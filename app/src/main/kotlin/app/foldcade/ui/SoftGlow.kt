@@ -15,19 +15,21 @@ import app.foldcade.language.strokeAt
 import kotlin.math.min
 
 /**
- * How many polyline samples share one stroke. Short enough that a hot spot
- * still ramps, long enough that the first frame stays a few strokes.
+ * Polyline samples that share one stroke. Matches the cheap ribbon the
+ * emulator already walks while it reads the accessibility tree.
  */
-private const val STROKE_STRIDE = 2
+private const val STROKE_STRIDE = 6
+
+/** Outside-in indexes into [GlowFalloff.STOPS]. Five shells, not all twelve. */
+private val SHELLS = intArrayOf(10, 8, 6, 4, 2)
 
 /**
  * Soft radial glow shared by ribbons, crossings, discs, and tiles.
  *
- * The curve is [GlowFalloff] sampled at [GlowFalloff.STOPS]. A ribbon is a
- * handful of round strokes whose alphas are the difference between those
- * stops, screened onto the backdrop. That is the same kind of draw the
- * emulator already finishes inside `am start -W`. A full-screen layer of
- * radial stamps, and a runtime shader, both kept that wait from returning.
+ * The curve is [GlowFalloff]. A ribbon is a few round strokes per stretch,
+ * lightened so overlapping caps do not stack into dots. Twelve shells on
+ * every other sample, and the earlier stamp layer, filled a frame for so
+ * long that the emulator's accessibility dump stayed an empty window.
  */
 internal object SoftGlow {
     fun fillStops(into: FloatArray, tightness: Float, rim: Float) {
@@ -137,9 +139,9 @@ private fun DrawScope.drawFalloffLine(
 }
 
 /**
- * Shells from the outside in. Each shell adds only the cover gained since the
- * next-wider stop, so the stacked strokes match the radial curve instead of
- * summing every stop at the core.
+ * Wider, dimmer shells first. Each shell's alpha is the cover at that stop,
+ * and [BlendMode.Lighten] keeps the brighter core without adding the shells
+ * together at a joint.
  */
 private fun DrawScope.drawFalloffStrokes(
     path: Path,
@@ -149,20 +151,16 @@ private fun DrawScope.drawFalloffStrokes(
     peak: Float,
 ) {
     val fractions = GlowFalloff.STOPS
-    var index = fractions.lastIndex
-    while (index >= 0) {
+    for (index in SHELLS) {
         val width = radius * 2f * fractions[index]
-        val outer = if (index + 1 < stops.size) stops[index + 1] else 0f
-        val delta = ((stops[index] - outer) * peak).coerceIn(0f, 1f)
-        if (width >= 0.5f && delta > 0.004f) {
-            drawPath(
-                path = path,
-                color = color.copy(alpha = delta),
-                style = Stroke(width = width, cap = StrokeCap.Round, join = StrokeJoin.Round),
-                blendMode = BlendMode.Screen,
-            )
-        }
-        index--
+        val cover = (stops[index] * peak).coerceIn(0f, 1f)
+        if (width < 0.5f || cover <= 0.004f) continue
+        drawPath(
+            path = path,
+            color = color.copy(alpha = cover),
+            style = Stroke(width = width, cap = StrokeCap.Round, join = StrokeJoin.Round),
+            blendMode = BlendMode.Lighten,
+        )
     }
 }
 
