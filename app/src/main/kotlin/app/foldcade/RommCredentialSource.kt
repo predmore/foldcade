@@ -3,6 +3,7 @@ package app.foldcade
 import app.foldcade.api.plugin.Credential
 import app.foldcade.api.plugin.CredentialLookup
 import app.foldcade.api.plugin.CredentialStore
+import app.foldcade.api.plugin.Platform
 import app.foldcade.api.plugin.RommCredentials
 import app.foldcade.plugins.romm.RommPlugins
 import app.foldcade.plugins.romm.RommTokenSource
@@ -52,7 +53,12 @@ internal fun readRommToken(store: CredentialStore, onMainThread: Boolean): Strin
  * Points [RommPlugins] at [store]. A blank [origin] removes the wiring.
  * The token is not copied into the wiring.
  */
-fun publishRommWiring(origin: String?, store: CredentialStore, cacheRoot: Path) {
+fun publishRommWiring(
+    origin: String?,
+    store: CredentialStore,
+    cacheRoot: Path,
+    platforms: List<Platform> = emptyList(),
+) {
     if (origin.isNullOrBlank()) {
         RommPlugins.clear()
         return
@@ -62,6 +68,7 @@ fun publishRommWiring(origin: String?, store: CredentialStore, cacheRoot: Path) 
             origin = origin,
             tokenSource = rommTokenSource(store),
             cacheRoot = cacheRoot,
+            platforms = platforms,
         ),
     )
 }

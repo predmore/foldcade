@@ -48,6 +48,7 @@ class PluginHost(
     private val credentials: CredentialStore = MemoryCredentialStore(),
 ) {
     private val platforms = linkedMapOf<String, Platform>()
+    private val definitions = mutableListOf<Platform>()
     private val players = linkedMapOf<String, Player>()
     private val libraries = linkedMapOf<String, LibraryBackend>()
     private val metadataProviders = linkedMapOf<String, MetadataProvider>()
@@ -88,9 +89,11 @@ class PluginHost(
             addAll(stagedMetadata.map { it.id })
         }
         refuseReserved(entry, ids)
+        val storedDefinitions = stagedPlatforms.map { it.stored() }
         entry.bind(BoundCredentialAccess(ids, credentials))
         platformNames.addAll(names)
         playerPlatformIds.putAll(stagedPlayerPlatforms)
+        definitions.addAll(storedDefinitions)
         stagedPlatforms.forEach { platforms[it.id] = it }
         stagedPlayers.forEach { players[it.id] = it }
         stagedLibraries.forEach { libraries[it.id] = it }
@@ -168,6 +171,12 @@ class PluginHost(
         val canonical = storedPlatformId(id) ?: return null
         return platforms[canonical]
     }
+
+    /**
+     * Platform definitions stored at registration, in that order.
+     * Aliases are the ones declared then. This does not call a plugin.
+     */
+    fun platformDefinitions(): List<Platform> = definitions.toList()
 
     fun player(id: String): Player? = players[id]
 
@@ -322,6 +331,20 @@ private fun rethrowVirtualMachineError(failure: Throwable) {
         current = current.cause
     }
 }
+
+private fun Platform.stored() = DefinedPlatform(
+    id = id,
+    displayName = displayName,
+    extensions = extensions.toSet(),
+    aliases = aliases.toSet(),
+)
+
+private class DefinedPlatform(
+    override val id: String,
+    override val displayName: String,
+    override val extensions: Set<String>,
+    override val aliases: Set<String>,
+) : Platform
 
 private fun planPlatformNames(
     incoming: List<Platform>,

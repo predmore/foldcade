@@ -18,10 +18,14 @@ import app.foldcade.language.focusAndActivateDialog
 import app.foldcade.language.homePrompt
 import app.foldcade.language.reduce
 import app.foldcade.language.signInAgainPrompt
+import app.foldcade.plugins.romm.RommPlugins
+import app.foldcade.plugins.romm.RommTokenSource
+import app.foldcade.plugins.romm.RommWiring
 import app.foldcade.romm.cleartextCredentialWarning
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
+import java.nio.file.Path
 
 class ShellController(
     private val store: SessionStore,
@@ -110,6 +114,22 @@ class ShellController(
             refreshLibraries()
         }
         return effect
+    }
+
+    /**
+     * Installs the RomM server [RommPlugins] reads.
+     * [PluginHost.platformDefinitions] is the platform list, aliases included.
+     * A RomM slug that matches one of those ids or aliases becomes that canonical id.
+     */
+    fun installRomm(origin: String, tokenSource: RommTokenSource, cacheRoot: Path) {
+        RommPlugins.install(
+            RommWiring(
+                origin = origin,
+                tokenSource = tokenSource,
+                cacheRoot = cacheRoot,
+                platforms = plugins.platformDefinitions(),
+            ),
+        )
     }
 
     /**

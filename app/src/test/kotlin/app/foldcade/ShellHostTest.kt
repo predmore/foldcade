@@ -10,17 +10,25 @@ import app.foldcade.api.plugin.ListedPlatform
 import app.foldcade.api.plugin.ObservedSaves
 import app.foldcade.api.plugin.PLUGIN_API_VERSION
 import app.foldcade.api.plugin.Placement
+import app.foldcade.api.plugin.Platform
 import app.foldcade.api.plugin.Player
 import app.foldcade.api.plugin.PluginEntry
 import app.foldcade.api.plugin.PluginException
 import app.foldcade.api.plugin.SaveSet
+import app.foldcade.api.plugin.canonicalPlatformId
 import app.foldcade.host.PluginHost
 import app.foldcade.language.HostScreen
 import app.foldcade.language.Meaning
+import app.foldcade.plugins.romm.RommPlugins
+import app.foldcade.plugins.romm.RommTokenSource
+import java.nio.file.Files
 import java.util.ServiceLoader
+import java.util.concurrent.atomic.AtomicInteger
 import kotlinx.coroutines.Dispatchers
+import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -62,12 +70,47 @@ class ShellHostTest {
     }
 
     @Test
-    fun localFolderEntryIsTheServiceFileRegistration() {
+    fun bundledEntriesComeFromServiceFiles() {
         val loaded = ServiceLoader.load(
             PluginEntry::class.java,
             ShellHostTest::class.java.classLoader,
-        ).map { it.javaClass.name }
-        assertEquals(listOf("app.foldcade.localfolder.LocalFolderEntry"), loaded)
+        ).map { it.javaClass.name }.sorted()
+        assertEquals(
+            listOf(
+                "app.foldcade.localfolder.LocalFolderEntry",
+                "app.foldcade.plugins.romm.RommEntry",
+            ),
+            loaded,
+        )
+    }
+
+    @Test
+    fun rommSetupMapsSlugsThroughHostPlatformAliases() {
+        val reads = AtomicInteger()
+        val host = PluginHost(Dispatchers.Unconfined)
+        host.register(object : PluginEntry {
+            override val apiVersion = PLUGIN_API_VERSION
+            override val platforms = listOf(
+                countedPlatform(reads, "nintendo-3ds", "Nintendo 3DS", setOf("cci"), setOf("3ds", "n3ds")),
+                countedPlatform(reads, "nintendo-ds", "Nintendo DS", setOf("nds"), setOf("nds")),
+            )
+        })
+        val afterRegister = reads.get()
+        val shell = shell(host)
+        val cache = Files.createTempDirectory("romm-setup")
+        shell.installRomm("https://romm.example", RommTokenSource { null }, cache)
+        val definitions = RommPlugins.wiring?.platforms
+        assertEquals(host.platformDefinitions(), definitions)
+        assertEquals("nintendo-3ds", canonicalPlatformId(definitions!!, "3ds"))
+        assertEquals("nintendo-3ds", canonicalPlatformId(definitions, "n3ds"))
+        assertEquals("nintendo-ds", canonicalPlatformId(definitions, "nds"))
+        assertNull(canonicalPlatformId(definitions, "snes"))
+        assertEquals(afterRegister, reads.get())
+    }
+
+    @After
+    fun clearRommWiring() {
+        RommPlugins.clear()
     }
 
     @Test
@@ -89,6 +132,35 @@ class ShellHostTest {
         override val apiVersion = PLUGIN_API_VERSION
         override val libraries = listOf(library)
     }
+}
+
+private fun countedPlatform(
+    reads: AtomicInteger,
+    id: String,
+    name: String,
+    extensions: Set<String>,
+    aliases: Set<String>,
+) = object : Platform {
+    override val id: String
+        get() {
+            reads.incrementAndGet()
+            return id
+        }
+    override val displayName: String
+        get() {
+            reads.incrementAndGet()
+            return name
+        }
+    override val extensions: Set<String>
+        get() {
+            reads.incrementAndGet()
+            return extensions
+        }
+    override val aliases: Set<String>
+        get() {
+            reads.incrementAndGet()
+            return aliases
+        }
 }
 
 private open class LabelLibrary(

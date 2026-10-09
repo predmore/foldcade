@@ -47,6 +47,7 @@ class FoldcadeApp : Application() {
         refreshCredentials()
         pluginLoad.launch {
             plugins.load(classLoader)
+            publishRomm()
         }
     }
 
@@ -84,7 +85,12 @@ class FoldcadeApp : Application() {
 
     /** Installs or clears [app.foldcade.plugins.romm.RommPlugins] from the saved origin and this store. */
     fun publishRomm() {
-        publishRommWiring(store.rommOrigin(), credentials, rommCacheRoot())
+        publishRommWiring(
+            store.rommOrigin(),
+            credentials,
+            rommCacheRoot(),
+            plugins.platformDefinitions(),
+        )
     }
 
     private fun rommCacheRoot(): Path = cacheDir.toPath().resolve("romm")
