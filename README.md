@@ -1,73 +1,51 @@
-# foldcade
-An open-source gaming frontend built for the AYN Thor.
+# Foldcade
 
-## Install with Obtainium
+A cozy, 3DS-inspired dual-screen launcher built for the AYN Thor.
 
-Add `https://github.com/predmore/foldcade`. Set the APK filter to `^foldcade\.apk$`. Every release asset is named `foldcade.apk`.
+Both screens stay with your library. The top holds the game you are on. The bottom is the shelf you move through. The screens stay dark, the motion stays small, and a short piece of music sits under the menu until a game starts.
 
-`versionName` in `app/build.gradle.kts` is the stable release name. The `versionCode` in that file is the local fallback. A merge to `main` computes `versionCode` with `git rev-list --count HEAD` and publishes a pre-release. A merge that changes `versionName` also creates tag `vX.Y.Z` and a stable GitHub release. That stable build uses the same computed code, so it is higher than every earlier pre-release. An existing tag is left in place.
+<!--
+Hero pair. Replace these two files in place. Keep the paths and the table below.
 
-A debug install is `app.foldcade.debug`. The signed release stays `app.foldcade`, so the two do not replace each other.
+  docs/images/hero-top.png
+  docs/images/hero-bottom.png
 
-### Stable releases only
+Labeled placeholders. Swap the files when the refreshed Afterglow captures are on main.
+Do not point this page at a pull-request branch.
+-->
 
-Leave **Include pre-releases** off. Obtainium follows the non-prerelease tagged `vX.Y.Z`. The tag is the version, so leave **Use release date as version string** off.
+| Top screen | Bottom screen |
+| :---: | :---: |
+| ![Top screen. Placeholder until the refreshed capture is on main.](docs/images/hero-top.png) | ![Bottom screen. Placeholder until the refreshed capture is on main.](docs/images/hero-bottom.png) |
 
-Every main build uses a higher computed `versionCode`, so Android installs it over the previous one. A stable release uses the code computed for that same push.
+These two pictures are placeholders. Replace `docs/images/hero-top.png` and `docs/images/hero-bottom.png` when the screen captures are ready. Leave this table as it is.
 
-### Include pre-releases
+## What you can do
 
-Turn these on:
+- Keep your library on both screens.
+- Connect a RomM library.
+- Open games in Azahar and melonDS.
+- Use a theme. The built-in look stays if a theme file is missing.
+- Leave the ambient music on, or turn it down. The home track is Lanternlight.
 
-- **Include pre-releases**
-- **Use latest asset upload as release date**
-- **Use release date as version string (pseudo-version)**
+## Get it
 
-A push to `main` recreates one pre-release, tag `pre-release`, on the commit that was built, so the source archive matches the APK. The tag name stays `pre-release`, so it is not a version. Obtainium versions a GitHub release by its tag unless the release date is used as the version string. That is why the pseudo-version switch has to be on. See Obtainium discussions [2111](https://github.com/ImranR98/Obtainium/discussions/2111) and [2843](https://github.com/ImranR98/Obtainium/discussions/2843).
+Install from [GitHub Releases](https://github.com/predmore/foldcade/releases), or add Foldcade with Obtainium. The release file is always `foldcade.apk`.
 
-The pseudo-version is a date string. It does not compare with the version Android already installed. After adding the app, use **Mark updated** once so Obtainium treats that install as current. The computed `versionCode` increases on every main build, so each pre-release APK installs over the previous one.
+[![Get it on Obtainium](docs/images/obtainium.png)](https://apps.obtainium.imranr.dev/redirect?r=obtainium://app/%7B%22id%22%3A%22app.foldcade%22%2C%22url%22%3A%22https%3A%2F%2Fgithub.com%2Fpredmore%2Ffoldcade%22%2C%22author%22%3A%22predmore%22%2C%22name%22%3A%22Foldcade%22%2C%22additionalSettings%22%3A%22%7B%5C%22apkFilterRegEx%5C%22%3A%5C%22%5Efoldcade%5C%5C%5C%5C.apk%24%5C%22%7D%22%7D)
 
-### Release signing, once
+The badge follows stable releases and sets the APK filter to `^foldcade\.apk$`. Pre-release switches are in [Releases](docs/releases.md).
 
-The Release workflow reads four GitHub Actions secrets. It fails before it uploads an APK if any secret is missing. Do not commit the keystore. Creating or rotating the secrets is a repository admin action.
+## License
 
-`keytool` defaults to a PKCS12 keystore. PKCS12 uses one password, so `RELEASE_KEY_PASSWORD` is the same value as `RELEASE_KEYSTORE_PASSWORD`.
+Foldcade is open source under the [GNU GPLv3](LICENSE).
 
-Back up `foldcade-release.jks` outside this repository. If that file is lost, the next APK is a different signing key. Android will not install it over the app that is already there, and Obtainium cannot update that install.
+Credits for the home music and the theme art are in [licenses/CREDITS.md](licenses/CREDITS.md).
 
-```sh
-keytool -genkeypair -v \
-  -keystore foldcade-release.jks \
-  -alias foldcade \
-  -keyalg RSA \
-  -keysize 2048 \
-  -validity 10000 \
-  -dname "CN=Foldcade, O=Foldcade"
-```
+## For developers
 
-`keytool` asks for that one password. Use it for both secrets below.
-
-```sh
-base64 -w 0 foldcade-release.jks
-```
-
-On macOS: `base64 -i foldcade-release.jks | tr -d '\n'`
-
-In the repository: Settings → Secrets and variables → Actions → New repository secret.
-
-| Secret | Value |
-| --- | --- |
-| `RELEASE_KEYSTORE_BASE64` | the base64 line |
-| `RELEASE_KEYSTORE_PASSWORD` | the keystore password |
-| `RELEASE_KEY_ALIAS` | `foldcade` |
-| `RELEASE_KEY_PASSWORD` | the same keystore password |
-
-## Plugins
-
-Minify is off for debug and release. Bundled plugins are found by `ServiceLoader` from `META-INF/services/app.foldcade.api.plugin.PluginEntry`. If minify is enabled later, keep rules are required for that service file and for `PluginEntry`. Without them, R8 drops the file and the entry classes, and the host loads no plugins.
-
-## Credits
-
-The home-screen track is Lanternlight, an original composition by the Foldcade project (variant A of that piece). It is licensed under GPLv3 with this repository, the same choice as the theme art. Theme art is licensed with the repository, not under a separate CC BY-SA 4.0 grant. The track list is [music/tracks/manifest.json](music/tracks/manifest.json).
-
-MuseScore General 0.2 is MIT. Credit Frank Wen, Michael Cowgill, S. Christian Collins, Ethan Winer, and Michael Schorsch. The full license text is in [licenses/MuseScore_General_License.md](licenses/MuseScore_General_License.md) and [licenses/CREDITS.md](licenses/CREDITS.md).
+- [Building](docs/building.md)
+- [Plugins](docs/plugins.md)
+- [Releases](docs/releases.md)
+- [Architecture](docs/architecture.md)
+- [Contributing](CONTRIBUTING.md)
