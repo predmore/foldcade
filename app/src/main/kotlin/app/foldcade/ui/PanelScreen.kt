@@ -173,9 +173,13 @@ fun PanelHost(activity: FoldcadeHomeActivity, displays: Displays) {
         spec = if (blurTarget >= 1f) Motion.arrive(Motion.durationIsland, scale) else Motion.leave(Motion.durationIsland, scale),
         snap = heldBlur != null,
     )
+    // The blur layer stays off once the menu is closed. A graphics layer left on
+    // the bottom screen keeps the accessibility dump empty, so the library title
+    // is not in the window the folder check reads.
+    val blurring = blurTarget > 0f || blur >= 0.02f
     CompositionLocalProvider(LocalFoldTheme provides paint) {
         Box(Modifier.fillMaxSize().background(paint.theme.background)) {
-            Box(Modifier.fillMaxSize().menuBlur(blur)) {
+            Box(Modifier.fillMaxSize().then(if (blurring) Modifier.menuBlur(blur) else Modifier)) {
                 Backdrop(
                     motion = model.backgroundMotion,
                     speed = model.motionSpeed,
