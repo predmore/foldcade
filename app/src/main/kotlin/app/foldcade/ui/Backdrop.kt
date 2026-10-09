@@ -118,9 +118,7 @@ private fun MovingBackdrop(
         }
         for (discIndex in 0 until frame.discCount) {
             val disc = frame.discs[discIndex]
-            val shader = glow.discShaders[discIndex]
             drawSoftDisc(
-                shader = shader,
                 slots = glow,
                 cx = disc.cx,
                 cy = disc.cy,

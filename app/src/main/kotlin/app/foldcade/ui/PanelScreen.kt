@@ -48,11 +48,9 @@ import androidx.compose.ui.draw.scale
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
-import android.graphics.RuntimeShader
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
-import androidx.compose.ui.graphics.ShaderBrush
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.graphics.drawscope.Stroke
@@ -845,7 +843,6 @@ private fun Cell(
             Motion.leave(Motion.durationFocus, animatorScale)
         },
     )
-    val glowShader = remember { RuntimeShader(SoftGlow.source) }
     val glowStops = remember { FloatArray(GlowFalloff.STOPS.size) }
     Column(
         horizontalAlignment = Alignment.CenterHorizontally,
@@ -872,13 +869,7 @@ private fun Cell(
                         val rim = if (focused) GlowFalloff.TILE_RIM else GlowFalloff.REST_RIM
                         val peak = if (focused) GlowFalloff.TILE_PEAK else GlowFalloff.REST_PEAK
                         SoftGlow.fillStops(glowStops, tightness, rim)
-                        glowShader.prepareTile(center, reach, glow, peak, glowStops)
-                        val pad = reach + 1f
-                        drawRect(
-                            brush = ShaderBrush(glowShader),
-                            topLeft = Offset(center.x - pad, center.y - pad),
-                            size = Size(pad * 2f, pad * 2f),
-                        )
+                        drawRadialGlow(center, reach, glow, glowStops, peak)
                     }
                     if (glow != null || icon != null) {
                         drawRoundRect(
