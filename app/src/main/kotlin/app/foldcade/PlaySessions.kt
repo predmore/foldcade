@@ -9,7 +9,13 @@ import app.foldcade.host.play.PlayClock
 import app.foldcade.host.play.PlayEvent
 import app.foldcade.host.play.PlayLog
 import app.foldcade.host.play.PlaySignal
+import app.foldcade.host.play.PackagePlay
 import app.foldcade.host.play.PlayTotals
+import app.foldcade.host.play.ShownPlay
+import app.foldcade.host.play.UsageSample
+import app.foldcade.host.play.packagePlay
+import app.foldcade.host.play.shownPlay
+import app.foldcade.host.play.usageSpans
 import java.io.File
 
 /**
@@ -32,6 +38,12 @@ class PlaySessions private constructor(
     /** Fired after a session fact is stored. The shell refreshes Recently played. */
     var onChanged: (() -> Unit)? = null
 
+    /** Player package for a game id. Null for a stand-in that has no package. */
+    var packageOf: (String) -> String? = { null }
+
+    private var usageGranted = false
+    private var usageByPackage = emptyMap<String, PackagePlay>()
+
     fun start(gameId: String): String {
         val id = log.start(gameId)
         changed()
@@ -51,7 +63,22 @@ class PlaySessions private constructor(
 
     fun totals(gameId: String): PlayTotals = log.totals(gameId)
 
-    fun lastPlayedMillis(gameId: String): Long? = log.totals(gameId).lastPlayedMillis
+    fun shown(gameId: String): ShownPlay {
+        val lifecycle = log.totals(gameId)
+        val usage = packageOf(gameId)?.let { usageByPackage[it] }
+        return shownPlay(lifecycle.activeMillis, lifecycle.lastPlayedMillis, usage, usageGranted)
+    }
+
+    fun lastPlayedMillis(gameId: String): Long? = shown(gameId).lastPlayedMillis
+
+    fun hasTrackedSession(): Boolean = log.events().isNotEmpty()
+
+    /** Replaces the usage overlay. Lifecycle sessions stay in place for when access is off. */
+    fun applyUsage(granted: Boolean, samples: List<UsageSample>, nowMillis: Long) {
+        usageGranted = granted
+        usageByPackage = if (granted) packagePlay(usageSpans(samples), nowMillis) else emptyMap()
+        changed()
+    }
 
     fun events(): List<PlayEvent> = log.events()
 

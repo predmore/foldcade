@@ -54,6 +54,7 @@ enum class DialogKind {
     Folder,
     Ok,
     ReLogin,
+    UsageAccess,
     MissingPlayer,
     ClosePlayer,
     SaveFolder,
@@ -63,6 +64,7 @@ enum class DialogButton {
     UseAsHome,
     NotNow,
     ContinueGrant,
+    Allow,
     Ok,
     CloseIt,
 }
@@ -78,6 +80,24 @@ data class DialogState(
     /** A second muted line. The missing-player dialog lists package names here. */
     val detail: String? = null,
 )
+
+fun usageAccessPrompt(screen: HostScreen = HostScreen.Bottom): DialogState = DialogState(
+    kind = DialogKind.UsageAccess,
+    title = Copy.usageAccessTitle,
+    body = Copy.usageAccessBody,
+    buttons = listOf(DialogButton.Allow, DialogButton.NotNow),
+    index = 1,
+    safeIndex = 1,
+    screen = screen,
+)
+
+/** The automatic ask. L1 can open the same explainer later. It never replaces another dialog. */
+fun shouldOfferUsageAccess(
+    hasTrackedSession: Boolean,
+    granted: Boolean,
+    alreadyOffered: Boolean,
+    dialogOpen: Boolean,
+): Boolean = hasTrackedSession && !granted && !alreadyOffered && !dialogOpen
 
 fun homePrompt(screen: HostScreen = HostScreen.Bottom): DialogState = DialogState(
     kind = DialogKind.Home,
@@ -184,6 +204,7 @@ sealed interface Row {
     data object Theme : Row
     data object Background : Row
     data object MotionSpeed : Row
+    data object UsageAccess : Row
     data object Primary : Row
     data object Arrange : Row
     data object Order : Row
@@ -274,6 +295,7 @@ fun leftRows(
     if (!homeRoleHeld) add(Row.SetAsHome)
     add(Row.Background)
     add(Row.MotionSpeed)
+    add(Row.UsageAccess)
     if (offerButtonLabels) add(Row.ButtonLabels)
     playerSaves.forEach { add(Row.PlayerSave(it.playerId)) }
     add(Row.AndroidGames)
@@ -349,6 +371,10 @@ fun rowText(row: Row, model: PickerModel): RowText = when (row) {
     Row.Theme -> RowText(Copy.theme, model.themes.getOrElse(model.themeIndex) { Copy.builtIn })
     Row.Background -> RowText(Copy.background, backgroundLabel(model.backgroundMotion))
     Row.MotionSpeed -> RowText(Copy.motion, speedLabel(model.motionSpeed))
+    Row.UsageAccess -> RowText(
+        "Play time",
+        if (model.usageGranted) "All launchers" else Copy.approximatePlay,
+    )
     Row.Primary -> RowText(Copy.primaryPanel, if (model.primaryIsTop) Copy.top else Copy.bottom)
     Row.Arrange -> RowText(Copy.arrange)
     Row.Order -> RowText("Order", if (model.sort == LibrarySort.RecentlyPlayed) "Recently played" else "Library")
@@ -498,6 +524,7 @@ data class PickerModel(
     val libraryGrid: Boolean = false,
     val gridKind: GridKind = GridKind.Games,
     val emptyGrid: EmptyGrid = EmptyGrid.None,
+    val usageGranted: Boolean = false,
 )
 
 fun reduce(
@@ -858,6 +885,7 @@ private fun activateRow(
             backgroundPinned = true,
         ) to null
         Row.MotionSpeed -> model.copy(panel = panel, motionSpeed = model.motionSpeed.next()) to null
+        Row.UsageAccess -> model.copy(dialog = usageAccessPrompt(screen)) to null
         Row.Primary -> model.copy(panel = panel, primaryIsTop = !model.primaryIsTop) to null
         Row.Arrange -> model.copy(
             panel = null,

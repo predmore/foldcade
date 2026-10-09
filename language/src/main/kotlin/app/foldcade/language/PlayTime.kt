@@ -21,6 +21,9 @@ fun orderLabel(sort: LibrarySort): String = when (sort) {
     LibrarySort.RecentlyPlayed -> "Order  Recently played"
 }
 
+/** Shown when play time comes from Foldcade's own launches, not usage access. */
+fun approximatePlayNote(approximate: Boolean): String? = if (approximate) Copy.approximatePlay else null
+
 /** Total active play time. Zero means this game has no recorded play. */
 fun playedLine(activeMillis: Long): String {
     if (activeMillis <= 0L) return "Played  —"

@@ -3,6 +3,9 @@ package app.foldcade.language
 import java.time.Instant
 import java.time.ZoneOffset
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class PlayTimeCopyTest {
@@ -13,6 +16,8 @@ class PlayTimeCopyTest {
         assertEquals("Played  1m", playedLine(60_000))
         assertEquals("Played  1h", playedLine(3_600_000))
         assertEquals("Played  1h 1m", playedLine(3_660_000))
+        assertEquals("Approximate", approximatePlayNote(approximate = true))
+        assertEquals(null, approximatePlayNote(approximate = false))
     }
 
     @Test
@@ -24,6 +29,25 @@ class PlayTimeCopyTest {
         assertEquals("Last played  Yesterday", lastPlayedLine(Instant.parse("2026-10-08T23:00:00Z").toEpochMilli(), now, zone))
         assertEquals("Last played  2 Mar", lastPlayedLine(Instant.parse("2026-03-02T12:00:00Z").toEpochMilli(), now, zone))
         assertEquals("Last played  9 Oct 2025", lastPlayedLine(Instant.parse("2025-10-09T12:00:00Z").toEpochMilli(), now, zone))
+    }
+
+    @Test
+    fun usageAccessIsOfferedOnceAfterASessionAndFromTheLeftPanel() {
+        assertFalse(shouldOfferUsageAccess(hasTrackedSession = false, granted = false, alreadyOffered = false, dialogOpen = false))
+        assertFalse(shouldOfferUsageAccess(hasTrackedSession = true, granted = true, alreadyOffered = false, dialogOpen = false))
+        assertFalse(shouldOfferUsageAccess(hasTrackedSession = true, granted = false, alreadyOffered = true, dialogOpen = false))
+        assertFalse(shouldOfferUsageAccess(hasTrackedSession = true, granted = false, alreadyOffered = false, dialogOpen = true))
+        assertTrue(shouldOfferUsageAccess(hasTrackedSession = true, granted = false, alreadyOffered = false, dialogOpen = false))
+        val prompt = usageAccessPrompt()
+        assertEquals(DialogKind.UsageAccess, prompt.kind)
+        assertEquals(DialogButton.NotNow, prompt.buttons[prompt.safeIndex])
+        assertNull(PickerModel(count = 1, rowsPerPage = 1, showLaunchTarget = false).dialog)
+        val opened = reduce(PickerModel(count = 1, rowsPerPage = 1, showLaunchTarget = false), Meaning.LeftPanel).first
+        val index = panelRows(opened.panel!!, opened).indexOf(Row.UsageAccess)
+        val asking = reduce(opened.copy(panel = opened.panel!!.copy(index = index)), Meaning.Activate).first
+        assertEquals(DialogKind.UsageAccess, asking.dialog?.kind)
+        assertEquals("Play time  Approximate", rowLabel(Row.UsageAccess, opened))
+        assertEquals("Play time  All launchers", rowLabel(Row.UsageAccess, opened.copy(usageGranted = true)))
     }
 
     @Test
