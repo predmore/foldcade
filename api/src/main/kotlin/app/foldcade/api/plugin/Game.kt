@@ -15,10 +15,14 @@ enum class Availability {
  * A game is [backendId] plus [remoteKey], a platform, and [availability].
  * [label] is the name the backend already has, such as a file name.
  * Display metadata belongs to a [MetadataProvider], not to this record.
- * [remoteKey] is opaque: a document URI, a server id, or whatever that backend uses.
  */
 data class Game(
     val backendId: String,
+    /**
+     * Opaque key for this game inside the backend.
+     * Stable across rescans: a later scan of the same game keeps this key.
+     * The shell does not parse it. The backend returns a [LaunchTarget].
+     */
     val remoteKey: String,
     val platformId: String,
     val availability: Availability,
@@ -32,8 +36,12 @@ data class GameQuery(
     val limit: Int = 50,
 )
 
-/** One page. [nextOffset] is null when there is no further page. */
+/**
+ * One page. [nextOffset] is null when there is no further page.
+ * [total] is null when this backend does not know how many games match.
+ */
 data class GamePage(
     val games: List<Game>,
     val nextOffset: Int?,
+    val total: Int? = null,
 )

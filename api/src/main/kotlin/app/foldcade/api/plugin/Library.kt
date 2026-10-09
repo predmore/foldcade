@@ -9,8 +9,12 @@ package app.foldcade.api.plugin
  * [connect], [disconnect], [listPlatforms], [listGames], [ensureLocal], [saves],
  * [prepareLaunch], and [reconcile] read or write the backend. Each is a cancellable
  * `suspend` function. An implementation must stop that work when the calling
- * coroutine is cancelled, including a scan or an HTTP call. The host calls these
- * off the main thread and does not block on them.
+ * coroutine is cancelled, including a scan or an HTTP call.
+ * Implementations rethrow [kotlin.coroutines.cancellation.CancellationException].
+ * They must not wrap it in [PluginException].
+ * The host calls these off the main thread and does not block on them.
+ *
+ * The shell calls [ensureLocal], then [prepareLaunch], then [reconcile], in that order.
  */
 interface LibraryBackend {
     val id: String
@@ -24,18 +28,26 @@ interface LibraryBackend {
 
     suspend fun listGames(platformId: String, query: GameQuery): GamePage
 
-    /** Bytes the player can open. A no-op when the game is already a local file. */
-    suspend fun ensureLocal(game: Game): LocalCopy
+    /**
+     * The [LaunchTarget] for [game]. A file backend returns [LaunchTarget.ContentUri]
+     * for a file it already has. A catalog backend returns [LaunchTarget.AppRef]
+     * and does not download. The shell does not parse [Game.remoteKey].
+     */
+    suspend fun ensureLocal(game: Game): LaunchTarget
 
     suspend fun saves(game: Game): SaveSet
 
     /**
      * Negotiate this game's saves before the shell places them and starts [player].
-     * [Placement.savesToPlace] is what the shell writes into the player's locations.
+     * Called after [ensureLocal]. [Placement.savesToPlace] is what the shell writes
+     * into the player's locations.
      */
     suspend fun prepareLaunch(game: Game, player: Player): Placement
 
-    /** After the player returns, record what it wrote and sync when this backend does. */
+    /**
+     * After the player returns, record what it wrote and sync when this backend does.
+     * Called after [prepareLaunch].
+     */
     suspend fun reconcile(game: Game, player: Player, observed: ObservedSaves): SyncResult
 }
 
@@ -43,15 +55,6 @@ interface LibraryBackend {
 data class ListedPlatform(
     val platformId: String,
     val displayName: String,
-)
-
-/**
- * A game the player can open, addressed by a content URI.
- * [firmware] is present only when this backend has bytes that player requires.
- */
-data class LocalCopy(
-    val contentUri: String,
-    val firmware: List<FirmwareBytes> = emptyList(),
 )
 
 /** Firmware this backend already has. [contentUri] addresses the bytes. */
@@ -68,16 +71,18 @@ data class SaveSet(
 
 data class SaveSlot(
     val slot: String,
+    /** Lowercase hex MD5 of the save bytes. */
     val contentHash: String,
     val lastPlayerId: String?,
 )
 
 /**
  * Result of [LibraryBackend.prepareLaunch].
+ * [target] is the same kind of handoff [LibraryBackend.ensureLocal] returned.
  * The shell writes [savesToPlace] into the matching [SaveDeclaration] locations.
  */
 data class Placement(
-    val local: LocalCopy,
+    val target: LaunchTarget,
     val savesToPlace: List<PlacedSave> = emptyList(),
     val sync: SyncResult = SyncResult(SyncOutcome.Unchanged),
 )
@@ -85,6 +90,7 @@ data class Placement(
 data class PlacedSave(
     val slot: String,
     val contentUri: String,
+    /** Lowercase hex MD5 of the save bytes. */
     val contentHash: String,
 )
 
@@ -95,6 +101,7 @@ data class ObservedSaves(
 
 data class ObservedSlot(
     val slot: String,
+    /** Lowercase hex MD5 of the save bytes. */
     val contentHash: String,
     val playerId: String,
     val contentUri: String?,

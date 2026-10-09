@@ -1,6 +1,7 @@
 package app.foldcade.api.plugin
 
 import java.util.concurrent.atomic.AtomicInteger
+import kotlin.coroutines.cancellation.CancellationException
 import kotlin.coroutines.coroutineContext
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.ensureActive
@@ -42,7 +43,7 @@ class PluginContractTest {
         val intent = player.launchIntent(
             LaunchRequest(
                 game = game,
-                local = LocalCopy(contentUri = "content://games/1"),
+                target = LaunchTarget.ContentUri(uri = "content://games/1"),
                 resolvedPackage = "app.sample",
             ),
         )
@@ -50,9 +51,89 @@ class PluginContractTest {
         assertEquals("app.sample.PlayActivity", intent.componentClass)
         assertEquals("app.sample.PLAY", intent.action)
         assertEquals("content://games/1", intent.dataUri)
+        assertEquals("application/octet-stream", intent.mimeType)
+        assertEquals(setOf(LaunchFlag.NewTask), intent.flags)
+        assertTrue(intent.extras.filterIsInstance<PlayerExtra.Long>().single().value == 7L)
         assertTrue(intent.grantReadUri)
+        assertTrue(player.needsLocalFile)
         assertEquals("slot", player.saveDeclarations(game).single().slot)
         assertFalse(player.occupiesBothDisplays)
+    }
+
+    @Test
+    fun appRefCarriesGameNativeAndMoonlightWithoutAFile() {
+        val gameNative = LaunchTarget.AppRef(
+            values = mapOf("app_id" to "42", "game_source" to "STEAM"),
+        )
+        val moonlight = LaunchTarget.AppRef(
+            values = mapOf("host_uuid" to "host-1", "app_id" to "123"),
+        )
+        val player = IdlePlayer(needsLocalFile = false)
+        val intent = player.launchIntent(
+            LaunchRequest(game = game, target = gameNative, resolvedPackage = "app.sample"),
+        )
+        assertNull(intent.dataUri)
+        assertFalse(player.needsLocalFile)
+        assertEquals("42", gameNative.values["app_id"])
+        assertEquals("STEAM", gameNative.values["game_source"])
+        assertEquals("host-1", moonlight.values["host_uuid"])
+        assertEquals("123", moonlight.values["app_id"])
+    }
+
+    @Test
+    fun nintendo3dsAliasesResolveToTheSamePlayers() {
+        val platform = object : Platform {
+            override val id = "nintendo-3ds"
+            override val displayName = "Nintendo 3DS"
+            override val extensions = setOf("cci")
+            override val aliases = setOf("3ds", "n3ds")
+        }
+        val player = IdlePlayer(platformId = "nintendo-3ds")
+        val platforms = listOf(platform)
+        val players = listOf(player)
+        assertEquals("nintendo-3ds", canonicalPlatformId(platforms, "nintendo-3ds"))
+        assertEquals("nintendo-3ds", canonicalPlatformId(platforms, "3ds"))
+        assertEquals("nintendo-3ds", canonicalPlatformId(platforms, "n3ds"))
+        assertEquals(listOf(player.id), playersForPlatform(platforms, players, "3ds").map { it.id })
+        assertEquals(listOf(player.id), playersForPlatform(platforms, players, "n3ds").map { it.id })
+        assertNull(canonicalPlatformId(platforms, "nds"))
+    }
+
+    @Test
+    fun aliasesAreAJvmDefaultMethod() {
+        val aliases = Platform::class.java.methods.single { it.name == "getAliases" }
+        assertTrue(aliases.isDefault)
+        assertTrue(IdlePlatform().aliases.isEmpty())
+        assertEquals(1, PLUGIN_API_VERSION)
+    }
+
+    @Test
+    fun fetchMayReturnNullAndAPageMayOmitTotal() = runBlocking {
+        assertNull(IdleMetadata(cachedMeta = null).fetch(game))
+        val page = GamePage(games = emptyList(), nextOffset = null)
+        assertNull(page.total)
+        assertEquals(4, page.copy(total = 4).total)
+        assertEquals(
+            setOf(
+                ArtworkRole.Cover,
+                ArtworkRole.Background,
+                ArtworkRole.Icon,
+                ArtworkRole.Logo,
+                ArtworkRole.Screenshot,
+            ),
+            ArtworkRole.entries.toSet(),
+        )
+    }
+
+    @Test
+    fun pluginFailuresNameTheCaseAndKeepTheServerVersion() {
+        val mismatch = PluginException.ProtocolMismatch(serverVersion = "5.4.0", message = "newer")
+        assertEquals("5.4.0", mismatch.serverVersion)
+        assertEquals("newer", mismatch.message)
+        assertEquals("sign in", PluginException.NotAuthenticated("sign in").message)
+        assertEquals("offline", PluginException.Unavailable("offline").message)
+        assertEquals("missing", PluginException.NotFound("missing").message)
+        assertFalse(CancellationException("stopped") is PluginException)
     }
 
     @Test
@@ -169,12 +250,13 @@ private class IdlePlatform : Platform {
     override val extensions = setOf("sample")
 }
 
-private class IdlePlayer : Player {
+private class IdlePlayer(
+    override val platformId: String = "sample",
+    override val needsLocalFile: Boolean = true,
+) : Player {
     override val id = "player.sample"
     override val displayName = "Sample player"
-    override val platformId = "sample"
     override val packageNames = listOf("app.sample")
-    override val handoff = GameHandoff.ContentUri
     override val startDisplay = StartDisplay.PickerChoice
     override val occupiesBothDisplays = false
     override val requiresImportedGame = false
@@ -182,13 +264,19 @@ private class IdlePlayer : Player {
     override fun saveDeclarations(game: Game): List<SaveDeclaration> =
         listOf(SaveDeclaration(slot = "slot", locationUri = null))
 
-    override fun launchIntent(request: LaunchRequest): PlayerIntent = PlayerIntent(
-        packageName = request.resolvedPackage,
-        componentClass = "app.sample.PlayActivity",
-        action = "app.sample.PLAY",
-        dataUri = request.local.contentUri,
-        grantReadUri = true,
-    )
+    override fun launchIntent(request: LaunchRequest): PlayerIntent {
+        val uri = (request.target as? LaunchTarget.ContentUri)?.uri
+        return PlayerIntent(
+            packageName = request.resolvedPackage,
+            componentClass = "app.sample.PlayActivity",
+            action = "app.sample.PLAY",
+            dataUri = uri,
+            extras = listOf(PlayerExtra.Long(key = "bytes", value = 7L)),
+            grantReadUri = uri != null,
+            mimeType = if (uri == null) null else "application/octet-stream",
+            flags = setOf(LaunchFlag.NewTask),
+        )
+    }
 }
 
 private class IdleLibrary : LibraryBackend {
@@ -204,24 +292,25 @@ private class IdleLibrary : LibraryBackend {
     override suspend fun listGames(platformId: String, query: GameQuery): GamePage =
         GamePage(games = emptyList(), nextOffset = null)
 
-    override suspend fun ensureLocal(game: Game): LocalCopy = LocalCopy(game.remoteKey)
+    override suspend fun ensureLocal(game: Game): LaunchTarget =
+        LaunchTarget.ContentUri(uri = game.remoteKey)
 
     override suspend fun saves(game: Game): SaveSet = SaveSet(id, emptyList())
 
     override suspend fun prepareLaunch(game: Game, player: Player): Placement =
-        Placement(local = LocalCopy(game.remoteKey))
+        Placement(target = LaunchTarget.ContentUri(uri = game.remoteKey))
 
     override suspend fun reconcile(game: Game, player: Player, observed: ObservedSaves): SyncResult =
         SyncResult(SyncOutcome.Unchanged)
 }
 
-private class IdleMetadata(private val cachedMeta: GameMeta?) : MetadataProvider {
+private open class IdleMetadata(private val cachedMeta: GameMeta?) : MetadataProvider {
     override val id = "metadata.sample"
     override val displayName = "Sample metadata"
 
     override fun cached(game: Game): GameMeta? = cachedMeta
 
-    override suspend fun fetch(game: Game): GameMeta = GameMeta(title = game.label)
+    override suspend fun fetch(game: Game): GameMeta? = cachedMeta
 }
 
 private class HangingLibrary : LibraryBackend {
@@ -238,7 +327,7 @@ private class HangingLibrary : LibraryBackend {
 
     override suspend fun listGames(platformId: String, query: GameQuery): GamePage = hang()
 
-    override suspend fun ensureLocal(game: Game): LocalCopy = hang()
+    override suspend fun ensureLocal(game: Game): LaunchTarget = hang()
 
     override suspend fun saves(game: Game): SaveSet = hang()
 
@@ -262,7 +351,7 @@ private class HangingMetadata : MetadataProvider {
 
     override fun cached(game: Game): GameMeta? = null
 
-    override suspend fun fetch(game: Game): GameMeta {
+    override suspend fun fetch(game: Game): GameMeta? {
         entered.send(Unit)
         suspendCancellableCoroutine<Nothing> { pending ->
             pending.invokeOnCancellation { }
@@ -298,12 +387,13 @@ private class ScanningLibrary : LibraryBackend {
         }
     }
 
-    override suspend fun ensureLocal(game: Game): LocalCopy = LocalCopy(game.remoteKey)
+    override suspend fun ensureLocal(game: Game): LaunchTarget =
+        LaunchTarget.ContentUri(uri = game.remoteKey)
 
     override suspend fun saves(game: Game): SaveSet = SaveSet(id, emptyList())
 
     override suspend fun prepareLaunch(game: Game, player: Player): Placement =
-        Placement(local = LocalCopy(game.remoteKey))
+        Placement(target = LaunchTarget.ContentUri(uri = game.remoteKey))
 
     override suspend fun reconcile(game: Game, player: Player, observed: ObservedSaves): SyncResult =
         SyncResult(SyncOutcome.Unchanged)
@@ -320,7 +410,7 @@ private class ScanningMetadata : MetadataProvider {
 
     override fun cached(game: Game): GameMeta? = null
 
-    override suspend fun fetch(game: Game): GameMeta {
+    override suspend fun fetch(game: Game): GameMeta? {
         running = true
         try {
             while (true) {

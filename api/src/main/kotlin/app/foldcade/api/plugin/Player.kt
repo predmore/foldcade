@@ -1,16 +1,6 @@
 package app.foldcade.api.plugin
 
 /**
- * How the game bytes are handed to the installed app.
- * The player plugin chooses this. The shell does not guess it.
- */
-enum class GameHandoff {
-    ContentUri,
-    IntegerAppId,
-    HostUuid,
-}
-
-/**
  * Where a player should be started.
  * A display-role setting can swap which panel is primary. Display ids are not stored here.
  */
@@ -25,6 +15,9 @@ enum class StartDisplay {
  *
  * [launchIntent] and [saveDeclarations] return data the plugin already holds.
  * They stay synchronous. A player uses `suspend` only when that plugin itself does I/O.
+ *
+ * [needsLocalFile] is the whole handoff flag. True means the player reads a
+ * [LaunchTarget.ContentUri]. False means it reads a [LaunchTarget.AppRef].
  */
 interface Player {
     val id: String
@@ -34,7 +27,7 @@ interface Player {
     /** Package ids this player can bind. Detection is a list, not one constant. */
     val packageNames: List<String>
 
-    val handoff: GameHandoff
+    val needsLocalFile: Boolean
     val startDisplay: StartDisplay
     val occupiesBothDisplays: Boolean
 
@@ -61,16 +54,21 @@ data class SaveDeclaration(
 /** What the shell already knows when the player builds an intent. */
 data class LaunchRequest(
     val game: Game,
-    val local: LocalCopy,
+    val target: LaunchTarget,
     val resolvedPackage: String,
-    val integerAppId: Int? = null,
-    val textAppId: String? = null,
-    val hostUuid: String? = null,
 )
+
+/** Flags the shell applies when it starts [PlayerIntent]. */
+enum class LaunchFlag {
+    GrantWriteUri,
+    NewTask,
+}
 
 /**
  * Intent data the shell turns into a start.
  * When [grantReadUri] is true and [dataUri] is set, the shell grants read on that URI.
+ * [mimeType] is set only when the player already knows the MIME type.
+ * [flags] are extra start flags. They do not replace [grantReadUri].
  */
 data class PlayerIntent(
     val packageName: String,
@@ -79,6 +77,8 @@ data class PlayerIntent(
     val dataUri: String? = null,
     val extras: List<PlayerExtra> = emptyList(),
     val grantReadUri: Boolean = false,
+    val mimeType: String? = null,
+    val flags: Set<LaunchFlag> = emptySet(),
 )
 
 sealed interface PlayerExtra {
@@ -86,5 +86,6 @@ sealed interface PlayerExtra {
 
     data class Text(override val key: String, val value: String) : PlayerExtra
     data class Integer(override val key: String, val value: Int) : PlayerExtra
+    data class Long(override val key: String, val value: kotlin.Long) : PlayerExtra
     data class BooleanFlag(override val key: String, val value: Boolean) : PlayerExtra
 }

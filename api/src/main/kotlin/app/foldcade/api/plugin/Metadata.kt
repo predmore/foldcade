@@ -8,7 +8,10 @@ package app.foldcade.api.plugin
  * [id] and [displayName] are already loaded and stay ordinary properties.
  * [cached] returns only what this provider has already loaded, or null. It stays synchronous.
  * [fetch] is the network or disk read. It is a cancellable `suspend` function.
+ * It returns null when this provider has nothing for the game.
  * An implementation must stop that work when the calling coroutine is cancelled.
+ * Implementations rethrow [kotlin.coroutines.cancellation.CancellationException].
+ * They must not wrap it in [PluginException].
  * The host calls [fetch] off the main thread and does not block on it.
  */
 interface MetadataProvider {
@@ -17,7 +20,7 @@ interface MetadataProvider {
 
     fun cached(game: Game): GameMeta?
 
-    suspend fun fetch(game: Game): GameMeta
+    suspend fun fetch(game: Game): GameMeta?
 }
 
 /** Display record. The provider maps its own source onto this. The host can cache [artwork]. */
@@ -35,4 +38,7 @@ data class Artwork(
 enum class ArtworkRole {
     Cover,
     Background,
+    Icon,
+    Logo,
+    Screenshot,
 }
