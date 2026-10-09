@@ -691,6 +691,12 @@ class RommClientTest {
         assertFalse(httpCleartextAllowed("http://192.168.1.20:8080", "http://evil.example/api/heartbeat"))
         assertFalse(httpCleartextAllowed("http://192.168.1.20:8080", "http://192.168.1.20:9090/api/heartbeat"))
         assertTrue(httpCleartextAllowed("http://192.168.1.20:8080", "https://192.168.1.20/api/heartbeat"))
+        assertFalse(sameSchemeRedirectLeavesOrigin("https://romm.example", "https://romm.example/api/roms"))
+        assertFalse(sameSchemeRedirectLeavesOrigin("https://romm.example", "https://romm.example:443/api/roms"))
+        assertTrue(sameSchemeRedirectLeavesOrigin("https://romm.example", "https://evil.example/api/roms"))
+        assertTrue(sameSchemeRedirectLeavesOrigin("https://romm.example", "https://romm.example:8443/api/roms"))
+        assertFalse(sameSchemeRedirectLeavesOrigin("http://romm.example", "https://evil.example/api/roms"))
+        assertFalse(sameSchemeRedirectLeavesOrigin("https://romm.example", "http://evil.example/api/roms"))
 
         server.route("GET", "/api/heartbeat") { exchange, _ ->
             exchange.responseHeaders.add("Location", "http://127.0.0.1:9/api/heartbeat")
@@ -709,6 +715,49 @@ class RommClientTest {
         runClient { client ->
             assertEquals(TRY_HTTPS_HINT, client.redirectHint())
         }
+    }
+
+    @Test
+    fun bearerStaysOnTheConfiguredOrigin() {
+        val other = MockRomm()
+        try {
+            other.route("GET", "/api/platforms") { exchange, _ ->
+                json(exchange, 200, fixture("platforms.json"))
+            }
+            server.route("GET", "/api/platforms") { exchange, _ ->
+                exchange.responseHeaders.add("Location", "${other.origin}/api/platforms")
+                exchange.sendResponseHeaders(302, -1)
+                exchange.responseBody.close()
+            }
+            val rejected = runCatching {
+                runClient(token = { "rmm_secret" }) { it.platforms() }
+            }.exceptionOrNull()
+            assertTrue(rejected is RommUnavailable)
+            assertTrue(rejected?.message?.contains("Cleartext") == true)
+            assertTrue(other.recorded.isEmpty())
+            assertEquals("Bearer rmm_secret", header(server.recorded.single(), "Authorization"))
+        } finally {
+            other.close()
+        }
+
+        var hops = 0
+        server.route("GET", "/api/roms") { exchange, _ ->
+            hops += 1
+            if (hops == 1) {
+                exchange.responseHeaders.add("Location", "${server.origin}/api/roms?landed=1")
+                exchange.sendResponseHeaders(302, -1)
+                exchange.responseBody.close()
+            } else {
+                json(exchange, 200, fixture("roms.json"))
+            }
+        }
+        runClient(token = { "rmm_secret" }) { client ->
+            client.roms()
+        }
+        val followed = server.recorded.filter { it.path == "/api/roms" }
+        assertTrue(followed.size >= 2)
+        assertTrue(followed.all { header(it, "Authorization") == "Bearer rmm_secret" })
+        assertTrue(followed.last().query.orEmpty().contains("landed=1"))
     }
 
     @Test

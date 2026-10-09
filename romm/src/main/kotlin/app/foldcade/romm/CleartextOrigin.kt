@@ -16,14 +16,25 @@ internal class RommCleartextInterceptor(
 ) : Interceptor {
     override fun intercept(chain: Interceptor.Chain): Response {
         val request = chain.request()
-        rejectUnlessRomOrigin(origin, request.url.toString())
+        val url = request.url.toString()
+        rejectUnlessRomOrigin(origin, url)
+        // A follow-up OkHttp already built for another origin must not leave with the bearer.
+        if (request.header("Authorization") != null && !sameOrigin(origin, url)) {
+            throw OriginRedirectRejected(url)
+        }
         val response = chain.proceed(request)
         if (response.code !in 300..399) return response
         val location = response.header("Location") ?: return response
         val next = request.url.resolve(location)?.toString() ?: location
-        if (httpCleartextAllowed(origin, next)) return response
-        response.close()
-        throw CleartextRejected(next)
+        if (!httpCleartextAllowed(origin, next)) {
+            response.close()
+            throw CleartextRejected(next)
+        }
+        if (sameSchemeRedirectLeavesOrigin(origin, next)) {
+            response.close()
+            throw OriginRedirectRejected(next)
+        }
+        return response
     }
 }
 
@@ -31,8 +42,30 @@ internal class CleartextRejected(val url: String) : IOException(
     "Cleartext request is not the configured RomM origin",
 )
 
+/** A same-scheme redirect targeted a different scheme, host, or port. */
+internal class OriginRedirectRejected(val url: String) : IOException(
+    "RomM redirect left the configured origin",
+)
+
 internal fun rejectUnlessRomOrigin(origin: String, url: String) {
     if (!httpCleartextAllowed(origin, url)) throw CleartextRejected(url)
+}
+
+/**
+ * OkHttp follows a same-scheme redirect. That follow-up would carry the
+ * bearer when the target stays on [origin], and must not when it does not.
+ * A scheme change is not followed (`followSslRedirects` is false).
+ */
+internal fun sameSchemeRedirectLeavesOrigin(origin: String, target: String): Boolean {
+    val from = endpointOf(origin) ?: return false
+    val to = endpointOf(target) ?: return false
+    return from.scheme == to.scheme && from != to
+}
+
+internal fun sameOrigin(origin: String, target: String): Boolean {
+    val from = endpointOf(origin) ?: return false
+    val to = endpointOf(target) ?: return false
+    return from == to
 }
 
 /**

@@ -48,6 +48,8 @@ import kotlin.coroutines.resumeWithException
  * This is the app's only HTTP stack. Cleartext is permitted in the network
  * security config, and [RommCleartextInterceptor] rejects any http request
  * whose scheme, host, and port are not [origin], including redirects.
+ * A same-scheme redirect to another origin is not followed, so the bearer
+ * stays on [origin]. An http to https redirect is left for the setup hint.
  */
 class RommClient(
     origin: String,
