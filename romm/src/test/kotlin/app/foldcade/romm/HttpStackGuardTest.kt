@@ -8,7 +8,14 @@ class HttpStackGuardTest {
     @Test
     fun rommClientIsTheOnlyHttpStack() {
         val root = projectRoot()
-        val needles = listOf("OkHttpClient(", "HttpURLConnection(", "java.net.http.HttpClient")
+        val needles = listOf(
+            "OkHttpClient(",
+            "OkHttpClient.Builder",
+            "HttpURLConnection(",
+            "java.net.http.HttpClient",
+            "openConnection",
+            "openStream",
+        )
         val allowedClient = "romm/src/main/kotlin/app/foldcade/romm/RommClient.kt"
         val hits = mutableListOf<String>()
         root.walkTopDown()

@@ -70,6 +70,25 @@ class SealedCredentialStoreTest {
     }
 
     @Test
+    fun aCorruptBase64BlobIsBadAndForgetsOnlyThatEntry() = runBlocking {
+        val generator = KeyGenerator.getInstance("AES")
+        generator.init(256)
+        val box = AesGcmSecretBox(generator.generateKey())
+        val corrupt = credentialCiphertext("***")
+        assertEquals(0, corrupt.size)
+        assertTrue(box.open(corrupt, credentialAad("romm", "access-token", "api-token")) is Opened.BadBlob)
+        val blobs = MemoryBlobs()
+        blobs.put("romm", "access-token", StoredBlob("api-token", corrupt))
+        val kept = box.seal("rmm_ok".toByteArray(), credentialAad("other", "access-token", "api-token"))
+        blobs.put("other", "access-token", StoredBlob("api-token", kept))
+        val store = SealedCredentialStore(blobs, box)
+        assertEquals(CredentialLookup.Unreadable, store.lookup("romm", "access-token"))
+        assertEquals(setOf("other"), blobs.pluginIds())
+        val left = store.lookup("other", "access-token") as CredentialLookup.Present
+        assertEquals("rmm_ok", (left.credential as Credential.ApiToken).value)
+    }
+
+    @Test
     fun aBadBlobForgetsOnlyThatEntry() = runBlocking {
         val blobs = MemoryBlobs()
         blobs.put("romm", "access-token", StoredBlob("api-token", byteArrayOf(1)))

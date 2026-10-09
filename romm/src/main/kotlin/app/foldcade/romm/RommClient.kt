@@ -758,10 +758,37 @@ class RommClient(
         internal fun normalizeOrigin(raw: String): String {
             var text = raw.trim().trimEnd('/')
             if (text.endsWith("/api")) text = text.removeSuffix("/api")
-            require(text.startsWith("http://") || text.startsWith("https://")) {
-                "RomM origin must be an http(s) URL"
+            val marker = "://"
+            val split = text.indexOf(marker)
+            require(split > 0) { "RomM origin must be an http(s) URL" }
+            val scheme = text.substring(0, split).lowercase()
+            require(scheme == "http" || scheme == "https") { "RomM origin must be an http(s) URL" }
+            val rest = text.substring(split + marker.length)
+            require(rest.isNotEmpty() && !rest.startsWith("/")) { "RomM origin must be an http(s) URL" }
+            val cut = rest.indexOfAny(charArrayOf('/', '?', '#'))
+            val authority = if (cut < 0) rest else rest.substring(0, cut)
+            val tail = if (cut < 0) "" else rest.substring(cut)
+            val at = authority.lastIndexOf('@')
+            val user = if (at < 0) "" else authority.substring(0, at + 1)
+            val hostPort = if (at < 0) authority else authority.substring(at + 1)
+            val (host, port) = splitHost(hostPort)
+            require(host.isNotEmpty() && host != "[]") { "RomM origin must be an http(s) URL" }
+            return scheme + marker + user + host + port + tail
+        }
+
+        private fun splitHost(hostPort: String): Pair<String, String> {
+            if (hostPort.startsWith("[")) {
+                val end = hostPort.indexOf(']')
+                require(end > 1) { "RomM origin must be an http(s) URL" }
+                val port = hostPort.substring(end + 1)
+                require(port.isEmpty() || port.startsWith(":")) { "RomM origin must be an http(s) URL" }
+                return hostPort.substring(0, end + 1).lowercase() to port
             }
-            return text
+            val colon = hostPort.lastIndexOf(':')
+            if (colon > 0 && hostPort.substring(colon + 1).all { it.isDigit() }) {
+                return hostPort.substring(0, colon).lowercase() to hostPort.substring(colon)
+            }
+            return hostPort.lowercase() to ""
         }
 
         /** File [downloadRom] writes. A `.partial` sibling means the download is not finished. */

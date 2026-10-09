@@ -28,7 +28,8 @@ import kotlin.coroutines.cancellation.CancellationException
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.withContext
 
-private const val ROMM_ENTRY_CLASS = "app.foldcade.plugins.romm.RommEntry"
+/** Binary name of the built-in RomM entry. Resolved on the host class loader, then compared by identity. */
+private const val BUNDLED_ROMM_ENTRY = "app.foldcade.plugins.romm.RommEntry"
 
 /**
  * Loads plugins and calls library I/O and metadata fetch off [io].
@@ -105,11 +106,25 @@ class PluginHost(
     /**
      * `romm` and `romm.metadata` belong to the built-in RomM entry.
      * Another entry cannot take them, even if it is registered first.
+     * The exemption is that class object on this host's class loader.
+     * A plugin loader can define a class with the same binary name. That
+     * object is a different class, and it is refused.
      */
     private fun refuseReserved(entry: PluginEntry, ids: Set<String>) {
-        if (entry.javaClass.name == ROMM_ENTRY_CLASS) return
+        if (entry.javaClass === bundledRommEntry()) return
         val taken = ids.filter { it in RommCredentials.RESERVED_IDS }
         if (taken.isNotEmpty()) error("Reserved plugin id: ${taken.joinToString()}")
+    }
+
+    private fun bundledRommEntry(): Class<*>? {
+        val loader = PluginHost::class.java.classLoader ?: return null
+        return try {
+            Class.forName(BUNDLED_ROMM_ENTRY, false, loader)
+        } catch (_: ClassNotFoundException) {
+            null
+        } catch (_: LinkageError) {
+            null
+        }
     }
 
     /**
