@@ -655,6 +655,7 @@ else
 fi
 
 # Shoulder panels on the Thor-sized emulator. This is not a Thor pass.
+# A setup that is cancelled before screenshots exist is not a failed capture.
 # The home role is held, so Set as Home is hidden. From Library the
 # rows are Theme, Primary, Arrange, Order, Music, Track, Volume,
 # Background, Motion, Azahar saves, melonDS saves, Android Games, Apps,
