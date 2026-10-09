@@ -12,6 +12,7 @@ import app.foldcade.language.SignedInBackend
 import app.foldcade.language.builtInTheme
 import app.foldcade.music.HomeMusic
 import app.foldcade.ui.FoldPaint
+import java.io.File
 import java.nio.file.Path
 import kotlin.coroutines.cancellation.CancellationException
 import kotlinx.coroutines.CoroutineScope
@@ -42,6 +43,10 @@ class FoldcadeApp : Application() {
         private set
     var packaged: PackagedTheme? = null
         private set
+
+    /** Local play history. Not a plugin API. */
+    lateinit var plays: PlaySessions
+        private set
     var companionLaunched: Boolean = false
 
     /**
@@ -63,9 +68,20 @@ class FoldcadeApp : Application() {
         packaged = PackagedTheme.load(this)
         val names = listOf(Copy.builtIn) + listOfNotNull(packaged?.name)
         val motions = listOf(BackgroundMotion.Off) + listOfNotNull(packaged?.backgroundMotion)
-        shell = ShellController(store, plugins, music::apply, music.trackTitle(), names, motions) { index, slot ->
-            if (index > 0) packaged?.sounds?.play(slot)
-        }
+        plays = PlaySessions.open(File(filesDir, "play-sessions/events.log"))
+        shell = ShellController(
+            store,
+            plugins,
+            music::apply,
+            music.trackTitle(),
+            names,
+            motions,
+            cue = { index, slot ->
+                if (index > 0) packaged?.sounds?.play(slot)
+            },
+            lastPlayedMillis = plays::lastPlayedMillis,
+        )
+        plays.onChanged = shell::notePlayChanged
         rommPublish = RommPublish(
             read = {
                 readRommPublish(

@@ -16,6 +16,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import app.foldcade.api.ExternalApp
 import app.foldcade.api.Panel
+import app.foldcade.host.play.PlaySignal
 import app.foldcade.api.isAndroidHomeRecall
 import app.foldcade.api.plugin.Credential
 import app.foldcade.api.plugin.RommCredentials
@@ -183,10 +184,7 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
         val external = ExternalApp(game.id, game.occupiesBothDisplays)
         if (game.occupiesBothDisplays) {
             foldcade.store.update { it.launch(external, game.platformId) }
-            startOnDisplay(StandInActivity::class.java, displays.assignment(session.defaultDisplayIsTop).topDisplayId) {
-                putExtra(StandInActivity.EXTRA_ID, game.id)
-                putExtra(StandInActivity.EXTRA_TITLE, game.title)
-            }
+            beginPlay(game, displays.assignment(session.defaultDisplayIsTop).topDisplayId)
             return
         }
         val panel = session.singleScreenTarget(game.id, game.platformId) ?: return
@@ -196,9 +194,21 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
             Panel.Bottom -> assignment.bottomDisplayId ?: return
         }
         foldcade.store.place(panel, external)
-        startOnDisplay(StandInActivity::class.java, displayId) {
-            putExtra(StandInActivity.EXTRA_ID, game.id)
-            putExtra(StandInActivity.EXTRA_TITLE, game.title)
+        beginPlay(game, displayId)
+    }
+
+    /** Opens a play session, then starts the stand-in. That activity reports the rest of the session. */
+    private fun beginPlay(game: ShelfGame, displayId: Int) {
+        val playId = foldcade.plays.start(game.id)
+        try {
+            startOnDisplay(StandInActivity::class.java, displayId) {
+                putExtra(StandInActivity.EXTRA_ID, game.id)
+                putExtra(StandInActivity.EXTRA_TITLE, game.title)
+                putExtra(StandInActivity.EXTRA_PLAY, playId)
+            }
+        } catch (failure: RuntimeException) {
+            foldcade.plays.signal(playId, PlaySignal.End)
+            throw failure
         }
     }
 

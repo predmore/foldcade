@@ -20,7 +20,9 @@ import app.foldcade.api.plugin.MemoryCredentialStore
 import app.foldcade.host.PluginHost
 import app.foldcade.language.Copy
 import app.foldcade.language.HostScreen
+import app.foldcade.language.LibrarySort
 import app.foldcade.language.Meaning
+import app.foldcade.language.displayOrder
 import app.foldcade.localfolder.LocalFolderBackend
 import app.foldcade.localfolder.LocalFolderEntry
 import app.foldcade.plugins.romm.RommEntry
@@ -215,6 +217,20 @@ class ShellHostTest {
     @After
     fun clearRommWiring() {
         RommPlugins.clear()
+    }
+
+    @Test
+    fun recentlyPlayedOrderFollowsLastPlayed() {
+        val host = PluginHost(Dispatchers.Unconfined, MemoryCredentialStore())
+        val store = SessionStore(MemoryPrefs())
+        val last = mapOf("shelf.handheld" to 30L, "shelf.clamshell" to 10L)
+        val shell = ShellController(store, host, lastPlayedMillis = { last[it] })
+        shell.onMeaning(Meaning.LeftPanel, HostScreen.Bottom)
+        repeat(4) { shell.onMeaning(Meaning.MoveDown, HostScreen.Bottom) }
+        shell.onMeaning(Meaning.Activate, HostScreen.Bottom)
+        assertEquals(LibrarySort.RecentlyPlayed, shell.model.sort)
+        assertEquals(LibrarySort.RecentlyPlayed, store.librarySort())
+        assertEquals(listOf(2, 0, 1), displayOrder(shell.model).take(3))
     }
 
     @Test

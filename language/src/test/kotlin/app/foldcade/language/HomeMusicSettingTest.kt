@@ -21,7 +21,7 @@ class HomeMusicSettingTest {
     fun leftPanelKeepsMusicBesideTheOtherSettings() {
         assertEquals(
             listOf(
-                Row.Library, Row.Theme, Row.Primary, Row.Arrange,
+                Row.Library, Row.Theme, Row.Primary, Row.Arrange, Row.Order,
                 Row.Music, Row.MusicTrack, Row.MusicVolume, Row.SetAsHome,
                 Row.Background, Row.MotionSpeed,
             ),
@@ -29,7 +29,7 @@ class HomeMusicSettingTest {
         )
         assertEquals(
             listOf(
-                Row.Library, Row.Theme, Row.Primary, Row.Arrange,
+                Row.Library, Row.Theme, Row.Primary, Row.Arrange, Row.Order,
                 Row.Music, Row.MusicTrack, Row.MusicVolume,
                 Row.Background, Row.MotionSpeed,
             ),
@@ -40,17 +40,17 @@ class HomeMusicSettingTest {
     @Test
     fun activateTogglesMusicAndStepsVolume() {
         val opened = reduce(PickerModel(count = 1, rowsPerPage = 1, showLaunchTarget = false), Meaning.LeftPanel).first
-        val music = opened.panel!!.copy(index = 4)
+        val music = opened.panel!!.copy(index = 5)
         val toggled = reduce(opened.copy(panel = music), Meaning.Activate).first
         assertFalse(toggled.music.enabled)
-        assertEquals(4, toggled.panel?.index)
+        assertEquals(5, toggled.panel?.index)
         val again = reduce(toggled, Meaning.Activate).first
         assertTrue(again.music.enabled)
-        val named = opened.panel!!.copy(index = 5)
+        val named = opened.panel!!.copy(index = 6)
         val stayed = reduce(opened.copy(panel = named, trackTitle = "Lanternlight"), Meaning.Activate).first
         assertEquals(HomeMusicSetting.DEFAULT_TRACK_ID, stayed.music.trackId)
         assertEquals("Track  Lanternlight", MusicCopy.trackLabel(stayed.trackTitle))
-        val volume = opened.panel!!.copy(index = 6)
+        val volume = opened.panel!!.copy(index = 7)
         val stepped = reduce(opened.copy(panel = volume), Meaning.Activate).first
         assertEquals(0.30f, stepped.music.volume, 0.0001f)
         val wrapped = HomeMusicSetting(volume = 1f).stepped()
