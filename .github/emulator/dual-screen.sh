@@ -318,9 +318,16 @@ timeout 15 adb shell am start -W -n "$component"
 echo "step: home role"
 adb_step shell cmd role add-role-holder android.app.role.HOME "$app_id"
 
-# A dialog that is already up is dismissed. This does not click a button.
-echo "step: dismiss leftover dialog"
-adb_step shell input keyevent KEYCODE_BACK || true
+# Back only when the home dialog is still on screen. Do not click its buttons.
+dialog_remains() {
+  timeout 10 adb shell uiautomator dump /sdcard/foldcade-ui.xml >/dev/null 2>&1 || return 1
+  timeout 10 adb shell cat /sdcard/foldcade-ui.xml | tr -d '\r' >"$out/ui-last.xml" || return 1
+  grep -q -E 'Not now|Use Foldcade as Home' "$out/ui-last.xml"
+}
+if dialog_remains; then
+  echo "step: dismiss leftover dialog"
+  adb_step shell input keyevent KEYCODE_BACK
+fi
 
 is_png() {
   local file="$1"
@@ -332,16 +339,29 @@ is_png() {
   [ "$magic" = "89504e47" ]
 }
 
+# API 33 screencap parses -d with atoll. The bits of the SurfaceFlinger id
+# are unchanged; a value above signed 64-bit max is passed as its signed form.
+screencap_arg() {
+  python3 -c 'import sys
+n = int(sys.argv[1])
+if n >= 1 << 63:
+    n -= 1 << 64
+print(n)' "$1"
+}
+
 capture() {
   local id="$1"
   local dest="$2"
-  local attempt
+  local arg attempt
+  arg="$(screencap_arg "$id")"
   for attempt in 1 2 3 4 5; do
-    if adb_do exec-out screencap -p -d "$id" >"$dest" && is_png "$dest"; then
+    if adb_do exec-out screencap -p -d "$arg" >"$dest" 2>"$out/screencap.err" && is_png "$dest"; then
       return 0
     fi
     sleep 2
   done
+  echo "----- screencap -d ${arg} (SurfaceFlinger ${id}) -----"
+  cat "$out/screencap.err" 2>/dev/null || true
   fail "screencap failed for display $id"
 }
 
@@ -362,9 +382,6 @@ resolve_screencap_ids() {
     if [ "${#virt[@]}" -eq 1 ]; then
       secondary="${virt[0]}"
     fi
-  fi
-  if [ -z "$secondary" ]; then
-    secondary="$presentation_logical"
   fi
   if [ -z "$primary" ] || [ -z "$secondary" ]; then
     echo "----- SurfaceFlinger --displays -----"
@@ -392,8 +409,8 @@ resolve_screencap_ids
 {
   echo "Thor-sized emulator, not a Thor pass."
   echo "presentation_logical=${presentation_logical} name=${presentation_name} FLAG_PRESENTATION real ${bottom_width}x${bottom_height}"
-  echo "primary=${primary} ${top_width}x${top_height} density ${top_density}"
-  echo "secondary=${secondary} ${bottom_width}x${bottom_height} density ${bottom_density}"
+  echo "primary=${primary} screencap=$(screencap_arg "$primary") ${top_width}x${top_height} density ${top_density}"
+  echo "secondary=${secondary} screencap=$(screencap_arg "$secondary") ${bottom_width}x${bottom_height} density ${bottom_density}"
   echo "bottom density ${bottom_density} is derived from the 3.92 inch diagonal."
   echo "published bottom 335 PPI conflicts with that diagonal and is not used."
   echo "device=${device}"
