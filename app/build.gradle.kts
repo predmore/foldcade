@@ -1,4 +1,20 @@
 import java.io.File
+import javax.inject.Inject
+import org.gradle.api.DefaultTask
+import org.gradle.api.GradleException
+import org.gradle.api.file.ConfigurableFileCollection
+import org.gradle.api.file.DirectoryProperty
+import org.gradle.api.file.RegularFileProperty
+import org.gradle.api.provider.Property
+import org.gradle.api.tasks.Input
+import org.gradle.api.tasks.InputFile
+import org.gradle.api.tasks.InputFiles
+import org.gradle.api.tasks.Optional
+import org.gradle.api.tasks.OutputDirectory
+import org.gradle.api.tasks.PathSensitive
+import org.gradle.api.tasks.PathSensitivity
+import org.gradle.api.tasks.TaskAction
+import org.gradle.process.ExecOperations
 
 plugins {
     alias(libs.plugins.android.application)
@@ -60,6 +76,9 @@ android {
     }
     buildFeatures {
         compose = true
+    }
+    androidResources {
+        noCompress += "ogg"
     }
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
@@ -149,5 +168,101 @@ dependencies {
     implementation(libs.compose.foundation)
     implementation(libs.compose.animation)
     implementation(libs.activity.compose)
+    implementation(libs.media3.exoplayer)
     testImplementation(libs.junit)
+}
+
+// Debug and release both merge these assets, so assembleDebug and assembleRelease
+// package the loop. CI renders inside the job. -PfoldcadeHomeMusicAssets is an
+// optional local copy of an already-rendered music/ directory.
+val prebuiltHomeMusic = providers.gradleProperty("foldcadeHomeMusicAssets")
+val renderHomeMusic = tasks.register<RenderHomeMusicTask>("renderHomeMusic") {
+    group = "build"
+    description = "Render every track in music/tracks/manifest.json, or copy a CI render."
+    script.set(rootProject.layout.projectDirectory.file("music/gradle-render.sh"))
+    sources.from(
+        rootProject.files(
+            "music/process.py",
+            "music/render.sh",
+            "music/check_render.py",
+            "music/requirements.txt",
+            "music/gradle-render.sh",
+            "music/tracks/manifest.json",
+        ),
+    )
+    sources.from(rootProject.fileTree("music/tracks") { include("**/compose.py") })
+    prebuiltPath.set(prebuiltHomeMusic.orElse(""))
+    if (prebuiltHomeMusic.isPresent) {
+        prebuiltFiles.setFrom(rootProject.fileTree(prebuiltHomeMusic.get()))
+    } else {
+        prebuiltFiles.setFrom()
+    }
+    assetsDir.set(layout.buildDirectory.dir("generated/homeMusicAssets"))
+    previewDir.set(layout.buildDirectory.dir("home-music-preview"))
+}
+
+androidComponents {
+    onVariants { variant ->
+        variant.sources.assets?.addGeneratedSourceDirectory(renderHomeMusic, RenderHomeMusicTask::assetsDir)
+    }
+}
+
+abstract class RenderHomeMusicTask : DefaultTask() {
+    @get:Inject
+    abstract val execOperations: ExecOperations
+
+    @get:InputFile
+    abstract val script: RegularFileProperty
+
+    @get:InputFiles
+    abstract val sources: ConfigurableFileCollection
+
+    @get:Input
+    abstract val prebuiltPath: Property<String>
+
+    @get:Optional
+    @get:InputFiles
+    @get:PathSensitive(PathSensitivity.RELATIVE)
+    abstract val prebuiltFiles: ConfigurableFileCollection
+
+    @get:OutputDirectory
+    abstract val assetsDir: DirectoryProperty
+
+    @get:OutputDirectory
+    abstract val previewDir: DirectoryProperty
+
+    @TaskAction
+    fun render() {
+        val dest = assetsDir.get().asFile
+        val preview = previewDir.get().asFile
+        dest.deleteRecursively()
+        preview.mkdirs()
+        val path = prebuiltPath.get()
+        if (path.isNotEmpty()) {
+            copyPrebuilt(File(path), dest)
+            return
+        }
+        execOperations.exec {
+            commandLine(
+                "bash",
+                script.get().asFile.absolutePath,
+                dest.absolutePath,
+                preview.absolutePath,
+            )
+        }.assertNormalExitValue()
+    }
+
+    private fun copyPrebuilt(source: File, dest: File) {
+        if (!source.isDirectory) {
+            throw GradleException("foldcadeHomeMusicAssets is not a directory: ${source.absolutePath}")
+        }
+        val manifest = File(source, "music/manifest.json")
+        val ogg = source.walkTopDown().firstOrNull { it.isFile && it.extension == "ogg" }
+        if (!manifest.isFile || ogg == null) {
+            throw GradleException(
+                "foldcadeHomeMusicAssets must contain music/manifest.json and an ogg: ${source.absolutePath}",
+            )
+        }
+        source.copyRecursively(dest, overwrite = true)
+    }
 }

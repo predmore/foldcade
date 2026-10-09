@@ -78,6 +78,7 @@ import app.foldcade.language.DialogState
 import app.foldcade.language.HintPlace
 import app.foldcade.language.HostScreen
 import app.foldcade.language.Meaning
+import app.foldcade.language.Row
 import app.foldcade.language.Metrics
 import app.foldcade.language.Motion
 import app.foldcade.language.PanelLevel
@@ -437,33 +438,42 @@ private fun PanelRows(
     Column(Modifier.graphicsLayer { alpha = progress }, verticalArrangement = Arrangement.spacedBy(px(8f))) {
         rows.forEachIndexed { index, row ->
             val focused = panel.index == index
-            val press = if (interactive) {
-                Modifier.hostPress {
-                    val shell = app.shell
-                    val current = shell.model.panel?.index ?: panel.index
-                    val delta = index - current
-                    val meaning = if (delta > 0) Meaning.MoveDown else Meaning.MoveUp
-                    if (delta == 0) {
-                        shell.onMeaning(Meaning.Activate, screen)
-                    } else {
-                        repeat(abs(delta)) { shell.onMeaning(meaning, screen) }
-                    }
+            val step: () -> Unit = {
+                val shell = app.shell
+                val current = shell.model.panel?.index ?: panel.index
+                val delta = index - current
+                val meaning = if (delta > 0) Meaning.MoveDown else Meaning.MoveUp
+                if (delta == 0) {
+                    shell.onMeaning(Meaning.Activate, screen)
+                } else {
+                    repeat(abs(delta)) { shell.onMeaning(meaning, screen) }
                 }
-            } else {
-                Modifier
+                Unit
             }
-            BasicText(
-                text = rowLabel(row, app.shell.model),
-                modifier = Modifier
-                    .focusStroke(focused)
-                    .then(press)
-                    .padding(px(8f)),
-                style = text(
-                    if (focused) theme.onBackground else theme.muted,
-                    TypeRamp.sideRow,
-                    theme,
-                ),
-            )
+            if (row is Row.MusicVolume) {
+                MusicVolumeRow(
+                    label = rowLabel(row, app.shell.model),
+                    volume = app.shell.model.music.volume,
+                    focused = focused,
+                    interactive = interactive,
+                    onStep = step,
+                    onVolume = app.shell::setMusicVolume,
+                )
+            } else {
+                val press = if (interactive) Modifier.hostPress(step) else Modifier
+                BasicText(
+                    text = rowLabel(row, app.shell.model),
+                    modifier = Modifier
+                        .focusStroke(focused)
+                        .then(press)
+                        .padding(px(8f)),
+                    style = text(
+                        if (focused) theme.onBackground else theme.muted,
+                        TypeRamp.sideRow,
+                        theme,
+                    ),
+                )
+            }
         }
     }
 }

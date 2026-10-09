@@ -131,24 +131,6 @@ jobs:
           distribution: temurin
           java-version: "21"
 
-      - name: Decode the release keystore
-        env:
-          RELEASE_KEYSTORE_BASE64: ${{ secrets.RELEASE_KEYSTORE_BASE64 }}
-          RELEASE_KEYSTORE_PASSWORD: ${{ secrets.RELEASE_KEYSTORE_PASSWORD }}
-          RELEASE_KEY_ALIAS: ${{ secrets.RELEASE_KEY_ALIAS }}
-        run: |
-          set -euo pipefail
-          umask 077
-          keystore="${RUNNER_TEMP}/foldcade-release.jks"
-          printf '%s' "$RELEASE_KEYSTORE_BASE64" | tr -d '[:space:]' | base64 -d > "$keystore"
-          test -s "$keystore"
-          keytool -list \
-            -keystore "$keystore" \
-            -alias "$RELEASE_KEY_ALIAS" \
-            -storepass:env RELEASE_KEYSTORE_PASSWORD \
-            >/dev/null
-          echo "FOLDCADE_RELEASE_KEYSTORE=$keystore" >> "$GITHUB_ENV"
-
       - name: Android SDK root
         id: sdk
         run: echo "root=$HOME/android-sdk" >> "$GITHUB_OUTPUT"
@@ -198,6 +180,30 @@ jobs:
           # The release configuration reads the keystore passwords. Do not write that cache.
           cache-read-only: true
 
+      # Same render as the unsigned dry-run and the home-music workflow.
+      # This step does not receive the release signing secrets, and it runs
+      # before the keystore is decoded.
+      - name: Render home music
+        uses: ./.github/actions/render-home-music
+
+      - name: Decode the release keystore
+        env:
+          RELEASE_KEYSTORE_BASE64: ${{ secrets.RELEASE_KEYSTORE_BASE64 }}
+          RELEASE_KEYSTORE_PASSWORD: ${{ secrets.RELEASE_KEYSTORE_PASSWORD }}
+          RELEASE_KEY_ALIAS: ${{ secrets.RELEASE_KEY_ALIAS }}
+        run: |
+          set -euo pipefail
+          umask 077
+          keystore="${RUNNER_TEMP}/foldcade-release.jks"
+          printf '%s' "$RELEASE_KEYSTORE_BASE64" | tr -d '[:space:]' | base64 -d > "$keystore"
+          test -s "$keystore"
+          keytool -list \
+            -keystore "$keystore" \
+            -alias "$RELEASE_KEY_ALIAS" \
+            -storepass:env RELEASE_KEYSTORE_PASSWORD \
+            >/dev/null
+          echo "FOLDCADE_RELEASE_KEYSTORE=$keystore" >> "$GITHUB_ENV"
+
       - name: Assemble release
         env:
           FOLDCADE_RELEASE_STORE_PASSWORD: ${{ secrets.RELEASE_KEYSTORE_PASSWORD }}
@@ -239,6 +245,8 @@ jobs:
             echo "::error::APK is not signed with the release key. Refusing to upload."
             exit 1
           fi
+          unzip -l "$signed" | grep -q 'assets/music/lanternlight.ogg'
+          unzip -l "$signed" | grep -q 'assets/music/manifest.json'
           cp "$signed" "${RUNNER_TEMP}/foldcade.apk"
 
       - name: Publish GitHub Release
@@ -252,7 +260,7 @@ jobs:
         run: rm -f "${RUNNER_TEMP}/foldcade-release.jks"
 
   unsigned-release:
-    name: unsigned release version
+    name: unsigned release dry-run
     if: github.event_name == 'pull_request' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-24.04
     timeout-minutes: 30
@@ -316,6 +324,10 @@ jobs:
         with:
           cache-read-only: true
 
+      # Same render step as the signed release job. No cross-workflow wait.
+      - name: Render home music
+        uses: ./.github/actions/render-home-music
+
       - name: Assemble unsigned release
         run: |
           set -euo pipefail
@@ -332,6 +344,8 @@ jobs:
             exit 1
           fi
           apk="${apks[0]}"
+          unzip -l "$apk" | grep -q 'assets/music/lanternlight.ogg'
+          unzip -l "$apk" | grep -q 'assets/music/manifest.json'
           if "$ANDROID_HOME/build-tools/37.0.0/apksigner" verify "$apk"; then
             echo "::error::Unsigned dry-run produced a signed APK."
             exit 1

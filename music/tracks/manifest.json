@@ -1,0 +1,11 @@
+{
+  "tracks": [
+    {
+      "id": "lanternlight",
+      "title": "Lanternlight",
+      "composer": "Foldcade project",
+      "license": "GPLv3",
+      "file": "music/lanternlight.ogg"
+    }
+  ]
+}

@@ -15,3 +15,14 @@ captures/
 *.keystore
 keystore.properties
 *.keystore.properties
+music/.venv/
+music/MuseScore_General.sf3
+music/out/**/*.wav
+music/out/**/*.ogg
+music/out/**/*.mp3
+music/out/**/*render4x.mid
+music/tracks/*/out/**/*.wav
+music/tracks/*/out/**/*.ogg
+music/tracks/*/out/**/*.mp3
+music/tracks/*/out/**/*render4x.mid
+music/tracks/*/out/**/checks.json

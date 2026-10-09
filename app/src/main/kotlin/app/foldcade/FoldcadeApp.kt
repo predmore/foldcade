@@ -7,6 +7,7 @@ import app.foldcade.api.plugin.RommCredentials
 import app.foldcade.credentials.AndroidCredentialStore
 import app.foldcade.host.PluginHost
 import app.foldcade.language.SignedInBackend
+import app.foldcade.music.HomeMusic
 import java.nio.file.Path
 import kotlin.coroutines.cancellation.CancellationException
 import kotlinx.coroutines.CoroutineScope
@@ -29,6 +30,8 @@ class FoldcadeApp : Application() {
     lateinit var credentials: CredentialStore
         private set
 
+    lateinit var music: HomeMusic
+        private set
     lateinit var shell: ShellController
         private set
     lateinit var plugins: PluginHost
@@ -49,7 +52,9 @@ class FoldcadeApp : Application() {
         store = SessionStore(getSharedPreferences("foldcade", MODE_PRIVATE))
         credentials = AndroidCredentialStore(this)
         plugins = PluginHost(Dispatchers.IO, credentials)
-        shell = ShellController(store, plugins)
+        music = HomeMusic(this, store)
+        store.afterSessionChanged = music::onSessionChanged
+        shell = ShellController(store, plugins, music::apply, music.trackTitle())
         rommPublish = RommPublish(
             read = {
                 readRommPublish(
@@ -72,6 +77,11 @@ class FoldcadeApp : Application() {
             plugins.load(classLoader)
             publishRomm()
         }
+    }
+
+    override fun onTrimMemory(level: Int) {
+        super.onTrimMemory(level)
+        if (::music.isInitialized) music.onTrimMemory(level)
     }
 
     fun refreshCredentials() {
