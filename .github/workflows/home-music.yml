@@ -1,0 +1,101 @@
+name: Home music
+
+on:
+  pull_request:
+
+jobs:
+  render:
+    name: home music render
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Decide whether this pull request renders music
+        id: scope
+        run: |
+          set -euo pipefail
+          git fetch origin main
+          if git diff --name-only origin/main...HEAD | grep -Eq '^(music/|app/build\.gradle\.kts|\.github/workflows/home-music\.yml)$'; then
+            echo "render=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "render=false" >> "$GITHUB_OUTPUT"
+            echo "Home music sources are unchanged. The render check is not pending."
+          fi
+
+      - uses: actions/setup-java@v4
+        if: steps.scope.outputs.render == 'true'
+        with:
+          distribution: temurin
+          java-version: "21"
+
+      - name: Android SDK root
+        if: steps.scope.outputs.render == 'true'
+        id: sdk
+        run: echo "root=$HOME/android-sdk" >> "$GITHUB_OUTPUT"
+
+      - name: Cache Android SDK packages
+        if: steps.scope.outputs.render == 'true'
+        uses: actions/cache@v4
+        with:
+          path: |
+            ${{ steps.sdk.outputs.root }}/cmdline-tools
+            ${{ steps.sdk.outputs.root }}/platforms
+            ${{ steps.sdk.outputs.root }}/build-tools
+            ${{ steps.sdk.outputs.root }}/platform-tools
+            ${{ steps.sdk.outputs.root }}/licenses
+          key: android-sdk-33-37.0-build-tools-37.0.0-platform-tools-v1
+
+      - name: Cache MuseScore General SoundFont
+        if: steps.scope.outputs.render == 'true'
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/foldcade/MuseScore_General.sf3
+          key: musescore-general-sf3-5b85b6c2c61d10b2b91cddd41efcce7b25cd31c8271d511c73afafbef20b6fa3
+
+      - name: Install Android SDK packages
+        if: steps.scope.outputs.render == 'true'
+        env:
+          SDK_ROOT: ${{ steps.sdk.outputs.root }}
+        run: |
+          set -euo pipefail
+          mkdir -p "$SDK_ROOT"
+          if [ ! -x "$SDK_ROOT/cmdline-tools/latest/bin/sdkmanager" ]; then
+            tmp="$(mktemp -d)"
+            curl -fsSL -o "$tmp/cmdlinetools.zip" \
+              https://dl.google.com/android/repository/commandlinetools-linux-12266719_latest.zip
+            unzip -q "$tmp/cmdlinetools.zip" -d "$tmp"
+            mkdir -p "$SDK_ROOT/cmdline-tools"
+            rm -rf "$SDK_ROOT/cmdline-tools/latest"
+            mv "$tmp/cmdline-tools" "$SDK_ROOT/cmdline-tools/latest"
+          fi
+          sdkmanager="$SDK_ROOT/cmdline-tools/latest/bin/sdkmanager"
+          yes | "$sdkmanager" --sdk_root="$SDK_ROOT" --licenses >/dev/null || true
+          "$sdkmanager" --sdk_root="$SDK_ROOT" --install \
+            "platforms;android-33" \
+            "platforms;android-37.0" \
+            "build-tools;37.0.0" \
+            "platform-tools"
+          echo "ANDROID_HOME=$SDK_ROOT" >> "$GITHUB_ENV"
+          echo "ANDROID_SDK_ROOT=$SDK_ROOT" >> "$GITHUB_ENV"
+
+      - name: Install fluidsynth and ffmpeg
+        if: steps.scope.outputs.render == 'true'
+        run: sudo apt-get update && sudo apt-get install -y fluidsynth ffmpeg python3-venv libsndfile1
+
+      - uses: gradle/actions/setup-gradle@v4
+        if: steps.scope.outputs.render == 'true'
+
+      - name: Render variant A and enforce checks
+        if: steps.scope.outputs.render == 'true'
+        run: ./gradlew :app:renderHomeMusic --configuration-cache
+
+      - name: Upload OGG and MP3 preview
+        if: steps.scope.outputs.render == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: home-music-preview
+          path: app/build/home-music-preview/
+          retention-days: 7
+          if-no-files-found: error

@@ -4,6 +4,7 @@ import android.content.SharedPreferences
 import app.foldcade.api.ExternalApp
 import app.foldcade.api.Panel
 import app.foldcade.api.Session
+import app.foldcade.language.HomeMusicSetting
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
@@ -59,6 +60,18 @@ class SessionStore(private val prefs: SharedPreferences) {
         prefs.edit().remove(KEY_ROMM_ORIGIN).apply()
     }
 
+    fun musicEnabled(): Boolean = prefs.getBoolean(KEY_MUSIC_ENABLED, true)
+
+    fun musicVolume(): Float =
+        prefs.getFloat(KEY_MUSIC_VOLUME, HomeMusicSetting.DEFAULT_VOLUME).coerceIn(0f, 1f)
+
+    fun setMusic(enabled: Boolean, volume: Float) {
+        prefs.edit()
+            .putBoolean(KEY_MUSIC_ENABLED, enabled)
+            .putFloat(KEY_MUSIC_VOLUME, volume.coerceIn(0f, 1f))
+            .apply()
+    }
+
     private fun encode(screens: Map<String, Panel>): String =
         screens.entries.joinToString(",") { "${it.key}=${it.value.name}" }
 
@@ -82,5 +95,7 @@ class SessionStore(private val prefs: SharedPreferences) {
         private const val KEY_FOLDER = "folder_tree"
         private const val KEY_FOLDER_EXPLAINED = "folder_explained"
         private const val KEY_ROMM_ORIGIN = "romm_origin"
+        private const val KEY_MUSIC_ENABLED = "music_enabled"
+        private const val KEY_MUSIC_VOLUME = "music_volume"
     }
 }

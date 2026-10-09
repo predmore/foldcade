@@ -7,6 +7,7 @@ import app.foldcade.language.Copy
 import app.foldcade.language.Chrome
 import app.foldcade.language.Effect
 import app.foldcade.language.GridFocus
+import app.foldcade.language.HomeMusicSetting
 import app.foldcade.language.HostScreen
 import app.foldcade.language.Meaning
 import app.foldcade.language.Metrics
@@ -28,6 +29,7 @@ import kotlin.coroutines.cancellation.CancellationException
 class ShellController(
     private val store: SessionStore,
     private val plugins: PluginHost,
+    private val onMusic: (HomeMusicSetting) -> Unit = {},
 ) {
     var model by mutableStateOf(initial())
         private set
@@ -215,9 +217,17 @@ class ShellController(
         return model.copy(count = Shelf.games.size, showLaunchTarget = visible)
     }
 
+    fun setMusicVolume(volume: Float) {
+        publish(model.copy(music = model.music.withVolume(volume)))
+    }
+
     private fun publish(next: PickerModel) {
         if (next.primaryIsTop != store.session.defaultDisplayIsTop) {
             store.update { it.withDefaultDisplayIsTop(next.primaryIsTop) }
+        }
+        if (next.music != model.music) {
+            store.setMusic(next.music.enabled, next.music.volume)
+            onMusic(next.music)
         }
         model = next.copy(count = Shelf.games.size)
     }
@@ -228,5 +238,6 @@ class ShellController(
         showLaunchTarget = true,
         primaryIsTop = store.session.defaultDisplayIsTop,
         folderGrantPending = store.folderGrantPending(),
+        music = HomeMusicSetting(store.musicEnabled(), store.musicVolume()),
     )
 }

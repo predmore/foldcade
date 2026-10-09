@@ -65,3 +65,9 @@ In the repository: Settings → Secrets and variables → Actions → New reposi
 ## Plugins
 
 Minify is off for debug and release. Bundled plugins are found by `ServiceLoader` from `META-INF/services/app.foldcade.api.plugin.PluginEntry`. If minify is enabled later, keep rules are required for that service file and for `PluginEntry`. Without them, R8 drops the file and the entry classes, and the host loads no plugins.
+
+## Credits
+
+The home-screen composition is original to Foldcade (variant A). It is licensed under GPLv3 with this repository, the same choice as the theme art. Theme art is licensed with the repository, not under a separate CC BY-SA 4.0 grant.
+
+MuseScore General 0.2 is MIT. Credit Frank Wen, Michael Cowgill, S. Christian Collins, Ethan Winer, and Michael Schorsch. The full license text is in [licenses/MuseScore_General_License.md](licenses/MuseScore_General_License.md) and [licenses/CREDITS.md](licenses/CREDITS.md).

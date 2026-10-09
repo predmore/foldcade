@@ -1,4 +1,14 @@
 import java.io.File
+import javax.inject.Inject
+import org.gradle.api.DefaultTask
+import org.gradle.api.file.ConfigurableFileCollection
+import org.gradle.api.file.DirectoryProperty
+import org.gradle.api.file.RegularFileProperty
+import org.gradle.api.tasks.InputFile
+import org.gradle.api.tasks.InputFiles
+import org.gradle.api.tasks.OutputDirectory
+import org.gradle.api.tasks.TaskAction
+import org.gradle.process.ExecOperations
 
 plugins {
     alias(libs.plugins.android.application)
@@ -60,6 +70,9 @@ android {
     }
     buildFeatures {
         compose = true
+    }
+    androidResources {
+        noCompress += "ogg"
     }
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
@@ -149,5 +162,61 @@ dependencies {
     implementation(libs.compose.foundation)
     implementation(libs.compose.animation)
     implementation(libs.activity.compose)
+    implementation(libs.media3.exoplayer)
     testImplementation(libs.junit)
+}
+
+// Debug and release both merge these assets, so assembleDebug and assembleRelease
+// package the loop. The signed release workflow calls assembleRelease when it lands.
+val renderHomeMusic = tasks.register<RenderHomeMusicTask>("renderHomeMusic") {
+    group = "build"
+    description = "Render variant A home music into foldcade_home_loop.ogg."
+    script.set(rootProject.layout.projectDirectory.file("music/gradle-render.sh"))
+    sources.from(
+        rootProject.files(
+            "music/compose.py",
+            "music/process.py",
+            "music/render.sh",
+            "music/check_render.py",
+            "music/requirements.txt",
+            "music/gradle-render.sh",
+        ),
+    )
+    assetsDir.set(layout.buildDirectory.dir("generated/homeMusicAssets"))
+    previewDir.set(layout.buildDirectory.dir("home-music-preview"))
+}
+
+androidComponents {
+    onVariants { variant ->
+        variant.sources.assets?.addGeneratedSourceDirectory(renderHomeMusic, RenderHomeMusicTask::assetsDir)
+    }
+}
+
+abstract class RenderHomeMusicTask : DefaultTask() {
+    @get:Inject
+    abstract val execOperations: ExecOperations
+
+    @get:InputFile
+    abstract val script: RegularFileProperty
+
+    @get:InputFiles
+    abstract val sources: ConfigurableFileCollection
+
+    @get:OutputDirectory
+    abstract val assetsDir: DirectoryProperty
+
+    @get:OutputDirectory
+    abstract val previewDir: DirectoryProperty
+
+    @TaskAction
+    fun render() {
+        execOperations.exec {
+            commandLine(
+                "bash",
+                script.get().asFile.absolutePath,
+                assetsDir.get().asFile.absolutePath,
+                previewDir.get().asFile.absolutePath,
+            )
+        }.assertNormalExitValue()
+    }
 }
