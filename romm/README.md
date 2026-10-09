@@ -18,6 +18,8 @@ RomM 5.1's device-sync document uses a different body. This client does not spea
 
 The public demo at the time this was written served OpenAPI 5.2.0. That document does not have `rom_ids`, `emulators`, or `total_delete` on negotiate. It was not used as the contract.
 
+`src/test/resources/fixtures/openapi-5.4.0-alpha.2.json` is the OpenAPI document generated from the RomM `5.4.0-alpha.2` tag with `backend/tools/dump_openapi.py`. `RommOpenApiContractTest` checks the paths and fields this client calls. The release substitutes the tag for the source placeholder `<version>`, so `info.version` is `5.4.0-alpha.2`.
+
 ## What it calls
 
 Paths below are on the 5.4.0-alpha.2 schema and in the 5.4.0-alpha docs for authentication, downloads, and device sync.
