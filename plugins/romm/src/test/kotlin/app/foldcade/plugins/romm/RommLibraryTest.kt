@@ -1,5 +1,6 @@
 package app.foldcade.plugins.romm
 
+import app.foldcade.api.plugin.Availability
 import app.foldcade.api.plugin.Game
 import app.foldcade.api.plugin.GameQuery
 import app.foldcade.api.plugin.LaunchRequest
@@ -37,6 +38,7 @@ import java.net.InetSocketAddress
 import java.nio.file.Files
 import java.nio.file.Path
 import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicInteger
 import kotlin.coroutines.cancellation.CancellationException
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.cancelAndJoin
@@ -94,6 +96,43 @@ class RommLibraryTest {
         val other = game.copy(backendId = "local-folder")
         assertNull(harness.metadata.cached(other))
         assertNull(harness.metadata.fetch(other))
+    }
+
+    @Test
+    fun metadataUsesTheRomIdAndSearchesByTitleOnlyWhenThatIdIsUnknown() = runBlocking {
+        val ops = ScriptedOps()
+        var lookedUp: Long? = null
+        var searched: String? = null
+        ops.onRom = { id ->
+            lookedUp = id
+            rom("3ds", 3).copy(id = id, name = "By Id", pathCoverLarge = "/assets/by-id.jpg")
+        }
+        ops.onRoms = { query ->
+            searched = query.searchTerm
+            page(rom("3ds", 3).copy(id = 99, name = "By Title", fsName = "by-title.cci"))
+        }
+        val harness = harness(ops)
+        val known = Game(ROMM_LIBRARY_ID, "1234", "3ds", Availability.RemoteOnly, "Wrong Title")
+        val byId = harness.metadata.fetch(known)
+        assertEquals("By Id", byId?.title)
+        assertEquals(1234L, lookedUp)
+        assertNull(searched)
+        assertEquals(
+            "http://romm.example/assets/by-id.jpg",
+            byId?.artwork?.first()?.uri,
+        )
+
+        val unknown = known.copy(remoteKey = "shelf-copy", label = "By Title")
+        val byTitle = harness.metadata.fetch(unknown)
+        assertEquals("By Title", byTitle?.title)
+        assertEquals("By Title", searched)
+
+        ops.onRom = { throw RommHttpException(404, "missing") }
+        val missing = runCatching {
+            harness.metadata.fetch(known.copy(remoteKey = "404", label = "Still By Id"))
+        }.exceptionOrNull()
+        assertTrue(missing is PluginException.NotFound)
+        assertEquals("By Title", searched)
     }
 
     @Test
@@ -245,6 +284,69 @@ class RommLibraryTest {
     }
 
     @Test
+    fun aReplacedConnectionStaysOpenUntilTheInFlightCallFinishes() = runBlocking {
+        val closes = AtomicInteger()
+        val started = CompletableDeferred<Unit>()
+        val release = CompletableDeferred<Unit>()
+        val first = ScriptedOps()
+        first.onClose = { closes.incrementAndGet() }
+        first.onPlatforms = {
+            started.complete(Unit)
+            release.await()
+            emptyList()
+        }
+        val second = ScriptedOps()
+        second.onClose = { closes.incrementAndGet() }
+        var token = "rmm_test"
+        val cache = Files.createTempDirectory("romm-race")
+        val wiring = RommWiring("http://romm.example", RommTokenSource { token }, cache)
+        var opened = 0
+        wiring.open = { _, _ ->
+            opened += 1
+            if (opened == 1) first else second
+        }
+        val library = RommLibrary(RommGate { wiring })
+        val job = launch { library.listPlatforms() }
+        withTimeout(2_000) { started.await() }
+        token = "rmm_next"
+        assertTrue(library.listPlatforms().isEmpty())
+        assertEquals(0, closes.get())
+        release.complete(Unit)
+        job.join()
+        assertEquals(1, closes.get())
+        library.disconnect()
+        assertEquals(2, closes.get())
+    }
+
+    @Test
+    fun disconnectClosesOnceAfterEveryInFlightCallDrains() = runBlocking {
+        val closes = AtomicInteger()
+        val arrived = AtomicInteger()
+        val both = CompletableDeferred<Unit>()
+        val release = CompletableDeferred<Unit>()
+        val ops = ScriptedOps()
+        ops.onClose = { closes.incrementAndGet() }
+        ops.onPlatforms = {
+            if (arrived.incrementAndGet() == 2) both.complete(Unit)
+            release.await()
+            emptyList()
+        }
+        val cache = Files.createTempDirectory("romm-drain")
+        val wiring = RommWiring("http://romm.example", RommTokenSource { "rmm_test" }, cache)
+        wiring.open = { _, _ -> ops }
+        val library = RommLibrary(RommGate { wiring })
+        val first = launch { library.listPlatforms() }
+        val second = launch { library.listPlatforms() }
+        withTimeout(2_000) { both.await() }
+        library.disconnect()
+        assertEquals(0, closes.get())
+        release.complete(Unit)
+        first.join()
+        second.join()
+        assertEquals(1, closes.get())
+    }
+
+    @Test
     fun pairingReturnsTheTokenAndDoesNotWriteIt() = runBlocking {
         val server = TinyServer()
         val cache = Files.createTempDirectory("romm-pair")
@@ -263,7 +365,7 @@ class RommLibraryTest {
                 json(
                     exchange,
                     200,
-                    """{"access_token":"rmm_secret","device_id":"device-1","scopes":["roms.read","roms.user.read","collections.read"]}""",
+                    """{"access_token":"rmm_secret","device_id":"device-1","scopes":["roms.read","platforms.read"]}""",
                 )
             }
             val wiring = RommWiring(server.origin, RommTokenSource { null }, cache)
@@ -273,12 +375,12 @@ class RommLibraryTest {
             assertTrue(challenge.verificationUrl.contains("WDJB-MJHT"))
             val approved = pairing.poll(challenge.deviceCode) as RommPairingPoll.Approved
             assertEquals("rmm_secret", approved.accessToken)
-            assertTrue(approved.scopes.contains("roms.user.read"))
-            assertTrue(approved.scopes.contains("collections.read"))
+            assertFalse(approved.scopes.contains("roms.user.read"))
+            assertFalse(approved.scopes.contains("collections.read"))
             val init = server.recorded.single { it.path == "/api/auth/device/init" }
             val body = init.body.toString(Charsets.UTF_8)
-            assertTrue(body.contains("roms.user.read"))
-            assertTrue(body.contains("collections.read"))
+            assertFalse(body.contains("roms.user.read"))
+            assertFalse(body.contains("collections.read"))
             assertFalse(body.contains("password"))
             assertFalse(cacheContains(cache, "rmm_secret"))
             assertNull(wiring.tokenSource.accessToken())
@@ -367,6 +469,8 @@ private class NamedPlayer(override val id: String) : Player {
 private class ScriptedOps : RommOps {
     var onPlatforms: suspend () -> List<PlatformSummary> = { emptyList() }
     var onRoms: suspend (RomQuery) -> RomPage = { query -> RomPage(emptyList(), 0, query.limit, query.offset) }
+    var onRom: suspend (Long) -> RomSummary = { id -> error("rom $id") }
+    var onClose: () -> Unit = {}
     var onRegister: suspend (RegisteredDevice?, String, String) -> RegisteredDevice =
         { _, _, version -> RegisteredDevice("device-1", version) }
     var onSync: suspend (String, List<LocalSave>, List<Long>, List<String>) -> SaveSyncReport =
@@ -375,6 +479,7 @@ private class ScriptedOps : RommOps {
     override suspend fun heartbeat() = Heartbeat("5.4.0")
     override suspend fun platforms() = onPlatforms()
     override suspend fun roms(query: RomQuery) = onRoms(query)
+    override suspend fun rom(id: Long) = onRom(id)
     override suspend fun downloadRom(
         romId: Long,
         fileName: String,
@@ -401,7 +506,7 @@ private class ScriptedOps : RommOps {
     override suspend fun pollDeviceToken(deviceCode: String) = error("poll")
     override fun verificationUrl(challenge: app.foldcade.romm.DeviceAuthChallenge) = error("url")
     override suspend fun flushUploads(queue: SaveUploadQueue) = FlushResult(0, 0)
-    override fun close() = Unit
+    override fun close() = onClose()
 }
 
 private class TinyServer : AutoCloseable {

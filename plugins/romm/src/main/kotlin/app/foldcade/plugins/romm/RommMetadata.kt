@@ -24,22 +24,28 @@ internal class RommMetadata(
     override suspend fun fetch(game: Game): GameMeta? {
         if (game.backendId != ROMM_LIBRARY_ID) return null
         cached(game)?.let { return it }
+        val romId = game.remoteKey.toLongOrNull()?.takeIf { it >= 1 }
         return translate {
             gate.session { wiring, ops ->
-                val romId = game.remoteKey.toLongOrNull() ?: return@session null
-                val page = ops.roms(
-                    RomQuery(
-                        searchTerm = game.label.trim().ifEmpty { null },
-                        limit = 50,
-                        offset = 0,
-                    ),
-                )
-                gate.catalog.rememberRoms(page.items)
-                page.items.find { it.id == romId }?.toMeta(wiring.origin)
+                if (romId != null) {
+                    val rom = ops.rom(romId)
+                    gate.catalog.rememberRoms(listOf(rom))
+                    rom.toMeta(wiring.origin)
+                } else {
+                    val term = game.label.trim().ifEmpty { return@session null }
+                    val page = ops.roms(RomQuery(searchTerm = term, limit = 50, offset = 0))
+                    gate.catalog.rememberRoms(page.items)
+                    page.items.byTitle(term)?.toMeta(wiring.origin)
+                }
             }
         }
     }
 }
+
+private fun List<RomSummary>.byTitle(term: String): RomSummary? =
+    firstOrNull { rom ->
+        rom.name.equals(term, ignoreCase = true) || rom.fsName.equals(term, ignoreCase = true)
+    } ?: singleOrNull()
 
 internal fun RomSummary.toMeta(origin: String): GameMeta {
     val artwork = mutableListOf<Artwork>()

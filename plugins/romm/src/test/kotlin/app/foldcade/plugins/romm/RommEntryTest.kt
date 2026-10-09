@@ -46,9 +46,10 @@ class RommEntryTest {
     }
 
     @Test
-    fun deviceAuthScopesIncludeUserRomsAndCollections() {
-        assertTrue(RommContract.DEVICE_AUTH_SCOPES.contains("roms.user.read"))
-        assertTrue(RommContract.DEVICE_AUTH_SCOPES.contains("collections.read"))
+    fun deviceAuthScopesOmitReadsNothingCallsYet() {
+        assertTrue(RommContract.DEVICE_AUTH_SCOPES.contains("roms.read"))
+        assertFalse(RommContract.DEVICE_AUTH_SCOPES.contains("roms.user.read"))
+        assertFalse(RommContract.DEVICE_AUTH_SCOPES.contains("collections.read"))
         assertFalse(RommContract.DEVICE_AUTH_SCOPES.contains("tasks.run"))
         assertFalse(RommContract.DEVICE_AUTH_SCOPES.contains("roms.user.write"))
     }

@@ -3,11 +3,12 @@ package app.foldcade.plugins.romm
 import app.foldcade.api.plugin.PluginException
 import app.foldcade.romm.PlatformSummary
 import app.foldcade.romm.RomSummary
-import kotlin.coroutines.cancellation.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.runInterruptible
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.withContext
 
 internal class RommCatalog {
     private val roms = HashMap<String, RomSummary>()
@@ -44,27 +45,24 @@ internal class RommGate(
         return wiring
     }
 
+    /**
+     * Reuses one client while the origin and token stay the same.
+     * The caller holds that client until [block] returns. A replacement or
+     * [disconnect] retires it and closes it once no call is still inside.
+     */
     suspend fun <T> session(block: suspend (RommWiring, RommOps) -> T): T {
         val wiring = wiring()
         val token = runInterruptible(Dispatchers.IO) {
             wiring.tokenSource.accessToken()?.trim()?.removePrefix("Bearer ")?.trim()?.ifEmpty { null }
         } ?: throw PluginException.NotAuthenticated("Sign in to RomM")
-        val ops = gate.withLock {
-            val current = held
-            if (current != null && current.origin == wiring.origin && current.token == token) {
-                current.ops
-            } else {
-                current?.ops?.close()
-                val opened = try {
-                    wiring.open(wiring.origin) { token }
-                } catch (cancelled: CancellationException) {
-                    throw cancelled
-                }
-                held = Held(wiring.origin, token, opened)
-                opened
+        val connection = gate.withLock { borrow(wiring, token) }
+        try {
+            return block(wiring, connection.ops)
+        } finally {
+            withContext(NonCancellable) {
+                gate.withLock { release(connection) }
             }
         }
-        return block(wiring, ops)
     }
 
     suspend fun <T> call(block: suspend (RommWiring, RommOps) -> T): T =
@@ -72,10 +70,48 @@ internal class RommGate(
 
     suspend fun disconnect() {
         gate.withLock {
-            held?.ops?.close()
+            val current = held ?: return@withLock
             held = null
+            retire(current)
         }
     }
 
-    private class Held(val origin: String, val token: String, val ops: RommOps)
+    private fun borrow(wiring: RommWiring, token: String): Held {
+        val current = held
+        if (current != null && !current.retired && current.origin == wiring.origin && current.token == token) {
+            current.users += 1
+            return current
+        }
+        if (current != null) {
+            held = null
+            retire(current)
+        }
+        val opened = wiring.open(wiring.origin) { token }
+        return Held(wiring.origin, token, opened).also {
+            it.users = 1
+            held = it
+        }
+    }
+
+    private fun retire(connection: Held) {
+        connection.retired = true
+        closeIfDrained(connection)
+    }
+
+    private fun release(connection: Held) {
+        if (connection.users > 0) connection.users -= 1
+        closeIfDrained(connection)
+    }
+
+    private fun closeIfDrained(connection: Held) {
+        if (!connection.retired || connection.users != 0 || connection.closed) return
+        connection.closed = true
+        connection.ops.close()
+    }
+
+    private class Held(val origin: String, val token: String, val ops: RommOps) {
+        var users: Int = 0
+        var retired: Boolean = false
+        var closed: Boolean = false
+    }
 }

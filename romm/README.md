@@ -29,6 +29,7 @@ Paths below are on the 5.4.0-alpha.2 schema and in the 5.4.0-alpha docs for auth
 | Device-code sign-in | `POST /api/auth/device/init`, `POST /api/auth/device/token` |
 | Platforms | `GET /api/platforms` |
 | ROMs | `GET /api/roms` |
+| One ROM | `GET /api/roms/{id}/simple` |
 | ROM bytes | `GET /api/roms/{id}/content/{file_name}?purpose=play` |
 | Register | `POST /api/devices`, `PUT /api/devices/{device_id}` |
 | Negotiate | `POST /api/sync/negotiate` |
@@ -40,7 +41,7 @@ Paths below are on the 5.4.0-alpha.2 schema and in the 5.4.0-alpha docs for auth
 
 Device registration uses client slug `foldcade`, platform `android`, and `sync_mode` `api`. A stored device id whose client version still matches is left alone.
 
-Device-code scopes: `roms.read`, `roms.user.read`, `platforms.read`, `assets.read`, `assets.write`, `devices.read`, `devices.write`, `firmware.read`, `collections.read`. `platforms.read` is the scope `GET /api/platforms` declares. `roms.user.read` and `collections.read` are requested and not used to invent extra calls. `firmware.read` is not used yet. Play sessions, `roms.user.write`, and `tasks.run` are not requested. Username and password are not sent.
+Device-code scopes: `roms.read`, `platforms.read`, `assets.read`, `assets.write`, `devices.read`, `devices.write`, `firmware.read`. `platforms.read` is the scope `GET /api/platforms` declares. `firmware.read` is not used yet. `roms.user.read` and `collections.read` are not requested until a feature needs them. Play sessions, `roms.user.write`, and `tasks.run` are not requested. Username and password are not sent.
 
 Negotiate sends `restore_unlisted: false`. Pass `emulators` for the player that will load the save (`azahar`, `melonds`) so a different emulator's file in the same slot is not paired. `rom_ids` limits downloads to that game.
 
