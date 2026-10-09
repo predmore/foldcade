@@ -15,6 +15,13 @@ dependencyResolutionManagement {
 }
 
 rootProject.name = "foldcade"
-include(":api", ":language", ":app")
-include(":plugins:local-folder")
-include(":romm")
+include(
+    ":api",
+    ":language",
+    ":app",
+    ":host",
+    ":plugins:local-folder",
+    ":plugins:sample",
+    ":samples:out-of-tree",
+    ":romm",
+)
