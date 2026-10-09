@@ -159,25 +159,24 @@ private fun Hero(app: FoldcadeApp, screen: HostScreen, scale: Float) {
             Box(
                 Modifier
                     .fillMaxWidth()
-                    .height(artHeight),
-                contentAlignment = Alignment.TopStart,
-            ) {
-                TravelFade(target = game, scale = scale) { shown ->
-                    if (shown != null) {
-                        Column {
-                            BasicText(
-                                text = shown.title,
-                                style = text(theme.onBackground, TypeRamp.heroTitle, theme),
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis,
-                            )
-                            BasicText(
-                                text = shown.shortText,
-                                style = text(theme.muted, TypeRamp.heroMeta, theme),
-                                maxLines = 2,
-                                overflow = TextOverflow.Ellipsis,
-                            )
-                        }
+                    .height(artHeight)
+                    .background(theme.background),
+            )
+            TravelFade(target = game, scale = scale) { shown ->
+                if (shown != null) {
+                    Column {
+                        BasicText(
+                            text = shown.title,
+                            style = text(theme.onBackground, TypeRamp.heroTitle, theme),
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                        BasicText(
+                            text = shown.shortText,
+                            style = text(theme.muted, TypeRamp.heroMeta, theme),
+                            maxLines = 2,
+                            overflow = TextOverflow.Ellipsis,
+                        )
                     }
                 }
             }
