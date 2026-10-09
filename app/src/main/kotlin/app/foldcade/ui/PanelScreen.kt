@@ -68,6 +68,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.IntOffset
+import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.zIndex
@@ -104,6 +105,8 @@ import app.foldcade.language.lastPlayedLine
 import app.foldcade.language.monogram
 import app.foldcade.language.panelRows
 import app.foldcade.language.playedLine
+import app.foldcade.language.quickTileColumns
+import app.foldcade.language.rowLabel
 import app.foldcade.language.rowText
 import java.time.ZoneId
 import app.foldcade.readDeviceStatus
@@ -139,7 +142,7 @@ fun PanelHost(activity: FoldcadeHomeActivity, displays: Displays) {
             TravelFade(target = session.surfaceOn(panel), scale = scale) { shown ->
                 when (shown) {
                     null -> Unit
-                    Surface.Hero -> if (connectHere) Unit else Hero(app, screen, scale)
+                    Surface.Hero -> if (connectHere) Unit else Hero(app, screen, scale, activity::dispatch)
                     Surface.Picker -> Picker(app, screen, scale, activity::dispatch)
                 }
             }
@@ -192,7 +195,7 @@ private fun <T> TravelFade(target: T, scale: Float, content: @Composable (T) -> 
 }
 
 @Composable
-private fun Hero(app: FoldcadeApp, screen: HostScreen, scale: Float) {
+private fun Hero(app: FoldcadeApp, screen: HostScreen, scale: Float, onEffect: (Effect?) -> Unit) {
     val theme = foldTheme()
     val game = app.shell.focusedGame()
     BoxWithConstraints(Modifier.fillMaxSize()) {
@@ -247,7 +250,7 @@ private fun Hero(app: FoldcadeApp, screen: HostScreen, scale: Float) {
                 }
             }
         }
-        Panels(app, screen, scale)
+        Panels(app, screen, scale, onEffect)
     }
 }
 
@@ -345,7 +348,7 @@ private fun Picker(
                 }
             }
         }
-        Panels(app, screen, scale) { clusterHeight = it }
+        Panels(app, screen, scale, onEffect) { clusterHeight = it }
     }
 }
 
@@ -354,6 +357,7 @@ private fun Panels(
     app: FoldcadeApp,
     screen: HostScreen,
     scale: Float,
+    onEffect: (Effect?) -> Unit,
     onClusterHeight: (Dp) -> Unit = {},
 ) {
     val model = app.shell.model
@@ -364,7 +368,7 @@ private fun Panels(
         val inset = maxWidth * Metrics.insetFraction
         val openWidth = maxWidth * 0.46f
         val openHeight = maxHeight * 0.62f
-        LeftPanel(app, screen, leftOpen, scale, maxWidth * 0.42f)
+        LeftPanel(app, screen, leftOpen, scale, maxWidth * 0.42f, onEffect)
         Box(Modifier.align(Alignment.TopEnd).padding(top = inset, end = inset)) {
             RightCluster(
                 app = app,
@@ -374,6 +378,7 @@ private fun Panels(
                 openWidth = openWidth,
                 openHeight = openHeight,
                 onClosedHeight = onClusterHeight,
+                onEffect = onEffect,
             )
         }
     }
@@ -386,6 +391,7 @@ private fun LeftPanel(
     open: Boolean,
     scale: Float,
     openWidth: Dp,
+    onEffect: (Effect?) -> Unit,
 ) {
     val theme = foldTheme()
     val progress = motionFloat(
@@ -419,7 +425,7 @@ private fun LeftPanel(
             if (libraryFailed) {
                 Unavailable()
             } else {
-                PanelRows(app, screen, panel, progress, interactive = open)
+                PanelRows(app, screen, panel, progress, interactive = open, onEffect = onEffect)
             }
         }
         Box(
@@ -455,6 +461,7 @@ private fun RightCluster(
     openWidth: Dp,
     openHeight: Dp,
     onClosedHeight: (Dp) -> Unit,
+    onEffect: (Effect?) -> Unit,
 ) {
     val theme = foldTheme()
     val progress = motionFloat(
@@ -488,7 +495,7 @@ private fun RightCluster(
         )
         val panel = shown
         if (progress > 0f && panel != null) {
-            PanelRows(app, screen, panel, progress, interactive = open)
+            PanelRows(app, screen, panel, progress, interactive = open, onEffect = onEffect)
         }
     }
 }
@@ -532,24 +539,16 @@ private fun PanelRows(
     panel: SidePanel,
     progress: Float,
     interactive: Boolean,
+    onEffect: (Effect?) -> Unit,
 ) {
     val theme = foldTheme()
     val rows = panelRows(panel, app.shell.model)
+    val tileStart = rows.indexOfFirst { it is Row.QuickTile }
     Column(Modifier.graphicsLayer { alpha = progress }, verticalArrangement = Arrangement.spacedBy(px(8f))) {
         rows.forEachIndexed { index, row ->
+            if (row is Row.QuickTile) return@forEachIndexed
             val focused = panel.index == index
-            val step: () -> Unit = {
-                val shell = app.shell
-                val current = shell.model.panel?.index ?: panel.index
-                val delta = index - current
-                val meaning = if (delta > 0) Meaning.MoveDown else Meaning.MoveUp
-                if (delta == 0) {
-                    shell.onMeaning(Meaning.Activate, screen)
-                } else {
-                    repeat(abs(delta)) { shell.onMeaning(meaning, screen) }
-                }
-                Unit
-            }
+            val step: () -> Unit = { onEffect(app.shell.touchPanel(index, screen)) }
             val parts = rowText(row, app.shell.model)
             if (row is Row.MusicVolume) {
                 MusicVolumeRow(
@@ -568,6 +567,7 @@ private fun PanelRows(
                     Modifier
                         .fillMaxWidth()
                         .rowHighlight(focused)
+                        .focusStroke(focused)
                         .then(press)
                         .padding(start = px(16f), end = px(8f), top = px(8f), bottom = px(8f)),
                     horizontalArrangement = Arrangement.SpaceBetween,
@@ -601,6 +601,91 @@ private fun PanelRows(
                 }
             }
         }
+        if (tileStart >= 0) {
+            QuickTiles(
+                app = app,
+                screen = screen,
+                rows = rows,
+                tileStart = tileStart,
+                focusedIndex = panel.index,
+                interactive = interactive,
+                onEffect = onEffect,
+            )
+        }
+    }
+}
+
+@Composable
+private fun QuickTiles(
+    app: FoldcadeApp,
+    screen: HostScreen,
+    rows: List<Row>,
+    tileStart: Int,
+    focusedIndex: Int,
+    interactive: Boolean,
+    onEffect: (Effect?) -> Unit,
+) {
+    val theme = foldTheme()
+    val tiles = rows.subList(tileStart, rows.size)
+    Column(verticalArrangement = Arrangement.spacedBy(px(8f))) {
+        tiles.chunked(quickTileColumns).forEachIndexed { rowIndex, chunk ->
+            Row(
+                Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(px(8f)),
+            ) {
+                chunk.forEachIndexed { column, row ->
+                    val index = tileStart + rowIndex * quickTileColumns + column
+                    val focused = focusedIndex == index
+                    val corner = 8.dp
+                    val press = if (interactive) {
+                        Modifier.hostPress { onEffect(app.shell.touchPanel(index, screen)) }
+                    } else {
+                        Modifier
+                    }
+                    Box(
+                        Modifier
+                            .weight(1f)
+                            .height(64.dp)
+                            .rowHighlight(focused)
+                            .focusStroke(focused, corner)
+                            .tileEdge(focused = focused, corner = corner)
+                            .then(press)
+                            .padding(px(8f)),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        BasicText(
+                            text = rowLabel(row, app.shell.model),
+                            style = text(
+                                if (focused) theme.onBackground else theme.muted,
+                                TypeRamp.sideRow,
+                                theme,
+                            ),
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    }
+                }
+                repeat(quickTileColumns - chunk.size) {
+                    Box(Modifier.weight(1f))
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun Modifier.tileEdge(focused: Boolean, corner: Dp): Modifier {
+    val color = foldTheme().muted
+    return drawWithContent {
+        drawContent()
+        if (focused) return@drawWithContent
+        val stroke = 2f
+        val radius = corner.toPx()
+        drawRoundRect(
+            color = color,
+            style = Stroke(width = stroke),
+            cornerRadius = CornerRadius(radius, radius),
+        )
     }
 }
 

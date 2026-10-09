@@ -164,6 +164,8 @@ sealed interface Row {
     data object MusicTrack : Row
     data object MusicVolume : Row
     data object SetAsHome : Row
+    data object AndroidSettings : Row
+    data object DefaultHomeApp : Row
     data class Backend(val name: String) : Row
     data object AddFolder : Row
     data object Connect : Row
@@ -178,6 +180,48 @@ sealed interface Row {
     data object MoveApp : Row
     data object HideApp : Row
     data object ShowApp : Row
+    data class QuickTile(val setting: QuickSetting) : Row
+}
+
+/** Two columns in the R1 cluster. Text rows above the tiles stay full width. */
+const val quickTileColumns = 2
+
+enum class QuickSetting {
+    Wifi,
+    Bluetooth,
+    Display,
+    Sound,
+    Battery,
+    AppInfo,
+}
+
+fun quickSettings(): List<QuickSetting> = listOf(
+    QuickSetting.Wifi,
+    QuickSetting.Bluetooth,
+    QuickSetting.Display,
+    QuickSetting.Sound,
+    QuickSetting.Battery,
+    QuickSetting.AppInfo,
+)
+
+enum class AndroidSetting {
+    Settings,
+    Home,
+    Wifi,
+    Bluetooth,
+    Display,
+    Sound,
+    Battery,
+    AppInfo,
+}
+
+fun QuickSetting.androidSetting(): AndroidSetting = when (this) {
+    QuickSetting.Wifi -> AndroidSetting.Wifi
+    QuickSetting.Bluetooth -> AndroidSetting.Bluetooth
+    QuickSetting.Display -> AndroidSetting.Display
+    QuickSetting.Sound -> AndroidSetting.Sound
+    QuickSetting.Battery -> AndroidSetting.Battery
+    QuickSetting.AppInfo -> AndroidSetting.AppInfo
 }
 
 data class PlayerSaveSetting(
@@ -205,6 +249,8 @@ fun leftRows(
     add(Row.AndroidGames)
     add(Row.Apps)
     add(Row.HiddenApps)
+    add(Row.AndroidSettings)
+    add(Row.DefaultHomeApp)
 }
 
 data class SignedInBackend(
@@ -241,6 +287,7 @@ fun rightRows(
         }
     }
     notices.forEach { add(Row.Notice(it.id)) }
+    quickSettings().forEach { add(Row.QuickTile(it)) }
 }
 
 fun panelRows(panel: SidePanel, model: PickerModel): List<Row> = when (panel.side) {
@@ -279,6 +326,18 @@ fun rowText(row: Row, model: PickerModel): RowText = when (row) {
     Row.MusicTrack -> RowText(MusicCopy.track, model.trackTitle)
     Row.MusicVolume -> RowText(MusicCopy.volume, MusicCopy.volumeLabel(model.music.volume).substringAfter("  "))
     Row.SetAsHome -> RowText(Copy.setAsHome)
+    Row.AndroidSettings -> RowText(Copy.androidSettings)
+    Row.DefaultHomeApp -> RowText(Copy.defaultHomeApp)
+    is Row.QuickTile -> RowText(
+        when (row.setting) {
+            QuickSetting.Wifi -> Copy.wifi
+            QuickSetting.Bluetooth -> Copy.bluetooth
+            QuickSetting.Display -> Copy.display
+            QuickSetting.Sound -> Copy.sound
+            QuickSetting.Battery -> Copy.battery
+            QuickSetting.AppInfo -> Copy.appInfo
+        },
+    )
     is Row.Backend -> RowText(row.name)
     Row.AddFolder -> RowText(Copy.addFolder)
     Row.Connect -> RowText(Copy.connectRomm)
@@ -330,6 +389,7 @@ sealed interface Effect {
     data object MoveApp : Effect
     data object HideApp : Effect
     data object ShowApp : Effect
+    data class OpenAndroidSetting(val setting: AndroidSetting) : Effect
 }
 
 data class PickerModel(
@@ -592,6 +652,52 @@ private fun placeOrPick(model: PickerModel): Pair<PickerModel, Effect?> {
     return model.copy(hold = Hold(index = index, origin = index, orderBefore = order), order = order) to null
 }
 
+/**
+ * Text rows are one column. Quick tiles are [quickTileColumns] wide and sit
+ * together at the end of the list. A direction with no neighbor stays put.
+ */
+fun panelFocusIndex(rows: List<Row>, index: Int, meaning: Meaning): Int {
+    if (rows.isEmpty()) return 0
+    val current = index.coerceIn(0, rows.lastIndex)
+    val tileStart = rows.indexOfFirst { it is Row.QuickTile }
+    val tilesAreSuffix = tileStart >= 0 && rows.drop(tileStart).all { it is Row.QuickTile }
+    if (!tilesAreSuffix) {
+        return when (meaning) {
+            Meaning.MoveUp -> (current - 1).coerceAtLeast(0)
+            Meaning.MoveDown -> (current + 1).coerceAtMost(rows.lastIndex)
+            else -> current
+        }
+    }
+    if (current < tileStart) {
+        return when (meaning) {
+            Meaning.MoveUp -> (current - 1).coerceAtLeast(0)
+            Meaning.MoveDown -> if (current == tileStart - 1) tileStart else current + 1
+            else -> current
+        }
+    }
+    val tileIndex = current - tileStart
+    val column = tileIndex % quickTileColumns
+    val row = tileIndex / quickTileColumns
+    val tileCount = rows.size - tileStart
+    return when (meaning) {
+        Meaning.MoveLeft -> if (column == 0) current else current - 1
+        Meaning.MoveRight -> {
+            val next = tileIndex + 1
+            if (next >= tileCount || next / quickTileColumns != row) current else tileStart + next
+        }
+        Meaning.MoveUp -> if (row == 0) {
+            if (tileStart == 0) current else tileStart - 1
+        } else {
+            tileStart + (row - 1) * quickTileColumns + column
+        }
+        Meaning.MoveDown -> {
+            val below = (row + 1) * quickTileColumns + column
+            if (below < tileCount) tileStart + below else current
+        }
+        else -> current
+    }
+}
+
 private fun applyPanel(
     model: PickerModel,
     panel: SidePanel,
@@ -605,13 +711,16 @@ private fun applyPanel(
     val index = panel.index.coerceIn(0, rows.lastIndex)
     val current = panel.copy(index = index)
     return when (meaning) {
-        Meaning.MoveUp -> model.copy(panel = current.copy(index = (index - 1).coerceAtLeast(0))) to null
-        Meaning.MoveDown -> model.copy(panel = current.copy(index = (index + 1).coerceAtMost(rows.lastIndex))) to null
+        Meaning.MoveUp, Meaning.MoveDown ->
+            model.copy(panel = current.copy(index = panelFocusIndex(rows, index, meaning))) to null
         Meaning.MoveLeft, Meaning.MoveRight -> {
             val direction = if (meaning == Meaning.MoveLeft) -1 else 1
             val nudged = nudgeSlider(model, rows[index], direction)
-            if (nudged == null) model.copy(panel = current) to null
-            else nudged.copy(panel = current) to null
+            if (nudged != null) {
+                nudged.copy(panel = current) to null
+            } else {
+                model.copy(panel = current.copy(index = panelFocusIndex(rows, index, meaning))) to null
+            }
         }
         Meaning.PageTowardStart, Meaning.PageTowardEnd ->
             model.copy(panel = current) to null
@@ -678,6 +787,9 @@ private fun activateRow(
         Row.MusicTrack -> model to null
         Row.MusicVolume -> model.copy(panel = panel, music = model.music.stepped()) to null
         Row.SetAsHome -> model to Effect.RequestHome
+        Row.AndroidSettings -> model.copy(panel = panel) to Effect.OpenAndroidSetting(AndroidSetting.Settings)
+        Row.DefaultHomeApp -> model.copy(panel = panel) to Effect.OpenAndroidSetting(AndroidSetting.Home)
+        is Row.QuickTile -> model.copy(panel = panel) to Effect.OpenAndroidSetting(row.setting.androidSetting())
         is Row.Backend -> model.copy(panel = null, focus = panel.grid) to Effect.ActivateBackend(row.name)
         Row.AddFolder ->
             if (model.folderGrantPending) {

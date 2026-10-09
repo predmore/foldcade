@@ -418,7 +418,7 @@ timeout 15 adb shell am start -W -n "$component"
 # Do not tap its buttons, and do not stall the capture on it.
 dialog_remains() {
   timeout 10 adb shell uiautomator dump /sdcard/foldcade-ui.xml >/dev/null 2>&1 || return 1
-  timeout 10 adb shell cat /sdcard/foldcade-ui.xml | tr -d '\r' >"$out/ui-last.xml" || return 1
+  timeout 10 adb shell cat /sdcard/foldcade-ui.xml 2>/dev/null | tr -d '\r' >"$out/ui-last.xml" || return 1
   grep -q -E 'Not now|Use Foldcade as Home' "$out/ui-last.xml"
 }
 
@@ -602,7 +602,7 @@ if printf '%s\n' "$input_help" | grep -q -- '-d' && printf '%s\n' "$input_help" 
   expect_png "$out/launch-primary.png" "${top_width}x${top_height}"
   expect_png "$out/launch-secondary.png" "${bottom_width}x${bottom_height}"
   timeout 10 adb shell uiautomator dump /sdcard/foldcade-ui.xml >/dev/null 2>&1 || true
-  timeout 10 adb shell cat /sdcard/foldcade-ui.xml | tr -d '\r' >"$out/launch-ui.xml" || true
+  timeout 10 adb shell cat /sdcard/foldcade-ui.xml 2>/dev/null | tr -d '\r' >"$out/launch-ui.xml" || true
   seen="no"
   if grep -q 'not installed' "$out/launch-ui.xml"; then
     seen="yes"
@@ -634,7 +634,7 @@ if printf '%s\n' "$input_help" | grep -q -- '-d' && printf '%s\n' "$input_help" 
   expect_png "$out/ds-launch-primary.png" "${top_width}x${top_height}"
   expect_png "$out/ds-launch-secondary.png" "${bottom_width}x${bottom_height}"
   timeout 10 adb shell uiautomator dump /sdcard/foldcade-ui.xml >/dev/null 2>&1 || true
-  timeout 10 adb shell cat /sdcard/foldcade-ui.xml | tr -d '\r' >"$out/ds-launch-ui.xml" || true
+  timeout 10 adb shell cat /sdcard/foldcade-ui.xml 2>/dev/null | tr -d '\r' >"$out/ds-launch-ui.xml" || true
   seen="no"
   if grep -q 'not installed' "$out/ds-launch-ui.xml"; then
     seen="yes"
@@ -695,6 +695,63 @@ else
     echo "input help does not document a display id. The launch path was not driven."
   } >"$out/launch-path.txt"
 fi
+
+# Shoulder panels on the Thor-sized emulator. This is not a Thor pass.
+# A setup cancelled before the first script step is not a capture result.
+# The home role is held, so Set as Home is hidden. From Library the
+# rows are Theme, Primary, Arrange, Order, Music, Track, Volume,
+# Background, Motion, Azahar saves, melonDS saves, Android Games, Apps,
+# Hidden, then Android settings: fifteen downs. One down from the
+# launch-target row lands on the Wi-Fi tile while a stand-in is focused.
+# Key events default to display -1, and that call does not return once a
+# second display exists. The help text writes the flag as "[-d DISPLAY_ID]"
+# and "-d: specify the display ID." Home was started on display 0.
+echo "step: shoulder panels"
+if printf '%s\n' "$input_help" | grep -q -- '-d' && printf '%s\n' "$input_help" | grep -qi 'display'; then
+  panel_key() {
+    adb_do shell input -d 0 keyevent "$1"
+  }
+
+  echo "step: L1 Android settings"
+  panel_key KEYCODE_BUTTON_L1
+  sleep 1
+  for _ in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15; do
+    panel_key KEYCODE_DPAD_DOWN
+    sleep 0.3
+  done
+  sleep 1
+  capture "$primary" "$out/settings-l1-top.png"
+  capture "$secondary" "$out/settings-l1-bottom.png"
+  expect_png "$out/settings-l1-top.png" "${top_width}x${top_height}"
+  expect_png "$out/settings-l1-bottom.png" "${bottom_width}x${bottom_height}"
+
+  echo "step: R1 quick settings"
+  panel_key KEYCODE_BUTTON_R1
+  sleep 1
+  panel_key KEYCODE_DPAD_DOWN
+  sleep 1
+  capture "$primary" "$out/settings-r1-top.png"
+  capture "$secondary" "$out/settings-r1-bottom.png"
+  expect_png "$out/settings-r1-top.png" "${top_width}x${top_height}"
+  expect_png "$out/settings-r1-bottom.png" "${bottom_width}x${bottom_height}"
+  {
+    echo "Thor-sized emulator, not a Thor pass."
+    echo "Shoulder keys used input -d 0. Top is ${top_width}x${top_height}. Bottom is ${bottom_width}x${bottom_height}."
+    echo "These screenshots are an emulator result. They are not a Thor pass."
+  } >"$out/settings-captures.txt"
+else
+  {
+    echo "Thor-sized emulator, not a Thor pass."
+    echo "input help does not document a display id. Shoulder keys were not sent."
+  } >"$out/settings-captures.txt"
+fi
+
+{
+  echo "Thor-sized emulator, not a Thor pass."
+  echo "Top panel captures are ${top_width}x${top_height}. Bottom panel captures are ${bottom_width}x${bottom_height}."
+  echo "input_display_flag=${input_display_flag:-none}"
+  echo "These screenshots are an emulator result. They are not a Thor pass."
+} >"$out/settings-captures.txt"
 
 open_android_shelf() {
   local which="$1"

@@ -152,6 +152,7 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
             is Effect.DialogChoice -> onDialog(effect)
             is Effect.ActivateBackend -> Unit
             Effect.RequestHome -> requestHome()
+            is Effect.OpenAndroidSetting -> openAndroidSetting(effect.setting)
             null -> Unit
         }
     }
