@@ -169,6 +169,22 @@ class RommClientTest {
     }
 
     @Test
+    fun readsOneRomById() {
+        server.route("GET", "/api/roms/1234/simple") { exchange, _ ->
+            json(exchange, 200, fixture("rom-simple.json"))
+        }
+        runClient(token = { "rmm_test" }) { client ->
+            val rom = client.rom(1234)
+            assertEquals(1234L, rom.id)
+            assertEquals("Super Mario", rom.name)
+            assertEquals("/assets/cover/large.jpg", rom.pathCoverLarge)
+        }
+        val hit = server.recorded.single { it.path == "/api/roms/1234/simple" }
+        assertEquals("Bearer rmm_test", header(hit, "Authorization"))
+        assertEquals("GET", hit.method)
+    }
+
+    @Test
     fun listsAStable531PlatformThatOmitsAbbreviation() {
         server.route("GET", "/api/platforms") { exchange, _ ->
             json(exchange, 200, fixture("platforms-5.3.1.json"))

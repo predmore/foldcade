@@ -16,6 +16,7 @@ tasks.register("testDebugUnitTest") {
         ":host:test",
         ":plugins:local-folder:test",
         ":plugins:sample:test",
+        ":plugins:romm:test",
         ":samples:out-of-tree:test",
         ":language:testDebugUnitTest",
         ":app:testDebugUnitTest",

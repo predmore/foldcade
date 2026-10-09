@@ -172,6 +172,17 @@ class RommClient(
     }
 
     /**
+     * One ROM by id. `GET /api/roms/{id}/simple` is the list item shape and
+     * needs `roms.read`. A missing id is HTTP 404.
+     */
+    suspend fun rom(id: Long): RomSummary {
+        require(id >= 1)
+        val raw = exchange(api("/roms/$id/simple"), "GET", authenticated = true)
+        raw.require(200)
+        return parseRom(parseObject(raw.body))
+    }
+
+    /**
      * Downloads one ROM into [cacheRoot] with `purpose=play`. Does not send `format`.
      * A finished file is reused. A `.partial` sibling is resumed with `Range`.
      */
@@ -701,7 +712,8 @@ class RommClient(
             return text
         }
 
-        internal fun romCacheFile(root: Path, romId: Long, fileName: String, fileIds: List<Long>): Path {
+        /** File [downloadRom] writes. A `.partial` sibling means the download is not finished. */
+        fun romCacheFile(root: Path, romId: Long, fileName: String, fileIds: List<Long>): Path {
             val safe = safeFileName(fileName)
             val dir = if (fileIds.isEmpty()) {
                 root.resolve("roms").resolve(romId.toString())

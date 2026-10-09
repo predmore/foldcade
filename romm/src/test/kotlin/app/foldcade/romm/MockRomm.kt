@@ -74,6 +74,7 @@ internal class MockRomm : AutoCloseable {
             Regex("^/api/auth/device/token$"),
             Regex("^/api/platforms$"),
             Regex("^/api/roms$"),
+            Regex("^/api/roms/\\d+/simple$"),
             Regex("^/api/roms/\\d+/content/.+"),
             Regex("^/api/devices$"),
             Regex("^/api/devices/[^/]+$"),
