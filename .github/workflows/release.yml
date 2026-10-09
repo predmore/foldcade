@@ -1,0 +1,236 @@
+name: Release
+
+# Push to main publishes a signed pre-release Obtainium can follow.
+# A push that changes versionName or versionCode in app/build.gradle.kts
+# also creates tag vX.Y.Z and a non-prerelease GitHub release.
+# Pull requests do not publish. This workflow does not boot an emulator.
+# Stable releases are cut by the merge. This workflow does not run on tag pushes.
+on:
+  push:
+    branches:
+      - main
+
+# A cancelled run can clobber the APK off the release and leave nothing.
+# This stays false. Only the emulator workflow and the unit-test pull-request job cancel in progress.
+concurrency:
+  group: release-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  test:
+    name: testDebugUnitTest
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: "21"
+
+      - name: Android SDK root
+        id: sdk
+        run: echo "root=$HOME/android-sdk" >> "$GITHUB_OUTPUT"
+
+      - name: Cache Android SDK packages
+        uses: actions/cache@v6
+        with:
+          path: |
+            ${{ steps.sdk.outputs.root }}/cmdline-tools
+            ${{ steps.sdk.outputs.root }}/platforms
+            ${{ steps.sdk.outputs.root }}/build-tools
+            ${{ steps.sdk.outputs.root }}/platform-tools
+            ${{ steps.sdk.outputs.root }}/licenses
+          key: android-sdk-33-37.0-build-tools-37.0.0-platform-tools-v1
+
+      - name: Install Android SDK packages
+        env:
+          SDK_ROOT: ${{ steps.sdk.outputs.root }}
+        run: |
+          set -euo pipefail
+          mkdir -p "$SDK_ROOT"
+          if [ ! -x "$SDK_ROOT/cmdline-tools/latest/bin/sdkmanager" ]; then
+            tmp="$(mktemp -d)"
+            curl -fsSL -o "$tmp/cmdlinetools.zip" \
+              https://dl.google.com/android/repository/commandlinetools-linux-12266719_latest.zip
+            unzip -q "$tmp/cmdlinetools.zip" -d "$tmp"
+            mkdir -p "$SDK_ROOT/cmdline-tools"
+            rm -rf "$SDK_ROOT/cmdline-tools/latest"
+            mv "$tmp/cmdline-tools" "$SDK_ROOT/cmdline-tools/latest"
+          fi
+          sdkmanager="$SDK_ROOT/cmdline-tools/latest/bin/sdkmanager"
+          # sdkmanager closes stdin, so `yes` exits 141. Licenses are still accepted.
+          yes | "$sdkmanager" --sdk_root="$SDK_ROOT" --licenses >/dev/null || true
+          # Do not install the legacy `tools` package. Current cmdline-tools do not ship it.
+          # compileSdk is release(37), so compilation needs platforms;android-37.0.
+          # platforms;android-33 is the min and target platform.
+          "$sdkmanager" --sdk_root="$SDK_ROOT" --install \
+            "platforms;android-33" \
+            "platforms;android-37.0" \
+            "build-tools;37.0.0" \
+            "platform-tools"
+          echo "ANDROID_HOME=$SDK_ROOT" >> "$GITHUB_ENV"
+          echo "ANDROID_SDK_ROOT=$SDK_ROOT" >> "$GITHUB_ENV"
+
+      - uses: gradle/actions/setup-gradle@v6
+        with:
+          cache-read-only: true
+
+      - name: Unit tests
+        run: ./gradlew testDebugUnitTest --configuration-cache
+
+  release:
+    name: signed release APK
+    needs: test
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Require release signing secrets
+        env:
+          RELEASE_KEYSTORE_BASE64: ${{ secrets.RELEASE_KEYSTORE_BASE64 }}
+          RELEASE_KEYSTORE_PASSWORD: ${{ secrets.RELEASE_KEYSTORE_PASSWORD }}
+          RELEASE_KEY_ALIAS: ${{ secrets.RELEASE_KEY_ALIAS }}
+          RELEASE_KEY_PASSWORD: ${{ secrets.RELEASE_KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          missing=0
+          require() {
+            local name="$1"
+            local value="$2"
+            if [ -z "${value//[[:space:]]/}" ]; then
+              echo "::error::Missing GitHub Actions secret ${name}. Refusing to build or upload an APK."
+              missing=1
+            fi
+          }
+          require RELEASE_KEYSTORE_BASE64 "$RELEASE_KEYSTORE_BASE64"
+          require RELEASE_KEYSTORE_PASSWORD "$RELEASE_KEYSTORE_PASSWORD"
+          require RELEASE_KEY_ALIAS "$RELEASE_KEY_ALIAS"
+          require RELEASE_KEY_PASSWORD "$RELEASE_KEY_PASSWORD"
+          if [ "$missing" -ne 0 ]; then
+            exit 1
+          fi
+
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: "21"
+
+      - name: Decode the release keystore
+        env:
+          RELEASE_KEYSTORE_BASE64: ${{ secrets.RELEASE_KEYSTORE_BASE64 }}
+          RELEASE_KEYSTORE_PASSWORD: ${{ secrets.RELEASE_KEYSTORE_PASSWORD }}
+          RELEASE_KEY_ALIAS: ${{ secrets.RELEASE_KEY_ALIAS }}
+        run: |
+          set -euo pipefail
+          umask 077
+          keystore="${RUNNER_TEMP}/foldcade-release.jks"
+          printf '%s' "$RELEASE_KEYSTORE_BASE64" | tr -d '[:space:]' | base64 -d > "$keystore"
+          test -s "$keystore"
+          keytool -list \
+            -keystore "$keystore" \
+            -alias "$RELEASE_KEY_ALIAS" \
+            -storepass:env RELEASE_KEYSTORE_PASSWORD \
+            >/dev/null
+          echo "FOLDCADE_RELEASE_KEYSTORE=$keystore" >> "$GITHUB_ENV"
+
+      - name: Android SDK root
+        id: sdk
+        run: echo "root=$HOME/android-sdk" >> "$GITHUB_OUTPUT"
+
+      - name: Cache Android SDK packages
+        uses: actions/cache@v6
+        with:
+          path: |
+            ${{ steps.sdk.outputs.root }}/cmdline-tools
+            ${{ steps.sdk.outputs.root }}/platforms
+            ${{ steps.sdk.outputs.root }}/build-tools
+            ${{ steps.sdk.outputs.root }}/platform-tools
+            ${{ steps.sdk.outputs.root }}/licenses
+          key: android-sdk-33-37.0-build-tools-37.0.0-platform-tools-v1
+
+      - name: Install Android SDK packages
+        env:
+          SDK_ROOT: ${{ steps.sdk.outputs.root }}
+        run: |
+          set -euo pipefail
+          mkdir -p "$SDK_ROOT"
+          if [ ! -x "$SDK_ROOT/cmdline-tools/latest/bin/sdkmanager" ]; then
+            tmp="$(mktemp -d)"
+            curl -fsSL -o "$tmp/cmdlinetools.zip" \
+              https://dl.google.com/android/repository/commandlinetools-linux-12266719_latest.zip
+            unzip -q "$tmp/cmdlinetools.zip" -d "$tmp"
+            mkdir -p "$SDK_ROOT/cmdline-tools"
+            rm -rf "$SDK_ROOT/cmdline-tools/latest"
+            mv "$tmp/cmdline-tools" "$SDK_ROOT/cmdline-tools/latest"
+          fi
+          sdkmanager="$SDK_ROOT/cmdline-tools/latest/bin/sdkmanager"
+          # sdkmanager closes stdin, so `yes` exits 141. Licenses are still accepted.
+          yes | "$sdkmanager" --sdk_root="$SDK_ROOT" --licenses >/dev/null || true
+          # Do not install the legacy `tools` package. Current cmdline-tools do not ship it.
+          # compileSdk is release(37), so compilation needs platforms;android-37.0.
+          # platforms;android-33 is the min and target platform.
+          "$sdkmanager" --sdk_root="$SDK_ROOT" --install \
+            "platforms;android-33" \
+            "platforms;android-37.0" \
+            "build-tools;37.0.0" \
+            "platform-tools"
+          echo "ANDROID_HOME=$SDK_ROOT" >> "$GITHUB_ENV"
+          echo "ANDROID_SDK_ROOT=$SDK_ROOT" >> "$GITHUB_ENV"
+
+      - uses: gradle/actions/setup-gradle@v6
+        with:
+          # The release configuration reads the keystore passwords. Do not write that cache.
+          cache-read-only: true
+
+      - name: Assemble release
+        run: ./gradlew :app:printFoldcadeIdentity :app:assembleRelease --configuration-cache
+
+      - name: Verify the release signature
+        env:
+          RELEASE_KEYSTORE_PASSWORD: ${{ secrets.RELEASE_KEYSTORE_PASSWORD }}
+          RELEASE_KEY_ALIAS: ${{ secrets.RELEASE_KEY_ALIAS }}
+        run: |
+          set -euo pipefail
+          signed="app/build/outputs/apk/release/app-release.apk"
+          if [ ! -s "$signed" ]; then
+            echo "::error::Signed release APK was not produced."
+            exit 1
+          fi
+          if find app/build/outputs/apk/release -name '*unsigned*' | grep -q .; then
+            echo "::error::Refusing to continue while an unsigned APK is present."
+            exit 1
+          fi
+          apksigner="$ANDROID_HOME/build-tools/37.0.0/apksigner"
+          "$apksigner" verify --print-certs "$signed" > "${RUNNER_TEMP}/apk-certs.txt"
+          keytool -list -v \
+            -keystore "$FOLDCADE_RELEASE_KEYSTORE" \
+            -alias "$RELEASE_KEY_ALIAS" \
+            -storepass:env RELEASE_KEYSTORE_PASSWORD \
+            > "${RUNNER_TEMP}/keystore-certs.txt"
+          normalize() { tr '[:upper:]' '[:lower:]' | tr -d '[:space:]:'; }
+          ks="$(sed -n 's/^[[:space:]]*SHA256: //p' "${RUNNER_TEMP}/keystore-certs.txt" | head -1 | normalize)"
+          apk="$(sed -n 's/.*SHA-256 digest: //p' "${RUNNER_TEMP}/apk-certs.txt" | head -1 | normalize)"
+          if [ -z "$ks" ] || [ "$ks" != "$apk" ]; then
+            echo "::error::APK is not signed with the release key. Refusing to upload."
+            exit 1
+          fi
+          cp "$signed" "${RUNNER_TEMP}/foldcade.apk"
+
+      - name: Publish GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          BEFORE_SHA: ${{ github.event.before }}
+        run: bash .github/release/publish.sh "${RUNNER_TEMP}/foldcade.apk"
+
+      - name: Remove the release keystore
+        if: always()
+        run: rm -f "${RUNNER_TEMP}/foldcade-release.jks"
