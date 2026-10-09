@@ -7,18 +7,18 @@ Pick up the AYN Thor and open the clamshell. Your whole collection is there: the
 When you are ready to play, Foldcade gets out of the way. The music fades, the home steps aside, and the game takes the screens.
 
 <!--
-Hero pair. Replace these two files in place. Keep the paths and the table below.
+Hero pair. Emulator only, not a Thor pass.
+Idle top and grid bottom, copied in place from docs/afterglow/. Keep these paths.
 
   docs/images/hero-top.png
   docs/images/hero-bottom.png
-
-Labeled placeholders. Swap the files when the refreshed Afterglow captures are on main.
-Do not point this page at a pull-request branch.
 -->
 
 | Top screen | Bottom screen |
 | :---: | :---: |
-| ![Top screen](docs/images/hero-top.png) | ![Bottom screen](docs/images/hero-bottom.png) |
+| ![Top screen. Emulator only, not a Thor pass.](docs/images/hero-top.png) | ![Bottom screen. Emulator only, not a Thor pass.](docs/images/hero-bottom.png) |
+
+*Emulator only, not a Thor pass.*
 
 ## What you can do
 
