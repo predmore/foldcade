@@ -119,7 +119,7 @@ class PluginHostTest {
         val library = LibraryFake("shared-id")
         val metadata = MetadataFake("shared-id")
         host.register(object : PluginEntry {
-            override val apiMajor = PLUGIN_API_VERSION
+            override val apiVersion = PLUGIN_API_VERSION
             override val libraries = listOf(library)
             override val metadataProviders = listOf(metadata)
         })
@@ -132,7 +132,7 @@ class PluginHostTest {
         val host = PluginHost(Dispatchers.Unconfined)
         val failure = runCatching {
             host.register(object : PluginEntry {
-                override val apiMajor = PLUGIN_API_VERSION + 1
+                override val apiVersion = PLUGIN_API_VERSION + 1
             })
         }
         assertTrue(failure.exceptionOrNull() is IllegalStateException)
@@ -143,7 +143,7 @@ class PluginHostTest {
     fun playersForResolvesNintendo3dsAliases() {
         val host = PluginHost(Dispatchers.Unconfined)
         host.register(object : PluginEntry {
-            override val apiMajor = PLUGIN_API_VERSION
+            override val apiVersion = PLUGIN_API_VERSION
             override val platforms = listOf(object : Platform {
                 override val id = "nintendo-3ds"
                 override val displayName = "Nintendo 3DS"
@@ -161,9 +161,44 @@ class PluginHostTest {
     @Test
     fun pluginEntryListsAreJvmDefaultMethods() {
         val lists = PluginEntry::class.java.methods.single { it.name == "getPlatforms" }
-        val major = PluginEntry::class.java.methods.single { it.name == "getApiMajor" }
+        val major = PluginEntry::class.java.methods.single { it.name == "getApiVersion" }
         assertTrue(lists.isDefault)
         assertFalse(major.isDefault)
+    }
+
+    @Test
+    fun platformIdAndAliasCollisionsAreRejected() {
+        val host = PluginHost(Dispatchers.Unconfined)
+        host.register(platformEntry("nintendo-3ds", setOf("3ds", "n3ds")))
+
+        val aliasHitsCanonicalId = runCatching {
+            host.register(platformEntry("folder", setOf("Nintendo-3DS")))
+        }
+        assertTrue(aliasHitsCanonicalId.exceptionOrNull() is IllegalStateException)
+        assertNull(host.platform("folder"))
+        assertEquals("nintendo-3ds", host.platform("nintendo-3ds")?.id)
+
+        val aliasHitsAlias = runCatching {
+            host.register(platformEntry("romm", setOf("N3DS")))
+        }
+        assertTrue(aliasHitsAlias.exceptionOrNull() is IllegalStateException)
+        assertNull(host.platform("romm"))
+
+        val repeatsOwnId = runCatching {
+            PluginHost(Dispatchers.Unconfined).register(platformEntry("3ds", setOf("3DS")))
+        }
+        assertTrue(repeatsOwnId.exceptionOrNull() is IllegalStateException)
+
+        val sharedAlias = runCatching {
+            PluginHost(Dispatchers.Unconfined).register(object : PluginEntry {
+                override val apiVersion = PLUGIN_API_VERSION
+                override val platforms = listOf(
+                    namedPlatform("ds", setOf("nds")),
+                    namedPlatform("other", setOf("NDS")),
+                )
+            })
+        }
+        assertTrue(sharedAlias.exceptionOrNull() is IllegalStateException)
     }
 
     @Test
@@ -195,7 +230,7 @@ class PluginHostTest {
             }
             val host = PluginHost(io)
             host.register(object : PluginEntry {
-                override val apiMajor = PLUGIN_API_VERSION
+                override val apiVersion = PLUGIN_API_VERSION
                 override val libraries = listOf(backend)
             })
             val listed = launch(caller) { host.listGames(backend.id, "sample", GameQuery()) }
@@ -227,7 +262,7 @@ class PluginHostTest {
             }
             val host = PluginHost(io)
             host.register(object : PluginEntry {
-                override val apiMajor = PLUGIN_API_VERSION
+                override val apiVersion = PLUGIN_API_VERSION
                 override val metadataProviders = listOf(provider)
             })
             val meta = withContext(caller) { host.cachedMetadata(provider.id, game) }
@@ -287,7 +322,7 @@ class PluginHostTest {
         }
         val host = PluginHost(Dispatchers.Default)
         host.register(object : PluginEntry {
-            override val apiMajor = PLUGIN_API_VERSION
+            override val apiVersion = PLUGIN_API_VERSION
             override val libraries = listOf(scan, http)
             override val metadataProviders = listOf(metadata)
         })
@@ -316,6 +351,18 @@ class PluginHostTest {
         assertTrue(fetching.isCancelled)
         assertFalse(metadata.finished)
     }
+}
+
+private fun platformEntry(id: String, aliases: Set<String>) = object : PluginEntry {
+    override val apiVersion = PLUGIN_API_VERSION
+    override val platforms = listOf(namedPlatform(id, aliases))
+}
+
+private fun namedPlatform(id: String, aliases: Set<String>) = object : Platform {
+    override val id = id
+    override val displayName = id
+    override val extensions = emptySet<String>()
+    override val aliases = aliases
 }
 
 private fun namedDispatcher(name: String) = Executors.newSingleThreadExecutor { runnable ->

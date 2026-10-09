@@ -33,7 +33,7 @@ import kotlinx.coroutines.yield
  * Community plugins use this same entry point and those same license terms.
  */
 class SampleEntry : PluginEntry {
-    override val apiMajor = PLUGIN_API_VERSION
+    override val apiVersion = PLUGIN_API_VERSION
     override val platforms: List<Platform> = listOf(SamplePlatform())
     override val players: List<Player> = listOf(SamplePlayer())
     override val libraries: List<LibraryBackend> = listOf(SampleLibrary())

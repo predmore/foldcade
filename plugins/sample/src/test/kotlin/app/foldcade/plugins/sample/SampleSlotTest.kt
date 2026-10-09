@@ -43,7 +43,7 @@ class SampleSlotTest {
         val metadata = entry.metadataProviders.single()
         assertNull(metadata.cached(game))
         assertEquals("Sample game", metadata.fetch(game)?.title)
-        assertEquals(PLUGIN_API_VERSION, entry.apiMajor)
+        assertEquals(PLUGIN_API_VERSION, entry.apiVersion)
         val page = entry.libraries.single().listGames("sample.platform", GameQuery())
         assertTrue(page.games.isEmpty())
         assertNull(page.nextOffset)

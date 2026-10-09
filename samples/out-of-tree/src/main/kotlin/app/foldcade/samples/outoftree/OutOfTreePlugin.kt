@@ -33,7 +33,7 @@ import kotlinx.coroutines.yield
  * A plugin Foldcade loads in-process is part of the GPLv3 work when distributed.
  */
 class OutOfTreeEntry : PluginEntry {
-    override val apiMajor = PLUGIN_API_VERSION
+    override val apiVersion = PLUGIN_API_VERSION
     override val platforms: List<Platform> = listOf(OutOfTreePlatform())
     override val players: List<Player> = listOf(OutOfTreePlayer())
     override val libraries: List<LibraryBackend> = listOf(OutOfTreeLibrary())

@@ -16,10 +16,10 @@ import app.foldcade.api.plugin.Player
  */
 interface PluginEntry {
     /**
-     * [PLUGIN_API_VERSION] this plugin was compiled against.
-     * The host rejects a different major.
+     * [PLUGIN_API_VERSION] major this plugin was compiled against.
+     * The host rejects a different major. A different minor of that major still loads.
      */
-    val apiMajor: Int
+    val apiVersion: Int
 
     val platforms: List<Platform> get() = emptyList()
     val players: List<Player> get() = emptyList()
