@@ -46,7 +46,6 @@ import app.foldcade.language.previewDialogState
 import app.foldcade.language.reduce
 import app.foldcade.language.signInAgainPrompt
 import app.foldcade.romm.cleartextCredentialWarning
-import android.util.Log
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue

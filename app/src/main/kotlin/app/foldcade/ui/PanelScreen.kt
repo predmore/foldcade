@@ -53,6 +53,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.drawscope.scale
 import androidx.compose.ui.graphics.graphicsLayer
@@ -70,7 +71,6 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.IntOffset
-import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.zIndex
@@ -1031,6 +1031,8 @@ private fun Cell(
         modifier = Modifier.zIndex(if (focused) 1f else 0f),
     ) {
         val accent = mark?.let { markGlyph(it)?.accent }
+        // A scanned-folder tile has no mark. Focus fills it like the dialog pill.
+        val focusCard = focused && accent == null && icon == null
         Box(
             modifier = Modifier
                 .size(size)
@@ -1043,6 +1045,7 @@ private fun Cell(
                     val glow = accent
                     val bounds = this.size
                     val cornerPx = corner.toPx()
+                    if (focusCard) drawFocusCard(theme.focus, cornerPx)
                     if (glow != null) {
                         val half = min(bounds.width, bounds.height) * 0.5f
                         // Halo sits outside the plate and reaches transparent before the pager pad.
@@ -1114,7 +1117,11 @@ private fun Cell(
                     BasicText(
                         text = monogram(title),
                         modifier = Modifier.scale(theme.artScale).graphicsLayer { alpha = glyphAlpha },
-                        style = text(theme.onBackground, TypeRamp.heroTitle, theme),
+                        style = text(
+                            if (focusCard) theme.background else theme.onBackground,
+                            TypeRamp.heroTitle,
+                            theme,
+                        ),
                         maxLines = 1,
                         overflow = TextOverflow.Clip,
                     )
@@ -1291,6 +1298,33 @@ private fun DialogAction(label: String, focused: Boolean, onClick: () -> Unit) {
             theme,
         ).copy(textAlign = TextAlign.Center),
     )
+}
+
+/**
+ * Focused library card. Same accent fill and bloom as [dialogPlate], on the tile's
+ * corner, with the cell's [Motion.scaleFocus] scale-up. The bloom ends transparent.
+ */
+private fun DrawScope.drawFocusCard(accent: Color, cornerPx: Float) {
+    val spread = 28f
+    val half = min(size.width, size.height) / 2f
+    val reach = half + spread
+    val edge = (half / reach).coerceIn(0.5f, 0.92f)
+    val mid = edge + (1f - edge) * 0.45f
+    drawCircle(
+        brush = Brush.radialGradient(
+            colorStops = arrayOf(
+                0f to accent,
+                edge to accent.copy(alpha = 0.82f),
+                mid to accent.copy(alpha = 0.18f),
+                1f to Color.Transparent,
+            ),
+            center = center,
+            radius = reach,
+        ),
+        radius = reach,
+        center = center,
+    )
+    drawRoundRect(color = accent, cornerRadius = CornerRadius(cornerPx, cornerPx))
 }
 
 /**
