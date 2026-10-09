@@ -1,0 +1,4 @@
+Top screen, 1920×1080.
+Emulator only, not a Thor pass.
+Before, during, and after a focus change from Cloud to Disc.
+The mid frame keeps one label, Disc, while the artwork is still crossfading.

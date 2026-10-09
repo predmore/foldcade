@@ -8,6 +8,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
+import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -96,6 +97,9 @@ import app.foldcade.language.Effect
 import app.foldcade.language.DialogState
 import app.foldcade.language.EmptyGrid
 import app.foldcade.language.GridKind
+import app.foldcade.language.HeroBlend
+import app.foldcade.language.HeroItem
+import app.foldcade.language.HeroSubject
 import app.foldcade.language.HintActions
 import app.foldcade.language.HintPlace
 import app.foldcade.language.HostScreen
@@ -106,6 +110,7 @@ import app.foldcade.language.MoonlightImportSheet
 import app.foldcade.language.MoonlightSheetTarget
 import app.foldcade.language.moonlightSheetSections
 import app.foldcade.language.Motion
+import app.foldcade.language.MotionSpeed
 import app.foldcade.language.PanelLevel
 import app.foldcade.language.Side
 import app.foldcade.language.SidePanel
@@ -119,6 +124,7 @@ import app.foldcade.language.islandGlyph
 import app.foldcade.language.letterOfKey
 import app.foldcade.language.cursorBrush
 import app.foldcade.language.displayOrder
+import app.foldcade.language.heroCopy
 import app.foldcade.language.lastPlayedLine
 import app.foldcade.language.monogram
 import app.foldcade.language.panelRows
@@ -126,6 +132,7 @@ import app.foldcade.language.approximatePlayNote
 import app.foldcade.language.playedLine
 import app.foldcade.language.quickTileColumns
 import app.foldcade.language.rowLabel
+import app.foldcade.language.retargetHero
 import app.foldcade.language.rowText
 import java.time.ZoneId
 import app.foldcade.readDeviceStatus
@@ -217,7 +224,9 @@ private fun <T> TravelFade(target: T, scale: Float, content: @Composable (T) -> 
 @Composable
 private fun Hero(app: FoldcadeApp, screen: HostScreen, scale: Float, onEffect: (Effect?) -> Unit) {
     val theme = foldTheme()
-    val game = app.shell.focusedGame()
+    val model = app.shell.model
+    val subject = app.shell.focusedHero()
+    val cellFocused = model.dialog == null && model.panel == null && !model.connectOpen && model.focus.chrome == null
     BoxWithConstraints(Modifier.fillMaxSize()) {
         val inset = px(Metrics.heroInsetPx)
         val artHeight = maxHeight * Metrics.heroArtFraction
@@ -244,44 +253,179 @@ private fun Hero(app: FoldcadeApp, screen: HostScreen, scale: Float, onEffect: (
                 .fillMaxWidth()
                 .padding(start = inset, end = inset, top = inset),
         ) {
-            Box(
-                Modifier
-                    .fillMaxWidth()
-                    .height(artHeight),
-            )
-            val cellFocused = app.shell.model.let { model ->
-                model.dialog == null && model.panel == null && !model.connectOpen && model.focus.chrome == null
-            }
-            TravelFade(target = game, scale = scale) { shown ->
-                if (shown != null) {
-                    Column {
-                        BasicText(
-                            text = shown.title,
-                            style = text(theme.onBackground, TypeRamp.heroTitle, theme),
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                        )
-                        if (shown.shortText.isNotEmpty()) {
-                            ShelfMeta(
-                                line = shown.shortText,
-                                hintFocused = shown.emptyShelfHint && cellFocused,
-                            )
-                        }
-                        val availability = shown.availabilityLabel
-                        if (availability != null) {
-                            BasicText(
-                                text = availability,
-                                style = text(theme.muted, TypeRamp.availability, theme),
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis,
-                            )
-                        }
-                        PlayFacts(app, shown.id)
-                    }
+            HeroCrossfade(
+                target = subject,
+                speed = model.motionSpeed,
+                animatorScale = scale,
+                same = { left, right -> left?.key == right?.key },
+            ) { shown ->
+                Box(
+                    Modifier
+                        .fillMaxWidth()
+                        .height(artHeight),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    if (shown is HeroSubject.Item) HeroArt(shown.item)
                 }
+            }
+            if (subject != null) {
+                HeroLabel(app, subject, cellFocused)
             }
         }
         Panels(app, screen, scale, onEffect)
+    }
+}
+
+/**
+ * Crossfades the artwork onto the newest focus. A second change before this
+ * finishes retargets the same two layers instead of starting another fade.
+ * The name and details are not in these layers: two labels in one place
+ * cannot be read. Off, and remove-animations, fade over the short duration
+ * with no slide.
+ */
+@Composable
+private fun <T> HeroCrossfade(
+    target: T?,
+    speed: MotionSpeed,
+    animatorScale: Float,
+    same: (T?, T?) -> Boolean,
+    content: @Composable (T) -> Unit,
+) {
+    val travelMillis = Motion.heroDuration(speed, animatorScale)
+    val fadeOnly = Motion.heroFadeOnly(speed, animatorScale)
+    var blend by remember {
+        mutableStateOf(
+            HeroBlend(
+                front = target,
+                back = null,
+                frontAlpha = if (target == null) 0f else 1f,
+                backAlpha = 0f,
+            ),
+        )
+    }
+    val incoming = remember { Animatable(blend.frontAlpha) }
+    val outgoing = remember { Animatable(blend.backAlpha) }
+    LaunchedEffect(target, travelMillis, fadeOnly) {
+        val latest = blend.copy(frontAlpha = incoming.value, backAlpha = outgoing.value)
+        val next = retargetHero(latest, target, same)
+        val sameFront = same(next.front, blend.front)
+        if (sameFront && blend.back == null && incoming.value >= 0.999f) {
+            if (next.front != blend.front) {
+                blend = next.copy(frontAlpha = 1f, back = null, backAlpha = 0f)
+            }
+            return@LaunchedEffect
+        }
+        incoming.snapTo(next.frontAlpha)
+        outgoing.snapTo(next.backAlpha)
+        blend = next
+        val arrive = Motion.arrive(travelMillis, 1f)
+        val leave = Motion.leave(travelMillis, 1f)
+        withContext(SteadyMotion) {
+            coroutineScope {
+                launch { incoming.animateTo(if (next.front == null) 0f else 1f, arrive) }
+                launch { outgoing.animateTo(0f, leave) }
+            }
+        }
+        if (same(blend.front, next.front)) {
+            blend = blend.copy(back = null, backAlpha = 0f, frontAlpha = incoming.value)
+        }
+    }
+    Box(Modifier.fillMaxWidth()) {
+        val previous = blend.back
+        if (previous != null) {
+            Box(Modifier.heroArrival(outgoing.value, fadeOnly)) { content(previous) }
+        }
+        val current = blend.front
+        if (current != null) {
+            Box(Modifier.heroArrival(incoming.value, fadeOnly)) { content(current) }
+        }
+    }
+}
+
+/**
+ * One name and one detail line for the focus that just arrived.
+ * The artwork behind it may still be crossfading.
+ */
+@Composable
+private fun HeroLabel(app: FoldcadeApp, shown: HeroSubject, cellFocused: Boolean) {
+    val theme = foldTheme()
+    val copy = heroCopy(shown)
+    BasicText(
+        text = copy.title,
+        style = text(theme.onBackground, TypeRamp.heroTitle, theme),
+        maxLines = 1,
+        overflow = TextOverflow.Ellipsis,
+    )
+    if (copy.detail.isNotEmpty()) {
+        val hint = shown is HeroSubject.Item && shown.item.emptyShelfHint && cellFocused
+        ShelfMeta(line = copy.detail, hintFocused = hint)
+    }
+    val availability = (shown as? HeroSubject.Item)?.item?.availability
+    if (availability != null) {
+        BasicText(
+            text = availability,
+            style = text(theme.muted, TypeRamp.availability, theme),
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
+    }
+    if (shown is HeroSubject.Item) {
+        PlayFacts(app, shown.item.key)
+    }
+}
+
+private fun Modifier.heroArrival(alpha: Float, fadeOnly: Boolean): Modifier = graphicsLayer {
+    this.alpha = alpha
+    val drawn = Motion.heroScale(alpha, fadeOnly)
+    scaleX = drawn
+    scaleY = drawn
+    translationY = Motion.heroSlidePx(alpha, fadeOnly)
+}
+
+@Composable
+private fun HeroArt(item: HeroItem) {
+    val theme = foldTheme()
+    val icon = launcherIcon(item.packageName)
+    val accent = item.mark?.let { markGlyph(it)?.accent } ?: theme.focus
+    Box(
+        Modifier
+            .fillMaxHeight()
+            .aspectRatio(1f)
+            .drawBehind {
+                val reach = size.minDimension * 0.62f
+                drawCircle(
+                    brush = Brush.radialGradient(
+                        colorStops = arrayOf(
+                            0f to accent.copy(alpha = 0.45f),
+                            0.42f to accent.copy(alpha = 0.16f),
+                            1f to Color.Transparent,
+                        ),
+                        center = center,
+                        radius = reach,
+                    ),
+                    radius = reach,
+                    center = center,
+                )
+            },
+        contentAlignment = Alignment.Center,
+    ) {
+        val mark = item.mark
+        when {
+            icon != null -> Image(
+                bitmap = icon,
+                contentDescription = item.title,
+                modifier = Modifier.fillMaxSize(theme.artScale),
+                contentScale = ContentScale.Fit,
+            )
+            mark != null && markGlyph(mark) != null -> MarkIcon(mark, 0.86f)
+            else -> BasicText(
+                text = monogram(item.title),
+                modifier = Modifier.scale(4f),
+                style = text(theme.onBackground, TypeRamp.heroTitle, theme),
+                maxLines = 1,
+                overflow = TextOverflow.Clip,
+            )
+        }
     }
 }
 

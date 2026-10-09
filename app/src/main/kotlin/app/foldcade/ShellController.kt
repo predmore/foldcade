@@ -21,6 +21,9 @@ import app.foldcade.language.Effect
 import app.foldcade.language.EmptyGrid
 import app.foldcade.language.GridFocus
 import app.foldcade.language.GridKind
+import app.foldcade.language.HeroFolder
+import app.foldcade.language.HeroItem
+import app.foldcade.language.HeroSubject
 import app.foldcade.language.DEFAULT_TRACK_TITLE
 import app.foldcade.host.play.recentlyPlayedIndices
 import app.foldcade.language.HomeMusicSetting
@@ -458,6 +461,37 @@ class ShellController(
     }
 
     fun focusedGame(): ShelfGame? = tileFromOrder(displaySource(model))
+
+    /**
+     * What the idle top screen shows for the focused cell.
+     * A platform folder is its name and game count, with no artwork.
+     * An empty or loading grid has nothing to show.
+     */
+    fun focusedHero(): HeroSubject? {
+        if (model.gridKind == GridKind.Platforms) {
+            val entry = focusedEntry() ?: return null
+            return HeroSubject.Folder(
+                HeroFolder(
+                    key = entry.id,
+                    name = entry.title,
+                    count = entry.shortText.toIntOrNull(),
+                ),
+            )
+        }
+        if (model.libraryGrid && model.gridKind != GridKind.Games) return null
+        val game = focusedGame() ?: return null
+        return HeroSubject.Item(
+            HeroItem(
+                key = game.id,
+                title = game.title,
+                detail = game.shortText,
+                mark = game.mark,
+                packageName = game.androidPackage,
+                emptyShelfHint = game.emptyShelfHint,
+                availability = game.availabilityLabel,
+            ),
+        )
+    }
 
     fun tileFromOrder(source: Int): ShelfGame? = when {
         model.libraryGrid -> entries.getOrNull(source)?.asShelf()
