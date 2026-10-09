@@ -4,6 +4,7 @@ plugins {
 
 dependencies {
     testImplementation(libs.junit)
+    testImplementation(libs.coroutines.core)
 }
 
 tasks.test {
