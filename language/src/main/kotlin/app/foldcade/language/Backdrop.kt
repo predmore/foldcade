@@ -4,6 +4,8 @@ import androidx.compose.ui.graphics.Color
 import kotlin.math.PI
 import kotlin.math.abs
 import kotlin.math.ceil
+import kotlin.math.cos
+import kotlin.math.exp
 import kotlin.math.floor
 import kotlin.math.hypot
 import kotlin.math.max
@@ -104,6 +106,8 @@ class BackdropFrame {
         if (lineCount >= lines.size) return null
         val line = lines[lineCount++]
         line.count = 0
+        line.perPoint = false
+        line.shaped = false
         return line
     }
 
@@ -126,6 +130,8 @@ class BackdropLine {
     var endBlue: Int = 0
     var pulse: Float = 0f
     var shaped: Boolean = false
+    var perPoint: Boolean = false
+    val gain = FloatArray(POINTS)
     var kind: MarkKind = MarkKind.Ribbon
 
     fun add(px: Float, py: Float) {
@@ -286,13 +292,33 @@ fun litSample(frame: BackdropFrame, width: Int, height: Int): LitSample {
 }
 
 fun visibleEffects(frame: BackdropFrame): Int {
-    var count = 0
+    var beads = 0
+    var shimmers = 0
     for (index in 0 until frame.discCount) {
         val disc = frame.discs[index]
-        if (disc.kind != MarkKind.Bead && disc.kind != MarkKind.Swell && disc.kind != MarkKind.Shimmer) continue
-        if (max(disc.red, max(disc.green, disc.blue)) > Backdrop.LIT_CHANNEL) count++
+        if (max(disc.red, max(disc.green, disc.blue)) <= Backdrop.LIT_CHANNEL) continue
+        when (disc.kind) {
+            MarkKind.Bead -> beads++
+            MarkKind.Shimmer -> shimmers++
+            else -> Unit
+        }
     }
-    return count
+    return beads + shimmers + if (crossingLit(frame)) 1 else 0
+}
+
+private fun crossingLit(frame: BackdropFrame): Boolean {
+    for (index in 0 until frame.lineCount) {
+        val line = frame.lines[index]
+        if (line.kind != MarkKind.Swell || line.count < 2) continue
+        val steps = line.count - 1
+        var sampleIndex = 0
+        while (sampleIndex <= steps) {
+            val sample = strokeAt(line, sampleIndex.toFloat() / steps.toFloat())
+            if (max(sample.red, max(sample.green, sample.blue)) > Backdrop.LIT_CHANNEL) return true
+            sampleIndex += 4
+        }
+    }
+    return false
 }
 
 private data class Strand(
@@ -347,44 +373,9 @@ private fun layoutRibbons(
     }
     if (!moving) return
     val loop = loopTime(timeSec)
-    val bead = window(loop, start = 0.4f, duration = 8f)
-    if (bead > 0f) {
-        val which = Math.floorMod(kotlin.math.floor(timeSec / Backdrop.EFFECT_LOOP).toInt(), strands.size)
-        val progress = ((loop - 0.4f) / 8f).coerceIn(0f, 1f)
-        val step = (progress * steps).toInt().coerceIn(0, steps)
-        val strand = strands[which]
-        val color = if (strand.teal) beadTeal else beadAmber
-        placeDisc(into, xs[step], ys[which][step], 8f, color, breath * bead, MarkKind.Bead)
-    }
-    val shimmer = window(loop, start = 6.8f, duration = 7f)
-    if (shimmer > 0f) {
-        val turn = kotlin.math.floor(timeSec / Backdrop.EFFECT_LOOP).toInt()
-        val x = (0.08f + unitHash(turn, 17) * 0.84f) * width
-        val y = (0.08f + unitHash(turn, 29) * 0.84f) * height
-        placeDisc(into, x, y, 24f, shimmerColor, breath * shimmer * 0.85f, MarkKind.Shimmer)
-    }
-    val swell = window(loop, start = 13.2f, duration = 8f)
-    if (swell > 0f) {
-        var best = Float.POSITIVE_INFINITY
-        var bestX = width * 0.5f
-        var bestY = height * 0.5f
-        for (step in 0..steps) {
-            for (left in strands.indices) {
-                for (right in left + 1 until strands.size) {
-                    val gap = kotlin.math.abs(ys[left][step] - ys[right][step])
-                    if (gap < best) {
-                        best = gap
-                        bestX = xs[step]
-                        bestY = (ys[left][step] + ys[right][step]) * 0.5f
-                    }
-                }
-            }
-        }
-        val closeness = (1f - best / (height * 0.055f)).coerceIn(0f, 1f)
-        if (closeness > 0f) {
-            placeDisc(into, bestX, bestY, 36f, swellColor, breath * swell * closeness, MarkKind.Swell)
-        }
-    }
+    placeTravelingBead(timeSec, loop, xs, ys, steps + 1, breath, into)
+    placeShimmer(timeSec, loop, width, height, breath, into)
+    placeCrossings(xs, ys, steps + 1, height, breath, into)
 }
 
 private fun layoutEmbers(
@@ -412,8 +403,8 @@ private fun layoutEmbers(
         val x = (0.06f + (index * 73 % 88) / 100f) * width +
             sin(TWO_PI * timeSec / 96f + index) * 14f
         val edge = when {
-            rise < 0.1f -> rise / 0.1f
-            rise > 0.9f -> (1f - rise) / 0.1f
+            rise < EMBER_FADE -> smoothStep(rise / EMBER_FADE)
+            rise > 1f - EMBER_FADE -> smoothStep((1f - rise) / EMBER_FADE)
             else -> 1f
         }
         val color = if (index % 2 == 0) warmEmber else violetEmber
@@ -436,6 +427,12 @@ private fun loopTime(timeSec: Float): Float {
     return if (raw < 0f) raw + Backdrop.EFFECT_LOOP else raw
 }
 
+/**
+ * Fade in and out with smoothstep. [Backdrop.FADE_SECONDS] is 2.5s, and the clock
+ * cap keeps that at least 2s, so an effect is fully transparent at both ends.
+ * Outside the window the value is 0, and the derivative matches, so a loop that
+ * does not cut through a window cannot pop.
+ */
 private fun window(loop: Float, start: Float, duration: Float): Float {
     val along = loop - start
     if (along < 0f || along > duration) return 0f
@@ -445,6 +442,97 @@ private fun window(loop: Float, start: Float, duration: Float): Float {
         along > duration - fade -> smoothStep((duration - along) / fade)
         else -> 1f
     }
+}
+
+/** One soft dot. Position is arc length along the ribbon at [timeSec], not a sample index. */
+private fun placeTravelingBead(
+    timeSec: Float,
+    loop: Float,
+    xs: FloatArray,
+    ys: Array<FloatArray>,
+    count: Int,
+    breath: Float,
+    into: BackdropFrame,
+) {
+    val fade = window(loop, BEAD_START, BEAD_DURATION)
+    if (fade <= 0f) return
+    val which = Math.floorMod(floor(timeSec / Backdrop.EFFECT_LOOP).toInt(), strands.size)
+    val travel = ((loop - BEAD_START) / BEAD_DURATION).coerceIn(0f, 1f)
+    val point = pointOnArc(xs, ys[which], count, travel)
+    val color = if (strands[which].teal) beadTeal else beadAmber
+    placeDisc(into, point[0], point[1], BEAD_RADIUS, color, breath * fade, MarkKind.Bead)
+}
+
+/** A still glimmer. It fades out before the loop chooses the next point, so the hand-off is black. */
+private fun placeShimmer(
+    timeSec: Float,
+    loop: Float,
+    width: Float,
+    height: Float,
+    breath: Float,
+    into: BackdropFrame,
+) {
+    val fade = window(loop, SHIMMER_START, SHIMMER_DURATION)
+    if (fade <= 0f) return
+    val turn = floor(timeSec / Backdrop.EFFECT_LOOP).toInt()
+    val x = (0.08f + unitHash(turn, 17) * 0.84f) * width
+    val y = (0.08f + unitHash(turn, 29) * 0.84f) * height
+    placeDisc(into, x, y, 28f, shimmerColor, breath * fade * 0.85f, MarkKind.Shimmer)
+}
+
+/**
+ * One glow between each pair of ribbons. Brightness is smoothstep of the gap, so a
+ * crossing swells and recedes as the ribbons drift. There is no time window and no cutoff.
+ */
+private fun placeCrossings(
+    xs: FloatArray,
+    ys: Array<FloatArray>,
+    count: Int,
+    height: Float,
+    breath: Float,
+    into: BackdropFrame,
+) {
+    val reach = height * CROSSING_REACH
+    val radius = 30f
+    for (left in ys.indices) {
+        for (right in left + 1 until ys.size) {
+            val line = into.line() ?: return
+            prepare(line, MarkKind.Swell, radius, swellColor, breath)
+            line.shaped = true
+            line.perPoint = true
+            for (step in 0 until count) {
+                val gap = abs(ys[left][step] - ys[right][step])
+                line.gain[step] = 1f - smoothStep((gap / reach).coerceIn(0f, 1f))
+                line.add(xs[step], (ys[left][step] + ys[right][step]) * 0.5f)
+            }
+        }
+    }
+}
+
+/** [fraction] is 0 at the start of the polyline and 1 at the end, measured in arc length. */
+internal fun pointOnArc(xs: FloatArray, ys: FloatArray, count: Int, fraction: Float): FloatArray {
+    val point = floatArrayOf(xs[0], ys[0])
+    if (count < 2) return point
+    var total = 0f
+    for (index in 1 until count) {
+        total += hypot(xs[index] - xs[index - 1], ys[index] - ys[index - 1])
+    }
+    if (total <= 0.01f) return point
+    val target = fraction.coerceIn(0f, 1f) * total
+    var walked = 0f
+    for (index in 1 until count) {
+        val span = hypot(xs[index] - xs[index - 1], ys[index] - ys[index - 1])
+        if (walked + span >= target || index == count - 1) {
+            val u = if (span <= 0.0001f) 0f else ((target - walked) / span).coerceIn(0f, 1f)
+            point[0] = xs[index - 1] + (xs[index] - xs[index - 1]) * u
+            point[1] = ys[index - 1] + (ys[index] - ys[index - 1]) * u
+            return point
+        }
+        walked += span
+    }
+    point[0] = xs[count - 1]
+    point[1] = ys[count - 1]
+    return point
 }
 
 private fun smoothStep(value: Float): Float {
@@ -463,6 +551,7 @@ private fun prepare(line: BackdropLine, kind: MarkKind, radius: Float, color: In
     line.endBlue = line.blue
     line.pulse = 0f
     line.shaped = false
+    line.perPoint = false
     line.count = 0
 }
 
@@ -485,6 +574,7 @@ private fun prepareRibbon(
 /**
  * Brightness and width along one ribbon. Ends fade out. A slow swell leaves dim
  * stretches, and two hotter knots travel the length when [pulse] advances.
+ * Each knot is a cosine bump, so it ramps in and out instead of stepping.
  */
 internal fun ribbonGain(along: Float, pulse: Float): Float {
     val t = along.coerceIn(0f, 1f)
@@ -504,13 +594,23 @@ private fun knot(along: Float, phase: Float): Float {
     val center = phase - floor(phase)
     val direct = abs(along - center)
     val distance = min(direct, 1f - direct)
-    if (distance >= KNOT) return 0f
-    val u = 1f - distance / KNOT
-    return u * u
+    val half = GlowFalloff.KNOT
+    if (distance >= half) return 0f
+    val u = distance / half
+    return 0.5f * (1f + cos(u * PI.toFloat()))
 }
 
 /** Center color and outer radius for the piece of [line] at [along] (0 at the left). */
 fun strokeAt(line: BackdropLine, along: Float): StrokeSample {
+    if (line.perPoint) {
+        val gain = pointGain(line, along)
+        return StrokeSample(
+            line.radius,
+            scale(line.red, gain),
+            scale(line.green, gain),
+            scale(line.blue, gain),
+        )
+    }
     if (!line.shaped) return StrokeSample(line.radius, line.red, line.green, line.blue)
     val t = along.coerceIn(0f, 1f)
     val gain = ribbonGain(t, line.pulse)
@@ -524,6 +624,15 @@ fun strokeAt(line: BackdropLine, along: Float): StrokeSample {
 
 private fun mixChannel(start: Int, end: Int, along: Float, gain: Float): Int =
     ((start + (end - start) * along) * gain).toInt().coerceIn(0, 255)
+
+private fun pointGain(line: BackdropLine, along: Float): Float {
+    val last = line.count - 1
+    if (last <= 0) return if (line.count > 0) line.gain[0] else 0f
+    val scaled = along.coerceIn(0f, 1f) * last.toFloat()
+    val index = scaled.toInt().coerceIn(0, last - 1)
+    val fraction = scaled - index
+    return line.gain[index] + (line.gain[index + 1] - line.gain[index]) * fraction
+}
 
 private fun placeDisc(
     into: BackdropFrame,
@@ -577,7 +686,52 @@ private val horizonColor = intArrayOf(32, 14, 26)
 private const val TWO_PI = (PI * 2).toFloat()
 private const val FRINGE = 0.75f
 private const val END_FADE = 0.16f
-private const val KNOT = 0.075f
+private const val BEAD_START = 0.4f
+private const val BEAD_DURATION = 8f
+private const val BEAD_RADIUS = 22f
+private const val SHIMMER_START = 6.8f
+private const val SHIMMER_DURATION = 7f
+private const val CROSSING_REACH = 0.09f
+private const val EMBER_FADE = 0.12f
+
+/**
+ * Shared radial curve. 1 at the center, 0 at the rim, with a gaussian body and a
+ * smoothstep tail so the last stop is transparent and the slope there is flat.
+ * [STOPS] is the same curve sampled for the GPU gradient.
+ */
+object GlowFalloff {
+    const val TIGHTNESS = 5.6f
+    const val RIM_START = 0.55f
+    const val REACH = 1.36f
+
+    /** Ribbon layers already carry dim colors. This scales the radial curve on top. */
+    const val PEAK = 1f
+    const val DISC_TIGHTNESS = 2.2f
+    const val DISC_RIM = 0.48f
+    const val DISC_REACH = 1.55f
+    const val TILE_TIGHTNESS = 0.85f
+    const val TILE_RIM = 0.66f
+    const val TILE_PEAK = 1f
+    const val REST_TIGHTNESS = 2.4f
+    const val REST_RIM = 0.42f
+    const val REST_PEAK = 0.22f
+
+    /** Half-width of a hot spot, as a fraction of the ribbon. The old knot was 0.075. */
+    const val KNOT = 0.14f
+
+    val STOPS = floatArrayOf(
+        0f, 0.08f, 0.16f, 0.25f, 0.34f, 0.43f, 0.52f, 0.61f, 0.70f, 0.80f, 0.90f, 1f,
+    )
+
+    fun cover(t: Float, tightness: Float = TIGHTNESS, rimStart: Float = RIM_START): Float {
+        if (t >= 1f) return 0f
+        if (t <= 0f) return 1f
+        val bell = exp(-tightness * t * t)
+        if (t <= rimStart) return bell
+        val u = ((t - rimStart) / (1f - rimStart)).coerceIn(0f, 1f)
+        return bell * (1f - smoothStep(u))
+    }
+}
 
 private fun paintSegment(
     pixels: IntArray,
@@ -594,7 +748,7 @@ private fun paintSegment(
     soft: Boolean = false,
 ) {
     if (radius < 0.4f || red + green + blue == 0) return
-    val reach = if (soft) radius else radius + FRINGE
+    val reach = if (soft) radius * GlowFalloff.REACH else radius + FRINGE
     val minX = floor(min(x0, x1) - reach).toInt().coerceIn(0, width - 1)
     val maxX = ceil(max(x0, x1) + reach).toInt().coerceIn(0, width - 1)
     val minY = floor(min(y0, y1) - reach).toInt().coerceIn(0, height - 1)
@@ -607,8 +761,7 @@ private fun paintSegment(
             val dist = distanceToSegment(x + 0.5f, y + 0.5f, x0, y0, x1, y1)
             if (dist <= reach) {
                 val cover = if (soft) {
-                    val u = 1f - dist / radius
-                    u * u
+                    GlowFalloff.cover(dist / reach)
                 } else if (dist <= radius) {
                     1f
                 } else {
@@ -629,7 +782,8 @@ private fun paintSegment(
 }
 
 private fun paintDisc(pixels: IntArray, width: Int, height: Int, disc: BackdropDisc) {
-    val reach = disc.radius + FRINGE
+    val reach = disc.radius * GlowFalloff.DISC_REACH
+    if (reach < 0.4f) return
     val minX = floor(disc.cx - reach).toInt().coerceIn(0, width - 1)
     val maxX = ceil(disc.cx + reach).toInt().coerceIn(0, width - 1)
     val minY = floor(disc.cy - reach).toInt().coerceIn(0, height - 1)
@@ -641,8 +795,7 @@ private fun paintDisc(pixels: IntArray, width: Int, height: Int, disc: BackdropD
         while (x <= maxX) {
             val dist = hypot(x + 0.5f - disc.cx, y + 0.5f - disc.cy)
             if (dist <= reach) {
-                val falloff = (1f - dist / disc.radius).coerceAtLeast(0f)
-                val cover = if (dist <= disc.radius) falloff else falloff * (reach - dist) / FRINGE
+                val cover = GlowFalloff.cover(dist / reach, GlowFalloff.DISC_TIGHTNESS, GlowFalloff.DISC_RIM)
                 val index = row + x
                 pixels[index] = maxBlend(
                     pixels[index],

@@ -48,9 +48,11 @@ import androidx.compose.ui.draw.scale
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
+import android.graphics.RuntimeShader
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.graphics.ShaderBrush
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.graphics.drawscope.Stroke
@@ -95,6 +97,7 @@ import app.foldcade.language.PanelLevel
 import app.foldcade.language.Side
 import app.foldcade.language.SidePanel
 import app.foldcade.language.TypeRamp
+import app.foldcade.language.GlowFalloff
 import app.foldcade.language.builtInTheme
 import app.foldcade.language.connectFields
 import app.foldcade.language.connectHint
@@ -269,8 +272,8 @@ private fun Picker(
         val gap = maxWidth * Metrics.gapFraction
         val inner = maxWidth - inset * 2
         val rough = (inner - gap * (Metrics.columns - 1)) / Metrics.columns
-        // Room outside each cell so the focus glow fades out before the pager clip.
-        val pad = focusOutset(rough) + px(40f)
+        // Room outside each cell so the focus glow reaches black before the pager clip.
+        val pad = focusOutset(rough) + px(FOCUS_GLOW_PAD)
         val cell = (inner - pad * 2 - gap * (Metrics.columns - 1)) / Metrics.columns
         val titlePx = rememberTextMeasurer().measure(
             text = "Ag",
@@ -797,6 +800,10 @@ private fun Grid(
     }
 }
 
+private const val FOCUS_GLOW_OVERFLOW = 64f
+private const val REST_GLOW_OVERFLOW = 18f
+private const val FOCUS_GLOW_PAD = 80f
+
 @Composable
 private fun emptyShelf(grid: HomeGrid): String = when (grid) {
     HomeGrid.AndroidGames -> Copy.noGames
@@ -838,6 +845,8 @@ private fun Cell(
             Motion.leave(Motion.durationFocus, animatorScale)
         },
     )
+    val glowShader = remember { RuntimeShader(SoftGlow.source) }
+    val glowStops = remember { FloatArray(GlowFalloff.STOPS.size) }
     Column(
         horizontalAlignment = Alignment.CenterHorizontally,
         modifier = Modifier.zIndex(if (focused) 1f else 0f),
@@ -857,25 +866,18 @@ private fun Cell(
                     val cornerPx = corner.toPx()
                     if (glow != null) {
                         val half = min(bounds.width, bounds.height) * 0.5f
-                        // Halo sits outside the plate and reaches transparent before the pager pad.
-                        val overflow = if (focused) 34f else 8f
+                        val overflow = if (focused) FOCUS_GLOW_OVERFLOW else REST_GLOW_OVERFLOW
                         val reach = half + overflow
-                        val edge = (half / reach).coerceIn(0.5f, 0.92f)
-                        val ring = if (focused) 0.95f else 0.16f
-                        val tail = if (focused) 0.42f else 0.05f
-                        drawCircle(
-                            brush = Brush.radialGradient(
-                                colorStops = arrayOf(
-                                    0f to glow.copy(alpha = ring),
-                                    edge to glow.copy(alpha = ring),
-                                    (edge + 1f) / 2f to glow.copy(alpha = tail),
-                                    1f to Color.Transparent,
-                                ),
-                                center = center,
-                                radius = reach,
-                            ),
-                            radius = reach,
-                            center = center,
+                        val tightness = if (focused) GlowFalloff.TILE_TIGHTNESS else GlowFalloff.REST_TIGHTNESS
+                        val rim = if (focused) GlowFalloff.TILE_RIM else GlowFalloff.REST_RIM
+                        val peak = if (focused) GlowFalloff.TILE_PEAK else GlowFalloff.REST_PEAK
+                        SoftGlow.fillStops(glowStops, tightness, rim)
+                        glowShader.prepareTile(center, reach, glow, peak, glowStops)
+                        val pad = reach + 1f
+                        drawRect(
+                            brush = ShaderBrush(glowShader),
+                            topLeft = Offset(center.x - pad, center.y - pad),
+                            size = Size(pad * 2f, pad * 2f),
                         )
                     }
                     if (glow != null || icon != null) {
