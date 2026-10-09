@@ -68,8 +68,6 @@ class ThemeZipTest {
             assertEquals(source.trim(), packed.trim())
             listOf(
                 "font.ttf",
-                "wallpaper-top.png",
-                "wallpaper-bottom.png",
                 "preview.png",
                 "sounds/move.ogg",
                 "sounds/activate.ogg",
@@ -81,6 +79,8 @@ class ThemeZipTest {
                 "marks/beam.png",
                 "LICENSE",
             ).forEach { name -> assertNotNull(name, zip.getEntry(name)) }
+            assertNull(zip.getEntry("wallpaper-top.png"))
+            assertNull(zip.getEntry("wallpaper-bottom.png"))
         }
     }
 

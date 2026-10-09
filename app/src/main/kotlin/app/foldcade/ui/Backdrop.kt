@@ -1,7 +1,6 @@
 package app.foldcade.ui
 
 import androidx.compose.foundation.Canvas
-import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -14,12 +13,10 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.drawscope.Stroke
-import androidx.compose.ui.layout.ContentScale
 import app.foldcade.language.BackdropFrame
 import app.foldcade.language.BackgroundMotion
 import app.foldcade.language.MotionSpeed
@@ -29,7 +26,8 @@ import app.foldcade.language.rgb
 
 /**
  * Background layer only. Its clock does not follow focus, paging, or other UI motion.
- * Pauses when [running] is false. Speed Off and reduced motion hold a still frame.
+ * Pauses when [running] is false. Reduced motion holds a still frame.
+ * Static is dim and creeps a few pixels every few minutes while the clock runs.
  */
 @Composable
 fun Backdrop(
@@ -37,19 +35,7 @@ fun Backdrop(
     speed: MotionSpeed,
     animatorScale: Float,
     running: Boolean,
-    wallpaper: ImageBitmap?,
 ) {
-    if (motion == BackgroundMotion.Static) {
-        if (wallpaper != null) {
-            Image(
-                bitmap = wallpaper,
-                contentDescription = null,
-                modifier = Modifier.fillMaxSize(),
-                contentScale = ContentScale.Fit,
-            )
-        }
-        return
-    }
     if (motion == BackgroundMotion.Off) return
     MovingBackdrop(motion, speed, animatorScale, running)
 }
@@ -61,11 +47,16 @@ private fun MovingBackdrop(
     animatorScale: Float,
     running: Boolean,
 ) {
-    val clock = backdropClock(speed, animatorScale)
-    val moving = running && clock > 0f
+    val clock = if (motion == BackgroundMotion.Static) {
+        if (running && animatorScale > 0f) 1f else 0f
+    } else {
+        backdropClock(speed, animatorScale)
+    }
+    val moving = motion != BackgroundMotion.Static && running && clock > 0f
+    val ticking = running && clock > 0f
     var designTime by remember { mutableFloatStateOf(0f) }
-    LaunchedEffect(moving, clock) {
-        if (!moving) return@LaunchedEffect
+    LaunchedEffect(ticking, clock) {
+        if (!ticking) return@LaunchedEffect
         var last = 0L
         while (true) {
             withFrameNanos { frame ->

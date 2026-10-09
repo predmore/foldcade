@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
 """Generate the Afterglow theme's original art.
 
-The script is part of the GPLv3 program. The files it writes — font, wallpapers,
-marks, preview, and sounds — are the CC BY-SA 4.0 theme art.
+The script is part of the GPLv3 program. The files it writes — font, marks,
+preview, and sounds — are the CC BY-SA 4.0 theme art. Afterglow does not ship
+a wallpaper; Static is a dim ribbon frame drawn by the host.
 """
 
 from __future__ import annotations
@@ -804,33 +805,6 @@ MARKS = {
 }
 
 
-def wallpaper(width: int, height: int, spots) -> Image.Image:
-    image = Image.new("RGB", (width, height), (0, 0, 0))
-    pixels = image.load()
-    for y in range(height):
-        for x in range(width):
-            red = green = blue = 0.0
-            for cx, cy, radius, color, peak in spots:
-                dist = math.hypot(x - cx, y - cy) / radius
-                if dist >= 1:
-                    continue
-                strength = (1 - dist) ** 2 * peak
-                red += color[0] * strength
-                green += color[1] * strength
-                blue += color[2] * strength
-            pixels[x, y] = (min(255, int(red)), min(255, int(green)), min(255, int(blue)))
-    return image
-
-
-def black_fraction(image: Image.Image) -> float:
-    black = 0
-    total = image.size[0] * image.size[1]
-    for pixel in image.getdata():
-        if pixel == (0, 0, 0):
-            black += 1
-    return black / total
-
-
 def write_wav(path: Path, samples: list[float], rate: int = 44100):
     with wave.open(str(path), "w") as handle:
         handle.setnchannels(1)
@@ -893,8 +867,6 @@ def write_zip(destination: Path):
         "theme.json",
         "LICENSE",
         "font.ttf",
-        "wallpaper-top.png",
-        "wallpaper-bottom.png",
         "preview.png",
         "sounds/move.ogg",
         "sounds/activate.ogg",
@@ -943,26 +915,6 @@ def main():
         image = glow_mark(color, drawer)
         image.save(mark_dir / f"{name}.png", optimize=True)
         marks[name] = image
-    top = wallpaper(
-        1920,
-        1080,
-        [
-            (1760, 70, 620, (170, 120, 255), 0.34),
-            (110, 1010, 540, (255, 90, 140), 0.28),
-        ],
-    )
-    bottom = wallpaper(
-        1240,
-        1080,
-        [
-            (1140, 50, 460, (64, 214, 255), 0.30),
-            (70, 1030, 420, (255, 186, 72), 0.26),
-        ],
-    )
-    top.save(ROOT / "wallpaper-top.png", optimize=True)
-    bottom.save(ROOT / "wallpaper-bottom.png", optimize=True)
-    print(f"top black {black_fraction(top):.1%}")
-    print(f"bottom black {black_fraction(bottom):.1%}")
     build_sounds(ROOT / "sounds")
     build_preview(ROOT / "preview.png", font_path, marks)
     write_zip(ZIP_PATH)

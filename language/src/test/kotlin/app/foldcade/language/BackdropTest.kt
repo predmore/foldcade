@@ -1,7 +1,6 @@
 package app.foldcade.language
 
-import java.io.File
-import javax.imageio.ImageIO
+import kotlin.math.abs
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -47,9 +46,32 @@ class BackdropTest {
         assertEquals(0, off.litPixels)
         assertEquals(0, off.peak)
         layoutBackdrop(BackgroundMotion.Static, 10f, 1920f, 1080f, moving = true, frame)
-        assertEquals(0, litSample(frame, 320, 180).litPixels)
+        assertEquals(0, visibleEffects(frame))
+        assertTrue(litSample(frame, 1920, 1080).litPixels > 0)
         layoutBackdrop(BackgroundMotion.Ribbons, 4f, 1920f, 1080f, moving = false, frame)
         assertEquals(0, visibleEffects(frame))
+    }
+
+    @Test
+    fun staticCreepsAFewPixelsAndStaysDimmerThanRibbons() {
+        val frame = BackdropFrame()
+        layoutBackdrop(BackgroundMotion.Static, 0f, 1920f, 1080f, moving = true, frame)
+        val start = frame.lines[1].y.copyOf(frame.lines[1].count)
+        layoutBackdrop(BackgroundMotion.Static, 30f, 1920f, 1080f, moving = true, frame)
+        val soon = frame.lines[1].y
+        var soonShift = 0f
+        for (index in start.indices) soonShift = maxOf(soonShift, abs(soon[index] - start[index]))
+        assertTrue("30s shift $soonShift", soonShift < 1.5f)
+        layoutBackdrop(BackgroundMotion.Static, Backdrop.STATIC_SHIFT_SECONDS, 1920f, 1080f, moving = true, frame)
+        val later = frame.lines[1].y
+        var shift = 0f
+        for (index in start.indices) shift = maxOf(shift, abs(later[index] - start[index]))
+        assertTrue("3 min shift $shift", shift in 1f..8f)
+        val ribbons = measure(BackgroundMotion.Ribbons, moving = true)
+        val still = measure(BackgroundMotion.Static, moving = true)
+        assertTrue("static ${still.fraction} ribbons ${ribbons.fraction}", still.fraction <= 0.04f)
+        assertTrue(still.fraction < ribbons.fraction)
+        assertTrue(still.peak < ribbons.peak)
     }
 
     @Test
@@ -83,19 +105,14 @@ class BackdropTest {
     fun eachBackgroundHasAMeasuredLitFraction() {
         val ribbons = measure(BackgroundMotion.Ribbons, moving = true)
         val embers = measure(BackgroundMotion.Embers, moving = true)
-        val top = litPng("themes/afterglow/wallpaper-top.png")
-        val bottom = litPng("themes/afterglow/wallpaper-bottom.png")
+        val still = measure(BackgroundMotion.Static, moving = true)
         println(
             "LIT_PIXELS ribbons=${pct(ribbons.fraction)} peak=${ribbons.peak} " +
                 "embers=${pct(embers.fraction)} peak=${embers.peak} " +
-                "staticTop=${pct(top.fraction)} staticBottom=${pct(bottom.fraction)} off=0",
+                "static=${pct(still.fraction)} peak=${still.peak} off=0",
         )
-        assertEquals(1920, top.width)
-        assertEquals(1080, top.height)
-        assertEquals(1240, bottom.width)
-        assertEquals(1080, bottom.height)
-        assertTrue(top.fraction > 0f)
-        assertTrue(bottom.fraction > 0f)
+        assertTrue(still.fraction > 0f)
+        assertTrue(still.fraction <= 0.04f)
     }
 
     private fun measure(motion: BackgroundMotion, moving: Boolean): LitSample {
@@ -114,34 +131,5 @@ class BackdropTest {
         return worst.copy(peak = peak)
     }
 
-    private fun litPng(relative: String): PngLit {
-        val image = ImageIO.read(repoFile(relative))
-        var lit = 0
-        for (y in 0 until image.height) {
-            for (x in 0 until image.width) {
-                val pixel = image.getRGB(x, y)
-                val red = (pixel shr 16) and 255
-                val green = (pixel shr 8) and 255
-                val blue = pixel and 255
-                val channel = maxOf(red, green, blue)
-                if (channel > Backdrop.LIT_CHANNEL) lit++
-            }
-        }
-        val total = image.width * image.height
-        return PngLit(image.width, image.height, lit.toFloat() / total.toFloat())
-    }
-
     private fun pct(fraction: Float): String = "%.2f%%".format(fraction * 100f)
-
-    private fun repoFile(relative: String): File {
-        val cwd = File(".").canonicalFile
-        val candidates = listOf(
-            File(cwd, relative),
-            File(cwd, "../$relative"),
-            File(cwd.parentFile, relative),
-        )
-        return candidates.firstOrNull { it.isFile } ?: error("missing $relative from $cwd")
-    }
-
-    private data class PngLit(val width: Int, val height: Int, val fraction: Float)
 }

@@ -73,7 +73,6 @@ import app.foldcade.api.Panel
 import app.foldcade.api.Surface
 import app.foldcade.batteryLabel
 import app.foldcade.millisUntilNextMinute
-import app.foldcade.language.BackgroundMotion
 import app.foldcade.language.Chrome
 import app.foldcade.language.ConnectField
 import app.foldcade.language.Copy
@@ -116,18 +115,11 @@ fun PanelHost(activity: FoldcadeHomeActivity, displays: Displays) {
     val scale = Motion.animatorScale(LocalContext.current.contentResolver)
     CompositionLocalProvider(LocalFoldTheme provides paint) {
         Box(Modifier.fillMaxSize().background(paint.theme.background)) {
-            val motion = app.shell.model.backgroundMotion
-            val wall = when (panel) {
-                Panel.Top -> paint.wallpaperTop
-                Panel.Bottom -> paint.wallpaperBottom
-                null -> null
-            }
             Backdrop(
-                motion = motion,
+                motion = app.shell.model.backgroundMotion,
                 speed = app.shell.model.motionSpeed,
                 animatorScale = scale,
                 running = activity.shellVisible && session.bothScreensFree(),
-                wallpaper = if (motion == BackgroundMotion.Static) wall else null,
             )
             if (panel == null) return@Box
             val screen = if (panel == Panel.Top) HostScreen.Top else HostScreen.Bottom

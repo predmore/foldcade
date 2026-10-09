@@ -4,7 +4,6 @@ Foldcade’s original default theme. True black, rounded tiles, a soft neon glow
 
 The art in this directory is licensed under [Creative Commons Attribution-ShareAlike 4.0 International](LICENSE):
 
-- `wallpaper-top.png` and `wallpaper-bottom.png`
 - `marks/` (`dual`, `pocket`, `desk`, `beam`)
 - `preview.png`
 - `font.ttf` (Foldcade Afterglow)
@@ -14,7 +13,7 @@ The art in this directory is licensed under [Creative Commons Attribution-ShareA
 
 These marks are Foldcade drawings. They are not console logos, and they are not taken from iiSU, Cocoon, Nintendo, Sony, or Disney.
 
-`theme.json` is the v1 theme zip: colors, and the host also reads the font, wallpapers, sounds, `iconRadius`, `artScale`, and `backgroundMotion`. `background` and `surface` are `#000000`. Afterglow sets `backgroundMotion` to `ribbons` (thin teal and amber trails on black). A theme may set `embers`, `static` (the wallpapers), or `off`. A field the host cannot read falls back to the built-in theme, and a missing `backgroundMotion` stays off.
+`theme.json` is the v1 theme zip: colors, and the host also reads the font, sounds, `iconRadius`, `artScale`, and `backgroundMotion`. Optional wallpaper files are still accepted for another theme. Afterglow does not ship one. `background` and `surface` are `#000000`. Afterglow sets `backgroundMotion` to `ribbons` (thin teal and amber trails on black). A theme may set `embers`, `static`, or `off`. Static is a dimmer, almost still frame of those ribbons, shifted a few pixels every few minutes. A field the host cannot read falls back to the built-in theme, and a missing `backgroundMotion` stays off.
 
 The grid draws a separate set of original line glyphs (`mark_dual`, `mark_pocket`, `mark_desk`, `mark_beam` in the app). Those vectors are program source under the GNU GPLv3. The `marks/` images stay in this zip as the painted marks and stay CC BY-SA 4.0. Neither set is a console logo.
 

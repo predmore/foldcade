@@ -172,6 +172,11 @@ object Backdrop {
     const val MAX_CLOCK = 1.25f
 
     const val EFFECT_LOOP = 22f
+
+    /** Static is a dimmed ribbon frame that creeps a few pixels every few minutes. */
+    const val STATIC_DIM = 0.28f
+    const val STATIC_SHIFT_PX = 4f
+    const val STATIC_SHIFT_SECONDS = 180f
 }
 
 fun rgb(red: Int, green: Int, blue: Int): Color = Color(red, green, blue)
@@ -200,9 +205,13 @@ fun layoutBackdrop(
     into.clear()
     if (width < 2f || height < 2f) return
     when (motion) {
-        BackgroundMotion.Ribbons -> layoutRibbons(timeSec, width, height, moving, into)
+        BackgroundMotion.Ribbons -> layoutRibbons(timeSec, width, height, moving, 1f, into)
         BackgroundMotion.Embers -> layoutEmbers(timeSec, width, height, moving, into)
-        BackgroundMotion.Static, BackgroundMotion.Off -> Unit
+        BackgroundMotion.Static -> {
+            val creep = timeSec * (Backdrop.STATIC_SHIFT_PX / width) / Backdrop.STATIC_SHIFT_SECONDS
+            layoutRibbons(creep * Backdrop.DRIFT_SECONDS, width, height, moving = false, Backdrop.STATIC_DIM, into)
+        }
+        BackgroundMotion.Off -> Unit
     }
 }
 
@@ -287,10 +296,11 @@ private fun layoutRibbons(
     width: Float,
     height: Float,
     moving: Boolean,
+    dim: Float,
     into: BackdropFrame,
 ) {
     val travel = timeSec / Backdrop.DRIFT_SECONDS
-    val breath = if (moving) breath(timeSec) else 1f
+    val breath = (if (moving) breath(timeSec) else 1f) * dim
     val ys = Array(strands.size) { FloatArray(BackdropLine.POINTS) }
     val xs = FloatArray(BackdropLine.POINTS)
     val steps = BackdropLine.POINTS - 1
