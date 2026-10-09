@@ -32,6 +32,7 @@ import app.foldcade.api.plugin.StartDisplay
 import app.foldcade.language.DialogButton
 import app.foldcade.language.DialogKind
 import app.foldcade.language.Effect
+import app.foldcade.language.HomeGrid
 import app.foldcade.language.HostScreen
 import app.foldcade.language.closeBothPanelDialog
 import app.foldcade.language.missingPlayerDialog
@@ -133,13 +134,14 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
 
     fun dispatch(effect: Effect?) {
         when (effect) {
-            is Effect.Launch -> launchGame(effect.index)
+            is Effect.Launch -> launchFocused()
             Effect.CycleLaunchTarget -> cycleLaunchTarget()
             Effect.AddFolder -> {
                 folderPurpose = FolderPurpose.Library
                 folderPicker.launch(null)
             }
             is Effect.ChoosePlayerSave -> choosePlayerSave(effect.playerId)
+            Effect.PinApp, Effect.MoveApp, Effect.HideApp, Effect.ShowApp -> Unit
             Effect.OpenConnect -> foldcade.shell.openConnect(foldcade.store.rommOrigin().orEmpty())
             Effect.SaveRommToken -> saveRommToken()
             is Effect.ForgetCredentials -> forget(effect.pluginId)
@@ -153,6 +155,7 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         acceptHome(intent)
+        acceptShelf(intent)
         val roleManager = getSystemService(RoleManager::class.java)
         val held = roleManager.isRoleHeld(RoleManager.ROLE_HOME)
         foldcade.shell.setHomeRoleHeld(held)
@@ -172,6 +175,7 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
         display?.displayId?.let { foldcade.externalPlay.endIfDisplayHome(foldcade.plays, it) }
         resumed = true
         refreshShellVisible()
+        foldcade.reloadInstalledApps()
         foldcade.music.onHomeResume()
     }
 
@@ -191,6 +195,7 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
         super.onNewIntent(intent)
         setIntent(intent)
         acceptHome(intent)
+        acceptShelf(intent)
     }
 
     override fun onDestroy() {
@@ -261,6 +266,47 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
                 startPlayer(game, decision)
             }
         }
+    }
+
+    private fun acceptShelf(intent: Intent) {
+        val grid = when (intent.getStringExtra(EXTRA_ANDROID_SHELF)) {
+            "games" -> HomeGrid.AndroidGames
+            "apps" -> HomeGrid.Apps
+            else -> return
+        }
+        foldcade.shell.showHomeGrid(grid)
+    }
+
+    /**
+     * Same top or bottom placement as any other single-screen launch.
+     * [PluginHost.openInstalledApp] does not read a save folder, so a missing one does not block this.
+     */
+    private fun launchInstalled(game: ShelfGame) {
+        val pkg = game.androidPackage ?: return
+        val opened = foldcade.plugins.openInstalledApp(pkg)
+        val launch = packageManager.getLaunchIntentForPackage(pkg) ?: return
+        val external = ExternalApp(opened.sessionId, occupiesBothDisplays = false)
+        val session = foldcade.store.session
+        val panel = session.singleScreenTarget(external.id, game.platformId) ?: return
+        val assignment = displays.assignment(session.defaultDisplayIsTop)
+        val displayId = when (panel) {
+            Panel.Top -> assignment.topDisplayId
+            Panel.Bottom -> assignment.bottomDisplayId ?: return
+        }
+        foldcade.music.onExternalLaunch()
+        foldcade.store.place(panel, external)
+        val options = ActivityOptions.makeBasic().apply { launchDisplayId = displayId }
+        startActivity(launch, options.toBundle())
+    }
+
+    private fun launchFocused() {
+        val game = foldcade.shell.focusedGame() ?: return
+        if (game.androidPackage != null) {
+            launchInstalled(game)
+            return
+        }
+        val index = Shelf.games.indexOfFirst { it.id == game.id }
+        if (index >= 0) launchGame(index) else launchStandIn(game)
     }
 
     private fun launchStandIn(game: ShelfGame) {
@@ -528,6 +574,8 @@ private fun shelfGame(game: ShelfGame): Game = Game(
     availability = if (game.contentUri == null) Availability.RemoteOnly else Availability.LocalOnly,
     label = game.title,
 )
+
+internal const val EXTRA_ANDROID_SHELF = "app.foldcade.extra.SHELF"
 
 class PrimaryHomeActivity : FoldcadeHomeActivity() {
     override val launchesCompanion: Boolean = true

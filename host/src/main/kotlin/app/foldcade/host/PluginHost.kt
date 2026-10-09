@@ -29,6 +29,15 @@ import kotlin.coroutines.cancellation.CancellationException
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.withContext
 
+/**
+ * An installed app launch.
+ * [needsSaveFolder] is false. The shell must not refuse the launch because a save directory is missing.
+ */
+data class InstalledAppLaunch(
+    val sessionId: String,
+    val needsSaveFolder: Boolean = false,
+)
+
 /** Binary name of the built-in RomM entry. Resolved on the host class loader, then compared by identity. */
 private const val BUNDLED_ROMM_ENTRY = "app.foldcade.plugins.romm.RommEntry"
 
@@ -227,6 +236,20 @@ class PluginHost(
     fun platformDefinitions(): List<Platform> = catalog.definitions
 
     fun player(id: String): Player? = catalog.players[id]
+
+    /**
+     * Installed Android apps and games start here.
+     * The shell then places the app on the top or bottom panel.
+     * This does not call [prepareLaunch] and does not read a save folder.
+     * [InstalledAppLaunch.needsSaveFolder] stays false, so a missing save folder never blocks the launch.
+     * Play-session recording watches that same placement. There is no second launch path.
+     */
+    fun openInstalledApp(packageName: String): InstalledAppLaunch =
+        InstalledAppLaunch(sessionId = "android:$packageName")
+
+    /** Package ids declared by registered players. Apps hides these until the user shows one. */
+    fun playerPackageNames(): Set<String> =
+        catalog.players.values.flatMap { it.packageNames }.filter { it.isNotBlank() }.toSet()
 
     /**
      * Players stored for [platformId] or one of its aliases.

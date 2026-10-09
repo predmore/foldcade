@@ -2,6 +2,8 @@ package app.foldcade.ui
 
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.FiniteAnimationSpec
+import androidx.compose.foundation.Image
+import androidx.core.graphics.drawable.toBitmap
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
@@ -22,6 +24,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.requiredWidth
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.text.BasicText
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardOptions
@@ -47,6 +50,9 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
@@ -68,7 +74,6 @@ import androidx.compose.ui.zIndex
 import app.foldcade.Displays
 import app.foldcade.FoldcadeApp
 import app.foldcade.FoldcadeHomeActivity
-import app.foldcade.Shelf
 import app.foldcade.api.Panel
 import app.foldcade.api.Surface
 import app.foldcade.batteryLabel
@@ -76,6 +81,8 @@ import app.foldcade.millisUntilNextMinute
 import app.foldcade.language.Chrome
 import app.foldcade.language.ConnectField
 import app.foldcade.language.Copy
+import app.foldcade.language.HomeGrid
+import app.foldcade.language.homeGridLabel
 import app.foldcade.language.DialogButton
 import app.foldcade.language.Effect
 import app.foldcade.language.DialogState
@@ -317,6 +324,11 @@ private fun Picker(
                     model.panel?.side == Side.Left
                 if (libraryFailed) {
                     Unavailable()
+                } else if (model.homeGrid != HomeGrid.StandIns && model.count == 0) {
+                    BasicText(
+                        text = emptyShelf(model.homeGrid),
+                        style = text(theme.muted, TypeRamp.dialogBody, theme),
+                    )
                 } else {
                     PagedGrid(
                         app = app,
@@ -630,6 +642,10 @@ private fun ChromeRow(app: FoldcadeApp, screen: HostScreen) {
     val showLaunch = model.panel == null && model.dialog == null && !model.connectOpen &&
         app.store.session.launchTargetControlVisible(game?.occupiesBothDisplays == true)
     Column {
+        val shelf = homeGridLabel(model.homeGrid)
+        if (shelf != null) {
+            BasicText(text = shelf, style = text(theme.onBackground, TypeRamp.sideRow, theme))
+        }
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(px(12f))) {
             if (showLaunch && game != null) {
                 val target = app.store.session.singleScreenTarget(game.id, game.platformId)
@@ -735,7 +751,7 @@ private fun Grid(
                         Box(Modifier.size(cell))
                     } else {
                         val source = order.getOrElse(index) { index }
-                        val game = Shelf.games.getOrNull(source)
+                        val game = shell.tileFromOrder(source)
                         val focused = shell.model.dialog == null &&
                             shell.model.panel == null &&
                             focus.chrome == null &&
@@ -747,12 +763,33 @@ private fun Grid(
                             focused = focused,
                             size = cell,
                             corner = radius,
+                            icon = launcherIcon(game?.androidPackage),
+                            favorite = game?.favorite == true,
                             onClick = { shell.touchCell(index, screen) },
                         )
                     }
                 }
             }
         }
+    }
+}
+
+@Composable
+private fun emptyShelf(grid: HomeGrid): String = when (grid) {
+    HomeGrid.AndroidGames -> Copy.noGames
+    HomeGrid.Apps -> Copy.noApps
+    HomeGrid.HiddenApps -> Copy.noHiddenApps
+    HomeGrid.StandIns -> Copy.noGames
+}
+
+@Composable
+private fun launcherIcon(packageName: String?): ImageBitmap? {
+    val context = LocalContext.current
+    return remember(packageName) {
+        if (packageName == null) return@remember null
+        val drawable = runCatching { context.packageManager.getApplicationIcon(packageName) }.getOrNull()
+            ?: return@remember null
+        runCatching { drawable.toBitmap().asImageBitmap() }.getOrNull()
     }
 }
 
@@ -764,6 +801,8 @@ private fun Cell(
     focused: Boolean,
     size: Dp,
     corner: Dp,
+    icon: ImageBitmap?,
+    favorite: Boolean,
     onClick: () -> Unit,
 ) {
     val theme = foldTheme()
@@ -790,60 +829,85 @@ private fun Cell(
                     scaleY = drawn
                 }
                 .drawBehind {
-                    val glow = accent ?: return@drawBehind
+                    val glow = accent
                     val bounds = this.size
                     val cornerPx = corner.toPx()
-                    val half = min(bounds.width, bounds.height) * 0.5f
-                    // Halo sits outside the plate and reaches transparent before the pager pad.
-                    val overflow = if (focused) 34f else 8f
-                    val reach = half + overflow
-                    val edge = (half / reach).coerceIn(0.5f, 0.92f)
-                    val ring = if (focused) 0.95f else 0.16f
-                    val tail = if (focused) 0.42f else 0.05f
-                    drawCircle(
-                        brush = Brush.radialGradient(
-                            colorStops = arrayOf(
-                                0f to glow.copy(alpha = ring),
-                                edge to glow.copy(alpha = ring),
-                                (edge + 1f) / 2f to glow.copy(alpha = tail),
-                                1f to Color.Transparent,
+                    if (glow != null) {
+                        val half = min(bounds.width, bounds.height) * 0.5f
+                        // Halo sits outside the plate and reaches transparent before the pager pad.
+                        val overflow = if (focused) 34f else 8f
+                        val reach = half + overflow
+                        val edge = (half / reach).coerceIn(0.5f, 0.92f)
+                        val ring = if (focused) 0.95f else 0.16f
+                        val tail = if (focused) 0.42f else 0.05f
+                        drawCircle(
+                            brush = Brush.radialGradient(
+                                colorStops = arrayOf(
+                                    0f to glow.copy(alpha = ring),
+                                    edge to glow.copy(alpha = ring),
+                                    (edge + 1f) / 2f to glow.copy(alpha = tail),
+                                    1f to Color.Transparent,
+                                ),
+                                center = center,
+                                radius = reach,
                             ),
-                            center = center,
                             radius = reach,
-                        ),
-                        radius = reach,
-                        center = center,
-                    )
-                    drawRoundRect(
-                        color = theme.background,
-                        cornerRadius = CornerRadius(cornerPx, cornerPx),
-                    )
-                    val strokePx = if (focused) 9f else 2.5f
-                    val inset = strokePx / 2f
-                    drawRoundRect(
-                        color = glow.copy(alpha = if (focused) 1f else 0.42f),
-                        topLeft = Offset(inset, inset),
-                        size = Size(bounds.width - strokePx, bounds.height - strokePx),
-                        cornerRadius = CornerRadius(cornerPx, cornerPx),
-                        style = Stroke(width = strokePx),
-                    )
+                            center = center,
+                        )
+                    }
+                    if (glow != null || icon != null) {
+                        drawRoundRect(
+                            color = theme.background,
+                            cornerRadius = CornerRadius(cornerPx, cornerPx),
+                        )
+                        val stroke = glow ?: theme.focus
+                        val strokePx = if (focused) 9f else 2.5f
+                        val inset = strokePx / 2f
+                        drawRoundRect(
+                            color = stroke.copy(alpha = if (focused) 1f else 0.42f),
+                            topLeft = Offset(inset, inset),
+                            size = Size(bounds.width - strokePx, bounds.height - strokePx),
+                            cornerRadius = CornerRadius(cornerPx, cornerPx),
+                            style = Stroke(width = strokePx),
+                        )
+                    }
                 }
                 .hostPress(onClick),
             contentAlignment = Alignment.Center,
         ) {
-            val glyphAlpha = if (focused) 1f else 0.58f
-            if (mark != null && markGlyph(mark) != null) {
-                Box(Modifier.graphicsLayer { alpha = glyphAlpha }) {
-                    MarkIcon(mark, theme.artScale)
+            if (icon != null) {
+                Image(
+                    bitmap = icon,
+                    contentDescription = title,
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .scale(theme.artScale),
+                    contentScale = ContentScale.Fit,
+                )
+                if (favorite) {
+                    Box(
+                        Modifier
+                            .align(Alignment.TopEnd)
+                            .padding(px(8f))
+                            .size(px(10f))
+                            .background(theme.focus, CircleShape),
+                    )
                 }
             } else {
-                BasicText(
-                    text = monogram(title),
-                    modifier = Modifier.scale(theme.artScale).graphicsLayer { alpha = glyphAlpha },
-                    style = text(theme.onBackground, TypeRamp.heroTitle, theme),
-                    maxLines = 1,
-                    overflow = TextOverflow.Clip,
-                )
+                val glyphAlpha = if (focused) 1f else 0.58f
+                if (mark != null && markGlyph(mark) != null) {
+                    Box(Modifier.graphicsLayer { alpha = glyphAlpha }) {
+                        MarkIcon(mark, theme.artScale)
+                    }
+                } else {
+                    BasicText(
+                        text = monogram(title),
+                        modifier = Modifier.scale(theme.artScale).graphicsLayer { alpha = glyphAlpha },
+                        style = text(theme.onBackground, TypeRamp.heroTitle, theme),
+                        maxLines = 1,
+                        overflow = TextOverflow.Clip,
+                    )
+                }
             }
         }
         if (showTitle) {

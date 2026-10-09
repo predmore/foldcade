@@ -171,6 +171,13 @@ sealed interface Row {
     data class Notice(val id: String) : Row
     data class SignOut(val pluginId: String, val label: String) : Row
     data class PlayerSave(val playerId: String) : Row
+    data object AndroidGames : Row
+    data object Apps : Row
+    data object HiddenApps : Row
+    data object PinApp : Row
+    data object MoveApp : Row
+    data object HideApp : Row
+    data object ShowApp : Row
 }
 
 data class PlayerSaveSetting(
@@ -195,6 +202,9 @@ fun leftRows(
     add(Row.Background)
     add(Row.MotionSpeed)
     playerSaves.forEach { add(Row.PlayerSave(it.playerId)) }
+    add(Row.AndroidGames)
+    add(Row.Apps)
+    add(Row.HiddenApps)
 }
 
 data class SignedInBackend(
@@ -215,8 +225,21 @@ fun libraryRows(backends: List<String>, signedIn: List<SignedInBackend> = emptyL
         signedIn.map { Row.SignOut(it.pluginId, it.label) } +
         listOf(Row.AddFolder, Row.Connect)
 
-fun rightRows(showLaunchTarget: Boolean, notices: List<FoldNotice>): List<Row> = buildList {
+fun rightRows(
+    showLaunchTarget: Boolean,
+    notices: List<FoldNotice>,
+    actions: AppActions? = null,
+): List<Row> = buildList {
     if (showLaunchTarget) add(Row.LaunchTarget)
+    if (actions != null) {
+        if (actions.hiddenShelf) {
+            add(Row.ShowApp)
+        } else {
+            add(Row.PinApp)
+            add(Row.MoveApp)
+            add(Row.HideApp)
+        }
+    }
     notices.forEach { add(Row.Notice(it.id)) }
 }
 
@@ -225,7 +248,7 @@ fun panelRows(panel: SidePanel, model: PickerModel): List<Row> = when (panel.sid
         PanelLevel.Root -> leftRows(model.homeRoleHeld, model.playerSaves)
         PanelLevel.Library -> libraryRows(model.backends, model.signedIn)
     }
-    Side.Right -> rightRows(model.showLaunchTarget, model.notices)
+    Side.Right -> rightRows(model.showLaunchTarget, model.notices, model.appActions)
 }
 
 fun backgroundLabel(motion: BackgroundMotion): String = when (motion) {
@@ -267,6 +290,13 @@ fun rowText(row: Row, model: PickerModel): RowText = when (row) {
         val chosen = if (setting?.chosen == true) Copy.playerSavesSet else Copy.playerSavesUnset
         RowText("${setting?.label ?: row.playerId} saves", chosen)
     }
+    Row.AndroidGames -> RowText(Copy.androidGames)
+    Row.Apps -> RowText(Copy.apps)
+    Row.HiddenApps -> RowText(Copy.hiddenApps)
+    Row.PinApp -> RowText(if (model.appActions?.favorite == true) Copy.unpin else Copy.pin)
+    Row.MoveApp -> RowText(if (model.appActions?.onGamesShelf == true) Copy.moveToApps else Copy.moveToGames)
+    Row.HideApp -> RowText(Copy.hideApp)
+    Row.ShowApp -> RowText(Copy.showApp)
 }
 
 fun rowLabel(row: Row, model: PickerModel): String {
@@ -296,6 +326,10 @@ sealed interface Effect {
     data object SaveRommToken : Effect
     data object RequestHome : Effect
     data class ChoosePlayerSave(val playerId: String) : Effect
+    data object PinApp : Effect
+    data object MoveApp : Effect
+    data object HideApp : Effect
+    data object ShowApp : Effect
 }
 
 data class PickerModel(
@@ -335,6 +369,8 @@ data class PickerModel(
     val reLoginPending: Boolean = false,
     val unavailable: Boolean = false,
     val playerSaves: List<PlayerSaveSetting> = emptyList(),
+    val homeGrid: HomeGrid = HomeGrid.StandIns,
+    val appActions: AppActions? = null,
 )
 
 fun reduce(
@@ -655,8 +691,28 @@ private fun activateRow(
         Row.LaunchTarget -> model.copy(panel = panel, launchOnBottom = !model.launchOnBottom) to Effect.CycleLaunchTarget
         is Row.Notice -> model.copy(panel = panel, notices = model.notices.filter { it.id != row.id }) to null
         is Row.PlayerSave -> model.copy(panel = null, focus = panel.grid) to Effect.ChoosePlayerSave(row.playerId)
+        Row.AndroidGames -> openGrid(model, panel, HomeGrid.AndroidGames)
+        Row.Apps -> openGrid(model, panel, HomeGrid.Apps)
+        Row.HiddenApps -> openGrid(model, panel, HomeGrid.HiddenApps)
+        Row.PinApp -> model to Effect.PinApp
+        Row.MoveApp -> model.copy(panel = null, focus = panel.grid) to Effect.MoveApp
+        Row.HideApp -> model.copy(panel = null, focus = panel.grid) to Effect.HideApp
+        Row.ShowApp -> model.copy(panel = null, focus = panel.grid) to Effect.ShowApp
     }
 }
+
+private fun openGrid(
+    model: PickerModel,
+    panel: SidePanel,
+    grid: HomeGrid,
+): Pair<PickerModel, Effect?> = model.copy(
+    panel = null,
+    focus = GridFocus(),
+    arranging = false,
+    hold = null,
+    order = emptyList(),
+    homeGrid = grid,
+) to null
 
 /** A tap on a dialog button focuses that button and activates it. */
 fun focusAndActivateDialog(model: PickerModel, index: Int): Pair<PickerModel, Effect?> {

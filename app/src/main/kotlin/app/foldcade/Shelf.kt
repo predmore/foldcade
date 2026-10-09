@@ -10,6 +10,8 @@ data class ShelfGame(
     val mark: String? = null,
     /** Content URI the player can open. Null until a library hands one over. */
     val contentUri: String? = null,
+    val androidPackage: String? = null,
+    val favorite: Boolean = false,
 )
 
 object Shelf {

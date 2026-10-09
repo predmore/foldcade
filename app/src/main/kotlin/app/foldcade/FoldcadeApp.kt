@@ -1,6 +1,10 @@
 package app.foldcade
 
 import android.app.Application
+import android.content.BroadcastReceiver
+import android.content.Context
+import android.content.Intent
+import android.content.IntentFilter
 import app.foldcade.api.plugin.CredentialLookup
 import app.foldcade.api.plugin.CredentialStore
 import app.foldcade.api.plugin.RommCredentials
@@ -62,6 +66,17 @@ class FoldcadeApp : Application() {
     private val pluginLoad = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private lateinit var rommPublish: RommPublish
 
+    private val packageChanges = object : BroadcastReceiver() {
+        override fun onReceive(context: Context?, intent: Intent?) {
+            when (intent?.action) {
+                Intent.ACTION_PACKAGE_ADDED,
+                Intent.ACTION_PACKAGE_REMOVED,
+                Intent.ACTION_PACKAGE_CHANGED,
+                -> reloadInstalledApps()
+            }
+        }
+    }
+
     override fun onCreate() {
         super.onCreate()
         store = SessionStore(getSharedPreferences("foldcade", MODE_PRIVATE))
@@ -105,13 +120,36 @@ class FoldcadeApp : Application() {
                 )
             },
         )
+        registerReceiver(
+            packageChanges,
+            IntentFilter().apply {
+                addAction(Intent.ACTION_PACKAGE_ADDED)
+                addAction(Intent.ACTION_PACKAGE_REMOVED)
+                addAction(Intent.ACTION_PACKAGE_CHANGED)
+                addDataScheme("package")
+            },
+            RECEIVER_EXPORTED,
+        )
         refreshCredentials()
+        reloadInstalledApps()
         pluginLoad.launch {
             plugins.load(classLoader)
             restorePlayerSaveFolders()
             publishRomm()
             withContext(Dispatchers.Main.immediate) {
                 shell.refreshPlayerSaves()
+            }
+            reloadInstalledApps()
+        }
+    }
+
+    /** MAIN / LAUNCHER list. Package add, remove, and change call this again. */
+    fun reloadInstalledApps() {
+        scope.launch {
+            val apps = InstalledAppCatalog(packageManager, packageName).list()
+            val players = plugins.playerPackageNames()
+            withContext(Dispatchers.Main.immediate) {
+                if (::shell.isInitialized) shell.setInstalledApps(apps, players)
             }
         }
     }

@@ -25,6 +25,7 @@ class HomeMusicSettingTest {
                 Row.Library, Row.Theme, Row.Primary, Row.Arrange, Row.Order,
                 Row.Music, Row.MusicTrack, Row.MusicVolume, Row.SetAsHome,
                 Row.Background, Row.MotionSpeed,
+                Row.AndroidGames, Row.Apps, Row.HiddenApps,
             ),
             leftRows(homeRoleHeld = false),
         )
@@ -33,6 +34,7 @@ class HomeMusicSettingTest {
                 Row.Library, Row.Theme, Row.Primary, Row.Arrange, Row.Order,
                 Row.Music, Row.MusicTrack, Row.MusicVolume,
                 Row.Background, Row.MotionSpeed,
+                Row.AndroidGames, Row.Apps, Row.HiddenApps,
             ),
             leftRows(homeRoleHeld = true),
         )

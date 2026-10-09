@@ -124,6 +124,19 @@ object Copy {
     const val notOnDevice = "Not on this device"
     const val onDevice = "On this device"
     const val inFolder = "In this folder"
+    const val androidGames = "Android Games"
+    const val apps = "Apps"
+    const val hiddenApps = "Hidden"
+    const val noApps = "No apps"
+    const val noHiddenApps = "No hidden apps"
+    const val pin = "Pin"
+    const val unpin = "Unpin"
+    const val moveToGames = "Move to Android Games"
+    const val moveToApps = "Move to Apps"
+    const val hideApp = "Hide"
+    const val showApp = "Show"
+    const val androidGameMeta = "Android game"
+    const val appMeta = "App"
 }
 
 fun hintLine(activateDoesSomething: Boolean, backDoesSomething: Boolean): String? {
