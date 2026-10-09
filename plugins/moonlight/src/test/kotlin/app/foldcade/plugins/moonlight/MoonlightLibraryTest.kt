@@ -40,6 +40,29 @@ class MoonlightLibraryTest {
     }
 
     @Test
+    fun theSourceSwitchKeepsBothLists() = runBlocking {
+        val library = MoonlightLibrary()
+        library.replacePinned(listOf(desktop, other))
+        library.confirmImport(listOf(other))
+        assertEquals(MoonlightCatalog.Imported, library.catalog())
+        assertEquals(listOf("Celeste"), library.importedApps().map { it.label })
+
+        library.useCatalog(MoonlightCatalog.Pinned)
+        library.replacePinned(listOf(desktop))
+        assertEquals(listOf("Desktop"), library.listGames(MoonlightPlatform.ID, GameQuery()).games.map { it.label })
+        assertEquals(listOf("Celeste"), library.importedApps().map { it.label })
+
+        library.useCatalog(MoonlightCatalog.Imported)
+        assertEquals(listOf("Celeste"), library.listGames(MoonlightPlatform.ID, GameQuery()).games.map { it.label })
+        assertEquals(listOf(desktop), library.pinnedApps())
+
+        val fresh = MoonlightLibrary()
+        fresh.useCatalog(MoonlightCatalog.Imported)
+        assertTrue(fresh.listGames(MoonlightPlatform.ID, GameQuery()).games.isEmpty())
+        assertFalse(fresh.hasConfirmedImport())
+    }
+
+    @Test
     fun aConfirmedEmptyImportStaysEmpty() = runBlocking {
         val library = MoonlightLibrary()
         library.replacePinned(listOf(desktop))

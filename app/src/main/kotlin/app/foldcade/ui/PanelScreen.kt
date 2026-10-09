@@ -18,6 +18,10 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.relocation.BringIntoViewRequester
+import androidx.compose.foundation.relocation.bringIntoViewRequester
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
@@ -98,6 +102,9 @@ import app.foldcade.language.HostScreen
 import app.foldcade.language.Meaning
 import app.foldcade.language.Row
 import app.foldcade.language.Metrics
+import app.foldcade.language.MoonlightImportSheet
+import app.foldcade.language.MoonlightSheetTarget
+import app.foldcade.language.moonlightSheetSections
 import app.foldcade.language.Motion
 import app.foldcade.language.PanelLevel
 import app.foldcade.language.Side
@@ -160,6 +167,7 @@ fun PanelHost(activity: FoldcadeHomeActivity, displays: Displays) {
             }
             if (connectHere) ConnectScreen(app, screen, activity::dispatch)
             DialogLayer(app, model.dialog, screen, scale, activity::dispatch)
+            MoonlightImportLayer(app, model.moonlightSheet, screen, scale)
         }
     }
 }
@@ -333,8 +341,10 @@ private fun Picker(
                 Modifier
                     .weight(1f)
                     .fillMaxWidth()
-                    .pointerInput(model.panel, model.dialog, model.connectOpen) {
-                        if (model.panel != null || model.dialog != null || model.connectOpen) return@pointerInput
+                    .pointerInput(model.panel, model.dialog, model.connectOpen, model.moonlightSheet) {
+                        if (model.panel != null || model.dialog != null || model.connectOpen || model.moonlightSheet != null) {
+                            return@pointerInput
+                        }
                         var dragged = 0f
                         detectHorizontalDragGestures(
                             onHorizontalDrag = { _, amount -> dragged += amount },
@@ -781,7 +791,7 @@ private fun ChromeRow(app: FoldcadeApp, screen: HostScreen) {
     val shell = app.shell
     val model = shell.model
     val game = shell.focusedGame()
-    val shelfOpen = model.panel == null && model.dialog == null && !model.connectOpen
+    val shelfOpen = model.panel == null && model.dialog == null && model.moonlightSheet == null && !model.connectOpen
     val showLaunch = shelfOpen && game?.emptyShelfHint != true &&
         app.store.session.launchTargetControlVisible(game?.occupiesBothDisplays == true)
     Column {
@@ -811,7 +821,7 @@ private fun ChromeRow(app: FoldcadeApp, screen: HostScreen) {
         } else {
             hintFor(
                 when {
-                    model.dialog != null -> HintPlace.Dialog
+                    model.moonlightSheet != null || model.dialog != null -> HintPlace.Dialog
                     model.panel != null -> HintPlace.Menu
                     !model.atLibraryRoot -> HintPlace.InsidePlatform
                     else -> HintPlace.RootGrid
@@ -1168,6 +1178,161 @@ private fun DialogLayer(
     val card = shown
     if (card != null && alpha > 0f) {
         Box(Modifier.graphicsLayer { this.alpha = alpha }) { DialogCard(app, card, onEffect) }
+    }
+}
+
+@Composable
+private fun MoonlightImportLayer(
+    app: FoldcadeApp,
+    sheet: MoonlightImportSheet?,
+    screen: HostScreen,
+    scale: Float,
+) {
+    val visible = sheet != null && sheet.screen == screen
+    var shown by remember { mutableStateOf(sheet) }
+    if (visible) shown = sheet
+    val alpha = motionFloat(
+        target = if (visible) 1f else 0f,
+        spec = if (visible) Motion.arrive(Motion.durationShort, scale) else Motion.leave(Motion.durationShort, scale),
+    )
+    val card = shown
+    if (card != null && alpha > 0f) {
+        Box(Modifier.graphicsLayer { this.alpha = alpha }) { MoonlightImportCard(app, card, screen) }
+    }
+}
+
+@Composable
+private fun MoonlightImportCard(
+    app: FoldcadeApp,
+    sheet: MoonlightImportSheet,
+    screen: HostScreen,
+) {
+    val theme = foldTheme()
+    val scroll = rememberScrollState()
+    Box(
+        Modifier
+            .fillMaxSize()
+            .background(Color.Black.copy(alpha = 0.72f))
+            .padding(px(Metrics.dialogInsetPx)),
+        contentAlignment = Alignment.Center,
+    ) {
+        Column(
+            Modifier
+                .fillMaxWidth()
+                .heightIn(max = 640.dp)
+                .drawWithContent {
+                    drawContent()
+                    drawRect(color = theme.muted, style = Stroke(width = Metrics.dialogBorderPx))
+                }
+                .background(theme.surface)
+                .padding(px(Metrics.dialogInsetPx)),
+            verticalArrangement = Arrangement.spacedBy(px(12f)),
+        ) {
+            BasicText(text = Copy.importMoonlightTitle, style = text(theme.onBackground, TypeRamp.dialogTitle, theme))
+            BasicText(text = Copy.importMoonlightBody, style = text(theme.onBackground, TypeRamp.dialogBody, theme))
+            Column(
+                Modifier
+                    .fillMaxWidth()
+                    .heightIn(max = 360.dp)
+                    .verticalScroll(scroll),
+                verticalArrangement = Arrangement.spacedBy(px(8f)),
+            ) {
+                moonlightSheetSections(sheet.apps).forEach { section ->
+                    BasicText(
+                        text = section.hostName,
+                        modifier = Modifier.padding(top = px(4f)),
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        style = text(theme.muted, TypeRamp.hint, theme),
+                    )
+                    section.rows.forEach { row ->
+                        MoonlightAppRow(
+                            label = row.app.label,
+                            checked = row.app.checked,
+                            focused = sheet.index == row.index,
+                            onClick = { app.shell.touchMoonlight(row.index, screen) },
+                        )
+                    }
+                }
+            }
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(px(8f)),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                DialogAction(
+                    label = Copy.importMoonlight,
+                    focused = sheet.target == MoonlightSheetTarget.Import,
+                    onClick = { app.shell.touchMoonlight(sheet.apps.size, screen) },
+                )
+                DialogAction(
+                    label = Copy.notNow,
+                    focused = sheet.target == MoonlightSheetTarget.NotNow,
+                    onClick = { app.shell.touchMoonlight(sheet.apps.size + 1, screen) },
+                )
+            }
+        }
+    }
+}
+
+/**
+ * One discovered app. Focus uses [dialogPlate], the same filled pill as the other dialogs.
+ */
+@Composable
+private fun MoonlightAppRow(
+    label: String,
+    checked: Boolean,
+    focused: Boolean,
+    onClick: () -> Unit,
+) {
+    val theme = foldTheme()
+    val animatorScale = Motion.animatorScale(LocalContext.current.contentResolver)
+    val drawn = motionFloat(
+        target = if (focused) Motion.scaleFocus else Motion.scaleRest,
+        spec = if (focused) {
+            Motion.arrive(Motion.durationFocus, animatorScale)
+        } else {
+            Motion.leave(Motion.durationFocus, animatorScale)
+        },
+    )
+    val requester = remember { BringIntoViewRequester() }
+    LaunchedEffect(focused) {
+        if (focused) requester.bringIntoView()
+    }
+    val ink = if (focused) theme.background else theme.muted
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .bringIntoViewRequester(requester)
+            .graphicsLayer {
+                clip = false
+                scaleX = drawn
+                scaleY = drawn
+            }
+            .dialogPlate(focused, theme.focus)
+            .hostPress(onClick)
+            .padding(horizontal = px(22f), vertical = px(12f)),
+        horizontalArrangement = Arrangement.spacedBy(px(12f)),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Box(
+            Modifier
+                .size(px(18f))
+                .drawBehind {
+                    val radius = CornerRadius(4f, 4f)
+                    if (checked) {
+                        drawRoundRect(color = ink, cornerRadius = radius)
+                    } else {
+                        drawRoundRect(color = ink, cornerRadius = radius, style = Stroke(width = 2f))
+                    }
+                },
+        )
+        BasicText(
+            text = label,
+            modifier = Modifier.weight(1f),
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            style = text(ink, TypeRamp.dialogBody, theme),
+        )
     }
 }
 

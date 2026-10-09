@@ -28,7 +28,11 @@ import app.foldcade.language.HostScreen
 import app.foldcade.language.Meaning
 import app.foldcade.language.MotionSpeed
 import app.foldcade.language.Metrics
+import app.foldcade.language.MoonlightDiscoveredApp
+import app.foldcade.language.MoonlightSource
+import app.foldcade.language.MoonlightStoredApp
 import app.foldcade.language.PanelLevel
+import app.foldcade.language.moonlightImportSheet
 import app.foldcade.language.PromptKey
 import app.foldcade.language.ThorStyle
 import app.foldcade.language.faceMapWithConfirm
@@ -63,6 +67,8 @@ class ShellController(
     private val cue: (themeIndex: Int, slot: String) -> Boolean = { _, _ -> false },
     private val bareTick: () -> Unit = {},
     private val lastPlayedMillis: (String) -> Long? = { null },
+    private val onMoonlightCatalog: () -> Unit = {},
+    private val onReviewMoonlight: (HostScreen) -> Unit = {},
 ) {
     private var shelfState: AppShelfState = store.appShelfState()
     private var installed: List<LaunchableApp> = emptyList()
@@ -94,6 +100,26 @@ class ShellController(
         if (!next.connectOpen) connectToken = ""
         val packageName = focusedGame()?.androidPackage
         when (effect) {
+            is Effect.ConfirmMoonlightImport -> {
+                val sourceChanged = next.moonlightSource != model.moonlightSource
+                store.setMoonlightImport(
+                    effect.checked.map { app ->
+                        MoonlightStoredApp(hostUuid = app.hostUuid, appId = app.appId, label = app.label)
+                    },
+                )
+                store.setMoonlightImportSettled()
+                publish(next)
+                if (!sourceChanged) onMoonlightCatalog()
+            }
+            Effect.SkipMoonlightImport -> {
+                store.setMoonlightImportSettled()
+                publish(next)
+            }
+            Effect.ReviewMoonlightImport -> {
+                val screenForSheet = next.panel?.screen ?: screen
+                publish(next)
+                onReviewMoonlight(screenForSheet)
+            }
             Effect.PinApp -> {
                 if (packageName != null) {
                     val favorite = !shelfState.record(packageName).favorite
@@ -140,7 +166,10 @@ class ShellController(
             store.saveButtonPrompt(inputDeviceKey, store.buttonPromptConfirm(inputDeviceKey), dismissed = true)
         }
         return when (effect) {
-            Effect.PinApp, Effect.MoveApp, Effect.HideApp, Effect.ShowApp -> null
+            Effect.PinApp, Effect.MoveApp, Effect.HideApp, Effect.ShowApp,
+            Effect.SkipMoonlightImport, Effect.ReviewMoonlightImport,
+            -> null
+            is Effect.ConfirmMoonlightImport -> null
             else -> effect
         }
     }
@@ -236,7 +265,7 @@ class ShellController(
     }
 
     fun askToSignInAgain() {
-        if (model.dialog != null) {
+        if (model.dialog != null || model.moonlightSheet != null) {
             model = model.copy(reLoginPending = true)
             return
         }
@@ -249,7 +278,7 @@ class ShellController(
     }
 
     fun present(dialog: DialogState) {
-        if (model.dialog != null) return
+        if (model.dialog != null || model.moonlightSheet != null) return
         model = model.copy(dialog = dialog)
     }
 
@@ -321,7 +350,7 @@ class ShellController(
     }
 
     fun touchCell(index: Int, screen: HostScreen) {
-        if (model.dialog != null || model.panel != null || model.connectOpen) return
+        if (model.dialog != null || model.moonlightSheet != null || model.panel != null || model.connectOpen) return
         val current = model.focus
         val already = current.chrome == null && current.cellIndex == index
         if (!already) {
@@ -341,7 +370,7 @@ class ShellController(
     }
 
     fun touchChrome(chrome: Chrome, screen: HostScreen) {
-        if (model.dialog != null || model.panel != null || model.connectOpen) return
+        if (model.dialog != null || model.moonlightSheet != null || model.panel != null || model.connectOpen) return
         publish(model.copy(focus = model.focus.copy(chrome = chrome)))
         onMeaning(Meaning.Activate, screen)
     }
@@ -368,6 +397,33 @@ class ShellController(
         return effect
     }
 
+    /** One tap focuses that sheet row and activates it. Keys still move, then Activate. */
+    fun touchMoonlight(index: Int, screen: HostScreen): Effect? {
+        val sheet = model.moonlightSheet ?: return null
+        if (sheet.screen != screen) return null
+        val last = sheet.apps.size + 1
+        if (index !in 0..last) return null
+        model = model.copy(moonlightSheet = sheet.copy(index = index))
+        return onMeaning(Meaning.Activate, screen)
+    }
+
+    fun maybeOfferMoonlightImport(apps: List<MoonlightDiscoveredApp>) {
+        if (store.moonlightImportSettled() || apps.isEmpty()) return
+        if (model.dialog != null || model.moonlightSheet != null || model.panel != null || model.connectOpen) return
+        presentMoonlightSheet(apps, HostScreen.Bottom)
+    }
+
+    fun presentMoonlightSheet(apps: List<MoonlightDiscoveredApp>, screen: HostScreen) {
+        if (model.dialog != null || model.moonlightSheet != null) return
+        val sheet = moonlightImportSheet(apps, screen) ?: return
+        model = model.copy(moonlightSheet = sheet)
+    }
+
+    fun selectImportedList() {
+        if (model.moonlightSource == MoonlightSource.ImportedList) return
+        publish(model.copy(moonlightSource = MoonlightSource.ImportedList))
+    }
+
     fun setUsageGranted(granted: Boolean) {
         if (model.usageGranted == granted) return
         model = model.copy(usageGranted = granted)
@@ -375,7 +431,8 @@ class ShellController(
 
     /** Once, after a session exists. Never on a cold start, and never over another dialog. */
     fun maybeOfferUsageAccess(hasTrackedSession: Boolean, granted: Boolean, screen: HostScreen) {
-        if (!shouldOfferUsageAccess(hasTrackedSession, granted, store.usagePromptOffered(), model.dialog != null)) {
+        val blocked = model.dialog != null || model.moonlightSheet != null
+        if (!shouldOfferUsageAccess(hasTrackedSession, granted, store.usagePromptOffered(), blocked)) {
             return
         }
         present(usageAccessPrompt(screen))
@@ -386,7 +443,7 @@ class ShellController(
             store.setHomePromptSettled()
             return
         }
-        if (store.homePromptSettled() || model.dialog != null) return
+        if (store.homePromptSettled() || model.dialog != null || model.moonlightSheet != null) return
         publish(model.copy(dialog = homePrompt()))
     }
 
@@ -397,7 +454,7 @@ class ShellController(
             "Foldcade",
             "preview-dialog kind=$kind index=${dialog.index} screen=${screen.name.lowercase()} title=${dialog.title}",
         )
-        publish(model.copy(panel = null, connectOpen = false, dialog = dialog))
+        publish(model.copy(panel = null, connectOpen = false, dialog = dialog, moonlightSheet = null))
     }
 
     fun focusedGame(): ShelfGame? = tileFromOrder(displaySource(model))
@@ -538,7 +595,7 @@ class ShellController(
     }
 
     fun showDialog(dialog: DialogState) {
-        if (model.dialog != null) return
+        if (model.dialog != null || model.moonlightSheet != null) return
         val notify = dialog.kind == DialogKind.Ok
         publish(model.copy(dialog = dialog))
         if (notify) cue(model.themeIndex, "notify")
@@ -678,6 +735,11 @@ class ShellController(
         if (next.motionSpeed != model.motionSpeed) {
             store.setMotionSpeed(next.motionSpeed)
         }
+        val moonlightSourceChanged = next.moonlightSource != model.moonlightSource
+        if (next.moonlightPlacements != model.moonlightPlacements) {
+            store.setMoonlightPlacements(next.moonlightPlacements)
+        }
+        if (moonlightSourceChanged) store.setMoonlightSource(next.moonlightSource)
         model = if (next.libraryGrid) {
             val entry = libraryEntry(next)
             val onGrid = next.gridKind == GridKind.Games || next.gridKind == GridKind.Platforms
@@ -688,6 +750,7 @@ class ShellController(
         } else {
             withShelf(next.copy(libraryGrid = false))
         }
+        if (moonlightSourceChanged) onMoonlightCatalog()
     }
 
     private fun countFor(grid: HomeGrid): Int = when (grid) {
@@ -770,6 +833,9 @@ class ShellController(
             motionSpeed = store.motionSpeed(),
             sort = store.librarySort(),
             recentFirst = recentOrder(),
+            moonlightSource = store.moonlightSource(),
+            moonlightPlacements = store.moonlightPlacements(),
+            moonlightImportConfirmed = store.moonlightImportConfirmed(),
         )
     }
 
@@ -787,7 +853,9 @@ class ShellController(
             Meaning.Activate -> cue(after.themeIndex, "activate")
             Meaning.Back -> cue(after.themeIndex, "back")
             Meaning.MoveUp, Meaning.MoveDown, Meaning.MoveLeft, Meaning.MoveRight -> {
-                val moved = before.focus != after.focus || before.panel?.index != after.panel?.index
+                val moved = before.focus != after.focus ||
+                    before.panel?.index != after.panel?.index ||
+                    before.moonlightSheet?.index != after.moonlightSheet?.index
                 val slid = sliderMoved(before, after)
                 if (slid) tickSlider(after.themeIndex) else if (moved) cue(after.themeIndex, "move")
             }

@@ -11,7 +11,14 @@ import app.foldcade.language.AppShelfRecord
 import app.foldcade.language.AppShelfState
 import app.foldcade.language.HomeMusicSetting
 import app.foldcade.language.LibrarySort
+import app.foldcade.language.MoonlightPlacement
+import app.foldcade.language.MoonlightSource
+import app.foldcade.language.MoonlightStoredApp
 import app.foldcade.language.PromptKey
+import app.foldcade.language.decodeMoonlightApps
+import app.foldcade.language.encodeMoonlightApps
+import app.foldcade.language.moonlightPlacementKeys
+import app.foldcade.language.moonlightPlacementsFromKeys
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
@@ -191,6 +198,43 @@ class SessionStore(private val prefs: SharedPreferences) {
         prefs.edit().putString(KEY_MOTION_SPEED, speed.wire).apply()
     }
 
+    fun moonlightSource(): MoonlightSource =
+        if (prefs.getString(KEY_MOONLIGHT_SOURCE, null) == MoonlightSource.ImportedList.name) {
+            MoonlightSource.ImportedList
+        } else {
+            MoonlightSource.PinnedShortcuts
+        }
+
+    fun setMoonlightSource(source: MoonlightSource) {
+        prefs.edit().putString(KEY_MOONLIGHT_SOURCE, source.name).apply()
+    }
+
+    fun moonlightImportConfirmed(): Boolean = prefs.getBoolean(KEY_MOONLIGHT_IMPORT_CONFIRMED, false)
+
+    fun moonlightImportSettled(): Boolean = prefs.getBoolean(KEY_MOONLIGHT_IMPORT_SETTLED, false)
+
+    fun setMoonlightImportSettled() {
+        prefs.edit().putBoolean(KEY_MOONLIGHT_IMPORT_SETTLED, true).apply()
+    }
+
+    fun moonlightImportEncoded(): String? = prefs.getString(KEY_MOONLIGHT_IMPORT, null)
+
+    fun moonlightImportedApps(): List<MoonlightStoredApp> = decodeMoonlightApps(moonlightImportEncoded())
+
+    fun setMoonlightImport(apps: List<MoonlightStoredApp>) {
+        prefs.edit()
+            .putString(KEY_MOONLIGHT_IMPORT, encodeMoonlightApps(apps))
+            .putBoolean(KEY_MOONLIGHT_IMPORT_CONFIRMED, true)
+            .apply()
+    }
+
+    fun moonlightPlacements(): List<MoonlightPlacement> =
+        moonlightPlacementsFromKeys(stringSet(KEY_MOONLIGHT_PLACEMENTS))
+
+    fun setMoonlightPlacements(placements: List<MoonlightPlacement>) {
+        prefs.edit().putStringSet(KEY_MOONLIGHT_PLACEMENTS, moonlightPlacementKeys(placements).toMutableSet()).apply()
+    }
+
     fun buttonPromptSeenLaunch(): Boolean = prefs.getBoolean(KEY_BUTTON_PROMPT_SEEN, false)
 
     fun setButtonPromptSeenLaunch() {
@@ -248,6 +292,11 @@ class SessionStore(private val prefs: SharedPreferences) {
         private const val KEY_SHELF_SHOWN = "android_shelf_shown"
         private const val KEY_BUTTON_PROMPT_SEEN = "button_prompt_seen"
         private const val KEY_USAGE_PROMPTED = "usage_prompted"
+        private const val KEY_MOONLIGHT_SOURCE = "moonlight_source"
+        private const val KEY_MOONLIGHT_IMPORT = "moonlight_import"
+        private const val KEY_MOONLIGHT_IMPORT_CONFIRMED = "moonlight_import_confirmed"
+        private const val KEY_MOONLIGHT_IMPORT_SETTLED = "moonlight_import_settled"
+        private const val KEY_MOONLIGHT_PLACEMENTS = "moonlight_placements"
 
         private fun buttonPromptConfirmKey(deviceKey: String) = "button_prompt_confirm:$deviceKey"
 

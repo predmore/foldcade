@@ -205,6 +205,7 @@ sealed interface Row {
     data object Background : Row
     data object MotionSpeed : Row
     data object UsageAccess : Row
+    data object MoonlightSource : Row
     data object Primary : Row
     data object Arrange : Row
     data object Order : Row
@@ -296,6 +297,7 @@ fun leftRows(
     add(Row.Background)
     add(Row.MotionSpeed)
     add(Row.UsageAccess)
+    add(Row.MoonlightSource)
     if (offerButtonLabels) add(Row.ButtonLabels)
     playerSaves.forEach { add(Row.PlayerSave(it.playerId)) }
     add(Row.AndroidGames)
@@ -375,6 +377,7 @@ fun rowText(row: Row, model: PickerModel): RowText = when (row) {
         "Play time",
         if (model.usageGranted) "All launchers" else Copy.approximatePlay,
     )
+    Row.MoonlightSource -> RowText(Copy.moonlight, moonlightSourceLabel(model.moonlightSource))
     Row.Primary -> RowText(Copy.primaryPanel, if (model.primaryIsTop) Copy.top else Copy.bottom)
     Row.Arrange -> RowText(Copy.arrange)
     Row.Order -> RowText("Order", if (model.sort == LibrarySort.RecentlyPlayed) "Recently played" else "Library")
@@ -454,6 +457,9 @@ sealed interface Effect {
     data object ShowApp : Effect
     data class OpenAndroidSetting(val setting: AndroidSetting) : Effect
     data object DismissButtonLabels : Effect
+    data class ConfirmMoonlightImport(val checked: List<MoonlightSheetApp>) : Effect
+    data object SkipMoonlightImport : Effect
+    data object ReviewMoonlightImport : Effect
 }
 
 /** What a grid cell is. Existing callers stay on [Games], which launches. */
@@ -525,6 +531,10 @@ data class PickerModel(
     val gridKind: GridKind = GridKind.Games,
     val emptyGrid: EmptyGrid = EmptyGrid.None,
     val usageGranted: Boolean = false,
+    val moonlightSource: MoonlightSource = MoonlightSource.PinnedShortcuts,
+    val moonlightPlacements: List<MoonlightPlacement> = emptyList(),
+    val moonlightImportConfirmed: Boolean = false,
+    val moonlightSheet: MoonlightImportSheet? = null,
 )
 
 fun reduce(
@@ -533,6 +543,21 @@ fun reduce(
     screen: HostScreen = HostScreen.Bottom,
 ): Pair<PickerModel, Effect?> {
     val coerced = model.copy(focus = coerce(model.focus, model))
+    val sheet = coerced.moonlightSheet
+    if (sheet != null) {
+        if (meaning == Meaning.LeftPanel || meaning == Meaning.RightPanel) return coerced to null
+        val (nextSheet, result) = applyMoonlightSheet(sheet, meaning)
+        return when (result) {
+            is MoonlightSheetResult.Import -> coerced.copy(
+                moonlightSheet = null,
+                moonlightSource = MoonlightSource.ImportedList,
+                moonlightImportConfirmed = true,
+                moonlightPlacements = placeMoonlightImport(coerced.moonlightPlacements, result.checked),
+            ) to Effect.ConfirmMoonlightImport(result.checked)
+            MoonlightSheetResult.NotNow -> coerced.copy(moonlightSheet = null) to Effect.SkipMoonlightImport
+            null -> coerced.copy(moonlightSheet = nextSheet) to null
+        }
+    }
     val dialog = coerced.dialog
     if (dialog != null) {
         if (meaning == Meaning.LeftPanel || meaning == Meaning.RightPanel) return coerced to null
@@ -886,6 +911,14 @@ private fun activateRow(
         ) to null
         Row.MotionSpeed -> model.copy(panel = panel, motionSpeed = model.motionSpeed.next()) to null
         Row.UsageAccess -> model.copy(dialog = usageAccessPrompt(screen)) to null
+        Row.MoonlightSource -> {
+            val nextSource = cycleMoonlightSource(model.moonlightSource)
+            if (nextSource == MoonlightSource.ImportedList && !model.moonlightImportConfirmed) {
+                model to Effect.ReviewMoonlightImport
+            } else {
+                model.copy(panel = panel, moonlightSource = nextSource) to null
+            }
+        }
         Row.Primary -> model.copy(panel = panel, primaryIsTop = !model.primaryIsTop) to null
         Row.Arrange -> model.copy(
             panel = null,

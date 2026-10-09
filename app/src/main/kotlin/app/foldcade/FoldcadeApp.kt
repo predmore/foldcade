@@ -14,12 +14,18 @@ import app.foldcade.api.plugin.RommCredentials
 import app.foldcade.api.plugin.SaveFolderHolder
 import app.foldcade.plugins.gamenative.GameNativeLibrary
 import app.foldcade.plugins.gamenative.GameNativePlayer
+import app.foldcade.plugins.moonlight.MoonlightCatalog
 import app.foldcade.plugins.moonlight.MoonlightLibrary
+import app.foldcade.plugins.moonlight.moonlightApp
 import app.foldcade.credentials.AndroidCredentialStore
 import app.foldcade.host.PluginHost
 import app.foldcade.language.BackgroundMotion
 import app.foldcade.language.Copy
+import app.foldcade.language.HostScreen
+import app.foldcade.language.MoonlightDiscoveredApp
+import app.foldcade.language.MoonlightSource
 import app.foldcade.language.SignedInBackend
+import app.foldcade.language.decodeMoonlightApps
 import app.foldcade.language.builtInTheme
 import app.foldcade.localfolder.LocalFolderBackend
 import app.foldcade.music.HomeMusic
@@ -123,6 +129,8 @@ class FoldcadeApp : Application() {
             },
             bareTick = sliderTick::play,
             lastPlayedMillis = plays::lastPlayedMillis,
+            onMoonlightCatalog = { refreshMoonlightShelf() },
+            onReviewMoonlight = ::reviewMoonlightImport,
         )
         plays.onChanged = shell::notePlayChanged
         rommPublish = RommPublish(
@@ -270,20 +278,67 @@ class FoldcadeApp : Application() {
 
     /**
      * Reads pinned Moonlight shortcuts when this app is the home app, then
-     * puts those games on the shelf. A failed read leaves the previous list.
-     * A confirmed import, once one exists, is what the library shows.
+     * puts the selected catalog on the shelf. A failed read leaves the previous
+     * pinned list. The source setting chooses the imported list or the pins.
+     * A first discovery opens the confirm sheet unless the user already answered.
      */
     fun refreshMoonlightShelf() {
         pluginLoad.launch {
             val library = plugins.library(MoonlightLibrary.ID) as? MoonlightLibrary ?: return@launch
+            restoreMoonlightCatalog(library)
             val pinned = readPinnedMoonlightShortcuts(this@FoldcadeApp)
             if (pinned != null) library.replacePinned(pinned)
             val tiles = plugins.moonlightShelfGames()
             Shelf.moonlightGames = tiles
+            val discovered = pinned.orEmpty().map { app ->
+                MoonlightDiscoveredApp(
+                    hostUuid = app.hostUuid,
+                    hostName = app.hostUuid,
+                    appId = app.appId,
+                    label = app.label,
+                )
+            }
             withContext(Dispatchers.Main.immediate) {
                 shell.noteShelfChanged()
+                shell.maybeOfferMoonlightImport(discovered)
             }
         }
+    }
+
+    /**
+     * Imported list is empty until the user confirms the sheet.
+     * Choosing it from the left panel opens that sheet when pins exist.
+     */
+    private fun reviewMoonlightImport(screen: HostScreen) {
+        val library = plugins.library(MoonlightLibrary.ID) as? MoonlightLibrary
+        val discovered = library?.pinnedApps().orEmpty().map { app ->
+            MoonlightDiscoveredApp(
+                hostUuid = app.hostUuid,
+                hostName = app.hostUuid,
+                appId = app.appId,
+                label = app.label,
+            )
+        }
+        if (discovered.isEmpty()) {
+            shell.selectImportedList()
+            return
+        }
+        shell.presentMoonlightSheet(discovered, screen)
+    }
+
+    private fun restoreMoonlightCatalog(library: MoonlightLibrary) {
+        if (store.moonlightImportConfirmed()) {
+            val apps = decodeMoonlightApps(store.moonlightImportEncoded()).mapNotNull { stored ->
+                moonlightApp(stored.hostUuid, stored.appId, stored.label)
+            }
+            library.confirmImport(apps)
+        }
+        val catalog = if (store.moonlightSource() == MoonlightSource.ImportedList) {
+            MoonlightCatalog.Imported
+        } else {
+            MoonlightCatalog.Pinned
+        }
+        library.useCatalog(catalog)
     }
 
     fun publishRomm() {
