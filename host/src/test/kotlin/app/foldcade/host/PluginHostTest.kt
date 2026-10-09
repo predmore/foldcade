@@ -219,6 +219,55 @@ class PluginHostTest {
     }
 
     @Test
+    fun thirdPartyCannotClaimReservedRommIds() {
+        val host = PluginHost(Dispatchers.Unconfined)
+        val library = runCatching {
+            host.register(object : PluginEntry {
+                override val apiVersion = PLUGIN_API_VERSION
+                override val libraries = listOf(LibraryFake("romm"))
+            })
+        }
+        assertTrue(library.exceptionOrNull() is IllegalStateException)
+        assertNull(host.library("romm"))
+
+        val metadata = runCatching {
+            host.register(object : PluginEntry {
+                override val apiVersion = PLUGIN_API_VERSION
+                override val metadataProviders = listOf(MetadataFake("romm.metadata"))
+            })
+        }
+        assertTrue(metadata.exceptionOrNull() is IllegalStateException)
+        assertNull(host.metadata("romm.metadata"))
+
+        val player = runCatching {
+            host.register(object : PluginEntry {
+                override val apiVersion = PLUGIN_API_VERSION
+                override val players = listOf(object : Player by SampleAliasPlayer() {
+                    override val id = "romm"
+                })
+            })
+        }
+        assertTrue(player.exceptionOrNull() is IllegalStateException)
+        assertNull(host.player("romm"))
+
+        val mixed = runCatching {
+            host.register(object : PluginEntry {
+                override val apiVersion = PLUGIN_API_VERSION
+                override val libraries = listOf(LibraryFake("kept.out"))
+                override val metadataProviders = listOf(MetadataFake("romm.metadata"))
+            })
+        }
+        assertTrue(mixed.exceptionOrNull() is IllegalStateException)
+        assertNull(host.library("kept.out"))
+
+        host.register(object : PluginEntry {
+            override val apiVersion = PLUGIN_API_VERSION
+            override val libraries = listOf(LibraryFake("local.folder"))
+        })
+        assertEquals("local.folder", host.library("local.folder")?.id)
+    }
+
+    @Test
     fun olderMinorLoadsAndANewerMinorIsRejected() {
         val host = PluginHost(Dispatchers.Unconfined)
         val older = object : PluginEntry {

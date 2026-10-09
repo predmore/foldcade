@@ -62,6 +62,10 @@ class PluginHost(
     /**
      * Validates [entry], then stores every slot it contributes.
      * A failure stores nothing from this entry.
+     *
+     * Credential scope is every slot id this entry registered.
+     * [RESERVED_BUILTIN_IDS] stay with the built-in RomM entry, so a
+     * third-party entry cannot register them first and take that scope.
      */
     fun register(entry: PluginEntry) {
         if (entry.apiVersion != PLUGIN_API_VERSION) {
@@ -78,6 +82,14 @@ class PluginHost(
         for (player in stagedPlayers) {
             stagedPlayerPlatforms[player.id] = player.platformId
         }
+        val slotIds = ArrayList<String>(
+            stagedPlatforms.size + stagedPlayers.size + stagedLibraries.size + stagedMetadata.size,
+        )
+        stagedPlatforms.mapTo(slotIds) { it.id }
+        stagedPlayers.mapTo(slotIds) { it.id }
+        stagedLibraries.mapTo(slotIds) { it.id }
+        stagedMetadata.mapTo(slotIds) { it.id }
+        reserveBuiltinIds(entry, slotIds)
         val names = planPlatformNames(stagedPlatforms, platformNames)
         planIds("player", stagedPlayers.map { it.id }, players.keys)
         planIds("library", stagedLibraries.map { it.id }, libraries.keys)
@@ -365,6 +377,20 @@ private fun planPlatformNames(
         names.forEach { pending.add(it to platform.id) }
     }
     return pending
+}
+
+private const val BUILTIN_ROMM_ENTRY = "app.foldcade.plugins.romm.RommEntry"
+
+/**
+ * Built-in slot ids. Credential scope is any slot id an entry registered,
+ * so a third-party entry must not claim these before the built-in RomM entry.
+ */
+private val RESERVED_BUILTIN_IDS = setOf("romm", "romm.metadata")
+
+private fun reserveBuiltinIds(entry: PluginEntry, slotIds: List<String>) {
+    if (entry.javaClass.name == BUILTIN_ROMM_ENTRY) return
+    val taken = slotIds.firstOrNull { it in RESERVED_BUILTIN_IDS } ?: return
+    error("Plugin id $taken is reserved")
 }
 
 private fun planIds(slot: String, incoming: List<String>, already: Set<String>) {
