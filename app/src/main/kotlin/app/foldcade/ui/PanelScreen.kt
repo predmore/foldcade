@@ -22,7 +22,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.requiredWidth
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicText
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardOptions
@@ -37,7 +36,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.MotionDurationScale
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.focus.onFocusChanged
@@ -103,6 +101,7 @@ import app.foldcade.readDeviceStatus
 import kotlin.math.abs
 import kotlin.math.ceil
 import kotlin.math.floor
+import kotlin.math.min
 import kotlin.math.roundToInt
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
@@ -679,16 +678,39 @@ private fun Cell(
                     scaleX = drawn
                     scaleY = drawn
                 }
-                .focusStroke(focused, corner, accent)
+                .drawBehind {
+                    val glow = accent ?: return@drawBehind
+                    val bounds = this.size
+                    // Falloff ends at the cell edge so a square clip never shows a hard side.
+                    val reach = min(bounds.width, bounds.height) * 0.5f
+                    val core = if (focused) 0.50f else 0.20f
+                    val mid = if (focused) 0.14f else 0.05f
+                    drawCircle(
+                        brush = Brush.radialGradient(
+                            colorStops = arrayOf(
+                                0f to glow.copy(alpha = core),
+                                0.55f to glow.copy(alpha = mid),
+                                1f to Color.Transparent,
+                            ),
+                            center = center,
+                            radius = reach,
+                        ),
+                        radius = reach,
+                        center = center,
+                    )
+                    val strokePx = 2.5f
+                    val inset = strokePx / 2f
+                    drawRoundRect(
+                        color = glow.copy(alpha = if (focused) 0.92f else 0.62f),
+                        topLeft = Offset(inset, inset),
+                        size = Size(bounds.width - strokePx, bounds.height - strokePx),
+                        cornerRadius = CornerRadius(corner.toPx(), corner.toPx()),
+                        style = Stroke(width = strokePx),
+                    )
+                }
                 .hostPress(onClick),
             contentAlignment = Alignment.Center,
         ) {
-            Box(
-                Modifier
-                    .fillMaxSize()
-                    .clip(RoundedCornerShape(corner))
-                    .background(theme.background),
-            )
             if (mark != null && markGlyph(mark) != null) {
                 MarkIcon(mark, theme.artScale)
             } else {
@@ -900,7 +922,7 @@ private fun text(
 
 @Composable
 private fun focusOutset(cell: Dp): Dp =
-    cell * ((Motion.scaleFocus - 1f) / 2f) + px(36f)
+    cell * ((Motion.scaleFocus - 1f) / 2f) + px(Metrics.focusStrokePx * Motion.scaleFocus)
 
 @Composable
 private fun Modifier.focusStroke(
@@ -911,7 +933,8 @@ private fun Modifier.focusStroke(
     val color = accent ?: foldTheme().focus
     return this.graphicsLayer { clip = false }.drawBehind {
         if (!focused) return@drawBehind
-        val reach = size.maxDimension * 0.78f
+        val bounds = this.size
+        val reach = min(bounds.width, bounds.height) * 0.5f
         drawCircle(
             brush = Brush.radialGradient(
                 colorStops = arrayOf(
