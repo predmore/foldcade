@@ -26,6 +26,11 @@ import app.foldcade.language.Meaning
 import app.foldcade.language.MotionSpeed
 import app.foldcade.language.Metrics
 import app.foldcade.language.PanelLevel
+import app.foldcade.language.PromptKey
+import app.foldcade.language.ThorStyle
+import app.foldcade.language.faceMapWithConfirm
+import app.foldcade.language.offerButtonCalibration
+import app.foldcade.language.resolveFaceMap
 import app.foldcade.language.PickerModel
 import app.foldcade.language.PlayerSaveSetting
 import app.foldcade.language.SignedInBackend
@@ -59,6 +64,8 @@ class ShellController(
 
     var model by mutableStateOf(initial())
         private set
+
+    private var inputDeviceKey: String = "builtin"
 
     var connectToken by mutableStateOf("")
         private set
@@ -112,6 +119,9 @@ class ShellController(
             }
         }
         cueMeaning(meaning, before, model)
+        if (effect == Effect.DismissButtonLabels) {
+            store.saveButtonPrompt(inputDeviceKey, store.buttonPromptConfirm(inputDeviceKey), dismissed = true)
+        }
         return when (effect) {
             Effect.PinApp, Effect.MoveApp, Effect.HideApp, Effect.ShowApp -> null
             else -> effect
@@ -135,6 +145,39 @@ class ShellController(
                 focus = GridFocus(),
                 connectOpen = false,
             ),
+        )
+    }
+
+    fun setPromptHeld(key: PromptKey, down: Boolean) {
+        val next = if (down) model.held + key else model.held - key
+        if (next == model.held) return
+        model = model.copy(held = next)
+    }
+
+    fun applyFacePrompt(style: ThorStyle?, deviceKey: String, firstSession: Boolean) {
+        inputDeviceKey = deviceKey
+        val confirm = store.buttonPromptConfirm(deviceKey)
+        val map = resolveFaceMap(style, confirm)
+        val offer = offerButtonCalibration(
+            firstSession = firstSession,
+            styleKnown = style != null,
+            dismissed = store.buttonPromptDismissed(deviceKey),
+            calibrated = confirm != null,
+        )
+        model = model.copy(
+            faceMap = map,
+            offerButtonLabels = offer,
+            capturingConfirm = if (offer) model.capturingConfirm else false,
+        )
+    }
+
+    fun calibrateConfirm(key: PromptKey) {
+        if (!key.face) return
+        store.saveButtonPrompt(inputDeviceKey, key, dismissed = false)
+        model = model.copy(
+            faceMap = faceMapWithConfirm(model.faceMap, key),
+            capturingConfirm = false,
+            offerButtonLabels = false,
         )
     }
 

@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Foldcade original art, CC BY-SA 4.0 (see LICENSE). Shoulder L2 -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:aapt="http://schemas.android.com/aapt"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+    <path
+        android:pathData="M10,4.5H18A3.5,3.5 0 0 1 21.5,8V16.5A3,3 0 0 1 18.5,19.5H5.5A3,3 0 0 1 2.5,16.5V12A7.5,7.5 0 0 1 10,4.5Z"
+        android:strokeWidth="1.2"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round">
+        <aapt:attr name="android:fillColor">
+          <gradient android:type="linear" android:startX="0" android:startY="4.5" android:endX="0" android:endY="19.5">
+            <item android:offset="0" android:color="#FF262A33" />
+            <item android:offset="1" android:color="#FF0A0B0F" />
+          </gradient>
+        </aapt:attr>
+        <aapt:attr name="android:strokeColor">
+          <gradient android:type="linear" android:startX="0" android:startY="4.5" android:endX="0" android:endY="19.5">
+            <item android:offset="0" android:color="#F2E9E4DA" />
+            <item android:offset="1" android:color="#8C7C786F" />
+          </gradient>
+        </aapt:attr>
+    </path>
+    <path
+        android:pathData="M6.95,5.7H17.45A2.45,2.45 0 0 1 19.9,8.15V10.4A1,1 0 0 1 18.9,11.4H5.1A1,1 0 0 1 4.1,10.4V8.55A2.85,2.85 0 0 1 6.95,5.7Z">
+        <aapt:attr name="android:fillColor">
+          <gradient android:type="linear" android:startX="0" android:startY="5.5" android:endX="0" android:endY="12">
+            <item android:offset="0" android:color="#47FFFFFF" />
+            <item android:offset="1" android:color="#00FFFFFF" />
+          </gradient>
+        </aapt:attr>
+    </path>
+    <path
+        android:pathData="M7.775 15.9Q7.359 15.9 7.131 15.67Q6.903 15.441 6.903 15.025V10.161Q6.903 9.736 7.126 9.513Q7.349 9.29 7.765 9.29Q8.181 9.29 8.401 9.513Q8.621 9.736 8.621 10.161V14.467H10.912Q11.266 14.467 11.456 14.652Q11.645 14.837 11.645 15.182Q11.645 15.527 11.456 15.713Q11.266 15.9 10.912 15.9Z M13.125 15.9Q12.718 15.9 12.531 15.707Q12.345 15.515 12.345 15.139Q12.345 14.878 12.462 14.675Q12.579 14.471 12.774 14.267L14.405 12.556Q14.776 12.167 14.93 11.887Q15.084 11.607 15.084 11.322Q15.084 10.967 14.849 10.787Q14.614 10.606 14.172 10.606Q13.949 10.606 13.697 10.668Q13.444 10.73 13.152 10.88Q12.906 10.998 12.701 10.949Q12.496 10.901 12.362 10.744Q12.227 10.587 12.193 10.381Q12.158 10.174 12.252 9.972Q12.345 9.769 12.597 9.639Q13.024 9.404 13.489 9.299Q13.954 9.194 14.417 9.194Q15.183 9.194 15.705 9.419Q16.228 9.643 16.499 10.073Q16.769 10.503 16.769 11.122Q16.769 11.522 16.652 11.893Q16.535 12.265 16.277 12.642Q16.02 13.02 15.59 13.439L14.075 14.939V14.501H16.385Q16.733 14.501 16.915 14.68Q17.097 14.858 17.097 15.197Q17.097 15.536 16.915 15.718Q16.733 15.9 16.385 15.9Z"
+        android:fillColor="#FFF4F1EA" />
+    <path
+        android:pathData="M8.5,7.7 H15.5"
+        android:strokeColor="#FFF4F1EA"
+        android:strokeWidth="0.7"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round"
+        android:strokeAlpha="0.35" />
+</vector>

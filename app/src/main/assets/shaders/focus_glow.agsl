@@ -1,0 +1,27 @@
+// Foldcade Afterglow focus glow (AGSL, RuntimeShader, API 33+). GPLv3 program source.
+// Draw on a layer the size of the tile plus `margin` on each side, behind the opaque tile.
+// Smooth, ring-free falloff: same curve as the vector halos and the glow sprites.
+uniform float2 size;      // layer size in px
+uniform float2 tile;      // tile size in px
+uniform float radius;     // tile corner radius in px (iconRadius * tile.x)
+uniform float margin;     // glow reach in px
+uniform float peak;       // 0..1 intensity; animate this, never toggle it
+uniform half4 color;      // focus colour, e.g. #C8FFE4
+
+float sdRoundRect(float2 p, float2 halfSize, float r) {
+    float2 q = abs(p) - (halfSize - r);
+    return length(max(q, 0.0)) + min(max(q.x, q.y), 0.0) - r;
+}
+
+// Interleaved gradient noise: breaks up 8-bit banding in the faint tail.
+float ign(float2 p) { return fract(52.9829189 * fract(dot(p, float2(0.06711056, 0.00583715)))); }
+
+half4 main(float2 p) {
+    float d = sdRoundRect(p - size * 0.5, tile * 0.5, radius);
+    if (d <= 0.0) return half4(0);                 // the tile paints its own body
+    float u = clamp(d / margin, 0.0, 1.0);
+    float a = peak * exp(-4.2 * u * u) * pow(1.0 - u, 1.5);
+    a += (ign(p) - 0.5) / 255.0;                   // dither
+    a = clamp(a, 0.0, 1.0);
+    return half4(color.rgb * a, a);                // premultiplied
+}

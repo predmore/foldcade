@@ -58,6 +58,7 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.input.ImeAction
@@ -79,6 +80,7 @@ import app.foldcade.api.Panel
 import app.foldcade.api.Surface
 import app.foldcade.batteryLabel
 import app.foldcade.millisUntilNextMinute
+import app.foldcade.language.ClusterRole
 import app.foldcade.language.Chrome
 import app.foldcade.language.ConnectField
 import app.foldcade.language.Copy
@@ -87,6 +89,8 @@ import app.foldcade.language.homeGridLabel
 import app.foldcade.language.DialogButton
 import app.foldcade.language.Effect
 import app.foldcade.language.DialogState
+import app.foldcade.language.HintActions
+import app.foldcade.language.HintPlace
 import app.foldcade.language.HostScreen
 import app.foldcade.language.Meaning
 import app.foldcade.language.Row
@@ -98,7 +102,13 @@ import app.foldcade.language.SidePanel
 import app.foldcade.language.TypeRamp
 import app.foldcade.language.builtInTheme
 import app.foldcade.language.connectFields
+import app.foldcade.language.clusterFilled
+import app.foldcade.language.clusterGlyph
 import app.foldcade.language.connectHint
+import app.foldcade.language.faceArt
+import app.foldcade.language.hintFor
+import app.foldcade.language.islandGlyph
+import app.foldcade.language.promptedLetter
 import app.foldcade.language.cursorBrush
 import app.foldcade.language.displayOrder
 import app.foldcade.language.lastPlayedLine
@@ -369,6 +379,10 @@ private fun Panels(
         val openWidth = maxWidth * 0.46f
         val openHeight = maxHeight * 0.62f
         LeftPanel(app, screen, leftOpen, scale, maxWidth * 0.42f, onEffect)
+        Box(Modifier.align(Alignment.TopStart).padding(top = inset, start = inset)) {
+            // Closed left chip. The island-morph pull request cross-fades ic_btn_l1 to ic_btn_l1_filled.
+            PromptImage(islandGlyph(left = true, app.shell.model.held), 32.dp)
+        }
         Box(Modifier.align(Alignment.TopEnd).padding(top = inset, end = inset)) {
             RightCluster(
                 app = app,
@@ -487,6 +501,7 @@ private fun RightCluster(
     ) {
         StatusLine(
             noticeCount = app.shell.model.notices.size,
+            held = app.shell.model.held,
             modifier = Modifier.onSizeChanged { if (!open) cluster = it },
             onClick = { app.shell.onMeaning(Meaning.RightPanel, screen) },
             focused = app.shell.model.focus.chrome == Chrome.StatusCluster &&
@@ -505,6 +520,7 @@ private fun lerp(start: Dp, end: Dp, fraction: Float): Dp = start + (end - start
 @Composable
 private fun StatusLine(
     noticeCount: Int,
+    held: Set<app.foldcade.language.PromptKey>,
     modifier: Modifier,
     onClick: () -> Unit,
     focused: Boolean,
@@ -523,6 +539,7 @@ private fun StatusLine(
         horizontalArrangement = Arrangement.spacedBy(px(12f)),
         verticalAlignment = Alignment.CenterVertically,
     ) {
+        PromptImage(islandGlyph(left = false, held), 32.dp)
         BasicText(text = status.time, style = text(theme.onBackground, TypeRamp.hint, theme))
         BasicText(text = batteryLabel(status), style = text(theme.onBackground, TypeRamp.hint, theme))
         BasicText(text = status.network, style = text(theme.onBackground, TypeRamp.hint, theme))
@@ -750,16 +767,88 @@ private fun ChromeRow(app: FoldcadeApp, screen: HostScreen) {
                 BasicText(text = Copy.usesBothScreens, style = text(theme.muted, TypeRamp.hint, theme))
             }
         }
-        val hint = if (model.connectOpen) {
+        val actions = if (model.connectOpen) {
             connectHint(connectFields().getOrElse(model.connectIndex) { ConnectField.Origin })
         } else {
-            // Letter hints ("A", "A  B") read as stray glyphs. Activate and Back still work.
-            null
+            hintFor(
+                when {
+                    model.dialog != null -> HintPlace.Dialog
+                    model.panel != null -> HintPlace.Menu
+                    !model.atLibraryRoot -> HintPlace.InsidePlatform
+                    else -> HintPlace.RootGrid
+                },
+            )
         }
-        if (hint != null) {
-            BasicText(text = hint, style = text(theme.muted, TypeRamp.hint, theme))
+        HintCluster(model, actions)
+    }
+}
+
+@Composable
+private fun HintCluster(
+    model: app.foldcade.language.PickerModel,
+    actions: HintActions?,
+) {
+    val theme = foldTheme()
+    val roles = listOf(ClusterRole.Select, ClusterRole.Start, ClusterRole.Home, ClusterRole.Back)
+    Column(verticalArrangement = Arrangement.spacedBy(px(8f))) {
+        Row(horizontalArrangement = Arrangement.spacedBy(px(16f)), verticalAlignment = Alignment.CenterVertically) {
+            roles.take(2).forEach { role ->
+                val filled = clusterFilled(role, model.held, model.faceMap)
+                PromptImage(clusterGlyph(role, model.thorGlyphs, filled), 32.dp)
+            }
+        }
+        Row(horizontalArrangement = Arrangement.spacedBy(px(16f)), verticalAlignment = Alignment.CenterVertically) {
+            roles.drop(2).forEach { role ->
+                val filled = clusterFilled(role, model.held, model.faceMap)
+                PromptImage(clusterGlyph(role, model.thorGlyphs, filled), 32.dp)
+            }
+        }
+        val shown = actions
+        val letter = shown?.let { promptedLetter(it.confirm, it.back, model.faceMap) }
+        if (shown != null && letter != null) {
+            val pressed = promptKeyOfLetter(letter, model)
+            val art = faceArt(letter, model.faceMap, filled = pressed)
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(px(12f)),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                PromptImage(art.diamond, 64.dp)
+                val companion = art.letter
+                if (companion != null) PromptImage(companion, 32.dp)
+                BasicText(
+                    text = if (shown.confirm) "Confirm" else "Back",
+                    style = text(theme.muted, TypeRamp.hint, theme),
+                )
+            }
         }
     }
+}
+
+private fun promptKeyOfLetter(
+    letter: app.foldcade.language.FaceLetter,
+    model: app.foldcade.language.PickerModel,
+): Boolean {
+    val key = when (letter) {
+        app.foldcade.language.FaceLetter.A -> app.foldcade.language.PromptKey.FaceA
+        app.foldcade.language.FaceLetter.B -> app.foldcade.language.PromptKey.FaceB
+        app.foldcade.language.FaceLetter.X -> app.foldcade.language.PromptKey.FaceX
+        app.foldcade.language.FaceLetter.Y -> app.foldcade.language.PromptKey.FaceY
+    }
+    return key in model.held
+}
+
+@Composable
+private fun PromptImage(name: String, size: Dp) {
+    val context = LocalContext.current
+    val id = remember(name) {
+        context.resources.getIdentifier(name, "drawable", context.packageName)
+    }
+    if (id == 0) return
+    Image(
+        painter = painterResource(id),
+        contentDescription = null,
+        modifier = Modifier.size(size),
+    )
 }
 
 /**

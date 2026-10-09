@@ -60,6 +60,10 @@ class FoldcadeApp : Application() {
     val externalPlay = ExternalPlay()
     var companionLaunched: Boolean = false
 
+    /** True only for the process that first recorded a launch. Calibration waits for the next one. */
+    var buttonPromptFirstSession: Boolean = false
+        private set
+
     /**
      * Sign-in and credential work. Keystore seal and open run here, on
      * [Dispatchers.IO], not on the main thread. Compose updates hop back to main.
@@ -83,6 +87,8 @@ class FoldcadeApp : Application() {
     override fun onCreate() {
         super.onCreate()
         store = SessionStore(getSharedPreferences("foldcade", MODE_PRIVATE))
+        buttonPromptFirstSession = !store.buttonPromptSeenLaunch()
+        if (buttonPromptFirstSession) store.setButtonPromptSeenLaunch()
         credentials = AndroidCredentialStore(this)
         plugins = PluginHost(Dispatchers.IO, credentials)
         music = HomeMusic(this, store)

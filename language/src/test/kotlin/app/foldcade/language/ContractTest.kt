@@ -87,12 +87,12 @@ class ContractTest {
 
     @Test
     fun hintsUseAAndBOnlyWhenThatActionDoesSomething() {
-        assertEquals("A", hintFor(HintPlace.RootGrid))
-        assertEquals("A  B", hintFor(HintPlace.InsidePlatform))
-        assertEquals("B", hintFor(HintPlace.Connect))
+        assertEquals(HintActions(confirm = true, back = false), hintFor(HintPlace.RootGrid))
+        assertEquals(HintActions(confirm = true, back = true), hintFor(HintPlace.InsidePlatform))
+        assertEquals(HintActions(confirm = false, back = true), hintFor(HintPlace.Connect))
         assertNull(hintLine(activateDoesSomething = false, backDoesSomething = false))
-        assertFalse(hintFor(HintPlace.RootGrid)!!.contains("X"))
-        assertFalse(hintFor(HintPlace.Dialog)!!.contains("L1"))
+        assertEquals(HintActions(confirm = true, back = true), hintFor(HintPlace.Dialog))
+        assertFalse(hintFor(HintPlace.RootGrid)!!.back)
     }
 
     @Test

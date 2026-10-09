@@ -22,7 +22,7 @@ enum class Meaning {
     PageTowardEnd,
 }
 
-fun meaningOf(keyCode: Int, repeatCount: Int = 0): Meaning? {
+fun meaningOf(keyCode: Int, repeatCount: Int = 0, faces: FaceMap = FaceMap.standard()): Meaning? {
     if (repeatCount > 0 && (keyCode == KeyEvent.KEYCODE_BUTTON_L1 || keyCode == KeyEvent.KEYCODE_BUTTON_R1)) {
         return null
     }
@@ -31,12 +31,12 @@ fun meaningOf(keyCode: Int, repeatCount: Int = 0): Meaning? {
         KeyEvent.KEYCODE_DPAD_DOWN -> Meaning.MoveDown
         KeyEvent.KEYCODE_DPAD_LEFT -> Meaning.MoveLeft
         KeyEvent.KEYCODE_DPAD_RIGHT -> Meaning.MoveRight
-        KeyEvent.KEYCODE_BUTTON_A,
+        faces.confirmKey,
         KeyEvent.KEYCODE_DPAD_CENTER,
         KeyEvent.KEYCODE_ENTER,
         KeyEvent.KEYCODE_NUMPAD_ENTER,
         -> Meaning.Activate
-        KeyEvent.KEYCODE_BUTTON_B,
+        faces.backKey,
         KeyEvent.KEYCODE_BACK,
         -> Meaning.Back
         KeyEvent.KEYCODE_BUTTON_L1 -> Meaning.LeftPanel

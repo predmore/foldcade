@@ -116,6 +116,8 @@ object Copy {
     const val noPlatforms = "This library has no platforms"
     const val noGames = "No games"
     const val loading = "Loading"
+    const val buttonLabels = "Button labels"
+    const val pressConfirm = "Press Confirm"
     const val missingPlayerBody = "Foldcade can’t start this game without it."
     const val closePlayerTitle = "Close the other game?"
     const val closePlayerBody = "This game uses both screens. The one already running has to close first."
@@ -148,12 +150,12 @@ object Copy {
     const val appMeta = "App"
 }
 
-fun hintLine(activateDoesSomething: Boolean, backDoesSomething: Boolean): String? {
-    val parts = buildList {
-        if (activateDoesSomething) add("A")
-        if (backDoesSomething) add("B")
-    }
-    return parts.takeIf { it.isNotEmpty() }?.joinToString("  ")
+/** Which face actions the hint row should show. Glyphs come from [FaceMap], not from these flags. */
+data class HintActions(val confirm: Boolean, val back: Boolean)
+
+fun hintLine(activateDoesSomething: Boolean, backDoesSomething: Boolean): HintActions? {
+    if (!activateDoesSomething && !backDoesSomething) return null
+    return HintActions(confirm = activateDoesSomething, back = backDoesSomething)
 }
 
 enum class HintPlace {
@@ -169,7 +171,7 @@ fun monogram(title: String): String {
     return char.uppercaseChar().toString()
 }
 
-fun hintFor(place: HintPlace): String? = when (place) {
+fun hintFor(place: HintPlace): HintActions? = when (place) {
     HintPlace.RootGrid -> hintLine(activateDoesSomething = true, backDoesSomething = false)
     HintPlace.InsidePlatform,
     HintPlace.Menu,

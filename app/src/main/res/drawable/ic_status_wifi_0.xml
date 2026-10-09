@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Foldcade original art, CC BY-SA 4.0 (see LICENSE). Wi-Fi 0 bars -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:aapt="http://schemas.android.com/aapt"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+    <path
+        android:pathData="M10,18.2A2,2 0 1 1 14,18.2A2,2 0 1 1 10,18.2Z"
+        android:fillColor="#FF3A3E47"
+        android:fillAlpha="0.9"
+        android:strokeColor="#FF3A3E47"
+        android:strokeWidth="0.9"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round" />
+    <path
+        android:pathData="M7.262,13.862A6.7,6.7 0 0 1 16.738,13.862L14.97,15.63A4.2,4.2 0 0 0 9.03,15.63Z"
+        android:fillColor="#FF3A3E47"
+        android:fillAlpha="0.9"
+        android:strokeColor="#FF3A3E47"
+        android:strokeWidth="0.9"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round" />
+    <path
+        android:pathData="M4.151,10.751A11.1,11.1 0 0 1 19.849,10.751L18.081,12.519A8.6,8.6 0 0 0 5.919,12.519Z"
+        android:fillColor="#FF3A3E47"
+        android:fillAlpha="0.9"
+        android:strokeColor="#FF3A3E47"
+        android:strokeWidth="0.9"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round" />
+    <path
+        android:pathData="M1.04,7.64A15.5,15.5 0 0 1 22.96,7.64L21.192,9.408A13,13 0 0 0 2.808,9.408Z"
+        android:fillColor="#FF3A3E47"
+        android:fillAlpha="0.9"
+        android:strokeColor="#FF3A3E47"
+        android:strokeWidth="0.9"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round" />
+</vector>

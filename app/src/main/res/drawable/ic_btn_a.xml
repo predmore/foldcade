@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Foldcade original art, CC BY-SA 4.0 (see LICENSE). Face button A -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:aapt="http://schemas.android.com/aapt"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+    <path
+        android:pathData="M3.2,12A8.8,8.8 0 1 1 20.8,12A8.8,8.8 0 1 1 3.2,12Z"
+        android:strokeWidth="1.2"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round">
+        <aapt:attr name="android:fillColor">
+          <gradient android:type="linear" android:startX="0" android:startY="3.2" android:endX="0" android:endY="20.8">
+            <item android:offset="0" android:color="#FF262A33" />
+            <item android:offset="1" android:color="#FF0A0B0F" />
+          </gradient>
+        </aapt:attr>
+        <aapt:attr name="android:strokeColor">
+          <gradient android:type="linear" android:startX="0" android:startY="3.2" android:endX="0" android:endY="20.8">
+            <item android:offset="0" android:color="#F2E9E4DA" />
+            <item android:offset="1" android:color="#8C7C786F" />
+          </gradient>
+        </aapt:attr>
+    </path>
+    <path
+        android:pathData="M9.3,4.6H14.7A3.1,3.1 0 0 1 17.8,7.7V7.7A3.1,3.1 0 0 1 14.7,10.8H9.3A3.1,3.1 0 0 1 6.2,7.7V7.7A3.1,3.1 0 0 1 9.3,4.6Z">
+        <aapt:attr name="android:fillColor">
+          <gradient android:type="linear" android:startX="0" android:startY="4.4" android:endX="0" android:endY="11">
+            <item android:offset="0" android:color="#47FFFFFF" />
+            <item android:offset="1" android:color="#00FFFFFF" />
+          </gradient>
+        </aapt:attr>
+    </path>
+    <path
+        android:pathData="M9.091 15.895Q8.767 15.895 8.554 15.743Q8.341 15.592 8.287 15.331Q8.234 15.07 8.382 14.744L10.928 9.272Q11.113 8.871 11.38 8.688Q11.647 8.505 11.997 8.505Q12.342 8.505 12.606 8.688Q12.87 8.871 13.055 9.272L15.605 14.744Q15.763 15.077 15.716 15.34Q15.669 15.602 15.464 15.748Q15.259 15.895 14.946 15.895Q14.543 15.895 14.323 15.708Q14.102 15.521 13.928 15.111L13.375 13.824L14.096 14.344H9.884L10.605 13.824L10.055 15.111Q9.877 15.525 9.682 15.71Q9.487 15.895 9.091 15.895ZM11.976 10.561 10.794 13.388 10.503 12.898H13.477L13.189 13.388L11.997 10.561Z"
+        android:fillColor="#FFF4F1EA" />
+</vector>

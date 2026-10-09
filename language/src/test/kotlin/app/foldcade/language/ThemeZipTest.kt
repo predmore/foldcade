@@ -79,6 +79,16 @@ class ThemeZipTest {
                 "marks/desk.png",
                 "marks/beam.png",
                 "LICENSE",
+                "sprites/glow_soft_256.png",
+                "sprites/glow_soft_256_amber.png",
+                "sprites/glow_soft_256_blue.png",
+                "sprites/glow_soft_256_rose.png",
+                "sprites/glow_soft_256_teal.png",
+                "sprites/glow_soft_256_violet.png",
+                "sprites/glow_soft_512.png",
+                "sprites/ribbon_hotspot.png",
+                "sprites/ribbon_hotspot_amber.png",
+                "sprites/ribbon_hotspot_teal.png",
             ).forEach { name -> assertNotNull(name, zip.getEntry(name)) }
             assertNull(zip.getEntry("wallpaper-top.png"))
             assertNull(zip.getEntry("wallpaper-bottom.png"))

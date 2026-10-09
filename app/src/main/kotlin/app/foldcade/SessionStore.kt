@@ -11,6 +11,7 @@ import app.foldcade.language.AppShelfRecord
 import app.foldcade.language.AppShelfState
 import app.foldcade.language.HomeMusicSetting
 import app.foldcade.language.LibrarySort
+import app.foldcade.language.PromptKey
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
@@ -182,6 +183,27 @@ class SessionStore(private val prefs: SharedPreferences) {
         prefs.edit().putString(KEY_MOTION_SPEED, speed.wire).apply()
     }
 
+    fun buttonPromptSeenLaunch(): Boolean = prefs.getBoolean(KEY_BUTTON_PROMPT_SEEN, false)
+
+    fun setButtonPromptSeenLaunch() {
+        prefs.edit().putBoolean(KEY_BUTTON_PROMPT_SEEN, true).apply()
+    }
+
+    fun buttonPromptConfirm(deviceKey: String): PromptKey? {
+        val name = prefs.getString(buttonPromptConfirmKey(deviceKey), null) ?: return null
+        return runCatching { PromptKey.valueOf(name) }.getOrNull()
+    }
+
+    fun buttonPromptDismissed(deviceKey: String): Boolean =
+        prefs.getBoolean(buttonPromptDismissedKey(deviceKey), false)
+
+    fun saveButtonPrompt(deviceKey: String, confirm: PromptKey?, dismissed: Boolean) {
+        val editor = prefs.edit().putBoolean(buttonPromptDismissedKey(deviceKey), dismissed)
+        if (confirm == null) editor.remove(buttonPromptConfirmKey(deviceKey))
+        else editor.putString(buttonPromptConfirmKey(deviceKey), confirm.name)
+        editor.apply()
+    }
+
     private fun encode(screens: Map<String, Panel>): String =
         screens.entries.joinToString(",") { "${it.key}=${it.value.name}" }
 
@@ -216,6 +238,11 @@ class SessionStore(private val prefs: SharedPreferences) {
         private const val KEY_SHELF_HIDDEN = "android_shelf_hidden"
         private const val KEY_SHELF_FAVORITES = "android_shelf_favorites"
         private const val KEY_SHELF_SHOWN = "android_shelf_shown"
+        private const val KEY_BUTTON_PROMPT_SEEN = "button_prompt_seen"
+
+        private fun buttonPromptConfirmKey(deviceKey: String) = "button_prompt_confirm:$deviceKey"
+
+        private fun buttonPromptDismissedKey(deviceKey: String) = "button_prompt_dismissed:$deviceKey"
 
         private fun saveFolderKey(playerId: String) = "player_save_folder:$playerId"
 
