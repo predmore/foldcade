@@ -335,4 +335,58 @@ class ContractTest {
         assertEquals(1f, Motion.easingLeave.transform(1f), 0.001f)
         assertTrue(Motion.easingArrive.transform(0.5f) != 0.5f)
     }
+
+    @Test
+    fun noLibraryMovesBetweenAddFolderAndConnect() {
+        val model = PickerModel(
+            count = 2,
+            rowsPerPage = 1,
+            showLaunchTarget = false,
+            gridKind = GridKind.NoLibrary,
+            libraryGrid = true,
+            folderGrantPending = false,
+        )
+        val (added, add) = reduce(model, Meaning.Activate)
+        assertEquals(Effect.AddFolder, add)
+        assertNull(added.dialog)
+        val right = reduce(model, Meaning.MoveRight).first
+        assertEquals(1, right.focus.cellIndex)
+        val (opened, connect) = reduce(right, Meaning.Activate)
+        assertEquals(Effect.OpenConnect, connect)
+        assertTrue(opened.connectOpen)
+        val pending = model.copy(folderGrantPending = true)
+        assertEquals(DialogKind.Folder, reduce(pending, Meaning.Activate).first.dialog?.kind)
+    }
+
+    @Test
+    fun aPlatformOpensAndBackLeavesIt() {
+        val platforms = PickerModel(
+            count = 2,
+            rowsPerPage = 1,
+            showLaunchTarget = false,
+            gridKind = GridKind.Platforms,
+            libraryGrid = true,
+            atLibraryRoot = true,
+        )
+        assertEquals(Effect.OpenPlatform(0), reduce(platforms, Meaning.Activate).second)
+        assertNull(reduce(platforms, Meaning.Back).second)
+        val games = platforms.copy(gridKind = GridKind.Games, atLibraryRoot = false, count = 3)
+        assertEquals(Effect.Launch(0), reduce(games, Meaning.Activate).second)
+        assertEquals(Effect.LeavePlatform, reduce(games, Meaning.Back).second)
+        val none = games.copy(count = 0, emptyGrid = EmptyGrid.NoGames)
+        assertEquals(Effect.LeavePlatform, reduce(none, Meaning.Back).second)
+        assertNull(reduce(none, Meaning.Activate).second)
+    }
+
+    @Test
+    fun anUnreachableLibraryTriesAgain() {
+        val model = PickerModel(
+            count = 1,
+            rowsPerPage = 1,
+            showLaunchTarget = false,
+            gridKind = GridKind.Unreachable,
+            libraryGrid = true,
+        )
+        assertEquals(Effect.TryAgain, reduce(model, Meaning.Activate).second)
+    }
 }

@@ -75,6 +75,8 @@ data class DialogState(
     val index: Int,
     val safeIndex: Int,
     val screen: HostScreen,
+    /** A second muted line. The missing-player dialog lists package names here. */
+    val detail: String? = null,
 )
 
 fun homePrompt(screen: HostScreen = HostScreen.Bottom): DialogState = DialogState(
@@ -398,6 +400,9 @@ fun displayOrder(model: PickerModel): List<Int> {
 
 sealed interface Effect {
     data class Launch(val index: Int) : Effect
+    data class OpenPlatform(val index: Int) : Effect
+    data object LeavePlatform : Effect
+    data object TryAgain : Effect
     data object CycleLaunchTarget : Effect
     data object AddFolder : Effect
     data object OpenConnect : Effect
@@ -413,6 +418,22 @@ sealed interface Effect {
     data object ShowApp : Effect
     data class OpenAndroidSetting(val setting: AndroidSetting) : Effect
     data object DismissButtonLabels : Effect
+}
+
+/** What a grid cell is. Existing callers stay on [Games], which launches. */
+enum class GridKind {
+    Games,
+    Platforms,
+    NoLibrary,
+    Unreachable,
+}
+
+/** Why a grid with no cells is showing. [None] means the grid has cells, or the kind already names the state. */
+enum class EmptyGrid {
+    None,
+    Loading,
+    NoPlatforms,
+    NoGames,
 }
 
 data class PickerModel(
@@ -464,6 +485,9 @@ data class PickerModel(
     val offerButtonLabels: Boolean = false,
     val capturingConfirm: Boolean = false,
     val held: Set<PromptKey> = emptySet(),
+    val libraryGrid: Boolean = false,
+    val gridKind: GridKind = GridKind.Games,
+    val emptyGrid: EmptyGrid = EmptyGrid.None,
 )
 
 fun reduce(
@@ -580,6 +604,7 @@ private fun backGrid(model: PickerModel): Pair<PickerModel, Effect?> {
         ) to null
     }
     if (model.arranging) return model.copy(arranging = false) to null
+    if (!model.atLibraryRoot) return model to Effect.LeavePlatform
     return model to null
 }
 
@@ -667,7 +692,25 @@ private fun activate(model: PickerModel, screen: HostScreen): Pair<PickerModel, 
         null -> {
             if (model.arranging) return placeOrPick(model)
             if (model.count <= 0 || model.focus.cellIndex !in 0 until model.count) return model to null
-            model to Effect.Launch(model.focus.cellIndex)
+            if (!model.libraryGrid) return model to Effect.Launch(model.focus.cellIndex)
+            when (model.gridKind) {
+                GridKind.Games -> model to Effect.Launch(model.focus.cellIndex)
+                GridKind.Platforms -> model to Effect.OpenPlatform(model.focus.cellIndex)
+                GridKind.Unreachable -> model to Effect.TryAgain
+                GridKind.NoLibrary -> if (model.focus.cellIndex == 0) {
+                    if (model.folderGrantPending) {
+                        model.copy(dialog = folderExplainer(screen)) to null
+                    } else {
+                        model to Effect.AddFolder
+                    }
+                } else {
+                    model.copy(
+                        connectOpen = true,
+                        connectScreen = screen,
+                        connectIndex = 0,
+                    ) to Effect.OpenConnect
+                }
+            }
         }
     }
 }
@@ -865,6 +908,7 @@ private fun openGrid(
     hold = null,
     order = emptyList(),
     homeGrid = grid,
+    libraryGrid = false,
 ) to null
 
 /** A tap on a dialog button focuses that button and activates it. */

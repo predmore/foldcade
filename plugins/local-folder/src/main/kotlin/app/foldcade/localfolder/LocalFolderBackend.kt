@@ -183,6 +183,16 @@ class LocalFolderBackend(
         return if (snap.generation == current.generation) snap.scan else null
     }
 
+    /**
+     * Display name of the directory that contains [remoteKey].
+     * Empty when this library has no published scan, or the file has no directory.
+     * The shell uses it as the hero short text. It does not parse [remoteKey].
+     */
+    fun folderName(remoteKey: String): String {
+        val scan = published() ?: return ""
+        return scan.games.firstOrNull { it.documentUri == remoteKey }?.folderName.orEmpty()
+    }
+
     private suspend fun requireGame(game: Game): FolderGame {
         if (game.backendId != id) {
             throw PluginException.NotFound("Game is not in this folder.")

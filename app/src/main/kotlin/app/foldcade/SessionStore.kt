@@ -55,6 +55,8 @@ class SessionStore(private val prefs: SharedPreferences) {
         prefs.edit().putString(KEY_FOLDER, uri).apply()
     }
 
+    fun folderTree(): String? = prefs.getString(KEY_FOLDER, null)?.takeIf { it.isNotBlank() }
+
     fun folderGrantPending(): Boolean = !prefs.getBoolean(KEY_FOLDER_EXPLAINED, false)
 
     fun setFolderGrantExplained() {

@@ -1,5 +1,6 @@
 package app.foldcade
 
+import android.util.Log
 import app.foldcade.api.plugin.RommCredentials
 import app.foldcade.api.plugin.SaveFolderHolder
 import app.foldcade.host.PluginHost
@@ -17,7 +18,9 @@ import app.foldcade.language.LaunchableApp
 import app.foldcade.language.appsOn
 import app.foldcade.language.hiddenApps
 import app.foldcade.language.Effect
+import app.foldcade.language.EmptyGrid
 import app.foldcade.language.GridFocus
+import app.foldcade.language.GridKind
 import app.foldcade.language.DEFAULT_TRACK_TITLE
 import app.foldcade.host.play.recentlyPlayedIndices
 import app.foldcade.language.HomeMusicSetting
@@ -43,7 +46,6 @@ import app.foldcade.language.previewDialogState
 import app.foldcade.language.reduce
 import app.foldcade.language.signInAgainPrompt
 import app.foldcade.romm.cleartextCredentialWarning
-import android.util.Log
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
@@ -72,9 +74,20 @@ class ShellController(
     var connectToken by mutableStateOf("")
         private set
 
+    /** Cells for the current grid. Empty when the grid is an empty state. */
+    var entries by mutableStateOf<List<GridEntry>>(emptyList())
+        private set
+
+    var activeLibraryId: String? = null
+        private set
+
+    private var platformEntries: List<GridEntry> = emptyList()
+    private var platformFocus: GridFocus = GridFocus()
+    private var platformOrder: List<Int> = emptyList()
+
     fun onMeaning(meaning: Meaning, screen: HostScreen): Effect? {
         val before = model
-        val current = withShelf(model)
+        val current = if (model.libraryGrid) model else withShelf(model)
         val (next, effect) = reduce(current, meaning, screen)
         if (!next.connectOpen) connectToken = ""
         val packageName = focusedGame()?.androidPackage
@@ -140,12 +153,14 @@ class ShellController(
         publish(
             model.copy(
                 homeGrid = grid,
+                libraryGrid = false,
                 panel = null,
                 arranging = false,
                 hold = null,
                 order = emptyList(),
                 focus = GridFocus(),
                 connectOpen = false,
+                dialog = null,
             ),
         )
     }
@@ -372,13 +387,194 @@ class ShellController(
 
     fun focusedGame(): ShelfGame? = tileFromOrder(displaySource(model))
 
-    fun tileFromOrder(source: Int): ShelfGame? = when (model.homeGrid) {
-        HomeGrid.StandIns -> Shelf.games.getOrNull(source)
+    fun tileFromOrder(source: Int): ShelfGame? = when {
+        model.libraryGrid -> entries.getOrNull(source)?.asShelf()
+        model.homeGrid == HomeGrid.StandIns -> Shelf.games.getOrNull(source)
         else -> listed(model.homeGrid).getOrNull(source)?.asTile(model.homeGrid)
     }
 
     fun refreshPlayerSaves() {
         model = model.copy(playerSaves = playerSaveSettings())
+    }
+
+    private fun libraryEntry(snapshot: PickerModel): GridEntry? {
+        if (!snapshot.libraryGrid) return null
+        val source = displayOrder(snapshot).getOrElse(snapshot.focus.cellIndex) { snapshot.focus.cellIndex }
+        return entries.getOrNull(source)
+    }
+
+    private fun GridEntry.asShelf(): ShelfGame = ShelfGame(
+        id = id,
+        title = title,
+        shortText = shortText,
+        platformId = platformId,
+        occupiesBothDisplays = occupiesBothDisplays,
+        availabilityLabel = availabilityLabel,
+    )
+
+    /** The cell [index] shows, after the arrange order. */
+    fun entryAt(index: Int): GridEntry? {
+        if (!model.libraryGrid || index !in 0 until model.count) return null
+        val source = displayOrder(model).getOrElse(index) { index }
+        return entries.getOrNull(source)
+    }
+
+    /**
+     * The focused platform or game. Empty states and action rows have none,
+     * so the hero stays blank.
+     */
+    fun focusedEntry(): GridEntry? {
+        if (!model.libraryGrid) return null
+        if (model.gridKind != GridKind.Games && model.gridKind != GridKind.Platforms) return null
+        return entryAt(model.focus.cellIndex)
+    }
+
+    fun showNoLibrary() {
+        activeLibraryId = null
+        platformEntries = emptyList()
+        platformOrder = emptyList()
+        show(
+            cells = emptyList(),
+            count = 2,
+            kind = GridKind.NoLibrary,
+            empty = EmptyGrid.None,
+            atRoot = true,
+            focus = GridFocus(),
+            order = emptyList(),
+        )
+    }
+
+    fun showLoading(insidePlatform: Boolean) {
+        show(
+            cells = emptyList(),
+            count = 0,
+            kind = if (insidePlatform) GridKind.Games else GridKind.Platforms,
+            empty = EmptyGrid.Loading,
+            atRoot = !insidePlatform,
+            focus = GridFocus(chrome = Chrome.StatusCluster),
+            order = emptyList(),
+        )
+    }
+
+    fun showUnreachable(insidePlatform: Boolean) {
+        show(
+            cells = emptyList(),
+            count = 1,
+            kind = GridKind.Unreachable,
+            empty = EmptyGrid.None,
+            atRoot = !insidePlatform,
+            focus = GridFocus(),
+            order = emptyList(),
+        )
+    }
+
+    fun showPlatforms(libraryId: String, cells: List<GridEntry>) {
+        activeLibraryId = libraryId
+        platformEntries = cells
+        platformFocus = GridFocus()
+        platformOrder = emptyList()
+        val empty = cells.isEmpty()
+        show(
+            cells = cells,
+            count = cells.size,
+            kind = GridKind.Platforms,
+            empty = if (empty) EmptyGrid.NoPlatforms else EmptyGrid.None,
+            atRoot = true,
+            focus = if (empty) GridFocus(chrome = Chrome.StatusCluster) else GridFocus(),
+            order = emptyList(),
+        )
+    }
+
+    fun showNoPlatforms(libraryId: String) {
+        showPlatforms(libraryId, emptyList())
+    }
+
+    fun showGames(cells: List<GridEntry>) {
+        val empty = cells.isEmpty()
+        show(
+            cells = cells,
+            count = cells.size,
+            kind = GridKind.Games,
+            empty = if (empty) EmptyGrid.NoGames else EmptyGrid.None,
+            atRoot = false,
+            focus = GridFocus(),
+            order = emptyList(),
+        )
+    }
+
+    /** Saves the platform grid so Back can return to the same cell. */
+    fun rememberPlatformPlace() {
+        platformEntries = entries
+        platformFocus = model.focus
+        platformOrder = model.order
+    }
+
+    fun restorePlatforms() {
+        entries = platformEntries
+        show(
+            cells = platformEntries,
+            count = platformEntries.size,
+            kind = GridKind.Platforms,
+            empty = if (platformEntries.isEmpty()) EmptyGrid.NoPlatforms else EmptyGrid.None,
+            atRoot = true,
+            focus = platformFocus,
+            order = platformOrder,
+        )
+    }
+
+    fun showDialog(dialog: DialogState) {
+        if (model.dialog != null) return
+        val notify = dialog.kind == DialogKind.Ok
+        publish(model.copy(dialog = dialog))
+        if (notify) cue(model.themeIndex, "notify")
+    }
+
+    private fun show(
+        cells: List<GridEntry>,
+        count: Int,
+        kind: GridKind,
+        empty: EmptyGrid,
+        atRoot: Boolean,
+        focus: GridFocus,
+        order: List<Int>,
+    ) {
+        entries = cells
+        val source = if (order.size == count && count > 0) {
+            order.getOrElse(focus.cellIndex) { focus.cellIndex }
+        } else {
+            focus.cellIndex
+        }
+        val entry = cells.getOrNull(source)
+        val onGrid = kind == GridKind.Games || kind == GridKind.Platforms
+        val visible = onGrid &&
+            count > 0 &&
+            focus.cellIndex in 0 until count &&
+            store.session.launchTargetControlVisible(entry?.occupiesBothDisplays == true)
+        publish(
+            model.copy(
+                count = count,
+                gridKind = kind,
+                emptyGrid = empty,
+                atLibraryRoot = atRoot,
+                focus = focus,
+                order = order,
+                arranging = false,
+                hold = null,
+                showLaunchTarget = visible,
+                libraryGrid = true,
+                homeGrid = HomeGrid.StandIns,
+                dialog = null,
+                panel = null,
+                connectOpen = false,
+            ),
+        )
+        val phrase = when {
+            kind == GridKind.NoLibrary -> "library-ui no-library"
+            kind == GridKind.Platforms && count > 0 -> "library-ui platforms"
+            kind == GridKind.Games && count > 0 -> "library-ui games"
+            else -> null
+        }
+        if (phrase != null) Log.i("Foldcade", phrase)
     }
 
     private fun displaySource(snapshot: PickerModel): Int {
@@ -425,7 +621,8 @@ class ShellController(
      * redraws the hint.
      */
     fun noteShelfChanged() {
-        model = withShelf(model.copy(shelfEpoch = model.shelfEpoch + 1))
+        val next = model.copy(shelfEpoch = model.shelfEpoch + 1)
+        model = if (model.libraryGrid) next else withShelf(next)
     }
 
     /** Play history changed. Recently played order follows the new last-played times. */
@@ -450,7 +647,16 @@ class ShellController(
         if (next.motionSpeed != model.motionSpeed) {
             store.setMotionSpeed(next.motionSpeed)
         }
-        model = withShelf(next)
+        model = if (next.libraryGrid) {
+            val entry = libraryEntry(next)
+            val onGrid = next.gridKind == GridKind.Games || next.gridKind == GridKind.Platforms
+            val visible = onGrid &&
+                next.count > 0 &&
+                store.session.launchTargetControlVisible(entry?.occupiesBothDisplays == true)
+            next.copy(showLaunchTarget = visible, appActions = null, playerSaves = playerSaveSettings())
+        } else {
+            withShelf(next.copy(libraryGrid = false))
+        }
     }
 
     private fun countFor(grid: HomeGrid): Int = when (grid) {

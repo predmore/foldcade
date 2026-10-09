@@ -278,6 +278,20 @@ class LocalFolderBackendTest {
     }
 
     @Test
+    fun theHeroShortTextIsTheContainingFolderName() = runBlocking {
+        val backend = newBackend(
+            folderDir(
+                "content://roms",
+                "roms",
+                listOf(folderDir("content://nds", "nds", listOf(folderFile("content://game", "Game.nds")))),
+            ),
+        )
+        val game = backend.listGames("nintendo-ds", GameQuery()).games.single()
+        assertEquals("nds", backend.folderName(game.remoteKey))
+        assertEquals("", backend.folderName("content://missing"))
+    }
+
+    @Test
     fun launchLeavesSavesWhereThePlayerWritesThem() = runBlocking {
         val backend = newBackend(
             folderDir("content://3ds", "3ds", listOf(folderFile("content://game", "Game.cci"))),

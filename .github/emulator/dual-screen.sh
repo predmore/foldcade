@@ -911,4 +911,171 @@ capture_dialog relogin 0 top relogin-ok "Sign in again"
 } >"$out/dialog-focus.txt"
 
 
+# Empty library, then a scanned folder. Thor-sized emulator, not a Thor pass.
+# "No library yet" is on the bottom panel, so the script waits for the shell log
+# rather than the default-display accessibility dump.
+wait_library_log() {
+  local phrase="$1" attempt line=""
+  for attempt in $(seq 1 30); do
+    line="$(timeout 10 adb logcat -d -s Foldcade:I 2>/dev/null | tr -d '\r' || true)"
+    if printf '%s\n' "$line" | grep -q "$phrase"; then
+      return 0
+    fi
+    sleep 1
+  done
+  echo "----- logcat Foldcade -----"
+  printf '%s\n' "$line" | tail -n 40
+  return 1
+}
+
+dump_library_ui() {
+  : >"$out/ui-library.xml"
+  timeout 15 adb shell uiautomator dump /sdcard/foldcade-ui.xml >/dev/null 2>&1 || true
+  timeout 15 adb shell cat /sdcard/foldcade-ui.xml 2>/dev/null | tr -d '\r' >>"$out/ui-library.xml" || true
+  timeout 15 adb shell uiautomator dump --windows /sdcard/foldcade-windows.xml >/dev/null 2>&1 || true
+  timeout 15 adb shell cat /sdcard/foldcade-windows.xml 2>/dev/null | tr -d '\r' >>"$out/ui-library.xml" || true
+  [ -s "$out/ui-library.xml" ]
+}
+
+wait_library_text() {
+  local phrase="$1" attempt
+  for attempt in $(seq 1 20); do
+    if dump_library_ui && grep -q "$phrase" "$out/ui-library.xml"; then
+      return 0
+    fi
+    sleep 1
+  done
+  echo "----- ui-library.xml -----"
+  head -c 2000 "$out/ui-library.xml" 2>/dev/null || true
+  echo
+  return 1
+}
+
+key_bottom() {
+  adb_do shell input -d "$presentation_logical" keyevent "$1"
+}
+
+become_root() {
+  local attempt
+  for attempt in 1 2 3 4 5; do
+    adb root >/dev/null 2>&1 || true
+    if timeout 30 adb wait-for-device && timeout 15 adb shell echo ok >/dev/null 2>&1; then
+      return 0
+    fi
+    sleep 2
+  done
+  return 1
+}
+
+# The persistable document-tree grant is read when the system server starts.
+# A guest reboot is what makes the seeded folder visible to the shell.
+seed_folder_library() {
+  local uid gid prefs tree name boot attempt
+  echo "step: seed folder files"
+  adb_do shell mkdir -p /sdcard/Library/gba
+  for name in Cart Drift Puzzle Quest Racer Runner; do
+    adb_do shell "printf '%s\n' foldcade > /sdcard/Library/gba/${name}.gba"
+  done
+  become_root || fail "folder library: adb root did not return"
+  adb_do shell am force-stop "$app_id"
+  tree='content://com.android.externalstorage.documents/tree/primary%3ALibrary'
+  cat >"$out/urigrants.xml" <<EOF
+<?xml version='1.0' encoding='utf-8' standalone='yes' ?>
+<uri-grants>
+<uri-grant sourceUserId="0" targetUserId="0" sourcePkg="com.android.externalstorage" targetPkg="${app_id}" uri="${tree}" modeFlags="193" createdTime="1" prefix="true" />
+</uri-grants>
+EOF
+  adb_do push "$out/urigrants.xml" /data/system/urigrants.xml >/dev/null
+  adb_do shell chown system:system /data/system/urigrants.xml
+  adb_do shell chmod 600 /data/system/urigrants.xml
+  adb_do shell restorecon /data/system/urigrants.xml || true
+  prefs="/data/data/${app_id}/shared_prefs/foldcade.xml"
+  uid="$(adb_do shell stat -c '%u' "/data/data/${app_id}")"
+  gid="$(adb_do shell stat -c '%g' "/data/data/${app_id}")"
+  if ! adb_do pull "$prefs" "$out/foldcade-prefs.xml" >/dev/null; then
+    printf '%s\n' "<?xml version='1.0' encoding='utf-8' standalone='yes' ?>" '<map>' '</map>' >"$out/foldcade-prefs.xml"
+  fi
+  python3 - "$out/foldcade-prefs.xml" "$tree" <<'PY'
+import sys
+from pathlib import Path
+path, tree = sys.argv[1], sys.argv[2]
+text = Path(path).read_text()
+if "</map>" not in text:
+    text = text.rstrip() + "\n<map>\n</map>\n"
+if 'name="folder_tree"' not in text:
+    text = text.replace("</map>", f'    <string name="folder_tree">{tree}</string>\n</map>')
+if 'name="folder_explained"' not in text:
+    text = text.replace("</map>", '    <boolean name="folder_explained" value="true" />\n</map>')
+Path(path).write_text(text)
+PY
+  adb_do shell mkdir -p "/data/data/${app_id}/shared_prefs"
+  adb_do shell chown "${uid}:${gid}" "/data/data/${app_id}/shared_prefs"
+  adb_do push "$out/foldcade-prefs.xml" "$prefs" >/dev/null
+  adb_do shell chown "${uid}:${gid}" "$prefs"
+  adb_do shell chmod 660 "$prefs"
+  adb_do shell restorecon "$prefs" || true
+  adb_do shell rm -f "${prefs}.bak" || true
+  echo "step: reboot for the folder grant"
+  adb reboot || true
+  for attempt in $(seq 1 60); do
+    boot="$(timeout 10 adb shell getprop sys.boot_completed 2>/dev/null | tr -d '\r' || true)"
+    if [ "$boot" != "1" ]; then
+      break
+    fi
+    sleep 1
+  done
+  wait_for_boot
+  start_guest_service
+  if ! poll_bottom; then
+    adb_do shell settings put global overlay_display_devices \
+      "${bottom_width}x${bottom_height}/${bottom_density}" || true
+    poll_bottom || fail "folder library: bottom display did not return"
+  fi
+  echo "step: launch seeded library"
+  timeout 30 adb shell am start -W -n "$component" --display 0
+  dismiss_leftover_dialog
+  show_foldcade
+  dismiss_leftover_dialog
+  expect_foldcade
+  wait_library_log "library-ui platforms" || fail "folder library: platform grid did not load"
+  wait_library_text "Game Boy" || fail "folder library: platform title was not on screen"
+  key_bottom KEYCODE_DPAD_CENTER
+  wait_library_log "library-ui games" || fail "folder library: game grid did not load"
+  wait_library_text "Cart" || fail "folder library: game title was not on screen"
+  sleep 1
+  resolve_screencap_ids
+  capture "$primary" "$out/library-top.png"
+  capture "$secondary" "$out/library-bottom.png"
+  expect_png "$out/library-top.png" "${top_width}x${top_height}"
+  expect_png "$out/library-bottom.png" "${bottom_width}x${bottom_height}"
+}
+
+echo "step: empty library"
+# The shelf launch path may still be showing a missing-player dialog.
+key_bottom KEYCODE_BACK || true
+sleep 1
+timeout 30 adb shell am start -W -n "$component" \
+  --es app.foldcade.extra.FOLDER_LIBRARY 1 \
+  --display 0
+dismiss_leftover_dialog
+show_foldcade
+dismiss_leftover_dialog
+expect_foldcade
+wait_library_log "library-ui no-library" || fail "empty library: No library yet was not shown"
+key_bottom KEYCODE_BACK || true
+sleep 1
+resolve_screencap_ids
+capture "$primary" "$out/empty-top.png"
+capture "$secondary" "$out/empty-bottom.png"
+expect_png "$out/empty-top.png" "${top_width}x${top_height}"
+expect_png "$out/empty-bottom.png" "${bottom_width}x${bottom_height}"
+
+seed_folder_library
+{
+  echo "Thor-sized emulator, not a Thor pass."
+  echo "Empty library: empty-top.png is ${top_width}x${top_height}, empty-bottom.png is ${bottom_width}x${bottom_height}."
+  echo "Scanned folder: library-top.png is ${top_width}x${top_height}, library-bottom.png is ${bottom_width}x${bottom_height}."
+  echo "These captures are not a pass on Thor hardware."
+} >"$out/library-captures.txt"
+
 echo "Captured displays $primary and $secondary. Thor-sized emulator, not a Thor pass."

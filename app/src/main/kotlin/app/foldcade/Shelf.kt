@@ -23,6 +23,7 @@ data class ShelfGame(
      * It tells the player to add a shortcut. It does not launch a game.
      */
     val emptyShelfHint: Boolean = false,
+    val availabilityLabel: String? = null,
 )
 
 object Shelf {

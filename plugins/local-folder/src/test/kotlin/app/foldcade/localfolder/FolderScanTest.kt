@@ -62,11 +62,11 @@ class FolderScanTest {
 
         assertEquals(
             listOf(
-                game("content://tree/3ds/usa/mario", "Super Mario (USA).cci", "Super Mario (USA)", "nintendo-3ds"),
-                game("content://tree/loose", "loose.nds", "loose", "nintendo-ds"),
-                game("content://tree/nds/zip", "Packed.7z", "Packed", "nintendo-ds"),
-                game("content://tree/nds/a", "Zelda.nds", "Zelda", "nintendo-ds"),
-                game("content://tree/ps1/cue", "Track.cue", "Track", "playstation"),
+                game("content://tree/3ds/usa/mario", "Super Mario (USA).cci", "Super Mario (USA)", "nintendo-3ds", "USA"),
+                game("content://tree/loose", "loose.nds", "loose", "nintendo-ds", "roms"),
+                game("content://tree/nds/zip", "Packed.7z", "Packed", "nintendo-ds", "nds"),
+                game("content://tree/nds/a", "Zelda.nds", "Zelda", "nintendo-ds", "nds"),
+                game("content://tree/ps1/cue", "Track.cue", "Track", "playstation", "PlayStation"),
             ),
             scan.games,
         )
@@ -127,9 +127,9 @@ class FolderScanTest {
 
         assertEquals(
             listOf(
-                game("content://gc/game", "Game.iso", "Game", "gamecube"),
-                game("content://ps2/game", "Game.iso", "Game", "playstation-2"),
-                game("content://wii/game", "Game.rvz", "Game", "wii"),
+                game("content://gc/game", "Game.iso", "Game", "gamecube", "gc"),
+                game("content://ps2/game", "Game.iso", "Game", "playstation-2", "ps2"),
+                game("content://wii/game", "Game.rvz", "Game", "wii", "wii"),
             ),
             scan.games,
         )
@@ -147,6 +147,7 @@ class FolderScanTest {
 
         assertEquals("nintendo-3ds", scan.games.single().platformId)
         assertEquals("Game", scan.games.single().title)
+        assertEquals("Nintendo 3DS", scan.games.single().folderName)
     }
 
     @Test
@@ -155,6 +156,7 @@ class FolderScanTest {
         val scan = scanFolderTree(game.entry()) { error("files have no children") }
         assertEquals("nintendo-ds", scan.games.single().platformId)
         assertEquals("content://rom/game.nds", scan.games.single().documentUri)
+        assertEquals("", scan.games.single().folderName)
     }
 
     @Test
@@ -187,8 +189,8 @@ class FolderScanTest {
 
         assertEquals(
             listOf(
-                game("content://gen/game", "Sonic.md", "Sonic", "genesis"),
-                game("content://gen/gen", "Sonic.gen", "Sonic", "genesis"),
+                game("content://gen/game", "Sonic.md", "Sonic", "genesis", "genesis"),
+                game("content://gen/gen", "Sonic.gen", "Sonic", "genesis", "genesis"),
             ),
             scan.games,
         )
@@ -413,10 +415,16 @@ private fun nodes(root: Node): (FolderEntry) -> List<FolderEntry> {
 private fun scan(root: Node): FolderScan =
     scanFolderTree(root.entry(), childrenOf = nodes(root))
 
-private fun game(uri: String, fileName: String, title: String, platformId: String): FolderGame =
-    FolderGame(
-        documentUri = uri,
-        fileName = fileName,
-        title = title,
-        platformId = platformId,
-    )
+private fun game(
+    uri: String,
+    fileName: String,
+    title: String,
+    platformId: String,
+    folderName: String,
+): FolderGame = FolderGame(
+    documentUri = uri,
+    fileName = fileName,
+    title = title,
+    platformId = platformId,
+    folderName = folderName,
+)

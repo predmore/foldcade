@@ -53,6 +53,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.drawscope.scale
 import androidx.compose.ui.graphics.graphicsLayer
@@ -70,7 +71,6 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.IntOffset
-import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.zIndex
@@ -89,6 +89,8 @@ import app.foldcade.language.homeGridLabel
 import app.foldcade.language.DialogButton
 import app.foldcade.language.Effect
 import app.foldcade.language.DialogState
+import app.foldcade.language.EmptyGrid
+import app.foldcade.language.GridKind
 import app.foldcade.language.HintActions
 import app.foldcade.language.HintPlace
 import app.foldcade.language.HostScreen
@@ -248,10 +250,21 @@ private fun Hero(app: FoldcadeApp, screen: HostScreen, scale: Float, onEffect: (
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis,
                         )
-                        ShelfMeta(
-                            line = shown.shortText,
-                            hintFocused = shown.emptyShelfHint && cellFocused,
-                        )
+                        if (shown.shortText.isNotEmpty()) {
+                            ShelfMeta(
+                                line = shown.shortText,
+                                hintFocused = shown.emptyShelfHint && cellFocused,
+                            )
+                        }
+                        val availability = shown.availabilityLabel
+                        if (availability != null) {
+                            BasicText(
+                                text = availability,
+                                style = text(theme.muted, TypeRamp.availability, theme),
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                            )
+                        }
                         PlayFacts(app, shown.id)
                     }
                 }
@@ -347,9 +360,12 @@ private fun Picker(
                 val libraryFailed = model.unavailable &&
                     model.panel?.level == PanelLevel.Library &&
                     model.panel?.side == Side.Left
+                val emptyTitle = emptyTitle(model)
                 if (libraryFailed) {
                     Unavailable()
-                } else if (model.homeGrid != HomeGrid.StandIns && model.count == 0) {
+                } else if (model.libraryGrid && emptyTitle != null) {
+                    EmptyLibrary(app, screen, emptyTitle, emptyActions(model))
+                } else if (!model.libraryGrid && model.homeGrid != HomeGrid.StandIns && model.count == 0) {
                     BasicText(
                         text = emptyShelf(model.homeGrid),
                         style = text(theme.muted, TypeRamp.dialogBody, theme),
@@ -1015,6 +1031,8 @@ private fun Cell(
         modifier = Modifier.zIndex(if (focused) 1f else 0f),
     ) {
         val accent = mark?.let { markGlyph(it)?.accent }
+        // A scanned-folder tile has no mark. Focus fills it like the dialog pill.
+        val focusCard = focused && accent == null && icon == null
         Box(
             modifier = Modifier
                 .size(size)
@@ -1027,6 +1045,7 @@ private fun Cell(
                     val glow = accent
                     val bounds = this.size
                     val cornerPx = corner.toPx()
+                    if (focusCard) drawFocusCard(theme.focus, cornerPx)
                     if (glow != null) {
                         val half = min(bounds.width, bounds.height) * 0.5f
                         // Halo sits outside the plate and reaches transparent before the pager pad.
@@ -1098,7 +1117,11 @@ private fun Cell(
                     BasicText(
                         text = monogram(title),
                         modifier = Modifier.scale(theme.artScale).graphicsLayer { alpha = glyphAlpha },
-                        style = text(theme.onBackground, TypeRamp.heroTitle, theme),
+                        style = text(
+                            if (focusCard) theme.background else theme.onBackground,
+                            TypeRamp.heroTitle,
+                            theme,
+                        ),
                         maxLines = 1,
                         overflow = TextOverflow.Clip,
                     )
@@ -1171,6 +1194,10 @@ private fun DialogCard(
         ) {
             BasicText(text = dialog.title, style = text(theme.onBackground, TypeRamp.dialogTitle, theme))
             BasicText(text = dialog.body, style = text(theme.onBackground, TypeRamp.dialogBody, theme))
+            val detail = dialog.detail
+            if (!detail.isNullOrBlank()) {
+                BasicText(text = detail, style = text(theme.muted, TypeRamp.dialogBody, theme))
+            }
             Row(
                 horizontalArrangement = Arrangement.spacedBy(px(8f)),
                 verticalAlignment = Alignment.CenterVertically,
@@ -1187,6 +1214,53 @@ private fun DialogCard(
                         label = label,
                         focused = dialog.index == index,
                         onClick = { onEffect(app.shell.touchDialog(index, dialog.screen)) },
+                    )
+                }
+            }
+        }
+    }
+}
+
+private fun emptyTitle(model: app.foldcade.language.PickerModel): String? = when {
+    model.gridKind == GridKind.NoLibrary -> Copy.noLibrary
+    model.gridKind == GridKind.Unreachable -> Copy.libraryUnreachable
+    model.emptyGrid == EmptyGrid.Loading -> Copy.loading
+    model.emptyGrid == EmptyGrid.NoPlatforms -> Copy.noPlatforms
+    model.emptyGrid == EmptyGrid.NoGames -> Copy.noGames
+    else -> null
+}
+
+private fun emptyActions(model: app.foldcade.language.PickerModel): List<String> = when (model.gridKind) {
+    GridKind.NoLibrary -> listOf(Copy.addFolder, Copy.connectRomm)
+    GridKind.Unreachable -> listOf(Copy.tryAgain)
+    else -> emptyList()
+}
+
+@Composable
+private fun EmptyLibrary(
+    app: FoldcadeApp,
+    screen: HostScreen,
+    title: String,
+    actions: List<String>,
+) {
+    val theme = foldTheme()
+    val focus = app.shell.model.focus
+    Column(Modifier.fillMaxSize(), verticalArrangement = Arrangement.Center) {
+        BasicText(text = title, style = text(theme.onBackground, TypeRamp.dialogTitle, theme))
+        if (actions.isNotEmpty()) {
+            Row(
+                modifier = Modifier.padding(top = px(16f)),
+                horizontalArrangement = Arrangement.spacedBy(px(16f)),
+            ) {
+                actions.forEachIndexed { index, label ->
+                    val focused = focus.chrome == null && focus.cellIndex == index
+                    BasicText(
+                        text = label,
+                        modifier = Modifier
+                            .focusStroke(focused)
+                            .hostPress { app.shell.touchCell(index, screen) }
+                            .padding(px(8f)),
+                        style = text(theme.onBackground, TypeRamp.dialogBody, theme),
                     )
                 }
             }
@@ -1224,6 +1298,33 @@ private fun DialogAction(label: String, focused: Boolean, onClick: () -> Unit) {
             theme,
         ).copy(textAlign = TextAlign.Center),
     )
+}
+
+/**
+ * Focused library card. Same accent fill and bloom as [dialogPlate], on the tile's
+ * corner, with the cell's [Motion.scaleFocus] scale-up. The bloom ends transparent.
+ */
+private fun DrawScope.drawFocusCard(accent: Color, cornerPx: Float) {
+    val spread = 28f
+    val half = min(size.width, size.height) / 2f
+    val reach = half + spread
+    val edge = (half / reach).coerceIn(0.5f, 0.92f)
+    val mid = edge + (1f - edge) * 0.45f
+    drawCircle(
+        brush = Brush.radialGradient(
+            colorStops = arrayOf(
+                0f to accent,
+                edge to accent.copy(alpha = 0.82f),
+                mid to accent.copy(alpha = 0.18f),
+                1f to Color.Transparent,
+            ),
+            center = center,
+            radius = reach,
+        ),
+        radius = reach,
+        center = center,
+    )
+    drawRoundRect(color = accent, cornerRadius = CornerRadius(cornerPx, cornerPx))
 }
 
 /**

@@ -6,6 +6,8 @@ import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
 import android.content.pm.PackageManager
+import android.net.Uri
+import android.util.Log
 import app.foldcade.api.plugin.CredentialLookup
 import app.foldcade.api.plugin.CredentialStore
 import app.foldcade.api.plugin.RommCredentials
@@ -18,11 +20,14 @@ import app.foldcade.language.BackgroundMotion
 import app.foldcade.language.Copy
 import app.foldcade.language.SignedInBackend
 import app.foldcade.language.builtInTheme
+import app.foldcade.localfolder.LocalFolderBackend
 import app.foldcade.music.HomeMusic
 import app.foldcade.ui.FoldPaint
 import java.io.File
 import java.nio.file.Path
+import java.util.concurrent.atomic.AtomicInteger
 import kotlin.coroutines.cancellation.CancellationException
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -71,6 +76,9 @@ class FoldcadeApp : Application() {
     val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val credentialGate = Mutex()
     private val pluginLoad = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    private val pluginsReady = CompletableDeferred<Unit>()
+    private val libraryTicket = AtomicInteger()
+    private var libraryRetry: () -> Unit = { reloadFolder() }
     private lateinit var rommPublish: RommPublish
 
     private val packageChanges = object : BroadcastReceiver() {
@@ -142,15 +150,20 @@ class FoldcadeApp : Application() {
         refreshCredentials()
         reloadInstalledApps()
         pluginLoad.launch {
-            plugins.load(classLoader)
-            restorePlayerSaveFolders()
-            publishRomm()
-            refreshGameNative()
-            withContext(Dispatchers.Main.immediate) {
-                shell.refreshPlayerSaves()
-                shell.noteShelfChanged()
+            try {
+                plugins.load(classLoader)
+                restorePlayerSaveFolders()
+                publishRomm()
+                refreshGameNative()
+                withContext(Dispatchers.Main.immediate) {
+                    shell.refreshPlayerSaves()
+                    shell.noteShelfChanged()
+                }
+                reloadInstalledApps()
+            } finally {
+                if (!pluginsReady.isCompleted) pluginsReady.complete(Unit)
             }
-            reloadInstalledApps()
+            if (!store.folderTree().isNullOrBlank()) reloadFolder()
         }
     }
 
@@ -258,5 +271,173 @@ class FoldcadeApp : Application() {
     fun backendLabel(pluginId: String): String = when (pluginId) {
         RommCredentials.PLUGIN_ID -> "RomM"
         else -> pluginId
+    }
+
+    /** Stores the picked tree and scans it. The grid shows that library. */
+    fun useFolder(uri: Uri) {
+        store.setFolderTree(uri.toString())
+        reloadFolder()
+    }
+
+    fun reloadFolder() {
+        libraryRetry = { reloadFolder() }
+        val ticket = libraryTicket.incrementAndGet()
+        pluginLoad.launch {
+            pluginsReady.await()
+            if (ticket != libraryTicket.get()) return@launch
+            val saved = store.folderTree()
+            if (saved.isNullOrBlank()) {
+                withContext(Dispatchers.Main.immediate) {
+                    if (ticket == libraryTicket.get()) shell.showNoLibrary()
+                }
+                return@launch
+            }
+            withContext(Dispatchers.Main.immediate) {
+                if (ticket == libraryTicket.get()) shell.showLoading(insidePlatform = false)
+            }
+            if (ticket != libraryTicket.get()) return@launch
+            val backend = plugins.library(LocalFolderBackend.ID) as? LocalFolderBackend
+            if (backend == null) {
+                showFailure(ticket, insidePlatform = false)
+                return@launch
+            }
+            val loaded = try {
+                val tree = DocumentTree(contentResolver, Uri.parse(saved))
+                backend.bindTree(tree.root(), tree::children)
+                loadPlatforms(
+                    plugins,
+                    LocalFolderBackend.ID,
+                    folderName = backend::folderName,
+                    occupiesBoth = { platformOccupiesBoth(plugins, it) },
+                )
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (fatal: VirtualMachineError) {
+                throw fatal
+            } catch (failure: Exception) {
+                Log.w("Foldcade", "Folder library failed", failure)
+                null
+            }
+            withContext(Dispatchers.Main.immediate) {
+                if (ticket != libraryTicket.get()) return@withContext
+                if (loaded == null) {
+                    shell.showUnreachable(insidePlatform = false)
+                } else {
+                    applyLoaded(LocalFolderBackend.ID, loaded)
+                }
+            }
+        }
+    }
+
+    fun activateLibrary(label: String) {
+        if (label == Copy.setUpRomm) {
+            shell.openConnect(store.rommOrigin().orEmpty())
+            return
+        }
+        val id = plugins.libraryIds().firstOrNull { libraryId ->
+            runCatching { plugins.libraryLabel(libraryId) }.getOrNull() == label
+        } ?: return
+        if (id == LocalFolderBackend.ID) {
+            reloadFolder()
+            return
+        }
+        libraryRetry = { activateLibrary(label) }
+        loadLibrary(id)
+    }
+
+    fun openPlatform(index: Int) {
+        val entry = shell.entryAt(index) ?: return
+        val libraryId = shell.activeLibraryId ?: return
+        val platformId = entry.platformId ?: return
+        shell.rememberPlatformPlace()
+        libraryRetry = { openPlatformId(libraryId, platformId) }
+        openPlatformId(libraryId, platformId)
+    }
+
+    fun leavePlatform() {
+        libraryTicket.incrementAndGet()
+        libraryRetry = { reloadFolder() }
+        shell.restorePlatforms()
+    }
+
+    fun retryLibrary() {
+        libraryRetry()
+    }
+
+    private fun openPlatformId(libraryId: String, platformId: String) {
+        val ticket = libraryTicket.incrementAndGet()
+        pluginLoad.launch {
+            pluginsReady.await()
+            if (ticket != libraryTicket.get()) return@launch
+            withContext(Dispatchers.Main.immediate) {
+                if (ticket == libraryTicket.get()) shell.showLoading(insidePlatform = true)
+            }
+            val games = try {
+                val folderName = (plugins.library(libraryId) as? LocalFolderBackend)?.let { backend ->
+                    backend::folderName
+                } ?: { "" }
+                loadGames(
+                    plugins,
+                    libraryId,
+                    platformId,
+                    folderName = folderName,
+                    occupiesBoth = { platformOccupiesBoth(plugins, it) },
+                )
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (fatal: VirtualMachineError) {
+                throw fatal
+            } catch (failure: Exception) {
+                Log.w("Foldcade", "Folder games failed", failure)
+                null
+            }
+            withContext(Dispatchers.Main.immediate) {
+                if (ticket != libraryTicket.get()) return@withContext
+                if (games == null) shell.showUnreachable(insidePlatform = true) else shell.showGames(games)
+            }
+        }
+    }
+
+    private fun loadLibrary(libraryId: String) {
+        val ticket = libraryTicket.incrementAndGet()
+        pluginLoad.launch {
+            pluginsReady.await()
+            if (ticket != libraryTicket.get()) return@launch
+            withContext(Dispatchers.Main.immediate) {
+                if (ticket == libraryTicket.get()) shell.showLoading(insidePlatform = false)
+            }
+            val loaded = try {
+                loadPlatforms(
+                    plugins,
+                    libraryId,
+                    occupiesBoth = { platformOccupiesBoth(plugins, it) },
+                )
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (fatal: VirtualMachineError) {
+                throw fatal
+            } catch (failure: Exception) {
+                Log.w("Foldcade", "Library failed", failure)
+                null
+            }
+            withContext(Dispatchers.Main.immediate) {
+                if (ticket != libraryTicket.get()) return@withContext
+                if (loaded == null) shell.showUnreachable(insidePlatform = false) else applyLoaded(libraryId, loaded)
+            }
+        }
+    }
+
+    private fun applyLoaded(libraryId: String, loaded: LoadedLibrary) {
+        when (loaded) {
+            is LoadedLibrary.Platforms -> shell.showPlatforms(libraryId, loaded.entries)
+            LoadedLibrary.NoPlatforms -> shell.showNoPlatforms(libraryId)
+            LoadedLibrary.Unreachable -> shell.showUnreachable(insidePlatform = false)
+        }
+    }
+
+    private suspend fun showFailure(ticket: Int, insidePlatform: Boolean) {
+        withContext(Dispatchers.Main.immediate) {
+            if (ticket == libraryTicket.get()) shell.showUnreachable(insidePlatform)
+        }
     }
 }
