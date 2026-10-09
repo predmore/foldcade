@@ -32,7 +32,10 @@ fun httpsRedirectHint(status: Int, location: String?): String? {
     return TRY_HTTPS_HINT
 }
 
-/** [RommClient.normalizeOrigin], or null when [raw] is not an http(s) URL. */
+/**
+ * [RommClient.normalizeOrigin], or null when [raw] is not an http(s) URL
+ * or includes a username or password.
+ */
 fun normalizeSetupOrigin(raw: String): String? = try {
     RommClient.normalizeOrigin(raw)
 } catch (_: IllegalArgumentException) {

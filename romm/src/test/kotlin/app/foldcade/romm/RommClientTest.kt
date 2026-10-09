@@ -667,9 +667,15 @@ class RommClientTest {
         assertEquals("https://romm.example", RommClient.normalizeOrigin("HTTPS://Romm.Example"))
         assertEquals("http://romm.example:8080", RommClient.normalizeOrigin("HTTP://Romm.Example:8080/api"))
         assertEquals("http://romm.example/Games", RommClient.normalizeOrigin("http://Romm.Example/Games/"))
-        assertEquals("https://romm.example/API", RommClient.normalizeOrigin("HTTPS://Romm.Example/API"))
+        assertEquals("https://romm.example", RommClient.normalizeOrigin("HTTPS://Romm.Example/API"))
+        assertEquals("http://romm.example/Games", RommClient.normalizeOrigin("http://romm.example/Games/Api"))
         assertEquals("http://[::1]", RommClient.normalizeOrigin("HTTP://[::1]/api"))
-        assertEquals("http://User:Secret@romm.example", RommClient.normalizeOrigin("HTTP://User:Secret@Romm.Example/api"))
+        val userinfo = runCatching { RommClient.normalizeOrigin("HTTP://User:s3cret-token@Romm.Example/API") }
+        val userinfoError = userinfo.exceptionOrNull()
+        assertTrue(userinfoError is IllegalArgumentException)
+        assertTrue(userinfoError?.message?.contains("password") == true)
+        assertFalse(userinfoError?.message?.contains("s3cret-token") == true)
+        assertEquals(null, normalizeSetupOrigin("http://User:s3cret-token@romm.example"))
         val rejected = runCatching { RommClient.normalizeOrigin("FTP://romm.example") }
         assertTrue(rejected.exceptionOrNull() is IllegalArgumentException)
         assertEquals(
