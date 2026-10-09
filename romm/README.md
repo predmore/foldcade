@@ -2,7 +2,7 @@
 
 Pure JVM client for one RomM server. It is not a library backend and not a metadata provider. `:plugins:romm` is that wiring. The shell does not call this module.
 
-Calls suspend on OkHttp. Cancelling the coroutine cancels the OkHttp call for the whole exchange, including a body copy, so a blocked read does not wait out the read timeout. Connect, read, and write timeouts bound every call. Same-scheme redirects are followed. An HTTPS response is not followed onto HTTP.
+Calls suspend on OkHttp. Cancelling the coroutine cancels the OkHttp call for the whole exchange, including a body copy, so a blocked read does not wait out the read timeout. Connect, read, and write timeouts bound every call. A same-scheme redirect is followed only when the target stays on the configured origin, so the bearer is not sent anywhere else. An HTTPS response is not followed onto HTTP, and an HTTP response is not followed onto HTTPS.
 
 `:romm:test` depends on Animal Sniffer against the Android API 33 signature (`gummy-bears-api-33`). `testDebugUnitTest` runs that check. A class-file test also fails if the module references `java.net.http`.
 
