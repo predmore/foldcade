@@ -8,6 +8,7 @@ import android.util.Log
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.text.font.Font
 import androidx.compose.ui.text.font.FontFamily
+import app.foldcade.language.BackgroundMotion
 import app.foldcade.language.Theme
 import app.foldcade.language.parseThemeJson
 import app.foldcade.ui.FoldPaint
@@ -19,6 +20,7 @@ class PackagedTheme(
     val name: String,
     val paint: FoldPaint,
     val sounds: ThemeSounds,
+    val backgroundMotion: BackgroundMotion,
 ) {
     companion object {
         private const val ASSET = "themes/afterglow.zip"
@@ -54,6 +56,7 @@ class PackagedTheme(
                     marks = marks,
                 ),
                 sounds = ThemeSounds(context, entries),
+                backgroundMotion = file.backgroundMotion,
             )
         } catch (error: Exception) {
             Log.w("Foldcade", "Theme zip ignored", error)

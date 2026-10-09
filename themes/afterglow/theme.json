@@ -6,5 +6,6 @@
   "muted": "#9A958C",
   "focus": "#C8FFE4",
   "iconRadius": 0.28,
-  "artScale": 0.92
+  "artScale": 0.92,
+  "backgroundMotion": "ribbons"
 }

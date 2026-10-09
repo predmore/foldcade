@@ -2,7 +2,6 @@ package app.foldcade.ui
 
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.FiniteAnimationSpec
-import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
@@ -51,7 +50,6 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
-import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
@@ -75,6 +73,7 @@ import app.foldcade.api.Panel
 import app.foldcade.api.Surface
 import app.foldcade.batteryLabel
 import app.foldcade.millisUntilNextMinute
+import app.foldcade.language.BackgroundMotion
 import app.foldcade.language.Chrome
 import app.foldcade.language.ConnectField
 import app.foldcade.language.Copy
@@ -117,19 +116,19 @@ fun PanelHost(activity: FoldcadeHomeActivity, displays: Displays) {
     val scale = Motion.animatorScale(LocalContext.current.contentResolver)
     CompositionLocalProvider(LocalFoldTheme provides paint) {
         Box(Modifier.fillMaxSize().background(paint.theme.background)) {
+            val motion = app.shell.model.backgroundMotion
             val wall = when (panel) {
                 Panel.Top -> paint.wallpaperTop
                 Panel.Bottom -> paint.wallpaperBottom
                 null -> null
             }
-            if (wall != null) {
-                Image(
-                    bitmap = wall,
-                    contentDescription = null,
-                    modifier = Modifier.fillMaxSize(),
-                    contentScale = ContentScale.Fit,
-                )
-            }
+            Backdrop(
+                motion = motion,
+                speed = app.shell.model.motionSpeed,
+                animatorScale = scale,
+                running = activity.shellVisible && session.bothScreensFree(),
+                wallpaper = if (motion == BackgroundMotion.Static) wall else null,
+            )
             if (panel == null) return@Box
             val screen = if (panel == Panel.Top) HostScreen.Top else HostScreen.Bottom
             val model = app.shell.model
@@ -684,20 +683,14 @@ private fun Cell(
                 .hostPress(onClick),
             contentAlignment = Alignment.Center,
         ) {
-            val markImage = mark?.let { LocalFoldTheme.current.marks[it] }
             Box(
                 Modifier
                     .fillMaxSize()
                     .clip(RoundedCornerShape(corner))
                     .background(theme.background),
             )
-            if (markImage != null) {
-                Image(
-                    bitmap = markImage,
-                    contentDescription = null,
-                    modifier = Modifier.fillMaxSize().scale(theme.artScale),
-                    contentScale = ContentScale.Fit,
-                )
+            if (mark != null && markGlyph(mark) != null) {
+                MarkIcon(mark, theme.artScale)
             } else {
                 BasicText(
                     text = monogram(title),

@@ -15,6 +15,7 @@ data class ThemeFile(
     val focus: Color,
     val iconRadius: Float,
     val artScale: Float,
+    val backgroundMotion: BackgroundMotion,
 )
 
 fun parseThemeJson(text: String): ThemeFile? {
@@ -37,6 +38,7 @@ fun parseThemeJson(text: String): ThemeFile? {
         focus = focus,
         iconRadius = numberField(fields, "iconRadius", fallback.iconRadius, 0f, 0.5f),
         artScale = numberField(fields, "artScale", fallback.artScale, 0.7f, 1f),
+        backgroundMotion = motionField(fields, "backgroundMotion"),
     )
 }
 
@@ -80,6 +82,11 @@ private fun numberField(
         else -> return fallback
     }
     return number.coerceIn(min, max)
+}
+
+private fun motionField(fields: Map<String, Any?>, key: String): BackgroundMotion {
+    val raw = fields[key] as? String ?: return BackgroundMotion.Off
+    return BackgroundMotion.fromWire(raw) ?: BackgroundMotion.Off
 }
 
 private fun parseRgb(text: String): Color? {

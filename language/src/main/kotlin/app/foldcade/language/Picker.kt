@@ -108,6 +108,8 @@ data class Hold(
 sealed interface Row {
     data object Library : Row
     data object Theme : Row
+    data object Background : Row
+    data object MotionSpeed : Row
     data object Primary : Row
     data object Arrange : Row
     data object Music : Row
@@ -131,6 +133,8 @@ fun leftRows(homeRoleHeld: Boolean): List<Row> = buildList {
     add(Row.MusicTrack)
     add(Row.MusicVolume)
     if (!homeRoleHeld) add(Row.SetAsHome)
+    add(Row.Background)
+    add(Row.MotionSpeed)
 }
 
 data class SignedInBackend(
@@ -164,9 +168,24 @@ fun panelRows(panel: SidePanel, model: PickerModel): List<Row> = when (panel.sid
     Side.Right -> rightRows(model.showLaunchTarget, model.notices)
 }
 
+fun backgroundLabel(motion: BackgroundMotion): String = when (motion) {
+    BackgroundMotion.Ribbons -> Copy.ribbons
+    BackgroundMotion.Embers -> Copy.embers
+    BackgroundMotion.Static -> Copy.motionStatic
+    BackgroundMotion.Off -> Copy.motionOff
+}
+
+fun speedLabel(speed: MotionSpeed): String = when (speed) {
+    MotionSpeed.Slow -> Copy.speedSlow
+    MotionSpeed.Slower -> Copy.speedSlower
+    MotionSpeed.Off -> Copy.motionOff
+}
+
 fun rowLabel(row: Row, model: PickerModel): String = when (row) {
     Row.Library -> Copy.library
     Row.Theme -> "${Copy.theme}  ${model.themes.getOrElse(model.themeIndex) { Copy.builtIn }}"
+    Row.Background -> "${Copy.background}  ${backgroundLabel(model.backgroundMotion)}"
+    Row.MotionSpeed -> "${Copy.motion}  ${speedLabel(model.motionSpeed)}"
     Row.Primary -> "${Copy.primaryPanel}  ${if (model.primaryIsTop) Copy.top else Copy.bottom}"
     Row.Arrange -> Copy.arrange
     Row.Music -> MusicCopy.musicLabel(model.music.enabled)
@@ -209,6 +228,10 @@ data class PickerModel(
     val backends: List<String> = emptyList(),
     val themes: List<String> = listOf(Copy.builtIn),
     val themeIndex: Int = 0,
+    val themeMotions: List<BackgroundMotion> = listOf(BackgroundMotion.Off),
+    val backgroundMotion: BackgroundMotion = BackgroundMotion.Off,
+    val backgroundPinned: Boolean = false,
+    val motionSpeed: MotionSpeed = MotionSpeed.Slow,
     val homeRoleHeld: Boolean = false,
     val folderGrantPending: Boolean = true,
     val notices: List<FoldNotice> = emptyList(),
@@ -483,8 +506,20 @@ private fun activateRow(
         Row.Library -> model.copy(panel = panel.copy(level = PanelLevel.Library, index = 0)) to null
         Row.Theme -> {
             val count = model.themes.size.coerceAtLeast(1)
-            model.copy(panel = panel, themeIndex = (model.themeIndex + 1) % count) to null
+            val nextIndex = (model.themeIndex + 1) % count
+            val motion = if (model.backgroundPinned) {
+                model.backgroundMotion
+            } else {
+                model.themeMotions.getOrElse(nextIndex) { BackgroundMotion.Off }
+            }
+            model.copy(panel = panel, themeIndex = nextIndex, backgroundMotion = motion) to null
         }
+        Row.Background -> model.copy(
+            panel = panel,
+            backgroundMotion = model.backgroundMotion.next(),
+            backgroundPinned = true,
+        ) to null
+        Row.MotionSpeed -> model.copy(panel = panel, motionSpeed = model.motionSpeed.next()) to null
         Row.Primary -> model.copy(panel = panel, primaryIsTop = !model.primaryIsTop) to null
         Row.Arrange -> model.copy(
             panel = null,

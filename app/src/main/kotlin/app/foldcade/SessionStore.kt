@@ -1,6 +1,8 @@
 package app.foldcade
 
 import android.content.SharedPreferences
+import app.foldcade.language.BackgroundMotion
+import app.foldcade.language.MotionSpeed
 import app.foldcade.api.ExternalApp
 import app.foldcade.api.Panel
 import app.foldcade.api.Session
@@ -84,6 +86,22 @@ class SessionStore(private val prefs: SharedPreferences) {
             .apply()
     }
 
+    fun backgroundMotionPinned(): Boolean = prefs.contains(KEY_BACKGROUND)
+
+    fun backgroundMotion(): BackgroundMotion =
+        BackgroundMotion.fromWire(prefs.getString(KEY_BACKGROUND, null)) ?: BackgroundMotion.Off
+
+    fun setBackgroundMotion(motion: BackgroundMotion) {
+        prefs.edit().putString(KEY_BACKGROUND, motion.wire).apply()
+    }
+
+    fun motionSpeed(): MotionSpeed =
+        MotionSpeed.fromWire(prefs.getString(KEY_MOTION_SPEED, null)) ?: MotionSpeed.Slow
+
+    fun setMotionSpeed(speed: MotionSpeed) {
+        prefs.edit().putString(KEY_MOTION_SPEED, speed.wire).apply()
+    }
+
     private fun encode(screens: Map<String, Panel>): String =
         screens.entries.joinToString(",") { "${it.key}=${it.value.name}" }
 
@@ -110,5 +128,7 @@ class SessionStore(private val prefs: SharedPreferences) {
         private const val KEY_MUSIC_ENABLED = "music_enabled"
         private const val KEY_MUSIC_VOLUME = "music_volume"
         private const val KEY_MUSIC_TRACK = "music_track"
+        private const val KEY_BACKGROUND = "background_motion"
+        private const val KEY_MOTION_SPEED = "motion_speed"
     }
 }

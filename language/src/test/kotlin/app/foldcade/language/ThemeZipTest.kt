@@ -32,6 +32,7 @@ class ThemeZipTest {
         assertEquals(Color(0xFF8A8A8A), parsed.muted)
         assertEquals(0.5f, parsed.iconRadius)
         assertEquals(0.7f, parsed.artScale)
+        assertEquals(BackgroundMotion.Off, parsed.backgroundMotion)
     }
 
     @Test
@@ -60,6 +61,7 @@ class ThemeZipTest {
         assertEquals(Color(0xFFC8FFE4), parsed.focus)
         assertEquals(0.28f, parsed.iconRadius)
         assertEquals(0.92f, parsed.artScale)
+        assertEquals(BackgroundMotion.Ribbons, parsed.backgroundMotion)
         assertTrue(parsed.focus != parsed.background)
         ZipFile(repoFile("app/src/main/assets/themes/afterglow.zip")).use { zip ->
             val packed = zip.getInputStream(zip.getEntry("theme.json")).readBytes().decodeToString()

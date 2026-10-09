@@ -6,6 +6,7 @@ import app.foldcade.api.plugin.CredentialStore
 import app.foldcade.api.plugin.RommCredentials
 import app.foldcade.credentials.AndroidCredentialStore
 import app.foldcade.host.PluginHost
+import app.foldcade.language.BackgroundMotion
 import app.foldcade.language.Copy
 import app.foldcade.language.SignedInBackend
 import app.foldcade.language.builtInTheme
@@ -61,7 +62,8 @@ class FoldcadeApp : Application() {
         store.afterSessionChanged = music::onSessionChanged
         packaged = PackagedTheme.load(this)
         val names = listOf(Copy.builtIn) + listOfNotNull(packaged?.name)
-        shell = ShellController(store, plugins, music::apply, music.trackTitle(), names) { index, slot ->
+        val motions = listOf(BackgroundMotion.Off) + listOfNotNull(packaged?.backgroundMotion)
+        shell = ShellController(store, plugins, music::apply, music.trackTitle(), names, motions) { index, slot ->
             if (index > 0) packaged?.sounds?.play(slot)
         }
         rommPublish = RommPublish(
