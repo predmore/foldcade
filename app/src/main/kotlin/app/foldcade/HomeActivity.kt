@@ -83,16 +83,6 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
         return foldcade.store.session.surfaceOn(panel) != null
     }
 
-    override fun onResume() {
-        super.onResume()
-        foldcade.music.onHomeResume()
-    }
-
-    override fun onPause() {
-        foldcade.music.onHomePause()
-        super.onPause()
-    }
-
     override fun onMeaning(meaning: app.foldcade.language.Meaning) {
         foldcade.music.duckForThemeSound(meaning)
         val panel = displays.panelFor(this, foldcade.store.session.defaultDisplayIsTop) ?: return
@@ -136,11 +126,13 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
         super.onResume()
         resumed = true
         refreshShellVisible()
+        foldcade.music.onHomeResume()
     }
 
     override fun onPause() {
         resumed = false
         refreshShellVisible()
+        foldcade.music.onHomePause()
         super.onPause()
     }
 
