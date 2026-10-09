@@ -11,7 +11,9 @@ import app.foldcade.api.plugin.CredentialLookup
 import app.foldcade.api.plugin.CredentialStore
 import app.foldcade.api.plugin.secret
 import java.util.Base64
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.withContext
 
 internal const val CREDENTIAL_STORE_NAME = "foldcade_credentials"
 
@@ -95,6 +97,16 @@ internal fun decodeIndex(raw: String): List<IndexRow> =
         IndexRow(pluginId, key, kind)
     }.toList()
 
+/**
+ * Standard Base64 ciphertext. Corrupt text is an empty blob, and [Opened.BadBlob]
+ * drops that entry only.
+ */
+internal fun credentialCiphertext(text: String): ByteArray = try {
+    Base64.getDecoder().decode(text)
+} catch (_: IllegalArgumentException) {
+    ByteArray(0)
+}
+
 /** Preference name for one entry. Dotted ids do not collide: `a.b`/`c` is not `a`/`b.c`. */
 internal fun blobPreferenceName(pluginId: String, key: String): String =
     "b." + encodePart(pluginId) + "." + encodePart(key)
@@ -133,7 +145,7 @@ internal class DataStoreBlobs(
         val prefs = store.data.first()
         val row = decodeIndex(prefs[INDEX] ?: "").find { it.pluginId == pluginId && it.key == key } ?: return null
         val text = prefs[blobKey(pluginId, key)] ?: return null
-        return StoredBlob(row.kind, Base64.getDecoder().decode(text))
+        return StoredBlob(row.kind, credentialCiphertext(text))
     }
 
     override suspend fun remove(pluginId: String, key: String) {
@@ -184,13 +196,18 @@ internal class SealedCredentialStore(
         val plain = credential.secret()
         require(plain.isNotBlank()) { "credential is empty" }
         val kind = kindOf(credential)
-        val sealed = box.seal(plain.toByteArray(Charsets.UTF_8), credentialAad(pluginId, key, kind))
+        val sealed = withContext(Dispatchers.IO) {
+            box.seal(plain.toByteArray(Charsets.UTF_8), credentialAad(pluginId, key, kind))
+        }
         blobs.put(pluginId, key, StoredBlob(kind, sealed))
     }
 
     override suspend fun lookup(pluginId: String, key: String): CredentialLookup {
         val blob = blobs.get(pluginId, key) ?: return CredentialLookup.Absent
-        return when (val opened = box.open(blob.bytes, credentialAad(pluginId, key, blob.kind))) {
+        val opened = withContext(Dispatchers.IO) {
+            box.open(blob.bytes, credentialAad(pluginId, key, blob.kind))
+        }
+        return when (opened) {
             is Opened.Plain -> {
                 val credential = credentialOf(blob.kind, opened.bytes.toString(Charsets.UTF_8))
                 if (credential == null) {

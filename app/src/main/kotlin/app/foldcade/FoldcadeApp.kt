@@ -15,6 +15,7 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.withContext
 
 class FoldcadeApp : Application() {
     lateinit var store: SessionStore
@@ -34,7 +35,11 @@ class FoldcadeApp : Application() {
         private set
     var companionLaunched: Boolean = false
 
-    val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
+    /**
+     * Sign-in and credential work. Keystore seal and open run here, on
+     * [Dispatchers.IO], not on the main thread. Compose updates hop back to main.
+     */
+    val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val credentialGate = Mutex()
     private val pluginLoad = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
@@ -79,8 +84,11 @@ class FoldcadeApp : Application() {
             }
             ids.map { SignedInBackend(it, backendLabel(it)) }
         }
-        shell.applyRecovery(signedInRecovery(romm, stored))
-        publishRomm()
+        val recovery = signedInRecovery(romm, stored)
+        withContext(Dispatchers.Main.immediate) {
+            shell.applyRecovery(recovery)
+            publishRomm()
+        }
     }
 
     /** Installs or clears [app.foldcade.plugins.romm.RommPlugins] from the saved origin and this store. */

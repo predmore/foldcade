@@ -33,6 +33,9 @@ import java.net.URL
 import java.net.URLClassLoader
 import java.util.Collections
 import java.util.Enumeration
+import javax.tools.DiagnosticCollector
+import javax.tools.JavaFileObject
+import javax.tools.ToolProvider
 import java.util.concurrent.Executors
 import java.util.concurrent.atomic.AtomicInteger
 import kotlin.coroutines.coroutineContext
@@ -688,6 +691,31 @@ class PluginHostTest {
     }
 
     @Test
+    fun aSameNamedClassFromAnotherLoaderCannotClaimReservedIds() {
+        val dir = File.createTempFile("foldcade-romm-spoof", "").apply {
+            delete()
+            mkdirs()
+        }
+        try {
+            val classes = File(dir, "classes")
+            compileSpoofRommEntry(classes)
+            URLClassLoader(arrayOf(classes.toURI().toURL()), PluginHost::class.java.classLoader).use { loader ->
+                val type = loader.loadClass("app.foldcade.plugins.romm.RommEntry")
+                val entry = type.getDeclaredConstructor().newInstance() as PluginEntry
+                assertEquals("app.foldcade.plugins.romm.RommEntry", entry.javaClass.name)
+                assertTrue(entry.javaClass.classLoader !== PluginHost::class.java.classLoader)
+                val host = PluginHost(Dispatchers.Unconfined, MemoryCredentialStore())
+                val failure = runCatching { host.register(entry) }.exceptionOrNull()
+                assertTrue(failure is IllegalStateException)
+                assertTrue(failure?.message?.contains("Reserved") == true)
+                assertNull(host.library("romm"))
+            }
+        } finally {
+            dir.deleteRecursively()
+        }
+    }
+
+    @Test
     fun aThirdPartyEntryCannotClaimReservedRommIds() {
         val host = PluginHost(Dispatchers.Unconfined, MemoryCredentialStore())
         val intruder = object : PluginEntry {
@@ -799,4 +827,70 @@ private open class MetadataFake(override val id: String) : MetadataProvider {
     open override fun cached(game: Game): GameMeta? = null
 
     open override suspend fun fetch(game: Game): GameMeta? = GameMeta(title = game.label)
+}
+
+private fun compileSpoofRommEntry(out: File) {
+    val src = File(out.parentFile, "src/app/foldcade/plugins/romm")
+    src.mkdirs()
+    File(src, "RommEntry.java").writeText(
+        """
+        package app.foldcade.plugins.romm;
+
+        import app.foldcade.api.plugin.Game;
+        import app.foldcade.api.plugin.GamePage;
+        import app.foldcade.api.plugin.GameQuery;
+        import app.foldcade.api.plugin.LaunchTarget;
+        import app.foldcade.api.plugin.LibraryBackend;
+        import app.foldcade.api.plugin.ObservedSaves;
+        import app.foldcade.api.plugin.Placement;
+        import app.foldcade.api.plugin.Player;
+        import app.foldcade.api.plugin.PluginEntry;
+        import app.foldcade.api.plugin.SaveSet;
+        import app.foldcade.api.plugin.SyncResult;
+        import java.util.Collections;
+        import java.util.List;
+        import kotlin.Unit;
+        import kotlin.coroutines.Continuation;
+
+        public class RommEntry implements PluginEntry {
+            @Override public int getApiVersion() { return $PLUGIN_API_VERSION; }
+
+            @Override public List<LibraryBackend> getLibraries() {
+                return Collections.singletonList(new LibraryBackend() {
+                    @Override public String getId() { return "romm"; }
+                    @Override public String getDisplayName() { return "spoof"; }
+                    @Override public Object connect(Continuation<? super Unit> completion) { return Unit.INSTANCE; }
+                    @Override public Object disconnect(Continuation<? super Unit> completion) { return Unit.INSTANCE; }
+                    @Override public Object listPlatforms(Continuation<? super List<app.foldcade.api.plugin.ListedPlatform>> completion) {
+                        return Collections.emptyList();
+                    }
+                    @Override public Object listGames(String platformId, GameQuery query, Continuation<? super GamePage> completion) { return null; }
+                    @Override public Object ensureLocal(Game game, Continuation<? super LaunchTarget> completion) { return null; }
+                    @Override public Object saves(Game game, Continuation<? super SaveSet> completion) { return null; }
+                    @Override public Object prepareLaunch(Game game, Player player, Continuation<? super Placement> completion) { return null; }
+                    @Override public Object reconcile(Game game, Player player, ObservedSaves observed, Continuation<? super SyncResult> completion) { return null; }
+                });
+            }
+        }
+        """.trimIndent(),
+    )
+    out.mkdirs()
+    val compiler = ToolProvider.getSystemJavaCompiler() ?: error("JDK compiler is required")
+    val classpath = listOf(PluginEntry::class.java, kotlin.coroutines.Continuation::class.java)
+        .map { type -> File(type.protectionDomain.codeSource.location.toURI()).absolutePath }
+        .distinct()
+        .joinToString(File.pathSeparator)
+    val diagnostics = DiagnosticCollector<JavaFileObject>()
+    compiler.getStandardFileManager(diagnostics, null, null).use { manager ->
+        val units = manager.getJavaFileObjects(File(src, "RommEntry.java"))
+        val ok = compiler.getTask(
+            null,
+            manager,
+            diagnostics,
+            listOf("-classpath", classpath, "-d", out.absolutePath),
+            null,
+            units,
+        ).call()
+        if (!ok) error(diagnostics.diagnostics.joinToString("\n"))
+    }
 }

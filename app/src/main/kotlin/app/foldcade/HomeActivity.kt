@@ -27,7 +27,9 @@ import app.foldcade.romm.RommSignInResult
 import app.foldcade.romm.normalizeSetupOrigin
 import java.time.Duration
 import kotlin.coroutines.cancellation.CancellationException
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import app.foldcade.ui.PanelHost
 
 abstract class FoldcadeHomeActivity : PanelKeyActivity() {
@@ -203,26 +205,37 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
             } catch (_: Exception) {
                 RommSignInResult.StayOnForm(null)
             }
-            foldcade.shell.showSetupHint(result.hint)
-            if (result is RommSignInResult.Accepted) foldcade.editCredentials {
-                val saved = try {
-                    foldcade.credentials.put(
-                        RommCredentials.PLUGIN_ID,
-                        RommCredentials.ACCESS_TOKEN,
-                        Credential.ApiToken(token),
-                    )
-                    true
-                } catch (cancelled: CancellationException) {
-                    throw cancelled
-                } catch (_: Exception) {
-                    foldcade.shell.askToSignInAgain()
-                    false
+            if (result is RommSignInResult.Accepted) {
+                foldcade.editCredentials {
+                    val saved = try {
+                        foldcade.credentials.put(
+                            RommCredentials.PLUGIN_ID,
+                            RommCredentials.ACCESS_TOKEN,
+                            Credential.ApiToken(token),
+                        )
+                        true
+                    } catch (cancelled: CancellationException) {
+                        throw cancelled
+                    } catch (_: Exception) {
+                        false
+                    }
+                    if (saved) {
+                        foldcade.store.setRommOrigin(origin)
+                        foldcade.publishRomm()
+                    }
+                    withContext(Dispatchers.Main.immediate) {
+                        foldcade.shell.showSetupHint(result.hint)
+                        if (saved) {
+                            foldcade.shell.setSignedIn(listOf(SignedInBackend(RommCredentials.PLUGIN_ID, "RomM")))
+                            if (foldcade.shell.connectToken.trim() == token) foldcade.shell.consumeConnectToken()
+                        } else {
+                            foldcade.shell.askToSignInAgain()
+                        }
+                    }
                 }
-                if (saved) {
-                    foldcade.store.setRommOrigin(origin)
-                    foldcade.publishRomm()
-                    foldcade.shell.setSignedIn(listOf(SignedInBackend(RommCredentials.PLUGIN_ID, "RomM")))
-                    if (foldcade.shell.connectToken.trim() == token) foldcade.shell.consumeConnectToken()
+            } else {
+                withContext(Dispatchers.Main.immediate) {
+                    foldcade.shell.showSetupHint(result.hint)
                 }
             }
         }
@@ -237,13 +250,20 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
                 } catch (cancelled: CancellationException) {
                     throw cancelled
                 } catch (_: Exception) {
-                    foldcade.shell.askToSignInAgain()
                     false
                 }
                 if (forgotten) {
                     if (pluginId == RommCredentials.PLUGIN_ID) foldcade.store.clearRommOrigin()
                     foldcade.publishRomm()
-                    foldcade.shell.setSignedIn(foldcade.shell.model.signedIn.filter { it.pluginId != pluginId })
+                }
+                withContext(Dispatchers.Main.immediate) {
+                    if (forgotten) {
+                        foldcade.shell.setSignedIn(
+                            foldcade.shell.model.signedIn.filter { it.pluginId != pluginId },
+                        )
+                    } else {
+                        foldcade.shell.askToSignInAgain()
+                    }
                 }
             }
         }

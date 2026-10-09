@@ -663,6 +663,22 @@ class RommClientTest {
     }
 
     @Test
+    fun normalizeOriginFoldsSchemeAndHostCase() {
+        assertEquals("https://romm.example", RommClient.normalizeOrigin("HTTPS://Romm.Example"))
+        assertEquals("http://romm.example:8080", RommClient.normalizeOrigin("HTTP://Romm.Example:8080/api"))
+        assertEquals("http://romm.example/Games", RommClient.normalizeOrigin("http://Romm.Example/Games/"))
+        assertEquals("https://romm.example/API", RommClient.normalizeOrigin("HTTPS://Romm.Example/API"))
+        assertEquals("http://[::1]", RommClient.normalizeOrigin("HTTP://[::1]/api"))
+        assertEquals("http://User:Secret@romm.example", RommClient.normalizeOrigin("HTTP://User:Secret@Romm.Example/api"))
+        val rejected = runCatching { RommClient.normalizeOrigin("FTP://romm.example") }
+        assertTrue(rejected.exceptionOrNull() is IllegalArgumentException)
+        assertEquals(
+            "http://romm.example",
+            normalizeSetupOrigin("  HTTP://Romm.Example/api/  "),
+        )
+    }
+
+    @Test
     fun cleartextGuardRejectsAnotherHttpHostAndStillHintsHttps() {
         assertTrue(httpCleartextAllowed("http://192.168.1.20:8080", "http://192.168.1.20:8080/api/heartbeat"))
         assertTrue(httpCleartextAllowed("http://192.168.1.20", "http://192.168.1.20:80/api/heartbeat"))
