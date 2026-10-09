@@ -54,6 +54,7 @@ import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.drawscope.scale
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onSizeChanged
@@ -1084,7 +1085,10 @@ private fun DialogCard(
         ) {
             BasicText(text = dialog.title, style = text(theme.onBackground, TypeRamp.dialogTitle, theme))
             BasicText(text = dialog.body, style = text(theme.onBackground, TypeRamp.dialogBody, theme))
-            Row(horizontalArrangement = Arrangement.spacedBy(px(16f))) {
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(px(8f)),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
                 dialog.buttons.forEachIndexed { index, button ->
                     val label = when (button) {
                         DialogButton.UseAsHome -> Copy.useAsHome
@@ -1093,19 +1097,93 @@ private fun DialogCard(
                         DialogButton.Ok -> Copy.ok
                         DialogButton.CloseIt -> Copy.closeIt
                     }
-                    BasicText(
-                        text = label,
-                        modifier = Modifier
-                            .focusStroke(dialog.index == index)
-                            .hostPress {
-                                onEffect(app.shell.touchDialog(index, dialog.screen))
-                            }
-                            .padding(px(8f)),
-                        style = text(theme.onBackground, TypeRamp.dialogBody, theme),
+                    DialogAction(
+                        label = label,
+                        focused = dialog.index == index,
+                        onClick = { onEffect(app.shell.touchDialog(index, dialog.screen)) },
                     )
                 }
             }
         }
+    }
+}
+
+@Composable
+private fun DialogAction(label: String, focused: Boolean, onClick: () -> Unit) {
+    val theme = foldTheme()
+    val animatorScale = Motion.animatorScale(LocalContext.current.contentResolver)
+    val drawn = motionFloat(
+        target = if (focused) Motion.scaleFocus else Motion.scaleRest,
+        spec = if (focused) {
+            Motion.arrive(Motion.durationFocus, animatorScale)
+        } else {
+            Motion.leave(Motion.durationFocus, animatorScale)
+        },
+    )
+    BasicText(
+        text = label,
+        modifier = Modifier
+            .graphicsLayer {
+                clip = false
+                scaleX = drawn
+                scaleY = drawn
+            }
+            .padding(horizontal = px(16f), vertical = px(18f))
+            .dialogPlate(focused, theme.focus)
+            .hostPress(onClick)
+            .padding(horizontal = px(22f), vertical = px(12f)),
+        style = text(
+            if (focused) theme.background else theme.muted,
+            TypeRamp.dialogBody,
+            theme,
+        ).copy(textAlign = TextAlign.Center),
+    )
+}
+
+/**
+ * Focused: one elliptical radial falloff, then the accent fill.
+ * The gradient ends at transparent, so the bloom has no stroke ring.
+ * Unfocused: a dim outline and no fill, so the black dialog stays black.
+ */
+@Composable
+private fun Modifier.dialogPlate(focused: Boolean, accent: Color): Modifier {
+    return this.graphicsLayer { clip = false }.drawBehind {
+        val radius = size.height / 2f
+        val corner = CornerRadius(radius, radius)
+        if (!focused) {
+            val stroke = 2f
+            val inset = stroke / 2f
+            drawRoundRect(
+                color = accent.copy(alpha = 0.38f),
+                topLeft = Offset(inset, inset),
+                size = Size((size.width - stroke).coerceAtLeast(0f), (size.height - stroke).coerceAtLeast(0f)),
+                cornerRadius = CornerRadius((radius - inset).coerceAtLeast(0f), (radius - inset).coerceAtLeast(0f)),
+                style = Stroke(width = stroke),
+            )
+            return@drawBehind
+        }
+        val spread = 20f
+        val reach = size.height / 2f + spread
+        val wide = (size.width / 2f + spread) / reach
+        val edge = (size.height / 2f / reach).coerceIn(0.35f, 0.82f)
+        val mid = edge + (1f - edge) * 0.45f
+        scale(scaleX = wide, scaleY = 1f, pivot = center) {
+            drawCircle(
+                brush = Brush.radialGradient(
+                    colorStops = arrayOf(
+                        0f to accent,
+                        edge to accent.copy(alpha = 0.82f),
+                        mid to accent.copy(alpha = 0.18f),
+                        1f to Color.Transparent,
+                    ),
+                    center = center,
+                    radius = reach,
+                ),
+                radius = reach,
+                center = center,
+            )
+        }
+        drawRoundRect(color = accent, cornerRadius = corner)
     }
 }
 
