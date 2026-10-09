@@ -136,6 +136,69 @@ class RommLibraryTest {
     }
 
     @Test
+    fun titleSearchAcceptsOnlyAnExactNormalizedNameOrFsName() = runBlocking {
+        val ops = ScriptedOps()
+        val harness = harness(ops)
+        val shelf = Game(ROMM_LIBRARY_ID, "shelf-copy", "3ds", Availability.RemoteOnly, "By Title")
+
+        ops.onRoms = {
+            page(rom("3ds", 3).copy(id = 99, name = "By  Title", fsName = "other.cci"))
+        }
+        assertEquals("By  Title", harness.metadata.fetch(shelf)?.title)
+
+        ops.onRoms = {
+            page(rom("3ds", 3).copy(id = 100, name = "Cafe\u0301", fsName = "cafe.cci"))
+        }
+        assertEquals("Cafe\u0301", harness.metadata.fetch(shelf.copy(label = "Caf\u00e9"))?.title)
+
+        ops.onRoms = {
+            page(rom("3ds", 3).copy(id = 101, name = "Something Else", fsName = "by-title.cci"))
+        }
+        assertEquals("Something Else", harness.metadata.fetch(shelf.copy(label = "By-Title.CCI"))?.title)
+
+        ops.onRoms = {
+            page(rom("3ds", 3).copy(id = 102, name = "Super Mario", fsName = "mario.cci"))
+        }
+        assertNull(harness.metadata.fetch(shelf.copy(label = "Mario")))
+        assertNull(harness.metadata.fetch(shelf.copy(label = "Super Mario Bros")))
+        assertNull(harness.metadata.fetch(shelf.copy(label = "mario")))
+        assertNull(harness.metadata.cached(shelf.copy(remoteKey = "102")))
+
+        ops.onRoms = {
+            RomPage(
+                listOf(
+                    rom("3ds", 3).copy(id = 103, name = "By Title Deluxe", fsName = "deluxe.cci"),
+                    rom("3ds", 3).copy(
+                        id = 104,
+                        name = "By Title",
+                        fsName = "exact.cci",
+                        pathCoverLarge = "/assets/exact.jpg",
+                    ),
+                ),
+                total = 2,
+                limit = 50,
+                offset = 0,
+            )
+        }
+        val exact = harness.metadata.fetch(shelf)
+        assertEquals("By Title", exact?.title)
+        assertEquals("http://romm.example/assets/exact.jpg", exact?.artwork?.single()?.uri)
+        assertNull(harness.metadata.cached(shelf.copy(remoteKey = "103")))
+
+        ops.onRoms = {
+            page(
+                rom("3ds", 3).copy(
+                    id = 105,
+                    name = "Other",
+                    fsName = "other.cci",
+                    alternativeNames = listOf("By Title"),
+                ),
+            )
+        }
+        assertNull(harness.metadata.fetch(shelf))
+    }
+
+    @Test
     fun clientErrorsMapAndCancellationIsRethrown() = runBlocking {
         val mismatch = RommProtocolMismatch("6.0.0", 5).toPluginException()
         assertTrue(mismatch is PluginException.ProtocolMismatch)
