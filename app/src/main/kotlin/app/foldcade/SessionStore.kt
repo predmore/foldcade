@@ -6,6 +6,9 @@ import app.foldcade.language.MotionSpeed
 import app.foldcade.api.ExternalApp
 import app.foldcade.api.Panel
 import app.foldcade.api.Session
+import app.foldcade.language.AndroidShelf
+import app.foldcade.language.AppShelfRecord
+import app.foldcade.language.AppShelfState
 import app.foldcade.language.HomeMusicSetting
 import app.foldcade.language.LibrarySort
 import androidx.compose.runtime.getValue
@@ -104,6 +107,56 @@ class SessionStore(private val prefs: SharedPreferences) {
         prefs.edit().putBoolean(saveFolderSkipKey(playerId), true).apply()
     }
 
+    fun appShelfState(): AppShelfState {
+        val games = stringSet(KEY_SHELF_GAMES)
+        val apps = stringSet(KEY_SHELF_APPS)
+        val hidden = stringSet(KEY_SHELF_HIDDEN)
+        val favorites = stringSet(KEY_SHELF_FAVORITES)
+        val shown = stringSet(KEY_SHELF_SHOWN)
+        val names = games + apps + hidden + favorites + shown
+        return AppShelfState(
+            names.associateWith { name ->
+                AppShelfRecord(
+                    shelf = when {
+                        name in games -> AndroidShelf.Games
+                        name in apps -> AndroidShelf.Apps
+                        else -> null
+                    },
+                    hidden = name in hidden,
+                    favorite = name in favorites,
+                    showDespitePlayer = name in shown,
+                )
+            },
+        )
+    }
+
+    fun saveAppShelfState(state: AppShelfState) {
+        val games = mutableSetOf<String>()
+        val apps = mutableSetOf<String>()
+        val hidden = mutableSetOf<String>()
+        val favorites = mutableSetOf<String>()
+        val shown = mutableSetOf<String>()
+        state.records.forEach { (name, record) ->
+            when (record.shelf) {
+                AndroidShelf.Games -> games += name
+                AndroidShelf.Apps -> apps += name
+                null -> Unit
+            }
+            if (record.hidden) hidden += name
+            if (record.favorite) favorites += name
+            if (record.showDespitePlayer) shown += name
+        }
+        prefs.edit()
+            .putStringSet(KEY_SHELF_GAMES, games)
+            .putStringSet(KEY_SHELF_APPS, apps)
+            .putStringSet(KEY_SHELF_HIDDEN, hidden)
+            .putStringSet(KEY_SHELF_FAVORITES, favorites)
+            .putStringSet(KEY_SHELF_SHOWN, shown)
+            .apply()
+    }
+
+    private fun stringSet(key: String): Set<String> = prefs.getStringSet(key, emptySet()).orEmpty().toSet()
+
     fun setMusic(enabled: Boolean, volume: Float, trackId: String) {
         val id = trackId.trim().ifEmpty { HomeMusicSetting.DEFAULT_TRACK_ID }
         prefs.edit()
@@ -158,6 +211,11 @@ class SessionStore(private val prefs: SharedPreferences) {
         private const val KEY_BACKGROUND = "background_motion"
         private const val KEY_MOTION_SPEED = "motion_speed"
         private const val KEY_LIBRARY_SORT = "library_sort"
+        private const val KEY_SHELF_GAMES = "android_shelf_games"
+        private const val KEY_SHELF_APPS = "android_shelf_apps"
+        private const val KEY_SHELF_HIDDEN = "android_shelf_hidden"
+        private const val KEY_SHELF_FAVORITES = "android_shelf_favorites"
+        private const val KEY_SHELF_SHOWN = "android_shelf_shown"
 
         private fun saveFolderKey(playerId: String) = "player_save_folder:$playerId"
 

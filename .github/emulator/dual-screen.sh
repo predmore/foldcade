@@ -654,4 +654,35 @@ else
   } >"$out/launch-path.txt"
 fi
 
+open_android_shelf() {
+  local which="$1"
+  echo "step: android shelf ${which}"
+  timeout 20 adb shell am start -W -n "$component" \
+    --es app.foldcade.extra.SHELF "$which" \
+    --display 0 || fail "android shelf ${which}"
+  sleep 1
+  show_foldcade
+  dismiss_leftover_dialog
+}
+
+# Emulator only, not a Thor pass. Top 1920×1080, bottom 1240×1080.
+# The extra opens the shelf the controller also opens from the left panel.
+echo "step: android shelves"
+open_android_shelf apps
+capture "$primary" "$out/apps-top.png"
+capture "$secondary" "$out/apps-bottom.png"
+expect_png "$out/apps-top.png" "${top_width}x${top_height}"
+expect_png "$out/apps-bottom.png" "${bottom_width}x${bottom_height}"
+open_android_shelf games
+capture "$primary" "$out/games-top.png"
+capture "$secondary" "$out/games-bottom.png"
+expect_png "$out/games-top.png" "${top_width}x${top_height}"
+expect_png "$out/games-bottom.png" "${bottom_width}x${bottom_height}"
+{
+  echo "Thor-sized emulator, not a Thor pass."
+  echo "Android Games and Apps shelves. Emulator only, not a Thor pass."
+  echo "Top ${top_width}x${top_height} at ${top_density} dpi."
+  echo "Bottom ${bottom_width}x${bottom_height} at ${bottom_density} dpi."
+} >"$out/android-shelves.txt"
+
 echo "Captured displays $primary and $secondary. Thor-sized emulator, not a Thor pass."

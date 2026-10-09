@@ -3,12 +3,19 @@ package app.foldcade
 import app.foldcade.api.plugin.RommCredentials
 import app.foldcade.api.plugin.SaveFolderHolder
 import app.foldcade.host.PluginHost
+import app.foldcade.language.AndroidShelf
+import app.foldcade.language.AppActions
+import app.foldcade.language.AppShelfState
 import app.foldcade.language.BackgroundMotion
 import app.foldcade.language.ConnectField
 import app.foldcade.language.Chrome
 import app.foldcade.language.Copy
 import app.foldcade.language.DialogKind
 import app.foldcade.language.DialogState
+import app.foldcade.language.HomeGrid
+import app.foldcade.language.LaunchableApp
+import app.foldcade.language.appsOn
+import app.foldcade.language.hiddenApps
 import app.foldcade.language.Effect
 import app.foldcade.language.GridFocus
 import app.foldcade.language.DEFAULT_TRACK_TITLE
@@ -44,6 +51,10 @@ class ShellController(
     private val cue: (themeIndex: Int, slot: String) -> Unit = { _, _ -> },
     private val lastPlayedMillis: (String) -> Long? = { null },
 ) {
+    private var shelfState: AppShelfState = store.appShelfState()
+    private var installed: List<LaunchableApp> = emptyList()
+    private var playerPackages: Set<String> = emptySet()
+
     var model by mutableStateOf(initial())
         private set
 
@@ -52,14 +63,77 @@ class ShellController(
 
     fun onMeaning(meaning: Meaning, screen: HostScreen): Effect? {
         val before = model
-        val (next, effect) = reduce(prepared(), meaning, screen)
+        val current = withShelf(model)
+        val (next, effect) = reduce(current, meaning, screen)
         if (!next.connectOpen) connectToken = ""
-        publish(next)
-        if (next.panel?.level == PanelLevel.Library) {
-            refreshLibraries()
+        val packageName = focusedGame()?.androidPackage
+        when (effect) {
+            Effect.PinApp -> {
+                if (packageName != null) {
+                    val favorite = !shelfState.record(packageName).favorite
+                    shelfState = shelfState.pin(packageName, favorite)
+                    store.saveAppShelfState(shelfState)
+                }
+                publish(focusPackage(next, packageName))
+            }
+            Effect.MoveApp -> {
+                if (packageName != null) {
+                    val destination = if (current.homeGrid == HomeGrid.AndroidGames) {
+                        AndroidShelf.Apps
+                    } else {
+                        AndroidShelf.Games
+                    }
+                    shelfState = shelfState.move(packageName, destination)
+                    store.saveAppShelfState(shelfState)
+                }
+                publish(next)
+            }
+            Effect.HideApp -> {
+                if (packageName != null) {
+                    shelfState = shelfState.hide(packageName)
+                    store.saveAppShelfState(shelfState)
+                }
+                publish(next)
+            }
+            Effect.ShowApp -> {
+                if (packageName != null) {
+                    shelfState = shelfState.show(packageName, packageName in playerPackages)
+                    store.saveAppShelfState(shelfState)
+                }
+                publish(next)
+            }
+            else -> {
+                publish(next)
+                if (next.panel?.level == PanelLevel.Library) {
+                    refreshLibraries()
+                }
+            }
         }
         cueMeaning(meaning, before, model)
-        return effect
+        return when (effect) {
+            Effect.PinApp, Effect.MoveApp, Effect.HideApp, Effect.ShowApp -> null
+            else -> effect
+        }
+    }
+
+    fun setInstalledApps(apps: List<LaunchableApp>, players: Set<String>) {
+        installed = apps.distinctBy { it.packageName }
+        playerPackages = players
+        publish(model)
+    }
+
+    fun showHomeGrid(grid: HomeGrid) {
+        publish(
+            model.copy(
+                homeGrid = grid,
+                panel = null,
+                arranging = false,
+                hold = null,
+                order = emptyList(),
+                focus = GridFocus(),
+                connectOpen = false,
+            ),
+        )
     }
 
     fun editOrigin(origin: String) {
@@ -226,24 +300,36 @@ class ShellController(
         publish(model.copy(dialog = homePrompt()))
     }
 
-    fun focusedGame(): ShelfGame? {
-        val index = model.focus.cellIndex
-        val source = displayOrder(model).getOrElse(index) { index }
-        return Shelf.games.getOrNull(source)
+    fun focusedGame(): ShelfGame? = tileFromOrder(displaySource(model))
+
+    fun tileFromOrder(source: Int): ShelfGame? = when (model.homeGrid) {
+        HomeGrid.StandIns -> Shelf.games.getOrNull(source)
+        else -> listed(model.homeGrid).getOrNull(source)?.asTile(model.homeGrid)
     }
 
     fun refreshPlayerSaves() {
         model = model.copy(playerSaves = playerSaveSettings())
     }
 
-    private fun prepared(): PickerModel {
-        val game = focusedGame()
-        val visible = store.session.launchTargetControlVisible(game?.occupiesBothDisplays == true)
-        return model.copy(
-            count = Shelf.games.size,
-            showLaunchTarget = visible,
-            playerSaves = playerSaveSettings(),
-        )
+    private fun displaySource(snapshot: PickerModel): Int {
+        val index = snapshot.focus.cellIndex
+        return displayOrder(snapshot).getOrElse(index) { index }
+    }
+
+    private fun withShelf(next: PickerModel): PickerModel {
+        val count = countFor(next.homeGrid)
+        val counted = next.copy(count = count, playerSaves = playerSaveSettings(), recentFirst = recentOrder())
+        val game = tileOn(counted)
+        val visible = game != null && store.session.launchTargetControlVisible(game.occupiesBothDisplays)
+        return counted.copy(showLaunchTarget = visible, appActions = actionsFor(counted, game))
+    }
+
+    private fun tileOn(snapshot: PickerModel): ShelfGame? {
+        val source = displaySource(snapshot)
+        return when (snapshot.homeGrid) {
+            HomeGrid.StandIns -> Shelf.games.getOrNull(source)
+            else -> listed(snapshot.homeGrid).getOrNull(source)?.asTile(snapshot.homeGrid)
+        }
     }
 
     private fun playerSaveSettings(): List<PlayerSaveSetting> =
@@ -283,7 +369,59 @@ class ShellController(
         if (next.motionSpeed != model.motionSpeed) {
             store.setMotionSpeed(next.motionSpeed)
         }
-        model = next.copy(count = Shelf.games.size, recentFirst = recentOrder())
+        model = withShelf(next)
+    }
+
+    private fun countFor(grid: HomeGrid): Int = when (grid) {
+        HomeGrid.StandIns -> Shelf.games.size
+        else -> listed(grid).size
+    }
+
+    private fun listed(grid: HomeGrid): List<LaunchableApp> = when (grid) {
+        HomeGrid.StandIns -> emptyList()
+        HomeGrid.AndroidGames -> appsOn(AndroidShelf.Games, installed, shelfState, playerPackages)
+        HomeGrid.Apps -> appsOn(AndroidShelf.Apps, installed, shelfState, playerPackages)
+        HomeGrid.HiddenApps -> hiddenApps(installed, shelfState, playerPackages)
+    }
+
+    private fun actionsFor(snapshot: PickerModel, game: ShelfGame?): AppActions? {
+        val packageName = game?.androidPackage ?: return null
+        if (snapshot.homeGrid == HomeGrid.StandIns) return null
+        val record = shelfState.record(packageName)
+        return AppActions(
+            favorite = record.favorite,
+            onGamesShelf = snapshot.homeGrid == HomeGrid.AndroidGames,
+            hiddenShelf = snapshot.homeGrid == HomeGrid.HiddenApps,
+        )
+    }
+
+    private fun focusPackage(next: PickerModel, packageName: String?): PickerModel {
+        if (packageName == null || next.homeGrid == HomeGrid.StandIns) return next
+        val source = listed(next.homeGrid).indexOfFirst { it.packageName == packageName }
+        if (source < 0) return next
+        val order = displayOrder(next.copy(count = listed(next.homeGrid).size))
+        val display = order.indexOf(source).takeIf { it >= 0 } ?: source
+        val column = display % Metrics.columns
+        val focus = next.focus.copy(cellIndex = display, lastColumn = column)
+        val open = next.panel
+        val panel = open?.copy(grid = open.grid.copy(cellIndex = display, lastColumn = column))
+        return next.copy(focus = focus, panel = panel)
+    }
+
+    private fun LaunchableApp.asTile(grid: HomeGrid): ShelfGame {
+        val opened = plugins.openInstalledApp(packageName)
+        val meta = when (grid) {
+            HomeGrid.AndroidGames -> Copy.androidGameMeta
+            HomeGrid.HiddenApps -> Copy.hiddenApps
+            else -> Copy.appMeta
+        }
+        return ShelfGame(
+            id = opened.sessionId,
+            title = label,
+            shortText = meta,
+            androidPackage = packageName,
+            favorite = shelfState.record(packageName).favorite,
+        )
     }
 
     private fun recentOrder(): List<Int> =

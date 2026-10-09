@@ -5,11 +5,16 @@
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
 
     <!-- Package visibility for the bundled players. Each plugin owns its ids. -->
+    <!-- Launcher visibility uses the same MAIN / LAUNCHER filter as queryIntentActivities. -->
     <queries>
         <package android:name="org.azahar_emu.azahar" />
         <package android:name="io.github.lime3ds.android" />
         <package android:name="me.magnum.melonds" />
         <package android:name="me.magnum.melonds.nightly" />
+        <intent>
+            <action android:name="android.intent.action.MAIN" />
+            <category android:name="android.intent.category.LAUNCHER" />
+        </intent>
     </queries>
 
     <application

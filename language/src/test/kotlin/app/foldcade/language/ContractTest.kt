@@ -280,7 +280,7 @@ class ContractTest {
     fun leftPanelOffersThePlayerSaveFolder() {
         val setting = PlayerSaveSetting(playerId = "azahar", label = "Azahar", chosen = false)
         val rows = leftRows(homeRoleHeld = true, playerSaves = listOf(setting))
-        assertEquals(Row.PlayerSave("azahar"), rows.last())
+        assertEquals(Row.PlayerSave("azahar"), rows.filterIsInstance<Row.PlayerSave>().single())
         val opened = reduce(
             PickerModel(
                 count = 1,
