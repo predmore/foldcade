@@ -15,7 +15,10 @@ kotlin {
 
 dependencies {
     implementation(libs.kotlinx.serialization.json)
+    implementation(libs.okhttp)
+    implementation(libs.coroutines.core)
     testImplementation(libs.junit)
+    testImplementation(libs.coroutines.core)
 }
 
 tasks.test {

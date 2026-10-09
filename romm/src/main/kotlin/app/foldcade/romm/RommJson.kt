@@ -203,16 +203,26 @@ internal fun parseApproved(bytes: ByteArray): DeviceTokenPoll.Approved {
     )
 }
 
-internal fun parsePlatform(obj: JsonObject): PlatformSummary = PlatformSummary(
-    id = obj.reqLong("id"),
-    name = obj.reqString("name"),
-    displayName = obj.optString("display_name") ?: obj.reqString("name"),
-    slug = obj.reqString("slug"),
-    fsSlug = obj.reqString("fs_slug"),
-    abbreviation = obj.reqString("abbreviation"),
-    alternativeNames = obj.stringList("alternative_names"),
-    romCount = obj.reqLong("rom_count"),
-)
+internal fun parsePlatform(obj: JsonObject): PlatformSummary {
+    val slug = obj.reqString("slug")
+    return PlatformSummary(
+        id = obj.reqLong("id"),
+        name = obj.reqString("name"),
+        displayName = obj.optString("display_name") ?: obj.reqString("name"),
+        slug = slug,
+        fsSlug = obj.reqString("fs_slug"),
+        abbreviation = obj.optString("abbreviation") ?: slug,
+        alternativeNames = obj.optionalStringList("alternative_names"),
+        romCount = obj.reqLong("rom_count"),
+    )
+}
+
+/** 5.3.1 platform objects omit this. A missing or null value is an empty list. */
+internal fun JsonObject.optionalStringList(name: String): List<String> {
+    val value = this[name] ?: return emptyList()
+    if (value is JsonNull) return emptyList()
+    return value.jsonArray.map { it.jsonPrimitive.content }
+}
 
 internal fun parseRomFile(obj: JsonObject): RomFileSummary = RomFileSummary(
     id = obj.reqLong("id"),

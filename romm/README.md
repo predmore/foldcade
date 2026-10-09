@@ -1,16 +1,18 @@
 # RomM client
 
-Pure JVM client for one RomM server. It is not a library backend and not a metadata provider. Those wait until the plugin interfaces exist. The shell does not call this module.
+Pure JVM client for one RomM server. It is not a library backend and not a metadata provider. Wiring waits until the API follow-up that changes alias matching, `LaunchFlag`, and the evolution rule has merged as well. The shell does not call this module.
 
-Calls are blocking. The caller does not run them on the main thread.
+Calls suspend on OkHttp. Cancelling the coroutine cancels the in-flight call, including a body copy. Connect, read, and write timeouts bound every call. A unit test reads the compiled classes and fails if any of them reference `java.net.http`, which Android does not provide. JDK 17 still has that package, so running the tests on the target JDK would not catch it.
 
 ## Pinned server
 
 Tested against RomM **5.4.0-alpha.2**. The pinned major is **5**.
 
-`POST /api/sync/negotiate` reads `info.version` from `/openapi.json` first. If that major is greater than 5, the client throws `RommProtocolMismatch` and does not negotiate. The exception carries the server version and the tested major so a later screen can show the mismatch. A newer minor of major 5 is still negotiated.
+Browse, download, and device-code sign-in work on any 5.x. Platform objects from stable 5.3.1 omit `abbreviation` and `alternative_names`. Those fields are optional: the abbreviation falls back to the slug, and missing names are an empty list.
 
-RomM 5.1's device-sync document uses a different body. This client does not speak it. A major-5 response that is missing the 5.4 fields, including `total_delete`, fails to parse and is not applied.
+Save sync needs **5.4.0** or newer. `POST /api/sync/negotiate` reads `info.version` from `/openapi.json` first. If that major is greater than 5, the client throws `RommProtocolMismatch` and does not negotiate. The exception carries the server version and the tested major so a later screen can show the mismatch. If the server is older than 5.4.0, the client throws `RommUnsupportedServer` with "server too old for save sync" and does not open a session. A newer minor of major 5, such as 5.9.0, is still negotiated.
+
+RomM 5.1's device-sync document uses a different body. This client does not speak it. A 5.4 response that is missing the tested fields, including `total_delete`, fails to parse and is not applied. Older servers never reach that parser.
 
 The public demo at the time this was written served OpenAPI 5.2.0. That document does not have `rom_ids`, `emulators`, or `total_delete` on negotiate. It was not used as the contract.
 

@@ -7,6 +7,7 @@ package app.foldcade.romm
  * (`info.version` on `/openapi.json`, generated models at that tag).
  * RomM documents breaking changes on major versions only. 5.1's device-sync
  * document describes a different body; this client does not speak it.
+ * Browse and download work on any 5.x. Save sync needs 5.4.0 or newer.
  */
 object RommContract {
     const val TESTED_MAJOR = 5

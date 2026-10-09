@@ -1,13 +1,26 @@
 package app.foldcade.romm
 
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.isActive
+import kotlinx.coroutines.suspendCancellableCoroutine
+import kotlin.coroutines.coroutineContext
+import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.jsonObject
+import okhttp3.Call
+import okhttp3.Callback
+import okhttp3.MediaType.Companion.toMediaType
+import okhttp3.OkHttpClient
+import okhttp3.Request
+import okhttp3.RequestBody.Companion.toRequestBody
+import okhttp3.Response
 import java.io.IOException
+import java.io.InputStream
+import java.io.OutputStream
 import java.net.URI
 import java.net.URLEncoder
-import java.net.http.HttpClient
-import java.net.http.HttpRequest
-import java.net.http.HttpResponse
 import java.nio.charset.StandardCharsets
 import java.nio.file.AtomicMoveNotSupportedException
 import java.nio.file.Files
@@ -16,9 +29,14 @@ import java.nio.file.StandardCopyOption
 import java.nio.file.StandardOpenOption
 import java.time.Duration
 import java.util.UUID
+import kotlin.coroutines.resume
+import kotlin.coroutines.resumeWithException
 
 /**
- * HTTP client for one RomM instance. Blocking. Call it off the main thread.
+ * HTTP client for one RomM instance.
+ *
+ * Calls suspend and run on [Dispatchers.IO]. Cancelling the calling coroutine
+ * cancels the OkHttp call. Connect, read, and write timeouts bound every call.
  *
  * [origin] is the instance root, such as `https://romm.example`. A trailing
  * `/api` is stripped. The token is a Client API Token (`rmm_…`) or the token
@@ -29,21 +47,26 @@ import java.util.UUID
 class RommClient(
     origin: String,
     private val accessToken: () -> String? = { null },
+    connectTimeout: Duration = Duration.ofSeconds(15),
+    readTimeout: Duration = Duration.ofSeconds(30),
+    writeTimeout: Duration = Duration.ofSeconds(30),
 ) : AutoCloseable {
     val origin: String = normalizeOrigin(origin)
 
-    private val http: HttpClient = HttpClient.newBuilder()
-        .connectTimeout(Duration.ofSeconds(15))
-        .followRedirects(HttpClient.Redirect.NORMAL)
+    private val http: OkHttpClient = OkHttpClient.Builder()
+        .connectTimeout(connectTimeout)
+        .readTimeout(readTimeout)
+        .writeTimeout(writeTimeout)
+        .followRedirects(true)
         .build()
 
-    fun heartbeat(): Heartbeat {
+    suspend fun heartbeat(): Heartbeat {
         val raw = exchange(api("/heartbeat"), "GET", authenticated = false)
         raw.require(200)
         return parseHeartbeat(raw.body)
     }
 
-    fun openApiInfo(): OpenApiInfo {
+    suspend fun openApiInfo(): OpenApiInfo {
         val raw = try {
             exchange(URI.create("$origin/openapi.json"), "GET", authenticated = false)
         } catch (e: RommUnavailable) {
@@ -64,7 +87,7 @@ class RommClient(
      * Device-code sign-in. One poll is [pollDeviceToken]. The caller waits
      * [DeviceAuthChallenge.intervalSeconds] between polls.
      */
-    fun beginDeviceAuth(
+    suspend fun beginDeviceAuth(
         clientDeviceIdentifier: String,
         name: String,
         clientVersion: String,
@@ -99,7 +122,7 @@ class RommClient(
         return origin + if (path.startsWith("/")) path else "/$path"
     }
 
-    fun pollDeviceToken(deviceCode: String): DeviceTokenPoll {
+    suspend fun pollDeviceToken(deviceCode: String): DeviceTokenPoll {
         val raw = exchange(
             api("/auth/device/token"),
             "POST",
@@ -120,7 +143,7 @@ class RommClient(
         throw RommHttpException(raw.status, raw.detail())
     }
 
-    fun platforms(): List<PlatformSummary> {
+    suspend fun platforms(): List<PlatformSummary> {
         val raw = exchange(api("/platforms"), "GET", authenticated = true)
         raw.require(200)
         val element = parseElement(raw.body.toString(Charsets.UTF_8))
@@ -128,7 +151,7 @@ class RommClient(
         return element.map { parsePlatform(it.jsonObject) }
     }
 
-    fun roms(query: RomQuery = RomQuery()): RomPage {
+    suspend fun roms(query: RomQuery = RomQuery()): RomPage {
         require(query.limit in 1..10_000) { "limit must be 1..10000" }
         require(query.offset >= 0) { "offset must be >= 0" }
         val params = mutableListOf(
@@ -151,7 +174,7 @@ class RommClient(
      * Downloads one ROM into [cacheRoot] with `purpose=play`. Does not send `format`.
      * A finished file is reused. A `.partial` sibling is resumed with `Range`.
      */
-    fun downloadRom(
+    suspend fun downloadRom(
         romId: Long,
         fileName: String,
         cacheRoot: Path,
@@ -171,6 +194,8 @@ class RommClient(
         val append = Files.isRegularFile(partial) && Files.size(partial) > 0
         try {
             streamGet(uri, partial, range = if (append) Files.size(partial) else null)
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: RommHttpException) {
             if (e.status == 416 && append) {
                 Files.deleteIfExists(partial)
@@ -188,7 +213,7 @@ class RommClient(
      * is returned without a request. Otherwise `PUT /api/devices/{id}`, and
      * `POST /api/devices` when that id is gone.
      */
-    fun registerDevice(
+    suspend fun registerDevice(
         stored: RegisteredDevice?,
         name: String,
         clientVersion: String,
@@ -223,10 +248,14 @@ class RommClient(
     }
 
     /**
-     * Asks the server what to do with [saves]. Refuses when the OpenAPI major
-     * is newer than [RommContract.TESTED_MAJOR], and does not call negotiate.
+     * Asks the server what to do with [saves].
+     *
+     * Refuses when the OpenAPI major is newer than [RommContract.TESTED_MAJOR].
+     * Save sync needs 5.4.0 or newer; an older server throws
+     * [RommUnsupportedServer] and no session is opened. Browse and download
+     * do not use this gate.
      */
-    fun negotiate(
+    suspend fun negotiate(
         deviceId: String,
         saves: List<LocalSave>,
         romIds: List<Long> = emptyList(),
@@ -236,8 +265,15 @@ class RommClient(
             require(Files.isRegularFile(save.file)) { "save file is missing: ${save.fileName}" }
         }
         val info = openApiInfo()
-        if (info.major > RommContract.TESTED_MAJOR) {
+        val parsed = RommVersion.parse(info.version) ?: throw RommProtocolUnreadable(info.version)
+        if (parsed.major > RommContract.TESTED_MAJOR) {
             throw RommProtocolMismatch(info.version, RommContract.TESTED_MAJOR)
+        }
+        if (!parsed.isAtLeast(5, 4, 0)) {
+            throw RommUnsupportedServer(
+                info.version,
+                "RomM server too old for save sync (${info.version}). Save sync needs 5.4.0 or newer.",
+            )
         }
         val raw = exchange(
             api("/sync/negotiate"),
@@ -250,7 +286,7 @@ class RommClient(
         return parseNegotiate(raw.body, info.version)
     }
 
-    fun uploadSave(
+    suspend fun uploadSave(
         romId: Long,
         fileName: String,
         slot: String?,
@@ -274,16 +310,15 @@ class RommClient(
             api("/saves", params),
             "POST",
             authenticated = true,
-            body = body,
+            bodyBytes = body,
             contentType = contentType,
-            timeout = null,
         )
         if (raw.status == 409) throw RommSlotMoved(raw.detail())
         raw.require(200)
         return parseSaveId(raw.body)
     }
 
-    fun downloadSave(
+    suspend fun downloadSave(
         saveId: Long,
         deviceId: String,
         sessionId: Long,
@@ -302,7 +337,7 @@ class RommClient(
         moveIntoPlace(partial, destination)
     }
 
-    fun confirmSaveDownloaded(saveId: Long, deviceId: String, contentHash: String) {
+    suspend fun confirmSaveDownloaded(saveId: Long, deviceId: String, contentHash: String) {
         val raw = exchange(
             api("/saves/$saveId/downloaded"),
             "POST",
@@ -313,7 +348,7 @@ class RommClient(
         raw.require(200)
     }
 
-    fun completeSync(sessionId: Long, operationsCompleted: Int, operationsFailed: Int): CompletedSync {
+    suspend fun completeSync(sessionId: Long, operationsCompleted: Int, operationsFailed: Int): CompletedSync {
         val raw = exchange(
             api("/sync/sessions/$sessionId/complete"),
             "POST",
@@ -330,9 +365,11 @@ class RommClient(
      * and again after the player exits. A conflict archives the local bytes
      * with a null slot and then writes the server copy.
      * An upload that cannot reach the server is copied into [queue] when one
-     * is given. A failed negotiate throws and does not change local files.
+     * is given. Cancellation is not a network failure: it is rethrown, nothing
+     * is queued, and the session is not completed. A failed negotiate throws
+     * and does not change local files.
      */
-    fun syncSaves(
+    suspend fun syncSaves(
         deviceId: String,
         saves: List<LocalSave>,
         romIds: List<Long> = emptyList(),
@@ -407,6 +444,8 @@ class RommClient(
                         failures += "unknown action ${op.action}"
                     }
                 }
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: RommException) {
                 failed++
                 failures += e.message ?: op.action
@@ -416,6 +455,8 @@ class RommClient(
         val sessionClosed = try {
             completeSync(negotiated.sessionId, completed, failed)
             true
+        } catch (e: CancellationException) {
+            throw e
         } catch (_: RommUnavailable) {
             false
         } catch (_: RommHttpException) {
@@ -436,10 +477,11 @@ class RommClient(
     }
 
     override fun close() {
-        http.close()
+        http.dispatcher.executorService.shutdown()
+        http.connectionPool.evictAll()
     }
 
-    private fun uploadOrQueue(
+    private suspend fun uploadOrQueue(
         local: LocalSave,
         deviceId: String,
         sessionId: Long,
@@ -461,6 +503,8 @@ class RommClient(
                 contentHash = hash,
                 bytes = bytes,
             )
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: RommUnavailable) {
             if (queue != null) {
                 queue.enqueue(local, deviceId, hash, bytes, slotOverride)
@@ -476,7 +520,7 @@ class RommClient(
             ?: saves.find { it.romId == op.romId && it.slot == op.slot }
             ?: throw RommResponseException("negotiate asked for ${op.fileName} and it was not local")
 
-    private fun streamGet(uri: URI, partial: Path, range: Long?) {
+    private suspend fun streamGet(uri: URI, partial: Path, range: Long?) {
         val headers = mutableMapOf<String, String>()
         if (range != null) headers["Range"] = "bytes=$range-"
         val raw = exchange(
@@ -486,7 +530,6 @@ class RommClient(
             extraHeaders = headers,
             streamTo = partial,
             append = range != null,
-            timeout = null,
         )
         if (raw.status == 202) {
             throw RommConversionPending(raw.header("Retry-After")?.toLongOrNull())
@@ -508,7 +551,7 @@ class RommClient(
         return URI.create("$origin/api$path$q")
     }
 
-    private fun exchange(
+    private suspend fun exchange(
         uri: URI,
         method: String,
         authenticated: Boolean,
@@ -518,30 +561,41 @@ class RommClient(
         extraHeaders: Map<String, String> = emptyMap(),
         streamTo: Path? = null,
         append: Boolean = false,
-        timeout: Duration? = Duration.ofSeconds(30),
-    ): RawResponse {
+    ): RawResponse = withContext(Dispatchers.IO) {
         val token = bearer()
         if (authenticated && token == null) throw RommUnauthenticated()
-        val publisher = when {
-            bodyBytes != null -> HttpRequest.BodyPublishers.ofByteArray(bodyBytes)
-            body != null -> HttpRequest.BodyPublishers.ofString(body)
-            else -> HttpRequest.BodyPublishers.noBody()
+        val requestBody = when {
+            bodyBytes != null -> bodyBytes.toRequestBody(contentType?.toMediaType())
+            body != null -> body.toRequestBody((contentType ?: "application/json").toMediaType())
+            method == "GET" || method == "HEAD" -> null
+            else -> ByteArray(0).toRequestBody(contentType?.toMediaType())
         }
-        val builder = HttpRequest.newBuilder(uri).method(method, publisher)
-        if (timeout != null) builder.timeout(timeout)
-        if (contentType != null) builder.header("Content-Type", contentType)
+        val builder = Request.Builder().url(uri.toString())
+        when (method) {
+            "GET" -> builder.get()
+            "POST" -> builder.post(requestBody ?: ByteArray(0).toRequestBody(null))
+            "PUT" -> builder.put(requestBody ?: ByteArray(0).toRequestBody(null))
+            else -> builder.method(method, requestBody)
+        }
         if (token != null && authenticated) builder.header("Authorization", "Bearer $token")
         extraHeaders.forEach { (key, value) -> builder.header(key, value) }
-        try {
-            if (streamTo != null) {
-                val response = http.send(builder.build(), HttpResponse.BodyHandlers.ofInputStream())
-                val status = response.statusCode()
-                if (status == 206 && !append) {
-                    response.body().close()
-                    return RawResponse(status, response.headers().map(), ByteArray(0))
-                }
-                if (status == 200 || status == 206) {
-                    response.body().use { input ->
+        val call = http.newCall(builder.build())
+        val response = try {
+            call.await()
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: IOException) {
+            if (!coroutineContext.isActive) throw CancellationException("RomM request was cancelled", e)
+            throw RommUnavailable(e.message ?: "RomM is unreachable", e)
+        }
+        response.use { open ->
+            val headers = open.headers.names().associateWith { open.headers.values(it) }
+            val status = open.code
+            try {
+                if (streamTo != null && (status == 200 || status == 206) && !(status == 206 && !append)) {
+                    val input = open.body?.byteStream()
+                        ?: throw RommResponseException("RomM returned an empty body")
+                    input.use { stream ->
                         streamTo.parent?.let { Files.createDirectories(it) }
                         val options = if (append && status == 206) {
                             arrayOf(
@@ -556,40 +610,55 @@ class RommClient(
                                 StandardOpenOption.TRUNCATE_EXISTING,
                             )
                         }
-                        Files.newOutputStream(streamTo, *options).use { out -> input.copyTo(out) }
+                        Files.newOutputStream(streamTo, *options).use { out ->
+                            copyCancellable(stream, out)
+                        }
                     }
-                } else {
-                    response.body().close()
                 }
-                return RawResponse(status, response.headers().map(), ByteArray(0))
+                val bytes = if (streamTo != null) {
+                    ByteArray(0)
+                } else {
+                    open.body?.bytes() ?: ByteArray(0)
+                }
+                RawResponse(status, headers, bytes)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: IOException) {
+                if (!coroutineContext.isActive) throw CancellationException("RomM request was cancelled", e)
+                throw RommUnavailable(e.message ?: "RomM is unreachable", e)
             }
-            val response = http.send(builder.build(), HttpResponse.BodyHandlers.ofByteArray())
-            return RawResponse(response.statusCode(), response.headers().map(), response.body())
-        } catch (e: RommException) {
-            throw e
-        } catch (e: IOException) {
-            throw RommUnavailable(e.message ?: "RomM is unreachable", e)
-        } catch (e: InterruptedException) {
-            Thread.currentThread().interrupt()
-            throw RommUnavailable("RomM request was interrupted", e)
         }
     }
 
-    private fun exchange(
-        uri: URI,
-        method: String,
-        authenticated: Boolean,
-        body: ByteArray,
-        contentType: String,
-        timeout: Duration?,
-    ): RawResponse = exchange(
-        uri = uri,
-        method = method,
-        authenticated = authenticated,
-        bodyBytes = body,
-        contentType = contentType,
-        timeout = timeout,
-    )
+    private suspend fun copyCancellable(input: InputStream, output: OutputStream) {
+        val buffer = ByteArray(8 * 1024)
+        while (true) {
+            coroutineContext.ensureActive()
+            val read = try {
+                input.read(buffer)
+            } catch (e: IOException) {
+                if (!coroutineContext.isActive) throw CancellationException("RomM request was cancelled", e)
+                throw e
+            }
+            if (read < 0) return
+            coroutineContext.ensureActive()
+            output.write(buffer, 0, read)
+        }
+    }
+
+    private suspend fun Call.await(): Response = suspendCancellableCoroutine { continuation ->
+        continuation.invokeOnCancellation { cancel() }
+        enqueue(object : Callback {
+            override fun onFailure(call: Call, e: IOException) {
+                if (continuation.isCancelled) return
+                continuation.resumeWithException(e)
+            }
+
+            override fun onResponse(call: Call, response: Response) {
+                continuation.resume(response) { _, _, _ -> response.close() }
+            }
+        })
+    }
 
     private fun bearer(): String? =
         accessToken()?.trim()?.removePrefix("Bearer ")?.trim()?.ifEmpty { null }

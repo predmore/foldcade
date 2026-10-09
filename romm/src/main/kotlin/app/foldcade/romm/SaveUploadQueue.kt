@@ -1,5 +1,6 @@
 package app.foldcade.romm
 
+import kotlinx.coroutines.CancellationException
 import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
@@ -56,7 +57,7 @@ class SaveUploadQueue(private val root: Path) {
         }
     }
 
-    fun flush(client: RommClient): FlushResult {
+    suspend fun flush(client: RommClient): FlushResult {
         var sent = 0
         var kept = 0
         for (item in pending()) {
@@ -74,6 +75,8 @@ class SaveUploadQueue(private val root: Path) {
                 Files.deleteIfExists(item.bytes)
                 Files.deleteIfExists(root.resolve("${item.id}.json"))
                 sent++
+            } catch (e: CancellationException) {
+                throw e
             } catch (_: RommUnavailable) {
                 kept++
             } catch (_: RommSlotMoved) {
