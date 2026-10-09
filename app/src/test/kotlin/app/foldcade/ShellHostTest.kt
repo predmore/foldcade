@@ -129,6 +129,7 @@ class ShellHostTest {
                 "app.foldcade.plugins.azahar.AzaharEntry",
                 "app.foldcade.plugins.gamenative.GameNativeEntry",
                 "app.foldcade.plugins.melonds.MelonDsEntry",
+                "app.foldcade.plugins.moonlight.MoonlightEntry",
                 "app.foldcade.plugins.romm.RommEntry",
             ),
             loaded,
@@ -176,6 +177,7 @@ class ShellHostTest {
                 "app.foldcade.plugins.azahar.AzaharEntry",
                 "app.foldcade.plugins.gamenative.GameNativeEntry",
                 "app.foldcade.plugins.melonds.MelonDsEntry",
+                "app.foldcade.plugins.moonlight.MoonlightEntry",
                 "app.foldcade.plugins.romm.RommEntry",
             ),
             loaded.map { it.javaClass.name }.toSet(),
@@ -189,15 +191,26 @@ class ShellHostTest {
         assertEquals("nintendo-3ds", host.playersFor("3ds").single().platformId)
         assertEquals("melonds", host.player("melonds")?.id)
         assertEquals("nintendo-ds", host.playersFor("nds").single().platformId)
-        assertTrue(host.playerIds().containsAll(listOf("azahar", "melonds", "gamenative")))
+        assertTrue(host.playerIds().containsAll(listOf("azahar", "melonds", "gamenative", "moonlight")))
         assertEquals("GameNative", host.library("gamenative")?.displayName)
         assertNull(host.metadata("gamenative"))
+        assertEquals("moonlight", host.player("moonlight")?.id)
+        assertEquals("moonlight", host.playersFor("moonlight").single().platformId)
+        assertFalse(host.player("moonlight") is app.foldcade.api.plugin.SaveFolderHolder)
+        assertEquals("Moonlight", host.library("moonlight")?.displayName)
         val stored = host.platformDefinitions()
-        assertEquals(folder.platforms.map { it.id }.toSet() + "pc", stored.map { it.id }.toSet())
-        assertEquals(folder.platforms.size + 1, stored.size)
+        assertEquals(
+            folder.platforms.map { it.id }.toSet() + setOf("pc", "moonlight"),
+            stored.map { it.id }.toSet(),
+        )
+        assertEquals(folder.platforms.size + 2, stored.size)
         val aliasesById = stored.associate { it.id to it.aliases }
-        assertEquals(folder.platforms.associate { it.id to it.aliases }, aliasesById - "pc")
+        assertEquals(
+            folder.platforms.associate { it.id to it.aliases },
+            aliasesById - "pc" - "moonlight",
+        )
         assertEquals(emptySet<String>(), aliasesById.getValue("pc"))
+        assertEquals(emptySet<String>(), aliasesById.getValue("moonlight"))
         val cache = Files.createTempDirectory("romm-real-entries")
         try {
             publishRommWiring(
@@ -222,6 +235,7 @@ class ShellHostTest {
             assertEquals("nintendo-64", canonicalPlatformId(definitions, "n64"))
             assertEquals("playstation", canonicalPlatformId(definitions, "psx"))
             assertEquals("gamecube", canonicalPlatformId(definitions, "ngc"))
+            assertEquals("moonlight", canonicalPlatformId(definitions, "moonlight"))
             assertEquals("game-gear", canonicalPlatformId(definitions, "gamegear"))
             assertEquals("nintendo-3ds", host.platform("3DS")?.id)
             assertEquals("nintendo-ds", host.platform("NDS")?.id)

@@ -47,6 +47,7 @@ import app.foldcade.language.HostScreen
 import app.foldcade.language.closeBothPanelDialog
 import app.foldcade.language.missingPlayerDialog
 import app.foldcade.language.noFileDialog
+import app.foldcade.language.playerNotice
 import app.foldcade.language.saveFolderDialog
 import app.foldcade.language.PanelKeyActivity
 import app.foldcade.language.PromptKey
@@ -232,6 +233,7 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
         foldcade.reloadInstalledApps()
         refreshFacePrompt()
         foldcade.music.onHomeResume()
+        foldcade.refreshMoonlightShelf()
     }
 
     override fun onPause() {
@@ -399,7 +401,11 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
             )
         } catch (cancelled: CancellationException) {
             throw cancelled
-        } catch (_: PluginException) {
+        } catch (error: PluginException) {
+            pendingLaunch = index
+            foldcade.shell.present(
+                playerNotice(player.displayName, error.message ?: Copy.missingPlayerBody, hostScreen()),
+            )
             return
         }
         pendingLaunch = index

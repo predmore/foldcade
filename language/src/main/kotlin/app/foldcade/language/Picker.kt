@@ -122,6 +122,16 @@ fun saveFolderDialog(screen: HostScreen): DialogState = DialogState(
 fun playerSavesLabel(name: String, chosen: Boolean): String =
     if (chosen) "$name saves  ${Copy.playerSavesSet}" else "$name saves  ${Copy.playerSavesUnset}"
 
+fun playerNotice(title: String, body: String, screen: HostScreen): DialogState = DialogState(
+    kind = DialogKind.Ok,
+    title = title,
+    body = body,
+    buttons = listOf(DialogButton.Ok),
+    index = 0,
+    safeIndex = 0,
+    screen = screen,
+)
+
 fun noFileDialog(screen: HostScreen): DialogState = DialogState(
     kind = DialogKind.Ok,
     title = Copy.notOnDevice,

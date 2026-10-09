@@ -25,6 +25,12 @@ Library I/O and metadata fetch are suspending. An implementation must stop that 
 
 An independent plugin that is not in this repository, and that uses only this API, may use any license. Plugins shipped here stay GPLv3. See [licensing](licensing.md).
 
+## Moonlight
+
+`:plugins:moonlight` (`MoonlightEntry`) is the official Moonlight client, `com.limelight`. The player starts `com.limelight.ShortcutTrampoline` with the host UUID and a string `AppId`. It does not pair, and it does not open Moonlight's database.
+
+`MoonlightLibrary` lists pinned shortcuts, or a one-time import after the caller confirms that list. `reconcile` does nothing. RomM does not configure this library: the entry has no metadata provider, and reconcile does not call RomM. The official client does not take both displays. The stream starts on the screen the picker targets, and the other screen keeps the picker.
+
 ## Samples
 
 `:plugins:sample` (`SampleEntry`) is the in-tree sample. It implements the four interfaces and does nothing else. Library and metadata are separate objects so the host can store them in separate slots.
