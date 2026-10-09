@@ -32,6 +32,7 @@ dependencies {
     implementation(project(":api"))
     implementation(project(":language"))
     implementation(project(":romm"))
+    implementation(project(":plugins:romm"))
     implementation(libs.androidx.core)
     implementation(libs.coroutines.android)
     implementation(libs.datastore.preferences)

@@ -6,6 +6,7 @@ import app.foldcade.api.plugin.CredentialStore
 import app.foldcade.api.plugin.RommCredentials
 import app.foldcade.credentials.AndroidCredentialStore
 import app.foldcade.language.SignedInBackend
+import java.nio.file.Path
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -19,9 +20,9 @@ class FoldcadeApp : Application() {
         private set
 
     /**
-     * Host-owned secrets. Plugin wiring should pass this same instance into
-     * the plugin host. Plugins do not read this store except through the
-     * namespaced access the host gives them.
+     * Host-owned secrets. Plugins do not open this store.
+     * RomM reads its token through [rommTokenSource], which looks up this
+     * same instance. There is no second token file.
      */
     lateinit var credentials: CredentialStore
         private set
@@ -61,6 +62,7 @@ class FoldcadeApp : Application() {
         }
         if (romm is CredentialLookup.Unreadable) {
             shell.setSignedIn(emptyList())
+            publishRomm()
             shell.askToSignInAgain()
             return
         }
@@ -72,7 +74,15 @@ class FoldcadeApp : Application() {
             emptySet()
         }
         shell.setSignedIn(ids.map { SignedInBackend(it, backendLabel(it)) })
+        publishRomm()
     }
+
+    /** Installs or clears [app.foldcade.plugins.romm.RommPlugins] from the saved origin and this store. */
+    fun publishRomm() {
+        publishRommWiring(store.rommOrigin(), credentials, rommCacheRoot())
+    }
+
+    private fun rommCacheRoot(): Path = cacheDir.toPath().resolve("romm")
 
     fun backendLabel(pluginId: String): String = when (pluginId) {
         RommCredentials.PLUGIN_ID -> "RomM"

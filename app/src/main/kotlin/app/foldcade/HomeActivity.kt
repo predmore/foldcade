@@ -219,6 +219,7 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
                 }
                 if (saved) {
                     foldcade.store.setRommOrigin(origin)
+                    foldcade.publishRomm()
                     foldcade.shell.setSignedIn(listOf(SignedInBackend(RommCredentials.PLUGIN_ID, "RomM")))
                 }
             }
@@ -239,6 +240,7 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
                 }
                 if (forgotten) {
                     if (pluginId == RommCredentials.PLUGIN_ID) foldcade.store.clearRommOrigin()
+                    foldcade.publishRomm()
                     foldcade.shell.setSignedIn(foldcade.shell.model.signedIn.filter { it.pluginId != pluginId })
                 }
             }
