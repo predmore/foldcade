@@ -21,6 +21,7 @@ include(
     ":language",
     ":app",
     ":host",
+    ":plugins:azahar",
     ":plugins:local-folder",
     ":plugins:sample",
     ":plugins:romm",

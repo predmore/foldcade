@@ -249,6 +249,56 @@ class ContractTest {
     }
 
     @Test
+    fun azaharDialogsKeepTheRunningGameOnBack() {
+        val missing = missingPlayerDialog("Azahar", HostScreen.Bottom)
+        assertEquals("Azahar is not installed", missing.title)
+        assertEquals(Copy.missingPlayerBody, missing.body)
+        assertEquals(DialogKind.MissingPlayer, missing.kind)
+
+        val close = closeBothPanelDialog(HostScreen.Bottom)
+        assertEquals(DialogButton.NotNow, close.buttons[close.safeIndex])
+        val model = PickerModel(count = 1, rowsPerPage = 1, showLaunchTarget = false, dialog = close)
+        val (kept, choice) = reduce(model, Meaning.Back)
+        assertEquals(Effect.DialogChoice(DialogButton.NotNow, DialogKind.ClosePlayer), choice)
+        assertNull(kept.dialog)
+
+        val saves = saveFolderDialog(HostScreen.Top)
+        assertEquals(DialogKind.SaveFolder, saves.kind)
+        assertEquals(HostScreen.Top, saves.screen)
+        assertEquals(DialogButton.NotNow, saves.buttons[saves.index])
+        assertEquals(DialogButton.NotNow, saves.buttons[saves.safeIndex])
+        assertFalse(saves.body.contains("sdmc"))
+        val (started, saveChoice) = reduce(
+            PickerModel(count = 1, rowsPerPage = 1, showLaunchTarget = false, dialog = saves),
+            Meaning.Activate,
+        )
+        assertEquals(Effect.DialogChoice(DialogButton.NotNow, DialogKind.SaveFolder), saveChoice)
+        assertNull(started.dialog)
+    }
+
+    @Test
+    fun leftPanelOffersThePlayerSaveFolder() {
+        val setting = PlayerSaveSetting(playerId = "azahar", label = "Azahar", chosen = false)
+        val rows = leftRows(homeRoleHeld = true, playerSaves = listOf(setting))
+        assertEquals(Row.PlayerSave("azahar"), rows.last())
+        val opened = reduce(
+            PickerModel(
+                count = 1,
+                rowsPerPage = 1,
+                showLaunchTarget = false,
+                homeRoleHeld = true,
+                playerSaves = listOf(setting),
+            ),
+            Meaning.LeftPanel,
+        ).first
+        val index = rows.indexOf(Row.PlayerSave("azahar"))
+        val (closed, effect) = reduce(opened.copy(panel = opened.panel!!.copy(index = index)), Meaning.Activate)
+        assertEquals(Effect.ChoosePlayerSave("azahar"), effect)
+        assertNull(closed.panel)
+        assertEquals("Azahar saves  Not set", rowLabel(Row.PlayerSave("azahar"), opened))
+    }
+
+    @Test
     fun motionTokensAreTheSharedScale() {
         assertEquals(100, Motion.durationShort)
         assertEquals(180, Motion.durationFocus)
