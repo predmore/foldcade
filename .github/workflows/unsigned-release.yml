@@ -1,0 +1,152 @@
+name: Unsigned release
+
+# Its own workflow so the dry-run is a pull request check as soon as CI starts.
+# A job that only needs the render job stays off the check list until that job finishes.
+# This does not sign, and it does not install fluidsynth. PR #2's release workflow is untouched.
+on:
+  pull_request:
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  dry-run:
+    name: unsigned release dry-run
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Decide whether this pull request packages music
+        id: scope
+        run: |
+          set -euo pipefail
+          git fetch origin main
+          if git diff --name-only origin/main...HEAD | grep -Eq '^(music/|app/build\.gradle\.kts|\.github/workflows/home-music\.yml|\.github/workflows/unsigned-release\.yml)$'; then
+            echo "package=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "package=false" >> "$GITHUB_OUTPUT"
+            echo "Home music sources are unchanged. The unsigned release dry-run is not pending."
+          fi
+
+      - name: Wait for the CI-rendered assets
+        id: assets
+        if: steps.scope.outputs.package == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          for _ in $(seq 1 60); do
+            json=$(gh api "repos/${GITHUB_REPOSITORY}/actions/workflows/home-music.yml/runs?head_sha=${GITHUB_SHA}&event=pull_request&per_page=10")
+            run_id=$(echo "$json" | jq -r '[.workflow_runs[]] | sort_by(.created_at) | last | .id // empty')
+            if [ -z "$run_id" ] || [ "$run_id" = "null" ]; then
+              echo "Home music workflow has not started for ${GITHUB_SHA}."
+              sleep 20
+              continue
+            fi
+            status=$(echo "$json" | jq -r --argjson id "$run_id" '.workflow_runs[] | select(.id == $id) | .status')
+            conclusion=$(echo "$json" | jq -r --argjson id "$run_id" '.workflow_runs[] | select(.id == $id) | .conclusion')
+            echo "Home music run ${run_id} status=${status} conclusion=${conclusion}"
+            if [ "$status" = "completed" ] && [ "$conclusion" = "success" ]; then
+              count=$(gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${run_id}/artifacts" --jq '[.artifacts[] | select(.name=="home-music-assets")] | length')
+              if [ "$count" = "0" ]; then
+                echo "::error::Home music render succeeded without the home-music-assets artifact."
+                exit 1
+              fi
+              echo "run_id=${run_id}" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+            if [ "$status" = "completed" ]; then
+              echo "::error::Home music workflow finished as ${conclusion}."
+              exit 1
+            fi
+            sleep 20
+          done
+          echo "::error::Timed out waiting for the home music render."
+          exit 1
+
+      - uses: actions/download-artifact@v4
+        if: steps.scope.outputs.package == 'true'
+        with:
+          name: home-music-assets
+          path: home-music-assets
+          run-id: ${{ steps.assets.outputs.run_id }}
+          github-token: ${{ github.token }}
+
+      - uses: actions/setup-java@v4
+        if: steps.scope.outputs.package == 'true'
+        with:
+          distribution: temurin
+          java-version: "21"
+
+      - name: Android SDK root
+        if: steps.scope.outputs.package == 'true'
+        id: sdk
+        run: echo "root=$HOME/android-sdk" >> "$GITHUB_OUTPUT"
+
+      - name: Cache Android SDK packages
+        if: steps.scope.outputs.package == 'true'
+        uses: actions/cache@v4
+        with:
+          path: |
+            ${{ steps.sdk.outputs.root }}/cmdline-tools
+            ${{ steps.sdk.outputs.root }}/platforms
+            ${{ steps.sdk.outputs.root }}/build-tools
+            ${{ steps.sdk.outputs.root }}/platform-tools
+            ${{ steps.sdk.outputs.root }}/licenses
+          key: android-sdk-33-37.0-build-tools-37.0.0-platform-tools-v1
+
+      - name: Install Android SDK packages
+        if: steps.scope.outputs.package == 'true'
+        env:
+          SDK_ROOT: ${{ steps.sdk.outputs.root }}
+        run: |
+          set -euo pipefail
+          mkdir -p "$SDK_ROOT"
+          if [ ! -x "$SDK_ROOT/cmdline-tools/latest/bin/sdkmanager" ]; then
+            tmp="$(mktemp -d)"
+            curl -fsSL -o "$tmp/cmdlinetools.zip" \
+              https://dl.google.com/android/repository/commandlinetools-linux-12266719_latest.zip
+            unzip -q "$tmp/cmdlinetools.zip" -d "$tmp"
+            mkdir -p "$SDK_ROOT/cmdline-tools"
+            rm -rf "$SDK_ROOT/cmdline-tools/latest"
+            mv "$tmp/cmdline-tools" "$SDK_ROOT/cmdline-tools/latest"
+          fi
+          sdkmanager="$SDK_ROOT/cmdline-tools/latest/bin/sdkmanager"
+          yes | "$sdkmanager" --sdk_root="$SDK_ROOT" --licenses >/dev/null || true
+          "$sdkmanager" --sdk_root="$SDK_ROOT" --install \
+            "platforms;android-33" \
+            "platforms;android-37.0" \
+            "build-tools;37.0.0" \
+            "platform-tools"
+          echo "ANDROID_HOME=$SDK_ROOT" >> "$GITHUB_ENV"
+          echo "ANDROID_SDK_ROOT=$SDK_ROOT" >> "$GITHUB_ENV"
+
+      - name: Assemble unsigned release from the CI render
+        if: steps.scope.outputs.package == 'true'
+        run: |
+          set -euo pipefail
+          if command -v fluidsynth >/dev/null 2>&1; then
+            echo "::error::This dry-run must not have fluidsynth installed."
+            exit 1
+          fi
+          test -f home-music-assets/music/manifest.json
+          test -f home-music-assets/music/lanternlight.ogg
+          ./gradlew :app:assembleRelease --configuration-cache \
+            -PfoldcadeHomeMusicAssets="${GITHUB_WORKSPACE}/home-music-assets"
+          mapfile -t apks < <(find app/build/outputs/apk/release -name '*.apk' -type f | sort)
+          if [ "${#apks[@]}" -ne 1 ]; then
+            echo "::error::Expected one unsigned release APK, found ${#apks[@]}."
+            printf '%s\n' "${apks[@]:-}"
+            exit 1
+          fi
+          apk="${apks[0]}"
+          unzip -l "$apk" | grep -q 'assets/music/lanternlight.ogg'
+          unzip -l "$apk" | grep -q 'assets/music/manifest.json'
+          if "$ANDROID_HOME/build-tools/37.0.0/apksigner" verify "$apk"; then
+            echo "::error::Unsigned dry-run produced a signed APK."
+            exit 1
+          fi
