@@ -79,6 +79,11 @@ class FoldcadeApp : Application() {
         }
     }
 
+    override fun onTrimMemory(level: Int) {
+        super.onTrimMemory(level)
+        if (::music.isInitialized) music.onTrimMemory()
+    }
+
     fun refreshCredentials() {
         scope.launch {
             credentialGate.withLock { loadSignedIn() }

@@ -69,6 +69,10 @@ class HomeMusic(
     }
 
     fun setThemeJson(json: String?) {
+        if (!onMainThread()) {
+            handler.post { setThemeJson(json) }
+            return
+        }
         themeJson = json
         val next = resolvedAsset()
         val existing = player ?: return
@@ -79,6 +83,10 @@ class HomeMusic(
     }
 
     fun onHomeResume() {
+        if (!onMainThread()) {
+            handler.post { onHomeResume() }
+            return
+        }
         val wasAway = resumedHomes == 0
         resumedHomes++
         if (gameInFront()) {
@@ -93,18 +101,30 @@ class HomeMusic(
     }
 
     fun onHomePause() {
+        if (!onMainThread()) {
+            handler.post { onHomePause() }
+            return
+        }
         resumedHomes = (resumedHomes - 1).coerceAtLeast(0)
         if (resumedHomes == 0) fadeOut()
     }
 
     /** A game or any other app Foldcade starts. The loop stays down until that game leaves. */
     fun onExternalLaunch() {
+        if (!onMainThread()) {
+            handler.post { onExternalLaunch() }
+            return
+        }
         suppressed = true
         fadeOut()
     }
 
     /** Session updates when a game is placed or cleared. Suppression follows the game, not the resume. */
     fun onSessionChanged() {
+        if (!onMainThread()) {
+            handler.post { onSessionChanged() }
+            return
+        }
         if (gameInFront()) {
             suppressed = true
             if (player != null) fadeOut()
@@ -118,6 +138,10 @@ class HomeMusic(
     fun trackTitle(): String = selectedTrack()?.title ?: DEFAULT_TRACK_TITLE
 
     fun apply(setting: HomeMusicSetting) {
+        if (!onMainThread()) {
+            handler.post { apply(setting) }
+            return
+        }
         reloadIfTrackChanged()
         if (!mayStart()) return
         if (playbackLevel(setting, ducked, mediaMuted()) <= 0f) {
@@ -138,6 +162,10 @@ class HomeMusic(
      * The built-in theme has none, so the loop does not dip on every key.
      */
     fun duckForThemeSound(meaning: Meaning) {
+        if (!onMainThread()) {
+            handler.post { duckForThemeSound(meaning) }
+            return
+        }
         val slot = when (meaning) {
             Meaning.MoveUp, Meaning.MoveDown, Meaning.MoveLeft, Meaning.MoveRight -> "move"
             Meaning.Activate -> "activate"
@@ -293,6 +321,15 @@ class HomeMusic(
         }
     }
 
+    /** The system is reclaiming memory. Drop the player so it does not keep audio focus. */
+    fun onTrimMemory() {
+        if (!onMainThread()) {
+            handler.post { onTrimMemory() }
+            return
+        }
+        releasePlayer()
+    }
+
     /** pause() does not abandon AUDIOFOCUS_GAIN. Release does. */
     private fun releasePlayer() {
         fadeToken++
@@ -331,6 +368,8 @@ class HomeMusic(
             app.assets.open(name).close()
             true
         }.getOrDefault(false)
+
+    private fun onMainThread(): Boolean = Looper.myLooper() == Looper.getMainLooper()
 
     private fun current(): HomeMusicSetting =
         HomeMusicSetting(store.musicEnabled(), store.musicVolume(), store.musicTrackId())
