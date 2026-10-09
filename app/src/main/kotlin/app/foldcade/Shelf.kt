@@ -8,6 +8,8 @@ data class ShelfGame(
     val occupiesBothDisplays: Boolean = false,
     /** Key into the original line glyphs. Not a console logo. */
     val mark: String? = null,
+    /** Content URI the player can open. Null until a library hands one over. */
+    val contentUri: String? = null,
 )
 
 object Shelf {
@@ -18,5 +20,19 @@ object Shelf {
         ShelfGame("shelf.cartridge", "Cartridge", "Solid media", mark = "cartridge"),
         ShelfGame("shelf.disc", "Disc", "Optical", mark = "disc"),
         ShelfGame("shelf.cloud", "Cloud", "Stream", mark = "cloud"),
+        ShelfGame(
+            id = "nintendo-3ds.azahar",
+            title = "3DS",
+            shortText = "Azahar",
+            platformId = "nintendo-3ds",
+            occupiesBothDisplays = true,
+        ),
+        ShelfGame(
+            id = "nintendo-ds.melonds",
+            title = "DS",
+            shortText = "melonDS",
+            platformId = "nintendo-ds",
+            occupiesBothDisplays = true,
+        ),
     )
 }

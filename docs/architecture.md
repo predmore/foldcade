@@ -12,6 +12,7 @@ Foldcade is an Android launcher for the AYN Thor. The shell is Compose. Plugins 
 | `:host` | `PluginHost`. Loads entries and calls library and metadata I/O off the main thread. |
 | `:romm` | RomM HTTP client. |
 | `:plugins:local-folder` | Library backed by a folder on the device, plus the platform ids that folder scan uses. |
+| `:plugins:melonds` | Nintendo DS player for upstream melonDS Android. |
 | `:plugins:romm` | Built-in RomM library and metadata. |
 | `:plugins:sample` | In-tree sample plugin. |
 | `:samples:out-of-tree` | Sample that compiles against `:api` only. |

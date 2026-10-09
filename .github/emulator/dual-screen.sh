@@ -581,4 +581,77 @@ capture "$secondary" "$out/home-secondary.png"
 expect_png "$out/home-primary.png" "${top_width}x${top_height}"
 expect_png "$out/home-secondary.png" "${bottom_width}x${bottom_height}"
 
+# Azahar launch path. Thor-sized emulator, not a Thor pass.
+# Azahar is not installed here. The capture is the missing-player state.
+# input -d is used only when this image's help text documents it.
+echo "step: azahar launch path"
+input_help="$(adb_do shell input -h 2>&1 | tr -d '\r' || true)"
+printf '%s\n' "$input_help" >"$out/input-help.txt"
+if printf '%s\n' "$input_help" | grep -q -- '-d' && printf '%s\n' "$input_help" | grep -qi 'display'; then
+  show_foldcade
+  dismiss_leftover_dialog
+  echo "step: focus the 3DS tile"
+  # Afterglow keeps six shelf tiles. 3DS is the seventh: row 1, column 2.
+  adb_do shell input -d "$presentation_logical" keyevent KEYCODE_DPAD_DOWN
+  adb_do shell input -d "$presentation_logical" keyevent KEYCODE_DPAD_RIGHT
+  adb_do shell input -d "$presentation_logical" keyevent KEYCODE_DPAD_RIGHT
+  adb_do shell input -d "$presentation_logical" keyevent KEYCODE_DPAD_CENTER
+  sleep 1
+  capture "$primary" "$out/launch-primary.png"
+  capture "$secondary" "$out/launch-secondary.png"
+  expect_png "$out/launch-primary.png" "${top_width}x${top_height}"
+  expect_png "$out/launch-secondary.png" "${bottom_width}x${bottom_height}"
+  timeout 10 adb shell uiautomator dump /sdcard/foldcade-ui.xml >/dev/null 2>&1 || true
+  timeout 10 adb shell cat /sdcard/foldcade-ui.xml | tr -d '\r' >"$out/launch-ui.xml" || true
+  seen="no"
+  if grep -q 'not installed' "$out/launch-ui.xml"; then
+    seen="yes"
+  fi
+  {
+    echo "Thor-sized emulator, not a Thor pass."
+    echo "Azahar is not installed on this image. The launch captures are the missing-player path."
+    echo "This is not a measurement of Azahar on the Thor bottom panel."
+    echo "missing_player_in_ui_dump=${seen}"
+  } >"$out/launch-path.txt"
+  adb_do shell input -d "$presentation_logical" keyevent KEYCODE_BACK || true
+
+  # melonDS launch path. Thor-sized emulator, not a Thor pass.
+  # melonDS is not installed here. The capture is the missing-player state.
+  # DS is the eighth shelf tile, the cell to the right of 3DS.
+  echo "step: melonDS launch path"
+  echo "step: focus the DS tile"
+  adb_do shell input -d "$presentation_logical" keyevent KEYCODE_DPAD_RIGHT
+  sleep 1
+  capture "$primary" "$out/ds-focus-primary.png"
+  capture "$secondary" "$out/ds-focus-secondary.png"
+  expect_png "$out/ds-focus-primary.png" "${top_width}x${top_height}"
+  expect_png "$out/ds-focus-secondary.png" "${bottom_width}x${bottom_height}"
+  echo "step: open the DS tile"
+  adb_do shell input -d "$presentation_logical" keyevent KEYCODE_DPAD_CENTER
+  sleep 1
+  capture "$primary" "$out/ds-launch-primary.png"
+  capture "$secondary" "$out/ds-launch-secondary.png"
+  expect_png "$out/ds-launch-primary.png" "${top_width}x${top_height}"
+  expect_png "$out/ds-launch-secondary.png" "${bottom_width}x${bottom_height}"
+  timeout 10 adb shell uiautomator dump /sdcard/foldcade-ui.xml >/dev/null 2>&1 || true
+  timeout 10 adb shell cat /sdcard/foldcade-ui.xml | tr -d '\r' >"$out/ds-launch-ui.xml" || true
+  seen="no"
+  if grep -q 'not installed' "$out/ds-launch-ui.xml"; then
+    seen="yes"
+  fi
+  {
+    echo "Thor-sized emulator, not a Thor pass."
+    echo "melonDS is not installed on this image. The launch captures are the missing-player path."
+    echo "Top is ${top_width}x${top_height}. Bottom is ${bottom_width}x${bottom_height}."
+    echo "This is not a measurement of the DS touch screen on the Thor bottom panel."
+    echo "missing_player_in_ui_dump=${seen}"
+  } >"$out/ds-launch-path.txt"
+  adb_do shell input -d "$presentation_logical" keyevent KEYCODE_BACK || true
+else
+  {
+    echo "Thor-sized emulator, not a Thor pass."
+    echo "input help does not document a display id. The launch path was not driven."
+  } >"$out/launch-path.txt"
+fi
+
 echo "Captured displays $primary and $secondary. Thor-sized emulator, not a Thor pass."

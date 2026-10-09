@@ -89,7 +89,7 @@ class PluginHost(
         if (entry.apiMinor > PLUGIN_API_MINOR) {
             error("Plugin API minor ${entry.apiMinor} is newer than $PLUGIN_API_MINOR")
         }
-        val stagedPlatforms = entry.platforms.toList()
+        val stagedPlatforms = novelPlatforms(entry.platforms.toList())
         val stagedPlayers = entry.players.toList()
         val stagedLibraries = entry.libraries.toList()
         val stagedMetadata = entry.metadataProviders.toList()
@@ -243,6 +243,9 @@ class PluginHost(
     /** Library ids stored at registration, from the published snapshot. This does not call a plugin. */
     fun libraryIds(): List<String> = catalog.libraries.keys.toList()
 
+    /** Player ids stored at registration, from the published snapshot. This does not call a plugin. */
+    fun playerIds(): List<String> = catalog.players.keys.toList()
+
     /**
      * The library's display name, through the same guard as a suspending call.
      * A plugin failure is [PluginCallException] or [PluginException].
@@ -353,6 +356,22 @@ class PluginHost(
     private fun storedPlatformId(names: List<Pair<String, String>>, idOrAlias: String): String? =
         names.firstOrNull { it.first.equals(idOrAlias, ignoreCase = true) }?.second
 
+    /**
+     * Platforms this entry still needs to store.
+     * A platform already stored with the same id, name, extensions, and aliases
+     * is the same declaration. The entry's other slots still register.
+     * A different declaration keeps the collision check in [planPlatformNames].
+     */
+    private fun novelPlatforms(incoming: List<Platform>): List<Platform> {
+        val novel = ArrayList<Platform>(incoming.size)
+        for (platform in incoming) {
+            val existing = platforms[platform.id]
+            if (existing != null && samePlatform(existing, platform)) continue
+            novel += platform
+        }
+        return novel
+    }
+
 }
 
 /** One consistent view of the host. Replaced whole, never edited. */
@@ -425,6 +444,12 @@ private class DefinedPlatform(
     override val extensions: Set<String>,
     override val aliases: Set<String>,
 ) : Platform
+
+private fun samePlatform(stored: Platform, incoming: Platform): Boolean =
+    stored.id == incoming.id &&
+        stored.displayName == incoming.displayName &&
+        stored.extensions == incoming.extensions &&
+        stored.aliases == incoming.aliases
 
 private fun planPlatformNames(
     incoming: List<Platform>,

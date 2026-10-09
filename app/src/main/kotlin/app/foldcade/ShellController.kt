@@ -1,12 +1,14 @@
 package app.foldcade
 
 import app.foldcade.api.plugin.RommCredentials
+import app.foldcade.api.plugin.SaveFolderHolder
 import app.foldcade.host.PluginHost
 import app.foldcade.language.BackgroundMotion
 import app.foldcade.language.ConnectField
 import app.foldcade.language.Chrome
 import app.foldcade.language.Copy
 import app.foldcade.language.DialogKind
+import app.foldcade.language.DialogState
 import app.foldcade.language.Effect
 import app.foldcade.language.GridFocus
 import app.foldcade.language.DEFAULT_TRACK_TITLE
@@ -18,6 +20,7 @@ import app.foldcade.language.MotionSpeed
 import app.foldcade.language.Metrics
 import app.foldcade.language.PanelLevel
 import app.foldcade.language.PickerModel
+import app.foldcade.language.PlayerSaveSetting
 import app.foldcade.language.SignedInBackend
 import app.foldcade.language.connectFields
 import app.foldcade.language.displayOrder
@@ -105,6 +108,11 @@ class ShellController(
             connectOpen = false,
             connectScreen = null,
         )
+    }
+
+    fun present(dialog: DialogState) {
+        if (model.dialog != null) return
+        model = model.copy(dialog = dialog)
     }
 
     fun showQueuedPrompt() {
@@ -224,11 +232,30 @@ class ShellController(
         return Shelf.games.getOrNull(source)
     }
 
+    fun refreshPlayerSaves() {
+        model = model.copy(playerSaves = playerSaveSettings())
+    }
+
     private fun prepared(): PickerModel {
         val game = focusedGame()
         val visible = store.session.launchTargetControlVisible(game?.occupiesBothDisplays == true)
-        return model.copy(count = Shelf.games.size, showLaunchTarget = visible)
+        return model.copy(
+            count = Shelf.games.size,
+            showLaunchTarget = visible,
+            playerSaves = playerSaveSettings(),
+        )
     }
+
+    private fun playerSaveSettings(): List<PlayerSaveSetting> =
+        plugins.playerIds().mapNotNull { id ->
+            val player = plugins.player(id) ?: return@mapNotNull null
+            if (player !is SaveFolderHolder) return@mapNotNull null
+            PlayerSaveSetting(
+                playerId = player.id,
+                label = player.displayName,
+                chosen = player.hasSaveFolder(),
+            )
+        }
 
     fun setMusicVolume(volume: Float) {
         publish(model.copy(music = model.music.withVolume(volume)))

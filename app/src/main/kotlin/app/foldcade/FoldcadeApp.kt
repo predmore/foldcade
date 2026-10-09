@@ -4,6 +4,7 @@ import android.app.Application
 import app.foldcade.api.plugin.CredentialLookup
 import app.foldcade.api.plugin.CredentialStore
 import app.foldcade.api.plugin.RommCredentials
+import app.foldcade.api.plugin.SaveFolderHolder
 import app.foldcade.credentials.AndroidCredentialStore
 import app.foldcade.host.PluginHost
 import app.foldcade.language.BackgroundMotion
@@ -47,6 +48,9 @@ class FoldcadeApp : Application() {
     /** Local play history. Not a plugin API. */
     lateinit var plays: PlaySessions
         private set
+
+    /** The external player session opened by the host launch path. */
+    val externalPlay = ExternalPlay()
     var companionLaunched: Boolean = false
 
     /**
@@ -102,7 +106,11 @@ class FoldcadeApp : Application() {
         refreshCredentials()
         pluginLoad.launch {
             plugins.load(classLoader)
+            restorePlayerSaveFolders()
             publishRomm()
+            withContext(Dispatchers.Main.immediate) {
+                shell.refreshPlayerSaves()
+            }
         }
     }
 
@@ -158,6 +166,14 @@ class FoldcadeApp : Application() {
      * A later call supersedes an earlier one. The same origin, cache, and platforms
      * leave the current wiring in place.
      */
+    private fun restorePlayerSaveFolders() {
+        for (id in plugins.playerIds()) {
+            val player = plugins.player(id) as? SaveFolderHolder ?: continue
+            val uri = store.playerSaveFolder(id) ?: continue
+            player.bindSaveFolder(uri)
+        }
+    }
+
     fun publishRomm() {
         rommPublish.publish()
     }

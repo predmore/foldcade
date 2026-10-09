@@ -126,6 +126,8 @@ class ShellHostTest {
         assertEquals(
             listOf(
                 "app.foldcade.localfolder.LocalFolderEntry",
+                "app.foldcade.plugins.azahar.AzaharEntry",
+                "app.foldcade.plugins.melonds.MelonDsEntry",
                 "app.foldcade.plugins.romm.RommEntry",
             ),
             loaded,
@@ -170,18 +172,27 @@ class ShellHostTest {
         assertEquals(
             setOf(
                 "app.foldcade.localfolder.LocalFolderEntry",
+                "app.foldcade.plugins.azahar.AzaharEntry",
+                "app.foldcade.plugins.melonds.MelonDsEntry",
                 "app.foldcade.plugins.romm.RommEntry",
             ),
             loaded.map { it.javaClass.name }.toSet(),
         )
         val host = PluginHost(Dispatchers.Unconfined, MemoryCredentialStore())
         host.load(ShellHostTest::class.java.classLoader)
-        assertTrue(host.rejected.isEmpty())
+        assertTrue(host.rejected.joinToString { "${it.plugin}: ${it.reason}" }, host.rejected.isEmpty())
         assertTrue(host.library("local-folder") is LocalFolderBackend)
         assertEquals("RomM", host.library("romm")?.displayName)
+        assertEquals("azahar", host.player("azahar")?.id)
+        assertEquals("nintendo-3ds", host.playersFor("3ds").single().platformId)
+        assertEquals("melonds", host.player("melonds")?.id)
+        assertEquals("nintendo-ds", host.playersFor("nds").single().platformId)
+        assertTrue(host.playerIds().containsAll(listOf("azahar", "melonds")))
         val stored = host.platformDefinitions()
-        assertEquals(folder.platforms.map { it.id }, stored.map { it.id })
-        assertEquals(folder.platforms.map { it.aliases }, stored.map { it.aliases })
+        assertEquals(folder.platforms.map { it.id }.toSet(), stored.map { it.id }.toSet())
+        assertEquals(folder.platforms.size, stored.size)
+        val aliasesById = stored.associate { it.id to it.aliases }
+        assertEquals(folder.platforms.associate { it.id to it.aliases }, aliasesById)
         val cache = Files.createTempDirectory("romm-real-entries")
         try {
             publishRommWiring(

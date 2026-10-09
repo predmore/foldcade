@@ -919,6 +919,7 @@ private fun DialogCard(
                         DialogButton.NotNow -> Copy.notNow
                         DialogButton.ContinueGrant -> Copy.continueGrant
                         DialogButton.Ok -> Copy.ok
+                        DialogButton.CloseIt -> Copy.closeIt
                     }
                     BasicText(
                         text = label,
