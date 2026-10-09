@@ -89,6 +89,8 @@ import app.foldcade.language.homeGridLabel
 import app.foldcade.language.DialogButton
 import app.foldcade.language.Effect
 import app.foldcade.language.DialogState
+import app.foldcade.language.EmptyGrid
+import app.foldcade.language.GridKind
 import app.foldcade.language.HintActions
 import app.foldcade.language.HintPlace
 import app.foldcade.language.HostScreen
@@ -248,10 +250,21 @@ private fun Hero(app: FoldcadeApp, screen: HostScreen, scale: Float, onEffect: (
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis,
                         )
-                        ShelfMeta(
-                            line = shown.shortText,
-                            hintFocused = shown.emptyShelfHint && cellFocused,
-                        )
+                        if (shown.shortText.isNotEmpty()) {
+                            ShelfMeta(
+                                line = shown.shortText,
+                                hintFocused = shown.emptyShelfHint && cellFocused,
+                            )
+                        }
+                        val availability = shown.availabilityLabel
+                        if (availability != null) {
+                            BasicText(
+                                text = availability,
+                                style = text(theme.muted, TypeRamp.availability, theme),
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                            )
+                        }
                         PlayFacts(app, shown.id)
                     }
                 }
@@ -347,9 +360,12 @@ private fun Picker(
                 val libraryFailed = model.unavailable &&
                     model.panel?.level == PanelLevel.Library &&
                     model.panel?.side == Side.Left
+                val emptyTitle = emptyTitle(model)
                 if (libraryFailed) {
                     Unavailable()
-                } else if (model.homeGrid != HomeGrid.StandIns && model.count == 0) {
+                } else if (model.libraryGrid && emptyTitle != null) {
+                    EmptyLibrary(app, screen, emptyTitle, emptyActions(model))
+                } else if (!model.libraryGrid && model.homeGrid != HomeGrid.StandIns && model.count == 0) {
                     BasicText(
                         text = emptyShelf(model.homeGrid),
                         style = text(theme.muted, TypeRamp.dialogBody, theme),
@@ -1171,6 +1187,10 @@ private fun DialogCard(
         ) {
             BasicText(text = dialog.title, style = text(theme.onBackground, TypeRamp.dialogTitle, theme))
             BasicText(text = dialog.body, style = text(theme.onBackground, TypeRamp.dialogBody, theme))
+            val detail = dialog.detail
+            if (!detail.isNullOrBlank()) {
+                BasicText(text = detail, style = text(theme.muted, TypeRamp.dialogBody, theme))
+            }
             Row(
                 horizontalArrangement = Arrangement.spacedBy(px(8f)),
                 verticalAlignment = Alignment.CenterVertically,
@@ -1187,6 +1207,53 @@ private fun DialogCard(
                         label = label,
                         focused = dialog.index == index,
                         onClick = { onEffect(app.shell.touchDialog(index, dialog.screen)) },
+                    )
+                }
+            }
+        }
+    }
+}
+
+private fun emptyTitle(model: app.foldcade.language.PickerModel): String? = when {
+    model.gridKind == GridKind.NoLibrary -> Copy.noLibrary
+    model.gridKind == GridKind.Unreachable -> Copy.libraryUnreachable
+    model.emptyGrid == EmptyGrid.Loading -> Copy.loading
+    model.emptyGrid == EmptyGrid.NoPlatforms -> Copy.noPlatforms
+    model.emptyGrid == EmptyGrid.NoGames -> Copy.noGames
+    else -> null
+}
+
+private fun emptyActions(model: app.foldcade.language.PickerModel): List<String> = when (model.gridKind) {
+    GridKind.NoLibrary -> listOf(Copy.addFolder, Copy.connectRomm)
+    GridKind.Unreachable -> listOf(Copy.tryAgain)
+    else -> emptyList()
+}
+
+@Composable
+private fun EmptyLibrary(
+    app: FoldcadeApp,
+    screen: HostScreen,
+    title: String,
+    actions: List<String>,
+) {
+    val theme = foldTheme()
+    val focus = app.shell.model.focus
+    Column(Modifier.fillMaxSize(), verticalArrangement = Arrangement.Center) {
+        BasicText(text = title, style = text(theme.onBackground, TypeRamp.dialogTitle, theme))
+        if (actions.isNotEmpty()) {
+            Row(
+                modifier = Modifier.padding(top = px(16f)),
+                horizontalArrangement = Arrangement.spacedBy(px(16f)),
+            ) {
+                actions.forEachIndexed { index, label ->
+                    val focused = focus.chrome == null && focus.cellIndex == index
+                    BasicText(
+                        text = label,
+                        modifier = Modifier
+                            .focusStroke(focused)
+                            .hostPress { app.shell.touchCell(index, screen) }
+                            .padding(px(8f)),
+                        style = text(theme.onBackground, TypeRamp.dialogBody, theme),
                     )
                 }
             }

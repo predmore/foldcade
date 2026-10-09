@@ -24,12 +24,15 @@ fun FolderEntry.isDirectory(): Boolean =
  * A game file found in the tree.
  * [documentUri] is the local-folder remote key.
  * [title] is the file name without its last extension. Nothing is scraped.
+ * [folderName] is the display name of the directory that contains the file.
+ * The hero uses it as the short text. A file with no containing directory has none.
  */
 data class FolderGame(
     val documentUri: String,
     val fileName: String,
     val title: String,
     val platformId: String,
+    val folderName: String = "",
 )
 
 data class FolderScan(
@@ -59,7 +62,7 @@ fun scanFolderTree(
     val found = LinkedHashMap<String, FolderGame>()
     val seen = HashSet<String>()
     val stack = ArrayDeque<Frame>()
-    stack.addLast(Frame(root, folderPlatform = null))
+    stack.addLast(Frame(root, folderPlatform = null, folderName = ""))
     var cancelled = false
 
     while (stack.isNotEmpty()) {
@@ -76,11 +79,12 @@ fun scanFolderTree(
             val folderPlatform = platformFromFolderName(frame.entry.displayName)
                 ?: frame.folderPlatform
             val children = childrenOf(frame.entry)
+            val containing = frame.entry.displayName
             for (index in children.lastIndex downTo 0) {
-                stack.addLast(Frame(children[index], folderPlatform))
+                stack.addLast(Frame(children[index], folderPlatform, containing))
             }
         } else {
-            val game = toGame(frame.entry, uri, frame.folderPlatform) ?: continue
+            val game = toGame(frame.entry, uri, frame.folderPlatform, frame.folderName) ?: continue
             found.putIfAbsent(game.documentUri, game)
         }
     }
@@ -91,6 +95,7 @@ fun scanFolderTree(
 private class Frame(
     val entry: FolderEntry,
     val folderPlatform: FolderPlatform?,
+    val folderName: String,
 )
 
 private val SKIPPED_FOLDERS: Set<String> = setOf(
@@ -112,7 +117,12 @@ private val SKIPPED_FOLDERS: Set<String> = setOf(
 private fun isSkippedFolder(name: String): Boolean =
     normalizeFolderName(name) in SKIPPED_FOLDERS
 
-private fun toGame(entry: FolderEntry, uri: String, folder: FolderPlatform?): FolderGame? {
+private fun toGame(
+    entry: FolderEntry,
+    uri: String,
+    folder: FolderPlatform?,
+    folderName: String,
+): FolderGame? {
     val name = entry.displayName.trim()
     if (name.isEmpty() || name.startsWith('.')) return null
     val extension = fileExtension(name) ?: return null
@@ -125,6 +135,7 @@ private fun toGame(entry: FolderEntry, uri: String, folder: FolderPlatform?): Fo
         fileName = name,
         title = titleFromFileName(name),
         platformId = platform.id,
+        folderName = folderName,
     )
 }
 

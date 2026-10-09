@@ -47,6 +47,10 @@ class StandInActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        val opened = intent.data
+        if (opened != null) {
+            runCatching { contentResolver.openInputStream(opened)?.close() }
+        }
         setContent {
             val theme = builtInTheme()
             val title = intent.getStringExtra(EXTRA_TITLE) ?: intent.getStringExtra(EXTRA_ID) ?: ""
