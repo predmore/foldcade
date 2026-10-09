@@ -784,4 +784,49 @@ expect_png "$out/games-bottom.png" "${bottom_width}x${bottom_height}"
   echo "Bottom ${bottom_width}x${bottom_height} at ${bottom_density} dpi."
 } >"$out/android-shelves.txt"
 
+# Debug builds only. Each file is a Thor-sized emulator frame, not a Thor pass.
+capture_dialog() {
+  local kind="$1" index="$2" screen="$3" name="$4" needle="$5"
+  echo "step: dialog ${name}"
+  timeout 20 adb shell am start -W -n "$component" \
+    --es foldcade.dialog "$kind" \
+    --ei foldcade.dialogIndex "$index" \
+    --es foldcade.dialogScreen "$screen" \
+    --display 0
+  local attempt
+  for attempt in 1 2 3 4 5 6 7 8; do
+    sleep 1
+    if timeout 15 adb shell uiautomator dump /sdcard/foldcade-ui.xml >/dev/null 2>&1 \
+      && timeout 15 adb shell cat /sdcard/foldcade-ui.xml | tr -d '\r' >"$out/${name}.xml" \
+      && grep -q "$needle" "$out/${name}.xml"; then
+      break
+    fi
+  done
+  if ! grep -q "$needle" "$out/${name}.xml" 2>/dev/null; then
+    fail "dialog ${name} did not show ${needle}"
+  fi
+  capture "$primary" "$out/${name}-top.png"
+  capture "$secondary" "$out/${name}-bottom.png"
+  expect_png "$out/${name}-top.png" "${top_width}x${top_height}"
+  expect_png "$out/${name}-bottom.png" "${bottom_width}x${bottom_height}"
+}
+
+# Emulator only, not a Thor pass. The extra sets which button is focused.
+capture_dialog home 0 bottom home-use-as-home "Use Foldcade as Home"
+capture_dialog home 1 bottom home-not-now "Use Foldcade as Home"
+capture_dialog folder 0 bottom folder-continue "Choose a folder"
+capture_dialog folder 1 bottom folder-not-now "Choose a folder"
+capture_dialog save-folder 0 bottom save-folder-continue "Save folder"
+capture_dialog save-folder 1 bottom save-folder-not-now "Save folder"
+capture_dialog close-player 0 bottom close-player-close "Close the other game"
+capture_dialog close-player 1 bottom close-player-not-now "Close the other game"
+capture_dialog missing-player 0 top missing-player-ok "Azahar is not installed"
+capture_dialog relogin 0 top relogin-ok "Sign in again"
+{
+  echo "Thor-sized emulator, not a Thor pass."
+  echo "Dialog focus frames. Emulator only, not a Thor pass."
+  echo "Top ${top_width}x${top_height}. Bottom ${bottom_width}x${bottom_height}."
+} >"$out/dialog-focus.txt"
+
+
 echo "Captured displays $primary and $secondary. Thor-sized emulator, not a Thor pass."
