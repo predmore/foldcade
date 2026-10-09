@@ -1,8 +1,9 @@
 package app.foldcade.romm
 
 /**
- * Shown in setup when the origin is `http://`.
- * Local-LAN RomM over http is allowed. The warning is the gate, not a block.
+ * Shown in setup whenever the origin uses http.
+ * The platform does not allow that host dynamically. The warning is visible
+ * before a token is saved.
  */
 const val CLEARTEXT_CREDENTIAL_WARNING =
     "This server is using http, not https. Credentials travel in cleartext on the network."
@@ -15,7 +16,9 @@ const val TRY_HTTPS_HINT = "try https://"
 
 fun cleartextCredentialWarning(origin: String): String? {
     val text = origin.trim()
-    if (!text.startsWith("http://")) return null
+    val http = "http://"
+    if (text.length < http.length) return null
+    if (!text.regionMatches(0, http, 0, http.length, ignoreCase = true)) return null
     return CLEARTEXT_CREDENTIAL_WARNING
 }
 

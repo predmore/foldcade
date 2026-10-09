@@ -53,27 +53,24 @@ class FoldcadeApp : Application() {
     }
 
     private suspend fun loadSignedIn() {
-        val romm = try {
-            credentials.lookup(RommCredentials.PLUGIN_ID, RommCredentials.ACCESS_TOKEN)
-        } catch (cancelled: CancellationException) {
-            throw cancelled
-        } catch (_: Exception) {
-            CredentialLookup.Unreadable
+        val romm = lookupOrUnreadable(
+            credentials,
+            RommCredentials.PLUGIN_ID,
+            RommCredentials.ACCESS_TOKEN,
+        )
+        val stored = if (romm is CredentialLookup.Unreadable) {
+            emptyList()
+        } else {
+            val ids = try {
+                credentials.pluginIds()
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (_: Exception) {
+                emptySet()
+            }
+            ids.map { SignedInBackend(it, backendLabel(it)) }
         }
-        if (romm is CredentialLookup.Unreadable) {
-            shell.setSignedIn(emptyList())
-            publishRomm()
-            shell.askToSignInAgain()
-            return
-        }
-        val ids = try {
-            credentials.pluginIds()
-        } catch (cancelled: CancellationException) {
-            throw cancelled
-        } catch (_: Exception) {
-            emptySet()
-        }
-        shell.setSignedIn(ids.map { SignedInBackend(it, backendLabel(it)) })
+        shell.applyRecovery(signedInRecovery(romm, stored))
         publishRomm()
     }
 

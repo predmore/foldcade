@@ -1,8 +1,10 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
-    targetSdk 33 blocks cleartext unless this allows it.
-    Local-LAN RomM is often http. Setup warns. It does not block.
+    Cleartext stays off for every host. This file is baked into the APK.
+    Android has no API to add the RomM host the user types during setup, so
+    that host cannot be allow-listed here. Setup still shows the cleartext
+    warning whenever the URL is http.
 -->
 <network-security-config>
-    <base-config cleartextTrafficPermitted="true" />
+    <base-config cleartextTrafficPermitted="false" />
 </network-security-config>

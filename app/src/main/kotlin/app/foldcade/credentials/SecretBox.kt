@@ -30,6 +30,15 @@ internal interface SecretBox {
     fun open(sealed: ByteArray): Opened
 }
 
+/**
+ * A missing key is [Opened.KeyGone]. Callers drop the ciphertext and ask
+ * for sign-in. This does not create a replacement key.
+ */
+internal fun openSealed(key: SecretKey?, sealed: ByteArray): Opened {
+    if (key == null) return Opened.KeyGone
+    return AesGcmSecretBox(key).open(sealed)
+}
+
 internal class AesGcmSecretBox(
     private val key: SecretKey,
 ) : SecretBox {
@@ -90,27 +99,47 @@ internal class AndroidKeystoreBox : SecretBox {
         throw CredentialUnreadable("Sign in again", e)
     }
 
-    override fun open(sealed: ByteArray): Opened = try {
-        AesGcmSecretBox(key()).open(sealed)
-    } catch (_: android.security.keystore.KeyPermanentlyInvalidatedException) {
-        deleteKey()
-        Opened.KeyGone
-    } catch (_: UnrecoverableKeyException) {
-        deleteKey()
-        Opened.KeyGone
-    } catch (_: GeneralSecurityException) {
-        Opened.KeyGone
-    } catch (_: ProviderException) {
-        Opened.KeyGone
+    override fun open(sealed: ByteArray): Opened {
+        val existing = try {
+            peek()
+        } catch (_: android.security.keystore.KeyPermanentlyInvalidatedException) {
+            deleteKey()
+            return Opened.KeyGone
+        } catch (_: UnrecoverableKeyException) {
+            deleteKey()
+            return Opened.KeyGone
+        } catch (_: GeneralSecurityException) {
+            return Opened.KeyGone
+        } catch (_: ProviderException) {
+            return Opened.KeyGone
+        }
+        return try {
+            openSealed(existing, sealed)
+        } catch (_: android.security.keystore.KeyPermanentlyInvalidatedException) {
+            deleteKey()
+            Opened.KeyGone
+        } catch (_: UnrecoverableKeyException) {
+            deleteKey()
+            Opened.KeyGone
+        } catch (_: GeneralSecurityException) {
+            Opened.KeyGone
+        } catch (_: ProviderException) {
+            Opened.KeyGone
+        }
     }
 
+    /** Creates the key. Used when saving a new token, not when reading one. */
     private fun key(): SecretKey {
         synchronized(this) {
-            val store = KeyStore.getInstance(ANDROID_KEYSTORE).apply { load(null) }
-            val existing = store.getKey(ALIAS, null) as? SecretKey
-            if (existing != null) return existing
-            return generate()
+            return peek() ?: generate()
         }
+    }
+
+    /** The current key, or null when the alias is missing after a clear or restore. */
+    private fun peek(): SecretKey? {
+        val store = KeyStore.getInstance(ANDROID_KEYSTORE).apply { load(null) }
+        if (!store.containsAlias(ALIAS)) return null
+        return store.getKey(ALIAS, null) as? SecretKey
     }
 
     private fun deleteKey() {

@@ -706,6 +706,7 @@ class RommClientTest {
         runClient { client ->
             assertEquals(TRY_HTTPS_HINT, client.redirectHint())
             assertEquals(CLEARTEXT_CREDENTIAL_WARNING, cleartextCredentialWarning(client.origin))
+            assertEquals(CLEARTEXT_CREDENTIAL_WARNING, cleartextCredentialWarning("  HTTP://192.168.1.20:8080"))
             assertEquals(null, cleartextCredentialWarning("https://romm.example"))
             assertEquals(null, httpsRedirectHint(200, "https://romm.example"))
         }
