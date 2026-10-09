@@ -8,6 +8,7 @@ import app.foldcade.language.Meaning
 import app.foldcade.language.Metrics
 import app.foldcade.language.PickerModel
 import app.foldcade.language.displayOrder
+import app.foldcade.language.focusAndActivateDialog
 import app.foldcade.language.homePrompt
 import app.foldcade.language.reduce
 import androidx.compose.runtime.getValue
@@ -63,6 +64,15 @@ class ShellController(private val store: SessionStore) {
         if (model.dialog != null || model.panel != null || model.connectOpen) return
         publish(model.copy(focus = model.focus.copy(chrome = chrome)))
         onMeaning(Meaning.Activate, screen)
+    }
+
+    /** One tap focuses the button and activates it. Keys still move, then Activate. */
+    fun touchDialog(index: Int, screen: HostScreen): Effect? {
+        val dialog = model.dialog ?: return null
+        if (dialog.screen != screen) return null
+        val (next, effect) = focusAndActivateDialog(model, index)
+        publish(next)
+        return effect
     }
 
     fun maybeAskHome(roleHeld: Boolean) {

@@ -2,6 +2,8 @@ package app.foldcade
 
 import android.os.Bundle
 import android.view.KeyEvent
+import android.view.WindowInsets
+import android.view.WindowInsetsController
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.background
@@ -49,6 +51,12 @@ class StandInActivity : ComponentActivity() {
                 )
             }
         }
+        hideSystemBars()
+    }
+
+    override fun onWindowFocusChanged(hasFocus: Boolean) {
+        super.onWindowFocusChanged(hasFocus)
+        if (hasFocus) hideSystemBars()
     }
 
     override fun onResume() {

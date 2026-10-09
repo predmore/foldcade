@@ -70,11 +70,19 @@ class ContractTest {
     }
 
     @Test
-    fun diamondFollowsStyleAndDoesNotRemapKeys() {
-        assertEquals(DiamondLetters("A", "B"), diamondLetters(ButtonLabels.Nintendo))
-        assertEquals(DiamondLetters("B", "A"), diamondLetters(ButtonLabels.Xbox))
+    fun faceButtonsDoNotFlipLabels() {
         assertEquals(Meaning.Activate, meaningOf(KeyEvent.KEYCODE_BUTTON_A))
         assertEquals(Meaning.Back, meaningOf(KeyEvent.KEYCODE_BUTTON_B))
+    }
+
+    @Test
+    fun dialogTapFocusesAndActivatesThatButton() {
+        val prompt = homePrompt()
+        val model = PickerModel(count = 2, rowsPerPage = 2, showLaunchTarget = true, dialog = prompt)
+        assertEquals(1, prompt.index)
+        val (next, effect) = focusAndActivateDialog(model, 0)
+        assertEquals(Effect.DialogChoice(DialogButton.UseAsHome, DialogKind.Home), effect)
+        assertNull(next.dialog)
     }
 
     @Test

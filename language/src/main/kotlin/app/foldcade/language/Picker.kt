@@ -437,6 +437,13 @@ private fun activateRow(
     }
 }
 
+/** A tap on a dialog button focuses that button and activates it. */
+fun focusAndActivateDialog(model: PickerModel, index: Int): Pair<PickerModel, Effect?> {
+    val dialog = model.dialog ?: return model to null
+    if (index !in dialog.buttons.indices) return model to null
+    return reduce(model.copy(dialog = dialog.copy(index = index)), Meaning.Activate, dialog.screen)
+}
+
 private fun applyDialog(dialog: DialogState, meaning: Meaning): Pair<DialogState, DialogButton?> {
     val last = dialog.buttons.lastIndex.coerceAtLeast(0)
     val index = dialog.index.coerceIn(0, last)

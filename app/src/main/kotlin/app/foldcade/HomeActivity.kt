@@ -1,11 +1,14 @@
 package app.foldcade
 
+import android.app.Activity
 import android.app.ActivityOptions
 import android.app.role.RoleManager
 import android.content.Intent
 import android.hardware.display.DisplayManager
 import android.os.Bundle
 import android.view.Display
+import android.view.WindowInsets
+import android.view.WindowInsetsController
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
 import app.foldcade.api.ExternalApp
@@ -58,7 +61,11 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
     override fun onMeaning(meaning: app.foldcade.language.Meaning) {
         val panel = displays.panelFor(this, foldcade.store.session.defaultDisplayIsTop) ?: return
         val screen = if (panel == Panel.Top) HostScreen.Top else HostScreen.Bottom
-        when (val effect = foldcade.shell.onMeaning(meaning, screen)) {
+        dispatch(foldcade.shell.onMeaning(meaning, screen))
+    }
+
+    fun dispatch(effect: Effect?) {
+        when (effect) {
             is Effect.Launch -> launchGame(effect.index)
             Effect.CycleLaunchTarget -> cycleLaunchTarget()
             Effect.AddFolder -> folderPicker.launch(null)
@@ -83,6 +90,12 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
             launchCompanionIfNeeded()
         }
         setContent { PanelHost(activity = this, displays = displays) }
+        hideSystemBars()
+    }
+
+    override fun onWindowFocusChanged(hasFocus: Boolean) {
+        super.onWindowFocusChanged(hasFocus)
+        if (hasFocus) hideSystemBars()
     }
 
     override fun onNewIntent(intent: Intent) {
@@ -174,4 +187,11 @@ class PrimaryHomeActivity : FoldcadeHomeActivity() {
 
 class CompanionHomeActivity : FoldcadeHomeActivity() {
     override val launchesCompanion: Boolean = false
+}
+
+internal fun Activity.hideSystemBars() {
+    window.insetsController?.apply {
+        hide(WindowInsets.Type.statusBars() or WindowInsets.Type.navigationBars())
+        systemBarsBehavior = WindowInsetsController.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+    }
 }

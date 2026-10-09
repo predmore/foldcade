@@ -4,7 +4,6 @@ import android.content.SharedPreferences
 import app.foldcade.api.ExternalApp
 import app.foldcade.api.Panel
 import app.foldcade.api.Session
-import app.foldcade.language.ButtonLabels
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
@@ -32,17 +31,6 @@ class SessionStore(private val prefs: SharedPreferences) {
             .putString(KEY_GAME_SCREENS, encode(session.gameScreens))
             .putString(KEY_PLATFORM_SCREENS, encode(session.platformScreens))
             .apply()
-    }
-
-    fun buttonLabels(): ButtonLabels =
-        if (prefs.getString(KEY_LABELS, ButtonLabels.Nintendo.name) == ButtonLabels.Xbox.name) {
-            ButtonLabels.Xbox
-        } else {
-            ButtonLabels.Nintendo
-        }
-
-    fun setButtonLabels(labels: ButtonLabels) {
-        prefs.edit().putString(KEY_LABELS, labels.name).apply()
     }
 
     fun homePromptSettled(): Boolean = prefs.getBoolean(KEY_HOME_PROMPTED, false)
@@ -80,7 +68,6 @@ class SessionStore(private val prefs: SharedPreferences) {
         private const val KEY_PRIMARY_TOP = "primary_top"
         private const val KEY_GAME_SCREENS = "game_screens"
         private const val KEY_PLATFORM_SCREENS = "platform_screens"
-        private const val KEY_LABELS = "button_labels"
         private const val KEY_HOME_PROMPTED = "home_prompted"
         private const val KEY_FOLDER = "folder_tree"
         private const val KEY_FOLDER_EXPLAINED = "folder_explained"

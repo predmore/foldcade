@@ -4,6 +4,7 @@ import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.FiniteAnimationSpec
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -31,6 +32,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.MotionDurationScale
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.clipToBounds
+import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.geometry.Offset
@@ -59,6 +62,7 @@ import app.foldcade.batteryLabel
 import app.foldcade.language.Chrome
 import app.foldcade.language.Copy
 import app.foldcade.language.DialogButton
+import app.foldcade.language.Effect
 import app.foldcade.language.DialogState
 import app.foldcade.language.HintPlace
 import app.foldcade.language.HostScreen
@@ -66,6 +70,7 @@ import app.foldcade.language.Meaning
 import app.foldcade.language.Metrics
 import app.foldcade.language.Motion
 import app.foldcade.language.Side
+import app.foldcade.language.SidePanel
 import app.foldcade.language.TypeRamp
 import app.foldcade.language.builtInTheme
 import app.foldcade.language.displayOrder
@@ -75,6 +80,8 @@ import app.foldcade.language.panelRows
 import app.foldcade.language.rowLabel
 import app.foldcade.readDeviceStatus
 import kotlin.math.abs
+import kotlin.math.ceil
+import kotlin.math.floor
 import kotlin.math.roundToInt
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
@@ -95,7 +102,7 @@ fun PanelHost(activity: FoldcadeHomeActivity, displays: Displays) {
             when (shown) {
                 null -> Unit
                 Surface.Hero -> Hero(app, screen, scale)
-                Surface.Picker -> Picker(app, screen, scale)
+                Surface.Picker -> Picker(app, screen, scale, activity::dispatch)
             }
         }
     }
@@ -186,7 +193,12 @@ private fun Hero(app: FoldcadeApp, screen: HostScreen, scale: Float) {
 }
 
 @Composable
-private fun Picker(app: FoldcadeApp, screen: HostScreen, scale: Float) {
+private fun Picker(
+    app: FoldcadeApp,
+    screen: HostScreen,
+    scale: Float,
+    onEffect: (Effect?) -> Unit,
+) {
     val theme = builtInTheme()
     val shell = app.shell
     val model = shell.model
@@ -245,7 +257,7 @@ private fun Picker(app: FoldcadeApp, screen: HostScreen, scale: Float) {
             }
         }
         Panels(app, screen, scale)
-        DialogLayer(model.dialog, screen, scale)
+        DialogLayer(app, model.dialog, screen, scale, onEffect)
     }
 }
 
@@ -286,7 +298,11 @@ private fun LeftPanel(
         target = if (open) 1f else 0f,
         spec = if (open) Motion.arrive(Motion.durationTravel, scale) else Motion.leave(Motion.durationTravel, scale),
     )
-    if (progress <= 0f) return
+    val live = app.shell.model.panel?.takeIf { it.side == Side.Left && it.screen == screen }
+    var shown by remember { mutableStateOf<SidePanel?>(null) }
+    if (live != null) shown = live
+    val panel = shown
+    if (progress <= 0f || panel == null) return
     Column(
         Modifier
             .fillMaxHeight()
@@ -295,7 +311,7 @@ private fun LeftPanel(
             .padding(px(24f)),
         verticalArrangement = Arrangement.spacedBy(px(8f)),
     ) {
-        if (open) PanelRows(app, screen, progress)
+        PanelRows(app, screen, panel, progress, interactive = open)
     }
 }
 
@@ -314,6 +330,9 @@ private fun RightCluster(
         spec = if (open) Motion.arrive(Motion.durationTravel, scale) else Motion.leave(Motion.durationTravel, scale),
     )
     var cluster by remember { mutableStateOf(IntSize.Zero) }
+    val live = app.shell.model.panel?.takeIf { it.side == Side.Right && it.screen == screen }
+    var shown by remember { mutableStateOf<SidePanel?>(null) }
+    if (live != null) shown = live
     val density = LocalDensity.current
     val grown = progress > 0f && cluster != IntSize.Zero
     val width = if (grown) lerp(with(density) { cluster.width.toDp() }, openWidth, progress) else null
@@ -332,7 +351,10 @@ private fun RightCluster(
                 app.shell.model.panel == null &&
                 app.shell.model.dialog == null,
         )
-        if (progress > 0f && open) PanelRows(app, screen, progress)
+        val panel = shown
+        if (progress > 0f && panel != null) {
+            PanelRows(app, screen, panel, progress, interactive = open)
+        }
     }
 }
 
@@ -355,7 +377,7 @@ private fun StatusLine(
         }
     }
     Row(
-        modifier.focusStroke(focused).clickable(onClick = onClick),
+        modifier.focusStroke(focused).hostPress(onClick),
         horizontalArrangement = Arrangement.spacedBy(px(12f)),
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -369,28 +391,38 @@ private fun StatusLine(
 }
 
 @Composable
-private fun PanelRows(app: FoldcadeApp, screen: HostScreen, progress: Float) {
+private fun PanelRows(
+    app: FoldcadeApp,
+    screen: HostScreen,
+    panel: SidePanel,
+    progress: Float,
+    interactive: Boolean,
+) {
     val theme = builtInTheme()
-    val panel = app.shell.model.panel ?: return
     val rows = panelRows(panel, app.shell.model)
     Column(Modifier.graphicsLayer { alpha = progress }, verticalArrangement = Arrangement.spacedBy(px(8f))) {
         rows.forEachIndexed { index, row ->
             val focused = panel.index == index
+            val press = if (interactive) {
+                Modifier.hostPress {
+                    val shell = app.shell
+                    val current = shell.model.panel?.index ?: panel.index
+                    val delta = index - current
+                    val meaning = if (delta > 0) Meaning.MoveDown else Meaning.MoveUp
+                    if (delta == 0) {
+                        shell.onMeaning(Meaning.Activate, screen)
+                    } else {
+                        repeat(abs(delta)) { shell.onMeaning(meaning, screen) }
+                    }
+                }
+            } else {
+                Modifier
+            }
             BasicText(
                 text = rowLabel(row, app.shell.model),
                 modifier = Modifier
                     .focusStroke(focused)
-                    .clickable {
-                        val shell = app.shell
-                        val current = shell.model.panel?.index ?: 0
-                        val delta = index - current
-                        val meaning = if (delta > 0) Meaning.MoveDown else Meaning.MoveUp
-                        if (delta == 0) {
-                            shell.onMeaning(Meaning.Activate, screen)
-                        } else {
-                            repeat(abs(delta)) { shell.onMeaning(meaning, screen) }
-                        }
-                    }
+                    .then(press)
                     .padding(px(8f)),
                 style = text(
                     if (focused) theme.onBackground else theme.muted,
@@ -442,7 +474,7 @@ private fun ChromeButton(label: String, focused: Boolean, onClick: () -> Unit) {
     val theme = builtInTheme()
     BasicText(
         text = label,
-        modifier = Modifier.focusStroke(focused).clickable(onClick = onClick).padding(px(8f)),
+        modifier = Modifier.focusStroke(focused).hostPress(onClick).padding(px(8f)),
         style = text(theme.onBackground, TypeRamp.sideRow, theme),
     )
 }
@@ -470,10 +502,20 @@ private fun PagedGrid(
     val reduced = Motion.reduced(scale)
     val alpha = if (reduced) (1f - abs(position.value - page)).coerceIn(0.35f, 1f) else 1f
     val width = cell * Metrics.columns + gap * (Metrics.columns - 1)
-    Box(Modifier.fillMaxWidth().graphicsLayer { this.alpha = alpha }) {
-        val shift = (position.value - page) * with(LocalDensity.current) { width.toPx() }
-        Box(Modifier.offset { IntOffset(shift.roundToInt(), 0) }) {
-            Grid(app, screen, cell, gap, rows, page, showTitle)
+    val widthPx = with(LocalDensity.current) { width.toPx() }
+    Box(
+        Modifier
+            .width(width)
+            .graphicsLayer { this.alpha = alpha }
+            .clipToBounds(),
+    ) {
+        val low = floor(position.value).toInt()
+        val high = ceil(position.value).toInt()
+        for (drawn in low..high) {
+            val dx = ((drawn - position.value) * widthPx).roundToInt()
+            Box(Modifier.offset { IntOffset(dx, 0) }) {
+                Grid(app, screen, cell, gap, rows, drawn, showTitle)
+            }
         }
     }
     if (usesBoth) {
@@ -507,7 +549,10 @@ private fun Grid(
                     } else {
                         val source = order.getOrElse(index) { index }
                         val game = Shelf.games.getOrNull(source)
-                        val focused = focus.chrome == null && focus.cellIndex == index && shell.model.panel == null
+                        val focused = shell.model.dialog == null &&
+                            shell.model.panel == null &&
+                            focus.chrome == null &&
+                            focus.cellIndex == index
                         Cell(
                             title = game?.title ?: "",
                             showTitle = showTitle,
@@ -551,7 +596,7 @@ private fun Cell(
                 .size(size)
                 .scale(drawn)
                 .focusStroke(focused)
-                .clickable(onClick = onClick),
+                .hostPress(onClick),
             contentAlignment = Alignment.Center,
         ) {
             Box(
@@ -580,7 +625,13 @@ private fun Cell(
 }
 
 @Composable
-private fun DialogLayer(dialog: DialogState?, screen: HostScreen, scale: Float) {
+private fun DialogLayer(
+    app: FoldcadeApp,
+    dialog: DialogState?,
+    screen: HostScreen,
+    scale: Float,
+    onEffect: (Effect?) -> Unit,
+) {
     val visible = dialog != null && dialog.screen == screen
     var shown by remember { mutableStateOf(dialog) }
     if (visible) shown = dialog
@@ -590,12 +641,16 @@ private fun DialogLayer(dialog: DialogState?, screen: HostScreen, scale: Float) 
     )
     val card = shown
     if (card != null && alpha > 0f) {
-        Box(Modifier.graphicsLayer { this.alpha = alpha }) { DialogCard(card) }
+        Box(Modifier.graphicsLayer { this.alpha = alpha }) { DialogCard(app, card, onEffect) }
     }
 }
 
 @Composable
-private fun DialogCard(dialog: DialogState) {
+private fun DialogCard(
+    app: FoldcadeApp,
+    dialog: DialogState,
+    onEffect: (Effect?) -> Unit,
+) {
     val theme = builtInTheme()
     Box(
         Modifier
@@ -627,7 +682,12 @@ private fun DialogCard(dialog: DialogState) {
                     }
                     BasicText(
                         text = label,
-                        modifier = Modifier.focusStroke(dialog.index == index).padding(px(8f)),
+                        modifier = Modifier
+                            .focusStroke(dialog.index == index)
+                            .hostPress {
+                                onEffect(app.shell.touchDialog(index, dialog.screen))
+                            }
+                            .padding(px(8f)),
                         style = text(theme.onBackground, TypeRamp.dialogBody, theme),
                     )
                 }
@@ -640,6 +700,18 @@ private fun DialogCard(dialog: DialogState) {
 private fun ConnectScreen() {
     val theme = builtInTheme()
     BasicText(text = Copy.connectRomm, style = text(theme.onBackground, TypeRamp.dialogTitle, theme))
+}
+
+@Composable
+private fun Modifier.hostPress(onClick: () -> Unit): Modifier {
+    val source = remember { MutableInteractionSource() }
+    return this
+        .focusProperties { canFocus = false }
+        .clickable(
+            interactionSource = source,
+            indication = null,
+            onClick = onClick,
+        )
 }
 
 @Composable

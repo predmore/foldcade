@@ -62,10 +62,7 @@ object Copy {
     const val arrange = "Arrange"
     const val setAsHome = "Set as Home"
     const val builtIn = "Built-in"
-    const val buttonLabels = "Button labels"
     const val primaryPanel = "Primary panel"
-    const val nintendo = "Nintendo"
-    const val xbox = "Xbox"
     const val top = "Top"
     const val bottom = "Bottom"
     const val addFolder = "Add a folder"
@@ -96,22 +93,6 @@ object Copy {
     const val notOnDevice = "Not on this device"
     const val onDevice = "On this device"
     const val inFolder = "In this folder"
-}
-
-enum class ButtonLabels {
-    Nintendo,
-    Xbox,
-}
-
-data class DiamondLetters(
-    val east: String,
-    val south: String,
-)
-
-/** Drawing only. The button map does not change. */
-fun diamondLetters(labels: ButtonLabels): DiamondLetters = when (labels) {
-    ButtonLabels.Nintendo -> DiamondLetters(east = "A", south = "B")
-    ButtonLabels.Xbox -> DiamondLetters(east = "B", south = "A")
 }
 
 fun hintLine(activateDoesSomething: Boolean, backDoesSomething: Boolean): String? {
