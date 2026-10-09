@@ -48,6 +48,9 @@ class FoldcadeApp : Application() {
     /** Local play history. Not a plugin API. */
     lateinit var plays: PlaySessions
         private set
+
+    /** The external player session opened by the host launch path. */
+    val externalPlay = ExternalPlay()
     var companionLaunched: Boolean = false
 
     /**

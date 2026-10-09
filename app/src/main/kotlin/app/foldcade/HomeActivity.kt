@@ -169,6 +169,7 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
 
     override fun onResume() {
         super.onResume()
+        display?.displayId?.let { foldcade.externalPlay.endIfDisplayHome(foldcade.plays, it) }
         resumed = true
         refreshShellVisible()
         foldcade.music.onHomeResume()
@@ -316,8 +317,10 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
             foldcade.store.place(panel, external)
         }
         try {
-            val options = ActivityOptions.makeBasic().apply { launchDisplayId = displayId }
-            startActivity(ready.intent.toAndroidIntent(), options.toBundle())
+            foldcade.externalPlay.open(foldcade.plays, game.id, displayId) {
+                val options = ActivityOptions.makeBasic().apply { launchDisplayId = displayId }
+                startActivity(ready.intent.toAndroidIntent(), options.toBundle())
+            }
         } catch (cancelled: CancellationException) {
             throw cancelled
         } catch (_: ActivityNotFoundException) {

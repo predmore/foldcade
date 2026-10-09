@@ -614,6 +614,39 @@ if printf '%s\n' "$input_help" | grep -q -- '-d' && printf '%s\n' "$input_help" 
     echo "missing_player_in_ui_dump=${seen}"
   } >"$out/launch-path.txt"
   adb_do shell input -d "$presentation_logical" keyevent KEYCODE_BACK || true
+
+  # melonDS launch path. Thor-sized emulator, not a Thor pass.
+  # melonDS is not installed here. The capture is the missing-player state.
+  # DS is the eighth shelf tile, the cell to the right of 3DS.
+  echo "step: melonDS launch path"
+  echo "step: focus the DS tile"
+  adb_do shell input -d "$presentation_logical" keyevent KEYCODE_DPAD_RIGHT
+  sleep 1
+  capture "$primary" "$out/ds-focus-primary.png"
+  capture "$secondary" "$out/ds-focus-secondary.png"
+  expect_png "$out/ds-focus-primary.png" "${top_width}x${top_height}"
+  expect_png "$out/ds-focus-secondary.png" "${bottom_width}x${bottom_height}"
+  echo "step: open the DS tile"
+  adb_do shell input -d "$presentation_logical" keyevent KEYCODE_DPAD_CENTER
+  sleep 1
+  capture "$primary" "$out/ds-launch-primary.png"
+  capture "$secondary" "$out/ds-launch-secondary.png"
+  expect_png "$out/ds-launch-primary.png" "${top_width}x${top_height}"
+  expect_png "$out/ds-launch-secondary.png" "${bottom_width}x${bottom_height}"
+  timeout 10 adb shell uiautomator dump /sdcard/foldcade-ui.xml >/dev/null 2>&1 || true
+  timeout 10 adb shell cat /sdcard/foldcade-ui.xml | tr -d '\r' >"$out/ds-launch-ui.xml" || true
+  seen="no"
+  if grep -q 'not installed' "$out/ds-launch-ui.xml"; then
+    seen="yes"
+  fi
+  {
+    echo "Thor-sized emulator, not a Thor pass."
+    echo "melonDS is not installed on this image. The launch captures are the missing-player path."
+    echo "Top is ${top_width}x${top_height}. Bottom is ${bottom_width}x${bottom_height}."
+    echo "This is not a measurement of the DS touch screen on the Thor bottom panel."
+    echo "missing_player_in_ui_dump=${seen}"
+  } >"$out/ds-launch-path.txt"
+  adb_do shell input -d "$presentation_logical" keyevent KEYCODE_BACK || true
 else
   {
     echo "Thor-sized emulator, not a Thor pass."

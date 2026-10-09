@@ -10,6 +10,8 @@ import app.foldcade.api.plugin.StartDisplay
 import app.foldcade.localfolder.LocalFolderEntry
 import app.foldcade.plugins.azahar.AzaharPlayer
 import app.foldcade.plugins.azahar.Nintendo3ds
+import app.foldcade.plugins.melonds.EMULATOR_ACTIVITY
+import app.foldcade.plugins.melonds.MelonDsPlayer
 import java.io.File
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -167,4 +169,69 @@ class PlayerLaunchTest {
             assertTrue(xml.contains("android:name=\"$name\""))
         }
     }
+
+    @Test
+    fun stableMelonDsPackageWinsAndKeepsTheMelonDsLaunch() {
+        val ds = dsGame()
+        val player = MelonDsPlayer().also { it.bindSaveFolder("content://trees/saves") }
+        val ready = planPlayerLaunch(
+            player = player,
+            game = ds,
+            target = LaunchTarget.ContentUri("content://games/title.nds"),
+            installedPackages = setOf(MelonDsPlayer.NIGHTLY_PACKAGE, MelonDsPlayer.STABLE_PACKAGE),
+            anotherBothPanelRunning = false,
+            closeConfirmed = false,
+        ) as PlayerLaunch.Ready
+        assertEquals(MelonDsPlayer.STABLE_PACKAGE, ready.intent.packageName)
+        assertEquals(EMULATOR_ACTIVITY, ready.intent.componentClass)
+        assertEquals("content://games/title.nds", ready.intent.dataUri)
+        assertTrue(ready.intent.grantReadUri)
+        assertTrue(ready.intent.extras.isEmpty())
+        assertEquals(setOf(LaunchFlag.NewTask), ready.intent.flags)
+        assertTrue(ready.occupiesBothDisplays)
+        assertEquals(StartDisplay.Primary, ready.startDisplay)
+    }
+
+    @Test
+    fun nightlyMelonDsIsUsedWhenItIsTheOnlyInstall() {
+        val player = MelonDsPlayer().also { it.bindSaveFolder("content://trees/saves") }
+        val ready = planPlayerLaunch(
+            player = player,
+            game = dsGame(),
+            target = LaunchTarget.ContentUri("content://games/title.nds"),
+            installedPackages = setOf(MelonDsPlayer.NIGHTLY_PACKAGE),
+            anotherBothPanelRunning = false,
+            closeConfirmed = false,
+        ) as PlayerLaunch.Ready
+        assertEquals(MelonDsPlayer.NIGHTLY_PACKAGE, ready.intent.packageName)
+        assertEquals(EMULATOR_ACTIVITY, ready.intent.componentClass)
+    }
+
+    @Test
+    fun melonDsPlatformMatchesTheLocalFolderCatalog() {
+        val folder = LocalFolderEntry().platforms.first { it.id == MelonDsPlayer.PLATFORM_ID }
+        val player = MelonDsPlayer()
+        assertEquals(folder.id, player.platformId)
+        assertEquals("Nintendo DS", folder.displayName)
+        assertTrue("nds" in folder.aliases)
+        assertTrue("nds" in folder.extensions)
+    }
+
+    @Test
+    fun manifestSeesMelonDsPackagesAndDoesNotAskForEveryPackage() {
+        val xml = File("src/main/AndroidManifest.xml").readText()
+        assertFalse(xml.contains("QUERY_ALL_PACKAGES"))
+        assertFalse(xml.contains("MANAGE_EXTERNAL_STORAGE"))
+        MelonDsPlayer.PACKAGES.forEach { name ->
+            assertTrue(xml.contains("android:name=\"$name\""))
+        }
+    }
+
+    private fun dsGame() = Game(
+        backendId = "shelf",
+        remoteKey = "nintendo-ds.melonds",
+        platformId = MelonDsPlayer.PLATFORM_ID,
+        availability = Availability.LocalOnly,
+        label = "DS",
+    )
 }

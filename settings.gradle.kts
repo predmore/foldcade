@@ -23,6 +23,7 @@ include(
     ":host",
     ":plugins:azahar",
     ":plugins:local-folder",
+    ":plugins:melonds",
     ":plugins:sample",
     ":plugins:romm",
     ":samples:out-of-tree",
