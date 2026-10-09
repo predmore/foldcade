@@ -759,14 +759,21 @@ if printf '%s\n' "$input_help" | grep -q -- '-d' && printf '%s\n' "$input_help" 
   done
 
   # Debug builds snap the morph. Display 0 is the main panel.
+  # The first start commits the hold. This emulator composites that frame on the
+  # next start, so the second start paints the same hold before the screenshot.
+  show_island() {
+    timeout 20 adb shell am start -n "$component" \
+      --es foldcade.island "$1" \
+      --display 0 || fail "island $1"
+  }
   capture_island() {
     local hold="$1"
     local name="$2"
     echo "step: island ${hold} on display 0"
-    timeout 20 adb shell am start -n "$component" \
-      --es foldcade.island "$hold" \
-      --display 0 || fail "island ${hold}"
-    sleep 2
+    show_island "$hold"
+    sleep 1
+    show_island "$hold"
+    sleep 1
     capture "$primary" "$out/${name}-top.png"
     capture "$secondary" "$out/${name}-bottom.png"
     expect_png "$out/${name}-top.png" "${top_width}x${top_height}"

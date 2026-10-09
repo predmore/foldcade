@@ -79,6 +79,8 @@ internal fun TopIslands(
     scale: Float,
     menuRows: @Composable (panel: SidePanel, progress: Float, interactive: Boolean) -> Unit,
 ) {
+    // Top screen only. The bottom screen keeps the grid and the hint row.
+    // The L1 chip, launch target, and status cluster are not drawn there.
     if (screen != HostScreen.Top) return
     val model = app.shell.model
     val dialogCovers = model.dialog?.screen == HostScreen.Top
@@ -117,15 +119,13 @@ private fun Island(
     val theme = LocalFoldTheme.current.theme
     val density = LocalDensity.current
     val model = app.shell.model
-    val hold = app.islandHold
+    val held = app.islandHold
     val mine = model.panel?.takeIf { it.side == side && it.screen == HostScreen.Top }
-    val otherHeld = hold != null && hold.side != side
-    val heldHere = hold?.takeIf { it.side == side && mine != null && !mine.retiring }?.progress
-    val retiringHere = mine?.retiring == true
-    val snap = hold != null
+    val retiringHere = held == null && mine?.retiring == true
+    val snap = held != null
     val target = when {
-        retiringHere || otherHeld -> 0f
-        heldHere != null -> heldHere
+        held != null && held.side == side -> held.progress
+        held != null || retiringHere -> 0f
         mine != null -> 1f
         else -> 0f
     }
@@ -261,7 +261,9 @@ private fun islandProgress(
     LaunchedEffect(target, snap, handoff) {
         if (snap) {
             anim.snapTo(target)
-        } else if (abs(anim.value - target) > 0.001f) {
+            return@LaunchedEffect
+        }
+        if (abs(anim.value - target) > 0.001f) {
             val spec = if (target >= anim.value) {
                 app.foldcade.language.Motion.arrive(app.foldcade.language.Motion.durationIsland, scale)
             } else {
@@ -280,7 +282,7 @@ private fun islandProgress(
         }
         if (handoff && anim.value <= 0.02f) onHandoff()
     }
-    return anim.value
+    return if (snap) target else anim.value
 }
 
 private object SteadyIsland : androidx.compose.ui.MotionDurationScale {

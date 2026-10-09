@@ -49,6 +49,7 @@ import app.foldcade.language.connectFields
 import app.foldcade.language.displayOrder
 import app.foldcade.language.focusAndActivateDialog
 import app.foldcade.language.finishIslandRetire
+import app.foldcade.language.replaceIsland
 import app.foldcade.language.homePrompt
 import app.foldcade.language.panelRows
 import app.foldcade.language.previewDialogState
@@ -291,6 +292,16 @@ class ShellController(
     fun dismissDialog() {
         if (model.dialog == null) return
         model = model.copy(dialog = null)
+    }
+
+    /**
+     * A debug capture shows this shoulder now, in place of whichever island was open.
+     * A real L1 or R1 press still retires the open island before the other expands.
+     */
+    fun previewIsland(side: Side) {
+        val shown = replaceIsland(model, side)
+        if (shown.panel == model.panel && shown.focus == model.focus) return
+        publish(shown)
     }
 
     /**

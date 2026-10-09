@@ -346,12 +346,12 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
         val hold = parseIslandHold(raw) ?: return
         if (!replace && foldcade.islandHold != null) return
         // A leftover dialog swallows shoulders and leaves the bottom screen sharp.
+        // Show this shoulder directly. onMeaning would retire the other island and
+        // leave that panel on screen under the new hold.
         cancelLaunches()
         foldcade.shell.dismissDialog()
+        foldcade.shell.previewIsland(hold.side)
         foldcade.islandHold = hold
-        if (foldcade.shell.model.panel?.side != hold.side) {
-            foldcade.shell.onMeaning(hold.meaning(), HostScreen.Top)
-        }
     }
 
     private fun acceptHome(intent: Intent) {

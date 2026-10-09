@@ -151,6 +151,26 @@ class ContractTest {
     }
 
     @Test
+    fun debugHoldShowsThatShoulderImmediately() {
+        val root = PickerModel(count = 2, rowsPerPage = 2, showLaunchTarget = false)
+        val left = replaceIsland(root, Side.Left)
+        assertEquals(Side.Left, left.panel?.side)
+        assertEquals(HostScreen.Top, left.panel?.screen)
+        assertFalse(left.panel!!.retiring)
+        val right = replaceIsland(left, Side.Right)
+        assertEquals(Side.Right, right.panel?.side)
+        assertFalse(right.panel!!.retiring)
+        assertNull(right.panel?.pendingSide)
+        val again = replaceIsland(right, Side.Left)
+        assertEquals(Side.Left, again.panel?.side)
+        assertFalse(again.panel!!.retiring)
+        val live = reduce(again, Meaning.RightPanel, HostScreen.Top).first
+        assertEquals(Side.Left, live.panel?.side)
+        assertTrue(live.panel!!.retiring)
+        assertEquals(Side.Right, live.panel?.pendingSide)
+    }
+
+    @Test
     fun leftPanelCyclesValuesAndRightReplacesIt() {
         val root = PickerModel(count = 2, rowsPerPage = 3, showLaunchTarget = true, themes = listOf("Built-in", "Sample"))
         val (stayed, effect) = reduce(root, Meaning.Back)

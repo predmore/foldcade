@@ -643,6 +643,24 @@ private fun freshPanel(side: Side, grid: GridFocus): SidePanel = SidePanel(
 )
 
 /**
+ * Debug captures show [side] now.
+ * The live shoulder path still retires the open island before the other expands.
+ */
+fun replaceIsland(model: PickerModel, side: Side): PickerModel {
+    val open = model.panel
+    if (open != null &&
+        open.side == side &&
+        !open.retiring &&
+        open.pendingSide == null &&
+        open.screen == HostScreen.Top &&
+        open.level == PanelLevel.Root
+    ) {
+        return model
+    }
+    return model.copy(panel = freshPanel(side, open?.grid ?: model.focus))
+}
+
+/**
  * The retiring island has finished its leave morph.
  * The pending shoulder then expands. A close with no pending side stays closed.
  */
