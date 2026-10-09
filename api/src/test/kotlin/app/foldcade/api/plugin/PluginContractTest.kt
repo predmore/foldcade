@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 package app.foldcade.api.plugin
 
 import java.util.concurrent.atomic.AtomicInteger

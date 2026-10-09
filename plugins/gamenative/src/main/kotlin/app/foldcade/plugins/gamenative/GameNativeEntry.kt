@@ -21,7 +21,8 @@ import java.util.Locale
  * This entry does not register a metadata provider. RomM does not configure
  * this catalog, and the RomM metadata default does not apply to it.
  *
- * A plugin Foldcade loads in-process is part of the GPLv3 work when distributed.
+ * This bundled entry stays under the GNU GPLv3. An independent plugin that
+ * uses only the published API may use any license.
  */
 class GameNativeEntry : PluginEntry {
     override val apiVersion: Int = PLUGIN_API_VERSION

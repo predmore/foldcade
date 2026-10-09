@@ -1,3 +1,36 @@
+Foldcade
+========
+
+The program in this repository is free software under the GNU General
+Public License version 3, with the additional permission below. The
+license text that follows this notice is unchanged.
+
+The plugin API (the api/ directory, the :api module) is licensed
+separately under the Apache License, Version 2.0. See api/LICENSE.
+A plain-language map is in docs/licensing.md.
+
+Foldcade Plugin Exception
+-------------------------
+
+Additional permission under section 7 of the GNU General Public License,
+version 3.
+
+As a special exception, the copyright holders of this Program give you
+permission to distribute an independent plugin or theme under terms of
+your choice, provided that the plugin or theme communicates with
+Foldcade only through the published plugin API or the published theme
+format, and is not included in this repository.
+
+This exception does not change the license of the Program. Work included
+in this repository remains under the GNU GPLv3, except the plugin API
+in api/, which is under the Apache License, Version 2.0.
+
+If you modify this Program, you may extend this exception to your
+version, but you are not obligated to do so. If you do not wish to do
+so, delete this exception statement from your version.
+
+The GNU General Public License, version 3, follows.
+
                     GNU GENERAL PUBLIC LICENSE
                        Version 3, 29 June 2007
 

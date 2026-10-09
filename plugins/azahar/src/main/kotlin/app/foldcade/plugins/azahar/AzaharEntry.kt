@@ -20,7 +20,8 @@ import app.foldcade.api.plugin.StartDisplay
  * The local-folder catalog classifies the same id. The host keeps one copy
  * when both declarations match. This entry does not scan a folder.
  *
- * A plugin Foldcade loads in-process is part of the GPLv3 work when distributed.
+ * This bundled entry stays under the GNU GPLv3. An independent plugin that
+ * uses only the published API may use any license.
  */
 class AzaharEntry : PluginEntry {
     override val apiVersion: Int = PLUGIN_API_VERSION

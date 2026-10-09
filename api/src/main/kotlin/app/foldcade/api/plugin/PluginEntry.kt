@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 package app.foldcade.api.plugin
 
 /**
@@ -9,7 +11,8 @@ package app.foldcade.api.plugin
  * The service file name is `META-INF/services/app.foldcade.api.plugin.PluginEntry`.
  * That name is part of this contract.
  *
- * A plugin loaded in-process is part of the GPLv3 work when it is distributed.
+ * An independent plugin that uses only this API, and is not included in this
+ * repository, may use any license. See the Foldcade Plugin Exception.
  */
 interface PluginEntry {
     /**
