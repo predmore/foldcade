@@ -35,6 +35,7 @@ data class Artwork(
     val uri: String,
 )
 
+/** Open. A plugin that branches on this must use an `else` branch. */
 enum class ArtworkRole {
     Cover,
     Background,

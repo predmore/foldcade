@@ -25,13 +25,20 @@ interface Platform {
         get() = emptySet()
 }
 
-/** The canonical id for [idOrAlias], or null when no platform claims it. */
+/**
+ * The canonical id for [idOrAlias], or null when no platform claims it.
+ * Matching is case-insensitive. The returned id keeps the platform's spelling.
+ */
 fun canonicalPlatformId(platforms: Iterable<Platform>, idOrAlias: String): String? =
-    platforms.firstOrNull { it.id == idOrAlias || idOrAlias in it.aliases }?.id
+    platforms.firstOrNull { platform ->
+        platform.id.equals(idOrAlias, ignoreCase = true) ||
+            platform.aliases.any { alias -> alias.equals(idOrAlias, ignoreCase = true) }
+    }?.id
 
 /**
  * Players whose [Player.platformId] is the canonical id for [idOrAlias].
  * An alias and the canonical id return the same players.
+ * Id and alias matching is case-insensitive.
  */
 fun playersForPlatform(
     platforms: Iterable<Platform>,
