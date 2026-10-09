@@ -1329,6 +1329,7 @@ PY
   expect_foldcade
   find_presentation_display || fail "folder library: bottom display was not found"
   wait_library_log "library-ui home" || fail "folder library: home grid did not load"
+  resolve_screencap_ids
   capture_curated_home
   local step
   for step in $(seq 1 24); do
