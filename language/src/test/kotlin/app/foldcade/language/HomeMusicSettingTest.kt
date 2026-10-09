@@ -24,7 +24,7 @@ class HomeMusicSettingTest {
             listOf(
                 Row.Library, Row.Theme, Row.Primary, Row.Arrange, Row.Order,
                 Row.Music, Row.MusicTrack, Row.MusicVolume, Row.SetAsHome,
-                Row.Background, Row.MotionSpeed,
+                Row.Background, Row.MotionSpeed, Row.UsageAccess,
                 Row.AndroidGames, Row.Apps, Row.HiddenApps,
                 Row.AndroidSettings, Row.DefaultHomeApp,
             ),
@@ -34,7 +34,7 @@ class HomeMusicSettingTest {
             listOf(
                 Row.Library, Row.Theme, Row.Primary, Row.Arrange, Row.Order,
                 Row.Music, Row.MusicTrack, Row.MusicVolume,
-                Row.Background, Row.MotionSpeed,
+                Row.Background, Row.MotionSpeed, Row.UsageAccess,
                 Row.AndroidGames, Row.Apps, Row.HiddenApps,
                 Row.AndroidSettings, Row.DefaultHomeApp,
             ),

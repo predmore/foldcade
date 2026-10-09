@@ -113,6 +113,7 @@ import app.foldcade.language.displayOrder
 import app.foldcade.language.lastPlayedLine
 import app.foldcade.language.monogram
 import app.foldcade.language.panelRows
+import app.foldcade.language.approximatePlayNote
 import app.foldcade.language.playedLine
 import app.foldcade.language.quickTileColumns
 import app.foldcade.language.rowLabel
@@ -741,21 +742,30 @@ private fun GameDetail(app: FoldcadeApp, gameId: String) {
 /** Total play time and last played. The hero and the game detail both use this. */
 @Composable
 private fun PlayFacts(app: FoldcadeApp, gameId: String) {
-    val totals = app.plays.run {
+    val shown = app.plays.run {
         stamp
-        totals(gameId)
+        shown(gameId)
     }
     val theme = foldTheme()
     val now = System.currentTimeMillis()
     Column {
+        val note = approximatePlayNote(shown.approximate)
+        if (note != null) {
+            BasicText(
+                text = note,
+                style = text(theme.muted, TypeRamp.availability, theme),
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
         BasicText(
-            text = playedLine(totals.activeMillis),
+            text = playedLine(shown.activeMillis),
             style = text(theme.muted, TypeRamp.heroMeta, theme),
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
         )
         BasicText(
-            text = lastPlayedLine(totals.lastPlayedMillis, now, ZoneId.systemDefault()),
+            text = lastPlayedLine(shown.lastPlayedMillis, now, ZoneId.systemDefault()),
             style = text(theme.muted, TypeRamp.availability, theme),
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
@@ -1206,6 +1216,7 @@ private fun DialogCard(
                     val label = when (button) {
                         DialogButton.UseAsHome -> Copy.useAsHome
                         DialogButton.NotNow -> Copy.notNow
+                        DialogButton.Allow -> Copy.allowUsage
                         DialogButton.ContinueGrant -> Copy.continueGrant
                         DialogButton.Ok -> Copy.ok
                         DialogButton.CloseIt -> Copy.closeIt

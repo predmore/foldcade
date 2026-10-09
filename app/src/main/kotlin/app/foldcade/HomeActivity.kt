@@ -234,6 +234,7 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
         refreshFacePrompt()
         foldcade.music.onHomeResume()
         foldcade.refreshMoonlightShelf()
+        reconcileUsage()
     }
 
     override fun onPause() {
@@ -684,6 +685,20 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
             }
         }.toSet()
 
+    private fun reconcileUsage() {
+        val now = System.currentTimeMillis()
+        val access = UsageAccess(this)
+        val granted = access.granted()
+        val samples = if (granted) {
+            access.samples(now - UsageAccess.LOOKBACK_MS, now)
+        } else {
+            emptyList()
+        }
+        foldcade.plays.applyUsage(granted, samples, now)
+        foldcade.shell.setUsageGranted(granted)
+        foldcade.shell.maybeOfferUsageAccess(foldcade.plays.hasTrackedSession(), granted, hostScreen())
+    }
+
     private fun clearPendingLaunch() {
         pendingLaunch = null
         closeConfirmed = false
@@ -698,6 +713,12 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
 
     private fun onDialog(effect: Effect.DialogChoice) {
         when (effect.kind) {
+            DialogKind.UsageAccess -> {
+                foldcade.store.setUsagePromptOffered()
+                if (effect.button == DialogButton.Allow) {
+                    startActivity(Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS))
+                }
+            }
             DialogKind.Home -> {
                 foldcade.store.setHomePromptSettled()
                 if (effect.button == DialogButton.UseAsHome) requestHome()

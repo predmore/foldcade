@@ -91,6 +91,12 @@ class SessionStore(private val prefs: SharedPreferences) {
             LibrarySort.Listed
         }
 
+    fun usagePromptOffered(): Boolean = prefs.getBoolean(KEY_USAGE_PROMPTED, false)
+
+    fun setUsagePromptOffered() {
+        prefs.edit().putBoolean(KEY_USAGE_PROMPTED, true).apply()
+    }
+
     fun setLibrarySort(sort: LibrarySort) {
         prefs.edit().putString(KEY_LIBRARY_SORT, sort.name).apply()
     }
@@ -241,6 +247,7 @@ class SessionStore(private val prefs: SharedPreferences) {
         private const val KEY_SHELF_FAVORITES = "android_shelf_favorites"
         private const val KEY_SHELF_SHOWN = "android_shelf_shown"
         private const val KEY_BUTTON_PROMPT_SEEN = "button_prompt_seen"
+        private const val KEY_USAGE_PROMPTED = "usage_prompted"
 
         private fun buttonPromptConfirmKey(deviceKey: String) = "button_prompt_confirm:$deviceKey"
 

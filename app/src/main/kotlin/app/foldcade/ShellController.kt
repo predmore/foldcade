@@ -43,6 +43,8 @@ import app.foldcade.language.focusAndActivateDialog
 import app.foldcade.language.homePrompt
 import app.foldcade.language.panelRows
 import app.foldcade.language.previewDialogState
+import app.foldcade.language.shouldOfferUsageAccess
+import app.foldcade.language.usageAccessPrompt
 import app.foldcade.language.reduce
 import app.foldcade.language.signInAgainPrompt
 import app.foldcade.romm.cleartextCredentialWarning
@@ -364,6 +366,19 @@ class ShellController(
         val (next, effect) = focusAndActivateDialog(model, index)
         publish(next)
         return effect
+    }
+
+    fun setUsageGranted(granted: Boolean) {
+        if (model.usageGranted == granted) return
+        model = model.copy(usageGranted = granted)
+    }
+
+    /** Once, after a session exists. Never on a cold start, and never over another dialog. */
+    fun maybeOfferUsageAccess(hasTrackedSession: Boolean, granted: Boolean, screen: HostScreen) {
+        if (!shouldOfferUsageAccess(hasTrackedSession, granted, store.usagePromptOffered(), model.dialog != null)) {
+            return
+        }
+        present(usageAccessPrompt(screen))
     }
 
     fun maybeAskHome(roleHeld: Boolean) {

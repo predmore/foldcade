@@ -107,6 +107,10 @@ class FoldcadeApp : Application() {
         val motions = listOf(BackgroundMotion.Off) + listOfNotNull(packaged?.backgroundMotion)
         plays = PlaySessions.open(File(filesDir, "play-sessions/events.log"))
         val sliderTick = SliderTick()
+        plays.packageOf = { gameId ->
+            val platform = Shelf.games.firstOrNull { it.id == gameId }?.platformId
+            platform?.let { plugins.playersFor(it).firstOrNull()?.packageNames?.firstOrNull() }
+        }
         shell = ShellController(
             store,
             plugins,
