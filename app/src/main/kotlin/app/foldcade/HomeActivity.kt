@@ -265,6 +265,8 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
         acceptShelf(intent)
         acceptFolderLibrary(intent)
         applyDialogPreview(intent)
+        // Home relaunches this activity before a debug capture intent arrives.
+        applyIslandPreview(intent, replace = true)
     }
 
     private fun applyDialogPreview(intent: Intent) {
@@ -322,12 +324,14 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
         shellVisible = resumed && state == Display.STATE_ON
     }
 
-    private fun applyIslandPreview(intent: Intent) {
+    private fun applyIslandPreview(intent: Intent, replace: Boolean = false) {
         if (applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE == 0) return
         val hold = parseIslandHold(intent.getStringExtra("foldcade.island")) ?: return
-        if (foldcade.islandHold != null) return
+        if (!replace && foldcade.islandHold != null) return
         foldcade.islandHold = hold
-        foldcade.shell.onMeaning(hold.meaning(), HostScreen.Top)
+        if (foldcade.shell.model.panel?.side != hold.side) {
+            foldcade.shell.onMeaning(hold.meaning(), HostScreen.Top)
+        }
     }
 
     private fun acceptHome(intent: Intent) {
