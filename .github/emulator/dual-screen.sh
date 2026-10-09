@@ -299,6 +299,79 @@ fi
   echo "real=${bottom_width}x${bottom_height}"
 } | tee "$out/bottom-display.txt"
 
+ui_dump() {
+  local remote="/sdcard/foldcade-ui.xml"
+  adb_do shell uiautomator dump "$remote" >/dev/null 2>&1 || true
+  adb_do shell cat "$remote" 2>/dev/null | tr -d '\r' >"$out/ui-last.xml" || true
+}
+
+ui_has() {
+  local text="$1"
+  ui_dump
+  grep -F -q "text=\"${text}\"" "$out/ui-last.xml" \
+    || grep -F -q "content-desc=\"${text}\"" "$out/ui-last.xml"
+}
+
+ui_lacks() {
+  local text="$1"
+  ui_dump
+  ! grep -F -q "text=\"${text}\"" "$out/ui-last.xml" \
+    && ! grep -F -q "content-desc=\"${text}\"" "$out/ui-last.xml"
+}
+
+activity_dump() {
+  adb_do shell dumpsys activity activities | tr -d '\r'
+}
+
+current_focus() {
+  adb_do shell dumpsys window | tr -d '\r' | sed -n 's/^[[:space:]]*mCurrentFocus=//p' | head -1
+}
+
+# Shelf focus is Compose state. When the dump has no focused node, the label
+# being on screen is the check the key step can make.
+label_focused() {
+  local text="$1"
+  ui_dump
+  python3 -c 'import re,sys
+text, path = sys.argv[1], sys.argv[2]
+try:
+    xml = open(path, encoding="utf-8", errors="replace").read()
+except OSError:
+    sys.exit(1)
+nodes = re.findall(r"<node\b[^>]*>", xml)
+def attrs(node):
+    return dict(re.findall(r"([A-Za-z0-9_-]+)=\"([^\"]*)\"", node))
+seen = False
+any_focused = False
+for node in nodes:
+    a = attrs(node)
+    if a.get("focused") == "true" or a.get("selected") == "true":
+        any_focused = True
+    label = a.get("text") or a.get("content-desc") or ""
+    if label != text:
+        continue
+    seen = True
+    if a.get("focused") == "true" or a.get("selected") == "true":
+        sys.exit(0)
+sys.exit(0 if seen and not any_focused else 1)
+' "$text" "$out/ui-last.xml"
+}
+
+wait_for() {
+  local label="$1"
+  local seconds="$2"
+  shift 2
+  local deadline=$((SECONDS + seconds))
+  while [ "$SECONDS" -lt "$deadline" ]; do
+    if "$@"; then
+      echo "step: ${label}"
+      return 0
+    fi
+    sleep 1
+  done
+  fail "${label}: timed out after ${seconds}s"
+}
+
 echo "step: launch"
 adb_do shell input keyevent KEYCODE_WAKEUP
 adb_do shell wm dismiss-keyguard || true
