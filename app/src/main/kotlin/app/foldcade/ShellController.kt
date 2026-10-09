@@ -38,6 +38,7 @@ import app.foldcade.language.previewDialogState
 import app.foldcade.language.reduce
 import app.foldcade.language.signInAgainPrompt
 import app.foldcade.romm.cleartextCredentialWarning
+import android.util.Log
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
@@ -319,6 +320,10 @@ class ShellController(
     /** Debuggable captures. Replaces whatever dialog is up. */
     fun showPreviewDialog(kind: String, index: Int, screen: HostScreen) {
         val dialog = previewDialogState(kind, index, screen) ?: return
+        Log.i(
+            "Foldcade",
+            "preview-dialog kind=$kind index=${dialog.index} screen=${screen.name.lowercase()} title=${dialog.title}",
+        )
         publish(model.copy(panel = null, connectOpen = false, dialog = dialog))
     }
 

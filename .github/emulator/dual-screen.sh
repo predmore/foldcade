@@ -784,31 +784,113 @@ expect_png "$out/games-bottom.png" "${bottom_width}x${bottom_height}"
   echo "Bottom ${bottom_width}x${bottom_height} at ${bottom_density} dpi."
 } >"$out/android-shelves.txt"
 
+# The Afterglow focus fill. A solid pill of this color is the focused button.
+# Ribbons and tile glows on the idle captures are not this color.
+focus_mint_min=1500
+
+# Count pixels of the accent fill. uiautomator dump on this image writes an
+# empty hierarchy while the ribbons keep moving, so it cannot see the title.
+focus_mint_count() {
+  python3 - "$1" <<'PY'
+import struct, sys, zlib
+data = open(sys.argv[1], "rb").read()
+if data[:8] != b"\x89PNG\r\n\x1a\n":
+    sys.exit("not a png")
+pos = 8
+width = height = color = None
+idat = []
+while pos < len(data):
+    ln = struct.unpack(">I", data[pos:pos + 4])[0]
+    typ = data[pos + 4:pos + 8]
+    chunk = data[pos + 8:pos + 8 + ln]
+    pos += 12 + ln
+    if typ == b"IHDR":
+        width, height, bit, color, comp, filt, inter = struct.unpack(">IIBBBBB", chunk)
+        if bit != 8 or inter != 0 or color not in (2, 6):
+            sys.exit("unsupported png")
+    elif typ == b"IDAT":
+        idat.append(chunk)
+    elif typ == b"IEND":
+        break
+raw = zlib.decompress(b"".join(idat))
+bpp = 3 if color == 2 else 4
+stride = width * bpp
+i = 0
+prev = bytearray(stride)
+mint = 0
+for y in range(height):
+    filt = raw[i]
+    i += 1
+    row = bytearray(raw[i:i + stride])
+    i += stride
+    if filt == 1:
+        for x in range(stride):
+            left = row[x - bpp] if x >= bpp else 0
+            row[x] = (row[x] + left) & 255
+    elif filt == 2:
+        for x in range(stride):
+            row[x] = (row[x] + prev[x]) & 255
+    elif filt == 3:
+        for x in range(stride):
+            left = row[x - bpp] if x >= bpp else 0
+            row[x] = (row[x] + ((left + prev[x]) // 2)) & 255
+    elif filt == 4:
+        for x in range(stride):
+            a = row[x - bpp] if x >= bpp else 0
+            b = prev[x]
+            c = prev[x - bpp] if x >= bpp else 0
+            p = a + b - c
+            pa, pb, pc = abs(p - a), abs(p - b), abs(p - c)
+            pred = a if pa <= pb and pa <= pc else b if pb <= pc else c
+            row[x] = (row[x] + pred) & 255
+    elif filt != 0:
+        sys.exit("bad filter")
+    prev = row
+    for x in range(0, stride, bpp):
+        r, g, b = row[x], row[x + 1], row[x + 2]
+        if 188 <= r <= 212 and g >= 247 and 216 <= b <= 240:
+            mint += 1
+print(mint)
+PY
+}
+
 # Debug builds only. Each file is a Thor-sized emulator frame, not a Thor pass.
 capture_dialog() {
   local kind="$1" index="$2" screen="$3" name="$4" needle="$5"
+  local mark="preview-dialog kind=${kind} index=${index} screen=${screen}"
   echo "step: dialog ${name}"
+  adb_do logcat -c || fail "dialog ${name}: logcat clear"
   timeout 20 adb shell am start -W -n "$component" \
     --es foldcade.dialog "$kind" \
     --ei foldcade.dialogIndex "$index" \
     --es foldcade.dialogScreen "$screen" \
     --display 0
-  local attempt
-  for attempt in 1 2 3 4 5 6 7 8; do
+  local attempt shot count
+  for attempt in 1 2 3 4 5 6 7 8 9 10 11 12; do
     sleep 1
-    if timeout 15 adb shell uiautomator dump /sdcard/foldcade-ui.xml >/dev/null 2>&1 \
-      && timeout 15 adb shell cat /sdcard/foldcade-ui.xml | tr -d '\r' >"$out/${name}.xml" \
-      && grep -q "$needle" "$out/${name}.xml"; then
+    timeout 15 adb logcat -d -s Foldcade:I | tr -d '\r' >"$out/${name}.log" || true
+    if grep -q "$mark" "$out/${name}.log" && grep -q "$needle" "$out/${name}.log"; then
       break
     fi
   done
-  if ! grep -q "$needle" "$out/${name}.xml" 2>/dev/null; then
+  if ! grep -q "$mark" "$out/${name}.log" 2>/dev/null || ! grep -q "$needle" "$out/${name}.log" 2>/dev/null; then
     fail "dialog ${name} did not show ${needle}"
   fi
-  capture "$primary" "$out/${name}-top.png"
-  capture "$secondary" "$out/${name}-bottom.png"
-  expect_png "$out/${name}-top.png" "${top_width}x${top_height}"
-  expect_png "$out/${name}-bottom.png" "${bottom_width}x${bottom_height}"
+  # The log is published before the next Compose frame. This image skips frames.
+  sleep 2
+  for shot in 1 2 3 4 5; do
+    capture "$primary" "$out/${name}-top.png"
+    capture "$secondary" "$out/${name}-bottom.png"
+    expect_png "$out/${name}-top.png" "${top_width}x${top_height}"
+    expect_png "$out/${name}-bottom.png" "${bottom_width}x${bottom_height}"
+    count="$(focus_mint_count "$out/${name}-${screen}.png")"
+    printf 'focus-pill %s mint=%s\n' "${name}-${screen}.png" "$count" | tee -a "$out/dialog-focus-pills.txt"
+    if [ "$count" -ge "$focus_mint_min" ]; then
+      return 0
+    fi
+    sleep 2
+  done
+  fail "dialog ${name} focus pill was not on the ${screen} panel"
 }
 
 # Emulator only, not a Thor pass. The extra sets which button is focused.
