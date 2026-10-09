@@ -2,9 +2,17 @@
 
 ## Lanternlight
 
-Lanternlight is the home-screen track. The composition is by the Foldcade project (variant A of that piece). It is licensed under the GNU General Public License version 3 with this repository, the same choice as the theme art. Theme art is licensed with the repository, not under a separate CC BY-SA 4.0 grant.
+Lanternlight is the home-screen track. The composition is by the Foldcade project (variant A of that piece). It is licensed under the GNU General Public License version 3 with this repository.
 
 The packaged file is `music/lanternlight.ogg`. The track list, with id, title, composer, license, and file, is `music/tracks/manifest.json`. It is rendered with MuseScore General 0.2.
+
+## Afterglow
+
+Afterglow is the reference theme in `themes/afterglow`. Its marks, preview, and sounds are original and licensed under Creative Commons Attribution-ShareAlike 4.0 International. The license text is `themes/afterglow/LICENSE`.
+
+The display face is Nunito Regular (`themes/afterglow/font.ttf`), under the SIL Open Font License. The license text is `themes/afterglow/OFL-Nunito.txt`.
+
+The on-screen line glyphs are program source under the GNU GPLv3. They are separate from the painted marks in the theme zip.
 
 ## MuseScore General 0.2
 
