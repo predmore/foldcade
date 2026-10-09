@@ -8,9 +8,7 @@ import android.net.NetworkCapabilities
 import android.os.BatteryManager
 import android.text.format.DateFormat
 import app.foldcade.language.Copy
-import java.text.SimpleDateFormat
 import java.util.Date
-import java.util.Locale
 
 data class DeviceStatus(
     val time: String,
@@ -35,13 +33,9 @@ fun readDeviceStatus(context: Context): DeviceStatus {
     )
 }
 
-/** Follows the device 12/24-hour setting. Does not force either style. */
-internal fun clockText(context: Context, nowMillis: Long): String {
-    val pattern = clockPattern(DateFormat.is24HourFormat(context))
-    return SimpleDateFormat(pattern, Locale.getDefault()).format(Date(nowMillis))
-}
-
-internal fun clockPattern(is24Hour: Boolean): String = if (is24Hour) "H:mm" else "h:mm a"
+/** Locale order and the device 12/24-hour setting. Does not force a pattern. */
+internal fun clockText(context: Context, nowMillis: Long): String =
+    DateFormat.getTimeFormat(context).format(Date(nowMillis))
 
 /** Delay until the next minute boundary. Exactly on the boundary waits a full minute. */
 internal fun millisUntilNextMinute(nowMillis: Long): Long {

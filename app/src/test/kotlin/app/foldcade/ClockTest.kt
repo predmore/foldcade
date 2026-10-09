@@ -10,10 +10,4 @@ class ClockTest {
         assertEquals(1L, millisUntilNextMinute(59_999L))
         assertEquals(30_000L, millisUntilNextMinute(90_000L))
     }
-
-    @Test
-    fun patternFollowsTheDeviceSetting() {
-        assertEquals("H:mm", clockPattern(true))
-        assertEquals("h:mm a", clockPattern(false))
-    }
 }

@@ -18,6 +18,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.requiredWidth
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicText
@@ -47,6 +48,7 @@ import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
@@ -212,6 +214,12 @@ private fun Picker(
         val inner = maxWidth - inset * 2
         val cell = (inner - gap * (Metrics.columns - 1)) / Metrics.columns
         val focusOutset = focusOutset(cell)
+        val titlePx = rememberTextMeasurer().measure(
+            text = "Ag",
+            style = text(theme.onBackground, TypeRamp.gridLabel, theme),
+            maxLines = 1,
+        ).size.height
+        val titleLine = with(LocalDensity.current) { titlePx.toDp() }
         Column(Modifier.fillMaxSize().padding(horizontal = inset, vertical = inset)) {
             Box(Modifier.zIndex(1f).fillMaxWidth()) { ChromeRow(app, screen) }
             BoxWithConstraints(
@@ -236,8 +244,11 @@ private fun Picker(
                         )
                     },
             ) {
+                val showTitles = !session.bothScreensFree()
+                val slot = if (showTitles) cell + focusOutset + titleLine else cell
+                val available = (maxHeight - focusOutset * 2).coerceAtLeast(slot)
                 val rows = if (cell > Dp.Hairline) {
-                    ((maxHeight + gap) / (cell + gap)).toInt().coerceAtLeast(1)
+                    ((available + gap) / (slot + gap)).toInt().coerceAtLeast(1)
                 } else {
                     1
                 }
@@ -252,7 +263,7 @@ private fun Picker(
                         gap = gap,
                         rows = rows,
                         scale = scale,
-                        showTitle = !session.bothScreensFree(),
+                        showTitle = showTitles,
                         usesBoth = game?.occupiesBothDisplays == true && session.bothScreensFree(),
                     )
                 }
@@ -508,8 +519,8 @@ private fun PagedGrid(
     val outset = focusOutset(cell)
     Box(
         Modifier
-            .offset(x = -outset, y = -outset)
-            .width(width + outset * 2)
+            .offset(y = -outset)
+            .requiredWidth(width + outset * 2)
             .graphicsLayer { this.alpha = alpha }
             .clipToBounds()
             .padding(outset),
