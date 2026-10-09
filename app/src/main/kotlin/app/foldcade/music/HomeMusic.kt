@@ -17,10 +17,14 @@ import androidx.media3.common.Player
 import androidx.media3.exoplayer.ExoPlayer
 import app.foldcade.SessionStore
 import app.foldcade.language.DEFAULT_BACKGROUND_MUSIC
+import app.foldcade.language.DEFAULT_TRACK_TITLE
 import app.foldcade.language.HomeMusicSetting
 import app.foldcade.language.Meaning
 import app.foldcade.language.Motion
+import app.foldcade.language.MusicTrack
 import app.foldcade.language.backgroundMusicFromThemeJson
+import app.foldcade.language.musicTrack
+import app.foldcade.language.musicTracksFromManifest
 import app.foldcade.language.playbackLevel
 
 /**
@@ -43,6 +47,7 @@ class HomeMusic(
     private var fadeToken = 0
     private var duckToken = 0
     private var ducked = false
+    private val catalog: List<MusicTrack> = loadCatalog()
 
     private val volumeReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
@@ -86,7 +91,10 @@ class HomeMusic(
         fadeOut()
     }
 
+    fun trackTitle(): String = selectedTrack()?.title ?: DEFAULT_TRACK_TITLE
+
     fun apply(setting: HomeMusicSetting) {
+        reloadIfTrackChanged()
         if (resumedHomes == 0 || suppressed) return
         if (playbackLevel(setting, ducked, mediaMuted()) <= 0f) {
             fadeOut()
@@ -207,9 +215,27 @@ class HomeMusic(
         return created
     }
 
+    private fun selectedTrack(): MusicTrack? = musicTrack(catalog, store.musicTrackId())
+
     private fun resolvedAsset(): String {
         val named = backgroundMusicFromThemeJson(themeJson)
-        return if (named == DEFAULT_BACKGROUND_MUSIC || assetExists(named)) named else DEFAULT_BACKGROUND_MUSIC
+        if (named != DEFAULT_BACKGROUND_MUSIC && assetExists(named)) return named
+        return selectedTrack()?.file ?: DEFAULT_BACKGROUND_MUSIC
+    }
+
+    private fun reloadIfTrackChanged() {
+        val existing = player ?: return
+        val next = resolvedAsset()
+        if (next == loadedAsset || !assetExists(next)) return
+        loadedAsset = next
+        existing.setMediaItem(MediaItem.fromUri("asset:///$next"))
+        existing.prepare()
+    }
+
+    private fun loadCatalog(): List<MusicTrack> {
+        val json = runCatching { app.assets.open("music/manifest.json").bufferedReader().use { it.readText() } }
+            .getOrNull()
+        return musicTracksFromManifest(json)
     }
 
     private fun assetExists(name: String): Boolean =
@@ -218,7 +244,8 @@ class HomeMusic(
             true
         }.getOrDefault(false)
 
-    private fun current(): HomeMusicSetting = HomeMusicSetting(store.musicEnabled(), store.musicVolume())
+    private fun current(): HomeMusicSetting =
+        HomeMusicSetting(store.musicEnabled(), store.musicVolume(), store.musicTrackId())
 
     private fun targetLevel(): Float = playbackLevel(current(), ducked, mediaMuted = false)
 

@@ -87,7 +87,7 @@ jobs:
       - uses: gradle/actions/setup-gradle@v4
         if: steps.scope.outputs.render == 'true'
 
-      - name: Render variant A and enforce checks
+      - name: Render every track and enforce checks
         if: steps.scope.outputs.render == 'true'
         run: ./gradlew :app:renderHomeMusic --configuration-cache
 

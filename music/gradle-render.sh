@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
-# Download MuseScore General, render variant A, and copy the packaged asset.
+# Download MuseScore General and render every track in tracks/manifest.json.
 # Local builds and CI both call this so the renders match.
-# Usage: gradle-render.sh <asset-ogg> <preview-dir>
+# Usage: gradle-render.sh <asset-dir> <preview-dir>
 set -euo pipefail
 cd "$(dirname "$0")"
 
@@ -15,7 +15,7 @@ if ! command -v fluidsynth >/dev/null 2>&1; then
   exit 1
 fi
 if ! command -v ffmpeg >/dev/null 2>&1; then
-  echo "ffmpeg is required to encode the Foldcade home loop (Vorbis and the MP3 preview)." >&2
+  echo "ffmpeg is required to encode Foldcade home music (Vorbis and the MP3 preview)." >&2
   echo "Install it, then rebuild. On Debian/Ubuntu: sudo apt-get install ffmpeg" >&2
   exit 1
 fi
@@ -56,12 +56,33 @@ if [[ ! -x .venv/bin/python ]]; then
 fi
 .venv/bin/pip install --disable-pip-version-check -r requirements.txt
 
-# render.sh defaults to variant a and keeps its .venv/bin/python path.
-./render.sh a
-.venv/bin/python check_render.py
+mapfile -t IDS < <(.venv/bin/python - <<'PY'
+import json
+manifest = json.load(open("tracks/manifest.json"))
+ids = [track["id"] for track in manifest["tracks"]]
+if not ids:
+    raise SystemExit("tracks/manifest.json has no tracks")
+print("\n".join(ids))
+PY
+)
 
-mkdir -p "$ASSETS_DIR" "$PREVIEW_DIR"
-cp -f out/a/foldcade_home_a_loop.ogg "$ASSETS_DIR/foldcade_home_loop.ogg"
-cp -f out/a/foldcade_home_a_loop.ogg "$PREVIEW_DIR/foldcade_home_loop.ogg"
-cp -f out/a/foldcade_home_a_loop.mp3 "$PREVIEW_DIR/foldcade_home_loop.mp3"
-cp -f out/a/foldcade_home_a_loop_x2_preview.mp3 "$PREVIEW_DIR/foldcade_home_loop_preview.mp3"
+mkdir -p "$ASSETS_DIR/music" "$PREVIEW_DIR"
+cp -f tracks/manifest.json "$ASSETS_DIR/music/manifest.json"
+
+for id in "${IDS[@]}"; do
+  ./render.sh "$id"
+  file="$(.venv/bin/python - "$id" <<'PY'
+import json, sys
+track_id = sys.argv[1]
+manifest = json.load(open("tracks/manifest.json"))
+print(next(track["file"] for track in manifest["tracks"] if track["id"] == track_id))
+PY
+)"
+  src="tracks/$id/out/a/foldcade_home_a_loop"
+  dest="$ASSETS_DIR/$file"
+  mkdir -p "$(dirname "$dest")"
+  cp -f "$src.ogg" "$dest"
+  cp -f "$src.ogg" "$PREVIEW_DIR/$id.ogg"
+  cp -f "$src.mp3" "$PREVIEW_DIR/$id.mp3"
+  cp -f "$src"_x2_preview.mp3 "$PREVIEW_DIR/${id}_preview.mp3"
+done

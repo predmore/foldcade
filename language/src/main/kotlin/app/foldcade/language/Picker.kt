@@ -111,6 +111,7 @@ sealed interface Row {
     data object Primary : Row
     data object Arrange : Row
     data object Music : Row
+    data object MusicTrack : Row
     data object MusicVolume : Row
     data object SetAsHome : Row
     data class Backend(val name: String) : Row
@@ -127,6 +128,7 @@ fun leftRows(homeRoleHeld: Boolean): List<Row> = buildList {
     add(Row.Primary)
     add(Row.Arrange)
     add(Row.Music)
+    add(Row.MusicTrack)
     add(Row.MusicVolume)
     if (!homeRoleHeld) add(Row.SetAsHome)
 }
@@ -168,6 +170,7 @@ fun rowLabel(row: Row, model: PickerModel): String = when (row) {
     Row.Primary -> "${Copy.primaryPanel}  ${if (model.primaryIsTop) Copy.top else Copy.bottom}"
     Row.Arrange -> Copy.arrange
     Row.Music -> MusicCopy.musicLabel(model.music.enabled)
+    Row.MusicTrack -> MusicCopy.trackLabel(model.trackTitle)
     Row.MusicVolume -> MusicCopy.volumeLabel(model.music.volume)
     Row.SetAsHome -> Copy.setAsHome
     is Row.Backend -> row.name
@@ -211,6 +214,7 @@ data class PickerModel(
     val notices: List<FoldNotice> = emptyList(),
     val launchOnBottom: Boolean = false,
     val music: HomeMusicSetting = HomeMusicSetting(),
+    val trackTitle: String = DEFAULT_TRACK_TITLE,
     val arranging: Boolean = false,
     val hold: Hold? = null,
     val order: List<Int> = emptyList(),
@@ -490,6 +494,7 @@ private fun activateRow(
             order = displayOrder(model),
         ) to null
         Row.Music -> model.copy(panel = panel, music = model.music.toggled()) to null
+        Row.MusicTrack -> model to null
         Row.MusicVolume -> model.copy(panel = panel, music = model.music.stepped()) to null
         Row.SetAsHome -> model to Effect.RequestHome
         is Row.Backend -> model.copy(panel = null, focus = panel.grid) to Effect.ActivateBackend(row.name)

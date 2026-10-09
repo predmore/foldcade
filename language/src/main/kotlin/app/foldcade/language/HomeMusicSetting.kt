@@ -9,6 +9,7 @@ import kotlin.math.roundToInt
 data class HomeMusicSetting(
     val enabled: Boolean = true,
     val volume: Float = DEFAULT_VOLUME,
+    val trackId: String = DEFAULT_TRACK_ID,
 ) {
     fun toggled(): HomeMusicSetting = copy(enabled = !enabled)
 
@@ -25,16 +26,29 @@ data class HomeMusicSetting(
         const val DEFAULT_VOLUME = 0.25f
         const val STEP_PERCENT = 5
         const val UI_SOUND_DUCK = 0.4f
+        const val DEFAULT_TRACK_ID = "lanternlight"
     }
 }
+
+/** One row of music/tracks/manifest.json. The setting stores [id], not the file name. */
+data class MusicTrack(
+    val id: String,
+    val title: String,
+    val composer: String,
+    val license: String,
+    val file: String,
+)
 
 object MusicCopy {
     const val row = "Music"
     const val on = "On"
     const val off = "Off"
     const val volume = "Volume"
+    const val track = "Track"
 
     fun musicLabel(enabled: Boolean): String = "$row  ${if (enabled) on else off}"
+
+    fun trackLabel(name: String): String = "$track  $name"
 
     fun volumeLabel(level: Float): String {
         val percent = (level.coerceIn(0f, 1f) * 100f).roundToInt().coerceIn(0, 100)
@@ -56,11 +70,40 @@ fun playbackLevel(
     return if (uiSoundActive) level * HomeMusicSetting.UI_SOUND_DUCK else level
 }
 
-/** Theme JSON key. Absent means the packaged default loop. */
+/** Theme JSON key. Absent means the selected track from the manifest. */
 const val THEME_BACKGROUND_MUSIC = "backgroundMusic"
 
-/** Asset name packaged for the default theme. Stable across renders. */
-const val DEFAULT_BACKGROUND_MUSIC = "foldcade_home_loop.ogg"
+/** Packaged file for Lanternlight. The manifest `file` field is this path. */
+const val DEFAULT_BACKGROUND_MUSIC = "music/lanternlight.ogg"
+
+const val DEFAULT_TRACK_TITLE = "Lanternlight"
+
+/**
+ * Tracks listed in music/tracks/manifest.json. A blank or broken manifest is empty.
+ * The caller falls back to [DEFAULT_TRACK_TITLE] and [DEFAULT_BACKGROUND_MUSIC].
+ */
+fun musicTracksFromManifest(json: String?): List<MusicTrack> {
+    if (json.isNullOrBlank()) return emptyList()
+    val field = Regex(""""(id|title|composer|license|file)"\s*:\s*"([^"\\]*)"""")
+    return Regex("""\{[^{}]*\}""").findAll(json).mapNotNull { obj ->
+        val fields = field.findAll(obj.value).associate { it.groupValues[1] to it.groupValues[2] }
+        val id = fields["id"]?.trim().orEmpty()
+        val title = fields["title"]?.trim().orEmpty()
+        val composer = fields["composer"]?.trim().orEmpty()
+        val license = fields["license"]?.trim().orEmpty()
+        val file = fields["file"]?.trim().orEmpty()
+        val usable = id.isNotEmpty() && title.isNotEmpty() && composer.isNotEmpty() &&
+            license.isNotEmpty() && file.isNotEmpty() &&
+            !file.startsWith("/") && !file.contains('\\') && !file.contains("..")
+        if (!usable) null else MusicTrack(id, title, composer, license, file)
+    }.toList()
+}
+
+/** The selected track, or Lanternlight when the id is missing from [tracks]. */
+fun musicTrack(tracks: List<MusicTrack>, id: String): MusicTrack? {
+    tracks.firstOrNull { it.id == id }?.let { return it }
+    return tracks.firstOrNull { it.id == HomeMusicSetting.DEFAULT_TRACK_ID }
+}
 
 /**
  * Optional `backgroundMusic` string in theme.json. A community theme names a

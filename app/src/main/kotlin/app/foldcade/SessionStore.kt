@@ -65,10 +65,18 @@ class SessionStore(private val prefs: SharedPreferences) {
     fun musicVolume(): Float =
         prefs.getFloat(KEY_MUSIC_VOLUME, HomeMusicSetting.DEFAULT_VOLUME).coerceIn(0f, 1f)
 
-    fun setMusic(enabled: Boolean, volume: Float) {
+    fun musicTrackId(): String =
+        prefs.getString(KEY_MUSIC_TRACK, HomeMusicSetting.DEFAULT_TRACK_ID)
+            ?.trim()
+            ?.ifEmpty { HomeMusicSetting.DEFAULT_TRACK_ID }
+            ?: HomeMusicSetting.DEFAULT_TRACK_ID
+
+    fun setMusic(enabled: Boolean, volume: Float, trackId: String) {
+        val id = trackId.trim().ifEmpty { HomeMusicSetting.DEFAULT_TRACK_ID }
         prefs.edit()
             .putBoolean(KEY_MUSIC_ENABLED, enabled)
             .putFloat(KEY_MUSIC_VOLUME, volume.coerceIn(0f, 1f))
+            .putString(KEY_MUSIC_TRACK, id)
             .apply()
     }
 
@@ -97,5 +105,6 @@ class SessionStore(private val prefs: SharedPreferences) {
         private const val KEY_ROMM_ORIGIN = "romm_origin"
         private const val KEY_MUSIC_ENABLED = "music_enabled"
         private const val KEY_MUSIC_VOLUME = "music_volume"
+        private const val KEY_MUSIC_TRACK = "music_track"
     }
 }

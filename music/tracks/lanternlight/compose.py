@@ -1,13 +1,16 @@
 #!/usr/bin/env python3
-"""Foldcade ambient home-menu loop. Original composition, written in code.
+"""Lanternlight, Foldcade's home loop. Original composition, written in code.
 
-Usage:  compose.py --variant {sketch1,a,b}
+The notes are the approved variant A arrangement. sketch1 and b stay in this file so the
+piece can still be rendered those ways; CI ships variant a only.
+
+Usage:  compose.py --variant {sketch1,a,b} [--out DIR]
   sketch1 : original arrangement (music box, harp, warm pad, strings)
   a       : gentle retro (square lead + vibraphone double, pizzicato arp, quieter pad)
   b       : more chiptune (square lead + square echo, saw arp, sine bass, very quiet pad)
 
-Writes out/<variant>/foldcade_home_<variant>_loop.mid      (one loop, editable, loop markers)
-       out/<variant>/foldcade_home_<variant>_render4x.mid  (loop x4 + tail, for rendering only)
+Writes <out>/foldcade_home_<variant>_loop.mid      (one loop, editable, loop markers)
+       <out>/foldcade_home_<variant>_render4x.mid  (loop x4 + tail, for rendering only)
 Same piece in every variant: D major, 72 bpm, 4/4, 24 bars (A/B/C) = 96 beats = exactly 80.000 s.
 """
 import argparse, math, os, random
@@ -182,6 +185,11 @@ def build(cfg, events, name, copies, tail_beats=0, markers=False):
     tr = mido.MidiTrack()
     mid.tracks.append(tr)
     tr.append(mido.MetaMessage('track_name', name=name, time=0))
+    tr.append(mido.MetaMessage(
+        'text',
+        text='Composer: Foldcade project. License: GPLv3 with the Foldcade repository.',
+        time=0,
+    ))
     tr.append(mido.MetaMessage('set_tempo', tempo=mido.bpm2tempo(BPM), time=0))
     tr.append(mido.MetaMessage('time_signature', numerator=4, denominator=4, time=0))
     tr.append(mido.MetaMessage('key_signature', key='D', time=0))
@@ -206,12 +214,13 @@ def build(cfg, events, name, copies, tail_beats=0, markers=False):
 if __name__ == '__main__':
     ap = argparse.ArgumentParser()
     ap.add_argument('--variant', choices=sorted(VARIANTS), default='a')
+    ap.add_argument('--out', help='directory for the MIDI files')
     a = ap.parse_args()
     cfg = VARIANTS[a.variant]
     ev = compose(cfg)
-    d = f'out/{a.variant}'
+    d = a.out or os.path.join(os.path.dirname(os.path.abspath(__file__)), 'out', a.variant)
     os.makedirs(d, exist_ok=True)
-    title = f'Foldcade Home (variant {a.variant})'
-    build(cfg, ev, title, 1, markers=True).save(f'{d}/foldcade_home_{a.variant}_loop.mid')
-    build(cfg, ev, title, 4, tail_beats=8).save(f'{d}/foldcade_home_{a.variant}_render4x.mid')
+    title = 'Lanternlight'
+    build(cfg, ev, title, 1, markers=True).save(os.path.join(d, f'foldcade_home_{a.variant}_loop.mid'))
+    build(cfg, ev, title, 4, tail_beats=8).save(os.path.join(d, f'foldcade_home_{a.variant}_render4x.mid'))
     print(a.variant, 'loop seconds:', LOOP_BEATS * 60 / BPM)

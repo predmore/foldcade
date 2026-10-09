@@ -1,10 +1,10 @@
 # Third-party licenses and credits
 
-## Foldcade home music
+## Lanternlight
 
-The home-screen loop is an original Foldcade composition (variant A). It is licensed under the GNU General Public License version 3 with this repository, the same choice as the theme art. Theme art is licensed with the repository, not under a separate CC BY-SA 4.0 grant.
+Lanternlight is the home-screen track. The composition is by the Foldcade project (variant A of that piece). It is licensed under the GNU General Public License version 3 with this repository, the same choice as the theme art. Theme art is licensed with the repository, not under a separate CC BY-SA 4.0 grant.
 
-The packaged file is `foldcade_home_loop.ogg`, rendered from `music/` with MuseScore General 0.2.
+The packaged file is `music/lanternlight.ogg`. The track list, with id, title, composer, license, and file, is `music/tracks/manifest.json`. It is rendered with MuseScore General 0.2.
 
 ## MuseScore General 0.2
 

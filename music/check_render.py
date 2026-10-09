@@ -1,16 +1,17 @@
 #!/usr/bin/env python3
-"""Fail the build unless variant A's checks.json matches the reference render.
+"""Fail the build unless a rendered track matches its checks.
 
-The reference is music/out/a/checks.json from the variant A sources:
--16.0 LUFS, peak about -3.45 dBFS, 0 clipped samples, an 80.000 s loop,
-3,840,000 decoded samples, no dropouts, and a seam identical to the
-continuous render. CI renders only variant A.
+Lanternlight (variant A) is the approved home loop: -16.0 LUFS, peak about
+-3.45 dBFS and at or below -3 dBFS, 0 clipped samples, an 80.000 s /
+3,840,000-sample loop, no dropouts, and a seam identical to the continuous
+render. Every other track must clear the same safety checks. The peak window
+around -3.45 dBFS is Lanternlight's, because that is the approved render.
 """
+import argparse
 import json
 import sys
 from pathlib import Path
 
-CHECKS = Path("out/a/checks.json")
 LENGTH_SAMPLES = 80 * 48000
 
 
@@ -20,9 +21,13 @@ def fail(message):
 
 
 def main():
-    if not CHECKS.is_file():
-        fail("missing " + str(CHECKS) + ". process.py did not write checks.")
-    res = json.loads(CHECKS.read_text())
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--track", required=True)
+    args = parser.parse_args()
+    checks = Path("tracks") / args.track / "out" / "a" / "checks.json"
+    if not checks.is_file():
+        fail("missing " + str(checks) + ". process.py did not write checks.")
+    res = json.loads(checks.read_text())
     errors = []
 
     def need(condition, message):
@@ -38,7 +43,8 @@ def main():
     need(abs(lufs - (-16.0)) <= 0.5, "integrated_lufs %.3f, expected -16.0 within 0.5" % lufs)
     peak = float(res.get("sample_peak_dbfs", 0))
     need(peak <= -3.0, "sample_peak_dbfs %.3f is above -3 dBFS" % peak)
-    need(abs(peak - (-3.4545)) <= 0.5, "sample_peak_dbfs %.3f, expected around -3.4 dBFS" % peak)
+    if args.track == "lanternlight":
+        need(abs(peak - (-3.4545)) <= 0.5, "sample_peak_dbfs %.3f, expected around -3.4 dBFS" % peak)
     clipped = int(res.get("clipped_samples", -1))
     need(clipped == 0, "clipped_samples %s, expected 0" % clipped)
     dropouts = int(res.get("windows_below_minus50db", -1))
@@ -53,8 +59,8 @@ def main():
             print("home music check failed: " + message, file=sys.stderr)
         sys.exit(1)
     print(
-        "home music checks passed: variant a, %.3f LUFS, peak %.3f dBFS, %d samples"
-        % (lufs, peak, samples)
+        "home music checks passed: %s, %.3f LUFS, peak %.3f dBFS, %d samples"
+        % (args.track, lufs, peak, samples)
     )
 
 

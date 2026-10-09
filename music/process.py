@@ -1,12 +1,20 @@
 #!/usr/bin/env python3
 """Cut a seamless loop from the 4x render, optional retro post, normalize, verify, encode.
-Usage: process.py --variant {sketch1,a,b}"""
+Usage: process.py --variant {sketch1,a,b} [--out DIR] [--title TITLE]"""
 import argparse, json, subprocess
 import numpy as np, soundfile as sf, pyloudnorm as pyln
 from scipy.signal import resample_poly, butter, lfilter
 
-ap = argparse.ArgumentParser(); ap.add_argument('--variant', default='a'); V = ap.parse_args().variant
-D = f'out/{V}'; base = f'{D}/foldcade_home_{V}'
+ap = argparse.ArgumentParser()
+ap.add_argument('--variant', default='a')
+ap.add_argument('--out')
+ap.add_argument('--title', default='Lanternlight')
+ap.add_argument('--composer', default='Foldcade project')
+ap.add_argument('--license', default='GPLv3')
+args = ap.parse_args()
+V = args.variant
+D = args.out or f'out/{V}'
+base = f'{D}/foldcade_home_{V}'
 SR = 48000
 L = 80 * SR
 raw, sr = sf.read(f'{D}/raw_4x.wav', dtype='float64')
@@ -69,8 +77,13 @@ for k, v in res.items():
 sf.write(f'{base}_loop.wav', loop.astype(np.float32), SR, subtype='FLOAT')
 sf.write(f'{base}_loop_x2.wav', two.astype(np.float32), SR, subtype='FLOAT')
 def run(*a): subprocess.run(a, check=True, capture_output=True)
-meta = ['-metadata', f'title=Foldcade Home (variant {V})',
-        '-metadata', 'comment=Rendered with MuseScore General 0.2 (MIT). Loop: whole file 0-80 s.']
+meta = [
+    '-metadata', f'title={args.title}',
+    '-metadata', f'artist={args.composer}',
+    '-metadata',
+    f'comment=Composition by {args.composer}. Licensed under {args.license} with the Foldcade repository. '
+    'Rendered with MuseScore General 0.2 (MIT). Loop: whole file 0-80 s.',
+]
 run('ffmpeg', '-y', '-i', f'{base}_loop.wav', '-c:a', 'libvorbis', '-q:a', '5', *meta, f'{base}_loop.ogg')
 run('ffmpeg', '-y', '-i', f'{base}_loop.wav', '-c:a', 'libmp3lame', '-b:a', '192k', *meta, f'{base}_loop.mp3')
 run('ffmpeg', '-y', '-i', f'{base}_loop_x2.wav', '-c:a', 'libmp3lame', '-b:a', '192k', *meta, f'{base}_loop_x2_preview.mp3')

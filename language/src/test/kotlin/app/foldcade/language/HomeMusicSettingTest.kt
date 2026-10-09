@@ -11,18 +11,23 @@ class HomeMusicSettingTest {
         val music = HomeMusicSetting()
         assertTrue(music.enabled)
         assertEquals(0.25f, music.volume, 0.0001f)
+        assertEquals(HomeMusicSetting.DEFAULT_TRACK_ID, music.trackId)
         assertEquals("Music  On", MusicCopy.musicLabel(true))
+        assertEquals("Track  Lanternlight", MusicCopy.trackLabel("Lanternlight"))
         assertEquals("Volume  25%", MusicCopy.volumeLabel(0.25f))
     }
 
     @Test
     fun leftPanelKeepsMusicBesideTheOtherSettings() {
         assertEquals(
-            listOf(Row.Library, Row.Theme, Row.Primary, Row.Arrange, Row.Music, Row.MusicVolume, Row.SetAsHome),
+            listOf(
+                Row.Library, Row.Theme, Row.Primary, Row.Arrange,
+                Row.Music, Row.MusicTrack, Row.MusicVolume, Row.SetAsHome,
+            ),
             leftRows(homeRoleHeld = false),
         )
         assertEquals(
-            listOf(Row.Library, Row.Theme, Row.Primary, Row.Arrange, Row.Music, Row.MusicVolume),
+            listOf(Row.Library, Row.Theme, Row.Primary, Row.Arrange, Row.Music, Row.MusicTrack, Row.MusicVolume),
             leftRows(homeRoleHeld = true),
         )
     }
@@ -36,7 +41,11 @@ class HomeMusicSettingTest {
         assertEquals(4, toggled.panel?.index)
         val again = reduce(toggled, Meaning.Activate).first
         assertTrue(again.music.enabled)
-        val volume = opened.panel!!.copy(index = 5)
+        val named = opened.panel!!.copy(index = 5)
+        val stayed = reduce(opened.copy(panel = named, trackTitle = "Lanternlight"), Meaning.Activate).first
+        assertEquals(HomeMusicSetting.DEFAULT_TRACK_ID, stayed.music.trackId)
+        assertEquals("Track  Lanternlight", MusicCopy.trackLabel(stayed.trackTitle))
+        val volume = opened.panel!!.copy(index = 6)
         val stepped = reduce(opened.copy(panel = volume), Meaning.Activate).first
         assertEquals(0.30f, stepped.music.volume, 0.0001f)
         val wrapped = HomeMusicSetting(volume = 1f).stepped()
@@ -61,5 +70,18 @@ class HomeMusicSettingTest {
         assertEquals(DEFAULT_BACKGROUND_MUSIC, backgroundMusicFromThemeJson("""{"backgroundMusic":""}"""))
         assertEquals(DEFAULT_BACKGROUND_MUSIC, backgroundMusicFromThemeJson("""{"backgroundMusic":"../secret.ogg"}"""))
         assertEquals("music/loop.ogg", backgroundMusicFromThemeJson("""{"backgroundMusic":"music/loop.ogg"}"""))
+    }
+
+    @Test
+    fun manifestSelectsLanternlightById() {
+        val json = """
+            {"tracks":[{"id":"lanternlight","title":"Lanternlight","composer":"Foldcade project","license":"GPLv3","file":"music/lanternlight.ogg"}]}
+        """.trimIndent()
+        val tracks = musicTracksFromManifest(json)
+        assertEquals(1, tracks.size)
+        assertEquals("Lanternlight", musicTrack(tracks, "lanternlight")?.title)
+        assertEquals("music/lanternlight.ogg", musicTrack(tracks, "missing")?.file)
+        assertEquals("Foldcade project", tracks.single().composer)
+        assertTrue(musicTracksFromManifest("""{"tracks":[{"id":"x","title":"X","composer":"C","license":"GPLv3","file":"../no.ogg"}]}""").isEmpty())
     }
 }

@@ -170,18 +170,19 @@ dependencies {
 // package the loop. The signed release workflow calls assembleRelease when it lands.
 val renderHomeMusic = tasks.register<RenderHomeMusicTask>("renderHomeMusic") {
     group = "build"
-    description = "Render variant A home music into foldcade_home_loop.ogg."
+    description = "Render every track in music/tracks/manifest.json."
     script.set(rootProject.layout.projectDirectory.file("music/gradle-render.sh"))
     sources.from(
         rootProject.files(
-            "music/compose.py",
             "music/process.py",
             "music/render.sh",
             "music/check_render.py",
             "music/requirements.txt",
             "music/gradle-render.sh",
+            "music/tracks/manifest.json",
         ),
     )
+    sources.from(rootProject.fileTree("music/tracks") { include("**/compose.py") })
     assetsDir.set(layout.buildDirectory.dir("generated/homeMusicAssets"))
     previewDir.set(layout.buildDirectory.dir("home-music-preview"))
 }

@@ -1,26 +1,20 @@
-# Foldcade Home – ambient loop (sketch 1)
+# Foldcade home music
 
-Original composition. Sources: `compose.py` (writes `out/foldcade_home_loop.mid`), `render.sh`, `process.py`.
-Rebuild: `./render.sh` (needs fluidsynth, ffmpeg, python venv with mido numpy scipy soundfile pyloudnorm).
+Tracks live in `tracks/<id>/` with their own `compose.py`. `tracks/manifest.json` lists each track's id, title, composer, license, and packaged file. The setting stores the track id and defaults to `lanternlight`. There is no picker in the app yet. L1 shows the current title.
 
-SoundFont: MuseScore_General.sf3 v0.2 (VERSION file 0.2.0, 13 May 2020), sha256
-5b85b6c2c61d10b2b91cddd41efcce7b25cd31c8271d511c73afafbef20b6fa3,
+The shipped track is **Lanternlight**, composed by the Foldcade project and licensed under GPLv3 with this repository, the same choice as the theme art.
+
+## Lanternlight
+
+`tracks/lanternlight/compose.py` is the original piece: D major, 72 bpm, 4/4, 24 bars, 80.000 s. CI renders variant `a` (gentle retro). `sketch1` and `b` stay in that file and are not rendered by CI.
+
+`./render.sh lanternlight` renders it. `music/gradle-render.sh` renders every id in the manifest, checks the result, and packages each `file` (Lanternlight is `music/lanternlight.ogg`).
+
+Do not commit the SoundFont, WAVs, or encoded audio. `tracks/lanternlight/checks.json` is the approved measurement. A fresh render writes `tracks/lanternlight/out/a/checks.json`, which is not committed.
+
+`theme.json` may still set an optional `backgroundMusic` path. Choosing a theme track, and picking among home tracks, is not in this change.
+
+SoundFont: MuseScore_General.sf3 v0.2, sha256
+`5b85b6c2c61d10b2b91cddd41efcce7b25cd31c8271d511c73afafbef20b6fa3`,
 from https://ftp.osuosl.org/pub/musescore/soundfont/MuseScore_General/ — MIT licensed.
-Rendered audio is a derivative work: MuseScore_General_License.md (acknowledgements, copyright
-notices and MIT permission notice) must be included in Foldcade's credits/licenses file.
-
-Loop: whole file, 0–80.000 s (3,840,000 samples @ 48 kHz). Seamless: cut from the 2nd copy of a 4x render.
-
-## Variants (Oct 8 2026)
-`./render.sh a` (gentle retro) / `./render.sh b` (more chiptune) / `./render.sh sketch1` (original arrangement).
-`compose.py --variant {sketch1,a,b}`; outputs land in `out/<variant>/`. Sketch 1's original files remain in `out/`.
-Variant b applies post-processing in process.py (10-bit crush at 12% wet, 2nd-order 9.5 kHz low-pass) to the
-continuous 4x render before cutting, so the seam stays continuous.
-
-## What Foldcade ships
-
-The home loop is variant A. `./render.sh` defaults to `a`, and CI renders only A. The packaged asset name is `foldcade_home_loop.ogg` (copied from `out/a/foldcade_home_a_loop.ogg`). Do not commit the SoundFont, WAVs, or encoded audio.
-
-The composition is original to Foldcade. It is licensed under GPLv3 with this repository, the same choice as the theme art.
-
-`theme.json` may set an optional string `backgroundMusic` to a track inside that theme. When the field is absent, Foldcade plays `foldcade_home_loop.ogg`.
+The acknowledgements are in `MuseScore_General_License.md`.
