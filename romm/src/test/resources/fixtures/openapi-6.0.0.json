@@ -1,0 +1,7 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "RomM API",
+    "version": "6.0.0"
+  }
+}

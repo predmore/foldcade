@@ -1,0 +1,8 @@
+{
+  "device_code": "dc_test",
+  "user_code": "WDJB-MJHT",
+  "verification_path": "/pair/device",
+  "verification_path_complete": "/pair/device?user_code=WDJB-MJHT",
+  "expires_in": 600,
+  "interval": 5
+}

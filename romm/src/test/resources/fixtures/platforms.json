@@ -1,0 +1,12 @@
+[
+  {
+    "id": 3,
+    "slug": "3ds",
+    "fs_slug": "3ds",
+    "rom_count": 2,
+    "name": "Nintendo 3DS",
+    "display_name": "Nintendo 3DS",
+    "abbreviation": "3DS",
+    "alternative_names": ["3ds"]
+  }
+]

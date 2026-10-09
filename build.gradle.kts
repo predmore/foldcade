@@ -6,12 +6,13 @@ plugins {
 }
 
 // Fast loop from the v1 scope. Android modules expose testDebugUnitTest.
-// JVM modules (:api, :plugins:local-folder) expose test. One command runs both.
+// JVM modules expose test. One command runs all of them.
 tasks.register("testDebugUnitTest") {
     group = "verification"
     description = "Unit tests only. Does not assemble, install, or boot an emulator."
     dependsOn(
         ":api:test",
+        ":romm:test",
         ":language:testDebugUnitTest",
         ":app:testDebugUnitTest",
         ":plugins:local-folder:test",

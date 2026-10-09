@@ -6,6 +6,8 @@ activity = "1.13.0"
 core = "1.19.0"
 junit = "4.13.2"
 coroutines = "1.11.0"
+kotlinxSerialization = "1.9.0"
+okhttp = "4.12.0"
 
 [libraries]
 compose-bom = { group = "androidx.compose", name = "compose-bom", version.ref = "composeBom" }
@@ -16,6 +18,8 @@ activity-compose = { group = "androidx.activity", name = "activity-compose", ver
 androidx-core = { group = "androidx.core", name = "core-ktx", version.ref = "core" }
 junit = { group = "junit", name = "junit", version.ref = "junit" }
 coroutines-core = { group = "org.jetbrains.kotlinx", name = "kotlinx-coroutines-core", version.ref = "coroutines" }
+kotlinx-serialization-json = { group = "org.jetbrains.kotlinx", name = "kotlinx-serialization-json", version.ref = "kotlinxSerialization" }
+okhttp = { group = "com.squareup.okhttp3", name = "okhttp", version.ref = "okhttp" }
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }

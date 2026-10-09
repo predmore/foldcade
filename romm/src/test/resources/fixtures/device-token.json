@@ -1,0 +1,6 @@
+{
+  "access_token": "rmm_issued",
+  "device_id": "3f1c2b9e-8a4d-4c7e-9f21-6d0b5a7e1c34",
+  "scopes": ["roms.read", "platforms.read"],
+  "expires_at": null
+}
