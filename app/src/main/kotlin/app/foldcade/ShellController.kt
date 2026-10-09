@@ -154,12 +154,14 @@ class ShellController(
         publish(
             model.copy(
                 homeGrid = grid,
+                libraryGrid = false,
                 panel = null,
                 arranging = false,
                 hold = null,
                 order = emptyList(),
                 focus = GridFocus(),
                 connectOpen = false,
+                dialog = null,
             ),
         )
     }
@@ -429,7 +431,6 @@ class ShellController(
     }
 
     fun showNoLibrary() {
-        Log.i("Foldcade", "library-ui no-library")
         activeLibraryId = null
         platformEntries = emptyList()
         platformOrder = emptyList()
@@ -469,7 +470,6 @@ class ShellController(
     }
 
     fun showPlatforms(libraryId: String, cells: List<GridEntry>) {
-        if (cells.isNotEmpty()) Log.i("Foldcade", "library-ui platforms")
         activeLibraryId = libraryId
         platformEntries = cells
         platformFocus = GridFocus()
@@ -491,7 +491,6 @@ class ShellController(
     }
 
     fun showGames(cells: List<GridEntry>) {
-        if (cells.isNotEmpty()) Log.i("Foldcade", "library-ui games")
         val empty = cells.isEmpty()
         show(
             cells = cells,
@@ -564,8 +563,19 @@ class ShellController(
                 hold = null,
                 showLaunchTarget = visible,
                 libraryGrid = true,
+                homeGrid = HomeGrid.StandIns,
+                dialog = null,
+                panel = null,
+                connectOpen = false,
             ),
         )
+        val phrase = when {
+            kind == GridKind.NoLibrary -> "library-ui no-library"
+            kind == GridKind.Platforms && count > 0 -> "library-ui platforms"
+            kind == GridKind.Games && count > 0 -> "library-ui games"
+            else -> null
+        }
+        if (phrase != null) Log.i("Foldcade", phrase)
     }
 
     private fun displaySource(snapshot: PickerModel): Int {
@@ -638,8 +648,7 @@ class ShellController(
         if (next.motionSpeed != model.motionSpeed) {
             store.setMotionSpeed(next.motionSpeed)
         }
-        val leavingLibrary = next.homeGrid != model.homeGrid
-        model = if (next.libraryGrid && !leavingLibrary) {
+        model = if (next.libraryGrid) {
             val entry = libraryEntry(next)
             val onGrid = next.gridKind == GridKind.Games || next.gridKind == GridKind.Platforms
             val visible = onGrid &&

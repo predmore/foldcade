@@ -1051,6 +1051,9 @@ PY
 }
 
 echo "step: empty library"
+# The shelf launch path may still be showing a missing-player dialog.
+key_bottom KEYCODE_BACK || true
+sleep 1
 timeout 30 adb shell am start -W -n "$component" \
   --es app.foldcade.extra.FOLDER_LIBRARY 1 \
   --display 0
@@ -1059,6 +1062,7 @@ show_foldcade
 dismiss_leftover_dialog
 expect_foldcade
 wait_library_log "library-ui no-library" || fail "empty library: No library yet was not shown"
+key_bottom KEYCODE_BACK || true
 sleep 1
 resolve_screencap_ids
 capture "$primary" "$out/empty-top.png"
