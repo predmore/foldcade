@@ -159,6 +159,75 @@ class PlayLogTest {
     }
 
     @Test
+    fun wallClockJumpDoesNotChangeActiveTime() {
+        var wall = 1_000L
+        var elapsed = 10_000L
+        val log = PlayLog(splitClock({ wall }, { elapsed }), MemoryPlaySink()) { "session-1" }
+        val id = log.start("one")
+        wall = 5_000_000L
+        elapsed = 12_000L
+        log.signal(id, PlaySignal.End)
+        assertEquals(2_000L, log.totals("one").activeMillis)
+        assertEquals(5_000_000L, log.totals("one").lastPlayedMillis)
+    }
+
+    @Test
+    fun elapsedGoingBackwardAddsNoActiveTime() {
+        var wall = 1_000L
+        var elapsed = 50_000L
+        val log = PlayLog(splitClock({ wall }, { elapsed }), MemoryPlaySink()) { "session-1" }
+        val id = log.start("one")
+        wall = 4_000L
+        elapsed = 1_000L
+        log.signal(id, PlaySignal.Background)
+        assertEquals(0L, log.totals("one").activeMillis)
+        log.signal(id, PlaySignal.Resume)
+        wall = 9_000L
+        elapsed = 4_000L
+        log.signal(id, PlaySignal.End)
+        assertEquals(3_000L, log.totals("one").activeMillis)
+        assertTrue(log.totals("one").activeMillis >= 0L)
+    }
+
+    @Test
+    fun reloadCreditsTimeUpToTheLastCheckpoint() {
+        val file = tempLog()
+        var wall = 1_000L
+        var elapsed = 0L
+        val clock = splitClock({ wall }, { elapsed })
+        val first = PlayLog(clock, FilePlayLog(file)) { "session-1" }
+        val id = first.start("one")
+        wall = 31_000L
+        elapsed = 30_000L
+        first.checkpoint(id)
+        assertEquals(listOf(PlayKind.Started), first.events().map { it.kind })
+        wall = 120_000L
+        elapsed = 90_000L
+        val second = PlayLog(clock, FilePlayLog(file)) { "session-2" }
+        assertEquals(30_000L, second.totals("one").activeMillis)
+        assertEquals(31_000L, second.totals("one").lastPlayedMillis)
+        assertEquals(listOf(PlayKind.Started, PlayKind.Ended), second.events().map { it.kind })
+        assertEquals(30_000L, second.events().last().activeMillis)
+    }
+
+    @Test
+    fun checkpointWhileAwayDoesNotIncreaseActiveTime() {
+        var wall = 0L
+        var elapsed = 0L
+        val log = PlayLog(splitClock({ wall }, { elapsed }), MemoryPlaySink()) { "session-1" }
+        val id = log.start("one")
+        wall = 1_000L
+        elapsed = 1_000L
+        log.signal(id, PlaySignal.Background)
+        wall = 9_000L
+        elapsed = 9_000L
+        log.checkpoint(id)
+        log.signal(id, PlaySignal.End)
+        assertEquals(1_000L, log.totals("one").activeMillis)
+        assertEquals(1, log.events().count { it.kind == PlayKind.Backgrounded })
+    }
+
+    @Test
     fun recentlyPlayedPutsTheLatestFirst() {
         val order = recentlyPlayedIndices(listOf("a", "b", "c", "d")) { id ->
             when (id) {
@@ -172,6 +241,11 @@ class PlayLogTest {
 
     private fun memoryLog(): PlayLog = PlayLog(PlayClock { now }, MemoryPlaySink()) { "session-${nextId++}" }
 
+    private fun splitClock(wall: () -> Long, elapsed: () -> Long): PlayClock = object : PlayClock {
+        override fun wallNow(): Long = wall()
+        override fun elapsedNow(): Long = elapsed()
+    }
+
     private fun tempLog() = Files.createTempDirectory("play-log").resolve("events.log").toFile()
 }
 
@@ -183,4 +257,16 @@ private class MemoryPlaySink : PlaySink {
     }
 
     override fun read(): List<PlayEvent> = rows.toList()
+
+    private var checkpoint: PlayCheckpoint? = null
+
+    override fun writeCheckpoint(checkpoint: PlayCheckpoint) {
+        this.checkpoint = checkpoint
+    }
+
+    override fun readCheckpoint(): PlayCheckpoint? = checkpoint
+
+    override fun clearCheckpoint(sessionId: String) {
+        if (checkpoint?.sessionId == sessionId) checkpoint = null
+    }
 }

@@ -56,15 +56,48 @@ data class PlayTotals(
     val lastPlayedMillis: Long?,
 )
 
-fun interface PlayClock {
-    fun now(): Long
+/**
+ * [wallNow] stamps start and last played. [elapsedNow] measures active time.
+ * The app uses the wall clock for those stamps and elapsedRealtime for the deltas.
+ */
+interface PlayClock {
+    fun wallNow(): Long
+
+    fun elapsedNow(): Long
+
+    companion object {
+        /** One clock for both, so a test can advance them together. */
+        operator fun invoke(now: () -> Long): PlayClock = object : PlayClock {
+            override fun wallNow(): Long = now()
+            override fun elapsedNow(): Long = now()
+        }
+    }
 }
+
+/**
+ * Latest foreground sample for one open session.
+ * Not a [PlayEvent]. Recovery uses it once, then drops it.
+ */
+data class PlayCheckpoint(
+    val sessionId: String,
+    val activeMillis: Long,
+    val atMillis: Long,
+)
+
+/** How often a foreground game asks the log to [PlayLog.checkpoint]. */
+const val PLAY_CHECKPOINT_INTERVAL_MS = 60_000L
 
 /** Durable history of [PlayEvent]. The log replays [read] on startup. */
 interface PlaySink {
     fun append(event: PlayEvent)
 
     fun read(): List<PlayEvent>
+
+    fun writeCheckpoint(checkpoint: PlayCheckpoint)
+
+    fun readCheckpoint(): PlayCheckpoint?
+
+    fun clearCheckpoint(sessionId: String)
 }
 
 /**
@@ -73,8 +106,12 @@ interface PlaySink {
  * [start] opens a session and returns its id. [signal] records background, sleep,
  * resume, and end for that id. Another launch of the same game is a second
  * session. A second leave while that session is already away does not add time
- * and does not emit another event. A process that died mid-session is closed
- * at the last stored event, so the gap is not counted.
+ * and does not emit another event. Active time is an [PlayClock.elapsedNow]
+ * delta, so a wall-clock change does not add or remove it. A negative delta
+ * counts as zero. A process that died mid-session is closed at the last stored
+ * event, plus a [checkpoint] if one was written while that session was in the
+ * foreground. Time after that checkpoint is not invented. A checkpoint is not
+ * a [PlayEvent].
  */
 class PlayLog(
     private val clock: PlayClock,
@@ -93,9 +130,12 @@ class PlayLog(
         synchronized(lock) {
             prior.forEach { apply(it) }
             history.addAll(prior)
+            val checkpoint = sink.readCheckpoint()
             for (session in open.values.toList()) {
-                commitLocked(session.ended(session.lastAt, addForeground = false))
+                session.credit(checkpoint)
+                commitLocked(session.ended(session.lastAt, elapsed = clock.elapsedNow(), addForeground = false))
             }
+            if (checkpoint != null) sink.clearCheckpoint(checkpoint.sessionId)
         }
     }
 
@@ -110,9 +150,9 @@ class PlayLog(
     fun events(): List<PlayEvent> = synchronized(lock) { history.toList() }
 
     fun totals(gameId: String): PlayTotals = synchronized(lock) {
-        val now = clock.now()
+        val elapsed = clock.elapsedNow()
         val running = open.values.sumOf { session ->
-            if (session.gameId == gameId) session.currentActive(now) else 0L
+            if (session.gameId == gameId) session.currentActive(elapsed) else 0L
         }
         PlayTotals(gameId, (completedActive[gameId] ?: 0L) + running, lastAt[gameId])
     }
@@ -129,7 +169,7 @@ class PlayLog(
                 sessionId = id,
                 gameId = gameId,
                 kind = PlayKind.Started,
-                atMillis = clock.now(),
+                atMillis = clock.wallNow(),
                 away = null,
                 activeMillis = 0L,
             )
@@ -144,17 +184,35 @@ class PlayLog(
     fun signal(sessionId: String, signal: PlaySignal) {
         val emitted = synchronized(lock) {
             val session = open[sessionId] ?: return@synchronized emptyList()
-            val now = clock.now()
+            val wall = clock.wallNow()
+            val elapsed = clock.elapsedNow()
             val event = when (signal) {
-                PlaySignal.Background -> session.leave(now, PlayAway.Background)
-                PlaySignal.Sleep -> session.leave(now, PlayAway.Sleep)
-                PlaySignal.Resume -> session.resume(now)
-                PlaySignal.End -> session.ended(now, addForeground = true)
+                PlaySignal.Background -> session.leave(wall, elapsed, PlayAway.Background)
+                PlaySignal.Sleep -> session.leave(wall, elapsed, PlayAway.Sleep)
+                PlaySignal.Resume -> session.resume(wall, elapsed)
+                PlaySignal.End -> session.ended(wall, elapsed, addForeground = true)
             } ?: return@synchronized emptyList()
             commitLocked(event)
+            if (event.kind == PlayKind.Backgrounded || event.kind == PlayKind.Ended) {
+                sink.clearCheckpoint(sessionId)
+            }
             listOf(event)
         }
         dispatch(emitted)
+    }
+
+    /**
+     * Stores the active time of a foreground session without emitting an event.
+     * The running game does this on a [PLAY_CHECKPOINT_INTERVAL_MS] cadence and
+     * when the screen turns off. An away session is left unchanged.
+     */
+    fun checkpoint(sessionId: String) {
+        synchronized(lock) {
+            val session = open[sessionId] ?: return
+            val since = session.foregroundSince ?: return
+            val active = session.activeMillis + (clock.elapsedNow() - since).coerceAtLeast(0L)
+            sink.writeCheckpoint(PlayCheckpoint(sessionId, active, clock.wallNow()))
+        }
     }
 
     private fun commitLocked(event: PlayEvent) {
@@ -171,7 +229,7 @@ class PlayLog(
                 sessionId = event.sessionId,
                 gameId = event.gameId,
                 activeMillis = event.activeMillis,
-                foregroundSince = event.atMillis,
+                foregroundSince = clock.elapsedNow(),
                 away = null,
                 lastAt = event.atMillis,
             )
@@ -183,7 +241,7 @@ class PlayLog(
             }
             PlayKind.Resumed -> open[event.sessionId]?.apply {
                 activeMillis = event.activeMillis
-                foregroundSince = event.atMillis
+                foregroundSince = clock.elapsedNow()
                 away = null
                 lastAt = event.atMillis
             }
@@ -225,28 +283,34 @@ private class OpenPlay(
         return activeMillis + (now - since).coerceAtLeast(0L)
     }
 
-    fun leave(now: Long, reason: PlayAway): PlayEvent? {
+    fun credit(checkpoint: PlayCheckpoint?) {
+        if (checkpoint == null || checkpoint.sessionId != sessionId || foregroundSince == null) return
+        if (checkpoint.activeMillis > activeMillis) activeMillis = checkpoint.activeMillis
+        if (checkpoint.atMillis > lastAt) lastAt = checkpoint.atMillis
+    }
+
+    fun leave(wall: Long, elapsed: Long, reason: PlayAway): PlayEvent? {
         val since = foregroundSince ?: return null
-        activeMillis += (now - since).coerceAtLeast(0L)
+        activeMillis += (elapsed - since).coerceAtLeast(0L)
         foregroundSince = null
         away = reason
-        lastAt = now
-        return PlayEvent(sessionId, gameId, PlayKind.Backgrounded, now, reason, activeMillis)
+        lastAt = wall
+        return PlayEvent(sessionId, gameId, PlayKind.Backgrounded, wall, reason, activeMillis)
     }
 
-    fun resume(now: Long): PlayEvent? {
+    fun resume(wall: Long, elapsed: Long): PlayEvent? {
         if (foregroundSince != null) return null
-        foregroundSince = now
+        foregroundSince = elapsed
         away = null
-        lastAt = now
-        return PlayEvent(sessionId, gameId, PlayKind.Resumed, now, null, activeMillis)
+        lastAt = wall
+        return PlayEvent(sessionId, gameId, PlayKind.Resumed, wall, null, activeMillis)
     }
 
-    fun ended(now: Long, addForeground: Boolean): PlayEvent {
+    fun ended(wall: Long, elapsed: Long, addForeground: Boolean): PlayEvent {
         if (addForeground && foregroundSince != null) {
-            val since = foregroundSince ?: now
-            activeMillis += (now - since).coerceAtLeast(0L)
-            lastAt = now
+            val since = foregroundSince ?: elapsed
+            activeMillis += (elapsed - since).coerceAtLeast(0L)
+            lastAt = wall
         }
         foregroundSince = null
         away = null

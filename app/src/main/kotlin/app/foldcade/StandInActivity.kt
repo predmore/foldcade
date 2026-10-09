@@ -5,8 +5,11 @@ import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
 import android.os.PowerManager
 import android.view.KeyEvent
+import app.foldcade.host.play.PLAY_CHECKPOINT_INTERVAL_MS
 import app.foldcade.host.play.PlaySignal
 import android.view.WindowInsets
 import android.view.WindowInsetsController
@@ -36,6 +39,11 @@ class StandInActivity : ComponentActivity() {
     private var lastKey by mutableStateOf<Int?>(null)
     private var placedOn: Panel? = null
     private var screenOff: BroadcastReceiver? = null
+    private val checkpointHandler = Handler(Looper.getMainLooper())
+    private val checkpointTick: Runnable = Runnable {
+        playId()?.let { (application as FoldcadeApp).plays.checkpoint(it) }
+        checkpointHandler.postDelayed(checkpointTick, PLAY_CHECKPOINT_INTERVAL_MS)
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -79,9 +87,12 @@ class StandInActivity : ComponentActivity() {
         }
         watchScreenOff()
         playId()?.let { app.plays.signal(it, PlaySignal.Resume) }
+        checkpointHandler.removeCallbacks(checkpointTick)
+        checkpointHandler.postDelayed(checkpointTick, PLAY_CHECKPOINT_INTERVAL_MS)
     }
 
     override fun onPause() {
+        checkpointHandler.removeCallbacks(checkpointTick)
         stopWatchingScreenOff()
         playId()?.let { id ->
             val interactive = getSystemService(PowerManager::class.java)?.isInteractive ?: true
@@ -108,7 +119,11 @@ class StandInActivity : ComponentActivity() {
         val receiver = object : BroadcastReceiver() {
             override fun onReceive(context: Context?, intent: Intent?) {
                 if (intent?.action != Intent.ACTION_SCREEN_OFF) return
-                playId()?.let { (application as FoldcadeApp).plays.signal(it, PlaySignal.Sleep) }
+                playId()?.let { id ->
+                    val plays = (application as FoldcadeApp).plays
+                    plays.checkpoint(id)
+                    plays.signal(id, PlaySignal.Sleep)
+                }
             }
         }
         screenOff = receiver

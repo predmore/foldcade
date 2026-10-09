@@ -1,5 +1,6 @@
 package app.foldcade
 
+import android.os.SystemClock
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.setValue
@@ -43,6 +44,11 @@ class PlaySessions private constructor(
         if (log.events().size != before) changed()
     }
 
+    /** Foreground sample for crash recovery. It does not emit a session event. */
+    fun checkpoint(sessionId: String) {
+        log.checkpoint(sessionId)
+    }
+
     fun totals(gameId: String): PlayTotals = log.totals(gameId)
 
     fun lastPlayedMillis(gameId: String): Long? = log.totals(gameId).lastPlayedMillis
@@ -57,7 +63,13 @@ class PlaySessions private constructor(
     }
 
     companion object {
-        fun open(file: File, clock: PlayClock = PlayClock { System.currentTimeMillis() }): PlaySessions =
+        fun open(file: File, clock: PlayClock = WallAndElapsedClock): PlaySessions =
             PlaySessions(PlayLog(clock, FilePlayLog(file)))
     }
+}
+
+private object WallAndElapsedClock : PlayClock {
+    override fun wallNow(): Long = System.currentTimeMillis()
+
+    override fun elapsedNow(): Long = SystemClock.elapsedRealtime()
 }
