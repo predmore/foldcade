@@ -35,14 +35,30 @@ import kotlinx.coroutines.sync.withLock
  * coroutine. This type does not read a filesystem path.
  */
 class LocalFolderBackend(
-    private val root: FolderEntry,
-    private val childrenOf: (FolderEntry) -> List<FolderEntry>,
+    root: FolderEntry? = null,
+    childrenOf: ((FolderEntry) -> List<FolderEntry>)? = null,
 ) : LibraryBackend {
     override val id: String = ID
     override val displayName: String = DISPLAY_NAME
 
     @Volatile
+    private var treeRoot: FolderEntry? = root
+
+    @Volatile
+    private var listChildren: ((FolderEntry) -> List<FolderEntry>)? = childrenOf
+
+    @Volatile
     private var cached: FolderScan? = null
+
+    /**
+     * Document tree to scan. Call this before [connect].
+     * Replaces any tree already set and drops the cached scan.
+     */
+    fun bindTree(root: FolderEntry, childrenOf: (FolderEntry) -> List<FolderEntry>) {
+        treeRoot = root
+        listChildren = childrenOf
+        cached = null
+    }
 
     private val gate = Mutex()
     private val remembered = HashMap<String, Map<String, RememberedSave>>()
@@ -117,6 +133,8 @@ class LocalFolderBackend(
     private suspend fun performScan(): FolderScan {
         coroutineContext.ensureActive()
         val context = coroutineContext
+        val root = treeRoot ?: throw PluginException.Unavailable("Choose a folder.")
+        val childrenOf = listChildren ?: throw PluginException.Unavailable("Choose a folder.")
         val scan = scanFolderTree(
             root = root,
             isCancelled = { !context.isActive },
