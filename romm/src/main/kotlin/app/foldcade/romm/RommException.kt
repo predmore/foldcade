@@ -18,6 +18,15 @@ class RommProtocolUnreadable(reason: String) : RommException(
 
 class RommUnavailable(message: String, cause: Throwable? = null) : RommException(message, cause)
 
+/** Result of one authenticated setup check. [StayOnForm] leaves the connect screen open. */
+sealed class RommSignInResult {
+    abstract val hint: String?
+
+    data class Accepted(override val hint: String?) : RommSignInResult()
+
+    data class StayOnForm(override val hint: String?) : RommSignInResult()
+}
+
 class RommHttpException(val status: Int, val detail: String) : RommException(
     if (detail.isBlank()) "RomM returned HTTP $status" else "RomM returned HTTP $status: $detail",
 )

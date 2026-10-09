@@ -523,6 +523,22 @@ class PluginHostTest {
         assertEquals("rmm_a", (found.credential as Credential.ApiToken).value)
         assertFalse(found.credential.toString().contains("rmm_a"))
     }
+
+    @Test
+    fun aThirdPartyEntryCannotClaimReservedRommIds() {
+        val host = PluginHost(Dispatchers.Unconfined)
+        val intruder = object : PluginEntry {
+            override val apiVersion = PLUGIN_API_VERSION
+            override val apiMinor = PLUGIN_API_MINOR
+            override val libraries: List<LibraryBackend> = listOf(LibraryFake("romm"))
+            override val metadataProviders: List<MetadataProvider> = listOf(MetadataFake("romm.metadata"))
+        }
+        val failure = runCatching { host.register(intruder) }.exceptionOrNull()
+        assertTrue(failure is IllegalStateException)
+        assertTrue(failure?.message?.contains("Reserved") == true)
+        assertNull(host.library("romm"))
+        assertNull(host.metadata("romm.metadata"))
+    }
 }
 
 class IsolatedGood : PluginEntry {

@@ -27,8 +27,8 @@ class CredentialRecoveryTest {
         blobs.put("romm", "access-token", StoredBlob("api-token", byteArrayOf(1, 2, 3)))
         blobs.put("other", "access-token", StoredBlob("api-token", byteArrayOf(4)))
         val missing = SealedCredentialStore(blobs, object : SecretBox {
-            override fun seal(plain: ByteArray): ByteArray = plain
-            override fun open(sealed: ByteArray): Opened = openSealed(null, sealed)
+            override fun seal(plain: ByteArray, aad: ByteArray): ByteArray = plain
+            override fun open(sealed: ByteArray, aad: ByteArray): Opened = openSealed(null, sealed, aad)
         })
         val lookup = lookupOrUnreadable(missing, "romm", "access-token")
         assertEquals(CredentialLookup.Unreadable, lookup)

@@ -26,8 +26,8 @@ class SealedCredentialStoreTest {
         assertFalse(String(sealed.bytes).contains("rmm_supersecret"))
 
         val gone = SealedCredentialStore(blobs, object : SecretBox {
-            override fun seal(plain: ByteArray): ByteArray = error("unused")
-            override fun open(sealed: ByteArray) = Opened.KeyGone
+            override fun seal(plain: ByteArray, aad: ByteArray): ByteArray = error("unused")
+            override fun open(sealed: ByteArray, aad: ByteArray) = Opened.KeyGone
         })
         assertEquals(CredentialLookup.Unreadable, gone.lookup("romm", "access-token"))
         assertTrue(blobs.pluginIds().isEmpty())
@@ -37,18 +37,36 @@ class SealedCredentialStoreTest {
     fun indexRoundTripKeepsPluginIdsApart() {
         val encoded = encodeIndex(
             listOf(
-                IndexRow("romm", "access-token", "api-token"),
+                IndexRow("romm.metadata", "access-token", "api-token"),
                 IndexRow("other/plugin", "line\nkey", "password"),
             ),
         )
         assertFalse(encoded.contains("rmm_supersecret"))
         assertEquals(
             listOf(
-                IndexRow("romm", "access-token", "api-token"),
+                IndexRow("romm.metadata", "access-token", "api-token"),
                 IndexRow("other/plugin", "line\nkey", "password"),
             ),
             decodeIndex(encoded),
         )
+    }
+
+    @Test
+    fun dottedIdsDoNotCollideAndSwappedAadFails() = runBlocking {
+        assertFalse(blobPreferenceName("a.b", "c") == blobPreferenceName("a", "b.c"))
+        assertFalse(
+            blobPreferenceName("romm.metadata", "access-token") ==
+                blobPreferenceName("romm", "metadata"),
+        )
+        val generator = KeyGenerator.getInstance("AES")
+        generator.init(256)
+        val box = AesGcmSecretBox(generator.generateKey())
+        val sealed = box.seal("rmm_secret".toByteArray(), credentialAad("a.b", "c", "api-token"))
+        assertTrue(box.open(sealed, credentialAad("a", "b.c", "api-token")) is Opened.BadBlob)
+        assertTrue(box.open(sealed, credentialAad("a.b", "c", "password")) is Opened.BadBlob)
+        val opened = box.open(sealed, credentialAad("a.b", "c", "api-token")) as Opened.Plain
+        assertEquals("rmm_secret", opened.bytes.toString(Charsets.UTF_8))
+        assertFalse(String(sealed).contains("rmm_secret"))
     }
 
     @Test
@@ -57,10 +75,23 @@ class SealedCredentialStoreTest {
         blobs.put("romm", "access-token", StoredBlob("api-token", byteArrayOf(1)))
         blobs.put("other", "access-token", StoredBlob("api-token", byteArrayOf(2)))
         val store = SealedCredentialStore(blobs, object : SecretBox {
-            override fun seal(plain: ByteArray): ByteArray = plain
-            override fun open(sealed: ByteArray): Opened = Opened.BadBlob
+            override fun seal(plain: ByteArray, aad: ByteArray): ByteArray = plain
+            override fun open(sealed: ByteArray, aad: ByteArray): Opened = Opened.BadBlob
         })
         assertEquals(CredentialLookup.Unreadable, store.lookup("romm", "access-token"))
         assertEquals(setOf("other"), blobs.pluginIds())
+    }
+
+    @Test
+    fun aTransientKeystoreErrorKeepsTheCiphertext() = runBlocking {
+        val blobs = MemoryBlobs()
+        blobs.put("romm", "access-token", StoredBlob("api-token", byteArrayOf(9)))
+        blobs.put("other", "access-token", StoredBlob("api-token", byteArrayOf(8)))
+        val store = SealedCredentialStore(blobs, object : SecretBox {
+            override fun seal(plain: ByteArray, aad: ByteArray): ByteArray = plain
+            override fun open(sealed: ByteArray, aad: ByteArray): Opened = Opened.Unavailable
+        })
+        assertEquals(CredentialLookup.Unreadable, store.lookup("romm", "access-token"))
+        assertEquals(setOf("romm", "other"), blobs.pluginIds())
     }
 }

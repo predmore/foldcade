@@ -9,7 +9,9 @@ import app.foldcade.plugins.romm.RommPlugins
 import java.nio.file.Files
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class RommTokenSourceTest {
@@ -29,6 +31,25 @@ class RommTokenSourceTest {
         assertNull(source.accessToken())
         val other = store.lookup("other", RommCredentials.ACCESS_TOKEN)
         assertEquals("other-secret", (other as CredentialLookup.Present).credential.secret())
+    }
+
+    @Test
+    fun tokenReadRefusesTheMainThreadWithoutTouchingTheStore() {
+        var lookedUp = false
+        val store = object : app.foldcade.api.plugin.CredentialStore {
+            override suspend fun put(pluginId: String, key: String, credential: Credential) = Unit
+            override suspend fun lookup(pluginId: String, key: String): CredentialLookup {
+                lookedUp = true
+                return CredentialLookup.Absent
+            }
+            override suspend fun forget(pluginId: String, key: String) = Unit
+            override suspend fun forgetPlugin(pluginId: String) = Unit
+            override suspend fun keys(pluginId: String): Set<String> = emptySet()
+            override suspend fun pluginIds(): Set<String> = emptySet()
+        }
+        val failure = runCatching { readRommToken(store, onMainThread = true) }.exceptionOrNull()
+        assertTrue(failure is IllegalStateException)
+        assertFalse(lookedUp)
     }
 
     @Test

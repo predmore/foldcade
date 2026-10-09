@@ -23,6 +23,7 @@ import app.foldcade.language.HostScreen
 import app.foldcade.language.PanelKeyActivity
 import app.foldcade.language.SignedInBackend
 import app.foldcade.romm.RommClient
+import app.foldcade.romm.RommSignInResult
 import app.foldcade.romm.normalizeSetupOrigin
 import java.time.Duration
 import kotlin.coroutines.cancellation.CancellationException
@@ -187,23 +188,23 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
     private fun saveRommToken() {
         val origin = normalizeSetupOrigin(foldcade.shell.model.connectOrigin)
         if (origin == null || foldcade.shell.connectToken.isBlank()) return
-        val token = foldcade.shell.consumeConnectToken().trim()
+        val token = foldcade.shell.connectToken.trim()
         if (token.isEmpty()) return
         foldcade.scope.launch {
-            val hint = try {
+            val result = try {
                 RommClient(
                     origin = origin,
-                    accessToken = { null },
+                    accessToken = { token },
                     connectTimeout = Duration.ofSeconds(4),
                     readTimeout = Duration.ofSeconds(4),
-                ).use { it.redirectHint() }
+                ).use { it.confirmSignIn() }
             } catch (cancelled: CancellationException) {
                 throw cancelled
             } catch (_: Exception) {
-                null
+                RommSignInResult.StayOnForm(null)
             }
-            foldcade.shell.showSetupHint(hint)
-            foldcade.editCredentials {
+            foldcade.shell.showSetupHint(result.hint)
+            if (result is RommSignInResult.Accepted) foldcade.editCredentials {
                 val saved = try {
                     foldcade.credentials.put(
                         RommCredentials.PLUGIN_ID,
@@ -221,6 +222,7 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
                     foldcade.store.setRommOrigin(origin)
                     foldcade.publishRomm()
                     foldcade.shell.setSignedIn(listOf(SignedInBackend(RommCredentials.PLUGIN_ID, "RomM")))
+                    if (foldcade.shell.connectToken.trim() == token) foldcade.shell.consumeConnectToken()
                 }
             }
         }

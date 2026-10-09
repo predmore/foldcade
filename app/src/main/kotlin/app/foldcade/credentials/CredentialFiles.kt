@@ -12,8 +12,6 @@ import app.foldcade.api.plugin.CredentialStore
 import app.foldcade.api.plugin.secret
 import java.util.Base64
 import kotlinx.coroutines.flow.first
-import java.net.URLDecoder
-import java.net.URLEncoder
 
 internal const val CREDENTIAL_STORE_NAME = "foldcade_credentials"
 
@@ -69,23 +67,55 @@ internal class MemoryBlobs : CredentialBlobs {
 
 internal data class IndexRow(val pluginId: String, val key: String, val kind: String)
 
+internal fun encodePart(text: String): String =
+    Base64.getUrlEncoder().withoutPadding().encodeToString(text.toByteArray(Charsets.UTF_8))
+
+internal fun decodePart(text: String): String =
+    String(Base64.getUrlDecoder().decode(text), Charsets.UTF_8)
+
+private fun decodePartOrNull(text: String): String? = try {
+    decodePart(text)
+} catch (_: IllegalArgumentException) {
+    null
+}
+
+/** Base64url of each part. `.` is the separator and cannot appear inside a part. */
 internal fun encodeIndex(rows: List<IndexRow>): String =
     rows.joinToString("\n") { row ->
-        listOf(row.pluginId, row.key, row.kind).joinToString("\u001f") { part ->
-            URLEncoder.encode(part, Charsets.UTF_8)
-        }
+        listOf(row.pluginId, row.key, row.kind).joinToString(".") { encodePart(it) }
     }
 
 internal fun decodeIndex(raw: String): List<IndexRow> =
     raw.lineSequence().filter { it.isNotBlank() }.mapNotNull { line ->
-        val parts = line.split('\u001f')
+        val parts = line.split('.')
         if (parts.size != 3) return@mapNotNull null
-        IndexRow(
-            pluginId = URLDecoder.decode(parts[0], Charsets.UTF_8),
-            key = URLDecoder.decode(parts[1], Charsets.UTF_8),
-            kind = URLDecoder.decode(parts[2], Charsets.UTF_8),
-        )
+        val pluginId = decodePartOrNull(parts[0]) ?: return@mapNotNull null
+        val key = decodePartOrNull(parts[1]) ?: return@mapNotNull null
+        val kind = decodePartOrNull(parts[2]) ?: return@mapNotNull null
+        IndexRow(pluginId, key, kind)
     }.toList()
+
+/** Preference name for one entry. Dotted ids do not collide: `a.b`/`c` is not `a`/`b.c`. */
+internal fun blobPreferenceName(pluginId: String, key: String): String =
+    "b." + encodePart(pluginId) + "." + encodePart(key)
+
+/** GCM additional data. A swapped plugin id, key, or type fails authentication. */
+internal fun credentialAad(pluginId: String, key: String, kind: String): ByteArray {
+    val parts = listOf(pluginId, key, kind).map { it.toByteArray(Charsets.UTF_8) }
+    val size = parts.sumOf { 4 + it.size }
+    val out = ByteArray(size)
+    var offset = 0
+    for (part in parts) {
+        out[offset] = (part.size ushr 24).toByte()
+        out[offset + 1] = (part.size ushr 16).toByte()
+        out[offset + 2] = (part.size ushr 8).toByte()
+        out[offset + 3] = part.size.toByte()
+        offset += 4
+        System.arraycopy(part, 0, out, offset, part.size)
+        offset += part.size
+    }
+    return out
+}
 
 internal class DataStoreBlobs(
     private val store: DataStore<Preferences>,
@@ -133,9 +163,7 @@ internal class DataStoreBlobs(
         store.edit { it.clear() }
     }
 
-    private fun blobKey(pluginId: String, key: String) = stringPreferencesKey(
-        "b." + URLEncoder.encode(pluginId, Charsets.UTF_8) + "." + URLEncoder.encode(key, Charsets.UTF_8),
-    )
+    private fun blobKey(pluginId: String, key: String) = stringPreferencesKey(blobPreferenceName(pluginId, key))
 
     private companion object {
         val INDEX = stringPreferencesKey("index")
@@ -155,13 +183,14 @@ internal class SealedCredentialStore(
         require(key.isNotBlank()) { "credential key is empty" }
         val plain = credential.secret()
         require(plain.isNotBlank()) { "credential is empty" }
-        val sealed = box.seal(plain.toByteArray(Charsets.UTF_8))
-        blobs.put(pluginId, key, StoredBlob(kindOf(credential), sealed))
+        val kind = kindOf(credential)
+        val sealed = box.seal(plain.toByteArray(Charsets.UTF_8), credentialAad(pluginId, key, kind))
+        blobs.put(pluginId, key, StoredBlob(kind, sealed))
     }
 
     override suspend fun lookup(pluginId: String, key: String): CredentialLookup {
         val blob = blobs.get(pluginId, key) ?: return CredentialLookup.Absent
-        return when (val opened = box.open(blob.bytes)) {
+        return when (val opened = box.open(blob.bytes, credentialAad(pluginId, key, blob.kind))) {
             is Opened.Plain -> {
                 val credential = credentialOf(blob.kind, opened.bytes.toString(Charsets.UTF_8))
                 if (credential == null) {
@@ -179,6 +208,7 @@ internal class SealedCredentialStore(
                 blobs.clear()
                 CredentialLookup.Unreadable
             }
+            Opened.Unavailable -> CredentialLookup.Unreadable
         }
     }
 

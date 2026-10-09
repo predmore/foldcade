@@ -663,6 +663,64 @@ class RommClientTest {
     }
 
     @Test
+    fun cleartextGuardRejectsAnotherHttpHostAndStillHintsHttps() {
+        assertTrue(httpCleartextAllowed("http://192.168.1.20:8080", "http://192.168.1.20:8080/api/heartbeat"))
+        assertTrue(httpCleartextAllowed("http://192.168.1.20", "http://192.168.1.20:80/api/heartbeat"))
+        assertFalse(httpCleartextAllowed("http://192.168.1.20:8080", "http://evil.example/api/heartbeat"))
+        assertFalse(httpCleartextAllowed("http://192.168.1.20:8080", "http://192.168.1.20:9090/api/heartbeat"))
+        assertTrue(httpCleartextAllowed("http://192.168.1.20:8080", "https://192.168.1.20/api/heartbeat"))
+
+        server.route("GET", "/api/heartbeat") { exchange, _ ->
+            exchange.responseHeaders.add("Location", "http://127.0.0.1:9/api/heartbeat")
+            exchange.sendResponseHeaders(302, -1)
+            exchange.responseBody.close()
+        }
+        val rejected = runCatching { runClient { it.heartbeat() } }.exceptionOrNull()
+        assertTrue(rejected is RommUnavailable)
+        assertTrue(rejected?.message?.contains("Cleartext") == true)
+
+        server.route("GET", "/api/heartbeat") { exchange, _ ->
+            exchange.responseHeaders.add("Location", "https://romm.example/api/heartbeat")
+            exchange.sendResponseHeaders(301, -1)
+            exchange.responseBody.close()
+        }
+        runClient { client ->
+            assertEquals(TRY_HTTPS_HINT, client.redirectHint())
+        }
+    }
+
+    @Test
+    fun confirmSignInStaysOpenOn401OrUnreachable() {
+        server.route("GET", "/api/heartbeat") { exchange, _ ->
+            json(exchange, 200, fixture("heartbeat-5.4.0-alpha.2.json"))
+        }
+        server.route("GET", "/api/platforms") { exchange, _ ->
+            json(exchange, 401, """{"detail":"unauthorized"}""")
+        }
+        runClient(token = { "rmm_test" }) { client ->
+            val denied = client.confirmSignIn()
+            assertTrue(denied is RommSignInResult.StayOnForm)
+        }
+        val unreachable = runBlocking {
+            RommClient(
+                origin = "http://127.0.0.1:1",
+                accessToken = { "rmm_test" },
+                connectTimeout = Duration.ofMillis(400),
+                readTimeout = Duration.ofMillis(400),
+            ).use { it.confirmSignIn() }
+        }
+        assertTrue(unreachable is RommSignInResult.StayOnForm)
+
+        server.route("GET", "/api/platforms") { exchange, _ ->
+            json(exchange, 200, "[]")
+        }
+        runClient(token = { "rmm_test" }) { client ->
+            val accepted = client.confirmSignIn()
+            assertTrue(accepted is RommSignInResult.Accepted)
+        }
+    }
+
+    @Test
     fun logsAndToStringHideTheTokenAndHttpRedirectsHintHttps() {
         val logs = mutableListOf<String>()
         server.route("GET", "/api/platforms") { exchange, _ ->

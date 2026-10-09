@@ -16,8 +16,15 @@ import javax.crypto.spec.GCMParameterSpec
 
 internal sealed interface Opened {
     class Plain(val bytes: ByteArray) : Opened
+
+    /** The key is missing or permanently invalidated. The caller drops every blob. */
     data object KeyGone : Opened
+
+    /** This ciphertext does not open. The caller drops this entry only. */
     data object BadBlob : Opened
+
+    /** The keystore failed without proving the key is gone. The caller keeps the blob. */
+    data object Unavailable : Opened
 }
 
 /**
@@ -25,26 +32,28 @@ internal sealed interface Opened {
  * was invalidated. The caller drops the ciphertext and asks for sign-in.
  */
 internal interface SecretBox {
-    fun seal(plain: ByteArray): ByteArray
+    fun seal(plain: ByteArray, aad: ByteArray): ByteArray
 
-    fun open(sealed: ByteArray): Opened
+    fun open(sealed: ByteArray, aad: ByteArray): Opened
 }
 
 /**
  * A missing key is [Opened.KeyGone]. Callers drop the ciphertext and ask
  * for sign-in. This does not create a replacement key.
+ * [aad] is checked by GCM. A swapped plugin id, key, or type fails to decrypt.
  */
-internal fun openSealed(key: SecretKey?, sealed: ByteArray): Opened {
+internal fun openSealed(key: SecretKey?, sealed: ByteArray, aad: ByteArray): Opened {
     if (key == null) return Opened.KeyGone
-    return AesGcmSecretBox(key).open(sealed)
+    return AesGcmSecretBox(key).open(sealed, aad)
 }
 
 internal class AesGcmSecretBox(
     private val key: SecretKey,
 ) : SecretBox {
-    override fun seal(plain: ByteArray): ByteArray {
+    override fun seal(plain: ByteArray, aad: ByteArray): ByteArray {
         val cipher = Cipher.getInstance(TRANSFORMATION)
         cipher.init(Cipher.ENCRYPT_MODE, key)
+        cipher.updateAAD(aad)
         val iv = cipher.iv
         val body = cipher.doFinal(plain)
         val out = ByteArray(1 + iv.size + body.size)
@@ -54,7 +63,7 @@ internal class AesGcmSecretBox(
         return out
     }
 
-    override fun open(sealed: ByteArray): Opened {
+    override fun open(sealed: ByteArray, aad: ByteArray): Opened {
         if (sealed.isEmpty()) return Opened.BadBlob
         val ivLength = sealed[0].toInt() and 0xff
         if (ivLength == 0 || ivLength >= sealed.size) return Opened.BadBlob
@@ -63,6 +72,7 @@ internal class AesGcmSecretBox(
         return try {
             val cipher = Cipher.getInstance(TRANSFORMATION)
             cipher.init(Cipher.DECRYPT_MODE, key, GCMParameterSpec(128, iv))
+            cipher.updateAAD(aad)
             Opened.Plain(cipher.doFinal(body))
         } catch (_: AEADBadTagException) {
             Opened.BadBlob
@@ -85,21 +95,21 @@ internal class AesGcmSecretBox(
  * throwing, and the shell asks for sign-in.
  */
 internal class AndroidKeystoreBox : SecretBox {
-    override fun seal(plain: ByteArray): ByteArray = try {
-        AesGcmSecretBox(key()).seal(plain)
+    override fun seal(plain: ByteArray, aad: ByteArray): ByteArray = try {
+        AesGcmSecretBox(key()).seal(plain, aad)
     } catch (_: android.security.keystore.KeyPermanentlyInvalidatedException) {
         deleteKey()
-        AesGcmSecretBox(key()).seal(plain)
+        AesGcmSecretBox(key()).seal(plain, aad)
     } catch (_: UnrecoverableKeyException) {
         deleteKey()
-        AesGcmSecretBox(key()).seal(plain)
+        AesGcmSecretBox(key()).seal(plain, aad)
     } catch (e: GeneralSecurityException) {
         throw CredentialUnreadable("Sign in again", e)
     } catch (e: ProviderException) {
         throw CredentialUnreadable("Sign in again", e)
     }
 
-    override fun open(sealed: ByteArray): Opened {
+    override fun open(sealed: ByteArray, aad: ByteArray): Opened {
         val existing = try {
             peek()
         } catch (_: android.security.keystore.KeyPermanentlyInvalidatedException) {
@@ -109,12 +119,12 @@ internal class AndroidKeystoreBox : SecretBox {
             deleteKey()
             return Opened.KeyGone
         } catch (_: GeneralSecurityException) {
-            return Opened.KeyGone
+            return Opened.Unavailable
         } catch (_: ProviderException) {
-            return Opened.KeyGone
+            return Opened.Unavailable
         }
         return try {
-            openSealed(existing, sealed)
+            openSealed(existing, sealed, aad)
         } catch (_: android.security.keystore.KeyPermanentlyInvalidatedException) {
             deleteKey()
             Opened.KeyGone
@@ -122,9 +132,9 @@ internal class AndroidKeystoreBox : SecretBox {
             deleteKey()
             Opened.KeyGone
         } catch (_: GeneralSecurityException) {
-            Opened.KeyGone
+            Opened.Unavailable
         } catch (_: ProviderException) {
-            Opened.KeyGone
+            Opened.Unavailable
         }
     }
 

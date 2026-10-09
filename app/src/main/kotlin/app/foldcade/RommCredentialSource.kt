@@ -6,6 +6,7 @@ import app.foldcade.api.plugin.CredentialStore
 import app.foldcade.api.plugin.RommCredentials
 import app.foldcade.plugins.romm.RommPlugins
 import app.foldcade.plugins.romm.RommTokenSource
+import android.os.Looper
 import app.foldcade.plugins.romm.RommWiring
 import java.nio.file.Path
 import kotlin.coroutines.cancellation.CancellationException
@@ -16,8 +17,21 @@ import kotlinx.coroutines.runBlocking
  * The plugin does not keep a second copy of the token.
  * A password entry is ignored: the merged RomM client has no password login.
  * [CredentialLookup.Unreadable] becomes null so the caller can ask for sign-in.
+ *
+ * [RommGate] calls [RommTokenSource.accessToken] on [kotlinx.coroutines.Dispatchers.IO].
+ * A DataStore read is refused on the main thread.
  */
 fun rommTokenSource(store: CredentialStore): RommTokenSource = RommTokenSource {
+    readRommToken(store, onMainThread = rommTokenReadOnMainThread())
+}
+
+internal fun rommTokenReadOnMainThread(): Boolean {
+    val main = Looper.getMainLooper() ?: return false
+    return Looper.myLooper() == main
+}
+
+internal fun readRommToken(store: CredentialStore, onMainThread: Boolean): String? {
+    check(!onMainThread) { "RomM token reads run off the main thread" }
     val found = try {
         runBlocking { store.lookup(RommCredentials.PLUGIN_ID, RommCredentials.ACCESS_TOKEN) }
     } catch (cancelled: CancellationException) {
@@ -25,7 +39,7 @@ fun rommTokenSource(store: CredentialStore): RommTokenSource = RommTokenSource {
     } catch (_: Exception) {
         null
     }
-    when (found) {
+    return when (found) {
         is CredentialLookup.Present -> when (val credential = found.credential) {
             is Credential.ApiToken -> credential.value
             is Credential.Password -> null
