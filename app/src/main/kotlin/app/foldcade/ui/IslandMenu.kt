@@ -54,8 +54,10 @@ import app.foldcade.language.SidePanel
 import app.foldcade.language.TypeRamp
 import app.foldcade.millisUntilNextMinute
 import app.foldcade.readDeviceStatus
+import kotlin.math.abs
 import kotlin.math.roundToInt
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.withTimeoutOrNull
 
 /**
  * Art-kit shoulder chips. Outline while the island is closed, filled while that
@@ -114,8 +116,26 @@ private fun Island(
 ) {
     val theme = LocalFoldTheme.current.theme
     val density = LocalDensity.current
-    val hold = app.islandHold?.takeIf { it.side == side }?.progress
-    val progress = islandProgress(open = open || hold != null, scale = scale, held = hold)
+    val model = app.shell.model
+    val hold = app.islandHold
+    val mine = model.panel?.takeIf { it.side == side && it.screen == HostScreen.Top }
+    val otherHeld = hold != null && hold.side != side
+    val heldHere = hold?.takeIf { it.side == side && mine != null && !mine.retiring }?.progress
+    val retiringHere = mine?.retiring == true
+    val snap = hold != null
+    val target = when {
+        retiringHere || otherHeld -> 0f
+        heldHere != null -> heldHere
+        mine != null -> 1f
+        else -> 0f
+    }
+    val progress = islandProgress(
+        target = target,
+        scale = scale,
+        snap = snap,
+        handoff = retiringHere,
+        onHandoff = { app.shell.completeIslandRetire() },
+    )
     val live = app.shell.model.panel?.takeIf { it.side == side && it.screen == HostScreen.Top }
     var shown by remember { mutableStateOf<SidePanel?>(null) }
     if (live != null) shown = live
@@ -230,24 +250,35 @@ private fun LaunchTargetLabel(app: FoldcadeApp, progress: Float) {
 }
 
 @Composable
-private fun islandProgress(open: Boolean, scale: Float, held: Float?): Float {
-    val target = held ?: if (open) 1f else 0f
+private fun islandProgress(
+    target: Float,
+    scale: Float,
+    snap: Boolean,
+    handoff: Boolean,
+    onHandoff: () -> Unit,
+): Float {
     val anim = remember { androidx.compose.animation.core.Animatable(target) }
-    LaunchedEffect(target, held) {
-        if (held != null) {
-            anim.snapTo(held)
-        } else {
-            kotlinx.coroutines.withContext(SteadyIsland) {
-                anim.animateTo(
-                    target,
-                    if (target >= anim.value) {
-                        app.foldcade.language.Motion.arrive(app.foldcade.language.Motion.durationIsland, scale)
-                    } else {
-                        app.foldcade.language.Motion.leave(app.foldcade.language.Motion.durationIsland, scale)
-                    },
-                )
+    LaunchedEffect(target, snap, handoff) {
+        if (snap) {
+            anim.snapTo(target)
+        } else if (abs(anim.value - target) > 0.001f) {
+            val spec = if (target >= anim.value) {
+                app.foldcade.language.Motion.arrive(app.foldcade.language.Motion.durationIsland, scale)
+            } else {
+                app.foldcade.language.Motion.leave(app.foldcade.language.Motion.durationIsland, scale)
             }
+            val budget = app.foldcade.language.Motion.duration(
+                app.foldcade.language.Motion.durationIsland,
+                scale,
+            ).toLong() + 80L
+            withTimeoutOrNull(budget) {
+                kotlinx.coroutines.withContext(SteadyIsland) {
+                    anim.animateTo(target, spec)
+                }
+            }
+            if (abs(anim.value - target) > 0.02f) anim.snapTo(target)
         }
+        if (handoff && anim.value <= 0.02f) onHandoff()
     }
     return anim.value
 }

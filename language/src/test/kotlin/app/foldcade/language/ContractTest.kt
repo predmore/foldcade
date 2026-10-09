@@ -122,6 +122,35 @@ class ContractTest {
     }
 
     @Test
+    fun openingOneIslandCollapsesTheOtherBeforeItExpands() {
+        val root = PickerModel(count = 2, rowsPerPage = 2, showLaunchTarget = false)
+        val left = reduce(root, Meaning.LeftPanel, HostScreen.Bottom).first
+        assertEquals(Side.Left, left.panel?.side)
+        assertFalse(left.panel!!.retiring)
+        assertNull(left.dialog)
+        val closing = reduce(left, Meaning.RightPanel, HostScreen.Top).first
+        assertEquals(Side.Left, closing.panel?.side)
+        assertTrue(closing.panel!!.retiring)
+        assertEquals(Side.Right, closing.panel?.pendingSide)
+        assertNull(closing.dialog)
+        val right = finishIslandRetire(closing)
+        assertEquals(Side.Right, right.panel?.side)
+        assertFalse(right.panel!!.retiring)
+        assertNull(right.panel?.pendingSide)
+        val back = reduce(right, Meaning.LeftPanel, HostScreen.Bottom).first
+        assertEquals(Side.Right, back.panel?.side)
+        assertTrue(back.panel!!.retiring)
+        assertEquals(Side.Left, back.panel?.pendingSide)
+        val reopened = finishIslandRetire(back)
+        assertEquals(Side.Left, reopened.panel?.side)
+        assertNull(reopened.panel?.pendingSide)
+        val cancelled = reduce(closing, Meaning.LeftPanel, HostScreen.Top).first
+        assertTrue(cancelled.panel!!.retiring)
+        assertNull(cancelled.panel?.pendingSide)
+        assertNull(finishIslandRetire(cancelled).panel)
+    }
+
+    @Test
     fun leftPanelCyclesValuesAndRightReplacesIt() {
         val root = PickerModel(count = 2, rowsPerPage = 3, showLaunchTarget = true, themes = listOf("Built-in", "Sample"))
         val (stayed, effect) = reduce(root, Meaning.Back)
@@ -152,9 +181,14 @@ class ContractTest {
         val closed = reduce(opened, Meaning.Back).first
         assertNull(closed.panel)
         val right = reduce(opened, Meaning.RightPanel, HostScreen.Top).first
-        assertEquals(Side.Right, right.panel?.side)
-        assertEquals(HostScreen.Top, right.panel?.screen)
-        val again = reduce(right, Meaning.RightPanel, HostScreen.Top).first
+        assertEquals(Side.Left, right.panel?.side)
+        assertTrue(right.panel!!.retiring)
+        assertEquals(Side.Right, right.panel?.pendingSide)
+        val openedRight = finishIslandRetire(right)
+        assertEquals(Side.Right, openedRight.panel?.side)
+        assertEquals(HostScreen.Top, openedRight.panel?.screen)
+        assertFalse(openedRight.panel!!.retiring)
+        val again = reduce(openedRight, Meaning.RightPanel, HostScreen.Top).first
         assertNull(again.panel)
     }
 

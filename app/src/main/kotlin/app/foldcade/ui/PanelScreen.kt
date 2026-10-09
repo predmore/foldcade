@@ -1168,12 +1168,16 @@ private fun DialogLayer(
     val visible = dialog != null && dialog.screen == screen
     var shown by remember { mutableStateOf(dialog) }
     if (visible) shown = dialog
+    // Drop the card with the model. A remembered card kept "GameNative is not installed"
+    // on screen after the launch had already been dismissed.
+    if (!visible) shown = null
     val alpha = motionFloat(
         target = if (visible) 1f else 0f,
         spec = if (visible) Motion.arrive(Motion.durationShort, scale) else Motion.leave(Motion.durationShort, scale),
+        snap = !visible,
     )
     val card = shown
-    if (card != null && alpha > 0f) {
+    if (visible && card != null && alpha > 0f) {
         Box(Modifier.graphicsLayer { this.alpha = alpha }) { DialogCard(app, card, onEffect) }
     }
 }

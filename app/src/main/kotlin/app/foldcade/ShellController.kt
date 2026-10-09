@@ -48,6 +48,7 @@ import app.foldcade.language.SignedInBackend
 import app.foldcade.language.connectFields
 import app.foldcade.language.displayOrder
 import app.foldcade.language.focusAndActivateDialog
+import app.foldcade.language.finishIslandRetire
 import app.foldcade.language.homePrompt
 import app.foldcade.language.panelRows
 import app.foldcade.language.previewDialogState
@@ -290,6 +291,16 @@ class ShellController(
     fun dismissDialog() {
         if (model.dialog == null) return
         model = model.copy(dialog = null)
+    }
+
+    /**
+     * The open island finished its leave morph. The pending shoulder expands now.
+     * Calling this before the close finishes, or twice, does nothing.
+     */
+    fun completeIslandRetire() {
+        val finished = finishIslandRetire(model)
+        if (finished.panel == model.panel && finished.focus == model.focus) return
+        publish(finished)
     }
 
     /** Closes whichever top menu is open. A closed menu stays closed. */

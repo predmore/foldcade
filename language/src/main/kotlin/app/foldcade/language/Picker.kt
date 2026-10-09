@@ -32,6 +32,12 @@ data class SidePanel(
     val level: PanelLevel,
     val index: Int,
     val grid: GridFocus,
+    /**
+     * The open island is playing its leave morph. [pendingSide] expands only
+     * after [finishIslandRetire]. The other island stays at idle size until then.
+     */
+    val retiring: Boolean = false,
+    val pendingSide: Side? = null,
 )
 
 fun signInAgainPrompt(screen: HostScreen = HostScreen.Top): DialogState = DialogState(
@@ -619,19 +625,32 @@ private fun coerce(focus: GridFocus, model: PickerModel): GridFocus {
 private fun presentPanel(model: PickerModel, meaning: Meaning, screen: HostScreen): PickerModel {
     val side = if (meaning == Meaning.LeftPanel) Side.Left else Side.Right
     val open = model.panel
-    if (open != null && open.side == side) {
-        return model.copy(panel = null, focus = open.grid)
+    if (open == null) return model.copy(panel = freshPanel(side, model.focus))
+    if (open.retiring) {
+        val pending = if (side == open.side) null else side
+        return model.copy(panel = open.copy(pendingSide = pending))
     }
-    val grid = open?.grid ?: model.focus
-    return model.copy(
-        panel = SidePanel(
-            side = side,
-            screen = HostScreen.Top,
-            level = PanelLevel.Root,
-            index = 0,
-            grid = grid,
-        ),
-    )
+    if (open.side == side) return model.copy(panel = null, focus = open.grid)
+    return model.copy(panel = open.copy(retiring = true, pendingSide = side))
+}
+
+private fun freshPanel(side: Side, grid: GridFocus): SidePanel = SidePanel(
+    side = side,
+    screen = HostScreen.Top,
+    level = PanelLevel.Root,
+    index = 0,
+    grid = grid,
+)
+
+/**
+ * The retiring island has finished its leave morph.
+ * The pending shoulder then expands. A close with no pending side stays closed.
+ */
+fun finishIslandRetire(model: PickerModel): PickerModel {
+    val open = model.panel ?: return model
+    if (!open.retiring) return model
+    val next = open.pendingSide ?: return model.copy(panel = null, focus = open.grid)
+    return model.copy(panel = freshPanel(next, open.grid))
 }
 
 private fun applyGrid(
