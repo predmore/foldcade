@@ -7,6 +7,7 @@ import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
 import android.media.AudioManager
+import android.net.Uri
 import android.os.Handler
 import android.os.Looper
 import android.util.Log
@@ -17,8 +18,6 @@ import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
 import androidx.media3.exoplayer.ExoPlayer
 import app.foldcade.SessionStore
-import app.foldcade.language.DEFAULT_BACKGROUND_MUSIC
-import app.foldcade.language.DEFAULT_TRACK_TITLE
 import app.foldcade.language.DuckLatch
 import app.foldcade.language.HomeMusicSetting
 import app.foldcade.language.Meaning
@@ -27,10 +26,13 @@ import app.foldcade.language.MusicTrack
 import app.foldcade.language.fadeInOnFocusReturn
 import app.foldcade.language.homeMusicMayStart
 import app.foldcade.language.homeMusicStaysSuppressed
-import app.foldcade.language.musicTrack
+import app.foldcade.language.defaultLanternlightTrack
 import app.foldcade.language.musicTracksFromManifest
+import app.foldcade.language.offeredMusicTracks
 import app.foldcade.language.packagedHomeMusicFile
 import app.foldcade.language.playbackLevel
+import app.foldcade.language.selectedMusicTrack
+import java.io.File
 import java.util.Locale
 
 /**
@@ -49,8 +51,8 @@ class HomeMusic(
     private val handler = Handler(Looper.getMainLooper())
     private val audio = app.getSystemService(AudioManager::class.java)
     private var player: ExoPlayer? = null
-    private var loadedAsset: String? = null
-    private var themeJson: String? = null
+    private var loadedKey: String? = null
+    private var themeChoice: MusicTrack? = null
     private var resumedHomes = 0
     private var suppressed = false
     private var awaitingFocusFade = false
@@ -71,19 +73,17 @@ class HomeMusic(
         app.registerReceiver(volumeReceiver, filter, Context.RECEIVER_NOT_EXPORTED)
     }
 
-    fun setThemeJson(json: String?) {
+    /** The theme's own track, or null on the built-in theme and on a theme with no loop. */
+    fun setThemeChoice(track: MusicTrack?) {
         if (!onMainThread()) {
-            handler.post { setThemeJson(json) }
+            handler.post { setThemeChoice(track) }
             return
         }
-        themeJson = json
-        val next = resolvedAsset()
-        val existing = player ?: return
-        if (next == loadedAsset) return
-        loadedAsset = next
-        existing.setMediaItem(MediaItem.fromUri("asset:///$next"))
-        existing.prepare()
+        themeChoice = track?.takeIf { it.fromTheme }
+        reloadIfTrackChanged()
     }
+
+    fun homeTracks(): List<MusicTrack> = catalog
 
     fun onHomeResume() {
         if (!onMainThread()) {
@@ -138,7 +138,7 @@ class HomeMusic(
         if (wasSuppressed && mayStart()) fadeIn()
     }
 
-    fun trackTitle(): String = selectedTrack()?.title ?: DEFAULT_TRACK_TITLE
+    fun trackTitle(): String = selectedTrack().title
 
     fun apply(setting: HomeMusicSetting) {
         if (!onMainThread()) {
@@ -277,9 +277,9 @@ class HomeMusic(
 
     private fun ensurePlayer(): ExoPlayer? {
         player?.let { return it }
-        val asset = resolvedAsset()
-        if (!assetExists(asset)) {
-            Log.e(TAG, "Home music asset $asset is not in the apk. Rebuild so renderHomeMusic can package it.")
+        val playable = resolvedPlayable()
+        if (playable == null) {
+            Log.e(TAG, "Home music asset is not in the apk. Rebuild so renderHomeMusic can package it.")
             return null
         }
         val created = ExoPlayer.Builder(app).build()
@@ -293,9 +293,9 @@ class HomeMusic(
         created.repeatMode = Player.REPEAT_MODE_ONE
         created.volume = 0f
         created.addListener(focusListener(created))
-        created.setMediaItem(MediaItem.fromUri("asset:///$asset"))
+        created.setMediaItem(playable.item)
         created.prepare()
-        loadedAsset = asset
+        loadedKey = playable.key
         player = created
         return created
     }
@@ -375,24 +375,41 @@ class HomeMusic(
         awaitingFocusFade = false
         val existing = player ?: return
         player = null
-        loadedAsset = null
+        loadedKey = null
         existing.release()
     }
 
-    private fun selectedTrack(): MusicTrack? = musicTrack(catalog, store.musicTrackId())
+    private fun selectedTrack(): MusicTrack =
+        selectedMusicTrack(offeredMusicTracks(catalog, themeChoice), store.musicTrackId())
 
-    private fun resolvedAsset(): String = packagedHomeMusicFile(
-        themeJson = themeJson,
-        selectedFile = selectedTrack()?.file,
-        assetExists = ::assetExists,
-    )
+    private fun resolvedPlayable(): Playable? {
+        val selected = selectedTrack()
+        if (selected.fromTheme) {
+            return themePlayable(selected) ?: assetPlayable(defaultLanternlightTrack())
+        }
+        return assetPlayable(selected) ?: assetPlayable(defaultLanternlightTrack())
+    }
+
+    private fun assetPlayable(track: MusicTrack): Playable? {
+        val file = packagedHomeMusicFile(track.file, ::assetExists)
+        if (!assetExists(file)) return null
+        return Playable(file, MediaItem.fromUri("asset:///$file"))
+    }
+
+    /** Theme audio is a file this process wrote under its own cache. */
+    private fun themePlayable(track: MusicTrack): Playable? {
+        val file = runCatching { File(track.file).canonicalFile }.getOrNull() ?: return null
+        val cache = runCatching { app.cacheDir.canonicalFile }.getOrNull() ?: return null
+        if (file.parentFile != cache || !file.isFile) return null
+        return Playable(file.absolutePath, MediaItem.fromUri(Uri.fromFile(file)))
+    }
 
     private fun reloadIfTrackChanged() {
         val existing = player ?: return
-        val next = resolvedAsset()
-        if (next == loadedAsset || !assetExists(next)) return
-        loadedAsset = next
-        existing.setMediaItem(MediaItem.fromUri("asset:///$next"))
+        val next = resolvedPlayable() ?: return
+        if (next.key == loadedKey) return
+        loadedKey = next.key
+        existing.setMediaItem(next.item)
         existing.prepare()
     }
 
@@ -419,6 +436,8 @@ class HomeMusic(
         if (audio.getStreamVolume(AudioManager.STREAM_MUSIC) <= 0) return true
         return audio.isStreamMute(AudioManager.STREAM_MUSIC)
     }
+
+    private data class Playable(val key: String, val item: MediaItem)
 
     private companion object {
         const val TAG = "HomeMusic"

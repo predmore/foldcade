@@ -9,8 +9,10 @@ import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.text.font.Font
 import androidx.compose.ui.text.font.FontFamily
 import app.foldcade.language.BackgroundMotion
+import app.foldcade.language.MusicTrack
 import app.foldcade.language.Theme
 import app.foldcade.language.parseThemeJson
+import app.foldcade.language.themeMusicTrack
 import app.foldcade.ui.FoldPaint
 import java.io.File
 import java.util.zip.ZipInputStream
@@ -21,6 +23,7 @@ class PackagedTheme(
     val paint: FoldPaint,
     val sounds: ThemeSounds,
     val backgroundMotion: BackgroundMotion,
+    val music: MusicTrack?,
 ) {
     companion object {
         private const val ASSET = "themes/afterglow.zip"
@@ -57,6 +60,7 @@ class PackagedTheme(
                 ),
                 sounds = ThemeSounds(context, entries),
                 backgroundMotion = file.backgroundMotion,
+                music = themeMusicFile(context, file.name, json, entries),
             )
         } catch (error: Exception) {
             Log.w("Foldcade", "Theme zip ignored", error)
@@ -80,6 +84,21 @@ class PackagedTheme(
             val file = File(context.cacheDir, "afterglow-font.ttf")
             file.writeBytes(bytes)
             return FontFamily(Font(file))
+        }
+
+        private fun themeMusicFile(
+            context: Context,
+            name: String,
+            json: String,
+            entries: Map<String, ByteArray>,
+        ): MusicTrack? {
+            val described = themeMusicTrack(name, json, entries.keys) ?: return null
+            val bytes = entries[described.file] ?: return null
+            if (bytes.isEmpty()) return null
+            val safe = described.file.replace(Regex("[^A-Za-z0-9._-]"), "_")
+            val out = File(context.cacheDir, "theme-music-$safe")
+            out.writeBytes(bytes)
+            return described.copy(file = out.absolutePath)
         }
 
         private fun decode(bytes: ByteArray?): androidx.compose.ui.graphics.ImageBitmap? {

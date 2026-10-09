@@ -501,6 +501,9 @@ data class PickerModel(
     val launchOnBottom: Boolean = false,
     val music: HomeMusicSetting = HomeMusicSetting(),
     val trackTitle: String = DEFAULT_TRACK_TITLE,
+    val homeTracks: List<MusicTrack> = emptyList(),
+    /** Parallel to [themes]. Null when that theme does not offer a track. */
+    val themeTracks: List<MusicTrack?> = emptyList(),
     val arranging: Boolean = false,
     val hold: Hold? = null,
     val order: List<Int> = emptyList(),
@@ -848,7 +851,7 @@ private fun applyPanel(
             model.copy(panel = current.copy(index = panelFocusIndex(rows, index, meaning))) to null
         Meaning.MoveLeft, Meaning.MoveRight -> {
             val direction = if (meaning == Meaning.MoveLeft) -1 else 1
-            val nudged = nudgeSlider(model, rows[index], direction)
+            val nudged = adjustRow(model, rows[index], direction)
             if (nudged != null) {
                 nudged.copy(panel = current) to null
             } else {
@@ -867,16 +870,23 @@ private fun applyPanel(
 }
 
 /**
- * Left and right step a slider by 5 points. Other rows ignore the direction
- * so the panel focus stays put. Music volume is the slider today; another
- * slider row joins this same branch.
+ * Left and right step a value and keep the row. Music volume moves by 5 points.
+ * The track row cycles the offered tracks. Other rows ignore the direction
+ * so the panel focus stays put.
  */
-private fun nudgeSlider(model: PickerModel, row: Row, direction: Int): PickerModel? {
+private fun adjustRow(model: PickerModel, row: Row, direction: Int): PickerModel? {
     return when (row) {
         Row.MusicVolume -> model.copy(music = model.music.nudged(direction))
+        Row.MusicTrack -> model.withTrack(cycledMusicTrack(offeredTracks(model), model.music.trackId, direction))
         else -> null
     }
 }
+
+private fun offeredTracks(model: PickerModel): List<MusicTrack> =
+    offeredMusicTracks(model.homeTracks, model.themeTracks.getOrNull(model.themeIndex))
+
+private fun PickerModel.withTrack(track: MusicTrack): PickerModel =
+    copy(music = music.copy(trackId = track.id), trackTitle = track.title)
 
 private fun backPanel(model: PickerModel, panel: SidePanel): Pair<PickerModel, Effect?> {
     return if (panel.level == PanelLevel.Library) {
@@ -902,7 +912,11 @@ private fun activateRow(
             } else {
                 model.themeMotions.getOrElse(nextIndex) { BackgroundMotion.Off }
             }
-            model.copy(panel = panel, themeIndex = nextIndex, backgroundMotion = motion) to null
+            val stepped = model.copy(panel = panel, themeIndex = nextIndex, backgroundMotion = motion)
+            val tracks = offeredMusicTracks(stepped.homeTracks, stepped.themeTracks.getOrNull(nextIndex))
+            val kept = tracks.firstOrNull { it.id == model.music.trackId }
+            val track = kept ?: selectedMusicTrack(tracks, HomeMusicSetting.DEFAULT_TRACK_ID)
+            stepped.withTrack(track) to null
         }
         Row.Background -> model.copy(
             panel = panel,
@@ -929,7 +943,8 @@ private fun activateRow(
         ) to null
         Row.Order -> model.copy(panel = panel, sort = model.sort.toggled()) to null
         Row.Music -> model.copy(panel = panel, music = model.music.toggled()) to null
-        Row.MusicTrack -> model to null
+        Row.MusicTrack ->
+            model.copy(panel = panel).withTrack(cycledMusicTrack(offeredTracks(model), model.music.trackId, 1)) to null
         Row.MusicVolume -> model.copy(panel = panel, music = model.music.stepped()) to null
         Row.SetAsHome -> model to Effect.RequestHome
         Row.AndroidSettings -> model.copy(panel = panel) to Effect.OpenAndroidSetting(AndroidSetting.Settings)

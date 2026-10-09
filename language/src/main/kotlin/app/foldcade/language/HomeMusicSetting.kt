@@ -43,13 +43,29 @@ data class HomeMusicSetting(
     }
 }
 
-/** One row of music/tracks/manifest.json. The setting stores [id], not the file name. */
+/**
+ * One choosable loop. Manifest rows come from music/tracks/manifest.json.
+ * A theme row has [fromTheme] and is offered only while that theme is selected.
+ * The setting stores [id], not the file name.
+ */
 data class MusicTrack(
     val id: String,
     val title: String,
     val composer: String,
     val license: String,
     val file: String,
+    val fromTheme: Boolean = false,
+)
+
+/** Id for the track a theme zip offers. It is not a manifest id. */
+const val THEME_TRACK_ID = "theme"
+
+fun defaultLanternlightTrack(): MusicTrack = MusicTrack(
+    id = HomeMusicSetting.DEFAULT_TRACK_ID,
+    title = DEFAULT_TRACK_TITLE,
+    composer = "Foldcade project",
+    license = "GPLv3",
+    file = DEFAULT_BACKGROUND_MUSIC,
 )
 
 object MusicCopy {
@@ -162,6 +178,57 @@ fun musicTrack(tracks: List<MusicTrack>, id: String): MusicTrack? {
 }
 
 /**
+ * Home tracks, plus the theme's own track when this theme offers one.
+ * An empty home list still offers Lanternlight, so the row has somewhere to land.
+ * A theme track whose file is already a home track is not listed twice.
+ */
+fun offeredMusicTracks(home: List<MusicTrack>, theme: MusicTrack?): List<MusicTrack> {
+    val base = home.ifEmpty { listOf(defaultLanternlightTrack()) }
+    if (theme == null || !theme.fromTheme) return base
+    if (base.any { it.id == theme.id || it.file == theme.file }) return base
+    return base + theme
+}
+
+/** [id] when it is in [tracks], otherwise Lanternlight, otherwise the first track. */
+fun selectedMusicTrack(tracks: List<MusicTrack>, id: String): MusicTrack {
+    val list = tracks.ifEmpty { listOf(defaultLanternlightTrack()) }
+    list.firstOrNull { it.id == id }?.let { return it }
+    list.firstOrNull { it.id == HomeMusicSetting.DEFAULT_TRACK_ID }?.let { return it }
+    return list.first()
+}
+
+/**
+ * Next or previous track. [direction] is negative to go backward.
+ * One track stays put. A missing [id] starts from the track [selectedMusicTrack] would show.
+ */
+fun cycledMusicTrack(tracks: List<MusicTrack>, id: String, direction: Int): MusicTrack {
+    val list = tracks.ifEmpty { listOf(defaultLanternlightTrack()) }
+    val current = selectedMusicTrack(list, id)
+    val index = list.indexOfFirst { it.id == current.id }.coerceAtLeast(0)
+    val step = if (direction < 0) -1 else 1
+    return list[(index + step).mod(list.size)]
+}
+
+/**
+ * The track a theme zip offers, or null when it does not name one.
+ * [entries] are the zip's file names. The path has to be one of them.
+ * Lanternlight, a blank field, and a path that leaves the zip are not an offer.
+ */
+fun themeMusicTrack(themeName: String, themeJson: String?, entries: Set<String>): MusicTrack? {
+    val path = backgroundMusicFromThemeJson(themeJson)
+    if (path == DEFAULT_BACKGROUND_MUSIC || path !in entries) return null
+    val name = themeName.trim().ifEmpty { path.substringAfterLast('/').substringBeforeLast('.') }
+    return MusicTrack(
+        id = THEME_TRACK_ID,
+        title = name,
+        composer = name,
+        license = "theme",
+        file = path,
+        fromTheme = true,
+    )
+}
+
+/**
  * Home music may request audio focus only while a Foldcade home is in front,
  * no launched game is in front on either screen, and another app is not already
  * playing on the music stream.
@@ -192,23 +259,21 @@ fun fadeInOnFocusReturn(
 ): Boolean = playbackResumed && fromAudioFocus && homeInFront && !gameInFront
 
 /**
- * Theme path, then the selected manifest file, then Lanternlight.
- * A manifest entry whose asset is missing does not stay silent.
+ * The file the picker selected, when that file is available, otherwise Lanternlight.
+ * A theme track plays only when it is the selection. This does not read theme.json.
  */
 fun packagedHomeMusicFile(
-    themeJson: String?,
     selectedFile: String?,
     assetExists: (String) -> Boolean,
 ): String {
-    val named = backgroundMusicFromThemeJson(themeJson)
-    if (named != DEFAULT_BACKGROUND_MUSIC && assetExists(named)) return named
     if (!selectedFile.isNullOrBlank() && assetExists(selectedFile)) return selectedFile
     return DEFAULT_BACKGROUND_MUSIC
 }
 
 /**
  * Optional `backgroundMusic` string in theme.json. A community theme names a
- * track inside the zip. A missing or blank field keeps [DEFAULT_BACKGROUND_MUSIC].
+ * file inside its zip. The picker offers that file while the theme is selected.
+ * A missing or blank field keeps [DEFAULT_BACKGROUND_MUSIC], which is not a second track.
  */
 fun backgroundMusicFromThemeJson(json: String?): String {
     if (json.isNullOrBlank()) return DEFAULT_BACKGROUND_MUSIC
