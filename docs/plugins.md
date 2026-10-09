@@ -1,6 +1,6 @@
 # Plugins
 
-The contract lives in `:api`. The host that loads it is `:host`. Samples are `:plugins:sample` and `:samples:out-of-tree`.
+The contract lives in `:api` ([Apache-2.0](../api/LICENSE)). The host that loads it is `:host`. Samples are `:plugins:sample` and `:samples:out-of-tree`.
 
 ## Contract
 
@@ -23,7 +23,7 @@ The host calls `PluginEntry.bind` after validation and before the entry is store
 
 Library I/O and metadata fetch are suspending. An implementation must stop that work when the calling coroutine is cancelled, and must rethrow `CancellationException` rather than wrap it in `PluginException`. The shell calls `ensureLocal`, then `prepareLaunch`, then `reconcile`, in that order.
 
-A plugin loaded in-process is part of the GPLv3 work when it is distributed.
+An independent plugin that is not in this repository, and that uses only this API, may use any license. Plugins shipped here stay GPLv3. See [licensing](licensing.md).
 
 ## Samples
 
