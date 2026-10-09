@@ -564,35 +564,31 @@ private fun Picker(
         val clearance = px(Metrics.chromeClearancePx)
         // Keeps the last tile label inside the screen, above the clip.
         val labelSafe = px(28f)
+        val showingHome = !model.libraryGrid && model.homeGrid == HomeGrid.StandIns
+        val bottomHome = showingHome && screen == HostScreen.Bottom
         Column(
             Modifier
                 .fillMaxSize()
                 .padding(horizontal = inset)
                 .padding(top = inset, bottom = inset + labelSafe),
         ) {
-            if (screen == HostScreen.Top) {
-                Spacer(Modifier.height(48.dp))
-            }
-            ChromeRow(app)
-            Spacer(Modifier.height(clearance))
-            if (detailGame != null) {
-                GameDetail(app, detailGame.id)
+            if (!bottomHome) {
+                if (screen == HostScreen.Top) {
+                    Spacer(Modifier.height(48.dp))
+                }
+                ChromeRow(app)
+                Spacer(Modifier.height(clearance))
+                if (detailGame != null && screen == HostScreen.Top) {
+                    GameDetail(app, detailGame.id)
+                }
             }
             AllBar(shell, screen, onEffect)
-            val hint = shell.homeHint()
-            if (hint != null) {
-                BasicText(
-                    text = hint,
-                    style = text(theme.muted, TypeRamp.hint, theme),
-                    maxLines = 3,
-                    overflow = TextOverflow.Ellipsis,
-                )
-            }
             BoxWithConstraints(
                 Modifier
                     .weight(1f)
                     .fillMaxWidth()
-                    .pointerInput(model.panel, model.dialog, model.connectOpen, model.moonlightSheet, shell.homeEditing()) {
+                    .pointerInput(model.panel, model.dialog, model.connectOpen, model.moonlightSheet, shell.homeEditing(), showingHome) {
+                        if (showingHome) return@pointerInput
                         if (model.panel != null || model.dialog != null || model.connectOpen || model.moonlightSheet != null) {
                             return@pointerInput
                         }
@@ -613,11 +609,28 @@ private fun Picker(
                     },
             ) {
                 val showTitles = true
-                val titleBlock = focusOutset(cell) + px(12f) + titleLine
-                val slot = if (showTitles) cell + titleBlock else cell
-                val available = (maxHeight - pad * 2).coerceAtLeast(0.dp)
-                val rows = if (cell > Dp.Hairline && slot > Dp.Hairline) {
-                    ((available + gap) / (slot + gap)).toInt().coerceAtLeast(1)
+                val available = maxHeight.coerceAtLeast(0.dp)
+                val homeRows = 3
+                val titleGuess = px(20f) + titleLine
+                val fromHeight = if (homeRows > 0) {
+                    ((available - gap * (homeRows - 1)) / homeRows) - titleGuess
+                } else {
+                    cell
+                }
+                val fromWidth = if (maxWidth > Dp.Hairline) {
+                    (maxWidth - gap * (Metrics.columns - 1)) / Metrics.columns
+                } else {
+                    cell
+                }
+                val homeCell = minOf(fromHeight, fromWidth).coerceAtLeast(px(56f))
+                val gridCell = if (bottomHome) homeCell else cell
+                val gridPad = if (bottomHome) px(8f) else pad
+                val titleBlock = focusOutset(gridCell) + px(12f) + titleLine
+                val slot = if (showTitles) gridCell + titleBlock else gridCell
+                val rows = if (bottomHome) {
+                    homeRows
+                } else if (gridCell > Dp.Hairline && slot > Dp.Hairline) {
+                    ((available - gridPad * 2 + gap) / (slot + gap)).toInt().coerceAtLeast(1)
                 } else {
                     1
                 }
@@ -639,15 +652,29 @@ private fun Picker(
                     PagedGrid(
                         app = app,
                         screen = screen,
-                        cell = cell,
+                        cell = gridCell,
                         gap = gap,
-                        pad = pad,
+                        pad = gridPad,
                         rows = rows,
                         scale = scale,
                         showTitle = showTitles,
                         usesBoth = game?.occupiesBothDisplays == true && session.bothScreensFree(),
+                        followDrag = bottomHome,
                     )
                 }
+            }
+            if (bottomHome) {
+                PageDots(count = model.count, rows = 3, index = model.focus.cellIndex)
+                val hint = shell.homeHint()
+                if (hint != null) {
+                    BasicText(
+                        text = hint,
+                        style = text(theme.muted, TypeRamp.hint, theme),
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
+                HomeHintRow(model)
             }
         }
         TopIslands(app, screen, scale) { panelState, progress, interactive ->
@@ -890,6 +917,50 @@ private fun ChromeRow(app: FoldcadeApp) {
     }
 }
 
+/** Page marks under the home grid. One dot per screen of columns. */
+@Composable
+private fun PageDots(count: Int, rows: Int, index: Int) {
+    val pageSize = (Metrics.columns * rows).coerceAtLeast(1)
+    val pages = ((count + pageSize - 1) / pageSize).coerceAtLeast(1)
+    val page = (index / pageSize).coerceIn(0, pages - 1)
+    val theme = foldTheme()
+    Row(
+        Modifier.fillMaxWidth().padding(top = px(4f), bottom = px(8f)),
+        horizontalArrangement = Arrangement.Center,
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        repeat(pages) { dot ->
+            Box(
+                Modifier
+                    .padding(horizontal = px(4f))
+                    .size(if (dot == page) px(8f) else px(6f))
+                    .background(
+                        if (dot == page) theme.onBackground else theme.muted.copy(alpha = 0.45f),
+                        CircleShape,
+                    ),
+            )
+        }
+    }
+}
+
+/** A Confirm, and Back when it does something, on its own row. */
+@Composable
+private fun HomeHintRow(model: app.foldcade.language.PickerModel) {
+    val actions = if (model.connectOpen) {
+        connectHint(connectFields().getOrElse(model.connectIndex) { ConnectField.Origin })
+    } else {
+        hintFor(
+            when {
+                model.dialog != null -> HintPlace.Dialog
+                model.panel != null -> HintPlace.Menu
+                !model.atLibraryRoot -> HintPlace.InsidePlatform
+                else -> HintPlace.RootGrid
+            },
+        )
+    }
+    HintRow(model, actions)
+}
+
 /** One small letter glyph and a word, only for an action that currently does something. */
 @Composable
 private fun HintRow(
@@ -994,18 +1065,22 @@ private fun PagedGrid(
     scale: Float,
     showTitle: Boolean,
     usesBoth: Boolean,
+    followDrag: Boolean = false,
 ) {
     val focus = app.shell.model.focus
     val pageSize = (Metrics.columns * rows).coerceAtLeast(1)
     val page = focus.cellIndex / pageSize
     val position = remember { Animatable(page.toFloat()) }
+    var dragPages by remember { mutableStateOf(0f) }
     LaunchedEffect(page, scale) {
+        dragPages = 0f
         withContext(SteadyMotion) {
             position.animateTo(page.toFloat(), Motion.arrive(Motion.durationTravel, scale))
         }
     }
     val reduced = Motion.reduced(scale)
-    val alpha = if (reduced) (1f - abs(position.value - page)).coerceIn(0.35f, 1f) else 1f
+    val shownPage = position.value - dragPages
+    val alpha = if (reduced) (1f - abs(shownPage - page)).coerceIn(0.35f, 1f) else 1f
     val width = cell * Metrics.columns + gap * (Metrics.columns - 1)
     val widthPx = with(LocalDensity.current) { width.toPx() }
     val folderToken = app.shell.homeAnimToken()
@@ -1016,7 +1091,7 @@ private fun PagedGrid(
             folderPop.animateTo(1f, Motion.arrive(Motion.durationShort, scale))
         }
     }
-    val fading = reduced && abs(position.value - page) > 0.001f
+    val fading = reduced && abs(shownPage - page) > 0.001f
     val popping = folderPop.value != 1f
     Box(
         Modifier
@@ -1033,12 +1108,33 @@ private fun PagedGrid(
                 },
             )
             .clipToBounds()
+            .pointerInput(followDrag, app.shell.homeEditing(), widthPx) {
+                if (!followDrag || app.shell.homeEditing() || widthPx <= 0f) return@pointerInput
+                var walked = 0f
+                detectHorizontalDragGestures(
+                    onHorizontalDrag = { _, amount ->
+                        walked += amount
+                        dragPages = walked / widthPx
+                    },
+                    onDragEnd = {
+                        val pages = dragPages
+                        dragPages = 0f
+                        walked = 0f
+                        val meaning = when {
+                            pages > 0.08f -> Meaning.PageTowardStart
+                            pages < -0.08f -> Meaning.PageTowardEnd
+                            else -> null
+                        }
+                        if (meaning != null) app.shell.onMeaning(meaning, screen)
+                    },
+                )
+            }
             .padding(pad),
     ) {
-        val low = floor(position.value).toInt()
-        val high = ceil(position.value).toInt()
+        val low = floor(shownPage).toInt()
+        val high = ceil(shownPage).toInt()
         for (drawn in low..high) {
-            val dx = ((drawn - position.value) * widthPx).roundToInt()
+            val dx = ((drawn - shownPage) * widthPx).roundToInt()
             Box(Modifier.offset { IntOffset(dx, 0) }) {
                 Grid(app, screen, cell, gap, rows, drawn, showTitle)
             }

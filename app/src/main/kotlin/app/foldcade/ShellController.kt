@@ -117,14 +117,22 @@ class ShellController(
     private var platformOrder: List<Int> = emptyList()
 
     fun onMeaning(meaning: Meaning, screen: HostScreen): Effect? {
-        if (homeActive()) {
+            if (homeActive()) {
             val before = model
             val wasInFolder = home.board.openFolderId != null
+            val wasAll = home.board.allOpen
+            val wasTab = home.board.allTab
+            val wasHeld = home.board.hold != null
             val step = home.handle(meaning, model.focus.cellIndex)
             if (step != null && step.handled) {
                 store.saveHomeBoard(home.encoded())
                 showBoard(step.focus ?: model.focus, keepDialog = true)
                 if (!wasInFolder && home.openedFolderHasGame()) Log.i("Foldcade", "library-ui games")
+                if (!wasHeld && home.board.hold != null) Log.i("Foldcade", "home-ui lifted")
+                if (home.board.allOpen && (!wasAll || wasTab != home.board.allTab)) {
+                    val tab = if (home.board.allTab == app.foldcade.language.AllTab.Games) "games" else "apps"
+                    Log.i("Foldcade", "home-ui all-$tab")
+                }
                 cueMeaning(meaning, before, model)
                 return step.effect
             }
@@ -134,6 +142,13 @@ class ShellController(
         val (next, effect) = reduce(current, meaning, screen)
         if (!next.connectOpen) connectToken = ""
         val packageName = focusedGame()?.androidPackage
+        val panelLabel = next.panel?.let { panel ->
+            val row = app.foldcade.language.panelRows(panel, next).getOrNull(panel.index) ?: return@let null
+            app.foldcade.language.rowText(row, next).label
+        }
+        if (panelLabel != null && (meaning == Meaning.LeftPanel || meaning == Meaning.MoveDown)) {
+            Log.i("Foldcade", "home-ui row $panelLabel")
+        }
         when (effect) {
             is Effect.ConfirmMoonlightImport -> {
                 val sourceChanged = next.moonlightSource != model.moonlightSource
@@ -207,10 +222,12 @@ class ShellController(
             is Effect.ConfirmMoonlightImport -> null
             Effect.EditHome -> {
                 enterHomeEdit()
+                Log.i("Foldcade", "home-ui editing")
                 null
             }
             Effect.OpenAll -> {
                 openHomeAll()
+                Log.i("Foldcade", "home-ui all-games")
                 null
             }
             Effect.ToggleAddNew -> {
@@ -1102,13 +1119,15 @@ class ShellController(
         if (changed) store.saveHomeBoard(home.encoded())
     }
 
-    private fun shelfItems(): List<HomeItem> = Shelf.games.map { game ->
+    private fun shelfItems(): List<HomeItem> = Shelf.games.mapNotNull { game ->
         val kind = when {
             game.id == Shelf.PC_TILE || game.libraryId == "gamenative" -> HomeKind.GameNative
             game.id == "moonlight" || game.libraryId == "moonlight" -> HomeKind.Moonlight
             !game.platformId.isNullOrBlank() && game.mark == null -> HomeKind.Rom
             else -> HomeKind.Loose
         }
+        // The demo marks stay on the shelf. The home grid is system folders.
+        if (kind == HomeKind.Loose) return@mapNotNull null
         HomeItem(
             id = game.id,
             title = game.title,

@@ -18,7 +18,7 @@ import org.junit.Test
 /** Bottom-grid order the emulator walks. Placement stays put across a rescan. */
 class HomeGridOrderTest {
     @Test
-    fun freshBoardPinsAllThenLooseMarksThenSystemFolders() {
+    fun freshBoardPinsAllThenSystemFolders() {
         val shell = shell()
         assertEquals(HomeGrid.StandIns, shell.model.homeGrid)
         assertFalse(shell.model.libraryGrid)
@@ -26,12 +26,6 @@ class HomeGridOrderTest {
         assertEquals(
             listOf(
                 Copy.allLibrary,
-                "Clamshell",
-                "Slim Dual",
-                "Handheld",
-                "Cartridge",
-                "Disc",
-                "Cloud",
                 "Nintendo 3DS",
                 "Nintendo DS",
                 "GameNative",
@@ -41,17 +35,17 @@ class HomeGridOrderTest {
             ),
             titles(shell),
         )
+        assertTrue(titles(shell).none { it == "Clamshell" || it == "Slim Dual" || it == "Handheld" })
         assertTrue(shell.homeFace(0)?.pinned == true)
-        assertTrue(shell.homeFace(7)?.folder == true)
-        assertEquals("dual", shell.homeFace(7)?.mark)
-        assertEquals("beam", shell.homeFace(10)?.mark)
+        assertTrue(shell.homeFace(1)?.folder == true)
+        assertEquals("dual", shell.homeFace(1)?.mark)
+        assertEquals("beam", shell.homeFace(4)?.mark)
     }
 
     @Test
     fun openingThe3dsFolderThenConfirmLaunchesTheTileInside() {
         val shell = shell()
-        shell.onMeaning(Meaning.MoveDown, HostScreen.Bottom)
-        repeat(3) { shell.onMeaning(Meaning.MoveRight, HostScreen.Bottom) }
+        shell.onMeaning(Meaning.MoveRight, HostScreen.Bottom)
         assertEquals("Nintendo 3DS", shell.focusedGame()?.title)
         assertNull(shell.onMeaning(Meaning.Activate, HostScreen.Bottom))
         assertEquals("3DS", shell.focusedGame()?.title)
@@ -84,10 +78,10 @@ class HomeGridOrderTest {
             emptyList(),
         )
         assertEquals("Game Boy Advance", titles(shell).last())
-        assertEquals(14, shell.model.count)
+        assertEquals(8, shell.model.count)
 
-        repeat(3) { shell.onMeaning(Meaning.MoveDown, HostScreen.Bottom) }
-        shell.onMeaning(Meaning.MoveRight, HostScreen.Bottom)
+        shell.onMeaning(Meaning.MoveDown, HostScreen.Bottom)
+        repeat(3) { shell.onMeaning(Meaning.MoveRight, HostScreen.Bottom) }
         assertEquals("Game Boy Advance", shell.focusedGame()?.title)
         shell.onMeaning(Meaning.Activate, HostScreen.Bottom)
         assertEquals("Cart", shell.focusedGame()?.title)
