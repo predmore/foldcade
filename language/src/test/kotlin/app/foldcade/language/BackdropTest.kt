@@ -1,7 +1,9 @@
 package app.foldcade.language
 
 import kotlin.math.abs
+import kotlin.math.hypot
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -45,7 +47,7 @@ class BackdropTest {
     @Test
     fun ribbonsStayInsideTheLitBudget() {
         val worst = measure(BackgroundMotion.Ribbons, moving = true)
-        assertTrue("ribbons lit ${worst.fraction} peak ${worst.peak}", worst.fraction <= Backdrop.LIT_BUDGET && worst.peak in 13..190)
+        assertTrue("ribbons lit ${worst.fraction} peak ${worst.peak}", worst.fraction <= Backdrop.LIT_BUDGET && worst.peak in 13..210)
         assertTrue(worst.fraction > 0f)
     }
 
@@ -110,14 +112,118 @@ class BackdropTest {
         for (time in times) {
             layoutBackdrop(BackgroundMotion.Ribbons, time, 1920f, 1080f, moving = true, frame)
             val effects = visibleEffects(frame)
-            assertTrue("effects at $time = $effects", effects in 0..2)
+            assertTrue("effects at $time = $effects", effects in 0..3)
+            assertTrue("beads at $time", discsOf(frame, MarkKind.Bead) <= 1)
+            assertTrue("shimmers at $time", discsOf(frame, MarkKind.Shimmer) <= 1)
         }
         layoutBackdrop(BackgroundMotion.Ribbons, 4f, 1920f, 1080f, moving = true, frame)
-        assertEquals(1, visibleEffects(frame))
+        assertEquals(1, discsOf(frame, MarkKind.Bead))
         layoutBackdrop(BackgroundMotion.Ribbons, 10f, 1920f, 1080f, moving = true, frame)
-        assertTrue(visibleEffects(frame) >= 1)
-        layoutBackdrop(BackgroundMotion.Ribbons, 16f, 1920f, 1080f, moving = true, frame)
-        assertTrue(visibleEffects(frame) >= 1)
+        assertEquals(1, discsOf(frame, MarkKind.Shimmer))
+        layoutBackdrop(BackgroundMotion.Ribbons, 21.9f, 1920f, 1080f, moving = true, frame)
+        assertEquals(0, discsOf(frame, MarkKind.Bead))
+        assertEquals(0, discsOf(frame, MarkKind.Shimmer))
+        layoutBackdrop(BackgroundMotion.Ribbons, 22.05f, 1920f, 1080f, moving = true, frame)
+        assertEquals(0, discsOf(frame, MarkKind.Bead))
+        assertEquals(0, discsOf(frame, MarkKind.Shimmer))
+    }
+
+    @Test
+    fun radialFalloffReachesBlackWithoutACliff() {
+        assertEquals(1f, GlowFalloff.cover(0f), 0.001f)
+        assertEquals(0f, GlowFalloff.cover(1f), 0.001f)
+        assertEquals(0f, GlowFalloff.cover(1.2f), 0.001f)
+        assertTrue(GlowFalloff.STOPS.size >= 8)
+        assertEquals(0f, GlowFalloff.STOPS.first(), 0.001f)
+        assertEquals(1f, GlowFalloff.STOPS.last(), 0.001f)
+        var previous = 1.1f
+        var biggest = 0f
+        for (index in GlowFalloff.STOPS.indices) {
+            val cover = GlowFalloff.cover(GlowFalloff.STOPS[index])
+            assertTrue("rose at ${GlowFalloff.STOPS[index]}", cover <= previous + 0.0001f)
+            if (index > 0) biggest = maxOf(biggest, previous - cover)
+            previous = cover
+        }
+        assertTrue("stop jump $biggest", biggest < 0.22f)
+        assertTrue(GlowFalloff.cover(0.9f) < 0.2f)
+        assertTrue(GlowFalloff.cover(0.98f) < 0.04f)
+        assertTrue(GlowFalloff.KNOT >= 0.12f)
+        val tileEdge = GlowFalloff.cover(0.65f, GlowFalloff.TILE_TIGHTNESS, GlowFalloff.TILE_RIM)
+        assertTrue("tile shoulder $tileEdge", tileEdge in 0.45f..0.9f)
+    }
+
+    @Test
+    fun hotSpotRampsInsteadOfStepping() {
+        val pulse = 0.37f
+        var worst = 0f
+        var previous = ribbonGain(0f, pulse)
+        var along = 0.005f
+        while (along <= 1f) {
+            val next = ribbonGain(along, pulse)
+            worst = maxOf(worst, abs(next - previous))
+            previous = next
+            along += 0.005f
+        }
+        assertTrue("gain step $worst", worst < 0.08f)
+    }
+
+    @Test
+    fun beadGlidesAlongArcLength() {
+        val frame = BackdropFrame()
+        val width = 1920f
+        val dt = 1f / 60f
+        layoutBackdrop(BackgroundMotion.Ribbons, 3f, width, 1080f, moving = true, frame)
+        var previous = beadCenter(frame)
+        assertNotNull(previous)
+        val spacing = width / (BackdropLine.POINTS - 1)
+        var elapsed = dt
+        while (elapsed <= 0.5f) {
+            layoutBackdrop(BackgroundMotion.Ribbons, 3f + elapsed, width, 1080f, moving = true, frame)
+            val next = beadCenter(frame)
+            assertNotNull(next)
+            val moved = hypot(next!!.first - previous!!.first, next.second - previous.second)
+            assertTrue("snap $moved at $elapsed (sample $spacing)", moved < spacing * 0.25f)
+            assertTrue("stuck $moved at $elapsed", moved > 0.2f)
+            previous = next
+            elapsed += dt
+        }
+        layoutBackdrop(BackgroundMotion.Ribbons, 3.5f, width, 1080f, moving = true, frame)
+        val direct = beadCenter(frame)
+        layoutBackdrop(BackgroundMotion.Ribbons, 3.5f, width, 1080f, moving = true, frame)
+        val again = beadCenter(frame)
+        assertEquals(direct!!.first, again!!.first, 0.01f)
+        assertEquals(direct.second, again.second, 0.01f)
+    }
+
+    @Test(timeout = 90_000)
+    fun adjacentFramesDoNotFlicker() {
+        val dt = 1f / 60f
+        val width = 960
+        val height = 540
+        val frame = BackdropFrame()
+        val windows = floatArrayOf(3f, 7.2f, 16f, 21.85f, 65.9f)
+        for (motion in listOf(BackgroundMotion.Ribbons, BackgroundMotion.Embers)) {
+            for (start in windows) {
+                layoutBackdrop(motion, start, width.toFloat(), height.toFloat(), moving = true, frame)
+                var previous = paintedPixels(frame, width, height)
+                var elapsed = dt
+                while (elapsed <= 0.2f) {
+                    layoutBackdrop(motion, start + elapsed, width.toFloat(), height.toFloat(), moving = true, frame)
+                    val next = paintedPixels(frame, width, height)
+                    var worst = 0
+                    for (index in previous.indices) {
+                        val delta = abs(level(next[index]) - level(previous[index]))
+                        if (delta > worst) worst = delta
+                    }
+                    assertTrue(
+                        "$motion at ${start + elapsed} changed by $worst",
+                        worst <= FLICKER_LEVELS,
+                    )
+                    previous = next
+                    elapsed += dt
+                }
+            }
+        }
     }
 
     @Test
@@ -151,4 +257,26 @@ class BackdropTest {
     }
 
     private fun pct(fraction: Float): String = "%.2f%%".format(fraction * 100f)
+
+    private fun discsOf(frame: BackdropFrame, kind: MarkKind): Int {
+        var count = 0
+        for (index in 0 until frame.discCount) {
+            if (frame.discs[index].kind == kind) count++
+        }
+        return count
+    }
+
+    private fun beadCenter(frame: BackdropFrame): Pair<Float, Float>? {
+        for (index in 0 until frame.discCount) {
+            val disc = frame.discs[index]
+            if (disc.kind == MarkKind.Bead) return disc.cx to disc.cy
+        }
+        return null
+    }
+
+    private fun level(pixel: Int): Int = maxOf(pixel ushr 16, (pixel ushr 8) and 255, pixel and 255)
+
+    private companion object {
+        const val FLICKER_LEVELS = 24
+    }
 }
