@@ -701,7 +701,8 @@ class RommClient(
             return text
         }
 
-        internal fun romCacheFile(root: Path, romId: Long, fileName: String, fileIds: List<Long>): Path {
+        /** File [downloadRom] writes. A `.partial` sibling means the download is not finished. */
+        fun romCacheFile(root: Path, romId: Long, fileName: String, fileIds: List<Long>): Path {
             val safe = safeFileName(fileName)
             val dir = if (fileIds.isEmpty()) {
                 root.resolve("roms").resolve(romId.toString())
