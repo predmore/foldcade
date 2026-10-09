@@ -19,6 +19,7 @@ import androidx.media3.exoplayer.ExoPlayer
 import app.foldcade.SessionStore
 import app.foldcade.language.DEFAULT_BACKGROUND_MUSIC
 import app.foldcade.language.DEFAULT_TRACK_TITLE
+import app.foldcade.language.DuckLatch
 import app.foldcade.language.HomeMusicSetting
 import app.foldcade.language.Meaning
 import app.foldcade.language.Motion
@@ -30,6 +31,7 @@ import app.foldcade.language.musicTrack
 import app.foldcade.language.musicTracksFromManifest
 import app.foldcade.language.packagedHomeMusicFile
 import app.foldcade.language.playbackLevel
+import java.util.Locale
 
 /**
  * Loops the home bed while a Foldcade home is in front, and stops when a game
@@ -53,8 +55,8 @@ class HomeMusic(
     private var suppressed = false
     private var awaitingFocusFade = false
     private var fadeToken = 0
-    private var duckToken = 0
-    private var ducked = false
+    private val duck = DuckLatch()
+    private var fadingOut = false
     private val catalog: List<MusicTrack> = loadCatalog()
 
     private val volumeReceiver = object : BroadcastReceiver() {
@@ -145,17 +147,23 @@ class HomeMusic(
         }
         reloadIfTrackChanged()
         if (!mayStart()) return
-        if (playbackLevel(setting, ducked, mediaMuted()) <= 0f) {
+        val level = playbackLevel(setting, duck.active, mediaMuted())
+        if (!setting.enabled || mediaMuted()) {
             fadeOut()
             return
         }
-        val existing = player
-        if (existing != null && existing.isPlaying) {
-            fadeToken++
-            existing.volume = targetLevel()
-        } else {
-            fadeIn()
+        // A slider move is audible now. The 1.5 s fade stays for entering and
+        // leaving home. Waiting for that fade is what made a drag feel late.
+        if (level <= 0f) {
+            val existing = player ?: return
+            fadingOut = false
+            writeNow(existing, 0f, "slider")
+            return
         }
+        val existing = ensurePlayer() ?: return
+        fadingOut = false
+        existing.play()
+        writeNow(existing, level, "slider")
     }
 
     /**
@@ -176,13 +184,13 @@ class HomeMusic(
         if (!assetExists("sounds/$slot.ogg")) return
         val existing = player ?: return
         if (!existing.isPlaying) return
-        ducked = true
-        existing.volume = targetLevel()
-        val token = ++duckToken
+        val generation = duck.begin()
+        if (!fadingOut) writeNow(existing, targetLevel(), "duck")
         handler.postDelayed({
-            if (token != duckToken) return@postDelayed
-            ducked = false
-            if (player === existing && existing.isPlaying) existing.volume = targetLevel()
+            if (!duck.end(generation)) return@postDelayed
+            val current = player
+            if (current == null || fadingOut || !current.isPlaying) return@postDelayed
+            writeNow(current, targetLevel(), "unduck")
         }, 220)
     }
 
@@ -206,40 +214,65 @@ class HomeMusic(
     }
 
     private fun fadeIn() {
-        if (playbackLevel(current(), ducked, mediaMuted()) <= 0f) {
+        fadingOut = false
+        if (playbackLevel(current(), duck.active, mediaMuted()) <= 0f) {
             releasePlayer()
             return
         }
         val existing = ensurePlayer() ?: return
         existing.play()
-        fade(targetLevel(), FADE_MS, arriving = true, releaseAtEnd = false)
+        fade(arriving = true, releaseAtEnd = false) { targetLevel() }
     }
 
     private fun fadeOut() {
         if (player == null) return
-        fade(0f, FADE_MS, arriving = false, releaseAtEnd = true)
+        fadingOut = true
+        fade(arriving = false, releaseAtEnd = true) { 0f }
     }
 
-    private fun fade(target: Float, durationMs: Long, arriving: Boolean, releaseAtEnd: Boolean) {
-        val existing = if (target > 0f) ensurePlayer() ?: return else player ?: return
+    /**
+     * Each frame reads [targetOf] again. A duck that ends during the fade
+     * cannot leave the player at the ducked level, and a cancelled fade
+     * (slider, duck, release) stops writing.
+     */
+    private fun fade(arriving: Boolean, releaseAtEnd: Boolean, targetOf: () -> Float) {
+        val existing = if (!releaseAtEnd) ensurePlayer() ?: return else player ?: return
         val token = ++fadeToken
         val from = existing.volume
         val easing = if (arriving) Motion.easingArrive else Motion.easingLeave
         val steps = 24
-        val stepMs = (durationMs / steps).coerceAtLeast(16)
-        if (target > 0f) existing.play()
+        val stepMs = (FADE_MS / steps).coerceAtLeast(16)
+        if (!releaseAtEnd) existing.play()
         fun frame(index: Int) {
             if (token != fadeToken) return
+            val target = targetOf()
             val t = index / steps.toFloat()
             existing.volume = from + (target - from) * easing.transform(t)
             if (index < steps) {
                 handler.postDelayed({ frame(index + 1) }, stepMs)
             } else {
-                existing.volume = target
-                if (releaseAtEnd && target <= 0.001f) releasePlayer()
+                val end = targetOf()
+                existing.volume = end
+                if (releaseAtEnd && end <= 0.001f) releasePlayer()
             }
         }
         frame(1)
+    }
+
+    /** Cancels an in-progress fade so the next frame cannot overwrite [level]. */
+    private fun writeNow(existing: ExoPlayer, level: Float, reason: String) {
+        fadeToken++
+        existing.volume = level
+        Log.i(
+            TAG,
+            "player.volume=%.3f slider=%.2f ducked=%s reason=%s".format(
+                Locale.US,
+                existing.volume,
+                current().volume,
+                duck.active,
+                reason,
+            ),
+        )
     }
 
     private fun ensurePlayer(): ExoPlayer? {
@@ -337,6 +370,8 @@ class HomeMusic(
     /** pause() does not abandon AUDIOFOCUS_GAIN. Release does. */
     private fun releasePlayer() {
         fadeToken++
+        duck.clear()
+        fadingOut = false
         awaitingFocusFade = false
         val existing = player ?: return
         player = null
@@ -378,7 +413,7 @@ class HomeMusic(
     private fun current(): HomeMusicSetting =
         HomeMusicSetting(store.musicEnabled(), store.musicVolume(), store.musicTrackId())
 
-    private fun targetLevel(): Float = playbackLevel(current(), ducked, mediaMuted = false)
+    private fun targetLevel(): Float = playbackLevel(current(), duck.active, mediaMuted = false)
 
     private fun mediaMuted(): Boolean {
         if (audio.getStreamVolume(AudioManager.STREAM_MUSIC) <= 0) return true
