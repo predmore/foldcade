@@ -6,14 +6,18 @@ import app.foldcade.api.plugin.GameMeta
 import app.foldcade.api.plugin.GamePage
 import app.foldcade.api.plugin.GameQuery
 import app.foldcade.api.plugin.LaunchRequest
+import app.foldcade.api.plugin.LaunchTarget
 import app.foldcade.api.plugin.LibraryBackend
 import app.foldcade.api.plugin.ListedPlatform
-import app.foldcade.api.plugin.LocalCopy
 import app.foldcade.api.plugin.MetadataProvider
+import app.foldcade.api.plugin.PLUGIN_API_VERSION
+import app.foldcade.api.plugin.Platform
 import app.foldcade.api.plugin.ObservedSaves
 import app.foldcade.api.plugin.Placement
 import app.foldcade.api.plugin.Player
+import app.foldcade.api.plugin.SaveDeclaration
 import app.foldcade.api.plugin.SaveSet
+import app.foldcade.api.plugin.StartDisplay
 import app.foldcade.api.plugin.SyncResult
 import app.foldcade.plugins.sample.SampleEntry
 import java.io.File
@@ -65,7 +69,7 @@ class PluginHostTest {
         val intent = host.player("sample.player")!!.launchIntent(
             LaunchRequest(
                 game = game,
-                local = LocalCopy(contentUri = game.remoteKey),
+                target = LaunchTarget.ContentUri(uri = game.remoteKey),
                 resolvedPackage = "app.foldcade.sample",
             ),
         )
@@ -115,11 +119,51 @@ class PluginHostTest {
         val library = LibraryFake("shared-id")
         val metadata = MetadataFake("shared-id")
         host.register(object : PluginEntry {
+            override val apiMajor = PLUGIN_API_VERSION
             override val libraries = listOf(library)
             override val metadataProviders = listOf(metadata)
         })
         assertTrue(host.library("shared-id") === library)
         assertTrue(host.metadata("shared-id") === metadata)
+    }
+
+    @Test
+    fun incompatiblePluginMajorIsRejected() {
+        val host = PluginHost(Dispatchers.Unconfined)
+        val failure = runCatching {
+            host.register(object : PluginEntry {
+                override val apiMajor = PLUGIN_API_VERSION + 1
+            })
+        }
+        assertTrue(failure.exceptionOrNull() is IllegalStateException)
+        assertNull(host.library("sample.library"))
+    }
+
+    @Test
+    fun playersForResolvesNintendo3dsAliases() {
+        val host = PluginHost(Dispatchers.Unconfined)
+        host.register(object : PluginEntry {
+            override val apiMajor = PLUGIN_API_VERSION
+            override val platforms = listOf(object : Platform {
+                override val id = "nintendo-3ds"
+                override val displayName = "Nintendo 3DS"
+                override val extensions = setOf("cci")
+                override val aliases = setOf("3ds", "n3ds")
+            })
+            override val players = listOf(SampleAliasPlayer())
+        })
+        assertEquals(listOf("n3ds-player"), host.playersFor("nintendo-3ds").map { it.id })
+        assertEquals(listOf("n3ds-player"), host.playersFor("3ds").map { it.id })
+        assertEquals(listOf("n3ds-player"), host.playersFor("n3ds").map { it.id })
+        assertTrue(host.playersFor("nds").isEmpty())
+    }
+
+    @Test
+    fun pluginEntryListsAreJvmDefaultMethods() {
+        val lists = PluginEntry::class.java.methods.single { it.name == "getPlatforms" }
+        val major = PluginEntry::class.java.methods.single { it.name == "getApiMajor" }
+        assertTrue(lists.isDefault)
+        assertFalse(major.isDefault)
     }
 
     @Test
@@ -151,6 +195,7 @@ class PluginHostTest {
             }
             val host = PluginHost(io)
             host.register(object : PluginEntry {
+                override val apiMajor = PLUGIN_API_VERSION
                 override val libraries = listOf(backend)
             })
             val listed = launch(caller) { host.listGames(backend.id, "sample", GameQuery()) }
@@ -182,6 +227,7 @@ class PluginHostTest {
             }
             val host = PluginHost(io)
             host.register(object : PluginEntry {
+                override val apiMajor = PLUGIN_API_VERSION
                 override val metadataProviders = listOf(provider)
             })
             val meta = withContext(caller) { host.cachedMetadata(provider.id, game) }
@@ -241,6 +287,7 @@ class PluginHostTest {
         }
         val host = PluginHost(Dispatchers.Default)
         host.register(object : PluginEntry {
+            override val apiMajor = PLUGIN_API_VERSION
             override val libraries = listOf(scan, http)
             override val metadataProviders = listOf(metadata)
         })
@@ -275,6 +322,21 @@ private fun namedDispatcher(name: String) = Executors.newSingleThreadExecutor { 
     Thread(runnable, name).apply { isDaemon = true }
 }.asCoroutineDispatcher()
 
+private class SampleAliasPlayer : Player {
+    override val id = "n3ds-player"
+    override val displayName = "3DS"
+    override val platformId = "nintendo-3ds"
+    override val packageNames = listOf("org.azahar_emu.azahar")
+    override val needsLocalFile = true
+    override val startDisplay = StartDisplay.Primary
+    override val occupiesBothDisplays = true
+    override val requiresImportedGame = false
+
+    override fun saveDeclarations(game: Game): List<SaveDeclaration> = emptyList()
+
+    override fun launchIntent(request: LaunchRequest) = error("unused")
+}
+
 private open class LibraryFake(override val id: String) : LibraryBackend {
     override val displayName = id
 
@@ -287,12 +349,13 @@ private open class LibraryFake(override val id: String) : LibraryBackend {
     open override suspend fun listGames(platformId: String, query: GameQuery): GamePage =
         GamePage(emptyList(), null)
 
-    override suspend fun ensureLocal(game: Game): LocalCopy = LocalCopy(game.remoteKey)
+    override suspend fun ensureLocal(game: Game): LaunchTarget =
+        LaunchTarget.ContentUri(uri = game.remoteKey)
 
     override suspend fun saves(game: Game): SaveSet = SaveSet(id, emptyList())
 
     override suspend fun prepareLaunch(game: Game, player: Player): Placement =
-        Placement(local = LocalCopy(game.remoteKey))
+        Placement(target = LaunchTarget.ContentUri(uri = game.remoteKey))
 
     override suspend fun reconcile(game: Game, player: Player, observed: ObservedSaves): SyncResult =
         error("unused")
@@ -303,5 +366,5 @@ private open class MetadataFake(override val id: String) : MetadataProvider {
 
     open override fun cached(game: Game): GameMeta? = null
 
-    open override suspend fun fetch(game: Game): GameMeta = GameMeta(title = game.label)
+    open override suspend fun fetch(game: Game): GameMeta? = GameMeta(title = game.label)
 }

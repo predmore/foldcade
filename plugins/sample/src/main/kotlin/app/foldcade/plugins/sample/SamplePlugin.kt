@@ -1,14 +1,14 @@
 package app.foldcade.plugins.sample
 
 import app.foldcade.api.plugin.Game
-import app.foldcade.api.plugin.GameHandoff
 import app.foldcade.api.plugin.GameMeta
+import app.foldcade.api.plugin.LaunchTarget
+import app.foldcade.api.plugin.PLUGIN_API_VERSION
 import app.foldcade.api.plugin.GamePage
 import app.foldcade.api.plugin.GameQuery
 import app.foldcade.api.plugin.LaunchRequest
 import app.foldcade.api.plugin.LibraryBackend
 import app.foldcade.api.plugin.ListedPlatform
-import app.foldcade.api.plugin.LocalCopy
 import app.foldcade.api.plugin.MetadataProvider
 import app.foldcade.api.plugin.ObservedSaves
 import app.foldcade.api.plugin.Placement
@@ -33,6 +33,7 @@ import kotlinx.coroutines.yield
  * Community plugins use this same entry point and those same license terms.
  */
 class SampleEntry : PluginEntry {
+    override val apiMajor = PLUGIN_API_VERSION
     override val platforms: List<Platform> = listOf(SamplePlatform())
     override val players: List<Player> = listOf(SamplePlayer())
     override val libraries: List<LibraryBackend> = listOf(SampleLibrary())
@@ -50,7 +51,7 @@ private class SamplePlayer : Player {
     override val displayName = "Sample player"
     override val platformId = "sample.platform"
     override val packageNames = listOf("app.foldcade.sample")
-    override val handoff = GameHandoff.ContentUri
+    override val needsLocalFile = true
     override val startDisplay = StartDisplay.PickerChoice
     override val occupiesBothDisplays = false
     override val requiresImportedGame = false
@@ -61,8 +62,8 @@ private class SamplePlayer : Player {
         packageName = request.resolvedPackage,
         componentClass = "app.foldcade.sample.PlayActivity",
         action = "app.foldcade.sample.PLAY",
-        dataUri = request.local.contentUri,
-        grantReadUri = request.local.contentUri.isNotEmpty(),
+        dataUri = (request.target as? LaunchTarget.ContentUri)?.uri,
+        grantReadUri = request.target is LaunchTarget.ContentUri,
     )
 }
 
@@ -84,9 +85,9 @@ private class SampleLibrary : LibraryBackend {
         return GamePage(games = emptyList(), nextOffset = null)
     }
 
-    override suspend fun ensureLocal(game: Game): LocalCopy {
+    override suspend fun ensureLocal(game: Game): LaunchTarget {
         cancellable()
-        return LocalCopy(contentUri = game.remoteKey)
+        return LaunchTarget.ContentUri(uri = game.remoteKey)
     }
 
     override suspend fun saves(game: Game): SaveSet {
@@ -96,7 +97,7 @@ private class SampleLibrary : LibraryBackend {
 
     override suspend fun prepareLaunch(game: Game, player: Player): Placement {
         cancellable()
-        return Placement(local = LocalCopy(contentUri = game.remoteKey))
+        return Placement(target = LaunchTarget.ContentUri(uri = game.remoteKey))
     }
 
     override suspend fun reconcile(game: Game, player: Player, observed: ObservedSaves): SyncResult {
@@ -111,7 +112,7 @@ private class SampleMetadata : MetadataProvider {
 
     override fun cached(game: Game): GameMeta? = null
 
-    override suspend fun fetch(game: Game): GameMeta {
+    override suspend fun fetch(game: Game): GameMeta? {
         cancellable()
         return GameMeta(title = game.label)
     }

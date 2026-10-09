@@ -4,10 +4,12 @@ import app.foldcade.api.plugin.Game
 import app.foldcade.api.plugin.GameMeta
 import app.foldcade.api.plugin.GamePage
 import app.foldcade.api.plugin.GameQuery
+import app.foldcade.api.plugin.LaunchTarget
 import app.foldcade.api.plugin.LibraryBackend
 import app.foldcade.api.plugin.ListedPlatform
-import app.foldcade.api.plugin.LocalCopy
 import app.foldcade.api.plugin.MetadataProvider
+import app.foldcade.api.plugin.PLUGIN_API_VERSION
+import app.foldcade.api.plugin.playersForPlatform
 import app.foldcade.api.plugin.ObservedSaves
 import app.foldcade.api.plugin.Placement
 import app.foldcade.api.plugin.Platform
@@ -33,6 +35,9 @@ class PluginHost(
     private val metadataProviders = linkedMapOf<String, MetadataProvider>()
 
     fun register(entry: PluginEntry) {
+        if (entry.apiMajor != PLUGIN_API_VERSION) {
+            error("Plugin API major ${entry.apiMajor} is incompatible with $PLUGIN_API_VERSION")
+        }
         entry.platforms.forEach { put("platform", platforms, it.id, it) }
         entry.players.forEach { put("player", players, it.id, it) }
         entry.libraries.forEach { put("library", libraries, it.id, it) }
@@ -49,7 +54,7 @@ class PluginHost(
     fun player(id: String): Player? = players[id]
 
     fun playersFor(platformId: String): List<Player> =
-        players.values.filter { it.platformId == platformId }
+        playersForPlatform(platforms.values, players.values, platformId)
 
     fun library(id: String): LibraryBackend? = libraries[id]
 
@@ -69,7 +74,7 @@ class PluginHost(
     suspend fun listGames(libraryId: String, platformId: String, query: GameQuery): GamePage =
         offMain { requireLibrary(libraryId).listGames(platformId, query) }
 
-    suspend fun ensureLocal(libraryId: String, game: Game): LocalCopy =
+    suspend fun ensureLocal(libraryId: String, game: Game): LaunchTarget =
         offMain { requireLibrary(libraryId).ensureLocal(game) }
 
     suspend fun saves(libraryId: String, game: Game): SaveSet =
@@ -85,7 +90,7 @@ class PluginHost(
         observed: ObservedSaves,
     ): SyncResult = offMain { requireLibrary(libraryId).reconcile(game, player, observed) }
 
-    suspend fun fetchMetadata(providerId: String, game: Game): GameMeta =
+    suspend fun fetchMetadata(providerId: String, game: Game): GameMeta? =
         offMain { requireMetadata(providerId).fetch(game) }
 
     private suspend fun <T> offMain(block: suspend () -> T): T = withContext(io) { block() }

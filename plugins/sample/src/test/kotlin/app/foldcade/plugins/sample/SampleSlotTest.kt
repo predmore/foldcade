@@ -2,6 +2,7 @@ package app.foldcade.plugins.sample
 
 import app.foldcade.api.plugin.Availability
 import app.foldcade.api.plugin.Game
+import app.foldcade.api.plugin.PLUGIN_API_VERSION
 import app.foldcade.api.plugin.GameQuery
 import app.foldcade.api.plugin.LibraryBackend
 import app.foldcade.api.plugin.MetadataProvider
@@ -41,7 +42,8 @@ class SampleSlotTest {
         val entry = SampleEntry()
         val metadata = entry.metadataProviders.single()
         assertNull(metadata.cached(game))
-        assertEquals("Sample game", metadata.fetch(game).title)
+        assertEquals("Sample game", metadata.fetch(game)?.title)
+        assertEquals(PLUGIN_API_VERSION, entry.apiMajor)
         val page = entry.libraries.single().listGames("sample.platform", GameQuery())
         assertTrue(page.games.isEmpty())
         assertNull(page.nextOffset)

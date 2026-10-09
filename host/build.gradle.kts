@@ -9,6 +9,12 @@ plugins {
     alias(libs.plugins.kotlin.jvm)
 }
 
+kotlin {
+    compilerOptions {
+        freeCompilerArgs.add("-Xjvm-default=all")
+    }
+}
+
 dependencies {
     implementation(project(":api"))
     implementation(libs.coroutines.core)
