@@ -1,16 +1,39 @@
 name: Unit tests
 
+# pull_request runs are read-only for the Gradle cache. push to main writes it.
 on:
   pull_request:
+  push:
+    branches:
+      - main
+
+# Cancel a stale pull-request run when a new push arrives.
+# Push to main does not cancel. The release workflow also keeps cancel-in-progress false.
+concurrency:
+  group: unit-tests-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
+  version:
+    name: versionCode
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Check versionName
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
+        run: bash .github/release/check-version-bump.sh
+
   test:
     name: testDebugUnitTest
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: actions/setup-java@v4
+      - uses: actions/setup-java@v6
         with:
           distribution: temurin
           java-version: "21"
@@ -20,7 +43,7 @@ jobs:
         run: echo "root=$HOME/android-sdk" >> "$GITHUB_OUTPUT"
 
       - name: Cache Android SDK packages
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: |
             ${{ steps.sdk.outputs.root }}/cmdline-tools
@@ -59,7 +82,9 @@ jobs:
           echo "ANDROID_HOME=$SDK_ROOT" >> "$GITHUB_ENV"
           echo "ANDROID_SDK_ROOT=$SDK_ROOT" >> "$GITHUB_ENV"
 
-      - uses: gradle/actions/setup-gradle@v4
+      - uses: gradle/actions/setup-gradle@v6
+        with:
+          cache-read-only: ${{ github.event_name == 'pull_request' }}
 
       - name: Unit tests
         run: ./gradlew testDebugUnitTest --configuration-cache
