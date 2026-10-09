@@ -82,7 +82,7 @@ fun homePrompt(screen: HostScreen = HostScreen.Bottom): DialogState = DialogStat
     title = Copy.homePromptTitle,
     body = Copy.homePromptBody,
     buttons = listOf(DialogButton.UseAsHome, DialogButton.NotNow),
-    index = 1,
+    index = 0,
     safeIndex = 1,
     screen = screen,
 )
@@ -135,10 +135,25 @@ fun folderExplainer(screen: HostScreen): DialogState = DialogState(
     title = Copy.folderGrantTitle,
     body = Copy.folderGrantBody,
     buttons = listOf(DialogButton.ContinueGrant, DialogButton.NotNow),
-    index = 1,
+    index = 0,
     safeIndex = 1,
     screen = screen,
 )
+
+/** Debug captures. Back still uses [DialogState.safeIndex]. Unknown names are ignored. */
+fun previewDialogState(kind: String, index: Int, screen: HostScreen): DialogState? {
+    val dialog = when (kind) {
+        "home" -> homePrompt(screen)
+        "folder" -> folderExplainer(screen)
+        "relogin" -> signInAgainPrompt(screen)
+        "save-folder" -> saveFolderDialog(screen)
+        "close-player" -> closeBothPanelDialog(screen)
+        "missing-player" -> missingPlayerDialog("Azahar", screen)
+        else -> return null
+    }
+    val last = dialog.buttons.lastIndex.coerceAtLeast(0)
+    return dialog.copy(index = index.coerceIn(0, last))
+}
 
 data class FoldNotice(
     val id: String,

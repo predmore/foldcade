@@ -34,6 +34,7 @@ import app.foldcade.language.displayOrder
 import app.foldcade.language.focusAndActivateDialog
 import app.foldcade.language.homePrompt
 import app.foldcade.language.panelRows
+import app.foldcade.language.previewDialogState
 import app.foldcade.language.reduce
 import app.foldcade.language.signInAgainPrompt
 import app.foldcade.romm.cleartextCredentialWarning
@@ -313,6 +314,12 @@ class ShellController(
         }
         if (store.homePromptSettled() || model.dialog != null) return
         publish(model.copy(dialog = homePrompt()))
+    }
+
+    /** Debuggable captures. Replaces whatever dialog is up. */
+    fun showPreviewDialog(kind: String, index: Int, screen: HostScreen) {
+        val dialog = previewDialogState(kind, index, screen) ?: return
+        publish(model.copy(panel = null, connectOpen = false, dialog = dialog))
     }
 
     fun focusedGame(): ShelfGame? = tileFromOrder(displaySource(model))

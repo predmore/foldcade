@@ -79,7 +79,7 @@ class ContractTest {
     fun dialogTapFocusesAndActivatesThatButton() {
         val prompt = homePrompt()
         val model = PickerModel(count = 2, rowsPerPage = 2, showLaunchTarget = true, dialog = prompt)
-        assertEquals(1, prompt.index)
+        assertEquals(DialogButton.UseAsHome, prompt.buttons[prompt.index])
         val (next, effect) = focusAndActivateDialog(model, 0)
         assertEquals(Effect.DialogChoice(DialogButton.UseAsHome, DialogKind.Home), effect)
         assertNull(next.dialog)
@@ -159,20 +159,37 @@ class ContractTest {
     }
 
     @Test
-    fun homePromptOpensOnTheSafeButtonAndShouldersDoNothing() {
+    fun homePromptOpensOnThePrimaryActionAndBackStaysSafe() {
         val prompt = homePrompt()
-        assertEquals(DialogButton.NotNow, prompt.buttons[prompt.index])
+        assertEquals(DialogButton.UseAsHome, prompt.buttons[prompt.index])
+        assertEquals(DialogButton.NotNow, prompt.buttons[prompt.safeIndex])
         val model = PickerModel(count = 2, rowsPerPage = 2, showLaunchTarget = true, dialog = prompt)
         val (dismissed, choice) = reduce(model, Meaning.Back)
         assertEquals(Effect.DialogChoice(DialogButton.NotNow, DialogKind.Home), choice)
         assertNull(dismissed.dialog)
-        val left = reduce(model, Meaning.MoveLeft).first
-        val (chosen, use) = reduce(left, Meaning.Activate)
+        val (chosen, use) = reduce(model, Meaning.Activate)
         assertEquals(Effect.DialogChoice(DialogButton.UseAsHome, DialogKind.Home), use)
         assertNull(chosen.dialog)
+        val right = reduce(model, Meaning.MoveRight).first
+        val (passed, notNow) = reduce(right, Meaning.Activate)
+        assertEquals(Effect.DialogChoice(DialogButton.NotNow, DialogKind.Home), notNow)
+        assertNull(passed.dialog)
         val shoulders = reduce(model, Meaning.RightPanel).first
         assertEquals(prompt.index, shoulders.dialog?.index)
         assertEquals(prompt, shoulders.dialog)
+        val folder = folderExplainer(HostScreen.Bottom)
+        assertEquals(DialogButton.ContinueGrant, folder.buttons[folder.index])
+        assertEquals(DialogButton.NotNow, folder.buttons[folder.safeIndex])
+        val again = signInAgainPrompt()
+        assertEquals(DialogButton.Ok, again.buttons[again.index])
+        val shown = previewDialogState("home", 1, HostScreen.Top)
+        assertEquals(HostScreen.Top, shown?.screen)
+        assertEquals(DialogButton.NotNow, shown?.let { it.buttons[it.index] })
+        val missing = previewDialogState("missing-player", 0, HostScreen.Bottom)
+        assertEquals(DialogButton.Ok, missing?.let { it.buttons[it.index] })
+        val saves = previewDialogState("save-folder", 0, HostScreen.Top)
+        assertEquals(DialogButton.ContinueGrant, saves?.let { it.buttons[it.index] })
+        assertNull(previewDialogState("missing", 0, HostScreen.Bottom))
     }
 
     @Test

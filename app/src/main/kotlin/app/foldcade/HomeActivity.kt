@@ -5,6 +5,7 @@ import android.app.ActivityOptions
 import android.app.role.RoleManager
 import android.content.ActivityNotFoundException
 import android.content.Intent
+import android.content.pm.ApplicationInfo
 import android.content.pm.PackageManager
 import android.net.Uri
 import android.hardware.display.DisplayManager
@@ -54,6 +55,12 @@ import app.foldcade.ui.PanelHost
 
 abstract class FoldcadeHomeActivity : PanelKeyActivity() {
     protected abstract val launchesCompanion: Boolean
+
+    private companion object {
+        const val EXTRA_DIALOG = "foldcade.dialog"
+        const val EXTRA_DIALOG_INDEX = "foldcade.dialogIndex"
+        const val EXTRA_DIALOG_SCREEN = "foldcade.dialogScreen"
+    }
 
     private val displays by lazy { Displays(this) }
     private val foldcade by lazy { application as FoldcadeApp }
@@ -165,6 +172,7 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
         val held = roleManager.isRoleHeld(RoleManager.ROLE_HOME)
         foldcade.shell.setHomeRoleHeld(held)
         foldcade.shell.maybeAskHome(held)
+        applyDialogPreview(intent)
         if (launchesCompanion) {
             val manager = getSystemService(DisplayManager::class.java)
             manager.registerDisplayListener(displayListener, null)
@@ -210,6 +218,19 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
         setIntent(intent)
         acceptHome(intent)
         acceptShelf(intent)
+        applyDialogPreview(intent)
+    }
+
+    private fun applyDialogPreview(intent: Intent) {
+        if (applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE == 0) return
+        val kind = intent.getStringExtra(EXTRA_DIALOG) ?: return
+        val index = intent.getIntExtra(EXTRA_DIALOG_INDEX, 0)
+        val screen = if (intent.getStringExtra(EXTRA_DIALOG_SCREEN) == "top") {
+            HostScreen.Top
+        } else {
+            HostScreen.Bottom
+        }
+        foldcade.shell.showPreviewDialog(kind, index, screen)
     }
 
     override fun onDestroy() {
