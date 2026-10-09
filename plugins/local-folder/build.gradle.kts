@@ -4,6 +4,8 @@ plugins {
 }
 
 dependencies {
+    implementation(project(":api"))
+    implementation(libs.coroutines.core)
     testImplementation(libs.junit)
 }
 
