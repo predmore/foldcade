@@ -6,6 +6,7 @@ import app.foldcade.api.plugin.PLUGIN_API_MINOR
 import app.foldcade.api.plugin.PLUGIN_API_VERSION
 import app.foldcade.api.plugin.PluginEntry
 import app.foldcade.api.plugin.PluginException
+import app.foldcade.api.plugin.canonicalPlatformId
 import java.util.ServiceLoader
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
@@ -16,7 +17,7 @@ import org.junit.Test
 
 class LocalFolderEntryTest {
     @Test
-    fun serviceLoaderRegistersTheLibraryOnly() {
+    fun serviceLoaderRegistersTheLibraryAndItsPlatforms() {
         val loaded = ServiceLoader.load(
             PluginEntry::class.java,
             LocalFolderEntry::class.java.classLoader,
@@ -28,8 +29,30 @@ class LocalFolderEntryTest {
         assertEquals("local-folder", entry.folder.id)
         assertEquals("Local folder", entry.folder.displayName)
         assertTrue(entry.metadataProviders.isEmpty())
-        assertTrue(entry.platforms.isEmpty())
         assertTrue(entry.players.isEmpty())
+        assertEquals(
+            PlatformCatalog.specs.map { it.platform.id },
+            entry.platforms.map { it.id },
+        )
+        assertEquals(
+            PlatformCatalog.specs.map { it.platform.name },
+            entry.platforms.map { it.displayName },
+        )
+        assertEquals(
+            PlatformCatalog.specs.map { it.extensions },
+            entry.platforms.map { it.extensions },
+        )
+        assertEquals(
+            PlatformCatalog.specs.map { it.aliases },
+            entry.platforms.map { it.aliases },
+        )
+        assertEquals("nintendo-3ds", canonicalPlatformId(entry.platforms, "3ds"))
+        assertEquals("nintendo-3ds", canonicalPlatformId(entry.platforms, "N3DS"))
+        assertEquals("nintendo-ds", canonicalPlatformId(entry.platforms, "nds"))
+        assertEquals("snes", canonicalPlatformId(entry.platforms, "snes"))
+        assertEquals("nes", canonicalPlatformId(entry.platforms, "nes"))
+        assertEquals("psp", canonicalPlatformId(entry.platforms, "psp"))
+        assertEquals("genesis", canonicalPlatformId(entry.platforms, "genesis"))
         assertFalse(MetadataProvider::class.java.isAssignableFrom(entry.folder.javaClass))
 
         val advertised = LocalFolderEntry::class.java.classLoader

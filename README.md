@@ -61,3 +61,7 @@ In the repository: Settings → Secrets and variables → Actions → New reposi
 | `RELEASE_KEYSTORE_PASSWORD` | the keystore password |
 | `RELEASE_KEY_ALIAS` | `foldcade` |
 | `RELEASE_KEY_PASSWORD` | the same keystore password |
+
+## Plugins
+
+Minify is off for debug and release. Bundled plugins are found by `ServiceLoader` from `META-INF/services/app.foldcade.api.plugin.PluginEntry`. If minify is enabled later, keep rules are required for that service file and for `PluginEntry`. Without them, R8 drops the file and the entry classes, and the host loads no plugins.

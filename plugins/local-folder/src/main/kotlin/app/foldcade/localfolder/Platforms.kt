@@ -79,6 +79,8 @@ internal object PlatformCatalog {
             name = "Nintendo DS",
             folders = setOf("ds", "nds", "nintendo ds", "dsi", "nintendo dsi"),
             extensions = setOf("nds", "dsi"),
+            // RomM's slug is nds. The scan still stores nintendo-ds.
+            aliases = setOf("nds"),
         ),
         spec(
             id = "nintendo-3ds",
@@ -86,6 +88,8 @@ internal object PlatformCatalog {
             folders = setOf("3ds", "n3ds", "nintendo 3ds", "new 3ds", "new nintendo 3ds"),
             // .3ds is best-effort. Decrypted .cci and .zcci are the formats to prefer.
             extensions = setOf("cci", "zcci", "3ds"),
+            // RomM's slug is 3ds. n3ds is the other short id for this platform.
+            aliases = setOf("3ds", "n3ds"),
         ),
         spec(
             id = "playstation",
@@ -174,6 +178,21 @@ internal object PlatformCatalog {
                 require(ext !in unique) { "Extension '$ext' is unique and also folder-only" }
             }
         }
+        val claimed = LinkedHashMap<String, String>()
+        for (spec in specs) {
+            claimed[spec.platform.id.lowercase(Locale.ROOT)] = spec.platform.id
+        }
+        for (spec in specs) {
+            for (alias in spec.aliases) {
+                require(alias.isNotEmpty() && alias == alias.lowercase(Locale.ROOT)) {
+                    "Alias '$alias' is not a lowercase id"
+                }
+                val prior = claimed.put(alias, spec.platform.id)
+                require(prior == null) {
+                    "Alias '$alias' on ${spec.platform.id} collides with $prior"
+                }
+            }
+        }
         byId = ids
         byFolder = folders
         byExtension = extensions
@@ -189,6 +208,7 @@ internal data class PlatformSpec(
     val folders: Set<String>,
     val extensions: Set<String>,
     val folderOnlyExtensions: Set<String>,
+    val aliases: Set<String>,
 )
 
 /** Archives need a platform folder. melonDS opens zip and 7z; so does every other folder here. */
@@ -321,9 +341,11 @@ private fun spec(
     folders: Set<String>,
     extensions: Set<String> = emptySet(),
     folderOnlyExtensions: Set<String> = emptySet(),
+    aliases: Set<String> = emptySet(),
 ): PlatformSpec = PlatformSpec(
     platform = FolderPlatform(id, name),
     folders = folders,
     extensions = extensions,
     folderOnlyExtensions = folderOnlyExtensions,
+    aliases = aliases,
 )

@@ -19,12 +19,15 @@ import app.foldcade.api.plugin.MemoryCredentialStore
 import app.foldcade.host.PluginHost
 import app.foldcade.language.HostScreen
 import app.foldcade.language.Meaning
+import app.foldcade.localfolder.LocalFolderBackend
+import app.foldcade.localfolder.LocalFolderEntry
 import app.foldcade.plugins.romm.RommPlugins
 import app.foldcade.plugins.romm.RommTokenSource
 import java.nio.file.Files
 import java.util.ServiceLoader
 import java.util.concurrent.atomic.AtomicInteger
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.runBlocking
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -106,6 +109,52 @@ class ShellHostTest {
         assertEquals("nintendo-ds", canonicalPlatformId(definitions, "nds"))
         assertNull(canonicalPlatformId(definitions, "snes"))
         assertEquals(afterRegister, reads.get())
+    }
+
+    @Test
+    fun loadedEntriesMapRommSlugsToCanonicalIds() = runBlocking {
+        val loaded = ServiceLoader.load(
+            PluginEntry::class.java,
+            ShellHostTest::class.java.classLoader,
+        ).toList()
+        val folder = loaded.filterIsInstance<LocalFolderEntry>().single()
+        assertEquals(
+            setOf(
+                "app.foldcade.localfolder.LocalFolderEntry",
+                "app.foldcade.plugins.romm.RommEntry",
+            ),
+            loaded.map { it.javaClass.name }.toSet(),
+        )
+        val host = PluginHost(Dispatchers.Unconfined, MemoryCredentialStore())
+        host.load(ShellHostTest::class.java.classLoader)
+        assertTrue(host.rejected.isEmpty())
+        assertTrue(host.library("local-folder") is LocalFolderBackend)
+        assertEquals("RomM", host.library("romm")?.displayName)
+        val stored = host.platformDefinitions()
+        assertEquals(folder.platforms.map { it.id }, stored.map { it.id })
+        assertEquals(folder.platforms.map { it.aliases }, stored.map { it.aliases })
+        val cache = Files.createTempDirectory("romm-real-entries")
+        try {
+            publishRommWiring(
+                "https://romm.example",
+                MemoryCredentialStore(),
+                cache,
+                stored,
+            )
+            val definitions = RommPlugins.wiring?.platforms
+            assertEquals(stored, definitions)
+            assertEquals("nintendo-3ds", canonicalPlatformId(definitions!!, "3ds"))
+            assertEquals("nintendo-3ds", canonicalPlatformId(definitions, "n3ds"))
+            assertEquals("nintendo-ds", canonicalPlatformId(definitions, "nds"))
+            assertEquals("snes", canonicalPlatformId(definitions, "snes"))
+            assertEquals("nes", canonicalPlatformId(definitions, "nes"))
+            assertEquals("psp", canonicalPlatformId(definitions, "psp"))
+            assertEquals("genesis", canonicalPlatformId(definitions, "genesis"))
+            assertEquals("nintendo-3ds", host.platform("3DS")?.id)
+            assertEquals("nintendo-ds", host.platform("NDS")?.id)
+        } finally {
+            cache.toFile().deleteRecursively()
+        }
     }
 
     @After
