@@ -197,6 +197,7 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
         super.onCreate(savedInstanceState)
         acceptHome(intent)
         acceptShelf(intent)
+        acceptFolderLibrary(intent)
         val roleManager = getSystemService(RoleManager::class.java)
         val held = roleManager.isRoleHeld(RoleManager.ROLE_HOME)
         foldcade.shell.setHomeRoleHeld(held)
@@ -250,6 +251,7 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
         setIntent(intent)
         acceptHome(intent)
         acceptShelf(intent)
+        acceptFolderLibrary(intent)
         applyDialogPreview(intent)
     }
 
@@ -423,6 +425,12 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
             else -> return
         }
         foldcade.shell.showHomeGrid(grid)
+    }
+
+    /** Emulator hook, same kind as the Android shelf extra. A saved folder still loads on its own. */
+    private fun acceptFolderLibrary(intent: Intent) {
+        if (!intent.hasExtra(EXTRA_FOLDER_LIBRARY)) return
+        foldcade.reloadFolder()
     }
 
     /**
@@ -876,6 +884,7 @@ private fun shelfGame(game: ShelfGame): Game = Game(
 )
 
 internal const val EXTRA_ANDROID_SHELF = "app.foldcade.extra.SHELF"
+internal const val EXTRA_FOLDER_LIBRARY = "app.foldcade.extra.FOLDER_LIBRARY"
 
 private data class LibraryReturn(
     val libraryId: String,

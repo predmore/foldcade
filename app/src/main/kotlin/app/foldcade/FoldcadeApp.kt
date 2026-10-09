@@ -163,7 +163,7 @@ class FoldcadeApp : Application() {
             } finally {
                 if (!pluginsReady.isCompleted) pluginsReady.complete(Unit)
             }
-            reloadFolder()
+            if (!store.folderTree().isNullOrBlank()) reloadFolder()
         }
     }
 
