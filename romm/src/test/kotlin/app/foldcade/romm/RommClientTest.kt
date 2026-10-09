@@ -359,6 +359,16 @@ class RommClientTest {
     }
 
     @Test
+    fun archiveNamesStayUniqueForTheSameSave() {
+        assertEquals(
+            "mario [2026-04-18_09-42-01-abcd1234].srm",
+            archiveFileName("mario.srm", "2026-04-18_09-42-01-abcd1234"),
+        )
+        assertEquals("mario [stamp]", archiveFileName("mario", "stamp"))
+        assertFalse(archiveStamp() == archiveStamp())
+    }
+
+    @Test
     fun conflictArchivesTheLocalBytesAndWritesTheServerCopy() {
         server.route("GET", "/openapi.json") { exchange, _ ->
             json(exchange, 200, fixture("openapi-5.4.0-alpha.2.json"))
@@ -384,23 +394,36 @@ class RommClientTest {
         }
         val save = localSave("local")
         runClient(token = { "rmm_test" }) { client ->
-            val report = client.syncSaves(
-                deviceId = "3f1c2b9e-8a4d-4c7e-9f21-6d0b5a7e1c34",
-                saves = listOf(save),
-                romIds = listOf(1234),
-                emulators = listOf("azahar"),
-                destination = { save.file },
-            )
-            assertEquals(1, report.keptBoth.size)
-            assertEquals(50L, report.keptBoth.single().archivedSaveId)
-            assertTrue(report.completedSession)
-            assertEquals("server", Files.readString(save.file))
+            repeat(2) {
+                Files.writeString(save.file, "local")
+                val report = client.syncSaves(
+                    deviceId = "3f1c2b9e-8a4d-4c7e-9f21-6d0b5a7e1c34",
+                    saves = listOf(save),
+                    romIds = listOf(1234),
+                    emulators = listOf("azahar"),
+                    destination = { save.file },
+                )
+                assertEquals(1, report.keptBoth.size)
+                assertEquals(50L, report.keptBoth.single().archivedSaveId)
+                assertTrue(report.completedSession)
+                assertEquals("server", Files.readString(save.file))
+            }
         }
-        val upload = server.recorded.first { it.method == "POST" && it.path == "/api/saves" }
-        assertFalse(upload.query.orEmpty().contains("slot="))
-        assertFalse(upload.query.orEmpty().contains("overwrite=true"))
-        assertTrue(upload.query.orEmpty().contains("overwrite=false"))
-        assertTrue(upload.body.toString(Charsets.ISO_8859_1).contains("local"))
+        val uploads = server.recorded.filter { it.method == "POST" && it.path == "/api/saves" }
+        assertEquals(2, uploads.size)
+        val names = uploads.map { upload ->
+            assertFalse(upload.query.orEmpty().contains("slot="))
+            assertFalse(upload.query.orEmpty().contains("overwrite=true"))
+            assertTrue(upload.query.orEmpty().contains("overwrite=false"))
+            val uploaded = upload.body.toString(Charsets.ISO_8859_1)
+            assertTrue(uploaded.contains("local"))
+            val archivedName = Regex("""filename="([^"]+)"""").find(uploaded)!!.groupValues[1]
+            assertTrue(archivedName.startsWith("mario ["))
+            assertTrue(archivedName.endsWith("].srm"))
+            assertFalse(archivedName == "mario.srm")
+            archivedName
+        }
+        assertFalse(names[0] == names[1])
         val download = server.recorded.first { it.path == "/api/saves/99/content" }
         assertTrue(download.query.orEmpty().contains("optimistic=false"))
         val confirm = server.recorded.first { it.path == "/api/saves/99/downloaded" }
