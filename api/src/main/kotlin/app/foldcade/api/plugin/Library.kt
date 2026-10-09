@@ -112,6 +112,7 @@ data class SyncResult(
     val note: String? = null,
 )
 
+/** Open. A plugin that branches on this must use an `else` branch. */
 enum class SyncOutcome {
     Unchanged,
     Downloaded,

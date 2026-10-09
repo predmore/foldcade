@@ -53,7 +53,9 @@ class PluginContractTest {
         assertEquals("content://games/1", intent.dataUri)
         assertEquals("application/octet-stream", intent.mimeType)
         assertEquals(setOf(LaunchFlag.NewTask), intent.flags)
-        assertTrue(intent.extras.filterIsInstance<PlayerExtra.Long>().single().value == 7L)
+        assertTrue(intent.extras.filterIsInstance<PlayerExtra.LongValue>().single().value == 7L)
+        assertTrue(LaunchFlag.ClearTop in LaunchFlag.entries)
+        assertTrue(LaunchFlag.ClearTask in LaunchFlag.entries)
         assertTrue(intent.grantReadUri)
         assertTrue(player.needsLocalFile)
         assertEquals("slot", player.saveDeclarations(game).single().slot)
@@ -92,9 +94,13 @@ class PluginContractTest {
         val platforms = listOf(platform)
         val players = listOf(player)
         assertEquals("nintendo-3ds", canonicalPlatformId(platforms, "nintendo-3ds"))
+        assertEquals("nintendo-3ds", canonicalPlatformId(platforms, "Nintendo-3DS"))
         assertEquals("nintendo-3ds", canonicalPlatformId(platforms, "3ds"))
+        assertEquals("nintendo-3ds", canonicalPlatformId(platforms, "3DS"))
         assertEquals("nintendo-3ds", canonicalPlatformId(platforms, "n3ds"))
+        assertEquals("nintendo-3ds", canonicalPlatformId(platforms, "N3DS"))
         assertEquals(listOf(player.id), playersForPlatform(platforms, players, "3ds").map { it.id })
+        assertEquals(listOf(player.id), playersForPlatform(platforms, players, "3DS").map { it.id })
         assertEquals(listOf(player.id), playersForPlatform(platforms, players, "n3ds").map { it.id })
         assertNull(canonicalPlatformId(platforms, "nds"))
     }
@@ -105,6 +111,7 @@ class PluginContractTest {
         assertTrue(aliases.isDefault)
         assertTrue(IdlePlatform().aliases.isEmpty())
         assertEquals(1, PLUGIN_API_VERSION)
+        assertEquals(1, PLUGIN_API_MINOR)
     }
 
     @Test
@@ -271,7 +278,7 @@ private class IdlePlayer(
             componentClass = "app.sample.PlayActivity",
             action = "app.sample.PLAY",
             dataUri = uri,
-            extras = listOf(PlayerExtra.Long(key = "bytes", value = 7L)),
+            extras = listOf(PlayerExtra.LongValue(key = "bytes", value = 7L)),
             grantReadUri = uri != null,
             mimeType = if (uri == null) null else "application/octet-stream",
             flags = setOf(LaunchFlag.NewTask),

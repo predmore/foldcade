@@ -6,6 +6,7 @@ package app.foldcade.api.plugin
  * Implementations rethrow [kotlin.coroutines.cancellation.CancellationException].
  * They must not catch it, and they must not wrap it in [PluginException].
  * Cancellation is not one of these failures.
+ * Open. A plugin that branches on this must use an `else` branch.
  */
 sealed class PluginException(
     message: String,

@@ -4,6 +4,7 @@ package app.foldcade.api.plugin
  * What the backend hands the player.
  * The backend builds this. The player reads it.
  * The shell does not parse [Game.remoteKey] and does not branch on the backend.
+ * Open. A plugin that branches on this must use an `else` branch.
  */
 sealed interface LaunchTarget {
     /**

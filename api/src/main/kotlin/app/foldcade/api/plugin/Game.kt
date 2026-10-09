@@ -4,6 +4,7 @@ package app.foldcade.api.plugin
  * Where the game bytes are.
  * Remote-only still has to be fetched. Cached is in the app cache.
  * Local-only never had a server copy.
+ * Open. A plugin that branches on this must use an `else` branch.
  */
 enum class Availability {
     RemoteOnly,

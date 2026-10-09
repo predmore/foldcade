@@ -3,6 +3,7 @@ package app.foldcade.api.plugin
 /**
  * Where a player should be started.
  * A display-role setting can swap which panel is primary. Display ids are not stored here.
+ * Open. A plugin that branches on this must use an `else` branch.
  */
 enum class StartDisplay {
     Primary,
@@ -51,17 +52,29 @@ data class SaveDeclaration(
     val locationUri: String?,
 )
 
-/** What the shell already knows when the player builds an intent. */
+/**
+ * What the shell already knows when the player builds an intent.
+ * The shell builds [LaunchRequest] from [Placement.target].
+ */
 data class LaunchRequest(
     val game: Game,
     val target: LaunchTarget,
     val resolvedPackage: String,
 )
 
-/** Flags the shell applies when it starts [PlayerIntent]. */
+/**
+ * Flags the shell applies when it starts [PlayerIntent].
+ * Open. A plugin that branches on this must use an `else` branch.
+ */
 enum class LaunchFlag {
     GrantWriteUri,
     NewTask,
+
+    /** Clears the activity on top. Used when Azahar is relaunched. */
+    ClearTop,
+
+    /** Clears the task. Used when Azahar is relaunched. */
+    ClearTask,
 }
 
 /**
@@ -81,11 +94,12 @@ data class PlayerIntent(
     val flags: Set<LaunchFlag> = emptySet(),
 )
 
+/** Open. A plugin that branches on this must use an `else` branch. */
 sealed interface PlayerExtra {
     val key: String
 
     data class Text(override val key: String, val value: String) : PlayerExtra
     data class Integer(override val key: String, val value: Int) : PlayerExtra
-    data class Long(override val key: String, val value: kotlin.Long) : PlayerExtra
+    data class LongValue(override val key: String, val value: Long) : PlayerExtra
     data class BooleanFlag(override val key: String, val value: Boolean) : PlayerExtra
 }
