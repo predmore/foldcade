@@ -17,6 +17,7 @@ import app.foldcade.api.plugin.SaveSet
 import app.foldcade.host.PluginHost
 import app.foldcade.language.HostScreen
 import app.foldcade.language.Meaning
+import java.util.ServiceLoader
 import kotlinx.coroutines.Dispatchers
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -58,6 +59,15 @@ class ShellHostTest {
         val failure = runCatching { shell.onMeaning(Meaning.Activate, HostScreen.Bottom) }
         assertTrue(failure.exceptionOrNull() is PluginException.Unavailable)
         assertFalse(shell.model.unavailable)
+    }
+
+    @Test
+    fun localFolderEntryIsTheServiceFileRegistration() {
+        val loaded = ServiceLoader.load(
+            PluginEntry::class.java,
+            ShellHostTest::class.java.classLoader,
+        ).map { it.javaClass.name }
+        assertEquals(listOf("app.foldcade.localfolder.LocalFolderEntry"), loaded)
     }
 
     @Test
@@ -110,7 +120,7 @@ private open class LabelLibrary(
 }
 
 private class MemoryPrefs : SharedPreferences {
-    override fun getAll(): MutableMap<String, *> = mutableMapOf()
+    override fun getAll(): MutableMap<String, *> = mutableMapOf<String, Any>()
 
     override fun getString(key: String?, defValue: String?): String? = defValue
 
