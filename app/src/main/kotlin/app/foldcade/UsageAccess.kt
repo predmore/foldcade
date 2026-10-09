@@ -17,11 +17,11 @@ import app.foldcade.host.play.UsageSample
 class UsageAccess(private val context: Context) {
     fun granted(): Boolean {
         val appOps = context.getSystemService(AppOpsManager::class.java) ?: return false
+        // The attribution-tag overload is absent on API 33. Calling it crashes at resume.
         val mode = appOps.checkOpNoThrow(
             AppOpsManager.OPSTR_GET_USAGE_STATS,
             Process.myUid(),
             context.packageName,
-            null,
         )
         return mode == AppOpsManager.MODE_ALLOWED
     }
