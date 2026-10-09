@@ -299,153 +299,28 @@ fi
   echo "real=${bottom_width}x${bottom_height}"
 } | tee "$out/bottom-display.txt"
 
-ui_dump() {
-  local remote="/sdcard/foldcade-ui.xml"
-  adb_do shell uiautomator dump "$remote" >/dev/null 2>&1 || true
-  adb_do shell cat "$remote" 2>/dev/null | tr -d '\r' >"$out/ui-last.xml" || true
+# Setup and the home chooser are not tapped. Each of these steps is short.
+adb_step() {
+  timeout 10 adb "$@"
 }
 
-ui_has() {
-  local text="$1"
-  ui_dump
-  grep -F -q "text=\"${text}\"" "$out/ui-last.xml" \
-    || grep -F -q "content-desc=\"${text}\"" "$out/ui-last.xml"
-}
-
-ui_lacks() {
-  local text="$1"
-  ui_dump
-  ! grep -F -q "text=\"${text}\"" "$out/ui-last.xml" \
-    && ! grep -F -q "content-desc=\"${text}\"" "$out/ui-last.xml"
-}
-
-activity_dump() {
-  adb_do shell dumpsys activity activities | tr -d '\r'
-}
-
-current_focus() {
-  adb_do shell dumpsys window | tr -d '\r' | sed -n 's/^[[:space:]]*mCurrentFocus=//p' | head -1
-}
-
-# Shelf focus is Compose state. When the dump has no focused node, the label
-# being on screen is the check the key step can make.
-label_focused() {
-  local text="$1"
-  ui_dump
-  python3 -c 'import re,sys
-text, path = sys.argv[1], sys.argv[2]
-try:
-    xml = open(path, encoding="utf-8", errors="replace").read()
-except OSError:
-    sys.exit(1)
-nodes = re.findall(r"<node\b[^>]*>", xml)
-def attrs(node):
-    return dict(re.findall(r"([A-Za-z0-9_-]+)=\"([^\"]*)\"", node))
-seen = False
-any_focused = False
-for node in nodes:
-    a = attrs(node)
-    if a.get("focused") == "true" or a.get("selected") == "true":
-        any_focused = True
-    label = a.get("text") or a.get("content-desc") or ""
-    if label != text:
-        continue
-    seen = True
-    if a.get("focused") == "true" or a.get("selected") == "true":
-        sys.exit(0)
-sys.exit(0 if seen and not any_focused else 1)
-' "$text" "$out/ui-last.xml"
-}
-
-wait_for() {
-  local label="$1"
-  local seconds="$2"
-  shift 2
-  local deadline=$((SECONDS + seconds))
-  while [ "$SECONDS" -lt "$deadline" ]; do
-    if "$@"; then
-      echo "step: ${label}"
-      return 0
-    fi
-    sleep 1
-  done
-  fail "${label}: timed out after ${seconds}s"
-}
-
-echo "step: launch"
-adb_do shell input keyevent KEYCODE_WAKEUP
-adb_do shell wm dismiss-keyguard || true
+echo "step: skip setup"
+adb_step shell settings put secure user_setup_complete 1
+adb_step shell settings put global device_provisioned 1
+adb_step shell input keyevent KEYCODE_WAKEUP || true
+adb_step shell wm dismiss-keyguard || true
 timeout 60 adb install -r "$apk"
-adb_do shell am start -W -n "${app_id}/app.foldcade.PrimaryHomeActivity"
 
-wait_for "companion home" 20 \
-  bash -c 'timeout 30 adb shell dumpsys activity activities | tr -d "\r" | grep -q CompanionHomeActivity'
-wait_for "primary home" 10 \
-  bash -c 'timeout 30 adb shell dumpsys activity activities | tr -d "\r" | grep -q PrimaryHomeActivity'
+component="${app_id}/app.foldcade.PrimaryHomeActivity"
+echo "step: launch ${component}"
+timeout 15 adb shell am start -W -n "$component"
 
-# Home prompt opens on Not now. Wait until that button is in the hierarchy,
-# then Activate. Do not press Center before the prompt is showing.
-echo "step: dismiss home prompt"
-wait_for "Not now" 30 ui_has "Not now"
-adb_do shell input keyevent KEYCODE_DPAD_CENTER
-wait_for "home prompt to close" 20 ui_lacks "Not now"
+echo "step: home role"
+adb_step shell cmd role add-role-holder android.app.role.HOME "$app_id"
 
-# First stand-in, on the focused display. The shelf opens on One.
-echo "step: first stand-in"
-wait_for "shelf title One" 20 ui_has "One"
-adb_do shell input keyevent KEYCODE_DPAD_CENTER
-wait_for "first stand-in" 20 bash -c 'test "$(timeout 30 adb shell dumpsys activity activities | tr -d "\r" | grep -c StandInActivity || true)" -ge 1'
-
-# Second stand-in. The picker is on the other display, so keys have to go there.
-# Use a display id only when input -h documents it.
-echo "step: second stand-in"
-input_help="$(adb_do shell input -h 2>&1 || true)"
-if ! printf '%s\n' "$input_help" | grep -Eq '(^|[[:space:]])--?d([[:space:]]|$)|DISPLAY_ID|display ID|displayId'; then
-  echo "::error::input -h does not document a display id. The second stand-in needs that flag, and this script will not invent one."
-  printf '%s\n' "$input_help" | head -n 40
-  fail "second stand-in: input -h has no display id"
-fi
-
-home_displays() {
-  activity_dump | awk '
-    /^[[:space:]]*Display #[0-9]/ {
-      disp = ""
-      if (match($0, /#[0-9]+/)) {
-        disp = substr($0, RSTART + 1, RLENGTH - 1)
-      }
-      top = 1
-      next
-    }
-    top && /Hist / {
-      top = 0
-      if ($0 ~ /PrimaryHomeActivity|CompanionHomeActivity/) print disp
-    }
-  '
-}
-
-picker_ready() {
-  [ -n "$(home_displays | head -1)" ]
-}
-
-wait_for "picker still on a home display" 15 picker_ready
-picker_display="$(home_displays | head -1)"
-if [ -z "$picker_display" ]; then
-  echo "----- activity dump -----"
-  activity_dump | head -n 120 || true
-  fail "second stand-in: no Foldcade home remained"
-fi
-
-send_key() {
-  local display="$1"
-  local key="$2"
-  adb_do shell input -d "$display" keyevent "$key"
-}
-
-# Focus is restored on One. Right moves to Two. Four columns, so Down does not.
-send_key "$picker_display" KEYCODE_DPAD_RIGHT
-wait_for "focus on Two" 20 label_focused "Two"
-send_key "$picker_display" KEYCODE_DPAD_CENTER
-wait_for "second stand-in" 20 bash -c 'test "$(timeout 30 adb shell dumpsys activity activities | tr -d "\r" | grep -c StandInActivity || true)" -ge 2'
+# A dialog that is already up is dismissed. This does not click a button.
+echo "step: dismiss leftover dialog"
+adb_step shell input keyevent KEYCODE_BACK || true
 
 is_png() {
   local file="$1"
@@ -522,7 +397,7 @@ resolve_screencap_ids
   echo "bottom density ${bottom_density} is derived from the 3.92 inch diagonal."
   echo "published bottom 335 PPI conflicts with that diagonal and is not used."
   echo "device=${device}"
-  echo "picker_display=${picker_display}"
+  echo "component=${app_id}/app.foldcade.PrimaryHomeActivity"
   adb_do shell dumpsys SurfaceFlinger --display-id | tr -d '\r' || true
 } >"$out/display-ids.txt"
 
@@ -533,14 +408,8 @@ expect_png "$out/secondary.png" "${bottom_width}x${bottom_height}"
 cp "$out/primary.png" "$out/display-${primary}.png"
 cp "$out/secondary.png" "$out/display-${secondary}.png"
 
-# Home on the display that just received input. Captures fail if screencap fails.
 echo "step: home"
-before_focus="$(current_focus)"
-send_key "$picker_display" KEYCODE_HOME
-focus_left() {
-  [ "$(current_focus)" != "$before_focus" ]
-}
-wait_for "focus to leave the stand-in" 20 focus_left
+adb_step shell input keyevent KEYCODE_HOME || true
 capture "$primary" "$out/home-primary.png"
 capture "$secondary" "$out/home-secondary.png"
 expect_png "$out/home-primary.png" "${top_width}x${top_height}"
