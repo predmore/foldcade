@@ -300,13 +300,11 @@ fi
 } | tee "$out/bottom-display.txt"
 
 # Setup and the home chooser are not tapped. Each of these steps is short.
-# "Viewing full screen" is the system notice over an immersive window. Its
-# only control is Got it, which is not tapped. That button writes
-# immersive_mode_confirmations=confirmed, and the window is removed when the
-# setting changes. Back is still sent when a dialog remains: it dismisses the
-# home prompt, and it is the key for the notice if the window takes it.
-# A home key is not sent. While this presentation display is focused, that
-# key resolves SECONDARY_HOME to the stock launcher.
+# "Viewing full screen" is the system confirmation. Back does not clear it,
+# and Got it is not tapped. The secure setting is what suppresses it, and it
+# is set before launch, the same way setup is skipped.
+# One Back if some other dialog is still up. A home key is not sent: while
+# this presentation display is focused, that key opens the stock launcher.
 adb_step() {
   timeout 10 adb "$@"
 }
@@ -314,39 +312,33 @@ adb_step() {
 echo "step: skip setup"
 adb_step shell settings put secure user_setup_complete 1
 adb_step shell settings put global device_provisioned 1
-adb_step shell settings put secure immersive_mode_confirmations confirmed
 adb_step shell input keyevent KEYCODE_WAKEUP || true
 adb_step shell wm dismiss-keyguard || true
 timeout 60 adb install -r "$apk"
 
 component="${app_id}/app.foldcade.PrimaryHomeActivity"
+echo "step: home role"
+adb_step shell cmd role add-role-holder android.app.role.HOME "$app_id"
+# Before the activity hides the system bars. Back does not dismiss this notice.
+echo "step: suppress full screen confirmation"
+adb_step shell settings put secure immersive_mode_confirmations confirmed
+
 echo "step: launch ${component}"
 timeout 15 adb shell am start -W -n "$component"
 
-echo "step: home role"
-adb_step shell cmd role add-role-holder android.app.role.HOME "$app_id"
-
-# Back only when a dialog is still on screen. Do not click its buttons.
+# One Back when a dialog other than the system confirmation is still up.
+# Do not tap its buttons, and do not stall the capture on it.
 dialog_remains() {
   timeout 10 adb shell uiautomator dump /sdcard/foldcade-ui.xml >/dev/null 2>&1 || return 1
   timeout 10 adb shell cat /sdcard/foldcade-ui.xml | tr -d '\r' >"$out/ui-last.xml" || return 1
-  grep -q -E 'Not now|Use Foldcade as Home|Viewing full screen' "$out/ui-last.xml"
+  grep -q -E 'Not now|Use Foldcade as Home' "$out/ui-last.xml"
 }
 
 dismiss_leftover_dialog() {
-  local n
-  for n in 1 2 3; do
-    dialog_remains || return 0
-    echo "step: dismiss leftover dialog"
-    adb_step shell input keyevent KEYCODE_BACK
-    if grep -q 'Viewing full screen' "$out/ui-last.xml"; then
-      adb_step shell settings put secure immersive_mode_confirmations confirmed
-    fi
-    sleep 1
-  done
-  if dialog_remains; then
-    fail "dialog still on screen"
-  fi
+  dialog_remains || return 0
+  echo "step: dismiss leftover dialog"
+  adb_step shell input keyevent KEYCODE_BACK
+  sleep 1
 }
 
 resumed_has() {
