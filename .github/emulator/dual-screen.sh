@@ -356,8 +356,57 @@ adb_step shell wm dismiss-keyguard || true
 timeout 60 adb install -r "$apk"
 
 component="${app_id}/app.foldcade.PrimaryHomeActivity"
-echo "step: home role"
-adb_step shell cmd role add-role-holder android.app.role.HOME "$app_id"
+# Run 37904476852: add-role-holder threw TimeoutException while the guest
+# was still settling. Each wait is bounded. The command is tried three
+# times with backoff, then the step fails.
+wait_for_boot_completed() {
+  local deadline=$((SECONDS + 30)) boot
+  echo "step: boot_completed"
+  while [ "$SECONDS" -lt "$deadline" ]; do
+    boot="$(timeout 10 adb shell getprop sys.boot_completed 2>/dev/null | tr -d '\r' || true)"
+    if [ "$boot" = "1" ]; then
+      return 0
+    fi
+    sleep 2
+  done
+  fail "home role: sys.boot_completed did not become 1"
+}
+
+wait_for_service() {
+  local name="$1"
+  local deadline=$((SECONDS + 30)) status
+  echo "step: service ${name}"
+  while [ "$SECONDS" -lt "$deadline" ]; do
+    status="$(timeout 10 adb shell service check "$name" 2>/dev/null | tr -d '\r' || true)"
+    if [[ "$status" == *": found" ]]; then
+      return 0
+    fi
+    sleep 2
+  done
+  fail "home role: service ${name} was not ready"
+}
+
+add_home_role() {
+  local attempt delay
+  for attempt in 1 2 3; do
+    echo "step: home role attempt ${attempt}"
+    if timeout 15 adb shell cmd role add-role-holder android.app.role.HOME "$app_id"; then
+      return 0
+    fi
+    if [ "$attempt" -eq 3 ]; then
+      break
+    fi
+    delay=$((attempt * 2))
+    echo "step: home role backoff ${delay}s"
+    sleep "$delay"
+  done
+  fail "home role: add-role-holder failed"
+}
+
+wait_for_boot_completed
+wait_for_service package
+wait_for_service role
+add_home_role
 # Before the activity hides the system bars. Back does not dismiss this notice.
 echo "step: suppress full screen confirmation"
 adb_step shell settings put secure immersive_mode_confirmations confirmed
