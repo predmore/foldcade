@@ -10,7 +10,9 @@ import app.foldcade.credentials.SealedCredentialStore
 import app.foldcade.credentials.SecretBox
 import app.foldcade.credentials.StoredBlob
 import app.foldcade.credentials.openSealed
+import app.foldcade.host.PluginHost
 import app.foldcade.language.Copy
+import kotlinx.coroutines.Dispatchers
 import app.foldcade.language.DialogKind
 import app.foldcade.language.SignedInBackend
 import app.foldcade.romm.CLEARTEXT_CREDENTIAL_WARNING
@@ -42,7 +44,7 @@ class CredentialRecoveryTest {
 
     @Test
     fun httpSetupShowsTheCleartextWarning() {
-        val shell = ShellController(SessionStore(MemoryPrefs()))
+        val shell = ShellController(SessionStore(MemoryPrefs()), PluginHost(Dispatchers.Unconfined))
         shell.openConnect("https://romm.example")
         assertNull(shell.model.connectWarning)
         shell.editOrigin("http://192.168.1.20:8080")
@@ -56,7 +58,7 @@ class CredentialRecoveryTest {
     }
 
     private fun assertSignedOut(lookup: CredentialLookup) {
-        val shell = ShellController(SessionStore(MemoryPrefs()))
+        val shell = ShellController(SessionStore(MemoryPrefs()), PluginHost(Dispatchers.Unconfined))
         shell.setSignedIn(listOf(SignedInBackend("romm", "RomM"), SignedInBackend("other", "other")))
         shell.applyRecovery(signedInRecovery(lookup, shell.model.signedIn))
         assertTrue(shell.model.signedIn.isEmpty())
