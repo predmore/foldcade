@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -146,32 +147,37 @@ private fun <T> TravelFade(target: T, scale: Float, content: @Composable (T) -> 
 private fun Hero(app: FoldcadeApp, screen: HostScreen, scale: Float) {
     val theme = builtInTheme()
     val game = app.shell.focusedGame()
-    Box(Modifier.fillMaxSize()) {
+    BoxWithConstraints(Modifier.fillMaxSize()) {
+        val inset = px(Metrics.heroInsetPx)
+        val artHeight = maxHeight * Metrics.heroArtFraction
         Column(
             Modifier
-                .fillMaxSize()
-                .padding(
-                    start = px(Metrics.heroInsetPx),
-                    end = px(Metrics.heroInsetPx),
-                    top = px(Metrics.heroInsetPx),
-                ),
+                .align(Alignment.TopStart)
+                .fillMaxWidth()
+                .padding(start = inset, end = inset, top = inset),
         ) {
-            Box(Modifier.fillMaxWidth().fillMaxHeight(Metrics.heroArtFraction))
-            TravelFade(target = game, scale = scale) { shown ->
-                Column {
+            Box(
+                Modifier
+                    .fillMaxWidth()
+                    .height(artHeight),
+                contentAlignment = Alignment.TopStart,
+            ) {
+                TravelFade(target = game, scale = scale) { shown ->
                     if (shown != null) {
-                        BasicText(
-                            text = shown.title,
-                            style = text(theme.onBackground, TypeRamp.heroTitle, theme),
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                        )
-                        BasicText(
-                            text = shown.shortText,
-                            style = text(theme.muted, TypeRamp.heroMeta, theme),
-                            maxLines = 2,
-                            overflow = TextOverflow.Ellipsis,
-                        )
+                        Column {
+                            BasicText(
+                                text = shown.title,
+                                style = text(theme.onBackground, TypeRamp.heroTitle, theme),
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                            )
+                            BasicText(
+                                text = shown.shortText,
+                                style = text(theme.muted, TypeRamp.heroMeta, theme),
+                                maxLines = 2,
+                                overflow = TextOverflow.Ellipsis,
+                            )
+                        }
                     }
                 }
             }
@@ -190,11 +196,14 @@ private fun Picker(app: FoldcadeApp, screen: HostScreen, scale: Float) {
     BoxWithConstraints(Modifier.fillMaxSize().background(theme.background)) {
         val inset = maxWidth * Metrics.insetFraction
         val gap = maxWidth * Metrics.gapFraction
-        val cell = (maxWidth - inset * 2 - gap * (Metrics.columns - 1)) / Metrics.columns
+        val inner = maxWidth - inset * 2
+        val cell = (inner - gap * (Metrics.columns - 1)) / Metrics.columns
+        val focusOutset = cell * ((Motion.scaleFocus - 1f) / 2f) + px(Metrics.focusStrokePx)
         Column(Modifier.fillMaxSize().padding(horizontal = inset, vertical = inset)) {
-            ChromeRow(app, screen)
+            Box(Modifier.zIndex(1f).fillMaxWidth()) { ChromeRow(app, screen) }
             BoxWithConstraints(
                 Modifier
+                    .padding(top = focusOutset)
                     .weight(1f)
                     .fillMaxWidth()
                     .pointerInput(model.panel, model.dialog, model.connectOpen) {
@@ -244,9 +253,9 @@ private fun Picker(app: FoldcadeApp, screen: HostScreen, scale: Float) {
 @Composable
 private fun Panels(app: FoldcadeApp, screen: HostScreen, scale: Float) {
     val model = app.shell.model
-    if (model.dialog?.screen == screen) return
-    val leftOpen = model.panel?.side == Side.Left && model.panel?.screen == screen
-    val rightOpen = model.panel?.side == Side.Right && model.panel?.screen == screen
+    val dialogHere = model.dialog?.screen == screen
+    val leftOpen = !dialogHere && model.panel?.side == Side.Left && model.panel?.screen == screen
+    val rightOpen = !dialogHere && model.panel?.side == Side.Right && model.panel?.screen == screen
     BoxWithConstraints(Modifier.fillMaxSize()) {
         val inset = maxWidth * Metrics.insetFraction
         val openWidth = maxWidth * 0.46f
@@ -543,15 +552,21 @@ private fun Cell(
                 .size(size)
                 .scale(drawn)
                 .focusStroke(focused)
-                .clip(RoundedCornerShape(corner))
-                .background(theme.background)
                 .clickable(onClick = onClick),
             contentAlignment = Alignment.Center,
         ) {
+            Box(
+                Modifier
+                    .fillMaxSize()
+                    .clip(RoundedCornerShape(corner))
+                    .background(theme.background),
+            )
             BasicText(
                 text = monogram(title),
                 modifier = Modifier.scale(theme.artScale),
                 style = text(theme.onBackground, TypeRamp.heroTitle, theme),
+                maxLines = 1,
+                overflow = TextOverflow.Clip,
             )
         }
         if (showTitle) {
@@ -583,11 +598,16 @@ private fun DialogLayer(dialog: DialogState?, screen: HostScreen, scale: Float) 
 @Composable
 private fun DialogCard(dialog: DialogState) {
     val theme = builtInTheme()
-    Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.72f)), contentAlignment = Alignment.Center) {
+    Box(
+        Modifier
+            .fillMaxSize()
+            .background(Color.Black.copy(alpha = 0.72f))
+            .padding(px(Metrics.dialogInsetPx)),
+        contentAlignment = Alignment.Center,
+    ) {
         Column(
             Modifier
                 .fillMaxWidth()
-                .padding(horizontal = px(Metrics.dialogInsetPx))
                 .drawWithContent {
                     drawContent()
                     drawRect(color = theme.muted, style = Stroke(width = Metrics.dialogBorderPx))
