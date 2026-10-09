@@ -330,6 +330,7 @@ internal fun localSaves(cacheRoot: Path, romId: Long, emulator: String?): List<L
             }
             val slot = slotDir.fileName.toString()
             Files.list(slotDir).use { files ->
+                // `.trash` is a directory. Only regular files in the slot are saves.
                 files.filter { Files.isRegularFile(it) }.forEach { file ->
                     found += LocalSave(
                         romId = romId,

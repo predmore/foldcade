@@ -28,6 +28,9 @@ import java.nio.file.Path
 import java.nio.file.StandardCopyOption
 import java.nio.file.StandardOpenOption
 import java.time.Duration
+import java.time.Instant
+import java.time.ZoneOffset
+import java.time.format.DateTimeFormatter
 import java.util.UUID
 import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
@@ -486,8 +489,13 @@ class RommClient(
                         completed++
                     }
                     "delete" -> {
-                        val local = saves.find { it.romId == op.romId && it.slot == op.slot }
-                        if (local != null && Files.deleteIfExists(local.file)) deleted.add(local.file)
+                        val local = saves.find {
+                            it.romId == op.romId &&
+                                it.slot == op.slot &&
+                                it.fileName == op.fileName &&
+                                it.emulator == op.emulator
+                        }
+                        if (local != null && moveSaveToTrash(local.file)) deleted.add(local.file)
                         completed++
                     }
                     "conflict" -> {
@@ -841,6 +849,34 @@ class RommClient(
             System.arraycopy(bytes, 0, body, header.size, bytes.size)
             System.arraycopy(ending, 0, body, header.size + bytes.size, ending.size)
             return "multipart/form-data; boundary=$boundary" to body
+        }
+
+        /**
+         * Moves [file] into a `.trash` directory beside it.
+         * The name is unique so a second delete does not replace the first.
+         * Returns false when [file] is already gone.
+         */
+        internal fun moveSaveToTrash(file: Path): Boolean {
+            if (!Files.exists(file)) return false
+            val parent = file.parent
+            if (parent == null) return Files.deleteIfExists(file)
+            val trash = parent.resolve(".trash")
+            Files.createDirectories(trash)
+            val dest = trash.resolve(trashedName(file.fileName.toString()))
+            try {
+                Files.move(file, dest, StandardCopyOption.ATOMIC_MOVE)
+            } catch (_: AtomicMoveNotSupportedException) {
+                Files.move(file, dest)
+            }
+            return true
+        }
+
+        private fun trashedName(fileName: String): String {
+            val stamp = DateTimeFormatter.ofPattern("yyyyMMddHHmmssSSS")
+                .withZone(ZoneOffset.UTC)
+                .format(Instant.now())
+            val unique = UUID.randomUUID().toString().substring(0, 8)
+            return "$stamp-$unique-$fileName"
         }
 
         private fun moveIntoPlace(partial: Path, target: Path) {

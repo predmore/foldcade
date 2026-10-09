@@ -400,6 +400,70 @@ class RommClientTest {
     }
 
     @Test
+    fun deleteMatchesFileNameAndEmulatorAndMovesTheFileToTrash() {
+        server.route("GET", "/openapi.json") { exchange, _ ->
+            json(exchange, 200, fixture("openapi-5.4.0-alpha.2.json"))
+        }
+        server.route("POST", "/api/sync/negotiate") { exchange, _ ->
+            json(
+                exchange,
+                200,
+                """
+                {
+                  "session_id": 42,
+                  "operations": [{
+                    "action": "delete",
+                    "rom_id": 1234,
+                    "save_id": null,
+                    "file_name": "mario.srm",
+                    "slot": "autosave",
+                    "emulator": "azahar",
+                    "reason": "deleted on server"
+                  }],
+                  "total_upload": 0,
+                  "total_download": 0,
+                  "total_conflict": 0,
+                  "total_no_op": 0,
+                  "total_delete": 1
+                }
+                """.trimIndent(),
+            )
+        }
+        server.route("POST", "/api/sync/sessions/42/complete") { exchange, _ ->
+            json(exchange, 200, fixture("sync-complete.json"))
+        }
+        val slot = dir.resolve("saves")
+        Files.createDirectories(slot)
+        val mario = slot.resolve("mario.srm")
+        val otherName = slot.resolve("other.srm")
+        val otherEmulator = slot.resolve("mario-melonds.srm")
+        Files.writeString(mario, "drop")
+        Files.writeString(otherName, "keep-name")
+        Files.writeString(otherEmulator, "keep-emulator")
+        val saves = listOf(
+            localSave("drop").copy(file = otherEmulator, emulator = "melonds"),
+            localSave("keep-name").copy(fileName = "other.srm", file = otherName),
+            localSave("drop").copy(file = mario),
+        )
+        runClient(token = { "rmm_test" }) { client ->
+            val report = client.syncSaves(
+                "device-1",
+                saves,
+                destination = { slot.resolve("unused.srm") },
+            )
+            assertEquals(listOf(mario), report.deleted)
+            assertTrue(report.completedSession)
+        }
+        assertFalse(Files.exists(mario))
+        assertEquals("keep-name", Files.readString(otherName))
+        assertEquals("keep-emulator", Files.readString(otherEmulator))
+        val trashed = Files.list(slot.resolve(".trash")).use { stream -> stream.toList() }
+        assertEquals(1, trashed.size)
+        assertEquals("drop", Files.readString(trashed.single()))
+        assertTrue(trashed.single().fileName.toString().endsWith("-mario.srm"))
+    }
+
+    @Test
     fun conflictArchivesTheLocalBytesAndWritesTheServerCopy() {
         server.route("GET", "/openapi.json") { exchange, _ ->
             json(exchange, 200, fixture("openapi-5.4.0-alpha.2.json"))
