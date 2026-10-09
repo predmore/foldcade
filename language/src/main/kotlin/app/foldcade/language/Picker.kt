@@ -566,11 +566,29 @@ private fun applyPanel(
     return when (meaning) {
         Meaning.MoveUp -> model.copy(panel = current.copy(index = (index - 1).coerceAtLeast(0))) to null
         Meaning.MoveDown -> model.copy(panel = current.copy(index = (index + 1).coerceAtMost(rows.lastIndex))) to null
-        Meaning.MoveLeft, Meaning.MoveRight, Meaning.PageTowardStart, Meaning.PageTowardEnd ->
+        Meaning.MoveLeft, Meaning.MoveRight -> {
+            val direction = if (meaning == Meaning.MoveLeft) -1 else 1
+            val nudged = nudgeSlider(model, rows[index], direction)
+            if (nudged == null) model.copy(panel = current) to null
+            else nudged.copy(panel = current) to null
+        }
+        Meaning.PageTowardStart, Meaning.PageTowardEnd ->
             model.copy(panel = current) to null
         Meaning.Back -> backPanel(model, current)
         Meaning.Activate -> activateRow(model, current, rows[index], screen)
         Meaning.LeftPanel, Meaning.RightPanel -> presentPanel(model, meaning, screen) to null
+    }
+}
+
+/**
+ * Left and right step a slider by 5 points. Other rows ignore the direction
+ * so the panel focus stays put. Music volume is the slider today; another
+ * slider row joins this same branch.
+ */
+private fun nudgeSlider(model: PickerModel, row: Row, direction: Int): PickerModel? {
+    return when (row) {
+        Row.MusicVolume -> model.copy(music = model.music.nudged(direction))
+        else -> null
     }
 }
 

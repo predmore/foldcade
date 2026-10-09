@@ -70,6 +70,7 @@ class FoldcadeApp : Application() {
         val names = listOf(Copy.builtIn) + listOfNotNull(packaged?.name)
         val motions = listOf(BackgroundMotion.Off) + listOfNotNull(packaged?.backgroundMotion)
         plays = PlaySessions.open(File(filesDir, "play-sessions/events.log"))
+        val sliderTick = SliderTick()
         shell = ShellController(
             store,
             plugins,
@@ -78,8 +79,9 @@ class FoldcadeApp : Application() {
             names,
             motions,
             cue = { index, slot ->
-                if (index > 0) packaged?.sounds?.play(slot)
+                index > 0 && packaged?.sounds?.play(slot) == true
             },
+            bareTick = sliderTick::play,
             lastPlayedMillis = plays::lastPlayedMillis,
         )
         plays.onChanged = shell::notePlayChanged

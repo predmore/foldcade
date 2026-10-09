@@ -1,10 +1,11 @@
 package app.foldcade.language
 
 import kotlin.math.roundToInt
+import kotlin.math.sqrt
 
 /**
  * Home-loop preference. The left panel edits this. Playback lives in the app.
- * Default level is a quarter of the media volume. The device mute is not a setting.
+ * Default level is half of the slider. The device mute is not a setting.
  */
 data class HomeMusicSetting(
     val enabled: Boolean = true,
@@ -15,15 +16,27 @@ data class HomeMusicSetting(
 
     /** Activate steps by 5 points and wraps from full to silent. */
     fun stepped(): HomeMusicSetting {
-        val percent = (volume.coerceIn(0f, 1f) * 100f).roundToInt().coerceIn(0, 100)
-        val next = if (percent >= 100) 0 else (percent + STEP_PERCENT).coerceAtMost(100)
+        val current = percent()
+        val next = if (current >= 100) 0 else (current + STEP_PERCENT).coerceAtMost(100)
+        return copy(volume = next / 100f)
+    }
+
+    /**
+     * D-pad steps by 5 points and stops at silent or full.
+     * [direction] is -1 to lower and +1 to raise.
+     */
+    fun nudged(direction: Int): HomeMusicSetting {
+        val next = (percent() + direction * STEP_PERCENT).coerceIn(0, 100)
         return copy(volume = next / 100f)
     }
 
     fun withVolume(value: Float): HomeMusicSetting = copy(volume = value.coerceIn(0f, 1f))
 
+    private fun percent(): Int =
+        (volume.coerceIn(0f, 1f) * 100f).roundToInt().coerceIn(0, 100)
+
     companion object {
-        const val DEFAULT_VOLUME = 0.25f
+        const val DEFAULT_VOLUME = 0.5f
         const val STEP_PERCENT = 5
         const val UI_SOUND_DUCK = 0.4f
         const val DEFAULT_TRACK_ID = "lanternlight"
@@ -57,8 +70,22 @@ object MusicCopy {
 }
 
 /**
+ * Slider position to linear amplitude.
+ * Full scale is exactly 1. A square curve would leave 25% near silence, so this
+ * uses the square root. A quarter of the slider is half amplitude, about -6 dB.
+ */
+fun perceptualAmplitude(position: Float): Float {
+    val slider = position.coerceIn(0f, 1f)
+    if (slider <= 0f) return 0f
+    if (slider >= 1f) return 1f
+    return sqrt(slider)
+}
+
+/**
  * Player level before the entry fade. Zero when music is off, the slider is at
- * zero, or the media stream is muted. UI sounds duck the loop. They do not replace it.
+ * zero, or the media stream is muted. The slider uses [perceptualAmplitude], so
+ * 100% is full scale and 25% is still audible. UI sounds duck the loop.
+ * They do not replace it.
  */
 fun playbackLevel(
     setting: HomeMusicSetting,
@@ -66,8 +93,37 @@ fun playbackLevel(
     mediaMuted: Boolean,
 ): Float {
     if (!setting.enabled || mediaMuted) return 0f
-    val level = setting.volume.coerceIn(0f, 1f)
-    return if (uiSoundActive) level * HomeMusicSetting.UI_SOUND_DUCK else level
+    val amplitude = perceptualAmplitude(setting.volume)
+    return if (uiSoundActive) amplitude * HomeMusicSetting.UI_SOUND_DUCK else amplitude
+}
+
+/**
+ * A UI-sound duck. A late callback from an older duck cannot turn it back on,
+ * and [clear] drops it when the player is released.
+ */
+class DuckLatch {
+    var active: Boolean = false
+        private set
+
+    private var generation: Int = 0
+
+    fun begin(): Int {
+        active = true
+        generation += 1
+        return generation
+    }
+
+    /** Clears the duck when [generation] is still the latest [begin]. */
+    fun end(generation: Int): Boolean {
+        if (generation != this.generation) return false
+        active = false
+        return true
+    }
+
+    fun clear() {
+        generation += 1
+        active = false
+    }
 }
 
 /** Theme JSON key. Absent means the selected track from the manifest. */

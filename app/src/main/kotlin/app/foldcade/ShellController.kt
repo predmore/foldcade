@@ -41,7 +41,8 @@ class ShellController(
     private val trackTitle: String = DEFAULT_TRACK_TITLE,
     private val themeNames: List<String> = listOf(Copy.builtIn),
     private val themeMotions: List<BackgroundMotion> = listOf(BackgroundMotion.Off),
-    private val cue: (themeIndex: Int, slot: String) -> Unit = { _, _ -> },
+    private val cue: (themeIndex: Int, slot: String) -> Boolean = { _, _ -> false },
+    private val bareTick: () -> Unit = {},
     private val lastPlayedMillis: (String) -> Long? = { null },
 ) {
     var model by mutableStateOf(initial())
@@ -317,13 +318,23 @@ class ShellController(
         )
     }
 
+    /** The move clip when the theme has one. Otherwise the short original tick. */
+    private fun tickSlider(themeIndex: Int) {
+        if (!cue(themeIndex, "move")) bareTick()
+    }
+
+    /** Slider rows. Music volume is the only one; another slider joins this check. */
+    private fun sliderMoved(before: PickerModel, after: PickerModel): Boolean =
+        before.music.volume != after.music.volume
+
     private fun cueMeaning(meaning: Meaning, before: PickerModel, after: PickerModel) {
         when (meaning) {
             Meaning.Activate -> cue(after.themeIndex, "activate")
             Meaning.Back -> cue(after.themeIndex, "back")
             Meaning.MoveUp, Meaning.MoveDown, Meaning.MoveLeft, Meaning.MoveRight -> {
                 val moved = before.focus != after.focus || before.panel?.index != after.panel?.index
-                if (moved) cue(after.themeIndex, "move")
+                val slid = sliderMoved(before, after)
+                if (slid) tickSlider(after.themeIndex) else if (moved) cue(after.themeIndex, "move")
             }
             else -> Unit
         }

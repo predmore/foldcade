@@ -112,9 +112,11 @@ class ThemeSounds(context: Context, entries: Map<String, ByteArray>) {
         }
     }
 
-    fun play(slot: String) {
-        val id = ids[slot] ?: return
-        if (id == 0) return
+    /** True when this theme has [slot] and the tick was started. */
+    fun play(slot: String): Boolean {
+        val id = ids[slot] ?: return false
+        if (id == 0) return false
         pool.play(id, 0.4f, 0.4f, 1, 0, 1f)
+        return true
     }
 }

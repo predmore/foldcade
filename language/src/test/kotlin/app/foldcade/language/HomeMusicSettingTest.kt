@@ -7,13 +7,14 @@ import org.junit.Test
 
 class HomeMusicSettingTest {
     @Test
-    fun defaultIsOnAtAQuarterOfMediaVolume() {
+    fun defaultIsOnAtHalfTheSlider() {
         val music = HomeMusicSetting()
         assertTrue(music.enabled)
-        assertEquals(0.25f, music.volume, 0.0001f)
+        assertEquals(0.5f, music.volume, 0.0001f)
         assertEquals(HomeMusicSetting.DEFAULT_TRACK_ID, music.trackId)
         assertEquals("Music  On", MusicCopy.musicLabel(true))
         assertEquals("Track  Lanternlight", MusicCopy.trackLabel("Lanternlight"))
+        assertEquals("Volume  50%", MusicCopy.volumeLabel(0.5f))
         assertEquals("Volume  25%", MusicCopy.volumeLabel(0.25f))
     }
 
@@ -51,7 +52,8 @@ class HomeMusicSettingTest {
         assertEquals(HomeMusicSetting.DEFAULT_TRACK_ID, stayed.music.trackId)
         assertEquals("Track  Lanternlight", MusicCopy.trackLabel(stayed.trackTitle))
         val volume = opened.panel!!.copy(index = 7)
-        val stepped = reduce(opened.copy(panel = volume), Meaning.Activate).first
+        val atQuarter = opened.copy(panel = volume, music = HomeMusicSetting(volume = 0.25f))
+        val stepped = reduce(atQuarter, Meaning.Activate).first
         assertEquals(0.30f, stepped.music.volume, 0.0001f)
         val wrapped = HomeMusicSetting(volume = 1f).stepped()
         assertEquals(0f, wrapped.volume, 0.0001f)
@@ -60,12 +62,65 @@ class HomeMusicSettingTest {
     }
 
     @Test
+    fun dpadStepsVolumeByFiveAndHoldsTheRow() {
+        val opened = reduce(PickerModel(count = 1, rowsPerPage = 1, showLaunchTarget = false), Meaning.LeftPanel).first
+        val volume = opened.panel!!.copy(index = 7)
+        val atHalf = opened.copy(panel = volume, music = HomeMusicSetting(volume = 0.5f))
+        val raised = reduce(atHalf, Meaning.MoveRight).first
+        assertEquals(0.55f, raised.music.volume, 0.0001f)
+        assertEquals(7, raised.panel?.index)
+        val lowered = reduce(atHalf, Meaning.MoveLeft).first
+        assertEquals(0.45f, lowered.music.volume, 0.0001f)
+        assertEquals(7, lowered.panel?.index)
+        val held = reduce(reduce(atHalf, Meaning.MoveRight).first, Meaning.MoveRight).first
+        assertEquals(0.60f, held.music.volume, 0.0001f)
+        val full = reduce(opened.copy(panel = volume, music = HomeMusicSetting(volume = 1f)), Meaning.MoveRight).first
+        assertEquals(1f, full.music.volume, 0.0001f)
+        val silent = reduce(opened.copy(panel = volume, music = HomeMusicSetting(volume = 0f)), Meaning.MoveLeft).first
+        assertEquals(0f, silent.music.volume, 0.0001f)
+        val theme = opened.panel!!.copy(index = 1)
+        val ignored = reduce(opened.copy(panel = theme, music = HomeMusicSetting(volume = 0.5f)), Meaning.MoveRight).first
+        assertEquals(0.5f, ignored.music.volume, 0.0001f)
+        assertEquals(1, ignored.panel?.index)
+    }
+
+    @Test
     fun muteAndUiSoundsLowerTheLoop() {
-        val setting = HomeMusicSetting()
-        assertEquals(0.25f, playbackLevel(setting, uiSoundActive = false, mediaMuted = false), 0.0001f)
-        assertEquals(0.10f, playbackLevel(setting, uiSoundActive = true, mediaMuted = false), 0.0001f)
+        val setting = HomeMusicSetting(volume = 0.25f)
+        assertEquals(0.5f, playbackLevel(setting, uiSoundActive = false, mediaMuted = false), 0.0001f)
+        assertEquals(0.2f, playbackLevel(setting, uiSoundActive = true, mediaMuted = false), 0.0001f)
         assertEquals(0f, playbackLevel(setting, uiSoundActive = false, mediaMuted = true), 0.0001f)
         assertEquals(0f, playbackLevel(setting.copy(enabled = false), uiSoundActive = true, mediaMuted = false), 0.0001f)
+    }
+
+    @Test
+    fun fullScaleIsUnityAndAQuarterIsNotSilent() {
+        val full = HomeMusicSetting(volume = 1f)
+        assertEquals(1f, playbackLevel(full, uiSoundActive = false, mediaMuted = false), 0.0001f)
+        assertEquals(0.4f, playbackLevel(full, uiSoundActive = true, mediaMuted = false), 0.0001f)
+        val quarter = playbackLevel(HomeMusicSetting(volume = 0.25f), uiSoundActive = false, mediaMuted = false)
+        assertEquals(0.5f, quarter, 0.0001f)
+        assertTrue(quarter >= 0.4f)
+        val half = playbackLevel(HomeMusicSetting(), uiSoundActive = false, mediaMuted = false)
+        assertEquals(0.7071f, half, 0.001f)
+    }
+
+    @Test
+    fun aLateDuckCannotTurnTheLevelBackDown() {
+        val latch = DuckLatch()
+        val first = latch.begin()
+        assertTrue(latch.active)
+        val second = latch.begin()
+        assertFalse(latch.end(first))
+        assertTrue(latch.active)
+        assertTrue(latch.end(second))
+        assertFalse(latch.active)
+        val stuck = latch.begin()
+        latch.clear()
+        assertFalse(latch.active)
+        assertFalse(latch.end(stuck))
+        val full = HomeMusicSetting(volume = 1f)
+        assertEquals(1f, playbackLevel(full, uiSoundActive = latch.active, mediaMuted = false), 0.0001f)
     }
 
     @Test

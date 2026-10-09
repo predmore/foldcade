@@ -1,11 +1,10 @@
 #!/usr/bin/env python3
 """Fail the build unless a rendered track matches its checks.
 
-Lanternlight (variant A) is the approved home loop: -16.0 LUFS, peak about
--3.45 dBFS and at or below -3 dBFS, 0 clipped samples, an 80.000 s /
+Lanternlight (variant A) is the approved home loop: about -12.0 LUFS
+integrated, true peak at or below -1.0 dBTP, 0 clipped samples, an 80.000 s /
 3,840,000-sample loop, no dropouts, and a seam identical to the continuous
-render. Every other track must clear the same safety checks. The peak window
-around -3.45 dBFS is Lanternlight's, because that is the approved render.
+render. Every other track must clear the same loudness and safety checks.
 """
 import argparse
 import json
@@ -40,11 +39,13 @@ def main():
     samples = int(res.get("ogg_decoded_samples", -1))
     need(samples == LENGTH_SAMPLES, "ogg_decoded_samples %s, expected %s" % (samples, LENGTH_SAMPLES))
     lufs = float(res.get("integrated_lufs", 0))
-    need(abs(lufs - (-16.0)) <= 0.5, "integrated_lufs %.3f, expected -16.0 within 0.5" % lufs)
+    need(abs(lufs - (-12.0)) <= 0.5, "integrated_lufs %.3f, expected -12.0 within 0.5" % lufs)
     peak = float(res.get("sample_peak_dbfs", 0))
-    need(peak <= -3.0, "sample_peak_dbfs %.3f is above -3 dBFS" % peak)
-    if args.track == "lanternlight":
-        need(abs(peak - (-3.4545)) <= 0.5, "sample_peak_dbfs %.3f, expected around -3.4 dBFS" % peak)
+    need(peak <= -1.0, "sample_peak_dbfs %.3f is above -1 dBFS" % peak)
+    true_peak = float(res.get("true_peak_dbfs_est", 0))
+    need(true_peak <= -1.0, "true_peak_dbfs_est %.3f is above -1 dBTP" % true_peak)
+    ogg_true_peak = float(res.get("ogg_true_peak_dbtp", 0))
+    need(ogg_true_peak <= -1.0, "ogg_true_peak_dbtp %.3f is above -1 dBTP" % ogg_true_peak)
     clipped = int(res.get("clipped_samples", -1))
     need(clipped == 0, "clipped_samples %s, expected 0" % clipped)
     dropouts = int(res.get("windows_below_minus50db", -1))
@@ -59,8 +60,8 @@ def main():
             print("home music check failed: " + message, file=sys.stderr)
         sys.exit(1)
     print(
-        "home music checks passed: %s, %.3f LUFS, peak %.3f dBFS, %d samples"
-        % (args.track, lufs, peak, samples)
+        "home music checks passed: %s, %.3f LUFS, peak %.3f dBFS, true peak %.3f dBTP, %d samples"
+        % (args.track, lufs, peak, true_peak, samples)
     )
 
 

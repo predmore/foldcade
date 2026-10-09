@@ -226,6 +226,55 @@ class ShellHostTest {
     }
 
     @Test
+    fun volumeRowStepsFivePercentAndTicks() {
+        val host = PluginHost(Dispatchers.Unconfined, MemoryCredentialStore())
+        val cues = mutableListOf<String>()
+        var bare = 0
+        val levels = mutableListOf<Float>()
+        val shell = ShellController(
+            SessionStore(MemoryPrefs()),
+            host,
+            onMusic = { levels += it.volume },
+            cue = { _, slot ->
+                cues += slot
+                true
+            },
+            bareTick = { bare += 1 },
+        )
+        shell.onMeaning(Meaning.LeftPanel, HostScreen.Bottom)
+        repeat(7) { shell.onMeaning(Meaning.MoveDown, HostScreen.Bottom) }
+        assertEquals(7, shell.model.panel?.index)
+        cues.clear()
+        shell.onMeaning(Meaning.MoveRight, HostScreen.Bottom)
+        shell.onMeaning(Meaning.MoveRight, HostScreen.Bottom)
+        assertEquals(0.60f, shell.model.music.volume, 0.0001f)
+        assertEquals(listOf(0.55f, 0.60f), levels)
+        assertEquals(listOf("move", "move"), cues)
+        assertEquals(0, bare)
+        assertEquals(7, shell.model.panel?.index)
+
+        var fallback = 0
+        val quiet = ShellController(
+            SessionStore(MemoryPrefs()),
+            host,
+            cue = { _, _ -> false },
+            bareTick = { fallback += 1 },
+        )
+        quiet.onMeaning(Meaning.LeftPanel, HostScreen.Bottom)
+        repeat(7) { quiet.onMeaning(Meaning.MoveDown, HostScreen.Bottom) }
+        fallback = 0
+        quiet.onMeaning(Meaning.MoveLeft, HostScreen.Bottom)
+        assertEquals(0.45f, quiet.model.music.volume, 0.0001f)
+        assertEquals(1, fallback)
+        repeat(9) { quiet.onMeaning(Meaning.MoveLeft, HostScreen.Bottom) }
+        assertEquals(0f, quiet.model.music.volume, 0.0001f)
+        val ticksAtSilence = fallback
+        quiet.onMeaning(Meaning.MoveLeft, HostScreen.Bottom)
+        assertEquals(0f, quiet.model.music.volume, 0.0001f)
+        assertEquals(ticksAtSilence, fallback)
+    }
+
+    @Test
     fun recentlyPlayedOrderFollowsLastPlayed() {
         val host = PluginHost(Dispatchers.Unconfined, MemoryCredentialStore())
         val store = SessionStore(MemoryPrefs())
