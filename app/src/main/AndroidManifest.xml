@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+
+    <application
+        android:name=".FoldcadeApp"
+        android:allowBackup="false"
+        android:icon="@drawable/ic_launcher"
+        android:label="Foldcade"
+        android:resizeableActivity="true"
+        android:supportsRtl="true"
+        android:theme="@android:style/Theme.Black.NoTitleBar.Fullscreen">
+
+        <activity
+            android:name=".PrimaryHomeActivity"
+            android:exported="true"
+            android:launchMode="singleTask"
+            android:taskAffinity="app.foldcade.primary">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.HOME" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+
+        <activity
+            android:name=".CompanionHomeActivity"
+            android:exported="true"
+            android:launchMode="singleTask"
+            android:taskAffinity="app.foldcade.companion">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.SECONDARY_HOME" />
+                <category android:name="android.intent.category.DEFAULT" />
+            </intent-filter>
+        </activity>
+
+        <activity
+            android:name=".StandInActivity"
+            android:exported="false"
+            android:launchMode="standard"
+            android:taskAffinity="app.foldcade.standin" />
+    </application>
+</manifest>
