@@ -55,6 +55,9 @@ object Metrics {
     const val dialogInsetPx = 48f
     const val dialogBorderPx = 2f
     const val heroArtFraction = 0.62f
+
+    /** Space between the hint line and the top of a focus stroke, in px. */
+    const val chromeClearancePx = 28f
 }
 
 object Copy {

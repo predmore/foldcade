@@ -3,8 +3,9 @@ package app.foldcade
 import app.foldcade.api.plugin.RommCredentials
 import app.foldcade.host.PluginHost
 import app.foldcade.language.ConnectField
-import app.foldcade.language.Copy
 import app.foldcade.language.Chrome
+import app.foldcade.language.Copy
+import app.foldcade.language.DialogKind
 import app.foldcade.language.Effect
 import app.foldcade.language.GridFocus
 import app.foldcade.language.DEFAULT_TRACK_TITLE
@@ -32,6 +33,8 @@ class ShellController(
     private val plugins: PluginHost,
     private val onMusic: (HomeMusicSetting) -> Unit = {},
     private val trackTitle: String = DEFAULT_TRACK_TITLE,
+    private val themeNames: List<String> = listOf(Copy.builtIn),
+    private val cue: (themeIndex: Int, slot: String) -> Unit = { _, _ -> },
 ) {
     var model by mutableStateOf(initial())
         private set
@@ -40,12 +43,14 @@ class ShellController(
         private set
 
     fun onMeaning(meaning: Meaning, screen: HostScreen): Effect? {
+        val before = model
         val (next, effect) = reduce(prepared(), meaning, screen)
         if (!next.connectOpen) connectToken = ""
         publish(next)
         if (next.panel?.level == PanelLevel.Library) {
             refreshLibraries()
         }
+        cueMeaning(meaning, before, model)
         return effect
     }
 
@@ -178,6 +183,7 @@ class ShellController(
                     ),
                 ),
             )
+            cue(model.themeIndex, "move")
             return
         }
         onMeaning(Meaning.Activate, screen)
@@ -242,5 +248,23 @@ class ShellController(
         folderGrantPending = store.folderGrantPending(),
         music = HomeMusicSetting(store.musicEnabled(), store.musicVolume(), store.musicTrackId()),
         trackTitle = trackTitle,
+        themes = themeNames.ifEmpty { listOf(Copy.builtIn) },
+        themeIndex = if (themeNames.size > 1) 1 else 0,
     )
+
+    private fun cueMeaning(meaning: Meaning, before: PickerModel, after: PickerModel) {
+        when (meaning) {
+            Meaning.Activate -> cue(after.themeIndex, "activate")
+            Meaning.Back -> cue(after.themeIndex, "back")
+            Meaning.MoveUp, Meaning.MoveDown, Meaning.MoveLeft, Meaning.MoveRight -> {
+                val moved = before.focus != after.focus || before.panel?.index != after.panel?.index
+                if (moved) cue(after.themeIndex, "move")
+            }
+            else -> Unit
+        }
+        if (before.dialog?.kind != DialogKind.Ok && after.dialog?.kind == DialogKind.Ok) {
+            cue(after.themeIndex, "notify")
+        }
+        if (after.notices.size > before.notices.size) cue(after.themeIndex, "notify")
+    }
 }
