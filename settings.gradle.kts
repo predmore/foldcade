@@ -25,6 +25,7 @@ include(
     ":plugins:gamenative",
     ":plugins:local-folder",
     ":plugins:melonds",
+    ":plugins:moonlight",
     ":plugins:sample",
     ":plugins:romm",
     ":samples:out-of-tree",

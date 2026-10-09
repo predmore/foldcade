@@ -618,11 +618,27 @@ class ShellController(
     /**
      * The shelf gained or lost catalog games, or the empty-shelf hint changed.
      * [PickerModel.shelfEpoch] changes even when the count does not, so Compose
-     * redraws the hint.
+     * redraws the hint. Focus stays inside the new count.
      */
     fun noteShelfChanged() {
         val next = model.copy(shelfEpoch = model.shelfEpoch + 1)
-        model = if (model.libraryGrid) next else withShelf(next)
+        if (model.libraryGrid) {
+            model = next
+            return
+        }
+        val counted = withShelf(next)
+        val last = (counted.count - 1).coerceAtLeast(0)
+        val cell = counted.focus.cellIndex.coerceIn(0, last)
+        model = if (cell == counted.focus.cellIndex) {
+            counted
+        } else {
+            counted.copy(
+                focus = counted.focus.copy(
+                    cellIndex = cell,
+                    lastColumn = if (counted.count == 0) 0 else cell % Metrics.columns,
+                ),
+            )
+        }
     }
 
     /** Play history changed. Recently played order follows the new last-played times. */

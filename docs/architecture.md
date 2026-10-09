@@ -14,6 +14,7 @@ Foldcade is an Android launcher for the AYN Thor. The shell is Compose. Plugins 
 | `:plugins:gamenative` | PC player and library for GameNative. Saves stay in GameNative. |
 | `:plugins:local-folder` | Library backed by a folder on the device, plus the platform ids that folder scan uses. |
 | `:plugins:melonds` | Nintendo DS player for upstream melonDS Android. |
+| `:plugins:moonlight` | Moonlight player and library. Official client, one screen. |
 | `:plugins:romm` | Built-in RomM library and metadata. |
 | `:plugins:sample` | In-tree sample plugin. |
 | `:samples:out-of-tree` | Sample that compiles against `:api` only. |

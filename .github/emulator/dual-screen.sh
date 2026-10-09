@@ -689,6 +689,48 @@ if printf '%s\n' "$input_help" | grep -q -- '-d' && printf '%s\n' "$input_help" 
     echo "progress_sentence_in_ui_dump=${progress}"
   } >"$out/pc-launch-path.txt"
   adb_do shell input -d "$presentation_logical" keyevent KEYCODE_BACK || true
+
+  # Moonlight launch path. Thor-sized emulator, not a Thor pass.
+  # Moonlight is not installed here. The capture is the missing-player state.
+  # Moonlight is the tenth shelf tile: row 2, column 1, one cell right of PC.
+  # It does not take both screens, so the picker stays on the other panel.
+  echo "step: moonlight launch path"
+  echo "step: focus the Moonlight tile"
+  adb_do shell input -d "$presentation_logical" keyevent KEYCODE_DPAD_RIGHT
+  sleep 1
+  capture "$primary" "$out/moonlight-focus-primary.png"
+  capture "$secondary" "$out/moonlight-focus-secondary.png"
+  expect_png "$out/moonlight-focus-primary.png" "${top_width}x${top_height}"
+  expect_png "$out/moonlight-focus-secondary.png" "${bottom_width}x${bottom_height}"
+  timeout 10 adb shell uiautomator dump /sdcard/foldcade-ui.xml >/dev/null 2>&1 || true
+  timeout 10 adb shell cat /sdcard/foldcade-ui.xml | tr -d '\r' >"$out/moonlight-focus-ui.xml" || true
+  launch_on_top="no"
+  if grep -q 'Launch on top' "$out/moonlight-focus-ui.xml"; then
+    launch_on_top="yes"
+  fi
+  echo "step: open the Moonlight tile"
+  adb_do shell input -d "$presentation_logical" keyevent KEYCODE_DPAD_CENTER
+  sleep 1
+  capture "$primary" "$out/moonlight-launch-primary.png"
+  capture "$secondary" "$out/moonlight-launch-secondary.png"
+  expect_png "$out/moonlight-launch-primary.png" "${top_width}x${top_height}"
+  expect_png "$out/moonlight-launch-secondary.png" "${bottom_width}x${bottom_height}"
+  timeout 10 adb shell uiautomator dump /sdcard/foldcade-ui.xml >/dev/null 2>&1 || true
+  timeout 10 adb shell cat /sdcard/foldcade-ui.xml | tr -d '\r' >"$out/moonlight-launch-ui.xml" || true
+  seen="no"
+  if grep -q 'not installed' "$out/moonlight-launch-ui.xml"; then
+    seen="yes"
+  fi
+  {
+    echo "Thor-sized emulator, not a Thor pass."
+    echo "Moonlight is not installed on this image. The launch captures are the missing-player path."
+    echo "Top is ${top_width}x${top_height}. Bottom is ${bottom_width}x${bottom_height}."
+    echo "This is not a stream. The picker stays on the other screen."
+    echo "Physical Thor checks stay on issue 43."
+    echo "launch_on_top_in_focus_dump=${launch_on_top}"
+    echo "missing_player_in_ui_dump=${seen}"
+  } >"$out/moonlight-launch-path.txt"
+  adb_do shell input -d "$presentation_logical" keyevent KEYCODE_BACK || true
 else
   {
     echo "Thor-sized emulator, not a Thor pass."

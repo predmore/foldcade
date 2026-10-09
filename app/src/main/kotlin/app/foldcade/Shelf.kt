@@ -35,6 +35,13 @@ object Shelf {
     var catalog: List<ShelfGame> = emptyList()
 
     /**
+     * Pinned Moonlight shortcuts, or a confirmed import. Empty until that list is read.
+     * These follow the GameNative catalog.
+     */
+    @Volatile
+    var moonlightGames: List<ShelfGame> = emptyList()
+
+    /**
      * True when `app.gamenative` or `app.gamenative.gold` is installed.
      * With an empty [catalog], the PC tile is an empty-shelf hint.
      */
@@ -69,6 +76,13 @@ object Shelf {
             platformId = "pc",
             occupiesBothDisplays = false,
         ),
+        ShelfGame(
+            id = "moonlight",
+            title = "Moonlight",
+            shortText = "Stream",
+            platformId = "moonlight",
+            occupiesBothDisplays = false,
+        ),
     )
 
     val games: List<ShelfGame>
@@ -81,7 +95,7 @@ object Shelf {
             } else {
                 tile
             }
-        } + catalog
+        } + catalog + moonlightGames
 
     const val PC_TILE: String = "pc.gamenative"
 }

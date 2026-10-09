@@ -161,6 +161,7 @@ dependencies {
     implementation(project(":plugins:gamenative"))
     implementation(project(":plugins:local-folder"))
     implementation(project(":plugins:melonds"))
+    implementation(project(":plugins:moonlight"))
     implementation(project(":romm"))
     implementation(project(":plugins:romm"))
     implementation(libs.androidx.core)

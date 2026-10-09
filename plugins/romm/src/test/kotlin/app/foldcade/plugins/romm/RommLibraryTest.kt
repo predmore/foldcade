@@ -98,6 +98,9 @@ class RommLibraryTest {
         val other = game.copy(backendId = "local-folder")
         assertNull(harness.metadata.cached(other))
         assertNull(harness.metadata.fetch(other))
+        val moonlight = game.copy(backendId = "moonlight")
+        assertNull(harness.metadata.cached(moonlight))
+        assertNull(harness.metadata.fetch(moonlight))
     }
 
     @Test

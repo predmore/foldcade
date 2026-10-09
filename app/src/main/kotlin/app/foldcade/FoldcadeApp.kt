@@ -14,6 +14,7 @@ import app.foldcade.api.plugin.RommCredentials
 import app.foldcade.api.plugin.SaveFolderHolder
 import app.foldcade.plugins.gamenative.GameNativeLibrary
 import app.foldcade.plugins.gamenative.GameNativePlayer
+import app.foldcade.plugins.moonlight.MoonlightLibrary
 import app.foldcade.credentials.AndroidCredentialStore
 import app.foldcade.host.PluginHost
 import app.foldcade.language.BackgroundMotion
@@ -155,6 +156,7 @@ class FoldcadeApp : Application() {
                 restorePlayerSaveFolders()
                 publishRomm()
                 refreshGameNative()
+                refreshMoonlightShelf()
                 withContext(Dispatchers.Main.immediate) {
                     shell.refreshPlayerSaves()
                     shell.noteShelfChanged()
@@ -259,6 +261,24 @@ class FoldcadeApp : Application() {
             val player = plugins.player(id) as? SaveFolderHolder ?: continue
             val uri = store.playerSaveFolder(id) ?: continue
             player.bindSaveFolder(uri)
+        }
+    }
+
+    /**
+     * Reads pinned Moonlight shortcuts when this app is the home app, then
+     * puts those games on the shelf. A failed read leaves the previous list.
+     * A confirmed import, once one exists, is what the library shows.
+     */
+    fun refreshMoonlightShelf() {
+        pluginLoad.launch {
+            val library = plugins.library(MoonlightLibrary.ID) as? MoonlightLibrary ?: return@launch
+            val pinned = readPinnedMoonlightShortcuts(this@FoldcadeApp)
+            if (pinned != null) library.replacePinned(pinned)
+            val tiles = plugins.moonlightShelfGames()
+            Shelf.moonlightGames = tiles
+            withContext(Dispatchers.Main.immediate) {
+                shell.noteShelfChanged()
+            }
         }
     }
 

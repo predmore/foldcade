@@ -13,6 +13,7 @@
         <package android:name="me.magnum.melonds.nightly" />
         <package android:name="app.gamenative" />
         <package android:name="app.gamenative.gold" />
+        <package android:name="com.limelight" />
         <intent>
             <action android:name="android.intent.action.MAIN" />
             <category android:name="android.intent.category.LAUNCHER" />
