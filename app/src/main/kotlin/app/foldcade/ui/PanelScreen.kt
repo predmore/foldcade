@@ -259,41 +259,17 @@ private fun Hero(app: FoldcadeApp, screen: HostScreen, scale: Float, onEffect: (
                 animatorScale = scale,
                 same = { left, right -> left?.key == right?.key },
             ) { shown ->
-                val copy = heroCopy(shown)
-                Column {
-                    Box(
-                        Modifier
-                            .fillMaxWidth()
-                            .height(artHeight),
-                        contentAlignment = Alignment.Center,
-                    ) {
-                        if (copy.showsArt && shown is HeroSubject.Item) {
-                            HeroArt(shown.item)
-                        }
-                    }
-                    BasicText(
-                        text = copy.title,
-                        style = text(theme.onBackground, TypeRamp.heroTitle, theme),
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                    )
-                    if (copy.detail.isNotEmpty()) {
-                        val hint = shown is HeroSubject.Item && shown.item.emptyShelfHint && cellFocused
-                        ShelfMeta(line = copy.detail, hintFocused = hint)
-                    }
-                    val availability = (shown as? HeroSubject.Item)?.item?.availability
-                    if (availability != null) {
-                        BasicText(
-                            text = availability,
-                            style = text(theme.muted, TypeRamp.availability, theme),
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                        )
-                    }
-                    if (shown is HeroSubject.Item) {
-                        PlayFacts(app, shown.item.key)
-                    }
+                Box(
+                    Modifier
+                        .fillMaxWidth()
+                        .height(artHeight),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    if (shown is HeroSubject.Item) HeroArt(shown.item)
                 }
+            }
+            if (subject != null) {
+                HeroLabel(app, subject, cellFocused)
             }
         }
         Panels(app, screen, scale, onEffect)
@@ -301,9 +277,11 @@ private fun Hero(app: FoldcadeApp, screen: HostScreen, scale: Float, onEffect: (
 }
 
 /**
- * Crossfades the hero onto the newest focus. A second change before this
+ * Crossfades the artwork onto the newest focus. A second change before this
  * finishes retargets the same two layers instead of starting another fade.
- * Off, and remove-animations, fade over the short duration with no slide.
+ * The name and details are not in these layers: two labels in one place
+ * cannot be read. Off, and remove-animations, fade over the short duration
+ * with no slide.
  */
 @Composable
 private fun <T> HeroCrossfade(
@@ -361,6 +339,38 @@ private fun <T> HeroCrossfade(
         if (current != null) {
             Box(Modifier.heroArrival(incoming.value, fadeOnly)) { content(current) }
         }
+    }
+}
+
+/**
+ * One name and one detail line for the focus that just arrived.
+ * The artwork behind it may still be crossfading.
+ */
+@Composable
+private fun HeroLabel(app: FoldcadeApp, shown: HeroSubject, cellFocused: Boolean) {
+    val theme = foldTheme()
+    val copy = heroCopy(shown)
+    BasicText(
+        text = copy.title,
+        style = text(theme.onBackground, TypeRamp.heroTitle, theme),
+        maxLines = 1,
+        overflow = TextOverflow.Ellipsis,
+    )
+    if (copy.detail.isNotEmpty()) {
+        val hint = shown is HeroSubject.Item && shown.item.emptyShelfHint && cellFocused
+        ShelfMeta(line = copy.detail, hintFocused = hint)
+    }
+    val availability = (shown as? HeroSubject.Item)?.item?.availability
+    if (availability != null) {
+        BasicText(
+            text = availability,
+            style = text(theme.muted, TypeRamp.availability, theme),
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
+    }
+    if (shown is HeroSubject.Item) {
+        PlayFacts(app, shown.item.key)
     }
 }
 
