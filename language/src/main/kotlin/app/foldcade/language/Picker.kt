@@ -181,23 +181,32 @@ fun speedLabel(speed: MotionSpeed): String = when (speed) {
     MotionSpeed.Off -> Copy.motionOff
 }
 
-fun rowLabel(row: Row, model: PickerModel): String = when (row) {
-    Row.Library -> Copy.library
-    Row.Theme -> "${Copy.theme}  ${model.themes.getOrElse(model.themeIndex) { Copy.builtIn }}"
-    Row.Background -> "${Copy.background}  ${backgroundLabel(model.backgroundMotion)}"
-    Row.MotionSpeed -> "${Copy.motion}  ${speedLabel(model.motionSpeed)}"
-    Row.Primary -> "${Copy.primaryPanel}  ${if (model.primaryIsTop) Copy.top else Copy.bottom}"
-    Row.Arrange -> Copy.arrange
-    Row.Music -> MusicCopy.musicLabel(model.music.enabled)
-    Row.MusicTrack -> MusicCopy.trackLabel(model.trackTitle)
-    Row.MusicVolume -> MusicCopy.volumeLabel(model.music.volume)
-    Row.SetAsHome -> Copy.setAsHome
-    is Row.Backend -> row.name
-    Row.AddFolder -> Copy.addFolder
-    Row.Connect -> Copy.connectRomm
-    is Row.SignOut -> "${Copy.signOut} · ${row.label}"
-    Row.LaunchTarget -> if (model.launchOnBottom) Copy.launchOnBottom else Copy.launchOnTop
-    is Row.Notice -> model.notices.firstOrNull { it.id == row.id }?.title ?: ""
+/** Label on the left, current value on the right. A null value is a single action row. */
+data class RowText(val label: String, val value: String? = null)
+
+fun rowText(row: Row, model: PickerModel): RowText = when (row) {
+    Row.Library -> RowText(Copy.library)
+    Row.Theme -> RowText(Copy.theme, model.themes.getOrElse(model.themeIndex) { Copy.builtIn })
+    Row.Background -> RowText(Copy.background, backgroundLabel(model.backgroundMotion))
+    Row.MotionSpeed -> RowText(Copy.motion, speedLabel(model.motionSpeed))
+    Row.Primary -> RowText(Copy.primaryPanel, if (model.primaryIsTop) Copy.top else Copy.bottom)
+    Row.Arrange -> RowText(Copy.arrange)
+    Row.Music -> RowText(MusicCopy.row, if (model.music.enabled) MusicCopy.on else MusicCopy.off)
+    Row.MusicTrack -> RowText(MusicCopy.track, model.trackTitle)
+    Row.MusicVolume -> RowText(MusicCopy.volume, MusicCopy.volumeLabel(model.music.volume).substringAfter("  "))
+    Row.SetAsHome -> RowText(Copy.setAsHome)
+    is Row.Backend -> RowText(row.name)
+    Row.AddFolder -> RowText(Copy.addFolder)
+    Row.Connect -> RowText(Copy.connectRomm)
+    is Row.SignOut -> RowText("${Copy.signOut} · ${row.label}")
+    Row.LaunchTarget -> RowText(if (model.launchOnBottom) Copy.launchOnBottom else Copy.launchOnTop)
+    is Row.Notice -> RowText(model.notices.firstOrNull { it.id == row.id }?.title ?: "")
+}
+
+fun rowLabel(row: Row, model: PickerModel): String {
+    val text = rowText(row, model)
+    val value = text.value
+    return if (value.isNullOrEmpty()) text.label else "${text.label}  $value"
 }
 
 fun displayOrder(model: PickerModel): List<Int> =

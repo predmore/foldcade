@@ -243,6 +243,9 @@ class ContractTest {
         assertEquals(BackgroundMotion.Ribbons, slowed.backgroundMotion)
         assertEquals("Background  Ribbons", rowLabel(Row.Background, pinned))
         assertEquals("Motion  Slower", rowLabel(Row.MotionSpeed, slowed))
+        assertEquals(RowText("Background", "Ribbons"), rowText(Row.Background, pinned))
+        assertEquals(RowText("Motion", "Slower"), rowText(Row.MotionSpeed, slowed))
+        assertEquals(RowText(Copy.theme, "Afterglow"), rowText(Row.Theme, kept))
     }
 
     @Test

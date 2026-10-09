@@ -79,7 +79,6 @@ import app.foldcade.language.Copy
 import app.foldcade.language.DialogButton
 import app.foldcade.language.Effect
 import app.foldcade.language.DialogState
-import app.foldcade.language.HintPlace
 import app.foldcade.language.HostScreen
 import app.foldcade.language.Meaning
 import app.foldcade.language.Row
@@ -94,10 +93,9 @@ import app.foldcade.language.connectFields
 import app.foldcade.language.connectHint
 import app.foldcade.language.cursorBrush
 import app.foldcade.language.displayOrder
-import app.foldcade.language.hintFor
 import app.foldcade.language.monogram
 import app.foldcade.language.panelRows
-import app.foldcade.language.rowLabel
+import app.foldcade.language.rowText
 import app.foldcade.readDeviceStatus
 import kotlin.math.abs
 import kotlin.math.ceil
@@ -190,6 +188,23 @@ private fun Hero(app: FoldcadeApp, screen: HostScreen, scale: Float) {
     BoxWithConstraints(Modifier.fillMaxSize()) {
         val inset = px(Metrics.heroInsetPx)
         val artHeight = maxHeight * Metrics.heroArtFraction
+        Box(
+            Modifier
+                .fillMaxSize()
+                .drawBehind {
+                    drawRect(
+                        brush = Brush.verticalGradient(
+                            colorStops = arrayOf(
+                                0f to Color.Transparent,
+                                0.48f to Color.Transparent,
+                                0.62f to theme.background.copy(alpha = 0.78f),
+                                0.74f to theme.background.copy(alpha = 0.96f),
+                                1f to theme.background,
+                            ),
+                        ),
+                    )
+                },
+        )
         Column(
             Modifier
                 .align(Alignment.TopStart)
@@ -241,8 +256,10 @@ private fun Picker(
         val inset = maxWidth * Metrics.insetFraction
         val gap = maxWidth * Metrics.gapFraction
         val inner = maxWidth - inset * 2
-        val cell = (inner - gap * (Metrics.columns - 1)) / Metrics.columns
-        val focusOutset = focusOutset(cell)
+        val rough = (inner - gap * (Metrics.columns - 1)) / Metrics.columns
+        // Room outside each cell so the focus glow fades out before the pager clip.
+        val pad = focusOutset(rough) + px(40f)
+        val cell = (inner - pad * 2 - gap * (Metrics.columns - 1)) / Metrics.columns
         val titlePx = rememberTextMeasurer().measure(
             text = "Ag",
             style = text(theme.onBackground, TypeRamp.gridLabel, theme),
@@ -277,8 +294,8 @@ private fun Picker(
                     },
             ) {
                 val showTitles = true
-                val slot = if (showTitles) cell + focusOutset + titleLine else cell
-                val available = (maxHeight - focusOutset * 2).coerceAtLeast(slot)
+                val slot = if (showTitles) cell + pad + titleLine else cell
+                val available = (maxHeight - pad * 2).coerceAtLeast(slot)
                 val rows = if (cell > Dp.Hairline) {
                     ((available + gap) / (slot + gap)).toInt().coerceAtLeast(1)
                 } else {
@@ -296,6 +313,7 @@ private fun Picker(
                         screen = screen,
                         cell = cell,
                         gap = gap,
+                        pad = pad,
                         rows = rows,
                         scale = scale,
                         showTitle = showTitles,
@@ -356,20 +374,42 @@ private fun LeftPanel(
     if (live != null) shown = live
     val panel = shown
     if (progress <= 0f || panel == null) return
-    Column(
+    val feather = px(176f)
+    val body = openWidth * progress
+    Row(
         Modifier
             .fillMaxHeight()
-            .width(openWidth * progress)
-            .background(theme.surface)
-            .padding(px(24f)),
-        verticalArrangement = Arrangement.spacedBy(px(8f)),
+            .width(body + feather)
+            .zIndex(2f),
     ) {
-        val libraryFailed = panel.level == PanelLevel.Library && app.shell.model.unavailable
-        if (libraryFailed) {
-            Unavailable()
-        } else {
-            PanelRows(app, screen, panel, progress, interactive = open)
+        Column(
+            Modifier
+                .fillMaxHeight()
+                .width(body)
+                .background(theme.background)
+                .padding(start = px(20f), end = px(12f), top = px(20f), bottom = px(20f)),
+            verticalArrangement = Arrangement.spacedBy(px(2f)),
+        ) {
+            val libraryFailed = panel.level == PanelLevel.Library && app.shell.model.unavailable
+            if (libraryFailed) {
+                Unavailable()
+            } else {
+                PanelRows(app, screen, panel, progress, interactive = open)
+            }
         }
+        Box(
+            Modifier
+                .fillMaxHeight()
+                .width(feather)
+                .background(
+                    Brush.horizontalGradient(
+                        0f to theme.background,
+                        0.58f to theme.background,
+                        0.82f to theme.background.copy(alpha = 0.72f),
+                        1f to Color.Transparent,
+                    ),
+                ),
+        )
     }
 }
 
@@ -477,29 +517,55 @@ private fun PanelRows(
                 }
                 Unit
             }
+            val parts = rowText(row, app.shell.model)
             if (row is Row.MusicVolume) {
                 MusicVolumeRow(
-                    label = rowLabel(row, app.shell.model),
+                    label = parts.label,
+                    value = parts.value.orEmpty(),
                     volume = app.shell.model.music.volume,
                     focused = focused,
                     interactive = interactive,
                     onStep = step,
                     onVolume = app.shell::setMusicVolume,
+                    modifier = Modifier.fillMaxWidth().rowHighlight(focused),
                 )
             } else {
                 val press = if (interactive) Modifier.hostPress(step) else Modifier
-                BasicText(
-                    text = rowLabel(row, app.shell.model),
-                    modifier = Modifier
-                        .focusStroke(focused)
+                Row(
+                    Modifier
+                        .fillMaxWidth()
+                        .rowHighlight(focused)
                         .then(press)
-                        .padding(px(8f)),
-                    style = text(
-                        if (focused) theme.onBackground else theme.muted,
-                        TypeRamp.sideRow,
-                        theme,
-                    ),
-                )
+                        .padding(start = px(16f), end = px(8f), top = px(8f), bottom = px(8f)),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    BasicText(
+                        text = parts.label,
+                        modifier = Modifier.weight(1f),
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        style = text(
+                            if (focused) theme.onBackground else theme.muted,
+                            TypeRamp.sideRow,
+                            theme,
+                        ),
+                    )
+                    val value = parts.value
+                    if (!value.isNullOrEmpty()) {
+                        BasicText(
+                            text = value,
+                            modifier = Modifier.padding(start = px(16f)),
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            style = text(
+                                if (focused) theme.focus else theme.onBackground,
+                                TypeRamp.sideRow,
+                                theme,
+                            ).copy(textAlign = TextAlign.End),
+                        )
+                    }
+                }
             }
         }
     }
@@ -513,13 +579,6 @@ private fun ChromeRow(app: FoldcadeApp, screen: HostScreen) {
     val game = shell.focusedGame()
     val showLaunch = model.panel == null && model.dialog == null && !model.connectOpen &&
         app.store.session.launchTargetControlVisible(game?.occupiesBothDisplays == true)
-    val place = when {
-        model.dialog != null -> HintPlace.Dialog
-        model.connectOpen -> HintPlace.Connect
-        model.panel != null -> HintPlace.Menu
-        model.atLibraryRoot -> HintPlace.RootGrid
-        else -> HintPlace.InsidePlatform
-    }
     Column {
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(px(12f))) {
             if (showLaunch && game != null) {
@@ -536,7 +595,8 @@ private fun ChromeRow(app: FoldcadeApp, screen: HostScreen) {
         val hint = if (model.connectOpen) {
             connectHint(connectFields().getOrElse(model.connectIndex) { ConnectField.Origin })
         } else {
-            hintFor(place)
+            // Letter hints ("A", "A  B") read as stray glyphs. Activate and Back still work.
+            null
         }
         if (hint != null) {
             BasicText(text = hint, style = text(theme.muted, TypeRamp.hint, theme))
@@ -560,6 +620,7 @@ private fun PagedGrid(
     screen: HostScreen,
     cell: Dp,
     gap: Dp,
+    pad: Dp,
     rows: Int,
     scale: Float,
     showTitle: Boolean,
@@ -578,13 +639,12 @@ private fun PagedGrid(
     val alpha = if (reduced) (1f - abs(position.value - page)).coerceIn(0.35f, 1f) else 1f
     val width = cell * Metrics.columns + gap * (Metrics.columns - 1)
     val widthPx = with(LocalDensity.current) { width.toPx() }
-    val outset = focusOutset(cell)
     Box(
         Modifier
-            .requiredWidth(width + outset * 2)
+            .requiredWidth(width + pad * 2)
             .graphicsLayer { this.alpha = alpha }
             .clipToBounds()
-            .padding(outset),
+            .padding(pad),
     ) {
         val low = floor(position.value).toInt()
         val high = ceil(position.value).toInt()
@@ -682,15 +742,20 @@ private fun Cell(
                 .drawBehind {
                     val glow = accent ?: return@drawBehind
                     val bounds = this.size
-                    // Falloff ends at the cell edge so a square clip never shows a hard side.
-                    val reach = min(bounds.width, bounds.height) * 0.5f
-                    val core = if (focused) 0.50f else 0.20f
-                    val mid = if (focused) 0.14f else 0.05f
+                    val cornerPx = corner.toPx()
+                    val half = min(bounds.width, bounds.height) * 0.5f
+                    // Halo sits outside the plate and reaches transparent before the pager pad.
+                    val overflow = if (focused) 34f else 8f
+                    val reach = half + overflow
+                    val edge = (half / reach).coerceIn(0.5f, 0.92f)
+                    val ring = if (focused) 0.95f else 0.16f
+                    val tail = if (focused) 0.42f else 0.05f
                     drawCircle(
                         brush = Brush.radialGradient(
                             colorStops = arrayOf(
-                                0f to glow.copy(alpha = core),
-                                0.55f to glow.copy(alpha = mid),
+                                0f to glow.copy(alpha = ring),
+                                edge to glow.copy(alpha = ring),
+                                (edge + 1f) / 2f to glow.copy(alpha = tail),
                                 1f to Color.Transparent,
                             ),
                             center = center,
@@ -699,25 +764,32 @@ private fun Cell(
                         radius = reach,
                         center = center,
                     )
-                    val strokePx = 2.5f
+                    drawRoundRect(
+                        color = theme.background,
+                        cornerRadius = CornerRadius(cornerPx, cornerPx),
+                    )
+                    val strokePx = if (focused) 9f else 2.5f
                     val inset = strokePx / 2f
                     drawRoundRect(
-                        color = glow.copy(alpha = if (focused) 0.92f else 0.62f),
+                        color = glow.copy(alpha = if (focused) 1f else 0.42f),
                         topLeft = Offset(inset, inset),
                         size = Size(bounds.width - strokePx, bounds.height - strokePx),
-                        cornerRadius = CornerRadius(corner.toPx(), corner.toPx()),
+                        cornerRadius = CornerRadius(cornerPx, cornerPx),
                         style = Stroke(width = strokePx),
                     )
                 }
                 .hostPress(onClick),
             contentAlignment = Alignment.Center,
         ) {
+            val glyphAlpha = if (focused) 1f else 0.58f
             if (mark != null && markGlyph(mark) != null) {
-                MarkIcon(mark, theme.artScale)
+                Box(Modifier.graphicsLayer { alpha = glyphAlpha }) {
+                    MarkIcon(mark, theme.artScale)
+                }
             } else {
                 BasicText(
                     text = monogram(title),
-                    modifier = Modifier.scale(theme.artScale),
+                    modifier = Modifier.scale(theme.artScale).graphicsLayer { alpha = glyphAlpha },
                     style = text(theme.onBackground, TypeRamp.heroTitle, theme),
                     maxLines = 1,
                     overflow = TextOverflow.Clip,
@@ -728,9 +800,13 @@ private fun Cell(
             BasicText(
                 text = title,
                 modifier = Modifier
-                    .padding(top = focusOutset(size))
+                    .padding(top = focusOutset(size) + px(12f))
                     .width(size),
-                style = text(theme.onBackground, TypeRamp.gridLabel, theme).copy(textAlign = TextAlign.Center),
+                style = text(
+                    if (focused) theme.onBackground else theme.muted,
+                    TypeRamp.gridLabel,
+                    theme,
+                ).copy(textAlign = TextAlign.Center),
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
@@ -924,6 +1000,25 @@ private fun text(
 @Composable
 private fun focusOutset(cell: Dp): Dp =
     cell * ((Motion.scaleFocus - 1f) / 2f) + px(Metrics.focusStrokePx * Motion.scaleFocus)
+
+@Composable
+private fun Modifier.rowHighlight(focused: Boolean): Modifier {
+    val accent = foldTheme().focus
+    return this.drawBehind {
+        if (!focused) return@drawBehind
+        drawRoundRect(
+            color = accent.copy(alpha = 0.2f),
+            cornerRadius = CornerRadius(22f, 22f),
+        )
+        val bar = 7f
+        drawRoundRect(
+            color = accent,
+            topLeft = Offset(10f, size.height * 0.2f),
+            size = Size(bar, size.height * 0.6f),
+            cornerRadius = CornerRadius(bar / 2f, bar / 2f),
+        )
+    }
+}
 
 @Composable
 private fun Modifier.focusStroke(

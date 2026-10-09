@@ -14,18 +14,18 @@ import androidx.compose.foundation.text.BasicText
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
+import androidx.compose.foundation.layout.Row
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
-import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.input.pointer.positionChange
 import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
-import app.foldcade.language.Metrics
 import app.foldcade.language.TypeRamp
-import app.foldcade.language.builtInTheme
 
 /**
  * Volume row for the L1 panel. Isolated so the theme-art pull request can rebase
@@ -34,25 +34,21 @@ import app.foldcade.language.builtInTheme
 @Composable
 fun MusicVolumeRow(
     label: String,
+    value: String,
     volume: Float,
     focused: Boolean,
     interactive: Boolean,
     onStep: () -> Unit,
     onVolume: (Float) -> Unit,
+    modifier: Modifier = Modifier,
 ) {
-    val theme = builtInTheme()
+    val theme = LocalFoldTheme.current.theme
     val fraction = volume.coerceIn(0f, 1f)
     val track = theme.muted
     val fill = theme.onBackground
-    Column(
-        Modifier
-            .fillMaxWidth()
-            .musicFocus(focused)
-            .padding(8.dp),
-    ) {
-        BasicText(
-            text = label,
-            modifier = Modifier
+    Column(modifier.fillMaxWidth().padding(start = 16.dp, end = 8.dp, top = 8.dp, bottom = 8.dp)) {
+        Row(
+            Modifier
                 .fillMaxWidth()
                 .focusProperties { canFocus = false }
                 .then(
@@ -66,12 +62,27 @@ fun MusicVolumeRow(
                         Modifier
                     },
                 ),
-            style = TextStyle(
-                color = if (focused) theme.onBackground else theme.muted,
-                fontSize = TypeRamp.sideRow,
-                fontFamily = theme.font,
-            ),
-        )
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            BasicText(
+                text = label,
+                modifier = Modifier.weight(1f),
+                style = TextStyle(
+                    color = if (focused) theme.onBackground else theme.muted,
+                    fontSize = TypeRamp.sideRow,
+                    fontFamily = theme.font,
+                ),
+            )
+            BasicText(
+                text = value,
+                style = TextStyle(
+                    color = if (focused) theme.focus else theme.onBackground,
+                    fontSize = TypeRamp.sideRow,
+                    fontFamily = theme.font,
+                    textAlign = TextAlign.End,
+                ),
+            )
+        }
         Box(
             Modifier
                 .padding(top = 8.dp)
@@ -103,22 +114,6 @@ fun MusicVolumeRow(
                         Modifier
                     },
                 ),
-        )
-    }
-}
-
-@Composable
-private fun Modifier.musicFocus(focused: Boolean): Modifier {
-    val color = builtInTheme().focus
-    return drawWithContent {
-        drawContent()
-        if (!focused) return@drawWithContent
-        val stroke = Metrics.focusStrokePx
-        drawRect(
-            color = color,
-            topLeft = Offset(-stroke / 2f, -stroke / 2f),
-            size = Size(size.width + stroke, size.height + stroke),
-            style = Stroke(width = stroke),
         )
     }
 }

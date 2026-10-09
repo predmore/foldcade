@@ -23,10 +23,29 @@ class BackdropTest {
     }
 
     @Test
+    fun ribbonsSwellFadeAndShiftColor() {
+        val frame = BackdropFrame()
+        layoutBackdrop(BackgroundMotion.Ribbons, 12f, 1920f, 1080f, moving = true, frame)
+        val teal = frame.lines[0]
+        assertTrue(teal.shaped)
+        assertTrue(teal.endBlue > teal.blue)
+        val tip = strokeAt(teal, 0.01f)
+        val mid = strokeAt(teal, 0.5f)
+        assertTrue("tip ${tip.radius} mid ${mid.radius}", mid.radius > tip.radius * 1.4f)
+        assertTrue(tip.red + tip.green + tip.blue < mid.red + mid.green + mid.blue)
+        val amber = (0 until frame.lineCount).map { frame.lines[it] }.first { it.shaped && it.endGreen < it.green }
+        assertTrue(amber.endBlue > amber.blue)
+        val early = strokeAt(amber, 0.22f)
+        val late = strokeAt(amber, 0.78f)
+        val earlyRose = early.blue.toFloat() / (early.red + early.green + early.blue).coerceAtLeast(1)
+        val lateRose = late.blue.toFloat() / (late.red + late.green + late.blue).coerceAtLeast(1)
+        assertTrue("rose $earlyRose -> $lateRose", lateRose > earlyRose)
+    }
+
+    @Test
     fun ribbonsStayInsideTheLitBudget() {
         val worst = measure(BackgroundMotion.Ribbons, moving = true)
-        assertTrue("ribbons lit ${worst.fraction} peak ${worst.peak}", worst.fraction <= Backdrop.LIT_BUDGET)
-        assertTrue(worst.peak in 13..190)
+        assertTrue("ribbons lit ${worst.fraction} peak ${worst.peak}", worst.fraction <= Backdrop.LIT_BUDGET && worst.peak in 13..190)
         assertTrue(worst.fraction > 0f)
     }
 

@@ -2,6 +2,7 @@ package app.foldcade.language
 
 import androidx.compose.ui.graphics.Color
 import kotlin.math.PI
+import kotlin.math.abs
 import kotlin.math.ceil
 import kotlin.math.floor
 import kotlin.math.hypot
@@ -120,6 +121,11 @@ class BackdropLine {
     var red: Int = 0
     var green: Int = 0
     var blue: Int = 0
+    var endRed: Int = 0
+    var endGreen: Int = 0
+    var endBlue: Int = 0
+    var pulse: Float = 0f
+    var shaped: Boolean = false
     var kind: MarkKind = MarkKind.Ribbon
 
     fun add(px: Float, py: Float) {
@@ -133,6 +139,9 @@ class BackdropLine {
         const val POINTS = 48
     }
 }
+
+/** One short piece of a ribbon. [radius] is the outer reach; color is the center. */
+data class StrokeSample(val radius: Float, val red: Int, val green: Int, val blue: Int)
 
 class BackdropDisc {
     var cx: Float = 0f
@@ -223,25 +232,33 @@ fun layoutBackdrop(
  */
 internal fun paintedPixels(frame: BackdropFrame, width: Int, height: Int): IntArray {
     val pixels = IntArray(width * height)
+    val scratch = IntArray(width * height)
     for (index in 0 until frame.lineCount) {
         val line = frame.lines[index]
+        val steps = line.count - 1
+        val target = if (line.shaped) scratch else pixels
+        if (line.shaped) scratch.fill(0)
         var previous = 1
-        while (previous < line.count) {
+        while (previous <= steps) {
+            val along = (previous - 0.5f) / steps.toFloat()
+            val sample = strokeAt(line, along)
             paintSegment(
-                pixels,
+                target,
                 width,
                 height,
                 line.x[previous - 1],
                 line.y[previous - 1],
                 line.x[previous],
                 line.y[previous],
-                line.radius,
-                line.red,
-                line.green,
-                line.blue,
+                sample.radius,
+                sample.red,
+                sample.green,
+                sample.blue,
+                line.shaped,
             )
             previous++
         }
+        if (line.shaped) screenOnto(pixels, scratch)
     }
     for (index in 0 until frame.discCount) {
         val disc = frame.discs[index]
@@ -311,18 +328,21 @@ private fun layoutRibbons(
     }
     for (index in strands.indices) {
         val strand = strands[index]
+        val halo = into.line() ?: return
         val glow = into.line() ?: return
         val core = into.line() ?: return
-        val coreColor = if (strand.teal) tealCore else amberCore
-        val glowColor = if (strand.teal) tealGlow else amberGlow
-        prepare(glow, MarkKind.Ribbon, 4.1f, glowColor, breath)
-        prepare(core, MarkKind.Ribbon, 1.15f, coreColor, breath)
+        val pulse = if (moving) timeSec / 36f + index * 0.33f else 0.2f + index * 0.17f
+        val teal = strand.teal
+        prepareRibbon(halo, if (teal) 15f else 14f, if (teal) tealHalo else amberHalo, if (teal) blueHalo else roseHalo, breath, pulse)
+        prepareRibbon(glow, if (teal) 6.4f else 6f, if (teal) tealGlow else amberGlow, if (teal) blueGlow else roseGlow, breath, pulse)
+        prepareRibbon(core, 2.5f, if (teal) tealCore else amberCore, if (teal) blueCore else roseCore, breath, pulse)
         for (step in 0..steps) {
             val s = xs[step] / width + travel
             val y = strandY(strand, s, travel) * height
             ys[index][step] = y
-            core.add(xs[step], y)
+            halo.add(xs[step], y)
             glow.add(xs[step], y)
+            core.add(xs[step], y)
         }
     }
     if (!moving) return
@@ -438,8 +458,72 @@ private fun prepare(line: BackdropLine, kind: MarkKind, radius: Float, color: In
     line.red = scale(color[0], gain)
     line.green = scale(color[1], gain)
     line.blue = scale(color[2], gain)
+    line.endRed = line.red
+    line.endGreen = line.green
+    line.endBlue = line.blue
+    line.pulse = 0f
+    line.shaped = false
     line.count = 0
 }
+
+private fun prepareRibbon(
+    line: BackdropLine,
+    radius: Float,
+    start: IntArray,
+    end: IntArray,
+    gain: Float,
+    pulse: Float,
+) {
+    prepare(line, MarkKind.Ribbon, radius, start, gain)
+    line.endRed = scale(end[0], gain)
+    line.endGreen = scale(end[1], gain)
+    line.endBlue = scale(end[2], gain)
+    line.pulse = pulse
+    line.shaped = true
+}
+
+/**
+ * Brightness and width along one ribbon. Ends fade out. A slow swell leaves dim
+ * stretches, and two hotter knots travel the length when [pulse] advances.
+ */
+internal fun ribbonGain(along: Float, pulse: Float): Float {
+    val t = along.coerceIn(0f, 1f)
+    val edge = when {
+        t < END_FADE -> smoothStep(t / END_FADE)
+        t > 1f - END_FADE -> smoothStep((1f - t) / END_FADE)
+        else -> 1f
+    }
+    if (edge <= 0f) return 0f
+    val swell = 0.34f + 0.66f * (0.5f + 0.5f * sin(TWO_PI * (t * 2.15f + 0.35f)))
+    val travel = if (pulse == 0f) 0.22f else pulse
+    val spots = knot(t, travel) * 0.9f + knot(t, travel + 0.46f) * 0.5f
+    return (edge * (swell * 0.58f + spots)).coerceIn(0f, 1f)
+}
+
+private fun knot(along: Float, phase: Float): Float {
+    val center = phase - floor(phase)
+    val direct = abs(along - center)
+    val distance = min(direct, 1f - direct)
+    if (distance >= KNOT) return 0f
+    val u = 1f - distance / KNOT
+    return u * u
+}
+
+/** Center color and outer radius for the piece of [line] at [along] (0 at the left). */
+fun strokeAt(line: BackdropLine, along: Float): StrokeSample {
+    if (!line.shaped) return StrokeSample(line.radius, line.red, line.green, line.blue)
+    val t = along.coerceIn(0f, 1f)
+    val gain = ribbonGain(t, line.pulse)
+    return StrokeSample(
+        radius = line.radius * (0.28f + 0.92f * gain),
+        red = mixChannel(line.red, line.endRed, t, gain),
+        green = mixChannel(line.green, line.endGreen, t, gain),
+        blue = mixChannel(line.blue, line.endBlue, t, gain),
+    )
+}
+
+private fun mixChannel(start: Int, end: Int, along: Float, gain: Float): Int =
+    ((start + (end - start) * along) * gain).toInt().coerceIn(0, 255)
 
 private fun placeDisc(
     into: BackdropFrame,
@@ -470,10 +554,18 @@ private fun unitHash(turn: Int, salt: Int): Float {
     return (positive % 10000L) / 10000f
 }
 
-private val tealCore = intArrayOf(46, 112, 104)
-private val tealGlow = intArrayOf(18, 40, 36)
-private val amberCore = intArrayOf(120, 82, 34)
-private val amberGlow = intArrayOf(40, 26, 12)
+private val tealHalo = intArrayOf(14, 36, 34)
+private val blueHalo = intArrayOf(12, 22, 40)
+private val amberHalo = intArrayOf(36, 20, 10)
+private val roseHalo = intArrayOf(34, 14, 20)
+private val tealGlow = intArrayOf(20, 52, 48)
+private val blueGlow = intArrayOf(16, 32, 58)
+private val amberGlow = intArrayOf(52, 30, 14)
+private val roseGlow = intArrayOf(50, 20, 28)
+private val tealCore = intArrayOf(28, 70, 66)
+private val blueCore = intArrayOf(22, 40, 78)
+private val amberCore = intArrayOf(72, 44, 20)
+private val roseCore = intArrayOf(70, 28, 40)
 private val beadTeal = intArrayOf(78, 168, 154)
 private val beadAmber = intArrayOf(168, 118, 52)
 private val shimmerColor = intArrayOf(34, 38, 36)
@@ -484,6 +576,8 @@ private val horizonColor = intArrayOf(32, 14, 26)
 
 private const val TWO_PI = (PI * 2).toFloat()
 private const val FRINGE = 0.75f
+private const val END_FADE = 0.16f
+private const val KNOT = 0.075f
 
 private fun paintSegment(
     pixels: IntArray,
@@ -497,8 +591,10 @@ private fun paintSegment(
     red: Int,
     green: Int,
     blue: Int,
+    soft: Boolean = false,
 ) {
-    val reach = radius + FRINGE
+    if (radius < 0.4f || red + green + blue == 0) return
+    val reach = if (soft) radius else radius + FRINGE
     val minX = floor(min(x0, x1) - reach).toInt().coerceIn(0, width - 1)
     val maxX = ceil(max(x0, x1) + reach).toInt().coerceIn(0, width - 1)
     val minY = floor(min(y0, y1) - reach).toInt().coerceIn(0, height - 1)
@@ -510,9 +606,21 @@ private fun paintSegment(
         while (x <= maxX) {
             val dist = distanceToSegment(x + 0.5f, y + 0.5f, x0, y0, x1, y1)
             if (dist <= reach) {
-                val cover = if (dist <= radius) 1f else (reach - dist) / FRINGE
+                val cover = if (soft) {
+                    val u = 1f - dist / radius
+                    u * u
+                } else if (dist <= radius) {
+                    1f
+                } else {
+                    (reach - dist) / FRINGE
+                }
                 val index = row + x
-                pixels[index] = maxBlend(pixels[index], scale(red, cover), scale(green, cover), scale(blue, cover))
+                pixels[index] = maxBlend(
+                    pixels[index],
+                    scale(red, cover),
+                    scale(green, cover),
+                    scale(blue, cover),
+                )
             }
             x++
         }
@@ -563,5 +671,23 @@ private fun maxBlend(existing: Int, red: Int, green: Int, blue: Int): Int {
     val oldBlue = existing and 255
     return (max(oldRed, red) shl 16) or (max(oldGreen, green) shl 8) or max(oldBlue, blue)
 }
+
+private fun screenOnto(dest: IntArray, src: IntArray) {
+    for (index in dest.indices) {
+        val sample = src[index]
+        if (sample != 0) dest[index] = screenBlend(dest[index], sample)
+    }
+}
+
+/** A little extra light where strokes overlap, without climbing to white. */
+private fun screenBlend(existing: Int, added: Int): Int {
+    val red = screenChannel(existing shr 16, added shr 16)
+    val green = screenChannel((existing shr 8) and 255, (added shr 8) and 255)
+    val blue = screenChannel(existing and 255, added and 255)
+    return (red shl 16) or (green shl 8) or blue
+}
+
+private fun screenChannel(base: Int, added: Int): Int =
+    255 - ((255 - base) * (255 - added) / 255)
 
 private fun maxChannel(pixel: Int): Int = max(pixel shr 16, max((pixel shr 8) and 255, pixel and 255))
