@@ -384,8 +384,10 @@ private fun LeftPanel(
     if (live != null) shown = live
     val panel = shown
     if (progress <= 0f || panel == null) return
-    val feather = px(176f)
+    // Opaque through the labels. The right edge is a scrim so the grid is not a hard cut.
+    val feather = px(300f)
     val body = openWidth * progress
+    val scrim = theme.background
     Row(
         Modifier
             .fillMaxHeight()
@@ -396,7 +398,7 @@ private fun LeftPanel(
             Modifier
                 .fillMaxHeight()
                 .width(body)
-                .background(theme.background)
+                .background(scrim)
                 .padding(start = px(20f), end = px(12f), top = px(20f), bottom = px(20f)),
             verticalArrangement = Arrangement.spacedBy(px(2f)),
         ) {
@@ -411,14 +413,22 @@ private fun LeftPanel(
             Modifier
                 .fillMaxHeight()
                 .width(feather)
-                .background(
-                    Brush.horizontalGradient(
-                        0f to theme.background,
-                        0.58f to theme.background,
-                        0.82f to theme.background.copy(alpha = 0.72f),
-                        1f to Color.Transparent,
-                    ),
-                ),
+                .drawBehind {
+                    drawRect(
+                        brush = Brush.horizontalGradient(
+                            colorStops = arrayOf(
+                                0f to scrim,
+                                0.16f to scrim.copy(alpha = 0.82f),
+                                0.4f to scrim.copy(alpha = 0.42f),
+                                0.68f to scrim.copy(alpha = 0.14f),
+                                0.88f to scrim.copy(alpha = 0.04f),
+                                1f to Color.Transparent,
+                            ),
+                            startX = 0f,
+                            endX = size.width,
+                        ),
+                    )
+                },
         )
     }
 }
