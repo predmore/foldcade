@@ -74,7 +74,6 @@ private fun MovingBackdrop(
     Canvas(Modifier.fillMaxSize()) {
         layoutBackdrop(motion, designTime, size.width, size.height, moving, frame)
         var index = 0
-        var slotLine = 0
         while (index < frame.lineCount) {
             val line = frame.lines[index]
             if (line.count < 2) {
@@ -89,16 +88,13 @@ private fun MovingBackdrop(
             ) {
                 drawRibbonStrand(
                     glow,
-                    slotLine,
                     frame.lines[index],
                     frame.lines[index + 1],
                     frame.lines[index + 2],
                 )
-                slotLine++
                 index += 3
             } else if (line.shaped) {
-                drawCrossingLine(glow, slotLine, line)
-                slotLine++
+                drawCrossingLine(glow, line)
                 index++
             } else {
                 path.rewind()

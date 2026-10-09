@@ -1,30 +1,33 @@
 package app.foldcade.ui
 
 import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.BlendMode
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.Paint
+import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.drawscope.DrawScope
+import androidx.compose.ui.graphics.drawscope.Stroke
 import app.foldcade.language.BackdropLine
 import app.foldcade.language.GlowFalloff
 import app.foldcade.language.strokeAt
-import kotlin.math.ceil
-import kotlin.math.hypot
-import kotlin.math.max
 import kotlin.math.min
 
-private const val STAMP_FRACTION = 0.4f
+/**
+ * How many polyline samples share one stroke. Short enough that a hot spot
+ * still ramps, long enough that the first frame stays a few strokes.
+ */
+private const val STROKE_STRIDE = 2
 
 /**
  * Soft radial glow shared by ribbons, crossings, discs, and tiles.
  *
- * The curve is [GlowFalloff] sampled at [GlowFalloff.STOPS]. Ribbons are
- * overlapping radial stamps, lightened inside one screen layer, so the halo
- * has no hard rim. There is no [android.graphics.RuntimeShader]: compiling one
- * per segment, and even one per ribbon, kept the first frame from finishing
- * inside the emulator's launch wait.
+ * The curve is [GlowFalloff] sampled at [GlowFalloff.STOPS]. A ribbon is a
+ * handful of round strokes whose alphas are the difference between those
+ * stops, screened onto the backdrop. That is the same kind of draw the
+ * emulator already finishes inside `am start -W`. A full-screen layer of
+ * radial stamps, and a runtime shader, both kept that wait from returning.
  */
 internal object SoftGlow {
     fun fillStops(into: FloatArray, tightness: Float, rim: Float) {
@@ -35,12 +38,10 @@ internal object SoftGlow {
 
 internal class GlowSlots {
     val stops: FloatArray = FloatArray(GlowFalloff.STOPS.size)
-    val layer: Paint = Paint().apply { blendMode = BlendMode.Screen }
 }
 
 internal fun DrawScope.drawRibbonStrand(
     slots: GlowSlots,
-    slotLine: Int,
     halo: BackdropLine,
     glow: BackdropLine,
     core: BackdropLine,
@@ -48,7 +49,7 @@ internal fun DrawScope.drawRibbonStrand(
     drawSoftLine(slots, halo, glow, core, GlowFalloff.TIGHTNESS, GlowFalloff.RIM_START, GlowFalloff.PEAK)
 }
 
-internal fun DrawScope.drawCrossingLine(slots: GlowSlots, slotLine: Int, line: BackdropLine) {
+internal fun DrawScope.drawCrossingLine(slots: GlowSlots, line: BackdropLine) {
     drawSoftLine(slots, line, null, null, GlowFalloff.TIGHTNESS, GlowFalloff.RIM_START, 1f)
 }
 
@@ -98,38 +99,14 @@ private fun DrawScope.drawSoftLine(
 ) {
     if (first.count < 2) return
     SoftGlow.fillStops(slots.stops, tightness, rim)
-    val reach = GlowFalloff.REACH
-    var minX = Float.POSITIVE_INFINITY
-    var minY = Float.POSITIVE_INFINITY
-    var maxX = Float.NEGATIVE_INFINITY
-    var maxY = Float.NEGATIVE_INFINITY
-    var maxRadius = 1f
-    for (index in 0 until first.count) {
-        minX = min(minX, first.x[index])
-        maxX = max(maxX, first.x[index])
-        minY = min(minY, first.y[index])
-        maxY = max(maxY, first.y[index])
-    }
-    val steps = first.count - 1
-    for (index in 0 until steps) {
-        val along = index.toFloat() / steps.toFloat()
-        maxRadius = max(maxRadius, strokeAt(first, along).radius * reach)
-        if (second != null) maxRadius = max(maxRadius, strokeAt(second, along).radius * reach)
-        if (third != null) maxRadius = max(maxRadius, strokeAt(third, along).radius * reach)
-    }
-    if (maxRadius < 0.4f) return
-    val pad = maxRadius + 2f
-    drawContext.canvas.saveLayer(
-        Rect(minX - pad, minY - pad, maxX + pad, maxY + pad),
-        slots.layer,
-    )
-    stampLine(first, slots.stops, reach, peak)
-    if (second != null) stampLine(second, slots.stops, reach, peak)
-    if (third != null) stampLine(third, slots.stops, reach, peak)
-    drawContext.canvas.restore()
+    val path = Path()
+    drawFalloffLine(path, first, slots.stops, GlowFalloff.REACH, peak)
+    if (second != null) drawFalloffLine(path, second, slots.stops, GlowFalloff.REACH, peak)
+    if (third != null) drawFalloffLine(path, third, slots.stops, GlowFalloff.REACH, peak)
 }
 
-private fun DrawScope.stampLine(
+private fun DrawScope.drawFalloffLine(
+    path: Path,
     line: BackdropLine,
     stops: FloatArray,
     reach: Float,
@@ -137,43 +114,57 @@ private fun DrawScope.stampLine(
 ) {
     val steps = line.count - 1
     if (steps < 1) return
-    for (index in 0 until steps) {
-        val along0 = index.toFloat() / steps.toFloat()
-        val along1 = (index + 1).toFloat() / steps.toFloat()
-        val a0 = strokeAt(line, along0)
-        val a1 = strokeAt(line, along1)
-        val x0 = line.x[index]
-        val y0 = line.y[index]
-        val x1 = line.x[index + 1]
-        val y1 = line.y[index + 1]
-        val span = hypot(x1 - x0, y1 - y0)
-        val radius0 = a0.radius * reach
-        val radius1 = a1.radius * reach
-        val spacing = max(3f, min(radius0, radius1).coerceAtLeast(1f) * STAMP_FRACTION)
-        val stamps = max(1, ceil(span / spacing).toInt())
-        for (stamp in 0..stamps) {
-            val t = stamp.toFloat() / stamps.toFloat()
-            val radius = radius0 + (radius1 - radius0) * t
-            val color = rgbOf(
-                mixChannel(a0.red, a1.red, t),
-                mixChannel(a0.green, a1.green, t),
-                mixChannel(a0.blue, a1.blue, t),
-            )
-            if (color.red == 0f && color.green == 0f && color.blue == 0f) continue
-            drawRadialGlow(
-                center = Offset(x0 + (x1 - x0) * t, y0 + (y1 - y0) * t),
-                radius = radius,
-                color = color,
-                stops = stops,
-                peak = peak,
-                blendMode = BlendMode.Lighten,
+    var point = 0
+    while (point < steps) {
+        val next = min(point + STROKE_STRIDE, steps)
+        val along = (point + next) * 0.5f / steps.toFloat()
+        val sample = strokeAt(line, along)
+        val radius = sample.radius * reach
+        if (radius >= 0.5f && sample.red + sample.green + sample.blue > 0) {
+            path.rewind()
+            path.moveTo(line.x[point], line.y[point])
+            for (index in point + 1..next) path.lineTo(line.x[index], line.y[index])
+            drawFalloffStrokes(
+                path,
+                rgbOf(sample.red, sample.green, sample.blue),
+                radius,
+                stops,
+                peak,
             )
         }
+        point = next
     }
 }
 
-private fun mixChannel(start: Int, end: Int, t: Float): Int =
-    (start + (end - start) * t).toInt().coerceIn(0, 255)
+/**
+ * Shells from the outside in. Each shell adds only the cover gained since the
+ * next-wider stop, so the stacked strokes match the radial curve instead of
+ * summing every stop at the core.
+ */
+private fun DrawScope.drawFalloffStrokes(
+    path: Path,
+    color: Color,
+    radius: Float,
+    stops: FloatArray,
+    peak: Float,
+) {
+    val fractions = GlowFalloff.STOPS
+    var index = fractions.lastIndex
+    while (index >= 0) {
+        val width = radius * 2f * fractions[index]
+        val outer = if (index + 1 < stops.size) stops[index + 1] else 0f
+        val delta = ((stops[index] - outer) * peak).coerceIn(0f, 1f)
+        if (width >= 0.5f && delta > 0.004f) {
+            drawPath(
+                path = path,
+                color = color.copy(alpha = delta),
+                style = Stroke(width = width, cap = StrokeCap.Round, join = StrokeJoin.Round),
+                blendMode = BlendMode.Screen,
+            )
+        }
+        index--
+    }
+}
 
 private fun rgbOf(red: Int, green: Int, blue: Int): Color =
     Color.Black.copy(red = red / 255f, green = green / 255f, blue = blue / 255f)
