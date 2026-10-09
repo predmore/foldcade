@@ -127,6 +127,7 @@ class ShellHostTest {
             listOf(
                 "app.foldcade.localfolder.LocalFolderEntry",
                 "app.foldcade.plugins.azahar.AzaharEntry",
+                "app.foldcade.plugins.melonds.MelonDsEntry",
                 "app.foldcade.plugins.romm.RommEntry",
             ),
             loaded,
@@ -172,6 +173,7 @@ class ShellHostTest {
             setOf(
                 "app.foldcade.localfolder.LocalFolderEntry",
                 "app.foldcade.plugins.azahar.AzaharEntry",
+                "app.foldcade.plugins.melonds.MelonDsEntry",
                 "app.foldcade.plugins.romm.RommEntry",
             ),
             loaded.map { it.javaClass.name }.toSet(),
@@ -183,6 +185,9 @@ class ShellHostTest {
         assertEquals("RomM", host.library("romm")?.displayName)
         assertEquals("azahar", host.player("azahar")?.id)
         assertEquals("nintendo-3ds", host.playersFor("3ds").single().platformId)
+        assertEquals("melonds", host.player("melonds")?.id)
+        assertEquals("nintendo-ds", host.playersFor("nds").single().platformId)
+        assertTrue(host.playerIds().containsAll(listOf("azahar", "melonds")))
         val stored = host.platformDefinitions()
         assertEquals(folder.platforms.map { it.id }.toSet(), stored.map { it.id }.toSet())
         assertEquals(folder.platforms.size, stored.size)

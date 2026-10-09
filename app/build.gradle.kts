@@ -159,6 +159,7 @@ dependencies {
     implementation(project(":host"))
     implementation(project(":plugins:azahar"))
     implementation(project(":plugins:local-folder"))
+    implementation(project(":plugins:melonds"))
     implementation(project(":romm"))
     implementation(project(":plugins:romm"))
     implementation(libs.androidx.core)

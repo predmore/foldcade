@@ -27,5 +27,12 @@ object Shelf {
             platformId = "nintendo-3ds",
             occupiesBothDisplays = true,
         ),
+        ShelfGame(
+            id = "nintendo-ds.melonds",
+            title = "DS",
+            shortText = "melonDS",
+            platformId = "nintendo-ds",
+            occupiesBothDisplays = true,
+        ),
     )
 }
