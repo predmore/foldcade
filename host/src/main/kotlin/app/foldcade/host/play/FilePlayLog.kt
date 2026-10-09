@@ -22,6 +22,34 @@ class FilePlayLog(private val file: File) : PlaySink {
         if (!file.isFile) return emptyList()
         return file.readLines(Charsets.UTF_8).mapNotNull { decodePlayEvent(it) }
     }
+
+    override fun writeCheckpoint(checkpoint: PlayCheckpoint) {
+        val target = checkpointFile()
+        target.parentFile?.mkdirs()
+        val tmp = File(target.parentFile, "${target.name}.tmp")
+        FileOutputStream(tmp).use { out ->
+            out.write(encodeCheckpoint(checkpoint).toByteArray(Charsets.UTF_8))
+            out.fd.sync()
+        }
+        if (!tmp.renameTo(target)) {
+            tmp.copyTo(target, overwrite = true)
+            tmp.delete()
+        }
+    }
+
+    override fun readCheckpoint(): PlayCheckpoint? {
+        val target = checkpointFile()
+        if (!target.isFile) return null
+        return target.readLines(Charsets.UTF_8).firstNotNullOfOrNull { decodeCheckpoint(it) }
+    }
+
+    override fun clearCheckpoint(sessionId: String) {
+        val target = checkpointFile()
+        val stored = readCheckpoint() ?: return
+        if (stored.sessionId == sessionId) target.delete()
+    }
+
+    private fun checkpointFile(): File = File(file.parentFile, "${file.name}.checkpoint")
 }
 
 internal fun encodePlayEvent(event: PlayEvent): String =
@@ -54,6 +82,23 @@ internal fun decodePlayEvent(line: String): PlayEvent? {
     val gameId = parts[2]
     if (sessionId.isBlank() || gameId.isBlank()) return null
     return PlayEvent(sessionId, gameId, kind, at, away, active)
+}
+
+internal fun encodeCheckpoint(checkpoint: PlayCheckpoint): String =
+    listOf(
+        escape(checkpoint.sessionId),
+        checkpoint.activeMillis.toString(),
+        checkpoint.atMillis.toString(),
+    ).joinToString("\t") + "\n"
+
+internal fun decodeCheckpoint(line: String): PlayCheckpoint? {
+    if (line.isBlank()) return null
+    val parts = splitFields(line)
+    if (parts.size != 3) return null
+    val active = parts[1].toLongOrNull() ?: return null
+    val at = parts[2].toLongOrNull() ?: return null
+    if (active < 0L || at < 0L || parts[0].isBlank()) return null
+    return PlayCheckpoint(parts[0], active, at)
 }
 
 private fun escape(value: String): String = buildString(value.length) {
