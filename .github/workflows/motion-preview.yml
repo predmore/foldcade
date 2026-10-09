@@ -1,0 +1,31 @@
+name: Motion preview
+
+# Uploads the emulator Ribbons clip so a reviewer can open it on GitHub.
+# Does not publish a release.
+on:
+  pull_request:
+    paths:
+      - docs/afterglow/ribbons-motion.mp4
+      - docs/afterglow/ribbons-motion.gif
+      - .github/workflows/motion-preview.yml
+  push:
+    branches:
+      - main
+    paths:
+      - docs/afterglow/ribbons-motion.mp4
+      - docs/afterglow/ribbons-motion.gif
+
+jobs:
+  upload:
+    name: ribbons-motion
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ribbons-motion
+          path: |
+            docs/afterglow/ribbons-motion.mp4
+            docs/afterglow/ribbons-motion.gif
+          if-no-files-found: error
