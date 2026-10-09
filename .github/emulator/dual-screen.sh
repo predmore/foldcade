@@ -417,7 +417,13 @@ timeout 15 adb shell am start -W -n "$component"
 # One Back when a dialog other than the system confirmation is still up.
 # Do not tap its buttons, and do not stall the capture on it.
 dialog_remains() {
-  timeout 10 adb shell uiautomator dump /sdcard/foldcade-ui.xml >/dev/null 2>&1 || return 1
+  # A dump that misses the idle window keeps running on the guest after this
+  # timeout. The next shell then sits behind it, and a later am start -W
+  # exits 124. Kill the guest dump before treating the dialog as gone.
+  if ! timeout 10 adb shell uiautomator dump /sdcard/foldcade-ui.xml >/dev/null 2>&1; then
+    timeout 5 adb shell 'for pid in $(pidof uiautomator); do kill "$pid"; done' >/dev/null 2>&1 || true
+    return 1
+  fi
   timeout 10 adb shell cat /sdcard/foldcade-ui.xml 2>/dev/null | tr -d '\r' >"$out/ui-last.xml" || return 1
   grep -q -E 'Not now|Use Foldcade as Home' "$out/ui-last.xml"
 }
@@ -432,22 +438,42 @@ dismiss_leftover_dialog() {
 resumed_has() {
   local name="$1"
   local resumed
-  resumed="$(adb_do shell dumpsys activity activities 2>/dev/null | tr -d '\r' | grep -E 'ResumedActivity' || true)"
+  # Shorter than adb_do. A stuck dumpsys is not proof the activity is gone,
+  # and burning 30s here is what made the recovery launch look necessary.
+  resumed="$(timeout 8 adb shell dumpsys activity activities 2>/dev/null | tr -d '\r' | grep -E 'ResumedActivity' || true)"
   [[ "$resumed" == *"$name"* ]]
+}
+
+wait_resumed() {
+  local name="$1"
+  local attempt
+  for attempt in 1 2 3 4 5 6 7 8; do
+    if resumed_has "$name"; then
+      return 0
+    fi
+    sleep 0.5
+  done
+  return 1
 }
 
 # The primary launch starts the companion. If that display is showing the
 # stock launcher instead, put the companion back on the presentation display.
+# Recovery starts do not use -W. Run 38002269310 printed Status: ok for the
+# cold start, then this second PrimaryHomeActivity launch sat in -W until
+# timeout exited 124. A singleTask activity that is already resumed does not
+# complete another -W wait.
 show_foldcade() {
-  if ! resumed_has "PrimaryHomeActivity"; then
+  if ! resumed_has "PrimaryHomeActivity" && ! wait_resumed "PrimaryHomeActivity"; then
     echo "step: launch ${component}"
-    timeout 15 adb shell am start -W -n "$component" --display 0
+    timeout 15 adb shell am start -n "$component" --display 0 || true
+    wait_resumed "PrimaryHomeActivity" || true
   fi
-  if ! resumed_has "CompanionHomeActivity"; then
+  if ! resumed_has "CompanionHomeActivity" && ! wait_resumed "CompanionHomeActivity"; then
     echo "step: companion on display ${presentation_logical}"
-    timeout 15 adb shell am start -W \
+    timeout 15 adb shell am start \
       -n "${app_id}/app.foldcade.CompanionHomeActivity" \
-      --display "$presentation_logical"
+      --display "$presentation_logical" || true
+    wait_resumed "CompanionHomeActivity" || true
   fi
 }
 
