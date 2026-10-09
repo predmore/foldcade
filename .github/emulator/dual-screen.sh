@@ -1207,13 +1207,21 @@ capture_curated_home() {
   capture "$secondary" "$out/edit-mode-secondary.png"
   expect_png "$out/edit-mode-primary.png" "${top_width}x${top_height}"
   expect_png "$out/edit-mode-secondary.png" "${bottom_width}x${bottom_height}"
-  key_bottom KEYCODE_BUTTON_B || true
-  key_bottom KEYCODE_BACK || true
+  # B only drops the held tile. Back does not leave edit mode on this image.
+  # Start does. All Games is the next L1 row, not a grid confirm.
+  key_bottom KEYCODE_BUTTON_START || true
   sleep 0.4
 
   echo "step: all games"
-  for step in 1 2 3 4 5 6; do
-    key_bottom KEYCODE_DPAD_LEFT
+  adb_do logcat -c || true
+  key_bottom KEYCODE_BUTTON_L1
+  sleep 0.6
+  for step in $(seq 1 24); do
+    key_bottom KEYCODE_DPAD_DOWN
+    sleep 0.25
+    if timeout 10 adb logcat -d -s Foldcade:I 2>/dev/null | tr -d '\r' | grep -q "home-ui row All library"; then
+      break
+    fi
   done
   key_bottom KEYCODE_DPAD_CENTER
   wait_library_log "home-ui all-games" || fail "All Games did not open"
@@ -1230,7 +1238,9 @@ capture_curated_home() {
   capture "$secondary" "$out/all-apps-secondary.png"
   expect_png "$out/all-apps-primary.png" "${top_width}x${top_height}"
   expect_png "$out/all-apps-secondary.png" "${bottom_width}x${bottom_height}"
-  key_bottom KEYCODE_BACK || true
+  # The first B leaves the All chrome. The second closes All.
+  key_bottom KEYCODE_BUTTON_B || true
+  key_bottom KEYCODE_BUTTON_B || true
   sleep 0.4
   {
     echo "Thor-sized emulator, not a Thor pass."
