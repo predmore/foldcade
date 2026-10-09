@@ -110,6 +110,9 @@ jobs:
         with:
           cache-read-only: true
 
+      - name: Render home music
+        uses: ./.github/actions/render-home-music
+
       - name: Assemble debug
         run: ./gradlew :app:assembleDebug --configuration-cache
 

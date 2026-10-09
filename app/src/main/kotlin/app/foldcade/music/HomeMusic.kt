@@ -2,6 +2,7 @@ package app.foldcade.music
 
 import android.app.Application
 import android.content.BroadcastReceiver
+import android.content.ComponentCallbacks2
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
@@ -321,13 +322,16 @@ class HomeMusic(
         }
     }
 
-    /** The system is reclaiming memory. Drop the player so it does not keep audio focus. */
-    fun onTrimMemory() {
+    /**
+     * Drop the player only after the UI is hidden. A running-low trim while
+     * home is in front must leave the loop playing.
+     */
+    fun onTrimMemory(level: Int) {
         if (!onMainThread()) {
-            handler.post { onTrimMemory() }
+            handler.post { onTrimMemory(level) }
             return
         }
-        releasePlayer()
+        if (level >= ComponentCallbacks2.TRIM_MEMORY_UI_HIDDEN) releasePlayer()
     }
 
     /** pause() does not abandon AUDIOFOCUS_GAIN. Release does. */

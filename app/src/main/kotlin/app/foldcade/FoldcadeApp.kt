@@ -81,7 +81,7 @@ class FoldcadeApp : Application() {
 
     override fun onTrimMemory(level: Int) {
         super.onTrimMemory(level)
-        if (::music.isInitialized) music.onTrimMemory()
+        if (::music.isInitialized) music.onTrimMemory(level)
     }
 
     fun refreshCredentials() {
