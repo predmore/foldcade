@@ -18,14 +18,19 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.focus.focusProperties
+import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.input.pointer.positionChange
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import app.foldcade.language.TypeRamp
+import kotlin.math.min
 
 /**
  * Volume row for the L1 panel. Isolated so the theme-art pull request can rebase
@@ -44,8 +49,7 @@ fun MusicVolumeRow(
 ) {
     val theme = LocalFoldTheme.current.theme
     val fraction = volume.coerceIn(0f, 1f)
-    val track = theme.muted
-    val fill = theme.onBackground
+    val accent = theme.focus
     Column(modifier.fillMaxWidth().padding(start = 16.dp, end = 8.dp, top = 8.dp, bottom = 8.dp)) {
         Row(
             Modifier
@@ -87,12 +91,48 @@ fun MusicVolumeRow(
             Modifier
                 .padding(top = 8.dp)
                 .fillMaxWidth()
-                .height(18.dp)
+                .height(36.dp)
+                .graphicsLayer { clip = false }
                 .drawWithContent {
-                    val bar = 8.dp.toPx()
-                    val top = (size.height - bar) / 2f
-                    drawRect(track, topLeft = Offset(0f, top), size = Size(size.width, bar))
-                    drawRect(fill, topLeft = Offset(0f, top), size = Size(size.width * fraction, bar))
+                    val trackHeight = 6.dp.toPx()
+                    val trackTop = (size.height - trackHeight) / 2f
+                    val trackRadius = CornerRadius(trackHeight / 2f, trackHeight / 2f)
+                    drawRoundRect(
+                        color = accent.copy(alpha = 0.28f),
+                        topLeft = Offset(0f, trackTop),
+                        size = Size(size.width, trackHeight),
+                        cornerRadius = trackRadius,
+                    )
+                    val fillWidth = size.width * fraction
+                    if (fillWidth > 1f) {
+                        val cap = min(trackHeight / 2f, fillWidth / 2f)
+                        drawRoundRect(
+                            color = accent,
+                            topLeft = Offset(0f, trackTop),
+                            size = Size(fillWidth, trackHeight),
+                            cornerRadius = CornerRadius(cap, cap),
+                        )
+                    }
+                    val thumbRadius = 7.dp.toPx()
+                    val center = Offset(
+                        x = (size.width * fraction).coerceIn(thumbRadius, (size.width - thumbRadius).coerceAtLeast(thumbRadius)),
+                        y = size.height / 2f,
+                    )
+                    val glow = thumbRadius * 2.2f
+                    drawCircle(
+                        brush = Brush.radialGradient(
+                            colorStops = arrayOf(
+                                0f to accent.copy(alpha = 0.9f),
+                                0.42f to accent.copy(alpha = 0.34f),
+                                1f to Color.Transparent,
+                            ),
+                            center = center,
+                            radius = glow,
+                        ),
+                        radius = glow,
+                        center = center,
+                    )
+                    drawCircle(color = accent, radius = thumbRadius * 0.62f, center = center)
                 }
                 .then(
                     if (interactive) {
