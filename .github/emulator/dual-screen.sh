@@ -159,6 +159,30 @@ echo "step: framebuffer"
 Xvfb :99 -screen 0 "$xvfb_geometry" >/tmp/xvfb.log 2>&1 &
 xvfb_pid=$!
 export DISPLAY=:99
+# Run 37901128566 started the windowed emulator about 35ms after Xvfb was
+# launched. Qt then aborted: could not connect to display :99. xdpyinfo is
+# the signal that the server accepts clients. Boot waits for that.
+if ! command -v xdpyinfo >/dev/null 2>&1; then
+  fail "framebuffer: xdpyinfo is not installed"
+fi
+framebuffer_deadline=$((SECONDS + 20))
+while true; do
+  if xdpyinfo >/dev/null 2>&1; then
+    echo "step: framebuffer ready"
+    break
+  fi
+  if ! kill -0 "$xvfb_pid" 2>/dev/null; then
+    echo "----- xvfb.log -----"
+    cat /tmp/xvfb.log 2>/dev/null || true
+    fail "framebuffer: Xvfb exited before display :99 was up"
+  fi
+  if [ "$SECONDS" -ge "$framebuffer_deadline" ]; then
+    echo "----- xvfb.log -----"
+    cat /tmp/xvfb.log 2>/dev/null || true
+    fail "framebuffer: display :99 did not accept connections"
+  fi
+  sleep 0.2
+done
 : >/tmp/emulator.log
 tail -n +1 -F /tmp/emulator.log &
 log_tail_pid=$!
