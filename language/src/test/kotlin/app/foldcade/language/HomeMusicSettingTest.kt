@@ -84,4 +84,82 @@ class HomeMusicSettingTest {
         assertEquals("Foldcade project", tracks.single().composer)
         assertTrue(musicTracksFromManifest("""{"tracks":[{"id":"x","title":"X","composer":"C","license":"GPLv3","file":"../no.ogg"}]}""").isEmpty())
     }
+
+    @Test
+    fun musicStartsOnlyWhenHomeIsAloneAndQuiet() {
+        assertTrue(homeMusicMayStart(homeInFront = true, gameInFront = false, otherAudioActive = false))
+        assertFalse(homeMusicMayStart(homeInFront = false, gameInFront = false, otherAudioActive = false))
+        assertFalse(homeMusicMayStart(homeInFront = true, gameInFront = true, otherAudioActive = false))
+        assertFalse(homeMusicMayStart(homeInFront = true, gameInFront = false, otherAudioActive = true))
+    }
+
+    @Test
+    fun suppressionClearsOnlyAfterTheGameLeaves() {
+        assertTrue(homeMusicStaysSuppressed(suppressed = true, gameInFront = true))
+        assertFalse(homeMusicStaysSuppressed(suppressed = true, gameInFront = false))
+        assertFalse(homeMusicStaysSuppressed(suppressed = false, gameInFront = true))
+        assertFalse(homeMusicStaysSuppressed(suppressed = false, gameInFront = false))
+    }
+
+    @Test
+    fun focusReturnFadesInFromSilenceUnlessAGameIsInFront() {
+        assertTrue(
+            fadeInOnFocusReturn(
+                playbackResumed = true,
+                fromAudioFocus = true,
+                homeInFront = true,
+                gameInFront = false,
+            ),
+        )
+        assertFalse(
+            fadeInOnFocusReturn(
+                playbackResumed = false,
+                fromAudioFocus = true,
+                homeInFront = true,
+                gameInFront = false,
+            ),
+        )
+        assertFalse(
+            fadeInOnFocusReturn(
+                playbackResumed = true,
+                fromAudioFocus = false,
+                homeInFront = true,
+                gameInFront = false,
+            ),
+        )
+        assertFalse(
+            fadeInOnFocusReturn(
+                playbackResumed = true,
+                fromAudioFocus = true,
+                homeInFront = true,
+                gameInFront = true,
+            ),
+        )
+        assertFalse(
+            fadeInOnFocusReturn(
+                playbackResumed = true,
+                fromAudioFocus = true,
+                homeInFront = false,
+                gameInFront = false,
+            ),
+        )
+    }
+
+    @Test
+    fun missingSelectedAssetFallsBackToLanternlight() {
+        val present = setOf("music/lanternlight.ogg", "music/theme.ogg")
+        val exists: (String) -> Boolean = { it in present }
+        assertEquals(
+            "music/theme.ogg",
+            packagedHomeMusicFile("""{"backgroundMusic":"music/theme.ogg"}""", "music/other.ogg", exists),
+        )
+        assertEquals(
+            "music/lanternlight.ogg",
+            packagedHomeMusicFile(null, "music/other.ogg", exists),
+        )
+        assertEquals(
+            DEFAULT_BACKGROUND_MUSIC,
+            packagedHomeMusicFile(null, "music/lanternlight.ogg", assetExists = { false }),
+        )
+    }
 }

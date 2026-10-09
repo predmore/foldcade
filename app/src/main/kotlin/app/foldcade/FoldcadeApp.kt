@@ -53,6 +53,7 @@ class FoldcadeApp : Application() {
         credentials = AndroidCredentialStore(this)
         plugins = PluginHost(Dispatchers.IO, credentials)
         music = HomeMusic(this, store)
+        store.afterSessionChanged = music::onSessionChanged
         shell = ShellController(store, plugins, music::apply, music.trackTitle())
         rommPublish = RommPublish(
             read = {

@@ -17,4 +17,6 @@ Do not commit the SoundFont, WAVs, or encoded audio. `tracks/lanternlight/checks
 SoundFont: MuseScore_General.sf3 v0.2, sha256
 `5b85b6c2c61d10b2b91cddd41efcce7b25cd31c8271d511c73afafbef20b6fa3`,
 from https://ftp.osuosl.org/pub/musescore/soundfont/MuseScore_General/ — MIT licensed.
-The acknowledgements are in `MuseScore_General_License.md`.
+The acknowledgements are in [licenses/MuseScore_General_License.md](../licenses/MuseScore_General_License.md).
+
+`assembleRelease` packages the same assets as debug. Pass `-PfoldcadeHomeMusicAssets=<dir>` to copy a CI render (`music/manifest.json` and the ogg files) instead of running fluidsynth. The signed release workflow should use that directory. It does not need fluidsynth, ffmpeg, python3-venv, or libsndfile1 when the property is set.

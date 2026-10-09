@@ -7,6 +7,8 @@ jobs:
   render:
     name: home music render
     runs-on: ubuntu-latest
+    outputs:
+      render: ${{ steps.scope.outputs.render }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -99,3 +101,95 @@ jobs:
           path: app/build/home-music-preview/
           retention-days: 7
           if-no-files-found: error
+
+      - name: Upload packaged home music assets
+        if: steps.scope.outputs.render == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: home-music-assets
+          path: app/build/generated/homeMusicAssets/
+          retention-days: 7
+          if-no-files-found: error
+
+  unsigned-release:
+    name: unsigned release dry-run
+    needs: render
+    if: needs.render.outputs.render == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: home-music-assets
+          path: home-music-assets
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+
+      - name: Android SDK root
+        id: sdk
+        run: echo "root=$HOME/android-sdk" >> "$GITHUB_OUTPUT"
+
+      - name: Cache Android SDK packages
+        uses: actions/cache@v4
+        with:
+          path: |
+            ${{ steps.sdk.outputs.root }}/cmdline-tools
+            ${{ steps.sdk.outputs.root }}/platforms
+            ${{ steps.sdk.outputs.root }}/build-tools
+            ${{ steps.sdk.outputs.root }}/platform-tools
+            ${{ steps.sdk.outputs.root }}/licenses
+          key: android-sdk-33-37.0-build-tools-37.0.0-platform-tools-v1
+
+      - name: Install Android SDK packages
+        env:
+          SDK_ROOT: ${{ steps.sdk.outputs.root }}
+        run: |
+          set -euo pipefail
+          mkdir -p "$SDK_ROOT"
+          if [ ! -x "$SDK_ROOT/cmdline-tools/latest/bin/sdkmanager" ]; then
+            tmp="$(mktemp -d)"
+            curl -fsSL -o "$tmp/cmdlinetools.zip" \
+              https://dl.google.com/android/repository/commandlinetools-linux-12266719_latest.zip
+            unzip -q "$tmp/cmdlinetools.zip" -d "$tmp"
+            mkdir -p "$SDK_ROOT/cmdline-tools"
+            rm -rf "$SDK_ROOT/cmdline-tools/latest"
+            mv "$tmp/cmdline-tools" "$SDK_ROOT/cmdline-tools/latest"
+          fi
+          sdkmanager="$SDK_ROOT/cmdline-tools/latest/bin/sdkmanager"
+          yes | "$sdkmanager" --sdk_root="$SDK_ROOT" --licenses >/dev/null || true
+          "$sdkmanager" --sdk_root="$SDK_ROOT" --install \
+            "platforms;android-33" \
+            "platforms;android-37.0" \
+            "build-tools;37.0.0" \
+            "platform-tools"
+          echo "ANDROID_HOME=$SDK_ROOT" >> "$GITHUB_ENV"
+          echo "ANDROID_SDK_ROOT=$SDK_ROOT" >> "$GITHUB_ENV"
+
+      - name: Assemble unsigned release from the CI render
+        run: |
+          set -euo pipefail
+          if command -v fluidsynth >/dev/null 2>&1; then
+            echo "::error::This dry-run must not have fluidsynth installed."
+            exit 1
+          fi
+          test -f home-music-assets/music/manifest.json
+          test -f home-music-assets/music/lanternlight.ogg
+          ./gradlew :app:assembleRelease --configuration-cache \
+            -PfoldcadeHomeMusicAssets="${GITHUB_WORKSPACE}/home-music-assets"
+          mapfile -t apks < <(find app/build/outputs/apk/release -name '*.apk' -type f | sort)
+          if [ "${#apks[@]}" -ne 1 ]; then
+            echo "::error::Expected one unsigned release APK, found ${#apks[@]}."
+            printf '%s\n' "${apks[@]:-}"
+            exit 1
+          fi
+          apk="${apks[0]}"
+          unzip -l "$apk" | grep -q 'assets/music/lanternlight.ogg'
+          unzip -l "$apk" | grep -q 'assets/music/manifest.json'
+          if "$ANDROID_HOME/build-tools/37.0.0/apksigner" verify "$apk"; then
+            echo "::error::Unsigned dry-run produced a signed APK."
+            exit 1
+          fi

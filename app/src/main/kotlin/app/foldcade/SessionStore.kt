@@ -13,11 +13,15 @@ class SessionStore(private val prefs: SharedPreferences) {
     var session by mutableStateOf(load())
         private set
 
+    /** Fired after [session] changes. Home music watches games entering and leaving either screen. */
+    var afterSessionChanged: (() -> Unit)? = null
+
     fun update(block: (Session) -> Session) {
         val next = block(session)
         if (next == session) return
         session = next
         save(next)
+        afterSessionChanged?.invoke()
     }
 
     private fun load(): Session = Session(

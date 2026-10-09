@@ -106,6 +106,51 @@ fun musicTrack(tracks: List<MusicTrack>, id: String): MusicTrack? {
 }
 
 /**
+ * Home music may request audio focus only while a Foldcade home is in front,
+ * no launched game is in front on either screen, and another app is not already
+ * playing on the music stream.
+ */
+fun homeMusicMayStart(
+    homeInFront: Boolean,
+    gameInFront: Boolean,
+    otherAudioActive: Boolean,
+): Boolean = homeInFront && !gameInFront && !otherAudioActive
+
+/**
+ * A resumed home does not clear this while the launched game is still in front.
+ * The flag drops only after that game has left both screens.
+ */
+fun homeMusicStaysSuppressed(suppressed: Boolean, gameInFront: Boolean): Boolean =
+    suppressed && gameInFront
+
+/**
+ * After a transient audio-focus loss, playback should fade in from silence
+ * instead of jumping back to the target level. A game still in front does not
+ * take the focus back.
+ */
+fun fadeInOnFocusReturn(
+    playbackResumed: Boolean,
+    fromAudioFocus: Boolean,
+    homeInFront: Boolean,
+    gameInFront: Boolean,
+): Boolean = playbackResumed && fromAudioFocus && homeInFront && !gameInFront
+
+/**
+ * Theme path, then the selected manifest file, then Lanternlight.
+ * A manifest entry whose asset is missing does not stay silent.
+ */
+fun packagedHomeMusicFile(
+    themeJson: String?,
+    selectedFile: String?,
+    assetExists: (String) -> Boolean,
+): String {
+    val named = backgroundMusicFromThemeJson(themeJson)
+    if (named != DEFAULT_BACKGROUND_MUSIC && assetExists(named)) return named
+    if (!selectedFile.isNullOrBlank() && assetExists(selectedFile)) return selectedFile
+    return DEFAULT_BACKGROUND_MUSIC
+}
+
+/**
  * Optional `backgroundMusic` string in theme.json. A community theme names a
  * track inside the zip. A missing or blank field keeps [DEFAULT_BACKGROUND_MUSIC].
  */

@@ -1,12 +1,18 @@
 import java.io.File
 import javax.inject.Inject
 import org.gradle.api.DefaultTask
+import org.gradle.api.GradleException
 import org.gradle.api.file.ConfigurableFileCollection
 import org.gradle.api.file.DirectoryProperty
 import org.gradle.api.file.RegularFileProperty
+import org.gradle.api.provider.Property
+import org.gradle.api.tasks.Input
 import org.gradle.api.tasks.InputFile
 import org.gradle.api.tasks.InputFiles
+import org.gradle.api.tasks.Optional
 import org.gradle.api.tasks.OutputDirectory
+import org.gradle.api.tasks.PathSensitive
+import org.gradle.api.tasks.PathSensitivity
 import org.gradle.api.tasks.TaskAction
 import org.gradle.process.ExecOperations
 
@@ -167,10 +173,13 @@ dependencies {
 }
 
 // Debug and release both merge these assets, so assembleDebug and assembleRelease
-// package the loop. The signed release workflow calls assembleRelease when it lands.
+// package the loop. -PfoldcadeHomeMusicAssets points at a directory already
+// rendered by CI. assembleRelease then copies those files and does not need
+// fluidsynth. Without the property, the task renders locally.
+val prebuiltHomeMusic = providers.gradleProperty("foldcadeHomeMusicAssets")
 val renderHomeMusic = tasks.register<RenderHomeMusicTask>("renderHomeMusic") {
     group = "build"
-    description = "Render every track in music/tracks/manifest.json."
+    description = "Render every track in music/tracks/manifest.json, or copy a CI render."
     script.set(rootProject.layout.projectDirectory.file("music/gradle-render.sh"))
     sources.from(
         rootProject.files(
@@ -183,6 +192,12 @@ val renderHomeMusic = tasks.register<RenderHomeMusicTask>("renderHomeMusic") {
         ),
     )
     sources.from(rootProject.fileTree("music/tracks") { include("**/compose.py") })
+    prebuiltPath.set(prebuiltHomeMusic.orElse(""))
+    if (prebuiltHomeMusic.isPresent) {
+        prebuiltFiles.setFrom(rootProject.fileTree(prebuiltHomeMusic.get()))
+    } else {
+        prebuiltFiles.setFrom()
+    }
     assetsDir.set(layout.buildDirectory.dir("generated/homeMusicAssets"))
     previewDir.set(layout.buildDirectory.dir("home-music-preview"))
 }
@@ -203,6 +218,14 @@ abstract class RenderHomeMusicTask : DefaultTask() {
     @get:InputFiles
     abstract val sources: ConfigurableFileCollection
 
+    @get:Input
+    abstract val prebuiltPath: Property<String>
+
+    @get:Optional
+    @get:InputFiles
+    @get:PathSensitive(PathSensitivity.RELATIVE)
+    abstract val prebuiltFiles: ConfigurableFileCollection
+
     @get:OutputDirectory
     abstract val assetsDir: DirectoryProperty
 
@@ -211,13 +234,36 @@ abstract class RenderHomeMusicTask : DefaultTask() {
 
     @TaskAction
     fun render() {
+        val dest = assetsDir.get().asFile
+        val preview = previewDir.get().asFile
+        dest.deleteRecursively()
+        preview.mkdirs()
+        val path = prebuiltPath.get()
+        if (path.isNotEmpty()) {
+            copyPrebuilt(File(path), dest)
+            return
+        }
         execOperations.exec {
             commandLine(
                 "bash",
                 script.get().asFile.absolutePath,
-                assetsDir.get().asFile.absolutePath,
-                previewDir.get().asFile.absolutePath,
+                dest.absolutePath,
+                preview.absolutePath,
             )
         }.assertNormalExitValue()
+    }
+
+    private fun copyPrebuilt(source: File, dest: File) {
+        if (!source.isDirectory) {
+            throw GradleException("foldcadeHomeMusicAssets is not a directory: ${source.absolutePath}")
+        }
+        val manifest = File(source, "music/manifest.json")
+        val ogg = source.walkTopDown().firstOrNull { it.isFile && it.extension == "ogg" }
+        if (!manifest.isFile || ogg == null) {
+            throw GradleException(
+                "foldcadeHomeMusicAssets must contain music/manifest.json and an ogg: ${source.absolutePath}",
+            )
+        }
+        source.copyRecursively(dest, overwrite = true)
     }
 }

@@ -22,9 +22,12 @@ import app.foldcade.language.HomeMusicSetting
 import app.foldcade.language.Meaning
 import app.foldcade.language.Motion
 import app.foldcade.language.MusicTrack
-import app.foldcade.language.backgroundMusicFromThemeJson
+import app.foldcade.language.fadeInOnFocusReturn
+import app.foldcade.language.homeMusicMayStart
+import app.foldcade.language.homeMusicStaysSuppressed
 import app.foldcade.language.musicTrack
 import app.foldcade.language.musicTracksFromManifest
+import app.foldcade.language.packagedHomeMusicFile
 import app.foldcade.language.playbackLevel
 
 /**
@@ -32,6 +35,9 @@ import app.foldcade.language.playbackLevel
  * or another app takes the screen. The fade is the 1.5 s entry and exit the
  * home loop uses. It is not a layout transition, so it does not borrow a
  * motion duration. The curve is still [Motion]'s arrive and leave pair.
+ *
+ * The player requests audio focus only while it is actually playing. Media3
+ * keeps AUDIOFOCUS_GAIN across pause(), so a finished fade releases the player.
  */
 class HomeMusic(
     private val app: Application,
@@ -44,6 +50,7 @@ class HomeMusic(
     private var themeJson: String? = null
     private var resumedHomes = 0
     private var suppressed = false
+    private var awaitingFocusFade = false
     private var fadeToken = 0
     private var duckToken = 0
     private var ducked = false
@@ -58,7 +65,7 @@ class HomeMusic(
     init {
         val filter = IntentFilter(VOLUME_CHANGED)
         filter.addAction(AudioManager.RINGER_MODE_CHANGED_ACTION)
-        app.registerReceiver(volumeReceiver, filter, Context.RECEIVER_EXPORTED)
+        app.registerReceiver(volumeReceiver, filter, Context.RECEIVER_NOT_EXPORTED)
     }
 
     fun setThemeJson(json: String?) {
@@ -74,10 +81,15 @@ class HomeMusic(
     fun onHomeResume() {
         val wasAway = resumedHomes == 0
         resumedHomes++
-        if (suppressed || wasAway) {
-            suppressed = false
-            fadeIn()
+        if (gameInFront()) {
+            suppressed = true
+            if (player != null) fadeOut()
+            return
         }
+        val wasSuppressed = suppressed
+        suppressed = homeMusicStaysSuppressed(suppressed, gameInFront = false)
+        if (!mayStart()) return
+        if (wasAway || wasSuppressed) fadeIn()
     }
 
     fun onHomePause() {
@@ -85,17 +97,29 @@ class HomeMusic(
         if (resumedHomes == 0) fadeOut()
     }
 
-    /** A game or any other app Foldcade starts. The loop stays down until home resumes. */
+    /** A game or any other app Foldcade starts. The loop stays down until that game leaves. */
     fun onExternalLaunch() {
         suppressed = true
         fadeOut()
+    }
+
+    /** Session updates when a game is placed or cleared. Suppression follows the game, not the resume. */
+    fun onSessionChanged() {
+        if (gameInFront()) {
+            suppressed = true
+            if (player != null) fadeOut()
+            return
+        }
+        val wasSuppressed = suppressed
+        suppressed = false
+        if (wasSuppressed && mayStart()) fadeIn()
     }
 
     fun trackTitle(): String = selectedTrack()?.title ?: DEFAULT_TRACK_TITLE
 
     fun apply(setting: HomeMusicSetting) {
         reloadIfTrackChanged()
-        if (resumedHomes == 0 || suppressed) return
+        if (!mayStart()) return
         if (playbackLevel(setting, ducked, mediaMuted()) <= 0f) {
             fadeOut()
             return
@@ -129,39 +153,45 @@ class HomeMusic(
         handler.postDelayed({
             if (token != duckToken) return@postDelayed
             ducked = false
-            if (existing.isPlaying) existing.volume = targetLevel()
+            if (player === existing && existing.isPlaying) existing.volume = targetLevel()
         }, 220)
     }
 
     private fun refreshForStream() {
-        if (resumedHomes == 0 || suppressed) return
+        if (!mayStart()) return
         if (mediaMuted() || !store.musicEnabled()) fadeOut() else fadeIn()
+    }
+
+    private fun mayStart(): Boolean = homeMusicMayStart(
+        homeInFront = resumedHomes > 0,
+        gameInFront = gameInFront(),
+        otherAudioActive = otherAudioActive(),
+    )
+
+    private fun gameInFront(): Boolean = !store.session.bothScreensFree()
+
+    /** True when some other app owns the music stream. Our own player does not count. */
+    private fun otherAudioActive(): Boolean {
+        if (player?.isPlaying == true) return false
+        return audio.isMusicActive
     }
 
     private fun fadeIn() {
         if (playbackLevel(current(), ducked, mediaMuted()) <= 0f) {
-            holdSilent()
+            releasePlayer()
             return
         }
         val existing = ensurePlayer() ?: return
         existing.play()
-        fade(targetLevel(), FADE_MS, arriving = true, pauseAtEnd = false)
+        fade(targetLevel(), FADE_MS, arriving = true, releaseAtEnd = false)
     }
 
     private fun fadeOut() {
         if (player == null) return
-        fade(0f, FADE_MS, arriving = false, pauseAtEnd = true)
+        fade(0f, FADE_MS, arriving = false, releaseAtEnd = true)
     }
 
-    private fun holdSilent() {
-        fadeToken++
-        player?.let {
-            it.volume = 0f
-            it.pause()
-        }
-    }
-
-    private fun fade(target: Float, durationMs: Long, arriving: Boolean, pauseAtEnd: Boolean) {
+    private fun fade(target: Float, durationMs: Long, arriving: Boolean, releaseAtEnd: Boolean) {
         val existing = if (target > 0f) ensurePlayer() ?: return else player ?: return
         val token = ++fadeToken
         val from = existing.volume
@@ -177,7 +207,7 @@ class HomeMusic(
                 handler.postDelayed({ frame(index + 1) }, stepMs)
             } else {
                 existing.volume = target
-                if (pauseAtEnd && target <= 0.001f) existing.pause()
+                if (releaseAtEnd && target <= 0.001f) releasePlayer()
             }
         }
         frame(1)
@@ -200,14 +230,7 @@ class HomeMusic(
         )
         created.repeatMode = Player.REPEAT_MODE_ONE
         created.volume = 0f
-        created.addListener(
-            object : Player.Listener {
-                override fun onPlayerError(error: PlaybackException) {
-                    Log.e(TAG, "Home music stopped because the loop could not play.", error)
-                    created.pause()
-                }
-            },
-        )
+        created.addListener(focusListener(created))
         created.setMediaItem(MediaItem.fromUri("asset:///$asset"))
         created.prepare()
         loadedAsset = asset
@@ -215,13 +238,78 @@ class HomeMusic(
         return created
     }
 
+    private fun focusListener(created: ExoPlayer) = object : Player.Listener {
+        override fun onPlayerError(error: PlaybackException) {
+            Log.e(TAG, "Home music stopped because the loop could not play.", error)
+            releasePlayer()
+        }
+
+        override fun onPlayWhenReadyChanged(playWhenReady: Boolean, reason: Int) {
+            if (reason != Player.PLAY_WHEN_READY_CHANGE_REASON_AUDIO_FOCUS_LOSS) return
+            if (!playWhenReady) {
+                // Permanent loss. pause() would keep AUDIOFOCUS_GAIN, so drop the player.
+                fadeToken++
+                awaitingFocusFade = false
+                handler.post { releasePlayer() }
+                return
+            }
+            noteFocusLoss(created)
+            if (created.isPlaying) resumeAfterFocus()
+        }
+
+        override fun onPlaybackSuppressionReasonChanged(playbackSuppressionReason: Int) {
+            if (playbackSuppressionReason == Player.PLAYBACK_SUPPRESSION_REASON_TRANSIENT_AUDIO_FOCUS_LOSS) {
+                noteFocusLoss(created)
+            }
+        }
+
+        override fun onIsPlayingChanged(isPlaying: Boolean) {
+            if (isPlaying && awaitingFocusFade) resumeAfterFocus()
+        }
+    }
+
+    private fun noteFocusLoss(created: ExoPlayer) {
+        fadeToken++
+        awaitingFocusFade = true
+        created.volume = 0f
+    }
+
+    private fun resumeAfterFocus() {
+        if (!awaitingFocusFade) return
+        val resume = fadeInOnFocusReturn(
+            playbackResumed = true,
+            fromAudioFocus = true,
+            homeInFront = resumedHomes > 0,
+            gameInFront = gameInFront(),
+        )
+        awaitingFocusFade = false
+        handler.post {
+            if (!resume || suppressed || gameInFront() || resumedHomes == 0) {
+                releasePlayer()
+                return@post
+            }
+            player?.volume = 0f
+            fadeIn()
+        }
+    }
+
+    /** pause() does not abandon AUDIOFOCUS_GAIN. Release does. */
+    private fun releasePlayer() {
+        fadeToken++
+        awaitingFocusFade = false
+        val existing = player ?: return
+        player = null
+        loadedAsset = null
+        existing.release()
+    }
+
     private fun selectedTrack(): MusicTrack? = musicTrack(catalog, store.musicTrackId())
 
-    private fun resolvedAsset(): String {
-        val named = backgroundMusicFromThemeJson(themeJson)
-        if (named != DEFAULT_BACKGROUND_MUSIC && assetExists(named)) return named
-        return selectedTrack()?.file ?: DEFAULT_BACKGROUND_MUSIC
-    }
+    private fun resolvedAsset(): String = packagedHomeMusicFile(
+        themeJson = themeJson,
+        selectedFile = selectedTrack()?.file,
+        assetExists = ::assetExists,
+    )
 
     private fun reloadIfTrackChanged() {
         val existing = player ?: return
