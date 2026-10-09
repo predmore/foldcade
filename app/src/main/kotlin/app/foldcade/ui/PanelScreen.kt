@@ -1331,6 +1331,10 @@ private fun DrawScope.drawFocusCard(accent: Color, cornerPx: Float) {
  * Focused: one elliptical radial falloff, then the accent fill.
  * The gradient ends at transparent, so the bloom has no stroke ring.
  * Unfocused: a dim outline and no fill, so the black dialog stays black.
+ *
+ * Stretching the circle leaves one accent pixel on the left tip when that
+ * tip sits on a pixel center (the gap beside Not now). The tips are the
+ * transparent rim, so the clip drops them.
  */
 @Composable
 private fun Modifier.dialogPlate(focused: Boolean, accent: Color): Modifier {
@@ -1354,21 +1358,29 @@ private fun Modifier.dialogPlate(focused: Boolean, accent: Color): Modifier {
         val wide = (size.width / 2f + spread) / reach
         val edge = (size.height / 2f / reach).coerceIn(0.35f, 0.82f)
         val mid = edge + (1f - edge) * 0.45f
-        scale(scaleX = wide, scaleY = 1f, pivot = center) {
-            drawCircle(
-                brush = Brush.radialGradient(
-                    colorStops = arrayOf(
-                        0f to accent,
-                        edge to accent.copy(alpha = 0.82f),
-                        mid to accent.copy(alpha = 0.18f),
-                        1f to Color.Transparent,
+        val rim = 2f
+        clipRect(
+            left = -spread + rim,
+            top = -spread,
+            right = size.width + spread - rim,
+            bottom = size.height + spread,
+        ) {
+            scale(scaleX = wide, scaleY = 1f, pivot = center) {
+                drawCircle(
+                    brush = Brush.radialGradient(
+                        colorStops = arrayOf(
+                            0f to accent,
+                            edge to accent.copy(alpha = 0.82f),
+                            mid to accent.copy(alpha = 0.18f),
+                            1f to Color.Transparent,
+                        ),
+                        center = center,
+                        radius = reach,
                     ),
-                    center = center,
                     radius = reach,
-                ),
-                radius = reach,
-                center = center,
-            )
+                    center = center,
+                )
+            }
         }
         drawRoundRect(color = accent, cornerRadius = corner)
     }
