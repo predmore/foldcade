@@ -45,6 +45,6 @@ Device-code scopes: `roms.read`, `platforms.read`, `assets.read`, `assets.write`
 
 Negotiate sends `restore_unlisted: false`. Pass `emulators` for the player that will load the save (`azahar`, `melonds`) so a different emulator's file in the same slot is not paired. `rom_ids` limits downloads to that game.
 
-A conflict uploads the local bytes with a null slot, then writes the server copy. It does not send `overwrite=true`. An upload that cannot reach the server can be copied into `SaveUploadQueue` and retried later. The queue is not a background sync.
+A conflict uploads the local bytes under a unique file name with a null slot, then writes the server copy. The unique name keeps a second archive from replacing the first. It does not send `overwrite=true`. An upload that cannot reach the server can be copied into `SaveUploadQueue` and retried later. The queue is not a background sync.
 
 Playtime is omitted from the complete call. Remote install, states, and format conversion are not implemented.

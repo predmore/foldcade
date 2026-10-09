@@ -17,7 +17,10 @@ import kotlinx.serialization.json.longOrNull
 import kotlinx.serialization.json.put
 import java.security.MessageDigest
 import java.time.Instant
+import java.time.ZoneOffset
+import java.time.format.DateTimeFormatter
 import java.time.temporal.ChronoUnit
+import java.util.UUID
 
 internal fun md5Hex(bytes: ByteArray): String {
     val digest = MessageDigest.getInstance("MD5").digest(bytes)
@@ -303,4 +306,25 @@ internal fun safeFileName(name: String): String {
         throw IllegalArgumentException("RomM file name cannot be stored")
     }
     return base
+}
+
+/**
+ * Name used when a conflict is uploaded with a null slot.
+ * RomM stores a slot-less save by file name, so a second archive with the
+ * same name replaces the first. The stamp is UTC time plus a short id.
+ */
+internal fun archiveFileName(fileName: String, stamp: String): String {
+    val safe = safeFileName(fileName)
+    val dot = safe.lastIndexOf('.')
+    val stem = if (dot > 0) safe.substring(0, dot) else safe
+    val ext = if (dot > 0) safe.substring(dot) else ""
+    return "$stem [$stamp]$ext"
+}
+
+internal fun archiveStamp(at: Instant = Instant.now()): String {
+    val clock = DateTimeFormatter.ofPattern("yyyy-MM-dd_HH-mm-ss")
+        .withZone(ZoneOffset.UTC)
+        .format(at)
+    val unique = UUID.randomUUID().toString().substring(0, 8)
+    return "$clock-$unique"
 }

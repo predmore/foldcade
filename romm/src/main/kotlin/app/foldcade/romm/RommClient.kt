@@ -428,7 +428,8 @@ class RommClient(
     /**
      * One negotiate, then the operations, then complete. Call it before launch
      * and again after the player exits. A conflict archives the local bytes
-     * with a null slot and then writes the server copy.
+     * under a unique file name with a null slot, then writes the server copy.
+     * The name has to be unique: RomM stores a slot-less save by file name.
      * An upload that cannot reach the server is copied into [queue] when one
      * is given. Cancellation is not a network failure: it is rethrown, nothing
      * is queued, and the session is not completed. A failed negotiate throws
@@ -484,8 +485,12 @@ class RommClient(
                         val local = localSave(saves, op)
                         val saveId = op.saveId
                             ?: throw RommResponseException("conflict is missing save_id")
+                        val archivedLocal = local.copy(
+                            fileName = archiveFileName(local.fileName, archiveStamp()),
+                            slot = null,
+                        )
                         val archived = uploadOrQueue(
-                            local,
+                            archivedLocal,
                             deviceId,
                             negotiated.sessionId,
                             queue,
