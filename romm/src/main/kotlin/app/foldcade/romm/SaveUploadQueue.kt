@@ -7,6 +7,7 @@ import kotlinx.serialization.json.put
 import java.nio.file.Files
 import java.nio.file.Path
 import java.util.UUID
+import java.util.stream.Collectors
 
 /**
  * Copies of saves that could not be uploaded. [flush] retries
@@ -34,7 +35,7 @@ class SaveUploadQueue(private val root: Path) {
             put("device_id", deviceId)
             put("content_hash", contentHash)
         }
-        Files.writeString(root.resolve("$id.json"), meta.toString())
+        Files.write(root.resolve("$id.json"), meta.toString().toByteArray())
     }
 
     fun pending(): List<PendingSaveUpload> {
@@ -53,7 +54,7 @@ class SaveUploadQueue(private val root: Path) {
                     contentHash = obj.reqString("content_hash"),
                     bytes = root.resolve("$id.bin"),
                 )
-            }.toList()
+            }.collect(Collectors.toList())
         }
     }
 

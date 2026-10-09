@@ -1,8 +1,10 @@
 # RomM client
 
-Pure JVM client for one RomM server. It is not a library backend and not a metadata provider. Wiring waits until the API follow-up that changes alias matching, `LaunchFlag`, and the evolution rule has merged as well. The shell does not call this module.
+Pure JVM client for one RomM server. It is not a library backend and not a metadata provider. Wiring waits until these Android API 33 fixes are green and merged, and until the host pull request moves `PluginEntry`. The shell does not call this module.
 
-Calls suspend on OkHttp. Cancelling the coroutine cancels the in-flight call, including a body copy. Connect, read, and write timeouts bound every call. A unit test reads the compiled classes and fails if any of them reference `java.net.http`, which Android does not provide. JDK 17 still has that package, so running the tests on the target JDK would not catch it.
+Calls suspend on OkHttp. Cancelling the coroutine cancels the OkHttp call for the whole exchange, including a body copy, so a blocked read does not wait out the read timeout. Connect, read, and write timeouts bound every call. Same-scheme redirects are followed. An HTTPS response is not followed onto HTTP.
+
+`:romm:test` depends on Animal Sniffer against the Android API 33 signature (`gummy-bears-api-33`). `testDebugUnitTest` runs that check. A class-file test also fails if the module references `java.net.http`.
 
 ## Pinned server
 

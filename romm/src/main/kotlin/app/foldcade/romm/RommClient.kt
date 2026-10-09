@@ -1,11 +1,11 @@
 package app.foldcade.romm
 
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.ensureActive
-import kotlinx.coroutines.isActive
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.suspendCancellableCoroutine
-import kotlin.coroutines.coroutineContext
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.jsonObject
@@ -58,6 +58,7 @@ class RommClient(
         .readTimeout(readTimeout)
         .writeTimeout(writeTimeout)
         .followRedirects(true)
+        .followSslRedirects(false)
         .build()
 
     suspend fun heartbeat(): Heartbeat {
@@ -580,68 +581,80 @@ class RommClient(
         if (token != null && authenticated) builder.header("Authorization", "Bearer $token")
         extraHeaders.forEach { (key, value) -> builder.header(key, value) }
         val call = http.newCall(builder.build())
-        val response = try {
-            call.await()
-        } catch (e: CancellationException) {
-            throw e
-        } catch (e: IOException) {
-            if (!coroutineContext.isActive) throw CancellationException("RomM request was cancelled", e)
-            throw RommUnavailable(e.message ?: "RomM is unreachable", e)
-        }
-        response.use { open ->
-            val headers = open.headers.names().associateWith { open.headers.values(it) }
-            val status = open.code
+        // Stays suspended for the header wait and the body copy. Cancelling
+        // this exchange cancels the OkHttp call, which unblocks a read.
+        coroutineScope {
+            val watching = launch(start = CoroutineStart.UNDISPATCHED) {
+                suspendCancellableCoroutine<Unit> { continuation ->
+                    continuation.invokeOnCancellation { call.cancel() }
+                }
+            }
             try {
-                if (streamTo != null && (status == 200 || status == 206) && !(status == 206 && !append)) {
-                    val input = open.body?.byteStream()
-                        ?: throw RommResponseException("RomM returned an empty body")
-                    input.use { stream ->
-                        streamTo.parent?.let { Files.createDirectories(it) }
-                        val options = if (append && status == 206) {
-                            arrayOf(
-                                StandardOpenOption.CREATE,
-                                StandardOpenOption.WRITE,
-                                StandardOpenOption.APPEND,
-                            )
+                val response = try {
+                    call.await()
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: IOException) {
+                    if (call.isCanceled()) throw CancellationException("RomM request was cancelled", e)
+                    throw RommUnavailable(e.message ?: "RomM is unreachable", e)
+                }
+                response.use { open ->
+                    val headers = open.headers.names().associateWith { open.headers.values(it) }
+                    val status = open.code
+                    try {
+                        if (streamTo != null && (status == 200 || status == 206) && !(status == 206 && !append)) {
+                            val input = open.body?.byteStream()
+                                ?: throw RommResponseException("RomM returned an empty body")
+                            input.use { stream ->
+                                streamTo.parent?.let { Files.createDirectories(it) }
+                                val options = if (append && status == 206) {
+                                    arrayOf(
+                                        StandardOpenOption.CREATE,
+                                        StandardOpenOption.WRITE,
+                                        StandardOpenOption.APPEND,
+                                    )
+                                } else {
+                                    arrayOf(
+                                        StandardOpenOption.CREATE,
+                                        StandardOpenOption.WRITE,
+                                        StandardOpenOption.TRUNCATE_EXISTING,
+                                    )
+                                }
+                                Files.newOutputStream(streamTo, *options).use { out ->
+                                    copyUntilCanceled(call, stream, out)
+                                }
+                            }
+                        }
+                        val bytes = if (streamTo != null) {
+                            ByteArray(0)
                         } else {
-                            arrayOf(
-                                StandardOpenOption.CREATE,
-                                StandardOpenOption.WRITE,
-                                StandardOpenOption.TRUNCATE_EXISTING,
-                            )
+                            open.body?.bytes() ?: ByteArray(0)
                         }
-                        Files.newOutputStream(streamTo, *options).use { out ->
-                            copyCancellable(stream, out)
-                        }
+                        RawResponse(status, headers, bytes)
+                    } catch (e: CancellationException) {
+                        throw e
+                    } catch (e: IOException) {
+                        if (call.isCanceled()) throw CancellationException("RomM request was cancelled", e)
+                        throw RommUnavailable(e.message ?: "RomM is unreachable", e)
                     }
                 }
-                val bytes = if (streamTo != null) {
-                    ByteArray(0)
-                } else {
-                    open.body?.bytes() ?: ByteArray(0)
-                }
-                RawResponse(status, headers, bytes)
-            } catch (e: CancellationException) {
-                throw e
-            } catch (e: IOException) {
-                if (!coroutineContext.isActive) throw CancellationException("RomM request was cancelled", e)
-                throw RommUnavailable(e.message ?: "RomM is unreachable", e)
+            } finally {
+                watching.cancel()
             }
         }
     }
 
-    private suspend fun copyCancellable(input: InputStream, output: OutputStream) {
+    private fun copyUntilCanceled(call: Call, input: InputStream, output: OutputStream) {
         val buffer = ByteArray(8 * 1024)
         while (true) {
-            coroutineContext.ensureActive()
             val read = try {
                 input.read(buffer)
             } catch (e: IOException) {
-                if (!coroutineContext.isActive) throw CancellationException("RomM request was cancelled", e)
+                if (call.isCanceled()) throw CancellationException("RomM request was cancelled", e)
                 throw e
             }
             if (read < 0) return
-            coroutineContext.ensureActive()
+            if (call.isCanceled()) throw CancellationException("RomM request was cancelled")
             output.write(buffer, 0, read)
         }
     }

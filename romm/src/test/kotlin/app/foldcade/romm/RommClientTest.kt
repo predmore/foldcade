@@ -563,9 +563,15 @@ class RommClientTest {
                     client.downloadRom(1234, "slow.bin", cache)
                 }
                 assertTrue(withContext(Dispatchers.IO) { started.await(5, TimeUnit.SECONDS) })
+                val cancelStarted = System.nanoTime()
                 job.cancel()
                 job.join()
+                val cancelMs = (System.nanoTime() - cancelStarted) / 1_000_000
                 assertTrue(job.isCancelled)
+                assertTrue(
+                    "download cancel took ${cancelMs}ms; the OkHttp call stayed open until the read timeout",
+                    cancelMs < 2_000,
+                )
             }
         } finally {
             release.countDown()
