@@ -118,6 +118,8 @@ object Copy {
     const val loading = "Loading"
     const val buttonLabels = "Button labels"
     const val pressConfirm = "Press Confirm"
+    const val confirm = "Confirm"
+    const val back = "Back"
     const val missingPlayerBody = "Foldcade can’t start this game without it."
     const val closePlayerTitle = "Close the other game?"
     const val closePlayerBody = "This game uses both screens. The one already running has to close first."

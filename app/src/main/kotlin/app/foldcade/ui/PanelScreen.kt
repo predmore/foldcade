@@ -80,7 +80,6 @@ import app.foldcade.api.Panel
 import app.foldcade.api.Surface
 import app.foldcade.batteryLabel
 import app.foldcade.millisUntilNextMinute
-import app.foldcade.language.ClusterRole
 import app.foldcade.language.Chrome
 import app.foldcade.language.ConnectField
 import app.foldcade.language.Copy
@@ -102,13 +101,10 @@ import app.foldcade.language.SidePanel
 import app.foldcade.language.TypeRamp
 import app.foldcade.language.builtInTheme
 import app.foldcade.language.connectFields
-import app.foldcade.language.clusterFilled
-import app.foldcade.language.clusterGlyph
 import app.foldcade.language.connectHint
-import app.foldcade.language.faceArt
 import app.foldcade.language.hintFor
 import app.foldcade.language.islandGlyph
-import app.foldcade.language.promptedLetter
+import app.foldcade.language.letterOfKey
 import app.foldcade.language.cursorBrush
 import app.foldcade.language.displayOrder
 import app.foldcade.language.lastPlayedLine
@@ -295,9 +291,22 @@ private fun Picker(
             model.panel == null && model.dialog == null && !model.connectOpen
         }
         val clearance = px(Metrics.chromeClearancePx)
-        Column(Modifier.fillMaxSize().padding(horizontal = inset, vertical = inset)) {
+        // The closed L1 chip is overlaid at this same inset. Chrome starts after it.
+        val chipClearance = IslandChipSize + px(12f)
+        // Keeps the last tile label inside the screen, above the clip.
+        val labelSafe = px(28f)
+        Column(
+            Modifier
+                .fillMaxSize()
+                .padding(horizontal = inset)
+                .padding(top = inset, bottom = inset + labelSafe),
+        ) {
             Box(Modifier.fillMaxWidth().heightIn(min = clusterHeight)) {
-                Column(Modifier.align(Alignment.BottomStart)) { ChromeRow(app, screen) }
+                Column(
+                    Modifier
+                        .align(Alignment.BottomStart)
+                        .padding(start = chipClearance),
+                ) { ChromeRow(app, screen) }
             }
             Spacer(Modifier.height(clearance))
             if (detailGame != null) {
@@ -325,9 +334,10 @@ private fun Picker(
                     },
             ) {
                 val showTitles = true
-                val slot = if (showTitles) cell + pad + titleLine else cell
-                val available = (maxHeight - pad * 2).coerceAtLeast(slot)
-                val rows = if (cell > Dp.Hairline) {
+                val titleBlock = focusOutset(cell) + px(12f) + titleLine
+                val slot = if (showTitles) cell + titleBlock else cell
+                val available = (maxHeight - pad * 2).coerceAtLeast(0.dp)
+                val rows = if (cell > Dp.Hairline && slot > Dp.Hairline) {
                     ((available + gap) / (slot + gap)).toInt().coerceAtLeast(1)
                 } else {
                     1
@@ -381,7 +391,7 @@ private fun Panels(
         LeftPanel(app, screen, leftOpen, scale, maxWidth * 0.42f, onEffect)
         Box(Modifier.align(Alignment.TopStart).padding(top = inset, start = inset)) {
             // Closed left chip. The island-morph pull request cross-fades ic_btn_l1 to ic_btn_l1_filled.
-            PromptImage(islandGlyph(left = true, app.shell.model.held), 32.dp)
+            PromptImage(islandGlyph(left = true, app.shell.model.held), IslandChipSize)
         }
         Box(Modifier.align(Alignment.TopEnd).padding(top = inset, end = inset)) {
             RightCluster(
@@ -539,7 +549,7 @@ private fun StatusLine(
         horizontalArrangement = Arrangement.spacedBy(px(12f)),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        PromptImage(islandGlyph(left = false, held), 32.dp)
+        PromptImage(islandGlyph(left = false, held), IslandChipSize)
         BasicText(text = status.time, style = text(theme.onBackground, TypeRamp.hint, theme))
         BasicText(text = batteryLabel(status), style = text(theme.onBackground, TypeRamp.hint, theme))
         BasicText(text = status.network, style = text(theme.onBackground, TypeRamp.hint, theme))
@@ -779,63 +789,50 @@ private fun ChromeRow(app: FoldcadeApp, screen: HostScreen) {
                 },
             )
         }
-        HintCluster(model, actions)
+        HintRow(model, actions)
+    }
+}
+
+/** One small letter glyph and a word, only for an action that currently does something. */
+@Composable
+private fun HintRow(
+    model: app.foldcade.language.PickerModel,
+    actions: HintActions?,
+) {
+    if (actions == null) return
+    Row(
+        horizontalArrangement = Arrangement.spacedBy(px(16f)),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        if (actions.confirm) HintWord(model, model.faceMap.confirmKey, Copy.confirm)
+        if (actions.back) HintWord(model, model.faceMap.backKey, Copy.back)
     }
 }
 
 @Composable
-private fun HintCluster(
+private fun HintWord(
     model: app.foldcade.language.PickerModel,
-    actions: HintActions?,
+    keyCode: Int,
+    label: String,
 ) {
-    val theme = foldTheme()
-    val roles = listOf(ClusterRole.Select, ClusterRole.Start, ClusterRole.Home, ClusterRole.Back)
-    Column(verticalArrangement = Arrangement.spacedBy(px(8f))) {
-        Row(horizontalArrangement = Arrangement.spacedBy(px(16f)), verticalAlignment = Alignment.CenterVertically) {
-            roles.take(2).forEach { role ->
-                val filled = clusterFilled(role, model.held, model.faceMap)
-                PromptImage(clusterGlyph(role, model.thorGlyphs, filled), 32.dp)
-            }
-        }
-        Row(horizontalArrangement = Arrangement.spacedBy(px(16f)), verticalAlignment = Alignment.CenterVertically) {
-            roles.drop(2).forEach { role ->
-                val filled = clusterFilled(role, model.held, model.faceMap)
-                PromptImage(clusterGlyph(role, model.thorGlyphs, filled), 32.dp)
-            }
-        }
-        val shown = actions
-        val letter = shown?.let { promptedLetter(it.confirm, it.back, model.faceMap) }
-        if (shown != null && letter != null) {
-            val pressed = promptKeyOfLetter(letter, model)
-            val art = faceArt(letter, model.faceMap, filled = pressed)
-            Row(
-                horizontalArrangement = Arrangement.spacedBy(px(12f)),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                PromptImage(art.diamond, 64.dp)
-                val companion = art.letter
-                if (companion != null) PromptImage(companion, 32.dp)
-                BasicText(
-                    text = if (shown.confirm) "Confirm" else "Back",
-                    style = text(theme.muted, TypeRamp.hint, theme),
-                )
-            }
-        }
-    }
-}
-
-private fun promptKeyOfLetter(
-    letter: app.foldcade.language.FaceLetter,
-    model: app.foldcade.language.PickerModel,
-): Boolean {
-    val key = when (letter) {
+    val letter = letterOfKey(keyCode) ?: return
+    val held = when (letter) {
         app.foldcade.language.FaceLetter.A -> app.foldcade.language.PromptKey.FaceA
         app.foldcade.language.FaceLetter.B -> app.foldcade.language.PromptKey.FaceB
         app.foldcade.language.FaceLetter.X -> app.foldcade.language.PromptKey.FaceX
         app.foldcade.language.FaceLetter.Y -> app.foldcade.language.PromptKey.FaceY
+    } in model.held
+    val glyph = "ic_btn_${letter.name.lowercase()}"
+    Row(
+        horizontalArrangement = Arrangement.spacedBy(px(8f)),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        PromptImage(if (held) "${glyph}_filled" else glyph, 24.dp)
+        BasicText(text = label, style = text(foldTheme().muted, TypeRamp.hint, foldTheme()))
     }
-    return key in model.held
 }
+
+private val IslandChipSize = 32.dp
 
 @Composable
 private fun PromptImage(name: String, size: Dp) {
