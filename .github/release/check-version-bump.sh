@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
-# Fail a pull request that changes versionName or versionCode unless versionCode
-# is higher than the base (main). An unchanged version passes.
+# A versionName change is a stable bump. The file's versionCode is the local
+# fallback and does not have to increase. An unchanged versionName passes.
+# versionName must stay X.Y.Z so the tag is vX.Y.Z.
 set -euo pipefail
 
 here="$(cd "$(dirname "$0")" && pwd)"

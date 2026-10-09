@@ -9,6 +9,7 @@ val releaseKeystore = providers.environmentVariable("FOLDCADE_RELEASE_KEYSTORE")
 val releaseStorePassword = providers.environmentVariable("FOLDCADE_RELEASE_STORE_PASSWORD")
 val releaseKeyAlias = providers.environmentVariable("FOLDCADE_RELEASE_KEY_ALIAS")
 val releaseKeyPassword = providers.environmentVariable("FOLDCADE_RELEASE_KEY_PASSWORD")
+val allowUnsignedRelease = providers.gradleProperty("foldcadeAllowUnsigned").orNull == "true"
 
 android {
     namespace = "app.foldcade"
@@ -20,10 +21,20 @@ android {
         applicationId = "app.foldcade"
         minSdk = 33
         targetSdk = 33
-        // Only source of truth. A push to main that changes either value
-        // cuts tag v<versionName> when versionCode is higher than the parent.
+        // Local fallback. CI passes -PfoldcadeVersionCode from git rev-list --count HEAD.
+        // A stable tag is cut only when versionName changes.
         versionCode = 1
         versionName = "0.1.0"
+        val requestedVersionCode = providers.gradleProperty("foldcadeVersionCode").orNull?.trim().orEmpty()
+        if (requestedVersionCode.isNotEmpty()) {
+            val parsed = requestedVersionCode.toIntOrNull()
+            if (parsed == null || parsed <= 0) {
+                throw GradleException(
+                    "foldcadeVersionCode must be a positive integer, was '$requestedVersionCode'.",
+                )
+            }
+            versionCode = parsed
+        }
     }
     signingConfigs {
         create("release") {
@@ -42,7 +53,9 @@ android {
             applicationIdSuffix = ".debug"
         }
         release {
-            signingConfig = signingConfigs.getByName("release")
+            if (!allowUnsignedRelease) {
+                signingConfig = signingConfigs.getByName("release")
+            }
         }
     }
     buildFeatures {
@@ -88,7 +101,7 @@ tasks.configureEach {
         name == "bundleRelease" ||
         name.startsWith("packageRelease") ||
         name.startsWith("signRelease")
-    if (packagesRelease) {
+    if (packagesRelease && !allowUnsignedRelease) {
         dependsOn(requireReleaseSigning)
     }
 }

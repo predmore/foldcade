@@ -2,9 +2,9 @@
 # Attach foldcade.apk to a GitHub Release.
 # Every push to main recreates the pre-release tag "pre-release" on the built
 # commit before the APK is uploaded, so the source archive matches the binary.
-# A push that changes versionName or versionCode in app/build.gradle.kts also
-# cuts tag vX.Y.Z and a non-prerelease release. An existing tag is not recreated.
-# versionCode must increase when the version changes.
+# A push that changes versionName in app/build.gradle.kts also cuts tag vX.Y.Z
+# and a non-prerelease release. An existing tag is not recreated.
+# versionCode is git rev-list --count HEAD, the same value Gradle was given.
 set -euo pipefail
 
 here="$(cd "$(dirname "$0")" && pwd)"
@@ -48,9 +48,17 @@ pair="$(read_version_file app/build.gradle.kts)" || {
   echo "::error::app/build.gradle.kts must set versionCode and versionName."
   exit 1
 }
-VERSION_CODE="${pair%%$'\n'*}"
 VERSION_NAME="${pair#*$'\n'}"
 require_version_name "$VERSION_NAME"
+if [ "$(git rev-parse --is-shallow-repository)" = "true" ]; then
+  echo "::error::Release checkout must be a full history. versionCode is git rev-list --count HEAD."
+  exit 1
+fi
+VERSION_CODE="$(git rev-list --count HEAD)"
+if ! [[ "$VERSION_CODE" =~ ^[1-9][0-9]*$ ]]; then
+  echo "::error::git rev-list --count HEAD did not return a versionCode."
+  exit 1
+fi
 
 parent_file="$(mktemp)"
 notes="$(mktemp)"
@@ -62,6 +70,13 @@ if [ -z "$before" ] || [ "$before" = "0000000000000000000000000000000000000000" 
 else
   if ! git cat-file -e "${before}^{commit}" 2>/dev/null; then
     git fetch origin "$before"
+  fi
+  if git cat-file -e "${before}^{commit}" 2>/dev/null; then
+    parent_count="$(git rev-list --count "${before}^{commit}")"
+    if [ "$VERSION_CODE" -le "$parent_count" ]; then
+      echo "::error::Computed versionCode ${VERSION_CODE} is not higher than ${parent_count} at ${before}."
+      exit 1
+    fi
   fi
   if git cat-file -e "${before}:app/build.gradle.kts" 2>/dev/null; then
     git show "${before}:app/build.gradle.kts" >"$parent_file"
@@ -93,7 +108,7 @@ existing_tag_commit() {
 if [ "$bump" = "bumped" ]; then
   if sha="$(existing_tag_commit "$tag")"; then
     if [ "$sha" != "$GITHUB_SHA" ]; then
-      echo "::error::Tag ${tag} already exists at ${sha}. Refusing to recreate it. versionCode ${VERSION_CODE} increased, so versionName must be a new X.Y.Z."
+      echo "::error::Tag ${tag} already exists at ${sha}. Refusing to recreate it. versionName changed, so it must be a new X.Y.Z."
       exit 1
     fi
   fi
@@ -126,6 +141,26 @@ recreate_prerelease() {
   gh release edit "$pre_tag" --draft=false --prerelease=true --latest=false
 }
 
+# Generated notes do not include the computed versionCode. Put it on the release
+# after --generate-notes, without dropping the generated text.
+ensure_stable_notes() {
+  local body combined
+  body="$(gh release view "$tag" --json body --jq '.body // ""')"
+  if printf '%s\n' "$body" | grep -qx "versionCode: ${VERSION_CODE}"; then
+    return 0
+  fi
+  combined="$(mktemp)"
+  cat >"$combined" <<EOF
+versionName: ${VERSION_NAME}
+versionCode: ${VERSION_CODE}
+commit: ${GITHUB_SHA}
+
+${body}
+EOF
+  gh release edit "$tag" --notes-file "$combined"
+  rm -f "$combined"
+}
+
 # Create the stable release once. A re-run that finds the tag on this commit
 # leaves the tag in place and only fills in a missing APK.
 publish_stable() {
@@ -140,6 +175,7 @@ publish_stable() {
       if ! gh release view "$tag" --json assets --jq '.assets[].name' | grep -qx 'foldcade.apk'; then
         gh release upload "$tag" "$apk" --clobber
       fi
+      ensure_stable_notes
     else
       gh release create "$tag" "$apk" \
         --verify-tag \
@@ -148,6 +184,7 @@ publish_stable() {
         --generate-notes \
         --latest \
         --prerelease=false
+      ensure_stable_notes
     fi
     return 0
   fi
@@ -157,6 +194,7 @@ publish_stable() {
     --generate-notes \
     --latest \
     --prerelease=false
+  ensure_stable_notes
 }
 
 recreate_prerelease

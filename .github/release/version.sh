@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
-# versionCode and versionName are the two assignments in app/build.gradle.kts.
-# That file is the only source of truth. CI must not override them.
+# versionName in app/build.gradle.kts is the stable-release name.
+# versionCode in that file is the local fallback. CI passes
+# -PfoldcadeVersionCode from git rev-list --count HEAD.
 
 read_version_file() {
   local file="$1"
@@ -25,29 +26,24 @@ require_version_name() {
 }
 
 # Prints "unchanged" or "bumped".
-# Fails when versionName or versionCode changed and versionCode did not increase.
+# A stable bump is a versionName change. The file's versionCode is only the
+# local fallback, so a versionCode-only edit is not a bump.
 compare_versions() {
   local base_file="$1"
   local head_file="$2"
-  local pair base_code=0 base_name="" head_code head_name
+  local pair base_name="" head_name
   if [ -s "$base_file" ] && pair="$(read_version_file "$base_file")"; then
-    base_code="${pair%%$'\n'*}"
     base_name="${pair#*$'\n'}"
   fi
   if ! pair="$(read_version_file "$head_file")"; then
     echo "::error::${head_file} must set versionCode and versionName in one place." >&2
     return 1
   fi
-  head_code="${pair%%$'\n'*}"
   head_name="${pair#*$'\n'}"
   require_version_name "$head_name" || return 1
-  if [ "$head_code" = "$base_code" ] && [ "$head_name" = "$base_name" ]; then
+  if [ "$head_name" = "$base_name" ]; then
     printf 'unchanged\n'
     return 0
-  fi
-  if [ "$head_code" -le "$base_code" ]; then
-    echo "::error::versionCode ${head_code} is not higher than ${base_code}. versionName ${base_name:-<none>} -> ${head_name}. Refusing the version bump." >&2
-    return 1
   fi
   printf 'bumped\n'
 }
