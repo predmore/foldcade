@@ -208,15 +208,56 @@ class ContractTest {
     }
 
     @Test
+    fun backgroundAndSpeedStaySeparateFromTheTheme() {
+        val motions = listOf(BackgroundMotion.Off, BackgroundMotion.Ribbons)
+        val root = PickerModel(
+            count = 2,
+            rowsPerPage = 3,
+            showLaunchTarget = true,
+            themes = listOf("Built-in", "Afterglow"),
+            themeMotions = motions,
+            themeIndex = 1,
+            backgroundMotion = BackgroundMotion.Ribbons,
+            motionSpeed = MotionSpeed.Slow,
+        )
+        val opened = reduce(root, Meaning.LeftPanel, HostScreen.Bottom).first
+        val rows = panelRows(opened.panel!!, opened)
+        assertEquals(1, rows.indexOf(Row.Theme))
+        assertEquals(2, rows.indexOf(Row.Primary))
+        val background = rows.indexOf(Row.Background)
+        val speed = rows.indexOf(Row.MotionSpeed)
+        assertTrue(background > 2)
+        assertEquals(background + 1, speed)
+        val themed = reduce(opened.copy(panel = opened.panel?.copy(index = 1)), Meaning.Activate).first
+        assertEquals(0, themed.themeIndex)
+        assertEquals(BackgroundMotion.Off, themed.backgroundMotion)
+        assertFalse(themed.backgroundPinned)
+        val pinned = reduce(themed.copy(panel = themed.panel?.copy(index = background)), Meaning.Activate).first
+        assertEquals(BackgroundMotion.Ribbons, pinned.backgroundMotion)
+        assertTrue(pinned.backgroundPinned)
+        val kept = reduce(pinned.copy(panel = pinned.panel?.copy(index = 1)), Meaning.Activate).first
+        assertEquals(1, kept.themeIndex)
+        assertEquals(BackgroundMotion.Ribbons, kept.backgroundMotion)
+        val slowed = reduce(pinned.copy(panel = pinned.panel?.copy(index = speed)), Meaning.Activate).first
+        assertEquals(MotionSpeed.Slower, slowed.motionSpeed)
+        assertEquals(BackgroundMotion.Ribbons, slowed.backgroundMotion)
+        assertEquals("Background  Ribbons", rowLabel(Row.Background, pinned))
+        assertEquals("Motion  Slower", rowLabel(Row.MotionSpeed, slowed))
+        assertEquals(RowText("Background", "Ribbons"), rowText(Row.Background, pinned))
+        assertEquals(RowText("Motion", "Slower"), rowText(Row.MotionSpeed, slowed))
+        assertEquals(RowText(Copy.theme, "Afterglow"), rowText(Row.Theme, kept))
+    }
+
+    @Test
     fun motionTokensAreTheSharedScale() {
         assertEquals(100, Motion.durationShort)
-        assertEquals(150, Motion.durationFocus)
+        assertEquals(180, Motion.durationFocus)
         assertEquals(200, Motion.durationTravel)
         assertEquals(1f, Motion.scaleRest)
-        assertEquals(1.12f, Motion.scaleFocus)
+        assertEquals(1.05f, Motion.scaleFocus)
         assertEquals(100, Motion.duration(Motion.durationTravel, animatorScale = 0f))
         assertEquals(400, Motion.duration(Motion.durationTravel, animatorScale = 2f))
-        assertEquals(150, Motion.duration(Motion.durationFocus, animatorScale = 1f))
+        assertEquals(180, Motion.duration(Motion.durationFocus, animatorScale = 1f))
         assertTrue(Motion.duration(Motion.durationShort, animatorScale = 0.01f) >= 1)
         assertTrue(Motion.reduced(0f))
         assertFalse(Motion.reduced(1f))

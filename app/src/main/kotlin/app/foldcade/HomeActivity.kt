@@ -11,6 +11,9 @@ import android.view.WindowInsets
 import android.view.WindowInsetsController
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 import app.foldcade.api.ExternalApp
 import app.foldcade.api.Panel
 import app.foldcade.api.isAndroidHomeRecall
@@ -37,6 +40,17 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
 
     private val displays by lazy { Displays(this) }
     private val foldcade by lazy { application as FoldcadeApp }
+    private var resumed = false
+
+    /** True while this panel is resumed and its display is fully on. */
+    var shellVisible by mutableStateOf(false)
+        private set
+
+    private val backdropDisplayListener = object : DisplayManager.DisplayListener {
+        override fun onDisplayAdded(displayId: Int) = refreshShellVisible()
+        override fun onDisplayRemoved(displayId: Int) = refreshShellVisible()
+        override fun onDisplayChanged(displayId: Int) = refreshShellVisible()
+    }
 
     private val folderPicker = registerForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri ->
         if (uri == null) return@registerForActivityResult
@@ -67,16 +81,6 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
     override fun foldcadeSurfaceFocused(): Boolean {
         val panel = displays.panelFor(this, foldcade.store.session.defaultDisplayIsTop) ?: return false
         return foldcade.store.session.surfaceOn(panel) != null
-    }
-
-    override fun onResume() {
-        super.onResume()
-        foldcade.music.onHomeResume()
-    }
-
-    override fun onPause() {
-        foldcade.music.onHomePause()
-        super.onPause()
     }
 
     override fun onMeaning(meaning: app.foldcade.language.Meaning) {
@@ -113,8 +117,23 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
             manager.registerDisplayListener(displayListener, null)
             launchCompanionIfNeeded()
         }
+        getSystemService(DisplayManager::class.java).registerDisplayListener(backdropDisplayListener, null)
         setContent { PanelHost(activity = this, displays = displays) }
         hideSystemBars()
+    }
+
+    override fun onResume() {
+        super.onResume()
+        resumed = true
+        refreshShellVisible()
+        foldcade.music.onHomeResume()
+    }
+
+    override fun onPause() {
+        resumed = false
+        refreshShellVisible()
+        foldcade.music.onHomePause()
+        super.onPause()
     }
 
     override fun onWindowFocusChanged(hasFocus: Boolean) {
@@ -129,10 +148,15 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
     }
 
     override fun onDestroy() {
-        if (launchesCompanion) {
-            getSystemService(DisplayManager::class.java).unregisterDisplayListener(displayListener)
-        }
+        val manager = getSystemService(DisplayManager::class.java)
+        manager.unregisterDisplayListener(backdropDisplayListener)
+        if (launchesCompanion) manager.unregisterDisplayListener(displayListener)
         super.onDestroy()
+    }
+
+    private fun refreshShellVisible() {
+        val state = display?.state ?: Display.STATE_ON
+        shellVisible = resumed && state == Display.STATE_ON
     }
 
     private fun acceptHome(intent: Intent) {

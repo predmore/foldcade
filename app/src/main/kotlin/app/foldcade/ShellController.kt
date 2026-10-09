@@ -2,15 +2,18 @@ package app.foldcade
 
 import app.foldcade.api.plugin.RommCredentials
 import app.foldcade.host.PluginHost
+import app.foldcade.language.BackgroundMotion
 import app.foldcade.language.ConnectField
-import app.foldcade.language.Copy
 import app.foldcade.language.Chrome
+import app.foldcade.language.Copy
+import app.foldcade.language.DialogKind
 import app.foldcade.language.Effect
 import app.foldcade.language.GridFocus
 import app.foldcade.language.DEFAULT_TRACK_TITLE
 import app.foldcade.language.HomeMusicSetting
 import app.foldcade.language.HostScreen
 import app.foldcade.language.Meaning
+import app.foldcade.language.MotionSpeed
 import app.foldcade.language.Metrics
 import app.foldcade.language.PanelLevel
 import app.foldcade.language.PickerModel
@@ -32,6 +35,9 @@ class ShellController(
     private val plugins: PluginHost,
     private val onMusic: (HomeMusicSetting) -> Unit = {},
     private val trackTitle: String = DEFAULT_TRACK_TITLE,
+    private val themeNames: List<String> = listOf(Copy.builtIn),
+    private val themeMotions: List<BackgroundMotion> = listOf(BackgroundMotion.Off),
+    private val cue: (themeIndex: Int, slot: String) -> Unit = { _, _ -> },
 ) {
     var model by mutableStateOf(initial())
         private set
@@ -40,12 +46,14 @@ class ShellController(
         private set
 
     fun onMeaning(meaning: Meaning, screen: HostScreen): Effect? {
+        val before = model
         val (next, effect) = reduce(prepared(), meaning, screen)
         if (!next.connectOpen) connectToken = ""
         publish(next)
         if (next.panel?.level == PanelLevel.Library) {
             refreshLibraries()
         }
+        cueMeaning(meaning, before, model)
         return effect
     }
 
@@ -178,6 +186,7 @@ class ShellController(
                     ),
                 ),
             )
+            cue(model.themeIndex, "move")
             return
         }
         onMeaning(Meaning.Activate, screen)
@@ -231,16 +240,54 @@ class ShellController(
             store.setMusic(next.music.enabled, next.music.volume, next.music.trackId)
             onMusic(next.music)
         }
+        if (next.backgroundPinned && next.backgroundMotion != model.backgroundMotion) {
+            store.setBackgroundMotion(next.backgroundMotion)
+        }
+        if (next.motionSpeed != model.motionSpeed) {
+            store.setMotionSpeed(next.motionSpeed)
+        }
         model = next.copy(count = Shelf.games.size)
     }
 
-    private fun initial(): PickerModel = PickerModel(
-        count = Shelf.games.size,
-        rowsPerPage = 2,
-        showLaunchTarget = true,
-        primaryIsTop = store.session.defaultDisplayIsTop,
-        folderGrantPending = store.folderGrantPending(),
-        music = HomeMusicSetting(store.musicEnabled(), store.musicVolume(), store.musicTrackId()),
-        trackTitle = trackTitle,
-    )
+    private fun initial(): PickerModel {
+        val names = themeNames.ifEmpty { listOf(Copy.builtIn) }
+        val index = if (names.size > 1) 1 else 0
+        val pinned = store.backgroundMotionPinned()
+        val motion = if (pinned) {
+            store.backgroundMotion()
+        } else {
+            themeMotions.getOrElse(index) { BackgroundMotion.Off }
+        }
+        return PickerModel(
+            count = Shelf.games.size,
+            rowsPerPage = 2,
+            showLaunchTarget = true,
+            primaryIsTop = store.session.defaultDisplayIsTop,
+            folderGrantPending = store.folderGrantPending(),
+            music = HomeMusicSetting(store.musicEnabled(), store.musicVolume(), store.musicTrackId()),
+            trackTitle = trackTitle,
+            themes = names,
+            themeIndex = index,
+            themeMotions = themeMotions,
+            backgroundMotion = motion,
+            backgroundPinned = pinned,
+            motionSpeed = store.motionSpeed(),
+        )
+    }
+
+    private fun cueMeaning(meaning: Meaning, before: PickerModel, after: PickerModel) {
+        when (meaning) {
+            Meaning.Activate -> cue(after.themeIndex, "activate")
+            Meaning.Back -> cue(after.themeIndex, "back")
+            Meaning.MoveUp, Meaning.MoveDown, Meaning.MoveLeft, Meaning.MoveRight -> {
+                val moved = before.focus != after.focus || before.panel?.index != after.panel?.index
+                if (moved) cue(after.themeIndex, "move")
+            }
+            else -> Unit
+        }
+        if (before.dialog?.kind != DialogKind.Ok && after.dialog?.kind == DialogKind.Ok) {
+            cue(after.themeIndex, "notify")
+        }
+        if (after.notices.size > before.notices.size) cue(after.themeIndex, "notify")
+    }
 }

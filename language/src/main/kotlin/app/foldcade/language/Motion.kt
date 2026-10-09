@@ -14,10 +14,10 @@ import androidx.compose.animation.core.tween
  */
 object Motion {
     const val durationShort = 100
-    const val durationFocus = 150
+    const val durationFocus = 180
     const val durationTravel = 200
     const val scaleRest = 1f
-    const val scaleFocus = 1.12f
+    const val scaleFocus = 1.05f
 
     val easingArrive: Easing = CubicBezierEasing(0.05f, 0.7f, 0.1f, 1f)
     val easingLeave: Easing = CubicBezierEasing(0.3f, 0f, 0.8f, 0.15f)

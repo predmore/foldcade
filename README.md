@@ -43,7 +43,7 @@ Or grab the APK from [GitHub Releases](https://github.com/predmore/foldcade/rele
 
 Foldcade is open source under the [GNU GPLv3](LICENSE).
 
-Credits for the home music and the theme art are in [licenses/CREDITS.md](licenses/CREDITS.md).
+Credits for the home music and the theme art are in [licenses/CREDITS.md](licenses/CREDITS.md). Afterglow’s marks, preview, and sounds are original and licensed under [CC BY-SA 4.0](themes/afterglow/LICENSE). Its display face is Nunito Regular under the [SIL Open Font License](themes/afterglow/OFL-Nunito.txt). The theme contract is in [themes/afterglow/README.md](themes/afterglow/README.md).
 
 ## For developers
 

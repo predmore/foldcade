@@ -34,10 +34,10 @@ fun cursorBrush(theme: Theme): Brush = SolidColor(theme.focus)
 
 /** Host-owned type ramp, in sp, the same on both panels. */
 object TypeRamp {
-    val heroTitle: TextUnit = 22.sp
-    val heroMeta: TextUnit = 16.sp
-    val availability: TextUnit = 14.sp
-    val gridLabel: TextUnit = 14.sp
+    val heroTitle: TextUnit = 28.sp
+    val heroMeta: TextUnit = 18.sp
+    val availability: TextUnit = 16.sp
+    val gridLabel: TextUnit = 16.sp
     val dialogTitle: TextUnit = 20.sp
     val dialogBody: TextUnit = 16.sp
     val menuRow: TextUnit = 18.sp
@@ -55,6 +55,9 @@ object Metrics {
     const val dialogInsetPx = 48f
     const val dialogBorderPx = 2f
     const val heroArtFraction = 0.62f
+
+    /** Space between the hint line and the top of a focus stroke, in px. */
+    const val chromeClearancePx = 28f
 }
 
 object Copy {
@@ -63,6 +66,14 @@ object Copy {
     const val usesBothScreens = "Uses both screens"
     const val library = "Library"
     const val theme = "Theme"
+    const val background = "Background"
+    const val motion = "Motion"
+    const val ribbons = "Ribbons"
+    const val embers = "Embers"
+    const val motionStatic = "Static"
+    const val motionOff = "Off"
+    const val speedSlow = "Slow"
+    const val speedSlower = "Slower"
     const val arrange = "Arrange"
     const val setAsHome = "Set as Home"
     const val builtIn = "Built-in"

@@ -6,8 +6,12 @@ import app.foldcade.api.plugin.CredentialStore
 import app.foldcade.api.plugin.RommCredentials
 import app.foldcade.credentials.AndroidCredentialStore
 import app.foldcade.host.PluginHost
+import app.foldcade.language.BackgroundMotion
+import app.foldcade.language.Copy
 import app.foldcade.language.SignedInBackend
+import app.foldcade.language.builtInTheme
 import app.foldcade.music.HomeMusic
+import app.foldcade.ui.FoldPaint
 import java.nio.file.Path
 import kotlin.coroutines.cancellation.CancellationException
 import kotlinx.coroutines.CoroutineScope
@@ -36,6 +40,8 @@ class FoldcadeApp : Application() {
         private set
     lateinit var plugins: PluginHost
         private set
+    var packaged: PackagedTheme? = null
+        private set
     var companionLaunched: Boolean = false
 
     /**
@@ -54,7 +60,12 @@ class FoldcadeApp : Application() {
         plugins = PluginHost(Dispatchers.IO, credentials)
         music = HomeMusic(this, store)
         store.afterSessionChanged = music::onSessionChanged
-        shell = ShellController(store, plugins, music::apply, music.trackTitle())
+        packaged = PackagedTheme.load(this)
+        val names = listOf(Copy.builtIn) + listOfNotNull(packaged?.name)
+        val motions = listOf(BackgroundMotion.Off) + listOfNotNull(packaged?.backgroundMotion)
+        shell = ShellController(store, plugins, music::apply, music.trackTitle(), names, motions) { index, slot ->
+            if (index > 0) packaged?.sounds?.play(slot)
+        }
         rommPublish = RommPublish(
             read = {
                 readRommPublish(
@@ -82,6 +93,12 @@ class FoldcadeApp : Application() {
     override fun onTrimMemory(level: Int) {
         super.onTrimMemory(level)
         if (::music.isInitialized) music.onTrimMemory(level)
+    }
+
+    fun paintFor(themeIndex: Int): FoldPaint {
+        val theme = packaged
+        if (theme != null && themeIndex > 0) return theme.paint
+        return FoldPaint(builtInTheme())
     }
 
     fun refreshCredentials() {

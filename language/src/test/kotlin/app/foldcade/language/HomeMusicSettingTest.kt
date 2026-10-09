@@ -23,11 +23,16 @@ class HomeMusicSettingTest {
             listOf(
                 Row.Library, Row.Theme, Row.Primary, Row.Arrange,
                 Row.Music, Row.MusicTrack, Row.MusicVolume, Row.SetAsHome,
+                Row.Background, Row.MotionSpeed,
             ),
             leftRows(homeRoleHeld = false),
         )
         assertEquals(
-            listOf(Row.Library, Row.Theme, Row.Primary, Row.Arrange, Row.Music, Row.MusicTrack, Row.MusicVolume),
+            listOf(
+                Row.Library, Row.Theme, Row.Primary, Row.Arrange,
+                Row.Music, Row.MusicTrack, Row.MusicVolume,
+                Row.Background, Row.MotionSpeed,
+            ),
             leftRows(homeRoleHeld = true),
         )
     }
