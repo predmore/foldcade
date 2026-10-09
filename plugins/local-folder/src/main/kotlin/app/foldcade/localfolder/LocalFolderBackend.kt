@@ -229,17 +229,14 @@ private fun page(scan: FolderScan, platformId: String, query: GameQuery): GamePa
                 game.fileName.contains(needle, ignoreCase = true))
     }
     val offset = query.offset.coerceAtLeast(0)
+    // A negative limit is an empty page, same as zero. Zero still names the
+    // next offset when this offset is inside the matches, so the caller can
+    // see that a later page exists. A limit past the remainder returns that
+    // remainder. An offset past the end returns an empty page.
     val limit = query.limit.coerceAtLeast(0)
-    val games = if (limit == 0) {
-        emptyList()
-    } else {
-        matched.drop(offset).take(limit).map { it.toGame() }
-    }
-    val nextOffset = if (limit == 0 || offset + games.size >= matched.size) {
-        null
-    } else {
-        offset + games.size
-    }
+    val games = matched.drop(offset).take(limit).map { it.toGame() }
+    val consumed = offset + games.size
+    val nextOffset = if (consumed < matched.size) consumed else null
     return GamePage(games = games, nextOffset = nextOffset, total = matched.size)
 }
 

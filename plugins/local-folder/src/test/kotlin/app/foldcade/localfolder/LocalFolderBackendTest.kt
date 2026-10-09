@@ -147,6 +147,56 @@ class LocalFolderBackendTest {
     }
 
     @Test
+    fun pagingKeepsANextOffsetForAnEmptyPageInsideTheMatches() = runBlocking {
+        val backend = newBackend(
+            folderDir(
+                "content://snes",
+                "snes",
+                listOf(
+                    folderFile("content://c", "C.sfc"),
+                    folderFile("content://a", "A.sfc"),
+                    folderFile("content://b", "B.sfc"),
+                ),
+            ),
+        )
+
+        val zero = backend.listGames("snes", GameQuery(limit = 0))
+        assertTrue(zero.games.isEmpty())
+        assertEquals(0, zero.nextOffset)
+        assertEquals(3, zero.total)
+
+        val zeroLater = backend.listGames("snes", GameQuery(offset = 2, limit = 0))
+        assertTrue(zeroLater.games.isEmpty())
+        assertEquals(2, zeroLater.nextOffset)
+        assertEquals(3, zeroLater.total)
+
+        val zeroAtEnd = backend.listGames("snes", GameQuery(offset = 3, limit = 0))
+        assertTrue(zeroAtEnd.games.isEmpty())
+        assertNull(zeroAtEnd.nextOffset)
+        assertEquals(3, zeroAtEnd.total)
+
+        val negative = backend.listGames("snes", GameQuery(offset = 1, limit = -4))
+        assertTrue(negative.games.isEmpty())
+        assertEquals(1, negative.nextOffset)
+        assertEquals(3, negative.total)
+
+        val oversized = backend.listGames("snes", GameQuery(offset = 1, limit = 10_000))
+        assertEquals(listOf("B", "C"), oversized.games.map { it.label })
+        assertNull(oversized.nextOffset)
+        assertEquals(3, oversized.total)
+
+        val past = backend.listGames("snes", GameQuery(offset = 8, limit = 2))
+        assertTrue(past.games.isEmpty())
+        assertNull(past.nextOffset)
+        assertEquals(3, past.total)
+
+        val emptyPlatform = backend.listGames("nes", GameQuery(limit = 0))
+        assertTrue(emptyPlatform.games.isEmpty())
+        assertNull(emptyPlatform.nextOffset)
+        assertEquals(0, emptyPlatform.total)
+    }
+
+    @Test
     fun disconnectDropsTheCacheAndKeepsRecordedSaves() = runBlocking {
         val calls = AtomicInteger()
         val backend = newBackend(
