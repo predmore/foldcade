@@ -64,7 +64,7 @@ class PluginHostTest {
 
     @Test
     fun inTreeSampleRegistersFourInterfacesInSeparateSlots() {
-        val host = PluginHost(Dispatchers.Unconfined)
+        val host = PluginHost(Dispatchers.Unconfined, MemoryCredentialStore())
         host.register(SampleEntry())
 
         assertEquals("sample.platform", host.platform("sample.platform")?.id)
@@ -91,7 +91,7 @@ class PluginHostTest {
 
     @Test
     fun inTreeSampleLoadsFromTheClasspathEntryPoint() {
-        val host = PluginHost(Dispatchers.Unconfined)
+        val host = PluginHost(Dispatchers.Unconfined, MemoryCredentialStore())
         runBlocking { host.load(SampleEntry::class.java.classLoader) }
         assertEquals("Sample library", host.library("sample.library")?.displayName)
         assertEquals("Sample metadata", host.metadata("sample.metadata")?.displayName)
@@ -105,7 +105,7 @@ class PluginHostTest {
         assertTrue(jar.isFile)
         val parent = PluginHost::class.java.classLoader
         URLClassLoader(arrayOf(jar.toURI().toURL()), parent).use { loader ->
-            val host = PluginHost(Dispatchers.Unconfined)
+            val host = PluginHost(Dispatchers.Unconfined, MemoryCredentialStore())
             assertNull(host.library("outoftree.library"))
             runBlocking { host.load(loader) }
 
@@ -127,7 +127,7 @@ class PluginHostTest {
 
     @Test
     fun theSameIdMayOccupyLibraryAndMetadataBecauseTheSlotsAreSeparate() {
-        val host = PluginHost(Dispatchers.Unconfined)
+        val host = PluginHost(Dispatchers.Unconfined, MemoryCredentialStore())
         val library = LibraryFake("shared-id")
         val metadata = MetadataFake("shared-id")
         host.register(object : PluginEntry {
@@ -141,7 +141,7 @@ class PluginHostTest {
 
     @Test
     fun incompatiblePluginMajorIsRejected() {
-        val host = PluginHost(Dispatchers.Unconfined)
+        val host = PluginHost(Dispatchers.Unconfined, MemoryCredentialStore())
         val failure = runCatching {
             host.register(object : PluginEntry {
                 override val apiVersion = PLUGIN_API_VERSION + 1
@@ -153,7 +153,7 @@ class PluginHostTest {
 
     @Test
     fun playersForResolvesNintendo3dsAliases() {
-        val host = PluginHost(Dispatchers.Unconfined)
+        val host = PluginHost(Dispatchers.Unconfined, MemoryCredentialStore())
         host.register(object : PluginEntry {
             override val apiVersion = PLUGIN_API_VERSION
             override val platforms = listOf(object : Platform {
@@ -185,7 +185,7 @@ class PluginHostTest {
 
     @Test
     fun platformIdAndAliasCollisionsAreRejected() {
-        val host = PluginHost(Dispatchers.Unconfined)
+        val host = PluginHost(Dispatchers.Unconfined, MemoryCredentialStore())
         host.register(platformEntry("nintendo-3ds", setOf("3ds", "n3ds")))
 
         val aliasHitsCanonicalId = runCatching {
@@ -202,12 +202,12 @@ class PluginHostTest {
         assertNull(host.platform("romm"))
 
         val repeatsOwnId = runCatching {
-            PluginHost(Dispatchers.Unconfined).register(platformEntry("3ds", setOf("3DS")))
+            PluginHost(Dispatchers.Unconfined, MemoryCredentialStore()).register(platformEntry("3ds", setOf("3DS")))
         }
         assertTrue(repeatsOwnId.exceptionOrNull() is IllegalStateException)
 
         val sharedAlias = runCatching {
-            PluginHost(Dispatchers.Unconfined).register(object : PluginEntry {
+            PluginHost(Dispatchers.Unconfined, MemoryCredentialStore()).register(object : PluginEntry {
                 override val apiVersion = PLUGIN_API_VERSION
                 override val platforms = listOf(
                     namedPlatform("ds", setOf("nds")),
@@ -220,7 +220,7 @@ class PluginHostTest {
 
     @Test
     fun thirdPartyCannotClaimReservedRommIds() {
-        val host = PluginHost(Dispatchers.Unconfined)
+        val host = PluginHost(Dispatchers.Unconfined, MemoryCredentialStore())
         val library = runCatching {
             host.register(object : PluginEntry {
                 override val apiVersion = PLUGIN_API_VERSION
@@ -269,7 +269,7 @@ class PluginHostTest {
 
     @Test
     fun olderMinorLoadsAndANewerMinorIsRejected() {
-        val host = PluginHost(Dispatchers.Unconfined)
+        val host = PluginHost(Dispatchers.Unconfined, MemoryCredentialStore())
         val older = object : PluginEntry {
             override val apiVersion = PLUGIN_API_VERSION
             override val libraries = listOf(LibraryFake("older.minor"))
@@ -299,7 +299,7 @@ class PluginHostTest {
 
     @Test
     fun aThrowingGetterDoesNotLeaveThePluginHalfRegistered() {
-        val host = PluginHost(Dispatchers.Unconfined)
+        val host = PluginHost(Dispatchers.Unconfined, MemoryCredentialStore())
         val failure = runCatching {
             host.register(object : PluginEntry {
                 override val apiVersion = PLUGIN_API_VERSION
@@ -333,7 +333,7 @@ class PluginHostTest {
                 return super.getResources(name)
             }
         }
-        val host = PluginHost(Dispatchers.Unconfined)
+        val host = PluginHost(Dispatchers.Unconfined, MemoryCredentialStore())
         runBlocking { host.load(loader) }
         assertEquals("good.one", host.library("good.one")?.id)
         assertEquals("good.two", host.library("good.two")?.id)
@@ -363,7 +363,7 @@ class PluginHostTest {
             override val id = "boom.player"
             override fun launchIntent(request: LaunchRequest) = throw IllegalStateException("intent")
         }
-        val host = PluginHost(Dispatchers.Unconfined)
+        val host = PluginHost(Dispatchers.Unconfined, MemoryCredentialStore())
         host.register(object : PluginEntry {
             override val apiVersion = PLUGIN_API_VERSION
             override val libraries = listOf(backend)
@@ -397,7 +397,7 @@ class PluginHostTest {
 
     @Test
     fun platformAndPlayersForUseNamesStoredAtRegistration() {
-        val host = PluginHost(Dispatchers.Unconfined)
+        val host = PluginHost(Dispatchers.Unconfined, MemoryCredentialStore())
         val reads = AtomicInteger()
         val platform = object : Platform {
             override val id: String
@@ -443,7 +443,7 @@ class PluginHostTest {
                 throw OutOfMemoryError("simulated")
             }
         }
-        val host = PluginHost(Dispatchers.Unconfined)
+        val host = PluginHost(Dispatchers.Unconfined, MemoryCredentialStore())
         host.register(object : PluginEntry {
             override val apiVersion = PLUGIN_API_VERSION
             override val libraries = listOf(backend)
@@ -459,7 +459,7 @@ class PluginHostTest {
                 throw OutOfMemoryError("simulated")
             }
         }
-        val host = PluginHost(Dispatchers.Unconfined)
+        val host = PluginHost(Dispatchers.Unconfined, MemoryCredentialStore())
         val failure = runCatching { host.load(loader) }
         assertTrue(failure.exceptionOrNull() is OutOfMemoryError)
         assertTrue(host.rejected.isEmpty())
@@ -477,7 +477,7 @@ class PluginHostTest {
                 return super.getResources(name)
             }
         }
-        val host = PluginHost(Dispatchers.Unconfined)
+        val host = PluginHost(Dispatchers.Unconfined, MemoryCredentialStore())
         val failure = runCatching { host.load(loader) }
         assertTrue(failure.exceptionOrNull() is OutOfMemoryError)
         assertTrue(host.rejected.isEmpty())
@@ -488,7 +488,7 @@ class PluginHostTest {
         val caller = namedDispatcher("caller")
         val io = namedDispatcher("foldcade-io")
         try {
-            val host = PluginHost(io)
+            val host = PluginHost(io, MemoryCredentialStore())
             val loader = object : ClassLoader(IsolatedGood::class.java.classLoader) {
                 @Volatile
                 var threadName: String? = null
@@ -511,7 +511,7 @@ class PluginHostTest {
 
     @Test
     fun duplicateIdInsideOneSlotIsRejected() {
-        val host = PluginHost(Dispatchers.Unconfined)
+        val host = PluginHost(Dispatchers.Unconfined, MemoryCredentialStore())
         host.register(SampleEntry())
         val failure = runCatching { host.register(SampleEntry()) }
         assertTrue(failure.exceptionOrNull() is IllegalStateException)
@@ -536,7 +536,7 @@ class PluginHostTest {
                     return GamePage(emptyList(), null)
                 }
             }
-            val host = PluginHost(io)
+            val host = PluginHost(io, MemoryCredentialStore())
             host.register(object : PluginEntry {
                 override val apiVersion = PLUGIN_API_VERSION
                 override val libraries = listOf(backend)
@@ -568,7 +568,7 @@ class PluginHostTest {
                     return GameMeta(title = "Already")
                 }
             }
-            val host = PluginHost(io)
+            val host = PluginHost(io, MemoryCredentialStore())
             host.register(object : PluginEntry {
                 override val apiVersion = PLUGIN_API_VERSION
                 override val metadataProviders = listOf(provider)
@@ -628,7 +628,7 @@ class PluginHostTest {
                 return GameMeta(title = game.label)
             }
         }
-        val host = PluginHost(Dispatchers.Default)
+        val host = PluginHost(Dispatchers.Default, MemoryCredentialStore())
         host.register(object : PluginEntry {
             override val apiVersion = PLUGIN_API_VERSION
             override val libraries = listOf(scan, http)
@@ -689,7 +689,7 @@ class PluginHostTest {
 
     @Test
     fun aThirdPartyEntryCannotClaimReservedRommIds() {
-        val host = PluginHost(Dispatchers.Unconfined)
+        val host = PluginHost(Dispatchers.Unconfined, MemoryCredentialStore())
         val intruder = object : PluginEntry {
             override val apiVersion = PLUGIN_API_VERSION
             override val apiMinor = PLUGIN_API_MINOR

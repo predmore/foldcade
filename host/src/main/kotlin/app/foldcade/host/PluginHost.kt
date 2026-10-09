@@ -4,7 +4,6 @@ import app.foldcade.api.plugin.BoundCredentialAccess
 import app.foldcade.api.plugin.CredentialStore
 import app.foldcade.api.plugin.Game
 import app.foldcade.api.plugin.GameMeta
-import app.foldcade.api.plugin.MemoryCredentialStore
 import app.foldcade.api.plugin.RommCredentials
 import app.foldcade.api.plugin.GamePage
 import app.foldcade.api.plugin.GameQuery
@@ -39,13 +38,12 @@ private const val ROMM_ENTRY_CLASS = "app.foldcade.plugins.romm.RommEntry"
  * Register from one thread before calling the suspending methods.
  * [load] records a bad plugin in [rejected]. It does not throw, except [VirtualMachineError].
  *
- * [credentials] defaults to an in-memory store for JVM tests.
- * The Android host must pass the encrypted store instead. The memory default
- * does not encrypt and must not be the store the app process uses.
+ * [credentials] is required. The Android app passes its encrypted store.
+ * JVM tests pass [app.foldcade.api.plugin.MemoryCredentialStore]. There is no in-memory default.
  */
 class PluginHost(
     private val io: CoroutineDispatcher,
-    private val credentials: CredentialStore = MemoryCredentialStore(),
+    private val credentials: CredentialStore,
 ) {
     private val platforms = linkedMapOf<String, Platform>()
     private val definitions = mutableListOf<Platform>()
@@ -64,7 +62,7 @@ class PluginHost(
      * A failure stores nothing from this entry.
      *
      * Credential scope is every slot id this entry registered.
-     * [RESERVED_BUILTIN_IDS] stay with the built-in RomM entry, so a
+     * [RommCredentials.RESERVED_IDS] stay with the built-in RomM entry, so a
      * third-party entry cannot register them first and take that scope.
      */
     fun register(entry: PluginEntry) {
@@ -82,14 +80,6 @@ class PluginHost(
         for (player in stagedPlayers) {
             stagedPlayerPlatforms[player.id] = player.platformId
         }
-        val slotIds = ArrayList<String>(
-            stagedPlatforms.size + stagedPlayers.size + stagedLibraries.size + stagedMetadata.size,
-        )
-        stagedPlatforms.mapTo(slotIds) { it.id }
-        stagedPlayers.mapTo(slotIds) { it.id }
-        stagedLibraries.mapTo(slotIds) { it.id }
-        stagedMetadata.mapTo(slotIds) { it.id }
-        reserveBuiltinIds(entry, slotIds)
         val names = planPlatformNames(stagedPlatforms, platformNames)
         planIds("player", stagedPlayers.map { it.id }, players.keys)
         planIds("library", stagedLibraries.map { it.id }, libraries.keys)
@@ -377,20 +367,6 @@ private fun planPlatformNames(
         names.forEach { pending.add(it to platform.id) }
     }
     return pending
-}
-
-private const val BUILTIN_ROMM_ENTRY = "app.foldcade.plugins.romm.RommEntry"
-
-/**
- * Built-in slot ids. Credential scope is any slot id an entry registered,
- * so a third-party entry must not claim these before the built-in RomM entry.
- */
-private val RESERVED_BUILTIN_IDS = setOf("romm", "romm.metadata")
-
-private fun reserveBuiltinIds(entry: PluginEntry, slotIds: List<String>) {
-    if (entry.javaClass.name == BUILTIN_ROMM_ENTRY) return
-    val taken = slotIds.firstOrNull { it in RESERVED_BUILTIN_IDS } ?: return
-    error("Plugin id $taken is reserved")
 }
 
 private fun planIds(slot: String, incoming: List<String>, already: Set<String>) {
