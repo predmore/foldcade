@@ -49,6 +49,16 @@ class SessionStore(private val prefs: SharedPreferences) {
         prefs.edit().putBoolean(KEY_FOLDER_EXPLAINED, true).apply()
     }
 
+    fun rommOrigin(): String? = prefs.getString(KEY_ROMM_ORIGIN, null)?.takeIf { it.isNotBlank() }
+
+    fun setRommOrigin(origin: String) {
+        prefs.edit().putString(KEY_ROMM_ORIGIN, origin).apply()
+    }
+
+    fun clearRommOrigin() {
+        prefs.edit().remove(KEY_ROMM_ORIGIN).apply()
+    }
+
     private fun encode(screens: Map<String, Panel>): String =
         screens.entries.joinToString(",") { "${it.key}=${it.value.name}" }
 
@@ -71,5 +81,6 @@ class SessionStore(private val prefs: SharedPreferences) {
         private const val KEY_HOME_PROMPTED = "home_prompted"
         private const val KEY_FOLDER = "folder_tree"
         private const val KEY_FOLDER_EXPLAINED = "folder_explained"
+        private const val KEY_ROMM_ORIGIN = "romm_origin"
     }
 }

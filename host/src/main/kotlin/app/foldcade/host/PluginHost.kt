@@ -1,7 +1,11 @@
 package app.foldcade.host
 
+import app.foldcade.api.plugin.BoundCredentialAccess
+import app.foldcade.api.plugin.CredentialStore
 import app.foldcade.api.plugin.Game
 import app.foldcade.api.plugin.GameMeta
+import app.foldcade.api.plugin.MemoryCredentialStore
+import app.foldcade.api.plugin.RommCredentials
 import app.foldcade.api.plugin.GamePage
 import app.foldcade.api.plugin.GameQuery
 import app.foldcade.api.plugin.LaunchRequest
@@ -27,6 +31,8 @@ import kotlin.coroutines.cancellation.CancellationException
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.withContext
 
+private const val ROMM_ENTRY_CLASS = "app.foldcade.plugins.romm.RommEntry"
+
 /**
  * Loads plugins and calls library I/O and metadata fetch off [io].
  * Those calls are suspending. This type does not block the caller.
@@ -34,9 +40,14 @@ import kotlinx.coroutines.withContext
  * [load] reads the class loader and must run off the main thread.
  * Register from one thread before calling the suspending methods.
  * [load] records a bad plugin in [rejected] and does not throw.
+ *
+ * [credentials] defaults to an in-memory store for JVM tests.
+ * The Android host must pass the encrypted store instead. The memory default
+ * does not encrypt and must not be the store the app process uses.
  */
 class PluginHost(
     private val io: CoroutineDispatcher,
+    private val credentials: CredentialStore = MemoryCredentialStore(),
 ) {
     private val platforms = linkedMapOf<String, Platform>()
     private val players = linkedMapOf<String, Player>()
@@ -67,11 +78,29 @@ class PluginHost(
         planIds("player", stagedPlayers.map { it.id }, players.keys)
         planIds("library", stagedLibraries.map { it.id }, libraries.keys)
         planIds("metadata", stagedMetadata.map { it.id }, metadataProviders.keys)
+        val ids = buildSet {
+            addAll(stagedPlatforms.map { it.id })
+            addAll(stagedPlayers.map { it.id })
+            addAll(stagedLibraries.map { it.id })
+            addAll(stagedMetadata.map { it.id })
+        }
+        refuseReserved(entry, ids)
+        entry.bind(BoundCredentialAccess(ids, credentials))
         platformNames.addAll(names)
         stagedPlatforms.forEach { platforms[it.id] = it }
         stagedPlayers.forEach { players[it.id] = it }
         stagedLibraries.forEach { libraries[it.id] = it }
         stagedMetadata.forEach { metadataProviders[it.id] = it }
+    }
+
+    /**
+     * `romm` and `romm.metadata` belong to the built-in RomM entry.
+     * Another entry cannot take them, even if it is registered first.
+     */
+    private fun refuseReserved(entry: PluginEntry, ids: Set<String>) {
+        if (entry.javaClass.name == ROMM_ENTRY_CLASS) return
+        val taken = ids.filter { it in RommCredentials.RESERVED_IDS }
+        if (taken.isNotEmpty()) error("Reserved plugin id: ${taken.joinToString()}")
     }
 
     /**

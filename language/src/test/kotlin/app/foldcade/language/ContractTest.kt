@@ -140,6 +140,15 @@ class ContractTest {
         val (folder, add) = reduce(child, Meaning.Activate)
         assertNull(add)
         assertEquals(DialogKind.Folder, folder.dialog?.kind)
+        val signedIn = child.copy(
+            signedIn = listOf(SignedInBackend("romm", "RomM")),
+            panel = child.panel?.copy(index = 0),
+        )
+        val signOut = libraryRows(emptyList(), signedIn.signedIn).first()
+        assertEquals("Sign out / forget credentials · RomM", rowLabel(signOut, signedIn))
+        val (left, forget) = reduce(signedIn, Meaning.Activate)
+        assertEquals(Effect.ForgetCredentials("romm"), forget)
+        assertNull(left.panel)
         val closed = reduce(opened, Meaning.Back).first
         assertNull(closed.panel)
         val right = reduce(opened, Meaning.RightPanel, HostScreen.Top).first

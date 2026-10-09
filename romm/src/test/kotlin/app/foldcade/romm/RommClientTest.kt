@@ -662,6 +662,115 @@ class RommClientTest {
         assertEquals("local", Files.readString(save.file))
     }
 
+    @Test
+    fun cleartextGuardRejectsAnotherHttpHostAndStillHintsHttps() {
+        assertTrue(httpCleartextAllowed("http://192.168.1.20:8080", "http://192.168.1.20:8080/api/heartbeat"))
+        assertTrue(httpCleartextAllowed("http://192.168.1.20", "http://192.168.1.20:80/api/heartbeat"))
+        assertFalse(httpCleartextAllowed("http://192.168.1.20:8080", "http://evil.example/api/heartbeat"))
+        assertFalse(httpCleartextAllowed("http://192.168.1.20:8080", "http://192.168.1.20:9090/api/heartbeat"))
+        assertTrue(httpCleartextAllowed("http://192.168.1.20:8080", "https://192.168.1.20/api/heartbeat"))
+
+        server.route("GET", "/api/heartbeat") { exchange, _ ->
+            exchange.responseHeaders.add("Location", "http://127.0.0.1:9/api/heartbeat")
+            exchange.sendResponseHeaders(302, -1)
+            exchange.responseBody.close()
+        }
+        val rejected = runCatching { runClient { it.heartbeat() } }.exceptionOrNull()
+        assertTrue(rejected is RommUnavailable)
+        assertTrue(rejected?.message?.contains("Cleartext") == true)
+
+        server.route("GET", "/api/heartbeat") { exchange, _ ->
+            exchange.responseHeaders.add("Location", "https://romm.example/api/heartbeat")
+            exchange.sendResponseHeaders(301, -1)
+            exchange.responseBody.close()
+        }
+        runClient { client ->
+            assertEquals(TRY_HTTPS_HINT, client.redirectHint())
+        }
+    }
+
+    @Test
+    fun confirmSignInStaysOpenOn401OrUnreachable() {
+        server.route("GET", "/api/heartbeat") { exchange, _ ->
+            json(exchange, 200, fixture("heartbeat-5.4.0-alpha.2.json"))
+        }
+        server.route("GET", "/api/platforms") { exchange, _ ->
+            json(exchange, 401, """{"detail":"unauthorized"}""")
+        }
+        runClient(token = { "rmm_test" }) { client ->
+            val denied = client.confirmSignIn()
+            assertTrue(denied is RommSignInResult.StayOnForm)
+        }
+        val unreachable = runBlocking {
+            RommClient(
+                origin = "http://127.0.0.1:1",
+                accessToken = { "rmm_test" },
+                connectTimeout = Duration.ofMillis(400),
+                readTimeout = Duration.ofMillis(400),
+            ).use { it.confirmSignIn() }
+        }
+        assertTrue(unreachable is RommSignInResult.StayOnForm)
+
+        server.route("GET", "/api/platforms") { exchange, _ ->
+            json(exchange, 200, "[]")
+        }
+        runClient(token = { "rmm_test" }) { client ->
+            val accepted = client.confirmSignIn()
+            assertTrue(accepted is RommSignInResult.Accepted)
+        }
+    }
+
+    @Test
+    fun logsAndToStringHideTheTokenAndHttpRedirectsHintHttps() {
+        val logs = mutableListOf<String>()
+        server.route("GET", "/api/platforms") { exchange, _ ->
+            json(exchange, 200, "[]")
+        }
+        runClient(token = { "rmm_supersecret" }, httpLog = { logs += it }) { client ->
+            client.platforms()
+        }
+        val text = logs.joinToString("\n")
+        assertFalse(text.contains("rmm_supersecret"))
+        assertTrue(text.contains("Authorization: ***"))
+        assertEquals(
+            "Authorization: ***\nBearer ***",
+            redactSensitive("Authorization: Bearer rmm_supersecret\nBearer rmm_supersecret"),
+        )
+
+        val approved = DeviceTokenPoll.Approved(
+            accessToken = "rmm_supersecret",
+            deviceId = "device-1",
+            scopes = listOf("roms.read"),
+            expiresAt = null,
+        )
+        assertFalse(approved.toString().contains("rmm_supersecret"))
+        assertTrue(approved.toString().contains("***"))
+        val challenge = DeviceAuthChallenge(
+            deviceCode = "device-secret",
+            userCode = "ABCD-EFGH",
+            verificationPath = "/auth/device",
+            verificationPathComplete = "/auth/device?user_code=ABCD-EFGH",
+            expiresInSeconds = 600,
+            intervalSeconds = 5,
+        )
+        assertFalse(challenge.toString().contains("device-secret"))
+        assertTrue(challenge.toString().contains("ABCD-EFGH"))
+
+        server.route("GET", "/api/heartbeat") { exchange, _ ->
+            exchange.responseHeaders.add("Location", "https://romm.example/api/heartbeat")
+            exchange.sendResponseHeaders(301, -1)
+            exchange.responseBody.close()
+        }
+        runClient { client ->
+            assertEquals(TRY_HTTPS_HINT, client.redirectHint())
+            assertEquals(CLEARTEXT_CREDENTIAL_WARNING, cleartextCredentialWarning(client.origin))
+            assertEquals(CLEARTEXT_CREDENTIAL_WARNING, cleartextCredentialWarning("  HTTP://192.168.1.20:8080"))
+            assertEquals(null, cleartextCredentialWarning("https://romm.example"))
+            assertEquals(null, httpsRedirectHint(200, "https://romm.example"))
+        }
+        assertTrue(server.recorded.none { it.path == "/api/heartbeat" && it.headers.keys.any { name -> name.equals("Authorization", true) } })
+    }
+
     private suspend fun <T> suspendCatching(block: suspend () -> T): Result<T> =
         try {
             Result.success(block())
@@ -675,6 +784,7 @@ class RommClientTest {
         origin: String = server.origin,
         token: () -> String? = { null },
         readTimeout: Duration = Duration.ofSeconds(30),
+        httpLog: ((String) -> Unit)? = null,
         block: suspend (RommClient) -> T,
     ): T = runBlocking {
         RommClient(
@@ -682,6 +792,7 @@ class RommClientTest {
             accessToken = token,
             readTimeout = readTimeout,
             writeTimeout = readTimeout,
+            httpLog = httpLog,
         ).use { block(it) }
     }
 

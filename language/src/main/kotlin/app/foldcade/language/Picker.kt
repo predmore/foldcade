@@ -34,10 +34,26 @@ data class SidePanel(
     val grid: GridFocus,
 )
 
+fun signInAgainPrompt(screen: HostScreen = HostScreen.Top): DialogState = DialogState(
+    kind = DialogKind.ReLogin,
+    title = Copy.signInAgainTitle,
+    body = Copy.signInAgainBody,
+    buttons = listOf(DialogButton.Ok),
+    index = 0,
+    safeIndex = 0,
+    screen = screen,
+)
+
+fun connectHint(field: ConnectField): String? = hintLine(
+    activateDoesSomething = field == ConnectField.Save,
+    backDoesSomething = true,
+)
+
 enum class DialogKind {
     Home,
     Folder,
     Ok,
+    ReLogin,
 }
 
 enum class DialogButton {
@@ -100,6 +116,7 @@ sealed interface Row {
     data object Connect : Row
     data object LaunchTarget : Row
     data class Notice(val id: String) : Row
+    data class SignOut(val pluginId: String, val label: String) : Row
 }
 
 fun leftRows(homeRoleHeld: Boolean): List<Row> = buildList {
@@ -110,8 +127,23 @@ fun leftRows(homeRoleHeld: Boolean): List<Row> = buildList {
     if (!homeRoleHeld) add(Row.SetAsHome)
 }
 
-fun libraryRows(backends: List<String>): List<Row> =
-    backends.map { Row.Backend(it) } + listOf(Row.AddFolder, Row.Connect)
+data class SignedInBackend(
+    val pluginId: String,
+    val label: String,
+)
+
+enum class ConnectField {
+    Origin,
+    Token,
+    Save,
+}
+
+fun connectFields(): List<ConnectField> = listOf(ConnectField.Origin, ConnectField.Token, ConnectField.Save)
+
+fun libraryRows(backends: List<String>, signedIn: List<SignedInBackend> = emptyList()): List<Row> =
+    backends.map { Row.Backend(it) } +
+        signedIn.map { Row.SignOut(it.pluginId, it.label) } +
+        listOf(Row.AddFolder, Row.Connect)
 
 fun rightRows(showLaunchTarget: Boolean, notices: List<FoldNotice>): List<Row> = buildList {
     if (showLaunchTarget) add(Row.LaunchTarget)
@@ -121,7 +153,7 @@ fun rightRows(showLaunchTarget: Boolean, notices: List<FoldNotice>): List<Row> =
 fun panelRows(panel: SidePanel, model: PickerModel): List<Row> = when (panel.side) {
     Side.Left -> when (panel.level) {
         PanelLevel.Root -> leftRows(model.homeRoleHeld)
-        PanelLevel.Library -> libraryRows(model.backends)
+        PanelLevel.Library -> libraryRows(model.backends, model.signedIn)
     }
     Side.Right -> rightRows(model.showLaunchTarget, model.notices)
 }
@@ -135,6 +167,7 @@ fun rowLabel(row: Row, model: PickerModel): String = when (row) {
     is Row.Backend -> row.name
     Row.AddFolder -> Copy.addFolder
     Row.Connect -> Copy.connectRomm
+    is Row.SignOut -> "${Copy.signOut} · ${row.label}"
     Row.LaunchTarget -> if (model.launchOnBottom) Copy.launchOnBottom else Copy.launchOnTop
     is Row.Notice -> model.notices.firstOrNull { it.id == row.id }?.title ?: ""
 }
@@ -149,6 +182,8 @@ sealed interface Effect {
     data object OpenConnect : Effect
     data class DialogChoice(val button: DialogButton, val kind: DialogKind) : Effect
     data class ActivateBackend(val name: String) : Effect
+    data class ForgetCredentials(val pluginId: String) : Effect
+    data object SaveRommToken : Effect
     data object RequestHome : Effect
 }
 
@@ -172,6 +207,13 @@ data class PickerModel(
     val arranging: Boolean = false,
     val hold: Hold? = null,
     val order: List<Int> = emptyList(),
+    val signedIn: List<SignedInBackend> = emptyList(),
+    val connectOrigin: String = "",
+    val connectIndex: Int = 0,
+    val connectScreen: HostScreen? = null,
+    val connectWarning: String? = null,
+    val connectHint: String? = null,
+    val reLoginPending: Boolean = false,
 )
 
 fun reduce(
@@ -189,11 +231,27 @@ fun reduce(
         return coerced.copy(dialog = cleared) to chosen
     }
     if (coerced.connectOpen) {
+        val fields = connectFields()
+        val index = coerced.connectIndex.coerceIn(0, fields.lastIndex)
+        val field = fields[index]
         return when (meaning) {
-            Meaning.Back -> coerced.copy(connectOpen = false) to null
+            Meaning.Back -> coerced.copy(
+                connectOpen = false,
+                connectScreen = null,
+            ) to null
+            Meaning.MoveUp -> coerced.copy(connectIndex = (index - 1).coerceAtLeast(0)) to null
+            Meaning.MoveDown -> coerced.copy(connectIndex = (index + 1).coerceAtMost(fields.lastIndex)) to null
+            Meaning.Activate -> when (field) {
+                ConnectField.Save -> coerced to Effect.SaveRommToken
+                ConnectField.Origin, ConnectField.Token -> coerced.copy(connectIndex = index) to null
+            }
             Meaning.LeftPanel, Meaning.RightPanel ->
-                presentPanel(coerced.copy(connectOpen = false), meaning, screen) to null
-            else -> coerced to null
+                presentPanel(
+                    coerced.copy(connectOpen = false, connectScreen = null),
+                    meaning,
+                    screen,
+                ) to null
+            else -> coerced.copy(connectIndex = index) to null
         }
     }
     val panel = coerced.panel
@@ -431,7 +489,14 @@ private fun activateRow(
             } else {
                 model to Effect.AddFolder
             }
-        Row.Connect -> model.copy(panel = null, focus = panel.grid, connectOpen = true) to Effect.OpenConnect
+        Row.Connect -> model.copy(
+            panel = null,
+            focus = panel.grid,
+            connectOpen = true,
+            connectScreen = screen,
+            connectIndex = 0,
+        ) to Effect.OpenConnect
+        is Row.SignOut -> model.copy(panel = null, focus = panel.grid) to Effect.ForgetCredentials(row.pluginId)
         Row.LaunchTarget -> model.copy(panel = panel, launchOnBottom = !model.launchOnBottom) to Effect.CycleLaunchTarget
         is Row.Notice -> model.copy(panel = panel, notices = model.notices.filter { it.id != row.id }) to null
     }

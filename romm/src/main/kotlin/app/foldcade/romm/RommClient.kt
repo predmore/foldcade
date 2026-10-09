@@ -43,6 +43,10 @@ import kotlin.coroutines.resumeWithException
  * device-code sign-in returns. This class does not store it.
  *
  * It does not implement a library backend or a metadata provider.
+ *
+ * This is the app's only HTTP stack. Cleartext is permitted in the network
+ * security config, and [RommCleartextInterceptor] rejects any http request
+ * whose scheme, host, and port are not [origin], including redirects.
  */
 class RommClient(
     origin: String,
@@ -50,6 +54,7 @@ class RommClient(
     connectTimeout: Duration = Duration.ofSeconds(15),
     readTimeout: Duration = Duration.ofSeconds(30),
     writeTimeout: Duration = Duration.ofSeconds(30),
+    httpLog: ((String) -> Unit)? = null,
 ) : AutoCloseable {
     val origin: String = normalizeOrigin(origin)
 
@@ -59,12 +64,59 @@ class RommClient(
         .writeTimeout(writeTimeout)
         .followRedirects(true)
         .followSslRedirects(false)
+        .addNetworkInterceptor(RommCleartextInterceptor(origin))
+        .apply {
+            if (httpLog != null) addInterceptor(RedactingLoggingInterceptor(httpLog))
+        }
         .build()
 
     suspend fun heartbeat(): Heartbeat {
         val raw = exchange(api("/heartbeat"), "GET", authenticated = false)
         raw.require(200)
         return parseHeartbeat(raw.body)
+    }
+
+    /**
+     * One unauthenticated `GET /api/heartbeat`. Does not send the token.
+     * An http origin that redirects to https returns [TRY_HTTPS_HINT].
+     * The client does not follow that redirect (`followSslRedirects` is false).
+     */
+    suspend fun redirectHint(): String? {
+        val raw = try {
+            exchange(api("/heartbeat"), "GET", authenticated = false)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (_: RommUnavailable) {
+            return null
+        }
+        return httpsRedirectHint(raw.status, raw.header("Location"))
+    }
+
+    /**
+     * One authenticated call, after the redirect hint.
+     * [RommSignInResult.StayOnForm] means the token was not accepted or the
+     * server could not be reached. The caller leaves the connect form open.
+     */
+    suspend fun confirmSignIn(): RommSignInResult {
+        val hint = try {
+            redirectHint()
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (_: Exception) {
+            null
+        }
+        return try {
+            platforms()
+            RommSignInResult.Accepted(hint)
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (_: RommHttpException) {
+            RommSignInResult.StayOnForm(hint)
+        } catch (_: RommUnavailable) {
+            RommSignInResult.StayOnForm(hint)
+        } catch (_: RommException) {
+            RommSignInResult.StayOnForm(hint)
+        }
     }
 
     suspend fun openApiInfo(): OpenApiInfo {

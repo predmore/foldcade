@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    Cleartext is permitted so a home-LAN RomM can use http. The app then
+    limits it: RommClient is the only HTTP stack, and its interceptor rejects
+    any http request whose scheme, host, and port are not the configured
+    RomM origin, including redirects. Setup still warns whenever the URL is http.
+-->
+<network-security-config>
+    <base-config cleartextTrafficPermitted="true" />
+</network-security-config>

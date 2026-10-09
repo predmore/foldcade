@@ -15,6 +15,11 @@ import app.foldcade.api.plugin.PLUGIN_API_VERSION
 import app.foldcade.api.plugin.Platform
 import app.foldcade.api.plugin.PluginEntry
 import app.foldcade.api.plugin.PluginException
+import app.foldcade.api.plugin.Credential
+import app.foldcade.api.plugin.CredentialAccess
+import app.foldcade.api.plugin.CredentialDenied
+import app.foldcade.api.plugin.CredentialLookup
+import app.foldcade.api.plugin.MemoryCredentialStore
 import app.foldcade.api.plugin.ObservedSaves
 import app.foldcade.api.plugin.Placement
 import app.foldcade.api.plugin.Player
@@ -490,6 +495,49 @@ class PluginHostTest {
         fetching.join()
         assertTrue(fetching.isCancelled)
         assertFalse(metadata.finished)
+    }
+
+    @Test
+    fun bindRefusesAnotherPluginsCredentials() = runBlocking {
+        val store = MemoryCredentialStore()
+        val host = PluginHost(Dispatchers.Unconfined, store)
+        val entry = object : PluginEntry {
+            override val apiVersion = PLUGIN_API_VERSION
+            override val apiMinor = PLUGIN_API_MINOR
+            override val libraries: List<LibraryBackend> = listOf(LibraryFake("library.a"))
+            var access: CredentialAccess? = null
+            override fun bind(access: CredentialAccess) {
+                this.access = access
+            }
+        }
+        host.register(entry)
+        val access = entry.access ?: error("bind was not called")
+        access.open("library.a").put("token", Credential.ApiToken("rmm_a"))
+        try {
+            access.open("library.b")
+            error("opened another plugin")
+        } catch (denied: CredentialDenied) {
+            assertEquals("library.b", denied.pluginId)
+        }
+        val found = store.lookup("library.a", "token") as CredentialLookup.Present
+        assertEquals("rmm_a", (found.credential as Credential.ApiToken).value)
+        assertFalse(found.credential.toString().contains("rmm_a"))
+    }
+
+    @Test
+    fun aThirdPartyEntryCannotClaimReservedRommIds() {
+        val host = PluginHost(Dispatchers.Unconfined)
+        val intruder = object : PluginEntry {
+            override val apiVersion = PLUGIN_API_VERSION
+            override val apiMinor = PLUGIN_API_MINOR
+            override val libraries: List<LibraryBackend> = listOf(LibraryFake("romm"))
+            override val metadataProviders: List<MetadataProvider> = listOf(MetadataFake("romm.metadata"))
+        }
+        val failure = runCatching { host.register(intruder) }.exceptionOrNull()
+        assertTrue(failure is IllegalStateException)
+        assertTrue(failure?.message?.contains("Reserved") == true)
+        assertNull(host.library("romm"))
+        assertNull(host.metadata("romm.metadata"))
     }
 }
 

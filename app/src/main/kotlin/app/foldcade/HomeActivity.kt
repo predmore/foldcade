@@ -14,11 +14,20 @@ import androidx.activity.result.contract.ActivityResultContracts
 import app.foldcade.api.ExternalApp
 import app.foldcade.api.Panel
 import app.foldcade.api.isAndroidHomeRecall
+import app.foldcade.api.plugin.Credential
+import app.foldcade.api.plugin.RommCredentials
 import app.foldcade.language.DialogButton
 import app.foldcade.language.DialogKind
 import app.foldcade.language.Effect
 import app.foldcade.language.HostScreen
 import app.foldcade.language.PanelKeyActivity
+import app.foldcade.language.SignedInBackend
+import app.foldcade.romm.RommClient
+import app.foldcade.romm.RommSignInResult
+import app.foldcade.romm.normalizeSetupOrigin
+import java.time.Duration
+import kotlin.coroutines.cancellation.CancellationException
+import kotlinx.coroutines.launch
 import app.foldcade.ui.PanelHost
 
 abstract class FoldcadeHomeActivity : PanelKeyActivity() {
@@ -69,7 +78,9 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
             is Effect.Launch -> launchGame(effect.index)
             Effect.CycleLaunchTarget -> cycleLaunchTarget()
             Effect.AddFolder -> folderPicker.launch(null)
-            Effect.OpenConnect -> Unit
+            Effect.OpenConnect -> foldcade.shell.openConnect(foldcade.store.rommOrigin().orEmpty())
+            Effect.SaveRommToken -> saveRommToken()
+            is Effect.ForgetCredentials -> forget(effect.pluginId)
             is Effect.DialogChoice -> onDialog(effect)
             is Effect.ActivateBackend -> Unit
             Effect.RequestHome -> requestHome()
@@ -169,6 +180,72 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
                 folderPicker.launch(null)
             }
             DialogKind.Ok -> Unit
+            DialogKind.ReLogin -> foldcade.shell.openConnect(foldcade.store.rommOrigin().orEmpty())
+        }
+        foldcade.shell.showQueuedPrompt()
+    }
+
+    private fun saveRommToken() {
+        val origin = normalizeSetupOrigin(foldcade.shell.model.connectOrigin)
+        if (origin == null || foldcade.shell.connectToken.isBlank()) return
+        val token = foldcade.shell.connectToken.trim()
+        if (token.isEmpty()) return
+        foldcade.scope.launch {
+            val result = try {
+                RommClient(
+                    origin = origin,
+                    accessToken = { token },
+                    connectTimeout = Duration.ofSeconds(4),
+                    readTimeout = Duration.ofSeconds(4),
+                ).use { it.confirmSignIn() }
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (_: Exception) {
+                RommSignInResult.StayOnForm(null)
+            }
+            foldcade.shell.showSetupHint(result.hint)
+            if (result is RommSignInResult.Accepted) foldcade.editCredentials {
+                val saved = try {
+                    foldcade.credentials.put(
+                        RommCredentials.PLUGIN_ID,
+                        RommCredentials.ACCESS_TOKEN,
+                        Credential.ApiToken(token),
+                    )
+                    true
+                } catch (cancelled: CancellationException) {
+                    throw cancelled
+                } catch (_: Exception) {
+                    foldcade.shell.askToSignInAgain()
+                    false
+                }
+                if (saved) {
+                    foldcade.store.setRommOrigin(origin)
+                    foldcade.publishRomm()
+                    foldcade.shell.setSignedIn(listOf(SignedInBackend(RommCredentials.PLUGIN_ID, "RomM")))
+                    if (foldcade.shell.connectToken.trim() == token) foldcade.shell.consumeConnectToken()
+                }
+            }
+        }
+    }
+
+    private fun forget(pluginId: String) {
+        foldcade.scope.launch {
+            foldcade.editCredentials {
+                val forgotten = try {
+                    foldcade.credentials.forgetPlugin(pluginId)
+                    true
+                } catch (cancelled: CancellationException) {
+                    throw cancelled
+                } catch (_: Exception) {
+                    foldcade.shell.askToSignInAgain()
+                    false
+                }
+                if (forgotten) {
+                    if (pluginId == RommCredentials.PLUGIN_ID) foldcade.store.clearRommOrigin()
+                    foldcade.publishRomm()
+                    foldcade.shell.setSignedIn(foldcade.shell.model.signedIn.filter { it.pluginId != pluginId })
+                }
+            }
         }
     }
 

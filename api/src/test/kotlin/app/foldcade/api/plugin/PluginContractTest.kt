@@ -111,7 +111,9 @@ class PluginContractTest {
         assertTrue(aliases.isDefault)
         assertTrue(IdlePlatform().aliases.isEmpty())
         assertEquals(1, PLUGIN_API_VERSION)
-        assertEquals(1, PLUGIN_API_MINOR)
+        assertEquals(2, PLUGIN_API_MINOR)
+        val bind = PluginEntry::class.java.methods.single { it.name == "bind" }
+        assertTrue(bind.isDefault)
     }
 
     @Test
