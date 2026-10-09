@@ -970,20 +970,144 @@ wait_library_log() {
   return 1
 }
 
-dump_library_ui() {
-  : >"$out/ui-library.xml"
+# uiautomator dump reads the active window. While the presentation display is
+# focused, that root is null, and --windows writes an empty <displays /> before
+# the interactive-window flag applies. A fixed grep of that file misses a title
+# that is on the bottom panel. Wake the presentation display and dump again.
+focus_library_display() {
+  find_presentation_display || return 1
+  adb_do shell input -d "$presentation_logical" keyevent KEYCODE_WAKEUP || true
+}
+
+dump_active_window() {
+  adb_do shell rm -f /sdcard/foldcade-ui.xml >/dev/null 2>&1 || true
   timeout 15 adb shell uiautomator dump /sdcard/foldcade-ui.xml >/dev/null 2>&1 || true
-  timeout 15 adb shell cat /sdcard/foldcade-ui.xml 2>/dev/null | tr -d '\r' >>"$out/ui-library.xml" || true
-  timeout 15 adb shell uiautomator dump --windows /sdcard/foldcade-windows.xml >/dev/null 2>&1 || true
-  timeout 15 adb shell cat /sdcard/foldcade-windows.xml 2>/dev/null | tr -d '\r' >>"$out/ui-library.xml" || true
-  [ -s "$out/ui-library.xml" ]
+  timeout 15 adb shell cat /sdcard/foldcade-ui.xml 2>/dev/null | tr -d '\r' >"$out/ui-library.xml" || true
+  grep -q '<hierarchy' "$out/ui-library.xml"
+}
+
+library_window_is_top() {
+  grep -q "bounds=\"\\[0,0\\]\\[${top_width},${top_height}\\]\"" "$out/ui-library.xml"
+}
+
+dump_library_ui() {
+  local saved
+  : >"$out/ui-library.xml"
+  if ! dump_active_window; then
+    focus_library_display || return 1
+    dump_active_window
+    return
+  fi
+  # Grid titles live on the bottom panel. A top-panel dump is the hero.
+  if library_window_is_top; then
+    saved="$(cat "$out/ui-library.xml")"
+    focus_library_display || return 0
+    if ! dump_active_window; then
+      printf '%s\n' "$saved" >"$out/ui-library.xml"
+    fi
+  fi
+  return 0
+}
+
+# Exit 0 when [phrase] is fully inside the dumped window.
+# Exit 3 and print next, prev, up, or down when the node is outside that window.
+library_text_placement() {
+  python3 - "$out/ui-library.xml" "$1" <<'PY'
+import re
+import sys
+
+path, phrase = sys.argv[1], sys.argv[2]
+try:
+    xml = open(path, errors="replace").read()
+except OSError:
+    sys.exit(1)
+if "<hierarchy" not in xml:
+    sys.exit(1)
+nodes = re.findall(r"<node\b([^>]*)/?>", xml)
+
+def fields(blob):
+    text = re.search(r'\btext="([^"]*)"', blob)
+    bounds = re.search(r'\bbounds="\[(-?\d+),(-?\d+)\]\[(-?\d+),(-?\d+)\]"', blob)
+    label = text.group(1) if text else ""
+    box = tuple(int(part) for part in bounds.groups()) if bounds else None
+    return label, box
+
+window = None
+for blob in nodes:
+    _, box = fields(blob)
+    if box:
+        window = box
+        break
+if window is None:
+    sys.exit(1)
+_, _, width, height = window
+slop = 4
+off = None
+for blob in nodes:
+    label, box = fields(blob)
+    if box is None or phrase not in label:
+        continue
+    left, top, right, bottom = box
+    if (
+        left >= -slop
+        and top >= -slop
+        and right <= width + slop
+        and bottom <= height + slop
+        and right > left
+        and bottom > top
+    ):
+        sys.exit(0)
+    off = box
+if off is None:
+    sys.exit(2)
+left, top, right, bottom = off
+if left < -slop:
+    print("prev")
+elif right > width + slop:
+    print("next")
+elif top < -slop:
+    print("up")
+else:
+    print("down")
+sys.exit(3)
+PY
+}
+
+# The library grid pages horizontally on the presentation display.
+page_library() {
+  local toward="$1" y x_from x_to
+  find_presentation_display || return 1
+  y=$((bottom_height / 2))
+  if [ "$toward" = "prev" ]; then
+    x_from=$((bottom_width / 4))
+    x_to=$((bottom_width * 3 / 4))
+  else
+    x_from=$((bottom_width * 3 / 4))
+    x_to=$((bottom_width / 4))
+  fi
+  adb_do shell input -d "$presentation_logical" swipe "$x_from" "$y" "$x_to" "$y" 250
 }
 
 wait_library_text() {
-  local phrase="$1" attempt
-  for attempt in $(seq 1 20); do
-    if dump_library_ui && grep -q "$phrase" "$out/ui-library.xml"; then
-      return 0
+  local phrase="$1" limit="${2:-20}" attempt status direction pages=0
+  for attempt in $(seq 1 "$limit"); do
+    if dump_library_ui; then
+      if direction="$(library_text_placement "$phrase")"; then
+        return 0
+      else
+        status=$?
+      fi
+      if [ "$status" -eq 3 ] && [ "$pages" -lt 3 ]; then
+        case "$direction" in
+          prev) page_library prev || true ;;
+          down) key_bottom KEYCODE_DPAD_DOWN || true ;;
+          up) key_bottom KEYCODE_DPAD_UP || true ;;
+          *) page_library next || true ;;
+        esac
+        pages=$((pages + 1))
+        sleep 1
+        continue
+      fi
     fi
     sleep 1
   done
@@ -1012,7 +1136,7 @@ become_root() {
 # The persistable document-tree grant is read when the system server starts.
 # A guest reboot is what makes the seeded folder visible to the shell.
 seed_folder_library() {
-  local uid gid prefs tree name boot attempt
+  local uid gid prefs tree name boot attempt platform_state
   echo "step: seed folder files"
   adb_do shell mkdir -p /sdcard/Library/gba
   for name in Cart Drift Puzzle Quest Racer Runner; do
@@ -1079,11 +1203,26 @@ PY
   show_foldcade
   dismiss_leftover_dialog
   expect_foldcade
+  find_presentation_display || fail "folder library: bottom display was not found"
   wait_library_log "library-ui platforms" || fail "folder library: platform grid did not load"
   wait_library_text "Game Boy" || fail "folder library: platform title was not on screen"
+  adb logcat -c >/dev/null 2>&1 || true
   key_bottom KEYCODE_DPAD_CENTER
   wait_library_log "library-ui games" || fail "folder library: game grid did not load"
-  wait_library_text "Cart" || fail "folder library: game title was not on screen"
+  if ! wait_library_text "Cart" 6; then
+    # Confirm can land on the launch chrome and leave the platform grid up.
+    # Step onto the tile and open it. A games grid does not contain this title.
+    platform_state=0
+    library_text_placement "Game Boy" >/dev/null || platform_state=$?
+    if [ "$platform_state" -eq 0 ] || [ "$platform_state" -eq 3 ]; then
+      find_presentation_display || true
+      key_bottom KEYCODE_DPAD_DOWN || true
+      adb logcat -c >/dev/null 2>&1 || true
+      key_bottom KEYCODE_DPAD_CENTER
+      wait_library_log "library-ui games" || true
+    fi
+    wait_library_text "Cart" 14 || fail "folder library: game title was not on screen"
+  fi
   sleep 1
   resolve_screencap_ids
   capture "$primary" "$out/library-top.png"
