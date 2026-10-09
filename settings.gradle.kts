@@ -1,4 +1,5 @@
 pluginManagement {
+    includeBuild("build-logic")
     repositories {
         google()
         mavenCentral()
@@ -25,3 +26,12 @@ include(
     ":samples:out-of-tree",
     ":romm",
 )
+
+// :api, :host, and every :plugins:* module apply foldcade.jvm-api33.
+// New plugin modules inherit the API 33 Animal Sniffer check the same way.
+gradle.lifecycle.afterProject {
+    val appJvmModule = path == ":api" || path == ":host" || path.startsWith(":plugins:")
+    if (appJvmModule && !pluginManager.hasPlugin("foldcade.jvm-api33")) {
+        error("$path must apply id(\"foldcade.jvm-api33\")")
+    }
+}

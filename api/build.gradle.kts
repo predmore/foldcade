@@ -2,6 +2,7 @@ import org.jetbrains.kotlin.gradle.dsl.JvmDefaultMode
 
 plugins {
     alias(libs.plugins.kotlin.jvm)
+    id("foldcade.jvm-api33")
 }
 
 kotlin {
