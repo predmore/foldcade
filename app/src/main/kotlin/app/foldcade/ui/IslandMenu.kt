@@ -36,12 +36,14 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.zIndex
 import app.foldcade.FoldcadeApp
 import app.foldcade.R
+import app.foldcade.api.Panel
 import app.foldcade.language.Chrome
 import app.foldcade.language.Copy
 import app.foldcade.language.HostScreen
@@ -119,7 +121,11 @@ private fun Island(
     if (live != null) shown = live
     val panel = shown
     val inset = maxWidth * Metrics.insetFraction
-    val pillWidth = if (side == Side.Left) 168.dp else 260.dp
+    val pillWidth = when {
+        side == Side.Right -> 260.dp
+        launchTargetShown(app) -> 280.dp
+        else -> 72.dp
+    }
     val pillHeight = 44.dp
     val openWidth = maxWidth * 0.48f
     val openHeight = maxHeight * 0.84f
@@ -129,7 +135,10 @@ private fun Island(
     val shape = RoundedCornerShape(radius)
     val x = if (side == Side.Left) inset else maxWidth - inset - width
     val focusedIsland = progress < 0.08f && app.shell.model.panel == null && app.shell.model.dialog == null &&
-        side == Side.Right && app.shell.model.focus.chrome == Chrome.StatusCluster
+        when (side) {
+            Side.Left -> app.shell.model.focus.chrome == Chrome.LaunchTarget
+            Side.Right -> app.shell.model.focus.chrome == Chrome.StatusCluster
+        }
     val interactive = open && progress > 0.92f
     Box(
         Modifier
@@ -156,10 +165,12 @@ private fun Island(
         ) {
             if (side == Side.Left) {
                 ShoulderChip(R.drawable.ic_btn_l1, R.drawable.ic_btn_l1_filled, progress, "L1")
-                Row(Modifier.graphicsLayer { alpha = 1f - progress }, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Glyph(R.drawable.ic_status_settings, null)
-                    Glyph(R.drawable.ic_status_tools, null)
-                    Glyph(R.drawable.ic_status_volume_2, null)
+                Row(
+                    Modifier.graphicsLayer { alpha = 1f - progress },
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    LaunchTargetLabel(app, progress)
                 }
             } else {
                 Row(Modifier.graphicsLayer { alpha = 1f - progress }, horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -182,6 +193,41 @@ private fun Island(
 }
 
 private fun Side.meaning(): Meaning = if (this == Side.Left) Meaning.LeftPanel else Meaning.RightPanel
+
+/** Closed left island shows the launch target. The menu opening does not change the pill width. */
+private fun launchTargetShown(app: FoldcadeApp): Boolean {
+    val model = app.shell.model
+    if (model.dialog != null || model.connectOpen) return false
+    val game = app.shell.focusedGame() ?: return false
+    if (game.emptyShelfHint) return false
+    return app.store.session.launchTargetControlVisible(game.occupiesBothDisplays)
+}
+
+@Composable
+private fun LaunchTargetLabel(app: FoldcadeApp, progress: Float) {
+    if (!launchTargetShown(app)) return
+    val game = app.shell.focusedGame() ?: return
+    val theme = LocalFoldTheme.current.theme
+    val model = app.shell.model
+    val target = app.store.session.singleScreenTarget(game.id, game.platformId)
+    val label = if (target == Panel.Bottom || model.launchOnBottom) Copy.launchOnBottom else Copy.launchOnTop
+    val focused = model.focus.chrome == Chrome.LaunchTarget
+    BasicText(
+        text = label,
+        modifier = if (progress < 0.08f) {
+            Modifier.islandPress { app.shell.touchChrome(Chrome.LaunchTarget, HostScreen.Top) }
+        } else {
+            Modifier
+        },
+        style = TextStyle(
+            color = if (focused) theme.focus else theme.onBackground,
+            fontSize = TypeRamp.hint,
+            fontFamily = theme.font,
+        ),
+        maxLines = 1,
+        overflow = TextOverflow.Ellipsis,
+    )
+}
 
 @Composable
 private fun islandProgress(open: Boolean, scale: Float, held: Float?): Float {

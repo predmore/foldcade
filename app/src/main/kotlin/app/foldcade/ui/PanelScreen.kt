@@ -87,7 +87,6 @@ import app.foldcade.FoldcadeApp
 import app.foldcade.FoldcadeHomeActivity
 import app.foldcade.api.Panel
 import app.foldcade.api.Surface
-import app.foldcade.language.Chrome
 import app.foldcade.language.ConnectField
 import app.foldcade.language.Copy
 import app.foldcade.language.HomeGrid
@@ -536,7 +535,7 @@ private fun Picker(
             if (screen == HostScreen.Top) {
                 Spacer(Modifier.height(48.dp))
             }
-            ChromeRow(app, screen)
+            ChromeRow(app)
             Spacer(Modifier.height(clearance))
             if (detailGame != null) {
                 GameDetail(app, detailGame.id)
@@ -805,28 +804,19 @@ private fun PlayFacts(app: FoldcadeApp, gameId: String) {
 }
 
 @Composable
-private fun ChromeRow(app: FoldcadeApp, screen: HostScreen) {
+private fun ChromeRow(app: FoldcadeApp) {
     val theme = foldTheme()
     val shell = app.shell
     val model = shell.model
     val game = shell.focusedGame()
     val shelfOpen = model.panel == null && model.dialog == null && model.moonlightSheet == null && !model.connectOpen
-    val showLaunch = shelfOpen && game?.emptyShelfHint != true &&
-        app.store.session.launchTargetControlVisible(game?.occupiesBothDisplays == true)
     Column {
         val shelf = homeGridLabel(model.homeGrid)
         if (shelf != null) {
             BasicText(text = shelf, style = text(theme.onBackground, TypeRamp.sideRow, theme))
         }
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(px(12f))) {
-            if (showLaunch && game != null) {
-                val target = app.store.session.singleScreenTarget(game.id, game.platformId)
-                ChromeButton(
-                    label = if (target == Panel.Bottom || model.launchOnBottom) Copy.launchOnBottom else Copy.launchOnTop,
-                    focused = model.focus.chrome == Chrome.LaunchTarget,
-                    onClick = { shell.touchChrome(Chrome.LaunchTarget, screen) },
-                )
-            } else if (shelfOpen && game?.emptyShelfHint == true) {
+            if (shelfOpen && game?.emptyShelfHint == true) {
                 ShelfMeta(
                     line = game.shortText,
                     hintFocused = model.focus.chrome == null,
@@ -917,16 +907,6 @@ private fun ShelfMeta(line: String, hintFocused: Boolean) {
         style = text(if (hintFocused) theme.focus else theme.muted, TypeRamp.heroMeta, theme),
         maxLines = 2,
         overflow = TextOverflow.Ellipsis,
-    )
-}
-
-@Composable
-private fun ChromeButton(label: String, focused: Boolean, onClick: () -> Unit) {
-    val theme = foldTheme()
-    BasicText(
-        text = label,
-        modifier = Modifier.focusStroke(focused).hostPress(onClick).padding(px(8f)),
-        style = text(theme.onBackground, TypeRamp.sideRow, theme),
     )
 }
 
