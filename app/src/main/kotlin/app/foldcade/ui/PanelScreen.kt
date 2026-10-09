@@ -36,6 +36,7 @@ import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.draw.scale
+import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
@@ -59,6 +60,7 @@ import app.foldcade.Shelf
 import app.foldcade.api.Panel
 import app.foldcade.api.Surface
 import app.foldcade.batteryLabel
+import app.foldcade.millisUntilNextMinute
 import app.foldcade.language.Chrome
 import app.foldcade.language.Copy
 import app.foldcade.language.DialogButton
@@ -209,7 +211,7 @@ private fun Picker(
         val gap = maxWidth * Metrics.gapFraction
         val inner = maxWidth - inset * 2
         val cell = (inner - gap * (Metrics.columns - 1)) / Metrics.columns
-        val focusOutset = cell * ((Motion.scaleFocus - 1f) / 2f) + px(Metrics.focusStrokePx)
+        val focusOutset = focusOutset(cell)
         Column(Modifier.fillMaxSize().padding(horizontal = inset, vertical = inset)) {
             Box(Modifier.zIndex(1f).fillMaxWidth()) { ChromeRow(app, screen) }
             BoxWithConstraints(
@@ -373,7 +375,7 @@ private fun StatusLine(
     LaunchedEffect(context) {
         while (true) {
             status = readDeviceStatus(context)
-            delay(30_000)
+            delay(millisUntilNextMinute(System.currentTimeMillis()))
         }
     }
     Row(
@@ -503,11 +505,14 @@ private fun PagedGrid(
     val alpha = if (reduced) (1f - abs(position.value - page)).coerceIn(0.35f, 1f) else 1f
     val width = cell * Metrics.columns + gap * (Metrics.columns - 1)
     val widthPx = with(LocalDensity.current) { width.toPx() }
+    val outset = focusOutset(cell)
     Box(
         Modifier
-            .width(width)
+            .offset(x = -outset, y = -outset)
+            .width(width + outset * 2)
             .graphicsLayer { this.alpha = alpha }
-            .clipToBounds(),
+            .clipToBounds()
+            .padding(outset),
     ) {
         val low = floor(position.value).toInt()
         val high = ceil(position.value).toInt()
@@ -595,7 +600,7 @@ private fun Cell(
             modifier = Modifier
                 .size(size)
                 .scale(drawn)
-                .focusStroke(focused)
+                .focusStroke(focused, corner)
                 .hostPress(onClick),
             contentAlignment = Alignment.Center,
         ) {
@@ -616,6 +621,7 @@ private fun Cell(
         if (showTitle) {
             BasicText(
                 text = title,
+                modifier = Modifier.padding(top = focusOutset(size)),
                 style = text(theme.onBackground, TypeRamp.gridLabel, theme),
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
@@ -730,17 +736,29 @@ private fun text(
 )
 
 @Composable
-private fun Modifier.focusStroke(focused: Boolean): Modifier {
+private fun focusOutset(cell: Dp): Dp =
+    cell * ((Motion.scaleFocus - 1f) / 2f) + px(Metrics.focusStrokePx * Motion.scaleFocus)
+
+@Composable
+private fun Modifier.focusStroke(focused: Boolean, corner: Dp = Dp.Hairline): Modifier {
     val color = builtInTheme().focus
     return drawWithContent {
         drawContent()
         if (!focused) return@drawWithContent
         val stroke = Metrics.focusStrokePx
-        drawRect(
-            color = color,
-            topLeft = Offset(-stroke / 2f, -stroke / 2f),
-            size = Size(size.width + stroke, size.height + stroke),
-            style = Stroke(width = stroke),
-        )
+        val radius = if (corner > Dp.Hairline) corner.toPx() + stroke / 2f else 0f
+        val topLeft = Offset(-stroke / 2f, -stroke / 2f)
+        val bounds = Size(size.width + stroke, size.height + stroke)
+        if (radius == 0f) {
+            drawRect(color = color, topLeft = topLeft, size = bounds, style = Stroke(width = stroke))
+        } else {
+            drawRoundRect(
+                color = color,
+                topLeft = topLeft,
+                size = bounds,
+                cornerRadius = CornerRadius(radius, radius),
+                style = Stroke(width = stroke),
+            )
+        }
     }
 }

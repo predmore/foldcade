@@ -6,9 +6,11 @@ import android.content.IntentFilter
 import android.net.ConnectivityManager
 import android.net.NetworkCapabilities
 import android.os.BatteryManager
+import android.text.format.DateFormat
 import app.foldcade.language.Copy
-import java.text.DateFormat
+import java.text.SimpleDateFormat
 import java.util.Date
+import java.util.Locale
 
 data class DeviceStatus(
     val time: String,
@@ -26,11 +28,25 @@ fun readDeviceStatus(context: Context): DeviceStatus {
     val charging = status == BatteryManager.BATTERY_STATUS_CHARGING ||
         status == BatteryManager.BATTERY_STATUS_FULL
     return DeviceStatus(
-        time = DateFormat.getTimeInstance(DateFormat.SHORT).format(Date()),
+        time = clockText(context, System.currentTimeMillis()),
         batteryPercent = percent,
         charging = charging,
         network = networkName(context),
     )
+}
+
+/** Follows the device 12/24-hour setting. Does not force either style. */
+internal fun clockText(context: Context, nowMillis: Long): String {
+    val pattern = clockPattern(DateFormat.is24HourFormat(context))
+    return SimpleDateFormat(pattern, Locale.getDefault()).format(Date(nowMillis))
+}
+
+internal fun clockPattern(is24Hour: Boolean): String = if (is24Hour) "H:mm" else "h:mm a"
+
+/** Delay until the next minute boundary. Exactly on the boundary waits a full minute. */
+internal fun millisUntilNextMinute(nowMillis: Long): Long {
+    val elapsed = nowMillis.mod(60_000L)
+    return if (elapsed == 0L) 60_000L else 60_000L - elapsed
 }
 
 private fun networkName(context: Context): String {
