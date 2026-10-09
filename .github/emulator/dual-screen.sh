@@ -13,8 +13,11 @@
 # An offline emulator never reaches state device, so that call has no end.
 # Run 37885246512 booted, then the console returned
 # "KO: setMultiDisplay not supported". This script does not call that console.
-# It tries, in order: hw.display1 in config.ini, -qt-hide-window, then
-# `cmd display` (or the API 33 overlay display, confirmed with cmd display).
+# It still tries hw.display1, -qt-hide-window, then `cmd display` so a
+# presentation display can appear. Success is not which of those ran.
+# Success is a FLAG_PRESENTATION display whose real size is 1240×1080.
+# screencap needs the SurfaceFlinger id of that display. cmd display id 2
+# on the last run was the panel; --display-id only lists the physical screen.
 # A crash-consent dialog and a downloadable snapshot both block the guest
 # before adbd. Cold-boot with the adb server already up.
 set -euo pipefail
@@ -27,7 +30,8 @@ export PATH="$ANDROID_HOME/platform-tools:$ANDROID_HOME/emulator:$ANDROID_HOME/c
 out="${1:-screenshots}"
 mkdir -p "$out"
 rm -f "$out"/*.png "$out"/display-ids.txt "$out"/ui-last.xml "$out"/emulator.log \
-  "$out"/logcat.txt "$out"/failure.txt
+  "$out"/logcat.txt "$out"/failure.txt "$out"/bottom-display.txt \
+  "$out"/cmd-display-get.txt "$out"/surfaceflinger-displays.txt
 
 # Top panel plus bottom panel, side by side, with margin. 1920+1240 wide, 1080 tall.
 xvfb_geometry="3360x1280x24"
@@ -209,17 +213,34 @@ wait_for_boot() {
   fail "boot: emulator did not finish booting (adb=${state:-none})"
 }
 
-display_ids() {
-  adb_do shell dumpsys SurfaceFlinger --display-id 2>/dev/null | tr -d '\r' \
-    | sed -n 's/^Display[[:space:]]\+\([0-9][0-9]*\).*/\1/p' || true
+presentation_logical=""
+presentation_name=""
+
+# Success is this display, not which creation attempt ran.
+find_presentation_display() {
+  local dump line
+  presentation_logical=""
+  presentation_name=""
+  dump="$(adb_do shell cmd display get-displays 2>/dev/null | tr -d '\r' || true)"
+  printf '%s\n' "$dump" >"$out/cmd-display-get.txt"
+  while IFS= read -r line; do
+    [[ "$line" == *"FLAG_PRESENTATION"* ]] || continue
+    [[ "$line" =~ real[[:space:]]${bottom_width}[[:space:]]x[[:space:]]${bottom_height}([^0-9]|$) ]] || continue
+    if [[ "$line" =~ Display\ id\ ([0-9]+) ]]; then
+      presentation_logical="${BASH_REMATCH[1]}"
+    else
+      continue
+    fi
+    if [[ "$line" =~ DisplayInfo\{\"([^\"]+)\" ]]; then
+      presentation_name="${BASH_REMATCH[1]}"
+    fi
+    return 0
+  done <<<"$dump"
+  return 1
 }
 
 bottom_ready() {
-  local dump
-  mapfile -t ids < <(display_ids | awk '!seen[$0]++')
-  [ "${#ids[@]}" -ge 2 ] || return 1
-  dump="$(adb_do shell dumpsys display 2>/dev/null | tr -d '\r' || true)"
-  printf '%s\n' "$dump" | grep -q "${bottom_width}"
+  find_presentation_display
 }
 
 poll_bottom() {
@@ -240,49 +261,43 @@ start_guest_service() {
     --user 0 || true
 }
 
-second_method=""
 start_emulator ""
 wait_for_boot
-echo "step: second display config.ini"
+echo "step: presentation display"
 start_guest_service
-if poll_bottom; then
-  second_method="config.ini hw.display1"
-fi
-if [ -z "$second_method" ]; then
-  echo "step: second display qt-hide-window"
+if ! poll_bottom; then
+  echo "step: qt-hide-window"
   stop_emulator
   start_emulator "-qt-hide-window"
   wait_for_boot
   start_guest_service
-  if poll_bottom; then
-    second_method="qt-hide-window"
-  fi
+  poll_bottom || true
 fi
-if [ -z "$second_method" ]; then
-  echo "step: second display cmd display"
+if [ -z "$presentation_logical" ]; then
+  echo "step: cmd display"
   help_text="$(adb_do shell cmd display help 2>&1 || true)"
   printf '%s\n' "$help_text" >"$out/cmd-display-help.txt"
   if printf '%s\n' "$help_text" | grep -q 'create-virtual-display'; then
     adb_do shell cmd display create-virtual-display \
       --width "$bottom_width" --height "$bottom_height" --density "$bottom_density" || true
-    second_method="cmd display create-virtual-display"
   else
     echo "cmd display has no create-virtual-display on this image. Using overlay_display_devices."
     adb_do shell settings put global overlay_display_devices \
       "${bottom_width}x${bottom_height}/${bottom_density}"
-    second_method="overlay_display_devices confirmed with cmd display get-displays"
   fi
-  adb_do shell cmd display get-displays >"$out/cmd-display-get.txt" || true
-  if ! poll_bottom; then
-    echo "----- SurfaceFlinger displays -----"
-    adb_do shell dumpsys SurfaceFlinger --display-id 2>/dev/null || true
-    echo "----- cmd display get-displays -----"
-    cat "$out/cmd-display-get.txt" 2>/dev/null || true
-    fail "second display: none of config.ini, qt-hide-window, or cmd display created the bottom panel"
-  fi
+  poll_bottom || true
 fi
-printf '%s\n' "$second_method" | tee "$out/second-display-method.txt"
-echo "second display created by: ${second_method}"
+if [ -z "$presentation_logical" ]; then
+  echo "----- cmd display get-displays -----"
+  cat "$out/cmd-display-get.txt" 2>/dev/null || true
+  fail "second display: no FLAG_PRESENTATION display with real ${bottom_width}x${bottom_height}"
+fi
+{
+  echo "logical_display_id=${presentation_logical}"
+  echo "name=${presentation_name}"
+  echo "flags=FLAG_PRESENTATION"
+  echo "real=${bottom_width}x${bottom_height}"
+} | tee "$out/bottom-display.txt"
 
 echo "step: launch"
 adb_do shell input keyevent KEYCODE_WAKEUP
@@ -382,9 +397,53 @@ capture() {
   fail "screencap failed for display $id"
 }
 
+# screencap -d takes the SurfaceFlinger id. --display-id hides virtual
+# displays, so match the presentation display by name in --displays.
+resolve_screencap_ids() {
+  local dump
+  dump="$(adb_do shell dumpsys SurfaceFlinger --displays 2>/dev/null | tr -d '\r' || true)"
+  printf '%s\n' "$dump" >"$out/surfaceflinger-displays.txt"
+  primary="$(printf '%s\n' "$dump" | sed -n 's/^[[:space:]]*Display \([0-9][0-9]*\) (internal.*/\1/p' | head -1)"
+  secondary=""
+  if [ -n "$presentation_name" ]; then
+    secondary="$(printf '%s\n' "$dump" | sed -n "s/^[[:space:]]*Display \\([0-9][0-9]*\\) (virtual, \"${presentation_name}\").*/\\1/p" | head -1)"
+  fi
+  if [ -z "$secondary" ]; then
+    local virt=()
+    mapfile -t virt < <(printf '%s\n' "$dump" | sed -n 's/^[[:space:]]*Display \([0-9][0-9]*\) (virtual.*/\1/p')
+    if [ "${#virt[@]}" -eq 1 ]; then
+      secondary="${virt[0]}"
+    fi
+  fi
+  if [ -z "$secondary" ]; then
+    secondary="$presentation_logical"
+  fi
+  if [ -z "$primary" ] || [ -z "$secondary" ]; then
+    echo "----- SurfaceFlinger --displays -----"
+    printf '%s\n' "$dump" | head -n 40
+    fail "screencap ids: presentation display ${presentation_logical} has no capture id"
+  fi
+}
+
+png_geometry() {
+  python3 -c 'import struct,sys; f=open(sys.argv[1],"rb"); f.seek(16); w,h=struct.unpack(">II", f.read(8)); print("%dx%d" % (w, h))' "$1"
+}
+
+expect_png() {
+  local file="$1"
+  local want="$2"
+  local got
+  got="$(png_geometry "$file")"
+  if [ "$got" != "$want" ]; then
+    fail "${file} is ${got}, wanted ${want}"
+  fi
+}
+
 echo "step: capture both displays"
+resolve_screencap_ids
 {
   echo "Thor-sized emulator, not a Thor pass."
+  echo "presentation_logical=${presentation_logical} name=${presentation_name} FLAG_PRESENTATION real ${bottom_width}x${bottom_height}"
   echo "primary=${primary} ${top_width}x${top_height} density ${top_density}"
   echo "secondary=${secondary} ${bottom_width}x${bottom_height} density ${bottom_density}"
   echo "bottom density ${bottom_density} is derived from the 3.92 inch diagonal."
@@ -396,6 +455,8 @@ echo "step: capture both displays"
 
 capture "$primary" "$out/primary.png"
 capture "$secondary" "$out/secondary.png"
+expect_png "$out/primary.png" "${top_width}x${top_height}"
+expect_png "$out/secondary.png" "${bottom_width}x${bottom_height}"
 cp "$out/primary.png" "$out/display-${primary}.png"
 cp "$out/secondary.png" "$out/display-${secondary}.png"
 
@@ -409,5 +470,7 @@ focus_left() {
 wait_for "focus to leave the stand-in" 20 focus_left
 capture "$primary" "$out/home-primary.png"
 capture "$secondary" "$out/home-secondary.png"
+expect_png "$out/home-primary.png" "${top_width}x${top_height}"
+expect_png "$out/home-secondary.png" "${bottom_width}x${bottom_height}"
 
 echo "Captured displays $primary and $secondary. Thor-sized emulator, not a Thor pass."
