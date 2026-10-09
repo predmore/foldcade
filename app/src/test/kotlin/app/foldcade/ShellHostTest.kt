@@ -127,6 +127,7 @@ class ShellHostTest {
             listOf(
                 "app.foldcade.localfolder.LocalFolderEntry",
                 "app.foldcade.plugins.azahar.AzaharEntry",
+                "app.foldcade.plugins.gamenative.GameNativeEntry",
                 "app.foldcade.plugins.melonds.MelonDsEntry",
                 "app.foldcade.plugins.romm.RommEntry",
             ),
@@ -173,6 +174,7 @@ class ShellHostTest {
             setOf(
                 "app.foldcade.localfolder.LocalFolderEntry",
                 "app.foldcade.plugins.azahar.AzaharEntry",
+                "app.foldcade.plugins.gamenative.GameNativeEntry",
                 "app.foldcade.plugins.melonds.MelonDsEntry",
                 "app.foldcade.plugins.romm.RommEntry",
             ),
@@ -187,12 +189,15 @@ class ShellHostTest {
         assertEquals("nintendo-3ds", host.playersFor("3ds").single().platformId)
         assertEquals("melonds", host.player("melonds")?.id)
         assertEquals("nintendo-ds", host.playersFor("nds").single().platformId)
-        assertTrue(host.playerIds().containsAll(listOf("azahar", "melonds")))
+        assertTrue(host.playerIds().containsAll(listOf("azahar", "melonds", "gamenative")))
+        assertEquals("GameNative", host.library("gamenative")?.displayName)
+        assertNull(host.metadata("gamenative"))
         val stored = host.platformDefinitions()
-        assertEquals(folder.platforms.map { it.id }.toSet(), stored.map { it.id }.toSet())
-        assertEquals(folder.platforms.size, stored.size)
+        assertEquals(folder.platforms.map { it.id }.toSet() + "pc", stored.map { it.id }.toSet())
+        assertEquals(folder.platforms.size + 1, stored.size)
         val aliasesById = stored.associate { it.id to it.aliases }
-        assertEquals(folder.platforms.associate { it.id to it.aliases }, aliasesById)
+        assertEquals(folder.platforms.associate { it.id to it.aliases }, aliasesById - "pc")
+        assertEquals(emptySet<String>(), aliasesById.getValue("pc"))
         val cache = Files.createTempDirectory("romm-real-entries")
         try {
             publishRommWiring(

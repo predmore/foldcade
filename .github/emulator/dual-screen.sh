@@ -647,6 +647,48 @@ if printf '%s\n' "$input_help" | grep -q -- '-d' && printf '%s\n' "$input_help" 
     echo "missing_player_in_ui_dump=${seen}"
   } >"$out/ds-launch-path.txt"
   adb_do shell input -d "$presentation_logical" keyevent KEYCODE_BACK || true
+
+  # GameNative launch path. Thor-sized emulator, not a Thor pass.
+  # GameNative is not installed here. The capture is the missing-player state.
+  # PC is the ninth shelf tile: row 2, column 0. From DS (row 1, column 3),
+  # three steps left land on row 1 column 0, then down lands on PC.
+  echo "step: GameNative launch path"
+  echo "step: focus the PC tile"
+  adb_do shell input -d "$presentation_logical" keyevent KEYCODE_DPAD_LEFT
+  adb_do shell input -d "$presentation_logical" keyevent KEYCODE_DPAD_LEFT
+  adb_do shell input -d "$presentation_logical" keyevent KEYCODE_DPAD_LEFT
+  adb_do shell input -d "$presentation_logical" keyevent KEYCODE_DPAD_DOWN
+  sleep 1
+  capture "$primary" "$out/pc-focus-primary.png"
+  capture "$secondary" "$out/pc-focus-secondary.png"
+  expect_png "$out/pc-focus-primary.png" "${top_width}x${top_height}"
+  expect_png "$out/pc-focus-secondary.png" "${bottom_width}x${bottom_height}"
+  echo "step: open the PC tile"
+  adb_do shell input -d "$presentation_logical" keyevent KEYCODE_DPAD_CENTER
+  sleep 1
+  capture "$primary" "$out/pc-launch-primary.png"
+  capture "$secondary" "$out/pc-launch-secondary.png"
+  expect_png "$out/pc-launch-primary.png" "${top_width}x${top_height}"
+  expect_png "$out/pc-launch-secondary.png" "${bottom_width}x${bottom_height}"
+  timeout 10 adb shell uiautomator dump /sdcard/foldcade-ui.xml >/dev/null 2>&1 || true
+  timeout 10 adb shell cat /sdcard/foldcade-ui.xml | tr -d '\r' >"$out/pc-launch-ui.xml" || true
+  seen="no"
+  if grep -q 'not installed' "$out/pc-launch-ui.xml"; then
+    seen="yes"
+  fi
+  progress="no"
+  if grep -q 'Progress lives in GameNative' "$out/pc-launch-ui.xml"; then
+    progress="yes"
+  fi
+  {
+    echo "Thor-sized emulator, not a Thor pass."
+    echo "GameNative is not installed on this image. The launch captures are the missing-player path."
+    echo "Top is ${top_width}x${top_height}. Bottom is ${bottom_width}x${bottom_height}."
+    echo "This is not a measurement of GameNative's Presentation mode on the Thor bottom panel."
+    echo "missing_player_in_ui_dump=${seen}"
+    echo "progress_sentence_in_ui_dump=${progress}"
+  } >"$out/pc-launch-path.txt"
+  adb_do shell input -d "$presentation_logical" keyevent KEYCODE_BACK || true
 else
   {
     echo "Thor-sized emulator, not a Thor pass."

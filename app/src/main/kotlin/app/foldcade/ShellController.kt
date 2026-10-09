@@ -321,7 +321,9 @@ class ShellController(
         val count = countFor(next.homeGrid)
         val counted = next.copy(count = count, playerSaves = playerSaveSettings(), recentFirst = recentOrder())
         val game = tileOn(counted)
-        val visible = game != null && store.session.launchTargetControlVisible(game.occupiesBothDisplays)
+        val visible = game != null &&
+            !game.emptyShelfHint &&
+            store.session.launchTargetControlVisible(game.occupiesBothDisplays)
         return counted.copy(showLaunchTarget = visible, appActions = actionsFor(counted, game))
     }
 
@@ -346,6 +348,15 @@ class ShellController(
 
     fun setMusicVolume(volume: Float) {
         publish(model.copy(music = model.music.withVolume(volume)))
+    }
+
+    /**
+     * The shelf gained or lost catalog games, or the empty-shelf hint changed.
+     * [PickerModel.shelfEpoch] changes even when the count does not, so Compose
+     * redraws the hint.
+     */
+    fun noteShelfChanged() {
+        model = withShelf(model.copy(shelfEpoch = model.shelfEpoch + 1))
     }
 
     /** Play history changed. Recently played order follows the new last-played times. */

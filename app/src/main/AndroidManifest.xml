@@ -11,6 +11,8 @@
         <package android:name="io.github.lime3ds.android" />
         <package android:name="me.magnum.melonds" />
         <package android:name="me.magnum.melonds.nightly" />
+        <package android:name="app.gamenative" />
+        <package android:name="app.gamenative.gold" />
         <intent>
             <action android:name="android.intent.action.MAIN" />
             <category android:name="android.intent.category.LAUNCHER" />

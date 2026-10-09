@@ -158,6 +158,7 @@ dependencies {
     implementation(project(":language"))
     implementation(project(":host"))
     implementation(project(":plugins:azahar"))
+    implementation(project(":plugins:gamenative"))
     implementation(project(":plugins:local-folder"))
     implementation(project(":plugins:melonds"))
     implementation(project(":romm"))

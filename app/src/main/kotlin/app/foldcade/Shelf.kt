@@ -1,5 +1,7 @@
 package app.foldcade
 
+import app.foldcade.language.Copy
+
 data class ShelfGame(
     val id: String,
     val title: String,
@@ -12,10 +14,33 @@ data class ShelfGame(
     val contentUri: String? = null,
     val androidPackage: String? = null,
     val favorite: Boolean = false,
+    /** Library that owns this game. Null for a shelf tile that is not from a backend. */
+    val libraryId: String? = null,
+    /** Opaque key inside [libraryId]. The shell does not parse it. */
+    val remoteKey: String? = null,
+    /**
+     * GameNative is installed and this tile is the empty shelf.
+     * It tells the player to add a shortcut. It does not launch a game.
+     */
+    val emptyShelfHint: Boolean = false,
 )
 
 object Shelf {
-    val games: List<ShelfGame> = listOf(
+    /**
+     * Games confirmed from GameNative shortcuts. Empty until that catalog is read.
+     * Built-in tiles stay in front of these.
+     */
+    @Volatile
+    var catalog: List<ShelfGame> = emptyList()
+
+    /**
+     * True when `app.gamenative` or `app.gamenative.gold` is installed.
+     * With an empty [catalog], the PC tile is an empty-shelf hint.
+     */
+    @Volatile
+    var gameNativeInstalled: Boolean = false
+
+    private val builtIn: List<ShelfGame> = listOf(
         ShelfGame("shelf.clamshell", "Clamshell", "Dual screen", mark = "clamshell"),
         ShelfGame("shelf.slim", "Slim Dual", "Side by side", mark = "slim"),
         ShelfGame("shelf.handheld", "Handheld", "Landscape", mark = "handheld"),
@@ -36,5 +61,26 @@ object Shelf {
             platformId = "nintendo-ds",
             occupiesBothDisplays = true,
         ),
+        ShelfGame(
+            id = "pc.gamenative",
+            title = "PC",
+            shortText = Copy.progressInGameNative,
+            platformId = "pc",
+            occupiesBothDisplays = false,
+        ),
     )
+
+    val games: List<ShelfGame>
+        get() = builtIn.map { tile ->
+            if (tile.id == PC_TILE && gameNativeInstalled && catalog.isEmpty()) {
+                tile.copy(
+                    shortText = Copy.addShortcutInGameNative,
+                    emptyShelfHint = true,
+                )
+            } else {
+                tile
+            }
+        } + catalog
+
+    const val PC_TILE: String = "pc.gamenative"
 }

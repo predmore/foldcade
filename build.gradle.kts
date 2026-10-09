@@ -15,6 +15,7 @@ tasks.register("testDebugUnitTest") {
         ":romm:test",
         ":host:test",
         ":plugins:azahar:test",
+        ":plugins:gamenative:test",
         ":plugins:local-folder:test",
         ":plugins:melonds:test",
         ":plugins:sample:test",

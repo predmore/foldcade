@@ -5,10 +5,13 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
+import android.content.pm.PackageManager
 import app.foldcade.api.plugin.CredentialLookup
 import app.foldcade.api.plugin.CredentialStore
 import app.foldcade.api.plugin.RommCredentials
 import app.foldcade.api.plugin.SaveFolderHolder
+import app.foldcade.plugins.gamenative.GameNativeLibrary
+import app.foldcade.plugins.gamenative.GameNativePlayer
 import app.foldcade.credentials.AndroidCredentialStore
 import app.foldcade.host.PluginHost
 import app.foldcade.language.BackgroundMotion
@@ -136,8 +139,10 @@ class FoldcadeApp : Application() {
             plugins.load(classLoader)
             restorePlayerSaveFolders()
             publishRomm()
+            refreshGameNative()
             withContext(Dispatchers.Main.immediate) {
                 shell.refreshPlayerSaves()
+                shell.noteShelfChanged()
             }
             reloadInstalledApps()
         }
@@ -206,6 +211,30 @@ class FoldcadeApp : Application() {
      * A later call supersedes an earlier one. The same origin, cache, and platforms
      * leave the current wiring in place.
      */
+    /** Shortcuts and the stored list. A failure leaves the shelf tiles already there. */
+    private fun refreshGameNative() {
+        val library = plugins.library(GameNativeLibrary.ID) as? GameNativeLibrary ?: return
+        Shelf.gameNativeInstalled = gameNativePackagePresent()
+        try {
+            refreshGameNativeCatalog(this, library, File(filesDir, "gamenative/catalog.txt"))
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (_: Exception) {
+            Unit
+        }
+    }
+
+    /** `getPackageInfo` on the GameNative package list. Not a query of every package. */
+    private fun gameNativePackagePresent(): Boolean =
+        GameNativePlayer.PACKAGES.any { name ->
+            try {
+                packageManager.getPackageInfo(name, 0)
+                true
+            } catch (_: PackageManager.NameNotFoundException) {
+                false
+            }
+        }
+
     private fun restorePlayerSaveFolders() {
         for (id in plugins.playerIds()) {
             val player = plugins.player(id) as? SaveFolderHolder ?: continue
