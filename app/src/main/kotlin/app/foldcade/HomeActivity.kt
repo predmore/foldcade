@@ -25,7 +25,9 @@ import app.foldcade.api.plugin.Availability
 import app.foldcade.api.plugin.Credential
 import app.foldcade.api.plugin.Game
 import app.foldcade.api.plugin.LaunchTarget
+import app.foldcade.api.plugin.ObservedSaves
 import app.foldcade.api.plugin.Player
+import app.foldcade.api.plugin.PluginException
 import app.foldcade.api.plugin.RommCredentials
 import app.foldcade.api.plugin.SaveFolderHolder
 import app.foldcade.api.plugin.StartDisplay
@@ -71,6 +73,8 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
     private var pendingLaunch: Int? = null
     private var closeConfirmed = false
     private var settingsPlayerId: String? = null
+    private var libraryLaunching = false
+    private var libraryReturn: LibraryReturn? = null
 
     private val folderPicker = registerForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri ->
         val purpose = folderPurpose
@@ -172,7 +176,16 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
 
     override fun onResume() {
         super.onResume()
-        display?.displayId?.let { foldcade.externalPlay.endIfDisplayHome(foldcade.plays, it) }
+        val displayId = display?.displayId
+        val ending = displayId != null &&
+            foldcade.externalPlay.sessionId != null &&
+            foldcade.externalPlay.displayId == displayId
+        val pending = libraryReturn
+        if (displayId != null) foldcade.externalPlay.endIfDisplayHome(foldcade.plays, displayId)
+        if (ending && foldcade.externalPlay.sessionId == null && pending != null) {
+            libraryReturn = null
+            reconcile(pending)
+        }
         resumed = true
         refreshShellVisible()
         foldcade.reloadInstalledApps()
@@ -239,19 +252,68 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
             launchStandIn(game)
             return
         }
-        val continuing = pendingLaunch == index && closeConfirmed
-        val decision = planPlayerLaunch(
-            player = player,
-            game = shelfGame(game),
-            target = game.contentUri?.let { LaunchTarget.ContentUri(it) },
-            installedPackages = installedPackages(player.packageNames),
-            anotherBothPanelRunning = anotherBothPanelRunning(foldcade.store.session, game.id),
-            closeConfirmed = continuing,
-            saveFolderSettled = foldcade.store.saveFolderPromptSkipped(player.id),
-            componentResolves = { intent ->
-                packageManager.resolveActivity(intent.toAndroidIntent(), 0) != null
-            },
+        val libraryId = game.libraryId
+        val remoteKey = game.remoteKey
+        if (libraryId != null && remoteKey != null) {
+            if (libraryLaunching) return
+            libraryLaunching = true
+            pendingLaunch = index
+            val apiGame = shelfGame(game)
+            foldcade.scope.launch {
+                val target = try {
+                    foldcade.plugins.ensureLocal(libraryId, apiGame)
+                    foldcade.plugins.prepareLaunch(libraryId, apiGame, player).target
+                } catch (cancelled: CancellationException) {
+                    throw cancelled
+                } catch (fatal: VirtualMachineError) {
+                    throw fatal
+                } catch (_: Exception) {
+                    null
+                }
+                withContext(Dispatchers.Main.immediate) {
+                    libraryLaunching = false
+                    if (pendingLaunch != index) return@withContext
+                    if (target == null) return@withContext
+                    finishLaunch(index, game, player, target, apiGame)
+                }
+            }
+            return
+        }
+        finishLaunch(
+            index,
+            game,
+            player,
+            game.contentUri?.let { LaunchTarget.ContentUri(it) },
+            shelfGame(game),
         )
+    }
+
+    private fun finishLaunch(
+        index: Int,
+        game: ShelfGame,
+        player: Player,
+        target: LaunchTarget?,
+        apiGame: Game,
+    ) {
+        val continuing = pendingLaunch == index && closeConfirmed
+        val decision = try {
+            planPlayerLaunch(
+                player = player,
+                game = apiGame,
+                target = target,
+                installedPackages = installedPackages(player.packageNames),
+                anotherBothPanelRunning = anotherBothPanelRunning(foldcade.store.session, game.id),
+                closeConfirmed = continuing,
+                saveFolderSettled = foldcade.store.saveFolderPromptSkipped(player.id),
+                componentResolves = { intent ->
+                    packageManager.resolveActivity(intent.toAndroidIntent(), 0) != null
+                },
+            )
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (_: PluginException) {
+            return
+        }
         pendingLaunch = index
         when (decision) {
             is PlayerLaunch.Blocked -> when (decision.block) {
@@ -263,7 +325,7 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
             }
             is PlayerLaunch.Ready -> {
                 clearPendingLaunch()
-                startPlayer(game, decision)
+                startPlayer(game, decision, apiGame, player)
             }
         }
     }
@@ -343,7 +405,7 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
         }
     }
 
-    private fun startPlayer(game: ShelfGame, ready: PlayerLaunch.Ready) {
+    private fun startPlayer(game: ShelfGame, ready: PlayerLaunch.Ready, apiGame: Game, player: Player) {
         foldcade.music.onExternalLaunch()
         val assignment = displays.assignment(foldcade.store.session.defaultDisplayIsTop)
         val panel = when (ready.startDisplay) {
@@ -366,6 +428,9 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
             foldcade.externalPlay.open(foldcade.plays, game.id, displayId) {
                 val options = ActivityOptions.makeBasic().apply { launchDisplayId = displayId }
                 startActivity(ready.intent.toAndroidIntent(), options.toBundle())
+            }
+            if (game.libraryId != null) {
+                libraryReturn = LibraryReturn(game.libraryId, apiGame, player)
             }
         } catch (cancelled: CancellationException) {
             throw cancelled
@@ -559,6 +624,25 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
             homeRole.launch(roleManager.createRequestRoleIntent(RoleManager.ROLE_HOME))
         }
     }
+
+    private fun reconcile(pending: LibraryReturn) {
+        foldcade.scope.launch {
+            try {
+                foldcade.plugins.reconcile(
+                    pending.libraryId,
+                    pending.game,
+                    pending.player,
+                    ObservedSaves(emptyList()),
+                )
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (fatal: VirtualMachineError) {
+                throw fatal
+            } catch (_: Exception) {
+                Unit
+            }
+        }
+    }
 }
 
 private enum class FolderPurpose {
@@ -568,14 +652,24 @@ private enum class FolderPurpose {
 }
 
 private fun shelfGame(game: ShelfGame): Game = Game(
-    backendId = "shelf",
-    remoteKey = game.contentUri ?: game.id,
+    backendId = game.libraryId ?: "shelf",
+    remoteKey = game.remoteKey ?: game.contentUri ?: game.id,
     platformId = game.platformId.orEmpty(),
-    availability = if (game.contentUri == null) Availability.RemoteOnly else Availability.LocalOnly,
+    availability = if (game.libraryId != null || game.contentUri != null) {
+        Availability.LocalOnly
+    } else {
+        Availability.RemoteOnly
+    },
     label = game.title,
 )
 
 internal const val EXTRA_ANDROID_SHELF = "app.foldcade.extra.SHELF"
+
+private data class LibraryReturn(
+    val libraryId: String,
+    val game: Game,
+    val player: Player,
+)
 
 class PrimaryHomeActivity : FoldcadeHomeActivity() {
     override val launchesCompanion: Boolean = true

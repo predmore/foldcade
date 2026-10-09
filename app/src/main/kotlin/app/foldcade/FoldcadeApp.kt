@@ -9,6 +9,7 @@ import app.foldcade.api.plugin.CredentialLookup
 import app.foldcade.api.plugin.CredentialStore
 import app.foldcade.api.plugin.RommCredentials
 import app.foldcade.api.plugin.SaveFolderHolder
+import app.foldcade.plugins.gamenative.GameNativeLibrary
 import app.foldcade.credentials.AndroidCredentialStore
 import app.foldcade.host.PluginHost
 import app.foldcade.language.BackgroundMotion
@@ -136,8 +137,10 @@ class FoldcadeApp : Application() {
             plugins.load(classLoader)
             restorePlayerSaveFolders()
             publishRomm()
+            refreshGameNative()
             withContext(Dispatchers.Main.immediate) {
                 shell.refreshPlayerSaves()
+                shell.noteShelfChanged()
             }
             reloadInstalledApps()
         }
@@ -206,6 +209,18 @@ class FoldcadeApp : Application() {
      * A later call supersedes an earlier one. The same origin, cache, and platforms
      * leave the current wiring in place.
      */
+    /** Shortcuts and the stored list. A failure leaves the shelf tiles already there. */
+    private fun refreshGameNative() {
+        val library = plugins.library(GameNativeLibrary.ID) as? GameNativeLibrary ?: return
+        try {
+            refreshGameNativeCatalog(this, library, File(filesDir, "gamenative/catalog.txt"))
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (_: Exception) {
+            Unit
+        }
+    }
+
     private fun restorePlayerSaveFolders() {
         for (id in plugins.playerIds()) {
             val player = plugins.player(id) as? SaveFolderHolder ?: continue

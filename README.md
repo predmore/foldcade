@@ -24,7 +24,7 @@ Idle top and grid bottom, copied in place from docs/afterglow/. Keep these paths
 
 - **A two-screen home, built for the Thor.** Both displays belong to the home, so your games have room to spread out across the clamshell.
 - **Your library, wherever it lives.** Keep games in a folder on the device, or connect RomM, and browse them from the same place.
-- **One press, and you are playing.** Launch straight into Azahar or melonDS, and Foldcade hands the screens over.
+- **One press, and you are playing.** Launch straight into Azahar, melonDS, or GameNative, and Foldcade hands the screens over.
 - **Themes, starting with Afterglow.** Afterglow is the first look: dark, quiet, and easy on a late session.
 - **Lanternlight, while you browse.** A gentle piece of music sits under the home, then fades away when a game starts.
 - **Play time and recently played.** Coming in v1, so you can see where the hours went and jump back into what you played last.

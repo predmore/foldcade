@@ -8,8 +8,13 @@ import app.foldcade.api.plugin.LaunchFlag
 import app.foldcade.api.plugin.LaunchTarget
 import app.foldcade.api.plugin.StartDisplay
 import app.foldcade.localfolder.LocalFolderEntry
+import app.foldcade.api.plugin.PlayerExtra
+import app.foldcade.language.Copy
 import app.foldcade.plugins.azahar.AzaharPlayer
 import app.foldcade.plugins.azahar.Nintendo3ds
+import app.foldcade.plugins.gamenative.GameNativeLibrary
+import app.foldcade.plugins.gamenative.GameNativePlayer
+import app.foldcade.plugins.gamenative.MAIN_ACTIVITY
 import app.foldcade.plugins.melonds.EMULATOR_ACTIVITY
 import app.foldcade.plugins.melonds.MelonDsPlayer
 import java.io.File
@@ -218,6 +223,71 @@ class PlayerLaunchTest {
     }
 
     @Test
+    fun gameNativeLaunchesOnThePickerScreenWithAnIntAppId() {
+        val player = GameNativePlayer()
+        val ready = planPlayerLaunch(
+            player = player,
+            game = pcGame(),
+            target = LaunchTarget.AppRef(mapOf("app_id" to "730", "game_source" to "STEAM")),
+            installedPackages = setOf(GameNativePlayer.VANILLA_PACKAGE, GameNativePlayer.GOLD_PACKAGE),
+            anotherBothPanelRunning = false,
+            closeConfirmed = false,
+        ) as PlayerLaunch.Ready
+        assertFalse(ready.occupiesBothDisplays)
+        assertEquals(StartDisplay.PickerChoice, ready.startDisplay)
+        assertEquals(GameNativePlayer.VANILLA_PACKAGE, ready.intent.packageName)
+        assertEquals(MAIN_ACTIVITY, ready.intent.componentClass)
+        assertEquals(GameNativePlayer.ACTION_LAUNCH_GAME, ready.intent.action)
+        val appId = ready.intent.extras.filterIsInstance<PlayerExtra.Integer>().single()
+        assertEquals("app_id", appId.key)
+        assertEquals(730, appId.value)
+        assertEquals(
+            setOf(LaunchFlag.NewTask, LaunchFlag.ClearTop),
+            ready.intent.flags,
+        )
+        assertEquals(Copy.progressInGameNative, GameNativeLibrary.PROGRESS_NOTE)
+    }
+
+    @Test
+    fun gameNativeGoldIsUsedWhenItIsTheOnlyInstall() {
+        val ready = planPlayerLaunch(
+            player = GameNativePlayer(),
+            game = pcGame(),
+            target = LaunchTarget.AppRef(mapOf("app_id" to "4", "game_source" to "EPIC")),
+            installedPackages = setOf(GameNativePlayer.GOLD_PACKAGE),
+            anotherBothPanelRunning = false,
+            closeConfirmed = false,
+        ) as PlayerLaunch.Ready
+        assertEquals(GameNativePlayer.GOLD_PACKAGE, ready.intent.packageName)
+        assertEquals(MAIN_ACTIVITY, ready.intent.componentClass)
+    }
+
+    @Test
+    fun gameNativeMissingPackageIsTheMissingPlayerState() {
+        val decision = planPlayerLaunch(
+            player = GameNativePlayer(),
+            game = pcGame(),
+            target = LaunchTarget.AppRef(mapOf("app_id" to "1", "game_source" to "STEAM")),
+            installedPackages = emptySet(),
+            anotherBothPanelRunning = false,
+            closeConfirmed = false,
+        )
+        val blocked = decision as PlayerLaunch.Blocked
+        assertEquals(LaunchBlock.MissingPlayer, blocked.block)
+        assertEquals("GameNative", blocked.playerName)
+    }
+
+    @Test
+    fun manifestSeesGameNativePackagesAndDoesNotAskForEveryPackage() {
+        val xml = File("src/main/AndroidManifest.xml").readText()
+        assertFalse(xml.contains("QUERY_ALL_PACKAGES"))
+        assertFalse(xml.contains("MANAGE_EXTERNAL_STORAGE"))
+        GameNativePlayer.PACKAGES.forEach { name ->
+            assertTrue(xml.contains("android:name=\"$name\""))
+        }
+    }
+
+    @Test
     fun manifestSeesMelonDsPackagesAndDoesNotAskForEveryPackage() {
         val xml = File("src/main/AndroidManifest.xml").readText()
         assertFalse(xml.contains("QUERY_ALL_PACKAGES"))
@@ -226,6 +296,14 @@ class PlayerLaunchTest {
             assertTrue(xml.contains("android:name=\"$name\""))
         }
     }
+
+    private fun pcGame() = Game(
+        backendId = GameNativeLibrary.ID,
+        remoteKey = "STEAM_730",
+        platformId = "pc",
+        availability = Availability.LocalOnly,
+        label = "Counter-Strike",
+    )
 
     private fun dsGame() = Game(
         backendId = "shelf",

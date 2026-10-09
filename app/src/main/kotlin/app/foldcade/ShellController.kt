@@ -348,6 +348,11 @@ class ShellController(
         publish(model.copy(music = model.music.withVolume(volume)))
     }
 
+    /** The shelf gained or lost catalog games. The grid count follows [Shelf.games]. */
+    fun noteShelfChanged() {
+        model = model.copy(count = Shelf.games.size, recentFirst = recentOrder())
+    }
+
     /** Play history changed. Recently played order follows the new last-played times. */
     fun notePlayChanged() {
         val next = recentOrder()
