@@ -39,8 +39,9 @@ import kotlin.coroutines.resumeWithException
  * cancels the OkHttp call. Connect, read, and write timeouts bound every call.
  *
  * [origin] is the instance root, such as `https://romm.example`. A trailing
- * `/api` is stripped. The token is a Client API Token (`rmm_…`) or the token
- * device-code sign-in returns. This class does not store it.
+ * `/api` is stripped, in any case. A username or password in the URL is rejected
+ * so it is never saved with the origin. The token is a Client API Token (`rmm_…`)
+ * or the token device-code sign-in returns. This class does not store it.
  *
  * It does not implement a library backend or a metadata provider.
  *
@@ -757,7 +758,7 @@ class RommClient(
     companion object {
         internal fun normalizeOrigin(raw: String): String {
             var text = raw.trim().trimEnd('/')
-            if (text.endsWith("/api")) text = text.removeSuffix("/api")
+            text = stripTrailingApi(text)
             val marker = "://"
             val split = text.indexOf(marker)
             require(split > 0) { "RomM origin must be an http(s) URL" }
@@ -768,12 +769,19 @@ class RommClient(
             val cut = rest.indexOfAny(charArrayOf('/', '?', '#'))
             val authority = if (cut < 0) rest else rest.substring(0, cut)
             val tail = if (cut < 0) "" else rest.substring(cut)
-            val at = authority.lastIndexOf('@')
-            val user = if (at < 0) "" else authority.substring(0, at + 1)
-            val hostPort = if (at < 0) authority else authority.substring(at + 1)
-            val (host, port) = splitHost(hostPort)
+            require(!authority.contains('@')) { "RomM origin must not include a username or password" }
+            val (host, port) = splitHost(authority)
             require(host.isNotEmpty() && host != "[]") { "RomM origin must be an http(s) URL" }
-            return scheme + marker + user + host + port + tail
+            return scheme + marker + host + port + tail
+        }
+
+        /** Drops a trailing `/api` in any case. `https://host/API` becomes `https://host`. */
+        private fun stripTrailingApi(text: String): String {
+            val suffix = "/api"
+            if (text.length < suffix.length) return text
+            val start = text.length - suffix.length
+            if (!text.regionMatches(start, suffix, 0, suffix.length, ignoreCase = true)) return text
+            return text.dropLast(suffix.length).trimEnd('/')
         }
 
         private fun splitHost(hostPort: String): Pair<String, String> {

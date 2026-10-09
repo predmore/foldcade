@@ -2,10 +2,12 @@ package app.foldcade.credentials
 
 import app.foldcade.api.plugin.Credential
 import app.foldcade.api.plugin.CredentialLookup
+import java.util.concurrent.atomic.AtomicReference
 import javax.crypto.KeyGenerator
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotSame
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -67,6 +69,34 @@ class SealedCredentialStoreTest {
         val opened = box.open(sealed, credentialAad("a.b", "c", "api-token")) as Opened.Plain
         assertEquals("rmm_secret", opened.bytes.toString(Charsets.UTF_8))
         assertFalse(String(sealed).contains("rmm_secret"))
+    }
+
+    @Test
+    fun sealAndOpenRunOffTheMainThread() = runBlocking {
+        val caller = Thread.currentThread()
+        val sealThread = AtomicReference<Thread>()
+        val openThread = AtomicReference<Thread>()
+        val box = object : SecretBox {
+            override fun seal(plain: ByteArray, aad: ByteArray): ByteArray {
+                sealThread.set(Thread.currentThread())
+                return plain
+            }
+
+            override fun open(sealed: ByteArray, aad: ByteArray): Opened {
+                openThread.set(Thread.currentThread())
+                return Opened.Plain(sealed)
+            }
+        }
+        val store = SealedCredentialStore(MemoryBlobs(), box)
+        store.put("romm", "access-token", Credential.ApiToken("rmm_live"))
+        val found = store.lookup("romm", "access-token") as CredentialLookup.Present
+        assertEquals("rmm_live", (found.credential as Credential.ApiToken).value)
+        val sealedOn = sealThread.get()
+        val openedOn = openThread.get()
+        assertNotSame(caller, sealedOn)
+        assertNotSame(caller, openedOn)
+        assertFalse(sealedOn.name == "main")
+        assertFalse(openedOn.name == "main")
     }
 
     @Test
