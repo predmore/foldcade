@@ -24,7 +24,9 @@ import app.foldcade.romm.RomQuery
 import app.foldcade.romm.RomSummary
 import app.foldcade.romm.RommClient
 import app.foldcade.romm.RommException
+import app.foldcade.romm.RommForbidden
 import app.foldcade.romm.RommHttpException
+import app.foldcade.romm.RommUnauthorized
 import app.foldcade.romm.RommProtocolMismatch
 import app.foldcade.romm.RommUnauthenticated
 import app.foldcade.romm.RommUnavailable
@@ -205,6 +207,8 @@ class RommLibraryTest {
         assertEquals("6.0.0", (mismatch as PluginException.ProtocolMismatch).serverVersion)
         assertTrue(RommHttpException(404, "missing").toPluginException() is PluginException.NotFound)
         assertTrue(RommHttpException(401, "no").toPluginException() is PluginException.NotAuthenticated)
+        assertTrue(RommUnauthorized("no").toPluginException() is PluginException.NotAuthenticated)
+        assertTrue(RommForbidden("no").toPluginException() is PluginException.NotAuthenticated)
         assertTrue(RommUnauthenticated().toPluginException() is PluginException.NotAuthenticated)
         assertTrue(RommUnavailable("down").toPluginException() is PluginException.Unavailable)
         val old = RommUnsupportedServer("5.3.1", "too old").toPluginException()

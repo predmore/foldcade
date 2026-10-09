@@ -27,9 +27,21 @@ sealed class RommSignInResult {
     data class StayOnForm(override val hint: String?) : RommSignInResult()
 }
 
-class RommHttpException(val status: Int, val detail: String) : RommException(
+open class RommHttpException(val status: Int, val detail: String) : RommException(
     if (detail.isBlank()) "RomM returned HTTP $status" else "RomM returned HTTP $status: $detail",
 )
+
+/** HTTP 401. Distinct from [RommHttpException] so a caller can tell an auth failure from other HTTP errors. */
+class RommUnauthorized(detail: String) : RommHttpException(401, detail)
+
+/** HTTP 403. Distinct from [RommHttpException] so a caller can tell an auth failure from other HTTP errors. */
+class RommForbidden(detail: String) : RommHttpException(403, detail)
+
+internal fun rommHttp(status: Int, detail: String): RommHttpException = when (status) {
+    401 -> RommUnauthorized(detail)
+    403 -> RommForbidden(detail)
+    else -> RommHttpException(status, detail)
+}
 
 class RommUnauthenticated : RommException("RomM client token is missing")
 
