@@ -43,6 +43,7 @@ import app.foldcade.language.DialogState
 import app.foldcade.language.Effect
 import app.foldcade.language.GridKind
 import app.foldcade.language.HomeGrid
+import app.foldcade.language.HomeKeys
 import app.foldcade.language.HostScreen
 import app.foldcade.language.closeBothPanelDialog
 import app.foldcade.language.missingPlayerDialog
@@ -159,6 +160,8 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
         foldcade.shell.calibrateConfirm(key)
     }
 
+    override fun homeKeys(): HomeKeys = foldcade.shell.homeKeys()
+
     override fun onMeaning(meaning: app.foldcade.language.Meaning) {
         val openingMenu = meaning == app.foldcade.language.Meaning.LeftPanel ||
             meaning == app.foldcade.language.Meaning.RightPanel
@@ -190,6 +193,9 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
             }
             is Effect.ChoosePlayerSave -> choosePlayerSave(effect.playerId)
             Effect.PinApp, Effect.MoveApp, Effect.HideApp, Effect.ShowApp -> Unit
+            Effect.EditHome -> foldcade.shell.enterHomeEdit()
+            Effect.OpenAll -> foldcade.shell.openHomeAll()
+            Effect.ToggleAddNew -> foldcade.shell.applyHomeAddNew(foldcade.shell.model.addNewToHome)
             Effect.OpenConnect -> foldcade.shell.openConnect(foldcade.store.rommOrigin().orEmpty())
             Effect.SaveRommToken -> saveRommToken()
             is Effect.ForgetCredentials -> forget(effect.pluginId)
@@ -511,18 +517,50 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
 
     private fun launchFocused() {
         val game = foldcade.shell.focusedGame() ?: return
+        if (game.emptyShelfHint) return
         if (game.androidPackage != null) {
             launchInstalled(game)
             return
         }
         val index = Shelf.games.indexOfFirst { it.id == game.id }
-        if (index >= 0) launchGame(index) else launchStandIn(game)
+        if (index >= 0) {
+            launchGame(index)
+            return
+        }
+        val apiGame = foldcade.shell.catalogGame(game.id)
+        if (apiGame != null) {
+            launchBackendGame(
+                id = apiGame.remoteKey,
+                title = game.title,
+                platformId = apiGame.platformId,
+                libraryId = apiGame.backendId,
+                game = apiGame,
+            )
+            return
+        }
+        launchStandIn(game)
     }
 
     private fun launchLibraryGame(index: Int) {
         val entry = foldcade.shell.entryAt(index) ?: return
         val game = entry.game ?: return
         val libraryId = foldcade.shell.activeLibraryId ?: return
+        launchBackendGame(
+            id = entry.id,
+            title = entry.title,
+            platformId = entry.platformId,
+            libraryId = libraryId,
+            game = game,
+        )
+    }
+
+    private fun launchBackendGame(
+        id: String,
+        title: String,
+        platformId: String?,
+        libraryId: String,
+        game: Game,
+    ) {
         foldcade.music.onExternalLaunch()
         val generation = beginLaunch()
         foldcade.scope.launch {
@@ -562,16 +600,16 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
                 if (!launchCurrent(generation)) return@withContext
                 when (plan) {
                     is GameLaunch.Dummy -> openContent(
-                        entry.id,
-                        entry.title,
-                        entry.platformId,
+                        id,
+                        title,
+                        platformId,
                         plan.uri,
                         occupiesBoth = false,
                     )
                     is GameLaunch.Installed -> if (installedIntent != null) {
                         startExternal(
                             game.remoteKey,
-                            entry.title,
+                            title,
                             game.platformId,
                             plan.player.occupiesBothDisplays,
                             installedIntent,

@@ -231,6 +231,9 @@ sealed interface Row {
     data object AndroidGames : Row
     data object Apps : Row
     data object HiddenApps : Row
+    data object EditHome : Row
+    data object AllLibrary : Row
+    data object AddNewGames : Row
     data object PinApp : Row
     data object MoveApp : Row
     data object HideApp : Row
@@ -306,6 +309,9 @@ fun leftRows(
     add(Row.MoonlightSource)
     if (offerButtonLabels) add(Row.ButtonLabels)
     playerSaves.forEach { add(Row.PlayerSave(it.playerId)) }
+    add(Row.EditHome)
+    add(Row.AllLibrary)
+    add(Row.AddNewGames)
     add(Row.AndroidGames)
     add(Row.Apps)
     add(Row.HiddenApps)
@@ -417,6 +423,9 @@ fun rowText(row: Row, model: PickerModel): RowText = when (row) {
     Row.AndroidGames -> RowText(Copy.androidGames)
     Row.Apps -> RowText(Copy.apps)
     Row.HiddenApps -> RowText(Copy.hiddenApps)
+    Row.EditHome -> RowText(Copy.editHome)
+    Row.AllLibrary -> RowText(Copy.allLibrary)
+    Row.AddNewGames -> RowText(Copy.addNewGames, if (model.addNewToHome) Copy.addNewOn else Copy.addNewOff)
     Row.PinApp -> RowText(if (model.appActions?.favorite == true) Copy.unpin else Copy.pin)
     Row.MoveApp -> RowText(if (model.appActions?.onGamesShelf == true) Copy.moveToApps else Copy.moveToGames)
     Row.HideApp -> RowText(Copy.hideApp)
@@ -466,6 +475,9 @@ sealed interface Effect {
     data class ConfirmMoonlightImport(val checked: List<MoonlightSheetApp>) : Effect
     data object SkipMoonlightImport : Effect
     data object ReviewMoonlightImport : Effect
+    data object EditHome : Effect
+    data object OpenAll : Effect
+    data object ToggleAddNew : Effect
 }
 
 /** What a grid cell is. Existing callers stay on [Games], which launches. */
@@ -544,6 +556,8 @@ data class PickerModel(
     val moonlightPlacements: List<MoonlightPlacement> = emptyList(),
     val moonlightImportConfirmed: Boolean = false,
     val moonlightSheet: MoonlightImportSheet? = null,
+    /** Mirrors the home board. Off keeps new scans out of the grid. */
+    val addNewToHome: Boolean = true,
 )
 
 fun reduce(
@@ -694,6 +708,7 @@ private fun applyGrid(
         Meaning.Activate -> activate(model, screen)
         Meaning.Back -> backGrid(model)
         Meaning.LeftPanel, Meaning.RightPanel -> presentPanel(model, meaning, screen) to null
+        else -> model to null
     }
 }
 
@@ -904,6 +919,7 @@ private fun applyPanel(
         }
         Meaning.Activate -> activateRow(model, current, rows[index], screen)
         Meaning.LeftPanel, Meaning.RightPanel -> presentPanel(model, meaning, screen) to null
+        else -> model.copy(panel = current) to null
     }
 }
 
@@ -1009,6 +1025,9 @@ private fun activateRow(
         Row.AndroidGames -> openGrid(model, panel, HomeGrid.AndroidGames)
         Row.Apps -> openGrid(model, panel, HomeGrid.Apps)
         Row.HiddenApps -> openGrid(model, panel, HomeGrid.HiddenApps)
+        Row.EditHome -> model.copy(panel = null, focus = panel.grid, arranging = false, hold = null) to Effect.EditHome
+        Row.AllLibrary -> model.copy(panel = null, focus = panel.grid, arranging = false, hold = null) to Effect.OpenAll
+        Row.AddNewGames -> model.copy(panel = panel, addNewToHome = !model.addNewToHome) to Effect.ToggleAddNew
         Row.PinApp -> model to Effect.PinApp
         Row.MoveApp -> model.copy(panel = null, focus = panel.grid) to Effect.MoveApp
         Row.HideApp -> model.copy(panel = null, focus = panel.grid) to Effect.HideApp
@@ -1053,5 +1072,6 @@ private fun applyDialog(dialog: DialogState, meaning: Meaning): Pair<DialogState
         -> dialog.copy(index = index) to null
         Meaning.Activate -> dialog to dialog.buttons[index]
         Meaning.Back -> dialog to dialog.buttons[dialog.safeIndex.coerceIn(0, last)]
+        else -> dialog.copy(index = index) to null
     }
 }

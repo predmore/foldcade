@@ -19,6 +19,9 @@ abstract class PanelKeyActivity : ComponentActivity() {
 
     protected open fun faceMap(): FaceMap = FaceMap.standard()
 
+    /** Home grid edits and All library add keys. Idle everywhere else. */
+    protected open fun homeKeys(): HomeKeys = HomeKeys.Idle
+
     protected open fun onPromptHeld(key: PromptKey, held: Boolean) = Unit
 
     protected open fun capturingConfirm(): Boolean = false
@@ -31,7 +34,9 @@ abstract class PanelKeyActivity : ComponentActivity() {
             this,
             object : OnBackPressedCallback(true) {
                 override fun handleOnBackPressed() {
-                    if (pickerIsFocused()) onMeaning(Meaning.Back)
+                    if (!pickerIsFocused()) return
+                    val meaning = if (homeKeys() == HomeKeys.Editing) Meaning.LeaveEdit else Meaning.Back
+                    onMeaning(meaning)
                 }
             },
         )
@@ -45,7 +50,7 @@ abstract class PanelKeyActivity : ComponentActivity() {
             return true
         }
         if (keyCode == KeyEvent.KEYCODE_BACK) return false
-        val meaning = meaningOf(keyCode, event.repeatCount, faceMap()) ?: return false
+        val meaning = meaningOf(keyCode, event.repeatCount, faceMap(), homeKeys()) ?: return false
         val shoulder = meaning == Meaning.LeftPanel || meaning == Meaning.RightPanel
         if (pickerIsFocused() || (shoulder && foldcadeSurfaceFocused())) {
             onMeaning(meaning)
