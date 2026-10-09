@@ -7,6 +7,7 @@ import app.foldcade.language.ConnectField
 import app.foldcade.language.Chrome
 import app.foldcade.language.Copy
 import app.foldcade.language.DialogKind
+import app.foldcade.language.DialogState
 import app.foldcade.language.Effect
 import app.foldcade.language.GridFocus
 import app.foldcade.language.DEFAULT_TRACK_TITLE
@@ -105,6 +106,11 @@ class ShellController(
             connectOpen = false,
             connectScreen = null,
         )
+    }
+
+    fun present(dialog: DialogState) {
+        if (model.dialog != null) return
+        model = model.copy(dialog = dialog)
     }
 
     fun showQueuedPrompt() {

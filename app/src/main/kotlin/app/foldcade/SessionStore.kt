@@ -89,6 +89,13 @@ class SessionStore(private val prefs: SharedPreferences) {
         prefs.edit().putString(KEY_LIBRARY_SORT, sort.name).apply()
     }
 
+    fun playerSaveFolder(playerId: String): String? =
+        prefs.getString(saveFolderKey(playerId), null)?.takeIf { it.isNotBlank() }
+
+    fun setPlayerSaveFolder(playerId: String, uri: String) {
+        prefs.edit().putString(saveFolderKey(playerId), uri).apply()
+    }
+
     fun setMusic(enabled: Boolean, volume: Float, trackId: String) {
         val id = trackId.trim().ifEmpty { HomeMusicSetting.DEFAULT_TRACK_ID }
         prefs.edit()
@@ -143,5 +150,7 @@ class SessionStore(private val prefs: SharedPreferences) {
         private const val KEY_BACKGROUND = "background_motion"
         private const val KEY_MOTION_SPEED = "motion_speed"
         private const val KEY_LIBRARY_SORT = "library_sort"
+
+        private fun saveFolderKey(playerId: String) = "player_save_folder:$playerId"
     }
 }

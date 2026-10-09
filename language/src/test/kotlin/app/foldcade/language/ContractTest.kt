@@ -249,6 +249,26 @@ class ContractTest {
     }
 
     @Test
+    fun azaharDialogsKeepTheRunningGameOnBack() {
+        val missing = missingPlayerDialog("Azahar", HostScreen.Bottom)
+        assertEquals("Azahar is not installed", missing.title)
+        assertEquals(Copy.missingPlayerBody, missing.body)
+        assertEquals(DialogKind.MissingPlayer, missing.kind)
+
+        val close = closeBothPanelDialog(HostScreen.Bottom)
+        assertEquals(DialogButton.NotNow, close.buttons[close.safeIndex])
+        val model = PickerModel(count = 1, rowsPerPage = 1, showLaunchTarget = false, dialog = close)
+        val (kept, choice) = reduce(model, Meaning.Back)
+        assertEquals(Effect.DialogChoice(DialogButton.NotNow, DialogKind.ClosePlayer), choice)
+        assertNull(kept.dialog)
+
+        val saves = saveFolderDialog(HostScreen.Top)
+        assertEquals(DialogKind.SaveFolder, saves.kind)
+        assertEquals(HostScreen.Top, saves.screen)
+        assertFalse(saves.body.contains("sdmc"))
+    }
+
+    @Test
     fun motionTokensAreTheSharedScale() {
         assertEquals(100, Motion.durationShort)
         assertEquals(180, Motion.durationFocus)

@@ -225,6 +225,28 @@ class PluginHostTest {
     }
 
     @Test
+    fun identicalPlatformRedeclarationKeepsThePlayer() {
+        val host = PluginHost(Dispatchers.Unconfined, MemoryCredentialStore())
+        host.register(platformEntry("nintendo-3ds", setOf("3ds", "n3ds"), "Nintendo 3DS", setOf("cci", "3ds")))
+        host.register(object : PluginEntry {
+            override val apiVersion = PLUGIN_API_VERSION
+            override val platforms = listOf(
+                namedPlatform("nintendo-3ds", setOf("3ds", "n3ds"), "Nintendo 3DS", setOf("cci", "3ds")),
+            )
+            override val players = listOf(SampleAliasPlayer())
+        })
+        assertEquals(listOf("nintendo-3ds"), host.platformDefinitions().map { it.id })
+        assertEquals("n3ds-player", host.playerIds().single())
+        assertEquals("nintendo-3ds", host.playersFor("3ds").single().platformId)
+
+        val drifted = runCatching {
+            host.register(platformEntry("nintendo-3ds", setOf("3ds", "n3ds"), "Nintendo 3DS", setOf("cia")))
+        }
+        assertTrue(drifted.exceptionOrNull() is IllegalStateException)
+        assertEquals(listOf("nintendo-3ds"), host.platformDefinitions().map { it.id })
+    }
+
+    @Test
     fun thirdPartyCannotClaimReservedRommIds() {
         val host = PluginHost(Dispatchers.Unconfined, MemoryCredentialStore())
         val library = runCatching {
@@ -840,15 +862,25 @@ class IsolatedThrows : PluginEntry {
         get() = throw IllegalStateException("library list failed")
 }
 
-private fun platformEntry(id: String, aliases: Set<String>) = object : PluginEntry {
+private fun platformEntry(
+    id: String,
+    aliases: Set<String>,
+    displayName: String = id,
+    extensions: Set<String> = emptySet(),
+) = object : PluginEntry {
     override val apiVersion = PLUGIN_API_VERSION
-    override val platforms = listOf(namedPlatform(id, aliases))
+    override val platforms = listOf(namedPlatform(id, aliases, displayName, extensions))
 }
 
-private fun namedPlatform(id: String, aliases: Set<String>) = object : Platform {
+private fun namedPlatform(
+    id: String,
+    aliases: Set<String>,
+    displayName: String = id,
+    extensions: Set<String> = emptySet(),
+) = object : Platform {
     override val id = id
-    override val displayName = id
-    override val extensions = emptySet<String>()
+    override val displayName = displayName
+    override val extensions = extensions
     override val aliases = aliases
 }
 

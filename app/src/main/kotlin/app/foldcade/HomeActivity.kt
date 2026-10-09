@@ -4,6 +4,7 @@ import android.app.Activity
 import android.app.ActivityOptions
 import android.app.role.RoleManager
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.hardware.display.DisplayManager
 import android.os.Bundle
 import android.view.Display
@@ -18,12 +19,21 @@ import app.foldcade.api.ExternalApp
 import app.foldcade.api.Panel
 import app.foldcade.host.play.PlaySignal
 import app.foldcade.api.isAndroidHomeRecall
+import app.foldcade.api.plugin.Availability
 import app.foldcade.api.plugin.Credential
+import app.foldcade.api.plugin.Game
+import app.foldcade.api.plugin.LaunchTarget
 import app.foldcade.api.plugin.RommCredentials
+import app.foldcade.api.plugin.SaveFolderHolder
+import app.foldcade.api.plugin.StartDisplay
 import app.foldcade.language.DialogButton
 import app.foldcade.language.DialogKind
 import app.foldcade.language.Effect
 import app.foldcade.language.HostScreen
+import app.foldcade.language.closeBothPanelDialog
+import app.foldcade.language.missingPlayerDialog
+import app.foldcade.language.noFileDialog
+import app.foldcade.language.saveFolderDialog
 import app.foldcade.language.PanelKeyActivity
 import app.foldcade.language.SignedInBackend
 import app.foldcade.romm.RommClient
@@ -53,10 +63,38 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
         override fun onDisplayChanged(displayId: Int) = refreshShellVisible()
     }
 
+    private var folderPurpose = FolderPurpose.Library
+    private var pendingLaunch: Int? = null
+    private var closeConfirmed = false
+
     private val folderPicker = registerForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri ->
-        if (uri == null) return@registerForActivityResult
-        contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
-        foldcade.store.setFolderTree(uri.toString())
+        if (uri == null) {
+            if (folderPurpose == FolderPurpose.PlayerSave) clearPendingLaunch()
+            return@registerForActivityResult
+        }
+        when (folderPurpose) {
+            FolderPurpose.Library -> {
+                contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                foldcade.store.setFolderTree(uri.toString())
+            }
+            FolderPurpose.PlayerSave -> {
+                val read = Intent.FLAG_GRANT_READ_URI_PERMISSION
+                val write = Intent.FLAG_GRANT_WRITE_URI_PERMISSION
+                try {
+                    contentResolver.takePersistableUriPermission(uri, read or write)
+                } catch (_: SecurityException) {
+                    contentResolver.takePersistableUriPermission(uri, read)
+                }
+                val index = pendingLaunch
+                val game = index?.let { Shelf.games.getOrNull(it) }
+                val player = game?.platformId?.let { foldcade.plugins.playersFor(it).firstOrNull() }
+                if (player is SaveFolderHolder) {
+                    player.bindSaveFolder(uri.toString())
+                    foldcade.store.setPlayerSaveFolder(player.id, uri.toString())
+                }
+                if (index != null) launchGame(index)
+            }
+        }
     }
 
     private val homeRole = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) {
@@ -179,6 +217,42 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
 
     private fun launchGame(index: Int) {
         val game = Shelf.games.getOrNull(index) ?: return
+        val player = game.platformId?.let { foldcade.plugins.playersFor(it).firstOrNull() }
+        if (player == null) {
+            if (game.platformId != null) {
+                pendingLaunch = index
+                foldcade.shell.present(missingPlayerDialog("Player", hostScreen()))
+                return
+            }
+            launchStandIn(game)
+            return
+        }
+        val continuing = pendingLaunch == index && closeConfirmed
+        val decision = planPlayerLaunch(
+            player = player,
+            game = shelfGame(game),
+            target = game.contentUri?.let { LaunchTarget.ContentUri(it) },
+            installedPackages = installedPackages(player.packageNames),
+            anotherBothPanelRunning = anotherBothPanelRunning(foldcade.store.session, game.id),
+            closeConfirmed = continuing,
+        )
+        pendingLaunch = index
+        when (decision) {
+            is PlayerLaunch.Blocked -> when (decision.block) {
+                LaunchBlock.CloseFirst -> foldcade.shell.present(closeBothPanelDialog(hostScreen()))
+                LaunchBlock.MissingPlayer ->
+                    foldcade.shell.present(missingPlayerDialog(decision.playerName, hostScreen()))
+                LaunchBlock.NoLocalFile -> foldcade.shell.present(noFileDialog(hostScreen()))
+                LaunchBlock.SaveFolder -> foldcade.shell.present(saveFolderDialog(hostScreen()))
+            }
+            is PlayerLaunch.Ready -> {
+                clearPendingLaunch()
+                startPlayer(game, decision)
+            }
+        }
+    }
+
+    private fun launchStandIn(game: ShelfGame) {
         foldcade.music.onExternalLaunch()
         val session = foldcade.store.session
         val external = ExternalApp(game.id, game.occupiesBothDisplays)
@@ -212,6 +286,55 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
         }
     }
 
+    private fun startPlayer(game: ShelfGame, ready: PlayerLaunch.Ready) {
+        foldcade.music.onExternalLaunch()
+        val assignment = displays.assignment(foldcade.store.session.defaultDisplayIsTop)
+        val panel = when (ready.startDisplay) {
+            StartDisplay.Primary -> Panel.Top
+            StartDisplay.PickerChoice ->
+                foldcade.store.session.singleScreenTarget(game.id, game.platformId) ?: return
+            else -> Panel.Top
+        }
+        val displayId = when (panel) {
+            Panel.Top -> assignment.topDisplayId
+            Panel.Bottom -> assignment.bottomDisplayId ?: return
+        }
+        val external = ExternalApp(game.id, ready.occupiesBothDisplays)
+        if (ready.occupiesBothDisplays) {
+            foldcade.store.update { it.launch(external, game.platformId) }
+        } else {
+            foldcade.store.place(panel, external)
+        }
+        try {
+            val options = ActivityOptions.makeBasic().apply { launchDisplayId = displayId }
+            startActivity(ready.intent.toAndroidIntent(), options.toBundle())
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (_: Exception) {
+            foldcade.store.update { it.home(Panel.Top).home(Panel.Bottom) }
+        }
+    }
+
+    private fun installedPackages(packageNames: List<String>): Set<String> =
+        packageNames.filter { name ->
+            try {
+                packageManager.getPackageInfo(name, 0)
+                true
+            } catch (_: PackageManager.NameNotFoundException) {
+                false
+            }
+        }.toSet()
+
+    private fun hostScreen(): HostScreen {
+        val panel = displays.panelFor(this, foldcade.store.session.defaultDisplayIsTop)
+        return if (panel == Panel.Top) HostScreen.Top else HostScreen.Bottom
+    }
+
+    private fun clearPendingLaunch() {
+        pendingLaunch = null
+        closeConfirmed = false
+    }
+
     private fun cycleLaunchTarget() {
         val game = foldcade.shell.focusedGame() ?: return
         foldcade.store.update { it.cycleStoredScreen(game.id, game.platformId, onPlatform = false) }
@@ -225,10 +348,24 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
             }
             DialogKind.Folder -> if (effect.button == DialogButton.ContinueGrant) {
                 foldcade.shell.noteFolderExplained()
+                folderPurpose = FolderPurpose.Library
                 folderPicker.launch(null)
             }
-            DialogKind.Ok -> Unit
+            DialogKind.Ok -> clearPendingLaunch()
             DialogKind.ReLogin -> foldcade.shell.openConnect(foldcade.store.rommOrigin().orEmpty())
+            DialogKind.MissingPlayer -> clearPendingLaunch()
+            DialogKind.ClosePlayer -> if (effect.button == DialogButton.CloseIt) {
+                closeConfirmed = true
+                pendingLaunch?.let { launchGame(it) }
+            } else {
+                clearPendingLaunch()
+            }
+            DialogKind.SaveFolder -> if (effect.button == DialogButton.ContinueGrant) {
+                folderPurpose = FolderPurpose.PlayerSave
+                folderPicker.launch(null)
+            } else {
+                clearPendingLaunch()
+            }
         }
         foldcade.shell.showQueuedPrompt()
     }
@@ -323,6 +460,19 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
         }
     }
 }
+
+private enum class FolderPurpose {
+    Library,
+    PlayerSave,
+}
+
+private fun shelfGame(game: ShelfGame): Game = Game(
+    backendId = "shelf",
+    remoteKey = game.contentUri ?: game.id,
+    platformId = game.platformId.orEmpty(),
+    availability = if (game.contentUri == null) Availability.RemoteOnly else Availability.LocalOnly,
+    label = game.title,
+)
 
 class PrimaryHomeActivity : FoldcadeHomeActivity() {
     override val launchesCompanion: Boolean = true

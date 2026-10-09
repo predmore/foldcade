@@ -54,6 +54,9 @@ enum class DialogKind {
     Folder,
     Ok,
     ReLogin,
+    MissingPlayer,
+    ClosePlayer,
+    SaveFolder,
 }
 
 enum class DialogButton {
@@ -61,6 +64,7 @@ enum class DialogButton {
     NotNow,
     ContinueGrant,
     Ok,
+    CloseIt,
 }
 
 data class DialogState(
@@ -80,6 +84,46 @@ fun homePrompt(screen: HostScreen = HostScreen.Bottom): DialogState = DialogStat
     buttons = listOf(DialogButton.UseAsHome, DialogButton.NotNow),
     index = 1,
     safeIndex = 1,
+    screen = screen,
+)
+
+fun missingPlayerDialog(playerName: String, screen: HostScreen): DialogState = DialogState(
+    kind = DialogKind.MissingPlayer,
+    title = "$playerName is not installed",
+    body = Copy.missingPlayerBody,
+    buttons = listOf(DialogButton.Ok),
+    index = 0,
+    safeIndex = 0,
+    screen = screen,
+)
+
+fun closeBothPanelDialog(screen: HostScreen): DialogState = DialogState(
+    kind = DialogKind.ClosePlayer,
+    title = Copy.closePlayerTitle,
+    body = Copy.closePlayerBody,
+    buttons = listOf(DialogButton.CloseIt, DialogButton.NotNow),
+    index = 0,
+    safeIndex = 1,
+    screen = screen,
+)
+
+fun saveFolderDialog(screen: HostScreen): DialogState = DialogState(
+    kind = DialogKind.SaveFolder,
+    title = Copy.saveFolderTitle,
+    body = Copy.saveFolderBody,
+    buttons = listOf(DialogButton.ContinueGrant, DialogButton.NotNow),
+    index = 0,
+    safeIndex = 1,
+    screen = screen,
+)
+
+fun noFileDialog(screen: HostScreen): DialogState = DialogState(
+    kind = DialogKind.Ok,
+    title = Copy.notOnDevice,
+    body = Copy.missingFileBody,
+    buttons = listOf(DialogButton.Ok),
+    index = 0,
+    safeIndex = 0,
     screen = screen,
 )
 

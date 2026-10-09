@@ -157,6 +157,7 @@ dependencies {
     implementation(project(":api"))
     implementation(project(":language"))
     implementation(project(":host"))
+    implementation(project(":plugins:azahar"))
     implementation(project(":plugins:local-folder"))
     implementation(project(":romm"))
     implementation(project(":plugins:romm"))

@@ -4,6 +4,12 @@
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
 
+    <!-- Package visibility for the bundled Azahar player. The plugin owns the ids. -->
+    <queries>
+        <package android:name="org.azahar_emu.azahar" />
+        <package android:name="io.github.lime3ds.android" />
+    </queries>
+
     <application
         android:name=".FoldcadeApp"
         android:allowBackup="false"
