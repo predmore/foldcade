@@ -173,9 +173,8 @@ dependencies {
 }
 
 // Debug and release both merge these assets, so assembleDebug and assembleRelease
-// package the loop. -PfoldcadeHomeMusicAssets points at a directory already
-// rendered by CI. assembleRelease then copies those files and does not need
-// fluidsynth. Without the property, the task renders locally.
+// package the loop. CI renders inside the job. -PfoldcadeHomeMusicAssets is an
+// optional local copy of an already-rendered music/ directory.
 val prebuiltHomeMusic = providers.gradleProperty("foldcadeHomeMusicAssets")
 val renderHomeMusic = tasks.register<RenderHomeMusicTask>("renderHomeMusic") {
     group = "build"

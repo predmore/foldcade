@@ -19,4 +19,4 @@ SoundFont: MuseScore_General.sf3 v0.2, sha256
 from https://ftp.osuosl.org/pub/musescore/soundfont/MuseScore_General/ — MIT licensed.
 The acknowledgements are in [licenses/MuseScore_General_License.md](../licenses/MuseScore_General_License.md).
 
-`assembleRelease` packages the same assets as debug. Pass `-PfoldcadeHomeMusicAssets=<dir>` to copy a CI render (`music/manifest.json` and the ogg files) instead of running fluidsynth. The signed release workflow should use that directory. It does not need fluidsynth, ffmpeg, python3-venv, or libsndfile1 when the property is set.
+`assembleRelease` packages the same assets as debug. The home-music workflow and both release jobs render inside the job with `.github/actions/render-home-music` (fluidsynth, ffmpeg, python3-venv, libsndfile1, and the pinned SoundFont). Pass `-PfoldcadeHomeMusicAssets=<dir>` only to copy an already-rendered `music/` directory instead of running fluidsynth.

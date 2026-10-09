@@ -198,6 +198,11 @@ jobs:
           # The release configuration reads the keystore passwords. Do not write that cache.
           cache-read-only: true
 
+      # Same render as the unsigned dry-run and the home-music workflow.
+      # This step does not receive the release signing secrets.
+      - name: Render home music
+        uses: ./.github/actions/render-home-music
+
       - name: Assemble release
         env:
           FOLDCADE_RELEASE_STORE_PASSWORD: ${{ secrets.RELEASE_KEYSTORE_PASSWORD }}
@@ -239,6 +244,8 @@ jobs:
             echo "::error::APK is not signed with the release key. Refusing to upload."
             exit 1
           fi
+          unzip -l "$signed" | grep -q 'assets/music/lanternlight.ogg'
+          unzip -l "$signed" | grep -q 'assets/music/manifest.json'
           cp "$signed" "${RUNNER_TEMP}/foldcade.apk"
 
       - name: Publish GitHub Release
@@ -252,7 +259,7 @@ jobs:
         run: rm -f "${RUNNER_TEMP}/foldcade-release.jks"
 
   unsigned-release:
-    name: unsigned release version
+    name: unsigned release dry-run
     if: github.event_name == 'pull_request' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-24.04
     timeout-minutes: 30
@@ -316,6 +323,10 @@ jobs:
         with:
           cache-read-only: true
 
+      # Same render step as the signed release job. No cross-workflow wait.
+      - name: Render home music
+        uses: ./.github/actions/render-home-music
+
       - name: Assemble unsigned release
         run: |
           set -euo pipefail
@@ -332,6 +343,8 @@ jobs:
             exit 1
           fi
           apk="${apks[0]}"
+          unzip -l "$apk" | grep -q 'assets/music/lanternlight.ogg'
+          unzip -l "$apk" | grep -q 'assets/music/manifest.json'
           if "$ANDROID_HOME/build-tools/37.0.0/apksigner" verify "$apk"; then
             echo "::error::Unsigned dry-run produced a signed APK."
             exit 1
