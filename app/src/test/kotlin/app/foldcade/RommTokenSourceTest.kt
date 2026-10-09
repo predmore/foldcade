@@ -5,12 +5,18 @@ import app.foldcade.api.plugin.CredentialLookup
 import app.foldcade.api.plugin.MemoryCredentialStore
 import app.foldcade.api.plugin.RommCredentials
 import app.foldcade.api.plugin.secret
+import app.foldcade.api.plugin.Platform
 import app.foldcade.plugins.romm.RommPlugins
+import app.foldcade.romm.RegisteredDevice
 import java.nio.file.Files
+import java.nio.file.Path
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertSame
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -91,4 +97,89 @@ class RommTokenSourceTest {
             cache.toFile().deleteRecursively()
         }
     }
+
+    @Test
+    fun theSameOriginCacheAndPlatformsKeepTheWiring() {
+        val store = MemoryCredentialStore()
+        val cache = Files.createTempDirectory("romm-cache")
+        val nes = platform("nes")
+        val snes = platform("snes")
+        try {
+            publishRommWiring("https://romm.example", store, cache, listOf(nes, snes))
+            val installed = RommPlugins.wiring
+            check(installed != null)
+            installed.rememberedDevice = RegisteredDevice("device-1", "0.1.0")
+            publishRommWiring("https://romm.example", store, cache, listOf(nes, snes))
+            assertSame(installed, RommPlugins.wiring)
+            assertEquals(listOf(nes, snes), installed.platforms)
+            publishRommWiring("https://romm.example", store, cache, listOf(snes, nes))
+            val reordered = RommPlugins.wiring
+            check(reordered != null)
+            assertTrue(reordered !== installed)
+            assertEquals(listOf(snes, nes), reordered.platforms)
+            publishRommWiring("  ", store, cache, listOf(snes, nes))
+            assertNull(RommPlugins.wiring)
+            publishRommWiring(null, store, cache, emptyList())
+            assertNull(RommPlugins.wiring)
+        } finally {
+            RommPlugins.clear()
+            cache.toFile().deleteRecursively()
+        }
+    }
+
+    @Test
+    fun publishReadsOriginThenPlatformsThenCache() {
+        val seen = mutableListOf<String>()
+        val request = readRommPublish(
+            origin = {
+                seen += "origin"
+                "https://romm.example"
+            },
+            platforms = {
+                seen += "platforms"
+                emptyList()
+            },
+            cacheRoot = {
+                seen += "cache"
+                Path.of("cache")
+            },
+        )
+        assertEquals(listOf("origin", "platforms", "cache"), seen)
+        assertEquals("https://romm.example", request.origin)
+        assertEquals(Path.of("cache"), request.cacheRoot)
+    }
+
+    @Test
+    fun aLaterPublishSupersedesAnEarlierRead() {
+        val release = CountDownLatch(1)
+        val entered = CountDownLatch(1)
+        var origin = "https://first.example"
+        val installed = mutableListOf<String?>()
+        val gate = RommPublish(
+            read = {
+                val seen = origin
+                if (seen == "https://first.example") {
+                    entered.countDown()
+                    check(release.await(2, TimeUnit.SECONDS))
+                }
+                RommPublishRequest(seen, emptyList(), Path.of("cache"))
+            },
+            apply = { installed += it.origin },
+        )
+        val first = Thread { gate.publish() }
+        first.start()
+        assertTrue(entered.await(2, TimeUnit.SECONDS))
+        origin = "https://second.example"
+        gate.publish()
+        release.countDown()
+        first.join(2_000)
+        assertEquals(listOf("https://second.example"), installed)
+    }
+}
+
+private fun platform(id: String) = object : Platform {
+    override val id = id
+    override val displayName = id
+    override val extensions = emptySet<String>()
+    override val aliases = emptySet<String>()
 }

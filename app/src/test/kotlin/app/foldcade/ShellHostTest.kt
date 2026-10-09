@@ -13,19 +13,22 @@ import app.foldcade.api.plugin.Platform
 import app.foldcade.api.plugin.Player
 import app.foldcade.api.plugin.PluginEntry
 import app.foldcade.api.plugin.PluginException
+import app.foldcade.api.plugin.RommCredentials
 import app.foldcade.api.plugin.SaveSet
 import app.foldcade.api.plugin.canonicalPlatformId
 import app.foldcade.api.plugin.MemoryCredentialStore
 import app.foldcade.host.PluginHost
+import app.foldcade.language.Copy
 import app.foldcade.language.HostScreen
 import app.foldcade.language.Meaning
 import app.foldcade.localfolder.LocalFolderBackend
 import app.foldcade.localfolder.LocalFolderEntry
+import app.foldcade.plugins.romm.RommEntry
 import app.foldcade.plugins.romm.RommPlugins
-import app.foldcade.plugins.romm.RommTokenSource
 import java.nio.file.Files
 import java.util.ServiceLoader
 import java.util.concurrent.atomic.AtomicInteger
+import kotlin.coroutines.cancellation.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.runBlocking
 import org.junit.After
@@ -59,17 +62,57 @@ class ShellHostTest {
     }
 
     @Test
-    fun typedPluginExceptionIsNotTheUnavailableState() {
+    fun pluginExceptionBecomesUnavailable() {
         val host = PluginHost(Dispatchers.Unconfined, MemoryCredentialStore())
         host.register(entry(object : LabelLibrary("typed.library", "Typed") {
             override val displayName: String
                 get() = throw PluginException.Unavailable("offline")
         }))
         val shell = shell(host)
-        shell.onMeaning(Meaning.LeftPanel, HostScreen.Bottom)
-        val failure = runCatching { shell.onMeaning(Meaning.Activate, HostScreen.Bottom) }
-        assertTrue(failure.exceptionOrNull() is PluginException.Unavailable)
+        openLibrary(shell)
+        assertTrue(shell.model.unavailable)
+    }
+
+    @Test
+    fun cancellationAndVirtualMachineErrorStillLeaveRefresh() {
+        val cancelled = PluginHost(Dispatchers.Unconfined, MemoryCredentialStore())
+        cancelled.register(entry(object : LabelLibrary("cancel.library", "Cancel") {
+            override val displayName: String
+                get() = throw CancellationException("stopped")
+        }))
+        val cancelShell = shell(cancelled)
+        val cancelFailure = runCatching { openLibrary(cancelShell) }
+        assertTrue(cancelFailure.exceptionOrNull() is CancellationException)
+        assertFalse(cancelShell.model.unavailable)
+
+        val fatal = PluginHost(Dispatchers.Unconfined, MemoryCredentialStore())
+        fatal.register(entry(object : LabelLibrary("oom.library", "Oom") {
+            override val displayName: String
+                get() = throw OutOfMemoryError("simulated")
+        }))
+        val fatalShell = shell(fatal)
+        val fatalFailure = runCatching { openLibrary(fatalShell) }
+        assertTrue(fatalFailure.exceptionOrNull() is OutOfMemoryError)
+        assertFalse(fatalShell.model.unavailable)
+    }
+
+    @Test
+    fun rommIsSetUpUntilAServerIsConfigured() {
+        val store = SessionStore(MemoryPrefs())
+        val host = PluginHost(Dispatchers.Unconfined, MemoryCredentialStore())
+        host.register(RommEntry())
+        host.register(entry(LabelLibrary("local.folder", "On this device")))
+        val shell = ShellController(store, host)
+        openLibrary(shell)
+        assertEquals(listOf(Copy.setUpRomm, "On this device"), shell.model.backends)
         assertFalse(shell.model.unavailable)
+        store.setRommOrigin("https://romm.example")
+        shell.refreshLibraries()
+        assertEquals(listOf("RomM", "On this device"), shell.model.backends)
+        store.clearRommOrigin()
+        shell.refreshLibraries()
+        assertEquals(listOf(Copy.setUpRomm, "On this device"), shell.model.backends)
+        assertEquals(RommCredentials.PLUGIN_ID, host.libraryIds().first())
     }
 
     @Test
@@ -99,9 +142,13 @@ class ShellHostTest {
             )
         })
         val afterRegister = reads.get()
-        val shell = shell(host)
         val cache = Files.createTempDirectory("romm-setup")
-        shell.installRomm("https://romm.example", RommTokenSource { null }, cache)
+        publishRommWiring(
+            "https://romm.example",
+            MemoryCredentialStore(),
+            cache,
+            host.platformDefinitions(),
+        )
         val definitions = RommPlugins.wiring?.platforms
         assertEquals(host.platformDefinitions(), definitions)
         assertEquals("nintendo-3ds", canonicalPlatformId(definitions!!, "3ds"))
