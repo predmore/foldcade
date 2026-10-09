@@ -7,6 +7,8 @@ import app.foldcade.api.plugin.GameMeta
 import app.foldcade.api.plugin.MetadataProvider
 import app.foldcade.romm.RomQuery
 import app.foldcade.romm.RomSummary
+import java.text.Normalizer
+import java.util.Locale
 
 internal class RommMetadata(
     private val gate: RommGate,
@@ -34,18 +36,32 @@ internal class RommMetadata(
                 } else {
                     val term = game.label.trim().ifEmpty { return@session null }
                     val page = ops.roms(RomQuery(searchTerm = term, limit = 50, offset = 0))
-                    gate.catalog.rememberRoms(page.items)
-                    page.items.byTitle(term)?.toMeta(wiring.origin)
+                    val rom = page.items.byTitle(term) ?: return@session null
+                    gate.catalog.rememberRoms(listOf(rom))
+                    rom.toMeta(wiring.origin)
                 }
             }
         }
     }
 }
 
-private fun List<RomSummary>.byTitle(term: String): RomSummary? =
-    firstOrNull { rom ->
-        rom.name.equals(term, ignoreCase = true) || rom.fsName.equals(term, ignoreCase = true)
-    } ?: singleOrNull()
+/**
+ * One search hit is not a match. RomM's search is partial, so metadata attaches
+ * only when the ROM name or fsName equals the label after normalization.
+ */
+private fun List<RomSummary>.byTitle(term: String): RomSummary? {
+    val needle = normalizeRomTitle(term)
+    if (needle.isEmpty()) return null
+    return firstOrNull { rom ->
+        normalizeRomTitle(rom.name) == needle || normalizeRomTitle(rom.fsName) == needle
+    }
+}
+
+private fun normalizeRomTitle(raw: String?): String =
+    Normalizer.normalize(raw.orEmpty(), Normalizer.Form.NFKC)
+        .trim()
+        .lowercase(Locale.ROOT)
+        .replace(Regex("\\s+"), " ")
 
 internal fun RomSummary.toMeta(origin: String): GameMeta {
     val artwork = mutableListOf<Artwork>()
