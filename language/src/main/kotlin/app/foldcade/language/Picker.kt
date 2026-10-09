@@ -615,6 +615,7 @@ private fun coerce(focus: GridFocus, model: PickerModel): GridFocus {
     return next
 }
 
+@Suppress("UNUSED_PARAMETER")
 private fun presentPanel(model: PickerModel, meaning: Meaning, screen: HostScreen): PickerModel {
     val side = if (meaning == Meaning.LeftPanel) Side.Left else Side.Right
     val open = model.panel
@@ -625,7 +626,7 @@ private fun presentPanel(model: PickerModel, meaning: Meaning, screen: HostScree
     return model.copy(
         panel = SidePanel(
             side = side,
-            screen = screen,
+            screen = HostScreen.Top,
             level = PanelLevel.Root,
             index = 0,
             grid = grid,

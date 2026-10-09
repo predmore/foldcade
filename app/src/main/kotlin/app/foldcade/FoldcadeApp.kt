@@ -76,6 +76,9 @@ class FoldcadeApp : Application() {
     var buttonPromptFirstSession: Boolean = false
         private set
 
+    /** Set before composition when a debug capture freezes the island morph. */
+    var islandHold: IslandHold? = null
+
     /**
      * Sign-in and credential work. Keystore seal and open run here, on
      * [Dispatchers.IO], not on the main thread. Compose updates hop back to main.

@@ -158,6 +158,11 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
         foldcade.shell.calibrateConfirm(key)
     }
 
+    override fun menuTakesKeys(): Boolean {
+        val model = foldcade.shell.model
+        return model.panel != null && model.dialog == null && !model.connectOpen && foldcadeSurfaceFocused()
+    }
+
     override fun onMeaning(meaning: app.foldcade.language.Meaning) {
         foldcade.music.duckForThemeSound(meaning)
         val panel = displays.panelFor(this, foldcade.store.session.defaultDisplayIsTop) ?: return
@@ -207,6 +212,7 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
         foldcade.shell.setHomeRoleHeld(held)
         foldcade.shell.maybeAskHome(held)
         applyDialogPreview(intent)
+        applyIslandPreview(intent)
         if (launchesCompanion) {
             val manager = getSystemService(DisplayManager::class.java)
             manager.registerDisplayListener(displayListener, null)
@@ -314,6 +320,14 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
     private fun refreshShellVisible() {
         val state = display?.state ?: Display.STATE_ON
         shellVisible = resumed && state == Display.STATE_ON
+    }
+
+    private fun applyIslandPreview(intent: Intent) {
+        if (applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE == 0) return
+        val hold = parseIslandHold(intent.getStringExtra("foldcade.island")) ?: return
+        if (foldcade.islandHold != null) return
+        foldcade.islandHold = hold
+        foldcade.shell.onMeaning(hold.meaning(), HostScreen.Top)
     }
 
     private fun acceptHome(intent: Intent) {

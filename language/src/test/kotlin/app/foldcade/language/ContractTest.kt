@@ -129,7 +129,7 @@ class ContractTest {
         assertEquals(root.focus, stayed.focus)
         val opened = reduce(root, Meaning.LeftPanel, HostScreen.Bottom).first
         assertEquals(Side.Left, opened.panel?.side)
-        assertEquals(HostScreen.Bottom, opened.panel?.screen)
+        assertEquals(HostScreen.Top, opened.panel?.screen)
         val primary = reduce(opened.copy(panel = opened.panel?.copy(index = 2)), Meaning.Activate).first
         assertFalse(primary.primaryIsTop)
         assertEquals(2, primary.panel?.index)
@@ -321,6 +321,8 @@ class ContractTest {
         assertEquals(100, Motion.durationShort)
         assertEquals(180, Motion.durationFocus)
         assertEquals(200, Motion.durationTravel)
+        assertEquals(320, Motion.durationIsland)
+        assertTrue(Motion.durationIsland in 280..350)
         assertEquals(1f, Motion.scaleRest)
         assertEquals(1.05f, Motion.scaleFocus)
         assertEquals(100, Motion.duration(Motion.durationTravel, animatorScale = 0f))
