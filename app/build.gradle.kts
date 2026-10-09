@@ -137,6 +137,8 @@ tasks.register("printFoldcadeIdentity") {
 dependencies {
     implementation(project(":api"))
     implementation(project(":language"))
+    implementation(project(":host"))
+    implementation(project(":plugins:local-folder"))
     implementation(project(":romm"))
     implementation(project(":plugins:romm"))
     implementation(libs.androidx.core)

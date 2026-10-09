@@ -80,6 +80,7 @@ import app.foldcade.language.HostScreen
 import app.foldcade.language.Meaning
 import app.foldcade.language.Metrics
 import app.foldcade.language.Motion
+import app.foldcade.language.PanelLevel
 import app.foldcade.language.Side
 import app.foldcade.language.SidePanel
 import app.foldcade.language.TypeRamp
@@ -267,16 +268,23 @@ private fun Picker(
                     1
                 }
                 SideEffect { shell.setRowsPerPage(rows) }
-                PagedGrid(
-                    app = app,
-                    screen = screen,
-                    cell = cell,
-                    gap = gap,
-                    rows = rows,
-                    scale = scale,
-                    showTitle = showTitles,
-                    usesBoth = game?.occupiesBothDisplays == true && session.bothScreensFree(),
-                )
+                val libraryFailed = model.unavailable &&
+                    model.panel?.level == PanelLevel.Library &&
+                    model.panel?.side == Side.Left
+                if (libraryFailed) {
+                    Unavailable()
+                } else {
+                    PagedGrid(
+                        app = app,
+                        screen = screen,
+                        cell = cell,
+                        gap = gap,
+                        rows = rows,
+                        scale = scale,
+                        showTitle = showTitles,
+                        usesBoth = game?.occupiesBothDisplays == true && session.bothScreensFree(),
+                    )
+                }
             }
         }
     }
@@ -332,7 +340,12 @@ private fun LeftPanel(
             .padding(px(24f)),
         verticalArrangement = Arrangement.spacedBy(px(8f)),
     ) {
-        PanelRows(app, screen, panel, progress, interactive = open)
+        val libraryFailed = panel.level == PanelLevel.Library && app.shell.model.unavailable
+        if (libraryFailed) {
+            Unavailable()
+        } else {
+            PanelRows(app, screen, panel, progress, interactive = open)
+        }
     }
 }
 
@@ -723,6 +736,12 @@ private fun DialogCard(
             }
         }
     }
+}
+
+@Composable
+private fun Unavailable() {
+    val theme = builtInTheme()
+    BasicText(text = Copy.unavailable, style = text(theme.onBackground, TypeRamp.dialogTitle, theme))
 }
 
 @Composable

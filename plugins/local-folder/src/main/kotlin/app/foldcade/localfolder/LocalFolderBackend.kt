@@ -16,6 +16,8 @@ import app.foldcade.api.plugin.SaveSlot
 import app.foldcade.api.plugin.SyncOutcome
 import app.foldcade.api.plugin.SyncResult
 import java.util.Locale
+import java.util.concurrent.atomic.AtomicInteger
+import java.util.concurrent.atomic.AtomicReference
 import kotlin.coroutines.cancellation.CancellationException
 import kotlin.coroutines.coroutineContext
 import kotlinx.coroutines.ensureActive
@@ -41,36 +43,47 @@ class LocalFolderBackend(
     override val id: String = ID
     override val displayName: String = DISPLAY_NAME
 
-    @Volatile
-    private var treeRoot: FolderEntry? = root
+    private val generation = AtomicInteger()
+    private val binding = AtomicReference<Binding?>(null)
 
     @Volatile
-    private var listChildren: ((FolderEntry) -> List<FolderEntry>)? = childrenOf
+    private var stored: StoredScan? = null
 
-    @Volatile
-    private var cached: FolderScan? = null
+    init {
+        if (root != null && childrenOf != null) {
+            bindTree(root, childrenOf)
+        }
+    }
 
     /**
      * Document tree to scan. Call this before [connect].
      * Replaces any tree already set and drops the cached scan.
+     * A scan that started on the previous tree does not publish after this returns.
+     * The generation is the check. This method does not take [gate].
      */
     fun bindTree(root: FolderEntry, childrenOf: (FolderEntry) -> List<FolderEntry>) {
-        treeRoot = root
-        listChildren = childrenOf
-        cached = null
+        val ticket = generation.incrementAndGet()
+        val next = Binding(ticket, root, childrenOf)
+        while (true) {
+            val current = binding.get()
+            if (current != null && current.generation > ticket) return
+            stored = null
+            if (binding.compareAndSet(current, next)) return
+        }
     }
 
     private val gate = Mutex()
     private val remembered = HashMap<String, Map<String, RememberedSave>>()
 
     override suspend fun connect() {
-        val scan = performScan()
-        gate.withLock { cached = scan }
+        val current = binding.get() ?: throw PluginException.Unavailable("Choose a folder.")
+        val scan = scanOf(current)
+        gate.withLock { publish(current.generation, scan) }
     }
 
     override suspend fun disconnect() {
         coroutineContext.ensureActive()
-        gate.withLock { cached = null }
+        gate.withLock { stored = null }
     }
 
     override suspend fun listPlatforms(): List<ListedPlatform> {
@@ -122,28 +135,52 @@ class LocalFolderBackend(
     }
 
     private suspend fun load(): FolderScan {
-        cached?.let { ready ->
+        while (true) {
             coroutineContext.ensureActive()
-            return ready
+            published()?.let { return it }
+            val current = binding.get() ?: throw PluginException.Unavailable("Choose a folder.")
+            val scan = scanOf(current)
+            val fresh = gate.withLock {
+                val latest = binding.get()
+                if (latest == null || latest.generation != current.generation) {
+                    null
+                } else {
+                    published() ?: scan.also { publish(current.generation, it) }
+                }
+            }
+            if (fresh != null) return fresh
         }
-        val scan = performScan()
-        return gate.withLock { cached ?: scan.also { cached = it } }
     }
 
-    private suspend fun performScan(): FolderScan {
+    private suspend fun scanOf(current: Binding): FolderScan {
         coroutineContext.ensureActive()
         val context = coroutineContext
-        val root = treeRoot ?: throw PluginException.Unavailable("Choose a folder.")
-        val childrenOf = listChildren ?: throw PluginException.Unavailable("Choose a folder.")
         val scan = scanFolderTree(
-            root = root,
+            root = current.root,
             isCancelled = { !context.isActive },
-            childrenOf = childrenOf,
+            childrenOf = current.childrenOf,
         )
         if (scan.cancelled || !context.isActive) {
             throw CancellationException("Local folder scan was cancelled")
         }
         return scan
+    }
+
+    /** Publishes [scan] only when [ticket] is still the bound tree. */
+    private fun publish(ticket: Int, scan: FolderScan) {
+        val current = binding.get()
+        if (current == null || current.generation != ticket) return
+        stored = StoredScan(ticket, scan)
+        val latest = binding.get()
+        if (latest == null || latest.generation != ticket) {
+            stored = null
+        }
+    }
+
+    private fun published(): FolderScan? {
+        val current = binding.get() ?: return null
+        val snap = stored ?: return null
+        return if (snap.generation == current.generation) snap.scan else null
     }
 
     private suspend fun requireGame(game: Game): FolderGame {
@@ -160,6 +197,17 @@ class LocalFolderBackend(
         const val DISPLAY_NAME: String = "Local folder"
     }
 }
+
+private class Binding(
+    val generation: Int,
+    val root: FolderEntry,
+    val childrenOf: (FolderEntry) -> List<FolderEntry>,
+)
+
+private class StoredScan(
+    val generation: Int,
+    val scan: FolderScan,
+)
 
 private data class RememberedSave(
     val slot: String,

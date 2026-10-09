@@ -214,6 +214,7 @@ data class PickerModel(
     val connectWarning: String? = null,
     val connectHint: String? = null,
     val reLoginPending: Boolean = false,
+    val unavailable: Boolean = false,
 )
 
 fun reduce(

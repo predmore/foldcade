@@ -1,19 +1,21 @@
 package app.foldcade
 
-import android.content.SharedPreferences
 import app.foldcade.api.plugin.Credential
 import app.foldcade.api.plugin.CredentialLookup
 import app.foldcade.api.plugin.CredentialStore
+import app.foldcade.api.plugin.MemoryCredentialStore
 import app.foldcade.credentials.MemoryBlobs
 import app.foldcade.credentials.Opened
 import app.foldcade.credentials.SealedCredentialStore
 import app.foldcade.credentials.SecretBox
 import app.foldcade.credentials.StoredBlob
 import app.foldcade.credentials.openSealed
+import app.foldcade.host.PluginHost
 import app.foldcade.language.Copy
 import app.foldcade.language.DialogKind
 import app.foldcade.language.SignedInBackend
 import app.foldcade.romm.CLEARTEXT_CREDENTIAL_WARNING
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
@@ -42,7 +44,7 @@ class CredentialRecoveryTest {
 
     @Test
     fun httpSetupShowsTheCleartextWarning() {
-        val shell = ShellController(SessionStore(MemoryPrefs()))
+        val shell = ShellController(SessionStore(MemoryPrefs()), PluginHost(Dispatchers.Unconfined, MemoryCredentialStore()))
         shell.openConnect("https://romm.example")
         assertNull(shell.model.connectWarning)
         shell.editOrigin("http://192.168.1.20:8080")
@@ -56,7 +58,7 @@ class CredentialRecoveryTest {
     }
 
     private fun assertSignedOut(lookup: CredentialLookup) {
-        val shell = ShellController(SessionStore(MemoryPrefs()))
+        val shell = ShellController(SessionStore(MemoryPrefs()), PluginHost(Dispatchers.Unconfined, MemoryCredentialStore()))
         shell.setSignedIn(listOf(SignedInBackend("romm", "RomM"), SignedInBackend("other", "other")))
         shell.applyRecovery(signedInRecovery(lookup, shell.model.signedIn))
         assertTrue(shell.model.signedIn.isEmpty())
@@ -79,43 +81,4 @@ private class ThrowingStore : CredentialStore {
     override suspend fun keys(pluginId: String): Set<String> = emptySet()
 
     override suspend fun pluginIds(): Set<String> = setOf("romm")
-}
-
-private class MemoryPrefs : SharedPreferences {
-    override fun getAll(): MutableMap<String, Any?> = mutableMapOf()
-
-    override fun getString(key: String?, defValue: String?): String? = defValue
-
-    override fun getStringSet(key: String?, defValues: MutableSet<String>?): MutableSet<String>? = defValues
-
-    override fun getInt(key: String?, defValue: Int): Int = defValue
-
-    override fun getLong(key: String?, defValue: Long): Long = defValue
-
-    override fun getFloat(key: String?, defValue: Float): Float = defValue
-
-    override fun getBoolean(key: String?, defValue: Boolean): Boolean = defValue
-
-    override fun contains(key: String?): Boolean = false
-
-    override fun edit(): SharedPreferences.Editor = object : SharedPreferences.Editor {
-        override fun putString(key: String?, value: String?) = this
-        override fun putStringSet(key: String?, values: MutableSet<String>?) = this
-        override fun putInt(key: String?, value: Int) = this
-        override fun putLong(key: String?, value: Long) = this
-        override fun putFloat(key: String?, value: Float) = this
-        override fun putBoolean(key: String?, value: Boolean) = this
-        override fun remove(key: String?) = this
-        override fun clear() = this
-        override fun commit(): Boolean = true
-        override fun apply() = Unit
-    }
-
-    override fun registerOnSharedPreferenceChangeListener(
-        listener: SharedPreferences.OnSharedPreferenceChangeListener?,
-    ) = Unit
-
-    override fun unregisterOnSharedPreferenceChangeListener(
-        listener: SharedPreferences.OnSharedPreferenceChangeListener?,
-    ) = Unit
 }

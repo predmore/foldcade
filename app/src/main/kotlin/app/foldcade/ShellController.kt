@@ -1,5 +1,7 @@
 package app.foldcade
 
+import app.foldcade.host.PluginCallException
+import app.foldcade.host.PluginHost
 import app.foldcade.language.ConnectField
 import app.foldcade.language.Chrome
 import app.foldcade.language.Effect
@@ -7,6 +9,7 @@ import app.foldcade.language.GridFocus
 import app.foldcade.language.HostScreen
 import app.foldcade.language.Meaning
 import app.foldcade.language.Metrics
+import app.foldcade.language.PanelLevel
 import app.foldcade.language.PickerModel
 import app.foldcade.language.SignedInBackend
 import app.foldcade.language.connectFields
@@ -15,12 +18,19 @@ import app.foldcade.language.focusAndActivateDialog
 import app.foldcade.language.homePrompt
 import app.foldcade.language.reduce
 import app.foldcade.language.signInAgainPrompt
+import app.foldcade.plugins.romm.RommPlugins
+import app.foldcade.plugins.romm.RommTokenSource
+import app.foldcade.plugins.romm.RommWiring
 import app.foldcade.romm.cleartextCredentialWarning
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
+import java.nio.file.Path
 
-class ShellController(private val store: SessionStore) {
+class ShellController(
+    private val store: SessionStore,
+    private val plugins: PluginHost,
+) {
     var model by mutableStateOf(initial())
         private set
 
@@ -31,6 +41,9 @@ class ShellController(private val store: SessionStore) {
         val (next, effect) = reduce(prepared(), meaning, screen)
         if (!next.connectOpen) connectToken = ""
         publish(next)
+        if (next.panel?.level == PanelLevel.Library) {
+            refreshLibraries()
+        }
         return effect
     }
 
@@ -97,7 +110,40 @@ class ShellController(private val store: SessionStore) {
         val (next, effect) = reduce(model.copy(connectIndex = index), Meaning.Activate, screen)
         if (!next.connectOpen) connectToken = ""
         publish(next)
+        if (next.panel?.level == PanelLevel.Library) {
+            refreshLibraries()
+        }
         return effect
+    }
+
+    /**
+     * Installs the RomM server [RommPlugins] reads.
+     * [PluginHost.platformDefinitions] is the platform list, aliases included.
+     * A RomM slug that matches one of those ids or aliases becomes that canonical id.
+     */
+    fun installRomm(origin: String, tokenSource: RommTokenSource, cacheRoot: Path) {
+        RommPlugins.install(
+            RommWiring(
+                origin = origin,
+                tokenSource = tokenSource,
+                cacheRoot = cacheRoot,
+                platforms = plugins.platformDefinitions(),
+            ),
+        )
+    }
+
+    /**
+     * Library names come from [PluginHost.libraryLabel].
+     * The shell does not call a plugin object itself.
+     * [PluginCallException] becomes the unavailable state.
+     */
+    fun refreshLibraries() {
+        try {
+            val names = plugins.libraryIds().map { plugins.libraryLabel(it) }
+            model = model.copy(backends = names, unavailable = false)
+        } catch (failure: PluginCallException) {
+            model = model.copy(unavailable = true)
+        }
     }
 
     fun setRowsPerPage(rows: Int) {

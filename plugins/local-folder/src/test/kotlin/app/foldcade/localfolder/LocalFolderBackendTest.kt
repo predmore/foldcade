@@ -269,6 +269,41 @@ class LocalFolderBackendTest {
         )
         assertEquals(listOf("player.b", "player.a"), backend.saves(game).slots.map { it.lastPlayerId })
     }
+
+    @Test(timeout = 5_000)
+    fun bindTreeDropsAnInFlightScanOfThePreviousFolder() = runBlocking {
+        val started = CompletableFuture<Unit>()
+        val release = CountDownLatch(1)
+        val previous = folderDir(
+            "content://old",
+            "nds",
+            listOf(folderFile("content://old/game", "Old.nds")),
+        )
+        val next = folderDir(
+            "content://new",
+            "snes",
+            listOf(folderFile("content://new/game", "New.sfc")),
+        )
+        val previousChildren = indexTree(previous)
+        val backend = LocalFolderBackend()
+        val scanning = launch(Dispatchers.Default) {
+            backend.bindTree(previous.entry()) { entry ->
+                started.complete(Unit)
+                release.await()
+                previousChildren(entry)
+            }
+            backend.connect()
+        }
+        try {
+            started.get(2, TimeUnit.SECONDS)
+            backend.bindTree(next.entry(), indexTree(next))
+        } finally {
+            release.countDown()
+        }
+        scanning.join()
+        assertEquals(listOf("New"), backend.listGames("snes", GameQuery()).games.map { it.label })
+        assertTrue(backend.listGames("nintendo-ds", GameQuery()).games.isEmpty())
+    }
 }
 
 private class TreeNode(

@@ -20,8 +20,9 @@ interface PluginEntry {
 
     /**
      * [PLUGIN_API_MINOR] this plugin was compiled against.
-     * The default is 0. The host loads a minor less than or equal to its own
-     * and rejects a newer minor.
+     * A plugin template sets `apiMinor = PLUGIN_API_MINOR`.
+     * The default is 0 so a plugin that does not declare a minor still loads.
+     * The host loads a minor less than or equal to its own and rejects a newer minor.
      */
     val apiMinor: Int
         get() = 0

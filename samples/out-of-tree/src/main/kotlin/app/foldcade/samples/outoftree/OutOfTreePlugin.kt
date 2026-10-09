@@ -33,6 +33,9 @@ import kotlinx.coroutines.yield
  * Library and metadata are separate objects in separate slots.
  *
  * A plugin Foldcade loads in-process is part of the GPLv3 work when distributed.
+ *
+ * Set `apiMinor = PLUGIN_API_MINOR`. That is the additive revision this plugin
+ * was compiled against. Leaving the interface default, 0, marks an older minor.
  */
 class OutOfTreeEntry : PluginEntry {
     override val apiVersion = PLUGIN_API_VERSION

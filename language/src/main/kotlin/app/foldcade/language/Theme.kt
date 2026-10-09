@@ -88,6 +88,7 @@ object Copy {
     const val offline = "Offline"
     const val homePromptTitle = "Use Foldcade as Home?"
     const val homePromptBody = "You can change this later in Android settings."
+    const val unavailable = "Unavailable"
     const val noLibrary = "No library yet"
     const val libraryUnreachable = "Couldn’t reach the library"
     const val tryAgain = "Try again"

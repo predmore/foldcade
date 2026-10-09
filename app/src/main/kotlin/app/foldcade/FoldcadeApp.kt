@@ -5,15 +5,16 @@ import app.foldcade.api.plugin.CredentialLookup
 import app.foldcade.api.plugin.CredentialStore
 import app.foldcade.api.plugin.RommCredentials
 import app.foldcade.credentials.AndroidCredentialStore
+import app.foldcade.host.PluginHost
 import app.foldcade.language.SignedInBackend
 import java.nio.file.Path
+import kotlin.coroutines.cancellation.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
-import kotlin.coroutines.cancellation.CancellationException
 
 class FoldcadeApp : Application() {
     lateinit var store: SessionStore
@@ -29,17 +30,25 @@ class FoldcadeApp : Application() {
 
     lateinit var shell: ShellController
         private set
+    lateinit var plugins: PluginHost
+        private set
     var companionLaunched: Boolean = false
 
     val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private val credentialGate = Mutex()
+    private val pluginLoad = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
     override fun onCreate() {
         super.onCreate()
         store = SessionStore(getSharedPreferences("foldcade", MODE_PRIVATE))
         credentials = AndroidCredentialStore(this)
-        shell = ShellController(store)
+        plugins = PluginHost(Dispatchers.IO, credentials)
+        shell = ShellController(store, plugins)
         refreshCredentials()
+        pluginLoad.launch {
+            plugins.load(classLoader)
+            publishRomm()
+        }
     }
 
     fun refreshCredentials() {
@@ -76,7 +85,12 @@ class FoldcadeApp : Application() {
 
     /** Installs or clears [app.foldcade.plugins.romm.RommPlugins] from the saved origin and this store. */
     fun publishRomm() {
-        publishRommWiring(store.rommOrigin(), credentials, rommCacheRoot())
+        publishRommWiring(
+            store.rommOrigin(),
+            credentials,
+            rommCacheRoot(),
+            plugins.platformDefinitions(),
+        )
     }
 
     private fun rommCacheRoot(): Path = cacheDir.toPath().resolve("romm")

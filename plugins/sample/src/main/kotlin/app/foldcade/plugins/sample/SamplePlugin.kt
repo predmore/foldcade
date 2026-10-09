@@ -32,6 +32,9 @@ import kotlinx.coroutines.yield
  *
  * A plugin Foldcade loads in-process is part of the GPLv3 work when distributed.
  * Community plugins use this same entry point and those same license terms.
+ *
+ * Set `apiMinor = PLUGIN_API_MINOR`. That is the additive revision this plugin
+ * was compiled against. Leaving the interface default, 0, marks an older minor.
  */
 class SampleEntry : PluginEntry {
     override val apiVersion = PLUGIN_API_VERSION

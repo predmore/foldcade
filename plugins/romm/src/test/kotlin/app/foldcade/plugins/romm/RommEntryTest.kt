@@ -5,6 +5,7 @@ import app.foldcade.api.plugin.MetadataProvider
 import app.foldcade.api.plugin.PLUGIN_API_MINOR
 import app.foldcade.api.plugin.PLUGIN_API_VERSION
 import app.foldcade.api.plugin.PluginEntry
+import app.foldcade.api.plugin.MemoryCredentialStore
 import app.foldcade.host.PluginHost
 import app.foldcade.romm.RommContract
 import java.io.File
@@ -37,7 +38,7 @@ class RommEntryTest {
         assertTrue(entry.platforms.isEmpty())
         assertTrue(entry.players.isEmpty())
 
-        val host = PluginHost(Dispatchers.Unconfined)
+        val host = PluginHost(Dispatchers.Unconfined, MemoryCredentialStore())
         host.register(entry)
         assertEquals(library.id, host.library(ROMM_LIBRARY_ID)?.id)
         assertEquals(metadata.id, host.metadata(ROMM_METADATA_ID)?.id)

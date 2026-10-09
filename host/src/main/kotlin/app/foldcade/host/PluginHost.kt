@@ -4,7 +4,6 @@ import app.foldcade.api.plugin.BoundCredentialAccess
 import app.foldcade.api.plugin.CredentialStore
 import app.foldcade.api.plugin.Game
 import app.foldcade.api.plugin.GameMeta
-import app.foldcade.api.plugin.MemoryCredentialStore
 import app.foldcade.api.plugin.RommCredentials
 import app.foldcade.api.plugin.GamePage
 import app.foldcade.api.plugin.GameQuery
@@ -24,8 +23,6 @@ import app.foldcade.api.plugin.PluginEntry
 import app.foldcade.api.plugin.PluginException
 import app.foldcade.api.plugin.SaveSet
 import app.foldcade.api.plugin.SyncResult
-import app.foldcade.api.plugin.canonicalPlatformId
-import app.foldcade.api.plugin.playersForPlatform
 import java.util.ServiceLoader
 import kotlin.coroutines.cancellation.CancellationException
 import kotlinx.coroutines.CoroutineDispatcher
@@ -37,23 +34,24 @@ private const val ROMM_ENTRY_CLASS = "app.foldcade.plugins.romm.RommEntry"
  * Loads plugins and calls library I/O and metadata fetch off [io].
  * Those calls are suspending. This type does not block the caller.
  * [cachedMetadata] stays synchronous because [MetadataProvider.cached] is already in memory.
- * [load] reads the class loader and must run off the main thread.
+ * [load] reads the class loader on [io], off the main thread.
  * Register from one thread before calling the suspending methods.
- * [load] records a bad plugin in [rejected] and does not throw.
+ * [load] records a bad plugin in [rejected]. It does not throw, except [VirtualMachineError].
  *
- * [credentials] defaults to an in-memory store for JVM tests.
- * The Android host must pass the encrypted store instead. The memory default
- * does not encrypt and must not be the store the app process uses.
+ * [credentials] is required. The Android app passes its encrypted store.
+ * JVM tests pass [app.foldcade.api.plugin.MemoryCredentialStore]. There is no in-memory default.
  */
 class PluginHost(
     private val io: CoroutineDispatcher,
-    private val credentials: CredentialStore = MemoryCredentialStore(),
+    private val credentials: CredentialStore,
 ) {
     private val platforms = linkedMapOf<String, Platform>()
+    private val definitions = mutableListOf<Platform>()
     private val players = linkedMapOf<String, Player>()
     private val libraries = linkedMapOf<String, LibraryBackend>()
     private val metadataProviders = linkedMapOf<String, MetadataProvider>()
     private val platformNames = mutableListOf<Pair<String, String>>()
+    private val playerPlatformIds = linkedMapOf<String, String>()
     private val rejectedPlugins = mutableListOf<RejectedPlugin>()
 
     /** Plugins [load] skipped, in the order they failed. For the UI. */
@@ -62,6 +60,10 @@ class PluginHost(
     /**
      * Validates [entry], then stores every slot it contributes.
      * A failure stores nothing from this entry.
+     *
+     * Credential scope is every slot id this entry registered.
+     * [RommCredentials.RESERVED_IDS] stay with the built-in RomM entry, so a
+     * third-party entry cannot register them first and take that scope.
      */
     fun register(entry: PluginEntry) {
         if (entry.apiVersion != PLUGIN_API_VERSION) {
@@ -74,6 +76,10 @@ class PluginHost(
         val stagedPlayers = entry.players.toList()
         val stagedLibraries = entry.libraries.toList()
         val stagedMetadata = entry.metadataProviders.toList()
+        val stagedPlayerPlatforms = linkedMapOf<String, String>()
+        for (player in stagedPlayers) {
+            stagedPlayerPlatforms[player.id] = player.platformId
+        }
         val names = planPlatformNames(stagedPlatforms, platformNames)
         planIds("player", stagedPlayers.map { it.id }, players.keys)
         planIds("library", stagedLibraries.map { it.id }, libraries.keys)
@@ -85,8 +91,11 @@ class PluginHost(
             addAll(stagedMetadata.map { it.id })
         }
         refuseReserved(entry, ids)
+        val storedDefinitions = stagedPlatforms.map { it.stored() }
         entry.bind(BoundCredentialAccess(ids, credentials))
         platformNames.addAll(names)
+        playerPlatformIds.putAll(stagedPlayerPlatforms)
+        definitions.addAll(storedDefinitions)
         stagedPlatforms.forEach { platforms[it.id] = it }
         stagedPlayers.forEach { players[it.id] = it }
         stagedLibraries.forEach { libraries[it.id] = it }
@@ -107,14 +116,22 @@ class PluginHost(
      * Loads every [PluginEntry] advertised by [classLoader].
      * The caller supplies the loader. This is the path for a bundled jar and
      * for an out-of-tree jar. It does not discover or open an installed package.
-     * Call this off the main thread.
+     * Runs on [io], off the main thread.
      * One bad provider is recorded in [rejected] and does not stop the providers
-     * that follow. This method does not throw.
+     * that follow. This method does not throw, except [VirtualMachineError].
+     * Cancellation still propagates.
      */
-    fun load(classLoader: ClassLoader) {
+    suspend fun load(classLoader: ClassLoader) {
+        withContext(io) {
+            loadHere(classLoader)
+        }
+    }
+
+    private fun loadHere(classLoader: ClassLoader) {
         val providers = try {
             ServiceLoader.load(PluginEntry::class.java, classLoader).iterator()
         } catch (failure: Throwable) {
+            rethrowVirtualMachineError(failure)
             reject(plugin = null, failure)
             return
         }
@@ -125,6 +142,7 @@ class PluginHost(
                 if (!providers.hasNext()) break
                 providers.next()
             } catch (failure: Throwable) {
+                rethrowVirtualMachineError(failure)
                 val reason = failure.message ?: failure.javaClass.name
                 reject(plugin = null, failure)
                 if (reason == lastLoaderFailure) {
@@ -141,21 +159,51 @@ class PluginHost(
             try {
                 register(entry)
             } catch (failure: Throwable) {
+                rethrowVirtualMachineError(failure)
                 reject(plugin = entry.javaClass.name, failure)
             }
         }
     }
 
-    /** Resolves [id] as a canonical platform id or an alias, ignoring case. */
+    /**
+     * Resolves [id] as a canonical platform id or an alias, ignoring case.
+     * The match uses names stored at registration. It does not call platform getters again.
+     */
     fun platform(id: String): Platform? {
-        val canonical = canonicalPlatformId(platforms.values, id) ?: return null
+        val canonical = storedPlatformId(id) ?: return null
         return platforms[canonical]
     }
 
+    /**
+     * Platform definitions stored at registration, in that order.
+     * Aliases are the ones declared then. This does not call a plugin.
+     */
+    fun platformDefinitions(): List<Platform> = definitions.toList()
+
     fun player(id: String): Player? = players[id]
 
-    fun playersFor(platformId: String): List<Player> =
-        playersForPlatform(platforms.values, players.values, platformId)
+    /**
+     * Players stored for [platformId] or one of its aliases.
+     * The platform match uses names stored at registration.
+     */
+    fun playersFor(platformId: String): List<Player> {
+        val canonical = storedPlatformId(platformId) ?: return emptyList()
+        return players.mapNotNull { (id, player) ->
+            if (playerPlatformIds[id] == canonical) player else null
+        }
+    }
+
+    /** Library ids stored at registration. This does not call a plugin. */
+    fun libraryIds(): List<String> = libraries.keys.toList()
+
+    /**
+     * The library's display name, through the same guard as a suspending call.
+     * A plugin failure is [PluginCallException] or [PluginException].
+     */
+    fun libraryLabel(id: String): String {
+        val library = requireLibrary(id)
+        return callPlugin(id) { library.displayName }
+    }
 
     fun library(id: String): LibraryBackend? = libraries[id]
 
@@ -242,6 +290,9 @@ class PluginHost(
         )
     }
 
+    private fun storedPlatformId(idOrAlias: String): String? =
+        platformNames.firstOrNull { it.first.equals(idOrAlias, ignoreCase = true) }?.second
+
 }
 
 /**
@@ -270,8 +321,32 @@ private inline fun <T> callPlugin(pluginId: String, block: () -> T): T =
     } catch (plugin: PluginException) {
         throw plugin
     } catch (failure: Throwable) {
+        rethrowVirtualMachineError(failure)
         throw PluginCallException(pluginId, failure)
     }
+
+private fun rethrowVirtualMachineError(failure: Throwable) {
+    var current: Throwable? = failure
+    val seen = HashSet<Throwable>()
+    while (current != null && seen.add(current)) {
+        if (current is VirtualMachineError) throw current
+        current = current.cause
+    }
+}
+
+private fun Platform.stored() = DefinedPlatform(
+    id = id,
+    displayName = displayName,
+    extensions = extensions.toSet(),
+    aliases = aliases.toSet(),
+)
+
+private class DefinedPlatform(
+    override val id: String,
+    override val displayName: String,
+    override val extensions: Set<String>,
+    override val aliases: Set<String>,
+) : Platform
 
 private fun planPlatformNames(
     incoming: List<Platform>,
