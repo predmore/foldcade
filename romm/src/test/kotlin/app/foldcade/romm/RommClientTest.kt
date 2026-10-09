@@ -600,6 +600,47 @@ class RommClientTest {
     }
 
     @Test
+    fun permanentClientErrorsLeaveTheQueueAndACorruptFileDoesNot() {
+        val queue = SaveUploadQueue(dir.resolve("queue"))
+        val save = localSave("local")
+        val hash = md5Hex("local".toByteArray())
+        queue.enqueue(save, "device-1", hash, "local".toByteArray(), "autosave")
+        queue.enqueue(save, "device-1", hash, "local".toByteArray(), "autosave")
+        queue.enqueue(save, "device-1", hash, "local".toByteArray(), "autosave")
+        Files.write(dir.resolve("queue").resolve("broken.json"), "not-json".toByteArray())
+        assertEquals(3, queue.pending().size)
+
+        var calls = 0
+        server.route("POST", "/api/saves") { exchange, _ ->
+            calls += 1
+            when (calls) {
+                1 -> json(exchange, 400, """{"detail":"bad file"}""")
+                2 -> json(exchange, 409, """{"detail":"slot changed"}""")
+                else -> json(exchange, 503, """{"detail":"down"}""")
+            }
+        }
+        runClient(token = { "rmm_test" }) { client ->
+            val flushed = queue.flush(client)
+            assertEquals(0, flushed.sent)
+            assertEquals(1, flushed.kept)
+        }
+        assertEquals(1, queue.pending().size)
+        assertTrue(Files.exists(dir.resolve("queue").resolve("broken.json")))
+
+        val retry = SaveUploadQueue(dir.resolve("retry"))
+        retry.enqueue(save, "device-1", hash, "local".toByteArray(), "autosave")
+        server.route("POST", "/api/saves") { exchange, _ ->
+            json(exchange, 429, """{"detail":"slow down"}""")
+        }
+        runClient(token = { "rmm_test" }) { client ->
+            val flushed = retry.flush(client)
+            assertEquals(0, flushed.sent)
+            assertEquals(1, flushed.kept)
+        }
+        assertEquals(1, retry.pending().size)
+    }
+
+    @Test
     fun aMajorFiveResponseMissingTheTestedFieldsIsNotApplied() {
         server.route("GET", "/openapi.json") { exchange, _ ->
             json(exchange, 200, fixture("openapi-5.4.0-alpha.2.json"))

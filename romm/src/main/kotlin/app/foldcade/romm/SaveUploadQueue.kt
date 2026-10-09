@@ -11,8 +11,9 @@ import java.util.stream.Collectors
 
 /**
  * Copies of saves that could not be uploaded. [flush] retries
- * `POST /api/saves` without a session id. A 409 or a dead network leaves
- * the entry in place.
+ * `POST /api/saves` without a session id. A dead network, HTTP 408, or
+ * HTTP 429 leaves the entry in place. Any other 4xx, including a moved
+ * slot, drops the entry. A metadata file that cannot be read is skipped.
  */
 class SaveUploadQueue(private val root: Path) {
     fun enqueue(
@@ -40,22 +41,33 @@ class SaveUploadQueue(private val root: Path) {
 
     fun pending(): List<PendingSaveUpload> {
         if (!Files.isDirectory(root)) return emptyList()
-        return Files.list(root).use { stream ->
-            stream.filter { it.fileName.toString().endsWith(".json") }.map { path ->
-                val obj = parseObject(Files.readAllBytes(path))
-                val id = obj.reqString("id")
-                PendingSaveUpload(
-                    id = id,
-                    romId = obj.reqLong("rom_id"),
-                    fileName = obj.reqString("file_name"),
-                    slot = obj.optString("slot"),
-                    emulator = obj.optString("emulator"),
-                    deviceId = obj.reqString("device_id"),
-                    contentHash = obj.reqString("content_hash"),
-                    bytes = root.resolve("$id.bin"),
-                )
-            }.collect(Collectors.toList())
+        val metas = Files.list(root).use { stream ->
+            stream.filter { it.fileName.toString().endsWith(".json") }.collect(Collectors.toList())
         }
+        return metas.mapNotNull { path ->
+            try {
+                readPending(path)
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (_: Exception) {
+                null
+            }
+        }
+    }
+
+    private fun readPending(path: Path): PendingSaveUpload {
+        val obj = parseObject(Files.readAllBytes(path))
+        val id = obj.reqString("id")
+        return PendingSaveUpload(
+            id = id,
+            romId = obj.reqLong("rom_id"),
+            fileName = obj.reqString("file_name"),
+            slot = obj.optString("slot"),
+            emulator = obj.optString("emulator"),
+            deviceId = obj.reqString("device_id"),
+            contentHash = obj.reqString("content_hash"),
+            bytes = root.resolve("$id.bin"),
+        )
     }
 
     suspend fun flush(client: RommClient): FlushResult {
@@ -81,13 +93,22 @@ class SaveUploadQueue(private val root: Path) {
             } catch (_: RommUnavailable) {
                 kept++
             } catch (_: RommSlotMoved) {
-                kept++
-            } catch (_: RommHttpException) {
-                kept++
+                drop(item)
+            } catch (e: RommHttpException) {
+                if (permanentClientError(e.status)) drop(item) else kept++
             }
         }
         return FlushResult(sent, kept)
     }
+
+    private fun drop(item: PendingSaveUpload) {
+        Files.deleteIfExists(item.bytes)
+        Files.deleteIfExists(root.resolve("${item.id}.json"))
+    }
+
+    /** 408 and 429 can succeed on a later try. The rest of 4xx will not. */
+    private fun permanentClientError(status: Int): Boolean =
+        status in 400..499 && status != 408 && status != 429
 }
 
 data class PendingSaveUpload(
