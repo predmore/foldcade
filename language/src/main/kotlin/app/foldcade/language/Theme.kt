@@ -1,0 +1,145 @@
+package app.foldcade.language
+
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.unit.TextUnit
+import androidx.compose.ui.unit.sp
+
+/** Built-in OLED theme. A missing theme zip keeps these values. */
+data class Theme(
+    val background: Color,
+    val surface: Color,
+    val onBackground: Color,
+    val muted: Color,
+    val focus: Color,
+    val iconRadius: Float,
+    val artScale: Float,
+    val font: FontFamily,
+)
+
+fun builtInTheme(): Theme = Theme(
+    background = Color(0xFF000000),
+    surface = Color(0xFF000000),
+    onBackground = Color(0xFFF2F2F2),
+    muted = Color(0xFF8A8A8A),
+    focus = Color(0xFFFFFFFF),
+    iconRadius = 0.12f,
+    artScale = 0.92f,
+    font = FontFamily.SansSerif,
+)
+
+/** Host-owned type ramp, in sp, the same on both panels. */
+object TypeRamp {
+    val heroTitle: TextUnit = 22.sp
+    val heroMeta: TextUnit = 16.sp
+    val availability: TextUnit = 14.sp
+    val gridLabel: TextUnit = 14.sp
+    val dialogTitle: TextUnit = 20.sp
+    val dialogBody: TextUnit = 16.sp
+    val menuRow: TextUnit = 18.sp
+    val sideRow: TextUnit = 18.sp
+    val hint: TextUnit = 14.sp
+}
+
+/** Host-owned layout. Motion lives on [Motion]. */
+object Metrics {
+    const val columns = 4
+    const val insetFraction = 0.04f
+    const val gapFraction = 0.02f
+    const val focusStrokePx = 3f
+    const val heroInsetPx = 48f
+    const val dialogInsetPx = 48f
+    const val dialogBorderPx = 2f
+    const val heroArtFraction = 0.62f
+}
+
+object Copy {
+    const val launchOnTop = "Launch on top"
+    const val launchOnBottom = "Launch on bottom"
+    const val usesBothScreens = "Uses both screens"
+    const val library = "Library"
+    const val theme = "Theme"
+    const val arrange = "Arrange"
+    const val setAsHome = "Set as Home"
+    const val builtIn = "Built-in"
+    const val buttonLabels = "Button labels"
+    const val primaryPanel = "Primary panel"
+    const val nintendo = "Nintendo"
+    const val xbox = "Xbox"
+    const val top = "Top"
+    const val bottom = "Bottom"
+    const val addFolder = "Add a folder"
+    const val connectRomm = "Connect RomM"
+    const val useAsHome = "Use as Home"
+    const val notNow = "Not now"
+    const val continueGrant = "Continue"
+    const val ok = "OK"
+    const val folderGrantTitle = "Choose a folder"
+    const val folderGrantBody = "Foldcade lists games from a folder you choose."
+    const val wifi = "Wi-Fi"
+    const val cellular = "Cellular"
+    const val offline = "Offline"
+    const val homePromptTitle = "Use Foldcade as Home?"
+    const val homePromptBody = "You can change this later in Android settings."
+    const val noLibrary = "No library yet"
+    const val libraryUnreachable = "Couldn’t reach the library"
+    const val tryAgain = "Try again"
+    const val noPlatforms = "This library has no platforms"
+    const val noGames = "No games"
+    const val loading = "Loading"
+    const val missingPlayerBody = "Foldcade can’t start this game without it."
+    const val savesKeptTitle = "Both saves were kept"
+    const val savesKeptBody = "This game used the copy from the server. The other copy was archived."
+    const val savesKeptMore = "More than one game did this."
+    const val offlineSaveTitle = "Played the save on this device"
+    const val offlineSaveBody = "It will upload when the server is reachable."
+    const val notOnDevice = "Not on this device"
+    const val onDevice = "On this device"
+    const val inFolder = "In this folder"
+}
+
+enum class ButtonLabels {
+    Nintendo,
+    Xbox,
+}
+
+data class DiamondLetters(
+    val east: String,
+    val south: String,
+)
+
+/** Drawing only. The button map does not change. */
+fun diamondLetters(labels: ButtonLabels): DiamondLetters = when (labels) {
+    ButtonLabels.Nintendo -> DiamondLetters(east = "A", south = "B")
+    ButtonLabels.Xbox -> DiamondLetters(east = "B", south = "A")
+}
+
+fun hintLine(activateDoesSomething: Boolean, backDoesSomething: Boolean): String? {
+    val parts = buildList {
+        if (activateDoesSomething) add("A")
+        if (backDoesSomething) add("B")
+    }
+    return parts.takeIf { it.isNotEmpty() }?.joinToString("  ")
+}
+
+enum class HintPlace {
+    RootGrid,
+    InsidePlatform,
+    Menu,
+    Dialog,
+    Connect,
+}
+
+fun monogram(title: String): String {
+    val char = title.firstOrNull { it.isLetterOrDigit() } ?: return ""
+    return char.uppercaseChar().toString()
+}
+
+fun hintFor(place: HintPlace): String? = when (place) {
+    HintPlace.RootGrid -> hintLine(activateDoesSomething = true, backDoesSomething = false)
+    HintPlace.InsidePlatform,
+    HintPlace.Menu,
+    HintPlace.Dialog,
+    -> hintLine(activateDoesSomething = true, backDoesSomething = true)
+    HintPlace.Connect -> hintLine(activateDoesSomething = false, backDoesSomething = true)
+}
