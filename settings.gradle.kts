@@ -23,6 +23,7 @@ include(
     ":host",
     ":plugins:local-folder",
     ":plugins:sample",
+    ":plugins:romm",
     ":samples:out-of-tree",
     ":romm",
 )

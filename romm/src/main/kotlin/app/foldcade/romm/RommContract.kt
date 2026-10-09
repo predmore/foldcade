@@ -19,17 +19,20 @@ object RommContract {
     /**
      * Scopes asked for on device-code sign-in.
      * `platforms.read` is the scope `GET /api/platforms` declares.
+     * `roms.user.read` is user-rom properties. `collections.read` is collections.
      * `firmware.read` is reserved for a later firmware download and is not called here.
-     * Play sessions and `tasks.run` are not requested.
+     * Play sessions, `roms.user.write`, and `tasks.run` are not requested.
      */
     val DEVICE_AUTH_SCOPES: List<String> = listOf(
         "roms.read",
+        "roms.user.read",
         "platforms.read",
         "assets.read",
         "assets.write",
         "devices.read",
         "devices.write",
         "firmware.read",
+        "collections.read",
     )
 }
 
