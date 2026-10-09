@@ -193,10 +193,10 @@ class RommClient(
                 "slow_down" -> DeviceTokenPoll.SlowDown
                 "access_denied" -> DeviceTokenPoll.Denied
                 "expired_token" -> DeviceTokenPoll.Expired
-                else -> throw RommHttpException(400, raw.detail())
+                else -> throw rommHttp(400, raw.detail())
             }
         }
-        throw RommHttpException(raw.status, raw.detail())
+        throw rommHttp(raw.status, raw.detail())
     }
 
     suspend fun platforms(): List<PlatformSummary> {
@@ -303,7 +303,7 @@ class RommClient(
             when (put.status) {
                 200 -> return stored.copy(clientVersion = clientVersion)
                 404 -> Unit
-                else -> throw RommHttpException(put.status, put.detail())
+                else -> throw rommHttp(put.status, put.detail())
             }
         }
         val post = exchange(
@@ -765,7 +765,7 @@ class RommClient(
         fun detail(): String = detailText(body)
 
         fun require(vararg codes: Int) {
-            if (status !in codes) throw RommHttpException(status, detail())
+            if (status !in codes) throw rommHttp(status, detail())
         }
     }
 

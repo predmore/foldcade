@@ -3,7 +3,9 @@ package app.foldcade.plugins.romm
 import app.foldcade.api.plugin.PluginException
 import app.foldcade.romm.RommConversionPending
 import app.foldcade.romm.RommException
+import app.foldcade.romm.RommForbidden
 import app.foldcade.romm.RommHttpException
+import app.foldcade.romm.RommUnauthorized
 import app.foldcade.romm.RommProtocolMismatch
 import app.foldcade.romm.RommProtocolUnreadable
 import app.foldcade.romm.RommSlotMoved
@@ -14,6 +16,8 @@ import kotlin.coroutines.cancellation.CancellationException
 
 internal fun RommException.toPluginException(): PluginException = when (this) {
     is RommUnauthenticated -> PluginException.NotAuthenticated(message ?: "Sign in to RomM", this)
+    is RommUnauthorized -> PluginException.NotAuthenticated(message ?: "Sign in to RomM", this)
+    is RommForbidden -> PluginException.NotAuthenticated(message ?: "Sign in to RomM", this)
     is RommHttpException -> when (status) {
         401, 403 -> PluginException.NotAuthenticated(message ?: "Sign in to RomM", this)
         404 -> PluginException.NotFound(message ?: "RomM could not find that", this)

@@ -583,12 +583,23 @@ class RommClientTest {
             }
         }
         runClient { client ->
-            val unauthorized = suspendCatching { client.heartbeat() }.exceptionOrNull() as RommHttpException
-            assertEquals(401, unauthorized.status)
-            val missing = suspendCatching { client.heartbeat() }.exceptionOrNull() as RommHttpException
-            assertEquals(404, missing.status)
+            val unauthorized = suspendCatching { client.heartbeat() }.exceptionOrNull()
+            assertTrue(unauthorized is RommUnauthorized)
+            assertEquals(401, (unauthorized as RommHttpException).status)
+            val missing = suspendCatching { client.heartbeat() }.exceptionOrNull()
+            assertTrue(missing is RommHttpException)
+            assertFalse(missing is RommUnauthorized || missing is RommForbidden)
+            assertEquals(404, (missing as RommHttpException).status)
             val down = suspendCatching { client.heartbeat() }.exceptionOrNull() as RommHttpException
             assertEquals(503, down.status)
+        }
+        server.route("GET", "/api/platforms") { exchange, _ ->
+            json(exchange, 403, """{"detail":"forbidden"}""")
+        }
+        runClient(token = { "rmm_test" }) { client ->
+            val forbidden = suspendCatching { client.platforms() }.exceptionOrNull()
+            assertTrue(forbidden is RommForbidden)
+            assertEquals(403, (forbidden as RommHttpException).status)
         }
     }
 
