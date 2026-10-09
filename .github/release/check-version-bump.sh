@@ -1,0 +1,33 @@
+#!/usr/bin/env bash
+# A versionName change is a stable bump. The file's versionCode is the local
+# fallback and does not have to increase. An unchanged versionName passes.
+# versionName must stay X.Y.Z so the tag is vX.Y.Z.
+set -euo pipefail
+
+here="$(cd "$(dirname "$0")" && pwd)"
+# shellcheck source=version.sh
+source "$here/version.sh"
+
+: "${BASE_SHA:?BASE_SHA is required}"
+
+root="$(cd "$here/../.." && pwd)"
+cd "$root"
+
+base_file="$(mktemp)"
+trap 'rm -f "$base_file"' EXIT
+
+if [ "$BASE_SHA" = "0000000000000000000000000000000000000000" ]; then
+  : >"$base_file"
+else
+  if ! git cat-file -e "${BASE_SHA}^{commit}" 2>/dev/null; then
+    git fetch origin "$BASE_SHA"
+  fi
+  if git cat-file -e "${BASE_SHA}:app/build.gradle.kts" 2>/dev/null; then
+    git show "${BASE_SHA}:app/build.gradle.kts" >"$base_file"
+  else
+    : >"$base_file"
+  fi
+fi
+
+status="$(compare_versions "$base_file" app/build.gradle.kts)"
+echo "version check against ${BASE_SHA}: ${status}"

@@ -11,3 +11,7 @@ captures/
 .cxx/
 .externalNativeBuild/
 .DS_Store
+*.jks
+*.keystore
+keystore.properties
+*.keystore.properties
