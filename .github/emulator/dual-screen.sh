@@ -160,14 +160,29 @@ Xvfb :99 -screen 0 "$xvfb_geometry" >/tmp/xvfb.log 2>&1 &
 xvfb_pid=$!
 export DISPLAY=:99
 # Run 37901128566 started the windowed emulator about 35ms after Xvfb was
-# launched. Qt then aborted: could not connect to display :99. xdpyinfo is
-# the signal that the server accepts clients. Boot waits for that.
-if ! command -v xdpyinfo >/dev/null 2>&1; then
-  fail "framebuffer: xdpyinfo is not installed"
+# launched. Qt then aborted: could not connect to display :99. An X11
+# handshake is the signal that the server accepts clients. Boot waits for
+# that. This stays in the script so the workflow file is left alone.
+if ! command -v python3 >/dev/null 2>&1; then
+  fail "framebuffer: python3 is not installed"
 fi
+display_accepts_clients() {
+  python3 - <<'PY'
+import socket, struct, sys
+s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+s.settimeout(0.5)
+try:
+    s.connect("/tmp/.X11-unix/X99")
+    s.sendall(struct.pack("<BxHHHHxx", ord("l"), 11, 0, 0, 0))
+    hdr = s.recv(8)
+except OSError:
+    sys.exit(1)
+sys.exit(0 if hdr[:1] == b"\x01" else 1)
+PY
+}
 framebuffer_deadline=$((SECONDS + 20))
 while true; do
-  if xdpyinfo >/dev/null 2>&1; then
+  if display_accepts_clients; then
     echo "step: framebuffer ready"
     break
   fi

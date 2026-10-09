@@ -127,10 +127,8 @@ jobs:
           # script then used to sit in adb wait-for-device until the job timeout.
           # qemu 37.2.12 NEEDs libpulse.so.0 even with -no-audio. Run 37884626225
           # exited at boot with "libpulse.so.0: cannot open shared object file".
-          # x11-utils provides xdpyinfo. The script waits on it so display :99
-          # is accepting connections before the windowed emulator starts.
           sudo apt-get install -y \
-            xvfb x11-utils libnss3 libxcomposite1 libxcursor1 libxi6 libxtst6 \
+            xvfb libnss3 libxcomposite1 libxcursor1 libxi6 libxtst6 \
             libxkbcommon-x11-0 libxcb-cursor0 libxcb-xinerama0 libegl1 \
             libpulse0 libx11-6 \
             ${audio:+"$audio"}
