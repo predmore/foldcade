@@ -42,7 +42,11 @@ fun anotherBothPanelRunning(session: Session, gameId: String): Boolean {
  * Decides the next step for [player].
  * A both-panel game asks to close a different both-panel game first.
  * A missing install is reported before a missing file.
- * A save folder is asked for only after those, and only when the player can store one.
+ * A save folder is offered once, and only when [saveFolderSettled] is false.
+ * Skipping that offer still returns [PlayerLaunch.Ready]. A missing folder
+ * never blocks play. Save sync is the caller that reads [SaveFolderHolder].
+ * [componentResolves] is the shell's `resolveActivity` check. A null result
+ * is the missing-player state, not a crash.
  */
 fun planPlayerLaunch(
     player: Player,
@@ -51,6 +55,8 @@ fun planPlayerLaunch(
     installedPackages: Set<String>,
     anotherBothPanelRunning: Boolean,
     closeConfirmed: Boolean,
+    saveFolderSettled: Boolean = false,
+    componentResolves: (PlayerIntent) -> Boolean = { true },
 ): PlayerLaunch {
     if (player.occupiesBothDisplays && anotherBothPanelRunning && !closeConfirmed) {
         return PlayerLaunch.Blocked(LaunchBlock.CloseFirst, player.displayName)
@@ -60,11 +66,14 @@ fun planPlayerLaunch(
     if (player.needsLocalFile && target !is LaunchTarget.ContentUri) {
         return PlayerLaunch.Blocked(LaunchBlock.NoLocalFile, player.displayName)
     }
-    if (player is SaveFolderHolder && !player.hasSaveFolder()) {
+    if (player is SaveFolderHolder && !player.hasSaveFolder() && !saveFolderSettled) {
         return PlayerLaunch.Blocked(LaunchBlock.SaveFolder, player.displayName)
     }
     val handoff = target ?: LaunchTarget.AppRef(emptyMap())
     val intent = player.launchIntent(LaunchRequest(game, handoff, resolved))
+    if (!componentResolves(intent)) {
+        return PlayerLaunch.Blocked(LaunchBlock.MissingPlayer, player.displayName)
+    }
     return PlayerLaunch.Ready(
         intent = intent,
         occupiesBothDisplays = player.occupiesBothDisplays,

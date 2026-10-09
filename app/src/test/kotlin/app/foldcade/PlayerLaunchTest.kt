@@ -13,6 +13,7 @@ import app.foldcade.plugins.azahar.Nintendo3ds
 import java.io.File
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -83,6 +84,41 @@ class PlayerLaunchTest {
         assertEquals(StartDisplay.Primary, ready.startDisplay)
         assertTrue(LaunchFlag.ClearTop in ready.intent.flags)
         assertEquals("content://trees/saves", player.saveDeclarations(game).single().locationUri)
+    }
+
+    @Test
+    fun aSkippedSaveFolderStillLaunches() {
+        val player = AzaharPlayer()
+        val ready = planPlayerLaunch(
+            player = player,
+            game = game,
+            target = uri,
+            installedPackages = setOf(AzaharPlayer.PACKAGES.first()),
+            anotherBothPanelRunning = false,
+            closeConfirmed = false,
+            saveFolderSettled = true,
+        ) as PlayerLaunch.Ready
+        assertFalse(player.hasSaveFolder())
+        assertNull(player.saveDeclarations(game).single().locationUri)
+        assertEquals("content://games/title.cci", ready.intent.dataUri)
+    }
+
+    @Test
+    fun anUnresolvedComponentIsTheMissingPlayerState() {
+        val player = AzaharPlayer()
+        val decision = planPlayerLaunch(
+            player = player,
+            game = game,
+            target = uri,
+            installedPackages = setOf("io.github.lime3ds.android"),
+            anotherBothPanelRunning = false,
+            closeConfirmed = false,
+            saveFolderSettled = true,
+            componentResolves = { false },
+        )
+        val blocked = decision as PlayerLaunch.Blocked
+        assertEquals(LaunchBlock.MissingPlayer, blocked.block)
+        assertEquals("Azahar", blocked.playerName)
     }
 
     @Test

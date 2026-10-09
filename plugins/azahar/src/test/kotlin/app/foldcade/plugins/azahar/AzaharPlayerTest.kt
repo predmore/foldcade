@@ -34,7 +34,7 @@ class AzaharPlayerTest {
     }
 
     @Test
-    fun bothOfficialPackagesAndBothPanels() {
+    fun bothApplicationIdsAndBothPanels() {
         val player = AzaharPlayer()
         assertEquals(
             listOf("org.azahar_emu.azahar", "io.github.lime3ds.android"),
@@ -56,13 +56,13 @@ class AzaharPlayerTest {
                 resolvedPackage = "org.azahar_emu.azahar",
             ),
         )
-        assertEquals("org.azahar_emu.azahar", intent.packageName)
-        assertEquals(AzaharPlayer.ACTIVITY, intent.componentClass)
+        assertEquals(VANILLA_PACKAGE, intent.packageName)
+        assertEquals(EMULATION_ACTIVITY, intent.componentClass)
         assertEquals(AzaharPlayer.ACTION_VIEW, intent.action)
         assertEquals("content://games/title.cci", intent.dataUri)
         assertTrue(intent.grantReadUri)
         assertTrue(intent.extras.isEmpty())
-        assertNull(intent.mimeType)
+        assertEquals(AzaharPlayer.CONTENT_MIME, intent.mimeType)
         assertEquals(
             setOf(LaunchFlag.NewTask, LaunchFlag.ClearTop, LaunchFlag.ClearTask),
             intent.flags,
@@ -78,7 +78,10 @@ class AzaharPlayerTest {
                 resolvedPackage = "io.github.lime3ds.android",
             ),
         )
-        assertEquals("io.github.lime3ds.android", intent.packageName)
+        assertEquals(PLAY_PACKAGE, intent.packageName)
+        assertEquals(EMULATION_ACTIVITY, intent.componentClass)
+        assertEquals(activityClass(VANILLA_PACKAGE), activityClass(PLAY_PACKAGE))
+        assertNull(activityClass("io.github.lime3ds.android.fork"))
     }
 
     @Test

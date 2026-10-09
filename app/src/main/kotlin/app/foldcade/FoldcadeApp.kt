@@ -105,6 +105,9 @@ class FoldcadeApp : Application() {
             plugins.load(classLoader)
             restorePlayerSaveFolders()
             publishRomm()
+            withContext(Dispatchers.Main.immediate) {
+                shell.refreshPlayerSaves()
+            }
         }
     }
 

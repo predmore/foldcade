@@ -69,11 +69,14 @@ enum class ExtensionAcceptance {
 }
 
 /**
- * Azahar on Android. Vanilla and Play are both official package ids.
+ * Azahar on Android.
+ *
  * The intent is `ACTION_VIEW` with the game content URI. There is no path extra.
+ * [activityClass] picks the component for the installed application id.
  *
  * Saves are one slot per title. The location is a content URI the user already
- * picked. This type does not invent a directory and does not read private storage.
+ * picked. A missing folder does not stop launch. Azahar keeps its own saves.
+ * This type does not invent a directory and does not read private storage.
  */
 class AzaharPlayer : Player, SaveFolderHolder {
     override val id: String = ID
@@ -100,9 +103,8 @@ class AzaharPlayer : Player, SaveFolderHolder {
     }
 
     override fun launchIntent(request: LaunchRequest): PlayerIntent {
-        if (request.resolvedPackage !in PACKAGES) {
-            throw PluginException.NotFound("Azahar is not installed.")
-        }
+        val activity = activityClass(request.resolvedPackage)
+            ?: throw PluginException.NotFound("Azahar is not installed.")
         val target = request.target as? LaunchTarget.ContentUri
         val uri = target?.uri
         if (uri == null || !uri.startsWith("content:")) {
@@ -110,10 +112,11 @@ class AzaharPlayer : Player, SaveFolderHolder {
         }
         return PlayerIntent(
             packageName = request.resolvedPackage,
-            componentClass = ACTIVITY,
+            componentClass = activity,
             action = ACTION_VIEW,
             dataUri = uri,
             grantReadUri = true,
+            mimeType = CONTENT_MIME,
             flags = setOf(LaunchFlag.NewTask, LaunchFlag.ClearTop, LaunchFlag.ClearTask),
         )
     }
@@ -121,19 +124,47 @@ class AzaharPlayer : Player, SaveFolderHolder {
     companion object {
         const val ID: String = "azahar"
         const val DISPLAY_NAME: String = "Azahar"
-        const val ACTIVITY: String = "org.citra.citra_emu.activities.EmulationActivity"
         const val ACTION_VIEW: String = "android.intent.action.VIEW"
         const val TITLE_SLOT: String = "title"
-        val PACKAGES: List<String> = listOf(
-            "org.azahar_emu.azahar",
-            "io.github.lime3ds.android",
-        )
+
+        /** Matches the VIEW filter on EmulationActivity: content + this MIME type. */
+        const val CONTENT_MIME: String = "application/octet-stream"
+        val PACKAGES: List<String> = listOf(VANILLA_PACKAGE, PLAY_PACKAGE)
     }
 }
 
 /**
+ * Component class for an Azahar application id.
+ *
+ * Read from Azahar `a5c3d4f8eb34493f37479158128de134c3e700a9`:
+ * - `src/android/app/build.gradle.kts` sets `namespace = "org.citra.citra_emu"` once.
+ *   The default `applicationId` is [VANILLA_PACKAGE]. The `googlePlay` flavor sets
+ *   `applicationId = "io.github.lime3ds.android"` so the existing Play listing can
+ *   stay. That flavor does not change the namespace.
+ * - `src/android/app/src/main/AndroidManifest.xml` declares
+ *   `org.citra.citra_emu.activities.EmulationActivity` with an absolute name,
+ *   exported, `singleTop`, and an `ACTION_VIEW` filter for `content` plus
+ *   `application/octet-stream`.
+ * - `src/android/app/src/googlePlay/AndroidManifest.xml` only removes storage
+ *   permissions. It does not replace the activity.
+ *
+ * The class string is therefore the same for both application ids. The package
+ * half of the component is the application id that was resolved.
+ */
+fun activityClass(packageName: String): String? = when (packageName) {
+    VANILLA_PACKAGE, PLAY_PACKAGE -> EMULATION_ACTIVITY
+    else -> null
+}
+
+const val VANILLA_PACKAGE: String = "org.azahar_emu.azahar"
+const val PLAY_PACKAGE: String = "io.github.lime3ds.android"
+const val EMULATION_ACTIVITY: String = "org.citra.citra_emu.activities.EmulationActivity"
+
+/**
  * Where the title save lives, if the user has already pointed at that folder.
  * A content URI is kept as given. Any other string is not a location.
+ * [SaveLocation.askForFolder] is a hint for save sync. It does not stop launch.
+ * Azahar keeps playing with its own saves when this is unset.
  */
 fun saveLocation(folderUri: String?): SaveLocation {
     val uri = folderUri?.trim()?.takeIf { it.startsWith("content:") }

@@ -96,6 +96,14 @@ class SessionStore(private val prefs: SharedPreferences) {
         prefs.edit().putString(saveFolderKey(playerId), uri).apply()
     }
 
+    /** True after Not now. The save-folder offer stays quiet for this player. */
+    fun saveFolderPromptSkipped(playerId: String): Boolean =
+        prefs.getBoolean(saveFolderSkipKey(playerId), false)
+
+    fun setSaveFolderPromptSkipped(playerId: String) {
+        prefs.edit().putBoolean(saveFolderSkipKey(playerId), true).apply()
+    }
+
     fun setMusic(enabled: Boolean, volume: Float, trackId: String) {
         val id = trackId.trim().ifEmpty { HomeMusicSetting.DEFAULT_TRACK_ID }
         prefs.edit()
@@ -152,5 +160,7 @@ class SessionStore(private val prefs: SharedPreferences) {
         private const val KEY_LIBRARY_SORT = "library_sort"
 
         private fun saveFolderKey(playerId: String) = "player_save_folder:$playerId"
+
+        private fun saveFolderSkipKey(playerId: String) = "player_save_folder_skipped:$playerId"
     }
 }

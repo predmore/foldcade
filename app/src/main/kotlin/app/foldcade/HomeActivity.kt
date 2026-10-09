@@ -3,8 +3,10 @@ package app.foldcade
 import android.app.Activity
 import android.app.ActivityOptions
 import android.app.role.RoleManager
+import android.content.ActivityNotFoundException
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.net.Uri
 import android.hardware.display.DisplayManager
 import android.os.Bundle
 import android.view.Display
@@ -23,6 +25,7 @@ import app.foldcade.api.plugin.Availability
 import app.foldcade.api.plugin.Credential
 import app.foldcade.api.plugin.Game
 import app.foldcade.api.plugin.LaunchTarget
+import app.foldcade.api.plugin.Player
 import app.foldcade.api.plugin.RommCredentials
 import app.foldcade.api.plugin.SaveFolderHolder
 import app.foldcade.api.plugin.StartDisplay
@@ -66,33 +69,32 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
     private var folderPurpose = FolderPurpose.Library
     private var pendingLaunch: Int? = null
     private var closeConfirmed = false
+    private var settingsPlayerId: String? = null
 
     private val folderPicker = registerForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri ->
+        val purpose = folderPurpose
+        folderPurpose = FolderPurpose.Library
         if (uri == null) {
-            if (folderPurpose == FolderPurpose.PlayerSave) clearPendingLaunch()
+            when (purpose) {
+                FolderPurpose.LaunchOffer -> skipSaveFolderAndLaunch()
+                FolderPurpose.Settings -> settingsPlayerId = null
+                FolderPurpose.Library -> Unit
+            }
             return@registerForActivityResult
         }
-        when (folderPurpose) {
+        when (purpose) {
             FolderPurpose.Library -> {
                 contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
                 foldcade.store.setFolderTree(uri.toString())
             }
-            FolderPurpose.PlayerSave -> {
-                val read = Intent.FLAG_GRANT_READ_URI_PERMISSION
-                val write = Intent.FLAG_GRANT_WRITE_URI_PERMISSION
-                try {
-                    contentResolver.takePersistableUriPermission(uri, read or write)
-                } catch (_: SecurityException) {
-                    contentResolver.takePersistableUriPermission(uri, read)
-                }
-                val index = pendingLaunch
-                val game = index?.let { Shelf.games.getOrNull(it) }
-                val player = game?.platformId?.let { foldcade.plugins.playersFor(it).firstOrNull() }
-                if (player is SaveFolderHolder) {
-                    player.bindSaveFolder(uri.toString())
-                    foldcade.store.setPlayerSaveFolder(player.id, uri.toString())
-                }
-                if (index != null) launchGame(index)
+            FolderPurpose.LaunchOffer -> {
+                rememberSaveFolder(uri, playerForPendingLaunch())
+                pendingLaunch?.let { launchGame(it) }
+            }
+            FolderPurpose.Settings -> {
+                val player = settingsPlayerId?.let { foldcade.plugins.player(it) }
+                settingsPlayerId = null
+                rememberSaveFolder(uri, player)
             }
         }
     }
@@ -133,7 +135,11 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
         when (effect) {
             is Effect.Launch -> launchGame(effect.index)
             Effect.CycleLaunchTarget -> cycleLaunchTarget()
-            Effect.AddFolder -> folderPicker.launch(null)
+            Effect.AddFolder -> {
+                folderPurpose = FolderPurpose.Library
+                folderPicker.launch(null)
+            }
+            is Effect.ChoosePlayerSave -> choosePlayerSave(effect.playerId)
             Effect.OpenConnect -> foldcade.shell.openConnect(foldcade.store.rommOrigin().orEmpty())
             Effect.SaveRommToken -> saveRommToken()
             is Effect.ForgetCredentials -> forget(effect.pluginId)
@@ -235,6 +241,10 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
             installedPackages = installedPackages(player.packageNames),
             anotherBothPanelRunning = anotherBothPanelRunning(foldcade.store.session, game.id),
             closeConfirmed = continuing,
+            saveFolderSettled = foldcade.store.saveFolderPromptSkipped(player.id),
+            componentResolves = { intent ->
+                packageManager.resolveActivity(intent.toAndroidIntent(), 0) != null
+            },
         )
         pendingLaunch = index
         when (decision) {
@@ -310,6 +320,12 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
             startActivity(ready.intent.toAndroidIntent(), options.toBundle())
         } catch (cancelled: CancellationException) {
             throw cancelled
+        } catch (_: ActivityNotFoundException) {
+            foldcade.store.update { it.home(Panel.Top).home(Panel.Bottom) }
+            val name = game.platformId
+                ?.let { foldcade.plugins.playersFor(it).firstOrNull()?.displayName }
+                ?: "Player"
+            foldcade.shell.present(missingPlayerDialog(name, hostScreen()))
         } catch (_: Exception) {
             foldcade.store.update { it.home(Panel.Top).home(Panel.Bottom) }
         }
@@ -361,10 +377,10 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
                 clearPendingLaunch()
             }
             DialogKind.SaveFolder -> if (effect.button == DialogButton.ContinueGrant) {
-                folderPurpose = FolderPurpose.PlayerSave
+                folderPurpose = FolderPurpose.LaunchOffer
                 folderPicker.launch(null)
             } else {
-                clearPendingLaunch()
+                skipSaveFolderAndLaunch()
             }
         }
         foldcade.shell.showQueuedPrompt()
@@ -452,6 +468,41 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
         }
     }
 
+    private fun choosePlayerSave(playerId: String) {
+        clearPendingLaunch()
+        settingsPlayerId = playerId
+        folderPurpose = FolderPurpose.Settings
+        folderPicker.launch(null)
+    }
+
+    private fun skipSaveFolderAndLaunch() {
+        val index = pendingLaunch ?: return
+        val player = playerForPendingLaunch() ?: return
+        foldcade.store.setSaveFolderPromptSkipped(player.id)
+        launchGame(index)
+    }
+
+    private fun playerForPendingLaunch(): Player? {
+        val index = pendingLaunch ?: return null
+        val game = Shelf.games.getOrNull(index) ?: return null
+        return game.platformId?.let { foldcade.plugins.playersFor(it).firstOrNull() }
+    }
+
+    private fun rememberSaveFolder(uri: Uri, player: Player?) {
+        val read = Intent.FLAG_GRANT_READ_URI_PERMISSION
+        val write = Intent.FLAG_GRANT_WRITE_URI_PERMISSION
+        try {
+            contentResolver.takePersistableUriPermission(uri, read or write)
+        } catch (_: SecurityException) {
+            contentResolver.takePersistableUriPermission(uri, read)
+        }
+        if (player is SaveFolderHolder) {
+            player.bindSaveFolder(uri.toString())
+            foldcade.store.setPlayerSaveFolder(player.id, uri.toString())
+            foldcade.shell.refreshPlayerSaves()
+        }
+    }
+
     private fun requestHome() {
         val roleManager = getSystemService(RoleManager::class.java)
         foldcade.shell.setHomeRoleHeld(roleManager.isRoleHeld(RoleManager.ROLE_HOME))
@@ -463,7 +514,8 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
 
 private enum class FolderPurpose {
     Library,
-    PlayerSave,
+    LaunchOffer,
+    Settings,
 }
 
 private fun shelfGame(game: ShelfGame): Game = Game(

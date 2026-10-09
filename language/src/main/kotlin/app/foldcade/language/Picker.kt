@@ -112,10 +112,13 @@ fun saveFolderDialog(screen: HostScreen): DialogState = DialogState(
     title = Copy.saveFolderTitle,
     body = Copy.saveFolderBody,
     buttons = listOf(DialogButton.ContinueGrant, DialogButton.NotNow),
-    index = 0,
+    index = 1,
     safeIndex = 1,
     screen = screen,
 )
+
+fun playerSavesLabel(name: String, chosen: Boolean): String =
+    if (chosen) "$name saves  ${Copy.playerSavesSet}" else "$name saves  ${Copy.playerSavesUnset}"
 
 fun noFileDialog(screen: HostScreen): DialogState = DialogState(
     kind = DialogKind.Ok,
@@ -167,9 +170,19 @@ sealed interface Row {
     data object LaunchTarget : Row
     data class Notice(val id: String) : Row
     data class SignOut(val pluginId: String, val label: String) : Row
+    data class PlayerSave(val playerId: String) : Row
 }
 
-fun leftRows(homeRoleHeld: Boolean): List<Row> = buildList {
+data class PlayerSaveSetting(
+    val playerId: String,
+    val label: String,
+    val chosen: Boolean,
+)
+
+fun leftRows(
+    homeRoleHeld: Boolean,
+    playerSaves: List<PlayerSaveSetting> = emptyList(),
+): List<Row> = buildList {
     add(Row.Library)
     add(Row.Theme)
     add(Row.Primary)
@@ -181,6 +194,7 @@ fun leftRows(homeRoleHeld: Boolean): List<Row> = buildList {
     if (!homeRoleHeld) add(Row.SetAsHome)
     add(Row.Background)
     add(Row.MotionSpeed)
+    playerSaves.forEach { add(Row.PlayerSave(it.playerId)) }
 }
 
 data class SignedInBackend(
@@ -208,7 +222,7 @@ fun rightRows(showLaunchTarget: Boolean, notices: List<FoldNotice>): List<Row> =
 
 fun panelRows(panel: SidePanel, model: PickerModel): List<Row> = when (panel.side) {
     Side.Left -> when (panel.level) {
-        PanelLevel.Root -> leftRows(model.homeRoleHeld)
+        PanelLevel.Root -> leftRows(model.homeRoleHeld, model.playerSaves)
         PanelLevel.Library -> libraryRows(model.backends, model.signedIn)
     }
     Side.Right -> rightRows(model.showLaunchTarget, model.notices)
@@ -248,6 +262,11 @@ fun rowText(row: Row, model: PickerModel): RowText = when (row) {
     is Row.SignOut -> RowText("${Copy.signOut} · ${row.label}")
     Row.LaunchTarget -> RowText(if (model.launchOnBottom) Copy.launchOnBottom else Copy.launchOnTop)
     is Row.Notice -> RowText(model.notices.firstOrNull { it.id == row.id }?.title ?: "")
+    is Row.PlayerSave -> {
+        val setting = model.playerSaves.firstOrNull { it.playerId == row.playerId }
+        val chosen = if (setting?.chosen == true) Copy.playerSavesSet else Copy.playerSavesUnset
+        RowText("${setting?.label ?: row.playerId} saves", chosen)
+    }
 }
 
 fun rowLabel(row: Row, model: PickerModel): String {
@@ -276,6 +295,7 @@ sealed interface Effect {
     data class ForgetCredentials(val pluginId: String) : Effect
     data object SaveRommToken : Effect
     data object RequestHome : Effect
+    data class ChoosePlayerSave(val playerId: String) : Effect
 }
 
 data class PickerModel(
@@ -314,6 +334,7 @@ data class PickerModel(
     val connectHint: String? = null,
     val reLoginPending: Boolean = false,
     val unavailable: Boolean = false,
+    val playerSaves: List<PlayerSaveSetting> = emptyList(),
 )
 
 fun reduce(
@@ -615,6 +636,7 @@ private fun activateRow(
         is Row.SignOut -> model.copy(panel = null, focus = panel.grid) to Effect.ForgetCredentials(row.pluginId)
         Row.LaunchTarget -> model.copy(panel = panel, launchOnBottom = !model.launchOnBottom) to Effect.CycleLaunchTarget
         is Row.Notice -> model.copy(panel = panel, notices = model.notices.filter { it.id != row.id }) to null
+        is Row.PlayerSave -> model.copy(panel = null, focus = panel.grid) to Effect.ChoosePlayerSave(row.playerId)
     }
 }
 
