@@ -39,7 +39,7 @@ Paths below are on the 5.4.0-alpha.2 schema and in the 5.4.0-alpha docs for auth
 
 `format` is never sent. A 202 from a conversion is surfaced and not retried. Multi-file downloads pass `file_ids` on the ROM content path. A finished cache file is reused. A `.partial` file is resumed with `Range`.
 
-Device registration uses client slug `foldcade`, platform `android`, and `sync_mode` `api`. A stored device id whose client version still matches is left alone.
+Device registration uses client slug `foldcade`, platform `android`, and `sync_mode` `api`. A stored device id whose client version still matches is left alone. `POST /api/devices` sends `allow_existing`. A 409 `device_exists` response is reused, including its `device_id`. Device-code sign-in remembers the returned device id for this process so registration does not create a second device. That id is not written to a file.
 
 Device-code scopes: `roms.read`, `platforms.read`, `assets.read`, `assets.write`, `devices.read`, `devices.write`, `firmware.read`. `platforms.read` is the scope `GET /api/platforms` declares. `firmware.read` is not used yet. `roms.user.read` and `collections.read` are not requested until a feature needs them. Play sessions, `roms.user.write`, and `tasks.run` are not requested. Username and password are not sent.
 

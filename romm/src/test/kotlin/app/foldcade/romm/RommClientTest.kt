@@ -302,6 +302,37 @@ class RommClientTest {
             assertEquals("3f1c2b9e-8a4d-4c7e-9f21-6d0b5a7e1c34", created.deviceId)
         }
         assertEquals(listOf("PUT", "POST"), server.recorded.map { it.method })
+        val created = Json.parseToJsonElement(server.recorded.last().body.toString(Charsets.UTF_8)).jsonObject
+        assertEquals(true, created.getValue("allow_existing").jsonPrimitive.content.toBoolean())
+    }
+
+    @Test
+    fun aDeviceExistsConflictReusesTheReturnedId() {
+        server.route("POST", "/api/devices") { exchange, _ ->
+            json(
+                exchange,
+                409,
+                """{"detail":{"error":"device_exists","message":"A device with this fingerprint already exists","device_id":"3f1c2b9e-8a4d-4c7e-9f21-6d0b5a7e1c34"}}""",
+            )
+        }
+        runClient(token = { "rmm_test" }) { client ->
+            val existing = client.registerDevice(null, "Thor", "0.2.0")
+            assertEquals("3f1c2b9e-8a4d-4c7e-9f21-6d0b5a7e1c34", existing.deviceId)
+            assertEquals("0.2.0", existing.clientVersion)
+        }
+        assertEquals(listOf("POST"), server.recorded.map { it.method })
+    }
+
+    @Test
+    fun aConflictThatIsNotDeviceExistsStillFails() {
+        server.route("POST", "/api/devices") { exchange, _ ->
+            json(exchange, 409, """{"detail":"something else"}""")
+        }
+        runClient(token = { "rmm_test" }) { client ->
+            val error = suspendCatching { client.registerDevice(null, "Thor", "0.2.0") }.exceptionOrNull()
+            val http = error as RommHttpException
+            assertEquals(409, http.status)
+        }
     }
 
     @Test

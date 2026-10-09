@@ -85,7 +85,13 @@ class RommPairing(
         }
 
     suspend fun poll(deviceCode: String): RommPairingPoll =
-        unauthenticated { ops -> ops.pollDeviceToken(deviceCode).toPublic() }
+        unauthenticated { ops ->
+            val result = ops.pollDeviceToken(deviceCode).toPublic()
+            if (result is RommPairingPoll.Approved) {
+                wiring.rememberedDevice = RegisteredDevice(result.deviceId, wiring.clientVersion)
+            }
+            result
+        }
 
     private suspend fun <T> unauthenticated(block: suspend (RommOps) -> T): T {
         val ops = wiring.open(wiring.origin) { null }

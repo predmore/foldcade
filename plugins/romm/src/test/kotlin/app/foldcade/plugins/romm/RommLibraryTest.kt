@@ -447,6 +447,9 @@ class RommLibraryTest {
             assertFalse(body.contains("password"))
             assertFalse(cacheContains(cache, "rmm_secret"))
             assertNull(wiring.tokenSource.accessToken())
+            assertEquals("device-1", wiring.rememberedDevice?.deviceId)
+            assertEquals(wiring.clientVersion, wiring.rememberedDevice?.clientVersion)
+            assertFalse(cacheContains(cache, "device-1"))
         } finally {
             server.close()
         }
