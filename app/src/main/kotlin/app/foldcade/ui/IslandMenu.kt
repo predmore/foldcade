@@ -1,7 +1,6 @@
 package app.foldcade.ui
 
 import android.content.Context
-import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
@@ -16,12 +15,10 @@ import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.text.BasicText
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -33,12 +30,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.focusProperties
-import androidx.compose.ui.geometry.CornerRadius
-import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.geometry.Size
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.StrokeCap
-import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
@@ -50,6 +41,7 @@ import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.zIndex
 import app.foldcade.FoldcadeApp
+import app.foldcade.R
 import app.foldcade.language.Chrome
 import app.foldcade.language.Copy
 import app.foldcade.language.HostScreen
@@ -65,7 +57,7 @@ import kotlinx.coroutines.delay
 
 /**
  * Art-kit shoulder chips. Outline while the island is closed, filled while that
- * menu is open. This module does not ship the PNGs.
+ * menu is open.
  * `@drawable/ic_btn_l1`, `@drawable/ic_btn_l1_filled`,
  * `@drawable/ic_btn_r1`, `@drawable/ic_btn_r1_filled`.
  */
@@ -163,17 +155,17 @@ private fun Island(
             horizontalArrangement = Arrangement.spacedBy(8.dp),
         ) {
             if (side == Side.Left) {
-                ShoulderChip(ShoulderChips.l1, ShoulderChips.l1Filled, progress, "L1")
+                ShoulderChip(R.drawable.ic_btn_l1, R.drawable.ic_btn_l1_filled, progress, "L1")
                 Row(Modifier.graphicsLayer { alpha = 1f - progress }, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    ToolIcon { sliders(theme.onBackground) }
-                    ToolIcon { grid(theme.onBackground) }
-                    ToolIcon { note(theme.onBackground) }
+                    Glyph(R.drawable.ic_status_settings, null)
+                    Glyph(R.drawable.ic_status_tools, null)
+                    Glyph(R.drawable.ic_status_volume_2, null)
                 }
             } else {
                 Row(Modifier.graphicsLayer { alpha = 1f - progress }, horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
                     StatusIcons(app)
                 }
-                ShoulderChip(ShoulderChips.r1, ShoulderChips.r1Filled, progress, "R1")
+                ShoulderChip(R.drawable.ic_btn_r1, R.drawable.ic_btn_r1_filled, progress, "R1")
             }
         }
         if (panel != null && progress > 0f) {
@@ -220,35 +212,84 @@ private object SteadyIsland : androidx.compose.ui.MotionDurationScale {
 
 /**
  * Cross-fades `@drawable/ic_btn_l1` or `@drawable/ic_btn_r1` into the `_filled` variant.
- * Missing art leaves the slot empty. This does not draw a substitute chip.
  */
 @Composable
-private fun ShoulderChip(outlineName: String, filledName: String, openFraction: Float, label: String) {
-    val context = LocalContext.current
-    val outline = remember(outlineName) { drawableId(context, outlineName) }
-    val filled = remember(filledName) { drawableId(context, filledName) }
-    Box(Modifier.size(40.dp, 28.dp), contentAlignment = Alignment.Center) {
-        if (outline != 0) {
-            Image(
-                painter = painterResource(outline),
-                contentDescription = label,
-                modifier = Modifier.fillMaxSize().graphicsLayer { alpha = 1f - openFraction },
-                contentScale = ContentScale.Fit,
-            )
+private fun ShoulderChip(outline: Int, filled: Int, openFraction: Float, label: String) {
+    Box(Modifier.size(36.dp, 24.dp), contentAlignment = Alignment.Center) {
+        Image(
+            painter = painterResource(outline),
+            contentDescription = label,
+            modifier = Modifier.fillMaxSize().graphicsLayer { alpha = 1f - openFraction },
+            contentScale = ContentScale.Fit,
+        )
+        Image(
+            painter = painterResource(filled),
+            contentDescription = null,
+            modifier = Modifier.fillMaxSize().graphicsLayer { alpha = openFraction },
+            contentScale = ContentScale.Fit,
+        )
+    }
+}
+
+@Composable
+private fun Glyph(id: Int, description: String?) {
+    Image(
+        painter = painterResource(id),
+        contentDescription = description,
+        modifier = Modifier.size(18.dp),
+        contentScale = ContentScale.Fit,
+    )
+}
+
+/** Battery, Wi-Fi, and the bell are art-kit icons. The clock stays text. */
+internal fun batteryStatusIcon(percent: Int, charging: Boolean): Int {
+    val bucket = ((percent.coerceIn(0, 100) + 5) / 10 * 10).coerceAtMost(100)
+    return if (charging) {
+        when (bucket) {
+            0 -> R.drawable.ic_status_battery_0_charging
+            10 -> R.drawable.ic_status_battery_10_charging
+            20 -> R.drawable.ic_status_battery_20_charging
+            30 -> R.drawable.ic_status_battery_30_charging
+            40 -> R.drawable.ic_status_battery_40_charging
+            50 -> R.drawable.ic_status_battery_50_charging
+            60 -> R.drawable.ic_status_battery_60_charging
+            70 -> R.drawable.ic_status_battery_70_charging
+            80 -> R.drawable.ic_status_battery_80_charging
+            90 -> R.drawable.ic_status_battery_90_charging
+            else -> R.drawable.ic_status_battery_100_charging
         }
-        if (filled != 0) {
-            Image(
-                painter = painterResource(filled),
-                contentDescription = null,
-                modifier = Modifier.fillMaxSize().graphicsLayer { alpha = openFraction },
-                contentScale = ContentScale.Fit,
-            )
+    } else {
+        when (bucket) {
+            0 -> R.drawable.ic_status_battery_0
+            10 -> R.drawable.ic_status_battery_10
+            20 -> R.drawable.ic_status_battery_20
+            30 -> R.drawable.ic_status_battery_30
+            40 -> R.drawable.ic_status_battery_40
+            50 -> R.drawable.ic_status_battery_50
+            60 -> R.drawable.ic_status_battery_60
+            70 -> R.drawable.ic_status_battery_70
+            80 -> R.drawable.ic_status_battery_80
+            90 -> R.drawable.ic_status_battery_90
+            else -> R.drawable.ic_status_battery_100
         }
     }
 }
 
-private fun drawableId(context: Context, name: String): Int =
-    context.resources.getIdentifier(name, "drawable", context.packageName)
+internal fun wifiStatusIcon(network: String): Int =
+    if (network == Copy.wifi) R.drawable.ic_status_wifi_4 else R.drawable.ic_status_wifi_off
+
+internal fun bellStatusIcon(count: Int): Int = when {
+    count <= 0 -> R.drawable.ic_status_bell_dot
+    count == 1 -> R.drawable.ic_status_bell_1
+    count == 2 -> R.drawable.ic_status_bell_2
+    count == 3 -> R.drawable.ic_status_bell_3
+    count == 4 -> R.drawable.ic_status_bell_4
+    count == 5 -> R.drawable.ic_status_bell_5
+    count == 6 -> R.drawable.ic_status_bell_6
+    count == 7 -> R.drawable.ic_status_bell_7
+    count == 8 -> R.drawable.ic_status_bell_8
+    else -> R.drawable.ic_status_bell_9plus
+}
 
 @Composable
 private fun StatusIcons(app: FoldcadeApp) {
@@ -261,146 +302,13 @@ private fun StatusIcons(app: FoldcadeApp) {
             delay(millisUntilNextMinute(System.currentTimeMillis()))
         }
     }
-    val notices = app.shell.model.notices.size
     BasicText(
         text = status.time,
         style = TextStyle(color = theme.onBackground, fontSize = TypeRamp.hint, fontFamily = theme.font),
     )
-    ToolIcon { battery(theme.onBackground, status.batteryPercent, status.charging) }
-    ToolIcon { wifi(if (status.network == Copy.wifi) theme.onBackground else theme.onBackground.copy(alpha = 0.4f)) }
-    Box(contentAlignment = Alignment.TopEnd) {
-        ToolIcon { bell(theme.onBackground) }
-        if (notices > 0) {
-            BasicText(
-                text = notices.coerceAtMost(9).toString(),
-                style = TextStyle(color = theme.focus, fontSize = TypeRamp.hint, fontFamily = theme.font),
-            )
-        } else {
-            Spacer(
-                Modifier
-                    .align(Alignment.TopEnd)
-                    .size(5.dp)
-                    .background(theme.focus, CircleShape),
-            )
-        }
-    }
-}
-
-@Composable
-private fun ToolIcon(draw: androidx.compose.ui.graphics.drawscope.DrawScope.() -> Unit) {
-    Canvas(Modifier.size(18.dp), onDraw = draw)
-}
-
-private fun androidx.compose.ui.graphics.drawscope.DrawScope.sliders(color: Color) {
-    val gaps = listOf(0.22f, 0.5f, 0.78f)
-    val knobs = listOf(0.32f, 0.68f, 0.42f)
-    gaps.forEachIndexed { index, yFrac ->
-        val y = size.height * yFrac
-        drawLine(color, Offset(size.width * 0.12f, y), Offset(size.width * 0.88f, y), strokeWidth = 1.6f, cap = StrokeCap.Round)
-        drawCircle(color, radius = 2.2f, center = Offset(size.width * knobs[index], y))
-    }
-}
-
-private fun androidx.compose.ui.graphics.drawscope.DrawScope.grid(color: Color) {
-    val stroke = Stroke(width = 1.5f)
-    val cells = listOf(0.12f to 0.12f, 0.54f to 0.12f, 0.12f to 0.54f, 0.54f to 0.54f)
-    cells.forEach { (x, y) ->
-        drawRoundRect(
-            color = color,
-            topLeft = Offset(size.width * x, size.height * y),
-            size = Size(size.width * 0.32f, size.height * 0.32f),
-            cornerRadius = CornerRadius(2f, 2f),
-            style = stroke,
-        )
-    }
-}
-
-private fun androidx.compose.ui.graphics.drawscope.DrawScope.note(color: Color) {
-    val head = Offset(size.width * 0.34f, size.height * 0.72f)
-    drawCircle(color, radius = size.minDimension * 0.16f, center = head)
-    drawLine(
-        color,
-        head + Offset(size.minDimension * 0.14f, -size.minDimension * 0.08f),
-        head + Offset(size.minDimension * 0.14f, -size.minDimension * 0.48f),
-        strokeWidth = 1.6f,
-        cap = StrokeCap.Round,
-    )
-    drawLine(
-        color,
-        head + Offset(size.minDimension * 0.14f, -size.minDimension * 0.48f),
-        head + Offset(size.minDimension * 0.36f, -size.minDimension * 0.36f),
-        strokeWidth = 1.6f,
-        cap = StrokeCap.Round,
-    )
-}
-
-private fun androidx.compose.ui.graphics.drawscope.DrawScope.bell(color: Color) {
-    val stroke = Stroke(width = 1.6f, cap = StrokeCap.Round)
-    drawArc(
-        color = color,
-        startAngle = 200f,
-        sweepAngle = 140f,
-        useCenter = false,
-        topLeft = Offset(size.width * 0.18f, size.height * 0.16f),
-        size = Size(size.width * 0.64f, size.height * 0.64f),
-        style = stroke,
-    )
-    drawLine(
-        color,
-        Offset(size.width * 0.2f, size.height * 0.68f),
-        Offset(size.width * 0.8f, size.height * 0.68f),
-        strokeWidth = 1.6f,
-        cap = StrokeCap.Round,
-    )
-    drawCircle(color, radius = 1.5f, center = Offset(size.width * 0.5f, size.height * 0.82f))
-}
-
-private fun androidx.compose.ui.graphics.drawscope.DrawScope.wifi(color: Color) {
-    val stroke = Stroke(width = 1.6f, cap = StrokeCap.Round)
-    val cx = size.width / 2f
-    val base = size.height * 0.78f
-    drawCircle(color, radius = 1.6f, center = Offset(cx, base))
-    listOf(0.28f, 0.46f, 0.66f).forEach { scale ->
-        val radius = size.minDimension * scale
-        drawArc(
-            color = color,
-            startAngle = 225f,
-            sweepAngle = 90f,
-            useCenter = false,
-            topLeft = Offset(cx - radius, base - radius),
-            size = Size(radius * 2f, radius * 2f),
-            style = stroke,
-        )
-    }
-}
-
-private fun androidx.compose.ui.graphics.drawscope.DrawScope.battery(color: Color, percent: Int, charging: Boolean) {
-    val stroke = Stroke(width = 1.5f)
-    val body = Size(size.width * 0.72f, size.height * 0.48f)
-    val top = Offset(size.width * 0.08f, (size.height - body.height) / 2f)
-    drawRoundRect(color, topLeft = top, size = body, cornerRadius = CornerRadius(2f, 2f), style = stroke)
-    val fillWidth = body.width * (percent.coerceIn(0, 100) / 100f) * 0.8f
-    if (fillWidth > 0f) {
-        drawRoundRect(
-            color,
-            topLeft = top + Offset(body.width * 0.1f, body.height * 0.18f),
-            size = Size(fillWidth, body.height * 0.64f),
-            cornerRadius = CornerRadius(1f, 1f),
-        )
-    }
-    drawRect(
-        color,
-        topLeft = Offset(top.x + body.width, top.y + body.height * 0.3f),
-        size = Size(size.width * 0.08f, body.height * 0.4f),
-    )
-    if (charging) {
-        drawLine(
-            color,
-            Offset(size.width * 0.42f, size.height * 0.34f),
-            Offset(size.width * 0.34f, size.height * 0.66f),
-            strokeWidth = 1.4f,
-        )
-    }
+    Glyph(batteryStatusIcon(status.batteryPercent, status.charging), null)
+    Glyph(wifiStatusIcon(status.network), null)
+    Glyph(bellStatusIcon(app.shell.model.notices.size), null)
 }
 
 @Composable

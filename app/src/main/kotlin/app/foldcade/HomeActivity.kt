@@ -326,8 +326,17 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
 
     private fun applyIslandPreview(intent: Intent, replace: Boolean = false) {
         if (applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE == 0) return
-        val hold = parseIslandHold(intent.getStringExtra("foldcade.island")) ?: return
+        val raw = intent.getStringExtra("foldcade.island")
+        if (raw == "closed") {
+            foldcade.islandHold = null
+            foldcade.shell.dismissDialog()
+            foldcade.shell.closePanel()
+            return
+        }
+        val hold = parseIslandHold(raw) ?: return
         if (!replace && foldcade.islandHold != null) return
+        // A leftover dialog swallows shoulders and leaves the bottom screen sharp.
+        foldcade.shell.dismissDialog()
         foldcade.islandHold = hold
         if (foldcade.shell.model.panel?.side != hold.side) {
             foldcade.shell.onMeaning(hold.meaning(), HostScreen.Top)
