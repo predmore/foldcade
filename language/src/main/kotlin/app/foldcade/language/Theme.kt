@@ -154,6 +154,12 @@ object Copy {
     const val showApp = "Show"
     const val androidGameMeta = "Android game"
     const val appMeta = "App"
+    const val moonlight = "Moonlight"
+    const val moonlightImported = "Imported list"
+    const val moonlightPinned = "Pinned shortcuts only"
+    const val importMoonlightTitle = "Import Moonlight games"
+    const val importMoonlightBody = "Checked games go to All Apps and the Moonlight folder."
+    const val importMoonlight = "Import"
 }
 
 /** Which face actions the hint row should show. Glyphs come from [FaceMap], not from these flags. */

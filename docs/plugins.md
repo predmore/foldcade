@@ -29,7 +29,7 @@ An independent plugin that is not in this repository, and that uses only this AP
 
 `:plugins:moonlight` (`MoonlightEntry`) is the official Moonlight client, `com.limelight`. The player starts `com.limelight.ShortcutTrampoline` with the host UUID and a string `AppId`. It does not pair, and it does not open Moonlight's database.
 
-`MoonlightLibrary` lists pinned shortcuts, or a one-time import after the caller confirms that list. `reconcile` does nothing. RomM does not configure this library: the entry has no metadata provider, and reconcile does not call RomM. The official client does not take both displays. The stream starts on the screen the picker targets, and the other screen keeps the picker.
+`MoonlightLibrary` lists pinned shortcuts, or the list the user confirmed on the import sheet. The left-panel Moonlight row switches between Imported list and Pinned shortcuts only. Switching does not clear either list, and it does not remove the All Apps or Moonlight-folder membership the import recorded. That membership is data for the home grid. The sheet does not draw the grid. `reconcile` does nothing. RomM does not configure this library: the entry has no metadata provider, and reconcile does not call RomM. The official client does not take both displays. The stream starts on the screen the picker targets, and the other screen keeps the picker.
 
 ## Samples
 

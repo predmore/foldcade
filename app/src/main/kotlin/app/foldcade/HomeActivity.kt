@@ -190,6 +190,9 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
             Effect.RequestHome -> requestHome()
             is Effect.OpenAndroidSetting -> openAndroidSetting(effect.setting)
             Effect.DismissButtonLabels -> Unit
+            is Effect.ConfirmMoonlightImport -> Unit
+            Effect.SkipMoonlightImport -> Unit
+            Effect.ReviewMoonlightImport -> Unit
             null -> Unit
         }
     }
