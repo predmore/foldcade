@@ -654,6 +654,71 @@ else
   } >"$out/launch-path.txt"
 fi
 
+# Shoulder panels on the Thor-sized emulator. This is not a Thor pass.
+# The home role is held, so Set as Home is hidden. From Library the
+# rows are Theme, Primary, Arrange, Order, Music, Track, Volume,
+# Background, Motion, Azahar saves, melonDS saves, Android Games, Apps,
+# Hidden, then Android settings: fifteen downs. One down from the
+# launch-target row lands on the Wi-Fi tile while a stand-in is focused.
+echo "step: input help"
+adb_do shell input -h >"$out/input-help.txt" 2>&1 || true
+input_display_flag=""
+if grep -Eq '(^|[[:space:]])-d[[:space:]]|displayId|--display' "$out/input-help.txt"; then
+  input_display_flag="-d"
+fi
+
+panel_key() {
+  local code="$1"
+  local display="${2:-}"
+  if [ -n "$input_display_flag" ] && [ -n "$display" ]; then
+    adb_step shell input "$input_display_flag" "$display" keyevent "$code"
+  else
+    adb_step shell input keyevent "$code"
+  fi
+}
+
+capture_shoulders() {
+  local display="${1:-}"
+  local tag="${2:-focused}"
+  echo "step: L1 Android settings (${tag})"
+  panel_key KEYCODE_BUTTON_L1 "$display"
+  sleep 1
+  local i
+  for i in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15; do
+    panel_key KEYCODE_DPAD_DOWN "$display"
+    sleep 0.3
+  done
+  sleep 1
+  capture "$primary" "$out/settings-l1-${tag}-top.png"
+  capture "$secondary" "$out/settings-l1-${tag}-bottom.png"
+  expect_png "$out/settings-l1-${tag}-top.png" "${top_width}x${top_height}"
+  expect_png "$out/settings-l1-${tag}-bottom.png" "${bottom_width}x${bottom_height}"
+
+  echo "step: R1 quick settings (${tag})"
+  panel_key KEYCODE_BUTTON_R1 "$display"
+  sleep 1
+  panel_key KEYCODE_DPAD_DOWN "$display"
+  sleep 1
+  capture "$primary" "$out/settings-r1-${tag}-top.png"
+  capture "$secondary" "$out/settings-r1-${tag}-bottom.png"
+  expect_png "$out/settings-r1-${tag}-top.png" "${top_width}x${top_height}"
+  expect_png "$out/settings-r1-${tag}-bottom.png" "${bottom_width}x${bottom_height}"
+}
+
+if [ -n "$input_display_flag" ]; then
+  capture_shoulders 0 top-input
+  capture_shoulders "$presentation_logical" bottom-input
+else
+  capture_shoulders "" focused
+fi
+
+{
+  echo "Thor-sized emulator, not a Thor pass."
+  echo "Top panel captures are ${top_width}x${top_height}. Bottom panel captures are ${bottom_width}x${bottom_height}."
+  echo "input_display_flag=${input_display_flag:-none}"
+  echo "These screenshots are an emulator result. They are not a Thor pass."
+} >"$out/settings-captures.txt"
+
 open_android_shelf() {
   local which="$1"
   echo "step: android shelf ${which}"
