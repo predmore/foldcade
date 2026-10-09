@@ -42,6 +42,7 @@ class FoldcadeApp : Application() {
     val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val credentialGate = Mutex()
     private val pluginLoad = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    private lateinit var rommPublish: RommPublish
 
     override fun onCreate() {
         super.onCreate()
@@ -49,6 +50,23 @@ class FoldcadeApp : Application() {
         credentials = AndroidCredentialStore(this)
         plugins = PluginHost(Dispatchers.IO, credentials)
         shell = ShellController(store, plugins)
+        rommPublish = RommPublish(
+            read = {
+                readRommPublish(
+                    origin = store::rommOrigin,
+                    platforms = plugins::platformDefinitions,
+                    cacheRoot = ::rommCacheRoot,
+                )
+            },
+            apply = { request ->
+                publishRommWiring(
+                    request.origin,
+                    credentials,
+                    request.cacheRoot,
+                    request.platforms,
+                )
+            },
+        )
         refreshCredentials()
         pluginLoad.launch {
             plugins.load(classLoader)
@@ -91,14 +109,14 @@ class FoldcadeApp : Application() {
         }
     }
 
-    /** Installs or clears [app.foldcade.plugins.romm.RommPlugins] from the saved origin and this store. */
+    /**
+     * Installs or clears [app.foldcade.plugins.romm.RommPlugins].
+     * Reads the saved origin, then the host platform list, then the cache directory.
+     * A later call supersedes an earlier one. The same origin, cache, and platforms
+     * leave the current wiring in place.
+     */
     fun publishRomm() {
-        publishRommWiring(
-            store.rommOrigin(),
-            credentials,
-            rommCacheRoot(),
-            plugins.platformDefinitions(),
-        )
+        rommPublish.publish()
     }
 
     private fun rommCacheRoot(): Path = cacheDir.toPath().resolve("romm")

@@ -23,6 +23,7 @@ import app.foldcade.api.plugin.PluginEntry
 import app.foldcade.api.plugin.PluginException
 import app.foldcade.api.plugin.SaveSet
 import app.foldcade.api.plugin.SyncResult
+import java.util.Collections
 import java.util.ServiceLoader
 import kotlin.coroutines.cancellation.CancellationException
 import kotlinx.coroutines.CoroutineDispatcher
@@ -38,6 +39,9 @@ private const val BUNDLED_ROMM_ENTRY = "app.foldcade.plugins.romm.RommEntry"
  * [load] reads the class loader on [io], off the main thread.
  * Register from one thread before calling the suspending methods.
  * [load] records a bad plugin in [rejected]. It does not throw, except [VirtualMachineError].
+ * List and map readers never walk the collections [load] mutates. They see one
+ * immutable snapshot, published when [load] returns. [register] publishes when
+ * it returns, except while [load] is still running.
  *
  * [credentials] is required. The Android app passes its encrypted store.
  * JVM tests pass [app.foldcade.api.plugin.MemoryCredentialStore]. There is no in-memory default.
@@ -55,8 +59,20 @@ class PluginHost(
     private val playerPlatformIds = linkedMapOf<String, String>()
     private val rejectedPlugins = mutableListOf<RejectedPlugin>()
 
+    /** Replaced in one write. Readers use this, not the maps above. */
+    @Volatile
+    private var catalog = PublishedCatalog()
+
+    /**
+     * True while [load] is registering. The snapshot waits until [load] returns.
+     * [loadHere] does not suspend, and it calls [register] on that same thread.
+     * A [register] from outside [load] runs only before [load], on one thread.
+     * This flag is not `@Volatile` because no other thread reads or writes it.
+     */
+    private var holdSnapshot = false
+
     /** Plugins [load] skipped, in the order they failed. For the UI. */
-    val rejected: List<RejectedPlugin> get() = rejectedPlugins.toList()
+    val rejected: List<RejectedPlugin> get() = catalog.rejected
 
     /**
      * Validates [entry], then stores every slot it contributes.
@@ -101,6 +117,7 @@ class PluginHost(
         stagedPlayers.forEach { players[it.id] = it }
         stagedLibraries.forEach { libraries[it.id] = it }
         stagedMetadata.forEach { metadataProviders[it.id] = it }
+        if (!holdSnapshot) publish()
     }
 
     /**
@@ -135,6 +152,8 @@ class PluginHost(
      * One bad provider is recorded in [rejected] and does not stop the providers
      * that follow. This method does not throw, except [VirtualMachineError].
      * Cancellation still propagates.
+     * The snapshot readers see is published once, after the providers that loaded
+     * are stored and the ones that failed are recorded.
      */
     suspend fun load(classLoader: ClassLoader) {
         withContext(io) {
@@ -143,6 +162,16 @@ class PluginHost(
     }
 
     private fun loadHere(classLoader: ClassLoader) {
+        holdSnapshot = true
+        try {
+            loadProviders(classLoader)
+        } finally {
+            holdSnapshot = false
+            publish()
+        }
+    }
+
+    private fun loadProviders(classLoader: ClassLoader) {
         val providers = try {
             ServiceLoader.load(PluginEntry::class.java, classLoader).iterator()
         } catch (failure: Throwable) {
@@ -185,31 +214,34 @@ class PluginHost(
      * The match uses names stored at registration. It does not call platform getters again.
      */
     fun platform(id: String): Platform? {
-        val canonical = storedPlatformId(id) ?: return null
-        return platforms[canonical]
+        val current = catalog
+        val canonical = storedPlatformId(current.platformNames, id) ?: return null
+        return current.platforms[canonical]
     }
 
     /**
      * Platform definitions stored at registration, in that order.
      * Aliases are the ones declared then. This does not call a plugin.
+     * The list is the snapshot from the last [register] or [load].
      */
-    fun platformDefinitions(): List<Platform> = definitions.toList()
+    fun platformDefinitions(): List<Platform> = catalog.definitions
 
-    fun player(id: String): Player? = players[id]
+    fun player(id: String): Player? = catalog.players[id]
 
     /**
      * Players stored for [platformId] or one of its aliases.
      * The platform match uses names stored at registration.
      */
     fun playersFor(platformId: String): List<Player> {
-        val canonical = storedPlatformId(platformId) ?: return emptyList()
-        return players.mapNotNull { (id, player) ->
-            if (playerPlatformIds[id] == canonical) player else null
+        val current = catalog
+        val canonical = storedPlatformId(current.platformNames, platformId) ?: return emptyList()
+        return current.players.mapNotNull { (id, player) ->
+            if (current.playerPlatformIds[id] == canonical) player else null
         }
     }
 
-    /** Library ids stored at registration. This does not call a plugin. */
-    fun libraryIds(): List<String> = libraries.keys.toList()
+    /** Library ids stored at registration, from the published snapshot. This does not call a plugin. */
+    fun libraryIds(): List<String> = catalog.libraries.keys.toList()
 
     /**
      * The library's display name, through the same guard as a suspending call.
@@ -220,9 +252,9 @@ class PluginHost(
         return callPlugin(id) { library.displayName }
     }
 
-    fun library(id: String): LibraryBackend? = libraries[id]
+    fun library(id: String): LibraryBackend? = catalog.libraries[id]
 
-    fun metadata(id: String): MetadataProvider? = metadataProviders[id]
+    fun metadata(id: String): MetadataProvider? = catalog.metadataProviders[id]
 
     /** Already loaded. Not a fetch, and not moved onto [io]. */
     fun cachedMetadata(providerId: String, game: Game): GameMeta? {
@@ -290,13 +322,26 @@ class PluginHost(
         callPlugin(pluginId) { withContext(io) { block() } }
 
     private fun requireLibrary(id: String): LibraryBackend =
-        libraries[id] ?: error("No library registered with id $id")
+        catalog.libraries[id] ?: error("No library registered with id $id")
 
     private fun requireMetadata(id: String): MetadataProvider =
-        metadataProviders[id] ?: error("No metadata provider registered with id $id")
+        catalog.metadataProviders[id] ?: error("No metadata provider registered with id $id")
 
     private fun requirePlayer(id: String): Player =
-        players[id] ?: error("No player registered with id $id")
+        catalog.players[id] ?: error("No player registered with id $id")
+
+    private fun publish() {
+        catalog = PublishedCatalog(
+            platforms = platforms.frozenMap(),
+            definitions = definitions.frozenList(),
+            players = players.frozenMap(),
+            libraries = libraries.frozenMap(),
+            metadataProviders = metadataProviders.frozenMap(),
+            platformNames = platformNames.frozenList(),
+            playerPlatformIds = playerPlatformIds.frozenMap(),
+            rejected = rejectedPlugins.frozenList(),
+        )
+    }
 
     private fun reject(plugin: String?, failure: Throwable) {
         rejectedPlugins += RejectedPlugin(
@@ -305,10 +350,28 @@ class PluginHost(
         )
     }
 
-    private fun storedPlatformId(idOrAlias: String): String? =
-        platformNames.firstOrNull { it.first.equals(idOrAlias, ignoreCase = true) }?.second
+    private fun storedPlatformId(names: List<Pair<String, String>>, idOrAlias: String): String? =
+        names.firstOrNull { it.first.equals(idOrAlias, ignoreCase = true) }?.second
 
 }
+
+/** One consistent view of the host. Replaced whole, never edited. */
+private class PublishedCatalog(
+    val platforms: Map<String, Platform> = emptyMap(),
+    val definitions: List<Platform> = emptyList(),
+    val players: Map<String, Player> = emptyMap(),
+    val libraries: Map<String, LibraryBackend> = emptyMap(),
+    val metadataProviders: Map<String, MetadataProvider> = emptyMap(),
+    val platformNames: List<Pair<String, String>> = emptyList(),
+    val playerPlatformIds: Map<String, String> = emptyMap(),
+    val rejected: List<RejectedPlugin> = emptyList(),
+)
+
+private fun <K, V> Map<K, V>.frozenMap(): Map<K, V> =
+    Collections.unmodifiableMap(java.util.LinkedHashMap(this))
+
+private fun <T> Collection<T>.frozenList(): List<T> =
+    Collections.unmodifiableList(java.util.ArrayList(this))
 
 /**
  * A plugin [PluginHost.load] did not store.

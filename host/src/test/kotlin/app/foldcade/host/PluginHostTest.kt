@@ -33,6 +33,9 @@ import java.net.URL
 import java.net.URLClassLoader
 import java.util.Collections
 import java.util.Enumeration
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicReference
 import javax.tools.DiagnosticCollector
 import javax.tools.JavaFileObject
 import javax.tools.ToolProvider
@@ -346,6 +349,58 @@ class PluginHostTest {
         assertTrue(host.rejected.any { it.plugin == IsolatedBadMajor::class.java.name })
         assertTrue(host.rejected.any { it.plugin == IsolatedThrows::class.java.name })
         assertEquals(3, host.rejected.size)
+    }
+
+    @Test(timeout = 5_000)
+    fun loadPublishesOneSnapshotWhenItFinishes() = runBlocking {
+        val probe = SnapshotProbe()
+        snapshotProbe = probe
+        val service = File.createTempFile("foldcade-snapshot", ".services")
+        service.writeText(
+            listOf(
+                IsolatedGood::class.java.name,
+                IsolatedSnapshotProbe::class.java.name,
+            ).joinToString("\n"),
+        )
+        val loader = object : ClassLoader(IsolatedGood::class.java.classLoader) {
+            override fun getResources(name: String): Enumeration<URL> {
+                if (name == "META-INF/services/${PluginEntry::class.java.name}") {
+                    return Collections.enumeration(listOf(service.toURI().toURL()))
+                }
+                return super.getResources(name)
+            }
+        }
+        val io = namedDispatcher("foldcade-io")
+        val failure = AtomicReference<Throwable>(null)
+        try {
+            val host = PluginHost(io, MemoryCredentialStore())
+            val loading = launch(io) { host.load(loader) }
+            assertTrue(probe.entered.await(2, TimeUnit.SECONDS))
+            assertTrue(host.libraryIds().isEmpty())
+            assertNull(host.library("good.one"))
+            val reader = Thread {
+                try {
+                    repeat(1_000) {
+                        host.libraryIds()
+                        host.platformDefinitions()
+                        host.rejected
+                        host.playersFor("sample")
+                    }
+                } catch (error: Throwable) {
+                    failure.set(error)
+                }
+            }
+            reader.start()
+            probe.release.countDown()
+            withTimeout(2_000) { loading.join() }
+            reader.join(2_000)
+            assertNull(failure.get())
+            assertEquals(listOf("good.one", "second.library"), host.libraryIds())
+            assertEquals("second.library", host.library("second.library")?.id)
+        } finally {
+            probe.release.countDown()
+            io.close()
+        }
     }
 
     @Test
@@ -735,6 +790,25 @@ class PluginHostTest {
 class IsolatedGood : PluginEntry {
     override val apiVersion = PLUGIN_API_VERSION
     override val libraries: List<LibraryBackend> = listOf(LibraryFake("good.one"))
+}
+
+class SnapshotProbe {
+    val entered = CountDownLatch(1)
+    val release = CountDownLatch(1)
+}
+
+@Volatile
+var snapshotProbe = SnapshotProbe()
+
+class IsolatedSnapshotProbe : PluginEntry {
+    override val apiVersion = PLUGIN_API_VERSION
+    override val libraries: List<LibraryBackend>
+        get() {
+            val probe = snapshotProbe
+            probe.entered.countDown()
+            check(probe.release.await(4, TimeUnit.SECONDS)) { "snapshot probe was not released" }
+            return listOf(LibraryFake("second.library"))
+        }
 }
 
 class IsolatedGoodTwo : PluginEntry {

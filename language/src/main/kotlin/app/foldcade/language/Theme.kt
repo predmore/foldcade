@@ -71,6 +71,7 @@ object Copy {
     const val bottom = "Bottom"
     const val addFolder = "Add a folder"
     const val connectRomm = "Connect RomM"
+    const val setUpRomm = "Set up RomM"
     const val signOut = "Sign out / forget credentials"
     const val clientApiToken = "Client API token"
     const val saveToken = "Save token"

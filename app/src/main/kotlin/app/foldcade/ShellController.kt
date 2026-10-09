@@ -1,8 +1,9 @@
 package app.foldcade
 
-import app.foldcade.host.PluginCallException
+import app.foldcade.api.plugin.RommCredentials
 import app.foldcade.host.PluginHost
 import app.foldcade.language.ConnectField
+import app.foldcade.language.Copy
 import app.foldcade.language.Chrome
 import app.foldcade.language.Effect
 import app.foldcade.language.GridFocus
@@ -18,14 +19,11 @@ import app.foldcade.language.focusAndActivateDialog
 import app.foldcade.language.homePrompt
 import app.foldcade.language.reduce
 import app.foldcade.language.signInAgainPrompt
-import app.foldcade.plugins.romm.RommPlugins
-import app.foldcade.plugins.romm.RommTokenSource
-import app.foldcade.plugins.romm.RommWiring
 import app.foldcade.romm.cleartextCredentialWarning
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
-import java.nio.file.Path
+import kotlin.coroutines.cancellation.CancellationException
 
 class ShellController(
     private val store: SessionStore,
@@ -117,32 +115,32 @@ class ShellController(
     }
 
     /**
-     * Installs the RomM server [RommPlugins] reads.
-     * [PluginHost.platformDefinitions] is the platform list, aliases included.
-     * A RomM slug that matches one of those ids or aliases becomes that canonical id.
-     */
-    fun installRomm(origin: String, tokenSource: RommTokenSource, cacheRoot: Path) {
-        RommPlugins.install(
-            RommWiring(
-                origin = origin,
-                tokenSource = tokenSource,
-                cacheRoot = cacheRoot,
-                platforms = plugins.platformDefinitions(),
-            ),
-        )
-    }
-
-    /**
      * Library names come from [PluginHost.libraryLabel].
      * The shell does not call a plugin object itself.
-     * [PluginCallException] becomes the unavailable state.
+     * RomM is [Copy.setUpRomm] until a server origin is saved.
+     * A plugin failure becomes the unavailable state.
+     * [CancellationException] and [VirtualMachineError] still propagate.
      */
     fun refreshLibraries() {
         try {
-            val names = plugins.libraryIds().map { plugins.libraryLabel(it) }
-            model = model.copy(backends = names, unavailable = false)
-        } catch (failure: PluginCallException) {
+            model = model.copy(backends = libraryNames(), unavailable = false)
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (fatal: VirtualMachineError) {
+            throw fatal
+        } catch (_: Throwable) {
             model = model.copy(unavailable = true)
+        }
+    }
+
+    private fun libraryNames(): List<String> {
+        val rommReady = !store.rommOrigin().isNullOrBlank()
+        return plugins.libraryIds().map { id ->
+            if (id == RommCredentials.PLUGIN_ID && !rommReady) {
+                Copy.setUpRomm
+            } else {
+                plugins.libraryLabel(id)
+            }
         }
     }
 
