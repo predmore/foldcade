@@ -24,24 +24,28 @@ internal object PlatformCatalog {
             name = "Game Boy",
             folders = setOf("gb", "game boy", "gameboy"),
             extensions = setOf("gb"),
+            aliases = setOf("gb"),
         ),
         spec(
             id = "game-boy-color",
             name = "Game Boy Color",
             folders = setOf("gbc", "game boy color", "gameboy color"),
             extensions = setOf("gbc"),
+            aliases = setOf("gbc"),
         ),
         spec(
             id = "game-boy-advance",
             name = "Game Boy Advance",
             folders = setOf("gba", "game boy advance", "gameboy advance"),
             extensions = setOf("gba"),
+            aliases = setOf("gba"),
         ),
         spec(
             id = "nes",
             name = "Nintendo Entertainment System",
             folders = setOf("nes", "famicom", "nintendo entertainment system"),
             extensions = setOf("nes", "fds"),
+            aliases = setOf("famicom"),
         ),
         spec(
             id = "snes",
@@ -53,12 +57,14 @@ internal object PlatformCatalog {
                 "super famicom",
             ),
             extensions = setOf("sfc", "smc"),
+            aliases = setOf("sfam"),
         ),
         spec(
             id = "nintendo-64",
             name = "Nintendo 64",
             folders = setOf("n64", "nintendo 64"),
             extensions = setOf("n64", "z64", "v64"),
+            aliases = setOf("n64"),
         ),
         spec(
             id = "gamecube",
@@ -66,6 +72,7 @@ internal object PlatformCatalog {
             folders = setOf("gamecube", "game cube", "gc", "ngc"),
             extensions = setOf("gcm"),
             folderOnlyExtensions = setOf("iso", "rvz"),
+            aliases = setOf("ngc"),
         ),
         spec(
             id = "wii",
@@ -88,20 +95,23 @@ internal object PlatformCatalog {
             folders = setOf("3ds", "n3ds", "nintendo 3ds", "new 3ds", "new nintendo 3ds"),
             // .3ds is best-effort. Decrypted .cci and .zcci are the formats to prefer.
             extensions = setOf("cci", "zcci", "3ds"),
-            // RomM's slug is 3ds. n3ds is the other short id for this platform.
-            aliases = setOf("3ds", "n3ds"),
+            // RomM's slug is 3ds. new-nintendo-3ds is the same platform.
+            // n3ds stays as a folder-style alias.
+            aliases = setOf("3ds", "n3ds", "new-nintendo-3ds"),
         ),
         spec(
             id = "playstation",
             name = "PlayStation",
             folders = setOf("ps1", "psx", "playstation"),
             folderOnlyExtensions = setOf("cue", "chd", "pbp", "img", "iso"),
+            aliases = setOf("psx"),
         ),
         spec(
             id = "playstation-2",
             name = "PlayStation 2",
             folders = setOf("ps2", "playstation 2"),
             folderOnlyExtensions = setOf("iso", "chd"),
+            aliases = setOf("ps2"),
         ),
         spec(
             id = "psp",
@@ -123,12 +133,14 @@ internal object PlatformCatalog {
             name = "Master System",
             folders = setOf("master system", "sega master system", "sms"),
             extensions = setOf("sms"),
+            aliases = setOf("sms"),
         ),
         spec(
             id = "game-gear",
             name = "Game Gear",
             folders = setOf("game gear", "gamegear", "gg"),
             extensions = setOf("gg"),
+            aliases = setOf("gamegear"),
         ),
     )
 
