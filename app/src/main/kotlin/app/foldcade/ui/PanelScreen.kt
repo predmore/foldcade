@@ -226,6 +226,9 @@ private fun Hero(app: FoldcadeApp, screen: HostScreen, scale: Float) {
                     .fillMaxWidth()
                     .height(artHeight),
             )
+            val cellFocused = app.shell.model.let { model ->
+                model.dialog == null && model.panel == null && !model.connectOpen && model.focus.chrome == null
+            }
             TravelFade(target = game, scale = scale) { shown ->
                 if (shown != null) {
                     Column {
@@ -235,11 +238,9 @@ private fun Hero(app: FoldcadeApp, screen: HostScreen, scale: Float) {
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis,
                         )
-                        BasicText(
-                            text = shown.shortText,
-                            style = text(theme.muted, TypeRamp.heroMeta, theme),
-                            maxLines = 2,
-                            overflow = TextOverflow.Ellipsis,
+                        ShelfMeta(
+                            line = shown.shortText,
+                            hintFocused = shown.emptyShelfHint && cellFocused,
                         )
                         PlayFacts(app, shown.id)
                     }
@@ -639,7 +640,8 @@ private fun ChromeRow(app: FoldcadeApp, screen: HostScreen) {
     val shell = app.shell
     val model = shell.model
     val game = shell.focusedGame()
-    val showLaunch = model.panel == null && model.dialog == null && !model.connectOpen &&
+    val shelfOpen = model.panel == null && model.dialog == null && !model.connectOpen
+    val showLaunch = shelfOpen && game?.emptyShelfHint != true &&
         app.store.session.launchTargetControlVisible(game?.occupiesBothDisplays == true)
     Column {
         val shelf = homeGridLabel(model.homeGrid)
@@ -653,6 +655,11 @@ private fun ChromeRow(app: FoldcadeApp, screen: HostScreen) {
                     label = if (target == Panel.Bottom || model.launchOnBottom) Copy.launchOnBottom else Copy.launchOnTop,
                     focused = model.focus.chrome == Chrome.LaunchTarget,
                     onClick = { shell.touchChrome(Chrome.LaunchTarget, screen) },
+                )
+            } else if (shelfOpen && game?.emptyShelfHint == true) {
+                ShelfMeta(
+                    line = game.shortText,
+                    hintFocused = model.focus.chrome == null,
                 )
             } else if (game?.occupiesBothDisplays == true && app.store.session.bothScreensFree() && model.panel == null) {
                 BasicText(text = Copy.usesBothScreens, style = text(theme.muted, TypeRamp.hint, theme))
@@ -668,6 +675,22 @@ private fun ChromeRow(app: FoldcadeApp, screen: HostScreen) {
             BasicText(text = hint, style = text(theme.muted, TypeRamp.hint, theme))
         }
     }
+}
+
+/**
+ * Shelf meta. An empty-shelf hint uses the focus color and the focus glow
+ * while the controller is on that tile.
+ */
+@Composable
+private fun ShelfMeta(line: String, hintFocused: Boolean) {
+    val theme = foldTheme()
+    BasicText(
+        text = line,
+        modifier = if (hintFocused) Modifier.focusStroke(true).padding(px(8f)) else Modifier,
+        style = text(if (hintFocused) theme.focus else theme.muted, TypeRamp.heroMeta, theme),
+        maxLines = 2,
+        overflow = TextOverflow.Ellipsis,
+    )
 }
 
 @Composable

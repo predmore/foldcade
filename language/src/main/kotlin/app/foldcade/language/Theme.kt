@@ -65,6 +65,7 @@ object Copy {
     const val launchOnBottom = "Launch on bottom"
     const val usesBothScreens = "Uses both screens"
     const val progressInGameNative = "Progress lives in GameNative."
+    const val addShortcutInGameNative = "Add a game's shortcut in GameNative."
     const val library = "Library"
     const val theme = "Theme"
     const val background = "Background"

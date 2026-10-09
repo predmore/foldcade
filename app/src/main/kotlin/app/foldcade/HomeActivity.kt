@@ -242,6 +242,7 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
 
     private fun launchGame(index: Int) {
         val game = Shelf.games.getOrNull(index) ?: return
+        if (game.emptyShelfHint) return
         val player = game.platformId?.let { foldcade.plugins.playersFor(it).firstOrNull() }
         if (player == null) {
             if (game.platformId != null) {

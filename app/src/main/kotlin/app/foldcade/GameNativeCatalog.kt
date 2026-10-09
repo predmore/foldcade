@@ -17,6 +17,7 @@ import kotlin.coroutines.cancellation.CancellationException
 
 /**
  * Reads shortcuts GameNative already published and keeps the confirmed list.
+ * v1 does not offer a screen for typing app ids.
  *
  * Android exposes another app's shortcuts to the default launcher. A security
  * failure leaves the list already stored. This does not read GameNative's

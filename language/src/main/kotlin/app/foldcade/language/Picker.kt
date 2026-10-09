@@ -371,6 +371,11 @@ data class PickerModel(
     val playerSaves: List<PlayerSaveSetting> = emptyList(),
     val homeGrid: HomeGrid = HomeGrid.StandIns,
     val appActions: AppActions? = null,
+    /**
+     * Bumped when the shelf's text changes without the count changing.
+     * Compose treats an equal model as unchanged.
+     */
+    val shelfEpoch: Int = 0,
 )
 
 fun reduce(
