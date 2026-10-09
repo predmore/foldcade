@@ -33,6 +33,7 @@ import app.foldcade.language.connectFields
 import app.foldcade.language.displayOrder
 import app.foldcade.language.focusAndActivateDialog
 import app.foldcade.language.homePrompt
+import app.foldcade.language.panelRows
 import app.foldcade.language.reduce
 import app.foldcade.language.signInAgainPrompt
 import app.foldcade.romm.cleartextCredentialWarning
@@ -281,6 +282,19 @@ class ShellController(
         if (model.dialog != null || model.panel != null || model.connectOpen) return
         publish(model.copy(focus = model.focus.copy(chrome = chrome)))
         onMeaning(Meaning.Activate, screen)
+    }
+
+    /** One tap moves focus to that row. A second tap on it activates. */
+    fun touchPanel(index: Int, screen: HostScreen): Effect? {
+        val panel = model.panel ?: return null
+        if (panel.screen != screen) return null
+        val rows = panelRows(panel, model)
+        if (index !in rows.indices) return null
+        if (panel.index != index) {
+            publish(model.copy(panel = panel.copy(index = index)))
+            return null
+        }
+        return onMeaning(Meaning.Activate, screen)
     }
 
     /** One tap focuses the button and activates it. Keys still move, then Activate. */

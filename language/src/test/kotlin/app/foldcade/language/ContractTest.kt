@@ -281,6 +281,7 @@ class ContractTest {
         val setting = PlayerSaveSetting(playerId = "azahar", label = "Azahar", chosen = false)
         val rows = leftRows(homeRoleHeld = true, playerSaves = listOf(setting))
         assertEquals(Row.PlayerSave("azahar"), rows.filterIsInstance<Row.PlayerSave>().single())
+        assertEquals(Row.DefaultHomeApp, rows.last())
         val opened = reduce(
             PickerModel(
                 count = 1,
