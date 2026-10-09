@@ -4,19 +4,26 @@ import app.foldcade.api.plugin.Game
 import app.foldcade.api.plugin.GameMeta
 import app.foldcade.api.plugin.GamePage
 import app.foldcade.api.plugin.GameQuery
+import app.foldcade.api.plugin.LaunchRequest
 import app.foldcade.api.plugin.LaunchTarget
 import app.foldcade.api.plugin.LibraryBackend
 import app.foldcade.api.plugin.ListedPlatform
 import app.foldcade.api.plugin.MetadataProvider
-import app.foldcade.api.plugin.PLUGIN_API_VERSION
-import app.foldcade.api.plugin.playersForPlatform
 import app.foldcade.api.plugin.ObservedSaves
+import app.foldcade.api.plugin.PLUGIN_API_MINOR
+import app.foldcade.api.plugin.PLUGIN_API_VERSION
 import app.foldcade.api.plugin.Placement
 import app.foldcade.api.plugin.Platform
 import app.foldcade.api.plugin.Player
+import app.foldcade.api.plugin.PlayerIntent
+import app.foldcade.api.plugin.PluginEntry
+import app.foldcade.api.plugin.PluginException
 import app.foldcade.api.plugin.SaveSet
 import app.foldcade.api.plugin.SyncResult
+import app.foldcade.api.plugin.canonicalPlatformId
+import app.foldcade.api.plugin.playersForPlatform
 import java.util.ServiceLoader
+import kotlin.coroutines.cancellation.CancellationException
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.withContext
 
@@ -24,7 +31,9 @@ import kotlinx.coroutines.withContext
  * Loads plugins and calls library I/O and metadata fetch off [io].
  * Those calls are suspending. This type does not block the caller.
  * [cachedMetadata] stays synchronous because [MetadataProvider.cached] is already in memory.
+ * [load] reads the class loader and must run off the main thread.
  * Register from one thread before calling the suspending methods.
+ * [load] records a bad plugin in [rejected] and does not throw.
  */
 class PluginHost(
     private val io: CoroutineDispatcher,
@@ -34,23 +43,85 @@ class PluginHost(
     private val libraries = linkedMapOf<String, LibraryBackend>()
     private val metadataProviders = linkedMapOf<String, MetadataProvider>()
     private val platformNames = mutableListOf<Pair<String, String>>()
+    private val rejectedPlugins = mutableListOf<RejectedPlugin>()
 
+    /** Plugins [load] skipped, in the order they failed. For the UI. */
+    val rejected: List<RejectedPlugin> get() = rejectedPlugins.toList()
+
+    /**
+     * Validates [entry], then stores every slot it contributes.
+     * A failure stores nothing from this entry.
+     */
     fun register(entry: PluginEntry) {
         if (entry.apiVersion != PLUGIN_API_VERSION) {
             error("Plugin API major ${entry.apiVersion} is incompatible with $PLUGIN_API_VERSION")
         }
-        registerPlatforms(entry.platforms)
-        entry.players.forEach { put("player", players, it.id, it) }
-        entry.libraries.forEach { put("library", libraries, it.id, it) }
-        entry.metadataProviders.forEach { put("metadata", metadataProviders, it.id, it) }
+        if (entry.apiMinor > PLUGIN_API_MINOR) {
+            error("Plugin API minor ${entry.apiMinor} is newer than $PLUGIN_API_MINOR")
+        }
+        val stagedPlatforms = entry.platforms.toList()
+        val stagedPlayers = entry.players.toList()
+        val stagedLibraries = entry.libraries.toList()
+        val stagedMetadata = entry.metadataProviders.toList()
+        val names = planPlatformNames(stagedPlatforms, platformNames)
+        planIds("player", stagedPlayers.map { it.id }, players.keys)
+        planIds("library", stagedLibraries.map { it.id }, libraries.keys)
+        planIds("metadata", stagedMetadata.map { it.id }, metadataProviders.keys)
+        platformNames.addAll(names)
+        stagedPlatforms.forEach { platforms[it.id] = it }
+        stagedPlayers.forEach { players[it.id] = it }
+        stagedLibraries.forEach { libraries[it.id] = it }
+        stagedMetadata.forEach { metadataProviders[it.id] = it }
     }
 
-    /** Loads every [PluginEntry] advertised by [classLoader]. Same path for a bundled jar or another APK. */
+    /**
+     * Loads every [PluginEntry] advertised by [classLoader].
+     * The caller supplies the loader. This is the path for a bundled jar and
+     * for an out-of-tree jar. It does not discover or open an installed package.
+     * Call this off the main thread.
+     * One bad provider is recorded in [rejected] and does not stop the providers
+     * that follow. This method does not throw.
+     */
     fun load(classLoader: ClassLoader) {
-        ServiceLoader.load(PluginEntry::class.java, classLoader).forEach(::register)
+        val providers = try {
+            ServiceLoader.load(PluginEntry::class.java, classLoader).iterator()
+        } catch (failure: Throwable) {
+            reject(plugin = null, failure)
+            return
+        }
+        var lastLoaderFailure: String? = null
+        var loaderFailureRun = 0
+        while (true) {
+            val entry = try {
+                if (!providers.hasNext()) break
+                providers.next()
+            } catch (failure: Throwable) {
+                val reason = failure.message ?: failure.javaClass.name
+                reject(plugin = null, failure)
+                if (reason == lastLoaderFailure) {
+                    loaderFailureRun++
+                    if (loaderFailureRun >= 2) break
+                } else {
+                    lastLoaderFailure = reason
+                    loaderFailureRun = 0
+                }
+                continue
+            }
+            lastLoaderFailure = null
+            loaderFailureRun = 0
+            try {
+                register(entry)
+            } catch (failure: Throwable) {
+                reject(plugin = entry.javaClass.name, failure)
+            }
+        }
     }
 
-    fun platform(id: String): Platform? = platforms[id]
+    /** Resolves [id] as a canonical platform id or an alias, ignoring case. */
+    fun platform(id: String): Platform? {
+        val canonical = canonicalPlatformId(platforms.values, id) ?: return null
+        return platforms[canonical]
+    }
 
     fun player(id: String): Player? = players[id]
 
@@ -62,39 +133,69 @@ class PluginHost(
     fun metadata(id: String): MetadataProvider? = metadataProviders[id]
 
     /** Already loaded. Not a fetch, and not moved onto [io]. */
-    fun cachedMetadata(providerId: String, game: Game): GameMeta? =
-        requireMetadata(providerId).cached(game)
+    fun cachedMetadata(providerId: String, game: Game): GameMeta? {
+        val provider = requireMetadata(providerId)
+        return callPlugin(providerId) { provider.cached(game) }
+    }
 
-    suspend fun connect(libraryId: String) = offMain { requireLibrary(libraryId).connect() }
+    /** Builds the intent. A plugin failure is [PluginCallException] or [PluginException]. */
+    fun launchIntent(playerId: String, request: LaunchRequest): PlayerIntent {
+        val player = requirePlayer(playerId)
+        return callPlugin(playerId) { player.launchIntent(request) }
+    }
 
-    suspend fun disconnect(libraryId: String) = offMain { requireLibrary(libraryId).disconnect() }
+    suspend fun connect(libraryId: String) {
+        val library = requireLibrary(libraryId)
+        offMain(libraryId) { library.connect() }
+    }
 
-    suspend fun listPlatforms(libraryId: String): List<ListedPlatform> =
-        offMain { requireLibrary(libraryId).listPlatforms() }
+    suspend fun disconnect(libraryId: String) {
+        val library = requireLibrary(libraryId)
+        offMain(libraryId) { library.disconnect() }
+    }
 
-    suspend fun listGames(libraryId: String, platformId: String, query: GameQuery): GamePage =
-        offMain { requireLibrary(libraryId).listGames(platformId, query) }
+    suspend fun listPlatforms(libraryId: String): List<ListedPlatform> {
+        val library = requireLibrary(libraryId)
+        return offMain(libraryId) { library.listPlatforms() }
+    }
 
-    suspend fun ensureLocal(libraryId: String, game: Game): LaunchTarget =
-        offMain { requireLibrary(libraryId).ensureLocal(game) }
+    suspend fun listGames(libraryId: String, platformId: String, query: GameQuery): GamePage {
+        val library = requireLibrary(libraryId)
+        return offMain(libraryId) { library.listGames(platformId, query) }
+    }
 
-    suspend fun saves(libraryId: String, game: Game): SaveSet =
-        offMain { requireLibrary(libraryId).saves(game) }
+    suspend fun ensureLocal(libraryId: String, game: Game): LaunchTarget {
+        val library = requireLibrary(libraryId)
+        return offMain(libraryId) { library.ensureLocal(game) }
+    }
 
-    suspend fun prepareLaunch(libraryId: String, game: Game, player: Player): Placement =
-        offMain { requireLibrary(libraryId).prepareLaunch(game, player) }
+    suspend fun saves(libraryId: String, game: Game): SaveSet {
+        val library = requireLibrary(libraryId)
+        return offMain(libraryId) { library.saves(game) }
+    }
+
+    suspend fun prepareLaunch(libraryId: String, game: Game, player: Player): Placement {
+        val library = requireLibrary(libraryId)
+        return offMain(libraryId) { library.prepareLaunch(game, player) }
+    }
 
     suspend fun reconcile(
         libraryId: String,
         game: Game,
         player: Player,
         observed: ObservedSaves,
-    ): SyncResult = offMain { requireLibrary(libraryId).reconcile(game, player, observed) }
+    ): SyncResult {
+        val library = requireLibrary(libraryId)
+        return offMain(libraryId) { library.reconcile(game, player, observed) }
+    }
 
-    suspend fun fetchMetadata(providerId: String, game: Game): GameMeta? =
-        offMain { requireMetadata(providerId).fetch(game) }
+    suspend fun fetchMetadata(providerId: String, game: Game): GameMeta? {
+        val provider = requireMetadata(providerId)
+        return offMain(providerId) { provider.fetch(game) }
+    }
 
-    private suspend fun <T> offMain(block: suspend () -> T): T = withContext(io) { block() }
+    private suspend fun <T> offMain(pluginId: String, block: suspend () -> T): T =
+        callPlugin(pluginId) { withContext(io) { block() } }
 
     private fun requireLibrary(id: String): LibraryBackend =
         libraries[id] ?: error("No library registered with id $id")
@@ -102,33 +203,71 @@ class PluginHost(
     private fun requireMetadata(id: String): MetadataProvider =
         metadataProviders[id] ?: error("No metadata provider registered with id $id")
 
-    /**
-     * Rejects a platform id or alias that matches another, ignoring case,
-     * including a repeat on the same platform. Nothing from [incoming] is
-     * stored when one name collides.
-     */
-    private fun registerPlatforms(incoming: List<Platform>) {
-        val pending = mutableListOf<Pair<String, String>>()
-        for (platform in incoming) {
-            val names = ArrayList<String>(1 + platform.aliases.size)
-            names.add(platform.id)
-            names.addAll(platform.aliases)
-            for (index in names.indices) {
-                val name = names[index]
-                val repeated = names.subList(0, index).any { it.equals(name, ignoreCase = true) }
-                if (repeated) error("Platform ${platform.id} repeats $name")
-                val claimed = platformNames + pending
-                val owner = claimed.firstOrNull { it.first.equals(name, ignoreCase = true) }
-                if (owner != null) error("Platform $name collides with ${owner.second}")
-            }
-            names.forEach { pending.add(it to platform.id) }
-        }
-        platformNames.addAll(pending)
-        incoming.forEach { put("platform", platforms, it.id, it) }
+    private fun requirePlayer(id: String): Player =
+        players[id] ?: error("No player registered with id $id")
+
+    private fun reject(plugin: String?, failure: Throwable) {
+        rejectedPlugins += RejectedPlugin(
+            plugin = plugin ?: "unknown",
+            reason = failure.message ?: failure.javaClass.name,
+        )
     }
 
-    private fun <T> put(slot: String, into: MutableMap<String, T>, id: String, value: T) {
-        if (into.containsKey(id)) error("$slot id $id is already registered")
-        into[id] = value
+}
+
+/**
+ * A plugin [PluginHost.load] did not store.
+ * [plugin] is the entry class name when the host has one.
+ */
+data class RejectedPlugin(
+    val plugin: String,
+    val reason: String,
+)
+
+/**
+ * A plugin call failed with something other than [PluginException] or cancellation.
+ * [pluginId] is the library, metadata provider, or player the host called.
+ */
+class PluginCallException(
+    val pluginId: String,
+    cause: Throwable,
+) : Exception("Plugin $pluginId failed", cause)
+
+private inline fun <T> callPlugin(pluginId: String, block: () -> T): T =
+    try {
+        block()
+    } catch (cancelled: CancellationException) {
+        throw cancelled
+    } catch (plugin: PluginException) {
+        throw plugin
+    } catch (failure: Throwable) {
+        throw PluginCallException(pluginId, failure)
+    }
+
+private fun planPlatformNames(
+    incoming: List<Platform>,
+    already: List<Pair<String, String>>,
+): List<Pair<String, String>> {
+    val pending = mutableListOf<Pair<String, String>>()
+    for (platform in incoming) {
+        val names = ArrayList<String>(1 + platform.aliases.size)
+        names.add(platform.id)
+        names.addAll(platform.aliases)
+        for (index in names.indices) {
+            val name = names[index]
+            val repeated = names.subList(0, index).any { it.equals(name, ignoreCase = true) }
+            if (repeated) error("Platform ${platform.id} repeats $name")
+            val owner = (already + pending).firstOrNull { it.first.equals(name, ignoreCase = true) }
+            if (owner != null) error("Platform $name collides with ${owner.second}")
+        }
+        names.forEach { pending.add(it to platform.id) }
+    }
+    return pending
+}
+
+private fun planIds(slot: String, incoming: List<String>, already: Set<String>) {
+    val seen = HashSet<String>()
+    for (id in incoming) {
+        if (!seen.add(id) || id in already) error("$slot id $id is already registered")
     }
 }

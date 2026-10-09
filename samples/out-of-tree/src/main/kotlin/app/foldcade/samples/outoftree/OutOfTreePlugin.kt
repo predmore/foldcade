@@ -19,14 +19,16 @@ import app.foldcade.api.plugin.SaveDeclaration
 import app.foldcade.api.plugin.SaveSet
 import app.foldcade.api.plugin.StartDisplay
 import app.foldcade.api.plugin.SyncOutcome
+import app.foldcade.api.plugin.PLUGIN_API_MINOR
+import app.foldcade.api.plugin.PluginEntry
 import app.foldcade.api.plugin.SyncResult
-import app.foldcade.host.PluginEntry
 import kotlin.coroutines.coroutineContext
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.yield
 
 /**
- * Out-of-tree sample. The host does not compile against this module.
+ * Out-of-tree sample. It compiles against the API module only.
+ * The host does not compile against this module.
  * It is loaded from its jar through [PluginEntry], the same entry an external plugin uses.
  * Library and metadata are separate objects in separate slots.
  *
@@ -34,6 +36,7 @@ import kotlinx.coroutines.yield
  */
 class OutOfTreeEntry : PluginEntry {
     override val apiVersion = PLUGIN_API_VERSION
+    override val apiMinor = PLUGIN_API_MINOR
     override val platforms: List<Platform> = listOf(OutOfTreePlatform())
     override val players: List<Player> = listOf(OutOfTreePlayer())
     override val libraries: List<LibraryBackend> = listOf(OutOfTreeLibrary())

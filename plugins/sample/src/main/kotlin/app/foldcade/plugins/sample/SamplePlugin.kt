@@ -19,8 +19,9 @@ import app.foldcade.api.plugin.SaveDeclaration
 import app.foldcade.api.plugin.SaveSet
 import app.foldcade.api.plugin.StartDisplay
 import app.foldcade.api.plugin.SyncOutcome
+import app.foldcade.api.plugin.PLUGIN_API_MINOR
+import app.foldcade.api.plugin.PluginEntry
 import app.foldcade.api.plugin.SyncResult
-import app.foldcade.host.PluginEntry
 import kotlin.coroutines.coroutineContext
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.yield
@@ -34,6 +35,7 @@ import kotlinx.coroutines.yield
  */
 class SampleEntry : PluginEntry {
     override val apiVersion = PLUGIN_API_VERSION
+    override val apiMinor = PLUGIN_API_MINOR
     override val platforms: List<Platform> = listOf(SamplePlatform())
     override val players: List<Player> = listOf(SamplePlayer())
     override val libraries: List<LibraryBackend> = listOf(SampleLibrary())

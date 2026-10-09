@@ -10,8 +10,11 @@ import app.foldcade.api.plugin.LaunchTarget
 import app.foldcade.api.plugin.LibraryBackend
 import app.foldcade.api.plugin.ListedPlatform
 import app.foldcade.api.plugin.MetadataProvider
+import app.foldcade.api.plugin.PLUGIN_API_MINOR
 import app.foldcade.api.plugin.PLUGIN_API_VERSION
 import app.foldcade.api.plugin.Platform
+import app.foldcade.api.plugin.PluginEntry
+import app.foldcade.api.plugin.PluginException
 import app.foldcade.api.plugin.ObservedSaves
 import app.foldcade.api.plugin.Placement
 import app.foldcade.api.plugin.Player
@@ -21,7 +24,10 @@ import app.foldcade.api.plugin.StartDisplay
 import app.foldcade.api.plugin.SyncResult
 import app.foldcade.plugins.sample.SampleEntry
 import java.io.File
+import java.net.URL
 import java.net.URLClassLoader
+import java.util.Collections
+import java.util.Enumeration
 import java.util.concurrent.Executors
 import java.util.concurrent.atomic.AtomicInteger
 import kotlin.coroutines.coroutineContext
@@ -66,7 +72,8 @@ class PluginHostTest {
         assertFalse(host.library("sample.library") is MetadataProvider)
         assertFalse(host.metadata("sample.metadata") is LibraryBackend)
 
-        val intent = host.player("sample.player")!!.launchIntent(
+        val intent = host.launchIntent(
+            "sample.player",
             LaunchRequest(
                 game = game,
                 target = LaunchTarget.ContentUri(uri = game.remoteKey),
@@ -155,6 +162,9 @@ class PluginHostTest {
         assertEquals(listOf("n3ds-player"), host.playersFor("nintendo-3ds").map { it.id })
         assertEquals(listOf("n3ds-player"), host.playersFor("3ds").map { it.id })
         assertEquals(listOf("n3ds-player"), host.playersFor("n3ds").map { it.id })
+        assertEquals("nintendo-3ds", host.platform("3DS")?.id)
+        assertEquals("nintendo-3ds", host.platform("N3DS")?.id)
+        assertNull(host.platform("nds"))
         assertTrue(host.playersFor("nds").isEmpty())
     }
 
@@ -162,8 +172,10 @@ class PluginHostTest {
     fun pluginEntryListsAreJvmDefaultMethods() {
         val lists = PluginEntry::class.java.methods.single { it.name == "getPlatforms" }
         val major = PluginEntry::class.java.methods.single { it.name == "getApiVersion" }
+        val minor = PluginEntry::class.java.methods.single { it.name == "getApiMinor" }
         assertTrue(lists.isDefault)
         assertFalse(major.isDefault)
+        assertTrue(minor.isDefault)
     }
 
     @Test
@@ -199,6 +211,134 @@ class PluginHostTest {
             })
         }
         assertTrue(sharedAlias.exceptionOrNull() is IllegalStateException)
+    }
+
+    @Test
+    fun olderMinorLoadsAndANewerMinorIsRejected() {
+        val host = PluginHost(Dispatchers.Unconfined)
+        val older = object : PluginEntry {
+            override val apiVersion = PLUGIN_API_VERSION
+            override val libraries = listOf(LibraryFake("older.minor"))
+        }
+        assertEquals(0, older.apiMinor)
+        host.register(older)
+        assertEquals("older.minor", host.library("older.minor")?.id)
+
+        host.register(object : PluginEntry {
+            override val apiVersion = PLUGIN_API_VERSION
+            override val apiMinor = PLUGIN_API_MINOR
+            override val libraries = listOf(LibraryFake("same.minor"))
+        })
+        assertEquals("same.minor", host.library("same.minor")?.id)
+
+        val newer = runCatching {
+            host.register(object : PluginEntry {
+                override val apiVersion = PLUGIN_API_VERSION
+                override val apiMinor = PLUGIN_API_MINOR + 1
+                override val libraries = listOf(LibraryFake("newer.minor"))
+            })
+        }
+        assertTrue(newer.exceptionOrNull() is IllegalStateException)
+        assertNull(host.library("newer.minor"))
+        assertEquals("older.minor", host.library("older.minor")?.id)
+    }
+
+    @Test
+    fun aThrowingGetterDoesNotLeaveThePluginHalfRegistered() {
+        val host = PluginHost(Dispatchers.Unconfined)
+        val failure = runCatching {
+            host.register(object : PluginEntry {
+                override val apiVersion = PLUGIN_API_VERSION
+                override val players = listOf(SampleAliasPlayer())
+                override val libraries: List<LibraryBackend>
+                    get() = throw IllegalStateException("library list failed")
+            })
+        }
+        assertTrue(failure.exceptionOrNull() is IllegalStateException)
+        assertNull(host.player("n3ds-player"))
+        assertTrue(host.library("unused") == null)
+    }
+
+    @Test(timeout = 5_000)
+    fun loadKeepsLaterPluginsWhenOneIsRejected() {
+        val service = File.createTempFile("foldcade-plugins", ".services")
+        service.writeText(
+            listOf(
+                IsolatedGood::class.java.name,
+                "missing.plugin.DoesNotExist",
+                IsolatedBadMajor::class.java.name,
+                IsolatedThrows::class.java.name,
+                IsolatedGoodTwo::class.java.name,
+            ).joinToString("\n"),
+        )
+        val loader = object : ClassLoader(IsolatedGood::class.java.classLoader) {
+            override fun getResources(name: String): Enumeration<URL> {
+                if (name == "META-INF/services/${PluginEntry::class.java.name}") {
+                    return Collections.enumeration(listOf(service.toURI().toURL()))
+                }
+                return super.getResources(name)
+            }
+        }
+        val host = PluginHost(Dispatchers.Unconfined)
+        host.load(loader)
+        assertEquals("good.one", host.library("good.one")?.id)
+        assertEquals("good.two", host.library("good.two")?.id)
+        assertNull(host.library("bad.major"))
+        assertNull(host.player("throws.player"))
+        assertTrue(host.rejected.any { it.reason.contains("DoesNotExist") })
+        assertTrue(host.rejected.any { it.plugin == IsolatedBadMajor::class.java.name })
+        assertTrue(host.rejected.any { it.plugin == IsolatedThrows::class.java.name })
+        assertEquals(3, host.rejected.size)
+    }
+
+    @Test
+    fun pluginCallsKeepPluginExceptionAndCancellationAndWrapTheRest() = runBlocking {
+        val backend = object : LibraryFake("boom.library") {
+            override suspend fun connect() {
+                throw PluginException.NotFound("gone")
+            }
+
+            override suspend fun listGames(platformId: String, query: GameQuery): GamePage {
+                throw IllegalStateException("disk")
+            }
+        }
+        val provider = object : MetadataFake("boom.meta") {
+            override fun cached(game: Game): GameMeta = throw IllegalStateException("cache")
+        }
+        val player = object : Player by SampleAliasPlayer() {
+            override val id = "boom.player"
+            override fun launchIntent(request: LaunchRequest) = throw IllegalStateException("intent")
+        }
+        val host = PluginHost(Dispatchers.Unconfined)
+        host.register(object : PluginEntry {
+            override val apiVersion = PLUGIN_API_VERSION
+            override val libraries = listOf(backend)
+            override val metadataProviders = listOf(provider)
+            override val players = listOf(player)
+        })
+
+        val missing = runCatching { host.connect(backend.id) }
+        assertTrue(missing.exceptionOrNull() is PluginException.NotFound)
+
+        val listed = runCatching { host.listGames(backend.id, "sample", GameQuery()) }
+        val wrapped = listed.exceptionOrNull() as PluginCallException
+        assertEquals(backend.id, wrapped.pluginId)
+        assertTrue(wrapped.cause is IllegalStateException)
+
+        val cached = runCatching { host.cachedMetadata(provider.id, game) }
+        assertEquals(provider.id, (cached.exceptionOrNull() as PluginCallException).pluginId)
+
+        val intent = runCatching {
+            host.launchIntent(
+                player.id,
+                LaunchRequest(
+                    game = game,
+                    target = LaunchTarget.ContentUri(uri = game.remoteKey),
+                    resolvedPackage = "app.sample",
+                ),
+            )
+        }
+        assertEquals(player.id, (intent.exceptionOrNull() as PluginCallException).pluginId)
     }
 
     @Test
@@ -351,6 +491,32 @@ class PluginHostTest {
         assertTrue(fetching.isCancelled)
         assertFalse(metadata.finished)
     }
+}
+
+class IsolatedGood : PluginEntry {
+    override val apiVersion = PLUGIN_API_VERSION
+    override val libraries: List<LibraryBackend> = listOf(LibraryFake("good.one"))
+}
+
+class IsolatedGoodTwo : PluginEntry {
+    override val apiVersion = PLUGIN_API_VERSION
+    override val libraries: List<LibraryBackend> = listOf(LibraryFake("good.two"))
+}
+
+class IsolatedBadMajor : PluginEntry {
+    override val apiVersion = PLUGIN_API_VERSION + 1
+    override val libraries: List<LibraryBackend> = listOf(LibraryFake("bad.major"))
+}
+
+class IsolatedThrows : PluginEntry {
+    override val apiVersion = PLUGIN_API_VERSION
+    override val players: List<Player> = listOf(SampleAliasPlayer().let { source ->
+        object : Player by source {
+            override val id = "throws.player"
+        }
+    })
+    override val libraries: List<LibraryBackend>
+        get() = throw IllegalStateException("library list failed")
 }
 
 private fun platformEntry(id: String, aliases: Set<String>) = object : PluginEntry {

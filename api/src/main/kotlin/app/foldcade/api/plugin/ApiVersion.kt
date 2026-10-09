@@ -11,8 +11,8 @@ package app.foldcade.api.plugin
  * [PLUGIN_API_MINOR] is the additive revision of this major. Adding an
  * interface member with a default body bumps the minor and does not bump
  * this major. This module sets `jvmDefault` to `no-compatibility`, so that
- * member is a JVM default method. A plugin compiled against an older
- * [PLUGIN_API_MINOR] of the same major still loads.
+ * member is a JVM default method. An older plugin minor of the same major
+ * is safe to load. A newer plugin minor is not.
  *
  * These enums and sealed types are open. A plugin that branches on one
  * must use an `else` branch. Adding an enum value or a sealed subclass of
@@ -30,6 +30,6 @@ const val PLUGIN_API_VERSION = 1
 
 /**
  * Additive revision of [PLUGIN_API_VERSION].
- * The host rejects a different major and still loads a different minor.
+ * The host loads an older or equal plugin minor and rejects a newer one.
  */
 const val PLUGIN_API_MINOR = 1

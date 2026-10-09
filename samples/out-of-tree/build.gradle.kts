@@ -3,9 +3,10 @@ plugins {
 }
 
 dependencies {
-    implementation(project(":api"))
-    implementation(project(":host"))
-    implementation(libs.coroutines.core)
+    compileOnly(project(":api"))
+    compileOnly(libs.coroutines.core)
+    testImplementation(project(":api"))
+    testImplementation(libs.coroutines.core)
     testImplementation(libs.junit)
 }
 
