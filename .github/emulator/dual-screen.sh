@@ -300,6 +300,13 @@ fi
 } | tee "$out/bottom-display.txt"
 
 # Setup and the home chooser are not tapped. Each of these steps is short.
+# "Viewing full screen" is the system notice over an immersive window. Its
+# only control is Got it, which is not tapped. That button writes
+# immersive_mode_confirmations=confirmed, and the window is removed when the
+# setting changes. Back is still sent when a dialog remains: it dismisses the
+# home prompt, and it is the key for the notice if the window takes it.
+# A home key is not sent. While this presentation display is focused, that
+# key resolves SECONDARY_HOME to the stock launcher.
 adb_step() {
   timeout 10 adb "$@"
 }
@@ -307,6 +314,7 @@ adb_step() {
 echo "step: skip setup"
 adb_step shell settings put secure user_setup_complete 1
 adb_step shell settings put global device_provisioned 1
+adb_step shell settings put secure immersive_mode_confirmations confirmed
 adb_step shell input keyevent KEYCODE_WAKEUP || true
 adb_step shell wm dismiss-keyguard || true
 timeout 60 adb install -r "$apk"
@@ -318,16 +326,69 @@ timeout 15 adb shell am start -W -n "$component"
 echo "step: home role"
 adb_step shell cmd role add-role-holder android.app.role.HOME "$app_id"
 
-# Back only when the home dialog is still on screen. Do not click its buttons.
+# Back only when a dialog is still on screen. Do not click its buttons.
 dialog_remains() {
   timeout 10 adb shell uiautomator dump /sdcard/foldcade-ui.xml >/dev/null 2>&1 || return 1
   timeout 10 adb shell cat /sdcard/foldcade-ui.xml | tr -d '\r' >"$out/ui-last.xml" || return 1
-  grep -q -E 'Not now|Use Foldcade as Home' "$out/ui-last.xml"
+  grep -q -E 'Not now|Use Foldcade as Home|Viewing full screen' "$out/ui-last.xml"
 }
-if dialog_remains; then
-  echo "step: dismiss leftover dialog"
-  adb_step shell input keyevent KEYCODE_BACK
-fi
+
+dismiss_leftover_dialog() {
+  local n
+  for n in 1 2 3; do
+    dialog_remains || return 0
+    echo "step: dismiss leftover dialog"
+    adb_step shell input keyevent KEYCODE_BACK
+    if grep -q 'Viewing full screen' "$out/ui-last.xml"; then
+      adb_step shell settings put secure immersive_mode_confirmations confirmed
+    fi
+    sleep 1
+  done
+  if dialog_remains; then
+    fail "dialog still on screen"
+  fi
+}
+
+resumed_has() {
+  local name="$1"
+  local resumed
+  resumed="$(adb_do shell dumpsys activity activities 2>/dev/null | tr -d '\r' | grep -E 'ResumedActivity' || true)"
+  [[ "$resumed" == *"$name"* ]]
+}
+
+# The primary launch starts the companion. If that display is showing the
+# stock launcher instead, put the companion back on the presentation display.
+show_foldcade() {
+  if ! resumed_has "PrimaryHomeActivity"; then
+    echo "step: launch ${component}"
+    timeout 15 adb shell am start -W -n "$component" --display 0
+  fi
+  if ! resumed_has "CompanionHomeActivity"; then
+    echo "step: companion on display ${presentation_logical}"
+    timeout 15 adb shell am start -W \
+      -n "${app_id}/app.foldcade.CompanionHomeActivity" \
+      --display "$presentation_logical"
+  fi
+}
+
+expect_foldcade() {
+  local resumed
+  resumed="$(adb_do shell dumpsys activity activities | tr -d '\r' | grep -E 'ResumedActivity' || true)"
+  printf '%s\n' "$resumed" >"$out/resumed.txt"
+  if ! printf '%s\n' "$resumed" | grep -q 'PrimaryHomeActivity'; then
+    printf '%s\n' "$resumed"
+    fail "primary display is not Foldcade"
+  fi
+  if ! printf '%s\n' "$resumed" | grep -q 'CompanionHomeActivity'; then
+    printf '%s\n' "$resumed"
+    fail "bottom display is not Foldcade"
+  fi
+}
+
+dismiss_leftover_dialog
+show_foldcade
+dismiss_leftover_dialog
+expect_foldcade
 
 is_png() {
   local file="$1"
@@ -426,7 +487,15 @@ cp "$out/primary.png" "$out/display-${primary}.png"
 cp "$out/secondary.png" "$out/display-${secondary}.png"
 
 echo "step: home"
-adb_step shell input keyevent KEYCODE_HOME || true
+timeout 15 adb shell am start -W \
+  -a android.intent.action.MAIN \
+  -c android.intent.category.HOME \
+  -n "$component" \
+  --display 0
+dismiss_leftover_dialog
+show_foldcade
+dismiss_leftover_dialog
+expect_foldcade
 capture "$primary" "$out/home-primary.png"
 capture "$secondary" "$out/home-secondary.png"
 expect_png "$out/home-primary.png" "${top_width}x${top_height}"
