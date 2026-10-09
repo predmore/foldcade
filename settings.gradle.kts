@@ -16,3 +16,4 @@ dependencyResolutionManagement {
 
 rootProject.name = "foldcade"
 include(":api", ":language", ":app")
+include(":plugins:local-folder")
