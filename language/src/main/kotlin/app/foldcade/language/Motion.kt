@@ -19,6 +19,12 @@ object Motion {
     const val scaleRest = 1f
     const val scaleFocus = 1.05f
 
+    /** Incoming hero art starts just under rest, then eases up to [scaleRest]. */
+    const val heroScaleFrom = 0.96f
+
+    /** Incoming hero art starts this many pixels lower, then eases up to 0. */
+    const val heroSlideUpPx = 24f
+
     val easingArrive: Easing = CubicBezierEasing(0.05f, 0.7f, 0.1f, 1f)
     val easingLeave: Easing = CubicBezierEasing(0.3f, 0f, 0.8f, 0.15f)
 
@@ -37,6 +43,30 @@ object Motion {
 
     fun leave(base: Int, animatorScale: Float): FiniteAnimationSpec<Float> =
         spec(base, animatorScale, easingLeave)
+
+    /**
+     * Motion Off, and Android's remove-animations scale, swap the hero with a short fade.
+     * Slower takes twice [durationTravel]. Slow uses [durationTravel].
+     */
+    fun heroFadeOnly(speed: MotionSpeed, animatorScale: Float): Boolean =
+        speed == MotionSpeed.Off || reduced(animatorScale)
+
+    fun heroDuration(speed: MotionSpeed, animatorScale: Float): Int {
+        if (heroFadeOnly(speed, animatorScale)) return durationShort
+        val base = if (speed == MotionSpeed.Slower) durationTravel * 2 else durationTravel
+        return duration(base, animatorScale)
+    }
+
+    fun heroScale(progress: Float, fadeOnly: Boolean): Float {
+        if (fadeOnly) return scaleRest
+        val t = progress.coerceIn(0f, 1f)
+        return heroScaleFrom + (scaleRest - heroScaleFrom) * t
+    }
+
+    fun heroSlidePx(progress: Float, fadeOnly: Boolean): Float {
+        if (fadeOnly) return 0f
+        return heroSlideUpPx * (1f - progress.coerceIn(0f, 1f))
+    }
 
     private fun spec(base: Int, animatorScale: Float, easing: Easing): FiniteAnimationSpec<Float> =
         tween(durationMillis = duration(base, animatorScale), easing = easing)
