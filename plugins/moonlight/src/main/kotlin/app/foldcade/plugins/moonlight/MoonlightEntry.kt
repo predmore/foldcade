@@ -22,7 +22,8 @@ import java.util.UUID
  * Pairing and the host's app list stay inside Moonlight. This entry does not
  * pair, and it does not open Moonlight's database.
  *
- * A plugin Foldcade loads in-process is part of the GPLv3 work when distributed.
+ * This bundled entry stays under the GNU GPLv3. An independent plugin that
+ * uses only the published API may use any license.
  */
 class MoonlightEntry : PluginEntry {
     override val apiVersion: Int = PLUGIN_API_VERSION

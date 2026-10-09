@@ -113,13 +113,35 @@ jobs:
           # Do not install the legacy `tools` package. Current cmdline-tools do not ship it.
           # compileSdk is release(37), so compilation needs platforms;android-37.0.
           # platforms;android-33 is the min and target platform.
-          "$sdkmanager" --sdk_root="$SDK_ROOT" --install \
-            "platforms;android-33" \
-            "platforms;android-37.0" \
-            "build-tools;37.0.0" \
-            "platform-tools" \
-            "emulator" \
-            "system-images;android-33;google_apis;x86_64"
+          # Run 37974211589 downloaded a truncated emulator zip. sdkmanager then
+          # failed with "Error on ZipFile unknown archive" and the job never
+          # reached the Thor-sized capture. Drop that partial package and retry.
+          install_packages() {
+            "$sdkmanager" --sdk_root="$SDK_ROOT" --install \
+              "platforms;android-33" \
+              "platforms;android-37.0" \
+              "build-tools;37.0.0" \
+              "platform-tools" \
+              "emulator" \
+              "system-images;android-33;google_apis;x86_64" \
+              || return 1
+            test -x "$SDK_ROOT/emulator/emulator"
+          }
+          installed=0
+          for attempt in 1 2 3; do
+            if install_packages; then
+              installed=1
+              break
+            fi
+            echo "SDK install failed on attempt ${attempt}."
+            rm -rf "$SDK_ROOT/emulator" "$SDK_ROOT/.temp" "$SDK_ROOT/.downloadIntermediates"
+            find "$SDK_ROOT" "$HOME/.android" -iname '*emulator*.zip' -delete 2>/dev/null || true
+            sleep $((attempt * 5))
+          done
+          if [ "$installed" -ne 1 ]; then
+            echo "::error::Android SDK packages did not install."
+            exit 1
+          fi
           echo "ANDROID_HOME=$SDK_ROOT" >> "$GITHUB_ENV"
           echo "ANDROID_SDK_ROOT=$SDK_ROOT" >> "$GITHUB_ENV"
 
