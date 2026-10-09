@@ -1,0 +1,3 @@
+Unused path-filter trigger so the Thor-sized emulator boots the unchanged app tree of b8a14786ee5600bb75b939821aa1d9fd34b883da.
+workflow_dispatch is not available to this token, and an empty diff skips the boot.
+dual-screen.sh does not read this file.
