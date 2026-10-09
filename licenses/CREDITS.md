@@ -12,7 +12,7 @@ Afterglow is the reference theme in `themes/afterglow`. Its marks, preview, and 
 
 The display face is Nunito Regular (`themes/afterglow/font.ttf`), under the SIL Open Font License. The license text is `themes/afterglow/OFL-Nunito.txt`.
 
-The on-screen line glyphs are program source under the GNU GPLv3. They are separate from the painted marks in the theme zip.
+The on-screen controller glyphs, face diamonds, status icons, and platform marks (`mark_*_lit`) are original art under Creative Commons Attribution-ShareAlike 4.0 International. The generator scripts and the focus-glow shader are program source under the GNU GPLv3. Those vectors are separate from the painted marks in the theme zip.
 
 ## MuseScore General 0.2
 

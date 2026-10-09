@@ -44,7 +44,7 @@ fun signInAgainPrompt(screen: HostScreen = HostScreen.Top): DialogState = Dialog
     screen = screen,
 )
 
-fun connectHint(field: ConnectField): String? = hintLine(
+fun connectHint(field: ConnectField): HintActions? = hintLine(
     activateDoesSomething = field == ConnectField.Save,
     backDoesSomething = true,
 )
@@ -196,6 +196,7 @@ sealed interface Row {
     data object HideApp : Row
     data object ShowApp : Row
     data class QuickTile(val setting: QuickSetting) : Row
+    data object ButtonLabels : Row
 }
 
 /** Two columns in the R1 cluster. Text rows above the tiles stay full width. */
@@ -248,6 +249,7 @@ data class PlayerSaveSetting(
 fun leftRows(
     homeRoleHeld: Boolean,
     playerSaves: List<PlayerSaveSetting> = emptyList(),
+    offerButtonLabels: Boolean = false,
 ): List<Row> = buildList {
     add(Row.Library)
     add(Row.Theme)
@@ -260,6 +262,7 @@ fun leftRows(
     if (!homeRoleHeld) add(Row.SetAsHome)
     add(Row.Background)
     add(Row.MotionSpeed)
+    if (offerButtonLabels) add(Row.ButtonLabels)
     playerSaves.forEach { add(Row.PlayerSave(it.playerId)) }
     add(Row.AndroidGames)
     add(Row.Apps)
@@ -307,7 +310,7 @@ fun rightRows(
 
 fun panelRows(panel: SidePanel, model: PickerModel): List<Row> = when (panel.side) {
     Side.Left -> when (panel.level) {
-        PanelLevel.Root -> leftRows(model.homeRoleHeld, model.playerSaves)
+        PanelLevel.Root -> leftRows(model.homeRoleHeld, model.playerSaves, model.offerButtonLabels)
         PanelLevel.Library -> libraryRows(model.backends, model.signedIn)
     }
     Side.Right -> rightRows(model.showLaunchTarget, model.notices, model.appActions)
@@ -371,6 +374,10 @@ fun rowText(row: Row, model: PickerModel): RowText = when (row) {
     Row.MoveApp -> RowText(if (model.appActions?.onGamesShelf == true) Copy.moveToApps else Copy.moveToGames)
     Row.HideApp -> RowText(Copy.hideApp)
     Row.ShowApp -> RowText(Copy.showApp)
+    Row.ButtonLabels -> RowText(
+        Copy.buttonLabels,
+        if (model.capturingConfirm) Copy.pressConfirm else null,
+    )
 }
 
 fun rowLabel(row: Row, model: PickerModel): String {
@@ -405,6 +412,7 @@ sealed interface Effect {
     data object HideApp : Effect
     data object ShowApp : Effect
     data class OpenAndroidSetting(val setting: AndroidSetting) : Effect
+    data object DismissButtonLabels : Effect
 }
 
 data class PickerModel(
@@ -451,6 +459,11 @@ data class PickerModel(
      * Compose treats an equal model as unchanged.
      */
     val shelfEpoch: Int = 0,
+    val faceMap: FaceMap = FaceMap.standard(),
+    val thorGlyphs: Boolean = true,
+    val offerButtonLabels: Boolean = false,
+    val capturingConfirm: Boolean = false,
+    val held: Set<PromptKey> = emptySet(),
 )
 
 fun reduce(
@@ -739,7 +752,10 @@ private fun applyPanel(
         }
         Meaning.PageTowardStart, Meaning.PageTowardEnd ->
             model.copy(panel = current) to null
-        Meaning.Back -> backPanel(model, current)
+        Meaning.Back -> {
+            val cleared = if (model.capturingConfirm) model.copy(capturingConfirm = false) else model
+            backPanel(cleared, current)
+        }
         Meaning.Activate -> activateRow(model, current, rows[index], screen)
         Meaning.LeftPanel, Meaning.RightPanel -> presentPanel(model, meaning, screen) to null
     }
@@ -830,6 +846,11 @@ private fun activateRow(
         Row.MoveApp -> model.copy(panel = null, focus = panel.grid) to Effect.MoveApp
         Row.HideApp -> model.copy(panel = null, focus = panel.grid) to Effect.HideApp
         Row.ShowApp -> model.copy(panel = null, focus = panel.grid) to Effect.ShowApp
+        Row.ButtonLabels -> if (model.capturingConfirm) {
+            model.copy(capturingConfirm = false, offerButtonLabels = false) to Effect.DismissButtonLabels
+        } else {
+            model.copy(capturingConfirm = true) to null
+        }
     }
 }
 

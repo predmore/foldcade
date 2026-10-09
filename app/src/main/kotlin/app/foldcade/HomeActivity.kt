@@ -9,6 +9,9 @@ import android.content.pm.ApplicationInfo
 import android.content.pm.PackageManager
 import android.net.Uri
 import android.hardware.display.DisplayManager
+import android.hardware.input.InputManager
+import android.provider.Settings
+import android.view.InputDevice
 import android.os.Bundle
 import android.view.Display
 import android.view.WindowInsets
@@ -42,6 +45,8 @@ import app.foldcade.language.missingPlayerDialog
 import app.foldcade.language.noFileDialog
 import app.foldcade.language.saveFolderDialog
 import app.foldcade.language.PanelKeyActivity
+import app.foldcade.language.PromptKey
+import app.foldcade.language.interpretThorStyle
 import app.foldcade.language.SignedInBackend
 import app.foldcade.romm.RommClient
 import app.foldcade.romm.RommSignInResult
@@ -136,6 +141,18 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
         return foldcade.store.session.surfaceOn(panel) != null
     }
 
+    override fun faceMap(): app.foldcade.language.FaceMap = foldcade.shell.model.faceMap
+
+    override fun onPromptHeld(key: PromptKey, held: Boolean) {
+        foldcade.shell.setPromptHeld(key, held)
+    }
+
+    override fun capturingConfirm(): Boolean = foldcade.shell.model.capturingConfirm
+
+    override fun onCalibrateConfirm(key: PromptKey) {
+        foldcade.shell.calibrateConfirm(key)
+    }
+
     override fun onMeaning(meaning: app.foldcade.language.Meaning) {
         foldcade.music.duckForThemeSound(meaning)
         val panel = displays.panelFor(this, foldcade.store.session.defaultDisplayIsTop) ?: return
@@ -160,6 +177,7 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
             is Effect.ActivateBackend -> Unit
             Effect.RequestHome -> requestHome()
             is Effect.OpenAndroidSetting -> openAndroidSetting(effect.setting)
+            Effect.DismissButtonLabels -> Unit
             null -> Unit
         }
     }
@@ -179,6 +197,8 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
             launchCompanionIfNeeded()
         }
         getSystemService(DisplayManager::class.java).registerDisplayListener(backdropDisplayListener, null)
+        getSystemService(InputManager::class.java).registerInputDeviceListener(inputDevices, null)
+        refreshFacePrompt()
         setContent { PanelHost(activity = this, displays = displays) }
         hideSystemBars()
     }
@@ -198,6 +218,7 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
         resumed = true
         refreshShellVisible()
         foldcade.reloadInstalledApps()
+        refreshFacePrompt()
         foldcade.music.onHomeResume()
     }
 
@@ -237,7 +258,38 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
         val manager = getSystemService(DisplayManager::class.java)
         manager.unregisterDisplayListener(backdropDisplayListener)
         if (launchesCompanion) manager.unregisterDisplayListener(displayListener)
+        getSystemService(InputManager::class.java).unregisterInputDeviceListener(inputDevices)
         super.onDestroy()
+    }
+
+    private val inputDevices = object : InputManager.InputDeviceListener {
+        override fun onInputDeviceAdded(deviceId: Int) = refreshFacePrompt()
+        override fun onInputDeviceRemoved(deviceId: Int) = refreshFacePrompt()
+        override fun onInputDeviceChanged(deviceId: Int) = refreshFacePrompt()
+    }
+
+    private fun refreshFacePrompt() {
+        foldcade.shell.applyFacePrompt(
+            style = interpretThorStyle(readThorControllerStyle()),
+            deviceKey = inputDeviceKey(this),
+            firstSession = foldcade.buttonPromptFirstSession,
+        )
+    }
+
+    /** Readable Thor style, or null when the setting is missing, blank, or blocked. */
+    private fun readThorControllerStyle(): String? {
+        val resolver = contentResolver
+        val keys = listOf(
+            "controller_style",
+            "thor_controller_style",
+            "gamepad_style",
+            "ayn_controller_style",
+        )
+        for (key in keys) {
+            val value = readSystemOrGlobal(resolver, key) ?: continue
+            if (value.isNotBlank()) return value
+        }
+        return null
     }
 
     private fun refreshShellVisible() {
@@ -701,6 +753,28 @@ class PrimaryHomeActivity : FoldcadeHomeActivity() {
 class CompanionHomeActivity : FoldcadeHomeActivity() {
     override val launchesCompanion: Boolean = false
 }
+
+internal fun inputDeviceKey(activity: Activity): String {
+    val descriptors = InputDevice.getDeviceIds().asIterable().mapNotNull { id ->
+        val device = InputDevice.getDevice(id) ?: return@mapNotNull null
+        val pad = device.sources and (
+            InputDevice.SOURCE_GAMEPAD or
+                InputDevice.SOURCE_JOYSTICK or
+                InputDevice.SOURCE_DPAD
+            )
+        if (pad == 0) return@mapNotNull null
+        device.descriptor.takeIf { it.isNotBlank() }
+    }.sorted()
+    return if (descriptors.isEmpty()) "builtin" else descriptors.joinToString(",")
+}
+
+private fun readSystemOrGlobal(resolver: android.content.ContentResolver, key: String): String? =
+    try {
+        Settings.System.getString(resolver, key)?.takeIf { it.isNotBlank() }
+            ?: Settings.Global.getString(resolver, key)
+    } catch (_: SecurityException) {
+        null
+    }
 
 internal fun Activity.hideSystemBars() {
     window.insetsController?.apply {

@@ -1,0 +1,53 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Foldcade original art, CC BY-SA 4.0 (see LICENSE). Right stick -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:aapt="http://schemas.android.com/aapt"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+    <path
+        android:pathData="M1.4,12A10.6,10.6 0 1 1 22.6,12A10.6,10.6 0 1 1 1.4,12Z"
+        android:strokeColor="#FF6E6A62"
+        android:strokeWidth="0.8"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round"
+        android:strokeAlpha="0.6">
+        <aapt:attr name="android:fillColor">
+          <gradient android:type="radial" android:centerX="12" android:centerY="12" android:gradientRadius="10.6">
+            <item android:offset="0" android:color="#FF000000" />
+            <item android:offset="0.75" android:color="#FF0E1014" />
+            <item android:offset="1" android:color="#FF1E2128" />
+          </gradient>
+        </aapt:attr>
+    </path>
+    <path
+        android:pathData="M4.6,12A7.4,7.4 0 1 1 19.4,12A7.4,7.4 0 1 1 4.6,12Z"
+        android:strokeColor="#FFE9E4DA"
+        android:strokeWidth="0.9"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round"
+        android:strokeAlpha="0.7">
+        <aapt:attr name="android:fillColor">
+          <gradient android:type="radial" android:centerX="10.2" android:centerY="9.6" android:gradientRadius="10.36">
+            <item android:offset="0" android:color="#FF3A3F4A" />
+            <item android:offset="0.6" android:color="#FF1C1F26" />
+            <item android:offset="1" android:color="#FF0B0C10" />
+          </gradient>
+        </aapt:attr>
+    </path>
+    <path
+        android:pathData="M6.5,12A5.5,5.5 0 1 1 17.5,12A5.5,5.5 0 1 1 6.5,12Z"
+        android:strokeColor="#FF000000"
+        android:strokeWidth="0.7"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round"
+        android:strokeAlpha="0.35" />
+    <path
+        android:pathData="M9.7,6.1H14.3A1.3,1.3 0 0 1 15.6,7.4V7.4A1.3,1.3 0 0 1 14.3,8.7H9.7A1.3,1.3 0 0 1 8.4,7.4V7.4A1.3,1.3 0 0 1 9.7,6.1Z"
+        android:fillColor="#FFFFFFFF"
+        android:fillAlpha="0.22" />
+    <path
+        android:pathData="M10.501 15.068Q10.173 15.068 9.997 14.888Q9.822 14.707 9.822 14.379V10.487Q9.822 10.152 10.001 9.976Q10.181 9.8 10.508 9.8H12.323Q13.207 9.8 13.688 10.233Q14.17 10.666 14.17 11.427Q14.17 11.925 13.952 12.288Q13.735 12.652 13.325 12.848Q12.915 13.044 12.323 13.044L12.38 12.914H12.737Q13.053 12.914 13.295 13.064Q13.536 13.214 13.701 13.522L14.066 14.189Q14.187 14.405 14.178 14.607Q14.168 14.809 14.02 14.939Q13.872 15.068 13.579 15.068Q13.295 15.068 13.113 14.951Q12.931 14.833 12.793 14.58L12.118 13.345Q12.033 13.184 11.897 13.123Q11.761 13.061 11.584 13.061H11.175V14.379Q11.175 14.707 11.006 14.888Q10.836 15.068 10.501 15.068ZM11.175 12.102H12.076Q12.468 12.102 12.673 11.945Q12.878 11.789 12.878 11.468Q12.878 11.154 12.673 10.998Q12.468 10.842 12.076 10.842H11.175Z"
+        android:fillColor="#FFF4F1EA" />
+</vector>

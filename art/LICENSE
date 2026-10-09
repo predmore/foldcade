@@ -1,0 +1,21 @@
+Foldcade art kit: license note
+
+All images and vector art in this kit (res/drawable/*.xml, res/drawable-nodpi/*.9.png,
+res/mipmap-*/*, svg/**, play/*, themes/afterglow/preview.png, themes/afterglow/sprites/*,
+previews/*, contact-sheet.png) are original Foldcade art, licensed under
+Creative Commons Attribution-ShareAlike 4.0 International (CC BY-SA 4.0),
+matching themes/afterglow. Full text: themes/afterglow/LICENSE in the repo, or
+https://creativecommons.org/licenses/by-sa/4.0/legalcode
+
+The generator scripts in src/ and the shader in shaders/focus_glow.agsl are program
+source and stay under the GNU GPLv3 with the rest of Foldcade.
+
+Letterforms on the controller glyphs and notification badges (A, B, X, Y, L, R, L1, R1,
+L2, R2, digits) are outlines converted from Nunito ExtraBold (SIL Open Font License 1.1,
+see themes/afterglow/OFL-Nunito.txt). They are drawn shapes, not an embedded font.
+
+Nothing here is taken from or derived from Nintendo, Sony, Microsoft, Disney, iiSU, or
+Cocoon marks, logos, or art. Face buttons are letters on neutral round caps with no
+brand colours. Platform marks are generic device silhouettes, not console logos.
+The Bluetooth status glyph follows the common system-status convention for the
+Bluetooth indicator; it is redrawn here, not copied.

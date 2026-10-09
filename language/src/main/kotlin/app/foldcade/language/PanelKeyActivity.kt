@@ -17,6 +17,14 @@ abstract class PanelKeyActivity : ComponentActivity() {
 
     protected abstract fun onMeaning(meaning: Meaning)
 
+    protected open fun faceMap(): FaceMap = FaceMap.standard()
+
+    protected open fun onPromptHeld(key: PromptKey, held: Boolean) = Unit
+
+    protected open fun capturingConfirm(): Boolean = false
+
+    protected open fun onCalibrateConfirm(key: PromptKey) = Unit
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         onBackPressedDispatcher.addCallback(
@@ -30,13 +38,25 @@ abstract class PanelKeyActivity : ComponentActivity() {
     }
 
     override fun onKeyDown(keyCode: Int, event: KeyEvent): Boolean {
+        val prompt = promptKeyOf(keyCode)
+        if (prompt != null && event.repeatCount == 0) onPromptHeld(prompt, true)
+        if (prompt != null && prompt.face && event.repeatCount == 0 && capturingConfirm()) {
+            onCalibrateConfirm(prompt)
+            return true
+        }
         if (keyCode == KeyEvent.KEYCODE_BACK) return false
-        val meaning = meaningOf(keyCode, event.repeatCount) ?: return false
+        val meaning = meaningOf(keyCode, event.repeatCount, faceMap()) ?: return false
         val shoulder = meaning == Meaning.LeftPanel || meaning == Meaning.RightPanel
         if (pickerIsFocused() || (shoulder && foldcadeSurfaceFocused())) {
             onMeaning(meaning)
             return true
         }
+        return false
+    }
+
+    override fun onKeyUp(keyCode: Int, event: KeyEvent): Boolean {
+        val prompt = promptKeyOf(keyCode)
+        if (prompt != null) onPromptHeld(prompt, false)
         return false
     }
 }

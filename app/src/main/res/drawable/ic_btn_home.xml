@@ -1,0 +1,45 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Foldcade original art, CC BY-SA 4.0 (see LICENSE). Thor Home: round cap, house outline (bottom-left) -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:aapt="http://schemas.android.com/aapt"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+    <path
+        android:pathData="M3.2,12A8.8,8.8 0 1 1 20.8,12A8.8,8.8 0 1 1 3.2,12Z"
+        android:strokeWidth="1.2"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round">
+        <aapt:attr name="android:fillColor">
+          <gradient android:type="linear" android:startX="0" android:startY="3.2" android:endX="0" android:endY="20.8">
+            <item android:offset="0" android:color="#FF262A33" />
+            <item android:offset="1" android:color="#FF0A0B0F" />
+          </gradient>
+        </aapt:attr>
+        <aapt:attr name="android:strokeColor">
+          <gradient android:type="linear" android:startX="0" android:startY="3.2" android:endX="0" android:endY="20.8">
+            <item android:offset="0" android:color="#F2E9E4DA" />
+            <item android:offset="1" android:color="#8C7C786F" />
+          </gradient>
+        </aapt:attr>
+    </path>
+    <path
+        android:pathData="M9.3,4.6H14.7A3.1,3.1 0 0 1 17.8,7.7V7.7A3.1,3.1 0 0 1 14.7,10.8H9.3A3.1,3.1 0 0 1 6.2,7.7V7.7A3.1,3.1 0 0 1 9.3,4.6Z">
+        <aapt:attr name="android:fillColor">
+          <gradient android:type="linear" android:startX="0" android:startY="4.4" android:endX="0" android:endY="11">
+            <item android:offset="0" android:color="#47FFFFFF" />
+            <item android:offset="1" android:color="#00FFFFFF" />
+          </gradient>
+        </aapt:attr>
+    </path>
+    <path
+        android:pathData="M7.6,12.1 L12,8.2 L16.4,12.1 M9.1,11 V15.4 Q9.1,16 9.7,16 H14.3 Q14.9,16 14.9,15.4 V11"
+        android:strokeColor="#FFF4F1EA"
+        android:strokeWidth="1.5"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round" />
+    <path
+        android:pathData="M12,13.1H12A1,1 0 0 1 13,14.1V16H11V14.1A1,1 0 0 1 12,13.1Z"
+        android:fillColor="#FFF4F1EA" />
+</vector>

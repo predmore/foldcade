@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Foldcade original art, CC BY-SA 4.0 (see LICENSE). Adaptive icon monochrome layer (themed icons) -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:aapt="http://schemas.android.com/aapt"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <group android:pivotX="54" android:pivotY="54" android:scaleX="0.86" android:scaleY="0.86">
+        <path
+            android:pathData="M32.664,27.436Q33.5,22 39,22L69,22Q74.5,22 75.336,27.436L78.664,49.064Q79.5,54.5 74,54.5L34,54.5Q28.5,54.5 29.336,49.064ZM37.613,29.27Q38,26.8 40.5,26.8L67.5,26.8Q70,26.8 70.387,29.27L73.213,47.33Q73.6,49.8 71.1,49.8L36.9,49.8Q34.4,49.8 34.787,47.33Z"
+            android:fillColor="#FFFFFFFF"
+            android:fillType="evenOdd" />
+    </group>
+    <group android:pivotX="54" android:pivotY="54" android:scaleX="0.86" android:scaleY="0.86">
+        <path
+            android:pathData="M32.6,54.6H75.4A1.6,1.6 0 0 1 77,56.2V56.2A1.6,1.6 0 0 1 75.4,57.8H32.6A1.6,1.6 0 0 1 31,56.2V56.2A1.6,1.6 0 0 1 32.6,54.6Z"
+            android:fillColor="#FFFFFFFF" />
+    </group>
+    <group android:pivotX="54" android:pivotY="54" android:scaleX="0.86" android:scaleY="0.86">
+        <path
+            android:pathData="M34,58H74A7,7 0 0 1 81,65V77A7,7 0 0 1 74,84H34A7,7 0 0 1 27,77V65A7,7 0 0 1 34,58ZM38.5,62H69.5A3.5,3.5 0 0 1 73,65.5V76A3.5,3.5 0 0 1 69.5,79.5H38.5A3.5,3.5 0 0 1 35,76V65.5A3.5,3.5 0 0 1 38.5,62Z"
+            android:fillColor="#FFFFFFFF"
+            android:fillType="evenOdd" />
+    </group>
+    <group android:pivotX="54" android:pivotY="54" android:scaleX="0.86" android:scaleY="0.86">
+        <path
+            android:pathData="M41.3,70H44.7A1.8,1.8 0 0 1 46.5,71.8V74.2A1.8,1.8 0 0 1 44.7,76H41.3A1.8,1.8 0 0 1 39.5,74.2V71.8A1.8,1.8 0 0 1 41.3,70Z"
+            android:fillColor="#FFFFFFFF" />
+    </group>
+    <group android:pivotX="54" android:pivotY="54" android:scaleX="0.86" android:scaleY="0.86">
+        <path
+            android:pathData="M52.3,70H55.7A1.8,1.8 0 0 1 57.5,71.8V74.2A1.8,1.8 0 0 1 55.7,76H52.3A1.8,1.8 0 0 1 50.5,74.2V71.8A1.8,1.8 0 0 1 52.3,70Z"
+            android:fillColor="#FFFFFFFF" />
+    </group>
+    <group android:pivotX="54" android:pivotY="54" android:scaleX="0.86" android:scaleY="0.86">
+        <path
+            android:pathData="M63.3,70H66.7A1.8,1.8 0 0 1 68.5,71.8V74.2A1.8,1.8 0 0 1 66.7,76H63.3A1.8,1.8 0 0 1 61.5,74.2V71.8A1.8,1.8 0 0 1 63.3,70Z"
+            android:fillColor="#FFFFFFFF" />
+    </group>
+</vector>
