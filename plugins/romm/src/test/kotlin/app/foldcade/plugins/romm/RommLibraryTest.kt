@@ -414,6 +414,21 @@ class RommLibraryTest {
     }
 
     @Test
+    fun aTrashedFileInsideASlotIsNotASave() {
+        val cache = Files.createTempDirectory("romm-trash")
+        try {
+            val slot = cache.resolve("saves").resolve("7").resolve("autosave")
+            Files.createDirectories(slot.resolve(".trash"))
+            Files.writeString(slot.resolve("keep.srm"), "keep")
+            Files.writeString(slot.resolve(".trash").resolve("gone.srm"), "gone")
+            val listed = localSaves(cache, 7, "azahar")
+            assertEquals(listOf("keep.srm"), listed.map { it.fileName })
+        } finally {
+            cache.toFile().deleteRecursively()
+        }
+    }
+
+    @Test
     fun pairingReturnsTheTokenAndDoesNotWriteIt() = runBlocking {
         val server = TinyServer()
         val cache = Files.createTempDirectory("romm-pair")
