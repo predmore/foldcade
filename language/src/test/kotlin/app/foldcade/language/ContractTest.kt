@@ -248,13 +248,13 @@ class ContractTest {
     @Test
     fun motionTokensAreTheSharedScale() {
         assertEquals(100, Motion.durationShort)
-        assertEquals(150, Motion.durationFocus)
+        assertEquals(180, Motion.durationFocus)
         assertEquals(200, Motion.durationTravel)
         assertEquals(1f, Motion.scaleRest)
-        assertEquals(1.12f, Motion.scaleFocus)
+        assertEquals(1.05f, Motion.scaleFocus)
         assertEquals(100, Motion.duration(Motion.durationTravel, animatorScale = 0f))
         assertEquals(400, Motion.duration(Motion.durationTravel, animatorScale = 2f))
-        assertEquals(150, Motion.duration(Motion.durationFocus, animatorScale = 1f))
+        assertEquals(180, Motion.duration(Motion.durationFocus, animatorScale = 1f))
         assertTrue(Motion.duration(Motion.durationShort, animatorScale = 0.01f) >= 1)
         assertTrue(Motion.reduced(0f))
         assertFalse(Motion.reduced(1f))

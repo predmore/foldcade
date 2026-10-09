@@ -182,10 +182,12 @@ object Backdrop {
 fun rgb(red: Int, green: Int, blue: Int): Color = Color(red, green, blue)
 
 object MarkAccent {
-    val dual: Color = Color(0xFFFF6090)
-    val pocket: Color = Color(0xFF40D6FF)
-    val desk: Color = Color(0xFFFFBA48)
-    val beam: Color = Color(0xFFBC9CFF)
+    val clamshell: Color = Color(0xFFFF5C7A)
+    val slim: Color = Color(0xFFFF7A45)
+    val handheld: Color = Color(0xFFFFBA48)
+    val cartridge: Color = Color(0xFF3EE0C3)
+    val disc: Color = Color(0xFFBC9CFF)
+    val cloud: Color = Color(0xFF40D6FF)
 }
 
 fun backdropClock(speed: MotionSpeed, animatorScale: Float): Float {

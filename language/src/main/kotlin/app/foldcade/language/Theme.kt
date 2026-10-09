@@ -34,10 +34,10 @@ fun cursorBrush(theme: Theme): Brush = SolidColor(theme.focus)
 
 /** Host-owned type ramp, in sp, the same on both panels. */
 object TypeRamp {
-    val heroTitle: TextUnit = 22.sp
-    val heroMeta: TextUnit = 16.sp
-    val availability: TextUnit = 14.sp
-    val gridLabel: TextUnit = 14.sp
+    val heroTitle: TextUnit = 28.sp
+    val heroMeta: TextUnit = 18.sp
+    val availability: TextUnit = 16.sp
+    val gridLabel: TextUnit = 16.sp
     val dialogTitle: TextUnit = 20.sp
     val dialogBody: TextUnit = 16.sp
     val menuRow: TextUnit = 18.sp

@@ -68,6 +68,7 @@ class ThemeZipTest {
             assertEquals(source.trim(), packed.trim())
             listOf(
                 "font.ttf",
+                "OFL-Nunito.txt",
                 "preview.png",
                 "sounds/move.ogg",
                 "sounds/activate.ogg",

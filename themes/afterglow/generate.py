@@ -867,6 +867,7 @@ def write_zip(destination: Path):
         "theme.json",
         "LICENSE",
         "font.ttf",
+        "OFL-Nunito.txt",
         "preview.png",
         "sounds/move.ogg",
         "sounds/activate.ogg",
@@ -906,7 +907,8 @@ def write_specimen(font_path: Path):
 
 def main():
     font_path = ROOT / "font.ttf"
-    build_font(font_path)
+    if not font_path.is_file():
+        raise SystemExit("themes/afterglow/font.ttf is missing. It should be the bundled Nunito Regular face.")
     write_specimen(font_path)
     marks = {}
     mark_dir = ROOT / "marks"

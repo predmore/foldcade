@@ -41,11 +41,13 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.graphicsLayer
@@ -90,6 +92,7 @@ import app.foldcade.language.Side
 import app.foldcade.language.SidePanel
 import app.foldcade.language.TypeRamp
 import app.foldcade.language.connectFields
+import app.foldcade.language.connectHint
 import app.foldcade.language.cursorBrush
 import app.foldcade.language.displayOrder
 import app.foldcade.language.hintFor
@@ -667,11 +670,16 @@ private fun Cell(
         horizontalAlignment = Alignment.CenterHorizontally,
         modifier = Modifier.zIndex(if (focused) 1f else 0f),
     ) {
+        val accent = mark?.let { markGlyph(it)?.accent }
         Box(
             modifier = Modifier
                 .size(size)
-                .scale(drawn)
-                .focusStroke(focused, corner)
+                .graphicsLayer {
+                    clip = false
+                    scaleX = drawn
+                    scaleY = drawn
+                }
+                .focusStroke(focused, corner, accent)
                 .hostPress(onClick),
             contentAlignment = Alignment.Center,
         ) {
@@ -892,28 +900,30 @@ private fun text(
 
 @Composable
 private fun focusOutset(cell: Dp): Dp =
-    cell * ((Motion.scaleFocus - 1f) / 2f) + px(Metrics.focusStrokePx * Motion.scaleFocus)
+    cell * ((Motion.scaleFocus - 1f) / 2f) + px(36f)
 
 @Composable
-private fun Modifier.focusStroke(focused: Boolean, corner: Dp = Dp.Hairline): Modifier {
-    val color = foldTheme().focus
-    return drawWithContent {
-        drawContent()
-        if (!focused) return@drawWithContent
-        val stroke = Metrics.focusStrokePx
-        val radius = if (corner > Dp.Hairline) corner.toPx() + stroke / 2f else 0f
-        val topLeft = Offset(-stroke / 2f, -stroke / 2f)
-        val bounds = Size(size.width + stroke, size.height + stroke)
-        if (radius == 0f) {
-            drawRect(color = color, topLeft = topLeft, size = bounds, style = Stroke(width = stroke))
-        } else {
-            drawRoundRect(
-                color = color,
-                topLeft = topLeft,
-                size = bounds,
-                cornerRadius = CornerRadius(radius, radius),
-                style = Stroke(width = stroke),
-            )
-        }
+private fun Modifier.focusStroke(
+    focused: Boolean,
+    corner: Dp = Dp.Hairline,
+    accent: Color? = null,
+): Modifier {
+    val color = accent ?: foldTheme().focus
+    return this.graphicsLayer { clip = false }.drawBehind {
+        if (!focused) return@drawBehind
+        val reach = size.maxDimension * 0.78f
+        drawCircle(
+            brush = Brush.radialGradient(
+                colorStops = arrayOf(
+                    0f to color.copy(alpha = 0.7f),
+                    0.38f to color.copy(alpha = 0.22f),
+                    1f to Color.Transparent,
+                ),
+                center = center,
+                radius = reach,
+            ),
+            radius = reach,
+            center = center,
+        )
     }
 }
