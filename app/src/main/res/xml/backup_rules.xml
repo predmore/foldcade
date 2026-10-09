@@ -3,8 +3,8 @@
     <!-- allowBackup=false still blocks cloud backup, not device-to-device transfer. These excludes cover transfer. A new device signs in again. -->
     <exclude domain="file" path="datastore/foldcade_credentials.preferences_pb" />
     <exclude domain="file" path="datastore" />
+    <!-- files/play-sessions is play history. It holds no secret, so the file domain is not blanket-excluded. -->
     <exclude domain="root" path="." />
-    <exclude domain="file" path="." />
     <exclude domain="database" path="." />
     <exclude domain="sharedpref" path="." />
     <exclude domain="external" path="." />

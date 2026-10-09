@@ -93,9 +93,12 @@ import app.foldcade.language.connectFields
 import app.foldcade.language.connectHint
 import app.foldcade.language.cursorBrush
 import app.foldcade.language.displayOrder
+import app.foldcade.language.lastPlayedLine
 import app.foldcade.language.monogram
 import app.foldcade.language.panelRows
+import app.foldcade.language.playedLine
 import app.foldcade.language.rowText
+import java.time.ZoneId
 import app.foldcade.readDeviceStatus
 import kotlin.math.abs
 import kotlin.math.ceil
@@ -231,6 +234,7 @@ private fun Hero(app: FoldcadeApp, screen: HostScreen, scale: Float) {
                             maxLines = 2,
                             overflow = TextOverflow.Ellipsis,
                         )
+                        PlayFacts(app, shown.id)
                     }
                 }
             }
@@ -266,12 +270,18 @@ private fun Picker(
             maxLines = 1,
         ).size.height
         val titleLine = with(LocalDensity.current) { titlePx.toDp() }
+        val detailGame = game?.takeIf {
+            model.panel == null && model.dialog == null && !model.connectOpen
+        }
         val clearance = px(Metrics.chromeClearancePx)
         Column(Modifier.fillMaxSize().padding(horizontal = inset, vertical = inset)) {
             Box(Modifier.fillMaxWidth().heightIn(min = clusterHeight)) {
                 Column(Modifier.align(Alignment.BottomStart)) { ChromeRow(app, screen) }
             }
             Spacer(Modifier.height(clearance))
+            if (detailGame != null) {
+                GameDetail(app, detailGame.id)
+            }
             BoxWithConstraints(
                 Modifier
                     .weight(1f)
@@ -568,6 +578,36 @@ private fun PanelRows(
                 }
             }
         }
+    }
+}
+
+@Composable
+private fun GameDetail(app: FoldcadeApp, gameId: String) {
+    PlayFacts(app, gameId)
+}
+
+/** Total play time and last played. The hero and the game detail both use this. */
+@Composable
+private fun PlayFacts(app: FoldcadeApp, gameId: String) {
+    val totals = app.plays.run {
+        stamp
+        totals(gameId)
+    }
+    val theme = foldTheme()
+    val now = System.currentTimeMillis()
+    Column {
+        BasicText(
+            text = playedLine(totals.activeMillis),
+            style = text(theme.muted, TypeRamp.heroMeta, theme),
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
+        BasicText(
+            text = lastPlayedLine(totals.lastPlayedMillis, now, ZoneId.systemDefault()),
+            style = text(theme.muted, TypeRamp.availability, theme),
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
     }
 }
 

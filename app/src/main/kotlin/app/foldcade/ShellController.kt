@@ -10,6 +10,7 @@ import app.foldcade.language.DialogKind
 import app.foldcade.language.Effect
 import app.foldcade.language.GridFocus
 import app.foldcade.language.DEFAULT_TRACK_TITLE
+import app.foldcade.host.play.recentlyPlayedIndices
 import app.foldcade.language.HomeMusicSetting
 import app.foldcade.language.HostScreen
 import app.foldcade.language.Meaning
@@ -38,6 +39,7 @@ class ShellController(
     private val themeNames: List<String> = listOf(Copy.builtIn),
     private val themeMotions: List<BackgroundMotion> = listOf(BackgroundMotion.Off),
     private val cue: (themeIndex: Int, slot: String) -> Unit = { _, _ -> },
+    private val lastPlayedMillis: (String) -> Long? = { null },
 ) {
     var model by mutableStateOf(initial())
         private set
@@ -232,10 +234,18 @@ class ShellController(
         publish(model.copy(music = model.music.withVolume(volume)))
     }
 
+    /** Play history changed. Recently played order follows the new last-played times. */
+    fun notePlayChanged() {
+        val next = recentOrder()
+        if (next == model.recentFirst) return
+        model = model.copy(recentFirst = next)
+    }
+
     private fun publish(next: PickerModel) {
         if (next.primaryIsTop != store.session.defaultDisplayIsTop) {
             store.update { it.withDefaultDisplayIsTop(next.primaryIsTop) }
         }
+        if (next.sort != model.sort) store.setLibrarySort(next.sort)
         if (next.music != model.music) {
             store.setMusic(next.music.enabled, next.music.volume, next.music.trackId)
             onMusic(next.music)
@@ -246,8 +256,11 @@ class ShellController(
         if (next.motionSpeed != model.motionSpeed) {
             store.setMotionSpeed(next.motionSpeed)
         }
-        model = next.copy(count = Shelf.games.size)
+        model = next.copy(count = Shelf.games.size, recentFirst = recentOrder())
     }
+
+    private fun recentOrder(): List<Int> =
+        recentlyPlayedIndices(Shelf.games.map { it.id }, lastPlayedMillis)
 
     private fun initial(): PickerModel {
         val names = themeNames.ifEmpty { listOf(Copy.builtIn) }
@@ -272,6 +285,8 @@ class ShellController(
             backgroundMotion = motion,
             backgroundPinned = pinned,
             motionSpeed = store.motionSpeed(),
+            sort = store.librarySort(),
+            recentFirst = recentOrder(),
         )
     }
 

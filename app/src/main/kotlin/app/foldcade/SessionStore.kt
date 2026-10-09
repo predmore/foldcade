@@ -7,6 +7,7 @@ import app.foldcade.api.ExternalApp
 import app.foldcade.api.Panel
 import app.foldcade.api.Session
 import app.foldcade.language.HomeMusicSetting
+import app.foldcade.language.LibrarySort
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
@@ -77,6 +78,17 @@ class SessionStore(private val prefs: SharedPreferences) {
             ?.ifEmpty { HomeMusicSetting.DEFAULT_TRACK_ID }
             ?: HomeMusicSetting.DEFAULT_TRACK_ID
 
+    fun librarySort(): LibrarySort =
+        if (prefs.getString(KEY_LIBRARY_SORT, null) == LibrarySort.RecentlyPlayed.name) {
+            LibrarySort.RecentlyPlayed
+        } else {
+            LibrarySort.Listed
+        }
+
+    fun setLibrarySort(sort: LibrarySort) {
+        prefs.edit().putString(KEY_LIBRARY_SORT, sort.name).apply()
+    }
+
     fun setMusic(enabled: Boolean, volume: Float, trackId: String) {
         val id = trackId.trim().ifEmpty { HomeMusicSetting.DEFAULT_TRACK_ID }
         prefs.edit()
@@ -130,5 +142,6 @@ class SessionStore(private val prefs: SharedPreferences) {
         private const val KEY_MUSIC_TRACK = "music_track"
         private const val KEY_BACKGROUND = "background_motion"
         private const val KEY_MOTION_SPEED = "motion_speed"
+        private const val KEY_LIBRARY_SORT = "library_sort"
     }
 }

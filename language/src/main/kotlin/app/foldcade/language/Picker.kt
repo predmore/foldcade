@@ -112,6 +112,7 @@ sealed interface Row {
     data object MotionSpeed : Row
     data object Primary : Row
     data object Arrange : Row
+    data object Order : Row
     data object Music : Row
     data object MusicTrack : Row
     data object MusicVolume : Row
@@ -129,6 +130,7 @@ fun leftRows(homeRoleHeld: Boolean): List<Row> = buildList {
     add(Row.Theme)
     add(Row.Primary)
     add(Row.Arrange)
+    add(Row.Order)
     add(Row.Music)
     add(Row.MusicTrack)
     add(Row.MusicVolume)
@@ -191,6 +193,7 @@ fun rowText(row: Row, model: PickerModel): RowText = when (row) {
     Row.MotionSpeed -> RowText(Copy.motion, speedLabel(model.motionSpeed))
     Row.Primary -> RowText(Copy.primaryPanel, if (model.primaryIsTop) Copy.top else Copy.bottom)
     Row.Arrange -> RowText(Copy.arrange)
+    Row.Order -> RowText("Order", if (model.sort == LibrarySort.RecentlyPlayed) "Recently played" else "Library")
     Row.Music -> RowText(MusicCopy.row, if (model.music.enabled) MusicCopy.on else MusicCopy.off)
     Row.MusicTrack -> RowText(MusicCopy.track, model.trackTitle)
     Row.MusicVolume -> RowText(MusicCopy.volume, MusicCopy.volumeLabel(model.music.volume).substringAfter("  "))
@@ -209,8 +212,15 @@ fun rowLabel(row: Row, model: PickerModel): String {
     return if (value.isNullOrEmpty()) text.label else "${text.label}  $value"
 }
 
-fun displayOrder(model: PickerModel): List<Int> =
-    if (model.order.size == model.count && model.count > 0) model.order else List(model.count) { it }
+fun displayOrder(model: PickerModel): List<Int> {
+    if (model.count <= 0) return emptyList()
+    if (model.arranging && model.order.size == model.count) return model.order
+    if (model.sort == LibrarySort.RecentlyPlayed && model.recentFirst.size == model.count) {
+        return model.recentFirst
+    }
+    if (model.order.size == model.count) return model.order
+    return List(model.count) { it }
+}
 
 sealed interface Effect {
     data class Launch(val index: Int) : Effect
@@ -250,6 +260,8 @@ data class PickerModel(
     val arranging: Boolean = false,
     val hold: Hold? = null,
     val order: List<Int> = emptyList(),
+    val sort: LibrarySort = LibrarySort.Listed,
+    val recentFirst: List<Int> = emptyList(),
     val signedIn: List<SignedInBackend> = emptyList(),
     val connectOrigin: String = "",
     val connectIndex: Int = 0,
@@ -537,6 +549,7 @@ private fun activateRow(
             hold = null,
             order = displayOrder(model),
         ) to null
+        Row.Order -> model.copy(panel = panel, sort = model.sort.toggled()) to null
         Row.Music -> model.copy(panel = panel, music = model.music.toggled()) to null
         Row.MusicTrack -> model to null
         Row.MusicVolume -> model.copy(panel = panel, music = model.music.stepped()) to null
