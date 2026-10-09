@@ -1,0 +1,28 @@
+{
+  "items": [
+    {
+      "id": 1234,
+      "name": "Super Mario",
+      "fs_name": "mario.cci",
+      "fs_extension": "cci",
+      "fs_size_bytes": 9,
+      "platform_id": 3,
+      "platform_slug": "3ds",
+      "platform_fs_slug": "3ds",
+      "platform_display_name": "Nintendo 3DS",
+      "alternative_names": ["Mario"],
+      "path_cover_small": "/assets/cover/small.jpg",
+      "path_cover_large": "/assets/cover/large.jpg",
+      "url_cover": null,
+      "has_simple_single_file": true,
+      "has_nested_single_file": false,
+      "has_multiple_files": false,
+      "files": [
+        {"id": 7, "file_name": "mario.cci", "file_size_bytes": 9}
+      ]
+    }
+  ],
+  "total": 1,
+  "limit": 50,
+  "offset": 0
+}
