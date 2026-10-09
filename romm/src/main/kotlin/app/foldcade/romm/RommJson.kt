@@ -120,6 +120,7 @@ internal fun deviceWriteBody(
     clientVersion: String,
     hostname: String?,
     macAddress: String?,
+    allowExisting: Boolean = false,
 ): String = buildJsonObject {
     put("name", name)
     put("platform", RommContract.PLATFORM)
@@ -128,7 +129,20 @@ internal fun deviceWriteBody(
     put("sync_mode", RommContract.SYNC_MODE)
     if (hostname != null) put("hostname", hostname)
     if (macAddress != null) put("mac_address", macAddress)
+    if (allowExisting) put("allow_existing", true)
 }.toString()
+
+/** `POST /api/devices` 409 body: `{ "detail": { "error": "device_exists", "device_id": "..." } }`. */
+internal fun deviceExistsId(body: ByteArray): String? {
+    val obj = try {
+        parseObject(body)
+    } catch (_: RommResponseException) {
+        return null
+    }
+    val detail = obj["detail"] as? JsonObject ?: obj
+    if (detail.optString("error") != "device_exists") return null
+    return detail.optString("device_id")?.takeIf { it.isNotBlank() }
+}
 
 internal fun negotiateBody(
     deviceId: String,

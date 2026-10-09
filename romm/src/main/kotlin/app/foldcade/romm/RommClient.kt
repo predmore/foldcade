@@ -278,7 +278,10 @@ class RommClient(
     /**
      * Registers this install. A stored id whose [clientVersion] still matches
      * is returned without a request. Otherwise `PUT /api/devices/{id}`, and
-     * `POST /api/devices` when that id is gone.
+     * `POST /api/devices` when that id is gone. The post sends `allow_existing`.
+     * A 409 `device_exists` response is the existing device, not a failure.
+     * Pass the device id from device-code sign-in as [stored] so this does
+     * not create a second device.
      */
     suspend fun registerDevice(
         stored: RegisteredDevice?,
@@ -307,9 +310,13 @@ class RommClient(
             api("/devices"),
             "POST",
             authenticated = true,
-            body = body,
+            body = deviceWriteBody(name, clientVersion, hostname, macAddress, allowExisting = true),
             contentType = "application/json",
         )
+        if (post.status == 409) {
+            val existing = deviceExistsId(post.body)
+            if (existing != null) return RegisteredDevice(existing, clientVersion)
+        }
         post.require(200, 201)
         return RegisteredDevice(parseObject(post.body).reqString("device_id"), clientVersion)
     }
