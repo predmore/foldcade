@@ -1,6 +1,8 @@
 package app.foldcade.language
 
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.sp
@@ -27,6 +29,8 @@ fun builtInTheme(): Theme = Theme(
     artScale = 0.92f,
     font = FontFamily.SansSerif,
 )
+
+fun cursorBrush(theme: Theme): Brush = SolidColor(theme.focus)
 
 /** Host-owned type ramp, in sp, the same on both panels. */
 object TypeRamp {
@@ -67,6 +71,12 @@ object Copy {
     const val bottom = "Bottom"
     const val addFolder = "Add a folder"
     const val connectRomm = "Connect RomM"
+    const val signOut = "Sign out / forget credentials"
+    const val clientApiToken = "Client API token"
+    const val saveToken = "Save token"
+    const val rommTokenHelp = "RomM uses a client API token or a device-code token. Foldcade stores the token and does not store a password."
+    const val signInAgainTitle = "Sign in again"
+    const val signInAgainBody = "Saved credentials could not be read."
     const val useAsHome = "Use as Home"
     const val notNow = "Not now"
     const val continueGrant = "Continue"

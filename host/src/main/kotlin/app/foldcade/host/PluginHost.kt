@@ -1,7 +1,10 @@
 package app.foldcade.host
 
+import app.foldcade.api.plugin.BoundCredentialAccess
+import app.foldcade.api.plugin.CredentialStore
 import app.foldcade.api.plugin.Game
 import app.foldcade.api.plugin.GameMeta
+import app.foldcade.api.plugin.MemoryCredentialStore
 import app.foldcade.api.plugin.GamePage
 import app.foldcade.api.plugin.GameQuery
 import app.foldcade.api.plugin.LaunchRequest
@@ -37,6 +40,7 @@ import kotlinx.coroutines.withContext
  */
 class PluginHost(
     private val io: CoroutineDispatcher,
+    private val credentials: CredentialStore = MemoryCredentialStore(),
 ) {
     private val platforms = linkedMapOf<String, Platform>()
     private val players = linkedMapOf<String, Player>()
@@ -67,6 +71,13 @@ class PluginHost(
         planIds("player", stagedPlayers.map { it.id }, players.keys)
         planIds("library", stagedLibraries.map { it.id }, libraries.keys)
         planIds("metadata", stagedMetadata.map { it.id }, metadataProviders.keys)
+        val ids = buildSet {
+            addAll(stagedPlatforms.map { it.id })
+            addAll(stagedPlayers.map { it.id })
+            addAll(stagedLibraries.map { it.id })
+            addAll(stagedMetadata.map { it.id })
+        }
+        entry.bind(BoundCredentialAccess(ids, credentials))
         platformNames.addAll(names)
         stagedPlatforms.forEach { platforms[it.id] = it }
         stagedPlayers.forEach { players[it.id] = it }

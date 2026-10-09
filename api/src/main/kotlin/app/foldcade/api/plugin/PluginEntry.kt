@@ -30,4 +30,11 @@ interface PluginEntry {
     val players: List<Player> get() = emptyList()
     val libraries: List<LibraryBackend> get() = emptyList()
     val metadataProviders: List<MetadataProvider> get() = emptyList()
+
+    /**
+     * The host calls this after validation and before the entry is stored.
+     * [access] opens credentials only for plugin ids this entry contributed.
+     * The default does nothing, so an older plugin minor of this major stays loadable.
+     */
+    fun bind(access: CredentialAccess) {}
 }

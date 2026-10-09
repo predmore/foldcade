@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    targetSdk 33 blocks cleartext unless this allows it.
+    Local-LAN RomM is often http. Setup warns. It does not block.
+-->
+<network-security-config>
+    <base-config cleartextTrafficPermitted="true" />
+</network-security-config>

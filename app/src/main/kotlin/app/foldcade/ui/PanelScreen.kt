@@ -22,6 +22,8 @@ import androidx.compose.foundation.layout.requiredWidth
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicText
+import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.SideEffect
@@ -35,6 +37,7 @@ import androidx.compose.ui.MotionDurationScale
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.focus.focusProperties
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.geometry.CornerRadius
@@ -48,6 +51,9 @@ import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -64,6 +70,7 @@ import app.foldcade.api.Surface
 import app.foldcade.batteryLabel
 import app.foldcade.millisUntilNextMinute
 import app.foldcade.language.Chrome
+import app.foldcade.language.ConnectField
 import app.foldcade.language.Copy
 import app.foldcade.language.DialogButton
 import app.foldcade.language.Effect
@@ -77,6 +84,9 @@ import app.foldcade.language.Side
 import app.foldcade.language.SidePanel
 import app.foldcade.language.TypeRamp
 import app.foldcade.language.builtInTheme
+import app.foldcade.language.connectFields
+import app.foldcade.language.connectHint
+import app.foldcade.language.cursorBrush
 import app.foldcade.language.displayOrder
 import app.foldcade.language.hintFor
 import app.foldcade.language.monogram
@@ -102,13 +112,18 @@ fun PanelHost(activity: FoldcadeHomeActivity, displays: Displays) {
     Box(Modifier.fillMaxSize().background(theme.background)) {
         if (panel == null) return@Box
         val screen = if (panel == Panel.Top) HostScreen.Top else HostScreen.Bottom
+        val model = app.shell.model
+        val connectHere = model.connectOpen && model.connectScreen == screen
         TravelFade(target = session.surfaceOn(panel), scale = scale) { shown ->
             when (shown) {
                 null -> Unit
-                Surface.Hero -> Hero(app, screen, scale)
+                Surface.Hero -> if (connectHere) Unit else Hero(app, screen, scale)
                 Surface.Picker -> Picker(app, screen, scale, activity::dispatch)
             }
         }
+        if (connectHere) ConnectScreen(app, screen, activity::dispatch)
+        Panels(app, screen, scale)
+        DialogLayer(app, model.dialog, screen, scale, activity::dispatch)
     }
 }
 
@@ -192,7 +207,6 @@ private fun Hero(app: FoldcadeApp, screen: HostScreen, scale: Float) {
                 }
             }
         }
-        Panels(app, screen, scale)
     }
 }
 
@@ -253,24 +267,18 @@ private fun Picker(
                     1
                 }
                 SideEffect { shell.setRowsPerPage(rows) }
-                if (model.connectOpen) {
-                    ConnectScreen()
-                } else {
-                    PagedGrid(
-                        app = app,
-                        screen = screen,
-                        cell = cell,
-                        gap = gap,
-                        rows = rows,
-                        scale = scale,
-                        showTitle = showTitles,
-                        usesBoth = game?.occupiesBothDisplays == true && session.bothScreensFree(),
-                    )
-                }
+                PagedGrid(
+                    app = app,
+                    screen = screen,
+                    cell = cell,
+                    gap = gap,
+                    rows = rows,
+                    scale = scale,
+                    showTitle = showTitles,
+                    usesBoth = game?.occupiesBothDisplays == true && session.bothScreensFree(),
+                )
             }
         }
-        Panels(app, screen, scale)
-        DialogLayer(app, model.dialog, screen, scale, onEffect)
     }
 }
 
@@ -475,7 +483,11 @@ private fun ChromeRow(app: FoldcadeApp, screen: HostScreen) {
                 BasicText(text = Copy.usesBothScreens, style = text(theme.muted, TypeRamp.hint, theme))
             }
         }
-        val hint = hintFor(place)
+        val hint = if (model.connectOpen) {
+            connectHint(connectFields().getOrElse(model.connectIndex) { ConnectField.Origin })
+        } else {
+            hintFor(place)
+        }
         if (hint != null) {
             BasicText(text = hint, style = text(theme.muted, TypeRamp.hint, theme))
         }
@@ -714,9 +726,78 @@ private fun DialogCard(
 }
 
 @Composable
-private fun ConnectScreen() {
+private fun ConnectScreen(
+    app: FoldcadeApp,
+    screen: HostScreen,
+    onEffect: (Effect?) -> Unit,
+) {
     val theme = builtInTheme()
-    BasicText(text = Copy.connectRomm, style = text(theme.onBackground, TypeRamp.dialogTitle, theme))
+    val model = app.shell.model
+    val fields = connectFields()
+    Column(
+        Modifier
+            .fillMaxSize()
+            .background(theme.background)
+            .padding(px(Metrics.dialogInsetPx)),
+        verticalArrangement = Arrangement.spacedBy(px(16f)),
+    ) {
+        BasicText(text = Copy.connectRomm, style = text(theme.onBackground, TypeRamp.dialogTitle, theme))
+        BasicText(text = "Server", style = text(theme.muted, TypeRamp.hint, theme))
+        BasicTextField(
+            value = model.connectOrigin,
+            onValueChange = { app.shell.editOrigin(it) },
+            singleLine = true,
+            textStyle = text(theme.onBackground, TypeRamp.dialogBody, theme),
+            cursorBrush = cursorBrush(theme),
+            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri, imeAction = ImeAction.Next),
+            modifier = Modifier
+                .fillMaxWidth()
+                .focusStroke(focused(model.connectIndex, ConnectField.Origin))
+                .onFocusChanged { state ->
+                    if (state.isFocused) app.shell.touchConnect(fields.indexOf(ConnectField.Origin), screen)
+                }
+                .padding(px(8f)),
+        )
+        val warning = model.connectWarning
+        if (warning != null) {
+            BasicText(text = warning, style = text(theme.onBackground, TypeRamp.dialogBody, theme))
+        }
+        val hint = model.connectHint
+        if (hint != null) {
+            BasicText(text = hint, style = text(theme.onBackground, TypeRamp.dialogBody, theme))
+        }
+        BasicText(text = Copy.clientApiToken, style = text(theme.muted, TypeRamp.hint, theme))
+        BasicTextField(
+            value = app.shell.connectToken,
+            onValueChange = { app.shell.editToken(it) },
+            singleLine = true,
+            visualTransformation = PasswordVisualTransformation(),
+            textStyle = text(theme.onBackground, TypeRamp.dialogBody, theme),
+            cursorBrush = cursorBrush(theme),
+            keyboardOptions = KeyboardOptions(autoCorrectEnabled = false, imeAction = ImeAction.Done),
+            modifier = Modifier
+                .fillMaxWidth()
+                .focusStroke(focused(model.connectIndex, ConnectField.Token))
+                .onFocusChanged { state ->
+                    if (state.isFocused) app.shell.touchConnect(fields.indexOf(ConnectField.Token), screen)
+                }
+                .padding(px(8f)),
+        )
+        BasicText(
+            text = Copy.saveToken,
+            modifier = Modifier
+                .focusStroke(focused(model.connectIndex, ConnectField.Save))
+                .hostPress { onEffect(app.shell.touchConnect(fields.indexOf(ConnectField.Save), screen)) }
+                .padding(px(8f)),
+            style = text(theme.onBackground, TypeRamp.dialogBody, theme),
+        )
+        BasicText(text = Copy.rommTokenHelp, style = text(theme.muted, TypeRamp.dialogBody, theme))
+    }
+}
+
+private fun focused(index: Int, field: ConnectField): Boolean {
+    val fields = connectFields()
+    return fields[index.coerceIn(fields.indices)] == field
 }
 
 @Composable

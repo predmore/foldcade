@@ -1,5 +1,6 @@
 package app.foldcade
 
+import app.foldcade.language.ConnectField
 import app.foldcade.language.Chrome
 import app.foldcade.language.Effect
 import app.foldcade.language.GridFocus
@@ -7,10 +8,14 @@ import app.foldcade.language.HostScreen
 import app.foldcade.language.Meaning
 import app.foldcade.language.Metrics
 import app.foldcade.language.PickerModel
+import app.foldcade.language.SignedInBackend
+import app.foldcade.language.connectFields
 import app.foldcade.language.displayOrder
 import app.foldcade.language.focusAndActivateDialog
 import app.foldcade.language.homePrompt
 import app.foldcade.language.reduce
+import app.foldcade.language.signInAgainPrompt
+import app.foldcade.romm.cleartextCredentialWarning
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
@@ -19,8 +24,78 @@ class ShellController(private val store: SessionStore) {
     var model by mutableStateOf(initial())
         private set
 
+    var connectToken by mutableStateOf("")
+        private set
+
     fun onMeaning(meaning: Meaning, screen: HostScreen): Effect? {
         val (next, effect) = reduce(prepared(), meaning, screen)
+        if (!next.connectOpen) connectToken = ""
+        publish(next)
+        return effect
+    }
+
+    fun editOrigin(origin: String) {
+        model = model.copy(
+            connectOrigin = origin,
+            connectWarning = cleartextCredentialWarning(origin),
+        )
+    }
+
+    fun editToken(value: String) {
+        connectToken = value
+    }
+
+    fun consumeConnectToken(): String = connectToken.also { connectToken = "" }
+
+    fun openConnect(origin: String) {
+        val screen = model.connectScreen ?: HostScreen.Top
+        connectToken = ""
+        model = model.copy(
+            connectOpen = true,
+            connectScreen = screen,
+            panel = null,
+            connectOrigin = origin,
+            connectIndex = 0,
+            connectWarning = cleartextCredentialWarning(origin),
+            connectHint = null,
+        )
+    }
+
+    fun showSetupHint(hint: String?) {
+        model = model.copy(connectHint = hint)
+    }
+
+    fun setSignedIn(backends: List<SignedInBackend>) {
+        model = model.copy(signedIn = backends)
+    }
+
+    fun askToSignInAgain() {
+        if (model.dialog != null) {
+            model = model.copy(reLoginPending = true)
+            return
+        }
+        connectToken = ""
+        model = model.copy(
+            dialog = signInAgainPrompt(),
+            connectOpen = false,
+            connectScreen = null,
+        )
+    }
+
+    fun showQueuedPrompt() {
+        if (!model.reLoginPending || model.dialog != null) return
+        model = model.copy(reLoginPending = false, dialog = signInAgainPrompt())
+    }
+
+    /** One tap focuses a text row. Save activates on that tap. */
+    fun touchConnect(index: Int, screen: HostScreen): Effect? {
+        val field = connectFields().getOrNull(index) ?: return null
+        if (field != ConnectField.Save) {
+            if (model.connectIndex != index) model = model.copy(connectIndex = index)
+            return null
+        }
+        val (next, effect) = reduce(model.copy(connectIndex = index), Meaning.Activate, screen)
+        if (!next.connectOpen) connectToken = ""
         publish(next)
         return effect
     }

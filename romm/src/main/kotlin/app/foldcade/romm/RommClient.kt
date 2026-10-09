@@ -50,6 +50,7 @@ class RommClient(
     connectTimeout: Duration = Duration.ofSeconds(15),
     readTimeout: Duration = Duration.ofSeconds(30),
     writeTimeout: Duration = Duration.ofSeconds(30),
+    httpLog: ((String) -> Unit)? = null,
 ) : AutoCloseable {
     val origin: String = normalizeOrigin(origin)
 
@@ -59,12 +60,31 @@ class RommClient(
         .writeTimeout(writeTimeout)
         .followRedirects(true)
         .followSslRedirects(false)
+        .apply {
+            if (httpLog != null) addInterceptor(RedactingLoggingInterceptor(httpLog))
+        }
         .build()
 
     suspend fun heartbeat(): Heartbeat {
         val raw = exchange(api("/heartbeat"), "GET", authenticated = false)
         raw.require(200)
         return parseHeartbeat(raw.body)
+    }
+
+    /**
+     * One unauthenticated `GET /api/heartbeat`. Does not send the token.
+     * An http origin that redirects to https returns [TRY_HTTPS_HINT].
+     * The client does not follow that redirect (`followSslRedirects` is false).
+     */
+    suspend fun redirectHint(): String? {
+        val raw = try {
+            exchange(api("/heartbeat"), "GET", authenticated = false)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (_: RommUnavailable) {
+            return null
+        }
+        return httpsRedirectHint(raw.status, raw.header("Location"))
     }
 
     suspend fun openApiInfo(): OpenApiInfo {

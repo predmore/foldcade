@@ -14,7 +14,12 @@ data class DeviceAuthChallenge(
     val verificationPathComplete: String,
     val expiresInSeconds: Int,
     val intervalSeconds: Int,
-)
+) {
+    override fun toString(): String =
+        "DeviceAuthChallenge(deviceCode=***, userCode=$userCode, verificationPath=$verificationPath, " +
+            "verificationPathComplete=$verificationPathComplete, expiresInSeconds=$expiresInSeconds, " +
+            "intervalSeconds=$intervalSeconds)"
+}
 
 sealed class DeviceTokenPoll {
     data object Pending : DeviceTokenPoll()
@@ -27,7 +32,10 @@ sealed class DeviceTokenPoll {
         val deviceId: String,
         val scopes: List<String>,
         val expiresAt: String?,
-    ) : DeviceTokenPoll()
+    ) : DeviceTokenPoll() {
+        override fun toString(): String =
+            "Approved(accessToken=***, deviceId=$deviceId, scopes=$scopes, expiresAt=$expiresAt)"
+    }
 }
 
 data class PlatformSummary(
