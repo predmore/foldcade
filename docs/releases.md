@@ -8,9 +8,9 @@ A debug install is `app.foldcade.debug`. The signed release stays `app.foldcade`
 
 ## Install with Obtainium
 
-Add `https://github.com/predmore/foldcade`. Set the APK filter to `^foldcade\.apk$`. Every release asset is named `foldcade.apk`.
+Add `https://github.com/predmore/foldcade`. Set the APK filter to `^foldcade\.apk$`. Every release file is named `foldcade.apk`.
 
-The badge on the [README](../README.md) adds that GitHub source with the filter, and leaves pre-releases off, so it follows stable releases.
+The badge on the [README](../README.md) does that for you. It adds the GitHub source, sets the APK filter to `^foldcade\.apk$`, and leaves pre-releases off, so it follows stable releases. The README itself only shows the install steps.
 
 ### Stable releases only
 

@@ -1,8 +1,10 @@
 # Foldcade
 
-A cozy, 3DS-inspired dual-screen launcher built for the AYN Thor.
+A calm home for two screens.
 
-Both screens stay with your library. The top holds the game you are on. The bottom is the shelf you move through. The screens stay dark, the motion stays small, and a short piece of music sits under the menu until a game starts.
+Pick up the AYN Thor and open the clamshell. Your whole collection is there: the game you have settled on, and the shelf of everything else just below it. The home glows quietly while you browse, unhurried and easy to sit with.
+
+When you are ready to play, Foldcade gets out of the way. The music fades, the home steps aside, and the game takes the screens.
 
 <!--
 Hero pair. Replace these two files in place. Keep the paths and the table below.
@@ -16,25 +18,26 @@ Do not point this page at a pull-request branch.
 
 | Top screen | Bottom screen |
 | :---: | :---: |
-| ![Top screen. Placeholder until the refreshed capture is on main.](docs/images/hero-top.png) | ![Bottom screen. Placeholder until the refreshed capture is on main.](docs/images/hero-bottom.png) |
-
-These two pictures are placeholders. Replace `docs/images/hero-top.png` and `docs/images/hero-bottom.png` when the screen captures are ready. Leave this table as it is.
+| ![Top screen](docs/images/hero-top.png) | ![Bottom screen](docs/images/hero-bottom.png) |
 
 ## What you can do
 
-- Keep your library on both screens.
-- Connect a RomM library.
-- Open games in Azahar and melonDS.
-- Use a theme. The built-in look stays if a theme file is missing.
-- Leave the ambient music on, or turn it down. The home track is Lanternlight.
+- **A two-screen home, built for the Thor.** Both displays belong to the home, so your games have room to spread out across the clamshell.
+- **Your library, wherever it lives.** Keep games in a folder on the device, or connect RomM, and browse them from the same place.
+- **One press, and you are playing.** Launch straight into Azahar or melonDS, and Foldcade hands the screens over.
+- **Themes, starting with Afterglow.** Afterglow is the first look: dark, quiet, and easy on a late session.
+- **Lanternlight, while you browse.** A gentle piece of music sits under the home, then fades away when a game starts.
+- **Play time and recently played.** Coming in v1, so you can see where the hours went and jump back into what you played last.
+
+**Status:** Early, and in active development. [Pre-releases](docs/releases.md#include-pre-releases) are available for testers.
 
 ## Get it
 
-Install from [GitHub Releases](https://github.com/predmore/foldcade/releases), or add Foldcade with Obtainium. The release file is always `foldcade.apk`.
+Install [Obtainium](https://obtainium.imranr.dev), tap the badge, and you are done.
 
 [![Get it on Obtainium](docs/images/obtainium.png)](https://apps.obtainium.imranr.dev/redirect?r=obtainium://app/%7B%22id%22%3A%22app.foldcade%22%2C%22url%22%3A%22https%3A%2F%2Fgithub.com%2Fpredmore%2Ffoldcade%22%2C%22author%22%3A%22predmore%22%2C%22name%22%3A%22Foldcade%22%2C%22additionalSettings%22%3A%22%7B%5C%22apkFilterRegEx%5C%22%3A%5C%22%5Efoldcade%5C%5C%5C%5C.apk%24%5C%22%7D%22%7D)
 
-The badge follows stable releases and sets the APK filter to `^foldcade\.apk$`. Pre-release switches are in [Releases](docs/releases.md).
+Or grab the APK from [GitHub Releases](https://github.com/predmore/foldcade/releases).
 
 ## License
 
