@@ -63,6 +63,7 @@ internal class RommLibrary(
             ListedPlatform(
                 platformId = alignedPlatformId(wiring.platforms, platform.slug),
                 displayName = platform.displayName,
+                gameCount = platform.romCount.coerceIn(0L, Int.MAX_VALUE.toLong()).toInt(),
             )
         }
     }
