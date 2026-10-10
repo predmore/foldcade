@@ -136,10 +136,9 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
         override fun onDisplayChanged(displayId: Int) = Unit
     }
 
-    override fun pickerIsFocused(): Boolean {
-        val panel = displays.panelFor(this, foldcade.store.session.defaultDisplayIsTop) ?: return false
-        return foldcade.store.session.pickerHandlesKeys(panel)
-    }
+    // The hero has no controls of its own. Android gives its display input focus after a
+    // launcher-icon start or Home on that screen, so its keys drive the picker too.
+    override fun pickerIsFocused(): Boolean = foldcadeSurfaceFocused()
 
     override fun foldcadeSurfaceFocused(): Boolean {
         val panel = displays.panelFor(this, foldcade.store.session.defaultDisplayIsTop) ?: return false
