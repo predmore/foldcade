@@ -378,7 +378,7 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
     private fun launchGame(index: Int) {
         val game = Shelf.games.getOrNull(index) ?: return
         if (game.emptyShelfHint) return
-        val player = game.platformId?.let { foldcade.plugins.playersFor(it).firstOrNull() }
+        val player = game.platformId?.let(::playerFor)
         if (player == null) {
             if (game.platformId != null) {
                 val generation = beginLaunch()
@@ -618,7 +618,6 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
                     is GameLaunch.Missing -> if (launchCurrent(generation)) {
                         showMissing(plan.playerName, plan.packages)
                     }
-                    GameLaunch.SeveralInstalled -> Unit
                     GameLaunch.NotAFile -> foldcade.retryLibrary()
                 }
             }
@@ -755,7 +754,7 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
         } catch (_: ActivityNotFoundException) {
             foldcade.store.update { it.home(Panel.Top).home(Panel.Bottom) }
             val name = game.platformId
-                ?.let { foldcade.plugins.playersFor(it).firstOrNull()?.displayName }
+                ?.let { playerFor(it)?.displayName }
                 ?: "Player"
             presentMissing(name, generation)
         } catch (_: Exception) {
@@ -769,14 +768,19 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
     }
 
     private fun installedPackages(packageNames: List<String>): Set<String> =
-        packageNames.filter { name ->
-            try {
-                packageManager.getPackageInfo(name, 0)
-                true
-            } catch (_: PackageManager.NameNotFoundException) {
-                false
-            }
-        }.toSet()
+        packageNames.filter(::packageInstalled).toSet()
+
+    private fun packageInstalled(name: String): Boolean =
+        try {
+            packageManager.getPackageInfo(name, 0)
+            true
+        } catch (_: PackageManager.NameNotFoundException) {
+            false
+        }
+
+    /** Several emulators can serve one platform. See [preferredPlayer]. */
+    private fun playerFor(platformId: String): Player? =
+        preferredPlayer(foldcade.plugins.playersFor(platformId), ::packageInstalled)
 
     private fun reconcileUsage() {
         val now = System.currentTimeMillis()
@@ -962,7 +966,7 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
     private fun playerForPendingLaunch(): Player? {
         val index = pendingLaunch ?: return null
         val game = Shelf.games.getOrNull(index) ?: return null
-        return game.platformId?.let { foldcade.plugins.playersFor(it).firstOrNull() }
+        return game.platformId?.let(::playerFor)
     }
 
     private fun rememberSaveFolder(uri: Uri, player: Player?) {

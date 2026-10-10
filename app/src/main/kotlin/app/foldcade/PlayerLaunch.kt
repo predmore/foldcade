@@ -29,6 +29,15 @@ enum class LaunchBlock {
     SaveFolder,
 }
 
+/**
+ * The player that opens a game whose platform has [players].
+ * The first player with an installed package wins, in registration order.
+ * With none installed, the first player is returned so the missing-player
+ * dialog can name it. Null only when [players] is empty.
+ */
+fun preferredPlayer(players: List<Player>, installed: (String) -> Boolean): Player? =
+    players.firstOrNull { player -> player.packageNames.any(installed) } ?: players.firstOrNull()
+
 /** True when a different both-panel player already owns the screens. */
 fun anotherBothPanelRunning(session: Session, gameId: String): Boolean {
     val running = listOfNotNull(session.topApp, session.bottomApp)

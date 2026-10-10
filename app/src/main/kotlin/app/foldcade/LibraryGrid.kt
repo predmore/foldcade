@@ -131,17 +131,11 @@ sealed interface GameLaunch {
     /** No player is registered. The stand-in opens this content URI with a read grant. */
     data class Dummy(val uri: String) : GameLaunch
 
-    /** Exactly one registered player has an installed package. */
+    /** The first registered player with an installed package, as in [preferredPlayer]. */
     data class Installed(val player: Player, val packageName: String) : GameLaunch
 
     /** Players are registered and none of their packages are installed. */
     data class Missing(val playerName: String, val packages: List<String>) : GameLaunch
-
-    /**
-     * More than one registered player is installed.
-     * Which one launches is not decided here.
-     */
-    data object SeveralInstalled : GameLaunch
 
     /** No player, and the backend did not hand back a content URI. */
     data object NotAFile : GameLaunch
@@ -160,18 +154,14 @@ internal fun planLaunch(
         val uri = (target as? LaunchTarget.ContentUri)?.uri?.takeIf { it.isNotBlank() }
         return if (uri != null) GameLaunch.Dummy(uri) else GameLaunch.NotAFile
     }
-    val installed = players.mapNotNull { player ->
-        val packageName = installedPackage(player) ?: return@mapNotNull null
-        player to packageName
+    for (player in players) {
+        val packageName = installedPackage(player) ?: continue
+        return GameLaunch.Installed(player, packageName)
     }
-    return when (installed.size) {
-        0 -> GameLaunch.Missing(
-            playerName = players.first().displayName,
-            packages = players.flatMap { it.packageNames }.distinct(),
-        )
-        1 -> GameLaunch.Installed(installed.single().first, installed.single().second)
-        else -> GameLaunch.SeveralInstalled
-    }
+    return GameLaunch.Missing(
+        playerName = players.first().displayName,
+        packages = players.flatMap { it.packageNames }.distinct(),
+    )
 }
 
 private const val PAGE: Int = 50

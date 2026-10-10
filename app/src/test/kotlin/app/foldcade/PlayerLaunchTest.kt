@@ -10,6 +10,7 @@ import app.foldcade.localfolder.LocalFolderEntry
 import app.foldcade.language.Copy
 import app.foldcade.plugins.azahar.AzaharPlayer
 import app.foldcade.plugins.azahar.Nintendo3ds
+import app.foldcade.plugins.emulators.EmulatorsEntry
 import app.foldcade.plugins.gamenative.GameNativeLibrary
 import app.foldcade.plugins.gamenative.GameNativePlayer
 import app.foldcade.plugins.gamenative.MAIN_ACTIVITY
@@ -220,6 +221,50 @@ class PlayerLaunchTest {
         assertEquals("Nintendo DS", folder.displayName)
         assertTrue("nds" in folder.aliases)
         assertTrue("nds" in folder.extensions)
+    }
+
+    @Test
+    fun everyEmulatorPlatformIsInTheLocalFolderCatalog() {
+        val folder = LocalFolderEntry().platforms.map { it.id }.toSet()
+        EmulatorsEntry().players.forEach { player ->
+            assertTrue(player.id, player.platformId in folder)
+        }
+    }
+
+    @Test
+    fun manifestSeesEveryEmulatorPackage() {
+        val xml = File("src/main/AndroidManifest.xml").readText()
+        EmulatorsEntry().players.flatMap { it.packageNames }.distinct().forEach { name ->
+            assertTrue(name, xml.contains("android:name=\"$name\""))
+        }
+    }
+
+    @Test
+    fun theFirstInstalledEmulatorOpensTheGame() {
+        val gba = EmulatorsEntry().players.filter { it.platformId == "game-boy-advance" }
+        val pizza = setOf("it.dbtecno.pizzaboygba")
+        assertEquals("Pizza Boy GBA", preferredPlayer(gba) { it in pizza }?.displayName)
+        val both = pizza + "com.fastemulator.gba"
+        assertEquals("My Boy!", preferredPlayer(gba) { it in both }?.displayName)
+        assertEquals("My Boy!", preferredPlayer(gba) { false }?.displayName)
+        assertNull(preferredPlayer(emptyList()) { true })
+    }
+
+    @Test
+    fun anEmulatorLaunchesOnThePickerScreenWithAContentUri() {
+        val player = EmulatorsEntry().players.single { it.id == "ppsspp.psp" }
+        val ready = planPlayerLaunch(
+            player = player,
+            game = game.copy(platformId = "psp"),
+            target = LaunchTarget.ContentUri("content://tree/game.iso"),
+            installedPackages = setOf("org.ppsspp.ppsspp"),
+            anotherBothPanelRunning = true,
+            closeConfirmed = false,
+        ) as PlayerLaunch.Ready
+        assertEquals("org.ppsspp.ppsspp", ready.intent.packageName)
+        assertEquals("content://tree/game.iso", ready.intent.dataUri)
+        assertFalse(ready.occupiesBothDisplays)
+        assertEquals(StartDisplay.PickerChoice, ready.startDisplay)
     }
 
     @Test

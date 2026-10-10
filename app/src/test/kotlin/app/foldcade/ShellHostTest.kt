@@ -133,6 +133,7 @@ class ShellHostTest {
             listOf(
                 "app.foldcade.localfolder.LocalFolderEntry",
                 "app.foldcade.plugins.azahar.AzaharEntry",
+                "app.foldcade.plugins.emulators.EmulatorsEntry",
                 "app.foldcade.plugins.gamenative.GameNativeEntry",
                 "app.foldcade.plugins.melonds.MelonDsEntry",
                 "app.foldcade.plugins.moonlight.MoonlightEntry",
@@ -181,6 +182,7 @@ class ShellHostTest {
             setOf(
                 "app.foldcade.localfolder.LocalFolderEntry",
                 "app.foldcade.plugins.azahar.AzaharEntry",
+                "app.foldcade.plugins.emulators.EmulatorsEntry",
                 "app.foldcade.plugins.gamenative.GameNativeEntry",
                 "app.foldcade.plugins.melonds.MelonDsEntry",
                 "app.foldcade.plugins.moonlight.MoonlightEntry",
@@ -198,6 +200,12 @@ class ShellHostTest {
         assertEquals("melonds", host.player("melonds")?.id)
         assertEquals("nintendo-ds", host.playersFor("nds").single().platformId)
         assertTrue(host.playerIds().containsAll(listOf("azahar", "melonds", "gamenative", "moonlight")))
+        assertEquals(
+            listOf("my-boy.game-boy-advance", "pizza-boy-gba.game-boy-advance", "gba-emu.game-boy-advance"),
+            host.playersFor("gba").map { it.id },
+        )
+        assertEquals("nintendo-switch", host.playersFor("switch").single().platformId)
+        assertEquals("dreamcast", host.playersFor("dc").first().platformId)
         assertEquals("GameNative", host.library("gamenative")?.displayName)
         assertNull(host.metadata("gamenative"))
         assertEquals("moonlight", host.player("moonlight")?.id)
