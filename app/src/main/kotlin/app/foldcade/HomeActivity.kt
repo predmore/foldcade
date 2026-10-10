@@ -240,6 +240,12 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
             libraryReturn = null
             reconcile(pending)
         }
+        // Foldcade in front on this panel means the game there has left. A launcher-icon
+        // start is not a Home recall, so without this a Foldcade that is not the default
+        // Home keeps the panel for the game and ignores every key.
+        displays.panelFor(this, foldcade.store.session.defaultDisplayIsTop)?.let { panel ->
+            foldcade.store.update { it.foldcadeResumed(panel) }
+        }
         resumed = true
         refreshShellVisible()
         foldcade.reloadInstalledApps()
