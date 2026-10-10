@@ -332,6 +332,130 @@ class LocalFolderBackendTest {
             backend.saves(game).slots.map { it.slot to it.contentHash },
         )
         assertEquals(listOf("player.b", "player.a"), backend.saves(game).slots.map { it.lastPlayerId })
+        assertTrue(backend.prepareLaunch(game, second).savesToPlace.isEmpty())
+    }
+
+    @Test
+    fun aLaterConflictReplacesTheSingleKeptCopy() = runBlocking {
+        val backend = newBackend(
+            folderDir("content://nds", "nds", listOf(folderFile("content://game", "Game.nds"))),
+        )
+        val game = backend.listGames("nintendo-ds", GameQuery()).games.single()
+        val first = unusedPlayer("player.a")
+        val second = unusedPlayer("player.b")
+
+        backend.reconcile(game, first, oneSlot("slot", "aa", first.id))
+        backend.reconcile(game, second, oneSlot("slot", "bb", second.id))
+        val again = backend.reconcile(game, first, oneSlot("slot", "cc", first.id))
+        assertEquals(SyncOutcome.KeptBoth, again.outcome)
+        assertEquals(
+            listOf("slot" to "cc", "slot.kept" to "bb"),
+            backend.saves(game).slots.map { it.slot to it.contentHash },
+        )
+        assertEquals(listOf("player.a", "player.b"), backend.saves(game).slots.map { it.lastPlayerId })
+        assertTrue(backend.saves(game).slots.none { it.slot.endsWith(".kept.kept") })
+
+        val samePlayer = backend.reconcile(game, first, oneSlot("slot", "dd", first.id))
+        assertEquals(SyncOutcome.Unchanged, samePlayer.outcome)
+        assertEquals(
+            listOf("slot" to "dd", "slot.kept" to "bb"),
+            backend.saves(game).slots.map { it.slot to it.contentHash },
+        )
+
+        val empty = backend.reconcile(game, second, ObservedSaves(emptyList()))
+        assertEquals(SyncOutcome.Unchanged, empty.outcome)
+        assertEquals(2, backend.saves(game).slots.size)
+
+        val third = unusedPlayer("player.c")
+        val nested = backend.reconcile(game, third, oneSlot("slot.kept", "ee", third.id))
+        assertEquals(SyncOutcome.Unchanged, nested.outcome)
+        assertEquals(
+            listOf("slot" to "dd", "slot.kept" to "ee"),
+            backend.saves(game).slots.map { it.slot to it.contentHash },
+        )
+    }
+
+    @Test
+    fun eachSlotKeepsItsOwnCopy() = runBlocking {
+        val backend = newBackend(
+            folderDir("content://nds", "nds", listOf(folderFile("content://game", "Game.nds"))),
+        )
+        val game = backend.listGames("nintendo-ds", GameQuery()).games.single()
+        val first = unusedPlayer("player.a")
+        val second = unusedPlayer("player.b")
+        backend.reconcile(
+            game,
+            first,
+            ObservedSaves(
+                slots = listOf(
+                    ObservedSlot("auto", "aa", first.id, null),
+                    ObservedSlot("main", "bb", first.id, null),
+                ),
+            ),
+        )
+        val conflict = backend.reconcile(
+            game,
+            second,
+            ObservedSaves(
+                slots = listOf(
+                    ObservedSlot("main", "cc", second.id, null),
+                    ObservedSlot("auto", "dd", second.id, null),
+                ),
+            ),
+        )
+        assertEquals(SyncOutcome.KeptBoth, conflict.outcome)
+        assertEquals(
+            listOf(
+                "auto" to "dd",
+                "auto.kept" to "aa",
+                "main" to "cc",
+                "main.kept" to "bb",
+            ),
+            backend.saves(game).slots.map { it.slot to it.contentHash },
+        )
+    }
+
+    @Test
+    fun theSameBytesFromAnotherPlayerAreNotArchived() = runBlocking {
+        val backend = newBackend(
+            folderDir("content://nds", "nds", listOf(folderFile("content://game", "Game.nds"))),
+        )
+        val game = backend.listGames("nintendo-ds", GameQuery()).games.single()
+        val first = unusedPlayer("player.a")
+        val second = unusedPlayer("player.b")
+        backend.reconcile(game, first, oneSlot("slot", "aa", first.id))
+        val same = backend.reconcile(game, second, oneSlot("slot", "AA", second.id))
+        assertEquals(SyncOutcome.Unchanged, same.outcome)
+        val recorded = backend.saves(game).slots.single()
+        assertEquals("slot", recorded.slot)
+        assertEquals("aa", recorded.contentHash)
+        assertEquals("player.b", recorded.lastPlayerId)
+    }
+
+    @Test
+    fun rememberedSavesSurviveRebindingTheFolder() = runBlocking {
+        val tree = folderDir(
+            "content://nds",
+            "nds",
+            listOf(folderFile("content://game", "Game.nds")),
+        )
+        val backend = newBackend(tree)
+        val game = backend.listGames("nintendo-ds", GameQuery()).games.single()
+        val player = unusedPlayer("player.a")
+        backend.reconcile(game, player, oneSlot("slot", "aa", player.id))
+
+        val other = folderDir(
+            "content://snes",
+            "snes",
+            listOf(folderFile("content://other", "Other.sfc")),
+        )
+        backend.bindTree(other.entry(), indexTree(other))
+        assertTrue(
+            runCatching { backend.saves(game) }.exceptionOrNull() is PluginException.NotFound,
+        )
+
+        backend.bindTree(tree.entry(), indexTree(tree))
+        assertEquals("aa", backend.saves(game).slots.single().contentHash)
     }
 
     @Test(timeout = 5_000)
