@@ -46,6 +46,9 @@ interface Player {
 
 /**
  * A save slot and the writable location the player has already resolved.
+ * [slot] is the name that matches [SaveSlot.slot], [PlacedSave.slot], and [ObservedSlot.slot].
+ * The player plugin owns this location. The bytes the player reads and writes live at [locationUri].
+ * The backend owns its copy of the same [slot].
  * [locationUri] is null when the plugin does not yet have a place to write.
  * The plugin owns what the URI means. The shell does not invent save paths.
  */

@@ -70,12 +70,24 @@ data class FirmwareBytes(
     val contentUri: String,
 )
 
-/** Saves this backend owns for one game. The core does not interpret the slot files. */
+/**
+ * Saves this backend owns for one game.
+ * [ownerBackendId] names the owner of the bytes.
+ * [SaveSlot.slot] is the name of each save, and [SaveDeclaration.slot] is that same name.
+ * A null location is [SaveDeclaration.locationUri] or [ObservedSlot.contentUri].
+ * The core does not interpret the slot files.
+ */
 data class SaveSet(
     val ownerBackendId: String,
     val slots: List<SaveSlot>,
 )
 
+/**
+ * One save the backend in [SaveSet] owns.
+ * [slot] is its name. [PlacedSave], [ObservedSlot], and [SaveDeclaration] use that name for the same save.
+ * The backend owns the bytes. [lastPlayerId] is the player that last wrote them, or null when that player is unknown.
+ * A null location is [SaveDeclaration.locationUri] or [ObservedSlot.contentUri].
+ */
 data class SaveSlot(
     val slot: String,
     /** Lowercase hex MD5 of the save bytes. */
@@ -87,6 +99,8 @@ data class SaveSlot(
  * Result of [LibraryBackend.prepareLaunch].
  * [target] is the same kind of handoff [LibraryBackend.ensureLocal] returned.
  * The shell writes [savesToPlace] into the matching [SaveDeclaration] locations.
+ * [PlacedSave.slot] names each save, and the backend owns those bytes.
+ * A null [SaveDeclaration.locationUri] has no place for the shell to write.
  */
 data class Placement(
     val target: LaunchTarget,
@@ -94,6 +108,12 @@ data class Placement(
     val sync: SyncResult = SyncResult(SyncOutcome.Unchanged),
 )
 
+/**
+ * Save bytes the backend owns and the shell writes before launch.
+ * [slot] matches [SaveDeclaration.slot].
+ * [contentUri] addresses the bytes. A save with no bytes is left out of [Placement.savesToPlace].
+ * Null [SaveDeclaration.locationUri] means the shell has these bytes and no place to write them.
+ */
 data class PlacedSave(
     val slot: String,
     val contentUri: String,
@@ -101,11 +121,21 @@ data class PlacedSave(
     val contentHash: String,
 )
 
-/** Bytes the shell observed in the player's save locations after it returned. */
+/**
+ * Bytes the shell observed in the player's save locations after it returned.
+ * [ObservedSlot.slot] is the name of each save. The player wrote the bytes.
+ * Null [ObservedSlot.contentUri] means that slot was observed with no location.
+ */
 data class ObservedSaves(
     val slots: List<ObservedSlot>,
 )
 
+/**
+ * One slot the shell read after the player returned.
+ * [slot] is the name from [SaveDeclaration]. The player wrote the bytes.
+ * [contentUri] addresses those bytes when the shell has a location.
+ * Null [contentUri] means [slot], [contentHash], and [playerId] were observed and no location was included.
+ */
 data class ObservedSlot(
     val slot: String,
     /** Lowercase hex MD5 of the save bytes. */
