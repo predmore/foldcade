@@ -29,7 +29,7 @@ class HomeMusicSettingTest {
                 Row.EditHome, Row.AllLibrary, Row.AddNewGames,
                 Row.AndroidGames, Row.Apps, Row.HiddenApps,
                 Row.Licenses,
-                Row.AndroidSettings, Row.DefaultHomeApp,
+                Row.AndroidSettings, Row.DefaultHomeApp, Row.Settings,
             ),
             leftRows(homeRoleHeld = false),
         )
@@ -41,7 +41,7 @@ class HomeMusicSettingTest {
                 Row.EditHome, Row.AllLibrary, Row.AddNewGames,
                 Row.AndroidGames, Row.Apps, Row.HiddenApps,
                 Row.Licenses,
-                Row.AndroidSettings, Row.DefaultHomeApp,
+                Row.AndroidSettings, Row.DefaultHomeApp, Row.Settings,
             ),
             leftRows(homeRoleHeld = true),
         )

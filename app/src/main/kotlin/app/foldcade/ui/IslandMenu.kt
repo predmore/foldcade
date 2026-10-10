@@ -156,7 +156,7 @@ private fun Island(
     val openHeight = maxHeight * 0.84f
     val width = lerp(pillWidth, openWidth, progress)
     val height = lerp(pillHeight, openHeight, progress)
-    val radius = lerp(pillHeight / 2, 22.dp, progress)
+    val radius = lerp(pillHeight / 2, Metrics.cardCornerDp.dp, progress)
     val shape = RoundedCornerShape(radius)
     val x = if (side == Side.Left) inset else maxWidth - inset - width
     val focusedIsland = progress < 0.08f && app.shell.model.panel == null && app.shell.model.dialog == null &&
@@ -175,9 +175,14 @@ private fun Island(
             }
             .size(width, height)
             .zIndex(if (progress > 0f) 2f else 1f)
-            .border(1.dp, if (focusedIsland) theme.focus else theme.onBackground.copy(alpha = 0.45f), shape)
+            // A filled card. A faint edge keeps it apart from a black backdrop.
+            .border(
+                if (focusedIsland) 2.dp else 1.dp,
+                if (focusedIsland) theme.focus else theme.onBackground.copy(alpha = 0.08f),
+                shape,
+            )
             .clip(shape)
-            .background(theme.background)
+            .background(theme.surface)
             .then(if (!interactive) Modifier.islandPress { app.shell.onMeaning(side.meaning(), HostScreen.Top) } else Modifier),
     ) {
         Row(
