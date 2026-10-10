@@ -119,6 +119,33 @@ class PluginContractTest {
     }
 
     @Test
+    fun artworkUriLoadsWithoutCredentials() {
+        val clean = Artwork(ArtworkRole.Cover, "https://cdn.example/cover.jpg?w=200")
+        assertEquals("https://cdn.example/cover.jpg?w=200", clean.uri)
+        assertEquals(
+            "https://cdn.example/cover.jpg?w=200",
+            credentialFreeArtworkUri(
+                "https://user:s3cret-token@cdn.example/cover.jpg?access_token=s3cret-token&w=200",
+            ),
+        )
+        assertEquals(
+            "https://cdn.example/cover.jpg",
+            credentialFreeArtworkUri("https://cdn.example/cover.jpg?token=s3cret-token#auth=s3cret-token"),
+        )
+        val userinfo = runCatching {
+            Artwork(ArtworkRole.Cover, "https://user:s3cret-token@cdn.example/cover.jpg")
+        }.exceptionOrNull()
+        assertTrue(userinfo is IllegalArgumentException)
+        assertFalse(userinfo?.message?.contains("s3cret") == true)
+        val token = runCatching {
+            Artwork(ArtworkRole.Cover, "https://cdn.example/cover.jpg?access_token=s3cret-token")
+        }.exceptionOrNull()
+        assertTrue(token is IllegalArgumentException)
+        assertFalse(token?.message?.contains("s3cret") == true)
+        assertEquals(null, credentialFreeArtworkUri("javascript:alert(1)"))
+    }
+
+    @Test
     fun fetchMayReturnNullAndAPageMayOmitTotal() = runBlocking {
         assertNull(IdleMetadata(cachedMeta = null).fetch(game))
         val page = GamePage(games = emptyList(), nextOffset = null)
