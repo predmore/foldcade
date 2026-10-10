@@ -13,6 +13,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -35,6 +36,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.requiredWidth
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicText
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardOptions
@@ -49,6 +51,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.MotionDurationScale
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.focus.onFocusChanged
@@ -1570,11 +1573,9 @@ private fun MoonlightImportCard(
             Modifier
                 .fillMaxWidth()
                 .heightIn(max = 640.dp)
-                .drawWithContent {
-                    drawContent()
-                    drawRect(color = theme.muted, style = Stroke(width = Metrics.dialogBorderPx))
-                }
+                .clip(RoundedCornerShape(Metrics.cardCornerDp.dp))
                 .background(theme.surface)
+                .border(1.dp, theme.onBackground.copy(alpha = 0.08f), RoundedCornerShape(Metrics.cardCornerDp.dp))
                 .padding(px(Metrics.dialogInsetPx)),
             verticalArrangement = Arrangement.spacedBy(px(12f)),
         ) {
@@ -1703,11 +1704,9 @@ private fun DialogCard(
         Column(
             Modifier
                 .fillMaxWidth()
-                .drawWithContent {
-                    drawContent()
-                    drawRect(color = theme.muted, style = Stroke(width = Metrics.dialogBorderPx))
-                }
+                .clip(RoundedCornerShape(Metrics.cardCornerDp.dp))
                 .background(theme.surface)
+                .border(1.dp, theme.onBackground.copy(alpha = 0.08f), RoundedCornerShape(Metrics.cardCornerDp.dp))
                 .padding(px(Metrics.dialogInsetPx)),
             verticalArrangement = Arrangement.spacedBy(px(12f)),
         ) {
