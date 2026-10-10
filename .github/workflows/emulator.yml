@@ -57,10 +57,16 @@ jobs:
           fi
 
   screenshots:
-    name: Thor-sized emulator, not a Thor pass
+    name: Thor-sized emulator, not a Thor pass (${{ matrix.shard }})
     needs: changes
     if: needs.changes.outputs.shell == 'true'
     runs-on: ubuntu-24.04
+    # Two emulators in parallel, each running half the captures (FOLDCADE_SHARD in
+    # dual-screen.sh). Each job boots its own emulator, so neither waits on the other.
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [shell, library]
     # Boot is capped in the script. This is the whole job, including the SDK install.
     timeout-minutes: 20
     permissions:
@@ -79,8 +85,13 @@ jobs:
         id: sdk
         run: echo "root=$HOME/android-sdk" >> "$GITHUB_OUTPUT"
 
-      - name: Cache Android SDK and system image
-        uses: actions/cache@v6
+      # Restore only. A pull request saving its own 2 GB copy under refs/pull/N/merge
+      # could not be read by any other pull request, and those copies pushed the
+      # repository past the 10 GB cache limit, so main's copy was evicted and every
+      # run reinstalled the SDK. Only main saves (see the step after the install).
+      - name: Restore Android SDK and system image
+        id: sdk-cache
+        uses: actions/cache/restore@v6
         with:
           path: |
             ${{ steps.sdk.outputs.root }}/cmdline-tools
@@ -145,15 +156,21 @@ jobs:
           echo "ANDROID_HOME=$SDK_ROOT" >> "$GITHUB_ENV"
           echo "ANDROID_SDK_ROOT=$SDK_ROOT" >> "$GITHUB_ENV"
 
-      - uses: gradle/actions/setup-gradle@v6
+      # Saved before the emulator runs, so a failed capture still warms the cache.
+      # The nightly run and a manual run on main write it. Pull requests read it.
+      - name: Save Android SDK and system image
+        if: github.ref == 'refs/heads/main' && steps.sdk-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v6
         with:
-          cache-read-only: true
-
-      - name: Render home music
-        uses: ./.github/actions/render-home-music
-
-      - name: Assemble debug
-        run: ./gradlew :app:assembleDebug --configuration-cache
+          path: |
+            ${{ steps.sdk.outputs.root }}/cmdline-tools
+            ${{ steps.sdk.outputs.root }}/platforms
+            ${{ steps.sdk.outputs.root }}/build-tools
+            ${{ steps.sdk.outputs.root }}/platform-tools
+            ${{ steps.sdk.outputs.root }}/emulator
+            ${{ steps.sdk.outputs.root }}/system-images
+            ${{ steps.sdk.outputs.root }}/licenses
+          key: ${{ steps.sdk-cache.outputs.cache-primary-key }}
 
       - name: Emulator packages
         run: |
@@ -185,20 +202,66 @@ jobs:
             fi
           fi
 
-      - name: Dual-screen screenshots
-        timeout-minutes: 15
+      # Boot while Gradle builds. The script stops before install until the
+      # APK marker appears, then runs the captures. The step below follows it.
+      - name: Boot the emulator
         env:
           ANDROID_AVD_HOME: ${{ runner.temp }}/avd
+          FOLDCADE_APK_READY: ${{ runner.temp }}/apk-ready
+          FOLDCADE_SHARD: ${{ matrix.shard }}
         run: |
           set -euo pipefail
-          mkdir -p "$ANDROID_AVD_HOME"
-          bash .github/emulator/dual-screen.sh screenshots
+          mkdir -p "$ANDROID_AVD_HOME" screenshots
+          nohup bash .github/emulator/dual-screen.sh screenshots >"$RUNNER_TEMP/emulator-run.log" 2>&1 &
+          echo $! >"$RUNNER_TEMP/emulator-run.pid"
+
+      - uses: gradle/actions/setup-gradle@v6
+        with:
+          cache-read-only: true
+
+      # The emulator does not listen to the loop. Reuse the last render of these exact
+      # sources instead of installing fluidsynth and rendering on every run.
+      - name: Restore rendered home music
+        id: music-cache
+        uses: actions/cache@v6
+        with:
+          path: ${{ runner.temp }}/home-music
+          key: home-music-render-${{ hashFiles('music/*.py', 'music/*.sh', 'music/requirements.txt', 'music/tracks/manifest.json', 'music/tracks/**/compose.py') }}
+
+      - name: Render home music
+        if: steps.music-cache.outputs.cache-hit != 'true'
+        uses: ./.github/actions/render-home-music
+
+      - name: Keep the render for the next run
+        if: steps.music-cache.outputs.cache-hit != 'true'
+        run: |
+          set -euo pipefail
+          rm -rf "$RUNNER_TEMP/home-music"
+          cp -r app/build/generated/homeMusicAssets "$RUNNER_TEMP/home-music"
+
+      - name: Use the rendered home music
+        run: echo "ORG_GRADLE_PROJECT_foldcadeHomeMusicAssets=$RUNNER_TEMP/home-music" >> "$GITHUB_ENV"
+
+      - name: Assemble debug
+        run: |
+          ./gradlew :app:assembleDebug --configuration-cache
+          touch "$RUNNER_TEMP/apk-ready"
+
+      - name: Dual-screen screenshots
+        timeout-minutes: 15
+        run: |
+          set -euo pipefail
+          pid="$(cat "$RUNNER_TEMP/emulator-run.pid")"
+          # Replays what the boot printed while Gradle ran, then follows to the end.
+          tail -n +1 --pid="$pid" -f "$RUNNER_TEMP/emulator-run.log"
+          code="$(cat screenshots/exit-code 2>/dev/null || echo 1)"
+          exit "$code"
 
       - name: Upload both displays
         if: always()
         uses: actions/upload-artifact@v7
         with:
-          name: dual-screen-displays
+          name: dual-screen-displays-${{ matrix.shard }}
           path: screenshots/
           if-no-files-found: error
           retention-days: 7
@@ -207,7 +270,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v7
         with:
-          name: emulator-log
+          name: emulator-log-${{ matrix.shard }}
           path: |
             screenshots/emulator.log
             screenshots/logcat.txt
