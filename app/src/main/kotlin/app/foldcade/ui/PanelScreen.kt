@@ -64,6 +64,7 @@ import androidx.compose.ui.graphics.drawscope.clipRect
 import androidx.compose.ui.graphics.drawscope.scale
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
@@ -125,6 +126,7 @@ import app.foldcade.language.letterOfKey
 import app.foldcade.language.cursorBrush
 import app.foldcade.language.displayOrder
 import app.foldcade.language.heroCopy
+import app.foldcade.language.heroCrossfadeActive
 import app.foldcade.language.lastPlayedLine
 import app.foldcade.language.monogram
 import app.foldcade.language.panelRows
@@ -281,7 +283,7 @@ private fun Hero(app: FoldcadeApp, screen: HostScreen, scale: Float, onEffect: (
  * finishes retargets the same two layers instead of starting another fade.
  * The name and details are not in these layers: two labels in one place
  * cannot be read. Off, and remove-animations, fade over the short duration
- * with no slide.
+ * with no slide. Once the fade is done the layer is not composed at all.
  */
 @Composable
 private fun <T> HeroCrossfade(
@@ -330,14 +332,32 @@ private fun <T> HeroCrossfade(
             blend = blend.copy(back = null, backAlpha = 0f, frontAlpha = incoming.value)
         }
     }
-    Box(Modifier.fillMaxWidth()) {
-        val previous = blend.back
+    val previous = blend.back
+    val current = blend.front
+    val active = heroCrossfadeActive(
+        hasFront = current != null,
+        hasBack = previous != null,
+        frontAlpha = incoming.value,
+        backAlpha = outgoing.value,
+    )
+    if (!active) {
+        if (current != null) content(current)
+        return
+    }
+    // The fading art sits behind the label. It takes no focus or touch, and it
+    // is not in the accessibility tree. The layer is absent once the fade ends.
+    Box(
+        Modifier
+            .fillMaxWidth()
+            .zIndex(-1f)
+            .focusProperties { canFocus = false }
+            .clearAndSetSemantics { },
+    ) {
         if (previous != null) {
-            Box(Modifier.heroArrival(outgoing.value, fadeOnly)) { content(previous) }
+            Box(Modifier.fadingHero(outgoing.value, fadeOnly)) { content(previous) }
         }
-        val current = blend.front
         if (current != null) {
-            Box(Modifier.heroArrival(incoming.value, fadeOnly)) { content(current) }
+            Box(Modifier.fadingHero(incoming.value, fadeOnly)) { content(current) }
         }
     }
 }
@@ -373,6 +393,11 @@ private fun HeroLabel(app: FoldcadeApp, shown: HeroSubject, cellFocused: Boolean
         PlayFacts(app, shown.item.key)
     }
 }
+
+private fun Modifier.fadingHero(alpha: Float, fadeOnly: Boolean): Modifier =
+    focusProperties { canFocus = false }
+        .clearAndSetSemantics { }
+        .heroArrival(alpha, fadeOnly)
 
 private fun Modifier.heroArrival(alpha: Float, fadeOnly: Boolean): Modifier = graphicsLayer {
     this.alpha = alpha

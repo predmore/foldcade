@@ -87,3 +87,14 @@ fun <T> retargetHero(
         backAlpha = current.frontAlpha.coerceIn(0f, 1f),
     )
 }
+
+/**
+ * True only while artwork is arriving or leaving.
+ * A settled front is not a layer: a graphics layer left in place keeps the
+ * accessibility dump empty, so a platform title is not on screen.
+ */
+fun heroCrossfadeActive(hasFront: Boolean, hasBack: Boolean, frontAlpha: Float, backAlpha: Float): Boolean {
+    if (hasBack || backAlpha > 0.001f) return true
+    if (!hasFront) return false
+    return frontAlpha < 0.999f
+}
