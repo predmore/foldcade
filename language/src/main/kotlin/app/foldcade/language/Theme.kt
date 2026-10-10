@@ -21,7 +21,7 @@ data class Theme(
 
 fun builtInTheme(): Theme = Theme(
     background = Color(0xFF000000),
-    surface = Color(0xFF000000),
+    surface = Color(0xFF1C1C20),
     onBackground = Color(0xFFF2F2F2),
     muted = Color(0xFF8A8A8A),
     focus = Color(0xFFFFFFFF),
@@ -31,6 +31,12 @@ fun builtInTheme(): Theme = Theme(
 )
 
 fun cursorBrush(theme: Theme): Brush = SolidColor(theme.focus)
+
+/** Ends of the focus ring's gradient: green at the top left, blue at the bottom right. */
+object FocusRingColors {
+    val start: Color = Color(0xFF52B788)
+    val end: Color = Color(0xFF3E8EC0)
+}
 
 /** Host-owned type ramp, in sp, the same on both panels. */
 object TypeRamp {
@@ -54,6 +60,9 @@ object Metrics {
     const val heroInsetPx = 48f
     const val dialogInsetPx = 48f
     const val dialogBorderPx = 2f
+
+    /** Corner of a filled card: an open island, a dialog, a settings group. */
+    const val cardCornerDp = 28f
     const val heroArtFraction = 0.62f
 
     /** Space between the hint line and the top of a focus stroke, in px. */

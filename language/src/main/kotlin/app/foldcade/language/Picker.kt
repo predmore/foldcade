@@ -241,6 +241,7 @@ sealed interface Row {
     data class QuickTile(val setting: QuickSetting) : Row
     data object ButtonLabels : Row
     data object Licenses : Row
+    data object Settings : Row
 }
 
 /** Two columns in the R1 cluster. Text rows above the tiles stay full width. */
@@ -319,6 +320,7 @@ fun leftRows(
     add(Row.Licenses)
     add(Row.AndroidSettings)
     add(Row.DefaultHomeApp)
+    add(Row.Settings)
 }
 
 data class SignedInBackend(
@@ -389,6 +391,7 @@ data class RowText(val label: String, val value: String? = null)
 
 fun rowText(row: Row, model: PickerModel): RowText = when (row) {
     Row.Library -> RowText(Copy.library)
+    Row.Settings -> RowText(SettingsCopy.title)
     Row.Theme -> RowText(Copy.theme, model.themes.getOrElse(model.themeIndex) { Copy.builtIn })
     Row.Background -> RowText(Copy.background, backgroundLabel(model.backgroundMotion))
     Row.MotionSpeed -> RowText(Copy.motion, speedLabel(model.motionSpeed))
@@ -511,6 +514,8 @@ data class PickerModel(
     val showLaunchTarget: Boolean,
     val focus: GridFocus = GridFocus(),
     val panel: SidePanel? = null,
+    /** The full-screen settings page. Null while it is closed. */
+    val settings: SettingsPage? = null,
     val dialog: DialogState? = null,
     val connectOpen: Boolean = false,
     val atLibraryRoot: Boolean = true,
@@ -622,6 +627,8 @@ fun reduce(
             else -> coerced.copy(connectIndex = index) to null
         }
     }
+    val settings = coerced.settings
+    if (settings != null) return applySettings(coerced, settings, meaning)
     val panel = coerced.panel
     if (panel != null) {
         if (meaning == Meaning.LeftPanel || meaning == Meaning.RightPanel) {
@@ -945,6 +952,70 @@ private fun adjustRow(model: PickerModel, row: Row, direction: Int): PickerModel
     }
 }
 
+/**
+ * Up and down move within the focused column. Right, or Activate, steps from a category into
+ * its rows. Left on a row steps a value when the row has one, otherwise back to the
+ * categories. Back steps out the same way, then closes the page. L1 and R1 close it too.
+ * A row acts exactly as it does in the menu. A row that would close the menu closes the page.
+ */
+private fun applySettings(
+    model: PickerModel,
+    page: SettingsPage,
+    meaning: Meaning,
+): Pair<PickerModel, Effect?> {
+    val categories = settingsCategories(model)
+    if (categories.isEmpty()) return model.copy(settings = null, focus = page.grid) to null
+    val categoryIndex = page.category.coerceIn(0, categories.lastIndex)
+    val rows = settingsRows(categories[categoryIndex], model)
+    val rowIndex = page.row.coerceIn(0, (rows.size - 1).coerceAtLeast(0))
+    val current = page.copy(category = categoryIndex, row = rowIndex)
+    val close = model.copy(settings = null, focus = page.grid, capturingConfirm = false) to null
+    if (!current.onRows) {
+        return when (meaning) {
+            Meaning.MoveUp -> model.copy(settings = current.copy(category = (categoryIndex - 1).coerceAtLeast(0), row = 0)) to null
+            Meaning.MoveDown -> model.copy(
+                settings = current.copy(category = (categoryIndex + 1).coerceAtMost(categories.lastIndex), row = 0),
+            ) to null
+            Meaning.MoveRight, Meaning.Activate ->
+                model.copy(settings = current.copy(onRows = rows.isNotEmpty(), row = 0)) to null
+            Meaning.Back, Meaning.LeftPanel, Meaning.RightPanel -> close
+            else -> model.copy(settings = current) to null
+        }
+    }
+    val row = rows.getOrNull(rowIndex) ?: return model.copy(settings = current.copy(onRows = false)) to null
+    return when (meaning) {
+        Meaning.MoveUp -> model.copy(settings = current.copy(row = (rowIndex - 1).coerceAtLeast(0))) to null
+        Meaning.MoveDown -> model.copy(settings = current.copy(row = (rowIndex + 1).coerceAtMost(rows.lastIndex))) to null
+        Meaning.MoveLeft, Meaning.MoveRight -> {
+            val direction = if (meaning == Meaning.MoveLeft) -1 else 1
+            val nudged = adjustRow(model, row, direction)
+            when {
+                nudged != null -> nudged.copy(settings = current) to null
+                meaning == Meaning.MoveLeft -> model.copy(settings = current.copy(onRows = false)) to null
+                else -> model.copy(settings = current) to null
+            }
+        }
+        Meaning.Back -> if (model.capturingConfirm) {
+            model.copy(capturingConfirm = false, settings = current) to null
+        } else {
+            model.copy(settings = current.copy(onRows = false)) to null
+        }
+        Meaning.LeftPanel, Meaning.RightPanel -> close
+        Meaning.Activate -> {
+            // Rows act through the menu path. A stand-in panel tells "stays open" from "leaves".
+            val standIn = SidePanel(Side.Left, current.screen, PanelLevel.Root, rowIndex, current.grid)
+            val (next, effect) = activateRow(model.copy(panel = standIn), standIn, row, current.screen)
+            val stays = next.panel != null
+            next.copy(
+                panel = null,
+                settings = if (stays) current else null,
+                focus = if (stays) model.focus else next.focus,
+            ) to effect
+        }
+        else -> model.copy(settings = current) to null
+    }
+}
+
 private fun offeredTracks(model: PickerModel): List<MusicTrack> =
     offeredMusicTracks(model.homeTracks, model.themeTracks.getOrNull(model.themeIndex))
 
@@ -967,6 +1038,10 @@ private fun activateRow(
 ): Pair<PickerModel, Effect?> {
     return when (row) {
         Row.Library -> model.copy(panel = panel.copy(level = PanelLevel.Library, index = 0)) to null
+        Row.Settings -> model.copy(
+            panel = null,
+            settings = SettingsPage(screen = panel.screen, grid = panel.grid),
+        ) to null
         Row.Theme -> {
             val count = model.themes.size.coerceAtLeast(1)
             val nextIndex = (model.themeIndex + 1) % count

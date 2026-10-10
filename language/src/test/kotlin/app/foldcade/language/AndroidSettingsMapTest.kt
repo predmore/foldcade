@@ -8,8 +8,9 @@ class AndroidSettingsMapTest {
     @Test
     fun leftPanelKeepsAndroidSettingsAndTheWayOut() {
         val held = leftRows(homeRoleHeld = true)
-        assertEquals(Row.AndroidSettings, held[held.lastIndex - 1])
-        assertEquals(Row.DefaultHomeApp, held.last())
+        assertEquals(Row.AndroidSettings, held[held.lastIndex - 2])
+        assertEquals(Row.DefaultHomeApp, held[held.lastIndex - 1])
+        assertEquals(Row.Settings, held.last())
         assertEquals("Android settings", rowLabel(Row.AndroidSettings, sample()))
         assertEquals("Default home app", rowLabel(Row.DefaultHomeApp, sample()))
         val opened = reduce(sample().copy(homeRoleHeld = true), Meaning.LeftPanel).first
@@ -21,7 +22,7 @@ class AndroidSettingsMapTest {
         val home = settings.copy(index = rows.indexOf(Row.DefaultHomeApp))
         val (homeStayed, homeEffect) = reduce(opened.copy(panel = home), Meaning.Activate)
         assertEquals(Effect.OpenAndroidSetting(AndroidSetting.Home), homeEffect)
-        assertEquals(Row.DefaultHomeApp, panelRows(home, opened).last())
+        assertEquals(Row.Settings, panelRows(home, opened).last())
         assertEquals(home.index, homeStayed.panel?.index)
     }
 
