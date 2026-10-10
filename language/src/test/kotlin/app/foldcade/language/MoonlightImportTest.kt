@@ -116,40 +116,32 @@ class MoonlightImportTest {
         val kept = listOf(
             MoonlightPlacement("$hostA|123", allApps = true, moonlightFolder = true),
         )
-        val opened = reduce(
-            PickerModel(
-                count = 1,
-                rowsPerPage = 1,
-                showLaunchTarget = false,
-                moonlightSource = MoonlightSource.ImportedList,
-                moonlightPlacements = kept,
-                moonlightImportConfirmed = true,
-            ),
-            Meaning.LeftPanel,
-        ).first
-        val index = panelRows(opened.panel!!, opened).indexOf(Row.MoonlightSource)
+        val opened = PickerModel(
+            count = 1,
+            rowsPerPage = 1,
+            showLaunchTarget = false,
+            moonlightSource = MoonlightSource.ImportedList,
+            moonlightPlacements = kept,
+            moonlightImportConfirmed = true,
+        ).onSetting(Row.MoonlightSource)
         assertEquals(
             "Moonlight  Imported list",
             rowLabel(Row.MoonlightSource, opened),
         )
-        val pinned = reduce(opened.copy(panel = opened.panel!!.copy(index = index)), Meaning.Activate).first
+        val pinned = reduce(opened, Meaning.Activate).first
         assertEquals(MoonlightSource.PinnedShortcuts, pinned.moonlightSource)
         assertEquals("Moonlight  Pinned shortcuts only", rowLabel(Row.MoonlightSource, pinned))
         assertEquals(kept, pinned.moonlightPlacements)
         val back = reduce(pinned, Meaning.Activate).first
         assertEquals(MoonlightSource.ImportedList, back.moonlightSource)
         assertEquals(kept, back.moonlightPlacements)
-        assertEquals(index, back.panel?.index)
+        assertEquals(opened.settings, back.settings)
     }
 
     @Test
     fun theSourceRowOpensTheSheetUntilAnImportExists() {
-        val opened = reduce(
-            PickerModel(count = 1, rowsPerPage = 1, showLaunchTarget = false),
-            Meaning.LeftPanel,
-        ).first
-        val index = panelRows(opened.panel!!, opened).indexOf(Row.MoonlightSource)
-        val (stayed, effect) = reduce(opened.copy(panel = opened.panel!!.copy(index = index)), Meaning.Activate)
+        val opened = PickerModel(count = 1, rowsPerPage = 1, showLaunchTarget = false).onSetting(Row.MoonlightSource)
+        val (stayed, effect) = reduce(opened, Meaning.Activate)
         assertEquals(Effect.ReviewMoonlightImport, effect)
         assertEquals(MoonlightSource.PinnedShortcuts, stayed.moonlightSource)
         assertTrue(stayed.moonlightPlacements.isEmpty())

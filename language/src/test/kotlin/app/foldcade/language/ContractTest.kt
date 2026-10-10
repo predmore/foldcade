@@ -180,10 +180,11 @@ class ContractTest {
         val opened = reduce(root, Meaning.LeftPanel, HostScreen.Bottom).first
         assertEquals(Side.Left, opened.panel?.side)
         assertEquals(HostScreen.Top, opened.panel?.screen)
-        val primary = reduce(opened.copy(panel = opened.panel?.copy(index = 2)), Meaning.Activate).first
+        val onPrimary = root.onSetting(Row.Primary)
+        val primary = reduce(onPrimary, Meaning.Activate).first
         assertFalse(primary.primaryIsTop)
-        assertEquals(2, primary.panel?.index)
-        val theme = reduce(opened.copy(panel = opened.panel?.copy(index = 1)), Meaning.Activate).first
+        assertEquals(onPrimary.settings, primary.settings)
+        val theme = reduce(root.onSetting(Row.Theme), Meaning.Activate).first
         assertEquals(1, theme.themeIndex)
         val child = reduce(opened, Meaning.Activate).first
         assertEquals(PanelLevel.Library, child.panel?.level)
@@ -292,25 +293,19 @@ class ContractTest {
             backgroundMotion = BackgroundMotion.Ribbons,
             motionSpeed = MotionSpeed.Slow,
         )
-        val opened = reduce(root, Meaning.LeftPanel, HostScreen.Bottom).first
-        val rows = panelRows(opened.panel!!, opened)
-        assertEquals(1, rows.indexOf(Row.Theme))
-        assertEquals(2, rows.indexOf(Row.Primary))
-        val background = rows.indexOf(Row.Background)
-        val speed = rows.indexOf(Row.MotionSpeed)
-        assertTrue(background > 2)
-        assertEquals(background + 1, speed)
-        val themed = reduce(opened.copy(panel = opened.panel?.copy(index = 1)), Meaning.Activate).first
+        val rows = settingsRows(SettingsCategory.Personalization, root)
+        assertEquals(listOf(Row.Theme, Row.Background, Row.MotionSpeed), rows)
+        val themed = reduce(root.onSetting(Row.Theme), Meaning.Activate).first
         assertEquals(0, themed.themeIndex)
         assertEquals(BackgroundMotion.Off, themed.backgroundMotion)
         assertFalse(themed.backgroundPinned)
-        val pinned = reduce(themed.copy(panel = themed.panel?.copy(index = background)), Meaning.Activate).first
+        val pinned = reduce(themed.onSetting(Row.Background), Meaning.Activate).first
         assertEquals(BackgroundMotion.Ribbons, pinned.backgroundMotion)
         assertTrue(pinned.backgroundPinned)
-        val kept = reduce(pinned.copy(panel = pinned.panel?.copy(index = 1)), Meaning.Activate).first
+        val kept = reduce(pinned.onSetting(Row.Theme), Meaning.Activate).first
         assertEquals(1, kept.themeIndex)
         assertEquals(BackgroundMotion.Ribbons, kept.backgroundMotion)
-        val slowed = reduce(pinned.copy(panel = pinned.panel?.copy(index = speed)), Meaning.Activate).first
+        val slowed = reduce(pinned.onSetting(Row.MotionSpeed), Meaning.Activate).first
         assertEquals(MotionSpeed.Slower, slowed.motionSpeed)
         assertEquals(BackgroundMotion.Ribbons, slowed.backgroundMotion)
         assertEquals("Background  Ribbons", rowLabel(Row.Background, pinned))
@@ -351,23 +346,18 @@ class ContractTest {
     @Test
     fun leftPanelOffersThePlayerSaveFolder() {
         val setting = PlayerSaveSetting(playerId = "azahar", label = "Azahar", chosen = false)
-        val rows = leftRows(homeRoleHeld = true, playerSaves = listOf(setting))
-        assertEquals(Row.PlayerSave("azahar"), rows.filterIsInstance<Row.PlayerSave>().single())
-        assertEquals(Row.Settings, rows.last())
-        val opened = reduce(
-            PickerModel(
-                count = 1,
-                rowsPerPage = 1,
-                showLaunchTarget = false,
-                homeRoleHeld = true,
-                playerSaves = listOf(setting),
-            ),
-            Meaning.LeftPanel,
-        ).first
-        val index = rows.indexOf(Row.PlayerSave("azahar"))
-        val (closed, effect) = reduce(opened.copy(panel = opened.panel!!.copy(index = index)), Meaning.Activate)
+        val opened = PickerModel(
+            count = 1,
+            rowsPerPage = 1,
+            showLaunchTarget = false,
+            homeRoleHeld = true,
+            playerSaves = listOf(setting),
+        )
+        assertEquals(listOf(Row.PlayerSave("azahar")), settingsRows(SettingsCategory.Players, opened))
+        val (closed, effect) = reduce(opened.onSetting(Row.PlayerSave("azahar")), Meaning.Activate)
         assertEquals(Effect.ChoosePlayerSave("azahar"), effect)
         assertNull(closed.panel)
+        assertNull(closed.settings)
         assertEquals("Azahar saves  Not set", rowLabel(Row.PlayerSave("azahar"), opened))
     }
 

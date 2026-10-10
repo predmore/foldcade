@@ -272,9 +272,8 @@ class ShellHostTest {
             },
             bareTick = { bare += 1 },
         )
-        shell.onMeaning(Meaning.LeftPanel, HostScreen.Bottom)
-        repeat(7) { shell.onMeaning(Meaning.MoveDown, HostScreen.Bottom) }
-        assertEquals(7, shell.model.panel?.index)
+        shell.openSetting(Row.MusicVolume)
+        assertEquals(Row.MusicVolume, shell.focusedSetting())
         cues.clear()
         shell.onMeaning(Meaning.MoveRight, HostScreen.Bottom)
         shell.onMeaning(Meaning.MoveRight, HostScreen.Bottom)
@@ -282,7 +281,7 @@ class ShellHostTest {
         assertEquals(listOf(0.55f, 0.60f), levels)
         assertEquals(listOf("move", "move"), cues)
         assertEquals(0, bare)
-        assertEquals(7, shell.model.panel?.index)
+        assertEquals(Row.MusicVolume, shell.focusedSetting())
 
         var fallback = 0
         val quiet = ShellController(
@@ -291,8 +290,7 @@ class ShellHostTest {
             cue = { _, _ -> false },
             bareTick = { fallback += 1 },
         )
-        quiet.onMeaning(Meaning.LeftPanel, HostScreen.Bottom)
-        repeat(7) { quiet.onMeaning(Meaning.MoveDown, HostScreen.Bottom) }
+        quiet.openSetting(Row.MusicVolume)
         fallback = 0
         quiet.onMeaning(Meaning.MoveLeft, HostScreen.Bottom)
         assertEquals(0.45f, quiet.model.music.volume, 0.0001f)
@@ -319,15 +317,13 @@ class ShellHostTest {
                 MusicTrack("dusk", "Dusk", "Foldcade project", "GPLv3", "music/dusk.ogg"),
             ),
         )
-        shell.onMeaning(Meaning.LeftPanel, HostScreen.Bottom)
-        repeat(6) { shell.onMeaning(Meaning.MoveDown, HostScreen.Bottom) }
-        assertEquals(6, shell.model.panel?.index)
+        shell.openSetting(Row.MusicTrack)
         shell.onMeaning(Meaning.Activate, HostScreen.Bottom)
         assertEquals("dusk", shell.model.music.trackId)
         assertEquals("Dusk", shell.model.trackTitle)
         assertEquals(listOf("dusk"), ids)
         assertEquals("dusk", store.musicTrackId())
-        assertEquals(6, shell.model.panel?.index)
+        assertEquals(Row.MusicTrack, shell.focusedSetting())
     }
 
     @Test
@@ -336,8 +332,7 @@ class ShellHostTest {
         val store = SessionStore(MemoryPrefs())
         val last = mapOf("shelf.handheld" to 30L, "shelf.clamshell" to 10L)
         val shell = ShellController(store, host, lastPlayedMillis = { last[it] })
-        shell.onMeaning(Meaning.LeftPanel, HostScreen.Bottom)
-        repeat(4) { shell.onMeaning(Meaning.MoveDown, HostScreen.Bottom) }
+        shell.openSetting(Row.Order)
         shell.onMeaning(Meaning.Activate, HostScreen.Bottom)
         assertEquals(LibrarySort.RecentlyPlayed, shell.model.sort)
         assertEquals(LibrarySort.RecentlyPlayed, store.librarySort())
@@ -358,7 +353,7 @@ class ShellHostTest {
         val store = SessionStore(MemoryPrefs())
         val shell = ShellController(store, PluginHost(Dispatchers.Unconfined, MemoryCredentialStore()))
         shell.onMeaning(Meaning.LeftPanel, HostScreen.Bottom)
-        repeat(leftRows(homeRoleHeld = false).indexOf(Row.Settings)) { shell.onMeaning(Meaning.MoveDown, HostScreen.Bottom) }
+        repeat(leftRows().indexOf(Row.Settings)) { shell.onMeaning(Meaning.MoveDown, HostScreen.Bottom) }
         shell.onMeaning(Meaning.Activate, HostScreen.Bottom)
         assertTrue(shell.model.settings != null)
         val library = settingsCategories(shell.model).indexOf(SettingsCategory.Library)
@@ -373,6 +368,24 @@ class ShellHostTest {
     }
 
     private fun shell(host: PluginHost) = ShellController(SessionStore(MemoryPrefs()), host)
+
+    /** L1, down to Settings, then down to [row]'s category and right into its rows, key by key. */
+    private fun ShellController.openSetting(row: Row) {
+        onMeaning(Meaning.LeftPanel, HostScreen.Bottom)
+        repeat(leftRows().indexOf(Row.Settings)) { onMeaning(Meaning.MoveDown, HostScreen.Bottom) }
+        onMeaning(Meaning.Activate, HostScreen.Bottom)
+        val categories = settingsCategories(model)
+        val category = categories.indexOfFirst { row in settingsRows(it, model) }
+        repeat(category) { onMeaning(Meaning.MoveDown, HostScreen.Bottom) }
+        onMeaning(Meaning.MoveRight, HostScreen.Bottom)
+        repeat(settingsRows(categories[category], model).indexOf(row)) { onMeaning(Meaning.MoveDown, HostScreen.Bottom) }
+    }
+
+    private fun ShellController.focusedSetting(): Row? {
+        val page = model.settings ?: return null
+        if (!page.onRows) return null
+        return settingsRows(settingsCategories(model)[page.category], model).getOrNull(page.row)
+    }
 
     private fun openLibrary(shell: ShellController) {
         shell.onMeaning(Meaning.LeftPanel, HostScreen.Bottom)

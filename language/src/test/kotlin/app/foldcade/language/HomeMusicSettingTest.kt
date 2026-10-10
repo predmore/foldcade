@@ -23,45 +23,30 @@ class HomeMusicSettingTest {
     fun leftPanelKeepsMusicBesideTheOtherSettings() {
         assertEquals(
             listOf(
-                Row.Library, Row.Theme, Row.Primary, Row.Arrange, Row.Order,
-                Row.Music, Row.MusicTrack, Row.MusicVolume, Row.SetAsHome,
-                Row.Background, Row.MotionSpeed, Row.UsageAccess, Row.MoonlightSource,
-                Row.EditHome, Row.AllLibrary, Row.AddNewGames,
-                Row.AndroidGames, Row.Apps, Row.HiddenApps,
-                Row.Licenses,
-                Row.AndroidSettings, Row.DefaultHomeApp, Row.Settings,
+                Row.Library, Row.EditHome, Row.AllLibrary, Row.Arrange,
+                Row.AndroidGames, Row.Apps, Row.HiddenApps, Row.Settings,
             ),
-            leftRows(homeRoleHeld = false),
+            leftRows(),
         )
         assertEquals(
-            listOf(
-                Row.Library, Row.Theme, Row.Primary, Row.Arrange, Row.Order,
-                Row.Music, Row.MusicTrack, Row.MusicVolume,
-                Row.Background, Row.MotionSpeed, Row.UsageAccess, Row.MoonlightSource,
-                Row.EditHome, Row.AllLibrary, Row.AddNewGames,
-                Row.AndroidGames, Row.Apps, Row.HiddenApps,
-                Row.Licenses,
-                Row.AndroidSettings, Row.DefaultHomeApp, Row.Settings,
-            ),
-            leftRows(homeRoleHeld = true),
+            listOf(Row.Music, Row.MusicTrack, Row.MusicVolume),
+            settingsRows(SettingsCategory.Sound, PickerModel(count = 1, rowsPerPage = 1, showLaunchTarget = false)),
         )
     }
 
     @Test
     fun activateTogglesMusicAndStepsVolume() {
-        val opened = reduce(PickerModel(count = 1, rowsPerPage = 1, showLaunchTarget = false), Meaning.LeftPanel).first
-        val music = opened.panel!!.copy(index = 5)
-        val toggled = reduce(opened.copy(panel = music), Meaning.Activate).first
+        val base = PickerModel(count = 1, rowsPerPage = 1, showLaunchTarget = false)
+        val music = base.onSetting(Row.Music)
+        val toggled = reduce(music, Meaning.Activate).first
         assertFalse(toggled.music.enabled)
-        assertEquals(5, toggled.panel?.index)
+        assertEquals(music.settings, toggled.settings)
         val again = reduce(toggled, Meaning.Activate).first
         assertTrue(again.music.enabled)
-        val named = opened.panel!!.copy(index = 6)
-        val stayed = reduce(opened.copy(panel = named, trackTitle = "Lanternlight"), Meaning.Activate).first
+        val stayed = reduce(base.copy(trackTitle = "Lanternlight").onSetting(Row.MusicTrack), Meaning.Activate).first
         assertEquals(HomeMusicSetting.DEFAULT_TRACK_ID, stayed.music.trackId)
         assertEquals("Track  Lanternlight", MusicCopy.trackLabel(stayed.trackTitle))
-        val volume = opened.panel!!.copy(index = 7)
-        val atQuarter = opened.copy(panel = volume, music = HomeMusicSetting(volume = 0.25f))
+        val atQuarter = base.copy(music = HomeMusicSetting(volume = 0.25f)).onSetting(Row.MusicVolume)
         val stepped = reduce(atQuarter, Meaning.Activate).first
         assertEquals(0.30f, stepped.music.volume, 0.0001f)
         val wrapped = HomeMusicSetting(volume = 1f).stepped()
@@ -72,25 +57,24 @@ class HomeMusicSettingTest {
 
     @Test
     fun dpadStepsVolumeByFiveAndHoldsTheRow() {
-        val opened = reduce(PickerModel(count = 1, rowsPerPage = 1, showLaunchTarget = false), Meaning.LeftPanel).first
-        val volume = opened.panel!!.copy(index = 7)
-        val atHalf = opened.copy(panel = volume, music = HomeMusicSetting(volume = 0.5f))
+        val base = PickerModel(count = 1, rowsPerPage = 1, showLaunchTarget = false)
+        val atHalf = base.copy(music = HomeMusicSetting(volume = 0.5f)).onSetting(Row.MusicVolume)
         val raised = reduce(atHalf, Meaning.MoveRight).first
         assertEquals(0.55f, raised.music.volume, 0.0001f)
-        assertEquals(7, raised.panel?.index)
+        assertEquals(atHalf.settings, raised.settings)
         val lowered = reduce(atHalf, Meaning.MoveLeft).first
         assertEquals(0.45f, lowered.music.volume, 0.0001f)
-        assertEquals(7, lowered.panel?.index)
+        assertEquals(atHalf.settings, lowered.settings)
         val held = reduce(reduce(atHalf, Meaning.MoveRight).first, Meaning.MoveRight).first
         assertEquals(0.60f, held.music.volume, 0.0001f)
-        val full = reduce(opened.copy(panel = volume, music = HomeMusicSetting(volume = 1f)), Meaning.MoveRight).first
+        val full = reduce(base.copy(music = HomeMusicSetting(volume = 1f)).onSetting(Row.MusicVolume), Meaning.MoveRight).first
         assertEquals(1f, full.music.volume, 0.0001f)
-        val silent = reduce(opened.copy(panel = volume, music = HomeMusicSetting(volume = 0f)), Meaning.MoveLeft).first
+        val silent = reduce(base.copy(music = HomeMusicSetting(volume = 0f)).onSetting(Row.MusicVolume), Meaning.MoveLeft).first
         assertEquals(0f, silent.music.volume, 0.0001f)
-        val theme = opened.panel!!.copy(index = 1)
-        val ignored = reduce(opened.copy(panel = theme, music = HomeMusicSetting(volume = 0.5f)), Meaning.MoveRight).first
+        val theme = base.copy(music = HomeMusicSetting(volume = 0.5f)).onSetting(Row.Theme)
+        val ignored = reduce(theme, Meaning.MoveRight).first
         assertEquals(0.5f, ignored.music.volume, 0.0001f)
-        assertEquals(1, ignored.panel?.index)
+        assertEquals(theme.settings, ignored.settings)
     }
 
     @Test
@@ -242,20 +226,19 @@ class HomeMusicSettingTest {
             "music/afterglow.ogg",
             fromTheme = true,
         )
-        val opened = reduce(PickerModel(count = 1, rowsPerPage = 1, showLaunchTarget = false), Meaning.LeftPanel).first
-        val model = opened.copy(
+        val model = PickerModel(count = 1, rowsPerPage = 1, showLaunchTarget = false).copy(
             homeTracks = listOf(lantern, dusk),
             themeTracks = listOf(null, theme),
             themes = listOf("Built-in", "Afterglow"),
             themeIndex = 1,
             trackTitle = lantern.title,
         )
-        val onTrack = model.copy(panel = model.panel!!.copy(index = 6))
+        val onTrack = model.onSetting(Row.MusicTrack)
         val duskPick = reduce(onTrack, Meaning.Activate).first
         assertEquals("dusk", duskPick.music.trackId)
         assertEquals("Dusk", duskPick.trackTitle)
         assertEquals("Track  Dusk", MusicCopy.trackLabel(duskPick.trackTitle))
-        assertEquals(6, duskPick.panel?.index)
+        assertEquals(onTrack.settings, duskPick.settings)
         val themePick = reduce(duskPick, Meaning.Activate).first
         assertEquals(THEME_TRACK_ID, themePick.music.trackId)
         assertEquals("Afterglow", themePick.trackTitle)
@@ -263,18 +246,18 @@ class HomeMusicSettingTest {
         assertEquals(HomeMusicSetting.DEFAULT_TRACK_ID, wrapped.music.trackId)
         val back = reduce(wrapped, Meaning.MoveLeft).first
         assertEquals(THEME_TRACK_ID, back.music.trackId)
-        assertEquals(6, back.panel?.index)
+        assertEquals(onTrack.settings, back.settings)
         val forward = reduce(back, Meaning.MoveRight).first
         assertEquals(HomeMusicSetting.DEFAULT_TRACK_ID, forward.music.trackId)
 
-        val onThemeRow = back.copy(panel = back.panel!!.copy(index = 1))
+        val onThemeRow = back.onSetting(Row.Theme)
         val builtIn = reduce(onThemeRow, Meaning.Activate).first
         assertEquals(0, builtIn.themeIndex)
         assertEquals(HomeMusicSetting.DEFAULT_TRACK_ID, builtIn.music.trackId)
         assertEquals("Lanternlight", builtIn.trackTitle)
         assertTrue(offeredMusicTracks(builtIn.homeTracks, builtIn.themeTracks.getOrNull(0)).none { it.fromTheme })
 
-        val stayed = reduce(duskPick.copy(panel = duskPick.panel!!.copy(index = 1)), Meaning.Activate).first
+        val stayed = reduce(duskPick.onSetting(Row.Theme), Meaning.Activate).first
         assertEquals(0, stayed.themeIndex)
         assertEquals("dusk", stayed.music.trackId)
     }
