@@ -174,28 +174,16 @@ fun PanelHost(activity: FoldcadeHomeActivity, displays: Displays) {
         spec = if (blurTarget >= 1f) Motion.arrive(Motion.durationIsland, scale) else Motion.leave(Motion.durationIsland, scale),
         snap = heldBlur != null,
     )
-    // Inactive menu: the blur and the scrim are not composed. A full-screen
-    // layer left over the library, even at zero alpha, hides its nodes.
+    // A closed menu composes neither the blur nor the scrim. A graphics layer
+    // left over the library, even at zero alpha, keeps the accessibility dump empty.
     CompositionLocalProvider(LocalFoldTheme provides paint) {
         Box(Modifier.fillMaxSize().background(paint.theme.background)) {
-            Box(Modifier.fillMaxSize().then(if (blurHere) Modifier.menuBlur(blur).menuDim(blur) else Modifier)) {
-                Backdrop(
-                    motion = model.backgroundMotion,
-                    speed = model.motionSpeed,
-                    animatorScale = scale,
-                    running = activity.shellVisible && session.bothScreensFree(),
-                )
-                if (panel != null && screen != null) {
-                    val connectHere = model.connectOpen && model.connectScreen == screen
-                    TravelFade(target = session.surfaceOn(panel), scale = scale) { shown ->
-                        when (shown) {
-                            null -> Unit
-                            Surface.Hero -> if (connectHere) Unit else Hero(app, screen, scale, activity::dispatch)
-                            Surface.Picker -> Picker(app, screen, scale, activity::dispatch)
-                        }
-                    }
-                    if (connectHere) ConnectScreen(app, screen, activity::dispatch)
+            if (blurHere) {
+                Box(Modifier.fillMaxSize().menuBlur(blur).menuDim(blur)) {
+                    PanelBody(activity, panel, screen, scale)
                 }
+            } else {
+                PanelBody(activity, panel, screen, scale)
             }
             if (panel != null && screen != null) {
                 DialogLayer(app, model.dialog, screen, scale, activity::dispatch)
@@ -205,6 +193,34 @@ fun PanelHost(activity: FoldcadeHomeActivity, displays: Displays) {
     }
 }
 
+@Composable
+private fun PanelBody(
+    activity: FoldcadeHomeActivity,
+    panel: Panel?,
+    screen: HostScreen?,
+    scale: Float,
+) {
+    val app = activity.application as FoldcadeApp
+    val session = app.store.session
+    val model = app.shell.model
+    Backdrop(
+        motion = model.backgroundMotion,
+        speed = model.motionSpeed,
+        animatorScale = scale,
+        running = activity.shellVisible && session.bothScreensFree(),
+    )
+    if (panel == null || screen == null) return
+    val connectHere = model.connectOpen && model.connectScreen == screen
+    TravelFade(target = session.surfaceOn(panel), scale = scale) { shown ->
+        when (shown) {
+            null -> Unit
+            Surface.Hero -> if (connectHere) Unit else Hero(app, screen, scale, activity::dispatch)
+            Surface.Picker -> Picker(app, screen, scale, activity::dispatch)
+        }
+    }
+    if (connectHere) ConnectScreen(app, screen, activity::dispatch)
+}
+
 /** Dim painted with the content, not a second full-screen node on top of it. */
 private fun Modifier.menuDim(progress: Float): Modifier = drawWithContent {
     drawContent()
@@ -212,12 +228,12 @@ private fun Modifier.menuDim(progress: Float): Modifier = drawWithContent {
     drawRect(Color.Black.copy(alpha = dim * progress.coerceIn(0f, 1f)))
 }
 
-private fun Modifier.menuBlur(progress: Float): Modifier = graphicsLayer {
+/** Blur only while the radius is visible. A zero-radius graphics layer still hides nodes. */
+private fun Modifier.menuBlur(progress: Float): Modifier {
     val radius = progress * 28f
-    renderEffect = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && radius >= 0.5f) {
-        RenderEffect.createBlurEffect(radius, radius, Shader.TileMode.CLAMP).asComposeRenderEffect()
-    } else {
-        null
+    if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S || radius < 0.5f) return this
+    return graphicsLayer {
+        renderEffect = RenderEffect.createBlurEffect(radius, radius, Shader.TileMode.CLAMP).asComposeRenderEffect()
     }
 }
 
@@ -254,9 +270,21 @@ private fun <T> TravelFade(target: T, scale: Float, content: @Composable (T) -> 
             }
         }
         back = null
+        incoming.snapTo(1f)
     }
-    Box {
-        val previous = back
+    val previous = back
+    val moving = previous != null || incoming.value < 0.999f
+    if (!moving) {
+        content(front)
+        return
+    }
+    // Only while the surface is changing. Settled content has no graphics layer.
+    Box(
+        Modifier
+            .fillMaxSize()
+            .focusProperties { canFocus = false }
+            .clearAndSetSemantics { },
+    ) {
         if (previous != null) {
             Box(Modifier.graphicsLayer { alpha = outgoing.value }) { content(previous) }
         }
@@ -376,6 +404,8 @@ private fun <T> HeroCrossfade(
             }
         }
         if (same(blend.front, next.front)) {
+            incoming.snapTo(if (next.front == null) 0f else 1f)
+            outgoing.snapTo(0f)
             blend = blend.copy(back = null, backAlpha = 0f, frontAlpha = incoming.value)
         }
     }
@@ -942,10 +972,11 @@ private fun PagedGrid(
     val alpha = if (reduced) (1f - abs(position.value - page)).coerceIn(0.35f, 1f) else 1f
     val width = cell * Metrics.columns + gap * (Metrics.columns - 1)
     val widthPx = with(LocalDensity.current) { width.toPx() }
+    val fading = reduced && abs(position.value - page) > 0.001f
     Box(
         Modifier
             .requiredWidth(width + pad * 2)
-            .graphicsLayer { this.alpha = alpha }
+            .then(if (fading) Modifier.graphicsLayer { this.alpha = alpha } else Modifier)
             .clipToBounds()
             .padding(pad),
     ) {

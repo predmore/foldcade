@@ -84,7 +84,12 @@ internal fun TopIslands(
     if (screen != HostScreen.Top) return
     val model = app.shell.model
     val dialogCovers = model.dialog?.screen == HostScreen.Top
-    BoxWithConstraints(Modifier.fillMaxSize().zIndex(4f)) {
+    BoxWithConstraints(
+        Modifier
+            .fillMaxSize()
+            .zIndex(4f)
+            .focusProperties { canFocus = false },
+    ) {
         Island(
             app = app,
             side = Side.Left,
