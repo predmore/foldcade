@@ -326,10 +326,15 @@ enum class ConnectField {
 
 fun connectFields(): List<ConnectField> = listOf(ConnectField.Origin, ConnectField.Token, ConnectField.Save)
 
+/**
+ * Until RomM has a server, its library row is [Copy.setUpRomm] and opens the
+ * connect form, so a second [Row.Connect] would only repeat it.
+ */
 fun libraryRows(backends: List<String>, signedIn: List<SignedInBackend> = emptyList()): List<Row> =
     backends.map { Row.Backend(it) } +
         signedIn.map { Row.SignOut(it.pluginId, it.label) } +
-        listOf(Row.AddFolder, Row.Connect)
+        listOf(Row.AddFolder) +
+        listOfNotNull(Row.Connect.takeIf { Copy.setUpRomm !in backends })
 
 fun rightRows(
     showLaunchTarget: Boolean,
