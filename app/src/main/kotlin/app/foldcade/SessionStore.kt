@@ -146,6 +146,12 @@ class SessionStore(private val prefs: SharedPreferences) {
         )
     }
 
+    fun homeBoardRaw(): String? = prefs.getString(KEY_HOME_BOARD, null)?.takeIf { it.isNotBlank() }
+
+    fun saveHomeBoard(raw: String) {
+        prefs.edit().putString(KEY_HOME_BOARD, raw).apply()
+    }
+
     fun saveAppShelfState(state: AppShelfState) {
         val games = mutableSetOf<String>()
         val apps = mutableSetOf<String>()
@@ -285,6 +291,7 @@ class SessionStore(private val prefs: SharedPreferences) {
         private const val KEY_BACKGROUND = "background_motion"
         private const val KEY_MOTION_SPEED = "motion_speed"
         private const val KEY_LIBRARY_SORT = "library_sort"
+        private const val KEY_HOME_BOARD = "home_board"
         private const val KEY_SHELF_GAMES = "android_shelf_games"
         private const val KEY_SHELF_APPS = "android_shelf_apps"
         private const val KEY_SHELF_HIDDEN = "android_shelf_hidden"

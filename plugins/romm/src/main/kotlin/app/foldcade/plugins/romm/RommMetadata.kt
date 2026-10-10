@@ -5,6 +5,7 @@ import app.foldcade.api.plugin.ArtworkRole
 import app.foldcade.api.plugin.Game
 import app.foldcade.api.plugin.GameMeta
 import app.foldcade.api.plugin.MetadataProvider
+import app.foldcade.api.plugin.credentialFreeArtworkUri
 import app.foldcade.romm.RomQuery
 import app.foldcade.romm.RomSummary
 import java.text.Normalizer
@@ -80,7 +81,10 @@ internal fun RomSummary.toMeta(origin: String): GameMeta {
 
 internal fun absoluteHttp(origin: String, raw: String?): String? {
     val value = raw?.trim()?.takeIf { it.isNotEmpty() } ?: return null
-    if (value.startsWith("http://") || value.startsWith("https://")) return value
-    if (!value.startsWith("/")) return null
-    return origin.trimEnd('/') + value
+    val absolute = when {
+        value.startsWith("http://") || value.startsWith("https://") -> value
+        value.startsWith("/") -> origin.trimEnd('/') + value
+        else -> return null
+    }
+    return credentialFreeArtworkUri(absolute)
 }

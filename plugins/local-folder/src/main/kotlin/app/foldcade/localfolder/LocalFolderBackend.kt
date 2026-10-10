@@ -35,6 +35,11 @@ import kotlinx.coroutines.sync.withLock
  *
  * [Game.remoteKey] is the document URI. Cancellation is the calling
  * coroutine. This type does not read a filesystem path.
+ *
+ * Saves stay in memory for this process. A rescan does not drop them, and
+ * nothing is written into the folder. [prepareLaunch] does not place save
+ * files. When a different player changes a slot's hash, the displaced save
+ * is kept once, at `slot.kept`. The next conflict replaces that copy.
  */
 class LocalFolderBackend(
     root: FolderEntry? = null,
@@ -105,13 +110,12 @@ class LocalFolderBackend(
 
     override suspend fun saves(game: Game): SaveSet {
         requireGame(game)
-        val slots = gate.withLock { remembered[game.remoteKey].orEmpty() }
-        return SaveSet(
-            ownerBackendId = id,
-            slots = slots.values
+        val slots = gate.withLock {
+            remembered[game.remoteKey].orEmpty().values
                 .sortedBy { it.slot }
-                .map { SaveSlot(slot = it.slot, contentHash = it.contentHash, lastPlayerId = it.lastPlayerId) },
-        )
+                .map { SaveSlot(slot = it.slot, contentHash = it.contentHash, lastPlayerId = it.lastPlayerId) }
+        }
+        return SaveSet(ownerBackendId = id, slots = slots)
     }
 
     override suspend fun prepareLaunch(game: Game, player: Player): Placement {
@@ -267,16 +271,15 @@ private fun mergeSaves(prior: Map<String, RememberedSave>, observed: ObservedSav
     for (slot in observed.slots) {
         val hash = slot.contentHash.lowercase(Locale.ROOT)
         val previous = next[slot.slot]
-        val conflict = previous != null &&
+        val archive = keptSlot(slot.slot)
+        if (archive != null &&
+            previous != null &&
             previous.lastPlayerId != null &&
             previous.lastPlayerId != slot.playerId &&
             previous.contentHash != hash
-        if (conflict) {
+        ) {
             keptBoth = true
-            val archive = "${slot.slot}.kept"
-            if (archive !in next) {
-                next[archive] = previous.copy(slot = archive)
-            }
+            next[archive] = previous.copy(slot = archive)
         }
         next[slot.slot] = RememberedSave(
             slot = slot.slot,
@@ -289,5 +292,11 @@ private fun mergeSaves(prior: Map<String, RememberedSave>, observed: ObservedSav
     } else {
         SyncResult(outcome = SyncOutcome.Unchanged)
     }
-    return MergedSaves(saves = next, result = result)
+    return MergedSaves(saves = next.toMap(), result = result)
 }
+
+private const val KEPT_SUFFIX = ".kept"
+
+/** One archive name per live slot. A name that is already an archive has none. */
+private fun keptSlot(slot: String): String? =
+    if (slot.endsWith(KEPT_SUFFIX)) null else slot + KEPT_SUFFIX

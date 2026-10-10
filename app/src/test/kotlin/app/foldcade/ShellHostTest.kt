@@ -336,7 +336,8 @@ class ShellHostTest {
         shell.onMeaning(Meaning.Activate, HostScreen.Bottom)
         assertEquals(LibrarySort.RecentlyPlayed, shell.model.sort)
         assertEquals(LibrarySort.RecentlyPlayed, store.librarySort())
-        assertEquals(listOf(2, 0, 1), displayOrder(shell.model).take(3))
+        // The curated grid keeps the user's placement. Recently played sorts All, not these slots.
+        assertEquals(listOf(0, 1, 2), displayOrder(shell.model).take(3))
     }
 
     @Test
