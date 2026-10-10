@@ -10,7 +10,8 @@ Foldcade is an Android launcher for the AYN Thor. The shell is Compose. Plugins 
 | `:api` | Plugin contract. Unstable: see [plugins.md](plugins.md#stability). |
 | `:language` | Shared UI language: panels, the built-in theme, motion, copy, and the home-music setting. |
 | `:host` | `PluginHost`. Loads entries and calls library and metadata I/O off the main thread. |
-| `:romm` | RomM HTTP client. |
+| `:net` | The only HTTP stack. Builds every OkHttp client; `PublicHttps` reaches a fixed list of public hosts over HTTPS only. `HttpStackGuardTest` fails a client built anywhere else. |
+| `:romm` | RomM HTTP client, on a client from `:net`. |
 | `:plugins:emulators` | Standalone emulators for the other catalog platforms. One screen. Saves stay in the emulator. |
 | `:plugins:gamenative` | PC player and library for GameNative. Saves stay in GameNative. |
 | `:plugins:local-folder` | Library backed by a folder on the device, plus the platform ids that folder scan uses. |
@@ -21,7 +22,7 @@ Foldcade is an Android launcher for the AYN Thor. The shell is Compose. Plugins 
 | `:samples:out-of-tree` | Sample that compiles against `:api` only. |
 | `build-logic` | `foldcade.jvm-api33`, the Animal Sniffer check for API 33. |
 
-`:api`, `:host`, `:romm`, and every `:plugins:*` module must apply `foldcade.jvm-api33`. A new plugin module inherits that check the same way. `settings.gradle.kts` fails configuration if one of those modules skips it.
+`:api`, `:host`, `:net`, `:romm`, and every `:plugins:*` module must apply `foldcade.jvm-api33`. A new plugin module inherits that check the same way. `settings.gradle.kts` fails configuration if one of those modules skips it.
 
 ## Screens
 
