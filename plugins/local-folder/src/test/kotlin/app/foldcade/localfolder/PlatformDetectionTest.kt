@@ -124,4 +124,24 @@ class PlatformDetectionTest {
             PlatformCatalog.specs.map { it.platform.id }.sorted(),
         )
     }
+
+    @Test
+    fun romTitlesDropNoIntroTagsAndKeepTheName() {
+        val cases = mapOf(
+            "Bravely Second - End Layer (USA) (En,Fr,Es).cci" to "Bravely Second - End Layer",
+            "Super Mario 3D Land (CTR-P-AREE) (v0.3.0) (U).legit.cci" to "Super Mario 3D Land",
+            "Sonic Boom- Fire & Ice (CTR-P-BS6E) (v0.0.0) (W).piratelegit.cci" to "Sonic Boom- Fire & Ice",
+            "Digimon Universe Appli Monsters [ENG v1.3] For Emu [Citra].cci" to "Digimon Universe Appli Monsters",
+            "Legend of Zelda, The - Ocarina of Time 3D (USA) (En,Fr,Es) (Rev 1).cci" to
+                "The Legend of Zelda - Ocarina of Time 3D",
+            "Disney Collection, The - QuackShot (Europe).md" to "The Disney Collection - QuackShot",
+            "Kid Icarus- Uprising.cci" to "Kid Icarus- Uprising",
+            "super_mario_world.sfc" to "super mario world",
+            "(USA) Odd.nes" to "(USA) Odd",
+            "Tetris DS (USA).nds" to "Tetris DS",
+            "Final Fantasy VII (USA) (Disc 2).cue" to "Final Fantasy VII (Disc 2)",
+            "Game (Europe) (Disk 1 of 3).adf" to "Game (Disk 1 of 3)",
+        )
+        cases.forEach { (file, title) -> assertEquals(file, title, titleFromFileName(file)) }
+    }
 }

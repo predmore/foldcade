@@ -26,7 +26,8 @@ fun FolderEntry.isDirectory(): Boolean =
 /**
  * A game file found in the tree.
  * [documentUri] is the local-folder remote key.
- * [title] is the file name without its last extension. Nothing is scraped.
+ * [title] is the file name without its extension or its No-Intro tags.
+ * [fileName] keeps the whole name, tags and extension included.
  * [folderName] is the display name of the directory that contains the file.
  * The hero uses it as the short text. A file with no containing directory has none.
  */
@@ -154,7 +155,7 @@ private fun toGame(
     val name = entry.displayName.trim()
     if (name.isEmpty() || name.startsWith('.')) return null
     val extension = fileExtension(name) ?: return null
-    if (extension == "md" && normalizeFolderName(titleFromFileName(name)) in DOC_STEMS) {
+    if (extension == "md" && normalizeFolderName(fileStem(name)) in DOC_STEMS) {
         return null
     }
     val platform = resolvePlatform(extension, folder) ?: return null
