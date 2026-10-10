@@ -1386,6 +1386,48 @@ key_bottom() {
   adb_do shell input -d "$presentation_logical" keyevent "$1"
 }
 
+# The L1 menu logs "home-ui row <label>" for L1 and for each DOWN.
+# Waits until at least $1 of those lines are logged, then prints the last label.
+wait_menu_row() {
+  local want="$1" deadline=$((SECONDS + 10)) rows
+  while [ "$SECONDS" -lt "$deadline" ]; do
+    rows="$(timeout 10 adb logcat -d -s Foldcade:I 2>/dev/null | tr -d '\r' | grep -F "home-ui row " || true)"
+    if [ -n "$rows" ] && [ "$(printf '%s\n' "$rows" | wc -l)" -ge "$want" ]; then
+      printf '%s\n' "$rows" | tail -n 1 | sed 's/.*home-ui row //'
+      return 0
+    fi
+    sleep 0.25
+  done
+  return 1
+}
+
+# Open L1 and confirm the row labelled $1. Each key waits for its own row
+# log before the next is sent. DOWN every 0.25s queued on a slow guest and
+# could carry focus past the row before its log was read; an L1 that was
+# not handled left the DOWNs moving the grid (runs 38040358382, 38069694130).
+open_l1_row() {
+  local target="$1" row="" opened=0 attempt step
+  adb_do logcat -c || true
+  for attempt in 1 2; do
+    key_bottom KEYCODE_BUTTON_L1
+    if row="$(wait_menu_row 1)"; then
+      opened=1
+      break
+    fi
+    echo "step: L1 menu did not open, attempt ${attempt}"
+  done
+  [ "$opened" -eq 1 ] || return 1
+  for step in $(seq 1 24); do
+    if [ "$row" = "$target" ]; then
+      key_bottom KEYCODE_DPAD_CENTER
+      return 0
+    fi
+    key_bottom KEYCODE_DPAD_DOWN
+    row="$(wait_menu_row $((step + 1)))" || return 1
+  done
+  return 1
+}
+
 become_root() {
   local attempt
   for attempt in 1 2 3 4 5; do
@@ -1456,18 +1498,7 @@ capture_curated_home() {
   expect_png "$out/scroll-mid-secondary.png" "${bottom_width}x${bottom_height}"
 
   echo "step: edit home"
-  adb_do logcat -c || true
-  key_bottom KEYCODE_BUTTON_L1
-  sleep 0.6
-  local step
-  for step in $(seq 1 24); do
-    key_bottom KEYCODE_DPAD_DOWN
-    sleep 0.25
-    if timeout 10 adb logcat -d -s Foldcade:I 2>/dev/null | tr -d '\r' | grep -q "home-ui row Edit home"; then
-      break
-    fi
-  done
-  key_bottom KEYCODE_DPAD_CENTER
+  open_l1_row "Edit home" || fail "edit home: the L1 menu did not reach Edit home"
   wait_library_log "home-ui editing" || fail "edit home did not open"
   key_bottom KEYCODE_DPAD_RIGHT
   key_bottom KEYCODE_DPAD_CENTER
@@ -1483,17 +1514,7 @@ capture_curated_home() {
   sleep 0.4
 
   echo "step: all games"
-  adb_do logcat -c || true
-  key_bottom KEYCODE_BUTTON_L1
-  sleep 0.6
-  for step in $(seq 1 24); do
-    key_bottom KEYCODE_DPAD_DOWN
-    sleep 0.25
-    if timeout 10 adb logcat -d -s Foldcade:I 2>/dev/null | tr -d '\r' | grep -q "home-ui row All library"; then
-      break
-    fi
-  done
-  key_bottom KEYCODE_DPAD_CENTER
+  open_l1_row "All library" || fail "all games: the L1 menu did not reach All library"
   wait_library_log "home-ui all-games" || fail "All Games did not open"
   sleep 0.6
   capture "$primary" "$out/all-games-primary.png"
