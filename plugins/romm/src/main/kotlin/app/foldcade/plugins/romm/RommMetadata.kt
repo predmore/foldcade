@@ -73,6 +73,8 @@ internal fun RomSummary.toMeta(origin: String): GameMeta {
     add(ArtworkRole.Cover, pathCoverLarge)
     add(ArtworkRole.Icon, pathCoverSmall)
     if (artwork.none { it.role == ArtworkRole.Cover }) add(ArtworkRole.Cover, urlCover)
+    // The top screen draws a screenshot crisp when there is no wide art.
+    add(ArtworkRole.Screenshot, screenshots.firstOrNull())
     return GameMeta(
         title = name?.takeIf { it.isNotBlank() } ?: fsName,
         artwork = artwork,
