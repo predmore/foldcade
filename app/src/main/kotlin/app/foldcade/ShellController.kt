@@ -462,6 +462,12 @@ class ShellController(
         model = model.copy(signedIn = backends)
     }
 
+    /** Leaves the connect form, as after a server accepts the token. */
+    fun closeConnect() {
+        connectToken = ""
+        model = model.copy(connectOpen = false, connectScreen = null, connectHint = null)
+    }
+
     fun askToSignInAgain() {
         if (model.dialog != null || model.moonlightSheet != null) {
             model = model.copy(reLoginPending = true)
