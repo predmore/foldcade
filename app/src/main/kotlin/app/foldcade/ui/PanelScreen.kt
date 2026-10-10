@@ -1200,17 +1200,6 @@ private fun pageTitles(app: FoldcadeApp, page: Int, pageSize: Int): List<String>
     }
 }
 
-/** Titles on [page], in the order [Grid] draws them. */
-private fun pageTitles(app: FoldcadeApp, page: Int, pageSize: Int): List<String> {
-    val shell = app.shell
-    val order = displayOrder(shell.model)
-    val start = page * pageSize
-    val end = minOf(start + pageSize, shell.model.count)
-    return (start until end).map { index ->
-        shell.tileFromOrder(order.getOrElse(index) { index })?.title.orEmpty()
-    }
-}
-
 @Composable
 private fun Grid(
     app: FoldcadeApp,
