@@ -79,8 +79,13 @@ jobs:
         id: sdk
         run: echo "root=$HOME/android-sdk" >> "$GITHUB_OUTPUT"
 
-      - name: Cache Android SDK and system image
-        uses: actions/cache@v6
+      # Restore only. A pull request saving its own 2 GB copy under refs/pull/N/merge
+      # could not be read by any other pull request, and those copies pushed the
+      # repository past the 10 GB cache limit, so main's copy was evicted and every
+      # run reinstalled the SDK. Only main saves (see the step after the install).
+      - name: Restore Android SDK and system image
+        id: sdk-cache
+        uses: actions/cache/restore@v6
         with:
           path: |
             ${{ steps.sdk.outputs.root }}/cmdline-tools
@@ -145,12 +150,48 @@ jobs:
           echo "ANDROID_HOME=$SDK_ROOT" >> "$GITHUB_ENV"
           echo "ANDROID_SDK_ROOT=$SDK_ROOT" >> "$GITHUB_ENV"
 
+      # Saved before the emulator runs, so a failed capture still warms the cache.
+      # The nightly run and a manual run on main write it. Pull requests read it.
+      - name: Save Android SDK and system image
+        if: github.ref == 'refs/heads/main' && steps.sdk-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v6
+        with:
+          path: |
+            ${{ steps.sdk.outputs.root }}/cmdline-tools
+            ${{ steps.sdk.outputs.root }}/platforms
+            ${{ steps.sdk.outputs.root }}/build-tools
+            ${{ steps.sdk.outputs.root }}/platform-tools
+            ${{ steps.sdk.outputs.root }}/emulator
+            ${{ steps.sdk.outputs.root }}/system-images
+            ${{ steps.sdk.outputs.root }}/licenses
+          key: ${{ steps.sdk-cache.outputs.cache-primary-key }}
+
       - uses: gradle/actions/setup-gradle@v6
         with:
           cache-read-only: true
 
+      # The emulator does not listen to the loop. Reuse the last render of these exact
+      # sources instead of installing fluidsynth and rendering on every run.
+      - name: Restore rendered home music
+        id: music-cache
+        uses: actions/cache@v6
+        with:
+          path: ${{ runner.temp }}/home-music
+          key: home-music-render-${{ hashFiles('music/*.py', 'music/*.sh', 'music/requirements.txt', 'music/tracks/manifest.json', 'music/tracks/**/compose.py') }}
+
       - name: Render home music
+        if: steps.music-cache.outputs.cache-hit != 'true'
         uses: ./.github/actions/render-home-music
+
+      - name: Keep the render for the next run
+        if: steps.music-cache.outputs.cache-hit != 'true'
+        run: |
+          set -euo pipefail
+          rm -rf "$RUNNER_TEMP/home-music"
+          cp -r app/build/generated/homeMusicAssets "$RUNNER_TEMP/home-music"
+
+      - name: Use the rendered home music
+        run: echo "ORG_GRADLE_PROJECT_foldcadeHomeMusicAssets=$RUNNER_TEMP/home-music" >> "$GITHUB_ENV"
 
       - name: Assemble debug
         run: ./gradlew :app:assembleDebug --configuration-cache
