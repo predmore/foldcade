@@ -583,6 +583,22 @@ private fun Picker(
                 }
             }
             AllBar(shell, screen, onEffect)
+            if (
+                bottomHome &&
+                game?.occupiesBothDisplays == true &&
+                session.bothScreensFree() &&
+                model.panel == null &&
+                model.dialog == null &&
+                !model.connectOpen
+            ) {
+                BasicText(
+                    text = Copy.usesBothScreens,
+                    modifier = Modifier.padding(bottom = px(8f)),
+                    style = text(theme.onBackground, TypeRamp.hint, theme),
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
             BoxWithConstraints(
                 Modifier
                     .weight(1f)
@@ -658,7 +674,6 @@ private fun Picker(
                         rows = rows,
                         scale = scale,
                         showTitle = showTitles,
-                        usesBoth = game?.occupiesBothDisplays == true && session.bothScreensFree(),
                         followDrag = bottomHome,
                     )
                 }
@@ -1064,7 +1079,6 @@ private fun PagedGrid(
     rows: Int,
     scale: Float,
     showTitle: Boolean,
-    usesBoth: Boolean,
     followDrag: Boolean = false,
 ) {
     val focus = app.shell.model.focus
@@ -1139,9 +1153,6 @@ private fun PagedGrid(
                 Grid(app, screen, cell, gap, rows, drawn, showTitle)
             }
         }
-    }
-    if (usesBoth) {
-        BasicText(text = Copy.usesBothScreens, style = text(foldTheme().muted, TypeRamp.hint, foldTheme()))
     }
 }
 
@@ -1279,8 +1290,8 @@ private fun Cell(
         modifier = Modifier.zIndex(if (focused || lifted) 1f else 0f),
     ) {
         val accent = mark?.let { markGlyph(it)?.accent }
-        // A scanned-folder tile has no line glyph. Focus fills it like the dialog pill.
-        val focusCard = focused && accent == null && icon == null && !empty
+        // Same mint card as a folder tile. An app icon used to skip it and leave a thin stroke.
+        val focusCard = focused && accent == null && !empty
         Box(
             modifier = Modifier
                 .size(size)
@@ -1304,7 +1315,7 @@ private fun Cell(
                         SoftGlow.fillStops(glowStops, tightness, rim)
                         drawRadialGlow(center, reach, glow, glowStops, peak)
                     }
-                    if (glow != null || icon != null) {
+                    if ((glow != null || icon != null) && !focusCard) {
                         drawRoundRect(
                             color = theme.background,
                             cornerRadius = CornerRadius(cornerPx, cornerPx),
