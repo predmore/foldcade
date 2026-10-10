@@ -107,6 +107,14 @@ import app.foldcade.FoldcadeApp
 import app.foldcade.FoldcadeHomeActivity
 import app.foldcade.Panel
 import app.foldcade.Surface
+import app.foldcade.CoverImage
+import app.foldcade.api.plugin.Game
+import androidx.compose.runtime.collectAsState
+import androidx.compose.ui.graphics.painter.Painter
+import coil3.compose.AsyncImagePainter
+import coil3.compose.rememberAsyncImagePainter
+import coil3.request.ImageRequest
+import coil3.request.crossfade
 import app.foldcade.language.ConnectField
 import app.foldcade.language.Copy
 import app.foldcade.language.HomeGrid
@@ -361,6 +369,9 @@ private fun Hero(app: FoldcadeApp, screen: HostScreen, scale: Float, onEffect: (
     val model = app.shell.model
     val subject = app.shell.focusedHero()
     val cellFocused = model.dialog == null && model.panel == null && !model.connectOpen && model.focus.chrome == null
+    // The record behind each subject, so a layer that is fading out keeps its own cover.
+    val records = remember { mutableMapOf<String, Game>() }
+    app.shell.focusedRecord()?.let { record -> if (subject != null) records[subject.key] = record }
     BoxWithConstraints(Modifier.fillMaxSize()) {
         val inset = px(Metrics.heroInsetPx)
         val cardMax = maxWidth * 0.5f
@@ -389,7 +400,16 @@ private fun Hero(app: FoldcadeApp, screen: HostScreen, scale: Float, onEffect: (
                     same = { left, right -> left?.key == right?.key },
                 ) { shown ->
                     Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                        if (shown is HeroSubject.Item) HeroArt(shown.item)
+                        when (shown) {
+                            is HeroSubject.Item -> HeroArt(
+                                app = app,
+                                title = shown.item.title,
+                                mark = shown.item.mark,
+                                packageName = shown.item.packageName,
+                                record = records[shown.key],
+                            )
+                            is HeroSubject.Folder -> HeroArt(app, shown.folder.name, shown.folder.mark, null, null)
+                        }
                     }
                 }
             }
@@ -572,11 +592,23 @@ private fun Modifier.heroArrival(alpha: Float, fadeOnly: Boolean): Modifier = gr
     translationY = Motion.heroSlidePx(alpha, fadeOnly)
 }
 
+/** The provider's cover for [record]: at once when a provider holds it, otherwise after one fetch. */
 @Composable
-private fun HeroArt(item: HeroItem) {
+private fun rememberCover(app: FoldcadeApp, record: Game?): String? {
+    val held = remember(record) { record?.let(app.covers::cached) }
+    var fetched by remember(record) { mutableStateOf<String?>(null) }
+    LaunchedEffect(record) {
+        if (record != null && held == null) fetched = app.covers.fetch(record)
+    }
+    return held ?: fetched
+}
+
+@Composable
+private fun HeroArt(app: FoldcadeApp, title: String, mark: String?, packageName: String?, record: Game?) {
     val theme = foldTheme()
-    val icon = launcherIcon(item.packageName)
-    val accent = item.mark?.let { markGlyph(it)?.accent } ?: theme.focus
+    val icon = launcherIcon(packageName)
+    val cover = rememberCover(app, record)
+    val accent = mark?.let { markGlyph(it)?.accent } ?: theme.focus
     Box(
         Modifier
             .fillMaxHeight()
@@ -599,23 +631,80 @@ private fun HeroArt(item: HeroItem) {
             },
         contentAlignment = Alignment.Center,
     ) {
-        val mark = item.mark
+        // The cover, then the same art the focused tile shows. A letter is the last resort.
+        val kit = mark?.let { LocalFoldTheme.current.marks[it] }
+        val loaded = cover?.let { rememberCoverPainter(app, it) }
         when {
+            loaded != null -> Image(
+                painter = loaded.painter,
+                contentDescription = title,
+                modifier = Modifier
+                    .fillMaxHeight(COVER_HEIGHT)
+                    .aspectRatio(loaded.ratio, matchHeightConstraintsFirst = true)
+                    .clip(RoundedCornerShape(Metrics.cardCornerDp.dp)),
+                contentScale = ContentScale.Crop,
+            )
             icon != null -> Image(
                 bitmap = icon,
-                contentDescription = item.title,
+                contentDescription = title,
                 modifier = Modifier.fillMaxSize(theme.artScale),
                 contentScale = ContentScale.Fit,
             )
+            kit != null -> KitMark(kit, theme.artScale, alpha = 1f)
             mark != null && markGlyph(mark) != null -> MarkIcon(mark, 0.86f)
             else -> BasicText(
-                text = monogram(item.title),
+                text = monogram(title),
                 modifier = Modifier.scale(4f),
                 style = text(theme.onBackground, TypeRamp.heroTitle, theme),
                 maxLines = 1,
                 overflow = TextOverflow.Clip,
             )
         }
+    }
+}
+
+private class LoadedCover(val painter: Painter, val ratio: Float)
+
+/**
+ * The decoded cover, or null while it loads or when it cannot load. The size
+ * is fixed, so the request starts before the painter is drawn.
+ */
+@Composable
+private fun rememberCoverPainter(app: FoldcadeApp, uri: String): LoadedCover? {
+    val context = LocalContext.current
+    val request = remember(uri) {
+        ImageRequest.Builder(context)
+            .data(CoverImage(uri))
+            .size(COVER_PX)
+            .crossfade(true)
+            .build()
+    }
+    val painter = rememberAsyncImagePainter(request, app.images)
+    val state by painter.state.collectAsState()
+    val image = (state as? AsyncImagePainter.State.Success)?.result?.image ?: return null
+    if (image.width <= 0 || image.height <= 0) return null
+    return LoadedCover(painter, image.width.toFloat() / image.height)
+}
+
+private const val COVER_PX = 1024
+private const val COVER_HEIGHT = 0.92f
+
+/**
+ * A theme mark. Theme marks are painted on opaque black. Screen drops the black,
+ * so the glow sits on the card behind instead of a black square inside it.
+ */
+@Composable
+private fun KitMark(kit: ImageBitmap, fraction: Float, alpha: Float) {
+    Canvas(Modifier.fillMaxSize(fraction)) {
+        val area = this.size
+        val side = min(area.width, area.height)
+        drawImage(
+            image = kit,
+            dstOffset = IntOffset(((area.width - side) / 2f).roundToInt(), ((area.height - side) / 2f).roundToInt()),
+            dstSize = IntSize(side.roundToInt(), side.roundToInt()),
+            alpha = alpha,
+            blendMode = BlendMode.Screen,
+        )
     }
 }
 
@@ -1423,19 +1512,7 @@ private fun Cell(
             } else if (!empty) {
                 val glyphAlpha = if (focused) 1f else 0.58f
                 if (kit != null) {
-                    // Theme marks are painted on opaque black. Screen drops the black, so the
-                    // glow sits on the tile's card instead of a black square inside it.
-                    Canvas(Modifier.fillMaxSize(theme.artScale)) {
-                        val area = this.size
-                        val side = min(area.width, area.height)
-                        drawImage(
-                            image = kit,
-                            dstOffset = IntOffset(((area.width - side) / 2f).roundToInt(), ((area.height - side) / 2f).roundToInt()),
-                            dstSize = IntSize(side.roundToInt(), side.roundToInt()),
-                            alpha = glyphAlpha,
-                            blendMode = BlendMode.Screen,
-                        )
-                    }
+                    KitMark(kit, theme.artScale, glyphAlpha)
                 } else if (mark != null && markGlyph(mark) != null) {
                     Box(Modifier.graphicsLayer { alpha = glyphAlpha }) {
                         MarkIcon(mark, theme.artScale)

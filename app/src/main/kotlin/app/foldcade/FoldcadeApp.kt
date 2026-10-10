@@ -21,6 +21,8 @@ import app.foldcade.plugins.moonlight.MoonlightLibrary
 import app.foldcade.plugins.moonlight.moonlightApp
 import app.foldcade.credentials.AndroidCredentialStore
 import app.foldcade.host.PluginHost
+import app.foldcade.plugins.romm.RommArtwork
+import coil3.ImageLoader
 import app.foldcade.language.BackgroundMotion
 import app.foldcade.language.Copy
 import app.foldcade.language.HostScreen
@@ -65,6 +67,19 @@ class FoldcadeApp : Application() {
         private set
     var packaged: PackagedTheme? = null
         private set
+
+    /** Cover addresses from the metadata providers. */
+    val covers: CoverArt by lazy { CoverArt(plugins) }
+
+    /** Decodes and caches covers. The bytes come through RomM's client, not a second HTTP stack. */
+    val images: ImageLoader by lazy {
+        ImageLoader.Builder(this)
+            .components {
+                add(CoverFetcher.Factory(RommArtwork()), CoverImage::class)
+                add(CoverKeyer, CoverImage::class)
+            }
+            .build()
+    }
 
     /** Local play history. Not a plugin API. */
     lateinit var plays: PlaySessions

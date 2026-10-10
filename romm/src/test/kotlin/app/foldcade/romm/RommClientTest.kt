@@ -1138,6 +1138,42 @@ class RommClientTest {
             Result.failure(e)
         }
 
+    @Test
+    fun artworkLoadsFromTheOriginWithoutTheToken() {
+        val png = byteArrayOf(0x89.toByte(), 0x50, 0x4E, 0x47)
+        server.route("GET", "/assets/romm/resources/roms/1/7/cover/big.png") { exchange, _ ->
+            bytes(exchange, 200, png)
+        }
+        val loaded = runClient(token = { "rmm_should_not_be_sent" }) { client ->
+            client.artwork("${server.origin}/assets/romm/resources/roms/1/7/cover/big.png")
+        }
+        assertTrue(png.contentEquals(loaded))
+        val sent = server.recorded.single()
+        assertNull(sent.headers.entries.firstOrNull { it.key.equals("Authorization", ignoreCase = true) })
+    }
+
+    @Test
+    fun artworkOnAnotherOriginIsRefusedBeforeAnyRequest() {
+        val refused = runClient { client ->
+            runCatching { client.artwork("https://cdn.example/cover.jpg") }.exceptionOrNull()
+        }
+        assertTrue(refused is RommResponseException)
+        assertTrue(server.recorded.isEmpty())
+    }
+
+    @Test
+    fun artworkOverTheLimitIsRefused() {
+        server.route("GET", "/assets/romm/resources/roms/1/7/cover/big.png") { exchange, _ ->
+            bytes(exchange, 200, ByteArray(32))
+        }
+        val refused = runClient { client ->
+            runCatching {
+                client.artwork("${server.origin}/assets/romm/resources/roms/1/7/cover/big.png", maxBytes = 16)
+            }.exceptionOrNull()
+        }
+        assertTrue(refused is RommResponseException)
+    }
+
     private fun <T> runClient(
         origin: String = server.origin,
         token: () -> String? = { null },

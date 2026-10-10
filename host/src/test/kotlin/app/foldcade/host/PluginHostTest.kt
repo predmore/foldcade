@@ -143,6 +143,7 @@ class PluginHostTest {
         })
         assertTrue(host.library("shared-id") === library)
         assertTrue(host.metadata("shared-id") === metadata)
+        assertEquals(listOf("shared-id"), host.metadataIds())
     }
 
     @Test

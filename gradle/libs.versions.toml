@@ -12,6 +12,8 @@ okhttp = "4.12.0"
 animalsniffer = "2.0.1"
 gummyBears = "0.16.0"
 media3 = "1.11.1"
+# 3.4 and later are built with a newer Kotlin than this project compiles with.
+coil = "3.3.0"
 
 [libraries]
 compose-bom = { group = "androidx.compose", name = "compose-bom", version.ref = "composeBom" }
@@ -27,6 +29,8 @@ datastore-preferences = { group = "androidx.datastore", name = "datastore-prefer
 kotlinx-serialization-json = { group = "org.jetbrains.kotlinx", name = "kotlinx-serialization-json", version.ref = "kotlinxSerialization" }
 okhttp = { group = "com.squareup.okhttp3", name = "okhttp", version.ref = "okhttp" }
 media3-exoplayer = { group = "androidx.media3", name = "media3-exoplayer", version.ref = "media3" }
+# No coil-network module: artwork loads through RommClient, the app's only HTTP stack.
+coil-compose = { group = "io.coil-kt.coil3", name = "coil-compose", version.ref = "coil" }
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }

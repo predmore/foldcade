@@ -15,12 +15,13 @@ data class HeroItem(
 
 /**
  * A focused platform folder. [count] is the game count when the library reported one.
- * Null means the count is unknown. This is not the folder grid.
+ * Null means the count is unknown. [mark] is the platform's theme mark. This is not the folder grid.
  */
 data class HeroFolder(
     val key: String,
     val name: String,
     val count: Int?,
+    val mark: String? = null,
 )
 
 sealed interface HeroSubject {

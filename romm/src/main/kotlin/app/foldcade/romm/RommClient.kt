@@ -127,6 +127,19 @@ class RommClient(
         }
     }
 
+    /**
+     * One artwork image, as bytes. [uri] must be on [origin]: any other address
+     * is refused before a request is made. No bearer is sent, because an artwork
+     * address is loaded as that string alone. A body over [maxBytes] is refused.
+     */
+    suspend fun artwork(uri: String, maxBytes: Int = ARTWORK_MAX_BYTES): ByteArray {
+        if (!sameOrigin(origin, uri)) throw RommResponseException("artwork is not on the RomM origin")
+        val raw = exchange(URI.create(uri), "GET", authenticated = false)
+        raw.require(200)
+        if (raw.body.size > maxBytes) throw RommResponseException("artwork is over $maxBytes bytes")
+        return raw.body
+    }
+
     suspend fun openApiInfo(): OpenApiInfo {
         val raw = try {
             exchange(URI.create("$origin/openapi.json"), "GET", authenticated = false)
@@ -780,6 +793,9 @@ class RommClient(
     }
 
     companion object {
+        /** A cover is well under this. A larger body is not an image the hero needs. */
+        const val ARTWORK_MAX_BYTES: Int = 8 * 1024 * 1024
+
         internal fun normalizeOrigin(raw: String): String {
             var text = raw.trim().trimEnd('/')
             text = stripTrailingApi(text)

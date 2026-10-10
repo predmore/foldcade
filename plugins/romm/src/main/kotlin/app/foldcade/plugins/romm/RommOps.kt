@@ -60,6 +60,8 @@ internal interface RommOps : AutoCloseable {
     fun verificationUrl(challenge: DeviceAuthChallenge): String
 
     suspend fun flushUploads(queue: SaveUploadQueue): FlushResult
+
+    suspend fun artwork(uri: String): ByteArray
 }
 
 internal class ClientRommOps(private val client: RommClient) : RommOps {
@@ -99,6 +101,8 @@ internal class ClientRommOps(private val client: RommClient) : RommOps {
     override fun verificationUrl(challenge: DeviceAuthChallenge) = client.verificationUrl(challenge)
 
     override suspend fun flushUploads(queue: SaveUploadQueue) = queue.flush(client)
+
+    override suspend fun artwork(uri: String) = client.artwork(uri)
 
     override fun close() = client.close()
 }
