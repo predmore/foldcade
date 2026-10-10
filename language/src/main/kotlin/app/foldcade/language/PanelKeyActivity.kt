@@ -15,9 +15,6 @@ abstract class PanelKeyActivity : ComponentActivity() {
     /** Hero and picker both count. An external app does not. */
     protected open fun foldcadeSurfaceFocused(): Boolean = pickerIsFocused()
 
-    /** An open top-screen menu takes the D-pad and Back, including from the hero. */
-    protected open fun menuTakesKeys(): Boolean = false
-
     protected abstract fun onMeaning(meaning: Meaning)
 
     protected open fun faceMap(): FaceMap = FaceMap.standard()
@@ -34,7 +31,7 @@ abstract class PanelKeyActivity : ComponentActivity() {
             this,
             object : OnBackPressedCallback(true) {
                 override fun handleOnBackPressed() {
-                    if (pickerIsFocused() || menuTakesKeys()) onMeaning(Meaning.Back)
+                    if (pickerIsFocused()) onMeaning(Meaning.Back)
                 }
             },
         )
@@ -50,7 +47,7 @@ abstract class PanelKeyActivity : ComponentActivity() {
         if (keyCode == KeyEvent.KEYCODE_BACK) return false
         val meaning = meaningOf(keyCode, event.repeatCount, faceMap()) ?: return false
         val shoulder = meaning == Meaning.LeftPanel || meaning == Meaning.RightPanel
-        if (pickerIsFocused() || menuTakesKeys() || (shoulder && foldcadeSurfaceFocused())) {
+        if (pickerIsFocused() || (shoulder && foldcadeSurfaceFocused())) {
             onMeaning(meaning)
             return true
         }
