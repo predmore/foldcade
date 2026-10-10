@@ -96,6 +96,36 @@ class HomeGridOrderTest {
         assertEquals(Copy.allGames, shell.homeChrome()?.tab)
     }
 
+    @Test
+    fun aPlatformOnlyTheLibraryNamesUsesThatName() {
+        val shell = shell()
+        val game = Game(
+            backendId = "romm",
+            remoteKey = "42",
+            platformId = "segacd",
+            availability = Availability.RemoteOnly,
+            label = "Sonic CD",
+        )
+        shell.ingestLibrary(
+            "romm",
+            listOf(
+                GridEntry(
+                    id = "42",
+                    title = "Sonic CD",
+                    shortText = "",
+                    platformId = "segacd",
+                    availabilityLabel = null,
+                    occupiesBothDisplays = false,
+                    game = game,
+                ),
+            ),
+            emptyList(),
+            listedNames = mapOf("segacd" to "Sega CD"),
+        )
+        assertTrue("Sega CD" in titles(shell))
+        assertFalse("segacd" in titles(shell))
+    }
+
     private fun titles(shell: ShellController): List<String> =
         List(shell.model.count) { index -> shell.homeFace(index)?.title.orEmpty() }
 
