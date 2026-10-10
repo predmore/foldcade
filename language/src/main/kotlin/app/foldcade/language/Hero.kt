@@ -42,6 +42,10 @@ data class HeroCopy(
     val showsArt: Boolean,
 )
 
+/** The hero's one line under the name. Blank parts and repeats are left out. */
+fun heroFacts(vararg parts: String?): String =
+    parts.mapNotNull { it?.trim()?.ifEmpty { null } }.distinct().joinToString(" · ")
+
 /** Game count under a folder name. One game stays singular. */
 fun folderCountLine(count: Int): String {
     val games = count.coerceAtLeast(0)
@@ -57,7 +61,7 @@ fun heroCopy(subject: HeroSubject): HeroCopy = when (subject) {
     is HeroSubject.Folder -> HeroCopy(
         title = subject.folder.name,
         detail = subject.folder.count?.let(::folderCountLine).orEmpty(),
-        showsArt = false,
+        showsArt = subject.folder.mark != null,
     )
 }
 

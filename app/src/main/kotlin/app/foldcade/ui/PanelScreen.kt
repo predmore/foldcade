@@ -100,6 +100,7 @@ import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.zIndex
 import app.foldcade.language.heroPlayLine
+import app.foldcade.language.heroFacts
 import app.foldcade.R
 import app.foldcade.language.QuickSetting
 import app.foldcade.Displays
@@ -511,7 +512,7 @@ private fun <T> HeroCrossfade(
 }
 
 /**
- * One name and one detail line for the focus that just arrived.
+ * One name and one line of facts for the focus that just arrived.
  * The artwork behind it may still be crossfading.
  */
 @Composable
@@ -534,43 +535,24 @@ private fun HeroLabel(app: FoldcadeApp, shown: HeroSubject, cellFocused: Boolean
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
         )
-        if (copy.detail.isNotEmpty()) {
-            val hint = shown is HeroSubject.Item && shown.item.emptyShelfHint && cellFocused
-            ShelfMeta(line = copy.detail, hintFocused = hint, centred = true)
-        }
-        val availability = (shown as? HeroSubject.Item)?.item?.availability
-        if (availability != null) {
-            BasicText(
-                text = availability,
-                style = text(theme.muted, TypeRamp.availability, theme).copy(textAlign = TextAlign.Center),
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
+        val item = (shown as? HeroSubject.Item)?.item
+        if (item?.emptyShelfHint == true) {
+            ShelfMeta(line = copy.detail, hintFocused = cellFocused, centred = true)
+        } else {
+            val both = app.shell.focusedGame()?.takeIf { it.id == item?.key }?.occupiesBothDisplays == true
+            val played = item?.let { app.plays.run { stamp; shown(it.key) } }
+            val facts = heroFacts(
+                copy.detail,
+                item?.availability,
+                Copy.usesBothScreens.takeIf { both },
+                played?.let {
+                    heroPlayLine(it.activeMillis, it.lastPlayedMillis, System.currentTimeMillis(), ZoneId.systemDefault())
+                },
             )
-        }
-        val both = app.shell.focusedGame()?.takeIf { it.id == (shown as? HeroSubject.Item)?.item?.key }
-        if (both?.occupiesBothDisplays == true) {
-            BasicText(
-                text = Copy.usesBothScreens,
-                style = text(theme.muted, TypeRamp.availability, theme).copy(textAlign = TextAlign.Center),
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
-        }
-        if (shown is HeroSubject.Item) {
-            val played = app.plays.run {
-                stamp
-                shown(shown.item.key)
-            }
-            val line = heroPlayLine(
-                played.activeMillis,
-                played.lastPlayedMillis,
-                System.currentTimeMillis(),
-                ZoneId.systemDefault(),
-            )
-            if (line != null) {
+            if (facts.isNotEmpty()) {
                 BasicText(
-                    text = line,
-                    style = text(theme.muted, TypeRamp.availability, theme).copy(textAlign = TextAlign.Center),
+                    text = facts,
+                    style = text(theme.muted, TypeRamp.heroMeta, theme).copy(textAlign = TextAlign.Center),
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                 )

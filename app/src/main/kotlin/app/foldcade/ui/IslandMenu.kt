@@ -244,6 +244,8 @@ private fun LaunchTargetLabel(app: FoldcadeApp, progress: Float) {
     val target = app.store.session.singleScreenTarget(game.id, game.platformId)
     val label = if (target == Panel.Bottom || model.launchOnBottom) Copy.launchOnBottom else Copy.launchOnTop
     val focused = model.focus.chrome == Chrome.LaunchTarget
+    // Top is the default. The label shows only when it says something else, or has focus.
+    if (label == Copy.launchOnTop && !focused) return
     BasicText(
         text = label,
         modifier = if (progress < 0.08f) {

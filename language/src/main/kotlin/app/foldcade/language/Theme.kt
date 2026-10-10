@@ -77,7 +77,8 @@ object Copy {
     const val usesBothScreens = "Uses both screens"
     const val progressInGameNative = "Progress lives in GameNative."
     const val addShortcutInGameNative = "Add a game's shortcut in GameNative."
-    const val library = "Library"
+    /** The left-menu row that opens the library sources. Not the All library tile. */
+    const val library = "Sources"
     const val theme = "Theme"
     const val background = "Background"
     const val motion = "Motion"

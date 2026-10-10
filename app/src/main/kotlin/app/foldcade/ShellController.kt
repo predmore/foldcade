@@ -738,6 +738,12 @@ class ShellController(
         else -> tileFromOrder(displaySource(model))
     }
 
+    /** A library game's platform, by the name its folder shows. Null off the library grid. */
+    private fun libraryPlatformName(platformId: String?): String? {
+        if (!model.libraryGrid || platformId == null) return null
+        return platformEntries.firstOrNull { it.platformId == platformId }?.title
+    }
+
     /** The library record behind the focused cell, for its metadata. Null for an app or a shelf tile. */
     fun focusedRecord(): Game? = when {
         showingHome() -> home.face(model.focus.cellIndex)?.id?.let(home::game)
@@ -767,7 +773,7 @@ class ShellController(
             HeroItem(
                 key = game.id,
                 title = game.title,
-                detail = game.shortText,
+                detail = libraryPlatformName(game.platformId) ?: game.shortText,
                 mark = game.mark,
                 packageName = game.androidPackage,
                 emptyShelfHint = game.emptyShelfHint,
