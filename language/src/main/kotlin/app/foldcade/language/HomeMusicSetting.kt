@@ -2,6 +2,10 @@ package app.foldcade.language
 
 import kotlin.math.roundToInt
 import kotlin.math.sqrt
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
 
 /**
  * Home-loop preference. The left panel edits this. Playback lives in the app.
@@ -153,22 +157,19 @@ const val DEFAULT_TRACK_TITLE = "Lanternlight"
 /**
  * Tracks listed in music/tracks/manifest.json. A blank or broken manifest is empty.
  * The caller falls back to [DEFAULT_TRACK_TITLE] and [DEFAULT_BACKGROUND_MUSIC].
+ * Only objects in the `tracks` array are tracks. A bare object is not a list.
  */
 fun musicTracksFromManifest(json: String?): List<MusicTrack> {
-    if (json.isNullOrBlank()) return emptyList()
-    val field = Regex(""""(id|title|composer|license|file)"\s*:\s*"([^"\\]*)"""")
-    return Regex("""\{[^{}]*\}""").findAll(json).mapNotNull { obj ->
-        val fields = field.findAll(obj.value).associate { it.groupValues[1] to it.groupValues[2] }
-        val id = fields["id"]?.trim().orEmpty()
-        val title = fields["title"]?.trim().orEmpty()
-        val composer = fields["composer"]?.trim().orEmpty()
-        val license = fields["license"]?.trim().orEmpty()
-        val file = fields["file"]?.trim().orEmpty()
-        val usable = id.isNotEmpty() && title.isNotEmpty() && composer.isNotEmpty() &&
-            license.isNotEmpty() && file.isNotEmpty() &&
-            !file.startsWith("/") && !file.contains('\\') && !file.contains("..")
-        if (!usable) null else MusicTrack(id, title, composer, license, file)
-    }.toList()
+    val tracks = jsonObject(json)?.get("tracks") as? JsonArray ?: return emptyList()
+    return tracks.mapNotNull { element ->
+        val obj = element as? JsonObject ?: return@mapNotNull null
+        val id = obj.text("id") ?: return@mapNotNull null
+        val title = obj.text("title") ?: return@mapNotNull null
+        val composer = obj.text("composer") ?: return@mapNotNull null
+        val license = obj.text("license") ?: return@mapNotNull null
+        val file = obj.text("file") ?: return@mapNotNull null
+        if (!safeMusicPath(file)) null else MusicTrack(id, title, composer, license, file)
+    }
 }
 
 /** The selected track, or Lanternlight when the id is missing from [tracks]. */
@@ -273,14 +274,25 @@ fun packagedHomeMusicFile(
 /**
  * Optional `backgroundMusic` string in theme.json. A community theme names a
  * file inside its zip. The picker offers that file while the theme is selected.
- * A missing or blank field keeps [DEFAULT_BACKGROUND_MUSIC], which is not a second track.
+ * A missing, blank, or non-string field keeps [DEFAULT_BACKGROUND_MUSIC], which is not a second track.
  */
 fun backgroundMusicFromThemeJson(json: String?): String {
-    if (json.isNullOrBlank()) return DEFAULT_BACKGROUND_MUSIC
-    val match = Regex(""""backgroundMusic"\s*:\s*"([^"\\]*)"""").find(json) ?: return DEFAULT_BACKGROUND_MUSIC
-    val value = match.groupValues[1].trim()
-    if (value.isEmpty() || value.startsWith("/") || value.contains('\\') || value.contains("..")) {
-        return DEFAULT_BACKGROUND_MUSIC
-    }
+    val value = jsonObject(json)?.text(THEME_BACKGROUND_MUSIC) ?: return DEFAULT_BACKGROUND_MUSIC
+    if (!safeMusicPath(value)) return DEFAULT_BACKGROUND_MUSIC
     return value
 }
+
+private fun jsonObject(json: String?): JsonObject? {
+    if (json.isNullOrBlank()) return null
+    val element = runCatching { Json.parseToJsonElement(json) }.getOrNull() ?: return null
+    return element as? JsonObject
+}
+
+private fun JsonObject.text(name: String): String? {
+    val value = this[name] as? JsonPrimitive ?: return null
+    if (!value.isString) return null
+    return value.content.trim().ifEmpty { null }
+}
+
+private fun safeMusicPath(value: String): Boolean =
+    !value.startsWith("/") && !value.contains('\\') && !value.contains("..")

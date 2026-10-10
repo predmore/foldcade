@@ -205,9 +205,37 @@ val renderHomeMusic = tasks.register<RenderHomeMusicTask>("renderHomeMusic") {
     previewDir.set(layout.buildDirectory.dir("home-music-preview"))
 }
 
+// licenses/MuseScore_General_License.md stays the source text. The APK asset is that file.
+val packageMuseScoreLicense = tasks.register<PackageMuseScoreLicenseTask>("packageMuseScoreLicense") {
+    group = "build"
+    description = "Package the MuseScore General MIT notice as an APK asset."
+    license.set(rootProject.layout.projectDirectory.file("licenses/MuseScore_General_License.md"))
+    assetsDir.set(layout.buildDirectory.dir("generated/licenseAssets"))
+}
+
 androidComponents {
     onVariants { variant ->
         variant.sources.assets?.addGeneratedSourceDirectory(renderHomeMusic, RenderHomeMusicTask::assetsDir)
+        variant.sources.assets?.addGeneratedSourceDirectory(
+            packageMuseScoreLicense,
+            PackageMuseScoreLicenseTask::assetsDir,
+        )
+    }
+}
+
+abstract class PackageMuseScoreLicenseTask : DefaultTask() {
+    @get:InputFile
+    abstract val license: RegularFileProperty
+
+    @get:OutputDirectory
+    abstract val assetsDir: DirectoryProperty
+
+    @TaskAction
+    fun copy() {
+        val dest = assetsDir.get().asFile
+        dest.deleteRecursively()
+        dest.mkdirs()
+        license.get().asFile.copyTo(dest.resolve("MuseScore_General_License.md"), overwrite = true)
     }
 }
 
