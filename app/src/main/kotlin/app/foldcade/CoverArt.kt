@@ -8,6 +8,7 @@ import app.foldcade.host.PluginCallException
 import app.foldcade.host.PluginHost
 import app.foldcade.artwork.ArtFinder
 import app.foldcade.artwork.ArtQuery
+import app.foldcade.artwork.ArtScene
 import app.foldcade.artwork.ArtSet
 import coil3.ImageLoader
 import coil3.decode.DataSource
@@ -22,37 +23,54 @@ import kotlin.coroutines.cancellation.CancellationException
 import okio.Buffer
 
 /**
- * Cover addresses for tiles. A metadata provider's cover for the library
+ * Art for tiles and the top screen. A metadata provider's art for the library
  * record comes first, so RomM's own art wins. Then [art] asks the public
  * sources with what the shell knows about the tile.
  *
- * [cached] is what is already known. [fetch] asks, off the main thread. A
- * provider is asked once per game; [art] keeps its own record.
+ * [cached] and [cachedScene] are what is already known. [fetch] and
+ * [fetchScene] ask, off the main thread. A provider is asked once per game;
+ * [art] keeps its own record.
  */
 class CoverArt(private val plugins: PluginHost, private val art: ArtFinder) {
-    private val fetched = ConcurrentHashMap<String, String>()
+    /** What a provider gave per game. A held null is a provider with nothing for it. */
+    private class Held(val meta: GameMeta?)
+
+    private val held = ConcurrentHashMap<String, Held>()
 
     fun cached(record: Game?, query: ArtQuery?): ArtSet? =
-        record?.let(::cachedCover)?.let { ArtSet(PROVIDER, it) } ?: query?.let(art::cached)
+        record?.let(::cachedMeta)?.cover()?.let { ArtSet(PROVIDER, it) } ?: query?.let(art::cached)
 
     suspend fun fetch(record: Game?, query: ArtQuery?): ArtSet? =
-        record?.let { fetchCover(it) }?.let { ArtSet(PROVIDER, it) } ?: query?.let { art.find(it) }
+        record?.let { fetchMeta(it) }?.cover()?.let { ArtSet(PROVIDER, it) } ?: query?.let { art.find(it) }
 
-    private fun cachedCover(game: Game): String? {
-        fetched[keyOf(game)]?.let { return it.ifEmpty { null } }
+    /** The top screen's scene: a provider's parts first, then the public sources' for what is missing. */
+    fun cachedScene(record: Game?, query: ArtQuery?): ArtScene? =
+        merged(record?.let(::cachedMeta)?.scene(), query?.let(art::cachedScene))
+
+    suspend fun fetchScene(record: Game?, query: ArtQuery?): ArtScene? {
+        val provided = record?.let { fetchMeta(it) }?.scene()
+        if (provided?.complete == true) return provided
+        return merged(provided, query?.let { art.findScene(it) })
+    }
+
+    private fun merged(provided: ArtScene?, found: ArtScene?): ArtScene? =
+        (provided ?: ArtScene()).or(found).takeUnless { it.isEmpty }
+
+    private fun cachedMeta(game: Game): GameMeta? {
+        held[keyOf(game)]?.let { return it.meta }
         return plugins.metadataIds().firstNotNullOfOrNull { id ->
-            quietly { plugins.cachedMetadata(id, game) }?.cover()
+            quietly { plugins.cachedMetadata(id, game) }?.takeIf { it.artwork.isNotEmpty() }
         }
     }
 
-    private suspend fun fetchCover(game: Game): String? {
+    private suspend fun fetchMeta(game: Game): GameMeta? {
         val key = keyOf(game)
-        fetched[key]?.let { return it.ifEmpty { null } }
-        val cover = plugins.metadataIds().firstNotNullOfOrNull { id ->
-            quietly { plugins.fetchMetadata(id, game) }?.cover()
+        held[key]?.let { return it.meta }
+        val meta = plugins.metadataIds().firstNotNullOfOrNull { id ->
+            quietly { plugins.fetchMetadata(id, game) }?.takeIf { it.artwork.isNotEmpty() }
         }
-        fetched[key] = cover.orEmpty()
-        return cover
+        held[key] = Held(meta)
+        return meta
     }
 
     private companion object {
@@ -61,7 +79,12 @@ class CoverArt(private val plugins: PluginHost, private val art: ArtFinder) {
 
     private fun keyOf(game: Game): String = game.backendId + "\u0000" + game.remoteKey
 
-    private fun GameMeta.cover(): String? = artwork.firstOrNull { it.role == ArtworkRole.Cover }?.uri
+    private fun GameMeta.role(role: ArtworkRole): String? = artwork.firstOrNull { it.role == role }?.uri
+
+    private fun GameMeta.cover(): String? = role(ArtworkRole.Cover)
+
+    private fun GameMeta.scene(): ArtScene? =
+        ArtScene(role(ArtworkRole.Background), role(ArtworkRole.Logo), role(ArtworkRole.Screenshot)).takeUnless { it.isEmpty }
 
     /** A provider that fails has no cover for this game. Cancellation still propagates. */
     private inline fun <T> quietly(block: () -> T): T? = try {

@@ -3,6 +3,8 @@ package app.foldcade.plugins.romm
 import app.foldcade.api.plugin.Availability
 import app.foldcade.api.plugin.Game
 import app.foldcade.api.plugin.GameQuery
+import app.foldcade.api.plugin.ArtworkRole
+import app.foldcade.api.plugin.Artwork
 import app.foldcade.api.plugin.LaunchRequest
 import app.foldcade.api.plugin.LaunchTarget
 import app.foldcade.api.plugin.Platform
@@ -113,6 +115,12 @@ class RommLibraryTest {
         assertEquals("https://cdn.example/cover.jpg", stripped.artwork.single().uri)
         assertFalse(stripped.artwork.single().uri.contains("rmm_"))
         assertFalse(stripped.artwork.single().uri.contains("s3cret"))
+        val shot = rom("3ds", 3).copy(screenshots = listOf("/assets/shots/1.jpg", "/assets/shots/2.jpg"))
+            .toMeta("http://192.168.1.20")
+        assertEquals(
+            listOf(Artwork(ArtworkRole.Screenshot, "http://192.168.1.20/assets/shots/1.jpg")),
+            shot.artwork.filter { it.role == ArtworkRole.Screenshot },
+        )
         val other = game.copy(backendId = "local-folder")
         assertNull(harness.metadata.cached(other))
         assertNull(harness.metadata.fetch(other))

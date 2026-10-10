@@ -39,8 +39,12 @@ Your games can live in a few different places. Foldcade brings them together.
 - **Games on your Thor.** Point Foldcade at a folder on your device and it finds your games for you.
 - **Games on your home server.** If you run [RomM](https://romm.app) at home, sign in once and browse that whole collection from the couch.
 - **Android games and apps.** Your installed Android games get their own shelf. Other apps live in a separate drawer, and you can hide the ones you never use.
-- **PC games.** Games you have set up in GameNative show up next to everything else.
+- **PC games.** Games you have set up in GameNative show up next to everything else. Export them from GameNative as `.steam` files and add that folder with **Add a folder**; you can add as many folders as you like.
 - **Games streamed from your PC.** Bring in your Moonlight games and stream them from the same home.
+
+### Every game looks like itself
+
+Each game shows its box art on the grid, and a folder shows the games inside it. When you hover over a game, the top screen becomes that game: its wide art and logo, or its box beside its real title screen. Art comes from your RomM server, Steam, the libretro thumbnail library, and SteamGridDB if you add a free key. You can turn downloading art off in Settings.
 
 ### One press, and you are playing
 

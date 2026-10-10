@@ -28,6 +28,31 @@ data class ArtSet(
     val background: String? = null,
 )
 
+/**
+ * What the top screen draws behind and around a focused game.
+ *
+ * [background] is wide art that can fill the screen, such as a Steam library
+ * hero. [logo] is the game's logo on a clear background. [screen] is a real
+ * title screen or snapshot, often small: it is drawn crisp, not filled.
+ */
+data class ArtScene(
+    val background: String? = null,
+    val logo: String? = null,
+    val screen: String? = null,
+) {
+    val isEmpty: Boolean get() = background == null && logo == null && screen == null
+
+    /** Wide art and a logo are the whole scene. A title screen is only drawn without them. */
+    val complete: Boolean get() = background != null && logo != null
+
+    /** Each part from this scene, or from [other] where this one has none. */
+    fun or(other: ArtScene?): ArtScene = if (other == null) {
+        this
+    } else {
+        ArtScene(background ?: other.background, logo ?: other.logo, screen ?: other.screen)
+    }
+}
+
 /** One place art comes from. Sources run in order, and the first with a cover wins. */
 interface ArtSource {
     val id: String
@@ -40,4 +65,11 @@ interface ArtSource {
      * A source that cannot be reached throws, so the miss is not remembered.
      */
     suspend fun find(query: ArtQuery): ArtSet?
+
+    /**
+     * The scene for [query]: wide art, a logo, or a title screen. Only the
+     * focused game is asked, so a grid of tiles costs nothing here. Null when
+     * this source has none. Throws when it cannot be reached.
+     */
+    suspend fun scene(query: ArtQuery): ArtScene? = null
 }
