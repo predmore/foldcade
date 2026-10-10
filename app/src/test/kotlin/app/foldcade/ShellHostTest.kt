@@ -18,6 +18,11 @@ import app.foldcade.api.plugin.SaveSet
 import app.foldcade.api.plugin.canonicalPlatformId
 import app.foldcade.api.plugin.MemoryCredentialStore
 import app.foldcade.host.PluginHost
+import app.foldcade.language.SettingsCategory
+import app.foldcade.language.settingsRows
+import app.foldcade.language.settingsCategories
+import app.foldcade.language.leftRows
+import app.foldcade.language.Row
 import app.foldcade.language.Copy
 import app.foldcade.language.HostScreen
 import app.foldcade.language.LibrarySort
@@ -346,6 +351,25 @@ class ShellHostTest {
         openLibrary(shell)
         assertFalse(shell.model.unavailable)
         assertTrue(shell.model.backends.isEmpty())
+    }
+
+    @Test
+    fun settingsRowActsOverTheHomeGrid() {
+        val store = SessionStore(MemoryPrefs())
+        val shell = ShellController(store, PluginHost(Dispatchers.Unconfined, MemoryCredentialStore()))
+        shell.onMeaning(Meaning.LeftPanel, HostScreen.Bottom)
+        repeat(leftRows(homeRoleHeld = false).indexOf(Row.Settings)) { shell.onMeaning(Meaning.MoveDown, HostScreen.Bottom) }
+        shell.onMeaning(Meaning.Activate, HostScreen.Bottom)
+        assertTrue(shell.model.settings != null)
+        val library = settingsCategories(shell.model).indexOf(SettingsCategory.Library)
+        repeat(library) { shell.onMeaning(Meaning.MoveDown, HostScreen.Bottom) }
+        shell.onMeaning(Meaning.MoveRight, HostScreen.Bottom)
+        val rows = settingsRows(SettingsCategory.Library, shell.model)
+        repeat(rows.indexOf(Row.Order)) { shell.onMeaning(Meaning.MoveDown, HostScreen.Bottom) }
+        // The home board must not take A while the page is open.
+        shell.onMeaning(Meaning.Activate, HostScreen.Bottom)
+        assertEquals(LibrarySort.RecentlyPlayed, store.librarySort())
+        assertTrue(shell.model.settings != null)
     }
 
     private fun shell(host: PluginHost) = ShellController(SessionStore(MemoryPrefs()), host)

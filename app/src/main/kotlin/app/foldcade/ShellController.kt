@@ -1124,7 +1124,7 @@ class ShellController(
         !model.libraryGrid && model.homeGrid == HomeGrid.StandIns
 
     private fun homeActive(): Boolean =
-        showingHome() && model.dialog == null && model.panel == null && !model.connectOpen
+        showingHome() && model.dialog == null && model.panel == null && model.settings == null && !model.connectOpen
 
     private fun showBoard(focus: GridFocus, keepDialog: Boolean) {
         val count = home.visibleCount()
