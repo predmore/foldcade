@@ -229,22 +229,21 @@ fun themeMusicTrack(themeName: String, themeJson: String?, entries: Set<String>)
 }
 
 /**
- * Home music may request audio focus only while a Foldcade home is in front,
- * no launched game is in front on either screen, and another app is not already
- * playing on the music stream.
+ * Home music plays while Foldcade is in front on every screen and no launched
+ * game holds either one, however Foldcade got there. Any app open on either
+ * screen stops it. Another app's audio does not hold it back.
  */
 fun homeMusicMayStart(
-    homeInFront: Boolean,
+    homeOnEveryScreen: Boolean,
     gameInFront: Boolean,
-    otherAudioActive: Boolean,
-): Boolean = homeInFront && !gameInFront && !otherAudioActive
+): Boolean = homeOnEveryScreen && !gameInFront
 
 /**
- * A resumed home does not clear this while the launched game is still in front.
- * The flag drops only after that game has left both screens.
+ * True when a Foldcade home is resumed on every lit screen. A screen that is
+ * off does not count against it, but at least one home must be resumed.
  */
-fun homeMusicStaysSuppressed(suppressed: Boolean, gameInFront: Boolean): Boolean =
-    suppressed && gameInFront
+fun <P> homeOnEveryScreen(resumed: Set<P>, lit: Set<P>): Boolean =
+    resumed.isNotEmpty() && resumed.containsAll(lit)
 
 /**
  * After a transient audio-focus loss, playback should fade in from silence
