@@ -145,6 +145,53 @@ adb_do() {
   return "$status"
 }
 
+# A System UI ANR put "isn't responding" over the top panel and left it there
+# (runs 38066206158 through 38085182044). CLOSE_SYSTEM_DIALOGS dismisses that
+# dialog, and the shell may send it. Sent before each capture, so a dialog
+# from an earlier step is not in the frame.
+# hide_error_dialogs is not used: ActivityManager then kills the process that
+# stopped responding, and with it set every emulator in run 38087973504
+# segfaulted within two minutes of boot (1 in 80 shards without it).
+close_system_dialogs() {
+  timeout 10 adb shell am broadcast -a android.intent.action.CLOSE_SYSTEM_DIALOGS >/dev/null 2>&1 || true
+}
+
+# The ANRs the guest recorded in DropBox, whether or not a dialog was seen.
+# One tag per call: dumpsys dropbox matches entries against every term.
+# Another process stopping is a warning. Returns 1 when Foldcade stopped.
+report_anrs() {
+  local tag processes count name app_hung=0
+  : >"$out/anr.txt"
+  for tag in data_app_anr system_app_anr; do
+    timeout 20 adb shell dumpsys dropbox --print "$tag" 2>/dev/null | tr -d '\r' >>"$out/anr.txt" || true
+  done
+  processes="$(sed -n 's/^Process: //p' "$out/anr.txt" | sort | uniq -c)"
+  [ -n "$processes" ] || return 0
+  echo "----- ANRs recorded by the guest -----"
+  printf '%s\n' "$processes"
+  while read -r count name; do
+    if [ "$name" = "$app_id" ]; then
+      echo "::error::${name} stopped responding ${count} time(s). See anr.txt."
+      app_hung=1
+    else
+      echo "::warning::${name} stopped responding ${count} time(s) on the guest. Foldcade did not."
+    fi
+  done <<<"$processes"
+  [ "$app_hung" -eq 0 ]
+}
+
+# Both panels as they were when the step failed. The last capture before a
+# failure is often several steps old.
+capture_failure_frames() {
+  local panel id
+  for panel in top bottom; do
+    if [ "$panel" = top ]; then id="${primary:-}"; else id="${secondary:-}"; fi
+    [ -n "$id" ] || continue
+    timeout 15 adb exec-out screencap -p -d "$(screencap_arg "$id")" \
+      >"$out/failure-${panel}.png" 2>/dev/null || rm -f "$out/failure-${panel}.png"
+  done
+}
+
 fail() {
   local step="$1"
   if device_lost; then
@@ -155,8 +202,12 @@ fail() {
   printf 'step=%s\n' "$step" >"$out/failure.txt"
   echo "----- emulator.log (tail) -----"
   tail -n 150 /tmp/emulator.log 2>/dev/null || true
+  if ! device_lost; then
+    capture_failure_frames
+    report_anrs || true
+  fi
   echo "----- logcat (tail) -----"
-  timeout 20 adb logcat -d -t 200 >"$out/logcat.txt" 2>/dev/null || true
+  timeout 20 adb logcat -d >"$out/logcat.txt" 2>/dev/null || true
   tail -n 80 "$out/logcat.txt" 2>/dev/null || true
   copy_logs
   exit 1
@@ -173,7 +224,7 @@ cleanup() {
     echo "step=exit ${status}" >"$out/failure.txt"
     echo "----- emulator.log (tail) -----"
     tail -n 150 /tmp/emulator.log 2>/dev/null || true
-    timeout 20 adb logcat -d -t 200 >"$out/logcat.txt" 2>/dev/null || true
+    timeout 20 adb logcat -d >"$out/logcat.txt" 2>/dev/null || true
   fi
   timeout 15 adb emu kill >/dev/null 2>&1 || true
   if [ -n "${emu_pid:-}" ]; then
@@ -200,31 +251,18 @@ sudo chmod 666 /dev/kvm || true
 
 apk="app/build/outputs/apk/debug/app-debug.apk"
 aapt="${ANDROID_HOME}/build-tools/37.0.0/aapt"
-app_id=""
-
-# The workflow boots the emulator while Gradle builds. With FOLDCADE_APK_READY set,
-# the APK is read only when that marker file appears, just before install.
-read_apk() {
-  if [ -n "${FOLDCADE_APK_READY:-}" ]; then
-    local deadline=$((SECONDS + 900))
-    echo "step: wait for the APK"
-    until [ -e "$FOLDCADE_APK_READY" ]; do
-      [ "$SECONDS" -lt "$deadline" ] || fail "apk: the build did not finish"
-      sleep 2
-    done
-  fi
-  if [ ! -s "$apk" ]; then
-    echo "::error::Debug APK not found at $apk"
-    exit 1
-  fi
-  app_id="$("$aapt" dump badging "$apk" | sed -n "s/package: name='\([^']*\)'.*/\1/p" | head -1)"
-  if [ -z "$app_id" ]; then
-    echo "::error::Debug APK has no package name."
-    exit 1
-  fi
-}
-if [ -z "${FOLDCADE_APK_READY:-}" ]; then
-  read_apk
+# The workflow builds the APK before this script boots the emulator.
+# Booting while Gradle built doubled the boot (53s to about 110s median) and
+# left "System UI isn't responding" on the top panel in about 28% of shards,
+# for about 10s saved (#140).
+if [ ! -s "$apk" ]; then
+  echo "::error::Debug APK not found at $apk"
+  exit 1
+fi
+app_id="$("$aapt" dump badging "$apk" | sed -n "s/package: name='\([^']*\)'.*/\1/p" | head -1)"
+if [ -z "$app_id" ]; then
+  echo "::error::Debug APK has no package name."
+  exit 1
 fi
 
 system_image="system-images;android-33;google_apis;x86_64"
@@ -488,7 +526,7 @@ adb_step shell settings put secure user_setup_complete 1
 adb_step shell settings put global device_provisioned 1
 adb_step shell input keyevent KEYCODE_WAKEUP || true
 adb_step shell wm dismiss-keyguard || true
-[ -n "$app_id" ] || read_apk
+close_system_dialogs
 timeout 60 adb install -r "$apk"
 
 component="${app_id}/app.foldcade.PrimaryHomeActivity"
@@ -525,9 +563,9 @@ wait_for_service() {
 add_home_role() {
   local attempt delay
   # sys.boot_completed is set before BOOT_COMPLETED has reached every receiver.
-  # While Gradle builds on the same cores, that delivery can run a minute late,
-  # and the role service grants its defaults only after it (run 38024937323
-  # failed all attempts four seconds before "Granting default roles").
+  # On a busy guest that delivery can run a minute late, and the role service
+  # grants its defaults only after it (run 38024937323 failed all attempts four
+  # seconds before "Granting default roles").
   echo "step: wait for boot broadcasts"
   timeout 120 adb shell am wait-for-broadcast-idle >/dev/null 2>&1 || true
   for attempt in 1 2 3 4 5 6; do
@@ -731,6 +769,7 @@ begin_capture() {
   fi
   capture_step="$name"
   printf '%s\n' "$name" >"$out/current-step"
+  close_system_dialogs
   return 0
 }
 
@@ -1697,6 +1736,9 @@ fi
 if [ -n "${resume_from:-}" ] && [ "${resume_armed:-0}" -eq 0 ]; then
   fail "resume: capture step '${resume_from}' was not found"
 fi
+
+echo "step: ANRs"
+report_anrs || fail "Foldcade stopped responding (anr.txt)"
 
 echo "Captured displays $primary and $secondary. Thor-sized emulator, not a Thor pass."
 }

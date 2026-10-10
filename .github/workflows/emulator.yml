@@ -202,19 +202,6 @@ jobs:
             fi
           fi
 
-      # Boot while Gradle builds. The script stops before install until the
-      # APK marker appears, then runs the captures. The step below follows it.
-      - name: Boot the emulator
-        env:
-          ANDROID_AVD_HOME: ${{ runner.temp }}/avd
-          FOLDCADE_APK_READY: ${{ runner.temp }}/apk-ready
-          FOLDCADE_SHARD: ${{ matrix.shard }}
-        run: |
-          set -euo pipefail
-          mkdir -p "$ANDROID_AVD_HOME" screenshots
-          nohup bash .github/emulator/dual-screen.sh screenshots >"$RUNNER_TEMP/emulator-run.log" 2>&1 &
-          echo $! >"$RUNNER_TEMP/emulator-run.pid"
-
       - uses: gradle/actions/setup-gradle@v6
         with:
           cache-read-only: true
@@ -242,20 +229,24 @@ jobs:
       - name: Use the rendered home music
         run: echo "ORG_GRADLE_PROJECT_foldcadeHomeMusicAssets=$RUNNER_TEMP/home-music" >> "$GITHUB_ENV"
 
+      # Build first, then boot. Booting while Gradle built (#140) doubled the boot,
+      # 53s to about 110s median, and left "System UI isn't responding" on the top
+      # panel in about 28% of shards (0 of 55 before). It saved about 10s.
+      # The daemons are stopped so the guest has the runner to itself.
       - name: Assemble debug
         run: |
           ./gradlew :app:assembleDebug --configuration-cache
-          touch "$RUNNER_TEMP/apk-ready"
+          ./gradlew --stop
 
       - name: Dual-screen screenshots
         timeout-minutes: 15
+        env:
+          ANDROID_AVD_HOME: ${{ runner.temp }}/avd
+          FOLDCADE_SHARD: ${{ matrix.shard }}
         run: |
           set -euo pipefail
-          pid="$(cat "$RUNNER_TEMP/emulator-run.pid")"
-          # Replays what the boot printed while Gradle ran, then follows to the end.
-          tail -n +1 --pid="$pid" -f "$RUNNER_TEMP/emulator-run.log"
-          code="$(cat screenshots/exit-code 2>/dev/null || echo 1)"
-          exit "$code"
+          mkdir -p "$ANDROID_AVD_HOME" screenshots
+          bash .github/emulator/dual-screen.sh screenshots
 
       - name: Upload both displays
         if: always()
@@ -276,6 +267,7 @@ jobs:
             screenshots/emulator-crash.log
             screenshots/logcat.txt
             screenshots/failure.txt
+            screenshots/anr.txt
           if-no-files-found: ignore
           retention-days: 7
 
