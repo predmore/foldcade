@@ -76,6 +76,8 @@ class PlatformDetectionTest {
         assertNull(platformFromExtension("cue"))
         assertNull(platformFromExtension("md"))
         assertNull(platformFromExtension("bin"))
+        assertNull(platformFromExtension("m3u"))
+        assertNull(platformFromExtension("m3u8"))
         assertNull(platformFromExtension("exe"))
         assertNull(platformFromExtension("sav"))
         assertNull(platformFromExtension(""))
