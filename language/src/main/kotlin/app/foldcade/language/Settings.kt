@@ -69,7 +69,7 @@ fun settingsRows(category: SettingsCategory, model: PickerModel): List<Row> = wh
         if (model.offerButtonLabels) add(Row.ButtonLabels)
     }
     SettingsCategory.Sound -> listOf(Row.Music, Row.MusicTrack, Row.MusicVolume)
-    SettingsCategory.Library -> libraryRows(model.backends, model.signedIn) +
+    SettingsCategory.Library -> libraryRows(model.signedIn) +
         listOf(Row.Order, Row.AddNewGames, Row.UsageAccess, Row.MoonlightSource)
     SettingsCategory.Players -> model.playerSaves.map { Row.PlayerSave(it.playerId) }
     SettingsCategory.Screens -> buildList {

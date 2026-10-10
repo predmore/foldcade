@@ -57,6 +57,7 @@ import app.foldcade.romm.normalizeSetupOrigin
 import java.time.Duration
 import kotlin.coroutines.cancellation.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import app.foldcade.ui.PanelHost
@@ -197,7 +198,6 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
             Effect.SaveRommToken -> saveRommToken()
             is Effect.ForgetCredentials -> forget(effect.pluginId)
             is Effect.DialogChoice -> onDialog(effect)
-            is Effect.ActivateBackend -> foldcade.activateLibrary(effect.name)
             Effect.RequestHome -> requestHome()
             is Effect.OpenAndroidSetting -> openAndroidSetting(effect.setting)
             Effect.OpenLicenses -> startActivity(Intent(this, LicensesActivity::class.java))
@@ -400,6 +400,7 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
             foldcade.scope.launch {
                 val target = try {
                     foldcade.plugins.ensureLocal(libraryId, apiGame)
+                    withContext(Dispatchers.Main.immediate) { foldcade.shell.noteOnDevice(libraryId, remoteKey) }
                     foldcade.plugins.prepareLaunch(libraryId, apiGame, player).target
                 } catch (cancelled: CancellationException) {
                     throw cancelled
@@ -559,25 +560,48 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
         libraryId: String,
         game: Game,
     ) {
+        // A server game downloads first. Its tile pulses until then, and a second press waits.
+        val fetching = game.availability == Availability.RemoteOnly
+        if (fetching && !foldcade.shell.beginDownload(libraryId, game.remoteKey)) return
         foldcade.music.onExternalLaunch()
         val generation = beginLaunch()
         foldcade.scope.launch {
             val players = foldcade.plugins.playersFor(game.platformId)
+            val installedPackage = { player: Player ->
+                player.packageNames.firstOrNull { name ->
+                    runCatching { packageManager.getPackageInfo(name, 0) }.isSuccess
+                }
+            }
+            // Say so before a download that could take minutes, not after it.
+            val missing = missingPlayer(players, installedPackage)
+            if (missing != null) {
+                withContext(Dispatchers.Main.immediate) {
+                    if (fetching) foldcade.shell.endDownload(libraryId, game.remoteKey)
+                    if (launchCurrent(generation)) showMissing(missing.playerName, missing.packages)
+                }
+                return@launch
+            }
             val target = try {
-                foldcade.plugins.ensureLocal(libraryId, game)
+                foldcade.plugins.ensureLocal(libraryId, game).also {
+                    withContext(Dispatchers.Main.immediate) { foldcade.shell.noteOnDevice(libraryId, game.remoteKey) }
+                }
             } catch (cancelled: CancellationException) {
                 throw cancelled
             } catch (fatal: VirtualMachineError) {
                 throw fatal
             } catch (_: Exception) {
-                withContext(Dispatchers.Main.immediate) { foldcade.retryLibrary() }
+                withContext(Dispatchers.Main.immediate) {
+                    if (launchCurrent(generation)) showDownloadFailed(title)
+                }
                 return@launch
-            }
-            val plan = planLaunch(players, target) { player ->
-                player.packageNames.firstOrNull { name ->
-                    runCatching { packageManager.getPackageInfo(name, 0) }.isSuccess
+            } finally {
+                if (fetching) {
+                    withContext(NonCancellable + Dispatchers.Main.immediate) {
+                        foldcade.shell.endDownload(libraryId, game.remoteKey)
+                    }
                 }
             }
+            val plan = planLaunch(players, target, installedPackage)
             val installedIntent = if (plan is GameLaunch.Installed) {
                 try {
                     foldcade.plugins.launchIntent(
@@ -622,6 +646,20 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
                 }
             }
         }
+    }
+
+    private fun showDownloadFailed(title: String) {
+        foldcade.shell.showDialog(
+            DialogState(
+                kind = DialogKind.Ok,
+                title = "${Copy.downloadFailed} $title",
+                body = Copy.downloadFailedBody,
+                buttons = listOf(DialogButton.Ok),
+                index = 0,
+                safeIndex = 0,
+                screen = hostScreen(),
+            ),
+        )
     }
 
     private fun showMissing(playerName: String, packages: List<String>) {
@@ -907,7 +945,7 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
                             // The form used to stay up with an empty token field, so a save
                             // that worked looked like one that did nothing.
                             foldcade.shell.closeConnect()
-                            foldcade.openRommLibrary()
+                            foldcade.syncRomm()
                         } else {
                             foldcade.shell.askToSignInAgain()
                         }
@@ -935,6 +973,7 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
                 if (forgotten) {
                     if (pluginId == RommCredentials.PLUGIN_ID) foldcade.store.clearRommOrigin()
                     foldcade.publishRomm()
+                    foldcade.syncRomm()
                 }
                 withContext(Dispatchers.Main.immediate) {
                     if (forgotten) {

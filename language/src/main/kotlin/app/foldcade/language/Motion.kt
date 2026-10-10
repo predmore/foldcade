@@ -5,6 +5,9 @@ import android.provider.Settings
 import androidx.compose.animation.core.CubicBezierEasing
 import androidx.compose.animation.core.Easing
 import androidx.compose.animation.core.FiniteAnimationSpec
+import androidx.compose.animation.core.InfiniteRepeatableSpec
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.tween
 
 /**
@@ -19,6 +22,9 @@ object Motion {
 
     /** Island morph. Same curves as travel, long enough to read the shared-element grow. */
     const val durationIsland = 320
+
+    /** One breath of a downloading tile's cloud, in each direction. */
+    const val durationPulse = 720
     const val scaleRest = 1f
     const val scaleFocus = 1.05f
 
@@ -30,6 +36,7 @@ object Motion {
 
     val easingArrive: Easing = CubicBezierEasing(0.05f, 0.7f, 0.1f, 1f)
     val easingLeave: Easing = CubicBezierEasing(0.3f, 0f, 0.8f, 0.15f)
+    val easingPulse: Easing = CubicBezierEasing(0.4f, 0f, 0.6f, 1f)
 
     fun animatorScale(resolver: ContentResolver): Float =
         Settings.Global.getFloat(resolver, Settings.Global.ANIMATOR_DURATION_SCALE, 1f)
@@ -46,6 +53,13 @@ object Motion {
 
     fun leave(base: Int, animatorScale: Float): FiniteAnimationSpec<Float> =
         spec(base, animatorScale, easingLeave)
+
+    /** Fades up and back for as long as it runs. Callers hold still when [reduced]. */
+    fun pulse(animatorScale: Float): InfiniteRepeatableSpec<Float> =
+        infiniteRepeatable(
+            tween(durationMillis = duration(durationPulse, animatorScale), easing = easingPulse),
+            RepeatMode.Reverse,
+        )
 
     /**
      * Motion Off, and Android's remove-animations scale, swap the hero with a short fade.

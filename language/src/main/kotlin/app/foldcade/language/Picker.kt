@@ -221,7 +221,6 @@ sealed interface Row {
     data object SetAsHome : Row
     data object AndroidSettings : Row
     data object DefaultHomeApp : Row
-    data class Backend(val name: String) : Row
     data object AddFolder : Row
     data object Connect : Row
     data object LaunchTarget : Row
@@ -326,14 +325,11 @@ enum class ConnectField {
 fun connectFields(): List<ConnectField> = listOf(ConnectField.Origin, ConnectField.Token, ConnectField.Save)
 
 /**
- * Until RomM has a server, its library row is [Copy.setUpRomm] and opens the
- * connect form, so a second [Row.Connect] would only repeat it.
+ * Every library feeds the one home grid, so these rows add or remove a source.
+ * None of them switches the grid to a different library.
  */
-fun libraryRows(backends: List<String>, signedIn: List<SignedInBackend> = emptyList()): List<Row> =
-    backends.map { Row.Backend(it) } +
-        signedIn.map { Row.SignOut(it.pluginId, it.label) } +
-        listOf(Row.AddFolder) +
-        listOfNotNull(Row.Connect.takeIf { Copy.setUpRomm !in backends })
+fun libraryRows(signedIn: List<SignedInBackend> = emptyList()): List<Row> =
+    signedIn.map { Row.SignOut(it.pluginId, it.label) } + listOf(Row.AddFolder, Row.Connect)
 
 fun rightRows(
     showLaunchTarget: Boolean,
@@ -357,7 +353,7 @@ fun rightRows(
 fun panelRows(panel: SidePanel, model: PickerModel): List<Row> = when (panel.side) {
     Side.Left -> when (panel.level) {
         PanelLevel.Root -> leftRows()
-        PanelLevel.Library -> libraryRows(model.backends, model.signedIn)
+        PanelLevel.Library -> libraryRows(model.signedIn)
     }
     Side.Right -> rightRows(model.showLaunchTarget, model.notices, model.appActions)
 }
@@ -410,7 +406,6 @@ fun rowText(row: Row, model: PickerModel): RowText = when (row) {
             QuickSetting.Settings -> SettingsCopy.title
         },
     )
-    is Row.Backend -> RowText(row.name)
     Row.AddFolder -> RowText(Copy.addFolder)
     Row.Connect -> RowText(Copy.connectRomm)
     is Row.SignOut -> RowText("${Copy.signOut} · ${row.label}")
@@ -462,7 +457,6 @@ sealed interface Effect {
     data object AddFolder : Effect
     data object OpenConnect : Effect
     data class DialogChoice(val button: DialogButton, val kind: DialogKind) : Effect
-    data class ActivateBackend(val name: String) : Effect
     data class ForgetCredentials(val pluginId: String) : Effect
     data object SaveRommToken : Effect
     data object RequestHome : Effect
@@ -510,7 +504,6 @@ data class PickerModel(
     val connectOpen: Boolean = false,
     val atLibraryRoot: Boolean = true,
     val primaryIsTop: Boolean = true,
-    val backends: List<String> = emptyList(),
     val themes: List<String> = listOf(Copy.builtIn),
     val themeIndex: Int = 0,
     val themeMotions: List<BackgroundMotion> = listOf(BackgroundMotion.Off),
@@ -538,7 +531,6 @@ data class PickerModel(
     val connectWarning: String? = null,
     val connectHint: String? = null,
     val reLoginPending: Boolean = false,
-    val unavailable: Boolean = false,
     val playerSaves: List<PlayerSaveSetting> = emptyList(),
     val homeGrid: HomeGrid = HomeGrid.StandIns,
     val appActions: AppActions? = null,
@@ -1083,7 +1075,6 @@ private fun activateRow(
         } else {
             model.copy(panel = panel) to Effect.OpenAndroidSetting(row.setting.androidSetting())
         }
-        is Row.Backend -> model.copy(panel = null, focus = panel.grid) to Effect.ActivateBackend(row.name)
         Row.AddFolder ->
             if (model.folderGrantPending) {
                 model.copy(dialog = folderExplainer(screen)) to null
