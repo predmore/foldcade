@@ -74,4 +74,13 @@ class PlayTimeCopyTest {
         assertEquals(listOf(1, 0, 2), displayOrder(arranging))
         assertEquals(listOf(0, 1, 2), displayOrder(sorted.copy(sort = LibrarySort.Listed, order = emptyList())))
     }
+
+    @Test
+    fun heroPlayLineIsOneLineOrNothing() {
+        val zone = java.time.ZoneOffset.UTC
+        val now = 1_760_000_000_000L
+        assertNull(heroPlayLine(0L, null, now, zone))
+        assertEquals("Played 1m · Today", heroPlayLine(61_000L, now, now, zone))
+        assertEquals("Played 2h 5m · Yesterday", heroPlayLine(125 * 60_000L, now - 86_400_000L, now, zone))
+    }
 }
