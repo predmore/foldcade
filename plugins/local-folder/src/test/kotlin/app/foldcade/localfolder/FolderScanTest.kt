@@ -377,6 +377,185 @@ class FolderScanTest {
             scan(root).games.map { it.documentUri },
         )
     }
+
+    @Test
+    fun anM3uIsTheGameAndTheDiscsItListsStayHidden() {
+        val playlist = """
+            #EXTM3U
+            #EXTINF:0,Disc 1
+            Final Fantasy VII (Disc 1).cue
+            Final Fantasy VII (Disc 2).CUE
+        """.trimIndent()
+        val root = dir(
+            "content://ps1",
+            "PlayStation",
+            listOf(
+                file("content://ps1/m3u", "Final Fantasy VII.m3u", playlist),
+                file("content://ps1/d1", "Final Fantasy VII (Disc 1).cue"),
+                file("content://ps1/d1b", "Final Fantasy VII (Disc 1).bin"),
+                file("content://ps1/d2", "Final Fantasy VII (Disc 2).cue"),
+                file("content://ps1/d2b", "Final Fantasy VII (Disc 2).bin"),
+                file("content://ps1/other", "Suikoden.cue"),
+            ),
+        )
+
+        assertEquals(
+            listOf(
+                game(
+                    "content://ps1/m3u",
+                    "Final Fantasy VII.m3u",
+                    "Final Fantasy VII",
+                    "playstation",
+                    "PlayStation",
+                ),
+                game("content://ps1/other", "Suikoden.cue", "Suikoden", "playstation", "PlayStation"),
+            ),
+            scan(root).games,
+        )
+    }
+
+    @Test
+    fun aPlaylistNamesDiscsByRelativePath() {
+        val root = dir(
+            "content://ps1",
+            "ps1",
+            listOf(
+                file(
+                    "content://ps1/m3u",
+                    "Game.m3u",
+                    "disc1/Game (Disc 1).chd\n../Loose.cue\n",
+                ),
+                dir(
+                    "content://ps1/disc1",
+                    "disc1",
+                    listOf(file("content://ps1/disc1/game", "Game (Disc 1).chd")),
+                ),
+                file("content://ps1/loose", "Loose.cue"),
+                dir(
+                    "content://ps1/nested",
+                    "nested",
+                    listOf(file("content://ps1/nested/m3u", "Nested.m3u", "../Kept.cue\n")),
+                ),
+                file("content://ps1/kept", "Kept.cue"),
+            ),
+        )
+
+        assertEquals(
+            listOf(
+                game("content://ps1/m3u", "Game.m3u", "Game", "playstation", "ps1"),
+                game("content://ps1/loose", "Loose.cue", "Loose", "playstation", "ps1"),
+                game("content://ps1/nested/m3u", "Nested.m3u", "Nested", "playstation", "nested"),
+            ),
+            scan(root).games,
+        )
+    }
+
+    @Test
+    fun aMissingRelativeDiscDoesNotHideASiblingWithTheSameName() {
+        val root = dir(
+            "content://ps1",
+            "ps1",
+            listOf(
+                file("content://ps1/m3u", "Game.m3u", "missing/Game.cue\n"),
+                dir(
+                    "content://ps1/missing",
+                    "missing",
+                    listOf(file("content://ps1/missing/other", "Other.cue")),
+                ),
+                file("content://ps1/sibling", "Game.cue"),
+            ),
+        )
+
+        assertEquals(
+            listOf(
+                "content://ps1/m3u",
+                "content://ps1/sibling",
+                "content://ps1/missing/other",
+            ),
+            scan(root).games.map { it.documentUri },
+        )
+    }
+
+    @Test
+    fun playlistPunctuationStillNamesTheDiscFile() {
+        val playlist = "\uFEFF" + """
+            #EXTM3U
+            "Chrono Cross (Disc 1).cue"
+            Chrono%20Cross%20%28Disc%202%29.cue
+            D:\Roms\PS1\Chrono Cross (Disc 3).cue
+        """.trimIndent()
+        val root = dir(
+            "content://ps1",
+            "PlayStation",
+            listOf(
+                file("content://ps1/m3u", "Chrono Cross.m3u", playlist),
+                file("content://ps1/d1", "Chrono Cross (Disc 1).cue"),
+                file("content://ps1/d2", "Chrono Cross (Disc 2).cue"),
+                file("content://ps1/d3", "Chrono Cross (Disc 3).cue"),
+                file("content://ps1/kept", "Chrono Cross (Disc 4).cue"),
+            ),
+        )
+
+        assertEquals(
+            listOf("content://ps1/m3u", "content://ps1/kept"),
+            scan(root).games.map { it.documentUri },
+        )
+    }
+
+    @Test
+    fun anM3uWithoutABodyLeavesItsDiscsVisible() {
+        val root = dir(
+            "content://ps1",
+            "ps1",
+            listOf(
+                file("content://ps1/m3u", "Game.m3u"),
+                file("content://ps1/d1", "Game (Disc 1).cue"),
+            ),
+        )
+
+        assertEquals(
+            listOf("content://ps1/m3u", "content://ps1/d1"),
+            scan(root).games.map { it.documentUri },
+        )
+    }
+
+    @Test
+    fun aPlaylistCountsOnlyInsideAPlatformFolderThatAcceptsIt() {
+        val root = dir(
+            "content://root",
+            "roms",
+            listOf(
+                file("content://root/m3u", "Game.m3u", "Game.cue\n"),
+                file("content://root/stream", "Show.m3u8", "Game.cue\n"),
+                dir(
+                    "content://snes",
+                    "snes",
+                    listOf(
+                        file("content://snes/m3u", "Game.m3u", "Cart.sfc\n"),
+                        file("content://snes/cart", "Cart.sfc"),
+                    ),
+                ),
+                dir(
+                    "content://ps2",
+                    "ps2",
+                    listOf(
+                        file("content://ps2/m3u", "Game.m3u", "Game (Disc 1).iso\nGame (Disc 2).iso\n"),
+                        file("content://ps2/d1", "Game (Disc 1).iso"),
+                        file("content://ps2/d2", "Game (Disc 2).iso"),
+                        file("content://ps2/stream", "Show.m3u8"),
+                    ),
+                ),
+            ),
+        )
+
+        assertEquals(
+            listOf(
+                game("content://ps2/m3u", "Game.m3u", "Game", "playstation-2", "ps2"),
+                game("content://snes/cart", "Cart.sfc", "Cart", "snes", "snes"),
+            ),
+            scan(root).games,
+        )
+    }
 }
 
 private class Node(
@@ -384,19 +563,21 @@ private class Node(
     val name: String,
     val directory: Boolean,
     val children: List<Node> = emptyList(),
+    val text: String? = null,
 ) {
     fun entry(): FolderEntry = FolderEntry(
         documentUri = uri,
         displayName = name,
         mimeType = if (directory) DOCUMENT_DIRECTORY_MIME else "application/octet-stream",
+        text = text,
     )
 }
 
 private fun dir(uri: String, name: String, children: List<Node> = emptyList()): Node =
     Node(uri, name, directory = true, children = children)
 
-private fun file(uri: String, name: String): Node =
-    Node(uri, name, directory = false)
+private fun file(uri: String, name: String, text: String? = null): Node =
+    Node(uri, name, directory = false, text = text)
 
 private fun nodes(root: Node): (FolderEntry) -> List<FolderEntry> {
     val byUri = HashMap<String, Node>()

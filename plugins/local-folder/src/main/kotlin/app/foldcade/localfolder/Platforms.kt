@@ -103,14 +103,15 @@ internal object PlatformCatalog {
             id = "playstation",
             name = "PlayStation",
             folders = setOf("ps1", "psx", "playstation"),
-            folderOnlyExtensions = setOf("cue", "chd", "pbp", "img", "iso"),
+            // .m3u is the multi-disc game. The scan hides the files that playlist names.
+            folderOnlyExtensions = setOf("cue", "chd", "pbp", "img", "iso", "m3u"),
             aliases = setOf("psx"),
         ),
         spec(
             id = "playstation-2",
             name = "PlayStation 2",
             folders = setOf("ps2", "playstation 2"),
-            folderOnlyExtensions = setOf("iso", "chd"),
+            folderOnlyExtensions = setOf("iso", "chd", "m3u"),
             aliases = setOf("ps2"),
         ),
         spec(
@@ -255,7 +256,6 @@ internal val NEVER_EXTENSIONS: Set<String> = setOf(
     "cfg",
     "ini",
     "toml",
-    "m3u",
     "m3u8",
     "bin",
     "exe",
