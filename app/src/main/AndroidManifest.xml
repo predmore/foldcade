@@ -72,5 +72,17 @@
             android:name=".LicensesActivity"
             android:exported="false"
             android:launchMode="standard" />
+
+        <!-- Players open RomM downloads through this provider. Not exported: a player gets
+             one URI at a time through FLAG_GRANT_READ_URI_PERMISSION on the launch intent. -->
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="${applicationId}.romm.cache"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/romm_cache_paths" />
+        </provider>
     </application>
 </manifest>
