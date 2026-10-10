@@ -15,8 +15,8 @@ kotlin {
 }
 
 dependencies {
-    implementation(libs.kotlinx.serialization.json)
-    implementation(project(":net"))
+    // Callers use OkHttp's request and interceptor types. Only this module builds a client.
+    api(libs.okhttp)
     implementation(libs.coroutines.core)
     testImplementation(libs.junit)
     testImplementation(libs.coroutines.core)
