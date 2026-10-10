@@ -4,6 +4,7 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import java.io.File
 
 class HomeMusicSettingTest {
     @Test
@@ -26,6 +27,7 @@ class HomeMusicSettingTest {
                 Row.Music, Row.MusicTrack, Row.MusicVolume, Row.SetAsHome,
                 Row.Background, Row.MotionSpeed, Row.UsageAccess, Row.MoonlightSource,
                 Row.AndroidGames, Row.Apps, Row.HiddenApps,
+                Row.Licenses,
                 Row.AndroidSettings, Row.DefaultHomeApp,
             ),
             leftRows(homeRoleHeld = false),
@@ -36,6 +38,7 @@ class HomeMusicSettingTest {
                 Row.Music, Row.MusicTrack, Row.MusicVolume,
                 Row.Background, Row.MotionSpeed, Row.UsageAccess, Row.MoonlightSource,
                 Row.AndroidGames, Row.Apps, Row.HiddenApps,
+                Row.Licenses,
                 Row.AndroidSettings, Row.DefaultHomeApp,
             ),
             leftRows(homeRoleHeld = true),
@@ -284,5 +287,37 @@ class HomeMusicSettingTest {
         val tracks = offeredMusicTracks(listOf(defaultLanternlightTrack()), offered)
         assertEquals(listOf(HomeMusicSetting.DEFAULT_TRACK_ID, THEME_TRACK_ID), tracks.map { it.id })
         assertEquals(HomeMusicSetting.DEFAULT_TRACK_ID, cycledMusicTrack(listOf(defaultLanternlightTrack()), "lanternlight", 1).id)
+    }
+
+    @Test
+    fun manifestAndThemeJsonIgnoreBrokenDocuments() {
+        assertTrue(musicTracksFromManifest("{").isEmpty())
+        assertTrue(musicTracksFromManifest("[]").isEmpty())
+        assertTrue(
+            musicTracksFromManifest(
+                """{"id":"x","title":"X","composer":"C","license":"GPLv3","file":"music/x.ogg"}""",
+            ).isEmpty(),
+        )
+        val extra = """
+            {"tracks":[{"id":"lanternlight","title":"Lanternlight","composer":"Foldcade project","license":"GPLv3","file":"music/lanternlight.ogg","extra":1}]}
+        """.trimIndent()
+        assertEquals("lanternlight", musicTracksFromManifest(extra).single().id)
+        assertEquals(DEFAULT_BACKGROUND_MUSIC, backgroundMusicFromThemeJson("{"))
+        assertEquals(DEFAULT_BACKGROUND_MUSIC, backgroundMusicFromThemeJson("""{"backgroundMusic":1}"""))
+        assertEquals(DEFAULT_BACKGROUND_MUSIC, backgroundMusicFromThemeJson("""{"backgroundMusic":" /abs.ogg"}"""))
+        val manifest = repoFile("music/tracks/manifest.json").readText()
+        assertEquals("music/lanternlight.ogg", musicTracksFromManifest(manifest).single().file)
+        val theme = repoFile("themes/afterglow/theme.json").readText()
+        assertEquals(DEFAULT_BACKGROUND_MUSIC, backgroundMusicFromThemeJson(theme))
+    }
+
+    private fun repoFile(relative: String): File {
+        val cwd = File(".").canonicalFile
+        val candidates = listOf(
+            File(cwd, relative),
+            File(cwd, "../$relative"),
+            File(cwd.parentFile, relative),
+        )
+        return candidates.firstOrNull { it.isFile } ?: error("missing $relative from $cwd")
     }
 }

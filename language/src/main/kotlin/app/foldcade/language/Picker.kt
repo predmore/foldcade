@@ -237,6 +237,7 @@ sealed interface Row {
     data object ShowApp : Row
     data class QuickTile(val setting: QuickSetting) : Row
     data object ButtonLabels : Row
+    data object Licenses : Row
 }
 
 /** Two columns in the R1 cluster. Text rows above the tiles stay full width. */
@@ -309,6 +310,7 @@ fun leftRows(
     add(Row.AndroidGames)
     add(Row.Apps)
     add(Row.HiddenApps)
+    add(Row.Licenses)
     add(Row.AndroidSettings)
     add(Row.DefaultHomeApp)
 }
@@ -392,6 +394,7 @@ fun rowText(row: Row, model: PickerModel): RowText = when (row) {
     Row.MusicVolume -> RowText(MusicCopy.volume, MusicCopy.volumeLabel(model.music.volume).substringAfter("  "))
     Row.SetAsHome -> RowText(Copy.setAsHome)
     Row.AndroidSettings -> RowText(Copy.androidSettings)
+    Row.Licenses -> RowText(LicenseCopy.row)
     Row.DefaultHomeApp -> RowText(Copy.defaultHomeApp)
     is Row.QuickTile -> RowText(
         when (row.setting) {
@@ -462,6 +465,7 @@ sealed interface Effect {
     data object HideApp : Effect
     data object ShowApp : Effect
     data class OpenAndroidSetting(val setting: AndroidSetting) : Effect
+    data object OpenLicenses : Effect
     data object DismissButtonLabels : Effect
     data class ConfirmMoonlightImport(val checked: List<MoonlightSheetApp>) : Effect
     data object SkipMoonlightImport : Effect
@@ -986,6 +990,7 @@ private fun activateRow(
         Row.MusicVolume -> model.copy(panel = panel, music = model.music.stepped()) to null
         Row.SetAsHome -> model to Effect.RequestHome
         Row.AndroidSettings -> model.copy(panel = panel) to Effect.OpenAndroidSetting(AndroidSetting.Settings)
+        Row.Licenses -> model.copy(panel = panel) to Effect.OpenLicenses
         Row.DefaultHomeApp -> model.copy(panel = panel) to Effect.OpenAndroidSetting(AndroidSetting.Home)
         is Row.QuickTile -> model.copy(panel = panel) to Effect.OpenAndroidSetting(row.setting.androidSetting())
         is Row.Backend -> model.copy(panel = null, focus = panel.grid) to Effect.ActivateBackend(row.name)

@@ -67,5 +67,10 @@
             android:exported="false"
             android:launchMode="standard"
             android:taskAffinity="app.foldcade.standin" />
+
+        <activity
+            android:name=".LicensesActivity"
+            android:exported="false"
+            android:launchMode="standard" />
     </application>
 </manifest>

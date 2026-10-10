@@ -197,6 +197,7 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
             is Effect.ActivateBackend -> foldcade.activateLibrary(effect.name)
             Effect.RequestHome -> requestHome()
             is Effect.OpenAndroidSetting -> openAndroidSetting(effect.setting)
+            Effect.OpenLicenses -> startActivity(Intent(this, LicensesActivity::class.java))
             Effect.DismissButtonLabels -> Unit
             is Effect.ConfirmMoonlightImport -> Unit
             Effect.SkipMoonlightImport -> Unit
