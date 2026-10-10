@@ -7,8 +7,8 @@ import java.net.URI
 
 /**
  * Cleartext is an explicit LAN opt-in. [RommClient] accepts an http origin
- * only for a loopback address, a private address, a link-local address, or a
- * localhost, `.local`, or `.home.arpa` name. This interceptor rejects any
+ * only for a loopback address, a private address, a link-local address, a
+ * Tailscale address, or a localhost, `.local`, `.home.arpa`, or `.ts.net` name. This interceptor rejects any
  * other http request, including a redirect. Android cannot name a dynamic
  * LAN address in the network-security config, so that file still permits
  * cleartext and this check is the opt-in.
@@ -87,6 +87,11 @@ internal fun httpCleartextAllowed(origin: String, target: String): Boolean {
  * True for a host that is unambiguously on the local network.
  * A public name is not, even when it has no public suffix.
  * This does not resolve DNS.
+ *
+ * A tailnet counts: `100.64.0.0/10` and `.ts.net` names. WireGuard encrypts
+ * that hop. The same /10 is also carrier-grade NAT space. Off a tailnet, an
+ * http origin there crosses the carrier's network in clear.
+ * Tailscale's IPv6 range is unique-local and already passes as `fc00::/7`.
  */
 internal fun isLanHost(raw: String): Boolean {
     var host = raw.trim().lowercase()
@@ -98,6 +103,7 @@ internal fun isLanHost(raw: String): Boolean {
     if (host.isEmpty()) return false
     if (host == "localhost" || dnsSuffix(host, ".localhost")) return true
     if (dnsSuffix(host, ".local") || dnsSuffix(host, ".home.arpa")) return true
+    if (dnsSuffix(host, ".ts.net")) return true
     if (host.contains(':')) return ipv6Lan(host)
     return ipv4Lan(host)
 }
@@ -113,6 +119,7 @@ private fun ipv4Lan(host: String): Boolean {
     if (a == 10) return true
     if (a == 192 && b == 168) return true
     if (a == 169 && b == 254) return true
+    if (a == 100 && b in 64..127) return true
     return a == 172 && b in 16..31
 }
 

@@ -868,6 +868,10 @@ class RommClientTest {
         assertEquals("http://[fe80::1]", RommClient.normalizeOrigin("http://[fe80::1]"))
         assertEquals("http://[fd00::1]", RommClient.normalizeOrigin("http://[FD00::1]"))
         assertEquals("http://[::ffff:192.168.1.20]", RommClient.normalizeOrigin("http://[::ffff:192.168.1.20]"))
+        assertEquals("http://100.64.0.1:8080", RommClient.normalizeOrigin("http://100.64.0.1:8080"))
+        assertEquals("http://100.127.255.255", RommClient.normalizeOrigin("http://100.127.255.255"))
+        assertEquals("http://nas.tail1234.ts.net", RommClient.normalizeOrigin("http://NAS.tail1234.ts.net"))
+        assertEquals("http://[fd7a:115c:a1e0::1]", RommClient.normalizeOrigin("http://[fd7a:115c:a1e0::1]"))
         listOf(
             "http://romm.example",
             "http://8.8.8.8",
@@ -875,6 +879,10 @@ class RommClientTest {
             "http://172.32.0.1",
             "http://[2001:db8::1]",
             "http://evil.local.example",
+            "http://100.63.255.255",
+            "http://100.128.0.1",
+            "http://ts.net",
+            "http://nas.ts.net.example",
         ).forEach { raw ->
             val failed = runCatching { RommClient.normalizeOrigin(raw) }.exceptionOrNull()
             assertTrue(raw, failed is IllegalArgumentException)

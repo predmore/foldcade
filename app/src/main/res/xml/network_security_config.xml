@@ -1,8 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
     Cleartext is an explicit LAN opt-in. RommClient accepts http only for a
-    loopback, private, or link-local address, or a localhost, .local, or
-    .home.arpa name. Android cannot name a dynamic LAN address in
+    loopback, private, link-local, or Tailscale (100.64.0.0/10) address, or a
+    localhost, .local, .home.arpa, or .ts.net name. Android cannot name a dynamic LAN address in
     domain-config, so unnamed private addresses still use the base permit.
     The client refuses every other http host. The named domains below are
     the part of that opt-in this file can state.
@@ -13,5 +13,6 @@
         <domain includeSubdomains="true">localhost</domain>
         <domain includeSubdomains="true">local</domain>
         <domain includeSubdomains="true">home.arpa</domain>
+        <domain includeSubdomains="true">ts.net</domain>
     </domain-config>
 </network-security-config>
