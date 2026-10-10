@@ -146,28 +146,17 @@ adb_do() {
 }
 
 # A System UI ANR put "isn't responding" over the top panel and left it there
-# (runs 38066206158 through 38085182044). With hide_error_dialogs set,
-# ActivityManager kills a process that stops responding instead of asking,
-# and System UI restarts. The setting is read live, so it is set as soon as
-# the guest takes it. CLOSE_SYSTEM_DIALOGS dismisses an ANR dialog that was
-# already up before then.
-error_dialogs_hidden=0
-hide_error_dialogs() {
-  [ "$error_dialogs_hidden" -eq 0 ] || return 0
-  if timeout 5 adb shell settings put global hide_error_dialogs 1 >/dev/null 2>&1; then
-    error_dialogs_hidden=1
-  fi
-}
-
-quiet_error_dialogs() {
-  local value
-  hide_error_dialogs
-  value="$(timeout 10 adb shell settings get global hide_error_dialogs 2>/dev/null | tr -d '\r' || true)"
-  [ "$value" = "1" ] || fail "error dialogs: hide_error_dialogs is '${value}', wanted 1"
+# (runs 38066206158 through 38085182044). CLOSE_SYSTEM_DIALOGS dismisses that
+# dialog, and the shell may send it. Sent before each capture, so a dialog
+# from an earlier step is not in the frame.
+# hide_error_dialogs is not used: ActivityManager then kills the process that
+# stopped responding, and with it set every emulator in run 38087973504
+# segfaulted within two minutes of boot (1 in 80 shards without it).
+close_system_dialogs() {
   timeout 10 adb shell am broadcast -a android.intent.action.CLOSE_SYSTEM_DIALOGS >/dev/null 2>&1 || true
 }
 
-# No dialog shows an ANR now, so read the ones the guest recorded in DropBox.
+# The ANRs the guest recorded in DropBox, whether or not a dialog was seen.
 # One tag per call: dumpsys dropbox matches entries against every term.
 # Another process stopping is a warning. Returns 1 when Foldcade stopped.
 report_anrs() {
@@ -422,7 +411,6 @@ wait_for_boot() {
     fi
     state="$(timeout 15 adb devices 2>/dev/null | awk 'NR>1 && $1 ~ /^emulator-/ { print $2; exit }' || true)"
     if [ "$state" = "device" ]; then
-      hide_error_dialogs
       boot="$(timeout 30 adb shell getprop sys.boot_completed 2>/dev/null | tr -d '\r' || true)"
       if [ "$boot" = "1" ]; then
         echo "step: boot complete"
@@ -538,7 +526,7 @@ adb_step shell settings put secure user_setup_complete 1
 adb_step shell settings put global device_provisioned 1
 adb_step shell input keyevent KEYCODE_WAKEUP || true
 adb_step shell wm dismiss-keyguard || true
-quiet_error_dialogs
+close_system_dialogs
 timeout 60 adb install -r "$apk"
 
 component="${app_id}/app.foldcade.PrimaryHomeActivity"
@@ -781,6 +769,7 @@ begin_capture() {
   fi
   capture_step="$name"
   printf '%s\n' "$name" >"$out/current-step"
+  close_system_dialogs
   return 0
 }
 
