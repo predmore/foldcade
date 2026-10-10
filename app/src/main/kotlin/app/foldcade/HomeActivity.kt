@@ -250,7 +250,7 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
         // start is not a Home recall, so without this a Foldcade that is not the default
         // Home keeps the panel for the game and ignores every key.
         displays.panelFor(this, foldcade.store.session.defaultDisplayIsTop)?.let { panel ->
-            foldcade.store.update { it.home(panel) }
+            foldcade.store.update { it.foldcadeResumed(panel) }
         }
         resumed = true
         refreshShellVisible()
