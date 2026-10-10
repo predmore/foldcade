@@ -199,6 +199,7 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
             Effect.OpenConnect -> foldcade.shell.openConnect(foldcade.store.rommOrigin().orEmpty())
             Effect.SaveRommToken -> saveRommToken()
             is Effect.ForgetCredentials -> forget(effect.pluginId)
+            is Effect.ForgetFolder -> foldcade.forgetFolder(effect.uri)
             is Effect.DialogChoice -> onDialog(effect)
             Effect.RequestHome -> requestHome()
             is Effect.OpenAndroidSetting -> openAndroidSetting(effect.setting)

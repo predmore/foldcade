@@ -55,11 +55,24 @@ class SessionStore(private val prefs: SharedPreferences) {
         prefs.edit().putBoolean(KEY_HOME_PROMPTED, true).apply()
     }
 
-    fun setFolderTree(uri: String) {
-        prefs.edit().putString(KEY_FOLDER, uri).apply()
+    /**
+     * Every folder the library reads, in the order they were added. One URI per
+     * line, so a single folder saved before this list reads back as itself.
+     */
+    fun folderTrees(): List<String> =
+        prefs.getString(KEY_FOLDER, null).orEmpty().lines().map { it.trim() }.filter { it.isNotEmpty() }.distinct()
+
+    fun addFolderTree(uri: String) {
+        saveFolderTrees((folderTrees() + uri).distinct())
     }
 
-    fun folderTree(): String? = prefs.getString(KEY_FOLDER, null)?.takeIf { it.isNotBlank() }
+    fun removeFolderTree(uri: String) {
+        saveFolderTrees(folderTrees() - uri)
+    }
+
+    private fun saveFolderTrees(trees: List<String>) {
+        prefs.edit().putString(KEY_FOLDER, trees.joinToString("\n")).apply()
+    }
 
     fun folderGrantPending(): Boolean = !prefs.getBoolean(KEY_FOLDER_EXPLAINED, false)
 

@@ -7,6 +7,7 @@ import android.content.Intent
 import android.content.IntentFilter
 import android.content.pm.PackageManager
 import android.net.Uri
+import android.provider.DocumentsContract
 import android.util.Log
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -14,6 +15,7 @@ import androidx.compose.runtime.setValue
 import app.foldcade.api.plugin.CredentialLookup
 import app.foldcade.api.plugin.CredentialStore
 import app.foldcade.api.plugin.SaveFolderHolder
+import app.foldcade.plugins.gamenative.CatalogGame
 import app.foldcade.plugins.gamenative.GameNativeLibrary
 import app.foldcade.plugins.gamenative.GameNativePlayer
 import app.foldcade.plugins.moonlight.MoonlightCatalog
@@ -27,12 +29,14 @@ import app.foldcade.language.BackgroundMotion
 import app.foldcade.language.Copy
 import app.foldcade.language.EmptyGrid
 import app.foldcade.language.HostScreen
+import app.foldcade.language.LibraryFolder
 import app.foldcade.language.MoonlightDiscoveredApp
 import app.foldcade.language.MoonlightSource
 import app.foldcade.language.SignedInBackend
 import app.foldcade.language.decodeMoonlightApps
 import app.foldcade.language.builtInTheme
 import app.foldcade.localfolder.LocalFolderBackend
+import app.foldcade.localfolder.SteamShortcut
 import app.foldcade.music.HomeMusic
 import app.foldcade.ui.FoldPaint
 import java.io.File
@@ -207,7 +211,7 @@ class FoldcadeApp : Application() {
             } finally {
                 if (!pluginsReady.isCompleted) pluginsReady.complete(Unit)
             }
-            if (!store.folderTree().isNullOrBlank()) reloadFolder()
+            if (store.folderTrees().isNotEmpty()) reloadFolder()
             syncRomm()
         }
     }
@@ -280,7 +284,7 @@ class FoldcadeApp : Application() {
         val library = plugins.library(GameNativeLibrary.ID) as? GameNativeLibrary ?: return
         Shelf.gameNativeInstalled = gameNativePackagePresent()
         try {
-            refreshGameNativeCatalog(this, library, File(filesDir, "gamenative/catalog.txt"))
+            refreshGameNativeCatalog(this, library, File(filesDir, "gamenative/catalog.txt"), steamFileGames)
         } catch (cancelled: CancellationException) {
             throw cancelled
         } catch (_: Exception) {
@@ -384,10 +388,49 @@ class FoldcadeApp : Application() {
         else -> pluginId
     }
 
-    /** Stores the picked tree and scans it. The grid shows that library. */
+    /** Adds the picked tree to the folders the library reads, and scans them all. */
     fun useFolder(uri: Uri) {
-        store.setFolderTree(uri.toString())
+        store.addFolderTree(uri.toString())
         reloadFolder()
+    }
+
+    /** Stops reading [uri]. Its games, and its .steam files, leave the grid. */
+    fun forgetFolder(uri: String) {
+        store.removeFolderTree(uri)
+        try {
+            contentResolver.releasePersistableUriPermission(Uri.parse(uri), Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        } catch (_: SecurityException) {
+            // Already released. The folder is off the list either way.
+        }
+        shell.setFolders(libraryFolders())
+        reloadFolder()
+    }
+
+    /** The folder's own name, such as "roms" for primary:roms. */
+    private fun folderLabel(uri: String): String {
+        val documentId = try {
+            DocumentsContract.getTreeDocumentId(Uri.parse(uri))
+        } catch (_: IllegalArgumentException) {
+            return uri
+        }
+        return documentId.substringAfterLast('/').substringAfterLast(':').ifEmpty { documentId }
+    }
+
+    /** The folders the library reads, named for the Sources rows. */
+    fun libraryFolders(): List<LibraryFolder> = store.folderTrees().map { uri ->
+        LibraryFolder(uri, folderLabel(uri))
+    }
+
+    /** The GameNative games named by .steam files in the folders. They join the GameNative catalog. */
+    @Volatile
+    private var steamFileGames: List<CatalogGame> = emptyList()
+
+    private suspend fun useSteamFiles(found: List<SteamShortcut>) {
+        val games = found.map { CatalogGame(title = it.title, appId = it.appId, gameSource = GameNativePlayer.DEFAULT_SOURCE) }
+        if (games == steamFileGames) return
+        steamFileGames = games
+        refreshGameNative()
+        withContext(Dispatchers.Main.immediate) { shell.noteShelfChanged() }
     }
 
     fun reloadFolder() {
@@ -396,10 +439,14 @@ class FoldcadeApp : Application() {
         pluginLoad.launch {
             pluginsReady.await()
             if (ticket != libraryTicket.get()) return@launch
-            val saved = store.folderTree()
-            if (saved.isNullOrBlank()) {
+            val saved = store.folderTrees()
+            withContext(Dispatchers.Main.immediate) { shell.setFolders(libraryFolders()) }
+            if (saved.isEmpty()) {
+                useSteamFiles(emptyList())
                 withContext(Dispatchers.Main.immediate) {
                     if (ticket != libraryTicket.get()) return@withContext
+                    // The last folder was forgotten: its games leave the board.
+                    shell.dropLibrary(LocalFolderBackend.ID)
                     // RomM's games are on the same board, so no folder is not no library.
                     if (shell.hasLibraryGames()) shell.showCuratedHome() else shell.showNoLibrary()
                 }
@@ -415,14 +462,14 @@ class FoldcadeApp : Application() {
                 return@launch
             }
             val loaded = try {
-                val tree = DocumentTree(contentResolver, Uri.parse(saved))
-                backend.bindTree(tree.root(), tree::children)
+                val forest = FolderForest(contentResolver, saved.map(Uri::parse))
+                backend.bindTree(forest.root(), forest::children)
                 loadPlatforms(
                     plugins,
                     LocalFolderBackend.ID,
                     folderName = backend::folderName,
                     occupiesBoth = { platformOccupiesBoth(plugins, it) },
-                )
+                ).also { useSteamFiles(backend.steamShortcuts()) }
             } catch (cancelled: CancellationException) {
                 throw cancelled
             } catch (fatal: VirtualMachineError) {
@@ -573,7 +620,13 @@ class FoldcadeApp : Application() {
                     )
                     shell.showCuratedHome()
                 }
-                LoadedLibrary.NoPlatforms -> shell.showNoPlatforms(libraryId)
+                // A folder of .steam files has games, just none of its own.
+                LoadedLibrary.NoPlatforms -> if (steamFileGames.isNotEmpty() && libraryId == LocalFolderBackend.ID) {
+                    shell.dropLibrary(libraryId)
+                    shell.showCuratedHome()
+                } else {
+                    shell.showNoPlatforms(libraryId)
+                }
                 LoadedLibrary.Unreachable, null -> shell.showUnreachable(insidePlatform = false)
             }
         }

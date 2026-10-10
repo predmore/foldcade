@@ -104,6 +104,7 @@ object Copy {
     const val addFolder = "Add a folder"
     const val connectRomm = "Connect RomM"
     const val signOut = "Sign out / forget credentials"
+    const val removeFolder = "Remove folder"
     const val clientApiToken = "Client API token"
     const val saveToken = "Save token"
     const val rommTokenHelp = "RomM uses a client API token or a device-code token. Foldcade stores the token and does not store a password."

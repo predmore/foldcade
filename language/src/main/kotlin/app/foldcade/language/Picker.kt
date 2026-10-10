@@ -233,6 +233,7 @@ sealed interface Row {
     data object LaunchTarget : Row
     data class Notice(val id: String) : Row
     data class SignOut(val pluginId: String, val label: String) : Row
+    data class ForgetFolder(val uri: String, val label: String) : Row
     data class PlayerSave(val playerId: String) : Row
     data object AndroidGames : Row
     data object Apps : Row
@@ -323,6 +324,12 @@ data class SignedInBackend(
     val label: String,
 )
 
+/** One folder the library reads. [uri] is its document tree; [label] its own name. */
+data class LibraryFolder(
+    val uri: String,
+    val label: String,
+)
+
 enum class ConnectField {
     Origin,
     Token,
@@ -335,8 +342,14 @@ fun connectFields(): List<ConnectField> = listOf(ConnectField.Origin, ConnectFie
  * Every library feeds the one home grid, so these rows add or remove a source.
  * None of them switches the grid to a different library.
  */
-fun libraryRows(signedIn: List<SignedInBackend> = emptyList()): List<Row> =
-    signedIn.map { Row.SignOut(it.pluginId, it.label) } + listOf(Row.AddFolder, Row.Connect)
+fun libraryRows(
+    signedIn: List<SignedInBackend> = emptyList(),
+    folders: List<LibraryFolder> = emptyList(),
+): List<Row> =
+    // Removing a folder comes after adding one, so the first row is never the one that drops a library.
+    signedIn.map { Row.SignOut(it.pluginId, it.label) } +
+        listOf(Row.AddFolder, Row.Connect) +
+        folders.map { Row.ForgetFolder(it.uri, it.label) }
 
 fun rightRows(
     showLaunchTarget: Boolean,
@@ -360,7 +373,7 @@ fun rightRows(
 fun panelRows(panel: SidePanel, model: PickerModel): List<Row> = when (panel.side) {
     Side.Left -> when (panel.level) {
         PanelLevel.Root -> leftRows()
-        PanelLevel.Library -> libraryRows(model.signedIn)
+        PanelLevel.Library -> libraryRows(model.signedIn, model.folders)
     }
     Side.Right -> rightRows(model.showLaunchTarget, model.notices, model.appActions)
 }
@@ -416,6 +429,7 @@ fun rowText(row: Row, model: PickerModel): RowText = when (row) {
     Row.AddFolder -> RowText(Copy.addFolder)
     Row.Connect -> RowText(Copy.connectRomm)
     is Row.SignOut -> RowText("${Copy.signOut} · ${row.label}")
+    is Row.ForgetFolder -> RowText("${Copy.removeFolder} · ${row.label}")
     Row.LaunchTarget -> RowText(if (model.launchOnBottom) Copy.launchOnBottom else Copy.launchOnTop)
     is Row.Notice -> RowText(model.notices.firstOrNull { it.id == row.id }?.title ?: "")
     is Row.PlayerSave -> {
@@ -465,6 +479,7 @@ sealed interface Effect {
     data object OpenConnect : Effect
     data class DialogChoice(val button: DialogButton, val kind: DialogKind) : Effect
     data class ForgetCredentials(val pluginId: String) : Effect
+    data class ForgetFolder(val uri: String) : Effect
     data object SaveRommToken : Effect
     data object RequestHome : Effect
     data class ChoosePlayerSave(val playerId: String) : Effect
@@ -532,6 +547,8 @@ data class PickerModel(
     val sort: LibrarySort = LibrarySort.Listed,
     val recentFirst: List<Int> = emptyList(),
     val signedIn: List<SignedInBackend> = emptyList(),
+    /** The folders the library reads. Each has a row to remove it. */
+    val folders: List<LibraryFolder> = emptyList(),
     val connectOrigin: String = "",
     val connectIndex: Int = 0,
     val connectScreen: HostScreen? = null,
@@ -1096,6 +1113,7 @@ private fun activateRow(
             connectIndex = 0,
         ) to Effect.OpenConnect
         is Row.SignOut -> model.copy(panel = null, focus = panel.grid) to Effect.ForgetCredentials(row.pluginId)
+        is Row.ForgetFolder -> model.copy(panel = null, focus = panel.grid) to Effect.ForgetFolder(row.uri)
         Row.LaunchTarget -> model.copy(panel = panel, launchOnBottom = !model.launchOnBottom) to Effect.CycleLaunchTarget
         is Row.Notice -> model.copy(panel = panel, notices = model.notices.filter { it.id != row.id }) to null
         is Row.PlayerSave -> model.copy(panel = null, focus = panel.grid) to Effect.ChoosePlayerSave(row.playerId)

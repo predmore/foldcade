@@ -40,6 +40,7 @@ import app.foldcade.language.MusicTrack
 import app.foldcade.language.offeredMusicTracks
 import app.foldcade.language.selectedMusicTrack
 import app.foldcade.language.HostScreen
+import app.foldcade.language.LibraryFolder
 import app.foldcade.language.Meaning
 import app.foldcade.language.MotionSpeed
 import app.foldcade.language.Metrics
@@ -503,6 +504,10 @@ class ShellController(
 
     fun setSignedIn(backends: List<SignedInBackend>) {
         model = model.copy(signedIn = backends)
+    }
+
+    fun setFolders(folders: List<LibraryFolder>) {
+        if (model.folders != folders) model = model.copy(folders = folders)
     }
 
     /** Leaves the connect form, as after a server accepts the token. */

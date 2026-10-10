@@ -556,6 +556,30 @@ class FolderScanTest {
             scan(root).games,
         )
     }
+
+    @Test
+    fun steamFilesBecomeShortcutsNotGames() {
+        val root = dir(
+            "content://steam",
+            "Steam",
+            listOf(
+                file("content://steam/aoe", "Age of Empires IV_ Anniversary Edition.steam", "1466860"),
+                file("content://steam/hades", "Hades II.steam", "1145350\n"),
+                file("content://steam/url", "Diablo® IV.steam", "steam://rungameid/2344520"),
+                file("content://steam/empty", "Nothing.steam", ""),
+            ),
+        )
+        val scanned = scan(root)
+        assertEquals(emptyList<FolderGame>(), scanned.games)
+        assertEquals(
+            listOf(
+                SteamShortcut("content://steam/aoe", "Age of Empires IV: Anniversary Edition", 1466860),
+                SteamShortcut("content://steam/url", "Diablo® IV", 2344520),
+                SteamShortcut("content://steam/hades", "Hades II", 1145350),
+            ),
+            scanned.steamShortcuts,
+        )
+    }
 }
 
 private class Node(

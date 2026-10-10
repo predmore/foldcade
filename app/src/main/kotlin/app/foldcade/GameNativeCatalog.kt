@@ -22,14 +22,24 @@ import kotlin.coroutines.cancellation.CancellationException
  * Android exposes another app's shortcuts to the default launcher. A security
  * failure leaves the list already stored. This does not read GameNative's
  * database and does not request every installed package.
+ *
+ * [steamFiles] are the games .steam files in the library folders name. They
+ * join the catalog but are not stored with it, so a deleted file takes its
+ * game off the grid at the next scan.
  */
-fun refreshGameNativeCatalog(context: Context, library: GameNativeLibrary, file: File) {
+fun refreshGameNativeCatalog(
+    context: Context,
+    library: GameNativeLibrary,
+    file: File,
+    steamFiles: List<CatalogGame> = emptyList(),
+) {
     val stored = readCatalog(file)
     val shortcuts = readGameNativeShortcuts(context, GameNativePlayer.PACKAGES)
-    library.confirm(stored + shortcuts)
+    library.confirm(stored + shortcuts + steamFiles)
     Shelf.catalog = library.confirmed().map { it.toShelfGame() }
+    val kept = (stored + shortcuts).map { it.remoteKey }.toSet()
     try {
-        writeCatalog(file, library.confirmed())
+        writeCatalog(file, library.confirmed().filter { it.remoteKey in kept })
     } catch (cancelled: CancellationException) {
         throw cancelled
     } catch (_: Exception) {

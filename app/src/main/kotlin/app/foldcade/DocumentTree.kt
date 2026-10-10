@@ -12,7 +12,8 @@ import java.nio.charset.StandardCharsets
 /**
  * Children of a folder the user picked with the system document-tree picker.
  * Document URIs only. This type does not read a filesystem path.
- * An .m3u body is read so the scan can hide the discs that playlist names.
+ * An .m3u body is read so the scan can hide the discs that playlist names,
+ * and a .steam body for the app id it holds.
  */
 internal class DocumentTree(
     private val resolver: ContentResolver,
@@ -70,19 +71,22 @@ internal class DocumentTree(
             documentUri = document.toString(),
             displayName = displayName,
             mimeType = mimeType,
-            text = playlistText(document, displayName, mimeType),
+            text = bodyText(document, displayName, mimeType),
         )
 
-    /** Playlist body, or null when this document is not an .m3u or cannot be read. */
-    private fun playlistText(document: Uri, displayName: String, mimeType: String): String? {
+    /** An .m3u or .steam body, or null for any other document or one that cannot be read. */
+    private fun bodyText(document: Uri, displayName: String, mimeType: String): String? {
         if (mimeType == DOCUMENT_DIRECTORY_MIME || mimeType == "inode/directory") return null
         val name = displayName.trim()
-        if (name.isEmpty() || name.startsWith('.') || !name.endsWith(".m3u", ignoreCase = true)) {
-            return null
+        if (name.isEmpty() || name.startsWith('.')) return null
+        val limit = when {
+            name.endsWith(".m3u", ignoreCase = true) -> MAX_PLAYLIST_BYTES
+            name.endsWith(".steam", ignoreCase = true) -> MAX_STEAM_BYTES
+            else -> return null
         }
         return try {
             resolver.openInputStream(document)?.use { stream ->
-                val bytes = stream.readNBytes(MAX_PLAYLIST_BYTES)
+                val bytes = stream.readNBytes(limit)
                 if (bytes.isEmpty()) null else String(bytes, StandardCharsets.UTF_8)
             }
         } catch (_: IOException) {
@@ -113,3 +117,38 @@ internal class DocumentTree(
 }
 
 private const val MAX_PLAYLIST_BYTES: Int = 256 * 1024
+private const val MAX_STEAM_BYTES: Int = 256
+
+/**
+ * Several picked folders scanned as one tree. With more than one, a root that
+ * is not a document holds each folder's root. Every other document belongs to
+ * the tree its URI starts with.
+ */
+internal class FolderForest(resolver: ContentResolver, trees: List<Uri>) {
+    private val parts = trees.map { tree -> tree.toString() to DocumentTree(resolver, tree) }
+
+    fun root(): FolderEntry = parts.singleOrNull()?.second?.root()
+        ?: FolderEntry(documentUri = FOREST_ROOT, displayName = "", mimeType = DOCUMENT_DIRECTORY_MIME)
+
+    fun children(parent: FolderEntry): List<FolderEntry> {
+        if (parent.documentUri == FOREST_ROOT) {
+            // A folder that is gone or no longer granted drops out. The rest still scan.
+            return parts.mapNotNull { (_, tree) ->
+                try {
+                    tree.root()
+                } catch (_: PluginException) {
+                    null
+                } catch (_: SecurityException) {
+                    null
+                }
+            }
+        }
+        val owner = parts.firstOrNull { (prefix, _) -> parent.documentUri.startsWith("$prefix/document/") }
+            ?: throw PluginException.Unavailable("Couldn’t reach the library")
+        return owner.second.children(parent)
+    }
+
+    private companion object {
+        const val FOREST_ROOT = "foldcade:folders"
+    }
+}

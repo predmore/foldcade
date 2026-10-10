@@ -77,6 +77,9 @@ class LocalFolderBackend(
         }
     }
 
+    /** The `.steam` files the last finished scan found. Empty before one has run. */
+    fun steamShortcuts(): List<SteamShortcut> = stored?.scan?.steamShortcuts.orEmpty()
+
     private val gate = Mutex()
     private val remembered = HashMap<String, Map<String, RememberedSave>>()
 
