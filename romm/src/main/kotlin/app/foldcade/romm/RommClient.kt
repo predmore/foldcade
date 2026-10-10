@@ -49,8 +49,8 @@ import kotlin.coroutines.resumeWithException
  * It does not implement a library backend or a metadata provider.
  *
  * This is the app's only HTTP stack. Cleartext is an explicit LAN opt-in:
- * an http [origin] must be a loopback, private, or link-local address, or a
- * localhost, `.local`, or `.home.arpa` name. The network-security config
+ * an http [origin] must be a loopback, private, link-local, or Tailscale address,
+ * or a localhost, `.local`, `.home.arpa`, or `.ts.net` name. The network-security config
  * cannot name a dynamic LAN address, so it still permits cleartext, and
  * [RommCleartextInterceptor] rejects any other http request, including redirects.
  * A same-scheme redirect to another origin is not followed, so the bearer
