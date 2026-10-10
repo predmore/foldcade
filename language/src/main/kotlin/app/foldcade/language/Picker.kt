@@ -242,6 +242,7 @@ sealed interface Row {
     data object AllLibrary : Row
     data object AddNewGames : Row
     data object Artwork : Row
+    data object ArtKey : Row
     data object PinApp : Row
     data object MoveApp : Row
     data object HideApp : Row
@@ -337,7 +338,16 @@ enum class ConnectField {
     Save,
 }
 
-fun connectFields(): List<ConnectField> = listOf(ConnectField.Origin, ConnectField.Token, ConnectField.Save)
+/** What the connect form saves: a RomM server and token, or a SteamGridDB key. */
+enum class ConnectKind {
+    Romm,
+    ArtKey,
+}
+
+fun connectFields(kind: ConnectKind = ConnectKind.Romm): List<ConnectField> = when (kind) {
+    ConnectKind.Romm -> listOf(ConnectField.Origin, ConnectField.Token, ConnectField.Save)
+    ConnectKind.ArtKey -> listOf(ConnectField.Token, ConnectField.Save)
+}
 
 /**
  * Every library feeds the one home grid, so these rows add or remove a source.
@@ -445,6 +455,7 @@ fun rowText(row: Row, model: PickerModel): RowText = when (row) {
     Row.AllLibrary -> RowText(Copy.allLibrary)
     Row.AddNewGames -> RowText(Copy.addNewGames, if (model.addNewToHome) Copy.addNewOn else Copy.addNewOff)
     Row.Artwork -> RowText(Copy.artwork, if (model.artwork) Copy.artworkOn else Copy.artworkOff)
+    Row.ArtKey -> RowText(Copy.steamGridDb, if (model.artKeySaved) Copy.forgetKey else Copy.addKey)
     Row.PinApp -> RowText(if (model.appActions?.favorite == true) Copy.unpin else Copy.pin)
     Row.MoveApp -> RowText(if (model.appActions?.onGamesShelf == true) Copy.moveToApps else Copy.moveToGames)
     Row.HideApp -> RowText(Copy.hideApp)
@@ -479,6 +490,9 @@ sealed interface Effect {
     data object CycleLaunchTarget : Effect
     data object AddFolder : Effect
     data object OpenConnect : Effect
+    data object OpenArtKey : Effect
+    data object SaveArtKey : Effect
+    data object ForgetArtKey : Effect
     data class DialogChoice(val button: DialogButton, val kind: DialogKind) : Effect
     data class ForgetCredentials(val pluginId: String) : Effect
     data class ForgetFolder(val uri: String) : Effect
@@ -582,6 +596,9 @@ data class PickerModel(
     val addNewToHome: Boolean = true,
     /** Download game art from public sources. Off sends nothing; RomM's own covers still show. */
     val artwork: Boolean = true,
+    /** A SteamGridDB key is saved. */
+    val artKeySaved: Boolean = false,
+    val connectKind: ConnectKind = ConnectKind.Romm,
 )
 
 fun reduce(
@@ -614,7 +631,7 @@ fun reduce(
         return coerced.copy(dialog = cleared) to chosen
     }
     if (coerced.connectOpen) {
-        val fields = connectFields()
+        val fields = connectFields(coerced.connectKind)
         val index = coerced.connectIndex.coerceIn(0, fields.lastIndex)
         val field = fields[index]
         return when (meaning) {
@@ -625,7 +642,7 @@ fun reduce(
             Meaning.MoveUp -> coerced.copy(connectIndex = (index - 1).coerceAtLeast(0)) to null
             Meaning.MoveDown -> coerced.copy(connectIndex = (index + 1).coerceAtMost(fields.lastIndex)) to null
             Meaning.Activate -> when (field) {
-                ConnectField.Save -> coerced to Effect.SaveRommToken
+                ConnectField.Save -> coerced to if (coerced.connectKind == ConnectKind.ArtKey) Effect.SaveArtKey else Effect.SaveRommToken
                 ConnectField.Origin, ConnectField.Token -> coerced.copy(connectIndex = index) to null
             }
             Meaning.LeftPanel, Meaning.RightPanel ->
@@ -852,6 +869,7 @@ private fun activate(model: PickerModel, screen: HostScreen): Pair<PickerModel, 
                         connectOpen = true,
                         connectScreen = screen,
                         connectIndex = 0,
+                        connectKind = ConnectKind.Romm,
                     ) to Effect.OpenConnect
                 }
             }
@@ -1115,6 +1133,7 @@ private fun activateRow(
             connectOpen = true,
             connectScreen = screen,
             connectIndex = 0,
+            connectKind = ConnectKind.Romm,
         ) to Effect.OpenConnect
         is Row.SignOut -> model.copy(panel = null, focus = panel.grid) to Effect.ForgetCredentials(row.pluginId)
         is Row.ForgetFolder -> model.copy(panel = null, focus = panel.grid) to Effect.ForgetFolder(row.uri)
@@ -1128,6 +1147,18 @@ private fun activateRow(
         Row.AllLibrary -> model.copy(panel = null, focus = panel.grid, arranging = false, hold = null) to Effect.OpenAll
         Row.AddNewGames -> model.copy(panel = panel, addNewToHome = !model.addNewToHome) to Effect.ToggleAddNew
         Row.Artwork -> model.copy(panel = panel, artwork = !model.artwork) to null
+        Row.ArtKey -> if (model.artKeySaved) {
+            model.copy(panel = panel) to Effect.ForgetArtKey
+        } else {
+            model.copy(
+                panel = null,
+                focus = panel.grid,
+                connectOpen = true,
+                connectScreen = screen,
+                connectIndex = 0,
+                connectKind = ConnectKind.ArtKey,
+            ) to Effect.OpenArtKey
+        }
         Row.PinApp -> model to Effect.PinApp
         Row.MoveApp -> model.copy(panel = null, focus = panel.grid) to Effect.MoveApp
         Row.HideApp -> model.copy(panel = null, focus = panel.grid) to Effect.HideApp

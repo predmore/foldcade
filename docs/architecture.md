@@ -12,7 +12,7 @@ Foldcade is an Android launcher for the AYN Thor. The shell is Compose. Plugins 
 | `:host` | `PluginHost`. Loads entries and calls library and metadata I/O off the main thread. |
 | `:net` | The only HTTP stack. Builds every OkHttp client; `PublicHttps` reaches a fixed list of public hosts over HTTPS only. `HttpStackGuardTest` fails a client built anywhere else. |
 | `:romm` | RomM HTTP client, on a client from `:net`. |
-| `:artwork` | Game art from public sources: Steam's CDN, then libretro's thumbnails. Keeps what it found, and its misses, on disk. Not a plugin. The Game art setting turns it off. |
+| `:artwork` | Game art from public sources: Steam's CDN, then libretro's thumbnails, then SteamGridDB with the user's key. Keeps what it found, and its misses, on disk. Not a plugin. The Game art setting turns it off. |
 | `:plugins:emulators` | Standalone emulators for the other catalog platforms. One screen. Saves stay in the emulator. |
 | `:plugins:gamenative` | PC player and library for GameNative. Saves stay in GameNative. |
 | `:plugins:local-folder` | Library backed by a folder on the device, plus the platform ids that folder scan uses. |

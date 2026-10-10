@@ -12,6 +12,7 @@ import android.util.Log
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
+import app.foldcade.api.plugin.Credential
 import app.foldcade.api.plugin.CredentialLookup
 import app.foldcade.api.plugin.CredentialStore
 import app.foldcade.api.plugin.SaveFolderHolder
@@ -30,6 +31,7 @@ import app.foldcade.artwork.ArtFinder
 import app.foldcade.artwork.ArtIndex
 import app.foldcade.artwork.LibretroThumbnails
 import app.foldcade.artwork.PublicArtHttp
+import app.foldcade.artwork.SteamGridDb
 import app.foldcade.artwork.SteamStoreArt
 import app.foldcade.net.PublicHttps
 import coil3.ImageLoader
@@ -84,21 +86,30 @@ class FoldcadeApp : Application() {
     /** Public art hosts over HTTPS only. RomM has its own client. */
     private val publicArt: PublicHttps by lazy { PublicHttps(ART_HOSTS) }
 
+    /** The user's SteamGridDB key, read from the credential store at start. Null when none is saved. */
+    @Volatile
+    var steamGridDbKey: String? = null
+
     /**
      * Art from public sources: Steam's CDN for Steam games, then libretro's
-     * thumbnails for ROMs. Results and misses are kept in filesDir, listings and
-     * images in cacheDir. Nothing is sent while the Game art setting is off.
+     * thumbnails for ROMs, then SteamGridDB when a key is saved. Results and
+     * misses are kept in filesDir, listings and images in cacheDir. Nothing is
+     * sent while the Game art setting is off.
      */
     val art: ArtFinder by lazy {
         val http = PublicArtHttp(publicArt)
         val sources = listOf(
             SteamStoreArt(http),
             LibretroThumbnails(http, File(cacheDir, "art/libretro")),
+            SteamGridDb(http) { steamGridDbKey },
         )
         ArtFinder({ sources }, ArtIndex(File(filesDir, "art/index.tsv"))) { shell.model.artwork }
     }
 
     private val artBytes: ArtBytes by lazy { ArtBytes(File(cacheDir, "art/images"), PublicArtHttp(publicArt)) }
+
+    /** Whether SteamGridDB accepts [key]. Null when it cannot be reached. */
+    suspend fun checkSteamGridDbKey(key: String): Boolean? = SteamGridDb.accepts(PublicArtHttp(publicArt), key)
 
     /** Cover addresses: the metadata providers first, then the public sources. */
     val covers: CoverArt by lazy { CoverArt(plugins, art) }
@@ -301,10 +312,14 @@ class FoldcadeApp : Application() {
             } catch (_: Exception) {
                 emptySet()
             }
-            ids.map { SignedInBackend(it, backendLabel(it)) }
+            // The SteamGridDB key is an art source, not a library to sign out of.
+            ids.filter { it != SteamGridDb.CREDENTIAL_ID }.map { SignedInBackend(it, backendLabel(it)) }
         }
+        val artKey = lookupOrUnreadable(credentials, SteamGridDb.CREDENTIAL_ID, SteamGridDb.CREDENTIAL_KEY)
+        steamGridDbKey = ((artKey as? CredentialLookup.Present)?.credential as? Credential.ApiToken)?.value
         val recovery = signedInRecovery(romm, stored)
         withContext(Dispatchers.Main.immediate) {
+            shell.setArtKeySaved(steamGridDbKey != null)
             shell.applyRecovery(recovery)
             publishRomm()
         }

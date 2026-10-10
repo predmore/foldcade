@@ -33,6 +33,7 @@ import app.foldcade.api.plugin.Player
 import app.foldcade.api.plugin.PluginException
 import app.foldcade.api.plugin.SaveFolderHolder
 import app.foldcade.api.plugin.StartDisplay
+import app.foldcade.artwork.SteamGridDb
 import app.foldcade.language.Copy
 import app.foldcade.language.DialogButton
 import app.foldcade.language.DialogKind
@@ -198,6 +199,9 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
             Effect.ToggleAddNew -> foldcade.shell.applyHomeAddNew(foldcade.shell.model.addNewToHome)
             Effect.OpenConnect -> foldcade.shell.openConnect(foldcade.store.rommOrigin().orEmpty())
             Effect.SaveRommToken -> saveRommToken()
+            Effect.OpenArtKey -> foldcade.shell.openArtKey()
+            Effect.SaveArtKey -> saveArtKey()
+            Effect.ForgetArtKey -> forgetArtKey()
             is Effect.ForgetCredentials -> forget(effect.pluginId)
             is Effect.ForgetFolder -> foldcade.forgetFolder(effect.uri)
             is Effect.DialogChoice -> onDialog(effect)
@@ -956,6 +960,70 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
             } else {
                 withContext(Dispatchers.Main.immediate) {
                     foldcade.shell.showSetupHint(result.hint)
+                }
+            }
+        }
+    }
+
+    /**
+     * Checks the typed SteamGridDB key with one search, then keeps it in the
+     * credential store. A refused or unreachable key leaves the form open with a note.
+     */
+    private fun saveArtKey() {
+        val key = foldcade.shell.connectToken.trim()
+        if (key.isEmpty()) return
+        foldcade.scope.launch {
+            val accepted = foldcade.checkSteamGridDbKey(key)
+            if (accepted != true) {
+                withContext(Dispatchers.Main.immediate) {
+                    foldcade.shell.showConnectNote(if (accepted == false) Copy.artKeyRefused else Copy.artKeyUnreachable)
+                }
+                return@launch
+            }
+            foldcade.editCredentials {
+                val saved = try {
+                    foldcade.credentials.put(
+                        SteamGridDb.CREDENTIAL_ID,
+                        SteamGridDb.CREDENTIAL_KEY,
+                        Credential.ApiToken(key),
+                    )
+                    true
+                } catch (cancelled: CancellationException) {
+                    throw cancelled
+                } catch (_: Exception) {
+                    false
+                }
+                if (saved) {
+                    foldcade.steamGridDbKey = key
+                    // Games the other sources missed are asked again, now with SteamGridDB.
+                    foldcade.art.forgetMisses()
+                }
+                withContext(Dispatchers.Main.immediate) {
+                    if (saved) {
+                        foldcade.shell.setArtKeySaved(true)
+                        foldcade.shell.closeConnect()
+                    } else {
+                        foldcade.shell.showConnectNote(Copy.artKeyUnreachable)
+                    }
+                }
+            }
+        }
+    }
+
+    private fun forgetArtKey() {
+        foldcade.scope.launch {
+            foldcade.editCredentials {
+                val forgotten = try {
+                    foldcade.credentials.forgetPlugin(SteamGridDb.CREDENTIAL_ID)
+                    true
+                } catch (cancelled: CancellationException) {
+                    throw cancelled
+                } catch (_: Exception) {
+                    false
+                }
+                if (forgotten) foldcade.steamGridDbKey = null
+                withContext(Dispatchers.Main.immediate) {
+                    if (forgotten) foldcade.shell.setArtKeySaved(false)
                 }
             }
         }

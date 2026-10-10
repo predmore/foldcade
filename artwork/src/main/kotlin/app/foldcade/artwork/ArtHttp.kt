@@ -17,6 +17,7 @@ class ArtResponse(val status: Int, val body: ByteArray)
 val ART_HOSTS: Set<String> = setOf(
     LibretroThumbnails.HOST,
     SteamStoreArt.HOST,
+    SteamGridDb.HOSTS,
 )
 
 class PublicArtHttp(private val http: PublicHttps) : ArtHttp {

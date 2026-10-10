@@ -70,6 +70,34 @@ class SettingsPageTest {
     }
 
     @Test
+    fun theSteamGridDbRowAsksForAKeyThenForgetsIt() {
+        val (form, open) = reduce(home.onSetting(Row.ArtKey), Meaning.Activate)
+        assertEquals(Effect.OpenArtKey, open)
+        assertNull(form.settings)
+        assertTrue(form.connectOpen)
+        assertEquals(ConnectKind.ArtKey, form.connectKind)
+        // The key form has no server field: the key, then Save.
+        assertEquals(listOf(ConnectField.Token, ConnectField.Save), connectFields(form.connectKind))
+        val onSave = form.copy(connectIndex = 1)
+        assertEquals(Effect.SaveArtKey, reduce(onSave, Meaning.Activate).second)
+
+        val saved = home.copy(artKeySaved = true).onSetting(Row.ArtKey)
+        val (forgot, effect) = reduce(saved, Meaning.Activate)
+        assertEquals(Effect.ForgetArtKey, effect)
+        assertTrue(forgot.settings != null)
+        assertFalse(forgot.connectOpen)
+    }
+
+    @Test
+    fun theRommFormStaysRommAfterTheKeyForm() {
+        val leftOver = home.copy(connectKind = ConnectKind.ArtKey)
+        val (connect, _) = reduce(leftOver.onSetting(Row.Connect), Meaning.Activate)
+        assertEquals(ConnectKind.Romm, connect.connectKind)
+        val onSave = connect.copy(connectIndex = 2)
+        assertEquals(Effect.SaveRommToken, reduce(onSave, Meaning.Activate).second)
+    }
+
+    @Test
     fun aRowThatLeavesTheMenuClosesThePage() {
         var model = openFromMenu()
         val library = settingsCategories(model).indexOf(SettingsCategory.Library)
