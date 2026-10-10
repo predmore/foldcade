@@ -2,7 +2,6 @@ package app.foldcade.plugins.romm
 
 import app.foldcade.romm.DeviceAuthChallenge
 import app.foldcade.romm.DeviceTokenPoll
-import app.foldcade.romm.FlushResult
 import app.foldcade.romm.Heartbeat
 import app.foldcade.romm.LocalSave
 import app.foldcade.romm.PlatformSummary
@@ -12,7 +11,7 @@ import app.foldcade.romm.RomQuery
 import app.foldcade.romm.RomSummary
 import app.foldcade.romm.RommClient
 import app.foldcade.romm.SaveSyncReport
-import app.foldcade.romm.SaveUploadQueue
+import app.foldcade.romm.SaveLedger
 import app.foldcade.romm.SyncOperation
 import java.nio.file.Path
 
@@ -32,21 +31,23 @@ internal interface RommOps : AutoCloseable {
         cacheRoot: Path,
         fileIds: List<Long>,
         expectedSize: Long?,
+        expectedMd5: String?,
     ): Path
 
     suspend fun registerDevice(
         stored: RegisteredDevice?,
         name: String,
         clientVersion: String,
+        hostname: String?,
     ): RegisteredDevice
 
     suspend fun syncSaves(
         deviceId: String,
         saves: List<LocalSave>,
         romIds: List<Long>,
-        emulators: List<String>,
+        emulators: List<String>?,
         destination: (SyncOperation) -> Path,
-        queue: SaveUploadQueue,
+        ledger: SaveLedger,
     ): SaveSyncReport
 
     suspend fun beginDeviceAuth(
@@ -58,8 +59,6 @@ internal interface RommOps : AutoCloseable {
     suspend fun pollDeviceToken(deviceCode: String): DeviceTokenPoll
 
     fun verificationUrl(challenge: DeviceAuthChallenge): String
-
-    suspend fun flushUploads(queue: SaveUploadQueue): FlushResult
 
     suspend fun artwork(uri: String): ByteArray
 }
@@ -79,19 +78,24 @@ internal class ClientRommOps(private val client: RommClient) : RommOps {
         cacheRoot: Path,
         fileIds: List<Long>,
         expectedSize: Long?,
-    ) = client.downloadRom(romId, fileName, cacheRoot, fileIds, expectedSize)
+        expectedMd5: String?,
+    ) = client.downloadRom(romId, fileName, cacheRoot, fileIds, expectedSize, expectedMd5)
 
-    override suspend fun registerDevice(stored: RegisteredDevice?, name: String, clientVersion: String) =
-        client.registerDevice(stored, name, clientVersion)
+    override suspend fun registerDevice(
+        stored: RegisteredDevice?,
+        name: String,
+        clientVersion: String,
+        hostname: String?,
+    ) = client.registerDevice(stored, name, clientVersion, hostname)
 
     override suspend fun syncSaves(
         deviceId: String,
         saves: List<LocalSave>,
         romIds: List<Long>,
-        emulators: List<String>,
+        emulators: List<String>?,
         destination: (SyncOperation) -> Path,
-        queue: SaveUploadQueue,
-    ) = client.syncSaves(deviceId, saves, romIds, emulators, destination, queue)
+        ledger: SaveLedger,
+    ) = client.syncSaves(deviceId, saves, romIds, emulators, destination, ledger)
 
     override suspend fun beginDeviceAuth(clientDeviceIdentifier: String, name: String, clientVersion: String) =
         client.beginDeviceAuth(clientDeviceIdentifier, name, clientVersion)
@@ -99,8 +103,6 @@ internal class ClientRommOps(private val client: RommClient) : RommOps {
     override suspend fun pollDeviceToken(deviceCode: String) = client.pollDeviceToken(deviceCode)
 
     override fun verificationUrl(challenge: DeviceAuthChallenge) = client.verificationUrl(challenge)
-
-    override suspend fun flushUploads(queue: SaveUploadQueue) = queue.flush(client)
 
     override suspend fun artwork(uri: String) = client.artwork(uri)
 

@@ -36,4 +36,4 @@ const val PLUGIN_API_VERSION = 1
  * Additive revision of [PLUGIN_API_VERSION].
  * The host loads an older or equal plugin minor and rejects a newer one.
  */
-const val PLUGIN_API_MINOR = 2
+const val PLUGIN_API_MINOR = 3

@@ -17,7 +17,7 @@ class RommArtworkTest {
 
     @Test
     fun oneClientWithNoTokenServesEveryLoadOnAnOrigin() = runBlocking {
-        val wiring = RommWiring("http://romm.example", RommTokenSource { "rmm_test" }, cache)
+        val wiring = RommWiring("http://romm.example", RommTokenSource { "rmm_test" }, cache, cache.resolve("data"))
         val tokens = mutableListOf<String?>()
         var opened = 0
         wiring.open = { _, token ->
@@ -39,7 +39,7 @@ class RommArtworkTest {
         var origin = "http://one.example"
         var closed = 0
         val artwork = RommArtwork {
-            RommWiring(origin, RommTokenSource { null }, cache).apply {
+            RommWiring(origin, RommTokenSource { null }, cache, cache.resolve("data")).apply {
                 open = { _, _ -> ScriptedOps().apply { onArtwork = { ByteArray(1) }; onClose = { closed += 1 } } }
             }
         }

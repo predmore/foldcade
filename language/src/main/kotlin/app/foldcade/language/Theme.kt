@@ -135,6 +135,8 @@ object Copy {
     const val libraryUnreachable = "Couldn’t reach the library"
     const val downloadFailed = "Couldn’t download"
     const val downloadFailedBody = "Check that your RomM server is reachable, then try again."
+    const val saveNotPlaced = "Couldn’t load the save for"
+    const val saveNotPlacedBody = "The game didn’t start, so it won’t play from an old save. Check the player’s save folder, then try again."
     const val tryAgain = "Try again"
     const val noPlatforms = "This library has no platforms"
     const val noGames = "No games"

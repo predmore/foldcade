@@ -42,4 +42,18 @@ class ContentUriTest {
         // A URI for the release authority is not this host's.
         assertNull(adapter.pathFor(uri.replace("app.foldcade.debug.", "app.foldcade.")))
     }
+
+    @Test
+    fun savesUnderTheDataRootMapToTheirOwnPrefix() {
+        val cache = Files.createTempDirectory("romm-cache")
+        val data = Files.createTempDirectory("romm-data")
+        val adapter = CachePathContentUri(cache, dataRoot = data)
+        val save = data.resolve("saves/1234/slot-sav/sav.sav")
+        val uri = adapter.uriFor(save)
+        assertEquals("content://app.foldcade.romm.cache/romm-data/saves/1234/slot-sav/sav.sav", uri)
+        assertEquals(save.toAbsolutePath().normalize(), adapter.pathFor(uri)!!.toAbsolutePath().normalize())
+        assertTrue(adapter.uriFor(cache.resolve("roms/1/a.nds")).startsWith("content://app.foldcade.romm.cache/romm/"))
+        assertNull(CachePathContentUri(cache).pathFor(uri))
+        assertNull(adapter.pathFor("content://app.foldcade.romm.cache/romm-data/../device.json"))
+    }
 }

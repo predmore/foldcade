@@ -73,7 +73,7 @@ class RommTokenSourceTest {
         val store = MemoryCredentialStore()
         val cache = Files.createTempDirectory("romm-cache")
         try {
-            publishRommWiring("https://romm.example", store, cache)
+            publishRommWiring("https://romm.example", store, cache, dataRoot = cache.resolve("data"))
             val wiring = RommPlugins.wiring
             check(wiring != null)
             assertNull(wiring.tokenSource.accessToken())
@@ -83,7 +83,7 @@ class RommTokenSourceTest {
                 Credential.ApiToken("rmm_after"),
             )
             assertEquals("rmm_after", wiring.tokenSource.accessToken())
-            publishRommWiring(null, store, cache)
+            publishRommWiring(null, store, cache, dataRoot = cache.resolve("data"))
             assertNull(RommPlugins.wiring)
             assertEquals(
                 "rmm_after",
@@ -104,21 +104,21 @@ class RommTokenSourceTest {
         val nes = platform("nes")
         val snes = platform("snes")
         try {
-            publishRommWiring("https://romm.example", store, cache, listOf(nes, snes))
+            publishRommWiring("https://romm.example", store, cache, listOf(nes, snes), dataRoot = cache.resolve("data"))
             val installed = RommPlugins.wiring
             check(installed != null)
             installed.rememberedDevice = RegisteredDevice("device-1", "0.1.0")
-            publishRommWiring("https://romm.example", store, cache, listOf(nes, snes))
+            publishRommWiring("https://romm.example", store, cache, listOf(nes, snes), dataRoot = cache.resolve("data"))
             assertSame(installed, RommPlugins.wiring)
             assertEquals(listOf(nes, snes), installed.platforms)
-            publishRommWiring("https://romm.example", store, cache, listOf(snes, nes))
+            publishRommWiring("https://romm.example", store, cache, listOf(snes, nes), dataRoot = cache.resolve("data"))
             val reordered = RommPlugins.wiring
             check(reordered != null)
             assertTrue(reordered !== installed)
             assertEquals(listOf(snes, nes), reordered.platforms)
-            publishRommWiring("  ", store, cache, listOf(snes, nes))
+            publishRommWiring("  ", store, cache, listOf(snes, nes), dataRoot = cache.resolve("data"))
             assertNull(RommPlugins.wiring)
-            publishRommWiring(null, store, cache, emptyList())
+            publishRommWiring(null, store, cache, emptyList(), dataRoot = cache.resolve("data"))
             assertNull(RommPlugins.wiring)
         } finally {
             RommPlugins.clear()
@@ -127,7 +127,7 @@ class RommTokenSourceTest {
     }
 
     @Test
-    fun publishReadsOriginThenPlatformsThenCache() {
+    fun publishReadsOriginThenPlatformsThenCacheThenData() {
         val seen = mutableListOf<String>()
         val request = readRommPublish(
             origin = {
@@ -142,10 +142,15 @@ class RommTokenSourceTest {
                 seen += "cache"
                 Path.of("cache")
             },
+            dataRoot = {
+                seen += "data"
+                Path.of("data")
+            },
         )
-        assertEquals(listOf("origin", "platforms", "cache"), seen)
+        assertEquals(listOf("origin", "platforms", "cache", "data"), seen)
         assertEquals("https://romm.example", request.origin)
         assertEquals(Path.of("cache"), request.cacheRoot)
+        assertEquals(Path.of("data"), request.dataRoot)
     }
 
     @Test
@@ -161,7 +166,7 @@ class RommTokenSourceTest {
                     entered.countDown()
                     check(release.await(2, TimeUnit.SECONDS))
                 }
-                RommPublishRequest(seen, emptyList(), Path.of("cache"))
+                RommPublishRequest(seen, emptyList(), Path.of("cache"), Path.of("data"))
             },
             apply = { installed += it.origin },
         )

@@ -113,9 +113,11 @@ class PluginContractTest {
         assertTrue(aliases.isDefault)
         assertTrue(IdlePlatform().aliases.isEmpty())
         assertEquals(1, PLUGIN_API_VERSION)
-        assertEquals(2, PLUGIN_API_MINOR)
+        assertEquals(3, PLUGIN_API_MINOR)
         val bind = PluginEntry::class.java.methods.single { it.name == "bind" }
         assertTrue(bind.isDefault)
+        val saveFileName = Player::class.java.methods.single { it.name == "saveFileName" }
+        assertTrue(saveFileName.isDefault)
     }
 
     @Test

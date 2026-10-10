@@ -60,6 +60,8 @@ data class RomFileSummary(
     val id: Long,
     val fileName: String,
     val fileSizeBytes: Long,
+    /** Lowercase hex MD5 RomM computed for this file, when it has one. */
+    val md5Hash: String? = null,
 )
 
 data class RomSummary(
@@ -129,10 +131,11 @@ data class NegotiateResult(
     val serverVersion: String,
 )
 
+/** [archivedSaveId] is null when the same local bytes were already archived by an earlier try. */
 data class KeptBoth(
     val romId: Long,
     val slot: String?,
-    val archivedSaveId: Long,
+    val archivedSaveId: Long?,
     val serverSaveId: Long,
     val serverFile: Path,
 )
@@ -151,4 +154,3 @@ data class SaveSyncReport(
 
 data class CompletedSync(val sessionId: Long, val status: String?)
 
-data class FlushResult(val sent: Int, val kept: Int)

@@ -25,7 +25,7 @@ The service file name is `META-INF/services/app.foldcade.api.plugin.PluginEntry`
 
 `PluginHost.load` reads every entry that class loader advertises. The caller supplies the loader. This is the path for a bundled jar and for an out-of-tree jar. It does not discover or open an installed package. `load` runs off the main thread. One bad provider is recorded in `rejected` and does not stop the providers that follow. `load` does not throw, except `VirtualMachineError`.
 
-`apiVersion` must equal `PLUGIN_API_VERSION` (1). The host rejects a different major. Set `apiMinor` to `PLUGIN_API_MINOR` (2). That is the additive revision this plugin was compiled against. The host loads a minor less than or equal to its own and rejects a newer minor. The interface default is 0, so a plugin that does not declare a minor still loads, marked as an older minor.
+`apiVersion` must equal `PLUGIN_API_VERSION` (1). The host rejects a different major. Set `apiMinor` to `PLUGIN_API_MINOR` (3). That is the additive revision this plugin was compiled against. The host loads a minor less than or equal to its own and rejects a newer minor. The interface default is 0, so a plugin that does not declare a minor still loads, marked as an older minor.
 
 Public value types in `:api` are frozen data classes, or sealed interfaces whose leaves are frozen data classes. Adding, removing, reordering, or changing the type of a constructor property bumps the major. Adding an interface member with a default body bumps the minor and does not bump the major. Open enums and sealed types must be branched with an `else`. Adding a value there bumps the minor. Any other enum or sealed type in the module is closed. Adding a value there bumps the major.
 

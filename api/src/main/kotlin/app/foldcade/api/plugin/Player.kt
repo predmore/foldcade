@@ -40,6 +40,15 @@ interface Player {
     /** Save slots this player already knows how to read and write for [game]. */
     fun saveDeclarations(game: Game): List<SaveDeclaration>
 
+    /**
+     * The file this player keeps [slot] in, inside a folder [SaveDeclaration.locationUri],
+     * when the game file it opens is named [romFileName]. The shell reads and writes
+     * that one file there and nothing else. Null means the player does not keep the
+     * slot as one file with a name the shell can know, so the shell does not place
+     * or read it. Added in API minor 3.
+     */
+    fun saveFileName(slot: String, romFileName: String): String? = null
+
     /** Builds the launch intent from [request]. Does not touch the network or disk. */
     fun launchIntent(request: LaunchRequest): PlayerIntent
 }

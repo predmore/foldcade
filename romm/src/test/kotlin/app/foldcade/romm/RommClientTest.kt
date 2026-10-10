@@ -2,6 +2,7 @@ package app.foldcade.romm
 
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withContext
@@ -218,28 +219,127 @@ class RommClientTest {
     }
 
     @Test
-    fun downloadsWithPurposePlayAndResumesAPartial() {
+    fun downloadsWithPurposePlayAndResumesAPartialOnlyWithItsValidator() {
         val rom = "hello-rom".toByteArray()
         server.route("GET", "/api/roms/1234/content/mario.cci") { exchange, _ ->
             val range = header(exchange)
             val start = range?.removePrefix("bytes=")?.substringBefore('-')?.toInt() ?: 0
+            exchange.responseHeaders.add("ETag", "\"v1\"")
+            if (range != null) exchange.responseHeaders.add("Content-Range", "bytes $start-${rom.size - 1}/${rom.size}")
             bytes(exchange, if (range == null) 200 else 206, rom.copyOfRange(start, rom.size))
         }
         val cache = dir.resolve("cache")
         val partial = cache.resolve("roms/1234/mario.cci.partial")
         Files.createDirectories(partial.parent)
         Files.write(partial, "hello".toByteArray())
+        Files.writeString(cache.resolve("roms/1234/mario.cci.partial.validator"), "\"v1\"")
         runClient(token = { "rmm_test" }) { client ->
-            val file = client.downloadRom(1234, "mario.cci", cache, expectedSize = rom.size.toLong())
+            val file = client.downloadRom(1234, "mario.cci", cache, expectedSize = rom.size.toLong(), expectedMd5 = md5Hex(rom))
             assertEquals("hello-rom", Files.readString(file))
-            val again = client.downloadRom(1234, "mario.cci", cache, expectedSize = rom.size.toLong())
+            val again = client.downloadRom(1234, "mario.cci", cache, expectedSize = rom.size.toLong(), expectedMd5 = md5Hex(rom))
             assertEquals(file, again)
         }
         val hits = server.recorded.filter { it.path.contains("/content/") }
         assertEquals(1, hits.size)
         assertEquals("bytes=5-", header(hits.single(), "Range"))
+        assertEquals("\"v1\"", header(hits.single(), "If-Range"))
         assertTrue(hits.single().query.orEmpty().contains("purpose=play"))
         assertFalse(hits.single().query.orEmpty().contains("format"))
+        assertFalse(Files.exists(cache.resolve("roms/1234/mario.cci.partial.validator")))
+    }
+
+    @Test
+    fun aPartialWithoutAValidatorStartsOver() {
+        server.route("GET", "/api/roms/1234/content/mario.cci") { exchange, _ ->
+            bytes(exchange, 200, "fresh-rom".toByteArray())
+        }
+        val cache = dir.resolve("cache")
+        val partial = cache.resolve("roms/1234/mario.cci.partial")
+        Files.createDirectories(partial.parent)
+        Files.write(partial, "stale".toByteArray())
+        runClient(token = { "rmm_test" }) { client ->
+            assertEquals("fresh-rom", Files.readString(client.downloadRom(1234, "mario.cci", cache)))
+        }
+        assertNull(header(server.recorded.single(), "Range"))
+    }
+
+    @Test
+    fun aResumeAtTheWrongOffsetStartsOver() {
+        val rom = "hello-rom".toByteArray()
+        server.route("GET", "/api/roms/1234/content/mario.cci") { exchange, _ ->
+            if (header(exchange) != null) {
+                exchange.responseHeaders.add("Content-Range", "bytes 0-${rom.size - 1}/${rom.size}")
+                bytes(exchange, 206, rom)
+            } else {
+                bytes(exchange, 200, rom)
+            }
+        }
+        val cache = dir.resolve("cache")
+        val partial = cache.resolve("roms/1234/mario.cci.partial")
+        Files.createDirectories(partial.parent)
+        Files.write(partial, "hello".toByteArray())
+        Files.writeString(cache.resolve("roms/1234/mario.cci.partial.validator"), "\"v1\"")
+        runClient(token = { "rmm_test" }) { client ->
+            assertEquals("hello-rom", Files.readString(client.downloadRom(1234, "mario.cci", cache)))
+        }
+        assertEquals(listOf("bytes=5-", null), server.recorded.map { header(it, "Range") })
+    }
+
+    @Test
+    fun aRomThatDoesNotMatchItsHashIsNotKept() {
+        server.route("GET", "/api/roms/1234/content/mario.cci") { exchange, _ ->
+            bytes(exchange, 200, "truncated".toByteArray())
+        }
+        val cache = dir.resolve("cache")
+        runClient(token = { "rmm_test" }) { client ->
+            val error = suspendCatching {
+                client.downloadRom(1234, "mario.cci", cache, expectedMd5 = md5Hex("the-real-rom".toByteArray()))
+            }.exceptionOrNull()
+            assertTrue(error is RommResponseException)
+        }
+        assertFalse(Files.exists(cache.resolve("roms/1234/mario.cci")))
+        assertFalse(Files.exists(cache.resolve("roms/1234/mario.cci.partial")))
+    }
+
+    @Test
+    fun aCachedRomIsCheckedOnceAndReplacedWhenRommHasANewOne() {
+        val cache = dir.resolve("cache")
+        val target = RommClient.romCacheFile(cache, 1234, "mario.cci", emptyList())
+        Files.createDirectories(target.parent)
+        Files.writeString(target, "old-rom")
+        server.route("GET", "/api/roms/1234/content/mario.cci") { exchange, _ ->
+            bytes(exchange, 200, "new-rom".toByteArray())
+        }
+        runClient(token = { "rmm_test" }) { client ->
+            // A file from before verification markers is hashed and kept when it still matches.
+            client.downloadRom(1234, "mario.cci", cache, expectedMd5 = md5Hex("old-rom".toByteArray()))
+            assertTrue(RommClient.isVerifiedRom(target, 7, md5Hex("old-rom".toByteArray())))
+            assertTrue(server.recorded.isEmpty())
+            client.downloadRom(1234, "mario.cci", cache, expectedMd5 = md5Hex("new-rom".toByteArray()))
+        }
+        assertEquals("new-rom", Files.readString(target))
+        assertEquals(1, server.recorded.size)
+        assertTrue(RommClient.isVerifiedRom(target, null, md5Hex("new-rom".toByteArray())))
+        assertFalse(RommClient.isVerifiedRom(target, null, md5Hex("old-rom".toByteArray())))
+    }
+
+    @Test
+    fun twoDownloadsOfOneRomTakeTurns() {
+        val rom = ByteArray(256 * 1024) { (it % 251).toByte() }
+        server.route("GET", "/api/roms/1234/content/big.bin") { exchange, _ ->
+            Thread.sleep(50)
+            bytes(exchange, 200, rom)
+        }
+        val cache = dir.resolve("cache")
+        runClient(token = { "rmm_test" }) { client ->
+            kotlinx.coroutines.coroutineScope {
+                val first = async(Dispatchers.IO) { client.downloadRom(1234, "big.bin", cache, expectedMd5 = md5Hex(rom)) }
+                val second = async(Dispatchers.IO) { client.downloadRom(1234, "big.bin", cache, expectedMd5 = md5Hex(rom)) }
+                assertEquals(first.await(), second.await())
+            }
+        }
+        assertEquals(1, server.recorded.size)
+        assertTrue(rom.contentEquals(Files.readAllBytes(RommClient.romCacheFile(cache, 1234, "big.bin", emptyList()))))
     }
 
     @Test
@@ -445,11 +545,14 @@ class RommClientTest {
             localSave("keep-name").copy(fileName = "other.srm", file = otherName),
             localSave("drop").copy(file = mario),
         )
+        val ledger = SaveLedger(dir.resolve("ledger.json"))
+        ledger.markSynced("autosave", md5Hex("drop".toByteArray()), "azahar")
         runClient(token = { "rmm_test" }) { client ->
             val report = client.syncSaves(
                 "device-1",
                 saves,
                 destination = { slot.resolve("unused.srm") },
+                ledger = ledger,
             )
             assertEquals(listOf(mario), report.deleted)
             assertTrue(report.completedSession)
@@ -461,6 +564,101 @@ class RommClientTest {
         assertEquals(1, trashed.size)
         assertEquals("drop", Files.readString(trashed.single()))
         assertTrue(trashed.single().fileName.toString().endsWith("-mario.srm"))
+        assertFalse(server.recorded.any { it.path == "/api/saves" })
+        assertNull(ledger.slot("autosave"))
+    }
+
+    @Test
+    fun aServerDeleteKeepsUnsyncedProgressOnTheServerFirst() {
+        syncRoutes(operation("delete", saveId = null, serverHash = null))
+        server.route("POST", "/api/saves") { exchange, _ ->
+            json(exchange, 200, """{"id":60,"rom_id":1234,"file_name":"mario.srm"}""")
+        }
+        val save = localSave("progress")
+        val ledger = SaveLedger(dir.resolve("ledger.json"))
+        ledger.markSynced("autosave", md5Hex("older".toByteArray()), "azahar")
+        runClient(token = { "rmm_test" }) { client ->
+            val report = client.syncSaves("device-1", listOf(save), destination = { save.file }, ledger = ledger)
+            assertEquals(listOf(save.file), report.deleted)
+        }
+        val upload = server.recorded.single { it.path == "/api/saves" }
+        assertFalse(upload.query.orEmpty().contains("slot="))
+        assertTrue(upload.body.toString(Charsets.ISO_8859_1).contains("progress"))
+        assertEquals(listOf("progress"), trashed())
+    }
+
+    @Test
+    fun aServerDeleteThatCannotKeepUnsyncedProgressLeavesTheFile() {
+        syncRoutes(operation("delete", saveId = null, serverHash = null))
+        server.route("POST", "/api/saves") { exchange, _ -> exchange.close() }
+        val save = localSave("progress")
+        runClient(token = { "rmm_test" }) { client ->
+            val report = client.syncSaves("device-1", listOf(save), destination = { save.file }, ledger = SaveLedger(dir.resolve("ledger.json")))
+            assertTrue(report.deleted.isEmpty())
+            assertEquals(listOf("mario.srm"), report.queued)
+        }
+        assertEquals("progress", Files.readString(save.file))
+    }
+
+    @Test
+    fun aRefusedNoOpUploadKeepsBothInsteadOfLooping() {
+        syncRoutes(operation("no_op", saveId = 99, serverHash = md5Hex(SERVER_SAVE.toByteArray())))
+        server.route("POST", "/api/saves") { exchange, _ ->
+            if (exchange.requestURI.rawQuery.orEmpty().contains("slot=")) {
+                json(exchange, 409, """{"detail":"Slot has a newer save since your last sync"}""")
+            } else {
+                json(exchange, 200, """{"id":61,"rom_id":1234,"file_name":"mario.srm"}""")
+            }
+        }
+        server.route("GET", "/api/saves/99/content") { exchange, _ ->
+            bytes(exchange, 200, SERVER_SAVE.toByteArray())
+        }
+        val save = localSave("progress")
+        val ledger = SaveLedger(dir.resolve("ledger.json"))
+        ledger.markSynced("autosave", md5Hex("older".toByteArray()), "azahar")
+        runClient(token = { "rmm_test" }) { client ->
+            val report = client.syncSaves("device-1", listOf(save), destination = { save.file }, ledger = ledger)
+            assertEquals(61L, report.keptBoth.single().archivedSaveId)
+        }
+        assertEquals(SERVER_SAVE, Files.readString(save.file))
+    }
+
+    @Test
+    fun anUploadOfBytesAlreadyAgreedTakesTheServerCopyInstead() {
+        syncRoutes(operation("upload", saveId = 99, serverHash = md5Hex(SERVER_SAVE.toByteArray())))
+        server.route("GET", "/api/saves/99/content") { exchange, _ ->
+            bytes(exchange, 200, SERVER_SAVE.toByteArray())
+        }
+        val save = localSave("agreed")
+        val ledger = SaveLedger(dir.resolve("ledger.json"))
+        ledger.markSynced("autosave", md5Hex("agreed".toByteArray()), "azahar")
+        runClient(token = { "rmm_test" }) { client ->
+            client.syncSaves("device-1", listOf(save), destination = { save.file }, ledger = ledger)
+        }
+        assertFalse(server.recorded.any { it.path == "/api/saves" })
+        assertEquals(SERVER_SAVE, Files.readString(save.file))
+    }
+
+    @Test
+    fun anArchiveIsCheckedBySizeOnlyBecauseRommHashesItsMembers() {
+        server.route("GET", "/api/roms/1234/content/game.zip") { exchange, _ ->
+            bytes(exchange, 200, "zip-bytes".toByteArray())
+        }
+        runClient(token = { "rmm_test" }) { client ->
+            val file = client.downloadRom(1234, "game.zip", dir.resolve("cache"), expectedSize = 9, expectedMd5 = "0".repeat(32))
+            assertEquals("zip-bytes", Files.readString(file))
+        }
+    }
+
+    @Test
+    fun aCorruptLedgerIsSetAsideAndEverySlotCountsAsUnsynced() {
+        val file = dir.resolve("ledger.json")
+        Files.writeString(file, "{not json")
+        val ledger = SaveLedger(file)
+        assertTrue(ledger.unsynced("autosave", "abc"))
+        ledger.markSynced("autosave", "abc", null)
+        assertFalse(ledger.unsynced("autosave", "abc"))
+        assertEquals(1L, Files.list(dir).use { s -> s.filter { it.fileName.toString().startsWith("ledger.json.unreadable-") }.count() })
     }
 
     @Test
@@ -479,7 +677,7 @@ class RommClientTest {
             json(exchange, 200, """{"id":50,"rom_id":1234,"file_name":"mario.srm"}""")
         }
         server.route("GET", "/api/saves/99/content") { exchange, _ ->
-            bytes(exchange, 200, "server".toByteArray())
+            bytes(exchange, 200, SERVER_SAVE.toByteArray())
         }
         server.route("POST", "/api/saves/99/downloaded") { exchange, _ ->
             json(exchange, 200, """{"id":99}""")
@@ -501,7 +699,7 @@ class RommClientTest {
                 assertEquals(1, report.keptBoth.size)
                 assertEquals(50L, report.keptBoth.single().archivedSaveId)
                 assertTrue(report.completedSession)
-                assertEquals("server", Files.readString(save.file))
+                assertEquals(SERVER_SAVE, Files.readString(save.file))
             }
         }
         val uploads = server.recorded.filter { it.method == "POST" && it.path == "/api/saves" }
@@ -522,9 +720,160 @@ class RommClientTest {
         val download = server.recorded.first { it.path == "/api/saves/99/content" }
         assertTrue(download.query.orEmpty().contains("optimistic=false"))
         val confirm = server.recorded.first { it.path == "/api/saves/99/downloaded" }
-        assertTrue(confirm.body.toString(Charsets.UTF_8).contains(md5Hex("server".toByteArray())))
+        assertTrue(confirm.body.toString(Charsets.UTF_8).contains(md5Hex(SERVER_SAVE.toByteArray())))
         val complete = server.recorded.first { it.path == "/api/sync/sessions/42/complete" }
         assertFalse(complete.body.toString(Charsets.UTF_8).contains("play_sessions"))
+    }
+
+    @Test
+    fun aDownloadOverUnsyncedProgressKeepsBoth() {
+        syncRoutes(fixture("negotiate-download.json"))
+        server.route("POST", "/api/saves") { exchange, _ ->
+            json(exchange, 200, """{"id":50,"rom_id":1234,"file_name":"mario.srm"}""")
+        }
+        server.route("GET", "/api/saves/99/content") { exchange, _ ->
+            bytes(exchange, 200, SERVER_SAVE.toByteArray())
+        }
+        val save = localSave("local")
+        val ledger = SaveLedger(dir.resolve("ledger.json"))
+        runClient(token = { "rmm_test" }) { client ->
+            val report = client.syncSaves("device-1", listOf(save), destination = { save.file }, ledger = ledger)
+            assertEquals(50L, report.keptBoth.single().archivedSaveId)
+        }
+        assertEquals(SERVER_SAVE, Files.readString(save.file))
+        val upload = server.recorded.single { it.path == "/api/saves" }
+        assertFalse(upload.query.orEmpty().contains("slot="))
+        assertTrue(upload.body.toString(Charsets.ISO_8859_1).contains("local"))
+        assertEquals(listOf("local"), trashed())
+        assertEquals(md5Hex(SERVER_SAVE.toByteArray()), ledger.slot("autosave")!!.syncedHash)
+        assertEquals(md5Hex("local".toByteArray()), ledger.slot("autosave")!!.archivedHash)
+    }
+
+    @Test
+    fun aDownloadOverASyncedSaveReplacesItAndKeepsTheOldCopyInTrash() {
+        syncRoutes(fixture("negotiate-download.json"))
+        server.route("GET", "/api/saves/99/content") { exchange, _ ->
+            bytes(exchange, 200, SERVER_SAVE.toByteArray())
+        }
+        val save = localSave("local")
+        val ledger = SaveLedger(dir.resolve("ledger.json"))
+        ledger.markSynced("autosave", md5Hex("local".toByteArray()), "azahar")
+        runClient(token = { "rmm_test" }) { client ->
+            val report = client.syncSaves("device-1", listOf(save), destination = { save.file }, ledger = ledger)
+            assertTrue(report.keptBoth.isEmpty())
+            assertEquals(listOf(save.file), report.downloaded)
+        }
+        assertEquals(SERVER_SAVE, Files.readString(save.file))
+        assertFalse(server.recorded.any { it.path == "/api/saves" })
+        assertEquals(listOf("local"), trashed())
+        val confirm = server.recorded.single { it.path == "/api/saves/99/downloaded" }
+        assertTrue(confirm.body.toString(Charsets.UTF_8).contains(md5Hex(SERVER_SAVE.toByteArray())))
+    }
+
+    @Test
+    fun aDownloadThatDoesNotMatchItsHashLeavesTheSaveAlone() {
+        syncRoutes(fixture("negotiate-download.json"))
+        server.route("GET", "/api/saves/99/content") { exchange, _ ->
+            bytes(exchange, 200, "torn".toByteArray())
+        }
+        val save = localSave("local")
+        val ledger = SaveLedger(dir.resolve("ledger.json"))
+        ledger.markSynced("autosave", md5Hex("local".toByteArray()), "azahar")
+        runClient(token = { "rmm_test" }) { client ->
+            val report = client.syncSaves("device-1", listOf(save), destination = { save.file }, ledger = ledger)
+            assertTrue(report.downloaded.isEmpty())
+            assertEquals(1, report.failed.size)
+        }
+        assertEquals("local", Files.readString(save.file))
+        assertFalse(Files.exists(dir.resolve("mario.srm.partial")))
+        assertFalse(server.recorded.any { it.path == "/api/saves/99/downloaded" })
+        assertEquals(md5Hex("local".toByteArray()), ledger.slot("autosave")!!.syncedHash)
+    }
+
+    @Test
+    fun aNoOpThatWouldLeaveNewerLocalBytesBehindUploadsThem() {
+        syncRoutes(operation("no_op", saveId = 99, serverHash = md5Hex("older".toByteArray())))
+        server.route("POST", "/api/saves") { exchange, _ ->
+            json(exchange, 200, """{"id":51,"rom_id":1234,"file_name":"mario.srm"}""")
+        }
+        val save = localSave("local")
+        val ledger = SaveLedger(dir.resolve("ledger.json"))
+        ledger.markSynced("autosave", md5Hex("older".toByteArray()), "azahar")
+        runClient(token = { "rmm_test" }) { client ->
+            val report = client.syncSaves("device-1", listOf(save), destination = { save.file }, ledger = ledger)
+            assertEquals(listOf(51L), report.uploadedSaveIds)
+        }
+        assertTrue(server.recorded.single { it.path == "/api/saves" }.query.orEmpty().contains("slot=autosave"))
+        assertEquals(md5Hex("local".toByteArray()), ledger.slot("autosave")!!.syncedHash)
+    }
+
+    @Test
+    fun aMatchingNoOpRecordsTheSlotAsSynced() {
+        syncRoutes(operation("no_op", saveId = 99, serverHash = md5Hex("local".toByteArray())))
+        val save = localSave("local")
+        val ledger = SaveLedger(dir.resolve("ledger.json"))
+        runClient(token = { "rmm_test" }) { client ->
+            client.syncSaves("device-1", listOf(save), destination = { save.file }, ledger = ledger)
+        }
+        assertFalse(server.recorded.any { it.path == "/api/saves" })
+        assertEquals(md5Hex("local".toByteArray()), ledger.slot("autosave")!!.syncedHash)
+    }
+
+    @Test
+    fun anUnreachableUploadStaysUnsyncedForTheNextNegotiate() {
+        syncRoutes(operation("upload", saveId = null, serverHash = null))
+        server.route("POST", "/api/saves") { exchange, _ ->
+            exchange.close()
+        }
+        val save = localSave("local")
+        val ledger = SaveLedger(dir.resolve("ledger.json"))
+        runClient(token = { "rmm_test" }) { client ->
+            val report = client.syncSaves("device-1", listOf(save), destination = { save.file }, ledger = ledger)
+            assertEquals(listOf("mario.srm"), report.queued)
+            assertTrue(report.uploadedSaveIds.isEmpty())
+        }
+        assertNull(ledger.slot("autosave"))
+        assertTrue(ledger.unsynced("autosave", md5Hex("local".toByteArray())))
+        assertEquals("local", Files.readString(save.file))
+    }
+
+    @Test
+    fun aRetriedConflictDoesNotArchiveTheSameBytesTwice() {
+        syncRoutes(fixture("negotiate-download.json").replace(""""action": "download"""", """"action": "conflict""""))
+        server.route("POST", "/api/saves") { exchange, _ ->
+            json(exchange, 200, """{"id":50,"rom_id":1234,"file_name":"mario.srm"}""")
+        }
+        var downloads = 0
+        server.route("GET", "/api/saves/99/content") { exchange, _ ->
+            downloads += 1
+            if (downloads == 1) json(exchange, 503, """{"detail":"down"}""") else bytes(exchange, 200, SERVER_SAVE.toByteArray())
+        }
+        val save = localSave("local")
+        val ledger = SaveLedger(dir.resolve("ledger.json"))
+        runClient(token = { "rmm_test" }) { client ->
+            val first = client.syncSaves("device-1", listOf(save), destination = { save.file }, ledger = ledger)
+            assertEquals(1, first.failed.size)
+            assertEquals("local", Files.readString(save.file))
+            val second = client.syncSaves("device-1", listOf(save), destination = { save.file }, ledger = ledger)
+            assertNull(second.keptBoth.single().archivedSaveId)
+        }
+        assertEquals(1, server.recorded.count { it.path == "/api/saves" })
+        assertEquals(SERVER_SAVE, Files.readString(save.file))
+    }
+
+    @Test
+    fun theTrashKeepsOnlyTheNewestCopies() {
+        val file = dir.resolve("slot/sav.sav")
+        Files.createDirectories(file.parent)
+        repeat(SAVE_TRASH_KEEP + 3) { index ->
+            Files.writeString(file, "v$index")
+            copySaveToTrash(file)
+            Thread.sleep(2)
+        }
+        val kept = Files.list(file.parent.resolve(TRASH_DIR)).use { it.toList() }
+        assertEquals(SAVE_TRASH_KEEP, kept.size)
+        assertTrue(kept.any { Files.readString(it) == "v${SAVE_TRASH_KEEP + 2}" })
+        assertFalse(kept.any { Files.readString(it) == "v0" })
     }
 
     @Test
@@ -578,139 +927,6 @@ class RommClientTest {
         assertEquals("local", Files.readString(save.file))
         assertEquals(1, server.recorded.count { it.path == "/api/saves" })
         assertFalse(server.recorded.any { it.query.orEmpty().contains("overwrite=true") })
-    }
-
-    @Test
-    fun queuedUploadIsRetriedWithoutASession() {
-        val queue = SaveUploadQueue(dir.resolve("queue"))
-        val save = localSave("local")
-        queue.enqueue(save, "device-1", md5Hex("local".toByteArray()), "local".toByteArray(), "autosave")
-        server.route("POST", "/api/saves") { exchange, _ ->
-            json(exchange, 200, """{"id":8,"rom_id":1234,"file_name":"mario.srm"}""")
-        }
-        runClient(token = { "rmm_test" }) { client ->
-            val flushed = queue.flush(client)
-            assertEquals(1, flushed.sent)
-            assertEquals(0, flushed.kept)
-        }
-        assertTrue(queue.pending().isEmpty())
-        val upload = server.recorded.single()
-        assertFalse(upload.query.orEmpty().contains("session_id"))
-        assertTrue(upload.query.orEmpty().contains("slot=autosave"))
-    }
-
-    @Test
-    fun permanentClientErrorsLeaveTheQueueAndACorruptFileDoesNot() {
-        val queue = SaveUploadQueue(dir.resolve("queue"))
-        val save = localSave("local")
-        val hash = md5Hex("local".toByteArray())
-        queue.enqueue(save, "device-1", hash, "local".toByteArray(), "autosave")
-        queue.enqueue(save, "device-1", hash, "local".toByteArray(), "autosave")
-        queue.enqueue(save, "device-1", hash, "local".toByteArray(), "autosave")
-        Files.write(dir.resolve("queue").resolve("broken.json"), "not-json".toByteArray())
-        assertEquals(3, queue.pending().size)
-
-        var calls = 0
-        server.route("POST", "/api/saves") { exchange, _ ->
-            calls += 1
-            when (calls) {
-                1 -> json(exchange, 400, """{"detail":"bad file"}""")
-                2 -> json(exchange, 409, """{"detail":"slot changed"}""")
-                else -> json(exchange, 503, """{"detail":"down"}""")
-            }
-        }
-        runClient(token = { "rmm_test" }) { client ->
-            val flushed = queue.flush(client)
-            assertEquals(0, flushed.sent)
-            assertEquals(1, flushed.kept)
-        }
-        assertEquals(1, queue.pending().size)
-        assertTrue(Files.exists(dir.resolve("queue").resolve("broken.json")))
-
-        val retry = SaveUploadQueue(dir.resolve("retry"))
-        retry.enqueue(save, "device-1", hash, "local".toByteArray(), "autosave")
-        server.route("POST", "/api/saves") { exchange, _ ->
-            json(exchange, 429, """{"detail":"slow down"}""")
-        }
-        runClient(token = { "rmm_test" }) { client ->
-            val flushed = retry.flush(client)
-            assertEquals(0, flushed.sent)
-            assertEquals(1, flushed.kept)
-        }
-        assertEquals(1, retry.pending().size)
-    }
-
-    @Test
-    fun anAuthFailureKeepsEveryQueuedSave() {
-        val hash = md5Hex("local".toByteArray())
-        for (status in listOf(401, 403)) {
-            val queue = SaveUploadQueue(dir.resolve("queue-$status"))
-            val save = localSave("local")
-            repeat(3) { queue.enqueue(save, "device-1", hash, "local".toByteArray(), "autosave") }
-            server.recorded.clear()
-            server.route("POST", "/api/saves") { exchange, _ ->
-                json(exchange, status, """{"detail":"token revoked"}""")
-            }
-            runClient(token = { "rmm_test" }) { client ->
-                val flushed = queue.flush(client)
-                assertEquals(0, flushed.sent)
-                assertEquals(3, flushed.kept)
-            }
-            assertEquals(3, queue.pending().size)
-            assertEquals(1, server.recorded.count { it.path == "/api/saves" })
-        }
-
-        val signedOut = SaveUploadQueue(dir.resolve("signed-out"))
-        signedOut.enqueue(localSave("local"), "device-1", hash, "local".toByteArray(), "autosave")
-        runClient(token = { null }) { client ->
-            assertEquals(FlushResult(sent = 0, kept = 1), signedOut.flush(client))
-        }
-        assertEquals(1, signedOut.pending().size)
-    }
-
-    @Test
-    fun aMetadataFileWithoutItsBytesDoesNotStopTheFlush() {
-        val root = dir.resolve("queue")
-        val queue = SaveUploadQueue(root)
-        val save = localSave("local")
-        val hash = md5Hex("local".toByteArray())
-        queue.enqueue(save, "device-1", hash, "local".toByteArray(), "autosave")
-        queue.enqueue(save, "device-1", hash, "local".toByteArray(), "autosave")
-        Files.delete(queue.pending().first().bytes)
-        server.route("POST", "/api/saves") { exchange, _ ->
-            json(exchange, 200, """{"id":8,"rom_id":1234,"file_name":"mario.srm"}""")
-        }
-        runClient(token = { "rmm_test" }) { client ->
-            assertEquals(FlushResult(sent = 1, kept = 0), queue.flush(client))
-        }
-        assertTrue(queue.pending().isEmpty())
-        Files.list(root).use { assertEquals(0L, it.count()) }
-    }
-
-    @Test
-    fun aFlushRemovesStaleLeftoversFromAnInterruptedEnqueue() {
-        val root = dir.resolve("queue")
-        val queue = SaveUploadQueue(root)
-        queue.enqueue(localSave("local"), "device-1", md5Hex("local".toByteArray()), "local".toByteArray())
-        Files.list(root).use { stream ->
-            assertFalse(stream.anyMatch { it.fileName.toString().endsWith(".tmp") })
-        }
-        val old = java.nio.file.attribute.FileTime.from(Instant.now().minus(SaveUploadQueue.STALE).minusSeconds(60))
-        val staleTemp = Files.write(root.resolve("a.json.tmp"), "{".toByteArray())
-        val staleBytes = Files.write(root.resolve("b.bin"), "x".toByteArray())
-        val freshBytes = Files.write(root.resolve("c.bin"), "x".toByteArray())
-        Files.setLastModifiedTime(staleTemp, old)
-        Files.setLastModifiedTime(staleBytes, old)
-        server.route("POST", "/api/saves") { exchange, _ ->
-            json(exchange, 503, """{"detail":"down"}""")
-        }
-        runClient(token = { "rmm_test" }) { client ->
-            assertEquals(FlushResult(sent = 0, kept = 1), queue.flush(client))
-        }
-        assertFalse(Files.exists(staleTemp))
-        assertFalse(Files.exists(staleBytes))
-        assertTrue(Files.exists(freshBytes))
-        assertEquals(1, queue.pending().size)
     }
 
     @Test
@@ -840,7 +1056,7 @@ class RommClientTest {
     }
 
     @Test
-    fun cancelDuringUploadDoesNotQueueOrCompleteTheSession() {
+    fun cancelDuringUploadDoesNotMarkTheSaveSyncedOrCompleteTheSession() {
         val started = CountDownLatch(1)
         val release = CountDownLatch(1)
         server.route("GET", "/openapi.json") { exchange, _ ->
@@ -876,8 +1092,8 @@ class RommClientTest {
             release.await(30, TimeUnit.SECONDS)
             exchange.close()
         }
-        val queue = SaveUploadQueue(dir.resolve("queue"))
         val save = localSave("local")
+        val ledger = SaveLedger(dir.resolve("ledger.json"))
         val client = RommClient(server.origin, { "rmm_test" })
         try {
             runBlocking {
@@ -888,7 +1104,7 @@ class RommClientTest {
                         romIds = listOf(1234),
                         emulators = listOf("azahar"),
                         destination = { save.file },
-                        queue = queue,
+                        ledger = ledger,
                     )
                 }
                 assertTrue(withContext(Dispatchers.IO) { started.await(5, TimeUnit.SECONDS) })
@@ -900,7 +1116,7 @@ class RommClientTest {
             release.countDown()
             client.close()
         }
-        assertTrue(queue.pending().isEmpty())
+        assertNull(ledger.slot("autosave"))
         assertFalse(server.recorded.any { it.path.contains("/complete") })
         assertEquals("local", Files.readString(save.file))
     }
@@ -1190,6 +1406,48 @@ class RommClientTest {
         ).use { block(it) }
     }
 
+    private fun syncRoutes(negotiate: String) {
+        server.route("GET", "/openapi.json") { exchange, _ ->
+            json(exchange, 200, fixture("openapi-5.4.0-alpha.2.json"))
+        }
+        server.route("POST", "/api/sync/negotiate") { exchange, _ ->
+            json(exchange, 200, negotiate)
+        }
+        server.route("POST", "/api/saves/99/downloaded") { exchange, _ ->
+            json(exchange, 200, """{"id":99}""")
+        }
+        server.route("POST", "/api/sync/sessions/42/complete") { exchange, _ ->
+            json(exchange, 200, fixture("sync-complete.json"))
+        }
+    }
+
+    private fun operation(action: String, saveId: Long?, serverHash: String?): String = """
+        {
+          "session_id": 42,
+          "operations": [{
+            "action": "$action",
+            "rom_id": 1234,
+            "save_id": ${saveId ?: "null"},
+            "file_name": "mario.srm",
+            "slot": "autosave",
+            "emulator": "azahar",
+            "reason": "test",
+            "server_content_hash": ${serverHash?.let { "\"$it\"" } ?: "null"}
+          }],
+          "total_upload": 0,
+          "total_download": 0,
+          "total_conflict": 0,
+          "total_no_op": 0,
+          "total_delete": 0
+        }
+    """.trimIndent()
+
+    private fun trashed(): List<String> {
+        val trash = dir.resolve(TRASH_DIR)
+        if (!Files.isDirectory(trash)) return emptyList()
+        return Files.list(trash).use { stream -> stream.toList() }.map { Files.readString(it) }
+    }
+
     private fun localSave(text: String): LocalSave {
         val file = dir.resolve("mario.srm")
         Files.writeString(file, text)
@@ -1227,6 +1485,9 @@ class RommClientTest {
         return -1
     }
 }
+
+/** Bytes whose MD5 is the hash `negotiate-download.json` names. */
+private const val SERVER_SAVE = "The quick brown fox jumps over the lazy dog."
 
 private fun kotlinx.serialization.json.JsonObject.req(name: String): String =
     getValue(name).jsonPrimitive.content

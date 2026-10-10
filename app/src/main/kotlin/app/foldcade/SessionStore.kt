@@ -20,7 +20,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 
-class SessionStore(private val prefs: SharedPreferences) {
+class SessionStore(private val prefs: SharedPreferences) : SaveMarks {
     var session by mutableStateOf(load())
         private set
 
@@ -122,6 +122,26 @@ class SessionStore(private val prefs: SharedPreferences) {
 
     fun setPlayerSaveFolder(playerId: String, uri: String) {
         prefs.edit().putString(saveFolderKey(playerId), uri).apply()
+    }
+
+    override fun mark(key: String): String? = prefs.getString(saveMarkKey(key), null)
+
+    /** Written before the game starts, so it is committed rather than applied. */
+    override fun setMark(key: String, hash: String) {
+        prefs.edit().putString(saveMarkKey(key), hash).commit()
+    }
+
+    override fun clearMark(key: String) {
+        prefs.edit().remove(saveMarkKey(key)).commit()
+    }
+
+    /** Launched games whose saves have not been read back yet, one per game. Survives the process. */
+    fun pendingSaveReturns(): List<String> =
+        prefs.all.filterKeys { it.startsWith(PENDING_SAVE_RETURN_PREFIX) }.values.filterIsInstance<String>()
+
+    fun setPendingSaveReturn(gameKey: String, value: String?) {
+        val key = PENDING_SAVE_RETURN_PREFIX + gameKey
+        prefs.edit().apply { if (value == null) remove(key) else putString(key, value) }.commit()
     }
 
     /** True after Not now. The save-folder offer stays quiet for this player. */
@@ -315,5 +335,9 @@ class SessionStore(private val prefs: SharedPreferences) {
         private fun saveFolderKey(playerId: String) = "player_save_folder:$playerId"
 
         private fun saveFolderSkipKey(playerId: String) = "player_save_folder_skipped:$playerId"
+
+        private fun saveMarkKey(key: String) = "player_save_mark:$key"
+
+        private const val PENDING_SAVE_RETURN_PREFIX = "pending_save_return:"
     }
 }

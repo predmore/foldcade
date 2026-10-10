@@ -5,6 +5,9 @@ import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.runInterruptible
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.JsonArray
@@ -23,16 +26,14 @@ import java.io.OutputStream
 import java.net.URI
 import java.net.URLEncoder
 import java.nio.charset.StandardCharsets
-import java.nio.file.AtomicMoveNotSupportedException
+import java.nio.channels.Channels
+import java.nio.channels.FileChannel
 import java.nio.file.Files
 import java.nio.file.Path
-import java.nio.file.StandardCopyOption
 import java.nio.file.StandardOpenOption
 import java.time.Duration
-import java.time.Instant
-import java.time.ZoneOffset
-import java.time.format.DateTimeFormatter
 import java.util.UUID
+import java.util.concurrent.ConcurrentHashMap
 import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
 
@@ -255,7 +256,17 @@ class RommClient(
 
     /**
      * Downloads one ROM into [cacheRoot] with `purpose=play`. Does not send `format`.
-     * A finished file is reused. A `.partial` sibling is resumed with `Range`.
+     *
+     * A finished file is reused only when its verified marker matches
+     * [expectedSize] and [expectedMd5]. A finished file from before markers is
+     * hashed once. A file that no longer matches is downloaded again.
+     *
+     * A `.partial` sibling is resumed with `Range` and `If-Range`, using the
+     * `ETag` or `Last-Modified` the first response sent. A partial without one,
+     * or a 206 that does not start where the partial ends, starts over. The
+     * finished bytes must match [expectedSize] and [expectedMd5] when RomM
+     * gave them, and are synced to storage before the rename that publishes them.
+     * Two calls for the same file take turns.
      */
     suspend fun downloadRom(
         romId: Long,
@@ -263,32 +274,99 @@ class RommClient(
         cacheRoot: Path,
         fileIds: List<Long> = emptyList(),
         expectedSize: Long? = null,
+        expectedMd5: String? = null,
     ): Path {
         require(romId >= 1)
         val target = romCacheFile(cacheRoot, romId, fileName, fileIds)
-        val partial = target.resolveSibling(target.fileName.toString() + ".partial")
+        // RomM hashes an archive by its members, not its bytes, so only its size can be checked.
+        val md5 = expectedMd5?.lowercase()?.takeUnless { isArchiveName(fileName) }
+        return romLock(target).withLock {
+            downloadRomLocked(romId, fileName, target, fileIds, expectedSize, md5)
+        }
+    }
+
+    private suspend fun downloadRomLocked(
+        romId: Long,
+        fileName: String,
+        target: Path,
+        fileIds: List<Long>,
+        expectedSize: Long?,
+        expectedMd5: String?,
+    ): Path {
+        val partial = partialOf(target)
+        val validatorFile = target.resolveSibling(target.fileName.toString() + VALIDATOR_SUFFIX)
         if (Files.isRegularFile(target) && !Files.exists(partial)) {
-            if (expectedSize == null || Files.size(target) == expectedSize) return target
-            Files.delete(target)
+            if (isVerifiedRom(target, expectedSize, expectedMd5)) return target
+            val reusable = withContext(Dispatchers.IO) {
+                val size = Files.size(target)
+                if (expectedSize != null && size != expectedSize) return@withContext false
+                val md5 = runInterruptible { md5File(target) }
+                if (expectedMd5 != null && md5 != expectedMd5) return@withContext false
+                writeVerifiedMarker(target, size, md5)
+                true
+            }
+            if (reusable) return target
+            // The old file stays until a verified replacement is renamed over it.
+            Files.deleteIfExists(markerOf(target))
         }
         val params = mutableListOf("purpose" to "play")
         if (fileIds.isNotEmpty()) params += "file_ids" to fileIds.joinToString(",")
         val uri = api("/roms/$romId/content/${encode(safeFileName(fileName))}", params)
-        val append = Files.isRegularFile(partial) && Files.size(partial) > 0
+        val validator = readValidator(validatorFile)
+        val resumeFrom = if (validator != null && Files.isRegularFile(partial) && Files.size(partial) > 0) {
+            Files.size(partial)
+        } else {
+            Files.deleteIfExists(partial)
+            Files.deleteIfExists(validatorFile)
+            null
+        }
         try {
-            streamGet(uri, partial, range = if (append) Files.size(partial) else null)
+            streamRom(uri, partial, validatorFile, resumeFrom, validator)
         } catch (e: CancellationException) {
             throw e
-        } catch (e: RommHttpException) {
-            if (e.status == 416 && append) {
+        } catch (e: RommException) {
+            val restart = resumeFrom != null && (e is RangeRejected || (e is RommHttpException && e.status == 416))
+            if (!restart) throw e
+            Files.deleteIfExists(partial)
+            Files.deleteIfExists(validatorFile)
+            streamRom(uri, partial, validatorFile, resumeFrom = null, validator = null)
+        }
+        withContext(Dispatchers.IO) {
+            val size = Files.size(partial)
+            val md5 = runInterruptible { md5File(partial) }
+            if ((expectedSize != null && size != expectedSize) || (expectedMd5 != null && md5 != expectedMd5)) {
                 Files.deleteIfExists(partial)
-                streamGet(uri, partial, range = null)
-            } else {
-                throw e
+                Files.deleteIfExists(validatorFile)
+                throw RommResponseException("The ROM RomM sent does not match its size or hash. Try again.")
+            }
+            forceToDisk(partial)
+            moveIntoPlace(partial, target)
+            writeVerifiedMarker(target, size, md5)
+            Files.deleteIfExists(validatorFile)
+        }
+        return target
+    }
+
+    private suspend fun streamRom(
+        uri: URI,
+        partial: Path,
+        validatorFile: Path,
+        resumeFrom: Long?,
+        validator: String?,
+    ) {
+        streamGet(uri, partial, range = resumeFrom, ifRange = validator) { status, headers ->
+            when (status) {
+                200 -> {
+                    // A full body replaces the partial. Keep what lets a later try resume it.
+                    val next = strongValidator(headers)
+                    if (next == null) Files.deleteIfExists(validatorFile) else writeDurably(validatorFile, next.toByteArray())
+                }
+                206 -> {
+                    val start = contentRangeStart(headers)
+                    if (start == null || start != resumeFrom) throw RangeRejected()
+                }
             }
         }
-        moveIntoPlace(partial, target)
-        return target
     }
 
     /**
@@ -408,11 +486,18 @@ class RommClient(
         return parseSaveId(raw.body)
     }
 
+    /**
+     * Writes save [saveId] to [destination]. The bytes land in a `.partial`
+     * sibling first. They must match [expectedHash] when RomM sent one, and are
+     * synced to storage before the rename that replaces [destination].
+     * A mismatch leaves [destination] as it was.
+     */
     suspend fun downloadSave(
         saveId: Long,
         deviceId: String,
         sessionId: Long,
         destination: Path,
+        expectedHash: String? = null,
     ) {
         val uri = api(
             "/saves/$saveId/content",
@@ -422,9 +507,16 @@ class RommClient(
                 "optimistic" to "false",
             ),
         )
-        val partial = destination.resolveSibling(destination.fileName.toString() + ".partial")
+        val partial = partialOf(destination)
         streamGet(uri, partial, range = null)
-        moveIntoPlace(partial, destination)
+        withContext(Dispatchers.IO) {
+            if (expectedHash != null && md5File(partial) != expectedHash.lowercase()) {
+                Files.deleteIfExists(partial)
+                throw RommResponseException("The save RomM sent does not match its hash")
+            }
+            forceToDisk(partial)
+            moveIntoPlace(partial, destination)
+        }
     }
 
     suspend fun confirmSaveDownloaded(saveId: Long, deviceId: String, contentHash: String) {
@@ -452,13 +544,24 @@ class RommClient(
 
     /**
      * One negotiate, then the operations, then complete. Call it before launch
-     * and again after the player exits. A conflict archives the local bytes
-     * under a unique file name with a null slot, then writes the server copy.
-     * The name has to be unique: RomM stores a slot-less save by file name.
-     * An upload that cannot reach the server is copied into [queue] when one
-     * is given. Cancellation is not a network failure: it is rethrown, nothing
-     * is queued, and the session is not completed. A failed negotiate throws
-     * and does not change local files.
+     * and again after the player exits.
+     *
+     * [ledger] records what this device last agreed with RomM. RomM decides from
+     * timestamps, and a device clock can be wrong, so a local save whose hash
+     * differs from its ledger entry is treated as progress RomM has not seen:
+     * - a download over it keeps both: the local bytes are uploaded first as an
+     *   archive with a null slot and a unique name, then the server copy is written;
+     * - a no-op that would leave it behind a different server copy uploads it.
+     * A null [ledger] knows nothing, so every local save counts as unsynced.
+     *
+     * A replaced local save is copied to the slot's trash first. A download must
+     * match the hash RomM sent before it replaces anything. An upload that cannot
+     * reach the server stays unsynced in the ledger and is named in
+     * [SaveSyncReport.queued]; the next sync retries it through a fresh
+     * negotiate, so an old copy is never replayed over a newer one.
+     *
+     * Cancellation is not a network failure: it is rethrown and the session is
+     * not completed. A failed negotiate throws and does not change local files.
      */
     suspend fun syncSaves(
         deviceId: String,
@@ -466,40 +569,64 @@ class RommClient(
         romIds: List<Long> = emptyList(),
         emulators: List<String>? = null,
         destination: (SyncOperation) -> Path,
-        queue: SaveUploadQueue? = null,
+        ledger: SaveLedger? = null,
     ): SaveSyncReport {
         val negotiated = negotiate(deviceId, saves, romIds, emulators)
-        var completed = 0
-        var failed = 0
-        val downloaded = mutableListOf<Path>()
-        val uploaded = mutableListOf<Long>()
-        val keptBoth = mutableListOf<KeptBoth>()
-        val deleted = mutableListOf<Path>()
-        val queued = mutableListOf<String>()
-        val failures = mutableListOf<String>()
+        val run = SyncRun(deviceId, negotiated.sessionId, ledger)
 
         for (op in negotiated.operations) {
             try {
                 when (op.action) {
-                    "no_op" -> completed++
+                    "no_op" -> {
+                        val local = pairedLocal(saves, op)
+                        val hash = local?.let { withContext(Dispatchers.IO) { md5File(it.file) } }
+                        val serverHash = comparableServerHash(op)
+                        if (local != null && hash != null && serverHash != null && hash != serverHash &&
+                            run.unsynced(local, hash)
+                        ) {
+                            // RomM saw an older timestamp. These bytes changed since the last sync here.
+                            try {
+                                run.upload(local)
+                            } catch (moved: RommSlotMoved) {
+                                // The slot moved on too. Keep both, or the next negotiate says no_op again.
+                                if (op.saveId == null) throw moved
+                                run.keepBoth(local, op, destination(op))
+                            }
+                        } else {
+                            if (local != null && hash != null && hash == serverHash) {
+                                run.markSynced(local.slot, hash, op.emulator ?: local.emulator)
+                            }
+                            run.completed++
+                        }
+                    }
                     "upload" -> {
                         val local = localSave(saves, op)
-                        val id = uploadOrQueue(local, deviceId, negotiated.sessionId, queue, queued, failures)
-                        if (id == null) {
-                            failed++
-                        } else {
-                            uploaded += id
-                            completed++
+                        val hash = withContext(Dispatchers.IO) { md5File(local.file) }
+                        val serverHash = comparableServerHash(op)
+                        when {
+                            serverHash == hash -> {
+                                run.markSynced(local.slot, hash, local.emulator)
+                                run.completed++
+                            }
+                            // Nothing new here: these are the bytes last agreed with RomM. Sending them
+                            // would put an older version back on top, so take the server copy instead.
+                            serverHash != null && op.saveId != null && !run.unsynced(local, hash) -> {
+                                run.download(op, destination(op))
+                                run.completed++
+                            }
+                            else -> run.upload(local)
                         }
                     }
                     "download" -> {
-                        val saveId = op.saveId
-                            ?: throw RommResponseException("download is missing save_id")
-                        val path = destination(op)
-                        downloadSave(saveId, deviceId, negotiated.sessionId, path)
-                        confirmSaveDownloaded(saveId, deviceId, md5Hex(Files.readAllBytes(path)))
-                        downloaded.add(path)
-                        completed++
+                        val local = pairedLocal(saves, op)
+                        if (local != null && Files.isRegularFile(local.file) &&
+                            run.unsynced(local, withContext(Dispatchers.IO) { md5File(local.file) })
+                        ) {
+                            run.keepBoth(local, op, destination(op))
+                        } else {
+                            run.download(op, destination(op))
+                            run.completed++
+                        }
                     }
                     "delete" -> {
                         val local = saves.find {
@@ -508,52 +635,47 @@ class RommClient(
                                 it.fileName == op.fileName &&
                                 it.emulator == op.emulator
                         }
-                        if (local != null && moveSaveToTrash(local.file)) deleted.add(local.file)
-                        completed++
-                    }
-                    "conflict" -> {
-                        val local = localSave(saves, op)
-                        val saveId = op.saveId
-                            ?: throw RommResponseException("conflict is missing save_id")
-                        val archivedLocal = local.copy(
-                            fileName = archiveFileName(local.fileName, archiveStamp()),
-                            slot = null,
-                        )
-                        val archived = uploadOrQueue(
-                            archivedLocal,
-                            deviceId,
-                            negotiated.sessionId,
-                            queue,
-                            queued,
-                            failures,
-                            slotOverride = null,
-                        )
-                        if (archived == null) {
-                            failed++
+                        // Progress RomM never saw is kept on the server before the local file goes.
+                        if (local != null && Files.isRegularFile(local.file) &&
+                            run.unsynced(local, withContext(Dispatchers.IO) { md5File(local.file) }) &&
+                            !run.archive(local)
+                        ) {
                             continue
                         }
-                        val path = destination(op)
-                        downloadSave(saveId, deviceId, negotiated.sessionId, path)
-                        confirmSaveDownloaded(saveId, deviceId, md5Hex(Files.readAllBytes(path)))
-                        keptBoth += KeptBoth(op.romId, op.slot, archived, saveId, path)
-                        downloaded.add(path)
-                        completed++
+                        if (local != null && withContext(Dispatchers.IO) { moveSaveToTrash(local.file) }) {
+                            run.deleted.add(local.file)
+                            local.slot?.let { slot -> ledger?.update(slot) { null } }
+                        }
+                        run.completed++
+                    }
+                    "conflict" -> {
+                        val local = pairedLocal(saves, op)
+                        if (local == null || !Files.isRegularFile(local.file)) {
+                            run.download(op, destination(op))
+                            run.completed++
+                        } else {
+                            run.keepBoth(local, op, destination(op))
+                        }
                     }
                     else -> {
-                        failed++
-                        failures += "unknown action ${op.action}"
+                        run.failed++
+                        run.failures += "unknown action ${op.action}"
                     }
                 }
             } catch (e: CancellationException) {
                 throw e
             } catch (e: RommException) {
-                failed++
-                failures += e.message ?: op.action
+                run.failed++
+                run.failures += e.message ?: op.action
+            } catch (e: IOException) {
+                // A local file could not be read or written. That operation waits for the next sync.
+                run.failed++
+                run.failures += e.message ?: op.action
             }
         }
 
         val sessionClosed = try {
-            completeSync(negotiated.sessionId, completed, failed)
+            completeSync(negotiated.sessionId, run.completed, run.failed)
             true
         } catch (e: CancellationException) {
             throw e
@@ -566,12 +688,12 @@ class RommClient(
         return SaveSyncReport(
             sessionId = negotiated.sessionId,
             serverVersion = negotiated.serverVersion,
-            downloaded = downloaded,
-            uploadedSaveIds = uploaded,
-            keptBoth = keptBoth,
-            deleted = deleted,
-            queued = queued,
-            failed = failures,
+            downloaded = run.downloaded,
+            uploadedSaveIds = run.uploaded,
+            keptBoth = run.keptBoth,
+            deleted = run.deleted,
+            queued = run.queued,
+            failed = run.failures,
             completedSession = sessionClosed,
         )
     }
@@ -581,48 +703,150 @@ class RommClient(
         http.connectionPool.evictAll()
     }
 
-    private suspend fun uploadOrQueue(
-        local: LocalSave,
-        deviceId: String,
-        sessionId: Long,
-        queue: SaveUploadQueue?,
-        queued: MutableList<String>,
-        failures: MutableList<String>,
-        slotOverride: String? = local.slot,
-    ): Long? {
-        val bytes = Files.readAllBytes(local.file)
-        val hash = md5Hex(bytes)
-        return try {
-            uploadSave(
-                romId = local.romId,
-                fileName = local.fileName,
-                slot = slotOverride,
-                emulator = local.emulator,
-                deviceId = deviceId,
-                sessionId = sessionId,
-                contentHash = hash,
-                bytes = bytes,
-            )
-        } catch (e: CancellationException) {
-            throw e
-        } catch (e: RommUnavailable) {
-            if (queue != null) {
-                queue.enqueue(local, deviceId, hash, bytes, slotOverride)
-                queued += local.fileName
-            }
-            failures += e.message ?: "upload failed"
-            null
+    /** State and steps for one [syncSaves] call. */
+    private inner class SyncRun(
+        val deviceId: String,
+        val sessionId: Long,
+        val ledger: SaveLedger?,
+    ) {
+        var completed = 0
+        var failed = 0
+        val downloaded = mutableListOf<Path>()
+        val uploaded = mutableListOf<Long>()
+        val keptBoth = mutableListOf<KeptBoth>()
+        val archived = mutableListOf<Long>()
+        val deleted = mutableListOf<Path>()
+        val queued = mutableListOf<String>()
+        val failures = mutableListOf<String>()
+
+        fun unsynced(local: LocalSave, hash: String): Boolean {
+            val slot = local.slot ?: return true
+            return ledger?.unsynced(slot, hash) ?: true
         }
+
+        fun markSynced(slot: String?, hash: String, emulator: String?) {
+            if (slot != null) ledger?.markSynced(slot, hash, emulator)
+        }
+
+        /** Uploads [local] into its slot. Counts the result. */
+        suspend fun upload(local: LocalSave) {
+            val bytes = withContext(Dispatchers.IO) { Files.readAllBytes(local.file) }
+            val hash = md5Hex(bytes)
+            val id = sendOrHold(local, bytes, hash, local.slot) ?: return
+            uploaded += id
+            markSynced(local.slot, hash, local.emulator)
+            completed++
+        }
+
+        /**
+         * Uploads [local] as an archive unless these bytes already are one, then
+         * writes the server copy over it. Counts the result.
+         */
+        suspend fun keepBoth(local: LocalSave, op: SyncOperation, path: Path) {
+            val saveId = op.saveId ?: throw RommResponseException("${op.action} is missing save_id")
+            val before = archived.size
+            if (!archive(local)) return
+            download(op, path)
+            keptBoth += KeptBoth(op.romId, op.slot, archived.drop(before).firstOrNull(), saveId, path)
+            completed++
+        }
+
+        /**
+         * Uploads [local] as an archive with a null slot and a unique name, unless
+         * these bytes already are one. False when RomM could not be reached; the
+         * save is then named in [queued] and the caller must not replace it.
+         */
+        suspend fun archive(local: LocalSave): Boolean {
+            val bytes = withContext(Dispatchers.IO) { Files.readAllBytes(local.file) }
+            val hash = md5Hex(bytes)
+            if (local.slot != null && ledger?.slot(local.slot)?.archivedHash == hash) return true
+            val copy = local.copy(fileName = archiveFileName(local.fileName, archiveStamp()), slot = null)
+            val id = sendOrHold(copy, bytes, hash, slot = null, name = local.fileName) ?: return false
+            archived += id
+            local.slot?.let { slot -> ledger?.update(slot) { it.copy(archivedHash = hash) } }
+            return true
+        }
+
+        /**
+         * Writes the server copy to [path]. What [path] held is copied to the
+         * slot's trash first. The ledger moves before the confirm, so a lost
+         * confirm cannot make the new bytes look unsynced.
+         */
+        suspend fun download(op: SyncOperation, path: Path) {
+            val saveId = op.saveId ?: throw RommResponseException("${op.action} is missing save_id")
+            val expected = comparableServerHash(op)
+            withContext(Dispatchers.IO) {
+                if (Files.isRegularFile(path) && md5File(path) != expected) copySaveToTrash(path)
+            }
+            downloadSave(saveId, deviceId, sessionId, path, expected)
+            val hash = withContext(Dispatchers.IO) { md5File(path) }
+            markSynced(op.slot, hash, op.emulator)
+            downloaded.add(path)
+            confirmSaveDownloaded(saveId, deviceId, hash)
+        }
+
+        /**
+         * Sends one upload. Null when RomM could not be reached: the save stays
+         * unsynced for the next negotiate and is named in [queued].
+         */
+        private suspend fun sendOrHold(
+            local: LocalSave,
+            bytes: ByteArray,
+            hash: String,
+            slot: String?,
+            name: String = local.fileName,
+        ): Long? =
+            try {
+                uploadSave(
+                    romId = local.romId,
+                    fileName = local.fileName,
+                    slot = slot,
+                    emulator = local.emulator,
+                    deviceId = deviceId,
+                    sessionId = sessionId,
+                    contentHash = hash,
+                    bytes = bytes,
+                )
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: RommUnavailable) {
+                queued += name
+                failures += e.message ?: "upload failed"
+                failed++
+                null
+            }
     }
 
-    private fun localSave(saves: List<LocalSave>, op: SyncOperation): LocalSave =
+    /**
+     * RomM's hash of the server save when it is an MD5 of the file's bytes.
+     * RomM hashes an archive by its members, so an archive's hash cannot be
+     * compared with the file and is left unchecked.
+     */
+    private fun comparableServerHash(op: SyncOperation): String? =
+        op.serverContentHash?.lowercase()?.takeUnless { isArchiveName(op.fileName) }
+
+    private fun pairedLocal(saves: List<LocalSave>, op: SyncOperation): LocalSave? =
         saves.find { it.romId == op.romId && it.slot == op.slot && it.fileName == op.fileName }
             ?: saves.find { it.romId == op.romId && it.slot == op.slot }
+
+    private fun localSave(saves: List<LocalSave>, op: SyncOperation): LocalSave =
+        pairedLocal(saves, op)
             ?: throw RommResponseException("negotiate asked for ${op.fileName} and it was not local")
 
-    private suspend fun streamGet(uri: URI, partial: Path, range: Long?) {
+    /**
+     * One GET into [partial]. [onHeaders] sees the status and headers before
+     * any body byte is written and may throw to refuse them.
+     */
+    private suspend fun streamGet(
+        uri: URI,
+        partial: Path,
+        range: Long?,
+        ifRange: String? = null,
+        onHeaders: ((Int, Map<String, List<String>>) -> Unit)? = null,
+    ) {
         val headers = mutableMapOf<String, String>()
         if (range != null) headers["Range"] = "bytes=$range-"
+        if (range != null && ifRange != null) headers["If-Range"] = ifRange
         val raw = exchange(
             uri,
             "GET",
@@ -630,6 +854,7 @@ class RommClient(
             extraHeaders = headers,
             streamTo = partial,
             append = range != null,
+            onHeaders = onHeaders,
         )
         if (raw.status == 202) {
             throw RommConversionPending(raw.header("Retry-After")?.toLongOrNull())
@@ -661,6 +886,7 @@ class RommClient(
         extraHeaders: Map<String, String> = emptyMap(),
         streamTo: Path? = null,
         append: Boolean = false,
+        onHeaders: ((Int, Map<String, List<String>>) -> Unit)? = null,
     ): RawResponse = withContext(Dispatchers.IO) {
         val token = bearer()
         if (authenticated && token == null) throw RommUnauthenticated()
@@ -701,6 +927,7 @@ class RommClient(
                     val headers = open.headers.names().associateWith { open.headers.values(it) }
                     val status = open.code
                     try {
+                        onHeaders?.invoke(status, headers)
                         if (streamTo != null && (status == 200 || status == 206) && !(status == 206 && !append)) {
                             val input = open.body?.byteStream()
                                 ?: throw RommResponseException("RomM returned an empty body")
@@ -719,8 +946,9 @@ class RommClient(
                                         StandardOpenOption.TRUNCATE_EXISTING,
                                     )
                                 }
-                                Files.newOutputStream(streamTo, *options).use { out ->
-                                    copyUntilCanceled(call, stream, out)
+                                FileChannel.open(streamTo, *options).use { channel ->
+                                    copyUntilCanceled(call, stream, Channels.newOutputStream(channel))
+                                    channel.force(true)
                                 }
                             }
                         }
@@ -794,7 +1022,8 @@ class RommClient(
         /** A cover is well under this. A larger body is not an image the hero needs. */
         const val ARTWORK_MAX_BYTES: Int = 8 * 1024 * 1024
 
-        internal fun normalizeOrigin(raw: String): String {
+        /** The origin as this client uses it: scheme and host lowercased, no trailing `/` or `/api`. */
+        fun normalizeOrigin(raw: String): String {
             var text = raw.trim().trimEnd('/')
             text = stripTrailingApi(text)
             val marker = "://"
@@ -876,45 +1105,73 @@ class RommClient(
         }
 
         /**
-         * Moves [file] into a `.trash` directory beside it.
-         * The name is unique so a second delete does not replace the first.
-         * Returns false when [file] is already gone.
+         * True when [target] is a finished download whose verified marker matches
+         * [expectedSize] and [expectedMd5]. A null expectation is not checked.
+         * Reads no ROM bytes, so it is cheap enough for a launch with no network.
          */
-        internal fun moveSaveToTrash(file: Path): Boolean {
-            if (!Files.exists(file)) return false
-            val parent = file.parent
-            if (parent == null) return Files.deleteIfExists(file)
-            val trash = parent.resolve(".trash")
-            Files.createDirectories(trash)
-            val dest = trash.resolve(trashedName(file.fileName.toString()))
-            try {
-                Files.move(file, dest, StandardCopyOption.ATOMIC_MOVE)
-            } catch (_: AtomicMoveNotSupportedException) {
-                Files.move(file, dest)
+        fun isVerifiedRom(target: Path, expectedSize: Long?, expectedMd5: String?): Boolean {
+            if (!Files.isRegularFile(target) || Files.exists(partialOf(target))) return false
+            val size = Files.size(target)
+            if (expectedSize != null && size != expectedSize) return false
+            val marker = try {
+                parseObject(Files.readAllBytes(markerOf(target)))
+            } catch (_: Exception) {
+                return false
             }
-            return true
+            if (marker.optLong("size") != size) return false
+            val md5 = marker.optString("md5") ?: return false
+            return expectedMd5 == null || md5.equals(expectedMd5, ignoreCase = true)
         }
 
-        private fun trashedName(fileName: String): String {
-            val stamp = DateTimeFormatter.ofPattern("yyyyMMddHHmmssSSS")
-                .withZone(ZoneOffset.UTC)
-                .format(Instant.now())
-            val unique = UUID.randomUUID().toString().substring(0, 8)
-            return "$stamp-$unique-$fileName"
+        private fun writeVerifiedMarker(target: Path, size: Long, md5: String) {
+            writeDurably(markerOf(target), """{"size":$size,"md5":"$md5"}""".toByteArray())
         }
 
-        private fun moveIntoPlace(partial: Path, target: Path) {
-            Files.createDirectories(target.parent)
-            try {
-                Files.move(
-                    partial,
-                    target,
-                    StandardCopyOption.ATOMIC_MOVE,
-                    StandardCopyOption.REPLACE_EXISTING,
-                )
-            } catch (_: AtomicMoveNotSupportedException) {
-                Files.move(partial, target, StandardCopyOption.REPLACE_EXISTING)
-            }
+        private fun markerOf(target: Path): Path = target.resolveSibling(target.fileName.toString() + MARKER_SUFFIX)
+
+        /** RomM hashes these by the files inside them, so their MD5 is not RomM's hash. */
+        fun isArchiveName(fileName: String): Boolean {
+            val name = fileName.lowercase()
+            return ARCHIVE_SUFFIXES.any { name.endsWith(it) }
         }
+
+        private val ARCHIVE_SUFFIXES = listOf(
+            ".zip", ".7z", ".rar", ".tar", ".tar.gz", ".tgz", ".tar.xz", ".txz", ".tar.bz2", ".tbz2",
+        )
+
+        internal fun partialOf(target: Path): Path = target.resolveSibling(target.fileName.toString() + ".partial")
+
+        private fun readValidator(file: Path): String? = try {
+            String(Files.readAllBytes(file), Charsets.UTF_8).trim().ifEmpty { null }
+        } catch (_: IOException) {
+            null
+        }
+
+        /** A strong `ETag`, else `Last-Modified`. A weak `ETag` cannot guard `If-Range`. */
+        private fun strongValidator(headers: Map<String, List<String>>): String? {
+            val etag = headerValue(headers, "ETag")
+            if (etag != null && !etag.startsWith("W/")) return etag
+            return headerValue(headers, "Last-Modified")
+        }
+
+        /** Start of `Content-Range: bytes <start>-<end>/<total>`. */
+        private fun contentRangeStart(headers: Map<String, List<String>>): Long? {
+            val value = headerValue(headers, "Content-Range") ?: return null
+            return value.trim().removePrefix("bytes").trim().substringBefore('-').toLongOrNull()
+        }
+
+        private fun headerValue(headers: Map<String, List<String>>, name: String): String? =
+            headers.entries.firstOrNull { it.key.equals(name, ignoreCase = true) }?.value?.firstOrNull()?.trim()
+
+        private val romLocks = ConcurrentHashMap<Path, Mutex>()
+
+        private fun romLock(target: Path): Mutex =
+            romLocks.computeIfAbsent(target.toAbsolutePath().normalize()) { Mutex() }
+
+        private const val MARKER_SUFFIX = ".verified"
+        private const val VALIDATOR_SUFFIX = ".partial.validator"
     }
 }
+
+/** A 206 that does not continue the partial on disk. The download starts over. */
+private class RangeRejected : RommException("RomM resumed the download at the wrong offset")

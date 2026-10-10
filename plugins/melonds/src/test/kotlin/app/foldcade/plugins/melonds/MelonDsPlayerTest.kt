@@ -129,4 +129,14 @@ class MelonDsPlayerTest {
         assertTrue(player.hasSaveFolder())
         assertEquals(tree, player.saveDeclarations(game).single().locationUri)
     }
+
+    @Test
+    fun theSaveIsTheGameFileNameWithASavExtension() {
+        val player = MelonDsPlayer()
+        assertEquals("Mario Kart DS (USA).sav", player.saveFileName(MelonDsPlayer.SAVE_SLOT, "Mario Kart DS (USA).nds"))
+        assertEquals("game.v2.sav", player.saveFileName(MelonDsPlayer.SAVE_SLOT, "game.v2.nds"))
+        assertEquals("noext.sav", player.saveFileName(MelonDsPlayer.SAVE_SLOT, "noext"))
+        assertNull(player.saveFileName("other", "game.nds"))
+        assertNull(player.saveFileName(MelonDsPlayer.SAVE_SLOT, " "))
+    }
 }

@@ -28,7 +28,6 @@ import app.foldcade.api.plugin.Credential
 import app.foldcade.api.plugin.Game
 import app.foldcade.api.plugin.LaunchRequest
 import app.foldcade.api.plugin.LaunchTarget
-import app.foldcade.api.plugin.ObservedSaves
 import app.foldcade.api.plugin.Player
 import app.foldcade.api.plugin.PluginException
 import app.foldcade.api.plugin.SaveFolderHolder
@@ -63,6 +62,9 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.sync.withLock
+import org.json.JSONArray
+import org.json.JSONObject
 import app.foldcade.ui.PanelHost
 
 abstract class FoldcadeHomeActivity : PanelKeyActivity() {
@@ -251,6 +253,8 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
         if (ending && foldcade.externalPlay.sessionId == null && pending != null) {
             libraryReturn = null
             reconcile(pending)
+        } else {
+            resumeLostReturn()
         }
         // Foldcade in front on this panel means the game there has left. A launcher-icon
         // start is not a Home recall, so without this a Foldcade that is not the default
@@ -406,22 +410,27 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
             pendingLaunch = index
             val apiGame = shelfGame(game)
             foldcade.scope.launch {
-                val target = try {
-                    foldcade.plugins.ensureLocal(libraryId, apiGame)
+                var notPlaced = false
+                val prepared = try {
+                    val local = foldcade.plugins.ensureLocal(libraryId, apiGame)
                     withContext(Dispatchers.Main.immediate) { foldcade.shell.noteOnDevice(libraryId, remoteKey) }
-                    foldcade.plugins.prepareLaunch(libraryId, apiGame, player).target
+                    prepareSaves(libraryId, apiGame, player, local)
                 } catch (cancelled: CancellationException) {
                     throw cancelled
                 } catch (fatal: VirtualMachineError) {
                     throw fatal
+                } catch (_: SaveNotPlaced) {
+                    notPlaced = true
+                    null
                 } catch (_: Exception) {
                     null
                 }
                 withContext(Dispatchers.Main.immediate) {
                     libraryLaunching = false
                     if (!launchCurrent(generation) || pendingLaunch != index) return@withContext
-                    if (target == null) return@withContext
-                    finishLaunch(index, game, player, target, apiGame, generation)
+                    if (notPlaced) showSaveNotPlaced(game.title)
+                    if (prepared == null) return@withContext
+                    finishLaunch(index, game, player, prepared.target, apiGame, generation, prepared.spots)
                 }
             }
             return
@@ -444,6 +453,7 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
         target: LaunchTarget?,
         apiGame: Game,
         generation: Int,
+        spots: List<SaveSpot> = emptyList(),
     ) {
         if (!launchCurrent(generation)) return
         val continuing = pendingLaunch == index && closeConfirmed
@@ -480,7 +490,7 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
             }
             is PlayerLaunch.Ready -> {
                 clearPendingLaunch()
-                startPlayer(game, decision, apiGame, player, generation)
+                startPlayer(game, decision, apiGame, player, generation, spots)
             }
         }
     }
@@ -616,6 +626,26 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
                 }
             }
             val plan = planLaunch(players, target, installedPackage)
+            // Saves go into the player's folder before it starts, and come back when it returns.
+            val spots = if (plan is GameLaunch.Installed) {
+                try {
+                    prepareSaves(libraryId, game, plan.player, target).spots
+                } catch (cancelled: CancellationException) {
+                    throw cancelled
+                } catch (fatal: VirtualMachineError) {
+                    throw fatal
+                } catch (_: SaveNotPlaced) {
+                    withContext(Dispatchers.Main.immediate) {
+                        if (launchCurrent(generation)) showSaveNotPlaced(title)
+                    }
+                    return@launch
+                } catch (_: Exception) {
+                    // The player keeps its own save. The next launch hands any change to the library.
+                    emptyList()
+                }
+            } else {
+                emptyList()
+            }
             val installedIntent = if (plan is GameLaunch.Installed) {
                 try {
                     foldcade.plugins.launchIntent(
@@ -643,13 +673,14 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
                         occupiesBoth = false,
                     )
                     is GameLaunch.Installed -> if (installedIntent != null) {
-                        startExternal(
+                        val started = startExternal(
                             id,
                             title,
                             game.platformId,
                             plan.player.occupiesBothDisplays,
                             installedIntent,
                         )
+                        if (started) rememberReturn(LibraryReturn(libraryId, game, plan.player, spots))
                     } else if (launchCurrent(generation)) {
                         showMissing(plan.player.displayName, emptyList())
                     }
@@ -674,6 +705,53 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
                 screen = hostScreen(),
             ),
         )
+    }
+
+    private fun showSaveNotPlaced(title: String) {
+        foldcade.shell.showDialog(
+            DialogState(
+                kind = DialogKind.Ok,
+                title = "${Copy.saveNotPlaced} $title",
+                body = Copy.saveNotPlacedBody,
+                buttons = listOf(DialogButton.Ok),
+                index = 0,
+                safeIndex = 0,
+                screen = hostScreen(),
+            ),
+        )
+    }
+
+    /**
+     * Hands the library any save the player changed outside Foldcade, lets the
+     * library sync, then writes its saves into the player's folder.
+     * Throws [SaveNotPlaced] when the player has a save folder and any step
+     * fails: the game must not start from a save the library does not know.
+     * One save flow runs at a time, so a second launch or a return read-back
+     * waits rather than racing this one.
+     */
+    private suspend fun prepareSaves(
+        libraryId: String,
+        game: Game,
+        player: Player,
+        local: LaunchTarget,
+    ): PreparedLaunch = foldcade.saveFlow.withLock {
+        val saves = foldcade.playerSaves
+        val spots = saves.spots(player, game, local)
+        try {
+            val outside = saves.changedSince(libraryId, game, player, spots)
+            if (outside.slots.isNotEmpty()) {
+                foldcade.plugins.reconcile(libraryId, game, player, outside)
+                saves.noteHandedOver(libraryId, game, player, spots, outside)
+            }
+            val placement = foldcade.plugins.prepareLaunch(libraryId, game, player)
+            if (!saves.place(libraryId, game, player, spots, placement.savesToPlace)) throw SaveNotPlaced()
+            PreparedLaunch(placement.target, spots)
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (failure: Exception) {
+            // With a save folder in play, any failure here would start the game from a save the library does not know.
+            if (spots.isNotEmpty() && failure !is SaveNotPlaced) throw SaveNotPlaced() else throw failure
+        }
     }
 
     private fun showMissing(playerName: String, alsoRuns: List<String>) {
@@ -708,13 +786,14 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
         startExternal(id, title, platformId, occupiesBoth, intent)
     }
 
+    /** True when the app was asked to start. */
     private fun startExternal(
         id: String,
         title: String,
         platformId: String?,
         occupiesBoth: Boolean,
         intent: Intent,
-    ) {
+    ): Boolean {
         val session = foldcade.store.session
         val external = ExternalApp(id, occupiesBoth)
         val assignment = displays.assignment(session.defaultDisplayIsTop)
@@ -722,16 +801,17 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
             foldcade.store.update { it.launch(external, launchScreen) }
             assignment.topDisplayId
         } else {
-            val panel = session.singleScreenTarget(launchScreen) ?: return
+            val panel = session.singleScreenTarget(launchScreen) ?: return false
             foldcade.store.place(panel, external)
             when (panel) {
                 Panel.Top -> assignment.topDisplayId
-                Panel.Bottom -> assignment.bottomDisplayId ?: return
+                Panel.Bottom -> assignment.bottomDisplayId ?: return false
             }
         }
         foldcade.externalPlay.open(foldcade.plays, id, displayId) {
             startOnDisplay(intent, displayId)
         }
+        return true
     }
 
     private fun launchStandIn(game: ShelfGame) {
@@ -774,6 +854,7 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
         apiGame: Game,
         player: Player,
         generation: Int,
+        spots: List<SaveSpot>,
     ) {
         foldcade.music.onExternalLaunch()
         val assignment = displays.assignment(foldcade.store.session.defaultDisplayIsTop)
@@ -799,7 +880,7 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
                 startActivity(ready.intent.toAndroidIntent(), options.toBundle())
             }
             if (game.libraryId != null) {
-                libraryReturn = LibraryReturn(game.libraryId, apiGame, player)
+                rememberReturn(LibraryReturn(game.libraryId, apiGame, player, spots))
             }
         } catch (cancelled: CancellationException) {
             throw cancelled
@@ -1102,15 +1183,51 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
         }
     }
 
+    /** Kept on disk too, so a process that dies while the game runs still reads its saves back. */
+    private fun rememberReturn(pending: LibraryReturn) {
+        libraryReturn = pending
+        foldcade.scope.launch { foldcade.store.setPendingSaveReturn(pending.storeKey, pending.encode()) }
+    }
+
+    /**
+     * Read-backs an earlier process never finished. Runs only when no game is
+     * open, and only once the plugins are loaded: before that no player can be
+     * found, and the record would be dropped.
+     */
+    private fun resumeLostReturn() {
+        if (libraryReturn != null || foldcade.externalPlay.sessionId != null) return
+        foldcade.scope.launch {
+            foldcade.awaitPlugins()
+            for (stored in foldcade.store.pendingSaveReturns()) {
+                val lost = decodeLibraryReturn(stored) { id -> foldcade.plugins.player(id) }
+                if (lost == null) {
+                    // The player is gone or the record is unreadable. Its next launch still hands the save over.
+                    storedReturnKey(stored)?.let { foldcade.store.setPendingSaveReturn(it, null) }
+                    continue
+                }
+                withContext(Dispatchers.Main.immediate) {
+                    if (libraryReturn == null && foldcade.externalPlay.sessionId == null) reconcile(lost)
+                }
+            }
+        }
+    }
+
+    /** Reads back what the player wrote and gives it to the library. */
     private fun reconcile(pending: LibraryReturn) {
         foldcade.scope.launch {
             try {
-                foldcade.plugins.reconcile(
-                    pending.libraryId,
-                    pending.game,
-                    pending.player,
-                    ObservedSaves(emptyList()),
-                )
+                foldcade.saveFlow.withLock {
+                    val saves = foldcade.playerSaves
+                    val observed = saves.changedSince(pending.libraryId, pending.game, pending.player, pending.spots)
+                    foldcade.plugins.reconcile(
+                        pending.libraryId,
+                        pending.game,
+                        pending.player,
+                        observed,
+                    )
+                    saves.noteHandedOver(pending.libraryId, pending.game, pending.player, pending.spots, observed)
+                    foldcade.store.setPendingSaveReturn(pending.storeKey, null)
+                }
             } catch (cancelled: CancellationException) {
                 throw cancelled
             } catch (fatal: VirtualMachineError) {
@@ -1147,7 +1264,74 @@ private data class LibraryReturn(
     val libraryId: String,
     val game: Game,
     val player: Player,
+    val spots: List<SaveSpot> = emptyList(),
 )
+
+/** One stored read-back per game. */
+private val LibraryReturn.storeKey: String get() = "$libraryId\u0000${game.remoteKey}"
+
+private fun storedReturnKey(text: String): String? = try {
+    val json = JSONObject(text)
+    "${json.getString("library")}\u0000${json.getString("key")}"
+} catch (_: Exception) {
+    null
+}
+
+private fun LibraryReturn.encode(): String = JSONObject().apply {
+    put("library", libraryId)
+    put("backend", game.backendId)
+    put("key", game.remoteKey)
+    put("platform", game.platformId)
+    put("availability", game.availability.name)
+    put("label", game.label)
+    put("player", player.id)
+    put(
+        "spots",
+        JSONArray(
+            spots.map { spot ->
+                JSONObject().put("slot", spot.slot).put("folder", spot.folderUri).put("file", spot.fileName)
+            },
+        ),
+    )
+}.toString()
+
+private fun decodeLibraryReturn(text: String, player: (String) -> Player?): LibraryReturn? {
+    val json = try {
+        JSONObject(text)
+    } catch (_: Exception) {
+        return null
+    }
+    val resolved = player(json.optString("player")) ?: return null
+    return try {
+        decodeLibraryReturn(json, resolved)
+    } catch (_: Exception) {
+        null
+    }
+}
+
+private fun decodeLibraryReturn(json: JSONObject, player: Player): LibraryReturn {
+    val spots = json.getJSONArray("spots")
+    return LibraryReturn(
+        libraryId = json.getString("library"),
+        game = Game(
+            backendId = json.getString("backend"),
+            remoteKey = json.getString("key"),
+            platformId = json.getString("platform"),
+            availability = Availability.valueOf(json.getString("availability")),
+            label = json.getString("label"),
+        ),
+        player = player,
+        spots = (0 until spots.length()).map { index ->
+            val spot = spots.getJSONObject(index)
+            SaveSpot(spot.getString("slot"), spot.getString("folder"), spot.getString("file"))
+        },
+    )
+}
+
+private class PreparedLaunch(val target: LaunchTarget, val spots: List<SaveSpot>)
+
+/** A library save could not be written into the player's folder and checked. */
+private class SaveNotPlaced : Exception("save could not be placed")
 
 class PrimaryHomeActivity : FoldcadeHomeActivity() {
     override val launchesCompanion: Boolean = true

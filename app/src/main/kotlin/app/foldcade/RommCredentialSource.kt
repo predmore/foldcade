@@ -10,6 +10,7 @@ import app.foldcade.plugins.romm.RommPlugins
 import app.foldcade.plugins.romm.RommTokenSource
 import android.os.Looper
 import app.foldcade.plugins.romm.RommWiring
+import app.foldcade.plugins.romm.SaveBytes
 import java.nio.file.Path
 import kotlin.coroutines.cancellation.CancellationException
 import kotlinx.coroutines.runBlocking
@@ -54,8 +55,12 @@ internal fun readRommToken(store: CredentialStore, onMainThread: Boolean): Strin
  * Points [RommPlugins] at [store]. A blank [origin] removes the wiring.
  * The token is not copied into the wiring.
  *
- * The same origin, cache, and platform list leaves the current wiring in place,
- * including a remembered device. [platforms] is compared in list order.
+ * [cacheRoot] holds downloaded ROMs and may be cleared by the system.
+ * [dataRoot] holds saves and the device id, and must not be a cache directory.
+ * [saveBytes] reads a save the player wrote at a content URI.
+ *
+ * The same origin, roots, and platform list leave the current wiring in place.
+ * [platforms] is compared in list order.
  */
 fun publishRommWiring(
     origin: String?,
@@ -63,6 +68,8 @@ fun publishRommWiring(
     cacheRoot: Path,
     platforms: List<Platform> = emptyList(),
     contentAuthority: String = ROMM_CONTENT_AUTHORITY,
+    dataRoot: Path,
+    saveBytes: SaveBytes = SaveBytes { null },
 ) {
     val current = RommPlugins.wiring
     if (origin.isNullOrBlank()) {
@@ -73,6 +80,7 @@ fun publishRommWiring(
         current != null &&
         current.origin == origin &&
         current.cacheRoot == cacheRoot &&
+        current.dataRoot == dataRoot &&
         current.platforms == platforms
     ) {
         return
@@ -82,8 +90,10 @@ fun publishRommWiring(
             origin = origin,
             tokenSource = rommTokenSource(store),
             cacheRoot = cacheRoot,
-            contentUris = CachePathContentUri(cacheRoot, contentAuthority),
+            dataRoot = dataRoot,
+            contentUris = CachePathContentUri(cacheRoot, contentAuthority, dataRoot),
             platforms = platforms,
+            saveBytes = saveBytes,
         ),
     )
 }
@@ -96,20 +106,22 @@ internal data class RommPublishRequest(
     val origin: String?,
     val platforms: List<Platform>,
     val cacheRoot: Path,
+    val dataRoot: Path,
 )
 
 /**
- * Saved origin, then the host platform list, then the cache directory.
+ * Saved origin, then the host platform list, then the cache directory, then the data directory.
  */
 internal fun readRommPublish(
     origin: () -> String?,
     platforms: () -> List<Platform>,
     cacheRoot: () -> Path,
+    dataRoot: () -> Path,
 ): RommPublishRequest {
     val saved = origin()
     val definitions = platforms()
     val cache = cacheRoot()
-    return RommPublishRequest(saved, definitions, cache)
+    return RommPublishRequest(saved, definitions, cache, dataRoot())
 }
 
 /**
