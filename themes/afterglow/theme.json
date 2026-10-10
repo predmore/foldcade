@@ -1,7 +1,7 @@
 {
   "name": "Afterglow",
   "background": "#000000",
-  "surface": "#000000",
+  "surface": "#1C1C20",
   "onBackground": "#F4F1EA",
   "muted": "#9A958C",
   "focus": "#C8FFE4",

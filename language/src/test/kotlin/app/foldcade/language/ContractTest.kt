@@ -60,7 +60,8 @@ class ContractTest {
     fun builtInThemeIsTrueBlack() {
         val theme = builtInTheme()
         assertEquals(Color(0xFF000000), theme.background)
-        assertEquals(Color(0xFF000000), theme.surface)
+        // Cards (islands, dialogs) are raised off the true-black backdrop.
+        assertEquals(Color(0xFF1C1C20), theme.surface)
         assertEquals(Color(0xFFF2F2F2), theme.onBackground)
         assertEquals(Color(0xFF8A8A8A), theme.muted)
         assertEquals(Color(0xFFFFFFFF), theme.focus)
@@ -352,7 +353,7 @@ class ContractTest {
         val setting = PlayerSaveSetting(playerId = "azahar", label = "Azahar", chosen = false)
         val rows = leftRows(homeRoleHeld = true, playerSaves = listOf(setting))
         assertEquals(Row.PlayerSave("azahar"), rows.filterIsInstance<Row.PlayerSave>().single())
-        assertEquals(Row.DefaultHomeApp, rows.last())
+        assertEquals(Row.Settings, rows.last())
         val opened = reduce(
             PickerModel(
                 count = 1,

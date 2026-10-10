@@ -57,10 +57,16 @@ jobs:
           fi
 
   screenshots:
-    name: Thor-sized emulator, not a Thor pass
+    name: Thor-sized emulator, not a Thor pass (${{ matrix.shard }})
     needs: changes
     if: needs.changes.outputs.shell == 'true'
     runs-on: ubuntu-24.04
+    # Two emulators in parallel, each running half the captures (FOLDCADE_SHARD in
+    # dual-screen.sh). Each job boots its own emulator, so neither waits on the other.
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [shell, library]
     # Boot is capped in the script. This is the whole job, including the SDK install.
     timeout-minutes: 20
     permissions:
@@ -202,6 +208,7 @@ jobs:
         env:
           ANDROID_AVD_HOME: ${{ runner.temp }}/avd
           FOLDCADE_APK_READY: ${{ runner.temp }}/apk-ready
+          FOLDCADE_SHARD: ${{ matrix.shard }}
         run: |
           set -euo pipefail
           mkdir -p "$ANDROID_AVD_HOME" screenshots
@@ -254,7 +261,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v7
         with:
-          name: dual-screen-displays
+          name: dual-screen-displays-${{ matrix.shard }}
           path: screenshots/
           if-no-files-found: error
           retention-days: 7
@@ -263,7 +270,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v7
         with:
-          name: emulator-log
+          name: emulator-log-${{ matrix.shard }}
           path: |
             screenshots/emulator.log
             screenshots/logcat.txt
