@@ -738,6 +738,12 @@ class ShellController(
         else -> tileFromOrder(displaySource(model))
     }
 
+    /** The library record behind the focused cell, for its metadata. Null for an app or a shelf tile. */
+    fun focusedRecord(): Game? = when {
+        showingHome() -> home.face(model.focus.cellIndex)?.id?.let(home::game)
+        else -> focusedEntry()?.game
+    }
+
     /**
      * What the idle top screen shows for the focused cell.
      * A platform folder is its name and game count, with no artwork.
@@ -751,6 +757,7 @@ class ShellController(
                     key = entry.id,
                     name = entry.title,
                     count = entry.shortText.toIntOrNull(),
+                    mark = entry.platformId?.let(::kitMark),
                 ),
             )
         }
@@ -792,6 +799,7 @@ class ShellController(
         shortText = shortText,
         platformId = platformId,
         occupiesBothDisplays = occupiesBothDisplays,
+        mark = platformId?.let(::kitMark),
         availabilityLabel = availabilityLabel,
     )
 

@@ -83,6 +83,8 @@ internal class MockRomm : AutoCloseable {
             Regex("^/api/saves/\\d+/content$"),
             Regex("^/api/saves/\\d+/downloaded$"),
             Regex("^/api/sync/sessions/\\d+/complete$"),
+            // Static artwork the server hosts. Not an API path.
+            Regex("^/assets/romm/resources/.+"),
         )
     }
 }

@@ -40,6 +40,7 @@ Paths below are on the 5.4.0-alpha.2 schema and in the 5.4.0-alpha docs for auth
 | Save bytes | `POST /api/saves`, `GET /api/saves/{id}/content` |
 | Confirm a download | `POST /api/saves/{id}/downloaded` |
 | Finish the session | `POST /api/sync/sessions/{id}/complete` |
+| Cover art | `GET` the artwork address, on the origin only, with no token |
 
 `format` is never sent. A 202 from a conversion is surfaced and not retried. Multi-file downloads pass `file_ids` on the ROM content path. A finished cache file is reused. A `.partial` file is resumed with `Range`.
 

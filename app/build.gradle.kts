@@ -173,6 +173,7 @@ dependencies {
     implementation(libs.compose.animation)
     implementation(libs.activity.compose)
     implementation(libs.media3.exoplayer)
+    implementation(libs.coil.compose)
     testImplementation(libs.junit)
 }
 

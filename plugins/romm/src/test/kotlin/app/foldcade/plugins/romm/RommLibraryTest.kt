@@ -572,17 +572,19 @@ private class NamedPlayer(override val id: String) : Player {
     override fun launchIntent(request: LaunchRequest): PlayerIntent = error("unused")
 }
 
-private class ScriptedOps : RommOps {
+internal class ScriptedOps : RommOps {
     var onPlatforms: suspend () -> List<PlatformSummary> = { emptyList() }
     var onRoms: suspend (RomQuery) -> RomPage = { query -> RomPage(emptyList(), 0, query.limit, query.offset) }
     var onRom: suspend (Long) -> RomSummary = { id -> error("rom $id") }
     var onClose: () -> Unit = {}
+    var onArtwork: suspend (String) -> ByteArray = { error("artwork") }
     var onRegister: suspend (RegisteredDevice?, String, String) -> RegisteredDevice =
         { _, _, version -> RegisteredDevice("device-1", version) }
     var onSync: suspend (String, List<LocalSave>, List<Long>, List<String>) -> SaveSyncReport =
         { _, _, _, _ -> error("sync") }
 
     override suspend fun heartbeat() = Heartbeat("5.4.0")
+    override suspend fun artwork(uri: String) = onArtwork(uri)
     override suspend fun platforms() = onPlatforms()
     override suspend fun roms(query: RomQuery) = onRoms(query)
     override suspend fun rom(id: Long) = onRom(id)

@@ -271,6 +271,9 @@ class PluginHost(
     /** Player ids stored at registration, from the published snapshot. This does not call a plugin. */
     fun playerIds(): List<String> = catalog.players.keys.toList()
 
+    /** Metadata provider ids in registration order, from the published snapshot. This does not call a plugin. */
+    fun metadataIds(): List<String> = catalog.metadataProviders.keys.toList()
+
     /**
      * The library's display name, through the same guard as a suspending call.
      * A plugin failure is [PluginCallException] or [PluginException].
