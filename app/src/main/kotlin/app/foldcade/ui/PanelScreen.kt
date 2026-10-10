@@ -60,7 +60,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.MotionDurationScale
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.draw.drawBehind
@@ -140,17 +139,17 @@ import app.foldcade.language.builtInTheme
 import app.foldcade.language.connectFields
 import app.foldcade.language.connectHint
 import app.foldcade.language.hintFor
+import app.foldcade.language.HintKey
+import app.foldcade.language.PromptKey
+import app.foldcade.language.gridHints
 import app.foldcade.language.letterOfKey
 import app.foldcade.language.letterbox
 import app.foldcade.language.cursorBrush
 import app.foldcade.language.displayOrder
 import app.foldcade.language.heroCopy
 import app.foldcade.language.heroCrossfadeActive
-import app.foldcade.language.lastPlayedLine
 import app.foldcade.language.monogram
 import app.foldcade.language.panelRows
-import app.foldcade.language.approximatePlayNote
-import app.foldcade.language.playedLine
 import app.foldcade.language.quickTileColumns
 import app.foldcade.language.rowLabel
 import app.foldcade.language.retargetHero
@@ -528,6 +527,15 @@ private fun HeroLabel(app: FoldcadeApp, shown: HeroSubject, cellFocused: Boolean
                 overflow = TextOverflow.Ellipsis,
             )
         }
+        val both = app.shell.focusedGame()?.takeIf { it.id == (shown as? HeroSubject.Item)?.item?.key }
+        if (both?.occupiesBothDisplays == true) {
+            BasicText(
+                text = Copy.usesBothScreens,
+                style = text(theme.muted, TypeRamp.availability, theme).copy(textAlign = TextAlign.Center),
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
         if (shown is HeroSubject.Item) {
             val played = app.plays.run {
                 stamp
@@ -621,59 +629,30 @@ private fun Picker(
     val theme = foldTheme()
     val shell = app.shell
     val model = shell.model
-    val session = app.store.session
-    val game = shell.focusedGame()
+    // The hero on the other screen carries the focused name, so the grid is
+    // icons only. With one screen free there is no hero, and tiles keep labels.
+    val iconsOnly = app.store.session.bothScreensFree()
     BoxWithConstraints(Modifier.fillMaxSize()) {
+        val stride = maxWidth
         val inset = maxWidth * Metrics.insetFraction
         val gap = maxWidth * Metrics.gapFraction
-        val inner = maxWidth - inset * 2
-        val rough = (inner - gap * (Metrics.columns - 1)) / Metrics.columns
-        // Room outside each cell so the focus glow reaches black before the pager clip.
-        val pad = focusOutset(rough) + px(FOCUS_GLOW_PAD)
-        val cell = (inner - pad * 2 - gap * (Metrics.columns - 1)) / Metrics.columns
         val titlePx = rememberTextMeasurer().measure(
             text = "Ag",
             style = text(theme.onBackground, TypeRamp.gridLabel, theme),
             maxLines = 1,
         ).size.height
         val titleLine = with(LocalDensity.current) { titlePx.toDp() }
-        val clearance = px(Metrics.chromeClearancePx)
-        // Keeps the last tile label inside the screen, above the clip.
-        val labelSafe = px(28f)
         val showingHome = !model.libraryGrid && model.homeGrid == HomeGrid.StandIns
-        val bottomHome = showingHome && screen == HostScreen.Bottom
         Column(
             Modifier
                 .fillMaxSize()
                 .padding(horizontal = inset)
-                .padding(top = inset, bottom = inset + labelSafe),
+                .padding(top = inset, bottom = inset),
         ) {
-            if (!bottomHome) {
-                if (screen == HostScreen.Top) {
-                    Spacer(Modifier.height(48.dp))
-                }
-                ChromeRow(app)
-                Spacer(Modifier.height(clearance))
+            if (screen == HostScreen.Top) {
+                Spacer(Modifier.height(48.dp))
             }
-            AllBar(app, shell, screen, onEffect)
-            if (
-                bottomHome &&
-                game?.occupiesBothDisplays == true &&
-                session.bothScreensFree() &&
-                model.panel == null &&
-                model.dialog == null &&
-                !model.connectOpen
-            ) {
-                BasicText(
-                    text = Copy.usesBothScreens,
-                    modifier = Modifier
-                        .padding(bottom = px(8f))
-                        .clearAndSetSemantics {},
-                    style = text(theme.onBackground, TypeRamp.hint, theme),
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
-            }
+            GridHeader(app, shell, screen, onEffect)
             BoxWithConstraints(
                 Modifier
                     .weight(1f)
@@ -698,35 +677,16 @@ private fun Picker(
                             },
                         )
                     },
+                contentAlignment = Alignment.Center,
             ) {
-                val showTitles = true
-                val available = maxHeight.coerceAtLeast(0.dp)
-                val homeRows = 3
-                // Room for the focus ring and its glow around a tile in the first row.
-                val homePad = px(HOME_RING_PAD)
-                val titleGuess = px(20f) + titleLine
-                val fromHeight = if (homeRows > 0) {
-                    ((available - homePad * 2 - gap * (homeRows - 1)) / homeRows) - titleGuess
-                } else {
-                    cell
-                }
-                val fromWidth = if (maxWidth > Dp.Hairline) {
-                    (maxWidth - gap * (Metrics.columns - 1)) / Metrics.columns
-                } else {
-                    cell
-                }
-                val homeCell = minOf(fromHeight, fromWidth).coerceAtLeast(px(56f))
-                val gridCell = if (bottomHome) homeCell else cell
-                val gridPad = if (bottomHome) homePad else pad
-                val titleBlock = focusOutset(gridCell) + px(12f) + titleLine
-                val slot = if (showTitles) gridCell + titleBlock else gridCell
-                val rows = if (bottomHome) {
-                    homeRows
-                } else if (gridCell > Dp.Hairline && slot > Dp.Hairline) {
-                    ((available - gridPad * 2 + gap) / (slot + gap)).toInt().coerceAtLeast(1)
-                } else {
-                    1
-                }
+                val rows = Metrics.rows
+                val columns = Metrics.columns
+                // Room for the focused tile's scale and ring. The glow is not clipped.
+                val ring = focusOutset(maxWidth / columns) + px(GRID_RING_PAD)
+                val titleBlock = if (iconsOnly) Dp.Hairline else px(20f) + titleLine
+                val fromHeight = (maxHeight - ring * 2 - gap * (rows - 1)) / rows - titleBlock
+                val fromWidth = (maxWidth - ring * 2 - gap * (columns - 1)) / columns
+                val cell = minOf(fromHeight, fromWidth).coerceAtLeast(px(56f))
                 SideEffect { shell.setRowsPerPage(rows) }
                 val libraryFailed = model.unavailable &&
                     model.panel?.level == PanelLevel.Library &&
@@ -745,29 +705,29 @@ private fun Picker(
                     PagedGrid(
                         app = app,
                         screen = screen,
-                        cell = gridCell,
+                        cell = cell,
                         gap = gap,
-                        pad = gridPad,
+                        pad = ring,
                         rows = rows,
+                        stride = stride,
                         scale = scale,
-                        showTitle = showTitles,
-                        followDrag = bottomHome,
+                        showTitle = !iconsOnly,
+                        followDrag = showingHome,
                     )
                 }
             }
-            if (bottomHome) {
-                PageDots(count = model.count, rows = 3, index = model.focus.cellIndex)
-                val hint = shell.homeHint()
-                if (hint != null) {
-                    BasicText(
-                        text = hint,
-                        style = text(theme.muted, TypeRamp.hint, theme),
-                        maxLines = 2,
-                        overflow = TextOverflow.Ellipsis,
-                    )
-                }
-                HomeHintRow(model)
+            PageDots(count = model.count, rows = Metrics.rows, index = model.focus.cellIndex)
+            val rename = shell.homeHint()
+            if (rename != null) {
+                BasicText(
+                    text = rename,
+                    modifier = Modifier.fillMaxWidth(),
+                    style = text(theme.muted, TypeRamp.hint, theme).copy(textAlign = TextAlign.Center),
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
             }
+            GridHints(app)
         }
         TopIslands(app, screen, scale) { panelState, progress, interactive ->
             PanelRows(app, screen, panelState, progress, interactive, onEffect)
@@ -943,88 +903,41 @@ private fun quickIcon(setting: QuickSetting): Int = when (setting) {
     QuickSetting.Settings -> R.drawable.ic_status_settings
 }
 
+/**
+ * Above the grid: the shelf name, or the All library's tab, sort, system, and
+ * destination. The home grid has nothing here.
+ */
 @Composable
-private fun GameDetail(app: FoldcadeApp, gameId: String) {
-    PlayFacts(app, gameId)
-}
-
-/** Total play time and last played. The hero and the game detail both use this. */
-@Composable
-private fun PlayFacts(app: FoldcadeApp, gameId: String) {
-    val shown = app.plays.run {
-        stamp
-        shown(gameId)
-    }
+private fun GridHeader(
+    app: FoldcadeApp,
+    shell: app.foldcade.ShellController,
+    screen: HostScreen,
+    onEffect: (Effect?) -> Unit,
+) {
     val theme = foldTheme()
-    val now = System.currentTimeMillis()
-    Column {
-        val note = approximatePlayNote(shown.approximate)
-        if (note != null) {
-            BasicText(
-                text = note,
-                style = text(theme.muted, TypeRamp.availability, theme),
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
-        }
-        BasicText(
-            text = playedLine(shown.activeMillis),
-            style = text(theme.muted, TypeRamp.heroMeta, theme),
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-        )
-        BasicText(
-            text = lastPlayedLine(shown.lastPlayedMillis, now, ZoneId.systemDefault()),
-            style = text(theme.muted, TypeRamp.availability, theme),
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-        )
-    }
-}
-
-@Composable
-private fun ChromeRow(app: FoldcadeApp) {
-    val theme = foldTheme()
-    val shell = app.shell
-    val model = shell.model
-    val game = shell.focusedGame()
-    val shelfOpen = model.panel == null && model.dialog == null && model.moonlightSheet == null && !model.connectOpen
-    Column {
-        val shelf = homeGridLabel(model.homeGrid)
-        if (shelf != null) {
-            BasicText(text = shelf, style = text(theme.onBackground, TypeRamp.sideRow, theme))
-        }
-        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(px(12f))) {
-            if (shelfOpen && game?.emptyShelfHint == true) {
-                ShelfMeta(
-                    line = game.shortText,
-                    hintFocused = model.focus.chrome == null,
+    val chrome = shell.homeChrome()
+    if (chrome != null) {
+        Row(horizontalArrangement = Arrangement.spacedBy(px(12f))) {
+            listOf(chrome.tab, chrome.sort, chrome.system, chrome.destination).forEachIndexed { index, label ->
+                ChromeButton(
+                    label = label,
+                    focused = chrome.focused == index,
+                    onClick = { onEffect(shell.touchAllChrome(index, screen)) },
                 )
-            } else if (game?.occupiesBothDisplays == true && app.store.session.bothScreensFree() && model.panel == null) {
-                BasicText(text = Copy.usesBothScreens, style = text(theme.muted, TypeRamp.hint, theme))
             }
         }
-        val actions = if (model.connectOpen) {
-            connectHint(connectFields().getOrElse(model.connectIndex) { ConnectField.Origin })
-        } else {
-            hintFor(
-                when {
-                    model.moonlightSheet != null || model.dialog != null -> HintPlace.Dialog
-                    model.panel != null -> HintPlace.Menu
-                    !model.atLibraryRoot -> HintPlace.InsidePlatform
-                    else -> HintPlace.RootGrid
-                },
-            )
-        }
-        HintRow(model, actions)
+        return
     }
+    val shelf = homeGridLabel(shell.model.homeGrid) ?: return
+    BasicText(text = shelf, style = text(theme.onBackground, TypeRamp.sideRow, theme))
 }
 
-/** Page marks under the home grid. One dot per screen of columns. */
+/** Page marks under the grid. One dot per page, and none for a single page. */
 @Composable
 private fun PageDots(count: Int, rows: Int, index: Int) {
     val pageSize = (Metrics.columns * rows).coerceAtLeast(1)
     val pages = ((count + pageSize - 1) / pageSize).coerceAtLeast(1)
+    if (pages < 2) return
     val page = (index / pageSize).coerceIn(0, pages - 1)
     val theme = foldTheme()
     Row(
@@ -1046,61 +959,62 @@ private fun PageDots(count: Int, rows: Int, index: Int) {
     }
 }
 
-/** A Confirm, and Back when it does something, on its own row. */
+/** The keys under the grid, centred. Nothing when every key here is obvious. */
 @Composable
-private fun HomeHintRow(model: app.foldcade.language.PickerModel) {
+private fun GridHints(app: FoldcadeApp) {
+    val shell = app.shell
+    val model = shell.model
     val actions = if (model.connectOpen) {
         connectHint(connectFields().getOrElse(model.connectIndex) { ConnectField.Origin })
     } else {
         hintFor(
             when {
-                model.dialog != null -> HintPlace.Dialog
+                model.moonlightSheet != null || model.dialog != null -> HintPlace.Dialog
                 model.panel != null -> HintPlace.Menu
                 !model.atLibraryRoot -> HintPlace.InsidePlatform
                 else -> HintPlace.RootGrid
             },
         )
     }
-    HintRow(model, actions)
-}
-
-/** One small letter glyph and a word, only for an action that currently does something. */
-@Composable
-private fun HintRow(
-    model: app.foldcade.language.PickerModel,
-    actions: HintActions?,
-) {
-    if (actions == null) return
+    val keys = gridHints(actions, shell.homeKeys(), model.faceMap)
+    if (keys.isEmpty()) return
     Row(
-        horizontalArrangement = Arrangement.spacedBy(px(16f)),
+        Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(px(16f), Alignment.CenterHorizontally),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        if (actions.confirm) HintWord(model, model.faceMap.confirmKey, Copy.confirm)
-        if (actions.back) HintWord(model, model.faceMap.backKey, Copy.back)
+        keys.forEach { key -> HintWord(model, key) }
     }
 }
 
+/** One small glyph and a word. The glyph fills while that key is held. */
 @Composable
 private fun HintWord(
     model: app.foldcade.language.PickerModel,
-    keyCode: Int,
-    label: String,
+    hint: HintKey,
 ) {
-    val letter = letterOfKey(keyCode) ?: return
-    val held = when (letter) {
-        app.foldcade.language.FaceLetter.A -> app.foldcade.language.PromptKey.FaceA
-        app.foldcade.language.FaceLetter.B -> app.foldcade.language.PromptKey.FaceB
-        app.foldcade.language.FaceLetter.X -> app.foldcade.language.PromptKey.FaceX
-        app.foldcade.language.FaceLetter.Y -> app.foldcade.language.PromptKey.FaceY
-    } in model.held
-    val glyph = "ic_btn_${letter.name.lowercase()}"
+    val glyph = promptGlyph(hint.key)
+    val held = hint.key in model.held
     Row(
         horizontalArrangement = Arrangement.spacedBy(px(8f)),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         PromptImage(if (held) "${glyph}_filled" else glyph, 24.dp)
-        BasicText(text = label, style = text(foldTheme().muted, TypeRamp.hint, foldTheme()))
+        BasicText(text = hint.label, style = text(foldTheme().muted, TypeRamp.hint, foldTheme()))
     }
+}
+
+private fun promptGlyph(key: PromptKey): String = when (key) {
+    PromptKey.FaceA -> "ic_btn_a"
+    PromptKey.FaceB -> "ic_btn_b"
+    PromptKey.FaceX -> "ic_btn_x"
+    PromptKey.FaceY -> "ic_btn_y"
+    PromptKey.Select -> "ic_btn_select"
+    PromptKey.Start -> "ic_btn_start"
+    PromptKey.Home -> "ic_btn_home"
+    PromptKey.Back -> "ic_btn_back"
+    PromptKey.L1 -> "ic_btn_l1"
+    PromptKey.R1 -> "ic_btn_r1"
 }
 
 @Composable
@@ -1135,41 +1049,6 @@ private fun ShelfMeta(line: String, hintFocused: Boolean, centred: Boolean = fal
 }
 
 @Composable
-private fun AllBar(
-    app: FoldcadeApp,
-    shell: app.foldcade.ShellController,
-    screen: HostScreen,
-    onEffect: (Effect?) -> Unit,
-) {
-    val chrome = shell.homeChrome()
-    // Same subject as the hero: a platform folder or an app has no play facts.
-    val detailGame = shell.focusedGame()?.takeIf { shell.focusedHero() is HeroSubject.Item }
-    val detailShown = shell.model.panel == null && shell.model.dialog == null && !shell.model.connectOpen
-    Column {
-        if (chrome != null) {
-            Row(horizontalArrangement = Arrangement.spacedBy(px(12f))) {
-                listOf(chrome.tab, chrome.sort, chrome.system, chrome.destination).forEachIndexed { index, label ->
-                    ChromeButton(
-                        label = label,
-                        focused = chrome.focused == index,
-                        onClick = { onEffect(shell.touchAllChrome(index, screen)) },
-                    )
-                }
-            }
-        }
-        if (detailGame != null) {
-            // Under a menu or dialog the facts keep their space, so the grid
-            // does not change its row count each time one opens.
-            Box(
-                if (detailShown) Modifier else Modifier.alpha(0f).clearAndSetSemantics { },
-            ) {
-                GameDetail(app, detailGame.id)
-            }
-        }
-    }
-}
-
-@Composable
 private fun ChromeButton(label: String, focused: Boolean, onClick: () -> Unit) {
     val theme = foldTheme()
     BasicText(
@@ -1187,6 +1066,7 @@ private fun PagedGrid(
     gap: Dp,
     pad: Dp,
     rows: Int,
+    stride: Dp,
     scale: Float,
     showTitle: Boolean,
     followDrag: Boolean = false,
@@ -1211,7 +1091,9 @@ private fun PagedGrid(
     val shownPage = position.value - dragPages
     val alpha = if (reduced) (1f - abs(shownPage - page)).coerceIn(0.35f, 1f) else 1f
     val width = cell * Metrics.columns + gap * (Metrics.columns - 1)
-    val widthPx = with(LocalDensity.current) { width.toPx() }
+    // A neighbouring page sits one panel width away, so it is off screen and
+    // the focus glow does not need a clip.
+    val widthPx = with(LocalDensity.current) { stride.toPx() }
     val folderToken = app.shell.homeAnimToken()
     val folderPop = remember { Animatable(1f) }
     LaunchedEffect(folderToken, scale) {
@@ -1236,7 +1118,6 @@ private fun PagedGrid(
                     Modifier
                 },
             )
-            .clipToBounds()
             .pointerInput(followDrag, app.shell.homeEditing(), widthPx) {
                 if (!followDrag || app.shell.homeEditing() || widthPx <= 0f) return@pointerInput
                 var walked = 0f
@@ -1362,8 +1243,7 @@ private fun Grid(
 
 private const val FOCUS_GLOW_OVERFLOW = 64f
 private const val REST_GLOW_OVERFLOW = 18f
-private const val FOCUS_GLOW_PAD = 80f
-private const val HOME_RING_PAD = 30f
+private const val GRID_RING_PAD = 8f
 
 @Composable
 private fun emptyShelf(grid: HomeGrid): String = when (grid) {
@@ -1518,7 +1398,8 @@ private fun Cell(
                     },
                 )
                 .hostPress(onClick)
-                .clearAndSetSemantics {},
+                // The title is on the tile, so the dump keeps it without a visible label.
+                .clearAndSetSemantics { this[SemanticsProperties.Text] = listOf(AnnotatedString(title)) },
             contentAlignment = Alignment.Center,
         ) {
             if (icon != null) {
@@ -1588,7 +1469,7 @@ private fun Cell(
                 text = title,
                 modifier = Modifier
                     .zIndex(1f)
-                    .clearAndSetSemantics { this[SemanticsProperties.Text] = listOf(AnnotatedString(title)) }
+                    .clearAndSetSemantics { }
                     .padding(top = focusOutset(size) + px(12f))
                     .width(size),
                 style = text(
@@ -1858,7 +1739,11 @@ private fun EmptyLibrary(
 ) {
     val theme = foldTheme()
     val focus = app.shell.model.focus
-    Column(Modifier.fillMaxSize(), verticalArrangement = Arrangement.Center) {
+    Column(
+        Modifier.fillMaxSize(),
+        verticalArrangement = Arrangement.Center,
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
         BasicText(text = title, style = text(theme.onBackground, TypeRamp.dialogTitle, theme))
         if (actions.isNotEmpty()) {
             Row(
