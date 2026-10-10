@@ -4,6 +4,8 @@ import android.graphics.RenderEffect
 import android.graphics.Shader
 import android.os.Build
 import android.util.Log
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.graphics.BlendMode
 import androidx.compose.foundation.Canvas
@@ -96,6 +98,7 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.zIndex
+import app.foldcade.language.heroPlayLine
 import app.foldcade.R
 import app.foldcade.language.QuickSetting
 import app.foldcade.Displays
@@ -317,51 +320,39 @@ private fun Hero(app: FoldcadeApp, screen: HostScreen, scale: Float, onEffect: (
     val cellFocused = model.dialog == null && model.panel == null && !model.connectOpen && model.focus.chrome == null
     BoxWithConstraints(Modifier.fillMaxSize()) {
         val inset = px(Metrics.heroInsetPx)
-        val artHeight = maxHeight * Metrics.heroArtFraction
-        Box(
-            Modifier
-                .fillMaxSize()
-                .drawBehind {
-                    drawRect(
-                        brush = Brush.verticalGradient(
-                            colorStops = arrayOf(
-                                0f to Color.Transparent,
-                                0.48f to Color.Transparent,
-                                0.62f to theme.background.copy(alpha = 0.78f),
-                                0.74f to theme.background.copy(alpha = 0.96f),
-                                1f to theme.background,
-                            ),
-                        ),
-                    )
-                },
-        )
+        val cardMax = maxWidth * 0.5f
+        // Cocoon's hero: the art centred between the islands, a name card centred under it.
         Column(
             Modifier
-                .align(Alignment.TopStart)
-                .fillMaxWidth()
+                .fillMaxSize()
                 .padding(
                     start = inset,
                     end = inset,
                     top = if (screen == HostScreen.Top) inset + 48.dp else inset,
+                    bottom = inset,
                 ),
+            horizontalAlignment = Alignment.CenterHorizontally,
         ) {
-            HeroCrossfade(
-                target = subject,
-                speed = model.motionSpeed,
-                animatorScale = scale,
-                same = { left, right -> left?.key == right?.key },
-            ) { shown ->
-                Box(
-                    Modifier
-                        .fillMaxWidth()
-                        .height(artHeight),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    if (shown is HeroSubject.Item) HeroArt(shown.item)
+            Box(
+                Modifier
+                    .weight(1f)
+                    .fillMaxWidth(),
+                contentAlignment = Alignment.Center,
+            ) {
+                HeroCrossfade(
+                    target = subject,
+                    speed = model.motionSpeed,
+                    animatorScale = scale,
+                    same = { left, right -> left?.key == right?.key },
+                ) { shown ->
+                    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                        if (shown is HeroSubject.Item) HeroArt(shown.item)
+                    }
                 }
             }
             if (subject != null) {
-                HeroLabel(app, subject, cellFocused)
+                Spacer(Modifier.height(px(24f)))
+                HeroLabel(app, subject, cellFocused, cardMax)
             }
         }
         TopIslands(app, screen, scale) { panelState, progress, interactive ->
@@ -461,30 +452,58 @@ private fun <T> HeroCrossfade(
  * The artwork behind it may still be crossfading.
  */
 @Composable
-private fun HeroLabel(app: FoldcadeApp, shown: HeroSubject, cellFocused: Boolean) {
+private fun HeroLabel(app: FoldcadeApp, shown: HeroSubject, cellFocused: Boolean, maxWidth: Dp) {
     val theme = foldTheme()
     val copy = heroCopy(shown)
-    BasicText(
-        text = copy.title,
-        style = text(theme.onBackground, TypeRamp.heroTitle, theme),
-        maxLines = 1,
-        overflow = TextOverflow.Ellipsis,
-    )
-    if (copy.detail.isNotEmpty()) {
-        val hint = shown is HeroSubject.Item && shown.item.emptyShelfHint && cellFocused
-        ShelfMeta(line = copy.detail, hintFocused = hint)
-    }
-    val availability = (shown as? HeroSubject.Item)?.item?.availability
-    if (availability != null) {
+    val centred = text(theme.onBackground, TypeRamp.heroTitle, theme).copy(textAlign = TextAlign.Center)
+    Column(
+        Modifier
+            .widthIn(min = px(360f), max = maxWidth)
+            .clip(RoundedCornerShape(Metrics.cardCornerDp.dp))
+            .background(theme.surface)
+            .padding(horizontal = px(40f), vertical = px(20f)),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(px(4f)),
+    ) {
         BasicText(
-            text = availability,
-            style = text(theme.muted, TypeRamp.availability, theme),
+            text = copy.title,
+            style = centred.copy(fontWeight = FontWeight.SemiBold),
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
         )
-    }
-    if (shown is HeroSubject.Item) {
-        PlayFacts(app, shown.item.key)
+        if (copy.detail.isNotEmpty()) {
+            val hint = shown is HeroSubject.Item && shown.item.emptyShelfHint && cellFocused
+            ShelfMeta(line = copy.detail, hintFocused = hint, centred = true)
+        }
+        val availability = (shown as? HeroSubject.Item)?.item?.availability
+        if (availability != null) {
+            BasicText(
+                text = availability,
+                style = text(theme.muted, TypeRamp.availability, theme).copy(textAlign = TextAlign.Center),
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
+        if (shown is HeroSubject.Item) {
+            val played = app.plays.run {
+                stamp
+                shown(shown.item.key)
+            }
+            val line = heroPlayLine(
+                played.activeMillis,
+                played.lastPlayedMillis,
+                System.currentTimeMillis(),
+                ZoneId.systemDefault(),
+            )
+            if (line != null) {
+                BasicText(
+                    text = line,
+                    style = text(theme.muted, TypeRamp.availability, theme).copy(textAlign = TextAlign.Center),
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+        }
     }
 }
 
@@ -1065,12 +1084,13 @@ private fun PromptImage(name: String, size: Dp) {
  * while the controller is on that tile.
  */
 @Composable
-private fun ShelfMeta(line: String, hintFocused: Boolean) {
+private fun ShelfMeta(line: String, hintFocused: Boolean, centred: Boolean = false) {
     val theme = foldTheme()
     BasicText(
         text = line,
         modifier = if (hintFocused) Modifier.focusStroke(true).padding(px(8f)) else Modifier,
-        style = text(if (hintFocused) theme.focus else theme.muted, TypeRamp.heroMeta, theme),
+        style = text(if (hintFocused) theme.focus else theme.muted, TypeRamp.heroMeta, theme)
+            .copy(textAlign = if (centred) TextAlign.Center else TextAlign.Start),
         maxLines = 2,
         overflow = TextOverflow.Ellipsis,
     )
