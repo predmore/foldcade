@@ -13,6 +13,8 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.FiniteAnimationSpec
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.foundation.Image
 import androidx.core.graphics.drawable.toBitmap
 import androidx.compose.foundation.background
@@ -70,6 +72,7 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.graphics.FilterQuality
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asComposeRenderEffect
@@ -139,8 +142,6 @@ import app.foldcade.language.MoonlightSheetTarget
 import app.foldcade.language.moonlightSheetSections
 import app.foldcade.language.Motion
 import app.foldcade.language.MotionSpeed
-import app.foldcade.language.PanelLevel
-import app.foldcade.language.Side
 import app.foldcade.language.SidePanel
 import app.foldcade.language.TypeRamp
 import app.foldcade.language.GlowFalloff
@@ -760,13 +761,8 @@ private fun Picker(
                 val fromWidth = (maxWidth - ring * 2 - gap * (columns - 1)) / columns
                 val cell = minOf(fromHeight, fromWidth).coerceAtLeast(px(56f))
                 SideEffect { shell.setRowsPerPage(rows) }
-                val libraryFailed = model.unavailable &&
-                    model.panel?.level == PanelLevel.Library &&
-                    model.panel?.side == Side.Left
                 val emptyTitle = emptyTitle(model)
-                if (libraryFailed) {
-                    Unavailable()
-                } else if (model.libraryGrid && emptyTitle != null) {
+                if (model.libraryGrid && emptyTitle != null) {
                     EmptyLibrary(app, screen, emptyTitle, emptyActions(model))
                 } else if (!model.libraryGrid && model.homeGrid != HomeGrid.StandIns && model.count == 0) {
                     BasicText(
@@ -1298,6 +1294,8 @@ private fun Grid(
                             lifted = lifted == index,
                             editing = editing,
                             marked = onHomeMark,
+                            onServer = face?.onServer == true,
+                            downloading = face?.id != null && face.id in shell.downloading,
                             library = libraryTile,
                             onClick = { shell.touchCell(index, screen) },
                             onDrag = if (editing) {
@@ -1355,6 +1353,8 @@ private fun Cell(
     lifted: Boolean = false,
     editing: Boolean = false,
     marked: Boolean = false,
+    onServer: Boolean = false,
+    downloading: Boolean = false,
     library: Boolean = false,
     onClick: () -> Unit,
     onPickUp: (() -> Unit)? = null,
@@ -1526,6 +1526,36 @@ private fun Cell(
                         .padding(px(8f))
                         .size(px(10f))
                         .background(theme.focus, CircleShape),
+                )
+            }
+            // On the server, not on this device. A downloaded game has no badge at all.
+            // While it downloads the cloud takes the focus colour and breathes.
+            if (onServer || downloading) {
+                val breath = if (downloading && !Motion.reduced(animatorScale)) {
+                    rememberInfiniteTransition(label = "download").animateFloat(
+                        initialValue = 0.35f,
+                        targetValue = 1f,
+                        animationSpec = Motion.pulse(animatorScale),
+                        label = "cloud",
+                    )
+                } else {
+                    null
+                }
+                val tint = when {
+                    downloading -> theme.focus
+                    focused -> theme.onBackground
+                    else -> theme.muted
+                }
+                Image(
+                    painter = painterResource(R.drawable.ic_badge_cloud),
+                    contentDescription = null,
+                    colorFilter = ColorFilter.tint(tint),
+                    modifier = Modifier
+                        .align(Alignment.BottomEnd)
+                        .padding(px(8f))
+                        .size(px(22f))
+                        // Read in the layer, so each frame redraws without recomposing the tile.
+                        .graphicsLayer { alpha = breath?.value ?: 1f },
                 )
             }
         }
@@ -1920,12 +1950,6 @@ private fun Modifier.dialogPlate(focused: Boolean, accent: Color): Modifier {
         }
         drawRoundRect(color = accent, cornerRadius = corner)
     }
-}
-
-@Composable
-private fun Unavailable() {
-    val theme = builtInTheme()
-    BasicText(text = Copy.unavailable, style = text(theme.onBackground, TypeRamp.dialogTitle, theme))
 }
 
 @Composable

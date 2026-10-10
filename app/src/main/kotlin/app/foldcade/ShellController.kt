@@ -1,6 +1,7 @@
 package app.foldcade
 
 import android.util.Log
+import app.foldcade.api.plugin.Availability
 import app.foldcade.api.plugin.Game
 import app.foldcade.api.plugin.Platform
 import app.foldcade.api.plugin.SaveFolderHolder
@@ -45,7 +46,6 @@ import app.foldcade.language.Metrics
 import app.foldcade.language.MoonlightDiscoveredApp
 import app.foldcade.language.MoonlightSource
 import app.foldcade.language.MoonlightStoredApp
-import app.foldcade.language.PanelLevel
 import app.foldcade.language.moonlightImportSheet
 import app.foldcade.language.PromptKey
 import app.foldcade.language.ThorStyle
@@ -109,6 +109,10 @@ class ShellController(
     private var inputDeviceKey: String = "builtin"
 
     var connectToken by mutableStateOf("")
+        private set
+
+    /** Home ids of server games downloading now. Their tiles pulse the cloud. */
+    var downloading by mutableStateOf<Set<String>>(emptySet())
         private set
 
     /** Cells for the current grid. Empty when the grid is an empty state. */
@@ -211,12 +215,7 @@ class ShellController(
                 }
                 publish(next)
             }
-            else -> {
-                publish(next)
-                if (next.panel?.level == PanelLevel.Library) {
-                    refreshLibraries()
-                }
-            }
+            else -> publish(next)
         }
         cueMeaning(meaning, before, model)
         if (effect == Effect.DismissButtonLabels) {
@@ -330,6 +329,7 @@ class ShellController(
     /**
      * Folds one backend's games into the curated board.
      * A later scan keeps placed tiles and only fills new ones when the setting is on.
+     * Every library lands on the same board. An open panel or dialog stays open.
      */
     fun ingestLibrary(
         libraryId: String,
@@ -371,11 +371,41 @@ class ShellController(
                 mark = kitMark(platform.id),
             )
         }
-        syncHome()
-        if (!model.libraryGrid && model.homeGrid == HomeGrid.StandIns) {
-            showBoard(model.focus, keepDialog = true)
-        }
+        noteShelfChanged()
     }
+
+    /** A library that is no longer set up takes its tiles off the board. */
+    fun dropLibrary(libraryId: String) {
+        val prefix = "lib:$libraryId:"
+        libraryItems = libraryItems.filterNot { it.id.startsWith(prefix) }
+        settledLibraries += libraryId
+        libraryGames.keys.removeAll { it.startsWith(prefix) }
+        noteShelfChanged()
+    }
+
+    /** A server game was downloaded. Its tile drops the cloud. */
+    fun noteOnDevice(libraryId: String, remoteKey: String) {
+        val id = homeGameId(libraryId, remoteKey)
+        val game = libraryGames[id] ?: return
+        if (game.availability != Availability.RemoteOnly) return
+        libraryGames[id] = game.copy(availability = Availability.Cached)
+        noteShelfChanged()
+    }
+
+    /** False when this game is already downloading, so a second press does nothing. */
+    fun beginDownload(libraryId: String, remoteKey: String): Boolean {
+        val id = homeGameId(libraryId, remoteKey)
+        if (id in downloading) return false
+        downloading = downloading + id
+        return true
+    }
+
+    fun endDownload(libraryId: String, remoteKey: String) {
+        downloading = downloading - homeGameId(libraryId, remoteKey)
+    }
+
+    /** True once any library has a game on the board. */
+    fun hasLibraryGames(): Boolean = libraryItems.isNotEmpty()
 
     /** The scanned library is on the home grid. Emulator waits for this line. */
     fun showCuratedHome() {
@@ -547,40 +577,7 @@ class ShellController(
         val (next, effect) = reduce(model.copy(connectIndex = index), Meaning.Activate, screen)
         if (!next.connectOpen) connectToken = ""
         publish(next)
-        if (next.panel?.level == PanelLevel.Library) {
-            refreshLibraries()
-        }
         return effect
-    }
-
-    /**
-     * Library names come from [PluginHost.libraryLabel].
-     * The shell does not call a plugin object itself.
-     * RomM is [Copy.setUpRomm] until a server origin is saved.
-     * A plugin failure becomes the unavailable state.
-     * [CancellationException] and [VirtualMachineError] still propagate.
-     */
-    fun refreshLibraries() {
-        try {
-            model = model.copy(backends = libraryNames(), unavailable = false)
-        } catch (cancelled: CancellationException) {
-            throw cancelled
-        } catch (fatal: VirtualMachineError) {
-            throw fatal
-        } catch (_: Throwable) {
-            model = model.copy(unavailable = true)
-        }
-    }
-
-    private fun libraryNames(): List<String> {
-        val rommReady = !store.rommOrigin().isNullOrBlank()
-        return plugins.libraryIds().map { id ->
-            if (id == RommCredentials.PLUGIN_ID && !rommReady) {
-                Copy.setUpRomm
-            } else {
-                plugins.libraryLabel(id)
-            }
-        }
     }
 
     fun setRowsPerPage(rows: Int) {

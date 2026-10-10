@@ -9,6 +9,7 @@ import app.foldcade.language.HomeGrid
 import app.foldcade.language.HostScreen
 import app.foldcade.language.Meaning
 import app.foldcade.language.Metrics
+import app.foldcade.language.homeGameId
 import kotlinx.coroutines.Dispatchers
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -54,6 +55,75 @@ class HomeGridOrderTest {
         assertNull(shell.onMeaning(Meaning.Activate, HostScreen.Bottom))
         assertEquals("Puzzle", shell.focusedGame()?.title)
         assertTrue(shell.onMeaning(Meaning.Activate, HostScreen.Bottom) is app.foldcade.language.Effect.Launch)
+    }
+
+    @Test
+    fun rommGamesShareTheFolderBoard() {
+        val shell = shell()
+        shell.ingestLibrary("local-folder", listOf(entry("puzzle", "Puzzle", "nintendo-3ds")), emptyList())
+        shell.ingestLibrary(
+            "romm",
+            listOf(entry("drift", "Drift", "nintendo-3ds", backendId = "romm")),
+            emptyList(),
+        )
+        assertFalse(shell.model.libraryGrid)
+        assertEquals(HomeGrid.StandIns, shell.model.homeGrid)
+        assertEquals(1, titles(shell).count { it == "Nintendo 3DS" })
+        focus(shell, titles(shell).indexOf("Nintendo 3DS"))
+        shell.onMeaning(Meaning.Activate, HostScreen.Bottom)
+        assertTrue(titles(shell).containsAll(listOf("Drift", "Puzzle")))
+    }
+
+    @Test
+    fun aServerGameShowsACloudUntilItIsOnTheDevice() {
+        val shell = shell()
+        shell.ingestLibrary("local-folder", listOf(entry("puzzle", "Puzzle", "nintendo-3ds")), emptyList())
+        shell.ingestLibrary(
+            "romm",
+            listOf(entry("drift", "Drift", "nintendo-3ds", backendId = "romm", availability = Availability.RemoteOnly)),
+            emptyList(),
+        )
+        focus(shell, titles(shell).indexOf("Nintendo 3DS"))
+        shell.onMeaning(Meaning.Activate, HostScreen.Bottom)
+        val onServer = { title: String -> shell.homeFace(titles(shell).indexOf(title))?.onServer }
+        assertEquals(true, onServer("Drift"))
+        assertEquals(false, onServer("Puzzle"))
+        shell.noteOnDevice("romm", "drift")
+        assertEquals(false, onServer("Drift"))
+    }
+
+    @Test
+    fun aSecondPressWhileDownloadingIsIgnored() {
+        val shell = shell()
+        assertTrue(shell.beginDownload("romm", "drift"))
+        assertFalse(shell.beginDownload("romm", "drift"))
+        assertEquals(setOf(homeGameId("romm", "drift")), shell.downloading)
+        shell.endDownload("romm", "drift")
+        assertTrue(shell.downloading.isEmpty())
+        assertTrue(shell.beginDownload("romm", "drift"))
+    }
+
+    @Test
+    fun aBackgroundLibraryLeavesAnOpenPanelUp() {
+        val shell = shell()
+        shell.onMeaning(Meaning.LeftPanel, HostScreen.Bottom)
+        val panel = shell.model.panel
+        assertTrue(panel != null)
+        shell.ingestLibrary("romm", listOf(entry("drift", "Drift", "nintendo-ds", backendId = "romm")), emptyList())
+        assertEquals(panel, shell.model.panel)
+        assertTrue(titles(shell).contains("Nintendo DS"))
+    }
+
+    @Test
+    fun droppingRommTakesOnlyItsGamesOff() {
+        val shell = shell()
+        shell.ingestLibrary("local-folder", listOf(entry("puzzle", "Puzzle", "nintendo-3ds")), emptyList())
+        shell.ingestLibrary("romm", listOf(entry("drift", "Drift", "nintendo-ds", backendId = "romm")), emptyList())
+        assertTrue(shell.hasLibraryGames())
+        shell.dropLibrary("romm")
+        assertFalse(titles(shell).contains("Nintendo DS"))
+        assertTrue(titles(shell).contains("Nintendo 3DS"))
+        assertTrue(shell.hasLibraryGames())
     }
 
     @Test
@@ -147,7 +217,13 @@ class HomeGridOrderTest {
         assertFalse("segacd" in titles(shell))
     }
 
-    private fun entry(key: String, title: String, platformId: String): GridEntry = GridEntry(
+    private fun entry(
+        key: String,
+        title: String,
+        platformId: String,
+        backendId: String = "local-folder",
+        availability: Availability = Availability.LocalOnly,
+    ): GridEntry = GridEntry(
         id = key,
         title = title,
         shortText = platformId,
@@ -155,10 +231,10 @@ class HomeGridOrderTest {
         availabilityLabel = null,
         occupiesBothDisplays = false,
         game = Game(
-            backendId = "local-folder",
+            backendId = backendId,
             remoteKey = key,
             platformId = platformId,
-            availability = Availability.LocalOnly,
+            availability = availability,
             label = title,
         ),
     )

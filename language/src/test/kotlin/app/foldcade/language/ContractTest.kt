@@ -212,7 +212,7 @@ class ContractTest {
             signedIn = listOf(SignedInBackend("romm", "RomM")),
             panel = child.panel?.copy(index = 0),
         )
-        val signOut = libraryRows(emptyList(), signedIn.signedIn).first()
+        val signOut = libraryRows(signedIn.signedIn).first()
         assertEquals("Sign out / forget credentials · RomM", rowLabel(signOut, signedIn))
         val (left, forget) = reduce(signedIn, Meaning.Activate)
         assertEquals(Effect.ForgetCredentials("romm"), forget)
@@ -455,13 +455,10 @@ class ContractTest {
     }
 
     @Test
-    fun rommSetUpIsOneRowUntilAServerIsSaved() {
-        val unset = libraryRows(listOf("Local folder", Copy.setUpRomm))
-        assertEquals(1, unset.count { it == Row.Backend(Copy.setUpRomm) })
-        assertFalse(Row.Connect in unset)
-        assertTrue(Row.AddFolder in unset)
+    fun libraryRowsAddSourcesAndNeverSwitchTheGrid() {
+        assertEquals(listOf(Row.AddFolder, Row.Connect), libraryRows())
 
-        val saved = libraryRows(listOf("Local folder", "RomM"))
-        assertTrue(Row.Connect in saved)
+        val signedIn = libraryRows(listOf(SignedInBackend("romm", "RomM")))
+        assertEquals(listOf(Row.SignOut("romm", "RomM"), Row.AddFolder, Row.Connect), signedIn)
     }
 }

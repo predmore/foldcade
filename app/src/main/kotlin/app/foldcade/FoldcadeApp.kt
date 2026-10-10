@@ -25,6 +25,7 @@ import app.foldcade.plugins.romm.RommArtwork
 import coil3.ImageLoader
 import app.foldcade.language.BackgroundMotion
 import app.foldcade.language.Copy
+import app.foldcade.language.EmptyGrid
 import app.foldcade.language.HostScreen
 import app.foldcade.language.MoonlightDiscoveredApp
 import app.foldcade.language.MoonlightSource
@@ -105,6 +106,7 @@ class FoldcadeApp : Application() {
     private val pluginLoad = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val pluginsReady = CompletableDeferred<Unit>()
     private val libraryTicket = AtomicInteger()
+    private val rommTicket = AtomicInteger()
     private var libraryRetry: () -> Unit = { reloadFolder() }
     private lateinit var rommPublish: RommPublish
 
@@ -206,6 +208,7 @@ class FoldcadeApp : Application() {
                 if (!pluginsReady.isCompleted) pluginsReady.complete(Unit)
             }
             if (!store.folderTree().isNullOrBlank()) reloadFolder()
+            syncRomm()
         }
     }
 
@@ -396,7 +399,9 @@ class FoldcadeApp : Application() {
             val saved = store.folderTree()
             if (saved.isNullOrBlank()) {
                 withContext(Dispatchers.Main.immediate) {
-                    if (ticket == libraryTicket.get()) shell.showNoLibrary()
+                    if (ticket != libraryTicket.get()) return@withContext
+                    // RomM's games are on the same board, so no folder is not no library.
+                    if (shell.hasLibraryGames()) shell.showCuratedHome() else shell.showNoLibrary()
                 }
                 return@launch
             }
@@ -428,22 +433,6 @@ class FoldcadeApp : Application() {
             }
             deliverLibrary(ticket, LocalFolderBackend.ID, loaded)
         }
-    }
-
-    fun activateLibrary(label: String) {
-        if (label == Copy.setUpRomm) {
-            shell.openConnect(store.rommOrigin().orEmpty())
-            return
-        }
-        val id = plugins.libraryIds().firstOrNull { libraryId ->
-            runCatching { plugins.libraryLabel(libraryId) }.getOrNull() == label
-        } ?: return
-        if (id == LocalFolderBackend.ID) {
-            reloadFolder()
-            return
-        }
-        libraryRetry = { activateLibrary(label) }
-        loadLibrary(id)
     }
 
     fun openPlatform(index: Int) {
@@ -499,35 +488,55 @@ class FoldcadeApp : Application() {
         }
     }
 
-    /** After RomM accepts a token, show its library rather than leaving the form up. */
-    fun openRommLibrary() {
-        libraryRetry = { openRommLibrary() }
-        loadLibrary(RommCredentials.PLUGIN_ID)
-    }
-
-    private fun loadLibrary(libraryId: String) {
-        val ticket = libraryTicket.incrementAndGet()
+    /**
+     * Puts RomM's games on the same home board as the folder's, or takes them off
+     * once no server is saved. The grid does not change mode while this runs. A
+     * server that cannot be reached leaves the board as it was, placed tiles included.
+     */
+    fun syncRomm() {
+        val ticket = rommTicket.incrementAndGet()
         pluginLoad.launch {
             pluginsReady.await()
-            if (ticket != libraryTicket.get()) return@launch
-            withContext(Dispatchers.Main.immediate) {
-                if (ticket == libraryTicket.get()) shell.showLoading(insidePlatform = false)
+            if (ticket != rommTicket.get()) return@launch
+            val libraryId = RommCredentials.PLUGIN_ID
+            if (store.rommOrigin().isNullOrBlank()) {
+                withContext(Dispatchers.Main.immediate) {
+                    if (ticket == rommTicket.get()) shell.dropLibrary(libraryId)
+                }
+                return@launch
             }
             val loaded = try {
-                loadPlatforms(
+                val listed = loadPlatforms(
                     plugins,
                     libraryId,
                     occupiesBoth = { platformOccupiesBoth(plugins, it) },
                 )
+                when (listed) {
+                    is LoadedLibrary.Platforms -> listed to loadEveryGame(libraryId, listed)
+                    LoadedLibrary.NoPlatforms -> null to emptyList()
+                    LoadedLibrary.Unreachable -> null
+                }
             } catch (cancelled: CancellationException) {
                 throw cancelled
             } catch (fatal: VirtualMachineError) {
                 throw fatal
             } catch (failure: Exception) {
-                Log.w("Foldcade", "Library failed", failure)
+                Log.w("Foldcade", "RomM library failed", failure)
                 null
             }
-            deliverLibrary(ticket, libraryId, loaded)
+            val (listed, games) = loaded ?: return@launch
+            withContext(Dispatchers.Main.immediate) {
+                if (ticket != rommTicket.get()) return@withContext
+                shell.ingestLibrary(
+                    libraryId,
+                    games,
+                    plugins.platformDefinitions(),
+                    listed?.entries.orEmpty().associate { (it.platformId ?: it.id) to it.title },
+                )
+                // An empty state such as No library yet gives way once there are games to show.
+                val waiting = shell.model.libraryGrid && shell.model.emptyGrid != EmptyGrid.Loading
+                if (waiting && games.isNotEmpty()) shell.showCuratedHome()
+            }
         }
     }
 

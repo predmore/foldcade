@@ -1,5 +1,6 @@
 package app.foldcade
 
+import app.foldcade.api.plugin.Availability
 import app.foldcade.api.plugin.Game
 import app.foldcade.language.AllSort
 import app.foldcade.language.AllTab
@@ -60,6 +61,8 @@ data class HomeFace(
     val platformId: String?,
     val androidPackage: String?,
     val occupiesBoth: Boolean,
+    /** The game is on its server and not on this device yet. The tile shows a cloud. */
+    val onServer: Boolean = false,
 )
 
 data class AllChrome(
@@ -486,6 +489,7 @@ class HomeSession(raw: String?) {
             platformId = item?.platformId ?: game?.platformId,
             androidPackage = id.removePrefix("android:").takeIf { id.startsWith("android:") },
             occupiesBoth = false,
+            onServer = game?.availability == Availability.RemoteOnly,
         )
     }
 

@@ -1,19 +1,8 @@
 package app.foldcade
 
-import app.foldcade.api.plugin.Game
-import app.foldcade.api.plugin.GamePage
-import app.foldcade.api.plugin.GameQuery
-import app.foldcade.api.plugin.LaunchTarget
-import app.foldcade.api.plugin.LibraryBackend
-import app.foldcade.api.plugin.ListedPlatform
-import app.foldcade.api.plugin.ObservedSaves
 import app.foldcade.api.plugin.PLUGIN_API_VERSION
-import app.foldcade.api.plugin.Placement
 import app.foldcade.api.plugin.Platform
-import app.foldcade.api.plugin.Player
 import app.foldcade.api.plugin.PluginEntry
-import app.foldcade.api.plugin.PluginException
-import app.foldcade.api.plugin.SaveSet
 import app.foldcade.api.plugin.canonicalPlatformId
 import app.foldcade.api.plugin.MemoryCredentialStore
 import app.foldcade.host.PluginHost
@@ -22,7 +11,6 @@ import app.foldcade.language.settingsRows
 import app.foldcade.language.settingsCategories
 import app.foldcade.language.leftRows
 import app.foldcade.language.Row
-import app.foldcade.language.Copy
 import app.foldcade.language.HostScreen
 import app.foldcade.language.LibrarySort
 import app.foldcade.language.Meaning
@@ -36,7 +24,6 @@ import app.foldcade.plugins.romm.RommPlugins
 import java.nio.file.Files
 import java.util.ServiceLoader
 import java.util.concurrent.atomic.AtomicInteger
-import kotlin.coroutines.cancellation.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.runBlocking
 import org.junit.After
@@ -47,82 +34,6 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class ShellHostTest {
-    @Test
-    fun libraryNamesComeFromTheGuardedAccessor() {
-        val host = PluginHost(Dispatchers.Unconfined, MemoryCredentialStore())
-        host.register(entry(LabelLibrary("sample.library", "Sample library")))
-        val shell = shell(host)
-        openLibrary(shell)
-        assertEquals(listOf("Sample library"), shell.model.backends)
-        assertFalse(shell.model.unavailable)
-    }
-
-    @Test
-    fun pluginCallExceptionBecomesUnavailable() {
-        val host = PluginHost(Dispatchers.Unconfined, MemoryCredentialStore())
-        host.register(entry(object : LabelLibrary("boom.library", "Boom") {
-            override val displayName: String
-                get() = throw IllegalStateException("label")
-        }))
-        val shell = shell(host)
-        openLibrary(shell)
-        assertTrue(shell.model.unavailable)
-    }
-
-    @Test
-    fun pluginExceptionBecomesUnavailable() {
-        val host = PluginHost(Dispatchers.Unconfined, MemoryCredentialStore())
-        host.register(entry(object : LabelLibrary("typed.library", "Typed") {
-            override val displayName: String
-                get() = throw PluginException.Unavailable("offline")
-        }))
-        val shell = shell(host)
-        openLibrary(shell)
-        assertTrue(shell.model.unavailable)
-    }
-
-    @Test
-    fun cancellationAndVirtualMachineErrorStillLeaveRefresh() {
-        val cancelled = PluginHost(Dispatchers.Unconfined, MemoryCredentialStore())
-        cancelled.register(entry(object : LabelLibrary("cancel.library", "Cancel") {
-            override val displayName: String
-                get() = throw CancellationException("stopped")
-        }))
-        val cancelShell = shell(cancelled)
-        val cancelFailure = runCatching { openLibrary(cancelShell) }
-        assertTrue(cancelFailure.exceptionOrNull() is CancellationException)
-        assertFalse(cancelShell.model.unavailable)
-
-        val fatal = PluginHost(Dispatchers.Unconfined, MemoryCredentialStore())
-        fatal.register(entry(object : LabelLibrary("oom.library", "Oom") {
-            override val displayName: String
-                get() = throw OutOfMemoryError("simulated")
-        }))
-        val fatalShell = shell(fatal)
-        val fatalFailure = runCatching { openLibrary(fatalShell) }
-        assertTrue(fatalFailure.exceptionOrNull() is OutOfMemoryError)
-        assertFalse(fatalShell.model.unavailable)
-    }
-
-    @Test
-    fun rommIsSetUpUntilAServerIsConfigured() {
-        val store = SessionStore(MemoryPrefs())
-        val host = PluginHost(Dispatchers.Unconfined, MemoryCredentialStore())
-        host.register(RommEntry())
-        host.register(entry(LabelLibrary("local.folder", "On this device")))
-        val shell = ShellController(store, host)
-        openLibrary(shell)
-        assertEquals(listOf(Copy.setUpRomm, "On this device"), shell.model.backends)
-        assertFalse(shell.model.unavailable)
-        store.setRommOrigin("https://romm.example")
-        shell.refreshLibraries()
-        assertEquals(listOf("RomM", "On this device"), shell.model.backends)
-        store.clearRommOrigin()
-        shell.refreshLibraries()
-        assertEquals(listOf(Copy.setUpRomm, "On this device"), shell.model.backends)
-        assertEquals(RommCredentials.PLUGIN_ID, host.libraryIds().first())
-    }
-
     @Test
     fun bundledEntriesComeFromServiceFiles() {
         val loaded = ServiceLoader.load(
@@ -348,14 +259,6 @@ class ShellHostTest {
     }
 
     @Test
-    fun noRegisteredLibraryStaysAvailable() {
-        val shell = shell(PluginHost(Dispatchers.Unconfined, MemoryCredentialStore()))
-        openLibrary(shell)
-        assertFalse(shell.model.unavailable)
-        assertTrue(shell.model.backends.isEmpty())
-    }
-
-    @Test
     fun settingsRowActsOverTheHomeGrid() {
         val store = SessionStore(MemoryPrefs())
         val shell = ShellController(store, PluginHost(Dispatchers.Unconfined, MemoryCredentialStore()))
@@ -393,16 +296,6 @@ class ShellHostTest {
         if (!page.onRows) return null
         return settingsRows(settingsCategories(model)[page.category], model).getOrNull(page.row)
     }
-
-    private fun openLibrary(shell: ShellController) {
-        shell.onMeaning(Meaning.LeftPanel, HostScreen.Bottom)
-        shell.onMeaning(Meaning.Activate, HostScreen.Bottom)
-    }
-
-    private fun entry(library: LibraryBackend) = object : PluginEntry {
-        override val apiVersion = PLUGIN_API_VERSION
-        override val libraries = listOf(library)
-    }
 }
 
 private fun countedPlatform(
@@ -434,30 +327,3 @@ private fun countedPlatform(
         }
 }
 
-private open class LabelLibrary(
-    override val id: String,
-    private val label: String,
-) : LibraryBackend {
-    override val displayName: String
-        get() = label
-
-    override suspend fun connect() = Unit
-
-    override suspend fun disconnect() = Unit
-
-    override suspend fun listPlatforms(): List<ListedPlatform> = emptyList()
-
-    override suspend fun listGames(platformId: String, query: GameQuery): GamePage =
-        GamePage(emptyList(), null)
-
-    override suspend fun ensureLocal(game: Game): LaunchTarget =
-        LaunchTarget.ContentUri(uri = game.remoteKey)
-
-    override suspend fun saves(game: Game): SaveSet = SaveSet(id, emptyList())
-
-    override suspend fun prepareLaunch(game: Game, player: Player): Placement =
-        Placement(target = LaunchTarget.ContentUri(uri = game.remoteKey))
-
-    override suspend fun reconcile(game: Game, player: Player, observed: ObservedSaves) =
-        error("unused")
-}

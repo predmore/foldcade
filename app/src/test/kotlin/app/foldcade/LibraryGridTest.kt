@@ -144,6 +144,16 @@ class LibraryGridTest {
     }
 
     @Test
+    fun aMissingPlayerIsKnownBeforeAnyDownload() {
+        val player = quietPlayer("player.a", "Azahar", listOf("org.example.azahar"))
+        val missing = missingPlayer(listOf(player)) { null }
+        assertEquals("Azahar", missing?.playerName)
+        assertEquals(null, missingPlayer(listOf(player)) { "org.example.azahar" })
+        // No registered player still opens the file in the stand-in, so nothing is missing.
+        assertEquals(null, missingPlayer(emptyList()) { null })
+    }
+
+    @Test
     fun theFirstInstalledPlayerIsChosen() {
         val first = quietPlayer("player.a", "Azahar", listOf("org.example.a"))
         val second = quietPlayer("player.b", "Other", listOf("org.example.b"))

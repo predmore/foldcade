@@ -158,10 +158,21 @@ internal fun planLaunch(
         val packageName = installedPackage(player) ?: continue
         return GameLaunch.Installed(player, packageName)
     }
-    return GameLaunch.Missing(
-        playerName = players.first().displayName,
-        packages = players.flatMap { it.packageNames }.distinct(),
-    )
+    return missingOf(players)
 }
+
+/**
+ * [GameLaunch.Missing] when players are registered and none is installed, else null.
+ * Needs no [LaunchTarget], so a launch can ask before it downloads anything.
+ */
+internal fun missingPlayer(players: List<Player>, installedPackage: (Player) -> String?): GameLaunch.Missing? {
+    if (players.isEmpty() || players.any { installedPackage(it) != null }) return null
+    return missingOf(players)
+}
+
+private fun missingOf(players: List<Player>) = GameLaunch.Missing(
+    playerName = players.first().displayName,
+    packages = players.flatMap { it.packageNames }.distinct(),
+)
 
 private const val PAGE: Int = 50
