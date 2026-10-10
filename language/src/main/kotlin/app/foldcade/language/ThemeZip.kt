@@ -1,6 +1,9 @@
 package app.foldcade.language
 
 import androidx.compose.ui.graphics.Color
+import java.io.ByteArrayOutputStream
+import java.io.InputStream
+import java.util.zip.ZipInputStream
 
 /**
  * Paint read from a theme zip. A missing or rejected field keeps the built-in value.
@@ -39,6 +42,75 @@ fun parseThemeJson(text: String): ThemeFile? {
         iconRadius = numberField(fields, "iconRadius", fallback.iconRadius, 0f, 0.5f),
         artScale = numberField(fields, "artScale", fallback.artScale, 0.7f, 1f),
         backgroundMotion = motionField(fields, "backgroundMotion"),
+    )
+}
+
+/** Bytes from a theme zip whose `theme.json` parsed. A bad zip is null. */
+data class ThemeZip(
+    val file: ThemeFile,
+    val entries: Map<String, ByteArray>,
+)
+
+/** Where a wallpaper sits when letterboxed inside a panel. */
+data class LetterboxRect(
+    val left: Float,
+    val top: Float,
+    val width: Float,
+    val height: Float,
+)
+
+private const val MAX_THEME_ENTRIES = 64
+private const val MAX_THEME_ENTRY_BYTES = 8 * 1024 * 1024
+
+/**
+ * Reads one theme zip. A stream that is not a zip, a zip with no named theme,
+ * or a `theme.json` the host cannot parse returns null. An oversized entry is
+ * skipped. A name that leaves the zip is skipped. Neither one throws.
+ */
+fun readThemeZip(input: InputStream): ThemeZip? {
+    val entries = try {
+        readCappedEntries(input)
+    } catch (_: Exception) {
+        return null
+    }
+    val json = entries["theme.json"]?.decodeToString() ?: return null
+    val file = parseThemeJson(json) ?: return null
+    return ThemeZip(file, entries)
+}
+
+/** `wallpaper-top.png` or `.webp`, and the same pair for the bottom panel. Png wins when both exist. */
+fun wallpaperZipName(names: Set<String>, top: Boolean): String? {
+    val stem = if (top) "wallpaper-top" else "wallpaper-bottom"
+    return listOf("$stem.png", "$stem.webp").firstOrNull { it in names }
+}
+
+/** `font.ttf`, or `font.otf` when the zip has no ttf. */
+fun fontZipName(names: Set<String>): String? =
+    listOf("font.ttf", "font.otf").firstOrNull { it in names }
+
+fun soundZipName(slot: String): String = "sounds/$slot.ogg"
+
+/**
+ * Fits [imageWidth]×[imageHeight] inside the panel, centered, without cropping.
+ * A zero side returns an empty rect.
+ */
+fun letterbox(
+    imageWidth: Float,
+    imageHeight: Float,
+    panelWidth: Float,
+    panelHeight: Float,
+): LetterboxRect {
+    if (imageWidth <= 0f || imageHeight <= 0f || panelWidth <= 0f || panelHeight <= 0f) {
+        return LetterboxRect(0f, 0f, 0f, 0f)
+    }
+    val scale = minOf(panelWidth / imageWidth, panelHeight / imageHeight)
+    val width = imageWidth * scale
+    val height = imageHeight * scale
+    return LetterboxRect(
+        left = (panelWidth - width) / 2f,
+        top = (panelHeight - height) / 2f,
+        width = width,
+        height = height,
     )
 }
 
@@ -204,4 +276,52 @@ private class JsonReader(private val text: String) {
     private fun skip() {
         while (index < text.length && text[index].isWhitespace()) index++
     }
+}
+
+private fun readCappedEntries(input: InputStream): Map<String, ByteArray> {
+    val entries = linkedMapOf<String, ByteArray>()
+    ZipInputStream(input).use { zip ->
+        var count = 0
+        while (count < MAX_THEME_ENTRIES) {
+            val entry = zip.nextEntry ?: break
+            count++
+            try {
+                if (entry.isDirectory) continue
+                val name = themeZipEntryName(entry.name) ?: continue
+                val known = entry.size
+                if (known > MAX_THEME_ENTRY_BYTES) continue
+                val bytes = readAtMost(zip, MAX_THEME_ENTRY_BYTES) ?: continue
+                entries[name] = bytes
+            } finally {
+                zip.closeEntry()
+            }
+        }
+    }
+    return entries
+}
+
+/** Zip path relative to the archive root. `..` and an absolute path are rejected. */
+internal fun themeZipEntryName(raw: String): String? {
+    val slash = raw.replace('\\', '/')
+    var name = slash
+    while (name.startsWith("/")) name = name.removePrefix("/")
+    if (name.startsWith("./")) name = name.removePrefix("./")
+    if (name.isEmpty() || name.contains('\u0000')) return null
+    val parts = name.split('/')
+    if (parts.any { it.isEmpty() || it == "." || it == ".." }) return null
+    return name
+}
+
+private fun readAtMost(input: InputStream, max: Int): ByteArray? {
+    val out = ByteArrayOutputStream()
+    val buffer = ByteArray(8192)
+    var total = 0
+    while (true) {
+        val read = input.read(buffer)
+        if (read < 0) break
+        total += read
+        if (total > max) return null
+        out.write(buffer, 0, read)
+    }
+    return out.toByteArray()
 }
