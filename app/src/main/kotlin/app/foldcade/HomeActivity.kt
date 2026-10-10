@@ -89,6 +89,8 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
     private var folderPurpose = FolderPurpose.Library
     private var pendingLaunch: Int? = null
     private var closeConfirmed = false
+    /** A dismissed or replaced launch. An older attempt must not present a dialog later. */
+    private var launchGeneration = 0
     private var settingsPlayerId: String? = null
     private var libraryLaunching = false
     private var libraryReturn: LibraryReturn? = null
@@ -158,7 +160,19 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
         foldcade.shell.calibrateConfirm(key)
     }
 
+    override fun menuTakesKeys(): Boolean {
+        val model = foldcade.shell.model
+        return model.panel != null && model.dialog == null && !model.connectOpen && foldcadeSurfaceFocused()
+    }
+
     override fun onMeaning(meaning: app.foldcade.language.Meaning) {
+        val openingMenu = meaning == app.foldcade.language.Meaning.LeftPanel ||
+            meaning == app.foldcade.language.Meaning.RightPanel
+        if (foldcade.shell.model.dialog == null &&
+            (openingMenu || meaning == app.foldcade.language.Meaning.Back)
+        ) {
+            cancelLaunches()
+        }
         foldcade.music.duckForThemeSound(meaning)
         val panel = displays.panelFor(this, foldcade.store.session.defaultDisplayIsTop) ?: return
         val screen = if (panel == Panel.Top) HostScreen.Top else HostScreen.Bottom
@@ -207,6 +221,7 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
         foldcade.shell.setHomeRoleHeld(held)
         foldcade.shell.maybeAskHome(held)
         applyDialogPreview(intent)
+        applyIslandPreview(intent)
         if (launchesCompanion) {
             val manager = getSystemService(DisplayManager::class.java)
             manager.registerDisplayListener(displayListener, null)
@@ -265,6 +280,8 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
         acceptShelf(intent)
         acceptFolderLibrary(intent)
         applyDialogPreview(intent)
+        // Home relaunches this activity before a debug capture intent arrives.
+        applyIslandPreview(intent, replace = true)
     }
 
     private fun applyDialogPreview(intent: Intent) {
@@ -322,6 +339,27 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
         shellVisible = resumed && state == Display.STATE_ON
     }
 
+    private fun applyIslandPreview(intent: Intent, replace: Boolean = false) {
+        if (applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE == 0) return
+        val raw = intent.getStringExtra("foldcade.island")
+        if (raw == "closed") {
+            foldcade.islandHold = null
+            cancelLaunches()
+            foldcade.shell.dismissDialog()
+            foldcade.shell.closePanel()
+            return
+        }
+        val hold = parseIslandHold(raw) ?: return
+        if (!replace && foldcade.islandHold != null) return
+        // A leftover dialog swallows shoulders and leaves the bottom screen sharp.
+        // Show this shoulder directly. onMeaning would retire the other island and
+        // leave that panel on screen under the new hold.
+        cancelLaunches()
+        foldcade.shell.dismissDialog()
+        foldcade.shell.previewIsland(hold.side)
+        foldcade.islandHold = hold
+    }
+
     private fun acceptHome(intent: Intent) {
         if (!isAndroidHomeRecall(intent.action, intent.categories ?: emptySet())) return
         val panel = displays.panelFor(this, foldcade.store.session.defaultDisplayIsTop) ?: return
@@ -345,8 +383,9 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
         val player = game.platformId?.let { foldcade.plugins.playersFor(it).firstOrNull() }
         if (player == null) {
             if (game.platformId != null) {
+                val generation = beginLaunch()
                 pendingLaunch = index
-                foldcade.shell.present(missingPlayerDialog("Player", hostScreen()))
+                presentMissing("Player", generation)
                 return
             }
             launchStandIn(game)
@@ -356,6 +395,7 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
         val remoteKey = game.remoteKey
         if (libraryId != null && remoteKey != null) {
             if (libraryLaunching) return
+            val generation = beginLaunch()
             libraryLaunching = true
             pendingLaunch = index
             val apiGame = shelfGame(game)
@@ -372,19 +412,21 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
                 }
                 withContext(Dispatchers.Main.immediate) {
                     libraryLaunching = false
-                    if (pendingLaunch != index) return@withContext
+                    if (!launchCurrent(generation) || pendingLaunch != index) return@withContext
                     if (target == null) return@withContext
-                    finishLaunch(index, game, player, target, apiGame)
+                    finishLaunch(index, game, player, target, apiGame, generation)
                 }
             }
             return
         }
+        val generation = beginLaunch()
         finishLaunch(
             index,
             game,
             player,
             game.contentUri?.let { LaunchTarget.ContentUri(it) },
             shelfGame(game),
+            generation,
         )
     }
 
@@ -394,7 +436,9 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
         player: Player,
         target: LaunchTarget?,
         apiGame: Game,
+        generation: Int,
     ) {
+        if (!launchCurrent(generation)) return
         val continuing = pendingLaunch == index && closeConfirmed
         val decision = try {
             planPlayerLaunch(
@@ -418,18 +462,18 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
             )
             return
         }
+        if (!launchCurrent(generation)) return
         pendingLaunch = index
         when (decision) {
-            is PlayerLaunch.Blocked -> when (decision.block) {
+            is PlayerLaunch.Blocked -> if (launchCurrent(generation)) when (decision.block) {
                 LaunchBlock.CloseFirst -> foldcade.shell.present(closeBothPanelDialog(hostScreen()))
-                LaunchBlock.MissingPlayer ->
-                    foldcade.shell.present(missingPlayerDialog(decision.playerName, hostScreen()))
+                LaunchBlock.MissingPlayer -> presentMissing(decision.playerName, generation)
                 LaunchBlock.NoLocalFile -> foldcade.shell.present(noFileDialog(hostScreen()))
                 LaunchBlock.SaveFolder -> foldcade.shell.present(saveFolderDialog(hostScreen()))
             }
             is PlayerLaunch.Ready -> {
                 clearPendingLaunch()
-                startPlayer(game, decision, apiGame, player)
+                startPlayer(game, decision, apiGame, player, generation)
             }
         }
     }
@@ -486,6 +530,7 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
         val game = entry.game ?: return
         val libraryId = foldcade.shell.activeLibraryId ?: return
         foldcade.music.onExternalLaunch()
+        val generation = beginLaunch()
         foldcade.scope.launch {
             val players = foldcade.plugins.playersFor(game.platformId)
             val target = try {
@@ -520,6 +565,7 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
                 null
             }
             withContext(Dispatchers.Main.immediate) {
+                if (!launchCurrent(generation)) return@withContext
                 when (plan) {
                     is GameLaunch.Dummy -> openContent(
                         entry.id,
@@ -536,10 +582,12 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
                             plan.player.occupiesBothDisplays,
                             installedIntent,
                         )
-                    } else {
+                    } else if (launchCurrent(generation)) {
                         showMissing(plan.player.displayName, plan.player.packageNames)
                     }
-                    is GameLaunch.Missing -> showMissing(plan.playerName, plan.packages)
+                    is GameLaunch.Missing -> if (launchCurrent(generation)) {
+                        showMissing(plan.playerName, plan.packages)
+                    }
                     GameLaunch.SeveralInstalled -> Unit
                     GameLaunch.NotAFile -> foldcade.retryLibrary()
                 }
@@ -639,7 +687,13 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
         }
     }
 
-    private fun startPlayer(game: ShelfGame, ready: PlayerLaunch.Ready, apiGame: Game, player: Player) {
+    private fun startPlayer(
+        game: ShelfGame,
+        ready: PlayerLaunch.Ready,
+        apiGame: Game,
+        player: Player,
+        generation: Int,
+    ) {
         foldcade.music.onExternalLaunch()
         val assignment = displays.assignment(foldcade.store.session.defaultDisplayIsTop)
         val panel = when (ready.startDisplay) {
@@ -673,7 +727,7 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
             val name = game.platformId
                 ?.let { foldcade.plugins.playersFor(it).firstOrNull()?.displayName }
                 ?: "Player"
-            foldcade.shell.present(missingPlayerDialog(name, hostScreen()))
+            presentMissing(name, generation)
         } catch (_: Exception) {
             foldcade.store.update { it.home(Panel.Top).home(Panel.Bottom) }
         }
@@ -713,6 +767,25 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
         closeConfirmed = false
     }
 
+    private fun beginLaunch(): Int {
+        launchGeneration += 1
+        return launchGeneration
+    }
+
+    /** Drops an in-flight launch so a late result cannot open a missing-player dialog. */
+    private fun cancelLaunches() {
+        launchGeneration += 1
+        libraryLaunching = false
+        clearPendingLaunch()
+    }
+
+    private fun launchCurrent(generation: Int): Boolean = generation == launchGeneration
+
+    private fun presentMissing(name: String, generation: Int) {
+        if (!launchCurrent(generation)) return
+        foldcade.shell.present(missingPlayerDialog(name, hostScreen()))
+    }
+
     private fun cycleLaunchTarget() {
         val game = foldcade.shell.focusedGame() ?: return
         val onPlatform = foldcade.shell.model.libraryGrid &&
@@ -737,14 +810,14 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
                 folderPurpose = FolderPurpose.Library
                 folderPicker.launch(null)
             }
-            DialogKind.Ok -> clearPendingLaunch()
+            DialogKind.Ok -> cancelLaunches()
             DialogKind.ReLogin -> foldcade.shell.openConnect(foldcade.store.rommOrigin().orEmpty())
-            DialogKind.MissingPlayer -> clearPendingLaunch()
+            DialogKind.MissingPlayer -> cancelLaunches()
             DialogKind.ClosePlayer -> if (effect.button == DialogButton.CloseIt) {
                 closeConfirmed = true
                 pendingLaunch?.let { launchGame(it) }
             } else {
-                clearPendingLaunch()
+                cancelLaunches()
             }
             DialogKind.SaveFolder -> if (effect.button == DialogButton.ContinueGrant) {
                 folderPurpose = FolderPurpose.LaunchOffer
