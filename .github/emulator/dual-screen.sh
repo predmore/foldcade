@@ -1190,6 +1190,39 @@ become_root() {
 
 # The persistable document-tree grant is read when the system server starts.
 # A guest reboot is what makes the seeded folder visible to the shell.
+# RIGHT stays on the current row. All closes back to the All library tile,
+# then this walk follows home-ui tile logs. A presentation dump is empty
+# while that display is focused, so the folder name is not read from it.
+focus_system_folder() {
+  local row col
+  adb_do logcat -c || true
+  key_bottom KEYCODE_BUTTON_B || true
+  sleep 0.35
+  key_bottom KEYCODE_BUTTON_B || true
+  sleep 0.35
+  key_bottom KEYCODE_BUTTON_B || true
+  sleep 0.4
+  for row in $(seq 1 8); do
+    for col in $(seq 1 5); do
+      if timeout 10 adb logcat -d -s Foldcade:I 2>/dev/null | tr -d '\r' | grep -F -q "home-ui tile Game Boy Advance"; then
+        return 0
+      fi
+      key_bottom KEYCODE_DPAD_RIGHT || true
+      sleep 0.3
+    done
+    if timeout 10 adb logcat -d -s Foldcade:I 2>/dev/null | tr -d '\r' | grep -F -q "home-ui tile Game Boy Advance"; then
+      return 0
+    fi
+    for col in $(seq 1 5); do
+      key_bottom KEYCODE_DPAD_LEFT || true
+      sleep 0.12
+    done
+    key_bottom KEYCODE_DPAD_DOWN || true
+    sleep 0.3
+  done
+  timeout 10 adb logcat -d -s Foldcade:I 2>/dev/null | tr -d '\r' | grep -F -q "home-ui tile Game Boy Advance"
+}
+
 # Curated home frames. Emulator only, not a Thor pass.
 # The grid is already on screen. Scroll is a finger drag, not a launch.
 # Edit mode lifts a tile. All Games and All Apps are different lists.
@@ -1264,10 +1297,9 @@ capture_curated_home() {
   capture "$secondary" "$out/all-apps-secondary.png"
   expect_png "$out/all-apps-primary.png" "${top_width}x${top_height}"
   expect_png "$out/all-apps-secondary.png" "${bottom_width}x${bottom_height}"
-  # The first B leaves the All chrome. The second closes All.
-  key_bottom KEYCODE_BUTTON_B || true
-  key_bottom KEYCODE_BUTTON_B || true
-  sleep 0.4
+  # The first B leaves the All chrome. The second closes All. The third is a
+  # no-op on the root grid. Then focus the Game Boy Advance folder.
+  focus_system_folder || fail "folder library: system folder was not on screen"
   {
     echo "Thor-sized emulator, not a Thor pass."
     echo "Grid: home-primary.png and home-secondary.png."
@@ -1367,15 +1399,7 @@ PY
   wait_library_log "library-ui home" || fail "folder library: home grid did not load"
   resolve_screencap_ids
   capture_curated_home
-  local step
-  for step in $(seq 1 24); do
-    if dump_library_ui && grep -q "Game Boy Advance" "$out/ui-library.xml"; then
-      break
-    fi
-    key_bottom KEYCODE_DPAD_RIGHT
-    sleep 0.3
-  done
-  dump_library_ui && grep -q "Game Boy Advance" "$out/ui-library.xml" \
+  wait_library_log "home-ui tile Game Boy Advance" \
     || fail "folder library: system folder was not on screen"
   key_bottom KEYCODE_DPAD_CENTER
   wait_library_log "library-ui games" || fail "folder library: game grid did not load"

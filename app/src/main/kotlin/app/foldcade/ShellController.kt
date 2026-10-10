@@ -115,6 +115,7 @@ class ShellController(
     private var platformEntries: List<GridEntry> = emptyList()
     private var platformFocus: GridFocus = GridFocus()
     private var platformOrder: List<Int> = emptyList()
+    private var loggedHomeTile: String? = null
 
     fun onMeaning(meaning: Meaning, screen: HostScreen): Effect? {
             if (homeActive()) {
@@ -1021,6 +1022,23 @@ class ShellController(
             withShelf(next.copy(libraryGrid = false))
         }
         if (moonlightSourceChanged) onMoonlightCatalog()
+        logHomeTile()
+    }
+
+    /**
+     * The bottom labels ellipsize, and a presentation-display dump is often empty.
+     * The capture follows this line to the Game Boy Advance folder.
+     */
+    private fun logHomeTile() {
+        if (!showingHome() || home.board.allOpen || home.board.openFolderId != null) {
+            loggedHomeTile = null
+            return
+        }
+        if (model.dialog != null || model.panel != null || model.connectOpen) return
+        val title = home.face(model.focus.cellIndex)?.title?.takeIf { it.isNotBlank() } ?: return
+        if (title == loggedHomeTile) return
+        loggedHomeTile = title
+        Log.i("Foldcade", "home-ui tile $title")
     }
 
     private fun countFor(grid: HomeGrid): Int = when (grid) {
