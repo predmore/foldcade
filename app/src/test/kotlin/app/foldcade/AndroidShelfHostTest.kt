@@ -89,7 +89,7 @@ class AndroidShelfHostTest {
         shell.setHomeRoleHeld(true)
         shell.setInstalledApps(listOf(game, settings, azahar), host.playerPackageNames())
 
-        val rows = leftRows(homeRoleHeld = true)
+        val rows = leftRows()
         shell.onMeaning(Meaning.LeftPanel, HostScreen.Bottom)
         repeat(rows.indexOf(Row.Apps)) { shell.onMeaning(Meaning.MoveDown, HostScreen.Bottom) }
         val opened = shell.onMeaning(Meaning.Activate, HostScreen.Bottom)
@@ -116,14 +116,14 @@ class AndroidShelfHostTest {
         assertEquals(0, shell.model.count)
 
         shell.onMeaning(Meaning.LeftPanel, HostScreen.Bottom)
-        val gamesIndex = leftRows(homeRoleHeld = true).indexOf(Row.AndroidGames)
+        val gamesIndex = leftRows().indexOf(Row.AndroidGames)
         repeat(gamesIndex) { shell.onMeaning(Meaning.MoveDown, HostScreen.Bottom) }
         shell.onMeaning(Meaning.Activate, HostScreen.Bottom)
         assertEquals(HomeGrid.AndroidGames, shell.model.homeGrid)
         assertEquals(listOf("Settings", "Example"), titles(shell))
 
         shell.onMeaning(Meaning.LeftPanel, HostScreen.Bottom)
-        val hiddenIndex = leftRows(homeRoleHeld = true).indexOf(Row.HiddenApps)
+        val hiddenIndex = leftRows().indexOf(Row.HiddenApps)
         repeat(hiddenIndex) { shell.onMeaning(Meaning.MoveDown, HostScreen.Bottom) }
         shell.onMeaning(Meaning.Activate, HostScreen.Bottom)
         assertEquals(listOf("Azahar"), titles(shell))
@@ -133,7 +133,7 @@ class AndroidShelfHostTest {
         assertEquals(0, shell.model.count)
 
         shell.onMeaning(Meaning.LeftPanel, HostScreen.Bottom)
-        repeat(leftRows(homeRoleHeld = true).indexOf(Row.Apps)) {
+        repeat(leftRows().indexOf(Row.Apps)) {
             shell.onMeaning(Meaning.MoveDown, HostScreen.Bottom)
         }
         shell.onMeaning(Meaning.Activate, HostScreen.Bottom)
