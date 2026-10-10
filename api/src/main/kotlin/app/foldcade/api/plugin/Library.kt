@@ -53,10 +53,15 @@ interface LibraryBackend {
     suspend fun reconcile(game: Game, player: Player, observed: ObservedSaves): SyncResult
 }
 
-/** A platform this backend can list. [displayName] is a name the backend already has. */
-data class ListedPlatform(
+/**
+ * A platform this backend can list. [displayName] is a name the backend already has.
+ * [gameCount] is the number of games when the listing already knows it, so the host
+ * does not ask [LibraryBackend.listGames] for each platform. Null means unknown.
+ */
+data class ListedPlatform @JvmOverloads constructor(
     val platformId: String,
     val displayName: String,
+    val gameCount: Int? = null,
 )
 
 /** Firmware this backend already has. [contentUri] addresses the bytes. */

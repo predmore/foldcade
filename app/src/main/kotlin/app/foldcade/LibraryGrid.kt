@@ -50,11 +50,14 @@ internal suspend fun loadPlatforms(
         if (listed.isEmpty()) return LoadedLibrary.NoPlatforms
         val entries = listed.map { platform ->
             coroutineContext.ensureActive()
-            val page = plugins.listGames(libraryId, platform.platformId, GameQuery(limit = 0))
+            // A count the listing already has saves one request per platform. RomM lists
+            // every platform it knows, most of them empty, so that was most of the load.
+            val count = platform.gameCount
+                ?: plugins.listGames(libraryId, platform.platformId, GameQuery(limit = 0)).total
             GridEntry(
                 id = platform.platformId,
                 title = platform.displayName,
-                shortText = page.total?.toString().orEmpty(),
+                shortText = count?.toString().orEmpty(),
                 platformId = platform.platformId,
                 availabilityLabel = null,
                 occupiesBothDisplays = occupiesBoth(platform.platformId),
