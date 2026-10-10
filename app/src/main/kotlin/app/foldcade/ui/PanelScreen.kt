@@ -114,6 +114,7 @@ import app.foldcade.Displays
 import app.foldcade.FoldcadeApp
 import app.foldcade.FoldcadeHomeActivity
 import app.foldcade.Panel
+import app.foldcade.FolderIconPick
 import app.foldcade.Surface
 import app.foldcade.CoverImage
 import app.foldcade.api.plugin.Game
@@ -126,6 +127,7 @@ import coil3.request.crossfade
 import app.foldcade.language.ConnectField
 import app.foldcade.language.Copy
 import app.foldcade.language.HomeGrid
+import app.foldcade.language.FOLDER_ICONS
 import app.foldcade.language.homeGridLabel
 import app.foldcade.language.DialogButton
 import app.foldcade.language.Effect
@@ -376,6 +378,15 @@ private fun <T> TravelFade(target: T, scale: Float, content: @Composable (T) -> 
 private fun Hero(app: FoldcadeApp, screen: HostScreen, scale: Float, onEffect: (Effect?) -> Unit) {
     val theme = foldTheme()
     val model = app.shell.model
+    app.shell.folderIconPick()?.let { (pick, name) ->
+        Box(Modifier.fillMaxSize()) {
+            FolderIconPicker(pick, name, top = screen == HostScreen.Top)
+            TopIslands(app, screen, scale) { panelState, progress, interactive ->
+                PanelRows(app, screen, panelState, progress, interactive, onEffect)
+            }
+        }
+        return
+    }
     val subject = app.shell.focusedHero()
     val cellFocused = model.dialog == null && model.panel == null && !model.connectOpen && model.focus.chrome == null
     // The record behind each subject, so a layer that is fading out keeps its own cover.
@@ -516,6 +527,64 @@ private fun <T> HeroCrossfade(
         }
         if (current != null) {
             Box(Modifier.fadingHero(incoming.value, fadeOnly)) { content(current) }
+        }
+    }
+}
+
+/**
+ * The icons a folder the user made can wear, in rows on the top screen. The
+ * focused icon wears the focus ring. The bottom screen names A and B.
+ */
+@Composable
+private fun FolderIconPicker(pick: FolderIconPick, name: String, top: Boolean) {
+    val theme = foldTheme()
+    val columns = FolderIconPick.COLUMNS
+    val rows = FOLDER_ICONS.chunked(columns)
+    val inset = px(Metrics.heroInsetPx)
+    Column(
+        Modifier
+            .fillMaxSize()
+            .padding(start = inset, end = inset, bottom = inset, top = if (top) inset + 48.dp else inset),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(px(24f)),
+    ) {
+        BasicText(
+            text = "${Copy.folderIcon} · $name",
+            style = text(theme.onBackground, TypeRamp.dialogTitle, theme),
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
+        BoxWithConstraints(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
+            val gap = px(20f)
+            val cell = minOf(
+                (maxWidth - gap * (columns - 1)) / columns,
+                (maxHeight - gap * (rows.size - 1)) / rows.size,
+            )
+            val corner = cell * theme.iconRadius
+            Column(verticalArrangement = Arrangement.spacedBy(gap)) {
+                rows.forEachIndexed { rowIndex, row ->
+                    Row(horizontalArrangement = Arrangement.spacedBy(gap)) {
+                        row.forEachIndexed { columnIndex, mark ->
+                            val focused = rowIndex * columns + columnIndex == pick.index
+                            Box(
+                                Modifier
+                                    .size(cell)
+                                    .graphicsLayer { clip = false }
+                                    .drawBehind {
+                                        val cornerPx = corner.toPx()
+                                        drawRoundRect(color = theme.surface, cornerRadius = CornerRadius(cornerPx, cornerPx))
+                                        if (focused) with(FocusRing) { drawFocusRing(cornerPx) }
+                                    },
+                                contentAlignment = Alignment.Center,
+                            ) {
+                                Box(Modifier.graphicsLayer { alpha = if (focused) 1f else 0.7f }) {
+                                    MarkIcon(mark, theme.artScale)
+                                }
+                            }
+                        }
+                    }
+                }
+            }
         }
     }
 }
@@ -1073,7 +1142,7 @@ private fun GridHints(app: FoldcadeApp, modifier: Modifier = Modifier) {
             },
         )
     }
-    val keys = gridHints(actions, shell.homeKeys(), model.faceMap)
+    val keys = gridHints(actions, shell.homeKeys(), model.faceMap, folderIcon = shell.canPickFolderIcon())
     if (keys.isEmpty()) return
     Row(
         modifier.fillMaxWidth(),

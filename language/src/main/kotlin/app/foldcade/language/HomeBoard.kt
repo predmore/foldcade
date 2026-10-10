@@ -104,6 +104,21 @@ const val MARK_CONSOLE: String = "console"
 const val MARK_FOLDER: String = "folder"
 const val MARK_LIBRARY: String = "library"
 
+/**
+ * The icons a folder the user made can wear, in the picker's order: the
+ * folder, the libraries, then every platform.
+ */
+val FOLDER_ICONS: List<String> =
+    listOf(MARK_FOLDER, MARK_LIBRARY, "android-games", "android-apps", "pc", "moonlight", MARK_CONSOLE) +
+        PLATFORM_MARKS
+
+/** Gives a folder the user made the icon [mark]. A system folder keeps its platform's. */
+fun setFolderIcon(board: HomeBoard, folderId: String, mark: String): HomeBoard {
+    val folder = board.folders[folderId] ?: return board
+    if (!folder.userMade || mark !in FOLDER_ICONS) return board
+    return board.copy(folders = board.folders + (folderId to folder.copy(mark = mark)))
+}
+
 /** Kit mark for a canonical platform id. Not a console logo. A platform without its own mark gets a controller. */
 fun kitMark(canonicalId: String): String =
     canonicalId.takeIf { it in PLATFORM_MARKS } ?: MARK_CONSOLE
@@ -635,6 +650,8 @@ private fun refreshFolderNames(board: HomeBoard, platforms: List<HomePlatform>):
         val mark = when {
             platformId != null -> platform?.mark?.ifBlank { null } ?: kitMark(platformId)
             folder.bucket != null -> bucketMark(folder.bucket)
+            // A folder the user made keeps the icon they chose.
+            folder.userMade -> folder.mark?.takeIf { it in FOLDER_ICONS } ?: MARK_FOLDER
             else -> MARK_FOLDER
         }
         val name = if (platform == null || folder.namedByUser) folder.name else platform.name

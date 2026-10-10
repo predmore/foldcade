@@ -8,6 +8,8 @@ import app.foldcade.language.Copy
 import app.foldcade.language.Effect
 import app.foldcade.language.GridFocus
 import app.foldcade.language.HOME_ALL
+import app.foldcade.language.setFolderIcon
+import app.foldcade.language.FOLDER_ICONS
 import app.foldcade.language.HomeBoard
 import app.foldcade.language.HomeItem
 import app.foldcade.language.HomeKeys
@@ -93,6 +95,11 @@ class HomeSession(raw: String?) {
     var renameDraft: String = ""
         private set
     private var renameIndex: Int = 0
+
+    /** The folder whose icon is being chosen, and the focused choice in [FOLDER_ICONS]. Null when closed. */
+    var iconPick: FolderIconPick? = null
+        private set
+    private var iconCell: Int = 0
     private var rootIndex: Int = 0
 
     fun rememberShelf(gamesOnShelf: List<ShelfGame>) {
@@ -162,6 +169,7 @@ class HomeSession(raw: String?) {
     }
 
     fun keys(): HomeKeys = when {
+        iconPick != null -> HomeKeys.PickingIcon
         board.editing -> HomeKeys.Editing
         board.allOpen -> HomeKeys.AllLibrary
         else -> HomeKeys.Idle
@@ -195,6 +203,7 @@ class HomeSession(raw: String?) {
 
     /** True when this meaning was applied. False lets the shared grid reducer move focus. */
     fun handle(meaning: Meaning, index: Int): HomeStep? {
+        iconPick?.let { return handleIconPick(it, meaning) }
         if (renaming) return handleRename(meaning)
         if (board.editing) return handleEdit(meaning, index)
         if (board.allOpen) return handleAll(meaning, index)
@@ -205,7 +214,12 @@ class HomeSession(raw: String?) {
         }
     }
 
+    /** True when the tile at [index] is a folder the user made, so Select can change its icon. */
+    fun canPickIcon(index: Int): Boolean =
+        board.editing && board.hold == null && visibleSlots(board).getOrNull(index)?.let { board.folders[it]?.userMade } == true
+
     fun enterEditing() {
+        iconPick = null
         renaming = false
         board = enterEdit(board)
     }
@@ -237,6 +251,28 @@ class HomeSession(raw: String?) {
     }
 
     fun encoded(): String = encodeHome(board)
+
+    /** The D-pad walks the icons, A wears the focused one, B leaves the folder as it was. */
+    private fun handleIconPick(pick: FolderIconPick, meaning: Meaning): HomeStep {
+        val last = FOLDER_ICONS.lastIndex
+        val columns = FolderIconPick.COLUMNS
+        val next = when (meaning) {
+            Meaning.MoveLeft -> pick.index - 1
+            Meaning.MoveRight -> pick.index + 1
+            Meaning.MoveUp -> pick.index - columns
+            Meaning.MoveDown -> pick.index + columns
+            else -> null
+        }
+        when {
+            next != null -> iconPick = pick.copy(index = next.coerceIn(0, last))
+            meaning == Meaning.Activate -> {
+                board = setFolderIcon(board, pick.folderId, FOLDER_ICONS[pick.index])
+                iconPick = null
+            }
+            meaning == Meaning.Back || meaning == Meaning.CancelHold || meaning == Meaning.LeaveEdit -> iconPick = null
+        }
+        return step(null, iconCell)
+    }
 
     private fun handleRename(meaning: Meaning): HomeStep {
         return when (meaning) {
@@ -297,6 +333,15 @@ class HomeSession(raw: String?) {
                 step(null, cursor.coerceAtMost((visibleCount() - 1).coerceAtLeast(0)))
             }
             Meaning.MakeFolder -> makeOrRename(cursor)
+            Meaning.FolderIcon -> {
+                val id = visibleSlots(board).getOrNull(cursor)
+                val folder = id?.let { board.folders[it] }
+                if (folder != null && folder.userMade && board.hold == null) {
+                    iconPick = FolderIconPick(id, FOLDER_ICONS.indexOf(folder.mark).coerceAtLeast(0))
+                    iconCell = cursor
+                }
+                step(null, cursor)
+            }
             Meaning.PageTowardStart, Meaning.PageTowardEnd ->
                 if (board.hold == null) {
                     HomeStep(handled = false, effect = null, focus = null)
@@ -525,6 +570,14 @@ class HomeSession(raw: String?) {
             effect = effect,
             focus = GridFocus(cellIndex = index.coerceAtLeast(0), lastColumn = index.coerceAtLeast(0) % Metrics.columns),
         )
+}
+
+/** The icon picker for one folder the user made. [index] is the focused icon in [FOLDER_ICONS]. */
+data class FolderIconPick(val folderId: String, val index: Int) {
+    companion object {
+        /** The picker lays the icons out in rows of this many. */
+        const val COLUMNS: Int = 7
+    }
 }
 
 data class HomeStep(

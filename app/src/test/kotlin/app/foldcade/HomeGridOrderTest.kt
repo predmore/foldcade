@@ -9,6 +9,9 @@ import app.foldcade.language.HomeGrid
 import app.foldcade.language.HostScreen
 import app.foldcade.language.Meaning
 import app.foldcade.language.Metrics
+import app.foldcade.language.FOLDER_ICONS
+import app.foldcade.language.HomeKeys
+import app.foldcade.language.MARK_FOLDER
 import app.foldcade.language.homeGameId
 import app.foldcade.localfolder.LocalFolderEntry
 import app.foldcade.plugins.melonds.MelonDsEntry
@@ -237,6 +240,37 @@ class HomeGridOrderTest {
         )
         assertTrue("Sega CD" in titles(shell))
         assertFalse("segacd" in titles(shell))
+    }
+
+    @Test
+    fun selectOnAFolderTheUserMadeChoosesItsIcon() {
+        val shell = shell()
+        shell.enterHomeEdit()
+        // Y on the All tile makes a new folder in the first free slot.
+        shell.onMeaning(Meaning.MakeFolder, HostScreen.Bottom)
+        val folder = List(shell.model.count) { shell.homeFace(it) }.indexOfFirst { it?.folder == true && it.mark == MARK_FOLDER }
+        assertTrue(folder >= 0)
+        // A new folder takes the focus.
+        assertEquals(folder, shell.model.focus.cellIndex)
+        assertTrue(shell.canPickFolderIcon())
+        shell.onMeaning(Meaning.FolderIcon, HostScreen.Bottom)
+        assertEquals(HomeKeys.PickingIcon, shell.homeKeys())
+        assertEquals(0, shell.folderIconPick()?.first?.index)
+        shell.onMeaning(Meaning.MoveDown, HostScreen.Bottom)
+        shell.onMeaning(Meaning.MoveRight, HostScreen.Bottom)
+        val chosen = FOLDER_ICONS[FolderIconPick.COLUMNS + 1]
+        shell.onMeaning(Meaning.Activate, HostScreen.Bottom)
+        assertNull(shell.folderIconPick())
+        assertEquals(chosen, shell.homeFace(folder)?.mark)
+        assertEquals(folder, shell.model.focus.cellIndex)
+        // B leaves the icon as it was.
+        shell.onMeaning(Meaning.FolderIcon, HostScreen.Bottom)
+        shell.onMeaning(Meaning.MoveRight, HostScreen.Bottom)
+        shell.onMeaning(Meaning.CancelHold, HostScreen.Bottom)
+        assertEquals(chosen, shell.homeFace(folder)?.mark)
+        // Outside Edit home, Select opens nothing.
+        shell.onMeaning(Meaning.LeaveEdit, HostScreen.Bottom)
+        assertFalse(shell.canPickFolderIcon())
     }
 
     private fun entry(

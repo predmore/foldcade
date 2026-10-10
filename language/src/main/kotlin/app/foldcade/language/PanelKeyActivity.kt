@@ -35,7 +35,11 @@ abstract class PanelKeyActivity : ComponentActivity() {
             object : OnBackPressedCallback(true) {
                 override fun handleOnBackPressed() {
                     if (!pickerIsFocused()) return
-                    val meaning = if (homeKeys() == HomeKeys.Editing) Meaning.LeaveEdit else Meaning.Back
+                    val meaning = when (homeKeys()) {
+                        HomeKeys.Editing -> Meaning.LeaveEdit
+                        HomeKeys.PickingIcon -> Meaning.CancelHold
+                        else -> Meaning.Back
+                    }
                     onMeaning(meaning)
                 }
             },

@@ -153,6 +153,23 @@ class HomeBoardTest {
     }
 
     @Test
+    fun aFolderTheUserMadeKeepsTheIconTheyChose() {
+        val made = createFolder(HomeBoard(), "home.user.1", "Zelda")
+        val iconed = setFolderIcon(made, "home.user.1", "nintendo-3ds")
+        assertEquals("nintendo-3ds", iconed.folders.getValue("home.user.1").mark)
+        // A rescan and a saved board keep it.
+        val merged = mergeHome(iconed, emptyList(), platforms)
+        assertEquals("nintendo-3ds", merged.folders.getValue("home.user.1").mark)
+        assertEquals("nintendo-3ds", decodeHome(encodeHome(merged)).folders.getValue("home.user.1").mark)
+        // Only icons from the set, and only on folders the user made.
+        assertEquals(iconed, setFolderIcon(iconed, "home.user.1", "not-an-icon"))
+        val system = mergeHome(HomeBoard(), emptyList(), platforms)
+        assertEquals(system, setFolderIcon(system, HOME_GAMENATIVE, "nintendo-3ds"))
+        assertEquals(MARK_FOLDER, FOLDER_ICONS.first())
+        assertTrue(FOLDER_ICONS.containsAll(PLATFORM_MARKS))
+    }
+
+    @Test
     fun allLibrarySortsFiltersAndJumpsLetters() {
         val items = listOf(
             item("b", title = "Beta", platformId = "gba"),

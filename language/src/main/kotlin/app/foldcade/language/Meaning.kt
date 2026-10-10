@@ -28,6 +28,8 @@ enum class Meaning {
     RemoveFromHome,
     /** Y while editing. New folder, or rename when a folder is focused. */
     MakeFolder,
+    /** Select while editing a folder the user made. Opens its icon picker. */
+    FolderIcon,
     /** Y in All. First free slot, or the chosen folder. */
     AddToHome,
     /** X in All. Cycles the folder an add will use. */
@@ -41,6 +43,8 @@ enum class HomeKeys {
     Idle,
     Editing,
     AllLibrary,
+    /** The icon picker for a folder the user made is open. */
+    PickingIcon,
 }
 
 fun meaningOf(
@@ -65,15 +69,19 @@ fun meaningOf(
             keyCode == KeyEvent.KEYCODE_DPAD_CENTER ||
             keyCode == KeyEvent.KEYCODE_ENTER ||
             keyCode == KeyEvent.KEYCODE_NUMPAD_ENTER -> Meaning.Activate
-        keyCode == KeyEvent.KEYCODE_BACK ->
-            if (homeKeys == HomeKeys.Editing) Meaning.LeaveEdit else Meaning.Back
+        keyCode == KeyEvent.KEYCODE_BACK -> when (homeKeys) {
+            HomeKeys.Editing -> Meaning.LeaveEdit
+            HomeKeys.PickingIcon -> Meaning.CancelHold
+            else -> Meaning.Back
+        }
         keyCode == faces.backKey ->
-            if (homeKeys == HomeKeys.Editing) Meaning.CancelHold else Meaning.Back
+            if (homeKeys == HomeKeys.Editing || homeKeys == HomeKeys.PickingIcon) Meaning.CancelHold else Meaning.Back
         keyCode == KeyEvent.KEYCODE_BUTTON_L1 -> Meaning.LeftPanel
         keyCode == KeyEvent.KEYCODE_BUTTON_R1 -> Meaning.RightPanel
         keyCode == KeyEvent.KEYCODE_BUTTON_START && homeKeys == HomeKeys.Editing -> Meaning.LeaveEdit
         keyCode == KeyEvent.KEYCODE_BUTTON_X && homeKeys == HomeKeys.Editing -> Meaning.RemoveFromHome
         keyCode == KeyEvent.KEYCODE_BUTTON_Y && homeKeys == HomeKeys.Editing -> Meaning.MakeFolder
+        keyCode == KeyEvent.KEYCODE_BUTTON_SELECT && homeKeys == HomeKeys.Editing -> Meaning.FolderIcon
         keyCode == KeyEvent.KEYCODE_BUTTON_X && homeKeys == HomeKeys.AllLibrary -> Meaning.CycleDestination
         keyCode == KeyEvent.KEYCODE_BUTTON_Y && homeKeys == HomeKeys.AllLibrary -> Meaning.AddToHome
         keyCode == KeyEvent.KEYCODE_BUTTON_L2 && homeKeys == HomeKeys.AllLibrary -> Meaning.LetterBackward

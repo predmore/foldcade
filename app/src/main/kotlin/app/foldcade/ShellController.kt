@@ -259,6 +259,16 @@ class ShellController(
 
     fun homeHint(): String? = if (showingHome() && model.dialog == null && model.panel == null) home.hint() else null
 
+    /** The open folder icon picker and that folder's name, for the top screen. Null when closed. */
+    fun folderIconPick(): Pair<FolderIconPick, String>? {
+        if (!showingHome()) return null
+        val pick = home.iconPick ?: return null
+        return pick to home.board.folders[pick.folderId]?.name.orEmpty()
+    }
+
+    /** True when Select would open the icon picker for the focused tile. */
+    fun canPickFolderIcon(): Boolean = showingHome() && home.canPickIcon(model.focus.cellIndex)
+
     fun homeChrome(): AllChrome? = if (showingHome() && model.dialog == null && model.panel == null && !model.connectOpen) {
         home.chrome()
     } else {

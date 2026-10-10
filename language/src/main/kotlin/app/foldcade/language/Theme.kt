@@ -189,6 +189,9 @@ object Copy {
     const val hintNewFolder = "New folder"
     const val hintRemove = "Remove"
     const val hintDone = "Done"
+    const val hintIcon = "Icon"
+    const val hintChoose = "Choose"
+    const val folderIcon = "Folder icon"
     const val hintAddToHome = "Add to Home"
     const val hintChangeFolder = "Change folder"
     const val onHomeMark = "On home"
@@ -237,15 +240,26 @@ data class HintKey(val key: PromptKey, val label: String)
  * The keys a grid lists under it. Editing home and the All library use keys
  * that are not obvious, so those modes name them. Anything else follows [actions].
  */
-fun gridHints(actions: HintActions?, homeKeys: HomeKeys, faceMap: FaceMap): List<HintKey> {
+fun gridHints(
+    actions: HintActions?,
+    homeKeys: HomeKeys,
+    faceMap: FaceMap,
+    folderIcon: Boolean = false,
+): List<HintKey> {
     val confirm = promptKeyOf(faceMap.confirmKey) ?: PromptKey.FaceA
     val back = promptKeyOf(faceMap.backKey) ?: PromptKey.FaceB
     return when (homeKeys) {
-        HomeKeys.Editing -> listOf(
+        // Select names the icon only on a folder the user made, the one place it works.
+        HomeKeys.Editing -> listOfNotNull(
             HintKey(confirm, Copy.hintMove),
             HintKey(PromptKey.FaceY, Copy.hintNewFolder),
             HintKey(PromptKey.FaceX, Copy.hintRemove),
+            HintKey(PromptKey.Select, Copy.hintIcon).takeIf { folderIcon },
             HintKey(PromptKey.Start, Copy.hintDone),
+        )
+        HomeKeys.PickingIcon -> listOf(
+            HintKey(confirm, Copy.hintChoose),
+            HintKey(back, Copy.back),
         )
         HomeKeys.AllLibrary -> listOf(
             HintKey(PromptKey.FaceY, Copy.hintAddToHome),
