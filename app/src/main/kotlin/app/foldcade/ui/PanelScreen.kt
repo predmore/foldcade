@@ -3,6 +3,7 @@ package app.foldcade.ui
 import android.graphics.RenderEffect
 import android.graphics.Shader
 import android.os.Build
+import android.util.Log
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.FiniteAnimationSpec
 import androidx.compose.foundation.Image
@@ -977,6 +978,11 @@ private fun PagedGrid(
     val focus = app.shell.model.focus
     val pageSize = (Metrics.columns * rows).coerceAtLeast(1)
     val page = focus.cellIndex / pageSize
+    val titles = pageTitles(app, page, pageSize)
+    // The emulator reads this line. A presentation-display dump is empty while that display has focus.
+    LaunchedEffect(titles) {
+        Log.i("Foldcade", "library-ui page " + titles.joinToString(" | "))
+    }
     val position = remember { Animatable(page.toFloat()) }
     LaunchedEffect(page, scale) {
         withContext(SteadyMotion) {
@@ -1006,6 +1012,17 @@ private fun PagedGrid(
     }
     if (usesBoth) {
         BasicText(text = Copy.usesBothScreens, style = text(foldTheme().muted, TypeRamp.hint, foldTheme()))
+    }
+}
+
+/** Titles on [page], in the order [Grid] draws them. */
+private fun pageTitles(app: FoldcadeApp, page: Int, pageSize: Int): List<String> {
+    val shell = app.shell
+    val order = displayOrder(shell.model)
+    val start = page * pageSize
+    val end = minOf(start + pageSize, shell.model.count)
+    return (start until end).map { index ->
+        shell.tileFromOrder(order.getOrElse(index) { index })?.title.orEmpty()
     }
 }
 
