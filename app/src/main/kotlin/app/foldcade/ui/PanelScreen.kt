@@ -542,6 +542,7 @@ private fun HeroLabel(app: FoldcadeApp, shown: HeroSubject, cellFocused: Boolean
             val both = app.shell.focusedGame()?.takeIf { it.id == item?.key }?.occupiesBothDisplays == true
             val played = item?.let { app.plays.run { stamp; shown(it.key) } }
             val facts = heroFacts(
+                copy.title,
                 copy.detail,
                 item?.availability,
                 Copy.usesBothScreens.takeIf { both },

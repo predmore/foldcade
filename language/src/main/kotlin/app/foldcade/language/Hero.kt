@@ -42,9 +42,12 @@ data class HeroCopy(
     val showsArt: Boolean,
 )
 
-/** The hero's one line under the name. Blank parts and repeats are left out. */
-fun heroFacts(vararg parts: String?): String =
-    parts.mapNotNull { it?.trim()?.ifEmpty { null } }.distinct().joinToString(" · ")
+/** The hero's one line under [title]. Blank parts, repeats, and the title itself are left out. */
+fun heroFacts(title: String, vararg parts: String?): String =
+    parts.mapNotNull { it?.trim()?.ifEmpty { null } }
+        .filter { !it.equals(title.trim(), ignoreCase = true) }
+        .distinct()
+        .joinToString(" · ")
 
 /** Game count under a folder name. One game stays singular. */
 fun folderCountLine(count: Int): String {
