@@ -52,6 +52,7 @@ import app.foldcade.language.PanelKeyActivity
 import app.foldcade.language.PromptKey
 import app.foldcade.language.interpretThorStyle
 import app.foldcade.language.SignedInBackend
+import app.foldcade.language.alsoRunsLine
 import app.foldcade.romm.RommClient
 import app.foldcade.romm.RommSignInResult
 import app.foldcade.romm.normalizeSetupOrigin
@@ -577,7 +578,7 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
             if (missing != null) {
                 withContext(Dispatchers.Main.immediate) {
                     if (fetching) foldcade.shell.endDownload(libraryId, game.remoteKey)
-                    if (launchCurrent(generation)) showMissing(missing.playerName, missing.packages)
+                    if (launchCurrent(generation)) showMissing(missing.playerName, missing.alsoRuns)
                 }
                 return@launch
             }
@@ -637,10 +638,10 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
                             installedIntent,
                         )
                     } else if (launchCurrent(generation)) {
-                        showMissing(plan.player.displayName, plan.player.packageNames)
+                        showMissing(plan.player.displayName, emptyList())
                     }
                     is GameLaunch.Missing -> if (launchCurrent(generation)) {
-                        showMissing(plan.playerName, plan.packages)
+                        showMissing(plan.playerName, plan.alsoRuns)
                     }
                     GameLaunch.NotAFile -> foldcade.retryLibrary()
                 }
@@ -662,7 +663,7 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
         )
     }
 
-    private fun showMissing(playerName: String, packages: List<String>) {
+    private fun showMissing(playerName: String, alsoRuns: List<String>) {
         foldcade.shell.showDialog(
             DialogState(
                 kind = DialogKind.Ok,
@@ -672,7 +673,7 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
                 index = 0,
                 safeIndex = 0,
                 screen = hostScreen(),
-                detail = packages.joinToString("\n").ifBlank { null },
+                detail = alsoRunsLine(alsoRuns),
             ),
         )
     }

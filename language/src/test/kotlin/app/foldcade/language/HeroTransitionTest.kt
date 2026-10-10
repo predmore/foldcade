@@ -79,6 +79,8 @@ class HeroTransitionTest {
         assertEquals("1 game", folderCountLine(1))
         assertEquals("0 games", folderCountLine(0))
         assertEquals("0 games", folderCountLine(-4))
+        assertEquals("14 apps", folderCountLine(14, apps = true))
+        assertEquals("1 app", folderCountLine(1, apps = true))
         val unknown = heroCopy(HeroSubject.Folder(HeroFolder(key = "nds", name = "Nintendo DS", count = null)))
         assertEquals("Nintendo DS", unknown.title)
         assertEquals("", unknown.detail)

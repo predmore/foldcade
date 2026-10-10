@@ -86,8 +86,6 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.clipPath
 import androidx.compose.ui.graphics.drawscope.Stroke
-import androidx.compose.ui.graphics.drawscope.clipRect
-import androidx.compose.ui.graphics.drawscope.scale
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.semantics.clearAndSetSemantics
@@ -1815,7 +1813,7 @@ private fun MoonlightImportCard(
 }
 
 /**
- * One discovered app. Focus uses [dialogPlate], the same filled pill as the other dialogs.
+ * One discovered app. Focus uses [chip], the same ring as dialog buttons, tiles, and menu rows.
  */
 @Composable
 private fun MoonlightAppRow(
@@ -1838,7 +1836,7 @@ private fun MoonlightAppRow(
     LaunchedEffect(focused) {
         if (focused) requester.bringIntoView()
     }
-    val ink = if (focused) theme.background else theme.muted
+    val ink = if (focused) theme.onBackground else theme.muted
     Row(
         Modifier
             .fillMaxWidth()
@@ -1848,7 +1846,7 @@ private fun MoonlightAppRow(
                 scaleX = drawn
                 scaleY = drawn
             }
-            .dialogPlate(focused, theme.focus)
+            .chip(focused)
             .hostPress(onClick)
             .padding(horizontal = px(22f), vertical = px(12f)),
         horizontalArrangement = Arrangement.spacedBy(px(12f)),
@@ -2001,74 +1999,15 @@ private fun DialogAction(label: String, focused: Boolean, onClick: () -> Unit) {
                 scaleY = drawn
             }
             .padding(horizontal = px(16f), vertical = px(18f))
-            .dialogPlate(focused, theme.focus)
+            .chip(focused)
             .hostPress(onClick)
             .padding(horizontal = px(22f), vertical = px(12f)),
         style = text(
-            if (focused) theme.background else theme.muted,
+            if (focused) theme.onBackground else theme.muted,
             TypeRamp.dialogBody,
             theme,
         ).copy(textAlign = TextAlign.Center),
     )
-}
-
-/**
- * Focused: one elliptical radial falloff, then the accent fill.
- * The gradient ends at transparent, so the bloom has no stroke ring.
- * Unfocused: a dim outline and no fill, so the black dialog stays black.
- *
- * Stretching the circle leaves one accent pixel on the left tip when that
- * tip sits on a pixel center (the gap beside Not now). The tips are the
- * transparent rim, so the clip drops them.
- */
-@Composable
-private fun Modifier.dialogPlate(focused: Boolean, accent: Color): Modifier {
-    return this.graphicsLayer { clip = false }.drawBehind {
-        val radius = size.height / 2f
-        val corner = CornerRadius(radius, radius)
-        if (!focused) {
-            val stroke = 2f
-            val inset = stroke / 2f
-            drawRoundRect(
-                color = accent.copy(alpha = 0.38f),
-                topLeft = Offset(inset, inset),
-                size = Size((size.width - stroke).coerceAtLeast(0f), (size.height - stroke).coerceAtLeast(0f)),
-                cornerRadius = CornerRadius((radius - inset).coerceAtLeast(0f), (radius - inset).coerceAtLeast(0f)),
-                style = Stroke(width = stroke),
-            )
-            return@drawBehind
-        }
-        val spread = 20f
-        val reach = size.height / 2f + spread
-        val wide = (size.width / 2f + spread) / reach
-        val edge = (size.height / 2f / reach).coerceIn(0.35f, 0.82f)
-        val mid = edge + (1f - edge) * 0.45f
-        val rim = 2f
-        clipRect(
-            left = -spread + rim,
-            top = -spread,
-            right = size.width + spread - rim,
-            bottom = size.height + spread,
-        ) {
-            scale(scaleX = wide, scaleY = 1f, pivot = center) {
-                drawCircle(
-                    brush = Brush.radialGradient(
-                        colorStops = arrayOf(
-                            0f to accent,
-                            edge to accent.copy(alpha = 0.82f),
-                            mid to accent.copy(alpha = 0.18f),
-                            1f to Color.Transparent,
-                        ),
-                        center = center,
-                        radius = reach,
-                    ),
-                    radius = reach,
-                    center = center,
-                )
-            }
-        }
-        drawRoundRect(color = accent, cornerRadius = corner)
-    }
 }
 
 @Composable
