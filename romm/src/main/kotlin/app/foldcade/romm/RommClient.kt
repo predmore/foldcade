@@ -8,6 +8,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.JsonArray
+import app.foldcade.net.HttpStack
 import kotlinx.serialization.json.jsonObject
 import okhttp3.Call
 import okhttp3.Callback
@@ -48,7 +49,7 @@ import kotlin.coroutines.resumeWithException
  *
  * It does not implement a library backend or a metadata provider.
  *
- * This is the app's only HTTP stack. Cleartext is an explicit LAN opt-in:
+ * Its client comes from [HttpStack], the app's only HTTP stack. Cleartext is an explicit LAN opt-in:
  * an http [origin] must be a loopback, private, link-local, or Tailscale address,
  * or a localhost, `.local`, `.home.arpa`, or `.ts.net` name. The network-security config
  * cannot name a dynamic LAN address, so it still permits cleartext, and
@@ -66,17 +67,14 @@ class RommClient(
 ) : AutoCloseable {
     val origin: String = normalizeOrigin(origin)
 
-    private val http: OkHttpClient = OkHttpClient.Builder()
-        .connectTimeout(connectTimeout)
-        .readTimeout(readTimeout)
-        .writeTimeout(writeTimeout)
-        .followRedirects(true)
-        .followSslRedirects(false)
-        .addNetworkInterceptor(RommCleartextInterceptor(origin))
-        .apply {
-            if (httpLog != null) addInterceptor(RedactingLoggingInterceptor(httpLog))
-        }
-        .build()
+    private val http: OkHttpClient = HttpStack.client(
+        connectTimeout = connectTimeout,
+        readTimeout = readTimeout,
+        writeTimeout = writeTimeout,
+        followSslRedirects = false,
+        network = listOf(RommCleartextInterceptor(origin)),
+        application = listOfNotNull(httpLog?.let(::RedactingLoggingInterceptor)),
+    )
 
     suspend fun heartbeat(): Heartbeat {
         val raw = exchange(api("/heartbeat"), "GET", authenticated = false)
