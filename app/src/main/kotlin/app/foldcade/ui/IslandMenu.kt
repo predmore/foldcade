@@ -1,7 +1,6 @@
 package app.foldcade.ui
 
-import androidx.compose.animation.core.animateDpAsState
-import androidx.compose.animation.core.tween
+import androidx.compose.animation.core.animateFloatAsState
 import app.foldcade.language.Motion as FoldMotion
 import android.content.Context
 import androidx.compose.foundation.Image
@@ -150,15 +149,12 @@ private fun Island(
     val panel = shown
     val inset = maxWidth * Metrics.insetFraction
     // The left pill widens for the launch target and narrows to its chip without it.
-    val pillWidth by animateDpAsState(
-        targetValue = when {
-            side == Side.Right -> 260.dp
-            launchTargetLabel(app) != null -> 280.dp
-            else -> 72.dp
-        },
-        animationSpec = tween(FoldMotion.duration(FoldMotion.durationShort, scale).toInt()),
+    val widen by animateFloatAsState(
+        targetValue = if (launchTargetLabel(app) != null) 1f else 0f,
+        animationSpec = FoldMotion.arrive(FoldMotion.durationShort, scale),
         label = "pill width",
     )
+    val pillWidth = if (side == Side.Right) 260.dp else lerp(72.dp, 280.dp, widen)
     val pillHeight = 44.dp
     val openWidth = maxWidth * 0.48f
     val openHeight = maxHeight * 0.84f
