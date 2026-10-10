@@ -1,7 +1,9 @@
 package app.foldcade.artwork
 
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.withContext
 import java.io.File
 import java.net.URLDecoder
 import java.net.URLEncoder
@@ -69,7 +71,10 @@ class LibretroThumbnails(
     private suspend fun readListing(system: String): List<String> {
         val response = http.get("https://$HOST/${segment(system)}/Named_Boxarts/")
         if (response.status != 200) throw IllegalStateException("libretro listing returned ${response.status}")
-        return parseListing(response.body.decodeToString())
+        // A system listing is a large HTML page. Parsing it on the caller, which is
+        // the Compose UI dispatcher, holds input long enough to ANR the home screen.
+        val html = response.body
+        return withContext(Dispatchers.IO) { parseListing(html.decodeToString()) }
     }
 
     companion object {
