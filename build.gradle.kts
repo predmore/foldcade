@@ -12,6 +12,7 @@ tasks.register("testDebugUnitTest") {
     description = "Unit tests only. Does not assemble, install, or boot an emulator."
     dependsOn(
         ":api:test",
+        ":net:test",
         ":romm:test",
         ":host:test",
         ":plugins:azahar:test",
