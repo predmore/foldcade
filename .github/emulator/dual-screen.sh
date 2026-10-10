@@ -31,7 +31,8 @@ out="${1:-screenshots}"
 mkdir -p "$out"
 rm -f "$out"/*.png "$out"/display-ids.txt "$out"/ui-last.xml "$out"/emulator.log \
   "$out"/logcat.txt "$out"/failure.txt "$out"/bottom-display.txt \
-  "$out"/cmd-display-get.txt "$out"/surfaceflinger-displays.txt
+  "$out"/cmd-display-get.txt "$out"/surfaceflinger-displays.txt \
+  "$out"/emulator-crash.log "$out"/emulator.pid "$out"/current-step "$out"/resume-step
 
 # Top panel plus bottom panel, side by side, with margin. 1920+1240 wide, 1080 tall.
 xvfb_geometry="3360x1280x24"
@@ -47,14 +48,109 @@ copy_logs() {
   cp /tmp/xvfb.log "$out/xvfb.log" 2>/dev/null || true
 }
 
+# One restart after the guest process dies. The capture that was running
+# is stored in current-step and repeated; earlier captures are left as they are.
+emulator_restarts=0
+capture_step=""
+resume_from=""
+resume_armed=0
+
+emulator_pid() {
+  if [ -n "${emu_pid:-}" ]; then
+    printf '%s\n' "$emu_pid"
+    return 0
+  fi
+  if [ -s "$out/emulator.pid" ]; then
+    cat "$out/emulator.pid"
+    return 0
+  fi
+  return 1
+}
+
+emulator_started() {
+  emulator_pid >/dev/null
+}
+
+emulator_alive() {
+  local pid
+  pid="$(emulator_pid 2>/dev/null || true)"
+  [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null
+}
+
+no_devices() {
+  timeout 10 adb devices 2>&1 | grep -q 'no devices/emulators found'
+}
+
+# The process is gone, or adb has already dropped it. Before the first
+# boot there is no pid file, so setup failures are not treated as a crash.
+device_lost() {
+  emulator_started || return 1
+  if ! emulator_alive; then
+    return 0
+  fi
+  no_devices
+}
+
+print_emulator_crash_log() {
+  local pid report found=0
+  pid="$(emulator_pid 2>/dev/null || true)"
+  {
+    echo "----- emulator crash log -----"
+    if [ -n "$pid" ]; then
+      # Reap a dead child of this shell so bash prints the signal name.
+      wait "$pid" 2>/dev/null || true
+    fi
+    echo "----- /tmp/emulator.log (tail) -----"
+    tail -n 200 /tmp/emulator.log 2>/dev/null || true
+    echo "----- crash reports -----"
+    while IFS= read -r report; do
+      [ -n "$report" ] || continue
+      found=1
+      echo "----- ${report} -----"
+      if command -v strings >/dev/null 2>&1; then
+        strings -n 10 "$report" | tail -n 40 || true
+      else
+        tail -c 4000 "$report" || true
+      fi
+    done < <(find /tmp/android-* "${ANDROID_AVD_HOME}" -type f \
+      \( -name '*crash*' -o -name '*.dmp' \) -mmin -10 2>/dev/null | head -n 10)
+    if [ "$found" -eq 0 ]; then
+      echo "(no recent crash report file)"
+    fi
+  } | tee "$out/emulator-crash.log"
+}
+
+# Exit 42 asks the outer loop to boot once more and repeat capture_step.
+note_emulator_crash() {
+  local where="$1"
+  if [ "${emulator_restarts:-0}" -ne 0 ]; then
+    return 0
+  fi
+  if [ -n "${capture_step:-}" ]; then
+    printf '%s\n' "$capture_step" >"$out/resume-step"
+  fi
+  echo "::warning::Emulator crashed during: ${capture_step:-$where}. Restarting once."
+  print_emulator_crash_log
+  exit 42
+}
+
 # Every adb invocation is capped. An offline emulator never reaches state
 # device, and an uncapped wait-for-device sits until the job timeout.
 adb_do() {
-  timeout 30 adb "$@"
+  local status=0
+  timeout 30 adb "$@" || status=$?
+  if [ "$status" -ne 0 ] && device_lost; then
+    note_emulator_crash "adb"
+  fi
+  return "$status"
 }
 
 fail() {
   local step="$1"
+  if device_lost; then
+    note_emulator_crash "$step"
+    print_emulator_crash_log
+  fi
   echo "::error::Stalled at: ${step}"
   printf 'step=%s\n' "$step" >"$out/failure.txt"
   echo "----- emulator.log (tail) -----"
@@ -68,6 +164,11 @@ fail() {
 
 cleanup() {
   local status=$?
+  # A capture attempt runs in a subshell so a crash can exit 42 without
+  # tearing down Xvfb. The parent loop reaps that status and boots again.
+  if [ "${BASH_SUBSHELL:-0}" -ne 0 ]; then
+    exit "$status"
+  fi
   if [ "$status" -ne 0 ] && [ ! -s "$out/failure.txt" ]; then
     echo "step=exit ${status}" >"$out/failure.txt"
     echo "----- emulator.log (tail) -----"
@@ -173,6 +274,13 @@ set_cfg hw.display1.density "$bottom_density"
 set_cfg hw.display1.xOffset "$top_width"
 set_cfg hw.display1.yOffset 0
 set_cfg hw.display1.flag 0
+# Pixel 6 leaves hw.ramSize at 8192 and vm.heapSize at 576. -memory used to
+# override only the RAM, to 3072, which is what the shell shard segfaulted
+# with (runs 38028953095, 38031104642, 38032206051). Each shard is its own
+# runner, and that runner still boots the guest while Gradle is resident.
+# Pin both so the profile cannot win. The heap stays under the RAM.
+set_cfg hw.ramSize 2048
+set_cfg vm.heapSize 512
 
 echo "step: framebuffer"
 Xvfb :99 -screen 0 "$xvfb_geometry" >/tmp/xvfb.log 2>&1 &
@@ -223,12 +331,18 @@ log_tail_pid=$!
 timeout 30 adb start-server >/dev/null
 
 stop_emulator() {
+  local pid
+  pid="$(emulator_pid 2>/dev/null || true)"
   timeout 15 adb emu kill >/dev/null 2>&1 || true
-  if [ -n "${emu_pid:-}" ] && kill -0 "$emu_pid" 2>/dev/null; then
-    kill "$emu_pid" >/dev/null 2>&1 || true
-    wait "$emu_pid" >/dev/null 2>&1 || true
+  if [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null; then
+    kill "$pid" >/dev/null 2>&1 || true
+    wait "$pid" >/dev/null 2>&1 || true
+    if kill -0 "$pid" 2>/dev/null; then
+      kill -9 "$pid" >/dev/null 2>&1 || true
+    fi
   fi
   emu_pid=""
+  rm -f "$out/emulator.pid"
   sleep 1
 }
 
@@ -243,11 +357,12 @@ start_emulator() {
     -gpu swiftshader_indirect \
     -crash-report-mode never \
     -feature -DownloadableSnapshot \
-    -memory 3072 \
+    -memory 2048 \
     -port 5554 \
     ${extra} \
     </dev/null >>/tmp/emulator.log 2>&1 &
   emu_pid=$!
+  printf '%s\n' "$emu_pid" >"$out/emulator.pid"
 }
 
 wait_for_boot() {
@@ -319,6 +434,7 @@ start_guest_service() {
     --user 0 || true
 }
 
+prepare_guest() {
 start_emulator ""
 wait_for_boot
 echo "step: presentation display"
@@ -521,6 +637,7 @@ dismiss_leftover_dialog
 show_foldcade
 dismiss_leftover_dialog
 expect_foldcade
+}
 
 is_png() {
   local file="$1"
@@ -597,7 +714,31 @@ expect_png() {
   fi
 }
 
-echo "step: capture both displays"
+# Return 0 when this capture should run. After one emulator restart, steps
+# before the failed capture are skipped. The failed capture runs again, then
+# the rest follow. A fresh guest is already booted by prepare_guest.
+begin_capture() {
+  local name="$1"
+  if [ -n "${resume_from:-}" ] && [ "${resume_armed:-0}" -eq 0 ] && [ "$resume_from" != "$name" ]; then
+    echo "step: skip ${name}"
+    return 1
+  fi
+  if [ "${resume_from:-}" = "$name" ]; then
+    resume_armed=1
+    echo "step: resume ${name}"
+  else
+    echo "step: ${name}"
+  fi
+  capture_step="$name"
+  printf '%s\n' "$name" >"$out/current-step"
+  return 0
+}
+
+run_captures() {
+# Display ids change across a reboot. Later steps capture these.
+resolve_screencap_ids
+
+if begin_capture "capture both displays"; then
 resolve_screencap_ids
 {
   echo "Thor-sized emulator, not a Thor pass."
@@ -617,8 +758,9 @@ expect_png "$out/primary.png" "${top_width}x${top_height}"
 expect_png "$out/secondary.png" "${bottom_width}x${bottom_height}"
 cp "$out/primary.png" "$out/display-${primary}.png"
 cp "$out/secondary.png" "$out/display-${secondary}.png"
+fi
 
-echo "step: home"
+if begin_capture "home"; then
 timeout 15 adb shell am start -W \
   -a android.intent.action.MAIN \
   -c android.intent.category.HOME \
@@ -632,6 +774,7 @@ capture "$primary" "$out/home-primary.png"
 capture "$secondary" "$out/home-secondary.png"
 expect_png "$out/home-primary.png" "${top_width}x${top_height}"
 expect_png "$out/home-secondary.png" "${bottom_width}x${bottom_height}"
+fi
 
 # FOLDCADE_SHARD splits the captures across parallel jobs. "shell" runs the
 # launch paths, shoulder menus, Android shelves, and dialogs. "library" runs the
@@ -650,6 +793,9 @@ input_help="$(adb_do shell input -h 2>&1 | tr -d '\r' || true)"
 printf '%s\n' "$input_help" >"$out/input-help.txt"
 
 if runs shell; then
+# Launch paths share one DPAD walk from the home grid, so a crash in the
+# middle repeats the walk from the 3DS tile.
+if begin_capture "launch paths"; then
 # Azahar launch path. Thor-sized emulator, not a Thor pass.
 # Azahar is not installed here. The capture is the missing-player state.
 # input -d is used only when this image's help text documents it.
@@ -815,6 +961,7 @@ else
     echo "input help does not document a display id. The launch path was not driven."
   } >"$out/launch-path.txt"
 fi
+fi
 
 # Home-grid proof frames are captured after the fixture library is seeded,
 # so the grid shows system folders rather than the demo shelf. The 3DS
@@ -832,12 +979,14 @@ fi
 echo "step: shoulder panels"
 if printf '%s\n' "$input_help" | grep -q -- '-d' && printf '%s\n' "$input_help" | grep -qi 'display'; then
   # A missing-player dialog swallows L1 and R1, so close it on both displays first.
+  if begin_capture "shoulder panels"; then
   echo "step: close leftover dialog"
   for _ in 1 2 3; do
     adb_do shell input -d 0 keyevent KEYCODE_BACK || true
     adb_do shell input -d "$presentation_logical" keyevent KEYCODE_BACK || true
     sleep 0.4
   done
+  fi
 
   # Debug builds snap the morph. Display 0 is the main panel.
   # The first start commits the hold. This emulator composites that frame on the
@@ -850,6 +999,9 @@ if printf '%s\n' "$input_help" | grep -q -- '-d' && printf '%s\n' "$input_help" 
   capture_island() {
     local hold="$1"
     local name="$2"
+    if ! begin_capture "island ${hold}"; then
+      return 0
+    fi
     echo "step: island ${hold} on display 0"
     show_island "$hold"
     sleep 1
@@ -864,6 +1016,7 @@ if printf '%s\n' "$input_help" | grep -q -- '-d' && printf '%s\n' "$input_help" 
   capture_island left-mid settings-l1-mid
   capture_island right-open settings-r1
   capture_island left-open settings-l1
+  if begin_capture "close island"; then
   echo "step: close island"
   timeout 20 adb shell am start -n "$component" \
     --es foldcade.island closed \
@@ -875,6 +1028,7 @@ if printf '%s\n' "$input_help" | grep -q -- '-d' && printf '%s\n' "$input_help" 
     echo "Top is ${top_width}x${top_height}. Bottom is ${bottom_width}x${bottom_height}."
     echo "These screenshots are an emulator result. They are not a Thor pass."
   } >"$out/settings-captures.txt"
+  fi
 else
   {
     echo "Thor-sized emulator, not a Thor pass."
@@ -902,6 +1056,7 @@ open_android_shelf() {
 
 # Emulator only, not a Thor pass. Top 1920×1080, bottom 1240×1080.
 # The extra opens the shelf the controller also opens from the left panel.
+if begin_capture "android shelves"; then
 echo "step: android shelves"
 open_android_shelf apps
 capture "$primary" "$out/apps-top.png"
@@ -919,6 +1074,7 @@ expect_png "$out/games-bottom.png" "${bottom_width}x${bottom_height}"
   echo "Top ${top_width}x${top_height} at ${top_density} dpi."
   echo "Bottom ${bottom_width}x${bottom_height} at ${bottom_density} dpi."
 } >"$out/android-shelves.txt"
+fi
 
 # The Afterglow focus fill. A solid pill of this color is the focused button.
 # Ribbons and tile glows on the idle captures are not this color.
@@ -994,6 +1150,9 @@ PY
 capture_dialog() {
   local kind="$1" index="$2" screen="$3" name="$4" needle="$5"
   local mark="preview-dialog kind=${kind} index=${index} screen=${screen}"
+  if ! begin_capture "dialog ${name}"; then
+    return 0
+  fi
   echo "step: dialog ${name}"
   adb_do logcat -c || fail "dialog ${name}: logcat clear"
   timeout 20 adb shell am start -W -n "$component" \
@@ -1486,6 +1645,7 @@ PY
 }
 
 if runs library; then
+if begin_capture "empty library"; then
 echo "step: empty library"
 # The shelf launch path may still be showing a missing-player dialog.
 key_bottom KEYCODE_BACK || true
@@ -1505,7 +1665,9 @@ capture "$primary" "$out/empty-top.png"
 capture "$secondary" "$out/empty-bottom.png"
 expect_png "$out/empty-top.png" "${top_width}x${top_height}"
 expect_png "$out/empty-bottom.png" "${bottom_width}x${bottom_height}"
+fi
 
+if begin_capture "seeded library"; then
 seed_folder_library
 {
   echo "Thor-sized emulator, not a Thor pass."
@@ -1514,5 +1676,57 @@ seed_folder_library
   echo "These captures are not a pass on Thor hardware."
 } >"$out/library-captures.txt"
 fi
+fi
+
+if [ -n "${resume_from:-}" ] && [ "${resume_armed:-0}" -eq 0 ]; then
+  fail "resume: capture step '${resume_from}' was not found"
+fi
 
 echo "Captured displays $primary and $secondary. Thor-sized emulator, not a Thor pass."
+}
+
+rm -f "$out/resume-step" "$out/current-step"
+attempt_status=0
+(
+  resume_from=""
+  resume_armed=0
+  if [ -s "$out/resume-step" ]; then
+    resume_from="$(cat "$out/resume-step")"
+    echo "step: resume from ${resume_from}"
+  fi
+  prepare_guest
+  run_captures
+) || attempt_status=$?
+if [ "$attempt_status" -ne 0 ] && [ "$emulator_restarts" -eq 0 ]; then
+  crashed=0
+  if [ "$attempt_status" -eq 42 ]; then
+    crashed=1
+  else
+    pid="$(emulator_pid 2>/dev/null || true)"
+    if [ -n "$pid" ] && ! kill -0 "$pid" 2>/dev/null; then
+      crashed=1
+      if [ ! -s "$out/resume-step" ] && [ -s "$out/current-step" ]; then
+        cp "$out/current-step" "$out/resume-step"
+      fi
+      print_emulator_crash_log
+    fi
+  fi
+  if [ "$crashed" -eq 1 ]; then
+    emulator_restarts=1
+    echo "step: restart emulator once"
+    stop_emulator
+    rm -f "$out/failure.txt"
+    attempt_status=0
+    (
+      resume_from=""
+      resume_armed=0
+      if [ -s "$out/resume-step" ]; then
+        resume_from="$(cat "$out/resume-step")"
+        echo "step: resume from ${resume_from}"
+      fi
+      prepare_guest
+      run_captures
+    ) || attempt_status=$?
+  fi
+fi
+exit "$attempt_status"

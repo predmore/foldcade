@@ -273,6 +273,7 @@ jobs:
           name: emulator-log-${{ matrix.shard }}
           path: |
             screenshots/emulator.log
+            screenshots/emulator-crash.log
             screenshots/logcat.txt
             screenshots/failure.txt
           if-no-files-found: ignore
