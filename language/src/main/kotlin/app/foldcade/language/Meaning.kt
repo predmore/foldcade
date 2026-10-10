@@ -22,18 +22,10 @@ enum class Meaning {
     PageTowardStart,
     /** Grid swipe only. L1 and R1 do not page. */
     PageTowardEnd,
-    /** B while editing home. Puts the held tile back. */
+    /** B while a tile is moving or the icon picker is open. Puts things back as they were. */
     CancelHold,
-    /** Start or Back leaves edit mode. */
-    LeaveEdit,
-    /** X while editing. Hides a tile or spills a folder. The game stays in All. */
-    RemoveFromHome,
-    /** Y while editing. New folder, or rename when a folder is focused. */
-    MakeFolder,
-    /** Select while editing a folder the user made. Opens its icon picker. */
-    FolderIcon,
-    /** Y in All. First free slot, or the chosen folder. */
-    AddToHome,
+    /** Y on a grid. Opens the actions for the focused tile. */
+    Options,
     LetterForward,
     LetterBackward,
 }
@@ -41,10 +33,13 @@ enum class Meaning {
 /** Extra keys that exist only on the home grid. Idle keeps the shared map. */
 enum class HomeKeys {
     Idle,
-    Editing,
+    /** A tile picked up with Move is following the D-pad. */
+    Moving,
     AllLibrary,
     /** The icon picker for a folder the user made is open. */
     PickingIcon,
+    /** The name field for a folder is open. */
+    Renaming,
 }
 
 fun meaningOf(
@@ -69,22 +64,14 @@ fun meaningOf(
             keyCode == KeyEvent.KEYCODE_DPAD_CENTER ||
             keyCode == KeyEvent.KEYCODE_ENTER ||
             keyCode == KeyEvent.KEYCODE_NUMPAD_ENTER -> Meaning.Activate
-        keyCode == KeyEvent.KEYCODE_BACK -> when (homeKeys) {
-            HomeKeys.Editing -> Meaning.LeaveEdit
-            HomeKeys.PickingIcon -> Meaning.CancelHold
-            else -> Meaning.Back
-        }
-        keyCode == faces.backKey ->
-            if (homeKeys == HomeKeys.Editing || homeKeys == HomeKeys.PickingIcon) Meaning.CancelHold else Meaning.Back
+        keyCode == KeyEvent.KEYCODE_BACK || keyCode == faces.backKey ->
+            if (homeKeys == HomeKeys.Moving || homeKeys == HomeKeys.PickingIcon) Meaning.CancelHold else Meaning.Back
         keyCode == KeyEvent.KEYCODE_BUTTON_L1 -> Meaning.LeftPanel
         keyCode == KeyEvent.KEYCODE_BUTTON_R1 -> Meaning.RightPanel
-        keyCode == KeyEvent.KEYCODE_BUTTON_START && homeKeys == HomeKeys.Editing -> Meaning.LeaveEdit
-        keyCode == KeyEvent.KEYCODE_BUTTON_X && homeKeys == HomeKeys.Editing -> Meaning.RemoveFromHome
-        keyCode == KeyEvent.KEYCODE_BUTTON_Y && homeKeys == HomeKeys.Editing -> Meaning.MakeFolder
-        keyCode == KeyEvent.KEYCODE_BUTTON_SELECT && homeKeys == HomeKeys.Editing -> Meaning.FolderIcon
         keyCode == KeyEvent.KEYCODE_BUTTON_X && (homeKeys == HomeKeys.Idle || homeKeys == HomeKeys.AllLibrary) ->
             Meaning.ActivateBottom
-        keyCode == KeyEvent.KEYCODE_BUTTON_Y && homeKeys == HomeKeys.AllLibrary -> Meaning.AddToHome
+        keyCode == KeyEvent.KEYCODE_BUTTON_Y && (homeKeys == HomeKeys.Idle || homeKeys == HomeKeys.AllLibrary) ->
+            Meaning.Options
         keyCode == KeyEvent.KEYCODE_BUTTON_L2 && homeKeys == HomeKeys.AllLibrary -> Meaning.LetterBackward
         keyCode == KeyEvent.KEYCODE_BUTTON_R2 && homeKeys == HomeKeys.AllLibrary -> Meaning.LetterForward
         else -> null

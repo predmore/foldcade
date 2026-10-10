@@ -43,7 +43,6 @@ class ContractTest {
     @Test
     fun unusedKeysAreNotGivenAMeaning() {
         listOf(
-            KeyEvent.KEYCODE_BUTTON_Y,
             KeyEvent.KEYCODE_BUTTON_L2,
             KeyEvent.KEYCODE_BUTTON_R2,
             KeyEvent.KEYCODE_BUTTON_START,
@@ -103,16 +102,25 @@ class ContractTest {
             gridHints(hintFor(HintPlace.InsidePlatform), HomeKeys.Idle, map),
         )
         assertEquals(
-            listOf(PromptKey.FaceA, PromptKey.FaceY, PromptKey.FaceX, PromptKey.Start),
-            gridHints(null, HomeKeys.Editing, map).map { it.key },
+            listOf(HintKey(PromptKey.FaceA, Copy.hintDrop), HintKey(PromptKey.FaceB, Copy.hintCancel)),
+            gridHints(null, HomeKeys.Moving, map),
         )
         assertEquals(
-            listOf(PromptKey.FaceY, PromptKey.FaceB),
+            listOf(HintKey(PromptKey.FaceA, Copy.hintSave), HintKey(PromptKey.FaceB, Copy.hintCancel)),
+            gridHints(null, HomeKeys.Renaming, map),
+        )
+        assertEquals(
+            listOf(PromptKey.FaceB),
             gridHints(hintFor(HintPlace.InsidePlatform), HomeKeys.AllLibrary, map).map { it.key },
         )
         assertEquals(
             listOf(PromptKey.FaceA, PromptKey.FaceX, PromptKey.FaceY, PromptKey.FaceB),
-            gridHints(hintFor(HintPlace.InsidePlatform), HomeKeys.AllLibrary, map, screens = true).map { it.key },
+            gridHints(hintFor(HintPlace.InsidePlatform), HomeKeys.AllLibrary, map, screens = true, options = true).map { it.key },
+        )
+        // Y is named only when the focused tile has a menu.
+        assertEquals(
+            listOf(HintKey(PromptKey.FaceY, Copy.hintOptions)),
+            gridHints(hintFor(HintPlace.RootGrid), HomeKeys.Idle, map, options = true),
         )
     }
 
@@ -136,6 +144,55 @@ class ContractTest {
         val hints = gridHints(null, HomeKeys.Idle, FaceMap.standard(), screens = true)
         assertEquals(listOf(Copy.hintTop, Copy.hintBottom), hints.map { it.label })
         assertTrue(gridHints(null, HomeKeys.Idle, FaceMap.standard()).isEmpty())
+    }
+
+    @Test
+    fun yOpensTheTileMenuAndMoveToStepsBackToIt() {
+        val focus = GridFocus(cellIndex = 2, lastColumn = 2)
+        val tile = TileActions(
+            move = true,
+            destinations = listOf(FolderChoice(null, Copy.homeSlot), FolderChoice("home.user.1", "Mine")),
+            newFolder = true,
+            remove = true,
+        )
+        val model = PickerModel(count = 6, rowsPerPage = 1, focus = focus, tileActions = tile)
+        val open = reduce(model, Meaning.Options).first
+        val panel = open.panel!!
+        assertEquals(Side.Right, panel.side)
+        assertEquals(PanelLevel.Actions, panel.level)
+        assertEquals(
+            listOf(Row.MoveTile, Row.MoveTileTo, Row.NewFolder, Row.RemoveTile),
+            panelRows(panel, open),
+        )
+        assertEquals(Copy.removeFromHome, rowText(Row.RemoveTile, open).label)
+        val moveTo = reduce(open.copy(panel = panel.copy(index = 1)), Meaning.Activate).first
+        assertEquals(PanelLevel.MoveTo, moveTo.panel?.level)
+        assertEquals(
+            listOf(Row.Destination(null, Copy.homeSlot), Row.Destination("home.user.1", "Mine")),
+            panelRows(moveTo.panel!!, moveTo),
+        )
+        val chosen = reduce(moveTo.copy(panel = moveTo.panel!!.copy(index = 1)), Meaning.Activate)
+        assertEquals(Effect.MoveTileTo("home.user.1"), chosen.second)
+        assertNull(chosen.first.panel)
+        assertEquals(focus, chosen.first.focus)
+        // B from Move to lands back on its row, and B again closes the menu.
+        val back = reduce(moveTo, Meaning.Back).first
+        assertEquals(PanelLevel.Actions, back.panel?.level)
+        assertEquals(1, back.panel?.index)
+        assertNull(reduce(back, Meaning.Back).first.panel)
+        // A tile with nothing to offer keeps Y shut, and so does the status island.
+        assertNull(reduce(model.copy(tileActions = null), Meaning.Options).first.panel)
+        assertNull(reduce(model.copy(focus = focus.copy(chrome = Chrome.StatusCluster)), Meaning.Options).first.panel)
+    }
+
+    @Test
+    fun yOnAnAndroidAppOffersItsShelfActionsAndR1NoLongerDoes() {
+        val apps = AppActions(favorite = false, onGamesShelf = false, hiddenShelf = false)
+        val model = PickerModel(count = 3, rowsPerPage = 1, appActions = apps)
+        val open = reduce(model, Meaning.Options).first
+        assertEquals(listOf(Row.PinApp, Row.MoveApp, Row.HideApp), panelRows(open.panel!!, open))
+        val r1 = reduce(model, Meaning.RightPanel).first
+        assertTrue(panelRows(r1.panel!!, r1).none { it == Row.PinApp || it == Row.MoveApp || it == Row.HideApp })
     }
 
     @Test

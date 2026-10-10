@@ -12,6 +12,9 @@ import app.foldcade.language.Metrics
 import app.foldcade.language.FOLDER_ICONS
 import app.foldcade.language.HomeKeys
 import app.foldcade.language.MARK_FOLDER
+import app.foldcade.language.Row
+import app.foldcade.language.actionRows
+import app.foldcade.language.panelRows
 import app.foldcade.language.homeGameId
 import app.foldcade.localfolder.LocalFolderEntry
 import app.foldcade.plugins.melonds.MelonDsEntry
@@ -184,8 +187,7 @@ class HomeGridOrderTest {
         assertEquals("Game Boy Advance", shell.focusedGame()?.title)
         shell.onMeaning(Meaning.Activate, HostScreen.Bottom)
         assertEquals("Cart", shell.focusedGame()?.title)
-        shell.enterHomeEdit()
-        shell.onMeaning(Meaning.RemoveFromHome, HostScreen.Bottom)
+        choose(shell, Row.RemoveTile)
         assertTrue(shell.homeFace(0)?.empty == true)
 
         shell.openHomeAll()
@@ -243,17 +245,27 @@ class HomeGridOrderTest {
     }
 
     @Test
-    fun selectOnAFolderTheUserMadeChoosesItsIcon() {
+    fun yMakesANamedFolderThatWearsTheIconYouPick() {
         val shell = shell()
-        shell.enterHomeEdit()
-        // Y on the All tile makes a new folder in the first free slot.
-        shell.onMeaning(Meaning.MakeFolder, HostScreen.Bottom)
+        // On the All tile there is no game to wrap, so the folder takes the first free slot.
+        choose(shell, Row.NewFolder)
         val folder = List(shell.model.count) { shell.homeFace(it) }.indexOfFirst { it?.folder == true && it.mark == MARK_FOLDER }
         assertTrue(folder >= 0)
-        // A new folder takes the focus.
+        // The new folder takes the focus and opens its name field.
         assertEquals(folder, shell.model.focus.cellIndex)
-        assertTrue(shell.canPickFolderIcon())
-        shell.onMeaning(Meaning.FolderIcon, HostScreen.Bottom)
+        assertEquals(HomeKeys.Renaming, shell.homeKeys())
+        assertEquals("${Copy.newFolder} 1", shell.renameDraft())
+        shell.editRename("Handhelds")
+        shell.onMeaning(Meaning.Activate, HostScreen.Bottom)
+        assertNull(shell.renameDraft())
+        assertEquals("Handhelds", shell.homeFace(folder)?.title)
+        // B on the name field keeps the name it had.
+        choose(shell, Row.RenameFolder)
+        shell.editRename("Nope")
+        shell.onMeaning(Meaning.Back, HostScreen.Bottom)
+        assertEquals("Handhelds", shell.homeFace(folder)?.title)
+
+        choose(shell, Row.FolderIcon)
         assertEquals(HomeKeys.PickingIcon, shell.homeKeys())
         assertEquals(0, shell.folderIconPick()?.first?.index)
         shell.onMeaning(Meaning.MoveDown, HostScreen.Bottom)
@@ -264,13 +276,94 @@ class HomeGridOrderTest {
         assertEquals(chosen, shell.homeFace(folder)?.mark)
         assertEquals(folder, shell.model.focus.cellIndex)
         // B leaves the icon as it was.
-        shell.onMeaning(Meaning.FolderIcon, HostScreen.Bottom)
+        choose(shell, Row.FolderIcon)
         shell.onMeaning(Meaning.MoveRight, HostScreen.Bottom)
         shell.onMeaning(Meaning.CancelHold, HostScreen.Bottom)
         assertEquals(chosen, shell.homeFace(folder)?.mark)
-        // Outside Edit home, Select opens nothing.
-        shell.onMeaning(Meaning.LeaveEdit, HostScreen.Bottom)
-        assertFalse(shell.canPickFolderIcon())
+        // A system folder can be renamed but keeps its own icon.
+        focus(shell, titles(shell).indexOf("Moonlight"))
+        val rows = optionRows(shell)
+        assertTrue(Row.RenameFolder in rows)
+        assertFalse(Row.FolderIcon in rows)
+    }
+
+    @Test
+    fun moveWalksATileAndAOrBEndsIt() {
+        val shell = shell()
+        val before = titles(shell)
+        focus(shell, 1)
+        choose(shell, Row.MoveTile)
+        assertEquals(HomeKeys.Moving, shell.homeKeys())
+        shell.onMeaning(Meaning.MoveRight, HostScreen.Bottom)
+        assertEquals(before[1], titles(shell)[2])
+        shell.onMeaning(Meaning.Activate, HostScreen.Bottom)
+        assertEquals(HomeKeys.Idle, shell.homeKeys())
+        assertEquals(2, shell.model.focus.cellIndex)
+
+        val placed = titles(shell)
+        choose(shell, Row.MoveTile)
+        shell.onMeaning(Meaning.MoveRight, HostScreen.Bottom)
+        shell.onMeaning(Meaning.CancelHold, HostScreen.Bottom)
+        assertEquals(HomeKeys.Idle, shell.homeKeys())
+        assertEquals(placed, titles(shell))
+        assertEquals(2, shell.model.focus.cellIndex)
+    }
+
+    @Test
+    fun moveToTakesAGameOutOfItsFolderAndNewFolderWrapsIt() {
+        val shell = shell()
+        shell.ingestLibrary(
+            "local-folder",
+            listOf(entry("puzzle", "Puzzle", "nintendo-3ds"), entry("drift", "Drift", "nintendo-3ds")),
+            emptyList(),
+        )
+        focus(shell, titles(shell).indexOf("Nintendo 3DS"))
+        shell.onMeaning(Meaning.Activate, HostScreen.Bottom)
+        focus(shell, titles(shell).indexOf("Puzzle"))
+        shell.onMeaning(Meaning.Options, HostScreen.Bottom)
+        val rows = panelRows(shell.model.panel!!, shell.model)
+        assertEquals(listOf(Row.MoveTile, Row.MoveTileTo, Row.NewFolder, Row.RemoveTile), rows)
+        repeat(rows.indexOf(Row.MoveTileTo)) { shell.onMeaning(Meaning.MoveDown, HostScreen.Bottom) }
+        shell.onMeaning(Meaning.Activate, HostScreen.Bottom)
+        // Home first, then every folder but the one it is in.
+        val destinations = panelRows(shell.model.panel!!, shell.model)
+        assertEquals(Row.Destination(null, Copy.homeSlot), destinations.first())
+        assertFalse(destinations.any { it is Row.Destination && it.label == "Nintendo 3DS" })
+        shell.onMeaning(Meaning.Activate, HostScreen.Bottom)
+        assertFalse("Puzzle" in titles(shell))
+        shell.onMeaning(Meaning.Back, HostScreen.Bottom)
+        assertTrue("Puzzle" in titles(shell))
+
+        // Inside a folder, New folder lands on the root with the game in it.
+        assertEquals("Nintendo 3DS", shell.focusedGame()?.title)
+        shell.onMeaning(Meaning.Activate, HostScreen.Bottom)
+        focus(shell, titles(shell).indexOf("Drift"))
+        choose(shell, Row.NewFolder)
+        assertEquals(HomeKeys.Renaming, shell.homeKeys())
+        shell.onMeaning(Meaning.Activate, HostScreen.Bottom)
+        val made = shell.model.focus.cellIndex
+        assertEquals("${Copy.newFolder} 1", shell.homeFace(made)?.title)
+        shell.onMeaning(Meaning.Activate, HostScreen.Bottom)
+        assertEquals(listOf("Drift"), titles(shell).filter { it.isNotEmpty() })
+    }
+
+    @Test
+    fun yInAllAddsAnItemThatIsNotOnHomeYet() {
+        val shell = shell()
+        shell.ingestLibrary("local-folder", listOf(entry("puzzle", "Puzzle", "nintendo-3ds")), emptyList())
+        focus(shell, titles(shell).indexOf("Nintendo 3DS"))
+        shell.onMeaning(Meaning.Activate, HostScreen.Bottom)
+        choose(shell, Row.RemoveTile)
+        shell.openHomeAll()
+        val puzzle = titles(shell).indexOf("Puzzle")
+        focus(shell, puzzle)
+        assertEquals(listOf(Row.AddToHome), optionRows(shell))
+        assertEquals(Copy.addToHome, shell.model.tileActions?.addToHome)
+        choose(shell, Row.AddToHome)
+        assertTrue(shell.homeFace(puzzle)?.onGrid == true)
+        // Placed now, so Y has nothing to offer and stays shut.
+        shell.onMeaning(Meaning.Options, HostScreen.Bottom)
+        assertNull(shell.model.panel)
     }
 
     private fun entry(
@@ -295,10 +388,30 @@ class HomeGridOrderTest {
         ),
     )
 
-    /** Moves focus from the first cell to [index] on the root grid. */
+    /** Y's rows for the focused tile, with the menu left closed. */
+    private fun optionRows(shell: ShellController): List<Row> =
+        actionRows(shell.model.tileActions, shell.model.appActions)
+
+    /** Y, down the menu to [row], then A. */
+    private fun choose(shell: ShellController, row: Row) {
+        shell.onMeaning(Meaning.Options, HostScreen.Bottom)
+        val panel = shell.model.panel ?: error("Y opened no menu")
+        val rows = panelRows(panel, shell.model)
+        assertTrue("$row in $rows", row in rows)
+        repeat(rows.indexOf(row)) { shell.onMeaning(Meaning.MoveDown, HostScreen.Bottom) }
+        shell.onMeaning(Meaning.Activate, HostScreen.Bottom)
+    }
+
+    /** Moves focus from the focused cell to [index]. */
     private fun focus(shell: ShellController, index: Int) {
-        repeat(index / Metrics.columns) { shell.onMeaning(Meaning.MoveDown, HostScreen.Bottom) }
-        repeat(index % Metrics.columns) { shell.onMeaning(Meaning.MoveRight, HostScreen.Bottom) }
+        val at = shell.model.focus.cellIndex
+        val rows = index / Metrics.columns - at / Metrics.columns
+        val columns = index % Metrics.columns - at % Metrics.columns
+        repeat(maxOf(rows, 0)) { shell.onMeaning(Meaning.MoveDown, HostScreen.Bottom) }
+        repeat(maxOf(-rows, 0)) { shell.onMeaning(Meaning.MoveUp, HostScreen.Bottom) }
+        repeat(maxOf(columns, 0)) { shell.onMeaning(Meaning.MoveRight, HostScreen.Bottom) }
+        repeat(maxOf(-columns, 0)) { shell.onMeaning(Meaning.MoveLeft, HostScreen.Bottom) }
+        assertEquals(index, shell.model.focus.cellIndex)
     }
 
     private fun titles(shell: ShellController): List<String> =

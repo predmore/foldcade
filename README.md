@@ -27,7 +27,7 @@ Idle top and grid bottom, copied in place from docs/afterglow/. Keep these paths
 Most Android launchers are built for one screen. The Thor has two, and they usually end up feeling like a phone with a spare. Foldcade treats them as one home.
 
 - **Two screens that work together.** The top screen shows off what you have selected. The bottom screen is where you browse. Nothing is cramped, and nothing is wasted.
-- **Made for buttons, not fingers.** Everything is reachable with the Thor's own controls. Move with the D-pad, press A to play, and use the shoulder buttons for quick settings.
+- **Made for buttons, not fingers.** Everything is reachable with the Thor's own controls. Move with the D-pad. A plays on the top screen, X on the bottom, and Y opens options for the tile you are on, such as moving it, putting it in a folder, or renaming a folder. The shoulder buttons open the menus.
 - **Quiet by design.** No ads, no store, no feeds, no account to make. Just your games, a dark screen, and a little music.
 
 ## What you get

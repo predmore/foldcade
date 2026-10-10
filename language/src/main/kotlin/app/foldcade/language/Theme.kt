@@ -171,7 +171,6 @@ object Copy {
     const val importMoonlightTitle = "Import Moonlight games"
     const val importMoonlightBody = "Checked games go to All Apps and the Moonlight folder."
     const val importMoonlight = "Import"
-    const val editHome = "Edit home"
     const val allLibrary = "All library"
     const val addNewGames = "Add new games"
     const val addNewOn = "On"
@@ -186,14 +185,21 @@ object Copy {
     const val sortSystem = "System"
     const val allSystems = "All systems"
     const val homeSlot = "Home"
-    const val hintMove = "Move"
-    const val hintNewFolder = "New folder"
-    const val hintRemove = "Remove"
-    const val hintDone = "Done"
-    const val hintIcon = "Icon"
+    const val move = "Move"
+    const val moveTo = "Move to"
+    const val makeFolder = "New folder"
+    const val rename = "Rename"
+    const val changeIcon = "Change icon"
+    const val removeFromHome = "Remove from Home"
+    const val addToHome = "Add to Home"
+    const val addTo = "Add to"
+    const val hintDrop = "Drop"
+    const val hintCancel = "Cancel"
+    const val hintSave = "Save"
     const val hintChoose = "Choose"
+    const val hintOptions = "Options"
     const val folderIcon = "Folder icon"
-    const val hintAddToHome = "Add to Home"
+    const val folderName = "Folder name"
     const val hintTop = "Top"
     const val hintBottom = "Bottom"
     const val onHomeMark = "On home"
@@ -246,36 +252,36 @@ fun gridHints(
     actions: HintActions?,
     homeKeys: HomeKeys,
     faceMap: FaceMap,
-    folderIcon: Boolean = false,
     screens: Boolean = false,
+    options: Boolean = false,
 ): List<HintKey> {
     val confirm = promptKeyOf(faceMap.confirmKey) ?: PromptKey.FaceA
     val back = promptKeyOf(faceMap.backKey) ?: PromptKey.FaceB
     // A one-screen game opens on the top screen with A and on the bottom with X.
     val launch = if (screens) listOf(HintKey(confirm, Copy.hintTop), HintKey(PromptKey.FaceX, Copy.hintBottom)) else emptyList()
+    // Y names its menu only when the focused tile has one.
+    val menu = if (options) listOf(HintKey(PromptKey.FaceY, Copy.hintOptions)) else emptyList()
     return when (homeKeys) {
-        // Select names the icon only on a folder the user made, the one place it works.
-        HomeKeys.Editing -> listOfNotNull(
-            HintKey(confirm, Copy.hintMove),
-            HintKey(PromptKey.FaceY, Copy.hintNewFolder),
-            HintKey(PromptKey.FaceX, Copy.hintRemove),
-            HintKey(PromptKey.Select, Copy.hintIcon).takeIf { folderIcon },
-            HintKey(PromptKey.Start, Copy.hintDone),
+        HomeKeys.Moving -> listOf(
+            HintKey(confirm, Copy.hintDrop),
+            HintKey(back, Copy.hintCancel),
         )
         HomeKeys.PickingIcon -> listOf(
             HintKey(confirm, Copy.hintChoose),
             HintKey(back, Copy.back),
         )
-        HomeKeys.AllLibrary -> launch + listOf(
-            HintKey(PromptKey.FaceY, Copy.hintAddToHome),
-            HintKey(back, Copy.back),
+        HomeKeys.Renaming -> listOf(
+            HintKey(confirm, Copy.hintSave),
+            HintKey(back, Copy.hintCancel),
         )
-        else -> buildList {
+        HomeKeys.AllLibrary -> launch + menu + HintKey(back, Copy.back)
+        HomeKeys.Idle -> buildList {
             if (launch.isNotEmpty()) {
                 addAll(launch)
             } else if (actions?.confirm == true) {
                 add(HintKey(confirm, Copy.confirm))
             }
+            addAll(menu)
             if (actions?.back == true) add(HintKey(back, Copy.back))
         }
     }
