@@ -1,6 +1,6 @@
 # Foldcade home music
 
-Tracks live in `tracks/<id>/` with their own `compose.py`. `tracks/manifest.json` lists each track's id, title, composer, license, and packaged file. The setting stores the track id and defaults to `lanternlight`. There is no picker in the app yet. L1 shows the current title.
+Tracks live in `tracks/<id>/` with their own `compose.py`. `tracks/manifest.json` lists each track's id, title, composer, license, and packaged file. The setting stores the track id and defaults to `lanternlight`. L1's Track row cycles those tracks. A activates the next one. Left and right move through them and stay on the row.
 
 The shipped track is **Lanternlight**, composed by the Foldcade project and licensed under GPLv3 with this repository, the same choice as the theme art.
 
@@ -12,7 +12,7 @@ The shipped track is **Lanternlight**, composed by the Foldcade project and lice
 
 Do not commit the SoundFont, WAVs, or encoded audio. `tracks/lanternlight/checks.json` is the approved measurement. A fresh render writes `tracks/lanternlight/out/a/checks.json`, which is not committed.
 
-`theme.json` may still set an optional `backgroundMusic` path. Choosing a theme track, and picking among home tracks, is not in this change.
+`theme.json` may set an optional `backgroundMusic` path to a file inside that zip. While the theme is selected, that file is the last choice on the Track row. Leaving the theme drops it. A home track stays selected.
 
 SoundFont: MuseScore_General.sf3 v0.2, sha256
 `5b85b6c2c61d10b2b91cddd41efcce7b25cd31c8271d511c73afafbef20b6fa3`,

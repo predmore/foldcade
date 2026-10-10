@@ -24,9 +24,11 @@ import app.foldcade.language.GridKind
 import app.foldcade.language.HeroFolder
 import app.foldcade.language.HeroItem
 import app.foldcade.language.HeroSubject
-import app.foldcade.language.DEFAULT_TRACK_TITLE
 import app.foldcade.host.play.recentlyPlayedIndices
 import app.foldcade.language.HomeMusicSetting
+import app.foldcade.language.MusicTrack
+import app.foldcade.language.offeredMusicTracks
+import app.foldcade.language.selectedMusicTrack
 import app.foldcade.language.HostScreen
 import app.foldcade.language.Meaning
 import app.foldcade.language.MotionSpeed
@@ -64,11 +66,13 @@ class ShellController(
     private val store: SessionStore,
     private val plugins: PluginHost,
     private val onMusic: (HomeMusicSetting) -> Unit = {},
-    private val trackTitle: String = DEFAULT_TRACK_TITLE,
+    private val onTheme: (Int) -> Unit = {},
     private val themeNames: List<String> = listOf(Copy.builtIn),
     private val themeMotions: List<BackgroundMotion> = listOf(BackgroundMotion.Off),
     private val cue: (themeIndex: Int, slot: String) -> Boolean = { _, _ -> false },
     private val bareTick: () -> Unit = {},
+    private val homeTracks: List<MusicTrack> = emptyList(),
+    private val themeTracks: List<MusicTrack?> = emptyList(),
     private val lastPlayedMillis: (String) -> Long? = { null },
     private val onMoonlightCatalog: () -> Unit = {},
     private val onReviewMoonlight: (HostScreen) -> Unit = {},
@@ -759,6 +763,7 @@ class ShellController(
             store.update { it.withDefaultDisplayIsTop(next.primaryIsTop) }
         }
         if (next.sort != model.sort) store.setLibrarySort(next.sort)
+        if (next.themeIndex != model.themeIndex) onTheme(next.themeIndex)
         if (next.music != model.music) {
             store.setMusic(next.music.enabled, next.music.volume, next.music.trackId)
             onMusic(next.music)
@@ -851,14 +856,22 @@ class ShellController(
         } else {
             themeMotions.getOrElse(index) { BackgroundMotion.Off }
         }
+        val stored = HomeMusicSetting(store.musicEnabled(), store.musicVolume(), store.musicTrackId())
+        val offered = offeredMusicTracks(homeTracks, themeTracks.getOrNull(index))
+        val selected = selectedMusicTrack(offered, stored.trackId)
+        if (selected.id != stored.trackId) {
+            store.setMusic(stored.enabled, stored.volume, selected.id)
+        }
         return PickerModel(
             count = Shelf.games.size,
             rowsPerPage = 2,
             showLaunchTarget = true,
             primaryIsTop = store.session.defaultDisplayIsTop,
             folderGrantPending = store.folderGrantPending(),
-            music = HomeMusicSetting(store.musicEnabled(), store.musicVolume(), store.musicTrackId()),
-            trackTitle = trackTitle,
+            music = stored.copy(trackId = selected.id),
+            trackTitle = selected.title,
+            homeTracks = homeTracks,
+            themeTracks = themeTracks,
             themes = names,
             themeIndex = index,
             themeMotions = themeMotions,
@@ -878,9 +891,9 @@ class ShellController(
         if (!cue(themeIndex, "move")) bareTick()
     }
 
-    /** Slider rows. Music volume is the only one; another slider joins this check. */
-    private fun sliderMoved(before: PickerModel, after: PickerModel): Boolean =
-        before.music.volume != after.music.volume
+    /** Volume steps and track changes. Either one ticks while the row stays put. */
+    private fun valueAdjusted(before: PickerModel, after: PickerModel): Boolean =
+        before.music.volume != after.music.volume || before.music.trackId != after.music.trackId
 
     private fun cueMeaning(meaning: Meaning, before: PickerModel, after: PickerModel) {
         when (meaning) {
@@ -890,7 +903,7 @@ class ShellController(
                 val moved = before.focus != after.focus ||
                     before.panel?.index != after.panel?.index ||
                     before.moonlightSheet?.index != after.moonlightSheet?.index
-                val slid = sliderMoved(before, after)
+                val slid = valueAdjusted(before, after)
                 if (slid) tickSlider(after.themeIndex) else if (moved) cue(after.themeIndex, "move")
             }
             else -> Unit

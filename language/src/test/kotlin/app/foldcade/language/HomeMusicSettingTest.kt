@@ -213,17 +213,76 @@ class HomeMusicSettingTest {
     fun missingSelectedAssetFallsBackToLanternlight() {
         val present = setOf("music/lanternlight.ogg", "music/theme.ogg")
         val exists: (String) -> Boolean = { it in present }
-        assertEquals(
-            "music/theme.ogg",
-            packagedHomeMusicFile("""{"backgroundMusic":"music/theme.ogg"}""", "music/other.ogg", exists),
-        )
-        assertEquals(
-            "music/lanternlight.ogg",
-            packagedHomeMusicFile(null, "music/other.ogg", exists),
-        )
+        assertEquals("music/theme.ogg", packagedHomeMusicFile("music/theme.ogg", exists))
+        assertEquals(DEFAULT_BACKGROUND_MUSIC, packagedHomeMusicFile("music/other.ogg", exists))
         assertEquals(
             DEFAULT_BACKGROUND_MUSIC,
-            packagedHomeMusicFile(null, "music/lanternlight.ogg", assetExists = { false }),
+            packagedHomeMusicFile("music/lanternlight.ogg", assetExists = { false }),
         )
+    }
+
+    @Test
+    fun trackPickerCyclesHomeTracksAndDropsAThemeTrackWhenThatThemeLeaves() {
+        val lantern = defaultLanternlightTrack()
+        val dusk = MusicTrack("dusk", "Dusk", "Foldcade project", "GPLv3", "music/dusk.ogg")
+        val theme = MusicTrack(
+            THEME_TRACK_ID,
+            "Afterglow",
+            "Afterglow",
+            "theme",
+            "music/afterglow.ogg",
+            fromTheme = true,
+        )
+        val opened = reduce(PickerModel(count = 1, rowsPerPage = 1, showLaunchTarget = false), Meaning.LeftPanel).first
+        val model = opened.copy(
+            homeTracks = listOf(lantern, dusk),
+            themeTracks = listOf(null, theme),
+            themes = listOf("Built-in", "Afterglow"),
+            themeIndex = 1,
+            trackTitle = lantern.title,
+        )
+        val onTrack = model.copy(panel = model.panel!!.copy(index = 6))
+        val duskPick = reduce(onTrack, Meaning.Activate).first
+        assertEquals("dusk", duskPick.music.trackId)
+        assertEquals("Dusk", duskPick.trackTitle)
+        assertEquals("Track  Dusk", MusicCopy.trackLabel(duskPick.trackTitle))
+        assertEquals(6, duskPick.panel?.index)
+        val themePick = reduce(duskPick, Meaning.Activate).first
+        assertEquals(THEME_TRACK_ID, themePick.music.trackId)
+        assertEquals("Afterglow", themePick.trackTitle)
+        val wrapped = reduce(themePick, Meaning.Activate).first
+        assertEquals(HomeMusicSetting.DEFAULT_TRACK_ID, wrapped.music.trackId)
+        val back = reduce(wrapped, Meaning.MoveLeft).first
+        assertEquals(THEME_TRACK_ID, back.music.trackId)
+        assertEquals(6, back.panel?.index)
+        val forward = reduce(back, Meaning.MoveRight).first
+        assertEquals(HomeMusicSetting.DEFAULT_TRACK_ID, forward.music.trackId)
+
+        val onThemeRow = back.copy(panel = back.panel!!.copy(index = 1))
+        val builtIn = reduce(onThemeRow, Meaning.Activate).first
+        assertEquals(0, builtIn.themeIndex)
+        assertEquals(HomeMusicSetting.DEFAULT_TRACK_ID, builtIn.music.trackId)
+        assertEquals("Lanternlight", builtIn.trackTitle)
+        assertTrue(offeredMusicTracks(builtIn.homeTracks, builtIn.themeTracks.getOrNull(0)).none { it.fromTheme })
+
+        val stayed = reduce(duskPick.copy(panel = duskPick.panel!!.copy(index = 1)), Meaning.Activate).first
+        assertEquals(0, stayed.themeIndex)
+        assertEquals("dusk", stayed.music.trackId)
+    }
+
+    @Test
+    fun themeTrackRequiresAFileInsideTheZip() {
+        val named = """{"name":"Moss","backgroundMusic":"music/moss.ogg"}"""
+        assertEquals(null, themeMusicTrack("Moss", named, emptySet()))
+        val offered = themeMusicTrack("Moss", named, setOf("music/moss.ogg"))
+        assertEquals(THEME_TRACK_ID, offered?.id)
+        assertEquals("Moss", offered?.title)
+        assertEquals(true, offered?.fromTheme)
+        assertEquals("music/moss.ogg", offered?.file)
+        assertEquals(null, themeMusicTrack("Moss", """{"name":"Moss"}""", setOf("music/moss.ogg")))
+        assertEquals(null, themeMusicTrack("Moss", """{"name":"Moss","backgroundMusic":"../x.ogg"}""", setOf("../x.ogg")))
+        val tracks = offeredMusicTracks(listOf(defaultLanternlightTrack()), offered)
+        assertEquals(listOf(HomeMusicSetting.DEFAULT_TRACK_ID, THEME_TRACK_ID), tracks.map { it.id })
+        assertEquals(HomeMusicSetting.DEFAULT_TRACK_ID, cycledMusicTrack(listOf(defaultLanternlightTrack()), "lanternlight", 1).id)
     }
 }

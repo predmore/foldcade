@@ -111,6 +111,9 @@ class FoldcadeApp : Application() {
         packaged = PackagedTheme.load(this)
         val names = listOf(Copy.builtIn) + listOfNotNull(packaged?.name)
         val motions = listOf(BackgroundMotion.Off) + listOfNotNull(packaged?.backgroundMotion)
+        val themeTrackList = List(names.size) { index -> if (index == 0) null else packaged?.music }
+        val initialTheme = if (names.size > 1) 1 else 0
+        music.setThemeChoice(themeTrackList.getOrNull(initialTheme))
         plays = PlaySessions.open(File(filesDir, "play-sessions/events.log"))
         val sliderTick = SliderTick()
         plays.packageOf = { gameId ->
@@ -121,13 +124,15 @@ class FoldcadeApp : Application() {
             store,
             plugins,
             music::apply,
-            music.trackTitle(),
-            names,
-            motions,
+            onTheme = { index -> music.setThemeChoice(themeTrackList.getOrNull(index)) },
+            themeNames = names,
+            themeMotions = motions,
             cue = { index, slot ->
                 index > 0 && packaged?.sounds?.play(slot) == true
             },
             bareTick = sliderTick::play,
+            homeTracks = music.homeTracks(),
+            themeTracks = themeTrackList,
             lastPlayedMillis = plays::lastPlayedMillis,
             onMoonlightCatalog = { refreshMoonlightShelf() },
             onReviewMoonlight = ::reviewMoonlightImport,

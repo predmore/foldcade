@@ -22,6 +22,8 @@ import app.foldcade.language.Copy
 import app.foldcade.language.HostScreen
 import app.foldcade.language.LibrarySort
 import app.foldcade.language.Meaning
+import app.foldcade.language.MusicTrack
+import app.foldcade.language.defaultLanternlightTrack
 import app.foldcade.language.displayOrder
 import app.foldcade.localfolder.LocalFolderBackend
 import app.foldcade.localfolder.LocalFolderEntry
@@ -296,6 +298,31 @@ class ShellHostTest {
         quiet.onMeaning(Meaning.MoveLeft, HostScreen.Bottom)
         assertEquals(0f, quiet.model.music.volume, 0.0001f)
         assertEquals(ticksAtSilence, fallback)
+    }
+
+    @Test
+    fun trackRowStoresTheNextHomeTrack() {
+        val host = PluginHost(Dispatchers.Unconfined, MemoryCredentialStore())
+        val store = SessionStore(MemoryPrefs())
+        val ids = mutableListOf<String>()
+        val shell = ShellController(
+            store,
+            host,
+            onMusic = { ids += it.trackId },
+            homeTracks = listOf(
+                defaultLanternlightTrack(),
+                MusicTrack("dusk", "Dusk", "Foldcade project", "GPLv3", "music/dusk.ogg"),
+            ),
+        )
+        shell.onMeaning(Meaning.LeftPanel, HostScreen.Bottom)
+        repeat(6) { shell.onMeaning(Meaning.MoveDown, HostScreen.Bottom) }
+        assertEquals(6, shell.model.panel?.index)
+        shell.onMeaning(Meaning.Activate, HostScreen.Bottom)
+        assertEquals("dusk", shell.model.music.trackId)
+        assertEquals("Dusk", shell.model.trackTitle)
+        assertEquals(listOf("dusk"), ids)
+        assertEquals("dusk", store.musicTrackId())
+        assertEquals(6, shell.model.panel?.index)
     }
 
     @Test
