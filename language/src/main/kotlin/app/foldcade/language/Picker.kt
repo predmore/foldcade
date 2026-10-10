@@ -6,7 +6,6 @@ enum class HostScreen {
 }
 
 enum class Chrome {
-    LaunchTarget,
     StatusCluster,
 }
 
@@ -230,7 +229,6 @@ sealed interface Row {
     data object DefaultHomeApp : Row
     data object AddFolder : Row
     data object Connect : Row
-    data object LaunchTarget : Row
     data class Notice(val id: String) : Row
     data class SignOut(val pluginId: String, val label: String) : Row
     data class ForgetFolder(val uri: String, val label: String) : Row
@@ -353,11 +351,9 @@ fun libraryRows(
         folders.map { Row.ForgetFolder(it.uri, it.label) }
 
 fun rightRows(
-    showLaunchTarget: Boolean,
     notices: List<FoldNotice>,
     actions: AppActions? = null,
 ): List<Row> = buildList {
-    if (showLaunchTarget) add(Row.LaunchTarget)
     if (actions != null) {
         if (actions.hiddenShelf) {
             add(Row.ShowApp)
@@ -376,7 +372,7 @@ fun panelRows(panel: SidePanel, model: PickerModel): List<Row> = when (panel.sid
         PanelLevel.Root -> leftRows()
         PanelLevel.Library -> libraryRows(model.signedIn, model.folders)
     }
-    Side.Right -> rightRows(model.showLaunchTarget, model.notices, model.appActions)
+    Side.Right -> rightRows(model.notices, model.appActions)
 }
 
 fun backgroundLabel(motion: BackgroundMotion): String = when (motion) {
@@ -431,7 +427,6 @@ fun rowText(row: Row, model: PickerModel): RowText = when (row) {
     Row.Connect -> RowText(Copy.connectRomm)
     is Row.SignOut -> RowText("${Copy.signOut} · ${row.label}")
     is Row.ForgetFolder -> RowText("${Copy.removeFolder} · ${row.label}")
-    Row.LaunchTarget -> RowText(if (model.launchOnBottom) Copy.launchOnBottom else Copy.launchOnTop)
     is Row.Notice -> RowText(model.notices.firstOrNull { it.id == row.id }?.title ?: "")
     is Row.PlayerSave -> {
         val setting = model.playerSaves.firstOrNull { it.playerId == row.playerId }
@@ -472,11 +467,11 @@ fun displayOrder(model: PickerModel): List<Int> {
 }
 
 sealed interface Effect {
-    data class Launch(val index: Int) : Effect
+    /** Launch the game at [index], on the bottom screen when [onBottom] (X), else the top (A). */
+    data class Launch(val index: Int, val onBottom: Boolean = false) : Effect
     data class OpenPlatform(val index: Int) : Effect
     data object LeavePlatform : Effect
     data object TryAgain : Effect
-    data object CycleLaunchTarget : Effect
     data object AddFolder : Effect
     data object OpenConnect : Effect
     data class DialogChoice(val button: DialogButton, val kind: DialogKind) : Effect
@@ -519,7 +514,6 @@ enum class EmptyGrid {
 data class PickerModel(
     val count: Int,
     val rowsPerPage: Int,
-    val showLaunchTarget: Boolean,
     val focus: GridFocus = GridFocus(),
     val panel: SidePanel? = null,
     /** The full-screen settings page. Null while it is closed. */
@@ -537,7 +531,6 @@ data class PickerModel(
     val homeRoleHeld: Boolean = false,
     val folderGrantPending: Boolean = true,
     val notices: List<FoldNotice> = emptyList(),
-    val launchOnBottom: Boolean = false,
     val music: HomeMusicSetting = HomeMusicSetting(),
     val trackTitle: String = DEFAULT_TRACK_TITLE,
     val homeTracks: List<MusicTrack> = emptyList(),
@@ -651,9 +644,6 @@ fun reduce(
 
 private fun coerce(focus: GridFocus, model: PickerModel): GridFocus {
     var next = focus
-    if (next.chrome == Chrome.LaunchTarget && !model.showLaunchTarget) {
-        next = next.copy(chrome = Chrome.StatusCluster)
-    }
     if (model.count <= 0) {
         return next.copy(chrome = next.chrome ?: Chrome.StatusCluster, cellIndex = 0, lastColumn = 0)
     }
@@ -732,6 +722,7 @@ private fun applyGrid(
         Meaning.PageTowardStart, Meaning.PageTowardEnd ->
             model.copy(focus = page(model.focus, meaning == Meaning.PageTowardEnd, model)) to null
         Meaning.Activate -> activate(model, screen)
+        Meaning.ActivateBottom -> activate(model, screen, onBottom = true)
         Meaning.Back -> backGrid(model)
         Meaning.LeftPanel, Meaning.RightPanel -> presentPanel(model, meaning, screen) to null
         else -> model to null
@@ -770,14 +761,6 @@ private fun move(focus: GridFocus, meaning: Meaning, model: PickerModel): GridFo
     val chrome = focus.chrome
     if (chrome != null) {
         return when (meaning) {
-            Meaning.MoveRight ->
-                if (chrome == Chrome.LaunchTarget) focus.copy(chrome = Chrome.StatusCluster) else focus
-            Meaning.MoveLeft ->
-                if (chrome == Chrome.StatusCluster && model.showLaunchTarget) {
-                    focus.copy(chrome = Chrome.LaunchTarget)
-                } else {
-                    focus
-                }
             Meaning.MoveDown -> downFromChrome(focus, model)
             Meaning.MoveUp -> focus
             else -> focus
@@ -804,8 +787,7 @@ private fun step(focus: GridFocus, column: Int, row: Int, model: PickerModel): G
 }
 
 private fun upToChrome(focus: GridFocus, column: Int, model: PickerModel): GridFocus {
-    val target = if (!model.showLaunchTarget || column >= 2) Chrome.StatusCluster else Chrome.LaunchTarget
-    return focus.copy(chrome = target, lastColumn = column)
+    return focus.copy(chrome = Chrome.StatusCluster, lastColumn = column)
 }
 
 private fun downFromChrome(focus: GridFocus, model: PickerModel): GridFocus {
@@ -829,16 +811,16 @@ private fun page(focus: GridFocus, towardEnd: Boolean, model: PickerModel): Grid
     return focus.copy(cellIndex = landed, lastColumn = landed % Metrics.columns, chrome = null)
 }
 
-private fun activate(model: PickerModel, screen: HostScreen): Pair<PickerModel, Effect?> {
+/** A, or X when [onBottom]. X launches a game on the bottom screen and does what A does anywhere else. */
+private fun activate(model: PickerModel, screen: HostScreen, onBottom: Boolean = false): Pair<PickerModel, Effect?> {
     return when (model.focus.chrome) {
         Chrome.StatusCluster -> presentPanel(model, Meaning.RightPanel, screen) to null
-        Chrome.LaunchTarget -> model.copy(launchOnBottom = !model.launchOnBottom) to Effect.CycleLaunchTarget
         null -> {
             if (model.arranging) return placeOrPick(model)
             if (model.count <= 0 || model.focus.cellIndex !in 0 until model.count) return model to null
-            if (!model.libraryGrid) return model to Effect.Launch(model.focus.cellIndex)
+            if (!model.libraryGrid) return model to Effect.Launch(model.focus.cellIndex, onBottom)
             when (model.gridKind) {
-                GridKind.Games -> model to Effect.Launch(model.focus.cellIndex)
+                GridKind.Games -> model to Effect.Launch(model.focus.cellIndex, onBottom)
                 GridKind.Platforms -> model to Effect.OpenPlatform(model.focus.cellIndex)
                 GridKind.Unreachable -> model to Effect.TryAgain
                 GridKind.NoLibrary -> if (model.focus.cellIndex == 0) {
@@ -1118,7 +1100,6 @@ private fun activateRow(
         ) to Effect.OpenConnect
         is Row.SignOut -> model.copy(panel = null, focus = panel.grid) to Effect.ForgetCredentials(row.pluginId)
         is Row.ForgetFolder -> model.copy(panel = null, focus = panel.grid) to Effect.ForgetFolder(row.uri)
-        Row.LaunchTarget -> model.copy(panel = panel, launchOnBottom = !model.launchOnBottom) to Effect.CycleLaunchTarget
         is Row.Notice -> model.copy(panel = panel, notices = model.notices.filter { it.id != row.id }) to null
         is Row.PlayerSave -> model.copy(panel = null, focus = panel.grid) to Effect.ChoosePlayerSave(row.playerId)
         Row.AndroidGames -> openGrid(model, panel, HomeGrid.AndroidGames)

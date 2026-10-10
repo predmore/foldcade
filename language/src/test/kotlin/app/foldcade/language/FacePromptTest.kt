@@ -52,7 +52,8 @@ class FacePromptTest {
         assertEquals(KeyEvent.KEYCODE_BUTTON_A, map.backKey)
         assertEquals(Meaning.Activate, meaningOf(KeyEvent.KEYCODE_BUTTON_B, faces = map))
         assertEquals(Meaning.Back, meaningOf(KeyEvent.KEYCODE_BUTTON_A, faces = map))
-        assertNull(meaningOf(KeyEvent.KEYCODE_BUTTON_X, faces = map))
+        // X is still the bottom-screen launch when B confirms.
+        assertEquals(Meaning.ActivateBottom, meaningOf(KeyEvent.KEYCODE_BUTTON_X, faces = map))
         assertEquals(FaceSet.N, map.set)
         assertEquals("ic_btn_face_diamond_n_b", faceArt(FaceLetter.B, map, filled = false).diamond)
         assertEquals(FaceLetter.B, promptedLetter(confirm = true, back = true, map))
@@ -142,7 +143,7 @@ class FacePromptTest {
 
     @Test
     fun buttonLabelRowOffersPressConfirmAndCanBeDismissed() {
-        val root = PickerModel(count = 1, rowsPerPage = 1, showLaunchTarget = false, offerButtonLabels = true)
+        val root = PickerModel(count = 1, rowsPerPage = 1, offerButtonLabels = true)
         val rows = settingsRows(SettingsCategory.Personalization, root)
         assertTrue(rows.indexOf(Row.ButtonLabels) > rows.indexOf(Row.MotionSpeed))
         val capturing = reduce(root.onSetting(Row.ButtonLabels), Meaning.Activate).first

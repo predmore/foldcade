@@ -149,13 +149,8 @@ private fun Island(
     if (live != null) shown = live
     val panel = shown
     val inset = maxWidth * Metrics.insetFraction
-    // The left pill widens for the launch target and narrows to its chip without it.
-    val widen by animateFloatAsState(
-        targetValue = if (launchTargetLabel(app) != null) 1f else 0f,
-        animationSpec = FoldMotion.arrive(FoldMotion.durationShort, scale),
-        label = "pill width",
-    )
-    val pillWidth = if (side == Side.Right) 260.dp else lerp(72.dp, 280.dp, widen)
+    // The left pill is just its chip. A and X choose the screen, so it names no launch target.
+    val pillWidth = if (side == Side.Right) 260.dp else 72.dp
     val pillHeight = 44.dp
     val openWidth = maxWidth * 0.48f
     // The open card fits its rows, up to most of the screen. A taller menu scrolls.
@@ -172,7 +167,7 @@ private fun Island(
     val x = if (side == Side.Left) inset else maxWidth - inset - width
     val focusedIsland = progress < 0.08f && app.shell.model.panel == null && app.shell.model.dialog == null &&
         when (side) {
-            Side.Left -> app.shell.model.focus.chrome == Chrome.LaunchTarget
+            Side.Left -> false
             Side.Right -> app.shell.model.focus.chrome == Chrome.StatusCluster
         }
     val interactive = open && progress > 0.92f
@@ -206,13 +201,6 @@ private fun Island(
         ) {
             if (side == Side.Left) {
                 ShoulderChip(R.drawable.ic_btn_l1, R.drawable.ic_btn_l1_filled, progress, "L1")
-                Row(
-                    Modifier.graphicsLayer { alpha = 1f - progress },
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    LaunchTargetLabel(app, progress)
-                }
             } else {
                 Row(Modifier.graphicsLayer { alpha = 1f - progress }, horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
                     StatusIcons(app)
@@ -241,47 +229,6 @@ private fun Island(
 private const val MENU_PADDING_DP = 28f
 
 private fun Side.meaning(): Meaning = if (this == Side.Left) Meaning.LeftPanel else Meaning.RightPanel
-
-/**
- * The closed left island's launch target, or null when it shows nothing.
- * Top is the default, so it shows only when it says bottom, or has focus.
- */
-private fun launchTargetLabel(app: FoldcadeApp): String? {
-    val model = app.shell.model
-    if (model.dialog != null || model.connectOpen) return null
-    val game = app.shell.focusedGame() ?: return null
-    if (game.emptyShelfHint) return null
-    if (!app.store.session.launchTargetControlVisible(game.occupiesBothDisplays)) return null
-    val target = app.store.session.singleScreenTarget(game.id, game.platformId)
-    val focused = model.focus.chrome == Chrome.LaunchTarget
-    return when {
-        target == Panel.Bottom || model.launchOnBottom -> Copy.launchOnBottom
-        focused -> Copy.launchOnTop
-        else -> null
-    }
-}
-
-@Composable
-private fun LaunchTargetLabel(app: FoldcadeApp, progress: Float) {
-    val label = launchTargetLabel(app) ?: return
-    val theme = LocalFoldTheme.current.theme
-    val focused = app.shell.model.focus.chrome == Chrome.LaunchTarget
-    BasicText(
-        text = label,
-        modifier = if (progress < 0.08f) {
-            Modifier.islandPress { app.shell.touchChrome(Chrome.LaunchTarget, HostScreen.Top) }
-        } else {
-            Modifier
-        },
-        style = TextStyle(
-            color = if (focused) theme.focus else theme.onBackground,
-            fontSize = TypeRamp.hint,
-            fontFamily = theme.font,
-        ),
-        maxLines = 1,
-        overflow = TextOverflow.Ellipsis,
-    )
-}
 
 @Composable
 private fun islandProgress(

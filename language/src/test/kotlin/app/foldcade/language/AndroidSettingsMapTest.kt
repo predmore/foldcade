@@ -27,9 +27,9 @@ class AndroidSettingsMapTest {
     @Test
     fun rightClusterTilesMoveInTwoColumnsAndDoNotWrap() {
         val notices = listOf(FoldNotice("save", "Both saves were kept", "Archived"))
-        val rows = rightRows(showLaunchTarget = true, notices = notices)
+        val rows = rightRows(notices = notices)
         assertEquals(
-            listOf(Row.LaunchTarget, Row.Notice("save")) + quickSettings().map { Row.QuickTile(it) },
+            listOf(Row.Notice("save")) + quickSettings().map { Row.QuickTile(it) },
             rows,
         )
         val opened = reduce(sample().copy(notices = notices), Meaning.RightPanel).first
@@ -68,7 +68,7 @@ class AndroidSettingsMapTest {
         assertEquals(0, reduce(launch, Meaning.MoveUp).first.panel?.index)
     }
 
-    private fun sample() = PickerModel(count = 2, rowsPerPage = 2, showLaunchTarget = true)
+    private fun sample() = PickerModel(count = 2, rowsPerPage = 2)
 
     private fun move(model: PickerModel, vararg meanings: Meaning): PickerModel {
         var current = model

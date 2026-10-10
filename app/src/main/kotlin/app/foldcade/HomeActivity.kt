@@ -178,15 +178,13 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
 
     fun dispatch(effect: Effect?) {
         when (effect) {
-            is Effect.Launch -> if (foldcade.shell.model.libraryGrid) {
-                launchLibraryGame(effect.index)
-            } else {
-                launchFocused()
+            is Effect.Launch -> {
+                launchScreen = if (effect.onBottom) Panel.Bottom else Panel.Top
+                if (foldcade.shell.model.libraryGrid) launchLibraryGame(effect.index) else launchFocused()
             }
             is Effect.OpenPlatform -> foldcade.openPlatform(effect.index)
             Effect.LeavePlatform -> foldcade.leavePlatform()
             Effect.TryAgain -> foldcade.retryLibrary()
-            Effect.CycleLaunchTarget -> cycleLaunchTarget()
             Effect.AddFolder -> {
                 folderPurpose = FolderPurpose.Library
                 folderPicker.launch(null)
@@ -505,7 +503,7 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
         val launch = packageManager.getLaunchIntentForPackage(pkg) ?: return
         val external = ExternalApp(opened.sessionId, occupiesBothDisplays = false)
         val session = foldcade.store.session
-        val panel = session.singleScreenTarget(external.id, game.platformId) ?: return
+        val panel = session.singleScreenTarget(launchScreen) ?: return
         val assignment = displays.assignment(session.defaultDisplayIsTop)
         val displayId = when (panel) {
             Panel.Top -> assignment.topDisplayId
@@ -516,6 +514,13 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
         val options = ActivityOptions.makeBasic().apply { launchDisplayId = displayId }
         startActivity(launch, options.toBundle())
     }
+
+    /**
+     * The screen the launch now starting asked for: top for A, bottom for X. A
+     * newer launch replaces it, and an older one still running is dropped by its
+     * generation check before it places anything.
+     */
+    private var launchScreen: Panel = Panel.Top
 
     private fun launchFocused() {
         val game = foldcade.shell.focusedGame() ?: return
@@ -707,10 +712,10 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
         val external = ExternalApp(id, occupiesBoth)
         val assignment = displays.assignment(session.defaultDisplayIsTop)
         val displayId = if (occupiesBoth) {
-            foldcade.store.update { it.launch(external, platformId) }
+            foldcade.store.update { it.launch(external, launchScreen) }
             assignment.topDisplayId
         } else {
-            val panel = session.singleScreenTarget(id, platformId) ?: return
+            val panel = session.singleScreenTarget(launchScreen) ?: return
             foldcade.store.place(panel, external)
             when (panel) {
                 Panel.Top -> assignment.topDisplayId
@@ -727,11 +732,11 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
         val session = foldcade.store.session
         val external = ExternalApp(game.id, game.occupiesBothDisplays)
         if (game.occupiesBothDisplays) {
-            foldcade.store.update { it.launch(external, game.platformId) }
+            foldcade.store.update { it.launch(external, launchScreen) }
             beginPlay(game, displays.assignment(session.defaultDisplayIsTop).topDisplayId)
             return
         }
-        val panel = session.singleScreenTarget(game.id, game.platformId) ?: return
+        val panel = session.singleScreenTarget(launchScreen) ?: return
         val assignment = displays.assignment(session.defaultDisplayIsTop)
         val displayId = when (panel) {
             Panel.Top -> assignment.topDisplayId
@@ -768,7 +773,7 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
         val panel = when (ready.startDisplay) {
             StartDisplay.Primary -> Panel.Top
             StartDisplay.PickerChoice ->
-                foldcade.store.session.singleScreenTarget(game.id, game.platformId) ?: return
+                foldcade.store.session.singleScreenTarget(launchScreen) ?: return
             else -> Panel.Top
         }
         val displayId = when (panel) {
@@ -777,7 +782,7 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
         }
         val external = ExternalApp(game.id, ready.occupiesBothDisplays)
         if (ready.occupiesBothDisplays) {
-            foldcade.store.update { it.launch(external, game.platformId) }
+            foldcade.store.update { it.launch(external, launchScreen) }
         } else {
             foldcade.store.place(panel, external)
         }
@@ -858,13 +863,6 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
     private fun presentMissing(name: String, generation: Int) {
         if (!launchCurrent(generation)) return
         foldcade.shell.present(missingPlayerDialog(name, hostScreen()))
-    }
-
-    private fun cycleLaunchTarget() {
-        val game = foldcade.shell.focusedGame() ?: return
-        val onPlatform = foldcade.shell.model.libraryGrid &&
-            foldcade.shell.model.gridKind == GridKind.Platforms
-        foldcade.store.update { it.cycleStoredScreen(game.id, game.platformId, onPlatform) }
     }
 
     private fun onDialog(effect: Effect.DialogChoice) {

@@ -13,6 +13,8 @@ enum class Meaning {
     MoveLeft,
     MoveRight,
     Activate,
+    /** X on a grid. Launches the focused game on the bottom screen; anything else acts as [Activate]. */
+    ActivateBottom,
     Back,
     LeftPanel,
     RightPanel,
@@ -32,8 +34,6 @@ enum class Meaning {
     FolderIcon,
     /** Y in All. First free slot, or the chosen folder. */
     AddToHome,
-    /** X in All. Cycles the folder an add will use. */
-    CycleDestination,
     LetterForward,
     LetterBackward,
 }
@@ -82,7 +82,8 @@ fun meaningOf(
         keyCode == KeyEvent.KEYCODE_BUTTON_X && homeKeys == HomeKeys.Editing -> Meaning.RemoveFromHome
         keyCode == KeyEvent.KEYCODE_BUTTON_Y && homeKeys == HomeKeys.Editing -> Meaning.MakeFolder
         keyCode == KeyEvent.KEYCODE_BUTTON_SELECT && homeKeys == HomeKeys.Editing -> Meaning.FolderIcon
-        keyCode == KeyEvent.KEYCODE_BUTTON_X && homeKeys == HomeKeys.AllLibrary -> Meaning.CycleDestination
+        keyCode == KeyEvent.KEYCODE_BUTTON_X && (homeKeys == HomeKeys.Idle || homeKeys == HomeKeys.AllLibrary) ->
+            Meaning.ActivateBottom
         keyCode == KeyEvent.KEYCODE_BUTTON_Y && homeKeys == HomeKeys.AllLibrary -> Meaning.AddToHome
         keyCode == KeyEvent.KEYCODE_BUTTON_L2 && homeKeys == HomeKeys.AllLibrary -> Meaning.LetterBackward
         keyCode == KeyEvent.KEYCODE_BUTTON_R2 && homeKeys == HomeKeys.AllLibrary -> Meaning.LetterForward

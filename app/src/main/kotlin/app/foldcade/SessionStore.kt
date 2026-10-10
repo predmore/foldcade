@@ -37,15 +37,14 @@ class SessionStore(private val prefs: SharedPreferences) {
 
     private fun load(): Session = Session(
         defaultDisplayIsTop = prefs.getBoolean(KEY_PRIMARY_TOP, true),
-        gameScreens = decode(prefs.getString(KEY_GAME_SCREENS, null)),
-        platformScreens = decode(prefs.getString(KEY_PLATFORM_SCREENS, null)),
     )
 
     private fun save(session: Session) {
         prefs.edit()
             .putBoolean(KEY_PRIMARY_TOP, session.defaultDisplayIsTop)
-            .putString(KEY_GAME_SCREENS, encode(session.gameScreens))
-            .putString(KEY_PLATFORM_SCREENS, encode(session.platformScreens))
+            // The launch button picks the screen now; per-game and per-platform choices are gone.
+            .remove(KEY_GAME_SCREENS)
+            .remove(KEY_PLATFORM_SCREENS)
             .apply()
     }
 
@@ -276,19 +275,6 @@ class SessionStore(private val prefs: SharedPreferences) {
         if (confirm == null) editor.remove(buttonPromptConfirmKey(deviceKey))
         else editor.putString(buttonPromptConfirmKey(deviceKey), confirm.name)
         editor.apply()
-    }
-
-    private fun encode(screens: Map<String, Panel>): String =
-        screens.entries.joinToString(",") { "${it.key}=${it.value.name}" }
-
-    private fun decode(raw: String?): Map<String, Panel> {
-        if (raw.isNullOrBlank()) return emptyMap()
-        return raw.split(",").mapNotNull { part ->
-            val bits = part.split("=", limit = 2)
-            if (bits.size != 2) return@mapNotNull null
-            val panel = runCatching { Panel.valueOf(bits[1]) }.getOrNull() ?: return@mapNotNull null
-            bits[0] to panel
-        }.toMap()
     }
 
     fun place(panel: Panel, app: ExternalApp) = update { it.place(panel, app) }

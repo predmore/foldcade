@@ -10,7 +10,6 @@ class SettingsPageTest {
     private val home = PickerModel(
         count = 4,
         rowsPerPage = 1,
-        showLaunchTarget = false,
         themes = listOf(Copy.builtIn, "Afterglow"),
     )
 

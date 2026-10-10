@@ -1162,7 +1162,13 @@ private fun GridHints(app: FoldcadeApp, modifier: Modifier = Modifier) {
             },
         )
     }
-    val keys = gridHints(actions, shell.homeKeys(), model.faceMap, folderIcon = shell.canPickFolderIcon())
+    val keys = gridHints(
+        actions,
+        shell.homeKeys(),
+        model.faceMap,
+        folderIcon = shell.canPickFolderIcon(),
+        screens = model.panel == null && model.dialog == null && shell.focusedLaunchesOnOneScreen(),
+    )
     if (keys.isEmpty()) return
     Row(
         modifier.fillMaxWidth(),

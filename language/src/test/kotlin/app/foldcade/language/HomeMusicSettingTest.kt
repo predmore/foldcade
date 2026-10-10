@@ -30,13 +30,13 @@ class HomeMusicSettingTest {
         )
         assertEquals(
             listOf(Row.Music, Row.MusicTrack, Row.MusicVolume),
-            settingsRows(SettingsCategory.Sound, PickerModel(count = 1, rowsPerPage = 1, showLaunchTarget = false)),
+            settingsRows(SettingsCategory.Sound, PickerModel(count = 1, rowsPerPage = 1)),
         )
     }
 
     @Test
     fun activateTogglesMusicAndStepsVolume() {
-        val base = PickerModel(count = 1, rowsPerPage = 1, showLaunchTarget = false)
+        val base = PickerModel(count = 1, rowsPerPage = 1)
         val music = base.onSetting(Row.Music)
         val toggled = reduce(music, Meaning.Activate).first
         assertFalse(toggled.music.enabled)
@@ -57,7 +57,7 @@ class HomeMusicSettingTest {
 
     @Test
     fun dpadStepsVolumeByFiveAndHoldsTheRow() {
-        val base = PickerModel(count = 1, rowsPerPage = 1, showLaunchTarget = false)
+        val base = PickerModel(count = 1, rowsPerPage = 1)
         val atHalf = base.copy(music = HomeMusicSetting(volume = 0.5f)).onSetting(Row.MusicVolume)
         val raised = reduce(atHalf, Meaning.MoveRight).first
         assertEquals(0.55f, raised.music.volume, 0.0001f)
@@ -226,7 +226,7 @@ class HomeMusicSettingTest {
             "music/afterglow.ogg",
             fromTheme = true,
         )
-        val model = PickerModel(count = 1, rowsPerPage = 1, showLaunchTarget = false).copy(
+        val model = PickerModel(count = 1, rowsPerPage = 1).copy(
             homeTracks = listOf(lantern, dusk),
             themeTracks = listOf(null, theme),
             themes = listOf("Built-in", "Afterglow"),

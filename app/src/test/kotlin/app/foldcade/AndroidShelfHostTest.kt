@@ -104,11 +104,10 @@ class AndroidShelfHostTest {
         assertFalse(host.openInstalledApp(settings.packageName).needsSaveFolder)
 
         shell.onMeaning(Meaning.RightPanel, HostScreen.Bottom)
-        assertEquals(Copy.pin, rowLabelAt(shell, 1))
-        shell.onMeaning(Meaning.MoveDown, HostScreen.Bottom)
+        assertEquals(Copy.pin, rowLabelAt(shell, 0))
         shell.onMeaning(Meaning.Activate, HostScreen.Bottom)
         assertTrue(shell.focusedGame()?.favorite == true)
-        assertEquals(Copy.unpin, rowLabelAt(shell, 1))
+        assertEquals(Copy.unpin, rowLabelAt(shell, 0))
 
         shell.onMeaning(Meaning.MoveDown, HostScreen.Bottom)
         shell.onMeaning(Meaning.Activate, HostScreen.Bottom)
@@ -128,7 +127,6 @@ class AndroidShelfHostTest {
         shell.onMeaning(Meaning.Activate, HostScreen.Bottom)
         assertEquals(listOf("Azahar"), titles(shell))
         shell.onMeaning(Meaning.RightPanel, HostScreen.Bottom)
-        shell.onMeaning(Meaning.MoveDown, HostScreen.Bottom)
         shell.onMeaning(Meaning.Activate, HostScreen.Bottom)
         assertEquals(0, shell.model.count)
 
@@ -148,7 +146,6 @@ class AndroidShelfHostTest {
         shell.setInstalledApps(listOf(settings), emptySet())
         shell.showHomeGrid(HomeGrid.Apps)
         shell.onMeaning(Meaning.RightPanel, HostScreen.Bottom)
-        shell.onMeaning(Meaning.MoveDown, HostScreen.Bottom)
         shell.onMeaning(Meaning.Activate, HostScreen.Bottom)
         val restored = SessionStore(prefs).appShelfState()
         assertTrue(restored.record(settings.packageName).favorite)
