@@ -155,19 +155,23 @@ class HomeMusicSettingTest {
     }
 
     @Test
-    fun musicStartsOnlyWhenHomeIsAloneAndQuiet() {
-        assertTrue(homeMusicMayStart(homeInFront = true, gameInFront = false, otherAudioActive = false))
-        assertFalse(homeMusicMayStart(homeInFront = false, gameInFront = false, otherAudioActive = false))
-        assertFalse(homeMusicMayStart(homeInFront = true, gameInFront = true, otherAudioActive = false))
-        assertFalse(homeMusicMayStart(homeInFront = true, gameInFront = false, otherAudioActive = true))
+    fun musicStartsOnlyWhenHomeHoldsEveryScreen() {
+        assertTrue(homeMusicMayStart(homeOnEveryScreen = true, gameInFront = false))
+        assertFalse(homeMusicMayStart(homeOnEveryScreen = false, gameInFront = false))
+        assertFalse(homeMusicMayStart(homeOnEveryScreen = true, gameInFront = true))
     }
 
     @Test
-    fun suppressionClearsOnlyAfterTheGameLeaves() {
-        assertTrue(homeMusicStaysSuppressed(suppressed = true, gameInFront = true))
-        assertFalse(homeMusicStaysSuppressed(suppressed = true, gameInFront = false))
-        assertFalse(homeMusicStaysSuppressed(suppressed = false, gameInFront = true))
-        assertFalse(homeMusicStaysSuppressed(suppressed = false, gameInFront = false))
+    fun homeMustBeResumedOnEveryLitScreen() {
+        val both = setOf("top", "bottom")
+        assertTrue(homeOnEveryScreen(resumed = both, lit = both))
+        // An app open on one screen pauses the home there.
+        assertFalse(homeOnEveryScreen(resumed = setOf("bottom"), lit = both))
+        assertFalse(homeOnEveryScreen(resumed = setOf("top"), lit = both))
+        // A screen that is off does not count against the other.
+        assertTrue(homeOnEveryScreen(resumed = setOf("top"), lit = setOf("top")))
+        // Asleep: nothing is lit and nothing is resumed.
+        assertFalse(homeOnEveryScreen(resumed = emptySet<String>(), lit = emptySet()))
     }
 
     @Test

@@ -257,7 +257,7 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
         refreshShellVisible()
         foldcade.reloadInstalledApps()
         refreshFacePrompt()
-        foldcade.music.onHomeResume()
+        displays.panelFor(this, foldcade.store.session.defaultDisplayIsTop)?.let(foldcade.music::onHomeResume)
         foldcade.refreshMoonlightShelf()
         reconcileUsage()
     }
@@ -265,7 +265,7 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
     override fun onPause() {
         resumed = false
         refreshShellVisible()
-        foldcade.music.onHomePause()
+        displays.panelFor(this, foldcade.store.session.defaultDisplayIsTop)?.let(foldcade.music::onHomePause)
         super.onPause()
     }
 
