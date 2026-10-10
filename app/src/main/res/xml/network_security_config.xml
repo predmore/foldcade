@@ -1,10 +1,17 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
-    Cleartext is permitted so a home-LAN RomM can use http. The app then
-    limits it: RommClient is the only HTTP stack, and its interceptor rejects
-    any http request whose scheme, host, and port are not the configured
-    RomM origin, including redirects. Setup still warns whenever the URL is http.
+    Cleartext is an explicit LAN opt-in. RommClient accepts http only for a
+    loopback, private, or link-local address, or a localhost, .local, or
+    .home.arpa name. Android cannot name a dynamic LAN address in
+    domain-config, so unnamed private addresses still use the base permit.
+    The client refuses every other http host. The named domains below are
+    the part of that opt-in this file can state.
 -->
 <network-security-config>
     <base-config cleartextTrafficPermitted="true" />
+    <domain-config cleartextTrafficPermitted="true">
+        <domain includeSubdomains="true">localhost</domain>
+        <domain includeSubdomains="true">local</domain>
+        <domain includeSubdomains="true">home.arpa</domain>
+    </domain-config>
 </network-security-config>
