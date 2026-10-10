@@ -373,26 +373,34 @@ private fun Hero(app: FoldcadeApp, screen: HostScreen, scale: Float, onEffect: (
         Column(
             Modifier
                 .align(Alignment.TopStart)
-                .fillMaxWidth()
+                .fillMaxSize()
                 .padding(
                     start = inset,
                     end = inset,
                     top = if (screen == HostScreen.Top) inset + 48.dp else inset,
+                    bottom = inset,
                 ),
         ) {
-            HeroCrossfade(
-                target = subject,
-                speed = model.motionSpeed,
-                animatorScale = scale,
-                same = { left, right -> left?.key == right?.key },
-            ) { shown ->
-                Box(
-                    Modifier
-                        .fillMaxWidth()
-                        .height(artHeight),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    if (shown is HeroSubject.Item) HeroArt(shown.item)
+            // The label is measured first. The art shrinks below artHeight when the
+            // name, details, and play facts would otherwise run off the screen.
+            Box(
+                Modifier
+                    .fillMaxWidth()
+                    .weight(1f, fill = false)
+                    .height(artHeight),
+            ) {
+                HeroCrossfade(
+                    target = subject,
+                    speed = model.motionSpeed,
+                    animatorScale = scale,
+                    same = { left, right -> left?.key == right?.key },
+                ) { shown ->
+                    Box(
+                        Modifier.fillMaxSize(),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        if (shown is HeroSubject.Item) HeroArt(shown.item)
+                    }
                 }
             }
             if (subject != null) {
