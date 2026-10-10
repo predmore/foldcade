@@ -38,7 +38,7 @@ The shell does not scan for installed plugin packages. `PluginHost.load` reads `
 
 ## CI
 
-Release publishing is specified in [releases.md](releases.md). Four workflows run the rest.
+Release publishing is specified in [releases.md](releases.md). Three workflows run the rest.
 
 ### Unit tests
 
@@ -47,10 +47,6 @@ Release publishing is specified in [releases.md](releases.md). Four workflows ru
 ### Release
 
 `.github/workflows/release.yml` runs on pushes to `main`, on pull requests, and on `workflow_dispatch`. Signing and publishing run on a push to `main` only, after the unit tests in that workflow. Pull requests and manual runs assemble an unsigned release to prove `versionCode`. They do not publish. This workflow does not boot an emulator. It does not run on tag pushes.
-
-### Thor-sized emulator
-
-`.github/workflows/emulator.yml` runs on pull requests, on a nightly schedule from `main` (`0 8 * * *`), and on `workflow_dispatch`. GitHub runs the schedule only from the default branch. A pull request skips the boot unless the diff touches `app/`, `api/`, `language/`, `plugins/`, `gradle/`, a `src/test` or `src/androidTest` tree, the Gradle wrapper or a root Gradle file, `.github/emulator/`, or this workflow. The nightly run and a manual run always boot. A green run is a Thor-sized emulator pass. It is not a pass on Thor hardware. `cancel-in-progress` is true for this workflow.
 
 ### Home music
 

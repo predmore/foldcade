@@ -17,7 +17,7 @@ Contributions are accepted under these terms. Inbound equals outbound: a contrib
 ./gradlew testDebugUnitTest
 ```
 
-Pull requests run that task, and `.github/release/check-version-bump.sh`. The Thor-sized emulator workflow boots only when the change touches the paths listed in [architecture.md](docs/architecture.md). A docs-only change skips that boot. A green emulator run is not a pass on Thor hardware.
+Pull requests run that task, and `.github/release/check-version-bump.sh`.
 
 ## Versioning
 
