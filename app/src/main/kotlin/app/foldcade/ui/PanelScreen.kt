@@ -1181,36 +1181,18 @@ private fun PagedGrid(
     }
 }
 
-/** Titles on [page], in the order [Grid] draws them. */
+/** Titles on [page], the same labels [Grid] draws, home sections included. */
 private fun pageTitles(app: FoldcadeApp, page: Int, pageSize: Int): List<String> {
     val shell = app.shell
+    val showingHome = !shell.model.libraryGrid && shell.model.homeGrid == HomeGrid.StandIns
     val order = displayOrder(shell.model)
     val start = page * pageSize
     val end = minOf(start + pageSize, shell.model.count)
     return (start until end).map { index ->
-        shell.tileFromOrder(order.getOrElse(index) { index })?.title.orEmpty()
-    }
-}
-
-/** Titles on [page], in the order [Grid] draws them. */
-private fun pageTitles(app: FoldcadeApp, page: Int, pageSize: Int): List<String> {
-    val shell = app.shell
-    val order = displayOrder(shell.model)
-    val start = page * pageSize
-    val end = minOf(start + pageSize, shell.model.count)
-    return (start until end).map { index ->
-        shell.tileFromOrder(order.getOrElse(index) { index })?.title.orEmpty()
-    }
-}
-
-/** Titles on [page], in the order [Grid] draws them. */
-private fun pageTitles(app: FoldcadeApp, page: Int, pageSize: Int): List<String> {
-    val shell = app.shell
-    val order = displayOrder(shell.model)
-    val start = page * pageSize
-    val end = minOf(start + pageSize, shell.model.count)
-    return (start until end).map { index ->
-        shell.tileFromOrder(order.getOrElse(index) { index })?.title.orEmpty()
+        val source = if (showingHome) index else order.getOrElse(index) { index }
+        val face = if (showingHome) shell.homeFace(index) else null
+        val title = shell.tileFromOrder(source)?.title.orEmpty()
+        face?.section?.let { section -> "$section · $title" } ?: title
     }
 }
 
