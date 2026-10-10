@@ -69,16 +69,21 @@ import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.geometry.RoundRect
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.graphics.FilterQuality
+import androidx.compose.ui.graphics.ClipOp
 import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.asComposeRenderEffect
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.graphics.drawscope.DrawScope
+import androidx.compose.ui.graphics.drawscope.clipPath
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.drawscope.clipRect
 import androidx.compose.ui.graphics.drawscope.scale
@@ -1216,13 +1221,101 @@ private fun PagedGrid(
     ) {
         val low = floor(shownPage).toInt()
         val high = ceil(shownPage).toInt()
+        var rowPx by remember { mutableStateOf(0) }
         for (drawn in low..high) {
             val dx = ((drawn - shownPage) * widthPx).roundToInt()
             Box(Modifier.offset { IntOffset(dx, 0) }) {
-                Grid(app, screen, cell, gap, rows, drawn, showTitle)
+                Grid(app, screen, cell, gap, rows, drawn, showTitle) { rowPx = it }
+            }
+        }
+        GridCursor(
+            app = app,
+            slot = focus.cellIndex % pageSize,
+            cell = cell,
+            gap = gap,
+            rowPx = rowPx,
+            dragPx = { dragPages * widthPx },
+            jump = folderToken,
+            scale = scale,
+        )
+    }
+}
+
+/**
+ * The one focus ring on the grid. It slides from tile to tile instead of each tile
+ * drawing its own, so moving reads as steering a cursor. Across a page it travels with
+ * the page, so it lands on the new tile as the page settles.
+ */
+@Composable
+private fun GridCursor(
+    app: FoldcadeApp,
+    slot: Int,
+    cell: Dp,
+    gap: Dp,
+    rowPx: Int,
+    dragPx: () -> Float,
+    jump: String,
+    scale: Float,
+) {
+    val shell = app.shell
+    val model = shell.model
+    val shown = model.dialog == null &&
+        model.panel == null &&
+        shell.homeChrome()?.focused == null &&
+        model.focus.chrome == null &&
+        !shell.homeEditing() &&
+        model.focus.cellIndex < model.count
+    val alpha = motionFloat(
+        target = if (shown) 1f else 0f,
+        spec = if (shown) Motion.arrive(Motion.durationFocus, scale) else Motion.leave(Motion.durationFocus, scale),
+    )
+    val column = (slot % Metrics.columns).toFloat()
+    val row = (slot / Metrics.columns).toFloat()
+    val x = remember { Animatable(column) }
+    val y = remember { Animatable(row) }
+    var landed by remember { mutableStateOf(jump) }
+    LaunchedEffect(column, row, jump, shown, scale) {
+        // A new folder, or a ring coming back from elsewhere, starts on its tile.
+        if (jump != landed || !shown || alpha == 0f) {
+            landed = jump
+            x.snapTo(column)
+            y.snapTo(row)
+            return@LaunchedEffect
+        }
+        withContext(SteadyMotion) {
+            coroutineScope {
+                launch { x.animateTo(column, Motion.arrive(Motion.durationTravel, scale)) }
+                launch { y.animateTo(row, Motion.arrive(Motion.durationTravel, scale)) }
             }
         }
     }
+    if (alpha == 0f) return
+    val radius = cell * foldTheme().iconRadius
+    val ring = remember { Path() }
+    Box(
+        Modifier
+            .offset {
+                val pitchX = (cell + gap).toPx()
+                val pitchY = (if (rowPx > 0) rowPx.toFloat() else cell.toPx()) + gap.toPx()
+                IntOffset((x.value * pitchX - dragPx()).roundToInt(), (y.value * pitchY).roundToInt())
+            }
+            .size(cell)
+            .graphicsLayer {
+                clip = false
+                scaleX = Motion.scaleFocus
+                scaleY = Motion.scaleFocus
+                this.alpha = alpha
+            }
+            .drawBehind {
+                val cornerPx = radius.toPx()
+                ring.reset()
+                ring.addRoundRect(RoundRect(Rect(Offset.Zero, size), CornerRadius(cornerPx, cornerPx)))
+                // Only outside the tile, so the glow never washes over the art.
+                clipPath(ring, ClipOp.Difference) {
+                    with(FocusRing) { drawFocusRing(cornerPx) }
+                }
+            },
+    )
 }
 
 /** Titles on [page], the same labels [Grid] draws, home sections included. */
@@ -1249,6 +1342,7 @@ private fun Grid(
     rows: Int,
     page: Int,
     showTitle: Boolean,
+    onRowHeight: (Int) -> Unit,
 ) {
     val shell = app.shell
     val focus = shell.model.focus
@@ -1263,7 +1357,11 @@ private fun Grid(
     Column(verticalArrangement = Arrangement.spacedBy(gap)) {
         val start = page * pageSize
         for (row in 0 until rows) {
-            Row(horizontalArrangement = Arrangement.spacedBy(gap)) {
+            // The first row always holds a tile, so its height is the row pitch the cursor steps by.
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(gap),
+                modifier = if (row == 0) Modifier.onSizeChanged { onRowHeight(it.height) } else Modifier,
+            ) {
                 for (column in 0 until Metrics.columns) {
                     val index = start + row * Metrics.columns + column
                     if (index >= shell.model.count) {
@@ -1406,11 +1504,9 @@ private fun Cell(
                     }
                     if (!empty) {
                         // Every tile is a filled card, as on Cocoon's grid. A mark's glow is left
-                        // as a halo around it. Focus is the ring; at rest a quiet edge.
+                        // as a halo around it. Focus is the grid's sliding ring; at rest a quiet edge.
                         drawRoundRect(color = theme.surface, cornerRadius = CornerRadius(cornerPx, cornerPx))
-                        if (focused && !editing) {
-                            with(FocusRing) { drawFocusRing(cornerPx) }
-                        } else if (!editing) {
+                        if (!focused && !editing) {
                             val strokePx = 2.5f
                             val inset = strokePx / 2f
                             drawRoundRect(
