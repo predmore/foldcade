@@ -546,7 +546,7 @@ private fun HeroLabel(app: FoldcadeApp, shown: HeroSubject, cellFocused: Boolean
             ShelfMeta(line = copy.detail, hintFocused = cellFocused, centred = true)
         } else {
             val both = app.shell.focusedGame()?.takeIf { it.id == item?.key }?.occupiesBothDisplays == true
-            val played = item?.let { app.plays.run { stamp; shown(it.key) } }
+            val played = item?.let { app.plays.run { stamp; shown(app.shell.playId(it.key)) } }
             val facts = heroFacts(
                 copy.title,
                 copy.detail,

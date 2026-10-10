@@ -43,6 +43,7 @@ import app.foldcade.language.HomeGrid
 import app.foldcade.language.HomeKeys
 import app.foldcade.language.HostScreen
 import app.foldcade.language.closeBothPanelDialog
+import app.foldcade.language.homeGameId
 import app.foldcade.language.missingPlayerDialog
 import app.foldcade.language.noFileDialog
 import app.foldcade.language.playerNotice
@@ -529,7 +530,6 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
         val apiGame = foldcade.shell.catalogGame(game.id)
         if (apiGame != null) {
             launchBackendGame(
-                id = apiGame.remoteKey,
                 title = game.title,
                 platformId = apiGame.platformId,
                 libraryId = apiGame.backendId,
@@ -545,7 +545,6 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
         val game = entry.game ?: return
         val libraryId = foldcade.shell.activeLibraryId ?: return
         launchBackendGame(
-            id = entry.id,
             title = entry.title,
             platformId = entry.platformId,
             libraryId = libraryId,
@@ -554,12 +553,13 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
     }
 
     private fun launchBackendGame(
-        id: String,
         title: String,
         platformId: String?,
         libraryId: String,
         game: Game,
     ) {
+        // Play history and the per-game screen choice use the home id from every grid.
+        val id = homeGameId(libraryId, game.remoteKey)
         // A server game downloads first. Its tile pulses until then, and a second press waits.
         val fetching = game.availability == Availability.RemoteOnly
         if (fetching && !foldcade.shell.beginDownload(libraryId, game.remoteKey)) return
@@ -630,7 +630,7 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
                     )
                     is GameLaunch.Installed -> if (installedIntent != null) {
                         startExternal(
-                            game.remoteKey,
+                            id,
                             title,
                             game.platformId,
                             plan.player.occupiesBothDisplays,

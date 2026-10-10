@@ -731,8 +731,28 @@ class ShellController(
     }
 
     fun focusedGame(): ShelfGame? = when {
-        showingHome() -> home.face(model.focus.cellIndex)?.let { home.asShelf(it) }
+        showingHome() -> home.face(model.focus.cellIndex)?.let(::homeShelf)
         else -> tileFromOrder(displaySource(model))
+    }
+
+    /**
+     * A home tile as a game. A library game takes its screens from its platform's
+     * players, as the library grid does, so a DS game reads as both screens.
+     */
+    private fun homeShelf(face: HomeFace): ShelfGame {
+        val game = home.asShelf(face)
+        val platformId = game.platformId
+        if (game.libraryId == null || platformId == null) return game
+        return game.copy(occupiesBothDisplays = platformOccupiesBoth(plugins, platformId))
+    }
+
+    /**
+     * The id play history is kept under. A library game has one id, its home id,
+     * whichever grid it was launched or focused from.
+     */
+    fun playId(id: String): String {
+        val libraryId = activeLibraryId
+        return if (model.libraryGrid && libraryId != null) homeGameId(libraryId, id) else id
     }
 
     /** A library game's platform, by the name its folder shows. Null off the library grid. */
@@ -781,7 +801,7 @@ class ShellController(
 
     fun tileFromOrder(source: Int): ShelfGame? = when {
         model.libraryGrid -> entries.getOrNull(source)?.asShelf()
-        showingHome() -> home.face(source)?.let { home.asShelf(it) }
+        showingHome() -> home.face(source)?.let(::homeShelf)
         model.homeGrid == HomeGrid.StandIns -> Shelf.games.getOrNull(source)
         else -> listed(model.homeGrid).getOrNull(source)?.asTile(model.homeGrid)
     }
@@ -988,7 +1008,7 @@ class ShellController(
 
     private fun tileOn(snapshot: PickerModel): ShelfGame? {
         if (!snapshot.libraryGrid && snapshot.homeGrid == HomeGrid.StandIns) {
-            return home.face(snapshot.focus.cellIndex)?.let { home.asShelf(it) }
+            return home.face(snapshot.focus.cellIndex)?.let(::homeShelf)
         }
         val source = displaySource(snapshot)
         return when (snapshot.homeGrid) {
