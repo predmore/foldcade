@@ -32,7 +32,7 @@ class ContractTest {
         assertNull(meaningOf(KeyEvent.KEYCODE_BUTTON_L1, repeatCount = 1))
         assertNull(meaningOf(KeyEvent.KEYCODE_BUTTON_R1, repeatCount = 4))
         assertEquals(Meaning.LeftPanel, meaningOf(KeyEvent.KEYCODE_BUTTON_L1, repeatCount = 0))
-        val model = PickerModel(count = 8, rowsPerPage = 1, showLaunchTarget = false)
+        val model = PickerModel(count = 8, rowsPerPage = 1)
         val paged = reduce(model, Meaning.PageTowardEnd).first
         assertEquals(4, paged.focus.cellIndex)
         val shoulder = reduce(model, Meaning.LeftPanel).first
@@ -43,7 +43,6 @@ class ContractTest {
     @Test
     fun unusedKeysAreNotGivenAMeaning() {
         listOf(
-            KeyEvent.KEYCODE_BUTTON_X,
             KeyEvent.KEYCODE_BUTTON_Y,
             KeyEvent.KEYCODE_BUTTON_L2,
             KeyEvent.KEYCODE_BUTTON_R2,
@@ -79,7 +78,7 @@ class ContractTest {
     @Test
     fun dialogTapFocusesAndActivatesThatButton() {
         val prompt = homePrompt()
-        val model = PickerModel(count = 2, rowsPerPage = 2, showLaunchTarget = true, dialog = prompt)
+        val model = PickerModel(count = 2, rowsPerPage = 2, dialog = prompt)
         assertEquals(DialogButton.UseAsHome, prompt.buttons[prompt.index])
         val (next, effect) = focusAndActivateDialog(model, 0)
         assertEquals(Effect.DialogChoice(DialogButton.UseAsHome, DialogKind.Home), effect)
@@ -108,29 +107,40 @@ class ContractTest {
             gridHints(null, HomeKeys.Editing, map).map { it.key },
         )
         assertEquals(
-            listOf(PromptKey.FaceY, PromptKey.FaceX, PromptKey.FaceB),
+            listOf(PromptKey.FaceY, PromptKey.FaceB),
             gridHints(hintFor(HintPlace.InsidePlatform), HomeKeys.AllLibrary, map).map { it.key },
+        )
+        assertEquals(
+            listOf(PromptKey.FaceA, PromptKey.FaceX, PromptKey.FaceY, PromptKey.FaceB),
+            gridHints(hintFor(HintPlace.InsidePlatform), HomeKeys.AllLibrary, map, screens = true).map { it.key },
         )
     }
 
     @Test
-    fun focusDoesNotWrapAndLaunchTargetIsChrome() {
-        val model = PickerModel(count = 6, rowsPerPage = 1, showLaunchTarget = true)
+    fun focusDoesNotWrapAndUpReachesTheStatusIsland() {
+        val model = PickerModel(count = 6, rowsPerPage = 1)
         val rightEdge = reduce(model.copy(focus = GridFocus(cellIndex = 3, lastColumn = 3)), Meaning.MoveRight).first
         assertEquals(3, rightEdge.focus.cellIndex)
         val up = reduce(model.copy(focus = GridFocus(cellIndex = 1, lastColumn = 1)), Meaning.MoveUp).first
-        assertEquals(Chrome.LaunchTarget, up.focus.chrome)
-        val (cycled, effect) = reduce(up, Meaning.Activate)
-        assertEquals(Effect.CycleLaunchTarget, effect)
-        assertNull(cycled.panel)
-        assertTrue(cycled.launchOnBottom)
+        assertEquals(Chrome.StatusCluster, up.focus.chrome)
         val cluster = reduce(model.copy(focus = GridFocus(cellIndex = 3, lastColumn = 3)), Meaning.MoveUp).first
         assertEquals(Chrome.StatusCluster, cluster.focus.chrome)
     }
 
     @Test
+    fun aLaunchesOnTopAndXOnTheBottom() {
+        val model = PickerModel(count = 6, rowsPerPage = 1, focus = GridFocus(cellIndex = 2, lastColumn = 2))
+        assertEquals(Effect.Launch(2, onBottom = false), reduce(model, Meaning.Activate).second)
+        assertEquals(Effect.Launch(2, onBottom = true), reduce(model, Meaning.ActivateBottom).second)
+        assertEquals(Meaning.ActivateBottom, meaningOf(android.view.KeyEvent.KEYCODE_BUTTON_X))
+        val hints = gridHints(null, HomeKeys.Idle, FaceMap.standard(), screens = true)
+        assertEquals(listOf(Copy.hintTop, Copy.hintBottom), hints.map { it.label })
+        assertTrue(gridHints(null, HomeKeys.Idle, FaceMap.standard()).isEmpty())
+    }
+
+    @Test
     fun pagingKeepsTheSlotAndStopsAtTheEnds() {
-        val model = PickerModel(count = 6, rowsPerPage = 1, showLaunchTarget = false)
+        val model = PickerModel(count = 6, rowsPerPage = 1)
         val next = reduce(model.copy(focus = GridFocus(1, 1)), Meaning.PageTowardEnd).first
         assertEquals(5, next.focus.cellIndex)
         val stuck = reduce(next, Meaning.PageTowardEnd).first
@@ -141,7 +151,7 @@ class ContractTest {
 
     @Test
     fun openingOneIslandCollapsesTheOtherBeforeItExpands() {
-        val root = PickerModel(count = 2, rowsPerPage = 2, showLaunchTarget = false)
+        val root = PickerModel(count = 2, rowsPerPage = 2)
         val left = reduce(root, Meaning.LeftPanel, HostScreen.Bottom).first
         assertEquals(Side.Left, left.panel?.side)
         assertFalse(left.panel!!.retiring)
@@ -170,7 +180,7 @@ class ContractTest {
 
     @Test
     fun debugHoldShowsThatShoulderImmediately() {
-        val root = PickerModel(count = 2, rowsPerPage = 2, showLaunchTarget = false)
+        val root = PickerModel(count = 2, rowsPerPage = 2)
         val left = replaceIsland(root, Side.Left)
         assertEquals(Side.Left, left.panel?.side)
         assertEquals(HostScreen.Top, left.panel?.screen)
@@ -190,7 +200,7 @@ class ContractTest {
 
     @Test
     fun leftPanelCyclesValuesAndRightReplacesIt() {
-        val root = PickerModel(count = 2, rowsPerPage = 3, showLaunchTarget = true, themes = listOf("Built-in", "Sample"))
+        val root = PickerModel(count = 2, rowsPerPage = 3, themes = listOf("Built-in", "Sample"))
         val (stayed, effect) = reduce(root, Meaning.Back)
         assertNull(effect)
         assertEquals(root.focus, stayed.focus)
@@ -236,7 +246,7 @@ class ContractTest {
         val prompt = homePrompt()
         assertEquals(DialogButton.UseAsHome, prompt.buttons[prompt.index])
         assertEquals(DialogButton.NotNow, prompt.buttons[prompt.safeIndex])
-        val model = PickerModel(count = 2, rowsPerPage = 2, showLaunchTarget = true, dialog = prompt)
+        val model = PickerModel(count = 2, rowsPerPage = 2, dialog = prompt)
         val (dismissed, choice) = reduce(model, Meaning.Back)
         assertEquals(Effect.DialogChoice(DialogButton.NotNow, DialogKind.Home), choice)
         assertNull(dismissed.dialog)
@@ -267,9 +277,9 @@ class ContractTest {
 
     @Test
     fun downFromChromeReturnsToTheColumnThatHadACell() {
-        val model = PickerModel(count = 6, rowsPerPage = 2, showLaunchTarget = true)
+        val model = PickerModel(count = 6, rowsPerPage = 2)
         val chrome = reduce(model.copy(focus = GridFocus(cellIndex = 1, lastColumn = 1)), Meaning.MoveUp).first
-        assertEquals(Chrome.LaunchTarget, chrome.focus.chrome)
+        assertEquals(Chrome.StatusCluster, chrome.focus.chrome)
         val back = reduce(chrome, Meaning.MoveDown).first
         assertNull(back.focus.chrome)
         assertEquals(1, back.focus.cellIndex)
@@ -277,7 +287,7 @@ class ContractTest {
 
     @Test
     fun repeatedMoveStepsOncePerEvent() {
-        val model = PickerModel(count = 6, rowsPerPage = 2, showLaunchTarget = false)
+        val model = PickerModel(count = 6, rowsPerPage = 2)
         val once = reduce(model, Meaning.MoveRight).first
         val twice = reduce(once, Meaning.MoveRight).first
         assertEquals(2, twice.focus.cellIndex)
@@ -285,7 +295,7 @@ class ContractTest {
 
     @Test
     fun arrangeMovesAHeldIconAndBackDropsIt() {
-        val model = PickerModel(count = 4, rowsPerPage = 1, showLaunchTarget = false, arranging = true)
+        val model = PickerModel(count = 4, rowsPerPage = 1, arranging = true)
         val held = reduce(model, Meaning.Activate).first
         assertEquals(0, held.hold?.index)
         val moved = reduce(held, Meaning.MoveRight).first
@@ -303,7 +313,6 @@ class ContractTest {
         val root = PickerModel(
             count = 2,
             rowsPerPage = 3,
-            showLaunchTarget = true,
             themes = listOf("Built-in", "Afterglow"),
             themeMotions = motions,
             themeIndex = 1,
@@ -341,7 +350,7 @@ class ContractTest {
 
         val close = closeBothPanelDialog(HostScreen.Bottom)
         assertEquals(DialogButton.NotNow, close.buttons[close.safeIndex])
-        val model = PickerModel(count = 1, rowsPerPage = 1, showLaunchTarget = false, dialog = close)
+        val model = PickerModel(count = 1, rowsPerPage = 1, dialog = close)
         val (kept, choice) = reduce(model, Meaning.Back)
         assertEquals(Effect.DialogChoice(DialogButton.NotNow, DialogKind.ClosePlayer), choice)
         assertNull(kept.dialog)
@@ -353,7 +362,7 @@ class ContractTest {
         assertEquals(DialogButton.NotNow, saves.buttons[saves.safeIndex])
         assertFalse(saves.body.contains("sdmc"))
         val (started, saveChoice) = reduce(
-            PickerModel(count = 1, rowsPerPage = 1, showLaunchTarget = false, dialog = saves),
+            PickerModel(count = 1, rowsPerPage = 1, dialog = saves),
             Meaning.Activate,
         )
         assertEquals(Effect.DialogChoice(DialogButton.NotNow, DialogKind.SaveFolder), saveChoice)
@@ -366,7 +375,6 @@ class ContractTest {
         val opened = PickerModel(
             count = 1,
             rowsPerPage = 1,
-            showLaunchTarget = false,
             homeRoleHeld = true,
             playerSaves = listOf(setting),
         )
@@ -405,7 +413,6 @@ class ContractTest {
         val model = PickerModel(
             count = 2,
             rowsPerPage = 1,
-            showLaunchTarget = false,
             gridKind = GridKind.NoLibrary,
             libraryGrid = true,
             folderGrantPending = false,
@@ -427,7 +434,6 @@ class ContractTest {
         val platforms = PickerModel(
             count = 2,
             rowsPerPage = 1,
-            showLaunchTarget = false,
             gridKind = GridKind.Platforms,
             libraryGrid = true,
             atLibraryRoot = true,
@@ -447,7 +453,6 @@ class ContractTest {
         val model = PickerModel(
             count = 1,
             rowsPerPage = 1,
-            showLaunchTarget = false,
             gridKind = GridKind.Unreachable,
             libraryGrid = true,
         )

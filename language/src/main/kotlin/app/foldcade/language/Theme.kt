@@ -72,8 +72,6 @@ object Metrics {
 }
 
 object Copy {
-    const val launchOnTop = "Launch on top"
-    const val launchOnBottom = "Launch on bottom"
     const val usesBothScreens = "Both screens"
     const val progressInGameNative = "Progress lives in GameNative."
     const val addShortcutInGameNative = "Add a game's shortcut in GameNative."
@@ -193,7 +191,8 @@ object Copy {
     const val hintChoose = "Choose"
     const val folderIcon = "Folder icon"
     const val hintAddToHome = "Add to Home"
-    const val hintChangeFolder = "Change folder"
+    const val hintTop = "Top"
+    const val hintBottom = "Bottom"
     const val onHomeMark = "On home"
     const val newFolder = "Folder"
     const val stillInAll = "Still in All"
@@ -245,9 +244,12 @@ fun gridHints(
     homeKeys: HomeKeys,
     faceMap: FaceMap,
     folderIcon: Boolean = false,
+    screens: Boolean = false,
 ): List<HintKey> {
     val confirm = promptKeyOf(faceMap.confirmKey) ?: PromptKey.FaceA
     val back = promptKeyOf(faceMap.backKey) ?: PromptKey.FaceB
+    // A one-screen game opens on the top screen with A and on the bottom with X.
+    val launch = if (screens) listOf(HintKey(confirm, Copy.hintTop), HintKey(PromptKey.FaceX, Copy.hintBottom)) else emptyList()
     return when (homeKeys) {
         // Select names the icon only on a folder the user made, the one place it works.
         HomeKeys.Editing -> listOfNotNull(
@@ -261,13 +263,16 @@ fun gridHints(
             HintKey(confirm, Copy.hintChoose),
             HintKey(back, Copy.back),
         )
-        HomeKeys.AllLibrary -> listOf(
+        HomeKeys.AllLibrary -> launch + listOf(
             HintKey(PromptKey.FaceY, Copy.hintAddToHome),
-            HintKey(PromptKey.FaceX, Copy.hintChangeFolder),
             HintKey(back, Copy.back),
         )
         else -> buildList {
-            if (actions?.confirm == true) add(HintKey(confirm, Copy.confirm))
+            if (launch.isNotEmpty()) {
+                addAll(launch)
+            } else if (actions?.confirm == true) {
+                add(HintKey(confirm, Copy.confirm))
+            }
             if (actions?.back == true) add(HintKey(back, Copy.back))
         }
     }

@@ -266,6 +266,19 @@ class ShellController(
         return pick to home.board.folders[pick.folderId]?.name.orEmpty()
     }
 
+    /**
+     * True when the focused tile is a game that A opens on the top screen and X
+     * on the bottom: one that takes one screen, while both screens are Foldcade's.
+     */
+    fun focusedLaunchesOnOneScreen(): Boolean {
+        if (!store.session.bothScreensFree() || model.focus.chrome != null) return false
+        if (model.libraryGrid && model.gridKind != GridKind.Games) return false
+        val face = if (showingHome() || home.board.allOpen) home.face(model.focus.cellIndex) else null
+        if (face != null && (face.folder || face.pinned || face.empty)) return false
+        val game = focusedGame() ?: return false
+        return !game.emptyShelfHint && !game.occupiesBothDisplays
+    }
+
     /** True when Select would open the icon picker for the focused tile. */
     fun canPickFolderIcon(): Boolean = showingHome() && home.canPickIcon(model.focus.cellIndex)
 
@@ -973,12 +986,6 @@ class ShellController(
         } else {
             focus.cellIndex
         }
-        val entry = cells.getOrNull(source)
-        val onGrid = kind == GridKind.Games || kind == GridKind.Platforms
-        val visible = onGrid &&
-            count > 0 &&
-            focus.cellIndex in 0 until count &&
-            store.session.launchTargetControlVisible(entry?.occupiesBothDisplays == true)
         publish(
             model.copy(
                 count = count,
@@ -989,7 +996,6 @@ class ShellController(
                 order = order,
                 arranging = false,
                 hold = null,
-                showLaunchTarget = visible,
                 libraryGrid = true,
                 homeGrid = HomeGrid.StandIns,
                 dialog = null,
@@ -1015,10 +1021,7 @@ class ShellController(
         val count = countFor(next.homeGrid)
         val counted = next.copy(count = count, playerSaves = playerSaveSettings(), recentFirst = recentOrder())
         val game = tileOn(counted)
-        val visible = game != null &&
-            !game.emptyShelfHint &&
-            store.session.launchTargetControlVisible(game.occupiesBothDisplays)
-        return counted.copy(showLaunchTarget = visible, appActions = actionsFor(counted, game))
+        return counted.copy(appActions = actionsFor(counted, game))
     }
 
     private fun tileOn(snapshot: PickerModel): ShelfGame? {
@@ -1103,12 +1106,7 @@ class ShellController(
         }
         if (moonlightSourceChanged) store.setMoonlightSource(next.moonlightSource)
         model = if (next.libraryGrid) {
-            val entry = libraryEntry(next)
-            val onGrid = next.gridKind == GridKind.Games || next.gridKind == GridKind.Platforms
-            val visible = onGrid &&
-                next.count > 0 &&
-                store.session.launchTargetControlVisible(entry?.occupiesBothDisplays == true)
-            next.copy(showLaunchTarget = visible, appActions = null, playerSaves = playerSaveSettings())
+            next.copy(appActions = null, playerSaves = playerSaveSettings())
         } else {
             withShelf(next.copy(libraryGrid = false))
         }
@@ -1312,7 +1310,6 @@ class ShellController(
             count = home.visibleCount(),
             addNewToHome = home.board.addNewToHome,
             rowsPerPage = 2,
-            showLaunchTarget = true,
             primaryIsTop = store.session.defaultDisplayIsTop,
             folderGrantPending = store.folderGrantPending(),
             music = stored.copy(trackId = selected.id),

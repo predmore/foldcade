@@ -16,45 +16,18 @@ class SessionTest {
         val session = Session()
         assertEquals(Surface.Hero, session.surfaceOn(Panel.Top))
         assertEquals(Surface.Picker, session.surfaceOn(Panel.Bottom))
-        assertEquals(Panel.Top, session.singleScreenTarget("stand-in.one", null))
+        assertEquals(Panel.Top, session.singleScreenTarget(Panel.Top))
+        assertEquals(Panel.Bottom, session.singleScreenTarget(Panel.Bottom))
         assertTrue(session.defaultDisplayIsTop)
-        assertTrue(session.launchTargetControlVisible(occupiesBothDisplays = false))
-        assertFalse(session.launchTargetControlVisible(occupiesBothDisplays = true))
     }
 
     @Test
-    fun storedGameScreenThenPlatformThenTop() {
-        val platformOnly = Session(platformScreens = mapOf("stand-ins" to Panel.Bottom))
-        assertEquals(Panel.Bottom, platformOnly.singleScreenTarget("stand-in.one", "stand-ins"))
-        val gameWins = platformOnly.copy(gameScreens = mapOf("stand-in.one" to Panel.Top))
-        assertEquals(Panel.Top, gameWins.singleScreenTarget("stand-in.one", "stand-ins"))
-    }
-
-    @Test
-    fun cycleStoresOnTheGameNotAGlobalFaceButton() {
-        val cycled = Session().cycleStoredScreen("stand-in.one", "stand-ins", onPlatform = false)
-        assertEquals(Panel.Bottom, cycled.gameScreens["stand-in.one"])
-        assertTrue(cycled.platformScreens.isEmpty())
-        val again = cycled.cycleStoredScreen("stand-in.one", "stand-ins", onPlatform = false)
-        assertEquals(Panel.Top, again.gameScreens["stand-in.one"])
-    }
-
-    @Test
-    fun cycleOnAPlatformStoresOnThePlatform() {
-        val cycled = Session().cycleStoredScreen("ignored", "stand-ins", onPlatform = true)
-        assertEquals(Panel.Bottom, cycled.platformScreens["stand-ins"])
-        assertTrue(cycled.gameScreens.isEmpty())
-    }
-
-    @Test
-    fun idleLaunchUsesTheStoredScreen() {
-        val session = Session(gameScreens = mapOf("stand-in.one" to Panel.Bottom))
-        val launched = session.launch(one)
+    fun xLaunchesOnTheBottomAndLeavesThePickerOnTop() {
+        val launched = Session().launch(one, Panel.Bottom)
         assertEquals(one, launched.bottomApp)
         assertNull(launched.topApp)
         assertEquals(Surface.Picker, launched.surfaceOn(Panel.Top))
         assertNull(launched.surfaceOn(Panel.Bottom))
-        assertFalse(launched.launchTargetControlVisible(false))
     }
 
     @Test
@@ -73,16 +46,16 @@ class SessionTest {
         assertEquals(two, bothFull.bottomApp)
         assertNull(bothFull.surfaceOn(Panel.Top))
         assertNull(bothFull.surfaceOn(Panel.Bottom))
-        assertNull(bothFull.singleScreenTarget("other", null))
+        assertNull(bothFull.singleScreenTarget(Panel.Top))
         assertEquals(bothFull, bothFull.launch(ExternalApp("ignored")))
     }
 
     @Test
-    fun onlyFreePanelIgnoresTheStoredScreen() {
-        val appOnTop = Session().launch(one).copy(gameScreens = mapOf("stand-in.two" to Panel.Top))
-        assertEquals(Panel.Bottom, appOnTop.singleScreenTarget("stand-in.two", null))
-        val appOnBottom = Session(gameScreens = mapOf(one.id to Panel.Bottom)).launch(one)
-        assertEquals(Panel.Top, appOnBottom.singleScreenTarget("stand-in.two", null))
+    fun aTakenScreenSendsTheLaunchToTheFreeOneAndReplacesNothing() {
+        val appOnTop = Session().launch(one)
+        assertEquals(Panel.Bottom, appOnTop.singleScreenTarget(Panel.Top))
+        val appOnBottom = Session().launch(one, Panel.Bottom)
+        assertEquals(Panel.Top, appOnBottom.singleScreenTarget(Panel.Bottom))
     }
 
     @Test
@@ -115,19 +88,15 @@ class SessionTest {
         assertEquals(Surface.Hero, idle.surfaceOn(Panel.Top))
         assertEquals(Surface.Picker, idle.surfaceOn(Panel.Bottom))
 
-        val idleAgain = Session(gameScreens = mapOf(one.id to Panel.Bottom)).launch(one).home(Panel.Bottom)
+        val idleAgain = Session().launch(one, Panel.Bottom).home(Panel.Bottom)
         assertEquals(Surface.Hero, idleAgain.surfaceOn(Panel.Top))
         assertEquals(Surface.Picker, idleAgain.surfaceOn(Panel.Bottom))
     }
 
     @Test
-    fun homeDoesNotMoveStoredScreensOrDisplayRoles() {
-        val session = Session(
-            gameScreens = mapOf(one.id to Panel.Bottom),
-            defaultDisplayIsTop = false,
-        )
+    fun homeDoesNotMoveDisplayRoles() {
+        val session = Session(defaultDisplayIsTop = false)
         val after = session.launch(one).launch(two).home(Panel.Top)
-        assertEquals(Panel.Bottom, after.gameScreens[one.id])
         assertFalse(after.defaultDisplayIsTop)
     }
 
@@ -198,7 +167,7 @@ class SessionTest {
         assertFalse(appOnTop.pickerHandlesKeys(Panel.Top))
         assertTrue(appOnTop.pickerHandlesKeys(Panel.Bottom))
 
-        val appOnBottom = Session(gameScreens = mapOf(one.id to Panel.Bottom)).launch(one)
+        val appOnBottom = Session().launch(one, Panel.Bottom)
         assertTrue(appOnBottom.pickerHandlesKeys(Panel.Top))
         assertFalse(appOnBottom.pickerHandlesKeys(Panel.Bottom))
 

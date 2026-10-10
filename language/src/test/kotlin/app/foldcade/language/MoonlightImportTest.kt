@@ -68,7 +68,6 @@ class MoonlightImportTest {
         val model = PickerModel(
             count = 1,
             rowsPerPage = 1,
-            showLaunchTarget = false,
             moonlightSheet = onImport,
             moonlightPlacements = listOf(kept),
         )
@@ -95,7 +94,6 @@ class MoonlightImportTest {
         val model = PickerModel(
             count = 1,
             rowsPerPage = 1,
-            showLaunchTarget = false,
             moonlightSource = MoonlightSource.PinnedShortcuts,
             moonlightPlacements = kept,
             moonlightSheet = sheet,
@@ -119,7 +117,6 @@ class MoonlightImportTest {
         val opened = PickerModel(
             count = 1,
             rowsPerPage = 1,
-            showLaunchTarget = false,
             moonlightSource = MoonlightSource.ImportedList,
             moonlightPlacements = kept,
             moonlightImportConfirmed = true,
@@ -140,7 +137,7 @@ class MoonlightImportTest {
 
     @Test
     fun theSourceRowOpensTheSheetUntilAnImportExists() {
-        val opened = PickerModel(count = 1, rowsPerPage = 1, showLaunchTarget = false).onSetting(Row.MoonlightSource)
+        val opened = PickerModel(count = 1, rowsPerPage = 1).onSetting(Row.MoonlightSource)
         val (stayed, effect) = reduce(opened, Meaning.Activate)
         assertEquals(Effect.ReviewMoonlightImport, effect)
         assertEquals(MoonlightSource.PinnedShortcuts, stayed.moonlightSource)

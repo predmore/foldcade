@@ -26,15 +26,13 @@ data class ExternalApp(
  * Android Home clears only the panel that has input. An app on both screens
  * runs on the top panel, so Home there clears both.
  *
- * Which screen a game launches on is stored per game, then per platform.
- * It is not a face button. The chrome control is what changes it.
+ * Which screen a game launches on is the button that launched it: A for the
+ * top screen, X for the bottom.
  */
 data class Session(
     val topApp: ExternalApp? = null,
     val bottomApp: ExternalApp? = null,
     val defaultDisplayIsTop: Boolean = true,
-    val gameScreens: Map<String, Panel> = emptyMap(),
-    val platformScreens: Map<String, Panel> = emptyMap(),
 ) {
     fun externalOn(panel: Panel): ExternalApp? = when (panel) {
         Panel.Top -> topApp
@@ -63,45 +61,26 @@ data class Session(
     fun pickerHandlesKeys(focused: Panel): Boolean = surfaceOn(focused) == Surface.Picker
 
     /**
-     * The launch-target control is on screen only while both panels belong to
-     * Foldcade and the focused entry can take one screen.
+     * Screen a single-screen game opens on: [requested] while it is free. When it
+     * is taken, the other screen if that one is free, so a running game is not
+     * replaced. Null when both screens are already taken.
      */
-    fun launchTargetControlVisible(occupiesBothDisplays: Boolean): Boolean =
-        bothScreensFree() && !occupiesBothDisplays
-
-    /**
-     * Screen a single-screen game opens on.
-     * The only free screen wins. Otherwise the stored game, then its platform, then top.
-     * Null when both screens are already taken.
-     */
-    fun singleScreenTarget(gameId: String, platformId: String?): Panel? {
-        val topFree = topApp == null
-        val bottomFree = bottomApp == null
+    fun singleScreenTarget(requested: Panel): Panel? {
+        val other = requested.flip()
         return when {
-            topFree && bottomFree ->
-                gameScreens[gameId] ?: platformId?.let { platformScreens[it] } ?: Panel.Top
-            topFree -> Panel.Top
-            bottomFree -> Panel.Bottom
+            externalOn(requested) == null -> requested
+            externalOn(other) == null -> other
             else -> null
         }
     }
 
-    fun cycleStoredScreen(gameId: String, platformId: String?, onPlatform: Boolean): Session {
-        if (onPlatform && platformId != null) {
-            val current = platformScreens[platformId] ?: Panel.Top
-            return copy(platformScreens = platformScreens + (platformId to current.flip()))
-        }
-        val current = gameScreens[gameId] ?: platformId?.let { platformScreens[it] } ?: Panel.Top
-        return copy(gameScreens = gameScreens + (gameId to current.flip()))
-    }
-
     fun withDefaultDisplayIsTop(top: Boolean): Session = copy(defaultDisplayIsTop = top)
 
-    fun launch(app: ExternalApp, platformId: String? = null): Session {
+    fun launch(app: ExternalApp, requested: Panel = Panel.Top): Session {
         if (app.occupiesBothDisplays) {
             return copy(topApp = app, bottomApp = app)
         }
-        val target = singleScreenTarget(app.id, platformId) ?: return this
+        val target = singleScreenTarget(requested) ?: return this
         return place(target, app)
     }
 

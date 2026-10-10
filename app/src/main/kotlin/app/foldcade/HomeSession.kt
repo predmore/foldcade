@@ -209,6 +209,7 @@ class HomeSession(raw: String?) {
         if (board.allOpen) return handleAll(meaning, index)
         return when (meaning) {
             Meaning.Activate -> activateCell(index)
+            Meaning.ActivateBottom -> activateCell(index, onBottom = true)
             Meaning.Back -> if (board.openFolderId != null) closeOpenFolder() else null
             else -> null
         }
@@ -386,6 +387,7 @@ class HomeSession(raw: String?) {
                 HomeStep(handled = false, effect = null, focus = null)
             }
             Meaning.Activate -> activateCell(index)
+            Meaning.ActivateBottom -> activateCell(index, onBottom = true)
             Meaning.Back -> {
                 board = closeAll(board)
                 step(null, rootIndex)
@@ -393,10 +395,6 @@ class HomeSession(raw: String?) {
             Meaning.AddToHome -> {
                 val item = allRows().getOrNull(index) ?: return step(null, index)
                 board = addToHome(board, item.id, board.destinationFolderId)
-                step(null, index)
-            }
-            Meaning.CycleDestination -> {
-                board = cycleDestination(board)
                 step(null, index)
             }
             Meaning.LetterForward, Meaning.LetterBackward -> {
@@ -411,7 +409,8 @@ class HomeSession(raw: String?) {
         }
     }
 
-    private fun activateCell(index: Int): HomeStep {
+    /** A opens a folder or launches on the top screen. X opens a folder too, or launches on the bottom. */
+    private fun activateCell(index: Int, onBottom: Boolean = false): HomeStep {
         val face = face(index) ?: return step(null, index)
         val id = face.id ?: return step(null, index)
         if (face.pinned) {
@@ -424,7 +423,7 @@ class HomeSession(raw: String?) {
             board = openFolder(board, id)
             return step(null, 0)
         }
-        return step(Effect.Launch(index), index)
+        return step(Effect.Launch(index, onBottom), index)
     }
 
     private fun closeOpenFolder(): HomeStep {

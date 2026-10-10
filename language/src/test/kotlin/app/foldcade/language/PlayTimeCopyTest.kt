@@ -41,8 +41,8 @@ class PlayTimeCopyTest {
         val prompt = usageAccessPrompt()
         assertEquals(DialogKind.UsageAccess, prompt.kind)
         assertEquals(DialogButton.NotNow, prompt.buttons[prompt.safeIndex])
-        assertNull(PickerModel(count = 1, rowsPerPage = 1, showLaunchTarget = false).dialog)
-        val opened = PickerModel(count = 1, rowsPerPage = 1, showLaunchTarget = false).onSetting(Row.UsageAccess)
+        assertNull(PickerModel(count = 1, rowsPerPage = 1).dialog)
+        val opened = PickerModel(count = 1, rowsPerPage = 1).onSetting(Row.UsageAccess)
         val asking = reduce(opened, Meaning.Activate).first
         assertEquals(DialogKind.UsageAccess, asking.dialog?.kind)
         assertEquals("Play time  Approximate", rowLabel(Row.UsageAccess, opened))
@@ -51,7 +51,7 @@ class PlayTimeCopyTest {
 
     @Test
     fun orderRowCyclesRecentlyPlayed() {
-        val opened = PickerModel(count = 1, rowsPerPage = 1, showLaunchTarget = false).onSetting(Row.Order)
+        val opened = PickerModel(count = 1, rowsPerPage = 1).onSetting(Row.Order)
         val next = reduce(opened, Meaning.Activate).first
         assertEquals(LibrarySort.RecentlyPlayed, next.sort)
         assertEquals("Order  Recently played", rowLabel(Row.Order, next))
@@ -65,7 +65,6 @@ class PlayTimeCopyTest {
         val sorted = PickerModel(
             count = 3,
             rowsPerPage = 1,
-            showLaunchTarget = false,
             sort = LibrarySort.RecentlyPlayed,
             recentFirst = listOf(2, 0, 1),
         )
