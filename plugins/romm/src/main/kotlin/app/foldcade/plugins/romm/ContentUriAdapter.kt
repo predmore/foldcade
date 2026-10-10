@@ -9,7 +9,8 @@ import java.nio.file.Path
 /**
  * Turns a cache file into the content URI a player opens.
  * [uriFor] and [pathFor] are the same mapping.
- * The URI is `content://app.foldcade.romm.cache/romm/` plus the path under the cache root.
+ * The URI is `content://<authority>/romm/` plus the path under the cache root. The host
+ * serves it with a FileProvider whose authority is `<application id>.romm.cache`.
  */
 interface ContentUriAdapter {
     fun uriFor(path: Path): String

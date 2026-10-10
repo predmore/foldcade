@@ -5,6 +5,8 @@ import app.foldcade.api.plugin.CredentialLookup
 import app.foldcade.api.plugin.CredentialStore
 import app.foldcade.api.plugin.Platform
 import app.foldcade.api.plugin.RommCredentials
+import app.foldcade.plugins.romm.CachePathContentUri
+import app.foldcade.plugins.romm.ROMM_CONTENT_AUTHORITY
 import app.foldcade.plugins.romm.RommPlugins
 import app.foldcade.plugins.romm.RommTokenSource
 import android.os.Looper
@@ -61,6 +63,7 @@ fun publishRommWiring(
     store: CredentialStore,
     cacheRoot: Path,
     platforms: List<Platform> = emptyList(),
+    contentAuthority: String = ROMM_CONTENT_AUTHORITY,
 ) {
     val current = RommPlugins.wiring
     if (origin.isNullOrBlank()) {
@@ -80,6 +83,7 @@ fun publishRommWiring(
             origin = origin,
             tokenSource = rommTokenSource(store),
             cacheRoot = cacheRoot,
+            contentUris = CachePathContentUri(cacheRoot, contentAuthority),
             platforms = platforms,
         ),
     )
