@@ -446,4 +446,15 @@ class ContractTest {
         )
         assertEquals(Effect.TryAgain, reduce(model, Meaning.Activate).second)
     }
+
+    @Test
+    fun rommSetUpIsOneRowUntilAServerIsSaved() {
+        val unset = libraryRows(listOf("Local folder", Copy.setUpRomm))
+        assertEquals(1, unset.count { it == Row.Backend(Copy.setUpRomm) })
+        assertFalse(Row.Connect in unset)
+        assertTrue(Row.AddFolder in unset)
+
+        val saved = libraryRows(listOf("Local folder", "RomM"))
+        assertTrue(Row.Connect in saved)
+    }
 }

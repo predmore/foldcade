@@ -6,6 +6,7 @@ import android.os.Build
 import android.util.Log
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.FiniteAnimationSpec
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
 import androidx.core.graphics.drawable.toBitmap
 import androidx.compose.foundation.background
@@ -63,6 +64,7 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.FilterQuality
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asComposeRenderEffect
 import androidx.compose.ui.graphics.asImageBitmap
@@ -89,6 +91,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.IntOffset
+import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.zIndex
 import app.foldcade.Displays
@@ -129,6 +132,7 @@ import app.foldcade.language.connectFields
 import app.foldcade.language.connectHint
 import app.foldcade.language.hintFor
 import app.foldcade.language.letterOfKey
+import app.foldcade.language.letterbox
 import app.foldcade.language.cursorBrush
 import app.foldcade.language.displayOrder
 import app.foldcade.language.heroCopy
@@ -185,6 +189,15 @@ fun PanelHost(activity: FoldcadeHomeActivity, displays: Displays) {
     // left over the library, even at zero alpha, keeps the accessibility dump empty.
     CompositionLocalProvider(LocalFoldTheme provides paint) {
         Box(Modifier.fillMaxSize().background(paint.theme.background)) {
+            val wallpaper = when (panel) {
+                Panel.Top -> paint.wallpaperTop
+                Panel.Bottom -> paint.wallpaperBottom
+                null -> null
+            }
+            // No wallpaper node when this panel has none. A full-screen layer left
+            // in the tree keeps the accessibility dump empty, so the library title
+            // is not in the window the folder check reads.
+            if (wallpaper != null) PanelWallpaper(wallpaper)
             if (blurHere) {
                 Box(Modifier.fillMaxSize().menuBlur(blur).menuDim(blur)) {
                     PanelBody(activity, panel, screen, scale)
@@ -241,6 +254,38 @@ private fun Modifier.menuBlur(progress: Float): Modifier {
     if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S || radius < 0.5f) return this
     return graphicsLayer {
         renderEffect = RenderEffect.createBlurEffect(radius, radius, Shader.TileMode.CLAMP).asComposeRenderEffect()
+    }
+}
+
+/**
+ * Static wallpaper for this panel. Letterboxed, not cropped, and not animated.
+ * Drawn behind the library, with no focus, touch, or semantics. The caller
+ * leaves this out of the tree when the panel has no wallpaper.
+ */
+@Composable
+private fun PanelWallpaper(image: ImageBitmap) {
+    Canvas(
+        Modifier
+            .fillMaxSize()
+            .zIndex(-1f)
+            .focusProperties { canFocus = false }
+            .clearAndSetSemantics { },
+    ) {
+        val box = letterbox(
+            imageWidth = image.width.toFloat(),
+            imageHeight = image.height.toFloat(),
+            panelWidth = size.width,
+            panelHeight = size.height,
+        )
+        val width = box.width.roundToInt()
+        val height = box.height.roundToInt()
+        if (width <= 0 || height <= 0) return@Canvas
+        drawImage(
+            image = image,
+            dstOffset = IntOffset(box.left.roundToInt(), box.top.roundToInt()),
+            dstSize = IntSize(width, height),
+            filterQuality = FilterQuality.Medium,
+        )
     }
 }
 
