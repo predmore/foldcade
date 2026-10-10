@@ -143,11 +143,9 @@ class FacePromptTest {
     @Test
     fun buttonLabelRowOffersPressConfirmAndCanBeDismissed() {
         val root = PickerModel(count = 1, rowsPerPage = 1, showLaunchTarget = false, offerButtonLabels = true)
-        val opened = reduce(root, Meaning.LeftPanel).first
-        val rows = panelRows(opened.panel!!, opened)
-        val index = rows.indexOf(Row.ButtonLabels)
-        assertTrue(index > rows.indexOf(Row.MotionSpeed))
-        val capturing = reduce(opened.copy(panel = opened.panel!!.copy(index = index)), Meaning.Activate).first
+        val rows = settingsRows(SettingsCategory.Personalization, root)
+        assertTrue(rows.indexOf(Row.ButtonLabels) > rows.indexOf(Row.MotionSpeed))
+        val capturing = reduce(root.onSetting(Row.ButtonLabels), Meaning.Activate).first
         assertTrue(capturing.capturingConfirm)
         assertEquals(RowText(Copy.buttonLabels, Copy.pressConfirm), rowText(Row.ButtonLabels, capturing))
         val (dismissed, effect) = reduce(capturing, Meaning.Activate)
