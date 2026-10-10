@@ -16,6 +16,7 @@ import app.foldcade.language.AppActions
 import app.foldcade.language.AppShelfState
 import app.foldcade.language.BackgroundMotion
 import app.foldcade.language.ConnectField
+import app.foldcade.language.ConnectKind
 import app.foldcade.language.Chrome
 import app.foldcade.language.Copy
 import app.foldcade.language.DialogKind
@@ -523,7 +524,32 @@ class ShellController(
             connectIndex = 0,
             connectWarning = cleartextCredentialWarning(origin),
             connectHint = null,
+            connectKind = ConnectKind.Romm,
         )
+    }
+
+    /** The connect form, asking for a SteamGridDB key. */
+    fun openArtKey() {
+        val screen = model.connectScreen ?: HostScreen.Top
+        connectToken = ""
+        model = model.copy(
+            connectOpen = true,
+            connectScreen = screen,
+            panel = null,
+            connectIndex = 0,
+            connectWarning = null,
+            connectHint = null,
+            connectKind = ConnectKind.ArtKey,
+        )
+    }
+
+    /** A line under the key field, such as a refused key. */
+    fun showConnectNote(note: String) {
+        model = model.copy(connectHint = note)
+    }
+
+    fun setArtKeySaved(saved: Boolean) {
+        if (model.artKeySaved != saved) model = model.copy(artKeySaved = saved)
     }
 
     fun showSetupHint(hint: String?) {
@@ -602,7 +628,7 @@ class ShellController(
 
     /** One tap focuses a text row. Save activates on that tap. */
     fun touchConnect(index: Int, screen: HostScreen): Effect? {
-        val field = connectFields().getOrNull(index) ?: return null
+        val field = connectFields(model.connectKind).getOrNull(index) ?: return null
         if (field != ConnectField.Save) {
             if (model.connectIndex != index) model = model.copy(connectIndex = index)
             return null

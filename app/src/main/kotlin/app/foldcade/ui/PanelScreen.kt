@@ -128,6 +128,7 @@ import coil3.compose.rememberAsyncImagePainter
 import coil3.request.ImageRequest
 import coil3.request.crossfade
 import app.foldcade.language.ConnectField
+import app.foldcade.language.ConnectKind
 import app.foldcade.language.Copy
 import app.foldcade.language.HomeGrid
 import app.foldcade.language.FOLDER_ICONS
@@ -1151,7 +1152,7 @@ private fun GridHints(app: FoldcadeApp, modifier: Modifier = Modifier) {
     val shell = app.shell
     val model = shell.model
     val actions = if (model.connectOpen) {
-        connectHint(connectFields().getOrElse(model.connectIndex) { ConnectField.Origin })
+        connectHint(connectFields(model.connectKind).getOrElse(model.connectIndex) { ConnectField.Token })
     } else {
         hintFor(
             when {
@@ -2131,7 +2132,8 @@ private fun ConnectScreen(
 ) {
     val theme = foldTheme()
     val model = app.shell.model
-    val fields = connectFields()
+    val artKey = model.connectKind == ConnectKind.ArtKey
+    val fields = connectFields(model.connectKind)
     Column(
         Modifier
             .fillMaxSize()
@@ -2139,32 +2141,37 @@ private fun ConnectScreen(
             .padding(px(Metrics.dialogInsetPx)),
         verticalArrangement = Arrangement.spacedBy(px(16f)),
     ) {
-        BasicText(text = Copy.connectRomm, style = text(theme.onBackground, TypeRamp.dialogTitle, theme))
-        BasicText(text = "Server", style = text(theme.muted, TypeRamp.hint, theme))
-        BasicTextField(
-            value = model.connectOrigin,
-            onValueChange = { app.shell.editOrigin(it) },
-            singleLine = true,
-            textStyle = text(theme.onBackground, TypeRamp.dialogBody, theme),
-            cursorBrush = cursorBrush(theme),
-            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri, imeAction = ImeAction.Next),
-            modifier = Modifier
-                .fillMaxWidth()
-                .chip(focused(model.connectIndex, ConnectField.Origin))
-                .onFocusChanged { state ->
-                    if (state.isFocused) app.shell.touchConnect(fields.indexOf(ConnectField.Origin), screen)
-                }
-                .padding(horizontal = px(20f), vertical = px(10f)),
+        BasicText(
+            text = if (artKey) Copy.steamGridDb else Copy.connectRomm,
+            style = text(theme.onBackground, TypeRamp.dialogTitle, theme),
         )
-        val warning = model.connectWarning
-        if (warning != null) {
-            BasicText(text = warning, style = text(theme.onBackground, TypeRamp.dialogBody, theme))
+        if (!artKey) {
+            BasicText(text = "Server", style = text(theme.muted, TypeRamp.hint, theme))
+            BasicTextField(
+                value = model.connectOrigin,
+                onValueChange = { app.shell.editOrigin(it) },
+                singleLine = true,
+                textStyle = text(theme.onBackground, TypeRamp.dialogBody, theme),
+                cursorBrush = cursorBrush(theme),
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri, imeAction = ImeAction.Next),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .chip(focused(model, ConnectField.Origin))
+                    .onFocusChanged { state ->
+                        if (state.isFocused) app.shell.touchConnect(fields.indexOf(ConnectField.Origin), screen)
+                    }
+                    .padding(horizontal = px(20f), vertical = px(10f)),
+            )
+            val warning = model.connectWarning
+            if (warning != null) {
+                BasicText(text = warning, style = text(theme.onBackground, TypeRamp.dialogBody, theme))
+            }
         }
         val hint = model.connectHint
         if (hint != null) {
             BasicText(text = hint, style = text(theme.onBackground, TypeRamp.dialogBody, theme))
         }
-        BasicText(text = Copy.clientApiToken, style = text(theme.muted, TypeRamp.hint, theme))
+        BasicText(text = if (artKey) Copy.apiKey else Copy.clientApiToken, style = text(theme.muted, TypeRamp.hint, theme))
         BasicTextField(
             value = app.shell.connectToken,
             onValueChange = { app.shell.editToken(it) },
@@ -2175,27 +2182,30 @@ private fun ConnectScreen(
             keyboardOptions = KeyboardOptions(autoCorrectEnabled = false, imeAction = ImeAction.Done),
             modifier = Modifier
                 .fillMaxWidth()
-                .chip(focused(model.connectIndex, ConnectField.Token))
+                .chip(focused(model, ConnectField.Token))
                 .onFocusChanged { state ->
                     if (state.isFocused) app.shell.touchConnect(fields.indexOf(ConnectField.Token), screen)
                 }
                 .padding(horizontal = px(20f), vertical = px(10f)),
         )
         BasicText(
-            text = Copy.saveToken,
+            text = if (artKey) Copy.saveKey else Copy.saveToken,
             modifier = Modifier
-                .chip(focused(model.connectIndex, ConnectField.Save))
+                .chip(focused(model, ConnectField.Save))
                 .hostPress { onEffect(app.shell.touchConnect(fields.indexOf(ConnectField.Save), screen)) }
                 .padding(horizontal = px(20f), vertical = px(10f)),
             style = text(theme.onBackground, TypeRamp.dialogBody, theme),
         )
-        BasicText(text = Copy.rommTokenHelp, style = text(theme.muted, TypeRamp.dialogBody, theme))
+        BasicText(
+            text = if (artKey) Copy.artKeyHelp else Copy.rommTokenHelp,
+            style = text(theme.muted, TypeRamp.dialogBody, theme),
+        )
     }
 }
 
-private fun focused(index: Int, field: ConnectField): Boolean {
-    val fields = connectFields()
-    return fields[index.coerceIn(fields.indices)] == field
+private fun focused(model: app.foldcade.language.PickerModel, field: ConnectField): Boolean {
+    val fields = connectFields(model.connectKind)
+    return fields[model.connectIndex.coerceIn(fields.indices)] == field
 }
 
 @Composable
