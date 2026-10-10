@@ -265,6 +265,7 @@ internal fun parseRom(obj: JsonObject): RomSummary = RomSummary(
     hasNestedSingleFile = obj.reqBool("has_nested_single_file"),
     hasMultipleFiles = obj.reqBool("has_multiple_files"),
     files = obj["files"]?.jsonArray?.map { parseRomFile(it.jsonObject) } ?: emptyList(),
+    screenshots = obj.optionalStringList("merged_screenshots"),
 )
 
 internal fun parseRomPage(bytes: ByteArray): RomPage {

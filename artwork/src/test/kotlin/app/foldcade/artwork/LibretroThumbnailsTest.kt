@@ -88,6 +88,33 @@ class LibretroThumbnailsTest {
     }
 
     @Test
+    fun theSceneIsTheTitleScreenThenASnapshot() = runBlocking {
+        val listing = "https://thumbnails.libretro.com/Nintendo%20-%20Nintendo%203DS/Named_Boxarts/"
+        val titles = "https://thumbnails.libretro.com/Nintendo%20-%20Nintendo%203DS/Named_Titles/Luigi%27s%20Mansion%20%28USA%29.png"
+        val snaps = "https://thumbnails.libretro.com/Nintendo%20-%20Nintendo%203DS/Named_Snaps/Luigi%27s%20Mansion%20%28USA%29.png"
+        val query = ArtQuery("k", "Luigi's Mansion", "nintendo-3ds", "Luigi's Mansion (USA).cci")
+        val pages = mapOf(listing to ArtResponse(200, page().toByteArray()))
+        val withTitle = LibretroThumbnails(FakeHttp(pages, mapOf(titles to 200)), Files.createTempDirectory("t").toFile())
+        assertEquals(ArtScene(screen = titles), withTitle.scene(query))
+        val snapOnly = LibretroThumbnails(FakeHttp(pages, mapOf(snaps to 200)), Files.createTempDirectory("s").toFile())
+        assertEquals(ArtScene(screen = snaps), snapOnly.scene(query))
+        assertNull(LibretroThumbnails(FakeHttp(pages), Files.createTempDirectory("n").toFile()).scene(query))
+    }
+
+    @Test
+    fun aSceneTriesTheNextReleaseWhenTheBestHasNoTitle() = runBlocking {
+        val base = "https://thumbnails.libretro.com/Nintendo%20-%20Nintendo%203DS"
+        val page = """
+            <a href="Kid%20Icarus%20-%20Uprising%20(USA).png">x</a>
+            <a href="Kid%20Icarus%20-%20Uprising%20(USA)%20(En,Fr,Es).png">x</a>
+        """.trimIndent()
+        val title = "$base/Named_Titles/Kid%20Icarus%20-%20Uprising%20%28USA%29%20%28En%2CFr%2CEs%29.png"
+        val http = FakeHttp(mapOf("$base/Named_Boxarts/" to ArtResponse(200, page.toByteArray())), mapOf(title to 200))
+        val query = ArtQuery("k", "Kid Icarus- Uprising", "nintendo-3ds", "Kid Icarus- Uprising.cci")
+        assertEquals(ArtScene(screen = title), LibretroThumbnails(http, Files.createTempDirectory("k").toFile()).scene(query))
+    }
+
+    @Test
     fun anApacheListingParsesToNames() {
         assertEquals(listOf("Luigi's Mansion (USA)", "Super Mario 3D Land (USA) (En,Fr,Es)"), parseListing(page()))
     }

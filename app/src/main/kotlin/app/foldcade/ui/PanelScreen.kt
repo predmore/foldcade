@@ -63,6 +63,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.MotionDurationScale
 import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.draw.BlurredEdgeTreatment
+import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.focus.onFocusChanged
@@ -118,6 +120,7 @@ import app.foldcade.Panel
 import app.foldcade.Surface
 import app.foldcade.CoverImage
 import app.foldcade.artwork.ArtQuery
+import app.foldcade.artwork.ArtScene
 import app.foldcade.artwork.ArtSet
 import app.foldcade.api.plugin.Game
 import androidx.compose.runtime.collectAsState
@@ -387,7 +390,21 @@ private fun Hero(app: FoldcadeApp, screen: HostScreen, scale: Float, onEffect: (
     val queries = remember { mutableMapOf<String, ArtQuery>() }
     app.shell.focusedRecord()?.let { record -> if (subject != null) records[subject.key] = record }
     app.shell.focusedGame()?.let(app.shell::artQuery)?.let { query -> if (subject != null) queries[subject.key] = query }
+    // The focused game's scene decides how the name card sits over it.
+    val scene = subject?.let { rememberScene(app, records[it.key], queries[it.key]) }
+    val sceneArt = scene != null || subject?.let { rememberArt(app, records[it.key], queries[it.key]) } != null
     BoxWithConstraints(Modifier.fillMaxSize()) {
+        // The game fills the screen behind everything: its wide art, or its box art blurred.
+        HeroCrossfade(
+            target = subject,
+            speed = model.motionSpeed,
+            animatorScale = scale,
+            same = { left, right -> left?.key == right?.key },
+            layer = Modifier.fillMaxSize(),
+            fadeOnly = true,
+        ) { shown ->
+            SceneBackdrop(app, records[shown.key], queries[shown.key])
+        }
         val inset = px(Metrics.heroInsetPx)
         // Wide enough for a platform, both screens, and play time on one line.
         val cardMax = maxWidth * 0.72f
@@ -432,7 +449,15 @@ private fun Hero(app: FoldcadeApp, screen: HostScreen, scale: Float, onEffect: (
             }
             if (subject != null) {
                 Spacer(Modifier.height(px(24f)))
-                HeroLabel(app, subject, cellFocused, cardMax)
+                HeroLabel(
+                    app,
+                    subject,
+                    cellFocused,
+                    cardMax,
+                    overArt = sceneArt,
+                    // A logo on wide art already says the name.
+                    named = !(scene?.background != null && scene.logo != null),
+                )
             }
         }
         TopIslands(app, screen, scale) { panelState, progress, interactive ->
@@ -454,10 +479,12 @@ private fun <T> HeroCrossfade(
     speed: MotionSpeed,
     animatorScale: Float,
     same: (T?, T?) -> Boolean,
+    layer: Modifier = Modifier.fillMaxWidth(),
+    fadeOnly: Boolean = false,
     content: @Composable (T) -> Unit,
 ) {
     val travelMillis = Motion.heroDuration(speed, animatorScale)
-    val fadeOnly = Motion.heroFadeOnly(speed, animatorScale)
+    val fadeOnly = fadeOnly || Motion.heroFadeOnly(speed, animatorScale)
     var blend by remember {
         mutableStateOf(
             HeroBlend(
@@ -512,8 +539,7 @@ private fun <T> HeroCrossfade(
     // The fading art sits behind the label. It takes no focus or touch, and it
     // is not in the accessibility tree. The layer is absent once the fade ends.
     Box(
-        Modifier
-            .fillMaxWidth()
+        layer
             .zIndex(-1f)
             .focusProperties { canFocus = false }
             .clearAndSetSemantics { },
@@ -532,7 +558,14 @@ private fun <T> HeroCrossfade(
  * The artwork behind it may still be crossfading.
  */
 @Composable
-private fun HeroLabel(app: FoldcadeApp, shown: HeroSubject, cellFocused: Boolean, maxWidth: Dp) {
+private fun HeroLabel(
+    app: FoldcadeApp,
+    shown: HeroSubject,
+    cellFocused: Boolean,
+    maxWidth: Dp,
+    overArt: Boolean = false,
+    named: Boolean = true,
+) {
     val theme = foldTheme()
     val copy = heroCopy(shown)
     val centred = text(theme.onBackground, TypeRamp.heroTitle, theme).copy(textAlign = TextAlign.Center)
@@ -540,17 +573,20 @@ private fun HeroLabel(app: FoldcadeApp, shown: HeroSubject, cellFocused: Boolean
         Modifier
             .widthIn(min = px(360f), max = maxWidth)
             .clip(RoundedCornerShape(Metrics.cardCornerDp.dp))
-            .background(theme.surface)
+            // Over the game's art the card lets it through.
+            .background(if (overArt) theme.surface.copy(alpha = SCENE_CARD_ALPHA) else theme.surface)
             .padding(horizontal = px(40f), vertical = px(20f)),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.spacedBy(px(4f)),
     ) {
-        BasicText(
-            text = copy.title,
-            style = centred.copy(fontWeight = FontWeight.SemiBold),
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-        )
+        if (named) {
+            BasicText(
+                text = copy.title,
+                style = centred.copy(fontWeight = FontWeight.SemiBold),
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
         val item = (shown as? HeroSubject.Item)?.item
         if (item?.emptyShelfHint == true) {
             ShelfMeta(line = copy.detail, hintFocused = cellFocused, centred = true)
@@ -592,6 +628,71 @@ private fun Modifier.heroArrival(alpha: Float, fadeOnly: Boolean): Modifier = gr
 }
 
 /**
+ * The top screen's scene for a game: at once when it is already known,
+ * otherwise after one lookup. Turning Game art off or on asks again.
+ */
+@Composable
+private fun rememberScene(app: FoldcadeApp, record: Game?, query: ArtQuery?): ArtScene? {
+    val allowed = app.shell.model.artwork
+    val held = remember(record, query, allowed) { app.covers.cachedScene(record, query) }
+    var fetched by remember(record, query, allowed) { mutableStateOf<ArtScene?>(null) }
+    LaunchedEffect(record, query, allowed) {
+        if ((record != null || query != null) && held == null) fetched = app.covers.fetchScene(record, query)
+    }
+    return held ?: fetched
+}
+
+/**
+ * The whole top screen behind a game. Wide art fills it, darkened at the top
+ * for the islands and at the bottom for the name card. Without wide art, the
+ * box art fills it blurred and dimmed, so the screen takes the game's colours.
+ * Without either, nothing is drawn and the theme's background shows.
+ */
+@Composable
+private fun SceneBackdrop(app: FoldcadeApp, record: Game?, query: ArtQuery?) {
+    val scene = rememberScene(app, record, query)
+    val wide = scene?.background?.let { rememberCoverPainter(app, it, BACKDROP_PX) }
+    if (wide != null) {
+        Box(Modifier.fillMaxSize()) {
+            Image(
+                painter = wide.painter,
+                contentDescription = null,
+                modifier = Modifier.fillMaxSize(),
+                contentScale = ContentScale.Crop,
+            )
+            Box(
+                Modifier
+                    .fillMaxSize()
+                    .background(
+                        Brush.verticalGradient(
+                            0f to Color.Black.copy(alpha = 0.45f),
+                            0.22f to Color.Transparent,
+                            0.55f to Color.Transparent,
+                            1f to Color.Black.copy(alpha = 0.8f),
+                        ),
+                    ),
+            )
+        }
+        return
+    }
+    if (scene?.background != null) return
+    val cover = rememberArt(app, record, query)?.cover ?: return
+    val ambient = rememberCoverPainter(app, cover, AMBIENT_PX) ?: return
+    Image(
+        painter = ambient.painter,
+        contentDescription = null,
+        modifier = Modifier
+            .fillMaxSize()
+            .blur(AMBIENT_BLUR, BlurredEdgeTreatment.Rectangle)
+            .drawWithContent {
+                drawContent()
+                drawRect(Color.Black.copy(alpha = AMBIENT_DIM))
+            },
+        contentScale = ContentScale.Crop,
+    )
+}
+
+/**
  * Art for a tile or the hero: at once when it is already known, otherwise after
  * one lookup. A provider's cover for [record] comes before the public sources.
  * Turning Game art off or on asks again.
@@ -619,12 +720,21 @@ private fun HeroArt(
     val theme = foldTheme()
     val icon = launcherIcon(packageName)
     val cover = rememberArt(app, record, query)?.cover
+    val scene = rememberScene(app, record, query)
+    val logo = scene?.logo?.takeIf { scene.background != null }?.let { rememberCoverPainter(app, it, LOGO_PX) }
+    val screenShot = scene?.screen?.takeIf { scene.background == null }
+        ?.let { rememberCoverPainter(app, it, SCREEN_PX, FilterQuality.None) }
     val accent = mark?.let { markGlyph(it)?.accent } ?: theme.focus
+    val loaded = cover?.let { rememberCoverPainter(app, it, COVER_PX) }
+    // A logo, or a box beside its title screen, takes the width it needs. The game's own
+    // art is behind them, so they draw no glow. A lone box or mark stays in its glowing square.
+    val staged = logo != null || (loaded != null && screenShot != null)
     Box(
         Modifier
             .fillMaxHeight()
-            .aspectRatio(1f)
+            .then(if (staged) Modifier.fillMaxWidth() else Modifier.aspectRatio(1f))
             .drawBehind {
+                if (staged) return@drawBehind
                 val reach = size.minDimension * 0.62f
                 drawCircle(
                     brush = Brush.radialGradient(
@@ -644,8 +754,59 @@ private fun HeroArt(
     ) {
         // The cover, then the same art the focused tile shows. A letter is the last resort.
         val kit = mark?.let { LocalFoldTheme.current.marks[it] }
-        val loaded = cover?.let { rememberCoverPainter(app, it, COVER_PX) }
         when {
+            // Wide art fills the screen behind; the logo names the game over it.
+            logo != null -> Image(
+                painter = logo.painter,
+                contentDescription = title,
+                modifier = Modifier
+                    .fillMaxWidth(LOGO_WIDTH)
+                    .fillMaxHeight(LOGO_HEIGHT)
+                    // A soft shade behind the logo keeps a dark logo readable over busy art.
+                    .drawBehind {
+                        val reach = size.maxDimension * 0.62f
+                        drawCircle(
+                            brush = Brush.radialGradient(
+                                colorStops = arrayOf(
+                                    0f to Color.Black.copy(alpha = 0.62f),
+                                    1f to Color.Transparent,
+                                ),
+                                center = center,
+                                radius = reach,
+                            ),
+                            radius = reach,
+                            center = center,
+                        )
+                    },
+                contentScale = ContentScale.Fit,
+            )
+            scene?.background != null && scene.logo != null -> Unit
+            // A real title screen beside the box, drawn crisp.
+            loaded != null && screenShot != null -> Row(
+                Modifier.fillMaxHeight(COVER_HEIGHT),
+                horizontalArrangement = Arrangement.spacedBy(px(40f)),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Image(
+                    painter = loaded.painter,
+                    contentDescription = title,
+                    modifier = Modifier
+                        .fillMaxHeight()
+                        .aspectRatio(loaded.ratio, matchHeightConstraintsFirst = true)
+                        .clip(RoundedCornerShape(Metrics.cardCornerDp.dp)),
+                    contentScale = ContentScale.Crop,
+                )
+                Image(
+                    painter = screenShot.painter,
+                    contentDescription = null,
+                    modifier = Modifier
+                        .fillMaxHeight()
+                        .aspectRatio(screenShot.ratio, matchHeightConstraintsFirst = true)
+                        .clip(RoundedCornerShape(Metrics.cardCornerDp.dp / 2)),
+                    // The painter was asked for nearest-neighbour scaling, so pixel art stays sharp.
+                    contentScale = ContentScale.Fit,
+                )
+            }
             loaded != null -> Image(
                 painter = loaded.painter,
                 contentDescription = title,
@@ -681,7 +842,12 @@ private class LoadedCover(val painter: Painter, val ratio: Float)
  * is fixed, so the request starts before the painter is drawn.
  */
 @Composable
-private fun rememberCoverPainter(app: FoldcadeApp, uri: String, px: Int): LoadedCover? {
+private fun rememberCoverPainter(
+    app: FoldcadeApp,
+    uri: String,
+    px: Int,
+    filterQuality: FilterQuality = FilterQuality.Low,
+): LoadedCover? {
     val context = LocalContext.current
     val request = remember(uri, px) {
         ImageRequest.Builder(context)
@@ -690,7 +856,7 @@ private fun rememberCoverPainter(app: FoldcadeApp, uri: String, px: Int): Loaded
             .crossfade(true)
             .build()
     }
-    val painter = rememberAsyncImagePainter(request, app.images)
+    val painter = rememberAsyncImagePainter(request, app.images, filterQuality = filterQuality)
     val state by painter.state.collectAsState()
     val image = (state as? AsyncImagePainter.State.Success)?.result?.image ?: return null
     if (image.width <= 0 || image.height <= 0) return null
@@ -698,6 +864,15 @@ private fun rememberCoverPainter(app: FoldcadeApp, uri: String, px: Int): Loaded
 }
 
 private const val COVER_PX = 1024
+private const val BACKDROP_PX = 1920
+private const val AMBIENT_PX = 256
+private const val LOGO_PX = 800
+private const val SCREEN_PX = 1024
+private const val LOGO_WIDTH = 0.6f
+private const val LOGO_HEIGHT = 0.7f
+private const val SCENE_CARD_ALPHA = 0.72f
+private const val AMBIENT_DIM = 0.55f
+private val AMBIENT_BLUR = 48.dp
 private const val TILE_PX = 384
 private const val TILE_ART_REST_ALPHA = 0.82f
 private const val COVER_HEIGHT = 0.92f

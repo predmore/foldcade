@@ -38,6 +38,24 @@ class LibretroThumbnails(
         return ArtSet(source = id, cover = imageUrl(system, name))
     }
 
+    /**
+     * The game's real title screen, or a snapshot when there is none. The
+     * server names those as it names the box, so the box's match finds them
+     * without another listing. On DS and 3DS the image holds both screens.
+     */
+    override suspend fun scene(query: ArtQuery): ArtScene? {
+        val system = SYSTEMS[query.platformId] ?: return null
+        // The best box match may have no title screen when a near release does, so try a few.
+        val names = rankedThumbnails(boxarts(system), query.fileName, query.title).take(SCENE_TRIES)
+        for (kind in listOf("Named_Titles", "Named_Snaps")) {
+            for (name in names) {
+                val url = imageUrl(system, name, kind)
+                if (http.status(url) == 200) return ArtScene(screen = url)
+            }
+        }
+        return null
+    }
+
     private suspend fun boxarts(system: String): List<String> {
         listings[system]?.let { return it }
         return reading.withLock {
@@ -75,6 +93,7 @@ class LibretroThumbnails(
     companion object {
         const val HOST: String = "thumbnails.libretro.com"
         const val LISTING_MAX_AGE_MS: Long = 14L * 24 * 60 * 60 * 1000
+        private const val SCENE_TRIES = 3
 
         /** Canonical platform ids to the server's system folders. */
         val SYSTEMS: Map<String, String> = mapOf(
@@ -98,8 +117,8 @@ class LibretroThumbnails(
             "dreamcast" to "Sega - Dreamcast",
         )
 
-        internal fun imageUrl(system: String, name: String): String =
-            "https://$HOST/${segment(system)}/Named_Boxarts/${segment("$name.png")}"
+        internal fun imageUrl(system: String, name: String, kind: String = "Named_Boxarts"): String =
+            "https://$HOST/${segment(system)}/$kind/${segment("$name.png")}"
     }
 }
 
@@ -117,25 +136,26 @@ internal fun parseListing(html: String): List<String> =
  * file names wins, then USA, World, Europe, and Japan. A clean release beats
  * a revision, beta, or demo of the same region.
  */
-internal fun bestThumbnail(names: List<String>, fileName: String?, title: String): String? {
+internal fun bestThumbnail(names: List<String>, fileName: String?, title: String): String? =
+    rankedThumbnails(names, fileName, title).firstOrNull()
+
+/** Every listing name for the ROM, best first, by the rules of [bestThumbnail]. */
+internal fun rankedThumbnails(names: List<String>, fileName: String?, title: String): List<String> {
     val stem = fileName?.let(::fileStem)
-    if (stem != null) {
-        val exact = libretroSafe(stem)
-        if (exact in names) return exact
-    }
+    val exact = stem?.let(::libretroSafe)?.takeIf { it in names }
     val key = matchKey(stem ?: title).ifEmpty { matchKey(title) }
-    if (key.isEmpty()) return null
+    if (key.isEmpty()) return listOfNotNull(exact)
     val candidates = names.filter { matchKey(it) == key }
         .ifEmpty { if (stem != null) names.filter { matchKey(it) == matchKey(title) } else emptyList() }
-    if (candidates.isEmpty()) return null
     val wanted = regionsIn(stem.orEmpty()) + DEFAULT_REGIONS
-    return candidates.minWith(
+    val ranked = candidates.sortedWith(
         compareBy<String>(
             { name -> regionsIn(name).minOfOrNull { region -> wanted.indexOf(region).takeIf { it >= 0 } ?: wanted.size } ?: wanted.size },
             { name -> if (UNOFFICIAL.containsMatchIn(name)) 1 else 0 },
             { name -> name.length },
         ),
     )
+    return listOfNotNull(exact) + (ranked - setOfNotNull(exact))
 }
 
 /** The title alone, for comparing: tags cut, articles dropped, letters and digits only. */

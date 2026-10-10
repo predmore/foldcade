@@ -80,6 +80,8 @@ data class RomSummary(
     val hasNestedSingleFile: Boolean,
     val hasMultipleFiles: Boolean,
     val files: List<RomFileSummary>,
+    /** `merged_screenshots`: screenshot paths on the server, from its scrapers. */
+    val screenshots: List<String> = emptyList(),
 )
 
 data class RomPage(

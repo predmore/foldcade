@@ -40,6 +40,15 @@ class SteamGridDb(
         return ArtSet(source = id, cover = cover, square = square)
     }
 
+    /** SteamGridDB's first hero and logo for the game. Static, safe-for-work images only. */
+    override suspend fun scene(query: ArtQuery): ArtScene? {
+        val token = key() ?: return null
+        val gameId = gameId(token, query) ?: return null
+        val background = firstImage(token, "heroes/game/$gameId?$SAFE")
+        val logo = firstImage(token, "logos/game/$gameId?$SAFE")
+        return ArtScene(background = background, logo = logo).takeUnless { it.isEmpty }
+    }
+
     private suspend fun gameId(token: String, query: ArtQuery): Int? {
         query.steamAppId?.let { appId ->
             val found = data(token, "games/steam/$appId")

@@ -94,13 +94,55 @@ class ArtFinderTest {
     fun theIndexSurvivesARestartAndCompacts() {
         val file = tempFile()
         val index = ArtIndex(file)
-        repeat(200) { index.put("k", ArtSet("s", "https://a/$it.png", square = "https://a/sq\t$it.png")) }
+        repeat(200) { index.put("k", listOf("s", "https://a/$it.png", "https://a/sq\t$it.png", "")) }
         index.put("gone", null)
         val reopened = ArtIndex(file)
-        assertEquals("https://a/199.png", reopened.hit("k")?.cover)
-        assertEquals("https://a/sq\t199.png", reopened.hit("k")?.square)
+        assertEquals(listOf("s", "https://a/199.png", "https://a/sq\t199.png", ""), reopened.hit("k"))
         assertEquals(ArtIndex.Known.Miss, reopened.lookup("gone"))
         assert(file.readLines().size < 200)
+        // A line from before this layout is dropped, so it is looked up again.
+        file.appendText("old\t1\tlibretro\thttps://a/x.png\t\t\n")
+        assertNull(ArtIndex(file).lookup("old"))
+    }
+
+    @Test
+    fun aSceneTakesEachPartFromTheFirstSourceThatHasIt() = runBlocking {
+        val retro = SceneOnly("retro", ArtScene(screen = "https://r/title.png"))
+        val grid = SceneOnly("grid", ArtScene(background = "https://g/hero.png", logo = "https://g/logo.png", screen = "https://g/x.png"))
+        val never = SceneOnly("never", ArtScene(background = "https://n/hero.png"))
+        val finder = ArtFinder({ listOf(retro, grid, never) }, ArtIndex(tempFile()))
+        val scene = finder.findScene(query)
+        assertEquals(ArtScene("https://g/hero.png", "https://g/logo.png", "https://r/title.png"), scene)
+        // Wide art and a logo complete the scene, so the last source is not asked.
+        assertEquals(0, never.asked)
+        finder.findScene(query)
+        assertEquals(1, grid.asked)
+        assertEquals(scene, finder.cachedScene(query))
+    }
+
+    @Test
+    fun aPartFoundBeforeAnOutageIsKept() = runBlocking {
+        val retro = SceneOnly("retro", ArtScene(screen = "https://r/title.png"))
+        val offline = SceneOnly("offline", null, fails = true)
+        val finder = ArtFinder({ listOf(retro, offline) }, ArtIndex(tempFile()))
+        assertEquals("https://r/title.png", finder.findScene(query)?.screen)
+        finder.findScene(query)
+        assertEquals(1, retro.asked)
+        val dark = ArtFinder({ listOf(offline) }, ArtIndex(tempFile()))
+        assertNull(dark.findScene(query))
+        assertNull(dark.findScene(query))
+        assertEquals(3, offline.asked)
+    }
+
+    @Test
+    fun steamTheSceneIsTheLibraryHeroAndLogo() = runBlocking {
+        val base = "https://shared.steamstatic.com/store_item_assets/steam/apps/1145350"
+        val http = FakeHttp(emptyMap(), mapOf("$base/library_hero.jpg" to 200, "$base/logo.png" to 200))
+        assertEquals(
+            ArtScene(background = "$base/library_hero.jpg", logo = "$base/logo.png"),
+            SteamStoreArt(http).scene(ArtQuery("k", "Hades II", "pc", steamAppId = 1145350)),
+        )
+        assertNull(SteamStoreArt(FakeHttp(emptyMap())).scene(ArtQuery("k", "Racer", "pc", steamAppId = 4078430)))
     }
 
     @Test
@@ -112,6 +154,24 @@ class ArtFinderTest {
         assertEquals("$base/library_hero.jpg", found?.background)
         assertEquals(listOf("$base/library_600x900_2x.jpg", "$base/library_600x900.jpg"), http.heads)
         assertNull(SteamStoreArt(FakeHttp(emptyMap())).find(ArtQuery("k", "Old", "pc", steamAppId = 10)))
+    }
+
+    private class SceneOnly(
+        override val id: String,
+        private val answer: ArtScene?,
+        private val fails: Boolean = false,
+    ) : ArtSource {
+        var asked = 0
+
+        override fun handles(query: ArtQuery): Boolean = true
+
+        override suspend fun find(query: ArtQuery): ArtSet? = null
+
+        override suspend fun scene(query: ArtQuery): ArtScene? {
+            asked++
+            if (fails) throw java.io.IOException("offline")
+            return answer
+        }
     }
 
     private fun tempFile(): File = File(Files.createTempDirectory("art").toFile(), "index.tsv")

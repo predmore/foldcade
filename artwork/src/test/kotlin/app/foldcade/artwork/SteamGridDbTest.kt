@@ -58,6 +58,21 @@ class SteamGridDbTest {
     }
 
     @Test
+    fun theSceneIsTheFirstHeroAndLogo() = runBlocking {
+        val http = FakeHttp(
+            mapOf(
+                "$api/search/autocomplete/Tetris%20DS" to ok("""{"success":true,"data":[{"id":7,"name":"Tetris DS"}]}"""),
+                "$api/heroes/game/7?$safe" to ok("""{"success":true,"data":[{"url":"https://cdn2.steamgriddb.com/hero/t.png"}]}"""),
+                "$api/logos/game/7?$safe" to ok("""{"success":true,"data":[]}"""),
+            ),
+        )
+        assertEquals(
+            ArtScene(background = "https://cdn2.steamgriddb.com/hero/t.png"),
+            SteamGridDb(http) { "k" }.scene(ArtQuery("k", "Tetris DS", "nintendo-ds")),
+        )
+    }
+
+    @Test
     fun aKeyIsCheckedWithOneSearch() = runBlocking {
         val url = "$api/search/autocomplete/tetris"
         assertEquals(true, SteamGridDb.accepts(FakeHttp(mapOf(url to ok("""{"success":true,"data":[]}"""))), "k"))
