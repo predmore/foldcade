@@ -10,6 +10,7 @@ import app.foldcade.language.HOME_ALL
 import app.foldcade.language.HomeBoard
 import app.foldcade.language.HomeItem
 import app.foldcade.language.HomeKeys
+import app.foldcade.language.folderCountLine
 import app.foldcade.language.HomeKind
 import app.foldcade.language.HomePlatform
 import app.foldcade.language.Meaning
@@ -440,7 +441,7 @@ class HomeSession(raw: String?) {
             return HomeFace(
                 id = id,
                 title = Copy.allLibrary,
-                shortText = Copy.allGames,
+                shortText = "",
                 mark = "desk",
                 empty = false,
                 folder = false,
@@ -458,7 +459,7 @@ class HomeSession(raw: String?) {
             return HomeFace(
                 id = id,
                 title = folder.name,
-                shortText = if (count == 1) "1" else count.toString(),
+                shortText = folderCountLine(count),
                 mark = folder.mark,
                 empty = false,
                 folder = true,
@@ -475,7 +476,7 @@ class HomeSession(raw: String?) {
         return HomeFace(
             id = id,
             title = item?.title ?: id,
-            shortText = item?.platformId.orEmpty(),
+            shortText = platformName(item?.platformId ?: game?.platformId),
             mark = item?.mark,
             empty = false,
             folder = false,
@@ -486,6 +487,12 @@ class HomeSession(raw: String?) {
             androidPackage = id.removePrefix("android:").takeIf { id.startsWith("android:") },
             occupiesBoth = false,
         )
+    }
+
+    /** The platform's display name. An id with no listed platform is not shown. */
+    private fun platformName(id: String?): String {
+        if (id == null) return ""
+        return platforms.firstOrNull { it.id == id || id in it.aliases }?.name.orEmpty()
     }
 
     private fun neighbor(index: Int, meaning: Meaning): Int? {

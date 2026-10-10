@@ -1,5 +1,7 @@
 package app.foldcade.ui
 
+import androidx.compose.animation.core.animateFloatAsState
+import app.foldcade.language.Motion as FoldMotion
 import android.content.Context
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.clickable
@@ -146,11 +148,13 @@ private fun Island(
     if (live != null) shown = live
     val panel = shown
     val inset = maxWidth * Metrics.insetFraction
-    val pillWidth = when {
-        side == Side.Right -> 260.dp
-        launchTargetShown(app) -> 280.dp
-        else -> 72.dp
-    }
+    // The left pill widens for the launch target and narrows to its chip without it.
+    val widen by animateFloatAsState(
+        targetValue = if (launchTargetLabel(app) != null) 1f else 0f,
+        animationSpec = FoldMotion.arrive(FoldMotion.durationShort, scale),
+        label = "pill width",
+    )
+    val pillWidth = if (side == Side.Right) 260.dp else lerp(72.dp, 280.dp, widen)
     val pillHeight = 44.dp
     val openWidth = maxWidth * 0.48f
     val openHeight = maxHeight * 0.84f
@@ -226,24 +230,30 @@ private fun Island(
 
 private fun Side.meaning(): Meaning = if (this == Side.Left) Meaning.LeftPanel else Meaning.RightPanel
 
-/** Closed left island shows the launch target. The menu opening does not change the pill width. */
-private fun launchTargetShown(app: FoldcadeApp): Boolean {
+/**
+ * The closed left island's launch target, or null when it shows nothing.
+ * Top is the default, so it shows only when it says bottom, or has focus.
+ */
+private fun launchTargetLabel(app: FoldcadeApp): String? {
     val model = app.shell.model
-    if (model.dialog != null || model.connectOpen) return false
-    val game = app.shell.focusedGame() ?: return false
-    if (game.emptyShelfHint) return false
-    return app.store.session.launchTargetControlVisible(game.occupiesBothDisplays)
+    if (model.dialog != null || model.connectOpen) return null
+    val game = app.shell.focusedGame() ?: return null
+    if (game.emptyShelfHint) return null
+    if (!app.store.session.launchTargetControlVisible(game.occupiesBothDisplays)) return null
+    val target = app.store.session.singleScreenTarget(game.id, game.platformId)
+    val focused = model.focus.chrome == Chrome.LaunchTarget
+    return when {
+        target == Panel.Bottom || model.launchOnBottom -> Copy.launchOnBottom
+        focused -> Copy.launchOnTop
+        else -> null
+    }
 }
 
 @Composable
 private fun LaunchTargetLabel(app: FoldcadeApp, progress: Float) {
-    if (!launchTargetShown(app)) return
-    val game = app.shell.focusedGame() ?: return
+    val label = launchTargetLabel(app) ?: return
     val theme = LocalFoldTheme.current.theme
-    val model = app.shell.model
-    val target = app.store.session.singleScreenTarget(game.id, game.platformId)
-    val label = if (target == Panel.Bottom || model.launchOnBottom) Copy.launchOnBottom else Copy.launchOnTop
-    val focused = model.focus.chrome == Chrome.LaunchTarget
+    val focused = app.shell.model.focus.chrome == Chrome.LaunchTarget
     BasicText(
         text = label,
         modifier = if (progress < 0.08f) {

@@ -86,6 +86,24 @@ class HeroTransitionTest {
     }
 
     @Test
+    fun aFolderWithAMarkShowsIt() {
+        val marked = HeroFolder(key = "nintendo-3ds", name = "Nintendo 3DS", count = 12, mark = "dual")
+        assertTrue(heroCopy(HeroSubject.Folder(marked)).showsArt)
+    }
+
+    @Test
+    fun heroFactsJoinWhatIsKnownOnce() {
+        assertEquals(
+            "Nintendo 3DS · On this device · Played 4h · Yesterday",
+            heroFacts("Puzzle", "Nintendo 3DS", "On this device", null, " ", "Played 4h · Yesterday"),
+        )
+        assertEquals("Nintendo DS", heroFacts("Puzzle", "Nintendo DS", "Nintendo DS"))
+        assertEquals("", heroFacts("Puzzle", null, ""))
+        // A platform tile named for its platform does not repeat the name.
+        assertEquals("", heroFacts("PC", "PC"))
+    }
+
+    @Test
     fun settledFrontIsNotACrossfadeLayer() {
         assertFalse(
             heroCrossfadeActive(hasFront = true, hasBack = false, frontAlpha = 1f, backAlpha = 0f),

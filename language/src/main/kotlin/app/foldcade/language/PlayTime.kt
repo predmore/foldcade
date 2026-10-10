@@ -55,10 +55,7 @@ fun lastPlayedLine(atMillis: Long?, nowMillis: Long, zone: ZoneId): String {
     return "Last played  $whenText"
 }
 
-/**
- * One line for the hero's name card: time played and when, or null for a game never played.
- * The full lines stay on the bottom panel's details.
- */
+/** Time played and when, for the hero's line of facts. Null for a game never played. */
 fun heroPlayLine(activeMillis: Long, atMillis: Long?, nowMillis: Long, zone: ZoneId): String? {
     if (activeMillis <= 0L && atMillis == null) return null
     val played = playedLine(activeMillis).removePrefix("Played  ")
