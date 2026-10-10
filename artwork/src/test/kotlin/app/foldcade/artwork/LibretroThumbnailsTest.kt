@@ -106,9 +106,11 @@ internal class FakeHttp(
 ) : ArtHttp {
     var gets = 0
     val heads = mutableListOf<String>()
+    val sent = mutableListOf<Pair<String, Map<String, String>>>()
 
     override suspend fun get(url: String, headers: Map<String, String>): ArtResponse {
         gets++
+        sent += url to headers
         return pages[url] ?: throw java.io.IOException("offline: $url")
     }
 
