@@ -77,10 +77,6 @@ class ThemeZipTest {
                 "sounds/activate.ogg",
                 "sounds/back.ogg",
                 "sounds/notify.ogg",
-                "marks/dual.png",
-                "marks/pocket.png",
-                "marks/desk.png",
-                "marks/beam.png",
                 "LICENSE",
                 "sprites/glow_soft_256.png",
                 "sprites/glow_soft_256_amber.png",
@@ -93,6 +89,7 @@ class ThemeZipTest {
                 "sprites/ribbon_hotspot_amber.png",
                 "sprites/ribbon_hotspot_teal.png",
             ).forEach { name -> assertNotNull(name, zip.getEntry(name)) }
+            assertNull(zip.getEntry("marks/desk.png"))
             assertNull(zip.getEntry("wallpaper-top.png"))
             assertNull(zip.getEntry("wallpaper-bottom.png"))
         }

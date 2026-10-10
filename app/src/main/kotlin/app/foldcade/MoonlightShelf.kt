@@ -64,7 +64,7 @@ internal suspend fun PluginHost.moonlightShelfGames(): List<ShelfGame> {
             shortText = library.displayName,
             platformId = game.platformId,
             occupiesBothDisplays = false,
-            mark = "cloud",
+            mark = "moonlight",
             libraryId = game.backendId,
             remoteKey = game.remoteKey,
         )

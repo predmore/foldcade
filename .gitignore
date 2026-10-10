@@ -26,3 +26,4 @@ music/tracks/*/out/**/*.ogg
 music/tracks/*/out/**/*.mp3
 music/tracks/*/out/**/*render4x.mid
 music/tracks/*/out/**/checks.json
+__pycache__/
