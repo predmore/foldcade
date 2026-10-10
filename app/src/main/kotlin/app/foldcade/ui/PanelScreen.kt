@@ -3,6 +3,7 @@ package app.foldcade.ui
 import android.graphics.RenderEffect
 import android.graphics.Shader
 import android.os.Build
+import android.util.Log
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.FiniteAnimationSpec
 import androidx.compose.foundation.Image
@@ -677,13 +678,14 @@ private fun PanelRows(
                     interactive = interactive,
                     onStep = step,
                     onVolume = app.shell::setMusicVolume,
-                    modifier = Modifier.fillMaxWidth().rowHighlight(focused),
+                    modifier = Modifier.fillMaxWidth().keepInView(focused).rowHighlight(focused),
                 )
             } else {
                 val press = if (interactive) Modifier.hostPress(step) else Modifier
                 Row(
                     Modifier
                         .fillMaxWidth()
+                        .keepInView(focused)
                         .rowHighlight(focused)
                         .focusStroke(focused)
                         .then(press)
@@ -733,6 +735,19 @@ private fun PanelRows(
     }
 }
 
+/**
+ * A menu taller than its island scrolls. The D-pad moves the focus, not the
+ * scroll, so the focused row asks its scrolling parent to show it.
+ */
+@Composable
+private fun Modifier.keepInView(focused: Boolean): Modifier {
+    val requester = remember { BringIntoViewRequester() }
+    LaunchedEffect(focused) {
+        if (focused) requester.bringIntoView()
+    }
+    return bringIntoViewRequester(requester)
+}
+
 @Composable
 private fun QuickTiles(
     app: FoldcadeApp,
@@ -764,6 +779,7 @@ private fun QuickTiles(
                         Modifier
                             .weight(1f)
                             .height(64.dp)
+                            .keepInView(focused)
                             .rowHighlight(focused)
                             .focusStroke(focused, corner)
                             .tileEdge(focused = focused, corner = corner)
@@ -967,6 +983,11 @@ private fun PagedGrid(
     val focus = app.shell.model.focus
     val pageSize = (Metrics.columns * rows).coerceAtLeast(1)
     val page = focus.cellIndex / pageSize
+    val titles = pageTitles(app, page, pageSize)
+    // The emulator reads this line. A presentation-display dump is empty while that display has focus.
+    LaunchedEffect(titles) {
+        Log.i("Foldcade", "library-ui page " + titles.joinToString(" | "))
+    }
     val position = remember { Animatable(page.toFloat()) }
     LaunchedEffect(page, scale) {
         withContext(SteadyMotion) {
@@ -993,6 +1014,17 @@ private fun PagedGrid(
                 Grid(app, screen, cell, gap, rows, drawn, showTitle)
             }
         }
+    }
+}
+
+/** Titles on [page], in the order [Grid] draws them. */
+private fun pageTitles(app: FoldcadeApp, page: Int, pageSize: Int): List<String> {
+    val shell = app.shell
+    val order = displayOrder(shell.model)
+    val start = page * pageSize
+    val end = minOf(start + pageSize, shell.model.count)
+    return (start until end).map { index ->
+        shell.tileFromOrder(order.getOrElse(index) { index })?.title.orEmpty()
     }
 }
 
