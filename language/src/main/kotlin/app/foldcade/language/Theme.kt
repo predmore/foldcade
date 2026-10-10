@@ -53,9 +53,11 @@ object TypeRamp {
 
 /** Host-owned layout. Motion lives on [Motion]. */
 object Metrics {
+    /** The grid is a fixed four by three on every page. */
     const val columns = 4
+    const val rows = 3
     const val insetFraction = 0.04f
-    const val gapFraction = 0.02f
+    const val gapFraction = 0.04f
     const val focusStrokePx = 3f
     const val heroInsetPx = 48f
     const val dialogInsetPx = 48f
@@ -181,8 +183,12 @@ object Copy {
     const val sortSystem = "System"
     const val allSystems = "All systems"
     const val homeSlot = "Home"
-    const val editHint = "A picks up. D-pad moves. A drops. B puts it back. Start or Back is done. X removes from home. It stays in All."
-    const val allHint = "A launches. Y adds to home. X chooses a folder. L2 and R2 jump a letter."
+    const val hintMove = "Move"
+    const val hintNewFolder = "New folder"
+    const val hintRemove = "Remove"
+    const val hintDone = "Done"
+    const val hintAddToHome = "Add to Home"
+    const val hintChangeFolder = "Change folder"
     const val onHomeMark = "On home"
     const val newFolder = "Folder"
     const val stillInAll = "Still in All"
@@ -209,11 +215,44 @@ fun monogram(title: String): String {
     return char.uppercaseChar().toString()
 }
 
+/**
+ * Moving and choosing on a grid need no prompt, so the root grid has none and
+ * a grid inside a folder shows Back only.
+ */
 fun hintFor(place: HintPlace): HintActions? = when (place) {
-    HintPlace.RootGrid -> hintLine(activateDoesSomething = true, backDoesSomething = false)
-    HintPlace.InsidePlatform,
+    HintPlace.RootGrid -> null
+    HintPlace.InsidePlatform -> hintLine(activateDoesSomething = false, backDoesSomething = true)
     HintPlace.Menu,
     HintPlace.Dialog,
     -> hintLine(activateDoesSomething = true, backDoesSomething = true)
     HintPlace.Connect -> hintLine(activateDoesSomething = false, backDoesSomething = true)
+}
+
+/** One glyph and one word in the hint row. */
+data class HintKey(val key: PromptKey, val label: String)
+
+/**
+ * The keys a grid lists under it. Editing home and the All library use keys
+ * that are not obvious, so those modes name them. Anything else follows [actions].
+ */
+fun gridHints(actions: HintActions?, homeKeys: HomeKeys, faceMap: FaceMap): List<HintKey> {
+    val confirm = promptKeyOf(faceMap.confirmKey) ?: PromptKey.FaceA
+    val back = promptKeyOf(faceMap.backKey) ?: PromptKey.FaceB
+    return when (homeKeys) {
+        HomeKeys.Editing -> listOf(
+            HintKey(confirm, Copy.hintMove),
+            HintKey(PromptKey.FaceY, Copy.hintNewFolder),
+            HintKey(PromptKey.FaceX, Copy.hintRemove),
+            HintKey(PromptKey.Start, Copy.hintDone),
+        )
+        HomeKeys.AllLibrary -> listOf(
+            HintKey(PromptKey.FaceY, Copy.hintAddToHome),
+            HintKey(PromptKey.FaceX, Copy.hintChangeFolder),
+            HintKey(back, Copy.back),
+        )
+        else -> buildList {
+            if (actions?.confirm == true) add(HintKey(confirm, Copy.confirm))
+            if (actions?.back == true) add(HintKey(back, Copy.back))
+        }
+    }
 }

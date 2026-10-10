@@ -88,12 +88,29 @@ class ContractTest {
 
     @Test
     fun hintsUseAAndBOnlyWhenThatActionDoesSomething() {
-        assertEquals(HintActions(confirm = true, back = false), hintFor(HintPlace.RootGrid))
-        assertEquals(HintActions(confirm = true, back = true), hintFor(HintPlace.InsidePlatform))
+        assertNull(hintFor(HintPlace.RootGrid))
+        assertEquals(HintActions(confirm = false, back = true), hintFor(HintPlace.InsidePlatform))
         assertEquals(HintActions(confirm = false, back = true), hintFor(HintPlace.Connect))
         assertNull(hintLine(activateDoesSomething = false, backDoesSomething = false))
         assertEquals(HintActions(confirm = true, back = true), hintFor(HintPlace.Dialog))
-        assertFalse(hintFor(HintPlace.RootGrid)!!.back)
+    }
+
+    @Test
+    fun gridHintsNameOnlyKeysThatAreNotObvious() {
+        val map = FaceMap.standard()
+        assertEquals(emptyList<HintKey>(), gridHints(hintFor(HintPlace.RootGrid), HomeKeys.Idle, map))
+        assertEquals(
+            listOf(HintKey(PromptKey.FaceB, Copy.back)),
+            gridHints(hintFor(HintPlace.InsidePlatform), HomeKeys.Idle, map),
+        )
+        assertEquals(
+            listOf(PromptKey.FaceA, PromptKey.FaceY, PromptKey.FaceX, PromptKey.Start),
+            gridHints(null, HomeKeys.Editing, map).map { it.key },
+        )
+        assertEquals(
+            listOf(PromptKey.FaceY, PromptKey.FaceX, PromptKey.FaceB),
+            gridHints(hintFor(HintPlace.InsidePlatform), HomeKeys.AllLibrary, map).map { it.key },
+        )
     }
 
     @Test

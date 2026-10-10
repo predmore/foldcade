@@ -162,13 +162,8 @@ class HomeSession(raw: String?) {
         else -> HomeKeys.Idle
     }
 
-    fun hint(): String? = when {
-        renaming -> Copy.newFolder
-        board.editing -> Copy.editHint
-        board.allOpen -> Copy.allHint
-        board.openFolderId != null -> null
-        else -> null
-    }
+    /** Edit and All name their keys in the hint row. Only renaming has a line of its own. */
+    fun hint(): String? = if (renaming) Copy.newFolder else null
 
     fun chrome(): AllChrome? {
         if (!board.allOpen) return null
