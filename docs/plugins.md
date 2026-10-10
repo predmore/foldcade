@@ -2,6 +2,16 @@
 
 The contract lives in `:api` ([Apache-2.0](../api/LICENSE)). The host that loads it is `:host`. Samples are `:plugins:sample` and `:samples:out-of-tree`.
 
+## Stability
+
+`:api` is unstable. Any release may change it without a major bump. It stays unstable until a plugin outside this repository depends on it.
+
+- The versioning rules below are the intended contract. No tool checks them yet. There is no binary-compatibility dump.
+- Only the plugins in this repository are loaded on a device. `:samples:out-of-tree` is loaded from a jar in a JVM test. Android has no path that loads a plugin from another package.
+- `:api` also carries app types that are not plugin contract: `Session`, `Panel`, `DisplayAssignment`, and the RomM credential ids. They may move out.
+
+A change to `:api` should still keep the in-tree plugins and both samples compiling, and keep `PLUGIN_API_VERSION` and `PLUGIN_API_MINOR` honest.
+
 ## Contract
 
 A plugin is a `PluginEntry` (`app.foldcade.api.plugin.PluginEntry`). One entry may contribute to any of four slots. The host stores each contribution in its own slot. A library and a metadata provider from the same entry stay separate objects.
