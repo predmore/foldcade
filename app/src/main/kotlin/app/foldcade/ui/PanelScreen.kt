@@ -989,7 +989,10 @@ private fun GridHeader(
     val theme = foldTheme()
     val chrome = shell.homeChrome()
     if (chrome != null) {
-        Row(horizontalArrangement = Arrangement.spacedBy(px(12f))) {
+        Row(
+            Modifier.padding(bottom = px(12f)),
+            horizontalArrangement = Arrangement.spacedBy(px(12f)),
+        ) {
             listOf(chrome.tab, chrome.sort, chrome.system, chrome.destination).forEachIndexed { index, label ->
                 ChromeButton(
                     label = label,
@@ -1112,7 +1115,7 @@ private fun ShelfMeta(line: String, hintFocused: Boolean, centred: Boolean = fal
     val theme = foldTheme()
     BasicText(
         text = line,
-        modifier = if (hintFocused) Modifier.focusStroke(true).padding(px(8f)) else Modifier,
+        modifier = if (hintFocused) Modifier.chip(true).padding(horizontal = px(20f), vertical = px(10f)) else Modifier,
         style = text(if (hintFocused) theme.focus else theme.muted, TypeRamp.heroMeta, theme)
             .copy(textAlign = if (centred) TextAlign.Center else TextAlign.Start),
         maxLines = 2,
@@ -1125,8 +1128,10 @@ private fun ChromeButton(label: String, focused: Boolean, onClick: () -> Unit) {
     val theme = foldTheme()
     BasicText(
         text = label,
-        modifier = Modifier.focusStroke(focused).hostPress(onClick).padding(px(8f)),
-        style = text(theme.onBackground, TypeRamp.sideRow, theme),
+        modifier = Modifier.chip(focused).hostPress(onClick).padding(horizontal = px(20f), vertical = px(10f)),
+        style = text(theme.onBackground, TypeRamp.dialogBody, theme),
+        maxLines = 1,
+        overflow = TextOverflow.Ellipsis,
     )
 }
 
@@ -1815,9 +1820,9 @@ private fun EmptyLibrary(
                     BasicText(
                         text = label,
                         modifier = Modifier
-                            .focusStroke(focused)
+                            .chip(focused)
                             .hostPress { app.shell.touchCell(index, screen) }
-                            .padding(px(8f)),
+                            .padding(horizontal = px(20f), vertical = px(10f)),
                         style = text(theme.onBackground, TypeRamp.dialogBody, theme),
                     )
                 }
@@ -1950,11 +1955,11 @@ private fun ConnectScreen(
             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri, imeAction = ImeAction.Next),
             modifier = Modifier
                 .fillMaxWidth()
-                .focusStroke(focused(model.connectIndex, ConnectField.Origin))
+                .chip(focused(model.connectIndex, ConnectField.Origin))
                 .onFocusChanged { state ->
                     if (state.isFocused) app.shell.touchConnect(fields.indexOf(ConnectField.Origin), screen)
                 }
-                .padding(px(8f)),
+                .padding(horizontal = px(20f), vertical = px(10f)),
         )
         val warning = model.connectWarning
         if (warning != null) {
@@ -1975,18 +1980,18 @@ private fun ConnectScreen(
             keyboardOptions = KeyboardOptions(autoCorrectEnabled = false, imeAction = ImeAction.Done),
             modifier = Modifier
                 .fillMaxWidth()
-                .focusStroke(focused(model.connectIndex, ConnectField.Token))
+                .chip(focused(model.connectIndex, ConnectField.Token))
                 .onFocusChanged { state ->
                     if (state.isFocused) app.shell.touchConnect(fields.indexOf(ConnectField.Token), screen)
                 }
-                .padding(px(8f)),
+                .padding(horizontal = px(20f), vertical = px(10f)),
         )
         BasicText(
             text = Copy.saveToken,
             modifier = Modifier
-                .focusStroke(focused(model.connectIndex, ConnectField.Save))
+                .chip(focused(model.connectIndex, ConnectField.Save))
                 .hostPress { onEffect(app.shell.touchConnect(fields.indexOf(ConnectField.Save), screen)) }
-                .padding(px(8f)),
+                .padding(horizontal = px(20f), vertical = px(10f)),
             style = text(theme.onBackground, TypeRamp.dialogBody, theme),
         )
         BasicText(text = Copy.rommTokenHelp, style = text(theme.muted, TypeRamp.dialogBody, theme))
@@ -2045,29 +2050,21 @@ private fun Modifier.rowHighlight(focused: Boolean): Modifier {
     }
 }
 
+/**
+ * A chip: a faint filled pill, and the same focus ring as tiles and menu rows
+ * while it has focus. Tabs, actions, and fields all use it.
+ */
 @Composable
-private fun Modifier.focusStroke(
-    focused: Boolean,
-    corner: Dp = Dp.Hairline,
-    accent: Color? = null,
-): Modifier {
-    val color = accent ?: foldTheme().focus
+private fun Modifier.chip(focused: Boolean): Modifier {
+    val lift = foldTheme().onBackground
     return this.graphicsLayer { clip = false }.drawBehind {
-        if (!focused) return@drawBehind
-        val bounds = this.size
-        val reach = min(bounds.width, bounds.height) * 0.5f
-        drawCircle(
-            brush = Brush.radialGradient(
-                colorStops = arrayOf(
-                    0f to color.copy(alpha = 0.7f),
-                    0.38f to color.copy(alpha = 0.22f),
-                    1f to Color.Transparent,
-                ),
-                center = center,
-                radius = reach,
-            ),
-            radius = reach,
-            center = center,
+        val corner = min(size.height / 2f, CHIP_CORNER_PX)
+        drawRoundRect(
+            color = lift.copy(alpha = if (focused) 0.10f else 0.06f),
+            cornerRadius = CornerRadius(corner, corner),
         )
+        if (focused) with(FocusRing) { drawFocusRing(corner) }
     }
 }
+
+private const val CHIP_CORNER_PX = 44f

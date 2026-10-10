@@ -1,6 +1,7 @@
 package app.foldcade.ui
 
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.ui.layout.onSizeChanged
 import app.foldcade.language.Motion as FoldMotion
 import android.content.Context
 import androidx.compose.foundation.Image
@@ -157,7 +158,13 @@ private fun Island(
     val pillWidth = if (side == Side.Right) 260.dp else lerp(72.dp, 280.dp, widen)
     val pillHeight = 44.dp
     val openWidth = maxWidth * 0.48f
-    val openHeight = maxHeight * 0.84f
+    // The open card fits its rows, up to most of the screen. A taller menu scrolls.
+    var rowsHeight by remember(side) { mutableStateOf(Dp.Hairline) }
+    val openHeight = if (rowsHeight > Dp.Hairline) {
+        minOf(maxHeight * 0.84f, pillHeight + rowsHeight + MENU_PADDING_DP.dp)
+    } else {
+        maxHeight * 0.84f
+    }
     val width = lerp(pillWidth, openWidth, progress)
     val height = lerp(pillHeight, openHeight, progress)
     val radius = lerp(pillHeight / 2, Metrics.cardCornerDp.dp, progress)
@@ -222,11 +229,16 @@ private fun Island(
                     // The scroll clips. This keeps the focus ring on the first and last rows inside it.
                     .padding(vertical = 10.dp),
             ) {
-                menuRows(panel, progress, interactive)
+                Box(Modifier.onSizeChanged { rowsHeight = with(density) { it.height.toDp() } }) {
+                    menuRows(panel, progress, interactive)
+                }
             }
         }
     }
 }
+
+/** The open card's padding below the pill: the scroll's 10dp each side, and 8dp under it. */
+private const val MENU_PADDING_DP = 28f
 
 private fun Side.meaning(): Meaning = if (this == Side.Left) Meaning.LeftPanel else Meaning.RightPanel
 
