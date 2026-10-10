@@ -8,6 +8,9 @@ import android.content.IntentFilter
 import android.content.pm.PackageManager
 import android.net.Uri
 import android.util.Log
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 import app.foldcade.api.plugin.CredentialLookup
 import app.foldcade.api.plugin.CredentialStore
 import app.foldcade.api.plugin.RommCredentials
@@ -75,6 +78,9 @@ class FoldcadeApp : Application() {
     /** True only for the process that first recorded a launch. Calibration waits for the next one. */
     var buttonPromptFirstSession: Boolean = false
         private set
+
+    /** Set before composition when a debug capture freezes the island morph. */
+    var islandHold by mutableStateOf<IslandHold?>(null)
 
     /**
      * Sign-in and credential work. Keystore seal and open run here, on

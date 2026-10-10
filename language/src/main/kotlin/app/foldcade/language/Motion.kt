@@ -16,6 +16,9 @@ object Motion {
     const val durationShort = 100
     const val durationFocus = 180
     const val durationTravel = 200
+
+    /** Island morph. Same curves as travel, long enough to read the shared-element grow. */
+    const val durationIsland = 320
     const val scaleRest = 1f
     const val scaleFocus = 1.05f
 

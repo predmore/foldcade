@@ -122,6 +122,55 @@ class ContractTest {
     }
 
     @Test
+    fun openingOneIslandCollapsesTheOtherBeforeItExpands() {
+        val root = PickerModel(count = 2, rowsPerPage = 2, showLaunchTarget = false)
+        val left = reduce(root, Meaning.LeftPanel, HostScreen.Bottom).first
+        assertEquals(Side.Left, left.panel?.side)
+        assertFalse(left.panel!!.retiring)
+        assertNull(left.dialog)
+        val closing = reduce(left, Meaning.RightPanel, HostScreen.Top).first
+        assertEquals(Side.Left, closing.panel?.side)
+        assertTrue(closing.panel!!.retiring)
+        assertEquals(Side.Right, closing.panel?.pendingSide)
+        assertNull(closing.dialog)
+        val right = finishIslandRetire(closing)
+        assertEquals(Side.Right, right.panel?.side)
+        assertFalse(right.panel!!.retiring)
+        assertNull(right.panel?.pendingSide)
+        val back = reduce(right, Meaning.LeftPanel, HostScreen.Bottom).first
+        assertEquals(Side.Right, back.panel?.side)
+        assertTrue(back.panel!!.retiring)
+        assertEquals(Side.Left, back.panel?.pendingSide)
+        val reopened = finishIslandRetire(back)
+        assertEquals(Side.Left, reopened.panel?.side)
+        assertNull(reopened.panel?.pendingSide)
+        val cancelled = reduce(closing, Meaning.LeftPanel, HostScreen.Top).first
+        assertTrue(cancelled.panel!!.retiring)
+        assertNull(cancelled.panel?.pendingSide)
+        assertNull(finishIslandRetire(cancelled).panel)
+    }
+
+    @Test
+    fun debugHoldShowsThatShoulderImmediately() {
+        val root = PickerModel(count = 2, rowsPerPage = 2, showLaunchTarget = false)
+        val left = replaceIsland(root, Side.Left)
+        assertEquals(Side.Left, left.panel?.side)
+        assertEquals(HostScreen.Top, left.panel?.screen)
+        assertFalse(left.panel!!.retiring)
+        val right = replaceIsland(left, Side.Right)
+        assertEquals(Side.Right, right.panel?.side)
+        assertFalse(right.panel!!.retiring)
+        assertNull(right.panel?.pendingSide)
+        val again = replaceIsland(right, Side.Left)
+        assertEquals(Side.Left, again.panel?.side)
+        assertFalse(again.panel!!.retiring)
+        val live = reduce(again, Meaning.RightPanel, HostScreen.Top).first
+        assertEquals(Side.Left, live.panel?.side)
+        assertTrue(live.panel!!.retiring)
+        assertEquals(Side.Right, live.panel?.pendingSide)
+    }
+
+    @Test
     fun leftPanelCyclesValuesAndRightReplacesIt() {
         val root = PickerModel(count = 2, rowsPerPage = 3, showLaunchTarget = true, themes = listOf("Built-in", "Sample"))
         val (stayed, effect) = reduce(root, Meaning.Back)
@@ -129,7 +178,7 @@ class ContractTest {
         assertEquals(root.focus, stayed.focus)
         val opened = reduce(root, Meaning.LeftPanel, HostScreen.Bottom).first
         assertEquals(Side.Left, opened.panel?.side)
-        assertEquals(HostScreen.Bottom, opened.panel?.screen)
+        assertEquals(HostScreen.Top, opened.panel?.screen)
         val primary = reduce(opened.copy(panel = opened.panel?.copy(index = 2)), Meaning.Activate).first
         assertFalse(primary.primaryIsTop)
         assertEquals(2, primary.panel?.index)
@@ -152,9 +201,14 @@ class ContractTest {
         val closed = reduce(opened, Meaning.Back).first
         assertNull(closed.panel)
         val right = reduce(opened, Meaning.RightPanel, HostScreen.Top).first
-        assertEquals(Side.Right, right.panel?.side)
-        assertEquals(HostScreen.Top, right.panel?.screen)
-        val again = reduce(right, Meaning.RightPanel, HostScreen.Top).first
+        assertEquals(Side.Left, right.panel?.side)
+        assertTrue(right.panel!!.retiring)
+        assertEquals(Side.Right, right.panel?.pendingSide)
+        val openedRight = finishIslandRetire(right)
+        assertEquals(Side.Right, openedRight.panel?.side)
+        assertEquals(HostScreen.Top, openedRight.panel?.screen)
+        assertFalse(openedRight.panel!!.retiring)
+        val again = reduce(openedRight, Meaning.RightPanel, HostScreen.Top).first
         assertNull(again.panel)
     }
 
@@ -321,6 +375,8 @@ class ContractTest {
         assertEquals(100, Motion.durationShort)
         assertEquals(180, Motion.durationFocus)
         assertEquals(200, Motion.durationTravel)
+        assertEquals(320, Motion.durationIsland)
+        assertTrue(Motion.durationIsland in 280..350)
         assertEquals(1f, Motion.scaleRest)
         assertEquals(1.05f, Motion.scaleFocus)
         assertEquals(100, Motion.duration(Motion.durationTravel, animatorScale = 0f))

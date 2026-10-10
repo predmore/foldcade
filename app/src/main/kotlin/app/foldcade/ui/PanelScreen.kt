@@ -1,5 +1,8 @@
 package app.foldcade.ui
 
+import android.graphics.RenderEffect
+import android.graphics.Shader
+import android.os.Build
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.FiniteAnimationSpec
 import androidx.compose.foundation.Image
@@ -16,7 +19,6 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxHeight
-import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.relocation.BringIntoViewRequester
@@ -24,6 +26,7 @@ import androidx.compose.foundation.relocation.bringIntoViewRequester
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -56,6 +59,7 @@ import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.graphics.asComposeRenderEffect
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.graphics.drawscope.DrawScope
@@ -78,7 +82,6 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.IntOffset
-import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.zIndex
 import app.foldcade.Displays
@@ -86,9 +89,6 @@ import app.foldcade.FoldcadeApp
 import app.foldcade.FoldcadeHomeActivity
 import app.foldcade.api.Panel
 import app.foldcade.api.Surface
-import app.foldcade.batteryLabel
-import app.foldcade.millisUntilNextMinute
-import app.foldcade.language.Chrome
 import app.foldcade.language.ConnectField
 import app.foldcade.language.Copy
 import app.foldcade.language.HomeGrid
@@ -121,7 +121,6 @@ import app.foldcade.language.builtInTheme
 import app.foldcade.language.connectFields
 import app.foldcade.language.connectHint
 import app.foldcade.language.hintFor
-import app.foldcade.language.islandGlyph
 import app.foldcade.language.letterOfKey
 import app.foldcade.language.cursorBrush
 import app.foldcade.language.displayOrder
@@ -137,7 +136,6 @@ import app.foldcade.language.rowLabel
 import app.foldcade.language.retargetHero
 import app.foldcade.language.rowText
 import java.time.ZoneId
-import app.foldcade.readDeviceStatus
 import kotlin.math.abs
 import kotlin.math.ceil
 import kotlin.math.floor
@@ -155,29 +153,87 @@ fun PanelHost(activity: FoldcadeHomeActivity, displays: Displays) {
     val panel = displays.panelFor(activity, session.defaultDisplayIsTop)
     val paint = app.paintFor(app.shell.model.themeIndex)
     val scale = Motion.animatorScale(LocalContext.current.contentResolver)
+    val model = app.shell.model
+    val screen = when (panel) {
+        Panel.Top -> HostScreen.Top
+        Panel.Bottom -> HostScreen.Bottom
+        null -> null
+    }
+    val ownsBottom = session.surfaceOn(Panel.Bottom) != null
+    val menuVisible = model.panel != null &&
+        model.panel?.screen == HostScreen.Top &&
+        model.dialog?.screen != HostScreen.Top
+    val blurHere = screen == HostScreen.Bottom &&
+        ownsBottom &&
+        menuVisible &&
+        model.dialog?.screen != HostScreen.Bottom
+    val heldBlur = if (blurHere) app.islandHold?.progress else null
+    val blurTarget = heldBlur ?: if (blurHere) 1f else 0f
+    val blur = motionFloat(
+        target = blurTarget,
+        spec = if (blurTarget >= 1f) Motion.arrive(Motion.durationIsland, scale) else Motion.leave(Motion.durationIsland, scale),
+        snap = heldBlur != null,
+    )
+    // A closed menu composes neither the blur nor the scrim. A graphics layer
+    // left over the library, even at zero alpha, keeps the accessibility dump empty.
     CompositionLocalProvider(LocalFoldTheme provides paint) {
         Box(Modifier.fillMaxSize().background(paint.theme.background)) {
-            Backdrop(
-                motion = app.shell.model.backgroundMotion,
-                speed = app.shell.model.motionSpeed,
-                animatorScale = scale,
-                running = activity.shellVisible && session.bothScreensFree(),
-            )
-            if (panel == null) return@Box
-            val screen = if (panel == Panel.Top) HostScreen.Top else HostScreen.Bottom
-            val model = app.shell.model
-            val connectHere = model.connectOpen && model.connectScreen == screen
-            TravelFade(target = session.surfaceOn(panel), scale = scale) { shown ->
-                when (shown) {
-                    null -> Unit
-                    Surface.Hero -> if (connectHere) Unit else Hero(app, screen, scale, activity::dispatch)
-                    Surface.Picker -> Picker(app, screen, scale, activity::dispatch)
+            if (blurHere) {
+                Box(Modifier.fillMaxSize().menuBlur(blur).menuDim(blur)) {
+                    PanelBody(activity, panel, screen, scale)
                 }
+            } else {
+                PanelBody(activity, panel, screen, scale)
             }
-            if (connectHere) ConnectScreen(app, screen, activity::dispatch)
-            DialogLayer(app, model.dialog, screen, scale, activity::dispatch)
-            MoonlightImportLayer(app, model.moonlightSheet, screen, scale)
+            if (panel != null && screen != null) {
+                DialogLayer(app, model.dialog, screen, scale, activity::dispatch)
+                MoonlightImportLayer(app, model.moonlightSheet, screen, scale)
+            }
         }
+    }
+}
+
+@Composable
+private fun PanelBody(
+    activity: FoldcadeHomeActivity,
+    panel: Panel?,
+    screen: HostScreen?,
+    scale: Float,
+) {
+    val app = activity.application as FoldcadeApp
+    val session = app.store.session
+    val model = app.shell.model
+    Backdrop(
+        motion = model.backgroundMotion,
+        speed = model.motionSpeed,
+        animatorScale = scale,
+        running = activity.shellVisible && session.bothScreensFree(),
+    )
+    if (panel == null || screen == null) return
+    val connectHere = model.connectOpen && model.connectScreen == screen
+    TravelFade(target = session.surfaceOn(panel), scale = scale) { shown ->
+        when (shown) {
+            null -> Unit
+            Surface.Hero -> if (connectHere) Unit else Hero(app, screen, scale, activity::dispatch)
+            Surface.Picker -> Picker(app, screen, scale, activity::dispatch)
+        }
+    }
+    if (connectHere) ConnectScreen(app, screen, activity::dispatch)
+}
+
+/** Dim painted with the content, not a second full-screen node on top of it. */
+private fun Modifier.menuDim(progress: Float): Modifier = drawWithContent {
+    drawContent()
+    val dim = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) 0.32f else 0.55f
+    drawRect(Color.Black.copy(alpha = dim * progress.coerceIn(0f, 1f)))
+}
+
+/** Blur only while the radius is visible. A zero-radius graphics layer still hides nodes. */
+private fun Modifier.menuBlur(progress: Float): Modifier {
+    val radius = progress * 28f
+    if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S || radius < 0.5f) return this
+    return graphicsLayer {
+        renderEffect = RenderEffect.createBlurEffect(radius, radius, Shader.TileMode.CLAMP).asComposeRenderEffect()
     }
 }
 
@@ -186,10 +242,11 @@ private object SteadyMotion : MotionDurationScale {
 }
 
 @Composable
-private fun motionFloat(target: Float, spec: FiniteAnimationSpec<Float>): Float {
+private fun motionFloat(target: Float, spec: FiniteAnimationSpec<Float>, snap: Boolean = false): Float {
     val anim = remember { Animatable(target) }
-    LaunchedEffect(target) {
-        withContext(SteadyMotion) { anim.animateTo(target, spec) }
+    LaunchedEffect(target, snap) {
+        if (snap) anim.snapTo(target)
+        else withContext(SteadyMotion) { anim.animateTo(target, spec) }
     }
     return anim.value
 }
@@ -213,9 +270,21 @@ private fun <T> TravelFade(target: T, scale: Float, content: @Composable (T) -> 
             }
         }
         back = null
+        incoming.snapTo(1f)
     }
-    Box {
-        val previous = back
+    val previous = back
+    val moving = previous != null || incoming.value < 0.999f
+    if (!moving) {
+        content(front)
+        return
+    }
+    // Only while the surface is changing. Settled content has no graphics layer.
+    Box(
+        Modifier
+            .fillMaxSize()
+            .focusProperties { canFocus = false }
+            .clearAndSetSemantics { },
+    ) {
         if (previous != null) {
             Box(Modifier.graphicsLayer { alpha = outgoing.value }) { content(previous) }
         }
@@ -253,7 +322,11 @@ private fun Hero(app: FoldcadeApp, screen: HostScreen, scale: Float, onEffect: (
             Modifier
                 .align(Alignment.TopStart)
                 .fillMaxWidth()
-                .padding(start = inset, end = inset, top = inset),
+                .padding(
+                    start = inset,
+                    end = inset,
+                    top = if (screen == HostScreen.Top) inset + 48.dp else inset,
+                ),
         ) {
             HeroCrossfade(
                 target = subject,
@@ -274,7 +347,9 @@ private fun Hero(app: FoldcadeApp, screen: HostScreen, scale: Float, onEffect: (
                 HeroLabel(app, subject, cellFocused)
             }
         }
-        Panels(app, screen, scale, onEffect)
+        TopIslands(app, screen, scale) { panelState, progress, interactive ->
+            PanelRows(app, screen, panelState, progress, interactive, onEffect)
+        }
     }
 }
 
@@ -329,6 +404,8 @@ private fun <T> HeroCrossfade(
             }
         }
         if (same(blend.front, next.front)) {
+            incoming.snapTo(if (next.front == null) 0f else 1f)
+            outgoing.snapTo(0f)
             blend = blend.copy(back = null, backAlpha = 0f, frontAlpha = incoming.value)
         }
     }
@@ -466,7 +543,6 @@ private fun Picker(
     val model = shell.model
     val session = app.store.session
     val game = shell.focusedGame()
-    var clusterHeight by remember { mutableStateOf(0.dp) }
     BoxWithConstraints(Modifier.fillMaxSize()) {
         val inset = maxWidth * Metrics.insetFraction
         val gap = maxWidth * Metrics.gapFraction
@@ -485,8 +561,6 @@ private fun Picker(
             model.panel == null && model.dialog == null && !model.connectOpen
         }
         val clearance = px(Metrics.chromeClearancePx)
-        // The closed L1 chip is overlaid at this same inset. Chrome starts after it.
-        val chipClearance = IslandChipSize + px(12f)
         // Keeps the last tile label inside the screen, above the clip.
         val labelSafe = px(28f)
         Column(
@@ -495,13 +569,10 @@ private fun Picker(
                 .padding(horizontal = inset)
                 .padding(top = inset, bottom = inset + labelSafe),
         ) {
-            Box(Modifier.fillMaxWidth().heightIn(min = clusterHeight)) {
-                Column(
-                    Modifier
-                        .align(Alignment.BottomStart)
-                        .padding(start = chipClearance),
-                ) { ChromeRow(app, screen) }
+            if (screen == HostScreen.Top) {
+                Spacer(Modifier.height(48.dp))
             }
+            ChromeRow(app)
             Spacer(Modifier.height(clearance))
             if (detailGame != null) {
                 GameDetail(app, detailGame.id)
@@ -567,193 +638,8 @@ private fun Picker(
                 }
             }
         }
-        Panels(app, screen, scale, onEffect) { clusterHeight = it }
-    }
-}
-
-@Composable
-private fun Panels(
-    app: FoldcadeApp,
-    screen: HostScreen,
-    scale: Float,
-    onEffect: (Effect?) -> Unit,
-    onClusterHeight: (Dp) -> Unit = {},
-) {
-    val model = app.shell.model
-    val dialogHere = model.dialog?.screen == screen
-    val leftOpen = !dialogHere && model.panel?.side == Side.Left && model.panel?.screen == screen
-    val rightOpen = !dialogHere && model.panel?.side == Side.Right && model.panel?.screen == screen
-    BoxWithConstraints(Modifier.fillMaxSize()) {
-        val inset = maxWidth * Metrics.insetFraction
-        val openWidth = maxWidth * 0.46f
-        val openHeight = maxHeight * 0.62f
-        LeftPanel(app, screen, leftOpen, scale, maxWidth * 0.42f, onEffect)
-        Box(Modifier.align(Alignment.TopStart).padding(top = inset, start = inset)) {
-            // Closed left chip. The island-morph pull request cross-fades ic_btn_l1 to ic_btn_l1_filled.
-            PromptImage(islandGlyph(left = true, app.shell.model.held), IslandChipSize)
-        }
-        Box(Modifier.align(Alignment.TopEnd).padding(top = inset, end = inset)) {
-            RightCluster(
-                app = app,
-                screen = screen,
-                open = rightOpen,
-                scale = scale,
-                openWidth = openWidth,
-                openHeight = openHeight,
-                onClosedHeight = onClusterHeight,
-                onEffect = onEffect,
-            )
-        }
-    }
-}
-
-@Composable
-private fun LeftPanel(
-    app: FoldcadeApp,
-    screen: HostScreen,
-    open: Boolean,
-    scale: Float,
-    openWidth: Dp,
-    onEffect: (Effect?) -> Unit,
-) {
-    val theme = foldTheme()
-    val progress = motionFloat(
-        target = if (open) 1f else 0f,
-        spec = if (open) Motion.arrive(Motion.durationTravel, scale) else Motion.leave(Motion.durationTravel, scale),
-    )
-    val live = app.shell.model.panel?.takeIf { it.side == Side.Left && it.screen == screen }
-    var shown by remember { mutableStateOf<SidePanel?>(null) }
-    if (live != null) shown = live
-    val panel = shown
-    if (progress <= 0f || panel == null) return
-    // Opaque through the labels. The right edge is a scrim so the grid is not a hard cut.
-    val feather = px(300f)
-    val body = openWidth * progress
-    val scrim = theme.background
-    Row(
-        Modifier
-            .fillMaxHeight()
-            .width(body + feather)
-            .zIndex(2f),
-    ) {
-        Column(
-            Modifier
-                .fillMaxHeight()
-                .width(body)
-                .background(scrim)
-                .padding(start = px(20f), end = px(12f), top = px(20f), bottom = px(20f)),
-            verticalArrangement = Arrangement.spacedBy(px(2f)),
-        ) {
-            val libraryFailed = panel.level == PanelLevel.Library && app.shell.model.unavailable
-            if (libraryFailed) {
-                Unavailable()
-            } else {
-                PanelRows(app, screen, panel, progress, interactive = open, onEffect = onEffect)
-            }
-        }
-        Box(
-            Modifier
-                .fillMaxHeight()
-                .width(feather)
-                .drawBehind {
-                    drawRect(
-                        brush = Brush.horizontalGradient(
-                            colorStops = arrayOf(
-                                0f to scrim,
-                                0.16f to scrim.copy(alpha = 0.82f),
-                                0.4f to scrim.copy(alpha = 0.42f),
-                                0.68f to scrim.copy(alpha = 0.14f),
-                                0.88f to scrim.copy(alpha = 0.04f),
-                                1f to Color.Transparent,
-                            ),
-                            startX = 0f,
-                            endX = size.width,
-                        ),
-                    )
-                },
-        )
-    }
-}
-
-@Composable
-private fun RightCluster(
-    app: FoldcadeApp,
-    screen: HostScreen,
-    open: Boolean,
-    scale: Float,
-    openWidth: Dp,
-    openHeight: Dp,
-    onClosedHeight: (Dp) -> Unit,
-    onEffect: (Effect?) -> Unit,
-) {
-    val theme = foldTheme()
-    val progress = motionFloat(
-        target = if (open) 1f else 0f,
-        spec = if (open) Motion.arrive(Motion.durationTravel, scale) else Motion.leave(Motion.durationTravel, scale),
-    )
-    var cluster by remember { mutableStateOf(IntSize.Zero) }
-    val live = app.shell.model.panel?.takeIf { it.side == Side.Right && it.screen == screen }
-    var shown by remember { mutableStateOf<SidePanel?>(null) }
-    if (live != null) shown = live
-    val density = LocalDensity.current
-    val grown = progress > 0f && cluster != IntSize.Zero
-    val width = if (grown) lerp(with(density) { cluster.width.toDp() }, openWidth, progress) else null
-    val height = if (grown) lerp(with(density) { cluster.height.toDp() }, openHeight, progress) else null
-    Column(
-        Modifier
-            .onSizeChanged { size ->
-                if (!open && progress == 0f) onClosedHeight(with(density) { size.height.toDp() })
-            }
-            .then(if (width != null && height != null) Modifier.size(width, height) else Modifier)
-            .background(if (progress > 0f) theme.surface else Color.Transparent)
-            .padding(px(8f)),
-    ) {
-        StatusLine(
-            noticeCount = app.shell.model.notices.size,
-            held = app.shell.model.held,
-            modifier = Modifier.onSizeChanged { if (!open) cluster = it },
-            onClick = { app.shell.onMeaning(Meaning.RightPanel, screen) },
-            focused = app.shell.model.focus.chrome == Chrome.StatusCluster &&
-                app.shell.model.panel == null &&
-                app.shell.model.dialog == null,
-        )
-        val panel = shown
-        if (progress > 0f && panel != null) {
-            PanelRows(app, screen, panel, progress, interactive = open, onEffect = onEffect)
-        }
-    }
-}
-
-private fun lerp(start: Dp, end: Dp, fraction: Float): Dp = start + (end - start) * fraction
-
-@Composable
-private fun StatusLine(
-    noticeCount: Int,
-    held: Set<app.foldcade.language.PromptKey>,
-    modifier: Modifier,
-    onClick: () -> Unit,
-    focused: Boolean,
-) {
-    val theme = foldTheme()
-    val context = LocalContext.current
-    var status by remember { mutableStateOf(readDeviceStatus(context)) }
-    LaunchedEffect(context) {
-        while (true) {
-            status = readDeviceStatus(context)
-            delay(millisUntilNextMinute(System.currentTimeMillis()))
-        }
-    }
-    Row(
-        modifier.focusStroke(focused).hostPress(onClick),
-        horizontalArrangement = Arrangement.spacedBy(px(12f)),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        PromptImage(islandGlyph(left = false, held), IslandChipSize)
-        BasicText(text = status.time, style = text(theme.onBackground, TypeRamp.hint, theme))
-        BasicText(text = batteryLabel(status), style = text(theme.onBackground, TypeRamp.hint, theme))
-        BasicText(text = status.network, style = text(theme.onBackground, TypeRamp.hint, theme))
-        if (noticeCount > 0) {
-            BasicText(text = noticeCount.toString(), style = text(theme.onBackground, TypeRamp.hint, theme))
+        TopIslands(app, screen, scale) { panelState, progress, interactive ->
+            PanelRows(app, screen, panelState, progress, interactive, onEffect)
         }
     }
 }
@@ -955,28 +841,19 @@ private fun PlayFacts(app: FoldcadeApp, gameId: String) {
 }
 
 @Composable
-private fun ChromeRow(app: FoldcadeApp, screen: HostScreen) {
+private fun ChromeRow(app: FoldcadeApp) {
     val theme = foldTheme()
     val shell = app.shell
     val model = shell.model
     val game = shell.focusedGame()
     val shelfOpen = model.panel == null && model.dialog == null && model.moonlightSheet == null && !model.connectOpen
-    val showLaunch = shelfOpen && game?.emptyShelfHint != true &&
-        app.store.session.launchTargetControlVisible(game?.occupiesBothDisplays == true)
     Column {
         val shelf = homeGridLabel(model.homeGrid)
         if (shelf != null) {
             BasicText(text = shelf, style = text(theme.onBackground, TypeRamp.sideRow, theme))
         }
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(px(12f))) {
-            if (showLaunch && game != null) {
-                val target = app.store.session.singleScreenTarget(game.id, game.platformId)
-                ChromeButton(
-                    label = if (target == Panel.Bottom || model.launchOnBottom) Copy.launchOnBottom else Copy.launchOnTop,
-                    focused = model.focus.chrome == Chrome.LaunchTarget,
-                    onClick = { shell.touchChrome(Chrome.LaunchTarget, screen) },
-                )
-            } else if (shelfOpen && game?.emptyShelfHint == true) {
+            if (shelfOpen && game?.emptyShelfHint == true) {
                 ShelfMeta(
                     line = game.shortText,
                     hintFocused = model.focus.chrome == null,
@@ -1040,8 +917,6 @@ private fun HintWord(
     }
 }
 
-private val IslandChipSize = 32.dp
-
 @Composable
 private fun PromptImage(name: String, size: Dp) {
     val context = LocalContext.current
@@ -1073,16 +948,6 @@ private fun ShelfMeta(line: String, hintFocused: Boolean) {
 }
 
 @Composable
-private fun ChromeButton(label: String, focused: Boolean, onClick: () -> Unit) {
-    val theme = foldTheme()
-    BasicText(
-        text = label,
-        modifier = Modifier.focusStroke(focused).hostPress(onClick).padding(px(8f)),
-        style = text(theme.onBackground, TypeRamp.sideRow, theme),
-    )
-}
-
-@Composable
 private fun PagedGrid(
     app: FoldcadeApp,
     screen: HostScreen,
@@ -1107,10 +972,11 @@ private fun PagedGrid(
     val alpha = if (reduced) (1f - abs(position.value - page)).coerceIn(0.35f, 1f) else 1f
     val width = cell * Metrics.columns + gap * (Metrics.columns - 1)
     val widthPx = with(LocalDensity.current) { width.toPx() }
+    val fading = reduced && abs(position.value - page) > 0.001f
     Box(
         Modifier
             .requiredWidth(width + pad * 2)
-            .graphicsLayer { this.alpha = alpha }
+            .then(if (fading) Modifier.graphicsLayer { this.alpha = alpha } else Modifier)
             .clipToBounds()
             .padding(pad),
     ) {
@@ -1340,12 +1206,16 @@ private fun DialogLayer(
     val visible = dialog != null && dialog.screen == screen
     var shown by remember { mutableStateOf(dialog) }
     if (visible) shown = dialog
+    // Drop the card with the model. A remembered card kept "GameNative is not installed"
+    // on screen after the launch had already been dismissed.
+    if (!visible) shown = null
     val alpha = motionFloat(
         target = if (visible) 1f else 0f,
         spec = if (visible) Motion.arrive(Motion.durationShort, scale) else Motion.leave(Motion.durationShort, scale),
+        snap = !visible,
     )
     val card = shown
-    if (card != null && alpha > 0f) {
+    if (visible && card != null && alpha > 0f) {
         Box(Modifier.graphicsLayer { this.alpha = alpha }) { DialogCard(app, card, onEffect) }
     }
 }
