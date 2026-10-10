@@ -9,7 +9,7 @@ A plugin is a `PluginEntry` (`app.foldcade.api.plugin.PluginEntry`). One entry m
 - `platforms` — a system a library can classify a game into. `id` is canonical. `aliases` are other ids that mean the same platform.
 - `players` — an installed app that runs a game for a platform.
 - `libraries` — a source of games and saves (`LibraryBackend`). This is not a metadata provider.
-- `metadataProviders` — titles, short text, and artwork (`MetadataProvider`). `cached` stays synchronous. `fetch` is the cancellable read.
+- `metadataProviders` — titles, short text, and artwork (`MetadataProvider`). `cached` stays synchronous. `fetch` is the cancellable read. `Artwork.uri` is loaded as that string. A provider must not put a username, password, or token in it. `credentialFreeArtworkUri` removes userinfo and credential query parameters before the provider builds `Artwork`.
 
 The service file name is `META-INF/services/app.foldcade.api.plugin.PluginEntry`. That name is part of this contract.
 

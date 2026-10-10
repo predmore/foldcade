@@ -835,10 +835,10 @@ class RommClientTest {
     @Test
     fun normalizeOriginFoldsSchemeAndHostCase() {
         assertEquals("https://romm.example", RommClient.normalizeOrigin("HTTPS://Romm.Example"))
-        assertEquals("http://romm.example:8080", RommClient.normalizeOrigin("HTTP://Romm.Example:8080/api"))
-        assertEquals("http://romm.example/Games", RommClient.normalizeOrigin("http://Romm.Example/Games/"))
+        assertEquals("http://192.168.1.20:8080", RommClient.normalizeOrigin("HTTP://192.168.1.20:8080/api"))
+        assertEquals("http://romm.local/Games", RommClient.normalizeOrigin("http://Romm.Local/Games/"))
         assertEquals("https://romm.example", RommClient.normalizeOrigin("HTTPS://Romm.Example/API"))
-        assertEquals("http://romm.example/Games", RommClient.normalizeOrigin("http://romm.example/Games/Api"))
+        assertEquals("http://romm.local/Games", RommClient.normalizeOrigin("http://romm.local/Games/Api"))
         assertEquals("http://[::1]", RommClient.normalizeOrigin("HTTP://[::1]/api"))
         val userinfo = runCatching { RommClient.normalizeOrigin("HTTP://User:s3cret-token@Romm.Example/API") }
         val userinfoError = userinfo.exceptionOrNull()
@@ -846,12 +846,48 @@ class RommClientTest {
         assertTrue(userinfoError?.message?.contains("password") == true)
         assertFalse(userinfoError?.message?.contains("s3cret-token") == true)
         assertEquals(null, normalizeSetupOrigin("http://User:s3cret-token@romm.example"))
+        assertEquals(null, normalizeSetupOrigin("http://User:s3cret-token@192.168.1.20"))
         val rejected = runCatching { RommClient.normalizeOrigin("FTP://romm.example") }
         assertTrue(rejected.exceptionOrNull() is IllegalArgumentException)
         assertEquals(
-            "http://romm.example",
-            normalizeSetupOrigin("  HTTP://Romm.Example/api/  "),
+            "http://192.168.1.20",
+            normalizeSetupOrigin("  HTTP://192.168.1.20/api/  "),
         )
+        assertEquals(null, normalizeSetupOrigin("  HTTP://Romm.Example/api/  "))
+    }
+
+    @Test
+    fun cleartextHttpIsOnlyALanAddress() {
+        assertEquals("http://10.1.2.3", RommClient.normalizeOrigin("http://10.1.2.3"))
+        assertEquals("http://127.0.0.1", RommClient.normalizeOrigin("http://127.0.0.1"))
+        assertEquals("http://172.16.0.1", RommClient.normalizeOrigin("http://172.16.0.1"))
+        assertEquals("http://172.31.255.255", RommClient.normalizeOrigin("http://172.31.255.255"))
+        assertEquals("http://169.254.1.1", RommClient.normalizeOrigin("http://169.254.1.1"))
+        assertEquals("http://nas.home.arpa", RommClient.normalizeOrigin("http://NAS.Home.Arpa"))
+        assertEquals("http://printer.localhost", RommClient.normalizeOrigin("http://printer.localhost"))
+        assertEquals("http://[fe80::1]", RommClient.normalizeOrigin("http://[fe80::1]"))
+        assertEquals("http://[fd00::1]", RommClient.normalizeOrigin("http://[FD00::1]"))
+        assertEquals("http://[::ffff:192.168.1.20]", RommClient.normalizeOrigin("http://[::ffff:192.168.1.20]"))
+        listOf(
+            "http://romm.example",
+            "http://8.8.8.8",
+            "http://172.15.0.1",
+            "http://172.32.0.1",
+            "http://[2001:db8::1]",
+            "http://evil.local.example",
+        ).forEach { raw ->
+            val failed = runCatching { RommClient.normalizeOrigin(raw) }.exceptionOrNull()
+            assertTrue(raw, failed is IllegalArgumentException)
+            assertTrue(failed?.message?.contains("LAN") == true)
+            assertEquals(null, normalizeSetupOrigin(raw))
+            assertEquals(CLEARTEXT_LAN_ONLY, cleartextCredentialWarning(raw))
+        }
+        assertEquals(CLEARTEXT_CREDENTIAL_WARNING, cleartextCredentialWarning("http://User:s3cret-token@192.168.1.20"))
+        assertFalse(
+            cleartextCredentialWarning("http://User:s3cret-token@romm.example").orEmpty().contains("s3cret"),
+        )
+        assertFalse(httpCleartextAllowed("http://romm.example", "http://romm.example/api/heartbeat"))
+        assertTrue(httpCleartextAllowed("http://nas.local", "http://nas.local/api/heartbeat"))
     }
 
     @Test
