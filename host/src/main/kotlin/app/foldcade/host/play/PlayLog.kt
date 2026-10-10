@@ -180,8 +180,11 @@ class PlayLog(
         return started.sessionId
     }
 
-    /** Records [signal] for a session [start] returned. An unknown id is ignored. */
-    fun signal(sessionId: String, signal: PlaySignal) {
+    /**
+     * Records [signal] for a session [start] returned. An unknown id is ignored.
+     * Returns true when this stored an event.
+     */
+    fun signal(sessionId: String, signal: PlaySignal): Boolean {
         val emitted = synchronized(lock) {
             val session = open[sessionId] ?: return@synchronized emptyList()
             val wall = clock.wallNow()
@@ -199,6 +202,7 @@ class PlayLog(
             listOf(event)
         }
         dispatch(emitted)
+        return emitted.isNotEmpty()
     }
 
     /**
