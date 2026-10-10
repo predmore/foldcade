@@ -13,6 +13,7 @@ tasks.register("testDebugUnitTest") {
     dependsOn(
         ":api:test",
         ":net:test",
+        ":artwork:test",
         ":romm:test",
         ":host:test",
         ":plugins:azahar:test",

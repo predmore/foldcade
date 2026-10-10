@@ -5,6 +5,10 @@ import app.foldcade.api.plugin.Availability
 import app.foldcade.api.plugin.Game
 import app.foldcade.api.plugin.Platform
 import app.foldcade.api.plugin.SaveFolderHolder
+import app.foldcade.artwork.ArtQuery
+import app.foldcade.localfolder.LocalFolderBackend
+import app.foldcade.plugins.gamenative.GameNativeLibrary
+import app.foldcade.plugins.gamenative.steamAppId
 import app.foldcade.host.PluginHost
 import app.foldcade.language.settingsCategories
 import app.foldcade.language.AndroidShelf
@@ -33,6 +37,7 @@ import app.foldcade.language.HomePlatform
 import app.foldcade.language.androidHomeId
 import app.foldcade.language.bucketMark
 import app.foldcade.language.homeGameId
+import app.foldcade.language.resolvePlatform
 import app.foldcade.language.kitMark
 import app.foldcade.host.play.recentlyPlayedIndices
 import app.foldcade.language.HomeMusicSetting
@@ -766,6 +771,31 @@ class ShellController(
         return platformEntries.firstOrNull { it.platformId == platformId }?.title
     }
 
+    /**
+     * What the art sources need to look [game] up. Null for an app, which draws its
+     * launcher icon, and for a tile with no game behind it, such as a folder.
+     */
+    fun artQuery(game: ShelfGame): ArtQuery? {
+        if (game.androidPackage != null || game.emptyShelfHint || game.id.isEmpty()) return null
+        val record = artRecord(game)
+        val libraryId = record?.backendId ?: game.libraryId ?: return null
+        val remoteKey = record?.remoteKey ?: game.remoteKey
+        val platformId = (record?.platformId ?: game.platformId)?.let { id ->
+            resolvePlatform(homePlatforms(), id)?.id ?: id
+        }
+        return ArtQuery(
+            key = if (model.libraryGrid && record != null) homeGameId(libraryId, record.remoteKey) else game.id,
+            title = game.title,
+            platformId = platformId,
+            fileName = remoteKey?.takeIf { libraryId == LocalFolderBackend.ID }?.let(LocalFolderBackend::fileNameOf),
+            steamAppId = remoteKey?.takeIf { libraryId == GameNativeLibrary.ID }?.let(::steamAppId),
+        )
+    }
+
+    /** The library record behind [game], on the home grid or the library grid. */
+    fun artRecord(game: ShelfGame): Game? =
+        home.game(game.id) ?: entries.firstOrNull { it.id == game.id }?.game
+
     /** The library record behind the focused cell, for its metadata. Null for an app or a shelf tile. */
     fun focusedRecord(): Game? = when {
         showingHome() -> home.face(model.focus.cellIndex)?.id?.let(home::game)
@@ -1087,6 +1117,7 @@ class ShellController(
         if (next.motionSpeed != model.motionSpeed) {
             store.setMotionSpeed(next.motionSpeed)
         }
+        if (next.artwork != model.artwork) store.setArtworkEnabled(next.artwork)
         val moonlightSourceChanged = next.moonlightSource != model.moonlightSource
         if (next.moonlightPlacements != model.moonlightPlacements) {
             store.setMoonlightPlacements(next.moonlightPlacements)
@@ -1315,6 +1346,7 @@ class ShellController(
             backgroundMotion = motion,
             backgroundPinned = pinned,
             motionSpeed = store.motionSpeed(),
+            artwork = store.artworkEnabled(),
             sort = store.librarySort(),
             recentFirst = recentOrder(),
             moonlightSource = store.moonlightSource(),
