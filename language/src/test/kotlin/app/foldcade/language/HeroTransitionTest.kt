@@ -86,6 +86,25 @@ class HeroTransitionTest {
     }
 
     @Test
+    fun settledFrontIsNotACrossfadeLayer() {
+        assertFalse(
+            heroCrossfadeActive(hasFront = true, hasBack = false, frontAlpha = 1f, backAlpha = 0f),
+        )
+        assertFalse(
+            heroCrossfadeActive(hasFront = false, hasBack = false, frontAlpha = 0f, backAlpha = 0f),
+        )
+        assertTrue(
+            heroCrossfadeActive(hasFront = true, hasBack = true, frontAlpha = 0.4f, backAlpha = 0.6f),
+        )
+        assertTrue(
+            heroCrossfadeActive(hasFront = true, hasBack = false, frontAlpha = 0.2f, backAlpha = 0f),
+        )
+        assertTrue(
+            heroCrossfadeActive(hasFront = false, hasBack = false, frontAlpha = 1f, backAlpha = 0.2f),
+        )
+    }
+
+    @Test
     fun itemKeepsItsNameAndArt() {
         val copy = heroCopy(
             HeroSubject.Item(
