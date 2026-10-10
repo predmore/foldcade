@@ -1143,9 +1143,23 @@ page_library() {
   adb_do shell input -d "$presentation_logical" swipe "$x_from" "$y" "$x_to" "$y" 250
 }
 
+# The app logs "library-ui page <title> | <title> ..." for the grid page it draws.
+# uiautomator dumps only the focused display and comes back empty while the
+# presentation display has focus, so a title on screen could go unseen. The
+# newest page line is what the bottom panel shows.
+library_page_has() {
+  local line
+  line="$(timeout 10 adb logcat -d -s Foldcade:I 2>/dev/null | tr -d '\r' | grep -F "library-ui page " | tail -n 1 || true)"
+  [ -n "$line" ] || return 1
+  printf '%s\n' "${line#*library-ui page }" | grep -F -q -- "$1"
+}
+
 wait_library_text() {
   local phrase="$1" limit="${2:-20}" attempt status direction pages=0
   for attempt in $(seq 1 "$limit"); do
+    if library_page_has "$phrase"; then
+      return 0
+    fi
     if dump_library_ui; then
       if direction="$(library_text_placement "$phrase")"; then
         return 0
@@ -1169,6 +1183,8 @@ wait_library_text() {
   echo "----- ui-library.xml -----"
   head -c 2000 "$out/ui-library.xml" 2>/dev/null || true
   echo
+  echo "----- library-ui page lines -----"
+  timeout 10 adb logcat -d -s Foldcade:I 2>/dev/null | tr -d '\r' | grep -F "library-ui page " | tail -n 5 || true
   return 1
 }
 
@@ -1408,6 +1424,10 @@ PY
     # Step onto the tile and open it. A games grid does not contain this title.
     platform_state=0
     library_text_placement "Game Boy" >/dev/null || platform_state=$?
+    # An empty dump says nothing. A fresh page line with the platform title says it is still up.
+    if [ "$platform_state" -eq 1 ] && library_page_has "Game Boy"; then
+      platform_state=0
+    fi
     if [ "$platform_state" -eq 0 ] || [ "$platform_state" -eq 3 ]; then
       find_presentation_display || true
       key_bottom KEYCODE_DPAD_DOWN || true
