@@ -8,8 +8,9 @@ import app.foldcade.language.Copy
 import app.foldcade.language.Effect
 import app.foldcade.language.GridFocus
 import app.foldcade.language.HOME_ALL
-import app.foldcade.language.setFolderIcon
 import app.foldcade.language.FOLDER_ICONS
+import app.foldcade.language.FolderChoice
+import app.foldcade.language.TileActions
 import app.foldcade.language.HomeBoard
 import app.foldcade.language.HomeItem
 import app.foldcade.language.HomeKeys
@@ -22,10 +23,9 @@ import app.foldcade.language.Metrics
 import app.foldcade.language.addToHome
 import app.foldcade.language.allItems
 import app.foldcade.language.allLabels
-import app.foldcade.language.cancelHold
 import app.foldcade.language.closeAll
 import app.foldcade.language.closeFolder
-import app.foldcade.language.createFolder
+import app.foldcade.language.folderAround
 import app.foldcade.language.cycleAllSort
 import app.foldcade.language.cycleAllTab
 import app.foldcade.language.cycleDestination
@@ -38,6 +38,7 @@ import app.foldcade.language.jumpLetter
 import app.foldcade.language.leaveEdit
 import app.foldcade.language.mergeHome
 import app.foldcade.language.moveHeld
+import app.foldcade.language.moveToFolder
 import app.foldcade.language.nextUserFolderId
 import app.foldcade.language.onHome
 import app.foldcade.language.openAll
@@ -47,6 +48,7 @@ import app.foldcade.language.removeFromHome
 import app.foldcade.language.renameFolder
 import app.foldcade.language.resolvePlatform
 import app.foldcade.language.sectionLabel
+import app.foldcade.language.setFolderIcon
 import app.foldcade.language.setAddNewToHome
 import app.foldcade.language.visibleSlots
 
@@ -90,11 +92,11 @@ class HomeSession(raw: String?) {
     private var platforms: List<HomePlatform> = emptyList()
     private val games = HashMap<String, Game>()
     private val shelfById = HashMap<String, ShelfGame>()
-    var renaming: Boolean = false
+    /** The folder whose name field is open. Null when closed. */
+    var renamingId: String? = null
         private set
     var renameDraft: String = ""
         private set
-    private var renameIndex: Int = 0
 
     /** The folder whose icon is being chosen, and the focused choice in [FOLDER_ICONS]. Null when closed. */
     var iconPick: FolderIconPick? = null
@@ -170,13 +172,11 @@ class HomeSession(raw: String?) {
 
     fun keys(): HomeKeys = when {
         iconPick != null -> HomeKeys.PickingIcon
-        board.editing -> HomeKeys.Editing
+        renamingId != null -> HomeKeys.Renaming
+        board.hold != null -> HomeKeys.Moving
         board.allOpen -> HomeKeys.AllLibrary
         else -> HomeKeys.Idle
     }
-
-    /** Edit and All name their keys in the hint row. Only renaming has a line of its own. */
-    fun hint(): String? = if (renaming) Copy.newFolder else null
 
     fun chrome(): AllChrome? {
         if (!board.allOpen) return null
@@ -204,8 +204,8 @@ class HomeSession(raw: String?) {
     /** True when this meaning was applied. False lets the shared grid reducer move focus. */
     fun handle(meaning: Meaning, index: Int): HomeStep? {
         iconPick?.let { return handleIconPick(it, meaning) }
-        if (renaming) return handleRename(meaning)
-        if (board.editing) return handleEdit(meaning, index)
+        if (renamingId != null) return handleRename(meaning)
+        if (board.editing) return handleMove(meaning, index)
         if (board.allOpen) return handleAll(meaning, index)
         return when (meaning) {
             Meaning.Activate -> activateCell(index)
@@ -215,18 +215,101 @@ class HomeSession(raw: String?) {
         }
     }
 
-    /** True when the tile at [index] is a folder the user made, so Select can change its icon. */
-    fun canPickIcon(index: Int): Boolean =
-        board.editing && board.hold == null && visibleSlots(board).getOrNull(index)?.let { board.folders[it]?.userMade } == true
+    /**
+     * What Y offers for the tile at [index]. In All, adding an item that is not
+     * placed yet. On the board, moving, folders, and removing. Null while a
+     * tile moves, a picker or name field is open, or All's chrome has focus.
+     */
+    fun actions(index: Int): TileActions? {
+        if (iconPick != null || renamingId != null || board.editing) return null
+        if (board.allOpen) {
+            if (board.allChrome != null) return null
+            val item = allRows().getOrNull(index) ?: return null
+            if (onHome(board, item.id)) return null
+            val into = board.destinationFolderId?.let { board.folders[it]?.name }
+            return TileActions(addToHome = if (into != null) "${Copy.addTo} $into" else Copy.addToHome)
+        }
+        val slots = visibleSlots(board)
+        if (index !in slots.indices) return null
+        val atRoot = board.openFolderId == null
+        val id = slots[index] ?: return if (atRoot) TileActions(newFolder = true) else null
+        if (id == HOME_ALL) return TileActions(move = true, newFolder = true)
+        val folder = board.folders[id]
+        if (folder != null) {
+            return TileActions(move = true, rename = true, icon = folder.userMade, remove = true, removeIsFolder = true)
+        }
+        val here = board.openFolderId
+        val destinations = buildList {
+            if (here != null) add(FolderChoice(null, Copy.homeSlot))
+            board.slots.mapNotNull { slot -> board.folders[slot] }
+                .filter { it.id != here }
+                .forEach { add(FolderChoice(it.id, it.name)) }
+        }
+        return TileActions(move = true, destinations = destinations, newFolder = true, remove = true)
+    }
 
-    fun enterEditing() {
-        iconPick = null
-        renaming = false
-        board = enterEdit(board)
+    /** Move: lifts the tile at [index]. The D-pad walks it, A drops it, B puts it back. */
+    fun startMove(index: Int) {
+        if (visibleSlots(board).getOrNull(index) == null) return
+        board = pickUp(enterEdit(board), index)
+    }
+
+    /** Sends the game at [index] to [folderId], or the root when null. Returns where focus goes. */
+    fun moveTo(index: Int, folderId: String?): Int {
+        val id = visibleSlots(board).getOrNull(index) ?: return index
+        board = moveToFolder(board, id, folderId)
+        return index
+    }
+
+    /**
+     * A new folder around the game at [index], then its name field. Made from
+     * inside a folder, it lands on the root, so the open folder closes onto it.
+     */
+    fun newFolder(index: Int): Int {
+        val folderId = nextUserFolderId(board)
+        val count = board.folders.values.count { it.userMade } + 1
+        board = folderAround(board, index, folderId, "${Copy.newFolder} $count")
+        if (folderId !in board.folders) return index
+        if (board.openFolderId != null) board = closeFolder(board)
+        val placed = board.slots.indexOf(folderId).coerceAtLeast(0)
+        startRename(placed)
+        return placed
+    }
+
+    /** Opens the name field for the folder at [index]. */
+    fun startRename(index: Int) {
+        val id = visibleSlots(board).getOrNull(index) ?: return
+        val folder = board.folders[id] ?: return
+        renamingId = id
+        renameDraft = folder.name
+    }
+
+    fun editRename(text: String) {
+        if (renamingId != null) renameDraft = text.replace('\n', ' ')
+    }
+
+    /** Opens the icon picker for the folder the user made at [index]. */
+    fun pickIcon(index: Int) {
+        val id = visibleSlots(board).getOrNull(index) ?: return
+        val folder = board.folders[id]?.takeIf { it.userMade } ?: return
+        iconPick = FolderIconPick(id, FOLDER_ICONS.indexOf(folder.mark).coerceAtLeast(0))
+        iconCell = index
+    }
+
+    /** Hides the tile at [index], or spills the folder there. Returns where focus goes. */
+    fun remove(index: Int): Int {
+        board = removeFromHome(board, index)
+        return index.coerceAtMost((visibleCount() - 1).coerceAtLeast(0))
+    }
+
+    /** Places the All item at [index] on Home, in the destination folder when one is chosen. */
+    fun addFocused(index: Int) {
+        val item = allRows().getOrNull(index) ?: return
+        board = addToHome(board, item.id, board.destinationFolderId)
     }
 
     fun showAll() {
-        renaming = false
+        renamingId = null
         rootIndex = 0
         board = openAll(board)
     }
@@ -235,20 +318,11 @@ class HomeSession(raw: String?) {
         board = setAddNewToHome(board, enabled)
     }
 
-    fun pickUpFocused(index: Int) {
-        if (!board.editing) board = enterEdit(board)
-        board = if (board.hold == null) pickUp(board, index) else board
-    }
-
-    fun dropHeld() {
-        val index = board.hold?.index ?: return
-        board = app.foldcade.language.drop(board, index)
-    }
-
     fun drag(meaning: Meaning) {
         val hold = board.hold ?: return
         val to = neighbor(hold.index, meaning) ?: return
         board = moveHeld(board, to)
+        if (board.hold == null) board = leaveEdit(board)
     }
 
     fun encoded(): String = encodeHome(board)
@@ -270,87 +344,53 @@ class HomeSession(raw: String?) {
                 board = setFolderIcon(board, pick.folderId, FOLDER_ICONS[pick.index])
                 iconPick = null
             }
-            meaning == Meaning.Back || meaning == Meaning.CancelHold || meaning == Meaning.LeaveEdit -> iconPick = null
+            meaning == Meaning.Back || meaning == Meaning.CancelHold -> iconPick = null
         }
         return step(null, iconCell)
     }
 
+    /** A saves the name, B keeps the old one. The keyboard types into [renameDraft]. */
     private fun handleRename(meaning: Meaning): HomeStep {
-        return when (meaning) {
+        val id = renamingId ?: return step(null, focusIndex())
+        when (meaning) {
             Meaning.Activate -> {
-                val folderId = visibleSlots(board).getOrNull(renameIndex)
-                if (folderId != null && board.folders[folderId] != null) {
-                    board = renameFolder(board, folderId, renameDraft)
-                }
-                renaming = false
-                step(null, renameIndex)
+                board = renameFolder(board, id, renameDraft)
+                renamingId = null
             }
-            Meaning.Back, Meaning.CancelHold, Meaning.LeaveEdit -> {
-                renaming = false
-                step(null, focusIndex())
-            }
-            else -> step(null, focusIndex())
+            Meaning.Back, Meaning.CancelHold -> renamingId = null
+            else -> Unit
         }
+        val at = visibleSlots(board).indexOf(id)
+        return step(null, if (at >= 0) at else focusIndex())
     }
 
-    private fun handleEdit(meaning: Meaning, index: Int): HomeStep {
-        val cursor = board.hold?.index ?: index
+    /**
+     * A tile lifted with Move. The D-pad walks it, and onto a folder drops it in.
+     * A drops it, B puts it back. Either way the board is back to plain browsing.
+     */
+    private fun handleMove(meaning: Meaning, index: Int): HomeStep {
+        val hold = board.hold
+        if (hold == null) {
+            board = leaveEdit(board)
+            return HomeStep(handled = false, effect = null, focus = null)
+        }
         return when (meaning) {
             Meaning.MoveLeft, Meaning.MoveRight, Meaning.MoveUp, Meaning.MoveDown -> {
-                val hold = board.hold
-                if (hold == null) return HomeStep(handled = false, effect = null, focus = null)
                 val to = neighbor(hold.index, meaning) ?: return step(null, hold.index)
                 board = moveHeld(board, to)
-                step(null, board.hold?.index ?: to)
+                val at = board.hold?.index ?: to
+                if (board.hold == null) board = leaveEdit(board)
+                step(null, at)
             }
             Meaning.Activate -> {
-                if (board.hold == null) {
-                    val id = visibleSlots(board).getOrNull(index)
-                    if (id == null) return step(null, index)
-                    board = pickUp(board, index)
-                    step(null, index)
-                } else {
-                    board = app.foldcade.language.drop(board, cursor)
-                    step(null, cursor)
-                }
+                board = leaveEdit(app.foldcade.language.drop(board, hold.index))
+                step(null, hold.index)
             }
             Meaning.CancelHold, Meaning.Back -> {
-                if (board.hold != null) {
-                    val origin = board.hold?.index
-                    board = cancelHold(board)
-                    step(null, origin ?: index)
-                } else if (board.openFolderId != null) {
-                    closeOpenFolder()
-                } else {
-                    step(null, index)
-                }
-            }
-            Meaning.LeaveEdit -> {
                 board = leaveEdit(board)
-                step(null, index)
+                step(null, hold.origin)
             }
-            Meaning.RemoveFromHome -> {
-                board = removeFromHome(board, cursor)
-                step(null, cursor.coerceAtMost((visibleCount() - 1).coerceAtLeast(0)))
-            }
-            Meaning.MakeFolder -> makeOrRename(cursor)
-            Meaning.FolderIcon -> {
-                val id = visibleSlots(board).getOrNull(cursor)
-                val folder = id?.let { board.folders[it] }
-                if (folder != null && folder.userMade && board.hold == null) {
-                    iconPick = FolderIconPick(id, FOLDER_ICONS.indexOf(folder.mark).coerceAtLeast(0))
-                    iconCell = cursor
-                }
-                step(null, cursor)
-            }
-            Meaning.PageTowardStart, Meaning.PageTowardEnd ->
-                if (board.hold == null) {
-                    HomeStep(handled = false, effect = null, focus = null)
-                } else {
-                    step(null, cursor)
-                }
-            Meaning.LeftPanel, Meaning.RightPanel -> HomeStep(handled = false, effect = null, focus = null)
-            else -> step(null, cursor)
+            else -> step(null, hold.index)
         }
     }
 
@@ -374,7 +414,6 @@ class HomeSession(raw: String?) {
                     board = cycleChrome(chrome)
                     step(null, 0)
                 }
-                Meaning.LeaveEdit -> step(null, index)
                 else -> step(null, index)
             }
         }
@@ -392,17 +431,12 @@ class HomeSession(raw: String?) {
                 board = closeAll(board)
                 step(null, rootIndex)
             }
-            Meaning.AddToHome -> {
-                val item = allRows().getOrNull(index) ?: return step(null, index)
-                board = addToHome(board, item.id, board.destinationFolderId)
-                step(null, index)
-            }
             Meaning.LetterForward, Meaning.LetterBackward -> {
                 val labels = allLabels(allRows(), platforms, board.allSort)
                 val next = jumpLetter(labels, index, meaning == Meaning.LetterForward)
                 step(null, next)
             }
-            Meaning.LeftPanel, Meaning.RightPanel -> HomeStep(handled = false, effect = null, focus = null)
+            Meaning.LeftPanel, Meaning.RightPanel, Meaning.Options -> HomeStep(handled = false, effect = null, focus = null)
             Meaning.MoveDown, Meaning.MoveLeft, Meaning.MoveRight, Meaning.PageTowardStart, Meaning.PageTowardEnd ->
                 HomeStep(handled = false, effect = null, focus = null)
             else -> step(null, index)
@@ -430,21 +464,6 @@ class HomeSession(raw: String?) {
         val restore = rootIndex
         board = closeFolder(board)
         return step(null, restore)
-    }
-
-    private fun makeOrRename(index: Int): HomeStep {
-        val id = visibleSlots(board).getOrNull(index)
-        if (id != null && board.folders[id] != null && board.hold == null) {
-            renaming = true
-            renameIndex = index
-            renameDraft = board.folders.getValue(id).name
-            return step(null, index)
-        }
-        val folderId = nextUserFolderId(board)
-        val count = board.folders.values.count { it.userMade } + 1
-        board = createFolder(board, folderId, "${Copy.newFolder} $count")
-        val placed = board.slots.indexOf(folderId).coerceAtLeast(0)
-        return step(null, placed)
     }
 
     private fun cycleChrome(index: Int): HomeBoard = when (index) {

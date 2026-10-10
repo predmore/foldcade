@@ -28,6 +28,7 @@ import app.foldcade.language.hiddenApps
 import app.foldcade.language.Effect
 import app.foldcade.language.EmptyGrid
 import app.foldcade.language.GridFocus
+import app.foldcade.language.actionRows
 import app.foldcade.language.GridKind
 import app.foldcade.language.HeroFolder
 import app.foldcade.language.HeroItem
@@ -233,11 +234,16 @@ class ShellController(
             Effect.SkipMoonlightImport, Effect.ReviewMoonlightImport,
             -> null
             is Effect.ConfirmMoonlightImport -> null
-            Effect.EditHome -> {
-                enterHomeEdit()
-                Log.i("Foldcade", "home-ui editing")
+            Effect.MoveTile -> {
+                pickUpHome(model.focus.cellIndex)
                 null
             }
+            is Effect.MoveTileTo -> changeHome { home.moveTo(it, effect.folderId) }
+            Effect.NewFolder -> changeHome { home.newFolder(it) }
+            Effect.RenameFolder -> changeHome { home.startRename(it); it }
+            Effect.ChooseFolderIcon -> changeHome { home.pickIcon(it); it }
+            Effect.RemoveTile -> changeHome { home.remove(it) }
+            Effect.AddToHome -> changeHome { home.addFocused(it); it }
             Effect.OpenAll -> {
                 openHomeAll()
                 Log.i("Foldcade", "home-ui all-games")
@@ -263,7 +269,13 @@ class ShellController(
 
     fun homeFace(index: Int): HomeFace? = home.face(index)
 
-    fun homeHint(): String? = if (showingHome() && model.dialog == null && model.panel == null) home.hint() else null
+    /** The text in the open folder name field. Null when no name field is open. */
+    fun renameDraft(): String? = if (showingHome() && home.renamingId != null) home.renameDraft else null
+
+    fun editRename(text: String) {
+        home.editRename(text)
+        showBoard(model.focus, keepDialog = true)
+    }
 
     /** The open folder icon picker and that folder's name, for the top screen. Null when closed. */
     fun folderIconPick(): Pair<FolderIconPick, String>? {
@@ -285,8 +297,9 @@ class ShellController(
         return !game.emptyShelfHint && !game.occupiesBothDisplays
     }
 
-    /** True when Select would open the icon picker for the focused tile. */
-    fun canPickFolderIcon(): Boolean = showingHome() && home.canPickIcon(model.focus.cellIndex)
+    /** True when Y would open a menu for the focused tile. */
+    fun hasOptions(): Boolean =
+        model.focus.chrome == null && actionRows(model.tileActions, model.appActions).isNotEmpty()
 
     fun homeChrome(): AllChrome? = if (showingHome() && model.dialog == null && model.panel == null && !model.connectOpen) {
         home.chrome()
@@ -306,10 +319,13 @@ class ShellController(
 
     fun catalogGame(id: String): Game? = home.game(id)
 
-    fun enterHomeEdit() {
-        home.enterEditing()
+    /** Runs one Y menu action on the focused home tile. [change] returns the index to focus after. */
+    private fun changeHome(change: (Int) -> Int): Effect? {
+        if (!showingHome()) return null
+        val index = change(model.focus.cellIndex)
         store.saveHomeBoard(home.encoded())
-        showBoard(model.focus, keepDialog = true)
+        showBoard(GridFocus(cellIndex = index, lastColumn = index % Metrics.columns), keepDialog = true)
+        return null
     }
 
     fun openHomeAll() {
@@ -332,7 +348,8 @@ class ShellController(
     fun pickUpHome(index: Int) {
         if (model.libraryGrid || model.homeGrid != HomeGrid.StandIns) return
         if (model.dialog != null || model.panel != null || model.connectOpen) return
-        home.pickUpFocused(index)
+        home.startMove(index)
+        if (home.board.hold != null) Log.i("Foldcade", "home-ui lifted")
         store.saveHomeBoard(home.encoded())
         showBoard(GridFocus(cellIndex = index, lastColumn = index % Metrics.columns), keepDialog = true)
     }
@@ -1077,7 +1094,8 @@ class ShellController(
         val count = countFor(next.homeGrid)
         val counted = next.copy(count = count, playerSaves = playerSaveSettings(), recentFirst = recentOrder())
         val game = tileOn(counted)
-        return counted.copy(appActions = actionsFor(counted, game))
+        val tile = if (showingHome(counted)) home.actions(counted.focus.cellIndex) else null
+        return counted.copy(appActions = actionsFor(counted, game), tileActions = tile)
     }
 
     private fun tileOn(snapshot: PickerModel): ShelfGame? {
@@ -1163,7 +1181,7 @@ class ShellController(
         }
         if (moonlightSourceChanged) store.setMoonlightSource(next.moonlightSource)
         model = if (next.libraryGrid) {
-            next.copy(appActions = null, playerSaves = playerSaveSettings())
+            next.copy(appActions = null, tileActions = null, playerSaves = playerSaveSettings())
         } else {
             withShelf(next.copy(libraryGrid = false))
         }
@@ -1239,8 +1257,8 @@ class ShellController(
         )
     }
 
-    private fun showingHome(): Boolean =
-        !model.libraryGrid && model.homeGrid == HomeGrid.StandIns
+    private fun showingHome(snapshot: PickerModel = model): Boolean =
+        !snapshot.libraryGrid && snapshot.homeGrid == HomeGrid.StandIns
 
     private fun homeActive(): Boolean =
         showingHome() && model.dialog == null && model.panel == null && model.settings == null && !model.connectOpen

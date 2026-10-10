@@ -23,6 +23,12 @@ enum class Side {
 enum class PanelLevel {
     Root,
     Library,
+
+    /** Y's menu for the focused tile, in the right island. */
+    Actions,
+
+    /** The folders Move to can send the focused game into. */
+    MoveTo,
 }
 
 data class SidePanel(
@@ -236,7 +242,6 @@ sealed interface Row {
     data object AndroidGames : Row
     data object Apps : Row
     data object HiddenApps : Row
-    data object EditHome : Row
     data object AllLibrary : Row
     data object AddNewGames : Row
     data object Artwork : Row
@@ -245,6 +250,14 @@ sealed interface Row {
     data object MoveApp : Row
     data object HideApp : Row
     data object ShowApp : Row
+    data object MoveTile : Row
+    data object MoveTileTo : Row
+    data class Destination(val folderId: String?, val label: String) : Row
+    data object NewFolder : Row
+    data object RenameFolder : Row
+    data object FolderIcon : Row
+    data object RemoveTile : Row
+    data object AddToHome : Row
     data class QuickTile(val setting: QuickSetting) : Row
     data object ButtonLabels : Row
     data object Licenses : Row
@@ -310,7 +323,6 @@ data class PlayerSaveSetting(
  */
 fun leftRows(): List<Row> = listOf(
     Row.Library,
-    Row.EditHome,
     Row.AllLibrary,
     Row.Arrange,
     Row.AndroidGames,
@@ -360,12 +372,47 @@ fun libraryRows(
         listOf(Row.AddFolder, Row.Connect) +
         folders.map { Row.ForgetFolder(it.uri, it.label) }
 
-fun rightRows(
-    notices: List<FoldNotice>,
-    actions: AppActions? = null,
-): List<Row> = buildList {
-    if (actions != null) {
-        if (actions.hiddenShelf) {
+fun rightRows(notices: List<FoldNotice>): List<Row> = buildList {
+    notices.forEach { add(Row.Notice(it.id)) }
+    quickSettings().forEach { add(Row.QuickTile(it)) }
+}
+
+/** A folder Move to can send a game into. A null [folderId] is the home root. */
+data class FolderChoice(val folderId: String?, val name: String)
+
+/**
+ * What Y offers for the focused tile on the home board or in All.
+ * The menu lists only what applies, so an empty one does not open.
+ */
+data class TileActions(
+    /** Pick the tile up and walk it with the D-pad. */
+    val move: Boolean = false,
+    /** Where Move to can send it. Empty leaves the row out. */
+    val destinations: List<FolderChoice> = emptyList(),
+    val newFolder: Boolean = false,
+    val rename: Boolean = false,
+    /** A folder the user made can wear an icon they choose. */
+    val icon: Boolean = false,
+    val remove: Boolean = false,
+    /** Remove spills a folder instead of hiding a tile, and says so. */
+    val removeIsFolder: Boolean = false,
+    /** The All row's label, such as "Add to Home". Null when the item is already placed. */
+    val addToHome: String? = null,
+)
+
+/** Y's menu: the tile's own actions, then an Android app's shelf actions. */
+fun actionRows(tile: TileActions?, app: AppActions?): List<Row> = buildList {
+    if (tile != null) {
+        if (tile.addToHome != null) add(Row.AddToHome)
+        if (tile.move) add(Row.MoveTile)
+        if (tile.destinations.isNotEmpty()) add(Row.MoveTileTo)
+        if (tile.newFolder) add(Row.NewFolder)
+        if (tile.rename) add(Row.RenameFolder)
+        if (tile.icon) add(Row.FolderIcon)
+        if (tile.remove) add(Row.RemoveTile)
+    }
+    if (app != null) {
+        if (app.hiddenShelf) {
             add(Row.ShowApp)
         } else {
             add(Row.PinApp)
@@ -373,16 +420,19 @@ fun rightRows(
             add(Row.HideApp)
         }
     }
-    notices.forEach { add(Row.Notice(it.id)) }
-    quickSettings().forEach { add(Row.QuickTile(it)) }
 }
 
-fun panelRows(panel: SidePanel, model: PickerModel): List<Row> = when (panel.side) {
-    Side.Left -> when (panel.level) {
-        PanelLevel.Root -> leftRows()
-        PanelLevel.Library -> libraryRows(model.signedIn, model.folders)
+fun destinationRows(tile: TileActions?): List<Row> =
+    tile?.destinations.orEmpty().map { Row.Destination(it.folderId, it.name) }
+
+fun panelRows(panel: SidePanel, model: PickerModel): List<Row> = when (panel.level) {
+    PanelLevel.Actions -> actionRows(model.tileActions, model.appActions)
+    PanelLevel.MoveTo -> destinationRows(model.tileActions)
+    PanelLevel.Library -> libraryRows(model.signedIn, model.folders)
+    PanelLevel.Root -> when (panel.side) {
+        Side.Left -> leftRows()
+        Side.Right -> rightRows(model.notices)
     }
-    Side.Right -> rightRows(model.notices, model.appActions)
 }
 
 fun backgroundLabel(motion: BackgroundMotion): String = when (motion) {
@@ -446,7 +496,6 @@ fun rowText(row: Row, model: PickerModel): RowText = when (row) {
     Row.AndroidGames -> RowText(Copy.androidGames)
     Row.Apps -> RowText(Copy.apps)
     Row.HiddenApps -> RowText(Copy.hiddenApps)
-    Row.EditHome -> RowText(Copy.editHome)
     Row.AllLibrary -> RowText(Copy.allLibrary)
     Row.AddNewGames -> RowText(Copy.addNewGames, if (model.addNewToHome) Copy.addNewOn else Copy.addNewOff)
     Row.Artwork -> RowText(Copy.artwork, if (model.artwork) Copy.artworkOn else Copy.artworkOff)
@@ -455,6 +504,14 @@ fun rowText(row: Row, model: PickerModel): RowText = when (row) {
     Row.MoveApp -> RowText(if (model.appActions?.onGamesShelf == true) Copy.moveToApps else Copy.moveToGames)
     Row.HideApp -> RowText(Copy.hideApp)
     Row.ShowApp -> RowText(Copy.showApp)
+    Row.MoveTile -> RowText(Copy.move)
+    Row.MoveTileTo -> RowText(Copy.moveTo)
+    is Row.Destination -> RowText(row.label)
+    Row.NewFolder -> RowText(Copy.makeFolder)
+    Row.RenameFolder -> RowText(Copy.rename)
+    Row.FolderIcon -> RowText(Copy.changeIcon)
+    Row.RemoveTile -> RowText(if (model.tileActions?.removeIsFolder == true) Copy.removeFolder else Copy.removeFromHome)
+    Row.AddToHome -> RowText(model.tileActions?.addToHome ?: Copy.addToHome)
     Row.ButtonLabels -> RowText(
         Copy.buttonLabels,
         if (model.capturingConfirm) Copy.pressConfirm else null,
@@ -504,7 +561,16 @@ sealed interface Effect {
     data class ConfirmMoonlightImport(val checked: List<MoonlightSheetApp>) : Effect
     data object SkipMoonlightImport : Effect
     data object ReviewMoonlightImport : Effect
-    data object EditHome : Effect
+    /** Pick up the focused tile to move it. */
+    data object MoveTile : Effect
+
+    /** Send the focused game into [folderId], or onto the home root when null. */
+    data class MoveTileTo(val folderId: String?) : Effect
+    data object NewFolder : Effect
+    data object RenameFolder : Effect
+    data object ChooseFolderIcon : Effect
+    data object RemoveTile : Effect
+    data object AddToHome : Effect
     data object OpenAll : Effect
     data object ToggleAddNew : Effect
 }
@@ -567,6 +633,8 @@ data class PickerModel(
     val playerSaves: List<PlayerSaveSetting> = emptyList(),
     val homeGrid: HomeGrid = HomeGrid.StandIns,
     val appActions: AppActions? = null,
+    /** What Y offers for the focused home or All tile. Null elsewhere. */
+    val tileActions: TileActions? = null,
     /**
      * Bumped when the shelf's text changes without the count changing.
      * Compose treats an equal model as unchanged.
@@ -740,10 +808,18 @@ private fun applyGrid(
             model.copy(focus = page(model.focus, meaning == Meaning.PageTowardEnd, model)) to null
         Meaning.Activate -> activate(model, screen)
         Meaning.ActivateBottom -> activate(model, screen, onBottom = true)
+        Meaning.Options -> openActions(model) to null
         Meaning.Back -> backGrid(model)
         Meaning.LeftPanel, Meaning.RightPanel -> presentPanel(model, meaning, screen) to null
         else -> model to null
     }
+}
+
+/** Y opens the focused tile's menu in the right island. With nothing to offer, it stays shut. */
+private fun openActions(model: PickerModel): PickerModel {
+    if (model.focus.chrome != null || model.arranging || model.count <= 0) return model
+    if (actionRows(model.tileActions, model.appActions).isEmpty()) return model
+    return model.copy(panel = freshPanel(Side.Right, model.focus).copy(level = PanelLevel.Actions))
 }
 
 private fun backGrid(model: PickerModel): Pair<PickerModel, Effect?> {
@@ -1033,10 +1109,13 @@ private fun PickerModel.withTrack(track: MusicTrack): PickerModel =
     copy(music = music.copy(trackId = track.id), trackTitle = track.title)
 
 private fun backPanel(model: PickerModel, panel: SidePanel): Pair<PickerModel, Effect?> {
-    return if (panel.level == PanelLevel.Library) {
-        model.copy(panel = panel.copy(level = PanelLevel.Root, index = 0)) to null
-    } else {
-        model.copy(panel = null, focus = panel.grid) to null
+    return when (panel.level) {
+        PanelLevel.Library -> model.copy(panel = panel.copy(level = PanelLevel.Root, index = 0)) to null
+        PanelLevel.MoveTo -> {
+            val row = actionRows(model.tileActions, model.appActions).indexOf(Row.MoveTileTo).coerceAtLeast(0)
+            model.copy(panel = panel.copy(level = PanelLevel.Actions, index = row)) to null
+        }
+        PanelLevel.Root, PanelLevel.Actions -> model.copy(panel = null, focus = panel.grid) to null
     }
 }
 
@@ -1124,7 +1203,6 @@ private fun activateRow(
         Row.AndroidGames -> openGrid(model, panel, HomeGrid.AndroidGames)
         Row.Apps -> openGrid(model, panel, HomeGrid.Apps)
         Row.HiddenApps -> openGrid(model, panel, HomeGrid.HiddenApps)
-        Row.EditHome -> model.copy(panel = null, focus = panel.grid, arranging = false, hold = null) to Effect.EditHome
         Row.AllLibrary -> model.copy(panel = null, focus = panel.grid, arranging = false, hold = null) to Effect.OpenAll
         Row.AddNewGames -> model.copy(panel = panel, addNewToHome = !model.addNewToHome) to Effect.ToggleAddNew
         Row.Artwork -> model.copy(panel = panel, artwork = !model.artwork) to null
@@ -1144,6 +1222,14 @@ private fun activateRow(
         Row.MoveApp -> model.copy(panel = null, focus = panel.grid) to Effect.MoveApp
         Row.HideApp -> model.copy(panel = null, focus = panel.grid) to Effect.HideApp
         Row.ShowApp -> model.copy(panel = null, focus = panel.grid) to Effect.ShowApp
+        Row.MoveTileTo -> model.copy(panel = panel.copy(level = PanelLevel.MoveTo, index = 0)) to null
+        is Row.Destination -> model.copy(panel = null, focus = panel.grid) to Effect.MoveTileTo(row.folderId)
+        Row.MoveTile -> model.copy(panel = null, focus = panel.grid) to Effect.MoveTile
+        Row.NewFolder -> model.copy(panel = null, focus = panel.grid) to Effect.NewFolder
+        Row.RenameFolder -> model.copy(panel = null, focus = panel.grid) to Effect.RenameFolder
+        Row.FolderIcon -> model.copy(panel = null, focus = panel.grid) to Effect.ChooseFolderIcon
+        Row.RemoveTile -> model.copy(panel = null, focus = panel.grid) to Effect.RemoveTile
+        Row.AddToHome -> model.copy(panel = null, focus = panel.grid) to Effect.AddToHome
         Row.ButtonLabels -> if (model.capturingConfirm) {
             model.copy(capturingConfirm = false, offerButtonLabels = false) to Effect.DismissButtonLabels
         } else {

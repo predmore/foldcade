@@ -48,6 +48,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicText
 import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
@@ -66,7 +67,9 @@ import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.BlurredEdgeTreatment
 import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusProperties
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.draw.drawWithContent
@@ -96,12 +99,16 @@ import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -1058,16 +1065,8 @@ private fun Picker(
                 }
             }
             PageDots(count = model.count, rows = Metrics.rows, index = model.focus.cellIndex)
-            val rename = shell.homeHint()
-            if (rename != null) {
-                BasicText(
-                    text = rename,
-                    modifier = Modifier.fillMaxWidth(),
-                    style = text(theme.muted, TypeRamp.hint, theme).copy(textAlign = TextAlign.Center),
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
-            }
+            val draft = shell.renameDraft()
+            if (draft != null) RenameField(app, screen, draft)
             // Under an open menu the blur would smear these. MenuHints draws them above it.
             GridHints(app, Modifier.alpha(if (LocalUnderMenu.current) 0f else 1f))
         }
@@ -1342,8 +1341,8 @@ private fun GridHints(app: FoldcadeApp, modifier: Modifier = Modifier) {
         actions,
         shell.homeKeys(),
         model.faceMap,
-        folderIcon = shell.canPickFolderIcon(),
         screens = model.panel == null && model.dialog == null && shell.focusedLaunchesOnOneScreen(),
+        options = model.panel == null && model.dialog == null && !model.connectOpen && shell.hasOptions(),
     )
     if (keys.isEmpty()) return
     Row(
@@ -2297,6 +2296,43 @@ private fun DialogAction(label: String, focused: Boolean, onClick: () -> Unit) {
             theme,
         ).copy(textAlign = TextAlign.Center),
     )
+}
+
+/**
+ * The name field for a folder, under the grid. It takes focus and raises the
+ * keyboard as it opens. The keyboard's Done saves like A; B keeps the old name.
+ */
+@Composable
+private fun RenameField(app: FoldcadeApp, screen: HostScreen, draft: String) {
+    val theme = foldTheme()
+    val focus = remember { FocusRequester() }
+    val keyboard = LocalSoftwareKeyboardController.current
+    // The draft starts as the old name. The cursor goes after it so typing adds on, and select-all would hide it.
+    var field by remember { mutableStateOf(TextFieldValue(draft, TextRange(draft.length))) }
+    LaunchedEffect(Unit) {
+        focus.requestFocus()
+        keyboard?.show()
+    }
+    Column(Modifier.fillMaxWidth().padding(top = px(8f)), horizontalAlignment = Alignment.CenterHorizontally) {
+        BasicText(text = Copy.folderName, style = text(theme.muted, TypeRamp.hint, theme))
+        BasicTextField(
+            value = field,
+            onValueChange = { next ->
+                field = next
+                app.shell.editRename(next.text)
+            },
+            singleLine = true,
+            textStyle = text(theme.onBackground, TypeRamp.dialogBody, theme).copy(textAlign = TextAlign.Center),
+            cursorBrush = cursorBrush(theme),
+            keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Words, imeAction = ImeAction.Done),
+            keyboardActions = KeyboardActions(onDone = { app.shell.onMeaning(Meaning.Activate, screen) }),
+            modifier = Modifier
+                .fillMaxWidth(0.6f)
+                .focusRequester(focus)
+                .chip(true)
+                .padding(horizontal = px(20f), vertical = px(10f)),
+        )
+    }
 }
 
 @Composable

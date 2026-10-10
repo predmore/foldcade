@@ -192,7 +192,10 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
             }
             is Effect.ChoosePlayerSave -> choosePlayerSave(effect.playerId)
             Effect.PinApp, Effect.MoveApp, Effect.HideApp, Effect.ShowApp -> Unit
-            Effect.EditHome -> foldcade.shell.enterHomeEdit()
+            // The shell applies Y's tile actions itself and hands back null; these never arrive.
+            Effect.MoveTile, is Effect.MoveTileTo, Effect.NewFolder, Effect.RenameFolder,
+            Effect.ChooseFolderIcon, Effect.RemoveTile, Effect.AddToHome,
+            -> Unit
             Effect.OpenAll -> foldcade.shell.openHomeAll()
             Effect.ToggleAddNew -> foldcade.shell.applyHomeAddNew(foldcade.shell.model.addNewToHome)
             Effect.OpenConnect -> foldcade.shell.openConnect(foldcade.store.rommOrigin().orEmpty())

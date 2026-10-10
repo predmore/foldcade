@@ -288,6 +288,53 @@ class HomeBoardTest {
         assertEquals("folder", folders.getValue("folder.mine").mark)
     }
 
+    @Test
+    fun aNewFolderWrapsTheGameInItsPlace() {
+        val board = board(listOf(HOME_ALL, "game.cart", "game.drift"))
+        val made = folderAround(board, 1, "home.user.1", "Folder 1")
+        assertEquals(listOf(HOME_ALL, "home.user.1", "game.drift"), made.slots)
+        val folder = made.folders.getValue("home.user.1")
+        assertEquals(listOf("game.cart"), folder.slots)
+        assertTrue(folder.userMade)
+        assertEquals(MARK_FOLDER, folder.mark)
+        // On the All tile there is no game to wrap, so the folder takes the first free slot.
+        val empty = folderAround(board(listOf(HOME_ALL, null, "game.drift")), 0, "home.user.1", "Folder 1")
+        assertEquals(listOf(HOME_ALL, "home.user.1", "game.drift"), empty.slots)
+        assertEquals(emptyList<String?>(), empty.folders.getValue("home.user.1").slots)
+    }
+
+    @Test
+    fun aNewFolderMadeInsideAFolderLandsOnTheRoot() {
+        val gba = HomeFolder("folder.gba", "Game Boy Advance", slots = listOf("game.cart", "game.drift"))
+        val board = HomeBoard(
+            slots = listOf(HOME_ALL, "folder.gba"),
+            folders = mapOf("folder.gba" to gba),
+            openFolderId = "folder.gba",
+        )
+        val made = folderAround(board, 1, "home.user.1", "Folder 1")
+        assertEquals(listOf(HOME_ALL, "folder.gba", "home.user.1"), made.slots)
+        assertEquals(listOf("game.cart", null), made.folders.getValue("folder.gba").slots)
+        assertEquals(listOf("game.drift"), made.folders.getValue("home.user.1").slots)
+    }
+
+    @Test
+    fun moveToSendsAGameIntoAFolderOrBackToTheRoot() {
+        val mine = HomeFolder("folder.mine", "Mine", userMade = true, slots = listOf("kept"))
+        val board = HomeBoard(
+            slots = listOf(HOME_ALL, "game.cart", "folder.mine"),
+            folders = mapOf("folder.mine" to mine),
+        )
+        val inside = moveToFolder(board, "game.cart", "folder.mine")
+        assertEquals(listOf(HOME_ALL, null, "folder.mine"), inside.slots)
+        assertEquals(listOf("kept", "game.cart"), inside.folders.getValue("folder.mine").slots)
+        val back = moveToFolder(inside, "game.cart", null)
+        assertEquals(listOf(HOME_ALL, "game.cart", "folder.mine"), back.slots)
+        assertEquals(listOf("kept", null), back.folders.getValue("folder.mine").slots)
+        // Folders and the All tile stay where they are.
+        assertEquals(board, moveToFolder(board, "folder.mine", null))
+        assertEquals(board, moveToFolder(board, HOME_ALL, "folder.mine"))
+    }
+
     private fun board(slots: List<String?>): HomeBoard = HomeBoard(slots = slots)
 
     private fun item(

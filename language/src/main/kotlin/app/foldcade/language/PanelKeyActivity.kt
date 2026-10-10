@@ -19,7 +19,7 @@ abstract class PanelKeyActivity : ComponentActivity() {
 
     protected open fun faceMap(): FaceMap = FaceMap.standard()
 
-    /** Home grid edits and All library add keys. Idle everywhere else. */
+    /** Moving a tile, picking an icon, naming a folder, and All library keys. Idle everywhere else. */
     protected open fun homeKeys(): HomeKeys = HomeKeys.Idle
 
     protected open fun onPromptHeld(key: PromptKey, held: Boolean) = Unit
@@ -36,8 +36,7 @@ abstract class PanelKeyActivity : ComponentActivity() {
                 override fun handleOnBackPressed() {
                     if (!pickerIsFocused()) return
                     val meaning = when (homeKeys()) {
-                        HomeKeys.Editing -> Meaning.LeaveEdit
-                        HomeKeys.PickingIcon -> Meaning.CancelHold
+                        HomeKeys.Moving, HomeKeys.PickingIcon -> Meaning.CancelHold
                         else -> Meaning.Back
                     }
                     onMeaning(meaning)

@@ -65,6 +65,8 @@ data class HomeHold(
     val slots: List<String?>,
     val folders: Map<String, HomeFolder>,
     val openFolderId: String?,
+    /** Where the tile was picked up. Cancel puts it back here. */
+    val origin: Int = index,
 )
 
 data class HomeBoard(
@@ -294,6 +296,39 @@ fun createFolder(board: HomeBoard, id: String, name: String): HomeBoard {
         slots + id
     }
     return board.copy(slots = placed, folders = board.folders + (id to folder))
+}
+
+/**
+ * A new folder the user made, holding the game at [index] and standing in its place.
+ * Folders do not nest, so inside a folder the new one goes on the root. With no game
+ * at [index], the folder is empty and takes the first free root slot.
+ */
+fun folderAround(board: HomeBoard, index: Int, folderId: String, name: String): HomeBoard {
+    val id = visibleSlots(board).getOrNull(index)
+    val game = id?.takeIf { it != HOME_ALL && board.folders[it] == null } ?: return createFolder(board, folderId, name)
+    if (folderId in board.folders || folderId == HOME_ALL) return board
+    val folder = HomeFolder(id = folderId, name = name, userMade = true, mark = MARK_FOLDER, slots = listOf(game))
+    val made = board.copy(folders = board.folders + (folderId to folder), hold = null)
+    if (board.openFolderId == null) return made.copy(slots = board.slots.map { if (it == game) folderId else it })
+    val left = writeVisible(made, visibleSlots(board).map { if (it == game) null else it })
+    return placeOnRoot(left, folderId)
+}
+
+/**
+ * Moves the game [id] into [folderId], or onto the first free root slot when [folderId]
+ * is null. Its old slot is left empty. Folders and the All tile do not move this way.
+ */
+fun moveToFolder(board: HomeBoard, id: String, folderId: String?): HomeBoard {
+    if (id == HOME_ALL || board.folders[id] != null) return board
+    if (folderId != null && board.folders[folderId] == null) return board
+    val lifted = board.copy(
+        slots = board.slots.map { if (it == id) null else it },
+        folders = board.folders.mapValues { (_, folder) ->
+            folder.copy(slots = folder.slots.map { if (it == id) null else it })
+        },
+        hold = null,
+    )
+    return if (folderId != null) dropInto(lifted, folderId, id) else placeOnRoot(lifted, id)
 }
 
 fun renameFolder(board: HomeBoard, folderId: String, name: String): HomeBoard {
