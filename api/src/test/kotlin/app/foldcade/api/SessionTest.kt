@@ -134,7 +134,7 @@ class SessionTest {
     }
 
     @Test
-    fun bothPanelAppClearsBothSurfacesUntilEachHome() {
+    fun bothPanelAppClearsBothSurfacesUntilHomeOnTop() {
         val running = Session().launch(both)
         assertEquals(both, running.topApp)
         assertEquals(both, running.bottomApp)
@@ -142,13 +142,52 @@ class SessionTest {
         assertNull(running.surfaceOn(Panel.Bottom))
 
         val homeTop = running.home(Panel.Top)
-        assertNull(homeTop.topApp)
-        assertEquals(both, homeTop.bottomApp)
-        assertEquals(Surface.Picker, homeTop.surfaceOn(Panel.Top))
+        assertTrue(homeTop.bothScreensFree())
+        assertEquals(Surface.Hero, homeTop.surfaceOn(Panel.Top))
+        assertEquals(Surface.Picker, homeTop.surfaceOn(Panel.Bottom))
+    }
 
-        val idle = homeTop.home(Panel.Bottom)
-        assertEquals(Surface.Hero, idle.surfaceOn(Panel.Top))
-        assertEquals(Surface.Picker, idle.surfaceOn(Panel.Bottom))
+    @Test
+    fun homeOnTheBottomOfABothPanelAppClearsOnlyTheBottom() {
+        val homeBottom = Session().launch(both).home(Panel.Bottom)
+        assertEquals(both, homeBottom.topApp)
+        assertNull(homeBottom.bottomApp)
+        assertEquals(Surface.Picker, homeBottom.surfaceOn(Panel.Bottom))
+
+        val idle = homeBottom.home(Panel.Top)
+        assertTrue(idle.bothScreensFree())
+    }
+
+    @Test
+    fun foldcadeResumedClearsTheSingleScreenAppOnThatPanel() {
+        val full = Session().launch(one).launch(two)
+        val top = full.foldcadeResumed(Panel.Top)
+        assertNull(top.topApp)
+        assertEquals(two, top.bottomApp)
+
+        val bottom = full.foldcadeResumed(Panel.Bottom)
+        assertEquals(one, bottom.topApp)
+        assertNull(bottom.bottomApp)
+    }
+
+    @Test
+    fun foldcadeResumedOnTopEndsABothPanelApp() {
+        val idle = Session().launch(both).foldcadeResumed(Panel.Top)
+        assertTrue(idle.bothScreensFree())
+    }
+
+    @Test
+    fun foldcadeResumedOnTheBottomKeepsABothPanelApp() {
+        // The app's second-screen window draws over the bottom Foldcade without pausing it.
+        val running = Session().launch(both)
+        assertEquals(running, running.foldcadeResumed(Panel.Bottom))
+    }
+
+    @Test
+    fun foldcadeResumedOnAFreePanelChangesNothing() {
+        val appOnTop = Session().launch(one)
+        assertEquals(appOnTop, appOnTop.foldcadeResumed(Panel.Bottom))
+        assertEquals(Session(), Session().foldcadeResumed(Panel.Top))
     }
 
     @Test

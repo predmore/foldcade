@@ -138,10 +138,9 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
         override fun onDisplayChanged(displayId: Int) = Unit
     }
 
-    override fun pickerIsFocused(): Boolean {
-        val panel = displays.panelFor(this, foldcade.store.session.defaultDisplayIsTop) ?: return false
-        return foldcade.store.session.pickerHandlesKeys(panel)
-    }
+    // The hero has no controls of its own. Android gives its display input focus after a
+    // launcher-icon start or Home on that screen, so its keys drive the picker too.
+    override fun pickerIsFocused(): Boolean = foldcadeSurfaceFocused()
 
     override fun foldcadeSurfaceFocused(): Boolean {
         val panel = displays.panelFor(this, foldcade.store.session.defaultDisplayIsTop) ?: return false
@@ -158,11 +157,6 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
 
     override fun onCalibrateConfirm(key: PromptKey) {
         foldcade.shell.calibrateConfirm(key)
-    }
-
-    override fun menuTakesKeys(): Boolean {
-        val model = foldcade.shell.model
-        return model.panel != null && model.dialog == null && !model.connectOpen && foldcadeSurfaceFocused()
     }
 
     override fun onMeaning(meaning: app.foldcade.language.Meaning) {
@@ -245,6 +239,12 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
         if (ending && foldcade.externalPlay.sessionId == null && pending != null) {
             libraryReturn = null
             reconcile(pending)
+        }
+        // Foldcade in front on this panel means the game there has left. A launcher-icon
+        // start is not a Home recall, so without this a Foldcade that is not the default
+        // Home keeps the panel for the game and ignores every key.
+        displays.panelFor(this, foldcade.store.session.defaultDisplayIsTop)?.let { panel ->
+            foldcade.store.update { it.foldcadeResumed(panel) }
         }
         resumed = true
         refreshShellVisible()

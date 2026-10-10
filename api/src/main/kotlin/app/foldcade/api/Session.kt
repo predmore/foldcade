@@ -25,7 +25,8 @@ data class ExternalApp(
 /**
  * Dual-screen session. Idle is hero on top and picker on the bottom.
  * A single-screen launch leaves the picker on the other panel.
- * Android Home clears only the panel that has input.
+ * Android Home clears only the panel that has input. An app on both screens
+ * runs on the top panel, so Home there clears both.
  *
  * Which screen a game launches on is stored per game, then per platform.
  * It is not a face button. The chrome control is what changes it.
@@ -123,11 +124,29 @@ data class Session(
 
     /**
      * Android Home on the panel that currently has input.
-     * Clears that panel only. Does not clear the other panel.
+     * Clears that panel only, except an app on both screens: it runs on the
+     * top panel and only draws on the bottom, so Home on top clears both.
      */
-    fun home(panelWithInput: Panel): Session = when (panelWithInput) {
-        Panel.Top -> copy(topApp = null)
-        Panel.Bottom -> copy(bottomApp = null)
+    fun home(panelWithInput: Panel): Session {
+        val app = externalOn(panelWithInput)
+        if (app?.occupiesBothDisplays == true && panelWithInput == Panel.Top) {
+            return copy(topApp = null, bottomApp = null)
+        }
+        return when (panelWithInput) {
+            Panel.Top -> copy(topApp = null)
+            Panel.Bottom -> copy(bottomApp = null)
+        }
+    }
+
+    /**
+     * Foldcade came to the front on [panel], however it got there.
+     * Same as [home], except the bottom panel says nothing about an app on both
+     * screens: that app draws over the bottom Foldcade without pausing it.
+     */
+    fun foldcadeResumed(panel: Panel): Session {
+        val app = externalOn(panel) ?: return this
+        if (app.occupiesBothDisplays && panel == Panel.Bottom) return this
+        return home(panel)
     }
 }
 
