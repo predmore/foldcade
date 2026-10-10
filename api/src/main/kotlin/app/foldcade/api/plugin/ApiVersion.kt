@@ -26,7 +26,9 @@ package app.foldcade.api.plugin
  *
  * [PluginException] is the error hierarchy. It is not a data class.
  *
- * This is the first versioned contract.
+ * This is the first versioned contract. It is unstable: a release may
+ * change it without a major bump until a plugin outside the repository
+ * depends on it. See docs/plugins.md.
  */
 const val PLUGIN_API_VERSION = 1
 
