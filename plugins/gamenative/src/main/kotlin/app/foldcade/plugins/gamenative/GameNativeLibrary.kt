@@ -129,6 +129,13 @@ class GameNativeLibrary : LibraryBackend {
     }
 }
 
+/** The Steam app id in a [CatalogGame.remoteKey], or null for any other store. */
+fun steamAppId(remoteKey: String): Int? {
+    val source = remoteKey.substringBefore('_', missingDelimiterValue = "")
+    if (source != "STEAM") return null
+    return remoteKey.substringAfter('_').toIntOrNull()?.takeIf { it > 0 }
+}
+
 /**
  * One game the user already has in GameNative.
  * [remoteKey] matches the in-app id `IntentLaunchManager` builds: `SOURCE_appId`.

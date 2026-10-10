@@ -52,17 +52,7 @@ class PublicHttps(
         headers: Map<String, String> = emptyMap(),
         maxBytes: Int = MAX_BODY_BYTES,
     ): PublicResponse = withContext(Dispatchers.IO) {
-        if (!allows(url)) throw PublicHttpsException("Refused $url")
-        val request = Request.Builder().url(url).get().apply {
-            headers.forEach { (name, value) -> header(name, value) }
-        }.build()
-        val call = http.newCall(request)
-        val response = try {
-            call.await()
-        } catch (e: IOException) {
-            throw PublicHttpsException(e.message ?: "Unreachable", e)
-        }
-        response.use { open ->
+        call(url, "GET", headers).use { open ->
             val body = open.body ?: return@use PublicResponse(open.code, ByteArray(0))
             val declared = body.contentLength()
             if (declared > maxBytes) throw PublicHttpsException("Body is over $maxBytes bytes")
@@ -72,6 +62,23 @@ class PublicHttps(
                 read
             }
             PublicResponse(open.code, bytes)
+        }
+    }
+
+    /** One HEAD request's status, so a caller can check an image exists without its bytes. */
+    suspend fun status(url: String, headers: Map<String, String> = emptyMap()): Int = withContext(Dispatchers.IO) {
+        call(url, "HEAD", headers).use { it.code }
+    }
+
+    private suspend fun call(url: String, method: String, headers: Map<String, String>): Response {
+        if (!allows(url)) throw PublicHttpsException("Refused $url")
+        val request = Request.Builder().url(url).method(method, null).apply {
+            headers.forEach { (name, value) -> header(name, value) }
+        }.build()
+        return try {
+            http.newCall(request).await()
+        } catch (e: IOException) {
+            throw PublicHttpsException(e.message ?: "Unreachable", e)
         }
     }
 

@@ -234,4 +234,12 @@ class GameNativeLibraryTest {
     private fun confirmed(): GameNativeLibrary = GameNativeLibrary().also { library ->
         library.confirm(listOf(CatalogGame("Counter-Strike", 730, "STEAM")))
     }
+
+    @Test
+    fun onlyASteamKeyHasASteamAppId() {
+        org.junit.Assert.assertEquals(1245620, steamAppId("STEAM_1245620"))
+        org.junit.Assert.assertEquals(null, steamAppId("GOG_1245620"))
+        org.junit.Assert.assertEquals(null, steamAppId("STEAM_x"))
+        org.junit.Assert.assertEquals(null, steamAppId("STEAM"))
+    }
 }

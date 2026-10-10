@@ -24,6 +24,14 @@ import app.foldcade.plugins.moonlight.moonlightApp
 import app.foldcade.credentials.AndroidCredentialStore
 import app.foldcade.host.PluginHost
 import app.foldcade.plugins.romm.RommArtwork
+import app.foldcade.artwork.ART_HOSTS
+import app.foldcade.artwork.ArtBytes
+import app.foldcade.artwork.ArtFinder
+import app.foldcade.artwork.ArtIndex
+import app.foldcade.artwork.LibretroThumbnails
+import app.foldcade.artwork.PublicArtHttp
+import app.foldcade.artwork.SteamStoreArt
+import app.foldcade.net.PublicHttps
 import coil3.ImageLoader
 import app.foldcade.language.BackgroundMotion
 import app.foldcade.language.Copy
@@ -73,14 +81,43 @@ class FoldcadeApp : Application() {
     var packaged: PackagedTheme? = null
         private set
 
-    /** Cover addresses from the metadata providers. */
-    val covers: CoverArt by lazy { CoverArt(plugins) }
+    /** Public art hosts over HTTPS only. RomM has its own client. */
+    private val publicArt: PublicHttps by lazy { PublicHttps(ART_HOSTS) }
 
-    /** Decodes and caches covers. The bytes come through RomM's client, not a second HTTP stack. */
+    /**
+     * Art from public sources: Steam's CDN for Steam games, then libretro's
+     * thumbnails for ROMs. Results and misses are kept in filesDir, listings and
+     * images in cacheDir. Nothing is sent while the Game art setting is off.
+     */
+    val art: ArtFinder by lazy {
+        val http = PublicArtHttp(publicArt)
+        val sources = listOf(
+            SteamStoreArt(http),
+            LibretroThumbnails(http, File(cacheDir, "art/libretro")),
+        )
+        ArtFinder({ sources }, ArtIndex(File(filesDir, "art/index.tsv"))) { shell.model.artwork }
+    }
+
+    private val artBytes: ArtBytes by lazy { ArtBytes(File(cacheDir, "art/images"), PublicArtHttp(publicArt)) }
+
+    /** Cover addresses: the metadata providers first, then the public sources. */
+    val covers: CoverArt by lazy { CoverArt(plugins, art) }
+
+    /** Decodes and caches covers. Public art loads through :net, RomM's through its own client. */
     val images: ImageLoader by lazy {
+        val romm = RommArtwork()
         ImageLoader.Builder(this)
             .components {
-                add(CoverFetcher.Factory(RommArtwork()), CoverImage::class)
+                add(
+                    CoverFetcher.Factory { uri ->
+                        when {
+                            !publicArt.allows(uri) -> romm.load(uri)
+                            shell.model.artwork -> artBytes.load(uri)
+                            else -> null
+                        }
+                    },
+                    CoverImage::class,
+                )
                 add(CoverKeyer, CoverImage::class)
             }
             .build()
