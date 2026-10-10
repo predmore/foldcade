@@ -6,6 +6,7 @@ import app.foldcade.api.plugin.Platform
 import app.foldcade.api.plugin.RommCredentials
 import app.foldcade.api.plugin.SaveFolderHolder
 import app.foldcade.host.PluginHost
+import app.foldcade.language.settingsCategories
 import app.foldcade.language.AndroidShelf
 import app.foldcade.language.AppActions
 import app.foldcade.language.AppShelfState
@@ -617,6 +618,32 @@ class ShellController(
             return null
         }
         return onMeaning(Meaning.Activate, screen)
+    }
+
+    /** A tap on a settings category shows its rows. A second tap steps into them. */
+    fun touchSettingsCategory(index: Int, screen: HostScreen): Effect? {
+        val page = model.settings ?: return null
+        if (page.screen != screen) return null
+        if (index !in settingsCategories(model).indices) return null
+        if (page.category != index || page.onRows) {
+            publish(model.copy(settings = page.copy(category = index, row = 0, onRows = false)))
+            return null
+        }
+        return onMeaning(Meaning.MoveRight, screen)
+    }
+
+    /** One tap on a settings row focuses it and acts on it, the same as a menu row. */
+    fun touchSettingsRow(index: Int, screen: HostScreen): Effect? {
+        val page = model.settings ?: return null
+        if (page.screen != screen) return null
+        publish(model.copy(settings = page.copy(row = index, onRows = true)))
+        return onMeaning(Meaning.Activate, screen)
+    }
+
+    fun closeSettings(): Effect? {
+        val page = model.settings ?: return null
+        publish(model.copy(settings = null, focus = page.grid))
+        return null
     }
 
     /** One tap focuses the button and activates it. Keys still move, then Activate. */
