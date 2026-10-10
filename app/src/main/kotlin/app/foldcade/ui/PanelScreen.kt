@@ -172,8 +172,7 @@ fun PanelHost(activity: FoldcadeHomeActivity, displays: Displays) {
         null -> null
     }
     val ownsBottom = session.surfaceOn(Panel.Bottom) != null
-    val menuVisible = model.panel != null &&
-        model.panel?.screen == HostScreen.Top &&
+    val menuVisible = (model.panel?.screen == HostScreen.Top || model.settings?.screen == HostScreen.Top) &&
         model.dialog?.screen != HostScreen.Top
     val blurHere = screen == HostScreen.Bottom &&
         ownsBottom &&
@@ -232,6 +231,10 @@ private fun PanelBody(
     )
     if (panel == null || screen == null) return
     val connectHere = model.connectOpen && model.connectScreen == screen
+    if (model.settings?.screen == screen) {
+        SettingsScreen(app, screen, activity::dispatch)
+        return
+    }
     TravelFade(target = session.surfaceOn(panel), scale = scale) { shown ->
         when (shown) {
             null -> Unit
@@ -1253,14 +1256,18 @@ private fun PagedGrid(
     }
 }
 
-/** Titles on [page], in the order [Grid] draws them. */
+/** Titles on [page], the same labels [Grid] draws, home sections included. */
 private fun pageTitles(app: FoldcadeApp, page: Int, pageSize: Int): List<String> {
     val shell = app.shell
+    val showingHome = !shell.model.libraryGrid && shell.model.homeGrid == HomeGrid.StandIns
     val order = displayOrder(shell.model)
     val start = page * pageSize
     val end = minOf(start + pageSize, shell.model.count)
     return (start until end).map { index ->
-        shell.tileFromOrder(order.getOrElse(index) { index })?.title.orEmpty()
+        val source = if (showingHome) index else order.getOrElse(index) { index }
+        val face = if (showingHome) shell.homeFace(index) else null
+        val title = shell.tileFromOrder(source)?.title.orEmpty()
+        face?.section?.let { section -> "$section · $title" } ?: title
     }
 }
 
