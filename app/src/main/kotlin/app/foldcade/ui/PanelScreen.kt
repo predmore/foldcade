@@ -4,11 +4,13 @@ import android.graphics.RenderEffect
 import android.graphics.Shader
 import android.os.Build
 import android.util.Log
+import androidx.compose.ui.unit.IntSize
+import androidx.compose.ui.graphics.BlendMode
+import androidx.compose.foundation.Canvas
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.FiniteAnimationSpec
-import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
 import androidx.core.graphics.drawable.toBitmap
 import androidx.compose.foundation.background
@@ -94,7 +96,6 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.IntOffset
-import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.zIndex
 import app.foldcade.R
@@ -1412,9 +1413,6 @@ private fun Cell(
         modifier = Modifier.zIndex(if (focused || lifted) 1f else 0f),
     ) {
         val accent = mark?.let { markGlyph(it)?.accent }
-        // Same mint card as a folder tile. Library rows keep the previous art treatment so
-        // the card is not composed over those titles.
-        val focusCard = focused && accent == null && !empty && !(library && icon != null)
         Box(
             modifier = Modifier
                 .size(size)
@@ -1427,10 +1425,6 @@ private fun Cell(
                     val glow = accent
                     val bounds = this.size
                     val cornerPx = corner.toPx()
-                    if (focusCard) {
-                        drawRoundRect(color = theme.surface, cornerRadius = CornerRadius(cornerPx, cornerPx))
-                        with(FocusRing) { drawFocusRing(cornerPx) }
-                    }
                     if (glow != null) {
                         val half = min(bounds.width, bounds.height) * 0.5f
                         val overflow = if (focused) FOCUS_GLOW_OVERFLOW else REST_GLOW_OVERFLOW
@@ -1441,19 +1435,17 @@ private fun Cell(
                         SoftGlow.fillStops(glowStops, tightness, rim)
                         drawRadialGlow(center, reach, glow, glowStops, peak)
                     }
-                    if ((glow != null || icon != null) && !focusCard) {
-                        drawRoundRect(
-                            color = theme.background,
-                            cornerRadius = CornerRadius(cornerPx, cornerPx),
-                        )
+                    if (!empty) {
+                        // Every tile is a filled card, as on Cocoon's grid. A mark's glow is left
+                        // as a halo around it. Focus is the ring; at rest a quiet edge.
+                        drawRoundRect(color = theme.surface, cornerRadius = CornerRadius(cornerPx, cornerPx))
                         if (focused && !editing) {
                             with(FocusRing) { drawFocusRing(cornerPx) }
-                        } else {
-                            val stroke = glow ?: theme.focus
+                        } else if (!editing) {
                             val strokePx = 2.5f
                             val inset = strokePx / 2f
                             drawRoundRect(
-                                color = stroke.copy(alpha = 0.42f),
+                                color = glow?.copy(alpha = 0.42f) ?: theme.onBackground.copy(alpha = 0.10f),
                                 topLeft = Offset(inset, inset),
                                 size = Size(bounds.width - strokePx, bounds.height - strokePx),
                                 cornerRadius = CornerRadius(cornerPx, cornerPx),
@@ -1538,14 +1530,19 @@ private fun Cell(
             } else if (!empty) {
                 val glyphAlpha = if (focused) 1f else 0.58f
                 if (kit != null) {
-                    Image(
-                        bitmap = kit,
-                        contentDescription = title,
-                        modifier = Modifier
-                            .fillMaxSize(theme.artScale)
-                            .graphicsLayer { alpha = glyphAlpha },
-                        contentScale = ContentScale.Fit,
-                    )
+                    // Theme marks are painted on opaque black. Screen drops the black, so the
+                    // glow sits on the tile's card instead of a black square inside it.
+                    Canvas(Modifier.fillMaxSize(theme.artScale)) {
+                        val area = this.size
+                        val side = min(area.width, area.height)
+                        drawImage(
+                            image = kit,
+                            dstOffset = IntOffset(((area.width - side) / 2f).roundToInt(), ((area.height - side) / 2f).roundToInt()),
+                            dstSize = IntSize(side.roundToInt(), side.roundToInt()),
+                            alpha = glyphAlpha,
+                            blendMode = BlendMode.Screen,
+                        )
+                    }
                 } else if (mark != null && markGlyph(mark) != null) {
                     Box(Modifier.graphicsLayer { alpha = glyphAlpha }) {
                         MarkIcon(mark, theme.artScale)
