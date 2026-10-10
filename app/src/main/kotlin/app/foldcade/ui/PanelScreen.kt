@@ -74,6 +74,9 @@ import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.semantics.SemanticsProperties
+import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
@@ -593,7 +596,9 @@ private fun Picker(
             ) {
                 BasicText(
                     text = Copy.usesBothScreens,
-                    modifier = Modifier.padding(bottom = px(8f)),
+                    modifier = Modifier
+                        .padding(bottom = px(8f))
+                        .clearAndSetSemantics {},
                     style = text(theme.onBackground, TypeRamp.hint, theme),
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
@@ -1169,7 +1174,8 @@ private fun Grid(
     val shell = app.shell
     val focus = shell.model.focus
     val pageSize = Metrics.columns * rows
-    val showingHome = !shell.model.libraryGrid && shell.model.homeGrid == HomeGrid.StandIns
+    val library = shell.model.libraryGrid
+    val showingHome = !library && shell.model.homeGrid == HomeGrid.StandIns
     val order = displayOrder(shell.model)
     val radius = cell * foldTheme().iconRadius
     val editing = shell.homeEditing()
@@ -1194,6 +1200,7 @@ private fun Grid(
                             focus.cellIndex == index
                         val label = face?.section?.let { section -> "$section · ${game?.title.orEmpty()}" }
                             ?: game?.title.orEmpty()
+                        val libraryTile = library && face == null
                         val onHomeMark = face != null && allOpen && face.onGrid && !face.folder && !face.pinned
                         Cell(
                             title = label,
@@ -1208,6 +1215,7 @@ private fun Grid(
                             lifted = lifted == index,
                             editing = editing,
                             marked = onHomeMark,
+                            library = libraryTile,
                             onClick = { shell.touchCell(index, screen) },
                             onDrag = if (editing) {
                                 { meaning -> shell.dragHome(meaning) }
@@ -1264,6 +1272,7 @@ private fun Cell(
     lifted: Boolean = false,
     editing: Boolean = false,
     marked: Boolean = false,
+    library: Boolean = false,
     onClick: () -> Unit,
     onPickUp: (() -> Unit)? = null,
     onDrag: ((Meaning) -> Unit)? = null,
@@ -1290,8 +1299,9 @@ private fun Cell(
         modifier = Modifier.zIndex(if (focused || lifted) 1f else 0f),
     ) {
         val accent = mark?.let { markGlyph(it)?.accent }
-        // Same mint card as a folder tile. An app icon used to skip it and leave a thin stroke.
-        val focusCard = focused && accent == null && !empty
+        // Same mint card as a folder tile. Library rows keep the previous art treatment so
+        // the card is not composed over those titles.
+        val focusCard = focused && accent == null && !empty && !(library && icon != null)
         Box(
             modifier = Modifier
                 .size(size)
@@ -1380,7 +1390,8 @@ private fun Cell(
                         Modifier
                     },
                 )
-                .hostPress(onClick),
+                .hostPress(onClick)
+                .clearAndSetSemantics {},
             contentAlignment = Alignment.Center,
         ) {
             if (icon != null) {
@@ -1444,6 +1455,8 @@ private fun Cell(
             BasicText(
                 text = title,
                 modifier = Modifier
+                    .zIndex(1f)
+                    .clearAndSetSemantics { this[SemanticsProperties.Text] = listOf(AnnotatedString(title)) }
                     .padding(top = focusOutset(size) + px(12f))
                     .width(size),
                 style = text(
