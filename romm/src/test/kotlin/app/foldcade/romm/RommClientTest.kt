@@ -641,6 +641,79 @@ class RommClientTest {
     }
 
     @Test
+    fun anAuthFailureKeepsEveryQueuedSave() {
+        val hash = md5Hex("local".toByteArray())
+        for (status in listOf(401, 403)) {
+            val queue = SaveUploadQueue(dir.resolve("queue-$status"))
+            val save = localSave("local")
+            repeat(3) { queue.enqueue(save, "device-1", hash, "local".toByteArray(), "autosave") }
+            server.recorded.clear()
+            server.route("POST", "/api/saves") { exchange, _ ->
+                json(exchange, status, """{"detail":"token revoked"}""")
+            }
+            runClient(token = { "rmm_test" }) { client ->
+                val flushed = queue.flush(client)
+                assertEquals(0, flushed.sent)
+                assertEquals(3, flushed.kept)
+            }
+            assertEquals(3, queue.pending().size)
+            assertEquals(1, server.recorded.count { it.path == "/api/saves" })
+        }
+
+        val signedOut = SaveUploadQueue(dir.resolve("signed-out"))
+        signedOut.enqueue(localSave("local"), "device-1", hash, "local".toByteArray(), "autosave")
+        runClient(token = { null }) { client ->
+            assertEquals(FlushResult(sent = 0, kept = 1), signedOut.flush(client))
+        }
+        assertEquals(1, signedOut.pending().size)
+    }
+
+    @Test
+    fun aMetadataFileWithoutItsBytesDoesNotStopTheFlush() {
+        val root = dir.resolve("queue")
+        val queue = SaveUploadQueue(root)
+        val save = localSave("local")
+        val hash = md5Hex("local".toByteArray())
+        queue.enqueue(save, "device-1", hash, "local".toByteArray(), "autosave")
+        queue.enqueue(save, "device-1", hash, "local".toByteArray(), "autosave")
+        Files.delete(queue.pending().first().bytes)
+        server.route("POST", "/api/saves") { exchange, _ ->
+            json(exchange, 200, """{"id":8,"rom_id":1234,"file_name":"mario.srm"}""")
+        }
+        runClient(token = { "rmm_test" }) { client ->
+            assertEquals(FlushResult(sent = 1, kept = 0), queue.flush(client))
+        }
+        assertTrue(queue.pending().isEmpty())
+        Files.list(root).use { assertEquals(0L, it.count()) }
+    }
+
+    @Test
+    fun aFlushRemovesStaleLeftoversFromAnInterruptedEnqueue() {
+        val root = dir.resolve("queue")
+        val queue = SaveUploadQueue(root)
+        queue.enqueue(localSave("local"), "device-1", md5Hex("local".toByteArray()), "local".toByteArray())
+        Files.list(root).use { stream ->
+            assertFalse(stream.anyMatch { it.fileName.toString().endsWith(".tmp") })
+        }
+        val old = java.nio.file.attribute.FileTime.from(Instant.now().minus(SaveUploadQueue.STALE).minusSeconds(60))
+        val staleTemp = Files.write(root.resolve("a.json.tmp"), "{".toByteArray())
+        val staleBytes = Files.write(root.resolve("b.bin"), "x".toByteArray())
+        val freshBytes = Files.write(root.resolve("c.bin"), "x".toByteArray())
+        Files.setLastModifiedTime(staleTemp, old)
+        Files.setLastModifiedTime(staleBytes, old)
+        server.route("POST", "/api/saves") { exchange, _ ->
+            json(exchange, 503, """{"detail":"down"}""")
+        }
+        runClient(token = { "rmm_test" }) { client ->
+            assertEquals(FlushResult(sent = 0, kept = 1), queue.flush(client))
+        }
+        assertFalse(Files.exists(staleTemp))
+        assertFalse(Files.exists(staleBytes))
+        assertTrue(Files.exists(freshBytes))
+        assertEquals(1, queue.pending().size)
+    }
+
+    @Test
     fun aMajorFiveResponseMissingTheTestedFieldsIsNotApplied() {
         server.route("GET", "/openapi.json") { exchange, _ ->
             json(exchange, 200, fixture("openapi-5.4.0-alpha.2.json"))
