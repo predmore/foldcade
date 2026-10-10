@@ -671,13 +671,14 @@ private fun PanelRows(
                     interactive = interactive,
                     onStep = step,
                     onVolume = app.shell::setMusicVolume,
-                    modifier = Modifier.fillMaxWidth().rowHighlight(focused),
+                    modifier = Modifier.fillMaxWidth().keepInView(focused).rowHighlight(focused),
                 )
             } else {
                 val press = if (interactive) Modifier.hostPress(step) else Modifier
                 Row(
                     Modifier
                         .fillMaxWidth()
+                        .keepInView(focused)
                         .rowHighlight(focused)
                         .focusStroke(focused)
                         .then(press)
@@ -727,6 +728,19 @@ private fun PanelRows(
     }
 }
 
+/**
+ * A menu taller than its island scrolls. The D-pad moves the focus, not the
+ * scroll, so the focused row asks its scrolling parent to show it.
+ */
+@Composable
+private fun Modifier.keepInView(focused: Boolean): Modifier {
+    val requester = remember { BringIntoViewRequester() }
+    LaunchedEffect(focused) {
+        if (focused) requester.bringIntoView()
+    }
+    return bringIntoViewRequester(requester)
+}
+
 @Composable
 private fun QuickTiles(
     app: FoldcadeApp,
@@ -758,6 +772,7 @@ private fun QuickTiles(
                         Modifier
                             .weight(1f)
                             .height(64.dp)
+                            .keepInView(focused)
                             .rowHighlight(focused)
                             .focusStroke(focused, corner)
                             .tileEdge(focused = focused, corner = corner)
