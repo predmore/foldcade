@@ -417,7 +417,13 @@ timeout 15 adb shell am start -W -n "$component"
 # One Back when a dialog other than the system confirmation is still up.
 # Do not tap its buttons, and do not stall the capture on it.
 dialog_remains() {
-  timeout 10 adb shell uiautomator dump /sdcard/foldcade-ui.xml >/dev/null 2>&1 || return 1
+  # A dump that misses the idle window keeps running on the guest after this
+  # timeout. The next shell then sits behind it, and a later am start -W
+  # exits 124. Kill the guest dump before treating the dialog as gone.
+  if ! timeout 10 adb shell uiautomator dump /sdcard/foldcade-ui.xml >/dev/null 2>&1; then
+    timeout 5 adb shell 'for pid in $(pidof uiautomator); do kill "$pid"; done' >/dev/null 2>&1 || true
+    return 1
+  fi
   timeout 10 adb shell cat /sdcard/foldcade-ui.xml 2>/dev/null | tr -d '\r' >"$out/ui-last.xml" || return 1
   grep -q -E 'Not now|Use Foldcade as Home' "$out/ui-last.xml"
 }
@@ -432,22 +438,42 @@ dismiss_leftover_dialog() {
 resumed_has() {
   local name="$1"
   local resumed
-  resumed="$(adb_do shell dumpsys activity activities 2>/dev/null | tr -d '\r' | grep -E 'ResumedActivity' || true)"
+  # Shorter than adb_do. A stuck dumpsys is not proof the activity is gone,
+  # and burning 30s here is what made the recovery launch look necessary.
+  resumed="$(timeout 8 adb shell dumpsys activity activities 2>/dev/null | tr -d '\r' | grep -E 'ResumedActivity' || true)"
   [[ "$resumed" == *"$name"* ]]
+}
+
+wait_resumed() {
+  local name="$1"
+  local attempt
+  for attempt in 1 2 3 4 5 6 7 8; do
+    if resumed_has "$name"; then
+      return 0
+    fi
+    sleep 0.5
+  done
+  return 1
 }
 
 # The primary launch starts the companion. If that display is showing the
 # stock launcher instead, put the companion back on the presentation display.
+# Recovery starts do not use -W. Run 38002269310 printed Status: ok for the
+# cold start, then this second PrimaryHomeActivity launch sat in -W until
+# timeout exited 124. A singleTask activity that is already resumed does not
+# complete another -W wait.
 show_foldcade() {
-  if ! resumed_has "PrimaryHomeActivity"; then
+  if ! resumed_has "PrimaryHomeActivity" && ! wait_resumed "PrimaryHomeActivity"; then
     echo "step: launch ${component}"
-    timeout 15 adb shell am start -W -n "$component" --display 0
+    timeout 15 adb shell am start -n "$component" --display 0 || true
+    wait_resumed "PrimaryHomeActivity" || true
   fi
-  if ! resumed_has "CompanionHomeActivity"; then
+  if ! resumed_has "CompanionHomeActivity" && ! wait_resumed "CompanionHomeActivity"; then
     echo "step: companion on display ${presentation_logical}"
-    timeout 15 adb shell am start -W \
+    timeout 15 adb shell am start \
       -n "${app_id}/app.foldcade.CompanionHomeActivity" \
-      --display "$presentation_logical"
+      --display "$presentation_logical" || true
+    wait_resumed "CompanionHomeActivity" || true
   fi
 }
 
@@ -591,10 +617,15 @@ if printf '%s\n' "$input_help" | grep -q -- '-d' && printf '%s\n' "$input_help" 
   show_foldcade
   dismiss_leftover_dialog
   echo "step: focus the 3DS tile"
-  # Afterglow keeps six shelf tiles. 3DS is the seventh: row 1, column 2.
-  adb_do shell input -d "$presentation_logical" keyevent KEYCODE_DPAD_DOWN
+  # Home grid: All, then the 3DS folder. One right lands on that folder.
+  # The first confirm opens it.
   adb_do shell input -d "$presentation_logical" keyevent KEYCODE_DPAD_RIGHT
-  adb_do shell input -d "$presentation_logical" keyevent KEYCODE_DPAD_RIGHT
+  adb_do shell input -d "$presentation_logical" keyevent KEYCODE_DPAD_CENTER
+  sleep 1
+  capture "$primary" "$out/folder-open-primary.png"
+  capture "$secondary" "$out/folder-open-secondary.png"
+  expect_png "$out/folder-open-primary.png" "${top_width}x${top_height}"
+  expect_png "$out/folder-open-secondary.png" "${bottom_width}x${bottom_height}"
   adb_do shell input -d "$presentation_logical" keyevent KEYCODE_DPAD_CENTER
   sleep 1
   capture "$primary" "$out/launch-primary.png"
@@ -614,13 +645,15 @@ if printf '%s\n' "$input_help" | grep -q -- '-d' && printf '%s\n' "$input_help" 
     echo "missing_player_in_ui_dump=${seen}"
   } >"$out/launch-path.txt"
   adb_do shell input -d "$presentation_logical" keyevent KEYCODE_BACK || true
+  adb_do shell input -d "$presentation_logical" keyevent KEYCODE_BACK || true
 
   # melonDS launch path. Thor-sized emulator, not a Thor pass.
   # melonDS is not installed here. The capture is the missing-player state.
-  # DS is the eighth shelf tile, the cell to the right of 3DS.
+  # The DS folder is the next cell to the right of the 3DS folder.
   echo "step: melonDS launch path"
   echo "step: focus the DS tile"
   adb_do shell input -d "$presentation_logical" keyevent KEYCODE_DPAD_RIGHT
+  adb_do shell input -d "$presentation_logical" keyevent KEYCODE_DPAD_CENTER
   sleep 1
   capture "$primary" "$out/ds-focus-primary.png"
   capture "$secondary" "$out/ds-focus-secondary.png"
@@ -647,22 +680,22 @@ if printf '%s\n' "$input_help" | grep -q -- '-d' && printf '%s\n' "$input_help" 
     echo "missing_player_in_ui_dump=${seen}"
   } >"$out/ds-launch-path.txt"
   adb_do shell input -d "$presentation_logical" keyevent KEYCODE_BACK || true
+  adb_do shell input -d "$presentation_logical" keyevent KEYCODE_BACK || true
 
   # GameNative launch path. Thor-sized emulator, not a Thor pass.
   # GameNative is not installed here. The capture is the missing-player state.
-  # PC is the ninth shelf tile: row 2, column 0. From DS (row 1, column 3),
-  # three steps left land on row 1 column 0, then down lands on PC.
+  # The GameNative folder is the cell to the right of the DS folder.
   echo "step: GameNative launch path"
   echo "step: focus the PC tile"
-  adb_do shell input -d "$presentation_logical" keyevent KEYCODE_DPAD_LEFT
-  adb_do shell input -d "$presentation_logical" keyevent KEYCODE_DPAD_LEFT
-  adb_do shell input -d "$presentation_logical" keyevent KEYCODE_DPAD_LEFT
-  adb_do shell input -d "$presentation_logical" keyevent KEYCODE_DPAD_DOWN
+  adb_do shell input -d "$presentation_logical" keyevent KEYCODE_DPAD_RIGHT
+  adb_do shell input -d "$presentation_logical" keyevent KEYCODE_DPAD_CENTER
   sleep 1
   capture "$primary" "$out/pc-focus-primary.png"
   capture "$secondary" "$out/pc-focus-secondary.png"
   expect_png "$out/pc-focus-primary.png" "${top_width}x${top_height}"
   expect_png "$out/pc-focus-secondary.png" "${bottom_width}x${bottom_height}"
+  timeout 10 adb shell uiautomator dump /sdcard/foldcade-ui.xml >/dev/null 2>&1 || true
+  timeout 10 adb shell cat /sdcard/foldcade-ui.xml | tr -d '\r' >"$out/pc-focus-ui.xml" || true
   echo "step: open the PC tile"
   adb_do shell input -d "$presentation_logical" keyevent KEYCODE_DPAD_CENTER
   sleep 1
@@ -677,7 +710,8 @@ if printf '%s\n' "$input_help" | grep -q -- '-d' && printf '%s\n' "$input_help" 
     seen="yes"
   fi
   progress="no"
-  if grep -q 'Progress lives in GameNative' "$out/pc-launch-ui.xml"; then
+  if grep -q 'Progress lives in GameNative' "$out/pc-focus-ui.xml" \
+    || grep -q 'Progress lives in GameNative' "$out/pc-launch-ui.xml"; then
     progress="yes"
   fi
   {
@@ -689,14 +723,16 @@ if printf '%s\n' "$input_help" | grep -q -- '-d' && printf '%s\n' "$input_help" 
     echo "progress_sentence_in_ui_dump=${progress}"
   } >"$out/pc-launch-path.txt"
   adb_do shell input -d "$presentation_logical" keyevent KEYCODE_BACK || true
+  adb_do shell input -d "$presentation_logical" keyevent KEYCODE_BACK || true
 
   # Moonlight launch path. Thor-sized emulator, not a Thor pass.
   # Moonlight is not installed here. The capture is the missing-player state.
-  # Moonlight is the tenth shelf tile: row 2, column 1, one cell right of PC.
+  # The Moonlight folder is one cell right of GameNative.
   # It does not take both screens, so the picker stays on the other panel.
   echo "step: moonlight launch path"
   echo "step: focus the Moonlight tile"
   adb_do shell input -d "$presentation_logical" keyevent KEYCODE_DPAD_RIGHT
+  adb_do shell input -d "$presentation_logical" keyevent KEYCODE_DPAD_CENTER
   sleep 1
   capture "$primary" "$out/moonlight-focus-primary.png"
   capture "$secondary" "$out/moonlight-focus-secondary.png"
@@ -731,6 +767,7 @@ if printf '%s\n' "$input_help" | grep -q -- '-d' && printf '%s\n' "$input_help" 
     echo "missing_player_in_ui_dump=${seen}"
   } >"$out/moonlight-launch-path.txt"
   adb_do shell input -d "$presentation_logical" keyevent KEYCODE_BACK || true
+  adb_do shell input -d "$presentation_logical" keyevent KEYCODE_BACK || true
 else
   {
     echo "Thor-sized emulator, not a Thor pass."
@@ -738,12 +775,17 @@ else
   } >"$out/launch-path.txt"
 fi
 
+# Home-grid proof frames are captured after the fixture library is seeded,
+# so the grid shows system folders rather than the demo shelf. The 3DS
+# folder-open frames above stay. Scroll does not launch a game.
+
 # Shoulder panels on the Thor-sized emulator. This is not a Thor pass.
 # A setup cancelled before the first script step is not a capture result.
 # The home role is held, so Set as Home is hidden. From Library the
 # rows are Theme, Primary, Arrange, Order, Music, Track, Volume,
-# Background, Motion, Azahar saves, melonDS saves, Android Games, Apps,
-# Hidden, then Android settings: fifteen downs. One down from the
+# Background, Motion, Play time, Azahar saves, melonDS saves, Edit home,
+# All library, Add new games, Android Games, Apps, Hidden, then Android settings:
+# nineteen downs. One down from the
 # launch-target row lands on the Wi-Fi tile while a stand-in is focused.
 # Key events default to display -1, and that call does not return once a
 # second display exists. The help text writes the flag as "[-d DISPLAY_ID]"
@@ -1148,13 +1190,150 @@ become_root() {
 
 # The persistable document-tree grant is read when the system server starts.
 # A guest reboot is what makes the seeded folder visible to the shell.
+# RIGHT stays on the current row. All closes back to the All library tile,
+# then this walk follows home-ui tile logs. A presentation dump is empty
+# while that display is focused, so the folder name is not read from it.
+focus_system_folder() {
+  local row col
+  adb_do logcat -c || true
+  key_bottom KEYCODE_BUTTON_B || true
+  sleep 0.35
+  key_bottom KEYCODE_BUTTON_B || true
+  sleep 0.35
+  key_bottom KEYCODE_BUTTON_B || true
+  sleep 0.4
+  for row in $(seq 1 8); do
+    for col in $(seq 1 5); do
+      if timeout 10 adb logcat -d -s Foldcade:I 2>/dev/null | tr -d '\r' | grep -F -q "home-ui tile Game Boy Advance"; then
+        return 0
+      fi
+      key_bottom KEYCODE_DPAD_RIGHT || true
+      sleep 0.3
+    done
+    if timeout 10 adb logcat -d -s Foldcade:I 2>/dev/null | tr -d '\r' | grep -F -q "home-ui tile Game Boy Advance"; then
+      return 0
+    fi
+    for col in $(seq 1 5); do
+      key_bottom KEYCODE_DPAD_LEFT || true
+      sleep 0.12
+    done
+    key_bottom KEYCODE_DPAD_DOWN || true
+    sleep 0.3
+  done
+  timeout 10 adb logcat -d -s Foldcade:I 2>/dev/null | tr -d '\r' | grep -F -q "home-ui tile Game Boy Advance"
+}
+
+# Curated home frames. Emulator only, not a Thor pass.
+# The grid is already on screen. Scroll is a finger drag, not a launch.
+# Edit mode lifts a tile. All Games and All Apps are different lists.
+capture_curated_home() {
+  echo "step: curated home grid"
+  sleep 1
+  capture "$primary" "$out/home-primary.png"
+  capture "$secondary" "$out/home-secondary.png"
+  expect_png "$out/home-primary.png" "${top_width}x${top_height}"
+  expect_png "$out/home-secondary.png" "${bottom_width}x${bottom_height}"
+
+  echo "step: scroll the home grid"
+  adb_do shell input -d "$presentation_logical" swipe 980 540 280 540 900 &
+  scroll_pid=$!
+  sleep 0.35
+  capture "$primary" "$out/scroll-mid-primary.png"
+  capture "$secondary" "$out/scroll-mid-secondary.png"
+  wait "$scroll_pid" || true
+  expect_png "$out/scroll-mid-primary.png" "${top_width}x${top_height}"
+  expect_png "$out/scroll-mid-secondary.png" "${bottom_width}x${bottom_height}"
+
+  echo "step: edit home"
+  adb_do logcat -c || true
+  key_bottom KEYCODE_BUTTON_L1
+  sleep 0.6
+  local step
+  for step in $(seq 1 24); do
+    key_bottom KEYCODE_DPAD_DOWN
+    sleep 0.25
+    if timeout 10 adb logcat -d -s Foldcade:I 2>/dev/null | tr -d '\r' | grep -q "home-ui row Edit home"; then
+      break
+    fi
+  done
+  key_bottom KEYCODE_DPAD_CENTER
+  wait_library_log "home-ui editing" || fail "edit home did not open"
+  key_bottom KEYCODE_DPAD_RIGHT
+  key_bottom KEYCODE_DPAD_CENTER
+  wait_library_log "home-ui lifted" || fail "edit home did not lift a tile"
+  sleep 0.6
+  capture "$primary" "$out/edit-mode-primary.png"
+  capture "$secondary" "$out/edit-mode-secondary.png"
+  expect_png "$out/edit-mode-primary.png" "${top_width}x${top_height}"
+  expect_png "$out/edit-mode-secondary.png" "${bottom_width}x${bottom_height}"
+  # B only drops the held tile. Back does not leave edit mode on this image.
+  # Start does. All Games is the next L1 row, not a grid confirm.
+  key_bottom KEYCODE_BUTTON_START || true
+  sleep 0.4
+
+  echo "step: all games"
+  adb_do logcat -c || true
+  key_bottom KEYCODE_BUTTON_L1
+  sleep 0.6
+  for step in $(seq 1 24); do
+    key_bottom KEYCODE_DPAD_DOWN
+    sleep 0.25
+    if timeout 10 adb logcat -d -s Foldcade:I 2>/dev/null | tr -d '\r' | grep -q "home-ui row All library"; then
+      break
+    fi
+  done
+  key_bottom KEYCODE_DPAD_CENTER
+  wait_library_log "home-ui all-games" || fail "All Games did not open"
+  sleep 0.6
+  capture "$primary" "$out/all-games-primary.png"
+  capture "$secondary" "$out/all-games-secondary.png"
+  expect_png "$out/all-games-primary.png" "${top_width}x${top_height}"
+  expect_png "$out/all-games-secondary.png" "${bottom_width}x${bottom_height}"
+  key_bottom KEYCODE_DPAD_UP
+  key_bottom KEYCODE_DPAD_CENTER
+  wait_library_log "home-ui all-apps" || fail "All Apps did not open"
+  sleep 0.6
+  capture "$primary" "$out/all-apps-primary.png"
+  capture "$secondary" "$out/all-apps-secondary.png"
+  expect_png "$out/all-apps-primary.png" "${top_width}x${top_height}"
+  expect_png "$out/all-apps-secondary.png" "${bottom_width}x${bottom_height}"
+  # The first B leaves the All chrome. The second closes All. The third is a
+  # no-op on the root grid. Then focus the Game Boy Advance folder.
+  focus_system_folder || fail "folder library: system folder was not on screen"
+  {
+    echo "Thor-sized emulator, not a Thor pass."
+    echo "Grid: home-primary.png and home-secondary.png."
+    echo "Open folder: folder-open-primary.png and folder-open-secondary.png."
+    echo "Edit mode: edit-mode-primary.png and edit-mode-secondary.png."
+    echo "Scroll: scroll-mid-primary.png and scroll-mid-secondary.png."
+    echo "All Games: all-games-primary.png and all-games-secondary.png."
+    echo "All Apps: all-apps-primary.png and all-apps-secondary.png."
+    echo "Top is ${top_width}x${top_height}. Bottom is ${bottom_width}x${bottom_height}."
+  } >"$out/home-grid-captures.txt"
+}
+
 seed_folder_library() {
   local uid gid prefs tree name boot attempt platform_state
   echo "step: seed folder files"
-  adb_do shell mkdir -p /sdcard/Library/gba
+  adb_do shell mkdir -p \
+    /sdcard/Library/gb /sdcard/Library/gbc /sdcard/Library/gba \
+    /sdcard/Library/nes /sdcard/Library/snes /sdcard/Library/n64 \
+    /sdcard/Library/nds /sdcard/Library/3ds \
+    /sdcard/Library/psp /sdcard/Library/gg /sdcard/Library/genesis /sdcard/Library/sms
+  adb_do shell "printf '%s\n' foldcade > /sdcard/Library/gb/Link.gb"
+  adb_do shell "printf '%s\n' foldcade > /sdcard/Library/gbc/Crystal.gbc"
   for name in Cart Drift Puzzle Quest Racer Runner; do
     adb_do shell "printf '%s\n' foldcade > /sdcard/Library/gba/${name}.gba"
   done
+  adb_do shell "printf '%s\n' foldcade > /sdcard/Library/nes/Mario.nes"
+  adb_do shell "printf '%s\n' foldcade > /sdcard/Library/snes/Zelda.sfc"
+  adb_do shell "printf '%s\n' foldcade > /sdcard/Library/n64/Kart.z64"
+  adb_do shell "printf '%s\n' foldcade > /sdcard/Library/nds/Drift.nds"
+  adb_do shell "printf '%s\n' foldcade > /sdcard/Library/3ds/Puzzle.cci"
+  adb_do shell "printf '%s\n' foldcade > /sdcard/Library/psp/Racer.cso"
+  adb_do shell "printf '%s\n' foldcade > /sdcard/Library/gg/Sonic.gg"
+  adb_do shell "printf '%s\n' foldcade > /sdcard/Library/genesis/Streets.gen"
+  adb_do shell "printf '%s\n' foldcade > /sdcard/Library/sms/Alex.sms"
   become_root || fail "folder library: adb root did not return"
   adb_do shell am force-stop "$app_id"
   tree='content://com.android.externalstorage.documents/tree/primary%3ALibrary'
@@ -1217,9 +1396,11 @@ PY
   dismiss_leftover_dialog
   expect_foldcade
   find_presentation_display || fail "folder library: bottom display was not found"
-  wait_library_log "library-ui platforms" || fail "folder library: platform grid did not load"
-  wait_library_text "Game Boy" || fail "folder library: platform title was not on screen"
-  adb logcat -c >/dev/null 2>&1 || true
+  wait_library_log "library-ui home" || fail "folder library: home grid did not load"
+  resolve_screencap_ids
+  capture_curated_home
+  wait_library_log "home-ui tile Game Boy Advance" \
+    || fail "folder library: system folder was not on screen"
   key_bottom KEYCODE_DPAD_CENTER
   wait_library_log "library-ui games" || fail "folder library: game grid did not load"
   if ! wait_library_text "Cart" 6; then

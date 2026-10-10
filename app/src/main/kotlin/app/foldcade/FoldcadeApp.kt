@@ -408,14 +408,7 @@ class FoldcadeApp : Application() {
                 Log.w("Foldcade", "Folder library failed", failure)
                 null
             }
-            withContext(Dispatchers.Main.immediate) {
-                if (ticket != libraryTicket.get()) return@withContext
-                if (loaded == null) {
-                    shell.showUnreachable(insidePlatform = false)
-                } else {
-                    applyLoaded(LocalFolderBackend.ID, loaded)
-                }
-            }
+            deliverLibrary(ticket, LocalFolderBackend.ID, loaded)
         }
     }
 
@@ -510,19 +503,59 @@ class FoldcadeApp : Application() {
                 Log.w("Foldcade", "Library failed", failure)
                 null
             }
-            withContext(Dispatchers.Main.immediate) {
-                if (ticket != libraryTicket.get()) return@withContext
-                if (loaded == null) shell.showUnreachable(insidePlatform = false) else applyLoaded(libraryId, loaded)
+            deliverLibrary(ticket, libraryId, loaded)
+        }
+    }
+
+    /**
+     * A library with platforms lands on the curated home grid.
+     * Games are read here, off the main thread, then the board is updated.
+     */
+    private suspend fun deliverLibrary(ticket: Int, libraryId: String, loaded: LoadedLibrary?) {
+        val games = if (loaded is LoadedLibrary.Platforms) {
+            try {
+                loadEveryGame(libraryId, loaded)
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (fatal: VirtualMachineError) {
+                throw fatal
+            } catch (failure: Exception) {
+                Log.w("Foldcade", "Library games failed", failure)
+                null
+            }
+        } else {
+            null
+        }
+        withContext(Dispatchers.Main.immediate) {
+            if (ticket != libraryTicket.get()) return@withContext
+            when (loaded) {
+                is LoadedLibrary.Platforms -> if (games == null) {
+                    shell.showUnreachable(insidePlatform = false)
+                } else {
+                    shell.ingestLibrary(libraryId, games, plugins.platformDefinitions())
+                    shell.showCuratedHome()
+                }
+                LoadedLibrary.NoPlatforms -> shell.showNoPlatforms(libraryId)
+                LoadedLibrary.Unreachable, null -> shell.showUnreachable(insidePlatform = false)
             }
         }
     }
 
-    private fun applyLoaded(libraryId: String, loaded: LoadedLibrary) {
-        when (loaded) {
-            is LoadedLibrary.Platforms -> shell.showPlatforms(libraryId, loaded.entries)
-            LoadedLibrary.NoPlatforms -> shell.showNoPlatforms(libraryId)
-            LoadedLibrary.Unreachable -> shell.showUnreachable(insidePlatform = false)
+    private suspend fun loadEveryGame(libraryId: String, loaded: LoadedLibrary.Platforms): List<GridEntry> {
+        val backend = plugins.library(libraryId)
+        val folderName = (backend as? LocalFolderBackend)?.let { it::folderName } ?: { "" }
+        val games = ArrayList<GridEntry>()
+        for (entry in loaded.entries) {
+            val platformId = entry.platformId ?: continue
+            games += loadGames(
+                plugins,
+                libraryId,
+                platformId,
+                folderName = folderName,
+                occupiesBoth = { platformOccupiesBoth(plugins, it) },
+            )
         }
+        return games
     }
 
     private suspend fun showFailure(ticket: Int, insidePlatform: Boolean) {

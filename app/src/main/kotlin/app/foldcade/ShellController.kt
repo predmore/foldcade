@@ -1,6 +1,8 @@
 package app.foldcade
 
 import android.util.Log
+import app.foldcade.api.plugin.Game
+import app.foldcade.api.plugin.Platform
 import app.foldcade.api.plugin.RommCredentials
 import app.foldcade.api.plugin.SaveFolderHolder
 import app.foldcade.host.PluginHost
@@ -24,6 +26,13 @@ import app.foldcade.language.GridKind
 import app.foldcade.language.HeroFolder
 import app.foldcade.language.HeroItem
 import app.foldcade.language.HeroSubject
+import app.foldcade.language.HomeItem
+import app.foldcade.language.HomeKind
+import app.foldcade.language.HomePlatform
+import app.foldcade.language.androidHomeId
+import app.foldcade.language.bucketMark
+import app.foldcade.language.homeGameId
+import app.foldcade.language.kitMark
 import app.foldcade.host.play.recentlyPlayedIndices
 import app.foldcade.language.HomeMusicSetting
 import app.foldcade.language.MusicTrack
@@ -83,6 +92,10 @@ class ShellController(
     private var shelfState: AppShelfState = store.appShelfState()
     private var installed: List<LaunchableApp> = emptyList()
     private var playerPackages: Set<String> = emptySet()
+    private val home = HomeSession(store.homeBoardRaw())
+    private var libraryItems: List<HomeItem> = emptyList()
+    private val libraryGames = HashMap<String, Game>()
+    private var extraPlatforms: List<HomePlatform> = emptyList()
 
     var model by mutableStateOf(initial())
         private set
@@ -102,13 +115,41 @@ class ShellController(
     private var platformEntries: List<GridEntry> = emptyList()
     private var platformFocus: GridFocus = GridFocus()
     private var platformOrder: List<Int> = emptyList()
+    private var loggedHomeTile: String? = null
 
     fun onMeaning(meaning: Meaning, screen: HostScreen): Effect? {
+            if (homeActive()) {
+            val before = model
+            val wasInFolder = home.board.openFolderId != null
+            val wasAll = home.board.allOpen
+            val wasTab = home.board.allTab
+            val wasHeld = home.board.hold != null
+            val step = home.handle(meaning, model.focus.cellIndex)
+            if (step != null && step.handled) {
+                store.saveHomeBoard(home.encoded())
+                showBoard(step.focus ?: model.focus, keepDialog = true)
+                if (!wasInFolder && home.openedFolderHasGame()) Log.i("Foldcade", "library-ui games")
+                if (!wasHeld && home.board.hold != null) Log.i("Foldcade", "home-ui lifted")
+                if (home.board.allOpen && (!wasAll || wasTab != home.board.allTab)) {
+                    val tab = if (home.board.allTab == app.foldcade.language.AllTab.Games) "games" else "apps"
+                    Log.i("Foldcade", "home-ui all-$tab")
+                }
+                cueMeaning(meaning, before, model)
+                return step.effect
+            }
+        }
         val before = model
         val current = if (model.libraryGrid) model else withShelf(model)
         val (next, effect) = reduce(current, meaning, screen)
         if (!next.connectOpen) connectToken = ""
         val packageName = focusedGame()?.androidPackage
+        val panelLabel = next.panel?.let { panel ->
+            val row = app.foldcade.language.panelRows(panel, next).getOrNull(panel.index) ?: return@let null
+            app.foldcade.language.rowText(row, next).label
+        }
+        if (panelLabel != null && (meaning == Meaning.LeftPanel || meaning == Meaning.MoveDown)) {
+            Log.i("Foldcade", "home-ui row $panelLabel")
+        }
         when (effect) {
             is Effect.ConfirmMoonlightImport -> {
                 val sourceChanged = next.moonlightSource != model.moonlightSource
@@ -180,13 +221,160 @@ class ShellController(
             Effect.SkipMoonlightImport, Effect.ReviewMoonlightImport,
             -> null
             is Effect.ConfirmMoonlightImport -> null
+            Effect.EditHome -> {
+                enterHomeEdit()
+                Log.i("Foldcade", "home-ui editing")
+                null
+            }
+            Effect.OpenAll -> {
+                openHomeAll()
+                Log.i("Foldcade", "home-ui all-games")
+                null
+            }
+            Effect.ToggleAddNew -> {
+                applyHomeAddNew(next.addNewToHome)
+                null
+            }
             else -> effect
         }
+    }
+
+    fun homeKeys(): app.foldcade.language.HomeKeys {
+        if (model.dialog != null || model.panel != null || model.connectOpen) {
+            return app.foldcade.language.HomeKeys.Idle
+        }
+        if (model.libraryGrid || model.homeGrid != HomeGrid.StandIns) {
+            return app.foldcade.language.HomeKeys.Idle
+        }
+        return home.keys()
+    }
+
+    fun homeFace(index: Int): HomeFace? = home.face(index)
+
+    fun homeHint(): String? = if (showingHome() && model.dialog == null && model.panel == null) home.hint() else null
+
+    fun homeChrome(): AllChrome? = if (showingHome() && model.dialog == null && model.panel == null && !model.connectOpen) {
+        home.chrome()
+    } else {
+        null
+    }
+
+    fun homeEditing(): Boolean =
+        showingHome() && home.board.editing && model.dialog == null && model.panel == null
+
+    fun homeAllOpen(): Boolean =
+        showingHome() && home.board.allOpen && model.dialog == null && model.panel == null
+
+    fun homeLiftedIndex(): Int? = home.board.hold?.index
+
+    fun homeAnimToken(): String = home.animToken()
+
+    fun catalogGame(id: String): Game? = home.game(id)
+
+    fun enterHomeEdit() {
+        home.enterEditing()
+        store.saveHomeBoard(home.encoded())
+        showBoard(model.focus, keepDialog = true)
+    }
+
+    fun openHomeAll() {
+        home.showAll()
+        store.saveHomeBoard(home.encoded())
+        showBoard(GridFocus(), keepDialog = true)
+    }
+
+    fun applyHomeAddNew(enabled: Boolean) {
+        home.applyAddNew(enabled)
+        syncHome()
+        publish(
+            model.copy(
+                addNewToHome = home.board.addNewToHome,
+                shelfEpoch = model.shelfEpoch + 1,
+            ),
+        )
+    }
+
+    fun pickUpHome(index: Int) {
+        if (model.libraryGrid || model.homeGrid != HomeGrid.StandIns) return
+        if (model.dialog != null || model.panel != null || model.connectOpen) return
+        home.pickUpFocused(index)
+        store.saveHomeBoard(home.encoded())
+        showBoard(GridFocus(cellIndex = index, lastColumn = index % Metrics.columns), keepDialog = true)
+    }
+
+    fun dragHome(meaning: Meaning) {
+        if (home.board.hold == null) return
+        home.drag(meaning)
+        val index = home.board.hold?.index ?: return
+        store.saveHomeBoard(home.encoded())
+        showBoard(GridFocus(cellIndex = index, lastColumn = index % Metrics.columns), keepDialog = true)
+    }
+
+    fun touchAllChrome(index: Int, screen: HostScreen): Effect? {
+        if (!home.board.allOpen || model.dialog != null || model.panel != null) return null
+        if (home.board.allChrome != index) {
+            home.focusChrome(index)
+            store.saveHomeBoard(home.encoded())
+            showBoard(model.focus, keepDialog = true)
+            return null
+        }
+        return onMeaning(Meaning.Activate, screen)
+    }
+
+    /**
+     * Folds one backend's games into the curated board.
+     * A later scan keeps placed tiles and only fills new ones when the setting is on.
+     */
+    fun ingestLibrary(libraryId: String, entries: List<GridEntry>, platforms: List<Platform>) {
+        val prefix = "lib:$libraryId:"
+        val items = ArrayList<HomeItem>()
+        val remembered = HashMap<String, Game>()
+        for (entry in entries) {
+            val game = entry.game ?: continue
+            val id = homeGameId(libraryId, game.remoteKey)
+            val kind = when (libraryId) {
+                "gamenative" -> HomeKind.GameNative
+                "moonlight" -> HomeKind.Moonlight
+                else -> HomeKind.Rom
+            }
+            items += HomeItem(
+                id = id,
+                title = entry.title.ifBlank { game.label },
+                kind = kind,
+                platformId = game.platformId,
+                mark = kitMark(game.platformId),
+                lastPlayedMillis = lastPlayedMillis(id) ?: 0L,
+            )
+            remembered[id] = game
+        }
+        libraryItems = libraryItems.filterNot { it.id.startsWith(prefix) } + items
+        libraryGames.keys.filter { it.startsWith(prefix) }.toList().forEach { libraryGames.remove(it) }
+        libraryGames.putAll(remembered)
+        extraPlatforms = platforms.map { platform ->
+            HomePlatform(
+                id = platform.id,
+                name = platform.displayName,
+                aliases = platform.aliases,
+                mark = kitMark(platform.id),
+            )
+        }
+        syncHome()
+        if (!model.libraryGrid && model.homeGrid == HomeGrid.StandIns) {
+            showBoard(model.focus, keepDialog = true)
+        }
+    }
+
+    /** The scanned library is on the home grid. Emulator waits for this line. */
+    fun showCuratedHome() {
+        syncHome()
+        showBoard(GridFocus(), keepDialog = true)
+        Log.i("Foldcade", "library-ui home")
     }
 
     fun setInstalledApps(apps: List<LaunchableApp>, players: Set<String>) {
         installed = apps.distinctBy { it.packageName }
         playerPackages = players
+        syncHome()
         publish(model)
     }
 
@@ -500,7 +688,10 @@ class ShellController(
         publish(model.copy(panel = null, connectOpen = false, dialog = dialog, moonlightSheet = null))
     }
 
-    fun focusedGame(): ShelfGame? = tileFromOrder(displaySource(model))
+    fun focusedGame(): ShelfGame? = when {
+        showingHome() -> home.face(model.focus.cellIndex)?.let { home.asShelf(it) }
+        else -> tileFromOrder(displaySource(model))
+    }
 
     /**
      * What the idle top screen shows for the focused cell.
@@ -535,6 +726,7 @@ class ShellController(
 
     fun tileFromOrder(source: Int): ShelfGame? = when {
         model.libraryGrid -> entries.getOrNull(source)?.asShelf()
+        showingHome() -> home.face(source)?.let { home.asShelf(it) }
         model.homeGrid == HomeGrid.StandIns -> Shelf.games.getOrNull(source)
         else -> listed(model.homeGrid).getOrNull(source)?.asTile(model.homeGrid)
     }
@@ -739,6 +931,9 @@ class ShellController(
     }
 
     private fun tileOn(snapshot: PickerModel): ShelfGame? {
+        if (!snapshot.libraryGrid && snapshot.homeGrid == HomeGrid.StandIns) {
+            return home.face(snapshot.focus.cellIndex)?.let { home.asShelf(it) }
+        }
         val source = displaySource(snapshot)
         return when (snapshot.homeGrid) {
             HomeGrid.StandIns -> Shelf.games.getOrNull(source)
@@ -767,6 +962,7 @@ class ShellController(
      * redraws the hint. Focus stays inside the new count.
      */
     fun noteShelfChanged() {
+        syncHome()
         val next = model.copy(shelfEpoch = model.shelfEpoch + 1)
         if (model.libraryGrid) {
             model = next
@@ -826,10 +1022,27 @@ class ShellController(
             withShelf(next.copy(libraryGrid = false))
         }
         if (moonlightSourceChanged) onMoonlightCatalog()
+        logHomeTile()
+    }
+
+    /**
+     * The bottom labels ellipsize, and a presentation-display dump is often empty.
+     * The capture follows this line to the Game Boy Advance folder.
+     */
+    private fun logHomeTile() {
+        if (!showingHome() || home.board.allOpen || home.board.openFolderId != null) {
+            loggedHomeTile = null
+            return
+        }
+        if (model.dialog != null || model.panel != null || model.connectOpen) return
+        val title = home.face(model.focus.cellIndex)?.title?.takeIf { it.isNotBlank() } ?: return
+        if (title == loggedHomeTile) return
+        loggedHomeTile = title
+        Log.i("Foldcade", "home-ui tile $title")
     }
 
     private fun countFor(grid: HomeGrid): Int = when (grid) {
-        HomeGrid.StandIns -> Shelf.games.size
+        HomeGrid.StandIns -> home.visibleCount()
         else -> listed(grid).size
     }
 
@@ -880,6 +1093,103 @@ class ShellController(
         )
     }
 
+    private fun showingHome(): Boolean =
+        !model.libraryGrid && model.homeGrid == HomeGrid.StandIns
+
+    private fun homeActive(): Boolean =
+        showingHome() && model.dialog == null && model.panel == null && !model.connectOpen
+
+    private fun showBoard(focus: GridFocus, keepDialog: Boolean) {
+        val count = home.visibleCount()
+        val cell = focus.cellIndex.coerceIn(0, (count - 1).coerceAtLeast(0))
+        publish(
+            model.copy(
+                libraryGrid = false,
+                homeGrid = HomeGrid.StandIns,
+                panel = null,
+                arranging = false,
+                hold = null,
+                order = emptyList(),
+                count = count,
+                focus = GridFocus(
+                    cellIndex = cell,
+                    lastColumn = if (count == 0) 0 else cell % Metrics.columns,
+                ),
+                addNewToHome = home.board.addNewToHome,
+                shelfEpoch = model.shelfEpoch + 1,
+                gridKind = GridKind.Games,
+                emptyGrid = EmptyGrid.None,
+                atLibraryRoot = home.board.openFolderId == null && !home.board.allOpen,
+                dialog = if (keepDialog) model.dialog else null,
+            ),
+        )
+    }
+
+    private fun syncHome() {
+        home.rememberShelf(Shelf.games)
+        val changed = home.remerge(
+            shelfItems(),
+            appItems(),
+            libraryItems,
+            homePlatforms(),
+            libraryGames,
+        )
+        if (changed) store.saveHomeBoard(home.encoded())
+    }
+
+    private fun shelfItems(): List<HomeItem> = Shelf.games.mapNotNull { game ->
+        val kind = when {
+            game.id == Shelf.PC_TILE || game.libraryId == "gamenative" -> HomeKind.GameNative
+            game.id == "moonlight" || game.libraryId == "moonlight" -> HomeKind.Moonlight
+            !game.platformId.isNullOrBlank() && game.mark == null -> HomeKind.Rom
+            else -> HomeKind.Loose
+        }
+        // The demo marks stay on the shelf. The home grid is system folders.
+        if (kind == HomeKind.Loose) return@mapNotNull null
+        HomeItem(
+            id = game.id,
+            title = game.title,
+            kind = kind,
+            platformId = game.platformId,
+            mark = game.mark ?: game.platformId?.let { kitMark(it) },
+            lastPlayedMillis = lastPlayedMillis(game.id) ?: 0L,
+        )
+    }
+
+    private fun appItems(): List<HomeItem> = installed.map { app ->
+        val kind = if (app.systemGame) HomeKind.AndroidGame else HomeKind.AndroidApp
+        HomeItem(
+            id = androidHomeId(app.packageName),
+            title = app.label,
+            kind = kind,
+            mark = bucketMark(kind),
+        )
+    }
+
+    private fun homePlatforms(): List<HomePlatform> {
+        val known = listOf(
+            HomePlatform("nintendo-3ds", "Nintendo 3DS", setOf("3ds", "n3ds", "new-nintendo-3ds"), "dual"),
+            HomePlatform("nintendo-ds", "Nintendo DS", setOf("nds"), "dual"),
+            HomePlatform("game-boy", "Game Boy", setOf("gb"), "pocket"),
+            HomePlatform("game-boy-color", "Game Boy Color", setOf("gbc"), "pocket"),
+            HomePlatform("game-boy-advance", "Game Boy Advance", setOf("gba"), "pocket"),
+            HomePlatform("game-gear", "Game Gear", setOf("gg"), "pocket"),
+            HomePlatform("psp", "PSP", setOf("psp"), "pocket"),
+        )
+        val byId = LinkedHashMap<String, HomePlatform>()
+        known.forEach { byId[it.id] = it }
+        extraPlatforms.forEach { byId[it.id] = it }
+        plugins.platformDefinitions().forEach { platform ->
+            byId[platform.id] = HomePlatform(
+                id = platform.id,
+                name = platform.displayName,
+                aliases = platform.aliases,
+                mark = kitMark(platform.id),
+            )
+        }
+        return byId.values.toList()
+    }
+
     private fun recentOrder(): List<Int> =
         recentlyPlayedIndices(Shelf.games.map { it.id }, lastPlayedMillis)
 
@@ -898,8 +1208,10 @@ class ShellController(
         if (selected.id != stored.trackId) {
             store.setMusic(stored.enabled, stored.volume, selected.id)
         }
+        syncHome()
         return PickerModel(
-            count = Shelf.games.size,
+            count = home.visibleCount(),
+            addNewToHome = home.board.addNewToHome,
             rowsPerPage = 2,
             showLaunchTarget = true,
             primaryIsTop = store.session.defaultDisplayIsTop,
