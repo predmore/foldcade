@@ -7,23 +7,21 @@ import org.junit.Test
 class AndroidSettingsMapTest {
     @Test
     fun leftPanelKeepsAndroidSettingsAndTheWayOut() {
-        val held = leftRows(homeRoleHeld = true)
-        assertEquals(Row.AndroidSettings, held[held.lastIndex - 2])
-        assertEquals(Row.DefaultHomeApp, held[held.lastIndex - 1])
-        assertEquals(Row.Settings, held.last())
+        val held = sample().copy(homeRoleHeld = true)
+        assertEquals(
+            listOf(Row.Primary, Row.DefaultHomeApp, Row.AndroidSettings),
+            settingsRows(SettingsCategory.Screens, held),
+        )
         assertEquals("Android settings", rowLabel(Row.AndroidSettings, sample()))
         assertEquals("Default home app", rowLabel(Row.DefaultHomeApp, sample()))
-        val opened = reduce(sample().copy(homeRoleHeld = true), Meaning.LeftPanel).first
-        val rows = panelRows(opened.panel!!, opened)
-        val settings = opened.panel!!.copy(index = rows.indexOf(Row.AndroidSettings))
-        val (stayed, effect) = reduce(opened.copy(panel = settings), Meaning.Activate)
+        val settings = held.onSetting(Row.AndroidSettings)
+        val (stayed, effect) = reduce(settings, Meaning.Activate)
         assertEquals(Effect.OpenAndroidSetting(AndroidSetting.Settings), effect)
-        assertEquals(settings.index, stayed.panel?.index)
-        val home = settings.copy(index = rows.indexOf(Row.DefaultHomeApp))
-        val (homeStayed, homeEffect) = reduce(opened.copy(panel = home), Meaning.Activate)
+        assertEquals(settings.settings, stayed.settings)
+        val home = held.onSetting(Row.DefaultHomeApp)
+        val (homeStayed, homeEffect) = reduce(home, Meaning.Activate)
         assertEquals(Effect.OpenAndroidSetting(AndroidSetting.Home), homeEffect)
-        assertEquals(Row.Settings, panelRows(home, opened).last())
-        assertEquals(home.index, homeStayed.panel?.index)
+        assertEquals(home.settings, homeStayed.settings)
     }
 
     @Test

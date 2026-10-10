@@ -214,7 +214,9 @@ private fun Island(
                 Modifier
                     .fillMaxSize()
                     .padding(start = 12.dp, end = 12.dp, top = pillHeight, bottom = 8.dp)
-                    .verticalScroll(rememberScrollState()),
+                    .verticalScroll(rememberScrollState())
+                    // The scroll clips. This keeps the focus ring on the first and last rows inside it.
+                    .padding(vertical = 10.dp),
             ) {
                 menuRows(panel, progress, interactive)
             }

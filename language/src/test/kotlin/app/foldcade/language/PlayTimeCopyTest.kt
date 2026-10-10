@@ -42,9 +42,8 @@ class PlayTimeCopyTest {
         assertEquals(DialogKind.UsageAccess, prompt.kind)
         assertEquals(DialogButton.NotNow, prompt.buttons[prompt.safeIndex])
         assertNull(PickerModel(count = 1, rowsPerPage = 1, showLaunchTarget = false).dialog)
-        val opened = reduce(PickerModel(count = 1, rowsPerPage = 1, showLaunchTarget = false), Meaning.LeftPanel).first
-        val index = panelRows(opened.panel!!, opened).indexOf(Row.UsageAccess)
-        val asking = reduce(opened.copy(panel = opened.panel!!.copy(index = index)), Meaning.Activate).first
+        val opened = PickerModel(count = 1, rowsPerPage = 1, showLaunchTarget = false).onSetting(Row.UsageAccess)
+        val asking = reduce(opened, Meaning.Activate).first
         assertEquals(DialogKind.UsageAccess, asking.dialog?.kind)
         assertEquals("Play time  Approximate", rowLabel(Row.UsageAccess, opened))
         assertEquals("Play time  All launchers", rowLabel(Row.UsageAccess, opened.copy(usageGranted = true)))
@@ -52,10 +51,8 @@ class PlayTimeCopyTest {
 
     @Test
     fun orderRowCyclesRecentlyPlayed() {
-        val opened = reduce(PickerModel(count = 1, rowsPerPage = 1, showLaunchTarget = false), Meaning.LeftPanel).first
-        val row = opened.panel!!.copy(index = 4)
-        assertEquals(Row.Order, panelRows(row, opened)[4])
-        val next = reduce(opened.copy(panel = row), Meaning.Activate).first
+        val opened = PickerModel(count = 1, rowsPerPage = 1, showLaunchTarget = false).onSetting(Row.Order)
+        val next = reduce(opened, Meaning.Activate).first
         assertEquals(LibrarySort.RecentlyPlayed, next.sort)
         assertEquals("Order  Recently played", rowLabel(Row.Order, next))
         val back = reduce(next, Meaning.Activate).first

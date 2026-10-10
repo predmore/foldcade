@@ -291,37 +291,20 @@ data class PlayerSaveSetting(
     val chosen: Boolean,
 )
 
-fun leftRows(
-    homeRoleHeld: Boolean,
-    playerSaves: List<PlayerSaveSetting> = emptyList(),
-    offerButtonLabels: Boolean = false,
-): List<Row> = buildList {
-    add(Row.Library)
-    add(Row.Theme)
-    add(Row.Primary)
-    add(Row.Arrange)
-    add(Row.Order)
-    add(Row.Music)
-    add(Row.MusicTrack)
-    add(Row.MusicVolume)
-    if (!homeRoleHeld) add(Row.SetAsHome)
-    add(Row.Background)
-    add(Row.MotionSpeed)
-    add(Row.UsageAccess)
-    add(Row.MoonlightSource)
-    if (offerButtonLabels) add(Row.ButtonLabels)
-    playerSaves.forEach { add(Row.PlayerSave(it.playerId)) }
-    add(Row.EditHome)
-    add(Row.AllLibrary)
-    add(Row.AddNewGames)
-    add(Row.AndroidGames)
-    add(Row.Apps)
-    add(Row.HiddenApps)
-    add(Row.Licenses)
-    add(Row.AndroidSettings)
-    add(Row.DefaultHomeApp)
-    add(Row.Settings)
-}
+/**
+ * The L1 menu: where to go on the home screen. Every setting lives on the Settings page,
+ * so this stays short enough to fit the island.
+ */
+fun leftRows(): List<Row> = listOf(
+    Row.Library,
+    Row.EditHome,
+    Row.AllLibrary,
+    Row.Arrange,
+    Row.AndroidGames,
+    Row.Apps,
+    Row.HiddenApps,
+    Row.Settings,
+)
 
 data class SignedInBackend(
     val pluginId: String,
@@ -367,7 +350,7 @@ fun rightRows(
 
 fun panelRows(panel: SidePanel, model: PickerModel): List<Row> = when (panel.side) {
     Side.Left -> when (panel.level) {
-        PanelLevel.Root -> leftRows(model.homeRoleHeld, model.playerSaves, model.offerButtonLabels)
+        PanelLevel.Root -> leftRows()
         PanelLevel.Library -> libraryRows(model.backends, model.signedIn)
     }
     Side.Right -> rightRows(model.showLaunchTarget, model.notices, model.appActions)

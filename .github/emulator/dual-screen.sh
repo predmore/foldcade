@@ -781,12 +781,10 @@ fi
 
 # Shoulder panels on the Thor-sized emulator. This is not a Thor pass.
 # A setup cancelled before the first script step is not a capture result.
-# The home role is held, so Set as Home is hidden. From Library the
-# rows are Theme, Primary, Arrange, Order, Music, Track, Volume,
-# Background, Motion, Play time, Azahar saves, melonDS saves, Edit home,
-# All library, Add new games, Android Games, Apps, Hidden, then Android settings:
-# nineteen downs. One down from the
-# launch-target row lands on the Wi-Fi tile while a stand-in is focused.
+# L1 rows are Library, Edit home, All library, Arrange, Android Games,
+# Apps, Hidden, then Settings. Every setting is on the Settings page. One
+# down from the launch-target row lands on the Wi-Fi tile while a stand-in
+# is focused.
 # Key events default to display -1, and that call does not return once a
 # second display exists. The help text writes the flag as "[-d DISPLAY_ID]"
 # and "-d: specify the display ID." Home was started on display 0.
