@@ -335,6 +335,20 @@ class HomeBoardTest {
         assertEquals(board, moveToFolder(board, HOME_ALL, "folder.mine"))
     }
 
+    @Test
+    fun aGameBroughtBackFromAllReturnsToItsFolderWhileItIsThere() {
+        val cart = item("game.cart", platformId = "gba")
+        val placed = mergeHome(HomeBoard(), listOf(cart, item("game.drift", platformId = "gba")), platforms)
+        val gba = platformFolderId("game-boy-advance")
+        assertEquals(gba, homeFolderFor(placed, cart, platforms))
+        val app = item("android:example", kind = HomeKind.AndroidApp)
+        assertEquals(HOME_ANDROID_APPS, homeFolderFor(placed, app, platforms))
+        // With its folder removed there is nowhere to return to, so it goes on the root.
+        val removed = deleteFolder(placed, gba)
+        assertNull(homeFolderFor(removed, cart, platforms))
+        assertNull(homeFolderFor(placed, item("loose", kind = HomeKind.Loose), platforms))
+    }
+
     private fun board(slots: List<String?>): HomeBoard = HomeBoard(slots = slots)
 
     private fun item(

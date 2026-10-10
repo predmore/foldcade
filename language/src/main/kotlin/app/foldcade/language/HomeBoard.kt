@@ -358,6 +358,27 @@ fun addToHome(board: HomeBoard, id: String, folderId: String? = null): HomeBoard
     return if (folder != null) dropInto(shown, folder.id, id) else placeOnRoot(shown, id)
 }
 
+/**
+ * The folder [item] is filed in, while the board still has it: its platform's folder
+ * for a ROM, or its library's folder for an app or stream. Null when that folder is
+ * gone or the item has none, so a game brought back from All lands where it came from.
+ */
+fun homeFolderFor(board: HomeBoard, item: HomeItem, platforms: List<HomePlatform>): String? {
+    val folderId = when (item.kind) {
+        HomeKind.Rom -> {
+            val platform = resolvePlatform(platforms, item.platformId)?.id
+                ?: item.platformId?.takeIf { it.isNotBlank() }
+            platform?.let(::platformFolderId)
+        }
+        HomeKind.AndroidGame -> HOME_ANDROID_GAMES
+        HomeKind.AndroidApp -> HOME_ANDROID_APPS
+        HomeKind.GameNative -> HOME_GAMENATIVE
+        HomeKind.Moonlight -> HOME_MOONLIGHT
+        HomeKind.Loose -> null
+    }
+    return folderId?.takeIf { it in board.folders }
+}
+
 fun setAddNewToHome(board: HomeBoard, enabled: Boolean): HomeBoard =
     board.copy(addNewToHome = enabled)
 
