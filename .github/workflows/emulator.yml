@@ -166,36 +166,6 @@ jobs:
             ${{ steps.sdk.outputs.root }}/licenses
           key: ${{ steps.sdk-cache.outputs.cache-primary-key }}
 
-      - uses: gradle/actions/setup-gradle@v6
-        with:
-          cache-read-only: true
-
-      # The emulator does not listen to the loop. Reuse the last render of these exact
-      # sources instead of installing fluidsynth and rendering on every run.
-      - name: Restore rendered home music
-        id: music-cache
-        uses: actions/cache@v6
-        with:
-          path: ${{ runner.temp }}/home-music
-          key: home-music-render-${{ hashFiles('music/*.py', 'music/*.sh', 'music/requirements.txt', 'music/tracks/manifest.json', 'music/tracks/**/compose.py') }}
-
-      - name: Render home music
-        if: steps.music-cache.outputs.cache-hit != 'true'
-        uses: ./.github/actions/render-home-music
-
-      - name: Keep the render for the next run
-        if: steps.music-cache.outputs.cache-hit != 'true'
-        run: |
-          set -euo pipefail
-          rm -rf "$RUNNER_TEMP/home-music"
-          cp -r app/build/generated/homeMusicAssets "$RUNNER_TEMP/home-music"
-
-      - name: Use the rendered home music
-        run: echo "ORG_GRADLE_PROJECT_foldcadeHomeMusicAssets=$RUNNER_TEMP/home-music" >> "$GITHUB_ENV"
-
-      - name: Assemble debug
-        run: ./gradlew :app:assembleDebug --configuration-cache
-
       - name: Emulator packages
         run: |
           set -euo pipefail
@@ -226,14 +196,59 @@ jobs:
             fi
           fi
 
-      - name: Dual-screen screenshots
-        timeout-minutes: 15
+      # Boot while Gradle builds. The script stops before install until the
+      # APK marker appears, then runs the captures. The step below follows it.
+      - name: Boot the emulator
         env:
           ANDROID_AVD_HOME: ${{ runner.temp }}/avd
+          FOLDCADE_APK_READY: ${{ runner.temp }}/apk-ready
         run: |
           set -euo pipefail
-          mkdir -p "$ANDROID_AVD_HOME"
-          bash .github/emulator/dual-screen.sh screenshots
+          mkdir -p "$ANDROID_AVD_HOME" screenshots
+          nohup bash .github/emulator/dual-screen.sh screenshots >"$RUNNER_TEMP/emulator-run.log" 2>&1 &
+          echo $! >"$RUNNER_TEMP/emulator-run.pid"
+
+      - uses: gradle/actions/setup-gradle@v6
+        with:
+          cache-read-only: true
+
+      # The emulator does not listen to the loop. Reuse the last render of these exact
+      # sources instead of installing fluidsynth and rendering on every run.
+      - name: Restore rendered home music
+        id: music-cache
+        uses: actions/cache@v6
+        with:
+          path: ${{ runner.temp }}/home-music
+          key: home-music-render-${{ hashFiles('music/*.py', 'music/*.sh', 'music/requirements.txt', 'music/tracks/manifest.json', 'music/tracks/**/compose.py') }}
+
+      - name: Render home music
+        if: steps.music-cache.outputs.cache-hit != 'true'
+        uses: ./.github/actions/render-home-music
+
+      - name: Keep the render for the next run
+        if: steps.music-cache.outputs.cache-hit != 'true'
+        run: |
+          set -euo pipefail
+          rm -rf "$RUNNER_TEMP/home-music"
+          cp -r app/build/generated/homeMusicAssets "$RUNNER_TEMP/home-music"
+
+      - name: Use the rendered home music
+        run: echo "ORG_GRADLE_PROJECT_foldcadeHomeMusicAssets=$RUNNER_TEMP/home-music" >> "$GITHUB_ENV"
+
+      - name: Assemble debug
+        run: |
+          ./gradlew :app:assembleDebug --configuration-cache
+          touch "$RUNNER_TEMP/apk-ready"
+
+      - name: Dual-screen screenshots
+        timeout-minutes: 15
+        run: |
+          set -euo pipefail
+          pid="$(cat "$RUNNER_TEMP/emulator-run.pid")"
+          # Replays what the boot printed while Gradle ran, then follows to the end.
+          tail -n +1 --pid="$pid" -f "$RUNNER_TEMP/emulator-run.log"
+          code="$(cat screenshots/exit-code 2>/dev/null || echo 1)"
+          exit "$code"
 
       - name: Upload both displays
         if: always()
