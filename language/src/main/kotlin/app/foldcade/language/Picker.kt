@@ -244,8 +244,8 @@ sealed interface Row {
     data object Settings : Row
 }
 
-/** Two columns in the R1 cluster. Text rows above the tiles stay full width. */
-const val quickTileColumns = 2
+/** The R1 quick settings are one row of round buttons. Text rows above them stay full width. */
+const val quickTileColumns = 7
 
 enum class QuickSetting {
     Wifi,
@@ -254,6 +254,9 @@ enum class QuickSetting {
     Sound,
     Battery,
     AppInfo,
+
+    /** Foldcade's own Settings page, not an Android screen. */
+    Settings,
 }
 
 fun quickSettings(): List<QuickSetting> = listOf(
@@ -263,6 +266,7 @@ fun quickSettings(): List<QuickSetting> = listOf(
     QuickSetting.Sound,
     QuickSetting.Battery,
     QuickSetting.AppInfo,
+    QuickSetting.Settings,
 )
 
 enum class AndroidSetting {
@@ -283,6 +287,8 @@ fun QuickSetting.androidSetting(): AndroidSetting = when (this) {
     QuickSetting.Sound -> AndroidSetting.Sound
     QuickSetting.Battery -> AndroidSetting.Battery
     QuickSetting.AppInfo -> AndroidSetting.AppInfo
+    // Opens the Settings page instead (see activateRow). Android settings are on that page.
+    QuickSetting.Settings -> AndroidSetting.Settings
 }
 
 data class PlayerSaveSetting(
@@ -401,6 +407,7 @@ fun rowText(row: Row, model: PickerModel): RowText = when (row) {
             QuickSetting.Sound -> Copy.sound
             QuickSetting.Battery -> Copy.battery
             QuickSetting.AppInfo -> Copy.appInfo
+            QuickSetting.Settings -> SettingsCopy.title
         },
     )
     is Row.Backend -> RowText(row.name)
@@ -1071,7 +1078,11 @@ private fun activateRow(
         Row.AndroidSettings -> model.copy(panel = panel) to Effect.OpenAndroidSetting(AndroidSetting.Settings)
         Row.Licenses -> model.copy(panel = panel) to Effect.OpenLicenses
         Row.DefaultHomeApp -> model.copy(panel = panel) to Effect.OpenAndroidSetting(AndroidSetting.Home)
-        is Row.QuickTile -> model.copy(panel = panel) to Effect.OpenAndroidSetting(row.setting.androidSetting())
+        is Row.QuickTile -> if (row.setting == QuickSetting.Settings) {
+            model.copy(panel = null, settings = SettingsPage(screen = panel.screen, grid = panel.grid)) to null
+        } else {
+            model.copy(panel = panel) to Effect.OpenAndroidSetting(row.setting.androidSetting())
+        }
         is Row.Backend -> model.copy(panel = null, focus = panel.grid) to Effect.ActivateBackend(row.name)
         Row.AddFolder ->
             if (model.folderGrantPending) {

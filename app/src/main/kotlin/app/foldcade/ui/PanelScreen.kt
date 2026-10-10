@@ -4,6 +4,8 @@ import android.graphics.RenderEffect
 import android.graphics.Shader
 import android.os.Build
 import android.util.Log
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.FiniteAnimationSpec
 import androidx.compose.foundation.Image
@@ -91,6 +93,8 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.zIndex
+import app.foldcade.R
+import app.foldcade.language.QuickSetting
 import app.foldcade.Displays
 import app.foldcade.FoldcadeApp
 import app.foldcade.FoldcadeHomeActivity
@@ -819,66 +823,64 @@ private fun QuickTiles(
 ) {
     val theme = foldTheme()
     val tiles = rows.subList(tileStart, rows.size)
-    Column(verticalArrangement = Arrangement.spacedBy(px(8f))) {
+    // Round icon buttons in one row, like Cocoon's quick settings. The label is for touch
+    // readers and the emulator's UI dump.
+    Column(Modifier.padding(vertical = px(12f)), verticalArrangement = Arrangement.spacedBy(px(16f))) {
         tiles.chunked(quickTileColumns).forEachIndexed { rowIndex, chunk ->
             Row(
                 Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(px(8f)),
+                horizontalArrangement = Arrangement.SpaceEvenly,
             ) {
                 chunk.forEachIndexed { column, row ->
                     val index = tileStart + rowIndex * quickTileColumns + column
                     val focused = focusedIndex == index
-                    val corner = 8.dp
                     val press = if (interactive) {
                         Modifier.hostPress { onEffect(app.shell.touchPanel(index, screen)) }
                     } else {
                         Modifier
                     }
+                    val label = rowLabel(row, app.shell.model)
                     Box(
                         Modifier
-                            .weight(1f)
-                            .height(64.dp)
+                            .size(QUICK_BUTTON_DP.dp)
                             .keepInView(focused)
-                            .rowHighlight(focused)
-                            .tileEdge(focused = focused, corner = corner)
+                            .graphicsLayer { clip = false }
+                            .drawBehind {
+                                val radius = size.minDimension / 2f
+                                drawCircle(theme.onBackground.copy(alpha = if (focused) 0.16f else 0.08f))
+                                if (focused) with(FocusRing) { drawFocusRing(radius) }
+                            }
                             .then(press)
-                            .padding(px(8f)),
+                            .semantics { contentDescription = label },
                         contentAlignment = Alignment.Center,
                     ) {
-                        BasicText(
-                            text = rowLabel(row, app.shell.model),
-                            style = text(
-                                if (focused) theme.onBackground else theme.muted,
-                                TypeRamp.sideRow,
-                                theme,
-                            ),
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                        )
+                        val icon = (row as? Row.QuickTile)?.setting?.let(::quickIcon)
+                        if (icon != null) {
+                            Image(
+                                painter = painterResource(icon),
+                                contentDescription = null,
+                                modifier = Modifier
+                                    .size((QUICK_BUTTON_DP * 0.46f).dp)
+                                    .graphicsLayer { alpha = if (focused) 1f else 0.78f },
+                            )
+                        }
                     }
-                }
-                repeat(quickTileColumns - chunk.size) {
-                    Box(Modifier.weight(1f))
                 }
             }
         }
     }
 }
 
-@Composable
-private fun Modifier.tileEdge(focused: Boolean, corner: Dp): Modifier {
-    val color = foldTheme().muted
-    return drawWithContent {
-        drawContent()
-        if (focused) return@drawWithContent
-        val stroke = 2f
-        val radius = corner.toPx()
-        drawRoundRect(
-            color = color,
-            style = Stroke(width = stroke),
-            cornerRadius = CornerRadius(radius, radius),
-        )
-    }
+private const val QUICK_BUTTON_DP = 52f
+
+private fun quickIcon(setting: QuickSetting): Int = when (setting) {
+    QuickSetting.Wifi -> R.drawable.ic_status_wifi_4
+    QuickSetting.Bluetooth -> R.drawable.ic_status_bluetooth
+    QuickSetting.Display -> R.drawable.ic_status_display
+    QuickSetting.Sound -> R.drawable.ic_status_volume_3
+    QuickSetting.Battery -> R.drawable.ic_status_battery_100
+    QuickSetting.AppInfo -> R.drawable.ic_status_info
+    QuickSetting.Settings -> R.drawable.ic_status_settings
 }
 
 @Composable
