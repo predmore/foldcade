@@ -174,13 +174,11 @@ fun PanelHost(activity: FoldcadeHomeActivity, displays: Displays) {
         spec = if (blurTarget >= 1f) Motion.arrive(Motion.durationIsland, scale) else Motion.leave(Motion.durationIsland, scale),
         snap = heldBlur != null,
     )
-    // The blur layer stays off once the menu is closed. A graphics layer left on
-    // the bottom screen keeps the accessibility dump empty, so the library title
-    // is not in the window the folder check reads.
-    val blurring = blurTarget > 0f || blur >= 0.02f
+    // Inactive menu: the blur and the scrim are not composed. A full-screen
+    // layer left over the library, even at zero alpha, hides its nodes.
     CompositionLocalProvider(LocalFoldTheme provides paint) {
         Box(Modifier.fillMaxSize().background(paint.theme.background)) {
-            Box(Modifier.fillMaxSize().then(if (blurring) Modifier.menuBlur(blur) else Modifier)) {
+            Box(Modifier.fillMaxSize().then(if (blurHere) Modifier.menuBlur(blur).menuDim(blur) else Modifier)) {
                 Backdrop(
                     motion = model.backgroundMotion,
                     speed = model.motionSpeed,
@@ -199,16 +197,19 @@ fun PanelHost(activity: FoldcadeHomeActivity, displays: Displays) {
                     if (connectHere) ConnectScreen(app, screen, activity::dispatch)
                 }
             }
-            if (blur > 0f) {
-                val dim = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) 0.32f else 0.55f
-                Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha = dim * blur)))
-            }
             if (panel != null && screen != null) {
                 DialogLayer(app, model.dialog, screen, scale, activity::dispatch)
                 MoonlightImportLayer(app, model.moonlightSheet, screen, scale)
             }
         }
     }
+}
+
+/** Dim painted with the content, not a second full-screen node on top of it. */
+private fun Modifier.menuDim(progress: Float): Modifier = drawWithContent {
+    drawContent()
+    val dim = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) 0.32f else 0.55f
+    drawRect(Color.Black.copy(alpha = dim * progress.coerceIn(0f, 1f)))
 }
 
 private fun Modifier.menuBlur(progress: Float): Modifier = graphicsLayer {
