@@ -47,6 +47,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.MotionDurationScale
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.focus.onFocusChanged
@@ -557,9 +558,9 @@ private fun Picker(
             maxLines = 1,
         ).size.height
         val titleLine = with(LocalDensity.current) { titlePx.toDp() }
-        val detailGame = game?.takeIf {
-            model.panel == null && model.dialog == null && !model.connectOpen
-        }
+        // Same subject as the hero: a platform folder has no play facts.
+        val detailGame = game?.takeIf { shell.focusedHero() is HeroSubject.Item }
+        val detailShown = model.panel == null && model.dialog == null && !model.connectOpen
         val clearance = px(Metrics.chromeClearancePx)
         // Keeps the last tile label inside the screen, above the clip.
         val labelSafe = px(28f)
@@ -575,7 +576,13 @@ private fun Picker(
             ChromeRow(app)
             Spacer(Modifier.height(clearance))
             if (detailGame != null) {
-                GameDetail(app, detailGame.id)
+                // Under a menu or dialog the facts keep their space, so the grid
+                // does not change its row count each time one opens.
+                Box(
+                    if (detailShown) Modifier else Modifier.alpha(0f).clearAndSetSemantics { },
+                ) {
+                    GameDetail(app, detailGame.id)
+                }
             }
             BoxWithConstraints(
                 Modifier
@@ -633,7 +640,6 @@ private fun Picker(
                         rows = rows,
                         scale = scale,
                         showTitle = showTitles,
-                        usesBoth = game?.occupiesBothDisplays == true && session.bothScreensFree(),
                     )
                 }
             }
@@ -957,7 +963,6 @@ private fun PagedGrid(
     rows: Int,
     scale: Float,
     showTitle: Boolean,
-    usesBoth: Boolean,
 ) {
     val focus = app.shell.model.focus
     val pageSize = (Metrics.columns * rows).coerceAtLeast(1)
@@ -988,9 +993,6 @@ private fun PagedGrid(
                 Grid(app, screen, cell, gap, rows, drawn, showTitle)
             }
         }
-    }
-    if (usesBoth) {
-        BasicText(text = Copy.usesBothScreens, style = text(foldTheme().muted, TypeRamp.hint, foldTheme()))
     }
 }
 
