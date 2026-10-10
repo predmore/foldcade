@@ -241,6 +241,7 @@ sealed interface Row {
     data object EditHome : Row
     data object AllLibrary : Row
     data object AddNewGames : Row
+    data object Artwork : Row
     data object PinApp : Row
     data object MoveApp : Row
     data object HideApp : Row
@@ -443,6 +444,7 @@ fun rowText(row: Row, model: PickerModel): RowText = when (row) {
     Row.EditHome -> RowText(Copy.editHome)
     Row.AllLibrary -> RowText(Copy.allLibrary)
     Row.AddNewGames -> RowText(Copy.addNewGames, if (model.addNewToHome) Copy.addNewOn else Copy.addNewOff)
+    Row.Artwork -> RowText(Copy.artwork, if (model.artwork) Copy.artworkOn else Copy.artworkOff)
     Row.PinApp -> RowText(if (model.appActions?.favorite == true) Copy.unpin else Copy.pin)
     Row.MoveApp -> RowText(if (model.appActions?.onGamesShelf == true) Copy.moveToApps else Copy.moveToGames)
     Row.HideApp -> RowText(Copy.hideApp)
@@ -578,6 +580,8 @@ data class PickerModel(
     val moonlightSheet: MoonlightImportSheet? = null,
     /** Mirrors the home board. Off keeps new scans out of the grid. */
     val addNewToHome: Boolean = true,
+    /** Download game art from public sources. Off sends nothing; RomM's own covers still show. */
+    val artwork: Boolean = true,
 )
 
 fun reduce(
@@ -1123,6 +1127,7 @@ private fun activateRow(
         Row.EditHome -> model.copy(panel = null, focus = panel.grid, arranging = false, hold = null) to Effect.EditHome
         Row.AllLibrary -> model.copy(panel = null, focus = panel.grid, arranging = false, hold = null) to Effect.OpenAll
         Row.AddNewGames -> model.copy(panel = panel, addNewToHome = !model.addNewToHome) to Effect.ToggleAddNew
+        Row.Artwork -> model.copy(panel = panel, artwork = !model.artwork) to null
         Row.PinApp -> model to Effect.PinApp
         Row.MoveApp -> model.copy(panel = null, focus = panel.grid) to Effect.MoveApp
         Row.HideApp -> model.copy(panel = null, focus = panel.grid) to Effect.HideApp

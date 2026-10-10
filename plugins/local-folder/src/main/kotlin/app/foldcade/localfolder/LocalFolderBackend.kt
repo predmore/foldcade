@@ -211,6 +211,22 @@ class LocalFolderBackend(
 
     companion object {
         const val ID: String = "local-folder"
+
+        /**
+         * The file name in a remote key, which is a storage document URI. The
+         * document id is the last path segment, percent-encoded, and its path
+         * ends with the file name. A literal `+` stays a `+`.
+         */
+        fun fileNameOf(remoteKey: String): String? {
+            val segment = remoteKey.substringBefore('?').substringAfterLast('/')
+            if (segment.isEmpty()) return null
+            val documentId = try {
+                java.net.URLDecoder.decode(segment.replace("+", "%2B"), Charsets.UTF_8)
+            } catch (_: IllegalArgumentException) {
+                return null
+            }
+            return documentId.substringAfterLast('/').substringAfterLast(':').ifEmpty { null }
+        }
         const val DISPLAY_NAME: String = "Local folder"
     }
 }

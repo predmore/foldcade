@@ -214,6 +214,12 @@ class SessionStore(private val prefs: SharedPreferences) {
         prefs.edit().putString(KEY_MOTION_SPEED, speed.wire).apply()
     }
 
+    fun artworkEnabled(): Boolean = prefs.getBoolean(KEY_ARTWORK, true)
+
+    fun setArtworkEnabled(enabled: Boolean) {
+        prefs.edit().putBoolean(KEY_ARTWORK, enabled).apply()
+    }
+
     fun moonlightSource(): MoonlightSource =
         if (prefs.getString(KEY_MOONLIGHT_SOURCE, null) == MoonlightSource.ImportedList.name) {
             MoonlightSource.ImportedList
@@ -300,6 +306,7 @@ class SessionStore(private val prefs: SharedPreferences) {
         private const val KEY_MUSIC_TRACK = "music_track"
         private const val KEY_BACKGROUND = "background_motion"
         private const val KEY_MOTION_SPEED = "motion_speed"
+        private const val KEY_ARTWORK = "artwork"
         private const val KEY_LIBRARY_SORT = "library_sort"
         private const val KEY_HOME_BOARD = "home_board"
         private const val KEY_SHELF_GAMES = "android_shelf_games"

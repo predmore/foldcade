@@ -55,6 +55,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -117,6 +118,8 @@ import app.foldcade.Panel
 import app.foldcade.FolderIconPick
 import app.foldcade.Surface
 import app.foldcade.CoverImage
+import app.foldcade.artwork.ArtQuery
+import app.foldcade.artwork.ArtSet
 import app.foldcade.api.plugin.Game
 import androidx.compose.runtime.collectAsState
 import androidx.compose.ui.graphics.painter.Painter
@@ -391,7 +394,9 @@ private fun Hero(app: FoldcadeApp, screen: HostScreen, scale: Float, onEffect: (
     val cellFocused = model.dialog == null && model.panel == null && !model.connectOpen && model.focus.chrome == null
     // The record behind each subject, so a layer that is fading out keeps its own cover.
     val records = remember { mutableMapOf<String, Game>() }
+    val queries = remember { mutableMapOf<String, ArtQuery>() }
     app.shell.focusedRecord()?.let { record -> if (subject != null) records[subject.key] = record }
+    app.shell.focusedGame()?.let(app.shell::artQuery)?.let { query -> if (subject != null) queries[subject.key] = query }
     BoxWithConstraints(Modifier.fillMaxSize()) {
         val inset = px(Metrics.heroInsetPx)
         // Wide enough for a platform, both screens, and play time on one line.
@@ -428,8 +433,9 @@ private fun Hero(app: FoldcadeApp, screen: HostScreen, scale: Float, onEffect: (
                                 mark = shown.item.mark,
                                 packageName = shown.item.packageName,
                                 record = records[shown.key],
+                                query = queries[shown.key],
                             )
-                            is HeroSubject.Folder -> HeroArt(app, shown.folder.name, shown.folder.mark, null, null)
+                            is HeroSubject.Folder -> HeroArt(app, shown.folder.name, shown.folder.mark, null, null, null)
                         }
                     }
                 }
@@ -653,22 +659,34 @@ private fun Modifier.heroArrival(alpha: Float, fadeOnly: Boolean): Modifier = gr
     translationY = Motion.heroSlidePx(alpha, fadeOnly)
 }
 
-/** The provider's cover for [record]: at once when a provider holds it, otherwise after one fetch. */
+/**
+ * Art for a tile or the hero: at once when it is already known, otherwise after
+ * one lookup. A provider's cover for [record] comes before the public sources.
+ * Turning Game art off or on asks again.
+ */
 @Composable
-private fun rememberCover(app: FoldcadeApp, record: Game?): String? {
-    val held = remember(record) { record?.let(app.covers::cached) }
-    var fetched by remember(record) { mutableStateOf<String?>(null) }
-    LaunchedEffect(record) {
-        if (record != null && held == null) fetched = app.covers.fetch(record)
+private fun rememberArt(app: FoldcadeApp, record: Game?, query: ArtQuery?): ArtSet? {
+    val allowed = app.shell.model.artwork
+    val held = remember(record, query, allowed) { app.covers.cached(record, query) }
+    var fetched by remember(record, query, allowed) { mutableStateOf<ArtSet?>(null) }
+    LaunchedEffect(record, query, allowed) {
+        if ((record != null || query != null) && held == null) fetched = app.covers.fetch(record, query)
     }
     return held ?: fetched
 }
 
 @Composable
-private fun HeroArt(app: FoldcadeApp, title: String, mark: String?, packageName: String?, record: Game?) {
+private fun HeroArt(
+    app: FoldcadeApp,
+    title: String,
+    mark: String?,
+    packageName: String?,
+    record: Game?,
+    query: ArtQuery?,
+) {
     val theme = foldTheme()
     val icon = launcherIcon(packageName)
-    val cover = rememberCover(app, record)
+    val cover = rememberArt(app, record, query)?.cover
     val accent = mark?.let { markGlyph(it)?.accent } ?: theme.focus
     Box(
         Modifier
@@ -694,7 +712,7 @@ private fun HeroArt(app: FoldcadeApp, title: String, mark: String?, packageName:
     ) {
         // The cover, then the same art the focused tile shows. A letter is the last resort.
         val kit = mark?.let { LocalFoldTheme.current.marks[it] }
-        val loaded = cover?.let { rememberCoverPainter(app, it) }
+        val loaded = cover?.let { rememberCoverPainter(app, it, COVER_PX) }
         when {
             loaded != null -> Image(
                 painter = loaded.painter,
@@ -731,12 +749,12 @@ private class LoadedCover(val painter: Painter, val ratio: Float)
  * is fixed, so the request starts before the painter is drawn.
  */
 @Composable
-private fun rememberCoverPainter(app: FoldcadeApp, uri: String): LoadedCover? {
+private fun rememberCoverPainter(app: FoldcadeApp, uri: String, px: Int): LoadedCover? {
     val context = LocalContext.current
-    val request = remember(uri) {
+    val request = remember(uri, px) {
         ImageRequest.Builder(context)
             .data(CoverImage(uri))
-            .size(COVER_PX)
+            .size(px)
             .crossfade(true)
             .build()
     }
@@ -748,6 +766,8 @@ private fun rememberCoverPainter(app: FoldcadeApp, uri: String): LoadedCover? {
 }
 
 private const val COVER_PX = 1024
+private const val TILE_PX = 384
+private const val TILE_ART_REST_ALPHA = 0.82f
 private const val COVER_HEIGHT = 0.92f
 
 /**
@@ -1469,9 +1489,16 @@ private fun Grid(
                             ?: game?.title.orEmpty()
                         val libraryTile = library && face == null
                         val onHomeMark = face != null && allOpen && face.onGrid && !face.folder && !face.pinned
+                        // A folder or an empty slot keeps its mark. A game asks for its art.
+                        val artGame = game?.takeIf { face?.folder != true && face?.empty != true }
+                        val art = key(artGame?.id) {
+                            val found = rememberArt(app, artGame?.let(shell::artRecord), artGame?.let(shell::artQuery))
+                            found?.let { rememberCoverPainter(app, it.square ?: it.cover, TILE_PX)?.painter }
+                        }
                         Cell(
                             title = label,
                             mark = game?.mark,
+                            art = art,
                             showTitle = showTitle && face?.empty != true,
                             focused = focused,
                             size = cell,
@@ -1531,6 +1558,7 @@ private fun launcherIcon(packageName: String?): ImageBitmap? {
 private fun Cell(
     title: String,
     mark: String?,
+    art: Painter? = null,
     showTitle: Boolean,
     focused: Boolean,
     size: Dp,
@@ -1683,6 +1711,16 @@ private fun Cell(
                             .background(theme.focus, CircleShape),
                     )
                 }
+            } else if (art != null) {
+                // Cover art fills the rounded tile. At rest it sits a little back, so focus reads.
+                Image(
+                    painter = art,
+                    contentDescription = title,
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .graphicsLayer { alpha = if (focused || lifted) 1f else TILE_ART_REST_ALPHA },
+                    contentScale = ContentScale.Crop,
+                )
             } else if (!empty) {
                 val glyphAlpha = if (focused) 1f else 0.58f
                 if (kit != null) {

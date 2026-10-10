@@ -558,4 +558,17 @@ private fun unusedPlayer(id: String): Player = object : Player {
     override fun saveDeclarations(game: Game): List<SaveDeclaration> = error("not asked")
 
     override fun launchIntent(request: LaunchRequest): PlayerIntent = error("not asked")
+
+    @Test
+    fun aDocumentUriNamesItsFile() {
+        val uri = "content://com.android.externalstorage.documents/tree/primary%3Aroms/document/" +
+            "primary%3Aroms%2Fgenesis%2FDisney%20Collection%2C%20The%20-%20QuackShot%20%2B%20Castle%20(Europe).md"
+        org.junit.Assert.assertEquals(
+            "Disney Collection, The - QuackShot + Castle (Europe).md",
+            LocalFolderBackend.fileNameOf(uri),
+        )
+        org.junit.Assert.assertEquals("loose.nds", LocalFolderBackend.fileNameOf("content://tree/document/primary%3Aloose.nds"))
+        org.junit.Assert.assertEquals("game", LocalFolderBackend.fileNameOf("content://tree/game"))
+        org.junit.Assert.assertEquals(null, LocalFolderBackend.fileNameOf("content://tree/"))
+    }
 }
