@@ -408,15 +408,21 @@ wait_for_service() {
 
 add_home_role() {
   local attempt delay
-  for attempt in 1 2 3; do
+  # sys.boot_completed is set before BOOT_COMPLETED has reached every receiver.
+  # While Gradle builds on the same cores, that delivery can run a minute late,
+  # and the role service grants its defaults only after it (run 38024937323
+  # failed all attempts four seconds before "Granting default roles").
+  echo "step: wait for boot broadcasts"
+  timeout 120 adb shell am wait-for-broadcast-idle >/dev/null 2>&1 || true
+  for attempt in 1 2 3 4 5 6; do
     echo "step: home role attempt ${attempt}"
     if timeout 15 adb shell cmd role add-role-holder android.app.role.HOME "$app_id"; then
       return 0
     fi
-    if [ "$attempt" -eq 3 ]; then
+    if [ "$attempt" -eq 6 ]; then
       break
     fi
-    delay=$((attempt * 2))
+    delay=$((attempt * 3))
     echo "step: home role backoff ${delay}s"
     sleep "$delay"
   done
