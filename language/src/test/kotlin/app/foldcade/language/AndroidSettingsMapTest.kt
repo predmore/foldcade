@@ -36,30 +36,26 @@ class AndroidSettingsMapTest {
         assertEquals(0, opened.panel?.index)
         val wifi = move(opened, Meaning.MoveDown, Meaning.MoveDown)
         assertEquals(Row.QuickTile(QuickSetting.Wifi), rows[wifi.panel!!.index])
+        val edge = reduce(wifi, Meaning.MoveLeft).first
+        assertEquals(wifi.panel?.index, edge.panel?.index)
         val bluetooth = reduce(wifi, Meaning.MoveRight).first
         assertEquals(Row.QuickTile(QuickSetting.Bluetooth), rows[bluetooth.panel!!.index])
-        val stuck = reduce(bluetooth, Meaning.MoveRight).first
-        assertEquals(bluetooth.panel?.index, stuck.panel?.index)
-        val sound = reduce(bluetooth, Meaning.MoveDown).first
-        assertEquals(Row.QuickTile(QuickSetting.Sound), rows[sound.panel!!.index])
-        val display = reduce(sound, Meaning.MoveLeft).first
-        assertEquals(Row.QuickTile(QuickSetting.Display), rows[display.panel!!.index])
-        val backToWifi = reduce(display, Meaning.MoveUp).first
-        assertEquals(wifi.panel?.index, backToWifi.panel?.index)
-        val edge = reduce(backToWifi, Meaning.MoveLeft).first
-        assertEquals(backToWifi.panel?.index, edge.panel?.index)
-        val appInfo = move(sound, Meaning.MoveDown)
-        assertEquals(Row.QuickTile(QuickSetting.AppInfo), rows[appInfo.panel!!.index])
-        val battery = reduce(appInfo, Meaning.MoveLeft).first
-        assertEquals(Row.QuickTile(QuickSetting.Battery), rows[battery.panel!!.index])
-        val stayed = reduce(battery, Meaning.MoveDown).first
-        assertEquals(battery.panel?.index, stayed.panel?.index)
-        val (activated, effect) = reduce(edge, Meaning.Activate)
+        // One row: down stays, up returns to the row above.
+        assertEquals(bluetooth.panel?.index, reduce(bluetooth, Meaning.MoveDown).first.panel?.index)
+        assertEquals(Row.Notice("save"), rows[reduce(bluetooth, Meaning.MoveUp).first.panel!!.index])
+        val last = move(wifi, *Array(quickSettings().size + 2) { Meaning.MoveRight })
+        assertEquals(Row.QuickTile(QuickSetting.Settings), rows[last.panel!!.index])
+        val (activated, effect) = reduce(wifi, Meaning.Activate)
         assertEquals(Effect.OpenAndroidSetting(AndroidSetting.Wifi), effect)
-        assertEquals(edge.panel?.index, activated.panel?.index)
+        assertEquals(wifi.panel?.index, activated.panel?.index)
+        val (page, none) = reduce(last, Meaning.Activate)
+        assertEquals(null, none)
+        assertEquals(null, page.panel)
+        assertEquals(HostScreen.Top, page.settings?.screen)
         assertEquals("Wi-Fi", rowLabel(Row.QuickTile(QuickSetting.Wifi), sample()))
         assertEquals("App info", rowLabel(Row.QuickTile(QuickSetting.AppInfo), sample()))
-        assertTrue(quickSettings().none { it.androidSetting() == AndroidSetting.Settings })
+        assertEquals("Settings", rowLabel(Row.QuickTile(QuickSetting.Settings), sample()))
+        assertTrue(quickSettings().filter { it != QuickSetting.Settings }.none { it.androidSetting() == AndroidSetting.Settings })
         assertTrue(quickSettings().none { it.androidSetting() == AndroidSetting.Home })
     }
 
