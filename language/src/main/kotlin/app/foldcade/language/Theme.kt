@@ -32,6 +32,12 @@ fun builtInTheme(): Theme = Theme(
 
 fun cursorBrush(theme: Theme): Brush = SolidColor(theme.focus)
 
+/** Ends of the focus ring's gradient: green at the top left, blue at the bottom right. */
+object FocusRingColors {
+    val start: Color = Color(0xFF52B788)
+    val end: Color = Color(0xFF3E8EC0)
+}
+
 /** Host-owned type ramp, in sp, the same on both panels. */
 object TypeRamp {
     val heroTitle: TextUnit = 28.sp

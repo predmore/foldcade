@@ -635,9 +635,11 @@ private fun Picker(
                 val showTitles = true
                 val available = maxHeight.coerceAtLeast(0.dp)
                 val homeRows = 3
+                // Room for the focus ring and its glow around a tile in the first row.
+                val homePad = px(HOME_RING_PAD)
                 val titleGuess = px(20f) + titleLine
                 val fromHeight = if (homeRows > 0) {
-                    ((available - gap * (homeRows - 1)) / homeRows) - titleGuess
+                    ((available - homePad * 2 - gap * (homeRows - 1)) / homeRows) - titleGuess
                 } else {
                     cell
                 }
@@ -648,7 +650,7 @@ private fun Picker(
                 }
                 val homeCell = minOf(fromHeight, fromWidth).coerceAtLeast(px(56f))
                 val gridCell = if (bottomHome) homeCell else cell
-                val gridPad = if (bottomHome) px(8f) else pad
+                val gridPad = if (bottomHome) homePad else pad
                 val titleBlock = focusOutset(gridCell) + px(12f) + titleLine
                 val slot = if (showTitles) gridCell + titleBlock else gridCell
                 val rows = if (bottomHome) {
@@ -742,7 +744,6 @@ private fun PanelRows(
                         .fillMaxWidth()
                         .keepInView(focused)
                         .rowHighlight(focused)
-                        .focusStroke(focused)
                         .then(press)
                         .padding(start = px(16f), end = px(8f), top = px(8f), bottom = px(8f)),
                     horizontalArrangement = Arrangement.SpaceBetween,
@@ -836,7 +837,6 @@ private fun QuickTiles(
                             .height(64.dp)
                             .keepInView(focused)
                             .rowHighlight(focused)
-                            .focusStroke(focused, corner)
                             .tileEdge(focused = focused, corner = corner)
                             .then(press)
                             .padding(px(8f)),
@@ -1276,6 +1276,7 @@ private fun Grid(
 private const val FOCUS_GLOW_OVERFLOW = 64f
 private const val REST_GLOW_OVERFLOW = 18f
 private const val FOCUS_GLOW_PAD = 80f
+private const val HOME_RING_PAD = 30f
 
 @Composable
 private fun emptyShelf(grid: HomeGrid): String = when (grid) {
@@ -1352,7 +1353,10 @@ private fun Cell(
                     val glow = accent
                     val bounds = this.size
                     val cornerPx = corner.toPx()
-                    if (focusCard) drawFocusCard(theme.focus, cornerPx)
+                    if (focusCard) {
+                        drawRoundRect(color = theme.surface, cornerRadius = CornerRadius(cornerPx, cornerPx))
+                        with(FocusRing) { drawFocusRing(cornerPx) }
+                    }
                     if (glow != null) {
                         val half = min(bounds.width, bounds.height) * 0.5f
                         val overflow = if (focused) FOCUS_GLOW_OVERFLOW else REST_GLOW_OVERFLOW
@@ -1368,16 +1372,20 @@ private fun Cell(
                             color = theme.background,
                             cornerRadius = CornerRadius(cornerPx, cornerPx),
                         )
-                        val stroke = glow ?: theme.focus
-                        val strokePx = if (focused) 9f else 2.5f
-                        val inset = strokePx / 2f
-                        drawRoundRect(
-                            color = stroke.copy(alpha = if (focused) 1f else 0.42f),
-                            topLeft = Offset(inset, inset),
-                            size = Size(bounds.width - strokePx, bounds.height - strokePx),
-                            cornerRadius = CornerRadius(cornerPx, cornerPx),
-                            style = Stroke(width = strokePx),
-                        )
+                        if (focused && !editing) {
+                            with(FocusRing) { drawFocusRing(cornerPx) }
+                        } else {
+                            val stroke = glow ?: theme.focus
+                            val strokePx = 2.5f
+                            val inset = strokePx / 2f
+                            drawRoundRect(
+                                color = stroke.copy(alpha = 0.42f),
+                                topLeft = Offset(inset, inset),
+                                size = Size(bounds.width - strokePx, bounds.height - strokePx),
+                                cornerRadius = CornerRadius(cornerPx, cornerPx),
+                                style = Stroke(width = strokePx),
+                            )
+                        }
                     }
                     if (empty) {
                         drawRoundRect(
@@ -1398,6 +1406,9 @@ private fun Cell(
                         )
                     }
                 }
+                // The ring and glows above draw outside. The art itself stays inside the
+                // rounded tile, so a mark's square backing does not show at the corners.
+                .clip(RoundedCornerShape(corner))
                 .then(
                     if (onPickUp != null && onDrag != null) {
                         Modifier.pointerInput(title) {
@@ -1470,7 +1481,7 @@ private fun Cell(
                         text = monogram(title),
                         modifier = Modifier.scale(theme.artScale).graphicsLayer { alpha = glyphAlpha },
                         style = text(
-                            if (focusCard) theme.background else theme.onBackground,
+                            theme.onBackground,
                             TypeRamp.heroTitle,
                             theme,
                         ),
@@ -1820,33 +1831,6 @@ private fun DialogAction(label: String, focused: Boolean, onClick: () -> Unit) {
 }
 
 /**
- * Focused library card. Same accent fill and bloom as [dialogPlate], on the tile's
- * corner, with the cell's [Motion.scaleFocus] scale-up. The bloom ends transparent.
- */
-private fun DrawScope.drawFocusCard(accent: Color, cornerPx: Float) {
-    val spread = 28f
-    val half = min(size.width, size.height) / 2f
-    val reach = half + spread
-    val edge = (half / reach).coerceIn(0.5f, 0.92f)
-    val mid = edge + (1f - edge) * 0.45f
-    drawCircle(
-        brush = Brush.radialGradient(
-            colorStops = arrayOf(
-                0f to accent,
-                edge to accent.copy(alpha = 0.82f),
-                mid to accent.copy(alpha = 0.18f),
-                1f to Color.Transparent,
-            ),
-            center = center,
-            radius = reach,
-        ),
-        radius = reach,
-        center = center,
-    )
-    drawRoundRect(color = accent, cornerRadius = CornerRadius(cornerPx, cornerPx))
-}
-
-/**
  * Focused: one elliptical radial falloff, then the accent fill.
  * The gradient ends at transparent, so the bloom has no stroke ring.
  * Unfocused: a dim outline and no fill, so the black dialog stays black.
@@ -2022,20 +2006,14 @@ private fun focusOutset(cell: Dp): Dp =
 
 @Composable
 private fun Modifier.rowHighlight(focused: Boolean): Modifier {
-    val accent = foldTheme().focus
-    return this.drawBehind {
+    val lift = foldTheme().onBackground
+    return this.graphicsLayer { clip = false }.drawBehind {
         if (!focused) return@drawBehind
         drawRoundRect(
-            color = accent.copy(alpha = 0.2f),
+            color = lift.copy(alpha = 0.06f),
             cornerRadius = CornerRadius(22f, 22f),
         )
-        val bar = 7f
-        drawRoundRect(
-            color = accent,
-            topLeft = Offset(10f, size.height * 0.2f),
-            size = Size(bar, size.height * 0.6f),
-            cornerRadius = CornerRadius(bar / 2f, bar / 2f),
-        )
+        with(FocusRing) { drawFocusRing(22f) }
     }
 }
 
