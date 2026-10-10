@@ -903,6 +903,10 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
                         if (saved) {
                             foldcade.shell.setSignedIn(listOf(SignedInBackend(RommCredentials.PLUGIN_ID, "RomM")))
                             if (foldcade.shell.connectToken.trim() == token) foldcade.shell.consumeConnectToken()
+                            // The form used to stay up with an empty token field, so a save
+                            // that worked looked like one that did nothing.
+                            foldcade.shell.closeConnect()
+                            foldcade.openRommLibrary()
                         } else {
                             foldcade.shell.askToSignInAgain()
                         }

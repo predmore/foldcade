@@ -483,6 +483,12 @@ class FoldcadeApp : Application() {
         }
     }
 
+    /** After RomM accepts a token, show its library rather than leaving the form up. */
+    fun openRommLibrary() {
+        libraryRetry = { openRommLibrary() }
+        loadLibrary(RommCredentials.PLUGIN_ID)
+    }
+
     private fun loadLibrary(libraryId: String) {
         val ticket = libraryTicket.incrementAndGet()
         pluginLoad.launch {
