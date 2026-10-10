@@ -9,6 +9,7 @@ import app.foldcade.host.play.PlayClock
 import app.foldcade.host.play.PlayEvent
 import app.foldcade.host.play.PlayLog
 import app.foldcade.host.play.PlaySignal
+import app.foldcade.host.play.QueuedPlaySink
 import app.foldcade.host.play.PackagePlay
 import app.foldcade.host.play.PlayTotals
 import app.foldcade.host.play.ShownPlay
@@ -22,6 +23,7 @@ import java.io.File
  * Host play history for the launch path.
  *
  * [file] lives under the app's files directory. It is not under `noBackupFilesDir`.
+ * Writes to it run on the play-log thread, not the caller's ([QueuedPlaySink]).
  * A session records the game id, when it started, left the foreground, resumed,
  * and ended. It holds no token, password, or save bytes, so backup rules leave
  * it in place.
@@ -51,9 +53,7 @@ class PlaySessions private constructor(
     }
 
     fun signal(sessionId: String, signal: PlaySignal) {
-        val before = log.events().size
-        log.signal(sessionId, signal)
-        if (log.events().size != before) changed()
+        if (log.signal(sessionId, signal)) changed()
     }
 
     /** Foreground sample for crash recovery. It does not emit a session event. */
@@ -91,7 +91,7 @@ class PlaySessions private constructor(
 
     companion object {
         fun open(file: File, clock: PlayClock = WallAndElapsedClock): PlaySessions =
-            PlaySessions(PlayLog(clock, FilePlayLog(file)))
+            PlaySessions(PlayLog(clock, QueuedPlaySink(FilePlayLog(file))))
     }
 }
 
