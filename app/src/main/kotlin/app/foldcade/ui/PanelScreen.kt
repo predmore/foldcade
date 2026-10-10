@@ -190,6 +190,9 @@ fun PanelHost(activity: FoldcadeHomeActivity, displays: Displays) {
                 Panel.Bottom -> paint.wallpaperBottom
                 null -> null
             }
+            // No wallpaper node when this panel has none. A full-screen layer left
+            // in the tree keeps the accessibility dump empty, so the library title
+            // is not in the window the folder check reads.
             if (wallpaper != null) PanelWallpaper(wallpaper)
             if (blurHere) {
                 Box(Modifier.fillMaxSize().menuBlur(blur).menuDim(blur)) {
@@ -250,10 +253,20 @@ private fun Modifier.menuBlur(progress: Float): Modifier {
     }
 }
 
-/** Static wallpaper for this panel. Letterboxed, not cropped, and not animated. */
+/**
+ * Static wallpaper for this panel. Letterboxed, not cropped, and not animated.
+ * Drawn behind the library, with no focus, touch, or semantics. The caller
+ * leaves this out of the tree when the panel has no wallpaper.
+ */
 @Composable
 private fun PanelWallpaper(image: ImageBitmap) {
-    Canvas(Modifier.fillMaxSize()) {
+    Canvas(
+        Modifier
+            .fillMaxSize()
+            .zIndex(-1f)
+            .focusProperties { canFocus = false }
+            .clearAndSetSemantics { },
+    ) {
         val box = letterbox(
             imageWidth = image.width.toFloat(),
             imageHeight = image.height.toFloat(),
