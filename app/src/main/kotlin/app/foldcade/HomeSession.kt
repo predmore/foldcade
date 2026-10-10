@@ -156,6 +156,21 @@ class HomeSession(raw: String?) {
 
     fun face(index: Int): HomeFace? = faces().getOrNull(index)
 
+    /**
+     * Up to [limit] tiles inside folder [id], in slot order, for its cover.
+     * Folders inside it, empty slots, and placeholder tiles are left out.
+     */
+    fun folderContents(id: String, limit: Int): List<HomeFace> {
+        val folder = board.folders[id] ?: return emptyList()
+        return folder.slots.asSequence()
+            .filterNotNull()
+            .filter { it != HOME_ALL && board.folders[it] == null }
+            .map { faceFor(it, section = null) }
+            .filter { !it.empty && shelfById[it.id]?.emptyShelfHint != true }
+            .take(limit)
+            .toList()
+    }
+
     fun faces(): List<HomeFace> {
         if (board.allOpen) return allFaces()
         return visibleSlots(board).map { id -> faceFor(id, section = null) }

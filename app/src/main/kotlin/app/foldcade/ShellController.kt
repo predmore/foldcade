@@ -818,6 +818,10 @@ class ShellController(
         )
     }
 
+    /** The first games in home folder [id], drawn as its cover. Empty for anything that is not a folder. */
+    fun folderPreview(id: String?): List<ShelfGame> =
+        id?.let { home.folderContents(it, FOLDER_PREVIEW) }.orEmpty().map(::homeShelf)
+
     /** The library record behind [game], on the home grid or the library grid. */
     fun artRecord(game: ShelfGame): Game? =
         home.game(game.id) ?: entries.firstOrNull { it.id == game.id }?.game
@@ -1409,3 +1413,9 @@ class ShellController(
         if (after.notices.size > before.notices.size) cue(after.themeIndex, "notify")
     }
 }
+
+/**
+ * How far into a folder its cover looks. The cover draws the first four that
+ * have a picture, so a tile with none, such as the PC tile, does not leave a gap.
+ */
+private const val FOLDER_PREVIEW = 8

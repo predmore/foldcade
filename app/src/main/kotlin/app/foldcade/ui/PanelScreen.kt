@@ -117,10 +117,12 @@ import app.foldcade.FoldcadeHomeActivity
 import app.foldcade.Panel
 import app.foldcade.Surface
 import app.foldcade.CoverImage
+import app.foldcade.ShelfGame
 import app.foldcade.artwork.ArtQuery
 import app.foldcade.artwork.ArtSet
 import app.foldcade.api.plugin.Game
 import androidx.compose.runtime.collectAsState
+import androidx.compose.ui.graphics.painter.BitmapPainter
 import androidx.compose.ui.graphics.painter.Painter
 import coil3.compose.AsyncImagePainter
 import coil3.compose.rememberAsyncImagePainter
@@ -424,6 +426,7 @@ private fun Hero(app: FoldcadeApp, screen: HostScreen, scale: Float, onEffect: (
                                 packageName = shown.item.packageName,
                                 record = records[shown.key],
                                 query = queries[shown.key],
+                                folder = app.shell.folderPreview(shown.key),
                             )
                             is HeroSubject.Folder -> HeroArt(app, shown.folder.name, shown.folder.mark, null, null, null)
                         }
@@ -615,10 +618,12 @@ private fun HeroArt(
     packageName: String?,
     record: Game?,
     query: ArtQuery?,
+    folder: List<ShelfGame> = emptyList(),
 ) {
     val theme = foldTheme()
     val icon = launcherIcon(packageName)
     val cover = rememberArt(app, record, query)?.cover
+    val folderCover = rememberFolderCover(app, folder, COVER_PX / 2)
     val accent = mark?.let { markGlyph(it)?.accent } ?: theme.focus
     Box(
         Modifier
@@ -661,6 +666,14 @@ private fun HeroArt(
                 modifier = Modifier.fillMaxSize(theme.artScale),
                 contentScale = ContentScale.Fit,
             )
+            folderCover.isNotEmpty() -> FolderMosaic(
+                images = folderCover,
+                gap = px(10f),
+                corner = Metrics.cardCornerDp.dp / 2,
+                modifier = Modifier
+                    .fillMaxHeight(COVER_HEIGHT)
+                    .aspectRatio(1f),
+            )
             kit != null -> KitMark(kit, theme.artScale, alpha = 1f)
             mark != null && markGlyph(mark) != null -> MarkIcon(mark, 0.86f)
             else -> BasicText(
@@ -675,6 +688,54 @@ private fun HeroArt(
 }
 
 private class LoadedCover(val painter: Painter, val ratio: Float)
+
+/** One picture in a folder's cover: a game's art, cropped to fill, or an app's icon, fitted. */
+private class TileImage(val painter: Painter, val crop: Boolean)
+
+/**
+ * Up to four pictures for a folder's cover, as each one loads. Games without
+ * art and apps without icons are passed over for the next one in the folder.
+ */
+@Composable
+private fun rememberFolderCover(app: FoldcadeApp, games: List<ShelfGame>, px: Int): List<TileImage> =
+    games.mapNotNull { game ->
+        key(game.id) {
+            val icon = launcherIcon(game.androidPackage)
+            if (icon != null) {
+                TileImage(remember(icon) { BitmapPainter(icon) }, crop = false)
+            } else {
+                val found = rememberArt(app, app.shell.artRecord(game), app.shell.artQuery(game))
+                found?.let { rememberCoverPainter(app, it.square ?: it.cover, px)?.painter }?.let { TileImage(it, crop = true) }
+            }
+        }
+    }.take(4)
+
+/** One picture fills the folder; two sit side by side; three or four make a 2x2. */
+@Composable
+private fun FolderMosaic(images: List<TileImage>, gap: Dp, corner: Dp, modifier: Modifier = Modifier) {
+    @Composable
+    fun Piece(image: TileImage, piece: Modifier) {
+        Image(
+            painter = image.painter,
+            contentDescription = null,
+            modifier = piece.clip(RoundedCornerShape(corner)),
+            contentScale = if (image.crop) ContentScale.Crop else ContentScale.Fit,
+        )
+    }
+    if (images.size == 1) {
+        Piece(images[0], modifier)
+        return
+    }
+    val rows = if (images.size == 2) listOf(images) else images.take(4).chunked(2)
+    Column(modifier, verticalArrangement = Arrangement.spacedBy(gap)) {
+        for (row in rows) {
+            Row(Modifier.weight(1f).fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(gap)) {
+                for (image in row) Piece(image, Modifier.weight(1f).fillMaxHeight())
+                if (row.size == 1) Spacer(Modifier.weight(1f))
+            }
+        }
+    }
+}
 
 /**
  * The decoded cover, or null while it loads or when it cannot load. The size
@@ -1427,10 +1488,15 @@ private fun Grid(
                             val found = rememberArt(app, artGame?.let(shell::artRecord), artGame?.let(shell::artQuery))
                             found?.let { rememberCoverPainter(app, it.square ?: it.cover, TILE_PX)?.painter }
                         }
+                        // A folder shows what is inside it.
+                        val folderCover = key(face?.id) {
+                            rememberFolderCover(app, if (face?.folder == true) shell.folderPreview(face.id) else emptyList(), TILE_PX)
+                        }
                         Cell(
                             title = label,
                             mark = game?.mark,
                             art = art,
+                            folderCover = folderCover,
                             showTitle = showTitle && face?.empty != true,
                             focused = focused,
                             size = cell,
@@ -1491,6 +1557,7 @@ private fun Cell(
     title: String,
     mark: String?,
     art: Painter? = null,
+    folderCover: List<TileImage> = emptyList(),
     showTitle: Boolean,
     focused: Boolean,
     size: Dp,
@@ -1652,6 +1719,16 @@ private fun Cell(
                         .fillMaxSize()
                         .graphicsLayer { alpha = if (focused || lifted) 1f else TILE_ART_REST_ALPHA },
                     contentScale = ContentScale.Crop,
+                )
+            } else if (folderCover.isNotEmpty()) {
+                FolderMosaic(
+                    images = folderCover,
+                    gap = px(4f),
+                    corner = corner / 3,
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(px(10f))
+                        .graphicsLayer { alpha = if (focused || lifted) 1f else TILE_ART_REST_ALPHA },
                 )
             } else if (!empty) {
                 val glyphAlpha = if (focused) 1f else 0.58f
