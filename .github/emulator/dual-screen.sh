@@ -86,6 +86,8 @@ cleanup() {
     kill "$xvfb_pid" >/dev/null 2>&1 || true
   fi
   copy_logs
+  # A run started in the background reports its status through this file.
+  echo "$status" >"$out/exit-code"
 }
 trap cleanup EXIT
 
@@ -96,15 +98,32 @@ fi
 sudo chmod 666 /dev/kvm || true
 
 apk="app/build/outputs/apk/debug/app-debug.apk"
-if [ ! -s "$apk" ]; then
-  echo "::error::Debug APK not found at $apk"
-  exit 1
-fi
 aapt="${ANDROID_HOME}/build-tools/37.0.0/aapt"
-app_id="$("$aapt" dump badging "$apk" | sed -n "s/package: name='\([^']*\)'.*/\1/p" | head -1)"
-if [ -z "$app_id" ]; then
-  echo "::error::Debug APK has no package name."
-  exit 1
+app_id=""
+
+# The workflow boots the emulator while Gradle builds. With FOLDCADE_APK_READY set,
+# the APK is read only when that marker file appears, just before install.
+read_apk() {
+  if [ -n "${FOLDCADE_APK_READY:-}" ]; then
+    local deadline=$((SECONDS + 900))
+    echo "step: wait for the APK"
+    until [ -e "$FOLDCADE_APK_READY" ]; do
+      [ "$SECONDS" -lt "$deadline" ] || fail "apk: the build did not finish"
+      sleep 2
+    done
+  fi
+  if [ ! -s "$apk" ]; then
+    echo "::error::Debug APK not found at $apk"
+    exit 1
+  fi
+  app_id="$("$aapt" dump badging "$apk" | sed -n "s/package: name='\([^']*\)'.*/\1/p" | head -1)"
+  if [ -z "$app_id" ]; then
+    echo "::error::Debug APK has no package name."
+    exit 1
+  fi
+}
+if [ -z "${FOLDCADE_APK_READY:-}" ]; then
+  read_apk
 fi
 
 system_image="system-images;android-33;google_apis;x86_64"
@@ -353,6 +372,7 @@ adb_step shell settings put secure user_setup_complete 1
 adb_step shell settings put global device_provisioned 1
 adb_step shell input keyevent KEYCODE_WAKEUP || true
 adb_step shell wm dismiss-keyguard || true
+[ -n "$app_id" ] || read_apk
 timeout 60 adb install -r "$apk"
 
 component="${app_id}/app.foldcade.PrimaryHomeActivity"
@@ -388,15 +408,21 @@ wait_for_service() {
 
 add_home_role() {
   local attempt delay
-  for attempt in 1 2 3; do
+  # sys.boot_completed is set before BOOT_COMPLETED has reached every receiver.
+  # While Gradle builds on the same cores, that delivery can run a minute late,
+  # and the role service grants its defaults only after it (run 38024937323
+  # failed all attempts four seconds before "Granting default roles").
+  echo "step: wait for boot broadcasts"
+  timeout 120 adb shell am wait-for-broadcast-idle >/dev/null 2>&1 || true
+  for attempt in 1 2 3 4 5 6; do
     echo "step: home role attempt ${attempt}"
     if timeout 15 adb shell cmd role add-role-holder android.app.role.HOME "$app_id"; then
       return 0
     fi
-    if [ "$attempt" -eq 3 ]; then
+    if [ "$attempt" -eq 6 ]; then
       break
     fi
-    delay=$((attempt * 2))
+    delay=$((attempt * 3))
     echo "step: home role backoff ${delay}s"
     sleep "$delay"
   done
@@ -607,12 +633,27 @@ capture "$secondary" "$out/home-secondary.png"
 expect_png "$out/home-primary.png" "${top_width}x${top_height}"
 expect_png "$out/home-secondary.png" "${bottom_width}x${bottom_height}"
 
+# FOLDCADE_SHARD splits the captures across parallel jobs. "shell" runs the
+# launch paths, shoulder menus, Android shelves, and dialogs. "library" runs the
+# empty library, the seeded folder, and the curated home grid. Each needs only
+# the setup above, and neither uses the other's state. Unset runs both.
+shard="${FOLDCADE_SHARD:-all}"
+case "$shard" in
+  all|shell|library) ;;
+  *) echo "::error::Unknown FOLDCADE_SHARD '${shard}'"; exit 1 ;;
+esac
+runs() {
+  [ "$shard" = all ] || [ "$shard" = "$1" ]
+}
+
+input_help="$(adb_do shell input -h 2>&1 | tr -d '\r' || true)"
+printf '%s\n' "$input_help" >"$out/input-help.txt"
+
+if runs shell; then
 # Azahar launch path. Thor-sized emulator, not a Thor pass.
 # Azahar is not installed here. The capture is the missing-player state.
 # input -d is used only when this image's help text documents it.
 echo "step: azahar launch path"
-input_help="$(adb_do shell input -h 2>&1 | tr -d '\r' || true)"
-printf '%s\n' "$input_help" >"$out/input-help.txt"
 if printf '%s\n' "$input_help" | grep -q -- '-d' && printf '%s\n' "$input_help" | grep -qi 'display'; then
   show_foldcade
   dismiss_leftover_dialog
@@ -1004,6 +1045,7 @@ capture_dialog relogin 0 top relogin-ok "Sign in again"
   echo "Dialog focus frames. Emulator only, not a Thor pass."
   echo "Top ${top_width}x${top_height}. Bottom ${bottom_width}x${bottom_height}."
 } >"$out/dialog-focus.txt"
+fi
 
 
 # Empty library, then a scanned folder. Thor-sized emulator, not a Thor pass.
@@ -1443,6 +1485,7 @@ PY
   expect_png "$out/library-bottom.png" "${bottom_width}x${bottom_height}"
 }
 
+if runs library; then
 echo "step: empty library"
 # The shelf launch path may still be showing a missing-player dialog.
 key_bottom KEYCODE_BACK || true
@@ -1470,5 +1513,6 @@ seed_folder_library
   echo "Scanned folder: library-top.png is ${top_width}x${top_height}, library-bottom.png is ${bottom_width}x${bottom_height}."
   echo "These captures are not a pass on Thor hardware."
 } >"$out/library-captures.txt"
+fi
 
 echo "Captured displays $primary and $secondary. Thor-sized emulator, not a Thor pass."
