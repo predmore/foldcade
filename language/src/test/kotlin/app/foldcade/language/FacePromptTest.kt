@@ -153,4 +153,16 @@ class FacePromptTest {
         assertFalse(dismissed.offerButtonLabels)
         assertFalse(dismissed.capturingConfirm)
     }
+
+    @Test
+    fun selectPicksAFolderIconWhileEditingAndBLeavesThePicker() {
+        assertEquals(Meaning.FolderIcon, meaningOf(KeyEvent.KEYCODE_BUTTON_SELECT, homeKeys = HomeKeys.Editing))
+        assertNull(meaningOf(KeyEvent.KEYCODE_BUTTON_SELECT))
+        assertEquals(Meaning.CancelHold, meaningOf(KeyEvent.KEYCODE_BUTTON_B, homeKeys = HomeKeys.PickingIcon))
+        assertEquals(Meaning.CancelHold, meaningOf(KeyEvent.KEYCODE_BACK, homeKeys = HomeKeys.PickingIcon))
+        assertEquals(Meaning.Activate, meaningOf(KeyEvent.KEYCODE_BUTTON_A, homeKeys = HomeKeys.PickingIcon))
+        val editing = gridHints(null, HomeKeys.Editing, FaceMap.standard(), folderIcon = true)
+        assertTrue(editing.any { it.key == PromptKey.Select && it.label == Copy.hintIcon })
+        assertFalse(gridHints(null, HomeKeys.Editing, FaceMap.standard()).any { it.key == PromptKey.Select })
+    }
 }
