@@ -82,6 +82,14 @@ internal object PlatformCatalog {
             folderOnlyExtensions = setOf("iso", "rvz"),
         ),
         spec(
+            id = "nintendo-switch",
+            name = "Nintendo Switch",
+            folders = setOf("switch", "nintendo switch", "nsw"),
+            extensions = setOf("nsp", "xci"),
+            // RomM's slug is switch.
+            aliases = setOf("switch"),
+        ),
+        spec(
             id = "nintendo-ds",
             name = "Nintendo DS",
             folders = setOf("ds", "nds", "nintendo ds", "dsi", "nintendo dsi"),
@@ -142,6 +150,21 @@ internal object PlatformCatalog {
             folders = setOf("game gear", "gamegear", "gg"),
             extensions = setOf("gg"),
             aliases = setOf("gamegear"),
+        ),
+        spec(
+            id = "saturn",
+            name = "Saturn",
+            folders = setOf("saturn", "sega saturn"),
+            folderOnlyExtensions = setOf("cue", "chd", "iso", "ccd", "mds", "m3u"),
+        ),
+        spec(
+            id = "dreamcast",
+            name = "Dreamcast",
+            folders = setOf("dreamcast", "sega dreamcast", "dc"),
+            extensions = setOf("gdi", "cdi"),
+            folderOnlyExtensions = setOf("chd", "cue", "iso", "m3u"),
+            // RomM's slug is dc.
+            aliases = setOf("dc"),
         ),
     )
 

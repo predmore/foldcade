@@ -35,6 +35,23 @@ Library I/O and metadata fetch are suspending. An implementation must stop that 
 
 An independent plugin that is not in this repository, and that uses only this API, may use any license. Plugins shipped here stay GPLv3. See [licensing](licensing.md).
 
+## Emulators
+
+`:plugins:emulators` (`EmulatorsEntry`) holds the standalone emulators for the platforms the local-folder catalog classifies, other than the DS and 3DS. `EMULATORS` is one table: application ids, activities, the intent action, and whether the game URI goes in the intent data or in a string extra. Package ids, activities, and handoffs are read from ES-DE's Android find rules and system list.
+
+- Each emulator becomes one player per platform. The player id is `emulator.platform`, such as `dolphin.wii`.
+- Players for one platform keep the table order. The shell launches the first one with an installed package (`preferredPlayer`). With none installed, the missing-player dialog names the first one and lists every package.
+- The game is always a content URI with a read grant. When the emulator reads it from an extra, the same URI is also the intent data, because the shell grants read on the data only.
+- A launch that needs a file path is not in the table. RetroArch is one.
+- The entry declares no platforms and no save slots. These players do not ask for a save folder.
+- Every application id must be in the app manifest's `<queries>`. `PlayerLaunchTest` checks that.
+
+### Table or own plugin
+
+An emulator goes in the table when its launch is data only: application ids, activities, an action, a handoff, fixed extras, and flags. An emulator that needs its own code gets its own plugin, the way `:plugins:azahar` and `:plugins:melonds` do. Own code means save slots or a save folder, both displays, extension rules, or a launch the table cannot express. An emulator in the table that gains one of these moves out to its own plugin.
+
+The host stores an entry whole or not at all. One bad row in the table drops every emulator in it. `EmulatorPlayerTest` checks that ids are unique, and `ShellHostTest` checks that no bundled entry is rejected.
+
 ## Moonlight
 
 `:plugins:moonlight` (`MoonlightEntry`) is the official Moonlight client, `com.limelight`. The player starts `com.limelight.ShortcutTrampoline` with the host UUID and a string `AppId`. It does not pair, and it does not open Moonlight's database.

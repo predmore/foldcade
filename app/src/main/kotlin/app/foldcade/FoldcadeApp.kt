@@ -138,7 +138,8 @@ class FoldcadeApp : Application() {
         val sliderTick = SliderTick()
         plays.packageOf = { gameId ->
             val platform = Shelf.games.firstOrNull { it.id == gameId }?.platformId
-            platform?.let { plugins.playersFor(it).firstOrNull()?.packageNames?.firstOrNull() }
+            val player = platform?.let { preferredPlayer(plugins.playersFor(it), ::packageInstalled) }
+            player?.packageNames?.let { names -> names.firstOrNull(::packageInstalled) ?: names.firstOrNull() }
         }
         shell = ShellController(
             store,
@@ -286,13 +287,14 @@ class FoldcadeApp : Application() {
 
     /** `getPackageInfo` on the GameNative package list. Not a query of every package. */
     private fun gameNativePackagePresent(): Boolean =
-        GameNativePlayer.PACKAGES.any { name ->
-            try {
-                packageManager.getPackageInfo(name, 0)
-                true
-            } catch (_: PackageManager.NameNotFoundException) {
-                false
-            }
+        GameNativePlayer.PACKAGES.any(::packageInstalled)
+
+    private fun packageInstalled(name: String): Boolean =
+        try {
+            packageManager.getPackageInfo(name, 0)
+            true
+        } catch (_: PackageManager.NameNotFoundException) {
+            false
         }
 
     private fun restorePlayerSaveFolders() {

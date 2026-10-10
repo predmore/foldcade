@@ -63,6 +63,20 @@ class PlatformDetectionTest {
         assertEquals("wii", platformFromExtension("wbfs")?.id)
         assertEquals("gamecube", platformFromExtension("gcm")?.id)
         assertEquals("psp", platformFromExtension("cso")?.id)
+        assertEquals("nintendo-switch", platformFromExtension("nsp")?.id)
+        assertEquals("nintendo-switch", platformFromExtension("xci")?.id)
+        assertEquals("dreamcast", platformFromExtension("gdi")?.id)
+        assertEquals("dreamcast", platformFromExtension("cdi")?.id)
+    }
+
+    @Test
+    fun discPlatformsUseTheirFolders() {
+        assertEquals("saturn", platformFromFolderName("Sega Saturn")?.id)
+        assertEquals("dreamcast", platformFromFolderName("dc")?.id)
+        assertEquals("nintendo-switch", platformFromFolderName("Switch ROMs")?.id)
+        assertEquals("saturn", resolvePlatform("cue", platformFromFolderName("saturn"))?.id)
+        assertEquals("dreamcast", resolvePlatform("chd", platformFromFolderName("dreamcast"))?.id)
+        assertNull(platformFromExtension("ccd"))
     }
 
     @Test
@@ -87,6 +101,7 @@ class PlatformDetectionTest {
     fun platformIdsStayPut() {
         assertEquals(
             listOf(
+                "dreamcast",
                 "game-boy",
                 "game-boy-advance",
                 "game-boy-color",
@@ -98,9 +113,11 @@ class PlatformDetectionTest {
                 "nintendo-3ds",
                 "nintendo-64",
                 "nintendo-ds",
+                "nintendo-switch",
                 "playstation",
                 "playstation-2",
                 "psp",
+                "saturn",
                 "snes",
                 "wii",
             ),

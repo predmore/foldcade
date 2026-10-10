@@ -44,7 +44,7 @@ Your games can live in a few different places. Foldcade brings them together.
 
 ### One press, and you are playing
 
-Pick a game and press A. Foldcade opens it in the right app for you: Azahar for 3DS games, melonDS for DS games, GameNative for PC games, or Moonlight for streaming. You choose whether a game opens on the top or bottom screen, and games that need both screens get both.
+Pick a game and press A. Foldcade opens it in the right app for you: Azahar for 3DS games, melonDS for DS games, GameNative for PC games, or Moonlight for streaming. Games from Game Boy to Switch open in the emulator you already have, such as Dolphin, PPSSPP, DuckStation, NetherSX2, or Eden. If you have more than one for a system, Foldcade uses the first one on its list. You choose whether a game opens on the top or bottom screen, and games that need both screens get both.
 
 ### Your saves follow you
 
@@ -71,13 +71,13 @@ Foldcade is a good fit if:
 
 - You have an **AYN Thor** and want both screens to feel like one device.
 - You want a **quiet, simple home** for the games you already have.
-- You play **3DS or DS** games, use **RomM**, **GameNative**, or **Moonlight**, or just want your Android games tidy.
+- You play **retro or console** games in emulators like Dolphin, PPSSPP, or Azahar, use **RomM**, **GameNative**, or **Moonlight**, or just want your Android games tidy.
 
 It might not be for you yet if:
 
 - You do not have a Thor. Foldcade is designed around its two screens.
 - You want a finished, polished app today. Foldcade is early and changing quickly.
-- You need support for many more emulators. Today it opens games in Azahar, melonDS, GameNative, and Moonlight.
+- You use RetroArch. Foldcade hands games over without a file path, and RetroArch needs one, so it is not supported yet.
 
 ## Get Foldcade
 

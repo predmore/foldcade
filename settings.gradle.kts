@@ -22,6 +22,7 @@ include(
     ":app",
     ":host",
     ":plugins:azahar",
+    ":plugins:emulators",
     ":plugins:gamenative",
     ":plugins:local-folder",
     ":plugins:melonds",

@@ -144,7 +144,7 @@ class LibraryGridTest {
     }
 
     @Test
-    fun oneInstalledPlayerIsChosenAndTwoAreNot() {
+    fun theFirstInstalledPlayerIsChosen() {
         val first = quietPlayer("player.a", "Azahar", listOf("org.example.a"))
         val second = quietPlayer("player.b", "Other", listOf("org.example.b"))
         val target = LaunchTarget.ContentUri("content://game")
@@ -154,7 +154,11 @@ class LibraryGridTest {
         assertEquals("player.a", (one as GameLaunch.Installed).player.id)
         assertEquals("org.example.a", one.packageName)
         val two = planLaunch(listOf(first, second), target) { it.packageNames.single() }
-        assertEquals(GameLaunch.SeveralInstalled, two)
+        assertEquals("player.a", (two as GameLaunch.Installed).player.id)
+        val later = planLaunch(listOf(first, second), target) { player ->
+            if (player.id == "player.b") "org.example.b" else null
+        }
+        assertEquals("player.b", (later as GameLaunch.Installed).player.id)
     }
 
     @Test
