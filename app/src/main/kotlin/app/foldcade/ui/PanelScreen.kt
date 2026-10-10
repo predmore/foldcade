@@ -14,6 +14,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -51,6 +52,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.MotionDurationScale
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.focus.focusProperties
@@ -372,26 +374,34 @@ private fun Hero(app: FoldcadeApp, screen: HostScreen, scale: Float, onEffect: (
         Column(
             Modifier
                 .align(Alignment.TopStart)
-                .fillMaxWidth()
+                .fillMaxSize()
                 .padding(
                     start = inset,
                     end = inset,
                     top = if (screen == HostScreen.Top) inset + 48.dp else inset,
+                    bottom = inset,
                 ),
         ) {
-            HeroCrossfade(
-                target = subject,
-                speed = model.motionSpeed,
-                animatorScale = scale,
-                same = { left, right -> left?.key == right?.key },
-            ) { shown ->
-                Box(
-                    Modifier
-                        .fillMaxWidth()
-                        .height(artHeight),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    if (shown is HeroSubject.Item) HeroArt(shown.item)
+            // The label is measured first. The art shrinks below artHeight when the
+            // name, details, and play facts would otherwise run off the screen.
+            Box(
+                Modifier
+                    .fillMaxWidth()
+                    .weight(1f, fill = false)
+                    .height(artHeight),
+            ) {
+                HeroCrossfade(
+                    target = subject,
+                    speed = model.motionSpeed,
+                    animatorScale = scale,
+                    same = { left, right -> left?.key == right?.key },
+                ) { shown ->
+                    Box(
+                        Modifier.fillMaxSize(),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        if (shown is HeroSubject.Item) HeroArt(shown.item)
+                    }
                 }
             }
             if (subject != null) {
@@ -608,9 +618,6 @@ private fun Picker(
             maxLines = 1,
         ).size.height
         val titleLine = with(LocalDensity.current) { titlePx.toDp() }
-        val detailGame = game?.takeIf {
-            model.panel == null && model.dialog == null && !model.connectOpen
-        }
         val clearance = px(Metrics.chromeClearancePx)
         // Keeps the last tile label inside the screen, above the clip.
         val labelSafe = px(28f)
@@ -628,11 +635,8 @@ private fun Picker(
                 }
                 ChromeRow(app)
                 Spacer(Modifier.height(clearance))
-                if (detailGame != null && screen == HostScreen.Top) {
-                    GameDetail(app, detailGame.id)
-                }
             }
-            AllBar(shell, screen, onEffect)
+            AllBar(app, shell, screen, onEffect)
             if (
                 bottomHome &&
                 game?.occupiesBothDisplays == true &&
@@ -1113,15 +1117,36 @@ private fun ShelfMeta(line: String, hintFocused: Boolean) {
 }
 
 @Composable
-private fun AllBar(shell: app.foldcade.ShellController, screen: HostScreen, onEffect: (Effect?) -> Unit) {
-    val chrome = shell.homeChrome() ?: return
-    Row(horizontalArrangement = Arrangement.spacedBy(px(12f))) {
-        listOf(chrome.tab, chrome.sort, chrome.system, chrome.destination).forEachIndexed { index, label ->
-            ChromeButton(
-                label = label,
-                focused = chrome.focused == index,
-                onClick = { onEffect(shell.touchAllChrome(index, screen)) },
-            )
+private fun AllBar(
+    app: FoldcadeApp,
+    shell: app.foldcade.ShellController,
+    screen: HostScreen,
+    onEffect: (Effect?) -> Unit,
+) {
+    val chrome = shell.homeChrome()
+    // Same subject as the hero: a platform folder or an app has no play facts.
+    val detailGame = shell.focusedGame()?.takeIf { shell.focusedHero() is HeroSubject.Item }
+    val detailShown = shell.model.panel == null && shell.model.dialog == null && !shell.model.connectOpen
+    Column {
+        if (chrome != null) {
+            Row(horizontalArrangement = Arrangement.spacedBy(px(12f))) {
+                listOf(chrome.tab, chrome.sort, chrome.system, chrome.destination).forEachIndexed { index, label ->
+                    ChromeButton(
+                        label = label,
+                        focused = chrome.focused == index,
+                        onClick = { onEffect(shell.touchAllChrome(index, screen)) },
+                    )
+                }
+            }
+        }
+        if (detailGame != null) {
+            // Under a menu or dialog the facts keep their space, so the grid
+            // does not change its row count each time one opens.
+            Box(
+                if (detailShown) Modifier else Modifier.alpha(0f).clearAndSetSemantics { },
+            ) {
+                GameDetail(app, detailGame.id)
+            }
         }
     }
 }
@@ -1624,11 +1649,9 @@ private fun MoonlightImportCard(
             Modifier
                 .fillMaxWidth()
                 .heightIn(max = 640.dp)
-                .drawWithContent {
-                    drawContent()
-                    drawRect(color = theme.muted, style = Stroke(width = Metrics.dialogBorderPx))
-                }
+                .clip(RoundedCornerShape(Metrics.cardCornerDp.dp))
                 .background(theme.surface)
+                .border(1.dp, theme.onBackground.copy(alpha = 0.08f), RoundedCornerShape(Metrics.cardCornerDp.dp))
                 .padding(px(Metrics.dialogInsetPx)),
             verticalArrangement = Arrangement.spacedBy(px(12f)),
         ) {
@@ -1757,11 +1780,9 @@ private fun DialogCard(
         Column(
             Modifier
                 .fillMaxWidth()
-                .drawWithContent {
-                    drawContent()
-                    drawRect(color = theme.muted, style = Stroke(width = Metrics.dialogBorderPx))
-                }
+                .clip(RoundedCornerShape(Metrics.cardCornerDp.dp))
                 .background(theme.surface)
+                .border(1.dp, theme.onBackground.copy(alpha = 0.08f), RoundedCornerShape(Metrics.cardCornerDp.dp))
                 .padding(px(Metrics.dialogInsetPx)),
             verticalArrangement = Arrangement.spacedBy(px(12f)),
         ) {

@@ -21,7 +21,7 @@ data class Theme(
 
 fun builtInTheme(): Theme = Theme(
     background = Color(0xFF000000),
-    surface = Color(0xFF000000),
+    surface = Color(0xFF1C1C20),
     onBackground = Color(0xFFF2F2F2),
     muted = Color(0xFF8A8A8A),
     focus = Color(0xFFFFFFFF),
@@ -60,6 +60,9 @@ object Metrics {
     const val heroInsetPx = 48f
     const val dialogInsetPx = 48f
     const val dialogBorderPx = 2f
+
+    /** Corner of a filled card: an open island, a dialog, a settings group. */
+    const val cardCornerDp = 28f
     const val heroArtFraction = 0.62f
 
     /** Space between the hint line and the top of a focus stroke, in px. */

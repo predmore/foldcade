@@ -60,7 +60,7 @@ class ThemeZipTest {
         parsed!!
         assertEquals("Afterglow", parsed.name)
         assertEquals(Color(0xFF000000), parsed.background)
-        assertEquals(Color(0xFF000000), parsed.surface)
+        assertEquals(Color(0xFF1C1C20), parsed.surface)
         assertEquals(Color(0xFFC8FFE4), parsed.focus)
         assertEquals(0.28f, parsed.iconRadius)
         assertEquals(0.92f, parsed.artScale)
