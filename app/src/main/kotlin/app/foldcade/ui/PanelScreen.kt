@@ -381,7 +381,8 @@ private fun Hero(app: FoldcadeApp, screen: HostScreen, scale: Float, onEffect: (
     app.shell.focusedRecord()?.let { record -> if (subject != null) records[subject.key] = record }
     BoxWithConstraints(Modifier.fillMaxSize()) {
         val inset = px(Metrics.heroInsetPx)
-        val cardMax = maxWidth * 0.5f
+        // Wide enough for a platform, both screens, and play time on one line.
+        val cardMax = maxWidth * 0.72f
         // Cocoon's hero: the art centred between the islands, a name card centred under it.
         Column(
             Modifier
