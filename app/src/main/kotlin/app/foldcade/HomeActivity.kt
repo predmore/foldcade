@@ -159,11 +159,6 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
         foldcade.shell.calibrateConfirm(key)
     }
 
-    override fun menuTakesKeys(): Boolean {
-        val model = foldcade.shell.model
-        return model.panel != null && model.dialog == null && !model.connectOpen && foldcadeSurfaceFocused()
-    }
-
     override fun onMeaning(meaning: app.foldcade.language.Meaning) {
         val openingMenu = meaning == app.foldcade.language.Meaning.LeftPanel ||
             meaning == app.foldcade.language.Meaning.RightPanel
