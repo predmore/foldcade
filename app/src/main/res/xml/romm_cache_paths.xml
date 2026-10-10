@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Only RomM downloads under cacheDir/romm. URIs are content://<authority>/romm/<path under that root>,
+     the same mapping as CachePathContentUri. -->
+<paths>
+    <cache-path name="romm" path="romm/" />
+</paths>

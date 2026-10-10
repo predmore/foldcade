@@ -27,4 +27,19 @@ class ContentUriTest {
         val escaped = runCatching { adapter.uriFor(outside) }.exceptionOrNull()
         assertTrue(escaped is PluginException.NotFound)
     }
+
+    @Test
+    fun theHostAuthorityRoundTrips() {
+        val root = Files.createTempDirectory("romm-cache")
+        val adapter = CachePathContentUri(root, "app.foldcade.debug.romm.cache")
+        val file = root.resolve("roms/13/Mario Kart DS (USA) (En,Fr).nds")
+        val uri = adapter.uriFor(file)
+        assertEquals(
+            "content://app.foldcade.debug.romm.cache/romm/roms/13/Mario%20Kart%20DS%20%28USA%29%20%28En%2CFr%29.nds",
+            uri,
+        )
+        assertEquals(file, adapter.pathFor(uri))
+        // A URI for the release authority is not this host's.
+        assertNull(adapter.pathFor(uri.replace("app.foldcade.debug.", "app.foldcade.")))
+    }
 }
