@@ -3,7 +3,6 @@ package app.foldcade
 import android.util.Log
 import app.foldcade.api.plugin.Game
 import app.foldcade.api.plugin.Platform
-import app.foldcade.api.plugin.RommCredentials
 import app.foldcade.api.plugin.SaveFolderHolder
 import app.foldcade.host.PluginHost
 import app.foldcade.language.settingsCategories

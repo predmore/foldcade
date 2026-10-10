@@ -43,7 +43,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.zIndex
 import app.foldcade.FoldcadeApp
 import app.foldcade.R
-import app.foldcade.api.Panel
+import app.foldcade.Panel
 import app.foldcade.language.Chrome
 import app.foldcade.language.Copy
 import app.foldcade.language.HostScreen

@@ -171,17 +171,3 @@ fun Credential.secret(): String = when (this) {
     is Credential.ApiToken -> value
     is Credential.Password -> value
 }
-
-/**
- * Ids the RomM connect screen and a RomM plugin share.
- * The merged client stores a client API token or a device-code access token.
- * It has no password login, so [Credential.Password] is not written for RomM.
- */
-object RommCredentials {
-    const val PLUGIN_ID = "romm"
-    const val METADATA_ID = "romm.metadata"
-    const val ACCESS_TOKEN = "access-token"
-
-    /** Built-in slot ids. A third-party entry cannot register these. */
-    val RESERVED_IDS = setOf(PLUGIN_ID, METADATA_ID)
-}

@@ -13,7 +13,6 @@ import app.foldcade.api.plugin.Platform
 import app.foldcade.api.plugin.Player
 import app.foldcade.api.plugin.PluginEntry
 import app.foldcade.api.plugin.PluginException
-import app.foldcade.api.plugin.RommCredentials
 import app.foldcade.api.plugin.SaveSet
 import app.foldcade.api.plugin.canonicalPlatformId
 import app.foldcade.api.plugin.MemoryCredentialStore

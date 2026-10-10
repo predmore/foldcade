@@ -21,7 +21,7 @@ import androidx.media3.common.Player
 import androidx.media3.exoplayer.ExoPlayer
 import app.foldcade.Displays
 import app.foldcade.SessionStore
-import app.foldcade.api.Panel
+import app.foldcade.Panel
 import app.foldcade.language.DuckLatch
 import app.foldcade.language.HomeMusicSetting
 import app.foldcade.language.Meaning

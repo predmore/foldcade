@@ -21,8 +21,6 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
-import app.foldcade.api.ExternalApp
-import app.foldcade.api.Panel
 import app.foldcade.host.play.PlaySignal
 import app.foldcade.api.isAndroidHomeRecall
 import app.foldcade.api.plugin.Availability
@@ -33,7 +31,6 @@ import app.foldcade.api.plugin.LaunchTarget
 import app.foldcade.api.plugin.ObservedSaves
 import app.foldcade.api.plugin.Player
 import app.foldcade.api.plugin.PluginException
-import app.foldcade.api.plugin.RommCredentials
 import app.foldcade.api.plugin.SaveFolderHolder
 import app.foldcade.api.plugin.StartDisplay
 import app.foldcade.language.Copy

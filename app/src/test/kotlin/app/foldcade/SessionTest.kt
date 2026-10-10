@@ -1,6 +1,4 @@
-// SPDX-License-Identifier: Apache-2.0
-
-package app.foldcade.api
+package app.foldcade
 
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse

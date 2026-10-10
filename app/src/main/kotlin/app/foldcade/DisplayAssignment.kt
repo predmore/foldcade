@@ -1,6 +1,4 @@
-// SPDX-License-Identifier: Apache-2.0
-
-package app.foldcade.api
+package app.foldcade
 
 /**
  * Maps the default display and whatever other displays exist onto panels.

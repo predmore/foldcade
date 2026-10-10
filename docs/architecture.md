@@ -6,8 +6,8 @@ Foldcade is an Android launcher for the AYN Thor. The shell is Compose. Plugins 
 
 | Module | Role |
 | --- | --- |
-| `:app` | Android shell. Application id `app.foldcade`. Debug suffix `.debug`. |
-| `:api` | Plugin contract, session, and display assignment. Unstable: see [plugins.md](plugins.md#stability). |
+| `:app` | Android shell. Application id `app.foldcade`. Debug suffix `.debug`. Session, panels, display assignment, and the RomM credential ids. |
+| `:api` | Plugin contract. Unstable: see [plugins.md](plugins.md#stability). |
 | `:language` | Shared UI language: panels, the built-in theme, motion, copy, and the home-music setting. |
 | `:host` | `PluginHost`. Loads entries and calls library and metadata I/O off the main thread. |
 | `:romm` | RomM HTTP client. |

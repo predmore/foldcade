@@ -1,7 +1,6 @@
 package app.foldcade.plugins.romm
 
 import app.foldcade.api.plugin.LibraryBackend
-import app.foldcade.api.plugin.RommCredentials
 import app.foldcade.api.plugin.MetadataProvider
 import app.foldcade.api.plugin.PLUGIN_API_MINOR
 import app.foldcade.api.plugin.PLUGIN_API_VERSION
@@ -14,8 +13,8 @@ import app.foldcade.romm.RommClient
 import java.nio.file.Path
 import kotlin.coroutines.cancellation.CancellationException
 
-const val ROMM_LIBRARY_ID = RommCredentials.PLUGIN_ID
-const val ROMM_METADATA_ID = RommCredentials.METADATA_ID
+const val ROMM_LIBRARY_ID = "romm"
+const val ROMM_METADATA_ID = "romm.metadata"
 const val ROMM_CONTENT_AUTHORITY = "app.foldcade.romm.cache"
 
 /**

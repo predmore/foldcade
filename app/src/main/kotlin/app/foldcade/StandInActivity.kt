@@ -26,8 +26,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.style.TextAlign
-import app.foldcade.api.ExternalApp
-import app.foldcade.api.Panel
 import app.foldcade.language.TypeRamp
 import app.foldcade.language.builtInTheme
 

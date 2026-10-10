@@ -4,7 +4,6 @@ import app.foldcade.api.plugin.BoundCredentialAccess
 import app.foldcade.api.plugin.CredentialStore
 import app.foldcade.api.plugin.Game
 import app.foldcade.api.plugin.GameMeta
-import app.foldcade.api.plugin.RommCredentials
 import app.foldcade.api.plugin.GamePage
 import app.foldcade.api.plugin.GameQuery
 import app.foldcade.api.plugin.LaunchRequest
@@ -40,6 +39,9 @@ data class InstalledAppLaunch(
 
 /** Binary name of the built-in RomM entry. Resolved on the host class loader, then compared by identity. */
 private const val BUNDLED_ROMM_ENTRY = "app.foldcade.plugins.romm.RommEntry"
+
+/** `romm` and `romm.metadata`. The built-in entry's slot ids. */
+private val RESERVED_ROMM_IDS = setOf("romm", "romm.metadata")
 
 /**
  * Loads plugins and calls library I/O and metadata fetch off [io].
@@ -88,7 +90,7 @@ class PluginHost(
      * A failure stores nothing from this entry.
      *
      * Credential scope is every slot id this entry registered.
-     * [RommCredentials.RESERVED_IDS] stay with the built-in RomM entry, so a
+     * `romm` and `romm.metadata` stay with the built-in RomM entry, so a
      * third-party entry cannot register them first and take that scope.
      */
     fun register(entry: PluginEntry) {
@@ -138,7 +140,7 @@ class PluginHost(
      */
     private fun refuseReserved(entry: PluginEntry, ids: Set<String>) {
         if (entry.javaClass === bundledRommEntry()) return
-        val taken = ids.filter { it in RommCredentials.RESERVED_IDS }
+        val taken = ids.filter { it in RESERVED_ROMM_IDS }
         if (taken.isNotEmpty()) error("Reserved plugin id: ${taken.joinToString()}")
     }
 
