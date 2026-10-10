@@ -95,6 +95,24 @@ class RommLibraryTest {
             meta?.artwork?.first()?.uri,
         )
         assertFalse(meta!!.artwork.any { it.uri.contains("rmm_") })
+        assertEquals(
+            "https://cdn.example/cover.jpg?w=200",
+            absoluteHttp(
+                "http://192.168.1.20",
+                "https://user:s3cret-token@cdn.example/cover.jpg?access_token=s3cret-token&w=200",
+            ),
+        )
+        assertEquals(
+            "http://192.168.1.20/assets/cover.jpg",
+            absoluteHttp("http://192.168.1.20", "/assets/cover.jpg?token=rmm_secret"),
+        )
+        val stripped = rom("3ds", 3).copy(
+            pathCoverLarge = null,
+            urlCover = "https://cdn.example/cover.jpg?token=rmm_secret",
+        ).toMeta("http://192.168.1.20")
+        assertEquals("https://cdn.example/cover.jpg", stripped.artwork.single().uri)
+        assertFalse(stripped.artwork.single().uri.contains("rmm_"))
+        assertFalse(stripped.artwork.single().uri.contains("s3cret"))
         val other = game.copy(backendId = "local-folder")
         assertNull(harness.metadata.cached(other))
         assertNull(harness.metadata.fetch(other))
