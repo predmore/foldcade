@@ -43,7 +43,29 @@ data class FolderScan(
     val games: List<FolderGame>,
     val platforms: List<FolderPlatform>,
     val cancelled: Boolean = false,
+    val steamShortcuts: List<SteamShortcut> = emptyList(),
 )
+
+/**
+ * A `.steam` file: the convention frontends such as Cocoon, Daijishou, and
+ * ES-DE read, and GameNative exports. The body is the Steam app id. The file
+ * name is the game's name, with `_` where the store name had a `:`.
+ * The shell plays these through GameNative, not as a folder game.
+ */
+data class SteamShortcut(
+    val documentUri: String,
+    val title: String,
+    val appId: Int,
+)
+
+/** The [SteamShortcut] in [entry], or null when it is not a `.steam` file with an app id. */
+fun steamShortcutOf(entry: FolderEntry): SteamShortcut? {
+    val name = entry.displayName.trim()
+    if (fileExtension(name) != "steam") return null
+    val appId = Regex("""\d+""").find(entry.text.orEmpty())?.value?.toIntOrNull()?.takeIf { it > 0 } ?: return null
+    val title = titleFromFileName(name).replace("_ ", ": ").trim().ifEmpty { return null }
+    return SteamShortcut(documentUri = entry.documentUri, title = title, appId = appId)
+}
 
 /**
  * Walk a SAF-style document tree and classify game files.
@@ -67,6 +89,7 @@ fun scanFolderTree(
     childrenOf: (FolderEntry) -> List<FolderEntry>,
 ): FolderScan {
     val found = LinkedHashMap<String, FolderGame>()
+    val steam = LinkedHashMap<String, SteamShortcut>()
     val playlists = LinkedHashMap<String, String>()
     val parentOf = HashMap<String, String>()
     val childrenByParent = HashMap<String, List<ChildRef>>()
@@ -102,6 +125,11 @@ fun scanFolderTree(
                 stack.addLast(Frame(children[index], folderPlatform, containing))
             }
         } else {
+            val shortcut = steamShortcutOf(frame.entry)
+            if (shortcut != null) {
+                steam.putIfAbsent(uri, shortcut)
+                continue
+            }
             val game = toGame(frame.entry, uri, frame.folderPlatform, frame.folderName) ?: continue
             if (found.putIfAbsent(game.documentUri, game) != null) continue
             val body = frame.entry.text
@@ -112,7 +140,7 @@ fun scanFolderTree(
     }
 
     if (!cancelled) hideListedDiscs(found, playlists, parentOf, childrenByParent)
-    return finish(found.values, cancelled)
+    return finish(found.values, cancelled).copy(steamShortcuts = steam.values.sortedBy { it.title.lowercase(Locale.ROOT) })
 }
 
 private class Frame(

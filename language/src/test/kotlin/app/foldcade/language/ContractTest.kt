@@ -460,5 +460,12 @@ class ContractTest {
 
         val signedIn = libraryRows(listOf(SignedInBackend("romm", "RomM")))
         assertEquals(listOf(Row.SignOut("romm", "RomM"), Row.AddFolder, Row.Connect), signedIn)
+
+        // Each folder can be removed on its own. Adding another keeps the first.
+        val folders = libraryRows(folders = listOf(LibraryFolder("content://roms", "roms"), LibraryFolder("content://steam", "Steam")))
+        assertEquals(
+            listOf(Row.AddFolder, Row.Connect, Row.ForgetFolder("content://roms", "roms"), Row.ForgetFolder("content://steam", "Steam")),
+            folders,
+        )
     }
 }
