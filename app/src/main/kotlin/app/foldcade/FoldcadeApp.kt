@@ -158,6 +158,8 @@ class FoldcadeApp : Application() {
                     credentials,
                     request.cacheRoot,
                     request.platforms,
+                    // The manifest's FileProvider authority. The debug build's id ends in .debug.
+                    contentAuthority = "$packageName.romm.cache",
                 )
             },
         )
