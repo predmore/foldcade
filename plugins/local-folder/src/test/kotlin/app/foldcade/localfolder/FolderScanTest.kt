@@ -62,7 +62,7 @@ class FolderScanTest {
 
         assertEquals(
             listOf(
-                game("content://tree/3ds/usa/mario", "Super Mario (USA).cci", "Super Mario (USA)", "nintendo-3ds", "USA"),
+                game("content://tree/3ds/usa/mario", "Super Mario (USA).cci", "Super Mario", "nintendo-3ds", "USA"),
                 game("content://tree/loose", "loose.nds", "loose", "nintendo-ds", "roms"),
                 game("content://tree/nds/zip", "Packed.7z", "Packed", "nintendo-ds", "nds"),
                 game("content://tree/nds/a", "Zelda.nds", "Zelda", "nintendo-ds", "nds"),

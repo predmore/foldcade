@@ -322,12 +322,39 @@ internal fun fileExtension(displayName: String): String? {
     return name.substring(dot + 1).lowercase(Locale.ROOT)
 }
 
+/**
+ * The title a ROM file name reads as. No-Intro and TOSEC names put region,
+ * language, version, and dump notes in parentheses and brackets after the
+ * name, so the title stops at the first group. A disc or side tag stays, so
+ * the discs of one game still read apart. "Legend of Zelda, The - …"
+ * reads "The Legend of Zelda - …". A name with no spaces turns underscores
+ * into spaces. The whole name stays on [FolderGame.fileName].
+ */
 internal fun titleFromFileName(displayName: String): String {
+    val stem = fileStem(displayName)
+    val cut = TAG_GROUP.find(stem)?.range?.first?.takeIf { it > 0 }
+    var title = (if (cut != null) stem.substring(0, cut) else stem).trim()
+    if (' ' !in title) title = title.replace('_', ' ')
+    title = TRAILING_ARTICLE.replace(title) { match ->
+        val (name, article, rest) = match.destructured
+        "$article $name$rest"
+    }
+    if (title.isBlank()) return stem
+    val disc = DISC_TAG.find(stem, startIndex = cut ?: stem.length)?.value
+    return if (disc != null) "$title $disc" else title
+}
+
+/** The file name without its last extension. */
+internal fun fileStem(displayName: String): String {
     val name = displayName.trim()
     val dot = name.lastIndexOf('.')
     if (dot <= 0) return name
     return name.substring(0, dot)
 }
+
+private val TAG_GROUP = Regex("""\s*[(\[]""")
+private val DISC_TAG = Regex("""\((?:Dis[ck]|Side) [0-9A-Z]+(?: of [0-9]+)?\)""", RegexOption.IGNORE_CASE)
+private val TRAILING_ARTICLE = Regex("""^(.+?), (The|A|An)((?: - .*)?)$""")
 
 /** Folder title, ignoring a trailing "roms". "3ds" does not match "nds". */
 fun platformFromFolderName(folderName: String): FolderPlatform? {
