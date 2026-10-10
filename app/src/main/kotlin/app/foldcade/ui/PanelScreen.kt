@@ -11,6 +11,7 @@ import androidx.core.graphics.drawable.toBitmap
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.Arrangement
@@ -74,6 +75,8 @@ import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.semantics.SemanticsProperties
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
@@ -572,28 +575,53 @@ private fun Picker(
         val clearance = px(Metrics.chromeClearancePx)
         // Keeps the last tile label inside the screen, above the clip.
         val labelSafe = px(28f)
+        val showingHome = !model.libraryGrid && model.homeGrid == HomeGrid.StandIns
+        val bottomHome = showingHome && screen == HostScreen.Bottom
         Column(
             Modifier
                 .fillMaxSize()
                 .padding(horizontal = inset)
                 .padding(top = inset, bottom = inset + labelSafe),
         ) {
-            if (screen == HostScreen.Top) {
-                Spacer(Modifier.height(48.dp))
+            if (!bottomHome) {
+                if (screen == HostScreen.Top) {
+                    Spacer(Modifier.height(48.dp))
+                }
+                ChromeRow(app)
+                Spacer(Modifier.height(clearance))
+                if (detailGame != null && screen == HostScreen.Top) {
+                    GameDetail(app, detailGame.id)
+                }
             }
-            ChromeRow(app)
-            Spacer(Modifier.height(clearance))
-            if (detailGame != null) {
-                GameDetail(app, detailGame.id)
+            AllBar(shell, screen, onEffect)
+            if (
+                bottomHome &&
+                game?.occupiesBothDisplays == true &&
+                session.bothScreensFree() &&
+                model.panel == null &&
+                model.dialog == null &&
+                !model.connectOpen
+            ) {
+                BasicText(
+                    text = Copy.usesBothScreens,
+                    modifier = Modifier
+                        .padding(bottom = px(8f))
+                        .clearAndSetSemantics {},
+                    style = text(theme.onBackground, TypeRamp.hint, theme),
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
             }
             BoxWithConstraints(
                 Modifier
                     .weight(1f)
                     .fillMaxWidth()
-                    .pointerInput(model.panel, model.dialog, model.connectOpen, model.moonlightSheet) {
+                    .pointerInput(model.panel, model.dialog, model.connectOpen, model.moonlightSheet, shell.homeEditing(), showingHome) {
+                        if (showingHome) return@pointerInput
                         if (model.panel != null || model.dialog != null || model.connectOpen || model.moonlightSheet != null) {
                             return@pointerInput
                         }
+                        if (shell.homeEditing()) return@pointerInput
                         var dragged = 0f
                         detectHorizontalDragGestures(
                             onHorizontalDrag = { _, amount -> dragged += amount },
@@ -610,11 +638,28 @@ private fun Picker(
                     },
             ) {
                 val showTitles = true
-                val titleBlock = focusOutset(cell) + px(12f) + titleLine
-                val slot = if (showTitles) cell + titleBlock else cell
-                val available = (maxHeight - pad * 2).coerceAtLeast(0.dp)
-                val rows = if (cell > Dp.Hairline && slot > Dp.Hairline) {
-                    ((available + gap) / (slot + gap)).toInt().coerceAtLeast(1)
+                val available = maxHeight.coerceAtLeast(0.dp)
+                val homeRows = 3
+                val titleGuess = px(20f) + titleLine
+                val fromHeight = if (homeRows > 0) {
+                    ((available - gap * (homeRows - 1)) / homeRows) - titleGuess
+                } else {
+                    cell
+                }
+                val fromWidth = if (maxWidth > Dp.Hairline) {
+                    (maxWidth - gap * (Metrics.columns - 1)) / Metrics.columns
+                } else {
+                    cell
+                }
+                val homeCell = minOf(fromHeight, fromWidth).coerceAtLeast(px(56f))
+                val gridCell = if (bottomHome) homeCell else cell
+                val gridPad = if (bottomHome) px(8f) else pad
+                val titleBlock = focusOutset(gridCell) + px(12f) + titleLine
+                val slot = if (showTitles) gridCell + titleBlock else gridCell
+                val rows = if (bottomHome) {
+                    homeRows
+                } else if (gridCell > Dp.Hairline && slot > Dp.Hairline) {
+                    ((available - gridPad * 2 + gap) / (slot + gap)).toInt().coerceAtLeast(1)
                 } else {
                     1
                 }
@@ -636,15 +681,28 @@ private fun Picker(
                     PagedGrid(
                         app = app,
                         screen = screen,
-                        cell = cell,
+                        cell = gridCell,
                         gap = gap,
-                        pad = pad,
+                        pad = gridPad,
                         rows = rows,
                         scale = scale,
                         showTitle = showTitles,
-                        usesBoth = game?.occupiesBothDisplays == true && session.bothScreensFree(),
+                        followDrag = bottomHome,
                     )
                 }
+            }
+            if (bottomHome) {
+                PageDots(count = model.count, rows = 3, index = model.focus.cellIndex)
+                val hint = shell.homeHint()
+                if (hint != null) {
+                    BasicText(
+                        text = hint,
+                        style = text(theme.muted, TypeRamp.hint, theme),
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
+                HomeHintRow(model)
             }
         }
         TopIslands(app, screen, scale) { panelState, progress, interactive ->
@@ -902,6 +960,50 @@ private fun ChromeRow(app: FoldcadeApp) {
     }
 }
 
+/** Page marks under the home grid. One dot per screen of columns. */
+@Composable
+private fun PageDots(count: Int, rows: Int, index: Int) {
+    val pageSize = (Metrics.columns * rows).coerceAtLeast(1)
+    val pages = ((count + pageSize - 1) / pageSize).coerceAtLeast(1)
+    val page = (index / pageSize).coerceIn(0, pages - 1)
+    val theme = foldTheme()
+    Row(
+        Modifier.fillMaxWidth().padding(top = px(4f), bottom = px(8f)),
+        horizontalArrangement = Arrangement.Center,
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        repeat(pages) { dot ->
+            Box(
+                Modifier
+                    .padding(horizontal = px(4f))
+                    .size(if (dot == page) px(8f) else px(6f))
+                    .background(
+                        if (dot == page) theme.onBackground else theme.muted.copy(alpha = 0.45f),
+                        CircleShape,
+                    ),
+            )
+        }
+    }
+}
+
+/** A Confirm, and Back when it does something, on its own row. */
+@Composable
+private fun HomeHintRow(model: app.foldcade.language.PickerModel) {
+    val actions = if (model.connectOpen) {
+        connectHint(connectFields().getOrElse(model.connectIndex) { ConnectField.Origin })
+    } else {
+        hintFor(
+            when {
+                model.dialog != null -> HintPlace.Dialog
+                model.panel != null -> HintPlace.Menu
+                !model.atLibraryRoot -> HintPlace.InsidePlatform
+                else -> HintPlace.RootGrid
+            },
+        )
+    }
+    HintRow(model, actions)
+}
+
 /** One small letter glyph and a word, only for an action that currently does something. */
 @Composable
 private fun HintRow(
@@ -972,6 +1074,30 @@ private fun ShelfMeta(line: String, hintFocused: Boolean) {
 }
 
 @Composable
+private fun AllBar(shell: app.foldcade.ShellController, screen: HostScreen, onEffect: (Effect?) -> Unit) {
+    val chrome = shell.homeChrome() ?: return
+    Row(horizontalArrangement = Arrangement.spacedBy(px(12f))) {
+        listOf(chrome.tab, chrome.sort, chrome.system, chrome.destination).forEachIndexed { index, label ->
+            ChromeButton(
+                label = label,
+                focused = chrome.focused == index,
+                onClick = { onEffect(shell.touchAllChrome(index, screen)) },
+            )
+        }
+    }
+}
+
+@Composable
+private fun ChromeButton(label: String, focused: Boolean, onClick: () -> Unit) {
+    val theme = foldTheme()
+    BasicText(
+        text = label,
+        modifier = Modifier.focusStroke(focused).hostPress(onClick).padding(px(8f)),
+        style = text(theme.onBackground, TypeRamp.sideRow, theme),
+    )
+}
+
+@Composable
 private fun PagedGrid(
     app: FoldcadeApp,
     screen: HostScreen,
@@ -981,7 +1107,7 @@ private fun PagedGrid(
     rows: Int,
     scale: Float,
     showTitle: Boolean,
-    usesBoth: Boolean,
+    followDrag: Boolean = false,
 ) {
     val focus = app.shell.model.focus
     val pageSize = (Metrics.columns * rows).coerceAtLeast(1)
@@ -992,34 +1118,85 @@ private fun PagedGrid(
         Log.i("Foldcade", "library-ui page " + titles.joinToString(" | "))
     }
     val position = remember { Animatable(page.toFloat()) }
+    var dragPages by remember { mutableStateOf(0f) }
     LaunchedEffect(page, scale) {
+        dragPages = 0f
         withContext(SteadyMotion) {
             position.animateTo(page.toFloat(), Motion.arrive(Motion.durationTravel, scale))
         }
     }
     val reduced = Motion.reduced(scale)
-    val alpha = if (reduced) (1f - abs(position.value - page)).coerceIn(0.35f, 1f) else 1f
+    val shownPage = position.value - dragPages
+    val alpha = if (reduced) (1f - abs(shownPage - page)).coerceIn(0.35f, 1f) else 1f
     val width = cell * Metrics.columns + gap * (Metrics.columns - 1)
     val widthPx = with(LocalDensity.current) { width.toPx() }
-    val fading = reduced && abs(position.value - page) > 0.001f
+    val folderToken = app.shell.homeAnimToken()
+    val folderPop = remember { Animatable(1f) }
+    LaunchedEffect(folderToken, scale) {
+        folderPop.snapTo(0.92f)
+        withContext(SteadyMotion) {
+            folderPop.animateTo(1f, Motion.arrive(Motion.durationShort, scale))
+        }
+    }
+    val fading = reduced && abs(shownPage - page) > 0.001f
+    val popping = folderPop.value != 1f
     Box(
         Modifier
             .requiredWidth(width + pad * 2)
-            .then(if (fading) Modifier.graphicsLayer { this.alpha = alpha } else Modifier)
+            .then(
+                if (fading || popping) {
+                    Modifier.graphicsLayer {
+                        if (fading) this.alpha = alpha
+                        scaleX = folderPop.value
+                        scaleY = folderPop.value
+                    }
+                } else {
+                    Modifier
+                },
+            )
             .clipToBounds()
+            .pointerInput(followDrag, app.shell.homeEditing(), widthPx) {
+                if (!followDrag || app.shell.homeEditing() || widthPx <= 0f) return@pointerInput
+                var walked = 0f
+                detectHorizontalDragGestures(
+                    onHorizontalDrag = { _, amount ->
+                        walked += amount
+                        dragPages = walked / widthPx
+                    },
+                    onDragEnd = {
+                        val pages = dragPages
+                        dragPages = 0f
+                        walked = 0f
+                        val meaning = when {
+                            pages > 0.08f -> Meaning.PageTowardStart
+                            pages < -0.08f -> Meaning.PageTowardEnd
+                            else -> null
+                        }
+                        if (meaning != null) app.shell.onMeaning(meaning, screen)
+                    },
+                )
+            }
             .padding(pad),
     ) {
-        val low = floor(position.value).toInt()
-        val high = ceil(position.value).toInt()
+        val low = floor(shownPage).toInt()
+        val high = ceil(shownPage).toInt()
         for (drawn in low..high) {
-            val dx = ((drawn - position.value) * widthPx).roundToInt()
+            val dx = ((drawn - shownPage) * widthPx).roundToInt()
             Box(Modifier.offset { IntOffset(dx, 0) }) {
                 Grid(app, screen, cell, gap, rows, drawn, showTitle)
             }
         }
     }
-    if (usesBoth) {
-        BasicText(text = Copy.usesBothScreens, style = text(foldTheme().muted, TypeRamp.hint, foldTheme()))
+}
+
+/** Titles on [page], in the order [Grid] draws them. */
+private fun pageTitles(app: FoldcadeApp, page: Int, pageSize: Int): List<String> {
+    val shell = app.shell
+    val order = displayOrder(shell.model)
+    val start = page * pageSize
+    val end = minOf(start + pageSize, shell.model.count)
+    return (start until end).map { index ->
+        shell.tileFromOrder(order.getOrElse(index) { index })?.title.orEmpty()
     }
 }
 
@@ -1047,8 +1224,13 @@ private fun Grid(
     val shell = app.shell
     val focus = shell.model.focus
     val pageSize = Metrics.columns * rows
+    val library = shell.model.libraryGrid
+    val showingHome = !library && shell.model.homeGrid == HomeGrid.StandIns
     val order = displayOrder(shell.model)
     val radius = cell * foldTheme().iconRadius
+    val editing = shell.homeEditing()
+    val lifted = shell.homeLiftedIndex()
+    val allOpen = shell.homeAllOpen()
     Column(verticalArrangement = Arrangement.spacedBy(gap)) {
         val start = page * pageSize
         for (row in 0 until rows) {
@@ -1058,22 +1240,43 @@ private fun Grid(
                     if (index >= shell.model.count) {
                         Box(Modifier.size(cell))
                     } else {
-                        val source = order.getOrElse(index) { index }
+                        val source = if (showingHome) index else order.getOrElse(index) { index }
+                        val face = if (showingHome) shell.homeFace(index) else null
                         val game = shell.tileFromOrder(source)
                         val focused = shell.model.dialog == null &&
                             shell.model.panel == null &&
+                            shell.homeChrome()?.focused == null &&
                             focus.chrome == null &&
                             focus.cellIndex == index
+                        val label = face?.section?.let { section -> "$section · ${game?.title.orEmpty()}" }
+                            ?: game?.title.orEmpty()
+                        val libraryTile = library && face == null
+                        val onHomeMark = face != null && allOpen && face.onGrid && !face.folder && !face.pinned
                         Cell(
-                            title = game?.title ?: "",
+                            title = label,
                             mark = game?.mark,
-                            showTitle = showTitle,
+                            showTitle = showTitle && face?.empty != true,
                             focused = focused,
                             size = cell,
                             corner = radius,
                             icon = launcherIcon(game?.androidPackage),
                             favorite = game?.favorite == true,
+                            empty = face?.empty == true,
+                            lifted = lifted == index,
+                            editing = editing,
+                            marked = onHomeMark,
+                            library = libraryTile,
                             onClick = { shell.touchCell(index, screen) },
+                            onDrag = if (editing) {
+                                { meaning -> shell.dragHome(meaning) }
+                            } else {
+                                null
+                            },
+                            onPickUp = if (editing) {
+                                { shell.pickUpHome(index) }
+                            } else {
+                                null
+                            },
                         )
                     }
                 }
@@ -1115,13 +1318,26 @@ private fun Cell(
     corner: Dp,
     icon: ImageBitmap?,
     favorite: Boolean,
+    empty: Boolean = false,
+    lifted: Boolean = false,
+    editing: Boolean = false,
+    marked: Boolean = false,
+    library: Boolean = false,
     onClick: () -> Unit,
+    onPickUp: (() -> Unit)? = null,
+    onDrag: ((Meaning) -> Unit)? = null,
 ) {
     val theme = foldTheme()
+    val kit = mark?.let { LocalFoldTheme.current.marks[it] }
     val animatorScale = Motion.animatorScale(LocalContext.current.contentResolver)
+    val scaleTarget = when {
+        lifted -> Motion.scaleFocus * Motion.scaleFocus
+        focused -> Motion.scaleFocus
+        else -> Motion.scaleRest
+    }
     val drawn = motionFloat(
-        target = if (focused) Motion.scaleFocus else Motion.scaleRest,
-        spec = if (focused) {
+        target = scaleTarget,
+        spec = if (focused || lifted) {
             Motion.arrive(Motion.durationFocus, animatorScale)
         } else {
             Motion.leave(Motion.durationFocus, animatorScale)
@@ -1130,11 +1346,12 @@ private fun Cell(
     val glowStops = remember { FloatArray(GlowFalloff.STOPS.size) }
     Column(
         horizontalAlignment = Alignment.CenterHorizontally,
-        modifier = Modifier.zIndex(if (focused) 1f else 0f),
+        modifier = Modifier.zIndex(if (focused || lifted) 1f else 0f),
     ) {
         val accent = mark?.let { markGlyph(it)?.accent }
-        // A scanned-folder tile has no mark. Focus fills it like the dialog pill.
-        val focusCard = focused && accent == null && icon == null
+        // Same mint card as a folder tile. Library rows keep the previous art treatment so
+        // the card is not composed over those titles.
+        val focusCard = focused && accent == null && !empty && !(library && icon != null)
         Box(
             modifier = Modifier
                 .size(size)
@@ -1158,7 +1375,7 @@ private fun Cell(
                         SoftGlow.fillStops(glowStops, tightness, rim)
                         drawRadialGlow(center, reach, glow, glowStops, peak)
                     }
-                    if (glow != null || icon != null) {
+                    if ((glow != null || icon != null) && !focusCard) {
                         drawRoundRect(
                             color = theme.background,
                             cornerRadius = CornerRadius(cornerPx, cornerPx),
@@ -1174,8 +1391,57 @@ private fun Cell(
                             style = Stroke(width = strokePx),
                         )
                     }
+                    if (empty) {
+                        drawRoundRect(
+                            color = theme.muted.copy(alpha = 0.35f),
+                            cornerRadius = CornerRadius(cornerPx, cornerPx),
+                            style = Stroke(width = 2.5f),
+                        )
+                    }
+                    if (editing) {
+                        val strokePx = if (focused || lifted) 9f else 3f
+                        val inset = strokePx / 2f
+                        drawRoundRect(
+                            color = theme.focus.copy(alpha = if (focused || lifted) 1f else 0.45f),
+                            topLeft = Offset(inset, inset),
+                            size = Size(bounds.width - strokePx, bounds.height - strokePx),
+                            cornerRadius = CornerRadius(cornerPx, cornerPx),
+                            style = Stroke(width = strokePx),
+                        )
+                    }
                 }
-                .hostPress(onClick),
+                .then(
+                    if (onPickUp != null && onDrag != null) {
+                        Modifier.pointerInput(title) {
+                            var walked = Offset.Zero
+                            detectDragGesturesAfterLongPress(
+                                onDragStart = {
+                                    walked = Offset.Zero
+                                    onPickUp()
+                                },
+                                onDrag = { _, amount ->
+                                    walked += amount
+                                    val step = size.toPx() * 0.45f
+                                    val meaning = when {
+                                        walked.x > step -> Meaning.MoveRight
+                                        walked.x < -step -> Meaning.MoveLeft
+                                        walked.y > step -> Meaning.MoveDown
+                                        walked.y < -step -> Meaning.MoveUp
+                                        else -> null
+                                    }
+                                    if (meaning != null) {
+                                        walked = Offset.Zero
+                                        onDrag(meaning)
+                                    }
+                                },
+                            )
+                        }
+                    } else {
+                        Modifier
+                    },
+                )
+                .hostPress(onClick)
+                .clearAndSetSemantics {},
             contentAlignment = Alignment.Center,
         ) {
             if (icon != null) {
@@ -1196,9 +1462,18 @@ private fun Cell(
                             .background(theme.focus, CircleShape),
                     )
                 }
-            } else {
+            } else if (!empty) {
                 val glyphAlpha = if (focused) 1f else 0.58f
-                if (mark != null && markGlyph(mark) != null) {
+                if (kit != null) {
+                    Image(
+                        bitmap = kit,
+                        contentDescription = title,
+                        modifier = Modifier
+                            .fillMaxSize(theme.artScale)
+                            .graphicsLayer { alpha = glyphAlpha },
+                        contentScale = ContentScale.Fit,
+                    )
+                } else if (mark != null && markGlyph(mark) != null) {
                     Box(Modifier.graphicsLayer { alpha = glyphAlpha }) {
                         MarkIcon(mark, theme.artScale)
                     }
@@ -1216,11 +1491,22 @@ private fun Cell(
                     )
                 }
             }
+            if (marked) {
+                Box(
+                    Modifier
+                        .align(Alignment.TopStart)
+                        .padding(px(8f))
+                        .size(px(10f))
+                        .background(theme.focus, CircleShape),
+                )
+            }
         }
         if (showTitle) {
             BasicText(
                 text = title,
                 modifier = Modifier
+                    .zIndex(1f)
+                    .clearAndSetSemantics { this[SemanticsProperties.Text] = listOf(AnnotatedString(title)) }
                     .padding(top = focusOutset(size) + px(12f))
                     .width(size),
                 style = text(

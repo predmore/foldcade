@@ -160,6 +160,23 @@ object Copy {
     const val importMoonlightTitle = "Import Moonlight games"
     const val importMoonlightBody = "Checked games go to All Apps and the Moonlight folder."
     const val importMoonlight = "Import"
+    const val editHome = "Edit home"
+    const val allLibrary = "All library"
+    const val addNewGames = "Add new games"
+    const val addNewOn = "On"
+    const val addNewOff = "Off"
+    const val allGames = "All Games"
+    const val allApps = "All Apps"
+    const val sortTitle = "A to Z"
+    const val sortRecent = "Recently played"
+    const val sortSystem = "System"
+    const val allSystems = "All systems"
+    const val homeSlot = "Home"
+    const val editHint = "A picks up. D-pad moves. A drops. B puts it back. Start or Back is done. X removes from home. It stays in All."
+    const val allHint = "A launches. Y adds to home. X chooses a folder. L2 and R2 jump a letter."
+    const val onHomeMark = "On home"
+    const val newFolder = "Folder"
+    const val stillInAll = "Still in All"
 }
 
 /** Which face actions the hint row should show. Glyphs come from [FaceMap], not from these flags. */

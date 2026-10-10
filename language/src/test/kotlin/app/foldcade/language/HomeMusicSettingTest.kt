@@ -4,6 +4,7 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import java.io.File
 
 class HomeMusicSettingTest {
     @Test
@@ -25,7 +26,9 @@ class HomeMusicSettingTest {
                 Row.Library, Row.Theme, Row.Primary, Row.Arrange, Row.Order,
                 Row.Music, Row.MusicTrack, Row.MusicVolume, Row.SetAsHome,
                 Row.Background, Row.MotionSpeed, Row.UsageAccess, Row.MoonlightSource,
+                Row.EditHome, Row.AllLibrary, Row.AddNewGames,
                 Row.AndroidGames, Row.Apps, Row.HiddenApps,
+                Row.Licenses,
                 Row.AndroidSettings, Row.DefaultHomeApp,
             ),
             leftRows(homeRoleHeld = false),
@@ -35,7 +38,9 @@ class HomeMusicSettingTest {
                 Row.Library, Row.Theme, Row.Primary, Row.Arrange, Row.Order,
                 Row.Music, Row.MusicTrack, Row.MusicVolume,
                 Row.Background, Row.MotionSpeed, Row.UsageAccess, Row.MoonlightSource,
+                Row.EditHome, Row.AllLibrary, Row.AddNewGames,
                 Row.AndroidGames, Row.Apps, Row.HiddenApps,
+                Row.Licenses,
                 Row.AndroidSettings, Row.DefaultHomeApp,
             ),
             leftRows(homeRoleHeld = true),
@@ -150,19 +155,23 @@ class HomeMusicSettingTest {
     }
 
     @Test
-    fun musicStartsOnlyWhenHomeIsAloneAndQuiet() {
-        assertTrue(homeMusicMayStart(homeInFront = true, gameInFront = false, otherAudioActive = false))
-        assertFalse(homeMusicMayStart(homeInFront = false, gameInFront = false, otherAudioActive = false))
-        assertFalse(homeMusicMayStart(homeInFront = true, gameInFront = true, otherAudioActive = false))
-        assertFalse(homeMusicMayStart(homeInFront = true, gameInFront = false, otherAudioActive = true))
+    fun musicStartsOnlyWhenHomeHoldsEveryScreen() {
+        assertTrue(homeMusicMayStart(homeOnEveryScreen = true, gameInFront = false))
+        assertFalse(homeMusicMayStart(homeOnEveryScreen = false, gameInFront = false))
+        assertFalse(homeMusicMayStart(homeOnEveryScreen = true, gameInFront = true))
     }
 
     @Test
-    fun suppressionClearsOnlyAfterTheGameLeaves() {
-        assertTrue(homeMusicStaysSuppressed(suppressed = true, gameInFront = true))
-        assertFalse(homeMusicStaysSuppressed(suppressed = true, gameInFront = false))
-        assertFalse(homeMusicStaysSuppressed(suppressed = false, gameInFront = true))
-        assertFalse(homeMusicStaysSuppressed(suppressed = false, gameInFront = false))
+    fun homeMustBeResumedOnEveryLitScreen() {
+        val both = setOf("top", "bottom")
+        assertTrue(homeOnEveryScreen(resumed = both, lit = both))
+        // An app open on one screen pauses the home there.
+        assertFalse(homeOnEveryScreen(resumed = setOf("bottom"), lit = both))
+        assertFalse(homeOnEveryScreen(resumed = setOf("top"), lit = both))
+        // A screen that is off does not count against the other.
+        assertTrue(homeOnEveryScreen(resumed = setOf("top"), lit = setOf("top")))
+        // Asleep: nothing is lit and nothing is resumed.
+        assertFalse(homeOnEveryScreen(resumed = emptySet<String>(), lit = emptySet()))
     }
 
     @Test
@@ -284,5 +293,37 @@ class HomeMusicSettingTest {
         val tracks = offeredMusicTracks(listOf(defaultLanternlightTrack()), offered)
         assertEquals(listOf(HomeMusicSetting.DEFAULT_TRACK_ID, THEME_TRACK_ID), tracks.map { it.id })
         assertEquals(HomeMusicSetting.DEFAULT_TRACK_ID, cycledMusicTrack(listOf(defaultLanternlightTrack()), "lanternlight", 1).id)
+    }
+
+    @Test
+    fun manifestAndThemeJsonIgnoreBrokenDocuments() {
+        assertTrue(musicTracksFromManifest("{").isEmpty())
+        assertTrue(musicTracksFromManifest("[]").isEmpty())
+        assertTrue(
+            musicTracksFromManifest(
+                """{"id":"x","title":"X","composer":"C","license":"GPLv3","file":"music/x.ogg"}""",
+            ).isEmpty(),
+        )
+        val extra = """
+            {"tracks":[{"id":"lanternlight","title":"Lanternlight","composer":"Foldcade project","license":"GPLv3","file":"music/lanternlight.ogg","extra":1}]}
+        """.trimIndent()
+        assertEquals("lanternlight", musicTracksFromManifest(extra).single().id)
+        assertEquals(DEFAULT_BACKGROUND_MUSIC, backgroundMusicFromThemeJson("{"))
+        assertEquals(DEFAULT_BACKGROUND_MUSIC, backgroundMusicFromThemeJson("""{"backgroundMusic":1}"""))
+        assertEquals(DEFAULT_BACKGROUND_MUSIC, backgroundMusicFromThemeJson("""{"backgroundMusic":" /abs.ogg"}"""))
+        val manifest = repoFile("music/tracks/manifest.json").readText()
+        assertEquals("music/lanternlight.ogg", musicTracksFromManifest(manifest).single().file)
+        val theme = repoFile("themes/afterglow/theme.json").readText()
+        assertEquals(DEFAULT_BACKGROUND_MUSIC, backgroundMusicFromThemeJson(theme))
+    }
+
+    private fun repoFile(relative: String): File {
+        val cwd = File(".").canonicalFile
+        val candidates = listOf(
+            File(cwd, relative),
+            File(cwd, "../$relative"),
+            File(cwd.parentFile, relative),
+        )
+        return candidates.firstOrNull { it.isFile } ?: error("missing $relative from $cwd")
     }
 }

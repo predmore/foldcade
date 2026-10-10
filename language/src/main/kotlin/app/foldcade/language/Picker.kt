@@ -231,12 +231,16 @@ sealed interface Row {
     data object AndroidGames : Row
     data object Apps : Row
     data object HiddenApps : Row
+    data object EditHome : Row
+    data object AllLibrary : Row
+    data object AddNewGames : Row
     data object PinApp : Row
     data object MoveApp : Row
     data object HideApp : Row
     data object ShowApp : Row
     data class QuickTile(val setting: QuickSetting) : Row
     data object ButtonLabels : Row
+    data object Licenses : Row
 }
 
 /** Two columns in the R1 cluster. Text rows above the tiles stay full width. */
@@ -306,9 +310,13 @@ fun leftRows(
     add(Row.MoonlightSource)
     if (offerButtonLabels) add(Row.ButtonLabels)
     playerSaves.forEach { add(Row.PlayerSave(it.playerId)) }
+    add(Row.EditHome)
+    add(Row.AllLibrary)
+    add(Row.AddNewGames)
     add(Row.AndroidGames)
     add(Row.Apps)
     add(Row.HiddenApps)
+    add(Row.Licenses)
     add(Row.AndroidSettings)
     add(Row.DefaultHomeApp)
 }
@@ -326,10 +334,15 @@ enum class ConnectField {
 
 fun connectFields(): List<ConnectField> = listOf(ConnectField.Origin, ConnectField.Token, ConnectField.Save)
 
+/**
+ * Until RomM has a server, its library row is [Copy.setUpRomm] and opens the
+ * connect form, so a second [Row.Connect] would only repeat it.
+ */
 fun libraryRows(backends: List<String>, signedIn: List<SignedInBackend> = emptyList()): List<Row> =
     backends.map { Row.Backend(it) } +
         signedIn.map { Row.SignOut(it.pluginId, it.label) } +
-        listOf(Row.AddFolder, Row.Connect)
+        listOf(Row.AddFolder) +
+        listOfNotNull(Row.Connect.takeIf { Copy.setUpRomm !in backends })
 
 fun rightRows(
     showLaunchTarget: Boolean,
@@ -392,6 +405,7 @@ fun rowText(row: Row, model: PickerModel): RowText = when (row) {
     Row.MusicVolume -> RowText(MusicCopy.volume, MusicCopy.volumeLabel(model.music.volume).substringAfter("  "))
     Row.SetAsHome -> RowText(Copy.setAsHome)
     Row.AndroidSettings -> RowText(Copy.androidSettings)
+    Row.Licenses -> RowText(LicenseCopy.row)
     Row.DefaultHomeApp -> RowText(Copy.defaultHomeApp)
     is Row.QuickTile -> RowText(
         when (row.setting) {
@@ -417,6 +431,9 @@ fun rowText(row: Row, model: PickerModel): RowText = when (row) {
     Row.AndroidGames -> RowText(Copy.androidGames)
     Row.Apps -> RowText(Copy.apps)
     Row.HiddenApps -> RowText(Copy.hiddenApps)
+    Row.EditHome -> RowText(Copy.editHome)
+    Row.AllLibrary -> RowText(Copy.allLibrary)
+    Row.AddNewGames -> RowText(Copy.addNewGames, if (model.addNewToHome) Copy.addNewOn else Copy.addNewOff)
     Row.PinApp -> RowText(if (model.appActions?.favorite == true) Copy.unpin else Copy.pin)
     Row.MoveApp -> RowText(if (model.appActions?.onGamesShelf == true) Copy.moveToApps else Copy.moveToGames)
     Row.HideApp -> RowText(Copy.hideApp)
@@ -462,10 +479,14 @@ sealed interface Effect {
     data object HideApp : Effect
     data object ShowApp : Effect
     data class OpenAndroidSetting(val setting: AndroidSetting) : Effect
+    data object OpenLicenses : Effect
     data object DismissButtonLabels : Effect
     data class ConfirmMoonlightImport(val checked: List<MoonlightSheetApp>) : Effect
     data object SkipMoonlightImport : Effect
     data object ReviewMoonlightImport : Effect
+    data object EditHome : Effect
+    data object OpenAll : Effect
+    data object ToggleAddNew : Effect
 }
 
 /** What a grid cell is. Existing callers stay on [Games], which launches. */
@@ -544,6 +565,8 @@ data class PickerModel(
     val moonlightPlacements: List<MoonlightPlacement> = emptyList(),
     val moonlightImportConfirmed: Boolean = false,
     val moonlightSheet: MoonlightImportSheet? = null,
+    /** Mirrors the home board. Off keeps new scans out of the grid. */
+    val addNewToHome: Boolean = true,
 )
 
 fun reduce(
@@ -694,6 +717,7 @@ private fun applyGrid(
         Meaning.Activate -> activate(model, screen)
         Meaning.Back -> backGrid(model)
         Meaning.LeftPanel, Meaning.RightPanel -> presentPanel(model, meaning, screen) to null
+        else -> model to null
     }
 }
 
@@ -904,6 +928,7 @@ private fun applyPanel(
         }
         Meaning.Activate -> activateRow(model, current, rows[index], screen)
         Meaning.LeftPanel, Meaning.RightPanel -> presentPanel(model, meaning, screen) to null
+        else -> model.copy(panel = current) to null
     }
 }
 
@@ -986,6 +1011,7 @@ private fun activateRow(
         Row.MusicVolume -> model.copy(panel = panel, music = model.music.stepped()) to null
         Row.SetAsHome -> model to Effect.RequestHome
         Row.AndroidSettings -> model.copy(panel = panel) to Effect.OpenAndroidSetting(AndroidSetting.Settings)
+        Row.Licenses -> model.copy(panel = panel) to Effect.OpenLicenses
         Row.DefaultHomeApp -> model.copy(panel = panel) to Effect.OpenAndroidSetting(AndroidSetting.Home)
         is Row.QuickTile -> model.copy(panel = panel) to Effect.OpenAndroidSetting(row.setting.androidSetting())
         is Row.Backend -> model.copy(panel = null, focus = panel.grid) to Effect.ActivateBackend(row.name)
@@ -1009,6 +1035,9 @@ private fun activateRow(
         Row.AndroidGames -> openGrid(model, panel, HomeGrid.AndroidGames)
         Row.Apps -> openGrid(model, panel, HomeGrid.Apps)
         Row.HiddenApps -> openGrid(model, panel, HomeGrid.HiddenApps)
+        Row.EditHome -> model.copy(panel = null, focus = panel.grid, arranging = false, hold = null) to Effect.EditHome
+        Row.AllLibrary -> model.copy(panel = null, focus = panel.grid, arranging = false, hold = null) to Effect.OpenAll
+        Row.AddNewGames -> model.copy(panel = panel, addNewToHome = !model.addNewToHome) to Effect.ToggleAddNew
         Row.PinApp -> model to Effect.PinApp
         Row.MoveApp -> model.copy(panel = null, focus = panel.grid) to Effect.MoveApp
         Row.HideApp -> model.copy(panel = null, focus = panel.grid) to Effect.HideApp
@@ -1053,5 +1082,6 @@ private fun applyDialog(dialog: DialogState, meaning: Meaning): Pair<DialogState
         -> dialog.copy(index = index) to null
         Meaning.Activate -> dialog to dialog.buttons[index]
         Meaning.Back -> dialog to dialog.buttons[dialog.safeIndex.coerceIn(0, last)]
+        else -> dialog.copy(index = index) to null
     }
 }
