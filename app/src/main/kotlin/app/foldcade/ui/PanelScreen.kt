@@ -53,6 +53,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.SideEffect
+import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -222,8 +223,11 @@ fun PanelHost(activity: FoldcadeHomeActivity, displays: Displays) {
             if (wallpaper != null) PanelWallpaper(wallpaper)
             if (blurHere) {
                 Box(Modifier.fillMaxSize().menuBlur(blur).menuDim(blur)) {
-                    PanelBody(activity, panel, screen, scale)
+                    CompositionLocalProvider(LocalUnderMenu provides true) {
+                        PanelBody(activity, panel, screen, scale)
+                    }
                 }
+                if (session.surfaceOn(Panel.Bottom) == Surface.Picker) MenuHints(app)
             } else {
                 PanelBody(activity, panel, screen, scale)
             }
@@ -801,7 +805,8 @@ private fun Picker(
                     overflow = TextOverflow.Ellipsis,
                 )
             }
-            GridHints(app)
+            // Under an open menu the blur would smear these. MenuHints draws them above it.
+            GridHints(app, Modifier.alpha(if (LocalUnderMenu.current) 0f else 1f))
         }
         TopIslands(app, screen, scale) { panelState, progress, interactive ->
             PanelRows(app, screen, panelState, progress, interactive, onEffect)
@@ -1036,9 +1041,26 @@ private fun PageDots(count: Int, rows: Int, index: Int) {
     }
 }
 
+/** True inside the blurred layer under an open menu. */
+private val LocalUnderMenu = compositionLocalOf { false }
+
+/**
+ * The picker's hint row, drawn above the blur while a menu is open. It sits where
+ * the picker's own row would, at the bottom of the same inset.
+ */
+@Composable
+private fun MenuHints(app: FoldcadeApp) {
+    BoxWithConstraints(Modifier.fillMaxSize()) {
+        val inset = maxWidth * Metrics.insetFraction
+        Box(Modifier.fillMaxSize().padding(inset), contentAlignment = Alignment.BottomCenter) {
+            GridHints(app)
+        }
+    }
+}
+
 /** The keys under the grid, centred. Nothing when every key here is obvious. */
 @Composable
-private fun GridHints(app: FoldcadeApp) {
+private fun GridHints(app: FoldcadeApp, modifier: Modifier = Modifier) {
     val shell = app.shell
     val model = shell.model
     val actions = if (model.connectOpen) {
@@ -1056,7 +1078,7 @@ private fun GridHints(app: FoldcadeApp) {
     val keys = gridHints(actions, shell.homeKeys(), model.faceMap)
     if (keys.isEmpty()) return
     Row(
-        Modifier.fillMaxWidth(),
+        modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.spacedBy(px(16f), Alignment.CenterHorizontally),
         verticalAlignment = Alignment.CenterVertically,
     ) {
