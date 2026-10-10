@@ -95,6 +95,9 @@ class ShellController(
     private var playerPackages: Set<String> = emptySet()
     private val home = HomeSession(store.homeBoardRaw())
     private var libraryItems: List<HomeItem> = emptyList()
+
+    /** Libraries that have reported their games since launch. Until then their home tiles are kept. */
+    private val settledLibraries = mutableSetOf<String>()
     private val libraryGames = HashMap<String, Game>()
     private var extraPlatforms: List<HomePlatform> = emptyList()
 
@@ -358,6 +361,7 @@ class ShellController(
             remembered[id] = game
         }
         libraryItems = libraryItems.filterNot { it.id.startsWith(prefix) } + items
+        settledLibraries += libraryId
         libraryGames.keys.filter { it.startsWith(prefix) }.toList().forEach { libraryGames.remove(it) }
         libraryGames.putAll(remembered)
         extraPlatforms = platforms.map { platform ->
@@ -1167,6 +1171,10 @@ class ShellController(
         )
     }
 
+    /** The library a [homeGameId] belongs to, or null for a tile that is not a library game. */
+    private fun libraryOf(id: String): String? =
+        id.removePrefix("lib:").takeIf { it != id }?.substringBefore(':')
+
     private fun syncHome() {
         home.rememberShelf(Shelf.games)
         val changed = home.remerge(
@@ -1175,6 +1183,7 @@ class ShellController(
             libraryItems,
             homePlatforms(),
             libraryGames,
+            unsettled = { id -> libraryOf(id)?.let { it !in settledLibraries } == true },
         )
         if (changed) store.saveHomeBoard(home.encoded())
     }

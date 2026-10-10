@@ -56,20 +56,6 @@ object Shelf {
         ShelfGame("shelf.disc", "Disc", "Optical", mark = "disc"),
         ShelfGame("shelf.cloud", "Cloud", "Stream", mark = "cloud"),
         ShelfGame(
-            id = "nintendo-3ds.azahar",
-            title = "3DS",
-            shortText = "Azahar",
-            platformId = "nintendo-3ds",
-            occupiesBothDisplays = true,
-        ),
-        ShelfGame(
-            id = "nintendo-ds.melonds",
-            title = "DS",
-            shortText = "melonDS",
-            platformId = "nintendo-ds",
-            occupiesBothDisplays = true,
-        ),
-        ShelfGame(
             id = "pc.gamenative",
             title = "PC",
             shortText = Copy.progressInGameNative,

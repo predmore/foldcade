@@ -134,20 +134,27 @@ fun folderCount(board: HomeBoard, folderId: String): Int =
  * Merges [items] into [board]. Placed tiles stay put. A missing catalog id leaves an empty slot.
  * New items go into their system folder when [HomeBoard.addNewToHome] is on, otherwise they stay off the grid.
  * Hidden tiles stay hidden. Games are not deleted.
+ *
+ * [unsettled] is true for an id whose source has not reported yet, such as a library still
+ * scanning after launch. Its slot is kept rather than read as a game that went away.
+ * A platform folder Foldcade made goes away once no game for that platform is left,
+ * and comes back with the next game for it.
  */
 fun mergeHome(
     board: HomeBoard,
     items: List<HomeItem>,
     platforms: List<HomePlatform>,
+    unsettled: (String) -> Boolean = { false },
 ): HomeBoard {
     val catalog = items.distinctBy { it.id }
     val ids = catalog.map { it.id }.toSet()
+    val keep = { id: String -> id in ids || unsettled(id) }
     var next = board.copy(
-        slots = stripUnknown(board.slots, ids, board.folders),
+        slots = stripUnknown(board.slots, keep, board.folders),
         folders = board.folders.mapValues { (_, folder) ->
-            folder.copy(slots = stripUnknown(folder.slots, ids, board.folders))
+            folder.copy(slots = stripUnknown(folder.slots, keep, board.folders))
         },
-        hidden = board.hidden.intersect(ids),
+        hidden = board.hidden.filter(keep).toSet(),
     )
     for (item in catalog) {
         if (item.id in next.hidden) continue
@@ -156,6 +163,7 @@ fun mergeHome(
         next = placeNew(next, item, platforms)
     }
     next = ensureSpecialFolders(next)
+    next = dropGonePlatformFolders(next, catalog, platforms)
     next = refreshFolderNames(next, platforms)
     if (HOME_ALL !in next.slots) {
         next = next.copy(slots = listOf(HOME_ALL) + next.slots)
@@ -473,16 +481,46 @@ fun decodeHome(raw: String?): HomeBoard {
 
 private fun stripUnknown(
     slots: List<String?>,
-    ids: Set<String>,
+    keep: (String) -> Boolean,
     folders: Map<String, HomeFolder>,
 ): List<String?> = slots.map { id ->
     when {
         id == null -> null
         id == HOME_ALL -> id
         id in folders -> id
-        id in ids -> id
+        keep(id) -> id
         else -> null
     }
+}
+
+/**
+ * A platform folder Foldcade made, with no game for that platform left in the catalog and
+ * nothing still in its slots, leaves the grid. Its root slot stays empty like any other
+ * removed tile, so the tiles after it keep their places. Empty slots left at the end of the
+ * grid are dropped. A folder the user made, or one moved while a tile is held, stays.
+ */
+private fun dropGonePlatformFolders(
+    board: HomeBoard,
+    catalog: List<HomeItem>,
+    platforms: List<HomePlatform>,
+): HomeBoard {
+    if (board.hold != null) return board
+    val present = catalog.mapNotNull { item ->
+        if (item.kind != HomeKind.Rom) return@mapNotNull null
+        resolvePlatform(platforms, item.platformId)?.id ?: item.platformId?.takeIf { it.isNotBlank() }
+    }.toSet()
+    val gone = board.folders.values.filter { folder ->
+        val platformId = folder.platformId ?: return@filter false
+        !folder.userMade && platformId !in present && folder.slots.all { it == null }
+    }.map { it.id }.toSet()
+    if (gone.isEmpty()) return board
+    val slots = board.slots.map { if (it in gone) null else it }.dropLastWhile { it == null }
+    return board.copy(
+        slots = slots,
+        folders = board.folders - gone,
+        openFolderId = board.openFolderId?.takeIf { it !in gone },
+        destinationFolderId = board.destinationFolderId?.takeIf { it !in gone },
+    )
 }
 
 private fun ensureSpecialFolders(board: HomeBoard): HomeBoard {

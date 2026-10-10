@@ -777,9 +777,11 @@ expect_png "$out/home-secondary.png" "${bottom_width}x${bottom_height}"
 fi
 
 # FOLDCADE_SHARD splits the captures across parallel jobs. "shell" runs the
-# launch paths, shoulder menus, Android shelves, and dialogs. "library" runs the
-# empty library, the seeded folder, and the curated home grid. Each needs only
-# the setup above, and neither uses the other's state. Unset runs both.
+# GameNative and Moonlight launch paths, shoulder menus, Android shelves, and
+# dialogs. "library" runs the empty library, the seeded folder, the curated
+# home grid, and the Azahar and melonDS paths. Those platform folders exist
+# only after the fixture ROMs are scanned. Each shard needs only the setup
+# above, and neither uses the other's state. Unset runs both.
 shard="${FOLDCADE_SHARD:-all}"
 case "$shard" in
   all|shell|library) ;;
@@ -793,85 +795,20 @@ input_help="$(adb_do shell input -h 2>&1 | tr -d '\r' || true)"
 printf '%s\n' "$input_help" >"$out/input-help.txt"
 
 if runs shell; then
-# Launch paths share one DPAD walk from the home grid, so a crash in the
-# middle repeats the walk from the 3DS tile.
+# Player launch paths. Thor-sized emulator, not a Thor pass.
+# Azahar and melonDS run from real fixture ROMs after the folder library is
+# seeded (capture_player_paths). With no library yet, the home grid is All,
+# then the GameNative, Moonlight, Android Games, and Android Apps folders.
 if begin_capture "launch paths"; then
-# Azahar launch path. Thor-sized emulator, not a Thor pass.
-# Azahar is not installed here. The capture is the missing-player state.
 # input -d is used only when this image's help text documents it.
-echo "step: azahar launch path"
+echo "step: player launch paths"
 if printf '%s\n' "$input_help" | grep -q -- '-d' && printf '%s\n' "$input_help" | grep -qi 'display'; then
   show_foldcade
   dismiss_leftover_dialog
-  echo "step: focus the 3DS tile"
-  # Home grid: All, then the 3DS folder. One right lands on that folder.
-  # The first confirm opens it.
-  adb_do shell input -d "$presentation_logical" keyevent KEYCODE_DPAD_RIGHT
-  adb_do shell input -d "$presentation_logical" keyevent KEYCODE_DPAD_CENTER
-  sleep 1
-  capture "$primary" "$out/folder-open-primary.png"
-  capture "$secondary" "$out/folder-open-secondary.png"
-  expect_png "$out/folder-open-primary.png" "${top_width}x${top_height}"
-  expect_png "$out/folder-open-secondary.png" "${bottom_width}x${bottom_height}"
-  adb_do shell input -d "$presentation_logical" keyevent KEYCODE_DPAD_CENTER
-  sleep 1
-  capture "$primary" "$out/launch-primary.png"
-  capture "$secondary" "$out/launch-secondary.png"
-  expect_png "$out/launch-primary.png" "${top_width}x${top_height}"
-  expect_png "$out/launch-secondary.png" "${bottom_width}x${bottom_height}"
-  timeout 10 adb shell uiautomator dump /sdcard/foldcade-ui.xml >/dev/null 2>&1 || true
-  timeout 10 adb shell cat /sdcard/foldcade-ui.xml 2>/dev/null | tr -d '\r' >"$out/launch-ui.xml" || true
-  seen="no"
-  if grep -q 'not installed' "$out/launch-ui.xml"; then
-    seen="yes"
-  fi
-  {
-    echo "Thor-sized emulator, not a Thor pass."
-    echo "Azahar is not installed on this image. The launch captures are the missing-player path."
-    echo "This is not a measurement of Azahar on the Thor bottom panel."
-    echo "missing_player_in_ui_dump=${seen}"
-  } >"$out/launch-path.txt"
-  adb_do shell input -d "$presentation_logical" keyevent KEYCODE_BACK || true
-  adb_do shell input -d "$presentation_logical" keyevent KEYCODE_BACK || true
-
-  # melonDS launch path. Thor-sized emulator, not a Thor pass.
-  # melonDS is not installed here. The capture is the missing-player state.
-  # The DS folder is the next cell to the right of the 3DS folder.
-  echo "step: melonDS launch path"
-  echo "step: focus the DS tile"
-  adb_do shell input -d "$presentation_logical" keyevent KEYCODE_DPAD_RIGHT
-  adb_do shell input -d "$presentation_logical" keyevent KEYCODE_DPAD_CENTER
-  sleep 1
-  capture "$primary" "$out/ds-focus-primary.png"
-  capture "$secondary" "$out/ds-focus-secondary.png"
-  expect_png "$out/ds-focus-primary.png" "${top_width}x${top_height}"
-  expect_png "$out/ds-focus-secondary.png" "${bottom_width}x${bottom_height}"
-  echo "step: open the DS tile"
-  adb_do shell input -d "$presentation_logical" keyevent KEYCODE_DPAD_CENTER
-  sleep 1
-  capture "$primary" "$out/ds-launch-primary.png"
-  capture "$secondary" "$out/ds-launch-secondary.png"
-  expect_png "$out/ds-launch-primary.png" "${top_width}x${top_height}"
-  expect_png "$out/ds-launch-secondary.png" "${bottom_width}x${bottom_height}"
-  timeout 10 adb shell uiautomator dump /sdcard/foldcade-ui.xml >/dev/null 2>&1 || true
-  timeout 10 adb shell cat /sdcard/foldcade-ui.xml 2>/dev/null | tr -d '\r' >"$out/ds-launch-ui.xml" || true
-  seen="no"
-  if grep -q 'not installed' "$out/ds-launch-ui.xml"; then
-    seen="yes"
-  fi
-  {
-    echo "Thor-sized emulator, not a Thor pass."
-    echo "melonDS is not installed on this image. The launch captures are the missing-player path."
-    echo "Top is ${top_width}x${top_height}. Bottom is ${bottom_width}x${bottom_height}."
-    echo "This is not a measurement of the DS touch screen on the Thor bottom panel."
-    echo "missing_player_in_ui_dump=${seen}"
-  } >"$out/ds-launch-path.txt"
-  adb_do shell input -d "$presentation_logical" keyevent KEYCODE_BACK || true
-  adb_do shell input -d "$presentation_logical" keyevent KEYCODE_BACK || true
 
   # GameNative launch path. Thor-sized emulator, not a Thor pass.
   # GameNative is not installed here. The capture is the missing-player state.
-  # The GameNative folder is the cell to the right of the DS folder.
+  # The GameNative folder is the cell to the right of All.
   echo "step: GameNative launch path"
   echo "step: focus the PC tile"
   adb_do shell input -d "$presentation_logical" keyevent KEYCODE_DPAD_RIGHT
@@ -964,8 +901,9 @@ fi
 fi
 
 # Home-grid proof frames are captured after the fixture library is seeded,
-# so the grid shows system folders rather than the demo shelf. The 3DS
-# folder-open frames above stay. Scroll does not launch a game.
+# so the grid shows system folders rather than the demo shelf. A platform
+# folder exists only while the library has a game for it. Scroll does not
+# launch a game.
 
 # Shoulder panels on the Thor-sized emulator. This is not a Thor pass.
 # A setup cancelled before the first script step is not a capture result.
@@ -1409,6 +1347,7 @@ become_root() {
 # then this walk follows home-ui tile logs. A presentation dump is empty
 # while that display is focused, so the folder name is not read from it.
 focus_system_folder() {
+  local name="${1:-Game Boy Advance}"
   local row col
   adb_do logcat -c || true
   key_bottom KEYCODE_BUTTON_B || true
@@ -1419,13 +1358,13 @@ focus_system_folder() {
   sleep 0.4
   for row in $(seq 1 8); do
     for col in $(seq 1 5); do
-      if timeout 10 adb logcat -d -s Foldcade:I 2>/dev/null | tr -d '\r' | grep -F -q "home-ui tile Game Boy Advance"; then
+      if timeout 10 adb logcat -d -s Foldcade:I 2>/dev/null | tr -d '\r' | grep -F -q "home-ui tile ${name}"; then
         return 0
       fi
       key_bottom KEYCODE_DPAD_RIGHT || true
       sleep 0.3
     done
-    if timeout 10 adb logcat -d -s Foldcade:I 2>/dev/null | tr -d '\r' | grep -F -q "home-ui tile Game Boy Advance"; then
+    if timeout 10 adb logcat -d -s Foldcade:I 2>/dev/null | tr -d '\r' | grep -F -q "home-ui tile ${name}"; then
       return 0
     fi
     for col in $(seq 1 5); do
@@ -1435,7 +1374,7 @@ focus_system_folder() {
     key_bottom KEYCODE_DPAD_DOWN || true
     sleep 0.3
   done
-  timeout 10 adb logcat -d -s Foldcade:I 2>/dev/null | tr -d '\r' | grep -F -q "home-ui tile Game Boy Advance"
+  timeout 10 adb logcat -d -s Foldcade:I 2>/dev/null | tr -d '\r' | grep -F -q "home-ui tile ${name}"
 }
 
 # Curated home frames. Emulator only, not a Thor pass.
@@ -1644,6 +1583,62 @@ PY
   expect_png "$out/library-bottom.png" "${bottom_width}x${bottom_height}"
 }
 
+# Azahar and melonDS from fixture ROMs. Thor-sized emulator, not a Thor pass.
+# Neither player is installed here. The captures are the missing-player path.
+# A first confirm opens the platform folder. A second launches its only game.
+capture_player_paths() {
+  local folder prefix player seen
+  for folder in "Nintendo 3DS" "Nintendo DS"; do
+    if [ "$folder" = "Nintendo 3DS" ]; then
+      prefix="launch"
+      player="Azahar"
+    else
+      prefix="ds-launch"
+      player="melonDS"
+    fi
+    echo "step: ${player} launch path"
+    focus_system_folder "$folder" || fail "player paths: ${folder} folder was not on screen"
+    if [ "$prefix" = "ds-launch" ]; then
+      capture "$primary" "$out/ds-focus-primary.png"
+      capture "$secondary" "$out/ds-focus-secondary.png"
+      expect_png "$out/ds-focus-primary.png" "${top_width}x${top_height}"
+      expect_png "$out/ds-focus-secondary.png" "${bottom_width}x${bottom_height}"
+    fi
+    adb_do logcat -c || true
+    key_bottom KEYCODE_DPAD_CENTER
+    wait_library_log "library-ui games" || fail "player paths: ${folder} folder did not open"
+    if [ "$prefix" = "launch" ]; then
+      capture "$primary" "$out/folder-open-primary.png"
+      capture "$secondary" "$out/folder-open-secondary.png"
+      expect_png "$out/folder-open-primary.png" "${top_width}x${top_height}"
+      expect_png "$out/folder-open-secondary.png" "${bottom_width}x${bottom_height}"
+    fi
+    key_bottom KEYCODE_DPAD_CENTER
+    sleep 1
+    capture "$primary" "$out/${prefix}-primary.png"
+    capture "$secondary" "$out/${prefix}-secondary.png"
+    expect_png "$out/${prefix}-primary.png" "${top_width}x${top_height}"
+    expect_png "$out/${prefix}-secondary.png" "${bottom_width}x${bottom_height}"
+    timeout 10 adb shell uiautomator dump /sdcard/foldcade-ui.xml >/dev/null 2>&1 || true
+    timeout 10 adb shell cat /sdcard/foldcade-ui.xml 2>/dev/null | tr -d '\r' >"$out/${prefix}-ui.xml" || true
+    seen="no"
+    if grep -q 'not installed' "$out/${prefix}-ui.xml"; then
+      seen="yes"
+    fi
+    {
+      echo "Thor-sized emulator, not a Thor pass."
+      echo "${player} is not installed on this image. The launch captures are the missing-player path."
+      echo "The game is a fixture ROM in the ${folder} folder."
+      echo "Top is ${top_width}x${top_height}. Bottom is ${bottom_width}x${bottom_height}."
+      echo "missing_player_in_ui_dump=${seen}"
+    } >"$out/${prefix}-path.txt"
+    key_bottom KEYCODE_BACK || true
+    sleep 0.5
+    key_bottom KEYCODE_BACK || true
+    sleep 0.5
+  done
+}
+
 if runs library; then
 if begin_capture "empty library"; then
 echo "step: empty library"
@@ -1669,6 +1664,9 @@ fi
 
 if begin_capture "seeded library"; then
 seed_folder_library
+if printf '%s\n' "$input_help" | grep -q -- '-d' && printf '%s\n' "$input_help" | grep -qi 'display'; then
+  capture_player_paths
+fi
 {
   echo "Thor-sized emulator, not a Thor pass."
   echo "Empty library: empty-top.png is ${top_width}x${top_height}, empty-bottom.png is ${bottom_width}x${bottom_height}."
