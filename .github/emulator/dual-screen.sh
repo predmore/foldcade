@@ -750,35 +750,48 @@ fi
 # and "-d: specify the display ID." Home was started on display 0.
 echo "step: shoulder panels"
 if printf '%s\n' "$input_help" | grep -q -- '-d' && printf '%s\n' "$input_help" | grep -qi 'display'; then
-  panel_key() {
-    adb_do shell input -d 0 keyevent "$1"
+  # A missing-player dialog swallows L1 and R1, so close it on both displays first.
+  echo "step: close leftover dialog"
+  for _ in 1 2 3; do
+    adb_do shell input -d 0 keyevent KEYCODE_BACK || true
+    adb_do shell input -d "$presentation_logical" keyevent KEYCODE_BACK || true
+    sleep 0.4
+  done
+
+  # Debug builds snap the morph. Display 0 is the main panel.
+  # The first start commits the hold. This emulator composites that frame on the
+  # next start, so the second start paints the same hold before the screenshot.
+  show_island() {
+    timeout 20 adb shell am start -n "$component" \
+      --es foldcade.island "$1" \
+      --display 0 || fail "island $1"
+  }
+  capture_island() {
+    local hold="$1"
+    local name="$2"
+    echo "step: island ${hold} on display 0"
+    show_island "$hold"
+    sleep 1
+    show_island "$hold"
+    sleep 1
+    capture "$primary" "$out/${name}-top.png"
+    capture "$secondary" "$out/${name}-bottom.png"
+    expect_png "$out/${name}-top.png" "${top_width}x${top_height}"
+    expect_png "$out/${name}-bottom.png" "${bottom_width}x${bottom_height}"
   }
 
-  echo "step: L1 Android settings"
-  panel_key KEYCODE_BUTTON_L1
+  capture_island left-mid settings-l1-mid
+  capture_island right-open settings-r1
+  capture_island left-open settings-l1
+  echo "step: close island"
+  timeout 20 adb shell am start -n "$component" \
+    --es foldcade.island closed \
+    --display 0 || true
   sleep 1
-  for _ in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15; do
-    panel_key KEYCODE_DPAD_DOWN
-    sleep 0.3
-  done
-  sleep 1
-  capture "$primary" "$out/settings-l1-top.png"
-  capture "$secondary" "$out/settings-l1-bottom.png"
-  expect_png "$out/settings-l1-top.png" "${top_width}x${top_height}"
-  expect_png "$out/settings-l1-bottom.png" "${bottom_width}x${bottom_height}"
-
-  echo "step: R1 quick settings"
-  panel_key KEYCODE_BUTTON_R1
-  sleep 1
-  panel_key KEYCODE_DPAD_DOWN
-  sleep 1
-  capture "$primary" "$out/settings-r1-top.png"
-  capture "$secondary" "$out/settings-r1-bottom.png"
-  expect_png "$out/settings-r1-top.png" "${top_width}x${top_height}"
-  expect_png "$out/settings-r1-bottom.png" "${bottom_width}x${bottom_height}"
   {
     echo "Thor-sized emulator, not a Thor pass."
-    echo "Shoulder keys used input -d 0. Top is ${top_width}x${top_height}. Bottom is ${bottom_width}x${bottom_height}."
+    echo "L1 and R1 open on the main display. settings-l1-mid is the mid-morph frame."
+    echo "Top is ${top_width}x${top_height}. Bottom is ${bottom_width}x${bottom_height}."
     echo "These screenshots are an emulator result. They are not a Thor pass."
   } >"$out/settings-captures.txt"
 else
@@ -793,7 +806,7 @@ fi
   echo "Top panel captures are ${top_width}x${top_height}. Bottom panel captures are ${bottom_width}x${bottom_height}."
   echo "input_display_flag=${input_display_flag:-none}"
   echo "These screenshots are an emulator result. They are not a Thor pass."
-} >"$out/settings-captures.txt"
+} >>"$out/settings-captures.txt"
 
 open_android_shelf() {
   local which="$1"

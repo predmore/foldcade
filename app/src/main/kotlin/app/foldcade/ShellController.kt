@@ -45,10 +45,13 @@ import app.foldcade.language.offerButtonCalibration
 import app.foldcade.language.resolveFaceMap
 import app.foldcade.language.PickerModel
 import app.foldcade.language.PlayerSaveSetting
+import app.foldcade.language.Side
 import app.foldcade.language.SignedInBackend
 import app.foldcade.language.connectFields
 import app.foldcade.language.displayOrder
 import app.foldcade.language.focusAndActivateDialog
+import app.foldcade.language.finishIslandRetire
+import app.foldcade.language.replaceIsland
 import app.foldcade.language.homePrompt
 import app.foldcade.language.panelRows
 import app.foldcade.language.previewDialogState
@@ -287,6 +290,39 @@ class ShellController(
     fun present(dialog: DialogState) {
         if (model.dialog != null || model.moonlightSheet != null) return
         model = model.copy(dialog = dialog)
+    }
+
+    /** Drops a dialog without activating its button. Debug captures use this before opening a menu. */
+    fun dismissDialog() {
+        if (model.dialog == null) return
+        model = model.copy(dialog = null)
+    }
+
+    /**
+     * A debug capture shows this shoulder now, in place of whichever island was open.
+     * A real L1 or R1 press still retires the open island before the other expands.
+     */
+    fun previewIsland(side: Side) {
+        val shown = replaceIsland(model, side)
+        if (shown.panel == model.panel && shown.focus == model.focus) return
+        publish(shown)
+    }
+
+    /**
+     * The open island finished its leave morph. The pending shoulder expands now.
+     * Calling this before the close finishes, or twice, does nothing.
+     */
+    fun completeIslandRetire() {
+        val finished = finishIslandRetire(model)
+        if (finished.panel == model.panel && finished.focus == model.focus) return
+        publish(finished)
+    }
+
+    /** Closes whichever top menu is open. A closed menu stays closed. */
+    fun closePanel() {
+        val side = model.panel?.side ?: return
+        val meaning = if (side == Side.Left) Meaning.LeftPanel else Meaning.RightPanel
+        onMeaning(meaning, HostScreen.Top)
     }
 
     fun showQueuedPrompt() {
