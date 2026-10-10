@@ -4,11 +4,15 @@ import android.graphics.RenderEffect
 import android.graphics.Shader
 import android.os.Build
 import android.util.Log
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.ui.unit.IntSize
+import androidx.compose.ui.graphics.BlendMode
+import androidx.compose.foundation.Canvas
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.FiniteAnimationSpec
-import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
 import androidx.core.graphics.drawable.toBitmap
 import androidx.compose.foundation.background
@@ -94,9 +98,9 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.IntOffset
-import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.zIndex
+import app.foldcade.language.heroPlayLine
 import app.foldcade.R
 import app.foldcade.language.QuickSetting
 import app.foldcade.Displays
@@ -360,27 +364,10 @@ private fun Hero(app: FoldcadeApp, screen: HostScreen, scale: Float, onEffect: (
     val cellFocused = model.dialog == null && model.panel == null && !model.connectOpen && model.focus.chrome == null
     BoxWithConstraints(Modifier.fillMaxSize()) {
         val inset = px(Metrics.heroInsetPx)
-        val artHeight = maxHeight * Metrics.heroArtFraction
-        Box(
-            Modifier
-                .fillMaxSize()
-                .drawBehind {
-                    drawRect(
-                        brush = Brush.verticalGradient(
-                            colorStops = arrayOf(
-                                0f to Color.Transparent,
-                                0.48f to Color.Transparent,
-                                0.62f to theme.background.copy(alpha = 0.78f),
-                                0.74f to theme.background.copy(alpha = 0.96f),
-                                1f to theme.background,
-                            ),
-                        ),
-                    )
-                },
-        )
+        val cardMax = maxWidth * 0.5f
+        // Cocoon's hero: the art centred between the islands, a name card centred under it.
         Column(
             Modifier
-                .align(Alignment.TopStart)
                 .fillMaxSize()
                 .padding(
                     start = inset,
@@ -388,14 +375,13 @@ private fun Hero(app: FoldcadeApp, screen: HostScreen, scale: Float, onEffect: (
                     top = if (screen == HostScreen.Top) inset + 48.dp else inset,
                     bottom = inset,
                 ),
+            horizontalAlignment = Alignment.CenterHorizontally,
         ) {
-            // The label is measured first. The art shrinks below artHeight when the
-            // name, details, and play facts would otherwise run off the screen.
             Box(
                 Modifier
-                    .fillMaxWidth()
-                    .weight(1f, fill = false)
-                    .height(artHeight),
+                    .weight(1f)
+                    .fillMaxWidth(),
+                contentAlignment = Alignment.Center,
             ) {
                 HeroCrossfade(
                     target = subject,
@@ -403,16 +389,14 @@ private fun Hero(app: FoldcadeApp, screen: HostScreen, scale: Float, onEffect: (
                     animatorScale = scale,
                     same = { left, right -> left?.key == right?.key },
                 ) { shown ->
-                    Box(
-                        Modifier.fillMaxSize(),
-                        contentAlignment = Alignment.Center,
-                    ) {
+                    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                         if (shown is HeroSubject.Item) HeroArt(shown.item)
                     }
                 }
             }
             if (subject != null) {
-                HeroLabel(app, subject, cellFocused)
+                Spacer(Modifier.height(px(24f)))
+                HeroLabel(app, subject, cellFocused, cardMax)
             }
         }
         TopIslands(app, screen, scale) { panelState, progress, interactive ->
@@ -512,30 +496,58 @@ private fun <T> HeroCrossfade(
  * The artwork behind it may still be crossfading.
  */
 @Composable
-private fun HeroLabel(app: FoldcadeApp, shown: HeroSubject, cellFocused: Boolean) {
+private fun HeroLabel(app: FoldcadeApp, shown: HeroSubject, cellFocused: Boolean, maxWidth: Dp) {
     val theme = foldTheme()
     val copy = heroCopy(shown)
-    BasicText(
-        text = copy.title,
-        style = text(theme.onBackground, TypeRamp.heroTitle, theme),
-        maxLines = 1,
-        overflow = TextOverflow.Ellipsis,
-    )
-    if (copy.detail.isNotEmpty()) {
-        val hint = shown is HeroSubject.Item && shown.item.emptyShelfHint && cellFocused
-        ShelfMeta(line = copy.detail, hintFocused = hint)
-    }
-    val availability = (shown as? HeroSubject.Item)?.item?.availability
-    if (availability != null) {
+    val centred = text(theme.onBackground, TypeRamp.heroTitle, theme).copy(textAlign = TextAlign.Center)
+    Column(
+        Modifier
+            .widthIn(min = px(360f), max = maxWidth)
+            .clip(RoundedCornerShape(Metrics.cardCornerDp.dp))
+            .background(theme.surface)
+            .padding(horizontal = px(40f), vertical = px(20f)),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(px(4f)),
+    ) {
         BasicText(
-            text = availability,
-            style = text(theme.muted, TypeRamp.availability, theme),
+            text = copy.title,
+            style = centred.copy(fontWeight = FontWeight.SemiBold),
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
         )
-    }
-    if (shown is HeroSubject.Item) {
-        PlayFacts(app, shown.item.key)
+        if (copy.detail.isNotEmpty()) {
+            val hint = shown is HeroSubject.Item && shown.item.emptyShelfHint && cellFocused
+            ShelfMeta(line = copy.detail, hintFocused = hint, centred = true)
+        }
+        val availability = (shown as? HeroSubject.Item)?.item?.availability
+        if (availability != null) {
+            BasicText(
+                text = availability,
+                style = text(theme.muted, TypeRamp.availability, theme).copy(textAlign = TextAlign.Center),
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
+        if (shown is HeroSubject.Item) {
+            val played = app.plays.run {
+                stamp
+                shown(shown.item.key)
+            }
+            val line = heroPlayLine(
+                played.activeMillis,
+                played.lastPlayedMillis,
+                System.currentTimeMillis(),
+                ZoneId.systemDefault(),
+            )
+            if (line != null) {
+                BasicText(
+                    text = line,
+                    style = text(theme.muted, TypeRamp.availability, theme).copy(textAlign = TextAlign.Center),
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+        }
     }
 }
 
@@ -1110,12 +1122,13 @@ private fun PromptImage(name: String, size: Dp) {
  * while the controller is on that tile.
  */
 @Composable
-private fun ShelfMeta(line: String, hintFocused: Boolean) {
+private fun ShelfMeta(line: String, hintFocused: Boolean, centred: Boolean = false) {
     val theme = foldTheme()
     BasicText(
         text = line,
         modifier = if (hintFocused) Modifier.focusStroke(true).padding(px(8f)) else Modifier,
-        style = text(if (hintFocused) theme.focus else theme.muted, TypeRamp.heroMeta, theme),
+        style = text(if (hintFocused) theme.focus else theme.muted, TypeRamp.heroMeta, theme)
+            .copy(textAlign = if (centred) TextAlign.Center else TextAlign.Start),
         maxLines = 2,
         overflow = TextOverflow.Ellipsis,
     )
@@ -1412,9 +1425,6 @@ private fun Cell(
         modifier = Modifier.zIndex(if (focused || lifted) 1f else 0f),
     ) {
         val accent = mark?.let { markGlyph(it)?.accent }
-        // Same mint card as a folder tile. Library rows keep the previous art treatment so
-        // the card is not composed over those titles.
-        val focusCard = focused && accent == null && !empty && !(library && icon != null)
         Box(
             modifier = Modifier
                 .size(size)
@@ -1427,10 +1437,6 @@ private fun Cell(
                     val glow = accent
                     val bounds = this.size
                     val cornerPx = corner.toPx()
-                    if (focusCard) {
-                        drawRoundRect(color = theme.surface, cornerRadius = CornerRadius(cornerPx, cornerPx))
-                        with(FocusRing) { drawFocusRing(cornerPx) }
-                    }
                     if (glow != null) {
                         val half = min(bounds.width, bounds.height) * 0.5f
                         val overflow = if (focused) FOCUS_GLOW_OVERFLOW else REST_GLOW_OVERFLOW
@@ -1441,19 +1447,17 @@ private fun Cell(
                         SoftGlow.fillStops(glowStops, tightness, rim)
                         drawRadialGlow(center, reach, glow, glowStops, peak)
                     }
-                    if ((glow != null || icon != null) && !focusCard) {
-                        drawRoundRect(
-                            color = theme.background,
-                            cornerRadius = CornerRadius(cornerPx, cornerPx),
-                        )
+                    if (!empty) {
+                        // Every tile is a filled card, as on Cocoon's grid. A mark's glow is left
+                        // as a halo around it. Focus is the ring; at rest a quiet edge.
+                        drawRoundRect(color = theme.surface, cornerRadius = CornerRadius(cornerPx, cornerPx))
                         if (focused && !editing) {
                             with(FocusRing) { drawFocusRing(cornerPx) }
-                        } else {
-                            val stroke = glow ?: theme.focus
+                        } else if (!editing) {
                             val strokePx = 2.5f
                             val inset = strokePx / 2f
                             drawRoundRect(
-                                color = stroke.copy(alpha = 0.42f),
+                                color = glow?.copy(alpha = 0.42f) ?: theme.onBackground.copy(alpha = 0.10f),
                                 topLeft = Offset(inset, inset),
                                 size = Size(bounds.width - strokePx, bounds.height - strokePx),
                                 cornerRadius = CornerRadius(cornerPx, cornerPx),
@@ -1538,14 +1542,19 @@ private fun Cell(
             } else if (!empty) {
                 val glyphAlpha = if (focused) 1f else 0.58f
                 if (kit != null) {
-                    Image(
-                        bitmap = kit,
-                        contentDescription = title,
-                        modifier = Modifier
-                            .fillMaxSize(theme.artScale)
-                            .graphicsLayer { alpha = glyphAlpha },
-                        contentScale = ContentScale.Fit,
-                    )
+                    // Theme marks are painted on opaque black. Screen drops the black, so the
+                    // glow sits on the tile's card instead of a black square inside it.
+                    Canvas(Modifier.fillMaxSize(theme.artScale)) {
+                        val area = this.size
+                        val side = min(area.width, area.height)
+                        drawImage(
+                            image = kit,
+                            dstOffset = IntOffset(((area.width - side) / 2f).roundToInt(), ((area.height - side) / 2f).roundToInt()),
+                            dstSize = IntSize(side.roundToInt(), side.roundToInt()),
+                            alpha = glyphAlpha,
+                            blendMode = BlendMode.Screen,
+                        )
+                    }
                 } else if (mark != null && markGlyph(mark) != null) {
                     Box(Modifier.graphicsLayer { alpha = glyphAlpha }) {
                         MarkIcon(mark, theme.artScale)

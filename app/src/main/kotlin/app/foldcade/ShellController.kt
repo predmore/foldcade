@@ -98,6 +98,9 @@ class ShellController(
     private val libraryGames = HashMap<String, Game>()
     private var extraPlatforms: List<HomePlatform> = emptyList()
 
+    /** Platform names a library listed, by platform id. Used when nothing else names it. */
+    private val listedPlatformNames = HashMap<String, String>()
+
     var model by mutableStateOf(initial())
         private set
 
@@ -326,7 +329,13 @@ class ShellController(
      * Folds one backend's games into the curated board.
      * A later scan keeps placed tiles and only fills new ones when the setting is on.
      */
-    fun ingestLibrary(libraryId: String, entries: List<GridEntry>, platforms: List<Platform>) {
+    fun ingestLibrary(
+        libraryId: String,
+        entries: List<GridEntry>,
+        platforms: List<Platform>,
+        listedNames: Map<String, String> = emptyMap(),
+    ) {
+        listedPlatformNames.putAll(listedNames.filterValues { it.isNotBlank() })
         val prefix = "lib:$libraryId:"
         val items = ArrayList<HomeItem>()
         val remembered = HashMap<String, Game>()
@@ -1210,6 +1219,9 @@ class ShellController(
             HomePlatform("psp", "PSP", setOf("psp"), "pocket"),
         )
         val byId = LinkedHashMap<String, HomePlatform>()
+        // Lowest priority: a name the library listed, so a platform Foldcade does not
+        // define (RomM's Sega CD) is named "Sega CD", not its id "segacd".
+        listedPlatformNames.forEach { (id, name) -> byId[id] = HomePlatform(id, name, emptySet(), kitMark(id)) }
         known.forEach { byId[it.id] = it }
         extraPlatforms.forEach { byId[it.id] = it }
         plugins.platformDefinitions().forEach { platform ->

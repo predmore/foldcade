@@ -158,6 +158,8 @@ class FoldcadeApp : Application() {
                     credentials,
                     request.cacheRoot,
                     request.platforms,
+                    // The manifest's FileProvider authority. The debug build's id ends in .debug.
+                    contentAuthority = "$packageName.romm.cache",
                 )
             },
         )
@@ -538,7 +540,12 @@ class FoldcadeApp : Application() {
                 is LoadedLibrary.Platforms -> if (games == null) {
                     shell.showUnreachable(insidePlatform = false)
                 } else {
-                    shell.ingestLibrary(libraryId, games, plugins.platformDefinitions())
+                    shell.ingestLibrary(
+                        libraryId,
+                        games,
+                        plugins.platformDefinitions(),
+                        loaded.entries.associate { (it.platformId ?: it.id) to it.title },
+                    )
                     shell.showCuratedHome()
                 }
                 LoadedLibrary.NoPlatforms -> shell.showNoPlatforms(libraryId)
@@ -553,6 +560,8 @@ class FoldcadeApp : Application() {
         val games = ArrayList<GridEntry>()
         for (entry in loaded.entries) {
             val platformId = entry.platformId ?: continue
+            // A platform the listing counted as empty has nothing to fetch.
+            if (entry.shortText == "0") continue
             games += loadGames(
                 plugins,
                 libraryId,

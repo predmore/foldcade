@@ -114,6 +114,20 @@ class LibraryGridTest {
     }
 
     @Test
+    fun aListedCountSavesTheRequestPerPlatform() = runBlocking {
+        val library = CountedLibrary()
+        val host = PluginHost(Dispatchers.Unconfined, MemoryCredentialStore())
+        host.register(object : PluginEntry {
+            override val apiVersion = PLUGIN_API_VERSION
+            override val libraries = listOf(library)
+        })
+        val platforms = loadPlatforms(host, "counted") as LoadedLibrary.Platforms
+        assertEquals(listOf("2", "0", "4"), platforms.entries.map { it.shortText })
+        // Only the platform without a listed count was asked.
+        assertEquals(listOf("snes"), library.asked)
+    }
+
+    @Test
     fun noRegisteredPlayerOpensTheContentUri() {
         val target = LaunchTarget.ContentUri("content://tree/game")
         val plan = planLaunch(emptyList(), target) { null }
@@ -197,6 +211,22 @@ private class PagingLibrary : QuietLibrary("paged") {
             nextOffset = if (offset + 1 < labels.size) offset + 1 else null,
             total = labels.size,
         )
+    }
+}
+
+/** Lists one platform without a count. The others carry the count the listing knows. */
+private class CountedLibrary : QuietLibrary("counted") {
+    val asked = mutableListOf<String>()
+
+    override suspend fun listPlatforms(): List<ListedPlatform> = listOf(
+        ListedPlatform("nintendo-ds", "Nintendo DS", gameCount = 2),
+        ListedPlatform("3do", "3DO", gameCount = 0),
+        ListedPlatform("snes", "Super Nintendo"),
+    )
+
+    override suspend fun listGames(platformId: String, query: GameQuery): GamePage {
+        asked += platformId
+        return GamePage(emptyList(), null, 4)
     }
 }
 
