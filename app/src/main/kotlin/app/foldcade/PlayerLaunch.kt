@@ -1,6 +1,5 @@
 package app.foldcade
 
-import app.foldcade.api.Session
 import app.foldcade.api.plugin.Game
 import app.foldcade.api.plugin.LaunchRequest
 import app.foldcade.api.plugin.LaunchTarget

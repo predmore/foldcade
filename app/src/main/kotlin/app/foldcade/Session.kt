@@ -1,6 +1,4 @@
-// SPDX-License-Identifier: Apache-2.0
-
-package app.foldcade.api
+package app.foldcade
 
 /**
  * Which panel a surface belongs to. Not a display id.

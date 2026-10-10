@@ -8,9 +8,6 @@ import android.content.Intent
 import android.hardware.display.DisplayManager
 import android.net.Uri
 import android.view.Display
-import app.foldcade.api.DisplayAssignment
-import app.foldcade.api.Panel
-import app.foldcade.api.assignDisplays
 import app.foldcade.api.plugin.LaunchFlag
 import app.foldcade.api.plugin.PlayerExtra
 import app.foldcade.api.plugin.PlayerIntent

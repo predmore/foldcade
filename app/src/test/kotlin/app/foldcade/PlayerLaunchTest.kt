@@ -1,11 +1,7 @@
 package app.foldcade
 
-import app.foldcade.api.ExternalApp
-import app.foldcade.api.Session
 import app.foldcade.api.plugin.Availability
 import app.foldcade.api.plugin.Game
-import app.foldcade.api.Panel
-import app.foldcade.api.Surface
 import app.foldcade.api.plugin.LaunchFlag
 import app.foldcade.api.plugin.LaunchTarget
 import app.foldcade.api.plugin.PlayerExtra

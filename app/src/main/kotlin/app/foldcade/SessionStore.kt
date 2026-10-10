@@ -3,9 +3,6 @@ package app.foldcade
 import android.content.SharedPreferences
 import app.foldcade.language.BackgroundMotion
 import app.foldcade.language.MotionSpeed
-import app.foldcade.api.ExternalApp
-import app.foldcade.api.Panel
-import app.foldcade.api.Session
 import app.foldcade.language.AndroidShelf
 import app.foldcade.language.AppShelfRecord
 import app.foldcade.language.AppShelfState

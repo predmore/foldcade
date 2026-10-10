@@ -106,8 +106,8 @@ import app.foldcade.language.QuickSetting
 import app.foldcade.Displays
 import app.foldcade.FoldcadeApp
 import app.foldcade.FoldcadeHomeActivity
-import app.foldcade.api.Panel
-import app.foldcade.api.Surface
+import app.foldcade.Panel
+import app.foldcade.Surface
 import app.foldcade.language.ConnectField
 import app.foldcade.language.Copy
 import app.foldcade.language.HomeGrid

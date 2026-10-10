@@ -28,6 +28,8 @@ class RommEntryTest {
         val metadata = entry.metadataProviders.single()
         assertEquals(PLUGIN_API_VERSION, entry.apiVersion)
         assertEquals(PLUGIN_API_MINOR, entry.apiMinor)
+        assertEquals("romm", ROMM_LIBRARY_ID)
+        assertEquals("romm.metadata", ROMM_METADATA_ID)
         assertEquals(ROMM_LIBRARY_ID, library.id)
         assertEquals("RomM", library.displayName)
         assertEquals(ROMM_METADATA_ID, metadata.id)
