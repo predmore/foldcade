@@ -74,7 +74,7 @@ object Metrics {
 object Copy {
     const val launchOnTop = "Launch on top"
     const val launchOnBottom = "Launch on bottom"
-    const val usesBothScreens = "Uses both screens"
+    const val usesBothScreens = "Both screens"
     const val progressInGameNative = "Progress lives in GameNative."
     const val addShortcutInGameNative = "Add a game's shortcut in GameNative."
     /** The left-menu row that opens the library sources. Not the All library tile. */

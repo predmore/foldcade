@@ -10,6 +10,8 @@ import app.foldcade.language.HostScreen
 import app.foldcade.language.Meaning
 import app.foldcade.language.Metrics
 import app.foldcade.language.homeGameId
+import app.foldcade.localfolder.LocalFolderEntry
+import app.foldcade.plugins.melonds.MelonDsEntry
 import kotlinx.coroutines.Dispatchers
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -185,6 +187,23 @@ class HomeGridOrderTest {
         assertTrue(cart != null)
         assertFalse(cart!!.onGrid)
         assertEquals(Copy.allGames, shell.homeChrome()?.tab)
+    }
+
+    @Test
+    fun aHomeLibraryGameKeepsPlayUnderItsHomeIdAndItsPlayersScreens() {
+        val plugins = PluginHost(Dispatchers.Unconfined, MemoryCredentialStore())
+        plugins.register(LocalFolderEntry())
+        plugins.register(MelonDsEntry())
+        val shell = ShellController(SessionStore(MemoryPrefs()), plugins)
+        shell.ingestLibrary("local-folder", listOf(entry("tetris", "Tetris DS", "nintendo-ds")), emptyList())
+        focus(shell, titles(shell).indexOf("Nintendo DS"))
+        shell.onMeaning(Meaning.Activate, HostScreen.Bottom)
+
+        val game = shell.focusedGame()
+        assertEquals(homeGameId("local-folder", "tetris"), game?.id)
+        // Off the library grid the hero reads play history under the id it launched with.
+        assertEquals(game?.id, shell.playId(game!!.id))
+        assertTrue(game.occupiesBothDisplays)
     }
 
     @Test
