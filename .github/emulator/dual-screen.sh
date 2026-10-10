@@ -1014,13 +1014,15 @@ expect_png "$out/games-bottom.png" "${bottom_width}x${bottom_height}"
 } >"$out/android-shelves.txt"
 fi
 
-# The Afterglow focus fill. A solid pill of this color is the focused button.
-# Ribbons and tile glows on the idle captures are not this color.
-focus_mint_min=1500
+# The chip focus ring: green at the top left, blue at the bottom right.
+# Same stroke as tiles, menu rows, and dialog buttons. Not the old solid mint fill.
+# Ribbons and tile glows on the idle captures are not on this gradient.
+# A real stroke clears 1500 pixels. A ribbon does not.
+focus_ring_min=1500
 
-# Count pixels of the accent fill. uiautomator dump on this image writes an
+# Count pixels of that ring. uiautomator dump on this image writes an
 # empty hierarchy while the ribbons keep moving, so it cannot see the title.
-focus_mint_count() {
+focus_ring_count() {
   python3 - "$1" <<'PY'
 import struct, sys, zlib
 data = open(sys.argv[1], "rb").read()
@@ -1047,7 +1049,14 @@ bpp = 3 if color == 2 else 4
 stride = width * bpp
 i = 0
 prev = bytearray(stride)
-mint = 0
+# FocusRingColors.start 0x52B788, FocusRingColors.end 0x3E8EC0.
+green = (0x52, 0xB7, 0x88)
+blue = (0x3E, 0x8E, 0xC0)
+vx, vy, vz = blue[0] - green[0], blue[1] - green[1], blue[2] - green[2]
+vv = vx * vx + vy * vy + vz * vz
+# Within 12 of the stroke color. The 10% glow sits farther out, and so do ribbons.
+limit = 12 * 12
+ring = 0
 for y in range(height):
     filt = raw[i]
     i += 1
@@ -1078,9 +1087,18 @@ for y in range(height):
     prev = row
     for x in range(0, stride, bpp):
         r, g, b = row[x], row[x + 1], row[x + 2]
-        if 188 <= r <= 212 and g >= 247 and 216 <= b <= 240:
-            mint += 1
-print(mint)
+        wx, wy, wz = r - green[0], g - green[1], b - green[2]
+        c1 = wx * vx + wy * vy + wz * vz
+        if c1 <= 0:
+            dist2 = wx * wx + wy * wy + wz * wz
+        elif c1 >= vv:
+            dx, dy, dz = r - blue[0], g - blue[1], b - blue[2]
+            dist2 = dx * dx + dy * dy + dz * dz
+        else:
+            dist2 = wx * wx + wy * wy + wz * wz - (c1 * c1) / vv
+        if dist2 <= limit:
+            ring += 1
+print(ring)
 PY
 }
 
@@ -1116,14 +1134,14 @@ capture_dialog() {
     capture "$secondary" "$out/${name}-bottom.png"
     expect_png "$out/${name}-top.png" "${top_width}x${top_height}"
     expect_png "$out/${name}-bottom.png" "${bottom_width}x${bottom_height}"
-    count="$(focus_mint_count "$out/${name}-${screen}.png")"
-    printf 'focus-pill %s mint=%s\n' "${name}-${screen}.png" "$count" | tee -a "$out/dialog-focus-pills.txt"
-    if [ "$count" -ge "$focus_mint_min" ]; then
+    count="$(focus_ring_count "$out/${name}-${screen}.png")"
+    printf 'focus-pill %s ring=%s\n' "${name}-${screen}.png" "$count" | tee -a "$out/dialog-focus-pills.txt"
+    if [ "$count" -ge "$focus_ring_min" ]; then
       return 0
     fi
     sleep 2
   done
-  fail "dialog ${name} focus pill was not on the ${screen} panel"
+  fail "dialog ${name} focus ring was not on the ${screen} panel"
 }
 
 # Emulator only, not a Thor pass. The extra sets which button is focused.
