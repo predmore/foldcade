@@ -15,6 +15,7 @@ import app.foldcade.language.Copy
 import app.foldcade.language.DialogKind
 import app.foldcade.language.SignedInBackend
 import app.foldcade.romm.CLEARTEXT_CREDENTIAL_WARNING
+import app.foldcade.romm.CLEARTEXT_LAN_ONLY
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
@@ -53,6 +54,8 @@ class CredentialRecoveryTest {
         assertEquals(CLEARTEXT_CREDENTIAL_WARNING, shell.model.connectWarning)
         shell.editOrigin("https://romm.example")
         assertNull(shell.model.connectWarning)
+        shell.editOrigin("http://romm.example")
+        assertEquals(CLEARTEXT_LAN_ONLY, shell.model.connectWarning)
         shell.openConnect("http://10.0.0.5")
         assertEquals(CLEARTEXT_CREDENTIAL_WARNING, shell.model.connectWarning)
     }

@@ -48,9 +48,11 @@ import kotlin.coroutines.resumeWithException
  *
  * It does not implement a library backend or a metadata provider.
  *
- * This is the app's only HTTP stack. Cleartext is permitted in the network
- * security config, and [RommCleartextInterceptor] rejects any http request
- * whose scheme, host, and port are not [origin], including redirects.
+ * This is the app's only HTTP stack. Cleartext is an explicit LAN opt-in:
+ * an http [origin] must be a loopback, private, or link-local address, or a
+ * localhost, `.local`, or `.home.arpa` name. The network-security config
+ * cannot name a dynamic LAN address, so it still permits cleartext, and
+ * [RommCleartextInterceptor] rejects any other http request, including redirects.
  * A same-scheme redirect to another origin is not followed, so the bearer
  * stays on [origin]. An http to https redirect is left for the setup hint.
  */
@@ -794,6 +796,14 @@ class RommClient(
             require(!authority.contains('@')) { "RomM origin must not include a username or password" }
             val (host, port) = splitHost(authority)
             require(host.isNotEmpty() && host != "[]") { "RomM origin must be an http(s) URL" }
+            if (scheme == "http") {
+                val bare = if (host.startsWith("[") && host.endsWith("]")) {
+                    host.substring(1, host.length - 1)
+                } else {
+                    host
+                }
+                require(isLanHost(bare)) { "Cleartext RomM origins are only for a LAN address" }
+            }
             return scheme + marker + host + port + tail
         }
 
