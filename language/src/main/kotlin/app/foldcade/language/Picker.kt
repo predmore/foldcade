@@ -115,6 +115,13 @@ fun homePrompt(screen: HostScreen = HostScreen.Bottom): DialogState = DialogStat
     screen = screen,
 )
 
+/** The other players that run a missing player's games, by name. Null when there are none. */
+fun alsoRunsLine(names: List<String>): String? = when (names.size) {
+    0 -> null
+    1 -> "${names[0]} also runs these games."
+    else -> "${names.dropLast(1).joinToString(", ")} and ${names.last()} also run these games."
+}
+
 fun missingPlayerDialog(playerName: String, screen: HostScreen): DialogState = DialogState(
     kind = DialogKind.MissingPlayer,
     title = "$playerName is not installed",

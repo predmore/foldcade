@@ -49,10 +49,11 @@ fun heroFacts(title: String, vararg parts: String?): String =
         .distinct()
         .joinToString(" · ")
 
-/** Game count under a folder name. One game stays singular. */
-fun folderCountLine(count: Int): String {
-    val games = count.coerceAtLeast(0)
-    return if (games == 1) "1 game" else "$games games"
+/** Count under a folder name. One stays singular. The Android Apps folder counts apps. */
+fun folderCountLine(count: Int, apps: Boolean = false): String {
+    val total = count.coerceAtLeast(0)
+    val noun = if (apps) "app" else "game"
+    return if (total == 1) "1 $noun" else "$total ${noun}s"
 }
 
 fun heroCopy(subject: HeroSubject): HeroCopy = when (subject) {

@@ -24,6 +24,7 @@ import app.foldcade.host.PluginHost
 import app.foldcade.language.Copy
 import app.foldcade.language.DialogKind
 import app.foldcade.language.GridKind
+import app.foldcade.language.alsoRunsLine
 import app.foldcade.language.Meaning
 import app.foldcade.language.reduce
 import app.foldcade.localfolder.DOCUMENT_DIRECTORY_MIME
@@ -135,12 +136,14 @@ class LibraryGridTest {
     }
 
     @Test
-    fun aMissingInstallNamesThePlayerAndItsPackages() {
-        val player = quietPlayer("player.a", "Azahar", listOf("org.example.azahar", "org.example.play"))
-        val plan = planLaunch(listOf(player), LaunchTarget.ContentUri("content://game")) { null }
+    fun aMissingInstallNamesThePlayerAndTheOthersByName() {
+        val first = quietPlayer("player.a", "MD.emu", listOf("org.example.md", "org.example.md.pro"))
+        val second = quietPlayer("player.b", "Pizza Boy SC", listOf("org.example.pizza"))
+        val plan = planLaunch(listOf(first, second), LaunchTarget.ContentUri("content://game")) { null }
         val missing = plan as GameLaunch.Missing
-        assertEquals("Azahar", missing.playerName)
-        assertEquals(listOf("org.example.azahar", "org.example.play"), missing.packages)
+        assertEquals("MD.emu", missing.playerName)
+        assertEquals(listOf("Pizza Boy SC"), missing.alsoRuns)
+        assertEquals("Pizza Boy SC also runs these games.", alsoRunsLine(missing.alsoRuns))
     }
 
     @Test

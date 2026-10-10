@@ -135,7 +135,8 @@ sealed interface GameLaunch {
     data class Installed(val player: Player, val packageName: String) : GameLaunch
 
     /** Players are registered and none of their packages are installed. */
-    data class Missing(val playerName: String, val packages: List<String>) : GameLaunch
+    /** [alsoRuns] names the other players for the platform, by the name a store lists. */
+    data class Missing(val playerName: String, val alsoRuns: List<String>) : GameLaunch
 
     /** No player, and the backend did not hand back a content URI. */
     data object NotAFile : GameLaunch
@@ -170,9 +171,12 @@ internal fun missingPlayer(players: List<Player>, installedPackage: (Player) -> 
     return missingOf(players)
 }
 
-private fun missingOf(players: List<Player>) = GameLaunch.Missing(
-    playerName = players.first().displayName,
-    packages = players.flatMap { it.packageNames }.distinct(),
-)
+private fun missingOf(players: List<Player>): GameLaunch.Missing {
+    val playerName = players.first().displayName
+    return GameLaunch.Missing(
+        playerName = playerName,
+        alsoRuns = players.map { it.displayName }.distinct() - playerName,
+    )
+}
 
 private const val PAGE: Int = 50

@@ -15,6 +15,7 @@ import app.foldcade.language.Copy
 import app.foldcade.language.DialogKind
 import app.foldcade.language.SignedInBackend
 import app.foldcade.romm.CLEARTEXT_CREDENTIAL_WARNING
+import app.foldcade.romm.CLEARTEXT_TAILNET_NOTE
 import app.foldcade.romm.CLEARTEXT_LAN_ONLY
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.runBlocking
@@ -58,6 +59,10 @@ class CredentialRecoveryTest {
         assertEquals(CLEARTEXT_LAN_ONLY, shell.model.connectWarning)
         shell.openConnect("http://10.0.0.5")
         assertEquals(CLEARTEXT_CREDENTIAL_WARNING, shell.model.connectWarning)
+        shell.editOrigin("http://100.64.12.34:8080")
+        assertEquals(CLEARTEXT_TAILNET_NOTE, shell.model.connectWarning)
+        shell.editOrigin("http://box.tail1234.ts.net")
+        assertEquals(CLEARTEXT_TAILNET_NOTE, shell.model.connectWarning)
     }
 
     private fun assertSignedOut(lookup: CredentialLookup) {

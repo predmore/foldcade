@@ -9,6 +9,14 @@ const val CLEARTEXT_CREDENTIAL_WARNING =
     "This server is using http, not https. Credentials travel in cleartext on the network."
 
 /**
+ * Shown instead of [CLEARTEXT_CREDENTIAL_WARNING] for a tailnet address.
+ * WireGuard encrypts that hop. 100.64.0.0/10 is also carrier NAT space, so
+ * off a tailnet the same address is cleartext.
+ */
+const val CLEARTEXT_TAILNET_NOTE =
+    "On your tailnet, Tailscale encrypts this http connection. Elsewhere, credentials travel in cleartext."
+
+/**
  * Shown when an http origin is not a LAN address.
  * [RommClient.normalizeOrigin] rejects it. The setup screen does not save it.
  */
@@ -23,14 +31,16 @@ const val TRY_HTTPS_HINT = "try https://"
 
 fun cleartextCredentialWarning(origin: String): String? = when (cleartextOriginKind(origin)) {
     CleartextOriginKind.Lan -> CLEARTEXT_CREDENTIAL_WARNING
+    CleartextOriginKind.Tailnet -> CLEARTEXT_TAILNET_NOTE
     CleartextOriginKind.Public -> CLEARTEXT_LAN_ONLY
     CleartextOriginKind.NotHttp -> null
 }
 
-internal enum class CleartextOriginKind { NotHttp, Lan, Public }
+internal enum class CleartextOriginKind { NotHttp, Lan, Tailnet, Public }
 
 /**
- * An http origin [RommClient] will accept is [CleartextOriginKind.Lan].
+ * An http origin [RommClient] will accept is [CleartextOriginKind.Lan], or
+ * [CleartextOriginKind.Tailnet] when the host is a Tailscale address.
  * Http that is not a LAN address is [CleartextOriginKind.Public].
  * A username or password is not copied into the result.
  */
@@ -40,10 +50,13 @@ internal fun cleartextOriginKind(raw: String): CleartextOriginKind {
     if (text.length < http.length || !text.regionMatches(0, http, 0, http.length, ignoreCase = true)) {
         return CleartextOriginKind.NotHttp
     }
-    if (runCatching { RommClient.normalizeOrigin(text) }.isSuccess) return CleartextOriginKind.Lan
     val host = httpHostIgnoringUserInfo(text)
-    if (host != null && isLanHost(host)) return CleartextOriginKind.Lan
-    return CleartextOriginKind.Public
+    val accepted = runCatching { RommClient.normalizeOrigin(text) }.isSuccess || (host != null && isLanHost(host))
+    return when {
+        !accepted -> CleartextOriginKind.Public
+        host != null && isTailnetHost(host) -> CleartextOriginKind.Tailnet
+        else -> CleartextOriginKind.Lan
+    }
 }
 
 private fun httpHostIgnoringUserInfo(raw: String): String? {

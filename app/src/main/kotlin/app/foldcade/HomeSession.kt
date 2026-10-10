@@ -462,7 +462,7 @@ class HomeSession(raw: String?) {
             return HomeFace(
                 id = id,
                 title = folder.name,
-                shortText = folderCountLine(count),
+                shortText = folderCountLine(count, apps = folder.bucket == HomeKind.AndroidApp),
                 mark = folder.mark,
                 empty = false,
                 folder = true,

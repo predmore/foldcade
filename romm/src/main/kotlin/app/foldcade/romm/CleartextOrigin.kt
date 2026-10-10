@@ -108,6 +108,14 @@ internal fun isLanHost(raw: String): Boolean {
     return ipv4Lan(host)
 }
 
+/** A `.ts.net` name or an address in Tailscale's 100.64.0.0/10. */
+internal fun isTailnetHost(raw: String): Boolean {
+    val host = raw.trim().lowercase().removeSuffix(".")
+    if (dnsSuffix(host, ".ts.net")) return true
+    val octets = ipv4Octets(host) ?: return false
+    return octets[0] == 100 && octets[1] in 64..127
+}
+
 private fun dnsSuffix(host: String, suffix: String): Boolean =
     host.endsWith(suffix) && host.length > suffix.length
 
