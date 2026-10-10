@@ -627,12 +627,27 @@ capture "$secondary" "$out/home-secondary.png"
 expect_png "$out/home-primary.png" "${top_width}x${top_height}"
 expect_png "$out/home-secondary.png" "${bottom_width}x${bottom_height}"
 
+# FOLDCADE_SHARD splits the captures across parallel jobs. "shell" runs the
+# launch paths, shoulder menus, Android shelves, and dialogs. "library" runs the
+# empty library, the seeded folder, and the curated home grid. Each needs only
+# the setup above, and neither uses the other's state. Unset runs both.
+shard="${FOLDCADE_SHARD:-all}"
+case "$shard" in
+  all|shell|library) ;;
+  *) echo "::error::Unknown FOLDCADE_SHARD '${shard}'"; exit 1 ;;
+esac
+runs() {
+  [ "$shard" = all ] || [ "$shard" = "$1" ]
+}
+
+input_help="$(adb_do shell input -h 2>&1 | tr -d '\r' || true)"
+printf '%s\n' "$input_help" >"$out/input-help.txt"
+
+if runs shell; then
 # Azahar launch path. Thor-sized emulator, not a Thor pass.
 # Azahar is not installed here. The capture is the missing-player state.
 # input -d is used only when this image's help text documents it.
 echo "step: azahar launch path"
-input_help="$(adb_do shell input -h 2>&1 | tr -d '\r' || true)"
-printf '%s\n' "$input_help" >"$out/input-help.txt"
 if printf '%s\n' "$input_help" | grep -q -- '-d' && printf '%s\n' "$input_help" | grep -qi 'display'; then
   show_foldcade
   dismiss_leftover_dialog
@@ -1026,6 +1041,7 @@ capture_dialog relogin 0 top relogin-ok "Sign in again"
   echo "Dialog focus frames. Emulator only, not a Thor pass."
   echo "Top ${top_width}x${top_height}. Bottom ${bottom_width}x${bottom_height}."
 } >"$out/dialog-focus.txt"
+fi
 
 
 # Empty library, then a scanned folder. Thor-sized emulator, not a Thor pass.
@@ -1465,6 +1481,7 @@ PY
   expect_png "$out/library-bottom.png" "${bottom_width}x${bottom_height}"
 }
 
+if runs library; then
 echo "step: empty library"
 # The shelf launch path may still be showing a missing-player dialog.
 key_bottom KEYCODE_BACK || true
@@ -1492,5 +1509,6 @@ seed_folder_library
   echo "Scanned folder: library-top.png is ${top_width}x${top_height}, library-bottom.png is ${bottom_width}x${bottom_height}."
   echo "These captures are not a pass on Thor hardware."
 } >"$out/library-captures.txt"
+fi
 
 echo "Captured displays $primary and $secondary. Thor-sized emulator, not a Thor pass."
