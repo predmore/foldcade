@@ -174,6 +174,84 @@ class HomeBoardTest {
         assertEquals(0, jumpLetter(labels, 2, forward = false))
     }
 
+    @Test
+    fun aPlatformFolderLeavesWithItsLastGameAndComesBackWithTheNext() {
+        val drift = item("game.drift", platformId = "nds")
+        val folderId = platformFolderId("nintendo-ds")
+        // A real board already has its system folders when the first ROM arrives.
+        val fresh = mergeHome(HomeBoard(), emptyList(), platforms)
+        val withGame = mergeHome(fresh, listOf(drift), platforms)
+        val slot = withGame.slots.indexOf(folderId)
+        assertEquals(withGame.slots.lastIndex, slot)
+
+        val gone = mergeHome(withGame, emptyList(), platforms)
+        assertFalse(gone.folders.containsKey(folderId))
+        assertFalse(gone.slots.contains(folderId))
+        // It was the last tile, so no empty slot is left behind.
+        assertEquals(withGame.slots.take(slot), gone.slots)
+
+        val back = mergeHome(gone, listOf(drift), platforms)
+        assertTrue(back.folders.containsKey(folderId))
+        assertEquals(slot, back.slots.indexOf(folderId))
+        assertEquals(listOf("game.drift"), back.folders.getValue(folderId).slots)
+    }
+
+    @Test
+    fun aPlatformFolderLeavingTheMiddleKeepsItsNeighboursInPlace() {
+        val drift = item("game.drift", platformId = "nds")
+        val cart = item("game.cart", platformId = "gba")
+        val both = mergeHome(HomeBoard(), listOf(drift, cart), platforms)
+        val ds = both.slots.indexOf(platformFolderId("nintendo-ds"))
+        val gba = both.slots.indexOf(platformFolderId("game-boy-advance"))
+        assertTrue(ds in 0 until gba)
+
+        val gone = mergeHome(both, listOf(cart), platforms)
+        assertNull(gone.slots[ds])
+        assertEquals(gba, gone.slots.indexOf(platformFolderId("game-boy-advance")))
+    }
+
+    @Test
+    fun aGameFromALibraryStillScanningKeepsItsSlotAndFolder() {
+        val drift = item("lib:local-folder:drift", platformId = "nds")
+        val folderId = platformFolderId("nintendo-ds")
+        val placed = mergeHome(HomeBoard(), listOf(drift), platforms)
+        val launch = mergeHome(placed, emptyList(), platforms, unsettled = { it.startsWith("lib:local-folder:") })
+        assertEquals(listOf("lib:local-folder:drift"), launch.folders.getValue(folderId).slots)
+        assertEquals(placed.slots, launch.slots)
+    }
+
+    @Test
+    fun aHiddenGameKeepsItsPlatformFolder() {
+        val drift = item("game.drift", platformId = "nds")
+        val folderId = platformFolderId("nintendo-ds")
+        val placed = mergeHome(HomeBoard(), listOf(drift), platforms)
+        val hidden = placed.copy(
+            folders = placed.folders + (folderId to placed.folders.getValue(folderId).copy(slots = listOf(null))),
+            hidden = setOf("game.drift"),
+        )
+        val again = mergeHome(hidden, listOf(drift), platforms)
+        assertTrue(again.folders.containsKey(folderId))
+        assertTrue(again.slots.contains(folderId))
+    }
+
+    @Test
+    fun aFolderTheUserMadeStaysWhenItsGamesAreGone() {
+        val mine = HomeFolder("folder.mine", "Mine", platformId = "nintendo-ds", userMade = true, slots = listOf("game.drift"))
+        val board = HomeBoard(slots = listOf(HOME_ALL, "folder.mine"), folders = mapOf("folder.mine" to mine))
+        val again = mergeHome(board, emptyList(), platforms)
+        assertTrue(again.folders.containsKey("folder.mine"))
+        assertTrue(again.slots.contains("folder.mine"))
+    }
+
+    @Test
+    fun anOpenPlatformFolderClosesWhenItsGamesAreGone() {
+        val drift = item("game.drift", platformId = "nds")
+        val folderId = platformFolderId("nintendo-ds")
+        val open = mergeHome(HomeBoard(), listOf(drift), platforms).copy(openFolderId = folderId)
+        val gone = mergeHome(open, emptyList(), platforms)
+        assertNull(gone.openFolderId)
+    }
+
     private fun board(slots: List<String?>): HomeBoard = HomeBoard(slots = slots)
 
     private fun item(

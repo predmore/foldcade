@@ -8,6 +8,7 @@ import app.foldcade.language.Copy
 import app.foldcade.language.HomeGrid
 import app.foldcade.language.HostScreen
 import app.foldcade.language.Meaning
+import app.foldcade.language.Metrics
 import kotlinx.coroutines.Dispatchers
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -26,8 +27,6 @@ class HomeGridOrderTest {
         assertEquals(
             listOf(
                 Copy.allLibrary,
-                "Nintendo 3DS",
-                "Nintendo DS",
                 "GameNative",
                 "Moonlight",
                 "Android Games",
@@ -36,20 +35,43 @@ class HomeGridOrderTest {
             titles(shell),
         )
         assertTrue(titles(shell).none { it == "Clamshell" || it == "Slim Dual" || it == "Handheld" })
+        // No ROM, no platform folder.
+        assertTrue(titles(shell).none { it == "Nintendo 3DS" || it == "Nintendo DS" })
         assertTrue(shell.homeFace(0)?.pinned == true)
         assertTrue(shell.homeFace(1)?.folder == true)
-        assertEquals("dual", shell.homeFace(1)?.mark)
-        assertEquals("beam", shell.homeFace(4)?.mark)
+        assertEquals("pocket", shell.homeFace(1)?.mark)
+        assertEquals("beam", shell.homeFace(2)?.mark)
     }
 
     @Test
-    fun openingThe3dsFolderThenConfirmLaunchesTheTileInside() {
+    fun aScanned3dsGameMakesItsFolderAndConfirmLaunchesIt() {
         val shell = shell()
-        shell.onMeaning(Meaning.MoveRight, HostScreen.Bottom)
+        shell.ingestLibrary("local-folder", listOf(entry("puzzle", "Puzzle", "nintendo-3ds")), emptyList())
+        val folder = titles(shell).indexOf("Nintendo 3DS")
+        assertTrue(folder >= 0)
+        focus(shell, folder)
         assertEquals("Nintendo 3DS", shell.focusedGame()?.title)
         assertNull(shell.onMeaning(Meaning.Activate, HostScreen.Bottom))
-        assertEquals("3DS", shell.focusedGame()?.title)
+        assertEquals("Puzzle", shell.focusedGame()?.title)
         assertTrue(shell.onMeaning(Meaning.Activate, HostScreen.Bottom) is app.foldcade.language.Effect.Launch)
+    }
+
+    @Test
+    fun aPlatformFolderLeavesWhenItsLastRomIsGone() {
+        val shell = shell()
+        shell.ingestLibrary(
+            "local-folder",
+            listOf(entry("puzzle", "Puzzle", "nintendo-3ds"), entry("drift", "Drift", "nintendo-ds")),
+            emptyList(),
+        )
+        val before = titles(shell)
+        assertTrue("Nintendo 3DS" in before && "Nintendo DS" in before)
+
+        shell.ingestLibrary("local-folder", listOf(entry("drift", "Drift", "nintendo-ds")), emptyList())
+        val after = titles(shell)
+        assertFalse("Nintendo 3DS" in after)
+        // The DS folder keeps its place.
+        assertEquals(before.indexOf("Nintendo DS"), after.indexOf("Nintendo DS"))
     }
 
     @Test
@@ -78,10 +100,9 @@ class HomeGridOrderTest {
             emptyList(),
         )
         assertEquals("Game Boy Advance", titles(shell).last())
-        assertEquals(8, shell.model.count)
+        assertEquals(6, shell.model.count)
 
-        shell.onMeaning(Meaning.MoveDown, HostScreen.Bottom)
-        repeat(3) { shell.onMeaning(Meaning.MoveRight, HostScreen.Bottom) }
+        focus(shell, 5)
         assertEquals("Game Boy Advance", shell.focusedGame()?.title)
         shell.onMeaning(Meaning.Activate, HostScreen.Bottom)
         assertEquals("Cart", shell.focusedGame()?.title)
@@ -124,6 +145,28 @@ class HomeGridOrderTest {
         )
         assertTrue("Sega CD" in titles(shell))
         assertFalse("segacd" in titles(shell))
+    }
+
+    private fun entry(key: String, title: String, platformId: String): GridEntry = GridEntry(
+        id = key,
+        title = title,
+        shortText = platformId,
+        platformId = platformId,
+        availabilityLabel = null,
+        occupiesBothDisplays = false,
+        game = Game(
+            backendId = "local-folder",
+            remoteKey = key,
+            platformId = platformId,
+            availability = Availability.LocalOnly,
+            label = title,
+        ),
+    )
+
+    /** Moves focus from the first cell to [index] on the root grid. */
+    private fun focus(shell: ShellController, index: Int) {
+        repeat(index / Metrics.columns) { shell.onMeaning(Meaning.MoveDown, HostScreen.Bottom) }
+        repeat(index % Metrics.columns) { shell.onMeaning(Meaning.MoveRight, HostScreen.Bottom) }
     }
 
     private fun titles(shell: ShellController): List<String> =
