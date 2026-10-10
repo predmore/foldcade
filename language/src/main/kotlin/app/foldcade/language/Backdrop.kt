@@ -203,6 +203,36 @@ object MarkAccent {
     val cartridge: Color = Color(0xFF3EE0C3)
     val disc: Color = Color(0xFFBC9CFF)
     val cloud: Color = Color(0xFF40D6FF)
+
+    /** Platform and library marks, keyed by mark name. */
+    val byMark: Map<String, Color> = mapOf(
+        "nintendo-3ds" to Color(0xFFFF5C7A),
+        "nintendo-ds" to Color(0xFFFF7A45),
+        "game-boy" to Color(0xFFB6F25C),
+        "game-boy-color" to Color(0xFFC77DFF),
+        "game-boy-advance" to Color(0xFF7C8CFF),
+        "nes" to Color(0xFFFF4D5A),
+        "snes" to Color(0xFFB39DFF),
+        "nintendo-64" to Color(0xFF3EE68A),
+        "gamecube" to Color(0xFF9B7BFF),
+        "wii" to Color(0xFF8FDFFF),
+        "nintendo-switch" to Color(0xFFFF4F5E),
+        "playstation" to Color(0xFFC3CEDF),
+        "playstation-2" to Color(0xFF4C8DFF),
+        "psp" to Color(0xFF6FC3FF),
+        "genesis" to Color(0xFFFF3B52),
+        "master-system" to Color(0xFFFF5E3A),
+        "game-gear" to Color(0xFF3EE6C0),
+        "saturn" to Color(0xFFFFC15A),
+        "dreamcast" to Color(0xFFFF8A3D),
+        "android-games" to Color(0xFF3DDC84),
+        "android-apps" to Color(0xFF3DDC84),
+        "pc" to Color(0xFF4CC9FF),
+        "moonlight" to Color(0xFFA9BCFF),
+        "folder" to Color(0xFFFFB547),
+        "library" to Color(0xFF3EE6C0),
+        "console" to Color(0xFFFFB547),
+    )
 }
 
 fun backdropClock(speed: MotionSpeed, animatorScale: Float): Float {

@@ -14,6 +14,7 @@ import app.foldcade.language.HomeKeys
 import app.foldcade.language.folderCountLine
 import app.foldcade.language.HomeKind
 import app.foldcade.language.HomePlatform
+import app.foldcade.language.MARK_LIBRARY
 import app.foldcade.language.Meaning
 import app.foldcade.language.Metrics
 import app.foldcade.language.addToHome
@@ -445,7 +446,7 @@ class HomeSession(raw: String?) {
                 id = id,
                 title = Copy.allLibrary,
                 shortText = "",
-                mark = "desk",
+                mark = MARK_LIBRARY,
                 empty = false,
                 folder = false,
                 pinned = true,

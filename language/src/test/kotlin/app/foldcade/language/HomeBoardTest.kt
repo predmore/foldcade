@@ -8,9 +8,9 @@ import org.junit.Test
 
 class HomeBoardTest {
     private val platforms = listOf(
-        HomePlatform("nintendo-3ds", "Nintendo 3DS", setOf("3ds", "n3ds"), "dual"),
-        HomePlatform("game-boy-advance", "Game Boy Advance", setOf("gba"), "pocket"),
-        HomePlatform("nintendo-ds", "Nintendo DS", setOf("nds"), "dual"),
+        HomePlatform("nintendo-3ds", "Nintendo 3DS", setOf("3ds", "n3ds")),
+        HomePlatform("game-boy-advance", "Game Boy Advance", setOf("gba")),
+        HomePlatform("nintendo-ds", "Nintendo DS", setOf("nds")),
     )
 
     @Test
@@ -104,7 +104,7 @@ class HomeBoardTest {
         val merged = mergeHome(HomeBoard(), listOf(gba, alias), platforms)
         val folderId = platformFolderId("game-boy-advance")
         assertEquals("Game Boy Advance", merged.folders.getValue(folderId).name)
-        assertEquals("pocket", merged.folders.getValue(folderId).mark)
+        assertEquals("game-boy-advance", merged.folders.getValue(folderId).mark)
         assertEquals(listOf("game.cart", "game.drift"), merged.folders.getValue(folderId).slots)
         assertTrue(merged.slots.contains(HOME_ALL))
         assertTrue(merged.folders.containsKey(HOME_ANDROID_GAMES))
@@ -250,6 +250,25 @@ class HomeBoardTest {
         val open = mergeHome(HomeBoard(), listOf(drift), platforms).copy(openFolderId = folderId)
         val gone = mergeHome(open, emptyList(), platforms)
         assertNull(gone.openFolderId)
+    }
+
+    @Test
+    fun aSavedBoardTradesOldMarksForEachFoldersOwn() {
+        val saved = HomeBoard(
+            folders = mapOf(
+                platformFolderId("nintendo-3ds") to HomeFolder(
+                    platformFolderId("nintendo-3ds"), "Nintendo 3DS", platformId = "nintendo-3ds", mark = "dual",
+                ),
+                platformFolderId("segacd") to HomeFolder(platformFolderId("segacd"), "Sega CD", platformId = "segacd", mark = "desk"),
+                HOME_MOONLIGHT to HomeFolder(HOME_MOONLIGHT, "Moonlight", bucket = HomeKind.Moonlight, mark = "beam"),
+                "folder.mine" to HomeFolder("folder.mine", "Mine", userMade = true, mark = "desk"),
+            ),
+        )
+        val folders = decodeHome(encodeHome(saved)).folders
+        assertEquals("nintendo-3ds", folders.getValue(platformFolderId("nintendo-3ds")).mark)
+        assertEquals("console", folders.getValue(platformFolderId("segacd")).mark)
+        assertEquals("moonlight", folders.getValue(HOME_MOONLIGHT).mark)
+        assertEquals("folder", folders.getValue("folder.mine").mark)
     }
 
     private fun board(slots: List<String?>): HomeBoard = HomeBoard(slots = slots)

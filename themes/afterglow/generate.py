@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
 """Generate the Afterglow theme's original art.
 
-The script is part of the GPLv3 program. The files it writes — font, marks,
-preview, and sounds — are the CC BY-SA 4.0 theme art. Afterglow does not ship
+The script is part of the GPLv3 program. The files it writes — font and
+sounds — are the CC BY-SA 4.0 theme art. The preview, sprites, and platform
+marks come from tools/art. Afterglow does not ship
 a wallpaper; Static is a dim ribbon frame drawn by the host.
 """
 
@@ -17,7 +18,7 @@ from pathlib import Path
 
 from fontTools.fontBuilder import FontBuilder
 from fontTools.pens.ttGlyphPen import TTGlyphPen
-from PIL import Image, ImageDraw, ImageFilter, ImageFont
+from PIL import Image, ImageDraw, ImageFont
 
 ROOT = Path(__file__).resolve().parent
 REPO = ROOT.parent.parent
@@ -751,60 +752,6 @@ def build_font(path: Path):
     fb.save(str(path))
 
 
-def plate(color: tuple[int, int, int]) -> Image.Image:
-    image = Image.new("RGBA", (512, 512), (0, 0, 0, 255))
-    pixels = image.load()
-    for y in range(512):
-        for x in range(512):
-            dist = math.hypot(x - 256, y - 256) / 290
-            if dist >= 1:
-                continue
-            strength = (1 - dist) ** 1.55 * 0.72
-            pixels[x, y] = tuple(int(channel * strength) for channel in color) + (255,)
-    return image
-
-
-def glow_mark(color: tuple[int, int, int], draw_mark) -> Image.Image:
-    base = plate(color)
-    ink = (244, 241, 234, 255)
-    glow = Image.new("RGBA", (512, 512), (0, 0, 0, 0))
-    draw_mark(ImageDraw.Draw(glow), (*color, 210))
-    glow = glow.filter(ImageFilter.GaussianBlur(14))
-    mark = Image.new("RGBA", (512, 512), (0, 0, 0, 0))
-    draw_mark(ImageDraw.Draw(mark), ink)
-    base.alpha_composite(glow)
-    base.alpha_composite(mark)
-    return base
-
-
-def draw_dual(draw: ImageDraw.ImageDraw, fill):
-    draw.rounded_rectangle((108, 156, 404, 230), radius=28, outline=fill, width=30)
-    draw.rounded_rectangle((108, 282, 404, 356), radius=28, outline=fill, width=30)
-
-
-def draw_pocket(draw: ImageDraw.ImageDraw, fill):
-    draw.rounded_rectangle((166, 96, 346, 416), radius=40, outline=fill, width=32)
-
-
-def draw_desk(draw: ImageDraw.ImageDraw, fill):
-    draw.rounded_rectangle((96, 128, 416, 384), radius=36, outline=fill, width=30)
-    draw.line((132, 196, 380, 196), fill=fill, width=24)
-
-
-def draw_beam(draw: ImageDraw.ImageDraw, fill):
-    draw.rounded_rectangle((132, 286, 196, 380), radius=18, fill=fill)
-    draw.rounded_rectangle((224, 214, 288, 380), radius=18, fill=fill)
-    draw.rounded_rectangle((316, 132, 380, 380), radius=18, fill=fill)
-
-
-MARKS = {
-    "dual": ((255, 96, 144), draw_dual),
-    "pocket": ((64, 214, 255), draw_pocket),
-    "desk": ((255, 186, 72), draw_desk),
-    "beam": ((188, 156, 255), draw_beam),
-}
-
-
 def write_wav(path: Path, samples: list[float], rate: int = 44100):
     with wave.open(str(path), "w") as handle:
         handle.setnchannels(1)
@@ -846,21 +793,6 @@ def build_sounds(directory: Path):
         wav.unlink()
 
 
-def build_preview(path: Path, font_path: Path, marks: dict[str, Image.Image]):
-    image = Image.new("RGB", (1280, 720), (0, 0, 0))
-    draw = ImageDraw.Draw(image)
-    font = ImageFont.truetype(str(font_path), 72)
-    small = ImageFont.truetype(str(font_path), 28)
-    draw.text((64, 48), "Afterglow", font=font, fill=(244, 241, 234))
-    draw.text((64, 140), "Foldcade", font=small, fill=(154, 149, 140))
-    x = 64
-    for name in ("dual", "pocket", "desk", "beam"):
-        tile = marks[name].resize((220, 220), Image.Resampling.LANCZOS)
-        image.paste(tile, (x, 280))
-        x += 250
-    image.save(path, optimize=True)
-
-
 def write_zip(destination: Path):
     destination.parent.mkdir(parents=True, exist_ok=True)
     names = [
@@ -873,10 +805,16 @@ def write_zip(destination: Path):
         "sounds/activate.ogg",
         "sounds/back.ogg",
         "sounds/notify.ogg",
-        "marks/dual.png",
-        "marks/pocket.png",
-        "marks/desk.png",
-        "marks/beam.png",
+        "sprites/glow_soft_256.png",
+        "sprites/glow_soft_256_amber.png",
+        "sprites/glow_soft_256_blue.png",
+        "sprites/glow_soft_256_rose.png",
+        "sprites/glow_soft_256_teal.png",
+        "sprites/glow_soft_256_violet.png",
+        "sprites/glow_soft_512.png",
+        "sprites/ribbon_hotspot.png",
+        "sprites/ribbon_hotspot_amber.png",
+        "sprites/ribbon_hotspot_teal.png",
     ]
     with zipfile.ZipFile(destination, "w", compression=zipfile.ZIP_DEFLATED) as archive:
         for name in names:
@@ -910,15 +848,7 @@ def main():
     if not font_path.is_file():
         raise SystemExit("themes/afterglow/font.ttf is missing. It should be the bundled Nunito Regular face.")
     write_specimen(font_path)
-    marks = {}
-    mark_dir = ROOT / "marks"
-    mark_dir.mkdir(exist_ok=True)
-    for name, (color, drawer) in MARKS.items():
-        image = glow_mark(color, drawer)
-        image.save(mark_dir / f"{name}.png", optimize=True)
-        marks[name] = image
     build_sounds(ROOT / "sounds")
-    build_preview(ROOT / "preview.png", font_path, marks)
     write_zip(ZIP_PATH)
     print(f"zip {ZIP_PATH} {ZIP_PATH.stat().st_size} bytes")
 

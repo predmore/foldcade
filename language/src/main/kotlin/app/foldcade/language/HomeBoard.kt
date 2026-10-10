@@ -37,7 +37,7 @@ data class HomePlatform(
     val id: String,
     val name: String,
     val aliases: Set<String> = emptySet(),
-    val mark: String = "desk",
+    val mark: String = "",
 )
 
 data class HomeItem(
@@ -92,18 +92,28 @@ fun androidHomeId(packageName: String): String = "android:$packageName"
 
 fun platformFolderId(canonicalId: String): String = "home.platform.$canonicalId"
 
-/** Kit mark for a canonical platform id. Not a console logo. */
-fun kitMark(canonicalId: String): String = when (canonicalId) {
-    "nintendo-3ds", "nintendo-ds" -> "dual"
-    "game-boy", "game-boy-color", "game-boy-advance", "game-gear", "psp" -> "pocket"
-    else -> "desk"
-}
+/** Platforms with their own drawn mark. The mark name is the canonical id. */
+val PLATFORM_MARKS: Set<String> = setOf(
+    "nintendo-3ds", "nintendo-ds", "game-boy", "game-boy-color", "game-boy-advance",
+    "nes", "snes", "nintendo-64", "gamecube", "wii", "nintendo-switch",
+    "playstation", "playstation-2", "psp",
+    "genesis", "master-system", "game-gear", "saturn", "dreamcast",
+)
+
+const val MARK_CONSOLE: String = "console"
+const val MARK_FOLDER: String = "folder"
+const val MARK_LIBRARY: String = "library"
+
+/** Kit mark for a canonical platform id. Not a console logo. A platform without its own mark gets a controller. */
+fun kitMark(canonicalId: String): String =
+    canonicalId.takeIf { it in PLATFORM_MARKS } ?: MARK_CONSOLE
 
 fun bucketMark(kind: HomeKind): String = when (kind) {
-    HomeKind.AndroidGame, HomeKind.GameNative -> "pocket"
-    HomeKind.Moonlight -> "beam"
-    HomeKind.AndroidApp -> "desk"
-    else -> "desk"
+    HomeKind.AndroidGame -> "android-games"
+    HomeKind.AndroidApp -> "android-apps"
+    HomeKind.GameNative -> "pc"
+    HomeKind.Moonlight -> "moonlight"
+    else -> MARK_FOLDER
 }
 
 fun resolvePlatform(platforms: List<HomePlatform>, idOrAlias: String?): HomePlatform? {
@@ -260,7 +270,7 @@ fun deleteFolder(board: HomeBoard, folderId: String): HomeBoard {
 
 fun createFolder(board: HomeBoard, id: String, name: String): HomeBoard {
     if (id in board.folders || id == HOME_ALL) return board
-    val folder = HomeFolder(id = id, name = name, userMade = true, mark = "desk")
+    val folder = HomeFolder(id = id, name = name, userMade = true, mark = MARK_FOLDER)
     val slots = board.slots
     val hole = slots.indexOfFirst { it == null }
     val placed = if (hole >= 0) {
@@ -476,7 +486,7 @@ fun decodeHome(raw: String?): HomeBoard {
     }
     if (board.slots.isEmpty()) board = board.copy(slots = listOf(HOME_ALL))
     if (HOME_ALL !in board.slots) board = board.copy(slots = listOf(HOME_ALL) + board.slots)
-    return board
+    return refreshFolderNames(board, emptyList())
 }
 
 private fun stripUnknown(
@@ -614,12 +624,21 @@ private fun dropInto(board: HomeBoard, folderId: String, id: String): HomeBoard 
     return board.copy(folders = board.folders + (folderId to folder.copy(slots = slots)))
 }
 
+/**
+ * Names system folders after their platform and redraws every folder's mark.
+ * A saved board keeps the marks of the release that wrote it, so marks are not trusted.
+ */
 private fun refreshFolderNames(board: HomeBoard, platforms: List<HomePlatform>): HomeBoard {
     val folders = board.folders.mapValues { (_, folder) ->
-        val platformId = folder.platformId ?: return@mapValues folder
-        if (folder.namedByUser) return@mapValues folder
-        val platform = platforms.firstOrNull { it.id == platformId } ?: return@mapValues folder
-        folder.copy(name = platform.name, mark = platform.mark.ifBlank { folder.mark })
+        val platformId = folder.platformId
+        val platform = platformId?.let { id -> platforms.firstOrNull { it.id == id } }
+        val mark = when {
+            platformId != null -> platform?.mark?.ifBlank { null } ?: kitMark(platformId)
+            folder.bucket != null -> bucketMark(folder.bucket)
+            else -> MARK_FOLDER
+        }
+        val name = if (platform == null || folder.namedByUser) folder.name else platform.name
+        folder.copy(name = name, mark = mark)
     }
     return board.copy(folders = folders)
 }

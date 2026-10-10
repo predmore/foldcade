@@ -5,7 +5,7 @@ import numpy as np, cairosvg
 from PIL import Image, ImageDraw, ImageFont, ImageFilter
 from art import *
 from palette import *
-import glyphs, marks, appicon, sprites
+import glyphs, marks, appicon, sprites, platforms
 
 OUT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 RES = f"{OUT}/res"; SVG = f"{OUT}/svg"; PREV = f"{OUT}/previews"
@@ -28,6 +28,7 @@ ctrl, stat, mk = glyphs.controller_assets(), glyphs.status_assets(), marks.marks
 for a in ctrl: write(a, "controller")
 for a in stat: write(a, "status")
 for a in mk: write(a, "marks")
+for a in platforms.platform_assets(): write(a, "marks")
 
 # ---------------- app icon (concept A) ----------------
 K = 0.86

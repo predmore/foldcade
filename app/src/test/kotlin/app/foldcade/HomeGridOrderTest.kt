@@ -42,8 +42,11 @@ class HomeGridOrderTest {
         assertTrue(titles(shell).none { it == "Nintendo 3DS" || it == "Nintendo DS" })
         assertTrue(shell.homeFace(0)?.pinned == true)
         assertTrue(shell.homeFace(1)?.folder == true)
-        assertEquals("pocket", shell.homeFace(1)?.mark)
-        assertEquals("beam", shell.homeFace(2)?.mark)
+        assertEquals("library", shell.homeFace(0)?.mark)
+        assertEquals("pc", shell.homeFace(1)?.mark)
+        assertEquals("moonlight", shell.homeFace(2)?.mark)
+        assertEquals("android-games", shell.homeFace(3)?.mark)
+        assertEquals("android-apps", shell.homeFace(4)?.mark)
     }
 
     @Test

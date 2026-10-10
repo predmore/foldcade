@@ -1249,13 +1249,13 @@ class ShellController(
 
     private fun homePlatforms(): List<HomePlatform> {
         val known = listOf(
-            HomePlatform("nintendo-3ds", "Nintendo 3DS", setOf("3ds", "n3ds", "new-nintendo-3ds"), "dual"),
-            HomePlatform("nintendo-ds", "Nintendo DS", setOf("nds"), "dual"),
-            HomePlatform("game-boy", "Game Boy", setOf("gb"), "pocket"),
-            HomePlatform("game-boy-color", "Game Boy Color", setOf("gbc"), "pocket"),
-            HomePlatform("game-boy-advance", "Game Boy Advance", setOf("gba"), "pocket"),
-            HomePlatform("game-gear", "Game Gear", setOf("gg"), "pocket"),
-            HomePlatform("psp", "PSP", setOf("psp"), "pocket"),
+            HomePlatform("nintendo-3ds", "Nintendo 3DS", setOf("3ds", "n3ds", "new-nintendo-3ds")),
+            HomePlatform("nintendo-ds", "Nintendo DS", setOf("nds")),
+            HomePlatform("game-boy", "Game Boy", setOf("gb")),
+            HomePlatform("game-boy-color", "Game Boy Color", setOf("gbc")),
+            HomePlatform("game-boy-advance", "Game Boy Advance", setOf("gba")),
+            HomePlatform("game-gear", "Game Gear", setOf("gg")),
+            HomePlatform("psp", "PSP", setOf("psp")),
         )
         val byId = LinkedHashMap<String, HomePlatform>()
         // Lowest priority: a name the library listed, so a platform Foldcade does not
