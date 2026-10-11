@@ -34,6 +34,7 @@ Paths below are on the 5.4.0 schema and in the 5.4 docs for authentication, down
 | Platforms | `GET /api/platforms` |
 | ROMs | `GET /api/roms` |
 | One ROM | `GET /api/roms/{id}/simple` |
+| Cover search for any game | `GET /api/search/cover?search_term=...` |
 | ROM bytes | `GET /api/roms/{id}/content/{file_name}?purpose=play` |
 | Register | `POST /api/devices`, `PUT /api/devices/{device_id}` |
 | Negotiate | `POST /api/sync/negotiate` |

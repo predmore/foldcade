@@ -254,6 +254,15 @@ class RommClient(
         return parseRom(parseObject(raw.body))
     }
 
+    /** Cover search using the server's providers and `roms.read`; no ROM id is needed. */
+    suspend fun searchCovers(title: String): List<RomCoverMatch> {
+        val term = title.trim()
+        if (term.isEmpty()) return emptyList()
+        val raw = exchange(api("/search/cover", listOf("search_term" to term)), "GET", authenticated = true)
+        raw.require(200)
+        return parseCoverMatches(raw.body)
+    }
+
     /**
      * `GET /api/users/me`, for the user's RetroAchievements progress. Needs the
      * `me.read` scope; a token without it gets [RommForbidden].

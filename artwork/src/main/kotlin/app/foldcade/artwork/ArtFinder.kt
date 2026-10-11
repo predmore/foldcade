@@ -15,8 +15,8 @@ import kotlin.coroutines.cancellation.CancellationException
  *
  * Results are remembered in [index] and [scenes], hits and misses both, so a
  * game is not looked up again on the next launch. A miss is asked again after
- * [MISS_MAX_AGE_MS], or at once after [forgetMisses]. A source that throws
- * (offline, server error) does not record a miss. At most [PARALLEL] lookups
+ * [MISS_MAX_AGE_MS], when the available sources change, or after [forgetMisses].
+ * A source that throws (offline, server error) does not record a miss. At most [PARALLEL] lookups
  * run at once, two asks for one key share a lookup, and nothing is sent while
  * [enabled] is false.
  */
@@ -32,10 +32,9 @@ class ArtFinder(
     /** What is already known for [query], with no lookup. */
     fun cached(query: ArtQuery): ArtSet? = if (enabled()) index.hit(query.key)?.let(::artSetOf) else null
 
-    suspend fun find(query: ArtQuery): ArtSet? = lookUp(index, query) {
+    suspend fun find(query: ArtQuery): ArtSet? = lookUp(index, query) { available ->
         var failed = false
-        for (source in sources()) {
-            if (!source.handles(query)) continue
+        for (source in available) {
             val found = asking(source) { find(query) }
             if (found.failed) failed = true
             val set = found.value
@@ -51,12 +50,11 @@ class ArtFinder(
      * Wide art, a logo, and a title screen for [query]. Each part comes from the
      * first source that has it. Asking stops once there is wide art and a logo.
      */
-    suspend fun findScene(query: ArtQuery): ArtScene? = lookUp(scenes, query) {
+    suspend fun findScene(query: ArtQuery): ArtScene? = lookUp(scenes, query) { available ->
         var scene = ArtScene()
         var failed = false
-        for (source in sources()) {
+        for (source in available) {
             if (scene.complete) break
-            if (!source.handles(query)) continue
             val found = asking(source) { scene(query) }
             if (found.failed) failed = true
             scene = scene.or(found.value)
@@ -83,21 +81,27 @@ class ArtFinder(
         Asked(null, failed = true)
     }
 
-    private suspend fun lookUp(store: ArtIndex, query: ArtQuery, ask: suspend () -> Answer): List<String>? {
+    private suspend fun lookUp(
+        store: ArtIndex,
+        query: ArtQuery,
+        ask: suspend (List<ArtSource>) -> Answer,
+    ): List<String>? {
         if (!enabled()) return null
-        when (val known = store.lookup(query.key)) {
+        val available = sources().filter { it.handles(query) }
+        val sourceIds = available.map { it.id }
+        when (val known = store.lookup(query.key, sourceIds)) {
             is ArtIndex.Known.Hit -> return known.fields
             ArtIndex.Known.Miss -> return null
             null -> Unit
         }
         // The hero and its tile ask at once. The second waits, then reads what the first found.
         return perKey.computeIfAbsent("${store.file.name}\u0000${query.key}") { Mutex() }.withLock {
-            when (val known = store.lookup(query.key)) {
+            when (val known = store.lookup(query.key, sourceIds)) {
                 is ArtIndex.Known.Hit -> known.fields
                 ArtIndex.Known.Miss -> null
                 null -> gate.withPermit {
-                    val answer = ask()
-                    if (answer.fields != null || !answer.failed) store.put(query.key, answer.fields)
+                    val answer = ask(available)
+                    if (answer.fields != null || !answer.failed) store.put(query.key, answer.fields, sourceIds)
                     answer.fields
                 }
             }
@@ -128,7 +132,7 @@ class ArtFinder(
 
 /**
  * What was found per tile key, kept in [file] across launches: a list of
- * fields for a hit, nothing for a miss. Each change is one appended line, and
+ * fields for a hit, the available source ids for a miss. Each change is one appended line, and
  * the file is rewritten when old lines outnumber live ones.
  */
 class ArtIndex(
@@ -140,7 +144,7 @@ class ArtIndex(
         data object Miss : Known
     }
 
-    private class Entry(val fields: List<String>?, val savedAt: Long)
+    private class Entry(val fields: List<String>?, val savedAt: Long, val missSources: List<String> = emptyList())
 
     private val entries = ConcurrentHashMap<String, Entry>()
     private var lines = 0
@@ -155,7 +159,7 @@ class ArtIndex(
                 val savedAt = parts[1].toLongOrNull() ?: return@forEachLine
                 entries[key] = when (parts[2]) {
                     HIT -> Entry(parts.drop(3).map(::unescape), savedAt)
-                    MISS -> Entry(null, savedAt)
+                    MISS -> Entry(null, savedAt, parts.drop(3).map(::unescape))
                     // A line from an older layout is dropped and looked up again.
                     else -> return@forEachLine
                 }
@@ -165,16 +169,17 @@ class ArtIndex(
 
     fun hit(key: String): List<String>? = entries[key]?.fields
 
-    fun lookup(key: String): Known? {
+    fun lookup(key: String, sources: List<String>? = null): Known? {
         val entry = entries[key] ?: return null
         val fields = entry.fields
         if (fields != null) return Known.Hit(fields)
+        if (sources != null && entry.missSources != sources) return null
         return if (clock() - entry.savedAt < ArtFinder.MISS_MAX_AGE_MS) Known.Miss else null
     }
 
     @Synchronized
-    fun put(key: String, fields: List<String>?) {
-        val entry = Entry(fields, clock())
+    fun put(key: String, fields: List<String>?, sources: List<String> = emptyList()) {
+        val entry = Entry(fields, clock(), if (fields == null) sources else emptyList())
         entries[key] = entry
         file.parentFile?.mkdirs()
         file.appendText(lineOf(key, entry))
@@ -202,7 +207,8 @@ class ArtIndex(
     private fun lineOf(key: String, entry: Entry): String {
         val fields = entry.fields
         val head = listOf(escape(key), entry.savedAt.toString(), if (fields == null) MISS else HIT)
-        return (head + fields.orEmpty().map(::escape)).joinToString("\t", postfix = "\n")
+        val values = fields ?: entry.missSources
+        return (head + values.map(::escape)).joinToString("\t", postfix = "\n")
     }
 
     private companion object {

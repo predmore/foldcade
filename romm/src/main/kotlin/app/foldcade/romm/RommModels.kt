@@ -134,6 +134,22 @@ data class RomPage(
     val offset: Int,
 )
 
+/** A title and its cover candidates from `GET /api/search/cover`, independent of the library. */
+data class RomCoverMatch(
+    val name: String,
+    val resources: List<RomCoverResource>,
+)
+
+data class RomCoverResource(
+    val url: String,
+    val type: String,
+    val width: Int,
+    val height: Int,
+    val nsfw: Boolean,
+    val humor: Boolean,
+    val epilepsy: Boolean,
+)
+
 /** Where [RommClient.downloadRom] is. Reported on its IO thread. */
 sealed interface RomProgress {
     /**
