@@ -34,7 +34,6 @@ import app.foldcade.plugins.romm.ROMM_ORIGIN_KEY
 import app.foldcade.plugins.romm.RommArtwork
 import app.foldcade.plugins.romm.RommCoverArt
 import app.foldcade.plugins.romm.SaveBytes
-import app.foldcade.plugins.romm.rommCredentialKey
 import app.foldcade.plugins.romm.rommOriginAlreadyConfigured
 import app.foldcade.artwork.ART_HOSTS
 import app.foldcade.artwork.ArtBytes
@@ -69,6 +68,7 @@ import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.Job
 import java.lang.ref.WeakReference
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
@@ -115,7 +115,7 @@ class FoldcadeApp : Application() {
     @Volatile
     var steamGridDbKey: String? = null
 
-    private val rommCoverArt by lazy { RommCoverArt(publicArt::allows) }
+    private val rommCoverArt by lazy { RommCoverArt(publicArt::allows) { rommWirings(store).firstOrNull() } }
 
     /**
      * Art from Steam's CDN for Steam games, then libretro's
@@ -145,7 +145,7 @@ class FoldcadeApp : Application() {
 
     /** Decodes and caches covers. Public art loads through :net, RomM's through its own client. */
     val images: ImageLoader by lazy {
-        val romm = RommArtwork()
+        val romm = RommArtwork { rommWirings(store) }
         ImageLoader.Builder(this)
             .components {
                 add(
@@ -218,6 +218,7 @@ class FoldcadeApp : Application() {
     private val pluginsReady = CompletableDeferred<Unit>()
     private val libraryTicket = AtomicInteger()
     private val rommTicket = AtomicInteger()
+    private var rommRefreshJob: Job? = null
     private var libraryRetry: () -> Unit = { reloadFolder() }
     private lateinit var rommPublish: RommPublish
 
@@ -460,47 +461,21 @@ class FoldcadeApp : Application() {
     }
 
     private suspend fun loadSignedIn() {
-        val romm = lookupOrUnreadable(
-            credentials,
-            RommCredentials.PLUGIN_ID,
-            RommCredentials.ACCESS_TOKEN,
-        )
-        var extraUnreadable = false
-        val stored = if (romm is CredentialLookup.Unreadable) {
-            emptyList()
-        } else {
-            val ids = try {
-                credentials.pluginIds()
-            } catch (cancelled: CancellationException) {
-                throw cancelled
-            } catch (_: Exception) {
-                emptySet()
-            }
-            val rommRows = ArrayList<SignedInBackend>()
-            val origin = store.rommOrigin()
-            if (romm is CredentialLookup.Present && !origin.isNullOrBlank()) {
-                rommRows.add(SignedInBackend(RommCredentials.PLUGIN_ID, rommServerLabel(RommCredentials.PLUGIN_ID, origin)))
-            }
-            for ((id, extra) in store.rommInstances()) {
-                when (lookupOrUnreadable(credentials, RommCredentials.PLUGIN_ID, rommCredentialKey(id))) {
-                    is CredentialLookup.Present ->
-                        rommRows.add(SignedInBackend(id, rommServerLabel(id, extra)))
-                    CredentialLookup.Unreadable -> extraUnreadable = true
-                    CredentialLookup.Absent -> Unit
-                }
-            }
-            // The SteamGridDB key is an art source, not a library to sign out of.
-            // RomM servers are listed from the session, not from the shared plugin id.
-            val others = ids
-                .filter { it != SteamGridDb.CREDENTIAL_ID && it != RommCredentials.PLUGIN_ID }
-                .map { SignedInBackend(it, backendLabel(it)) }
-            rommRows + others
+        val romm = readRommRecovery(credentials, store.rommServers())
+        val ids = try {
+            credentials.pluginIds()
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (_: Exception) {
+            emptySet()
         }
+        // The art key is not a library. RomM connections have their own rows under one plugin id.
+        val others = ids
+            .filter { it != SteamGridDb.CREDENTIAL_ID && it != RommCredentials.PLUGIN_ID }
+            .map { SignedInBackend(it, backendLabel(it)) }
         val artKey = lookupOrUnreadable(credentials, SteamGridDb.CREDENTIAL_ID, SteamGridDb.CREDENTIAL_KEY)
         steamGridDbKey = ((artKey as? CredentialLookup.Present)?.credential as? Credential.ApiToken)?.value
-        val recovery = signedInRecovery(romm, stored).let { signed ->
-            if (extraUnreadable) signed.copy(askToSignIn = true) else signed
-        }
+        val recovery = romm.copy(backends = romm.backends + others)
         withContext(Dispatchers.Main.immediate) {
             shell.setArtKeySaved(steamGridDbKey != null)
             shell.applyRecovery(recovery)
@@ -635,13 +610,6 @@ class FoldcadeApp : Application() {
             }
             plugins.configure(id, mapOf(ROMM_ORIGIN_KEY to extra))
         }
-    }
-
-    private fun rommLibraryIds(): List<String> {
-        val ids = ArrayList<String>()
-        if (!store.rommOrigin().isNullOrBlank()) ids.add(RommCredentials.PLUGIN_ID)
-        ids.addAll(store.rommInstances().map { it.first })
-        return ids
     }
 
     private fun rommCacheRoot(): Path = cacheDir.toPath().resolve("romm")
@@ -842,57 +810,55 @@ class FoldcadeApp : Application() {
      * server that cannot be reached leaves the board as it was, placed tiles included.
      */
     fun syncRomm() {
-        val ticket = rommTicket.incrementAndGet()
-        pluginLoad.launch {
-            pluginsReady.await()
-            if (ticket != rommTicket.get()) return@launch
-            configureSavedRomm()
-            val ids = rommLibraryIds()
-            if (ids.isEmpty()) {
-                withContext(Dispatchers.Main.immediate) {
-                    if (ticket == rommTicket.get()) shell.dropLibrary(RommCredentials.PLUGIN_ID)
-                }
-                return@launch
-            }
-            for (libraryId in ids) {
+        synchronized(rommTicket) {
+            val ticket = rommTicket.incrementAndGet()
+            rommRefreshJob?.cancel()
+            rommRefreshJob = pluginLoad.launch {
+                pluginsReady.await()
                 if (ticket != rommTicket.get()) return@launch
-                val loaded = try {
-                    val listed = loadPlatforms(
-                        plugins,
-                        libraryId,
-                        occupiesBoth = { platformOccupiesBoth(plugins, it) },
-                    )
-                    when (listed) {
-                        is LoadedLibrary.Platforms -> listed to loadEveryGame(libraryId, listed)
-                        LoadedLibrary.NoPlatforms -> null to emptyList()
-                        LoadedLibrary.Unreachable -> null
-                    }
-                } catch (cancelled: CancellationException) {
-                    throw cancelled
-                } catch (fatal: VirtualMachineError) {
-                    throw fatal
-                } catch (_: PluginException.NotAuthenticated) {
+                configureSavedRomm()
+                val ids = store.rommServers().map { it.first }
+                if (ids.isEmpty()) {
                     withContext(Dispatchers.Main.immediate) {
-                        if (ticket == rommTicket.get()) shell.askToSignInAgain()
+                        if (ticket == rommTicket.get()) shell.dropLibrary(RommCredentials.PLUGIN_ID)
                     }
-                    continue
-                } catch (failure: Exception) {
-                    Log.w("Foldcade", "RomM library failed", failure)
-                    null
+                    return@launch
                 }
-                val (listed, games) = loaded ?: continue
-                withContext(Dispatchers.Main.immediate) {
-                    if (ticket != rommTicket.get()) return@withContext
-                    shell.ingestLibrary(
-                        libraryId,
-                        games,
-                        plugins.platformDefinitions(),
-                        listed?.entries.orEmpty().associate { (it.platformId ?: it.id) to it.title },
-                    )
-                    // An empty state such as No library yet gives way once there are games to show.
-                    val waiting = shell.model.libraryGrid && shell.model.emptyGrid != EmptyGrid.Loading
-                    if (waiting && games.isNotEmpty()) shell.showCuratedHome()
-                }
+                refreshRommServers(
+                    ids = ids,
+                    load = { libraryId ->
+                        when (val listed = loadPlatforms(
+                            plugins,
+                            libraryId,
+                            occupiesBoth = { platformOccupiesBoth(plugins, it) },
+                        )) {
+                            is LoadedLibrary.Platforms -> listed to loadEveryGame(libraryId, listed)
+                            LoadedLibrary.NoPlatforms -> null to emptyList<GridEntry>()
+                            LoadedLibrary.Unreachable -> null
+                        }
+                    },
+                    onSignIn = { libraryId ->
+                        withContext(Dispatchers.Main.immediate) {
+                            if (ticket == rommTicket.get() && store.rommServerOrigin(libraryId) != null) {
+                                shell.askToSignInAgain(libraryId)
+                            }
+                        }
+                    },
+                    onFailure = { libraryId, failure -> Log.w("Foldcade", "RomM library $libraryId failed", failure) },
+                    onLoaded = { libraryId, (listed, games) ->
+                        withContext(Dispatchers.Main.immediate) {
+                            if (ticket != rommTicket.get() || store.rommServerOrigin(libraryId) == null) return@withContext
+                            shell.ingestLibrary(
+                                libraryId,
+                                games,
+                                plugins.platformDefinitions(),
+                                listed?.entries.orEmpty().associate { (it.platformId ?: it.id) to it.title },
+                            )
+                            val waiting = shell.model.libraryGrid && shell.model.emptyGrid != EmptyGrid.Loading
+                            if (waiting && games.isNotEmpty()) shell.showCuratedHome()
+                        }
+                    },
+                )
             }
         }
     }

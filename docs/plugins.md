@@ -45,6 +45,8 @@ A library can ask for setup and can have more than one configured copy (API mino
 
 Setup runs again only when nothing is stored, when credential lookup returns `Unreadable`, or when connect throws `NotAuthenticated`. Not on `Unavailable`, and not on a network error.
 
+RomM recovery opens the saved connection that failed and replaces only its token. Refreshes run independently, with at most three servers loading at once; a new refresh cancels the previous one. Artwork routes to a configured server by origin and base path, with a separate client and cache per server. Cover search for games outside RomM uses the first saved server, including an additional server when the original has been removed.
+
 An independent plugin that is not in this repository, and that uses only this API, may use any license. Plugins shipped here stay GPLv3. See [licensing](licensing.md).
 
 ## Emulators

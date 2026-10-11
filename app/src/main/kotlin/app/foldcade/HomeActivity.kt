@@ -10,6 +10,7 @@ import android.content.pm.PackageManager
 import android.hardware.display.DisplayManager
 import android.hardware.input.InputManager
 import android.net.Uri
+import android.util.Log
 import android.provider.Settings
 import android.view.InputDevice
 import android.os.Bundle
@@ -29,7 +30,6 @@ import app.foldcade.api.plugin.Availability
 import app.foldcade.api.plugin.Credential
 import app.foldcade.api.plugin.DeviceCodePoll
 import app.foldcade.api.plugin.Game
-import app.foldcade.api.plugin.Setup
 import app.foldcade.api.plugin.LaunchRequest
 import app.foldcade.api.plugin.LaunchTarget
 import app.foldcade.api.plugin.Player
@@ -65,7 +65,6 @@ import app.foldcade.language.interpretThorStyle
 import app.foldcade.language.alsoRunsLine
 import app.foldcade.plugins.romm.ROMM_ORIGIN_KEY
 import app.foldcade.plugins.romm.isRommInstance
-import app.foldcade.plugins.romm.rommCredentialKey
 import app.foldcade.plugins.romm.rommOriginAlreadyConfigured
 import app.foldcade.romm.RommClient
 import app.foldcade.romm.RommSignInResult
@@ -1188,7 +1187,10 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
                 folderPicker.launch(null)
             }
             DialogKind.Ok -> cancelLaunches()
-            DialogKind.ReLogin -> foldcade.shell.openConnect(foldcade.store.rommOrigin().orEmpty())
+            DialogKind.ReLogin -> {
+                foldcade.shell.openRommRecovery()
+                beginRommDeviceCode()
+            }
             DialogKind.MissingPlayer -> cancelLaunches()
             DialogKind.ClosePlayer -> if (effect.button == DialogButton.CloseIt) {
                 closeConfirmed = true
@@ -1220,8 +1222,9 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
 
     /** Check once, then store only if this is still the form that submitted the token. */
     private fun validateRommToken(origin: String, token: String, another: Boolean) {
-        val taken = foldcade.store.rommInstances().map { it.second } +
-            if (another) listOfNotNull(foldcade.store.rommOrigin()) else emptyList()
+        val instanceId = foldcade.shell.connectRommId
+        val taken = foldcade.store.rommServers()
+            .filter { another || it.first != instanceId }.map { it.second }
         if (rommOriginAlreadyConfigured(taken, origin)) {
             foldcade.shell.showSetupHint(Copy.rommSameServer)
             return
@@ -1265,8 +1268,10 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
                             if (added is RommServerAdd.Added) pendingRommId = null
                             added is RommServerAdd.Added
                         } else {
-                            foldcade.credentials.put(RommCredentials.PLUGIN_ID, rommAccessKey(), Credential.ApiToken(token))
-                            foldcade.store.setRommOrigin(origin)
+                            if (instanceId != RommCredentials.PLUGIN_ID && foldcade.store.rommServerOrigin(instanceId) == null) {
+                                return@editCredentials
+                            }
+                            saveRommConnection(foldcade.store, foldcade.credentials, instanceId, origin, token)
                             true
                         }
                     } catch (cancelled: CancellationException) {
@@ -1314,99 +1319,47 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
         return created.instanceId
     }
 
-    private fun rommAccessKey(): String = try {
-        foldcade.plugins.setup(RommCredentials.PLUGIN_ID)
-            .filterIsInstance<Setup.DeviceCode>()
-            .firstOrNull()
-            ?.credentialKey
-            ?: rommCredentialKey(RommCredentials.PLUGIN_ID)
-    } catch (cancelled: CancellationException) {
-        throw cancelled
-    } catch (_: Exception) {
-        rommCredentialKey(RommCredentials.PLUGIN_ID)
-    }
-
     /**
      * Device code is the main path once an origin is on the form. Paste stays in the token field.
      * The code is for the saved server when one exists, and for the typed origin otherwise.
      */
     private fun beginRommDeviceCode() {
         deviceCodeJob?.cancel()
+        val instanceId = foldcade.shell.connectRommId
+        val another = foldcade.shell.model.connectAnother
         deviceCodeJob = foldcade.scope.launch {
             var pairedFor: String? = null
             var refused: String? = null
-            while (foldcade.shell.model.connectOpen && foldcade.shell.model.connectKind == ConnectKind.Romm) {
-                val another = foldcade.shell.model.connectAnother
+            while (foldcade.shell.model.connectOpen && foldcade.shell.model.connectKind == ConnectKind.Romm &&
+                foldcade.shell.connectRommId == instanceId && foldcade.shell.model.connectAnother == another) {
                 val origin = normalizeSetupOrigin(foldcade.shell.model.connectOrigin)
-                if (another) {
-                    if (origin == null || origin == pairedFor) {
-                        delay(200)
-                        continue
-                    }
-                    val taken = listOfNotNull(foldcade.store.rommOrigin()) +
-                        foldcade.store.rommInstances().map { it.second }
-                    if (rommOriginAlreadyConfigured(taken, origin)) {
-                        if (origin != refused) {
-                            refused = origin
-                            withContext(Dispatchers.Main.immediate) {
-                                if (foldcade.shell.model.connectOpen) {
-                                    foldcade.shell.showSetupHint(Copy.rommSameServer)
-                                }
-                            }
-                        }
-                        delay(200)
-                        continue
-                    }
-                    refused = null
-                    delay(400)
-                    if (normalizeSetupOrigin(foldcade.shell.model.connectOrigin) != origin) continue
-                    if (!foldcade.shell.model.connectOpen || !foldcade.shell.model.connectAnother) continue
-                    val id = pendingRommInstance()
-                    pairedFor = origin
-                    try {
-                        foldcade.plugins.configure(id, mapOf(ROMM_ORIGIN_KEY to origin), remember = false)
-                        val outcome = pollAnother(id)
-                        if (
-                            outcome is DeviceCodePoll.Approved &&
-                            foldcade.shell.model.connectOpen &&
-                            foldcade.shell.model.connectAnother &&
-                            normalizeSetupOrigin(foldcade.shell.model.connectOrigin) == origin
-                        ) {
-                            saveAnotherRomm(origin, outcome.token)
-                            return@launch
-                        }
-                    } catch (cancelled: CancellationException) {
-                        throw cancelled
-                    } catch (_: Exception) {
-                        pairedFor = null
-                        delay(1_000)
-                    }
-                    continue
-                }
-                val saved = foldcade.store.rommOrigin()?.let(::normalizeSetupOrigin)
-                val ready = origin != null && (saved == null || saved == origin)
-                if (!ready || origin == pairedFor) {
+                val saved = if (another) null else foldcade.store.rommServerOrigin(instanceId)?.let(::normalizeSetupOrigin)
+                if (origin == null || origin == pairedFor || (saved != null && saved != origin)) {
                     delay(200)
                     continue
                 }
+                val taken = foldcade.store.rommServers()
+                    .filter { another || it.first != instanceId }.map { it.second }
+                if (rommOriginAlreadyConfigured(taken, origin)) {
+                    if (origin != refused) {
+                        refused = origin
+                        withContext(Dispatchers.Main.immediate) {
+                            if (rommFormCurrent(origin, another, instanceId)) foldcade.shell.showSetupHint(Copy.rommSameServer)
+                        }
+                    }
+                    delay(200)
+                    continue
+                }
+                refused = null
                 delay(400)
-                if (normalizeSetupOrigin(foldcade.shell.model.connectOrigin) != origin) continue
-                if (!foldcade.shell.model.connectOpen || foldcade.shell.model.connectAnother) continue
+                if (!rommFormCurrent(origin, another, instanceId)) continue
+                val id = if (another) pendingRommInstance() else instanceId
                 pairedFor = origin
                 try {
-                    foldcade.plugins.configure(
-                        RommCredentials.PLUGIN_ID,
-                        mapOf(ROMM_ORIGIN_KEY to origin),
-                        remember = saved != null,
-                    )
-                    val outcome = pollAnother(RommCredentials.PLUGIN_ID)
-                    if (
-                        outcome is DeviceCodePoll.Approved &&
-                        foldcade.shell.model.connectOpen &&
-                        !foldcade.shell.model.connectAnother &&
-                        normalizeSetupOrigin(foldcade.shell.model.connectOrigin) == origin
-                    ) {
-                        storeRommToken(origin, outcome.token)
+                    foldcade.plugins.configure(id, mapOf(ROMM_ORIGIN_KEY to origin), remember = saved != null)
+                    val outcome = pollAnother(id, origin, another, instanceId)
+                    if (outcome is DeviceCodePoll.Approved && rommFormCurrent(origin, another, instanceId)) {
+                        validateRommToken(origin, outcome.token, another)
                         return@launch
                     }
                 } catch (cancelled: CancellationException) {
@@ -1419,12 +1372,17 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
         }
     }
 
-    private suspend fun pollAnother(libraryId: String): DeviceCodePoll = pollDeviceCode(
+    private fun rommFormCurrent(origin: String, another: Boolean, instanceId: String): Boolean =
+        foldcade.shell.model.connectOpen && foldcade.shell.model.connectKind == ConnectKind.Romm &&
+            foldcade.shell.connectRommId == instanceId && foldcade.shell.model.connectAnother == another &&
+            normalizeSetupOrigin(foldcade.shell.model.connectOrigin) == origin
+
+    private suspend fun pollAnother(libraryId: String, origin: String, another: Boolean, instanceId: String): DeviceCodePoll = pollDeviceCode(
         begin = { foldcade.plugins.beginDeviceCode(libraryId) },
         poll = { code -> foldcade.plugins.pollDeviceCode(libraryId, code) },
         onChallenge = { challenge ->
             withContext(Dispatchers.Main.immediate) {
-                if (foldcade.shell.model.connectOpen) {
+                if (rommFormCurrent(origin, another, instanceId)) {
                     foldcade.shell.showSetupHint(
                         "${Copy.rommDeviceCode}\n${challenge.userCode}\n${challenge.verificationUrl}",
                     )
@@ -1514,6 +1472,16 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
                 }
                 if (forgotten) {
                     foldcade.publishRomm()
+                    if (isRommInstance(pluginId) && foldcade.plugins.library(pluginId) != null) {
+                        try {
+                            foldcade.plugins.configure(pluginId, mapOf(ROMM_ORIGIN_KEY to ""))
+                            foldcade.plugins.disconnect(pluginId)
+                        } catch (cancelled: CancellationException) {
+                            throw cancelled
+                        } catch (failure: Exception) {
+                            Log.w("Foldcade", "Could not close RomM connection $pluginId", failure)
+                        }
+                    }
                     foldcade.syncRomm()
                 }
                 withContext(Dispatchers.Main.immediate) {
@@ -1523,7 +1491,7 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
                             foldcade.shell.model.signedIn.filter { it.pluginId != pluginId },
                         )
                     } else {
-                        foldcade.shell.askToSignInAgain()
+                        foldcade.shell.askToSignInAgain(if (isRommInstance(pluginId)) pluginId else RommCredentials.PLUGIN_ID)
                     }
                 }
             }

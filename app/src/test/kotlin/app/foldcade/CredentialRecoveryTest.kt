@@ -34,13 +34,15 @@ class CredentialRecoveryTest {
             override fun seal(plain: ByteArray, aad: ByteArray): ByteArray = plain
             override fun open(sealed: ByteArray, aad: ByteArray): Opened = openSealed(null, sealed, aad)
         })
-        val lookup = lookupOrUnreadable(missing, "romm", "access-token")
-        assertEquals(CredentialLookup.Unreadable, lookup)
+        val servers = listOf("romm" to "https://romm.example")
+        val recovery = readRommRecovery(missing, servers)
+        assertTrue(recovery.askToSignIn)
+        assertEquals("romm", recovery.rommInstanceId)
         assertTrue(blobs.pluginIds().isEmpty())
-        assertSignedOut(lookup)
+        assertSignedOut(recovery)
 
-        val thrown = lookupOrUnreadable(ThrowingStore(), "romm", "access-token")
-        assertEquals(CredentialLookup.Unreadable, thrown)
+        val thrown = readRommRecovery(ThrowingStore(), servers)
+        assertTrue(thrown.askToSignIn)
         assertSignedOut(thrown)
     }
 
@@ -65,10 +67,10 @@ class CredentialRecoveryTest {
         assertEquals(CLEARTEXT_TAILNET_NOTE, shell.model.connectWarning)
     }
 
-    private fun assertSignedOut(lookup: CredentialLookup) {
+    private fun assertSignedOut(recovery: SignedInRecovery) {
         val shell = ShellController(SessionStore(MemoryPrefs()), PluginHost(Dispatchers.Unconfined, MemoryCredentialStore()))
         shell.setSignedIn(listOf(SignedInBackend("romm", "RomM"), SignedInBackend("other", "other")))
-        shell.applyRecovery(signedInRecovery(lookup, shell.model.signedIn))
+        shell.applyRecovery(recovery)
         assertTrue(shell.model.signedIn.isEmpty())
         assertEquals(DialogKind.ReLogin, shell.model.dialog?.kind)
         assertEquals(Copy.signInAgainTitle, shell.model.dialog?.title)

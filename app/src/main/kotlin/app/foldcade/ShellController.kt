@@ -133,6 +133,11 @@ class ShellController(
 
     private var setupValidation = 0
 
+    /** Shared by the two activities; the form always saves to the connection it opened for. */
+    var connectRommId: String = RommCredentials.PLUGIN_ID
+        private set
+    private var reLoginRommId = RommCredentials.PLUGIN_ID
+
     /** Only the current form may save credentials or show the result of its check. */
     fun beginSetupValidation(): Int? {
         if (!model.connectOpen || model.connectBusy) return null
@@ -644,8 +649,9 @@ class ShellController(
 
     fun consumeConnectToken(): String = connectToken.also { connectToken = "" }
 
-    fun openConnect(origin: String, another: Boolean = false) {
+    fun openConnect(origin: String, another: Boolean = false, instanceId: String = RommCredentials.PLUGIN_ID) {
         invalidateSetupValidation()
+        connectRommId = instanceId
         val screen = model.connectScreen ?: HostScreen.Top
         val shown = if (another) "" else origin
         connectToken = ""
@@ -704,21 +710,37 @@ class ShellController(
         invalidateSetupValidation()
         connectToken = ""
         model = model.copy(connectOpen = false, connectScreen = null, connectHint = null, connectAnother = false)
+        showQueuedPrompt()
     }
 
-    fun askToSignInAgain() {
-        invalidateSetupValidation()
-        if (model.dialog != null) {
+    fun openRommRecovery() {
+        val origin = store.rommServerOrigin(reLoginRommId)
+        // A removed additional server must not be recreated by an old prompt.
+        if (origin == null && reLoginRommId != RommCredentials.PLUGIN_ID) return
+        openConnect(origin.orEmpty(), instanceId = reLoginRommId)
+    }
+
+    fun askToSignInAgain(instanceId: String = RommCredentials.PLUGIN_ID) {
+        if (model.dialog?.kind == DialogKind.ReLogin || model.reLoginPending) return
+        if (model.connectOpen && !model.connectAnother && connectRommId == instanceId) return
+        reLoginRommId = instanceId
+        if (model.dialog != null || model.connectOpen) {
             model = model.copy(reLoginPending = true)
             return
         }
+        invalidateSetupValidation()
         connectToken = ""
         model = model.copy(
-            dialog = signInAgainPrompt(),
+            dialog = rommRecoveryPrompt(),
             connectOpen = false,
             connectScreen = null,
         )
     }
+
+    private fun rommRecoveryPrompt() = signInAgainPrompt().copy(
+        detail = if (reLoginRommId == RommCredentials.PLUGIN_ID) null
+        else store.rommServerOrigin(reLoginRommId)?.let { rommServerLabel(reLoginRommId, it) },
+    )
 
     fun present(dialog: DialogState) {
         if (model.dialog != null) return
@@ -759,8 +781,8 @@ class ShellController(
     }
 
     fun showQueuedPrompt() {
-        if (!model.reLoginPending || model.dialog != null) return
-        model = model.copy(reLoginPending = false, dialog = signInAgainPrompt())
+        if (!model.reLoginPending || model.dialog != null || model.connectOpen) return
+        model = model.copy(reLoginPending = false, dialog = rommRecoveryPrompt())
     }
 
     /** One tap focuses a text row. Save activates on that tap. */
@@ -1372,6 +1394,7 @@ class ShellController(
     }
 
     private fun publish(next: PickerModel) {
+        val connectClosed = model.connectOpen && !next.connectOpen
         if (model.connectOpen != next.connectOpen) invalidateSetupValidation()
         if (next.primaryIsTop != store.session.defaultDisplayIsTop) {
             store.update { it.withDefaultDisplayIsTop(next.primaryIsTop) }
@@ -1399,6 +1422,7 @@ class ShellController(
         } else {
             withShelf(ready.copy(libraryGrid = false))
         }
+        if (connectClosed) showQueuedPrompt()
         logHomeTile()
     }
 

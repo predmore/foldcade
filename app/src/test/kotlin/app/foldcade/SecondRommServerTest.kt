@@ -6,6 +6,10 @@ import app.foldcade.api.plugin.CredentialStore
 import app.foldcade.api.plugin.MemoryCredentialStore
 import app.foldcade.host.PluginHost
 import app.foldcade.language.SignedInBackend
+import app.foldcade.language.DialogKind
+import app.foldcade.language.homePrompt
+import app.foldcade.language.HostScreen
+import app.foldcade.language.Meaning
 import app.foldcade.plugins.romm.RommEntry
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.runBlocking
@@ -16,6 +20,109 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class SecondRommServerTest {
+    @Test
+    fun recoveryRepairsTheSecondServerWithoutChangingTheDefault() = runBlocking {
+        val credentials = MemoryCredentialStore()
+        val session = SessionStore(MemoryPrefs())
+        session.setRommOrigin("https://one.example")
+        session.setRommInstance("romm#2", "https://two.example")
+        credentials.put("romm", "access-token", Credential.ApiToken("rmm_one"))
+        credentials.put("romm", "access-token@romm#2", Credential.ApiToken("rmm_expired"))
+        val shell = ShellController(session, host(credentials))
+
+        shell.askToSignInAgain("romm#2")
+        assertEquals(DialogKind.ReLogin, shell.model.dialog?.kind)
+        assertEquals("two.example", shell.model.dialog?.detail)
+        // A second failure must not replace the target of the prompt already shown.
+        shell.askToSignInAgain("romm")
+        shell.dismissDialog()
+        shell.openRommRecovery()
+        assertEquals("https://two.example", shell.model.connectOrigin)
+        assertEquals("romm#2", shell.connectRommId)
+        assertFalse(shell.model.connectAnother)
+
+        saveRommConnection(session, credentials, shell.connectRommId, shell.model.connectOrigin, "rmm_repaired")
+        assertEquals("rmm_one", token(credentials, "access-token"))
+        assertEquals("rmm_repaired", token(credentials, "access-token@romm#2"))
+        assertEquals(listOf("romm" to "https://one.example", "romm#2" to "https://two.example"), session.rommServers())
+    }
+
+    @Test
+    fun unreadableCredentialsLeaveTheOtherConnectionSignedIn() = runBlocking {
+        val memory = MemoryCredentialStore()
+        memory.put("romm", "access-token", Credential.ApiToken("rmm_one"))
+        memory.put("romm", "access-token@romm#2", Credential.ApiToken("rmm_two"))
+        val servers = listOf("romm" to "https://one.example", "romm#2" to "https://two.example")
+        for ((failedId, _) in servers) {
+            val credentials = object : CredentialStore by memory {
+                override suspend fun lookup(pluginId: String, key: String): CredentialLookup =
+                    if (key == app.foldcade.plugins.romm.rommCredentialKey(failedId)) CredentialLookup.Unreadable
+                    else memory.lookup(pluginId, key)
+            }
+            val recovery = readRommRecovery(credentials, servers)
+            assertTrue(recovery.askToSignIn)
+            assertEquals(failedId, recovery.rommInstanceId)
+            assertEquals(servers.filter { it.first != failedId }.map { it.first }, recovery.backends.map { it.pluginId })
+        }
+    }
+
+    @Test
+    fun recoveryWaitsForAnOpenFormAndKeepsItsConnection() {
+        val session = SessionStore(MemoryPrefs())
+        session.setRommOrigin("https://one.example")
+        session.setRommInstance("romm#2", "https://two.example")
+        val shell = ShellController(session, host(MemoryCredentialStore()))
+        shell.openConnect("https://one.example")
+        shell.editToken("being-edited")
+        shell.askToSignInAgain("romm#2")
+        shell.showQueuedPrompt()
+        assertTrue(shell.model.connectOpen)
+        assertNull(shell.model.dialog)
+        assertEquals("romm", shell.connectRommId)
+        assertEquals("being-edited", shell.connectToken)
+        shell.onMeaning(Meaning.Back, HostScreen.Top)
+        assertEquals(DialogKind.ReLogin, shell.model.dialog?.kind)
+        shell.dismissDialog()
+        shell.openRommRecovery()
+        assertEquals("romm#2", shell.connectRommId)
+    }
+
+    @Test
+    fun queuedRecoveryDoesNotRecreateARemovedServer() {
+        val session = SessionStore(MemoryPrefs())
+        session.setRommInstance("romm#2", "https://two.example")
+        val shell = ShellController(session, host(MemoryCredentialStore()))
+        shell.present(homePrompt())
+        shell.askToSignInAgain("romm#2")
+        session.removeRommInstance("romm#2")
+        shell.dismissDialog()
+        shell.showQueuedPrompt()
+        shell.dismissDialog()
+        shell.openRommRecovery()
+        assertFalse(shell.model.connectOpen)
+        assertTrue(session.rommServers().isEmpty())
+    }
+
+    @Test
+    fun theSingleServerKeepsItsOriginalCredentialAndRecoveryFlow() = runBlocking {
+        val session = SessionStore(MemoryPrefs())
+        val credentials = MemoryCredentialStore()
+        saveRommConnection(session, credentials, "romm", "https://one.example", "rmm_one")
+        val shell = ShellController(session, host(credentials))
+        val recovery = readRommRecovery(credentials, session.rommServers())
+        assertFalse(recovery.askToSignIn)
+        assertEquals(listOf(SignedInBackend("romm", "RomM")), recovery.backends)
+        shell.askToSignInAgain()
+        assertNull(shell.model.dialog?.detail)
+        shell.dismissDialog()
+        shell.openRommRecovery()
+        assertEquals("https://one.example", shell.model.connectOrigin)
+        assertEquals("romm", shell.connectRommId)
+        saveRommConnection(session, credentials, shell.connectRommId, "https://one.example", "rmm_new")
+        assertEquals("rmm_new", token(credentials, "access-token"))
+        assertTrue(session.rommInstances().isEmpty())
+    }
+
     @Test
     fun addingASecondServerMintsTheInstanceAndStoresTheOrigin() = runBlocking {
         val credentials = MemoryCredentialStore()
