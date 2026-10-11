@@ -64,6 +64,12 @@ import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.mutableLongStateOf
+import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.runtime.snapshotFlow
+import androidx.compose.ui.util.lerp
+import android.content.Context
+import android.os.SystemClock
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.MotionDurationScale
@@ -154,6 +160,10 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.ui.graphics.painter.Painter
 import coil3.compose.AsyncImagePainter
 import coil3.compose.rememberAsyncImagePainter
+import coil3.compose.asPainter
+import coil3.memory.MemoryCache
+import coil3.request.SuccessResult
+import java.util.concurrent.ConcurrentHashMap
 import coil3.request.ImageRequest
 import coil3.request.crossfade
 import app.foldcade.language.ConnectField
@@ -170,6 +180,8 @@ import app.foldcade.language.GridKind
 import app.foldcade.language.HeroBlend
 import app.foldcade.language.HeroItem
 import app.foldcade.language.HeroSubject
+import app.foldcade.language.HeroTravel
+import app.foldcade.language.heroTravel
 import app.foldcade.language.HintActions
 import app.foldcade.language.HintPlace
 import app.foldcade.language.HostScreen
@@ -213,6 +225,7 @@ import kotlin.math.floor
 import kotlin.math.min
 import kotlin.math.roundToInt
 import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -418,6 +431,37 @@ private fun motionState(target: Float, spec: FiniteAnimationSpec<Float>, snap: B
     LaunchedEffect(target, snap) {
         if (snap) anim.snapTo(target)
         else withContext(SteadyMotion) { anim.animateTo(target, spec) }
+    }
+    return anim.asState()
+}
+
+/** What [glideState] follows. [jump] is a token: a new one lands at once, as [snap] does. */
+private data class GlideTo(val target: Float, val snap: Boolean, val jump: Any?, val scale: Float)
+
+/**
+ * [target] reached with [Motion.glide], as state. One coroutine follows every change and
+ * reads the speed while the last move still runs, so a held move carries it on instead
+ * of starting over at each repeat. Cancelling an animation clears its speed, so a keyed
+ * effect could not. [snap], or a new [jump], lands at once.
+ */
+@Composable
+private fun glideState(target: Float, base: Int, scale: Float, snap: Boolean = false, jump: Any? = null): State<Float> {
+    val anim = remember { Animatable(target) }
+    val latest = rememberUpdatedState(GlideTo(target, snap, jump, scale))
+    LaunchedEffect(anim, base) {
+        var landed = latest.value.jump
+        withContext(SteadyMotion) {
+            snapshotFlow { latest.value }.collect { next ->
+                if (next.snap || next.jump != landed) {
+                    landed = next.jump
+                    anim.snapTo(next.target)
+                    return@collect
+                }
+                val velocity = anim.velocity
+                val spec = Motion.glide(base, next.scale, next.target - anim.value, velocity)
+                launch { anim.animateTo(next.target, spec) }
+            }
+        }
     }
     return anim.asState()
 }
@@ -761,7 +805,7 @@ private fun CenterArt(app: FoldcadeApp, running: RunningApp?) {
             modifier = Modifier.fillMaxSize(theme.artScale),
             contentScale = ContentScale.Fit,
         )
-        kit != null -> KitMark(kit, theme.artScale, alpha = 1f)
+        kit != null -> KitMark(kit, theme.artScale, alpha = { 1f })
         else -> MarkIcon(mark, 0.86f)
     }
 }
@@ -804,20 +848,30 @@ private fun Hero(app: FoldcadeApp, screen: HostScreen, scale: Float, onEffect: (
     val queries = remember { mutableMapOf<String, ArtQuery>() }
     app.shell.focusedRecord()?.let { record -> if (subject != null) records[subject.key] = record }
     app.shell.focusedGame()?.let(app.shell::artQuery)?.let { query -> if (subject != null) queries[subject.key] = query }
-    // The focused game's scene decides how the name card sits over it.
-    val scene = subject?.let { rememberScene(app, records[it.key], queries[it.key]) }
-    val sceneArt = scene != null || subject?.let { rememberArt(app, records[it.key], queries[it.key]) } != null
+    val place = subject?.let { HeroPlace(gridToken(app), model.focus.cellIndex) }
+    // The label follows focus at once. The art follows once it is whole.
+    val staged = rememberStagedHero(app, subject, place, records, queries, scale)
+    val shown = staged.subject
+    WarmNeighbours(app, place)
+    // The shown game's scene decides how the name card sits over it.
+    val scene = shown?.let { rememberScene(app, records[it.key], queries[it.key]) }
+    val sceneArt = scene != null || shown?.let { rememberArt(app, records[it.key], queries[it.key]) } != null
+    val fadeOnly = Motion.heroFadeOnly(model.motionSpeed, scale)
     BoxWithConstraints(Modifier.fillMaxSize()) {
         // The game fills the screen behind everything: its wide art, or its box art blurred.
+        // It travels less than the art in front, so the two read at different depths.
         HeroCrossfade(
-            target = subject,
-            speed = model.motionSpeed,
-            animatorScale = scale,
-            same = { left, right -> left?.key == right?.key },
+            target = shown,
+            travel = staged.travel,
+            travelMillis = Motion.sceneDuration(model.motionSpeed, scale),
+            fadeOnly = fadeOnly,
+            keyOf = { it.key },
             layer = Modifier.fillMaxSize(),
-            fadeOnly = true,
-        ) { shown ->
-            SceneBackdrop(app, records[shown.key], queries[shown.key])
+            depth = Motion.sceneDepth,
+            grows = false,
+            dissolves = true,
+        ) { layer ->
+            SceneBackdrop(app, records[layer.key], queries[layer.key], model.motionSpeed, scale)
         }
         val inset = px(Metrics.heroInsetPx)
         // Wide enough for a platform, both screens, and play time on one line.
@@ -841,22 +895,23 @@ private fun Hero(app: FoldcadeApp, screen: HostScreen, scale: Float, onEffect: (
                 contentAlignment = Alignment.Center,
             ) {
                 HeroCrossfade(
-                    target = subject,
-                    speed = model.motionSpeed,
-                    animatorScale = scale,
-                    same = { left, right -> left?.key == right?.key },
-                ) { shown ->
+                    target = shown,
+                    travel = staged.travel,
+                    travelMillis = Motion.heroDuration(model.motionSpeed, scale),
+                    fadeOnly = fadeOnly,
+                    keyOf = { it.key },
+                ) { layer ->
                     Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                        when (shown) {
+                        when (layer) {
                             is HeroSubject.Item -> HeroArt(
                                 app = app,
-                                title = shown.item.title,
-                                mark = shown.item.mark,
-                                packageName = shown.item.packageName,
-                                record = records[shown.key],
-                                query = queries[shown.key],
+                                title = layer.item.title,
+                                mark = layer.item.mark,
+                                packageName = layer.item.packageName,
+                                record = records[layer.key],
+                                query = queries[layer.key],
                             )
-                            is HeroSubject.Folder -> HeroArt(app, shown.folder.name, shown.folder.mark, null, null, null)
+                            is HeroSubject.Folder -> HeroArt(app, layer.folder.name, layer.folder.mark, null, null, null)
                         }
                     }
                 }
@@ -869,8 +924,8 @@ private fun Hero(app: FoldcadeApp, screen: HostScreen, scale: Float, onEffect: (
                     cellFocused,
                     cardMax,
                     overArt = sceneArt,
-                    // A logo on wide art already says the name.
-                    named = !(scene?.background != null && scene.logo != null),
+                    // A logo on wide art already says the name, once that art is the focused game's.
+                    named = !(shown?.key == subject.key && scene?.background != null && scene.logo != null),
                 )
             }
         }
@@ -884,21 +939,29 @@ private fun Hero(app: FoldcadeApp, screen: HostScreen, scale: Float, onEffect: (
  * Crossfades the artwork onto the newest focus. A second change before this
  * finishes retargets the same two layers instead of starting another fade.
  * The name and details are not in these layers: two labels in one place
- * cannot be read. Off, and remove-animations, fade over the short duration
- * with no slide. Once the fade is done the layer is not composed at all.
+ * cannot be read. Art arrives from the way the cursor went, [travel], and the
+ * art it replaces carries on out the other side. [depth] is the share of that
+ * travel this layer moves. [grows] eases the arriving art up from just under
+ * rest. [dissolves] keeps the leaving art up under the arriving art until it is
+ * nearly in, so a full-screen layer never thins to the theme behind it.
+ * [fadeOnly], for Off and remove-animations, fades over the short duration
+ * with no travel. Once the fade is done the layer has no graphics layer.
+ * Layers are keyed by [keyOf], so art that stops moving keeps its decoded images.
  */
 @Composable
 private fun <T> HeroCrossfade(
     target: T?,
-    speed: MotionSpeed,
-    animatorScale: Float,
-    same: (T?, T?) -> Boolean,
+    travel: HeroTravel,
+    travelMillis: Int,
+    fadeOnly: Boolean,
+    keyOf: (T) -> Any,
     layer: Modifier = Modifier.fillMaxWidth(),
-    fadeOnly: Boolean = false,
+    depth: Float = 1f,
+    grows: Boolean = true,
+    dissolves: Boolean = false,
     content: @Composable (T) -> Unit,
 ) {
-    val travelMillis = Motion.heroDuration(speed, animatorScale)
-    val fadeOnly = fadeOnly || Motion.heroFadeOnly(speed, animatorScale)
+    val same: (T?, T?) -> Boolean = { left, right -> left?.let(keyOf) == right?.let(keyOf) }
     var blend by remember {
         mutableStateOf(
             HeroBlend(
@@ -911,6 +974,12 @@ private fun <T> HeroCrossfade(
     }
     val incoming = remember { Animatable(blend.frontAlpha) }
     val outgoing = remember { Animatable(blend.backAlpha) }
+    // Where each layer sits along the travel, in pixels before [depth].
+    val inX = remember { Animatable(0f) }
+    val inY = remember { Animatable(0f) }
+    val outX = remember { Animatable(0f) }
+    val outY = remember { Animatable(0f) }
+    val way by rememberUpdatedState(travel.takeUnless { fadeOnly })
     LaunchedEffect(target, travelMillis, fadeOnly) {
         val latest = blend.copy(frontAlpha = incoming.value, backAlpha = outgoing.value)
         val next = retargetHero(latest, target, same)
@@ -921,15 +990,29 @@ private fun <T> HeroCrossfade(
             }
             return@LaunchedEffect
         }
+        val going = way
+        if (!sameFront) {
+            // The art that was arriving leaves from wherever it had got to.
+            outX.snapTo(inX.value)
+            outY.snapTo(inY.value)
+            inX.snapTo(going?.let(Motion::heroEntryX) ?: 0f)
+            inY.snapTo(going?.let(Motion::heroEntryY) ?: 0f)
+        }
         incoming.snapTo(next.frontAlpha)
         outgoing.snapTo(next.backAlpha)
         blend = next
+        // The art travels on the arrive curve and fades on the gentler dissolve.
         val arrive = Motion.arrive(travelMillis, 1f)
-        val leave = Motion.leave(travelMillis, 1f)
+        val fadeIn = Motion.dissolve(travelMillis, 1f)
+        val fadeOut = if (dissolves) Motion.leave(travelMillis, 1f) else fadeIn
         withContext(SteadyMotion) {
             coroutineScope {
-                launch { incoming.animateTo(if (next.front == null) 0f else 1f, arrive) }
-                launch { outgoing.animateTo(0f, leave) }
+                launch { incoming.animateTo(if (next.front == null) 0f else 1f, fadeIn) }
+                launch { outgoing.animateTo(0f, fadeOut) }
+                launch { inX.animateTo(0f, arrive) }
+                launch { inY.animateTo(0f, arrive) }
+                launch { outX.animateTo(going?.let(Motion::heroExitX) ?: outX.value, arrive) }
+                launch { outY.animateTo(going?.let(Motion::heroExitY) ?: outY.value, arrive) }
             }
         }
         if (same(blend.front, next.front)) {
@@ -946,23 +1029,30 @@ private fun <T> HeroCrossfade(
         frontAlpha = incoming.value,
         backAlpha = outgoing.value,
     )
-    if (!active) {
-        if (current != null) content(current)
-        return
-    }
     // The fading art sits behind the label. It takes no focus or touch, and it
-    // is not in the accessibility tree. The layer is absent once the fade ends.
+    // is not in the accessibility tree. One keyed loop holds every layer, settled
+    // or fading, so art that moves from arriving to leaving, or settles, keeps its
+    // decoded images; only these modifiers change.
     Box(
-        layer
-            .zIndex(-1f)
-            .focusProperties { canFocus = false }
-            .clearAndSetSemantics { },
+        if (active) {
+            layer
+                .zIndex(-1f)
+                .focusProperties { canFocus = false }
+                .clearAndSetSemantics { }
+        } else {
+            layer
+        },
     ) {
-        if (previous != null) {
-            Box(Modifier.fadingHero(outgoing.value, fadeOnly)) { content(previous) }
-        }
-        if (current != null) {
-            Box(Modifier.fadingHero(incoming.value, fadeOnly)) { content(current) }
+        for (shown in listOfNotNull(previous, current)) {
+            val leaving = shown === previous
+            key(keyOf(shown)) {
+                val fade = when {
+                    leaving -> Modifier.fadingHero(outgoing.asState(), outX.asState(), outY.asState(), depth, grows, fadeOnly)
+                    active -> Modifier.fadingHero(incoming.asState(), inX.asState(), inY.asState(), depth, grows, fadeOnly)
+                    else -> Modifier
+                }
+                Box(fade) { content(shown) }
+            }
         }
     }
 }
@@ -1095,18 +1185,24 @@ private fun HeroLabel(
     }
 }
 
-private fun Modifier.fadingHero(alpha: Float, fadeOnly: Boolean): Modifier =
+private fun Modifier.fadingHero(
+    alpha: State<Float>,
+    x: State<Float>,
+    y: State<Float>,
+    depth: Float,
+    grows: Boolean,
+    fadeOnly: Boolean,
+): Modifier =
     focusProperties { canFocus = false }
         .clearAndSetSemantics { }
-        .heroArrival(alpha, fadeOnly)
-
-private fun Modifier.heroArrival(alpha: Float, fadeOnly: Boolean): Modifier = graphicsLayer {
-    this.alpha = alpha
-    val drawn = Motion.heroScale(alpha, fadeOnly)
-    scaleX = drawn
-    scaleY = drawn
-    translationY = Motion.heroSlidePx(alpha, fadeOnly)
-}
+        .graphicsLayer {
+            this.alpha = alpha.value
+            val drawn = if (grows) Motion.heroScale(alpha.value, fadeOnly) else Motion.scaleRest
+            scaleX = drawn
+            scaleY = drawn
+            translationX = x.value * depth
+            translationY = y.value * depth
+        }
 
 /**
  * The top screen's scene for a game: at once when it is already known,
@@ -1132,16 +1228,33 @@ private fun rememberScene(app: FoldcadeApp, record: Game?, query: ArtQuery?): Ar
  * Without either, nothing is drawn and the theme's background shows.
  */
 @Composable
-private fun SceneBackdrop(app: FoldcadeApp, record: Game?, query: ArtQuery?) {
+private fun SceneBackdrop(app: FoldcadeApp, record: Game?, query: ArtQuery?, speed: MotionSpeed, animatorScale: Float) {
     val scene = rememberScene(app, record, query)
     val wide = scene?.background?.let { rememberCoverPainter(app, it, BACKDROP_PX) }
     if (wide != null) {
         CoversBackdrop()
+        // Wide art lands a little close and settles back over a long breath, once per
+        // game. It stays drawn just past the screen's edges, so its travel shows none.
+        val still = Motion.heroFadeOnly(speed, animatorScale)
+        val settle = remember(scene.background) { Animatable(if (still) 0f else 1f) }
+        LaunchedEffect(settle, still) {
+            if (still) {
+                settle.snapTo(0f)
+            } else {
+                withContext(SteadyMotion) { settle.animateTo(0f, Motion.showcase(speed, animatorScale)) }
+            }
+        }
         Box(Modifier.fillMaxSize()) {
             Image(
                 painter = wide.painter,
                 contentDescription = null,
-                modifier = Modifier.fillMaxSize(),
+                modifier = Modifier
+                    .fillMaxSize()
+                    .graphicsLayer {
+                        val drawn = Motion.sceneScale(settle.value)
+                        scaleX = drawn
+                        scaleY = drawn
+                    },
                 contentScale = ContentScale.Crop,
             )
             Box(
@@ -1309,7 +1422,7 @@ private fun HeroArt(
                 modifier = Modifier.fillMaxSize(theme.artScale),
                 contentScale = ContentScale.Fit,
             )
-            kit != null -> KitMark(kit, theme.artScale, alpha = 1f)
+            kit != null -> KitMark(kit, theme.artScale, alpha = { 1f })
             mark != null && markGlyph(mark) != null -> MarkIcon(mark, 0.86f)
             else -> BasicText(
                 text = monogram(title),
@@ -1325,6 +1438,167 @@ private fun HeroArt(
 private class LoadedCover(val painter: Painter, val ratio: Float)
 
 /**
+ * Memory-cache keys of covers already decoded, by size and address. A painter made
+ * later for the same cover draws it on its first frame from these, instead of
+ * drawing nothing until its own request comes back.
+ */
+private val decodedCovers = ConcurrentHashMap<String, MemoryCache.Key>()
+
+private fun coverId(uri: String, px: Int): String = "$px\u0000$uri"
+
+/**
+ * The one request for [uri] at [px]. Art warmed ahead with it is the art the painter finds.
+ * The size is part of the cache key: a tile and the top screen ask for the same cover
+ * at different sizes, and with one entry each evicted the other, so the top screen's
+ * cover reloaded and faded in late.
+ */
+private fun coverRequest(context: Context, uri: String, px: Int): ImageRequest =
+    ImageRequest.Builder(context)
+        .data(CoverImage(uri))
+        .size(px)
+        .memoryCacheKeyExtra(COVER_SIZE_KEY, px.toString())
+        .crossfade(true)
+        .build()
+
+private const val COVER_SIZE_KEY = "foldcade.px"
+
+/**
+ * Looks up a game's scene and art, and decodes the images [SceneBackdrop] and
+ * [HeroArt] draw for it into the image cache, so its art is whole when it arrives.
+ */
+private suspend fun prepareHeroArt(app: FoldcadeApp, context: Context, record: Game?, query: ArtQuery?) {
+    if (record == null && query == null) return
+    val scene = app.covers.cachedScene(record, query) ?: app.covers.fetchScene(record, query)
+    val cover = (app.covers.cached(record, query) ?: app.covers.fetch(record, query))?.cover
+    val wide = scene?.background
+    val wanted = buildList {
+        if (wide != null) {
+            add(wide to BACKDROP_PX)
+            scene.logo?.let { add(it to LOGO_PX) }
+        } else {
+            scene?.screen?.let { add(it to SCREEN_PX) }
+            cover?.let { add(it to AMBIENT_PX) }
+        }
+        if (wide == null || scene.logo == null) cover?.let { add(it to COVER_PX) }
+    }
+    coroutineScope {
+        wanted.forEach { (uri, px) -> launch { warmCover(app, context, uri, px) } }
+    }
+}
+
+/** Decodes [uri] at [px] into the image cache, so the next painter for it draws it on its first frame. */
+private suspend fun warmCover(app: FoldcadeApp, context: Context, uri: String, px: Int) {
+    // Still in memory: nothing to do. An entry the cache has since dropped decodes again.
+    decodedCovers[coverId(uri, px)]?.let { held -> if (app.images.memoryCache?.get(held) != null) return }
+    val done = app.images.execute(coverRequest(context, uri, px)) as? SuccessResult
+    done?.memoryCacheKey?.let { decodedCovers[coverId(uri, px)] = it }
+}
+
+/** Where a hero subject's tile sat when it had focus. [grid] tells grids and folders apart. */
+private data class HeroPlace(val grid: String, val index: Int)
+
+/** The subject the top screen's art shows, and the way the cursor went to reach it. */
+private data class StagedHero(val subject: HeroSubject?, val travel: HeroTravel)
+
+private fun gridToken(app: FoldcadeApp): String {
+    val model = app.shell.model
+    return listOf(model.libraryGrid, model.gridKind, model.homeGrid, app.shell.homeAnimToken()).joinToString("/")
+}
+
+private fun travelOf(from: HeroPlace?, to: HeroPlace?, rowsPerPage: Int): HeroTravel {
+    if (from == null || to == null || from.grid != to.grid) return HeroTravel.None
+    return heroTravel(from.index, to.index, Metrics.columns, Metrics.columns * rowsPerPage)
+}
+
+/**
+ * The subject the top screen's art shows. It follows [subject] once that
+ * subject's art is decoded, or after [HERO_ART_WAIT_MS], so art crossfades in
+ * whole instead of filling in after the fade. One arrival is mostly in before
+ * the next starts, so a held move does not strobe the screen; the art catches
+ * up when the cursor rests. New copy for the same subject shows at once.
+ */
+@Composable
+private fun rememberStagedHero(
+    app: FoldcadeApp,
+    subject: HeroSubject?,
+    place: HeroPlace?,
+    records: Map<String, Game>,
+    queries: Map<String, ArtQuery>,
+    animatorScale: Float,
+): StagedHero {
+    val context = LocalContext.current
+    var staged by remember { mutableStateOf(StagedHero(subject, HeroTravel.None)) }
+    var stagedPlace by remember { mutableStateOf(place) }
+    var stagedAt by remember { mutableLongStateOf(0L) }
+    val dwell = Motion.sceneDuration(app.shell.model.motionSpeed, animatorScale) / 2
+    LaunchedEffect(subject?.key) {
+        if (subject?.key == staged.subject?.key) return@LaunchedEffect
+        if (subject != null) {
+            // Keeps warming after the wait gives up, until focus moves on.
+            val ready = launch { prepareHeroArt(app, context, records[subject.key], queries[subject.key]) }
+            withTimeoutOrNull(HERO_ART_WAIT_MS) { ready.join() }
+        }
+        delay(stagedAt + dwell - SystemClock.uptimeMillis())
+        staged = StagedHero(subject, travelOf(stagedPlace, place, app.shell.model.rowsPerPage))
+        stagedPlace = place
+        stagedAt = SystemClock.uptimeMillis()
+    }
+    val current = staged
+    if (subject != null && subject.key == current.subject?.key && subject != current.subject) {
+        return current.copy(subject = subject)
+    }
+    return current
+}
+
+/**
+ * Once the cursor rests, warms the art of the tiles beside it, so the next
+ * move's art is ready to arrive at once.
+ */
+@Composable
+private fun WarmNeighbours(app: FoldcadeApp, place: HeroPlace?) {
+    val context = LocalContext.current
+    LaunchedEffect(place) {
+        val index = place?.index ?: return@LaunchedEffect
+        delay(HERO_WARM_DELAY_MS)
+        val shell = app.shell
+        for (near in listOf(index + 1, index - 1, index + Metrics.columns, index - Metrics.columns)) {
+            val game = shell.gameAt(near) ?: continue
+            prepareHeroArt(app, context, shell.artRecord(game), shell.artQuery(game))
+        }
+    }
+}
+
+/** How long the top screen keeps the last game's art while the next one's decodes. */
+private const val HERO_ART_WAIT_MS = 400L
+
+/**
+ * Once the cursor rests, warms the tile art of the pages either side of [page],
+ * so a page slides in with its art drawn rather than filling in behind the slide.
+ */
+@Composable
+private fun WarmPages(app: FoldcadeApp, page: Int, pageSize: Int) {
+    val context = LocalContext.current
+    // A folder opens on page 0 too, so the grid itself is part of the key.
+    LaunchedEffect(page, pageSize, gridToken(app), app.shell.model.count) {
+        delay(HERO_WARM_DELAY_MS)
+        val shell = app.shell
+        for (near in listOf(page + 1, page - 1)) {
+            for (index in near * pageSize until (near + 1) * pageSize) {
+                val game = shell.gameAt(index) ?: continue
+                val record = shell.artRecord(game)
+                val query = shell.artQuery(game)
+                if (record == null && query == null) continue
+                val found = app.covers.cached(record, query) ?: app.covers.fetch(record, query) ?: continue
+                warmCover(app, context, found.square ?: found.cover, TILE_PX)
+            }
+        }
+    }
+}
+
+/** How long the cursor rests before its neighbours' art is warmed. */
+private const val HERO_WARM_DELAY_MS = 300L
+
+/**
  * The decoded cover, or null while it loads or when it cannot load. The size
  * is fixed, so the request starts before the painter is drawn.
  */
@@ -1336,18 +1610,23 @@ private fun rememberCoverPainter(
     filterQuality: FilterQuality = FilterQuality.Low,
 ): LoadedCover? {
     val context = LocalContext.current
-    val request = remember(uri, px) {
-        ImageRequest.Builder(context)
-            .data(CoverImage(uri))
-            .size(px)
-            .crossfade(true)
-            .build()
-    }
+    val request = remember(uri, px) { coverRequest(context, uri, px) }
     val painter = rememberAsyncImagePainter(request, app.images, filterQuality = filterQuality)
     val state by painter.state.collectAsState()
-    val image = (state as? AsyncImagePainter.State.Success)?.result?.image ?: return null
-    if (image.width <= 0 || image.height <= 0) return null
-    return LoadedCover(painter, image.width.toFloat() / image.height)
+    val result = (state as? AsyncImagePainter.State.Success)?.result
+    if (result != null) {
+        result.memoryCacheKey?.let { decodedCovers[coverId(uri, px)] = it }
+        val image = result.image
+        if (image.width <= 0 || image.height <= 0) return null
+        return LoadedCover(painter, image.width.toFloat() / image.height)
+    }
+    // Until the painter has it, the same cover already in memory draws at once.
+    val held = remember(uri, px) {
+        decodedCovers[coverId(uri, px)]?.let { app.images.memoryCache?.get(it)?.image }
+            ?.takeIf { it.width > 0 && it.height > 0 }
+            ?.let { LoadedCover(it.asPainter(context, filterQuality), it.width.toFloat() / it.height) }
+    }
+    return held
 }
 
 private const val COVER_PX = 1024
@@ -1362,6 +1641,7 @@ private const val AMBIENT_DIM = 0.55f
 private val AMBIENT_BLUR = 48.dp
 private const val TILE_PX = 384
 private const val TILE_ART_REST_ALPHA = 0.82f
+private const val GLYPH_REST_ALPHA = 0.58f
 private const val COVER_HEIGHT = 0.92f
 
 /**
@@ -1369,7 +1649,7 @@ private const val COVER_HEIGHT = 0.92f
  * so the glow sits on the card behind instead of a black square inside it.
  */
 @Composable
-private fun KitMark(kit: ImageBitmap, fraction: Float, alpha: Float) {
+private fun KitMark(kit: ImageBitmap, fraction: Float, alpha: () -> Float) {
     Canvas(Modifier.fillMaxSize(fraction)) {
         val area = this.size
         val side = min(area.width, area.height)
@@ -1377,7 +1657,7 @@ private fun KitMark(kit: ImageBitmap, fraction: Float, alpha: Float) {
             image = kit,
             dstOffset = IntOffset(((area.width - side) / 2f).roundToInt(), ((area.height - side) / 2f).roundToInt()),
             dstSize = IntSize(side.roundToInt(), side.roundToInt()),
-            alpha = alpha,
+            alpha = alpha(),
             blendMode = BlendMode.Screen,
         )
     }
@@ -1935,14 +2215,10 @@ private fun PagedGrid(
     LaunchedEffect(titles) {
         Log.i("Foldcade", "library-ui page " + titles.joinToString(" | "))
     }
-    val position = remember { Animatable(page.toFloat()) }
+    val position = glideState(page.toFloat(), Motion.durationTravel, scale)
+    WarmPages(app, page, pageSize)
     var dragPages by remember { mutableStateOf(0f) }
-    LaunchedEffect(page, scale) {
-        dragPages = 0f
-        withContext(SteadyMotion) {
-            position.animateTo(page.toFloat(), Motion.arrive(Motion.durationTravel, scale))
-        }
-    }
+    LaunchedEffect(page, scale) { dragPages = 0f }
     val reduced = Motion.reduced(scale)
     // Read where it is used, in offsets and layers, so travel redraws without recomposing
     // the pages. Composition only hears which pages are on screen.
@@ -2002,17 +2278,23 @@ private fun PagedGrid(
         val high by remember { derivedStateOf { ceil(shownPage()).toInt() } }
         var rowPx by remember { mutableStateOf(0) }
         for (drawn in low..high) {
-            Box(Modifier.offset { IntOffset(((drawn - shownPage()) * widthPx).roundToInt(), 0) }) {
-                Grid(app, screen, cell, gap, rows, drawn, showTitle) { rowPx = it }
+            // Keyed, so the arriving page keeps its decoded art when the page it replaced
+            // leaves. Unkeyed, it moved slots as the slide settled and every tile reloaded.
+            key(drawn) {
+                Box(Modifier.offset { IntOffset(((drawn - shownPage()) * widthPx).roundToInt(), 0) }) {
+                    Grid(app, screen, cell, gap, rows, drawn, showTitle) { rowPx = it }
+                }
             }
         }
         GridCursor(
             app = app,
+            page = page,
             slot = focus.cellIndex % pageSize,
             cell = cell,
             gap = gap,
             rowPx = rowPx,
-            dragPx = { dragPages * widthPx },
+            pageWidthPx = widthPx,
+            shownPage = shownPage,
             jump = folderToken,
             scale = scale,
         )
@@ -2021,17 +2303,21 @@ private fun PagedGrid(
 
 /**
  * The one focus ring on the grid. It slides from tile to tile instead of each tile
- * drawing its own, so moving reads as steering a cursor. Across a page it travels with
- * the page, so it lands on the new tile as the page settles.
+ * drawing its own, so moving reads as steering a cursor. Across is measured over the
+ * whole grid, page by page, and drawn against the page on screen: a page change slides
+ * the new tile under the ring as the page settles, and a drag carries the ring with
+ * the tiles rather than against them.
  */
 @Composable
 private fun GridCursor(
     app: FoldcadeApp,
+    page: Int,
     slot: Int,
     cell: Dp,
     gap: Dp,
     rowPx: Int,
-    dragPx: () -> Float,
+    pageWidthPx: Float,
+    shownPage: () -> Float,
     jump: String,
     scale: Float,
 ) {
@@ -2049,33 +2335,22 @@ private fun GridCursor(
     )
     val column = (slot % Metrics.columns).toFloat()
     val row = (slot / Metrics.columns).toFloat()
-    val x = remember { Animatable(column) }
-    val y = remember { Animatable(row) }
-    var landed by remember { mutableStateOf(jump) }
-    LaunchedEffect(column, row, jump, shown, scale) {
-        // A new folder, or a ring coming back from elsewhere, starts on its tile.
-        if (jump != landed || !shown || alpha == 0f) {
-            landed = jump
-            x.snapTo(column)
-            y.snapTo(row)
-            return@LaunchedEffect
-        }
-        withContext(SteadyMotion) {
-            coroutineScope {
-                launch { x.animateTo(column, Motion.arrive(Motion.durationTravel, scale)) }
-                launch { y.animateTo(row, Motion.arrive(Motion.durationTravel, scale)) }
-            }
-        }
-    }
+    val pitchPx = with(LocalDensity.current) { (cell + gap).toPx() }
+    // A page's width in columns, so across counts columns over the whole grid.
+    val across = if (pitchPx > 0f) pageWidthPx / pitchPx else 0f
+    // A new folder, or a ring coming back from elsewhere, starts on its tile.
+    // Held moves glide from tile to tile.
+    val lands = !shown || alpha == 0f
+    val x by glideState(page * across + column, Motion.durationTravel, scale, snap = lands, jump = jump)
+    val y by glideState(row, Motion.durationTravel, scale, snap = lands, jump = jump)
     if (alpha == 0f) return
     val radius = cell * foldTheme().iconRadius
     val ring = remember { Path() }
     Box(
         Modifier
             .offset {
-                val pitchX = (cell + gap).toPx()
                 val pitchY = (if (rowPx > 0) rowPx.toFloat() else cell.toPx()) + gap.toPx()
-                IntOffset((x.value * pitchX - dragPx()).roundToInt(), (y.value * pitchY).roundToInt())
+                IntOffset((x * pitchPx - shownPage() * pageWidthPx).roundToInt(), (y * pitchY).roundToInt())
             }
             .size(cell)
             .graphicsLayer {
@@ -2385,14 +2660,11 @@ private fun Cell(
         focused -> Motion.scaleFocus
         else -> Motion.scaleRest
     }
-    val drawn by motionState(
-        target = scaleTarget,
-        spec = if (focused || lifted) {
-            Motion.arrive(Motion.durationFocus, animatorScale)
-        } else {
-            Motion.leave(Motion.durationFocus, animatorScale)
-        },
-    )
+    // Settling back eases out too, so a tile shrinks as the ring leaves it, not after.
+    val drawn by motionState(target = scaleTarget, spec = Motion.arrive(Motion.durationFocus, animatorScale))
+    // How focused the tile looks, 0 at rest to 1 focused. Read in draw and layer blocks,
+    // so the art, glow, and edge ease with the scale without recomposing the tile.
+    val lit = { ((drawn - Motion.scaleRest) / (Motion.scaleFocus - Motion.scaleRest)).coerceIn(0f, 1f) }
     val glowStops = remember { FloatArray(GlowFalloff.STOPS.size) }
     Column(
         horizontalAlignment = Alignment.CenterHorizontally,
@@ -2411,13 +2683,13 @@ private fun Cell(
                     val glow = accent
                     val bounds = this.size
                     val cornerPx = corner.toPx()
+                    val focusShown = lit()
                     if (glow != null) {
                         val half = min(bounds.width, bounds.height) * 0.5f
-                        val overflow = if (focused) FOCUS_GLOW_OVERFLOW else REST_GLOW_OVERFLOW
-                        val reach = half + overflow
-                        val tightness = if (focused) GlowFalloff.TILE_TIGHTNESS else GlowFalloff.REST_TIGHTNESS
-                        val rim = if (focused) GlowFalloff.TILE_RIM else GlowFalloff.REST_RIM
-                        val peak = if (focused) GlowFalloff.TILE_PEAK else GlowFalloff.REST_PEAK
+                        val reach = half + lerp(REST_GLOW_OVERFLOW, FOCUS_GLOW_OVERFLOW, focusShown)
+                        val tightness = lerp(GlowFalloff.REST_TIGHTNESS, GlowFalloff.TILE_TIGHTNESS, focusShown)
+                        val rim = lerp(GlowFalloff.REST_RIM, GlowFalloff.TILE_RIM, focusShown)
+                        val peak = lerp(GlowFalloff.REST_PEAK, GlowFalloff.TILE_PEAK, focusShown)
                         SoftGlow.fillStops(glowStops, tightness, rim)
                         drawRadialGlow(center, reach, glow, glowStops, peak)
                     }
@@ -2425,11 +2697,13 @@ private fun Cell(
                         // Every tile is a filled card, as on Cocoon's grid. A mark's glow is left
                         // as a halo around it. Focus is the grid's sliding ring; at rest a quiet edge.
                         drawRoundRect(color = theme.surface, cornerRadius = CornerRadius(cornerPx, cornerPx))
-                        if (!focused && !editing) {
+                        // The quiet edge fades as the ring arrives, and back as it leaves.
+                        if (!editing && focusShown < 1f) {
                             val strokePx = 2.5f
                             val inset = strokePx / 2f
+                            val rest = 1f - focusShown
                             drawRoundRect(
-                                color = glow?.copy(alpha = 0.42f) ?: theme.onBackground.copy(alpha = 0.10f),
+                                color = glow?.copy(alpha = 0.42f * rest) ?: theme.onBackground.copy(alpha = 0.10f * rest),
                                 topLeft = Offset(inset, inset),
                                 size = Size(bounds.width - strokePx, bounds.height - strokePx),
                                 cornerRadius = CornerRadius(cornerPx, cornerPx),
@@ -2519,21 +2793,21 @@ private fun Cell(
                     contentDescription = title,
                     modifier = Modifier
                         .fillMaxSize()
-                        .graphicsLayer { alpha = if (focused || lifted) 1f else TILE_ART_REST_ALPHA },
+                        .graphicsLayer { alpha = lerp(TILE_ART_REST_ALPHA, 1f, lit()) },
                     contentScale = ContentScale.Crop,
                 )
             } else if (!empty) {
-                val glyphAlpha = if (focused) 1f else 0.58f
+                val glyphAlpha = { lerp(GLYPH_REST_ALPHA, 1f, lit()) }
                 if (kit != null) {
                     KitMark(kit, theme.artScale, glyphAlpha)
                 } else if (mark != null && markGlyph(mark) != null) {
-                    Box(Modifier.graphicsLayer { alpha = glyphAlpha }) {
+                    Box(Modifier.graphicsLayer { alpha = glyphAlpha() }) {
                         MarkIcon(mark, theme.artScale)
                     }
                 } else {
                     BasicText(
                         text = monogram(title),
-                        modifier = Modifier.scale(theme.artScale).graphicsLayer { alpha = glyphAlpha },
+                        modifier = Modifier.scale(theme.artScale).graphicsLayer { alpha = glyphAlpha() },
                         style = text(
                             theme.onBackground,
                             TypeRamp.heroTitle,

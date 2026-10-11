@@ -13,7 +13,7 @@ class HeroTransitionTest {
         assertEquals(Motion.durationShort, Motion.heroDuration(MotionSpeed.Off, animatorScale = 1f))
         assertEquals(Motion.durationShort, Motion.heroDuration(MotionSpeed.Off, animatorScale = 2f))
         assertEquals(1f, Motion.heroScale(0f, fadeOnly = true), 0.001f)
-        assertEquals(0f, Motion.heroSlidePx(0f, fadeOnly = true), 0.001f)
+        assertEquals(Motion.durationShort, Motion.sceneDuration(MotionSpeed.Off, animatorScale = 1f))
     }
 
     @Test
@@ -33,9 +33,77 @@ class HeroTransitionTest {
         assertEquals(Motion.durationTravel * 4, Motion.heroDuration(MotionSpeed.Slower, animatorScale = 2f))
         assertEquals(Motion.heroScaleFrom, Motion.heroScale(0f, fadeOnly = false), 0.001f)
         assertEquals(Motion.scaleRest, Motion.heroScale(1f, fadeOnly = false), 0.001f)
-        assertEquals(Motion.heroSlideUpPx, Motion.heroSlidePx(0f, fadeOnly = false), 0.001f)
-        assertEquals(0f, Motion.heroSlidePx(1f, fadeOnly = false), 0.001f)
         assertTrue(Motion.heroScale(0.5f, fadeOnly = false) < Motion.scaleRest)
+        assertEquals(Motion.durationScene * 2, Motion.sceneDuration(MotionSpeed.Slower, animatorScale = 1f))
+        assertTrue(Motion.sceneDuration(MotionSpeed.Slow, 1f) > Motion.heroDuration(MotionSpeed.Slow, 1f))
+    }
+
+    @Test
+    fun artArrivesFromTheWayTheCursorWentAndLeavesOnward() {
+        assertEquals(Motion.heroTravelPx, Motion.heroEntryX(HeroTravel.Right), 0.001f)
+        assertEquals(-Motion.heroTravelPx, Motion.heroExitX(HeroTravel.Right), 0.001f)
+        assertEquals(0f, Motion.heroEntryY(HeroTravel.Right), 0.001f)
+        assertEquals(Motion.heroTravelPx, Motion.heroEntryY(HeroTravel.Down), 0.001f)
+        assertEquals(-Motion.heroTravelPx, Motion.heroExitY(HeroTravel.Down), 0.001f)
+        assertEquals(-Motion.heroTravelPx, Motion.heroEntryY(HeroTravel.Up), 0.001f)
+        // A jump rises a little and fades out where it is.
+        assertEquals(Motion.heroSlideUpPx, Motion.heroEntryY(HeroTravel.None), 0.001f)
+        assertEquals(0f, Motion.heroEntryX(HeroTravel.None), 0.001f)
+        assertEquals(0f, Motion.heroExitX(HeroTravel.None), 0.001f)
+        assertEquals(0f, Motion.heroExitY(HeroTravel.None), 0.001f)
+    }
+
+    @Test
+    fun wideArtNeverShowsAnEdgeWhileItTravels() {
+        assertEquals(Motion.sceneSettleFrom, Motion.sceneScale(1f), 0.001f)
+        assertEquals(Motion.sceneOverscan, Motion.sceneScale(0f), 0.001f)
+        assertEquals(Motion.sceneOverscan, Motion.sceneScale(-1f), 0.001f)
+        // The Thor's panels are 1080 pixels high, their shortest side, so half the
+        // overscan there covers the wide art's travel up or down.
+        val shortestSidePx = 1080f
+        val spare = shortestSidePx * (Motion.sceneOverscan - 1f) / 2f
+        assertTrue(Motion.heroTravelPx * Motion.sceneDepth < spare)
+    }
+
+    @Test
+    fun travelReadsAcrossPagesThenTheLongerStep() {
+        val columns = 4
+        val page = 12
+        assertEquals(HeroTravel.Right, heroTravel(0, 1, columns, page))
+        assertEquals(HeroTravel.Left, heroTravel(1, 0, columns, page))
+        assertEquals(HeroTravel.Down, heroTravel(1, 5, columns, page))
+        assertEquals(HeroTravel.Up, heroTravel(9, 1, columns, page))
+        // The last cell of a page to the first of the next is across, not up.
+        assertEquals(HeroTravel.Right, heroTravel(11, 12, columns, page))
+        assertEquals(HeroTravel.Left, heroTravel(12, 11, columns, page))
+        assertEquals(HeroTravel.Right, heroTravel(0, 5, columns, page))
+        assertEquals(HeroTravel.Down, heroTravel(0, 9, columns, page))
+        assertEquals(HeroTravel.None, heroTravel(null, 3, columns, page))
+        assertEquals(HeroTravel.None, heroTravel(3, 3, columns, page))
+        assertEquals(HeroTravel.None, heroTravel(3, 4, columns, 0))
+    }
+
+    @Test
+    fun aHeldMoveKeepsTheSpeedItHas() {
+        val fresh = Motion.arrive(Motion.durationTravel, 1f)
+        // Still, or reversing, starts fresh.
+        assertEquals(fresh, Motion.glide(Motion.durationTravel, 1f, distance = 1f, velocity = 0f))
+        assertEquals(fresh, Motion.glide(Motion.durationTravel, 1f, distance = 1f, velocity = -3f))
+        assertEquals(fresh, Motion.glide(Motion.durationTravel, 1f, distance = 0f, velocity = 3f))
+        assertEquals(
+            Motion.arrive(Motion.durationTravel, 0f),
+            Motion.glide(Motion.durationTravel, 0f, distance = 1f, velocity = 3f),
+        )
+        // Mid-travel, the curve opens at the current speed instead of a fresh move's top speed.
+        val distance = 2f
+        val velocity = 20f
+        val millis = Motion.durationTravel
+        val carried = Motion.glide(millis, 1f, distance, velocity) as androidx.compose.animation.core.TweenSpec<Float>
+        assertEquals(millis, carried.durationMillis)
+        val dt = 0.001f
+        val opening = carried.easing.transform(dt) / dt * distance / (millis / 1000f)
+        assertEquals(velocity, opening, velocity * 0.15f)
+        assertEquals(1f, carried.easing.transform(1f), 0.001f)
     }
 
     @Test

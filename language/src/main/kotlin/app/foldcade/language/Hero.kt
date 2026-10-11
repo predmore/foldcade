@@ -1,5 +1,7 @@
 package app.foldcade.language
 
+import kotlin.math.abs
+
 /**
  * One focused shelf item. [detail] is the short text. Artwork is the mark or icon.
  */
@@ -67,6 +69,38 @@ fun heroCopy(subject: HeroSubject): HeroCopy = when (subject) {
         detail = subject.folder.count?.let(::folderCountLine).orEmpty(),
         showsArt = subject.folder.mark != null,
     )
+}
+
+/**
+ * Which way the cursor went to reach the art arriving on the top screen. Art
+ * arrives from that side and the art it replaces leaves toward the other.
+ * [None] is a jump: a new folder, a new grid, or the first focus.
+ */
+enum class HeroTravel(val x: Float, val y: Float) {
+    None(0f, 0f),
+    Left(-1f, 0f),
+    Right(1f, 0f),
+    Up(0f, -1f),
+    Down(0f, 1f),
+}
+
+/**
+ * The travel from cell [from] to cell [to] on a grid of [columns] by
+ * [pageSize] cells per page. Another page is across. On a page the longer
+ * step decides, and a tie reads across.
+ */
+fun heroTravel(from: Int?, to: Int, columns: Int, pageSize: Int): HeroTravel {
+    if (from == null || from == to || from < 0 || to < 0 || columns <= 0 || pageSize <= 0) return HeroTravel.None
+    val fromPage = from / pageSize
+    val toPage = to / pageSize
+    if (fromPage != toPage) return if (toPage > fromPage) HeroTravel.Right else HeroTravel.Left
+    val across = to % pageSize % columns - from % pageSize % columns
+    val down = to % pageSize / columns - from % pageSize / columns
+    return when {
+        abs(across) >= abs(down) -> if (across > 0) HeroTravel.Right else HeroTravel.Left
+        down > 0 -> HeroTravel.Down
+        else -> HeroTravel.Up
+    }
 }
 
 /**

@@ -463,6 +463,10 @@ class ContractTest {
         assertEquals(1f, Motion.easingArrive.transform(1f), 0.001f)
         assertEquals(0f, Motion.easingLeave.transform(0f), 0.001f)
         assertEquals(1f, Motion.easingLeave.transform(1f), 0.001f)
+        assertEquals(0f, Motion.easingDissolve.transform(0f), 0.001f)
+        assertEquals(1f, Motion.easingDissolve.transform(1f), 0.001f)
+        // A dissolve opens gentler than an arrival, so art does not cut over art.
+        assertTrue(Motion.easingDissolve.transform(0.05f) < Motion.easingArrive.transform(0.05f))
         assertTrue(Motion.easingArrive.transform(0.5f) != 0.5f)
     }
 
