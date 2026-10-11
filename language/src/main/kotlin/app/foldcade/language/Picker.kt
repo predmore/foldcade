@@ -6,7 +6,11 @@ enum class HostScreen {
 }
 
 enum class Chrome {
+    /** The R1 pill. */
     StatusCluster,
+
+    /** The L1 pill. Up from the left half of the top row reaches it. */
+    LeftIsland,
 }
 
 data class GridFocus(
@@ -24,11 +28,14 @@ enum class PanelLevel {
     Root,
     Library,
 
-    /** Y's menu for the focused tile, in the right island. */
+    /** Y's menu for the focused tile, in the left island. */
     Actions,
 
     /** The folders Move to can send the focused game into. */
     MoveTo,
+
+    /** L1's Edit home: the focused tile's actions, then the settings for the whole board. */
+    EditHome,
 }
 
 data class SidePanel(
@@ -43,6 +50,8 @@ data class SidePanel(
      */
     val retiring: Boolean = false,
     val pendingSide: Side? = null,
+    /** The level Move to came from, so Back returns there. */
+    val via: PanelLevel = PanelLevel.Actions,
 )
 
 fun signInAgainPrompt(screen: HostScreen = HostScreen.Top): DialogState = DialogState(
@@ -227,7 +236,6 @@ sealed interface Row {
     data object MotionSpeed : Row
     data object UsageAccess : Row
     data object Primary : Row
-    data object Arrange : Row
     data object Order : Row
     data object Music : Row
     data object MusicTrack : Row
@@ -273,6 +281,15 @@ sealed interface Row {
     data object ButtonLabels : Row
     data object Licenses : Row
     data object Settings : Row
+
+    /** L1's first row: the past week's play as bars. A opens the Play activity page. */
+    data object PlayActivity : Row
+
+    /** Back to the home board's top level, from a folder, All, or a shelf. */
+    data object Home : Row
+
+    /** Opens [PanelLevel.EditHome]. */
+    data object EditHome : Row
 }
 
 /** The R1 quick settings are one row of round buttons. Text rows above them stay full width. */
@@ -324,18 +341,40 @@ data class PlayerSaveSetting(
 )
 
 /**
- * The L1 menu: where to go on the home screen. Every setting lives on the Settings page,
- * so this stays short enough to fit the island.
+ * L1 is Foldcade's own drawer: the past week's play, where to go, editing home,
+ * and Foldcade's settings. Device controls are on R1. Every other setting lives
+ * on the Settings page, so this stays short enough to fit the island.
  */
 fun leftRows(): List<Row> = listOf(
-    Row.Library,
+    Row.PlayActivity,
+    Row.Home,
     Row.AllLibrary,
-    Row.Arrange,
     Row.AndroidGames,
     Row.Apps,
-    Row.HiddenApps,
+    Row.EditHome,
+    Row.Library,
     Row.Settings,
 )
+
+/**
+ * The focused tile's actions, the same ones Y offers, then what applies to the
+ * whole board: whether new games join it, and the apps hidden from it.
+ */
+fun editHomeRows(model: PickerModel): List<Row> =
+    actionRows(model.tileActions, model.appActions) + listOf(Row.AddNewGames, Row.HiddenApps)
+
+/** The library sources in a few words, for the Sources row: "RomM · 2 folders". */
+fun sourcesSummary(model: PickerModel): String? {
+    val folders = model.folders.size
+    val parts = model.signedIn.map { it.label } + listOfNotNull(
+        when (folders) {
+            0 -> null
+            1 -> "1 folder"
+            else -> "$folders folders"
+        },
+    )
+    return parts.takeIf { it.isNotEmpty() }?.joinToString(" · ")
+}
 
 data class SignedInBackend(
     val pluginId: String,
@@ -467,6 +506,7 @@ fun panelRows(panel: SidePanel, model: PickerModel): List<Row> = when (panel.lev
     PanelLevel.Actions -> actionRows(model.tileActions, model.appActions)
     PanelLevel.MoveTo -> destinationRows(model.tileActions)
     PanelLevel.Library -> libraryRows(model.signedIn, model.folders)
+    PanelLevel.EditHome -> editHomeRows(model)
     PanelLevel.Root -> when (panel.side) {
         Side.Left -> leftRows()
         Side.Right -> rightRows(model.notices, model.askNoticeAccess)
@@ -490,7 +530,10 @@ fun speedLabel(speed: MotionSpeed): String = when (speed) {
 data class RowText(val label: String, val value: String? = null)
 
 fun rowText(row: Row, model: PickerModel): RowText = when (row) {
-    Row.Library -> RowText(Copy.library)
+    Row.Library -> RowText(Copy.library, sourcesSummary(model))
+    Row.PlayActivity -> RowText(PlayCopy.activity)
+    Row.Home -> RowText(Copy.home)
+    Row.EditHome -> RowText(Copy.editHome)
     Row.Settings -> RowText(SettingsCopy.title)
     Row.Theme -> RowText(Copy.theme, model.themes.getOrElse(model.themeIndex) { Copy.builtIn })
     Row.Background -> RowText(Copy.background, backgroundLabel(model.backgroundMotion))
@@ -500,7 +543,6 @@ fun rowText(row: Row, model: PickerModel): RowText = when (row) {
         if (model.usageGranted) "All launchers" else Copy.approximatePlay,
     )
     Row.Primary -> RowText(Copy.primaryPanel, if (model.primaryIsTop) Copy.top else Copy.bottom)
-    Row.Arrange -> RowText(Copy.arrange)
     Row.Order -> RowText("Order", if (model.sort == LibrarySort.RecentlyPlayed) "Recently played" else "Library")
     Row.Music -> RowText(MusicCopy.row, if (model.music.enabled) MusicCopy.on else MusicCopy.off)
     Row.MusicTrack -> RowText(MusicCopy.track, model.trackTitle)
@@ -535,7 +577,7 @@ fun rowText(row: Row, model: PickerModel): RowText = when (row) {
     }
     Row.AndroidGames -> RowText(Copy.androidGames)
     Row.Apps -> RowText(Copy.apps)
-    Row.HiddenApps -> RowText(Copy.hiddenApps)
+    Row.HiddenApps -> RowText(Copy.hiddenAppsRow)
     Row.AllLibrary -> RowText(Copy.allLibrary)
     Row.AddNewGames -> RowText(Copy.addNewGames, if (model.addNewToHome) Copy.addNewOn else Copy.addNewOff)
     Row.Artwork -> RowText(Copy.artwork, if (model.artwork) Copy.artworkOn else Copy.artworkOff)
@@ -617,6 +659,9 @@ sealed interface Effect {
 
     /** Every notice Y could remove is gone from the model; the app clears them too. */
     data object ClearNotices : Effect
+
+    /** Show the home board's top level. */
+    data object GoHome : Effect
 }
 
 /** What a grid cell is. Existing callers stay on [Games], which launches. */
@@ -706,6 +751,8 @@ data class PickerModel(
     val brightnessAllowed: Boolean = false,
     /** R1 shows the row that asks for notification access. */
     val askNoticeAccess: Boolean = false,
+    /** The Play activity page. Null while it is closed. */
+    val playActivity: PlayActivityPage? = null,
 )
 
 fun reduce(
@@ -748,6 +795,8 @@ fun reduce(
     }
     val settings = coerced.settings
     if (settings != null) return applySettings(coerced, settings, meaning)
+    val activity = coerced.playActivity
+    if (activity != null) return applyPlayActivity(coerced, activity, meaning)
     val panel = coerced.panel
     if (panel != null) {
         if (meaning == Meaning.LeftPanel || meaning == Meaning.RightPanel) {
@@ -846,11 +895,14 @@ private fun applyGrid(
     }
 }
 
-/** Y opens the focused tile's menu in the right island. With nothing to offer, it stays shut. */
+/**
+ * Y opens the focused tile's menu in the left island, with Foldcade's other
+ * options. R1 is the device's. With nothing to offer, it stays shut.
+ */
 private fun openActions(model: PickerModel): PickerModel {
     if (model.focus.chrome != null || model.arranging || model.count <= 0) return model
     if (actionRows(model.tileActions, model.appActions).isEmpty()) return model
-    return model.copy(panel = freshPanel(Side.Right, model.focus).copy(level = PanelLevel.Actions))
+    return model.copy(panel = freshPanel(Side.Left, model.focus).copy(level = PanelLevel.Actions))
 }
 
 private fun backGrid(model: PickerModel): Pair<PickerModel, Effect?> {
@@ -886,7 +938,8 @@ private fun move(focus: GridFocus, meaning: Meaning, model: PickerModel): GridFo
     if (chrome != null) {
         return when (meaning) {
             Meaning.MoveDown -> downFromChrome(focus, model)
-            Meaning.MoveUp -> focus
+            Meaning.MoveLeft -> focus.copy(chrome = Chrome.LeftIsland)
+            Meaning.MoveRight -> focus.copy(chrome = Chrome.StatusCluster)
             else -> focus
         }
     }
@@ -910,8 +963,10 @@ private fun step(focus: GridFocus, column: Int, row: Int, model: PickerModel): G
     return focus.copy(cellIndex = index, lastColumn = column, chrome = null)
 }
 
+/** Up from the top row reaches the pill on that side: L1 from the left half, R1 from the right. */
 private fun upToChrome(focus: GridFocus, column: Int, model: PickerModel): GridFocus {
-    return focus.copy(chrome = Chrome.StatusCluster, lastColumn = column)
+    val chrome = if (column < Metrics.columns / 2) Chrome.LeftIsland else Chrome.StatusCluster
+    return focus.copy(chrome = chrome, lastColumn = column)
 }
 
 private fun downFromChrome(focus: GridFocus, model: PickerModel): GridFocus {
@@ -939,6 +994,7 @@ private fun page(focus: GridFocus, towardEnd: Boolean, model: PickerModel): Grid
 private fun activate(model: PickerModel, screen: HostScreen, onBottom: Boolean = false): Pair<PickerModel, Effect?> {
     return when (model.focus.chrome) {
         Chrome.StatusCluster -> presentPanel(model, Meaning.RightPanel, screen) to null
+        Chrome.LeftIsland -> presentPanel(model, Meaning.LeftPanel, screen) to null
         null -> {
             if (model.arranging) return placeOrPick(model)
             if (model.count <= 0 || model.focus.cellIndex !in 0 until model.count) return model to null
@@ -1157,9 +1213,11 @@ private fun PickerModel.withTrack(track: MusicTrack): PickerModel =
 private fun backPanel(model: PickerModel, panel: SidePanel): Pair<PickerModel, Effect?> {
     return when (panel.level) {
         PanelLevel.Library -> model.copy(panel = panel.copy(level = PanelLevel.Root, index = 0)) to null
+        PanelLevel.EditHome -> model.copy(panel = panel.copy(level = PanelLevel.Root, index = leftRows().indexOf(Row.EditHome))) to null
         PanelLevel.MoveTo -> {
-            val row = actionRows(model.tileActions, model.appActions).indexOf(Row.MoveTileTo).coerceAtLeast(0)
-            model.copy(panel = panel.copy(level = PanelLevel.Actions, index = row)) to null
+            val parent = panel.copy(level = panel.via)
+            val row = panelRows(parent, model).indexOf(Row.MoveTileTo).coerceAtLeast(0)
+            model.copy(panel = parent.copy(index = row)) to null
         }
         PanelLevel.Root, PanelLevel.Actions -> model.copy(panel = null, focus = panel.grid) to null
     }
@@ -1199,13 +1257,12 @@ private fun activateRow(
         Row.MotionSpeed -> model.copy(panel = panel, motionSpeed = model.motionSpeed.next()) to null
         Row.UsageAccess -> model.copy(dialog = usageAccessPrompt(screen)) to null
         Row.Primary -> model.copy(panel = panel, primaryIsTop = !model.primaryIsTop) to null
-        Row.Arrange -> model.copy(
+        Row.PlayActivity -> model.copy(
             panel = null,
-            focus = panel.grid,
-            arranging = true,
-            hold = null,
-            order = displayOrder(model),
+            playActivity = PlayActivityPage(screen = panel.screen, grid = panel.grid),
         ) to null
+        Row.Home -> model.copy(panel = null, focus = panel.grid) to Effect.GoHome
+        Row.EditHome -> model.copy(panel = panel.copy(level = PanelLevel.EditHome, index = 0)) to null
         Row.Order -> model.copy(panel = panel, sort = model.sort.toggled()) to null
         Row.Music -> model.copy(panel = panel, music = model.music.toggled()) to null
         Row.MusicTrack ->
@@ -1267,7 +1324,7 @@ private fun activateRow(
         Row.MoveApp -> model.copy(panel = null, focus = panel.grid) to Effect.MoveApp
         Row.HideApp -> model.copy(panel = null, focus = panel.grid) to Effect.HideApp
         Row.ShowApp -> model.copy(panel = null, focus = panel.grid) to Effect.ShowApp
-        Row.MoveTileTo -> model.copy(panel = panel.copy(level = PanelLevel.MoveTo, index = 0)) to null
+        Row.MoveTileTo -> model.copy(panel = panel.copy(level = PanelLevel.MoveTo, index = 0, via = panel.level)) to null
         is Row.Destination -> model.copy(panel = null, focus = panel.grid) to Effect.MoveTileTo(row.folderId)
         Row.MoveTile -> model.copy(panel = null, focus = panel.grid) to Effect.MoveTile
         Row.NewFolder -> model.copy(panel = null, focus = panel.grid) to Effect.NewFolder

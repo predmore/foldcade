@@ -181,6 +181,7 @@ import app.foldcade.language.heroCrossfadeActive
 import app.foldcade.language.monogram
 import app.foldcade.language.panelRows
 import app.foldcade.language.panelHints
+import app.foldcade.language.playActivityHints
 import app.foldcade.language.noticeAge
 import app.foldcade.language.quickTileColumns
 import app.foldcade.language.rowLabel
@@ -211,8 +212,11 @@ fun PanelHost(activity: FoldcadeHomeActivity, displays: Displays) {
         null -> null
     }
     val ownsBottom = session.surfaceOn(Panel.Bottom) != null
-    val menuVisible = (model.panel?.screen == HostScreen.Top || model.settings?.screen == HostScreen.Top) &&
-        model.dialog?.screen != HostScreen.Top
+    val menuVisible = (
+        model.panel?.screen == HostScreen.Top ||
+            model.settings?.screen == HostScreen.Top ||
+            model.playActivity?.screen == HostScreen.Top
+        ) && model.dialog?.screen != HostScreen.Top
     val blurHere = screen == HostScreen.Bottom &&
         ownsBottom &&
         menuVisible &&
@@ -263,8 +267,9 @@ private fun PanelBody(
     val session = app.store.session
     val model = app.shell.model
     val cover = remember { BackdropCover() }
-    // Settings paints the theme's background over the whole panel.
-    val settingsOver = screen != null && model.settings?.screen == screen && foldTheme().background.alpha >= 1f
+    // Settings and Play activity paint the theme's background over the whole panel.
+    val pageHere = screen != null && (model.settings?.screen == screen || model.playActivity?.screen == screen)
+    val settingsOver = pageHere && foldTheme().background.alpha >= 1f
     Backdrop(
         motion = model.backgroundMotion,
         speed = model.motionSpeed,
@@ -277,6 +282,10 @@ private fun PanelBody(
     val connectHere = model.connectOpen && model.connectScreen == screen
     if (model.settings?.screen == screen) {
         SettingsScreen(app, screen, activity::dispatch)
+        return
+    }
+    if (model.playActivity?.screen == screen) {
+        PlayActivityScreen(app, screen)
         return
     }
     CompositionLocalProvider(LocalBackdropCover provides cover) {
@@ -1112,7 +1121,17 @@ private fun PanelRows(
             val step: () -> Unit = { onEffect(app.shell.touchPanel(index, screen)) }
             val parts = rowText(row, app.shell.model)
             val notice = (row as? Row.Notice)?.let { item -> app.shell.model.notices.firstOrNull { it.id == item.id } }
-            if (notice != null) {
+            if (row is Row.PlayActivity) {
+                PlayStrip(
+                    app = app,
+                    focused = focused,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .keepInView(focused)
+                        .rowHighlight(focused)
+                        .then(if (interactive) Modifier.hostPress(step) else Modifier),
+                )
+            } else if (notice != null) {
                 NoticeRow(
                     notice = notice,
                     focused = focused,
@@ -1415,7 +1434,8 @@ private fun GridHints(app: FoldcadeApp, modifier: Modifier = Modifier) {
     }
     // The grid's own keys only count while nothing covers it.
     val gridKeys = model.panel == null && model.dialog == null
-    val keys = panelHints(model) ?: gridHints(
+    val page = model.playActivity?.takeIf { model.dialog == null }?.let { playActivityHints(model) }
+    val keys = page ?: panelHints(model) ?: gridHints(
         actions,
         shell.homeKeys(),
         model.faceMap,

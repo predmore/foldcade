@@ -7,6 +7,8 @@ import androidx.compose.runtime.setValue
 import app.foldcade.host.play.FilePlayLog
 import app.foldcade.host.play.PlayClock
 import app.foldcade.host.play.PlayEvent
+import app.foldcade.host.play.PlayKind
+import app.foldcade.language.PlaySpan
 import app.foldcade.host.play.PlayLog
 import app.foldcade.host.play.PlaySignal
 import app.foldcade.host.play.QueuedPlaySink
@@ -82,6 +84,9 @@ class PlaySessions private constructor(
 
     fun events(): List<PlayEvent> = log.events()
 
+    /** Every stretch a game was in front, for the Play activity page. */
+    fun spans(): List<PlaySpan> = playSpans(log.events())
+
     fun subscribe(listener: (PlayEvent) -> Unit): AutoCloseable = log.subscribe(listener)
 
     private fun changed() {
@@ -93,6 +98,27 @@ class PlaySessions private constructor(
         fun open(file: File, clock: PlayClock = WallAndElapsedClock): PlaySessions =
             PlaySessions(PlayLog(clock, QueuedPlaySink(FilePlayLog(file))))
     }
+}
+
+/**
+ * The log's events as stretches in front. Each starts at the wall time the game
+ * came to the front and lasts as long as the active time it gained, so sleep and
+ * time away never count. A session still in front has no stretch until it leaves.
+ */
+internal fun playSpans(events: List<PlayEvent>): List<PlaySpan> {
+    val front = HashMap<String, PlayEvent>()
+    val spans = mutableListOf<PlaySpan>()
+    for (event in events) {
+        when (event.kind) {
+            PlayKind.Started, PlayKind.Resumed -> front[event.sessionId] = event
+            PlayKind.Backgrounded, PlayKind.Ended -> {
+                val since = front.remove(event.sessionId) ?: continue
+                val active = event.activeMillis - since.activeMillis
+                if (active > 0L) spans += PlaySpan(event.gameId, since.atMillis, since.atMillis + active)
+            }
+        }
+    }
+    return spans
 }
 
 private object WallAndElapsedClock : PlayClock {

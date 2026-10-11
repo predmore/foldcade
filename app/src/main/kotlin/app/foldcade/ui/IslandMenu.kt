@@ -167,7 +167,7 @@ private fun Island(
     val x = if (side == Side.Left) inset else maxWidth - inset - width
     val focusedIsland = progress < 0.08f && app.shell.model.panel == null && app.shell.model.dialog == null &&
         when (side) {
-            Side.Left -> false
+            Side.Left -> app.shell.model.focus.chrome == Chrome.LeftIsland
             Side.Right -> app.shell.model.focus.chrome == Chrome.StatusCluster
         }
     val interactive = open && progress > 0.92f
