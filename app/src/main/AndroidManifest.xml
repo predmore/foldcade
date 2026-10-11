@@ -7,6 +7,10 @@
         android:name="android.permission.PACKAGE_USAGE_STATS"
         tools:ignore="ProtectedPermissions" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <!-- The R1 brightness slider. Granted from "Modify system settings", never at install. -->
+    <uses-permission
+        android:name="android.permission.WRITE_SETTINGS"
+        tools:ignore="ProtectedPermissions" />
 
     <!-- Package visibility for the bundled players. Each plugin owns its ids. -->
     <!-- Launcher visibility uses the same MAIN / LAUNCHER filter as queryIntentActivities. -->

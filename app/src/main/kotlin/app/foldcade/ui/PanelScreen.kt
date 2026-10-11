@@ -179,6 +179,7 @@ import app.foldcade.language.heroCopy
 import app.foldcade.language.heroCrossfadeActive
 import app.foldcade.language.monogram
 import app.foldcade.language.panelRows
+import app.foldcade.language.panelSlider
 import app.foldcade.language.quickTileColumns
 import app.foldcade.language.rowLabel
 import app.foldcade.language.retargetHero
@@ -1108,15 +1109,26 @@ private fun PanelRows(
             val focused = panel.index == index
             val step: () -> Unit = { onEffect(app.shell.touchPanel(index, screen)) }
             val parts = rowText(row, app.shell.model)
-            if (row is Row.MusicVolume) {
-                MusicVolumeRow(
+            if (row is Row.Brightness) {
+                SliderRow(
                     label = parts.label,
                     value = parts.value.orEmpty(),
-                    volume = app.shell.model.music.volume,
+                    fraction = app.shell.model.brightness / 100f,
                     focused = focused,
                     interactive = interactive,
                     onStep = step,
-                    onVolume = app.shell::setMusicVolume,
+                    onFraction = { app.shell.touchBrightness((it * 100f).roundToInt()) },
+                    modifier = Modifier.fillMaxWidth().keepInView(focused).rowHighlight(focused),
+                )
+            } else if (row is Row.MusicVolume) {
+                SliderRow(
+                    label = parts.label,
+                    value = parts.value.orEmpty(),
+                    fraction = app.shell.model.music.volume,
+                    focused = focused,
+                    interactive = interactive,
+                    onStep = step,
+                    onFraction = app.shell::setMusicVolume,
                     modifier = Modifier.fillMaxWidth().keepInView(focused).rowHighlight(focused),
                 )
             } else {
@@ -1251,10 +1263,7 @@ private const val QUICK_BUTTON_DP = 52f
 private fun quickIcon(setting: QuickSetting): Int = when (setting) {
     QuickSetting.Wifi -> R.drawable.ic_status_wifi_4
     QuickSetting.Bluetooth -> R.drawable.ic_status_bluetooth
-    QuickSetting.Display -> R.drawable.ic_status_display
-    QuickSetting.Sound -> R.drawable.ic_status_volume_3
     QuickSetting.Battery -> R.drawable.ic_status_battery_100
-    QuickSetting.AppInfo -> R.drawable.ic_status_info
     QuickSetting.Settings -> R.drawable.ic_status_settings
 }
 
@@ -1359,6 +1368,7 @@ private fun GridHints(app: FoldcadeApp, modifier: Modifier = Modifier) {
         model.faceMap,
         screens = gridKeys && shell.focusedLaunchesOnOneScreen(),
         options = gridKeys && !model.connectOpen && shell.hasOptions(),
+        slider = if (model.dialog == null) panelSlider(model) else null,
     )
     if (keys.isEmpty()) return
     Row(
@@ -1398,6 +1408,7 @@ private fun promptGlyph(key: PromptKey): String = when (key) {
     PromptKey.Back -> "ic_btn_back"
     PromptKey.L1 -> "ic_btn_l1"
     PromptKey.R1 -> "ic_btn_r1"
+    PromptKey.DpadSides -> "ic_btn_dpad"
 }
 
 @Composable

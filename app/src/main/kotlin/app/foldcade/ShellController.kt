@@ -12,6 +12,9 @@ import app.foldcade.plugins.gamenative.steamAppId
 import app.foldcade.plugins.moonlight.MoonlightLibrary
 import app.foldcade.plugins.moonlight.isMoonlightRemoteKey
 import app.foldcade.host.PluginHost
+import app.foldcade.language.brightnessPrompt
+import app.foldcade.language.brightnessLevel
+import app.foldcade.language.brightnessPosition
 import app.foldcade.language.settingsCategories
 import app.foldcade.language.AndroidShelf
 import app.foldcade.language.AppActions
@@ -94,6 +97,8 @@ class ShellController(
     private val lastPlayedMillis: (String) -> Long? = { null },
     /** A Moonlight game left Home. The app drops its pinned shortcut. */
     private val onMoonlightRemoved: (remoteKey: String) -> Unit = {},
+    /** The R1 slider moved to this position. The app stores it. */
+    private val onBrightness: (position: Int) -> Unit = {},
 ) {
     private var shelfState: AppShelfState = store.appShelfState()
     private var installed: List<LaunchableApp> = emptyList()
@@ -746,6 +751,20 @@ class ShellController(
         noteShelfChanged()
     }
 
+    /**
+     * The stored [level] and whether Foldcade may write it. A level the slider
+     * already shows keeps its position, so a write echoing back cannot nudge it.
+     */
+    fun setBrightness(level: Int?, allowed: Boolean) {
+        val position = when {
+            level == null -> model.brightness
+            brightnessLevel(model.brightness) == level -> model.brightness
+            else -> brightnessPosition(level)
+        }
+        if (position == model.brightness && allowed == model.brightnessAllowed) return
+        model = model.copy(brightness = position, brightnessAllowed = allowed)
+    }
+
     fun setUsageGranted(granted: Boolean) {
         if (model.usageGranted == granted) return
         model = model.copy(usageGranted = granted)
@@ -1098,6 +1117,15 @@ class ShellController(
         publish(model.copy(music = model.music.withVolume(volume)))
     }
 
+    /** A touch on the brightness slider. Without access it asks, as the keys do. */
+    fun touchBrightness(position: Int) {
+        if (!model.brightnessAllowed) {
+            present(brightnessPrompt())
+            return
+        }
+        publish(model.copy(brightness = position.coerceIn(0, 100)))
+    }
+
     /**
      * The shelf gained or lost catalog games, or the empty-shelf hint changed.
      * [PickerModel.shelfEpoch] changes even when the count does not, so Compose
@@ -1148,6 +1176,7 @@ class ShellController(
         if (next.motionSpeed != model.motionSpeed) {
             store.setMotionSpeed(next.motionSpeed)
         }
+        if (next.brightnessAllowed && next.brightness != model.brightness) onBrightness(next.brightness)
         if (next.artwork != model.artwork) store.setArtworkEnabled(next.artwork)
         model = if (next.libraryGrid) {
             next.copy(appActions = null, tileActions = null, playerSaves = playerSaveSettings())
@@ -1380,7 +1409,8 @@ class ShellController(
 
     /** Volume steps and track changes. Either one ticks while the row stays put. */
     private fun valueAdjusted(before: PickerModel, after: PickerModel): Boolean =
-        before.music.volume != after.music.volume || before.music.trackId != after.music.trackId
+        before.music.volume != after.music.volume || before.music.trackId != after.music.trackId ||
+            before.brightness != after.brightness
 
     private fun cueMeaning(meaning: Meaning, before: PickerModel, after: PickerModel) {
         when (meaning) {

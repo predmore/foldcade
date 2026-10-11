@@ -42,13 +42,20 @@ enum class HomeKeys {
     Renaming,
 }
 
+private val shoulderKeys = setOf(
+    KeyEvent.KEYCODE_BUTTON_L1,
+    KeyEvent.KEYCODE_BUTTON_R1,
+    KeyEvent.KEYCODE_LEFT_BRACKET,
+    KeyEvent.KEYCODE_RIGHT_BRACKET,
+)
+
 fun meaningOf(
     keyCode: Int,
     repeatCount: Int = 0,
     faces: FaceMap = FaceMap.standard(),
     homeKeys: HomeKeys = HomeKeys.Idle,
 ): Meaning? {
-    if (repeatCount > 0 && (keyCode == KeyEvent.KEYCODE_BUTTON_L1 || keyCode == KeyEvent.KEYCODE_BUTTON_R1)) {
+    if (repeatCount > 0 && keyCode in shoulderKeys) {
         return null
     }
     if (homeKeys == HomeKeys.AllLibrary && repeatCount > 0) {
@@ -64,10 +71,11 @@ fun meaningOf(
             keyCode == KeyEvent.KEYCODE_DPAD_CENTER ||
             keyCode == KeyEvent.KEYCODE_ENTER ||
             keyCode == KeyEvent.KEYCODE_NUMPAD_ENTER -> Meaning.Activate
-        keyCode == KeyEvent.KEYCODE_BACK || keyCode == faces.backKey ->
+        keyCode == KeyEvent.KEYCODE_BACK || keyCode == KeyEvent.KEYCODE_ESCAPE || keyCode == faces.backKey ->
             if (homeKeys == HomeKeys.Moving || homeKeys == HomeKeys.PickingIcon) Meaning.CancelHold else Meaning.Back
-        keyCode == KeyEvent.KEYCODE_BUTTON_L1 -> Meaning.LeftPanel
-        keyCode == KeyEvent.KEYCODE_BUTTON_R1 -> Meaning.RightPanel
+        // A keyboard has no shoulders. The bracket keys sit where L1 and R1 would.
+        keyCode == KeyEvent.KEYCODE_BUTTON_L1 || keyCode == KeyEvent.KEYCODE_LEFT_BRACKET -> Meaning.LeftPanel
+        keyCode == KeyEvent.KEYCODE_BUTTON_R1 || keyCode == KeyEvent.KEYCODE_RIGHT_BRACKET -> Meaning.RightPanel
         keyCode == KeyEvent.KEYCODE_BUTTON_X && (homeKeys == HomeKeys.Idle || homeKeys == HomeKeys.AllLibrary) ->
             Meaning.ActivateBottom
         keyCode == KeyEvent.KEYCODE_BUTTON_Y && (homeKeys == HomeKeys.Idle || homeKeys == HomeKeys.AllLibrary) ->

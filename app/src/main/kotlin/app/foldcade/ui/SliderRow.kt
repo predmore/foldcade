@@ -33,22 +33,23 @@ import app.foldcade.language.TypeRamp
 import kotlin.math.min
 
 /**
- * Volume row for the L1 panel. Isolated so the theme-art pull request can rebase
- * the rest of the panel. Activate still steps the value. Touch drags the slider.
+ * A label, its value, and a slider under them: music volume in Settings, and
+ * brightness in R1. Left and right step it from the keys. A tap on the label
+ * runs [onStep]. Touch drags the slider and reports a fraction from 0 to 1.
  */
 @Composable
-fun MusicVolumeRow(
+fun SliderRow(
     label: String,
     value: String,
-    volume: Float,
+    fraction: Float,
     focused: Boolean,
     interactive: Boolean,
     onStep: () -> Unit,
-    onVolume: (Float) -> Unit,
+    onFraction: (Float) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val theme = LocalFoldTheme.current.theme
-    val fraction = volume.coerceIn(0f, 1f)
+    val fraction = fraction.coerceIn(0f, 1f)
     val accent = theme.focus
     Column(modifier.fillMaxWidth().padding(start = 16.dp, end = 8.dp, top = 8.dp, bottom = 8.dp)) {
         Row(
@@ -136,12 +137,12 @@ fun MusicVolumeRow(
                 }
                 .then(
                     if (interactive) {
-                        Modifier.pointerInput(onVolume) {
+                        Modifier.pointerInput(onFraction) {
                             awaitEachGesture {
                                 val down = awaitFirstDown()
                                 fun apply(x: Float) {
                                     val width = size.width.coerceAtLeast(1)
-                                    onVolume((x / width).coerceIn(0f, 1f))
+                                    onFraction((x / width).coerceIn(0f, 1f))
                                 }
                                 apply(down.position.x)
                                 drag(down.id) { change ->

@@ -202,8 +202,10 @@ private fun Island(
             if (side == Side.Left) {
                 ShoulderChip(R.drawable.ic_btn_l1, R.drawable.ic_btn_l1_filled, progress, "L1")
             } else {
-                Row(Modifier.graphicsLayer { alpha = 1f - progress }, horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
-                    StatusIcons(app)
+                // The status stays while R1 is open, and says more: the date, the battery
+                // percent, and Bluetooth. The bell leaves, since the notices are listed below it.
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                    StatusIcons(app, progress)
                 }
                 ShoulderChip(R.drawable.ic_btn_r1, R.drawable.ic_btn_r1_filled, progress, "R1")
             }
@@ -335,11 +337,18 @@ internal fun batteryStatusIcon(percent: Int, charging: Boolean): Int {
     }
 }
 
-internal fun wifiStatusIcon(network: String): Int =
-    if (network == Copy.wifi) R.drawable.ic_status_wifi_4 else R.drawable.ic_status_wifi_off
+internal fun wifiStatusIcon(network: String, bars: Int = 4): Int = when {
+    network != Copy.wifi -> R.drawable.ic_status_wifi_off
+    bars <= 0 -> R.drawable.ic_status_wifi_0
+    bars == 1 -> R.drawable.ic_status_wifi_1
+    bars == 2 -> R.drawable.ic_status_wifi_2
+    bars == 3 -> R.drawable.ic_status_wifi_3
+    else -> R.drawable.ic_status_wifi_4
+}
 
-internal fun bellStatusIcon(count: Int): Int = when {
-    count <= 0 -> R.drawable.ic_status_bell_dot
+/** The bell with its count. Null with no notices: an empty bell would only be noise. */
+internal fun bellStatusIcon(count: Int): Int? = when {
+    count <= 0 -> null
     count == 1 -> R.drawable.ic_status_bell_1
     count == 2 -> R.drawable.ic_status_bell_2
     count == 3 -> R.drawable.ic_status_bell_3
@@ -351,8 +360,12 @@ internal fun bellStatusIcon(count: Int): Int = when {
     else -> R.drawable.ic_status_bell_9plus
 }
 
+/**
+ * Time, battery, Wi-Fi, and the bell. As R1 opens ([open] toward 1) the date,
+ * the battery percent, and Bluetooth fade in, and the bell fades out.
+ */
 @Composable
-private fun StatusIcons(app: FoldcadeApp) {
+private fun StatusIcons(app: FoldcadeApp, open: Float) {
     val theme = LocalFoldTheme.current.theme
     val context = LocalContext.current
     var status by remember { mutableStateOf(readDeviceStatus(context)) }
@@ -362,13 +375,28 @@ private fun StatusIcons(app: FoldcadeApp) {
             delay(millisUntilNextMinute(System.currentTimeMillis()))
         }
     }
-    BasicText(
-        text = status.time,
-        style = TextStyle(color = theme.onBackground, fontSize = TypeRamp.hint, fontFamily = theme.font),
-    )
+    // Battery, Wi-Fi, and Bluetooth change between minutes. Opening R1 reads them again.
+    LaunchedEffect(open > 0f) {
+        if (open > 0f) status = readDeviceStatus(context)
+    }
+    val style = TextStyle(color = theme.onBackground, fontSize = TypeRamp.hint, fontFamily = theme.font)
+    val muted = style.copy(color = theme.muted)
+    if (open > 0f && status.date.isNotEmpty()) {
+        BasicText(text = status.date, style = muted, modifier = Modifier.graphicsLayer { alpha = open })
+    }
+    BasicText(text = status.time, style = style)
+    if (open > 0f) {
+        BasicText(text = "${status.batteryPercent}%", style = style, modifier = Modifier.graphicsLayer { alpha = open })
+    }
     Glyph(batteryStatusIcon(status.batteryPercent, status.charging), null)
-    Glyph(wifiStatusIcon(status.network), null)
-    Glyph(bellStatusIcon(app.shell.model.notices.size), null)
+    Glyph(wifiStatusIcon(status.network, status.wifiBars), null)
+    if (open > 0f && status.bluetooth) {
+        Box(Modifier.graphicsLayer { alpha = open }) { Glyph(R.drawable.ic_status_bluetooth, null) }
+    }
+    val bell = bellStatusIcon(app.shell.model.notices.size)
+    if (bell != null && open < 1f) {
+        Box(Modifier.graphicsLayer { alpha = 1f - open }) { Glyph(bell, null) }
+    }
 }
 
 @Composable

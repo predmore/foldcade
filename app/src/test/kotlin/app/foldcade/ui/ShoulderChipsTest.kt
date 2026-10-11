@@ -15,12 +15,13 @@ class ShoulderChipsTest {
     }
 
     @Test
-    fun statusUsesIconsNotPercentOrNetworkText() {
+    fun closedStatusUsesIconsAndRingsTheBellOnlyForNotices() {
         assertEquals(R.drawable.ic_status_battery_100, batteryStatusIcon(100, charging = false))
         assertEquals(R.drawable.ic_status_battery_100_charging, batteryStatusIcon(97, charging = true))
         assertEquals(R.drawable.ic_status_wifi_4, wifiStatusIcon(Copy.wifi))
-        assertEquals(R.drawable.ic_status_wifi_off, wifiStatusIcon(Copy.offline))
-        assertEquals(R.drawable.ic_status_bell_dot, bellStatusIcon(0))
+        assertEquals(R.drawable.ic_status_wifi_2, wifiStatusIcon(Copy.wifi, bars = 2))
+        assertEquals(R.drawable.ic_status_wifi_off, wifiStatusIcon(Copy.offline, bars = 4))
+        assertEquals(null, bellStatusIcon(0))
         assertEquals(R.drawable.ic_status_bell_3, bellStatusIcon(3))
         assertEquals(R.drawable.ic_status_bell_9plus, bellStatusIcon(12))
     }

@@ -25,12 +25,16 @@ class AndroidSettingsMapTest {
     }
 
     @Test
-    fun rightClusterTilesMoveInTwoColumnsAndDoNotWrap() {
+    fun rightClusterIsBrightnessNoticesThenOneRowOfAndroidScreens() {
         val notices = listOf(FoldNotice("save", "Both saves were kept", "Archived"))
         val rows = rightRows(notices = notices)
         assertEquals(
-            listOf(Row.Notice("save")) + quickSettings().map { Row.QuickTile(it) },
+            listOf(Row.Brightness, Row.Notice("save")) + quickSettings().map { Row.QuickTile(it) },
             rows,
+        )
+        assertEquals(
+            listOf(QuickSetting.Wifi, QuickSetting.Bluetooth, QuickSetting.Battery, QuickSetting.Settings),
+            quickSettings(),
         )
         val opened = reduce(sample().copy(notices = notices), Meaning.RightPanel).first
         assertEquals(0, opened.panel?.index)
@@ -48,14 +52,13 @@ class AndroidSettingsMapTest {
         val (activated, effect) = reduce(wifi, Meaning.Activate)
         assertEquals(Effect.OpenAndroidSetting(AndroidSetting.Wifi), effect)
         assertEquals(wifi.panel?.index, activated.panel?.index)
-        val (page, none) = reduce(last, Meaning.Activate)
-        assertEquals(null, none)
-        assertEquals(null, page.panel)
-        assertEquals(HostScreen.Top, page.settings?.screen)
+        // The last tile is Android's Settings app. Foldcade's own settings are on L1.
+        val (stayed, android) = reduce(last, Meaning.Activate)
+        assertEquals(Effect.OpenAndroidSetting(AndroidSetting.Settings), android)
+        assertEquals(last.panel, stayed.panel)
+        assertEquals(null, stayed.settings)
         assertEquals("Wi-Fi", rowLabel(Row.QuickTile(QuickSetting.Wifi), sample()))
-        assertEquals("App info", rowLabel(Row.QuickTile(QuickSetting.AppInfo), sample()))
-        assertEquals("Settings", rowLabel(Row.QuickTile(QuickSetting.Settings), sample()))
-        assertTrue(quickSettings().filter { it != QuickSetting.Settings }.none { it.androidSetting() == AndroidSetting.Settings })
+        assertEquals("Android settings", rowLabel(Row.QuickTile(QuickSetting.Settings), sample()))
         assertTrue(quickSettings().none { it.androidSetting() == AndroidSetting.Home })
     }
 

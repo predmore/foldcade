@@ -38,6 +38,7 @@ import app.foldcade.artwork.SteamGridDb
 import app.foldcade.artwork.SteamStoreArt
 import app.foldcade.net.PublicHttps
 import coil3.ImageLoader
+import app.foldcade.language.brightnessLevel
 import app.foldcade.language.BackgroundMotion
 import app.foldcade.language.Copy
 import app.foldcade.language.EmptyGrid
@@ -148,6 +149,10 @@ class FoldcadeApp : Application() {
     lateinit var plays: PlaySessions
         private set
 
+    /** The top screen's brightness, for the R1 slider. */
+    lateinit var brightness: ScreenBrightness
+        private set
+
     /** The external player session opened by the host launch path. */
     val externalPlay = ExternalPlay()
     var companionLaunched: Boolean = false
@@ -220,8 +225,13 @@ class FoldcadeApp : Application() {
             themeTracks = themeTrackList,
             lastPlayedMillis = plays::lastPlayedMillis,
             onMoonlightRemoved = ::unpinMoonlightGame,
+            onBrightness = { position -> brightness.write(brightnessLevel(position)) },
         )
         plays.onChanged = shell::notePlayChanged
+        brightness = ScreenBrightness(this)
+        // The Thor's own quick settings, or Android's, can move it too. The slider follows.
+        brightness.observe(::refreshBrightness)
+        refreshBrightness()
         rommPublish = RommPublish(
             read = {
                 readRommPublish(
@@ -276,6 +286,11 @@ class FoldcadeApp : Application() {
             if (store.folderTrees().isNotEmpty()) reloadFolder()
             syncRomm()
         }
+    }
+
+    /** Reads the level and the write access again. Resume calls this after Android's access page. */
+    fun refreshBrightness() {
+        shell.setBrightness(brightness.level(), brightness.allowed())
     }
 
     /** MAIN / LAUNCHER list. Package add, remove, and change call this again. */

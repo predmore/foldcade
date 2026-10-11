@@ -265,6 +265,7 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
         refreshFacePrompt()
         displays.panelFor(this, foldcade.store.session.defaultDisplayIsTop)?.let(foldcade.music::onHomeResume)
         foldcade.refreshMoonlightShelf()
+        foldcade.refreshBrightness()
         reconcileUsage()
     }
 
@@ -952,6 +953,9 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
 
     private fun onDialog(effect: Effect.DialogChoice) {
         when (effect.kind) {
+            DialogKind.Brightness -> if (effect.button == DialogButton.Allow) {
+                startActivity(foldcade.brightness.accessIntent())
+            }
             DialogKind.UsageAccess -> {
                 foldcade.store.setUsagePromptOffered()
                 if (effect.button == DialogButton.Allow) {
