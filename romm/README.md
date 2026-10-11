@@ -8,23 +8,23 @@ Calls suspend on OkHttp. Cancelling the coroutine cancels the OkHttp call for th
 
 ## Pinned server
 
-Tested against RomM **5.4.0-alpha.2**. The pinned major is **5**.
+Tested against RomM **5.4.0**, the first stable release with save sync. The pinned major is **5**.
 
 Browse, download, and device-code sign-in work on any 5.x. Platform objects from stable 5.3.1 omit `abbreviation` and `alternative_names`. Those fields are optional: the abbreviation falls back to the slug, and missing names are an empty list.
 
-Save sync needs **5.4.0** or newer. `POST /api/sync/negotiate` reads `info.version` from `/openapi.json` first. If that major is greater than 5, the client throws `RommProtocolMismatch` and does not negotiate. The exception carries the server version and the tested major so a later screen can show the mismatch. If the server is older than 5.4.0, the client throws `RommUnsupportedServer` with "server too old for save sync" and does not open a session. A newer minor of major 5, such as 5.9.0, is still negotiated.
+Save sync needs **5.4.0** or newer. `POST /api/sync/negotiate` reads `info.version` from `/openapi.json` first. If that major is greater than 5, the client throws `RommProtocolMismatch` and does not negotiate. The exception carries the server version and the tested major so a later screen can show the mismatch. If the server is older than 5.4.0, the client throws `RommUnsupportedServer` with "server too old for save sync" and does not open a session. A newer minor of major 5, such as 5.9.0, is still negotiated. A pre-release tag is ignored, so `5.4.0-beta.1` counts as 5.4.0.
 
 RomM 5.1's device-sync document uses a different body. This client does not speak it. A 5.4 response that is missing the tested fields, including `total_delete`, fails to parse and is not applied. Older servers never reach that parser.
 
-The public demo at the time this was written served OpenAPI 5.2.0. That document does not have `rom_ids`, `emulators`, or `total_delete` on negotiate. It was not used as the contract.
+Stable 5.3.x is refused on purpose. Its negotiate has no `emulators` filter, so a slot could pair with another emulator's save; it has no `restore_unlisted` or `total_delete`; and it decides from timestamps alone. 5.2 has no `rom_ids`, so it would offer every game's saves.
 
-`src/test/resources/fixtures/openapi-5.4.0-alpha.2.json` is the OpenAPI document generated from the RomM `5.4.0-alpha.2` tag with `backend/tools/dump_openapi.py`. `RommOpenApiContractTest` checks the paths and fields this client calls. The release substitutes the tag for the source placeholder `<version>`, so `info.version` is `5.4.0-alpha.2`.
+`src/test/resources/fixtures/openapi-5.4.0.json` is the `/openapi.json` a RomM 5.4.0 server serves. `RommOpenApiContractTest` checks the paths and fields this client calls. Every one of them matches the `5.4.0-alpha.2` document this client was first written against.
 
 HTTP 401 is `RommUnauthorized` and HTTP 403 is `RommForbidden`. Both extend `RommHttpException`. Other statuses stay `RommHttpException`.
 
 ## What it calls
 
-Paths below are on the 5.4.0-alpha.2 schema and in the 5.4.0-alpha docs for authentication, downloads, and device sync.
+Paths below are on the 5.4.0 schema and in the 5.4 docs for authentication, downloads, and device sync.
 
 | Call | Path |
 | --- | --- |

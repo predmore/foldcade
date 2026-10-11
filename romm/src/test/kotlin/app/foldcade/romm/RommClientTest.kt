@@ -52,7 +52,7 @@ class RommClientTest {
         assertFalse(RommVersion.parse("5.3.1")!!.isAtLeast(5, 4, 0))
         assertFalse(RommVersion.parse("4.9.9")!!.isAtLeast(5, 0, 0))
         assertEquals(RommContract.TESTED_MAJOR, 5)
-        assertEquals(RommContract.TESTED_SPEC, "5.4.0-alpha.2")
+        assertEquals(RommContract.TESTED_SPEC, "5.4.0")
         assertNull(RommVersion.parse("v5.4.0"))
     }
 
@@ -76,7 +76,7 @@ class RommClientTest {
     @Test
     fun deviceAuthAsksForFoldcadeScopesAndNotAPassword() {
         server.route("GET", "/api/heartbeat") { exchange, _ ->
-            json(exchange, 200, fixture("heartbeat-5.4.0-alpha.2.json"))
+            json(exchange, 200, fixture("heartbeat-5.4.0.json"))
         }
         server.route("POST", "/api/auth/device/init") { exchange, _ ->
             json(exchange, 201, fixture("device-auth-init.json"))
@@ -502,7 +502,7 @@ class RommClientTest {
     @Test
     fun deleteMatchesFileNameAndEmulatorAndMovesTheFileToTrash() {
         server.route("GET", "/openapi.json") { exchange, _ ->
-            json(exchange, 200, fixture("openapi-5.4.0-alpha.2.json"))
+            json(exchange, 200, fixture("openapi-5.4.0.json"))
         }
         server.route("POST", "/api/sync/negotiate") { exchange, _ ->
             json(
@@ -664,7 +664,7 @@ class RommClientTest {
     @Test
     fun conflictArchivesTheLocalBytesAndWritesTheServerCopy() {
         server.route("GET", "/openapi.json") { exchange, _ ->
-            json(exchange, 200, fixture("openapi-5.4.0-alpha.2.json"))
+            json(exchange, 200, fixture("openapi-5.4.0.json"))
         }
         server.route("POST", "/api/sync/negotiate") { exchange, _ ->
             json(
@@ -879,7 +879,7 @@ class RommClientTest {
     @Test
     fun aMovedSlotIsNotOverwritten() {
         server.route("GET", "/openapi.json") { exchange, _ ->
-            json(exchange, 200, fixture("openapi-5.4.0-alpha.2.json"))
+            json(exchange, 200, fixture("openapi-5.4.0.json"))
         }
         server.route("POST", "/api/sync/negotiate") { exchange, _ ->
             json(
@@ -932,7 +932,7 @@ class RommClientTest {
     @Test
     fun aMajorFiveResponseMissingTheTestedFieldsIsNotApplied() {
         server.route("GET", "/openapi.json") { exchange, _ ->
-            json(exchange, 200, fixture("openapi-5.4.0-alpha.2.json"))
+            json(exchange, 200, fixture("openapi-5.4.0.json"))
         }
         server.route("POST", "/api/sync/negotiate") { exchange, _ ->
             json(
@@ -1060,7 +1060,7 @@ class RommClientTest {
         val started = CountDownLatch(1)
         val release = CountDownLatch(1)
         server.route("GET", "/openapi.json") { exchange, _ ->
-            json(exchange, 200, fixture("openapi-5.4.0-alpha.2.json"))
+            json(exchange, 200, fixture("openapi-5.4.0.json"))
         }
         server.route("POST", "/api/sync/negotiate") { exchange, _ ->
             json(
@@ -1266,7 +1266,7 @@ class RommClientTest {
     @Test
     fun confirmSignInStaysOpenOn401OrUnreachable() {
         server.route("GET", "/api/heartbeat") { exchange, _ ->
-            json(exchange, 200, fixture("heartbeat-5.4.0-alpha.2.json"))
+            json(exchange, 200, fixture("heartbeat-5.4.0.json"))
         }
         server.route("GET", "/api/platforms") { exchange, _ ->
             json(exchange, 401, """{"detail":"unauthorized"}""")
@@ -1408,7 +1408,7 @@ class RommClientTest {
 
     private fun syncRoutes(negotiate: String) {
         server.route("GET", "/openapi.json") { exchange, _ ->
-            json(exchange, 200, fixture("openapi-5.4.0-alpha.2.json"))
+            json(exchange, 200, fixture("openapi-5.4.0.json"))
         }
         server.route("POST", "/api/sync/negotiate") { exchange, _ ->
             json(exchange, 200, negotiate)

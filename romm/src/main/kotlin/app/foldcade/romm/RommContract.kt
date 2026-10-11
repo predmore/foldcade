@@ -3,7 +3,7 @@ package app.foldcade.romm
 /**
  * RomM major this client was tested against.
  *
- * The wire shape is the OpenAPI schema shipped with RomM 5.4.0-alpha.2
+ * The wire shape is the OpenAPI schema shipped with RomM 5.4.0
  * (`info.version` on `/openapi.json`, generated models at that tag).
  * RomM documents breaking changes on major versions only. 5.1's device-sync
  * document describes a different body; this client does not speak it.
@@ -11,7 +11,7 @@ package app.foldcade.romm
  */
 object RommContract {
     const val TESTED_MAJOR = 5
-    const val TESTED_SPEC = "5.4.0-alpha.2"
+    const val TESTED_SPEC = "5.4.0"
     const val CLIENT_SLUG = "foldcade"
     const val PLATFORM = "android"
     const val SYNC_MODE = "api"
