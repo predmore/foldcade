@@ -98,6 +98,21 @@
             </intent-filter>
         </activity>
 
+        <!-- Android sends shortcut pin requests to the default home app. Moonlight's
+             Create shortcut lands here. It draws nothing and finishes at once. -->
+        <activity
+            android:name=".PinShortcutActivity"
+            android:excludeFromRecents="true"
+            android:exported="true"
+            android:noHistory="true"
+            android:taskAffinity=""
+            android:theme="@android:style/Theme.NoDisplay">
+            <intent-filter>
+                <action android:name="android.content.pm.action.CONFIRM_PIN_SHORTCUT" />
+                <category android:name="android.intent.category.DEFAULT" />
+            </intent-filter>
+        </activity>
+
         <activity
             android:name=".StandInActivity"
             android:exported="false"

@@ -22,9 +22,11 @@ import app.foldcade.api.plugin.SaveFolderHolder
 import app.foldcade.plugins.gamenative.CatalogGame
 import app.foldcade.plugins.gamenative.GameNativeLibrary
 import app.foldcade.plugins.gamenative.GameNativePlayer
+import app.foldcade.plugins.moonlight.MoonlightApp
 import app.foldcade.plugins.moonlight.MoonlightCatalog
 import app.foldcade.plugins.moonlight.MoonlightLibrary
 import app.foldcade.plugins.moonlight.moonlightApp
+import app.foldcade.plugins.moonlight.moonlightShortcutKey
 import app.foldcade.credentials.AndroidCredentialStore
 import app.foldcade.host.PluginHost
 import app.foldcade.plugins.romm.RommArtwork
@@ -55,6 +57,7 @@ import app.foldcade.music.HomeMusic
 import app.foldcade.ui.FoldPaint
 import java.io.File
 import java.nio.file.Path
+import java.util.Locale
 import java.util.concurrent.atomic.AtomicInteger
 import kotlin.coroutines.cancellation.CancellationException
 import kotlinx.coroutines.CompletableDeferred
@@ -172,6 +175,10 @@ class FoldcadeApp : Application() {
     private val credentialGate = Mutex()
     private val pluginLoad = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val pluginsReady = CompletableDeferred<Unit>()
+
+    /** Computer names from the last Moonlight shortcut read, keyed by lowercase host UUID. */
+    @Volatile
+    private var moonlightHostNames: Map<String, String> = emptyMap()
     private val libraryTicket = AtomicInteger()
     private val rommTicket = AtomicInteger()
     private var libraryRetry: () -> Unit = { reloadFolder() }
@@ -384,27 +391,24 @@ class FoldcadeApp : Application() {
     }
 
     /**
-     * Reads pinned Moonlight shortcuts when this app is the home app, then
-     * puts the selected catalog on the shelf. A failed read leaves the previous
-     * pinned list. The source setting chooses the imported list or the pins.
-     * A first discovery opens the confirm sheet unless the user already answered.
+     * Reads Moonlight's shortcuts when this app is the home app, then puts the
+     * selected catalog on the shelf. A failed read leaves the previous pinned
+     * list and computer names. The source setting chooses the imported list or
+     * the pins. A first discovery opens the confirm sheet unless the user
+     * already answered.
      */
     fun refreshMoonlightShelf() {
         pluginLoad.launch {
             val library = plugins.library(MoonlightLibrary.ID) as? MoonlightLibrary ?: return@launch
             restoreMoonlightCatalog(library)
-            val pinned = readPinnedMoonlightShortcuts(this@FoldcadeApp)
-            if (pinned != null) library.replacePinned(pinned)
+            val read = queryMoonlightShortcuts(this@FoldcadeApp)
+            if (read != null) {
+                library.replacePinned(read.games)
+                moonlightHostNames = read.hostNames
+            }
             val tiles = plugins.moonlightShelfGames()
             Shelf.moonlightGames = tiles
-            val discovered = pinned.orEmpty().map { app ->
-                MoonlightDiscoveredApp(
-                    hostUuid = app.hostUuid,
-                    hostName = app.hostUuid,
-                    appId = app.appId,
-                    label = app.label,
-                )
-            }
+            val discovered = read?.games.orEmpty().map(::discoveredMoonlightApp)
             withContext(Dispatchers.Main.immediate) {
                 shell.noteShelfChanged()
                 shell.maybeOfferMoonlightImport(discovered)
@@ -413,19 +417,39 @@ class FoldcadeApp : Application() {
     }
 
     /**
+     * [PinShortcutActivity] accepted Moonlight's Create shortcut for [shortcutId].
+     * The game is read back from Android's pinned shortcuts, not from the
+     * request, then joins a confirmed import so the Imported list shows it too.
+     */
+    fun acceptedMoonlightPin(shortcutId: String) {
+        val key = moonlightShortcutKey(shortcutId) ?: return
+        pluginLoad.launch {
+            pluginsReady.await()
+            val read = queryMoonlightShortcuts(this@FoldcadeApp)
+            if (read != null) moonlightHostNames = read.hostNames
+            val app = read?.games?.firstOrNull { it.remoteKey == key }
+            if (app != null) {
+                withContext(Dispatchers.Main.immediate) { shell.addMoonlightPin(discoveredMoonlightApp(app)) }
+            }
+            refreshMoonlightShelf()
+        }
+    }
+
+    /** The sheet falls back to the host UUID when no shortcut named the computer. */
+    private fun discoveredMoonlightApp(app: MoonlightApp): MoonlightDiscoveredApp = MoonlightDiscoveredApp(
+        hostUuid = app.hostUuid,
+        hostName = moonlightHostNames[app.hostUuid.lowercase(Locale.ROOT)].orEmpty(),
+        appId = app.appId,
+        label = app.label,
+    )
+
+    /**
      * Imported list is empty until the user confirms the sheet.
      * Choosing it from the left panel opens that sheet when pins exist.
      */
     private fun reviewMoonlightImport(screen: HostScreen) {
         val library = plugins.library(MoonlightLibrary.ID) as? MoonlightLibrary
-        val discovered = library?.pinnedApps().orEmpty().map { app ->
-            MoonlightDiscoveredApp(
-                hostUuid = app.hostUuid,
-                hostName = app.hostUuid,
-                appId = app.appId,
-                label = app.label,
-            )
-        }
+        val discovered = library?.pinnedApps().orEmpty().map(::discoveredMoonlightApp)
         if (discovered.isEmpty()) {
             shell.selectImportedList()
             return

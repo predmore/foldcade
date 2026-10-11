@@ -47,6 +47,21 @@ class SteamGridDbTest {
     }
 
     @Test
+    fun anExactTitleQueryTakesNoNearMatch() = runBlocking {
+        val http = FakeHttp(
+            mapOf(
+                "$api/search/autocomplete/Desktop" to ok(
+                    """{"success":true,"data":[{"id":3,"name":"Desktop Dungeons"},{"id":4,"name":"Desktop Goose"}]}""",
+                ),
+            ) + grids(3, "https://cdn2.steamgriddb.com/grid/dungeons.png", null),
+        )
+        val source = SteamGridDb(http) { "k" }
+        assertEquals("https://cdn2.steamgriddb.com/grid/dungeons.png", source.find(ArtQuery("k", "Desktop"))?.cover)
+        assertNull(source.find(ArtQuery("k", "Desktop", "moonlight", exactTitle = true)))
+        assertNull(source.scene(ArtQuery("k", "Desktop", "moonlight", exactTitle = true)))
+    }
+
+    @Test
     fun noKeyHandlesNothingAndARefusedKeyThrows() = runBlocking {
         assertFalse(SteamGridDb(FakeHttp(emptyMap())) { null }.handles(ArtQuery("k", "Anything")))
         val refused = FakeHttp(mapOf("$api/search/autocomplete/Game" to ArtResponse(401, ByteArray(0))))

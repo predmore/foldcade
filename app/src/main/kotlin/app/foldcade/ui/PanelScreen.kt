@@ -1355,12 +1355,14 @@ private fun GridHints(app: FoldcadeApp, modifier: Modifier = Modifier) {
             },
         )
     }
+    // The grid's own keys only count while nothing covers it.
+    val gridKeys = model.panel == null && model.dialog == null && model.moonlightSheet == null
     val keys = gridHints(
         actions,
         shell.homeKeys(),
         model.faceMap,
-        screens = model.panel == null && model.dialog == null && shell.focusedLaunchesOnOneScreen(),
-        options = model.panel == null && model.dialog == null && !model.connectOpen && shell.hasOptions(),
+        screens = gridKeys && shell.focusedLaunchesOnOneScreen(),
+        options = gridKeys && !model.connectOpen && shell.hasOptions(),
     )
     if (keys.isEmpty()) return
     Row(

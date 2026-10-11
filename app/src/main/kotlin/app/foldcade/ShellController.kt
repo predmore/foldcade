@@ -9,6 +9,7 @@ import app.foldcade.artwork.ArtQuery
 import app.foldcade.localfolder.LocalFolderBackend
 import app.foldcade.plugins.gamenative.GameNativeLibrary
 import app.foldcade.plugins.gamenative.steamAppId
+import app.foldcade.plugins.moonlight.MoonlightLibrary
 import app.foldcade.host.PluginHost
 import app.foldcade.language.settingsCategories
 import app.foldcade.language.AndroidShelf
@@ -53,8 +54,10 @@ import app.foldcade.language.MotionSpeed
 import app.foldcade.language.Metrics
 import app.foldcade.language.MoonlightDiscoveredApp
 import app.foldcade.language.MoonlightSource
+import app.foldcade.language.MoonlightSheetApp
 import app.foldcade.language.MoonlightStoredApp
 import app.foldcade.language.moonlightImportSheet
+import app.foldcade.language.placeMoonlightImport
 import app.foldcade.language.PromptKey
 import app.foldcade.language.ThorStyle
 import app.foldcade.language.faceMapWithConfirm
@@ -762,6 +765,28 @@ class ShellController(
         presentMoonlightSheet(apps, HostScreen.Bottom)
     }
 
+    /**
+     * A game the user just pinned in Moonlight. With a confirmed import it joins
+     * the imported list and gets the placement an import gives. Without one,
+     * Pinned shortcuts already shows it, and the first-run sheet still offers it.
+     */
+    fun addMoonlightPin(app: MoonlightDiscoveredApp) {
+        if (!store.moonlightImportConfirmed()) return
+        val pin = MoonlightSheetApp(
+            hostUuid = app.hostUuid,
+            hostName = app.hostName,
+            appId = app.appId,
+            label = app.label,
+            checked = true,
+        )
+        val stored = store.moonlightImportedApps()
+        if (stored.none { it.hostUuid.equals(pin.hostUuid, ignoreCase = true) && it.appId == pin.appId }) {
+            store.setMoonlightImport(stored + MoonlightStoredApp(hostUuid = pin.hostUuid, appId = pin.appId, label = pin.label))
+        }
+        val placements = placeMoonlightImport(model.moonlightPlacements, listOf(pin))
+        if (placements != model.moonlightPlacements) publish(model.copy(moonlightPlacements = placements))
+    }
+
     fun presentMoonlightSheet(apps: List<MoonlightDiscoveredApp>, screen: HostScreen) {
         if (model.dialog != null || model.moonlightSheet != null) return
         val sheet = moonlightImportSheet(apps, screen) ?: return
@@ -855,6 +880,7 @@ class ShellController(
             platformId = platformId,
             fileName = remoteKey?.takeIf { libraryId == LocalFolderBackend.ID }?.let(LocalFolderBackend::fileNameOf),
             steamAppId = remoteKey?.takeIf { libraryId == GameNativeLibrary.ID }?.let(::steamAppId),
+            exactTitle = libraryId == MoonlightLibrary.ID,
         )
     }
 
@@ -1261,7 +1287,8 @@ class ShellController(
         !snapshot.libraryGrid && snapshot.homeGrid == HomeGrid.StandIns
 
     private fun homeActive(): Boolean =
-        showingHome() && model.dialog == null && model.panel == null && model.settings == null && !model.connectOpen
+        showingHome() && model.dialog == null && model.moonlightSheet == null && model.panel == null &&
+            model.settings == null && !model.connectOpen
 
     private fun showBoard(focus: GridFocus, keepDialog: Boolean) {
         val count = home.visibleCount()
