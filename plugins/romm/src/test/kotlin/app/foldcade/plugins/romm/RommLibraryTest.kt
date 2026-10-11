@@ -14,7 +14,6 @@ import app.foldcade.api.plugin.PluginException
 import app.foldcade.api.plugin.SaveDeclaration
 import app.foldcade.api.plugin.StartDisplay
 import app.foldcade.api.plugin.SyncOutcome
-import app.foldcade.romm.FlushResult
 import app.foldcade.romm.Heartbeat
 import app.foldcade.romm.KeptBoth
 import app.foldcade.romm.LocalSave
@@ -34,7 +33,7 @@ import app.foldcade.romm.RommUnauthenticated
 import app.foldcade.romm.RommUnavailable
 import app.foldcade.romm.RommUnsupportedServer
 import app.foldcade.romm.SaveSyncReport
-import app.foldcade.romm.SaveUploadQueue
+import app.foldcade.romm.SaveLedger
 import app.foldcade.romm.SyncOperation
 import com.sun.net.httpserver.HttpExchange
 import com.sun.net.httpserver.HttpServer
@@ -277,7 +276,7 @@ class RommLibraryTest {
             serverVersion = "5.4.0",
             downloaded = emptyList(),
             uploadedSaveIds = emptyList(),
-            keptBoth = listOf(KeptBoth(1, "main", 2, 3, path)),
+            keptBoth = listOf(KeptBoth(1, "main", 2L, 3, path)),
             deleted = emptyList(),
             queued = emptyList(),
             failed = emptyList(),
@@ -334,7 +333,8 @@ class RommLibraryTest {
             val library = live(server, cache)
             val game = library.listGames("3ds", GameQuery()).games.single()
             val spec = rom("3ds", 3).bytes()
-            val cached = RommClient.romCacheFile(cache, 1234, spec.fileName, spec.fileIds)
+            val roms = cache.resolve("servers").resolve(RommData.serverKey(server.origin))
+            val cached = RommClient.romCacheFile(roms, 1234, spec.fileName, spec.fileIds)
             Files.createDirectories(cached.parent)
             Files.write(cached, "hello-rom".toByteArray())
             val placement = library.prepareLaunch(game, NamedPlayer("azahar"))
@@ -395,7 +395,7 @@ class RommLibraryTest {
         second.onClose = { closes.incrementAndGet() }
         var token = "rmm_test"
         val cache = Files.createTempDirectory("romm-race")
-        val wiring = RommWiring("http://romm.example", RommTokenSource { token }, cache)
+        val wiring = RommWiring("http://romm.example", RommTokenSource { token }, cache, Files.createTempDirectory("romm-data"))
         var opened = 0
         wiring.open = { _, _ ->
             opened += 1
@@ -428,7 +428,7 @@ class RommLibraryTest {
             emptyList()
         }
         val cache = Files.createTempDirectory("romm-drain")
-        val wiring = RommWiring("http://romm.example", RommTokenSource { "rmm_test" }, cache)
+        val wiring = RommWiring("http://romm.example", RommTokenSource { "rmm_test" }, cache, Files.createTempDirectory("romm-data"))
         wiring.open = { _, _ -> ops }
         val library = RommLibrary(RommGate { wiring })
         val first = launch { library.listPlatforms() }
@@ -443,17 +443,22 @@ class RommLibraryTest {
     }
 
     @Test
-    fun aTrashedFileInsideASlotIsNotASave() {
-        val cache = Files.createTempDirectory("romm-trash")
+    fun eachSlotIsOneFileAndTrashIsNotASave() {
+        val root = Files.createTempDirectory("romm-trash")
         try {
-            val slot = cache.resolve("saves").resolve("7").resolve("autosave")
-            Files.createDirectories(slot.resolve(".trash"))
-            Files.writeString(slot.resolve("keep.srm"), "keep")
-            Files.writeString(slot.resolve(".trash").resolve("gone.srm"), "gone")
-            val listed = localSaves(cache, 7, "azahar")
-            assertEquals(listOf("keep.srm"), listed.map { it.fileName })
+            val data = RommData(root, "http://romm.example")
+            val file = data.slotFile(7, "autosave")
+            Files.createDirectories(file.parent.resolve(".trash"))
+            Files.writeString(file, "keep")
+            Files.writeString(file.parent.resolve("stray.srm"), "stray")
+            Files.writeString(file.parent.resolve(".trash").resolve("gone.srm"), "gone")
+            val odd = data.slotFile(7, "../up")
+            assertTrue(odd.normalize().startsWith(data.romSaves(7)))
+            val listed = localSaves(data, 7, "azahar")
+            assertEquals(listOf("autosave.sav"), listed.map { it.fileName })
+            assertEquals("autosave", listed.single().slot)
         } finally {
-            cache.toFile().deleteRecursively()
+            root.toFile().deleteRecursively()
         }
     }
 
@@ -479,7 +484,8 @@ class RommLibraryTest {
                     """{"access_token":"rmm_secret","device_id":"device-1","scopes":["roms.read","platforms.read"]}""",
                 )
             }
-            val wiring = RommWiring(server.origin, RommTokenSource { null }, cache)
+            val data = Files.createTempDirectory("romm-pair-data")
+            val wiring = RommWiring(server.origin, RommTokenSource { null }, cache, data)
             val pairing = RommPairing(wiring)
             val challenge = pairing.begin("device-identifier")
             assertEquals("WDJB-MJHT", challenge.userCode)
@@ -498,6 +504,9 @@ class RommLibraryTest {
             assertEquals("device-1", wiring.rememberedDevice?.deviceId)
             assertEquals(wiring.clientVersion, wiring.rememberedDevice?.clientVersion)
             assertFalse(cacheContains(cache, "device-1"))
+            assertFalse(cacheContains(data, "rmm_secret"))
+            val restarted = RommWiring(server.origin, RommTokenSource { null }, cache, data)
+            assertEquals("device-1", restarted.rememberedDevice?.deviceId)
         } finally {
             server.close()
         }
@@ -510,6 +519,7 @@ private fun harness(ops: ScriptedOps, platforms: List<Platform> = emptyList()): 
         origin = "http://romm.example",
         tokenSource = RommTokenSource { "rmm_test" },
         cacheRoot = cache,
+        dataRoot = Files.createTempDirectory("romm-script-data"),
         platforms = platforms,
     )
     wiring.open = { _, _ -> ops }
@@ -518,7 +528,7 @@ private fun harness(ops: ScriptedOps, platforms: List<Platform> = emptyList()): 
 }
 
 private fun live(server: TinyServer, cache: Path): RommLibrary {
-    val wiring = RommWiring(server.origin, RommTokenSource { "rmm_test" }, cache)
+    val wiring = RommWiring(server.origin, RommTokenSource { "rmm_test" }, cache, Files.createTempDirectory("romm-data"))
     return RommLibrary(RommGate { wiring })
 }
 
@@ -588,8 +598,11 @@ internal class ScriptedOps : RommOps {
     var onArtwork: suspend (String) -> ByteArray = { error("artwork") }
     var onRegister: suspend (RegisteredDevice?, String, String) -> RegisteredDevice =
         { _, _, version -> RegisteredDevice("device-1", version) }
-    var onSync: suspend (String, List<LocalSave>, List<Long>, List<String>) -> SaveSyncReport =
+    var hostnames = mutableListOf<String?>()
+    var onSync: suspend (String, List<LocalSave>, List<Long>, List<String>?) -> SaveSyncReport =
         { _, _, _, _ -> error("sync") }
+    var onDownload: suspend (Long, String, Path, List<Long>, Long?, String?) -> Path =
+        { _, _, _, _, _, _ -> error("download") }
 
     override suspend fun heartbeat() = Heartbeat("5.4.0")
     override suspend fun artwork(uri: String) = onArtwork(uri)
@@ -602,18 +615,26 @@ internal class ScriptedOps : RommOps {
         cacheRoot: Path,
         fileIds: List<Long>,
         expectedSize: Long?,
-    ): Path = error("download")
+        expectedMd5: String?,
+    ): Path = onDownload(romId, fileName, cacheRoot, fileIds, expectedSize, expectedMd5)
 
-    override suspend fun registerDevice(stored: RegisteredDevice?, name: String, clientVersion: String) =
-        onRegister(stored, name, clientVersion)
+    override suspend fun registerDevice(
+        stored: RegisteredDevice?,
+        name: String,
+        clientVersion: String,
+        hostname: String?,
+    ): RegisteredDevice {
+        hostnames += hostname
+        return onRegister(stored, name, clientVersion)
+    }
 
     override suspend fun syncSaves(
         deviceId: String,
         saves: List<LocalSave>,
         romIds: List<Long>,
-        emulators: List<String>,
+        emulators: List<String>?,
         destination: (SyncOperation) -> Path,
-        queue: SaveUploadQueue,
+        ledger: SaveLedger,
     ) = onSync(deviceId, saves, romIds, emulators)
 
     override suspend fun beginDeviceAuth(clientDeviceIdentifier: String, name: String, clientVersion: String) =
@@ -621,7 +642,6 @@ internal class ScriptedOps : RommOps {
 
     override suspend fun pollDeviceToken(deviceCode: String) = error("poll")
     override fun verificationUrl(challenge: app.foldcade.romm.DeviceAuthChallenge) = error("url")
-    override suspend fun flushUploads(queue: SaveUploadQueue) = FlushResult(0, 0)
     override fun close() = onClose()
 }
 

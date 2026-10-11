@@ -76,6 +76,16 @@ class MelonDsPlayer : Player, SaveFolderHolder {
     override fun saveDeclarations(game: Game): List<SaveDeclaration> =
         listOf(SaveDeclaration(slot = SAVE_SLOT, locationUri = saveFolder))
 
+    /**
+     * melonDS names the save after the game file's display name with its
+     * extension replaced by `sav` (`SramProvider.getSramForRom`), in the save
+     * directory. A name with no extension gets `.sav` appended.
+     */
+    override fun saveFileName(slot: String, romFileName: String): String? {
+        if (slot != SAVE_SLOT || romFileName.isBlank()) return null
+        return romFileName.replaceAfterLast('.', "sav", "$romFileName.sav")
+    }
+
     override fun launchIntent(request: LaunchRequest): PlayerIntent {
         if (request.resolvedPackage !in PACKAGES) {
             throw PluginException.NotFound("melonDS is not installed.")

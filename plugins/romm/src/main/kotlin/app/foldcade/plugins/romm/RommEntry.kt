@@ -19,7 +19,7 @@ const val ROMM_CONTENT_AUTHORITY = "app.foldcade.romm.cache"
 
 /**
  * Bytes of a save the shell observed, when the URI is not one this plugin minted.
- * The default reads nothing. The host can supply a reader later.
+ * The default reads nothing. The host supplies a reader for its content URIs.
  */
 fun interface SaveBytes {
     fun read(contentUri: String): ByteArray?
@@ -28,24 +28,58 @@ fun interface SaveBytes {
 /**
  * One configured RomM server.
  * [tokenSource] supplies the client token. This object does not write that token.
- * [rememberedDevice] is the device id for this process. It is not a credential file.
+ *
+ * [cacheRoot] holds downloaded ROMs. The system may clear it, and a ROM can be
+ * downloaded again. [dataRoot] holds saves, the sync ledger, and the device id,
+ * none of which can be downloaded again, so it must not be a cache directory.
+ * ROMs and saves are kept apart per [origin].
+ *
+ * [rememberedDevice] is the RomM device for [origin]. It is kept in [dataRoot],
+ * so a restart keeps the same device and RomM keeps its sync history.
+ * It is not a credential.
  *
  * [platforms] are definitions the host already has. A RomM slug that matches one
  * of their ids or aliases becomes that canonical id. Slugs with no match stay
  * the slug. This plugin does not keep a second slug table.
+ *
+ * [saveBytes] reads a save the player wrote at a URI this plugin did not mint.
  */
 class RommWiring(
     val origin: String,
     val tokenSource: RommTokenSource,
     val cacheRoot: Path,
-    val contentUris: ContentUriAdapter = CachePathContentUri(cacheRoot),
+    val dataRoot: Path,
+    val contentUris: ContentUriAdapter = CachePathContentUri(cacheRoot, dataRoot = dataRoot),
     val platforms: List<Platform> = emptyList(),
     val clientVersion: String = "0.1.0",
     val deviceName: String = "Foldcade",
     val saveBytes: SaveBytes = SaveBytes { null },
 ) {
+    internal val data = RommData(dataRoot, origin)
+
+    /** Downloaded ROMs for [origin]. A ROM id names a different game on another server. */
+    internal val romRoot: Path = cacheRoot.resolve("servers").resolve(RommData.serverKey(origin))
+
     @Volatile
-    var rememberedDevice: RegisteredDevice? = null
+    private var device: RegisteredDevice? = null
+
+    @Volatile
+    private var deviceLoaded = false
+
+    var rememberedDevice: RegisteredDevice?
+        get() {
+            if (!deviceLoaded) {
+                device = data.device(origin)
+                deviceLoaded = true
+            }
+            return device
+        }
+        set(value) {
+            if (value == rememberedDevice) return
+            device = value
+            deviceLoaded = true
+            data.saveDevice(origin, value)
+        }
 
     internal var open: (String, () -> String?) -> RommOps = { server, token ->
         ClientRommOps(RommClient(server, token))

@@ -72,6 +72,7 @@ class ShellHostTest {
             MemoryCredentialStore(),
             cache,
             host.platformDefinitions(),
+            dataRoot = cache.resolve("data"),
         )
         val definitions = RommPlugins.wiring?.platforms
         assertEquals(host.platformDefinitions(), definitions)
@@ -143,6 +144,7 @@ class ShellHostTest {
                 MemoryCredentialStore(),
                 cache,
                 stored,
+                dataRoot = cache.resolve("data"),
             )
             val definitions = RommPlugins.wiring?.platforms
             assertEquals(stored, definitions)

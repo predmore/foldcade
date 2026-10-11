@@ -6,6 +6,9 @@ import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
 import android.content.pm.PackageManager
+import android.net.ConnectivityManager
+import android.net.Network
+import android.net.NetworkCapabilities
 import android.net.Uri
 import android.provider.DocumentsContract
 import android.util.Log
@@ -25,6 +28,7 @@ import app.foldcade.plugins.moonlight.moonlightApp
 import app.foldcade.credentials.AndroidCredentialStore
 import app.foldcade.host.PluginHost
 import app.foldcade.plugins.romm.RommArtwork
+import app.foldcade.plugins.romm.SaveBytes
 import app.foldcade.artwork.ART_HOSTS
 import app.foldcade.artwork.ArtBytes
 import app.foldcade.artwork.ArtFinder
@@ -65,6 +69,17 @@ import kotlinx.coroutines.withContext
 class FoldcadeApp : Application() {
     lateinit var store: SessionStore
         private set
+
+    /** Waits until the plugin entries are loaded, so a player can be found by id. */
+    internal suspend fun awaitPlugins() = pluginsReady.await()
+
+    /** One save flow at a time: a launch's placement, or a return's read-back. */
+    internal val saveFlow = Mutex()
+
+    /** Moves library saves in and out of each player's save folder. Replaced files are kept in `save-backups`. */
+    internal val playerSaves: PlayerSaves by lazy {
+        PlayerSaves(AndroidSaveDocuments(contentResolver), store, filesDir.toPath().resolve("save-backups"))
+    }
 
     /**
      * Host-owned secrets. Plugins do not open this store.
@@ -219,6 +234,7 @@ class FoldcadeApp : Application() {
                     origin = store::rommOrigin,
                     platforms = plugins::platformDefinitions,
                     cacheRoot = ::rommCacheRoot,
+                    dataRoot = ::rommDataRoot,
                 )
             },
             apply = { request ->
@@ -229,6 +245,8 @@ class FoldcadeApp : Application() {
                     request.platforms,
                     // The manifest's FileProvider authority. The debug build's id ends in .debug.
                     contentAuthority = "$packageName.romm.cache",
+                    dataRoot = request.dataRoot,
+                    saveBytes = SaveBytes { uri -> AndroidSaveDocuments(contentResolver).read(uri) },
                 )
             },
         )
@@ -242,6 +260,7 @@ class FoldcadeApp : Application() {
             },
             RECEIVER_EXPORTED,
         )
+        getSystemService(ConnectivityManager::class.java)?.registerDefaultNetworkCallback(rommReconnect)
         refreshCredentials()
         reloadInstalledApps()
         pluginLoad.launch {
@@ -435,6 +454,9 @@ class FoldcadeApp : Application() {
 
     private fun rommCacheRoot(): Path = cacheDir.toPath().resolve("romm")
 
+    /** Saves and the RomM device id. Not the cache: the system may clear that. */
+    private fun rommDataRoot(): Path = filesDir.toPath().resolve("romm")
+
     fun backendLabel(pluginId: String): String = when (pluginId) {
         RommCredentials.PLUGIN_ID -> "RomM"
         else -> pluginId
@@ -592,6 +614,47 @@ class FoldcadeApp : Application() {
      * once no server is saved. The grid does not change mode while this runs. A
      * server that cannot be reached leaves the board as it was, placed tiles included.
      */
+    /**
+     * A network coming back syncs the RomM saves that changed while it was gone.
+     * It waits until Android has validated the network, so a captive portal or a
+     * link with no route yet does not use up the retry.
+     */
+    private val rommReconnect = object : ConnectivityManager.NetworkCallback() {
+        private var validated: Network? = null
+
+        override fun onCapabilitiesChanged(network: Network, capabilities: NetworkCapabilities) {
+            val ready = capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED)
+            if (!ready) {
+                if (validated == network) validated = null
+                return
+            }
+            if (validated == network) return
+            validated = network
+            reconnectRomm()
+        }
+
+        override fun onLost(network: Network) {
+            if (validated == network) validated = null
+        }
+    }
+
+    /** Connecting starts the RomM plugin's sync of unsynced saves. A failure waits for the next network. */
+    private fun reconnectRomm() {
+        pluginLoad.launch {
+            pluginsReady.await()
+            if (store.rommOrigin().isNullOrBlank()) return@launch
+            try {
+                plugins.connect(RommCredentials.PLUGIN_ID)
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (fatal: VirtualMachineError) {
+                throw fatal
+            } catch (_: Exception) {
+                Unit
+            }
+        }
+    }
+
     fun syncRomm() {
         val ticket = rommTicket.incrementAndGet()
         pluginLoad.launch {

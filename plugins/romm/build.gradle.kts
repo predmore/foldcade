@@ -6,6 +6,7 @@ plugins {
 dependencies {
     compileOnly(project(":api"))
     implementation(project(":romm"))
+    implementation(libs.kotlinx.serialization.json)
     implementation(libs.coroutines.core)
     testImplementation(project(":api"))
     testImplementation(project(":host"))
