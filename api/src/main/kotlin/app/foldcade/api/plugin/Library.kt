@@ -20,7 +20,41 @@ package app.foldcade.api.plugin
  */
 interface LibraryBackend {
     val id: String
+
+    /**
+     * One configured copy of [id]. The host keys the catalog and home tiles by this.
+     * Default is [id], so the copy that exists today keeps its key.
+     */
+    val instanceId: String
+        get() = id
+
     val displayName: String
+
+    /**
+     * Stored text for this instance, including a RomM origin.
+     * The host calls this before [connect] and before [beginDeviceCode].
+     * Not the token, and not the shared roots. The default ignores [values].
+     *
+     * Editing a stored value calls this again and then [connect].
+     */
+    fun configure(values: Map<String, String>) {}
+
+    /** Ordered setup steps. Empty means nothing to set up. */
+    fun setup(): List<Setup> = emptyList()
+
+    /**
+     * Starts device-code sign-in. The plugin creates and keeps the device identifier.
+     * A backend that does not offer it leaves the default, which refuses.
+     */
+    suspend fun beginDeviceCode(): DeviceCodeChallenge =
+        throw PluginException.Unavailable("No device-code setup")
+
+    /**
+     * Polls [deviceCode] from [beginDeviceCode].
+     * The host writes an [DeviceCodePoll.Approved] token. The plugin does not.
+     */
+    suspend fun pollDeviceCode(deviceCode: String): DeviceCodePoll =
+        throw PluginException.Unavailable("No device-code setup")
 
     suspend fun connect()
 

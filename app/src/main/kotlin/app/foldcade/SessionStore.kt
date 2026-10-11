@@ -91,6 +91,36 @@ class SessionStore(private val prefs: SharedPreferences) : SaveMarks {
         prefs.edit().remove(KEY_ROMM_ORIGIN).apply()
     }
 
+    /**
+     * Servers other than the default instance `romm`.
+     * Each line is `instanceId` then a tab then the origin. `romm_origin` stays the default.
+     */
+    fun rommInstances(): List<Pair<String, String>> =
+        prefs.getString(KEY_ROMM_INSTANCES, null).orEmpty().lineSequence().mapNotNull { line ->
+            val tab = line.indexOf('\t')
+            if (tab <= 0) return@mapNotNull null
+            val id = line.substring(0, tab).trim()
+            val origin = line.substring(tab + 1).trim()
+            if (id.isEmpty() || origin.isEmpty() || id == "romm") null else id to origin
+        }.toList()
+
+    fun setRommInstance(instanceId: String, origin: String) {
+        val next = rommInstances().filter { it.first != instanceId } + (instanceId to origin)
+        writeRommInstances(next)
+    }
+
+    fun removeRommInstance(instanceId: String) {
+        writeRommInstances(rommInstances().filter { it.first != instanceId })
+    }
+
+    private fun writeRommInstances(rows: List<Pair<String, String>>) {
+        if (rows.isEmpty()) {
+            prefs.edit().remove(KEY_ROMM_INSTANCES).apply()
+        } else {
+            prefs.edit().putString(KEY_ROMM_INSTANCES, rows.joinToString("\n") { "${it.first}\t${it.second}" }).apply()
+        }
+    }
+
     fun musicEnabled(): Boolean = prefs.getBoolean(KEY_MUSIC_ENABLED, true)
 
     fun musicVolume(): Float =
@@ -313,6 +343,7 @@ class SessionStore(private val prefs: SharedPreferences) : SaveMarks {
         private const val KEY_FOLDER = "folder_tree"
         private const val KEY_FOLDER_EXPLAINED = "folder_explained"
         private const val KEY_ROMM_ORIGIN = "romm_origin"
+        private const val KEY_ROMM_INSTANCES = "romm_instances"
         private const val KEY_MUSIC_ENABLED = "music_enabled"
         private const val KEY_MUSIC_VOLUME = "music_volume"
         private const val KEY_MUSIC_TRACK = "music_track"

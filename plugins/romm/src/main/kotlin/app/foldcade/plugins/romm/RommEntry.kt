@@ -1,6 +1,7 @@
 package app.foldcade.plugins.romm
 
 import app.foldcade.api.plugin.LibraryBackend
+import app.foldcade.api.plugin.LibraryInstance
 import app.foldcade.api.plugin.MetadataProvider
 import app.foldcade.api.plugin.PLUGIN_API_MINOR
 import app.foldcade.api.plugin.PLUGIN_API_VERSION
@@ -11,6 +12,7 @@ import app.foldcade.romm.DeviceTokenPoll
 import app.foldcade.romm.RegisteredDevice
 import app.foldcade.romm.RommClient
 import java.nio.file.Path
+import java.util.concurrent.CopyOnWriteArrayList
 import kotlin.coroutines.cancellation.CancellationException
 
 const val ROMM_LIBRARY_ID = "romm"
@@ -87,20 +89,64 @@ class RommWiring(
 }
 
 /**
- * The wiring [RommEntry] reads. The host installs this before connect.
+ * Roots, platforms, and the token reader every RomM instance shares.
+ * The origin is not here. Each instance builds its wiring from [LibraryBackend.configure].
+ * Per-instance roots still arrive only through [RommPlugins]. A plugin outside this
+ * repository has no data root. That limit predates instance ids.
+ */
+class RommSupply(
+    val cacheRoot: Path,
+    val dataRoot: Path,
+    val platforms: List<Platform> = emptyList(),
+    val contentUris: ContentUriAdapter? = null,
+    val clientVersion: String = "0.1.0",
+    val deviceName: String = "Foldcade",
+    val saveBytes: SaveBytes = SaveBytes { null },
+    val tokenFor: (credentialKey: String) -> String? = { null },
+) {
+    fun wiring(origin: String, credentialKey: String): RommWiring = RommWiring(
+        origin = origin,
+        tokenSource = RommTokenSource { tokenFor(credentialKey) },
+        cacheRoot = cacheRoot,
+        dataRoot = dataRoot,
+        contentUris = contentUris ?: CachePathContentUri(cacheRoot, dataRoot = dataRoot),
+        platforms = platforms,
+        clientVersion = clientVersion,
+        deviceName = deviceName,
+        saveBytes = saveBytes,
+    )
+}
+
+/**
+ * Shared RomM supply, plus the default instance's wiring for cover art.
+ * [wiring] is that default server, not a slot that holds every origin.
  * Replacing it does not write a token.
  */
 object RommPlugins {
     @Volatile
+    var supply: RommSupply? = null
+        private set
+
+    @Volatile
     var wiring: RommWiring? = null
         private set
+
+    fun installSupply(supply: RommSupply) {
+        this.supply = supply
+    }
 
     fun install(wiring: RommWiring) {
         this.wiring = wiring
     }
 
+    /** Drops the default instance's wiring and leaves [supply] for any other instance. */
+    fun clearDefault() {
+        wiring = null
+    }
+
     fun clear() {
         wiring = null
+        supply = null
     }
 }
 
@@ -185,10 +231,18 @@ private fun DeviceTokenPoll.toPublic(): RommPairingPoll = when (this) {
  * uses only the published API may use any license.
  */
 class RommEntry : PluginEntry {
-    private val gate = RommGate { RommPlugins.wiring }
+    private val instances = CopyOnWriteArrayList<RommLibrary>()
+    private val library = RommLibrary.open(ROMM_LIBRARY_ID).also { instances.add(it) }
+    private val metadata = RommMetadata { id -> instances.firstOrNull { it.instanceId == id }?.connection }
 
     override val apiVersion = PLUGIN_API_VERSION
     override val apiMinor = PLUGIN_API_MINOR
-    override val libraries: List<LibraryBackend> = listOf(RommLibrary(gate))
-    override val metadataProviders: List<MetadataProvider> = listOf(RommMetadata(gate))
+    override val libraries: List<LibraryBackend> = listOf(library)
+    override val metadataProviders: List<MetadataProvider> = listOf(metadata)
+
+    override fun openLibrary(instance: LibraryInstance): LibraryBackend? {
+        if (instance.typeId != ROMM_LIBRARY_ID) return null
+        instances.firstOrNull { it.instanceId == instance.instanceId }?.let { return it }
+        return RommLibrary.open(instance.instanceId).also { instances.add(it) }
+    }
 }

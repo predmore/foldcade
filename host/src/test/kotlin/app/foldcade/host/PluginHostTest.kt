@@ -8,6 +8,7 @@ import app.foldcade.api.plugin.GameQuery
 import app.foldcade.api.plugin.LaunchRequest
 import app.foldcade.api.plugin.LaunchTarget
 import app.foldcade.api.plugin.LibraryBackend
+import app.foldcade.api.plugin.LibraryInstance
 import app.foldcade.api.plugin.ListedPlatform
 import app.foldcade.api.plugin.MetadataProvider
 import app.foldcade.api.plugin.PLUGIN_API_MINOR
@@ -807,6 +808,67 @@ class PluginHostTest {
         assertTrue(failure?.message?.contains("Reserved") == true)
         assertNull(host.library("romm"))
         assertNull(host.metadata("romm.metadata"))
+    }
+
+    @Test
+    fun aTypeIdThatContainsHashIsRefused() {
+        val host = PluginHost(Dispatchers.Unconfined, MemoryCredentialStore())
+        val hashed = runCatching {
+            host.register(object : PluginEntry {
+                override val apiVersion = PLUGIN_API_VERSION
+                override val libraries = listOf(LibraryFake("local#2"))
+            })
+        }
+        assertTrue(hashed.exceptionOrNull() is IllegalStateException)
+        assertNull(host.library("local#2"))
+
+        val declared = runCatching {
+            host.register(object : PluginEntry {
+                override val apiVersion = PLUGIN_API_VERSION
+                override val libraries = listOf(object : LibraryFake("local.folder") {
+                    override val instanceId = "local.folder#2"
+                })
+            })
+        }
+        assertTrue(declared.exceptionOrNull() is IllegalStateException)
+        assertNull(host.library("local.folder"))
+        assertNull(host.library("local.folder#2"))
+    }
+
+    @Test
+    fun theHostMintsInstanceIdsAndRejectsAMismatch() {
+        val host = PluginHost(Dispatchers.Unconfined, MemoryCredentialStore())
+        var fail = false
+        host.register(object : PluginEntry {
+            override val apiVersion = PLUGIN_API_VERSION
+            override val libraries = listOf(LibraryFake("shelf"))
+            override fun openLibrary(instance: LibraryInstance): LibraryBackend? {
+                if (fail) return LibraryFake(instance.typeId)
+                return object : LibraryFake(instance.typeId) {
+                    override val instanceId = instance.instanceId
+                }
+            }
+        })
+        assertEquals("shelf", host.library("shelf")?.instanceId)
+        val second = host.addInstance("shelf")
+        assertEquals("shelf#2", second.instanceId)
+        assertEquals("shelf", second.id)
+        assertEquals("shelf#2", host.library("shelf#2")?.instanceId)
+        assertEquals("shelf#3", host.addInstance("shelf").instanceId)
+        assertEquals("shelf#2", mintInstanceId("shelf", setOf("shelf")))
+        assertEquals("shelf#4", mintInstanceId("shelf", setOf("shelf", "shelf#2", "shelf#3")))
+
+        fail = true
+        val mismatch = runCatching { host.addInstance("shelf") }.exceptionOrNull()
+        assertTrue(mismatch is IllegalStateException)
+        assertNull(host.library("shelf#4"))
+
+        val missing = runCatching {
+            host.openInstance(LibraryInstance("shelf#9", "shelf")).let { }
+        }
+        // openLibrary returns the wrong id while fail is set, so this is refused too.
+        assertTrue(missing.exceptionOrNull() is IllegalStateException)
+        assertEquals(listOf("shelf", "shelf#2", "shelf#3"), host.libraryIds())
     }
 }
 

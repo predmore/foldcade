@@ -20,6 +20,8 @@ import androidx.compose.runtime.setValue
 import app.foldcade.api.plugin.Credential
 import app.foldcade.api.plugin.CredentialLookup
 import app.foldcade.api.plugin.CredentialStore
+import app.foldcade.api.plugin.LibraryInstance
+import app.foldcade.api.plugin.PluginException
 import app.foldcade.api.plugin.SaveFolderHolder
 import app.foldcade.plugins.gamenative.CatalogGame
 import app.foldcade.plugins.gamenative.GameNativeLibrary
@@ -28,9 +30,11 @@ import app.foldcade.plugins.moonlight.MoonlightLibrary
 import app.foldcade.plugins.moonlight.moonlightShortcutKey
 import app.foldcade.credentials.AndroidCredentialStore
 import app.foldcade.host.PluginHost
+import app.foldcade.plugins.romm.ROMM_ORIGIN_KEY
 import app.foldcade.plugins.romm.RommArtwork
 import app.foldcade.plugins.romm.RommCoverArt
 import app.foldcade.plugins.romm.SaveBytes
+import app.foldcade.plugins.romm.rommOriginAlreadyConfigured
 import app.foldcade.artwork.ART_HOSTS
 import app.foldcade.artwork.ArtBytes
 import app.foldcade.artwork.ArtFinder
@@ -561,7 +565,42 @@ class FoldcadeApp : Application() {
 
     fun publishRomm() {
         rommPublish.publish()
+        configureSavedRomm()
         pluginLoad.launch { rommCoverArt.disconnect() }
+    }
+
+    /**
+     * Gives each saved RomM server its origin. Editing an origin calls this again
+     * and then [syncRomm], which reconnects. Shared roots stay on [app.foldcade.plugins.romm.RommPlugins].
+     */
+    private fun configureSavedRomm() {
+        if (plugins.library(RommCredentials.PLUGIN_ID) == null) return
+        val origin = store.rommOrigin()
+        if (!origin.isNullOrBlank()) {
+            plugins.configure(RommCredentials.PLUGIN_ID, mapOf(ROMM_ORIGIN_KEY to origin))
+        }
+        val others = store.rommInstances()
+        for ((id, extra) in others) {
+            val taken = listOfNotNull(origin) + others.filter { it.first != id }.map { it.second }
+            if (rommOriginAlreadyConfigured(taken, extra)) continue
+            if (plugins.library(id) == null) {
+                try {
+                    plugins.openInstance(LibraryInstance(id, RommCredentials.PLUGIN_ID))
+                } catch (cancelled: CancellationException) {
+                    throw cancelled
+                } catch (_: Exception) {
+                    continue
+                }
+            }
+            plugins.configure(id, mapOf(ROMM_ORIGIN_KEY to extra))
+        }
+    }
+
+    private fun rommLibraryIds(): List<String> {
+        val ids = ArrayList<String>()
+        if (!store.rommOrigin().isNullOrBlank()) ids.add(RommCredentials.PLUGIN_ID)
+        ids.addAll(store.rommInstances().map { it.first })
+        return ids
     }
 
     private fun rommCacheRoot(): Path = cacheDir.toPath().resolve("romm")
@@ -760,15 +799,19 @@ class FoldcadeApp : Application() {
     private fun reconnectRomm() {
         pluginLoad.launch {
             pluginsReady.await()
-            if (store.rommOrigin().isNullOrBlank()) return@launch
-            try {
-                plugins.connect(RommCredentials.PLUGIN_ID)
-            } catch (cancelled: CancellationException) {
-                throw cancelled
-            } catch (fatal: VirtualMachineError) {
-                throw fatal
-            } catch (_: Exception) {
-                Unit
+            configureSavedRomm()
+            for (id in rommLibraryIds()) {
+                try {
+                    plugins.connect(id)
+                } catch (cancelled: CancellationException) {
+                    throw cancelled
+                } catch (fatal: VirtualMachineError) {
+                    throw fatal
+                } catch (_: PluginException.NotAuthenticated) {
+                    withContext(Dispatchers.Main.immediate) { shell.askToSignInAgain() }
+                } catch (_: Exception) {
+                    Unit
+                }
             }
         }
     }
@@ -778,44 +821,53 @@ class FoldcadeApp : Application() {
         pluginLoad.launch {
             pluginsReady.await()
             if (ticket != rommTicket.get()) return@launch
-            val libraryId = RommCredentials.PLUGIN_ID
-            if (store.rommOrigin().isNullOrBlank()) {
+            configureSavedRomm()
+            val ids = rommLibraryIds()
+            if (ids.isEmpty()) {
                 withContext(Dispatchers.Main.immediate) {
-                    if (ticket == rommTicket.get()) shell.dropLibrary(libraryId)
+                    if (ticket == rommTicket.get()) shell.dropLibrary(RommCredentials.PLUGIN_ID)
                 }
                 return@launch
             }
-            val loaded = try {
-                val listed = loadPlatforms(
-                    plugins,
-                    libraryId,
-                    occupiesBoth = { platformOccupiesBoth(plugins, it) },
-                )
-                when (listed) {
-                    is LoadedLibrary.Platforms -> listed to loadEveryGame(libraryId, listed)
-                    LoadedLibrary.NoPlatforms -> null to emptyList()
-                    LoadedLibrary.Unreachable -> null
+            for (libraryId in ids) {
+                if (ticket != rommTicket.get()) return@launch
+                val loaded = try {
+                    val listed = loadPlatforms(
+                        plugins,
+                        libraryId,
+                        occupiesBoth = { platformOccupiesBoth(plugins, it) },
+                    )
+                    when (listed) {
+                        is LoadedLibrary.Platforms -> listed to loadEveryGame(libraryId, listed)
+                        LoadedLibrary.NoPlatforms -> null to emptyList()
+                        LoadedLibrary.Unreachable -> null
+                    }
+                } catch (cancelled: CancellationException) {
+                    throw cancelled
+                } catch (fatal: VirtualMachineError) {
+                    throw fatal
+                } catch (_: PluginException.NotAuthenticated) {
+                    withContext(Dispatchers.Main.immediate) {
+                        if (ticket == rommTicket.get()) shell.askToSignInAgain()
+                    }
+                    continue
+                } catch (failure: Exception) {
+                    Log.w("Foldcade", "RomM library failed", failure)
+                    null
                 }
-            } catch (cancelled: CancellationException) {
-                throw cancelled
-            } catch (fatal: VirtualMachineError) {
-                throw fatal
-            } catch (failure: Exception) {
-                Log.w("Foldcade", "RomM library failed", failure)
-                null
-            }
-            val (listed, games) = loaded ?: return@launch
-            withContext(Dispatchers.Main.immediate) {
-                if (ticket != rommTicket.get()) return@withContext
-                shell.ingestLibrary(
-                    libraryId,
-                    games,
-                    plugins.platformDefinitions(),
-                    listed?.entries.orEmpty().associate { (it.platformId ?: it.id) to it.title },
-                )
-                // An empty state such as No library yet gives way once there are games to show.
-                val waiting = shell.model.libraryGrid && shell.model.emptyGrid != EmptyGrid.Loading
-                if (waiting && games.isNotEmpty()) shell.showCuratedHome()
+                val (listed, games) = loaded ?: continue
+                withContext(Dispatchers.Main.immediate) {
+                    if (ticket != rommTicket.get()) return@withContext
+                    shell.ingestLibrary(
+                        libraryId,
+                        games,
+                        plugins.platformDefinitions(),
+                        listed?.entries.orEmpty().associate { (it.platformId ?: it.id) to it.title },
+                    )
+                    // An empty state such as No library yet gives way once there are games to show.
+                    val waiting = shell.model.libraryGrid && shell.model.emptyGrid != EmptyGrid.Loading
+                    if (waiting && games.isNotEmpty()) shell.showCuratedHome()
+                }
             }
         }
     }

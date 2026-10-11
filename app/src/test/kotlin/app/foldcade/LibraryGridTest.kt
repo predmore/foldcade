@@ -37,6 +37,7 @@ import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class LibraryGridTest {
@@ -101,6 +102,21 @@ class LibraryGridTest {
             })
         })
         assertEquals(LoadedLibrary.Unreachable, loadPlatforms(host, "broken"))
+    }
+
+    @Test
+    fun notAuthenticatedIsNotAnUnreachableLibrary() = runBlocking {
+        val host = PluginHost(Dispatchers.Unconfined, MemoryCredentialStore())
+        host.register(object : PluginEntry {
+            override val apiVersion = PLUGIN_API_VERSION
+            override val libraries = listOf(object : QuietLibrary("signed-out") {
+                override suspend fun connect() {
+                    throw PluginException.NotAuthenticated("Sign in to RomM")
+                }
+            })
+        })
+        val failure = runCatching { loadPlatforms(host, "signed-out") }.exceptionOrNull()
+        assertTrue(failure is PluginException.NotAuthenticated)
     }
 
     @Test

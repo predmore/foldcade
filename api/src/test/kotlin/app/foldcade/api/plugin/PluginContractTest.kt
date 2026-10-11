@@ -113,7 +113,7 @@ class PluginContractTest {
         assertTrue(aliases.isDefault)
         assertTrue(IdlePlatform().aliases.isEmpty())
         assertEquals(1, PLUGIN_API_VERSION)
-        assertEquals(6, PLUGIN_API_MINOR)
+        assertEquals(7, PLUGIN_API_MINOR)
         val bind = PluginEntry::class.java.methods.single { it.name == "bind" }
         assertTrue(bind.isDefault)
         val saveFileName = Player::class.java.methods.single { it.name == "saveFileName" }
@@ -126,6 +126,27 @@ class PluginContractTest {
         assertTrue(LibraryBackend::class.java.methods.single { it.name == "resolveSaveConflict" }.isDefault)
         assertTrue(LibraryBackend::class.java.methods.single { it.name == "reopenDeferredSaveConflicts" }.isDefault)
         assertTrue(LibraryBackend::class.java.methods.single { it.name == "addSaveConflictListener" }.isDefault)
+        assertTrue(LibraryBackend::class.java.methods.single { it.name == "getInstanceId" }.isDefault)
+        assertTrue(LibraryBackend::class.java.methods.single { it.name == "configure" }.isDefault)
+        assertTrue(LibraryBackend::class.java.methods.single { it.name == "setup" }.isDefault)
+        assertTrue(LibraryBackend::class.java.methods.single { it.name == "beginDeviceCode" }.isDefault)
+        assertTrue(LibraryBackend::class.java.methods.single { it.name == "pollDeviceCode" }.isDefault)
+        assertTrue(PluginEntry::class.java.methods.single { it.name == "openLibrary" }.isDefault)
+    }
+
+    @Test
+    fun setupDefaultsToNothingAndDeviceCodeRefuses() = runBlocking {
+        val library = IdleLibrary()
+        assertEquals(library.id, library.instanceId)
+        assertTrue(library.setup().isEmpty())
+        val failure = runCatching { library.beginDeviceCode() }.exceptionOrNull()
+        assertTrue(failure is PluginException.Unavailable)
+        val poll = runCatching { library.pollDeviceCode("code") }.exceptionOrNull()
+        assertTrue(poll is PluginException.Unavailable)
+        val entry = object : PluginEntry {
+            override val apiVersion = PLUGIN_API_VERSION
+        }
+        assertNull(entry.openLibrary(LibraryInstance("sample#2", "library.sample")))
     }
 
     @Test
@@ -211,6 +232,8 @@ class PluginContractTest {
                 "pendingSaveConflicts",
                 "resolveSaveConflict",
                 "reopenDeferredSaveConflicts",
+                "beginDeviceCode",
+                "pollDeviceCode",
             ),
         )
         assertSuspendMethods(MetadataProvider::class.java, setOf("fetch", "achievements"))

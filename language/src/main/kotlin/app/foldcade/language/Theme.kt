@@ -118,6 +118,8 @@ object Copy {
     const val artKeyRefused = "SteamGridDB didn’t accept this key."
     const val artKeyUnreachable = "Couldn’t reach SteamGridDB. Try again in a moment."
     const val rommTokenHelp = "RomM uses a client API token or a device-code token. Foldcade stores the token and does not store a password."
+    const val rommSameServer = "That server is already connected."
+    const val rommDeviceCode = "Approve this code on your phone, or paste a token instead."
     const val signInAgainTitle = "Sign in again"
     const val signInAgainBody = "Saved credentials could not be read."
     const val useAsHome = "Use as Home"

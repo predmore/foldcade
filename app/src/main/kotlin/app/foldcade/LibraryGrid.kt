@@ -69,6 +69,8 @@ internal suspend fun loadPlatforms(
         throw cancelled
     } catch (fatal: VirtualMachineError) {
         throw fatal
+    } catch (auth: PluginException.NotAuthenticated) {
+        throw auth
     } catch (_: PluginException) {
         LoadedLibrary.Unreachable
     } catch (_: PluginCallException) {
