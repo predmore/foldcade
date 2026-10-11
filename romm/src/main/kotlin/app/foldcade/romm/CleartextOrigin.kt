@@ -64,7 +64,8 @@ internal fun sameSchemeRedirectLeavesOrigin(origin: String, target: String): Boo
     return from.scheme == to.scheme && from != to
 }
 
-internal fun sameOrigin(origin: String, target: String): Boolean {
+/** True when both HTTP addresses have the same scheme, host, and effective port. */
+fun sameOrigin(origin: String, target: String): Boolean {
     val from = endpointOf(origin) ?: return false
     val to = endpointOf(target) ?: return false
     return from == to

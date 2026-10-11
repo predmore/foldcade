@@ -1276,6 +1276,7 @@ class RommClientTest {
         runClient(token = { "rmm_test" }) { client ->
             val denied = client.confirmSignIn()
             assertTrue(denied is RommSignInResult.StayOnForm)
+            assertTrue(denied.hint!!.contains("rejected this token"))
         }
         val unreachable = runBlocking {
             RommClient(
@@ -1286,6 +1287,7 @@ class RommClientTest {
             ).use { it.confirmSignIn() }
         }
         assertTrue(unreachable is RommSignInResult.StayOnForm)
+        assertTrue(unreachable.hint!!.contains("Could not reach RomM"))
 
         server.route("GET", "/api/platforms") { exchange, _ ->
             json(exchange, 200, "[]")

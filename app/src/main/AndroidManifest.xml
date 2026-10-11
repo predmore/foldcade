@@ -93,7 +93,7 @@
         <activity
             android:name=".CompanionHomeActivity"
             android:exported="true"
-            android:launchMode="singleTask"
+            android:launchMode="singleTop"
             android:taskAffinity="app.foldcade.companion">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />

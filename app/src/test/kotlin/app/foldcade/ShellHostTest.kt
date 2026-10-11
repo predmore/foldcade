@@ -35,6 +35,34 @@ import org.junit.Test
 
 class ShellHostTest {
     @Test
+    fun setupValidationRejectsDuplicateSubmitsAndStaleFormResults() {
+        val shell = shell(PluginHost(Dispatchers.Unconfined, MemoryCredentialStore()))
+        shell.openConnect("https://romm.example")
+        shell.editToken("first")
+        val first = shell.beginSetupValidation()!!
+        assertTrue(shell.model.connectBusy)
+        assertNull(shell.beginSetupValidation())
+        assertNull(shell.touchConnect(2, HostScreen.Top))
+        shell.editToken("second")
+        assertFalse(shell.setupValidationCurrent(first))
+        assertFalse(shell.model.connectBusy)
+        val second = shell.beginSetupValidation()!!
+        shell.finishSetupValidation(first)
+        assertTrue(shell.model.connectBusy)
+        shell.onMeaning(Meaning.Back, HostScreen.Top)
+        assertFalse(shell.setupValidationCurrent(second))
+        shell.openConnect("https://romm.example")
+        assertFalse(shell.model.connectBusy)
+        assertFalse(shell.setupValidationCurrent(second))
+        val third = shell.beginSetupValidation()!!
+        shell.editOrigin("https://other.example")
+        assertFalse(shell.setupValidationCurrent(third))
+        val fourth = shell.beginSetupValidation()!!
+        shell.finishSetupValidation(fourth)
+        assertFalse(shell.model.connectBusy)
+    }
+
+    @Test
     fun bundledEntriesComeFromServiceFiles() {
         val loaded = ServiceLoader.load(
             PluginEntry::class.java,

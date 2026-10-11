@@ -76,6 +76,9 @@ internal class RommData(val root: Path, origin: String) {
 
     fun savesRoot(): Path = server.resolve("saves")
 
+    /** Last successfully listed catalog. It survives cache eviction and is scoped to this server. */
+    fun catalogFile(): Path = server.resolve("catalog.json")
+
     /** Copies of saves handed to the shell for one launch. Replaced on the next launch of that ROM. */
     fun placingRoot(romId: Long): Path = server.resolve("placing").resolve(romId.toString())
 

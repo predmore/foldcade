@@ -118,12 +118,16 @@ class RommClient(
             RommSignInResult.Accepted(hint)
         } catch (cancelled: CancellationException) {
             throw cancelled
-        } catch (_: RommHttpException) {
-            RommSignInResult.StayOnForm(hint)
+        } catch (error: RommHttpException) {
+            val failure = when (error.status) {
+                401, 403 -> "RomM rejected this token. Check the token and its permissions."
+                else -> "RomM returned HTTP ${error.status}. Check the server address and try again."
+            }
+            RommSignInResult.StayOnForm(listOfNotNull(failure, hint).joinToString(" "))
         } catch (_: RommUnavailable) {
-            RommSignInResult.StayOnForm(hint)
-        } catch (_: RommException) {
-            RommSignInResult.StayOnForm(hint)
+            RommSignInResult.StayOnForm(listOfNotNull("Could not reach RomM. Check the server address and connection.", hint).joinToString(" "))
+        } catch (error: RommException) {
+            RommSignInResult.StayOnForm(listOfNotNull(error.message ?: "RomM returned an unreadable response.", hint).joinToString(" "))
         }
     }
 

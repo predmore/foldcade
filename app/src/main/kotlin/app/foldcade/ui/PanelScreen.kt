@@ -63,9 +63,9 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.mutableLongStateOf
-import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.util.lerp
 import android.content.Context
@@ -198,6 +198,7 @@ import app.foldcade.language.builtInTheme
 import app.foldcade.language.connectFields
 import app.foldcade.language.hintFor
 import app.foldcade.language.HintKey
+import app.foldcade.language.HomeKeys
 import app.foldcade.language.PromptKey
 import app.foldcade.language.gridHints
 import app.foldcade.language.letterOfKey
@@ -258,7 +259,7 @@ fun PanelHost(activity: FoldcadeHomeActivity, displays: Displays) {
         model.dialog?.screen != HostScreen.Bottom
     val heldBlur = if (blurHere) app.islandHold?.progress else null
     val blurTarget = heldBlur ?: if (blurHere) 1f else 0f
-    val blur = motionFloat(
+    val blur by motionState(
         target = blurTarget,
         spec = if (blurTarget >= 1f) Motion.arrive(Motion.durationIsland, scale) else Motion.leave(Motion.durationIsland, scale),
         snap = heldBlur != null,
@@ -285,7 +286,7 @@ fun PanelHost(activity: FoldcadeHomeActivity, displays: Displays) {
             if (wallpaper != null) PanelWallpaper(wallpaper)
             // The body has one place in the tree, open menu or not. Opening a menu
             // keeps the backdrop's clock and the grid's state, and the blur eases out.
-            Box(Modifier.fillMaxSize().menuBlur(blur).menuDim(blur)) {
+            Box(Modifier.fillMaxSize().menuBlur { blur }.menuDim { blur }) {
                 CompositionLocalProvider(LocalUnderMenu provides blurHere) {
                     PanelBody(activity, panel, screen, scale)
                 }
@@ -365,18 +366,23 @@ private fun PanelBody(
 }
 
 /** Dim painted with the content, not a second full-screen node on top of it. */
-private fun Modifier.menuDim(progress: Float): Modifier = drawWithContent {
+private fun Modifier.menuDim(progress: () -> Float): Modifier = drawWithContent {
     drawContent()
-    if (progress <= 0f) return@drawWithContent
+    val amount = progress()
+    if (amount <= 0f) return@drawWithContent
     val dim = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) 0.32f else 0.55f
-    drawRect(Color.Black.copy(alpha = dim * progress.coerceIn(0f, 1f)))
+    drawRect(Color.Black.copy(alpha = dim * amount.coerceIn(0f, 1f)))
 }
 
 /** Blur only while the radius is visible. A zero-radius graphics layer still hides nodes. */
-private fun Modifier.menuBlur(progress: Float): Modifier {
-    val radius = progress * 28f
-    if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S || radius < 0.5f) return this
+@Composable
+private fun Modifier.menuBlur(progress: () -> Float): Modifier {
+    if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S) return this
+    val latest = rememberUpdatedState(progress)
+    val visible by remember { derivedStateOf { latest.value() * 28f >= 0.5f } }
+    if (!visible) return this
     return graphicsLayer {
+        val radius = (progress() * 28f).coerceAtLeast(0.5f)
         renderEffect = RenderEffect.createBlurEffect(radius, radius, Shader.TileMode.CLAMP).asComposeRenderEffect()
     }
 }
@@ -488,7 +494,7 @@ private fun <T> TravelFade(target: T, scale: Float, content: @Composable (T) -> 
         incoming.snapTo(1f)
     }
     val previous = back
-    val moving = previous != null || incoming.value < 0.999f
+    val moving by remember { derivedStateOf { back != null || incoming.value < 0.999f } }
     if (!moving) {
         content(front)
         return
@@ -1023,12 +1029,17 @@ private fun <T> HeroCrossfade(
     }
     val previous = blend.back
     val current = blend.front
-    val active = heroCrossfadeActive(
-        hasFront = current != null,
-        hasBack = previous != null,
-        frontAlpha = incoming.value,
-        backAlpha = outgoing.value,
-    )
+    // Composition only observes the start and end. Every intervening alpha belongs to the layer.
+    val active by remember {
+        derivedStateOf {
+            heroCrossfadeActive(
+                hasFront = blend.front != null,
+                hasBack = blend.back != null,
+                frontAlpha = incoming.value,
+                backAlpha = outgoing.value,
+            )
+        }
+    }
     // The fading art sits behind the label. It takes no focus or touch, and it
     // is not in the accessibility tree. One keyed loop holds every layer, settled
     // or fading, so art that moves from arriving to leaving, or settles, keeps its
@@ -1272,7 +1283,6 @@ private fun SceneBackdrop(app: FoldcadeApp, record: Game?, query: ArtQuery?, spe
         }
         return
     }
-    if (scene?.background != null) return
     val cover = rememberArt(app, record, query)?.cover ?: return
     val ambient = rememberCoverPainter(app, cover, AMBIENT_PX) ?: return
     CoversBackdrop()
@@ -1380,7 +1390,6 @@ private fun HeroArt(
                     },
                 contentScale = ContentScale.Fit,
             )
-            scene?.background != null && scene.logo != null -> Unit
             // A real title screen beside the box, drawn crisp.
             loaded != null && screenShot != null -> Row(
                 Modifier.fillMaxHeight(COVER_HEIGHT),
@@ -1423,7 +1432,7 @@ private fun HeroArt(
                 contentScale = ContentScale.Fit,
             )
             kit != null -> KitMark(kit, theme.artScale, alpha = { 1f })
-            mark != null && markGlyph(mark) != null -> MarkIcon(mark, 0.86f)
+            mark != null && markGlyph(mark) != null -> HeroMark(mark, 0.86f)
             else -> BasicText(
                 text = monogram(title),
                 modifier = Modifier.scale(4f),
@@ -2101,15 +2110,19 @@ private fun GridHints(app: FoldcadeApp, modifier: Modifier = Modifier) {
         },
     )
     // The grid's own keys only count while nothing covers it.
-    val gridKeys = model.panel == null && model.dialog == null
+    val gridKeys = model.panel == null && model.dialog == null && !model.connectOpen
     val page = model.playActivity?.takeIf { model.dialog == null }?.let { playActivityHints(model) }
-    val keys = page ?: panelHints(model) ?: gridHints(
+    val normalKeys = page ?: panelHints(model) ?: gridHints(
         actions,
-        shell.homeKeys(),
+        if (model.connectOpen) HomeKeys.Idle else shell.homeKeys(),
         model.faceMap,
         screens = gridKeys && shell.focusedLaunchesOnOneScreen(),
         options = gridKeys && !model.connectOpen && shell.hasOptions(),
     )
+    val back = promptKeyOf(model.faceMap.backKey) ?: PromptKey.FaceB
+    val keys = if (gridKeys && (shell.downloading.isNotEmpty() || shell.activity.values.any { it is TileActivity.Downloading || it == TileActivity.Checking })) {
+        normalKeys.filterNot { it.key == back } + HintKey(back, "Cancel download")
+    } else normalKeys
     if (keys.isEmpty()) return
     Row(
         modifier.fillMaxWidth(),
@@ -2325,11 +2338,12 @@ private fun GridCursor(
     val model = shell.model
     val shown = model.dialog == null &&
         model.panel == null &&
+        !model.connectOpen &&
         shell.homeChrome()?.focused == null &&
         model.focus.chrome == null &&
         !shell.homeEditing() &&
         model.focus.cellIndex < model.count
-    val alpha = motionFloat(
+    val alpha by motionState(
         target = if (shown) 1f else 0f,
         spec = if (shown) Motion.arrive(Motion.durationFocus, scale) else Motion.leave(Motion.durationFocus, scale),
     )
@@ -2340,20 +2354,20 @@ private fun GridCursor(
     val across = if (pitchPx > 0f) pageWidthPx / pitchPx else 0f
     // A new folder, or a ring coming back from elsewhere, starts on its tile.
     // Held moves glide from tile to tile.
-    val lands = !shown || alpha == 0f
+    val visible by remember { derivedStateOf { alpha > 0f } }
+    val lands = !shown || !visible
     val x by glideState(page * across + column, Motion.durationTravel, scale, snap = lands, jump = jump)
     val y by glideState(row, Motion.durationTravel, scale, snap = lands, jump = jump)
-    if (alpha == 0f) return
+    if (!visible) return
     val radius = cell * foldTheme().iconRadius
     val ring = remember { Path() }
     Box(
         Modifier
-            .offset {
-                val pitchY = (if (rowPx > 0) rowPx.toFloat() else cell.toPx()) + gap.toPx()
-                IntOffset((x * pitchPx - shownPage() * pageWidthPx).roundToInt(), (y * pitchY).roundToInt())
-            }
             .size(cell)
             .graphicsLayer {
+                val pitchY = (if (rowPx > 0) rowPx.toFloat() else cell.toPx()) + gap.toPx()
+                translationX = x * pitchPx - shownPage() * pageWidthPx
+                translationY = y * pitchY
                 clip = false
                 scaleX = Motion.scaleFocus
                 scaleY = Motion.scaleFocus
@@ -2426,6 +2440,7 @@ private fun Grid(
                         val game = shell.tileFromOrder(source)
                         val focused = shell.model.dialog == null &&
                             shell.model.panel == null &&
+                            !shell.model.connectOpen &&
                             shell.homeChrome()?.focused == null &&
                             focus.chrome == null &&
                             focus.cellIndex == index
@@ -3164,10 +3179,10 @@ private fun ConnectScreen(
                 .padding(horizontal = px(20f), vertical = px(10f)),
         )
         BasicText(
-            text = if (artKey) Copy.saveKey else Copy.saveToken,
+            text = if (model.connectBusy) "Checking token…" else if (artKey) Copy.saveKey else Copy.saveToken,
             modifier = Modifier
                 .chip(focused(model, ConnectField.Save))
-                .hostPress { onEffect(app.shell.touchConnect(fields.indexOf(ConnectField.Save), screen)) }
+                .hostPress { if (!model.connectBusy) onEffect(app.shell.touchConnect(fields.indexOf(ConnectField.Save), screen)) }
                 .padding(horizontal = px(20f), vertical = px(10f)),
             style = text(theme.onBackground, TypeRamp.dialogBody, theme),
         )

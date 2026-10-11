@@ -28,7 +28,7 @@ internal class RommMetadata(
     override fun cached(game: Game): GameMeta? {
         val gate = resolve(game.backendId) ?: return null
         val wiring = gate.peek() ?: return null
-        val rom = gate.catalog.rom(game.remoteKey) ?: return null
+        val rom = gate.catalog(wiring).rom(game.remoteKey) ?: return null
         return rom.toMeta(wiring.origin)
     }
 
@@ -40,13 +40,13 @@ internal class RommMetadata(
             gate.session { wiring, ops ->
                 if (romId != null) {
                     val rom = ops.rom(romId)
-                    gate.catalog.rememberRoms(listOf(rom))
+                    gate.catalog(wiring).rememberRoms(listOf(rom))
                     rom.toMeta(wiring.origin)
                 } else {
                     val term = game.label.trim().ifEmpty { return@session null }
                     val page = ops.roms(RomQuery(searchTerm = term, limit = 50, offset = 0))
                     val rom = page.items.byTitle(term) ?: return@session null
-                    gate.catalog.rememberRoms(listOf(rom))
+                    gate.catalog(wiring).rememberRoms(listOf(rom))
                     rom.toMeta(wiring.origin)
                 }
             }
@@ -63,7 +63,7 @@ internal class RommMetadata(
         return translate {
             gate.session { wiring, ops ->
                 val rom = ops.rom(romId)
-                gate.catalog.rememberRoms(listOf(rom))
+                gate.catalog(wiring).rememberRoms(listOf(rom))
                 if (rom.achievements.isEmpty()) return@session null
                 rom.toAchievements(wiring.origin, earnedOn(ops, rom.raId))
             }

@@ -2,6 +2,7 @@ package app.foldcade.romm
 
 import java.nio.file.Path
 import java.time.Instant
+import kotlinx.serialization.Serializable
 
 data class Heartbeat(val version: String)
 
@@ -38,6 +39,7 @@ sealed class DeviceTokenPoll {
     }
 }
 
+@Serializable
 data class PlatformSummary(
     val id: Long,
     val name: String,
@@ -56,6 +58,7 @@ data class RomQuery(
     val offset: Int = 0,
 )
 
+@Serializable
 data class RomFileSummary(
     val id: Long,
     val fileName: String,
@@ -64,6 +67,7 @@ data class RomFileSummary(
     val md5Hash: String? = null,
 )
 
+@Serializable
 data class RomSummary(
     val id: Long,
     val name: String?,
@@ -95,6 +99,7 @@ data class RomSummary(
  * [badgeId] can be missing. [badgePath] and [badgePathLock] are on the RomM
  * server and load without the token; the urls are on RetroAchievements' own host.
  */
+@Serializable
 data class RaAchievement(
     val title: String?,
     val description: String?,
