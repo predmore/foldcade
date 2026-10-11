@@ -16,10 +16,13 @@ import app.foldcade.api.plugin.Platform
 import app.foldcade.api.plugin.Player
 import app.foldcade.api.plugin.PluginException
 import app.foldcade.api.plugin.canonicalPlatformId
+import app.foldcade.api.plugin.SaveConflict
+import app.foldcade.api.plugin.SaveConflictChoice
 import app.foldcade.api.plugin.SaveSet
 import app.foldcade.api.plugin.SaveSlot
 import app.foldcade.api.plugin.SyncOutcome
 import app.foldcade.api.plugin.SyncResult
+import app.foldcade.romm.KeptBoth
 import app.foldcade.romm.LocalSave
 import app.foldcade.romm.RomProgress
 import app.foldcade.romm.RomQuery
@@ -37,6 +40,7 @@ import app.foldcade.romm.writeDurably
 import java.io.IOException
 import java.nio.file.Files
 import java.nio.file.Path
+import java.util.concurrent.CopyOnWriteArrayList
 import java.security.MessageDigest
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicBoolean
@@ -77,6 +81,7 @@ internal class RommLibrary(
 
     @Volatile
     private var listener: GameActivityListener? = null
+    private val conflictListeners = CopyOnWriteArrayList<() -> Unit>()
 
     override fun observeActivity(listener: GameActivityListener) {
         this.listener = listener
@@ -341,6 +346,7 @@ internal class RommLibrary(
                     syncOnce(current, ops, romId, emulator)
                 }
             }
+            rememberConflicts(wiring, report)
             report.toResult()
         } catch (cancelled: CancellationException) {
             throw cancelled
@@ -433,6 +439,101 @@ internal class RommLibrary(
         gate.catalog.rememberRoms(page.items)
         return page.items.find { it.id == romId }
             ?: throw PluginException.NotFound("RomM has no ROM ${game.remoteKey}")
+    }
+
+    override suspend fun pendingSaveConflicts(): List<SaveConflict> {
+        val wiring = gate.peek() ?: return emptyList()
+        return runInterruptible(Dispatchers.IO) {
+            SaveConflictLog(wiring.data.conflictsFile()).pending().map { it.toConflict() }
+        }
+    }
+
+    override suspend fun resolveSaveConflict(id: String, choice: SaveConflictChoice) {
+        val wiring = gate.peek() ?: return
+        val romId = id.substringBefore(':').toLongOrNull() ?: return
+        romLock(romId).withLock {
+            val changed = runInterruptible(Dispatchers.IO) {
+                SaveConflictLog(wiring.data.conflictsFile()).resolve(id, choice)
+            }
+            if (changed) conflictsChanged()
+        }
+    }
+
+    override suspend fun reopenDeferredSaveConflicts() {
+        val wiring = gate.peek() ?: return
+        val changed = runInterruptible(Dispatchers.IO) {
+            SaveConflictLog(wiring.data.conflictsFile()).reopenDeferred()
+        }
+        if (changed) conflictsChanged()
+    }
+
+    override fun addSaveConflictListener(listener: () -> Unit): AutoCloseable {
+        conflictListeners += listener
+        return AutoCloseable { conflictListeners -= listener }
+    }
+
+    /**
+     * Writes each kept-both pair into the conflict log. A copy that could not be
+     * preserved is skipped: the archive and the slot file are still both on disk.
+     * Failures here do not fail the sync.
+     */
+    private fun rememberConflicts(wiring: RommWiring, report: SaveSyncReport) {
+        if (report.keptBoth.isEmpty()) return
+        try {
+            val log = SaveConflictLog(wiring.data.conflictsFile())
+            var changed = false
+            for (kept in report.keptBoth) {
+                val entry = kept.toEntry(wiring) ?: continue
+                if (log.record(entry)) changed = true
+            }
+            if (changed) conflictsChanged()
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (_: Exception) {
+            Unit
+        }
+    }
+
+    private fun KeptBoth.toEntry(wiring: RommWiring): ConflictEntry? {
+        val slotName = slot ?: return null
+        val localPath = localCopy ?: return null
+        val remotePath = remoteCopy ?: return null
+        if (!Files.isRegularFile(localPath) || !Files.isRegularFile(remotePath)) return null
+        val rom = gate.catalog.rom(romId.toString())
+        val label = rom?.name?.takeIf { it.isNotBlank() }
+            ?: rom?.fsName?.takeIf { it.isNotBlank() }
+            ?: "ROM $romId"
+        return ConflictEntry(
+            id = "$romId:$slotName",
+            romId = romId,
+            slot = slotName,
+            gameLabel = label,
+            localSource = saveSource(wiring.deviceName, localEmulator, "This device"),
+            localUpdatedAtMillis = localUpdatedAtMillis,
+            localSizeBytes = localSizeBytes,
+            localHash = md5File(localPath),
+            remoteSource = saveSource(device = null, emulator = remoteEmulator, fallback = "RomM"),
+            remoteUpdatedAtMillis = remoteUpdatedAtMillis,
+            remoteSizeBytes = remoteSizeBytes,
+            remoteHash = md5File(remotePath),
+            localCopy = localPath.toString(),
+            remoteCopy = remotePath.toString(),
+            slotFile = serverFile.toString(),
+            status = ConflictStatus.Open,
+            choice = null,
+        )
+    }
+
+    private fun conflictsChanged() {
+        conflictListeners.forEach { listener ->
+            try {
+                listener()
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (_: Exception) {
+                Unit
+            }
+        }
     }
 }
 

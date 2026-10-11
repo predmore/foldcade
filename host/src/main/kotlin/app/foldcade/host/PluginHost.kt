@@ -22,6 +22,8 @@ import app.foldcade.api.plugin.Player
 import app.foldcade.api.plugin.PlayerIntent
 import app.foldcade.api.plugin.PluginEntry
 import app.foldcade.api.plugin.PluginException
+import app.foldcade.api.plugin.SaveConflict
+import app.foldcade.api.plugin.SaveConflictChoice
 import app.foldcade.api.plugin.SaveSet
 import app.foldcade.api.plugin.SyncResult
 import java.util.Collections
@@ -363,6 +365,41 @@ class PluginHost(
     ): SyncResult {
         val library = requireLibrary(libraryId)
         return offMain(libraryId) { library.reconcile(game, player, observed) }
+    }
+
+    suspend fun pendingSaveConflicts(): List<SaveConflict> {
+        val found = mutableListOf<SaveConflict>()
+        for (id in libraryIds()) {
+            try {
+                found += offMain(id) { requireLibrary(id).pendingSaveConflicts() }
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (_: Exception) {
+                Unit
+            }
+        }
+        return found
+    }
+
+    suspend fun resolveSaveConflict(libraryId: String, id: String, choice: SaveConflictChoice) {
+        offMain(libraryId) { requireLibrary(libraryId).resolveSaveConflict(id, choice) }
+    }
+
+    suspend fun reopenDeferredSaveConflicts() {
+        for (id in libraryIds()) {
+            try {
+                offMain(id) { requireLibrary(id).reopenDeferredSaveConflicts() }
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (_: Exception) {
+                Unit
+            }
+        }
+    }
+
+    fun addSaveConflictListener(listener: () -> Unit): AutoCloseable {
+        val handles = libraries.values.map { it.addSaveConflictListener(listener) }
+        return AutoCloseable { handles.forEach { it.close() } }
     }
 
     suspend fun fetchMetadata(providerId: String, game: Game): GameMeta? {

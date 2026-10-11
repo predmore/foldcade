@@ -269,7 +269,9 @@ class ShellController(
     }
 
     fun homeKeys(): app.foldcade.language.HomeKeys {
-        if (model.dialog != null || model.panel != null || model.playActivity != null || model.connectOpen) {
+        if (model.dialog != null || model.panel != null || model.playActivity != null ||
+            model.saveConflict != null || model.connectOpen
+        ) {
             return app.foldcade.language.HomeKeys.Idle
         }
         if (model.libraryGrid || model.homeGrid != HomeGrid.StandIns) {
@@ -922,6 +924,44 @@ class ShellController(
         publish(model.copy(panel = null, connectOpen = false, dialog = dialog))
     }
 
+    /** Puts [prompt] on the bottom screen. Null clears it. A debug preview is left in place. */
+    fun presentSaveConflict(prompt: app.foldcade.language.SaveConflictPrompt?) {
+        if (prompt == null && model.saveConflict?.preview == true) return
+        if (prompt != null && !prompt.preview) {
+            Log.i("Foldcade", "save-conflict ${prompt.gameLabel}")
+        }
+        publish(
+            model.copy(
+                saveConflict = prompt,
+                panel = if (prompt != null) null else model.panel,
+                playActivity = if (prompt != null) null else model.playActivity,
+            ),
+        )
+    }
+
+    /** Debuggable capture of the conflict screen. Choosing it does not touch a library. */
+    fun showSaveConflictPreview() {
+        val prompt = app.foldcade.language.previewSaveConflict()
+        Log.i("Foldcade", "save-conflict ${prompt.gameLabel}")
+        publish(
+            model.copy(
+                panel = null,
+                connectOpen = false,
+                dialog = null,
+                settings = null,
+                playActivity = null,
+                saveConflict = prompt,
+            ),
+        )
+    }
+
+    /** A touch focuses that action and activates it, the same as the controller. */
+    fun touchSaveConflict(focus: app.foldcade.language.SaveConflictFocus): Effect? {
+        val prompt = model.saveConflict ?: return null
+        model = model.copy(saveConflict = prompt.copy(focus = focus))
+        return onMeaning(Meaning.Activate, HostScreen.Bottom)
+    }
+
     fun focusedGame(): ShelfGame? = when {
         showingHome() -> home.face(model.focus.cellIndex)?.let(::homeShelf)
         else -> tileFromOrder(displaySource(model))
@@ -1402,7 +1442,7 @@ class ShellController(
 
     private fun homeActive(): Boolean =
         showingHome() && model.dialog == null && model.panel == null && model.settings == null &&
-            model.playActivity == null && !model.connectOpen
+            model.playActivity == null && model.saveConflict == null && !model.connectOpen
 
     private fun showBoard(focus: GridFocus, keepDialog: Boolean) {
         val count = home.visibleCount()

@@ -32,10 +32,16 @@ import app.foldcade.api.plugin.LaunchRequest
 import app.foldcade.api.plugin.LaunchTarget
 import app.foldcade.api.plugin.Player
 import app.foldcade.api.plugin.PluginException
+import app.foldcade.api.plugin.SaveConflict
+import app.foldcade.api.plugin.SaveConflictChoice
+import app.foldcade.api.plugin.SaveCopy
 import app.foldcade.api.plugin.SaveFolderHolder
 import app.foldcade.api.plugin.StartDisplay
 import app.foldcade.artwork.SteamGridDb
 import app.foldcade.language.Copy
+import app.foldcade.language.SaveConflictAction
+import app.foldcade.language.SaveConflictPrompt
+import app.foldcade.language.SaveConflictSide
 import app.foldcade.language.DialogButton
 import app.foldcade.language.DialogKind
 import app.foldcade.language.DialogState
@@ -78,6 +84,7 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
         const val EXTRA_DIALOG = "foldcade.dialog"
         const val EXTRA_DIALOG_INDEX = "foldcade.dialogIndex"
         const val EXTRA_DIALOG_SCREEN = "foldcade.dialogScreen"
+        const val EXTRA_SAVE_CONFLICT = "foldcade.saveConflict"
     }
 
     private val displays by lazy { Displays(this) }
@@ -176,6 +183,7 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
         val openingMenu = meaning == app.foldcade.language.Meaning.LeftPanel ||
             meaning == app.foldcade.language.Meaning.RightPanel
         if (foldcade.shell.model.dialog == null &&
+            foldcade.shell.model.saveConflict == null &&
             (openingMenu || meaning == app.foldcade.language.Meaning.Back)
         ) {
             cancelLaunches()
@@ -229,6 +237,7 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
             is Effect.OpenNotice -> openNotice(effect.id, if (effect.onBottom) Panel.Bottom else Panel.Top)
             is Effect.DismissNotice -> foldcade.dismissNotice(effect.id)
             Effect.ClearNotices -> foldcade.clearNotices()
+            is Effect.ResolveSaveConflict -> resolveSaveConflict(effect)
             null -> Unit
         }
     }
@@ -242,7 +251,9 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
         val held = roleManager.isRoleHeld(RoleManager.ROLE_HOME)
         foldcade.shell.setHomeRoleHeld(held)
         foldcade.shell.maybeAskHome(held)
+        foldcade.onSaveConflicts = { refreshSaveConflict() }
         applyDialogPreview(intent)
+        applySaveConflictPreview(intent)
         applyIslandPreview(intent)
         if (launchesCompanion) {
             val manager = getSystemService(DisplayManager::class.java)
@@ -264,11 +275,24 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
             foldcade.externalPlay.displayId == displayId
         val pending = libraryReturn
         if (displayId != null) foldcade.externalPlay.endIfDisplayHome(foldcade.plays, displayId)
-        if (ending && foldcade.externalPlay.sessionId == null && pending != null) {
+        val returned = ending && foldcade.externalPlay.sessionId == null
+        if (returned) foldcade.suppressSaveConflict = false
+        if (returned && pending != null) {
             libraryReturn = null
             reconcile(pending)
+            foldcade.scope.launch {
+                try {
+                    foldcade.plugins.reopenDeferredSaveConflicts()
+                } catch (cancelled: CancellationException) {
+                    throw cancelled
+                } catch (_: Exception) {
+                    Unit
+                }
+                withContext(Dispatchers.Main.immediate) { refreshSaveConflict() }
+            }
         } else {
             resumeLostReturn()
+            if (!foldcade.suppressSaveConflict) refreshSaveConflict()
         }
         // Foldcade in front on this panel means the game there has left. A launcher-icon
         // start is not a Home recall, so without this a Foldcade that is not the default
@@ -351,6 +375,7 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
         acceptShelf(intent)
         acceptFolderLibrary(intent)
         applyDialogPreview(intent)
+        applySaveConflictPreview(intent)
         // Home relaunches this activity before a debug capture intent arrives.
         applyIslandPreview(intent, replace = true)
     }
@@ -365,6 +390,12 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
             HostScreen.Bottom
         }
         foldcade.shell.showPreviewDialog(kind, index, screen)
+    }
+
+    private fun applySaveConflictPreview(intent: Intent) {
+        if (applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE == 0) return
+        if (intent.getStringExtra(EXTRA_SAVE_CONFLICT) == null) return
+        foldcade.shell.showSaveConflictPreview()
     }
 
     override fun onDestroy() {
@@ -680,6 +711,7 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
         if (fetching && !foldcade.shell.beginDownload(libraryId, game.remoteKey)) return
         foldcade.music.onExternalLaunch()
         val generation = beginLaunch()
+        foldcade.suppressSaveConflict = true
         foldcade.scope.launch {
             try {
                 runBackendLaunch(title, platformId, libraryId, game, id, fetching, generation)
@@ -687,6 +719,11 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
                 // Opened or not, a half-told download or sync is stale now. A sync's mark stays.
                 withContext(NonCancellable + Dispatchers.Main.immediate) {
                     foldcade.shell.settleActivity(libraryId, game.remoteKey)
+                    // A game that started shows the conflict when Foldcade is in front again.
+                    if (foldcade.externalPlay.sessionId == null && libraryReturn == null) {
+                        foldcade.suppressSaveConflict = false
+                        refreshSaveConflict()
+                    }
                 }
             }
         }
@@ -1374,6 +1411,58 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
         }
     }
 
+    /** Shows the first conflict that is still waiting, unless a launch or a preview is up. */
+    private fun refreshSaveConflict() {
+        if (foldcade.suppressSaveConflict) return
+        if (foldcade.shell.model.saveConflict?.preview == true) return
+        foldcade.scope.launch {
+            foldcade.awaitPlugins()
+            if (foldcade.suppressSaveConflict) return@launch
+            val pending = try {
+                foldcade.plugins.pendingSaveConflicts()
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (_: Exception) {
+                return@launch
+            }
+            withContext(Dispatchers.Main.immediate) {
+                if (foldcade.suppressSaveConflict) return@withContext
+                if (foldcade.shell.model.saveConflict?.preview == true) return@withContext
+                foldcade.shell.presentSaveConflict(pending.firstOrNull()?.toPrompt())
+            }
+        }
+    }
+
+    private fun resolveSaveConflict(effect: Effect.ResolveSaveConflict) {
+        if (effect.preview) return
+        if (effect.action == SaveConflictAction.DecideLater) {
+            foldcade.scope.launch {
+                try {
+                    foldcade.plugins.resolveSaveConflict(
+                        effect.libraryId,
+                        effect.id,
+                        SaveConflictChoice.DecideLater,
+                    )
+                } catch (cancelled: CancellationException) {
+                    throw cancelled
+                } catch (_: Exception) {
+                    withContext(Dispatchers.Main.immediate) { refreshSaveConflict() }
+                }
+            }
+            return
+        }
+        foldcade.scope.launch {
+            try {
+                foldcade.plugins.resolveSaveConflict(effect.libraryId, effect.id, effect.action.toChoice())
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (_: Exception) {
+                Unit
+            }
+            withContext(Dispatchers.Main.immediate) { refreshSaveConflict() }
+        }
+    }
+
     /** Reads back what the player wrote and gives it to the library. */
     private fun reconcile(pending: LibraryReturn) {
         foldcade.scope.launch {
@@ -1430,6 +1519,23 @@ private const val KEYBOARD_FOCUS_WAIT_MS = 1_000L
 
 internal const val EXTRA_ANDROID_SHELF = "app.foldcade.extra.SHELF"
 internal const val EXTRA_FOLDER_LIBRARY = "app.foldcade.extra.FOLDER_LIBRARY"
+
+private fun SaveConflict.toPrompt(): SaveConflictPrompt = SaveConflictPrompt(
+    id = id,
+    libraryId = libraryId,
+    gameLabel = gameLabel,
+    local = local.toSide(),
+    remote = remote.toSide(),
+)
+
+private fun SaveCopy.toSide(): SaveConflictSide = SaveConflictSide(source, updatedAtMillis, sizeBytes)
+
+private fun SaveConflictAction.toChoice(): SaveConflictChoice = when (this) {
+    SaveConflictAction.KeepLocal -> SaveConflictChoice.KeepLocal
+    SaveConflictAction.KeepRemote -> SaveConflictChoice.KeepRemote
+    SaveConflictAction.KeepBoth -> SaveConflictChoice.KeepBoth
+    SaveConflictAction.DecideLater -> SaveConflictChoice.DecideLater
+}
 
 private data class LibraryReturn(
     val libraryId: String,

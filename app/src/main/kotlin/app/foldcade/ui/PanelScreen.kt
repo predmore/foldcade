@@ -281,6 +281,13 @@ fun PanelHost(activity: FoldcadeHomeActivity, displays: Displays) {
             if (panel != null && screen != null) {
                 DialogLayer(app, model.dialog, screen, scale, activity::dispatch)
             }
+            val conflict = model.saveConflict
+            if (conflict != null && screen == HostScreen.Top) SaveConflictTop(conflict)
+            if (conflict != null && screen == HostScreen.Bottom) {
+                SaveConflictBottom(conflict) { focus ->
+                    activity.dispatch(app.shell.touchSaveConflict(focus))
+                }
+            }
         }
     }
 }

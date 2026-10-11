@@ -200,13 +200,25 @@ data class NegotiateResult(
     val serverVersion: String,
 )
 
-/** [archivedSaveId] is null when the same local bytes were already archived by an earlier try. */
+/**
+ * [archivedSaveId] is null when the same local bytes were already archived by an earlier try.
+ * [localCopy] and [remoteCopy] are preserved bytes for the shell's choice. Null when a copy
+ * could not be written. Neither is the slot file, so choosing one does not delete the other.
+ */
 data class KeptBoth(
     val romId: Long,
     val slot: String?,
     val archivedSaveId: Long?,
     val serverSaveId: Long,
     val serverFile: Path,
+    val localEmulator: String? = null,
+    val localUpdatedAtMillis: Long = 0L,
+    val localSizeBytes: Long = 0L,
+    val remoteEmulator: String? = null,
+    val remoteUpdatedAtMillis: Long = 0L,
+    val remoteSizeBytes: Long = 0L,
+    val localCopy: Path? = null,
+    val remoteCopy: Path? = null,
 )
 
 data class SaveSyncReport(

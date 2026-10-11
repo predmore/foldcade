@@ -56,6 +56,9 @@ class LocalFolderBackendTest {
                 "saves",
                 "prepareLaunch",
                 "reconcile",
+                "pendingSaveConflicts",
+                "resolveSaveConflict",
+                "reopenDeferredSaveConflicts",
             ),
             suspendNames,
         )

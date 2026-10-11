@@ -702,6 +702,8 @@ class RommClientTest {
                 assertEquals(SERVER_SAVE, Files.readString(save.file))
             }
         }
+        assertEquals("local", Files.readString(dir.resolve(".kept").resolve("local.sav")))
+        assertEquals(SERVER_SAVE, Files.readString(dir.resolve(".kept").resolve("remote.sav")))
         val uploads = server.recorded.filter { it.method == "POST" && it.path == "/api/saves" }
         assertEquals(2, uploads.size)
         val names = uploads.map { upload ->

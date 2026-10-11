@@ -660,6 +660,17 @@ sealed interface Effect {
 
     /** Show the home board's top level. */
     data object GoHome : Effect
+
+    /**
+     * The player chose what to do with a save conflict.
+     * [preview] does not touch a library. The copies themselves are not dropped.
+     */
+    data class ResolveSaveConflict(
+        val libraryId: String,
+        val id: String,
+        val action: SaveConflictAction,
+        val preview: Boolean = false,
+    ) : Effect
 }
 
 /** What a grid cell is. Existing callers stay on [Games], which launches. */
@@ -751,6 +762,8 @@ data class PickerModel(
     val askNoticeAccess: Boolean = false,
     /** The Play activity page. Null while it is closed. */
     val playActivity: PlayActivityPage? = null,
+    /** Two saves waiting for a choice on the bottom screen. Null while there is nothing to ask. */
+    val saveConflict: SaveConflictPrompt? = null,
 )
 
 fun reduce(
@@ -766,6 +779,15 @@ fun reduce(
         val chosen = choice?.let { Effect.DialogChoice(it, dialog.kind) }
         val cleared = if (choice != null) null else next
         return coerced.copy(dialog = cleared) to chosen
+    }
+    val conflict = coerced.saveConflict
+    if (conflict != null) {
+        if (meaning == Meaning.LeftPanel || meaning == Meaning.RightPanel) return coerced to null
+        val (next, action) = applySaveConflict(conflict, meaning)
+        val effect = action?.let {
+            Effect.ResolveSaveConflict(conflict.libraryId, conflict.id, it, conflict.preview)
+        }
+        return coerced.copy(saveConflict = if (action != null) null else next) to effect
     }
     if (coerced.connectOpen) {
         val fields = connectFields(coerced.connectKind)
