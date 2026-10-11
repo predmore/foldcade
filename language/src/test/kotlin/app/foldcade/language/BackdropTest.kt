@@ -25,6 +25,35 @@ class BackdropTest {
     }
 
     @Test
+    fun framesComeOnlyAsOftenAsTheMotionNeeds() {
+        val width = 1920f
+        val height = 1080f
+        for (clock in floatArrayOf(Backdrop.MAX_CLOCK, 1f, 0.5f)) {
+            var drift = 0f
+            var glide = 0f
+            var time = 0f
+            while (time < Backdrop.EFFECT_LOOP * 3f) {
+                val wait = backdropFrameSeconds(BackgroundMotion.Ribbons, time, clock)
+                assertTrue(wait in Backdrop.GLIDE_FRAME_SECONDS..Backdrop.SLOWEST_FRAME_SECONDS)
+                val next = time + wait * clock
+                drift = maxOf(drift, ribbonStep(time, next, width, height))
+                val bead = beadCenter(frame(BackgroundMotion.Ribbons, time, width, height))
+                val after = beadCenter(frame(BackgroundMotion.Ribbons, next, width, height))
+                if (bead != null && after != null) {
+                    glide = maxOf(glide, hypot(after.first - bead.first, after.second - bead.second))
+                }
+                time = next
+            }
+            assertTrue("drift ${"%.2f".format(drift)}px a frame at clock $clock", drift <= 1.5f)
+            assertTrue("bead ${"%.2f".format(glide)}px a frame at clock $clock", glide <= 6f)
+        }
+        val still = Backdrop.STATIC_FRAME_SECONDS
+        assertEquals(still, backdropFrameSeconds(BackgroundMotion.Static, 30f, 1f), 0.001f)
+        val creep = Backdrop.STATIC_SHIFT_PX / Backdrop.STATIC_SHIFT_SECONDS * still
+        assertTrue("static ${"%.2f".format(creep)}px a frame", creep <= 0.5f)
+    }
+
+    @Test
     fun ribbonsSwellFadeAndShiftColor() {
         val frame = BackdropFrame()
         layoutBackdrop(BackgroundMotion.Ribbons, 12f, 1920f, 1080f, moving = true, frame)
@@ -254,6 +283,26 @@ class BackdropTest {
             }
         }
         return worst.copy(peak = peak)
+    }
+
+    private fun frame(motion: BackgroundMotion, time: Float, width: Float, height: Float): BackdropFrame {
+        val frame = BackdropFrame()
+        layoutBackdrop(motion, time, width, height, moving = true, frame)
+        return frame
+    }
+
+    /** The farthest any ribbon sample moves between two design times. */
+    private fun ribbonStep(from: Float, to: Float, width: Float, height: Float): Float {
+        val before = frame(BackgroundMotion.Ribbons, from, width, height)
+        val after = frame(BackgroundMotion.Ribbons, to, width, height)
+        var step = 0f
+        for (index in 0 until before.lineCount) {
+            val a = before.lines[index]
+            val b = after.lines[index]
+            if (a.kind != MarkKind.Ribbon) continue
+            for (point in 0 until minOf(a.count, b.count)) step = maxOf(step, abs(b.y[point] - a.y[point]))
+        }
+        return step
     }
 
     private fun pct(fraction: Float): String = "%.2f%%".format(fraction * 100f)

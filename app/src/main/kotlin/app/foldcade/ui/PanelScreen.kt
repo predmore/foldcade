@@ -54,7 +54,9 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.SideEffect
+import androidx.compose.runtime.State
 import androidx.compose.runtime.compositionLocalOf
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
@@ -222,7 +224,7 @@ fun PanelHost(activity: FoldcadeHomeActivity, displays: Displays) {
         spec = if (blurTarget >= 1f) Motion.arrive(Motion.durationIsland, scale) else Motion.leave(Motion.durationIsland, scale),
         snap = heldBlur != null,
     )
-    // A closed menu composes neither the blur nor the scrim. A graphics layer
+    // A closed menu draws neither the blur nor the scrim. A graphics layer
     // left over the library, even at zero alpha, keeps the accessibility dump empty.
     CompositionLocalProvider(LocalFoldTheme provides paint) {
         Box(Modifier.fillMaxSize().background(paint.theme.background)) {
@@ -235,16 +237,14 @@ fun PanelHost(activity: FoldcadeHomeActivity, displays: Displays) {
             // in the tree keeps the accessibility dump empty, so the library title
             // is not in the window the folder check reads.
             if (wallpaper != null) PanelWallpaper(wallpaper)
-            if (blurHere) {
-                Box(Modifier.fillMaxSize().menuBlur(blur).menuDim(blur)) {
-                    CompositionLocalProvider(LocalUnderMenu provides true) {
-                        PanelBody(activity, panel, screen, scale)
-                    }
+            // The body has one place in the tree, open menu or not. Opening a menu
+            // keeps the backdrop's clock and the grid's state, and the blur eases out.
+            Box(Modifier.fillMaxSize().menuBlur(blur).menuDim(blur)) {
+                CompositionLocalProvider(LocalUnderMenu provides blurHere) {
+                    PanelBody(activity, panel, screen, scale)
                 }
-                if (session.surfaceOn(Panel.Bottom) == Surface.Picker) MenuHints(app)
-            } else {
-                PanelBody(activity, panel, screen, scale)
             }
+            if (blurHere && session.surfaceOn(Panel.Bottom) == Surface.Picker) MenuHints(app)
             if (panel != null && screen != null) {
                 DialogLayer(app, model.dialog, screen, scale, activity::dispatch)
                 MoonlightImportLayer(app, model.moonlightSheet, screen, scale)
@@ -263,11 +263,16 @@ private fun PanelBody(
     val app = activity.application as FoldcadeApp
     val session = app.store.session
     val model = app.shell.model
+    val cover = remember { BackdropCover() }
+    // Settings paints the theme's background over the whole panel.
+    val settingsOver = screen != null && model.settings?.screen == screen && foldTheme().background.alpha >= 1f
     Backdrop(
         motion = model.backgroundMotion,
         speed = model.motionSpeed,
         animatorScale = scale,
         running = activity.shellVisible && session.bothScreensFree(),
+        // Opaque game art or Settings over it, or the menu's blur, leaves nothing to watch move.
+        held = cover.covered || settingsOver || LocalUnderMenu.current,
     )
     if (panel == null || screen == null) return
     val connectHere = model.connectOpen && model.connectScreen == screen
@@ -275,11 +280,13 @@ private fun PanelBody(
         SettingsScreen(app, screen, activity::dispatch)
         return
     }
-    TravelFade(target = session.surfaceOn(panel), scale = scale) { shown ->
-        when (shown) {
-            null -> Unit
-            Surface.Hero -> if (connectHere) Unit else Hero(app, screen, scale, activity::dispatch)
-            Surface.Picker -> Picker(app, screen, scale, activity::dispatch)
+    CompositionLocalProvider(LocalBackdropCover provides cover) {
+        TravelFade(target = session.surfaceOn(panel), scale = scale) { shown ->
+            when (shown) {
+                null -> Unit
+                Surface.Hero -> if (connectHere) Unit else Hero(app, screen, scale, activity::dispatch)
+                Surface.Picker -> Picker(app, screen, scale, activity::dispatch)
+            }
         }
     }
     if (connectHere) ConnectScreen(app, screen, activity::dispatch)
@@ -288,6 +295,7 @@ private fun PanelBody(
 /** Dim painted with the content, not a second full-screen node on top of it. */
 private fun Modifier.menuDim(progress: Float): Modifier = drawWithContent {
     drawContent()
+    if (progress <= 0f) return@drawWithContent
     val dim = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) 0.32f else 0.55f
     drawRect(Color.Black.copy(alpha = dim * progress.coerceIn(0f, 1f)))
 }
@@ -338,13 +346,21 @@ private object SteadyMotion : MotionDurationScale {
 }
 
 @Composable
-private fun motionFloat(target: Float, spec: FiniteAnimationSpec<Float>, snap: Boolean = false): Float {
+private fun motionFloat(target: Float, spec: FiniteAnimationSpec<Float>, snap: Boolean = false): Float =
+    motionState(target, spec, snap).value
+
+/**
+ * The same motion as [motionFloat], as state. Delegate to it with `by` and read it in a
+ * layer or draw block: each frame then redraws without recomposing the caller.
+ */
+@Composable
+private fun motionState(target: Float, spec: FiniteAnimationSpec<Float>, snap: Boolean = false): State<Float> {
     val anim = remember { Animatable(target) }
     LaunchedEffect(target, snap) {
         if (snap) anim.snapTo(target)
         else withContext(SteadyMotion) { anim.animateTo(target, spec) }
     }
-    return anim.value
+    return anim.asState()
 }
 
 @Composable
@@ -729,6 +745,7 @@ private fun SceneBackdrop(app: FoldcadeApp, record: Game?, query: ArtQuery?) {
     val scene = rememberScene(app, record, query)
     val wide = scene?.background?.let { rememberCoverPainter(app, it, BACKDROP_PX) }
     if (wide != null) {
+        CoversBackdrop()
         Box(Modifier.fillMaxSize()) {
             Image(
                 painter = wide.painter,
@@ -754,6 +771,7 @@ private fun SceneBackdrop(app: FoldcadeApp, record: Game?, query: ArtQuery?) {
     if (scene?.background != null) return
     val cover = rememberArt(app, record, query)?.cover ?: return
     val ambient = rememberCoverPainter(app, cover, AMBIENT_PX) ?: return
+    CoversBackdrop()
     Image(
         painter = ambient.painter,
         contentDescription = null,
@@ -1457,8 +1475,9 @@ private fun PagedGrid(
         }
     }
     val reduced = Motion.reduced(scale)
-    val shownPage = position.value - dragPages
-    val alpha = if (reduced) (1f - abs(shownPage - page)).coerceIn(0.35f, 1f) else 1f
+    // Read where it is used, in offsets and layers, so travel redraws without recomposing
+    // the pages. Composition only hears which pages are on screen.
+    val shownPage = { position.value - dragPages }
     val width = cell * Metrics.columns + gap * (Metrics.columns - 1)
     // A neighbouring page sits one panel width away, so it is off screen and
     // the focus glow does not need a clip.
@@ -1471,15 +1490,15 @@ private fun PagedGrid(
             folderPop.animateTo(1f, Motion.arrive(Motion.durationShort, scale))
         }
     }
-    val fading = reduced && abs(shownPage - page) > 0.001f
-    val popping = folderPop.value != 1f
+    val fading by remember(reduced, page) { derivedStateOf { reduced && abs(shownPage() - page) > 0.001f } }
+    val popping by remember { derivedStateOf { folderPop.value != 1f } }
     Box(
         Modifier
             .requiredWidth(width + pad * 2)
             .then(
                 if (fading || popping) {
                     Modifier.graphicsLayer {
-                        if (fading) this.alpha = alpha
+                        if (reduced) this.alpha = (1f - abs(shownPage() - page)).coerceIn(0.35f, 1f)
                         scaleX = folderPop.value
                         scaleY = folderPop.value
                     }
@@ -1510,12 +1529,11 @@ private fun PagedGrid(
             }
             .padding(pad),
     ) {
-        val low = floor(shownPage).toInt()
-        val high = ceil(shownPage).toInt()
+        val low by remember { derivedStateOf { floor(shownPage()).toInt() } }
+        val high by remember { derivedStateOf { ceil(shownPage()).toInt() } }
         var rowPx by remember { mutableStateOf(0) }
         for (drawn in low..high) {
-            val dx = ((drawn - shownPage) * widthPx).roundToInt()
-            Box(Modifier.offset { IntOffset(dx, 0) }) {
+            Box(Modifier.offset { IntOffset(((drawn - shownPage()) * widthPx).roundToInt(), 0) }) {
                 Grid(app, screen, cell, gap, rows, drawn, showTitle) { rowPx = it }
             }
         }
@@ -1765,7 +1783,7 @@ private fun Cell(
         focused -> Motion.scaleFocus
         else -> Motion.scaleRest
     }
-    val drawn = motionFloat(
+    val drawn by motionState(
         target = scaleTarget,
         spec = if (focused || lifted) {
             Motion.arrive(Motion.durationFocus, animatorScale)
@@ -2112,7 +2130,7 @@ private fun MoonlightAppRow(
 ) {
     val theme = foldTheme()
     val animatorScale = Motion.animatorScale(LocalContext.current.contentResolver)
-    val drawn = motionFloat(
+    val drawn by motionState(
         target = if (focused) Motion.scaleFocus else Motion.scaleRest,
         spec = if (focused) {
             Motion.arrive(Motion.durationFocus, animatorScale)
@@ -2270,7 +2288,7 @@ private fun EmptyLibrary(
 private fun DialogAction(label: String, focused: Boolean, onClick: () -> Unit) {
     val theme = foldTheme()
     val animatorScale = Motion.animatorScale(LocalContext.current.contentResolver)
-    val drawn = motionFloat(
+    val drawn by motionState(
         target = if (focused) Motion.scaleFocus else Motion.scaleRest,
         spec = if (focused) {
             Motion.arrive(Motion.durationFocus, animatorScale)
