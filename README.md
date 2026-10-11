@@ -44,7 +44,7 @@ Your games can live in a few different places. Foldcade brings them together.
 
 ### Every game looks like itself
 
-Each game shows its box art on the grid, and a folder shows the games inside it. When you hover over a game, the top screen becomes that game: its wide art and logo, or its box beside its real title screen. Art comes from your RomM server, Steam, the libretro thumbnail library, and SteamGridDB if you add a free key. You can turn downloading art off in Settings.
+Each game shows its box art on the grid, and a folder shows the games inside it. When you hover over a game, the top screen becomes that game: its wide art and logo, or its box beside its real title screen. Art comes from your RomM server, Steam, the libretro thumbnail library, and SteamGridDB if you add a free key. A connected RomM server can also find covers for games outside its library, using the artwork providers configured there. You can turn downloading art off in Settings.
 
 ### One press, and you are playing
 

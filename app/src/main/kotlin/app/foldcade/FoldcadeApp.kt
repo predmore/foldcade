@@ -29,6 +29,7 @@ import app.foldcade.plugins.moonlight.moonlightShortcutKey
 import app.foldcade.credentials.AndroidCredentialStore
 import app.foldcade.host.PluginHost
 import app.foldcade.plugins.romm.RommArtwork
+import app.foldcade.plugins.romm.RommCoverArt
 import app.foldcade.plugins.romm.SaveBytes
 import app.foldcade.artwork.ART_HOSTS
 import app.foldcade.artwork.ArtBytes
@@ -107,9 +108,12 @@ class FoldcadeApp : Application() {
     @Volatile
     var steamGridDbKey: String? = null
 
+    private val rommCoverArt by lazy { RommCoverArt(publicArt::allows) }
+
     /**
-     * Art from public sources: Steam's CDN for Steam games, then libretro's
-     * thumbnails for ROMs, then SteamGridDB when a key is saved. Results and
+     * Art from Steam's CDN for Steam games, then libretro's
+     * thumbnails for ROMs, then the connected RomM server's cover search,
+     * then SteamGridDB when a key is saved. Results and
      * misses are kept in filesDir, listings and images in cacheDir. Nothing is
      * sent while the Game art setting is off.
      */
@@ -118,6 +122,7 @@ class FoldcadeApp : Application() {
         val sources = listOf(
             SteamStoreArt(http),
             LibretroThumbnails(http, File(cacheDir, "art/libretro")),
+            rommCoverArt,
             SteamGridDb(http) { steamGridDbKey },
         )
         ArtFinder({ sources }, ArtIndex(File(filesDir, "art/index.tsv"))) { shell.model.artwork }
@@ -538,6 +543,7 @@ class FoldcadeApp : Application() {
 
     fun publishRomm() {
         rommPublish.publish()
+        pluginLoad.launch { rommCoverArt.disconnect() }
     }
 
     private fun rommCacheRoot(): Path = cacheDir.toPath().resolve("romm")

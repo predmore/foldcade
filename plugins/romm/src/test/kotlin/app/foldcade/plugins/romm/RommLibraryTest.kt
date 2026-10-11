@@ -730,6 +730,7 @@ private class NamedPlayer(override val id: String) : Player {
 }
 
 internal class ScriptedOps : RommOps {
+    var onSearchCovers: suspend (String) -> List<app.foldcade.romm.RomCoverMatch> = { emptyList() }
     var onPlatforms: suspend () -> List<PlatformSummary> = { emptyList() }
     var onRoms: suspend (RomQuery) -> RomPage = { query -> RomPage(emptyList(), 0, query.limit, query.offset) }
     var onRom: suspend (Long) -> RomSummary = { id -> error("rom $id") }
@@ -753,6 +754,7 @@ internal class ScriptedOps : RommOps {
     override suspend fun roms(query: RomQuery) = onRoms(query)
     override suspend fun rom(id: Long) = onRom(id)
     override suspend fun me() = onMe()
+    override suspend fun searchCovers(title: String) = onSearchCovers(title)
     override suspend fun downloadRom(
         romId: Long,
         fileName: String,

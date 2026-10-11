@@ -29,6 +29,7 @@ class RommOpenApiContractTest {
             "get" to "/api/platforms",
             "get" to "/api/roms",
             "get" to "/api/roms/{id}/simple",
+            "get" to "/api/search/cover",
             "get" to "/api/roms/{id}/content/{file_name}",
             "post" to "/api/devices",
             "put" to "/api/devices/{device_id}",
@@ -43,6 +44,12 @@ class RommOpenApiContractTest {
             assertTrue("$method $path", item.containsKey(method))
         }
         val schemas = root.getValue("components").jsonObject.getValue("schemas").jsonObject
+        assertTrue(props(schemas, "SearchCoverSchema").containsAll(listOf("name", "resources")))
+        assertTrue(
+            props(schemas, "CoverResource").containsAll(
+                listOf("url", "type", "width", "height", "nsfw", "humor", "epilepsy"),
+            ),
+        )
         assertTrue(
             props(schemas, "SyncNegotiateResponse").containsAll(
                 listOf("session_id", "operations", "total_upload", "total_download", "total_conflict", "total_no_op", "total_delete"),

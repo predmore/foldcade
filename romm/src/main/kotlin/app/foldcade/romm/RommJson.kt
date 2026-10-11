@@ -331,6 +331,31 @@ internal fun parseRomPage(bytes: ByteArray): RomPage {
     )
 }
 
+internal fun parseCoverMatches(bytes: ByteArray): List<RomCoverMatch> {
+    val items = parseElement(bytes.toString(Charsets.UTF_8)) as? JsonArray
+        ?: throw RommResponseException("cover search response is not an array")
+    return items.map { item ->
+        val obj = item.jsonObject
+        val resources = obj["resources"]?.jsonArray
+            ?: throw RommResponseException("cover search response missing resources")
+        RomCoverMatch(
+            name = obj.reqString("name"),
+            resources = resources.map { resource ->
+                val cover = resource.jsonObject
+                RomCoverResource(
+                    url = cover.reqString("url"),
+                    type = cover.reqString("type"),
+                    width = cover.reqInt("width"),
+                    height = cover.reqInt("height"),
+                    nsfw = cover.reqBool("nsfw"),
+                    humor = cover.reqBool("humor"),
+                    epilepsy = cover.reqBool("epilepsy"),
+                )
+            },
+        )
+    }
+}
+
 internal fun parseOperation(obj: JsonObject): SyncOperation = SyncOperation(
     action = obj.reqString("action"),
     romId = obj.reqLong("rom_id"),

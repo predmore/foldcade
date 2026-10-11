@@ -91,6 +91,26 @@ class ArtFinderTest {
     }
 
     @Test
+    fun aNewlyAvailableSourceRetriesOldMissesAndUnchangedMissesSurviveRestart() = runBlocking {
+        val empty = Scripted("empty", null)
+        val added = Scripted("romm.cover", ArtSet("romm.cover", "https://a/romm.png"))
+        var connected = false
+        val sources = { if (connected) listOf(empty, added) else listOf(empty) }
+        val file = tempFile()
+        val finder = ArtFinder(sources, ArtIndex(file))
+        assertNull(finder.find(query))
+        val restarted = ArtFinder(sources, ArtIndex(file))
+        assertNull(restarted.find(query))
+        assertEquals(1, empty.asked)
+        connected = true
+        assertEquals("https://a/romm.png", restarted.find(query)?.cover)
+        assertEquals(1, added.asked)
+        connected = false
+        assertEquals("https://a/romm.png", restarted.find(query)?.cover)
+        assertEquals(2, empty.asked)
+    }
+
+    @Test
     fun theIndexSurvivesARestartAndCompacts() {
         val file = tempFile()
         val index = ArtIndex(file)

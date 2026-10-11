@@ -12,13 +12,13 @@ Foldcade is an Android launcher for the AYN Thor. The shell is Compose. Plugins 
 | `:host` | `PluginHost`. Loads entries and calls library and metadata I/O off the main thread. |
 | `:net` | The only HTTP stack. Builds every OkHttp client; `PublicHttps` reaches a fixed list of public hosts over HTTPS only. `HttpStackGuardTest` fails a client built anywhere else. |
 | `:romm` | RomM HTTP client, on a client from `:net`. |
-| `:artwork` | Game art from public sources: Steam's CDN, then libretro's thumbnails, then SteamGridDB with the user's key. Covers for tiles, and for the focused game a scene: wide art, a logo, and a title screen. Keeps what it found, and its misses, on disk. Not a plugin. The Game art setting turns it off. |
+| `:artwork` | Artwork lookup and caching. The app tries Steam's CDN, libretro's thumbnails, the connected RomM server's cover search, then SteamGridDB with the user's key. Covers for tiles, and for the focused game a scene: wide art, a logo, and a title screen. Keeps what it found, and its misses, on disk. The Game art setting turns it off. |
 | `:plugins:emulators` | Standalone emulators for the other catalog platforms. One screen. Saves stay in the emulator. |
 | `:plugins:gamenative` | PC player and library for GameNative. Saves stay in GameNative. |
 | `:plugins:local-folder` | Library backed by a folder on the device, plus the platform ids that folder scan uses. |
 | `:plugins:melonds` | Nintendo DS player for upstream melonDS Android. |
 | `:plugins:moonlight` | Moonlight player and library. Official client, one screen. |
-| `:plugins:romm` | Built-in RomM library and metadata. |
+| `:plugins:romm` | Built-in RomM library and metadata, plus a cover-search art source for games outside the server's library. |
 | `:plugins:sample` | In-tree sample plugin. |
 | `:samples:out-of-tree` | Sample that compiles against `:api` only. |
 | `build-logic` | `foldcade.jvm-api33`, the Animal Sniffer check for API 33. |

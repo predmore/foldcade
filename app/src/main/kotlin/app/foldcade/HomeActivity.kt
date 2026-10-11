@@ -1180,6 +1180,8 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
                     if (saved) {
                         foldcade.store.setRommOrigin(origin)
                         foldcade.publishRomm()
+                        // Covers missed before sign-in can now use the server's providers.
+                        foldcade.art.forgetMisses()
                     }
                     withContext(Dispatchers.Main.immediate) {
                         foldcade.shell.showSetupHint(result.hint)

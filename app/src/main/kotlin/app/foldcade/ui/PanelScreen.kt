@@ -1103,14 +1103,16 @@ private fun Modifier.heroArrival(alpha: Float, fadeOnly: Boolean): Modifier = gr
 
 /**
  * The top screen's scene for a game: at once when it is already known,
- * otherwise after one lookup. Turning Game art off or on asks again.
+ * otherwise after one lookup. Changing artwork sources or the Game art setting asks again.
  */
 @Composable
 private fun rememberScene(app: FoldcadeApp, record: Game?, query: ArtQuery?): ArtScene? {
     val allowed = app.shell.model.artwork
-    val held = remember(record, query, allowed) { app.covers.cachedScene(record, query) }
-    var fetched by remember(record, query, allowed) { mutableStateOf<ArtScene?>(null) }
-    LaunchedEffect(record, query, allowed) {
+    val connections = app.shell.model.signedIn
+    val artKeySaved = app.shell.model.artKeySaved
+    val held = remember(record, query, allowed, connections, artKeySaved) { app.covers.cachedScene(record, query) }
+    var fetched by remember(record, query, allowed, connections, artKeySaved) { mutableStateOf<ArtScene?>(null) }
+    LaunchedEffect(record, query, allowed, connections, artKeySaved) {
         if ((record != null || query != null) && held == null) fetched = app.covers.fetchScene(record, query)
     }
     return held ?: fetched
@@ -1171,14 +1173,16 @@ private fun SceneBackdrop(app: FoldcadeApp, record: Game?, query: ArtQuery?) {
 /**
  * Art for a tile or the hero: at once when it is already known, otherwise after
  * one lookup. A provider's cover for [record] comes before the public sources.
- * Turning Game art off or on asks again.
+ * Changing artwork sources or the Game art setting asks again.
  */
 @Composable
 private fun rememberArt(app: FoldcadeApp, record: Game?, query: ArtQuery?): ArtSet? {
     val allowed = app.shell.model.artwork
-    val held = remember(record, query, allowed) { app.covers.cached(record, query) }
-    var fetched by remember(record, query, allowed) { mutableStateOf<ArtSet?>(null) }
-    LaunchedEffect(record, query, allowed) {
+    val connections = app.shell.model.signedIn
+    val artKeySaved = app.shell.model.artKeySaved
+    val held = remember(record, query, allowed, connections, artKeySaved) { app.covers.cached(record, query) }
+    var fetched by remember(record, query, allowed, connections, artKeySaved) { mutableStateOf<ArtSet?>(null) }
+    LaunchedEffect(record, query, allowed, connections, artKeySaved) {
         if ((record != null || query != null) && held == null) fetched = app.covers.fetch(record, query)
     }
     return held ?: fetched

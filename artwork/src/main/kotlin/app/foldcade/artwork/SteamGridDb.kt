@@ -60,11 +60,9 @@ class SteamGridDb(
         val title = query.title.trim()
         if (title.isEmpty()) return null
         val results = data(token, "search/autocomplete/${segment(title)}") as? JsonArray ?: return null
-        val wanted = normalized(title)
-        if (wanted.isEmpty()) return null
         // Autocomplete answers every search with something, so only a game of the same name is taken.
         return results.mapNotNull { it as? JsonObject }
-            .firstOrNull { normalized(it["name"]?.jsonPrimitive?.content.orEmpty()) == wanted }
+            .firstOrNull { artworkTitleMatches(it["name"]?.jsonPrimitive?.content.orEmpty(), title) }
             ?.get("id")?.jsonPrimitive?.int
     }
 
@@ -115,6 +113,12 @@ class SteamGridDb(
 }
 
 class SteamGridDbKeyRefused : IOException("SteamGridDB refused the API key")
+
+/** Exact title matching across punctuation, accents, and a leading "The". */
+fun artworkTitleMatches(candidate: String, title: String): Boolean {
+    val wanted = normalized(title)
+    return wanted.isNotEmpty() && normalized(candidate) == wanted
+}
 
 /**
  * What two spellings of one title share. Case, accents, a leading "The",
