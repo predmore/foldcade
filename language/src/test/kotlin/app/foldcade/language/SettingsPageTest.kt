@@ -97,6 +97,20 @@ class SettingsPageTest {
     }
 
     @Test
+    fun aOnATextRowRaisesTheKeyboardThere() {
+        val (romm, _) = reduce(home.onSetting(Row.Connect), Meaning.Activate)
+        for (field in listOf(ConnectField.Origin, ConnectField.Token)) {
+            val on = romm.copy(connectIndex = connectFields(romm.connectKind).indexOf(field))
+            val (typing, effect) = reduce(on, Meaning.Activate)
+            assertEquals(Effect.EditField, effect)
+            assertEquals(on.connectIndex, typing.connectIndex)
+            assertTrue(typing.connectOpen)
+        }
+        val (key, _) = reduce(home.onSetting(Row.ArtKey), Meaning.Activate)
+        assertEquals(Effect.EditField, reduce(key.copy(connectIndex = 0), Meaning.Activate).second)
+    }
+
+    @Test
     fun aRowThatLeavesTheMenuClosesThePage() {
         var model = openFromMenu()
         val library = settingsCategories(model).indexOf(SettingsCategory.Library)

@@ -64,11 +64,6 @@ fun signInAgainPrompt(screen: HostScreen = HostScreen.Top): DialogState = Dialog
     screen = screen,
 )
 
-fun connectHint(field: ConnectField): HintActions? = hintLine(
-    activateDoesSomething = field == ConnectField.Save,
-    backDoesSomething = true,
-)
-
 enum class DialogKind {
     Home,
     Folder,
@@ -631,6 +626,9 @@ sealed interface Effect {
     data class ForgetCredentials(val pluginId: String) : Effect
     data class ForgetFolder(val uri: String) : Effect
     data object SaveRommToken : Effect
+
+    /** A on a text row of the connect form. The field takes focus and raises the keyboard. */
+    data object EditField : Effect
     data object RequestHome : Effect
     data class ChoosePlayerSave(val playerId: String) : Effect
     data object PinApp : Effect
@@ -782,7 +780,7 @@ fun reduce(
             Meaning.MoveDown -> coerced.copy(connectIndex = (index + 1).coerceAtMost(fields.lastIndex)) to null
             Meaning.Activate -> when (field) {
                 ConnectField.Save -> coerced to if (coerced.connectKind == ConnectKind.ArtKey) Effect.SaveArtKey else Effect.SaveRommToken
-                ConnectField.Origin, ConnectField.Token -> coerced.copy(connectIndex = index) to null
+                ConnectField.Origin, ConnectField.Token -> coerced.copy(connectIndex = index) to Effect.EditField
             }
             Meaning.LeftPanel, Meaning.RightPanel ->
                 presentPanel(

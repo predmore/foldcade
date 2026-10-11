@@ -246,10 +246,11 @@ fun monogram(title: String): String {
 fun hintFor(place: HintPlace): HintActions? = when (place) {
     HintPlace.RootGrid -> null
     HintPlace.InsidePlatform -> hintLine(activateDoesSomething = false, backDoesSomething = true)
+    // A on a connect field raises the keyboard, and on Save it saves.
     HintPlace.Menu,
     HintPlace.Dialog,
+    HintPlace.Connect,
     -> hintLine(activateDoesSomething = true, backDoesSomething = true)
-    HintPlace.Connect -> hintLine(activateDoesSomething = false, backDoesSomething = true)
 }
 
 /** One glyph and one word in the hint row. */

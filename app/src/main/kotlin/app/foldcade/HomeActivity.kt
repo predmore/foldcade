@@ -21,6 +21,7 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
 import app.foldcade.host.play.PlaySignal
 import app.foldcade.api.isAndroidHomeRecall
 import app.foldcade.api.plugin.Availability
@@ -60,8 +61,10 @@ import java.time.Duration
 import kotlin.coroutines.cancellation.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.coroutines.sync.withLock
 import org.json.JSONArray
 import org.json.JSONObject
@@ -165,6 +168,8 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
 
     override fun homeKeys(): HomeKeys = foldcade.shell.homeKeys()
 
+    override fun rowsTakeVerticalKeys(): Boolean = foldcade.shell.model.connectOpen
+
     override fun onMeaning(meaning: app.foldcade.language.Meaning) {
         val openingMenu = meaning == app.foldcade.language.Meaning.LeftPanel ||
             meaning == app.foldcade.language.Meaning.RightPanel
@@ -194,9 +199,9 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
             }
             is Effect.ChoosePlayerSave -> choosePlayerSave(effect.playerId)
             Effect.PinApp, Effect.MoveApp, Effect.HideApp, Effect.ShowApp -> Unit
-            // The shell applies Y's tile actions itself and hands back null; these never arrive.
+            // The shell applies Y's tile actions and A on a text field itself and hands back null; these never arrive.
             Effect.MoveTile, is Effect.MoveTileTo, Effect.NewFolder, Effect.RenameFolder,
-            Effect.ChooseFolderIcon, Effect.RemoveTile, Effect.AddToHome, Effect.GoHome,
+            Effect.ChooseFolderIcon, Effect.RemoveTile, Effect.AddToHome, Effect.GoHome, Effect.EditField,
             -> Unit
             Effect.OpenAll -> foldcade.shell.openHomeAll()
             Effect.ToggleAddNew -> foldcade.shell.applyHomeAddNew(foldcade.shell.model.addNewToHome)
@@ -305,6 +310,29 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
     override fun onWindowFocusChanged(hasFocus: Boolean) {
         super.onWindowFocusChanged(hasFocus)
         if (hasFocus) hideSystemBars()
+    }
+
+    /** True while this screen is Android's focused display. Each screen's window has focus of its own. */
+    private var topResumed by mutableStateOf(false)
+
+    override fun onTopResumedActivityChanged(isTopResumedActivity: Boolean) {
+        super.onTopResumedActivityChanged(isTopResumedActivity)
+        topResumed = isTopResumedActivity
+    }
+
+    /**
+     * Android raises the keyboard only on the focused display. The keys usually come from
+     * the other screen, so this one starts itself again there, which moves focus to it.
+     * Android pauses and resumes it around the new intent; resuming only refreshes state.
+     * This returns once it has focus.
+     */
+    suspend fun takeKeyboardFocus() {
+        val displayId = display?.displayId ?: return
+        if (!topResumed) {
+            val options = ActivityOptions.makeBasic().apply { launchDisplayId = displayId }
+            startActivity(Intent(this, this::class.java), options.toBundle())
+        }
+        withTimeoutOrNull(KEYBOARD_FOCUS_WAIT_MS) { snapshotFlow { topResumed }.first { it } }
     }
 
     override fun onNewIntent(intent: Intent) {
@@ -1351,6 +1379,9 @@ private fun shelfGame(game: ShelfGame): Game = Game(
 
 /** The session's id for an app Foldcade did not open. */
 internal const val OTHER_APP_ID = "android:other"
+
+/** How long A on a text field waits for its screen to take focus before raising the keyboard anyway. */
+private const val KEYBOARD_FOCUS_WAIT_MS = 1_000L
 
 internal const val EXTRA_ANDROID_SHELF = "app.foldcade.extra.SHELF"
 internal const val EXTRA_FOLDER_LIBRARY = "app.foldcade.extra.FOLDER_LIBRARY"
