@@ -255,6 +255,16 @@ class RommClient(
     }
 
     /**
+     * `GET /api/users/me`, for the user's RetroAchievements progress. Needs the
+     * `me.read` scope; a token without it gets [RommForbidden].
+     */
+    suspend fun me(): RommUser {
+        val raw = exchange(api("/users/me"), "GET", authenticated = true)
+        raw.require(200)
+        return parseUser(raw.body)
+    }
+
+    /**
      * Downloads one ROM into [cacheRoot] with `purpose=play`. Does not send `format`.
      *
      * A finished file is reused only when its verified marker matches

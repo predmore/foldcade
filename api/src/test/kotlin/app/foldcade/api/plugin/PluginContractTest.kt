@@ -113,13 +113,15 @@ class PluginContractTest {
         assertTrue(aliases.isDefault)
         assertTrue(IdlePlatform().aliases.isEmpty())
         assertEquals(1, PLUGIN_API_VERSION)
-        assertEquals(4, PLUGIN_API_MINOR)
+        assertEquals(5, PLUGIN_API_MINOR)
         val bind = PluginEntry::class.java.methods.single { it.name == "bind" }
         assertTrue(bind.isDefault)
         val saveFileName = Player::class.java.methods.single { it.name == "saveFileName" }
         assertTrue(saveFileName.isDefault)
         val observeActivity = LibraryBackend::class.java.methods.single { it.name == "observeActivity" }
         assertTrue(observeActivity.isDefault)
+        val achievements = MetadataProvider::class.java.methods.single { it.name == "achievements" }
+        assertTrue(achievements.isDefault)
     }
 
     @Test
@@ -204,7 +206,7 @@ class PluginContractTest {
                 "reconcile",
             ),
         )
-        assertSuspendMethods(MetadataProvider::class.java, setOf("fetch"))
+        assertSuspendMethods(MetadataProvider::class.java, setOf("fetch", "achievements"))
         assertSuspendMethods(Player::class.java, emptySet())
         assertSuspendMethods(Platform::class.java, emptySet())
     }
@@ -276,7 +278,10 @@ class PluginContractTest {
     }
 
     private fun assertSuspendMethods(type: Class<*>, suspendNames: Set<String>) {
-        val declared = type.methods.filter { it.declaringClass == type }
+        // A suspend default body also compiles to a static `$suspendImpl` helper. It is not a member.
+        val declared = type.methods.filter {
+            it.declaringClass == type && !java.lang.reflect.Modifier.isStatic(it.modifiers)
+        }
         assertTrue(declared.isNotEmpty())
         for (method in declared) {
             val isSuspend = method.parameterTypes.any { it.name == "kotlin.coroutines.Continuation" }

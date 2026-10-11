@@ -761,8 +761,9 @@ class ShellController(
         model = model.copy(folderGrantPending = false)
     }
 
-    fun touchCell(index: Int, screen: HostScreen) {
-        if (model.dialog != null || model.panel != null || model.connectOpen) return
+    /** One tap focuses a tile. A second tap on it activates, and hands back what that opens. */
+    fun touchCell(index: Int, screen: HostScreen): Effect? {
+        if (model.dialog != null || model.panel != null || model.connectOpen) return null
         val current = model.focus
         val already = current.chrome == null && current.cellIndex == index
         if (!already) {
@@ -776,9 +777,9 @@ class ShellController(
                 ),
             )
             cue(model.themeIndex, "move")
-            return
+            return null
         }
-        onMeaning(Meaning.Activate, screen)
+        return onMeaning(Meaning.Activate, screen)
     }
 
     fun touchChrome(chrome: Chrome, screen: HostScreen) {
@@ -951,6 +952,18 @@ class ShellController(
         if (!model.libraryGrid || platformId == null) return null
         return platformEntries.firstOrNull { it.platformId == platformId }?.title
     }
+
+    /** [game] as the command center beside it shows it: its name, icon or mark, and art. */
+    fun runningApp(game: ShelfGame): RunningApp = RunningApp(
+        title = game.title,
+        packageName = game.androidPackage,
+        mark = game.mark,
+        record = artRecord(game),
+        query = artQuery(game),
+    )
+
+    /** The focused tile as a [RunningApp], for the launch it is about to start. */
+    fun focusedRunningApp(): RunningApp? = focusedGame()?.takeUnless { it.emptyShelfHint }?.let(::runningApp)
 
     /**
      * What the art sources need to look [game] up. Null for an app, which draws its
@@ -1381,6 +1394,11 @@ class ShellController(
 
     private fun showingHome(snapshot: PickerModel = model): Boolean =
         !snapshot.libraryGrid && snapshot.homeGrid == HomeGrid.StandIns
+
+    /** The home grid's top level with nothing open over it, where B has nothing left to close. */
+    fun atRest(): Boolean =
+        homeActive() && home.board.openFolderId == null && !home.board.allOpen && home.board.hold == null &&
+            home.iconPick == null && renameDraft() == null
 
     private fun homeActive(): Boolean =
         showingHome() && model.dialog == null && model.panel == null && model.settings == null &&

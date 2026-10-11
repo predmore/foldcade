@@ -84,6 +84,47 @@ data class RomSummary(
     val files: List<RomFileSummary>,
     /** `merged_screenshots`: screenshot paths on the server, from its scrapers. */
     val screenshots: List<String> = emptyList(),
+    /** `ra_id`: the game's RetroAchievements id. Null when RomM has no match for it. */
+    val raId: Long? = null,
+    /** `merged_ra_metadata.achievements`, in `display_order`. Empty without a match. */
+    val achievements: List<RaAchievement> = emptyList(),
+)
+
+/**
+ * One RetroAchievements achievement as RomM lists it. Every field but
+ * [badgeId] can be missing. [badgePath] and [badgePathLock] are on the RomM
+ * server and load without the token; the urls are on RetroAchievements' own host.
+ */
+data class RaAchievement(
+    val title: String?,
+    val description: String?,
+    val points: Int?,
+    /** Joins this achievement to [RaGameProgress.earnedBadgeIds]. */
+    val badgeId: String?,
+    val badgePath: String?,
+    val badgePathLock: String?,
+    val badgeUrl: String?,
+    val badgeUrlLock: String?,
+    val displayOrder: Int?,
+)
+
+/**
+ * `GET /api/users/me`, for RetroAchievements. [raUsername] is null until the
+ * user links one in RomM. [progress] is what RomM last fetched for them.
+ */
+data class RommUser(
+    val raUsername: String?,
+    val progress: List<RaGameProgress>,
+)
+
+/** One game in `ra_progression.results`. Joined to a ROM on [RomSummary.raId]. */
+data class RaGameProgress(
+    val romRaId: Long,
+    val maxPossible: Int?,
+    val numAwarded: Int?,
+    val numAwardedHardcore: Int?,
+    /** `earned_achievements[].id`: the badge ids of what the user has earned. */
+    val earnedBadgeIds: Set<String>,
 )
 
 data class RomPage(

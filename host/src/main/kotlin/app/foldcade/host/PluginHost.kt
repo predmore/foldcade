@@ -4,6 +4,7 @@ import app.foldcade.api.plugin.BoundCredentialAccess
 import app.foldcade.api.plugin.CredentialStore
 import app.foldcade.api.plugin.Game
 import app.foldcade.api.plugin.GameActivity
+import app.foldcade.api.plugin.GameAchievements
 import app.foldcade.api.plugin.GameMeta
 import app.foldcade.api.plugin.GamePage
 import app.foldcade.api.plugin.GameQuery
@@ -367,6 +368,12 @@ class PluginHost(
     suspend fun fetchMetadata(providerId: String, game: Game): GameMeta? {
         val provider = requireMetadata(providerId)
         return offMain(providerId) { provider.fetch(game) }
+    }
+
+    /** The provider's achievements for [game], off the main thread. Null when it has none. */
+    suspend fun fetchAchievements(providerId: String, game: Game): GameAchievements? {
+        val provider = requireMetadata(providerId)
+        return offMain(providerId) { provider.achievements(game) }
     }
 
     private suspend fun <T> offMain(pluginId: String, block: suspend () -> T): T =

@@ -16,6 +16,7 @@ import android.os.Bundle
 import android.view.Display
 import android.view.WindowInsets
 import android.view.WindowInsetsController
+import android.view.WindowManager
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.runtime.getValue
@@ -171,6 +172,7 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
     override fun rowsTakeVerticalKeys(): Boolean = foldcade.shell.model.connectOpen
 
     override fun onMeaning(meaning: app.foldcade.language.Meaning) {
+        if (commandCenterKey(meaning)) return
         val openingMenu = meaning == app.foldcade.language.Meaning.LeftPanel ||
             meaning == app.foldcade.language.Meaning.RightPanel
         if (foldcade.shell.model.dialog == null &&
@@ -184,10 +186,17 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
         dispatch(foldcade.shell.onMeaning(meaning, screen))
     }
 
+    /** The command center on this screen, or the grid opened from it, takes the key first. */
+    private fun commandCenterKey(meaning: app.foldcade.language.Meaning): Boolean {
+        val panel = displays.panelFor(this, foldcade.store.session.defaultDisplayIsTop) ?: return false
+        return foldcade.commandCenter.onKey(panel, meaning, foldcade.shell::atRest)
+    }
+
     fun dispatch(effect: Effect?) {
         when (effect) {
             is Effect.Launch -> {
                 launchScreen = if (effect.onBottom) Panel.Bottom else Panel.Top
+                launchSubject = foldcade.shell.focusedRunningApp()
                 if (foldcade.shell.model.libraryGrid) launchLibraryGame(effect.index) else launchFocused()
             }
             is Effect.OpenPlatform -> foldcade.openPlatform(effect.index)
@@ -396,6 +405,27 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
         return null
     }
 
+    /**
+     * The command center's dim, as this window's own brightness. On the Thor that
+     * moves this panel's backlight and no other. Not dimmed hands the panel back
+     * to its own level, with nothing to remember or restore.
+     */
+    fun applyCommandCenterDim(dimmed: Boolean) {
+        val level = if (dimmed) commandCenterDimLevel() else WindowManager.LayoutParams.BRIGHTNESS_OVERRIDE_NONE
+        val attributes = window.attributes
+        if (attributes.screenBrightness == level) return
+        attributes.screenBrightness = level
+        window.attributes = attributes
+    }
+
+    /** The settings level is the default display's, so only that screen can be kept darker than the dim. */
+    private fun commandCenterDimLevel(): Float {
+        val dim = CommandCenter.DIM_BRIGHTNESS
+        if (display?.displayId != Display.DEFAULT_DISPLAY) return dim
+        val own = foldcade.brightness.level() ?: return dim
+        return minOf(dim, (own - 1).coerceAtLeast(0) / 254f)
+    }
+
     private fun refreshShellVisible() {
         val state = display?.state ?: Display.STATE_ON
         shellVisible = resumed && state == Display.STATE_ON
@@ -584,6 +614,7 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
             Panel.Bottom -> assignment.bottomDisplayId ?: return
         }
         foldcade.music.onExternalLaunch()
+        foldcade.commandCenter.note(external.id, foldcade.shell.runningApp(game))
         foldcade.store.place(panel, external)
         val options = ActivityOptions.makeBasic().apply { launchDisplayId = displayId }
         startActivity(launch, options.toBundle())
@@ -595,6 +626,9 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
      * generation check before it places anything.
      */
     private var launchScreen: Panel = Panel.Top
+
+    /** The tile behind the launch now starting, for the command center beside it. */
+    private var launchSubject: RunningApp? = null
 
     private fun launchFocused() {
         val game = foldcade.shell.focusedGame() ?: return
@@ -873,6 +907,7 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
     ): Boolean {
         val session = foldcade.store.session
         val external = ExternalApp(id, occupiesBoth)
+        foldcade.commandCenter.note(id, launchSubject?.takeIf { it.title == title } ?: RunningApp(title))
         val assignment = displays.assignment(session.defaultDisplayIsTop)
         val displayId = if (occupiesBoth) {
             foldcade.store.update { it.launch(external, launchScreen) }
@@ -895,6 +930,7 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
         foldcade.music.onExternalLaunch()
         val session = foldcade.store.session
         val external = ExternalApp(game.id, game.occupiesBothDisplays)
+        foldcade.commandCenter.note(game.id, foldcade.shell.runningApp(game))
         if (game.occupiesBothDisplays) {
             foldcade.store.update { it.launch(external, launchScreen) }
             beginPlay(game, displays.assignment(session.defaultDisplayIsTop).topDisplayId)
@@ -946,6 +982,7 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
             Panel.Bottom -> assignment.bottomDisplayId ?: return
         }
         val external = ExternalApp(game.id, ready.occupiesBothDisplays)
+        foldcade.commandCenter.note(game.id, foldcade.shell.runningApp(game))
         if (ready.occupiesBothDisplays) {
             foldcade.store.update { it.launch(external, launchScreen) }
         } else {
@@ -989,7 +1026,9 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
         val pkg = foldcade.shell.model.notices.firstOrNull { it.id == key }?.packageName
         listener.open(key, displayId) {
             foldcade.music.onExternalLaunch()
-            foldcade.store.place(panel, ExternalApp("notice:${pkg ?: key}"))
+            val id = "notice:${pkg ?: key}"
+            foldcade.commandCenter.note(id, pkg?.let { RunningApp(title = "", packageName = it) })
+            foldcade.store.place(panel, ExternalApp(id))
         }
     }
 

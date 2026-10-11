@@ -31,6 +31,8 @@ object RommContract {
         "devices.read",
         "devices.write",
         "firmware.read",
+        // RetroAchievements progress on the command center, from GET /api/users/me.
+        "me.read",
     )
 }
 

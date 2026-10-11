@@ -13,6 +13,12 @@ enum class Panel {
 enum class Surface {
     Hero,
     Picker,
+
+    /**
+     * The quiet screen beside a single-screen app: the time, the battery, the
+     * app's art, and a button that opens the grid here. See [Session.browsing].
+     */
+    CommandCenter,
 }
 
 data class ExternalApp(
@@ -22,7 +28,8 @@ data class ExternalApp(
 
 /**
  * Dual-screen session. Idle is hero on top and picker on the bottom.
- * A single-screen launch leaves the picker on the other panel.
+ * A single-screen launch leaves the command center on the other panel, and
+ * the picker there only while the user is [browsing] it.
  * Android Home clears only the panel that has input. An app on both screens
  * runs on the top panel, so Home there clears both.
  *
@@ -33,6 +40,12 @@ data class Session(
     val topApp: ExternalApp? = null,
     val bottomApp: ExternalApp? = null,
     val defaultDisplayIsTop: Boolean = true,
+    /**
+     * The free panel showing the grid instead of the command center. Cleared
+     * when an app takes that panel, when both panels are free again, and when
+     * the user leaves it idle.
+     */
+    val browsing: Panel? = null,
 ) {
     fun externalOn(panel: Panel): ExternalApp? = when (panel) {
         Panel.Top -> topApp
@@ -46,14 +59,24 @@ data class Session(
             Panel.Top -> when {
                 !topFree -> null
                 bottomFree -> Surface.Hero
-                else -> Surface.Picker
+                else -> besideApp(panel)
             }
             Panel.Bottom -> when {
                 !bottomFree -> null
-                else -> Surface.Picker
+                topFree -> Surface.Picker
+                else -> besideApp(panel)
             }
         }
     }
+
+    private fun besideApp(panel: Panel): Surface =
+        if (browsing == panel) Surface.Picker else Surface.CommandCenter
+
+    /** The command center on [panel] gives way to the grid. Nothing changes on any other surface. */
+    fun browse(panel: Panel): Session =
+        if (surfaceOn(panel) == Surface.CommandCenter) copy(browsing = panel) else this
+
+    fun stopBrowsing(): Session = if (browsing == null) this else copy(browsing = null)
 
     fun bothScreensFree(): Boolean = topApp == null && bottomApp == null
 
@@ -86,12 +109,12 @@ data class Session(
 
     fun place(panel: Panel, app: ExternalApp): Session {
         if (app.occupiesBothDisplays) {
-            return copy(topApp = app, bottomApp = app)
+            return copy(topApp = app, bottomApp = app, browsing = null)
         }
         return when (panel) {
             Panel.Top -> copy(topApp = app)
             Panel.Bottom -> copy(bottomApp = app)
-        }
+        }.settled()
     }
 
     fun clearIfCurrent(panel: Panel, appId: String): Session {
@@ -107,12 +130,18 @@ data class Session(
     fun home(panelWithInput: Panel): Session {
         val app = externalOn(panelWithInput)
         if (app?.occupiesBothDisplays == true && panelWithInput == Panel.Top) {
-            return copy(topApp = null, bottomApp = null)
+            return copy(topApp = null, bottomApp = null, browsing = null)
         }
         return when (panelWithInput) {
             Panel.Top -> copy(topApp = null)
             Panel.Bottom -> copy(bottomApp = null)
-        }
+        }.settled()
+    }
+
+    /** [browsing] only means something on a free panel beside an app. */
+    private fun settled(): Session {
+        val panel = browsing ?: return this
+        return if (externalOn(panel) != null || externalOn(panel.flip()) == null) copy(browsing = null) else this
     }
 
     /**
@@ -127,7 +156,7 @@ data class Session(
     }
 }
 
-private fun Panel.flip(): Panel = when (this) {
+internal fun Panel.flip(): Panel = when (this) {
     Panel.Top -> Panel.Bottom
     Panel.Bottom -> Panel.Top
 }

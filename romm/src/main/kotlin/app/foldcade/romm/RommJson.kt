@@ -267,7 +267,58 @@ internal fun parseRom(obj: JsonObject): RomSummary = RomSummary(
     hasMultipleFiles = obj.reqBool("has_multiple_files"),
     files = obj["files"]?.jsonArray?.map { parseRomFile(it.jsonObject) } ?: emptyList(),
     screenshots = obj.optionalStringList("merged_screenshots"),
+    raId = obj.optLong("ra_id"),
+    achievements = parseAchievements(obj["merged_ra_metadata"]),
 )
+
+/**
+ * `merged_ra_metadata.achievements`. RomM sends `{}` for a game with no match.
+ * One unreadable achievement is skipped; a broken block never costs the ROM.
+ */
+internal fun parseAchievements(metadata: JsonElement?): List<RaAchievement> {
+    val list = (metadata as? JsonObject)?.get("achievements") as? JsonArray ?: return emptyList()
+    return list.mapNotNull { element ->
+        val obj = element as? JsonObject ?: return@mapNotNull null
+        try {
+            RaAchievement(
+                title = obj.optString("title"),
+                description = obj.optString("description"),
+                points = obj.optLong("points")?.toInt(),
+                badgeId = obj.optString("badge_id"),
+                badgePath = obj.optString("badge_path"),
+                badgePathLock = obj.optString("badge_path_lock"),
+                badgeUrl = obj.optString("badge_url"),
+                badgeUrlLock = obj.optString("badge_url_lock"),
+                displayOrder = obj.optLong("display_order")?.toInt(),
+            )
+        } catch (_: IllegalArgumentException) {
+            null
+        }
+    }.sortedBy { it.displayOrder ?: Int.MAX_VALUE }
+}
+
+internal fun parseUser(bytes: ByteArray): RommUser {
+    val obj = parseObject(bytes)
+    val results = (obj["ra_progression"] as? JsonObject)?.get("results") as? JsonArray
+    val progress = results.orEmpty().mapNotNull { element ->
+        val game = element as? JsonObject ?: return@mapNotNull null
+        try {
+            val earned = (game["earned_achievements"] as? JsonArray).orEmpty().mapNotNull { earned ->
+                (earned as? JsonObject)?.optString("id")
+            }
+            RaGameProgress(
+                romRaId = game.optLong("rom_ra_id") ?: return@mapNotNull null,
+                maxPossible = game.optLong("max_possible")?.toInt(),
+                numAwarded = game.optLong("num_awarded")?.toInt(),
+                numAwardedHardcore = game.optLong("num_awarded_hardcore")?.toInt(),
+                earnedBadgeIds = earned.toSet(),
+            )
+        } catch (_: IllegalArgumentException) {
+            null
+        }
+    }
+    return RommUser(raUsername = obj.optString("ra_username"), progress = progress)
+}
 
 internal fun parseRomPage(bytes: ByteArray): RomPage {
     val obj = parseObject(bytes)

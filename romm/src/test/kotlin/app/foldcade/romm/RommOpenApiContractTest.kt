@@ -37,6 +37,7 @@ class RommOpenApiContractTest {
             "get" to "/api/saves/{id}/content",
             "post" to "/api/saves/{id}/downloaded",
             "post" to "/api/sync/sessions/{session_id}/complete",
+            "get" to "/api/users/me",
         ).forEach { (method, path) ->
             val item = paths.getValue(path).jsonObject
             assertTrue("$method $path", item.containsKey(method))
@@ -53,6 +54,20 @@ class RommOpenApiContractTest {
             ),
         )
         assertTrue(props(schemas, "DeviceCreatePayload").contains("allow_existing"))
+        // RetroAchievements on the command center: the ROM's list and the user's progress.
+        assertTrue(props(schemas, "SimpleRomSchema").containsAll(listOf("ra_id", "merged_ra_metadata")))
+        assertTrue(props(schemas, "RomRAMetadata").contains("achievements"))
+        assertTrue(
+            props(schemas, "RAGameRomAchievement").containsAll(
+                listOf("title", "description", "points", "badge_id", "badge_path", "badge_path_lock", "display_order"),
+            ),
+        )
+        assertTrue(props(schemas, "UserSchema").containsAll(listOf("ra_username", "ra_progression")))
+        assertTrue(
+            props(schemas, "RAUserGameProgression").containsAll(
+                listOf("rom_ra_id", "max_possible", "num_awarded", "earned_achievements"),
+            ),
+        )
         assertTrue(
             props(schemas, "SyncOperationSchema").containsAll(
                 listOf("action", "rom_id", "save_id", "file_name", "slot", "emulator"),
