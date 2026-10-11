@@ -22,21 +22,21 @@ class SessionTest {
     }
 
     @Test
-    fun xLaunchesOnTheBottomAndLeavesThePickerOnTop() {
+    fun xLaunchesOnTheBottomAndLeavesTheCommandCenterOnTop() {
         val launched = Session().launch(one, Panel.Bottom)
         assertEquals(one, launched.bottomApp)
         assertNull(launched.topApp)
-        assertEquals(Surface.Picker, launched.surfaceOn(Panel.Top))
+        assertEquals(Surface.CommandCenter, launched.surfaceOn(Panel.Top))
         assertNull(launched.surfaceOn(Panel.Bottom))
     }
 
     @Test
-    fun launchOnTopLeavesPickerOnBottom() {
+    fun launchOnTopLeavesTheCommandCenterOnBottom() {
         val launched = Session().launch(one)
         assertEquals(one, launched.topApp)
         assertNull(launched.bottomApp)
         assertNull(launched.surfaceOn(Panel.Top))
-        assertEquals(Surface.Picker, launched.surfaceOn(Panel.Bottom))
+        assertEquals(Surface.CommandCenter, launched.surfaceOn(Panel.Bottom))
     }
 
     @Test
@@ -64,22 +64,22 @@ class SessionTest {
         val homeTop = full.home(Panel.Top)
         assertNull(homeTop.topApp)
         assertEquals(two, homeTop.bottomApp)
-        assertEquals(Surface.Picker, homeTop.surfaceOn(Panel.Top))
+        assertEquals(Surface.CommandCenter, homeTop.surfaceOn(Panel.Top))
         assertNull(homeTop.surfaceOn(Panel.Bottom))
 
         val homeBottom = full.home(Panel.Bottom)
         assertEquals(one, homeBottom.topApp)
         assertNull(homeBottom.bottomApp)
         assertNull(homeBottom.surfaceOn(Panel.Top))
-        assertEquals(Surface.Picker, homeBottom.surfaceOn(Panel.Bottom))
+        assertEquals(Surface.CommandCenter, homeBottom.surfaceOn(Panel.Bottom))
     }
 
     @Test
-    fun homeOnThePickerDoesNotDismissTheOtherApp() {
+    fun homeOnTheCommandCenterDoesNotDismissTheOtherApp() {
         val appOnTop = Session().launch(one)
         val after = appOnTop.home(Panel.Bottom)
         assertEquals(one, after.topApp)
-        assertEquals(Surface.Picker, after.surfaceOn(Panel.Bottom))
+        assertEquals(Surface.CommandCenter, after.surfaceOn(Panel.Bottom))
     }
 
     @Test
@@ -119,7 +119,7 @@ class SessionTest {
         val homeBottom = Session().launch(both).home(Panel.Bottom)
         assertEquals(both, homeBottom.topApp)
         assertNull(homeBottom.bottomApp)
-        assertEquals(Surface.Picker, homeBottom.surfaceOn(Panel.Bottom))
+        assertEquals(Surface.CommandCenter, homeBottom.surfaceOn(Panel.Bottom))
 
         val idle = homeBottom.home(Panel.Top)
         assertTrue(idle.bothScreensFree())
@@ -163,17 +163,58 @@ class SessionTest {
         assertFalse(idle.pickerHandlesKeys(Panel.Top))
         assertTrue(idle.pickerHandlesKeys(Panel.Bottom))
 
+        // Beside an app the command center takes keys until the user opens the grid there.
         val appOnTop = idle.launch(one)
         assertFalse(appOnTop.pickerHandlesKeys(Panel.Top))
-        assertTrue(appOnTop.pickerHandlesKeys(Panel.Bottom))
+        assertFalse(appOnTop.pickerHandlesKeys(Panel.Bottom))
+        assertTrue(appOnTop.browse(Panel.Bottom).pickerHandlesKeys(Panel.Bottom))
 
         val appOnBottom = Session().launch(one, Panel.Bottom)
-        assertTrue(appOnBottom.pickerHandlesKeys(Panel.Top))
+        assertFalse(appOnBottom.pickerHandlesKeys(Panel.Top))
+        assertTrue(appOnBottom.browse(Panel.Top).pickerHandlesKeys(Panel.Top))
         assertFalse(appOnBottom.pickerHandlesKeys(Panel.Bottom))
 
         val full = appOnTop.launch(two)
         assertFalse(full.pickerHandlesKeys(Panel.Top))
         assertFalse(full.pickerHandlesKeys(Panel.Bottom))
+    }
+
+    @Test
+    fun browsingShowsTheGridBesideAnAppUntilSomethingTakesThatScreen() {
+        val appOnTop = Session().launch(one)
+        val browsing = appOnTop.browse(Panel.Bottom)
+        assertEquals(Panel.Bottom, browsing.browsing)
+        assertEquals(Surface.Picker, browsing.surfaceOn(Panel.Bottom))
+        assertEquals(Surface.CommandCenter, browsing.stopBrowsing().surfaceOn(Panel.Bottom))
+
+        // A second app on the browsed screen ends it, and so does the first app leaving.
+        assertNull(browsing.launch(two).browsing)
+        assertNull(browsing.home(Panel.Top).browsing)
+        assertEquals(Surface.Picker, browsing.home(Panel.Top).surfaceOn(Panel.Bottom))
+        // Home on the browsed screen leaves the grid there.
+        assertEquals(Panel.Bottom, browsing.home(Panel.Bottom).browsing)
+    }
+
+    @Test
+    fun browseOnlyOpensACommandCenter() {
+        val idle = Session()
+        assertEquals(idle, idle.browse(Panel.Bottom))
+        val appOnTop = idle.launch(one)
+        assertEquals(appOnTop, appOnTop.browse(Panel.Top))
+        val bothPanels = idle.launch(both)
+        assertEquals(bothPanels, bothPanels.browse(Panel.Bottom))
+    }
+
+    @Test
+    fun theCommandCenterRestsDimUntilItsScreenIsWoken() {
+        val appOnTop = Session().launch(one)
+        assertTrue(commandCenterDimmed(appOnTop, Panel.Bottom, awake = null))
+        assertFalse(commandCenterDimmed(appOnTop, Panel.Bottom, awake = Panel.Bottom))
+        assertFalse(commandCenterDimmed(appOnTop, Panel.Top, awake = null))
+        // The grid opened from it, a Foldcade page, and an app never dim.
+        assertFalse(commandCenterDimmed(appOnTop.browse(Panel.Bottom), Panel.Bottom, awake = null))
+        assertFalse(commandCenterDimmed(Session(), Panel.Bottom, awake = null))
+        assertFalse(commandCenterDimmed(appOnTop.launch(two), Panel.Bottom, awake = null))
     }
 
     @Test

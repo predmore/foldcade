@@ -1,13 +1,17 @@
 package app.foldcade.plugins.romm
 
+import app.foldcade.api.plugin.Achievement
 import app.foldcade.api.plugin.Artwork
 import app.foldcade.api.plugin.ArtworkRole
 import app.foldcade.api.plugin.Game
+import app.foldcade.api.plugin.GameAchievements
 import app.foldcade.api.plugin.GameMeta
 import app.foldcade.api.plugin.MetadataProvider
 import app.foldcade.api.plugin.credentialFreeArtworkUri
 import app.foldcade.romm.RomQuery
 import app.foldcade.romm.RomSummary
+import app.foldcade.romm.RommException
+import kotlin.coroutines.cancellation.CancellationException
 import java.text.Normalizer
 import java.util.Locale
 
@@ -44,7 +48,64 @@ internal class RommMetadata(
             }
         }
     }
+
+    /**
+     * The ROM's RetroAchievements list, fresh from the server, and what the
+     * user has earned when RomM knows. A ROM RomM matched to no game has none.
+     */
+    override suspend fun achievements(game: Game): GameAchievements? {
+        if (game.backendId != ROMM_LIBRARY_ID) return null
+        val romId = game.remoteKey.toLongOrNull()?.takeIf { it >= 1 } ?: return null
+        return translate {
+            gate.session { wiring, ops ->
+                val rom = ops.rom(romId)
+                gate.catalog.rememberRoms(listOf(rom))
+                if (rom.achievements.isEmpty()) return@session null
+                rom.toAchievements(wiring.origin, earnedOn(ops, rom.raId))
+            }
+        }
+    }
 }
+
+/**
+ * Badge ids the user has earned on [raId]. Null when RomM cannot say: no
+ * RetroAchievements username linked there, or a token without `me.read`.
+ * That leaves the list without progress; it never asks for a new sign-in.
+ */
+private suspend fun earnedOn(ops: RommOps, raId: Long?): Set<String>? {
+    if (raId == null) return null
+    val user = try {
+        ops.me()
+    } catch (cancelled: CancellationException) {
+        throw cancelled
+    } catch (_: RommException) {
+        return null
+    }
+    if (user.raUsername.isNullOrBlank()) return null
+    return user.progress.firstOrNull { it.romRaId == raId }?.earnedBadgeIds.orEmpty()
+}
+
+/**
+ * The list as the plugin API carries it. Earned is a badge id in [earned].
+ * Badges load from the RomM server: colour when earned or when progress is
+ * unknown, the locked one otherwise. An achievement with no title is dropped.
+ */
+internal fun RomSummary.toAchievements(origin: String, earned: Set<String>?): GameAchievements =
+    GameAchievements(
+        achievements = achievements.mapNotNull { ra ->
+            val title = ra.title?.trim()?.takeIf { it.isNotEmpty() } ?: return@mapNotNull null
+            val got = earned != null && ra.badgeId != null && ra.badgeId in earned
+            val path = if (got || earned == null) ra.badgePath else ra.badgePathLock ?: ra.badgePath
+            Achievement(
+                title = title,
+                description = ra.description?.trim()?.takeIf { it.isNotEmpty() },
+                points = ra.points,
+                earned = got,
+                badge = absoluteHttp(origin, path),
+            )
+        },
+        progressKnown = earned != null,
+    )
 
 /**
  * One search hit is not a match. RomM's search is partial, so metadata attaches

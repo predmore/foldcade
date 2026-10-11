@@ -49,6 +49,9 @@ object TypeRamp {
     val menuRow: TextUnit = 18.sp
     val sideRow: TextUnit = 18.sp
     val hint: TextUnit = 14.sp
+
+    /** The command center's clock, the one large thing on that screen. */
+    val clock: TextUnit = 64.sp
 }
 
 /** Host-owned layout. Motion lives on [Motion]. */
@@ -73,6 +76,8 @@ object Metrics {
 
 object Copy {
     const val usesBothScreens = "Both screens"
+    /** The command center's button: the grid on that screen, to open a second app there. */
+    const val openAnApp = "Open an app"
     const val progressInGameNative = "Progress lives in GameNative."
     const val addShortcutInGameNative = "Add a game's shortcut in GameNative."
     /** The left-menu row that opens the library sources. Not the All library tile. */

@@ -34,6 +34,9 @@ import app.foldcade.romm.RommProtocolMismatch
 import app.foldcade.romm.RommUnauthenticated
 import app.foldcade.romm.RommUnavailable
 import app.foldcade.romm.RommUnsupportedServer
+import app.foldcade.romm.RommUser
+import app.foldcade.romm.RaAchievement
+import app.foldcade.romm.RaGameProgress
 import app.foldcade.romm.SaveSyncReport
 import app.foldcade.romm.SaveLedger
 import app.foldcade.romm.SyncOperation
@@ -146,6 +149,57 @@ class RommLibraryTest {
         val moonlight = game.copy(backendId = "moonlight")
         assertNull(harness.metadata.cached(moonlight))
         assertNull(harness.metadata.fetch(moonlight))
+    }
+
+    @Test
+    fun achievementsJoinTheUsersProgressOnTheBadgeId() = runBlocking {
+        val ops = ScriptedOps()
+        ops.onRom = { rom("genesis", 2).copy(raId = 120, achievements = twoAchievements) }
+        ops.onMe = {
+            RommUser(
+                raUsername = "player",
+                progress = listOf(RaGameProgress(120, 2, 1, 1, earnedBadgeIds = setOf("25175"))),
+            )
+        }
+        val game = Game(ROMM_LIBRARY_ID, "1234", "genesis", Availability.LocalOnly, "Gunstar")
+        val found = harness(ops).metadata.achievements(game)!!
+        assertTrue(found.progressKnown)
+        assertEquals(listOf("Stage One", "Stage Two"), found.achievements.map { it.title })
+        assertEquals(listOf(true, false), found.achievements.map { it.earned })
+        // Earned badges in colour, the rest locked, both from the RomM server.
+        assertEquals("http://romm.example/badges/25175.png", found.achievements[0].badge)
+        assertEquals("http://romm.example/badges/25176_lock.png", found.achievements[1].badge)
+    }
+
+    @Test
+    fun achievementsWithoutProgressStillListAndNeverAskForASignIn() = runBlocking {
+        val ops = ScriptedOps()
+        ops.onRom = { rom("genesis", 2).copy(raId = 120, achievements = twoAchievements) }
+        val game = Game(ROMM_LIBRARY_ID, "1234", "genesis", Availability.LocalOnly, "Gunstar")
+        // The default fake refuses /api/users/me the way a token without me.read is refused.
+        val refused = harness(ops).metadata.achievements(game)!!
+        assertFalse(refused.progressKnown)
+        assertEquals(2, refused.achievements.size)
+        assertFalse(refused.achievements.any { it.earned })
+        assertEquals("http://romm.example/badges/25176.png", refused.achievements[1].badge)
+
+        ops.onMe = { RommUser(raUsername = null, progress = emptyList()) }
+        assertFalse(harness(ops).metadata.achievements(game)!!.progressKnown)
+
+        // Linked, with nothing earned on this game yet, is known progress.
+        ops.onMe = { RommUser(raUsername = "player", progress = emptyList()) }
+        val none = harness(ops).metadata.achievements(game)!!
+        assertTrue(none.progressKnown)
+        assertFalse(none.achievements.any { it.earned })
+    }
+
+    @Test
+    fun aRomWithoutAchievementsAndAnotherLibrarysGameHaveNone() = runBlocking {
+        val ops = ScriptedOps()
+        ops.onRom = { rom("3ds", 3) }
+        val harness = harness(ops)
+        assertNull(harness.metadata.achievements(Game(ROMM_LIBRARY_ID, "1234", "3ds", Availability.LocalOnly, "Mario")))
+        assertNull(harness.metadata.achievements(Game("local-folder", "1234", "3ds", Availability.LocalOnly, "Mario")))
     }
 
     @Test
@@ -649,6 +703,11 @@ private fun rom(slug: String, platformId: Long) = RomSummary(
     files = listOf(RomFileSummary(7, "mario.cci", 9)),
 )
 
+private val twoAchievements = listOf(
+    RaAchievement("Stage Two", "Clear Stage 2", 5, "25176", "/badges/25176.png", "/badges/25176_lock.png", null, null, 2),
+    RaAchievement("Stage One", "Clear Stage 1", 4, "25175", "/badges/25175.png", "/badges/25175_lock.png", null, null, 1),
+).sortedBy { it.displayOrder }
+
 private fun page(rom: RomSummary) = RomPage(listOf(rom), total = 1, limit = 50, offset = 0)
 
 private fun aliasPlatform(id: String, aliases: Set<String>) = object : Platform {
@@ -674,6 +733,7 @@ internal class ScriptedOps : RommOps {
     var onPlatforms: suspend () -> List<PlatformSummary> = { emptyList() }
     var onRoms: suspend (RomQuery) -> RomPage = { query -> RomPage(emptyList(), 0, query.limit, query.offset) }
     var onRom: suspend (Long) -> RomSummary = { id -> error("rom $id") }
+    var onMe: suspend () -> RommUser = { throw RommForbidden("no me.read") }
     var onClose: () -> Unit = {}
     var onArtwork: suspend (String) -> ByteArray = { error("artwork") }
     var onRegister: suspend (RegisteredDevice?, String, String) -> RegisteredDevice =
@@ -692,6 +752,7 @@ internal class ScriptedOps : RommOps {
     override suspend fun platforms() = onPlatforms()
     override suspend fun roms(query: RomQuery) = onRoms(query)
     override suspend fun rom(id: Long) = onRom(id)
+    override suspend fun me() = onMe()
     override suspend fun downloadRom(
         romId: Long,
         fileName: String,

@@ -11,6 +11,7 @@ import app.foldcade.romm.RomProgress
 import app.foldcade.romm.RomQuery
 import app.foldcade.romm.RomSummary
 import app.foldcade.romm.RommClient
+import app.foldcade.romm.RommUser
 import app.foldcade.romm.SaveSyncReport
 import app.foldcade.romm.SaveLedger
 import app.foldcade.romm.SyncOperation
@@ -25,6 +26,8 @@ internal interface RommOps : AutoCloseable {
     suspend fun roms(query: RomQuery): RomPage
 
     suspend fun rom(id: Long): RomSummary
+
+    suspend fun me(): RommUser
 
     suspend fun downloadRom(
         romId: Long,
@@ -73,6 +76,8 @@ internal class ClientRommOps(private val client: RommClient) : RommOps {
     override suspend fun roms(query: RomQuery) = client.roms(query)
 
     override suspend fun rom(id: Long) = client.rom(id)
+
+    override suspend fun me() = client.me()
 
     override suspend fun downloadRom(
         romId: Long,

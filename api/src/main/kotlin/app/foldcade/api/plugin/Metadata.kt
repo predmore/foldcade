@@ -27,6 +27,42 @@ interface MetadataProvider {
     fun cached(game: Game): GameMeta?
 
     suspend fun fetch(game: Game): GameMeta?
+
+    /**
+     * The game's achievements, and the user's progress when this provider knows it
+     * (API minor 5). Null when it has none for [game].
+     * Same rules as [fetch]: off the main thread, cancellable. A provider that
+     * cannot read the user's progress still returns the list, with
+     * [GameAchievements.progressKnown] false, rather than failing.
+     */
+    suspend fun achievements(game: Game): GameAchievements? = null
+}
+
+/**
+ * A game's achievements from one provider, in the order the provider shows them.
+ * [progressKnown] is false when [Achievement.earned] says nothing about the user.
+ */
+data class GameAchievements(
+    val achievements: List<Achievement>,
+    val progressKnown: Boolean,
+)
+
+/**
+ * One achievement. [badge] follows the [Artwork.uri] rules: no credentials, and
+ * loaded as that string with no token of the host's. Null when there is none.
+ */
+data class Achievement(
+    val title: String,
+    val description: String? = null,
+    val points: Int? = null,
+    val earned: Boolean = false,
+    val badge: String? = null,
+) {
+    init {
+        require(badge == null || credentialFreeArtworkUri(badge) == badge) {
+            "Achievement.badge must not include credentials"
+        }
+    }
 }
 
 /** Display record. The provider maps its own source onto this. The host can cache [artwork]. */

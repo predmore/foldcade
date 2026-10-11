@@ -97,6 +97,8 @@ import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.clipPath
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.input.pointer.PointerEventPass
+import androidx.compose.ui.input.pointer.PointerEventType
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.layout.onSizeChanged
@@ -133,6 +135,16 @@ import app.foldcade.FoldcadeHomeActivity
 import app.foldcade.Panel
 import app.foldcade.FolderIconPick
 import app.foldcade.Surface
+import app.foldcade.RunningApp
+import app.foldcade.CenterFocus
+import app.foldcade.language.AchievementCopy
+import app.foldcade.language.achievementLine
+import app.foldcade.language.achievementPoints
+import app.foldcade.millisUntilNextMinute
+import app.foldcade.readDeviceStatus
+import app.foldcade.language.PlayCopy
+import app.foldcade.language.SettingsCopy
+import app.foldcade.language.promptKeyOf
 import app.foldcade.CoverImage
 import app.foldcade.artwork.ArtQuery
 import app.foldcade.artwork.ArtScene
@@ -219,6 +231,8 @@ fun PanelHost(activity: FoldcadeHomeActivity, displays: Displays) {
         null -> null
     }
     val ownsBottom = session.surfaceOn(Panel.Bottom) != null
+    // A full-screen page on the other screen leaves this one its command center, not a blurred grid.
+    val besidePage = screen != null && pageBeside(model, session, screen) != null
     val menuVisible = (
         model.panel?.screen == HostScreen.Top ||
             model.settings?.screen == HostScreen.Top ||
@@ -226,6 +240,7 @@ fun PanelHost(activity: FoldcadeHomeActivity, displays: Displays) {
         ) && model.dialog?.screen != HostScreen.Top
     val blurHere = screen == HostScreen.Bottom &&
         ownsBottom &&
+        !besidePage &&
         menuVisible &&
         model.dialog?.screen != HostScreen.Bottom
     val heldBlur = if (blurHere) app.islandHold?.progress else null
@@ -235,10 +250,17 @@ fun PanelHost(activity: FoldcadeHomeActivity, displays: Displays) {
         spec = if (blurTarget >= 1f) Motion.arrive(Motion.durationIsland, scale) else Motion.leave(Motion.durationIsland, scale),
         snap = heldBlur != null,
     )
+    val dimmed = panel != null && app.commandCenter.dimmed(panel)
+    LaunchedEffect(dimmed) { activity.applyCommandCenterDim(dimmed) }
     // A closed menu draws neither the blur nor the scrim. A graphics layer
     // left over the library, even at zero alpha, keeps the accessibility dump empty.
     CompositionLocalProvider(LocalFoldTheme provides paint) {
-        Box(Modifier.fillMaxSize().background(paint.theme.background)) {
+        Box(
+            Modifier
+                .fillMaxSize()
+                .background(paint.theme.background)
+                .wakesCommandCenter(app, panel),
+        ) {
             val wallpaper = when (panel) {
                 Panel.Top -> paint.wallpaperTop
                 Panel.Bottom -> paint.wallpaperBottom
@@ -277,13 +299,15 @@ private fun PanelBody(
     // Settings and Play activity paint the theme's background over the whole panel.
     val pageHere = screen != null && (model.settings?.screen == screen || model.playActivity?.screen == screen)
     val settingsOver = pageHere && foldTheme().background.alpha >= 1f
+    val page = screen?.let { pageBeside(model, session, it) }
+    val centerHere = page != null || (panel != null && session.surfaceOn(panel) == Surface.CommandCenter)
     Backdrop(
         motion = model.backgroundMotion,
         speed = model.motionSpeed,
         animatorScale = scale,
         running = activity.shellVisible && session.bothScreensFree(),
         // Opaque game art or Settings over it, or the menu's blur, leaves nothing to watch move.
-        held = cover.covered || settingsOver || LocalUnderMenu.current,
+        held = cover.covered || settingsOver || LocalUnderMenu.current || centerHere,
     )
     if (panel == null || screen == null) return
     val connectHere = model.connectOpen && model.connectScreen == screen
@@ -295,12 +319,25 @@ private fun PanelBody(
         PlayActivityScreen(app, screen)
         return
     }
+    if (page != null) {
+        // The other screen is still Foldcade, so it is never dimmed. Its keys still drive the page.
+        // Play activity names its keys here; Settings shows its own on the page.
+        CommandCenterScreen(app, page, hints = !page.settings) {
+            if (page.settings) app.shell.closeSettings() else app.shell.closePlayActivity()
+        }
+        return
+    }
     CompositionLocalProvider(LocalBackdropCover provides cover) {
         TravelFade(target = session.surfaceOn(panel), scale = scale) { shown ->
             when (shown) {
                 null -> Unit
                 Surface.Hero -> if (connectHere) Unit else Hero(app, screen, scale, activity::dispatch)
                 Surface.Picker -> Picker(app, screen, scale, activity::dispatch, activity::takeKeyboardFocus)
+                Surface.CommandCenter -> CommandCenterScreen(
+                    app,
+                    CenterSubject.App(panel, app.commandCenter.beside(panel)),
+                    hints = false,
+                ) { app.commandCenter.browse(panel) }
             }
         }
     }
@@ -418,6 +455,327 @@ private fun <T> TravelFade(target: T, scale: Float, content: @Composable (T) -> 
         Box(Modifier.graphicsLayer { alpha = incoming.value }) { content(front) }
     }
 }
+
+/**
+ * Every press on a panel that has a command center, or a grid opened from one.
+ * Seen before the grid does, and never consumed.
+ */
+private fun Modifier.wakesCommandCenter(app: FoldcadeApp, panel: Panel?): Modifier {
+    if (panel == null) return this
+    return pointerInput(panel) {
+        awaitPointerEventScope {
+            while (true) {
+                val event = awaitPointerEvent(PointerEventPass.Initial)
+                if (event.type == PointerEventType.Press) app.commandCenter.touch(panel)
+            }
+        }
+    }
+}
+
+/** What a command center stands beside: an app on the other screen, or a Foldcade page there. */
+private sealed interface CenterSubject {
+    data class App(val panel: Panel, val running: RunningApp?) : CenterSubject
+
+    data class Page(val title: String, val icon: Int?, val mark: String?, val settings: Boolean) : CenterSubject
+}
+
+/**
+ * Settings or Play activity filling the other screen while both are Foldcade's.
+ * This screen then says where the user is, the way it would beside an app.
+ */
+private fun pageBeside(
+    model: app.foldcade.language.PickerModel,
+    session: app.foldcade.Session,
+    screen: HostScreen,
+): CenterSubject.Page? {
+    if (!session.bothScreensFree()) return null
+    val settings = model.settings
+    val playActivity = model.playActivity
+    return when {
+        settings != null && settings.screen != screen ->
+            CenterSubject.Page(SettingsCopy.title, R.drawable.ic_status_settings, null, settings = true)
+        playActivity != null && playActivity.screen != screen ->
+            CenterSubject.Page(PlayCopy.activity, null, "console", settings = false)
+        else -> null
+    }
+}
+
+/**
+ * The quiet screen: true black, so an OLED panel lights only one small cluster.
+ * The app's art and name, the time, the battery, and one button that opens the
+ * grid here. A RomM game with RetroAchievements adds its progress and a second
+ * button for the list. The cluster steps a little each minute, so a long game
+ * does not leave it lit in one place.
+ */
+@Composable
+private fun CommandCenterScreen(
+    app: FoldcadeApp,
+    subject: CenterSubject,
+    hints: Boolean,
+    onOpen: () -> Unit,
+) {
+    val theme = foldTheme()
+    val context = LocalContext.current
+    var status by remember { mutableStateOf(readDeviceStatus(context)) }
+    // The wall clock's minute, so the cluster keeps stepping when this screen is shown again.
+    var minute by remember { mutableStateOf(System.currentTimeMillis() / 60_000L) }
+    LaunchedEffect(context) {
+        while (true) {
+            status = readDeviceStatus(context)
+            minute = System.currentTimeMillis() / 60_000L
+            delay(millisUntilNextMinute(System.currentTimeMillis()))
+        }
+    }
+    val (driftX, driftY) = CENTER_DRIFT[(minute % CENTER_DRIFT.size).toInt()]
+    val center = app.commandCenter
+    val panel = (subject as? CenterSubject.App)?.panel
+    val achievements = panel?.let(center::achievements)
+    val title = when (subject) {
+        is CenterSubject.App -> subject.running?.title?.ifEmpty { null } ?: appLabel(subject.running?.packageName)
+        is CenterSubject.Page -> subject.title
+    }
+    BoxWithConstraints(
+        Modifier
+            .fillMaxSize()
+            .background(Color.Black),
+    ) {
+        if (panel != null && achievements != null && center.listOn == panel) {
+            AchievementList(app, achievements, center.listIndex, onBack = center::closeList)
+            return@BoxWithConstraints
+        }
+        val titleMax = maxWidth * 0.5f
+        Row(
+            Modifier
+                .align(Alignment.Center)
+                .offset(px(driftX), px(driftY)),
+            horizontalArrangement = Arrangement.spacedBy(px(40f)),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Box(Modifier.size(px(CENTER_ART_PX)), contentAlignment = Alignment.Center) {
+                when (subject) {
+                    is CenterSubject.App -> CenterArt(app, subject.running)
+                    is CenterSubject.Page -> when {
+                        subject.icon != null -> Image(
+                            painter = painterResource(subject.icon),
+                            contentDescription = null,
+                            modifier = Modifier.fillMaxSize(0.62f),
+                            contentScale = ContentScale.Fit,
+                        )
+                        subject.mark != null -> MarkIcon(subject.mark, 0.86f)
+                    }
+                }
+            }
+            Column(verticalArrangement = Arrangement.spacedBy(px(8f))) {
+                BasicText(text = status.time, style = text(theme.onBackground, TypeRamp.clock, theme), maxLines = 1)
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(px(10f)),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Image(
+                        painter = painterResource(batteryStatusIcon(status.batteryPercent, status.charging)),
+                        contentDescription = null,
+                        modifier = Modifier.size(px(54f), px(36f)),
+                        contentScale = ContentScale.Fit,
+                    )
+                    BasicText(
+                        text = listOf("${status.batteryPercent}%", status.date).filter { it.isNotEmpty() }.joinToString(" · "),
+                        style = text(theme.muted, TypeRamp.heroMeta, theme),
+                        maxLines = 1,
+                    )
+                }
+                if (title != null) {
+                    BasicText(
+                        text = title,
+                        modifier = Modifier.widthIn(max = titleMax),
+                        style = text(theme.onBackground, TypeRamp.sideRow, theme),
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
+                val line = achievements?.let { found ->
+                    val total = found.achievements.size
+                    achievementLine(if (found.progressKnown) found.achievements.count { it.earned } else null, total)
+                }
+                if (line != null) {
+                    BasicText(text = line, style = text(theme.focus, TypeRamp.heroMeta, theme), maxLines = 1)
+                }
+                Spacer(Modifier.height(px(12f)))
+                // Beside an app the keys press these buttons. Beside a page they drive the page.
+                val keyed = subject is CenterSubject.App
+                Row(horizontalArrangement = Arrangement.spacedBy(px(16f))) {
+                    val onApps = !keyed || achievements == null || center.focus == CenterFocus.OpenApp
+                    CenterButton(app, Copy.openAnApp, focused = onApps, keyed = keyed, onClick = onOpen)
+                    if (panel != null && achievements != null) {
+                        CenterButton(
+                            app,
+                            AchievementCopy.title,
+                            focused = !onApps,
+                            keyed = keyed,
+                            onClick = { center.openList(panel) },
+                        )
+                    }
+                }
+            }
+        }
+        if (hints) {
+            val inset = maxWidth * Metrics.insetFraction
+            Box(Modifier.fillMaxSize().padding(inset), contentAlignment = Alignment.BottomCenter) {
+                GridHints(app)
+            }
+        }
+    }
+}
+
+/** A command center button. The focused one carries the confirm key's glyph when keys can press it. */
+@Composable
+private fun CenterButton(app: FoldcadeApp, label: String, focused: Boolean, keyed: Boolean, onClick: () -> Unit) {
+    val theme = foldTheme()
+    val confirm = promptKeyOf(app.shell.model.faceMap.confirmKey)
+    Row(
+        Modifier.chip(focused).hostPress(onClick).padding(horizontal = px(24f), vertical = px(12f)),
+        horizontalArrangement = Arrangement.spacedBy(px(10f)),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        if (keyed && focused && confirm != null) PromptImage(promptGlyph(confirm), 24.dp)
+        BasicText(text = label, style = text(theme.onBackground, TypeRamp.dialogBody, theme), maxLines = 1)
+    }
+}
+
+/**
+ * The game's achievements, one row each: the badge, the title and what it asks,
+ * and its points. Earned rows are bright; the rest are muted, and only when
+ * RomM knows the user's progress. Up and down move the keys' row into view.
+ */
+@Composable
+private fun AchievementList(
+    app: FoldcadeApp,
+    found: app.foldcade.api.plugin.GameAchievements,
+    index: Int,
+    onBack: () -> Unit,
+) {
+    val theme = foldTheme()
+    val inset = px(Metrics.heroInsetPx)
+    val rows = found.achievements
+    Column(Modifier.fillMaxSize().padding(inset), verticalArrangement = Arrangement.spacedBy(px(16f))) {
+        Row(
+            Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(px(16f)),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            BasicText(
+                text = AchievementCopy.back,
+                modifier = Modifier.chip(false).hostPress(onBack).padding(horizontal = px(20f), vertical = px(10f)),
+                style = text(theme.onBackground, TypeRamp.dialogBody, theme),
+                maxLines = 1,
+            )
+            val earned = if (found.progressKnown) rows.count { it.earned } else null
+            BasicText(
+                text = achievementLine(earned, rows.size).orEmpty(),
+                style = text(theme.focus, TypeRamp.heroMeta, theme),
+                maxLines = 1,
+            )
+        }
+        Column(
+            Modifier
+                .weight(1f)
+                .fillMaxWidth()
+                .verticalScroll(rememberScrollState()),
+            verticalArrangement = Arrangement.spacedBy(px(8f)),
+        ) {
+            rows.forEachIndexed { row, achievement ->
+                val dim = found.progressKnown && !achievement.earned
+                Row(
+                    Modifier
+                        .fillMaxWidth()
+                        .rowHighlight(row == index)
+                        .keepInView(row == index)
+                        .padding(horizontal = px(16f), vertical = px(10f)),
+                    horizontalArrangement = Arrangement.spacedBy(px(16f)),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Box(Modifier.size(px(ACHIEVEMENT_BADGE_PX)).alpha(if (dim) 0.55f else 1f)) {
+                        achievement.badge?.let { rememberCoverPainter(app, it, ACHIEVEMENT_BADGE_PX.toInt()) }?.let { badge ->
+                            Image(
+                                painter = badge.painter,
+                                contentDescription = null,
+                                modifier = Modifier.fillMaxSize().clip(RoundedCornerShape(px(8f))),
+                                contentScale = ContentScale.Crop,
+                            )
+                        }
+                    }
+                    Column(Modifier.weight(1f)) {
+                        BasicText(
+                            text = achievement.title,
+                            style = text(if (dim) theme.muted else theme.onBackground, TypeRamp.menuRow, theme),
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                        achievement.description?.let {
+                            BasicText(
+                                text = it,
+                                style = text(theme.muted, TypeRamp.hint, theme),
+                                maxLines = 2,
+                                overflow = TextOverflow.Ellipsis,
+                            )
+                        }
+                    }
+                    achievementPoints(achievement.points)?.let {
+                        BasicText(text = it, style = text(theme.muted, TypeRamp.hint, theme), maxLines = 1)
+                    }
+                }
+            }
+        }
+    }
+}
+
+private const val ACHIEVEMENT_BADGE_PX = 96f
+
+/** The app's cover, then its launcher icon, then its platform mark. An app Foldcade did not open shows Android's. */
+@Composable
+private fun CenterArt(app: FoldcadeApp, running: RunningApp?) {
+    val theme = foldTheme()
+    val icon = launcherIcon(running?.packageName)
+    val cover = running?.let { rememberArt(app, it.record, it.query) }?.cover?.let { rememberCoverPainter(app, it, COVER_PX) }
+    val mark = running?.mark ?: "android-apps"
+    val kit = LocalFoldTheme.current.marks[mark]
+    when {
+        cover != null -> Image(
+            painter = cover.painter,
+            contentDescription = null,
+            modifier = Modifier
+                .fillMaxHeight()
+                .aspectRatio(cover.ratio, matchHeightConstraintsFirst = true)
+                .clip(RoundedCornerShape(Metrics.cardCornerDp.dp / 2)),
+            contentScale = ContentScale.Crop,
+        )
+        icon != null -> Image(
+            bitmap = icon,
+            contentDescription = null,
+            modifier = Modifier.fillMaxSize(theme.artScale),
+            contentScale = ContentScale.Fit,
+        )
+        kit != null -> KitMark(kit, theme.artScale, alpha = 1f)
+        else -> MarkIcon(mark, 0.86f)
+    }
+}
+
+@Composable
+private fun appLabel(packageName: String?): String? {
+    val context = LocalContext.current
+    return remember(packageName) {
+        if (packageName == null) return@remember null
+        runCatching {
+            val manager = context.packageManager
+            manager.getApplicationLabel(manager.getApplicationInfo(packageName, 0)).toString()
+        }.getOrNull()
+    }
+}
+
+/** Where the command center's cluster sits each minute, in px from the centre. Small enough to read as still. */
+private val CENTER_DRIFT = listOf(
+    0f to 0f, 14f to 6f, -8f to 16f, 16f to -12f, -16f to -6f, 6f to -16f, -6f to 12f, 10f to 10f,
+)
+private const val CENTER_ART_PX = 300f
 
 @Composable
 private fun Hero(app: FoldcadeApp, screen: HostScreen, scale: Float, onEffect: (Effect?) -> Unit) {
@@ -1748,6 +2106,7 @@ private fun Grid(
     showTitle: Boolean,
     onRowHeight: (Int) -> Unit,
 ) {
+    val context = LocalContext.current
     val shell = app.shell
     val focus = shell.model.focus
     val pageSize = Metrics.columns * rows
@@ -1807,7 +2166,8 @@ private fun Grid(
                             downloading = face?.id != null && face.id in shell.downloading,
                             activity = shell.activityAt(source),
                             library = libraryTile,
-                            onClick = { shell.touchCell(index, screen) },
+                            // The activity runs what a second tap opens, as it does for A.
+                            onClick = { (context as? FoldcadeHomeActivity)?.dispatch(shell.touchCell(index, screen)) },
                             onDrag = if (editing) {
                                 { meaning -> shell.dragHome(meaning) }
                             } else {
@@ -2310,6 +2670,7 @@ private fun EmptyLibrary(
     title: String,
     actions: List<String>,
 ) {
+    val context = LocalContext.current
     val theme = foldTheme()
     val focus = app.shell.model.focus
     Column(
@@ -2329,7 +2690,7 @@ private fun EmptyLibrary(
                         text = label,
                         modifier = Modifier
                             .chip(focused)
-                            .hostPress { app.shell.touchCell(index, screen) }
+                            .hostPress { (context as? FoldcadeHomeActivity)?.dispatch(app.shell.touchCell(index, screen)) }
                             .padding(horizontal = px(20f), vertical = px(10f)),
                         style = text(theme.onBackground, TypeRamp.dialogBody, theme),
                     )

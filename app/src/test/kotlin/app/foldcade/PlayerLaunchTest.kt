@@ -371,14 +371,14 @@ class PlayerLaunchTest {
 
         val onTop = Session().place(Panel.Top, ExternalApp(stream.remoteKey, occupiesBothDisplays = false))
         assertNull(onTop.surfaceOn(Panel.Top))
-        assertEquals(Surface.Picker, onTop.surfaceOn(Panel.Bottom))
+        assertEquals(Surface.CommandCenter, onTop.surfaceOn(Panel.Bottom))
         val homeOnTop = onTop.home(Panel.Top)
         assertNull(homeOnTop.topApp)
         assertNull(homeOnTop.bottomApp)
         assertEquals(Surface.Hero, homeOnTop.surfaceOn(Panel.Top))
 
         val onBottom = Session().place(Panel.Bottom, ExternalApp(stream.remoteKey, occupiesBothDisplays = false))
-        assertEquals(Surface.Picker, onBottom.surfaceOn(Panel.Top))
+        assertEquals(Surface.CommandCenter, onBottom.surfaceOn(Panel.Top))
         assertNull(onBottom.surfaceOn(Panel.Bottom))
         val homeOnBottom = onBottom.home(Panel.Bottom)
         assertNull(homeOnBottom.bottomApp)

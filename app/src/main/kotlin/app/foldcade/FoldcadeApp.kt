@@ -161,6 +161,10 @@ class FoldcadeApp : Application() {
 
     /** The external player session opened by the host launch path. */
     val externalPlay = ExternalPlay()
+
+    /** The quiet screen beside a single-screen app, and how bright it is. */
+    lateinit var commandCenter: CommandCenter
+        private set
     /** The bottom screen's [CompanionHomeActivity] exists. Android can destroy it on its own. */
     var companionAlive: Boolean = false
 
@@ -238,6 +242,17 @@ class FoldcadeApp : Application() {
             onBrightness = { position -> brightness.write(brightnessLevel(position)) },
         )
         plays.onChanged = shell::notePlayChanged
+        commandCenter = CommandCenter(
+            store = store,
+            scope = scope,
+            load = { record ->
+                awaitPlugins()
+                plugins.metadataIds().firstNotNullOfOrNull { id -> plugins.fetchAchievements(id, record) }
+            },
+        ) {
+            val model = shell.model
+            model.dialog != null || model.panel != null || model.connectOpen
+        }
         brightness = ScreenBrightness(this)
         // The Thor's own quick settings, or Android's, can move it too. The slider follows.
         brightness.observe(::refreshBrightness)
