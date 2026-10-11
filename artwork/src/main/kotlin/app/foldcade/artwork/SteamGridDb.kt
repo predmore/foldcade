@@ -15,7 +15,8 @@ import java.nio.charset.StandardCharsets
  * Covers and square art from SteamGridDB, with the user's own API key.
  *
  * A Steam game is found by its app id. Anything else, such as a Moonlight
- * stream or a game the other sources missed, is found by its title. The cover
+ * stream or a game the other sources missed, is found by its title: the exact
+ * name, else the first result unless the query asks for an exact title. The cover
  * is a 600x900 grid, and a 512 or 1024 square grid is the tile art. Static,
  * safe-for-work images only.
  *
@@ -60,7 +61,8 @@ class SteamGridDb(
         val wanted = normalized(title)
         val games = results.mapNotNull { it as? JsonObject }
         val exact = games.firstOrNull { normalized(it["name"]?.jsonPrimitive?.content.orEmpty()) == wanted }
-        return (exact ?: games.firstOrNull())?.get("id")?.jsonPrimitive?.int
+        val nearest = games.firstOrNull().takeUnless { query.exactTitle }
+        return (exact ?: nearest)?.get("id")?.jsonPrimitive?.int
     }
 
     private suspend fun firstImage(token: String, path: String): String? {

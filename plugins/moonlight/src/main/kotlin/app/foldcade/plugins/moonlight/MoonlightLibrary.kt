@@ -20,10 +20,9 @@ import kotlinx.coroutines.ensureActive
 /**
  * Games from a paired Moonlight host.
  *
- * The catalog is pinned shortcuts, or the list the caller confirmed.
- * [confirmImport] stores that list and shows it. [useCatalog] switches back to
- * pinned shortcuts, or to the imported list, without clearing either one.
- * This type does not open Moonlight's database, and it does not pair.
+ * The catalog is the enabled pinned game shortcuts Foldcade last read. Every
+ * one is on Home; there is no separate imported list. This type does not open
+ * Moonlight's database, and it does not pair.
  *
  * [reconcile] is a no-op. Progress stays in Moonlight. RomM does not configure
  * this library: there is no metadata provider, and this method does not call RomM.
@@ -33,11 +32,9 @@ class MoonlightLibrary : LibraryBackend {
     override val displayName: String = DISPLAY_NAME
 
     private val lock = Any()
-    private var imported: List<MoonlightApp>? = null
     private var pinned: List<MoonlightApp> = emptyList()
-    private var catalog: MoonlightCatalog = MoonlightCatalog.Pinned
 
-    /** Pinned shortcuts Foldcade read. Shown while [catalog] is [MoonlightCatalog.Pinned]. */
+    /** Pinned shortcuts Foldcade read. These are the catalog. */
     fun replacePinned(apps: List<MoonlightApp>) {
         synchronized(lock) {
             pinned = apps.distinctBy { it.remoteKey }
@@ -45,35 +42,6 @@ class MoonlightLibrary : LibraryBackend {
     }
 
     fun pinnedApps(): List<MoonlightApp> = synchronized(lock) { pinned.toList() }
-
-    fun importedApps(): List<MoonlightApp> = synchronized(lock) { imported.orEmpty().toList() }
-
-    fun catalog(): MoonlightCatalog = synchronized(lock) { catalog }
-
-    /**
-     * Selects which list [listGames] returns.
-     * Neither list is cleared. A source change does not remove grid placements;
-     * those live outside this catalog.
-     */
-    fun useCatalog(next: MoonlightCatalog) {
-        synchronized(lock) {
-            catalog = next
-        }
-    }
-
-    /**
-     * Stores the list the user confirmed and shows it.
-     * An empty list is a confirmed empty catalog.
-     * Pinned shortcuts stay available through [useCatalog].
-     */
-    fun confirmImport(apps: List<MoonlightApp>) {
-        synchronized(lock) {
-            imported = apps.distinctBy { it.remoteKey }
-            catalog = MoonlightCatalog.Imported
-        }
-    }
-
-    fun hasConfirmedImport(): Boolean = synchronized(lock) { imported != null }
 
     override suspend fun connect() {
         coroutineContext.ensureActive()
@@ -136,12 +104,7 @@ class MoonlightLibrary : LibraryBackend {
         return SyncResult(SyncOutcome.Unchanged)
     }
 
-    private fun snapshot(): List<MoonlightApp> = synchronized(lock) {
-        when (catalog) {
-            MoonlightCatalog.Imported -> (imported ?: emptyList()).toList()
-            MoonlightCatalog.Pinned -> pinned.toList()
-        }
-    }
+    private fun snapshot(): List<MoonlightApp> = synchronized(lock) { pinned.toList() }
 
     private fun requireApp(game: Game): MoonlightApp {
         if (game.backendId != id) {
@@ -170,10 +133,4 @@ class MoonlightLibrary : LibraryBackend {
         const val ID: String = "moonlight"
         const val DISPLAY_NAME: String = "Moonlight"
     }
-}
-
-/** Which list [MoonlightLibrary.listGames] returns. */
-enum class MoonlightCatalog {
-    Imported,
-    Pinned,
 }

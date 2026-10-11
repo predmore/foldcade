@@ -40,7 +40,7 @@ Your games can live in a few different places. Foldcade brings them together.
 - **Games on your home server.** If you run [RomM](https://romm.app) at home, sign in once and browse that whole collection from the couch.
 - **Android games and apps.** Your installed Android games get their own shelf. Other apps live in a separate drawer, and you can hide the ones you never use.
 - **PC games.** Games you have set up in GameNative show up next to everything else. Export them from GameNative as `.steam` files and add that folder with **Add a folder**; you can add as many folders as you like.
-- **Games streamed from your PC.** Bring in your Moonlight games and stream them from the same home.
+- **Games streamed from your PC.** Bring in your Moonlight games and stream them from the same home. With Foldcade as your home app, open a game's menu in Moonlight and choose **Create shortcut**, and the game shows up in Foldcade.
 
 ### Every game looks like itself
 

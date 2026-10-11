@@ -22,9 +22,8 @@ import app.foldcade.api.plugin.SaveFolderHolder
 import app.foldcade.plugins.gamenative.CatalogGame
 import app.foldcade.plugins.gamenative.GameNativeLibrary
 import app.foldcade.plugins.gamenative.GameNativePlayer
-import app.foldcade.plugins.moonlight.MoonlightCatalog
 import app.foldcade.plugins.moonlight.MoonlightLibrary
-import app.foldcade.plugins.moonlight.moonlightApp
+import app.foldcade.plugins.moonlight.moonlightShortcutKey
 import app.foldcade.credentials.AndroidCredentialStore
 import app.foldcade.host.PluginHost
 import app.foldcade.plugins.romm.RommArtwork
@@ -42,12 +41,8 @@ import coil3.ImageLoader
 import app.foldcade.language.BackgroundMotion
 import app.foldcade.language.Copy
 import app.foldcade.language.EmptyGrid
-import app.foldcade.language.HostScreen
 import app.foldcade.language.LibraryFolder
-import app.foldcade.language.MoonlightDiscoveredApp
-import app.foldcade.language.MoonlightSource
 import app.foldcade.language.SignedInBackend
-import app.foldcade.language.decodeMoonlightApps
 import app.foldcade.language.builtInTheme
 import app.foldcade.localfolder.LocalFolderBackend
 import app.foldcade.localfolder.SteamShortcut
@@ -224,8 +219,7 @@ class FoldcadeApp : Application() {
             homeTracks = music.homeTracks(),
             themeTracks = themeTrackList,
             lastPlayedMillis = plays::lastPlayedMillis,
-            onMoonlightCatalog = { refreshMoonlightShelf() },
-            onReviewMoonlight = ::reviewMoonlightImport,
+            onMoonlightRemoved = ::unpinMoonlightGame,
         )
         plays.onChanged = shell::notePlayChanged
         rommPublish = RommPublish(
@@ -269,6 +263,7 @@ class FoldcadeApp : Application() {
                 restorePlayerSaveFolders()
                 publishRomm()
                 refreshGameNative()
+                restoreMoonlightPins()
                 refreshMoonlightShelf()
                 withContext(Dispatchers.Main.immediate) {
                     shell.refreshPlayerSaves()
@@ -383,69 +378,57 @@ class FoldcadeApp : Application() {
         }
     }
 
-    /**
-     * Reads pinned Moonlight shortcuts when this app is the home app, then
-     * puts the selected catalog on the shelf. A failed read leaves the previous
-     * pinned list. The source setting chooses the imported list or the pins.
-     * A first discovery opens the confirm sheet unless the user already answered.
-     */
+    /** Reads Moonlight's pinned games again and puts them on the shelf. */
     fun refreshMoonlightShelf() {
-        pluginLoad.launch {
-            val library = plugins.library(MoonlightLibrary.ID) as? MoonlightLibrary ?: return@launch
-            restoreMoonlightCatalog(library)
-            val pinned = readPinnedMoonlightShortcuts(this@FoldcadeApp)
-            if (pinned != null) library.replacePinned(pinned)
-            val tiles = plugins.moonlightShelfGames()
-            Shelf.moonlightGames = tiles
-            val discovered = pinned.orEmpty().map { app ->
-                MoonlightDiscoveredApp(
-                    hostUuid = app.hostUuid,
-                    hostName = app.hostUuid,
-                    appId = app.appId,
-                    label = app.label,
-                )
-            }
-            withContext(Dispatchers.Main.immediate) {
-                shell.noteShelfChanged()
-                shell.maybeOfferMoonlightImport(discovered)
-            }
-        }
+        pluginLoad.launch { readMoonlightShelf() }
     }
 
     /**
-     * Imported list is empty until the user confirms the sheet.
-     * Choosing it from the left panel opens that sheet when pins exist.
+     * Reads Moonlight's shortcuts when this app is the home app and puts every
+     * enabled pinned game on the shelf, and so on Home. A failed read leaves the
+     * previous list. Only a read that ran settles the Moonlight tiles, so one
+     * missing from the shelf is taken off Home only once Android has said so.
      */
-    private fun reviewMoonlightImport(screen: HostScreen) {
-        val library = plugins.library(MoonlightLibrary.ID) as? MoonlightLibrary
-        val discovered = library?.pinnedApps().orEmpty().map { app ->
-            MoonlightDiscoveredApp(
-                hostUuid = app.hostUuid,
-                hostName = app.hostUuid,
-                appId = app.appId,
-                label = app.label,
-            )
+    private suspend fun readMoonlightShelf() {
+        val library = plugins.library(MoonlightLibrary.ID) as? MoonlightLibrary ?: return
+        val read = queryMoonlightShortcuts(this)
+        if (read != null) {
+            library.replacePinned(read.games)
+            store.setMoonlightPins(read.games)
         }
-        if (discovered.isEmpty()) {
-            shell.selectImportedList()
-            return
+        Shelf.moonlightGames = plugins.moonlightShelfGames()
+        withContext(Dispatchers.Main.immediate) {
+            if (read != null) shell.settleMoonlight()
+            shell.noteShelfChanged()
         }
-        shell.presentMoonlightSheet(discovered, screen)
     }
 
-    private fun restoreMoonlightCatalog(library: MoonlightLibrary) {
-        if (store.moonlightImportConfirmed()) {
-            val apps = decodeMoonlightApps(store.moonlightImportEncoded()).mapNotNull { stored ->
-                moonlightApp(stored.hostUuid, stored.appId, stored.label)
-            }
-            library.confirmImport(apps)
+    /** The last read fills the shelf at start, before Android answers. It never settles. */
+    private suspend fun restoreMoonlightPins() {
+        val library = plugins.library(MoonlightLibrary.ID) as? MoonlightLibrary ?: return
+        library.replacePinned(store.moonlightPins())
+        Shelf.moonlightGames = plugins.moonlightShelfGames()
+    }
+
+    /**
+     * [PinShortcutActivity] accepted Moonlight's Create shortcut for [shortcutId].
+     * The game is read back from Android's pinned shortcuts, not from the
+     * request, then placed on Home.
+     */
+    fun acceptedMoonlightPin(shortcutId: String) {
+        val key = moonlightShortcutKey(shortcutId) ?: return
+        pluginLoad.launch {
+            pluginsReady.await()
+            readMoonlightShelf()
+            withContext(Dispatchers.Main.immediate) { shell.placeMoonlightPin(key) }
         }
-        val catalog = if (store.moonlightSource() == MoonlightSource.ImportedList) {
-            MoonlightCatalog.Imported
-        } else {
-            MoonlightCatalog.Pinned
+    }
+
+    /** Remove from Home on a Moonlight game drops Foldcade's pin for it. */
+    private fun unpinMoonlightGame(remoteKey: String) {
+        pluginLoad.launch {
+            if (unpinMoonlightShortcut(this@FoldcadeApp, remoteKey)) readMoonlightShelf()
         }
-        library.useCatalog(catalog)
     }
 
     fun publishRomm() {

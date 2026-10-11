@@ -7,6 +7,9 @@ package app.foldcade.artwork
  * [platformId] is a canonical platform id, such as `nintendo-3ds`.
  * [fileName] is a ROM's whole file name, tags and extension included.
  * [steamAppId] is set for a Steam game.
+ * [exactTitle] keeps a title search to a game with the same name. A Moonlight
+ * app can be "Desktop" or another name that is not a game, and the nearest
+ * search result for it would be some other game's art.
  */
 data class ArtQuery(
     val key: String,
@@ -14,6 +17,7 @@ data class ArtQuery(
     val platformId: String? = null,
     val fileName: String? = null,
     val steamAppId: Int? = null,
+    val exactTitle: Boolean = false,
 )
 
 /**

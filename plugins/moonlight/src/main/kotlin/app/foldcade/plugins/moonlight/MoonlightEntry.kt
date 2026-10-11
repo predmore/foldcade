@@ -56,6 +56,8 @@ object MoonlightPlatform : Platform {
  * - `ShortcutTrampoline` is exported. A pinned game shortcut targets it with
  *   string extra `UUID` (`AppView.UUID_EXTRA`) and string extra `AppId`
  *   (`Game.EXTRA_APP_ID`). The app id is not an int on this activity.
+ *   A launcher cannot read those extras; [readMoonlightShortcuts] reads the
+ *   same two values from the shortcut id.
  * - The activity looks a computer up by name only when the UUID is missing.
  *   That lookup reads Moonlight's database. This intent always sends the UUID.
  *
@@ -108,7 +110,7 @@ class MoonlightPlayer : Player {
         const val HOST_UUID: String = "host_uuid"
         const val APP_ID: String = "app_id"
         const val NEEDS_APP: String =
-            "Pin a shortcut in Moonlight, or confirm an import. Foldcade does not read Moonlight's database."
+            "Choose Create Shortcut on the game in Moonlight. Foldcade does not read Moonlight's database."
         val PACKAGES: List<String> = listOf(OFFICIAL_PACKAGE)
     }
 }

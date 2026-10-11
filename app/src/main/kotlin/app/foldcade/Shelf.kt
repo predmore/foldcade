@@ -35,7 +35,7 @@ object Shelf {
     var catalog: List<ShelfGame> = emptyList()
 
     /**
-     * Pinned Moonlight shortcuts, or a confirmed import. Empty until that list is read.
+     * Enabled pinned Moonlight games. Empty until the last read or a saved one is loaded.
      * These follow the GameNative catalog.
      */
     @Volatile
