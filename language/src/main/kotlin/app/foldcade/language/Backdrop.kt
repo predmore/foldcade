@@ -97,6 +97,10 @@ class BackdropFrame {
     val discs = Array(24) { BackdropDisc() }
     var discCount: Int = 0
 
+    /** Ribbon samples kept between frames, so a layout does not allocate. */
+    internal val sampleX = FloatArray(BackdropLine.POINTS)
+    internal val sampleY = Array(strands.size) { FloatArray(BackdropLine.POINTS) }
+
     fun clear() {
         lineCount = 0
         discCount = 0
@@ -192,6 +196,16 @@ object Backdrop {
     const val STATIC_DIM = 0.28f
     const val STATIC_SHIFT_PX = 4f
     const val STATIC_SHIFT_SECONDS = 180f
+
+    /**
+     * Real seconds between painted frames. Drift moves well under a pixel a frame at
+     * 30 fps, so the backdrop does not ask for every refresh. The bead crosses the
+     * panel in a few seconds and gets 60. Static creeps a pixel in about 45s.
+     */
+    const val DRIFT_FRAME_SECONDS = 1f / 30f
+    const val GLIDE_FRAME_SECONDS = 1f / 60f
+    const val SLOWEST_FRAME_SECONDS = 1f / 20f
+    const val STATIC_FRAME_SECONDS = 8f
 }
 
 fun rgb(red: Int, green: Int, blue: Int): Color = Color(red, green, blue)
@@ -241,6 +255,22 @@ fun backdropClock(speed: MotionSpeed, animatorScale: Float): Float {
     return (factor / animatorScale).coerceAtMost(Backdrop.MAX_CLOCK)
 }
 
+/**
+ * Real seconds until the next frame at design time [timeSec]. A slower [clock] moves
+ * less per second, so it waits longer for the same step on screen, down to
+ * [Backdrop.SLOWEST_FRAME_SECONDS].
+ */
+fun backdropFrameSeconds(motion: BackgroundMotion, timeSec: Float, clock: Float): Float {
+    if (motion == BackgroundMotion.Static) return Backdrop.STATIC_FRAME_SECONDS
+    if (clock <= 0f) return Backdrop.SLOWEST_FRAME_SECONDS
+    val gliding = motion == BackgroundMotion.Ribbons && beadShowing(loopTime(timeSec))
+    val step = if (gliding) Backdrop.GLIDE_FRAME_SECONDS else Backdrop.DRIFT_FRAME_SECONDS
+    return (step / clock).coerceIn(Backdrop.GLIDE_FRAME_SECONDS, Backdrop.SLOWEST_FRAME_SECONDS)
+}
+
+private fun beadShowing(loop: Float): Boolean =
+    loop >= BEAD_START && loop <= BEAD_START + BEAD_DURATION
+
 fun layoutBackdrop(
     motion: BackgroundMotion,
     timeSec: Float,
@@ -254,10 +284,8 @@ fun layoutBackdrop(
     when (motion) {
         BackgroundMotion.Ribbons -> layoutRibbons(timeSec, width, height, moving, 1f, into)
         BackgroundMotion.Embers -> layoutEmbers(timeSec, width, height, moving, into)
-        BackgroundMotion.Static -> {
-            val creep = timeSec * (Backdrop.STATIC_SHIFT_PX / width) / Backdrop.STATIC_SHIFT_SECONDS
-            layoutRibbons(creep * Backdrop.DRIFT_SECONDS, width, height, moving = false, Backdrop.STATIC_DIM, into)
-        }
+        BackgroundMotion.Static ->
+            layoutRibbons(staticTime(timeSec, width), width, height, moving = false, Backdrop.STATIC_DIM, into)
         BackgroundMotion.Off -> Unit
     }
 }
@@ -375,9 +403,9 @@ private fun layoutRibbons(
     into: BackdropFrame,
 ) {
     val travel = timeSec / Backdrop.DRIFT_SECONDS
-    val breath = (if (moving) breath(timeSec) else 1f) * dim
-    val ys = Array(strands.size) { FloatArray(BackdropLine.POINTS) }
-    val xs = FloatArray(BackdropLine.POINTS)
+    val breath = ribbonBreath(timeSec, moving, dim)
+    val ys = into.sampleY
+    val xs = into.sampleX
     val steps = BackdropLine.POINTS - 1
     for (step in 0..steps) {
         xs[step] = width * step / steps.toFloat()
@@ -387,11 +415,15 @@ private fun layoutRibbons(
         val halo = into.line() ?: return
         val glow = into.line() ?: return
         val core = into.line() ?: return
-        val pulse = if (moving) timeSec / 36f + index * 0.33f else 0.2f + index * 0.17f
-        val teal = strand.teal
-        prepareRibbon(halo, if (teal) 15f else 14f, if (teal) tealHalo else amberHalo, if (teal) blueHalo else roseHalo, breath, pulse)
-        prepareRibbon(glow, if (teal) 6.4f else 6f, if (teal) tealGlow else amberGlow, if (teal) blueGlow else roseGlow, breath, pulse)
-        prepareRibbon(core, 2.5f, if (teal) tealCore else amberCore, if (teal) blueCore else roseCore, breath, pulse)
+        val pulse = ribbonPulse(timeSec, index, moving)
+        for (layer in 0 until RIBBON_LAYERS) {
+            val line = when (layer) {
+                0 -> halo
+                1 -> glow
+                else -> core
+            }
+            prepareRibbon(line, layerRadius(strand, layer), layerStart(strand, layer), layerEnd(strand, layer), breath, pulse)
+        }
         for (step in 0..steps) {
             val s = xs[step] / width + travel
             val y = strandY(strand, s, travel) * height
@@ -406,6 +438,129 @@ private fun layoutRibbons(
     placeTravelingBead(timeSec, loop, xs, ys, steps + 1, breath, into)
     placeShimmer(timeSec, loop, width, height, breath, into)
     placeCrossings(xs, ys, steps + 1, height, breath, into)
+}
+
+/**
+ * The ribbons of [layoutBackdrop] as numbers for a per-pixel shader: the same strands,
+ * breath, pulse, and colors. The shader paints them with the [GlowFalloff] curve along
+ * the whole length, where the stroked layout steps from one stretch to the next.
+ * Beads and shimmers stay discs from [layoutBackdrop].
+ */
+class RibbonField {
+    var travel: Float = 0f
+
+    /** Per strand: anchor, sweep, wave, waves. Fractions of the panel height. */
+    val shape = FloatArray(STRANDS * 4)
+
+    /** Per strand: phase, bob as a fraction of the height, pulse, unused. */
+    val drift = FloatArray(STRANDS * 4)
+
+    /** Per strand and layer (halo, glow, core): left-end rgb 0..1 and base radius in px. */
+    val start = FloatArray(STRANDS * RIBBON_LAYERS * 4)
+
+    /** Per strand and layer: right-end rgb 0..1, unused. */
+    val end = FloatArray(STRANDS * RIBBON_LAYERS * 4)
+
+    /** Crossing rgb 0..1, and 1 when crossings are lit. */
+    val swell = FloatArray(4)
+
+    /** Gap in px at which a crossing has faded out. */
+    var reach: Float = 0f
+
+    companion object {
+        const val STRANDS = 3
+        const val LAYERS = RIBBON_LAYERS
+        const val CROSSING_RADIUS = 30f
+
+        /** Length at each end over which a ribbon fades in, as a fraction of it. */
+        const val END_FADE = 0.16f
+    }
+}
+
+/** Fills [into] for [motion] and returns true, or false when [motion] has no ribbons. */
+fun fieldRibbons(
+    motion: BackgroundMotion,
+    timeSec: Float,
+    width: Float,
+    height: Float,
+    moving: Boolean,
+    into: RibbonField,
+): Boolean {
+    val time: Float
+    val dim: Float
+    val live: Boolean
+    when (motion) {
+        BackgroundMotion.Ribbons -> {
+            time = timeSec
+            dim = 1f
+            live = moving
+        }
+        BackgroundMotion.Static -> {
+            time = staticTime(timeSec, width)
+            dim = Backdrop.STATIC_DIM
+            live = false
+        }
+        else -> return false
+    }
+    val travel = time / Backdrop.DRIFT_SECONDS
+    val breath = ribbonBreath(time, live, dim)
+    into.travel = travel
+    for (index in strands.indices) {
+        val strand = strands[index]
+        val at = index * 4
+        into.shape[at] = strand.anchor
+        into.shape[at + 1] = strand.sweep
+        into.shape[at + 2] = strand.wave
+        into.shape[at + 3] = strand.waves
+        into.drift[at] = strand.phase
+        into.drift[at + 1] = 0.04f * sin(TWO_PI * travel + strand.phase)
+        into.drift[at + 2] = ribbonPulse(time, index, live)
+        into.drift[at + 3] = 0f
+        for (layer in 0 until RIBBON_LAYERS) {
+            val slot = (index * RIBBON_LAYERS + layer) * 4
+            val left = layerStart(strand, layer)
+            val right = layerEnd(strand, layer)
+            for (channel in 0 until 3) {
+                into.start[slot + channel] = left[channel] * breath / 255f
+                into.end[slot + channel] = right[channel] * breath / 255f
+            }
+            into.start[slot + 3] = layerRadius(strand, layer)
+            into.end[slot + 3] = 0f
+        }
+    }
+    for (channel in 0 until 3) into.swell[channel] = swellColor[channel] * breath / 255f
+    into.swell[3] = if (live) 1f else 0f
+    into.reach = height * CROSSING_REACH
+    return true
+}
+
+private fun staticTime(timeSec: Float, width: Float): Float {
+    val creep = timeSec * (Backdrop.STATIC_SHIFT_PX / width) / Backdrop.STATIC_SHIFT_SECONDS
+    return creep * Backdrop.DRIFT_SECONDS
+}
+
+private fun ribbonBreath(timeSec: Float, moving: Boolean, dim: Float): Float =
+    (if (moving) breath(timeSec) else 1f) * dim
+
+private fun ribbonPulse(timeSec: Float, index: Int, moving: Boolean): Float =
+    if (moving) timeSec / 36f + index * 0.33f else 0.2f + index * 0.17f
+
+private fun layerRadius(strand: Strand, layer: Int): Float = when (layer) {
+    0 -> if (strand.teal) 15f else 14f
+    1 -> if (strand.teal) 6.4f else 6f
+    else -> 2.5f
+}
+
+private fun layerStart(strand: Strand, layer: Int): IntArray = when (layer) {
+    0 -> if (strand.teal) tealHalo else amberHalo
+    1 -> if (strand.teal) tealGlow else amberGlow
+    else -> if (strand.teal) tealCore else amberCore
+}
+
+private fun layerEnd(strand: Strand, layer: Int): IntArray = when (layer) {
+    0 -> if (strand.teal) blueHalo else roseHalo
+    1 -> if (strand.teal) blueGlow else roseGlow
+    else -> if (strand.teal) blueCore else roseCore
 }
 
 private fun layoutEmbers(
@@ -523,7 +678,7 @@ private fun placeCrossings(
     into: BackdropFrame,
 ) {
     val reach = height * CROSSING_REACH
-    val radius = 30f
+    val radius = RibbonField.CROSSING_RADIUS
     for (left in ys.indices) {
         for (right in left + 1 until ys.size) {
             val line = into.line() ?: return
@@ -607,6 +762,7 @@ private fun prepareRibbon(
  * Each knot is a cosine bump, so it ramps in and out instead of stepping.
  */
 internal fun ribbonGain(along: Float, pulse: Float): Float {
+    // RibbonShader repeats this curve per pixel. Change both together.
     val t = along.coerceIn(0f, 1f)
     val edge = when {
         t < END_FADE -> smoothStep(t / END_FADE)
@@ -715,7 +871,7 @@ private val horizonColor = intArrayOf(32, 14, 26)
 
 private const val TWO_PI = (PI * 2).toFloat()
 private const val FRINGE = 0.75f
-private const val END_FADE = 0.16f
+private const val END_FADE = RibbonField.END_FADE
 private const val BEAD_START = 0.4f
 private const val BEAD_DURATION = 8f
 private const val BEAD_RADIUS = 22f
@@ -723,6 +879,7 @@ private const val SHIMMER_START = 6.8f
 private const val SHIMMER_DURATION = 7f
 private const val CROSSING_REACH = 0.09f
 private const val EMBER_FADE = 0.12f
+private const val RIBBON_LAYERS = 3
 
 /**
  * Shared radial curve. 1 at the center, 0 at the rim, with a gaussian body and a
