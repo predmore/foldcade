@@ -7,9 +7,10 @@ import app.foldcade.api.plugin.Platform
 import app.foldcade.plugins.romm.CachePathContentUri
 import app.foldcade.plugins.romm.ROMM_CONTENT_AUTHORITY
 import app.foldcade.plugins.romm.RommPlugins
+import app.foldcade.plugins.romm.RommSupply
 import app.foldcade.plugins.romm.RommTokenSource
+import app.foldcade.plugins.romm.rommCredentialKey
 import android.os.Looper
-import app.foldcade.plugins.romm.RommWiring
 import app.foldcade.plugins.romm.SaveBytes
 import java.nio.file.Path
 import kotlin.coroutines.cancellation.CancellationException
@@ -33,10 +34,14 @@ internal fun rommTokenReadOnMainThread(): Boolean {
     return Looper.myLooper() == main
 }
 
-internal fun readRommToken(store: CredentialStore, onMainThread: Boolean): String? {
+internal fun readRommToken(
+    store: CredentialStore,
+    onMainThread: Boolean,
+    key: String = RommCredentials.ACCESS_TOKEN,
+): String? {
     check(!onMainThread) { "RomM token reads run off the main thread" }
     val found = try {
-        runBlocking { store.lookup(RommCredentials.PLUGIN_ID, RommCredentials.ACCESS_TOKEN) }
+        runBlocking { store.lookup(RommCredentials.PLUGIN_ID, key) }
     } catch (cancelled: CancellationException) {
         throw cancelled
     } catch (_: Exception) {
@@ -71,9 +76,18 @@ fun publishRommWiring(
     dataRoot: Path,
     saveBytes: SaveBytes = SaveBytes { null },
 ) {
+    val supply = RommSupply(
+        cacheRoot = cacheRoot,
+        dataRoot = dataRoot,
+        platforms = platforms,
+        contentUris = CachePathContentUri(cacheRoot, contentAuthority, dataRoot),
+        saveBytes = saveBytes,
+        tokenFor = { key -> readRommToken(store, onMainThread = rommTokenReadOnMainThread(), key = key) },
+    )
+    RommPlugins.installSupply(supply)
     val current = RommPlugins.wiring
     if (origin.isNullOrBlank()) {
-        if (current != null) RommPlugins.clear()
+        if (current != null) RommPlugins.clearDefault()
         return
     }
     if (
@@ -85,17 +99,7 @@ fun publishRommWiring(
     ) {
         return
     }
-    RommPlugins.install(
-        RommWiring(
-            origin = origin,
-            tokenSource = rommTokenSource(store),
-            cacheRoot = cacheRoot,
-            dataRoot = dataRoot,
-            contentUris = CachePathContentUri(cacheRoot, contentAuthority, dataRoot),
-            platforms = platforms,
-            saveBytes = saveBytes,
-        ),
-    )
+    RommPlugins.install(supply.wiring(origin, rommCredentialKey(RommCredentials.PLUGIN_ID)))
 }
 
 /**

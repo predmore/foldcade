@@ -2,6 +2,8 @@ package app.foldcade.host
 
 import app.foldcade.api.plugin.BoundCredentialAccess
 import app.foldcade.api.plugin.CredentialStore
+import app.foldcade.api.plugin.DeviceCodeChallenge
+import app.foldcade.api.plugin.DeviceCodePoll
 import app.foldcade.api.plugin.Game
 import app.foldcade.api.plugin.GameActivity
 import app.foldcade.api.plugin.GameAchievements
@@ -11,6 +13,7 @@ import app.foldcade.api.plugin.GameQuery
 import app.foldcade.api.plugin.LaunchRequest
 import app.foldcade.api.plugin.LaunchTarget
 import app.foldcade.api.plugin.LibraryBackend
+import app.foldcade.api.plugin.LibraryInstance
 import app.foldcade.api.plugin.ListedPlatform
 import app.foldcade.api.plugin.MetadataProvider
 import app.foldcade.api.plugin.ObservedSaves
@@ -25,8 +28,10 @@ import app.foldcade.api.plugin.PluginException
 import app.foldcade.api.plugin.SaveConflict
 import app.foldcade.api.plugin.SaveConflictChoice
 import app.foldcade.api.plugin.SaveSet
+import app.foldcade.api.plugin.Setup
 import app.foldcade.api.plugin.SyncResult
 import java.util.Collections
+import java.util.concurrent.ConcurrentHashMap
 import java.util.ServiceLoader
 import kotlin.coroutines.cancellation.CancellationException
 import kotlinx.coroutines.CoroutineDispatcher
@@ -69,6 +74,8 @@ class PluginHost(
     private val definitions = mutableListOf<Platform>()
     private val players = linkedMapOf<String, Player>()
     private val libraries = linkedMapOf<String, LibraryBackend>()
+    private val libraryTypes = linkedMapOf<String, PluginEntry>()
+    private val configuredText = ConcurrentHashMap<String, Map<String, String>>()
     private val metadataProviders = linkedMapOf<String, MetadataProvider>()
     private val platformNames = mutableListOf<Pair<String, String>>()
     private val playerPlatformIds = linkedMapOf<String, String>()
@@ -114,7 +121,9 @@ class PluginHost(
         }
         val names = planPlatformNames(stagedPlatforms, platformNames)
         planIds("player", stagedPlayers.map { it.id }, players.keys)
-        planIds("library", stagedLibraries.map { it.id }, libraries.keys)
+        refuseLibraryIds(stagedLibraries)
+        planIds("library", stagedLibraries.map { it.instanceId }, libraries.keys)
+        planIds("library type", stagedLibraries.map { it.id }, libraryTypes.keys)
         planIds("metadata", stagedMetadata.map { it.id }, metadataProviders.keys)
         val ids = buildSet {
             addAll(stagedPlatforms.map { it.id })
@@ -130,7 +139,10 @@ class PluginHost(
         definitions.addAll(storedDefinitions)
         stagedPlatforms.forEach { platforms[it.id] = it }
         stagedPlayers.forEach { players[it.id] = it }
-        stagedLibraries.forEach { libraries[it.id] = it }
+        stagedLibraries.forEach { library ->
+            libraries[library.instanceId] = library
+            libraryTypes[library.id] = entry
+        }
         stagedLibraries.forEach(::listenTo)
         stagedMetadata.forEach { metadataProviders[it.id] = it }
         if (!holdSnapshot) publish()
@@ -283,7 +295,9 @@ class PluginHost(
     /** A library that cannot take the listener still lists and launches; it just shows no progress. */
     private fun listenTo(library: LibraryBackend) {
         try {
-            library.observeActivity { remoteKey, activity -> activityListener?.invoke(library.id, remoteKey, activity) }
+            library.observeActivity { remoteKey, activity ->
+                activityListener?.invoke(library.instanceId, remoteKey, activity)
+            }
         } catch (cancelled: CancellationException) {
             throw cancelled
         } catch (failure: Exception) {
@@ -322,9 +336,73 @@ class PluginHost(
         return callPlugin(playerId) { player.launchIntent(request) }
     }
 
+    /**
+     * Passes [values] to the library. Remembered text is applied again before
+     * [connect] and [beginDeviceCode], including after a restart.
+     * Editing an origin calls this again and then [connect].
+     */
+    fun configure(instanceId: String, values: Map<String, String>, remember: Boolean = true) {
+        val library = requireLibrary(instanceId)
+        if (remember) configuredText[instanceId] = values
+        callPlugin(instanceId) { library.configure(values) }
+    }
+
+    fun setup(libraryId: String): List<Setup> {
+        val library = requireLibrary(libraryId)
+        return callPlugin(libraryId) { library.setup() }
+    }
+
+    /**
+     * Opens another copy of the type [typeId]. The id is [typeId] plus `#` and a number, starting at 2.
+     * The default copy keeps [typeId] itself and is not renamed.
+     */
+    fun addInstance(typeId: String): LibraryBackend =
+        openInstance(LibraryInstance(mintInstanceId(typeId, libraries.keys.toSet()), typeId))
+
+    /**
+     * Opens the copy [instance] on the entry that registered [LibraryInstance.typeId].
+     * A result whose id or instance id does not match is not stored.
+     */
+    fun openInstance(instance: LibraryInstance): LibraryBackend {
+        if ('#' in instance.typeId || ':' in instance.typeId) {
+            error("library type id ${instance.typeId} contains a reserved character")
+        }
+        if ('#' !in instance.instanceId || ':' in instance.instanceId) {
+            error("instance id ${instance.instanceId} is not a host id")
+        }
+        val entry = libraryTypes[instance.typeId] ?: error("No library registered with type ${instance.typeId}")
+        if (instance.instanceId in libraries) error("library id ${instance.instanceId} is already registered")
+        val opened = entry.openLibrary(instance) ?: error("Plugin did not open ${instance.instanceId}")
+        if (opened.id != instance.typeId || opened.instanceId != instance.instanceId) {
+            error("Opened library does not match ${instance.typeId} / ${instance.instanceId}")
+        }
+        libraries[opened.instanceId] = opened
+        listenTo(opened)
+        if (!holdSnapshot) publish()
+        return opened
+    }
+
+    suspend fun beginDeviceCode(libraryId: String): DeviceCodeChallenge {
+        val library = requireLibrary(libraryId)
+        val text = configuredText[libraryId]
+        return offMain(libraryId) {
+            if (text != null) library.configure(text)
+            library.beginDeviceCode()
+        }
+    }
+
+    suspend fun pollDeviceCode(libraryId: String, deviceCode: String): DeviceCodePoll {
+        val library = requireLibrary(libraryId)
+        return offMain(libraryId) { library.pollDeviceCode(deviceCode) }
+    }
+
     suspend fun connect(libraryId: String) {
         val library = requireLibrary(libraryId)
-        offMain(libraryId) { library.connect() }
+        val text = configuredText[libraryId]
+        offMain(libraryId) {
+            if (text != null) library.configure(text)
+            library.connect()
+        }
     }
 
     suspend fun disconnect(libraryId: String) {
@@ -562,6 +640,24 @@ private fun planPlatformNames(
         names.forEach { pending.add(it to platform.id) }
     }
     return pending
+}
+
+private fun refuseLibraryIds(incoming: List<LibraryBackend>) {
+    for (library in incoming) {
+        if ('#' in library.id || ':' in library.id) {
+            error("library type id ${library.id} contains a reserved character")
+        }
+        if ('#' in library.instanceId) error("instance id ${library.instanceId} is reserved for the host")
+        if (':' in library.instanceId) error("instance id ${library.instanceId} contains ':'")
+    }
+}
+
+/** `romm#2`, then `romm#3`. [typeId] itself stays the default copy. */
+fun mintInstanceId(typeId: String, taken: Set<String>): String {
+    require('#' !in typeId && ':' !in typeId) { "library type id $typeId contains a reserved character" }
+    var n = 2
+    while ("$typeId#$n" in taken) n++
+    return "$typeId#$n"
 }
 
 private fun planIds(slot: String, incoming: List<String>, already: Set<String>) {

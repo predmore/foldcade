@@ -41,4 +41,21 @@ interface PluginEntry {
      * The default does nothing, so an older plugin minor of this major stays loadable.
      */
     fun bind(access: CredentialAccess) {}
+
+    /**
+     * A copy added after load. The object already in [libraries] is the default instance.
+     * Null means this entry does not serve [LibraryInstance.typeId].
+     * The host keeps the result only when its [LibraryBackend.id] is [LibraryInstance.typeId]
+     * and its [LibraryBackend.instanceId] is the id the host minted.
+     */
+    fun openLibrary(instance: LibraryInstance): LibraryBackend? = null
 }
+
+/**
+ * One configured copy of a library type.
+ * Frozen. The origin is not a field here: the host passes it through [LibraryBackend.configure].
+ */
+data class LibraryInstance(
+    val instanceId: String,
+    val typeId: String,
+)

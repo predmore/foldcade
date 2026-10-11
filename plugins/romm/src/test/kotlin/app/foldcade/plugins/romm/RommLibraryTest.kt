@@ -1,7 +1,9 @@
 package app.foldcade.plugins.romm
 
 import app.foldcade.api.plugin.Availability
+import app.foldcade.api.plugin.DeviceCodePoll
 import app.foldcade.api.plugin.Game
+import app.foldcade.api.plugin.Setup
 import app.foldcade.api.plugin.GameActivity
 import app.foldcade.api.plugin.GameQuery
 import app.foldcade.api.plugin.ArtworkRole
@@ -15,6 +17,8 @@ import app.foldcade.api.plugin.PluginException
 import app.foldcade.api.plugin.SaveDeclaration
 import app.foldcade.api.plugin.StartDisplay
 import app.foldcade.api.plugin.SyncOutcome
+import app.foldcade.romm.DeviceAuthChallenge
+import app.foldcade.romm.DeviceTokenPoll
 import app.foldcade.romm.Heartbeat
 import app.foldcade.romm.KeptBoth
 import app.foldcade.romm.LocalSave
@@ -645,6 +649,64 @@ class RommLibraryTest {
             server.close()
         }
     }
+
+    @Test
+    fun setupIsOriginThenDeviceCodeAndTheSecondInstanceKeepsItsKey() {
+        val library = RommLibrary(RommGate { null })
+        val steps = library.setup()
+        assertEquals(Setup.Text(ROMM_ORIGIN_KEY, "Server"), steps[0])
+        assertTrue(steps.none { it is Setup.Secret })
+        assertEquals("access-token", (steps[1] as Setup.DeviceCode).credentialKey)
+        val second = RommLibrary.open("romm#2")
+        assertEquals("romm", second.id)
+        assertEquals("romm#2", second.instanceId)
+        assertEquals("access-token@romm#2", (second.setup()[1] as Setup.DeviceCode).credentialKey)
+        assertEquals("access-token", rommCredentialKey("romm"))
+        assertEquals("access-token@romm#2", rommCredentialKey("romm#2"))
+    }
+
+    @Test
+    fun deviceCodePollMapsTheTokenAndKeepsTheDevice() = runBlocking {
+        val cache = Files.createTempDirectory("romm-code")
+        val data = Files.createTempDirectory("romm-code-data")
+        try {
+            val wiring = RommWiring("http://romm.example", RommTokenSource { null }, cache, data)
+            val ops = ScriptedOps()
+            var seenId: String? = null
+            ops.onBegin = { id, _, _ ->
+                seenId = id
+                DeviceAuthChallenge("dev", "WDJB-MJHT", "/pair", "/pair?user_code=WDJB-MJHT", 600, 5)
+            }
+            ops.onUrl = { "http://romm.example/pair?user_code=WDJB-MJHT" }
+            val polls = ArrayDeque(
+                listOf(
+                    DeviceTokenPoll.Pending,
+                    DeviceTokenPoll.SlowDown,
+                    DeviceTokenPoll.Denied,
+                    DeviceTokenPoll.Expired,
+                    DeviceTokenPoll.Approved("rmm_secret", "device-1", listOf("roms.read"), null),
+                ),
+            )
+            ops.onPoll = { polls.removeFirst() }
+            wiring.open = { _, _ -> ops }
+            val library = RommLibrary(RommGate { wiring })
+            val challenge = library.beginDeviceCode()
+            assertEquals("WDJB-MJHT", challenge.userCode)
+            assertEquals(Files.readString(data.resolve("install-id")).trim(), seenId)
+            assertTrue(challenge.verificationUrl.contains("WDJB-MJHT"))
+            assertEquals(DeviceCodePoll.Pending, library.pollDeviceCode(challenge.deviceCode))
+            assertEquals(DeviceCodePoll.SlowDown, library.pollDeviceCode(challenge.deviceCode))
+            assertEquals(DeviceCodePoll.Denied, library.pollDeviceCode(challenge.deviceCode))
+            assertEquals(DeviceCodePoll.Expired, library.pollDeviceCode(challenge.deviceCode))
+            val approved = library.pollDeviceCode(challenge.deviceCode) as DeviceCodePoll.Approved
+            assertEquals("rmm_secret", approved.token)
+            assertEquals("device-1", wiring.rememberedDevice?.deviceId)
+            assertNull(wiring.tokenSource.accessToken())
+        } finally {
+            cache.toFile().deleteRecursively()
+            data.toFile().deleteRecursively()
+        }
+    }
 }
 
 private fun harness(ops: ScriptedOps, platforms: List<Platform> = emptyList()): Harness {
@@ -787,11 +849,15 @@ internal class ScriptedOps : RommOps {
         ledger: SaveLedger,
     ) = onSync(deviceId, saves, romIds, emulators)
 
-    override suspend fun beginDeviceAuth(clientDeviceIdentifier: String, name: String, clientVersion: String) =
-        error("begin")
+    var onBegin: suspend (String, String, String) -> DeviceAuthChallenge = { _, _, _ -> error("begin") }
+    var onPoll: suspend (String) -> DeviceTokenPoll = { error("poll") }
+    var onUrl: (DeviceAuthChallenge) -> String = { error("url") }
 
-    override suspend fun pollDeviceToken(deviceCode: String) = error("poll")
-    override fun verificationUrl(challenge: app.foldcade.romm.DeviceAuthChallenge) = error("url")
+    override suspend fun beginDeviceAuth(clientDeviceIdentifier: String, name: String, clientVersion: String) =
+        onBegin(clientDeviceIdentifier, name, clientVersion)
+
+    override suspend fun pollDeviceToken(deviceCode: String) = onPoll(deviceCode)
+    override fun verificationUrl(challenge: DeviceAuthChallenge) = onUrl(challenge)
     override fun close() = onClose()
 }
 

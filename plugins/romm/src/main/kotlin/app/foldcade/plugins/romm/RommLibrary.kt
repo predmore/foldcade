@@ -1,6 +1,8 @@
 package app.foldcade.plugins.romm
 
 import app.foldcade.api.plugin.Availability
+import app.foldcade.api.plugin.DeviceCodeChallenge
+import app.foldcade.api.plugin.DeviceCodePoll
 import app.foldcade.api.plugin.Game
 import app.foldcade.api.plugin.GameActivity
 import app.foldcade.api.plugin.GameActivityListener
@@ -20,6 +22,7 @@ import app.foldcade.api.plugin.SaveConflict
 import app.foldcade.api.plugin.SaveConflictChoice
 import app.foldcade.api.plugin.SaveSet
 import app.foldcade.api.plugin.SaveSlot
+import app.foldcade.api.plugin.Setup
 import app.foldcade.api.plugin.SyncOutcome
 import app.foldcade.api.plugin.SyncResult
 import app.foldcade.romm.KeptBoth
@@ -41,6 +44,7 @@ import java.io.IOException
 import java.nio.file.Files
 import java.nio.file.Path
 import java.util.concurrent.CopyOnWriteArrayList
+import java.util.concurrent.atomic.AtomicReference
 import java.security.MessageDigest
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicBoolean
@@ -66,11 +70,71 @@ import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.longOrNull
 import kotlinx.serialization.json.put
 
-internal class RommLibrary(
+internal class RommLibrary internal constructor(
     private val gate: RommGate,
+    override val instanceId: String,
+    private val supply: () -> RommSupply?,
+    private val slot: AtomicReference<RommWiring?>?,
 ) : LibraryBackend {
+    /** Tests pass their own gate. Production uses [open]. */
+    constructor(gate: RommGate) : this(gate, ROMM_LIBRARY_ID, { null }, null)
+
     override val id = ROMM_LIBRARY_ID
     override val displayName = "RomM"
+
+    internal val connection: RommGate get() = gate
+
+    override fun setup(): List<Setup> = listOf(
+        Setup.Text(key = ROMM_ORIGIN_KEY, prompt = "Server"),
+        Setup.DeviceCode(credentialKey = rommCredentialKey(instanceId)),
+    )
+
+    override fun configure(values: Map<String, String>) {
+        val held = slot ?: return
+        val origin = values[ROMM_ORIGIN_KEY] ?: return
+        val trimmed = origin.trim()
+        if (trimmed.isEmpty()) {
+            held.set(null)
+            return
+        }
+        val shared = supply() ?: return
+        held.set(shared.wiring(trimmed, rommCredentialKey(instanceId)))
+    }
+
+    override suspend fun beginDeviceCode(): DeviceCodeChallenge {
+        val wiring = gate.wiring()
+        val challenge = RommPairing(wiring).begin(wiring.data.hostName())
+        return DeviceCodeChallenge(
+            deviceCode = challenge.deviceCode,
+            userCode = challenge.userCode,
+            verificationUrl = challenge.verificationUrl,
+            intervalSeconds = challenge.intervalSeconds,
+            expiresInSeconds = challenge.expiresInSeconds,
+        )
+    }
+
+    override suspend fun pollDeviceCode(deviceCode: String): DeviceCodePoll =
+        when (val result = RommPairing(gate.wiring()).poll(deviceCode)) {
+            RommPairingPoll.Pending -> DeviceCodePoll.Pending
+            RommPairingPoll.SlowDown -> DeviceCodePoll.SlowDown
+            RommPairingPoll.Denied -> DeviceCodePoll.Denied
+            RommPairingPoll.Expired -> DeviceCodePoll.Expired
+            is RommPairingPoll.Approved -> DeviceCodePoll.Approved(result.accessToken)
+        }
+
+    companion object {
+        fun open(instanceId: String, supply: () -> RommSupply? = { RommPlugins.supply }): RommLibrary {
+            val slot = AtomicReference<RommWiring?>(null)
+            return RommLibrary(
+                gate = RommGate {
+                    slot.get() ?: if (instanceId == ROMM_LIBRARY_ID) RommPlugins.wiring else null
+                },
+                instanceId = instanceId,
+                supply = supply,
+                slot = slot,
+            )
+        }
+    }
 
     /** Runs [syncPending] after a connect. One at a time; [disconnect] stops it. */
     private val background = CoroutineScope(
@@ -210,7 +274,7 @@ internal class RommLibrary(
         )
         gate.catalog.rememberRoms(page.items)
         val games = runInterruptible(Dispatchers.IO) {
-            page.items.map { it.toGame(wiring.romRoot, wiring.platforms) }
+            page.items.map { it.toGame(wiring.romRoot, wiring.platforms, instanceId) }
         }
         val consumed = page.offset + page.items.size
         val knownTotal = page.total
@@ -282,7 +346,7 @@ internal class RommLibrary(
                 throw PluginException.Unavailable(error.message ?: "RomM save could not be read", error)
             }
         }
-        return SaveSet(ownerBackendId = id, slots = slots)
+        return SaveSet(ownerBackendId = instanceId, slots = slots)
     }
 
     /**
@@ -424,7 +488,7 @@ internal class RommLibrary(
         }
 
     private suspend fun romFor(game: Game, ops: RommOps): RomSummary {
-        if (game.backendId != ROMM_LIBRARY_ID) {
+        if (game.backendId != instanceId) {
             throw PluginException.NotFound("This game is not from RomM")
         }
         gate.catalog.rom(game.remoteKey)?.let { return it }
@@ -601,8 +665,12 @@ private fun romSpecFile(cacheRoot: Path, romId: Long): Path =
 internal fun alignedPlatformId(definitions: Iterable<Platform>, slug: String): String =
     canonicalPlatformId(definitions, slug) ?: slug
 
-internal fun RomSummary.toGame(cacheRoot: Path, definitions: Iterable<Platform>): Game = Game(
-    backendId = ROMM_LIBRARY_ID,
+internal fun RomSummary.toGame(
+    cacheRoot: Path,
+    definitions: Iterable<Platform>,
+    instanceId: String = ROMM_LIBRARY_ID,
+): Game = Game(
+    backendId = instanceId,
     remoteKey = id.toString(),
     platformId = alignedPlatformId(definitions, platformSlug),
     availability = cacheAvailability(cacheRoot, this),

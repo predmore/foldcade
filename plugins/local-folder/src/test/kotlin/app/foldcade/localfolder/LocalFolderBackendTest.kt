@@ -59,6 +59,8 @@ class LocalFolderBackendTest {
                 "pendingSaveConflicts",
                 "resolveSaveConflict",
                 "reopenDeferredSaveConflicts",
+                "beginDeviceCode",
+                "pollDeviceCode",
             ),
             suspendNames,
         )
