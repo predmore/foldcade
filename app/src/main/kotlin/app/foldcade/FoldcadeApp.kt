@@ -34,6 +34,7 @@ import app.foldcade.plugins.romm.ROMM_ORIGIN_KEY
 import app.foldcade.plugins.romm.RommArtwork
 import app.foldcade.plugins.romm.RommCoverArt
 import app.foldcade.plugins.romm.SaveBytes
+import app.foldcade.plugins.romm.rommCredentialKey
 import app.foldcade.plugins.romm.rommOriginAlreadyConfigured
 import app.foldcade.artwork.ART_HOSTS
 import app.foldcade.artwork.ArtBytes
@@ -444,6 +445,7 @@ class FoldcadeApp : Application() {
             RommCredentials.PLUGIN_ID,
             RommCredentials.ACCESS_TOKEN,
         )
+        var extraUnreadable = false
         val stored = if (romm is CredentialLookup.Unreadable) {
             emptyList()
         } else {
@@ -454,12 +456,31 @@ class FoldcadeApp : Application() {
             } catch (_: Exception) {
                 emptySet()
             }
+            val rommRows = ArrayList<SignedInBackend>()
+            val origin = store.rommOrigin()
+            if (romm is CredentialLookup.Present && !origin.isNullOrBlank()) {
+                rommRows.add(SignedInBackend(RommCredentials.PLUGIN_ID, rommServerLabel(RommCredentials.PLUGIN_ID, origin)))
+            }
+            for ((id, extra) in store.rommInstances()) {
+                when (lookupOrUnreadable(credentials, RommCredentials.PLUGIN_ID, rommCredentialKey(id))) {
+                    is CredentialLookup.Present ->
+                        rommRows.add(SignedInBackend(id, rommServerLabel(id, extra)))
+                    CredentialLookup.Unreadable -> extraUnreadable = true
+                    CredentialLookup.Absent -> Unit
+                }
+            }
             // The SteamGridDB key is an art source, not a library to sign out of.
-            ids.filter { it != SteamGridDb.CREDENTIAL_ID }.map { SignedInBackend(it, backendLabel(it)) }
+            // RomM servers are listed from the session, not from the shared plugin id.
+            val others = ids
+                .filter { it != SteamGridDb.CREDENTIAL_ID && it != RommCredentials.PLUGIN_ID }
+                .map { SignedInBackend(it, backendLabel(it)) }
+            rommRows + others
         }
         val artKey = lookupOrUnreadable(credentials, SteamGridDb.CREDENTIAL_ID, SteamGridDb.CREDENTIAL_KEY)
         steamGridDbKey = ((artKey as? CredentialLookup.Present)?.credential as? Credential.ApiToken)?.value
-        val recovery = signedInRecovery(romm, stored)
+        val recovery = signedInRecovery(romm, stored).let { signed ->
+            if (extraUnreadable) signed.copy(askToSignIn = true) else signed
+        }
         withContext(Dispatchers.Main.immediate) {
             shell.setArtKeySaved(steamGridDbKey != null)
             shell.applyRecovery(recovery)

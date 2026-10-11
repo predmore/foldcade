@@ -621,18 +621,20 @@ class ShellController(
 
     fun consumeConnectToken(): String = connectToken.also { connectToken = "" }
 
-    fun openConnect(origin: String) {
+    fun openConnect(origin: String, another: Boolean = false) {
         val screen = model.connectScreen ?: HostScreen.Top
+        val shown = if (another) "" else origin
         connectToken = ""
         model = model.copy(
             connectOpen = true,
             connectScreen = screen,
             panel = null,
-            connectOrigin = origin,
+            connectOrigin = shown,
             connectIndex = 0,
-            connectWarning = cleartextCredentialWarning(origin),
+            connectWarning = cleartextCredentialWarning(shown),
             connectHint = null,
             connectKind = ConnectKind.Romm,
+            connectAnother = another,
         )
     }
 
@@ -675,7 +677,7 @@ class ShellController(
     /** Leaves the connect form, as after a server accepts the token. */
     fun closeConnect() {
         connectToken = ""
-        model = model.copy(connectOpen = false, connectScreen = null, connectHint = null)
+        model = model.copy(connectOpen = false, connectScreen = null, connectHint = null, connectAnother = false)
     }
 
     fun askToSignInAgain() {
