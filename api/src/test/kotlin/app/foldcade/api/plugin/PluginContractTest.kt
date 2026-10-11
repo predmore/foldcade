@@ -113,7 +113,7 @@ class PluginContractTest {
         assertTrue(aliases.isDefault)
         assertTrue(IdlePlatform().aliases.isEmpty())
         assertEquals(1, PLUGIN_API_VERSION)
-        assertEquals(5, PLUGIN_API_MINOR)
+        assertEquals(6, PLUGIN_API_MINOR)
         val bind = PluginEntry::class.java.methods.single { it.name == "bind" }
         assertTrue(bind.isDefault)
         val saveFileName = Player::class.java.methods.single { it.name == "saveFileName" }
@@ -122,6 +122,10 @@ class PluginContractTest {
         assertTrue(observeActivity.isDefault)
         val achievements = MetadataProvider::class.java.methods.single { it.name == "achievements" }
         assertTrue(achievements.isDefault)
+        assertTrue(LibraryBackend::class.java.methods.single { it.name == "pendingSaveConflicts" }.isDefault)
+        assertTrue(LibraryBackend::class.java.methods.single { it.name == "resolveSaveConflict" }.isDefault)
+        assertTrue(LibraryBackend::class.java.methods.single { it.name == "reopenDeferredSaveConflicts" }.isDefault)
+        assertTrue(LibraryBackend::class.java.methods.single { it.name == "addSaveConflictListener" }.isDefault)
     }
 
     @Test
@@ -204,6 +208,9 @@ class PluginContractTest {
                 "saves",
                 "prepareLaunch",
                 "reconcile",
+                "pendingSaveConflicts",
+                "resolveSaveConflict",
+                "reopenDeferredSaveConflicts",
             ),
         )
         assertSuspendMethods(MetadataProvider::class.java, setOf("fetch", "achievements"))
@@ -284,6 +291,7 @@ class PluginContractTest {
         }
         assertTrue(declared.isNotEmpty())
         for (method in declared) {
+            if ('$' in method.name) continue
             val isSuspend = method.parameterTypes.any { it.name == "kotlin.coroutines.Continuation" }
             assertEquals(method.name, method.name in suspendNames, isSuspend)
         }

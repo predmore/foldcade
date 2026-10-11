@@ -25,7 +25,7 @@ The service file name is `META-INF/services/app.foldcade.api.plugin.PluginEntry`
 
 `PluginHost.load` reads every entry that class loader advertises. The caller supplies the loader. This is the path for a bundled jar and for an out-of-tree jar. It does not discover or open an installed package. `load` runs off the main thread. One bad provider is recorded in `rejected` and does not stop the providers that follow. `load` does not throw, except `VirtualMachineError`.
 
-`apiVersion` must equal `PLUGIN_API_VERSION` (1). The host rejects a different major. Set `apiMinor` to `PLUGIN_API_MINOR` (5). That is the additive revision this plugin was compiled against. The host loads a minor less than or equal to its own and rejects a newer minor. The interface default is 0, so a plugin that does not declare a minor still loads, marked as an older minor.
+`apiVersion` must equal `PLUGIN_API_VERSION` (1). The host rejects a different major. Set `apiMinor` to `PLUGIN_API_MINOR` (6). That is the additive revision this plugin was compiled against. The host loads a minor less than or equal to its own and rejects a newer minor. The interface default is 0, so a plugin that does not declare a minor still loads, marked as an older minor.
 
 Public value types in `:api` are frozen data classes, or sealed interfaces whose leaves are frozen data classes. Adding, removing, reordering, or changing the type of a constructor property bumps the major. Adding an interface member with a default body bumps the minor and does not bump the major. Open enums and sealed types must be branched with an `else`. Adding a value there bumps the minor. Any other enum or sealed type in the module is closed. Adding a value there bumps the major.
 
@@ -36,6 +36,8 @@ Library I/O and metadata fetch are suspending. An implementation must stop that 
 A library can report what it is doing with a game through `observeActivity` (API minor 4): `GameActivity.Downloading` with bytes so far and the total when known, `Checking`, `SyncingSaves`, `Synced` with the `SyncResult`, or `Idle` when the work ended with nothing to show. The host calls `observeActivity` once, before `connect`. Report from any thread and return at once. The shell shows it on the game's tile and on the top screen, and never stops the player for it. The default does nothing, so a library that reports nothing still lists and launches.
 
 A metadata provider can list a game's achievements through `achievements` (API minor 5): each `Achievement` has a title, an optional description, points, a credential-free badge address, and whether the user has earned it. Set `GameAchievements.progressKnown` to false when you have the list but not the user's progress, rather than failing. The command center beside a running game shows the count and opens the list. The default returns null, so a provider without achievements still loads.
+
+A library can also hold a save conflict for the shell (API minor 6). `pendingSaveConflicts` lists both copies, each with its source, time, and size. `resolveSaveConflict` applies keep-this-one, keep-both, or decide-later. Every choice keeps both copies. Decide-later stays out of the pending list until `reopenDeferredSaveConflicts`, which the shell calls on the next launch. The defaults do nothing.
 
 An independent plugin that is not in this repository, and that uses only this API, may use any license. Plugins shipped here stay GPLv3. See [licensing](licensing.md).
 

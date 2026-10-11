@@ -25,22 +25,29 @@ internal object FocusRing {
         end = Offset(size.width, size.height),
     )
 
-    /** Draws around this draw scope's bounds, [gapPx] outside them. */
-    fun DrawScope.drawFocusRing(cornerPx: Float) {
-        val outset = gapPx + strokePx / 2f
+    /**
+     * Draws around this draw scope's bounds, [gapPx] outside them.
+     * [pronounced] uses the same green-to-blue stroke, heavier, for a choice that
+     * has to read from across the bottom screen.
+     */
+    fun DrawScope.drawFocusRing(cornerPx: Float, pronounced: Boolean = false) {
+        val stroke = if (pronounced) 10f else strokePx
+        val glowSpread = if (pronounced) 22f else glowSpreadPx
+        val glowAlpha = if (pronounced) 0.22f else 0.10f
+        val outset = gapPx + stroke / 2f
         val ringSize = Size(size.width + outset * 2f, size.height + outset * 2f)
         val topLeft = Offset(-outset, -outset)
         val radius = CornerRadius(cornerPx + outset, cornerPx + outset)
         val brush = brush(ringSize)
         for (step in glowSteps downTo 1) {
-            val spread = glowSpreadPx * step / glowSteps
+            val spread = glowSpread * step / glowSteps
             drawRoundRect(
                 brush = brush,
                 topLeft = topLeft,
                 size = ringSize,
                 cornerRadius = radius,
-                style = Stroke(width = strokePx + spread * 2f),
-                alpha = 0.10f,
+                style = Stroke(width = stroke + spread * 2f),
+                alpha = glowAlpha,
             )
         }
         drawRoundRect(
@@ -48,7 +55,7 @@ internal object FocusRing {
             topLeft = topLeft,
             size = ringSize,
             cornerRadius = radius,
-            style = Stroke(width = strokePx),
+            style = Stroke(width = stroke),
         )
     }
 }

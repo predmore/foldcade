@@ -58,6 +58,29 @@ interface LibraryBackend {
      * return at once: the host only records what it hears.
      */
     fun observeActivity(listener: GameActivityListener) = Unit
+
+    /**
+     * Conflicts waiting for a choice. Empty until a sync kept both copies.
+     * A deferred choice is left out until [reopenDeferredSaveConflicts].
+     */
+    suspend fun pendingSaveConflicts(): List<SaveConflict> = emptyList()
+
+    /**
+     * Applies [choice] to the conflict [id].
+     * Every choice keeps both copies. [SaveConflictChoice.DecideLater] leaves it
+     * for the next launch. An unknown id does nothing.
+     */
+    suspend fun resolveSaveConflict(id: String, choice: SaveConflictChoice) = Unit
+
+    /** Deferred conflicts become pending again, so the next launch can ask. */
+    suspend fun reopenDeferredSaveConflicts() = Unit
+
+    /**
+     * Called when the pending set may have changed.
+     * The listener must not call back into this backend on that same stack.
+     * The returned handle removes the listener.
+     */
+    fun addSaveConflictListener(listener: () -> Unit): AutoCloseable = AutoCloseable { }
 }
 
 /** Hears what a [LibraryBackend] is doing with the game whose [Game.remoteKey] it names. */

@@ -83,6 +83,9 @@ internal class RommData(val root: Path, origin: String) {
 
     fun ledger(romId: Long): SaveLedger = SaveLedger(romSaves(romId).resolve(SaveLedger.FILE_NAME))
 
+    /** Choices the shell has not finished, for this server. */
+    fun conflictsFile(): Path = server.resolve("conflicts.json")
+
     /** The one file that holds [slot]. Its name is what an upload calls the save. */
     fun slotFile(romId: Long, slot: String): Path =
         romSaves(romId).resolve(SLOT_DIR_PREFIX + encodeSlot(slot)).resolve(slotFileName(slot))

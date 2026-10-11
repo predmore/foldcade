@@ -329,8 +329,26 @@ class FoldcadeApp : Application() {
             }
             if (store.folderTrees().isNotEmpty()) reloadFolder()
             syncRomm()
+            try {
+                plugins.reopenDeferredSaveConflicts()
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (_: Exception) {
+                Unit
+            }
+            plugins.addSaveConflictListener {
+                scope.launch(Dispatchers.Main.immediate) { onSaveConflicts?.invoke() }
+            }
+            withContext(Dispatchers.Main.immediate) { onSaveConflicts?.invoke() }
         }
     }
+
+    /** The activity refreshes the bottom screen when a library kept both saves. */
+    var onSaveConflicts: (() -> Unit)? = null
+
+    /** True while a game is being started, so a conflict waits until Foldcade is in front again. */
+    @Volatile
+    var suppressSaveConflict: Boolean = false
 
     private var androidNotices: List<FoldNotice> = emptyList()
     private var foldcadeNotices: List<FoldNotice> = emptyList()

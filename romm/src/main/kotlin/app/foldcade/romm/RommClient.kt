@@ -32,6 +32,7 @@ import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.StandardOpenOption
 import java.time.Duration
+import java.time.Instant
 import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
 import kotlin.coroutines.resume
@@ -786,9 +787,49 @@ class RommClient(
             val saveId = op.saveId ?: throw RommResponseException("${op.action} is missing save_id")
             val before = archived.size
             if (!archive(local)) return
+            val localSize = withContext(Dispatchers.IO) { Files.size(local.file) }
+            val localWhen = local.updatedAt.toEpochMilli()
+            val localCopy = preserveBeside(path, "local.sav", local.file)
             download(op, path)
-            keptBoth += KeptBoth(op.romId, op.slot, archived.drop(before).firstOrNull(), saveId, path)
+            val remoteSize = withContext(Dispatchers.IO) { Files.size(path) }
+            val remoteWhen = op.serverUpdatedAt?.let { text ->
+                try {
+                    Instant.parse(text).toEpochMilli()
+                } catch (_: Exception) {
+                    null
+                }
+            } ?: withContext(Dispatchers.IO) { Files.getLastModifiedTime(path).toMillis() }
+            val remoteCopy = preserveBeside(path, "remote.sav", path)
+            keptBoth += KeptBoth(
+                romId = op.romId,
+                slot = op.slot,
+                archivedSaveId = archived.drop(before).firstOrNull(),
+                serverSaveId = saveId,
+                serverFile = path,
+                localEmulator = local.emulator,
+                localUpdatedAtMillis = localWhen,
+                localSizeBytes = localSize,
+                remoteEmulator = op.emulator,
+                remoteUpdatedAtMillis = remoteWhen,
+                remoteSizeBytes = remoteSize,
+                localCopy = localCopy,
+                remoteCopy = remoteCopy,
+            )
             completed++
+        }
+
+        /** A copy beside the slot, outside `.trash`, so a later choice still has both saves. */
+        private suspend fun preserveBeside(slotFile: Path, name: String, source: Path): Path? = try {
+            val dest = slotFile.parent?.resolve(".kept")?.resolve(name) ?: return null
+            val bytes = withContext(Dispatchers.IO) { Files.readAllBytes(source) }
+            withContext(Dispatchers.IO) { writeDurably(dest, bytes) }
+            dest
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (fatal: VirtualMachineError) {
+            throw fatal
+        } catch (_: Exception) {
+            null
         }
 
         /**

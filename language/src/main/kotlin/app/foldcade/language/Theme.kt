@@ -41,6 +41,7 @@ object FocusRingColors {
 /** Host-owned type ramp, in sp, the same on both panels. */
 object TypeRamp {
     val heroTitle: TextUnit = 28.sp
+    val conflictGame: TextUnit = 40.sp
     val heroMeta: TextUnit = 18.sp
     val availability: TextUnit = 16.sp
     val gridLabel: TextUnit = 16.sp
@@ -159,6 +160,12 @@ object Copy {
     const val missingFileBody = "This game has no file Foldcade can hand to the player."
     const val savesKeptTitle = "Both saves were kept"
     const val savesKeptBody = "This game used the copy from the server. The other copy was archived."
+    const val saveConflictTitle = "Two saves"
+    const val saveConflictBody = "Both copies are kept. Choose which one this game plays."
+    const val saveConflictTop = "Choose which save to play on the bottom screen."
+    const val keepThisOne = "Keep this one"
+    const val keepBoth = "Keep both"
+    const val decideLater = "Decide later"
     const val savesKeptMore = "More than one game did this."
     const val offlineSaveTitle = "Played the save on this device"
     const val offlineSaveBody = "It will upload when the server is reachable."
