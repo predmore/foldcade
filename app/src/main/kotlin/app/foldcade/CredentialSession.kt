@@ -8,6 +8,7 @@ import kotlin.coroutines.cancellation.CancellationException
 internal data class SignedInRecovery(
     val backends: List<SignedInBackend>,
     val askToSignIn: Boolean,
+    val rommInstanceId: String = RommCredentials.PLUGIN_ID,
 )
 
 /**
@@ -26,16 +27,7 @@ internal suspend fun lookupOrUnreadable(
     CredentialLookup.Unreadable
 }
 
-/** An unreadable token signs the user out and asks them to sign in again. */
-internal fun signedInRecovery(
-    lookup: CredentialLookup,
-    stored: List<SignedInBackend>,
-): SignedInRecovery = when (lookup) {
-    CredentialLookup.Unreadable -> SignedInRecovery(emptyList(), askToSignIn = true)
-    CredentialLookup.Absent, is CredentialLookup.Present -> SignedInRecovery(stored, askToSignIn = false)
-}
-
 internal fun ShellController.applyRecovery(recovery: SignedInRecovery) {
     setSignedIn(recovery.backends)
-    if (recovery.askToSignIn) askToSignInAgain()
+    if (recovery.askToSignIn) askToSignInAgain(recovery.rommInstanceId)
 }

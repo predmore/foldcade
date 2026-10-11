@@ -2,6 +2,7 @@ package app.foldcade
 
 import app.foldcade.api.plugin.Credential
 import app.foldcade.api.plugin.CredentialStore
+import app.foldcade.api.plugin.CredentialLookup
 import app.foldcade.host.PluginHost
 import app.foldcade.language.SignedInBackend
 import app.foldcade.plugins.romm.ROMM_ORIGIN_KEY
@@ -9,7 +10,45 @@ import app.foldcade.plugins.romm.forgetRommInstance
 import app.foldcade.plugins.romm.isRommInstance
 import app.foldcade.plugins.romm.rommCredentialKey
 import app.foldcade.plugins.romm.rommOriginAlreadyConfigured
+import app.foldcade.plugins.romm.RommPlugins
+import app.foldcade.plugins.romm.RommWiring
 import java.net.URI
+
+/** Artwork keeps the same roots and token reader as the library connections. */
+internal fun rommWirings(session: SessionStore): List<RommWiring> {
+    val supply = RommPlugins.supply ?: return emptyList()
+    return session.rommServers().map { (id, origin) -> supply.wiring(origin, rommCredentialKey(id)) }
+}
+
+/** Replacing a token keeps that connection's identity, tiles, and save ownership. */
+internal suspend fun saveRommConnection(
+    session: SessionStore,
+    credentials: CredentialStore,
+    instanceId: String,
+    origin: String,
+    token: String,
+) {
+    credentials.put(RommCredentials.PLUGIN_ID, rommCredentialKey(instanceId), Credential.ApiToken(token))
+    if (instanceId == RommCredentials.PLUGIN_ID) session.setRommOrigin(origin)
+    else session.setRommInstance(instanceId, origin)
+}
+
+/** A failed credential affects only its connection. Recovery names the first one needing attention. */
+internal suspend fun readRommRecovery(
+    credentials: CredentialStore,
+    servers: List<Pair<String, String>>,
+): SignedInRecovery {
+    val signedIn = ArrayList<SignedInBackend>()
+    var failed: String? = null
+    for ((id, origin) in servers) {
+        when (lookupOrUnreadable(credentials, RommCredentials.PLUGIN_ID, rommCredentialKey(id))) {
+            is CredentialLookup.Present -> signedIn.add(SignedInBackend(id, rommServerLabel(id, origin)))
+            CredentialLookup.Unreadable -> if (failed == null) failed = id
+            CredentialLookup.Absent -> Unit
+        }
+    }
+    return SignedInRecovery(signedIn, askToSignIn = failed != null, rommInstanceId = failed ?: RommCredentials.PLUGIN_ID)
+}
 
 /**
  * What saving the connect form does with one more RomM server.
@@ -38,12 +77,7 @@ internal suspend fun addRommServer(
     val taken = listOfNotNull(defaultOrigin?.takeIf { it.isNotBlank() }) + extras.map { it.second }
     if (rommOriginAlreadyConfigured(taken, origin)) return RommServerAdd.SameServer
     val instanceId = pendingInstanceId ?: host.addInstance(RommCredentials.PLUGIN_ID).instanceId
-    credentials.put(
-        RommCredentials.PLUGIN_ID,
-        rommCredentialKey(instanceId),
-        Credential.ApiToken(token),
-    )
-    session.setRommInstance(instanceId, origin)
+    saveRommConnection(session, credentials, instanceId, origin, token)
     host.configure(instanceId, mapOf(ROMM_ORIGIN_KEY to origin))
     return RommServerAdd.Added(instanceId)
 }

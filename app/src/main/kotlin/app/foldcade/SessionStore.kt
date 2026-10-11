@@ -91,6 +91,13 @@ class SessionStore(private val prefs: SharedPreferences) : SaveMarks {
         prefs.edit().remove(KEY_ROMM_ORIGIN).apply()
     }
 
+    /** Every saved connection, with the original instance first. */
+    fun rommServers(): List<Pair<String, String>> =
+        listOfNotNull(rommOrigin()?.let { "romm" to it }) + rommInstances()
+
+    fun rommServerOrigin(instanceId: String): String? =
+        rommServers().firstOrNull { it.first == instanceId }?.second
+
     /**
      * Servers other than the default instance `romm`.
      * Each line is `instanceId` then a tab then the origin. `romm_origin` stays the default.
