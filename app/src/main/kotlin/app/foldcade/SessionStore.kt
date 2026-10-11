@@ -94,7 +94,7 @@ class SessionStore(private val prefs: SharedPreferences) : SaveMarks {
     fun musicEnabled(): Boolean = prefs.getBoolean(KEY_MUSIC_ENABLED, true)
 
     fun musicVolume(): Float =
-        prefs.getFloat(KEY_MUSIC_VOLUME, HomeMusicSetting.DEFAULT_VOLUME).coerceIn(0f, 1f)
+        safeMusicVolume(prefs.getFloat(KEY_MUSIC_VOLUME, HomeMusicSetting.DEFAULT_VOLUME))
 
     fun musicTrackId(): String =
         prefs.getString(KEY_MUSIC_TRACK, HomeMusicSetting.DEFAULT_TRACK_ID)
@@ -125,6 +125,10 @@ class SessionStore(private val prefs: SharedPreferences) : SaveMarks {
     fun setPlayerSaveFolder(playerId: String, uri: String) {
         prefs.edit().putString(saveFolderKey(playerId), uri).apply()
     }
+
+    /** A tree grant can be shared by a library source and several players. */
+    fun folderTreeInUse(uri: String): Boolean = uri in folderTrees() ||
+        prefs.all.any { (key, value) -> key.startsWith(PLAYER_SAVE_FOLDER_PREFIX) && value == uri }
 
     override fun mark(key: String): String? = prefs.getString(saveMarkKey(key), null)
 
@@ -180,6 +184,8 @@ class SessionStore(private val prefs: SharedPreferences) : SaveMarks {
     fun homeBoardRaw(): String? = prefs.getString(KEY_HOME_BOARD, null)?.takeIf { it.isNotBlank() }
 
     fun saveHomeBoard(raw: String) {
+        // Focus, open panels, and unfinished edits can publish the same saved layout.
+        if (raw == homeBoardRaw()) return
         prefs.edit().putString(KEY_HOME_BOARD, raw).apply()
     }
 
@@ -214,7 +220,7 @@ class SessionStore(private val prefs: SharedPreferences) : SaveMarks {
         val id = trackId.trim().ifEmpty { HomeMusicSetting.DEFAULT_TRACK_ID }
         prefs.edit()
             .putBoolean(KEY_MUSIC_ENABLED, enabled)
-            .putFloat(KEY_MUSIC_VOLUME, volume.coerceIn(0f, 1f))
+            .putFloat(KEY_MUSIC_VOLUME, safeMusicVolume(volume))
             .putString(KEY_MUSIC_TRACK, id)
             .apply()
     }
@@ -236,6 +242,16 @@ class SessionStore(private val prefs: SharedPreferences) : SaveMarks {
     }
 
     fun artworkEnabled(): Boolean = prefs.getBoolean(KEY_ARTWORK, true)
+
+    /** Store the theme's name so a changed list order cannot select another theme. */
+    fun themeIndex(names: List<String>): Int {
+        val saved = prefs.getString(KEY_THEME, null)
+        return names.indexOf(saved).takeIf { it >= 0 } ?: if (names.size > 1) 1 else 0
+    }
+
+    fun setTheme(name: String) {
+        prefs.edit().putString(KEY_THEME, name).apply()
+    }
 
     fun setArtworkEnabled(enabled: Boolean) {
         prefs.edit().putBoolean(KEY_ARTWORK, enabled).apply()
@@ -287,6 +303,9 @@ class SessionStore(private val prefs: SharedPreferences) : SaveMarks {
     fun place(panel: Panel, app: ExternalApp) = update { it.place(panel, app) }
 
     companion object {
+        private fun safeMusicVolume(volume: Float): Float =
+            if (volume.isFinite()) volume.coerceIn(0f, 1f) else HomeMusicSetting.DEFAULT_VOLUME
+
         private const val KEY_PRIMARY_TOP = "primary_top"
         private const val KEY_GAME_SCREENS = "game_screens"
         private const val KEY_PLATFORM_SCREENS = "platform_screens"
@@ -300,6 +319,7 @@ class SessionStore(private val prefs: SharedPreferences) : SaveMarks {
         private const val KEY_BACKGROUND = "background_motion"
         private const val KEY_MOTION_SPEED = "motion_speed"
         private const val KEY_ARTWORK = "artwork"
+        private const val KEY_THEME = "theme"
         private const val KEY_LIBRARY_SORT = "library_sort"
         private const val KEY_HOME_BOARD = "home_board"
         private const val KEY_SHELF_GAMES = "android_shelf_games"
@@ -326,7 +346,9 @@ class SessionStore(private val prefs: SharedPreferences) : SaveMarks {
 
         private fun buttonPromptDismissedKey(deviceKey: String) = "button_prompt_dismissed:$deviceKey"
 
-        private fun saveFolderKey(playerId: String) = "player_save_folder:$playerId"
+        private const val PLAYER_SAVE_FOLDER_PREFIX = "player_save_folder:"
+
+        private fun saveFolderKey(playerId: String) = PLAYER_SAVE_FOLDER_PREFIX + playerId
 
         private fun saveFolderSkipKey(playerId: String) = "player_save_folder_skipped:$playerId"
 

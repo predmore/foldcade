@@ -33,6 +33,8 @@ With both screens free, the top panel is the hero for the game you have selected
 
 The home-music loop plays while Foldcade is in front and pauses when you leave it. The setting (on, volume, track id) lives in `:language`. Playback lives in `:app`. The default track is Lanternlight.
 
+Saved settings, Home edits, file durability, credentials, and transfer rules are covered in the [persistence audit](persistence.md).
+
 ## Plugins
 
 The shell does not scan for installed plugin packages. `PluginHost.load` reads `ServiceLoader` entries from a class loader. The contract, the reserved RomM ids, and the minify keep rules are in [plugins.md](plugins.md).

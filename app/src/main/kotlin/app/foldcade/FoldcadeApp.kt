@@ -211,7 +211,7 @@ class FoldcadeApp : Application() {
         val names = listOf(Copy.builtIn) + listOfNotNull(packaged?.name)
         val motions = listOf(BackgroundMotion.Off) + listOfNotNull(packaged?.backgroundMotion)
         val themeTrackList = List(names.size) { index -> if (index == 0) null else packaged?.music }
-        val initialTheme = if (names.size > 1) 1 else 0
+        val initialTheme = store.themeIndex(names)
         music.setThemeChoice(themeTrackList.getOrNull(initialTheme))
         plays = PlaySessions.open(File(filesDir, "play-sessions/events.log"))
         val sliderTick = SliderTick()
@@ -432,11 +432,15 @@ class FoldcadeApp : Application() {
      * leave the current wiring in place.
      */
     /** Shortcuts and the stored list. A failure leaves the shelf tiles already there. */
-    private fun refreshGameNative() {
+    private suspend fun refreshGameNative() {
         val library = plugins.library(GameNativeLibrary.ID) as? GameNativeLibrary ?: return
         Shelf.gameNativeInstalled = gameNativePackagePresent()
         try {
             refreshGameNativeCatalog(this, library, File(filesDir, "gamenative/catalog.txt"), steamFileGames)
+            withContext(Dispatchers.Main.immediate) {
+                shell.settleGameNative()
+                shell.noteShelfChanged()
+            }
         } catch (cancelled: CancellationException) {
             throw cancelled
         } catch (_: Exception) {
@@ -540,13 +544,19 @@ class FoldcadeApp : Application() {
     /** Stops reading [uri]. Its games, and its .steam files, leave the grid. */
     fun forgetFolder(uri: String) {
         store.removeFolderTree(uri)
-        try {
-            contentResolver.releasePersistableUriPermission(Uri.parse(uri), Intent.FLAG_GRANT_READ_URI_PERMISSION)
-        } catch (_: SecurityException) {
-            // Already released. The folder is off the list either way.
-        }
+        releaseUnusedFolderGrant(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
         shell.setFolders(libraryFolders())
         reloadFolder()
+    }
+
+    /** Removing one saved reference must not revoke another saved folder's access. */
+    fun releaseUnusedFolderGrant(uri: String, flags: Int) {
+        if (store.folderTreeInUse(uri)) return
+        try {
+            contentResolver.releasePersistableUriPermission(Uri.parse(uri), flags)
+        } catch (_: SecurityException) {
+            // Already released.
+        }
     }
 
     /** The folder's own name, such as "roms" for primary:roms. */

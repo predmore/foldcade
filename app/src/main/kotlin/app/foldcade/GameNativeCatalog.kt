@@ -12,6 +12,7 @@ import app.foldcade.plugins.gamenative.ShortcutLaunch
 import app.foldcade.plugins.gamenative.catalogGameFromLine
 import app.foldcade.plugins.gamenative.catalogGameFromShortcut
 import app.foldcade.plugins.gamenative.catalogLine
+import app.foldcade.romm.writeDurably
 import java.io.File
 import kotlin.coroutines.cancellation.CancellationException
 
@@ -55,9 +56,9 @@ internal fun readCatalog(file: File): List<CatalogGame> {
 }
 
 internal fun writeCatalog(file: File, games: List<CatalogGame>) {
-    file.parentFile?.mkdirs()
     val body = games.map { catalogLine(it) }.filter { it.isNotEmpty() }
-    file.writeText(if (body.isEmpty()) "" else body.joinToString("\n", postfix = "\n"))
+    val raw = if (body.isEmpty()) "" else body.joinToString("\n", postfix = "\n")
+    writeDurably(file.toPath(), raw.toByteArray(Charsets.UTF_8))
 }
 
 internal fun readGameNativeShortcuts(context: Context, packages: List<String>): List<CatalogGame> {

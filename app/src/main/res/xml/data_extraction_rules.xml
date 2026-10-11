@@ -1,22 +1,15 @@
 <?xml version="1.0" encoding="utf-8"?>
 <data-extraction-rules>
+    <!-- The manifest disables cloud backup. Device transfer retains settings and Home edits;
+         credentials remain excluded in both modes. Includes omit all other domains. -->
     <cloud-backup>
-        <!-- allowBackup=false still blocks cloud backup. It does not block device-to-device transfer, which is why these excludes are here. -->
-        <exclude domain="file" path="datastore/foldcade_credentials.preferences_pb" />
+        <include domain="sharedpref" path="foldcade.xml" />
+        <include domain="file" path="." />
         <exclude domain="file" path="datastore" />
-        <!-- files/play-sessions is play history. It holds no secret, so the file domain is not blanket-excluded. -->
-        <exclude domain="root" path="." />
-        <exclude domain="database" path="." />
-        <exclude domain="sharedpref" path="." />
-        <exclude domain="external" path="." />
     </cloud-backup>
     <device-transfer>
-        <exclude domain="file" path="datastore/foldcade_credentials.preferences_pb" />
+        <include domain="sharedpref" path="foldcade.xml" />
+        <include domain="file" path="." />
         <exclude domain="file" path="datastore" />
-        <!-- files/play-sessions is play history. It holds no secret, so the file domain is not blanket-excluded. -->
-        <exclude domain="root" path="." />
-        <exclude domain="database" path="." />
-        <exclude domain="sharedpref" path="." />
-        <exclude domain="external" path="." />
     </device-transfer>
 </data-extraction-rules>

@@ -1,5 +1,7 @@
 package app.foldcade.language
 
+import java.util.Base64
+
 /**
  * Curated home grid. Slots are positions. A null slot is empty.
  * Item ids are catalog keys. Removing a tile hides it here and does not delete the game.
@@ -190,7 +192,7 @@ fun mergeHome(
         next = placeNew(next, item, platforms)
     }
     next = ensureSpecialFolders(next)
-    next = dropGonePlatformFolders(next, catalog, platforms)
+    next = dropGonePlatformFolders(next, catalog, platforms, unsettled)
     next = refreshFolderNames(next, platforms)
     if (HOME_ALL !in next.slots) {
         next = next.copy(slots = listOf(HOME_ALL) + next.slots)
@@ -504,40 +506,69 @@ fun cycleDestination(board: HomeBoard): HomeBoard {
     return board.copy(destinationFolderId = next)
 }
 
-fun encodeHome(board: HomeBoard): String = buildString {
-    append("v1\n")
-    append("addNew\t").append(if (board.addNewToHome) "1" else "0").append('\n')
-    append("hidden\t").append(board.hidden.joinToString("\t")).append('\n')
-    append("retired\t").append(board.retired.joinToString("\t")).append('\n')
-    append("slots\t").append(encodeSlots(board.slots)).append('\n')
-    for (folder in board.folders.values.sortedBy { it.id }) {
-        append("folder\t")
-        append(folder.id).append('\t')
-        append(folder.name).append('\t')
-        append(folder.platformId.orEmpty()).append('\t')
-        append(folder.bucket?.name.orEmpty()).append('\t')
-        append(if (folder.userMade) "1" else "0").append('\t')
-        append(if (folder.namedByUser) "1" else "0").append('\t')
-        append(folder.mark.orEmpty()).append('\t')
-        append(encodeSlots(folder.slots))
-        append('\n')
+/** A versioned snapshot of saved choices. A lifted tile is saved at its last confirmed position. */
+fun encodeHome(board: HomeBoard): String {
+    val saved = cancelHold(board)
+    return buildString {
+        append("v2\n")
+        homeRow("addNew", listOf(if (saved.addNewToHome) "1" else "0"))
+        homeRow("hidden", saved.hidden.sorted())
+        homeRow("retired", saved.retired.sorted())
+        homeRow("slots", saved.slots.map { it.orEmpty() })
+        homeRow("allTab", listOf(saved.allTab.name))
+        homeRow("allSort", listOf(saved.allSort.name))
+        homeRow("allSystem", listOf(saved.allSystemId.orEmpty()))
+        homeRow("destination", listOf(saved.destinationFolderId.orEmpty()))
+        for (folder in saved.folders.values.sortedBy { it.id }) {
+            homeRow(
+                "folder",
+                listOf(
+                    folder.id, folder.name, folder.platformId.orEmpty(), folder.bucket?.name.orEmpty(),
+                    if (folder.userMade) "1" else "0", if (folder.namedByUser) "1" else "0", folder.mark.orEmpty(),
+                ) + folder.slots.map { it.orEmpty() },
+            )
+        }
     }
+}
+
+/** Each field is Base64url, so opaque ids and names cannot split a record. */
+private fun StringBuilder.homeRow(kind: String, fields: List<String>) {
+    val encoder = Base64.getUrlEncoder().withoutPadding()
+    append(kind)
+    if (fields.isNotEmpty()) append('\t')
+    append(fields.joinToString("\t") { encoder.encodeToString(it.toByteArray(Charsets.UTF_8)) })
+    append('\n')
 }
 
 fun decodeHome(raw: String?): HomeBoard {
     if (raw.isNullOrBlank()) return HomeBoard()
+    val encoded = raw.lineSequence().firstOrNull() == "v2"
+    val decoder = Base64.getUrlDecoder()
     var board = HomeBoard(slots = emptyList())
     for (line in raw.lineSequence()) {
         if (line.isBlank()) continue
-        val bits = line.split('\t')
+        val fields = line.split('\t')
+        val bits = if (encoded) {
+            try {
+                listOf(fields.first()) + fields.drop(1).map {
+                    String(decoder.decode(it), Charsets.UTF_8)
+                }
+            } catch (_: IllegalArgumentException) {
+                continue
+            }
+        } else fields
         when (bits.firstOrNull()) {
-            "v1" -> Unit
+            "v1", "v2" -> Unit
             "addNew" -> board = board.copy(addNewToHome = bits.getOrNull(1) != "0")
             "hidden" -> board = board.copy(hidden = bits.drop(1).filter { it.isNotEmpty() }.toSet())
             "retired" -> board = board.copy(retired = bits.drop(1).filter { it.isNotEmpty() }.toSet())
-            "slots" -> board = board.copy(slots = decodeSlots(bits.drop(1)))
+            "slots" -> board = board.copy(slots = decodeSlots(bits.drop(1), encoded))
+            "allTab" -> board = board.copy(allTab = AllTab.entries.firstOrNull { it.name == bits.getOrNull(1) } ?: AllTab.Games)
+            "allSort" -> board = board.copy(allSort = AllSort.entries.firstOrNull { it.name == bits.getOrNull(1) } ?: AllSort.Title)
+            "allSystem" -> board = board.copy(allSystemId = bits.getOrNull(1)?.takeIf { it.isNotEmpty() })
+            "destination" -> board = board.copy(destinationFolderId = bits.getOrNull(1)?.takeIf { it.isNotEmpty() })
             "folder" -> {
-                if (bits.size < 9) continue
+                if (bits.size < 8) continue
                 val bucket = bits[4].takeIf { it.isNotEmpty() }?.let { runCatching { HomeKind.valueOf(it) }.getOrNull() }
                 val folder = HomeFolder(
                     id = bits[1],
@@ -547,7 +578,7 @@ fun decodeHome(raw: String?): HomeBoard {
                     userMade = bits[5] == "1",
                     namedByUser = bits[6] == "1",
                     mark = bits[7].takeIf { it.isNotEmpty() },
-                    slots = decodeSlots(bits.drop(8)),
+                    slots = decodeSlots(bits.drop(8), encoded),
                 )
                 if (folder.id.isNotEmpty()) {
                     board = board.copy(folders = board.folders + (folder.id to folder))
@@ -584,8 +615,14 @@ private fun dropGonePlatformFolders(
     board: HomeBoard,
     catalog: List<HomeItem>,
     platforms: List<HomePlatform>,
+    unsettled: (String) -> Boolean,
 ): HomeBoard {
     if (board.hold != null) return board
+    // An empty platform folder may belong to games hidden or moved into a user folder.
+    // Until those sources report, an empty catalog cannot confirm its removal.
+    if (board.hidden.any(unsettled) || board.slots.any { it != null && unsettled(it) } ||
+        board.folders.values.any { folder -> folder.slots.any { it != null && unsettled(it) } }
+    ) return board
     val present = catalog.mapNotNull { item ->
         if (item.kind != HomeKind.Rom) return@mapNotNull null
         resolvePlatform(platforms, item.platformId)?.id ?: item.platformId?.takeIf { it.isNotBlank() }
@@ -726,8 +763,6 @@ private fun writeVisible(board: HomeBoard, slots: List<String?>): HomeBoard {
 private fun systemName(platforms: List<HomePlatform>, item: HomeItem): String =
     resolvePlatform(platforms, item.platformId)?.name ?: item.platformId ?: ""
 
-private fun encodeSlots(slots: List<String?>): String =
-    slots.joinToString("\t") { it ?: "-" }
-
-private fun decodeSlots(bits: List<String>): List<String?> =
-    bits.filter { it.isNotEmpty() }.map { if (it == "-") null else it }
+private fun decodeSlots(bits: List<String>, encoded: Boolean): List<String?> =
+    if (encoded) bits.map { it.ifEmpty { null } }
+    else bits.filter { it.isNotEmpty() }.map { if (it == "-") null else it }

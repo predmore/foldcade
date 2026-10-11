@@ -116,6 +116,7 @@ class ShellController(
     /** Libraries that have reported their games since launch. Until then their home tiles are kept. */
     private val settledLibraries = mutableSetOf<String>()
     private var moonlightSettled = false
+    private var installedAppsSettled = false
     private val libraryGames = HashMap<String, Game>()
     private var extraPlatforms: List<HomePlatform> = emptyList()
 
@@ -550,6 +551,7 @@ class ShellController(
 
     fun setInstalledApps(apps: List<LaunchableApp>, players: Set<String>) {
         installed = apps.distinctBy { it.packageName }
+        installedAppsSettled = true
         playerPackages = players
         syncHome()
         publish(model)
@@ -845,6 +847,10 @@ class ShellController(
      */
     fun settleMoonlight() {
         moonlightSettled = true
+    }
+
+    fun settleGameNative() {
+        settledLibraries += GameNativeLibrary.ID
     }
 
     /**
@@ -1281,12 +1287,15 @@ class ShellController(
             store.update { it.withDefaultDisplayIsTop(next.primaryIsTop) }
         }
         if (next.sort != model.sort) store.setLibrarySort(next.sort)
-        if (next.themeIndex != model.themeIndex) onTheme(next.themeIndex)
+        if (next.themeIndex != model.themeIndex) {
+            store.setTheme(next.themes[next.themeIndex])
+            onTheme(next.themeIndex)
+        }
         if (next.music != model.music) {
             store.setMusic(next.music.enabled, next.music.volume, next.music.trackId)
             onMusic(next.music)
         }
-        if (next.backgroundPinned && next.backgroundMotion != model.backgroundMotion) {
+        if (next.backgroundPinned && (!model.backgroundPinned || next.backgroundMotion != model.backgroundMotion)) {
             store.setBackgroundMotion(next.backgroundMotion)
         }
         if (next.motionSpeed != model.motionSpeed) {
@@ -1409,17 +1418,20 @@ class ShellController(
 
     private fun syncHome() {
         home.rememberShelf(Shelf.games)
-        val changed = home.remerge(
+        home.remerge(
             shelfItems(),
             appItems(),
             libraryItems,
             homePlatforms(),
             libraryGames,
             unsettled = { id ->
-                libraryOf(id)?.let { it !in settledLibraries } == true || (!moonlightSettled && isMoonlightRemoteKey(id))
+                libraryOf(id)?.let { it !in settledLibraries } == true ||
+                    (!moonlightSettled && isMoonlightRemoteKey(id)) ||
+                    (!installedAppsSettled && id.startsWith("android:")) ||
+                    (GameNativeLibrary.ID !in settledLibraries && id.startsWith("gamenative."))
             },
         )
-        if (changed) store.saveHomeBoard(home.encoded())
+        store.saveHomeBoard(home.encoded())
     }
 
     private fun shelfItems(): List<HomeItem> = Shelf.games.mapNotNull { game ->
@@ -1483,7 +1495,7 @@ class ShellController(
 
     private fun initial(): PickerModel {
         val names = themeNames.ifEmpty { listOf(Copy.builtIn) }
-        val index = if (names.size > 1) 1 else 0
+        val index = store.themeIndex(names)
         val pinned = store.backgroundMotionPinned()
         val motion = if (pinned) {
             store.backgroundMotion()
@@ -1493,9 +1505,7 @@ class ShellController(
         val stored = HomeMusicSetting(store.musicEnabled(), store.musicVolume(), store.musicTrackId())
         val offered = offeredMusicTracks(homeTracks, themeTracks.getOrNull(index))
         val selected = selectedMusicTrack(offered, stored.trackId)
-        if (selected.id != stored.trackId) {
-            store.setMusic(stored.enabled, stored.volume, selected.id)
-        }
+        // Playback can fall back while a track is unavailable without erasing the user's choice.
         syncHome()
         return PickerModel(
             count = home.visibleCount(),

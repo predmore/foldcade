@@ -1286,8 +1286,12 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
             contentResolver.takePersistableUriPermission(uri, read)
         }
         if (player is SaveFolderHolder) {
+            val previous = foldcade.store.playerSaveFolder(player.id)
             player.bindSaveFolder(uri.toString())
             foldcade.store.setPlayerSaveFolder(player.id, uri.toString())
+            if (previous != null && previous != uri.toString()) {
+                foldcade.releaseUnusedFolderGrant(previous, read or write)
+            }
             foldcade.shell.refreshPlayerSaves()
         }
     }
