@@ -28,6 +28,9 @@ abstract class PanelKeyActivity : ComponentActivity() {
 
     protected open fun onCalibrateConfirm(key: PromptKey) = Unit
 
+    /** A form of text rows is open. Its rows take D-pad up and down, which a focused text field would keep. */
+    protected open fun rowsTakeVerticalKeys(): Boolean = false
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         onBackPressedDispatcher.addCallback(
@@ -43,6 +46,17 @@ abstract class PanelKeyActivity : ComponentActivity() {
                 }
             },
         )
+    }
+
+    override fun dispatchKeyEvent(event: KeyEvent): Boolean {
+        val vertical = event.keyCode == KeyEvent.KEYCODE_DPAD_UP || event.keyCode == KeyEvent.KEYCODE_DPAD_DOWN
+        if (vertical && rowsTakeVerticalKeys()) {
+            return when (event.action) {
+                KeyEvent.ACTION_DOWN -> onKeyDown(event.keyCode, event)
+                else -> onKeyUp(event.keyCode, event)
+            }
+        }
+        return super.dispatchKeyEvent(event)
     }
 
     override fun onKeyDown(keyCode: Int, event: KeyEvent): Boolean {

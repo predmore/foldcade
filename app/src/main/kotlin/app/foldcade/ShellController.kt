@@ -130,6 +130,10 @@ class ShellController(
     var connectToken by mutableStateOf("")
         private set
 
+    /** Counts A presses on a connect text field. Each one focuses that field and raises the keyboard. */
+    var typingRequest by mutableStateOf(0)
+        private set
+
     /** Home ids of server games downloading now. Their tiles pulse the cloud. */
     var downloading by mutableStateOf<Set<String>>(emptySet())
         private set
@@ -253,6 +257,10 @@ class ShellController(
             }
             Effect.GoHome -> {
                 goHome()
+                null
+            }
+            Effect.EditField -> {
+                typingRequest++
                 null
             }
             else -> effect

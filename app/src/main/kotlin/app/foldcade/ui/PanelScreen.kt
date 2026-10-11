@@ -20,6 +20,7 @@ import androidx.compose.foundation.Image
 import androidx.core.graphics.drawable.toBitmap
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.focusable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
@@ -171,7 +172,6 @@ import app.foldcade.language.TypeRamp
 import app.foldcade.language.GlowFalloff
 import app.foldcade.language.builtInTheme
 import app.foldcade.language.connectFields
-import app.foldcade.language.connectHint
 import app.foldcade.language.hintFor
 import app.foldcade.language.HintKey
 import app.foldcade.language.PromptKey
@@ -300,11 +300,11 @@ private fun PanelBody(
             when (shown) {
                 null -> Unit
                 Surface.Hero -> if (connectHere) Unit else Hero(app, screen, scale, activity::dispatch)
-                Surface.Picker -> Picker(app, screen, scale, activity::dispatch)
+                Surface.Picker -> Picker(app, screen, scale, activity::dispatch, activity::takeKeyboardFocus)
             }
         }
     }
-    if (connectHere) ConnectScreen(app, screen, activity::dispatch)
+    if (connectHere) ConnectScreen(app, screen, activity::dispatch, activity::takeKeyboardFocus)
 }
 
 /** Dim painted with the content, not a second full-screen node on top of it. */
@@ -1020,6 +1020,7 @@ private fun Picker(
     screen: HostScreen,
     scale: Float,
     onEffect: (Effect?) -> Unit,
+    takeKeyboardFocus: suspend () -> Unit,
 ) {
     val theme = foldTheme()
     val shell = app.shell
@@ -1108,7 +1109,7 @@ private fun Picker(
             }
             PageDots(count = model.count, rows = Metrics.rows, index = model.focus.cellIndex)
             val draft = shell.renameDraft()
-            if (draft != null) RenameField(app, screen, draft)
+            if (draft != null) RenameField(app, screen, draft, takeKeyboardFocus)
             // Under an open menu the blur would smear these. MenuHints draws them above it.
             GridHints(app, Modifier.alpha(if (LocalUnderMenu.current) 0f else 1f))
         }
@@ -1436,18 +1437,15 @@ private fun MenuHints(app: FoldcadeApp) {
 private fun GridHints(app: FoldcadeApp, modifier: Modifier = Modifier) {
     val shell = app.shell
     val model = shell.model
-    val actions = if (model.connectOpen) {
-        connectHint(connectFields(model.connectKind).getOrElse(model.connectIndex) { ConnectField.Token })
-    } else {
-        hintFor(
-            when {
-                model.dialog != null -> HintPlace.Dialog
-                model.panel != null -> HintPlace.Menu
-                !model.atLibraryRoot -> HintPlace.InsidePlatform
-                else -> HintPlace.RootGrid
-            },
-        )
-    }
+    val actions = hintFor(
+        when {
+            model.connectOpen -> HintPlace.Connect
+            model.dialog != null -> HintPlace.Dialog
+            model.panel != null -> HintPlace.Menu
+            !model.atLibraryRoot -> HintPlace.InsidePlatform
+            else -> HintPlace.RootGrid
+        },
+    )
     // The grid's own keys only count while nothing covers it.
     val gridKeys = model.panel == null && model.dialog == null
     val page = model.playActivity?.takeIf { model.dialog == null }?.let { playActivityHints(model) }
@@ -2378,13 +2376,19 @@ private fun DialogAction(label: String, focused: Boolean, onClick: () -> Unit) {
  * keyboard as it opens. The keyboard's Done saves like A; B keeps the old name.
  */
 @Composable
-private fun RenameField(app: FoldcadeApp, screen: HostScreen, draft: String) {
+private fun RenameField(
+    app: FoldcadeApp,
+    screen: HostScreen,
+    draft: String,
+    takeKeyboardFocus: suspend () -> Unit,
+) {
     val theme = foldTheme()
     val focus = remember { FocusRequester() }
     val keyboard = LocalSoftwareKeyboardController.current
     // The draft starts as the old name. The cursor goes after it so typing adds on, and select-all would hide it.
     var field by remember { mutableStateOf(TextFieldValue(draft, TextRange(draft.length))) }
     LaunchedEffect(Unit) {
+        takeKeyboardFocus()
         focus.requestFocus()
         keyboard?.show()
     }
@@ -2415,14 +2419,43 @@ private fun ConnectScreen(
     app: FoldcadeApp,
     screen: HostScreen,
     onEffect: (Effect?) -> Unit,
+    takeKeyboardFocus: suspend () -> Unit,
 ) {
     val theme = foldTheme()
     val model = app.shell.model
     val artKey = model.connectKind == ConnectKind.ArtKey
     val fields = connectFields(model.connectKind)
+    val ringed = fields[model.connectIndex.coerceIn(fields.indices)]
+    val origin = remember { FocusRequester() }
+    val token = remember { FocusRequester() }
+    // Leaving a field parks focus on the form. Cleared focus would land on the first field again.
+    val form = remember { FocusRequester() }
+    val keyboard = LocalSoftwareKeyboardController.current
+    var typingIn by remember { mutableStateOf<ConnectField?>(null) }
+    // Presses from an earlier visit to the form don't count.
+    val opened = remember { app.shell.typingRequest }
+    // A on a text row: the cursor goes into that field and the keyboard comes up.
+    // A again brings the keyboard back after it was put away.
+    LaunchedEffect(app.shell.typingRequest) {
+        if (app.shell.typingRequest == opened) return@LaunchedEffect
+        val field = when (ringed) {
+            ConnectField.Origin -> origin
+            ConnectField.Token -> token
+            ConnectField.Save -> return@LaunchedEffect
+        }
+        takeKeyboardFocus()
+        field.requestFocus()
+        keyboard?.show()
+    }
+    // The D-pad moved the ring off the field being typed in, so typing stops there.
+    LaunchedEffect(ringed) {
+        if (typingIn != null && typingIn != ringed) form.requestFocus()
+    }
     Column(
         Modifier
             .fillMaxSize()
+            .focusRequester(form)
+            .focusable()
             .background(theme.background)
             .padding(px(Metrics.dialogInsetPx)),
         verticalArrangement = Arrangement.spacedBy(px(16f)),
@@ -2442,8 +2475,10 @@ private fun ConnectScreen(
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri, imeAction = ImeAction.Next),
                 modifier = Modifier
                     .fillMaxWidth()
+                    .focusRequester(origin)
                     .chip(focused(model, ConnectField.Origin))
                     .onFocusChanged { state ->
+                        typingIn = typing(typingIn, ConnectField.Origin, state.isFocused)
                         if (state.isFocused) app.shell.touchConnect(fields.indexOf(ConnectField.Origin), screen)
                     }
                     .padding(horizontal = px(20f), vertical = px(10f)),
@@ -2465,11 +2500,14 @@ private fun ConnectScreen(
             visualTransformation = PasswordVisualTransformation(),
             textStyle = text(theme.onBackground, TypeRamp.dialogBody, theme),
             cursorBrush = cursorBrush(theme),
-            keyboardOptions = KeyboardOptions(autoCorrectEnabled = false, imeAction = ImeAction.Done),
+            // A password field to the keyboard too, so it neither shows nor learns the token.
+            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password, imeAction = ImeAction.Done),
             modifier = Modifier
                 .fillMaxWidth()
+                .focusRequester(token)
                 .chip(focused(model, ConnectField.Token))
                 .onFocusChanged { state ->
+                    typingIn = typing(typingIn, ConnectField.Token, state.isFocused)
                     if (state.isFocused) app.shell.touchConnect(fields.indexOf(ConnectField.Token), screen)
                 }
                 .padding(horizontal = px(20f), vertical = px(10f)),
@@ -2487,6 +2525,13 @@ private fun ConnectScreen(
             style = text(theme.muted, TypeRamp.dialogBody, theme),
         )
     }
+}
+
+/** The field taking text after [field] gains or loses focus. */
+private fun typing(current: ConnectField?, field: ConnectField, focused: Boolean): ConnectField? = when {
+    focused -> field
+    current == field -> null
+    else -> current
 }
 
 private fun focused(model: app.foldcade.language.PickerModel, field: ConnectField): Boolean {
