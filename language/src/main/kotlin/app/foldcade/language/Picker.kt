@@ -69,6 +69,9 @@ enum class DialogKind {
     MissingPlayer,
     ClosePlayer,
     SaveFolder,
+
+    /** Android's "Modify system settings" access, for the R1 brightness slider. */
+    Brightness,
 }
 
 enum class DialogButton {
@@ -258,33 +261,35 @@ sealed interface Row {
     data object RemoveTile : Row
     data object AddToHome : Row
     data class QuickTile(val setting: QuickSetting) : Row
+
+    /** The R1 slider for the top screen's brightness. */
+    data object Brightness : Row
     data object ButtonLabels : Row
     data object Licenses : Row
     data object Settings : Row
 }
 
 /** The R1 quick settings are one row of round buttons. Text rows above them stay full width. */
-const val quickTileColumns = 7
+const val quickTileColumns = 4
 
+/**
+ * The Android screens R1 opens. Only what a Thor owner reaches for: the slider
+ * replaces Display, the hardware buttons set the volume, and Foldcade's own
+ * settings are on L1.
+ */
 enum class QuickSetting {
     Wifi,
     Bluetooth,
-    Display,
-    Sound,
     Battery,
-    AppInfo,
 
-    /** Foldcade's own Settings page, not an Android screen. */
+    /** Android's Settings app. */
     Settings,
 }
 
 fun quickSettings(): List<QuickSetting> = listOf(
     QuickSetting.Wifi,
     QuickSetting.Bluetooth,
-    QuickSetting.Display,
-    QuickSetting.Sound,
     QuickSetting.Battery,
-    QuickSetting.AppInfo,
     QuickSetting.Settings,
 )
 
@@ -302,11 +307,7 @@ enum class AndroidSetting {
 fun QuickSetting.androidSetting(): AndroidSetting = when (this) {
     QuickSetting.Wifi -> AndroidSetting.Wifi
     QuickSetting.Bluetooth -> AndroidSetting.Bluetooth
-    QuickSetting.Display -> AndroidSetting.Display
-    QuickSetting.Sound -> AndroidSetting.Sound
     QuickSetting.Battery -> AndroidSetting.Battery
-    QuickSetting.AppInfo -> AndroidSetting.AppInfo
-    // Opens the Settings page instead (see activateRow). Android settings are on that page.
     QuickSetting.Settings -> AndroidSetting.Settings
 }
 
@@ -371,7 +372,9 @@ fun libraryRows(
         listOf(Row.AddFolder, Row.Connect) +
         folders.map { Row.ForgetFolder(it.uri, it.label) }
 
+/** R1: brightness first, so R1 then left or right changes it. Then notices, then Android's screens. */
 fun rightRows(notices: List<FoldNotice>): List<Row> = buildList {
+    add(Row.Brightness)
     notices.forEach { add(Row.Notice(it.id)) }
     quickSettings().forEach { add(Row.QuickTile(it)) }
 }
@@ -419,6 +422,13 @@ fun actionRows(tile: TileActions?, app: AppActions?): List<Row> = buildList {
             add(Row.HideApp)
         }
     }
+}
+
+/** The hint word for the focused menu row when it is a slider, or null. */
+fun panelSlider(model: PickerModel): String? {
+    val panel = model.panel ?: return null
+    val row = panelRows(panel, model).getOrNull(panel.index)
+    return BrightnessCopy.adjust.takeIf { row == Row.Brightness && model.brightnessAllowed }
 }
 
 fun destinationRows(tile: TileActions?): List<Row> =
@@ -474,12 +484,13 @@ fun rowText(row: Row, model: PickerModel): RowText = when (row) {
         when (row.setting) {
             QuickSetting.Wifi -> Copy.wifi
             QuickSetting.Bluetooth -> Copy.bluetooth
-            QuickSetting.Display -> Copy.display
-            QuickSetting.Sound -> Copy.sound
             QuickSetting.Battery -> Copy.battery
-            QuickSetting.AppInfo -> Copy.appInfo
-            QuickSetting.Settings -> SettingsCopy.title
+            QuickSetting.Settings -> Copy.androidSettings
         },
+    )
+    Row.Brightness -> RowText(
+        BrightnessCopy.row,
+        if (model.brightnessAllowed) BrightnessCopy.percent(model.brightness) else BrightnessCopy.allow,
     )
     Row.AddFolder -> RowText(Copy.addFolder)
     Row.Connect -> RowText(Copy.connectRomm)
@@ -651,6 +662,10 @@ data class PickerModel(
     /** A SteamGridDB key is saved. */
     val artKeySaved: Boolean = false,
     val connectKind: ConnectKind = ConnectKind.Romm,
+    /** The top screen's brightness as a slider position, 0 to 100. See [brightnessLevel]. */
+    val brightness: Int = 50,
+    /** Android lets Foldcade write the brightness setting. */
+    val brightnessAllowed: Boolean = false,
 )
 
 fun reduce(
@@ -1002,13 +1017,18 @@ private fun applyPanel(
 }
 
 /**
- * Left and right step a value and keep the row. Music volume moves by 5 points.
- * The track row cycles the offered tracks. Other rows ignore the direction
- * so the panel focus stays put.
+ * Left and right step a value and keep the row. Music volume moves by 5 points,
+ * and so does brightness, or it asks for access first. The track row cycles the
+ * offered tracks. Other rows ignore the direction so the panel focus stays put.
  */
 private fun adjustRow(model: PickerModel, row: Row, direction: Int): PickerModel? {
     return when (row) {
         Row.MusicVolume -> model.copy(music = model.music.nudged(direction))
+        Row.Brightness -> if (model.brightnessAllowed) {
+            model.copy(brightness = steppedBrightness(model.brightness, direction))
+        } else {
+            model.copy(dialog = brightnessPrompt())
+        }
         Row.MusicTrack -> model.withTrack(cycledMusicTrack(offeredTracks(model), model.music.trackId, direction))
         else -> null
     }
@@ -1145,10 +1165,12 @@ private fun activateRow(
         Row.AndroidSettings -> model.copy(panel = panel) to Effect.OpenAndroidSetting(AndroidSetting.Settings)
         Row.Licenses -> model.copy(panel = panel) to Effect.OpenLicenses
         Row.DefaultHomeApp -> model.copy(panel = panel) to Effect.OpenAndroidSetting(AndroidSetting.Home)
-        is Row.QuickTile -> if (row.setting == QuickSetting.Settings) {
-            model.copy(panel = null, settings = SettingsPage(screen = panel.screen, grid = panel.grid)) to null
+        is Row.QuickTile -> model.copy(panel = panel) to Effect.OpenAndroidSetting(row.setting.androidSetting())
+        // Left and right move the slider. A asks for access, and does nothing once it is granted.
+        Row.Brightness -> if (model.brightnessAllowed) {
+            model.copy(panel = panel) to null
         } else {
-            model.copy(panel = panel) to Effect.OpenAndroidSetting(row.setting.androidSetting())
+            model.copy(panel = panel, dialog = brightnessPrompt()) to null
         }
         Row.AddFolder ->
             if (model.folderGrantPending) {

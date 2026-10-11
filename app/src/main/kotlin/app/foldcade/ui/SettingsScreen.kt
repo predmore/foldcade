@@ -121,14 +121,14 @@ internal fun SettingsScreen(app: FoldcadeApp, screen: HostScreen, onEffect: (Eff
                     val focused = page.onRows && index == page.row
                     val parts = rowText(row, model)
                     if (row == Row.MusicVolume) {
-                        MusicVolumeRow(
+                        SliderRow(
                             label = parts.label,
                             value = parts.value.orEmpty(),
-                            volume = model.music.volume,
+                            fraction = model.music.volume,
                             focused = focused,
                             interactive = true,
                             onStep = { onEffect(app.shell.touchSettingsRow(index, screen)) },
-                            onVolume = app.shell::setMusicVolume,
+                            onFraction = app.shell::setMusicVolume,
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .keepVisible(focused)

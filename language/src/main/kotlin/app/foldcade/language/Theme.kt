@@ -91,10 +91,7 @@ object Copy {
     const val androidSettings = "Android settings"
     const val defaultHomeApp = "Default home app"
     const val bluetooth = "Bluetooth"
-    const val display = "Display"
-    const val sound = "Sound"
     const val battery = "Battery"
-    const val appInfo = "App info"
     const val builtIn = "Built-in"
     const val primaryPanel = "Primary panel"
     const val top = "Top"
@@ -258,6 +255,8 @@ fun gridHints(
     faceMap: FaceMap,
     screens: Boolean = false,
     options: Boolean = false,
+    /** The focused menu row is a slider. Left and right move it and A does nothing. */
+    slider: String? = null,
 ): List<HintKey> {
     val confirm = promptKeyOf(faceMap.confirmKey) ?: PromptKey.FaceA
     val back = promptKeyOf(faceMap.backKey) ?: PromptKey.FaceB
@@ -280,7 +279,9 @@ fun gridHints(
         )
         HomeKeys.AllLibrary -> launch + menu + HintKey(back, Copy.back)
         HomeKeys.Idle -> buildList {
-            if (launch.isNotEmpty()) {
+            if (slider != null) {
+                add(HintKey(PromptKey.DpadSides, slider))
+            } else if (launch.isNotEmpty()) {
                 addAll(launch)
             } else if (actions?.confirm == true) {
                 add(HintKey(confirm, Copy.confirm))
