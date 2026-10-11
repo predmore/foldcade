@@ -125,12 +125,12 @@ class ContractTest {
     }
 
     @Test
-    fun focusDoesNotWrapAndUpReachesTheStatusIsland() {
+    fun focusDoesNotWrapAndUpReachesThePillOnThatSide() {
         val model = PickerModel(count = 6, rowsPerPage = 1)
         val rightEdge = reduce(model.copy(focus = GridFocus(cellIndex = 3, lastColumn = 3)), Meaning.MoveRight).first
         assertEquals(3, rightEdge.focus.cellIndex)
         val up = reduce(model.copy(focus = GridFocus(cellIndex = 1, lastColumn = 1)), Meaning.MoveUp).first
-        assertEquals(Chrome.StatusCluster, up.focus.chrome)
+        assertEquals(Chrome.LeftIsland, up.focus.chrome)
         val cluster = reduce(model.copy(focus = GridFocus(cellIndex = 3, lastColumn = 3)), Meaning.MoveUp).first
         assertEquals(Chrome.StatusCluster, cluster.focus.chrome)
     }
@@ -158,7 +158,7 @@ class ContractTest {
         val model = PickerModel(count = 6, rowsPerPage = 1, focus = focus, tileActions = tile)
         val open = reduce(model, Meaning.Options).first
         val panel = open.panel!!
-        assertEquals(Side.Right, panel.side)
+        assertEquals(Side.Left, panel.side)
         assertEquals(PanelLevel.Actions, panel.level)
         assertEquals(
             listOf(Row.MoveTile, Row.MoveTileTo, Row.NewFolder, Row.RemoveTile),
@@ -270,7 +270,8 @@ class ContractTest {
         assertEquals(onPrimary.settings, primary.settings)
         val theme = reduce(root.onSetting(Row.Theme), Meaning.Activate).first
         assertEquals(1, theme.themeIndex)
-        val child = reduce(opened, Meaning.Activate).first
+        val sources = opened.copy(panel = opened.panel!!.copy(index = leftRows().indexOf(Row.Library)))
+        val child = reduce(sources, Meaning.Activate).first
         assertEquals(PanelLevel.Library, child.panel?.level)
         val (folder, add) = reduce(child, Meaning.Activate)
         assertNull(add)
@@ -336,7 +337,7 @@ class ContractTest {
     fun downFromChromeReturnsToTheColumnThatHadACell() {
         val model = PickerModel(count = 6, rowsPerPage = 2)
         val chrome = reduce(model.copy(focus = GridFocus(cellIndex = 1, lastColumn = 1)), Meaning.MoveUp).first
-        assertEquals(Chrome.StatusCluster, chrome.focus.chrome)
+        assertEquals(Chrome.LeftIsland, chrome.focus.chrome)
         val back = reduce(chrome, Meaning.MoveDown).first
         assertNull(back.focus.chrome)
         assertEquals(1, back.focus.cellIndex)

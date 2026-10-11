@@ -158,7 +158,11 @@ class FoldcadeApp : Application() {
 
     /** The external player session opened by the host launch path. */
     val externalPlay = ExternalPlay()
-    var companionLaunched: Boolean = false
+    /** The bottom screen's [CompanionHomeActivity] exists. Android can destroy it on its own. */
+    var companionAlive: Boolean = false
+
+    /** A start for it is on its way, so a second resume does not start another. */
+    var companionStarting: Boolean = false
 
     /** True only for the process that first recorded a launch. Calibration waits for the next one. */
     var buttonPromptFirstSession: Boolean = false

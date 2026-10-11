@@ -23,8 +23,8 @@ class HomeMusicSettingTest {
     fun leftPanelKeepsMusicBesideTheOtherSettings() {
         assertEquals(
             listOf(
-                Row.Library, Row.AllLibrary, Row.Arrange,
-                Row.AndroidGames, Row.Apps, Row.HiddenApps, Row.Settings,
+                Row.PlayActivity, Row.Home, Row.AllLibrary, Row.AndroidGames, Row.Apps,
+                Row.EditHome, Row.Library, Row.Settings,
             ),
             leftRows(),
         )

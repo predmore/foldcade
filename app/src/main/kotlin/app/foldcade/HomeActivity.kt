@@ -196,7 +196,7 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
             Effect.PinApp, Effect.MoveApp, Effect.HideApp, Effect.ShowApp -> Unit
             // The shell applies Y's tile actions itself and hands back null; these never arrive.
             Effect.MoveTile, is Effect.MoveTileTo, Effect.NewFolder, Effect.RenameFolder,
-            Effect.ChooseFolderIcon, Effect.RemoveTile, Effect.AddToHome,
+            Effect.ChooseFolderIcon, Effect.RemoveTile, Effect.AddToHome, Effect.GoHome,
             -> Unit
             Effect.OpenAll -> foldcade.shell.openHomeAll()
             Effect.ToggleAddNew -> foldcade.shell.applyHomeAddNew(foldcade.shell.model.addNewToHome)
@@ -264,6 +264,7 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
         }
         resumed = true
         refreshShellVisible()
+        if (launchesCompanion) launchCompanionIfNeeded()
         foldcade.reloadInstalledApps()
         refreshFacePrompt()
         displays.panelFor(this, foldcade.store.session.defaultDisplayIsTop)?.let(foldcade.music::onHomeResume)
@@ -271,6 +272,27 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
         foldcade.refreshBrightness()
         foldcade.refreshNoticeAccess()
         reconcileUsage()
+    }
+
+    override fun onStop() {
+        super.onStop()
+        noteCovered()
+    }
+
+    /**
+     * Another app now covers this screen while Foldcade thought it was showing.
+     * It might come from Recents, another launcher, or a notification. The session
+     * marks this screen taken, so the other screen shows the grid instead of a hero
+     * for a grid nobody can see. Foldcade's own launches mark their screen first,
+     * and coming back to the front clears it ([Session.foldcadeResumed]).
+     */
+    private fun noteCovered() {
+        if (isChangingConfigurations || isFinishing) return
+        // Sleep stops the activity too. That is not another app.
+        if (display?.state != Display.STATE_ON) return
+        val panel = displays.panelFor(this, foldcade.store.session.defaultDisplayIsTop) ?: return
+        if (foldcade.store.session.surfaceOn(panel) == null) return
+        foldcade.store.place(panel, ExternalApp(OTHER_APP_ID))
     }
 
     override fun onPause() {
@@ -378,11 +400,16 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
         foldcade.store.update { it.home(panel) }
     }
 
+    /**
+     * Starts the other screen's Foldcade when it does not exist: at first launch, and
+     * again if Android destroyed it. One that exists behind another app is left there;
+     * [noteCovered] hands the grid to this screen instead.
+     */
     private fun launchCompanionIfNeeded() {
-        if (foldcade.companionLaunched) return
+        if (foldcade.companionAlive || foldcade.companionStarting) return
         val assignment = displays.assignment(foldcade.store.session.defaultDisplayIsTop)
         val other = assignment.allIds().firstOrNull { it != Display.DEFAULT_DISPLAY } ?: return
-        foldcade.companionLaunched = true
+        foldcade.companionStarting = true
         val intent = Intent(this, CompanionHomeActivity::class.java)
             .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
         val options = ActivityOptions.makeBasic().apply { launchDisplayId = other }
@@ -912,9 +939,10 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
             Panel.Bottom -> assignment.bottomDisplayId ?: return
         }
         val pkg = foldcade.shell.model.notices.firstOrNull { it.id == key }?.packageName
-        if (!listener.open(key, displayId)) return
-        foldcade.music.onExternalLaunch()
-        foldcade.store.place(panel, ExternalApp("notice:${pkg ?: key}"))
+        listener.open(key, displayId) {
+            foldcade.music.onExternalLaunch()
+            foldcade.store.place(panel, ExternalApp("notice:${pkg ?: key}"))
+        }
     }
 
     /** The first of [intents] this device can open. */
@@ -1301,6 +1329,9 @@ private fun shelfGame(game: ShelfGame): Game = Game(
     label = game.title,
 )
 
+/** The session's id for an app Foldcade did not open. */
+internal const val OTHER_APP_ID = "android:other"
+
 internal const val EXTRA_ANDROID_SHELF = "app.foldcade.extra.SHELF"
 internal const val EXTRA_FOLDER_LIBRARY = "app.foldcade.extra.FOLDER_LIBRARY"
 
@@ -1383,6 +1414,18 @@ class PrimaryHomeActivity : FoldcadeHomeActivity() {
 
 class CompanionHomeActivity : FoldcadeHomeActivity() {
     override val launchesCompanion: Boolean = false
+
+    override fun onCreate(savedInstanceState: Bundle?) {
+        val app = application as FoldcadeApp
+        app.companionAlive = true
+        app.companionStarting = false
+        super.onCreate(savedInstanceState)
+    }
+
+    override fun onDestroy() {
+        if (!isChangingConfigurations) (application as FoldcadeApp).companionAlive = false
+        super.onDestroy()
+    }
 }
 
 internal fun inputDeviceKey(activity: Activity): String {

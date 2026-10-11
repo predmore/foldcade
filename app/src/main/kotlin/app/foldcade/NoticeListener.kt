@@ -76,21 +76,21 @@ class NoticeListener : NotificationListenerService() {
     }
 
     /**
-     * Sends the notice's own intent onto [displayId]. True when it opened an
-     * activity, so the caller can mark that screen as taken. A notice that
-     * cancels itself on open goes, as it would from the shade.
+     * Sends the notice's own intent onto [displayId]. When it opens an activity,
+     * [placing] runs first, so the screen is marked taken before Foldcade leaves
+     * it. A notice that cancels itself on open goes, as it would from the shade.
      */
-    fun open(key: String, displayId: Int): Boolean {
-        val sbn = activeNotifications.orEmpty().firstOrNull { it.key == key } ?: return false
-        val intent = sbn.notification.contentIntent ?: return false
+    fun open(key: String, displayId: Int, placing: () -> Unit) {
+        val sbn = activeNotifications.orEmpty().firstOrNull { it.key == key } ?: return
+        val intent = sbn.notification.contentIntent ?: return
+        if (intent.isActivity) placing()
         val options = ActivityOptions.makeBasic().apply { launchDisplayId = displayId }
         try {
             intent.send(this, 0, null, null, null, null, options.toBundle())
         } catch (_: PendingIntent.CanceledException) {
-            return false
+            return
         }
         if (sbn.notification.flags and Notification.FLAG_AUTO_CANCEL != 0) cancelNotification(key)
-        return intent.isActivity
     }
 
     companion object {

@@ -18,6 +18,7 @@ import app.foldcade.language.LaunchableApp
 import app.foldcade.language.Meaning
 import app.foldcade.language.Row
 import app.foldcade.language.leftRows
+import app.foldcade.language.panelRows
 import java.io.File
 import kotlinx.coroutines.Dispatchers
 import org.junit.Assert.assertEquals
@@ -121,8 +122,11 @@ class AndroidShelfHostTest {
         assertEquals(HomeGrid.AndroidGames, shell.model.homeGrid)
         assertEquals(listOf("Settings", "Example"), titles(shell))
 
+        // Hidden apps are under Edit home.
         shell.onMeaning(Meaning.LeftPanel, HostScreen.Bottom)
-        val hiddenIndex = leftRows().indexOf(Row.HiddenApps)
+        repeat(leftRows().indexOf(Row.EditHome)) { shell.onMeaning(Meaning.MoveDown, HostScreen.Bottom) }
+        shell.onMeaning(Meaning.Activate, HostScreen.Bottom)
+        val hiddenIndex = panelRows(shell.model.panel!!, shell.model).indexOf(Row.HiddenApps)
         repeat(hiddenIndex) { shell.onMeaning(Meaning.MoveDown, HostScreen.Bottom) }
         shell.onMeaning(Meaning.Activate, HostScreen.Bottom)
         assertEquals(listOf("Azahar"), titles(shell))

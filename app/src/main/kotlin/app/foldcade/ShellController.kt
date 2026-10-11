@@ -241,12 +241,16 @@ class ShellController(
                 applyHomeAddNew(next.addNewToHome)
                 null
             }
+            Effect.GoHome -> {
+                goHome()
+                null
+            }
             else -> effect
         }
     }
 
     fun homeKeys(): app.foldcade.language.HomeKeys {
-        if (model.dialog != null || model.panel != null || model.connectOpen) {
+        if (model.dialog != null || model.panel != null || model.playActivity != null || model.connectOpen) {
             return app.foldcade.language.HomeKeys.Idle
         }
         if (model.libraryGrid || model.homeGrid != HomeGrid.StandIns) {
@@ -315,6 +319,21 @@ class ShellController(
         showBoard(GridFocus(cellIndex = index, lastColumn = index % Metrics.columns), keepDialog = true)
         return null
     }
+
+    /** L1's Home: the board's top level, from a folder, All, or a shelf. The last root tile keeps the focus. */
+    fun goHome() {
+        val index = home.showRoot()
+        syncHome()
+        showBoard(GridFocus(cellIndex = index, lastColumn = index % Metrics.columns), keepDialog = true)
+        Log.i("Foldcade", "library-ui home")
+    }
+
+    /** A game's name for the Play activity page, wherever it lives. Null for one Foldcade no longer knows. */
+    fun playTitle(gameId: String): String? =
+        home.catalog().firstOrNull { it.id == gameId }?.title
+            ?: home.game(gameId)?.label
+            ?: Shelf.games.firstOrNull { it.id == gameId }?.title
+            ?: installed.firstOrNull { androidHomeId(it.packageName) == gameId }?.label
 
     fun openHomeAll() {
         home.showAll()
@@ -717,6 +736,12 @@ class ShellController(
         if (page.screen != screen) return null
         publish(model.copy(settings = page.copy(row = index, onRows = true)))
         return onMeaning(Meaning.Activate, screen)
+    }
+
+    /** A tap on the Play activity page's back pill. */
+    fun closePlayActivity() {
+        val page = model.playActivity ?: return
+        publish(model.copy(playActivity = null, focus = page.grid))
     }
 
     fun closeSettings(): Effect? {
@@ -1270,7 +1295,8 @@ class ShellController(
         !snapshot.libraryGrid && snapshot.homeGrid == HomeGrid.StandIns
 
     private fun homeActive(): Boolean =
-        showingHome() && model.dialog == null && model.panel == null && model.settings == null && !model.connectOpen
+        showingHome() && model.dialog == null && model.panel == null && model.settings == null &&
+            model.playActivity == null && !model.connectOpen
 
     private fun showBoard(focus: GridFocus, keepDialog: Boolean) {
         val count = home.visibleCount()

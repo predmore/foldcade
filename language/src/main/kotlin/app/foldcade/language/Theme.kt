@@ -86,7 +86,8 @@ object Copy {
     const val motionOff = "Off"
     const val speedSlow = "Slow"
     const val speedSlower = "Slower"
-    const val arrange = "Arrange"
+    const val home = "Home"
+    const val editHome = "Edit home"
     const val setAsHome = "Set as Home"
     const val androidSettings = "Android settings"
     const val defaultHomeApp = "Default home app"
@@ -162,6 +163,8 @@ object Copy {
     const val androidGames = "Android Games"
     const val apps = "Apps"
     const val hiddenApps = "Hidden"
+    /** The Edit home row that opens the Hidden grid. */
+    const val hiddenAppsRow = "Hidden apps"
     const val noApps = "No apps"
     const val noHiddenApps = "No hidden apps"
     const val pin = "Pin"

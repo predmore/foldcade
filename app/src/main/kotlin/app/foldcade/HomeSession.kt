@@ -24,6 +24,7 @@ import app.foldcade.language.Metrics
 import app.foldcade.language.addToHome
 import app.foldcade.language.allItems
 import app.foldcade.language.allLabels
+import app.foldcade.language.cancelHold
 import app.foldcade.language.closeAll
 import app.foldcade.language.closeFolder
 import app.foldcade.language.folderAround
@@ -326,6 +327,14 @@ class HomeSession(raw: String?) {
 
     private fun addFolderFor(item: HomeItem): String? =
         board.destinationFolderId ?: homeFolderFor(board, item, platforms)
+
+    /** Leaves any folder, All, a lifted tile, or a name field. Returns the root tile to focus. */
+    fun showRoot(): Int {
+        renamingId = null
+        iconPick = null
+        board = closeAll(closeFolder(cancelHold(board)))
+        return rootIndex
+    }
 
     fun showAll() {
         renamingId = null
