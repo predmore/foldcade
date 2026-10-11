@@ -240,6 +240,9 @@ sealed interface Row {
     data object DefaultHomeApp : Row
     data object AddFolder : Row
     data object Connect : Row
+
+    /** Another RomM server. Shown once one is signed in. The connect form is the same. */
+    data object AddRomm : Row
     data class Notice(val id: String) : Row
 
     /** Shown in R1 until Foldcade may read notifications. A asks. */
@@ -406,11 +409,15 @@ fun connectFields(kind: ConnectKind = ConnectKind.Romm): List<ConnectField> = wh
 fun libraryRows(
     signedIn: List<SignedInBackend> = emptyList(),
     folders: List<LibraryFolder> = emptyList(),
-): List<Row> =
+): List<Row> {
+    // A host-minted RomM copy is `romm#2`. The default stays `romm`.
+    val another = signedIn.any { it.pluginId == "romm" || it.pluginId.startsWith("romm#") }
     // Removing a folder comes after adding one, so the first row is never the one that drops a library.
-    signedIn.map { Row.SignOut(it.pluginId, it.label) } +
+    return signedIn.map { Row.SignOut(it.pluginId, it.label) } +
         listOf(Row.AddFolder, Row.Connect) +
+        (if (another) listOf(Row.AddRomm) else emptyList()) +
         folders.map { Row.ForgetFolder(it.uri, it.label) }
+}
 
 /**
  * R1: Android's screens on top, then brightness, then the notices, newest first.
@@ -563,6 +570,7 @@ fun rowText(row: Row, model: PickerModel): RowText = when (row) {
     )
     Row.AddFolder -> RowText(Copy.addFolder)
     Row.Connect -> RowText(Copy.connectRomm)
+    Row.AddRomm -> RowText(Copy.addRommServer)
     is Row.SignOut -> RowText("${Copy.signOut} · ${row.label}")
     is Row.ForgetFolder -> RowText("${Copy.removeFolder} · ${row.label}")
     is Row.Notice -> RowText(model.notices.firstOrNull { it.id == row.id }?.title ?: "")
@@ -622,6 +630,9 @@ sealed interface Effect {
     data object TryAgain : Effect
     data object AddFolder : Effect
     data object OpenConnect : Effect
+
+    /** The connect form for a server besides the default. The fields are the same. */
+    data object OpenAddRomm : Effect
     data object OpenArtKey : Effect
     data object SaveArtKey : Effect
     data object ForgetArtKey : Effect
@@ -757,6 +768,8 @@ data class PickerModel(
     /** A SteamGridDB key is saved. */
     val artKeySaved: Boolean = false,
     val connectKind: ConnectKind = ConnectKind.Romm,
+    /** The open RomM form is adding a server besides the default instance. */
+    val connectAnother: Boolean = false,
     /** The top screen's brightness as a slider position, 0 to 100. See [brightnessLevel]. */
     val brightness: Int = 50,
     /** Android lets Foldcade write the brightness setting. */
@@ -1038,6 +1051,7 @@ private fun activate(model: PickerModel, screen: HostScreen, onBottom: Boolean =
                         connectScreen = screen,
                         connectIndex = 0,
                         connectKind = ConnectKind.Romm,
+                        connectAnother = false,
                     ) to Effect.OpenConnect
                 }
             }
@@ -1317,7 +1331,19 @@ private fun activateRow(
             connectScreen = screen,
             connectIndex = 0,
             connectKind = ConnectKind.Romm,
+            connectAnother = false,
         ) to Effect.OpenConnect
+        Row.AddRomm -> model.copy(
+            panel = null,
+            focus = panel.grid,
+            connectOpen = true,
+            connectScreen = screen,
+            connectOrigin = "",
+            connectIndex = 0,
+            connectKind = ConnectKind.Romm,
+            connectHint = null,
+            connectAnother = true,
+        ) to Effect.OpenAddRomm
         is Row.SignOut -> model.copy(panel = null, focus = panel.grid) to Effect.ForgetCredentials(row.pluginId)
         is Row.ForgetFolder -> model.copy(panel = null, focus = panel.grid) to Effect.ForgetFolder(row.uri)
         is Row.Notice -> openNotice(model, panel, row.id, onBottom = false, screen = screen)

@@ -105,6 +105,8 @@ object Copy {
     const val bottom = "Bottom"
     const val addFolder = "Add a folder"
     const val connectRomm = "Connect RomM"
+    /** A second server. The row opens the same connect form as [connectRomm]. */
+    const val addRommServer = "Add a RomM server"
     const val signOut = "Sign out / forget credentials"
     const val removeFolder = "Remove folder"
     const val clientApiToken = "Client API token"
