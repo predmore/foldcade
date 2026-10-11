@@ -118,16 +118,13 @@ class HomeSession(raw: String?) {
         platformList: List<HomePlatform>,
         remembered: Map<String, Game> = emptyMap(),
         unsettled: (String) -> Boolean = { false },
-    ): Boolean {
+    ) {
         shelf = shelfItems
         apps = appItems
         library = libraryItems
         platforms = platformList
         remembered.forEach { (id, game) -> games[id] = game }
-        val next = mergeHome(board, catalog(), platforms, unsettled)
-        val changed = next != board
-        board = next
-        return changed
+        board = mergeHome(board, catalog(), platforms, unsettled)
     }
 
     fun asShelf(face: HomeFace): ShelfGame {
