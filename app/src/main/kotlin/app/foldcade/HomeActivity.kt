@@ -212,6 +212,9 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
             is Effect.OpenAndroidSetting -> openAndroidSetting(effect.setting)
             Effect.OpenLicenses -> startActivity(Intent(this, LicensesActivity::class.java))
             Effect.DismissButtonLabels -> Unit
+            is Effect.OpenNotice -> openNotice(effect.id, if (effect.onBottom) Panel.Bottom else Panel.Top)
+            is Effect.DismissNotice -> foldcade.dismissNotice(effect.id)
+            Effect.ClearNotices -> foldcade.clearNotices()
             null -> Unit
         }
     }
@@ -266,6 +269,7 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
         displays.panelFor(this, foldcade.store.session.defaultDisplayIsTop)?.let(foldcade.music::onHomeResume)
         foldcade.refreshMoonlightShelf()
         foldcade.refreshBrightness()
+        foldcade.refreshNoticeAccess()
         reconcileUsage()
     }
 
@@ -893,6 +897,38 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
         }
     }
 
+    /**
+     * Opens a notice's app on [requested], or the other screen when a game holds it,
+     * the way an app from the grid opens. A notice that only runs a service or a
+     * broadcast leaves both screens to Foldcade.
+     */
+    private fun openNotice(key: String, requested: Panel) {
+        val listener = NoticeListener.connected ?: return
+        val session = foldcade.store.session
+        val panel = session.singleScreenTarget(requested) ?: return
+        val assignment = displays.assignment(session.defaultDisplayIsTop)
+        val displayId = when (panel) {
+            Panel.Top -> assignment.topDisplayId
+            Panel.Bottom -> assignment.bottomDisplayId ?: return
+        }
+        val pkg = foldcade.shell.model.notices.firstOrNull { it.id == key }?.packageName
+        if (!listener.open(key, displayId)) return
+        foldcade.music.onExternalLaunch()
+        foldcade.store.place(panel, ExternalApp("notice:${pkg ?: key}"))
+    }
+
+    /** The first of [intents] this device can open. */
+    private fun startFirst(intents: List<Intent>) {
+        for (intent in intents) {
+            try {
+                startActivity(intent)
+                return
+            } catch (_: ActivityNotFoundException) {
+                continue
+            }
+        }
+    }
+
     private fun hostScreen(): HostScreen {
         val panel = displays.panelFor(this, foldcade.store.session.defaultDisplayIsTop)
         return if (panel == Panel.Top) HostScreen.Top else HostScreen.Bottom
@@ -956,6 +992,10 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
             DialogKind.Brightness -> if (effect.button == DialogButton.Allow) {
                 startActivity(foldcade.brightness.accessIntent())
             }
+            DialogKind.NoticeAccess -> if (effect.button == DialogButton.Allow) {
+                startFirst(NoticeListener.accessIntents(this))
+            }
+            DialogKind.Notice -> Unit
             DialogKind.UsageAccess -> {
                 foldcade.store.setUsagePromptOffered()
                 if (effect.button == DialogButton.Allow) {
@@ -1220,12 +1260,15 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
                 foldcade.saveFlow.withLock {
                     val saves = foldcade.playerSaves
                     val observed = saves.changedSince(pending.libraryId, pending.game, pending.player, pending.spots)
-                    foldcade.plugins.reconcile(
+                    val result = foldcade.plugins.reconcile(
                         pending.libraryId,
                         pending.game,
                         pending.player,
                         observed,
                     )
+                    saveNotice(pending.game, result.outcome)?.let { notice ->
+                        withContext(Dispatchers.Main.immediate) { foldcade.postNotice(notice) }
+                    }
                     saves.noteHandedOver(pending.libraryId, pending.game, pending.player, pending.spots, observed)
                     foldcade.store.setPendingSaveReturn(pending.storeKey, null)
                 }

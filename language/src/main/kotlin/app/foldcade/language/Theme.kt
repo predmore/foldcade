@@ -255,8 +255,6 @@ fun gridHints(
     faceMap: FaceMap,
     screens: Boolean = false,
     options: Boolean = false,
-    /** The focused menu row is a slider. Left and right move it and A does nothing. */
-    slider: String? = null,
 ): List<HintKey> {
     val confirm = promptKeyOf(faceMap.confirmKey) ?: PromptKey.FaceA
     val back = promptKeyOf(faceMap.backKey) ?: PromptKey.FaceB
@@ -279,9 +277,7 @@ fun gridHints(
         )
         HomeKeys.AllLibrary -> launch + menu + HintKey(back, Copy.back)
         HomeKeys.Idle -> buildList {
-            if (slider != null) {
-                add(HintKey(PromptKey.DpadSides, slider))
-            } else if (launch.isNotEmpty()) {
+            if (launch.isNotEmpty()) {
                 addAll(launch)
             } else if (actions?.confirm == true) {
                 add(HintKey(confirm, Copy.confirm))

@@ -28,6 +28,9 @@ enum class Meaning {
     Options,
     LetterForward,
     LetterBackward,
+
+    /** Delete on a keyboard. Removes the focused notice in R1, as Y does. */
+    Dismiss,
 }
 
 /** Extra keys that exist only on the home grid. Idle keeps the shared map. */
@@ -80,6 +83,8 @@ fun meaningOf(
             Meaning.ActivateBottom
         keyCode == KeyEvent.KEYCODE_BUTTON_Y && (homeKeys == HomeKeys.Idle || homeKeys == HomeKeys.AllLibrary) ->
             Meaning.Options
+        (keyCode == KeyEvent.KEYCODE_DEL || keyCode == KeyEvent.KEYCODE_FORWARD_DEL) &&
+            homeKeys != HomeKeys.Renaming -> Meaning.Dismiss
         keyCode == KeyEvent.KEYCODE_BUTTON_L2 && homeKeys == HomeKeys.AllLibrary -> Meaning.LetterBackward
         keyCode == KeyEvent.KEYCODE_BUTTON_R2 && homeKeys == HomeKeys.AllLibrary -> Meaning.LetterForward
         else -> null

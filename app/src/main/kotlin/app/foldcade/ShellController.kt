@@ -12,6 +12,7 @@ import app.foldcade.plugins.gamenative.steamAppId
 import app.foldcade.plugins.moonlight.MoonlightLibrary
 import app.foldcade.plugins.moonlight.isMoonlightRemoteKey
 import app.foldcade.host.PluginHost
+import app.foldcade.language.FoldNotice
 import app.foldcade.language.brightnessPrompt
 import app.foldcade.language.brightnessLevel
 import app.foldcade.language.brightnessPosition
@@ -763,6 +764,17 @@ class ShellController(
         }
         if (position == model.brightness && allowed == model.brightnessAllowed) return
         model = model.copy(brightness = position, brightnessAllowed = allowed)
+    }
+
+    /** R1's notices, newest first. A notice that went away while focused leaves the focus on the next. */
+    fun setNotices(notices: List<FoldNotice>) {
+        if (notices == model.notices) return
+        model = model.copy(notices = notices)
+    }
+
+    fun setNoticeAccess(ask: Boolean) {
+        if (ask == model.askNoticeAccess) return
+        model = model.copy(askNoticeAccess = ask)
     }
 
     fun setUsageGranted(granted: Boolean) {

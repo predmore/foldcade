@@ -38,6 +38,9 @@ import app.foldcade.artwork.SteamGridDb
 import app.foldcade.artwork.SteamStoreArt
 import app.foldcade.net.PublicHttps
 import coil3.ImageLoader
+import android.service.notification.NotificationListenerService
+import app.foldcade.language.FoldNotice
+import app.foldcade.language.orderedNotices
 import app.foldcade.language.brightnessLevel
 import app.foldcade.language.BackgroundMotion
 import app.foldcade.language.Copy
@@ -232,6 +235,7 @@ class FoldcadeApp : Application() {
         // The Thor's own quick settings, or Android's, can move it too. The slider follows.
         brightness.observe(::refreshBrightness)
         refreshBrightness()
+        refreshNoticeAccess()
         rommPublish = RommPublish(
             read = {
                 readRommPublish(
@@ -286,6 +290,53 @@ class FoldcadeApp : Application() {
             if (store.folderTrees().isNotEmpty()) reloadFolder()
             syncRomm()
         }
+    }
+
+    private var androidNotices: List<FoldNotice> = emptyList()
+    private var foldcadeNotices: List<FoldNotice> = emptyList()
+
+    /** The device's notifications, from [NoticeListener]. Main thread. */
+    fun setAndroidNotices(notices: List<FoldNotice>) {
+        androidNotices = notices
+        publishNotices()
+    }
+
+    /** A notice of Foldcade's own. One with the same id replaces it. */
+    fun postNotice(notice: FoldNotice) {
+        foldcadeNotices = foldcadeNotices.filter { it.id != notice.id } + notice
+        publishNotices()
+    }
+
+    /** Y on a notice. Android's go through the listener, which then publishes the rest. */
+    fun dismissNotice(id: String) {
+        if (foldcadeNotices.any { it.id == id }) {
+            foldcadeNotices = foldcadeNotices.filter { it.id != id }
+            publishNotices()
+            return
+        }
+        NoticeListener.connected?.cancelNotification(id)
+    }
+
+    fun clearNotices() {
+        foldcadeNotices = foldcadeNotices.filter { !it.dismissable }
+        publishNotices()
+        NoticeListener.connected?.cancelAllNotifications()
+    }
+
+    /**
+     * Whether R1 asks for notification access. Right after the user grants it,
+     * Android may not have bound the listener yet, so this asks it to.
+     */
+    fun refreshNoticeAccess() {
+        val granted = NoticeListener.granted(this)
+        shell.setNoticeAccess(ask = !granted)
+        if (granted && NoticeListener.connected == null) {
+            NotificationListenerService.requestRebind(NoticeListener.component(this))
+        }
+    }
+
+    private fun publishNotices() {
+        shell.setNotices(orderedNotices(foldcadeNotices + androidNotices))
     }
 
     /** Reads the level and the write access again. Resume calls this after Android's access page. */
