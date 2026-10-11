@@ -116,6 +116,20 @@ class LeftDrawerTest {
     }
 
     @Test
+    fun todayCountsOnlyTimeSinceMidnight() {
+        val zone = ZoneOffset.UTC
+        val now = millis(2026, 10, 10, 20, 0, zone)
+        val spans = listOf(
+            // Friday 23:00 to Saturday 01:00: only the hour after midnight.
+            PlaySpan("a", millis(2026, 10, 9, 23, 0, zone), millis(2026, 10, 10, 1, 0, zone)),
+            PlaySpan("b", millis(2026, 10, 10, 12, 0, zone), millis(2026, 10, 10, 12, 30, zone)),
+            PlaySpan("c", millis(2026, 10, 8, 12, 0, zone), millis(2026, 10, 8, 15, 0, zone)),
+        )
+        assertEquals(5_400_000L, playToday(spans, now, zone))
+        assertEquals(0L, playToday(emptyList(), now, zone))
+    }
+
+    @Test
     fun durationsAreHoursAndMinutes() {
         assertEquals("0m", playDuration(0L))
         assertEquals("<1m", playDuration(30_000L))

@@ -26,6 +26,8 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.input.pointer.positionChange
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
@@ -36,6 +38,7 @@ import kotlin.math.min
  * A label, its value, and a slider under them: music volume in Settings, and
  * brightness in R1. Left and right step it from the keys. A tap on the label
  * runs [onStep]. Touch drags the slider and reports a fraction from 0 to 1.
+ * Without [showLabel] it is the bare slider, and [label] is only for touch readers.
  */
 @Composable
 fun SliderRow(
@@ -47,12 +50,13 @@ fun SliderRow(
     onStep: () -> Unit,
     onFraction: (Float) -> Unit,
     modifier: Modifier = Modifier,
+    showLabel: Boolean = true,
 ) {
     val theme = LocalFoldTheme.current.theme
     val fraction = fraction.coerceIn(0f, 1f)
     val accent = theme.focus
     Column(modifier.fillMaxWidth().padding(start = 16.dp, end = 8.dp, top = 8.dp, bottom = 8.dp)) {
-        Row(
+        if (showLabel) Row(
             Modifier
                 .fillMaxWidth()
                 .focusProperties { canFocus = false }
@@ -90,8 +94,9 @@ fun SliderRow(
         }
         Box(
             Modifier
-                .padding(top = 8.dp)
+                .padding(top = if (showLabel) 8.dp else 0.dp)
                 .fillMaxWidth()
+                .then(if (showLabel) Modifier else Modifier.semantics { contentDescription = "$label $value" })
                 .height(36.dp)
                 .graphicsLayer { clip = false }
                 .drawWithContent {

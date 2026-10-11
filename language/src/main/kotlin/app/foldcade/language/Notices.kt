@@ -42,7 +42,7 @@ fun noticeAge(postedMillis: Long, nowMillis: Long): String {
 fun orderedNotices(notices: List<FoldNotice>): List<FoldNotice> =
     notices.sortedWith(compareByDescending<FoldNotice> { it.postedMillis }.thenBy { it.id })
 
-/** Asked from the R1 row while Foldcade cannot read notifications. */
+/** Asked from the Settings row while Foldcade cannot read notifications. */
 fun noticeAccessPrompt(screen: HostScreen = HostScreen.Top): DialogState = DialogState(
     kind = DialogKind.NoticeAccess,
     title = NoticeCopy.accessTitle,

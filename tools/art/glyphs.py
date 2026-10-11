@@ -428,6 +428,15 @@ def power():
             L("M7.6,6.8 A7.6,7.6 0 1 0 16.4,6.8", stroke=Lin(0, 6, 0, 21, [(0, "#FFC2CE", 1), (1, ROSE, 1)]), sw=2.0),
             L("M12,3.2 V11.4", stroke="#FFFFFF", sw=2.0)]
 
+def playtime():  # play time today: a clock face, hands at ten past ten
+    return [halo(12, 12, 11.5, ORANGE, 0.24),
+            L(circle(12, 12, 8.6), fill=Lin(0, 3.4, 0, 20.6, [(0, "#FFD2BC", 1), (0.55, ORANGE, 1), (1, "#D9542A", 1)]),
+              stroke="#FFFFFF", sw=0.8, salpha=0.5),
+            L(circle(12, 12, 6.6), fill="#0C0D11"),
+            L("M12,6.9 V7.9 M17.1,12 H16.1 M12,17.1 V16.1 M6.9,12 H7.9", stroke=MUTED, sw=0.9),
+            L("M12,12 L9.1,9.6 M12,12 L15.4,8.4", stroke=INK, sw=1.5),
+            L(circle(12, 12, 1.1), fill=ORANGE)]
+
 def status_assets():
     A = [Asset("ic_status_bell", 24, 24, bell(), note="Notifications"),
          Asset("ic_status_bell_dot", 24, 24, bell("dot"), note="Notifications, unread dot")]
@@ -446,5 +455,6 @@ def status_assets():
     A += [Asset("ic_status_settings", 24, 24, gear(), note="Settings gear"),
           Asset("ic_status_wrench", 24, 24, wrench(), note="Wrench"),
           Asset("ic_status_tools", 24, 24, tools(), note="Tools island (sliders)"),
-          Asset("ic_status_power", 24, 24, power(), note="Power")]
+          Asset("ic_status_power", 24, 24, power(), note="Power"),
+          Asset("ic_status_playtime", 24, 24, playtime(), note="Play time today")]
     return A

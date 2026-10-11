@@ -12,17 +12,19 @@ class NoticesTest {
     private val pinned = FoldNotice("vpn", "VPN", "Connected", "com.vpn", postedMillis = 500L, openable = true, dismissable = false)
 
     @Test
-    fun rOneListsNoticesUnderBrightnessThenClearAllThenTheTiles() {
+    fun rOneListsTheTilesThenBrightnessThenNoticesThenClearAll() {
         val rows = rightRows(listOf(chat, mail, pinned))
         assertEquals(
-            listOf(Row.Brightness, Row.Notice("chat"), Row.Notice("mail"), Row.Notice("vpn"), Row.ClearNotices) +
-                quickSettings().map { Row.QuickTile(it) },
+            quickSettings().map { Row.QuickTile(it) } +
+                listOf(Row.Brightness, Row.Notice("chat"), Row.Notice("mail"), Row.Notice("vpn"), Row.ClearNotices),
             rows,
         )
         // One removable notice needs no Clear all.
         assertEquals(false, Row.ClearNotices in rightRows(listOf(chat, pinned)))
-        // Without access, R1 asks where the notices would be.
-        assertEquals(listOf(Row.Brightness, Row.NoticeAccess), rightRows(emptyList(), askNoticeAccess = true).take(2))
+        // Access is asked from Settings, so R1 never shows the row.
+        val asking = model(emptyList()).copy(askNoticeAccess = true)
+        val opened = reduce(asking, Meaning.RightPanel).first
+        assertEquals(false, Row.NoticeAccess in panelRows(opened.panel!!, opened))
     }
 
     @Test
@@ -70,16 +72,17 @@ class NoticesTest {
         val (after, effect) = reduce(clear, Meaning.Activate)
         assertEquals(Effect.ClearNotices, effect)
         assertEquals(listOf(pinned), after.notices)
-        assertEquals(0, after.panel?.index)
+        assertEquals(Row.Brightness, panelRows(after.panel!!, after)[after.panel!!.index])
     }
 
     @Test
-    fun theAccessRowAsksAndBackSaysNotNow() {
-        val opened = reduce(model(emptyList()).copy(askNoticeAccess = true), Meaning.RightPanel).first
-        val row = reduce(opened, Meaning.MoveDown).first
+    fun theSettingsRowAsksAndBackSaysNotNow() {
+        assertEquals(false, Row.NoticeAccess in settingsRows(SettingsCategory.Screens, model(emptyList())))
+        val row = model(emptyList()).copy(askNoticeAccess = true).onSetting(Row.NoticeAccess)
         assertEquals("Notifications  Allow", rowLabel(Row.NoticeAccess, row))
         val asked = reduce(row, Meaning.Activate).first
         assertEquals(DialogKind.NoticeAccess, asked.dialog?.kind)
+        assertEquals(row.settings, asked.settings)
         assertEquals(DialogButton.Allow, asked.dialog!!.buttons[asked.dialog!!.index])
         assertEquals(Effect.DialogChoice(DialogButton.NotNow, DialogKind.NoticeAccess), reduce(asked, Meaning.Back).second)
     }

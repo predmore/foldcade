@@ -76,6 +76,8 @@ fun settingsRows(category: SettingsCategory, model: PickerModel): List<Row> = wh
         add(Row.Primary)
         if (!model.homeRoleHeld) add(Row.SetAsHome)
         add(Row.DefaultHomeApp)
+        // Until Android grants it, so R1 can list notifications.
+        if (model.askNoticeAccess) add(Row.NoticeAccess)
         add(Row.AndroidSettings)
     }
     SettingsCategory.About -> listOf(Row.Licenses)
