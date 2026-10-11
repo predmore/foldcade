@@ -131,6 +131,27 @@ class ShellController(
     var connectToken by mutableStateOf("")
         private set
 
+    private var setupValidation = 0
+
+    /** Only the current form may save credentials or show the result of its check. */
+    fun beginSetupValidation(): Int? {
+        if (!model.connectOpen || model.connectBusy) return null
+        setupValidation += 1
+        model = model.copy(connectBusy = true, connectHint = null)
+        return setupValidation
+    }
+
+    fun setupValidationCurrent(ticket: Int): Boolean = model.connectOpen && setupValidation == ticket
+
+    fun finishSetupValidation(ticket: Int) {
+        if (setupValidationCurrent(ticket)) model = model.copy(connectBusy = false)
+    }
+
+    private fun invalidateSetupValidation() {
+        setupValidation += 1
+        if (model.connectBusy) model = model.copy(connectBusy = false)
+    }
+
     /** Counts A presses on a connect text field. Each one focuses that field and raises the keyboard. */
     var typingRequest by mutableStateOf(0)
         private set
@@ -609,6 +630,7 @@ class ShellController(
     }
 
     fun editOrigin(origin: String) {
+        if (origin != model.connectOrigin) invalidateSetupValidation()
         model = model.copy(
             connectOrigin = origin,
             connectWarning = cleartextCredentialWarning(origin),
@@ -616,12 +638,14 @@ class ShellController(
     }
 
     fun editToken(value: String) {
+        if (value != connectToken) invalidateSetupValidation()
         connectToken = value
     }
 
     fun consumeConnectToken(): String = connectToken.also { connectToken = "" }
 
     fun openConnect(origin: String, another: Boolean = false) {
+        invalidateSetupValidation()
         val screen = model.connectScreen ?: HostScreen.Top
         val shown = if (another) "" else origin
         connectToken = ""
@@ -640,6 +664,7 @@ class ShellController(
 
     /** The connect form, asking for a SteamGridDB key. */
     fun openArtKey() {
+        invalidateSetupValidation()
         val screen = model.connectScreen ?: HostScreen.Top
         connectToken = ""
         model = model.copy(
@@ -676,11 +701,13 @@ class ShellController(
 
     /** Leaves the connect form, as after a server accepts the token. */
     fun closeConnect() {
+        invalidateSetupValidation()
         connectToken = ""
         model = model.copy(connectOpen = false, connectScreen = null, connectHint = null, connectAnother = false)
     }
 
     fun askToSignInAgain() {
+        invalidateSetupValidation()
         if (model.dialog != null) {
             model = model.copy(reLoginPending = true)
             return
@@ -1345,6 +1372,7 @@ class ShellController(
     }
 
     private fun publish(next: PickerModel) {
+        if (model.connectOpen != next.connectOpen) invalidateSetupValidation()
         if (next.primaryIsTop != store.session.defaultDisplayIsTop) {
             store.update { it.withDefaultDisplayIsTop(next.primaryIsTop) }
         }
@@ -1365,10 +1393,11 @@ class ShellController(
         }
         if (next.brightnessAllowed && next.brightness != model.brightness) onBrightness(next.brightness)
         if (next.artwork != model.artwork) store.setArtworkEnabled(next.artwork)
-        model = if (next.libraryGrid) {
-            next.copy(appActions = null, tileActions = null, playerSaves = playerSaveSettings())
+        val ready = if (!next.connectOpen) next.copy(connectBusy = false) else next
+        model = if (ready.libraryGrid) {
+            ready.copy(appActions = null, tileActions = null, playerSaves = playerSaveSettings())
         } else {
-            withShelf(next.copy(libraryGrid = false))
+            withShelf(ready.copy(libraryGrid = false))
         }
         logHomeTile()
     }

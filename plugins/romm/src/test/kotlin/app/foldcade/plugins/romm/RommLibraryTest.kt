@@ -65,6 +65,162 @@ import org.junit.Test
 
 class RommLibraryTest {
     @Test
+    fun catalogSnapshotStripsArtworkCredentialsAndCorruptSnapshotsCanRefresh() = runBlocking {
+        val ops = ScriptedOps()
+        ops.onPlatforms = { listOf(platform(3, "3ds")) }
+        ops.onRoms = { page(rom("3ds", 3).copy(
+            pathCoverLarge = "/cover.png?token=rmm_secret&ts=1",
+            screenshots = listOf("https://user:rmm_secret@romm.example/scene.png?api_key=rmm_secret"),
+        )) }
+        val harness = harness(ops)
+        try {
+            harness.library.listPlatforms()
+            harness.library.listGames("3ds", GameQuery())
+            assertFalse(cacheContains(harness.wiring.dataRoot, "rmm_secret"))
+            val file = harness.wiring.data.catalogFile()
+            Files.writeString(file, "{broken")
+            val fresh = RommLibrary(RommGate { harness.wiring })
+            fresh.listPlatforms()
+            assertEquals("Super Mario", fresh.listGames("3ds", GameQuery()).games.single().label)
+            ops.onHeartbeat = { throw RommUnavailable("offline") }
+            val cold = RommLibrary(RommGate { harness.wiring })
+            cold.connect()
+            assertEquals("Super Mario", cold.listGames("3ds", GameQuery()).games.single().label)
+        } finally {
+            harness.wiring.cacheRoot.toFile().deleteRecursively()
+            harness.wiring.dataRoot.toFile().deleteRecursively()
+        }
+    }
+
+    @Test
+    fun cancellingDownloadClearsItsActivityAndDoesNotProduceATarget() = runBlocking {
+        val ops = ScriptedOps()
+        ops.onPlatforms = { listOf(platform(3, "3ds")) }
+        ops.onRoms = { page(rom("3ds", 3)) }
+        val started = CompletableDeferred<Unit>()
+        val finished = CompletableDeferred<Unit>()
+        ops.onDownload = { _, _, _, _, _, _ ->
+            started.complete(Unit)
+            try { CompletableDeferred<Path>().await() } finally { finished.complete(Unit) }
+        }
+        val harness = harness(ops)
+        try {
+            val game = harness.library.listGames("3ds", GameQuery()).games.single()
+            val activities = mutableListOf<GameActivity>()
+            harness.library.observeActivity { _, activity -> activities += activity }
+            var delivered = false
+            val job = launch {
+                harness.library.ensureLocal(game)
+                delivered = true
+            }
+            withTimeout(2_000) { started.await() }
+            job.cancelAndJoin()
+            assertTrue(finished.isCompleted)
+            assertFalse(delivered)
+            assertEquals(GameActivity.Idle, activities.last())
+        } finally {
+            harness.wiring.cacheRoot.toFile().deleteRecursively()
+            harness.wiring.dataRoot.toFile().deleteRecursively()
+        }
+    }
+
+    @Test
+    fun coldOfflineCatalogRetainsTitlesArtAndVerifiedLaunchesThenRefreshes() = runBlocking {
+        val ops = ScriptedOps()
+        val listed = rom("3ds", 3).copy(pathCoverLarge = "/assets/cover.jpg")
+        ops.onPlatforms = { listOf(platform(3, "3ds")) }
+        ops.onRoms = { page(listed) }
+        val harness = harness(ops)
+        try {
+            harness.library.listPlatforms()
+            val game = harness.library.listGames("3ds", GameQuery()).games.single()
+            val spec = listed.bytes()
+            val target = RommClient.romCacheFile(harness.wiring.romRoot, listed.id, spec.fileName, spec.fileIds)
+            Files.createDirectories(target.parent)
+            Files.write(target, ByteArray(9))
+            Files.writeString(target.resolveSibling(target.fileName.toString() + ".verified"),
+                """{"size":9,"md5":"${app.foldcade.romm.md5File(target)}"}""")
+            writeRomSpec(harness.wiring.romRoot, listed.id, spec)
+            ops.onHeartbeat = { throw RommUnavailable("offline") }
+            ops.onPlatforms = { error("offline listing must use disk") }
+            ops.onRoms = { error("offline listing must use disk") }
+            // A new gate simulates a new process using the same data roots.
+            val gate = RommGate { harness.wiring }
+            val cold = RommLibrary(gate)
+            cold.connect()
+            assertEquals("3ds", cold.listPlatforms().single().platformId)
+            val cached = cold.listGames("3ds", GameQuery()).games.single()
+            assertEquals(game.label, cached.label)
+            assertEquals(Availability.Cached, cached.availability)
+            assertEquals("Super Mario", RommMetadata(gate).cached(cached)?.title)
+            assertTrue(RommMetadata(gate).cached(cached)!!.artwork.isNotEmpty())
+            assertTrue(cold.ensureLocal(cached) is LaunchTarget.ContentUri)
+
+            ops.onHeartbeat = { Heartbeat("5.4.0") }
+            ops.onPlatforms = { listOf(platform(3, "3ds")) }
+            ops.onRoms = { page(listed.copy(name = "Renamed online")) }
+            cold.connect()
+            cold.listPlatforms()
+            assertEquals("Renamed online", cold.listGames("3ds", GameQuery()).games.single().label)
+        } finally {
+            harness.library.disconnect()
+            harness.wiring.cacheRoot.toFile().deleteRecursively()
+            harness.wiring.dataRoot.toFile().deleteRecursively()
+        }
+    }
+
+    @Test
+    fun offlineFallbackDoesNotHideAuthenticationFailureOrMixServers() = runBlocking {
+        val ops = ScriptedOps()
+        ops.onPlatforms = { listOf(platform(3, "3ds")) }
+        ops.onRoms = { page(rom("3ds", 3)) }
+        val harness = harness(ops)
+        try {
+            harness.library.listPlatforms()
+            harness.library.listGames("3ds", GameQuery())
+            ops.onHeartbeat = { throw RommUnauthorized("expired") }
+            assertTrue(runCatching { RommLibrary(RommGate { harness.wiring }).connect() }.exceptionOrNull() is PluginException.NotAuthenticated)
+            val other = RommWiring("https://different.example", RommTokenSource { "rmm_other" }, harness.wiring.cacheRoot, harness.wiring.dataRoot)
+            other.open = { _, _ -> ops }
+            ops.onHeartbeat = { throw RommUnavailable("offline") }
+            assertTrue(runCatching { RommLibrary(RommGate { other }).connect() }.exceptionOrNull() is PluginException.Unavailable)
+        } finally {
+            harness.wiring.cacheRoot.toFile().deleteRecursively()
+            harness.wiring.dataRoot.toFile().deleteRecursively()
+        }
+    }
+
+    @Test
+    fun searchesAndInterruptedPaginationKeepThePreviousCompleteOfflineListing() = runBlocking {
+        val ops = ScriptedOps()
+        val first = rom("3ds", 3)
+        val second = first.copy(id = 5678, name = "Luigi")
+        ops.onPlatforms = { listOf(platform(3, "3ds").copy(romCount = 2)) }
+        ops.onRoms = { RomPage(listOf(first, second), 2, 50, 0) }
+        val harness = harness(ops)
+        try {
+            harness.library.listPlatforms()
+            harness.library.listGames("3ds", GameQuery())
+            ops.onRoms = { page(first) }
+            harness.library.listGames("3ds", GameQuery(text = "Mario"))
+            ops.onRoms = { RomPage(listOf(first), 2, 1, 0) }
+            harness.library.listGames("3ds", GameQuery(limit = 1))
+            ops.onHeartbeat = { throw RommUnavailable("offline") }
+            val cold = RommLibrary(RommGate { harness.wiring })
+            cold.connect()
+            val page1 = cold.listGames("3ds", GameQuery(limit = 1))
+            assertEquals(listOf("1234"), page1.games.map { it.remoteKey })
+            assertEquals(1, page1.nextOffset)
+            assertEquals(2, page1.total)
+            assertEquals("5678", cold.listGames("3ds", GameQuery(offset = 1)).games.single().remoteKey)
+            assertEquals("Luigi", cold.listGames("3ds", GameQuery(text = "luigi")).games.single().label)
+        } finally {
+            harness.wiring.cacheRoot.toFile().deleteRecursively()
+            harness.wiring.dataRoot.toFile().deleteRecursively()
+        }
+    }
+
+    @Test
     fun slugsStayPutUnlessABuiltInAliasAlreadyClaimsThem() = runBlocking {
         val ops = ScriptedOps()
         ops.onPlatforms = { listOf(platform(3, "3ds"), platform(4, "snes"), platform(5, "nes")) }
@@ -792,6 +948,7 @@ private class NamedPlayer(override val id: String) : Player {
 }
 
 internal class ScriptedOps : RommOps {
+    var onHeartbeat: suspend () -> Heartbeat = { Heartbeat("5.4.0") }
     var onSearchCovers: suspend (String) -> List<app.foldcade.romm.RomCoverMatch> = { emptyList() }
     var onPlatforms: suspend () -> List<PlatformSummary> = { emptyList() }
     var onRoms: suspend (RomQuery) -> RomPage = { query -> RomPage(emptyList(), 0, query.limit, query.offset) }
@@ -810,7 +967,7 @@ internal class ScriptedOps : RommOps {
     /** What a download reports before [onDownload] answers. */
     var downloadSteps: List<RomProgress> = emptyList()
 
-    override suspend fun heartbeat() = Heartbeat("5.4.0")
+    override suspend fun heartbeat() = onHeartbeat()
     override suspend fun artwork(uri: String) = onArtwork(uri)
     override suspend fun platforms() = onPlatforms()
     override suspend fun roms(query: RomQuery) = onRoms(query)

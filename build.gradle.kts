@@ -3,6 +3,7 @@ plugins {
     alias(libs.plugins.android.library) apply false
     alias(libs.plugins.kotlin.jvm) apply false
     alias(libs.plugins.kotlin.compose) apply false
+    alias(libs.plugins.kotlin.serialization) apply false
 }
 
 // Fast loop from the v1 scope. Android modules expose testDebugUnitTest.

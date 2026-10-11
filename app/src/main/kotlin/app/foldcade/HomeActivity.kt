@@ -112,10 +112,7 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
     private var folderPurpose = FolderPurpose.Library
     private var pendingLaunch: Int? = null
     private var closeConfirmed = false
-    /** A dismissed or replaced launch. An older attempt must not present a dialog later. */
-    private var launchGeneration = 0
     private var settingsPlayerId: String? = null
-    private var libraryLaunching = false
     private var libraryReturn: LibraryReturn? = null
     private var deviceCodeJob: Job? = null
 
@@ -263,6 +260,7 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        foldcade.homeCreated(this)
         acceptHome(intent)
         acceptShelf(intent)
         acceptFolderLibrary(intent)
@@ -418,6 +416,7 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
     }
 
     override fun onDestroy() {
+        foldcade.homeDestroyed(this)
         val manager = getSystemService(DisplayManager::class.java)
         manager.unregisterDisplayListener(backdropDisplayListener)
         if (launchesCompanion) manager.unregisterDisplayListener(displayListener)
@@ -514,12 +513,12 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
      * [noteCovered] hands the grid to this screen instead.
      */
     private fun launchCompanionIfNeeded() {
-        if (foldcade.companionAlive || foldcade.companionStarting) return
         val assignment = displays.assignment(foldcade.store.session.defaultDisplayIsTop)
         val other = assignment.allIds().firstOrNull { it != Display.DEFAULT_DISPLAY } ?: return
+        if (foldcade.companionAlive(other) || foldcade.companionStarting) return
         foldcade.companionStarting = true
         val intent = Intent(this, CompanionHomeActivity::class.java)
-            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP)
         val options = ActivityOptions.makeBasic().apply { launchDisplayId = other }
         startActivity(intent, options.toBundle())
     }
@@ -541,12 +540,11 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
         val libraryId = game.libraryId
         val remoteKey = game.remoteKey
         if (libraryId != null && remoteKey != null) {
-            if (libraryLaunching) return
+            if (foldcade.launchWork.active) return
             val generation = beginLaunch()
-            libraryLaunching = true
             pendingLaunch = index
             val apiGame = shelfGame(game)
-            foldcade.scope.launch {
+            foldcade.launchWork.job = foldcade.scope.launch {
                 var notPlaced = false
                 val prepared = try {
                     val local = foldcade.plugins.ensureLocal(libraryId, apiGame)
@@ -563,7 +561,6 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
                     null
                 }
                 withContext(Dispatchers.Main.immediate) {
-                    libraryLaunching = false
                     if (!launchCurrent(generation) || pendingLaunch != index) return@withContext
                     if (notPlaced) showSaveNotPlaced(game.title)
                     if (prepared == null) return@withContext
@@ -702,6 +699,19 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
             )
             return
         }
+        if (game.id.startsWith("lib:")) {
+            foldcade.shell.present(DialogState(
+                kind = DialogKind.Ok,
+                title = "Game unavailable",
+                body = "This game's library details are not available yet. Reconnect the library and try again.",
+                buttons = listOf(DialogButton.Ok),
+                index = 0,
+                safeIndex = 0,
+                screen = hostScreen(),
+            ))
+            foldcade.syncRomm()
+            return
+        }
         launchStandIn(game)
     }
 
@@ -728,10 +738,9 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
         // A server game downloads first. Its tile pulses until then, and a second press waits.
         val fetching = game.availability == Availability.RemoteOnly
         if (fetching && !foldcade.shell.beginDownload(libraryId, game.remoteKey)) return
-        foldcade.music.onExternalLaunch()
         val generation = beginLaunch()
         foldcade.suppressSaveConflict = true
-        foldcade.scope.launch {
+        foldcade.launchWork.job = foldcade.scope.launch {
             try {
                 runBackendLaunch(title, platformId, libraryId, game, id, fetching, generation)
             } finally {
@@ -1139,19 +1148,15 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
         closeConfirmed = false
     }
 
-    private fun beginLaunch(): Int {
-        launchGeneration += 1
-        return launchGeneration
-    }
+    private fun beginLaunch(): Int = foldcade.launchWork.begin()
 
     /** Drops an in-flight launch so a late result cannot open a missing-player dialog. */
     private fun cancelLaunches() {
-        launchGeneration += 1
-        libraryLaunching = false
+        foldcade.launchWork.cancel()
         clearPendingLaunch()
     }
 
-    private fun launchCurrent(generation: Int): Boolean = generation == launchGeneration
+    private fun launchCurrent(generation: Int): Boolean = foldcade.launchWork.current(generation)
 
     private fun presentMissing(name: String, generation: Int) {
         if (!launchCurrent(generation)) return
@@ -1209,134 +1214,83 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
         if (foldcade.shell.model.connectAnother) saveAnotherRomm(origin, token) else storeRommToken(origin, token)
     }
 
-    /**
-     * Writes the token under the device-code step's key and the origin for instance `romm`.
-     * Editing that origin calls configure again inside [FoldcadeApp.publishRomm], then [FoldcadeApp.syncRomm] reconnects.
-     */
-    private fun storeRommToken(origin: String, token: String) {
-        val others = foldcade.store.rommInstances().map { it.second }
-        if (rommOriginAlreadyConfigured(others, origin)) {
+    private fun storeRommToken(origin: String, token: String) = validateRommToken(origin, token, another = false)
+
+    private fun saveAnotherRomm(origin: String, token: String) = validateRommToken(origin, token, another = true)
+
+    /** Check once, then store only if this is still the form that submitted the token. */
+    private fun validateRommToken(origin: String, token: String, another: Boolean) {
+        val taken = foldcade.store.rommInstances().map { it.second } +
+            if (another) listOfNotNull(foldcade.store.rommOrigin()) else emptyList()
+        if (rommOriginAlreadyConfigured(taken, origin)) {
             foldcade.shell.showSetupHint(Copy.rommSameServer)
             return
         }
+        val ticket = foldcade.shell.beginSetupValidation() ?: return
         foldcade.scope.launch {
-            val result = try {
-                RommClient(
-                    origin = origin,
-                    accessToken = { token },
-                    connectTimeout = Duration.ofSeconds(4),
-                    readTimeout = Duration.ofSeconds(4),
-                ).use { it.confirmSignIn() }
-            } catch (cancelled: CancellationException) {
-                throw cancelled
-            } catch (_: Exception) {
-                RommSignInResult.StayOnForm(null)
-            }
-            if (result is RommSignInResult.Accepted) {
-                foldcade.editCredentials {
-                    val saved = try {
-                        foldcade.credentials.put(
-                            RommCredentials.PLUGIN_ID,
-                            rommAccessKey(),
-                            Credential.ApiToken(token),
-                        )
+            try {
+                val result = try {
+                    RommClient(
+                        origin = origin,
+                        accessToken = { token },
+                        connectTimeout = Duration.ofSeconds(4),
+                        readTimeout = Duration.ofSeconds(4),
+                    ).use { it.confirmSignIn() }
+                } catch (cancelled: CancellationException) {
+                    throw cancelled
+                } catch (_: Exception) {
+                    RommSignInResult.StayOnForm("Could not check this RomM server. Check the address and try again.")
+                }
+                val current = withContext(Dispatchers.Main.immediate) {
+                    if (!foldcade.shell.setupValidationCurrent(ticket)) false else {
+                        foldcade.shell.showSetupHint(result.hint)
                         true
+                    }
+                }
+                if (!current || result !is RommSignInResult.Accepted) return@launch
+                foldcade.editCredentials {
+                    if (!withContext(Dispatchers.Main.immediate) { foldcade.shell.setupValidationCurrent(ticket) }) return@editCredentials
+                    val saved = try {
+                        if (another) {
+                            val added = addRommServer(
+                                host = foldcade.plugins,
+                                session = foldcade.store,
+                                credentials = foldcade.credentials,
+                                origin = origin,
+                                token = token,
+                                defaultOrigin = foldcade.store.rommOrigin(),
+                                extras = foldcade.store.rommInstances(),
+                                pendingInstanceId = pendingRommId,
+                            )
+                            if (added is RommServerAdd.Added) pendingRommId = null
+                            added is RommServerAdd.Added
+                        } else {
+                            foldcade.credentials.put(RommCredentials.PLUGIN_ID, rommAccessKey(), Credential.ApiToken(token))
+                            foldcade.store.setRommOrigin(origin)
+                            true
+                        }
                     } catch (cancelled: CancellationException) {
                         throw cancelled
                     } catch (_: Exception) {
                         false
                     }
                     if (saved) {
-                        foldcade.store.setRommOrigin(origin)
-                        // configure again, then syncRomm reconnects.
                         foldcade.publishRomm()
-                        // Covers missed before sign-in can now use the server's providers.
                         foldcade.art.forgetMisses()
                     }
                     withContext(Dispatchers.Main.immediate) {
-                        foldcade.shell.showSetupHint(result.hint)
                         if (saved) {
                             refreshRommSignedIn()
-                            if (foldcade.shell.connectToken.trim() == token) foldcade.shell.consumeConnectToken()
-                            // The form used to stay up with an empty token field, so a save
-                            // that worked looked like one that did nothing.
-                            foldcade.shell.closeConnect()
+                            if (foldcade.shell.setupValidationCurrent(ticket)) foldcade.shell.closeConnect()
                             foldcade.syncRomm()
-                        } else {
-                            foldcade.shell.askToSignInAgain()
+                        } else if (foldcade.shell.setupValidationCurrent(ticket)) {
+                            foldcade.shell.showSetupHint("Could not save the RomM credentials. Try again.")
                         }
                     }
                 }
-            } else {
-                withContext(Dispatchers.Main.immediate) {
-                    foldcade.shell.showSetupHint(result.hint)
-                }
-            }
-        }
-    }
-
-    /**
-     * A server besides the default. Same form, same check against the server.
-     * [addRommServer] calls [app.foldcade.host.PluginHost.addInstance] and [SessionStore.setRommInstance].
-     * The same canonical origin is refused before either of those runs.
-     */
-    private fun saveAnotherRomm(origin: String, token: String) {
-        val taken = listOfNotNull(foldcade.store.rommOrigin()) + foldcade.store.rommInstances().map { it.second }
-        if (rommOriginAlreadyConfigured(taken, origin)) {
-            foldcade.shell.showSetupHint(Copy.rommSameServer)
-            return
-        }
-        foldcade.scope.launch {
-            val result = try {
-                RommClient(
-                    origin = origin,
-                    accessToken = { token },
-                    connectTimeout = Duration.ofSeconds(4),
-                    readTimeout = Duration.ofSeconds(4),
-                ).use { it.confirmSignIn() }
-            } catch (cancelled: CancellationException) {
-                throw cancelled
-            } catch (_: Exception) {
-                RommSignInResult.StayOnForm(null)
-            }
-            if (result !is RommSignInResult.Accepted) {
-                withContext(Dispatchers.Main.immediate) { foldcade.shell.showSetupHint(result.hint) }
-                return@launch
-            }
-            foldcade.editCredentials {
-                val added = try {
-                    addRommServer(
-                        host = foldcade.plugins,
-                        session = foldcade.store,
-                        credentials = foldcade.credentials,
-                        origin = origin,
-                        token = token,
-                        defaultOrigin = foldcade.store.rommOrigin(),
-                        extras = foldcade.store.rommInstances(),
-                        pendingInstanceId = pendingRommId,
-                    )
-                } catch (cancelled: CancellationException) {
-                    throw cancelled
-                } catch (_: Exception) {
-                    null
-                }
-                if (added is RommServerAdd.Added) {
-                    pendingRommId = null
-                    foldcade.publishRomm()
-                    foldcade.art.forgetMisses()
-                }
-                withContext(Dispatchers.Main.immediate) {
-                    when (added) {
-                        is RommServerAdd.Added -> {
-                            foldcade.shell.showSetupHint(result.hint)
-                            refreshRommSignedIn()
-                            if (foldcade.shell.connectToken.trim() == token) foldcade.shell.consumeConnectToken()
-                            foldcade.shell.closeConnect()
-                            foldcade.syncRomm()
-                        }
-                        RommServerAdd.SameServer -> foldcade.shell.showSetupHint(Copy.rommSameServer)
-                        null -> foldcade.shell.askToSignInAgain()
-                    }
+            } finally {
+                withContext(NonCancellable + Dispatchers.Main.immediate) {
+                    foldcade.shell.finishSetupValidation(ticket)
                 }
             }
         }
@@ -1857,18 +1811,6 @@ class PrimaryHomeActivity : FoldcadeHomeActivity() {
 
 class CompanionHomeActivity : FoldcadeHomeActivity() {
     override val launchesCompanion: Boolean = false
-
-    override fun onCreate(savedInstanceState: Bundle?) {
-        val app = application as FoldcadeApp
-        app.companionAlive = true
-        app.companionStarting = false
-        super.onCreate(savedInstanceState)
-    }
-
-    override fun onDestroy() {
-        if (!isChangingConfigurations) (application as FoldcadeApp).companionAlive = false
-        super.onDestroy()
-    }
 }
 
 internal fun inputDeviceKey(activity: Activity): String {

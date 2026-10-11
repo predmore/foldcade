@@ -26,6 +26,10 @@ Saved Android, GameNative, Moonlight, and library placements are retained while 
 
 Confirmed GameNative catalogs use the existing durable-file writer: write a temporary sibling, sync its bytes, replace the destination, and attempt to sync the parent directory. Play history is appended and synced under `files/play-sessions`. RomM's durable device/save data and replaced player-save backups remain under `filesDir`; downloaded games and regenerable artwork bytes use cache storage.
 
+RomM also keeps a server-scoped catalog under `files/romm/servers/<server key>/catalog.json`. It restores titles, platform metadata, artwork addresses, and complete platform listings after a cold offline start. Searches and interrupted pagination retain the last complete listing. Network recovery reconnects and ingests the refreshed catalog in the running shell. Authentication failures still require sign-in; an unavailable server can use its saved catalog. Verified downloaded ROMs can launch without a network request.
+
+RomM image bytes use a bounded cache under that server's ROM cache root. Cache hits still require a credential-free address on the configured origin. Both screens share image requests, and temporary files keep unfinished images out of the cache. Android may evict ROMs and artwork from cache storage; the catalog is kept separately so their metadata survives that eviction.
+
 RomM and SteamGridDB credentials use the existing encrypted DataStore, with encryption keys in Android Keystore. The backup rules include `sharedpref/foldcade.xml` and ordinary files, and exclude the credential DataStore directory. The manifest's existing `allowBackup=false` policy still disables cloud backup. Device transfer behavior with that flag depends on the device; the transfer rules now include saved settings and Home edits ([Android backup documentation](https://developer.android.com/identity/data/autobackup)). Credentials must be entered again, and provider-specific folder grants may need to be reacquired on another device.
 
 ## Verification

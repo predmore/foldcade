@@ -142,6 +142,7 @@ internal class RommLibrary internal constructor(
     )
     private val pendingRunning = AtomicBoolean(false)
     private val romLocks = ConcurrentHashMap<Long, Mutex>()
+    @Volatile private var offlineCatalog = false
 
     @Volatile
     private var listener: GameActivityListener? = null
@@ -204,9 +205,17 @@ internal class RommLibrary internal constructor(
      * background, so a slow server does not hold the library open.
      */
     override suspend fun connect() {
-        gate.call { wiring, ops ->
-            ops.heartbeat()
-            rememberDevice(wiring, ops)
+        val catalog = gate.restoreCatalog()
+        offlineCatalog = false
+        try {
+            gate.call { wiring, ops ->
+                ops.heartbeat()
+                rememberDevice(wiring, ops)
+            }
+        } catch (unavailable: PluginException.Unavailable) {
+            if (!catalog.hasPlatforms()) throw unavailable
+            offlineCatalog = true
+            return
         }
         val wiring = gate.wiring()
         try {
@@ -247,10 +256,19 @@ internal class RommLibrary internal constructor(
         }
     }
 
-    override suspend fun listPlatforms(): List<ListedPlatform> = gate.call { wiring, ops ->
-        val platforms = ops.platforms()
-        gate.catalog.rememberPlatforms(platforms)
-        platforms.map { platform ->
+    override suspend fun listPlatforms(): List<ListedPlatform> {
+        val wiring = gate.wiring()
+        val catalog = gate.restoreCatalog(wiring)
+        val platforms = if (offlineCatalog) catalog.platforms() else try {
+            gate.call { current, ops ->
+                ops.platforms().also { gate.catalog(current).rememberPlatforms(it) }
+            }
+        } catch (unavailable: PluginException.Unavailable) {
+            if (!catalog.hasPlatforms()) throw unavailable
+            offlineCatalog = true
+            catalog.platforms()
+        }
+        return platforms.map { platform ->
             ListedPlatform(
                 platformId = alignedPlatformId(wiring.platforms, platform.slug),
                 displayName = platform.displayName,
@@ -259,20 +277,52 @@ internal class RommLibrary internal constructor(
         }
     }
 
-    override suspend fun listGames(platformId: String, query: GameQuery): GamePage = gate.call { wiring, ops ->
-        val numeric = resolvePlatform(ops, platformId, wiring.platforms)
+    override suspend fun listGames(platformId: String, query: GameQuery): GamePage {
+        val wiring = gate.wiring()
+        val catalog = gate.restoreCatalog(wiring)
+        if (offlineCatalog) return cachedGames(wiring, catalog, platformId, query)
+        return try {
+            listOnlineGames(platformId, query)
+        } catch (unavailable: PluginException.Unavailable) {
+            cachedGames(wiring, catalog, platformId, query, unavailable)
+        }
+    }
+
+    private fun cachedGames(
+        wiring: RommWiring,
+        catalog: RommCatalog,
+        platformId: String,
+        query: GameQuery,
+        failure: PluginException.Unavailable = PluginException.Unavailable("RomM is offline; this catalog has not been saved yet"),
+    ): GamePage {
+        val numeric = matchPlatform(platformId, wiring.platforms, catalog)?.id ?: throw failure
+        val listed = catalog.listing(numeric) ?: throw failure
+        val text = query.text.trim()
+        val matches = if (text.isEmpty()) listed else listed.filter { rom ->
+            (listOfNotNull(rom.name, rom.fsName) + rom.alternativeNames).any { it.contains(text, ignoreCase = true) }
+        }
+        val offset = query.offset.coerceAtLeast(0).coerceAtMost(matches.size)
+        val end = (offset.toLong() + query.limit.coerceIn(1, 10_000)).coerceAtMost(matches.size.toLong()).toInt()
+        return GamePage(
+            games = matches.subList(offset, end).map { it.toGame(wiring.romRoot, wiring.platforms, instanceId) },
+            nextOffset = end.takeIf { it < matches.size },
+            total = matches.size,
+        )
+    }
+
+    private suspend fun listOnlineGames(platformId: String, query: GameQuery): GamePage = gate.call { wiring, ops ->
+        val catalog = gate.catalog(wiring)
+        val numeric = resolvePlatform(ops, platformId, wiring.platforms, catalog)
             ?: return@call GamePage(games = emptyList(), nextOffset = null, total = 0)
         val limit = query.limit.coerceIn(1, 10_000)
         val offset = query.offset.coerceAtLeast(0)
-        val page = ops.roms(
-            RomQuery(
-                platformIds = listOf(numeric),
-                searchTerm = query.text.trim().ifEmpty { null },
-                limit = limit,
-                offset = offset,
-            ),
+        val romQuery = RomQuery(
+            platformIds = listOf(numeric),
+            searchTerm = query.text.trim().ifEmpty { null },
+            limit = limit,
+            offset = offset,
         )
-        gate.catalog.rememberRoms(page.items)
+        val page = ops.roms(romQuery)
         val games = runInterruptible(Dispatchers.IO) {
             page.items.map { it.toGame(wiring.romRoot, wiring.platforms, instanceId) }
         }
@@ -283,6 +333,7 @@ internal class RommLibrary internal constructor(
             knownTotal != null && consumed.toLong() >= knownTotal -> null
             else -> consumed
         }
+        catalog.rememberPage(numeric, romQuery, page, finished = next == null)
         GamePage(
             games = games,
             nextOffset = next,
@@ -299,8 +350,9 @@ internal class RommLibrary internal constructor(
     override suspend fun ensureLocal(game: Game): LaunchTarget {
         val wiring = gate.wiring()
         val romId = game.romId()
+        val catalog = gate.restoreCatalog(wiring)
         val cached = runInterruptible(Dispatchers.IO) {
-            val spec = gate.catalog.rom(game.remoteKey)?.bytes() ?: readRomSpec(wiring.romRoot, romId)
+            val spec = catalog.rom(game.remoteKey)?.bytes() ?: readRomSpec(wiring.romRoot, romId)
             spec?.let { verifiedRom(wiring.romRoot, romId, it) }
         }
         if (cached != null) return LaunchTarget.ContentUri(uri = wiring.contentUris.uriFor(cached))
@@ -308,7 +360,7 @@ internal class RommLibrary internal constructor(
         var done = false
         try {
             return gate.call { current, ops ->
-                val rom = romFor(game, ops)
+                val rom = romFor(game, ops, gate.catalog(current))
                 val spec = rom.bytes()
                 val path = ops.downloadRom(
                     romId = rom.id,
@@ -473,25 +525,26 @@ internal class RommLibrary internal constructor(
         ops: RommOps,
         platformId: String,
         definitions: List<Platform>,
+        catalog: RommCatalog,
     ): Long? {
-        matchPlatform(platformId, definitions)?.let { return it.id }
+        matchPlatform(platformId, definitions, catalog)?.let { return it.id }
         val listed = ops.platforms()
-        gate.catalog.rememberPlatforms(listed)
-        return matchPlatform(platformId, definitions)?.id
+        catalog.rememberPlatforms(listed)
+        return matchPlatform(platformId, definitions, catalog)?.id
     }
 
-    private fun matchPlatform(platformId: String, definitions: List<Platform>): app.foldcade.romm.PlatformSummary? =
-        gate.catalog.platforms().firstOrNull { platform ->
+    private fun matchPlatform(platformId: String, definitions: List<Platform>, catalog: RommCatalog): app.foldcade.romm.PlatformSummary? =
+        catalog.platforms().firstOrNull { platform ->
             platform.slug.equals(platformId, ignoreCase = true) ||
                 platform.id.toString() == platformId ||
                 alignedPlatformId(definitions, platform.slug).equals(platformId, ignoreCase = true)
         }
 
-    private suspend fun romFor(game: Game, ops: RommOps): RomSummary {
+    private suspend fun romFor(game: Game, ops: RommOps, catalog: RommCatalog): RomSummary {
         if (game.backendId != instanceId) {
             throw PluginException.NotFound("This game is not from RomM")
         }
-        gate.catalog.rom(game.remoteKey)?.let { return it }
+        catalog.rom(game.remoteKey)?.let { return it }
         val romId = game.romId()
         val page = ops.roms(
             RomQuery(
@@ -500,7 +553,7 @@ internal class RommLibrary internal constructor(
                 offset = 0,
             ),
         )
-        gate.catalog.rememberRoms(page.items)
+        catalog.rememberRoms(page.items)
         return page.items.find { it.id == romId }
             ?: throw PluginException.NotFound("RomM has no ROM ${game.remoteKey}")
     }
@@ -563,7 +616,7 @@ internal class RommLibrary internal constructor(
         val localPath = localCopy ?: return null
         val remotePath = remoteCopy ?: return null
         if (!Files.isRegularFile(localPath) || !Files.isRegularFile(remotePath)) return null
-        val rom = gate.catalog.rom(romId.toString())
+        val rom = gate.catalog(wiring).rom(romId.toString())
         val label = rom?.name?.takeIf { it.isNotBlank() }
             ?: rom?.fsName?.takeIf { it.isNotBlank() }
             ?: "ROM $romId"

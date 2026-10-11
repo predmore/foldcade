@@ -4,10 +4,17 @@ import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.platform.LocalContext
+import app.foldcade.FoldcadeApp
 import app.foldcade.R
 import app.foldcade.language.MarkAccent
 
@@ -71,5 +78,21 @@ fun MarkIcon(mark: String, scale: Float) {
             contentDescription = null,
             modifier = Modifier.fillMaxSize(scale),
         )
+    }
+}
+
+/** The hero keeps a small, bounded cache of the large marks used in its transitions. */
+@Composable
+internal fun HeroMark(mark: String, scale: Float) {
+    val glyph = markGlyph(mark) ?: return
+    val images = (LocalContext.current.applicationContext as FoldcadeApp).markImages
+    var bitmap by remember(glyph.drawable) { mutableStateOf(images.cached(glyph.drawable)) }
+    LaunchedEffect(glyph.drawable) {
+        if (bitmap == null) bitmap = images.load(glyph.drawable)
+    }
+    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+        bitmap?.let {
+            Image(bitmap = it, contentDescription = null, modifier = Modifier.fillMaxSize(scale))
+        }
     }
 }

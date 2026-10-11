@@ -1,9 +1,14 @@
 package app.foldcade.artwork
 
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import java.io.File
+import java.io.IOException
 import java.security.MessageDigest
+import kotlin.coroutines.coroutineContext
 
 /**
  * Image bytes on disk, so art is downloaded once. Files are named by a hash of
@@ -12,24 +17,53 @@ import java.security.MessageDigest
  */
 class ArtBytes(
     private val dir: File,
-    private val http: ArtHttp,
+    private val fetch: suspend (String) -> ByteArray?,
     private val maxTotalBytes: Long = 256L * 1024 * 1024,
 ) {
+    constructor(dir: File, http: ArtHttp, maxTotalBytes: Long = 256L * 1024 * 1024) : this(
+        dir,
+        { url -> http.get(url).takeIf { it.status == 200 }?.body },
+        maxTotalBytes,
+    )
+
+    // Bounded locks coalesce requests from both displays without retaining every URL.
+    private val loads = Array(32) { Mutex() }
+    private val disk = Mutex()
+
     /** The image at [url], or null when the server has none. Throws when it cannot be reached. */
     suspend fun load(url: String): ByteArray? = withContext(Dispatchers.IO) {
         val file = File(dir, hashOf(url))
+        loads[(url.hashCode() and Int.MAX_VALUE) % loads.size].withLock {
+            disk.withLock { read(file) }?.let { return@withLock it }
+            val bytes = fetch(url)?.takeIf { it.isNotEmpty() } ?: return@withLock null
+            coroutineContext.ensureActive()
+            disk.withLock { save(file, bytes) }
+            bytes
+        }
+    }
+
+    private fun read(file: File): ByteArray? = try {
         if (file.isFile) {
             file.setLastModified(System.currentTimeMillis())
-            return@withContext file.readBytes()
+            file.readBytes().takeIf { it.isNotEmpty() }
+        } else null
+    } catch (_: IOException) {
+        null
+    }
+
+    private fun save(file: File, bytes: ByteArray) {
+        var temp: File? = null
+        try {
+            dir.mkdirs()
+            // A different cache instance may still be finishing a request after an origin change.
+            temp = File.createTempFile(file.name, ".tmp", dir)
+            temp.writeBytes(bytes)
+            if (temp.renameTo(file)) trim()
+        } catch (_: IOException) {
+            // Cache eviction or a full disk must not fail a successful image request.
+        } finally {
+            temp?.delete()
         }
-        val response = http.get(url)
-        if (response.status != 200 || response.body.isEmpty()) return@withContext null
-        dir.mkdirs()
-        val temp = File(dir, "${file.name}.tmp")
-        temp.writeBytes(response.body)
-        if (!temp.renameTo(file)) temp.delete()
-        trim()
-        response.body
     }
 
     private fun trim() {
@@ -38,8 +72,8 @@ class ArtBytes(
         if (total <= maxTotalBytes) return
         for (file in files.sortedBy { it.lastModified() }) {
             if (total <= maxTotalBytes) break
-            total -= file.length()
-            file.delete()
+            val length = file.length()
+            if (file.delete()) total -= length
         }
     }
 

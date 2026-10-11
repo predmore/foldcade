@@ -69,12 +69,14 @@ import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import java.lang.ref.WeakReference
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 
 class FoldcadeApp : Application() {
+    internal val markImages by lazy { app.foldcade.ui.MarkImages(this) }
     lateinit var store: SessionStore
         private set
 
@@ -175,8 +177,24 @@ class FoldcadeApp : Application() {
     /** The quiet screen beside a single-screen app, and how bright it is. */
     lateinit var commandCenter: CommandCenter
         private set
-    /** The bottom screen's [CompanionHomeActivity] exists. Android can destroy it on its own. */
-    var companionAlive: Boolean = false
+    private val homes = mutableMapOf<Int, WeakReference<FoldcadeHomeActivity>>()
+
+    internal fun companionAlive(displayId: Int): Boolean = homes[displayId]?.get()?.let {
+        !it.isDestroyed && !it.isFinishing
+    } == true
+
+    /** Android may replace an explicit task with its Home task. Keep one Foldcade surface per display. */
+    internal fun homeCreated(activity: FoldcadeHomeActivity) {
+        val displayId = activity.display?.displayId ?: return
+        val previous = homes.put(displayId, WeakReference(activity))?.get()
+        if (activity is CompanionHomeActivity) companionStarting = false
+        if (previous != null && previous !== activity && !previous.isDestroyed) previous.finishAndRemoveTask()
+    }
+
+    internal fun homeDestroyed(activity: FoldcadeHomeActivity) {
+        val displayId = activity.display?.displayId ?: return
+        if (homes[displayId]?.get() === activity) homes.remove(displayId)
+    }
 
     /** A start for it is on its way, so a second resume does not start another. */
     var companionStarting: Boolean = false
@@ -193,6 +211,8 @@ class FoldcadeApp : Application() {
      * [Dispatchers.IO], not on the main thread. Compose updates hop back to main.
      */
     val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    /** Both displays cancel the same pending launch, including its network transfer. */
+    internal val launchWork = LaunchWork()
     private val credentialGate = Mutex()
     private val pluginLoad = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val pluginsReady = CompletableDeferred<Unit>()
@@ -788,12 +808,7 @@ class FoldcadeApp : Application() {
     }
 
     /**
-     * Puts RomM's games on the same home board as the folder's, or takes them off
-     * once no server is saved. The grid does not change mode while this runs. A
-     * server that cannot be reached leaves the board as it was, placed tiles included.
-     */
-    /**
-     * A network coming back syncs the RomM saves that changed while it was gone.
+     * A network coming back refreshes the RomM catalog and syncs saves changed offline.
      * It waits until Android has validated the network, so a captive portal or a
      * link with no route yet does not use up the retry.
      */
@@ -816,27 +831,16 @@ class FoldcadeApp : Application() {
         }
     }
 
-    /** Connecting starts the RomM plugin's sync of unsynced saves. A failure waits for the next network. */
+    /** Reloading also connects, which starts the plugin's sync of unsynced saves. */
     private fun reconnectRomm() {
-        pluginLoad.launch {
-            pluginsReady.await()
-            configureSavedRomm()
-            for (id in rommLibraryIds()) {
-                try {
-                    plugins.connect(id)
-                } catch (cancelled: CancellationException) {
-                    throw cancelled
-                } catch (fatal: VirtualMachineError) {
-                    throw fatal
-                } catch (_: PluginException.NotAuthenticated) {
-                    withContext(Dispatchers.Main.immediate) { shell.askToSignInAgain() }
-                } catch (_: Exception) {
-                    Unit
-                }
-            }
-        }
+        syncRomm()
     }
 
+    /**
+     * Puts RomM's games on the same home board as the folder's, or takes them off
+     * once no server is saved. The grid does not change mode while this runs. A
+     * server that cannot be reached leaves the board as it was, placed tiles included.
+     */
     fun syncRomm() {
         val ticket = rommTicket.incrementAndGet()
         pluginLoad.launch {

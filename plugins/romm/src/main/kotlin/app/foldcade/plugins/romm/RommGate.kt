@@ -1,8 +1,8 @@
 package app.foldcade.plugins.romm
 
 import app.foldcade.api.plugin.PluginException
-import app.foldcade.romm.PlatformSummary
-import app.foldcade.romm.RomSummary
+import java.nio.file.Path
+import java.util.concurrent.ConcurrentHashMap
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.runInterruptible
@@ -10,30 +10,18 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 
-internal class RommCatalog {
-    private val roms = HashMap<String, RomSummary>()
-    private val platforms = ArrayList<PlatformSummary>()
-
-    fun rememberPlatforms(items: List<PlatformSummary>) = synchronized(this) {
-        items.forEach { incoming ->
-            val index = platforms.indexOfFirst { it.id == incoming.id }
-            if (index >= 0) platforms[index] = incoming else platforms.add(incoming)
-        }
-    }
-
-    fun rememberRoms(items: List<RomSummary>) = synchronized(this) {
-        items.forEach { roms[it.id.toString()] = it }
-    }
-
-    fun rom(remoteKey: String): RomSummary? = synchronized(this) { roms[remoteKey] }
-
-    fun platforms(): List<PlatformSummary> = synchronized(this) { platforms.toList() }
-}
-
 internal class RommGate(
     private val source: () -> RommWiring?,
 ) {
-    val catalog = RommCatalog()
+    private val catalogs = ConcurrentHashMap<Path, RommCatalog>()
+    val catalog: RommCatalog get() = catalog(wiring())
+
+    fun catalog(wiring: RommWiring): RommCatalog = catalogs.computeIfAbsent(wiring.data.catalogFile()) {
+        RommCatalog(it, wiring.origin)
+    }
+
+    suspend fun restoreCatalog(wiring: RommWiring = wiring()): RommCatalog =
+        catalog(wiring).also { runInterruptible(Dispatchers.IO) { it.restore() } }
     private val gate = Mutex()
     private var held: Held? = null
 
@@ -52,6 +40,7 @@ internal class RommGate(
      */
     suspend fun <T> session(block: suspend (RommWiring, RommOps) -> T): T {
         val wiring = wiring()
+        restoreCatalog(wiring)
         val token = runInterruptible(Dispatchers.IO) {
             wiring.tokenSource.accessToken()?.trim()?.removePrefix("Bearer ")?.trim()?.ifEmpty { null }
         } ?: throw PluginException.NotAuthenticated("Sign in to RomM")

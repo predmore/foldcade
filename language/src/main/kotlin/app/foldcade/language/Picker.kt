@@ -741,6 +741,7 @@ data class PickerModel(
     val connectScreen: HostScreen? = null,
     val connectWarning: String? = null,
     val connectHint: String? = null,
+    val connectBusy: Boolean = false,
     val reLoginPending: Boolean = false,
     val playerSaves: List<PlayerSaveSetting> = emptyList(),
     val homeGrid: HomeGrid = HomeGrid.StandIns,
@@ -813,16 +814,17 @@ fun reduce(
             Meaning.Back -> coerced.copy(
                 connectOpen = false,
                 connectScreen = null,
+                connectBusy = false,
             ) to null
             Meaning.MoveUp -> coerced.copy(connectIndex = (index - 1).coerceAtLeast(0)) to null
             Meaning.MoveDown -> coerced.copy(connectIndex = (index + 1).coerceAtMost(fields.lastIndex)) to null
             Meaning.Activate -> when (field) {
-                ConnectField.Save -> coerced to if (coerced.connectKind == ConnectKind.ArtKey) Effect.SaveArtKey else Effect.SaveRommToken
+                ConnectField.Save -> coerced to if (coerced.connectBusy) null else if (coerced.connectKind == ConnectKind.ArtKey) Effect.SaveArtKey else Effect.SaveRommToken
                 ConnectField.Origin, ConnectField.Token -> coerced.copy(connectIndex = index) to Effect.EditField
             }
             Meaning.LeftPanel, Meaning.RightPanel ->
                 presentPanel(
-                    coerced.copy(connectOpen = false, connectScreen = null),
+                    coerced.copy(connectOpen = false, connectScreen = null, connectBusy = false),
                     meaning,
                     screen,
                 ) to null
