@@ -969,6 +969,13 @@ class ShellController(
         else -> tileFromOrder(displaySource(model))
     }
 
+    /** The game cell [index] shows, as [focusedGame] reads the focused cell. Null off the grid. */
+    fun gameAt(index: Int): ShelfGame? = when {
+        index !in 0 until model.count -> null
+        showingHome() -> home.face(index)?.let(::homeShelf)
+        else -> tileFromOrder(displayOrder(model).getOrElse(index) { index })
+    }
+
     /**
      * A home tile as a game. A library game takes its screens from its platform's
      * players, as the library grid does, so a DS game reads as both screens.
