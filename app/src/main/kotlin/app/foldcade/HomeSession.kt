@@ -15,6 +15,7 @@ import app.foldcade.language.HomeBoard
 import app.foldcade.language.HomeItem
 import app.foldcade.language.HomeKeys
 import app.foldcade.language.folderCountLine
+import app.foldcade.language.homeFolderFor
 import app.foldcade.language.HomeKind
 import app.foldcade.language.HomePlatform
 import app.foldcade.language.MARK_LIBRARY
@@ -226,7 +227,7 @@ class HomeSession(raw: String?) {
             if (board.allChrome != null) return null
             val item = allRows().getOrNull(index) ?: return null
             if (onHome(board, item.id)) return null
-            val into = board.destinationFolderId?.let { board.folders[it]?.name }
+            val into = addFolderFor(item)?.let { board.folders[it]?.name }
             return TileActions(addToHome = if (into != null) "${Copy.addTo} $into" else Copy.addToHome)
         }
         val slots = visibleSlots(board)
@@ -302,11 +303,17 @@ class HomeSession(raw: String?) {
         return index.coerceAtMost((visibleCount() - 1).coerceAtLeast(0))
     }
 
-    /** Places the All item at [index] on Home, in the destination folder when one is chosen. */
+    /**
+     * Places the All item at [index] on Home: in the destination folder when one is
+     * chosen, else back in its platform's or library's folder, else the first free slot.
+     */
     fun addFocused(index: Int) {
         val item = allRows().getOrNull(index) ?: return
-        board = addToHome(board, item.id, board.destinationFolderId)
+        board = addToHome(board, item.id, addFolderFor(item))
     }
+
+    private fun addFolderFor(item: HomeItem): String? =
+        board.destinationFolderId ?: homeFolderFor(board, item, platforms)
 
     fun showAll() {
         renamingId = null

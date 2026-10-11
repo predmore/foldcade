@@ -358,12 +358,18 @@ class HomeGridOrderTest {
         val puzzle = titles(shell).indexOf("Puzzle")
         focus(shell, puzzle)
         assertEquals(listOf(Row.AddToHome), optionRows(shell))
-        assertEquals(Copy.addToHome, shell.model.tileActions?.addToHome)
+        // It goes back where it came from, and the row says where.
+        assertEquals("${Copy.addTo} Nintendo 3DS", shell.model.tileActions?.addToHome)
         choose(shell, Row.AddToHome)
         assertTrue(shell.homeFace(puzzle)?.onGrid == true)
         // Placed now, so Y has nothing to offer and stays shut.
         shell.onMeaning(Meaning.Options, HostScreen.Bottom)
         assertNull(shell.model.panel)
+        shell.onMeaning(Meaning.Back, HostScreen.Bottom)
+        assertFalse("Puzzle" in titles(shell))
+        focus(shell, titles(shell).indexOf("Nintendo 3DS"))
+        shell.onMeaning(Meaning.Activate, HostScreen.Bottom)
+        assertTrue("Puzzle" in titles(shell))
     }
 
     private fun entry(
