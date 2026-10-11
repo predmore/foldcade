@@ -117,6 +117,17 @@
             </intent-filter>
         </activity>
 
+        <!-- R1's notices. Android binds it only after the user turns on notification access. -->
+        <service
+            android:name=".NoticeListener"
+            android:exported="false"
+            android:label="Foldcade"
+            android:permission="android.permission.BIND_NOTIFICATION_LISTENER_SERVICE">
+            <intent-filter>
+                <action android:name="android.service.notification.NotificationListenerService" />
+            </intent-filter>
+        </service>
+
         <activity
             android:name=".StandInActivity"
             android:exported="false"

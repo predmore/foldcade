@@ -22,7 +22,7 @@ class BrightnessTest {
     fun rOneOpensOnBrightnessAndTheSideKeysStepIt() {
         val opened = reduce(allowed(position = 60), Meaning.RightPanel).first
         assertEquals(Row.Brightness, panelRows(opened.panel!!, opened)[opened.panel!!.index])
-        assertEquals(BrightnessCopy.adjust, panelSlider(opened))
+        assertEquals(listOf(HintKey(PromptKey.DpadSides, BrightnessCopy.adjust), HintKey(PromptKey.FaceB, Copy.back)), panelHints(opened))
         val brighter = reduce(opened, Meaning.MoveRight).first
         assertEquals(65, brighter.brightness)
         assertEquals(opened.panel, brighter.panel)
@@ -38,7 +38,7 @@ class BrightnessTest {
     @Test
     fun withoutAccessEveryKeyOnTheRowAsksFirst() {
         val opened = reduce(PickerModel(count = 2, rowsPerPage = 2), Meaning.RightPanel).first
-        assertNull(panelSlider(opened))
+        assertNull(panelHints(opened))
         assertEquals("Brightness  Allow", rowLabel(Row.Brightness, opened))
         listOf(Meaning.Activate, Meaning.MoveLeft, Meaning.MoveRight).forEach { meaning ->
             val asked = reduce(opened, meaning).first

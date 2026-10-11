@@ -72,6 +72,12 @@ enum class DialogKind {
 
     /** Android's "Modify system settings" access, for the R1 brightness slider. */
     Brightness,
+
+    /** Notification access, for R1's notices. */
+    NoticeAccess,
+
+    /** All of one Foldcade notice's text. */
+    Notice,
 }
 
 enum class DialogButton {
@@ -208,12 +214,6 @@ fun previewDialogState(kind: String, index: Int, screen: HostScreen): DialogStat
     return dialog.copy(index = index.coerceIn(0, last))
 }
 
-data class FoldNotice(
-    val id: String,
-    val title: String,
-    val body: String,
-)
-
 data class Hold(
     val index: Int,
     val origin: Int,
@@ -238,6 +238,12 @@ sealed interface Row {
     data object AddFolder : Row
     data object Connect : Row
     data class Notice(val id: String) : Row
+
+    /** Shown in R1 until Foldcade may read notifications. A asks. */
+    data object NoticeAccess : Row
+
+    /** Under two or more notices Y could remove. */
+    data object ClearNotices : Row
     data class SignOut(val pluginId: String, val label: String) : Row
     data class ForgetFolder(val uri: String, val label: String) : Row
     data class PlayerSave(val playerId: String) : Row
@@ -372,10 +378,15 @@ fun libraryRows(
         listOf(Row.AddFolder, Row.Connect) +
         folders.map { Row.ForgetFolder(it.uri, it.label) }
 
-/** R1: brightness first, so R1 then left or right changes it. Then notices, then Android's screens. */
-fun rightRows(notices: List<FoldNotice>): List<Row> = buildList {
+/**
+ * R1: brightness first, so R1 then left or right changes it. Then the notices,
+ * newest first, or the row that asks for access. Then Android's screens.
+ */
+fun rightRows(notices: List<FoldNotice>, askNoticeAccess: Boolean = false): List<Row> = buildList {
     add(Row.Brightness)
+    if (askNoticeAccess) add(Row.NoticeAccess)
     notices.forEach { add(Row.Notice(it.id)) }
+    if (notices.count { it.dismissable } >= 2) add(Row.ClearNotices)
     quickSettings().forEach { add(Row.QuickTile(it)) }
 }
 
@@ -424,11 +435,29 @@ fun actionRows(tile: TileActions?, app: AppActions?): List<Row> = buildList {
     }
 }
 
-/** The hint word for the focused menu row when it is a slider, or null. */
-fun panelSlider(model: PickerModel): String? {
+/**
+ * The hint row for the focused menu row when its keys are not just A and B:
+ * the slider names the D-pad, and a notice names Y. Null leaves the usual row.
+ */
+fun panelHints(model: PickerModel): List<HintKey>? {
     val panel = model.panel ?: return null
-    val row = panelRows(panel, model).getOrNull(panel.index)
-    return BrightnessCopy.adjust.takeIf { row == Row.Brightness && model.brightnessAllowed }
+    if (model.dialog != null) return null
+    val back = HintKey(promptKeyOf(model.faceMap.backKey) ?: PromptKey.FaceB, Copy.back)
+    return when (val row = panelRows(panel, model).getOrNull(panel.index)) {
+        Row.Brightness -> if (model.brightnessAllowed) listOf(HintKey(PromptKey.DpadSides, BrightnessCopy.adjust), back) else null
+        is Row.Notice -> {
+            val notice = model.notices.firstOrNull { it.id == row.id } ?: return null
+            buildList {
+                if (notice.openable) {
+                    add(HintKey(promptKeyOf(model.faceMap.confirmKey) ?: PromptKey.FaceA, Copy.hintTop))
+                    add(HintKey(PromptKey.FaceX, Copy.hintBottom))
+                }
+                if (notice.dismissable) add(HintKey(PromptKey.FaceY, NoticeCopy.dismiss))
+                add(back)
+            }
+        }
+        else -> null
+    }
 }
 
 fun destinationRows(tile: TileActions?): List<Row> =
@@ -440,7 +469,7 @@ fun panelRows(panel: SidePanel, model: PickerModel): List<Row> = when (panel.lev
     PanelLevel.Library -> libraryRows(model.signedIn, model.folders)
     PanelLevel.Root -> when (panel.side) {
         Side.Left -> leftRows()
-        Side.Right -> rightRows(model.notices)
+        Side.Right -> rightRows(model.notices, model.askNoticeAccess)
     }
 }
 
@@ -497,6 +526,8 @@ fun rowText(row: Row, model: PickerModel): RowText = when (row) {
     is Row.SignOut -> RowText("${Copy.signOut} · ${row.label}")
     is Row.ForgetFolder -> RowText("${Copy.removeFolder} · ${row.label}")
     is Row.Notice -> RowText(model.notices.firstOrNull { it.id == row.id }?.title ?: "")
+    Row.NoticeAccess -> RowText(NoticeCopy.access, NoticeCopy.accessValue)
+    Row.ClearNotices -> RowText(NoticeCopy.clearAll)
     is Row.PlayerSave -> {
         val setting = model.playerSaves.firstOrNull { it.playerId == row.playerId }
         val chosen = if (setting?.chosen == true) Copy.playerSavesSet else Copy.playerSavesUnset
@@ -579,6 +610,13 @@ sealed interface Effect {
     data object AddToHome : Effect
     data object OpenAll : Effect
     data object ToggleAddNew : Effect
+
+    /** Open the notice's app on the top screen, or the bottom when [onBottom]. */
+    data class OpenNotice(val id: String, val onBottom: Boolean) : Effect
+    data class DismissNotice(val id: String) : Effect
+
+    /** Every notice Y could remove is gone from the model; the app clears them too. */
+    data object ClearNotices : Effect
 }
 
 /** What a grid cell is. Existing callers stay on [Games], which launches. */
@@ -666,6 +704,8 @@ data class PickerModel(
     val brightness: Int = 50,
     /** Android lets Foldcade write the brightness setting. */
     val brightnessAllowed: Boolean = false,
+    /** R1 shows the row that asks for notification access. */
+    val askNoticeAccess: Boolean = false,
 )
 
 fun reduce(
@@ -1012,6 +1052,16 @@ private fun applyPanel(
         }
         Meaning.Activate -> activateRow(model, current, rows[index], screen)
         Meaning.LeftPanel, Meaning.RightPanel -> presentPanel(model, meaning, screen) to null
+        // X opens a notice on the bottom screen, as it opens a game there.
+        Meaning.ActivateBottom -> when (val row = rows[index]) {
+            is Row.Notice -> openNotice(model, current, row.id, onBottom = true, screen = screen)
+            else -> model.copy(panel = current) to null
+        }
+        // Y, or Delete on a keyboard, removes the focused notice.
+        Meaning.Options, Meaning.Dismiss -> when (val row = rows[index]) {
+            is Row.Notice -> dismissNotice(model, current, row.id)
+            else -> model.copy(panel = current) to null
+        }
         else -> model.copy(panel = current) to null
     }
 }
@@ -1188,7 +1238,12 @@ private fun activateRow(
         ) to Effect.OpenConnect
         is Row.SignOut -> model.copy(panel = null, focus = panel.grid) to Effect.ForgetCredentials(row.pluginId)
         is Row.ForgetFolder -> model.copy(panel = null, focus = panel.grid) to Effect.ForgetFolder(row.uri)
-        is Row.Notice -> model.copy(panel = panel, notices = model.notices.filter { it.id != row.id }) to null
+        is Row.Notice -> openNotice(model, panel, row.id, onBottom = false, screen = screen)
+        Row.NoticeAccess -> model.copy(panel = panel, dialog = noticeAccessPrompt()) to null
+        Row.ClearNotices -> model.copy(
+            panel = panel.copy(index = 0),
+            notices = model.notices.filter { !it.dismissable },
+        ) to Effect.ClearNotices
         is Row.PlayerSave -> model.copy(panel = null, focus = panel.grid) to Effect.ChoosePlayerSave(row.playerId)
         Row.AndroidGames -> openGrid(model, panel, HomeGrid.AndroidGames)
         Row.Apps -> openGrid(model, panel, HomeGrid.Apps)
@@ -1226,6 +1281,32 @@ private fun activateRow(
             model.copy(capturingConfirm = true) to null
         }
     }
+}
+
+/**
+ * A, or X for the bottom screen. An app's notice opens that app and R1 closes.
+ * A Foldcade notice has no app, so A shows all of its text and X does nothing.
+ */
+private fun openNotice(
+    model: PickerModel,
+    panel: SidePanel,
+    id: String,
+    onBottom: Boolean,
+    screen: HostScreen,
+): Pair<PickerModel, Effect?> {
+    val notice = model.notices.firstOrNull { it.id == id } ?: return model.copy(panel = panel) to null
+    if (notice.openable) {
+        return model.copy(panel = null, focus = panel.grid) to Effect.OpenNotice(id, onBottom)
+    }
+    if (onBottom) return model.copy(panel = panel) to null
+    return model.copy(panel = panel, dialog = noticeReader(notice, panel.screen)) to null
+}
+
+/** The focus stays in place, so the next notice moves up under it. */
+private fun dismissNotice(model: PickerModel, panel: SidePanel, id: String): Pair<PickerModel, Effect?> {
+    val notice = model.notices.firstOrNull { it.id == id }
+    if (notice == null || !notice.dismissable) return model.copy(panel = panel) to null
+    return model.copy(panel = panel, notices = model.notices.filter { it.id != id }) to Effect.DismissNotice(id)
 }
 
 private fun openGrid(

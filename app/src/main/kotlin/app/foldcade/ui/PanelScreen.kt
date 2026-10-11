@@ -158,6 +158,7 @@ import app.foldcade.language.HintPlace
 import app.foldcade.language.HostScreen
 import app.foldcade.language.Meaning
 import app.foldcade.language.Row
+import app.foldcade.language.FoldNotice
 import app.foldcade.language.Metrics
 import app.foldcade.language.Motion
 import app.foldcade.language.MotionSpeed
@@ -179,7 +180,8 @@ import app.foldcade.language.heroCopy
 import app.foldcade.language.heroCrossfadeActive
 import app.foldcade.language.monogram
 import app.foldcade.language.panelRows
-import app.foldcade.language.panelSlider
+import app.foldcade.language.panelHints
+import app.foldcade.language.noticeAge
 import app.foldcade.language.quickTileColumns
 import app.foldcade.language.rowLabel
 import app.foldcade.language.retargetHero
@@ -1109,7 +1111,18 @@ private fun PanelRows(
             val focused = panel.index == index
             val step: () -> Unit = { onEffect(app.shell.touchPanel(index, screen)) }
             val parts = rowText(row, app.shell.model)
-            if (row is Row.Brightness) {
+            val notice = (row as? Row.Notice)?.let { item -> app.shell.model.notices.firstOrNull { it.id == item.id } }
+            if (notice != null) {
+                NoticeRow(
+                    notice = notice,
+                    focused = focused,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .keepInView(focused)
+                        .rowHighlight(focused)
+                        .then(if (interactive) Modifier.hostPress(step) else Modifier),
+                )
+            } else if (row is Row.Brightness) {
                 SliderRow(
                     label = parts.label,
                     value = parts.value.orEmpty(),
@@ -1180,6 +1193,46 @@ private fun PanelRows(
                 focusedIndex = panel.index,
                 interactive = interactive,
                 onEffect = onEffect,
+            )
+        }
+    }
+}
+
+/** One notice: its app's icon, its title over one line of text, and how long ago. */
+@Composable
+private fun NoticeRow(notice: FoldNotice, focused: Boolean, modifier: Modifier = Modifier) {
+    val theme = foldTheme()
+    val icon = launcherIcon(notice.packageName ?: LocalContext.current.packageName)
+    Row(
+        modifier.padding(start = px(16f), end = px(16f), top = px(10f), bottom = px(10f)),
+        horizontalArrangement = Arrangement.spacedBy(px(16f)),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Box(Modifier.size(px(48f)), contentAlignment = Alignment.Center) {
+            if (icon != null) {
+                Image(bitmap = icon, contentDescription = null, modifier = Modifier.fillMaxSize())
+            }
+        }
+        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(px(2f))) {
+            BasicText(
+                text = notice.title,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                style = text(if (focused) theme.onBackground else theme.onBackground.copy(alpha = 0.86f), TypeRamp.sideRow, theme),
+            )
+            if (notice.body.isNotEmpty()) {
+                BasicText(
+                    text = notice.body,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    style = text(theme.muted, TypeRamp.hint, theme),
+                )
+            }
+        }
+        if (notice.postedMillis > 0L) {
+            BasicText(
+                text = noticeAge(notice.postedMillis, System.currentTimeMillis()),
+                style = text(theme.muted, TypeRamp.hint, theme),
             )
         }
     }
@@ -1362,13 +1415,12 @@ private fun GridHints(app: FoldcadeApp, modifier: Modifier = Modifier) {
     }
     // The grid's own keys only count while nothing covers it.
     val gridKeys = model.panel == null && model.dialog == null
-    val keys = gridHints(
+    val keys = panelHints(model) ?: gridHints(
         actions,
         shell.homeKeys(),
         model.faceMap,
         screens = gridKeys && shell.focusedLaunchesOnOneScreen(),
         options = gridKeys && !model.connectOpen && shell.hasOptions(),
-        slider = if (model.dialog == null) panelSlider(model) else null,
     )
     if (keys.isEmpty()) return
     Row(
