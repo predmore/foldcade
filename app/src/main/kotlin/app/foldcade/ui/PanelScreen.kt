@@ -1502,7 +1502,21 @@ private fun PanelRows(
     val tileStart = rows.indexOfFirst { it is Row.QuickTile }
     Column(Modifier.graphicsLayer { alpha = progress }, verticalArrangement = Arrangement.spacedBy(px(8f))) {
         rows.forEachIndexed { index, row ->
-            if (row is Row.QuickTile) return@forEachIndexed
+            // The tiles draw as one block where the first of them sits: the top of R1.
+            if (row is Row.QuickTile) {
+                if (index == tileStart) {
+                    QuickTiles(
+                        app = app,
+                        screen = screen,
+                        rows = rows,
+                        tileStart = tileStart,
+                        focusedIndex = panel.index,
+                        interactive = interactive,
+                        onEffect = onEffect,
+                    )
+                }
+                return@forEachIndexed
+            }
             val focused = panel.index == index
             val step: () -> Unit = { onEffect(app.shell.touchPanel(index, screen)) }
             val parts = rowText(row, app.shell.model)
@@ -1528,9 +1542,11 @@ private fun PanelRows(
                         .then(if (interactive) Modifier.hostPress(step) else Modifier),
                 )
             } else if (row is Row.Brightness) {
+                // A bare slider under the tiles, as in Android's quick settings.
                 SliderRow(
                     label = parts.label,
                     value = parts.value.orEmpty(),
+                    showLabel = false,
                     fraction = app.shell.model.brightness / 100f,
                     focused = focused,
                     interactive = interactive,
@@ -1588,17 +1604,6 @@ private fun PanelRows(
                     }
                 }
             }
-        }
-        if (tileStart >= 0) {
-            QuickTiles(
-                app = app,
-                screen = screen,
-                rows = rows,
-                tileStart = tileStart,
-                focusedIndex = panel.index,
-                interactive = interactive,
-                onEffect = onEffect,
-            )
         }
     }
 }
@@ -1667,7 +1672,7 @@ private fun QuickTiles(
     onEffect: (Effect?) -> Unit,
 ) {
     val theme = foldTheme()
-    val tiles = rows.subList(tileStart, rows.size)
+    val tiles = rows.drop(tileStart).takeWhile { it is Row.QuickTile }
     // Round icon buttons in one row, like Cocoon's quick settings. The label is for touch
     // readers and the emulator's UI dump.
     Column(Modifier.padding(vertical = px(12f)), verticalArrangement = Arrangement.spacedBy(px(16f))) {

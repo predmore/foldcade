@@ -25,28 +25,30 @@ class AndroidSettingsMapTest {
     }
 
     @Test
-    fun rightClusterIsBrightnessNoticesThenOneRowOfAndroidScreens() {
+    fun rightClusterIsOneRowOfAndroidScreensThenBrightnessThenNotices() {
         val notices = listOf(FoldNotice("save", "Both saves were kept", "Archived"))
         val rows = rightRows(notices = notices)
         assertEquals(
-            listOf(Row.Brightness, Row.Notice("save")) + quickSettings().map { Row.QuickTile(it) },
+            quickSettings().map { Row.QuickTile(it) } + listOf(Row.Brightness, Row.Notice("save")),
             rows,
         )
         assertEquals(
             listOf(QuickSetting.Wifi, QuickSetting.Bluetooth, QuickSetting.Battery, QuickSetting.Settings),
             quickSettings(),
         )
+        // R1 opens on brightness, under the tiles. Up reaches the first tile.
         val opened = reduce(sample().copy(notices = notices), Meaning.RightPanel).first
-        assertEquals(0, opened.panel?.index)
-        val wifi = move(opened, Meaning.MoveDown, Meaning.MoveDown)
+        assertEquals(Row.Brightness, rows[opened.panel!!.index])
+        val wifi = move(opened, Meaning.MoveUp)
         assertEquals(Row.QuickTile(QuickSetting.Wifi), rows[wifi.panel!!.index])
         val edge = reduce(wifi, Meaning.MoveLeft).first
         assertEquals(wifi.panel?.index, edge.panel?.index)
         val bluetooth = reduce(wifi, Meaning.MoveRight).first
         assertEquals(Row.QuickTile(QuickSetting.Bluetooth), rows[bluetooth.panel!!.index])
-        // One row: down stays, up returns to the row above.
-        assertEquals(bluetooth.panel?.index, reduce(bluetooth, Meaning.MoveDown).first.panel?.index)
-        assertEquals(Row.Notice("save"), rows[reduce(bluetooth, Meaning.MoveUp).first.panel!!.index])
+        // One row at the top: up stays, down returns to brightness.
+        assertEquals(bluetooth.panel?.index, reduce(bluetooth, Meaning.MoveUp).first.panel?.index)
+        assertEquals(Row.Brightness, rows[reduce(bluetooth, Meaning.MoveDown).first.panel!!.index])
+        assertEquals(Row.Notice("save"), rows[move(opened, Meaning.MoveDown).panel!!.index])
         val last = move(wifi, *Array(quickSettings().size + 2) { Meaning.MoveRight })
         assertEquals(Row.QuickTile(QuickSetting.Settings), rows[last.panel!!.index])
         val (activated, effect) = reduce(wifi, Meaning.Activate)
@@ -63,12 +65,22 @@ class AndroidSettingsMapTest {
     }
 
     @Test
-    fun upFromTheFirstTileReturnsToTheRowAbove() {
+    fun downFromTheTilesReturnsToBrightness() {
         val opened = reduce(sample(), Meaning.RightPanel).first
-        val tiles = reduce(opened, Meaning.MoveDown).first
-        val launch = reduce(tiles, Meaning.MoveUp).first
-        assertEquals(0, launch.panel?.index)
-        assertEquals(0, reduce(launch, Meaning.MoveUp).first.panel?.index)
+        val tiles = reduce(opened, Meaning.MoveUp).first
+        assertEquals(0, tiles.panel?.index)
+        val back = reduce(tiles, Meaning.MoveDown).first
+        assertEquals(opened.panel?.index, back.panel?.index)
+        // Nothing under brightness without notices.
+        assertEquals(opened.panel?.index, reduce(back, Meaning.MoveDown).first.panel?.index)
+    }
+
+    @Test
+    fun tilesAtTheEndOfAListStillTakeTheLastRow() {
+        val rows = listOf(Row.Brightness) + quickSettings().map { Row.QuickTile(it) }
+        assertEquals(1, panelFocusIndex(rows, 0, Meaning.MoveDown))
+        assertEquals(0, panelFocusIndex(rows, 3, Meaning.MoveUp))
+        assertEquals(3, panelFocusIndex(rows, 3, Meaning.MoveDown))
     }
 
     private fun sample() = PickerModel(count = 2, rowsPerPage = 2)

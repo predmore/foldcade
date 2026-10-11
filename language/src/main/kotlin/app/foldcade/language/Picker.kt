@@ -413,16 +413,19 @@ fun libraryRows(
         folders.map { Row.ForgetFolder(it.uri, it.label) }
 
 /**
- * R1: brightness first, so R1 then left or right changes it. Then the notices,
- * newest first, or the row that asks for access. Then Android's screens.
+ * R1: Android's screens on top, then brightness, then the notices, newest first.
+ * R1 opens on brightness ([rightStart]), so R1 then left or right changes it.
+ * Notification access is asked from Settings, not here.
  */
-fun rightRows(notices: List<FoldNotice>, askNoticeAccess: Boolean = false): List<Row> = buildList {
+fun rightRows(notices: List<FoldNotice>): List<Row> = buildList {
+    quickSettings().forEach { add(Row.QuickTile(it)) }
     add(Row.Brightness)
-    if (askNoticeAccess) add(Row.NoticeAccess)
     notices.forEach { add(Row.Notice(it.id)) }
     if (notices.count { it.dismissable } >= 2) add(Row.ClearNotices)
-    quickSettings().forEach { add(Row.QuickTile(it)) }
 }
+
+/** Where R1 opens: the brightness slider, under the tiles. */
+fun rightStart(): Int = quickSettings().size
 
 /** A folder Move to can send a game into. A null [folderId] is the home root. */
 data class FolderChoice(val folderId: String?, val name: String)
@@ -504,7 +507,7 @@ fun panelRows(panel: SidePanel, model: PickerModel): List<Row> = when (panel.lev
     PanelLevel.EditHome -> editHomeRows(model)
     PanelLevel.Root -> when (panel.side) {
         Side.Left -> leftRows()
-        Side.Right -> rightRows(model.notices, model.askNoticeAccess)
+        Side.Right -> rightRows(model.notices)
     }
 }
 
@@ -856,7 +859,7 @@ private fun freshPanel(side: Side, grid: GridFocus): SidePanel = SidePanel(
     side = side,
     screen = HostScreen.Top,
     level = PanelLevel.Root,
-    index = 0,
+    index = if (side == Side.Right) rightStart() else 0,
     grid = grid,
 )
 
@@ -1052,45 +1055,47 @@ private fun placeOrPick(model: PickerModel): Pair<PickerModel, Effect?> {
 
 /**
  * Text rows are one column. Quick tiles are [quickTileColumns] wide and sit
- * together at the end of the list. A direction with no neighbor stays put.
+ * together as one block, at the top of R1. Up from the row under the block
+ * lands on the first tile of its last line. A direction with no neighbor stays put.
  */
 fun panelFocusIndex(rows: List<Row>, index: Int, meaning: Meaning): Int {
     if (rows.isEmpty()) return 0
     val current = index.coerceIn(0, rows.lastIndex)
     val tileStart = rows.indexOfFirst { it is Row.QuickTile }
-    val tilesAreSuffix = tileStart >= 0 && rows.drop(tileStart).all { it is Row.QuickTile }
-    if (!tilesAreSuffix) {
-        return when (meaning) {
-            Meaning.MoveUp -> (current - 1).coerceAtLeast(0)
-            Meaning.MoveDown -> (current + 1).coerceAtMost(rows.lastIndex)
-            else -> current
-        }
+    val tileEnd = rows.indexOfLast { it is Row.QuickTile } + 1
+    val tilesAreBlock = tileStart >= 0 && (tileStart until tileEnd).all { rows[it] is Row.QuickTile }
+    val linear = when (meaning) {
+        Meaning.MoveUp -> (current - 1).coerceAtLeast(0)
+        Meaning.MoveDown -> (current + 1).coerceAtMost(rows.lastIndex)
+        else -> current
     }
-    if (current < tileStart) {
-        return when (meaning) {
-            Meaning.MoveUp -> (current - 1).coerceAtLeast(0)
-            Meaning.MoveDown -> if (current == tileStart - 1) tileStart else current + 1
-            else -> current
-        }
+    if (!tilesAreBlock) return linear
+    val tileCount = tileEnd - tileStart
+    val lastLine = (tileCount - 1) / quickTileColumns
+    if (current !in tileStart until tileEnd) {
+        return if (meaning == Meaning.MoveUp && current == tileEnd) tileStart + lastLine * quickTileColumns else linear
     }
     val tileIndex = current - tileStart
     val column = tileIndex % quickTileColumns
-    val row = tileIndex / quickTileColumns
-    val tileCount = rows.size - tileStart
+    val line = tileIndex / quickTileColumns
     return when (meaning) {
         Meaning.MoveLeft -> if (column == 0) current else current - 1
         Meaning.MoveRight -> {
             val next = tileIndex + 1
-            if (next >= tileCount || next / quickTileColumns != row) current else tileStart + next
+            if (next >= tileCount || next / quickTileColumns != line) current else tileStart + next
         }
-        Meaning.MoveUp -> if (row == 0) {
+        Meaning.MoveUp -> if (line == 0) {
             if (tileStart == 0) current else tileStart - 1
         } else {
-            tileStart + (row - 1) * quickTileColumns + column
+            tileStart + (line - 1) * quickTileColumns + column
         }
         Meaning.MoveDown -> {
-            val below = (row + 1) * quickTileColumns + column
-            if (below < tileCount) tileStart + below else current
+            val below = (line + 1) * quickTileColumns + column
+            when {
+                below < tileCount -> tileStart + below
+                line == lastLine && tileEnd < rows.size -> tileEnd
+                else -> current
+            }
         }
         else -> current
     }
@@ -1316,9 +1321,9 @@ private fun activateRow(
         is Row.SignOut -> model.copy(panel = null, focus = panel.grid) to Effect.ForgetCredentials(row.pluginId)
         is Row.ForgetFolder -> model.copy(panel = null, focus = panel.grid) to Effect.ForgetFolder(row.uri)
         is Row.Notice -> openNotice(model, panel, row.id, onBottom = false, screen = screen)
-        Row.NoticeAccess -> model.copy(panel = panel, dialog = noticeAccessPrompt()) to null
+        Row.NoticeAccess -> model.copy(panel = panel, dialog = noticeAccessPrompt(screen)) to null
         Row.ClearNotices -> model.copy(
-            panel = panel.copy(index = 0),
+            panel = panel.copy(index = rightStart()),
             notices = model.notices.filter { !it.dismissable },
         ) to Effect.ClearNotices
         is Row.PlayerSave -> model.copy(panel = null, focus = panel.grid) to Effect.ChoosePlayerSave(row.playerId)

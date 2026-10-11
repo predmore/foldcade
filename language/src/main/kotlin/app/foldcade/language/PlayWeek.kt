@@ -93,6 +93,15 @@ fun playWeek(
     )
 }
 
+/**
+ * Time in front today, in [zone], for the L1 island. A stretch that began
+ * before midnight counts only its part after it.
+ */
+fun playToday(spans: List<PlaySpan>, nowMillis: Long, zone: ZoneId): Long {
+    val start = Instant.ofEpochMilli(nowMillis).atZone(zone).toLocalDate().atStartOfDay(zone).toInstant().toEpochMilli()
+    return spans.sumOf { (it.endMillis - maxOf(it.startMillis, start)).coerceAtLeast(0L) }
+}
+
 /** A length of play as hours and minutes: 6h 40m, 45m, 2h, <1m, or 0m. */
 fun playDuration(millis: Long): String {
     if (millis <= 0L) return "0m"
