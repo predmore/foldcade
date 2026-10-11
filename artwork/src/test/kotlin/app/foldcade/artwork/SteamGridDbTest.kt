@@ -47,18 +47,44 @@ class SteamGridDbTest {
     }
 
     @Test
-    fun anExactTitleQueryTakesNoNearMatch() = runBlocking {
+    fun aTitleWithNoGameOfThatNameFindsNothing() = runBlocking {
+        // Live answers: autocomplete returns near names for any search, even nonsense.
         val http = FakeHttp(
             mapOf(
                 "$api/search/autocomplete/Desktop" to ok(
-                    """{"success":true,"data":[{"id":3,"name":"Desktop Dungeons"},{"id":4,"name":"Desktop Goose"}]}""",
+                    """{"success":true,"data":[{"id":1,"name":"Desktop Dungeons"},{"id":2,"name":"Desktop Dynasties"}]}""",
                 ),
-            ) + grids(3, "https://cdn2.steamgriddb.com/grid/dungeons.png", null),
+                "$api/search/autocomplete/%E3%82%B9%E3%83%8E%E3%83%BC%E3%83%96%E3%83%A9%E3%82%B6%E3%83%BC%E3%82%BA" to ok(
+                    """{"success":true,"data":[{"id":3,"name":"スターそらイトファンタジー"}]}""",
+                ),
+            ) + grids(1, "https://cdn2.steamgriddb.com/grid/dungeons.png", null) +
+                grids(3, "https://cdn2.steamgriddb.com/grid/other.png", null),
         )
-        val source = SteamGridDb(http) { "k" }
-        assertEquals("https://cdn2.steamgriddb.com/grid/dungeons.png", source.find(ArtQuery("k", "Desktop"))?.cover)
-        assertNull(source.find(ArtQuery("k", "Desktop", "moonlight", exactTitle = true)))
-        assertNull(source.scene(ArtQuery("k", "Desktop", "moonlight", exactTitle = true)))
+        val sgdb = SteamGridDb(http) { "k" }
+        assertNull(sgdb.find(ArtQuery("k", "Desktop")))
+        assertNull(sgdb.scene(ArtQuery("k", "Desktop")))
+        assertNull(sgdb.find(ArtQuery("k", "スノーブラザーズ")))
+    }
+
+    @Test
+    fun aTitleMatchesAcrossPunctuationAccentsAndALeadingThe() = runBlocking {
+        val http = FakeHttp(
+            mapOf(
+                "$api/search/autocomplete/The%20Legend%20of%20Zelda%20-%20A%20Link%20Between%20Worlds" to ok(
+                    """{"success":true,"data":[{"id":4,"name":"The Legend of Zelda: A Link Between Worlds"}]}""",
+                ),
+                "$api/search/autocomplete/Pokemon%20and%20Friends" to ok(
+                    """{"success":true,"data":[{"id":5,"name":"Pokémon & Friends"}]}""",
+                ),
+            ) + grids(4, "https://cdn2.steamgriddb.com/grid/zelda.png", null) +
+                grids(5, "https://cdn2.steamgriddb.com/grid/pokemon.png", null),
+        )
+        val sgdb = SteamGridDb(http) { "k" }
+        assertEquals(
+            "https://cdn2.steamgriddb.com/grid/zelda.png",
+            sgdb.find(ArtQuery("k", "The Legend of Zelda - A Link Between Worlds"))?.cover,
+        )
+        assertEquals("https://cdn2.steamgriddb.com/grid/pokemon.png", sgdb.find(ArtQuery("k", "Pokemon and Friends"))?.cover)
     }
 
     @Test

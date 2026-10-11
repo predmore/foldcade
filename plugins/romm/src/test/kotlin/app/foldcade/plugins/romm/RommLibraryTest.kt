@@ -107,6 +107,24 @@ class RommLibraryTest {
             "http://192.168.1.20/assets/cover.jpg",
             absoluteHttp("http://192.168.1.20", "/assets/cover.jpg?token=rmm_secret"),
         )
+        // RomM 5.3.1 stamps covers with an unencoded date and time.
+        assertEquals(
+            "https://romm.example/assets/romm/resources/roms/1/9/cover/big.png?ts=2026-10-03%2004:20:36",
+            absoluteHttp("https://romm.example", "/assets/romm/resources/roms/1/9/cover/big.png?ts=2026-10-03 04:20:36"),
+        )
+        assertEquals(
+            "http://192.168.1.20/assets/Pok%C3%A9mon%20Blue.png?a=%2Fb&c=d%25",
+            absoluteHttp("http://192.168.1.20", "/assets/Pokémon%20Blue.png?a=%2Fb&c=d%"),
+        )
+        // The server's own cover wins over its scraper's address on another host.
+        val stamped = rom("3ds", 3).copy(
+            pathCoverLarge = "/assets/cover/big.png?ts=2026-10-03 04:20:36",
+            urlCover = "https://images.igdb.com/igdb/image/upload/t_1080p/co1xpx.jpg",
+        ).toMeta("https://romm.example")
+        assertEquals(
+            "https://romm.example/assets/cover/big.png?ts=2026-10-03%2004:20:36",
+            stamped.artwork.single { it.role == ArtworkRole.Cover }.uri,
+        )
         val stripped = rom("3ds", 3).copy(
             pathCoverLarge = null,
             urlCover = "https://cdn.example/cover.jpg?token=rmm_secret",

@@ -88,5 +88,37 @@ internal fun absoluteHttp(origin: String, raw: String?): String? {
         value.startsWith("/") -> origin.trimEnd('/') + value
         else -> return null
     }
-    return credentialFreeArtworkUri(absolute)
+    return credentialFreeArtworkUri(encodeIllegalUriChars(absolute))
 }
+
+/**
+ * [url] with every character a URI cannot hold percent-encoded. RomM 5.3 sends
+ * cover paths such as `/cover/big.png?ts=2026-10-03 04:20:36`, and a raw space
+ * makes the address unparseable, so the cover would be dropped. Escapes already
+ * in [url] are kept as they are.
+ */
+internal fun encodeIllegalUriChars(url: String): String {
+    val bytes = url.toByteArray(Charsets.UTF_8)
+    val out = StringBuilder(bytes.size)
+    var index = 0
+    while (index < bytes.size) {
+        val code = bytes[index].toInt() and 0xff
+        val char = code.toChar()
+        val escape = char == '%' && index + 2 < bytes.size &&
+            isHex(bytes[index + 1].toInt().toChar()) && isHex(bytes[index + 2].toInt().toChar())
+        when {
+            escape -> out.append(char)
+            code < 0x80 && char != '%' && (char.isLetterOrDigit() || char in URI_PUNCTUATION) -> out.append(char)
+            else -> out.append('%').append(HEX[code shr 4]).append(HEX[code and 0xf])
+        }
+        index++
+    }
+    return out.toString()
+}
+
+private fun isHex(char: Char): Boolean = char in '0'..'9' || char in 'a'..'f' || char in 'A'..'F'
+
+/** RFC 3986 unreserved and reserved punctuation. Letters and digits are legal too. */
+private const val URI_PUNCTUATION = "-._~:/?#[]@!$&'()*+,;="
+
+private const val HEX = "0123456789ABCDEF"

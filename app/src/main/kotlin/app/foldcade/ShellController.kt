@@ -884,7 +884,6 @@ class ShellController(
             platformId = platformId,
             fileName = remoteKey?.takeIf { libraryId == LocalFolderBackend.ID }?.let(LocalFolderBackend::fileNameOf),
             steamAppId = remoteKey?.takeIf { libraryId == GameNativeLibrary.ID }?.let(::steamAppId),
-            exactTitle = libraryId == MoonlightLibrary.ID,
         )
     }
 
