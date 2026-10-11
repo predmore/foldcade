@@ -10,7 +10,6 @@ import app.foldcade.api.plugin.PluginException
 import app.foldcade.api.plugin.SyncOutcome
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -21,10 +20,10 @@ class MoonlightLibraryTest {
     private val other = moonlightApp(host, "123", "Celeste")!!
 
     @Test
-    fun pinnedShortcutsAreTheCatalogUntilTheUserConfirmsAnImport() = runBlocking {
+    fun thePinnedShortcutsAreTheCatalog() = runBlocking {
         val library = MoonlightLibrary()
-        assertFalse(library.hasConfirmedImport())
-        library.replacePinned(listOf(desktop, other))
+        assertTrue(library.listGames(MoonlightPlatform.ID, GameQuery()).games.isEmpty())
+        library.replacePinned(listOf(desktop, other, other))
         val page = library.listGames(MoonlightPlatform.ID, GameQuery())
         assertEquals(listOf("Desktop", "Celeste"), page.games.map { it.label })
         assertEquals(2, page.total)
@@ -32,44 +31,9 @@ class MoonlightLibraryTest {
         assertEquals(Availability.LocalOnly, page.games.first().availability)
         assertEquals(MoonlightLibrary.ID, page.games.first().backendId)
 
-        library.confirmImport(listOf(other))
-        assertTrue(library.hasConfirmedImport())
+        library.replacePinned(listOf(other))
         assertEquals(listOf("Celeste"), library.listGames(MoonlightPlatform.ID, GameQuery()).games.map { it.label })
-        library.replacePinned(listOf(desktop))
-        assertEquals(listOf("Celeste"), library.listGames(MoonlightPlatform.ID, GameQuery()).games.map { it.label })
-    }
-
-    @Test
-    fun theSourceSwitchKeepsBothLists() = runBlocking {
-        val library = MoonlightLibrary()
-        library.replacePinned(listOf(desktop, other))
-        library.confirmImport(listOf(other))
-        assertEquals(MoonlightCatalog.Imported, library.catalog())
-        assertEquals(listOf("Celeste"), library.importedApps().map { it.label })
-
-        library.useCatalog(MoonlightCatalog.Pinned)
-        library.replacePinned(listOf(desktop))
-        assertEquals(listOf("Desktop"), library.listGames(MoonlightPlatform.ID, GameQuery()).games.map { it.label })
-        assertEquals(listOf("Celeste"), library.importedApps().map { it.label })
-
-        library.useCatalog(MoonlightCatalog.Imported)
-        assertEquals(listOf("Celeste"), library.listGames(MoonlightPlatform.ID, GameQuery()).games.map { it.label })
-        assertEquals(listOf(desktop), library.pinnedApps())
-
-        val fresh = MoonlightLibrary()
-        fresh.useCatalog(MoonlightCatalog.Imported)
-        assertTrue(fresh.listGames(MoonlightPlatform.ID, GameQuery()).games.isEmpty())
-        assertFalse(fresh.hasConfirmedImport())
-    }
-
-    @Test
-    fun aConfirmedEmptyImportStaysEmpty() = runBlocking {
-        val library = MoonlightLibrary()
-        library.replacePinned(listOf(desktop))
-        library.confirmImport(emptyList())
-        val page = library.listGames(MoonlightPlatform.ID, GameQuery())
-        assertTrue(page.games.isEmpty())
-        assertEquals(0, page.total)
+        assertEquals(listOf(other), library.pinnedApps())
     }
 
     @Test

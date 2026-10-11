@@ -110,7 +110,7 @@ class MoonlightPlayer : Player {
         const val HOST_UUID: String = "host_uuid"
         const val APP_ID: String = "app_id"
         const val NEEDS_APP: String =
-            "Pin a shortcut in Moonlight, or confirm an import. Foldcade does not read Moonlight's database."
+            "Choose Create Shortcut on the game in Moonlight. Foldcade does not read Moonlight's database."
         val PACKAGES: List<String> = listOf(OFFICIAL_PACKAGE)
     }
 }

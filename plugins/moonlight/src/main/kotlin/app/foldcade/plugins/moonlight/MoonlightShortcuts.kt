@@ -55,6 +55,25 @@ fun moonlightShortcutKey(id: String): String? {
 }
 
 /**
+ * The pinned ids to keep when the game [remoteKey] leaves Home. Ids are
+ * compared by game, so a host UUID in another case still matches. Ids that
+ * are not game shortcuts are kept.
+ */
+fun pinsWithout(pinnedIds: List<String>, remoteKey: String): List<String> =
+    pinnedIds.filter { moonlightShortcutKey(it) != remoteKey }
+
+/**
+ * True when [id] is a [MoonlightApp.remoteKey]: a lowercase host UUID, a bar,
+ * then an app id. Home tile ids for Moonlight games have this form.
+ */
+fun isMoonlightRemoteKey(id: String): Boolean {
+    val bar = id.indexOf('|')
+    if (bar != UUID_LENGTH) return false
+    val hostUuid = id.substring(0, bar)
+    return isCanonicalUuid(hostUuid) && hostUuid == hostUuid.lowercase(Locale.ROOT) && isAppId(id.substring(bar + 1))
+}
+
+/**
  * The UUID is always 36 characters, so the app id is whatever follows it.
  * A computer shortcut has nothing after the UUID and is not a game.
  */

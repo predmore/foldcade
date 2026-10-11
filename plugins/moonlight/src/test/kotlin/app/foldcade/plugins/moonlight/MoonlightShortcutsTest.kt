@@ -1,6 +1,7 @@
 package app.foldcade.plugins.moonlight
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -69,5 +70,24 @@ class MoonlightShortcutsTest {
         assertNull(moonlightShortcutKey("1-1-1-1-1123"))
         val read = readMoonlightShortcuts(listOf(MoonlightShortcut("content://x", "X", pinned = true, enabled = true)))
         assertTrue(read.games.isEmpty())
+    }
+
+    @Test
+    fun removingAGameKeepsEveryOtherPin() {
+        val pinned = listOf(host + "7", host.lowercase() + "8", host, "manifest-shortcut")
+        assertEquals(listOf(host.lowercase() + "8", host, "manifest-shortcut"), pinsWithout(pinned, "$key|7"))
+        assertEquals(listOf(host + "7", host, "manifest-shortcut"), pinsWithout(pinned, "$key|8"))
+        assertEquals(pinned, pinsWithout(pinned, "$key|9"))
+    }
+
+    @Test
+    fun aMoonlightTileIdIsALowercaseHostABarAndAnAppId() {
+        assertTrue(isMoonlightRemoteKey("$key|881448767"))
+        assertFalse(isMoonlightRemoteKey("$host|881448767"))
+        assertFalse(isMoonlightRemoteKey("$key|"))
+        assertFalse(isMoonlightRemoteKey("$key|abc"))
+        assertFalse(isMoonlightRemoteKey("moonlight"))
+        assertFalse(isMoonlightRemoteKey("lib:romm:12"))
+        assertFalse(isMoonlightRemoteKey("gamenative.730"))
     }
 }

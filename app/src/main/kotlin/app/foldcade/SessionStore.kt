@@ -8,14 +8,9 @@ import app.foldcade.language.AppShelfRecord
 import app.foldcade.language.AppShelfState
 import app.foldcade.language.HomeMusicSetting
 import app.foldcade.language.LibrarySort
-import app.foldcade.language.MoonlightPlacement
-import app.foldcade.language.MoonlightSource
-import app.foldcade.language.MoonlightStoredApp
 import app.foldcade.language.PromptKey
-import app.foldcade.language.decodeMoonlightApps
-import app.foldcade.language.encodeMoonlightApps
-import app.foldcade.language.moonlightPlacementKeys
-import app.foldcade.language.moonlightPlacementsFromKeys
+import app.foldcade.plugins.moonlight.MoonlightApp
+import app.foldcade.plugins.moonlight.moonlightApp
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
@@ -23,6 +18,13 @@ import androidx.compose.runtime.setValue
 class SessionStore(private val prefs: SharedPreferences) : SaveMarks {
     var session by mutableStateOf(load())
         private set
+
+    init {
+        // The Moonlight import sheet and its source switch are gone. Every pin is on Home.
+        if (RETIRED_MOONLIGHT_KEYS.any(prefs::contains)) {
+            prefs.edit().apply { RETIRED_MOONLIGHT_KEYS.forEach { remove(it) } }.apply()
+        }
+    }
 
     /** Fired after [session] changes. Home music watches games entering and leaving either screen. */
     var afterSessionChanged: (() -> Unit)? = null
@@ -239,41 +241,26 @@ class SessionStore(private val prefs: SharedPreferences) : SaveMarks {
         prefs.edit().putBoolean(KEY_ARTWORK, enabled).apply()
     }
 
-    fun moonlightSource(): MoonlightSource =
-        if (prefs.getString(KEY_MOONLIGHT_SOURCE, null) == MoonlightSource.ImportedList.name) {
-            MoonlightSource.ImportedList
-        } else {
-            MoonlightSource.PinnedShortcuts
+    /**
+     * The Moonlight games Foldcade last read from Android. They fill the shelf at
+     * start, so Moonlight tiles keep their names before Android answers again.
+     */
+    fun moonlightPins(): List<MoonlightApp> {
+        val raw = prefs.getString(KEY_MOONLIGHT_PINS, null)
+        if (raw.isNullOrBlank()) return emptyList()
+        return raw.split(PIN_RECORD).mapNotNull { record ->
+            val bits = record.split(PIN_FIELD)
+            if (bits.size != 3) null else moonlightApp(hostUuid = bits[0], appId = bits[1], label = bits[2])
         }
-
-    fun setMoonlightSource(source: MoonlightSource) {
-        prefs.edit().putString(KEY_MOONLIGHT_SOURCE, source.name).apply()
     }
 
-    fun moonlightImportConfirmed(): Boolean = prefs.getBoolean(KEY_MOONLIGHT_IMPORT_CONFIRMED, false)
-
-    fun moonlightImportSettled(): Boolean = prefs.getBoolean(KEY_MOONLIGHT_IMPORT_SETTLED, false)
-
-    fun setMoonlightImportSettled() {
-        prefs.edit().putBoolean(KEY_MOONLIGHT_IMPORT_SETTLED, true).apply()
-    }
-
-    fun moonlightImportEncoded(): String? = prefs.getString(KEY_MOONLIGHT_IMPORT, null)
-
-    fun moonlightImportedApps(): List<MoonlightStoredApp> = decodeMoonlightApps(moonlightImportEncoded())
-
-    fun setMoonlightImport(apps: List<MoonlightStoredApp>) {
-        prefs.edit()
-            .putString(KEY_MOONLIGHT_IMPORT, encodeMoonlightApps(apps))
-            .putBoolean(KEY_MOONLIGHT_IMPORT_CONFIRMED, true)
-            .apply()
-    }
-
-    fun moonlightPlacements(): List<MoonlightPlacement> =
-        moonlightPlacementsFromKeys(stringSet(KEY_MOONLIGHT_PLACEMENTS))
-
-    fun setMoonlightPlacements(placements: List<MoonlightPlacement>) {
-        prefs.edit().putStringSet(KEY_MOONLIGHT_PLACEMENTS, moonlightPlacementKeys(placements).toMutableSet()).apply()
+    fun setMoonlightPins(apps: List<MoonlightApp>) {
+        val raw = apps.joinToString(PIN_RECORD) { app ->
+            listOf(app.hostUuid, app.appId, app.label).joinToString(PIN_FIELD) { field ->
+                field.replace(PIN_FIELD, " ").replace(PIN_RECORD, " ")
+            }
+        }
+        prefs.edit().putString(KEY_MOONLIGHT_PINS, raw).apply()
     }
 
     fun buttonPromptSeenLaunch(): Boolean = prefs.getBoolean(KEY_BUTTON_PROMPT_SEEN, false)
@@ -322,11 +309,18 @@ class SessionStore(private val prefs: SharedPreferences) : SaveMarks {
         private const val KEY_SHELF_SHOWN = "android_shelf_shown"
         private const val KEY_BUTTON_PROMPT_SEEN = "button_prompt_seen"
         private const val KEY_USAGE_PROMPTED = "usage_prompted"
-        private const val KEY_MOONLIGHT_SOURCE = "moonlight_source"
-        private const val KEY_MOONLIGHT_IMPORT = "moonlight_import"
-        private const val KEY_MOONLIGHT_IMPORT_CONFIRMED = "moonlight_import_confirmed"
-        private const val KEY_MOONLIGHT_IMPORT_SETTLED = "moonlight_import_settled"
-        private const val KEY_MOONLIGHT_PLACEMENTS = "moonlight_placements"
+        private const val KEY_MOONLIGHT_PINS = "moonlight_pins"
+        private const val PIN_FIELD = "\u001f"
+        private const val PIN_RECORD = "\u001e"
+
+        /** The import sheet's list, answer, and placements, and the source switch. */
+        internal val RETIRED_MOONLIGHT_KEYS: List<String> = listOf(
+            "moonlight_source",
+            "moonlight_import",
+            "moonlight_import_confirmed",
+            "moonlight_import_settled",
+            "moonlight_placements",
+        )
 
         private fun buttonPromptConfirmKey(deviceKey: String) = "button_prompt_confirm:$deviceKey"
 

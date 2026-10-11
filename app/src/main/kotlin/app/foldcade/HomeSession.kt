@@ -312,6 +312,18 @@ class HomeSession(raw: String?) {
         board = addToHome(board, item.id, addFolderFor(item))
     }
 
+    /**
+     * Places catalog item [id] on Home in its own folder, the way Add to Home in
+     * All does. A hidden id comes back. False when nothing changed.
+     */
+    fun place(id: String): Boolean {
+        val item = catalog().firstOrNull { it.id == id } ?: return false
+        val next = addToHome(board, id, homeFolderFor(board, item, platforms))
+        if (next == board) return false
+        board = next
+        return true
+    }
+
     private fun addFolderFor(item: HomeItem): String? =
         board.destinationFolderId ?: homeFolderFor(board, item, platforms)
 

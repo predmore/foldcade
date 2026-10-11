@@ -70,7 +70,7 @@ fun settingsRows(category: SettingsCategory, model: PickerModel): List<Row> = wh
     }
     SettingsCategory.Sound -> listOf(Row.Music, Row.MusicTrack, Row.MusicVolume)
     SettingsCategory.Library -> libraryRows(model.signedIn, model.folders) +
-        listOf(Row.Order, Row.AddNewGames, Row.Artwork, Row.ArtKey, Row.UsageAccess, Row.MoonlightSource)
+        listOf(Row.Order, Row.AddNewGames, Row.Artwork, Row.ArtKey, Row.UsageAccess)
     SettingsCategory.Players -> model.playerSaves.map { Row.PlayerSave(it.playerId) }
     SettingsCategory.Screens -> buildList {
         add(Row.Primary)

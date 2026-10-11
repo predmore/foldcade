@@ -212,9 +212,6 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
             is Effect.OpenAndroidSetting -> openAndroidSetting(effect.setting)
             Effect.OpenLicenses -> startActivity(Intent(this, LicensesActivity::class.java))
             Effect.DismissButtonLabels -> Unit
-            is Effect.ConfirmMoonlightImport -> Unit
-            Effect.SkipMoonlightImport -> Unit
-            Effect.ReviewMoonlightImport -> Unit
             null -> Unit
         }
     }
