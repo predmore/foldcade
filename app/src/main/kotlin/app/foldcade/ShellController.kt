@@ -3,8 +3,11 @@ package app.foldcade
 import android.util.Log
 import app.foldcade.api.plugin.Availability
 import app.foldcade.api.plugin.Game
+import app.foldcade.api.plugin.GameActivity
 import app.foldcade.api.plugin.Platform
 import app.foldcade.api.plugin.SaveFolderHolder
+import app.foldcade.api.plugin.SyncOutcome
+import app.foldcade.api.plugin.SyncResult
 import app.foldcade.artwork.ArtQuery
 import app.foldcade.localfolder.LocalFolderBackend
 import app.foldcade.plugins.gamenative.GameNativeLibrary
@@ -45,6 +48,9 @@ import app.foldcade.language.HomePlatform
 import app.foldcade.language.androidHomeId
 import app.foldcade.language.bucketMark
 import app.foldcade.language.homeGameId
+import app.foldcade.language.Motion
+import app.foldcade.language.SyncMark
+import app.foldcade.language.TileActivity
 import app.foldcade.language.resolvePlatform
 import app.foldcade.language.kitMark
 import app.foldcade.host.play.recentlyPlayedIndices
@@ -126,6 +132,10 @@ class ShellController(
 
     /** Home ids of server games downloading now. Their tiles pulse the cloud. */
     var downloading by mutableStateOf<Set<String>>(emptySet())
+        private set
+
+    /** What libraries are doing with games, by home id. Tiles and the top screen show it. */
+    var activity by mutableStateOf<Map<String, TileActivity>>(emptyMap())
         private set
 
     /** Cells for the current grid. Empty when the grid is an empty state. */
@@ -456,6 +466,68 @@ class ShellController(
 
     fun endDownload(libraryId: String, remoteKey: String) {
         downloading = downloading - homeGameId(libraryId, remoteKey)
+    }
+
+    /**
+     * Records what a library said it is doing with a game. A finished sync keeps
+     * its mark for [Motion.durationSyncMark]; the time it ends is returned so the
+     * caller can call [expireActivity] then. Anything else returns null.
+     */
+    fun noteActivity(libraryId: String, remoteKey: String, reported: GameActivity, nowMillis: Long): Long? {
+        val id = homeGameId(libraryId, remoteKey)
+        val next = when (reported) {
+            is GameActivity.Downloading -> TileActivity.Downloading(
+                reported.totalBytes?.takeIf { it > 0 }?.let { total ->
+                    (reported.bytesSoFar.toDouble() / total).toFloat().coerceIn(0f, 1f)
+                },
+            )
+            GameActivity.Checking -> TileActivity.Checking
+            GameActivity.SyncingSaves -> TileActivity.Syncing
+            is GameActivity.Synced -> TileActivity.Synced(syncMark(reported.result), nowMillis + Motion.durationSyncMark)
+            else -> null
+        }
+        if (next == null) {
+            if (id in activity) activity = activity - id
+            return null
+        }
+        if (activity[id] != next) activity = activity + (id to next)
+        return (next as? TileActivity.Synced)?.untilMillis
+    }
+
+    /** Drops a finished sync's mark when its time is up. A newer report for the game stays. */
+    fun expireActivity(libraryId: String, remoteKey: String, untilMillis: Long) {
+        val id = homeGameId(libraryId, remoteKey)
+        val current = activity[id] as? TileActivity.Synced ?: return
+        if (current.untilMillis == untilMillis) activity = activity - id
+    }
+
+    /** A launch is over, opened or not. Only a finished sync's mark outlives it. */
+    fun settleActivity(libraryId: String, remoteKey: String) {
+        val id = homeGameId(libraryId, remoteKey)
+        val current = activity[id] ?: return
+        if (current !is TileActivity.Synced) activity = activity - id
+    }
+
+    /** The activity of the game at [source] in the grid shown now. */
+    fun activityAt(source: Int): TileActivity? {
+        if (activity.isEmpty()) return null
+        val id = when {
+            model.libraryGrid -> entries.getOrNull(source)?.game?.let { homeGameId(it.backendId, it.remoteKey) }
+            showingHome() -> home.face(source)?.id
+            else -> null
+        }
+        return id?.let { activity[it] }
+    }
+
+    /** The activity of the focused game, for the top screen. */
+    fun focusedActivity(): TileActivity? {
+        if (activity.isEmpty()) return null
+        val source = if (model.libraryGrid) {
+            displayOrder(model).getOrElse(model.focus.cellIndex) { model.focus.cellIndex }
+        } else {
+            model.focus.cellIndex
+        }
+        return activityAt(source)
     }
 
     /** True once any library has a game on the board. */
@@ -1465,4 +1537,12 @@ class ShellController(
         }
         if (after.notices.size > before.notices.size) cue(after.themeIndex, "notify")
     }
+}
+
+/** How a finished sync reads on its tile. Unchanged with a note is a sync that could not run. */
+internal fun syncMark(result: SyncResult): SyncMark = when (result.outcome) {
+    SyncOutcome.KeptBoth -> SyncMark.KeptBoth
+    SyncOutcome.Queued -> SyncMark.Later
+    SyncOutcome.Unchanged -> if (result.note == null) SyncMark.Synced else SyncMark.NotSynced
+    else -> SyncMark.Synced
 }

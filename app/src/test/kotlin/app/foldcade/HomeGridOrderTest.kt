@@ -2,6 +2,9 @@ package app.foldcade
 
 import app.foldcade.api.plugin.Availability
 import app.foldcade.api.plugin.Game
+import app.foldcade.api.plugin.GameActivity
+import app.foldcade.api.plugin.SyncOutcome
+import app.foldcade.api.plugin.SyncResult
 import app.foldcade.api.plugin.MemoryCredentialStore
 import app.foldcade.host.PluginHost
 import app.foldcade.language.Copy
@@ -9,6 +12,9 @@ import app.foldcade.language.HomeGrid
 import app.foldcade.language.HostScreen
 import app.foldcade.language.Meaning
 import app.foldcade.language.Metrics
+import app.foldcade.language.Motion
+import app.foldcade.language.SyncMark
+import app.foldcade.language.TileActivity
 import app.foldcade.language.FOLDER_ICONS
 import app.foldcade.language.HomeKeys
 import app.foldcade.language.MARK_FOLDER
@@ -112,6 +118,59 @@ class HomeGridOrderTest {
         shell.endDownload("romm", "drift")
         assertTrue(shell.downloading.isEmpty())
         assertTrue(shell.beginDownload("romm", "drift"))
+    }
+
+    @Test
+    fun aDownloadThenASyncShowOnTheTileAndTheMarkFadesAway() {
+        val shell = shell()
+        shell.ingestLibrary(
+            "romm",
+            listOf(entry("drift", "Drift", "nintendo-3ds", backendId = "romm", availability = Availability.RemoteOnly)),
+            emptyList(),
+        )
+        focus(shell, titles(shell).indexOf("Nintendo 3DS"))
+        shell.onMeaning(Meaning.Activate, HostScreen.Bottom)
+        val drift = titles(shell).indexOf("Drift")
+        focus(shell, drift)
+
+        assertNull(shell.noteActivity("romm", "drift", GameActivity.Downloading(0L, null), nowMillis = 0L))
+        assertEquals(TileActivity.Downloading(null), shell.activityAt(drift))
+        shell.noteActivity("romm", "drift", GameActivity.Downloading(50L, 200L), nowMillis = 0L)
+        assertEquals(TileActivity.Downloading(0.25f), shell.focusedActivity())
+        shell.noteActivity("romm", "drift", GameActivity.Checking, nowMillis = 0L)
+        assertEquals(TileActivity.Checking, shell.activityAt(drift))
+        shell.noteActivity("romm", "drift", GameActivity.SyncingSaves, nowMillis = 0L)
+        assertEquals(TileActivity.Syncing, shell.activityAt(drift))
+
+        val until = shell.noteActivity("romm", "drift", GameActivity.Synced(SyncResult(SyncOutcome.Uploaded)), 1_000L)
+        assertEquals(1_000L + Motion.durationSyncMark, until)
+        assertEquals(TileActivity.Synced(SyncMark.Synced, until!!), shell.activityAt(drift))
+        // The launch ending does not take the mark early. Only its own timer does.
+        shell.settleActivity("romm", "drift")
+        shell.expireActivity("romm", "drift", until - 1)
+        assertEquals(TileActivity.Synced(SyncMark.Synced, until), shell.activityAt(drift))
+        shell.expireActivity("romm", "drift", until)
+        assertNull(shell.activityAt(drift))
+    }
+
+    @Test
+    fun aLaunchThatEndsMidWayLeavesTheTileQuiet() {
+        val shell = shell()
+        shell.noteActivity("romm", "drift", GameActivity.Downloading(10L, 100L), nowMillis = 0L)
+        shell.settleActivity("romm", "drift")
+        assertTrue(shell.activity.isEmpty())
+        shell.noteActivity("romm", "drift", GameActivity.SyncingSaves, nowMillis = 0L)
+        shell.noteActivity("romm", "drift", GameActivity.Idle, nowMillis = 0L)
+        assertTrue(shell.activity.isEmpty())
+    }
+
+    @Test
+    fun aSyncReadsAsWorkedOnlyWhenItRan() {
+        assertEquals(SyncMark.Synced, syncMark(SyncResult(SyncOutcome.Downloaded)))
+        assertEquals(SyncMark.Synced, syncMark(SyncResult(SyncOutcome.Unchanged)))
+        assertEquals(SyncMark.KeptBoth, syncMark(SyncResult(SyncOutcome.KeptBoth, "Kept both copies")))
+        assertEquals(SyncMark.Later, syncMark(SyncResult(SyncOutcome.Queued, "Saves will sync when RomM is reachable")))
+        assertEquals(SyncMark.NotSynced, syncMark(SyncResult(SyncOutcome.Unchanged, "RomM server too old for save sync")))
     }
 
     @Test

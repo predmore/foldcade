@@ -266,7 +266,8 @@ class RommClient(
      * or a 206 that does not start where the partial ends, starts over. The
      * finished bytes must match [expectedSize] and [expectedMd5] when RomM
      * gave them, and are synced to storage before the rename that publishes them.
-     * Two calls for the same file take turns.
+     * Two calls for the same file take turns. [progress] hears the bytes as they
+     * arrive, then [RomProgress.Checking] while the hash is computed.
      */
     suspend fun downloadRom(
         romId: Long,
@@ -275,13 +276,14 @@ class RommClient(
         fileIds: List<Long> = emptyList(),
         expectedSize: Long? = null,
         expectedMd5: String? = null,
+        progress: ((RomProgress) -> Unit)? = null,
     ): Path {
         require(romId >= 1)
         val target = romCacheFile(cacheRoot, romId, fileName, fileIds)
         // RomM hashes an archive by its members, not its bytes, so only its size can be checked.
         val md5 = expectedMd5?.lowercase()?.takeUnless { isArchiveName(fileName) }
         return romLock(target).withLock {
-            downloadRomLocked(romId, fileName, target, fileIds, expectedSize, md5)
+            downloadRomLocked(romId, fileName, target, fileIds, expectedSize, md5, progress)
         }
     }
 
@@ -292,11 +294,13 @@ class RommClient(
         fileIds: List<Long>,
         expectedSize: Long?,
         expectedMd5: String?,
+        progress: ((RomProgress) -> Unit)?,
     ): Path {
         val partial = partialOf(target)
         val validatorFile = target.resolveSibling(target.fileName.toString() + VALIDATOR_SUFFIX)
         if (Files.isRegularFile(target) && !Files.exists(partial)) {
             if (isVerifiedRom(target, expectedSize, expectedMd5)) return target
+            progress?.invoke(RomProgress.Checking)
             val reusable = withContext(Dispatchers.IO) {
                 val size = Files.size(target)
                 if (expectedSize != null && size != expectedSize) return@withContext false
@@ -321,7 +325,7 @@ class RommClient(
             null
         }
         try {
-            streamRom(uri, partial, validatorFile, resumeFrom, validator)
+            streamRom(uri, partial, validatorFile, resumeFrom, validator, expectedSize, progress)
         } catch (e: CancellationException) {
             throw e
         } catch (e: RommException) {
@@ -329,8 +333,9 @@ class RommClient(
             if (!restart) throw e
             Files.deleteIfExists(partial)
             Files.deleteIfExists(validatorFile)
-            streamRom(uri, partial, validatorFile, resumeFrom = null, validator = null)
+            streamRom(uri, partial, validatorFile, resumeFrom = null, validator = null, expectedSize, progress)
         }
+        progress?.invoke(RomProgress.Checking)
         withContext(Dispatchers.IO) {
             val size = Files.size(partial)
             val md5 = runInterruptible { md5File(partial) }
@@ -353,19 +358,35 @@ class RommClient(
         validatorFile: Path,
         resumeFrom: Long?,
         validator: String?,
+        expectedSize: Long?,
+        progress: ((RomProgress) -> Unit)?,
     ) {
-        streamGet(uri, partial, range = resumeFrom, ifRange = validator) { status, headers ->
+        var received = 0L
+        var total = expectedSize
+        val onBytes = progress?.let { report ->
+            { count: Int ->
+                received += count
+                report(RomProgress.Receiving(received, total))
+            }
+        }
+        streamGet(uri, partial, range = resumeFrom, ifRange = validator, onBytes = onBytes) { status, headers ->
+            val length = headerValue(headers, "Content-Length")?.toLongOrNull()
             when (status) {
                 200 -> {
                     // A full body replaces the partial. Keep what lets a later try resume it.
                     val next = strongValidator(headers)
                     if (next == null) Files.deleteIfExists(validatorFile) else writeDurably(validatorFile, next.toByteArray())
+                    received = 0L
+                    if (total == null) total = length
                 }
                 206 -> {
                     val start = contentRangeStart(headers)
                     if (start == null || start != resumeFrom) throw RangeRejected()
+                    received = start
+                    if (total == null && length != null) total = start + length
                 }
             }
+            progress?.invoke(RomProgress.Receiving(received, total))
         }
     }
 
@@ -842,6 +863,7 @@ class RommClient(
         partial: Path,
         range: Long?,
         ifRange: String? = null,
+        onBytes: ((Int) -> Unit)? = null,
         onHeaders: ((Int, Map<String, List<String>>) -> Unit)? = null,
     ) {
         val headers = mutableMapOf<String, String>()
@@ -855,6 +877,7 @@ class RommClient(
             streamTo = partial,
             append = range != null,
             onHeaders = onHeaders,
+            onBytes = onBytes,
         )
         if (raw.status == 202) {
             throw RommConversionPending(raw.header("Retry-After")?.toLongOrNull())
@@ -887,6 +910,7 @@ class RommClient(
         streamTo: Path? = null,
         append: Boolean = false,
         onHeaders: ((Int, Map<String, List<String>>) -> Unit)? = null,
+        onBytes: ((Int) -> Unit)? = null,
     ): RawResponse = withContext(Dispatchers.IO) {
         val token = bearer()
         if (authenticated && token == null) throw RommUnauthenticated()
@@ -947,7 +971,7 @@ class RommClient(
                                     )
                                 }
                                 FileChannel.open(streamTo, *options).use { channel ->
-                                    copyUntilCanceled(call, stream, Channels.newOutputStream(channel))
+                                    copyUntilCanceled(call, stream, Channels.newOutputStream(channel), onBytes)
                                     channel.force(true)
                                 }
                             }
@@ -971,7 +995,7 @@ class RommClient(
         }
     }
 
-    private fun copyUntilCanceled(call: Call, input: InputStream, output: OutputStream) {
+    private fun copyUntilCanceled(call: Call, input: InputStream, output: OutputStream, onBytes: ((Int) -> Unit)?) {
         val buffer = ByteArray(8 * 1024)
         while (true) {
             val read = try {
@@ -983,6 +1007,7 @@ class RommClient(
             if (read < 0) return
             if (call.isCanceled()) throw CancellationException("RomM request was cancelled")
             output.write(buffer, 0, read)
+            onBytes?.invoke(read)
         }
     }
 

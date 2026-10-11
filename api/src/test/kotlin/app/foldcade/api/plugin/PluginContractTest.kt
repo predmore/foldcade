@@ -113,11 +113,13 @@ class PluginContractTest {
         assertTrue(aliases.isDefault)
         assertTrue(IdlePlatform().aliases.isEmpty())
         assertEquals(1, PLUGIN_API_VERSION)
-        assertEquals(3, PLUGIN_API_MINOR)
+        assertEquals(4, PLUGIN_API_MINOR)
         val bind = PluginEntry::class.java.methods.single { it.name == "bind" }
         assertTrue(bind.isDefault)
         val saveFileName = Player::class.java.methods.single { it.name == "saveFileName" }
         assertTrue(saveFileName.isDefault)
+        val observeActivity = LibraryBackend::class.java.methods.single { it.name == "observeActivity" }
+        assertTrue(observeActivity.isDefault)
     }
 
     @Test

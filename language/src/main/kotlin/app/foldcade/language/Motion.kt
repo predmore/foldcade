@@ -25,6 +25,9 @@ object Motion {
 
     /** One breath of a downloading tile's cloud, in each direction. */
     const val durationPulse = 720
+
+    /** How long a finished sync's mark stays on its tile, fades included. */
+    const val durationSyncMark = 2400
     const val scaleRest = 1f
     const val scaleFocus = 1.05f
 

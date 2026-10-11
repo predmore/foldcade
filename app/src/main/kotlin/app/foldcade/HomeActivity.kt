@@ -619,105 +619,125 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
         foldcade.music.onExternalLaunch()
         val generation = beginLaunch()
         foldcade.scope.launch {
-            val players = foldcade.plugins.playersFor(game.platformId)
-            val installedPackage = { player: Player ->
-                player.packageNames.firstOrNull { name ->
-                    runCatching { packageManager.getPackageInfo(name, 0) }.isSuccess
+            try {
+                runBackendLaunch(title, platformId, libraryId, game, id, fetching, generation)
+            } finally {
+                // Opened or not, a half-told download or sync is stale now. A sync's mark stays.
+                withContext(NonCancellable + Dispatchers.Main.immediate) {
+                    foldcade.shell.settleActivity(libraryId, game.remoteKey)
                 }
             }
-            // Say so before a download that could take minutes, not after it.
-            val missing = missingPlayer(players, installedPackage)
-            if (missing != null) {
+        }
+    }
+
+    /** Download, saves, then the player, for [launchBackendGame]. Each step that shows anything checks [generation]. */
+    private suspend fun runBackendLaunch(
+        title: String,
+        platformId: String?,
+        libraryId: String,
+        game: Game,
+        id: String,
+        fetching: Boolean,
+        generation: Int,
+    ) {
+        val players = foldcade.plugins.playersFor(game.platformId)
+        val installedPackage = { player: Player ->
+            player.packageNames.firstOrNull { name ->
+                runCatching { packageManager.getPackageInfo(name, 0) }.isSuccess
+            }
+        }
+        // Say so before a download that could take minutes, not after it.
+        val missing = missingPlayer(players, installedPackage)
+        if (missing != null) {
+            withContext(Dispatchers.Main.immediate) {
+                if (fetching) foldcade.shell.endDownload(libraryId, game.remoteKey)
+                if (launchCurrent(generation)) showMissing(missing.playerName, missing.alsoRuns)
+            }
+            return
+        }
+        val target = try {
+            foldcade.plugins.ensureLocal(libraryId, game).also {
+                withContext(Dispatchers.Main.immediate) { foldcade.shell.noteOnDevice(libraryId, game.remoteKey) }
+            }
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (fatal: VirtualMachineError) {
+            throw fatal
+        } catch (_: Exception) {
+            withContext(Dispatchers.Main.immediate) {
+                if (launchCurrent(generation)) showDownloadFailed(title)
+            }
+            return
+        } finally {
+            if (fetching) {
+                withContext(NonCancellable + Dispatchers.Main.immediate) {
+                    foldcade.shell.endDownload(libraryId, game.remoteKey)
+                }
+            }
+        }
+        val plan = planLaunch(players, target, installedPackage)
+        // Saves go into the player's folder before it starts, and come back when it returns.
+        val spots = if (plan is GameLaunch.Installed) {
+            try {
+                prepareSaves(libraryId, game, plan.player, target).spots
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (fatal: VirtualMachineError) {
+                throw fatal
+            } catch (_: SaveNotPlaced) {
                 withContext(Dispatchers.Main.immediate) {
-                    if (fetching) foldcade.shell.endDownload(libraryId, game.remoteKey)
-                    if (launchCurrent(generation)) showMissing(missing.playerName, missing.alsoRuns)
+                    if (launchCurrent(generation)) showSaveNotPlaced(title)
                 }
-                return@launch
+                return
+            } catch (_: Exception) {
+                // The player keeps its own save. The next launch hands any change to the library.
+                emptyList()
             }
-            val target = try {
-                foldcade.plugins.ensureLocal(libraryId, game).also {
-                    withContext(Dispatchers.Main.immediate) { foldcade.shell.noteOnDevice(libraryId, game.remoteKey) }
-                }
+        } else {
+            emptyList()
+        }
+        val installedIntent = if (plan is GameLaunch.Installed) {
+            try {
+                foldcade.plugins.launchIntent(
+                    plan.player.id,
+                    LaunchRequest(game, target, plan.packageName),
+                ).toStartIntent()
             } catch (cancelled: CancellationException) {
                 throw cancelled
             } catch (fatal: VirtualMachineError) {
                 throw fatal
             } catch (_: Exception) {
-                withContext(Dispatchers.Main.immediate) {
-                    if (launchCurrent(generation)) showDownloadFailed(title)
-                }
-                return@launch
-            } finally {
-                if (fetching) {
-                    withContext(NonCancellable + Dispatchers.Main.immediate) {
-                        foldcade.shell.endDownload(libraryId, game.remoteKey)
-                    }
-                }
-            }
-            val plan = planLaunch(players, target, installedPackage)
-            // Saves go into the player's folder before it starts, and come back when it returns.
-            val spots = if (plan is GameLaunch.Installed) {
-                try {
-                    prepareSaves(libraryId, game, plan.player, target).spots
-                } catch (cancelled: CancellationException) {
-                    throw cancelled
-                } catch (fatal: VirtualMachineError) {
-                    throw fatal
-                } catch (_: SaveNotPlaced) {
-                    withContext(Dispatchers.Main.immediate) {
-                        if (launchCurrent(generation)) showSaveNotPlaced(title)
-                    }
-                    return@launch
-                } catch (_: Exception) {
-                    // The player keeps its own save. The next launch hands any change to the library.
-                    emptyList()
-                }
-            } else {
-                emptyList()
-            }
-            val installedIntent = if (plan is GameLaunch.Installed) {
-                try {
-                    foldcade.plugins.launchIntent(
-                        plan.player.id,
-                        LaunchRequest(game, target, plan.packageName),
-                    ).toStartIntent()
-                } catch (cancelled: CancellationException) {
-                    throw cancelled
-                } catch (fatal: VirtualMachineError) {
-                    throw fatal
-                } catch (_: Exception) {
-                    null
-                }
-            } else {
                 null
             }
-            withContext(Dispatchers.Main.immediate) {
-                if (!launchCurrent(generation)) return@withContext
-                when (plan) {
-                    is GameLaunch.Dummy -> openContent(
+        } else {
+            null
+        }
+        withContext(Dispatchers.Main.immediate) {
+            if (!launchCurrent(generation)) return@withContext
+            when (plan) {
+                is GameLaunch.Dummy -> openContent(
+                    id,
+                    title,
+                    platformId,
+                    plan.uri,
+                    occupiesBoth = false,
+                )
+                is GameLaunch.Installed -> if (installedIntent != null) {
+                    val started = startExternal(
                         id,
                         title,
-                        platformId,
-                        plan.uri,
-                        occupiesBoth = false,
+                        game.platformId,
+                        plan.player.occupiesBothDisplays,
+                        installedIntent,
                     )
-                    is GameLaunch.Installed -> if (installedIntent != null) {
-                        val started = startExternal(
-                            id,
-                            title,
-                            game.platformId,
-                            plan.player.occupiesBothDisplays,
-                            installedIntent,
-                        )
-                        if (started) rememberReturn(LibraryReturn(libraryId, game, plan.player, spots))
-                    } else if (launchCurrent(generation)) {
-                        showMissing(plan.player.displayName, emptyList())
-                    }
-                    is GameLaunch.Missing -> if (launchCurrent(generation)) {
-                        showMissing(plan.playerName, plan.alsoRuns)
-                    }
-                    GameLaunch.NotAFile -> foldcade.retryLibrary()
+                    if (started) rememberReturn(LibraryReturn(libraryId, game, plan.player, spots))
+                } else if (launchCurrent(generation)) {
+                    showMissing(plan.player.displayName, emptyList())
                 }
+                is GameLaunch.Missing -> if (launchCurrent(generation)) {
+                    showMissing(plan.playerName, plan.alsoRuns)
+                }
+                GameLaunch.NotAFile -> foldcade.retryLibrary()
             }
         }
     }

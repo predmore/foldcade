@@ -93,6 +93,18 @@ data class RomPage(
     val offset: Int,
 )
 
+/** Where [RommClient.downloadRom] is. Reported on its IO thread. */
+sealed interface RomProgress {
+    /**
+     * [bytes] of the ROM are on the device, a resumed part included. [total]
+     * is null when neither RomM's file list nor the response gives a size.
+     */
+    data class Receiving(val bytes: Long, val total: Long?) : RomProgress
+
+    /** Every byte is here, and its size and hash are being checked. */
+    data object Checking : RomProgress
+}
+
 data class RegisteredDevice(
     val deviceId: String,
     val clientVersion: String,

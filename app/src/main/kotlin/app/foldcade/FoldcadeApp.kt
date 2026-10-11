@@ -10,6 +10,8 @@ import android.net.ConnectivityManager
 import android.net.Network
 import android.net.NetworkCapabilities
 import android.net.Uri
+import android.os.Handler
+import android.os.Looper
 import android.provider.DocumentsContract
 import android.util.Log
 import androidx.compose.runtime.getValue
@@ -43,6 +45,7 @@ import app.foldcade.language.FoldNotice
 import app.foldcade.language.orderedNotices
 import app.foldcade.language.brightnessLevel
 import app.foldcade.language.BackgroundMotion
+import app.foldcade.language.Motion
 import app.foldcade.language.Copy
 import app.foldcade.language.EmptyGrid
 import app.foldcade.language.LibraryFolder
@@ -240,6 +243,19 @@ class FoldcadeApp : Application() {
         brightness.observe(::refreshBrightness)
         refreshBrightness()
         refreshNoticeAccess()
+        // Libraries report from their own threads. The shell hears them in order on the main one.
+        val main = Handler(Looper.getMainLooper())
+        plugins.activityListener = { libraryId, remoteKey, reported ->
+            main.post {
+                val until = shell.noteActivity(libraryId, remoteKey, reported, System.currentTimeMillis())
+                if (until != null) {
+                    main.postDelayed(
+                        { shell.expireActivity(libraryId, remoteKey, until) },
+                        Motion.durationSyncMark.toLong(),
+                    )
+                }
+            }
+        }
         rommPublish = RommPublish(
             read = {
                 readRommPublish(

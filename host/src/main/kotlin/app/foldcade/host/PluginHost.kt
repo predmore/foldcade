@@ -3,6 +3,7 @@ package app.foldcade.host
 import app.foldcade.api.plugin.BoundCredentialAccess
 import app.foldcade.api.plugin.CredentialStore
 import app.foldcade.api.plugin.Game
+import app.foldcade.api.plugin.GameActivity
 import app.foldcade.api.plugin.GameMeta
 import app.foldcade.api.plugin.GamePage
 import app.foldcade.api.plugin.GameQuery
@@ -127,6 +128,7 @@ class PluginHost(
         stagedPlatforms.forEach { platforms[it.id] = it }
         stagedPlayers.forEach { players[it.id] = it }
         stagedLibraries.forEach { libraries[it.id] = it }
+        stagedLibraries.forEach(::listenTo)
         stagedMetadata.forEach { metadataProviders[it.id] = it }
         if (!holdSnapshot) publish()
     }
@@ -267,6 +269,24 @@ class PluginHost(
 
     /** Library ids stored at registration, from the published snapshot. This does not call a plugin. */
     fun libraryIds(): List<String> = catalog.libraries.keys.toList()
+
+    /**
+     * Hears every library's [GameActivity] with the library's id, on whatever
+     * thread the library reports from. Set it any time: a report reads it then.
+     */
+    @Volatile
+    var activityListener: ((libraryId: String, remoteKey: String, activity: GameActivity) -> Unit)? = null
+
+    /** A library that cannot take the listener still lists and launches; it just shows no progress. */
+    private fun listenTo(library: LibraryBackend) {
+        try {
+            library.observeActivity { remoteKey, activity -> activityListener?.invoke(library.id, remoteKey, activity) }
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (failure: Exception) {
+            Unit
+        }
+    }
 
     /** Player ids stored at registration, from the published snapshot. This does not call a plugin. */
     fun playerIds(): List<String> = catalog.players.keys.toList()

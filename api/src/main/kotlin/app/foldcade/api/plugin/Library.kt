@@ -51,6 +51,40 @@ interface LibraryBackend {
      * Called after [prepareLaunch].
      */
     suspend fun reconcile(game: Game, player: Player, observed: ObservedSaves): SyncResult
+
+    /**
+     * The host's ear for [GameActivity]. Called once, before [connect]. A backend
+     * that reports nothing leaves this as it is. Report from any thread and
+     * return at once: the host only records what it hears.
+     */
+    fun observeActivity(listener: GameActivityListener) = Unit
+}
+
+/** Hears what a [LibraryBackend] is doing with the game whose [Game.remoteKey] it names. */
+fun interface GameActivityListener {
+    fun onActivity(remoteKey: String, activity: GameActivity)
+}
+
+/**
+ * What a backend is doing with one game right now. The shell shows it on the
+ * game's tile and on the top screen, and never stops the player for it.
+ * Open. A host that branches on this must use an `else` branch.
+ */
+sealed interface GameActivity {
+    /** The game's bytes are arriving. [totalBytes] is null when the size is not known. */
+    data class Downloading(val bytesSoFar: Long, val totalBytes: Long?) : GameActivity
+
+    /** Every byte is here, and the backend is checking them. */
+    data object Checking : GameActivity
+
+    /** The game's saves are syncing. */
+    data object SyncingSaves : GameActivity
+
+    /** The work ended with nothing to tell, such as a download that failed or was cancelled. */
+    data object Idle : GameActivity
+
+    /** A save sync ended with [result]. */
+    data class Synced(val result: SyncResult) : GameActivity
 }
 
 /**
