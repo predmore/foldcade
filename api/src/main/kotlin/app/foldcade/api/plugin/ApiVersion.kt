@@ -20,7 +20,7 @@ package app.foldcade.api.plugin
  * must use an `else` branch. Adding an enum value or a sealed subclass of
  * an open type bumps [PLUGIN_API_MINOR] and does not bump this major:
  * [Availability], [ArtworkRole], [StartDisplay], [LaunchFlag], [SyncOutcome],
- * [LaunchTarget], [PlayerExtra], [PluginException], and [Credential].
+ * [LaunchTarget], [PlayerExtra], [PluginException], [Credential], and [GameActivity].
  * Any other enum or sealed type in this module is closed. Adding a value
  * or a subclass there bumps this major.
  *
@@ -36,4 +36,4 @@ const val PLUGIN_API_VERSION = 1
  * Additive revision of [PLUGIN_API_VERSION].
  * The host loads an older or equal plugin minor and rejects a newer one.
  */
-const val PLUGIN_API_MINOR = 3
+const val PLUGIN_API_MINOR = 4

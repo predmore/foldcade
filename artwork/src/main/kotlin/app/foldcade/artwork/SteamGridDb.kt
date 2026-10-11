@@ -10,13 +10,15 @@ import kotlinx.serialization.json.jsonPrimitive
 import java.io.IOException
 import java.net.URLEncoder
 import java.nio.charset.StandardCharsets
+import java.text.Normalizer
+import java.util.Locale
 
 /**
  * Covers and square art from SteamGridDB, with the user's own API key.
  *
  * A Steam game is found by its app id. Anything else, such as a Moonlight
- * stream or a game the other sources missed, is found by its title: the exact
- * name, else the first result unless the query asks for an exact title. The cover
+ * stream or a game the other sources missed, is found by its title, and only a
+ * game of that same title counts, so a tile never wears another game's art. The cover
  * is a 600x900 grid, and a 512 or 1024 square grid is the tile art. Static,
  * safe-for-work images only.
  *
@@ -59,10 +61,11 @@ class SteamGridDb(
         if (title.isEmpty()) return null
         val results = data(token, "search/autocomplete/${segment(title)}") as? JsonArray ?: return null
         val wanted = normalized(title)
-        val games = results.mapNotNull { it as? JsonObject }
-        val exact = games.firstOrNull { normalized(it["name"]?.jsonPrimitive?.content.orEmpty()) == wanted }
-        val nearest = games.firstOrNull().takeUnless { query.exactTitle }
-        return (exact ?: nearest)?.get("id")?.jsonPrimitive?.int
+        if (wanted.isEmpty()) return null
+        // Autocomplete answers every search with something, so only a game of the same name is taken.
+        return results.mapNotNull { it as? JsonObject }
+            .firstOrNull { normalized(it["name"]?.jsonPrimitive?.content.orEmpty()) == wanted }
+            ?.get("id")?.jsonPrimitive?.int
     }
 
     private suspend fun firstImage(token: String, path: String): String? {
@@ -113,7 +116,17 @@ class SteamGridDb(
 
 class SteamGridDbKeyRefused : IOException("SteamGridDB refused the API key")
 
-private fun normalized(name: String): String = name.lowercase().replace(Regex("[^a-z0-9]+"), "")
+/**
+ * What two spellings of one title share. Case, accents, a leading "The",
+ * "&" for "and", and punctuation do not count. Letters of every script do.
+ */
+private fun normalized(name: String): String =
+    Normalizer.normalize(name, Normalizer.Form.NFKD)
+        .replace(Regex("\\p{M}+"), "")
+        .lowercase(Locale.ROOT)
+        .replace("&", " and ")
+        .replace(Regex("^\\W*the\\s+"), "")
+        .replace(Regex("[^\\p{L}\\p{N}]+"), "")
 
 private fun segment(text: String): String =
     URLEncoder.encode(text, StandardCharsets.UTF_8).replace("+", "%20")

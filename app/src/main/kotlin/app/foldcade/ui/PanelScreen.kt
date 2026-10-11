@@ -7,6 +7,7 @@ import android.util.Log
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.ui.unit.IntSize
+import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.BlendMode
 import androidx.compose.foundation.Canvas
 import androidx.compose.ui.semantics.semantics
@@ -104,6 +105,9 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.input.ImeAction
@@ -187,6 +191,9 @@ import app.foldcade.language.quickTileColumns
 import app.foldcade.language.rowLabel
 import app.foldcade.language.retargetHero
 import app.foldcade.language.rowText
+import app.foldcade.language.TileActivity
+import app.foldcade.language.activityLine
+import app.foldcade.language.worked
 import java.time.ZoneId
 import kotlin.math.abs
 import kotlin.math.ceil
@@ -691,20 +698,29 @@ private fun HeroLabel(
         if (item?.emptyShelfHint == true) {
             ShelfMeta(line = copy.detail, hintFocused = cellFocused, centred = true)
         } else {
-            val both = app.shell.focusedGame()?.takeIf { it.id == item?.key }?.occupiesBothDisplays == true
+            val focusedGame = app.shell.focusedGame()?.takeIf { it.id == item?.key }
+            val both = focusedGame?.occupiesBothDisplays == true
+            // What the library is doing with this game leads the line, in the focus colour.
+            val live = focusedGame?.let { app.shell.focusedActivity() }?.let(::activityLine)
             val played = item?.let { app.plays.run { stamp; shown(app.shell.playId(it.key)) } }
             val facts = heroFacts(
                 copy.title,
                 copy.detail,
-                item?.availability,
+                item?.availability.takeIf { live == null },
                 Copy.usesBothScreens.takeIf { both },
                 played?.let {
                     heroPlayLine(it.activeMillis, it.lastPlayedMillis, System.currentTimeMillis(), ZoneId.systemDefault())
                 },
             )
-            if (facts.isNotEmpty()) {
+            if (facts.isNotEmpty() || live != null) {
                 BasicText(
-                    text = facts,
+                    text = buildAnnotatedString {
+                        if (live != null) {
+                            withStyle(SpanStyle(color = theme.focus)) { append(live) }
+                            if (facts.isNotEmpty()) append(" · ")
+                        }
+                        append(facts)
+                    },
                     style = text(theme.muted, TypeRamp.heroMeta, theme).copy(textAlign = TextAlign.Center),
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
@@ -1791,6 +1807,7 @@ private fun Grid(
                             marked = onHomeMark,
                             onServer = face?.onServer == true,
                             downloading = face?.id != null && face.id in shell.downloading,
+                            activity = shell.activityAt(source),
                             library = libraryTile,
                             onClick = { shell.touchCell(index, screen) },
                             onDrag = if (editing) {
@@ -1834,6 +1851,135 @@ private fun launcherIcon(packageName: String?): ImageBitmap? {
     }
 }
 
+/**
+ * A game's state on its tile, in one small chip in the tile's corner: the cloud
+ * while it is only on the server, the cloud breathing in the focus colour while
+ * it downloads, with a bar that fills beside it, the sync mark breathing while
+ * saves sync, and for a moment after, a check when the sync worked.
+ */
+@Composable
+private fun TileStatus(
+    onServer: Boolean,
+    focused: Boolean,
+    downloading: Boolean,
+    activity: TileActivity?,
+    animatorScale: Float,
+    modifier: Modifier,
+) {
+    val theme = foldTheme()
+    val busy = downloading || (activity != null && activity !is TileActivity.Synced)
+    val breath = if (busy && !Motion.reduced(animatorScale)) {
+        rememberInfiniteTransition(label = "busy").animateFloat(
+            initialValue = 0.35f,
+            targetValue = 1f,
+            animationSpec = Motion.pulse(animatorScale),
+            label = "breath",
+        )
+    } else {
+        null
+    }
+    val loading = activity as? TileActivity.Downloading
+    val showsBar = loading != null || activity == TileActivity.Checking
+    val synced = activity as? TileActivity.Synced
+    val shown = if (synced != null) syncMarkShown(synced, animatorScale) else null
+    Row(
+        modifier = modifier
+            .then(if (showsBar) Modifier.fillMaxWidth() else Modifier)
+            .graphicsLayer {
+                val grown = shown?.value?.let { SYNC_MARK_FROM + (1f - SYNC_MARK_FROM) * it } ?: 1f
+                alpha = shown?.value ?: 1f
+                scaleX = grown
+                scaleY = grown
+                transformOrigin = TransformOrigin(1f, 0.5f)
+            }
+            .height(px(STATUS_CHIP_PX))
+            .clip(RoundedCornerShape(percent = 50))
+            .background(theme.background.copy(alpha = STATUS_BACKING_ALPHA))
+            .padding(horizontal = px((STATUS_CHIP_PX - STATUS_ICON_PX) / 2f)),
+        horizontalArrangement = Arrangement.spacedBy(px(8f)),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        if (showsBar) {
+            // Before the size is known the bar waits empty; the cloud beside it breathes.
+            DownloadBar(
+                fraction = if (activity == TileActivity.Checking) 1f else loading?.fraction ?: 0f,
+                animatorScale = animatorScale,
+                modifier = Modifier.weight(1f),
+            )
+        }
+        val (icon, tint) = when {
+            synced != null -> if (synced.mark.worked) {
+                R.drawable.ic_badge_check to theme.focus
+            } else {
+                R.drawable.ic_badge_sync to theme.muted
+            }
+            activity == TileActivity.Syncing -> R.drawable.ic_badge_sync to theme.focus
+            busy -> R.drawable.ic_badge_cloud to theme.focus
+            focused -> R.drawable.ic_badge_cloud to theme.onBackground
+            else -> R.drawable.ic_badge_cloud to theme.muted
+        }
+        Image(
+            painter = painterResource(icon),
+            contentDescription = null,
+            colorFilter = ColorFilter.tint(tint),
+            modifier = Modifier
+                .size(px(STATUS_ICON_PX))
+                // Read in the layer, so each frame redraws without recomposing the tile.
+                .graphicsLayer { alpha = if (synced == null) breath?.value ?: 1f else 1f },
+        )
+    }
+}
+
+/** The bar beside a downloading tile's cloud. It fills with [fraction]. */
+@Composable
+private fun DownloadBar(fraction: Float, animatorScale: Float, modifier: Modifier) {
+    val theme = foldTheme()
+    val filled by motionState(
+        target = fraction.coerceIn(0f, 1f),
+        spec = Motion.arrive(Motion.durationTravel, animatorScale),
+    )
+    Box(
+        modifier
+            .height(px(DOWNLOAD_LINE_PX))
+            .clip(RoundedCornerShape(percent = 50))
+            .drawBehind {
+                drawRect(theme.onBackground.copy(alpha = 0.22f))
+                drawRect(color = theme.focus, size = Size(size.width * filled, size.height))
+            },
+    )
+}
+
+/** A finished sync's mark grows in, holds, and fades before its time is up. */
+@Composable
+private fun syncMarkShown(synced: TileActivity.Synced, animatorScale: Float): State<Float> {
+    val shown = remember(synced.untilMillis) { Animatable(0f) }
+    LaunchedEffect(synced.untilMillis) {
+        withContext(SteadyMotion) {
+            shown.animateTo(1f, Motion.arrive(Motion.durationFocus, animatorScale))
+            val fade = Motion.duration(Motion.durationTravel, animatorScale)
+            delay((synced.untilMillis - System.currentTimeMillis() - fade).coerceAtLeast(0L))
+            shown.animateTo(0f, Motion.leave(Motion.durationTravel, animatorScale))
+        }
+    }
+    return shown.asState()
+}
+
+/** A status chip sits this share of the tile's corner radius in from each edge, clear of the curve. */
+private const val CORNER_SAFE = 0.3f
+
+/** Height of a tile's status chip and the badge in it, in panel pixels. */
+private const val STATUS_CHIP_PX = 36f
+private const val STATUS_ICON_PX = 24f
+
+/** The chip's backing, so the badge reads over bright cover art. */
+private const val STATUS_BACKING_ALPHA = 0.72f
+
+/** Thickness of the download line, in panel pixels. */
+private const val DOWNLOAD_LINE_PX = 6f
+
+/** A sync mark grows in from this scale. */
+private const val SYNC_MARK_FROM = 0.6f
+
 @Composable
 private fun Cell(
     title: String,
@@ -1851,6 +1997,7 @@ private fun Cell(
     marked: Boolean = false,
     onServer: Boolean = false,
     downloading: Boolean = false,
+    activity: TileActivity? = null,
     library: Boolean = false,
     onClick: () -> Unit,
     onPickUp: (() -> Unit)? = null,
@@ -2033,33 +2180,15 @@ private fun Cell(
                 )
             }
             // On the server, not on this device. A downloaded game has no badge at all.
-            // While it downloads the cloud takes the focus colour and breathes.
-            if (onServer || downloading) {
-                val breath = if (downloading && !Motion.reduced(animatorScale)) {
-                    rememberInfiniteTransition(label = "download").animateFloat(
-                        initialValue = 0.35f,
-                        targetValue = 1f,
-                        animationSpec = Motion.pulse(animatorScale),
-                        label = "cloud",
-                    )
-                } else {
-                    null
-                }
-                val tint = when {
-                    downloading -> theme.focus
-                    focused -> theme.onBackground
-                    else -> theme.muted
-                }
-                Image(
-                    painter = painterResource(R.drawable.ic_badge_cloud),
-                    contentDescription = null,
-                    colorFilter = ColorFilter.tint(tint),
-                    modifier = Modifier
-                        .align(Alignment.BottomEnd)
-                        .padding(px(8f))
-                        .size(px(22f))
-                        // Read in the layer, so each frame redraws without recomposing the tile.
-                        .graphicsLayer { alpha = breath?.value ?: 1f },
+            if (onServer || downloading || activity != null) {
+                TileStatus(
+                    onServer = onServer,
+                    focused = focused,
+                    downloading = downloading,
+                    activity = activity,
+                    animatorScale = animatorScale,
+                    // Far enough in that the tile's rounded corner never clips it.
+                    modifier = Modifier.align(Alignment.BottomEnd).padding(maxOf(px(8f), corner * CORNER_SAFE)),
                 )
             }
         }

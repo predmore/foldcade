@@ -2,6 +2,7 @@ package app.foldcade.plugins.romm
 
 import app.foldcade.api.plugin.Availability
 import app.foldcade.api.plugin.Game
+import app.foldcade.api.plugin.GameActivity
 import app.foldcade.api.plugin.GameQuery
 import app.foldcade.api.plugin.ArtworkRole
 import app.foldcade.api.plugin.Artwork
@@ -17,6 +18,7 @@ import app.foldcade.api.plugin.SyncOutcome
 import app.foldcade.romm.Heartbeat
 import app.foldcade.romm.KeptBoth
 import app.foldcade.romm.LocalSave
+import app.foldcade.romm.RomProgress
 import app.foldcade.romm.PlatformSummary
 import app.foldcade.romm.RegisteredDevice
 import app.foldcade.romm.RomFileSummary
@@ -106,6 +108,24 @@ class RommLibraryTest {
         assertEquals(
             "http://192.168.1.20/assets/cover.jpg",
             absoluteHttp("http://192.168.1.20", "/assets/cover.jpg?token=rmm_secret"),
+        )
+        // RomM 5.3.1 stamps covers with an unencoded date and time.
+        assertEquals(
+            "https://romm.example/assets/romm/resources/roms/1/9/cover/big.png?ts=2026-10-03%2004:20:36",
+            absoluteHttp("https://romm.example", "/assets/romm/resources/roms/1/9/cover/big.png?ts=2026-10-03 04:20:36"),
+        )
+        assertEquals(
+            "http://192.168.1.20/assets/Pok%C3%A9mon%20Blue.png?a=%2Fb&c=d%25",
+            absoluteHttp("http://192.168.1.20", "/assets/Pokémon%20Blue.png?a=%2Fb&c=d%"),
+        )
+        // The server's own cover wins over its scraper's address on another host.
+        val stamped = rom("3ds", 3).copy(
+            pathCoverLarge = "/assets/cover/big.png?ts=2026-10-03 04:20:36",
+            urlCover = "https://images.igdb.com/igdb/image/upload/t_1080p/co1xpx.jpg",
+        ).toMeta("https://romm.example")
+        assertEquals(
+            "https://romm.example/assets/cover/big.png?ts=2026-10-03%2004:20:36",
+            stamped.artwork.single { it.role == ArtworkRole.Cover }.uri,
         )
         val stripped = rom("3ds", 3).copy(
             pathCoverLarge = null,
@@ -310,6 +330,66 @@ class RommLibraryTest {
             assertFalse(hit.query.orEmpty().contains("format"))
             assertEquals("Bearer rmm_test", hit.header("Authorization"))
             assertFalse(cacheContains(cache, "rmm_test"))
+        } finally {
+            server.close()
+        }
+    }
+
+    @Test
+    fun aDownloadAndALaunchSyncTellTheHostWhatTheyAreDoing() = runBlocking {
+        val server = TinyServer()
+        val cache = Files.createTempDirectory("romm-activity")
+        try {
+            server.route("GET", "/api/platforms") { exchange, _ ->
+                json(exchange, 200, """[{"id":3,"slug":"3ds","fs_slug":"3ds","rom_count":1,"name":"Nintendo 3DS"}]""")
+            }
+            server.route("GET", "/api/roms") { exchange, _ -> json(exchange, 200, ROM_PAGE) }
+            server.route("GET", "/api/roms/1234/content/mario.cci") { exchange, _ ->
+                bytes(exchange, 200, "hello-rom".toByteArray())
+            }
+            server.route("POST", "/api/devices") { exchange, _ -> json(exchange, 201, """{"device_id":"device-1"}""") }
+            server.route("GET", "/openapi.json") { exchange, _ ->
+                json(exchange, 200, """{"openapi":"3.1.0","info":{"title":"RomM API","version":"5.3.1"}}""")
+            }
+            val library = live(server, cache)
+            val heard = java.util.Collections.synchronizedList(mutableListOf<Pair<String, GameActivity>>())
+            library.observeActivity { key, activity -> heard += key to activity }
+            val game = library.listGames("3ds", GameQuery()).games.single()
+
+            library.ensureLocal(game)
+            val download = heard.map { it.second }
+            assertTrue(heard.all { it.first == "1234" })
+            assertEquals(GameActivity.Downloading(0L, null), download.first())
+            assertEquals(GameActivity.Downloading(9L, 9L), download.last { it is GameActivity.Downloading })
+            assertEquals(GameActivity.Checking, download.last())
+
+            heard.clear()
+            val placement = library.prepareLaunch(game, NamedPlayer("azahar"))
+            assertEquals(
+                listOf(GameActivity.SyncingSaves, GameActivity.Synced(placement.sync)),
+                heard.map { it.second },
+            )
+        } finally {
+            server.close()
+        }
+    }
+
+    @Test
+    fun aFailedDownloadLeavesTheTileIdle() = runBlocking {
+        val server = TinyServer()
+        val cache = Files.createTempDirectory("romm-activity-fail")
+        try {
+            server.route("GET", "/api/platforms") { exchange, _ ->
+                json(exchange, 200, """[{"id":3,"slug":"3ds","fs_slug":"3ds","rom_count":1,"name":"Nintendo 3DS"}]""")
+            }
+            server.route("GET", "/api/roms") { exchange, _ -> json(exchange, 200, ROM_PAGE) }
+            server.route("GET", "/api/roms/1234/content/mario.cci") { exchange, _ -> json(exchange, 500, "{}") }
+            val library = live(server, cache)
+            val heard = java.util.Collections.synchronizedList(mutableListOf<GameActivity>())
+            library.observeActivity { _, activity -> heard += activity }
+            val game = library.listGames("3ds", GameQuery()).games.single()
+            assertTrue(runCatching { library.ensureLocal(game) }.isFailure)
+            assertEquals(GameActivity.Idle, heard.last())
         } finally {
             server.close()
         }
@@ -604,6 +684,9 @@ internal class ScriptedOps : RommOps {
     var onDownload: suspend (Long, String, Path, List<Long>, Long?, String?) -> Path =
         { _, _, _, _, _, _ -> error("download") }
 
+    /** What a download reports before [onDownload] answers. */
+    var downloadSteps: List<RomProgress> = emptyList()
+
     override suspend fun heartbeat() = Heartbeat("5.4.0")
     override suspend fun artwork(uri: String) = onArtwork(uri)
     override suspend fun platforms() = onPlatforms()
@@ -616,7 +699,11 @@ internal class ScriptedOps : RommOps {
         fileIds: List<Long>,
         expectedSize: Long?,
         expectedMd5: String?,
-    ): Path = onDownload(romId, fileName, cacheRoot, fileIds, expectedSize, expectedMd5)
+        progress: ((RomProgress) -> Unit)?,
+    ): Path {
+        downloadSteps.forEach { progress?.invoke(it) }
+        return onDownload(romId, fileName, cacheRoot, fileIds, expectedSize, expectedMd5)
+    }
 
     override suspend fun registerDevice(
         stored: RegisteredDevice?,

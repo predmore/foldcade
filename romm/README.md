@@ -8,23 +8,23 @@ Calls suspend on OkHttp. Cancelling the coroutine cancels the OkHttp call for th
 
 ## Pinned server
 
-Tested against RomM **5.4.0-alpha.2**. The pinned major is **5**.
+Tested against RomM **5.4.0**, the first stable release with save sync. The pinned major is **5**.
 
 Browse, download, and device-code sign-in work on any 5.x. Platform objects from stable 5.3.1 omit `abbreviation` and `alternative_names`. Those fields are optional: the abbreviation falls back to the slug, and missing names are an empty list.
 
-Save sync needs **5.4.0** or newer. `POST /api/sync/negotiate` reads `info.version` from `/openapi.json` first. If that major is greater than 5, the client throws `RommProtocolMismatch` and does not negotiate. The exception carries the server version and the tested major so a later screen can show the mismatch. If the server is older than 5.4.0, the client throws `RommUnsupportedServer` with "server too old for save sync" and does not open a session. A newer minor of major 5, such as 5.9.0, is still negotiated.
+Save sync needs **5.4.0** or newer. `POST /api/sync/negotiate` reads `info.version` from `/openapi.json` first. If that major is greater than 5, the client throws `RommProtocolMismatch` and does not negotiate. The exception carries the server version and the tested major so a later screen can show the mismatch. If the server is older than 5.4.0, the client throws `RommUnsupportedServer` with "server too old for save sync" and does not open a session. A newer minor of major 5, such as 5.9.0, is still negotiated. A pre-release tag is ignored, so `5.4.0-beta.1` counts as 5.4.0.
 
 RomM 5.1's device-sync document uses a different body. This client does not speak it. A 5.4 response that is missing the tested fields, including `total_delete`, fails to parse and is not applied. Older servers never reach that parser.
 
-The public demo at the time this was written served OpenAPI 5.2.0. That document does not have `rom_ids`, `emulators`, or `total_delete` on negotiate. It was not used as the contract.
+Stable 5.3.x is refused on purpose. Its negotiate has no `emulators` filter, so a slot could pair with another emulator's save; it has no `restore_unlisted` or `total_delete`; and it decides from timestamps alone. 5.2 has no `rom_ids`, so it would offer every game's saves.
 
-`src/test/resources/fixtures/openapi-5.4.0-alpha.2.json` is the OpenAPI document generated from the RomM `5.4.0-alpha.2` tag with `backend/tools/dump_openapi.py`. `RommOpenApiContractTest` checks the paths and fields this client calls. The release substitutes the tag for the source placeholder `<version>`, so `info.version` is `5.4.0-alpha.2`.
+`src/test/resources/fixtures/openapi-5.4.0.json` is the `/openapi.json` a RomM 5.4.0 server serves. `RommOpenApiContractTest` checks the paths and fields this client calls. Every one of them matches the `5.4.0-alpha.2` document this client was first written against.
 
 HTTP 401 is `RommUnauthorized` and HTTP 403 is `RommForbidden`. Both extend `RommHttpException`. Other statuses stay `RommHttpException`.
 
 ## What it calls
 
-Paths below are on the 5.4.0-alpha.2 schema and in the 5.4.0-alpha docs for authentication, downloads, and device sync.
+Paths below are on the 5.4.0 schema and in the 5.4 docs for authentication, downloads, and device sync.
 
 | Call | Path |
 | --- | --- |
@@ -42,7 +42,7 @@ Paths below are on the 5.4.0-alpha.2 schema and in the 5.4.0-alpha docs for auth
 | Finish the session | `POST /api/sync/sessions/{id}/complete` |
 | Cover art | `GET` the artwork address, on the origin only, with no token |
 
-`format` is never sent. A 202 from a conversion is surfaced and not retried. Multi-file downloads pass `file_ids` on the ROM content path. A finished file must match the size and MD5 RomM lists for it, is synced to storage before it is renamed into place, and gets a `.verified` marker. A cached file is reused only while its marker matches RomM's hash. A `.partial` file is resumed with `Range` and `If-Range`, using the `ETag` or `Last-Modified` of its first response; without one, or when a 206 starts at the wrong offset, it starts over. Two downloads of one file take turns.
+`format` is never sent. A 202 from a conversion is surfaced and not retried. Multi-file downloads pass `file_ids` on the ROM content path. A finished file must match the size and MD5 RomM lists for it, is synced to storage before it is renamed into place, and gets a `.verified` marker. A cached file is reused only while its marker matches RomM's hash. A `.partial` file is resumed with `Range` and `If-Range`, using the `ETag` or `Last-Modified` of its first response; without one, or when a 206 starts at the wrong offset, it starts over. Two downloads of one file take turns. A caller can pass `progress` to hear the bytes as they arrive, with the total from RomM's file list or the response, then `RomProgress.Checking` while the hash is computed.
 
 Device registration uses client slug `foldcade`, platform `android`, and `sync_mode` `api`. A stored device id whose client version still matches is left alone. `POST /api/devices` sends `allow_existing`. A 409 `device_exists` response is reused, including its `device_id`. The RomM plugin keeps the device id for each origin in app storage, and sends a random per-install host name, so a restart keeps one device and RomM keeps its sync history.
 

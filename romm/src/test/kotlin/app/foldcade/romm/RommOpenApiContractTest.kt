@@ -9,13 +9,13 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /**
- * The vendored document is the schema from RomM 5.4.0-alpha.2.
+ * The vendored document is the schema from RomM 5.4.0.
  * The public demo's 5.2.0 document is not this contract.
  */
 class RommOpenApiContractTest {
     @Test
     fun clientPathsAndSaveSyncFieldsAreInThePinnedSpec() {
-        val text = javaClass.classLoader.getResource("fixtures/openapi-5.4.0-alpha.2.json")!!.readText()
+        val text = javaClass.classLoader.getResource("fixtures/openapi-5.4.0.json")!!.readText()
         val root = Json.parseToJsonElement(text).jsonObject
         val info = root.getValue("info").jsonObject
         assertEquals("RomM API", info.getValue("title").jsonPrimitive.content)

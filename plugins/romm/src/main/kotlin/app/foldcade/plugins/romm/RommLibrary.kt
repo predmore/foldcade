@@ -2,6 +2,8 @@ package app.foldcade.plugins.romm
 
 import app.foldcade.api.plugin.Availability
 import app.foldcade.api.plugin.Game
+import app.foldcade.api.plugin.GameActivity
+import app.foldcade.api.plugin.GameActivityListener
 import app.foldcade.api.plugin.GamePage
 import app.foldcade.api.plugin.GameQuery
 import app.foldcade.api.plugin.LaunchTarget
@@ -19,6 +21,7 @@ import app.foldcade.api.plugin.SaveSlot
 import app.foldcade.api.plugin.SyncOutcome
 import app.foldcade.api.plugin.SyncResult
 import app.foldcade.romm.LocalSave
+import app.foldcade.romm.RomProgress
 import app.foldcade.romm.RomQuery
 import app.foldcade.romm.RomSummary
 import app.foldcade.romm.RommClient
@@ -72,6 +75,60 @@ internal class RommLibrary(
     private val pendingRunning = AtomicBoolean(false)
     private val romLocks = ConcurrentHashMap<Long, Mutex>()
 
+    @Volatile
+    private var listener: GameActivityListener? = null
+
+    override fun observeActivity(listener: GameActivityListener) {
+        this.listener = listener
+    }
+
+    /** Tells the host what is happening to [romId]. A listener that throws is not this backend's failure. */
+    private fun report(romId: Long, activity: GameActivity) {
+        try {
+            listener?.onActivity(romId.toString(), activity)
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (_: Exception) {
+            Unit
+        }
+    }
+
+    /**
+     * Download progress for [romId], at most one report per whole percent and
+     * [PROGRESS_GAP_NS], so a fast link does not flood the host. The last byte is always told.
+     */
+    private fun downloadReporter(romId: Long): (RomProgress) -> Unit {
+        var shownAt = 0L
+        var shown = -1L
+        return { step ->
+            when (step) {
+                is RomProgress.Receiving -> {
+                    val total = step.total
+                    val percent = if (total != null && total > 0) step.bytes * 100 / total else -1L
+                    val now = System.nanoTime()
+                    val last = total != null && step.bytes >= total
+                    if (last || (percent != shown && now - shownAt >= PROGRESS_GAP_NS)) {
+                        shownAt = now
+                        shown = percent
+                        report(romId, GameActivity.Downloading(step.bytes, total))
+                    }
+                }
+                RomProgress.Checking -> report(romId, GameActivity.Checking)
+            }
+        }
+    }
+
+    /** One sync of [romId] the host can watch: syncing first, then its result. */
+    private suspend fun syncRomReported(romId: Long, emulator: String?): SyncResult {
+        report(romId, GameActivity.SyncingSaves)
+        var result: SyncResult? = null
+        try {
+            return syncRom(romId, emulator).also { result = it }
+        } finally {
+            report(romId, result?.let { GameActivity.Synced(it) } ?: GameActivity.Idle)
+        }
+    }
+
     /**
      * Checks the server and the device, then starts a sync of every ROM whose
      * saves changed since they last agreed with RomM. That sync runs in the
@@ -112,7 +169,7 @@ internal class RommLibrary(
         for (romId in roms) {
             try {
                 val waiting = runInterruptible(Dispatchers.IO) { unsyncedSlots(wiring, romId).isNotEmpty() }
-                if (waiting) syncRom(romId, emulator = null)
+                if (waiting) syncRomReported(romId, emulator = null)
             } catch (cancelled: CancellationException) {
                 throw cancelled
             } catch (_: Exception) {
@@ -178,19 +235,27 @@ internal class RommLibrary(
             spec?.let { verifiedRom(wiring.romRoot, romId, it) }
         }
         if (cached != null) return LaunchTarget.ContentUri(uri = wiring.contentUris.uriFor(cached))
-        return gate.call { current, ops ->
-            val rom = romFor(game, ops)
-            val spec = rom.bytes()
-            val path = ops.downloadRom(
-                romId = rom.id,
-                fileName = spec.fileName,
-                cacheRoot = current.romRoot,
-                fileIds = spec.fileIds,
-                expectedSize = spec.expectedSize,
-                expectedMd5 = spec.md5,
-            )
-            runInterruptible(Dispatchers.IO) { writeRomSpec(current.romRoot, rom.id, spec) }
-            LaunchTarget.ContentUri(uri = current.contentUris.uriFor(path))
+        report(romId, GameActivity.Downloading(0L, null))
+        var done = false
+        try {
+            return gate.call { current, ops ->
+                val rom = romFor(game, ops)
+                val spec = rom.bytes()
+                val path = ops.downloadRom(
+                    romId = rom.id,
+                    fileName = spec.fileName,
+                    cacheRoot = current.romRoot,
+                    fileIds = spec.fileIds,
+                    expectedSize = spec.expectedSize,
+                    expectedMd5 = spec.md5,
+                    progress = downloadReporter(rom.id),
+                )
+                runInterruptible(Dispatchers.IO) { writeRomSpec(current.romRoot, rom.id, spec) }
+                LaunchTarget.ContentUri(uri = current.contentUris.uriFor(path))
+            }.also { done = true }
+        } finally {
+            // A finished download is followed by the launch's save sync, which reports next.
+            if (!done) report(romId, GameActivity.Idle)
         }
     }
 
@@ -225,8 +290,10 @@ internal class RommLibrary(
         val wiring = gate.wiring()
         val romId = game.romId()
         // A slow server does not hold the game. A cut-short sync leaves files whole: each write is a rename.
+        report(romId, GameActivity.SyncingSaves)
         val sync = withTimeoutOrNull(LAUNCH_SYNC_LIMIT_MS) { syncRom(romId, player.id) }
             ?: pending(wiring, romId, "RomM took too long. Saves will sync later.")
+        report(romId, GameActivity.Synced(sync))
         // A sync still running in the background may rename a save at any time, so
         // the shell gets copies whose hashes match their bytes.
         return Placement(target, snapshotSaves(wiring, romId), sync)
@@ -248,7 +315,7 @@ internal class RommLibrary(
                 throw PluginException.Unavailable(error.message ?: "The save could not be kept", error)
             }
         }
-        background.launch { syncRom(romId, player.id) }
+        background.launch { syncRomReported(romId, player.id) }
         return pending(wiring, romId, null)
     }
 
@@ -578,6 +645,9 @@ internal fun dropLegacyCache(cacheRoot: Path, dataRoot: Path, romRoot: Path) {
 
 private fun md5Hex(bytes: ByteArray): String =
     MessageDigest.getInstance("MD5").digest(bytes).joinToString("") { "%02x".format(it) }
+
+/** The shortest time between two download reports for one game. */
+private const val PROGRESS_GAP_NS = 100_000_000L
 
 /** How long a launch waits for its save sync. */
 private const val LAUNCH_SYNC_LIMIT_MS = 20_000L

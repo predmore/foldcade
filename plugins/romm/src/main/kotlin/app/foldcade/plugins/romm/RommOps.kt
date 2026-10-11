@@ -7,6 +7,7 @@ import app.foldcade.romm.LocalSave
 import app.foldcade.romm.PlatformSummary
 import app.foldcade.romm.RegisteredDevice
 import app.foldcade.romm.RomPage
+import app.foldcade.romm.RomProgress
 import app.foldcade.romm.RomQuery
 import app.foldcade.romm.RomSummary
 import app.foldcade.romm.RommClient
@@ -32,6 +33,7 @@ internal interface RommOps : AutoCloseable {
         fileIds: List<Long>,
         expectedSize: Long?,
         expectedMd5: String?,
+        progress: ((RomProgress) -> Unit)? = null,
     ): Path
 
     suspend fun registerDevice(
@@ -79,7 +81,8 @@ internal class ClientRommOps(private val client: RommClient) : RommOps {
         fileIds: List<Long>,
         expectedSize: Long?,
         expectedMd5: String?,
-    ) = client.downloadRom(romId, fileName, cacheRoot, fileIds, expectedSize, expectedMd5)
+        progress: ((RomProgress) -> Unit)?,
+    ) = client.downloadRom(romId, fileName, cacheRoot, fileIds, expectedSize, expectedMd5, progress)
 
     override suspend fun registerDevice(
         stored: RegisteredDevice?,
