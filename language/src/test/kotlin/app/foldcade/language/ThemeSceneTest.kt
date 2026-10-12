@@ -1,17 +1,11 @@
 package app.foldcade.language
 
-import java.io.File
 import org.junit.Assert.*
 import org.junit.Test
 
 class ThemeSceneTest {
-    private fun root(): File {
-        var directory = File(requireNotNull(System.getProperty("user.dir")))
-        while (!File(directory, "settings.gradle.kts").isFile) directory = requireNotNull(directory.parentFile)
-        return directory
-    }
     private fun afterglow(): ThemeResources = resolveThemeResources(readThemeZip(
-        File(root(), "app/src/main/assets/themes/afterglow.zip").inputStream(),
+        afterglowZip().inputStream(),
     )!!)
 
     @Test

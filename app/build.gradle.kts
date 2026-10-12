@@ -221,6 +221,14 @@ val packageMuseScoreLicense = tasks.register<PackageMuseScoreLicenseTask>("packa
 }
 
 // Afterglow is the source of the default icon art, including emergency native fallbacks.
+val packageAfterglowTheme = tasks.register<PackageThemeTask>("packageAfterglowTheme") {
+    group = "build"
+    description = "Validate and package Afterglow from its source assets."
+    script.set(rootProject.layout.projectDirectory.file("tools/themes/pack.py"))
+    sourceDir.set(rootProject.layout.projectDirectory.dir("themes/afterglow"))
+    assetsDir.set(layout.buildDirectory.dir("generated/themeAssets"))
+}
+
 val packageThemeIcons = tasks.register<PackageThemeIconsTask>("packageThemeIcons") {
     sourceDir.set(rootProject.layout.projectDirectory.dir("themes/afterglow/icons"))
     resourceDir.set(layout.buildDirectory.dir("generated/themeRes"))
@@ -229,11 +237,43 @@ val packageThemeIcons = tasks.register<PackageThemeIconsTask>("packageThemeIcons
 androidComponents {
     onVariants { variant ->
         variant.sources.res?.addGeneratedSourceDirectory(packageThemeIcons, PackageThemeIconsTask::resourceDir)
+        variant.sources.assets?.addGeneratedSourceDirectory(packageAfterglowTheme, PackageThemeTask::assetsDir)
         variant.sources.assets?.addGeneratedSourceDirectory(renderHomeMusic, RenderHomeMusicTask::assetsDir)
         variant.sources.assets?.addGeneratedSourceDirectory(
             packageMuseScoreLicense,
             PackageMuseScoreLicenseTask::assetsDir,
         )
+    }
+}
+
+abstract class PackageThemeTask : DefaultTask() {
+    @get:Inject
+    abstract val execOperations: ExecOperations
+
+    @get:InputFile
+    @get:PathSensitive(PathSensitivity.RELATIVE)
+    abstract val script: RegularFileProperty
+
+    @get:InputDirectory
+    @get:PathSensitive(PathSensitivity.RELATIVE)
+    abstract val sourceDir: DirectoryProperty
+
+    @get:OutputDirectory
+    abstract val assetsDir: DirectoryProperty
+
+    @TaskAction
+    fun pack() {
+        val destination = assetsDir.get().asFile
+        destination.deleteRecursively()
+        execOperations.exec {
+            commandLine(
+                "python3",
+                script.get().asFile.absolutePath,
+                sourceDir.get().asFile.absolutePath,
+                "--output",
+                File(destination, "themes/afterglow.zip").absolutePath,
+            )
+        }.assertNormalExitValue()
     }
 }
 

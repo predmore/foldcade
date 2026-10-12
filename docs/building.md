@@ -8,6 +8,7 @@ Local debug and release builds. Version codes, Obtainium, and the release keysto
 - Android SDK packages: `platforms;android-33`, `platforms;android-37.0`, `build-tools;37.0.0`, and `platform-tools`. Do not install the legacy `tools` package. Current cmdline-tools do not ship it.
 - `compileSdk` is `release(37)`, so compilation needs `platforms;android-37.0`. `platforms;android-33` is the min and target platform. `minSdk` and `targetSdk` are 33. App bytecode is Java 17.
 - The Gradle wrapper is 9.6.0. Use `./gradlew`.
+- Theme packaging needs `python3` (standard library only). Builds and language tests validate and generate the bundled Afterglow ZIP from `themes/afterglow/`; generated archives are not committed.
 - Home music rendering needs `fluidsynth`, `ffmpeg`, `python3`, `python3-venv`, and `libsndfile1`. The build downloads MuseScore General. That SoundFont is not committed.
 
 On Debian or Ubuntu:

@@ -1,5 +1,6 @@
 .gradle/
 build/
+app/src/main/assets/themes/*.zip
 local.properties
 *.iml
 .idea/
