@@ -23,6 +23,10 @@ import app.foldcade.api.plugin.CredentialStore
 import app.foldcade.api.plugin.LibraryInstance
 import app.foldcade.api.plugin.PluginException
 import app.foldcade.api.plugin.SaveFolderHolder
+import app.foldcade.plugins.droiddeck.DroidDeckGame
+import app.foldcade.plugins.droiddeck.DroidDeckLibrary
+import app.foldcade.plugins.droiddeck.DroidDeckPlayer
+import app.foldcade.plugins.droiddeck.droidDeckShortcutKey
 import app.foldcade.plugins.gamenative.CatalogGame
 import app.foldcade.plugins.gamenative.GameNativeLibrary
 import app.foldcade.plugins.gamenative.GameNativePlayer
@@ -229,7 +233,11 @@ class FoldcadeApp : Application() {
                 Intent.ACTION_PACKAGE_ADDED,
                 Intent.ACTION_PACKAGE_REMOVED,
                 Intent.ACTION_PACKAGE_CHANGED,
-                -> reloadInstalledApps()
+                -> {
+                    reloadInstalledApps()
+                    val changed = intent.data?.schemeSpecificPart
+                    if (changed in GameNativePlayer.PACKAGES || changed == DroidDeckPlayer.PACKAGE) rerouteSteamFiles()
+                }
             }
         }
     }
@@ -282,6 +290,7 @@ class FoldcadeApp : Application() {
             themeTracks = themeTrackList,
             lastPlayedMillis = plays::lastPlayedMillis,
             onMoonlightRemoved = ::unpinMoonlightGame,
+            onDroidDeckRemoved = ::unpinDroidDeckGame,
             onBrightness = { position -> brightness.write(brightnessLevel(position)) },
         )
         plays.onChanged = shell::notePlayChanged
@@ -357,6 +366,8 @@ class FoldcadeApp : Application() {
                 refreshGameNative()
                 restoreMoonlightPins()
                 refreshMoonlightShelf()
+                restoreDroidDeckPins()
+                refreshDroidDeckShelf()
                 withContext(Dispatchers.Main.immediate) {
                     shell.refreshPlayerSaves()
                     shell.noteShelfChanged()
@@ -600,6 +611,82 @@ class FoldcadeApp : Application() {
         }
     }
 
+    /** DroidDeck's pinned games from the last shortcut read, or the saved list before one ran. */
+    @Volatile
+    private var droidDeckPinned: List<DroidDeckGame> = emptyList()
+
+    /** DroidDeck games named by .steam files in the folders. */
+    @Volatile
+    private var droidDeckFileGames: List<DroidDeckGame> = emptyList()
+
+    @Volatile
+    private var droidDeckShortcutsRead = false
+
+    /** Reads DroidDeck's pinned games again and puts them on the shelf. */
+    fun refreshDroidDeckShelf() {
+        pluginLoad.launch { readDroidDeckShelf() }
+    }
+
+    /**
+     * Reads DroidDeck's shortcuts when this app is the home app. A failed read
+     * leaves the previous list. Only a read that ran can settle the DroidDeck
+     * tiles, so one missing from the shelf is taken off Home only once Android
+     * and the folder scan have both said so.
+     */
+    private suspend fun readDroidDeckShelf() {
+        if (plugins.library(DroidDeckLibrary.ID) !is DroidDeckLibrary) return
+        val read = queryDroidDeckShortcuts(this)
+        if (read != null) {
+            droidDeckPinned = read
+            droidDeckShortcutsRead = true
+            store.setDroidDeckPins(read)
+        }
+        publishDroidDeck()
+    }
+
+    /** The last read fills the shelf at start, before Android answers. It never settles. */
+    private suspend fun restoreDroidDeckPins() {
+        droidDeckPinned = store.droidDeckPins()
+        publishDroidDeck()
+    }
+
+    /**
+     * Pinned games first, so a pinned game keeps DroidDeck's whole name over
+     * the shortened file name. Settles once both sources have answered.
+     */
+    private suspend fun publishDroidDeck() {
+        val library = plugins.library(DroidDeckLibrary.ID) as? DroidDeckLibrary ?: return
+        library.replaceGames(droidDeckPinned + droidDeckFileGames)
+        Shelf.droidDeckInstalled = packageInstalled(DroidDeckPlayer.PACKAGE)
+        Shelf.droidDeckGames = plugins.droidDeckShelfGames()
+        // With no folder there is no scan to wait for.
+        val settled = droidDeckShortcutsRead && (steamFilesRead || store.folderTrees().isEmpty())
+        withContext(Dispatchers.Main.immediate) {
+            if (settled) shell.settleDroidDeck()
+            shell.noteShelfChanged()
+        }
+    }
+
+    /**
+     * [PinShortcutActivity] accepted DroidDeck's Add to home screen for [shortcutId].
+     * The game is read back from Android's pinned shortcuts, then placed on Home.
+     */
+    fun acceptedDroidDeckPin(shortcutId: String) {
+        val key = droidDeckShortcutKey(shortcutId) ?: return
+        pluginLoad.launch {
+            pluginsReady.await()
+            readDroidDeckShelf()
+            withContext(Dispatchers.Main.immediate) { shell.placeDroidDeckPin(Shelf.DROIDDECK_PREFIX + key) }
+        }
+    }
+
+    /** Remove from Home on a DroidDeck game drops Foldcade's pin for it. A synced file stays. */
+    private fun unpinDroidDeckGame(remoteKey: String) {
+        pluginLoad.launch {
+            if (unpinDroidDeckShortcut(this@FoldcadeApp, remoteKey)) readDroidDeckShelf()
+        }
+    }
+
     fun publishRomm() {
         rommPublish.publish()
         configureSavedRomm()
@@ -686,12 +773,40 @@ class FoldcadeApp : Application() {
     @Volatile
     private var steamFileGames: List<CatalogGame> = emptyList()
 
+    /** The .steam files the last finished scan found, before they are routed. */
+    @Volatile
+    private var steamFiles: List<SteamShortcut> = emptyList()
+
+    @Volatile
+    private var steamFilesRead = false
+
     private suspend fun useSteamFiles(found: List<SteamShortcut>) {
-        val games = found.map { CatalogGame(title = it.title, appId = it.appId, gameSource = GameNativePlayer.DEFAULT_SOURCE) }
-        if (games == steamFileGames) return
-        steamFileGames = games
-        refreshGameNative()
-        withContext(Dispatchers.Main.immediate) { shell.noteShelfChanged() }
+        steamFiles = found
+        steamFilesRead = true
+        routeSteamFiles()
+    }
+
+    /** Splits the .steam files between GameNative and DroidDeck. See [routeSteamFiles]. */
+    private suspend fun routeSteamFiles() {
+        val route = routeSteamFiles(
+            steamFiles,
+            gameNativeInstalled = gameNativePackagePresent(),
+            droidDeckInstalled = packageInstalled(DroidDeckPlayer.PACKAGE),
+        )
+        droidDeckFileGames = route.droidDeck
+        if (route.gameNative != steamFileGames) {
+            steamFileGames = route.gameNative
+            refreshGameNative()
+        }
+        publishDroidDeck()
+    }
+
+    /** GameNative or DroidDeck came or went, so the .steam files may belong to the other now. */
+    private fun rerouteSteamFiles() {
+        pluginLoad.launch {
+            pluginsReady.await()
+            routeSteamFiles()
+        }
     }
 
     fun reloadFolder() {
@@ -917,8 +1032,8 @@ class FoldcadeApp : Application() {
                     )
                     shell.showCuratedHome()
                 }
-                // A folder of .steam files has games, just none of its own.
-                LoadedLibrary.NoPlatforms -> if (steamFileGames.isNotEmpty() && libraryId == LocalFolderBackend.ID) {
+                // A folder of .steam files has games, just none of its own: GameNative's, DroidDeck's, or both.
+                LoadedLibrary.NoPlatforms -> if (steamFiles.isNotEmpty() && libraryId == LocalFolderBackend.ID) {
                     shell.dropLibrary(libraryId)
                     shell.showCuratedHome()
                 } else {

@@ -68,6 +68,8 @@ private fun markDrawable(mark: String): Int? = when (mark) {
     "android-apps" -> R.drawable.mark_android_apps
     "pc" -> R.drawable.mark_pc
     "moonlight" -> R.drawable.mark_moonlight
+    "droiddeck" -> R.drawable.mark_droiddeck
+    "emulators" -> R.drawable.mark_emulators
     "folder" -> R.drawable.mark_folder
     "library" -> R.drawable.mark_library
     "console" -> R.drawable.mark_console

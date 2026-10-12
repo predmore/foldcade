@@ -107,10 +107,8 @@ class HomeBoardTest {
         assertEquals("game-boy-advance", merged.folders.getValue(folderId).mark)
         assertEquals(listOf("game.cart", "game.drift"), merged.folders.getValue(folderId).slots)
         assertTrue(merged.slots.contains(HOME_ALL))
-        assertTrue(merged.folders.containsKey(HOME_ANDROID_GAMES))
-        assertTrue(merged.folders.containsKey(HOME_ANDROID_APPS))
-        assertTrue(merged.folders.containsKey(HOME_GAMENATIVE))
-        assertTrue(merged.folders.containsKey(HOME_MOONLIGHT))
+        // No games, no folder.
+        assertEquals(setOf(folderId), merged.folders.keys)
         val allIndex = merged.slots.indexOf(HOME_ALL)
         val kept = removeFromHome(merged, allIndex)
         assertTrue(kept.slots.contains(HOME_ALL))
@@ -279,17 +277,80 @@ class HomeBoardTest {
     }
 
     @Test
-    fun aHiddenGameKeepsItsPlatformFolder() {
+    fun aFolderWhoseGamesAreAllHiddenGoesAndComesBackWithOne() {
         val drift = item("game.drift", platformId = "nds")
         val folderId = platformFolderId("nintendo-ds")
         val placed = mergeHome(HomeBoard(), listOf(drift), platforms)
-        val hidden = placed.copy(
-            folders = placed.folders + (folderId to placed.folders.getValue(folderId).copy(slots = listOf(null))),
-            hidden = setOf("game.drift"),
+        val hidden = mergeHome(removeFromHome(openFolder(placed, folderId), 0), listOf(drift), platforms)
+        assertFalse(hidden.folders.containsKey(folderId))
+        assertFalse(hidden.slots.contains(folderId))
+        assertNull(hidden.openFolderId)
+
+        val back = addItemToHome(hidden, drift, platforms)
+        assertEquals(listOf("game.drift"), back.folders.getValue(folderId).slots)
+        assertTrue(back.slots.contains(folderId))
+        assertEquals(back, mergeHome(back, listOf(drift), platforms))
+    }
+
+    @Test
+    fun aFreshBoardHasNoFolderWithoutAGame() {
+        val merged = mergeHome(HomeBoard(), emptyList(), platforms)
+        assertEquals(listOf(HOME_ALL), merged.slots)
+        assertTrue(merged.folders.isEmpty())
+    }
+
+    @Test
+    fun emulatorsGetTheirOwnFolderApartFromGames() {
+        val azahar = item("android:org.azahar_emu.azahar", kind = HomeKind.Emulator)
+        val moonlight = item("android:com.limelight", kind = HomeKind.Emulator)
+        val stream = item("host|7", kind = HomeKind.Moonlight)
+        val merged = mergeHome(HomeBoard(), listOf(azahar, moonlight, stream), platforms)
+        assertEquals(listOf(azahar.id, moonlight.id), merged.folders.getValue(HOME_EMULATORS).slots)
+        assertEquals(listOf(stream.id), merged.folders.getValue(HOME_MOONLIGHT).slots)
+        assertEquals("emulators", merged.folders.getValue(HOME_EMULATORS).mark)
+        assertEquals("Emulators", merged.folders.getValue(HOME_EMULATORS).name)
+        assertTrue(merged.emulatorsFiled)
+
+        // Uninstalled, the last emulator takes the folder with it.
+        val gone = mergeHome(merged, listOf(stream), platforms)
+        assertFalse(gone.folders.containsKey(HOME_EMULATORS))
+    }
+
+    @Test
+    fun emulatorsFiledWithTheAndroidAppsMoveOnceAndThenStayWhereTheUserPutsThem() {
+        val azahar = item("android:org.azahar_emu.azahar", kind = HomeKind.Emulator)
+        val notes = item("android:com.example.notes", kind = HomeKind.AndroidApp)
+        val old = HomeBoard(
+            slots = listOf(HOME_ALL, HOME_ANDROID_APPS),
+            folders = mapOf(
+                HOME_ANDROID_APPS to HomeFolder(HOME_ANDROID_APPS, "Android Apps", bucket = HomeKind.AndroidApp, slots = listOf(azahar.id, notes.id)),
+            ),
         )
-        val again = mergeHome(hidden, listOf(drift), platforms)
-        assertTrue(again.folders.containsKey(folderId))
-        assertTrue(again.slots.contains(folderId))
+        // Before the installed apps report, nothing moves.
+        val loading = mergeHome(old, emptyList(), platforms, unsettled = { it.startsWith("android:") })
+        assertFalse(loading.emulatorsFiled)
+        assertEquals(listOf(azahar.id, notes.id), loading.folders.getValue(HOME_ANDROID_APPS).slots)
+
+        val filed = mergeHome(loading, listOf(azahar, notes), platforms)
+        assertEquals(listOf(null, notes.id), filed.folders.getValue(HOME_ANDROID_APPS).slots)
+        assertEquals(listOf(azahar.id), filed.folders.getValue(HOME_EMULATORS).slots)
+        assertTrue(decodeHome(encodeHome(filed)).emulatorsFiled)
+
+        // The user moves it back. It stays.
+        val moved = moveToFolder(filed, azahar.id, HOME_ANDROID_APPS)
+        val again = mergeHome(decodeHome(encodeHome(moved)), listOf(azahar, notes), platforms)
+        assertTrue(azahar.id in again.folders.getValue(HOME_ANDROID_APPS).slots)
+        assertFalse(again.folders.containsKey(HOME_EMULATORS))
+    }
+
+    @Test
+    fun aLibraryFolderWaitsForGamesStillLoading() {
+        val game = item("lib:romm:7", kind = HomeKind.AndroidGame)
+        val placed = mergeHome(HomeBoard(), listOf(game), platforms)
+        val loading = mergeHome(placed, emptyList(), platforms, unsettled = { it == "lib:romm:7" })
+        assertEquals(placed.folders, loading.folders)
+        val gone = mergeHome(loading, emptyList(), platforms)
+        assertTrue(gone.folders.isEmpty())
     }
 
     @Test
@@ -383,7 +444,9 @@ class HomeBoardTest {
         val gba = platformFolderId("game-boy-advance")
         assertEquals(gba, homeFolderFor(placed, cart, platforms))
         val app = item("android:example", kind = HomeKind.AndroidApp)
-        assertEquals(HOME_ANDROID_APPS, homeFolderFor(placed, app, platforms))
+        // No app has made the Android Apps folder.
+        assertNull(homeFolderFor(placed, app, platforms))
+        assertEquals(listOf("android:example"), addItemToHome(placed, app, platforms).folders.getValue(HOME_ANDROID_APPS).slots)
         // With its folder removed there is nowhere to return to, so it goes on the root.
         val removed = deleteFolder(placed, gba)
         assertNull(homeFolderFor(removed, cart, platforms))

@@ -9,6 +9,8 @@ import app.foldcade.language.AppShelfState
 import app.foldcade.language.HomeMusicSetting
 import app.foldcade.language.LibrarySort
 import app.foldcade.language.PromptKey
+import app.foldcade.plugins.droiddeck.DroidDeckGame
+import app.foldcade.plugins.droiddeck.droidDeckGame
 import app.foldcade.plugins.moonlight.MoonlightApp
 import app.foldcade.plugins.moonlight.moonlightApp
 import androidx.compose.runtime.getValue
@@ -322,6 +324,28 @@ class SessionStore(private val prefs: SharedPreferences) : SaveMarks {
         prefs.edit().putString(KEY_MOONLIGHT_PINS, raw).apply()
     }
 
+    /**
+     * The DroidDeck games Foldcade last read from Android's pinned shortcuts.
+     * They fill the shelf at start, so DroidDeck tiles keep their names before Android answers again.
+     */
+    fun droidDeckPins(): List<DroidDeckGame> {
+        val raw = prefs.getString(KEY_DROIDDECK_PINS, null)
+        if (raw.isNullOrBlank()) return emptyList()
+        return raw.split(PIN_RECORD).mapNotNull { record ->
+            val bits = record.split(PIN_FIELD)
+            if (bits.size != 2) null else droidDeckGame(gameId = bits[0], title = bits[1])
+        }
+    }
+
+    fun setDroidDeckPins(games: List<DroidDeckGame>) {
+        val raw = games.joinToString(PIN_RECORD) { game ->
+            listOf(game.gameId, game.title).joinToString(PIN_FIELD) { field ->
+                field.replace(PIN_FIELD, " ").replace(PIN_RECORD, " ")
+            }
+        }
+        prefs.edit().putString(KEY_DROIDDECK_PINS, raw).apply()
+    }
+
     fun buttonPromptSeenLaunch(): Boolean = prefs.getBoolean(KEY_BUTTON_PROMPT_SEEN, false)
 
     fun setButtonPromptSeenLaunch() {
@@ -374,6 +398,7 @@ class SessionStore(private val prefs: SharedPreferences) : SaveMarks {
         private const val KEY_BUTTON_PROMPT_SEEN = "button_prompt_seen"
         private const val KEY_USAGE_PROMPTED = "usage_prompted"
         private const val KEY_MOONLIGHT_PINS = "moonlight_pins"
+        private const val KEY_DROIDDECK_PINS = "droiddeck_pins"
         private const val PIN_FIELD = "\u001f"
         private const val PIN_RECORD = "\u001e"
 

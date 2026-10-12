@@ -23,7 +23,9 @@ class ThemeSceneTest {
         assertNotNull(pack.icons["mark.nintendo-3ds"])
         assertNotNull(pack.icons["button.a.filled"])
         assertNotNull(pack.icons["status.battery.100.charging"])
-        assertEquals(166, pack.icons.size)
+        assertNotNull(pack.icons["mark.droiddeck"])
+        assertNotNull(pack.icons["mark.emulators"])
+        assertEquals(168, pack.icons.size)
     }
 
     @Test

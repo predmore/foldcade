@@ -159,6 +159,7 @@ dependencies {
     implementation(project(":language"))
     implementation(project(":host"))
     implementation(project(":plugins:azahar"))
+    implementation(project(":plugins:droiddeck"))
     implementation(project(":plugins:emulators"))
     implementation(project(":plugins:gamenative"))
     implementation(project(":plugins:local-folder"))

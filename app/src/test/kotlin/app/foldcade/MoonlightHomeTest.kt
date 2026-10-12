@@ -104,11 +104,6 @@ class MoonlightHomeTest {
         focus(shell, titles(shell).indexOf("Hades"))
         choose(shell, Row.RemoveTile)
         assertEquals(listOf(hades), removed)
-
-        // The built-in Moonlight tile is not a pinned game.
-        focus(shell, titles(shell).indexOf("Moonlight"))
-        choose(shell, Row.RemoveTile)
-        assertEquals(listOf(hades), removed)
     }
 
     @Test

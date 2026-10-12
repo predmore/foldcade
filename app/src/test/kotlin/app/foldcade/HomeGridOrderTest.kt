@@ -10,6 +10,7 @@ import app.foldcade.host.PluginHost
 import app.foldcade.language.Copy
 import app.foldcade.language.HomeGrid
 import app.foldcade.language.HostScreen
+import app.foldcade.language.LaunchableApp
 import app.foldcade.language.Meaning
 import app.foldcade.language.Metrics
 import app.foldcade.language.Motion
@@ -34,31 +35,27 @@ import org.junit.Test
 /** Bottom-grid order the emulator walks. Placement stays put across a rescan. */
 class HomeGridOrderTest {
     @Test
-    fun freshBoardPinsAllThenSystemFolders() {
+    fun freshBoardPinsAllAndMakesAFolderOnlyForGames() {
         val shell = shell()
         assertEquals(HomeGrid.StandIns, shell.model.homeGrid)
         assertFalse(shell.model.libraryGrid)
         assertTrue(shell.model.addNewToHome)
-        assertEquals(
-            listOf(
-                Copy.allLibrary,
-                "GameNative",
-                "Moonlight",
-                "Android Games",
-                "Android Apps",
-            ),
-            titles(shell),
-        )
-        assertTrue(titles(shell).none { it == "Clamshell" || it == "Slim Dual" || it == "Handheld" })
-        // No ROM, no platform folder.
-        assertTrue(titles(shell).none { it == "Nintendo 3DS" || it == "Nintendo DS" })
+        // No games, no folder: not even for GameNative, Moonlight, DroidDeck, or Android.
+        assertEquals(listOf(Copy.allLibrary), titles(shell))
         assertTrue(shell.homeFace(0)?.pinned == true)
-        assertTrue(shell.homeFace(1)?.folder == true)
         assertEquals("library", shell.homeFace(0)?.mark)
-        assertEquals("pc", shell.homeFace(1)?.mark)
-        assertEquals("moonlight", shell.homeFace(2)?.mark)
-        assertEquals("android-games", shell.homeFace(3)?.mark)
-        assertEquals("android-apps", shell.homeFace(4)?.mark)
+
+        // Each folder comes with its first game.
+        shell.setInstalledApps(
+            listOf(LaunchableApp("com.example.game", "Game", systemGame = true), LaunchableApp("com.example.notes", "Notes", systemGame = false)),
+            emptySet(),
+        )
+        shell.ingestLibrary("local-folder", listOf(entry("puzzle", "Puzzle", "nintendo-3ds")), emptyList())
+        assertEquals(listOf(Copy.allLibrary, "Android Games", "Android Apps", "Nintendo 3DS"), titles(shell))
+        assertTrue((1..3).all { shell.homeFace(it)?.folder == true })
+        assertEquals("android-games", shell.homeFace(1)?.mark)
+        assertEquals("android-apps", shell.homeFace(2)?.mark)
+        assertTrue(titles(shell).none { it == "GameNative" || it == "Moonlight" || it == "DroidDeck" || it == "Nintendo DS" })
     }
 
     @Test
@@ -197,6 +194,22 @@ class HomeGridOrderTest {
     }
 
     @Test
+    fun removingTheLastGameInAnOpenFolderLandsBackOnTheRoot() {
+        val shell = shell()
+        shell.ingestLibrary("local-folder", listOf(entry("drift", "Drift", "nintendo-ds")), emptyList())
+        focus(shell, titles(shell).indexOf("Nintendo DS"))
+        shell.onMeaning(Meaning.Activate, HostScreen.Bottom)
+        assertFalse(shell.model.atLibraryRoot)
+        assertEquals("Drift", shell.focusedGame()?.title)
+
+        choose(shell, Row.RemoveTile)
+        // No games, no folder: the folder closed under the focus, and Back has nothing left to close.
+        assertTrue(titles(shell).none { it == "Nintendo DS" })
+        assertTrue(shell.model.atLibraryRoot)
+        assertEquals(listOf(Copy.allLibrary), titles(shell))
+    }
+
+    @Test
     fun aPlatformFolderLeavesWhenItsLastRomIsGone() {
         val shell = shell()
         shell.ingestLibrary(
@@ -240,14 +253,16 @@ class HomeGridOrderTest {
             emptyList(),
         )
         assertEquals("Game Boy Advance", titles(shell).last())
-        assertEquals(6, shell.model.count)
+        assertEquals(2, shell.model.count)
 
-        focus(shell, 5)
+        focus(shell, 1)
         assertEquals("Game Boy Advance", shell.focusedGame()?.title)
         shell.onMeaning(Meaning.Activate, HostScreen.Bottom)
         assertEquals("Cart", shell.focusedGame()?.title)
         choose(shell, Row.RemoveTile)
-        assertTrue(shell.homeFace(0)?.empty == true)
+        // Its only game hidden, the folder goes and the grid is back at the root.
+        assertTrue(shell.model.atLibraryRoot)
+        assertTrue(titles(shell).none { it == "Game Boy Advance" })
 
         shell.openHomeAll()
         val cart = List(shell.model.count) { shell.homeFace(it) }.first { it?.title == "Cart" }
@@ -340,7 +355,8 @@ class HomeGridOrderTest {
         shell.onMeaning(Meaning.CancelHold, HostScreen.Bottom)
         assertEquals(chosen, shell.homeFace(folder)?.mark)
         // A system folder can be renamed but keeps its own icon.
-        focus(shell, titles(shell).indexOf("Moonlight"))
+        shell.ingestLibrary("local-folder", listOf(entry("drift", "Drift", "nintendo-ds")), emptyList())
+        focus(shell, titles(shell).indexOf("Nintendo DS"))
         val rows = optionRows(shell)
         assertTrue(Row.RenameFolder in rows)
         assertFalse(Row.FolderIcon in rows)
@@ -349,6 +365,11 @@ class HomeGridOrderTest {
     @Test
     fun moveWalksATileAndAOrBEndsIt() {
         val shell = shell()
+        shell.ingestLibrary(
+            "local-folder",
+            listOf(entry("puzzle", "Puzzle", "nintendo-3ds"), entry("drift", "Drift", "nintendo-ds")),
+            emptyList(),
+        )
         val before = titles(shell)
         focus(shell, 1)
         choose(shell, Row.MoveTile)

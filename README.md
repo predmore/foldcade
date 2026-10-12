@@ -38,8 +38,9 @@ Your games can live in a few different places. Foldcade brings them together.
 
 - **Games on your Thor.** Point Foldcade at a folder on your device and it finds your games for you.
 - **Games on your home server.** If you run [RomM](https://romm.app) at home, sign in once and browse that whole collection from the couch.
-- **Android games and apps.** Your installed Android games get their own shelf. Other apps live in a separate drawer, and you can hide the ones you never use.
+- **Android games and apps.** Your installed Android games get their own shelf. Other apps live in a separate drawer, and you can hide the ones you never use. Emulators and the apps that play your PC and streamed games, such as Dolphin, Azahar, GameNative, DroidDeck, and Moonlight, get an Emulators folder, so every other folder holds only games.
 - **PC games.** Games you have set up in GameNative show up next to everything else. Export them from GameNative as `.steam` files and add that folder with **Add a folder**; you can add as many folders as you like.
+- **Steam games on the device.** Play your Steam library through DroidDeck. With Foldcade as your home app, choose **Add to home screen** on a game in DroidDeck and it shows up in Foldcade. Or turn on DroidDeck's game-file sync and add that folder with **Add a folder**, and your whole DroidDeck library follows.
 - **Games streamed from your PC.** Bring in your Moonlight games and stream them from the same home. With Foldcade as your home app, open a game's menu in Moonlight and choose **Create shortcut**, and the game shows up in Foldcade.
 
 ### Every game looks like itself
@@ -48,7 +49,7 @@ Each game shows its box art on the grid, and a folder shows the games inside it.
 
 ### One press, and you are playing
 
-Pick a game and press A. Foldcade opens it in the right app for you: Azahar for 3DS games, melonDS for DS games, GameNative for PC games, or Moonlight for streaming. Games from Game Boy to Switch open in the emulator you already have, such as Dolphin, PPSSPP, DuckStation, NetherSX2, or Eden. If you have more than one for a system, Foldcade uses the first one on its list. You choose whether a game opens on the top or bottom screen, and games that need both screens get both.
+Pick a game and press A. Foldcade opens it in the right app for you: Azahar for 3DS games, melonDS for DS games, GameNative for PC games, DroidDeck for Steam games, or Moonlight for streaming. Games from Game Boy to Switch open in the emulator you already have, such as Dolphin, PPSSPP, DuckStation, NetherSX2, or Eden. If you have more than one for a system, Foldcade uses the first one on its list. You choose whether a game opens on the top or bottom screen, and games that need both screens get both.
 
 ### Your saves follow you
 
@@ -75,7 +76,7 @@ Foldcade is a good fit if:
 
 - You have an **AYN Thor** and want both screens to feel like one device.
 - You want a **quiet, simple home** for the games you already have.
-- You play **retro or console** games in emulators like Dolphin, PPSSPP, or Azahar, use **RomM**, **GameNative**, or **Moonlight**, or just want your Android games tidy.
+- You play **retro or console** games in emulators like Dolphin, PPSSPP, or Azahar, use **RomM**, **GameNative**, **DroidDeck**, or **Moonlight**, or just want your Android games tidy.
 
 It might not be for you yet if:
 

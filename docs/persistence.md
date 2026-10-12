@@ -20,7 +20,9 @@ The Home format is versioned. Version 2 encodes each field separately as Base64u
 
 A lifted tile is serialized at its last confirmed position. Confirming a move saves the new position; canceling or restarting during an unfinished move restores the original position. Open dialogs, rename drafts, editing state, and active external-app sessions are transient.
 
-Saved Android, GameNative, Moonlight, and library placements are retained while their respective catalogs load. An empty startup catalog does not establish that a game was removed. This also protects renamed platform folders whose games are hidden or have been moved into another folder. A reported catalog can then remove games that are actually gone.
+Saved Android, GameNative, Moonlight, DroidDeck, and library placements are retained while their respective catalogs load. An empty startup catalog does not establish that a game was removed, so a folder whose games are still loading keeps its place and its name. A reported catalog can then remove games that are actually gone.
+
+No games, no folder. A folder Foldcade makes, for a platform or for Android, GameNative, Moonlight, or DroidDeck, appears with its first game and is removed once no game is left in it, including when its games are hidden or moved into another folder. Folders hold games, not the apps that run them: an installed app a player plugin covers, such as Azahar, Dolphin, GameNative, Moonlight, or DroidDeck, goes in its own Emulators folder, under the same rule. Releases before the Emulators folder filed those apps under Android Games or Android Apps; each moves to Emulators once, and after that stays wherever the user puts it. A game added back from All, or a newly pinned one, brings its folder back. Folders the user made stay, empty or not.
 
 ## Files, secrets, and transfer
 

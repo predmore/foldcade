@@ -80,6 +80,23 @@ The last read is saved, so Moonlight tiles keep their names at start. Their tile
 
 `reconcile` does nothing. RomM does not configure this library: the entry has no metadata provider, and reconcile does not call RomM. The official client does not take both displays. The stream starts on the screen the picker targets, and the other screen keeps the picker.
 
+## DroidDeck
+
+`:plugins:droiddeck` (`DroidDeckEntry`) is DroidDeck, `com.droiddeck.launcher`, which runs Valve's ARM64 Steam client on the device. The player starts `com.droiddeck.launcher.MainActivity` with action `com.droiddeck.launcher.LAUNCH_GAME` and the game id as a string `app_id`, and no `game_source`. The id is Steam's 64-bit game id. It is a Steam app id for a Steam game, and a value past an int for a game added to Steam from outside it, so it is never sent as an int. With no game id the player opens DroidDeck's own front end; DroidDeck's own tile in the Emulators folder on Home opens it that way. DroidDeck starts Steam when it is not running, hands a running Steam session the game, and returns home when the game ends. A game DroidDeck does not have, or a busy session, is DroidDeck's own message.
+
+DroidDeck has its own platform, not `pc`, so a DroidDeck game always opens in DroidDeck and a GameNative game always opens in GameNative, with both installed.
+
+Games reach `DroidDeckLibrary` two ways:
+
+- **Add to home screen.** DroidDeck pins a shortcut, which reaches `PinShortcutActivity` the same way Moonlight's does. Its id is `game:` and the game id, its long label the whole name. `readDroidDeckShortcuts` reads enabled pinned ones. DroidDeck publishes no dynamic shortcuts. Remove from Home drops Foldcade's pin.
+- **Game-file sync.** DroidDeck can keep a folder of `.steam` files in step with its library. Added as a library folder, it is recognised by the `.droiddeck-sync.json` inventory DroidDeck keeps there, and every `.steam` file beside it is a DroidDeck game.
+
+`routeSteamFiles` splits the folders' `.steam` files. A file DroidDeck synced, or one with an id past an int, goes to DroidDeck. Any other goes to GameNative, unless DroidDeck is the only one of the two installed. Installing or removing either app routes them again.
+
+Pinned games come first, so a pin keeps DroidDeck's whole name over the 40-character file name. Tiles are `droiddeck.` and the game id, in the DroidDeck folder. The last shortcut read is saved, and the shell keeps DroidDeck tiles on Home until a live shortcut read and a finished folder scan have both reported. Art comes from Steam and SteamGridDB by app id for a Steam game, and by title for any other.
+
+`reconcile` does nothing. Steam Cloud keeps the saves. The entry has no metadata provider. Read from DroidDeck `de1a734`; see the player's KDoc for the files.
+
 ## Samples
 
 `:plugins:sample` (`SampleEntry`) is the in-tree sample. It implements the four interfaces and does nothing else. Library and metadata are separate objects so the host can store them in separate slots.

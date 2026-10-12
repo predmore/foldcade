@@ -10,7 +10,7 @@ from palette import *
 LIME = "#B6F25C"; GRAPE = "#C77DFF"; INDIGO = "#7C8CFF"; RED = "#FF4D5A"; LAVENDER = "#B39DFF"
 GREEN = "#3EE68A"; SKY = "#8FDFFF"; JOY_L = "#2FC7FF"; JOY_R = "#FF4F5E"; SILVER = "#C3CEDF"
 PSBLUE = "#4C8DFF"; CRIMSON = "#FF3B52"; SUNSET = "#FF8A3D"; DROID = "#3DDC84"; MOON = "#A9BCFF"
-GOLD = "#FFC15A"
+GOLD = "#FFC15A"; DECK = "#66C0F4"; EMU = "#B48CFF"
 SNES_X, SNES_Y, SNES_A, SNES_B = "#5BA8FF", "#4FE08A", "#FF5C6C", "#FFD24C"
 
 def mix(a, b, t):
@@ -406,6 +406,37 @@ def moonlight():
             L("M51,44 L52,46.4 L54.4,47.4 L52,48.4 L51,50.8 L50,48.4 L47.6,47.4 L50,46.4 Z", fill="#FFFFFF", alpha=0.85)]
     return out
 
+def droiddeck():
+    c = DECK
+    shell = rrect(3, 17, 58, 30, (9, 9, 13, 13))
+    out = [glow(c, 0.32), body(shell, c, 17, 47), sheen(shell, 17, 47, 0.18),
+           L(rrect(17.4, 19.6, 29.2, 20.4, 1.8), fill="#05060A", stroke="#FFFFFF", sw=0.8, salpha=0.45),
+           *glass(19.2, 21.2, 25.6, 17.2, 1.2, c, bezel=False)]
+    for i, x in enumerate((21.6, 29.2, 36.8)):
+        out.append(L(rrect(x, 26.4, 5.6, 8, 0.9), fill="#04121C", alpha=0.72 - i * 0.12))
+    out += [*dpad(10.4, 25.4, 6.4), *stick(10.8, 36.2, 3.4),
+            *diamond(53.4, 25.4, 3, 1.3, [INK, INK, c, INK]), *stick(53.2, 36.2, 3.4),
+            L(rrect(23.4, 42, 6.4, 2.2, 1.1), fill=c, alpha=0.5), L(rrect(34.2, 42, 6.4, 2.2, 1.1), fill=c, alpha=0.5)]
+    return out
+
+def emulators():
+    c = EMU
+    phone = rrect(8, 8, 32, 48, 5)
+    cart = "M30,27 H48.6 L56,34.4 V54 Q56,57 53,57 H33 Q30,57 30,54 Z"
+    out = [glow(c, 0.3, cx=30, cy=32),
+           body(phone, c, 8, 56), sheen(phone, 8, 56, 0.16),
+           *glass(12, 13, 24, 26, 1.6, c),
+           L(poly([(20.6, 20.4), (29, 26), (20.6, 31.6)]), fill="#120A24", alpha=0.7),
+           *dpad(16, 47, 6.2), *btn(31, 45, 1.6, INK), *btn(34.6, 48.4, 1.6, INK),
+           L(cart, fill="#000000", alpha=0.55),
+           L(cart, fill=Lin(30, 27, 56, 57, [(0, hi(c), 1), (0.5, c, 1), (1, lo(c), 1)]),
+             stroke=Lin(0, 27, 0, 57, [(0, "#FFFFFF", 0.9), (1, c, 0.6)]), sw=1.4),
+           L(rrect(34, 32, 15.6, 12, 1.6), fill="#F4F1EA", alpha=0.9),
+           L("M37,36.4 H46.4 M37,39.8 H43", stroke=lo(c), sw=1.3, salpha=0.8)]
+    for x in (34.4, 38.2, 42, 45.8, 49.6):
+        out.append(L(rrect(x, 49.4, 2.2, 5, 0.6), fill="#1A1030", alpha=0.75))
+    return out
+
 def folder():
     c = AMBER
     back = "M7,17 Q7,13 11,13 H23.6 Q25.4,13 26.6,14.4 L29.4,17.6 H53 Q57,17.6 57,21.6 V48 Q57,52 53,52 H11 Q7,52 7,48 Z"
@@ -465,6 +496,8 @@ MARKS = {
     "android_apps": (android_apps, DROID, "A grid of apps"),
     "pc": (pc, BLUE, "A monitor showing a controller"),
     "moonlight": (moonlight, MOON, "A crescent moon sending a stream"),
+    "droiddeck": (droiddeck, DECK, "A wide handheld showing a game library"),
+    "emulators": (emulators, EMU, "A cartridge in front of a handheld"),
     "folder": (folder, AMBER, "A folder"),
     "library": (library, TEAL, "A fanned stack of games"),
     "console": (console, AMBER, "A game controller"),
