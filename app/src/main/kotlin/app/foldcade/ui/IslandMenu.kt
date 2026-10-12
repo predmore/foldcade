@@ -11,19 +11,20 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.wrapContentWidth
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.text.BasicText
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -38,7 +39,10 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.IntOffset
@@ -51,6 +55,8 @@ import app.foldcade.language.Chrome
 import app.foldcade.language.Copy
 import app.foldcade.language.HostScreen
 import app.foldcade.language.Meaning
+import app.foldcade.language.heroCopy
+import app.foldcade.language.PromptKey
 import app.foldcade.language.Side
 import app.foldcade.language.SidePanel
 import app.foldcade.language.playDuration
@@ -82,7 +88,7 @@ internal fun TopIslands(
     app: FoldcadeApp,
     screen: HostScreen,
     scale: Float,
-    menuRows: @Composable (panel: SidePanel, progress: Float, interactive: Boolean) -> Unit,
+    menuRows: @Composable (panel: SidePanel, progress: () -> Float, interactive: Boolean) -> Unit,
 ) {
     // Top screen only. The bottom screen keeps the grid and the hint row.
     // The L1 chip, launch target, and status cluster are not drawn there.
@@ -124,7 +130,7 @@ private fun Island(
     scale: Float,
     maxWidth: Dp,
     maxHeight: Dp,
-    menuRows: @Composable (panel: SidePanel, progress: Float, interactive: Boolean) -> Unit,
+    menuRows: @Composable (panel: SidePanel, progress: () -> Float, interactive: Boolean) -> Unit,
 ) {
     val design = LocalFoldTheme.current.theme.style
     val theme = LocalFoldTheme.current.theme
@@ -160,12 +166,22 @@ private fun Island(
     val closed by rememberUpdatedState(progress == 0f)
     val openWidth = maxWidth * 0.48f
     // The open card fits its rows, up to most of the screen. A taller menu scrolls.
+    // A new level or a new notice changes the rows, and the card eases to the new height.
     var rowsHeight by remember(side) { mutableStateOf(Dp.Hairline) }
-    val openHeight = if (rowsHeight > Dp.Hairline) {
-        minOf(maxHeight * 0.84f, pillHeight + rowsHeight + MENU_PADDING_DP.dp)
+    val reach = ringReach()
+    val fitted = if (rowsHeight > Dp.Hairline) {
+        minOf(maxHeight * 0.88f, pillHeight + rowsHeight + reach * 2 + MENU_BOTTOM_DP.dp)
     } else {
-        maxHeight * 0.84f
+        maxHeight * 0.88f
     }
+    // The first measured height lands at once; a change of rows eases to the next.
+    var settled by remember(side) { mutableStateOf(false) }
+    val openHeight = motionState(
+        fitted.value,
+        theme.motion.playful(theme.motion.durationSelect, scale),
+        snap = !settled,
+    ).value.dp
+    if (rowsHeight > Dp.Hairline) SideEffect { settled = true }
     val width = lerp(pillWidth, openWidth, progress)
     val height = lerp(pillHeight, openHeight, progress)
     val radius = lerp(pillHeight / 2, design.metrics.cardCornerDp.dp, progress)
@@ -177,6 +193,13 @@ private fun Island(
             Side.Right -> app.shell.model.focus.chrome == Chrome.StatusCluster
         }
     val interactive = open && progress > 0.92f
+    // Y's menu acts on one tile, so its header names that tile instead of today's play.
+    // The two swap as the card grows and shrinks, so the closed pill is always L1's.
+    val actingShown = if (side == Side.Left && panel?.level?.actsOnTile == true) progress else 0f
+    val rim = remember(theme) { FocusRing(theme) }
+    // The rows read the open fraction in their layers, so the morph does not recompose them.
+    val opening = rememberUpdatedState(progress)
+    val readOpening = remember { { opening.value } }
     Box(
         Modifier
             .offset {
@@ -187,14 +210,25 @@ private fun Island(
             }
             .size(width, height)
             .zIndex(if (progress > 0f) 2f else 1f)
-            // A filled card. A faint edge keeps it apart from a black backdrop.
+            // A filled card. A faint edge keeps it apart from a black backdrop, and lights
+            // with the focus colors as the menu opens.
             .border(
                 if (focusedIsland) 2.dp else 1.dp,
-                if (focusedIsland) theme.focus else theme.onBackground.copy(alpha = 0.08f),
+                if (focusedIsland) {
+                    SolidColor(theme.focus)
+                } else {
+                    Brush.linearGradient(
+                        listOf(
+                            rim.start.copy(alpha = 0.08f + 0.34f * progress),
+                            theme.onBackground.copy(alpha = 0.06f),
+                            rim.end.copy(alpha = 0.08f + 0.26f * progress),
+                        ),
+                    )
+                },
                 shape,
             )
             .clip(shape)
-            .background(theme.surface)
+            .background(cardFill(theme, 0.04f * progress))
             .then(if (!interactive) Modifier.islandPress { app.shell.onMeaning(side.meaning(), HostScreen.Top) } else Modifier),
     ) {
         // The chip leads on both sides, so the clock is the last thing on the right.
@@ -205,7 +239,8 @@ private fun Island(
                 .wrapContentWidth(unbounded = true)
                 .onSizeChanged { if (closed) fitWidth = with(density) { it.width.toDp() } }
                 .height(pillHeight)
-                .padding(start = 8.dp, end = 14.dp),
+                .padding(start = 8.dp, end = 14.dp)
+                .graphicsLayer { alpha = 1f - actingShown },
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(8.dp),
         ) {
@@ -219,25 +254,59 @@ private fun Island(
                 StatusIcons(app, progress)
             }
         }
+        if (side == Side.Left && actingShown > 0f) {
+            ActingHeader(app, Modifier.height(pillHeight).padding(start = 14.dp, end = 20.dp).graphicsLayer { alpha = actingShown })
+        }
         if (panel != null && progress > 0f) {
+            // The rows are laid out at the open card's width from the first frame, and the
+            // growing card reveals them. Laid out at its passing width they would wrap.
             Column(
                 Modifier
-                    .fillMaxSize()
-                    .padding(start = 12.dp, end = 12.dp, top = pillHeight, bottom = 8.dp)
-                    .verticalScroll(rememberScrollState())
-                    // The scroll clips. This keeps the focus ring on the first and last rows inside it.
-                    .padding(vertical = 10.dp),
+                    .fillMaxHeight()
+                    .wrapContentWidth(if (side == Side.Left) Alignment.Start else Alignment.End, unbounded = true)
+                    .width(openWidth)
+                    .padding(start = 6.dp, end = 6.dp, top = pillHeight, bottom = MENU_BOTTOM_DP.dp)
+                    // The scroll clips. This keeps the focus ring's glow on every row inside it.
+                    .ringScroll(),
             ) {
-                Box(Modifier.onSizeChanged { rowsHeight = with(density) { it.height.toDp() } }) {
-                    menuRows(panel, progress, interactive)
+                SlideSwap(
+                    target = panel,
+                    scale = scale,
+                    distance = 40.dp,
+                    vertical = false,
+                    direction = { from, to -> to.level.depth.compareTo(from.level.depth) },
+                    front = Modifier.onSizeChanged { rowsHeight = with(density) { it.height.toDp() } },
+                    key = { it.level to it.connection },
+                ) { shownPanel ->
+                    // Rows on their way out take no taps: their indices belong to the old level.
+                    val arriving = shownPanel.level == panel.level && shownPanel.connection == panel.connection
+                    menuRows(shownPanel, readOpening, interactive && arriving)
                 }
             }
         }
     }
 }
 
-/** The open card's padding below the pill: the scroll's 10dp each side, and 8dp under it. */
-private const val MENU_PADDING_DP = 28f
+/** Y and the name of the tile its menu acts on. */
+@Composable
+private fun ActingHeader(app: FoldcadeApp, modifier: Modifier) {
+    val theme = LocalFoldTheme.current.theme
+    val name = app.shell.focusedHero()?.let { heroCopy(it).title }
+    Row(modifier, verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+        PromptImage(promptGlyph(PromptKey.FaceY), 26.dp)
+        if (name != null) {
+            BasicText(
+                text = name,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                style = TextStyle(color = theme.onBackground, fontSize = theme.style.type.sideRow, fontFamily = theme.font, fontWeight = FontWeight.SemiBold),
+            )
+        }
+    }
+}
+
+/** The open card's margin under its scroll. The rows keep the ring's reach inside it as well. */
+private const val MENU_BOTTOM_DP = 6f
 
 private fun Side.meaning(): Meaning = if (this == Side.Left) Meaning.LeftPanel else Meaning.RightPanel
 
@@ -267,7 +336,7 @@ private fun islandProgress(
                 scale,
             ).toLong() + 80L
             withTimeoutOrNull(budget) {
-                kotlinx.coroutines.withContext(SteadyIsland) {
+                kotlinx.coroutines.withContext(SteadyMenu) {
                     anim.animateTo(target, spec)
                 }
             }
@@ -288,16 +357,12 @@ private fun fittedWidth(target: Dp, scale: Float): Dp? {
         if (anim.value.isNaN()) {
             anim.snapTo(target.value)
         } else {
-            kotlinx.coroutines.withContext(SteadyIsland) {
+            kotlinx.coroutines.withContext(SteadyMenu) {
                 anim.animateTo(target.value, motion.arrive(motion.durationFocus, scale))
             }
         }
     }
     return anim.value.takeUnless { it.isNaN() }?.dp
-}
-
-private object SteadyIsland : androidx.compose.ui.MotionDurationScale {
-    override val scaleFactor: Float = 1f
 }
 
 /**

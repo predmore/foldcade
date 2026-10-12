@@ -13,7 +13,7 @@ class AndroidSettingsMapTest {
             settingsRows(SettingsCategory.Screens, held),
         )
         assertEquals("Android settings", rowLabel(Row.AndroidSettings, sample()))
-        assertEquals("Default home app", rowLabel(Row.DefaultHomeApp, sample()))
+        assertEquals("Home app", rowLabel(Row.DefaultHomeApp, sample()))
         val settings = held.onSetting(Row.AndroidSettings)
         val (stayed, effect) = reduce(settings, Meaning.Activate)
         assertEquals(Effect.OpenAndroidSetting(AndroidSetting.Settings), effect)

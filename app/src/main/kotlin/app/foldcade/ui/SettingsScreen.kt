@@ -2,6 +2,7 @@ package app.foldcade.ui
 
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
@@ -11,36 +12,22 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.relocation.BringIntoViewRequester
-import androidx.compose.foundation.relocation.bringIntoViewRequester
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicText
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.focus.focusProperties
-import androidx.compose.ui.geometry.CornerRadius
-import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.ui.layout.onSizeChanged
-import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
-import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
 import app.foldcade.FoldcadeApp
@@ -48,28 +35,30 @@ import app.foldcade.R
 import app.foldcade.language.Effect
 import app.foldcade.language.HostScreen
 import app.foldcade.language.Row
+import app.foldcade.language.SettingsCategory
 import app.foldcade.language.SettingsCopy
+import app.foldcade.language.SettingsPage
 import app.foldcade.language.Theme
+import app.foldcade.language.rowControl
 import app.foldcade.language.rowText
 import app.foldcade.language.settingsCategories
-import app.foldcade.language.settingsDetail
 import app.foldcade.language.settingsRows
 import app.foldcade.language.settingsTitle
 
 /**
  * Full-screen settings, laid out like Cocoon's: a header, the categories on the left, and the
  * focused category's rows on a card to the right. It replaces the hero while it is open.
+ * Each side has one highlight that glides between its rows. The side the D-pad is in wears
+ * the focus ring; the other keeps a soft fill on its choice.
  */
 @Composable
-internal fun SettingsScreen(app: FoldcadeApp, screen: HostScreen, onEffect: (Effect?) -> Unit) {
+internal fun SettingsScreen(app: FoldcadeApp, screen: HostScreen, page: SettingsPage, scale: Float, onEffect: (Effect?) -> Unit) {
     val design = LocalFoldTheme.current.theme.style
     val model = app.shell.model
-    val page = model.settings ?: return
     val theme = LocalFoldTheme.current.theme
     val categories = settingsCategories(model)
     if (categories.isEmpty()) return
     val categoryIndex = page.category.coerceIn(0, categories.lastIndex)
-    val rows = settingsRows(categories[categoryIndex], model)
     Column(
         Modifier
             .fillMaxSize()
@@ -80,70 +69,131 @@ internal fun SettingsScreen(app: FoldcadeApp, screen: HostScreen, onEffect: (Eff
         Row(
             Modifier
                 .fillMaxSize()
-                .padding(top = 24.dp),
-            horizontalArrangement = Arrangement.spacedBy(32.dp),
+                .padding(top = 20.dp),
+            horizontalArrangement = Arrangement.spacedBy(24.dp),
         ) {
+            val master = rememberSelectionSlots()
             Column(
                 Modifier
-                    .weight(0.34f)
+                    .weight(0.32f)
                     .fillMaxHeight()
-                    .verticalScroll(rememberScrollState())
-                    // A scrolling column clips. This keeps the focus ring inside it.
-                    .padding(16.dp),
-                verticalArrangement = Arrangement.spacedBy(10.dp),
+                    .ringScroll()
+                    .selectionHighlight(master, categoryIndex, ring = !page.onRows, scale = scale),
+                verticalArrangement = Arrangement.spacedBy(6.dp),
             ) {
                 categories.forEachIndexed { index, category ->
                     val selected = index == categoryIndex
                     CategoryRow(
                         title = settingsTitle(category),
-                        detail = settingsDetail(category),
+                        icon = categoryIcon(category),
                         selected = selected,
                         focused = selected && !page.onRows,
-                        theme = theme,
+                        scale = scale,
+                        modifier = Modifier.selectionSlot(master, index),
                         onClick = { onEffect(app.shell.touchSettingsCategory(index, screen)) },
                     )
                 }
             }
-            Column(
+            val card = RoundedCornerShape(design.metrics.cardCornerDp.dp)
+            Box(
                 Modifier
-                    .weight(0.66f)
+                    .weight(0.68f)
                     .fillMaxHeight()
-                    .clip(RoundedCornerShape(design.metrics.cardCornerDp.dp))
-                    .background(theme.surface)
-                    .verticalScroll(rememberScrollState())
-                    .padding(16.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp),
+                    .clip(card)
+                    .background(cardFill(theme, 0.035f))
+                    .border(1.dp, theme.onBackground.copy(alpha = 0.06f), card),
             ) {
-                rows.forEachIndexed { index, row ->
-                    val focused = page.onRows && index == page.row
-                    val parts = rowText(row, model)
-                    if (row == Row.MusicVolume) {
-                        SliderRow(
-                            label = parts.label,
-                            value = parts.value.orEmpty(),
-                            fraction = model.music.volume,
-                            focused = focused,
-                            interactive = true,
-                            onStep = { onEffect(app.shell.touchSettingsRow(index, screen)) },
-                            onFraction = app.shell::setMusicVolume,
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .keepVisible(focused)
-                                .settingsFocus(focused, theme),
-                        )
-                    } else {
-                        SettingRow(
-                            label = parts.label,
-                            value = parts.value,
-                            focused = focused,
-                            theme = theme,
-                            onClick = { onEffect(app.shell.touchSettingsRow(index, screen)) },
-                        )
-                    }
+                // A new category's rows rise in from the way the focus went.
+                SlideSwap(
+                    target = categories[categoryIndex],
+                    scale = scale,
+                    distance = 36.dp,
+                    vertical = true,
+                    direction = { from, to -> to.ordinal.compareTo(from.ordinal) },
+                ) { category ->
+                    DetailRows(app, screen, page, category, category == categories[categoryIndex], scale, onEffect)
                 }
             }
         }
     }
+}
+
+@Composable
+private fun DetailRows(
+    app: FoldcadeApp,
+    screen: HostScreen,
+    page: SettingsPage,
+    category: SettingsCategory,
+    current: Boolean,
+    scale: Float,
+    onEffect: (Effect?) -> Unit,
+) {
+    val model = app.shell.model
+    val theme = LocalFoldTheme.current.theme
+    val rows = settingsRows(category, model)
+    val slots = rememberSelectionSlots()
+    val iconSlot = rows.any { rowIcon(it) != null }
+    val focus = page.row.takeIf { current && page.onRows && it in rows.indices }
+    val labelStyle = style(theme.onBackground, theme.style.type.menuRow, theme, bold = true)
+    Column(
+        Modifier
+            .fillMaxSize()
+            .ringScroll(extra = 6.dp)
+            .selectionHighlight(slots, focus, ring = true, scale = scale),
+        verticalArrangement = Arrangement.spacedBy(4.dp),
+    ) {
+        rows.forEachIndexed { index, row ->
+            val focused = focus == index
+            val parts = rowText(row, model)
+            val place = Modifier
+                .fillMaxWidth()
+                .selectionSlot(slots, index)
+                .keepInView(focused)
+            val tap = { onEffect(app.shell.touchSettingsRow(index, screen)) }
+            if (row == Row.MusicVolume) {
+                SliderRow(
+                    label = parts.label,
+                    value = parts.value.orEmpty(),
+                    fraction = model.music.volume,
+                    focused = focused,
+                    interactive = current,
+                    onStep = tap,
+                    onFraction = app.shell::setMusicVolume,
+                    modifier = place,
+                    scale = scale,
+                    labelStyle = labelStyle,
+                )
+            } else {
+                MenuRow(
+                    label = parts.label,
+                    icon = rowIcon(row),
+                    iconSlot = iconSlot,
+                    focused = focused,
+                    control = rowControl(row, model, parts.value),
+                    chord = null,
+                    held = model.held,
+                    scale = scale,
+                    // The category on its way out takes no taps: its rows are not the page's now.
+                    modifier = if (current) place.press(tap) else place,
+                    labelStyle = labelStyle,
+                    height = ROW_HEIGHT,
+                )
+            }
+        }
+    }
+}
+
+/** Categories and rows share one height, so both highlights are the same size. */
+private val ROW_HEIGHT = 60.dp
+
+/** The art beside each category, from the theme's own set. */
+private fun categoryIcon(category: SettingsCategory): Int = when (category) {
+    SettingsCategory.Personalization -> R.drawable.ic_status_display
+    SettingsCategory.Sound -> R.drawable.ic_status_volume_3
+    SettingsCategory.Library -> R.drawable.mark_library
+    SettingsCategory.Players -> R.drawable.mark_cartridge_lit
+    SettingsCategory.Screens -> R.drawable.ic_status_settings
+    SettingsCategory.About -> R.drawable.ic_status_info
 }
 
 @Composable
@@ -158,106 +208,50 @@ private fun Header(theme: Theme, onBack: () -> Unit) {
         horizontalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         Image(themeIconPainter(R.drawable.ic_btn_b), contentDescription = null, modifier = Modifier.size(32.dp))
-        BasicText(SettingsCopy.title, style = style(theme.onBackground, LocalFoldTheme.current.theme.style.type.heroTitle, theme, bold = true))
+        BasicText(SettingsCopy.title, style = style(theme.onBackground, theme.style.type.heroTitle, theme, bold = true))
     }
 }
 
+/** A category: its art and one word, always the same height so the highlight never changes size. */
 @Composable
 private fun CategoryRow(
     title: String,
-    detail: String,
+    icon: Int,
     selected: Boolean,
     focused: Boolean,
-    theme: Theme,
+    scale: Float,
+    modifier: Modifier,
     onClick: () -> Unit,
 ) {
-    Column(
-        Modifier
+    val theme = LocalFoldTheme.current.theme
+    val chosen = eased(if (selected) 1f else 0f, theme.motion.durationFocus, scale)
+    val lift = bouncy(if (focused) 1f else 0f, scale)
+    Row(
+        modifier
             .fillMaxWidth()
-            .keepVisible(focused)
-            .settingsFocus(focused, theme, lifted = selected)
+            .height(ROW_HEIGHT)
+            .keepInView(focused)
             .press(onClick)
-            .padding(horizontal = 20.dp, vertical = 14.dp),
-        verticalArrangement = Arrangement.spacedBy(2.dp),
+            .padding(horizontal = 16.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(16.dp),
     ) {
+        Image(
+            painter = themeIconPainter(icon),
+            contentDescription = null,
+            modifier = Modifier.size(34.dp).lifted(chosen, lift, grow = 0.14f, rest = 0.7f),
+        )
         BasicText(
             title,
-            style = style(if (selected) (theme.style.focusRing.start ?: theme.focus) else theme.onBackground, LocalFoldTheme.current.theme.style.type.menuRow, theme, bold = true),
+            modifier = Modifier.graphicsLayer {
+                alpha = 0.62f + 0.38f * chosen.value
+                translationX = chosen.value * 4.dp.toPx()
+            },
+            style = style(theme.onBackground, theme.style.type.menuRow, theme, bold = true),
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
         )
-        if (selected) {
-            BasicText(
-                detail,
-                style = style(theme.muted, LocalFoldTheme.current.theme.style.type.hint, theme),
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
-        }
     }
-}
-
-@Composable
-private fun SettingRow(
-    label: String,
-    value: String?,
-    focused: Boolean,
-    theme: Theme,
-    onClick: () -> Unit,
-) {
-    Row(
-        Modifier
-            .fillMaxWidth()
-            .keepVisible(focused)
-            .settingsFocus(focused, theme)
-            .press(onClick)
-            .padding(horizontal = 20.dp, vertical = 16.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.SpaceBetween,
-    ) {
-        BasicText(
-            label,
-            modifier = Modifier.weight(1f),
-            style = style(theme.onBackground, LocalFoldTheme.current.theme.style.type.menuRow, theme, bold = true),
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-        )
-        if (!value.isNullOrEmpty()) {
-            BasicText(
-                value,
-                modifier = Modifier.padding(start = 16.dp),
-                style = style(if (focused) (theme.style.focusRing.start ?: theme.focus) else theme.muted, LocalFoldTheme.current.theme.style.type.menuRow, theme)
-                    .copy(textAlign = TextAlign.End),
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
-        }
-    }
-}
-
-/** A lifted fill for the selected entry, and the focus ring while the D-pad is on it. */
-private fun Modifier.settingsFocus(focused: Boolean, theme: Theme, lifted: Boolean = focused): Modifier =
-    graphicsLayer { clip = false }.drawBehind {
-        val corner = CornerRadius(22.dp.toPx(), 22.dp.toPx())
-        if (lifted) drawRoundRect(color = theme.onBackground.copy(alpha = 0.06f), cornerRadius = corner)
-        if (focused) with(FocusRing(theme)) { drawFocusRing(22.dp.toPx()) }
-    }
-
-/**
- * The D-pad moves focus, not the scroll, so the focused entry asks its column to show it,
- * with room for the focus ring around it.
- */
-@Composable
-private fun Modifier.keepVisible(focused: Boolean): Modifier {
-    val requester = remember { BringIntoViewRequester() }
-    var size by remember { mutableStateOf(IntSize.Zero) }
-    val margin = with(LocalDensity.current) { 24.dp.toPx() }
-    LaunchedEffect(focused, size) {
-        if (focused && size != IntSize.Zero) {
-            requester.bringIntoView(Rect(-margin, -margin, size.width + margin, size.height + margin))
-        }
-    }
-    return onSizeChanged { size = it }.bringIntoViewRequester(requester)
 }
 
 @Composable

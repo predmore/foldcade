@@ -28,12 +28,6 @@ enum class MotionSpeed {
     Off,
     ;
 
-    fun next(): MotionSpeed = when (this) {
-        Slow -> Slower
-        Slower -> Off
-        Off -> Slow
-    }
-
     val wire: String
         get() = when (this) {
             Slow -> "slow"

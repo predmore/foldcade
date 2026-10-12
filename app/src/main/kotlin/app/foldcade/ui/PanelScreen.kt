@@ -35,8 +35,6 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.relocation.BringIntoViewRequester
-import androidx.compose.foundation.relocation.bringIntoViewRequester
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.height
@@ -72,7 +70,6 @@ import android.content.Context
 import android.os.SystemClock
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.MotionDurationScale
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.BlurredEdgeTreatment
 import androidx.compose.ui.draw.blur
@@ -150,6 +147,10 @@ import app.foldcade.readDeviceStatus
 import app.foldcade.language.PlayCopy
 import app.foldcade.language.SettingsCopy
 import app.foldcade.language.promptKeyOf
+import app.foldcade.language.rowKeys
+import app.foldcade.language.rowControl
+import app.foldcade.language.tileLabel
+import app.foldcade.language.tiled
 import app.foldcade.CoverImage
 import app.foldcade.artwork.ArtQuery
 import app.foldcade.artwork.ArtScene
@@ -334,37 +335,52 @@ private fun PanelBody(
     )
     if (panel == null || screen == null) return
     val connectHere = model.connectOpen && model.connectScreen == screen
-    if (model.settings?.screen == screen) {
-        SettingsScreen(app, screen, activity::dispatch)
-        return
+    // Settings and Play activity rise over the panel and sink away again. Each keeps its
+    // last state while it leaves, so it fades out as it was rather than vanishing.
+    val settingsPage = model.settings?.takeIf { it.screen == screen }
+    val activityPage = model.playActivity?.takeIf { it.screen == screen }
+    val motion = LocalFoldTheme.current.theme.motion
+    val settings = presence(settingsPage, motion.durationIsland, scale)
+    val played = presence(activityPage, motion.durationIsland, scale)
+    val beside = presence(page, motion.durationIsland, scale)
+    // Only whether a page fully covers the panel, so the fades do not recompose it each frame.
+    val covered by remember {
+        derivedStateOf { maxOf(settings.progress.value, played.progress.value, beside.progress.value) >= 1f }
     }
-    if (model.playActivity?.screen == screen) {
-        PlayActivityScreen(app, screen)
-        return
+    if (!covered) {
+        CompositionLocalProvider(LocalBackdropCover provides cover) {
+            TravelFade(target = session.surfaceOn(panel), scale = scale) { shown ->
+                when (shown) {
+                    null -> Unit
+                    Surface.Hero -> if (connectHere) Unit else Hero(app, screen, scale, activity::dispatch)
+                    Surface.Picker -> Picker(app, screen, scale, activity::dispatch, activity::takeKeyboardFocus)
+                    Surface.CommandCenter -> CommandCenterScreen(
+                        app,
+                        CenterSubject.App(panel, app.commandCenter.beside(panel)),
+                        hints = false,
+                    ) { app.commandCenter.browse(panel) }
+                }
+            }
+        }
+        if (connectHere) ConnectScreen(app, screen, activity::dispatch, activity::takeKeyboardFocus)
     }
-    if (page != null) {
+    beside.shown?.let { subject ->
         // The other screen is still Foldcade, so it is never dimmed. Its keys still drive the page.
         // Play activity names its keys here; Settings shows its own on the page.
-        CommandCenterScreen(app, page, hints = !page.settings) {
-            if (page.settings) app.shell.closeSettings() else app.shell.closePlayActivity()
-        }
-        return
-    }
-    CompositionLocalProvider(LocalBackdropCover provides cover) {
-        TravelFade(target = session.surfaceOn(panel), scale = scale) { shown ->
-            when (shown) {
-                null -> Unit
-                Surface.Hero -> if (connectHere) Unit else Hero(app, screen, scale, activity::dispatch)
-                Surface.Picker -> Picker(app, screen, scale, activity::dispatch, activity::takeKeyboardFocus)
-                Surface.CommandCenter -> CommandCenterScreen(
-                    app,
-                    CenterSubject.App(panel, app.commandCenter.beside(panel)),
-                    hints = false,
-                ) { app.commandCenter.browse(panel) }
+        Box(Modifier.fillMaxSize().graphicsLayer { alpha = beside.progress.value }) {
+            CommandCenterScreen(app, subject, hints = !subject.settings) {
+                if (subject.settings) app.shell.closeSettings() else app.shell.closePlayActivity()
             }
         }
     }
-    if (connectHere) ConnectScreen(app, screen, activity::dispatch, activity::takeKeyboardFocus)
+    settings.shown?.let { shown ->
+        Box(Modifier.fillMaxSize().rise { settings.progress.value }) {
+            SettingsScreen(app, screen, shown, scale, activity::dispatch)
+        }
+    }
+    played.shown?.let { shown ->
+        Box(Modifier.fillMaxSize().rise { played.progress.value }) { PlayActivityScreen(app, shown) }
+    }
 }
 
 /** Dim painted with the content, not a second full-screen node on top of it. */
@@ -421,28 +437,9 @@ private fun PanelWallpaper(image: ImageBitmap) {
     }
 }
 
-private object SteadyMotion : MotionDurationScale {
-    override val scaleFactor: Float = 1f
-}
-
 @Composable
 private fun motionFloat(target: Float, spec: FiniteAnimationSpec<Float>, snap: Boolean = false): Float =
     motionState(target, spec, snap).value
-
-/**
- * The same motion as [motionFloat], as state. Delegate to it with `by` and read it in a
- * layer or draw block: each frame then redraws without recomposing the caller.
- */
-@Composable
-private fun motionState(target: Float, spec: FiniteAnimationSpec<Float>, snap: Boolean = false): State<Float> {
-    val motion = LocalFoldTheme.current.theme.motion
-    val anim = remember { Animatable(target) }
-    LaunchedEffect(target, snap) {
-        if (snap) anim.snapTo(target)
-        else withContext(SteadyMotion) { anim.animateTo(target, spec) }
-    }
-    return anim.asState()
-}
 
 /** What [glideState] follows. [jump] is a token: a new one lands at once, as [snap] does. */
 private data class GlideTo(val target: Float, val snap: Boolean, val jump: Any?, val scale: Float)
@@ -460,7 +457,7 @@ private fun glideState(target: Float, base: Int, scale: Float, snap: Boolean = f
     val latest = rememberUpdatedState(GlideTo(target, snap, jump, scale))
     LaunchedEffect(anim, base) {
         var landed = latest.value.jump
-        withContext(SteadyMotion) {
+        withContext(SteadyMenu) {
             snapshotFlow { latest.value }.collect { next ->
                 if (next.snap || next.jump != landed) {
                     landed = next.jump
@@ -489,7 +486,7 @@ private fun <T> TravelFade(target: T, scale: Float, content: @Composable (T) -> 
         incoming.snapTo(0f)
         outgoing.snapTo(1f)
         front = target
-        withContext(SteadyMotion) {
+        withContext(SteadyMenu) {
             coroutineScope {
                 launch { incoming.animateTo(1f, motion.arrive(motion.durationTravel, scale)) }
                 launch { outgoing.animateTo(0f, motion.leave(motion.durationTravel, scale)) }
@@ -850,7 +847,7 @@ private fun Hero(app: FoldcadeApp, screen: HostScreen, scale: Float, onEffect: (
         Box(Modifier.fillMaxSize()) {
             FolderIconPicker(pick, name, top = screen == HostScreen.Top)
             TopIslands(app, screen, scale) { panelState, progress, interactive ->
-                PanelRows(app, screen, panelState, progress, interactive, onEffect)
+                PanelRows(app, screen, panelState, progress, interactive, scale, onEffect)
             }
         }
         return
@@ -944,7 +941,7 @@ private fun Hero(app: FoldcadeApp, screen: HostScreen, scale: Float, onEffect: (
             }
         }
         TopIslands(app, screen, scale) { panelState, progress, interactive ->
-            PanelRows(app, screen, panelState, progress, interactive, onEffect)
+            PanelRows(app, screen, panelState, progress, interactive, scale, onEffect)
         }
     }
 }
@@ -1020,7 +1017,7 @@ private fun <T> HeroCrossfade(
         val arrive = motion.arrive(travelMillis, 1f)
         val fadeIn = motion.dissolve(travelMillis, 1f)
         val fadeOut = if (dissolves) motion.leave(travelMillis, 1f) else fadeIn
-        withContext(SteadyMotion) {
+        withContext(SteadyMenu) {
             coroutineScope {
                 launch { incoming.animateTo(if (next.front == null) 0f else 1f, fadeIn) }
                 launch { outgoing.animateTo(0f, fadeOut) }
@@ -1268,7 +1265,7 @@ private fun SceneBackdrop(app: FoldcadeApp, record: Game?, query: ArtQuery?, spe
             if (still) {
                 settle.snapTo(0f)
             } else {
-                withContext(SteadyMotion) { settle.animateTo(0f, motion.showcase(speed, animatorScale)) }
+                withContext(SteadyMenu) { settle.animateTo(0f, motion.showcase(speed, animatorScale)) }
             }
         }
         Box(Modifier.fillMaxSize()) {
@@ -1770,7 +1767,7 @@ private fun Picker(
             GridHints(app, Modifier.alpha(if (LocalUnderMenu.current) 0f else 1f))
         }
         TopIslands(app, screen, scale) { panelState, progress, interactive ->
-            PanelRows(app, screen, panelState, progress, interactive, onEffect)
+            PanelRows(app, screen, panelState, progress, interactive, scale, onEffect)
         }
     }
 }
@@ -1780,41 +1777,56 @@ private fun PanelRows(
     app: FoldcadeApp,
     screen: HostScreen,
     panel: SidePanel,
-    progress: Float,
+    progress: () -> Float,
     interactive: Boolean,
+    scale: Float,
     onEffect: (Effect?) -> Unit,
 ) {
     val theme = foldTheme()
-    val rows = panelRows(panel, app.shell.model)
-    val tileStart = rows.indexOfFirst { it is Row.QuickTile }
-    Column(Modifier.graphicsLayer { alpha = progress }, verticalArrangement = Arrangement.spacedBy(px(8f))) {
+    val model = app.shell.model
+    val rows = panelRows(panel, model)
+    val keys = remember(rows) { rowKeys(rows) }
+    val tileStart = rows.indexOfFirst { it.tiled() }
+    val slots = rememberSelectionSlots()
+    val iconSlot = rows.any { !it.tiled() && rowIcon(it) != null }
+    // The tiles light their own circle. The highlight serves every other row.
+    val listFocus = panel.index.takeIf { rows.getOrNull(it)?.tiled() == false }
+    val rowStyle = text(theme.onBackground, LocalFoldTheme.current.theme.style.type.sideRow, theme)
+    Column(
+        Modifier
+            .selectionHighlight(slots, listFocus, ring = true, scale = scale),
+        verticalArrangement = Arrangement.spacedBy(px(6f)),
+    ) {
         panel.connection?.let { connection ->
-            BasicText(
-                text = Copy.rommConnection,
-                modifier = Modifier.padding(horizontal = px(16f), vertical = px(8f)),
-                style = text(theme.onBackground, LocalFoldTheme.current.theme.style.type.sideRow, theme),
-            )
-            app.store.rommServerOrigin(connection.pluginId)?.let { origin ->
+            Column(Modifier.padding(horizontal = px(28f), vertical = px(8f)).cascade(0, progress)) {
                 BasicText(
-                    text = origin,
-                    modifier = Modifier.padding(horizontal = px(16f), vertical = px(8f)),
-                    style = text(theme.muted, LocalFoldTheme.current.theme.style.type.hint, theme),
-                    maxLines = 2,
-                    overflow = TextOverflow.Ellipsis,
+                    text = connection.label,
+                    style = rowStyle.copy(fontWeight = FontWeight.SemiBold),
                 )
+                app.store.rommServerOrigin(connection.pluginId)?.let { origin ->
+                    BasicText(
+                        text = origin,
+                        style = text(theme.muted, LocalFoldTheme.current.theme.style.type.hint, theme),
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
             }
         }
         rows.forEachIndexed { index, row ->
-            // The tiles draw as one block where the first of them sits: the top of R1.
-            if (row is Row.QuickTile) {
+            // The tiles draw as one block where the first of them sits: the top of R1, or under L1's strip.
+            if (row.tiled()) {
                 if (index == tileStart) {
                     QuickTiles(
                         app = app,
                         screen = screen,
+                        panel = panel,
                         rows = rows,
+                        keys = keys,
                         tileStart = tileStart,
-                        focusedIndex = panel.index,
                         interactive = interactive,
+                        scale = scale,
+                        modifier = Modifier.cascade(index, progress),
                         onEffect = onEffect,
                     )
                 }
@@ -1822,90 +1834,58 @@ private fun PanelRows(
             }
             val focused = panel.index == index
             val step: () -> Unit = { onEffect(app.shell.touchPanel(index, screen)) }
-            val parts = rowText(row, app.shell.model)
-            val notice = (row as? Row.Notice)?.let { item -> app.shell.model.notices.firstOrNull { it.id == item.id } }
-            if (row is Row.PlayActivity) {
-                PlayStrip(
+            val press = if (interactive) Modifier.hostPress(step) else Modifier
+            val place = Modifier
+                .fillMaxWidth()
+                .selectionSlot(slots, index)
+                .keepInView(focused)
+                .cascade(index + 1, progress)
+            val parts = rowText(row, model)
+            val notice = (row as? Row.Notice)?.let { item -> model.notices.firstOrNull { it.id == item.id } }
+            when {
+                row is Row.PlayActivity -> PlayStrip(
                     app = app,
                     focused = focused,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .keepInView(focused)
-                        .rowHighlight(focused)
-                        .then(if (interactive) Modifier.hostPress(step) else Modifier),
+                    chord = keys[index],
+                    modifier = place.then(press),
                 )
-            } else if (notice != null) {
-                NoticeRow(
-                    notice = notice,
-                    focused = focused,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .keepInView(focused)
-                        .rowHighlight(focused)
-                        .then(if (interactive) Modifier.hostPress(step) else Modifier),
-                )
-            } else if (row is Row.Brightness) {
+                notice != null -> NoticeRow(notice = notice, focused = focused, modifier = place.then(press))
                 // A bare slider under the tiles, as in Android's quick settings.
-                SliderRow(
+                row is Row.Brightness -> SliderRow(
                     label = parts.label,
                     value = parts.value.orEmpty(),
                     showLabel = false,
-                    fraction = app.shell.model.brightness / 100f,
+                    fraction = model.brightness / 100f,
                     focused = focused,
                     interactive = interactive,
                     onStep = step,
                     onFraction = { app.shell.touchBrightness((it * 100f).roundToInt()) },
-                    modifier = Modifier.fillMaxWidth().keepInView(focused).rowHighlight(focused),
+                    modifier = place,
+                    scale = scale,
                 )
-            } else if (row is Row.MusicVolume) {
-                SliderRow(
+                row is Row.MusicVolume -> SliderRow(
                     label = parts.label,
                     value = parts.value.orEmpty(),
-                    fraction = app.shell.model.music.volume,
+                    fraction = model.music.volume,
                     focused = focused,
                     interactive = interactive,
                     onStep = step,
                     onFraction = app.shell::setMusicVolume,
-                    modifier = Modifier.fillMaxWidth().keepInView(focused).rowHighlight(focused),
+                    modifier = place,
+                    scale = scale,
                 )
-            } else {
-                val press = if (interactive) Modifier.hostPress(step) else Modifier
-                Row(
-                    Modifier
-                        .fillMaxWidth()
-                        .keepInView(focused)
-                        .rowHighlight(focused)
-                        .then(press)
-                        .padding(start = px(16f), end = px(8f), top = px(8f), bottom = px(8f)),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    BasicText(
-                        text = parts.label,
-                        modifier = Modifier.weight(1f),
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                        style = text(
-                            if (focused) theme.onBackground else theme.muted,
-                            LocalFoldTheme.current.theme.style.type.sideRow,
-                            theme,
-                        ),
-                    )
-                    val value = parts.value
-                    if (!value.isNullOrEmpty()) {
-                        BasicText(
-                            text = value,
-                            modifier = Modifier.padding(start = px(16f)),
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                            style = text(
-                                if (focused) theme.focus else theme.onBackground,
-                                LocalFoldTheme.current.theme.style.type.sideRow,
-                                theme,
-                            ).copy(textAlign = TextAlign.End),
-                        )
-                    }
-                }
+                else -> MenuRow(
+                    label = parts.label,
+                    icon = rowIcon(row),
+                    iconSlot = iconSlot,
+                    focused = focused,
+                    control = rowControl(row, model, parts.value),
+                    chord = keys[index],
+                    held = model.held,
+                    scale = scale,
+                    modifier = place.then(press),
+                    labelStyle = rowStyle,
+                )
             }
         }
     }
@@ -1951,34 +1931,24 @@ private fun NoticeRow(notice: FoldNotice, focused: Boolean, modifier: Modifier =
     }
 }
 
-/**
- * A menu taller than its island scrolls. The D-pad moves the focus, not the
- * scroll, so the focused row asks its scrolling parent to show it.
- */
-@Composable
-private fun Modifier.keepInView(focused: Boolean): Modifier {
-    val requester = remember { BringIntoViewRequester() }
-    LaunchedEffect(focused) {
-        if (focused) requester.bringIntoView()
-    }
-    return bringIntoViewRequester(requester)
-}
-
 @Composable
 private fun QuickTiles(
     app: FoldcadeApp,
     screen: HostScreen,
+    panel: SidePanel,
     rows: List<Row>,
+    keys: List<PromptKey?>,
     tileStart: Int,
-    focusedIndex: Int,
     interactive: Boolean,
+    scale: Float,
+    modifier: Modifier,
     onEffect: (Effect?) -> Unit,
 ) {
     val theme = foldTheme()
-    val tiles = rows.drop(tileStart).takeWhile { it is Row.QuickTile }
-    // Round icon buttons in one row, like Cocoon's quick settings. The label is for touch
-    // readers and the emulator's UI dump.
-    Column(Modifier.padding(vertical = px(12f)), verticalArrangement = Arrangement.spacedBy(px(16f))) {
+    val tiles = rows.drop(tileStart).takeWhile { it.tiled() }
+    // Round icon buttons in one row, like Cocoon's quick settings. R1's need no words; the
+    // label is for touch readers. L1's places say where they go, under each one.
+    Column(modifier.padding(vertical = px(12f)), verticalArrangement = Arrangement.spacedBy(px(16f))) {
         tiles.chunked(quickTileColumns).forEachIndexed { rowIndex, chunk ->
             Row(
                 Modifier.fillMaxWidth(),
@@ -1986,13 +1956,18 @@ private fun QuickTiles(
             ) {
                 chunk.forEachIndexed { column, row ->
                     val index = tileStart + rowIndex * quickTileColumns + column
-                    val focused = focusedIndex == index
+                    val focused = panel.index == index
                     val press = if (interactive) {
                         Modifier.hostPress { onEffect(app.shell.touchPanel(index, screen)) }
                     } else {
                         Modifier
                     }
                     val label = rowLabel(row, app.shell.model)
+                    val lit = eased(if (focused) 1f else 0f, LocalFoldTheme.current.theme.motion.durationFocus, scale)
+                    val lift = bouncy(if (focused) 1f else 0f, scale)
+                    val ring = remember(theme) { FocusRing(theme) }
+                    val words = tileLabel(row)
+                    Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Box(
                         Modifier
                             .size(QUICK_BUTTON_DP.dp)
@@ -2000,23 +1975,43 @@ private fun QuickTiles(
                             .graphicsLayer { clip = false }
                             .drawBehind {
                                 val radius = size.minDimension / 2f
-                                drawCircle(theme.onBackground.copy(alpha = if (focused) 0.16f else 0.08f))
-                                if (focused) with(FocusRing(theme)) { drawFocusRing(radius) }
+                                drawCircle(theme.onBackground.copy(alpha = 0.08f + 0.08f * lit.value))
+                                if (lit.value > 0f) with(ring) { drawFocusRing(radius, alpha = lit.value) }
                             }
                             .then(press)
                             .semantics { contentDescription = label },
                         contentAlignment = Alignment.Center,
                     ) {
-                        val icon = (row as? Row.QuickTile)?.setting?.let(::quickIcon)
+                        val quick = (row as? Row.QuickTile)?.setting?.let(::quickIcon)
+                        val icon = quick ?: rowIcon(row)
                         if (icon != null) {
                             Image(
                                 painter = themeIconPainter(icon),
                                 contentDescription = null,
                                 modifier = Modifier
-                                    .size((QUICK_BUTTON_DP * 0.46f).dp)
-                                    .graphicsLayer { alpha = if (focused) 1f else 0.78f },
+                                    // A place's art is a whole lit disc, so it fills more of its tile.
+                                    .size((QUICK_BUTTON_DP * if (quick != null) 0.46f else 0.74f).dp)
+                                    .lifted(lit, lift, grow = 0.14f, rest = 0.78f),
                             )
                         }
+                        // A round tile has no right side, so its chord's key sits on its rim.
+                        val chord = keys[index]
+                        if (chord != null) {
+                            PromptImage(
+                                promptGlyph(chord),
+                                22.dp,
+                                Modifier.align(Alignment.BottomEnd).offset(x = 4.dp, y = 2.dp),
+                            )
+                        }
+                    }
+                    if (words != null) {
+                        BasicText(
+                            text = words,
+                            maxLines = 1,
+                            style = text(theme.onBackground, LocalFoldTheme.current.theme.style.type.hint, theme),
+                            modifier = Modifier.graphicsLayer { alpha = 0.6f + 0.4f * lit.value },
+                        )
+                    }
                     }
                 }
             }
@@ -2024,7 +2019,7 @@ private fun QuickTiles(
     }
 }
 
-private const val QUICK_BUTTON_DP = 52f
+private const val QUICK_BUTTON_DP = 56f
 
 private fun quickIcon(setting: QuickSetting): Int = when (setting) {
     QuickSetting.Wifi -> R.drawable.ic_status_wifi_4
@@ -2150,34 +2145,6 @@ private fun HintWord(
     }
 }
 
-private fun promptGlyph(key: PromptKey): String = when (key) {
-    PromptKey.FaceA -> "ic_btn_a"
-    PromptKey.FaceB -> "ic_btn_b"
-    PromptKey.FaceX -> "ic_btn_x"
-    PromptKey.FaceY -> "ic_btn_y"
-    PromptKey.Select -> "ic_btn_select"
-    PromptKey.Start -> "ic_btn_start"
-    PromptKey.Home -> "ic_btn_home"
-    PromptKey.Back -> "ic_btn_back"
-    PromptKey.L1 -> "ic_btn_l1"
-    PromptKey.R1 -> "ic_btn_r1"
-    PromptKey.DpadSides -> "ic_btn_dpad"
-}
-
-@Composable
-private fun PromptImage(name: String, size: Dp) {
-    val context = LocalContext.current
-    val id = remember(name) {
-        context.resources.getIdentifier(name, "drawable", context.packageName)
-    }
-    if (id == 0) return
-    Image(
-        painter = themeIconPainter(id),
-        contentDescription = null,
-        modifier = Modifier.size(size),
-    )
-}
-
 /**
  * Shelf meta. An empty-shelf hint uses the focus color and the focus glow
  * while the controller is on that tile.
@@ -2230,7 +2197,7 @@ private fun StripGrid(
     val folderPop = remember { Animatable(1f) }
     LaunchedEffect(folderToken, scale) {
         folderPop.snapTo(0.92f)
-        withContext(SteadyMotion) {
+        withContext(SteadyMenu) {
             folderPop.animateTo(1f, motion.arrive(motion.durationShort, scale))
         }
     }
@@ -2606,7 +2573,7 @@ private fun syncMarkShown(synced: TileActivity.Synced, animatorScale: Float): St
     val motion = LocalFoldTheme.current.theme.motion
     val shown = remember(synced.untilMillis) { Animatable(0f) }
     LaunchedEffect(synced.untilMillis) {
-        withContext(SteadyMotion) {
+        withContext(SteadyMenu) {
             shown.animateTo(1f, motion.arrive(motion.durationFocus, animatorScale))
             val fade = motion.duration(motion.durationTravel, animatorScale)
             delay((synced.untilMillis - System.currentTimeMillis() - fade).coerceAtLeast(0L))
@@ -2870,20 +2837,15 @@ private fun DialogLayer(
     onEffect: (Effect?) -> Unit,
 ) {
     val motion = LocalFoldTheme.current.theme.motion
-    val visible = dialog != null && dialog.screen == screen
-    var shown by remember { mutableStateOf(dialog) }
-    if (visible) shown = dialog
-    // Drop the card with the model. A remembered card kept "GameNative is not installed"
-    // on screen after the launch had already been dismissed.
-    if (!visible) shown = null
-    val alpha = motionFloat(
-        target = if (visible) 1f else 0f,
-        spec = if (visible) motion.arrive(motion.durationShort, scale) else motion.leave(motion.durationShort, scale),
-        snap = !visible,
-    )
-    val card = shown
-    if (visible && card != null && alpha > 0f) {
-        Box(Modifier.graphicsLayer { this.alpha = alpha }) { DialogCard(app, card, onEffect) }
+    val visible = dialog?.takeIf { it.screen == screen }
+    // The card leaves with the model: it fades out, takes no touch while it does, and is
+    // gone once it is clear. A card kept after its dialog ended once left "GameNative is
+    // not installed" on screen after the launch had already been dismissed.
+    val card = presence(visible, motion.durationFocus, scale)
+    card.shown?.let { shown ->
+        Box(Modifier.rise { card.progress.value }) {
+            DialogCard(app, shown, if (visible != null) onEffect else { _ -> })
+        }
     }
 }
 

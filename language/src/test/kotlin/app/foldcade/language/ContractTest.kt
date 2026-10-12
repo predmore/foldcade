@@ -45,8 +45,6 @@ class ContractTest {
         listOf(
             KeyEvent.KEYCODE_BUTTON_L2,
             KeyEvent.KEYCODE_BUTTON_R2,
-            KeyEvent.KEYCODE_BUTTON_START,
-            KeyEvent.KEYCODE_BUTTON_SELECT,
             KeyEvent.KEYCODE_BUTTON_THUMBL,
             KeyEvent.KEYCODE_BUTTON_THUMBR,
             KeyEvent.KEYCODE_BUTTON_MODE,
@@ -362,19 +360,15 @@ class ContractTest {
         assertEquals(onPrimary.settings, primary.settings)
         val theme = reduce(root.onSetting(Row.Theme), Meaning.Activate).first
         assertEquals(1, theme.themeIndex)
-        val sources = opened.copy(panel = opened.panel!!.copy(index = leftRows().indexOf(Row.Library)))
-        val child = reduce(sources, Meaning.Activate).first
-        assertEquals(PanelLevel.Library, child.panel?.level)
-        val (folder, add) = reduce(child, Meaning.Activate)
+        // The sources live on the Settings page's Library rows, not in L1.
+        assertFalse(leftRows().any { it is Row.AddFolder || it is Row.RommConnection })
+        val (folder, add) = reduce(root.onSetting(Row.AddFolder), Meaning.Activate)
         assertNull(add)
         assertEquals(DialogKind.Folder, folder.dialog?.kind)
-        val signedIn = child.copy(
-            signedIn = listOf(SignedInBackend("romm", "RomM")),
-            panel = child.panel?.copy(index = 0),
-        )
+        val signedIn = root.copy(signedIn = listOf(SignedInBackend("romm", "RomM")))
         val connection = libraryRows(signedIn.signedIn).first()
         assertEquals("RomM", rowLabel(connection, signedIn))
-        val (actions, openConnection) = reduce(signedIn, Meaning.Activate)
+        val (actions, openConnection) = reduce(signedIn.onSetting(connection), Meaning.Activate)
         assertNull(openConnection)
         assertEquals(PanelLevel.RommConnection, actions.panel?.level)
         assertEquals(listOf(Row.EditRomm("romm"), Row.SignOut("romm", "RomM")), panelRows(actions.panel!!, actions))
@@ -539,7 +533,7 @@ class ContractTest {
         assertEquals(Effect.ChoosePlayerSave("azahar"), effect)
         assertNull(closed.panel)
         assertNull(closed.settings)
-        assertEquals("Azahar saves  Not set", rowLabel(Row.PlayerSave("azahar"), opened))
+        assertEquals("Azahar  Choose folder", rowLabel(Row.PlayerSave("azahar"), opened))
     }
 
     @Test

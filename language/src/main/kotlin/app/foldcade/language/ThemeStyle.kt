@@ -107,8 +107,10 @@ class ThemeMotion internal constructor(reader: ThemeStyleReader) {
     val sceneSettleFrom = reader.number("motion", "sceneSettleFrom", 1.1f) { it > 0f }
     val durationScene = reader.number("motion", "durationScene", 360f) { it >= 1f && it.toDouble() <= Int.MAX_VALUE }.toInt()
     val durationShowcase = reader.number("motion", "durationShowcase", 1400f) { it >= 1f && it.toDouble() <= Int.MAX_VALUE }.toInt()
+    val durationSelect = reader.number("motion", "durationSelect", 280f) { it >= 1f && it.toDouble() <= Int.MAX_VALUE }.toInt()
     val arrive = reader.curve("arrive", floatArrayOf(.05f, .7f, .1f, 1f))
     val leave = reader.curve("leave", floatArrayOf(.3f, 0f, .8f, .15f))
     val pulse = reader.curve("pulse", floatArrayOf(.4f, 0f, .6f, 1f))
     val dissolve = reader.curve("dissolve", floatArrayOf(.2f, 0f, 0f, 1f))
+    val playful = reader.curve("playful", floatArrayOf(.34f, 1.36f, .64f, 1f))
 }

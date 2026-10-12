@@ -24,22 +24,24 @@ enum class Side {
     Right,
 }
 
-enum class PanelLevel {
-    Root,
-    Library,
-    RommConnection,
+/** [depth] is how far in a level sits, so going in and coming back move opposite ways. [actsOnTile] marks Y's menus. */
+enum class PanelLevel(val depth: Int, val actsOnTile: Boolean = false) {
+    Root(0),
+
+    /** One saved RomM server's edit and sign-out actions, opened from Settings. */
+    RommConnection(1),
 
     /** Y's menu for the focused tile, in the left island. */
-    Actions,
+    Actions(1, actsOnTile = true),
 
     /** The folders Move to can send the focused game into. */
-    MoveTo,
+    MoveTo(2, actsOnTile = true),
 
     /** Home and the folders Add to can place an installed app in. */
-    AddTo,
+    AddTo(2, actsOnTile = true),
 
     /** L1's Edit home: the focused tile's actions, then the settings for the whole board. */
-    EditHome,
+    EditHome(1),
 }
 
 data class SidePanel(
@@ -178,9 +180,6 @@ fun saveFolderDialog(screen: HostScreen): DialogState = DialogState(
     screen = screen,
 )
 
-fun playerSavesLabel(name: String, chosen: Boolean): String =
-    if (chosen) "$name saves  ${Copy.playerSavesSet}" else "$name saves  ${Copy.playerSavesUnset}"
-
 fun playerNotice(title: String, body: String, screen: HostScreen): DialogState = DialogState(
     kind = DialogKind.Ok,
     title = title,
@@ -233,7 +232,6 @@ data class Hold(
 )
 
 sealed interface Row {
-    data object Library : Row
     data object IconTheme : Row
     data object Theme : Row
     data object Background : Row
@@ -301,8 +299,23 @@ sealed interface Row {
     data object EditHome : Row
 }
 
-/** The R1 quick settings are one row of round buttons. Text rows above them stay full width. */
+/** The R1 quick settings and the L1 places are rows of round buttons. Text rows around them stay full width. */
 const val quickTileColumns = 4
+
+/** L1's places to go. They sit side by side as round tiles, as R1's Android screens do. */
+private val placeRows: Set<Row> = setOf(Row.Home, Row.AllLibrary, Row.AndroidGames, Row.Apps)
+
+/** True for a row drawn as a round tile in a row of [quickTileColumns]. */
+fun Row.tiled(): Boolean = this is Row.QuickTile || this in placeRows
+
+/** The word under a place tile. A tile has less room than a row, so it says less. */
+fun tileLabel(row: Row): String? = when (row) {
+    Row.Home -> Copy.home
+    Row.AllLibrary -> Copy.tileAll
+    Row.AndroidGames -> Copy.tileGames
+    Row.Apps -> Copy.apps
+    else -> null
+}
 
 /**
  * The Android screens R1 opens. Only what a Thor owner reaches for: the slider
@@ -351,8 +364,9 @@ data class PlayerSaveSetting(
 
 /**
  * L1 is Foldcade's own drawer: the past week's play, where to go, editing home,
- * and Foldcade's settings. Device controls are on R1. Every other setting lives
- * on the Settings page, so this stays short enough to fit the island.
+ * and Foldcade's settings. Device controls are on R1. Every other setting,
+ * the library sources included, lives on the Settings page, so this stays
+ * short enough to fit the island.
  */
 fun leftRows(): List<Row> = listOf(
     Row.PlayActivity,
@@ -361,7 +375,6 @@ fun leftRows(): List<Row> = listOf(
     Row.AndroidGames,
     Row.Apps,
     Row.EditHome,
-    Row.Library,
     Row.Settings,
 )
 
@@ -371,19 +384,6 @@ fun leftRows(): List<Row> = listOf(
  */
 fun editHomeRows(model: PickerModel): List<Row> =
     actionRows(model.tileActions, model.appActions) + listOf(Row.AddNewGames, Row.HiddenApps)
-
-/** The library sources in a few words, for the Sources row: "RomM · 2 folders". */
-fun sourcesSummary(model: PickerModel): String? {
-    val folders = model.folders.size
-    val parts = model.signedIn.map { it.label } + listOfNotNull(
-        when (folders) {
-            0 -> null
-            1 -> "1 folder"
-            else -> "$folders folders"
-        },
-    )
-    return parts.takeIf { it.isNotEmpty() }?.joinToString(" · ")
-}
 
 data class SignedInBackend(
     val pluginId: String,
@@ -524,7 +524,6 @@ fun panelRows(panel: SidePanel, model: PickerModel): List<Row> = when (panel.lev
     PanelLevel.Actions -> actionRows(model.tileActions, model.appActions)
     PanelLevel.MoveTo -> destinationRows(model.tileActions)
     PanelLevel.AddTo -> model.appActions?.destinations.orEmpty().map { Row.Destination(it.folderId, it.name) }
-    PanelLevel.Library -> libraryRows(model.signedIn, model.folders)
     PanelLevel.RommConnection -> panel.connection?.let {
         listOf(Row.EditRomm(it.pluginId), Row.SignOut(it.pluginId, it.label))
     }.orEmpty()
@@ -553,21 +552,17 @@ fun speedLabel(speed: MotionSpeed): String = when (speed) {
 data class RowText(val label: String, val value: String? = null)
 
 fun rowText(row: Row, model: PickerModel): RowText = when (row) {
-    Row.Library -> RowText(Copy.library, sourcesSummary(model))
     Row.PlayActivity -> RowText(PlayCopy.activity)
     Row.Home -> RowText(Copy.home)
     Row.EditHome -> RowText(Copy.editHome)
     Row.Settings -> RowText(SettingsCopy.title)
-    Row.IconTheme -> RowText("Icons", model.iconThemeIndex?.let { model.themes.getOrNull(it) } ?: "Follow theme")
+    Row.IconTheme -> RowText(Copy.icons, model.iconThemeIndex?.let { model.themes.getOrNull(it) } ?: Copy.matchTheme)
     Row.Theme -> RowText(Copy.theme, model.themes.getOrElse(model.themeIndex) { Copy.builtIn })
     Row.Background -> RowText(Copy.background, model.backgroundChoices.firstOrNull { it.motion == model.backgroundMotion }?.name ?: backgroundLabel(model.backgroundMotion))
     Row.MotionSpeed -> RowText(Copy.motion, speedLabel(model.motionSpeed))
-    Row.UsageAccess -> RowText(
-        "Play time",
-        if (model.usageGranted) "All launchers" else Copy.approximatePlay,
-    )
+    Row.UsageAccess -> RowText(Copy.playTime, if (model.usageGranted) Copy.playTimeEverywhere else Copy.playTimeHere)
     Row.Primary -> RowText(Copy.primaryPanel, if (model.primaryIsTop) Copy.top else Copy.bottom)
-    Row.Order -> RowText("Order", if (model.sort == LibrarySort.RecentlyPlayed) "Recently played" else "Library")
+    Row.Order -> RowText(Copy.sort, if (model.sort == LibrarySort.RecentlyPlayed) Copy.sortRecent else Copy.sortListed)
     Row.Music -> RowText(MusicCopy.row, if (model.music.enabled) MusicCopy.on else MusicCopy.off)
     Row.MusicTrack -> RowText(MusicCopy.track, model.trackTitle)
     Row.MusicVolume -> RowText(MusicCopy.volume, MusicCopy.volumeLabel(model.music.volume).substringAfter("  "))
@@ -591,24 +586,22 @@ fun rowText(row: Row, model: PickerModel): RowText = when (row) {
     is Row.RommConnection -> RowText(row.label)
     is Row.EditRomm -> RowText(Copy.editRommConnection)
     Row.AddRomm -> RowText(Copy.addRommServer)
-    is Row.SignOut -> RowText(
-        if (model.panel?.level == PanelLevel.RommConnection) Copy.signOut else "${Copy.signOut} · ${row.label}",
-    )
-    is Row.ForgetFolder -> RowText("${Copy.removeFolder} · ${row.label}")
+    is Row.SignOut -> if (model.panel?.level == PanelLevel.RommConnection) RowText(Copy.signOut) else RowText(row.label, Copy.signOut)
+    is Row.ForgetFolder -> RowText(row.label, Copy.remove)
     is Row.Notice -> RowText(model.notices.firstOrNull { it.id == row.id }?.title ?: "")
     Row.NoticeAccess -> RowText(NoticeCopy.access, NoticeCopy.accessValue)
     Row.ClearNotices -> RowText(NoticeCopy.clearAll)
     is Row.PlayerSave -> {
         val setting = model.playerSaves.firstOrNull { it.playerId == row.playerId }
         val chosen = if (setting?.chosen == true) Copy.playerSavesSet else Copy.playerSavesUnset
-        RowText("${setting?.label ?: row.playerId} saves", chosen)
+        RowText(setting?.label ?: row.playerId, chosen)
     }
     Row.AndroidGames -> RowText(Copy.androidGames)
     Row.Apps -> RowText(Copy.apps)
     Row.HiddenApps -> RowText(Copy.hiddenAppsRow)
     Row.AllLibrary -> RowText(Copy.allLibrary)
-    Row.AddNewGames -> RowText(Copy.addNewGames, if (model.addNewToHome) Copy.addNewOn else Copy.addNewOff)
-    Row.Artwork -> RowText(Copy.artwork, if (model.artwork) Copy.artworkOn else Copy.artworkOff)
+    Row.AddNewGames -> RowText(Copy.addNewGames, if (model.addNewToHome) Copy.on else Copy.off)
+    Row.Artwork -> RowText(Copy.artwork, if (model.artwork) Copy.on else Copy.off)
     Row.ArtKey -> RowText(Copy.steamGridDb, if (model.artKeySaved) Copy.forgetKey else Copy.addKey)
     Row.PinApp -> RowText(if (model.appActions?.favorite == true) Copy.unpin else Copy.pin)
     Row.AddAppTo -> RowText(Copy.addTo)
@@ -1133,16 +1126,17 @@ private fun placeOrPick(model: PickerModel): Pair<PickerModel, Effect?> {
 }
 
 /**
- * Text rows are one column. Quick tiles are [quickTileColumns] wide and sit
- * together as one block, at the top of R1. Up from the row under the block
- * lands on the first tile of its last line. A direction with no neighbor stays put.
+ * Text rows are one column. Tiles ([tiled]) are [quickTileColumns] wide and sit
+ * together as one block: R1's Android screens at its top, L1's places under the
+ * play strip. Up from the row under the block lands on the first tile of its last
+ * line. A direction with no neighbor stays put.
  */
 fun panelFocusIndex(rows: List<Row>, index: Int, meaning: Meaning): Int {
     if (rows.isEmpty()) return 0
     val current = index.coerceIn(0, rows.lastIndex)
-    val tileStart = rows.indexOfFirst { it is Row.QuickTile }
-    val tileEnd = rows.indexOfLast { it is Row.QuickTile } + 1
-    val tilesAreBlock = tileStart >= 0 && (tileStart until tileEnd).all { rows[it] is Row.QuickTile }
+    val tileStart = rows.indexOfFirst { it.tiled() }
+    val tileEnd = rows.indexOfLast { it.tiled() } + 1
+    val tilesAreBlock = tileStart >= 0 && (tileStart until tileEnd).all { rows[it].tiled() }
     val linear = when (meaning) {
         Meaning.MoveUp -> (current - 1).coerceAtLeast(0)
         Meaning.MoveDown -> (current + 1).coerceAtMost(rows.lastIndex)
@@ -1192,12 +1186,24 @@ private fun applyPanel(
     }
     val index = panel.index.coerceIn(0, rows.lastIndex)
     val current = panel.copy(index = index)
+    if (chordKey(meaning) != null) {
+        // A chord pressed while the other island is still folding away belongs to the one
+        // opening. The island leaving never takes it, even when the opening one has no such row.
+        if (current.retiring) {
+            val pending = current.pendingSide ?: return model to null
+            val opening = freshPanel(pending, current.grid)
+            chordIndex(panelRows(opening, model), meaning) ?: return model to null
+            return applyPanel(model.copy(panel = opening), opening, meaning, screen)
+        }
+        val chord = chordIndex(rows, meaning)
+        if (chord != null) return activateRow(model, current.copy(index = chord), rows[chord], screen)
+    }
     return when (meaning) {
         Meaning.MoveUp, Meaning.MoveDown ->
             model.copy(panel = current.copy(index = panelFocusIndex(rows, index, meaning))) to null
         Meaning.MoveLeft, Meaning.MoveRight -> {
             val direction = if (meaning == Meaning.MoveLeft) -1 else 1
-            val nudged = adjustRow(model, rows[index], direction)
+            val nudged = stepRow(model, rows[index], direction)
             if (nudged != null) {
                 nudged.copy(panel = current) to null
             } else {
@@ -1227,11 +1233,20 @@ private fun applyPanel(
 }
 
 /**
- * Left and right step a value and keep the row. Music volume moves by 5 points,
- * and so does brightness, or it asks for access first. The track row cycles the
- * offered tracks. Other rows ignore the direction so the panel focus stays put.
+ * Rows that offer a few choices: left and right step through them, and A steps forward.
+ * The Settings page draws them as ‹ value ›.
  */
-private fun adjustRow(model: PickerModel, row: Row, direction: Int): PickerModel? {
+internal val choiceRows: Set<Row> = setOf(
+    Row.Theme, Row.IconTheme, Row.Background, Row.MotionSpeed, Row.MusicTrack, Row.Order, Row.Primary,
+)
+
+/**
+ * Left and right step a value and keep the row. Music volume moves by 5 points,
+ * and so does brightness, or it asks for access first. A choice row (theme,
+ * icons, background, motion, track, sort, main screen) cycles its choices either
+ * way, as A cycles them forward. Other rows ignore the direction, so the focus stays put.
+ */
+private fun stepRow(model: PickerModel, row: Row, direction: Int): PickerModel? {
     return when (row) {
         Row.MusicVolume -> model.copy(music = model.music.nudged(direction))
         Row.Brightness -> if (model.brightnessAllowed) {
@@ -1240,15 +1255,57 @@ private fun adjustRow(model: PickerModel, row: Row, direction: Int): PickerModel
             model.copy(dialog = brightnessPrompt())
         }
         Row.MusicTrack -> model.withTrack(cycledMusicTrack(offeredTracks(model), model.music.trackId, direction))
+        Row.Theme -> stepTheme(model, direction)
+        Row.IconTheme -> {
+            // Match theme sits before the first pack, so the choices loop through it.
+            val slots = model.themes.size + 1
+            val now = model.iconThemeIndex?.plus(1) ?: 0
+            val next = Math.floorMod(now + direction, slots)
+            model.copy(iconThemeIndex = if (next == 0) null else next - 1)
+        }
+        Row.Background -> {
+            val choices = model.backgroundChoices
+            val at = choices.indexOfFirst { it.motion == model.backgroundMotion }
+            val motion = when {
+                choices.isEmpty() -> BackgroundMotion.Off
+                // A motion that is not among the choices steps to the first or the last.
+                at < 0 -> (if (direction > 0) choices.first() else choices.last()).motion
+                else -> choices[Math.floorMod(at + direction, choices.size)].motion
+            }
+            model.copy(backgroundMotion = motion, backgroundPinned = true)
+        }
+        Row.MotionSpeed -> {
+            val speeds = MotionSpeed.entries
+            model.copy(motionSpeed = speeds[Math.floorMod(speeds.indexOf(model.motionSpeed) + direction, speeds.size)])
+        }
+        Row.Order -> model.copy(sort = model.sort.toggled())
+        Row.Primary -> model.copy(primaryIsTop = !model.primaryIsTop)
         else -> null
     }
+}
+
+/** The next or previous theme. It brings that theme's background and track unless the user chose their own. */
+private fun stepTheme(model: PickerModel, direction: Int): PickerModel {
+    val count = model.themes.size.coerceAtLeast(1)
+    val nextIndex = Math.floorMod(model.themeIndex + direction, count)
+    val motion = if (model.backgroundPinned) {
+        model.backgroundMotion
+    } else {
+        model.themeMotions.getOrElse(nextIndex) { BackgroundMotion.Off }
+    }
+    val stepped = model.copy(themeIndex = nextIndex, backgroundMotion = motion)
+    val tracks = offeredMusicTracks(stepped.homeTracks, stepped.themeTracks.getOrNull(nextIndex))
+    val kept = tracks.firstOrNull { it.id == model.music.trackId }
+    val track = kept ?: selectedMusicTrack(tracks, HomeMusicSetting.DEFAULT_TRACK_ID)
+    return stepped.withTrack(track)
 }
 
 /**
  * Up and down move within the focused column. Right, or Activate, steps from a category into
  * its rows. Left on a row steps a value when the row has one, otherwise back to the
- * categories. Back steps out the same way, then closes the page. L1 and R1 close it too.
- * A row acts exactly as it does in the menu. A row that would close the menu closes the page.
+ * categories. Back steps out the same way, then closes the page. L1, R1, and Start close it
+ * too, so Start undoes L1 then Start. A row acts exactly as it does in the menu. A row that
+ * would close the menu closes the page.
  */
 private fun applySettings(
     model: PickerModel,
@@ -1270,7 +1327,7 @@ private fun applySettings(
             ) to null
             Meaning.MoveRight, Meaning.Activate ->
                 model.copy(settings = current.copy(onRows = rows.isNotEmpty(), row = 0)) to null
-            Meaning.Back, Meaning.LeftPanel, Meaning.RightPanel -> close
+            Meaning.Back, Meaning.LeftPanel, Meaning.RightPanel, Meaning.Menu -> close
             else -> model.copy(settings = current) to null
         }
     }
@@ -1280,7 +1337,7 @@ private fun applySettings(
         Meaning.MoveDown -> model.copy(settings = current.copy(row = (rowIndex + 1).coerceAtMost(rows.lastIndex))) to null
         Meaning.MoveLeft, Meaning.MoveRight -> {
             val direction = if (meaning == Meaning.MoveLeft) -1 else 1
-            val nudged = adjustRow(model, row, direction)
+            val nudged = stepRow(model, row, direction)
             when {
                 nudged != null -> nudged.copy(settings = current) to null
                 meaning == Meaning.MoveLeft -> model.copy(settings = current.copy(onRows = false)) to null
@@ -1292,7 +1349,7 @@ private fun applySettings(
         } else {
             model.copy(settings = current.copy(onRows = false)) to null
         }
-        Meaning.LeftPanel, Meaning.RightPanel -> close
+        Meaning.LeftPanel, Meaning.RightPanel, Meaning.Menu -> close
         Meaning.Activate -> {
             // Rows act through the menu path. A stand-in panel tells "stays open" from "leaves".
             val standIn = SidePanel(Side.Left, current.screen, PanelLevel.Root, rowIndex, current.grid)
@@ -1322,17 +1379,10 @@ private fun PickerModel.withTrack(track: MusicTrack): PickerModel =
 
 private fun backPanel(model: PickerModel, panel: SidePanel): Pair<PickerModel, Effect?> {
     return when (panel.level) {
-        PanelLevel.Library -> model.copy(panel = panel.copy(level = PanelLevel.Root, index = 0)) to null
         PanelLevel.RommConnection -> {
             val settings = panel.connectionSettings
             if (settings != null) model.copy(panel = null, settings = settings) to null
-            else {
-                val parent = panel.copy(level = PanelLevel.Library, connection = null, connectionSettings = null)
-                val index = panelRows(parent, model).indexOfFirst {
-                    it is Row.RommConnection && it.pluginId == panel.connection?.pluginId
-                }.coerceAtLeast(0)
-                model.copy(panel = parent.copy(index = index)) to null
-            }
+            else model.copy(panel = null, focus = panel.grid) to null
         }
         PanelLevel.EditHome -> model.copy(panel = panel.copy(level = PanelLevel.Root, index = leftRows().indexOf(Row.EditHome))) to null
         PanelLevel.MoveTo, PanelLevel.AddTo -> {
@@ -1352,49 +1402,21 @@ private fun activateRow(
     screen: HostScreen,
 ): Pair<PickerModel, Effect?> {
     return when (row) {
-        Row.Library -> model.copy(panel = panel.copy(level = PanelLevel.Library, index = 0)) to null
         Row.Settings -> model.copy(
             panel = null,
             settings = SettingsPage(screen = panel.screen, grid = panel.grid),
         ) to null
-        Row.IconTheme -> {
-            val next = model.iconThemeIndex?.plus(1) ?: 0
-            model.copy(panel = panel, iconThemeIndex = next.takeIf { it < model.themes.size }) to null
-        }
-        Row.Theme -> {
-            val count = model.themes.size.coerceAtLeast(1)
-            val nextIndex = (model.themeIndex + 1) % count
-            val motion = if (model.backgroundPinned) {
-                model.backgroundMotion
-            } else {
-                model.themeMotions.getOrElse(nextIndex) { BackgroundMotion.Off }
-            }
-            val stepped = model.copy(panel = panel, themeIndex = nextIndex, backgroundMotion = motion)
-            val tracks = offeredMusicTracks(stepped.homeTracks, stepped.themeTracks.getOrNull(nextIndex))
-            val kept = tracks.firstOrNull { it.id == model.music.trackId }
-            val track = kept ?: selectedMusicTrack(tracks, HomeMusicSetting.DEFAULT_TRACK_ID)
-            stepped.withTrack(track) to null
-        }
-        Row.Background -> model.copy(
-            panel = panel,
-            backgroundMotion = model.backgroundChoices.let { choices ->
-                if (choices.isEmpty()) BackgroundMotion.Off else choices[(choices.indexOfFirst { it.motion == model.backgroundMotion } + 1) % choices.size].motion
-            },
-            backgroundPinned = true,
-        ) to null
-        Row.MotionSpeed -> model.copy(panel = panel, motionSpeed = model.motionSpeed.next()) to null
+        // The [choiceRows]. The list is spelled out so a new row cannot slip past this when.
+        Row.Theme, Row.IconTheme, Row.Background, Row.MotionSpeed, Row.MusicTrack, Row.Order, Row.Primary ->
+            stepRow(model, row, 1)!!.copy(panel = panel) to null
         Row.UsageAccess -> model.copy(dialog = usageAccessPrompt(screen)) to null
-        Row.Primary -> model.copy(panel = panel, primaryIsTop = !model.primaryIsTop) to null
         Row.PlayActivity -> model.copy(
             panel = null,
             playActivity = PlayActivityPage(screen = panel.screen, grid = panel.grid),
         ) to null
         Row.Home -> model.copy(panel = null, focus = panel.grid) to Effect.GoHome
         Row.EditHome -> model.copy(panel = panel.copy(level = PanelLevel.EditHome, index = 0)) to null
-        Row.Order -> model.copy(panel = panel, sort = model.sort.toggled()) to null
         Row.Music -> model.copy(panel = panel, music = model.music.toggled()) to null
-        Row.MusicTrack ->
-            model.copy(panel = panel).withTrack(cycledMusicTrack(offeredTracks(model), model.music.trackId, 1)) to null
         Row.MusicVolume -> model.copy(panel = panel, music = model.music.stepped()) to null
         Row.SetAsHome -> model to Effect.RequestHome
         Row.AndroidSettings -> model.copy(panel = panel) to Effect.OpenAndroidSetting(AndroidSetting.Settings)

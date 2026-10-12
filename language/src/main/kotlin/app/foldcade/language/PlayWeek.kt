@@ -124,7 +124,8 @@ internal fun applyPlayActivity(model: PickerModel, page: PlayActivityPage, meani
     when (meaning) {
         Meaning.MoveLeft -> model.copy(playActivity = page.copy(weeksBack = page.weeksBack + 1)) to null
         Meaning.MoveRight -> model.copy(playActivity = page.copy(weeksBack = (page.weeksBack - 1).coerceAtLeast(0))) to null
-        Meaning.Back, Meaning.LeftPanel, Meaning.RightPanel -> model.copy(playActivity = null, focus = page.grid) to null
+        // Select closes it again, as L1 then Select opened it.
+        Meaning.Back, Meaning.LeftPanel, Meaning.RightPanel, Meaning.View -> model.copy(playActivity = null, focus = page.grid) to null
         else -> model to null
     }
 

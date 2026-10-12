@@ -41,6 +41,7 @@ import app.foldcade.language.Effect
 import app.foldcade.language.EmptyGrid
 import app.foldcade.language.GridFocus
 import app.foldcade.language.actionRows
+import app.foldcade.language.chordIndex
 import app.foldcade.language.GridKind
 import app.foldcade.language.HeroFolder
 import app.foldcade.language.HeroItem
@@ -1760,15 +1761,25 @@ class ShellController(
         if (!cue(themeIndex, "move")) bareTick()
     }
 
-    /** Volume steps and track changes. Either one ticks while the row stays put. */
+    /** Volume and brightness steps, and a choice stepped with left or right. Each ticks while the row stays put. */
     private fun valueAdjusted(before: PickerModel, after: PickerModel): Boolean =
         before.music.volume != after.music.volume || before.music.trackId != after.music.trackId ||
-            before.brightness != after.brightness
+            before.brightness != after.brightness || before.themeIndex != after.themeIndex ||
+            before.iconThemeIndex != after.iconThemeIndex || before.backgroundMotion != after.backgroundMotion ||
+            before.motionSpeed != after.motionSpeed || before.sort != after.sort ||
+            before.primaryIsTop != after.primaryIsTop
 
     private fun cueMeaning(meaning: Meaning, before: PickerModel, after: PickerModel) {
         when (meaning) {
             Meaning.Activate -> cue(after.themeIndex, "activate")
             Meaning.Back -> cue(after.themeIndex, "back")
+            // A chord runs a row, so it sounds as A on that row would.
+            Meaning.Menu, Meaning.View, Meaning.Options, Meaning.ActivateBottom -> {
+                val panel = before.panel
+                if (panel != null && chordIndex(panelRows(panel, before), meaning) != null) {
+                    cue(after.themeIndex, "activate")
+                }
+            }
             Meaning.MoveUp, Meaning.MoveDown, Meaning.MoveLeft, Meaning.MoveRight -> {
                 val moved = before.focus != after.focus || before.panel?.index != after.panel?.index
                 val slid = valueAdjusted(before, after)

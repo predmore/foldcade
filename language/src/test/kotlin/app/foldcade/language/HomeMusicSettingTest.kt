@@ -24,7 +24,7 @@ class HomeMusicSettingTest {
         assertEquals(
             listOf(
                 Row.PlayActivity, Row.Home, Row.AllLibrary, Row.AndroidGames, Row.Apps,
-                Row.EditHome, Row.Library, Row.Settings,
+                Row.EditHome, Row.Settings,
             ),
             leftRows(),
         )
