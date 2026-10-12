@@ -180,6 +180,14 @@ class SessionTest {
     }
 
     @Test
+    fun islandsOpenOnlyWhileTheTopScreenIsFree() {
+        assertTrue(Session().islandsOpen())
+        assertTrue(Session().launch(one, Panel.Bottom).browse(Panel.Top).islandsOpen())
+        // Browsing beside an app on top, the menu would open under that app.
+        assertFalse(Session().launch(one).browse(Panel.Bottom).islandsOpen())
+    }
+
+    @Test
     fun browsingShowsTheGridBesideAnAppUntilSomethingTakesThatScreen() {
         val appOnTop = Session().launch(one)
         val browsing = appOnTop.browse(Panel.Bottom)

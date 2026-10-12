@@ -2,8 +2,6 @@ package app.foldcade
 
 import app.foldcade.api.plugin.Availability
 import app.foldcade.api.plugin.Game
-import app.foldcade.language.AllSort
-import app.foldcade.language.AllTab
 import app.foldcade.language.Copy
 import app.foldcade.language.Effect
 import app.foldcade.language.GridFocus
@@ -23,15 +21,10 @@ import app.foldcade.language.Meaning
 import app.foldcade.language.Metrics
 import app.foldcade.language.addItemToHome
 import app.foldcade.language.allItems
-import app.foldcade.language.allLabels
 import app.foldcade.language.cancelHold
 import app.foldcade.language.closeAll
 import app.foldcade.language.closeFolder
 import app.foldcade.language.folderAround
-import app.foldcade.language.cycleAllSort
-import app.foldcade.language.cycleAllTab
-import app.foldcade.language.cycleDestination
-import app.foldcade.language.cycleSystemFilter
 import app.foldcade.language.decodeHome
 import app.foldcade.language.encodeHome
 import app.foldcade.language.enterEdit
@@ -49,7 +42,6 @@ import app.foldcade.language.pickUp
 import app.foldcade.language.removeFromHome
 import app.foldcade.language.renameFolder
 import app.foldcade.language.resolvePlatform
-import app.foldcade.language.sectionLabel
 import app.foldcade.language.setFolderIcon
 import app.foldcade.language.setAddNewToHome
 import app.foldcade.language.visibleSlots
@@ -64,20 +56,11 @@ data class HomeFace(
     val folder: Boolean,
     val pinned: Boolean,
     val onGrid: Boolean,
-    val section: String?,
     val platformId: String?,
     val androidPackage: String?,
     val occupiesBoth: Boolean,
     /** The game is on its server and not on this device yet. The tile shows a cloud. */
     val onServer: Boolean = false,
-)
-
-data class AllChrome(
-    val tab: String,
-    val sort: String,
-    val system: String,
-    val destination: String,
-    val focused: Int?,
 )
 
 /**
@@ -152,10 +135,6 @@ class HomeSession(raw: String?) {
         return board.folders[folderId]?.slots?.any { it != null } == true
     }
 
-    fun focusChrome(index: Int) {
-        board = board.copy(allChrome = index.coerceIn(0, 3))
-    }
-
     fun game(id: String): Game? = games[id]
 
     fun catalog(): List<HomeItem> = (shelf + apps + library).distinctBy { it.id }
@@ -166,7 +145,7 @@ class HomeSession(raw: String?) {
 
     fun faces(): List<HomeFace> {
         if (board.allOpen) return allFaces()
-        return visibleSlots(board).map { id -> faceFor(id, section = null) }
+        return visibleSlots(board).map { id -> faceFor(id) }
     }
 
     fun keys(): HomeKeys = when {
@@ -175,27 +154,6 @@ class HomeSession(raw: String?) {
         board.hold != null -> HomeKeys.Moving
         board.allOpen -> HomeKeys.AllLibrary
         else -> HomeKeys.Idle
-    }
-
-    fun chrome(): AllChrome? {
-        if (!board.allOpen) return null
-        val system = board.allSystemId?.let { id ->
-            platforms.firstOrNull { it.id == id }?.name
-        } ?: Copy.allSystems
-        val destination = board.destinationFolderId?.let { id ->
-            board.folders[id]?.name
-        } ?: Copy.homeSlot
-        return AllChrome(
-            tab = if (board.allTab == AllTab.Games) Copy.allGames else Copy.allApps,
-            sort = when (board.allSort) {
-                AllSort.Title -> Copy.sortTitle
-                AllSort.RecentlyPlayed -> Copy.sortRecent
-                AllSort.System -> Copy.sortSystem
-            },
-            system = system,
-            destination = destination,
-            focused = board.allChrome,
-        )
     }
 
     fun animToken(): String = "${board.openFolderId}:${board.allOpen}"
@@ -217,16 +175,15 @@ class HomeSession(raw: String?) {
     /**
      * What Y offers for the tile at [index]. In All, adding an item that is not
      * placed yet. On the board, moving, folders, and removing. Null while a
-     * tile moves, a picker or name field is open, or All's chrome has focus.
+     * tile moves or a picker or name field is open.
      */
     fun actions(index: Int): TileActions? {
         if (iconPick != null || renamingId != null || board.editing) return null
         if (board.allOpen) {
-            if (board.allChrome != null) return null
             val item = allRows().getOrNull(index) ?: return null
             if (onHome(board, item.id)) return null
             // Named for where it would land, including a folder that comes back with it.
-            val placed = addItemToHome(board, item, platforms, board.destinationFolderId)
+            val placed = addItemToHome(board, item, platforms)
             val into = placed.folders.values.firstOrNull { item.id in it.slots }?.name
             return TileActions(addToHome = if (into != null) "${Copy.addTo} $into" else Copy.addToHome)
         }
@@ -304,12 +261,12 @@ class HomeSession(raw: String?) {
     }
 
     /**
-     * Places the All item at [index] on Home: in the destination folder when one is
-     * chosen, else back in its platform's or library's folder, else the first free slot.
+     * Places the All item at [index] on Home: back in its platform's or library's
+     * folder, else the first free slot.
      */
     fun addFocused(index: Int) {
         val item = allRows().getOrNull(index) ?: return
-        board = addItemToHome(board, item, platforms, board.destinationFolderId)
+        board = addItemToHome(board, item, platforms)
     }
 
     /**
@@ -420,37 +377,7 @@ class HomeSession(raw: String?) {
     }
 
     private fun handleAll(meaning: Meaning, index: Int): HomeStep {
-        val chrome = board.allChrome
-        if (chrome != null) {
-            return when (meaning) {
-                Meaning.MoveLeft -> {
-                    board = board.copy(allChrome = (chrome - 1).coerceAtLeast(0))
-                    step(null, index)
-                }
-                Meaning.MoveRight -> {
-                    board = board.copy(allChrome = (chrome + 1).coerceAtMost(3))
-                    step(null, index)
-                }
-                Meaning.MoveDown, Meaning.Back -> {
-                    board = board.copy(allChrome = null)
-                    step(null, index)
-                }
-                Meaning.Activate -> {
-                    board = cycleChrome(chrome)
-                    step(null, 0)
-                }
-                Meaning.LeftPanel, Meaning.RightPanel, Meaning.Options -> HomeStep(handled = false, effect = null, focus = null)
-                else -> step(null, index)
-            }
-        }
         return when (meaning) {
-            Meaning.MoveUp -> {
-                if (GridStrip.row(index) == 0) {
-                    board = board.copy(allChrome = 0)
-                    return step(null, index)
-                }
-                HomeStep(handled = false, effect = null, focus = null)
-            }
             Meaning.Activate -> activateCell(index)
             Meaning.ActivateBottom -> activateCell(index, onBottom = true)
             Meaning.Back -> {
@@ -458,12 +385,13 @@ class HomeSession(raw: String?) {
                 step(null, rootIndex)
             }
             Meaning.LetterForward, Meaning.LetterBackward -> {
-                val labels = allLabels(allRows(), platforms, board.allSort)
-                val next = jumpLetter(labels, index, meaning == Meaning.LetterForward)
+                val next = jumpLetter(allRows().map { it.title }, index, meaning == Meaning.LetterForward)
                 step(null, next)
             }
             Meaning.LeftPanel, Meaning.RightPanel, Meaning.Options -> HomeStep(handled = false, effect = null, focus = null)
-            Meaning.MoveDown, Meaning.MoveLeft, Meaning.MoveRight, Meaning.PageTowardStart, Meaning.PageTowardEnd ->
+            Meaning.MoveUp, Meaning.MoveDown, Meaning.MoveLeft, Meaning.MoveRight,
+            Meaning.PageTowardStart, Meaning.PageTowardEnd,
+            ->
                 HomeStep(handled = false, effect = null, focus = null)
             else -> step(null, index)
         }
@@ -492,28 +420,13 @@ class HomeSession(raw: String?) {
         return step(null, restore)
     }
 
-    private fun cycleChrome(index: Int): HomeBoard = when (index) {
-        0 -> cycleAllTab(board)
-        1 -> cycleAllSort(board)
-        2 -> cycleSystemFilter(board, platforms, catalog())
-        else -> cycleDestination(board)
-    }
-
     private fun allRows(): List<HomeItem> =
-        allItems(catalog(), platforms, board.allTab, board.allSort, board.allSystemId)
+        allItems(catalog())
 
-    private fun allFaces(): List<HomeFace> {
-        val rows = allRows()
-        var previous: String? = null
-        return rows.map { item ->
-            val section = sectionLabel(item, platforms, board.allSort)
-            val header = section?.takeIf { it != previous }
-            previous = section ?: previous
-            faceFor(item.id, header).copy(onGrid = onHome(board, item.id))
-        }
-    }
+    private fun allFaces(): List<HomeFace> =
+        allRows().map { item -> faceFor(item.id).copy(onGrid = onHome(board, item.id)) }
 
-    private fun faceFor(id: String?, section: String?): HomeFace {
+    private fun faceFor(id: String?): HomeFace {
         if (id == null) {
             return HomeFace(
                 id = null,
@@ -524,7 +437,6 @@ class HomeSession(raw: String?) {
                 folder = false,
                 pinned = false,
                 onGrid = false,
-                section = section,
                 platformId = null,
                 androidPackage = null,
                 occupiesBoth = false,
@@ -540,7 +452,6 @@ class HomeSession(raw: String?) {
                 folder = false,
                 pinned = true,
                 onGrid = true,
-                section = section,
                 platformId = null,
                 androidPackage = null,
                 occupiesBoth = false,
@@ -558,7 +469,6 @@ class HomeSession(raw: String?) {
                 folder = true,
                 pinned = false,
                 onGrid = true,
-                section = section,
                 platformId = folder.platformId,
                 androidPackage = null,
                 occupiesBoth = false,
@@ -575,7 +485,6 @@ class HomeSession(raw: String?) {
             folder = false,
             pinned = false,
             onGrid = true,
-            section = section,
             platformId = item?.platformId ?: game?.platformId,
             androidPackage = id.removePrefix("android:").takeIf { id.startsWith("android:") },
             occupiesBoth = false,

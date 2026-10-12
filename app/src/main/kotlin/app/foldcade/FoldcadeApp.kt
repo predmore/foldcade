@@ -301,6 +301,7 @@ class FoldcadeApp : Application() {
                 awaitPlugins()
                 plugins.metadataIds().firstNotNullOfOrNull { id -> plugins.fetchAchievements(id, record) }
             },
+            showHome = shell::goHome,
         ) {
             val model = shell.model
             model.dialog != null || model.panel != null || model.connectOpen

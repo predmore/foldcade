@@ -29,17 +29,6 @@ enum class HomeKind {
     Loose,
 }
 
-enum class AllTab {
-    Games,
-    Apps,
-}
-
-enum class AllSort {
-    Title,
-    RecentlyPlayed,
-    System,
-}
-
 /** A platform the catalog can classify a ROM into. [id] is canonical. */
 data class HomePlatform(
     val id: String,
@@ -90,12 +79,6 @@ data class HomeBoard(
     val allOpen: Boolean = false,
     val editing: Boolean = false,
     val hold: HomeHold? = null,
-    val allTab: AllTab = AllTab.Games,
-    val allSort: AllSort = AllSort.Title,
-    val allSystemId: String? = null,
-    val destinationFolderId: String? = null,
-    /** 0 tab, 1 sort, 2 system, 3 destination. Null is the grid. */
-    val allChrome: Int? = null,
     /** Emulators an older release filed with the Android apps have moved to Emulators. */
     val emulatorsFiled: Boolean = false,
 )
@@ -391,20 +374,13 @@ fun homeFolderFor(board: HomeBoard, item: HomeItem, platforms: List<HomePlatform
 }
 
 /**
- * Puts [item] back on Home, unhidden. [folderId] wins when it is a folder on the board.
- * Otherwise the item goes where a new one would, and a system folder that went away
- * with its last game comes back with this one.
+ * Puts [item] back on Home, unhidden, where a new one would go. A system folder that
+ * went away with its last game comes back with this one.
  */
-fun addItemToHome(
-    board: HomeBoard,
-    item: HomeItem,
-    platforms: List<HomePlatform>,
-    folderId: String? = null,
-): HomeBoard {
+fun addItemToHome(board: HomeBoard, item: HomeItem, platforms: List<HomePlatform>): HomeBoard {
     if (item.id == HOME_ALL || item.id.isBlank()) return board
     val shown = board.copy(hidden = board.hidden - item.id)
     if (onHome(shown, item.id)) return shown
-    if (folderId != null && folderId in shown.folders) return dropInto(shown, folderId, item.id)
     return placeNew(shown, item, platforms)
 }
 
@@ -413,60 +389,27 @@ fun setAddNewToHome(board: HomeBoard, enabled: Boolean): HomeBoard =
 
 fun openFolder(board: HomeBoard, folderId: String): HomeBoard {
     if (board.folders[folderId] == null) return board
-    return board.copy(openFolderId = folderId, allOpen = false, hold = null, allChrome = null)
+    return board.copy(openFolderId = folderId, allOpen = false, hold = null)
 }
 
 fun closeFolder(board: HomeBoard): HomeBoard = board.copy(openFolderId = null, hold = null)
 
 fun openAll(board: HomeBoard): HomeBoard =
-    board.copy(allOpen = true, openFolderId = null, hold = null, editing = false, allChrome = null)
+    board.copy(allOpen = true, openFolderId = null, hold = null, editing = false)
 
-fun closeAll(board: HomeBoard): HomeBoard = board.copy(allOpen = false, allChrome = null)
+fun closeAll(board: HomeBoard): HomeBoard = board.copy(allOpen = false)
 
 fun enterEdit(board: HomeBoard): HomeBoard =
-    board.copy(editing = true, allOpen = false, hold = null, allChrome = null)
+    board.copy(editing = true, allOpen = false, hold = null)
 
 fun leaveEdit(board: HomeBoard): HomeBoard = cancelHold(board).copy(editing = false)
 
-enum class AllChromeControl {
-    Tab,
-    Sort,
-    System,
-    Destination,
-}
+private val gameKinds = setOf(HomeKind.Rom, HomeKind.AndroidGame, HomeKind.GameNative, HomeKind.Moonlight, HomeKind.DroidDeck)
 
-private fun HomeItem.inAllTab(tab: AllTab): Boolean = !placeholder && when (tab) {
-    AllTab.Games -> kind == HomeKind.Rom || kind == HomeKind.AndroidGame ||
-        kind == HomeKind.GameNative || kind == HomeKind.Moonlight || kind == HomeKind.DroidDeck
-    AllTab.Apps -> kind == HomeKind.AndroidApp || kind == HomeKind.Emulator
-}
-
-fun allItems(
-    items: List<HomeItem>,
-    platforms: List<HomePlatform>,
-    tab: AllTab,
-    sort: AllSort,
-    systemId: String?,
-): List<HomeItem> {
-    val filtered = items.distinctBy { it.id }.filter { item ->
-        if (!item.inAllTab(tab)) return@filter false
-        if (systemId == null || tab != AllTab.Games) return@filter true
-        val platform = resolvePlatform(platforms, item.platformId)
-        platform?.id == systemId
-    }
-    return when (sort) {
-        AllSort.Title -> filtered.sortedWith(compareBy({ it.title.lowercase() }, { it.id }))
-        AllSort.RecentlyPlayed -> filtered.sortedWith(
-            compareByDescending<HomeItem> { it.lastPlayedMillis }.thenBy { it.title.lowercase() }.thenBy { it.id },
-        )
-        AllSort.System -> filtered.sortedWith(
-            compareBy({ systemName(platforms, it) }, { it.title.lowercase() }, { it.id }),
-        )
-    }
-}
-
-fun sectionLabel(item: HomeItem, platforms: List<HomePlatform>, sort: AllSort): String? =
-    if (sort == AllSort.System) systemName(platforms, item) else null
+/** The All library: every game, A to Z. */
+fun allItems(items: List<HomeItem>): List<HomeItem> = items.distinctBy { it.id }
+    .filter { !it.placeholder && it.kind in gameKinds }
+    .sortedWith(compareBy({ it.title.lowercase() }, { it.id }))
 
 /** Next letter group. Forward lands on its first row. Backward lands on the previous group's first row. Stays put at the ends. Does not wrap. */
 fun jumpLetter(labels: List<String>, index: Int, forward: Boolean): Int {
@@ -489,49 +432,6 @@ fun jumpLetter(labels: List<String>, index: Int, forward: Boolean): Int {
     }
 }
 
-fun allLabels(
-    items: List<HomeItem>,
-    platforms: List<HomePlatform>,
-    sort: AllSort,
-): List<String> = items.map { item ->
-    if (sort == AllSort.System) systemName(platforms, item) else item.title
-}
-
-fun cycleAllTab(board: HomeBoard): HomeBoard {
-    val tab = if (board.allTab == AllTab.Games) AllTab.Apps else AllTab.Games
-    return board.copy(allTab = tab, allSystemId = null)
-}
-
-fun cycleAllSort(board: HomeBoard): HomeBoard {
-    val sort = when (board.allSort) {
-        AllSort.Title -> AllSort.RecentlyPlayed
-        AllSort.RecentlyPlayed -> AllSort.System
-        AllSort.System -> AllSort.Title
-    }
-    return board.copy(allSort = sort)
-}
-
-fun cycleSystemFilter(board: HomeBoard, platforms: List<HomePlatform>, items: List<HomeItem>): HomeBoard {
-    val systems = items.filter { it.inAllTab(AllTab.Games) }.mapNotNull { resolvePlatform(platforms, it.platformId)?.id }.distinct()
-    if (systems.isEmpty()) return board.copy(allSystemId = null)
-    val current = board.allSystemId
-    val next = if (current == null) {
-        systems.first()
-    } else {
-        val index = systems.indexOf(current)
-        if (index < 0 || index == systems.lastIndex) null else systems[index + 1]
-    }
-    return board.copy(allSystemId = next)
-}
-
-fun cycleDestination(board: HomeBoard): HomeBoard {
-    val ids = listOf<String?>(null) + board.folders.keys.filter { it != HOME_ALL }
-    if (ids.size <= 1) return board.copy(destinationFolderId = null)
-    val index = ids.indexOf(board.destinationFolderId).let { if (it < 0) 0 else it }
-    val next = ids[(index + 1) % ids.size]
-    return board.copy(destinationFolderId = next)
-}
-
 /** A versioned snapshot of saved choices. A lifted tile is saved at its last confirmed position. */
 fun encodeHome(board: HomeBoard): String {
     val saved = cancelHold(board)
@@ -541,10 +441,6 @@ fun encodeHome(board: HomeBoard): String {
         homeRow("hidden", saved.hidden.sorted())
         homeRow("retired", saved.retired.sorted())
         homeRow("slots", saved.slots.map { it.orEmpty() })
-        homeRow("allTab", listOf(saved.allTab.name))
-        homeRow("allSort", listOf(saved.allSort.name))
-        homeRow("allSystem", listOf(saved.allSystemId.orEmpty()))
-        homeRow("destination", listOf(saved.destinationFolderId.orEmpty()))
         homeRow("emulatorsFiled", listOf(if (saved.emulatorsFiled) "1" else "0"))
         for (folder in saved.folders.values.sortedBy { it.id }) {
             homeRow(
@@ -590,10 +486,6 @@ fun decodeHome(raw: String?): HomeBoard {
             "hidden" -> board = board.copy(hidden = bits.drop(1).filter { it.isNotEmpty() }.toSet())
             "retired" -> board = board.copy(retired = bits.drop(1).filter { it.isNotEmpty() }.toSet())
             "slots" -> board = board.copy(slots = decodeSlots(bits.drop(1), encoded))
-            "allTab" -> board = board.copy(allTab = AllTab.entries.firstOrNull { it.name == bits.getOrNull(1) } ?: AllTab.Games)
-            "allSort" -> board = board.copy(allSort = AllSort.entries.firstOrNull { it.name == bits.getOrNull(1) } ?: AllSort.Title)
-            "allSystem" -> board = board.copy(allSystemId = bits.getOrNull(1)?.takeIf { it.isNotEmpty() })
-            "destination" -> board = board.copy(destinationFolderId = bits.getOrNull(1)?.takeIf { it.isNotEmpty() })
             "emulatorsFiled" -> board = board.copy(emulatorsFiled = bits.getOrNull(1) == "1")
             "folder" -> {
                 if (bits.size < 8) continue
@@ -670,7 +562,6 @@ private fun dropEmptySystemFolders(board: HomeBoard): HomeBoard {
         slots = slots,
         folders = board.folders - gone,
         openFolderId = board.openFolderId?.takeIf { it !in gone },
-        destinationFolderId = board.destinationFolderId?.takeIf { it !in gone },
     )
 }
 
@@ -789,9 +680,6 @@ private fun writeVisible(board: HomeBoard, slots: List<String?>): HomeBoard {
     val folder = board.folders[folderId] ?: return board
     return board.copy(folders = board.folders + (folderId to folder.copy(slots = slots)))
 }
-
-private fun systemName(platforms: List<HomePlatform>, item: HomeItem): String =
-    resolvePlatform(platforms, item.platformId)?.name ?: item.platformId ?: ""
 
 private fun decodeSlots(bits: List<String>, encoded: Boolean): List<String?> =
     if (encoded) bits.map { it.ifEmpty { null } }

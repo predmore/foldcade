@@ -39,12 +39,14 @@ enum class CenterFocus {
  * A library game's achievements come from [load] when the game is noted, and
  * again on a wake once they are [ACHIEVEMENTS_STALE_MS] old.
  *
+ * [showHome] puts the grid back at Home's top level before the button opens it.
  * [busy] holds the timer while a dialog or menu is up.
  */
 class CommandCenter(
     private val store: SessionStore,
     private val scope: CoroutineScope,
     private val load: suspend (Game) -> GameAchievements?,
+    private val showHome: () -> Unit,
     private val busy: () -> Boolean,
 ) {
     /** A wake belongs to the app beside it. A new app there starts dim again. */
@@ -108,9 +110,13 @@ class CommandCenter(
         if (waking) besideId(panel)?.let(::refresh)
     }
 
-    /** The command center's button: the grid on [panel], awake. */
+    /**
+     * The command center's button: the grid on [panel], awake, at Home's top level
+     * with its folders, wherever the grid was when the app beside it opened.
+     */
     fun browse(panel: Panel) {
         listOn = null
+        showHome()
         store.update { it.browse(panel) }
         touch(panel)
     }

@@ -80,6 +80,9 @@ data class Session(
 
     fun bothScreensFree(): Boolean = topApp == null && bottomApp == null
 
+    /** The island menus open on the top screen. An app there would cover them, so L1 and R1 do nothing. */
+    fun islandsOpen(): Boolean = topApp == null
+
     /** The picker handles controls only while it is the focused surface. */
     fun pickerHandlesKeys(focused: Panel): Boolean = surfaceOn(focused) == Surface.Picker
 
