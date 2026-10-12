@@ -16,6 +16,7 @@ import kotlin.coroutines.cancellation.CancellationException
  * Results are remembered in [index] and [scenes], hits and misses both, so a
  * game is not looked up again on the next launch. A miss is asked again after
  * [MISS_MAX_AGE_MS], when the available sources change, or after [forgetMisses].
+ * Incomplete scenes keep their parts and retry after source changes, expiry, or an outage.
  * A source that throws (offline, server error) does not record a miss. At most [PARALLEL] lookups
  * run at once, two asks for one key share a lookup, and nothing is sent while
  * [enabled] is false.
@@ -32,7 +33,7 @@ class ArtFinder(
     /** What is already known for [query], with no lookup. */
     fun cached(query: ArtQuery): ArtSet? = if (enabled()) index.hit(query.key)?.let(::artSetOf) else null
 
-    suspend fun find(query: ArtQuery): ArtSet? = lookUp(index, query) { available ->
+    suspend fun find(query: ArtQuery): ArtSet? = lookUp(index, query) { available, _ ->
         var failed = false
         for (source in available) {
             val found = asking(source) { find(query) }
@@ -50,8 +51,10 @@ class ArtFinder(
      * Wide art, a logo, and a title screen for [query]. Each part comes from the
      * first source that has it. Asking stops once there is wide art and a logo.
      */
-    suspend fun findScene(query: ArtQuery): ArtScene? = lookUp(scenes, query) { available ->
-        var scene = ArtScene()
+    suspend fun findScene(query: ArtQuery): ArtScene? = lookUp(
+        scenes, query, partial = { sceneOf(it)?.complete != true },
+    ) { available, held ->
+        var scene = held?.let(::sceneOf) ?: ArtScene()
         var failed = false
         for (source in available) {
             if (scene.complete) break
@@ -59,17 +62,17 @@ class ArtFinder(
             if (found.failed) failed = true
             scene = scene.or(found.value)
         }
-        // A part found before an outage is kept. Only a scene with nothing in it waits to be asked again.
-        if (scene.isEmpty) Answer(null, failed) else Answer(fieldsOf(scene), failed = false)
+        // Keep useful parts while allowing missing ones to recover after an outage or a source change.
+        if (scene.isEmpty) Answer(null, failed) else Answer(fieldsOf(scene), failed, partial = !scene.complete)
     }?.let(::sceneOf)
 
-    /** Misses are asked again, for when a source is added. */
+    /** Misses and incomplete scenes are asked again, without discarding useful artwork. */
     fun forgetMisses() {
         index.forgetMisses()
-        scenes.forgetMisses()
+        scenes.forgetMisses(retryHits = true)
     }
 
-    private class Answer(val fields: List<String>?, val failed: Boolean)
+    private class Answer(val fields: List<String>?, val failed: Boolean, val partial: Boolean = false)
 
     private class Asked<T>(val value: T?, val failed: Boolean)
 
@@ -84,24 +87,27 @@ class ArtFinder(
     private suspend fun lookUp(
         store: ArtIndex,
         query: ArtQuery,
-        ask: suspend (List<ArtSource>) -> Answer,
+        partial: (List<String>) -> Boolean = { false },
+        ask: suspend (List<ArtSource>, List<String>?) -> Answer,
     ): List<String>? {
         if (!enabled()) return null
         val available = sources().filter { it.handles(query) }
         val sourceIds = available.map { it.id }
-        when (val known = store.lookup(query.key, sourceIds)) {
+        when (val known = store.lookup(query.key, sourceIds, partial)) {
             is ArtIndex.Known.Hit -> return known.fields
             ArtIndex.Known.Miss -> return null
             null -> Unit
         }
         // The hero and its tile ask at once. The second waits, then reads what the first found.
         return perKey.computeIfAbsent("${store.file.name}\u0000${query.key}") { Mutex() }.withLock {
-            when (val known = store.lookup(query.key, sourceIds)) {
+            when (val known = store.lookup(query.key, sourceIds, partial)) {
                 is ArtIndex.Known.Hit -> known.fields
                 ArtIndex.Known.Miss -> null
                 null -> gate.withPermit {
-                    val answer = ask(available)
-                    if (answer.fields != null || !answer.failed) store.put(query.key, answer.fields, sourceIds)
+                    val answer = ask(available, store.hit(query.key))
+                    if (answer.fields != null || !answer.failed) {
+                        store.put(query.key, answer.fields, sourceIds, answer.partial, retry = answer.failed && answer.partial)
+                    }
                     answer.fields
                 }
             }
@@ -132,7 +138,8 @@ class ArtFinder(
 
 /**
  * What was found per tile key, kept in [file] across launches: a list of
- * fields for a hit, the available source ids for a miss. Each change is one appended line, and
+ * fields for a hit, source ids and a retry marker for incomplete hits, or source ids for a miss.
+ * Each change is one appended line, and
  * the file is rewritten when old lines outnumber live ones.
  */
 class ArtIndex(
@@ -144,7 +151,13 @@ class ArtIndex(
         data object Miss : Known
     }
 
-    private class Entry(val fields: List<String>?, val savedAt: Long, val missSources: List<String> = emptyList())
+    private data class Entry(
+        val fields: List<String>?,
+        val savedAt: Long,
+        val sources: List<String> = emptyList(),
+        val partial: Boolean = false,
+        val retry: Boolean = false,
+    )
 
     private val entries = ConcurrentHashMap<String, Entry>()
     private var lines = 0
@@ -160,6 +173,14 @@ class ArtIndex(
                 entries[key] = when (parts[2]) {
                     HIT -> Entry(parts.drop(3).map(::unescape), savedAt)
                     MISS -> Entry(null, savedAt, parts.drop(3).map(::unescape))
+                    PARTIAL, RETRY -> {
+                        val count = parts.getOrNull(3)?.toIntOrNull() ?: return@forEachLine
+                        if (count < 0 || count > parts.size - 4) return@forEachLine
+                        Entry(
+                            parts.drop(4 + count).map(::unescape), savedAt,
+                            parts.drop(4).take(count).map(::unescape), partial = true, retry = parts[2] == RETRY,
+                        )
+                    }
                     // A line from an older layout is dropped and looked up again.
                     else -> return@forEachLine
                 }
@@ -169,17 +190,21 @@ class ArtIndex(
 
     fun hit(key: String): List<String>? = entries[key]?.fields
 
-    fun lookup(key: String, sources: List<String>? = null): Known? {
+    fun lookup(key: String, sources: List<String>? = null, partial: (List<String>) -> Boolean = { false }): Known? {
         val entry = entries[key] ?: return null
         val fields = entry.fields
-        if (fields != null) return Known.Hit(fields)
-        if (sources != null && entry.missSources != sources) return null
+        if (fields != null) {
+            if (partial(fields) && (!entry.partial || entry.retry ||
+                    (sources != null && entry.sources != sources) || clock() - entry.savedAt >= ArtFinder.MISS_MAX_AGE_MS)) return null
+            return Known.Hit(fields)
+        }
+        if (sources != null && entry.sources != sources) return null
         return if (clock() - entry.savedAt < ArtFinder.MISS_MAX_AGE_MS) Known.Miss else null
     }
 
     @Synchronized
-    fun put(key: String, fields: List<String>?, sources: List<String> = emptyList()) {
-        val entry = Entry(fields, clock(), if (fields == null) sources else emptyList())
+    fun put(key: String, fields: List<String>?, sources: List<String> = emptyList(), partial: Boolean = false, retry: Boolean = false) {
+        val entry = Entry(fields, clock(), if (fields == null || partial) sources else emptyList(), partial, retry)
         entries[key] = entry
         file.parentFile?.mkdirs()
         file.appendText(lineOf(key, entry))
@@ -188,8 +213,9 @@ class ArtIndex(
     }
 
     @Synchronized
-    fun forgetMisses() {
+    fun forgetMisses(retryHits: Boolean = false) {
         entries.entries.removeIf { it.value.fields == null }
+        if (retryHits) entries.replaceAll { _, entry -> if (entry.partial) entry.copy(retry = true) else entry }
         rewrite()
     }
 
@@ -206,8 +232,16 @@ class ArtIndex(
 
     private fun lineOf(key: String, entry: Entry): String {
         val fields = entry.fields
-        val head = listOf(escape(key), entry.savedAt.toString(), if (fields == null) MISS else HIT)
-        val values = fields ?: entry.missSources
+        val kind = when {
+            fields == null -> MISS
+            !entry.partial -> HIT
+            entry.retry -> RETRY
+            else -> PARTIAL
+        }
+        val head = listOf(escape(key), entry.savedAt.toString(), kind)
+        val values = if (entry.partial && fields != null) {
+            listOf(entry.sources.size.toString()) + entry.sources + fields
+        } else fields ?: entry.sources
         return (head + values.map(::escape)).joinToString("\t", postfix = "\n")
     }
 
@@ -215,6 +249,8 @@ class ArtIndex(
         const val COMPACT_FLOOR = 64
         const val HIT = "h"
         const val MISS = "m"
+        const val PARTIAL = "p"
+        const val RETRY = "r"
 
         fun escape(text: String): String =
             text.replace("\\", "\\\\").replace("\t", "\\t").replace("\n", "\\n")

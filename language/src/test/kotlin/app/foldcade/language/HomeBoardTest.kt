@@ -170,6 +170,47 @@ class HomeBoardTest {
     }
 
     @Test
+    fun allLibraryOmitsSetupTilesWhileKeepingPcAndStreamedGames() {
+        val pc = item("exported-pc", kind = HomeKind.GameNative)
+        val streamed = item("streamed", kind = HomeKind.Moonlight)
+        val placeholders = listOf(
+            item("empty-pc", kind = HomeKind.GameNative).copy(placeholder = true),
+            item("empty-stream", kind = HomeKind.Moonlight).copy(placeholder = true),
+        )
+        val catalog = listOf(pc, streamed) + placeholders
+        assertEquals(setOf(pc.id, streamed.id), allItems(catalog, platforms, AllTab.Games, AllSort.Title, null).map { it.id }.toSet())
+        assertTrue(allItems(catalog, platforms, AllTab.Apps, AllSort.Title, null).isEmpty())
+        val rom = item("rom", kind = HomeKind.Rom).copy(platformId = "nintendo-ds")
+        val pcHint = placeholders.first().copy(platformId = "pc")
+        val choices = platforms + HomePlatform("pc", "PC")
+        assertEquals("nintendo-ds", cycleSystemFilter(HomeBoard(), choices, listOf(pcHint, rom)).allSystemId)
+    }
+
+    @Test
+    fun allGamesSystemChoicesExcludePlatformsWithOnlyApplications() {
+        val android = HomePlatform("android", "Android")
+        val app = item("utility", kind = HomeKind.AndroidApp).copy(platformId = android.id)
+        val rom = item("rom", kind = HomeKind.Rom).copy(platformId = "nintendo-ds")
+        val systems = platforms + android
+        assertNull(cycleSystemFilter(HomeBoard(), systems, listOf(app)).allSystemId)
+        val ds = cycleSystemFilter(HomeBoard(), systems, listOf(app, rom))
+        assertEquals("nintendo-ds", ds.allSystemId)
+        assertNull(cycleSystemFilter(ds, systems, listOf(app, rom)).allSystemId)
+    }
+
+    @Test
+    fun allGamesIncludesEveryGameKindAndAllAppsContainsOnlyApplications() {
+        val games = listOf(HomeKind.Rom, HomeKind.AndroidGame, HomeKind.GameNative, HomeKind.Moonlight)
+            .map { item(it.name, kind = it) }
+        val app = item("utility", kind = HomeKind.AndroidApp)
+        val loose = item("loose", kind = HomeKind.Loose)
+        val catalog = games + app + loose
+        assertEquals(games.map { it.id }.toSet(), allItems(catalog, platforms, AllTab.Games, AllSort.Title, null).map { it.id }.toSet())
+        assertEquals(listOf(app.id), allItems(catalog, platforms, AllTab.Apps, AllSort.Title, null).map { it.id })
+        assertTrue(allItems(catalog, platforms, AllTab.Games, AllSort.Title, "nintendo-ds").isEmpty())
+    }
+
+    @Test
     fun allLibrarySortsFiltersAndJumpsLetters() {
         val items = listOf(
             item("b", title = "Beta", platformId = "gba"),

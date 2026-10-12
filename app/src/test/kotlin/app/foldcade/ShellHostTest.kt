@@ -21,6 +21,7 @@ import app.foldcade.localfolder.LocalFolderBackend
 import app.foldcade.localfolder.LocalFolderEntry
 import app.foldcade.plugins.romm.RommEntry
 import app.foldcade.plugins.romm.RommPlugins
+import app.foldcade.romm.normalizeSetupOrigin
 import java.nio.file.Files
 import java.util.ServiceLoader
 import java.util.concurrent.atomic.AtomicInteger
@@ -34,6 +35,99 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class ShellHostTest {
+    @Test
+    fun originEditsSupersedeChallengesEvenWhenTheNormalizedAddressIsUnchanged() {
+        val shell = shell(PluginHost(Dispatchers.Unconfined, MemoryCredentialStore()))
+        val address = "https://romm.example"
+        shell.openConnect(address)
+        val visit = shell.beginDeviceCodeAttempt()
+        val revision = shell.connectOriginRevision
+        shell.showSetupHint(app.foldcade.language.Copy.rommCodeExpired, retry = true)
+        shell.editOrigin("$address/")
+        assertEquals(normalizeSetupOrigin(address), normalizeSetupOrigin(shell.model.connectOrigin))
+        assertTrue(shell.deviceCodeVisitCurrent(visit))
+        assertFalse(shell.deviceCodeFormCurrent(visit, revision))
+        assertTrue(shell.deviceCodeFormCurrent(visit, shell.connectOriginRevision))
+        assertNull(shell.model.connectHint)
+        assertTrue(shell.model.connectRetry)
+        shell.editOrigin(address)
+        assertFalse(shell.deviceCodeFormCurrent(visit, revision))
+        assertTrue(shell.deviceCodeFormCurrent(visit, shell.connectOriginRevision))
+    }
+
+    @Test
+    fun tokenValidationRetiresDeviceCodePollingOnBothDisplaysUntilAnExplicitRetry() {
+        val shell = shell(PluginHost(Dispatchers.Unconfined, MemoryCredentialStore()))
+        shell.openConnect("https://romm.example")
+        val visit = shell.beginDeviceCodeAttempt()
+        val revision = shell.connectOriginRevision
+        assertTrue(shell.deviceCodeFormCurrent(visit, revision))
+        val ticket = shell.beginSetupValidation()!!
+        assertFalse(shell.deviceCodeVisitCurrent(visit))
+        shell.showSetupHint("Token refused", retry = true)
+        shell.finishSetupValidation(ticket)
+        assertFalse(shell.deviceCodeFormCurrent(visit, revision))
+        shell.editOrigin("https://another.example")
+        assertTrue(shell.model.connectRetry)
+        assertEquals(app.foldcade.language.Effect.RetryRommDeviceCode, shell.touchConnect(3, HostScreen.Bottom))
+        val editedTicket = shell.beginSetupValidation()!!
+        shell.editOrigin("https://edited.example")
+        assertFalse(shell.setupValidationCurrent(editedTicket))
+        assertTrue(shell.model.connectRetry)
+        assertEquals(app.foldcade.language.Effect.RetryRommDeviceCode, shell.touchConnect(3, HostScreen.Top))
+        val retry = shell.beginDeviceCodeAttempt()
+        assertTrue(shell.deviceCodeFormCurrent(retry, shell.connectOriginRevision))
+        shell.closeConnect()
+        shell.openConnect("https://romm.example")
+        assertFalse(shell.deviceCodeVisitCurrent(retry))
+    }
+
+    @Test
+    fun artKeyValidationRejectsDuplicatesEditsAndResultsFromACancelledVisit() {
+        val shell = shell(PluginHost(Dispatchers.Unconfined, MemoryCredentialStore()))
+        shell.openArtKey()
+        shell.editToken("first-key")
+        val first = shell.beginSetupValidation()!!
+        assertTrue(shell.model.connectBusy)
+        assertNull(shell.touchConnect(1, HostScreen.Top))
+        assertNull(shell.beginSetupValidation())
+        shell.editToken("second-key")
+        assertFalse(shell.setupValidationCurrent(first))
+        val second = shell.beginSetupValidation()!!
+        shell.onMeaning(Meaning.Back, HostScreen.Top)
+        shell.openArtKey()
+        val third = shell.beginSetupValidation()!!
+        shell.finishSetupValidation(second)
+        assertFalse(shell.setupValidationCurrent(second))
+        assertTrue(shell.model.connectBusy)
+        shell.finishSetupValidation(third)
+        assertFalse(shell.model.connectBusy)
+    }
+
+    @Test
+    fun expiredRommCodesOfferControllerAndTouchRetryAndDoNotLeakIntoArtKeySetup() {
+        val shell = shell(PluginHost(Dispatchers.Unconfined, MemoryCredentialStore()))
+        shell.openConnect("https://romm.example")
+        shell.showSetupHint(app.foldcade.language.Copy.rommCodeExpired, retry = true)
+        repeat(3) { shell.onMeaning(Meaning.MoveDown, HostScreen.Top) }
+        assertEquals(app.foldcade.language.Effect.RetryRommDeviceCode, shell.onMeaning(Meaning.Activate, HostScreen.Top))
+        assertEquals(app.foldcade.language.Effect.RetryRommDeviceCode, shell.touchConnect(3, HostScreen.Top))
+        val previousAttempt = shell.connectVisit
+        assertTrue(shell.beginDeviceCodeAttempt() > previousAttempt)
+        assertFalse(shell.model.connectRetry)
+        shell.showSetupHint(app.foldcade.language.Copy.rommCodeDenied, retry = true)
+        shell.beginSetupValidation()
+        assertNull(shell.touchConnect(3, HostScreen.Top))
+        shell.editOrigin("https://another.example")
+        assertTrue(shell.model.connectRetry)
+        assertNull(shell.model.connectHint)
+        val visit = shell.connectVisit
+        shell.closeConnect()
+        shell.openArtKey()
+        assertTrue(shell.connectVisit > visit)
+        assertFalse(shell.model.connectRetry)
+    }
+
     @Test
     fun setupValidationRejectsDuplicateSubmitsAndStaleFormResults() {
         val shell = shell(PluginHost(Dispatchers.Unconfined, MemoryCredentialStore()))

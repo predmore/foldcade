@@ -1228,8 +1228,8 @@ private fun Modifier.fadingHero(
 }
 
 /**
- * The top screen's scene for a game: at once when it is already known,
- * otherwise after one lookup. Changing artwork sources or the Game art setting asks again.
+ * Shows cached scene parts immediately, then fills missing ones when a lookup is due.
+ * Changing artwork sources or the Game art setting asks again.
  */
 @Composable
 private fun rememberScene(app: FoldcadeApp, record: Game?, query: ArtQuery?): ArtScene? {
@@ -1239,9 +1239,9 @@ private fun rememberScene(app: FoldcadeApp, record: Game?, query: ArtQuery?): Ar
     val held = remember(record, query, allowed, connections, artKeySaved) { app.covers.cachedScene(record, query) }
     var fetched by remember(record, query, allowed, connections, artKeySaved) { mutableStateOf<ArtScene?>(null) }
     LaunchedEffect(record, query, allowed, connections, artKeySaved) {
-        if ((record != null || query != null) && held == null) fetched = app.covers.fetchScene(record, query)
+        if ((record != null || query != null) && held?.complete != true) fetched = app.covers.fetchScene(record, query)
     }
-    return held ?: fetched
+    return fetched ?: held
 }
 
 /**
@@ -1490,6 +1490,7 @@ private const val COVER_SIZE_KEY = "foldcade.px"
  */
 private suspend fun prepareHeroArt(app: FoldcadeApp, context: Context, record: Game?, query: ArtQuery?) {
     if (record == null && query == null) return
+    // Warm useful cached parts immediately. rememberScene refreshes missing parts after arrival.
     val scene = app.covers.cachedScene(record, query) ?: app.covers.fetchScene(record, query)
     val cover = (app.covers.cached(record, query) ?: app.covers.fetch(record, query))?.cover
     val wide = scene?.background
@@ -3102,7 +3103,7 @@ private fun ConnectScreen(
     val theme = foldTheme()
     val model = app.shell.model
     val artKey = model.connectKind == ConnectKind.ArtKey
-    val fields = connectFields(model.connectKind)
+    val fields = connectFields(model.connectKind, model.connectRetry)
     val ringed = fields[model.connectIndex.coerceIn(fields.indices)]
     val origin = remember { FocusRequester() }
     val token = remember { FocusRequester() }
@@ -3119,7 +3120,7 @@ private fun ConnectScreen(
         val field = when (ringed) {
             ConnectField.Origin -> origin
             ConnectField.Token -> token
-            ConnectField.Save -> return@LaunchedEffect
+            ConnectField.Save, ConnectField.Retry -> return@LaunchedEffect
         }
         takeKeyboardFocus()
         field.requestFocus()
@@ -3191,13 +3192,27 @@ private fun ConnectScreen(
                 .padding(horizontal = px(20f), vertical = px(10f)),
         )
         BasicText(
-            text = if (model.connectBusy) "Checking token…" else if (artKey) Copy.saveKey else Copy.saveToken,
+            text = when {
+                model.connectBusy -> if (artKey) "Checking key…" else "Checking token…"
+                artKey -> Copy.saveKey
+                else -> Copy.saveToken
+            },
             modifier = Modifier
                 .chip(focused(model, ConnectField.Save))
                 .hostPress { if (!model.connectBusy) onEffect(app.shell.touchConnect(fields.indexOf(ConnectField.Save), screen)) }
                 .padding(horizontal = px(20f), vertical = px(10f)),
             style = text(theme.onBackground, LocalFoldTheme.current.theme.style.type.dialogBody, theme),
         )
+        if (!artKey && model.connectRetry) {
+            BasicText(
+                text = Copy.rommNewCode,
+                modifier = Modifier
+                    .chip(focused(model, ConnectField.Retry))
+                    .hostPress { onEffect(app.shell.touchConnect(fields.indexOf(ConnectField.Retry), screen)) }
+                    .padding(horizontal = px(20f), vertical = px(10f)),
+                style = text(theme.onBackground, TypeRamp.dialogBody, theme),
+            )
+        }
         BasicText(
             text = if (artKey) Copy.artKeyHelp else Copy.rommTokenHelp,
             style = text(theme.muted, LocalFoldTheme.current.theme.style.type.dialogBody, theme),
@@ -3213,7 +3228,7 @@ private fun typing(current: ConnectField?, field: ConnectField, focused: Boolean
 }
 
 private fun focused(model: app.foldcade.language.PickerModel, field: ConnectField): Boolean {
-    val fields = connectFields(model.connectKind)
+    val fields = connectFields(model.connectKind, model.connectRetry)
     return fields[model.connectIndex.coerceIn(fields.indices)] == field
 }
 

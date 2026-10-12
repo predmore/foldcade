@@ -134,6 +134,10 @@ class ShellController(
         private set
 
     private var setupValidation = 0
+    var connectVisit: Int = 0
+        private set
+    var connectOriginRevision: Int = 0
+        private set
 
     /** Shared by the two activities; the form always saves to the connection it opened for. */
     var connectRommId: String = RommCredentials.PLUGIN_ID
@@ -144,7 +148,9 @@ class ShellController(
     fun beginSetupValidation(): Int? {
         if (!model.connectOpen || model.connectBusy) return null
         setupValidation += 1
-        model = model.copy(connectBusy = true, connectHint = null)
+        // A token submitted on either display retires every outstanding challenge.
+        if (model.connectKind == ConnectKind.Romm) connectVisit += 1
+        model = model.copy(connectBusy = true, connectHint = null, connectRetry = model.connectKind == ConnectKind.Romm)
         return setupValidation
     }
 
@@ -637,7 +643,12 @@ class ShellController(
     }
 
     fun editOrigin(origin: String) {
-        if (origin != model.connectOrigin) invalidateSetupValidation()
+        if (origin != model.connectOrigin) {
+            invalidateSetupValidation()
+            connectOriginRevision += 1
+            // Keep retry available until a replacement challenge arrives; token checks retire polling.
+            model = model.copy(connectHint = null)
+        }
         model = model.copy(
             connectOrigin = origin,
             connectWarning = cleartextCredentialWarning(origin),
@@ -653,6 +664,7 @@ class ShellController(
 
     fun openConnect(origin: String, another: Boolean = false, instanceId: String = RommCredentials.PLUGIN_ID) {
         invalidateSetupValidation()
+        connectVisit += 1
         connectRommId = instanceId
         val screen = model.connectScreen ?: HostScreen.Top
         val shown = if (another) "" else origin
@@ -665,6 +677,7 @@ class ShellController(
             connectIndex = 0,
             connectWarning = cleartextCredentialWarning(shown),
             connectHint = null,
+            connectRetry = false,
             connectKind = ConnectKind.Romm,
             connectAnother = another,
         )
@@ -673,6 +686,7 @@ class ShellController(
     /** The connect form, asking for a SteamGridDB key. */
     fun openArtKey() {
         invalidateSetupValidation()
+        connectVisit += 1
         val screen = model.connectScreen ?: HostScreen.Top
         connectToken = ""
         model = model.copy(
@@ -682,6 +696,7 @@ class ShellController(
             connectIndex = 0,
             connectWarning = null,
             connectHint = null,
+            connectRetry = false,
             connectKind = ConnectKind.ArtKey,
         )
     }
@@ -695,9 +710,23 @@ class ShellController(
         if (model.artKeySaved != saved) model = model.copy(artKeySaved = saved)
     }
 
-    fun showSetupHint(hint: String?) {
-        model = model.copy(connectHint = hint)
+    fun showSetupHint(hint: String?, retry: Boolean = false) {
+        model = model.copy(connectHint = hint, connectRetry = retry)
     }
+
+    /** A retry on either display supersedes every previous device-code attempt. */
+    fun beginDeviceCodeAttempt(): Int {
+        connectVisit += 1
+        showSetupHint(null)
+        return connectVisit
+    }
+
+    fun deviceCodeVisitCurrent(visit: Int): Boolean =
+        model.connectOpen && model.connectKind == ConnectKind.Romm && connectVisit == visit
+
+    /** Even an edit back to the same address supersedes the previous challenge. */
+    fun deviceCodeFormCurrent(visit: Int, originRevision: Int): Boolean =
+        deviceCodeVisitCurrent(visit) && connectOriginRevision == originRevision && !model.connectBusy
 
     fun setSignedIn(backends: List<SignedInBackend>) {
         model = model.copy(signedIn = backends)
@@ -711,7 +740,7 @@ class ShellController(
     fun closeConnect() {
         invalidateSetupValidation()
         connectToken = ""
-        model = model.copy(connectOpen = false, connectScreen = null, connectHint = null, connectAnother = false)
+        model = model.copy(connectOpen = false, connectScreen = null, connectHint = null, connectAnother = false, connectRetry = false)
         showQueuedPrompt()
     }
 
@@ -789,8 +818,8 @@ class ShellController(
 
     /** One tap focuses a text row. Save activates on that tap. */
     fun touchConnect(index: Int, screen: HostScreen): Effect? {
-        val field = connectFields(model.connectKind).getOrNull(index) ?: return null
-        if (field != ConnectField.Save) {
+        val field = connectFields(model.connectKind, model.connectRetry).getOrNull(index) ?: return null
+        if (field == ConnectField.Origin || field == ConnectField.Token) {
             if (model.connectIndex != index) model = model.copy(connectIndex = index)
             return null
         }
@@ -1575,6 +1604,7 @@ class ShellController(
             platformId = game.platformId,
             mark = game.mark ?: game.platformId?.let { kitMark(it) },
             lastPlayedMillis = lastPlayedMillis(game.id) ?: 0L,
+            placeholder = game.id == Shelf.PC_TILE || game.id == "moonlight",
         )
     }
 

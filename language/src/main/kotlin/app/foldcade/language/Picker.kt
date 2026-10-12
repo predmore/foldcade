@@ -390,6 +390,7 @@ enum class ConnectField {
     Origin,
     Token,
     Save,
+    Retry,
 }
 
 /** What the connect form saves: a RomM server and token, or a SteamGridDB key. */
@@ -398,8 +399,9 @@ enum class ConnectKind {
     ArtKey,
 }
 
-fun connectFields(kind: ConnectKind = ConnectKind.Romm): List<ConnectField> = when (kind) {
-    ConnectKind.Romm -> listOf(ConnectField.Origin, ConnectField.Token, ConnectField.Save)
+fun connectFields(kind: ConnectKind = ConnectKind.Romm, retry: Boolean = false): List<ConnectField> = when (kind) {
+    ConnectKind.Romm -> listOf(ConnectField.Origin, ConnectField.Token, ConnectField.Save) +
+        if (retry) listOf(ConnectField.Retry) else emptyList()
     ConnectKind.ArtKey -> listOf(ConnectField.Token, ConnectField.Save)
 }
 
@@ -638,6 +640,7 @@ sealed interface Effect {
     data object OpenAddRomm : Effect
     data object OpenArtKey : Effect
     data object SaveArtKey : Effect
+    data object RetryRommDeviceCode : Effect
     data object ForgetArtKey : Effect
     data class DialogChoice(val button: DialogButton, val kind: DialogKind) : Effect
     data class ForgetCredentials(val pluginId: String) : Effect
@@ -753,6 +756,7 @@ data class PickerModel(
     val connectWarning: String? = null,
     val connectHint: String? = null,
     val connectBusy: Boolean = false,
+    val connectRetry: Boolean = false,
     val reLoginPending: Boolean = false,
     val playerSaves: List<PlayerSaveSetting> = emptyList(),
     val homeGrid: HomeGrid = HomeGrid.StandIns,
@@ -818,7 +822,7 @@ fun reduce(
         return coerced.copy(saveConflict = if (action != null) null else next) to effect
     }
     if (coerced.connectOpen) {
-        val fields = connectFields(coerced.connectKind)
+        val fields = connectFields(coerced.connectKind, coerced.connectRetry)
         val index = coerced.connectIndex.coerceIn(0, fields.lastIndex)
         val field = fields[index]
         return when (meaning) {
@@ -831,6 +835,7 @@ fun reduce(
             Meaning.MoveDown -> coerced.copy(connectIndex = (index + 1).coerceAtMost(fields.lastIndex)) to null
             Meaning.Activate -> when (field) {
                 ConnectField.Save -> coerced to if (coerced.connectBusy) null else if (coerced.connectKind == ConnectKind.ArtKey) Effect.SaveArtKey else Effect.SaveRommToken
+                ConnectField.Retry -> coerced to if (coerced.connectBusy) null else Effect.RetryRommDeviceCode
                 ConnectField.Origin, ConnectField.Token -> coerced.copy(connectIndex = index) to Effect.EditField
             }
             Meaning.LeftPanel, Meaning.RightPanel ->

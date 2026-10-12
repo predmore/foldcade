@@ -49,6 +49,8 @@ data class HomeItem(
     val platformId: String? = null,
     val mark: String? = null,
     val lastPlayedMillis: Long = 0L,
+    /** A setup/navigation tile, kept on Home but excluded from the All library tabs. */
+    val placeholder: Boolean = false,
 )
 
 data class HomeFolder(
@@ -408,6 +410,12 @@ enum class AllChromeControl {
     Destination,
 }
 
+private fun HomeItem.inAllTab(tab: AllTab): Boolean = !placeholder && when (tab) {
+    AllTab.Games -> kind == HomeKind.Rom || kind == HomeKind.AndroidGame ||
+        kind == HomeKind.GameNative || kind == HomeKind.Moonlight
+    AllTab.Apps -> kind == HomeKind.AndroidApp
+}
+
 fun allItems(
     items: List<HomeItem>,
     platforms: List<HomePlatform>,
@@ -416,14 +424,7 @@ fun allItems(
     systemId: String?,
 ): List<HomeItem> {
     val filtered = items.distinctBy { it.id }.filter { item ->
-        val tabOk = when (tab) {
-            AllTab.Games -> item.kind == HomeKind.Rom
-            AllTab.Apps -> item.kind == HomeKind.AndroidGame ||
-                item.kind == HomeKind.AndroidApp ||
-                item.kind == HomeKind.GameNative ||
-                item.kind == HomeKind.Moonlight
-        }
-        if (!tabOk) return@filter false
+        if (!item.inAllTab(tab)) return@filter false
         if (systemId == null || tab != AllTab.Games) return@filter true
         val platform = resolvePlatform(platforms, item.platformId)
         platform?.id == systemId
@@ -486,7 +487,7 @@ fun cycleAllSort(board: HomeBoard): HomeBoard {
 }
 
 fun cycleSystemFilter(board: HomeBoard, platforms: List<HomePlatform>, items: List<HomeItem>): HomeBoard {
-    val systems = items.mapNotNull { resolvePlatform(platforms, it.platformId)?.id }.distinct()
+    val systems = items.filter { it.inAllTab(AllTab.Games) }.mapNotNull { resolvePlatform(platforms, it.platformId)?.id }.distinct()
     if (systems.isEmpty()) return board.copy(allSystemId = null)
     val current = board.allSystemId
     val next = if (current == null) {
