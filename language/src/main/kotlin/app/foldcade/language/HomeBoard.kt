@@ -210,28 +210,48 @@ fun pickUp(board: HomeBoard, index: Int): HomeBoard {
     )
 }
 
-fun moveHeld(board: HomeBoard, toIndex: Int): HomeBoard {
+/**
+ * Walks the held tile to [toIndex]. It trades places with the tile there, and every tile it
+ * passed on the way is back where it was at pickup, so a long move disturbs one other tile.
+ * Onto a folder that takes it, a game drops in. Onto one that does not, it trades places.
+ */
+fun moveHeld(board: HomeBoard, toIndex: Int, catalog: List<HomeItem>, platforms: List<HomePlatform>): HomeBoard {
     val hold = board.hold ?: return board
-    val slots = visibleSlots(board).toMutableList()
-    val from = hold.index
-    if (from !in slots.indices) return board
     if (toIndex < 0) return board
+    val before = hold.openFolderId?.let { hold.folders[it]?.slots } ?: hold.slots
+    val moving = before.getOrNull(hold.origin) ?: return board
+    val slots = before.toMutableList()
     while (slots.size <= toIndex) slots += null
-    if (from == toIndex) return writeVisible(board, slots)
-    val moving = slots[from]
     val target = slots[toIndex]
-    if (moving == null) return board
     val targetFolder = target?.let { board.folders[it] }
-    if (targetFolder != null && moving != HOME_ALL && board.folders[moving] == null) {
-        slots[from] = null
-        val written = writeVisible(board, slots)
-        val filled = dropInto(written, targetFolder.id, moving)
-        return filled.copy(hold = null)
+    if (targetFolder != null && moving != HOME_ALL && board.folders[moving] == null &&
+        folderTakes(targetFolder, catalog.firstOrNull { it.id == moving }, platforms)
+    ) {
+        slots[hold.origin] = null
+        return dropInto(writeVisible(board, slots), targetFolder.id, moving).copy(hold = null)
     }
-    slots[from] = target
+    slots[hold.origin] = target
     slots[toIndex] = moving
     return writeVisible(board, slots).copy(hold = hold.copy(index = toIndex))
 }
+
+/**
+ * Whether [item] may go in [folder]. A folder the user made takes anything. A platform's
+ * folder takes only that platform's games, and a library's folder only that library's.
+ * The installed Android folders trade among themselves, so an app filed as the wrong
+ * kind can be moved where it belongs. An item the catalog does not know goes only in a
+ * folder the user made.
+ */
+fun folderTakes(folder: HomeFolder, item: HomeItem?, platforms: List<HomePlatform>): Boolean {
+    val platformId = folder.platformId
+    val bucket = folder.bucket
+    if (folder.userMade || (platformId == null && bucket == null)) return true
+    if (item == null) return false
+    if (platformId != null) return item.kind == HomeKind.Rom && romPlatformId(item, platforms) == platformId
+    return item.kind == bucket || (bucket in INSTALLED_KINDS && item.kind in INSTALLED_KINDS)
+}
+
+private val INSTALLED_KINDS: Set<HomeKind> = setOf(HomeKind.AndroidGame, HomeKind.AndroidApp, HomeKind.Emulator)
 
 fun drop(board: HomeBoard, index: Int): HomeBoard {
     if (board.hold == null) return board
@@ -314,11 +334,21 @@ fun folderAround(board: HomeBoard, index: Int, folderId: String, name: String): 
 
 /**
  * Moves the game [id] into [folderId], or onto the first free root slot when [folderId]
- * is null. Its old slot is left empty. Folders and the All tile do not move this way.
+ * is null. Its old slot is left empty. Folders and the All tile do not move this way,
+ * and a game does not go in a folder that does not take it.
  */
-fun moveToFolder(board: HomeBoard, id: String, folderId: String?): HomeBoard {
+fun moveToFolder(
+    board: HomeBoard,
+    id: String,
+    folderId: String?,
+    catalog: List<HomeItem>,
+    platforms: List<HomePlatform>,
+): HomeBoard {
     if (id == HOME_ALL || board.folders[id] != null) return board
-    if (folderId != null && board.folders[folderId] == null) return board
+    if (folderId != null) {
+        val folder = board.folders[folderId] ?: return board
+        if (!folderTakes(folder, catalog.firstOrNull { it.id == id }, platforms)) return board
+    }
     val lifted = board.copy(
         slots = board.slots.map { if (it == id) null else it },
         folders = board.folders.mapValues { (_, folder) ->
@@ -363,15 +393,15 @@ fun addToHome(board: HomeBoard, id: String, folderId: String? = null): HomeBoard
  */
 fun homeFolderFor(board: HomeBoard, item: HomeItem, platforms: List<HomePlatform>): String? {
     val folderId = when (item.kind) {
-        HomeKind.Rom -> {
-            val platform = resolvePlatform(platforms, item.platformId)?.id
-                ?: item.platformId?.takeIf { it.isNotBlank() }
-            platform?.let(::platformFolderId)
-        }
+        HomeKind.Rom -> romPlatformId(item, platforms)?.let(::platformFolderId)
         else -> bucketFolderId(item.kind)
     }
     return folderId?.takeIf { it in board.folders }
 }
+
+/** The canonical platform of a ROM, or its raw platform id when no platform knows it. */
+private fun romPlatformId(item: HomeItem, platforms: List<HomePlatform>): String? =
+    resolvePlatform(platforms, item.platformId)?.id ?: item.platformId?.takeIf { it.isNotBlank() }
 
 /**
  * Puts [item] back on Home, unhidden, where a new one would go. A system folder that

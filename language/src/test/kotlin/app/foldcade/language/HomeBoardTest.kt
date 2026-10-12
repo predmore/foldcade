@@ -16,9 +16,9 @@ class HomeBoardTest {
     @Test
     fun moveLeavesAnEmptySlotAndSwapsANeighbor() {
         val board = board(listOf("a", null, "b"))
-        val moved = moveHeld(pickUp(board, 0), 1)
+        val moved = moveHeld(pickUp(board, 0), 1, emptyList(), platforms)
         assertEquals(listOf(null, "a", "b"), moved.slots)
-        val swapped = moveHeld(pickUp(board, 0), 2)
+        val swapped = moveHeld(pickUp(board, 0), 2, emptyList(), platforms)
         assertEquals(listOf("b", null, "a"), swapped.slots)
     }
 
@@ -29,10 +29,55 @@ class HomeBoardTest {
             slots = listOf("game.cart", "folder.gba"),
             folders = mapOf("folder.gba" to folder),
         )
-        val dropped = moveHeld(pickUp(board, 0), 1)
+        val dropped = moveHeld(pickUp(board, 0), 1, listOf(item("game.cart", platformId = "gba")), platforms)
         assertNull(dropped.hold)
         assertEquals(listOf(null, "folder.gba"), dropped.slots)
         assertEquals(listOf("game.cart"), dropped.folders.getValue("folder.gba").slots)
+    }
+
+    @Test
+    fun aLongMoveTradesPlacesWithOneTileAndLeavesTheRestWhereTheyWere() {
+        val board = board(listOf("a", "b", "c", "d", "e"))
+        var moving = pickUp(board, 0)
+        for (to in 1..4) moving = moveHeld(moving, to, emptyList(), platforms)
+        assertEquals(listOf("e", "b", "c", "d", "a"), moving.slots)
+        // Walking back past the tiles puts each one back.
+        moving = moveHeld(moving, 3, emptyList(), platforms)
+        assertEquals(listOf("d", "b", "c", "a", "e"), moving.slots)
+        moving = moveHeld(moving, 0, emptyList(), platforms)
+        assertEquals(board.slots, moving.slots)
+        // Past the end and back, no empty slots are left behind.
+        moving = moveHeld(moveHeld(moving, 6, emptyList(), platforms), 4, emptyList(), platforms)
+        assertEquals(listOf("e", "b", "c", "d", "a"), moving.slots)
+    }
+
+    @Test
+    fun aGameDoesNotGoInAnotherSystemsFolder() {
+        val ds = HomeFolder(platformFolderId("nintendo-ds"), "Nintendo DS", platformId = "nintendo-ds")
+        val mine = HomeFolder("folder.mine", "Mine", userMade = true)
+        val board = HomeBoard(
+            slots = listOf("game.3ds", ds.id, "folder.mine", HOME_ANDROID_GAMES),
+            folders = mapOf(
+                ds.id to ds,
+                mine.id to mine,
+                HOME_ANDROID_GAMES to HomeFolder(HOME_ANDROID_GAMES, "Android Games", bucket = HomeKind.AndroidGame),
+            ),
+        )
+        val catalog = listOf(item("game.3ds", platformId = "3ds"))
+        // Walking onto the DS folder trades places with it instead of dropping in.
+        val passed = moveHeld(pickUp(board, 0), 1, catalog, platforms)
+        assertEquals(listOf(ds.id, "game.3ds", "folder.mine", HOME_ANDROID_GAMES), passed.slots)
+        assertTrue(passed.folders.getValue(ds.id).slots.isEmpty())
+        // A folder the user made takes it.
+        val inMine = moveHeld(passed, 2, catalog, platforms)
+        assertNull(inMine.hold)
+        assertEquals(listOf("game.3ds"), inMine.folders.getValue("folder.mine").slots)
+
+        assertEquals(board, moveToFolder(board, "game.3ds", ds.id, catalog, platforms))
+        assertEquals(board, moveToFolder(board, "game.3ds", HOME_ANDROID_GAMES, catalog, platforms))
+        // Not in the catalog yet, so it only goes in a folder the user made.
+        assertEquals(board, moveToFolder(board, "game.3ds", ds.id, emptyList(), platforms))
+        assertEquals(listOf("game.3ds"), moveToFolder(board, "game.3ds", "folder.mine", emptyList(), platforms).folders.getValue("folder.mine").slots)
     }
 
     @Test
@@ -134,7 +179,7 @@ class HomeBoardTest {
     @Test
     fun cancelRestoresThePickupAndEncodeRoundTrips() {
         val board = board(listOf("a", "b", null))
-        val moved = moveHeld(pickUp(board, 0), 2)
+        val moved = moveHeld(pickUp(board, 0), 2, emptyList(), platforms)
         val restored = cancelHold(moved)
         assertEquals(listOf("a", "b", null), restored.slots)
         assertNull(restored.hold)
@@ -307,7 +352,7 @@ class HomeBoardTest {
         assertTrue(decodeHome(encodeHome(filed)).emulatorsFiled)
 
         // The user moves it back. It stays.
-        val moved = moveToFolder(filed, azahar.id, HOME_ANDROID_APPS)
+        val moved = moveToFolder(filed, azahar.id, HOME_ANDROID_APPS, listOf(azahar, notes), platforms)
         val again = mergeHome(decodeHome(encodeHome(moved)), listOf(azahar, notes), platforms)
         assertTrue(azahar.id in again.folders.getValue(HOME_ANDROID_APPS).slots)
         assertFalse(again.folders.containsKey(HOME_EMULATORS))
@@ -396,15 +441,15 @@ class HomeBoardTest {
             slots = listOf(HOME_ALL, "game.cart", "folder.mine"),
             folders = mapOf("folder.mine" to mine),
         )
-        val inside = moveToFolder(board, "game.cart", "folder.mine")
+        val inside = moveToFolder(board, "game.cart", "folder.mine", emptyList(), platforms)
         assertEquals(listOf(HOME_ALL, null, "folder.mine"), inside.slots)
         assertEquals(listOf("kept", "game.cart"), inside.folders.getValue("folder.mine").slots)
-        val back = moveToFolder(inside, "game.cart", null)
+        val back = moveToFolder(inside, "game.cart", null, emptyList(), platforms)
         assertEquals(listOf(HOME_ALL, "game.cart", "folder.mine"), back.slots)
         assertEquals(listOf("kept", null), back.folders.getValue("folder.mine").slots)
         // Folders and the All tile stay where they are.
-        assertEquals(board, moveToFolder(board, "folder.mine", null))
-        assertEquals(board, moveToFolder(board, HOME_ALL, "folder.mine"))
+        assertEquals(board, moveToFolder(board, "folder.mine", null, emptyList(), platforms))
+        assertEquals(board, moveToFolder(board, HOME_ALL, "folder.mine", emptyList(), platforms))
     }
 
     @Test
