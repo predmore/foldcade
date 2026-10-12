@@ -33,6 +33,35 @@ import org.junit.Test
 
 class SettingsPersistenceTest {
     @Test
+    fun iconProviderSelectionPersistsIndependentlyOfTheBaseTheme() {
+        val prefs = MemoryPrefs()
+        val changed = shell(prefs)
+        changed.openSetting(Row.IconTheme)
+        changed.onMeaning(Meaning.Activate, HostScreen.Bottom)
+        changed.onMeaning(Meaning.Activate, HostScreen.Bottom)
+        assertEquals(1, changed.model.iconThemeIndex)
+        assertEquals("Afterglow", SessionStore(prefs).iconTheme())
+        val restored = shell(prefs)
+        assertEquals(1, restored.model.iconThemeIndex)
+        restored.openSetting(Row.Theme)
+        restored.onMeaning(Meaning.Activate, HostScreen.Bottom)
+        assertEquals(0, restored.model.themeIndex)
+        assertEquals(1, restored.model.iconThemeIndex)
+    }
+
+    @Test
+    fun stableThemeIdsRestoreOldNamesAndKeepUnavailableProvidersSaved() {
+        val prefs = MemoryPrefs()
+        val store = SessionStore(prefs)
+        store.setTheme("Afterglow")
+        assertEquals(1, store.themeIndex(listOf("builtin", "afterglow"), listOf("Built-in", "Afterglow")))
+        store.setTheme("afterglow")
+        assertEquals(0, store.themeIndex(listOf("afterglow", "builtin"), listOf("Afterglow", "Built-in")))
+        store.setIconTheme("temporarily-unavailable")
+        assertNull(shell(prefs).model.iconThemeIndex)
+        assertEquals("temporarily-unavailable", SessionStore(prefs).iconTheme())
+    }
+    @Test
     fun settingsEditedInTheShellSurviveARecreatedController() {
         val prefs = MemoryPrefs()
         val changed = shell(prefs)

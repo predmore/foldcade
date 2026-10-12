@@ -31,7 +31,6 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
-import app.foldcade.language.TypeRamp
 import kotlin.math.min
 
 /**
@@ -78,7 +77,7 @@ fun SliderRow(
                 modifier = Modifier.weight(1f),
                 style = TextStyle(
                     color = if (focused) theme.onBackground else theme.muted,
-                    fontSize = TypeRamp.sideRow,
+                    fontSize = LocalFoldTheme.current.theme.style.type.sideRow,
                     fontFamily = theme.font,
                 ),
             )
@@ -86,7 +85,7 @@ fun SliderRow(
                 text = value,
                 style = TextStyle(
                     color = if (focused) theme.focus else theme.onBackground,
-                    fontSize = TypeRamp.sideRow,
+                    fontSize = LocalFoldTheme.current.theme.style.type.sideRow,
                     fontFamily = theme.font,
                     textAlign = TextAlign.End,
                 ),

@@ -97,6 +97,8 @@ class ShellController(
     private val onTheme: (Int) -> Unit = {},
     private val themeNames: List<String> = listOf(Copy.builtIn),
     private val themeMotions: List<BackgroundMotion> = listOf(BackgroundMotion.Off),
+    private val themeIds: List<String> = themeNames,
+    private val backgroundChoices: List<app.foldcade.language.BackgroundChoice>? = null,
     private val cue: (themeIndex: Int, slot: String) -> Boolean = { _, _ -> false },
     private val bareTick: () -> Unit = {},
     private val homeTracks: List<MusicTrack> = emptyList(),
@@ -1401,8 +1403,11 @@ class ShellController(
         }
         if (next.sort != model.sort) store.setLibrarySort(next.sort)
         if (next.themeIndex != model.themeIndex) {
-            store.setTheme(next.themes[next.themeIndex])
+            store.setTheme(next.themeIds[next.themeIndex])
             onTheme(next.themeIndex)
+        }
+        if (next.iconThemeIndex != model.iconThemeIndex) {
+            store.setIconTheme(next.iconThemeIndex?.let { themeIds.getOrNull(it) })
         }
         if (next.music != model.music) {
             store.setMusic(next.music.enabled, next.music.volume, next.music.trackId)
@@ -1615,13 +1620,15 @@ class ShellController(
 
     private fun initial(): PickerModel {
         val names = themeNames.ifEmpty { listOf(Copy.builtIn) }
-        val index = store.themeIndex(names)
+        val index = store.themeIndex(themeIds, names)
         val pinned = store.backgroundMotionPinned()
-        val motion = if (pinned) {
+        val savedMotion = if (pinned) {
             store.backgroundMotion()
         } else {
             themeMotions.getOrElse(index) { BackgroundMotion.Off }
         }
+        val choices = backgroundChoices ?: app.foldcade.language.PickerModel(count = 0, rowsPerPage = 1).backgroundChoices
+        val motion = app.foldcade.language.resolveBackgroundChoice(savedMotion, choices, themeMotions.getOrElse(index) { BackgroundMotion.Off })
         val stored = HomeMusicSetting(store.musicEnabled(), store.musicVolume(), store.musicTrackId())
         val offered = offeredMusicTracks(homeTracks, themeTracks.getOrNull(index))
         val selected = selectedMusicTrack(offered, stored.trackId)
@@ -1638,7 +1645,10 @@ class ShellController(
             homeTracks = homeTracks,
             themeTracks = themeTracks,
             themes = names,
+            themeIds = themeIds,
             themeIndex = index,
+            iconThemeIndex = store.iconTheme()?.let { themeIds.indexOf(it).takeIf { index -> index >= 0 } },
+            backgroundChoices = choices,
             themeMotions = themeMotions,
             backgroundMotion = motion,
             backgroundPinned = pinned,

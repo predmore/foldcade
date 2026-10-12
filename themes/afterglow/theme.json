@@ -7,5 +7,801 @@
   "focus": "#C8FFE4",
   "iconRadius": 0.28,
   "artScale": 0.92,
-  "backgroundMotion": "ribbons"
+  "backgroundMotion": "ribbons",
+  "version": 2,
+  "id": "afterglow",
+  "icons": {
+    "badge.check": {
+      "file": "icons/ic_badge_check.xml",
+      "tint": true
+    },
+    "badge.cloud": {
+      "file": "icons/ic_badge_cloud.xml",
+      "tint": true
+    },
+    "badge.sync": {
+      "file": "icons/ic_badge_sync.xml",
+      "tint": true
+    },
+    "button.a": {
+      "file": "icons/ic_btn_a.xml",
+      "tint": false
+    },
+    "button.a.filled": {
+      "file": "icons/ic_btn_a_filled.xml",
+      "tint": false
+    },
+    "button.b": {
+      "file": "icons/ic_btn_b.xml",
+      "tint": false
+    },
+    "button.b.filled": {
+      "file": "icons/ic_btn_b_filled.xml",
+      "tint": false
+    },
+    "button.back": {
+      "file": "icons/ic_btn_back.xml",
+      "tint": false
+    },
+    "button.back.filled": {
+      "file": "icons/ic_btn_back_filled.xml",
+      "tint": false
+    },
+    "button.dpad": {
+      "file": "icons/ic_btn_dpad.xml",
+      "tint": false
+    },
+    "button.dpad.down": {
+      "file": "icons/ic_btn_dpad_down.xml",
+      "tint": false
+    },
+    "button.dpad.filled": {
+      "file": "icons/ic_btn_dpad_filled.xml",
+      "tint": false
+    },
+    "button.dpad.left": {
+      "file": "icons/ic_btn_dpad_left.xml",
+      "tint": false
+    },
+    "button.dpad.right": {
+      "file": "icons/ic_btn_dpad_right.xml",
+      "tint": false
+    },
+    "button.dpad.up": {
+      "file": "icons/ic_btn_dpad_up.xml",
+      "tint": false
+    },
+    "button.face.diamond": {
+      "file": "icons/ic_btn_face_diamond.xml",
+      "tint": false
+    },
+    "button.face.diamond.a": {
+      "file": "icons/ic_btn_face_diamond_a.xml",
+      "tint": false
+    },
+    "button.face.diamond.a.filled": {
+      "file": "icons/ic_btn_face_diamond_a_filled.xml",
+      "tint": false
+    },
+    "button.face.diamond.b": {
+      "file": "icons/ic_btn_face_diamond_b.xml",
+      "tint": false
+    },
+    "button.face.diamond.b.filled": {
+      "file": "icons/ic_btn_face_diamond_b_filled.xml",
+      "tint": false
+    },
+    "button.face.diamond.blank": {
+      "file": "icons/ic_btn_face_diamond_blank.xml",
+      "tint": false
+    },
+    "button.face.diamond.blank.bottom": {
+      "file": "icons/ic_btn_face_diamond_blank_bottom.xml",
+      "tint": false
+    },
+    "button.face.diamond.blank.bottom.filled": {
+      "file": "icons/ic_btn_face_diamond_blank_bottom_filled.xml",
+      "tint": false
+    },
+    "button.face.diamond.blank.filled": {
+      "file": "icons/ic_btn_face_diamond_blank_filled.xml",
+      "tint": false
+    },
+    "button.face.diamond.blank.left": {
+      "file": "icons/ic_btn_face_diamond_blank_left.xml",
+      "tint": false
+    },
+    "button.face.diamond.blank.left.filled": {
+      "file": "icons/ic_btn_face_diamond_blank_left_filled.xml",
+      "tint": false
+    },
+    "button.face.diamond.blank.right": {
+      "file": "icons/ic_btn_face_diamond_blank_right.xml",
+      "tint": false
+    },
+    "button.face.diamond.blank.right.filled": {
+      "file": "icons/ic_btn_face_diamond_blank_right_filled.xml",
+      "tint": false
+    },
+    "button.face.diamond.blank.top": {
+      "file": "icons/ic_btn_face_diamond_blank_top.xml",
+      "tint": false
+    },
+    "button.face.diamond.blank.top.filled": {
+      "file": "icons/ic_btn_face_diamond_blank_top_filled.xml",
+      "tint": false
+    },
+    "button.face.diamond.filled": {
+      "file": "icons/ic_btn_face_diamond_filled.xml",
+      "tint": false
+    },
+    "button.face.diamond.n": {
+      "file": "icons/ic_btn_face_diamond_n.xml",
+      "tint": false
+    },
+    "button.face.diamond.n.a": {
+      "file": "icons/ic_btn_face_diamond_n_a.xml",
+      "tint": false
+    },
+    "button.face.diamond.n.a.filled": {
+      "file": "icons/ic_btn_face_diamond_n_a_filled.xml",
+      "tint": false
+    },
+    "button.face.diamond.n.b": {
+      "file": "icons/ic_btn_face_diamond_n_b.xml",
+      "tint": false
+    },
+    "button.face.diamond.n.b.filled": {
+      "file": "icons/ic_btn_face_diamond_n_b_filled.xml",
+      "tint": false
+    },
+    "button.face.diamond.n.filled": {
+      "file": "icons/ic_btn_face_diamond_n_filled.xml",
+      "tint": false
+    },
+    "button.face.diamond.n.x": {
+      "file": "icons/ic_btn_face_diamond_n_x.xml",
+      "tint": false
+    },
+    "button.face.diamond.n.x.filled": {
+      "file": "icons/ic_btn_face_diamond_n_x_filled.xml",
+      "tint": false
+    },
+    "button.face.diamond.n.y": {
+      "file": "icons/ic_btn_face_diamond_n_y.xml",
+      "tint": false
+    },
+    "button.face.diamond.n.y.filled": {
+      "file": "icons/ic_btn_face_diamond_n_y_filled.xml",
+      "tint": false
+    },
+    "button.face.diamond.x": {
+      "file": "icons/ic_btn_face_diamond_x.xml",
+      "tint": false
+    },
+    "button.face.diamond.x.a": {
+      "file": "icons/ic_btn_face_diamond_x_a.xml",
+      "tint": false
+    },
+    "button.face.diamond.x.a.filled": {
+      "file": "icons/ic_btn_face_diamond_x_a_filled.xml",
+      "tint": false
+    },
+    "button.face.diamond.x.b": {
+      "file": "icons/ic_btn_face_diamond_x_b.xml",
+      "tint": false
+    },
+    "button.face.diamond.x.b.filled": {
+      "file": "icons/ic_btn_face_diamond_x_b_filled.xml",
+      "tint": false
+    },
+    "button.face.diamond.x.filled": {
+      "file": "icons/ic_btn_face_diamond_x_filled.xml",
+      "tint": false
+    },
+    "button.face.diamond.x.x": {
+      "file": "icons/ic_btn_face_diamond_x_x.xml",
+      "tint": false
+    },
+    "button.face.diamond.x.x.filled": {
+      "file": "icons/ic_btn_face_diamond_x_x_filled.xml",
+      "tint": false
+    },
+    "button.face.diamond.x.y": {
+      "file": "icons/ic_btn_face_diamond_x_y.xml",
+      "tint": false
+    },
+    "button.face.diamond.x.y.filled": {
+      "file": "icons/ic_btn_face_diamond_x_y_filled.xml",
+      "tint": false
+    },
+    "button.face.diamond.y": {
+      "file": "icons/ic_btn_face_diamond_y.xml",
+      "tint": false
+    },
+    "button.face.diamond.y.filled": {
+      "file": "icons/ic_btn_face_diamond_y_filled.xml",
+      "tint": false
+    },
+    "button.home": {
+      "file": "icons/ic_btn_home.xml",
+      "tint": false
+    },
+    "button.home.filled": {
+      "file": "icons/ic_btn_home_filled.xml",
+      "tint": false
+    },
+    "button.l1": {
+      "file": "icons/ic_btn_l1.xml",
+      "tint": false
+    },
+    "button.l1.filled": {
+      "file": "icons/ic_btn_l1_filled.xml",
+      "tint": false
+    },
+    "button.l2": {
+      "file": "icons/ic_btn_l2.xml",
+      "tint": false
+    },
+    "button.l2.filled": {
+      "file": "icons/ic_btn_l2_filled.xml",
+      "tint": false
+    },
+    "button.lstick": {
+      "file": "icons/ic_btn_lstick.xml",
+      "tint": false
+    },
+    "button.lstick.filled": {
+      "file": "icons/ic_btn_lstick_filled.xml",
+      "tint": false
+    },
+    "button.lstick.press": {
+      "file": "icons/ic_btn_lstick_press.xml",
+      "tint": false
+    },
+    "button.r1": {
+      "file": "icons/ic_btn_r1.xml",
+      "tint": false
+    },
+    "button.r1.filled": {
+      "file": "icons/ic_btn_r1_filled.xml",
+      "tint": false
+    },
+    "button.r2": {
+      "file": "icons/ic_btn_r2.xml",
+      "tint": false
+    },
+    "button.r2.filled": {
+      "file": "icons/ic_btn_r2_filled.xml",
+      "tint": false
+    },
+    "button.rstick": {
+      "file": "icons/ic_btn_rstick.xml",
+      "tint": false
+    },
+    "button.rstick.filled": {
+      "file": "icons/ic_btn_rstick_filled.xml",
+      "tint": false
+    },
+    "button.rstick.press": {
+      "file": "icons/ic_btn_rstick_press.xml",
+      "tint": false
+    },
+    "button.select": {
+      "file": "icons/ic_btn_select.xml",
+      "tint": false
+    },
+    "button.select.filled": {
+      "file": "icons/ic_btn_select_filled.xml",
+      "tint": false
+    },
+    "button.square": {
+      "file": "icons/ic_btn_square.xml",
+      "tint": false
+    },
+    "button.square.filled": {
+      "file": "icons/ic_btn_square_filled.xml",
+      "tint": false
+    },
+    "button.start": {
+      "file": "icons/ic_btn_start.xml",
+      "tint": false
+    },
+    "button.start.filled": {
+      "file": "icons/ic_btn_start_filled.xml",
+      "tint": false
+    },
+    "button.triangle": {
+      "file": "icons/ic_btn_triangle.xml",
+      "tint": false
+    },
+    "button.triangle.filled": {
+      "file": "icons/ic_btn_triangle_filled.xml",
+      "tint": false
+    },
+    "button.x": {
+      "file": "icons/ic_btn_x.xml",
+      "tint": false
+    },
+    "button.x.filled": {
+      "file": "icons/ic_btn_x_filled.xml",
+      "tint": false
+    },
+    "button.y": {
+      "file": "icons/ic_btn_y.xml",
+      "tint": false
+    },
+    "button.y.filled": {
+      "file": "icons/ic_btn_y_filled.xml",
+      "tint": false
+    },
+    "status.battery.0": {
+      "file": "icons/ic_status_battery_0.xml",
+      "tint": false
+    },
+    "status.battery.0.charging": {
+      "file": "icons/ic_status_battery_0_charging.xml",
+      "tint": false
+    },
+    "status.battery.10": {
+      "file": "icons/ic_status_battery_10.xml",
+      "tint": false
+    },
+    "status.battery.100": {
+      "file": "icons/ic_status_battery_100.xml",
+      "tint": false
+    },
+    "status.battery.100.charging": {
+      "file": "icons/ic_status_battery_100_charging.xml",
+      "tint": false
+    },
+    "status.battery.10.charging": {
+      "file": "icons/ic_status_battery_10_charging.xml",
+      "tint": false
+    },
+    "status.battery.20": {
+      "file": "icons/ic_status_battery_20.xml",
+      "tint": false
+    },
+    "status.battery.20.charging": {
+      "file": "icons/ic_status_battery_20_charging.xml",
+      "tint": false
+    },
+    "status.battery.30": {
+      "file": "icons/ic_status_battery_30.xml",
+      "tint": false
+    },
+    "status.battery.30.charging": {
+      "file": "icons/ic_status_battery_30_charging.xml",
+      "tint": false
+    },
+    "status.battery.40": {
+      "file": "icons/ic_status_battery_40.xml",
+      "tint": false
+    },
+    "status.battery.40.charging": {
+      "file": "icons/ic_status_battery_40_charging.xml",
+      "tint": false
+    },
+    "status.battery.50": {
+      "file": "icons/ic_status_battery_50.xml",
+      "tint": false
+    },
+    "status.battery.50.charging": {
+      "file": "icons/ic_status_battery_50_charging.xml",
+      "tint": false
+    },
+    "status.battery.60": {
+      "file": "icons/ic_status_battery_60.xml",
+      "tint": false
+    },
+    "status.battery.60.charging": {
+      "file": "icons/ic_status_battery_60_charging.xml",
+      "tint": false
+    },
+    "status.battery.70": {
+      "file": "icons/ic_status_battery_70.xml",
+      "tint": false
+    },
+    "status.battery.70.charging": {
+      "file": "icons/ic_status_battery_70_charging.xml",
+      "tint": false
+    },
+    "status.battery.80": {
+      "file": "icons/ic_status_battery_80.xml",
+      "tint": false
+    },
+    "status.battery.80.charging": {
+      "file": "icons/ic_status_battery_80_charging.xml",
+      "tint": false
+    },
+    "status.battery.90": {
+      "file": "icons/ic_status_battery_90.xml",
+      "tint": false
+    },
+    "status.battery.90.charging": {
+      "file": "icons/ic_status_battery_90_charging.xml",
+      "tint": false
+    },
+    "status.bell": {
+      "file": "icons/ic_status_bell.xml",
+      "tint": false
+    },
+    "status.bell.1": {
+      "file": "icons/ic_status_bell_1.xml",
+      "tint": false
+    },
+    "status.bell.2": {
+      "file": "icons/ic_status_bell_2.xml",
+      "tint": false
+    },
+    "status.bell.3": {
+      "file": "icons/ic_status_bell_3.xml",
+      "tint": false
+    },
+    "status.bell.4": {
+      "file": "icons/ic_status_bell_4.xml",
+      "tint": false
+    },
+    "status.bell.5": {
+      "file": "icons/ic_status_bell_5.xml",
+      "tint": false
+    },
+    "status.bell.6": {
+      "file": "icons/ic_status_bell_6.xml",
+      "tint": false
+    },
+    "status.bell.7": {
+      "file": "icons/ic_status_bell_7.xml",
+      "tint": false
+    },
+    "status.bell.8": {
+      "file": "icons/ic_status_bell_8.xml",
+      "tint": false
+    },
+    "status.bell.9": {
+      "file": "icons/ic_status_bell_9.xml",
+      "tint": false
+    },
+    "status.bell.9plus": {
+      "file": "icons/ic_status_bell_9plus.xml",
+      "tint": false
+    },
+    "status.bell.dot": {
+      "file": "icons/ic_status_bell_dot.xml",
+      "tint": false
+    },
+    "status.bluetooth": {
+      "file": "icons/ic_status_bluetooth.xml",
+      "tint": false
+    },
+    "status.bluetooth.off": {
+      "file": "icons/ic_status_bluetooth_off.xml",
+      "tint": false
+    },
+    "status.display": {
+      "file": "icons/ic_status_display.xml",
+      "tint": false
+    },
+    "status.info": {
+      "file": "icons/ic_status_info.xml",
+      "tint": false
+    },
+    "status.playtime": {
+      "file": "icons/ic_status_playtime.xml",
+      "tint": false
+    },
+    "status.power": {
+      "file": "icons/ic_status_power.xml",
+      "tint": false
+    },
+    "status.settings": {
+      "file": "icons/ic_status_settings.xml",
+      "tint": false
+    },
+    "status.tools": {
+      "file": "icons/ic_status_tools.xml",
+      "tint": false
+    },
+    "status.volume.1": {
+      "file": "icons/ic_status_volume_1.xml",
+      "tint": false
+    },
+    "status.volume.2": {
+      "file": "icons/ic_status_volume_2.xml",
+      "tint": false
+    },
+    "status.volume.3": {
+      "file": "icons/ic_status_volume_3.xml",
+      "tint": false
+    },
+    "status.volume.mute": {
+      "file": "icons/ic_status_volume_mute.xml",
+      "tint": false
+    },
+    "status.wifi.0": {
+      "file": "icons/ic_status_wifi_0.xml",
+      "tint": false
+    },
+    "status.wifi.1": {
+      "file": "icons/ic_status_wifi_1.xml",
+      "tint": false
+    },
+    "status.wifi.2": {
+      "file": "icons/ic_status_wifi_2.xml",
+      "tint": false
+    },
+    "status.wifi.3": {
+      "file": "icons/ic_status_wifi_3.xml",
+      "tint": false
+    },
+    "status.wifi.4": {
+      "file": "icons/ic_status_wifi_4.xml",
+      "tint": false
+    },
+    "status.wifi.off": {
+      "file": "icons/ic_status_wifi_off.xml",
+      "tint": false
+    },
+    "status.wrench": {
+      "file": "icons/ic_status_wrench.xml",
+      "tint": false
+    },
+    "mark.android-apps": {
+      "file": "icons/mark_android_apps.xml",
+      "tint": false,
+      "accent": "#3DDC84"
+    },
+    "mark.android-games": {
+      "file": "icons/mark_android_games.xml",
+      "tint": false,
+      "accent": "#3DDC84"
+    },
+    "mark.cartridge": {
+      "file": "icons/mark_cartridge_lit.xml",
+      "tint": false,
+      "accent": "#3EE0C3"
+    },
+    "mark.clamshell": {
+      "file": "icons/mark_clamshell_lit.xml",
+      "tint": false,
+      "accent": "#FF5C7A"
+    },
+    "mark.cloud": {
+      "file": "icons/mark_cloud_lit.xml",
+      "tint": false,
+      "accent": "#40D6FF"
+    },
+    "mark.console": {
+      "file": "icons/mark_console.xml",
+      "tint": false,
+      "accent": "#FFB547"
+    },
+    "mark.disc": {
+      "file": "icons/mark_disc_lit.xml",
+      "tint": false,
+      "accent": "#BC9CFF"
+    },
+    "mark.dreamcast": {
+      "file": "icons/mark_dreamcast.xml",
+      "tint": false,
+      "accent": "#FF8A3D"
+    },
+    "mark.folder": {
+      "file": "icons/mark_folder.xml",
+      "tint": false,
+      "accent": "#FFB547"
+    },
+    "mark.game-boy": {
+      "file": "icons/mark_game_boy.xml",
+      "tint": false,
+      "accent": "#B6F25C"
+    },
+    "mark.game-boy-advance": {
+      "file": "icons/mark_game_boy_advance.xml",
+      "tint": false,
+      "accent": "#7C8CFF"
+    },
+    "mark.game-boy-color": {
+      "file": "icons/mark_game_boy_color.xml",
+      "tint": false,
+      "accent": "#C77DFF"
+    },
+    "mark.game-gear": {
+      "file": "icons/mark_game_gear.xml",
+      "tint": false,
+      "accent": "#3EE6C0"
+    },
+    "mark.gamecube": {
+      "file": "icons/mark_gamecube.xml",
+      "tint": false,
+      "accent": "#9B7BFF"
+    },
+    "mark.genesis": {
+      "file": "icons/mark_genesis.xml",
+      "tint": false,
+      "accent": "#FF3B52"
+    },
+    "mark.handheld": {
+      "file": "icons/mark_handheld_lit.xml",
+      "tint": false,
+      "accent": "#FFBA48"
+    },
+    "mark.library": {
+      "file": "icons/mark_library.xml",
+      "tint": false,
+      "accent": "#3EE6C0"
+    },
+    "mark.master-system": {
+      "file": "icons/mark_master_system.xml",
+      "tint": false,
+      "accent": "#FF5E3A"
+    },
+    "mark.moonlight": {
+      "file": "icons/mark_moonlight.xml",
+      "tint": false,
+      "accent": "#A9BCFF"
+    },
+    "mark.nes": {
+      "file": "icons/mark_nes.xml",
+      "tint": false,
+      "accent": "#FF4D5A"
+    },
+    "mark.nintendo-3ds": {
+      "file": "icons/mark_nintendo_3ds.xml",
+      "tint": false,
+      "accent": "#FF5C7A"
+    },
+    "mark.nintendo-64": {
+      "file": "icons/mark_nintendo_64.xml",
+      "tint": false,
+      "accent": "#3EE68A"
+    },
+    "mark.nintendo-ds": {
+      "file": "icons/mark_nintendo_ds.xml",
+      "tint": false,
+      "accent": "#FF7A45"
+    },
+    "mark.nintendo-switch": {
+      "file": "icons/mark_nintendo_switch.xml",
+      "tint": false,
+      "accent": "#FF4F5E"
+    },
+    "mark.pc": {
+      "file": "icons/mark_pc.xml",
+      "tint": false,
+      "accent": "#4CC9FF"
+    },
+    "mark.playstation": {
+      "file": "icons/mark_playstation.xml",
+      "tint": false,
+      "accent": "#C3CEDF"
+    },
+    "mark.playstation-2": {
+      "file": "icons/mark_playstation_2.xml",
+      "tint": false,
+      "accent": "#4C8DFF"
+    },
+    "mark.psp": {
+      "file": "icons/mark_psp.xml",
+      "tint": false,
+      "accent": "#6FC3FF"
+    },
+    "mark.saturn": {
+      "file": "icons/mark_saturn.xml",
+      "tint": false,
+      "accent": "#FFC15A"
+    },
+    "mark.slim": {
+      "file": "icons/mark_slim_lit.xml",
+      "tint": false,
+      "accent": "#FF7A45"
+    },
+    "mark.snes": {
+      "file": "icons/mark_snes.xml",
+      "tint": false,
+      "accent": "#B39DFF"
+    },
+    "mark.wii": {
+      "file": "icons/mark_wii.xml",
+      "tint": false,
+      "accent": "#8FDFFF"
+    }
+  },
+  "scenes": [
+    "backgrounds/ribbons.json",
+    "backgrounds/embers.json",
+    "backgrounds/static.json"
+  ],
+  "style": {
+    "focusRing": {
+      "start": "#52B788",
+      "end": "#3E8EC0",
+      "stroke": 6,
+      "gap": 2,
+      "glowSpread": 10,
+      "glowAlpha": 0.1,
+      "glowSteps": 4,
+      "pronouncedStroke": 10,
+      "pronouncedSpread": 22,
+      "pronouncedAlpha": 0.22
+    },
+    "type": {
+      "heroTitle": 28,
+      "conflictGame": 40,
+      "heroMeta": 18,
+      "availability": 16,
+      "gridLabel": 16,
+      "dialogTitle": 20,
+      "dialogBody": 16,
+      "menuRow": 18,
+      "sideRow": 18,
+      "hint": 14,
+      "clock": 64
+    },
+    "glow": {
+      "focusOverflow": 64,
+      "restOverflow": 18,
+      "restTightness": 2.4,
+      "focusTightness": 0.85,
+      "restRim": 0.42,
+      "focusRim": 0.66,
+      "restPeak": 0.22,
+      "focusPeak": 1,
+      "heroPeak": 0.45
+    },
+    "motion": {
+      "durationShort": 100,
+      "durationFocus": 180,
+      "durationTravel": 200,
+      "durationIsland": 320,
+      "durationPulse": 720,
+      "durationSyncMark": 2400,
+      "scaleRest": 1.0,
+      "scaleFocus": 1.05,
+      "heroScaleFrom": 0.96,
+      "heroSlideUpPx": 24.0,
+      "heroTravelPx": 64.0,
+      "sceneDepth": 0.35,
+      "sceneOverscan": 1.05,
+      "sceneSettleFrom": 1.1,
+      "durationScene": 360,
+      "durationShowcase": 1400,
+      "arrive": [
+        0.05,
+        0.7,
+        0.1,
+        1
+      ],
+      "leave": [
+        0.3,
+        0,
+        0.8,
+        0.15
+      ],
+      "pulse": [
+        0.4,
+        0,
+        0.6,
+        1
+      ],
+      "dissolve": [
+        0.2,
+        0,
+        0,
+        1
+      ]
+    },
+    "metrics": {
+      "insetFraction": 0.04,
+      "gapFraction": 0.04,
+      "focusStrokePx": 3,
+      "heroInsetPx": 48,
+      "dialogInsetPx": 48,
+      "dialogBorderPx": 2,
+      "cardCornerDp": 28,
+      "heroArtFraction": 0.62,
+      "chromeClearancePx": 28
+    }
+  }
 }

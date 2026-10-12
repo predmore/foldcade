@@ -27,7 +27,6 @@ import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
-import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -36,11 +35,9 @@ import androidx.compose.ui.unit.dp
 import app.foldcade.FoldcadeApp
 import app.foldcade.R
 import app.foldcade.language.HostScreen
-import app.foldcade.language.Metrics
 import app.foldcade.language.PlayCopy
 import app.foldcade.language.PlayWeek
 import app.foldcade.language.Theme
-import app.foldcade.language.TypeRamp
 import app.foldcade.language.playDuration
 import app.foldcade.language.playWeek
 import java.time.ZoneId
@@ -61,6 +58,7 @@ private fun rememberPlayWeek(app: FoldcadeApp, weeksBack: Int): PlayWeek {
  */
 @Composable
 internal fun PlayActivityScreen(app: FoldcadeApp, screen: HostScreen) {
+    val design = LocalFoldTheme.current.theme.style
     val page = app.shell.model.playActivity ?: return
     if (page.screen != screen) return
     val theme = LocalFoldTheme.current.theme
@@ -84,13 +82,13 @@ internal fun PlayActivityScreen(app: FoldcadeApp, screen: HostScreen) {
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(12.dp),
             ) {
-                Image(painterResource(R.drawable.ic_btn_b), contentDescription = null, modifier = Modifier.size(32.dp))
-                BasicText(PlayCopy.activity, style = playText(theme.onBackground, theme, TypeRamp.heroTitle, bold = true))
+                Image(themeIconPainter(R.drawable.ic_btn_b), contentDescription = null, modifier = Modifier.size(32.dp))
+                BasicText(PlayCopy.activity, style = playText(theme.onBackground, theme, LocalFoldTheme.current.theme.style.type.heroTitle, bold = true))
             }
             Spacer(Modifier.weight(1f))
-            BasicText(week.label, style = playText(theme.muted, theme, TypeRamp.heroMeta))
+            BasicText(week.label, style = playText(theme.muted, theme, LocalFoldTheme.current.theme.style.type.heroMeta))
             Spacer(Modifier.width(16.dp))
-            BasicText(playDuration(week.totalMillis), style = playText(theme.onBackground, theme, TypeRamp.heroMeta, bold = true))
+            BasicText(playDuration(week.totalMillis), style = playText(theme.onBackground, theme, LocalFoldTheme.current.theme.style.type.heroMeta, bold = true))
         }
         Row(
             Modifier.fillMaxSize(),
@@ -100,7 +98,7 @@ internal fun PlayActivityScreen(app: FoldcadeApp, screen: HostScreen) {
                 Modifier
                     .weight(0.66f)
                     .fillMaxHeight()
-                    .clip(RoundedCornerShape(Metrics.cardCornerDp.dp))
+                    .clip(RoundedCornerShape(design.metrics.cardCornerDp.dp))
                     .background(theme.surface)
                     .padding(24.dp),
                 verticalArrangement = Arrangement.SpaceEvenly,
@@ -111,13 +109,13 @@ internal fun PlayActivityScreen(app: FoldcadeApp, screen: HostScreen) {
                         BasicText(
                             day.label,
                             modifier = Modifier.width(56.dp),
-                            style = playText(theme.muted, theme, TypeRamp.sideRow),
+                            style = playText(theme.muted, theme, LocalFoldTheme.current.theme.style.type.sideRow),
                         )
                         DayTrack(day.blocks, theme, Modifier.weight(1f).height(22.dp))
                         BasicText(
                             if (day.totalMillis > 0L) playDuration(day.totalMillis) else "",
                             modifier = Modifier.width(88.dp),
-                            style = playText(theme.onBackground, theme, TypeRamp.sideRow).copy(textAlign = TextAlign.End),
+                            style = playText(theme.onBackground, theme, LocalFoldTheme.current.theme.style.type.sideRow).copy(textAlign = TextAlign.End),
                         )
                     }
                 }
@@ -126,14 +124,14 @@ internal fun PlayActivityScreen(app: FoldcadeApp, screen: HostScreen) {
                 Modifier
                     .weight(0.34f)
                     .fillMaxHeight()
-                    .clip(RoundedCornerShape(Metrics.cardCornerDp.dp))
+                    .clip(RoundedCornerShape(design.metrics.cardCornerDp.dp))
                     .background(theme.surface)
                     .padding(24.dp),
                 verticalArrangement = Arrangement.spacedBy(14.dp),
             ) {
-                BasicText(PlayCopy.mostPlayed, style = playText(theme.muted, theme, TypeRamp.sideRow))
+                BasicText(PlayCopy.mostPlayed, style = playText(theme.muted, theme, LocalFoldTheme.current.theme.style.type.sideRow))
                 if (week.top.isEmpty()) {
-                    BasicText(PlayCopy.nothing, style = playText(theme.muted, theme, TypeRamp.sideRow))
+                    BasicText(PlayCopy.nothing, style = playText(theme.muted, theme, LocalFoldTheme.current.theme.style.type.sideRow))
                 }
                 week.top.forEach { (gameId, millis) ->
                     Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
@@ -141,9 +139,9 @@ internal fun PlayActivityScreen(app: FoldcadeApp, screen: HostScreen) {
                             app.shell.playTitle(gameId) ?: gameId,
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis,
-                            style = playText(theme.onBackground, theme, TypeRamp.sideRow, bold = true),
+                            style = playText(theme.onBackground, theme, LocalFoldTheme.current.theme.style.type.sideRow, bold = true),
                         )
-                        BasicText(playDuration(millis), style = playText(theme.muted, theme, TypeRamp.hint))
+                        BasicText(playDuration(millis), style = playText(theme.muted, theme, LocalFoldTheme.current.theme.style.type.hint))
                     }
                 }
             }
@@ -159,7 +157,7 @@ private fun HourScale(theme: Theme) {
         Box(Modifier.weight(1f).height(20.dp)) {
             listOf(6, 12, 18).forEach { hour ->
                 Box(Modifier.fillMaxWidth(hour / 24f), contentAlignment = Alignment.CenterEnd) {
-                    BasicText("$hour", style = playText(theme.muted, theme, TypeRamp.hint))
+                    BasicText("$hour", style = playText(theme.muted, theme, LocalFoldTheme.current.theme.style.type.hint))
                 }
             }
         }
@@ -199,9 +197,9 @@ internal fun PlayStrip(app: FoldcadeApp, focused: Boolean, modifier: Modifier = 
             BasicText(
                 PlayCopy.activity,
                 modifier = Modifier.weight(1f),
-                style = playText(if (focused) theme.onBackground else theme.muted, theme, TypeRamp.sideRow),
+                style = playText(if (focused) theme.onBackground else theme.muted, theme, LocalFoldTheme.current.theme.style.type.sideRow),
             )
-            BasicText(playDuration(week.totalMillis), style = playText(if (focused) theme.focus else theme.onBackground, theme, TypeRamp.sideRow))
+            BasicText(playDuration(week.totalMillis), style = playText(if (focused) theme.focus else theme.onBackground, theme, LocalFoldTheme.current.theme.style.type.sideRow))
         }
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.Bottom) {
             week.days.forEach { day ->
@@ -221,7 +219,7 @@ internal fun PlayStrip(app: FoldcadeApp, focused: Boolean, modifier: Modifier = 
                                 )
                             },
                     )
-                    BasicText(day.label.take(1), style = playText(theme.muted, theme, TypeRamp.hint))
+                    BasicText(day.label.take(1), style = playText(theme.muted, theme, LocalFoldTheme.current.theme.style.type.hint))
                 }
             }
         }

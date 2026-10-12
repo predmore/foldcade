@@ -4,7 +4,7 @@
 The script is part of the GPLv3 program. The files it writes — font and
 sounds — are the CC BY-SA 4.0 theme art. The preview, sprites, and platform
 marks come from tools/art. Afterglow does not ship
-a wallpaper; Static is a dim ribbon frame drawn by the host.
+a wallpaper; its scene manifests define ribbons, embers, and Static.
 """
 
 from __future__ import annotations
@@ -13,7 +13,7 @@ import math
 import struct
 import subprocess
 import wave
-import zipfile
+import sys
 from pathlib import Path
 
 from fontTools.fontBuilder import FontBuilder
@@ -794,31 +794,7 @@ def build_sounds(directory: Path):
 
 
 def write_zip(destination: Path):
-    destination.parent.mkdir(parents=True, exist_ok=True)
-    names = [
-        "theme.json",
-        "LICENSE",
-        "font.ttf",
-        "OFL-Nunito.txt",
-        "preview.png",
-        "sounds/move.ogg",
-        "sounds/activate.ogg",
-        "sounds/back.ogg",
-        "sounds/notify.ogg",
-        "sprites/glow_soft_256.png",
-        "sprites/glow_soft_256_amber.png",
-        "sprites/glow_soft_256_blue.png",
-        "sprites/glow_soft_256_rose.png",
-        "sprites/glow_soft_256_teal.png",
-        "sprites/glow_soft_256_violet.png",
-        "sprites/glow_soft_512.png",
-        "sprites/ribbon_hotspot.png",
-        "sprites/ribbon_hotspot_amber.png",
-        "sprites/ribbon_hotspot_teal.png",
-    ]
-    with zipfile.ZipFile(destination, "w", compression=zipfile.ZIP_DEFLATED) as archive:
-        for name in names:
-            archive.write(ROOT / name, arcname=name)
+    subprocess.run([sys.executable, str(REPO / "tools/themes/pack.py"), str(ROOT), "--output", str(destination)], check=True)
 
 
 def write_specimen(font_path: Path):

@@ -11,6 +11,12 @@ import androidx.compose.ui.text.font.FontFamily
 import app.foldcade.language.BackgroundMotion
 import app.foldcade.language.MusicTrack
 import app.foldcade.language.Theme
+import app.foldcade.language.ThemeResources
+import app.foldcade.language.resolveThemeResources
+import app.foldcade.language.loadThemeCatalog
+import app.foldcade.language.themeAssetCacheKey
+import app.foldcade.language.ThemeZip
+import java.io.InputStream
 import app.foldcade.language.fontZipName
 import app.foldcade.language.readThemeZip
 import app.foldcade.language.soundZipName
@@ -26,62 +32,76 @@ class PackagedTheme(
     val sounds: ThemeSounds,
     val backgroundMotion: BackgroundMotion,
     val music: MusicTrack?,
+    val resources: ThemeResources,
 ) {
     companion object {
         private const val ASSET = "themes/afterglow.zip"
 
-        fun load(context: Context): PackagedTheme? {
-            val zip = try {
-                readThemeZip(context.assets.open(ASSET))
-            } catch (error: Exception) {
-                Log.w("Foldcade", "Theme zip ignored", error)
-                null
-            } ?: return null
-            return try {
-                val entries = zip.entries
-                val file = zip.file
-                val json = entries["theme.json"]?.decodeToString()
-                val fontName = fontZipName(entries.keys)
-                val theme = Theme(
-                    background = file.background,
-                    surface = file.surface,
-                    onBackground = file.onBackground,
-                    muted = file.muted,
-                    focus = file.focus,
-                    iconRadius = file.iconRadius,
-                    artScale = file.artScale,
-                    font = loadFont(context, fontName?.let { entries[it] }, fontName),
-                )
-                val marks = entries
-                    .filterKeys { it.startsWith("marks/") && it.endsWith(".png") }
-                    .mapNotNull { (path, bytes) ->
-                        val bitmap = decode(bytes) ?: return@mapNotNull null
-                        path.removePrefix("marks/").removeSuffix(".png") to bitmap
-                    }
-                    .toMap()
-                PackagedTheme(
-                    name = file.name,
-                    paint = FoldPaint(
-                        theme = theme,
-                        wallpaperTop = decode(wallpaperZipName(entries.keys, top = true)?.let { entries[it] }),
-                        wallpaperBottom = decode(wallpaperZipName(entries.keys, top = false)?.let { entries[it] }),
-                        marks = marks,
-                    ),
-                    sounds = ThemeSounds(context, entries),
-                    backgroundMotion = file.backgroundMotion,
-                    music = themeMusic(context, file.name, json, entries),
-                )
-            } catch (error: Exception) {
-                Log.w("Foldcade", "Theme zip ignored", error)
-                null
+        fun load(context: Context): PackagedTheme? = try {
+            load(context, context.assets.open(ASSET))
+        } catch (error: Exception) { Log.w("FoldcadeTheme", "Default theme ignored", error); null }
+
+        fun loadAll(context: Context): List<PackagedTheme> {
+            val sources: List<Pair<String, () -> InputStream>> = context.assets.list("themes").orEmpty().filter { it.endsWith(".zip") }.sorted()
+                .map { name -> "themes/$name" to { context.assets.open("themes/$name") } } +
+                File(context.filesDir, "themes").listFiles().orEmpty().filter { it.extension == "zip" }.sortedBy { it.name }
+                    .map { file -> file.name to { file.inputStream() } }
+            val archives = sources.asSequence().mapNotNull { (source, open) ->
+                try { open().use(::readThemeZip) }
+                catch (error: Exception) { Log.w("FoldcadeTheme", "Theme $source ignored", error); null }
+            }
+            return loadThemeCatalog(archives, { zip -> load(context, zip) }) { diagnostic ->
+                Log.w("FoldcadeTheme", "${diagnostic.source}: ${diagnostic.message}")
             }
         }
+
+        fun load(context: Context, input: InputStream): PackagedTheme? {
+            val zip = input.use { readThemeZip(it) } ?: return null
+            return load(context, zip)
+        }
+
+        private fun load(context: Context, zip: ThemeZip): PackagedTheme? = try {
+            val entries = zip.entries
+            val file = zip.file
+            val resources = resolveThemeResources(zip)
+            resources.diagnostics.forEach { Log.w("FoldcadeTheme", "${it.source}: ${it.message}") }
+            val json = entries["theme.json"]?.decodeToString()
+            val fontName = fontZipName(entries.keys)
+            val theme = Theme(
+                background = file.background,
+                surface = file.surface,
+                onBackground = file.onBackground,
+                muted = file.muted,
+                focus = file.focus,
+                iconRadius = file.iconRadius,
+                artScale = file.artScale,
+                font = loadFont(context, fontName?.let { entries[it] }, fontName),
+                style = resources.style,
+            )
+            PackagedTheme(
+                name = file.name,
+                paint = FoldPaint(
+                    theme = theme,
+                    wallpaperTop = decode(wallpaperZipName(entries.keys, top = true)?.let { entries[it] }),
+                    wallpaperBottom = decode(wallpaperZipName(entries.keys, top = false)?.let { entries[it] }),
+                    icons = resources.icons.mapValues { (_, icon) -> listOf(icon) },
+                ),
+                sounds = ThemeSounds(context, entries),
+                backgroundMotion = resources.defaultBackground,
+                music = themeMusic(context, file.name, json, entries),
+                resources = resources,
+            )
+        } catch (error: Exception) {
+            Log.w("Foldcade", "Theme zip ignored", error)
+            null
+        }
+
 
         private fun loadFont(context: Context, bytes: ByteArray?, name: String?): FontFamily {
             if (bytes == null || name == null) return FontFamily.SansSerif
             return try {
                 val ext = name.substringAfterLast('.', "ttf")
-                val file = File(context.cacheDir, "afterglow-font.$ext")
+                val file = File(context.cacheDir, "theme-${themeAssetCacheKey(bytes)}-font.$ext")
                 file.writeBytes(bytes)
                 FontFamily(Font(file))
             } catch (error: Exception) {
@@ -112,7 +132,7 @@ class PackagedTheme(
             val bytes = entries[described.file] ?: return null
             if (bytes.isEmpty()) return null
             val safe = described.file.replace(Regex("[^A-Za-z0-9._-]"), "_")
-            val out = File(context.cacheDir, "theme-music-$safe")
+            val out = File(context.cacheDir, "theme-${themeAssetCacheKey(bytes)}-music-$safe")
             out.writeBytes(bytes)
             return described.copy(file = out.absolutePath)
         }
@@ -147,7 +167,7 @@ class ThemeSounds(context: Context, entries: Map<String, ByteArray>) {
         listOf("move", "activate", "back", "notify").forEach { slot ->
             val bytes = entries[soundZipName(slot)] ?: return@forEach
             try {
-                val file = File(context.cacheDir, "afterglow-$slot.ogg")
+                val file = File(context.cacheDir, "theme-${themeAssetCacheKey(bytes)}-$slot.ogg")
                 file.writeBytes(bytes)
                 val id = pool.load(file.absolutePath, 1)
                 if (id != 0) ids[slot] = id

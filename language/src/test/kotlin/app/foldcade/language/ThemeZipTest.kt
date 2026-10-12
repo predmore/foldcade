@@ -143,6 +143,20 @@ class ThemeZipTest {
     }
 
     @Test
+    fun applicationCodeCannotBeSmuggledInAsAnUnusedOrOversizedAsset() {
+        for (suffix in listOf("java", "KT", "kts", "class", "dex", "jar", "so", "apk", "js")) {
+            assertNull(suffix, readThemeZip(zipBytes(
+                "theme.json" to """{"version":2,"id":"test","name":"Test"}""",
+                "unused/payload.$suffix" to "code",
+            ).inputStream()))
+        }
+        assertNull(readThemeZip(zipBytes(
+            "theme.json" to """{"name":"Test"}""",
+            "payload.dex" to "x".repeat(8 * 1024 * 1024 + 1),
+        ).inputStream()))
+    }
+
+    @Test
     fun aZipKeepsWallpaperFontAndSoundsAndDropsAPathEscape() {
         val loaded = readThemeZip(
             zipBytes(

@@ -262,6 +262,10 @@ class SessionStore(private val prefs: SharedPreferences) : SaveMarks {
             .apply()
     }
 
+    fun iconTheme(): String? = prefs.getString("icon_theme_id", null)
+
+    fun setIconTheme(id: String?) { prefs.edit().putString("icon_theme_id", id).apply() }
+
     fun backgroundMotionPinned(): Boolean = prefs.contains(KEY_BACKGROUND)
 
     fun backgroundMotion(): BackgroundMotion =
@@ -280,10 +284,12 @@ class SessionStore(private val prefs: SharedPreferences) : SaveMarks {
 
     fun artworkEnabled(): Boolean = prefs.getBoolean(KEY_ARTWORK, true)
 
-    /** Store the theme's name so a changed list order cannot select another theme. */
-    fun themeIndex(names: List<String>): Int {
+    /** Restore stable pack IDs, with the old display-name preferences as a migration fallback. */
+    fun themeIndex(names: List<String>, legacyNames: List<String> = names): Int {
         val saved = prefs.getString(KEY_THEME, null)
-        return names.indexOf(saved).takeIf { it >= 0 } ?: if (names.size > 1) 1 else 0
+        return names.indexOf(saved).takeIf { it >= 0 }
+            ?: legacyNames.indexOf(saved).takeIf { it >= 0 }
+            ?: if (names.size > 1) 1 else 0
     }
 
     fun setTheme(name: String) {

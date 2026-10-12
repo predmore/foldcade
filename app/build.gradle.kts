@@ -8,6 +8,7 @@ import org.gradle.api.file.RegularFileProperty
 import org.gradle.api.provider.Property
 import org.gradle.api.tasks.Input
 import org.gradle.api.tasks.InputFile
+import org.gradle.api.tasks.InputDirectory
 import org.gradle.api.tasks.InputFiles
 import org.gradle.api.tasks.Optional
 import org.gradle.api.tasks.OutputDirectory
@@ -218,13 +219,37 @@ val packageMuseScoreLicense = tasks.register<PackageMuseScoreLicenseTask>("packa
     assetsDir.set(layout.buildDirectory.dir("generated/licenseAssets"))
 }
 
+// Afterglow is the source of the default icon art, including emergency native fallbacks.
+val packageThemeIcons = tasks.register<PackageThemeIconsTask>("packageThemeIcons") {
+    sourceDir.set(rootProject.layout.projectDirectory.dir("themes/afterglow/icons"))
+    resourceDir.set(layout.buildDirectory.dir("generated/themeRes"))
+}
+
 androidComponents {
     onVariants { variant ->
+        variant.sources.res?.addGeneratedSourceDirectory(packageThemeIcons, PackageThemeIconsTask::resourceDir)
         variant.sources.assets?.addGeneratedSourceDirectory(renderHomeMusic, RenderHomeMusicTask::assetsDir)
         variant.sources.assets?.addGeneratedSourceDirectory(
             packageMuseScoreLicense,
             PackageMuseScoreLicenseTask::assetsDir,
         )
+    }
+}
+
+abstract class PackageThemeIconsTask : DefaultTask() {
+    @get:InputDirectory
+    @get:PathSensitive(PathSensitivity.RELATIVE)
+    abstract val sourceDir: DirectoryProperty
+    @get:OutputDirectory
+    abstract val resourceDir: DirectoryProperty
+    @TaskAction
+    fun copy() {
+        val destination = File(resourceDir.get().asFile, "drawable")
+        destination.deleteRecursively()
+        destination.mkdirs()
+        sourceDir.get().asFile.listFiles().orEmpty().filter { it.extension == "xml" }.forEach {
+            it.copyTo(File(destination, it.name), overwrite = true)
+        }
     }
 }
 

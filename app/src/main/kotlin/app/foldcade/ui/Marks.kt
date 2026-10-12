@@ -1,40 +1,46 @@
 package app.foldcade.ui
 
-import androidx.compose.foundation.Image
-import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.res.painterResource
-import androidx.compose.ui.platform.LocalContext
-import app.foldcade.FoldcadeApp
 import app.foldcade.R
-import app.foldcade.language.MarkAccent
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.BlendMode
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.graphics.drawscope.translate
+import androidx.compose.ui.unit.IntOffset
+import androidx.compose.ui.unit.IntSize
+import app.foldcade.language.ThemeIconBlend
+import kotlin.math.min
+import kotlin.math.roundToInt
 
 /**
  * Illustrated platform and library marks. They carry their own colour, so the host does not tint them.
  * The accent still paints the tile glow. Not console logos.
  */
-data class MarkGlyph(
-    val drawable: Int,
+internal data class MarkGlyph(
+    val icon: ThemeIconPainter,
     val accent: Color,
-)
+) {
+    fun heroScale(artScale: Float): Float = if (icon.resolved?.asset?.blend == ThemeIconBlend.Screen) artScale else 0.86f
+}
 
-fun markGlyph(mark: String): MarkGlyph? = when (mark) {
-    "clamshell" -> MarkGlyph(R.drawable.mark_clamshell_lit, MarkAccent.clamshell)
-    "slim" -> MarkGlyph(R.drawable.mark_slim_lit, MarkAccent.slim)
-    "handheld" -> MarkGlyph(R.drawable.mark_handheld_lit, MarkAccent.handheld)
-    "cartridge" -> MarkGlyph(R.drawable.mark_cartridge_lit, MarkAccent.cartridge)
-    "disc" -> MarkGlyph(R.drawable.mark_disc_lit, MarkAccent.disc)
-    "cloud" -> MarkGlyph(R.drawable.mark_cloud_lit, MarkAccent.cloud)
-    else -> markDrawable(mark)?.let { drawable -> MarkGlyph(drawable, MarkAccent.byMark.getValue(mark)) }
+@Composable
+internal fun markGlyph(mark: String, pixels: Int = 256): MarkGlyph? {
+    val paint = LocalFoldTheme.current
+    val drawable = when (mark) {
+        "clamshell" -> R.drawable.mark_clamshell_lit
+        "slim" -> R.drawable.mark_slim_lit
+        "handheld" -> R.drawable.mark_handheld_lit
+        "cartridge" -> R.drawable.mark_cartridge_lit
+        "disc" -> R.drawable.mark_disc_lit
+        "cloud" -> R.drawable.mark_cloud_lit
+        else -> markDrawable(mark) ?: R.drawable.mark_console.takeIf { paint.icons["mark.$mark"].orEmpty().isNotEmpty() }
+    } ?: return null
+    val icon = themeIcon("mark.$mark", drawable, pixels)
+    return MarkGlyph(icon, icon.resolved?.asset?.accent ?: paint.theme.focus)
 }
 
 /** Platform and library marks. A platform's mark is named by its canonical id. */
@@ -69,30 +75,28 @@ private fun markDrawable(mark: String): Int? = when (mark) {
 }
 
 @Composable
-fun MarkIcon(mark: String, scale: Float) {
+internal fun MarkIcon(mark: String, scale: Float) {
     val glyph = markGlyph(mark) ?: return
-    val painter = painterResource(glyph.drawable)
-    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-        Image(
-            painter = painter,
-            contentDescription = null,
-            modifier = Modifier.fillMaxSize(scale),
-        )
-    }
+    MarkIcon(glyph, scale)
 }
 
-/** The hero keeps a small, bounded cache of the large marks used in its transitions. */
+/** Legacy PNGs retain Screen blending, through the same resolution path as modern icons. */
 @Composable
-internal fun HeroMark(mark: String, scale: Float) {
-    val glyph = markGlyph(mark) ?: return
-    val images = (LocalContext.current.applicationContext as FoldcadeApp).markImages
-    var bitmap by remember(glyph.drawable) { mutableStateOf(images.cached(glyph.drawable)) }
-    LaunchedEffect(glyph.drawable) {
-        if (bitmap == null) bitmap = images.load(glyph.drawable)
-    }
-    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-        bitmap?.let {
-            Image(bitmap = it, contentDescription = null, modifier = Modifier.fillMaxSize(scale))
-        }
+internal fun MarkIcon(glyph: MarkGlyph, scale: Float, alpha: () -> Float = { 1f }) {
+    val icon = glyph.icon
+    val image = icon.resolved?.image?.let { androidx.compose.runtime.remember(it) { it.asImageBitmap() } }
+    Canvas(Modifier.fillMaxSize(scale)) {
+        val intrinsic = icon.painter.intrinsicSize
+        val target = if (intrinsic.width > 0f && intrinsic.height > 0f) {
+            val fit = min(size.width / intrinsic.width, size.height / intrinsic.height)
+            Size(intrinsic.width * fit, intrinsic.height * fit)
+        } else size
+        val x = (size.width - target.width) / 2f
+        val y = (size.height - target.height) / 2f
+        if (icon.resolved?.asset?.blend == ThemeIconBlend.Screen && image != null) {
+            drawImage(image, dstOffset = IntOffset(x.roundToInt(), y.roundToInt()),
+                dstSize = IntSize(target.width.roundToInt().coerceAtLeast(1), target.height.roundToInt().coerceAtLeast(1)),
+                alpha = alpha(), blendMode = BlendMode.Screen)
+        } else translate(x, y) { with(icon.painter) { draw(target, alpha = alpha()) } }
     }
 }

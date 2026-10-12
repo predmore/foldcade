@@ -18,7 +18,9 @@ def png(a, px, bg=None):
 
 def write(a, sub):
     os.makedirs(f"{RES}/drawable", exist_ok=True); os.makedirs(f"{SVG}/{sub}", exist_ok=True)
-    open(f"{RES}/drawable/{a.name}.xml", "w").write(to_vd(a))
+    destination = f"{OUT}/themes/afterglow/icons" if a.name.startswith(("mark_", "ic_btn_", "ic_status_", "ic_badge_")) else f"{RES}/drawable"
+    os.makedirs(destination, exist_ok=True)
+    open(f"{destination}/{a.name}.xml", "w").write(to_vd(a))
     open(f"{SVG}/{sub}/{a.name}.svg", "w").write(to_svg(a))
 
 for d in (RES, SVG, f"{OUT}/play", f"{OUT}/themes", f"{OUT}/shaders"):
@@ -91,6 +93,8 @@ sprites.focus_ninepatch().save(f"{RES}/drawable-nodpi/focus_glow.9.png")
 sprites.focus_ninepatch(color=ACC["mint"]).save(f"{RES}/drawable-nodpi/focus_glow_mint.9.png")
 os.makedirs(f"{OUT}/shaders", exist_ok=True)
 shutil.copy(f"{OUT}/src/focus_glow.agsl", f"{OUT}/shaders/focus_glow.agsl")
+os.makedirs(f"{OUT}/themes/afterglow/effects", exist_ok=True)
+shutil.copy(f"{OUT}/src/focus_glow.agsl", f"{OUT}/themes/afterglow/effects/focus_glow.agsl")
 
 # ---------------- theme preview (1280x720) ----------------
 def ribbon_layer(W, H, pts_fn, color, width, sigma, peak, seed):

@@ -4,9 +4,9 @@ This page says, in plain language, which license covers what. It is not legal ad
 
 ## Themes
 
-A theme is data. The zip, its `theme.json`, and the images and sounds it names are not program code. A theme can use any license.
+A theme is a resource pack. Its manifest, images, and sounds are data. Optional AGSL shaders are graphics program source; themes do not load Java, Kotlin, DEX, or native application code. A theme can use any license.
 
-A theme that ships in this repository keeps the license written next to those files. Afterglow's art is CC BY-SA 4.0, and its font is the SIL Open Font License. See [credits](../licenses/CREDITS.md).
+A theme that ships in this repository keeps the license written next to those files. Afterglow's art is CC BY-SA 4.0, its font is the SIL Open Font License, and its shader source is GPLv3. See [credits](../licenses/CREDITS.md) and the [theme author guide](themes.md).
 
 ## External plugins
 

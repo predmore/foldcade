@@ -17,6 +17,8 @@ data class Theme(
     val iconRadius: Float,
     val artScale: Float,
     val font: FontFamily,
+    val style: ThemeStyle = ThemeStyle(),
+    val motion: MotionStyle = MotionStyle(style),
 )
 
 fun builtInTheme(): Theme = Theme(

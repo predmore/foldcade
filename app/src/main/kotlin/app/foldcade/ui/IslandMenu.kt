@@ -2,7 +2,6 @@ package app.foldcade.ui
 
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.ui.layout.onSizeChanged
-import app.foldcade.language.Motion as FoldMotion
 import android.content.Context
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.clickable
@@ -39,7 +38,6 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
-import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
@@ -53,10 +51,8 @@ import app.foldcade.language.Chrome
 import app.foldcade.language.Copy
 import app.foldcade.language.HostScreen
 import app.foldcade.language.Meaning
-import app.foldcade.language.Metrics
 import app.foldcade.language.Side
 import app.foldcade.language.SidePanel
-import app.foldcade.language.TypeRamp
 import app.foldcade.language.playDuration
 import app.foldcade.language.playToday
 import app.foldcade.millisUntilNextMinute
@@ -130,6 +126,7 @@ private fun Island(
     maxHeight: Dp,
     menuRows: @Composable (panel: SidePanel, progress: Float, interactive: Boolean) -> Unit,
 ) {
+    val design = LocalFoldTheme.current.theme.style
     val theme = LocalFoldTheme.current.theme
     val density = LocalDensity.current
     val model = app.shell.model
@@ -154,7 +151,7 @@ private fun Island(
     var shown by remember { mutableStateOf<SidePanel?>(null) }
     if (live != null) shown = live
     val panel = shown
-    val inset = maxWidth * Metrics.insetFraction
+    val inset = maxWidth * design.metrics.insetFraction
     // The closed pill fits what it shows. It is measured closed, so the status the
     // open card adds does not widen it, and it eases when a bell or a digit comes or goes.
     var fitWidth by remember(side) { mutableStateOf(Dp.Unspecified) }
@@ -171,7 +168,7 @@ private fun Island(
     }
     val width = lerp(pillWidth, openWidth, progress)
     val height = lerp(pillHeight, openHeight, progress)
-    val radius = lerp(pillHeight / 2, Metrics.cardCornerDp.dp, progress)
+    val radius = lerp(pillHeight / 2, design.metrics.cardCornerDp.dp, progress)
     val shape = RoundedCornerShape(radius)
     val x = if (side == Side.Left) inset else maxWidth - inset - width
     val focusedIsland = progress < 0.08f && app.shell.model.panel == null && app.shell.model.dialog == null &&
@@ -252,6 +249,7 @@ private fun islandProgress(
     handoff: Boolean,
     onHandoff: () -> Unit,
 ): Float {
+    val motion = LocalFoldTheme.current.theme.motion
     val anim = remember { androidx.compose.animation.core.Animatable(target) }
     LaunchedEffect(target, snap, handoff) {
         if (snap) {
@@ -260,12 +258,12 @@ private fun islandProgress(
         }
         if (abs(anim.value - target) > 0.001f) {
             val spec = if (target >= anim.value) {
-                app.foldcade.language.Motion.arrive(app.foldcade.language.Motion.durationIsland, scale)
+                motion.arrive(motion.durationIsland, scale)
             } else {
-                app.foldcade.language.Motion.leave(app.foldcade.language.Motion.durationIsland, scale)
+                motion.leave(motion.durationIsland, scale)
             }
-            val budget = app.foldcade.language.Motion.duration(
-                app.foldcade.language.Motion.durationIsland,
+            val budget = motion.duration(
+                motion.durationIsland,
                 scale,
             ).toLong() + 80L
             withTimeoutOrNull(budget) {
@@ -283,6 +281,7 @@ private fun islandProgress(
 /** Null until the pill is first measured. The first width lands at once, later ones ease. */
 @Composable
 private fun fittedWidth(target: Dp, scale: Float): Dp? {
+    val motion = LocalFoldTheme.current.theme.motion
     val anim = remember { androidx.compose.animation.core.Animatable(Float.NaN) }
     LaunchedEffect(target) {
         if (target == Dp.Unspecified) return@LaunchedEffect
@@ -290,7 +289,7 @@ private fun fittedWidth(target: Dp, scale: Float): Dp? {
             anim.snapTo(target.value)
         } else {
             kotlinx.coroutines.withContext(SteadyIsland) {
-                anim.animateTo(target.value, FoldMotion.arrive(FoldMotion.durationFocus, scale))
+                anim.animateTo(target.value, motion.arrive(motion.durationFocus, scale))
             }
         }
     }
@@ -308,13 +307,13 @@ private object SteadyIsland : androidx.compose.ui.MotionDurationScale {
 private fun ShoulderChip(outline: Int, filled: Int, openFraction: Float, label: String) {
     Box(Modifier.size(36.dp, 24.dp), contentAlignment = Alignment.Center) {
         Image(
-            painter = painterResource(outline),
+            painter = themeIconPainter(outline),
             contentDescription = label,
             modifier = Modifier.fillMaxSize().graphicsLayer { alpha = 1f - openFraction },
             contentScale = ContentScale.Fit,
         )
         Image(
-            painter = painterResource(filled),
+            painter = themeIconPainter(filled),
             contentDescription = null,
             modifier = Modifier.fillMaxSize().graphicsLayer { alpha = openFraction },
             contentScale = ContentScale.Fit,
@@ -325,7 +324,7 @@ private fun ShoulderChip(outline: Int, filled: Int, openFraction: Float, label: 
 @Composable
 private fun Glyph(id: Int, description: String?) {
     Image(
-        painter = painterResource(id),
+        painter = themeIconPainter(id),
         contentDescription = description,
         modifier = Modifier.size(18.dp),
         contentScale = ContentScale.Fit,
@@ -408,7 +407,7 @@ private fun StatusIcons(app: FoldcadeApp, open: Float) {
     LaunchedEffect(open > 0f) {
         if (open > 0f) status = readDeviceStatus(context)
     }
-    val style = TextStyle(color = theme.onBackground, fontSize = TypeRamp.hint, fontFamily = theme.font)
+    val style = TextStyle(color = theme.onBackground, fontSize = LocalFoldTheme.current.theme.style.type.hint, fontFamily = theme.font)
     val muted = style.copy(color = theme.muted)
     // Read from the edge in: the clock, then the date, battery, Wi-Fi, Bluetooth, and the bell.
     val bell = bellStatusIcon(app.shell.model.notices.size)
@@ -450,7 +449,7 @@ private fun PlayToday(app: FoldcadeApp) {
     Glyph(R.drawable.ic_status_playtime, null)
     BasicText(
         text = playDuration(today),
-        style = TextStyle(color = theme.onBackground, fontSize = TypeRamp.hint, fontFamily = theme.font),
+        style = TextStyle(color = theme.onBackground, fontSize = LocalFoldTheme.current.theme.style.type.hint, fontFamily = theme.font),
     )
 }
 

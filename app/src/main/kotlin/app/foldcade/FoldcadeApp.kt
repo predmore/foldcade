@@ -76,7 +76,6 @@ import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 
 class FoldcadeApp : Application() {
-    internal val markImages by lazy { app.foldcade.ui.MarkImages(this) }
     lateinit var store: SessionStore
         private set
 
@@ -104,6 +103,8 @@ class FoldcadeApp : Application() {
     lateinit var shell: ShellController
         private set
     lateinit var plugins: PluginHost
+        private set
+    var themePacks: List<PackagedTheme> = emptyList()
         private set
     var packaged: PackagedTheme? = null
         private set
@@ -242,11 +243,20 @@ class FoldcadeApp : Application() {
         plugins = PluginHost(Dispatchers.IO, credentials)
         music = HomeMusic(this, store)
         store.afterSessionChanged = music::onSessionChanged
-        packaged = PackagedTheme.load(this)
-        val names = listOf(Copy.builtIn) + listOfNotNull(packaged?.name)
-        val motions = listOf(BackgroundMotion.Off) + listOfNotNull(packaged?.backgroundMotion)
-        val themeTrackList = List(names.size) { index -> if (index == 0) null else packaged?.music }
-        val initialTheme = store.themeIndex(names)
+        themePacks = PackagedTheme.loadAll(this)
+        packaged = themePacks.firstOrNull { it.resources.id == "afterglow" }
+        val names = listOf(Copy.builtIn) + themePacks.map { it.name }
+        val ids = listOf("builtin") + themePacks.map { it.resources.id }
+        val sceneChoices = themePacks.flatMap { pack -> pack.resources.scenes.map { (id, scene) ->
+            app.foldcade.language.BackgroundChoice(id, if (pack.resources.id == "afterglow") scene.name else "${pack.name} · ${scene.name}")
+        } } + app.foldcade.language.BackgroundChoice(BackgroundMotion.Off, Copy.motionOff)
+        val motions = listOf(BackgroundMotion.Off) + themePacks.map { pack ->
+            if (pack.resources.file.version == 1 && pack.resources.scenes.isEmpty())
+                app.foldcade.language.resolveBackgroundChoice(pack.resources.file.backgroundMotion, sceneChoices, BackgroundMotion.Off)
+            else pack.backgroundMotion
+        }
+        val themeTrackList = listOf(null) + themePacks.map { it.music }
+        val initialTheme = store.themeIndex(ids, names)
         music.setThemeChoice(themeTrackList.getOrNull(initialTheme))
         plays = PlaySessions.open(File(filesDir, "play-sessions/events.log"))
         val sliderTick = SliderTick()
@@ -262,8 +272,10 @@ class FoldcadeApp : Application() {
             onTheme = { index -> music.setThemeChoice(themeTrackList.getOrNull(index)) },
             themeNames = names,
             themeMotions = motions,
+            themeIds = ids,
+            backgroundChoices = sceneChoices,
             cue = { index, slot ->
-                index > 0 && packaged?.sounds?.play(slot) == true
+                themePacks.getOrNull(index - 1)?.sounds?.play(slot) == true
             },
             bareTick = sliderTick::play,
             homeTracks = music.homeTracks(),
@@ -444,11 +456,20 @@ class FoldcadeApp : Application() {
         if (::music.isInitialized) music.onTrimMemory(level)
     }
 
-    fun paintFor(themeIndex: Int): FoldPaint {
-        val theme = packaged
-        if (theme != null && themeIndex > 0) return theme.paint
-        return FoldPaint(builtInTheme())
+    private val composedPaints = mutableMapOf<Pair<Int, Int?>, FoldPaint>()
+
+    fun paintFor(themeIndex: Int): FoldPaint = composedPaints.getOrPut(themeIndex to shell.model.iconThemeIndex) {
+        val base = themePacks.getOrNull(themeIndex - 1)
+        val override = shell.model.iconThemeIndex?.let { themePacks.getOrNull(it - 1) }
+        val composition = app.foldcade.language.ThemeComposition(base?.resources, override?.resources, packaged?.resources)
+        val slots = (composition.base?.icons?.keys.orEmpty() + composition.iconProvider?.icons?.keys.orEmpty() + composition.fallback?.icons?.keys.orEmpty()).toSet()
+        val paint = base?.paint ?: FoldPaint(builtInTheme())
+        val icons = if (shell.model.iconThemeIndex == 0) emptyMap() else slots.associateWith(composition::iconCandidates)
+        paint.copy(icons = icons)
     }
+
+    fun backgroundFor(motion: BackgroundMotion): app.foldcade.language.ThemeScene? =
+        themePacks.firstNotNullOfOrNull { it.resources.scenes[motion] }
 
     fun refreshCredentials() {
         scope.launch {

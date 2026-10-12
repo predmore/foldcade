@@ -1,38 +1,5 @@
-package app.foldcade.ui
-
-import android.graphics.RuntimeShader
-import androidx.compose.ui.graphics.ShaderBrush
-import app.foldcade.language.GlowFalloff
-import app.foldcade.language.RibbonField
-
-/**
- * Paints the ribbons of a [RibbonField] in one pass. Each pixel finds its distance to
- * every strand and takes the [GlowFalloff] curve there, with the gain and width
- * [app.foldcade.language.ribbonGain] gives at that point along the ribbon. One full-panel
- * draw replaces hundreds of stroked shells, and the glow has no steps along or across.
- * Layers combine like Lighten over black: a brighter color eases in by its cover.
- */
-internal class RibbonShader {
-    private val shader = RuntimeShader(SOURCE).apply {
-        setFloatUniform("falloff", GlowFalloff.TIGHTNESS, GlowFalloff.RIM_START, GlowFalloff.REACH, GlowFalloff.KNOT)
-        setFloatUniform("endFade", RibbonField.END_FADE)
-        setFloatUniform("crossingRadius", RibbonField.CROSSING_RADIUS)
-    }
-    val brush: ShaderBrush = ShaderBrush(shader)
-
-    fun update(field: RibbonField, width: Float, height: Float) {
-        shader.setFloatUniform("size", width, height)
-        shader.setFloatUniform("travel", field.travel)
-        shader.setFloatUniform("shape", field.shape)
-        shader.setFloatUniform("drift", field.drift)
-        shader.setFloatUniform("start", field.start)
-        shader.setFloatUniform("end", field.end)
-        shader.setFloatUniform("swell", field.swell)
-        shader.setFloatUniform("reach", field.reach)
-    }
-}
-
-private val SOURCE = """
+// SPDX-License-Identifier: GPL-3.0-only
+// Afterglow scene shader. All uniforms are bound by the scene manifest.
 uniform float2 size;
 uniform float travel;
 uniform float4 shape[3];
@@ -123,4 +90,3 @@ half4 main(float2 p) {
     }
     return half4(half3(lit), 1.0);
 }
-"""

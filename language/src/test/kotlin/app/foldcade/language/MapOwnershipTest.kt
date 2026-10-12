@@ -15,7 +15,6 @@ class MapOwnershipTest {
             "meaningOf",
             "onGenericMotionEvent",
             "AXIS_",
-            "Color(",
             "MaterialTheme",
             "Launch on top",
             "Launch on bottom",
@@ -25,6 +24,7 @@ class MapOwnershipTest {
             banned.forEach { token ->
                 assertFalse("$file contains $token", text.contains(token))
             }
+            assertFalse("$file constructs a theme color", text.contains(Regex("\\bColor\\(")))
             if (file.name != "StandInActivity.kt") {
                 assertFalse(text.contains("fun onKeyDown"))
             }

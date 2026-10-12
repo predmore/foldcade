@@ -28,11 +28,9 @@ import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import app.foldcade.language.Copy
-import app.foldcade.language.Motion
 import app.foldcade.language.SaveConflictFocus
 import app.foldcade.language.SaveConflictPrompt
 import app.foldcade.language.SaveConflictSide
-import app.foldcade.language.TypeRamp
 import app.foldcade.language.formatSaveSize
 import app.foldcade.language.formatSaveWhen
 import app.foldcade.language.previewSaveConflict
@@ -48,9 +46,9 @@ internal fun SaveConflictTop(prompt: SaveConflictPrompt) {
         verticalArrangement = Arrangement.Center,
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
-        BasicLine(prompt.gameLabel, theme.onBackground, TypeRamp.conflictGame.value, theme, TextAlign.Center)
-        BasicLine(Copy.saveConflictTitle, theme.onBackground, TypeRamp.heroTitle.value, theme, TextAlign.Center)
-        BasicLine(Copy.saveConflictTop, theme.muted, TypeRamp.heroMeta.value, theme, TextAlign.Center)
+        BasicLine(prompt.gameLabel, theme.onBackground, LocalFoldTheme.current.theme.style.type.conflictGame.value, theme, TextAlign.Center)
+        BasicLine(Copy.saveConflictTitle, theme.onBackground, LocalFoldTheme.current.theme.style.type.heroTitle.value, theme, TextAlign.Center)
+        BasicLine(Copy.saveConflictTop, theme.muted, LocalFoldTheme.current.theme.style.type.heroMeta.value, theme, TextAlign.Center)
     }
 }
 
@@ -76,9 +74,9 @@ internal fun SaveConflictBottom(
             verticalArrangement = Arrangement.Center,
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
-            BasicLine(Copy.saveConflictTitle, theme.onBackground, TypeRamp.heroTitle.value, theme, TextAlign.Center)
-            BasicLine(prompt.gameLabel, theme.onBackground, TypeRamp.heroMeta.value, theme, TextAlign.Center)
-            BasicLine(Copy.saveConflictBody, theme.muted, TypeRamp.dialogBody.value, theme, TextAlign.Center)
+            BasicLine(Copy.saveConflictTitle, theme.onBackground, LocalFoldTheme.current.theme.style.type.heroTitle.value, theme, TextAlign.Center)
+            BasicLine(prompt.gameLabel, theme.onBackground, LocalFoldTheme.current.theme.style.type.heroMeta.value, theme, TextAlign.Center)
+            BasicLine(Copy.saveConflictBody, theme.muted, LocalFoldTheme.current.theme.style.type.dialogBody.value, theme, TextAlign.Center)
             Row(
                 Modifier.padding(top = 28.dp),
                 horizontalArrangement = Arrangement.spacedBy(28.dp),
@@ -96,7 +94,7 @@ internal fun SaveConflictBottom(
             BasicLine(
                 "B  ${Copy.decideLater}",
                 theme.muted,
-                TypeRamp.hint.value,
+                LocalFoldTheme.current.theme.style.type.hint.value,
                 theme,
                 TextAlign.Center,
             )
@@ -116,9 +114,9 @@ private fun SaveColumn(side: SaveConflictSide, focused: Boolean, onKeep: () -> U
                 .padding(horizontal = 18.dp, vertical = 16.dp),
             verticalArrangement = Arrangement.spacedBy(6.dp),
         ) {
-            BasicLine(side.source, theme.onBackground, TypeRamp.menuRow.value, theme, TextAlign.Start)
-            BasicLine(formatSaveWhen(side.updatedAtMillis), theme.onBackground, TypeRamp.dialogBody.value, theme, TextAlign.Start)
-            BasicLine(formatSaveSize(side.sizeBytes), theme.muted, TypeRamp.dialogBody.value, theme, TextAlign.Start)
+            BasicLine(side.source, theme.onBackground, LocalFoldTheme.current.theme.style.type.menuRow.value, theme, TextAlign.Start)
+            BasicLine(formatSaveWhen(side.updatedAtMillis), theme.onBackground, LocalFoldTheme.current.theme.style.type.dialogBody.value, theme, TextAlign.Start)
+            BasicLine(formatSaveSize(side.sizeBytes), theme.muted, LocalFoldTheme.current.theme.style.type.dialogBody.value, theme, TextAlign.Start)
         }
         ConflictChip(
             label = Copy.keepThisOne,
@@ -136,9 +134,10 @@ private fun ConflictChip(
     modifier: Modifier,
     onClick: () -> Unit,
 ) {
+    val motion = LocalFoldTheme.current.theme.motion
     val theme = LocalFoldTheme.current.theme
     val source = remember { MutableInteractionSource() }
-    val scale = if (focused) 1.08f else Motion.scaleRest
+    val scale = if (focused) 1.08f else motion.scaleRest
     androidx.compose.foundation.text.BasicText(
         text = label,
         modifier = modifier
@@ -152,7 +151,7 @@ private fun ConflictChip(
             .padding(horizontal = 22.dp, vertical = 14.dp),
         style = TextStyle(
             color = if (focused) theme.onBackground else theme.muted,
-            fontSize = TypeRamp.dialogBody,
+            fontSize = LocalFoldTheme.current.theme.style.type.dialogBody,
             fontFamily = theme.font,
             textAlign = TextAlign.Center,
         ),
@@ -182,14 +181,15 @@ private fun BasicLine(
 /** The shared chip ring, with a heavier stroke so the focused action is obvious. */
 @Composable
 private fun Modifier.conflictChip(focused: Boolean): Modifier {
-    val lift = LocalFoldTheme.current.theme.onBackground
+    val theme = LocalFoldTheme.current.theme
+    val lift = theme.onBackground
     return this.graphicsLayer { clip = false }.drawBehind {
         val corner = size.height / 2f
         drawRoundRect(
             color = lift.copy(alpha = if (focused) 0.16f else 0.06f),
             cornerRadius = CornerRadius(corner, corner),
         )
-        if (focused) with(FocusRing) { drawFocusRing(corner, pronounced = true) }
+        if (focused) with(FocusRing(theme)) { drawFocusRing(corner, pronounced = true) }
     }
 }
 
