@@ -35,7 +35,7 @@ class HomePersistenceTest {
     @Test
     fun anUnconfirmedMoveRestoresItsOriginalPositionAndAConfirmedMoveIsSaved() {
         val board = HomeBoard(slots = listOf(HOME_ALL, "game.a", null))
-        val moving = moveHeld(pickUp(board, 1), 2)
+        val moving = moveHeld(pickUp(board, 1), 2, emptyList(), emptyList())
         assertEquals(board, decodeHome(encodeHome(moving)))
         assertEquals(listOf(HOME_ALL, null, "game.a"), decodeHome(encodeHome(drop(moving, 2))).slots)
         assertNull(decodeHome(encodeHome(moving)).hold)

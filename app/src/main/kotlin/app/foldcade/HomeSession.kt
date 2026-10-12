@@ -28,6 +28,7 @@ import app.foldcade.language.folderAround
 import app.foldcade.language.decodeHome
 import app.foldcade.language.encodeHome
 import app.foldcade.language.enterEdit
+import app.foldcade.language.folderTakes
 import app.foldcade.language.folderCount
 import app.foldcade.language.jumpLetter
 import app.foldcade.language.leaveEdit
@@ -197,10 +198,11 @@ class HomeSession(raw: String?) {
             return TileActions(move = true, rename = true, icon = folder.userMade, remove = true, removeIsFolder = true)
         }
         val here = board.openFolderId
+        val item = catalog().firstOrNull { it.id == id }
         val destinations = buildList {
             if (here != null) add(FolderChoice(null, Copy.homeSlot))
             board.slots.mapNotNull { slot -> board.folders[slot] }
-                .filter { it.id != here }
+                .filter { it.id != here && folderTakes(it, item, platforms) }
                 .forEach { add(FolderChoice(it.id, it.name)) }
         }
         return TileActions(move = true, destinations = destinations, newFolder = true, remove = true)
@@ -215,7 +217,7 @@ class HomeSession(raw: String?) {
     /** Sends the game at [index] to [folderId], or the root when null. Returns where focus goes. */
     fun moveTo(index: Int, folderId: String?): Int {
         val id = visibleSlots(board).getOrNull(index) ?: return index
-        board = moveToFolder(board, id, folderId)
+        board = moveToFolder(board, id, folderId, catalog(), platforms)
         return index
     }
 
@@ -303,7 +305,7 @@ class HomeSession(raw: String?) {
     fun drag(meaning: Meaning) {
         val hold = board.hold ?: return
         val to = neighbor(hold.index, meaning) ?: return
-        board = moveHeld(board, to)
+        board = moveHeld(board, to, catalog(), platforms)
         if (board.hold == null) board = leaveEdit(board)
     }
 
@@ -359,7 +361,7 @@ class HomeSession(raw: String?) {
         return when (meaning) {
             Meaning.MoveLeft, Meaning.MoveRight, Meaning.MoveUp, Meaning.MoveDown -> {
                 val to = neighbor(hold.index, meaning) ?: return step(null, hold.index)
-                board = moveHeld(board, to)
+                board = moveHeld(board, to, catalog(), platforms)
                 val at = board.hold?.index ?: to
                 if (board.hold == null) board = leaveEdit(board)
                 step(null, at)
