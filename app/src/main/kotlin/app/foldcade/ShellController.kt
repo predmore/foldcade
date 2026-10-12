@@ -1450,7 +1450,7 @@ class ShellController(
     /**
      * The shelf gained or lost catalog games, or the empty-shelf hint changed.
      * [PickerModel.shelfEpoch] changes even when the count does not, so Compose
-     * redraws the hint. Focus stays inside the new count.
+     * redraws the hint. Focus stays inside the new strip's reach, see [GridStrip.reach].
      */
     fun noteShelfChanged() {
         syncHome()
@@ -1460,8 +1460,7 @@ class ShellController(
             return
         }
         val counted = withShelf(next)
-        val last = (counted.count - 1).coerceAtLeast(0)
-        val cell = counted.focus.cellIndex.coerceIn(0, last)
+        val cell = counted.focus.cellIndex.coerceIn(0, (GridStrip.reach(counted.count) - 1).coerceAtLeast(0))
         model = if (cell == counted.focus.cellIndex) {
             counted
         } else {
@@ -1600,7 +1599,8 @@ class ShellController(
 
     private fun showBoard(focus: GridFocus, keepDialog: Boolean) {
         val count = home.visibleCount()
-        val cell = focus.cellIndex.coerceIn(0, (count - 1).coerceAtLeast(0))
+        // An empty slot past the last tile keeps the cursor, as it does on the strip.
+        val cell = focus.cellIndex.coerceIn(0, (GridStrip.reach(count) - 1).coerceAtLeast(0))
         publish(
             model.copy(
                 libraryGrid = false,

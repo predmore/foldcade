@@ -188,10 +188,10 @@ class HomeSession(raw: String?) {
             val into = placed.folders.values.firstOrNull { item.id in it.slots }?.name
             return TileActions(addToHome = if (into != null) "${Copy.addTo} $into" else Copy.addToHome)
         }
-        val slots = visibleSlots(board)
-        if (index !in slots.indices) return null
+        if (index < 0) return null
         val atRoot = board.openFolderId == null
-        val id = slots[index] ?: return if (atRoot) TileActions(newFolder = true) else null
+        // An empty slot, or one past the last tile, offers a new folder as an empty slot does.
+        val id = visibleSlots(board).getOrNull(index) ?: return if (atRoot) TileActions(newFolder = true) else null
         if (id == HOME_ALL) return TileActions(move = true, newFolder = true)
         val folder = board.folders[id]
         if (folder != null) {
@@ -292,7 +292,7 @@ class HomeSession(raw: String?) {
     fun placeIn(id: String, folderId: String?): Boolean {
         if (catalog().none { it.id == id }) return false
         if (folderId != null && folderId !in board.folders) return false
-        val next = moveToFolder(board.copy(hidden = board.hidden - id), id, folderId)
+        val next = moveToFolder(board.copy(hidden = board.hidden - id), id, folderId, catalog(), platforms)
         if (next == board) return false
         board = next
         return true
@@ -514,10 +514,12 @@ class HomeSession(raw: String?) {
         return platforms.firstOrNull { it.id == id || id in it.aliases }?.name.orEmpty()
     }
 
-    /** Where a lifted tile goes. It can walk past the last tile, into empty slots along the strip. */
+    /**
+     * Where a lifted tile goes. It can walk past the last tile, into empty slots along the
+     * strip, as far as the cursor reaches past the tiles there were when it was lifted.
+     */
     private fun neighbor(index: Int, meaning: Meaning): Int? {
         val rows = Metrics.rows
-        val count = visibleSlots(board).size.coerceAtLeast(index + 1)
         val column = GridStrip.column(index)
         val row = GridStrip.row(index)
         val target = when (meaning) {
@@ -527,9 +529,8 @@ class HomeSession(raw: String?) {
             Meaning.MoveDown -> if (row == rows - 1) null else index + 1
             else -> null
         } ?: return null
-        if (target < 0) return null
-        if (target >= count && meaning != Meaning.MoveRight && meaning != Meaning.MoveDown) return null
-        return target
+        val lifted = visibleSlots(cancelHold(board)).indexOfLast { it != null } + 1
+        return target.takeIf { it < GridStrip.reach(lifted) }
     }
 
     private fun focusIndex(): Int = board.hold?.index ?: rootIndex
