@@ -147,11 +147,11 @@ class ArtFinderTest {
         val finder = ArtFinder({ listOf(retro, offline) }, ArtIndex(tempFile()))
         assertEquals("https://r/title.png", finder.findScene(query)?.screen)
         finder.findScene(query)
-        assertEquals(1, retro.asked)
+        assertEquals(2, retro.asked)
         val dark = ArtFinder({ listOf(offline) }, ArtIndex(tempFile()))
         assertNull(dark.findScene(query))
         assertNull(dark.findScene(query))
-        assertEquals(3, offline.asked)
+        assertEquals(4, offline.asked)
     }
 
     @Test

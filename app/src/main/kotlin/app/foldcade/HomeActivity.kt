@@ -43,7 +43,6 @@ import app.foldcade.artwork.SteamGridDb
 import app.foldcade.language.SaveConflictAction
 import app.foldcade.language.SaveConflictPrompt
 import app.foldcade.language.SaveConflictSide
-import app.foldcade.language.ConnectKind
 import app.foldcade.language.Copy
 import app.foldcade.language.DialogButton
 import app.foldcade.language.DialogKind
@@ -239,6 +238,7 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
                 beginRommDeviceCode()
             }
             Effect.SaveRommToken -> saveRommToken()
+            Effect.RetryRommDeviceCode -> beginRommDeviceCode()
             Effect.OpenArtKey -> foldcade.shell.openArtKey()
             Effect.SaveArtKey -> saveArtKey()
             Effect.ForgetArtKey -> forgetArtKey()
@@ -1246,7 +1246,7 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
                 }
                 val current = withContext(Dispatchers.Main.immediate) {
                     if (!foldcade.shell.setupValidationCurrent(ticket)) false else {
-                        foldcade.shell.showSetupHint(result.hint)
+                        foldcade.shell.showSetupHint(result.hint, retry = true)
                         true
                     }
                 }
@@ -1289,7 +1289,7 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
                             if (foldcade.shell.setupValidationCurrent(ticket)) foldcade.shell.closeConnect()
                             foldcade.syncRomm()
                         } else if (foldcade.shell.setupValidationCurrent(ticket)) {
-                            foldcade.shell.showSetupHint("Could not save the RomM credentials. Try again.")
+                            foldcade.shell.showSetupHint("Could not save the RomM credentials. Try again.", retry = true)
                         }
                     }
                 }
@@ -1327,62 +1327,71 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
         deviceCodeJob?.cancel()
         val instanceId = foldcade.shell.connectRommId
         val another = foldcade.shell.model.connectAnother
+        val visit = foldcade.shell.beginDeviceCodeAttempt()
         deviceCodeJob = foldcade.scope.launch {
-            var pairedFor: String? = null
-            var refused: String? = null
-            while (foldcade.shell.model.connectOpen && foldcade.shell.model.connectKind == ConnectKind.Romm &&
-                foldcade.shell.connectRommId == instanceId && foldcade.shell.model.connectAnother == another) {
-                val origin = normalizeSetupOrigin(foldcade.shell.model.connectOrigin)
+            var pairedRevision: Int? = null
+            var refusedRevision: Int? = null
+            while (withContext(Dispatchers.Main.immediate) { foldcade.shell.deviceCodeVisitCurrent(visit) }) {
+                val (revision, origin) = withContext(Dispatchers.Main.immediate) {
+                    foldcade.shell.connectOriginRevision to normalizeSetupOrigin(foldcade.shell.model.connectOrigin)
+                }
                 val saved = if (another) null else foldcade.store.rommServerOrigin(instanceId)?.let(::normalizeSetupOrigin)
-                if (origin == null || origin == pairedFor || (saved != null && saved != origin)) {
+                if (origin == null || revision == pairedRevision || (saved != null && saved != origin)) {
                     delay(200)
                     continue
                 }
                 val taken = foldcade.store.rommServers()
                     .filter { another || it.first != instanceId }.map { it.second }
                 if (rommOriginAlreadyConfigured(taken, origin)) {
-                    if (origin != refused) {
-                        refused = origin
+                    if (revision != refusedRevision) {
+                        refusedRevision = revision
                         withContext(Dispatchers.Main.immediate) {
-                            if (rommFormCurrent(origin, another, instanceId)) foldcade.shell.showSetupHint(Copy.rommSameServer)
+                            if (foldcade.shell.deviceCodeFormCurrent(visit, revision)) foldcade.shell.showSetupHint(Copy.rommSameServer)
                         }
                     }
                     delay(200)
                     continue
                 }
-                refused = null
+                refusedRevision = null
                 delay(400)
-                if (!rommFormCurrent(origin, another, instanceId)) continue
+                if (!withContext(Dispatchers.Main.immediate) { foldcade.shell.deviceCodeFormCurrent(visit, revision) }) continue
                 val id = if (another) pendingRommInstance() else instanceId
-                pairedFor = origin
+                pairedRevision = revision
                 try {
                     foldcade.plugins.configure(id, mapOf(ROMM_ORIGIN_KEY to origin), remember = saved != null)
-                    val outcome = pollAnother(id, origin, another, instanceId)
-                    if (outcome is DeviceCodePoll.Approved && rommFormCurrent(origin, another, instanceId)) {
-                        validateRommToken(origin, outcome.token, another)
-                        return@launch
+                    val outcome = pollRommDeviceCode(id, visit, revision)
+                    withContext(Dispatchers.Main.immediate) {
+                        if (foldcade.shell.deviceCodeFormCurrent(visit, revision)) {
+                            when (outcome) {
+                                is DeviceCodePoll.Approved -> validateRommToken(origin, outcome.token, another)
+                                DeviceCodePoll.Expired -> foldcade.shell.showSetupHint(Copy.rommCodeExpired, retry = true)
+                                DeviceCodePoll.Denied -> foldcade.shell.showSetupHint(Copy.rommCodeDenied, retry = true)
+                                else -> Unit
+                            }
+                        }
                     }
                 } catch (cancelled: CancellationException) {
                     throw cancelled
                 } catch (_: Exception) {
-                    pairedFor = null
-                    delay(1_000)
+                    withContext(Dispatchers.Main.immediate) {
+                        if (foldcade.shell.deviceCodeFormCurrent(visit, revision)) {
+                            foldcade.shell.showSetupHint(Copy.rommCodeUnavailable, retry = true)
+                        }
+                    }
                 }
             }
         }
     }
 
-    private fun rommFormCurrent(origin: String, another: Boolean, instanceId: String): Boolean =
-        foldcade.shell.model.connectOpen && foldcade.shell.model.connectKind == ConnectKind.Romm &&
-            foldcade.shell.connectRommId == instanceId && foldcade.shell.model.connectAnother == another &&
-            normalizeSetupOrigin(foldcade.shell.model.connectOrigin) == origin
-
-    private suspend fun pollAnother(libraryId: String, origin: String, another: Boolean, instanceId: String): DeviceCodePoll = pollDeviceCode(
+    private suspend fun pollRommDeviceCode(libraryId: String, visit: Int, originRevision: Int): DeviceCodePoll = pollDeviceCode(
         begin = { foldcade.plugins.beginDeviceCode(libraryId) },
-        poll = { code -> foldcade.plugins.pollDeviceCode(libraryId, code) },
+        poll = { code ->
+            val current = withContext(Dispatchers.Main.immediate) { foldcade.shell.deviceCodeFormCurrent(visit, originRevision) }
+            if (current) foldcade.plugins.pollDeviceCode(libraryId, code) else DeviceCodePoll.Expired
+        },
         onChallenge = { challenge ->
             withContext(Dispatchers.Main.immediate) {
-                if (rommFormCurrent(origin, another, instanceId)) {
+                if (foldcade.shell.deviceCodeFormCurrent(visit, originRevision)) {
                     foldcade.shell.showSetupHint(
                         "${Copy.rommDeviceCode}\n${challenge.userCode}\n${challenge.verificationUrl}",
                     )
@@ -1398,39 +1407,46 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
     private fun saveArtKey() {
         val key = foldcade.shell.connectToken.trim()
         if (key.isEmpty()) return
+        val ticket = foldcade.shell.beginSetupValidation() ?: return
         foldcade.scope.launch {
-            val accepted = foldcade.checkSteamGridDbKey(key)
-            if (accepted != true) {
-                withContext(Dispatchers.Main.immediate) {
-                    foldcade.shell.showConnectNote(if (accepted == false) Copy.artKeyRefused else Copy.artKeyUnreachable)
-                }
-                return@launch
-            }
-            foldcade.editCredentials {
-                val saved = try {
-                    foldcade.credentials.put(
-                        SteamGridDb.CREDENTIAL_ID,
-                        SteamGridDb.CREDENTIAL_KEY,
-                        Credential.ApiToken(key),
-                    )
-                    true
-                } catch (cancelled: CancellationException) {
-                    throw cancelled
-                } catch (_: Exception) {
-                    false
-                }
-                if (saved) {
-                    foldcade.steamGridDbKey = key
-                    // Games the other sources missed are asked again, now with SteamGridDB.
-                    foldcade.art.forgetMisses()
-                }
-                withContext(Dispatchers.Main.immediate) {
-                    if (saved) {
-                        foldcade.shell.setArtKeySaved(true)
-                        foldcade.shell.closeConnect()
-                    } else {
-                        foldcade.shell.showConnectNote(Copy.artKeyUnreachable)
+            try {
+                val accepted = foldcade.checkSteamGridDbKey(key)
+                if (accepted != true) {
+                    withContext(Dispatchers.Main.immediate) {
+                        if (foldcade.shell.setupValidationCurrent(ticket)) {
+                            foldcade.shell.showConnectNote(if (accepted == false) Copy.artKeyRefused else Copy.artKeyUnreachable)
+                        }
                     }
+                    return@launch
+                }
+                foldcade.editCredentials {
+                    if (!withContext(Dispatchers.Main.immediate) { foldcade.shell.setupValidationCurrent(ticket) }) return@editCredentials
+                    val saved = try {
+                        foldcade.credentials.put(
+                            SteamGridDb.CREDENTIAL_ID,
+                            SteamGridDb.CREDENTIAL_KEY,
+                            Credential.ApiToken(key),
+                        )
+                        true
+                    } catch (cancelled: CancellationException) {
+                        throw cancelled
+                    } catch (_: Exception) {
+                        false
+                    }
+                    if (saved) {
+                        foldcade.steamGridDbKey = key
+                        foldcade.art.forgetMisses()
+                    }
+                    withContext(Dispatchers.Main.immediate) {
+                        if (saved) foldcade.shell.setArtKeySaved(true)
+                        if (foldcade.shell.setupValidationCurrent(ticket)) {
+                            if (saved) foldcade.shell.closeConnect() else foldcade.shell.showConnectNote(Copy.artKeyUnreachable)
+                        }
+                    }
+                }
+            } finally {
+                withContext(NonCancellable + Dispatchers.Main.immediate) {
+                    foldcade.shell.finishSetupValidation(ticket)
                 }
             }
         }

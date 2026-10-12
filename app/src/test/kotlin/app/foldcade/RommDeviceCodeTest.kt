@@ -9,6 +9,20 @@ import org.junit.Test
 
 class RommDeviceCodeTest {
     @Test
+    fun denialAndExpiryStopPollingAndANewAttemptGetsANewChallenge() = runBlocking {
+        var attempts = 0
+        val codes = mutableListOf<String>()
+        for (terminal in listOf(DeviceCodePoll.Expired, DeviceCodePoll.Denied)) {
+            assertEquals(terminal, pollDeviceCode(
+                begin = { attempts++; DeviceCodeChallenge("device-$attempts", "code-$attempts", "https://host/pair", 1, 60) },
+                poll = { codes += it; terminal },
+                onChallenge = {}, wait = {},
+            ))
+        }
+        assertEquals(listOf("device-1", "device-2"), codes)
+    }
+
+    @Test
     fun pollingWaitsThenReturnsTheApprovedToken() = runBlocking {
         val waits = mutableListOf<Long>()
         var now = 0L

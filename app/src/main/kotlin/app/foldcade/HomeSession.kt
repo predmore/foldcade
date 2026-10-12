@@ -439,6 +439,7 @@ class HomeSession(raw: String?) {
                     board = cycleChrome(chrome)
                     step(null, 0)
                 }
+                Meaning.LeftPanel, Meaning.RightPanel, Meaning.Options -> HomeStep(handled = false, effect = null, focus = null)
                 else -> step(null, index)
             }
         }
