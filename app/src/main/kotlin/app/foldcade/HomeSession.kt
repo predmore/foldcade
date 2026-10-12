@@ -15,13 +15,12 @@ import app.foldcade.language.HomeBoard
 import app.foldcade.language.HomeItem
 import app.foldcade.language.HomeKeys
 import app.foldcade.language.folderCountLine
-import app.foldcade.language.homeFolderFor
 import app.foldcade.language.HomeKind
 import app.foldcade.language.HomePlatform
 import app.foldcade.language.MARK_LIBRARY
 import app.foldcade.language.Meaning
 import app.foldcade.language.Metrics
-import app.foldcade.language.addToHome
+import app.foldcade.language.addItemToHome
 import app.foldcade.language.allItems
 import app.foldcade.language.allLabels
 import app.foldcade.language.cancelHold
@@ -225,7 +224,9 @@ class HomeSession(raw: String?) {
             if (board.allChrome != null) return null
             val item = allRows().getOrNull(index) ?: return null
             if (onHome(board, item.id)) return null
-            val into = addFolderFor(item)?.let { board.folders[it]?.name }
+            // Named for where it would land, including a folder that comes back with it.
+            val placed = addItemToHome(board, item, platforms, board.destinationFolderId)
+            val into = placed.folders.values.firstOrNull { item.id in it.slots }?.name
             return TileActions(addToHome = if (into != null) "${Copy.addTo} $into" else Copy.addToHome)
         }
         val slots = visibleSlots(board)
@@ -307,23 +308,21 @@ class HomeSession(raw: String?) {
      */
     fun addFocused(index: Int) {
         val item = allRows().getOrNull(index) ?: return
-        board = addToHome(board, item.id, addFolderFor(item))
+        board = addItemToHome(board, item, platforms, board.destinationFolderId)
     }
 
     /**
      * Places catalog item [id] on Home in its own folder, the way Add to Home in
-     * All does. A hidden id comes back. False when nothing changed.
+     * All does. The folder comes back if it went away. A hidden id comes back.
+     * False when nothing changed.
      */
     fun place(id: String): Boolean {
         val item = catalog().firstOrNull { it.id == id } ?: return false
-        val next = addToHome(board, id, homeFolderFor(board, item, platforms))
+        val next = addItemToHome(board, item, platforms)
         if (next == board) return false
         board = next
         return true
     }
-
-    private fun addFolderFor(item: HomeItem): String? =
-        board.destinationFolderId ?: homeFolderFor(board, item, platforms)
 
     /** Leaves any folder, All, a lifted tile, or a name field. Returns the root tile to focus. */
     fun showRoot(): Int {

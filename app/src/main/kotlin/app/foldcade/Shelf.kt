@@ -48,6 +48,20 @@ object Shelf {
     @Volatile
     var gameNativeInstalled: Boolean = false
 
+    /**
+     * Games DroidDeck pinned to Home or synced into a library folder.
+     * Empty until the last read or a saved one is loaded. These follow the Moonlight games.
+     */
+    @Volatile
+    var droidDeckGames: List<ShelfGame> = emptyList()
+
+    /**
+     * True when `com.droiddeck.launcher` is installed. With no [droidDeckGames],
+     * the DroidDeck tile says how to add one. It still opens DroidDeck.
+     */
+    @Volatile
+    var droidDeckInstalled: Boolean = false
+
     private val builtIn: List<ShelfGame> = listOf(
         ShelfGame("shelf.clamshell", "Clamshell", "Dual screen", mark = "clamshell"),
         ShelfGame("shelf.slim", "Slim Dual", "Side by side", mark = "slim"),
@@ -63,11 +77,20 @@ object Shelf {
             occupiesBothDisplays = false,
         ),
         ShelfGame(
-            id = "moonlight",
+            id = MOONLIGHT_TILE,
             title = "Moonlight",
             shortText = "Stream",
             platformId = "moonlight",
             occupiesBothDisplays = false,
+        ),
+        // Opens DroidDeck itself. On Home, the installed app in Emulators does that instead.
+        ShelfGame(
+            id = DROIDDECK_TILE,
+            title = "DroidDeck",
+            shortText = Copy.steamInDroidDeck,
+            platformId = "droiddeck",
+            occupiesBothDisplays = false,
+            mark = "droiddeck",
         ),
     )
 
@@ -78,10 +101,23 @@ object Shelf {
                     shortText = Copy.addShortcutInGameNative,
                     emptyShelfHint = true,
                 )
+            } else if (tile.id == DROIDDECK_TILE && droidDeckInstalled && droidDeckGames.isEmpty()) {
+                tile.copy(shortText = Copy.addToHomeInDroidDeck)
             } else {
                 tile
             }
-        } + catalog + moonlightGames
+        } + catalog + moonlightGames + droidDeckGames
 
     const val PC_TILE: String = "pc.gamenative"
+    const val MOONLIGHT_TILE: String = "moonlight"
+    const val DROIDDECK_TILE: String = "droiddeck"
+
+    /**
+     * Built-in tiles that open their app, not a game. They stay off Home: the
+     * installed app is there instead, in Emulators, so library folders hold only games.
+     */
+    val APP_TILES: Set<String> = setOf(PC_TILE, MOONLIGHT_TILE, DROIDDECK_TILE)
+
+    /** Shelf ids of DroidDeck games start with this, then the game id. */
+    const val DROIDDECK_PREFIX: String = "droiddeck."
 }

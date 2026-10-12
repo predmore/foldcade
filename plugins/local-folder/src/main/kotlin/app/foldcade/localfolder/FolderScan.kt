@@ -48,23 +48,41 @@ data class FolderScan(
 
 /**
  * A `.steam` file: the convention frontends such as Cocoon, Daijishou, and
- * ES-DE read, and GameNative exports. The body is the Steam app id. The file
- * name is the game's name, with `_` where the store name had a `:`.
- * The shell plays these through GameNative, not as a folder game.
+ * ES-DE read, and GameNative and DroidDeck export. The body is the game id.
+ * The file name is the game's name, with `_` where the store name had a `:`.
+ * The shell plays these through GameNative or DroidDeck, not as a folder game.
+ *
+ * [gameId] is canonical decimal: a Steam app id, or the 64-bit id Steam gives a
+ * game added outside Steam, which only DroidDeck writes. [fromDroidDeck] is true
+ * when the file sits beside [DROIDDECK_INVENTORY], so DroidDeck's game-file sync wrote it.
  */
 data class SteamShortcut(
     val documentUri: String,
     val title: String,
-    val appId: Int,
-)
+    val gameId: String,
+    val fromDroidDeck: Boolean = false,
+) {
+    /** [gameId] as a Steam app id. Null for an id too large to be one. */
+    val appId: Int? get() = gameId.toIntOrNull()
+}
 
-/** The [SteamShortcut] in [entry], or null when it is not a `.steam` file with an app id. */
-fun steamShortcutOf(entry: FolderEntry): SteamShortcut? {
+/**
+ * The inventory DroidDeck's game-file sync keeps in the folder it writes,
+ * from DroidDeck `GameFiles.INVENTORY`.
+ */
+const val DROIDDECK_INVENTORY: String = ".droiddeck-sync.json"
+
+/**
+ * The [SteamShortcut] in [entry], or null when it is not a `.steam` file with a game id.
+ * The id is the first run of digits, without leading zeros, up to the largest unsigned 64-bit value.
+ */
+fun steamShortcutOf(entry: FolderEntry, fromDroidDeck: Boolean = false): SteamShortcut? {
     val name = entry.displayName.trim()
     if (fileExtension(name) != "steam") return null
-    val appId = Regex("""\d+""").find(entry.text.orEmpty())?.value?.toIntOrNull()?.takeIf { it > 0 } ?: return null
+    val digits = Regex("""\d+""").find(entry.text.orEmpty())?.value?.trimStart('0') ?: return null
+    val gameId = digits.takeIf { it.isNotEmpty() && it.length <= 20 && it.toULongOrNull() != null } ?: return null
     val title = titleFromFileName(name).replace("_ ", ": ").trim().ifEmpty { return null }
-    return SteamShortcut(documentUri = entry.documentUri, title = title, appId = appId)
+    return SteamShortcut(documentUri = entry.documentUri, title = title, gameId = gameId, fromDroidDeck = fromDroidDeck)
 }
 
 /**
@@ -95,7 +113,7 @@ fun scanFolderTree(
     val childrenByParent = HashMap<String, List<ChildRef>>()
     val seen = HashSet<String>()
     val stack = ArrayDeque<Frame>()
-    stack.addLast(Frame(root, folderPlatform = null, folderName = ""))
+    stack.addLast(Frame(root, folderPlatform = null, folderName = "", droidDeckFolder = false))
     var cancelled = false
 
     while (stack.isNotEmpty()) {
@@ -121,11 +139,12 @@ fun scanFolderTree(
             }
             childrenByParent[uri] = listed
             val containing = frame.entry.displayName
+            val droidDeck = listed.any { !it.directory && it.name == DROIDDECK_INVENTORY }
             for (index in children.lastIndex downTo 0) {
-                stack.addLast(Frame(children[index], folderPlatform, containing))
+                stack.addLast(Frame(children[index], folderPlatform, containing, droidDeck))
             }
         } else {
-            val shortcut = steamShortcutOf(frame.entry)
+            val shortcut = steamShortcutOf(frame.entry, frame.droidDeckFolder)
             if (shortcut != null) {
                 steam.putIfAbsent(uri, shortcut)
                 continue
@@ -147,6 +166,8 @@ private class Frame(
     val entry: FolderEntry,
     val folderPlatform: FolderPlatform?,
     val folderName: String,
+    /** The containing directory holds [DROIDDECK_INVENTORY]. */
+    val droidDeckFolder: Boolean,
 )
 
 private class ChildRef(

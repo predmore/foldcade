@@ -587,6 +587,16 @@
       "tint": false,
       "accent": "#FF8A3D"
     },
+    "mark.droiddeck": {
+      "file": "icons/mark_droiddeck.xml",
+      "tint": false,
+      "accent": "#66C0F4"
+    },
+    "mark.emulators": {
+      "file": "icons/mark_emulators.xml",
+      "tint": false,
+      "accent": "#B48CFF"
+    },
     "mark.folder": {
       "file": "icons/mark_folder.xml",
       "tint": false,

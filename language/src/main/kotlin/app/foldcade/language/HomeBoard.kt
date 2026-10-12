@@ -13,6 +13,8 @@ const val HOME_ANDROID_GAMES: String = "home.android-games"
 const val HOME_ANDROID_APPS: String = "home.android-apps"
 const val HOME_GAMENATIVE: String = "home.gamenative"
 const val HOME_MOONLIGHT: String = "home.moonlight"
+const val HOME_DROIDDECK: String = "home.droiddeck"
+const val HOME_EMULATORS: String = "home.emulators"
 
 enum class HomeKind {
     Rom,
@@ -20,6 +22,10 @@ enum class HomeKind {
     AndroidApp,
     GameNative,
     Moonlight,
+    DroidDeck,
+
+    /** An installed app a player plugin launches games in. It is filed apart from the games. */
+    Emulator,
     Loose,
 }
 
@@ -90,6 +96,8 @@ data class HomeBoard(
     val destinationFolderId: String? = null,
     /** 0 tab, 1 sort, 2 system, 3 destination. Null is the grid. */
     val allChrome: Int? = null,
+    /** Emulators an older release filed with the Android apps have moved to Emulators. */
+    val emulatorsFiled: Boolean = false,
 )
 
 fun homeGameId(backendId: String, remoteKey: String): String = "lib:$backendId:$remoteKey"
@@ -115,7 +123,7 @@ const val MARK_LIBRARY: String = "library"
  * folder, the libraries, then every platform.
  */
 val FOLDER_ICONS: List<String> =
-    listOf(MARK_FOLDER, MARK_LIBRARY, "android-games", "android-apps", "pc", "moonlight", MARK_CONSOLE) +
+    listOf(MARK_FOLDER, MARK_LIBRARY, "android-games", "android-apps", "pc", "moonlight", "droiddeck", "emulators", MARK_CONSOLE) +
         PLATFORM_MARKS
 
 /** Gives a folder the user made the icon [mark]. A system folder keeps its platform's. */
@@ -134,6 +142,8 @@ fun bucketMark(kind: HomeKind): String = when (kind) {
     HomeKind.AndroidApp -> "android-apps"
     HomeKind.GameNative -> "pc"
     HomeKind.Moonlight -> "moonlight"
+    HomeKind.DroidDeck -> "droiddeck"
+    HomeKind.Emulator -> "emulators"
     else -> MARK_FOLDER
 }
 
@@ -168,8 +178,9 @@ fun folderCount(board: HomeBoard, folderId: String): Int =
  *
  * [unsettled] is true for an id whose source has not reported yet, such as a library still
  * scanning after launch. Its slot is kept rather than read as a game that went away.
- * A platform folder Foldcade made goes away once no game for that platform is left,
- * and comes back with the next game for it.
+ *
+ * No games, no folder. A folder Foldcade made, for a platform or a library, appears with its
+ * first game and goes away once none is left in it. Emulators have a folder of their own.
  */
 fun mergeHome(
     board: HomeBoard,
@@ -187,14 +198,14 @@ fun mergeHome(
         },
         hidden = board.hidden.filter(keep).toSet(),
     )
+    next = fileEmulators(next, catalog, platforms)
     for (item in catalog) {
         if (item.id in next.hidden) continue
         if (onHome(next, item.id)) continue
         if (!next.addNewToHome) continue
         next = placeNew(next, item, platforms)
     }
-    next = ensureSpecialFolders(next)
-    next = dropGonePlatformFolders(next, catalog, platforms, unsettled)
+    next = dropEmptySystemFolders(next)
     next = refreshFolderNames(next, platforms)
     if (HOME_ALL !in next.slots) {
         next = next.copy(slots = listOf(HOME_ALL) + next.slots)
@@ -374,13 +385,27 @@ fun homeFolderFor(board: HomeBoard, item: HomeItem, platforms: List<HomePlatform
                 ?: item.platformId?.takeIf { it.isNotBlank() }
             platform?.let(::platformFolderId)
         }
-        HomeKind.AndroidGame -> HOME_ANDROID_GAMES
-        HomeKind.AndroidApp -> HOME_ANDROID_APPS
-        HomeKind.GameNative -> HOME_GAMENATIVE
-        HomeKind.Moonlight -> HOME_MOONLIGHT
-        HomeKind.Loose -> null
+        else -> bucketFolderId(item.kind)
     }
     return folderId?.takeIf { it in board.folders }
+}
+
+/**
+ * Puts [item] back on Home, unhidden. [folderId] wins when it is a folder on the board.
+ * Otherwise the item goes where a new one would, and a system folder that went away
+ * with its last game comes back with this one.
+ */
+fun addItemToHome(
+    board: HomeBoard,
+    item: HomeItem,
+    platforms: List<HomePlatform>,
+    folderId: String? = null,
+): HomeBoard {
+    if (item.id == HOME_ALL || item.id.isBlank()) return board
+    val shown = board.copy(hidden = board.hidden - item.id)
+    if (onHome(shown, item.id)) return shown
+    if (folderId != null && folderId in shown.folders) return dropInto(shown, folderId, item.id)
+    return placeNew(shown, item, platforms)
 }
 
 fun setAddNewToHome(board: HomeBoard, enabled: Boolean): HomeBoard =
@@ -412,8 +437,8 @@ enum class AllChromeControl {
 
 private fun HomeItem.inAllTab(tab: AllTab): Boolean = !placeholder && when (tab) {
     AllTab.Games -> kind == HomeKind.Rom || kind == HomeKind.AndroidGame ||
-        kind == HomeKind.GameNative || kind == HomeKind.Moonlight
-    AllTab.Apps -> kind == HomeKind.AndroidApp
+        kind == HomeKind.GameNative || kind == HomeKind.Moonlight || kind == HomeKind.DroidDeck
+    AllTab.Apps -> kind == HomeKind.AndroidApp || kind == HomeKind.Emulator
 }
 
 fun allItems(
@@ -520,6 +545,7 @@ fun encodeHome(board: HomeBoard): String {
         homeRow("allSort", listOf(saved.allSort.name))
         homeRow("allSystem", listOf(saved.allSystemId.orEmpty()))
         homeRow("destination", listOf(saved.destinationFolderId.orEmpty()))
+        homeRow("emulatorsFiled", listOf(if (saved.emulatorsFiled) "1" else "0"))
         for (folder in saved.folders.values.sortedBy { it.id }) {
             homeRow(
                 "folder",
@@ -568,6 +594,7 @@ fun decodeHome(raw: String?): HomeBoard {
             "allSort" -> board = board.copy(allSort = AllSort.entries.firstOrNull { it.name == bits.getOrNull(1) } ?: AllSort.Title)
             "allSystem" -> board = board.copy(allSystemId = bits.getOrNull(1)?.takeIf { it.isNotEmpty() })
             "destination" -> board = board.copy(destinationFolderId = bits.getOrNull(1)?.takeIf { it.isNotEmpty() })
+            "emulatorsFiled" -> board = board.copy(emulatorsFiled = bits.getOrNull(1) == "1")
             "folder" -> {
                 if (bits.size < 8) continue
                 val bucket = bits[4].takeIf { it.isNotEmpty() }?.let { runCatching { HomeKind.valueOf(it) }.getOrNull() }
@@ -607,30 +634,35 @@ private fun stripUnknown(
 }
 
 /**
- * A platform folder Foldcade made, with no game for that platform left in the catalog and
- * nothing still in its slots, leaves the grid. Its root slot stays empty like any other
- * removed tile, so the tiles after it keep their places. Empty slots left at the end of the
- * grid are dropped. A folder the user made, or one moved while a tile is held, stays.
+ * Once, an emulator still in the Android Games or Android Apps folder, where releases
+ * before the Emulators folder put it, moves to Emulators. Later moves are the user's.
+ * Waits until the installed apps have reported, which is when an emulator is in [catalog].
  */
-private fun dropGonePlatformFolders(
-    board: HomeBoard,
-    catalog: List<HomeItem>,
-    platforms: List<HomePlatform>,
-    unsettled: (String) -> Boolean,
-): HomeBoard {
+private fun fileEmulators(board: HomeBoard, catalog: List<HomeItem>, platforms: List<HomePlatform>): HomeBoard {
+    if (board.emulatorsFiled || board.hold != null) return board
+    val emulators = catalog.filter { it.kind == HomeKind.Emulator }
+    if (emulators.isEmpty()) return board
+    var next = board
+    for (item in emulators) {
+        val from = listOf(HOME_ANDROID_GAMES, HOME_ANDROID_APPS).mapNotNull { next.folders[it] }
+            .firstOrNull { item.id in it.slots } ?: continue
+        val left = from.copy(slots = from.slots.map { if (it == item.id) null else it })
+        next = placeNew(next.copy(folders = next.folders + (from.id to left)), item, platforms)
+    }
+    return next.copy(emulatorsFiled = true)
+}
+
+/**
+ * A folder Foldcade made, for a platform or a library, with nothing left in its slots,
+ * leaves the grid. Its root slot stays empty like any other removed tile, so the tiles
+ * after it keep their places. Empty slots left at the end of the grid are dropped.
+ * A folder the user made, or any folder while a tile is held, stays. A game whose
+ * source has not reported yet keeps its slot, so it keeps its folder too.
+ */
+private fun dropEmptySystemFolders(board: HomeBoard): HomeBoard {
     if (board.hold != null) return board
-    // An empty platform folder may belong to games hidden or moved into a user folder.
-    // Until those sources report, an empty catalog cannot confirm its removal.
-    if (board.hidden.any(unsettled) || board.slots.any { it != null && unsettled(it) } ||
-        board.folders.values.any { folder -> folder.slots.any { it != null && unsettled(it) } }
-    ) return board
-    val present = catalog.mapNotNull { item ->
-        if (item.kind != HomeKind.Rom) return@mapNotNull null
-        resolvePlatform(platforms, item.platformId)?.id ?: item.platformId?.takeIf { it.isNotBlank() }
-    }.toSet()
     val gone = board.folders.values.filter { folder ->
-        val platformId = folder.platformId ?: return@filter false
-        !folder.userMade && platformId !in present && folder.slots.all { it == null }
+        !folder.userMade && (folder.platformId != null || folder.bucket != null) && folder.slots.all { it == null }
     }.map { it.id }.toSet()
     if (gone.isEmpty()) return board
     val slots = board.slots.map { if (it in gone) null else it }.dropLastWhile { it == null }
@@ -642,23 +674,13 @@ private fun dropGonePlatformFolders(
     )
 }
 
-private fun ensureSpecialFolders(board: HomeBoard): HomeBoard {
-    var next = board
-    for (spec in specialFolders()) {
-        if (spec.id in next.folders || spec.id in next.retired) continue
-        next = next.copy(
-            folders = next.folders + (spec.id to spec),
-            slots = next.slots + spec.id,
-        )
-    }
-    return next
-}
-
 private fun specialFolders(): List<HomeFolder> = listOf(
     HomeFolder(HOME_ANDROID_GAMES, "Android Games", bucket = HomeKind.AndroidGame, mark = bucketMark(HomeKind.AndroidGame)),
     HomeFolder(HOME_ANDROID_APPS, "Android Apps", bucket = HomeKind.AndroidApp, mark = bucketMark(HomeKind.AndroidApp)),
     HomeFolder(HOME_GAMENATIVE, "GameNative", bucket = HomeKind.GameNative, mark = bucketMark(HomeKind.GameNative)),
     HomeFolder(HOME_MOONLIGHT, "Moonlight", bucket = HomeKind.Moonlight, mark = bucketMark(HomeKind.Moonlight)),
+    HomeFolder(HOME_DROIDDECK, "DroidDeck", bucket = HomeKind.DroidDeck, mark = bucketMark(HomeKind.DroidDeck)),
+    HomeFolder(HOME_EMULATORS, "Emulators", bucket = HomeKind.Emulator, mark = bucketMark(HomeKind.Emulator)),
 )
 
 private fun placeNew(board: HomeBoard, item: HomeItem, platforms: List<HomePlatform>): HomeBoard {
@@ -670,12 +692,19 @@ private fun placeNew(board: HomeBoard, item: HomeItem, platforms: List<HomePlatf
                 }
             if (platform == null) placeOnRoot(board, item.id) else placeInPlatform(board, item.id, platform)
         }
-        HomeKind.AndroidGame -> placeInBucket(board, item.id, HOME_ANDROID_GAMES)
-        HomeKind.AndroidApp -> placeInBucket(board, item.id, HOME_ANDROID_APPS)
-        HomeKind.GameNative -> placeInBucket(board, item.id, HOME_GAMENATIVE)
-        HomeKind.Moonlight -> placeInBucket(board, item.id, HOME_MOONLIGHT)
-        HomeKind.Loose -> placeOnRoot(board, item.id)
+        else -> bucketFolderId(item.kind)?.let { placeInBucket(board, item.id, it) } ?: placeOnRoot(board, item.id)
     }
+}
+
+/** The library folder for [kind], or null for a ROM, whose folder is its platform's, and a loose tile. */
+private fun bucketFolderId(kind: HomeKind): String? = when (kind) {
+    HomeKind.AndroidGame -> HOME_ANDROID_GAMES
+    HomeKind.AndroidApp -> HOME_ANDROID_APPS
+    HomeKind.GameNative -> HOME_GAMENATIVE
+    HomeKind.Moonlight -> HOME_MOONLIGHT
+    HomeKind.DroidDeck -> HOME_DROIDDECK
+    HomeKind.Emulator -> HOME_EMULATORS
+    HomeKind.Rom, HomeKind.Loose -> null
 }
 
 private fun placeInPlatform(board: HomeBoard, itemId: String, platform: HomePlatform): HomeBoard {

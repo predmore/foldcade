@@ -10,6 +10,8 @@ import app.foldcade.api.plugin.SyncOutcome
 import app.foldcade.api.plugin.SyncResult
 import app.foldcade.artwork.ArtQuery
 import app.foldcade.localfolder.LocalFolderBackend
+import app.foldcade.plugins.droiddeck.DroidDeckLibrary
+import app.foldcade.plugins.droiddeck.droidDeckSteamAppId
 import app.foldcade.plugins.gamenative.GameNativeLibrary
 import app.foldcade.plugins.gamenative.steamAppId
 import app.foldcade.plugins.moonlight.MoonlightLibrary
@@ -106,6 +108,8 @@ class ShellController(
     private val lastPlayedMillis: (String) -> Long? = { null },
     /** A Moonlight game left Home. The app drops its pinned shortcut. */
     private val onMoonlightRemoved: (remoteKey: String) -> Unit = {},
+    /** A DroidDeck game left Home. The app drops its pinned shortcut. */
+    private val onDroidDeckRemoved: (remoteKey: String) -> Unit = {},
     /** The R1 slider moved to this position. The app stores it. */
     private val onBrightness: (position: Int) -> Unit = {},
 ) {
@@ -118,6 +122,7 @@ class ShellController(
     /** Libraries that have reported their games since launch. Until then their home tiles are kept. */
     private val settledLibraries = mutableSetOf<String>()
     private var moonlightSettled = false
+    private var droidDeckSettled = false
     private var installedAppsSettled = false
     private val libraryGames = HashMap<String, Game>()
     private var extraPlatforms: List<HomePlatform> = emptyList()
@@ -276,9 +281,13 @@ class ShellController(
             Effect.ChooseFolderIcon -> changeHome { home.pickIcon(it); it }
             Effect.RemoveTile -> {
                 // A folder has no library, so removing one never unpins what it held.
-                val moonlight = home.face(model.focus.cellIndex)?.let(::homeShelf)
-                    ?.takeIf { it.libraryId == MoonlightLibrary.ID }?.remoteKey
-                changeHome { home.remove(it) }.also { if (moonlight != null) onMoonlightRemoved(moonlight) }
+                val removed = home.face(model.focus.cellIndex)?.let(::homeShelf)
+                val moonlight = removed?.takeIf { it.libraryId == MoonlightLibrary.ID }?.remoteKey
+                val droidDeck = removed?.takeIf { it.libraryId == DroidDeckLibrary.ID }?.remoteKey
+                changeHome { home.remove(it) }.also {
+                    if (moonlight != null) onMoonlightRemoved(moonlight)
+                    if (droidDeck != null) onDroidDeckRemoved(droidDeck)
+                }
             }
             Effect.AddToHome -> changeHome { home.addFocused(it); it }
             Effect.OpenAll -> {
@@ -370,6 +379,8 @@ class ShellController(
     private fun changeHome(change: (Int) -> Int): Effect? {
         if (!showingHome()) return null
         val index = change(model.focus.cellIndex)
+        // A folder Foldcade made goes the moment its last game leaves it, not at the next scan.
+        syncHome()
         store.saveHomeBoard(home.encoded())
         showBoard(GridFocus(cellIndex = index, lastColumn = index % Metrics.columns), keepDialog = true)
         return null
@@ -456,6 +467,7 @@ class ShellController(
             val kind = when (libraryId) {
                 "gamenative" -> HomeKind.GameNative
                 "moonlight" -> HomeKind.Moonlight
+                DroidDeckLibrary.ID -> HomeKind.DroidDeck
                 else -> HomeKind.Rom
             }
             items += HomeItem(
@@ -939,6 +951,24 @@ class ShellController(
     }
 
     /**
+     * DroidDeck tiles stay on Home until a live shortcut read and a finished
+     * folder scan have both reported. Before that, a missing tile is not yet known to be gone.
+     */
+    fun settleDroidDeck() {
+        droidDeckSettled = true
+    }
+
+    /**
+     * A game the user just added to the home screen in DroidDeck goes on Home in
+     * the DroidDeck folder, even with Add new games off and even if it was removed before.
+     */
+    fun placeDroidDeckPin(shelfId: String) {
+        if (!home.place(shelfId)) return
+        store.saveHomeBoard(home.encoded())
+        noteShelfChanged()
+    }
+
+    /**
      * A game the user just pinned in Moonlight goes on Home in the Moonlight
      * folder, even with Add new games off and even if it was removed before.
      */
@@ -1111,7 +1141,11 @@ class ShellController(
             title = game.title,
             platformId = platformId,
             fileName = remoteKey?.takeIf { libraryId == LocalFolderBackend.ID }?.let(LocalFolderBackend::fileNameOf),
-            steamAppId = remoteKey?.takeIf { libraryId == GameNativeLibrary.ID }?.let(::steamAppId),
+            steamAppId = when (libraryId) {
+                GameNativeLibrary.ID -> remoteKey?.let(::steamAppId)
+                DroidDeckLibrary.ID -> remoteKey?.let(::droidDeckSteamAppId)
+                else -> null
+            },
         )
     }
 
@@ -1351,8 +1385,11 @@ class ShellController(
         val count = countFor(next.homeGrid)
         val counted = next.copy(count = count, playerSaves = playerSaveSettings(), recentFirst = recentOrder())
         val game = tileOn(counted)
-        val tile = if (showingHome(counted)) home.actions(counted.focus.cellIndex) else null
-        return counted.copy(appActions = actionsFor(counted, game), tileActions = tile)
+        val onHome = showingHome(counted)
+        val tile = if (onHome) home.actions(counted.focus.cellIndex) else null
+        // A merge can close the open folder, when its last game left, so read where the board is now.
+        val root = if (onHome) home.board.openFolderId == null && !home.board.allOpen else counted.atLibraryRoot
+        return counted.copy(appActions = actionsFor(counted, game), tileActions = tile, atLibraryRoot = root)
     }
 
     private fun tileOn(snapshot: PickerModel): ShelfGame? {
@@ -1581,6 +1618,7 @@ class ShellController(
             unsettled = { id ->
                 libraryOf(id)?.let { it !in settledLibraries } == true ||
                     (!moonlightSettled && isMoonlightRemoteKey(id)) ||
+                    (!droidDeckSettled && id.startsWith(Shelf.DROIDDECK_PREFIX)) ||
                     (!installedAppsSettled && id.startsWith("android:")) ||
                     (GameNativeLibrary.ID !in settledLibraries && id.startsWith("gamenative."))
             },
@@ -1589,9 +1627,12 @@ class ShellController(
     }
 
     private fun shelfItems(): List<HomeItem> = Shelf.games.mapNotNull { game ->
+        // The app itself is on Home, in Emulators, so its folder holds only games.
+        if (game.id in Shelf.APP_TILES) return@mapNotNull null
         val kind = when {
             game.id == Shelf.PC_TILE || game.libraryId == "gamenative" -> HomeKind.GameNative
             game.id == "moonlight" || game.libraryId == "moonlight" -> HomeKind.Moonlight
+            game.id == Shelf.DROIDDECK_TILE || game.libraryId == DroidDeckLibrary.ID -> HomeKind.DroidDeck
             !game.platformId.isNullOrBlank() && game.mark == null -> HomeKind.Rom
             else -> HomeKind.Loose
         }
@@ -1604,12 +1645,16 @@ class ShellController(
             platformId = game.platformId,
             mark = game.mark ?: game.platformId?.let { kitMark(it) },
             lastPlayedMillis = lastPlayedMillis(game.id) ?: 0L,
-            placeholder = game.id == Shelf.PC_TILE || game.id == "moonlight",
         )
     }
 
+    /** Installed apps. One a player plugin launches games in is an emulator, filed apart from the games. */
     private fun appItems(): List<HomeItem> = installed.map { app ->
-        val kind = if (app.systemGame) HomeKind.AndroidGame else HomeKind.AndroidApp
+        val kind = when {
+            app.packageName in playerPackages -> HomeKind.Emulator
+            app.systemGame -> HomeKind.AndroidGame
+            else -> HomeKind.AndroidApp
+        }
         HomeItem(
             id = androidHomeId(app.packageName),
             title = app.label,

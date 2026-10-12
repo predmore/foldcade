@@ -83,6 +83,9 @@ object Copy {
     const val openAnApp = "Open an app"
     const val progressInGameNative = "Progress lives in GameNative."
     const val addShortcutInGameNative = "Add a game's shortcut in GameNative."
+    const val progressInDroidDeck = "Progress lives in DroidDeck."
+    const val steamInDroidDeck = "Steam on this device"
+    const val addToHomeInDroidDeck = "Choose Add to home screen on a game in DroidDeck."
     /** The left-menu row that opens the library sources. Not the All library tile. */
     const val library = "Sources"
     const val theme = "Theme"
@@ -118,7 +121,7 @@ object Copy {
     const val forgetKey = "Forget key"
     const val apiKey = "API key"
     const val saveKey = "Save key"
-    const val artKeyHelp = "A free key from steamgriddb.com, under Preferences › API. It finds art for Moonlight, PC games, and anything the other sources miss. Foldcade keeps the key on this device."
+    const val artKeyHelp = "A free key from steamgriddb.com, under Preferences › API. It finds art for Moonlight, PC and DroidDeck games, and anything the other sources miss. Foldcade keeps the key on this device."
     const val artKeyRefused = "SteamGridDB didn’t accept this key."
     const val artKeyUnreachable = "Couldn’t reach SteamGridDB. Try again in a moment."
     const val rommTokenHelp = "RomM uses a client API token or a device-code token. Foldcade stores the token and does not store a password."

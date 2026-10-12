@@ -573,12 +573,52 @@ class FolderScanTest {
         assertEquals(emptyList<FolderGame>(), scanned.games)
         assertEquals(
             listOf(
-                SteamShortcut("content://steam/aoe", "Age of Empires IV: Anniversary Edition", 1466860),
-                SteamShortcut("content://steam/url", "Diablo® IV", 2344520),
-                SteamShortcut("content://steam/hades", "Hades II", 1145350),
+                SteamShortcut("content://steam/aoe", "Age of Empires IV: Anniversary Edition", "1466860"),
+                SteamShortcut("content://steam/url", "Diablo® IV", "2344520"),
+                SteamShortcut("content://steam/hades", "Hades II", "1145350"),
             ),
             scanned.steamShortcuts,
         )
+        assertEquals(listOf(1466860, 2344520, 1145350), scanned.steamShortcuts.map { it.appId })
+    }
+
+    @Test
+    fun droidDeckSyncFolderMarksItsSteamFilesAndKeepsWholeIds() {
+        val root = dir(
+            "content://root",
+            "Games",
+            listOf(
+                dir(
+                    "content://deck",
+                    "DroidDeck",
+                    listOf(
+                        file("content://deck/inventory", ".droiddeck-sync.json", null),
+                        file("content://deck/hades", "Hades II.steam", "1145350"),
+                        file("content://deck/added", "Celeste.steam", "18446744069448138752"),
+                        dir("content://deck/images", "images", listOf(file("content://deck/images/hades", "hades-ii-icon.png"))),
+                    ),
+                ),
+                dir(
+                    "content://gn",
+                    "GameNative",
+                    listOf(
+                        file("content://gn/portal", "Portal 2.steam", "0620"),
+                        file("content://gn/huge", "Too Big.steam", "18446744073709551616"),
+                    ),
+                ),
+            ),
+        )
+        val scanned = scan(root)
+        assertEquals(emptyList<FolderGame>(), scanned.games)
+        assertEquals(
+            listOf(
+                SteamShortcut("content://deck/added", "Celeste", "18446744069448138752", fromDroidDeck = true),
+                SteamShortcut("content://deck/hades", "Hades II", "1145350", fromDroidDeck = true),
+                SteamShortcut("content://gn/portal", "Portal 2", "620"),
+            ),
+            scanned.steamShortcuts,
+        )
+        assertEquals(null, scanned.steamShortcuts.first().appId)
     }
 }
 

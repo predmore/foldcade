@@ -6,6 +6,7 @@ import app.foldcade.api.plugin.PluginEntry
 import app.foldcade.api.plugin.canonicalPlatformId
 import app.foldcade.api.plugin.MemoryCredentialStore
 import app.foldcade.host.PluginHost
+import app.foldcade.language.LaunchableApp
 import app.foldcade.language.SettingsCategory
 import app.foldcade.language.settingsRows
 import app.foldcade.language.settingsCategories
@@ -166,6 +167,7 @@ class ShellHostTest {
             listOf(
                 "app.foldcade.localfolder.LocalFolderEntry",
                 "app.foldcade.plugins.azahar.AzaharEntry",
+                "app.foldcade.plugins.droiddeck.DroidDeckEntry",
                 "app.foldcade.plugins.emulators.EmulatorsEntry",
                 "app.foldcade.plugins.gamenative.GameNativeEntry",
                 "app.foldcade.plugins.melonds.MelonDsEntry",
@@ -216,6 +218,7 @@ class ShellHostTest {
             setOf(
                 "app.foldcade.localfolder.LocalFolderEntry",
                 "app.foldcade.plugins.azahar.AzaharEntry",
+                "app.foldcade.plugins.droiddeck.DroidDeckEntry",
                 "app.foldcade.plugins.emulators.EmulatorsEntry",
                 "app.foldcade.plugins.gamenative.GameNativeEntry",
                 "app.foldcade.plugins.melonds.MelonDsEntry",
@@ -246,19 +249,26 @@ class ShellHostTest {
         assertEquals("moonlight", host.playersFor("moonlight").single().platformId)
         assertFalse(host.player("moonlight") is app.foldcade.api.plugin.SaveFolderHolder)
         assertEquals("Moonlight", host.library("moonlight")?.displayName)
+        assertEquals("droiddeck", host.playersFor("droiddeck").single().id)
+        assertFalse(host.player("droiddeck") is app.foldcade.api.plugin.SaveFolderHolder)
+        assertEquals("DroidDeck", host.library("droiddeck")?.displayName)
+        assertNull(host.metadata("droiddeck"))
+        // GameNative keeps PC to itself: a DroidDeck game never opens there, and the reverse.
+        assertEquals(listOf("gamenative"), host.playersFor("pc").map { it.id })
         val stored = host.platformDefinitions()
         assertEquals(
-            folder.platforms.map { it.id }.toSet() + setOf("pc", "moonlight"),
+            folder.platforms.map { it.id }.toSet() + setOf("pc", "moonlight", "droiddeck"),
             stored.map { it.id }.toSet(),
         )
-        assertEquals(folder.platforms.size + 2, stored.size)
+        assertEquals(folder.platforms.size + 3, stored.size)
         val aliasesById = stored.associate { it.id to it.aliases }
         assertEquals(
             folder.platforms.associate { it.id to it.aliases },
-            aliasesById - "pc" - "moonlight",
+            aliasesById - "pc" - "moonlight" - "droiddeck",
         )
         assertEquals(emptySet<String>(), aliasesById.getValue("pc"))
         assertEquals(emptySet<String>(), aliasesById.getValue("moonlight"))
+        assertEquals(emptySet<String>(), aliasesById.getValue("droiddeck"))
         val cache = Files.createTempDirectory("romm-real-entries")
         try {
             publishRommWiring(
@@ -374,6 +384,11 @@ class ShellHostTest {
         val store = SessionStore(MemoryPrefs())
         val last = mapOf("shelf.handheld" to 30L, "shelf.clamshell" to 10L)
         val shell = ShellController(store, host, lastPlayedMillis = { last[it] })
+        // Three folders, so there is an order to keep.
+        shell.setInstalledApps(
+            listOf(LaunchableApp("com.example.game", "Game", systemGame = true), LaunchableApp("com.example.notes", "Notes", systemGame = false)),
+            emptySet(),
+        )
         shell.openSetting(Row.Order)
         shell.onMeaning(Meaning.Activate, HostScreen.Bottom)
         assertEquals(LibrarySort.RecentlyPlayed, shell.model.sort)

@@ -21,6 +21,7 @@
         <package android:name="me.magnum.melonds.nightly" />
         <package android:name="app.gamenative" />
         <package android:name="app.gamenative.gold" />
+        <package android:name="com.droiddeck.launcher" />
         <package android:name="com.limelight" />
         <!-- :plugins:emulators -->
         <package android:name="com.fastemulator.gba" />
@@ -103,7 +104,7 @@
         </activity>
 
         <!-- Android sends shortcut pin requests to the default home app. Moonlight's
-             Create shortcut lands here. It draws nothing and finishes at once. -->
+             Create shortcut and DroidDeck's Add to home screen land here. It draws nothing and finishes at once. -->
         <activity
             android:name=".PinShortcutActivity"
             android:excludeFromRecents="true"

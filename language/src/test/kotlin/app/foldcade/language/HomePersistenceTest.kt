@@ -51,16 +51,22 @@ class HomePersistenceTest {
     }
 
     @Test
-    fun anEmptyRenamedPlatformFolderSurvivesWhileItsHiddenGamesAreStillLoading() {
+    fun aRenamedPlatformFolderSurvivesWhileItsGamesAreStillLoading() {
         val gameId = homeGameId("romm", "game")
         val platform = HomePlatform("nintendo-ds", "Nintendo DS")
-        val folder = HomeFolder(platformFolderId(platform.id), "DS favorites", platformId = platform.id, namedByUser = true)
-        val board = HomeBoard(slots = listOf(HOME_ALL, folder.id), folders = mapOf(folder.id to folder), hidden = setOf(gameId))
+        val folder = HomeFolder(
+            platformFolderId(platform.id),
+            "DS favorites",
+            platformId = platform.id,
+            namedByUser = true,
+            slots = listOf(gameId),
+        )
+        val board = HomeBoard(slots = listOf(HOME_ALL, folder.id), folders = mapOf(folder.id to folder))
         val loading = mergeHome(decodeHome(encodeHome(board)), emptyList(), listOf(platform), unsettled = { it == gameId })
         assertEquals("DS favorites", loading.folders[folder.id]?.name)
         assertEquals(1, loading.slots.indexOf(folder.id))
         val loaded = mergeHome(loading, listOf(HomeItem(gameId, "Game", HomeKind.Rom, platformId = platform.id)), listOf(platform))
         assertEquals("DS favorites", loaded.folders[folder.id]?.name)
-        assertEquals(setOf(gameId), loaded.hidden)
+        assertEquals(listOf(gameId), loaded.folders[folder.id]?.slots)
     }
 }
