@@ -61,7 +61,7 @@ Every game shows how long you have played it and when you last picked it up. Sor
 
 ### Make it yours
 
-<img src="docs/afterglow/ribbons-motion.gif" alt="Thin teal and amber ribbons drift slowly across a black screen." width="480">
+<img src="docs/afterglow/ribbons-motion.gif" alt="Softly glowing teal and amber ribbons drift at their own paces and cross each other on a black screen." width="480">
 
 - **Afterglow**, the first theme, is true black with soft neon tiles and slow, drifting ribbons of light. It is easy on the eyes on a late-night session. More themes are on the way.
 - **Arrange your home.** Pick the games you care about most and put them in the order you like.

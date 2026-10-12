@@ -2,7 +2,7 @@
 
 Themes are ZIPs containing JSON, images, Android vector XML, fonts, audio, and AGSL shaders. They contain no Java, Kotlin, DEX, native libraries, or application scripts. The native renderer provides the machinery; packs own their design and performance. There is no automatic quality reduction or cap on scene layers, particles, shader complexity, or requested frame rate.
 
-Afterglow is the reference pack in `themes/afterglow/`. Its icon artwork, focus styling, typography, motion settings, layout metrics, and backgrounds live there. The app generates its emergency drawable resources from those same icon files. The old procedural background implementation is retained only in tests as an independent migration oracle.
+Afterglow is the reference pack in `themes/afterglow/`. Its icon artwork, focus styling, typography, motion settings, layout metrics, and backgrounds live there. The app generates its emergency drawable resources from those same icon files. Tests keep a CPU model of the Afterglow backgrounds. It is updated alongside the scenes and checks their uniforms, lit budget, and motion pacing.
 
 The current version exposes the existing launcher's presentation tokens and components. It does not yet let a pack replace the controller's grid/navigation topology or author arbitrary screen layouts. Downloading/installing external packs through the UI is also future work; the loader already accepts resource packs from private `files/themes/*.zip` storage.
 

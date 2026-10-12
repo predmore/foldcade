@@ -23,7 +23,7 @@ class ThemeSceneTest {
     }
 
     @Test
-    fun themeRibbonsAndStaticBindTheSameGpuInputsAsThePreviousRenderer() {
+    fun themeRibbonsAndStaticBindTheSameGpuInputsAsTheReferenceModel() {
         val pack = afterglow()
         for ((id, mode) in listOf("ribbons" to BackgroundMotion.Ribbons, "static" to BackgroundMotion.Static)) {
             val scene = pack.scenes.getValue(BackgroundMotion("afterglow:$id"))
@@ -37,7 +37,7 @@ class ThemeSceneTest {
                     val actual = shader.uniforms.getValue(name).map { it.evaluate(state.values) }.toFloatArray()
                     assertArrayEquals("$id $name at $time", values, actual, 0.0001f)
                 }
-                check("travel", floatArrayOf(expected.travel)); check("shape", expected.shape)
+                check("shape", expected.shape)
                 check("drift", expected.drift); check("start", expected.start); check("end", expected.end)
                 check("swell", expected.swell); check("reach", floatArrayOf(expected.reach))
             }
