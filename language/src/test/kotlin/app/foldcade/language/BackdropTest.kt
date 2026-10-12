@@ -1,7 +1,9 @@
 package app.foldcade.language
 
+import kotlin.math.PI
 import kotlin.math.abs
 import kotlin.math.hypot
+import kotlin.math.round
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
@@ -17,11 +19,9 @@ class BackdropTest {
         assertEquals(0.5f, referenceBackdropClock(MotionSpeed.Slower, 1f), 0.001f)
         assertEquals(0.5f, referenceBackdropClock(MotionSpeed.Slow, 2f), 0.001f)
         assertEquals(Backdrop.MAX_CLOCK, referenceBackdropClock(MotionSpeed.Slow, 0.5f), 0.001f)
-        assertTrue(Backdrop.DRIFT_SECONDS / Backdrop.MAX_CLOCK >= 60f)
         assertTrue(Backdrop.BREATH_SECONDS / Backdrop.MAX_CLOCK >= 30f)
         assertTrue(Backdrop.FADE_SECONDS / Backdrop.MAX_CLOCK >= 2f)
         assertTrue(Backdrop.BREATH_AMOUNT <= 0.10f)
-        assertTrue(Backdrop.DRIFT_SECONDS in 60f..120f)
     }
 
     @Test
@@ -36,7 +36,7 @@ class BackdropTest {
                 val wait = backdropFrameSeconds(BackgroundMotion.Ribbons, time, clock)
                 assertTrue(wait in Backdrop.GLIDE_FRAME_SECONDS..Backdrop.SLOWEST_FRAME_SECONDS)
                 val next = time + wait * clock
-                drift = maxOf(drift, ribbonStep(time, next, width, height))
+                drift = maxOf(drift, ribbonStep(BackgroundMotion.Ribbons, time, next, width, height))
                 val bead = beadCenter(frame(BackgroundMotion.Ribbons, time, width, height))
                 val after = beadCenter(frame(BackgroundMotion.Ribbons, next, width, height))
                 if (bead != null && after != null) {
@@ -44,12 +44,12 @@ class BackdropTest {
                 }
                 time = next
             }
-            assertTrue("drift ${"%.2f".format(drift)}px a frame at clock $clock", drift <= 1.5f)
+            assertTrue("drift ${"%.2f".format(drift)}px a frame at clock $clock", drift <= 1.25f)
             assertTrue("bead ${"%.2f".format(glide)}px a frame at clock $clock", glide <= 6f)
         }
         val still = Backdrop.STATIC_FRAME_SECONDS
         assertEquals(still, backdropFrameSeconds(BackgroundMotion.Static, 30f, 1f), 0.001f)
-        val creep = Backdrop.STATIC_SHIFT_PX / Backdrop.STATIC_SHIFT_SECONDS * still
+        val creep = ribbonStep(BackgroundMotion.Static, 30f, 30f + still * Backdrop.MAX_CLOCK, width, height)
         assertTrue("static ${"%.2f".format(creep)}px a frame", creep <= 0.5f)
     }
 
@@ -125,18 +125,51 @@ class BackdropTest {
     }
 
     @Test
-    fun driftRepeatsAndEffectsStaySparse() {
-        val frame = BackdropFrame()
-        layoutBackdrop(BackgroundMotion.Ribbons, 3f, 1240f, 1080f, moving = true, frame)
-        val early = frame.lines[1]
-        val xs = early.x.copyOf(early.count)
-        val ys = early.y.copyOf(early.count)
-        layoutBackdrop(BackgroundMotion.Ribbons, 3f + Backdrop.DRIFT_SECONDS, 1240f, 1080f, moving = true, frame)
-        val again = frame.lines[1]
-        for (index in xs.indices) {
-            assertEquals(xs[index], again.x[index], 0.01f)
-            assertEquals(ys[index], again.y[index], 0.01f)
+    fun strandsDriftOnTheirOwnClocks() {
+        // A shared clock slid the whole family sideways as one picture. Each strand now
+        // flows at its own pace, some the other way, so no single shift explains a frame.
+        val width = 1920f
+        val before = RibbonField().also { fieldRibbons(BackgroundMotion.Ribbons, 40f, width, 1080f, true, it) }
+        val after = RibbonField().also { fieldRibbons(BackgroundMotion.Ribbons, 60f, width, 1080f, true, it) }
+        val shifts = (0 until RibbonField.STRANDS).map { strand ->
+            // A growing sweep phase slides the curve left by phase / (2π · cycles) of the width.
+            var turned = after.drift[strand * 4] - before.drift[strand * 4]
+            turned -= TWO_PI * round(turned / TWO_PI)
+            -turned / (TWO_PI * before.drift[strand * 4 + 3]) * width
         }
+        assertTrue("strand shifts $shifts", shifts.max() - shifts.min() >= 120f)
+        assertTrue("strand shifts $shifts", shifts.any { it < 0f } && shifts.any { it > 0f })
+    }
+
+    @Test
+    fun crossingsWanderAcrossThePanel() {
+        val width = 1920f
+        val frame = BackdropFrame()
+        val pairs = listOf(0 to 1, 0 to 2, 1 to 2)
+        val bins = Array(pairs.size) { IntArray(5) }
+        var time = 0f
+        while (time < 1800f) {
+            layoutBackdrop(BackgroundMotion.Ribbons, time, width, 1080f, moving = true, frame)
+            pairs.forEachIndexed { pair, (one, other) ->
+                val left = frame.lines[one * 3]
+                val right = frame.lines[other * 3]
+                for (index in 1 until left.count) {
+                    if ((left.y[index - 1] - right.y[index - 1]) * (left.y[index] - right.y[index]) < 0f) {
+                        bins[pair][(left.x[index] / width * 5).toInt().coerceAtMost(4)]++
+                    }
+                }
+            }
+            time += 5f
+        }
+        for ((pair, counts) in pairs.zip(bins)) {
+            val total = counts.sum()
+            assertTrue("crossings $pair ${counts.toList()}", total > 0 && counts.all { it * counts.size * 2 >= total })
+        }
+    }
+
+    @Test
+    fun effectsStaySparse() {
+        val frame = BackdropFrame()
         val times = floatArrayOf(0f, 1f, 4f, 7.5f, 8f, 10f, 13.5f, 16f, 20f, 21.5f, 30f, 48f)
         for (time in times) {
             layoutBackdrop(BackgroundMotion.Ribbons, time, 1920f, 1080f, moving = true, frame)
@@ -292,9 +325,9 @@ class BackdropTest {
     }
 
     /** The farthest any ribbon sample moves between two design times. */
-    private fun ribbonStep(from: Float, to: Float, width: Float, height: Float): Float {
-        val before = frame(BackgroundMotion.Ribbons, from, width, height)
-        val after = frame(BackgroundMotion.Ribbons, to, width, height)
+    private fun ribbonStep(motion: BackgroundMotion, from: Float, to: Float, width: Float, height: Float): Float {
+        val before = frame(motion, from, width, height)
+        val after = frame(motion, to, width, height)
         var step = 0f
         for (index in 0 until before.lineCount) {
             val a = before.lines[index]
@@ -327,5 +360,6 @@ class BackdropTest {
 
     private companion object {
         const val FLICKER_LEVELS = 24
+        const val TWO_PI = (PI * 2).toFloat()
     }
 }
