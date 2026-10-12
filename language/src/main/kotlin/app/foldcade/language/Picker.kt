@@ -34,6 +34,9 @@ enum class PanelLevel {
     /** The folders Move to can send the focused game into. */
     MoveTo,
 
+    /** Home and the folders Add to can place an installed app in. */
+    AddTo,
+
     /** L1's Edit home: the focused tile's actions, then the settings for the whole board. */
     EditHome,
 }
@@ -50,7 +53,7 @@ data class SidePanel(
      */
     val retiring: Boolean = false,
     val pendingSide: Side? = null,
-    /** The level Move to came from, so Back returns there. */
+    /** The level the destination picker came from, so Back returns there. */
     val via: PanelLevel = PanelLevel.Actions,
 )
 
@@ -262,6 +265,7 @@ sealed interface Row {
     data object Artwork : Row
     data object ArtKey : Row
     data object PinApp : Row
+    data object AddAppTo : Row
     data object MoveApp : Row
     data object HideApp : Row
     data object ShowApp : Row
@@ -476,6 +480,7 @@ fun actionRows(tile: TileActions?, app: AppActions?): List<Row> = buildList {
             add(Row.ShowApp)
         } else {
             add(Row.PinApp)
+            if (app.destinations.isNotEmpty()) add(Row.AddAppTo)
             add(Row.MoveApp)
             add(Row.HideApp)
         }
@@ -513,6 +518,7 @@ fun destinationRows(tile: TileActions?): List<Row> =
 fun panelRows(panel: SidePanel, model: PickerModel): List<Row> = when (panel.level) {
     PanelLevel.Actions -> actionRows(model.tileActions, model.appActions)
     PanelLevel.MoveTo -> destinationRows(model.tileActions)
+    PanelLevel.AddTo -> model.appActions?.destinations.orEmpty().map { Row.Destination(it.folderId, it.name) }
     PanelLevel.Library -> libraryRows(model.signedIn, model.folders)
     PanelLevel.EditHome -> editHomeRows(model)
     PanelLevel.Root -> when (panel.side) {
@@ -594,6 +600,7 @@ fun rowText(row: Row, model: PickerModel): RowText = when (row) {
     Row.Artwork -> RowText(Copy.artwork, if (model.artwork) Copy.artworkOn else Copy.artworkOff)
     Row.ArtKey -> RowText(Copy.steamGridDb, if (model.artKeySaved) Copy.forgetKey else Copy.addKey)
     Row.PinApp -> RowText(if (model.appActions?.favorite == true) Copy.unpin else Copy.pin)
+    Row.AddAppTo -> RowText(Copy.addTo)
     Row.MoveApp -> RowText(if (model.appActions?.onGamesShelf == true) Copy.moveToApps else Copy.moveToGames)
     Row.HideApp -> RowText(Copy.hideApp)
     Row.ShowApp -> RowText(Copy.showApp)
@@ -652,6 +659,8 @@ sealed interface Effect {
     data object RequestHome : Effect
     data class ChoosePlayerSave(val playerId: String) : Effect
     data object PinApp : Effect
+    /** Place the focused installed app on Home, or in the chosen folder. */
+    data class AddAppTo(val folderId: String?) : Effect
     data object MoveApp : Effect
     data object HideApp : Effect
     data object ShowApp : Effect
@@ -971,6 +980,7 @@ private fun backGrid(model: PickerModel): Pair<PickerModel, Effect?> {
         ) to null
     }
     if (model.arranging) return model.copy(arranging = false) to null
+    if (model.homeGrid != HomeGrid.StandIns) return model to Effect.GoHome
     if (!model.atLibraryRoot) return model to Effect.LeavePlatform
     return model to null
 }
@@ -1282,9 +1292,10 @@ private fun backPanel(model: PickerModel, panel: SidePanel): Pair<PickerModel, E
     return when (panel.level) {
         PanelLevel.Library -> model.copy(panel = panel.copy(level = PanelLevel.Root, index = 0)) to null
         PanelLevel.EditHome -> model.copy(panel = panel.copy(level = PanelLevel.Root, index = leftRows().indexOf(Row.EditHome))) to null
-        PanelLevel.MoveTo -> {
+        PanelLevel.MoveTo, PanelLevel.AddTo -> {
             val parent = panel.copy(level = panel.via)
-            val row = panelRows(parent, model).indexOf(Row.MoveTileTo).coerceAtLeast(0)
+            val action = if (panel.level == PanelLevel.AddTo) Row.AddAppTo else Row.MoveTileTo
+            val row = panelRows(parent, model).indexOf(action).coerceAtLeast(0)
             model.copy(panel = parent.copy(index = row)) to null
         }
         PanelLevel.Root, PanelLevel.Actions -> model.copy(panel = null, focus = panel.grid) to null
@@ -1407,11 +1418,13 @@ private fun activateRow(
             ) to Effect.OpenArtKey
         }
         Row.PinApp -> model to Effect.PinApp
+        Row.AddAppTo -> model.copy(panel = panel.copy(level = PanelLevel.AddTo, index = 0, via = panel.level)) to null
         Row.MoveApp -> model.copy(panel = null, focus = panel.grid) to Effect.MoveApp
         Row.HideApp -> model.copy(panel = null, focus = panel.grid) to Effect.HideApp
         Row.ShowApp -> model.copy(panel = null, focus = panel.grid) to Effect.ShowApp
         Row.MoveTileTo -> model.copy(panel = panel.copy(level = PanelLevel.MoveTo, index = 0, via = panel.level)) to null
-        is Row.Destination -> model.copy(panel = null, focus = panel.grid) to Effect.MoveTileTo(row.folderId)
+        is Row.Destination -> model.copy(panel = null, focus = panel.grid) to
+            if (panel.level == PanelLevel.AddTo) Effect.AddAppTo(row.folderId) else Effect.MoveTileTo(row.folderId)
         Row.MoveTile -> model.copy(panel = null, focus = panel.grid) to Effect.MoveTile
         Row.NewFolder -> model.copy(panel = null, focus = panel.grid) to Effect.NewFolder
         Row.RenameFolder -> model.copy(panel = null, focus = panel.grid) to Effect.RenameFolder

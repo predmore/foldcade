@@ -86,11 +86,12 @@ data class AppShelfState(
     }
 }
 
-/** Right-panel actions for the focused installed app. */
+/** Y's actions for the focused installed app. */
 data class AppActions(
     val favorite: Boolean,
     val onGamesShelf: Boolean,
     val hiddenShelf: Boolean,
+    val destinations: List<FolderChoice> = emptyList(),
 )
 
 fun systemShelf(app: LaunchableApp): AndroidShelf =

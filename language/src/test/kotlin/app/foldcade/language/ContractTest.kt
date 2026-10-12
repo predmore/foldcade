@@ -220,6 +220,56 @@ class ContractTest {
     }
 
     @Test
+    fun appShelvesGoHomeOnBackEvenWhenEmptyOrOpenedFromAFolder() {
+        for (grid in listOf(HomeGrid.Apps, HomeGrid.AndroidGames, HomeGrid.HiddenApps)) {
+            for (count in listOf(0, 3)) {
+                for (atRoot in listOf(false, true)) {
+                    val model = PickerModel(count = count, rowsPerPage = 1, homeGrid = grid, atLibraryRoot = atRoot)
+                    assertEquals(Effect.GoHome, reduce(model, Meaning.Back).second)
+                    val menu = reduce(model, Meaning.LeftPanel).first
+                    val closed = reduce(menu, Meaning.Back)
+                    assertNull(closed.first.panel)
+                    assertNull(closed.second)
+                    assertEquals(grid, closed.first.homeGrid)
+                }
+            }
+        }
+    }
+
+    @Test
+    fun appAddToOffersDestinationsAndBackReturnsToItsActionRow() {
+        val focus = GridFocus(cellIndex = 2, lastColumn = 0)
+        val apps = AppActions(
+            favorite = false,
+            onGamesShelf = false,
+            hiddenShelf = false,
+            destinations = listOf(FolderChoice(null, Copy.homeSlot), FolderChoice("home.user.1", "Mine")),
+        )
+        val model = PickerModel(count = 3, rowsPerPage = 1, focus = focus, homeGrid = HomeGrid.Apps, appActions = apps)
+        for (level in listOf(PanelLevel.Actions, PanelLevel.EditHome)) {
+            val open = reduce(model, Meaning.Options).first
+            val panel = open.panel!!.copy(level = level, index = 1)
+            assertEquals(Row.AddAppTo, panelRows(panel, open)[panel.index])
+            assertEquals(Copy.addTo, rowText(Row.AddAppTo, open).label)
+            val picker = reduce(open.copy(panel = panel), Meaning.Activate).first
+            assertEquals(PanelLevel.AddTo, picker.panel?.level)
+            assertEquals(
+                listOf(Row.Destination(null, Copy.homeSlot), Row.Destination("home.user.1", "Mine")),
+                panelRows(picker.panel!!, picker),
+            )
+            for ((index, folderId) in listOf(null, "home.user.1").withIndex()) {
+                val chosen = reduce(picker.copy(panel = picker.panel!!.copy(index = index)), Meaning.Activate)
+                assertEquals(Effect.AddAppTo(folderId), chosen.second)
+                assertNull(chosen.first.panel)
+                assertEquals(focus, chosen.first.focus)
+            }
+            val back = reduce(picker, Meaning.Back).first
+            assertEquals(level, back.panel?.level)
+            assertEquals(Row.AddAppTo, panelRows(back.panel!!, back)[back.panel!!.index])
+        }
+    }
+
+    @Test
     fun swipingMovesAScreenOfColumnsOnTheSameRowAndStopsAtTheEnds() {
         // Seven columns of three, the last holding 18 and 19.
         val model = PickerModel(count = 20, rowsPerPage = 1)
