@@ -18,7 +18,10 @@ import android.view.Display
 import android.view.WindowInsets
 import android.view.WindowInsetsController
 import android.view.WindowManager
-import androidx.activity.compose.setContent
+import android.widget.FrameLayout
+import androidx.compose.ui.platform.ComposeView
+import androidx.compose.ui.platform.ViewCompositionStrategy
+import androidx.compose.ui.focus.FocusRequester
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -96,6 +99,8 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
     private val displays by lazy { Displays(this) }
     private val foldcade by lazy { application as FoldcadeApp }
     private var resumed = false
+    private var recoveryWindow: PanelRecoveryWindow? = null
+    internal val panelFocus = FocusRequester()
 
     /** True while this panel is resumed and its display is fully on. */
     var shellVisible by mutableStateOf(false)
@@ -260,7 +265,8 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         foldcade.homeCreated(this)
-        acceptHome(intent)
+        // Secondary Home may be created behind a running emulator. Resume reconciles its panel.
+        if (launchesCompanion) acceptHome(intent)
         acceptShelf(intent)
         acceptFolderLibrary(intent)
         val roleManager = getSystemService(RoleManager::class.java)
@@ -279,7 +285,16 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
         getSystemService(DisplayManager::class.java).registerDisplayListener(backdropDisplayListener, null)
         getSystemService(InputManager::class.java).registerInputDeviceListener(inputDevices, null)
         refreshFacePrompt()
-        setContent { PanelHost(activity = this, displays = displays) }
+        val root = FrameLayout(this)
+        val panel = ComposeView(this).apply {
+            id = android.R.id.content
+            // Both containers belong to this activity; moving windows must preserve panel state.
+            setViewCompositionStrategy(ViewCompositionStrategy.DisposeOnLifecycleDestroyed(lifecycle))
+            setContent { PanelHost(activity = this@FoldcadeHomeActivity, displays = displays) }
+        }
+        root.addView(panel, FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT)
+        setContentView(root)
+        recoveryWindow = PanelRecoveryWindow(this, root, panel)
         hideSystemBars()
     }
 
@@ -313,10 +328,15 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
         // Foldcade in front on this panel means the game there has left. A launcher-icon
         // start is not a Home recall, so without this a Foldcade that is not the default
         // Home keeps the panel for the game and ignores every key.
+        var reclaimedPanel = false
         displays.panelFor(this, foldcade.store.session.defaultDisplayIsTop)?.let { panel ->
+            reclaimedPanel = foldcade.store.session.surfaceOn(panel) == null
             foldcade.store.update { it.foldcadeResumed(panel) }
         }
         resumed = true
+        // Primary Home coming forward reclaims the launcher, including a fresh icon start.
+        // A secondary Home can resume behind an emulator and cannot arm recovery by itself.
+        if (launchesCompanion) foldcade.requestPanelRecovery(reclaim = reclaimedPanel)
         refreshShellVisible()
         if (launchesCompanion) launchCompanionIfNeeded()
         foldcade.reloadInstalledApps()
@@ -383,6 +403,7 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
             startActivity(Intent(this, this::class.java), options.toBundle())
         }
         withTimeoutOrNull(KEYBOARD_FOCUS_WAIT_MS) { snapshotFlow { topResumed }.first { it } }
+        recoveryWindow?.takeKeyboardFocus()
     }
 
     override fun onNewIntent(intent: Intent) {
@@ -416,6 +437,7 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
     }
 
     override fun onDestroy() {
+        recoveryWindow?.close()
         foldcade.homeDestroyed(this)
         val manager = getSystemService(DisplayManager::class.java)
         manager.unregisterDisplayListener(backdropDisplayListener)
@@ -465,6 +487,7 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
         if (attributes.screenBrightness == level) return
         attributes.screenBrightness = level
         window.attributes = attributes
+        recoveryWindow?.brightness(level)
     }
 
     /** The settings level is the default display's, so only that screen can be kept darker than the dim. */
@@ -478,6 +501,17 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
     private fun refreshShellVisible() {
         val state = display?.state ?: Display.STATE_ON
         shellVisible = resumed && state == Display.STATE_ON
+        refreshRecoveryWindow()
+    }
+
+    internal fun refreshRecoveryWindow(reclaim: Boolean = false) {
+        val panel = displays.panelFor(this, foldcade.store.session.defaultDisplayIsTop)
+        val ownsPanel = panel != null && canRecoverPanel(foldcade.store.session, panel)
+        recoveryWindow?.update(
+            wanted = foldcade.panelRecoveryRequested && shellVisible && ownsPanel && !isFinishing && !isDestroyed &&
+                display?.displayId != Display.DEFAULT_DISPLAY,
+            reclaim = reclaim,
+        )
     }
 
     private fun applyIslandPreview(intent: Intent, replace: Boolean = false) {
@@ -505,6 +539,7 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
         if (!isAndroidHomeRecall(intent.action, intent.categories ?: emptySet())) return
         val panel = displays.panelFor(this, foldcade.store.session.defaultDisplayIsTop) ?: return
         foldcade.store.update { it.home(panel) }
+        if (foldcade.panelRecoveryRequested) foldcade.requestPanelRecovery()
     }
 
     /**
