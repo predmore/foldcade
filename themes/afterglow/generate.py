@@ -13,7 +13,6 @@ import math
 import struct
 import subprocess
 import wave
-import sys
 from pathlib import Path
 
 from fontTools.fontBuilder import FontBuilder
@@ -21,8 +20,6 @@ from fontTools.pens.ttGlyphPen import TTGlyphPen
 from PIL import Image, ImageDraw, ImageFont
 
 ROOT = Path(__file__).resolve().parent
-REPO = ROOT.parent.parent
-ZIP_PATH = REPO / "app" / "src" / "main" / "assets" / "themes" / "afterglow.zip"
 SPECIMEN = Path("/tmp/afterglow-specimen.png")
 
 UPM = 1000
@@ -793,10 +790,6 @@ def build_sounds(directory: Path):
         wav.unlink()
 
 
-def write_zip(destination: Path):
-    subprocess.run([sys.executable, str(REPO / "tools/themes/pack.py"), str(ROOT), "--output", str(destination)], check=True)
-
-
 def write_specimen(font_path: Path):
     font = ImageFont.truetype(str(font_path), 78)
     label = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", 18)
@@ -825,8 +818,6 @@ def main():
         raise SystemExit("themes/afterglow/font.ttf is missing. It should be the bundled Nunito Regular face.")
     write_specimen(font_path)
     build_sounds(ROOT / "sounds")
-    write_zip(ZIP_PATH)
-    print(f"zip {ZIP_PATH} {ZIP_PATH.stat().st_size} bytes")
 
 
 if __name__ == "__main__":

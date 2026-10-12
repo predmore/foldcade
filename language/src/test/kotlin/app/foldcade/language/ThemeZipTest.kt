@@ -66,7 +66,7 @@ class ThemeZipTest {
         assertEquals(0.92f, parsed.artScale)
         assertEquals(BackgroundMotion.Ribbons, parsed.backgroundMotion)
         assertTrue(parsed.focus != parsed.background)
-        ZipFile(repoFile("app/src/main/assets/themes/afterglow.zip")).use { zip ->
+        ZipFile(afterglowZip()).use { zip ->
             val packed = zip.getInputStream(zip.getEntry("theme.json")).readBytes().decodeToString()
             assertEquals(source.trim(), packed.trim())
             listOf(
@@ -93,7 +93,7 @@ class ThemeZipTest {
             assertNull(zip.getEntry("wallpaper-top.png"))
             assertNull(zip.getEntry("wallpaper-bottom.png"))
         }
-        val loaded = readThemeZip(repoFile("app/src/main/assets/themes/afterglow.zip").inputStream())
+        val loaded = readThemeZip(afterglowZip().inputStream())
         assertNotNull(loaded)
         loaded!!
         assertEquals("Afterglow", loaded.file.name)

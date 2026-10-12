@@ -28,3 +28,11 @@ dependencies {
     api(libs.kotlinx.serialization.json)
     testImplementation(libs.junit)
 }
+
+// Exercise the same archive that the app packages, including its reference validation.
+val afterglowZip = project(":app").layout.buildDirectory.file("generated/themeAssets/themes/afterglow.zip")
+tasks.withType<Test>().configureEach {
+    dependsOn(":app:packageAfterglowTheme")
+    inputs.file(afterglowZip).withPathSensitivity(PathSensitivity.NONE)
+    systemProperty("foldcade.afterglowZip", afterglowZip.get().asFile.absolutePath)
+}

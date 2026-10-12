@@ -98,9 +98,11 @@ The host pauses hidden/inactive scenes and respects their panel lifecycle. Each 
 ## Package and preview
 
 ```sh
-python3 tools/themes/pack.py themes/afterglow --output app/src/main/assets/themes/afterglow.zip
+./gradlew :app:packageAfterglowTheme
 python3 tools/themes/pack.py /path/to/my-theme --output /tmp/my-theme.zip
 ```
+
+App builds and language tests automatically generate Afterglow from `themes/afterglow/` into `app/build/generated/themeAssets/themes/afterglow.zip`. Both debug and release APKs include it as `assets/themes/afterglow.zip`. Keep the theme sources in Git; the generated archive stays in the ignored build directory.
 
 The tool validates asset references and produces reproducible ZIPs using only Python's standard library. JSON/asset checks happen before packaging; the native loader validates expressions and the target device compiles shaders. Archive reading retains the existing 8 MiB per-entry transport limit (4096 entries); these are separate from scene rendering choices.
 
