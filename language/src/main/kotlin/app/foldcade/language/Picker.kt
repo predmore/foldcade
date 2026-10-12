@@ -892,7 +892,7 @@ private fun coerce(focus: GridFocus, model: PickerModel): GridFocus {
     if (model.count <= 0) {
         return next.copy(chrome = next.chrome ?: Chrome.StatusCluster, cellIndex = 0, lastColumn = 0)
     }
-    if (next.chrome == null && next.cellIndex !in 0 until model.count) {
+    if (next.chrome == null && next.cellIndex !in 0 until reach(model)) {
         val index = (model.count - 1).coerceAtLeast(0)
         next = next.copy(cellIndex = index, lastColumn = GridStrip.column(index))
     }
@@ -1037,6 +1037,15 @@ private fun move(focus: GridFocus, meaning: Meaning, model: PickerModel): GridFo
     }
 }
 
+/**
+ * Slots the cursor can rest on. The empty library has only its buttons, and a
+ * held tile only reorders the tiles there are, so it stops at the last one.
+ */
+private fun reach(model: PickerModel): Int =
+    if (model.hold != null || model.libraryGrid && model.gridKind == GridKind.NoLibrary) model.count else GridStrip.reach(model.count)
+
+private fun reachColumns(model: PickerModel): Int = GridStrip.columns(reach(model))
+
 /** The empty library's buttons sit side by side under its title, not down a column. */
 private fun alongButtons(focus: GridFocus, meaning: Meaning, model: PickerModel): GridFocus = when (meaning) {
     Meaning.MoveLeft -> land(focus, focus.cellIndex - 1, model)
@@ -1045,14 +1054,14 @@ private fun alongButtons(focus: GridFocus, meaning: Meaning, model: PickerModel)
     else -> focus
 }
 
-/** Into [column] at [row], or the column's last tile when it is shorter. No such column stays put. */
+/** Into [column] at [row], a tile or an empty slot. Past the strip's reach stays put. */
 private fun across(focus: GridFocus, column: Int, row: Int, model: PickerModel): GridFocus {
-    if (column !in 0 until GridStrip.columns(model.count)) return focus
-    return land(focus, minOf(GridStrip.index(column, row), model.count - 1), model)
+    if (column !in 0 until reachColumns(model)) return focus
+    return land(focus, GridStrip.index(column, row), model)
 }
 
 private fun land(focus: GridFocus, index: Int, model: PickerModel): GridFocus {
-    if (index !in 0 until model.count) return focus
+    if (index !in 0 until reach(model)) return focus
     return focus.copy(cellIndex = index, lastColumn = GridStrip.column(index), chrome = null)
 }
 
@@ -1065,17 +1074,17 @@ private fun upToChrome(focus: GridFocus, column: Int, model: PickerModel): GridF
 
 private fun downFromChrome(focus: GridFocus, model: PickerModel): GridFocus {
     if (model.count <= 0) return focus
-    val column = focus.lastColumn.coerceIn(0, GridStrip.columns(model.count) - 1)
+    val column = focus.lastColumn.coerceIn(0, reachColumns(model) - 1)
     return focus.copy(cellIndex = GridStrip.index(column, 0), lastColumn = column, chrome = null)
 }
 
 /** A swipe moves the cursor a screen of columns along the strip, on the same row. */
 private fun page(focus: GridFocus, towardEnd: Boolean, model: PickerModel): GridFocus {
     if (model.count <= 0 || focus.chrome != null) return focus
-    val index = focus.cellIndex.coerceIn(0, model.count - 1)
+    val index = focus.cellIndex
     val column = GridStrip.column(index)
     val step = if (towardEnd) Metrics.columns else -Metrics.columns
-    val target = (column + step).coerceIn(0, GridStrip.columns(model.count) - 1)
+    val target = (column + step).coerceIn(0, reachColumns(model) - 1)
     if (target == column) return focus
     return across(focus, target, GridStrip.row(index), model)
 }
@@ -1118,6 +1127,7 @@ private fun placeOrPick(model: PickerModel): Pair<PickerModel, Effect?> {
     val hold = model.hold
     if (hold != null) return model.copy(hold = null) to null
     val index = model.focus.cellIndex
+    if (index !in 0 until model.count) return model to null
     val order = displayOrder(model)
     return model.copy(hold = Hold(index = index, origin = index, orderBefore = order), order = order) to null
 }

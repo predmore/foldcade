@@ -2040,13 +2040,16 @@ private fun GridHeader(shell: app.foldcade.ShellController) {
     BasicText(text = shelf, style = text(theme.onBackground, LocalFoldTheme.current.theme.style.type.sideRow, theme))
 }
 
-/** Under the grid, where the screen sits along the strip. None while the strip fits on one screen. */
+/**
+ * Under the grid, where the screen sits along the strip, empty columns past the
+ * last tile included. None while the tiles fit on one screen.
+ */
 @Composable
 private fun StripBar(count: Int, first: Int, scale: Float) {
-    val columns = GridStrip.columns(count)
+    val columns = GridStrip.reachColumns(count)
     val motion = LocalFoldTheme.current.theme.motion
     val start by glideState(first.toFloat(), motion.durationTravel, scale)
-    if (columns <= Metrics.columns) return
+    if (GridStrip.columns(count) <= Metrics.columns) return
     val theme = foldTheme()
     val track = px(STRIP_BAR_WIDTH)
     val thumb = track * (Metrics.columns.toFloat() / columns)
@@ -2221,7 +2224,7 @@ private fun StripGrid(
     val shownFirst = { position.value - dragColumns }
     val width = cell * Metrics.columns + gap * (Metrics.columns - 1)
     val pitchPx = with(LocalDensity.current) { (cell + gap).toPx() }
-    val lastColumn = GridStrip.columns(model.count) - 1
+    val lastColumn = GridStrip.reachColumns(model.count) - 1
     val folderToken = app.shell.homeAnimToken()
     val folderPop = remember { Animatable(1f) }
     LaunchedEffect(folderToken, scale) {
@@ -2332,8 +2335,7 @@ private fun GridCursor(
         model.panel == null &&
         !model.connectOpen &&
         model.focus.chrome == null &&
-        !shell.homeEditing() &&
-        model.focus.cellIndex < model.count
+        !shell.homeEditing()
     val alpha by motionState(
         target = if (shown) 1f else 0f,
         spec = if (shown) motion.arrive(motion.durationFocus, scale) else motion.leave(motion.durationFocus, scale),
@@ -2411,10 +2413,14 @@ private fun StripColumn(
     Column(verticalArrangement = Arrangement.spacedBy(gap)) {
         for (row in 0 until Metrics.rows) {
             val index = GridStrip.index(column, row)
-            // A column on screen always starts with a tile, so its height is the row pitch the cursor steps by.
-            Box(if (row == 0) Modifier.onSizeChanged { onRowHeight(it.height) } else Modifier) {
-                if (index >= shell.model.count) {
-                    Box(Modifier.size(cell))
+            // The activity runs what a second tap opens, as it does for A.
+            val tap = { (context as? FoldcadeHomeActivity)?.dispatch(shell.touchCell(index, screen)) }
+            // A tile's height with its title is the row pitch the cursor steps by. Past the last tile, nothing is drawn.
+            val past = index >= shell.model.count
+            Box(if (row == 0 && !past) Modifier.onSizeChanged { onRowHeight(it.height) } else Modifier) {
+                if (past) {
+                    // A tap rests the cursor here, as on any empty slot.
+                    Box(Modifier.size(cell).hostPress { tap() })
                 } else {
                     val source = if (showingHome) index else order.getOrElse(index) { index }
                     val face = if (showingHome) shell.homeFace(index) else null
@@ -2437,7 +2443,7 @@ private fun StripColumn(
                         title = label,
                         mark = game?.mark,
                         art = art,
-                        showTitle = showTitle && face?.empty != true,
+                        showTitle = showTitle,
                         focused = focused,
                         size = cell,
                         corner = radius,
@@ -2451,8 +2457,7 @@ private fun StripColumn(
                         downloading = face?.id != null && face.id in shell.downloading,
                         activity = shell.activityAt(source),
                         library = libraryTile,
-                        // The activity runs what a second tap opens, as it does for A.
-                        onClick = { (context as? FoldcadeHomeActivity)?.dispatch(shell.touchCell(index, screen)) },
+                        onClick = { tap() },
                         onDrag = if (editing) {
                             { meaning -> shell.dragHome(meaning) }
                         } else {
@@ -2715,25 +2720,19 @@ private fun Cell(
                                 style = Stroke(width = strokePx),
                             )
                         }
+                        if (editing) {
+                            val strokePx = if (focused || lifted) 9f else 3f
+                            val inset = strokePx / 2f
+                            drawRoundRect(
+                                color = theme.focus.copy(alpha = if (focused || lifted) 1f else 0.45f),
+                                topLeft = Offset(inset, inset),
+                                size = Size(bounds.width - strokePx, bounds.height - strokePx),
+                                cornerRadius = CornerRadius(cornerPx, cornerPx),
+                                style = Stroke(width = strokePx),
+                            )
+                        }
                     }
-                    if (empty) {
-                        drawRoundRect(
-                            color = theme.muted.copy(alpha = 0.35f),
-                            cornerRadius = CornerRadius(cornerPx, cornerPx),
-                            style = Stroke(width = 2.5f),
-                        )
-                    }
-                    if (editing) {
-                        val strokePx = if (focused || lifted) 9f else 3f
-                        val inset = strokePx / 2f
-                        drawRoundRect(
-                            color = theme.focus.copy(alpha = if (focused || lifted) 1f else 0.45f),
-                            topLeft = Offset(inset, inset),
-                            size = Size(bounds.width - strokePx, bounds.height - strokePx),
-                            cornerRadius = CornerRadius(cornerPx, cornerPx),
-                            style = Stroke(width = strokePx),
-                        )
-                    }
+                    // An empty slot draws nothing, so the grid ends where its tiles do.
                 }
                 // The ring and glows above draw outside. The art itself stays inside the
                 // rounded tile, so a mark's square backing does not show at the corners.

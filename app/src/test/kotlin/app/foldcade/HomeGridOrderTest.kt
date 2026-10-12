@@ -389,6 +389,33 @@ class HomeGridOrderTest {
     }
 
     @Test
+    fun theCursorWalksPastTheLastTileAndALiftedTileGoesAsFar() {
+        val shell = shell()
+        shell.ingestLibrary(
+            "local-folder",
+            listOf(entry("puzzle", "Puzzle", "nintendo-3ds"), entry("drift", "Drift", "nintendo-ds")),
+            emptyList(),
+        )
+        val count = shell.model.count
+        val lastColumn = GridStrip.columns(count) - 1
+        repeat(lastColumn + GridStrip.trailing + 2) { shell.onMeaning(Meaning.MoveRight, HostScreen.Bottom) }
+        assertEquals(GridStrip.index(lastColumn + GridStrip.trailing, 0), shell.model.focus.cellIndex)
+        // An empty slot shows no game and offers only a new folder, as an empty slot between tiles does.
+        assertNull(shell.focusedGame())
+        assertEquals(listOf(Row.NewFolder), optionRows(shell))
+        shell.onMeaning(Meaning.MoveDown, HostScreen.Bottom)
+        assertEquals(GridStrip.index(lastColumn + GridStrip.trailing, 1), shell.model.focus.cellIndex)
+
+        focus(shell, count - 1)
+        val lifted = titles(shell)[count - 1]
+        choose(shell, Row.MoveTile)
+        repeat(GridStrip.trailing + 2) { shell.onMeaning(Meaning.MoveRight, HostScreen.Bottom) }
+        val at = shell.model.focus.cellIndex
+        assertEquals(lastColumn + GridStrip.trailing, GridStrip.column(at))
+        assertEquals(lifted, titles(shell)[at])
+    }
+
+    @Test
     fun moveToTakesAGameOutOfItsFolderAndNewFolderWrapsIt() {
         val shell = shell()
         shell.ingestLibrary(
@@ -512,7 +539,6 @@ class HomeGridOrderTest {
         val columns = GridStrip.column(index) - GridStrip.column(at)
         repeat(maxOf(columns, 0)) { shell.onMeaning(Meaning.MoveRight, HostScreen.Bottom) }
         repeat(maxOf(-columns, 0)) { shell.onMeaning(Meaning.MoveLeft, HostScreen.Bottom) }
-        // Into a shorter last column the cursor lands on its last tile, so rows count from there.
         val rows = GridStrip.row(index) - GridStrip.row(shell.model.focus.cellIndex)
         repeat(maxOf(rows, 0)) { shell.onMeaning(Meaning.MoveDown, HostScreen.Bottom) }
         repeat(maxOf(-rows, 0)) { shell.onMeaning(Meaning.MoveUp, HostScreen.Bottom) }

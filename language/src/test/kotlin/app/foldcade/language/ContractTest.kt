@@ -125,16 +125,26 @@ class ContractTest {
     }
 
     @Test
-    fun focusDoesNotWrapAndUpReachesThePillOnThatSide() {
+    fun focusWalksIntoEmptySlotsPastTheEndAndUpReachesThePillOnThatSide() {
         // Five columns of three: 0 1 2 down the first, 12 alone at the top of the last.
         val model = PickerModel(count = 13, rowsPerPage = 1)
-        val end = reduce(model.copy(focus = GridFocus(cellIndex = 12, lastColumn = 4)), Meaning.MoveRight).first
-        assertEquals(12, end.focus.cellIndex)
+        // Right from the last tile walks the empty columns past it, then stops without wrapping.
+        var walked = model.copy(focus = GridFocus(cellIndex = 12, lastColumn = 4))
+        val columns = mutableListOf<Int>()
+        repeat(GridStrip.trailing + 1) {
+            walked = reduce(walked, Meaning.MoveRight).first
+            columns += GridStrip.column(walked.focus.cellIndex)
+        }
+        assertEquals(listOf(5, 6, 7, 7), columns)
+        assertEquals(GridStrip.index(7, 0), walked.focus.cellIndex)
+        // An empty slot opens nothing.
+        assertNull(reduce(walked, Meaning.Activate).second)
         val bottom = reduce(model.copy(focus = GridFocus(cellIndex = 2)), Meaning.MoveDown).first
         assertEquals(2, bottom.focus.cellIndex)
-        // Right from the bottom row into the short last column lands on its one tile.
+        // Right from the bottom row into the short last column lands on the empty slot under its one tile.
         val short = reduce(model.copy(focus = GridFocus(cellIndex = 11, lastColumn = 3)), Meaning.MoveRight).first
-        assertEquals(12, short.focus.cellIndex)
+        assertEquals(14, short.focus.cellIndex)
+        assertEquals(13, reduce(short, Meaning.MoveUp).first.focus.cellIndex)
         val up = reduce(model.copy(focus = GridFocus(cellIndex = 3, lastColumn = 1)), Meaning.MoveUp).first
         assertEquals(Chrome.LeftIsland, up.focus.chrome)
         val cluster = reduce(model.copy(focus = GridFocus(cellIndex = 9, lastColumn = 3)), Meaning.MoveUp).first
@@ -149,9 +159,11 @@ class ContractTest {
         // Back left, the screen holds until the cursor reaches its first column.
         assertEquals(3, GridStrip.follow(first = 3, column = 4, count = count))
         assertEquals(2, GridStrip.follow(first = 3, column = 2, count = count))
-        // Never past the last full screen, and a strip that fits does not scroll.
-        assertEquals(3, GridStrip.follow(first = 9, column = 6, count = count))
-        assertEquals(0, GridStrip.follow(first = 2, column = 1, count = 6))
+        // Never past the screen with the last tiles at its left edge.
+        assertEquals(6, GridStrip.follow(first = 9, column = 9, count = count))
+        // A strip that fits scrolls only once the cursor walks off its screen into the empty columns.
+        assertEquals(0, GridStrip.follow(first = 0, column = 3, count = 6))
+        assertEquals(1, GridStrip.follow(first = 0, column = 4, count = 6))
         // Up reads the pill from where the column sits on screen, not along the strip.
         val scrolled = PickerModel(count = count, rowsPerPage = 1, firstColumn = 3, focus = GridFocus(GridStrip.index(4, 0), 4))
         assertEquals(Chrome.LeftIsland, reduce(scrolled, Meaning.MoveUp).first.focus.chrome)
@@ -271,14 +283,16 @@ class ContractTest {
 
     @Test
     fun swipingMovesAScreenOfColumnsOnTheSameRowAndStopsAtTheEnds() {
-        // Seven columns of three, the last holding 18 and 19.
+        // Seven columns of three, the last holding 18 and 19, then three empty columns.
         val model = PickerModel(count = 20, rowsPerPage = 1)
         val next = reduce(model.copy(focus = GridFocus(1, 0)), Meaning.PageTowardEnd).first
         assertEquals(GridStrip.index(Metrics.columns, 1), next.focus.cellIndex)
-        val last = reduce(next, Meaning.PageTowardEnd).first
-        assertEquals(19, last.focus.cellIndex)
+        val empty = reduce(next, Meaning.PageTowardEnd).first
+        assertEquals(GridStrip.index(8, 1), empty.focus.cellIndex)
+        val last = reduce(empty, Meaning.PageTowardEnd).first
+        assertEquals(GridStrip.index(9, 1), last.focus.cellIndex)
         val stuck = reduce(last, Meaning.PageTowardEnd).first
-        assertEquals(19, stuck.focus.cellIndex)
+        assertEquals(GridStrip.index(9, 1), stuck.focus.cellIndex)
         val back = reduce(next, Meaning.PageTowardStart).first
         assertEquals(1, back.focus.cellIndex)
         assertEquals(0, reduce(model, Meaning.PageTowardStart).first.focus.cellIndex)
@@ -437,6 +451,11 @@ class ContractTest {
         assertEquals(0, held.hold?.index)
         val moved = reduce(held, Meaning.MoveDown).first
         assertEquals(listOf(1, 0, 2, 3), moved.order)
+        // Arranging reorders the tiles there are, so a held icon stops at the last one.
+        val last = reduce(moved.copy(hold = moved.hold?.copy(index = 3), focus = GridFocus(3, 1)), Meaning.MoveDown).first
+        assertEquals(3, last.hold?.index)
+        // A on an empty slot past the end lifts nothing.
+        assertNull(reduce(model.copy(focus = GridFocus(4, 1)), Meaning.Activate).first.hold)
         val dropped = reduce(moved, Meaning.Back).first
         assertNull(dropped.hold)
         assertEquals(listOf(0, 1, 2, 3), displayOrder(dropped))
