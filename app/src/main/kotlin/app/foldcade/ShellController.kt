@@ -206,7 +206,6 @@ class ShellController(
             val before = model
             val wasInFolder = home.board.openFolderId != null
             val wasAll = home.board.allOpen
-            val wasTab = home.board.allTab
             val wasHeld = home.board.hold != null
             val step = home.handle(meaning, model.focus.cellIndex)
             if (step != null && step.handled) {
@@ -214,10 +213,7 @@ class ShellController(
                 showBoard(step.focus ?: model.focus, keepDialog = true)
                 if (!wasInFolder && home.openedFolderHasGame()) Log.i("Foldcade", "library-ui games")
                 if (!wasHeld && home.board.hold != null) Log.i("Foldcade", "home-ui lifted")
-                if (home.board.allOpen && (!wasAll || wasTab != home.board.allTab)) {
-                    val tab = if (home.board.allTab == app.foldcade.language.AllTab.Games) "games" else "apps"
-                    Log.i("Foldcade", "home-ui all-$tab")
-                }
+                if (home.board.allOpen && !wasAll) Log.i("Foldcade", "home-ui all-games")
                 cueMeaning(meaning, before, model)
                 return step.effect
             }
@@ -364,12 +360,6 @@ class ShellController(
     fun hasOptions(): Boolean =
         model.focus.chrome == null && actionRows(model.tileActions, model.appActions).isNotEmpty()
 
-    fun homeChrome(): AllChrome? = if (showingHome() && model.dialog == null && model.panel == null && !model.connectOpen) {
-        home.chrome()
-    } else {
-        null
-    }
-
     fun homeEditing(): Boolean =
         showingHome() && home.board.editing && model.dialog == null && model.panel == null
 
@@ -440,17 +430,6 @@ class ShellController(
         val index = home.board.hold?.index ?: return
         store.saveHomeBoard(home.encoded())
         showBoard(GridFocus(cellIndex = index, lastColumn = GridStrip.column(index)), keepDialog = true)
-    }
-
-    fun touchAllChrome(index: Int, screen: HostScreen): Effect? {
-        if (!home.board.allOpen || model.dialog != null || model.panel != null) return null
-        if (home.board.allChrome != index) {
-            home.focusChrome(index)
-            store.saveHomeBoard(home.encoded())
-            showBoard(model.focus, keepDialog = true)
-            return null
-        }
-        return onMeaning(Meaning.Activate, screen)
     }
 
     /**

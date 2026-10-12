@@ -175,55 +175,25 @@ class HomeBoardTest {
             item("empty-pc", kind = HomeKind.GameNative).copy(placeholder = true),
             item("empty-stream", kind = HomeKind.Moonlight).copy(placeholder = true),
         )
-        val catalog = listOf(pc, streamed) + placeholders
-        assertEquals(setOf(pc.id, streamed.id), allItems(catalog, platforms, AllTab.Games, AllSort.Title, null).map { it.id }.toSet())
-        assertTrue(allItems(catalog, platforms, AllTab.Apps, AllSort.Title, null).isEmpty())
-        val rom = item("rom", kind = HomeKind.Rom).copy(platformId = "nintendo-ds")
-        val pcHint = placeholders.first().copy(platformId = "pc")
-        val choices = platforms + HomePlatform("pc", "PC")
-        assertEquals("nintendo-ds", cycleSystemFilter(HomeBoard(), choices, listOf(pcHint, rom)).allSystemId)
+        assertEquals(setOf(pc.id, streamed.id), allItems(listOf(pc, streamed) + placeholders).map { it.id }.toSet())
     }
 
     @Test
-    fun allGamesSystemChoicesExcludePlatformsWithOnlyApplications() {
-        val android = HomePlatform("android", "Android")
-        val app = item("utility", kind = HomeKind.AndroidApp).copy(platformId = android.id)
-        val rom = item("rom", kind = HomeKind.Rom).copy(platformId = "nintendo-ds")
-        val systems = platforms + android
-        assertNull(cycleSystemFilter(HomeBoard(), systems, listOf(app)).allSystemId)
-        val ds = cycleSystemFilter(HomeBoard(), systems, listOf(app, rom))
-        assertEquals("nintendo-ds", ds.allSystemId)
-        assertNull(cycleSystemFilter(ds, systems, listOf(app, rom)).allSystemId)
-    }
-
-    @Test
-    fun allGamesIncludesEveryGameKindAndAllAppsContainsOnlyApplications() {
-        val games = listOf(HomeKind.Rom, HomeKind.AndroidGame, HomeKind.GameNative, HomeKind.Moonlight)
+    fun allLibraryHoldsEveryGameKindAndNoApps() {
+        val games = listOf(HomeKind.Rom, HomeKind.AndroidGame, HomeKind.GameNative, HomeKind.Moonlight, HomeKind.DroidDeck)
             .map { item(it.name, kind = it) }
-        val app = item("utility", kind = HomeKind.AndroidApp)
-        val loose = item("loose", kind = HomeKind.Loose)
-        val catalog = games + app + loose
-        assertEquals(games.map { it.id }.toSet(), allItems(catalog, platforms, AllTab.Games, AllSort.Title, null).map { it.id }.toSet())
-        assertEquals(listOf(app.id), allItems(catalog, platforms, AllTab.Apps, AllSort.Title, null).map { it.id })
-        assertTrue(allItems(catalog, platforms, AllTab.Games, AllSort.Title, "nintendo-ds").isEmpty())
+        val others = listOf(HomeKind.AndroidApp, HomeKind.Emulator, HomeKind.Loose).map { item(it.name, kind = it) }
+        assertEquals(games.map { it.id }.toSet(), allItems(games + others).map { it.id }.toSet())
     }
 
     @Test
-    fun allLibrarySortsFiltersAndJumpsLetters() {
+    fun allLibraryRunsAToZAndJumpsLetters() {
         val items = listOf(
             item("b", title = "Beta", platformId = "gba"),
-            item("a", title = "Alpha", platformId = "nds"),
-            item("c", title = "Amber", platformId = "gba", kind = HomeKind.AndroidApp),
+            item("a", title = "alpha", platformId = "nds"),
             item("d", title = "Drift", platformId = "gba", lastPlayedMillis = 50),
         )
-        val titles = allItems(items, platforms, AllTab.Games, AllSort.Title, null).map { it.title }
-        assertEquals(listOf("Alpha", "Beta", "Drift"), titles)
-        val recent = allItems(items, platforms, AllTab.Games, AllSort.RecentlyPlayed, null).map { it.id }
-        assertEquals("d", recent.first())
-        val gba = allItems(items, platforms, AllTab.Games, AllSort.Title, "game-boy-advance").map { it.id }
-        assertEquals(listOf("b", "d"), gba)
-        val apps = allItems(items, platforms, AllTab.Apps, AllSort.Title, null).map { it.id }
-        assertEquals(listOf("c"), apps)
+        assertEquals(listOf("alpha", "Beta", "Drift"), allItems(items).map { it.title })
         val labels = listOf("Alpha", "Amber", "Beta")
         assertEquals(2, jumpLetter(labels, 0, forward = true))
         assertEquals(2, jumpLetter(labels, 2, forward = true))

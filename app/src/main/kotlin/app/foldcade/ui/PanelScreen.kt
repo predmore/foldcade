@@ -1705,7 +1705,7 @@ private fun Picker(
             if (screen == HostScreen.Top) {
                 Spacer(Modifier.height(48.dp))
             }
-            GridHeader(app, shell, screen, onEffect)
+            GridHeader(shell)
             BoxWithConstraints(
                 Modifier
                     .weight(1f)
@@ -2016,34 +2016,10 @@ private fun quickIcon(setting: QuickSetting): Int = when (setting) {
     QuickSetting.Settings -> R.drawable.ic_status_settings
 }
 
-/**
- * Above the grid: the shelf name, or the All library's tab, sort, system, and
- * destination. The home grid has nothing here.
- */
+/** Above the grid: the shelf name. The home grid and All have nothing here. */
 @Composable
-private fun GridHeader(
-    app: FoldcadeApp,
-    shell: app.foldcade.ShellController,
-    screen: HostScreen,
-    onEffect: (Effect?) -> Unit,
-) {
+private fun GridHeader(shell: app.foldcade.ShellController) {
     val theme = foldTheme()
-    val chrome = shell.homeChrome()
-    if (chrome != null) {
-        Row(
-            Modifier.padding(bottom = px(12f)),
-            horizontalArrangement = Arrangement.spacedBy(px(12f)),
-        ) {
-            listOf(chrome.tab, chrome.sort, chrome.system, chrome.destination).forEachIndexed { index, label ->
-                ChromeButton(
-                    label = label,
-                    focused = chrome.focused == index,
-                    onClick = { onEffect(shell.touchAllChrome(index, screen)) },
-                )
-            }
-        }
-        return
-    }
     val shelf = homeGridLabel(shell.model.homeGrid) ?: return
     BasicText(text = shelf, style = text(theme.onBackground, LocalFoldTheme.current.theme.style.type.sideRow, theme))
 }
@@ -2200,18 +2176,6 @@ private fun ShelfMeta(line: String, hintFocused: Boolean, centred: Boolean = fal
 }
 
 @Composable
-private fun ChromeButton(label: String, focused: Boolean, onClick: () -> Unit) {
-    val theme = foldTheme()
-    BasicText(
-        text = label,
-        modifier = Modifier.chip(focused).hostPress(onClick).padding(horizontal = px(20f), vertical = px(10f)),
-        style = text(theme.onBackground, LocalFoldTheme.current.theme.style.type.dialogBody, theme),
-        maxLines = 1,
-        overflow = TextOverflow.Ellipsis,
-    )
-}
-
-@Composable
 private fun StripGrid(
     app: FoldcadeApp,
     screen: HostScreen,
@@ -2351,7 +2315,6 @@ private fun GridCursor(
     val shown = model.dialog == null &&
         model.panel == null &&
         !model.connectOpen &&
-        shell.homeChrome()?.focused == null &&
         model.focus.chrome == null &&
         !shell.homeEditing() &&
         model.focus.cellIndex < model.count
@@ -2396,7 +2359,7 @@ private fun GridCursor(
     )
 }
 
-/** Titles of [size] tiles from [start], the same labels [StripColumn] draws, home sections included. */
+/** Titles of [size] tiles from [start], the same labels [StripColumn] draws. */
 private fun shownTitles(app: FoldcadeApp, start: Int, size: Int): List<String> {
     val shell = app.shell
     val showingHome = !shell.model.libraryGrid && shell.model.homeGrid == HomeGrid.StandIns
@@ -2404,9 +2367,7 @@ private fun shownTitles(app: FoldcadeApp, start: Int, size: Int): List<String> {
     val end = minOf(start + size, shell.model.count)
     return (start until end).map { index ->
         val source = if (showingHome) index else order.getOrElse(index) { index }
-        val face = if (showingHome) shell.homeFace(index) else null
-        val title = shell.tileFromOrder(source)?.title.orEmpty()
-        face?.section?.let { section -> "$section · $title" } ?: title
+        shell.tileFromOrder(source)?.title.orEmpty()
     }
 }
 
@@ -2445,11 +2406,9 @@ private fun StripColumn(
                     val focused = shell.model.dialog == null &&
                         shell.model.panel == null &&
                         !shell.model.connectOpen &&
-                        shell.homeChrome()?.focused == null &&
                         focus.chrome == null &&
                         focus.cellIndex == index
-                    val label = face?.section?.let { section -> "$section · ${game?.title.orEmpty()}" }
-                        ?: game?.title.orEmpty()
+                    val label = game?.title.orEmpty()
                     val libraryTile = library && face == null
                     val onHomeMark = face != null && allOpen && face.onGrid && !face.folder && !face.pinned
                     // A folder or an empty slot keeps its mark. A game asks for its art.

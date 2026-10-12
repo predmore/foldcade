@@ -7,13 +7,12 @@ import org.junit.Test
 
 class HomePersistenceTest {
     @Test
-    fun opaqueIdsNamesAndBrowsingChoicesRoundTripWithoutSplittingRecords() {
+    fun opaqueIdsAndNamesRoundTripWithoutSplittingRecords() {
         val id = "lib:source:a\tb\nc\rd"
         val folder = HomeFolder("home.user.1", "Favorites\rEvening", userMade = true, namedByUser = true, mark = "psp", slots = listOf(id, null, "-"))
         val board = HomeBoard(
             slots = listOf(HOME_ALL, null, folder.id), folders = mapOf(folder.id to folder),
             hidden = setOf("hidden\titem"), retired = setOf(HOME_ANDROID_APPS), addNewToHome = false,
-            allTab = AllTab.Apps, allSort = AllSort.System, allSystemId = "nintendo-ds", destinationFolderId = folder.id,
         )
         assertEquals(board, decodeHome(encodeHome(board)))
     }
@@ -45,8 +44,9 @@ class HomePersistenceTest {
 
     @Test
     fun invalidRecordsDoNotDiscardOtherSavedFields() {
-        val board = HomeBoard(addNewToHome = false, allSort = AllSort.RecentlyPlayed)
-        val raw = encodeHome(board) + "folder\t%%%\nunknown\tvalue\n"
+        val board = HomeBoard(addNewToHome = false)
+        // allSort is a row older releases saved for All's header, which is gone.
+        val raw = encodeHome(board) + "folder\t%%%\nunknown\tvalue\nallSort\tU3lzdGVt\n"
         assertEquals(board, decodeHome(raw))
     }
 

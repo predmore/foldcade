@@ -268,7 +268,6 @@ class HomeGridOrderTest {
         val cart = List(shell.model.count) { shell.homeFace(it) }.first { it?.title == "Cart" }
         assertTrue(cart != null)
         assertFalse(cart!!.onGrid)
-        assertEquals(Copy.allGames, shell.homeChrome()?.tab)
     }
 
     @Test
@@ -425,6 +424,25 @@ class HomeGridOrderTest {
         assertEquals("${Copy.newFolder} 1", shell.homeFace(made)?.title)
         shell.onMeaning(Meaning.Activate, HostScreen.Bottom)
         assertEquals(listOf("Drift"), titles(shell).filter { it.isNotEmpty() })
+    }
+
+    @Test
+    fun goHomeLeavesAllAndAnOpenFolderForHomesFolders() {
+        // The command center's Open an app button shows the grid this way.
+        val shell = shell()
+        shell.ingestLibrary("local-folder", listOf(entry("puzzle", "Puzzle", "nintendo-3ds")), emptyList())
+        val root = titles(shell)
+        shell.openHomeAll()
+        shell.goHome()
+        assertEquals(root, titles(shell))
+        assertTrue(shell.model.atLibraryRoot)
+
+        focus(shell, root.indexOf("Nintendo 3DS"))
+        shell.onMeaning(Meaning.Activate, HostScreen.Bottom)
+        assertEquals("Puzzle", shell.focusedGame()?.title)
+        shell.goHome()
+        assertEquals(root, titles(shell))
+        assertEquals("Nintendo 3DS", shell.focusedGame()?.title)
     }
 
     @Test

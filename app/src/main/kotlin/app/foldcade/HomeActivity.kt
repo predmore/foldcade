@@ -189,6 +189,7 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
         if (commandCenterKey(meaning)) return
         val openingMenu = meaning == app.foldcade.language.Meaning.LeftPanel ||
             meaning == app.foldcade.language.Meaning.RightPanel
+        if (openingMenu && !foldcade.store.session.islandsOpen()) return
         if (foldcade.shell.model.dialog == null &&
             foldcade.shell.model.saveConflict == null &&
             (openingMenu || meaning == app.foldcade.language.Meaning.Back)
