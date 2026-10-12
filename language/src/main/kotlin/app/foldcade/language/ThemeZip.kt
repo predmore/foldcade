@@ -4,6 +4,7 @@ import androidx.compose.ui.graphics.Color
 import java.io.ByteArrayOutputStream
 import java.io.InputStream
 import java.util.zip.ZipInputStream
+import kotlinx.serialization.json.*
 
 /**
  * Paint read from a theme zip. A missing or rejected field keeps the built-in value.
@@ -19,12 +20,26 @@ data class ThemeFile(
     val iconRadius: Float,
     val artScale: Float,
     val backgroundMotion: BackgroundMotion,
+    val id: String = name,
+    val version: Int = 1,
+    val icons: Map<String, ThemeIconFile> = emptyMap(),
+    val sceneFiles: List<String> = emptyList(),
+    val style: JsonObject = JsonObject(emptyMap()),
 )
 
-fun parseThemeJson(text: String): ThemeFile? {
+data class ThemeIconFile(val file: String, val accent: Color? = null, val tint: Boolean = false)
+
+fun parseThemeJson(text: String): ThemeFile? = try { parseThemeJsonFields(text) } catch (_: Exception) { null }
+
+private fun parseThemeJsonFields(text: String): ThemeFile? {
     val fields = parseFlatObject(text) ?: return null
     val name = fields["name"] as? String ?: return null
     if (name.isBlank()) return null
+    val root = try { Json.parseToJsonElement(text).jsonObject } catch (_: Exception) { return null }
+    val version = root["version"]?.jsonPrimitive?.intOrNull ?: 1
+    if (version !in 1..2) return null
+    val id = root["id"]?.jsonPrimitive?.contentOrNull ?: name
+    if (version == 2 && (!id.matches(Regex("[A-Za-z0-9._-]+")) || id == "builtin")) return null
     val fallback = builtInTheme()
     val background = colorField(fields, "background", fallback.background)
     val surface = colorField(fields, "surface", fallback.surface)
@@ -42,6 +57,17 @@ fun parseThemeJson(text: String): ThemeFile? {
         iconRadius = numberField(fields, "iconRadius", fallback.iconRadius, 0f, 0.5f),
         artScale = numberField(fields, "artScale", fallback.artScale, 0.7f, 1f),
         backgroundMotion = motionField(fields, "backgroundMotion"),
+        id = id,
+        version = version,
+        icons = (root["icons"] as? JsonObject)?.mapNotNull { (slot, value) ->
+            val icon = value as? JsonObject ?: return@mapNotNull null
+            val path = (icon["file"] as? JsonPrimitive)?.contentOrNull ?: return@mapNotNull null
+            if (themeZipEntryName(path) != path) return@mapNotNull null
+            slot to ThemeIconFile(path, (icon["accent"] as? JsonPrimitive)?.contentOrNull?.let(::parseRgb),
+                (icon["tint"] as? JsonPrimitive)?.booleanOrNull ?: false)
+        }?.toMap().orEmpty(),
+        sceneFiles = (root["scenes"] as? JsonArray)?.mapNotNull { (it as? JsonPrimitive)?.contentOrNull }.orEmpty(),
+        style = root["style"] as? JsonObject ?: JsonObject(emptyMap()),
     )
 }
 
@@ -59,8 +85,9 @@ data class LetterboxRect(
     val height: Float,
 )
 
-private const val MAX_THEME_ENTRIES = 64
+private const val MAX_THEME_ENTRIES = 4096
 private const val MAX_THEME_ENTRY_BYTES = 8 * 1024 * 1024
+private val APPLICATION_CODE_EXTENSIONS = setOf("java", "kt", "kts", "class", "dex", "jar", "so", "apk", "aar", "dll", "dylib", "wasm", "js", "mjs", "cjs", "py")
 
 /**
  * Reads one theme zip. A stream that is not a zip, a zip with no named theme,
@@ -158,7 +185,9 @@ private fun numberField(
 
 private fun motionField(fields: Map<String, Any?>, key: String): BackgroundMotion {
     val raw = fields[key] as? String ?: return BackgroundMotion.Off
-    return BackgroundMotion.fromWire(raw) ?: BackgroundMotion.Off
+    return BackgroundMotion.fromWire(raw)
+        ?: raw.takeIf { it.matches(Regex("[A-Za-z0-9._-]+")) }?.let(::BackgroundMotion)
+        ?: BackgroundMotion.Off
 }
 
 private fun parseRgb(text: String): Color? {
@@ -167,124 +196,28 @@ private fun parseRgb(text: String): Color? {
     return Color(0xFF000000 or raw)
 }
 
-internal fun parseFlatObject(text: String): Map<String, Any?>? {
-    val reader = JsonReader(text)
-    return reader.objectValue()
-}
-
-private class JsonReader(private val text: String) {
-    private var index = 0
-
-    fun objectValue(): Map<String, Any?>? {
-        skip()
-        if (!eat('{')) return null
-        val fields = linkedMapOf<String, Any?>()
-        skip()
-        if (eat('}')) return fields
-        while (index < text.length) {
-            skip()
-            val key = string() ?: return null
-            skip()
-            if (!eat(':')) return null
-            skip()
-            val value = value() ?: return null
-            fields[key] = value
-            skip()
+internal fun parseFlatObject(text: String): Map<String, Any?>? = try {
+    Json.parseToJsonElement(text).jsonObject.mapValues { (_, element) ->
+        if (element is JsonPrimitive) {
             when {
-                eat(',') -> continue
-                eat('}') -> return fields
-                else -> return null
+                element is JsonNull -> null
+                element.isString -> element.content
+                element.booleanOrNull != null -> element.boolean
+                else -> element.doubleOrNull
             }
-        }
-        return null
+        } else element
     }
-
-    private fun value(): Any? {
-        skip()
-        if (index >= text.length) return null
-        return when (text[index]) {
-            '"' -> string()
-            '-', in '0'..'9' -> number()
-            else -> literal()
-        }
-    }
-
-    private fun string(): String? {
-        if (!eat('"')) return null
-        val out = StringBuilder()
-        while (index < text.length) {
-            val char = text[index++]
-            when (char) {
-                '"' -> return out.toString()
-                '\\' -> {
-                    if (index >= text.length) return null
-                    when (val escaped = text[index++]) {
-                        '"', '\\', '/' -> out.append(escaped)
-                        'b' -> out.append('\b')
-                        'f' -> out.append('\u000C')
-                        'n' -> out.append('\n')
-                        'r' -> out.append('\r')
-                        't' -> out.append('\t')
-                        'u' -> {
-                            if (index + 4 > text.length) return null
-                            val hex = text.substring(index, index + 4).toIntOrNull(16) ?: return null
-                            index += 4
-                            out.append(hex.toChar())
-                        }
-                        else -> return null
-                    }
-                }
-                else -> out.append(char)
-            }
-        }
-        return null
-    }
-
-    private fun number(): Double? {
-        val start = index
-        if (eat('-')) Unit
-        if (index >= text.length || !text[index].isDigit()) return null
-        while (index < text.length && text[index].isDigit()) index++
-        if (eat('.')) {
-            if (index >= text.length || !text[index].isDigit()) return null
-            while (index < text.length && text[index].isDigit()) index++
-        }
-        return text.substring(start, index).toDoubleOrNull()
-    }
-
-    private fun literal(): Any? {
-        return when {
-            eatWord("true") -> true
-            eatWord("false") -> false
-            eatWord("null") -> null
-            else -> null
-        }
-    }
-
-    private fun eatWord(word: String): Boolean {
-        if (!text.startsWith(word, index)) return false
-        index += word.length
-        return true
-    }
-
-    private fun eat(char: Char): Boolean {
-        if (index >= text.length || text[index] != char) return false
-        index++
-        return true
-    }
-
-    private fun skip() {
-        while (index < text.length && text[index].isWhitespace()) index++
-    }
-}
+} catch (_: Exception) { null }
 
 private fun readCappedEntries(input: InputStream): Map<String, ByteArray> {
     val entries = linkedMapOf<String, ByteArray>()
     ZipInputStream(input).use { zip ->
         var count = 0
-        while (count < MAX_THEME_ENTRIES) {
+        while (true) {
             val entry = zip.nextEntry ?: break
             count++
+            require(count <= MAX_THEME_ENTRIES) { "Too many theme archive entries" }
+            require(entry.name.substringAfterLast('.').lowercase() !in APPLICATION_CODE_EXTENSIONS) { "Themes cannot contain application code" }
             try {
                 if (entry.isDirectory) continue
                 val name = themeZipEntryName(entry.name) ?: continue

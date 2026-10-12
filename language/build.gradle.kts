@@ -25,6 +25,6 @@ dependencies {
     implementation(libs.compose.ui)
     implementation(libs.compose.animation)
     implementation(libs.activity.compose)
-    implementation(libs.kotlinx.serialization.json)
+    api(libs.kotlinx.serialization.json)
     testImplementation(libs.junit)
 }

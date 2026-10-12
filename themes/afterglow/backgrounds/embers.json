@@ -1,0 +1,49 @@
+{
+  "version": 1,
+  "id": "embers",
+  "name": "Embers",
+  "frameRate": "clamp(30*clock,20,60)",
+  "maxClock": 1.25,
+  "renderScale": 1,
+  "variables": {
+    "breath": "if(moving,1+0.08*sin(2*pi*time/48),1)",
+    "lift": "sin(2*pi*time/84)*8",
+    "cycle": "66+(index % 4)*6",
+    "rise": "fract(time/cycle+index*0.137)",
+    "edge": "if(rise < 0.12,smooth(rise/0.12),if(rise > 0.88,smooth((1-rise)/0.12),1))"
+  },
+  "layers": [
+    {
+      "name": "horizon",
+      "type": "line",
+      "repeat": 5,
+      "x": 0,
+      "y": "height-8-index*5.2+lift",
+      "endX": "width",
+      "endY": "height-8-index*5.2+lift",
+      "width": 6.2,
+      "color": [
+        "floor(32*breath*(5-index)/5*0.5)/255",
+        "floor(14*breath*(5-index)/5*0.5)/255",
+        "floor(26*breath*(5-index)/5*0.5)/255",
+        1
+      ]
+    },
+    {
+      "name": "embers",
+      "type": "disc",
+      "repeat": 12,
+      "x": "(0.06+(index*73 % 88)/100)*width+sin(2*pi*time/96+index)*14",
+      "y": "height+10-rise*(height+20)",
+      "radius": 3.565,
+      "tightness": 2.2,
+      "rim": 0.48,
+      "color": [
+        "floor(if(index % 2 == 0,140,108)*breath*edge)/255",
+        "floor(if(index % 2 == 0,76,82)*breath*edge)/255",
+        "floor(if(index % 2 == 0,42,142)*breath*edge)/255",
+        1
+      ]
+    }
+  ]
+}

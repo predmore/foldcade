@@ -9,7 +9,7 @@ import app.foldcade.language.GlowFalloff
 
 /**
  * Soft radial glow shared by discs and tiles. The curve is [GlowFalloff].
- * Ribbons and crossings use the same curve per pixel in [RibbonShader].
+ * Theme shaders can use the same curve per pixel.
  */
 internal object SoftGlow {
     fun fillStops(into: FloatArray, tightness: Float, rim: Float) {

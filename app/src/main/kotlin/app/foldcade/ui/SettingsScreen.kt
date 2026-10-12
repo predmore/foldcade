@@ -36,7 +36,6 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalDensity
-import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -47,13 +46,10 @@ import androidx.compose.ui.unit.dp
 import app.foldcade.FoldcadeApp
 import app.foldcade.R
 import app.foldcade.language.Effect
-import app.foldcade.language.FocusRingColors
 import app.foldcade.language.HostScreen
-import app.foldcade.language.Metrics
 import app.foldcade.language.Row
 import app.foldcade.language.SettingsCopy
 import app.foldcade.language.Theme
-import app.foldcade.language.TypeRamp
 import app.foldcade.language.rowText
 import app.foldcade.language.settingsCategories
 import app.foldcade.language.settingsDetail
@@ -66,6 +62,7 @@ import app.foldcade.language.settingsTitle
  */
 @Composable
 internal fun SettingsScreen(app: FoldcadeApp, screen: HostScreen, onEffect: (Effect?) -> Unit) {
+    val design = LocalFoldTheme.current.theme.style
     val model = app.shell.model
     val page = model.settings ?: return
     val theme = LocalFoldTheme.current.theme
@@ -111,7 +108,7 @@ internal fun SettingsScreen(app: FoldcadeApp, screen: HostScreen, onEffect: (Eff
                 Modifier
                     .weight(0.66f)
                     .fillMaxHeight()
-                    .clip(RoundedCornerShape(Metrics.cardCornerDp.dp))
+                    .clip(RoundedCornerShape(design.metrics.cardCornerDp.dp))
                     .background(theme.surface)
                     .verticalScroll(rememberScrollState())
                     .padding(16.dp),
@@ -160,8 +157,8 @@ private fun Header(theme: Theme, onBack: () -> Unit) {
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(12.dp),
     ) {
-        Image(painterResource(R.drawable.ic_btn_b), contentDescription = null, modifier = Modifier.size(32.dp))
-        BasicText(SettingsCopy.title, style = style(theme.onBackground, TypeRamp.heroTitle, theme, bold = true))
+        Image(themeIconPainter(R.drawable.ic_btn_b), contentDescription = null, modifier = Modifier.size(32.dp))
+        BasicText(SettingsCopy.title, style = style(theme.onBackground, LocalFoldTheme.current.theme.style.type.heroTitle, theme, bold = true))
     }
 }
 
@@ -185,14 +182,14 @@ private fun CategoryRow(
     ) {
         BasicText(
             title,
-            style = style(if (selected) FocusRingColors.start else theme.onBackground, TypeRamp.menuRow, theme, bold = true),
+            style = style(if (selected) (theme.style.focusRing.start ?: theme.focus) else theme.onBackground, LocalFoldTheme.current.theme.style.type.menuRow, theme, bold = true),
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
         )
         if (selected) {
             BasicText(
                 detail,
-                style = style(theme.muted, TypeRamp.hint, theme),
+                style = style(theme.muted, LocalFoldTheme.current.theme.style.type.hint, theme),
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
@@ -221,7 +218,7 @@ private fun SettingRow(
         BasicText(
             label,
             modifier = Modifier.weight(1f),
-            style = style(theme.onBackground, TypeRamp.menuRow, theme, bold = true),
+            style = style(theme.onBackground, LocalFoldTheme.current.theme.style.type.menuRow, theme, bold = true),
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
         )
@@ -229,7 +226,7 @@ private fun SettingRow(
             BasicText(
                 value,
                 modifier = Modifier.padding(start = 16.dp),
-                style = style(if (focused) FocusRingColors.start else theme.muted, TypeRamp.menuRow, theme)
+                style = style(if (focused) (theme.style.focusRing.start ?: theme.focus) else theme.muted, LocalFoldTheme.current.theme.style.type.menuRow, theme)
                     .copy(textAlign = TextAlign.End),
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
@@ -243,7 +240,7 @@ private fun Modifier.settingsFocus(focused: Boolean, theme: Theme, lifted: Boole
     graphicsLayer { clip = false }.drawBehind {
         val corner = CornerRadius(22.dp.toPx(), 22.dp.toPx())
         if (lifted) drawRoundRect(color = theme.onBackground.copy(alpha = 0.06f), cornerRadius = corner)
-        if (focused) with(FocusRing) { drawFocusRing(22.dp.toPx()) }
+        if (focused) with(FocusRing(theme)) { drawFocusRing(22.dp.toPx()) }
     }
 
 /**

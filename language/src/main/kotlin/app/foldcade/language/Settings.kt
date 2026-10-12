@@ -64,6 +64,7 @@ fun settingsCategories(model: PickerModel): List<SettingsCategory> =
 fun settingsRows(category: SettingsCategory, model: PickerModel): List<Row> = when (category) {
     SettingsCategory.Personalization -> buildList {
         add(Row.Theme)
+        add(Row.IconTheme)
         add(Row.Background)
         add(Row.MotionSpeed)
         if (model.offerButtonLabels) add(Row.ButtonLabels)

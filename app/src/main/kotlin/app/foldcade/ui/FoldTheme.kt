@@ -10,7 +10,7 @@ data class FoldPaint(
     val theme: Theme,
     val wallpaperTop: ImageBitmap? = null,
     val wallpaperBottom: ImageBitmap? = null,
-    val marks: Map<String, ImageBitmap> = emptyMap(),
+    val icons: Map<String, List<app.foldcade.language.ThemeIconAsset>> = emptyMap(),
 )
 
 val LocalFoldTheme = staticCompositionLocalOf { FoldPaint(builtInTheme()) }

@@ -15,59 +15,60 @@ import androidx.compose.animation.core.tween
  * Call sites ask this object for a spec. They do not write a second cubic.
  * Durations are never 0. The toolkit must not apply [Settings.Global.ANIMATOR_DURATION_SCALE] again.
  */
-object Motion {
-    const val durationShort = 100
-    const val durationFocus = 180
-    const val durationTravel = 200
+open class MotionStyle(private val style: ThemeStyle = ThemeStyle()) {
+    val durationShort = style.motion.durationShort
+    val durationFocus = style.motion.durationFocus
+    val durationTravel = style.motion.durationTravel
 
     /** Island morph. Same curves as travel, long enough to read the shared-element grow. */
-    const val durationIsland = 320
+    val durationIsland = style.motion.durationIsland
 
     /** One breath of a downloading tile's cloud, in each direction. */
-    const val durationPulse = 720
+    val durationPulse = style.motion.durationPulse
 
     /** How long a finished sync's mark stays on its tile, fades included. */
-    const val durationSyncMark = 2400
-    const val scaleRest = 1f
-    const val scaleFocus = 1.05f
+    val durationSyncMark = style.motion.durationSyncMark
+    val scaleRest = style.motion.scaleRest
+    val scaleFocus = style.motion.scaleFocus
 
     /** Incoming hero art starts just under rest, then eases up to [scaleRest]. */
-    const val heroScaleFrom = 0.96f
+    val heroScaleFrom = style.motion.heroScaleFrom
 
     /** Hero art that arrives without a direction, after a jump, starts this many pixels lower, then eases up to 0. */
-    const val heroSlideUpPx = 24f
+    val heroSlideUpPx = style.motion.heroSlideUpPx
 
     /**
      * Hero art arrives this far along the cursor's travel and eases to rest. The art
      * leaving goes the same distance on, so the top screen moves the way the cursor did.
      */
-    const val heroTravelPx = 64f
+    val heroTravelPx = style.motion.heroTravelPx
 
     /** The game's wide art behind the logo travels this share of [heroTravelPx], so the logo reads in front of it. */
-    const val sceneDepth = 0.35f
+    val sceneDepth = style.motion.sceneDepth
 
     /** Wide art is drawn this much larger than the screen, so its travel never shows an edge. */
-    const val sceneOverscan = 1.05f
+    val sceneOverscan = style.motion.sceneOverscan
 
     /** Wide art that has just arrived starts this much larger, then settles to [sceneOverscan]. */
-    const val sceneSettleFrom = 1.1f
+    val sceneSettleFrom = style.motion.sceneSettleFrom
 
     /** One wide-art crossfade. Longer than [durationTravel], so the game's art dissolves rather than cuts. */
-    const val durationScene = 360
+    val durationScene = style.motion.durationScene
 
     /** Wide art's slow settle after it arrives. */
-    const val durationShowcase = 1400
+    val durationShowcase = style.motion.durationShowcase
 
-    val easingArrive: Easing = CubicBezierEasing(0.05f, ARRIVE_Y1, 0.1f, 1f)
-    val easingLeave: Easing = CubicBezierEasing(0.3f, 0f, 0.8f, 0.15f)
-    val easingPulse: Easing = CubicBezierEasing(0.4f, 0f, 0.6f, 1f)
+    private val arriveCurve = style.motion.arrive
+    val easingArrive: Easing = CubicBezierEasing(arriveCurve[0], arriveCurve[1], arriveCurve[2], arriveCurve[3])
+    val easingLeave: Easing = style.motion.leave.let { CubicBezierEasing(it[0], it[1], it[2], it[3]) }
+    val easingPulse: Easing = style.motion.pulse.let { CubicBezierEasing(it[0], it[1], it[2], it[3]) }
 
     /**
      * Opacity of art crossing over art. [easingArrive] covers most of its way in the
      * first frames, which reads as a cut when a whole screen of art changes. This
      * starts gently, then settles the same way.
      */
-    val easingDissolve: Easing = CubicBezierEasing(0.2f, 0f, 0f, 1f)
+    val easingDissolve: Easing = style.motion.dissolve.let { CubicBezierEasing(it[0], it[1], it[2], it[3]) }
 
     fun animatorScale(resolver: ContentResolver): Float =
         Settings.Global.getFloat(resolver, Settings.Global.ANIMATOR_DURATION_SCALE, 1f)
@@ -100,9 +101,9 @@ object Motion {
         val millis = duration(base, animatorScale)
         // The easing's opening slope that carries the current speed over.
         val slope = velocity * millis / 1000f / distance
-        if (slope < 1f || slope >= ARRIVE_OPENING_SLOPE) return arrive(base, animatorScale)
-        val reach = ARRIVE_Y1 / slope
-        return tween(durationMillis = millis, easing = CubicBezierEasing(reach, ARRIVE_Y1, 0.1f, 1f))
+        if (slope < 1f || slope >= arriveOpeningSlope) return arrive(base, animatorScale)
+        val reach = arriveCurve[1] / slope
+        return tween(durationMillis = millis, easing = CubicBezierEasing(reach, arriveCurve[1], arriveCurve[2], arriveCurve[3]))
     }
 
     /** Fades up and back for as long as it runs. Callers hold still when [reduced]. */
@@ -155,11 +156,11 @@ object Motion {
         return duration(if (speed == MotionSpeed.Slower) base * 2 else base, animatorScale)
     }
 
-    private const val ARRIVE_Y1 = 0.7f
-
-    /** [easingArrive]'s slope at its start: a fresh move's top speed. */
-    private const val ARRIVE_OPENING_SLOPE = ARRIVE_Y1 / 0.05f
+    private val arriveOpeningSlope = if (arriveCurve[0] > 0f) arriveCurve[1] / arriveCurve[0] else Float.POSITIVE_INFINITY
 
     private fun spec(base: Int, animatorScale: Float, easing: Easing): FiniteAnimationSpec<Float> =
         tween(durationMillis = duration(base, animatorScale), easing = easing)
 }
+
+/** Default motion for callers that do not render a theme. */
+object Motion : MotionStyle()

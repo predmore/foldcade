@@ -378,7 +378,7 @@ class ContractTest {
             motionSpeed = MotionSpeed.Slow,
         )
         val rows = settingsRows(SettingsCategory.Personalization, root)
-        assertEquals(listOf(Row.Theme, Row.Background, Row.MotionSpeed), rows)
+        assertEquals(listOf(Row.Theme, Row.IconTheme, Row.Background, Row.MotionSpeed), rows)
         val themed = reduce(root.onSetting(Row.Theme), Meaning.Activate).first
         assertEquals(0, themed.themeIndex)
         assertEquals(BackgroundMotion.Off, themed.backgroundMotion)

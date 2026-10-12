@@ -10,13 +10,13 @@ import org.junit.Test
 class BackdropTest {
     @Test
     fun clockFollowsSpeedAndAnimatorScale() {
-        assertEquals(0f, backdropClock(MotionSpeed.Off, 1f), 0.001f)
-        assertEquals(0f, backdropClock(MotionSpeed.Slow, 0f), 0.001f)
-        assertEquals(0f, backdropClock(MotionSpeed.Slow, -1f), 0.001f)
-        assertEquals(1f, backdropClock(MotionSpeed.Slow, 1f), 0.001f)
-        assertEquals(0.5f, backdropClock(MotionSpeed.Slower, 1f), 0.001f)
-        assertEquals(0.5f, backdropClock(MotionSpeed.Slow, 2f), 0.001f)
-        assertEquals(Backdrop.MAX_CLOCK, backdropClock(MotionSpeed.Slow, 0.5f), 0.001f)
+        assertEquals(0f, referenceBackdropClock(MotionSpeed.Off, 1f), 0.001f)
+        assertEquals(0f, referenceBackdropClock(MotionSpeed.Slow, 0f), 0.001f)
+        assertEquals(0f, referenceBackdropClock(MotionSpeed.Slow, -1f), 0.001f)
+        assertEquals(1f, referenceBackdropClock(MotionSpeed.Slow, 1f), 0.001f)
+        assertEquals(0.5f, referenceBackdropClock(MotionSpeed.Slower, 1f), 0.001f)
+        assertEquals(0.5f, referenceBackdropClock(MotionSpeed.Slow, 2f), 0.001f)
+        assertEquals(Backdrop.MAX_CLOCK, referenceBackdropClock(MotionSpeed.Slow, 0.5f), 0.001f)
         assertTrue(Backdrop.DRIFT_SECONDS / Backdrop.MAX_CLOCK >= 60f)
         assertTrue(Backdrop.BREATH_SECONDS / Backdrop.MAX_CLOCK >= 30f)
         assertTrue(Backdrop.FADE_SECONDS / Backdrop.MAX_CLOCK >= 2f)

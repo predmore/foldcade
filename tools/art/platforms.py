@@ -478,6 +478,6 @@ if __name__ == "__main__":
     import os
     repo = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
     for a in platform_assets():
-        open(f"{repo}/app/src/main/res/drawable/{a.name}.xml", "w").write(to_vd(a))
+        open(f"{repo}/themes/afterglow/icons/{a.name}.xml", "w").write(to_vd(a))
         open(f"{repo}/art/svg/marks/{a.name}.svg", "w").write(to_svg(a))
     print("wrote", len(MARKS), "marks")

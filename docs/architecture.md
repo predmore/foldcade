@@ -35,6 +35,8 @@ The home-music loop plays while Foldcade is in front and pauses when you leave i
 
 Saved settings, Home edits, file durability, credentials, and transfer rules are covered in the [persistence audit](persistence.md).
 
+Resource themes supply icons, styling, and animated scenes through a versioned ZIP contract. `:language` compiles scene expressions and tracks; the app's native renderer reuses shaders, textures, and path buffers. Afterglow's complete background definitions live under `themes/afterglow/backgrounds`. Icon providers and background selections compose independently. See [themes](themes.md) for author tools and the debug-only native preview.
+
 ## Plugins
 
 The shell does not scan for installed plugin packages. `PluginHost.load` reads `ServiceLoader` entries from a class loader. The contract, the reserved RomM ids, and the minify keep rules are in [plugins.md](plugins.md).

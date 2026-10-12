@@ -226,6 +226,7 @@ data class Hold(
 
 sealed interface Row {
     data object Library : Row
+    data object IconTheme : Row
     data object Theme : Row
     data object Background : Row
     data object MotionSpeed : Row
@@ -523,6 +524,7 @@ fun backgroundLabel(motion: BackgroundMotion): String = when (motion) {
     BackgroundMotion.Embers -> Copy.embers
     BackgroundMotion.Static -> Copy.motionStatic
     BackgroundMotion.Off -> Copy.motionOff
+    else -> motion.wire
 }
 
 fun speedLabel(speed: MotionSpeed): String = when (speed) {
@@ -540,8 +542,9 @@ fun rowText(row: Row, model: PickerModel): RowText = when (row) {
     Row.Home -> RowText(Copy.home)
     Row.EditHome -> RowText(Copy.editHome)
     Row.Settings -> RowText(SettingsCopy.title)
+    Row.IconTheme -> RowText("Icons", model.iconThemeIndex?.let { model.themes.getOrNull(it) } ?: "Follow theme")
     Row.Theme -> RowText(Copy.theme, model.themes.getOrElse(model.themeIndex) { Copy.builtIn })
-    Row.Background -> RowText(Copy.background, backgroundLabel(model.backgroundMotion))
+    Row.Background -> RowText(Copy.background, model.backgroundChoices.firstOrNull { it.motion == model.backgroundMotion }?.name ?: backgroundLabel(model.backgroundMotion))
     Row.MotionSpeed -> RowText(Copy.motion, speedLabel(model.motionSpeed))
     Row.UsageAccess -> RowText(
         "Play time",
@@ -715,7 +718,15 @@ data class PickerModel(
     val atLibraryRoot: Boolean = true,
     val primaryIsTop: Boolean = true,
     val themes: List<String> = listOf(Copy.builtIn),
+    val themeIds: List<String> = themes,
     val themeIndex: Int = 0,
+    val iconThemeIndex: Int? = null,
+    val backgroundChoices: List<BackgroundChoice> = listOf(
+        BackgroundChoice(BackgroundMotion.Ribbons, Copy.ribbons),
+        BackgroundChoice(BackgroundMotion.Embers, Copy.embers),
+        BackgroundChoice(BackgroundMotion.Static, Copy.motionStatic),
+        BackgroundChoice(BackgroundMotion.Off, Copy.motionOff),
+    ),
     val themeMotions: List<BackgroundMotion> = listOf(BackgroundMotion.Off),
     val backgroundMotion: BackgroundMotion = BackgroundMotion.Off,
     val backgroundPinned: Boolean = false,
@@ -1276,6 +1287,10 @@ private fun activateRow(
             panel = null,
             settings = SettingsPage(screen = panel.screen, grid = panel.grid),
         ) to null
+        Row.IconTheme -> {
+            val next = model.iconThemeIndex?.plus(1) ?: 0
+            model.copy(panel = panel, iconThemeIndex = next.takeIf { it < model.themes.size }) to null
+        }
         Row.Theme -> {
             val count = model.themes.size.coerceAtLeast(1)
             val nextIndex = (model.themeIndex + 1) % count
@@ -1292,7 +1307,9 @@ private fun activateRow(
         }
         Row.Background -> model.copy(
             panel = panel,
-            backgroundMotion = model.backgroundMotion.next(),
+            backgroundMotion = model.backgroundChoices.let { choices ->
+                if (choices.isEmpty()) BackgroundMotion.Off else choices[(choices.indexOfFirst { it.motion == model.backgroundMotion } + 1) % choices.size].motion
+            },
             backgroundPinned = true,
         ) to null
         Row.MotionSpeed -> model.copy(panel = panel, motionSpeed = model.motionSpeed.next()) to null
