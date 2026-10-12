@@ -272,6 +272,7 @@ fun PanelHost(activity: FoldcadeHomeActivity, displays: Displays) {
         Box(
             Modifier
                 .fillMaxSize()
+                .focusRequester(activity.panelFocus)
                 .background(paint.theme.background)
                 .wakesCommandCenter(app, panel),
         ) {

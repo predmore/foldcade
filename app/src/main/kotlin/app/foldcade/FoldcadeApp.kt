@@ -183,6 +183,18 @@ class FoldcadeApp : Application() {
     lateinit var commandCenter: CommandCenter
         private set
     private val homes = mutableMapOf<Int, WeakReference<FoldcadeHomeActivity>>()
+    /** A stopped emulator can recreate its window again. Ownership still gates each showing. */
+    internal var panelRecoveryRequested = false
+        private set
+
+    internal fun requestPanelRecovery(reclaim: Boolean = true) {
+        panelRecoveryRequested = true
+        refreshHomeRecovery(reclaim)
+    }
+
+    private fun refreshHomeRecovery(reclaim: Boolean = false) {
+        homes.values.toList().forEach { it.get()?.refreshRecoveryWindow(reclaim) }
+    }
 
     internal fun companionAlive(displayId: Int): Boolean = homes[displayId]?.get()?.let {
         !it.isDestroyed && !it.isFinishing
@@ -250,7 +262,10 @@ class FoldcadeApp : Application() {
         credentials = AndroidCredentialStore(this)
         plugins = PluginHost(Dispatchers.IO, credentials)
         music = HomeMusic(this, store)
-        store.afterSessionChanged = music::onSessionChanged
+        store.afterSessionChanged = {
+            music.onSessionChanged()
+            refreshHomeRecovery()
+        }
         themePacks = PackagedTheme.loadAll(this)
         packaged = themePacks.firstOrNull { it.resources.id == "afterglow" }
         val names = listOf(Copy.builtIn) + themePacks.map { it.name }

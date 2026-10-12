@@ -48,7 +48,8 @@ abstract class PanelKeyActivity : ComponentActivity() {
         )
     }
 
-    override fun dispatchKeyEvent(event: KeyEvent): Boolean {
+    /** Form navigation runs before a text view, in either an activity or a presentation. */
+    fun dispatchFormKeyEvent(event: KeyEvent): Boolean? {
         val vertical = event.keyCode == KeyEvent.KEYCODE_DPAD_UP || event.keyCode == KeyEvent.KEYCODE_DPAD_DOWN
         if (vertical && rowsTakeVerticalKeys()) {
             return when (event.action) {
@@ -56,8 +57,11 @@ abstract class PanelKeyActivity : ComponentActivity() {
                 else -> onKeyUp(event.keyCode, event)
             }
         }
-        return super.dispatchKeyEvent(event)
+        return null
     }
+
+    override fun dispatchKeyEvent(event: KeyEvent): Boolean =
+        dispatchFormKeyEvent(event) ?: super.dispatchKeyEvent(event)
 
     override fun onKeyDown(keyCode: Int, event: KeyEvent): Boolean {
         val prompt = promptKeyOf(keyCode)
