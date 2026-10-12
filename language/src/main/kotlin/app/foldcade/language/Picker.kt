@@ -27,6 +27,7 @@ enum class Side {
 enum class PanelLevel {
     Root,
     Library,
+    RommConnection,
 
     /** Y's menu for the focused tile, in the left island. */
     Actions,
@@ -52,6 +53,10 @@ data class SidePanel(
     val pendingSide: Side? = null,
     /** The level Move to came from, so Back returns there. */
     val via: PanelLevel = PanelLevel.Actions,
+    /** The saved RomM connection whose edit and sign-out actions are open. */
+    val connection: SignedInBackend? = null,
+    /** A connection opened from Settings returns to that page on Back. */
+    val connectionSettings: SettingsPage? = null,
 )
 
 fun signInAgainPrompt(screen: HostScreen = HostScreen.Top): DialogState = DialogState(
@@ -240,9 +245,10 @@ sealed interface Row {
     data object AndroidSettings : Row
     data object DefaultHomeApp : Row
     data object AddFolder : Row
-    data object Connect : Row
+    data class RommConnection(val pluginId: String, val label: String) : Row
+    data class EditRomm(val pluginId: String) : Row
 
-    /** Another RomM server. Shown once one is signed in. The connect form is the same. */
+    /** Add a server, whether it is the first or an additional connection. */
     data object AddRomm : Row
     data class Notice(val id: String) : Row
 
@@ -413,12 +419,11 @@ fun libraryRows(
     signedIn: List<SignedInBackend> = emptyList(),
     folders: List<LibraryFolder> = emptyList(),
 ): List<Row> {
-    // A host-minted RomM copy is `romm#2`. The default stays `romm`.
-    val another = signedIn.any { it.pluginId == "romm" || it.pluginId.startsWith("romm#") }
     // Removing a folder comes after adding one, so the first row is never the one that drops a library.
-    return signedIn.map { Row.SignOut(it.pluginId, it.label) } +
-        listOf(Row.AddFolder, Row.Connect) +
-        (if (another) listOf(Row.AddRomm) else emptyList()) +
+    return signedIn.map {
+        if (it.pluginId == "romm" || it.pluginId.startsWith("romm#")) Row.RommConnection(it.pluginId, it.label)
+        else Row.SignOut(it.pluginId, it.label)
+    } + listOf(Row.AddFolder, Row.AddRomm) +
         folders.map { Row.ForgetFolder(it.uri, it.label) }
 }
 
@@ -514,6 +519,9 @@ fun panelRows(panel: SidePanel, model: PickerModel): List<Row> = when (panel.lev
     PanelLevel.Actions -> actionRows(model.tileActions, model.appActions)
     PanelLevel.MoveTo -> destinationRows(model.tileActions)
     PanelLevel.Library -> libraryRows(model.signedIn, model.folders)
+    PanelLevel.RommConnection -> panel.connection?.let {
+        listOf(Row.EditRomm(it.pluginId), Row.SignOut(it.pluginId, it.label))
+    }.orEmpty()
     PanelLevel.EditHome -> editHomeRows(model)
     PanelLevel.Root -> when (panel.side) {
         Side.Left -> leftRows()
@@ -574,9 +582,12 @@ fun rowText(row: Row, model: PickerModel): RowText = when (row) {
         if (model.brightnessAllowed) BrightnessCopy.percent(model.brightness) else BrightnessCopy.allow,
     )
     Row.AddFolder -> RowText(Copy.addFolder)
-    Row.Connect -> RowText(Copy.connectRomm)
+    is Row.RommConnection -> RowText(row.label)
+    is Row.EditRomm -> RowText(Copy.editRommConnection)
     Row.AddRomm -> RowText(Copy.addRommServer)
-    is Row.SignOut -> RowText("${Copy.signOut} · ${row.label}")
+    is Row.SignOut -> RowText(
+        if (model.panel?.level == PanelLevel.RommConnection) Copy.signOut else "${Copy.signOut} · ${row.label}",
+    )
     is Row.ForgetFolder -> RowText("${Copy.removeFolder} · ${row.label}")
     is Row.Notice -> RowText(model.notices.firstOrNull { it.id == row.id }?.title ?: "")
     Row.NoticeAccess -> RowText(NoticeCopy.access, NoticeCopy.accessValue)
@@ -634,9 +645,9 @@ sealed interface Effect {
     data object LeavePlatform : Effect
     data object TryAgain : Effect
     data object AddFolder : Effect
-    data object OpenConnect : Effect
+    data class EditRommConnection(val pluginId: String) : Effect
 
-    /** The connect form for a server besides the default. The fields are the same. */
+    /** The connect form for a new server. */
     data object OpenAddRomm : Effect
     data object OpenArtKey : Effect
     data object SaveArtKey : Effect
@@ -755,6 +766,8 @@ data class PickerModel(
     val connectOrigin: String = "",
     val connectIndex: Int = 0,
     val connectScreen: HostScreen? = null,
+    /** Editing returns to this connection's actions when the form closes. */
+    val connectReturnPanel: SidePanel? = null,
     val connectWarning: String? = null,
     val connectHint: String? = null,
     val connectBusy: Boolean = false,
@@ -832,6 +845,8 @@ fun reduce(
                 connectOpen = false,
                 connectScreen = null,
                 connectBusy = false,
+                panel = coerced.connectReturnPanel,
+                connectReturnPanel = null,
             ) to null
             Meaning.MoveUp -> coerced.copy(connectIndex = (index - 1).coerceAtLeast(0)) to null
             Meaning.MoveDown -> coerced.copy(connectIndex = (index + 1).coerceAtMost(fields.lastIndex)) to null
@@ -842,7 +857,7 @@ fun reduce(
             }
             Meaning.LeftPanel, Meaning.RightPanel ->
                 presentPanel(
-                    coerced.copy(connectOpen = false, connectScreen = null, connectBusy = false),
+                    coerced.copy(connectOpen = false, connectScreen = null, connectBusy = false, connectReturnPanel = null),
                     meaning,
                     screen,
                 ) to null
@@ -1081,7 +1096,8 @@ private fun activate(model: PickerModel, screen: HostScreen, onBottom: Boolean =
                         connectIndex = 0,
                         connectKind = ConnectKind.Romm,
                         connectAnother = false,
-                    ) to Effect.OpenConnect
+                        connectReturnPanel = null,
+                    ) to Effect.OpenAddRomm
                 }
             }
         }
@@ -1261,6 +1277,12 @@ private fun applySettings(
             // Rows act through the menu path. A stand-in panel tells "stays open" from "leaves".
             val standIn = SidePanel(Side.Left, current.screen, PanelLevel.Root, rowIndex, current.grid)
             val (next, effect) = activateRow(model.copy(panel = standIn), standIn, row, current.screen)
+            if (next.panel?.level == PanelLevel.RommConnection) {
+                return next.copy(
+                    panel = next.panel.copy(connectionSettings = current),
+                    settings = null,
+                ) to effect
+            }
             val stays = next.panel != null
             next.copy(
                 panel = null,
@@ -1281,6 +1303,17 @@ private fun PickerModel.withTrack(track: MusicTrack): PickerModel =
 private fun backPanel(model: PickerModel, panel: SidePanel): Pair<PickerModel, Effect?> {
     return when (panel.level) {
         PanelLevel.Library -> model.copy(panel = panel.copy(level = PanelLevel.Root, index = 0)) to null
+        PanelLevel.RommConnection -> {
+            val settings = panel.connectionSettings
+            if (settings != null) model.copy(panel = null, settings = settings) to null
+            else {
+                val parent = panel.copy(level = PanelLevel.Library, connection = null, connectionSettings = null)
+                val index = panelRows(parent, model).indexOfFirst {
+                    it is Row.RommConnection && it.pluginId == panel.connection?.pluginId
+                }.coerceAtLeast(0)
+                model.copy(panel = parent.copy(index = index)) to null
+            }
+        }
         PanelLevel.EditHome -> model.copy(panel = panel.copy(level = PanelLevel.Root, index = leftRows().indexOf(Row.EditHome))) to null
         PanelLevel.MoveTo -> {
             val parent = panel.copy(level = panel.via)
@@ -1359,7 +1392,14 @@ private fun activateRow(
             } else {
                 model to Effect.AddFolder
             }
-        Row.Connect -> model.copy(
+        is Row.RommConnection -> model.copy(
+            panel = panel.copy(
+                level = PanelLevel.RommConnection,
+                index = 0,
+                connection = SignedInBackend(row.pluginId, row.label),
+            ),
+        ) to null
+        is Row.EditRomm -> model.copy(
             panel = null,
             focus = panel.grid,
             connectOpen = true,
@@ -1367,7 +1407,8 @@ private fun activateRow(
             connectIndex = 0,
             connectKind = ConnectKind.Romm,
             connectAnother = false,
-        ) to Effect.OpenConnect
+            connectReturnPanel = panel,
+        ) to Effect.EditRommConnection(row.pluginId)
         Row.AddRomm -> model.copy(
             panel = null,
             focus = panel.grid,
@@ -1377,7 +1418,8 @@ private fun activateRow(
             connectIndex = 0,
             connectKind = ConnectKind.Romm,
             connectHint = null,
-            connectAnother = true,
+            connectAnother = model.signedIn.any { it.pluginId == "romm" },
+            connectReturnPanel = null,
         ) to Effect.OpenAddRomm
         is Row.SignOut -> model.copy(panel = null, focus = panel.grid) to Effect.ForgetCredentials(row.pluginId)
         is Row.ForgetFolder -> model.copy(panel = null, focus = panel.grid) to Effect.ForgetFolder(row.uri)

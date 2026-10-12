@@ -230,12 +230,11 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
             -> Unit
             Effect.OpenAll -> foldcade.shell.openHomeAll()
             Effect.ToggleAddNew -> foldcade.shell.applyHomeAddNew(foldcade.shell.model.addNewToHome)
-            Effect.OpenConnect -> {
-                foldcade.shell.openConnect(foldcade.store.rommOrigin().orEmpty())
-                beginRommDeviceCode()
+            is Effect.EditRommConnection -> {
+                if (foldcade.shell.editRommConnection(effect.pluginId)) beginRommDeviceCode()
             }
             Effect.OpenAddRomm -> {
-                foldcade.shell.openConnect("", another = true)
+                foldcade.shell.openAddRomm()
                 beginRommDeviceCode()
             }
             Effect.SaveRommToken -> saveRommToken()

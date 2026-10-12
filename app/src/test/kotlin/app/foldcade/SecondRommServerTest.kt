@@ -6,6 +6,11 @@ import app.foldcade.api.plugin.CredentialStore
 import app.foldcade.api.plugin.MemoryCredentialStore
 import app.foldcade.host.PluginHost
 import app.foldcade.language.SignedInBackend
+import app.foldcade.language.Effect
+import app.foldcade.language.PanelLevel
+import app.foldcade.language.Side
+import app.foldcade.language.Row
+import app.foldcade.language.leftRows
 import app.foldcade.language.DialogKind
 import app.foldcade.language.homePrompt
 import app.foldcade.language.HostScreen
@@ -20,6 +25,60 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class SecondRommServerTest {
+    @Test
+    fun editingTheSecondConnectionKeepsTheFirstAndReturnsToItsActions() = runBlocking {
+        val session = SessionStore(MemoryPrefs())
+        val credentials = MemoryCredentialStore()
+        saveRommConnection(session, credentials, "romm", "https://one.example", "rmm_one")
+        saveRommConnection(session, credentials, "romm#2", "https://two.example", "rmm_two")
+        val shell = ShellController(session, host(credentials))
+        shell.setSignedIn(rommSignedInBackends(session.rommOrigin(), session.rommInstances()))
+        shell.previewIsland(Side.Left)
+        shell.touchPanel(leftRows().indexOf(Row.Library), HostScreen.Top)
+        shell.touchPanel(leftRows().indexOf(Row.Library), HostScreen.Top)
+        shell.touchPanel(1, HostScreen.Top)
+        assertNull(shell.touchPanel(1, HostScreen.Top))
+        assertEquals(PanelLevel.RommConnection, shell.model.panel?.level)
+        assertFalse(shell.model.connectOpen)
+
+        assertEquals(Effect.EditRommConnection("romm#2"), shell.touchPanel(0, HostScreen.Top))
+        assertTrue(shell.editRommConnection("romm#2"))
+        assertEquals("https://two.example", shell.model.connectOrigin)
+        assertEquals("romm#2", shell.connectRommId)
+        shell.editOrigin("https://changed.example")
+        saveRommConnection(session, credentials, shell.connectRommId, shell.model.connectOrigin, "rmm_changed")
+        shell.closeConnect()
+        assertEquals(PanelLevel.RommConnection, shell.model.panel?.level)
+        assertEquals("romm#2", shell.model.panel?.connection?.pluginId)
+        assertEquals("https://one.example", session.rommOrigin())
+        assertEquals("rmm_one", token(credentials, "access-token"))
+        assertEquals(listOf("romm#2" to "https://changed.example"), session.rommInstances())
+
+        shell.touchPanel(1, HostScreen.Top)
+        assertEquals(Effect.ForgetCredentials("romm#2"), shell.touchPanel(1, HostScreen.Top))
+        removeRommServer(credentials, session, "romm#2")
+        assertEquals(listOf("romm" to "https://one.example"), session.rommServers())
+        assertEquals("rmm_one", token(credentials, "access-token"))
+    }
+
+    @Test
+    fun theAddActionUsesTheFirstVacantDefaultSlotAndKeepsOtherConnections() {
+        val session = SessionStore(MemoryPrefs())
+        val shell = ShellController(session, host(MemoryCredentialStore()))
+        shell.openAddRomm()
+        assertFalse(shell.model.connectAnother)
+        assertEquals("", shell.model.connectOrigin)
+        session.setRommOrigin("https://one.example")
+        shell.openAddRomm()
+        assertTrue(shell.model.connectAnother)
+        assertEquals("", shell.model.connectOrigin)
+        session.setRommInstance("romm#2", "https://two.example")
+        session.clearRommOrigin()
+        shell.openAddRomm()
+        assertFalse(shell.model.connectAnother)
+        assertEquals(listOf("romm#2" to "https://two.example"), session.rommServers())
+    }
+
     @Test
     fun recoveryRepairsTheSecondServerWithoutChangingTheDefault() = runBlocking {
         val credentials = MemoryCredentialStore()

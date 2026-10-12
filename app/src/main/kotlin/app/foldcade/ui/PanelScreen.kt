@@ -1787,6 +1787,22 @@ private fun PanelRows(
     val rows = panelRows(panel, app.shell.model)
     val tileStart = rows.indexOfFirst { it is Row.QuickTile }
     Column(Modifier.graphicsLayer { alpha = progress }, verticalArrangement = Arrangement.spacedBy(px(8f))) {
+        panel.connection?.let { connection ->
+            BasicText(
+                text = Copy.rommConnection,
+                modifier = Modifier.padding(horizontal = px(16f), vertical = px(8f)),
+                style = text(theme.onBackground, LocalFoldTheme.current.theme.style.type.sideRow, theme),
+            )
+            app.store.rommServerOrigin(connection.pluginId)?.let { origin ->
+                BasicText(
+                    text = origin,
+                    modifier = Modifier.padding(horizontal = px(16f), vertical = px(8f)),
+                    style = text(theme.muted, LocalFoldTheme.current.theme.style.type.hint, theme),
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+        }
         rows.forEachIndexed { index, row ->
             // The tiles draw as one block where the first of them sits: the top of R1.
             if (row is Row.QuickTile) {
@@ -2935,7 +2951,7 @@ private fun emptyTitle(model: app.foldcade.language.PickerModel): String? = when
 }
 
 private fun emptyActions(model: app.foldcade.language.PickerModel): List<String> = when (model.gridKind) {
-    GridKind.NoLibrary -> listOf(Copy.addFolder, Copy.connectRomm)
+    GridKind.NoLibrary -> listOf(Copy.addFolder, Copy.addRommServer)
     GridKind.Unreachable -> listOf(Copy.tryAgain)
     else -> emptyList()
 }
@@ -3101,7 +3117,12 @@ private fun ConnectScreen(
         verticalArrangement = Arrangement.spacedBy(px(16f)),
     ) {
         BasicText(
-            text = if (artKey) Copy.steamGridDb else Copy.connectRomm,
+            text = when {
+                artKey -> Copy.steamGridDb
+                model.connectReturnPanel != null -> Copy.editRommConnection
+                !model.connectAnother && app.store.rommServerOrigin(app.shell.connectRommId) != null -> Copy.signInAgainTitle
+                else -> Copy.addRommServer
+            },
             style = text(theme.onBackground, LocalFoldTheme.current.theme.style.type.dialogTitle, theme),
         )
         if (!artKey) {
