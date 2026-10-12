@@ -292,7 +292,7 @@ class HomeSession(raw: String?) {
     fun placeIn(id: String, folderId: String?): Boolean {
         if (catalog().none { it.id == id }) return false
         if (folderId != null && folderId !in board.folders) return false
-        val next = moveToFolder(board.copy(hidden = board.hidden - id), id, folderId)
+        val next = moveToFolder(board.copy(hidden = board.hidden - id), id, folderId, catalog(), platforms)
         if (next == board) return false
         board = next
         return true
