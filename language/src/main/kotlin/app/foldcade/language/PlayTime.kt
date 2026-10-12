@@ -17,8 +17,8 @@ fun LibrarySort.toggled(): LibrarySort = when (this) {
 }
 
 fun orderLabel(sort: LibrarySort): String = when (sort) {
-    LibrarySort.Listed -> "Order  Library"
-    LibrarySort.RecentlyPlayed -> "Order  Recently played"
+    LibrarySort.Listed -> "${Copy.sort}  ${Copy.sortListed}"
+    LibrarySort.RecentlyPlayed -> "${Copy.sort}  ${Copy.sortRecent}"
 }
 
 /** Shown when play time comes from Foldcade's own launches, not usage access. */

@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.text.BasicText
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.foundation.layout.Row
@@ -50,11 +51,15 @@ fun SliderRow(
     onFraction: (Float) -> Unit,
     modifier: Modifier = Modifier,
     showLabel: Boolean = true,
+    scale: Float = 1f,
+    labelStyle: TextStyle? = null,
 ) {
     val theme = LocalFoldTheme.current.theme
     val fraction = fraction.coerceIn(0f, 1f)
     val accent = theme.focus
-    Column(modifier.fillMaxWidth().padding(start = 16.dp, end = 8.dp, top = 8.dp, bottom = 8.dp)) {
+    val lit by eased(if (focused) 1f else 0f, theme.motion.durationFocus, scale)
+    // The same margins as a menu row, so the words line up down the list.
+    Column(modifier.fillMaxWidth().padding(start = 14.dp, end = 14.dp, top = 8.dp, bottom = 8.dp)) {
         if (showLabel) Row(
             Modifier
                 .fillMaxWidth()
@@ -74,12 +79,9 @@ fun SliderRow(
         ) {
             BasicText(
                 text = label,
-                modifier = Modifier.weight(1f),
-                style = TextStyle(
-                    color = if (focused) theme.onBackground else theme.muted,
-                    fontSize = LocalFoldTheme.current.theme.style.type.sideRow,
-                    fontFamily = theme.font,
-                ),
+                modifier = Modifier.weight(1f).graphicsLayer { alpha = 0.72f + 0.28f * lit },
+                style = (labelStyle ?: TextStyle(fontSize = theme.style.type.sideRow, fontFamily = theme.font))
+                    .copy(color = theme.onBackground),
             )
             BasicText(
                 text = value,

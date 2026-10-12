@@ -35,8 +35,10 @@ import androidx.compose.ui.unit.dp
 import app.foldcade.FoldcadeApp
 import app.foldcade.R
 import app.foldcade.language.HostScreen
+import app.foldcade.language.PlayActivityPage
 import app.foldcade.language.PlayCopy
 import app.foldcade.language.PlayWeek
+import app.foldcade.language.PromptKey
 import app.foldcade.language.Theme
 import app.foldcade.language.playDuration
 import app.foldcade.language.playWeek
@@ -57,10 +59,8 @@ private fun rememberPlayWeek(app: FoldcadeApp, weeksBack: Int): PlayWeek {
  * covers the screen L1 opened it on, as Settings does.
  */
 @Composable
-internal fun PlayActivityScreen(app: FoldcadeApp, screen: HostScreen) {
+internal fun PlayActivityScreen(app: FoldcadeApp, page: PlayActivityPage) {
     val design = LocalFoldTheme.current.theme.style
-    val page = app.shell.model.playActivity ?: return
-    if (page.screen != screen) return
     val theme = LocalFoldTheme.current.theme
     val week = rememberPlayWeek(app, page.weeksBack)
     Column(
@@ -188,18 +188,24 @@ private fun DayTrack(blocks: List<ClosedFloatingPointRange<Float>>, theme: Theme
 
 /** L1's first row: the past week as seven bars, the total, and the page's name. */
 @Composable
-internal fun PlayStrip(app: FoldcadeApp, focused: Boolean, modifier: Modifier = Modifier) {
+internal fun PlayStrip(app: FoldcadeApp, focused: Boolean, chord: PromptKey? = null, modifier: Modifier = Modifier) {
     val theme = LocalFoldTheme.current.theme
     val week = rememberPlayWeek(app, 0)
     val most = week.days.maxOfOrNull { it.totalMillis }?.coerceAtLeast(1L) ?: 1L
-    Column(modifier.padding(start = 16.dp, end = 16.dp, top = 10.dp, bottom = 10.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
+    Column(modifier.padding(start = 14.dp, end = 14.dp, top = 10.dp, bottom = 10.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            Image(
+                painter = themeIconPainter(R.drawable.ic_status_playtime),
+                contentDescription = null,
+                modifier = Modifier.size(24.dp),
+            )
             BasicText(
                 PlayCopy.activity,
                 modifier = Modifier.weight(1f),
                 style = playText(if (focused) theme.onBackground else theme.muted, theme, LocalFoldTheme.current.theme.style.type.sideRow),
             )
             BasicText(playDuration(week.totalMillis), style = playText(if (focused) theme.focus else theme.onBackground, theme, LocalFoldTheme.current.theme.style.type.sideRow))
+            ChordHint(chord, app.shell.model.held)
         }
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.Bottom) {
             week.days.forEach { day ->

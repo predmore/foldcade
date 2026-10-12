@@ -12,12 +12,12 @@ class LeftDrawerTest {
     private val tile = TileActions(move = true, destinations = listOf(FolderChoice(null, "Home")), rename = true)
 
     @Test
-    fun lOneIsPlayThenWhereToGoThenEditHomeSourcesAndSettings() {
+    fun lOneIsPlayThenWhereToGoThenEditHomeAndSettings() {
         val opened = reduce(model(), Meaning.LeftPanel).first
         assertEquals(
             listOf(
                 Row.PlayActivity, Row.Home, Row.AllLibrary, Row.AndroidGames, Row.Apps,
-                Row.EditHome, Row.Library, Row.Settings,
+                Row.EditHome, Row.Settings,
             ),
             panelRows(opened.panel!!, opened),
         )
@@ -136,19 +136,6 @@ class LeftDrawerTest {
         assertEquals("45m", playDuration(45 * 60_000L))
         assertEquals("2h", playDuration(2 * 3_600_000L))
         assertEquals("6h 40m", playDuration(400 * 60_000L))
-    }
-
-    @Test
-    fun sourcesSummarizeInAFewWords() {
-        assertNull(sourcesSummary(model()))
-        val summary = sourcesSummary(
-            model().copy(
-                signedIn = listOf(SignedInBackend("romm", "RomM")),
-                folders = listOf(LibraryFolder("a", "ROMs"), LibraryFolder("b", "More")),
-            ),
-        )
-        assertEquals("RomM · 2 folders", summary)
-        assertEquals("1 folder", sourcesSummary(model().copy(folders = listOf(LibraryFolder("a", "ROMs")))))
     }
 
     private fun model() = PickerModel(count = 8, rowsPerPage = 2, tileActions = tile)

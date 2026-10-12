@@ -31,6 +31,12 @@ enum class Meaning {
 
     /** Delete on a keyboard. Removes the focused notice in R1, as Y does. */
     Dismiss,
+
+    /** Start. In a menu it runs the settings row (L1 then Start), and it closes Settings again. See [chords]. */
+    Menu,
+
+    /** Select. In a menu it runs the row that shows a view (L1 then Select is Play activity). See [chords]. */
+    View,
 }
 
 /** Extra keys that exist only on the home grid. Idle keeps the shared map. */
@@ -45,11 +51,14 @@ enum class HomeKeys {
     Renaming,
 }
 
+/** Keys that act once per press. Holding one does not repeat it. */
 private val shoulderKeys = setOf(
     KeyEvent.KEYCODE_BUTTON_L1,
     KeyEvent.KEYCODE_BUTTON_R1,
     KeyEvent.KEYCODE_LEFT_BRACKET,
     KeyEvent.KEYCODE_RIGHT_BRACKET,
+    KeyEvent.KEYCODE_BUTTON_START,
+    KeyEvent.KEYCODE_BUTTON_SELECT,
 )
 
 fun meaningOf(
@@ -83,6 +92,8 @@ fun meaningOf(
             Meaning.ActivateBottom
         keyCode == KeyEvent.KEYCODE_BUTTON_Y && (homeKeys == HomeKeys.Idle || homeKeys == HomeKeys.AllLibrary) ->
             Meaning.Options
+        keyCode == KeyEvent.KEYCODE_BUTTON_START && homeKeys != HomeKeys.Renaming -> Meaning.Menu
+        keyCode == KeyEvent.KEYCODE_BUTTON_SELECT && homeKeys != HomeKeys.Renaming -> Meaning.View
         (keyCode == KeyEvent.KEYCODE_DEL || keyCode == KeyEvent.KEYCODE_FORWARD_DEL) &&
             homeKeys != HomeKeys.Renaming -> Meaning.Dismiss
         keyCode == KeyEvent.KEYCODE_BUTTON_L2 && homeKeys == HomeKeys.AllLibrary -> Meaning.LetterBackward

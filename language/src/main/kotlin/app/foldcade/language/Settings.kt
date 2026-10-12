@@ -23,20 +23,15 @@ enum class SettingsCategory {
     About,
 }
 
+/** One or two words each. The page is for players, not a form, so nothing here explains itself twice. */
 object SettingsCopy {
     const val title = "Settings"
-    const val personalization = "Personalization"
-    const val personalizationDetail = "Theme, background, and motion"
+    const val personalization = "Look"
     const val sound = "Sound"
-    const val soundDetail = "Home music"
-    const val library = "Library & data"
-    const val libraryDetail = "Sources, order, and play time"
-    const val players = "Players"
-    const val playersDetail = "Save folders"
-    const val screens = "Screens & system"
-    const val screensDetail = "Panels, Home, and Android"
+    const val library = "Library"
+    const val players = "Saves"
+    const val screens = "System"
     const val about = "About"
-    const val aboutDetail = "Licenses"
 }
 
 fun settingsTitle(category: SettingsCategory): String = when (category) {
@@ -46,15 +41,6 @@ fun settingsTitle(category: SettingsCategory): String = when (category) {
     SettingsCategory.Players -> SettingsCopy.players
     SettingsCategory.Screens -> SettingsCopy.screens
     SettingsCategory.About -> SettingsCopy.about
-}
-
-fun settingsDetail(category: SettingsCategory): String = when (category) {
-    SettingsCategory.Personalization -> SettingsCopy.personalizationDetail
-    SettingsCategory.Sound -> SettingsCopy.soundDetail
-    SettingsCategory.Library -> SettingsCopy.libraryDetail
-    SettingsCategory.Players -> SettingsCopy.playersDetail
-    SettingsCategory.Screens -> SettingsCopy.screensDetail
-    SettingsCategory.About -> SettingsCopy.aboutDetail
 }
 
 /** Categories with at least one row. Players appears once a player has a save folder setting. */
@@ -82,4 +68,30 @@ fun settingsRows(category: SettingsCategory, model: PickerModel): List<Row> = wh
         add(Row.AndroidSettings)
     }
     SettingsCategory.About -> listOf(Row.Licenses)
+}
+
+/**
+ * How a row shows its value on the right. A [Toggle] is a switch that A flips. A [Choice]
+ * reads ‹ value ›, and left and right step it. [Opens] leads somewhere else. [Value] is
+ * plain text. Sliders draw their own row, so they show [None] here.
+ */
+sealed interface RowControl {
+    data class Toggle(val on: Boolean) : RowControl
+    data class Choice(val value: String) : RowControl
+    data object Opens : RowControl
+    data class Value(val text: String) : RowControl
+    data object None : RowControl
+}
+
+/** [value] is the row's [rowText] value, for a caller that already has it. */
+fun rowControl(row: Row, model: PickerModel, value: String? = rowText(row, model).value): RowControl = when (row) {
+    Row.Music -> RowControl.Toggle(model.music.enabled)
+    Row.AddNewGames -> RowControl.Toggle(model.addNewToHome)
+    Row.Artwork -> RowControl.Toggle(model.artwork)
+    in choiceRows -> RowControl.Choice(value.orEmpty())
+    Row.MusicVolume, Row.Brightness -> RowControl.None
+    Row.EditHome, Row.MoveTileTo, Row.AddAppTo, is Row.RommConnection,
+    Row.AddFolder, Row.AddRomm, Row.SetAsHome, Row.DefaultHomeApp, Row.AndroidSettings, Row.Licenses,
+    -> RowControl.Opens
+    else -> value?.takeIf { it.isNotEmpty() }?.let(RowControl::Value) ?: RowControl.None
 }

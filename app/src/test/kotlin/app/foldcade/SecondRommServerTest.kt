@@ -10,6 +10,8 @@ import app.foldcade.language.Effect
 import app.foldcade.language.PanelLevel
 import app.foldcade.language.Side
 import app.foldcade.language.Row
+import app.foldcade.language.SettingsCategory
+import app.foldcade.language.settingsCategories
 import app.foldcade.language.leftRows
 import app.foldcade.language.DialogKind
 import app.foldcade.language.homePrompt
@@ -33,11 +35,12 @@ class SecondRommServerTest {
         saveRommConnection(session, credentials, "romm#2", "https://two.example", "rmm_two")
         val shell = ShellController(session, host(credentials))
         shell.setSignedIn(rommSignedInBackends(session.rommOrigin(), session.rommInstances()))
+        // The sources live on the Settings page's Library rows.
         shell.previewIsland(Side.Left)
-        shell.touchPanel(leftRows().indexOf(Row.Library), HostScreen.Top)
-        shell.touchPanel(leftRows().indexOf(Row.Library), HostScreen.Top)
-        shell.touchPanel(1, HostScreen.Top)
-        assertNull(shell.touchPanel(1, HostScreen.Top))
+        shell.touchPanel(leftRows().indexOf(Row.Settings), HostScreen.Top)
+        shell.touchPanel(leftRows().indexOf(Row.Settings), HostScreen.Top)
+        shell.touchSettingsCategory(settingsCategories(shell.model).indexOf(SettingsCategory.Library), HostScreen.Top)
+        assertNull(shell.touchSettingsRow(1, HostScreen.Top))
         assertEquals(PanelLevel.RommConnection, shell.model.panel?.level)
         assertFalse(shell.model.connectOpen)
 

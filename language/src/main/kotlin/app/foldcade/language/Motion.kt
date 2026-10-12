@@ -58,6 +58,9 @@ open class MotionStyle(private val style: ThemeStyle = ThemeStyle()) {
     /** Wide art's slow settle after it arrives. */
     val durationShowcase = style.motion.durationShowcase
 
+    /** A menu's highlight landing on a row, and a switch flipping. Long enough to read the overshoot. */
+    val durationSelect = style.motion.durationSelect
+
     private val arriveCurve = style.motion.arrive
     val easingArrive: Easing = CubicBezierEasing(arriveCurve[0], arriveCurve[1], arriveCurve[2], arriveCurve[3])
     val easingLeave: Easing = style.motion.leave.let { CubicBezierEasing(it[0], it[1], it[2], it[3]) }
@@ -69,6 +72,9 @@ open class MotionStyle(private val style: ThemeStyle = ThemeStyle()) {
      * starts gently, then settles the same way.
      */
     val easingDissolve: Easing = style.motion.dissolve.let { CubicBezierEasing(it[0], it[1], it[2], it[3]) }
+
+    /** Runs a touch past its target, then settles back. Menus use it so a choice lands with a little bounce. */
+    val easingPlayful: Easing = style.motion.playful.let { CubicBezierEasing(it[0], it[1], it[2], it[3]) }
 
     fun animatorScale(resolver: ContentResolver): Float =
         Settings.Global.getFloat(resolver, Settings.Global.ANIMATOR_DURATION_SCALE, 1f)
@@ -88,6 +94,10 @@ open class MotionStyle(private val style: ThemeStyle = ThemeStyle()) {
 
     fun dissolve(base: Int, animatorScale: Float): FiniteAnimationSpec<Float> =
         spec(base, animatorScale, easingDissolve)
+
+    /** [easingPlayful], or a plain [arrive] when Android removes animations, so nothing bounces then. */
+    fun playful(base: Int, animatorScale: Float): FiniteAnimationSpec<Float> =
+        if (reduced(animatorScale)) arrive(base, animatorScale) else spec(base, animatorScale, easingPlayful)
 
     /**
      * [arrive] for a move that lands while the last one is still travelling. The new

@@ -8,12 +8,7 @@ import org.junit.Test
 
 class RommConnectionNavigationTest {
     private val connections = listOf(SignedInBackend("romm", "RomM"), SignedInBackend("romm#2", "two.example"))
-    private val sources = PickerModel(
-        count = 1,
-        rowsPerPage = 1,
-        signedIn = connections,
-        panel = SidePanel(Side.Left, HostScreen.Top, PanelLevel.Library, 0, GridFocus()),
-    )
+    private val home = PickerModel(count = 1, rowsPerPage = 1, signedIn = connections)
 
     @Test
     fun eachSavedServerHasOneEntryAndASingleAddAction() {
@@ -27,7 +22,7 @@ class RommConnectionNavigationTest {
     @Test
     fun openingAConnectionIsSafeAndEditingReturnsToItsActions() {
         for (index in connections.indices) {
-            val selected = sources.copy(panel = sources.panel!!.copy(index = index))
+            val selected = home.onSetting(Row.RommConnection(connections[index].pluginId, connections[index].label))
             val (opened, effect) = reduce(selected, Meaning.Activate)
             assertNull(effect)
             assertFalse(opened.connectOpen)
@@ -42,13 +37,13 @@ class RommConnectionNavigationTest {
             assertFalse(editing.connectAnother)
             assertNull(editing.panel)
             assertEquals(opened.panel, reduce(editing, Meaning.Back).first.panel)
-            assertEquals(selected.panel, reduce(opened, Meaning.Back).first.panel)
+            assertEquals(selected.settings, reduce(opened, Meaning.Back).first.settings)
         }
     }
 
     @Test
     fun signOutOnlyTargetsTheConnectionWhoseActionsAreOpen() {
-        val selected = sources.copy(panel = sources.panel!!.copy(index = 1))
+        val selected = home.onSetting(Row.RommConnection("romm#2", "two.example"))
         val opened = reduce(selected, Meaning.Activate).first
         val onSignOut = reduce(opened, Meaning.MoveDown).first
         val (closed, effect) = reduce(onSignOut, Meaning.Activate)
@@ -59,7 +54,7 @@ class RommConnectionNavigationTest {
 
     @Test
     fun aConnectionOpenedFromSettingsReturnsToTheSameRow() {
-        val selected = sources.copy(panel = null).onSetting(Row.RommConnection("romm#2", "two.example"))
+        val selected = home.onSetting(Row.RommConnection("romm#2", "two.example"))
         val (opened, effect) = reduce(selected, Meaning.Activate)
         assertNull(effect)
         assertNull(opened.settings)

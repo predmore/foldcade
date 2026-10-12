@@ -777,6 +777,7 @@
       "sceneSettleFrom": 1.1,
       "durationScene": 360,
       "durationShowcase": 1400,
+      "durationSelect": 280,
       "arrive": [
         0.05,
         0.7,
@@ -799,6 +800,12 @@
         0.2,
         0,
         0,
+        1
+      ],
+      "playful": [
+        0.34,
+        1.36,
+        0.64,
         1
       ]
     },

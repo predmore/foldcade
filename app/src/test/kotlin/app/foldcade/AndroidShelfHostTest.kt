@@ -20,7 +20,9 @@ import app.foldcade.language.HomeGrid
 import app.foldcade.language.HostScreen
 import app.foldcade.language.LaunchableApp
 import app.foldcade.language.Meaning
+import app.foldcade.language.Effect
 import app.foldcade.language.Row
+import app.foldcade.language.tiled
 import app.foldcade.language.androidHomeId
 import app.foldcade.language.decodeHome
 import app.foldcade.language.encodeHome
@@ -97,10 +99,8 @@ class AndroidShelfHostTest {
         shell.setHomeRoleHeld(true)
         shell.setInstalledApps(listOf(game, settings, azahar), host.playerPackageNames())
 
-        val rows = leftRows()
         shell.onMeaning(Meaning.LeftPanel, HostScreen.Bottom)
-        repeat(rows.indexOf(Row.Apps)) { shell.onMeaning(Meaning.MoveDown, HostScreen.Bottom) }
-        val opened = shell.onMeaning(Meaning.Activate, HostScreen.Bottom)
+        val opened = choose(shell, Row.Apps)
         assertNull(opened)
         assertEquals(HomeGrid.Apps, shell.model.homeGrid)
         assertNull(shell.model.panel)
@@ -125,16 +125,13 @@ class AndroidShelfHostTest {
         assertEquals(0, shell.model.count)
 
         shell.onMeaning(Meaning.LeftPanel, HostScreen.Bottom)
-        val gamesIndex = leftRows().indexOf(Row.AndroidGames)
-        repeat(gamesIndex) { shell.onMeaning(Meaning.MoveDown, HostScreen.Bottom) }
-        shell.onMeaning(Meaning.Activate, HostScreen.Bottom)
+        choose(shell, Row.AndroidGames)
         assertEquals(HomeGrid.AndroidGames, shell.model.homeGrid)
         assertEquals(listOf("Settings", "Example"), titles(shell))
 
         // Hidden apps are under Edit home.
         shell.onMeaning(Meaning.LeftPanel, HostScreen.Bottom)
-        repeat(leftRows().indexOf(Row.EditHome)) { shell.onMeaning(Meaning.MoveDown, HostScreen.Bottom) }
-        shell.onMeaning(Meaning.Activate, HostScreen.Bottom)
+        choose(shell, Row.EditHome)
         val hiddenIndex = panelRows(shell.model.panel!!, shell.model).indexOf(Row.HiddenApps)
         repeat(hiddenIndex) { shell.onMeaning(Meaning.MoveDown, HostScreen.Bottom) }
         shell.onMeaning(Meaning.Activate, HostScreen.Bottom)
@@ -144,10 +141,7 @@ class AndroidShelfHostTest {
         assertEquals(0, shell.model.count)
 
         shell.onMeaning(Meaning.LeftPanel, HostScreen.Bottom)
-        repeat(leftRows().indexOf(Row.Apps)) {
-            shell.onMeaning(Meaning.MoveDown, HostScreen.Bottom)
-        }
-        shell.onMeaning(Meaning.Activate, HostScreen.Bottom)
+        choose(shell, Row.Apps)
         assertEquals(listOf("Azahar"), titles(shell))
     }
 
@@ -249,12 +243,24 @@ class AndroidShelfHostTest {
         assertEquals(listOf(id), decodeHome(store.homeBoardRaw()).folders[folder.id]?.slots)
     }
 
-    private fun choose(shell: ShellController, row: Row) {
+    /** Walks the D-pad to [row], across L1's tiles where it has to, and activates it. */
+    private fun choose(shell: ShellController, row: Row): Effect? {
         val panel = shell.model.panel ?: error("panel closed")
-        val index = panelRows(panel, shell.model).indexOf(row)
+        val rows = panelRows(panel, shell.model)
+        val index = rows.indexOf(row)
         check(index >= 0) { "missing row $row" }
-        repeat(index - panel.index) { shell.onMeaning(Meaning.MoveDown, HostScreen.Bottom) }
-        shell.onMeaning(Meaning.Activate, HostScreen.Bottom)
+        repeat(rows.size * 2) {
+            val at = shell.model.panel?.index ?: return@repeat
+            if (at == index) return@repeat
+            val step = when {
+                rows[at].tiled() && row.tiled() -> if (index > at) Meaning.MoveRight else Meaning.MoveLeft
+                index > at -> Meaning.MoveDown
+                else -> Meaning.MoveUp
+            }
+            shell.onMeaning(step, HostScreen.Bottom)
+        }
+        check(shell.model.panel?.index == index) { "could not reach $row" }
+        return shell.onMeaning(Meaning.Activate, HostScreen.Bottom)
     }
 
     private fun titles(shell: ShellController): List<String> {

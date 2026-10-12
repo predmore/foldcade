@@ -45,8 +45,8 @@ class PlayTimeCopyTest {
         val opened = PickerModel(count = 1, rowsPerPage = 1).onSetting(Row.UsageAccess)
         val asking = reduce(opened, Meaning.Activate).first
         assertEquals(DialogKind.UsageAccess, asking.dialog?.kind)
-        assertEquals("Play time  Approximate", rowLabel(Row.UsageAccess, opened))
-        assertEquals("Play time  All launchers", rowLabel(Row.UsageAccess, opened.copy(usageGranted = true)))
+        assertEquals("Play time  Foldcade only", rowLabel(Row.UsageAccess, opened))
+        assertEquals("Play time  Everywhere", rowLabel(Row.UsageAccess, opened.copy(usageGranted = true)))
     }
 
     @Test
@@ -54,10 +54,10 @@ class PlayTimeCopyTest {
         val opened = PickerModel(count = 1, rowsPerPage = 1).onSetting(Row.Order)
         val next = reduce(opened, Meaning.Activate).first
         assertEquals(LibrarySort.RecentlyPlayed, next.sort)
-        assertEquals("Order  Recently played", rowLabel(Row.Order, next))
+        assertEquals("Sort  Recent", rowLabel(Row.Order, next))
         val back = reduce(next, Meaning.Activate).first
         assertEquals(LibrarySort.Listed, back.sort)
-        assertEquals("Order  Library", orderLabel(back.sort))
+        assertEquals("Sort  Library", orderLabel(back.sort))
     }
 
     @Test
