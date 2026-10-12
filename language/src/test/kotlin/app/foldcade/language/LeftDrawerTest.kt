@@ -61,7 +61,7 @@ class LeftDrawerTest {
     fun upFromTheTopRowReachesThePillOnThatSide() {
         val left = reduce(model(), Meaning.MoveUp).first
         assertEquals(Chrome.LeftIsland, left.focus.chrome)
-        val right = reduce(model().copy(focus = GridFocus(cellIndex = Metrics.columns - 1)), Meaning.MoveUp).first
+        val right = reduce(model().copy(focus = GridFocus(cellIndex = GridStrip.index(Metrics.columns / 2, 0))), Meaning.MoveUp).first
         assertEquals(Chrome.StatusCluster, right.focus.chrome)
         assertEquals(Chrome.StatusCluster, reduce(left, Meaning.MoveRight).first.focus.chrome)
         assertEquals(Chrome.LeftIsland, reduce(right, Meaning.MoveLeft).first.focus.chrome)

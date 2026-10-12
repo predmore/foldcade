@@ -59,7 +59,7 @@ object TypeRamp {
 
 /** Host-owned layout. Motion lives on [Motion]. */
 object Metrics {
-    /** The grid is a fixed four by three on every page. */
+    /** The grid shows four columns of three. More columns scroll in from the side, see [GridStrip]. */
     const val columns = 4
     const val rows = 3
     const val insetFraction = 0.04f

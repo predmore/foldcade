@@ -66,21 +66,19 @@ class HeroTransitionTest {
     }
 
     @Test
-    fun travelReadsAcrossPagesThenTheLongerStep() {
-        val columns = 4
-        val page = 12
-        assertEquals(HeroTravel.Right, heroTravel(0, 1, columns, page))
-        assertEquals(HeroTravel.Left, heroTravel(1, 0, columns, page))
-        assertEquals(HeroTravel.Down, heroTravel(1, 5, columns, page))
-        assertEquals(HeroTravel.Up, heroTravel(9, 1, columns, page))
-        // The last cell of a page to the first of the next is across, not up.
-        assertEquals(HeroTravel.Right, heroTravel(11, 12, columns, page))
-        assertEquals(HeroTravel.Left, heroTravel(12, 11, columns, page))
-        assertEquals(HeroTravel.Right, heroTravel(0, 5, columns, page))
-        assertEquals(HeroTravel.Down, heroTravel(0, 9, columns, page))
-        assertEquals(HeroTravel.None, heroTravel(null, 3, columns, page))
-        assertEquals(HeroTravel.None, heroTravel(3, 3, columns, page))
-        assertEquals(HeroTravel.None, heroTravel(3, 4, columns, 0))
+    fun travelFollowsTheStripAndTheLongerStep() {
+        // Columns of three: 0, 1, 2 down the first column, 3 at the top of the next.
+        assertEquals(HeroTravel.Down, heroTravel(0, 1))
+        assertEquals(HeroTravel.Up, heroTravel(2, 1))
+        assertEquals(HeroTravel.Right, heroTravel(0, 3))
+        assertEquals(HeroTravel.Left, heroTravel(3, 0))
+        assertEquals(HeroTravel.Right, heroTravel(2, 5))
+        // Across and down by one each reads across.
+        assertEquals(HeroTravel.Right, heroTravel(0, 4))
+        // Far along the strip, across still wins.
+        assertEquals(HeroTravel.Right, heroTravel(1, 13))
+        assertEquals(HeroTravel.None, heroTravel(null, 3))
+        assertEquals(HeroTravel.None, heroTravel(3, 3))
     }
 
     @Test

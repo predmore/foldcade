@@ -7,6 +7,7 @@ import app.foldcade.language.AllTab
 import app.foldcade.language.Copy
 import app.foldcade.language.Effect
 import app.foldcade.language.GridFocus
+import app.foldcade.language.GridStrip
 import app.foldcade.language.HOME_ALL
 import app.foldcade.language.FOLDER_ICONS
 import app.foldcade.language.FolderChoice
@@ -444,7 +445,7 @@ class HomeSession(raw: String?) {
         }
         return when (meaning) {
             Meaning.MoveUp -> {
-                if (index < Metrics.columns) {
+                if (GridStrip.row(index) == 0) {
                     board = board.copy(allChrome = 0)
                     return step(null, index)
                 }
@@ -588,16 +589,17 @@ class HomeSession(raw: String?) {
         return platforms.firstOrNull { it.id == id || id in it.aliases }?.name.orEmpty()
     }
 
+    /** Where a lifted tile goes. It can walk past the last tile, into empty slots along the strip. */
     private fun neighbor(index: Int, meaning: Meaning): Int? {
-        val columns = Metrics.columns
+        val rows = Metrics.rows
         val count = visibleSlots(board).size.coerceAtLeast(index + 1)
-        val column = index % columns
-        val row = index / columns
+        val column = GridStrip.column(index)
+        val row = GridStrip.row(index)
         val target = when (meaning) {
-            Meaning.MoveLeft -> if (column == 0) null else index - 1
-            Meaning.MoveRight -> index + 1
-            Meaning.MoveUp -> if (row == 0) null else index - columns
-            Meaning.MoveDown -> index + columns
+            Meaning.MoveLeft -> if (column == 0) null else index - rows
+            Meaning.MoveRight -> index + rows
+            Meaning.MoveUp -> if (row == 0) null else index - 1
+            Meaning.MoveDown -> if (row == rows - 1) null else index + 1
             else -> null
         } ?: return null
         if (target < 0) return null
@@ -611,7 +613,7 @@ class HomeSession(raw: String?) {
         HomeStep(
             handled = true,
             effect = effect,
-            focus = GridFocus(cellIndex = index.coerceAtLeast(0), lastColumn = index.coerceAtLeast(0) % Metrics.columns),
+            focus = GridFocus(cellIndex = index.coerceAtLeast(0), lastColumn = GridStrip.column(index.coerceAtLeast(0))),
         )
 }
 

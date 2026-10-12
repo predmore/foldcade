@@ -188,6 +188,8 @@ import app.foldcade.language.Meaning
 import app.foldcade.language.Row
 import app.foldcade.language.FoldNotice
 import app.foldcade.language.Metrics
+import app.foldcade.language.GridStrip
+import app.foldcade.language.shownFirstColumn
 import app.foldcade.language.MotionSpeed
 import app.foldcade.language.SidePanel
 import app.foldcade.language.GlowFalloff
@@ -1528,9 +1530,9 @@ private fun gridToken(app: FoldcadeApp): String {
     return listOf(model.libraryGrid, model.gridKind, model.homeGrid, app.shell.homeAnimToken()).joinToString("/")
 }
 
-private fun travelOf(from: HeroPlace?, to: HeroPlace?, rowsPerPage: Int): HeroTravel {
+private fun travelOf(from: HeroPlace?, to: HeroPlace?): HeroTravel {
     if (from == null || to == null || from.grid != to.grid) return HeroTravel.None
-    return heroTravel(from.index, to.index, Metrics.columns, Metrics.columns * rowsPerPage)
+    return heroTravel(from.index, to.index)
 }
 
 /**
@@ -1563,7 +1565,7 @@ private fun rememberStagedHero(
             withTimeoutOrNull(HERO_ART_WAIT_MS) { ready.join() }
         }
         delay(stagedAt + dwell - SystemClock.uptimeMillis())
-        staged = StagedHero(subject, travelOf(stagedPlace, place, app.shell.model.rowsPerPage))
+        staged = StagedHero(subject, travelOf(stagedPlace, place))
         stagedPlace = place
         stagedAt = SystemClock.uptimeMillis()
     }
@@ -1585,7 +1587,7 @@ private fun WarmNeighbours(app: FoldcadeApp, place: HeroPlace?) {
         val index = place?.index ?: return@LaunchedEffect
         delay(HERO_WARM_DELAY_MS)
         val shell = app.shell
-        for (near in listOf(index + 1, index - 1, index + Metrics.columns, index - Metrics.columns)) {
+        for (near in listOf(index + 1, index - 1, index + Metrics.rows, index - Metrics.rows)) {
             val game = shell.gameAt(near) ?: continue
             prepareHeroArt(app, context, shell.artRecord(game), shell.artQuery(game))
         }
@@ -1596,25 +1598,26 @@ private fun WarmNeighbours(app: FoldcadeApp, place: HeroPlace?) {
 private const val HERO_ART_WAIT_MS = 400L
 
 /**
- * Once the cursor rests, warms the tile art of the pages either side of [page],
- * so a page slides in with its art drawn rather than filling in behind the slide.
+ * Once the cursor rests, warms the tile art a screen of columns either side of
+ * [first], so a column slides in with its art drawn rather than filling in behind it.
  */
 @Composable
-private fun WarmPages(app: FoldcadeApp, page: Int, pageSize: Int) {
+private fun WarmColumns(app: FoldcadeApp, first: Int) {
     val context = LocalContext.current
-    // A folder opens on page 0 too, so the grid itself is part of the key.
-    LaunchedEffect(page, pageSize, gridToken(app), app.shell.model.count) {
+    // A folder opens at the start too, so the grid itself is part of the key.
+    LaunchedEffect(first, gridToken(app), app.shell.model.count) {
         delay(HERO_WARM_DELAY_MS)
         val shell = app.shell
-        for (near in listOf(page + 1, page - 1)) {
-            for (index in near * pageSize until (near + 1) * pageSize) {
-                val game = shell.gameAt(index) ?: continue
-                val record = shell.artRecord(game)
-                val query = shell.artQuery(game)
-                if (record == null && query == null) continue
-                val found = app.covers.cached(record, query) ?: app.covers.fetch(record, query) ?: continue
-                warmCover(app, context, found.square ?: found.cover, TILE_PX)
-            }
+        val screenful = Metrics.columns * Metrics.rows
+        val ahead = GridStrip.index(first + Metrics.columns, 0)
+        val behind = GridStrip.index(first, 0) - screenful
+        for (index in (ahead until ahead + screenful) + (behind until behind + screenful)) {
+            val game = shell.gameAt(index) ?: continue
+            val record = shell.artRecord(game)
+            val query = shell.artQuery(game)
+            if (record == null && query == null) continue
+            val found = app.covers.cached(record, query) ?: app.covers.fetch(record, query) ?: continue
+            warmCover(app, context, found.square ?: found.cover, TILE_PX)
         }
     }
 }
@@ -1684,7 +1687,6 @@ private fun Picker(
     // icons only. With one screen free there is no hero, and tiles keep labels.
     val iconsOnly = app.store.session.bothScreensFree()
     BoxWithConstraints(Modifier.fillMaxSize()) {
-        val stride = maxWidth
         val inset = maxWidth * design.metrics.insetFraction
         val gap = maxWidth * design.metrics.gapFraction
         val titlePx = rememberTextMeasurer().measure(
@@ -1748,21 +1750,19 @@ private fun Picker(
                         style = text(theme.muted, LocalFoldTheme.current.theme.style.type.dialogBody, theme),
                     )
                 } else {
-                    PagedGrid(
+                    StripGrid(
                         app = app,
                         screen = screen,
                         cell = cell,
                         gap = gap,
                         pad = ring,
-                        rows = rows,
-                        stride = stride,
                         scale = scale,
                         showTitle = !iconsOnly,
                         followDrag = showingHome,
                     )
                 }
             }
-            PageDots(count = model.count, rows = Metrics.rows, index = model.focus.cellIndex)
+            StripBar(count = model.count, first = shownFirstColumn(model), scale = scale)
             val draft = shell.renameDraft()
             if (draft != null) RenameField(app, screen, draft, takeKeyboardFocus)
             // Under an open menu the blur would smear these. MenuHints draws them above it.
@@ -2048,32 +2048,38 @@ private fun GridHeader(
     BasicText(text = shelf, style = text(theme.onBackground, LocalFoldTheme.current.theme.style.type.sideRow, theme))
 }
 
-/** Page marks under the grid. One dot per page, and none for a single page. */
+/** Under the grid, where the screen sits along the strip. None while the strip fits on one screen. */
 @Composable
-private fun PageDots(count: Int, rows: Int, index: Int) {
-    val pageSize = (Metrics.columns * rows).coerceAtLeast(1)
-    val pages = ((count + pageSize - 1) / pageSize).coerceAtLeast(1)
-    if (pages < 2) return
-    val page = (index / pageSize).coerceIn(0, pages - 1)
+private fun StripBar(count: Int, first: Int, scale: Float) {
+    val columns = GridStrip.columns(count)
+    val motion = LocalFoldTheme.current.theme.motion
+    val start by glideState(first.toFloat(), motion.durationTravel, scale)
+    if (columns <= Metrics.columns) return
     val theme = foldTheme()
-    Row(
-        Modifier.fillMaxWidth().padding(top = px(4f), bottom = px(8f)),
-        horizontalArrangement = Arrangement.Center,
-        verticalAlignment = Alignment.CenterVertically,
+    val track = px(STRIP_BAR_WIDTH)
+    val thumb = track * (Metrics.columns.toFloat() / columns)
+    Box(
+        Modifier.fillMaxWidth().padding(top = px(5f), bottom = px(9f)),
+        contentAlignment = Alignment.Center,
     ) {
-        repeat(pages) { dot ->
+        Box(
+            Modifier
+                .width(track)
+                .height(px(6f))
+                .background(theme.muted.copy(alpha = 0.45f), CircleShape),
+        ) {
             Box(
                 Modifier
-                    .padding(horizontal = px(4f))
-                    .size(if (dot == page) px(8f) else px(6f))
-                    .background(
-                        if (dot == page) theme.onBackground else theme.muted.copy(alpha = 0.45f),
-                        CircleShape,
-                    ),
+                    .graphicsLayer { translationX = (track * (start / columns)).toPx() }
+                    .width(thumb)
+                    .fillMaxHeight()
+                    .background(theme.onBackground, CircleShape),
             )
         }
     }
 }
+
+private const val STRIP_BAR_WIDTH = 160f
 
 /** True inside the blurred layer under an open menu. */
 private val LocalUnderMenu = compositionLocalOf { false }
@@ -2206,39 +2212,36 @@ private fun ChromeButton(label: String, focused: Boolean, onClick: () -> Unit) {
 }
 
 @Composable
-private fun PagedGrid(
+private fun StripGrid(
     app: FoldcadeApp,
     screen: HostScreen,
     cell: Dp,
     gap: Dp,
     pad: Dp,
-    rows: Int,
-    stride: Dp,
     scale: Float,
     showTitle: Boolean,
     followDrag: Boolean = false,
 ) {
     val motion = LocalFoldTheme.current.theme.motion
-    val focus = app.shell.model.focus
-    val pageSize = (Metrics.columns * rows).coerceAtLeast(1)
-    val page = focus.cellIndex / pageSize
-    val titles = pageTitles(app, page, pageSize)
+    val model = app.shell.model
+    val first = shownFirstColumn(model)
+    val screenful = Metrics.columns * Metrics.rows
+    val titles = shownTitles(app, GridStrip.index(first, 0), screenful)
     // The emulator reads this line. A presentation-display dump is empty while that display has focus.
     LaunchedEffect(titles) {
         Log.i("Foldcade", "library-ui page " + titles.joinToString(" | "))
     }
-    val position = glideState(page.toFloat(), motion.durationTravel, scale)
-    WarmPages(app, page, pageSize)
-    var dragPages by remember { mutableStateOf(0f) }
-    LaunchedEffect(page, scale) { dragPages = 0f }
+    val position = glideState(first.toFloat(), motion.durationTravel, scale)
+    WarmColumns(app, first)
+    var dragColumns by remember { mutableStateOf(0f) }
+    LaunchedEffect(first, scale) { dragColumns = 0f }
     val reduced = motion.reduced(scale)
-    // Read where it is used, in offsets and layers, so travel redraws without recomposing
-    // the pages. Composition only hears which pages are on screen.
-    val shownPage = { position.value - dragPages }
+    // Read where it is used, in offsets and layers, so scrolling redraws without
+    // recomposing the columns. Composition only hears which columns are on screen.
+    val shownFirst = { position.value - dragColumns }
     val width = cell * Metrics.columns + gap * (Metrics.columns - 1)
-    // A neighbouring page sits one panel width away, so it is off screen and
-    // the focus glow does not need a clip.
-    val widthPx = with(LocalDensity.current) { stride.toPx() }
+    val pitchPx = with(LocalDensity.current) { (cell + gap).toPx() }
+    val lastColumn = GridStrip.columns(model.count) - 1
     val folderToken = app.shell.homeAnimToken()
     val folderPop = remember { Animatable(1f) }
     LaunchedEffect(folderToken, scale) {
@@ -2247,7 +2250,7 @@ private fun PagedGrid(
             folderPop.animateTo(1f, motion.arrive(motion.durationShort, scale))
         }
     }
-    val fading by remember(reduced, page) { derivedStateOf { reduced && abs(shownPage() - page) > 0.001f } }
+    val fading by remember(reduced, first) { derivedStateOf { reduced && abs(shownFirst() - first) > 0.001f } }
     val popping by remember { derivedStateOf { folderPop.value != 1f } }
     Box(
         Modifier
@@ -2255,7 +2258,7 @@ private fun PagedGrid(
             .then(
                 if (fading || popping) {
                     Modifier.graphicsLayer {
-                        if (reduced) this.alpha = (1f - abs(shownPage() - page)).coerceIn(0.35f, 1f)
+                        if (reduced) this.alpha = (1f - abs(shownFirst() - first)).coerceIn(0.35f, 1f)
                         scaleX = folderPop.value
                         scaleY = folderPop.value
                     }
@@ -2263,21 +2266,21 @@ private fun PagedGrid(
                     Modifier
                 },
             )
-            .pointerInput(followDrag, app.shell.homeEditing(), widthPx) {
-                if (!followDrag || app.shell.homeEditing() || widthPx <= 0f) return@pointerInput
+            .pointerInput(followDrag, app.shell.homeEditing(), pitchPx) {
+                if (!followDrag || app.shell.homeEditing() || pitchPx <= 0f) return@pointerInput
                 var walked = 0f
                 detectHorizontalDragGestures(
                     onHorizontalDrag = { _, amount ->
                         walked += amount
-                        dragPages = walked / widthPx
+                        dragColumns = walked / pitchPx
                     },
                     onDragEnd = {
-                        val pages = dragPages
-                        dragPages = 0f
+                        val columns = dragColumns
+                        dragColumns = 0f
                         walked = 0f
                         val meaning = when {
-                            pages > 0.08f -> Meaning.PageTowardStart
-                            pages < -0.08f -> Meaning.PageTowardEnd
+                            columns > 0.3f -> Meaning.PageTowardStart
+                            columns < -0.3f -> Meaning.PageTowardEnd
                             else -> null
                         }
                         if (meaning != null) app.shell.onMeaning(meaning, screen)
@@ -2286,27 +2289,38 @@ private fun PagedGrid(
             }
             .padding(pad),
     ) {
-        val low by remember { derivedStateOf { floor(shownPage()).toInt() } }
-        val high by remember { derivedStateOf { ceil(shownPage()).toInt() } }
+        val low by remember(lastColumn) {
+            derivedStateOf { floor(shownFirst()).toInt().coerceIn(0, lastColumn.coerceAtLeast(0)) }
+        }
+        val high by remember(lastColumn) {
+            derivedStateOf { ceil(shownFirst() + Metrics.columns - 1).toInt().coerceIn(0, lastColumn.coerceAtLeast(0)) }
+        }
         var rowPx by remember { mutableStateOf(0) }
         for (drawn in low..high) {
-            // Keyed, so the arriving page keeps its decoded art when the page it replaced
-            // leaves. Unkeyed, it moved slots as the slide settled and every tile reloaded.
+            // Keyed, so a column keeps its decoded art as the strip scrolls. Unkeyed,
+            // columns moved slots as the strip settled and every tile reloaded.
             key(drawn) {
-                Box(Modifier.offset { IntOffset(((drawn - shownPage()) * widthPx).roundToInt(), 0) }) {
-                    Grid(app, screen, cell, gap, rows, drawn, showTitle) { rowPx = it }
+                Box(
+                    Modifier
+                        .offset { IntOffset(((drawn - shownFirst()) * pitchPx).roundToInt(), 0) }
+                        .graphicsLayer {
+                            // A column fades as it slides past either edge, so the strip has no cut ends.
+                            val along = drawn - shownFirst()
+                            val outside = maxOf(-along, along - (Metrics.columns - 1), 0f)
+                            alpha = (1f - outside).coerceIn(0f, 1f)
+                        },
+                ) {
+                    StripColumn(app, screen, cell, gap, drawn, showTitle) { rowPx = it }
                 }
             }
         }
         GridCursor(
             app = app,
-            page = page,
-            slot = focus.cellIndex % pageSize,
+            index = model.focus.cellIndex,
             cell = cell,
             gap = gap,
             rowPx = rowPx,
-            pageWidthPx = widthPx,
-            shownPage = shownPage,
+            shownFirst = shownFirst,
             jump = folderToken,
             scale = scale,
         )
@@ -2315,21 +2329,19 @@ private fun PagedGrid(
 
 /**
  * The one focus ring on the grid. It slides from tile to tile instead of each tile
- * drawing its own, so moving reads as steering a cursor. Across is measured over the
- * whole grid, page by page, and drawn against the page on screen: a page change slides
- * the new tile under the ring as the page settles, and a drag carries the ring with
- * the tiles rather than against them.
+ * drawing its own, so moving reads as steering a cursor. Across is measured along
+ * the whole strip and drawn against the columns on screen: when the strip scrolls,
+ * the ring stays at the edge as the tiles slide under it, and a drag carries the
+ * ring with the tiles rather than against them.
  */
 @Composable
 private fun GridCursor(
     app: FoldcadeApp,
-    page: Int,
-    slot: Int,
+    index: Int,
     cell: Dp,
     gap: Dp,
     rowPx: Int,
-    pageWidthPx: Float,
-    shownPage: () -> Float,
+    shownFirst: () -> Float,
     jump: String,
     scale: Float,
 ) {
@@ -2347,16 +2359,14 @@ private fun GridCursor(
         target = if (shown) 1f else 0f,
         spec = if (shown) motion.arrive(motion.durationFocus, scale) else motion.leave(motion.durationFocus, scale),
     )
-    val column = (slot % Metrics.columns).toFloat()
-    val row = (slot / Metrics.columns).toFloat()
+    val column = GridStrip.column(index).toFloat()
+    val row = GridStrip.row(index).toFloat()
     val pitchPx = with(LocalDensity.current) { (cell + gap).toPx() }
-    // A page's width in columns, so across counts columns over the whole grid.
-    val across = if (pitchPx > 0f) pageWidthPx / pitchPx else 0f
     // A new folder, or a ring coming back from elsewhere, starts on its tile.
     // Held moves glide from tile to tile.
     val visible by remember { derivedStateOf { alpha > 0f } }
     val lands = !shown || !visible
-    val x by glideState(page * across + column, motion.durationTravel, scale, snap = lands, jump = jump)
+    val x by glideState(column, motion.durationTravel, scale, snap = lands, jump = jump)
     val y by glideState(row, motion.durationTravel, scale, snap = lands, jump = jump)
     if (!visible) return
     val theme = foldTheme()
@@ -2367,7 +2377,7 @@ private fun GridCursor(
             .size(cell)
             .graphicsLayer {
                 val pitchY = (if (rowPx > 0) rowPx.toFloat() else cell.toPx()) + gap.toPx()
-                translationX = x * pitchPx - shownPage() * pageWidthPx
+                translationX = (x - shownFirst()) * pitchPx
                 translationY = y * pitchY
                 clip = false
                 scaleX = motion.scaleFocus
@@ -2386,13 +2396,12 @@ private fun GridCursor(
     )
 }
 
-/** Titles on [page], the same labels [Grid] draws, home sections included. */
-private fun pageTitles(app: FoldcadeApp, page: Int, pageSize: Int): List<String> {
+/** Titles of [size] tiles from [start], the same labels [StripColumn] draws, home sections included. */
+private fun shownTitles(app: FoldcadeApp, start: Int, size: Int): List<String> {
     val shell = app.shell
     val showingHome = !shell.model.libraryGrid && shell.model.homeGrid == HomeGrid.StandIns
     val order = displayOrder(shell.model)
-    val start = page * pageSize
-    val end = minOf(start + pageSize, shell.model.count)
+    val end = minOf(start + size, shell.model.count)
     return (start until end).map { index ->
         val source = if (showingHome) index else order.getOrElse(index) { index }
         val face = if (showingHome) shell.homeFace(index) else null
@@ -2401,21 +2410,20 @@ private fun pageTitles(app: FoldcadeApp, page: Int, pageSize: Int): List<String>
     }
 }
 
+/** One column of the strip, its tiles top to bottom. */
 @Composable
-private fun Grid(
+private fun StripColumn(
     app: FoldcadeApp,
     screen: HostScreen,
     cell: Dp,
     gap: Dp,
-    rows: Int,
-    page: Int,
+    column: Int,
     showTitle: Boolean,
     onRowHeight: (Int) -> Unit,
 ) {
     val context = LocalContext.current
     val shell = app.shell
     val focus = shell.model.focus
-    val pageSize = Metrics.columns * rows
     val library = shell.model.libraryGrid
     val showingHome = !library && shell.model.homeGrid == HomeGrid.StandIns
     val order = displayOrder(shell.model)
@@ -2424,69 +2432,63 @@ private fun Grid(
     val lifted = shell.homeLiftedIndex()
     val allOpen = shell.homeAllOpen()
     Column(verticalArrangement = Arrangement.spacedBy(gap)) {
-        val start = page * pageSize
-        for (row in 0 until rows) {
-            // The first row always holds a tile, so its height is the row pitch the cursor steps by.
-            Row(
-                horizontalArrangement = Arrangement.spacedBy(gap),
-                modifier = if (row == 0) Modifier.onSizeChanged { onRowHeight(it.height) } else Modifier,
-            ) {
-                for (column in 0 until Metrics.columns) {
-                    val index = start + row * Metrics.columns + column
-                    if (index >= shell.model.count) {
-                        Box(Modifier.size(cell))
-                    } else {
-                        val source = if (showingHome) index else order.getOrElse(index) { index }
-                        val face = if (showingHome) shell.homeFace(index) else null
-                        val game = shell.tileFromOrder(source)
-                        val focused = shell.model.dialog == null &&
-                            shell.model.panel == null &&
-                            !shell.model.connectOpen &&
-                            shell.homeChrome()?.focused == null &&
-                            focus.chrome == null &&
-                            focus.cellIndex == index
-                        val label = face?.section?.let { section -> "$section · ${game?.title.orEmpty()}" }
-                            ?: game?.title.orEmpty()
-                        val libraryTile = library && face == null
-                        val onHomeMark = face != null && allOpen && face.onGrid && !face.folder && !face.pinned
-                        // A folder or an empty slot keeps its mark. A game asks for its art.
-                        val artGame = game?.takeIf { face?.folder != true && face?.empty != true }
-                        val art = key(artGame?.id) {
-                            val found = rememberArt(app, artGame?.let(shell::artRecord), artGame?.let(shell::artQuery))
-                            found?.let { rememberCoverPainter(app, it.square ?: it.cover, TILE_PX)?.painter }
-                        }
-                        Cell(
-                            title = label,
-                            mark = game?.mark,
-                            art = art,
-                            showTitle = showTitle && face?.empty != true,
-                            focused = focused,
-                            size = cell,
-                            corner = radius,
-                            icon = launcherIcon(game?.androidPackage),
-                            favorite = game?.favorite == true,
-                            empty = face?.empty == true,
-                            lifted = lifted == index,
-                            editing = editing,
-                            marked = onHomeMark,
-                            onServer = face?.onServer == true,
-                            downloading = face?.id != null && face.id in shell.downloading,
-                            activity = shell.activityAt(source),
-                            library = libraryTile,
-                            // The activity runs what a second tap opens, as it does for A.
-                            onClick = { (context as? FoldcadeHomeActivity)?.dispatch(shell.touchCell(index, screen)) },
-                            onDrag = if (editing) {
-                                { meaning -> shell.dragHome(meaning) }
-                            } else {
-                                null
-                            },
-                            onPickUp = if (editing) {
-                                { shell.pickUpHome(index) }
-                            } else {
-                                null
-                            },
-                        )
+        for (row in 0 until Metrics.rows) {
+            val index = GridStrip.index(column, row)
+            // A column on screen always starts with a tile, so its height is the row pitch the cursor steps by.
+            Box(if (row == 0) Modifier.onSizeChanged { onRowHeight(it.height) } else Modifier) {
+                if (index >= shell.model.count) {
+                    Box(Modifier.size(cell))
+                } else {
+                    val source = if (showingHome) index else order.getOrElse(index) { index }
+                    val face = if (showingHome) shell.homeFace(index) else null
+                    val game = shell.tileFromOrder(source)
+                    val focused = shell.model.dialog == null &&
+                        shell.model.panel == null &&
+                        !shell.model.connectOpen &&
+                        shell.homeChrome()?.focused == null &&
+                        focus.chrome == null &&
+                        focus.cellIndex == index
+                    val label = face?.section?.let { section -> "$section · ${game?.title.orEmpty()}" }
+                        ?: game?.title.orEmpty()
+                    val libraryTile = library && face == null
+                    val onHomeMark = face != null && allOpen && face.onGrid && !face.folder && !face.pinned
+                    // A folder or an empty slot keeps its mark. A game asks for its art.
+                    val artGame = game?.takeIf { face?.folder != true && face?.empty != true }
+                    val art = key(artGame?.id) {
+                        val found = rememberArt(app, artGame?.let(shell::artRecord), artGame?.let(shell::artQuery))
+                        found?.let { rememberCoverPainter(app, it.square ?: it.cover, TILE_PX)?.painter }
                     }
+                    Cell(
+                        title = label,
+                        mark = game?.mark,
+                        art = art,
+                        showTitle = showTitle && face?.empty != true,
+                        focused = focused,
+                        size = cell,
+                        corner = radius,
+                        icon = launcherIcon(game?.androidPackage),
+                        favorite = game?.favorite == true,
+                        empty = face?.empty == true,
+                        lifted = lifted == index,
+                        editing = editing,
+                        marked = onHomeMark,
+                        onServer = face?.onServer == true,
+                        downloading = face?.id != null && face.id in shell.downloading,
+                        activity = shell.activityAt(source),
+                        library = libraryTile,
+                        // The activity runs what a second tap opens, as it does for A.
+                        onClick = { (context as? FoldcadeHomeActivity)?.dispatch(shell.touchCell(index, screen)) },
+                        onDrag = if (editing) {
+                            { meaning -> shell.dragHome(meaning) }
+                        } else {
+                            null
+                        },
+                        onPickUp = if (editing) {
+                            { shell.pickUpHome(index) }
+                        } else {
+                            null
+                        },
+                    )
                 }
             }
         }
