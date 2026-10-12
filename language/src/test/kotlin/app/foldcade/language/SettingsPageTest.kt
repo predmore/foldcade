@@ -90,7 +90,7 @@ class SettingsPageTest {
     @Test
     fun theRommFormStaysRommAfterTheKeyForm() {
         val leftOver = home.copy(connectKind = ConnectKind.ArtKey)
-        val (connect, _) = reduce(leftOver.onSetting(Row.Connect), Meaning.Activate)
+        val (connect, _) = reduce(leftOver.onSetting(Row.AddRomm), Meaning.Activate)
         assertEquals(ConnectKind.Romm, connect.connectKind)
         val onSave = connect.copy(connectIndex = 2)
         assertEquals(Effect.SaveRommToken, reduce(onSave, Meaning.Activate).second)
@@ -98,7 +98,7 @@ class SettingsPageTest {
 
     @Test
     fun aOnATextRowRaisesTheKeyboardThere() {
-        val (romm, _) = reduce(home.onSetting(Row.Connect), Meaning.Activate)
+        val (romm, _) = reduce(home.onSetting(Row.AddRomm), Meaning.Activate)
         for (field in listOf(ConnectField.Origin, ConnectField.Token)) {
             val on = romm.copy(connectIndex = connectFields(romm.connectKind).indexOf(field))
             val (typing, effect) = reduce(on, Meaning.Activate)
@@ -117,9 +117,9 @@ class SettingsPageTest {
         repeat(library) { model = reduce(model, Meaning.MoveDown).first }
         model = reduce(model, Meaning.MoveRight).first
         val rows = settingsRows(SettingsCategory.Library, model)
-        repeat(rows.indexOf(Row.Connect)) { model = reduce(model, Meaning.MoveDown).first }
+        repeat(rows.indexOf(Row.AddRomm)) { model = reduce(model, Meaning.MoveDown).first }
         val (connect, effect) = reduce(model, Meaning.Activate)
-        assertEquals(Effect.OpenConnect, effect)
+        assertEquals(Effect.OpenAddRomm, effect)
         assertNull(connect.settings)
         assertTrue(connect.connectOpen)
     }

@@ -27,6 +27,7 @@ import app.foldcade.language.AppActions
 import app.foldcade.language.AppShelfState
 import app.foldcade.language.BackgroundMotion
 import app.foldcade.language.ConnectField
+import app.foldcade.language.SidePanel
 import app.foldcade.language.ConnectKind
 import app.foldcade.language.Chrome
 import app.foldcade.language.Copy
@@ -664,7 +665,26 @@ class ShellController(
 
     fun consumeConnectToken(): String = connectToken.also { connectToken = "" }
 
-    fun openConnect(origin: String, another: Boolean = false, instanceId: String = RommCredentials.PLUGIN_ID) {
+    fun openAddRomm() {
+        openConnect("", another = store.rommOrigin() != null)
+    }
+
+    fun editRommConnection(instanceId: String): Boolean {
+        val origin = store.rommServerOrigin(instanceId)
+        if (origin == null) {
+            closeConnect()
+            return false
+        }
+        openConnect(origin, instanceId = instanceId, returnPanel = model.connectReturnPanel)
+        return true
+    }
+
+    fun openConnect(
+        origin: String,
+        another: Boolean = false,
+        instanceId: String = RommCredentials.PLUGIN_ID,
+        returnPanel: SidePanel? = null,
+    ) {
         invalidateSetupValidation()
         connectVisit += 1
         connectRommId = instanceId
@@ -674,6 +694,7 @@ class ShellController(
         model = model.copy(
             connectOpen = true,
             connectScreen = screen,
+            connectReturnPanel = returnPanel,
             panel = null,
             connectOrigin = shown,
             connectIndex = 0,
@@ -700,6 +721,7 @@ class ShellController(
             connectHint = null,
             connectRetry = false,
             connectKind = ConnectKind.ArtKey,
+            connectReturnPanel = null,
         )
     }
 
@@ -742,7 +764,15 @@ class ShellController(
     fun closeConnect() {
         invalidateSetupValidation()
         connectToken = ""
-        model = model.copy(connectOpen = false, connectScreen = null, connectHint = null, connectAnother = false, connectRetry = false)
+        model = model.copy(
+            connectOpen = false,
+            connectScreen = null,
+            connectHint = null,
+            connectAnother = false,
+            connectRetry = false,
+            panel = model.connectReturnPanel,
+            connectReturnPanel = null,
+        )
         showQueuedPrompt()
     }
 

@@ -358,11 +358,12 @@ class ContractTest {
             signedIn = listOf(SignedInBackend("romm", "RomM")),
             panel = child.panel?.copy(index = 0),
         )
-        val signOut = libraryRows(signedIn.signedIn).first()
-        assertEquals("Sign out / forget credentials · RomM", rowLabel(signOut, signedIn))
-        val (left, forget) = reduce(signedIn, Meaning.Activate)
-        assertEquals(Effect.ForgetCredentials("romm"), forget)
-        assertNull(left.panel)
+        val connection = libraryRows(signedIn.signedIn).first()
+        assertEquals("RomM", rowLabel(connection, signedIn))
+        val (actions, openConnection) = reduce(signedIn, Meaning.Activate)
+        assertNull(openConnection)
+        assertEquals(PanelLevel.RommConnection, actions.panel?.level)
+        assertEquals(listOf(Row.EditRomm("romm"), Row.SignOut("romm", "RomM")), panelRows(actions.panel!!, actions))
         val closed = reduce(opened, Meaning.Back).first
         assertNull(closed.panel)
         val right = reduce(opened, Meaning.RightPanel, HostScreen.Top).first
@@ -563,7 +564,7 @@ class ContractTest {
         val right = reduce(model, Meaning.MoveRight).first
         assertEquals(1, right.focus.cellIndex)
         val (opened, connect) = reduce(right, Meaning.Activate)
-        assertEquals(Effect.OpenConnect, connect)
+        assertEquals(Effect.OpenAddRomm, connect)
         assertTrue(opened.connectOpen)
         val pending = model.copy(folderGrantPending = true)
         assertEquals(DialogKind.Folder, reduce(pending, Meaning.Activate).first.dialog?.kind)
@@ -601,15 +602,15 @@ class ContractTest {
 
     @Test
     fun libraryRowsAddSourcesAndNeverSwitchTheGrid() {
-        assertEquals(listOf(Row.AddFolder, Row.Connect), libraryRows())
+        assertEquals(listOf(Row.AddFolder, Row.AddRomm), libraryRows())
 
         val signedIn = libraryRows(listOf(SignedInBackend("romm", "RomM")))
         assertEquals(
-            listOf(Row.SignOut("romm", "RomM"), Row.AddFolder, Row.Connect, Row.AddRomm),
+            listOf(Row.RommConnection("romm", "RomM"), Row.AddFolder, Row.AddRomm),
             signedIn,
         )
         val other = libraryRows(listOf(SignedInBackend("other", "Other")))
-        assertEquals(listOf(Row.SignOut("other", "Other"), Row.AddFolder, Row.Connect), other)
+        assertEquals(listOf(Row.SignOut("other", "Other"), Row.AddFolder, Row.AddRomm), other)
     }
 
     @Test
@@ -631,7 +632,7 @@ class ContractTest {
         // Each folder can be removed on its own. Adding another keeps the first.
         val folders = libraryRows(folders = listOf(LibraryFolder("content://roms", "roms"), LibraryFolder("content://steam", "Steam")))
         assertEquals(
-            listOf(Row.AddFolder, Row.Connect, Row.ForgetFolder("content://roms", "roms"), Row.ForgetFolder("content://steam", "Steam")),
+            listOf(Row.AddFolder, Row.AddRomm, Row.ForgetFolder("content://roms", "roms"), Row.ForgetFolder("content://steam", "Steam")),
             folders,
         )
     }
