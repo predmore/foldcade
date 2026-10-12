@@ -3210,7 +3210,7 @@ private fun ConnectScreen(
                     .chip(focused(model, ConnectField.Retry))
                     .hostPress { onEffect(app.shell.touchConnect(fields.indexOf(ConnectField.Retry), screen)) }
                     .padding(horizontal = px(20f), vertical = px(10f)),
-                style = text(theme.onBackground, TypeRamp.dialogBody, theme),
+                style = text(theme.onBackground, design.type.dialogBody, theme),
             )
         }
         BasicText(
