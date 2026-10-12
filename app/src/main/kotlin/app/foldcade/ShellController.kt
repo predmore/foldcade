@@ -64,7 +64,8 @@ import app.foldcade.language.HostScreen
 import app.foldcade.language.LibraryFolder
 import app.foldcade.language.Meaning
 import app.foldcade.language.MotionSpeed
-import app.foldcade.language.Metrics
+import app.foldcade.language.GridStrip
+import app.foldcade.language.shownFirstColumn
 import app.foldcade.language.PromptKey
 import app.foldcade.language.ThorStyle
 import app.foldcade.language.faceMapWithConfirm
@@ -130,8 +131,14 @@ class ShellController(
     /** Platform names a library listed, by platform id. Used when nothing else names it. */
     private val listedPlatformNames = HashMap<String, String>()
 
-    var model by mutableStateOf(initial())
-        private set
+    private var current by mutableStateOf(initial())
+
+    /** Every change keeps the columns the grid showed, so the next focus scrolls only as far as it must. */
+    var model: PickerModel
+        get() = current
+        private set(next) {
+            current = next.copy(firstColumn = shownFirstColumn(current))
+        }
 
     private var inputDeviceKey: String = "builtin"
 
@@ -382,7 +389,7 @@ class ShellController(
         // A folder Foldcade made goes the moment its last game leaves it, not at the next scan.
         syncHome()
         store.saveHomeBoard(home.encoded())
-        showBoard(GridFocus(cellIndex = index, lastColumn = index % Metrics.columns), keepDialog = true)
+        showBoard(GridFocus(cellIndex = index, lastColumn = GridStrip.column(index)), keepDialog = true)
         return null
     }
 
@@ -390,7 +397,7 @@ class ShellController(
     fun goHome() {
         val index = home.showRoot()
         syncHome()
-        showBoard(GridFocus(cellIndex = index, lastColumn = index % Metrics.columns), keepDialog = true)
+        showBoard(GridFocus(cellIndex = index, lastColumn = GridStrip.column(index)), keepDialog = true)
         Log.i("Foldcade", "library-ui home")
     }
 
@@ -424,7 +431,7 @@ class ShellController(
         home.startMove(index)
         if (home.board.hold != null) Log.i("Foldcade", "home-ui lifted")
         store.saveHomeBoard(home.encoded())
-        showBoard(GridFocus(cellIndex = index, lastColumn = index % Metrics.columns), keepDialog = true)
+        showBoard(GridFocus(cellIndex = index, lastColumn = GridStrip.column(index)), keepDialog = true)
     }
 
     fun dragHome(meaning: Meaning) {
@@ -432,7 +439,7 @@ class ShellController(
         home.drag(meaning)
         val index = home.board.hold?.index ?: return
         store.saveHomeBoard(home.encoded())
-        showBoard(GridFocus(cellIndex = index, lastColumn = index % Metrics.columns), keepDialog = true)
+        showBoard(GridFocus(cellIndex = index, lastColumn = GridStrip.column(index)), keepDialog = true)
     }
 
     fun touchAllChrome(index: Int, screen: HostScreen): Effect? {
@@ -867,7 +874,7 @@ class ShellController(
                 model.copy(
                     focus = GridFocus(
                         cellIndex = index,
-                        lastColumn = index % Metrics.columns,
+                        lastColumn = GridStrip.column(index),
                         chrome = null,
                     ),
                 ),
@@ -1448,7 +1455,7 @@ class ShellController(
             counted.copy(
                 focus = counted.focus.copy(
                     cellIndex = cell,
-                    lastColumn = if (counted.count == 0) 0 else cell % Metrics.columns,
+                    lastColumn = if (counted.count == 0) 0 else GridStrip.column(cell),
                 ),
             )
         }
@@ -1542,7 +1549,7 @@ class ShellController(
         if (source < 0) return next
         val order = displayOrder(next.copy(count = listed(next.homeGrid).size))
         val display = order.indexOf(source).takeIf { it >= 0 } ?: source
-        val column = display % Metrics.columns
+        val column = GridStrip.column(display)
         val focus = next.focus.copy(cellIndex = display, lastColumn = column)
         val open = next.panel
         val panel = open?.copy(grid = open.grid.copy(cellIndex = display, lastColumn = column))
@@ -1591,7 +1598,7 @@ class ShellController(
                 count = count,
                 focus = GridFocus(
                     cellIndex = cell,
-                    lastColumn = if (count == 0) 0 else cell % Metrics.columns,
+                    lastColumn = if (count == 0) 0 else GridStrip.column(cell),
                 ),
                 addNewToHome = home.board.addNewToHome,
                 shelfEpoch = model.shelfEpoch + 1,

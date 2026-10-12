@@ -5,8 +5,8 @@ import app.foldcade.host.PluginHost
 import app.foldcade.language.HOME_MOONLIGHT
 import app.foldcade.language.HomeBoard
 import app.foldcade.language.HostScreen
+import app.foldcade.language.GridStrip
 import app.foldcade.language.Meaning
-import app.foldcade.language.Metrics
 import app.foldcade.language.Row
 import app.foldcade.language.decodeHome
 import app.foldcade.language.encodeHome
@@ -150,12 +150,13 @@ class MoonlightHomeTest {
     private fun focus(shell: ShellController, index: Int) {
         assertTrue("no such tile", index >= 0)
         val at = shell.model.focus.cellIndex
-        val rows = index / Metrics.columns - at / Metrics.columns
-        val columns = index % Metrics.columns - at % Metrics.columns
-        repeat(maxOf(rows, 0)) { shell.onMeaning(Meaning.MoveDown, HostScreen.Bottom) }
-        repeat(maxOf(-rows, 0)) { shell.onMeaning(Meaning.MoveUp, HostScreen.Bottom) }
+        val columns = GridStrip.column(index) - GridStrip.column(at)
         repeat(maxOf(columns, 0)) { shell.onMeaning(Meaning.MoveRight, HostScreen.Bottom) }
         repeat(maxOf(-columns, 0)) { shell.onMeaning(Meaning.MoveLeft, HostScreen.Bottom) }
+        // Into a shorter last column the cursor lands on its last tile, so rows count from there.
+        val rows = GridStrip.row(index) - GridStrip.row(shell.model.focus.cellIndex)
+        repeat(maxOf(rows, 0)) { shell.onMeaning(Meaning.MoveDown, HostScreen.Bottom) }
+        repeat(maxOf(-rows, 0)) { shell.onMeaning(Meaning.MoveUp, HostScreen.Bottom) }
         assertEquals(index, shell.model.focus.cellIndex)
     }
 

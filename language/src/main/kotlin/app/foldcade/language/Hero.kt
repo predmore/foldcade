@@ -85,17 +85,13 @@ enum class HeroTravel(val x: Float, val y: Float) {
 }
 
 /**
- * The travel from cell [from] to cell [to] on a grid of [columns] by
- * [pageSize] cells per page. Another page is across. On a page the longer
+ * The travel from cell [from] to cell [to] along the [GridStrip]. The longer
  * step decides, and a tie reads across.
  */
-fun heroTravel(from: Int?, to: Int, columns: Int, pageSize: Int): HeroTravel {
-    if (from == null || from == to || from < 0 || to < 0 || columns <= 0 || pageSize <= 0) return HeroTravel.None
-    val fromPage = from / pageSize
-    val toPage = to / pageSize
-    if (fromPage != toPage) return if (toPage > fromPage) HeroTravel.Right else HeroTravel.Left
-    val across = to % pageSize % columns - from % pageSize % columns
-    val down = to % pageSize / columns - from % pageSize / columns
+fun heroTravel(from: Int?, to: Int): HeroTravel {
+    if (from == null || from == to || from < 0 || to < 0) return HeroTravel.None
+    val across = GridStrip.column(to) - GridStrip.column(from)
+    val down = GridStrip.row(to) - GridStrip.row(from)
     return when {
         abs(across) >= abs(down) -> if (across > 0) HeroTravel.Right else HeroTravel.Left
         down > 0 -> HeroTravel.Down

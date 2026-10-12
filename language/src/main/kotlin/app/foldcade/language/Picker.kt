@@ -9,7 +9,7 @@ enum class Chrome {
     /** The R1 pill. */
     StatusCluster,
 
-    /** The L1 pill. Up from the left half of the top row reaches it. */
+    /** The L1 pill. Up from the top row on the left half of the screen reaches it. */
     LeftIsland,
 }
 
@@ -713,6 +713,8 @@ data class PickerModel(
     val count: Int,
     val rowsPerPage: Int,
     val focus: GridFocus = GridFocus(),
+    /** The first column the grid showed. The next focus scrolls from here, see [shownFirstColumn]. */
+    val firstColumn: Int = 0,
     val panel: SidePanel? = null,
     /** The full-screen settings page. Null while it is closed. */
     val settings: SettingsPage? = null,
@@ -868,7 +870,7 @@ private fun coerce(focus: GridFocus, model: PickerModel): GridFocus {
     }
     if (next.chrome == null && next.cellIndex !in 0 until model.count) {
         val index = (model.count - 1).coerceAtLeast(0)
-        next = next.copy(cellIndex = index, lastColumn = index % Metrics.columns)
+        next = next.copy(cellIndex = index, lastColumn = GridStrip.column(index))
     }
     return next
 }
@@ -965,7 +967,7 @@ private fun backGrid(model: PickerModel): Pair<PickerModel, Effect?> {
         return model.copy(
             hold = null,
             order = hold.orderBefore,
-            focus = model.focus.copy(cellIndex = hold.origin, lastColumn = hold.origin % Metrics.columns, chrome = null),
+            focus = model.focus.copy(cellIndex = hold.origin, lastColumn = GridStrip.column(hold.origin), chrome = null),
         ) to null
     }
     if (model.arranging) return model.copy(arranging = false) to null
@@ -974,7 +976,7 @@ private fun backGrid(model: PickerModel): Pair<PickerModel, Effect?> {
 }
 
 private fun moveHeld(model: PickerModel, hold: Hold, meaning: Meaning): PickerModel {
-    val focus = GridFocus(cellIndex = hold.index, lastColumn = hold.index % Metrics.columns)
+    val focus = GridFocus(cellIndex = hold.index, lastColumn = GridStrip.column(hold.index))
     val moved = move(focus, meaning, model)
     if (moved.chrome != null || moved.cellIndex == hold.index) return model
     val order = displayOrder(model).toMutableList()
@@ -998,50 +1000,59 @@ private fun move(focus: GridFocus, meaning: Meaning, model: PickerModel): GridFo
         }
     }
     if (model.count <= 0) return focus.copy(chrome = Chrome.StatusCluster)
-    val columns = Metrics.columns
-    val column = focus.cellIndex % columns
-    val row = focus.cellIndex / columns
+    if (model.libraryGrid && model.gridKind == GridKind.NoLibrary) return alongButtons(focus, meaning, model)
+    val column = GridStrip.column(focus.cellIndex)
+    val row = GridStrip.row(focus.cellIndex)
     return when (meaning) {
-        Meaning.MoveLeft -> step(focus, column - 1, row, model)
-        Meaning.MoveRight -> step(focus, column + 1, row, model)
-        Meaning.MoveDown -> step(focus, column, row + 1, model)
-        Meaning.MoveUp -> if (row == 0) upToChrome(focus, column, model) else step(focus, column, row - 1, model)
+        Meaning.MoveLeft -> across(focus, column - 1, row, model)
+        Meaning.MoveRight -> across(focus, column + 1, row, model)
+        Meaning.MoveDown -> if (row == Metrics.rows - 1) focus else land(focus, focus.cellIndex + 1, model)
+        Meaning.MoveUp -> if (row == 0) upToChrome(focus, column, model) else land(focus, focus.cellIndex - 1, model)
         else -> focus
     }
 }
 
-private fun step(focus: GridFocus, column: Int, row: Int, model: PickerModel): GridFocus {
-    if (column !in 0 until Metrics.columns || row < 0) return focus
-    val index = row * Metrics.columns + column
-    if (index !in 0 until model.count) return focus
-    return focus.copy(cellIndex = index, lastColumn = column, chrome = null)
+/** The empty library's buttons sit side by side under its title, not down a column. */
+private fun alongButtons(focus: GridFocus, meaning: Meaning, model: PickerModel): GridFocus = when (meaning) {
+    Meaning.MoveLeft -> land(focus, focus.cellIndex - 1, model)
+    Meaning.MoveRight -> land(focus, focus.cellIndex + 1, model)
+    Meaning.MoveUp -> upToChrome(focus, 0, model)
+    else -> focus
 }
 
-/** Up from the top row reaches the pill on that side: L1 from the left half, R1 from the right. */
+/** Into [column] at [row], or the column's last tile when it is shorter. No such column stays put. */
+private fun across(focus: GridFocus, column: Int, row: Int, model: PickerModel): GridFocus {
+    if (column !in 0 until GridStrip.columns(model.count)) return focus
+    return land(focus, minOf(GridStrip.index(column, row), model.count - 1), model)
+}
+
+private fun land(focus: GridFocus, index: Int, model: PickerModel): GridFocus {
+    if (index !in 0 until model.count) return focus
+    return focus.copy(cellIndex = index, lastColumn = GridStrip.column(index), chrome = null)
+}
+
+/** Up from the top row reaches the pill on that side of the screen: L1 from the left half, R1 from the right. */
 private fun upToChrome(focus: GridFocus, column: Int, model: PickerModel): GridFocus {
-    val chrome = if (column < Metrics.columns / 2) Chrome.LeftIsland else Chrome.StatusCluster
+    val onScreen = column - shownFirstColumn(model)
+    val chrome = if (onScreen < Metrics.columns / 2) Chrome.LeftIsland else Chrome.StatusCluster
     return focus.copy(chrome = chrome, lastColumn = column)
 }
 
 private fun downFromChrome(focus: GridFocus, model: PickerModel): GridFocus {
     if (model.count <= 0) return focus
-    val rowCount = minOf(Metrics.columns, model.count)
-    val column = focus.lastColumn.coerceIn(0, rowCount - 1)
-    return focus.copy(cellIndex = column, lastColumn = column, chrome = null)
+    val column = focus.lastColumn.coerceIn(0, GridStrip.columns(model.count) - 1)
+    return focus.copy(cellIndex = GridStrip.index(column, 0), lastColumn = column, chrome = null)
 }
 
+/** A swipe moves the cursor a screen of columns along the strip, on the same row. */
 private fun page(focus: GridFocus, towardEnd: Boolean, model: PickerModel): GridFocus {
     if (model.count <= 0 || focus.chrome != null) return focus
-    val pageSize = Metrics.columns * model.rowsPerPage.coerceAtLeast(1)
     val index = focus.cellIndex.coerceIn(0, model.count - 1)
-    val pageIndex = index / pageSize
-    val slot = index % pageSize
-    val nextPage = pageIndex + if (towardEnd) 1 else -1
-    if (nextPage < 0) return focus
-    val start = nextPage * pageSize
-    if (start >= model.count) return focus
-    val landed = minOf(start + slot, model.count - 1)
-    return focus.copy(cellIndex = landed, lastColumn = landed % Metrics.columns, chrome = null)
+    val column = GridStrip.column(index)
+    val step = if (towardEnd) Metrics.columns else -Metrics.columns
+    val target = (column + step).coerceIn(0, GridStrip.columns(model.count) - 1)
+    if (target == column) return focus
+    return across(focus, target, GridStrip.row(index), model)
 }
 
 /** A, or X when [onBottom]. X launches a game on the bottom screen and does what A does anywhere else. */

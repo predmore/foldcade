@@ -32,9 +32,9 @@ class ContractTest {
         assertNull(meaningOf(KeyEvent.KEYCODE_BUTTON_L1, repeatCount = 1))
         assertNull(meaningOf(KeyEvent.KEYCODE_BUTTON_R1, repeatCount = 4))
         assertEquals(Meaning.LeftPanel, meaningOf(KeyEvent.KEYCODE_BUTTON_L1, repeatCount = 0))
-        val model = PickerModel(count = 8, rowsPerPage = 1)
+        val model = PickerModel(count = 24, rowsPerPage = 1)
         val paged = reduce(model, Meaning.PageTowardEnd).first
-        assertEquals(4, paged.focus.cellIndex)
+        assertEquals(GridStrip.index(Metrics.columns, 0), paged.focus.cellIndex)
         val shoulder = reduce(model, Meaning.LeftPanel).first
         assertEquals(0, shoulder.focus.cellIndex)
         assertEquals(Side.Left, shoulder.panel?.side)
@@ -126,13 +126,37 @@ class ContractTest {
 
     @Test
     fun focusDoesNotWrapAndUpReachesThePillOnThatSide() {
-        val model = PickerModel(count = 6, rowsPerPage = 1)
-        val rightEdge = reduce(model.copy(focus = GridFocus(cellIndex = 3, lastColumn = 3)), Meaning.MoveRight).first
-        assertEquals(3, rightEdge.focus.cellIndex)
-        val up = reduce(model.copy(focus = GridFocus(cellIndex = 1, lastColumn = 1)), Meaning.MoveUp).first
+        // Five columns of three: 0 1 2 down the first, 12 alone at the top of the last.
+        val model = PickerModel(count = 13, rowsPerPage = 1)
+        val end = reduce(model.copy(focus = GridFocus(cellIndex = 12, lastColumn = 4)), Meaning.MoveRight).first
+        assertEquals(12, end.focus.cellIndex)
+        val bottom = reduce(model.copy(focus = GridFocus(cellIndex = 2)), Meaning.MoveDown).first
+        assertEquals(2, bottom.focus.cellIndex)
+        // Right from the bottom row into the short last column lands on its one tile.
+        val short = reduce(model.copy(focus = GridFocus(cellIndex = 11, lastColumn = 3)), Meaning.MoveRight).first
+        assertEquals(12, short.focus.cellIndex)
+        val up = reduce(model.copy(focus = GridFocus(cellIndex = 3, lastColumn = 1)), Meaning.MoveUp).first
         assertEquals(Chrome.LeftIsland, up.focus.chrome)
-        val cluster = reduce(model.copy(focus = GridFocus(cellIndex = 3, lastColumn = 3)), Meaning.MoveUp).first
+        val cluster = reduce(model.copy(focus = GridFocus(cellIndex = 9, lastColumn = 3)), Meaning.MoveUp).first
         assertEquals(Chrome.StatusCluster, cluster.focus.chrome)
+    }
+
+    @Test
+    fun theStripScrollsOnlyAsFarAsTheCursorGoes() {
+        val count = 7 * Metrics.rows
+        assertEquals(0, GridStrip.follow(first = 0, column = Metrics.columns - 1, count = count))
+        assertEquals(1, GridStrip.follow(first = 0, column = Metrics.columns, count = count))
+        // Back left, the screen holds until the cursor reaches its first column.
+        assertEquals(3, GridStrip.follow(first = 3, column = 4, count = count))
+        assertEquals(2, GridStrip.follow(first = 3, column = 2, count = count))
+        // Never past the last full screen, and a strip that fits does not scroll.
+        assertEquals(3, GridStrip.follow(first = 9, column = 6, count = count))
+        assertEquals(0, GridStrip.follow(first = 2, column = 1, count = 6))
+        // Up reads the pill from where the column sits on screen, not along the strip.
+        val scrolled = PickerModel(count = count, rowsPerPage = 1, firstColumn = 3, focus = GridFocus(GridStrip.index(4, 0), 4))
+        assertEquals(Chrome.LeftIsland, reduce(scrolled, Meaning.MoveUp).first.focus.chrome)
+        val far = scrolled.copy(focus = GridFocus(GridStrip.index(6, 0), 6))
+        assertEquals(Chrome.StatusCluster, reduce(far, Meaning.MoveUp).first.focus.chrome)
     }
 
     @Test
@@ -196,14 +220,18 @@ class ContractTest {
     }
 
     @Test
-    fun pagingKeepsTheSlotAndStopsAtTheEnds() {
-        val model = PickerModel(count = 6, rowsPerPage = 1)
-        val next = reduce(model.copy(focus = GridFocus(1, 1)), Meaning.PageTowardEnd).first
-        assertEquals(5, next.focus.cellIndex)
-        val stuck = reduce(next, Meaning.PageTowardEnd).first
-        assertEquals(5, stuck.focus.cellIndex)
-        val back = reduce(model, Meaning.PageTowardStart).first
-        assertEquals(0, back.focus.cellIndex)
+    fun swipingMovesAScreenOfColumnsOnTheSameRowAndStopsAtTheEnds() {
+        // Seven columns of three, the last holding 18 and 19.
+        val model = PickerModel(count = 20, rowsPerPage = 1)
+        val next = reduce(model.copy(focus = GridFocus(1, 0)), Meaning.PageTowardEnd).first
+        assertEquals(GridStrip.index(Metrics.columns, 1), next.focus.cellIndex)
+        val last = reduce(next, Meaning.PageTowardEnd).first
+        assertEquals(19, last.focus.cellIndex)
+        val stuck = reduce(last, Meaning.PageTowardEnd).first
+        assertEquals(19, stuck.focus.cellIndex)
+        val back = reduce(next, Meaning.PageTowardStart).first
+        assertEquals(1, back.focus.cellIndex)
+        assertEquals(0, reduce(model, Meaning.PageTowardStart).first.focus.cellIndex)
     }
 
     @Test
@@ -336,18 +364,18 @@ class ContractTest {
     @Test
     fun downFromChromeReturnsToTheColumnThatHadACell() {
         val model = PickerModel(count = 6, rowsPerPage = 2)
-        val chrome = reduce(model.copy(focus = GridFocus(cellIndex = 1, lastColumn = 1)), Meaning.MoveUp).first
+        val chrome = reduce(model.copy(focus = GridFocus(cellIndex = 3, lastColumn = 1)), Meaning.MoveUp).first
         assertEquals(Chrome.LeftIsland, chrome.focus.chrome)
         val back = reduce(chrome, Meaning.MoveDown).first
         assertNull(back.focus.chrome)
-        assertEquals(1, back.focus.cellIndex)
+        assertEquals(3, back.focus.cellIndex)
     }
 
     @Test
     fun repeatedMoveStepsOncePerEvent() {
         val model = PickerModel(count = 6, rowsPerPage = 2)
-        val once = reduce(model, Meaning.MoveRight).first
-        val twice = reduce(once, Meaning.MoveRight).first
+        val once = reduce(model, Meaning.MoveDown).first
+        val twice = reduce(once, Meaning.MoveDown).first
         assertEquals(2, twice.focus.cellIndex)
     }
 
@@ -356,7 +384,7 @@ class ContractTest {
         val model = PickerModel(count = 4, rowsPerPage = 1, arranging = true)
         val held = reduce(model, Meaning.Activate).first
         assertEquals(0, held.hold?.index)
-        val moved = reduce(held, Meaning.MoveRight).first
+        val moved = reduce(held, Meaning.MoveDown).first
         assertEquals(listOf(1, 0, 2, 3), moved.order)
         val dropped = reduce(moved, Meaning.Back).first
         assertNull(dropped.hold)
