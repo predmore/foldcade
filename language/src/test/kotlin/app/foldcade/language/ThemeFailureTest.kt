@@ -22,8 +22,8 @@ class ThemeFailureTest {
             val reports = mutableListOf<ThemeDiagnostic>()
             val runtime = SceneEvaluation(scene, reports::add)
             repeat(3) {
-                assertNull(runtime.evaluate("variables") { runtime.state.update(0f, 100f, 100f, true, 0f) })
-                assertNull(runtime.frameRate(0f, 100f, 100f, true, 0f, 1f))
+                assertNull(runtime.evaluate("variables") { runtime.state.update(0.0, 100f, 100f, true, 0f) })
+                assertNull(runtime.frameRate(0.0, 100f, 100f, true, 0f, 1f))
             }
             assertTrue(runtime.failed)
             assertEquals("backgrounds/probe.json:variables", reports.single().source)
@@ -36,12 +36,12 @@ class ThemeFailureTest {
         for (rate in listOf("clamp(30,60,0)", "0/0", "-1")) {
             val reports = mutableListOf<ThemeDiagnostic>()
             val runtime = SceneEvaluation(scene(""""frameRate":"$rate","layers":[]"""), reports::add)
-            assertNull(runtime.frameRate(1f, 100f, 100f, true, 0f, 1f))
-            assertNull(runtime.frameRate(2f, 100f, 100f, true, 0f, 1f))
+            assertNull(runtime.frameRate(1.0, 100f, 100f, true, 0f, 1f))
+            assertNull(runtime.frameRate(2.0, 100f, 100f, true, 0f, 1f))
             assertEquals("backgrounds/probe.json:frameRate", reports.single().source)
         }
         val runtime = SceneEvaluation(scene(""""frameRate":0,"layers":[]"""))
-        assertEquals(0f, runtime.frameRate(1f, 100f, 100f, true, 0f, 1f)!!, 0f)
+        assertEquals(0f, runtime.frameRate(1.0, 100f, 100f, true, 0f, 1f)!!, 0f)
         assertFalse(runtime.failed)
     }
 
@@ -54,14 +54,14 @@ class ThemeFailureTest {
         },"layers":[{"type":"disc","radius":2,"color":[1,1,1,1],
             "path":{"x":"track","y":"derived","samples":3}}]""")
         val state = scene.state()
-        state.update(7f, 100f, 100f, true, 0f)
+        state.update(7.0, 100f, 100f, true, 0f)
         state.instance(2)
         val previous = state.values.copyOf()
         val sampler = ScenePathSampler((scene.layers.single() as SceneLayer.Disc).path!!, scene)
         sampler.sample(state.values, .5f)
         assertEquals(50f, sampler.x, .001f)
         assertEquals(52f, sampler.y, .001f)
-        assertArrayEquals(previous, state.values, 0f)
+        assertArrayEquals(previous, state.values, 0.0)
         assertEquals(3, scene.sampledVariables.size)
     }
 
@@ -71,12 +71,12 @@ class ThemeFailureTest {
             "layers":[{"type":"disc","radius":2,"color":[1,1,1,1],
             "path":{"x":"u","y":"wave","samples":3}}]""")
         val state = scene.state()
-        state.update(0f, 100f, 100f, true, 0f)
+        state.update(0.0, 100f, 100f, true, 0f)
         val previous = state.values.copyOf()
         val sampler = ScenePathSampler((scene.layers.single() as SceneLayer.Disc).path!!, scene)
         try { sampler.sample(state.values, .5f); fail("Invalid clamp must fail the layer") }
         catch (_: IllegalArgumentException) { }
-        assertArrayEquals(previous, state.values, 0f)
+        assertArrayEquals(previous, state.values, 0.0)
     }
 
     @Test

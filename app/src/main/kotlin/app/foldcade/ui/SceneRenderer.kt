@@ -33,7 +33,7 @@ internal class SceneRenderer(val scene: ThemeScene) {
         }
     }
 
-    fun draw(scope: DrawScope, time: Float, moving: Boolean, panel: Float, clock: Float = 1f) {
+    fun draw(scope: DrawScope, time: Double, moving: Boolean, panel: Float, clock: Float = 1f) {
         val started = System.nanoTime()
         if (evaluation.evaluate("variables") {
             state.update(time, scope.size.width, scope.size.height, moving, panel, clock)
@@ -57,7 +57,7 @@ internal class SceneRenderer(val scene: ThemeScene) {
         metrics.layers = runtimes.count { it != null && !it.failed }
     }
 
-    fun frameRate(time: Float, width: Float, height: Float, moving: Boolean, panel: Float, clock: Float): Float? = evaluation.frameRate(
+    fun frameRate(time: Double, width: Float, height: Float, moving: Boolean, panel: Float, clock: Float): Float? = evaluation.frameRate(
         time, width, height, moving, panel, clock,
     )
 
@@ -93,7 +93,7 @@ internal class SceneRenderer(val scene: ThemeScene) {
             "lighten" -> BlendMode.Lighten; "plus" -> BlendMode.Plus; "screen" -> BlendMode.Screen
             "multiply" -> BlendMode.Multiply; else -> BlendMode.SrcOver
         }
-        private fun value(expression: AnimationExpression) = expression.evaluate(state.values)
+        private fun value(expression: AnimationExpression) = expression.evaluate(state.values).toFloat()
         private fun color(expressions: List<AnimationExpression>): Color = rgba(
             value(expressions[0]).coerceIn(0f, 1f), value(expressions[1]).coerceIn(0f, 1f),
             value(expressions[2]).coerceIn(0f, 1f), value(expressions[3]).coerceIn(0f, 1f),

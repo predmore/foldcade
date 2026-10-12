@@ -17,8 +17,8 @@ class SceneRendererTest {
             val scene = parseThemeScene("""{"version":1,"id":"bad","name":"Bad",$property,"layers":[]}""", "bad.json", emptyMap())!!
             val renderer = SceneRenderer(scene)
             repeat(2) {
-                renderer.draw(CanvasDrawScope(), 1f, true, 0f)
-                assertNull(renderer.frameRate(1f, 640f, 480f, true, 0f, 1f))
+                renderer.draw(CanvasDrawScope(), 1.0, true, 0f)
+                assertNull(renderer.frameRate(1.0, 640f, 480f, true, 0f, 1f))
             }
             assertEquals(1, renderer.diagnostics.size)
             assertTrue(renderer.diagnostics.single().source.startsWith("bad.json:"))
@@ -32,8 +32,8 @@ class SceneRendererTest {
             "variables":{"rate":"width / height"},"frameRate":"rate","layers":[]
         }""", "viewport.json", emptyMap())!!
         val renderer = SceneRenderer(scene)
-        assertEquals(2f, renderer.frameRate(0f, 640f, 320f, true, 0f, 1f)!!, 0f)
-        assertEquals(0.5f, renderer.frameRate(0f, 320f, 640f, true, 0f, 1f)!!, 0f)
+        assertEquals(2f, renderer.frameRate(0.0, 640f, 320f, true, 0f, 1f)!!, 0f)
+        assertEquals(0.5f, renderer.frameRate(0.0, 320f, 640f, true, 0f, 1f)!!, 0f)
         assertTrue(renderer.diagnostics.isEmpty())
         assertEquals(0L, renderer.metrics.frames)
     }
@@ -45,12 +45,12 @@ class SceneRendererTest {
             "layers":[{"type":"line","name":"broken","repeat":10,"color":["clamp(1,2,0)",1,1,1]}]
         }""", "layer.json", emptyMap())!!
         var evaluations = 0
-        val scene = parsed.copy(variables = listOf(parsed.symbols.index("counter") to AnimationExpression { (++evaluations).toFloat() }))
+        val scene = parsed.copy(variables = listOf(parsed.symbols.index("counter") to AnimationExpression { (++evaluations).toDouble() }))
         val renderer = SceneRenderer(scene)
-        renderer.draw(CanvasDrawScope(), 0f, true, 0f)
+        renderer.draw(CanvasDrawScope(), 0.0, true, 0f)
         assertEquals(2, evaluations)
         assertEquals("layer.json:broken", renderer.diagnostics.single().source)
-        renderer.draw(CanvasDrawScope(), 1f, true, 0f)
+        renderer.draw(CanvasDrawScope(), 1.0, true, 0f)
         assertEquals(3, evaluations)
         assertEquals(1, renderer.diagnostics.size)
         assertEquals(0, renderer.metrics.layers)

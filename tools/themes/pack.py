@@ -26,18 +26,30 @@ def assets(root: Path):
 
     for icon in manifest.get("icons", {}).values():
         add(icon["file"])
-    for name in manifest.get("scenes", []):
+
+    def add_scene(name, chain=()):
+        if name in chain:
+            raise ValueError(f"{name}: scene inheritance loops")
         add(name)
         scene = json.loads((root / name).read_text())
         if scene.get("version") != 1 or not scene.get("id") or not scene.get("name"):
             raise ValueError(f"{name}: expected scene version 1, id and name")
+        if "extends" in scene:
+            add_scene(scene["extends"], chain + (name,))
         for layer in scene.get("layers", []):
+            if isinstance(layer, str):
+                if "extends" not in scene:
+                    raise ValueError(f"{name}: layer {layer!r} reuses a base layer, but the scene extends nothing")
+                continue
             if layer.get("type") not in ("shader", "disc", "line", "image"):
                 raise ValueError(f"{name}: unknown layer type {layer.get('type')!r}")
             if layer.get("type") in ("shader", "image"):
                 add(layer["file"])
             for texture in layer.get("inputs", {}).values():
                 add(texture)
+
+    for name in manifest.get("scenes", []):
+        add_scene(name)
     # Preserve v1 convention assets and their license notices.
     for path in root.rglob("*"):
         if not path.is_file():

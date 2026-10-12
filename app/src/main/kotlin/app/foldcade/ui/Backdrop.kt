@@ -25,7 +25,7 @@ fun Backdrop(
     running: Boolean,
     held: Boolean = false,
     panel: Float = 0f,
-    previewTime: Float? = null,
+    previewTime: Double? = null,
     onMetrics: ((SceneMetrics) -> Unit)? = null,
 ) {
     if (scene == null) return
@@ -36,7 +36,8 @@ fun Backdrop(
         else backdropClock(speed, animatorScale).coerceAtMost(scene.maxClock)
     val moving = !scene.animateWhenMotionOff && running && clock > 0f
     val ticking = previewTime == null && running && !held && clock > 0f
-    var time by remember(scene) { mutableFloatStateOf(scene.frozenTime) }
+    // Seconds of visible motion. Double keeps frame steps exact through months of uptime.
+    var time by remember(scene) { mutableDoubleStateOf(scene.frozenTime) }
     var viewport by remember(scene) { mutableStateOf(IntSize.Zero) }
     LaunchedEffect(ticking, clock, scene, moving, panel, viewport) {
         if (!ticking || viewport.width == 0 || viewport.height == 0) return@LaunchedEffect
@@ -44,7 +45,7 @@ fun Backdrop(
         var wait = 0f
         while (true) {
             withFrameNanos { frame ->
-                if (last != 0L) time += ((frame - last) / 1_000_000_000f).coerceIn(0f, wait + 0.05f) * clock
+                if (last != 0L) time += ((frame - last) / 1_000_000_000.0).coerceIn(0.0, wait + 0.05) * clock
                 last = frame
             }
             val rate = prepared.frameRate(time, viewport.width.toFloat(), viewport.height.toFloat(), moving, panel, clock)

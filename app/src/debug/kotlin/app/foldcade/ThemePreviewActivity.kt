@@ -44,7 +44,7 @@ class ThemePreviewActivity : ComponentActivity() {
         val scenes = backgrounds?.resources?.scenes?.values?.toList().orEmpty()
         val requested = intent.getStringExtra("scene")
         val panel = intent.getIntExtra("panel", 0).toFloat()
-        val fixedTime = intent.getStringExtra("time")?.toFloatOrNull()
+        val fixedTime = intent.getStringExtra("time")?.toDoubleOrNull()
         val chrome = intent.getBooleanExtra("chrome", true)
         setContent {
             val referenceIcons = if (intent.getBooleanExtra("validateIcons", false) && base?.resources?.id == "afterglow") {

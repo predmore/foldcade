@@ -1,5 +1,7 @@
 package app.foldcade.language
 
+import kotlin.math.PI
+import kotlin.math.round
 import org.junit.Assert.*
 import org.junit.Test
 
@@ -30,17 +32,70 @@ class ThemeSceneTest {
             val shader = scene.layers.first() as SceneLayer.Shader
             val state = scene.state()
             for (width in listOf(1240f, 1920f)) for (time in listOf(0f, 3.5f, 12f, 21.9f, 47f, 180f)) for (moving in listOf(false, true)) {
-                state.update(time, width, 1080f, moving, 0f)
+                state.update(time.toDouble(), width, 1080f, moving, 0f)
                 val expected = RibbonField()
                 assertTrue(fieldRibbons(mode, time, width, 1080f, moving, expected))
                 fun check(name: String, values: FloatArray) {
-                    val actual = shader.uniforms.getValue(name).map { it.evaluate(state.values) }.toFloatArray()
+                    val actual = shader.uniforms.getValue(name).map { it.evaluate(state.values).toFloat() }.toFloatArray()
                     assertArrayEquals("$id $name at $time", values, actual, 0.0001f)
                 }
                 check("shape", expected.shape)
                 check("drift", expected.drift); check("start", expected.start); check("end", expected.end)
                 check("swell", expected.swell); check("reach", floatArrayOf(expected.reach))
             }
+        }
+    }
+
+    @Test
+    fun ribbonsKeepMovingSmoothlyAfterMonthsOfUptime() {
+        // Launchers run for weeks between reboots. A Float clock rounds a 1/60s step to
+        // nothing after about 12 days; the sweep must still advance by exactly one frame.
+        val scene = afterglow().scenes.getValue(BackgroundMotion("afterglow:ribbons"))
+        val shader = scene.layers.first() as SceneLayer.Shader
+        val drift = shader.uniforms.getValue("drift")
+        val state = scene.state()
+        val frame = 1.0 / 60.0
+        val start = 90.0 * 24 * 60 * 60
+        val phases = (0..10).map { step ->
+            state.update(start + step * frame, 1920f, 1080f, true, 0f)
+            drift.map { it.evaluate(state.values) }
+        }
+        val expected = 2 * PI * frame / 100.0
+        for ((before, after) in phases.zipWithNext()) {
+            var turned = after[0] - before[0]
+            turned -= 2 * PI * round(turned / (2 * PI))
+            assertEquals(expected, turned, 1e-9)
+            for (strand in 0 until 3) assertTrue("pulse ${after[strand * 4 + 2]}", after[strand * 4 + 2] in 0.0..1.0)
+        }
+    }
+
+    @Test
+    fun scenesExtendABaseSceneByOverridingVariablesAndReusingLayers() {
+        val shader = "uniform float gain; half4 main(float2 p) { return half4(gain); }".toByteArray()
+        val base = """{"version":1,"id":"base","name":"Base","frameRate":30,
+          "variables":{"pace":"time","gain":"pace * 2"},
+          "layers":[{"name":"sky","type":"shader","file":"sky.agsl","uniforms":{"gain":"gain"}},
+                    {"name":"dot","type":"disc","radius":2,"color":[1,1,1,1]}]}""".toByteArray()
+        val child = """{"version":1,"extends":"base.json","id":"child","name":"Child","frameRate":1,
+          "variables":{"pace":"time / 10","extra":"gain + 1"},"layers":["sky"]}"""
+        val entries = mapOf("base.json" to base, "sky.agsl" to shader)
+        val scene = parseThemeScene(child, "child.json", entries)!!
+        assertEquals(listOf("sky"), scene.layers.map { it.name })
+        val state = scene.state().apply { update(20.0, 100f, 100f, true, 0f) }
+        // The override keeps the base's position, so the base's later gain sees it.
+        assertEquals(4.0, state.values[scene.symbols.index("gain")], 1e-9)
+        assertEquals(5.0, state.values[scene.symbols.index("extra")], 1e-9)
+        assertEquals(1f, scene.frameRate.evaluate(state.values).toFloat(), 0f)
+        assertEquals(2, parseThemeScene(child.replace(""","layers":["sky"]""", ""), "child.json", entries)!!.layers.size)
+        for ((text, message) in listOf(
+            child.replace("\"sky\"]", "\"moon\"]") to "no layer named 'moon'",
+            child.replace("base.json", "gone.json") to "Missing base scene 'gone.json'",
+            child.replace("base.json", "child.json") to "loops",
+            """{"version":1,"id":"lone","name":"Lone","layers":["sky"]}""" to "only a scene that extends another",
+        )) {
+            val diagnostics = mutableListOf<ThemeDiagnostic>()
+            assertNull(parseThemeScene(text, "child.json", entries + ("child.json" to text.toByteArray()), diagnostics::add))
+            assertTrue(diagnostics.single().message, diagnostics.single().message.contains(message))
         }
     }
 
@@ -52,20 +107,20 @@ class ThemeSceneTest {
         val sampler = ScenePathSampler(bead.path!!, scene)
         val shimmer = scene.layers[2] as SceneLayer.Disc
         for (width in listOf(1240f, 1920f)) for (time in listOf(0f, 0.5f, 3.5f, 7.8f, 10f, 13.7f, 25.5f, 47.5f)) {
-            state.update(time, width, 1080f, true, 0f)
+            state.update(time.toDouble(), width, 1080f, true, 0f)
             val previous = BackdropFrame()
             layoutBackdrop(BackgroundMotion.Ribbons, time, width, 1080f, true, previous)
             for ((spec, kind) in listOf(bead to MarkKind.Bead, shimmer to MarkKind.Shimmer)) {
                 val expected = previous.discs.take(previous.discCount).firstOrNull { it.kind == kind }
-                assertEquals(expected != null, spec.color[3].evaluate(state.values) > 0f)
+                assertEquals(expected != null, spec.color[3].evaluate(state.values).toFloat() > 0f)
                 if (expected != null) {
                     val x: Float; val y: Float
                     if (spec.path != null) {
-                        sampler.sample(state.values, spec.along.evaluate(state.values)); x = sampler.x; y = sampler.y
-                    } else { x = spec.x.evaluate(state.values); y = spec.y.evaluate(state.values) }
+                        sampler.sample(state.values, spec.along.evaluate(state.values).toFloat()); x = sampler.x; y = sampler.y
+                    } else { x = spec.x.evaluate(state.values).toFloat(); y = spec.y.evaluate(state.values).toFloat() }
                     assertEquals(expected.cx, x, 0.01f); assertEquals(expected.cy, y, 0.01f)
                     listOf(expected.red, expected.green, expected.blue).forEachIndexed { index, value ->
-                        assertEquals(value.toFloat(), spec.color[index].evaluate(state.values) * 255f, 1.01f)
+                        assertEquals(value.toFloat(), spec.color[index].evaluate(state.values).toFloat() * 255f, 1.01f)
                     }
                 }
             }
@@ -79,17 +134,17 @@ class ThemeSceneTest {
         val line = scene.layers[0] as SceneLayer.Line
         val disc = scene.layers[1] as SceneLayer.Disc
         for (time in listOf(0f, 12f, 60f, 120f)) {
-            state.update(time, 1240f, 1080f, true, 1f)
+            state.update(time.toDouble(), 1240f, 1080f, true, 1f)
             val previous = BackdropFrame()
             layoutBackdrop(BackgroundMotion.Embers, time, 1240f, 1080f, true, previous)
             repeat(line.repeat) { index ->
                 state.instance(index)
-                assertEquals(previous.lines[index].y[0], line.y.evaluate(state.values), 0.01f)
+                assertEquals(previous.lines[index].y[0], line.y.evaluate(state.values).toFloat(), 0.01f)
             }
             repeat(disc.repeat) { index ->
                 state.instance(index)
-                assertEquals(previous.discs[index].cx, disc.x.evaluate(state.values), 0.01f)
-                assertEquals(previous.discs[index].cy, disc.y.evaluate(state.values), 0.01f)
+                assertEquals(previous.discs[index].cx, disc.x.evaluate(state.values).toFloat(), 0.01f)
+                assertEquals(previous.discs[index].cy, disc.y.evaluate(state.values).toFloat(), 0.01f)
             }
         }
     }
@@ -132,11 +187,11 @@ class ThemeSceneTest {
         val symbols = AnimationSymbols()
         val time = symbols.define("time")
         val expression = symbols.compile("if(time > 0, sin(pi / 2) * 4 + 2, 1 / 0)")
-        val values = FloatArray(symbols.size)
-        values[time] = 2f
-        assertEquals(6f, expression.evaluate(values), 0.0001f)
-        values[time] = 3f
-        assertEquals(6f, expression.evaluate(values), 0.0001f)
+        val values = DoubleArray(symbols.size)
+        values[time] = 2.0
+        assertEquals(6.0, expression.evaluate(values), 0.0001)
+        values[time] = 3.0
+        assertEquals(6.0, expression.evaluate(values), 0.0001)
         try { symbols.compile("launchGame(time)"); fail("Application functions must not resolve") } catch (_: IllegalStateException) {}
     }
 
@@ -164,17 +219,17 @@ class ThemeSceneTest {
           },"layers":[]
         }""", "tracks.json", emptyMap())!!
         val state = scene.state()
-        fun value(name: String) = state.values[scene.symbols.index(name)]
-        state.update(-0.5f, 100f, 100f, true, 0f)
+        fun value(name: String) = state.values[scene.symbols.index(name)].toFloat()
+        state.update(-0.5, 100f, 100f, true, 0f)
         assertEquals(5f, value("looped"), 0.0001f)
         assertEquals(2f, value("held"), 0.0001f)
-        state.update(0.25f, 100f, 100f, true, 0f)
+        state.update(0.25, 100f, 100f, true, 0f)
         assertEquals(2.5f, value("looped"), 0.0001f)
         assertEquals(3f, value("held"), 0.0001f)
         assertEquals(0.15625f, value("smooth"), 0.0001f)
         state.instance(1)
         assertEquals(7.5f, value("offset"), 0.0001f)
-        state.update(2f, 100f, 100f, true, 0f)
+        state.update(2.0, 100f, 100f, true, 0f)
         assertEquals(0f, value("looped"), 0.0001f)
         assertEquals(6f, value("held"), 0.0001f)
         assertNull(parseThemeScene("""{"version":1,"id":"bad","name":"Bad","variables":{"x":{"keyframes":[[1,0],[1,2]]}},"layers":[]}""", "duplicate-times.json", emptyMap()))
@@ -191,8 +246,8 @@ class ThemeSceneTest {
         val scene = parseThemeScene(text, "texture.json", mapOf("sky.agsl" to shader, "sky.png" to texture))!!
         assertSame(texture, scene.textures.getValue("sky.png"))
         assertEquals(mapOf("picture" to "sky.png"), (scene.layers[0] as SceneLayer.Shader).inputs)
-        val state = scene.state().apply { update(0f, 1920f, 1080f, false, 0f) }
-        assertEquals(960f, (scene.layers[1] as SceneLayer.Image).width.evaluate(state.values), 0.0001f)
+        val state = scene.state().apply { update(0.0, 1920f, 1080f, false, 0f) }
+        assertEquals(960f, (scene.layers[1] as SceneLayer.Image).width.evaluate(state.values).toFloat(), 0.0001f)
         val diagnostics = mutableListOf<ThemeDiagnostic>()
         assertNull(parseThemeScene(text, "texture.json", mapOf("sky.agsl" to shader), diagnostics::add))
         assertTrue(diagnostics.single().message.contains("sky: Missing asset 'sky.png'"))

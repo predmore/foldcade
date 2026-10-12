@@ -69,12 +69,14 @@ Styles are resolved once into typed values. Invalid tokens report their manifest
     "name": "sky",
     "type": "shader",
     "file": "backgrounds/stars.agsl",
-    "uniforms": {"size": ["width", "height"], "elapsed": "time", "gain": "pulse"}
+    "uniforms": {"size": ["width", "height"], "phase": "fract(time / 20)", "gain": "pulse"}
   }]
 }
 ```
 
 The shader's uniforms must agree with the names and component counts bound by the scene. Shader source is compiled when the scene is prepared, not during each frame. Shader brushes, textures, expression trees, and path sampling buffers are reused. `uniforms` accepts a scalar or an array, including arrays of vectors. Optional `inputs` maps shader-input names to image assets; these use pixel coordinates and clamp at their edges.
+
+A scene can build on another scene in the same pack with `"extends": "backgrounds/base.json"`. Its own top-level keys replace the base's. Its `variables` replace same-named base variables in their original position, so later base variables see the override, and new names are appended. `layers` is inherited when omitted. When given, each entry is either a layer object or the name of a base layer to reuse unchanged. Bases may extend other bases, up to eight deep. A base scene does not need to be listed in `scenes`. Afterglow's Static extends Ribbons, slows its `pace`, turns off its `live` effects, dims its `breath`, and keeps only the shader layer.
 
 Layers are drawn in order. Each supports a name, a positive integer `repeat` (default 1), and `blend`: `srcOver`, `lighten`, `plus`, `screen`, or `multiply`.
 
@@ -83,7 +85,7 @@ Layers are drawn in order. Each supports a name, a positive integer `repeat` (de
 - **line:** `x`, `y`, `endX`, `endY`, stroke `width`, and RGBA `color`.
 - **image:** `file`, `x`, `y`, `width`, `height`, optional `alpha` (default 1) and `rotation` in degrees.
 
-Numeric properties can be numbers, arithmetic-expression strings, or keyframe tracks. Available inputs are `time` in design seconds, `width`/`height` of the render target, `panel` (top 0, bottom 1), `moving` (0/1), `clock`, repeated-layer `index`, and sampled-path `u` (0–1). `pi` is constant. Variables are evaluated in declaration order and can refer to preceding variables. Repeat-local variables are reevaluated for each instance.
+Numeric properties can be numbers, arithmetic-expression strings, or keyframe tracks. Expressions evaluate in double precision, so `time` stays exact through months of uptime. Values reach shaders as 32-bit floats, which lose a frame's worth of precision after about a day. Pass shaders a wrapped phase such as `fract(time / 20)` or `2*pi*fract(time / 20)`, not raw `time`. Available inputs are `time` in design seconds, `width`/`height` of the render target, `panel` (top 0, bottom 1), `moving` (0/1), `clock`, repeated-layer `index`, and sampled-path `u` (0–1). `pi` is constant. Variables are evaluated in declaration order and can refer to preceding variables. Repeat-local variables are reevaluated for each instance.
 
 Path samples reevaluate variables that depend directly or indirectly on `u`, including keyframe tracks, then restore the instance's values. Runtime errors in scene-wide variables or `frameRate` stop that scene and emit one diagnostic; layer errors disable only the failed layer.
 

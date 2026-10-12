@@ -2,9 +2,13 @@ package app.foldcade.language
 
 import kotlin.math.*
 
-/** Compiled, side-effect-free arithmetic. Theme expressions cannot call application code. */
+/**
+ * Compiled, side-effect-free arithmetic. Theme expressions cannot call application code.
+ * They evaluate in double precision, so a scene clock that has run for months still
+ * moves smoothly; renderers narrow each result to Float at the GPU or Canvas.
+ */
 fun interface AnimationExpression {
-    fun evaluate(values: FloatArray): Float
+    fun evaluate(values: DoubleArray): Double
     val dependencies: Set<Int> get() = emptySet()
 }
 
@@ -13,7 +17,7 @@ internal class CompiledAnimationExpression(
     override val dependencies: Set<Int>,
 ) : AnimationExpression by expression
 
-/** Symbols resolve once, while loading; frames only read a reusable float array. */
+/** Symbols resolve once, while loading; frames only read a reusable value array. */
 class AnimationSymbols {
     private val names = linkedMapOf<String, Int>()
     val size: Int get() = names.size
@@ -74,7 +78,7 @@ private class ExpressionReader(private val source: String, private val symbols: 
                 if (at < source.length && source[at] in "+-") at++
                 while (at < source.length && source[at].isDigit()) at++
             }
-            val number = source.substring(start, at).toFloat()
+            val number = source.substring(start, at).toDouble()
             require(number.isFinite()) { "Nonfinite literal in '$source'" }
             return AnimationExpression { number }
         }
@@ -83,7 +87,7 @@ private class ExpressionReader(private val source: String, private val symbols: 
         val name = source.substring(start, at)
         space()
         if (!take('(')) {
-            if (name == "pi") return AnimationExpression { PI.toFloat() }
+            if (name == "pi") return AnimationExpression { PI }
             val slot = symbols.index(name)
             dependencies += slot
             return AnimationExpression { it[slot] }
@@ -106,7 +110,7 @@ private class ExpressionReader(private val source: String, private val symbols: 
             when (name) {
                 "sin" -> sin(a); "cos" -> cos(a); "abs" -> abs(a); "floor" -> floor(a)
                 "ceil" -> ceil(a); "sqrt" -> sqrt(a); "fract" -> a - floor(a); "smooth" -> smooth(a)
-                "if" -> args[if (a != 0f) 1 else 2].evaluate(values)
+                "if" -> args[if (a != 0.0) 1 else 2].evaluate(values)
                 else -> {
                     val b = args[1].evaluate(values)
                     when (name) {
@@ -119,10 +123,10 @@ private class ExpressionReader(private val source: String, private val symbols: 
                                     val fade = args[3].evaluate(values)
                                     val along = a - b
                                     when {
-                                        along < 0f || along > c -> 0f
+                                        along < 0.0 || along > c -> 0.0
                                         along < fade -> smooth(along / fade)
                                         along > c - fade -> smooth((c - along) / fade)
-                                        else -> 1f
+                                        else -> 1.0
                                     }
                                 }
                             }
@@ -136,11 +140,11 @@ private class ExpressionReader(private val source: String, private val symbols: 
     private fun space() { while (at < source.length && source[at].isWhitespace()) at++ }
 }
 
-private fun flag(value: Boolean) = if (value) 1f else 0f
-private fun smooth(value: Float): Float { val t = value.coerceIn(0f, 1f); return t * t * (3f - 2f * t) }
-private fun hash(turn: Int, salt: Int): Float {
+private fun flag(value: Boolean) = if (value) 1.0 else 0.0
+private fun smooth(value: Double): Double { val t = value.coerceIn(0.0, 1.0); return t * t * (3.0 - 2.0 * t) }
+private fun hash(turn: Int, salt: Int): Double {
     var mixed = turn * 374761393 + salt * 668265263
     mixed = mixed xor (mixed ushr 13)
     mixed *= 1274126177
-    return ((mixed.toLong() and 0x7fffffffL) % 10000L) / 10000f
+    return ((mixed.toLong() and 0x7fffffffL) % 10000L) / 10000.0
 }

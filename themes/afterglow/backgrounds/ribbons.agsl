@@ -4,6 +4,7 @@ uniform float2 size;
 // Per strand: center, sweep, and wave as fractions of the height, then wave cycles across the panel.
 uniform float4 shape[3];
 // Per strand: sweep phase, wave phase, pulse, then sweep cycles across the panel.
+// Phases and pulse arrive wrapped to one cycle, so they stay exact however long the clock runs.
 // Each strand drifts on its own clock, so the strands slide across one another.
 uniform float4 drift[3];
 uniform float4 start[9];
@@ -43,8 +44,7 @@ float edgeFade(float t) {
 // [edge] and [swelling] depend only on t, so main computes them once for every strand.
 float ribbonGain(float t, float edge, float swelling, float pulse) {
     if (edge <= 0.0) return 0.0;
-    float moving = pulse == 0.0 ? 0.22 : pulse;
-    float spots = knot(t, moving) * 0.9 + knot(t, moving + 0.46) * 0.5;
+    float spots = knot(t, pulse) * 0.9 + knot(t, pulse + 0.46) * 0.5;
     return clamp(edge * (swelling * 0.58 + spots), 0.0, 1.0);
 }
 
