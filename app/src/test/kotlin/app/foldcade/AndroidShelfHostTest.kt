@@ -12,11 +12,18 @@ import app.foldcade.api.plugin.SaveDeclaration
 import app.foldcade.api.plugin.StartDisplay
 import app.foldcade.host.PluginHost
 import app.foldcade.language.Copy
+import app.foldcade.language.HOME_ALL
+import app.foldcade.language.HOME_ANDROID_GAMES
+import app.foldcade.language.HomeBoard
+import app.foldcade.language.HomeFolder
 import app.foldcade.language.HomeGrid
 import app.foldcade.language.HostScreen
 import app.foldcade.language.LaunchableApp
 import app.foldcade.language.Meaning
 import app.foldcade.language.Row
+import app.foldcade.language.androidHomeId
+import app.foldcade.language.decodeHome
+import app.foldcade.language.encodeHome
 import app.foldcade.language.leftRows
 import app.foldcade.language.panelRows
 import java.io.File
@@ -110,7 +117,9 @@ class AndroidShelfHostTest {
         assertTrue(shell.focusedGame()?.favorite == true)
         assertEquals(Copy.unpin, rowLabelAt(shell, 0))
 
-        shell.onMeaning(Meaning.MoveDown, HostScreen.Bottom)
+        repeat(panelRows(shell.model.panel!!, shell.model).indexOf(Row.MoveApp)) {
+            shell.onMeaning(Meaning.MoveDown, HostScreen.Bottom)
+        }
         shell.onMeaning(Meaning.Activate, HostScreen.Bottom)
         assertEquals(HomeGrid.Apps, shell.model.homeGrid)
         assertEquals(0, shell.model.count)
@@ -153,6 +162,99 @@ class AndroidShelfHostTest {
         shell.onMeaning(Meaning.Activate, HostScreen.Bottom)
         val restored = SessionStore(prefs).appShelfState()
         assertTrue(restored.record(settings.packageName).favorite)
+    }
+
+    @Test
+    fun bAfterLOneAppsReturnsToHomeWhenOpenedFromAFolder() {
+        val shell = ShellController(SessionStore(MemoryPrefs()), PluginHost(Dispatchers.Unconfined, MemoryCredentialStore()))
+        shell.setInstalledApps(listOf(settings), emptySet())
+        shell.onMeaning(Meaning.MoveDown, HostScreen.Bottom)
+        shell.onMeaning(Meaning.Activate, HostScreen.Bottom)
+        assertEquals("Settings", shell.focusedGame()?.title)
+
+        shell.onMeaning(Meaning.LeftPanel, HostScreen.Bottom)
+        choose(shell, Row.Apps)
+        assertEquals(HomeGrid.Apps, shell.model.homeGrid)
+        assertNull(shell.onMeaning(Meaning.Back, HostScreen.Bottom))
+        assertEquals(HomeGrid.StandIns, shell.model.homeGrid)
+        assertTrue(shell.atRest())
+        assertTrue("Android Apps" in titles(shell))
+    }
+
+    @Test
+    fun addAppToHomeKeepsItInAppsAndRemembersOneHomeTile() {
+        val prefs = MemoryPrefs()
+        val store = SessionStore(prefs)
+        val shell = ShellController(store, PluginHost(Dispatchers.Unconfined, MemoryCredentialStore()))
+        shell.setInstalledApps(listOf(settings, game), emptySet())
+        shell.showHomeGrid(HomeGrid.Apps)
+        shell.onMeaning(Meaning.Options, HostScreen.Bottom)
+        choose(shell, Row.AddAppTo)
+        val destinations = panelRows(shell.model.panel!!, shell.model)
+        assertEquals(Row.Destination(null, Copy.homeSlot), destinations.first())
+        assertTrue(Row.Destination(HOME_ANDROID_GAMES, "Android Games") in destinations)
+        val before = store.homeBoardRaw()
+        shell.onMeaning(Meaning.Back, HostScreen.Bottom)
+        assertEquals(Row.AddAppTo, panelRows(shell.model.panel!!, shell.model)[shell.model.panel!!.index])
+        assertEquals(before, store.homeBoardRaw())
+
+        shell.onMeaning(Meaning.Activate, HostScreen.Bottom)
+        shell.onMeaning(Meaning.Activate, HostScreen.Bottom)
+        assertNull(shell.model.panel)
+        assertEquals(HomeGrid.Apps, shell.model.homeGrid)
+        assertEquals("Settings", shell.focusedGame()?.title)
+        assertNull(store.appShelfState().record(settings.packageName).shelf)
+        val placed = decodeHome(store.homeBoardRaw())
+        assertTrue(androidHomeId(settings.packageName) in placed.slots)
+        assertEquals(1, (placed.slots + placed.folders.values.flatMap { it.slots }).count { it == androidHomeId(settings.packageName) })
+
+        val restarted = ShellController(SessionStore(prefs), PluginHost(Dispatchers.Unconfined, MemoryCredentialStore()))
+        restarted.setInstalledApps(listOf(settings, game), emptySet())
+        assertTrue("Settings" in titles(restarted))
+        shell.onMeaning(Meaning.Back, HostScreen.Bottom)
+        assertTrue("Settings" in titles(shell))
+        assertTrue(shell.atRest())
+    }
+
+    @Test
+    fun addAppToAUserFolderRestoresAnAppRemovedFromHome() {
+        val prefs = MemoryPrefs()
+        val store = SessionStore(prefs)
+        val folder = HomeFolder("home.user.1", "Utilities", userMade = true)
+        val id = androidHomeId(settings.packageName)
+        store.saveHomeBoard(encodeHome(HomeBoard(
+            slots = listOf(HOME_ALL, folder.id),
+            folders = mapOf(folder.id to folder),
+            hidden = setOf(id),
+            addNewToHome = false,
+        )))
+        val notes = LaunchableApp("com.example.notes", "Notes", systemGame = false)
+        val shell = ShellController(store, PluginHost(Dispatchers.Unconfined, MemoryCredentialStore()))
+        shell.setInstalledApps(listOf(settings, notes), emptySet())
+        shell.showHomeGrid(HomeGrid.Apps)
+        shell.onMeaning(Meaning.MoveDown, HostScreen.Bottom)
+        assertEquals("Settings", shell.focusedGame()?.title)
+        shell.onMeaning(Meaning.Options, HostScreen.Bottom)
+        choose(shell, Row.AddAppTo)
+        choose(shell, Row.Destination(folder.id, folder.name))
+
+        val placed = decodeHome(store.homeBoardRaw())
+        assertEquals(listOf(id), placed.folders[folder.id]?.slots)
+        assertFalse(id in placed.hidden)
+        assertFalse(placed.addNewToHome)
+        assertEquals(HomeGrid.Apps, shell.model.homeGrid)
+        assertEquals(listOf("Notes", "Settings"), titles(shell))
+        assertFalse(androidHomeId(notes.packageName) in placed.slots)
+        shell.setInstalledApps(listOf(settings, notes), emptySet())
+        assertEquals(listOf(id), decodeHome(store.homeBoardRaw()).folders[folder.id]?.slots)
+    }
+
+    private fun choose(shell: ShellController, row: Row) {
+        val panel = shell.model.panel ?: error("panel closed")
+        val index = panelRows(panel, shell.model).indexOf(row)
+        check(index >= 0) { "missing row $row" }
+        repeat(index - panel.index) { shell.onMeaning(Meaning.MoveDown, HostScreen.Bottom) }
+        shell.onMeaning(Meaning.Activate, HostScreen.Bottom)
     }
 
     private fun titles(shell: ShellController): List<String> {

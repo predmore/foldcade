@@ -243,6 +243,10 @@ class ShellController(
                 }
                 publish(focusPackage(next, packageName))
             }
+            is Effect.AddAppTo -> {
+                if (packageName != null && home.placeIn(androidHomeId(packageName), effect.folderId)) syncHome()
+                publish(next.copy(shelfEpoch = next.shelfEpoch + 1))
+            }
             Effect.MoveApp -> {
                 if (packageName != null) {
                     val destination = if (current.homeGrid == HomeGrid.AndroidGames) {
@@ -276,7 +280,7 @@ class ShellController(
             store.saveButtonPrompt(inputDeviceKey, store.buttonPromptConfirm(inputDeviceKey), dismissed = true)
         }
         return when (effect) {
-            Effect.PinApp, Effect.MoveApp, Effect.HideApp, Effect.ShowApp,
+            Effect.PinApp, is Effect.AddAppTo, Effect.MoveApp, Effect.HideApp, Effect.ShowApp,
             -> null
             Effect.MoveTile -> {
                 pickUpHome(model.focus.cellIndex)
@@ -1540,6 +1544,7 @@ class ShellController(
             favorite = record.favorite,
             onGamesShelf = snapshot.homeGrid == HomeGrid.AndroidGames,
             hiddenShelf = snapshot.homeGrid == HomeGrid.HiddenApps,
+            destinations = home.placementDestinations(),
         )
     }
 

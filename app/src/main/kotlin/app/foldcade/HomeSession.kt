@@ -325,6 +325,20 @@ class HomeSession(raw: String?) {
         return true
     }
 
+    /** Destinations for placing an app from a shelf, with Home first. */
+    fun placementDestinations(): List<FolderChoice> = listOf(FolderChoice(null, Copy.homeSlot)) +
+        board.slots.mapNotNull { board.folders[it] }.map { FolderChoice(it.id, it.name) }
+
+    /** Places a catalog item at the chosen destination, moving any existing home tile. */
+    fun placeIn(id: String, folderId: String?): Boolean {
+        if (catalog().none { it.id == id }) return false
+        if (folderId != null && folderId !in board.folders) return false
+        val next = moveToFolder(board.copy(hidden = board.hidden - id), id, folderId)
+        if (next == board) return false
+        board = next
+        return true
+    }
+
     /** Leaves any folder, All, a lifted tile, or a name field. Returns the root tile to focus. */
     fun showRoot(): Int {
         renamingId = null
