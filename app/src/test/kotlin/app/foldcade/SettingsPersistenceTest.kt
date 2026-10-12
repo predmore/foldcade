@@ -113,7 +113,7 @@ class SettingsPersistenceTest {
         assertEquals("dusk", SessionStore(prefs).musicTrackId())
         val restored = ShellController(
             SessionStore(prefs), PluginHost(Dispatchers.Unconfined, MemoryCredentialStore()),
-            homeTracks = listOf(defaultLanternlightTrack(), MusicTrack("dusk", "Dusk", "Foldcade", "GPLv3", "music/dusk.ogg")),
+            homeTracks = listOf(defaultLanternlightTrack(), MusicTrack("dusk", "Dusk", "Foldcade", "MIT", "music/dusk.ogg")),
         )
         assertEquals(HomeMusicSetting(false, 0.25f, "dusk"), restored.model.music)
     }

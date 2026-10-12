@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Foldcade original art, CC BY-SA 4.0 (see LICENSE). Alias of ic_btn_face_diamond_n_filled. Nintendo-style face diamond (X top, Y left, A right, B bottom) -->
+<!-- Foldcade original art, MIT licensed (see LICENSE). Alias of ic_btn_face_diamond_n_filled. Nintendo-style face diamond (X top, Y left, A right, B bottom) -->
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:aapt="http://schemas.android.com/aapt"
     android:width="24dp"

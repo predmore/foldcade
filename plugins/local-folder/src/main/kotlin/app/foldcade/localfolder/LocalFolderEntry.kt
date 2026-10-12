@@ -14,8 +14,7 @@ import app.foldcade.api.plugin.PluginEntry
  * Ids that already match a RomM slug, such as `snes` and `psp`, stay the id.
  * This entry does not contribute a metadata provider.
  *
- * This bundled entry stays under the GNU GPLv3. An independent plugin that
- * uses only the published API may use any license.
+ * This bundled entry is licensed under MIT.
  */
 class LocalFolderEntry : PluginEntry {
     override val apiVersion: Int = PLUGIN_API_VERSION

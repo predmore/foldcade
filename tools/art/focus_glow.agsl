@@ -1,4 +1,4 @@
-// Foldcade Afterglow focus glow (AGSL, RuntimeShader, API 33+). GPLv3 program source.
+// Foldcade Afterglow focus glow (AGSL, RuntimeShader, API 33+). MIT program source.
 // Draw on a layer the size of the tile plus `margin` on each side, behind the opaque tile.
 // Smooth, ring-free falloff: same curve as the vector halos and the glow sprites.
 uniform float2 size;      // layer size in px

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Build every Foldcade art asset. GPLv3 program; its outputs are CC BY-SA 4.0 art."""
+"""Build every Foldcade art asset. Script and original outputs are MIT licensed."""
 import io, os, shutil, math
 import numpy as np, cairosvg
 from PIL import Image, ImageDraw, ImageFont, ImageFilter

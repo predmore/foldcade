@@ -27,8 +27,7 @@ import app.foldcade.api.plugin.StartDisplay
  * both displays, or its own launch code gets its own plugin, like Azahar and
  * melonDS. The host stores this entry whole, so one bad row drops every player.
  *
- * This bundled entry stays under the GNU GPLv3. An independent plugin that
- * uses only the published API may use any license.
+ * This bundled entry is licensed under MIT.
  */
 class EmulatorsEntry : PluginEntry {
     override val apiVersion: Int = PLUGIN_API_VERSION

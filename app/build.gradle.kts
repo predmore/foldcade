@@ -212,11 +212,12 @@ val renderHomeMusic = tasks.register<RenderHomeMusicTask>("renderHomeMusic") {
     previewDir.set(layout.buildDirectory.dir("home-music-preview"))
 }
 
-// licenses/MuseScore_General_License.md stays the source text. The APK asset is that file.
-val packageMuseScoreLicense = tasks.register<PackageMuseScoreLicenseTask>("packageMuseScoreLicense") {
+// Package the source notices verbatim in debug and release APKs.
+val packageLicenses = tasks.register<PackageLicensesTask>("packageLicenses") {
     group = "build"
-    description = "Package the MuseScore General MIT notice as an APK asset."
-    license.set(rootProject.layout.projectDirectory.file("licenses/MuseScore_General_License.md"))
+    description = "Package the Foldcade and MuseScore General MIT notices as APK assets."
+    foldcadeLicense.set(rootProject.layout.projectDirectory.file("LICENSE"))
+    museScoreLicense.set(rootProject.layout.projectDirectory.file("licenses/MuseScore_General_License.md"))
     assetsDir.set(layout.buildDirectory.dir("generated/licenseAssets"))
 }
 
@@ -240,8 +241,8 @@ androidComponents {
         variant.sources.assets?.addGeneratedSourceDirectory(packageAfterglowTheme, PackageThemeTask::assetsDir)
         variant.sources.assets?.addGeneratedSourceDirectory(renderHomeMusic, RenderHomeMusicTask::assetsDir)
         variant.sources.assets?.addGeneratedSourceDirectory(
-            packageMuseScoreLicense,
-            PackageMuseScoreLicenseTask::assetsDir,
+            packageLicenses,
+            PackageLicensesTask::assetsDir,
         )
     }
 }
@@ -294,9 +295,12 @@ abstract class PackageThemeIconsTask : DefaultTask() {
     }
 }
 
-abstract class PackageMuseScoreLicenseTask : DefaultTask() {
+abstract class PackageLicensesTask : DefaultTask() {
     @get:InputFile
-    abstract val license: RegularFileProperty
+    abstract val foldcadeLicense: RegularFileProperty
+
+    @get:InputFile
+    abstract val museScoreLicense: RegularFileProperty
 
     @get:OutputDirectory
     abstract val assetsDir: DirectoryProperty
@@ -306,7 +310,8 @@ abstract class PackageMuseScoreLicenseTask : DefaultTask() {
         val dest = assetsDir.get().asFile
         dest.deleteRecursively()
         dest.mkdirs()
-        license.get().asFile.copyTo(dest.resolve("MuseScore_General_License.md"), overwrite = true)
+        foldcadeLicense.get().asFile.copyTo(dest.resolve("Foldcade_LICENSE.txt"), overwrite = true)
+        museScoreLicense.get().asFile.copyTo(dest.resolve("MuseScore_General_License.md"), overwrite = true)
     }
 }
 

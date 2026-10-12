@@ -4,7 +4,7 @@
       "id": "lanternlight",
       "title": "Lanternlight",
       "composer": "Foldcade project",
-      "license": "GPLv3",
+      "license": "MIT",
       "file": "music/lanternlight.ogg"
     }
   ]

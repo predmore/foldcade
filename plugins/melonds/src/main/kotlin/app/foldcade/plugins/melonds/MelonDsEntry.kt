@@ -20,8 +20,7 @@ import app.foldcade.api.plugin.StartDisplay
  * not declare that platform again. On this host a second declaration is rejected
  * and the player would be dropped with it. This entry does not scan a folder.
  *
- * This bundled entry stays under the GNU GPLv3. An independent plugin that
- * uses only the published API may use any license.
+ * This bundled entry is licensed under MIT.
  */
 class MelonDsEntry : PluginEntry {
     override val apiVersion: Int = PLUGIN_API_VERSION

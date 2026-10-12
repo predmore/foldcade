@@ -68,7 +68,7 @@ fun defaultLanternlightTrack(): MusicTrack = MusicTrack(
     id = HomeMusicSetting.DEFAULT_TRACK_ID,
     title = DEFAULT_TRACK_TITLE,
     composer = "Foldcade project",
-    license = "GPLv3",
+    license = "MIT",
     file = DEFAULT_BACKGROUND_MUSIC,
 )
 

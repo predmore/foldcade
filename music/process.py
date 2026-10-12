@@ -72,7 +72,7 @@ ap.add_argument('--variant', default='a')
 ap.add_argument('--out')
 ap.add_argument('--title', default='Lanternlight')
 ap.add_argument('--composer', default='Foldcade project')
-ap.add_argument('--license', default='GPLv3')
+ap.add_argument('--license', default='MIT')
 args = ap.parse_args()
 V = args.variant
 D = args.out or f'out/{V}'

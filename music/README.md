@@ -2,7 +2,7 @@
 
 Tracks live in `tracks/<id>/` with their own `compose.py`. `tracks/manifest.json` lists each track's id, title, composer, license, and packaged file. The setting stores the track id and defaults to `lanternlight`. L1's Track row cycles those tracks. A activates the next one. Left and right move through them and stay on the row.
 
-The shipped track is **Lanternlight**, composed by the Foldcade project and licensed under GPLv3 with this repository, the same choice as the theme art.
+The shipped track is **Lanternlight**, composed by the Foldcade project and licensed under MIT with this repository, the same choice as the original theme art.
 
 ## Lanternlight
 

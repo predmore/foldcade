@@ -1,25 +1,23 @@
 # Licensing
 
-This page says, in plain language, which license covers what. It is not legal advice.
+Foldcade's original code, artwork, and music are licensed under [MIT](../LICENSE). This includes the app, plugin API, bundled plugins, samples, tools, Afterglow's original theme assets and shaders, and the Lanternlight composition. Include the MIT copyright and permission notice when distributing copies or substantial portions of this work.
 
 ## Themes
 
-A theme is a resource pack. Its manifest, images, and sounds are data. Optional AGSL shaders are graphics program source; themes do not load Java, Kotlin, DEX, or native application code. A theme can use any license.
+A theme is a resource pack. Its manifest, images, and sounds are data. Optional AGSL shaders are graphics program source; themes do not load Java, Kotlin, DEX, or native application code. Theme authors may choose any license for their original work. Retain the MIT notice when reusing Foldcade's original assets or shaders.
 
-A theme that ships in this repository keeps the license written next to those files. Afterglow's art is CC BY-SA 4.0, its font is the SIL Open Font License, and its shader source is GPLv3. See [credits](../licenses/CREDITS.md) and the [theme author guide](themes.md).
+Afterglow includes its [MIT license](../themes/afterglow/LICENSE) and the separate [SIL Open Font License](../themes/afterglow/OFL-Nunito.txt) for Nunito Regular. See [credits](../licenses/CREDITS.md) and the [theme author guide](themes.md).
 
-## External plugins
+## Plugins and API
 
-A plugin that is not in this repository, and that talks to Foldcade only through the published plugin API, can use any license.
+The published plugin API is the `:api` module. It is [MIT licensed](../api/LICENSE), as are the bundled plugins and samples. The API JAR includes the MIT notice in `META-INF/LICENSE`.
 
-That permission is the Foldcade Plugin Exception, a [GPLv3 section 7](../LICENSE) additional permission, at the top of the main license.
+Plugin authors may choose any license for their original work. Retain the MIT notice when reusing Foldcade code. No special licensing exception is needed.
 
-## Bundled code
+## Third-party material
 
-Code in this repository is GNU GPLv3, except where a file says otherwise. Plugins and samples that ship here are GPLv3, including the sample that shows the out-of-tree shape.
+- Nunito Regular remains under the [SIL Open Font License](../themes/afterglow/OFL-Nunito.txt).
+- MuseScore General remains under its [MIT license and acknowledgements](../licenses/MuseScore_General_License.md). Retain these notices for the rendered home music.
+- Dependencies retain their own licenses and notices.
 
-## Plugin API
-
-The published plugin API is the `:api` module. It is Apache License 2.0. The license text is [api/LICENSE](../api/LICENSE).
-
-The published theme format is the theme zip described above. Writing a theme against that format does not make the theme GPLv3. The code in this repository that reads a theme stays GPLv3.
+The APK bundles Foldcade's MIT notice and the MuseScore General notice, and displays both on the Licenses screen. The bundled Afterglow ZIP includes its MIT notice and Nunito's OFL notice. Full credits are in [licenses/CREDITS.md](../licenses/CREDITS.md).

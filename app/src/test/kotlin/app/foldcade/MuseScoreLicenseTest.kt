@@ -13,7 +13,7 @@ class MuseScoreLicenseTest {
         assertTrue(activity.contains("android:exported=\"false\""))
         val gradle = File("build.gradle.kts").readText()
         assertTrue(gradle.contains("licenses/MuseScore_General_License.md"))
-        assertTrue(gradle.contains("packageMuseScoreLicense"))
+        assertTrue(gradle.contains("packageLicenses"))
         assertFalse(File("src/main/assets/$MUSESCORE_LICENSE_ASSET").isFile)
         val notice = licenseFile().readText()
         listOf(

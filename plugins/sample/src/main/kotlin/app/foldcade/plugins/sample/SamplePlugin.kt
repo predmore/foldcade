@@ -30,8 +30,7 @@ import kotlinx.coroutines.yield
  * In-tree sample. It implements the four interfaces and does nothing else.
  * Library and metadata are separate objects so the host can store them in separate slots.
  *
- * This bundled sample stays under the GNU GPLv3. An independent plugin that
- * uses only this entry point may use any license.
+ * This bundled sample is licensed under MIT.
  *
  * Set `apiMinor = PLUGIN_API_MINOR`. That is the additive revision this plugin
  * was compiled against. Leaving the interface default, 0, marks an older minor.

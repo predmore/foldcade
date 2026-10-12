@@ -1,6 +1,6 @@
 # Plugins
 
-The contract lives in `:api` ([Apache-2.0](../api/LICENSE)). The host that loads it is `:host`. Samples are `:plugins:sample` and `:samples:out-of-tree`.
+The contract lives in `:api` ([MIT](../api/LICENSE)). The host that loads it is `:host`. Samples are `:plugins:sample` and `:samples:out-of-tree`.
 
 ## Stability
 
@@ -47,7 +47,7 @@ Setup runs again only when nothing is stored, when credential lookup returns `Un
 
 RomM recovery opens the saved connection that failed and replaces only its token. Refreshes run independently, with at most three servers loading at once; a new refresh cancels the previous one. Artwork routes to a configured server by origin and base path, with a separate client and cache per server. Cover search for games outside RomM uses the first saved server, including an additional server when the original has been removed.
 
-An independent plugin that is not in this repository, and that uses only this API, may use any license. Plugins shipped here stay GPLv3. See [licensing](licensing.md).
+Plugin authors may choose any license for their original work. The API, bundled plugins, and samples are MIT licensed; retain the MIT notice when reusing their code. See [licensing](licensing.md).
 
 ## Emulators
 
