@@ -1,8 +1,8 @@
 # Contributing
 
-Foldcade is licensed under the [GNU GPLv3](LICENSE), with the plugin exception in that file. The plugin API in `api/` is [Apache-2.0](api/LICENSE). The plain-language map is [licensing](docs/licensing.md).
+Foldcade's original code, artwork, and music are licensed under [MIT](LICENSE), including the plugin API, bundled plugins, samples, and tools. The plain-language map is [licensing](docs/licensing.md).
 
-Contributions are accepted under these terms. Inbound equals outbound: a contribution is licensed the same way as the file it changes. A change under `api/` is Apache-2.0. A change to the rest of the program is GPLv3, including the plugin exception. A file that already names another license stays under that license.
+Original contributions are accepted under MIT. Preserve the license and attribution notices for third-party material, including the Nunito font and MuseScore General SoundFont.
 
 - [Building](docs/building.md)
 - [Plugins](docs/plugins.md)

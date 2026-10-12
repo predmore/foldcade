@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: GPL-3.0-only
+// SPDX-License-Identifier: MIT
 // Afterglow scene shader. All uniforms are bound by the scene manifest.
 uniform float2 size;
 uniform float travel;

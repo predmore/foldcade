@@ -122,9 +122,9 @@ Not yet. Foldcade is early and in active development, so things will change and 
 
 ## License and credits
 
-Foldcade is open source under the [GNU GPLv3](LICENSE) ([licensing](docs/licensing.md)).
+Foldcade's original code, artwork, and music are open source under [MIT](LICENSE) ([licensing](docs/licensing.md)).
 
-Credits for the home music and the theme art are in [licenses/CREDITS.md](licenses/CREDITS.md). Afterglow’s marks, preview, and sounds are original and licensed under [CC BY-SA 4.0](themes/afterglow/LICENSE). Its display face is Nunito Regular under the [SIL Open Font License](themes/afterglow/OFL-Nunito.txt). Its shaders are GPLv3. The resource-theme format, composition rules, and native preview are in the [theme author guide](docs/themes.md).
+Credits for the home music and the theme art are in [licenses/CREDITS.md](licenses/CREDITS.md). Afterglow's original art, sounds, and shaders are licensed under [MIT](themes/afterglow/LICENSE). Its display face is Nunito Regular under the [SIL Open Font License](themes/afterglow/OFL-Nunito.txt). The resource-theme format, composition rules, and native preview are in the [theme author guide](docs/themes.md).
 
 ## For developers
 

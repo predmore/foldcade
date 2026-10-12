@@ -366,7 +366,7 @@ class ShellHostTest {
             onMusic = { ids += it.trackId },
             homeTracks = listOf(
                 defaultLanternlightTrack(),
-                MusicTrack("dusk", "Dusk", "Foldcade project", "GPLv3", "music/dusk.ogg"),
+                MusicTrack("dusk", "Dusk", "Foldcade project", "MIT", "music/dusk.ogg"),
             ),
         )
         shell.openSetting(Row.MusicTrack)

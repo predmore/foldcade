@@ -109,7 +109,7 @@ def to_svg(a, px=None, bg=None):
     W, H = (px or a.w), (px or a.h) * a.h / a.w if px else a.h
     bgr = f'<rect width="{f(a.w)}" height="{f(a.h)}" fill="{bg}"/>' if bg else ""
     return (f'<svg xmlns="http://www.w3.org/2000/svg" width="{f(W)}" height="{f(H)}" viewBox="0 0 {f(a.w)} {f(a.h)}">'
-            f'<!-- Foldcade original art, CC BY-SA 4.0. {escape(a.note)} -->'
+            f'<!-- Foldcade original art, MIT licensed. {escape(a.note)} -->'
             f'<defs>{"".join(defs)}</defs>{bgr}{"".join(body)}</svg>\n')
 
 def _vd_grad(attr, p, ind):
@@ -125,7 +125,7 @@ def _vd_grad(attr, p, ind):
 
 def to_vd(a):
     out = ['<?xml version="1.0" encoding="utf-8"?>',
-           f'<!-- Foldcade original art, CC BY-SA 4.0 (see LICENSE). {escape(a.note)} -->',
+           f'<!-- Foldcade original art, MIT licensed (see LICENSE). {escape(a.note)} -->',
            '<vector xmlns:android="http://schemas.android.com/apk/res/android"',
            '    xmlns:aapt="http://schemas.android.com/aapt"',
            f'    android:width="{f(a.dp[0])}dp"', f'    android:height="{f(a.dp[1])}dp"',

@@ -24,11 +24,12 @@ import app.foldcade.language.Theme
 import app.foldcade.language.TypeRamp
 import kotlinx.coroutines.launch
 
-/** Asset name of licenses/MuseScore_General_License.md. The repo file is the source text. */
+/** Asset names for the source notices packaged by packageLicenses. */
+internal const val FOLDCADE_LICENSE_ASSET = "Foldcade_LICENSE.txt"
 internal const val MUSESCORE_LICENSE_ASSET = "MuseScore_General_License.md"
 
 /**
- * MuseScore General MIT notice. The left panel opens this. Back returns to that panel.
+ * Foldcade and MuseScore General MIT notices. Back returns to the left panel.
  * Keys stay on [PanelKeyActivity], so this screen does not name key codes.
  */
 class LicensesActivity : PanelKeyActivity() {
@@ -44,7 +45,9 @@ class LicensesActivity : PanelKeyActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        val notice = assets.open(MUSESCORE_LICENSE_ASSET).bufferedReader().use { it.readText() }
+        val foldcadeNotice = assets.open(FOLDCADE_LICENSE_ASSET).bufferedReader().use { it.readText() }
+        val museScoreNotice = assets.open(MUSESCORE_LICENSE_ASSET).bufferedReader().use { it.readText() }
+        val notice = "Foldcade\n\n${foldcadeNotice.trim()}\n\n$museScoreNotice"
         val app = application as FoldcadeApp
         val theme = app.paintFor(app.shell.model.themeIndex).theme
         setContent {

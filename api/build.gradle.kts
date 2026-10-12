@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: Apache-2.0
+// SPDX-License-Identifier: MIT
 
 import org.jetbrains.kotlin.gradle.dsl.JvmDefaultMode
 
@@ -7,15 +7,15 @@ plugins {
     id("foldcade.jvm-api33")
 }
 
-description = "Foldcade plugin API. Apache License, Version 2.0."
+description = "Foldcade plugin API. MIT License."
 
 tasks.jar {
     manifest {
         attributes(
             "Specification-Title" to "Foldcade Plugin API",
             "Specification-Vendor" to "Foldcade",
-            "Bundle-License" to "https://www.apache.org/licenses/LICENSE-2.0.txt",
-            "SPDX-License-Identifier" to "Apache-2.0",
+            "Bundle-License" to "https://opensource.org/license/mit",
+            "SPDX-License-Identifier" to "MIT",
         )
     }
     from(layout.projectDirectory.file("LICENSE")) {

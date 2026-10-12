@@ -227,8 +227,7 @@ private fun DeviceTokenPoll.toPublic(): RommPairingPoll = when (this) {
  * does not read RomM fields. A RomM slug stays the slug unless
  * [RommWiring.platforms] already aliases it. There is no private slug map.
  *
- * This bundled entry stays under the GNU GPLv3. An independent plugin that
- * uses only the published API may use any license.
+ * This bundled entry is licensed under MIT.
  */
 class RommEntry : PluginEntry {
     private val instances = CopyOnWriteArrayList<RommLibrary>()

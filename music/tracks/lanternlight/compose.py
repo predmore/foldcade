@@ -187,7 +187,7 @@ def build(cfg, events, name, copies, tail_beats=0, markers=False):
     tr.append(mido.MetaMessage('track_name', name=name, time=0))
     tr.append(mido.MetaMessage(
         'text',
-        text='Composer: Foldcade project. License: GPLv3 with the Foldcade repository.',
+        text='Composer: Foldcade project. License: MIT with the Foldcade repository.',
         time=0,
     ))
     tr.append(mido.MetaMessage('set_tempo', tempo=mido.bpm2tempo(BPM), time=0))

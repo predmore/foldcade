@@ -34,7 +34,7 @@ def row(assets, px, cols, gapx, labels=True):
     y += px + (60 if labels else 30)
 
 dr.text((50, y), "Foldcade · Afterglow art kit", font=font(56, 800), fill=(244, 241, 234)); y += 76
-dr.text((52, y), "Original art, CC BY-SA 4.0 · true black · soft, smooth glows · Nunito", font=font(26, 500), fill=(154, 149, 140)); y += 70
+dr.text((52, y), "Original art, MIT · true black · soft, smooth glows · Nunito", font=font(26, 500), fill=(154, 149, 140)); y += 70
 
 h1("App icon — A: open clamshell (adaptive + monochrome + legacy)")
 full = png(Asset("x", 108, 108, fg.layers), 1296, bg="#000000"); v = view(full)

@@ -20,8 +20,7 @@ import app.foldcade.api.plugin.StartDisplay
  * The Steam client, its login, and its saves stay inside DroidDeck. This entry
  * does not open DroidDeck's files, and it does not register a metadata provider.
  *
- * This bundled entry stays under the GNU GPLv3. An independent plugin that
- * uses only the published API may use any license.
+ * This bundled entry is licensed under MIT.
  */
 class DroidDeckEntry : PluginEntry {
     override val apiVersion: Int = PLUGIN_API_VERSION

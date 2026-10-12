@@ -128,14 +128,14 @@ class HomeMusicSettingTest {
     @Test
     fun manifestSelectsLanternlightById() {
         val json = """
-            {"tracks":[{"id":"lanternlight","title":"Lanternlight","composer":"Foldcade project","license":"GPLv3","file":"music/lanternlight.ogg"}]}
+            {"tracks":[{"id":"lanternlight","title":"Lanternlight","composer":"Foldcade project","license":"MIT","file":"music/lanternlight.ogg"}]}
         """.trimIndent()
         val tracks = musicTracksFromManifest(json)
         assertEquals(1, tracks.size)
         assertEquals("Lanternlight", musicTrack(tracks, "lanternlight")?.title)
         assertEquals("music/lanternlight.ogg", musicTrack(tracks, "missing")?.file)
         assertEquals("Foldcade project", tracks.single().composer)
-        assertTrue(musicTracksFromManifest("""{"tracks":[{"id":"x","title":"X","composer":"C","license":"GPLv3","file":"../no.ogg"}]}""").isEmpty())
+        assertTrue(musicTracksFromManifest("""{"tracks":[{"id":"x","title":"X","composer":"C","license":"MIT","file":"../no.ogg"}]}""").isEmpty())
     }
 
     @Test
@@ -217,7 +217,7 @@ class HomeMusicSettingTest {
     @Test
     fun trackPickerCyclesHomeTracksAndDropsAThemeTrackWhenThatThemeLeaves() {
         val lantern = defaultLanternlightTrack()
-        val dusk = MusicTrack("dusk", "Dusk", "Foldcade project", "GPLv3", "music/dusk.ogg")
+        val dusk = MusicTrack("dusk", "Dusk", "Foldcade project", "MIT", "music/dusk.ogg")
         val theme = MusicTrack(
             THEME_TRACK_ID,
             "Afterglow",
@@ -284,11 +284,11 @@ class HomeMusicSettingTest {
         assertTrue(musicTracksFromManifest("[]").isEmpty())
         assertTrue(
             musicTracksFromManifest(
-                """{"id":"x","title":"X","composer":"C","license":"GPLv3","file":"music/x.ogg"}""",
+                """{"id":"x","title":"X","composer":"C","license":"MIT","file":"music/x.ogg"}""",
             ).isEmpty(),
         )
         val extra = """
-            {"tracks":[{"id":"lanternlight","title":"Lanternlight","composer":"Foldcade project","license":"GPLv3","file":"music/lanternlight.ogg","extra":1}]}
+            {"tracks":[{"id":"lanternlight","title":"Lanternlight","composer":"Foldcade project","license":"MIT","file":"music/lanternlight.ogg","extra":1}]}
         """.trimIndent()
         assertEquals("lanternlight", musicTracksFromManifest(extra).single().id)
         assertEquals(DEFAULT_BACKGROUND_MUSIC, backgroundMusicFromThemeJson("{"))

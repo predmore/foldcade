@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Foldcade original art, CC BY-SA 4.0 (see LICENSE). Xbox-style face diamond (Y top, X left, B right, A bottom) -->
+<!-- Foldcade original art, MIT licensed (see LICENSE). Xbox-style face diamond (Y top, X left, B right, A bottom) -->
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:aapt="http://schemas.android.com/aapt"
     android:width="24dp"

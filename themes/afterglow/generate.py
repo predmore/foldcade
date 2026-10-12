@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """Generate the Afterglow theme's original art.
 
-The script is part of the GPLv3 program. The files it writes — font and
-sounds — are the CC BY-SA 4.0 theme art. The preview, sprites, and platform
-marks come from tools/art. Afterglow does not ship
+The script and its original sounds and font design are MIT licensed.
+The bundled Nunito font keeps its SIL Open Font License. The preview,
+sprites, and platform marks come from tools/art. Afterglow does not ship
 a wallpaper; its scene manifests define ribbons, embers, and Static.
 """
 
@@ -733,16 +733,16 @@ def build_font(path: Path):
     fb.setupPost()
     fb.setupNameTable(
         {
-            "copyright": "Copyright 2026 Foldcade contributors. Licensed under CC BY-SA 4.0.",
+            "copyright": "Copyright (c) 2026 Caleb Predmore. Licensed under MIT.",
             "familyName": "Foldcade Afterglow",
             "styleName": "Regular",
             "uniqueFontIdentifier": "Foldcade Afterglow Regular",
             "fullName": "Foldcade Afterglow",
             "version": "Version 1.000",
             "psName": "FoldcadeAfterglow-Regular",
-            "licenseDescription": "Creative Commons Attribution-ShareAlike 4.0 International",
-            "licenseInfoURL": "https://creativecommons.org/licenses/by-sa/4.0/",
-            "designer": "Foldcade contributors",
+            "licenseDescription": "MIT License",
+            "licenseInfoURL": "https://opensource.org/license/mit",
+            "designer": "Caleb Predmore",
             "description": "Original geometric sans drawn for the Foldcade Afterglow theme.",
         }
     )
