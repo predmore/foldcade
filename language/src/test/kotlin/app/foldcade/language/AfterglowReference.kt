@@ -507,7 +507,7 @@ private fun ribbonBreath(timeSec: Float, moving: Boolean, dim: Float): Float =
     (if (moving) breath(timeSec) else 1f) * dim
 
 private fun ribbonPulse(timeSec: Float, index: Int, moving: Boolean): Float =
-    if (moving) timeSec / strands[index].pulseSeconds + index * 0.33f else 0.2f + index * 0.17f
+    if (moving) fract(timeSec / strands[index].pulseSeconds + index * 0.33f) else 0.2f + index * 0.17f
 
 private fun layerRadius(strand: Strand, layer: Int): Float = when (layer) {
     0 -> if (strand.teal) 24f else 22f
@@ -733,8 +733,7 @@ internal fun ribbonGain(along: Float, pulse: Float): Float {
     val edge = endFade(t)
     if (edge <= 0f) return 0f
     val swell = 0.34f + 0.66f * (0.5f + 0.5f * sin(TWO_PI * (t * 2.15f + 0.35f)))
-    val travel = if (pulse == 0f) 0.22f else pulse
-    val spots = knot(t, travel) * 0.9f + knot(t, travel + 0.46f) * 0.5f
+    val spots = knot(t, pulse) * 0.9f + knot(t, pulse + 0.46f) * 0.5f
     return (edge * (swell * 0.58f + spots)).coerceIn(0f, 1f)
 }
 
