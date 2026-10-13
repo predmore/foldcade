@@ -23,6 +23,41 @@ class HomeBoardTest {
     }
 
     @Test
+    fun aLiftedGapMovesAsTheInverseOfATile() {
+        val board = board(listOf("a", null, "b"))
+        val lifted = pickUp(board, 1)
+        assertEquals(1, lifted.hold?.index)
+        // Carrying the gap onto a tile is the same as carrying that tile onto the gap.
+        assertEquals(moveHeld(pickUp(board, 0), 1, emptyList(), platforms).slots, moveHeld(lifted, 0, emptyList(), platforms).slots)
+        assertEquals(listOf("a", "b", null), moveHeld(lifted, 2, emptyList(), platforms).slots)
+        // A long walk trades with one tile, and cancel puts the gap back.
+        val long = moveHeld(pickUp(board(listOf(null, "a", "b", "c")), 0), 3, emptyList(), platforms)
+        assertEquals(listOf("c", "a", "b", null), long.slots)
+        assertEquals(listOf(null, "a", "b", "c"), cancelHold(long).slots)
+    }
+
+    @Test
+    fun aGapPastTheLastTilePullsATileOutAndLeavesNoPadding() {
+        val board = board(listOf("a", "b"))
+        val lifted = pickUp(board, 4)
+        assertEquals(4, lifted.hold?.index)
+        // Walking among empties changes nothing on the board.
+        assertEquals(board.slots, moveHeld(lifted, 3, emptyList(), platforms).slots)
+        // Onto a tile, that tile goes where the gap was.
+        assertEquals(listOf("a", null, null, null, "b"), moveHeld(moveHeld(lifted, 3, emptyList(), platforms), 1, emptyList(), platforms).slots)
+    }
+
+    @Test
+    fun aGapDoesNotDropIntoAFolder() {
+        val mine = HomeFolder("folder.mine", "Mine", userMade = true)
+        val board = HomeBoard(slots = listOf(null, mine.id), folders = mapOf(mine.id to mine))
+        val passed = moveHeld(pickUp(board, 0), 1, emptyList(), platforms)
+        assertEquals(1, passed.hold?.index)
+        assertEquals(listOf(mine.id, null), passed.slots)
+        assertTrue(passed.folders.getValue(mine.id).slots.isEmpty())
+    }
+
+    @Test
     fun movingOntoAFolderDropsTheTileInside() {
         val folder = HomeFolder("folder.gba", "Game Boy Advance", platformId = "game-boy-advance")
         val board = HomeBoard(

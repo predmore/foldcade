@@ -190,8 +190,8 @@ class HomeSession(raw: String?) {
         }
         if (index < 0) return null
         val atRoot = board.openFolderId == null
-        // An empty slot, or one past the last tile, offers a new folder as an empty slot does.
-        val id = visibleSlots(board).getOrNull(index) ?: return if (atRoot) TileActions(newFolder = true) else null
+        // An empty slot, or one past the last tile, moves as a tile does, and offers a new folder on the root.
+        val id = visibleSlots(board).getOrNull(index) ?: return TileActions(move = true, newFolder = atRoot)
         if (id == HOME_ALL) return TileActions(move = true, newFolder = true)
         val folder = board.folders[id]
         if (folder != null) {
@@ -208,9 +208,9 @@ class HomeSession(raw: String?) {
         return TileActions(move = true, destinations = destinations, newFolder = true, remove = true)
     }
 
-    /** Move: lifts the tile at [index]. The D-pad walks it, A drops it, B puts it back. */
+    /** Move: lifts the tile or empty slot at [index]. The D-pad walks it, A drops it, B puts it back. */
     fun startMove(index: Int) {
-        if (visibleSlots(board).getOrNull(index) == null) return
+        if (index < 0) return
         board = pickUp(enterEdit(board), index)
     }
 
@@ -363,7 +363,7 @@ class HomeSession(raw: String?) {
     }
 
     /**
-     * A tile lifted with Move. The D-pad walks it, and onto a folder drops it in.
+     * A tile or gap lifted with Move. The D-pad walks it, and onto a folder a game drops in.
      * A drops it, B puts it back. Either way the board is back to plain browsing.
      */
     private fun handleMove(meaning: Meaning, index: Int): HomeStep {
