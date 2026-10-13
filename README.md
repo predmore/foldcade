@@ -48,12 +48,14 @@ Art comes from your RomM server, Steam, the libretro thumbnail library, and Stea
 
 Every system gets its own folder, with a glossy icon you can spot at a glance. Your games can live in a few different places, and Foldcade brings them all into the same home.
 
-- **Games on your Thor.** Point Foldcade at a folder on your device and it finds your games for you.
-- **Games on your home server.** If you run [RomM](https://romm.app), approve a code on your phone to sign in, then browse that whole collection from the couch. You can add more than one server.
-- **Android games and apps.** Your Android games get their own folder. Other apps live in a separate drawer, and you can hide the ones you never use. Emulators and streaming apps get an Emulators folder, so every other folder holds only games.
-- **PC games.** Games you have set up in GameNative show up next to everything else. Export them from GameNative as `.steam` files, then choose **Add a folder** in Settings › Library. Add as many folders as you like.
-- **Steam games on the device.** Play your Steam library through DroidDeck. Choose **Add to home screen** on a game in DroidDeck, or turn on DroidDeck's game-file sync and add that folder, and your whole library follows.
-- **Games streamed from your PC.** In Moonlight, open a game's menu and choose **Create shortcut**, and it shows up in Foldcade.
+- **[Games on your Thor](docs/integrations/local-games.md).** Point Foldcade at a folder on your device and it finds your games for you.
+- **[Games on your home server](docs/integrations/romm.md).** If you run [RomM](https://romm.app), approve a code on your phone to sign in, then browse that whole collection from the couch. You can add more than one server.
+- **[Android games and apps](docs/integrations/android.md).** Your Android games get their own folder. Other apps live in a separate drawer, and you can hide the ones you never use. Emulators and streaming apps get an Emulators folder, so every other folder holds only games.
+- **[PC games](docs/integrations/gamenative.md).** Games you have set up in GameNative show up next to everything else. Export them from GameNative as `.steam` files, then choose **Add a folder** in Settings › Library. Add as many folders as you like.
+- **[Steam games on the device](docs/integrations/droiddeck.md).** Play your Steam library through DroidDeck. Choose **Add to home screen** on a game in DroidDeck, or turn on DroidDeck's game-file sync and add that folder. Foldcade finds its games on the next folder scan.
+- **[Games streamed from your PC](docs/integrations/moonlight.md).** In Moonlight, open a game's menu and choose **Create shortcut**, and it shows up in Foldcade.
+
+See the [integration guides](docs/integrations/README.md) for setup and troubleshooting, and the [emulator guide](docs/integrations/emulators.md) for supported apps and formats.
 
 ### One press, and you are playing
 
@@ -81,7 +83,7 @@ When a game or app uses just one screen, the other becomes a dim command center:
 
 ### Your saves follow you
 
-If you use RomM, Foldcade backs up your saves to your server. Play on the bus, and the save is there when you get home. If you are offline, it waits and uploads later, and a small badge on the tile shows downloads and syncs as they happen. If the same game was saved in two places, Foldcade asks on the bottom screen which to use, and keeps both copies either way. Save sync needs RomM 5.4 or newer.
+If you use RomM with a [supported save setup](docs/integrations/romm.md#save-sync), Foldcade backs up your saves to your server. Play on the bus, and the save is there when you get home. If you are offline, it waits and uploads later, and a small badge on the tile shows downloads and syncs as they happen. If the same game was saved in two places, Foldcade asks on the bottom screen which to use, and keeps both copies either way. Save sync needs RomM 5.4 or newer.
 
 ### See where the hours went
 
