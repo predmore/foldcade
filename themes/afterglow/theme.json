@@ -562,20 +562,43 @@
       "tint": false,
       "accent": "#3EE0C3"
     },
+    "mark.check-badge": {
+      "file": "icons/mark_check_badge.xml",
+      "tint": false,
+      "accent": "#3EE68A"
+    },
     "mark.clamshell": {
       "file": "icons/mark_clamshell_lit.xml",
       "tint": false,
       "accent": "#FF5C7A"
+    },
+    "mark.clock": {
+      "file": "icons/mark_clock.xml",
+      "tint": false,
+      "accent": "#3EE6C0"
     },
     "mark.cloud": {
       "file": "icons/mark_cloud_lit.xml",
       "tint": false,
       "accent": "#40D6FF"
     },
+    "mark.collection-body": {
+      "file": "icons/mark_collection_body.xml",
+      "tint": false
+    },
+    "mark.collection-face": {
+      "file": "icons/mark_collection_face.xml",
+      "tint": false
+    },
     "mark.console": {
       "file": "icons/mark_console.xml",
       "tint": false,
       "accent": "#FFB547"
+    },
+    "mark.crown": {
+      "file": "icons/mark_crown.xml",
+      "tint": false,
+      "accent": "#FFD24C"
     },
     "mark.disc": {
       "file": "icons/mark_disc_lit.xml",
@@ -596,6 +619,11 @@
       "file": "icons/mark_emulators.xml",
       "tint": false,
       "accent": "#B48CFF"
+    },
+    "mark.flame": {
+      "file": "icons/mark_flame.xml",
+      "tint": false,
+      "accent": "#FF7A2E"
     },
     "mark.folder": {
       "file": "icons/mark_folder.xml",
@@ -627,15 +655,40 @@
       "tint": false,
       "accent": "#9B7BFF"
     },
+    "mark.gem": {
+      "file": "icons/mark_gem.xml",
+      "tint": false,
+      "accent": "#5CE8FF"
+    },
     "mark.genesis": {
       "file": "icons/mark_genesis.xml",
       "tint": false,
       "accent": "#FF3B52"
     },
+    "mark.ghost": {
+      "file": "icons/mark_ghost.xml",
+      "tint": false,
+      "accent": "#B39DFF"
+    },
     "mark.handheld": {
       "file": "icons/mark_handheld_lit.xml",
       "tint": false,
       "accent": "#FFBA48"
+    },
+    "mark.heart": {
+      "file": "icons/mark_heart.xml",
+      "tint": false,
+      "accent": "#FF4F6E"
+    },
+    "mark.hourglass": {
+      "file": "icons/mark_hourglass.xml",
+      "tint": false,
+      "accent": "#FFB547"
+    },
+    "mark.leaf": {
+      "file": "icons/mark_leaf.xml",
+      "tint": false,
+      "accent": "#3EE68A"
     },
     "mark.library": {
       "file": "icons/mark_library.xml",
@@ -651,6 +704,16 @@
       "file": "icons/mark_moonlight.xml",
       "tint": false,
       "accent": "#A9BCFF"
+    },
+    "mark.mushroom": {
+      "file": "icons/mark_mushroom.xml",
+      "tint": false,
+      "accent": "#FF4D5A"
+    },
+    "mark.music": {
+      "file": "icons/mark_music.xml",
+      "tint": false,
+      "accent": "#FF6FD8"
     },
     "mark.nes": {
       "file": "icons/mark_nes.xml",
@@ -677,8 +740,18 @@
       "tint": false,
       "accent": "#FF4F5E"
     },
+    "mark.paw": {
+      "file": "icons/mark_paw.xml",
+      "tint": false,
+      "accent": "#FF9ACB"
+    },
     "mark.pc": {
       "file": "icons/mark_pc.xml",
+      "tint": false,
+      "accent": "#4CC9FF"
+    },
+    "mark.play-badge": {
+      "file": "icons/mark_play_badge.xml",
       "tint": false,
       "accent": "#4CC9FF"
     },
@@ -697,10 +770,35 @@
       "tint": false,
       "accent": "#6FC3FF"
     },
+    "mark.puzzle": {
+      "file": "icons/mark_puzzle.xml",
+      "tint": false,
+      "accent": "#B6F25C"
+    },
+    "mark.racing-flag": {
+      "file": "icons/mark_racing_flag.xml",
+      "tint": false,
+      "accent": "#C9F7FF"
+    },
+    "mark.rocket": {
+      "file": "icons/mark_rocket.xml",
+      "tint": false,
+      "accent": "#FF8A3D"
+    },
     "mark.saturn": {
       "file": "icons/mark_saturn.xml",
       "tint": false,
       "accent": "#FFC15A"
+    },
+    "mark.shield": {
+      "file": "icons/mark_shield.xml",
+      "tint": false,
+      "accent": "#7C8CFF"
+    },
+    "mark.skull": {
+      "file": "icons/mark_skull.xml",
+      "tint": false,
+      "accent": "#FF3B52"
     },
     "mark.slim": {
       "file": "icons/mark_slim_lit.xml",
@@ -711,6 +809,26 @@
       "file": "icons/mark_snes.xml",
       "tint": false,
       "accent": "#B39DFF"
+    },
+    "mark.star": {
+      "file": "icons/mark_star.xml",
+      "tint": false,
+      "accent": "#FFC15A"
+    },
+    "mark.sword": {
+      "file": "icons/mark_sword.xml",
+      "tint": false,
+      "accent": "#9FC2FF"
+    },
+    "mark.trophy": {
+      "file": "icons/mark_trophy.xml",
+      "tint": false,
+      "accent": "#FFB547"
+    },
+    "mark.two-players": {
+      "file": "icons/mark_two_players.xml",
+      "tint": false,
+      "accent": "#4CC9FF"
     },
     "mark.wii": {
       "file": "icons/mark_wii.xml",
