@@ -15,6 +15,7 @@ import android.provider.Settings
 import android.view.InputDevice
 import android.os.Bundle
 import android.view.Display
+import android.view.View
 import android.view.WindowInsets
 import android.view.WindowInsetsController
 import android.view.WindowManager
@@ -24,6 +25,7 @@ import androidx.compose.ui.platform.ViewCompositionStrategy
 import androidx.compose.ui.focus.FocusRequester
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
@@ -104,6 +106,10 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
 
     /** True while this panel is resumed and its display is fully on. */
     var shellVisible by mutableStateOf(false)
+        private set
+
+    /** Windows the panel has been attached to. [PanelRecoveryWindow] moves it at each wake and return. */
+    var panelWindows by mutableIntStateOf(0)
         private set
 
     private val backdropDisplayListener = object : DisplayManager.DisplayListener {
@@ -291,6 +297,15 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
             // Both containers belong to this activity; moving windows must preserve panel state.
             setViewCompositionStrategy(ViewCompositionStrategy.DisposeOnLifecycleDestroyed(lifecycle))
             setContent { PanelHost(activity = this@FoldcadeHomeActivity, displays = displays) }
+            addOnAttachStateChangeListener(
+                object : View.OnAttachStateChangeListener {
+                    override fun onViewAttachedToWindow(view: View) {
+                        panelWindows++
+                    }
+
+                    override fun onViewDetachedFromWindow(view: View) = Unit
+                },
+            )
         }
         root.addView(panel, FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT)
         setContentView(root)
