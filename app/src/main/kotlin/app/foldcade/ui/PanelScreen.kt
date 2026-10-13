@@ -1,5 +1,7 @@
 package app.foldcade.ui
 
+import androidx.compose.animation.Crossfade
+
 import android.graphics.RenderEffect
 import android.graphics.Shader
 import android.os.Build
@@ -133,6 +135,7 @@ import app.foldcade.language.heroFacts
 import app.foldcade.R
 import app.foldcade.language.QuickSetting
 import app.foldcade.Displays
+import app.foldcade.language.ArtKind
 import app.foldcade.FoldcadeApp
 import app.foldcade.FoldcadeHomeActivity
 import app.foldcade.Panel
@@ -346,6 +349,7 @@ private fun PanelBody(
     val connectHere = model.connectOpen && model.connectScreen == screen
     // Settings and Play activity rise over the panel and sink away again. Each keeps its
     // last state while it leaves, so it fades out as it was rather than vanishing.
+    val artPage = presence(app.shell.artPicker, LocalFoldTheme.current.theme.motion.durationIsland, scale)
     val settingsPage = model.settings?.takeIf { it.screen == screen }
     val activityPage = model.playActivity?.takeIf { it.screen == screen }
     val motion = LocalFoldTheme.current.theme.motion
@@ -361,7 +365,7 @@ private fun PanelBody(
             TravelFade(target = session.surfaceOn(panel), scale = scale) { shown ->
                 when (shown) {
                     null -> Unit
-                    Surface.Hero -> if (connectHere) Unit else Hero(app, screen, scale, activity::dispatch)
+                    Surface.Hero -> if (connectHere) Unit else ArtPreviewHero(app, screen, scale, activity::dispatch)
                     Surface.Picker -> Picker(app, screen, scale, activity::dispatch, activity::takeKeyboardFocus)
                     Surface.CommandCenter -> CommandCenterScreen(
                         app,
@@ -372,6 +376,9 @@ private fun PanelBody(
             }
         }
         if (connectHere) ConnectScreen(app, screen, activity::dispatch, activity::takeKeyboardFocus)
+    }
+    if (screen == HostScreen.Bottom) artPage.shown?.let { shown ->
+        Box(Modifier.fillMaxSize().rise { artPage.progress.value }) { ArtPickerScreen(app, shown, scale) }
     }
     beside.shown?.let { subject ->
         // The other screen is still Foldcade, so it is never dimmed. Its keys still drive the page.
@@ -849,6 +856,19 @@ private val CENTER_DRIFT = listOf(
 )
 private const val CENTER_ART_PX = 300f
 
+private data class ArtPreview(val gameId: String, val kind: ArtKind, val url: String)
+private val LocalArtPreview = compositionLocalOf<ArtPreview?> { null }
+
+@Composable
+private fun ArtPreviewHero(app: FoldcadeApp, screen: HostScreen, scale: Float, onEffect: (Effect?) -> Unit) {
+    val picker = app.shell.artPicker?.takeIf { it.preview }
+    val preview = picker?.focused?.let { ArtPreview(picker.gameId, picker.kind, it.url) }
+    val motion = LocalFoldTheme.current.theme.motion
+    Crossfade(preview, animationSpec = motion.arrive(motion.durationScene, scale)) { shown ->
+        CompositionLocalProvider(LocalArtPreview provides shown) { Hero(app, screen, scale, onEffect) }
+    }
+}
+
 @Composable
 private fun Hero(app: FoldcadeApp, screen: HostScreen, scale: Float, onEffect: (Effect?) -> Unit) {
     val motion = LocalFoldTheme.current.theme.motion
@@ -1247,13 +1267,21 @@ private fun Modifier.fadingHero(
 private fun rememberScene(app: FoldcadeApp, record: Game?, query: ArtQuery?): ArtScene? {
     val allowed = app.shell.model.artwork
     val connections = app.shell.model.signedIn
+    val revision = app.artRevision
     val artKeySaved = app.shell.model.artKeySaved
-    val held = remember(record, query, allowed, connections, artKeySaved) { app.covers.cachedScene(record, query) }
-    var fetched by remember(record, query, allowed, connections, artKeySaved) { mutableStateOf<ArtScene?>(null) }
-    LaunchedEffect(record, query, allowed, connections, artKeySaved) {
+    val held = remember(record, query, allowed, connections, artKeySaved, revision) { app.covers.cachedScene(record, query) }
+    var fetched by remember(record, query, allowed, connections, artKeySaved, revision) { mutableStateOf<ArtScene?>(null) }
+    LaunchedEffect(record, query, allowed, connections, artKeySaved, revision) {
         if ((record != null || query != null) && held?.complete != true) fetched = app.covers.fetchScene(record, query)
     }
-    return fetched ?: held
+    val scene = app.covers.chosenScene(fetched ?: held, query)
+    val picker = LocalArtPreview.current?.takeIf { it.gameId == query?.key }
+    val candidate = picker?.url ?: return scene
+    return when (picker.kind) {
+        ArtKind.Hero -> (scene ?: ArtScene()).copy(background = candidate)
+        ArtKind.Logo -> (scene ?: ArtScene()).copy(logo = candidate)
+        else -> scene
+    }
 }
 
 /**
@@ -1334,13 +1362,17 @@ private fun SceneBackdrop(app: FoldcadeApp, record: Game?, query: ArtQuery?, spe
 private fun rememberArt(app: FoldcadeApp, record: Game?, query: ArtQuery?): ArtSet? {
     val allowed = app.shell.model.artwork
     val connections = app.shell.model.signedIn
+    val revision = app.artRevision
     val artKeySaved = app.shell.model.artKeySaved
-    val held = remember(record, query, allowed, connections, artKeySaved) { app.covers.cached(record, query) }
-    var fetched by remember(record, query, allowed, connections, artKeySaved) { mutableStateOf<ArtSet?>(null) }
-    LaunchedEffect(record, query, allowed, connections, artKeySaved) {
+    val held = remember(record, query, allowed, connections, artKeySaved, revision) { app.covers.cached(record, query) }
+    var fetched by remember(record, query, allowed, connections, artKeySaved, revision) { mutableStateOf<ArtSet?>(null) }
+    LaunchedEffect(record, query, allowed, connections, artKeySaved, revision) {
         if ((record != null || query != null) && held == null) fetched = app.covers.fetch(record, query)
     }
-    return held ?: fetched
+    val set = app.covers.chosen(held ?: fetched, query)
+    val picker = LocalArtPreview.current?.takeIf { it.gameId == query?.key && it.kind == ArtKind.Tile }
+    val candidate = picker?.url ?: return set
+    return (set ?: ArtSet(artPreviewSource, candidate)).copy(cover = candidate, square = candidate)
 }
 
 @Composable
@@ -1665,6 +1697,8 @@ private fun rememberCoverPainter(
     }
     return held
 }
+
+private const val artPreviewSource = "preview"
 
 private const val COVER_PX = 1024
 private const val BACKDROP_PX = 1920
@@ -2144,7 +2178,7 @@ private fun GridHints(app: FoldcadeApp, modifier: Modifier = Modifier) {
 
 /** One small glyph and a word. The glyph fills while that key is held. */
 @Composable
-private fun HintWord(
+internal fun HintWord(
     model: app.foldcade.language.PickerModel,
     hint: HintKey,
 ) {
@@ -2431,7 +2465,7 @@ private fun StripColumn(
                         focused = focused,
                         size = cell,
                         corner = radius,
-                        icon = launcherIcon(game?.androidPackage),
+                        icon = if (art == null) launcherIcon(game?.androidPackage) else null,
                         favorite = game?.favorite == true,
                         empty = face?.empty == true || beyond,
                         lifted = lifted == index,

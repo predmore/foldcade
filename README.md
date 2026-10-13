@@ -30,7 +30,7 @@ Keep the hero-top.png and hero-bottom.png paths.
 
 Move with the D-pad across a continuous shelf of box art. The selected game fills the top screen with wide art and a logo, or its cover beside a title-screen image.
 
-Art comes from RomM, Steam, libretro, and an optional SteamGridDB key. See [artwork setup](docs/integrations/README.md#artwork) to configure downloads.
+Art comes from RomM, Steam, libretro, and an optional SteamGridDB key. With a key saved, choose **Y › Art** on a game to browse tile art, heroes, and logos. L1/R1 switch kinds, A saves a choice, X restores automatic art for that kind, and B returns Home. Choices stay with the game across restarts. See [artwork setup](docs/integrations/README.md#artwork) to configure downloads.
 
 ### Everything in one place
 

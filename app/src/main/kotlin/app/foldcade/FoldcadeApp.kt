@@ -1,5 +1,7 @@
 package app.foldcade
 
+import app.foldcade.language.ArtChoices
+import app.foldcade.language.ArtKind
 import android.app.Application
 import android.content.BroadcastReceiver
 import android.content.Context
@@ -124,6 +126,23 @@ class FoldcadeApp : Application() {
 
     private val rommCoverArt by lazy { RommCoverArt(publicArt::allows) { rommWirings(store).firstOrNull() } }
 
+    val steamGridDb by lazy { SteamGridDb(PublicArtHttp(publicArt)) { steamGridDbKey } }
+    private val artChoiceFile by lazy { File(filesDir, "art/choices.json") }
+    var artChoices by mutableStateOf(ArtChoices())
+        private set
+    var artRevision by mutableStateOf(0)
+        private set
+
+    fun chooseArt(id: String, kind: ArtKind, url: String?) {
+        val next = artChoices.set(id, kind, url)
+        artChoiceFile.parentFile?.mkdirs()
+        val temp = File(artChoiceFile.parentFile, "choices.tmp")
+        temp.writeText(next.encode())
+        check(temp.renameTo(artChoiceFile))
+        artChoices = next
+        artRevision++
+    }
+
     /**
      * Art from Steam's CDN for Steam games, then libretro's
      * thumbnails for ROMs, then the connected RomM server's cover search,
@@ -137,7 +156,7 @@ class FoldcadeApp : Application() {
             SteamStoreArt(http),
             LibretroThumbnails(http, File(cacheDir, "art/libretro")),
             rommCoverArt,
-            SteamGridDb(http) { steamGridDbKey },
+            steamGridDb,
         )
         ArtFinder({ sources }, ArtIndex(File(filesDir, "art/index.tsv"))) { shell.model.artwork }
     }
@@ -148,7 +167,7 @@ class FoldcadeApp : Application() {
     suspend fun checkSteamGridDbKey(key: String): Boolean? = SteamGridDb.accepts(PublicArtHttp(publicArt), key)
 
     /** Cover addresses: the metadata providers first, then the public sources. */
-    val covers: CoverArt by lazy { CoverArt(plugins, art) }
+    val covers: CoverArt by lazy { CoverArt(plugins, art) { artChoices } }
 
     /** Decodes and caches covers. Public art loads through :net, RomM's through its own client. */
     val images: ImageLoader by lazy {
@@ -290,10 +309,12 @@ class FoldcadeApp : Application() {
             val player = platform?.let { preferredPlayer(plugins.playersFor(it), ::packageInstalled) }
             player?.packageNames?.let { names -> names.firstOrNull(::packageInstalled) ?: names.firstOrNull() }
         }
+        artChoices = ArtChoices.decode(artChoiceFile.takeIf { it.isFile }?.readText())
         shell = ShellController(
             store,
             plugins,
             music::apply,
+            onArtApply = ::chooseArt,
             onTheme = { index -> music.setThemeChoice(themeTrackList.getOrNull(index)) },
             themeNames = names,
             themeMotions = motions,

@@ -1,0 +1,91 @@
+package app.foldcade.language
+
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.put
+
+enum class ArtKind { Tile, Hero, Logo }
+
+data class ArtCandidate(val id: String, val url: String, val thumbnail: String)
+
+data class ArtChoices(val values: Map<String, Map<ArtKind, String>> = emptyMap()) {
+    fun get(id: String, kind: ArtKind): String? = values[id]?.get(kind)
+
+    fun set(id: String, kind: ArtKind, url: String?): ArtChoices {
+        val parts = values[id].orEmpty().toMutableMap()
+        if (url == null) parts.remove(kind) else parts[kind] = url
+        val next = values.toMutableMap()
+        if (parts.isEmpty()) next.remove(id) else next[id] = parts
+        return ArtChoices(next)
+    }
+
+    fun encode(): String = buildJsonObject {
+        values.forEach { (id, parts) -> put(id, buildJsonObject {
+            parts.forEach { (kind, url) -> put(kind.name, url) }
+        }) }
+    }.toString()
+
+    companion object {
+        fun decode(raw: String?): ArtChoices = try {
+            val root = Json.parseToJsonElement(raw ?: "{}").jsonObject
+            ArtChoices(root.mapValues { (_, value) ->
+                (value as? JsonObject).orEmpty().mapNotNull { (name, value) ->
+                    val kind = ArtKind.entries.firstOrNull { it.name == name } ?: return@mapNotNull null
+                    val url = (value as? JsonPrimitive)?.content ?: return@mapNotNull null
+                    if (url.startsWith("https://")) kind to url else null
+                }.toMap()
+            }.filterValues { it.isNotEmpty() })
+        } catch (_: Exception) { ArtChoices() }
+    }
+}
+
+data class ArtPickerState(
+    val gameId: String,
+    val kind: ArtKind = ArtKind.Tile,
+    val index: Int = 0,
+    val candidates: List<ArtCandidate> = emptyList(),
+    val preview: Boolean = true,
+    val loading: Boolean = true,
+    val error: Boolean = false,
+) {
+    val focused: ArtCandidate? get() = candidates.getOrNull(index)
+
+    fun navigate(meaning: Meaning): ArtPickerState {
+        val tab = when (meaning) {
+            Meaning.LeftPanel -> (kind.ordinal + 2) % 3
+            Meaning.RightPanel -> (kind.ordinal + 1) % 3
+            else -> kind.ordinal
+        }
+        if (tab != kind.ordinal) return copy(preview = true, kind = ArtKind.entries[tab], index = 0, candidates = emptyList(), loading = true, error = false)
+        val target = when (meaning) {
+            Meaning.MoveUp -> if (index % 3 > 0) index - 1 else index
+            Meaning.MoveDown -> if (index % 3 < 2) index + 1 else index
+            Meaning.MoveLeft -> index - 3
+            Meaning.MoveRight -> index + 3
+            else -> return this
+        }
+        return copy(preview = true, index = target.coerceIn(0, (candidates.size - 1).coerceAtLeast(0)))
+    }
+}
+
+object ArtCopy {
+    const val art = "Art"
+    val tabs = listOf("Tile", "Hero", "Logo")
+    const val empty = "No art found"
+    const val error = "Couldn’t load art"
+    const val kind = "Kind"
+    const val apply = "Apply"
+    const val automatic = "Automatic"
+    const val current = "✓"
+}
+
+fun artPickerHints(faces: FaceMap): List<HintKey> = listOf(
+    HintKey(PromptKey.L1, ArtCopy.kind),
+    HintKey(PromptKey.R1, ArtCopy.kind),
+    HintKey(promptKeyOf(faces.confirmKey) ?: PromptKey.FaceA, ArtCopy.apply),
+    HintKey(PromptKey.FaceX, ArtCopy.automatic),
+    HintKey(promptKeyOf(faces.backKey) ?: PromptKey.FaceB, Copy.back),
+)
