@@ -175,18 +175,23 @@ class HomeSession(raw: String?) {
 
     /**
      * What Y offers for the tile at [index]. In All, adding an item that is not
-     * placed yet. On the board, moving, folders, and removing. Null while a
-     * tile moves or a picker or name field is open.
+     * placed yet. On the board, moving, folders, and removing. A downloaded
+     * server game can be deleted from either. Null while a tile moves or a
+     * picker or name field is open.
      */
     fun actions(index: Int): TileActions? {
         if (iconPick != null || renamingId != null || board.editing) return null
         if (board.allOpen) {
             val item = allRows().getOrNull(index) ?: return null
-            if (onHome(board, item.id)) return null
+            val downloaded = downloaded(item.id)
+            if (onHome(board, item.id)) return if (downloaded) TileActions(removeDownload = true) else null
             // Named for where it would land, including a folder that comes back with it.
             val placed = addItemToHome(board, item, platforms)
             val into = placed.folders.values.firstOrNull { item.id in it.slots }?.name
-            return TileActions(addToHome = if (into != null) "${Copy.addTo} $into" else Copy.addToHome)
+            return TileActions(
+                addToHome = if (into != null) "${Copy.addTo} $into" else Copy.addToHome,
+                removeDownload = downloaded,
+            )
         }
         if (index < 0) return null
         val atRoot = board.openFolderId == null
@@ -205,8 +210,17 @@ class HomeSession(raw: String?) {
                 .filter { it.id != here && folderTakes(it, item, platforms) }
                 .forEach { add(FolderChoice(it.id, it.name)) }
         }
-        return TileActions(move = true, destinations = destinations, newFolder = true, remove = true)
+        return TileActions(
+            move = true,
+            destinations = destinations,
+            newFolder = true,
+            remove = true,
+            removeDownload = downloaded(id),
+        )
     }
+
+    /** A server game with a copy on this device. */
+    private fun downloaded(id: String): Boolean = games[id]?.availability == Availability.Cached
 
     /** Move: lifts the tile or empty slot at [index]. The D-pad walks it, A drops it, B puts it back. */
     fun startMove(index: Int) {

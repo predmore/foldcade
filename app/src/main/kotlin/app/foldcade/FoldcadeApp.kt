@@ -1092,6 +1092,7 @@ class FoldcadeApp : Application() {
     fun syncRomm(): Job {
         synchronized(rommTicket) {
             val ticket = rommTicket.incrementAndGet()
+            val readAt = shell.deviceMark()
             rommRefreshJob?.cancel()
             return pluginLoad.launch {
                 pluginsReady.await()
@@ -1133,6 +1134,7 @@ class FoldcadeApp : Application() {
                                 games,
                                 plugins.platformDefinitions(),
                                 listed?.entries.orEmpty().associate { (it.platformId ?: it.id) to it.title },
+                                readAt = readAt,
                             )
                             val waiting = shell.model.libraryGrid && shell.model.emptyGrid != EmptyGrid.Loading
                             if (waiting && games.isNotEmpty()) shell.showCuratedHome()

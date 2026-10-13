@@ -283,6 +283,7 @@ sealed interface Row {
     data object RenameFolder : Row
     data object FolderIcon : Row
     data object RemoveTile : Row
+    data object RemoveDownload : Row
     data object AddToHome : Row
     data class QuickTile(val setting: QuickSetting) : Row
 
@@ -470,6 +471,8 @@ data class TileActions(
     val removeIsFolder: Boolean = false,
     /** The All row's label, such as "Add to Home". Null when the item is already placed. */
     val addToHome: String? = null,
+    /** A server game downloaded to this device can be deleted again. */
+    val removeDownload: Boolean = false,
 )
 
 /** Y's menu: the tile's own actions, then an Android app's shelf actions. */
@@ -482,6 +485,7 @@ fun actionRows(tile: TileActions?, app: AppActions?): List<Row> = buildList {
         if (tile.rename) add(Row.RenameFolder)
         if (tile.icon) add(Row.FolderIcon)
         if (tile.remove) add(Row.RemoveTile)
+        if (tile.removeDownload) add(Row.RemoveDownload)
     }
     if (app != null) {
         if (app.hiddenShelf) {
@@ -619,6 +623,7 @@ fun rowText(row: Row, model: PickerModel): RowText = when (row) {
     Row.RenameFolder -> RowText(Copy.rename)
     Row.FolderIcon -> RowText(Copy.changeIcon)
     Row.RemoveTile -> RowText(if (model.tileActions?.removeIsFolder == true) Copy.removeFolder else Copy.removeFromHome)
+    Row.RemoveDownload -> RowText(Copy.deleteDownload)
     Row.AddToHome -> RowText(model.tileActions?.addToHome ?: Copy.addToHome)
     Row.ButtonLabels -> RowText(
         Copy.buttonLabels,
@@ -685,6 +690,9 @@ sealed interface Effect {
     data object RenameFolder : Effect
     data object ChooseFolderIcon : Effect
     data object RemoveTile : Effect
+
+    /** Delete the focused server game's downloaded copy. Its saves stay. */
+    data object RemoveDownload : Effect
     data object AddToHome : Effect
     data object OpenAll : Effect
     data object ToggleAddNew : Effect
@@ -1513,6 +1521,7 @@ private fun activateRow(
         Row.RenameFolder -> model.copy(panel = null, focus = panel.grid) to Effect.RenameFolder
         Row.FolderIcon -> model.copy(panel = null, focus = panel.grid) to Effect.ChooseFolderIcon
         Row.RemoveTile -> model.copy(panel = null, focus = panel.grid) to Effect.RemoveTile
+        Row.RemoveDownload -> model.copy(panel = null, focus = panel.grid) to Effect.RemoveDownload
         Row.AddToHome -> model.copy(panel = null, focus = panel.grid) to Effect.AddToHome
         Row.ButtonLabels -> if (model.capturingConfirm) {
             model.copy(capturingConfirm = false, offerButtonLabels = false) to Effect.DismissButtonLabels
