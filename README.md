@@ -59,7 +59,7 @@ Press **A** to play on the top screen or **X** on the bottom. Games that need bo
 | :---: | :---: |
 | ![The L1 drawer: this week's play activity as a small bar chart, round buttons for Home, All, Games, and Apps, then Edit home and Settings.](docs/images/menu-l1.webp) | ![The R1 drawer: date, battery, and Wi-Fi, round buttons for Wi-Fi, Bluetooth, Battery, and Android settings, and a brightness slider.](docs/images/menu-r1.webp) |
 
-**L1** opens Home, All, Games, Apps, Edit home, and Settings. **R1** gives you Wi-Fi, Bluetooth, battery, top-screen brightness, and notifications you can open or clear.
+**L1** opens Home, All, Games, Apps, Edit home, and Settings. **R1** gives you Wi-Fi, Bluetooth, battery, brightness for both screens, and notifications you can open or clear.
 
 ### Tidy up with one button
 

@@ -19,7 +19,6 @@ import app.foldcade.plugins.moonlight.isMoonlightRemoteKey
 import app.foldcade.host.PluginHost
 import app.foldcade.language.FoldNotice
 import app.foldcade.language.brightnessPrompt
-import app.foldcade.language.brightnessLevel
 import app.foldcade.language.brightnessPosition
 import app.foldcade.language.settingsCategories
 import app.foldcade.language.AndroidShelf
@@ -999,16 +998,9 @@ class ShellController(
         noteShelfChanged()
     }
 
-    /**
-     * The stored [level] and whether Foldcade may write it. A level the slider
-     * already shows keeps its position, so a write echoing back cannot nudge it.
-     */
+    /** The stored [level] and whether Foldcade may write it. */
     fun setBrightness(level: Int?, allowed: Boolean) {
-        val position = when {
-            level == null -> model.brightness
-            brightnessLevel(model.brightness) == level -> model.brightness
-            else -> brightnessPosition(level)
-        }
+        val position = level?.let(::brightnessPosition) ?: model.brightness
         if (position == model.brightness && allowed == model.brightnessAllowed) return
         model = model.copy(brightness = position, brightnessAllowed = allowed)
     }

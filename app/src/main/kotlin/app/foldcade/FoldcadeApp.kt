@@ -172,7 +172,7 @@ class FoldcadeApp : Application() {
     lateinit var plays: PlaySessions
         private set
 
-    /** The top screen's brightness, for the R1 slider. */
+    /** Both screens' brightness, for the R1 slider. */
     lateinit var brightness: ScreenBrightness
         private set
 

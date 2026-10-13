@@ -17,17 +17,16 @@ data class DisplayAssignment(
     fun allIds(): List<Int> = listOfNotNull(topDisplayId, bottomDisplayId)
 }
 
+/** The panel that is not the default display: the lowest other id. */
+fun otherDisplay(defaultDisplayId: Int, otherDisplayIds: List<Int>): Int? =
+    otherDisplayIds.filter { it != defaultDisplayId }.minOrNull()
+
 fun assignDisplays(
     defaultDisplayId: Int,
     otherDisplayIds: List<Int>,
     defaultDisplayIsTop: Boolean,
 ): DisplayAssignment {
-    val other = otherDisplayIds
-        .asSequence()
-        .filter { it != defaultDisplayId }
-        .distinct()
-        .sorted()
-        .firstOrNull()
+    val other = otherDisplay(defaultDisplayId, otherDisplayIds)
     return when {
         defaultDisplayIsTop -> DisplayAssignment(
             topDisplayId = defaultDisplayId,

@@ -13,10 +13,15 @@ import app.foldcade.api.plugin.PlayerExtra
 import app.foldcade.api.plugin.PlayerIntent
 
 class Displays(private val context: Context) {
-    fun assignment(defaultDisplayIsTop: Boolean): DisplayAssignment {
+    fun assignment(defaultDisplayIsTop: Boolean): DisplayAssignment =
+        assignDisplays(Display.DEFAULT_DISPLAY, displayIds(), defaultDisplayIsTop)
+
+    /** The panel that is not the default display, whichever screen that is. */
+    fun otherDisplayId(): Int? = otherDisplay(Display.DEFAULT_DISPLAY, displayIds())
+
+    private fun displayIds(): List<Int> {
         val manager = context.getSystemService(DisplayManager::class.java)
-        val others = manager.displays.map { it.displayId }.filter { it != Display.DEFAULT_DISPLAY }
-        return assignDisplays(Display.DEFAULT_DISPLAY, others, defaultDisplayIsTop)
+        return manager.displays.map { it.displayId }
     }
 
     fun panelFor(activity: Activity, defaultDisplayIsTop: Boolean): Panel? {

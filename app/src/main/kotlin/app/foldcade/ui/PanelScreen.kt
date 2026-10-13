@@ -266,7 +266,8 @@ fun PanelHost(activity: FoldcadeHomeActivity, displays: Displays) {
         snap = heldBlur != null,
     )
     val dimmed = panel != null && app.commandCenter.dimmed(panel)
-    LaunchedEffect(dimmed) { activity.applyCommandCenterDim(dimmed) }
+    // Either panel's level can move while dimmed, and a darker one still wins.
+    LaunchedEffect(dimmed, app.brightness.revision) { activity.applyCommandCenterDim(dimmed) }
     // A closed menu draws neither the blur nor the scrim. A graphics layer
     // left over the library, even at zero alpha, keeps the accessibility dump empty.
     CompositionLocalProvider(LocalFoldTheme provides paint) {
