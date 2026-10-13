@@ -1179,9 +1179,11 @@ class ShellController(
     /**
      * What the idle top screen shows for the focused cell.
      * A platform folder is its name and game count, with no artwork.
-     * An empty or loading grid has nothing to show.
+     * An empty or loading grid has nothing to show, and nor does an empty slot,
+     * so the background shows through instead of a blank name card.
      */
     fun focusedHero(): HeroSubject? {
+        if (showingHome() && home.face(model.focus.cellIndex)?.empty == true) return null
         if (model.gridKind == GridKind.Platforms) {
             val entry = focusedEntry() ?: return null
             return HeroSubject.Folder(
