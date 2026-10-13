@@ -127,7 +127,7 @@ class AndroidShelfHostTest {
         shell.onMeaning(Meaning.LeftPanel, HostScreen.Bottom)
         choose(shell, Row.AndroidGames)
         assertEquals(HomeGrid.AndroidGames, shell.model.homeGrid)
-        assertEquals(listOf("Settings", "Example"), titles(shell))
+        assertEquals(listOf("Example", "Settings"), titles(shell))
 
         // Hidden apps are under Edit home.
         shell.onMeaning(Meaning.LeftPanel, HostScreen.Bottom)

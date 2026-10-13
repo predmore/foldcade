@@ -197,6 +197,7 @@ import app.foldcade.language.SidePanel
 import app.foldcade.language.GlowFalloff
 import app.foldcade.language.builtInTheme
 import app.foldcade.language.connectFields
+import app.foldcade.language.triggerHints
 import app.foldcade.language.hintFor
 import app.foldcade.language.HintKey
 import app.foldcade.language.HomeKeys
@@ -300,6 +301,7 @@ fun PanelHost(activity: FoldcadeHomeActivity, displays: Displays) {
                     PanelBody(activity, panel, screen, scale)
                 }
             }
+            if (screen == HostScreen.Top) LetterOverlay(app, scale)
             if (blurHere && session.surfaceOn(Panel.Bottom) == Surface.Picker) MenuHints(app)
             if (panel != null && screen != null) {
                 DialogLayer(app, model.dialog, screen, scale, activity::dispatch)
@@ -2115,15 +2117,17 @@ private fun GridHints(app: FoldcadeApp, modifier: Modifier = Modifier) {
         },
     )
     // The grid's own keys only count while nothing covers it.
-    val gridKeys = model.panel == null && model.dialog == null && !model.connectOpen
+    val gridKeys = model.panel == null && model.dialog == null && model.saveConflict == null && !model.connectOpen
     val page = model.playActivity?.takeIf { model.dialog == null }?.let { playActivityHints(model) }
-    val normalKeys = page ?: panelHints(model) ?: gridHints(
+    val normalKeys = (page ?: panelHints(model) ?: gridHints(
         actions,
         if (model.connectOpen) HomeKeys.Idle else shell.homeKeys(),
         model.faceMap,
         screens = gridKeys && shell.focusedLaunchesOnOneScreen(),
         options = gridKeys && !model.connectOpen && shell.hasOptions(),
-    )
+    )) + if (gridKeys && model.settings == null && model.playActivity == null &&
+        (model.homeGrid != HomeGrid.StandIns || shell.homeKeys() == HomeKeys.AllLibrary)
+    ) triggerHints(model.gridLabels.isNotEmpty()) else emptyList()
     val back = promptKeyOf(model.faceMap.backKey) ?: PromptKey.FaceB
     val keys = if (gridKeys && (shell.downloading.isNotEmpty() || shell.activity.values.any { it is TileActivity.Downloading || it == TileActivity.Checking })) {
         normalKeys.filterNot { it.key == back } + HintKey(back, "Cancel download")
@@ -2151,7 +2155,7 @@ private fun HintWord(
         verticalAlignment = Alignment.CenterVertically,
     ) {
         PromptImage(if (held) "${glyph}_filled" else glyph, 24.dp)
-        BasicText(text = hint.label, style = text(foldTheme().muted, LocalFoldTheme.current.theme.style.type.hint, foldTheme()))
+        if (hint.label.isNotEmpty()) BasicText(text = hint.label, style = text(foldTheme().muted, LocalFoldTheme.current.theme.style.type.hint, foldTheme()))
     }
 }
 
@@ -3267,3 +3271,29 @@ private fun Modifier.chip(focused: Boolean): Modifier {
 }
 
 private const val CHIP_CORNER_PX = 44f
+
+/** The trigger's letter is brief enough to read without covering the hero for long. */
+@Composable
+private fun LetterOverlay(app: FoldcadeApp, scale: Float) {
+    val model = app.shell.model
+    val theme = LocalFoldTheme.current.theme
+    val alpha = remember { Animatable(0f) }
+    LaunchedEffect(model.letterJumpEpoch) {
+        if (model.letterJumpEpoch == 0) return@LaunchedEffect
+        alpha.animateTo(1f, theme.motion.arrive(theme.motion.durationLetterFade, scale))
+        delay(theme.motion.durationLetterHold)
+        alpha.animateTo(0f, theme.motion.leave(theme.motion.durationLetterFade, scale))
+    }
+    val letter = model.letterJump ?: return
+    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+        BasicText(
+            text = letter,
+            modifier = Modifier.graphicsLayer { this.alpha = alpha.value }
+                .clip(RoundedCornerShape(theme.style.metrics.cardCornerDp.dp * 2))
+                .background(theme.surface.copy(alpha = 0.94f))
+                .padding(horizontal = px(128f), vertical = px(64f)),
+            style = text(theme.onBackground, theme.style.type.heroTitle * 4, theme)
+                .copy(fontWeight = FontWeight.SemiBold, textAlign = TextAlign.Center),
+        )
+    }
+}

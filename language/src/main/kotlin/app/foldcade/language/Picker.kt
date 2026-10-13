@@ -24,7 +24,7 @@ enum class Side {
     Right,
 }
 
-/** [depth] is how far in a level sits, so going in and coming back move opposite ways. [actsOnTile] marks Y's menus. */
+/** [depth] is how far in a level sits, so going in and coming back move opposite ways. [actsOnTile] marks menus whose header names the focused tile. */
 enum class PanelLevel(val depth: Int, val actsOnTile: Boolean = false) {
     Root(0),
 
@@ -41,7 +41,7 @@ enum class PanelLevel(val depth: Int, val actsOnTile: Boolean = false) {
     AddTo(2, actsOnTile = true),
 
     /** L1's Edit home: the focused tile's actions, then the settings for the whole board. */
-    EditHome(1),
+    EditHome(1, actsOnTile = true),
 }
 
 data class SidePanel(
@@ -640,7 +640,7 @@ fun rowLabel(row: Row, model: PickerModel): String {
 fun displayOrder(model: PickerModel): List<Int> {
     if (model.count <= 0) return emptyList()
     if (model.arranging && model.order.size == model.count) return model.order
-    if (model.sort == LibrarySort.RecentlyPlayed && model.recentFirst.size == model.count) {
+    if (model.homeGrid == HomeGrid.StandIns && model.sort == LibrarySort.RecentlyPlayed && model.recentFirst.size == model.count) {
         return model.recentFirst
     }
     if (model.order.size == model.count) return model.order
@@ -828,12 +828,21 @@ data class PickerModel(
     val saveConflict: SaveConflictPrompt? = null,
     /** Every library is being read again. */
     val librarySyncing: Boolean = false,
+    /** Alphabetical labels in display order. Empty when triggers jump screens instead. */
+    val gridLabels: List<String> = emptyList(),
+    /** Home can retain empty slots after its last actual tile. */
+    val lastOccupiedIndex: Int = count - 1,
+    /** Trigger jumps on Home and folders stop at the last occupied column. Swipes keep the full reach. */
+    val screenJumpLastColumn: Int? = null,
+    val letterJump: String? = null,
+    val letterJumpEpoch: Int = 0,
 )
 
 fun reduce(
     model: PickerModel,
     meaning: Meaning,
     screen: HostScreen = HostScreen.Bottom,
+    repeatCount: Int = 0,
 ): Pair<PickerModel, Effect?> {
     val coerced = model.copy(focus = coerce(model.focus, model))
     val dialog = coerced.dialog
@@ -892,7 +901,7 @@ fun reduce(
         }
         return applyPanel(coerced, panel, meaning, screen)
     }
-    return applyGrid(coerced, meaning, screen)
+    return applyGrid(coerced, meaning, screen, repeatCount)
 }
 
 private fun coerce(focus: GridFocus, model: PickerModel): GridFocus {
@@ -961,6 +970,7 @@ private fun applyGrid(
     model: PickerModel,
     meaning: Meaning,
     screen: HostScreen,
+    repeatCount: Int,
 ): Pair<PickerModel, Effect?> {
     val hold = model.hold
     if (model.arranging && hold != null &&
@@ -971,9 +981,23 @@ private fun applyGrid(
     }
     return when (meaning) {
         Meaning.MoveUp, Meaning.MoveDown, Meaning.MoveLeft, Meaning.MoveRight ->
-            model.copy(focus = move(model.focus, meaning, model)) to null
+            model.copy(focus = softStop(model.focus, move(model.focus, meaning, model), model.lastOccupiedIndex, repeatCount)) to null
         Meaning.PageTowardStart, Meaning.PageTowardEnd ->
             model.copy(focus = page(model.focus, meaning == Meaning.PageTowardEnd, model)) to null
+        Meaning.LetterBackward, Meaning.LetterForward -> {
+            val forward = meaning == Meaning.LetterForward
+            if (model.gridLabels.isNotEmpty() && model.focus.chrome == null) {
+                val index = jumpLetter(model.gridLabels, model.focus.cellIndex, forward)
+                model.copy(
+                    focus = GridFocus(index, GridStrip.column(index)),
+                    letterJump = letterGroup(model.gridLabels[index]),
+                    letterJumpEpoch = model.letterJumpEpoch + 1,
+                ) to null
+            } else model.copy(focus = page(model.focus, forward, model, model.screenJumpLastColumn)) to null
+        }
+        Meaning.Menu -> if (model.arranging) model to null else model.copy(
+            settings = SettingsPage(screen = HostScreen.Top, grid = model.focus),
+        ) to null
         Meaning.Activate -> activate(model, screen)
         Meaning.ActivateBottom -> activate(model, screen, onBottom = true)
         Meaning.Options -> openActions(model) to null
@@ -1087,12 +1111,14 @@ private fun downFromChrome(focus: GridFocus, model: PickerModel): GridFocus {
 }
 
 /** A swipe moves the cursor a screen of columns along the strip, on the same row. */
-private fun page(focus: GridFocus, towardEnd: Boolean, model: PickerModel): GridFocus {
+private fun page(focus: GridFocus, towardEnd: Boolean, model: PickerModel, lastColumn: Int? = null): GridFocus {
     if (model.count <= 0 || focus.chrome != null) return focus
     val index = focus.cellIndex
     val column = GridStrip.column(index)
     val step = if (towardEnd) Metrics.columns else -Metrics.columns
-    val target = (column + step).coerceIn(0, reachColumns(model) - 1)
+    val last = (lastColumn ?: (reachColumns(model) - 1)).coerceIn(0, reachColumns(model) - 1)
+    if (towardEnd && column >= last) return focus
+    val target = (column + step).coerceIn(0, last)
     if (target == column) return focus
     return across(focus, target, GridStrip.row(index), model)
 }
@@ -1592,3 +1618,8 @@ private fun applyDialog(dialog: DialogState, meaning: Meaning): Pair<DialogState
         else -> dialog.copy(index = index) to null
     }
 }
+
+/** A held direction stops before the empty tail; a fresh press can explore it. */
+fun softStop(before: GridFocus, after: GridFocus, lastOccupiedIndex: Int, repeatCount: Int): GridFocus =
+    if (repeatCount > 0 && after.chrome == null && after.cellIndex > lastOccupiedIndex &&
+        after.cellIndex > before.cellIndex) before else after

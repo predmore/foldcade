@@ -17,6 +17,8 @@ abstract class PanelKeyActivity : ComponentActivity() {
 
     protected abstract fun onMeaning(meaning: Meaning)
 
+    protected open fun onMeaningRepeated(meaning: Meaning, repeatCount: Int) = onMeaning(meaning)
+
     protected open fun faceMap(): FaceMap = FaceMap.standard()
 
     /** Moving a tile, picking an icon, naming a folder, and All library keys. Idle everywhere else. */
@@ -71,18 +73,18 @@ abstract class PanelKeyActivity : ComponentActivity() {
             return true
         }
         if (keyCode == KeyEvent.KEYCODE_BACK) return false
-        val meaning = meaningOf(keyCode, event.repeatCount, faceMap(), homeKeys()) ?: return false
+        val meaning = meaningOf(keyCode, event.repeatCount, faceMap(), homeKeys()) ?: return consumesUnmapped(keyCode)
         val shoulder = meaning == Meaning.LeftPanel || meaning == Meaning.RightPanel
         if (pickerIsFocused() || (shoulder && foldcadeSurfaceFocused())) {
-            onMeaning(meaning)
+            onMeaningRepeated(meaning, event.repeatCount)
             return true
         }
-        return false
+        return consumesUnmapped(keyCode)
     }
 
     override fun onKeyUp(keyCode: Int, event: KeyEvent): Boolean {
         val prompt = promptKeyOf(keyCode)
         if (prompt != null) onPromptHeld(prompt, false)
-        return false
+        return consumesUnmapped(keyCode)
     }
 }

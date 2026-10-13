@@ -2,6 +2,7 @@ package app.foldcade
 
 import app.foldcade.api.plugin.Availability
 import app.foldcade.api.plugin.Game
+import app.foldcade.language.LibrarySort
 import app.foldcade.language.Copy
 import app.foldcade.language.Effect
 import app.foldcade.language.GridFocus
@@ -30,7 +31,6 @@ import app.foldcade.language.encodeHome
 import app.foldcade.language.enterEdit
 import app.foldcade.language.folderTakes
 import app.foldcade.language.folderCount
-import app.foldcade.language.jumpLetter
 import app.foldcade.language.leaveEdit
 import app.foldcade.language.mergeHome
 import app.foldcade.language.moveHeld
@@ -71,6 +71,9 @@ data class HomeFace(
 class HomeSession(raw: String?) {
     var board: HomeBoard = decodeHome(raw)
         private set
+
+    var sort: LibrarySort = LibrarySort.Listed
+    var lastPlayed: (String) -> Long? = { null }
 
     private var shelf: List<HomeItem> = emptyList()
     private var apps: List<HomeItem> = emptyList()
@@ -299,8 +302,8 @@ class HomeSession(raw: String?) {
     }
 
     /** Destinations for placing an app from a shelf, with Home first. */
-    fun placementDestinations(): List<FolderChoice> = listOf(FolderChoice(null, Copy.homeSlot)) +
-        board.slots.mapNotNull { board.folders[it] }.map { FolderChoice(it.id, it.name) }
+    fun placementDestinations(id: String): List<FolderChoice> =
+        app.foldcade.language.placementChoices(board, catalog().firstOrNull { it.id == id }, platforms)
 
     /** Places a catalog item at the chosen destination, moving any existing home tile. */
     fun placeIn(id: String, folderId: String?): Boolean {
@@ -320,9 +323,13 @@ class HomeSession(raw: String?) {
         return rootIndex
     }
 
+    /** A shelf opened from a nested view keeps that view's original root opener. */
+    fun rememberRootFocus(index: Int) {
+        if (board.openFolderId == null && !board.allOpen) rootIndex = index
+    }
+
     fun showAll() {
         renamingId = null
-        rootIndex = 0
         board = openAll(board)
     }
 
@@ -414,11 +421,8 @@ class HomeSession(raw: String?) {
                 board = closeAll(board)
                 step(null, rootIndex)
             }
-            Meaning.LetterForward, Meaning.LetterBackward -> {
-                val next = jumpLetter(allRows().map { it.title }, index, meaning == Meaning.LetterForward)
-                step(null, next)
-            }
-            Meaning.LeftPanel, Meaning.RightPanel, Meaning.Options -> HomeStep(handled = false, effect = null, focus = null)
+            Meaning.LetterForward, Meaning.LetterBackward,
+            Meaning.Menu, Meaning.LeftPanel, Meaning.RightPanel, Meaning.Options -> HomeStep(handled = false, effect = null, focus = null)
             Meaning.MoveUp, Meaning.MoveDown, Meaning.MoveLeft, Meaning.MoveRight,
             Meaning.PageTowardStart, Meaning.PageTowardEnd,
             ->
@@ -451,7 +455,7 @@ class HomeSession(raw: String?) {
     }
 
     private fun allRows(): List<HomeItem> =
-        allItems(catalog())
+        allItems(catalog().map { it.copy(lastPlayedMillis = lastPlayed(it.id) ?: it.lastPlayedMillis) }, sort)
 
     private fun allFaces(): List<HomeFace> =
         allRows().map { item -> faceFor(item.id).copy(onGrid = onHome(board, item.id)) }

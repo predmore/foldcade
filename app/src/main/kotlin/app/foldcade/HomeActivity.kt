@@ -196,21 +196,23 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
 
     override fun rowsTakeVerticalKeys(): Boolean = foldcade.shell.model.connectOpen
 
-    override fun onMeaning(meaning: app.foldcade.language.Meaning) {
+    override fun onMeaning(meaning: app.foldcade.language.Meaning) = onMeaningRepeated(meaning, 0)
+
+    override fun onMeaningRepeated(meaning: app.foldcade.language.Meaning, repeatCount: Int) {
         if (commandCenterKey(meaning)) return
-        val openingMenu = meaning == app.foldcade.language.Meaning.LeftPanel ||
-            meaning == app.foldcade.language.Meaning.RightPanel
-        if (openingMenu && !foldcade.store.session.islandsOpen()) return
-        if (foldcade.shell.model.dialog == null &&
-            foldcade.shell.model.saveConflict == null &&
-            (openingMenu || meaning == app.foldcade.language.Meaning.Back)
+        if (app.foldcade.language.opensTopMenu(meaning) && !foldcade.store.session.islandsOpen()) return
+        if (app.foldcade.language.cancelsPendingLaunch(
+                meaning,
+                dialogOpen = foldcade.shell.model.dialog != null,
+                conflictOpen = foldcade.shell.model.saveConflict != null,
+            )
         ) {
             cancelLaunches()
         }
         foldcade.music.duckForThemeSound(meaning)
         val panel = displays.panelFor(this, foldcade.store.session.defaultDisplayIsTop) ?: return
         val screen = if (panel == Panel.Top) HostScreen.Top else HostScreen.Bottom
-        dispatch(foldcade.shell.onMeaning(meaning, screen))
+        dispatch(foldcade.shell.onMeaning(meaning, screen, repeatCount))
     }
 
     /** The command center on this screen, or the grid opened from it, takes the key first. */
@@ -557,6 +559,8 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
     private fun acceptHome(intent: Intent) {
         if (!isAndroidHomeRecall(intent.action, intent.categories ?: emptySet())) return
         val panel = displays.panelFor(this, foldcade.store.session.defaultDisplayIsTop) ?: return
+        val surface = foldcade.store.session.surfaceOn(panel)
+        if (surface == Surface.Picker || surface == Surface.Hero) foldcade.shell.goHome()
         foldcade.store.update { it.home(panel) }
         if (foldcade.panelRecoveryRequested) foldcade.requestPanelRecovery()
     }
