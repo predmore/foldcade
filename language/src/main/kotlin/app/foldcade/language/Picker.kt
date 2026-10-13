@@ -283,7 +283,7 @@ sealed interface Row {
     data object AddToHome : Row
     data class QuickTile(val setting: QuickSetting) : Row
 
-    /** The R1 slider for the top screen's brightness. */
+    /** The R1 slider for both screens' brightness. */
     data object Brightness : Row
     data object ButtonLabels : Row
     data object Licenses : Row
@@ -803,7 +803,7 @@ data class PickerModel(
     val connectKind: ConnectKind = ConnectKind.Romm,
     /** The open RomM form is adding a server besides the default instance. */
     val connectAnother: Boolean = false,
-    /** The top screen's brightness as a slider position, 0 to 100. See [brightnessLevel]. */
+    /** Both screens' brightness as a slider position, 0 to 100. See [brightnessLevel]. */
     val brightness: Int = 50,
     /** Android lets Foldcade write the brightness setting. */
     val brightnessAllowed: Boolean = false,

@@ -7,15 +7,17 @@ import org.junit.Test
 
 class BrightnessTest {
     @Test
-    fun theCurveSpansAndroidsManualRangeAndNeverStepsBack() {
+    fun theSliderSpansAndroidsManualRangeInAStraightLine() {
         assertEquals(1, brightnessLevel(0))
         assertEquals(255, brightnessLevel(100))
         val levels = (0..100).map(::brightnessLevel)
-        assertTrue(levels.zipWithNext().all { (a, b) -> b >= a })
-        // Android's slider curve: halfway along is far below half the level.
-        assertEquals(22, brightnessLevel(50))
-        assertEquals(66, brightnessPosition(44))
-        assertEquals(44, brightnessLevel(brightnessPosition(44)))
+        assertTrue(levels.zipWithNext().all { (a, b) -> b > a })
+        // Halfway along is half the level, as in AYN's own menu.
+        assertEquals(128, brightnessLevel(50))
+        assertEquals(50, brightnessPosition(128))
+        assertEquals(0, brightnessPosition(0))
+        assertEquals(100, brightnessPosition(300))
+        assertTrue((0..100).all { brightnessPosition(brightnessLevel(it)) == it })
     }
 
     @Test

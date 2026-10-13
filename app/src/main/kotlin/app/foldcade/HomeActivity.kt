@@ -345,6 +345,7 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
         foldcade.refreshMoonlightShelf()
         foldcade.refreshDroidDeckShelf()
         foldcade.refreshBrightness()
+        foldcade.brightness.refreshOther()
         foldcade.refreshNoticeAccess()
         reconcileUsage()
     }
@@ -490,12 +491,11 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
         recoveryWindow?.brightness(level)
     }
 
-    /** The settings level is the default display's, so only that screen can be kept darker than the dim. */
+    /** A screen the user keeps darker than the dim stays at its own level. */
     private fun commandCenterDimLevel(): Float {
         val dim = CommandCenter.DIM_BRIGHTNESS
-        if (display?.displayId != Display.DEFAULT_DISPLAY) return dim
-        val own = foldcade.brightness.level() ?: return dim
-        return minOf(dim, (own - 1).coerceAtLeast(0) / 254f)
+        val id = display?.displayId ?: return dim
+        return minOf(dim, foldcade.brightness.fraction(id) ?: return dim)
     }
 
     private fun refreshShellVisible() {
