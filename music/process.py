@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Cut a seamless loop from the 4x render, optional retro post, normalize, verify, encode.
+"""Cut a seamless loop from the 4x render, optional retro post, compress, normalize, limit, encode.
 Usage: process.py --variant {sketch1,a,b} [--out DIR] [--title TITLE]"""
 import argparse, json, subprocess
 import numpy as np, soundfile as sf, pyloudnorm as pyln
@@ -12,6 +12,16 @@ from scipy.signal import resample_poly, butter, lfilter
 TARGET_LUFS = -12.0
 TRUE_PEAK_DBTP = -1.0
 LIMIT_DBTP = -1.8
+# Gentle bus compression, after the rough gain to TARGET_LUFS and before the
+# limiter. A wide 2:1 knee rides swells down a few dB. The loudness loop then
+# restores the integrated level, so playback stays with the in-app slider.
+COMPRESS_THRESHOLD_DB = -16.0
+COMPRESS_RATIO = 2.0
+COMPRESS_KNEE_DB = 8.0
+COMPRESS_ATTACK_S = 0.020
+COMPRESS_RELEASE_S = 0.200
+COMPRESS_RMS_S = 0.015
+COMPRESS_LOOKAHEAD_S = 0.005
 
 
 def true_peak_db(audio, sr):
@@ -50,9 +60,68 @@ def limit_true_peak(audio, sr, ceiling_dbtp, lookahead_s=0.005, release_s=0.05):
     return np.concatenate([down, pad], axis=0)
 
 
+def compress_gentle(audio, sr, threshold_db, ratio, knee_db, attack_s, release_s, rms_s, lookahead_s):
+    """Stereo-linked soft-knee compressor.
+
+    The detector is a short RMS so it follows swells rather than sample peaks.
+    Attack and release are causal. The lookahead is a few milliseconds, so run
+    this on a span that continues past the loop.
+    """
+    power = np.mean(np.asarray(audio, dtype=np.float64) ** 2, axis=1)
+    win = max(1, int(round(rms_s * sr)))
+    cumulative = np.empty(len(power) + 1, dtype=np.float64)
+    cumulative[0] = 0.0
+    np.cumsum(power, out=cumulative[1:])
+    average = (cumulative[win:] - cumulative[:-win]) / win
+    level = np.empty(len(power), dtype=np.float64)
+    half = win // 2
+    level[:half] = average[0]
+    end = half + len(average)
+    if end <= len(level):
+        level[half:end] = average
+        if end < len(level):
+            level[end:] = average[-1]
+    else:
+        level[half:] = average[:len(level) - half]
+    attack = np.exp(-1.0 / (attack_s * sr))
+    release = np.exp(-1.0 / (release_s * sr))
+    envelope = np.empty(len(level), dtype=np.float64)
+    held = float(level[0])
+    for index in range(len(level)):
+        sample = float(level[index])
+        coef = attack if sample > held else release
+        held = coef * held + (1.0 - coef) * sample
+        envelope[index] = held
+    level_db = 10.0 * np.log10(np.maximum(envelope, 1e-12))
+    low = threshold_db - knee_db / 2.0
+    high = threshold_db + knee_db / 2.0
+    reduction = np.zeros(len(level_db), dtype=np.float64)
+    above = level_db > high
+    reduction[above] = (1.0 / ratio - 1.0) * (level_db[above] - threshold_db)
+    in_knee = (level_db >= low) & ~above
+    span = level_db[in_knee] - threshold_db + knee_db / 2.0
+    reduction[in_knee] = ((1.0 / ratio - 1.0) * span * span) / (2.0 * knee_db)
+    gain = 10.0 ** (reduction / 20.0)
+    lookahead = int(round(lookahead_s * sr))
+    if lookahead > 0:
+        gain = np.concatenate([gain[lookahead:], np.full(lookahead, gain[-1])])
+    print('compress: %.1f:1 above %.1f dBFS, knee %.1f dB, reduction median %.2f dB max %.2f dB' % (
+        ratio, threshold_db, knee_db, -float(np.median(reduction)), -float(reduction.min())))
+    return audio * gain[:, None]
+
+
 def master_loudness(audio, sr, meter, target_lufs, ceiling_dbtp, loop_start, loop_len):
-    """Gain the continuous span to the integrated target, then true-peak limit it."""
+    """Compress the continuous span, restore integrated loudness, then true-peak limit it."""
     out = np.asarray(audio, dtype=np.float64).copy()
+    region = out[loop_start:loop_start + loop_len]
+    rough = float(meter.integrated_loudness(region))
+    if np.isfinite(rough):
+        pre = target_lufs - rough
+        if abs(pre) > 0.05:
+            out *= 10 ** (pre / 20.0)
+    out = compress_gentle(
+        out, sr, COMPRESS_THRESHOLD_DB, COMPRESS_RATIO, COMPRESS_KNEE_DB,
+        COMPRESS_ATTACK_S, COMPRESS_RELEASE_S, COMPRESS_RMS_S, COMPRESS_LOOKAHEAD_S)
     for step in range(4):
         region = out[loop_start:loop_start + loop_len]
         loud = float(meter.integrated_loudness(region))
@@ -117,6 +186,7 @@ loop3n = mastered[warm + L:warm + 2 * L]
 
 def db(x): return float(20 * np.log10(max(x, 1e-12)))
 res = {'variant': V, 'length_s': len(loop) / SR, 'integrated_lufs': meter.integrated_loudness(loop),
+       'loudness_range_lu': meter.loudness_range(loop),
        'sample_peak_dbfs': db(np.abs(loop).max()),
        'true_peak_dbfs_est': db(np.abs(resample_poly(loop, 4, 1, axis=0)).max()),
        'clipped_samples': int((np.abs(loop) >= 0.999).sum())}
@@ -175,6 +245,7 @@ else:
     decoded = encode_ogg()
 
 res['integrated_lufs'] = float(meter.integrated_loudness(loop))
+res['loudness_range_lu'] = float(meter.loudness_range(loop))
 res['sample_peak_dbfs'] = db(np.abs(loop).max())
 res['true_peak_dbfs_est'] = true_peak_db(loop, SR)
 res['clipped_samples'] = int((np.abs(loop) >= 0.999).sum())
@@ -183,7 +254,8 @@ res['ogg_decoded_peak_dbfs'] = db(np.abs(decoded).max())
 res['ogg_true_peak_dbtp'] = true_peak_db(decoded, SR)
 print('ogg decoded: %d samples (expected %d), peak %.2f dBFS, true peak %.2f dBTP' % (
     len(decoded), L, res['ogg_decoded_peak_dbfs'], res['ogg_true_peak_dbtp']))
-print('final: %.3f LUFS, wav true peak %.3f dBTP' % (res['integrated_lufs'], res['true_peak_dbfs_est']))
+print('final: %.3f LUFS, LRA %.3f LU, wav true peak %.3f dBTP' % (
+    res['integrated_lufs'], res['loudness_range_lu'], res['true_peak_dbfs_est']))
 two = np.concatenate([loop, loop])
 sf.write(f'{base}_loop_x2.wav', two.astype(np.float32), SR, subtype='FLOAT')
 run('ffmpeg', '-y', '-i', f'{base}_loop.wav', '-c:a', 'libmp3lame', '-b:a', '192k', *meta, f'{base}_loop.mp3')
