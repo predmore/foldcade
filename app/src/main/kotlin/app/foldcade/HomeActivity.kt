@@ -200,12 +200,12 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
 
     override fun onMeaningRepeated(meaning: app.foldcade.language.Meaning, repeatCount: Int) {
         if (commandCenterKey(meaning)) return
-        val openingMenu = meaning == app.foldcade.language.Meaning.LeftPanel ||
-            meaning == app.foldcade.language.Meaning.RightPanel
-        if (openingMenu && !foldcade.store.session.islandsOpen()) return
-        if (foldcade.shell.model.dialog == null &&
-            foldcade.shell.model.saveConflict == null &&
-            (openingMenu || meaning == app.foldcade.language.Meaning.Back)
+        if (app.foldcade.language.opensTopMenu(meaning) && !foldcade.store.session.islandsOpen()) return
+        if (app.foldcade.language.cancelsPendingLaunch(
+                meaning,
+                dialogOpen = foldcade.shell.model.dialog != null,
+                conflictOpen = foldcade.shell.model.saveConflict != null,
+            )
         ) {
             cancelLaunches()
         }

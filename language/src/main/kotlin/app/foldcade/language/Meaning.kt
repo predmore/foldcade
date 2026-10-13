@@ -102,3 +102,10 @@ fun meaningOf(
 fun consumesUnmapped(keyCode: Int): Boolean =
     keyCode in KeyEvent.KEYCODE_BUTTON_A..KeyEvent.KEYCODE_BUTTON_MODE ||
         keyCode in KeyEvent.KEYCODE_BUTTON_1..KeyEvent.KEYCODE_BUTTON_16
+
+/** These controls open UI on top, so they share ownership and launch cancellation rules. */
+fun opensTopMenu(meaning: Meaning): Boolean =
+    meaning == Meaning.LeftPanel || meaning == Meaning.RightPanel || meaning == Meaning.Menu
+
+fun cancelsPendingLaunch(meaning: Meaning, dialogOpen: Boolean, conflictOpen: Boolean): Boolean =
+    !dialogOpen && !conflictOpen && (opensTopMenu(meaning) || meaning == Meaning.Back)

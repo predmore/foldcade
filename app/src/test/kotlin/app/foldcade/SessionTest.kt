@@ -239,4 +239,14 @@ class SessionTest {
         assertEquals(session, session.clearIfCurrent(Panel.Top, "other"))
         assertNull(session.clearIfCurrent(Panel.Top, one.id).topApp)
     }
+    @Test fun startUsesTheSameTopScreenOwnershipGuardAsShoulders() {
+        val running = Session().launch(one, Panel.Top).browse(Panel.Bottom)
+        assertEquals(Surface.Picker, running.surfaceOn(Panel.Bottom))
+        for (meaning in listOf(app.foldcade.language.Meaning.Menu,
+            app.foldcade.language.Meaning.LeftPanel, app.foldcade.language.Meaning.RightPanel)) {
+            assertFalse(!app.foldcade.language.opensTopMenu(meaning) || running.islandsOpen())
+            assertTrue(!app.foldcade.language.opensTopMenu(meaning) || Session().islandsOpen())
+        }
+    }
+
 }

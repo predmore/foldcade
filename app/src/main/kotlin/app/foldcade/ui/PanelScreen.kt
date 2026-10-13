@@ -3289,10 +3289,10 @@ private fun LetterOverlay(app: FoldcadeApp, scale: Float) {
         BasicText(
             text = letter,
             modifier = Modifier.graphicsLayer { this.alpha = alpha.value }
-                .clip(RoundedCornerShape(theme.style.metrics.cardCornerDp.dp))
+                .clip(RoundedCornerShape(theme.style.metrics.cardCornerDp.dp * 2))
                 .background(theme.surface.copy(alpha = 0.94f))
-                .padding(horizontal = px(64f), vertical = px(32f)),
-            style = text(theme.onBackground, theme.style.type.heroTitle * 2, theme)
+                .padding(horizontal = px(128f), vertical = px(64f)),
+            style = text(theme.onBackground, theme.style.type.heroTitle * 4, theme)
                 .copy(fontWeight = FontWeight.SemiBold, textAlign = TextAlign.Center),
         )
     }

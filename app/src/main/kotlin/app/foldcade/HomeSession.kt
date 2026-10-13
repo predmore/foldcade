@@ -323,9 +323,13 @@ class HomeSession(raw: String?) {
         return rootIndex
     }
 
+    /** A shelf opened from a nested view keeps that view's original root opener. */
+    fun rememberRootFocus(index: Int) {
+        if (board.openFolderId == null && !board.allOpen) rootIndex = index
+    }
+
     fun showAll() {
         renamingId = null
-        rootIndex = 0
         board = openAll(board)
     }
 

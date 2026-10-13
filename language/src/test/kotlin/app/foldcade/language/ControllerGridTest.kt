@@ -101,4 +101,31 @@ class ControllerGridTest {
         val dialog = model.copy(dialog = homePrompt())
         assertNull(reduce(dialog, Meaning.Menu).first.settings)
     }
+    @Test fun startSharesMenuOwnershipAndPendingLaunchCancellation() {
+        for (meaning in listOf(Meaning.LeftPanel, Meaning.RightPanel, Meaning.Menu)) {
+            assertTrue(opensTopMenu(meaning))
+            assertTrue(cancelsPendingLaunch(meaning, dialogOpen = false, conflictOpen = false))
+            assertFalse(cancelsPendingLaunch(meaning, dialogOpen = true, conflictOpen = false))
+            assertFalse(cancelsPendingLaunch(meaning, dialogOpen = false, conflictOpen = true))
+        }
+        assertFalse(opensTopMenu(Meaning.Activate))
+        assertFalse(cancelsPendingLaunch(Meaning.Activate, dialogOpen = false, conflictOpen = false))
+        assertTrue(cancelsPendingLaunch(Meaning.Back, dialogOpen = false, conflictOpen = false))
+    }
+
+    @Test fun homeTriggersStopAtOccupiedColumnsWhileSwipesKeepTheirReach() {
+        val short = PickerModel(count = 9, rowsPerPage = 3, focus = GridFocus(1), screenJumpLastColumn = 2)
+        val right = reduce(short, Meaning.LetterForward).first
+        assertEquals(7, right.focus.cellIndex)
+        assertEquals(right.focus, reduce(right, Meaning.LetterForward).first.focus)
+        val left = reduce(right, Meaning.LetterBackward).first
+        assertEquals(1, left.focus.cellIndex)
+        assertEquals(left.focus, reduce(left, Meaning.LetterBackward).first.focus)
+        val gaps = short.copy(count = 15, lastOccupiedIndex = 6, screenJumpLastColumn = 2)
+        assertEquals(7, reduce(gaps, Meaning.LetterForward).first.focus.cellIndex)
+        assertEquals(13, reduce(short, Meaning.PageTowardEnd).first.focus.cellIndex)
+        val singleColumn = short.copy(count = 1, screenJumpLastColumn = 0)
+        assertEquals(1, reduce(singleColumn, Meaning.LetterForward).first.focus.cellIndex)
+    }
+
 }

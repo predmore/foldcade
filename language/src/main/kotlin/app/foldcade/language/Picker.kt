@@ -832,6 +832,8 @@ data class PickerModel(
     val gridLabels: List<String> = emptyList(),
     /** Home can retain empty slots after its last actual tile. */
     val lastOccupiedIndex: Int = count - 1,
+    /** Trigger jumps on Home and folders stop at the last occupied column. Swipes keep the full reach. */
+    val screenJumpLastColumn: Int? = null,
     val letterJump: String? = null,
     val letterJumpEpoch: Int = 0,
 )
@@ -991,7 +993,7 @@ private fun applyGrid(
                     letterJump = letterGroup(model.gridLabels[index]),
                     letterJumpEpoch = model.letterJumpEpoch + 1,
                 ) to null
-            } else model.copy(focus = page(model.focus, forward, model)) to null
+            } else model.copy(focus = page(model.focus, forward, model, model.screenJumpLastColumn)) to null
         }
         Meaning.Menu -> if (model.arranging) model to null else model.copy(
             settings = SettingsPage(screen = HostScreen.Top, grid = model.focus),
@@ -1109,12 +1111,14 @@ private fun downFromChrome(focus: GridFocus, model: PickerModel): GridFocus {
 }
 
 /** A swipe moves the cursor a screen of columns along the strip, on the same row. */
-private fun page(focus: GridFocus, towardEnd: Boolean, model: PickerModel): GridFocus {
+private fun page(focus: GridFocus, towardEnd: Boolean, model: PickerModel, lastColumn: Int? = null): GridFocus {
     if (model.count <= 0 || focus.chrome != null) return focus
     val index = focus.cellIndex
     val column = GridStrip.column(index)
     val step = if (towardEnd) Metrics.columns else -Metrics.columns
-    val target = (column + step).coerceIn(0, reachColumns(model) - 1)
+    val last = (lastColumn ?: (reachColumns(model) - 1)).coerceIn(0, reachColumns(model) - 1)
+    if (towardEnd && column >= last) return focus
+    val target = (column + step).coerceIn(0, last)
     if (target == column) return focus
     return across(focus, target, GridStrip.row(index), model)
 }

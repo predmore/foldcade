@@ -404,9 +404,12 @@ class ShellController(
 
     /** L1's Home: the board's top level, from a folder, All, or a shelf. The last root tile keeps the focus. */
     fun goHome() {
+        val rootFocus = model.focus.takeIf {
+            showingHome() && home.board.openFolderId == null && !home.board.allOpen
+        }
         val index = home.showRoot()
         syncHome()
-        showBoard(GridFocus(cellIndex = index, lastColumn = GridStrip.column(index)), keepDialog = true)
+        showBoard(rootFocus ?: GridFocus(cellIndex = index, lastColumn = GridStrip.column(index)), keepDialog = true)
         Log.i("Foldcade", "library-ui home")
     }
 
@@ -418,6 +421,7 @@ class ShellController(
             ?: installed.firstOrNull { androidHomeId(it.packageName) == gameId }?.label
 
     fun openHomeAll() {
+        if (showingHome()) home.rememberRootFocus(model.focus.cellIndex)
         home.showAll()
         store.saveHomeBoard(home.encoded())
         showBoard(GridFocus(), keepDialog = true)
@@ -1488,7 +1492,8 @@ class ShellController(
             app.foldcade.language.visibleSlots(home.board).indexOfLast { it != null }
         } else count - 1
         val counted = next.copy(count = count, playerSaves = playerSaveSettings(), recentFirst = recentOrder(),
-            gridLabels = labels, lastOccupiedIndex = lastOccupied)
+            gridLabels = labels, lastOccupiedIndex = lastOccupied,
+            screenJumpLastColumn = if (showingHome(next) && !home.board.allOpen) GridStrip.column(lastOccupied.coerceAtLeast(0)) else null)
         val game = tileOn(counted)
         val onHome = showingHome(counted)
         val tile = if (onHome) home.actions(counted.focus.cellIndex) else null
@@ -1573,6 +1578,9 @@ class ShellController(
     }
 
     private fun publish(next: PickerModel) {
+        if (showingHome() && next.homeGrid != HomeGrid.StandIns) {
+            home.rememberRootFocus(model.panel?.grid?.cellIndex ?: model.focus.cellIndex)
+        }
         val connectClosed = model.connectOpen && !next.connectOpen
         if (model.connectOpen != next.connectOpen) invalidateSetupValidation()
         if (next.primaryIsTop != store.session.defaultDisplayIsTop) {

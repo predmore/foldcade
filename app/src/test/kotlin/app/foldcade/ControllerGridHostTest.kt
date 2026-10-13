@@ -66,4 +66,57 @@ class ControllerGridHostTest {
         assertEquals(all, home.showRoot())
         assertFalse(home.board.allOpen)
     }
+    @Test fun shelvesAndMenuAllRestoreTheirRootOpenerAndRootRecallKeepsFocus() {
+        val shell = ShellController(SessionStore(MemoryPrefs()),
+            PluginHost(Dispatchers.Unconfined, MemoryCredentialStore()))
+        shell.setInstalledApps(listOf(LaunchableApp("app", "App", false)), emptySet())
+        shell.touchCell(5, HostScreen.Bottom)
+        shell.onMeaning(Meaning.LeftPanel, HostScreen.Bottom)
+        val apps = panelRows(shell.model.panel!!, shell.model).indexOf(Row.Apps)
+        shell.touchPanel(apps, HostScreen.Top)
+        shell.touchPanel(apps, HostScreen.Top)
+        assertEquals(HomeGrid.Apps, shell.model.homeGrid)
+        shell.showHomeGrid(HomeGrid.AndroidGames)
+        shell.goHome()
+        assertEquals(5, shell.model.focus.cellIndex)
+
+        shell.touchCell(6, HostScreen.Bottom)
+        shell.goHome()
+        assertEquals(6, shell.model.focus.cellIndex)
+        shell.onMeaning(Meaning.LeftPanel, HostScreen.Bottom)
+        val all = panelRows(shell.model.panel!!, shell.model).indexOf(Row.AllLibrary)
+        shell.touchPanel(all, HostScreen.Top)
+        shell.touchPanel(all, HostScreen.Top)
+        assertEquals(HomeKeys.AllLibrary, shell.homeKeys())
+        shell.goHome()
+        assertEquals(6, shell.model.focus.cellIndex)
+
+        val folder = (0 until shell.model.count).first { shell.homeFace(it)?.folder == true }
+        shell.touchCell(folder, HostScreen.Bottom)
+        shell.onMeaning(Meaning.Activate, HostScreen.Bottom)
+        shell.showHomeGrid(HomeGrid.Apps)
+        shell.goHome()
+        assertEquals(folder, shell.model.focus.cellIndex)
+    }
+
+    @Test fun homeAndFolderTriggersUseTheLastOccupiedColumn() {
+        val store = SessionStore(MemoryPrefs())
+        val folder = HomeFolder("mine", "Mine", userMade = true, slots = listOf(androidHomeId("app")))
+        store.saveHomeBoard(encodeHome(HomeBoard(
+            slots = listOf(HOME_ALL, null, null, null, null, null, folder.id, null, null, null),
+            folders = mapOf(folder.id to folder), addNewToHome = false,
+        )))
+        val shell = ShellController(store, PluginHost(Dispatchers.Unconfined, MemoryCredentialStore()))
+        shell.setInstalledApps(listOf(LaunchableApp("app", "App", false)), emptySet())
+        shell.onMeaning(Meaning.LetterForward, HostScreen.Bottom)
+        assertEquals(2, GridStrip.column(shell.model.focus.cellIndex))
+        shell.onMeaning(Meaning.LetterForward, HostScreen.Bottom)
+        assertEquals(2, GridStrip.column(shell.model.focus.cellIndex))
+        shell.onMeaning(Meaning.Activate, HostScreen.Bottom)
+        assertEquals(1, shell.model.count)
+        assertEquals(0, shell.model.screenJumpLastColumn)
+        shell.onMeaning(Meaning.LetterForward, HostScreen.Bottom)
+        assertEquals(0, shell.model.focus.cellIndex)
+    }
+
 }
