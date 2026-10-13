@@ -80,6 +80,23 @@ class LocalFolderBackend(
     /** The `.steam` files the last finished scan found. Empty before one has run. */
     fun steamShortcuts(): List<SteamShortcut> = stored?.scan?.steamShortcuts.orEmpty()
 
+    /**
+     * Walks the bound tree again and publishes the result when it differs from
+     * the cached scan. Pages keep reading the cached scan until then. False when
+     * nothing changed, no scan has finished yet, or the tree was rebound meanwhile.
+     */
+    suspend fun rescan(): Boolean {
+        val current = binding.get() ?: return false
+        val before = published() ?: return false
+        val scan = scanOf(current)
+        if (scan == before) return false
+        return gate.withLock {
+            if (published() !== before) return@withLock false
+            publish(current.generation, scan)
+            published() === scan
+        }
+    }
+
     private val gate = Mutex()
     private val remembered = HashMap<String, Map<String, RememberedSave>>()
 

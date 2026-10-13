@@ -23,7 +23,7 @@ Builds with **Frontend Sync** can update exports as games are installed or remov
 3. Wait for export to finish, or use **Resync all** if needed.
 4. Add that directory to Foldcade with **Settings › Library › Add a folder**.
 
-After exports change, [fully restart Foldcade](README.md#discovery-and-updates). Returning Home alone does not rescan folders.
+After exports change, return to Foldcade; it [rescans folders in the background](README.md#discovery-and-updates).
 
 GameNative [exports a format for each store](https://github.com/TheReal-Flo/gamenative/blob/master/app/src/main/java/app/gamenative/sync/FrontendSyncManager.kt). Foldcade reads only `.steam`; `.epic`, `.gog`, `.amazon`, and `.pcgame` are not supported. Renaming them does not supply the correct store information.
 
@@ -39,7 +39,7 @@ Keep exports in separate folders. DroidDeck's sync inventory marks its files as 
 
 ## If a game is missing or opens the wrong app
 
-- **Missing game:** Select the folder containing `.steam` exports, then restart Foldcade. If it is in All, check [Home placement](README.md#a-game-is-in-all-but-missing-from-home).
+- **Missing game:** Select the folder containing `.steam` exports, then return to Foldcade. If it is in All, check [Home placement](README.md#a-game-is-in-all-but-missing-from-home).
 - **Game is unavailable:** Check its installation and account in GameNative; an export does not install it.
 - **Opens in DroidDeck:** Check that GameNative is installed and its export folder does not contain DroidDeck's sync inventory.
 

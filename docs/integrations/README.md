@@ -22,12 +22,12 @@ Finish setup in the source app or emulator and check that your game plays there.
 
 | Source | When the list updates |
 | --- | --- |
-| Local folders, GameNative exports, and DroidDeck exports | At startup and when you add or remove a library folder. |
+| Local folders, GameNative exports, and DroidDeck exports | At startup, when you add or remove a library folder, and in the background when you return to Foldcade. |
 | RomM | At startup and when a connection is added or changed. |
 | Android apps | At startup, when you return to Foldcade, and when apps are installed, removed, or changed. |
 | Moonlight and DroidDeck pinned shortcuts | At startup, when you return to Foldcade, and after Foldcade accepts a new game shortcut. |
 
-Folders are not watched continuously. After changing files or a server's catalog, fully restart Foldcade: open Android's **App info** for Foldcade, choose **Force stop**, then reopen it. Pressing Home alone does not rescan folders.
+Folders are not watched continuously. Returning to Foldcade rescans them in the background; Home keeps showing the current list until the scan finds a change. After changing a server's catalog, fully restart Foldcade: open Android's **App info** for Foldcade, choose **Force stop**, then reopen it.
 
 ## A game is in All but missing from Home
 

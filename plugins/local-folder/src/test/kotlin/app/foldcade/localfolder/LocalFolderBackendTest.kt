@@ -22,6 +22,7 @@ import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.atomic.AtomicReference
 import kotlin.coroutines.cancellation.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.yield
@@ -61,6 +62,7 @@ class LocalFolderBackendTest {
                 "reopenDeferredSaveConflicts",
                 "beginDeviceCode",
                 "pollDeviceCode",
+                "rescan",
             ),
             suspendNames,
         )
@@ -461,6 +463,51 @@ class LocalFolderBackendTest {
 
         backend.bindTree(tree.entry(), indexTree(tree))
         assertEquals("aa", backend.saves(game).slots.single().contentHash)
+    }
+
+    @Test
+    fun rescanPublishesOnlyAChangedFolder() = runBlocking {
+        val files = mutableListOf(folderFile("content://a", "A.nds"))
+        val tree = folderDir("content://nds", "nds")
+        val backend = LocalFolderBackend(tree.entry()) { entry ->
+            if (entry.documentUri == tree.uri) files.map { it.entry() } else emptyList()
+        }
+        assertFalse(backend.rescan())
+
+        assertEquals(listOf("A"), backend.listGames("nintendo-ds", GameQuery()).games.map { it.label })
+        assertFalse(backend.rescan())
+
+        files += folderFile("content://b", "B.nds")
+        assertEquals(listOf("A"), backend.listGames("nintendo-ds", GameQuery()).games.map { it.label })
+        assertTrue(backend.rescan())
+        assertEquals(listOf("A", "B"), backend.listGames("nintendo-ds", GameQuery()).games.map { it.label })
+        assertFalse(backend.rescan())
+    }
+
+    @Test(timeout = 5_000)
+    fun rescanDoesNotPublishOverARebind() = runBlocking {
+        val started = CompletableFuture<Unit>()
+        val release = CountDownLatch(1)
+        val previous = folderDir("content://old", "nds", listOf(folderFile("content://old/game", "Old.nds")))
+        val next = folderDir("content://new", "snes", listOf(folderFile("content://new/game", "New.sfc")))
+        val previousChildren = indexTree(previous)
+        val walks = AtomicInteger()
+        val backend = LocalFolderBackend(previous.entry()) { entry ->
+            if (walks.incrementAndGet() == 1) return@LocalFolderBackend previousChildren(entry)
+            started.complete(Unit)
+            release.await()
+            previousChildren(entry) + folderFile("content://old/more", "More.nds").entry()
+        }
+        backend.connect()
+        val rescanning = async(Dispatchers.Default) { backend.rescan() }
+        try {
+            started.get(2, TimeUnit.SECONDS)
+            backend.bindTree(next.entry(), indexTree(next))
+        } finally {
+            release.countDown()
+        }
+        assertFalse(rescanning.await())
+        assertEquals(listOf("New"), backend.listGames("snes", GameQuery()).games.map { it.label })
     }
 
     @Test(timeout = 5_000)

@@ -24,9 +24,9 @@ The current [export format](https://github.com/Droid-Deck/DroidDeck/blob/main/ap
 
 ## Updates
 
-DroidDeck keeps the export folder in step with its library. Foldcade reads it at startup and when a library folder is added or removed; it does not watch for file changes. After DroidDeck finishes a sync, [fully restart Foldcade](README.md#discovery-and-updates) to load the changes.
+DroidDeck keeps the export folder in step with its library. Foldcade reads it at startup, when a library folder is added or removed, and in the background when you return to Foldcade. After DroidDeck finishes a sync, press Home to load the changes.
 
-Returning Home refreshes pins, not export folders. Installing DroidDeck alone adds its app tile to **Emulators**; Foldcade does not read its private game library.
+Installing DroidDeck alone adds its app tile to **Emulators**; Foldcade does not read its private game library.
 
 ## Launching, saves, and removal
 
@@ -39,8 +39,8 @@ A game found through both a pin and an export gets one entry. See the shared [ar
 ## If a game is missing or opens the wrong app
 
 - **Shortcut is missing:** Make Foldcade the default home app and request it again. Pins from another launcher are not imported.
-- **Synced games are missing:** Check the selected `.steam` folder and restart Foldcade after sync finishes. For games already in All, check [Home placement](README.md#a-game-is-in-all-but-missing-from-home).
-- **Opens in GameNative:** Keep `.droiddeck-sync.json` beside the original exports; copying only `.steam` files loses their source marker.
+- **Synced games are missing:** Check the selected `.steam` folder and return to Foldcade after sync finishes. For games already in All, check [Home placement](README.md#a-game-is-in-all-but-missing-from-home).
+- **Opens in GameNative:** Keep `.droiddeck-sync.json` beside the original exports; copying only `.steam` files loses their source marker. DroidDeck skips the inventory when the folder already held matching `.steam` files, for example from **Export game file** or a GameNative export. Delete those files, let DroidDeck sync again, then return to Foldcade.
 - **Game is unavailable or a session is busy:** Open DroidDeck and resolve it there.
 
 [All integration guides](README.md)
