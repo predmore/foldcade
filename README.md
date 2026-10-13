@@ -59,7 +59,7 @@ Press **A** to play on the top screen or **X** on the bottom. Games that need bo
 | :---: | :---: |
 | ![The L1 drawer: this week's play activity as a small bar chart, round buttons for Home, All, Games, and Apps, then Edit home and Settings.](docs/images/menu-l1.webp) | ![The R1 drawer: date, battery, and Wi-Fi, round buttons for Wi-Fi, Bluetooth, Battery, and Android settings, and a brightness slider.](docs/images/menu-r1.webp) |
 
-**L1** opens Home, All, Games, Apps, Edit home, and Settings. **R1** gives you Wi-Fi, Bluetooth, battery, brightness for both screens, and notifications you can open or clear.
+**L1** opens Home, All, Games, Apps, Edit home, and Settings. **Start** opens Settings from the grid and closes it again. **L2 / R2** jump letters in All and the Android shelves, with a brief letter on the top screen; on Home and inside folders they move four columns at a time. Stick clicks do nothing. The Android Home button closes a folder, All, or a shelf and returns to its Home tile. **R1** gives you Wi-Fi, Bluetooth, battery, brightness for both screens, and notifications you can open or clear.
 
 ### Tidy up with one button
 
@@ -77,7 +77,7 @@ With RomM 5.4 or newer and a [supported save setup](docs/integrations/romm.md#sa
 
 ### See where the hours went
 
-Track how long you played and when, see your week in L1, and sort by **Recent** to return to a game. **Settings › Library › Play time › Everywhere** also counts sessions started outside Foldcade.
+Track how long you played and when, see your week in L1, and sort All by **Recent** to return to a game. **Library** sorts All A–Z; **Recent** puts the most recently played games first, followed by unplayed games A–Z. In Recent order, L2 / R2 move four columns at a time. **Settings › Library › Play time › Everywhere** also counts sessions started outside Foldcade.
 
 ### Make it yours
 

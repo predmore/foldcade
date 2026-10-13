@@ -43,8 +43,6 @@ class ContractTest {
     @Test
     fun unusedKeysAreNotGivenAMeaning() {
         listOf(
-            KeyEvent.KEYCODE_BUTTON_L2,
-            KeyEvent.KEYCODE_BUTTON_R2,
             KeyEvent.KEYCODE_BUTTON_THUMBL,
             KeyEvent.KEYCODE_BUTTON_THUMBR,
             KeyEvent.KEYCODE_BUTTON_MODE,

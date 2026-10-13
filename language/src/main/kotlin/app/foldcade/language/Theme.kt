@@ -237,6 +237,9 @@ object Copy {
     const val deleteDownload = "Delete download"
     const val addToHome = "Add to Home"
     const val addTo = "Add to"
+    const val emptySlot = "Empty slot"
+    const val letterJump = "Letter"
+    const val screenJump = "Screen"
     const val hintDrop = "Drop"
     const val hintCancel = "Cancel"
     const val hintSave = "Save"
@@ -331,3 +334,8 @@ fun gridHints(
         }
     }
 }
+
+fun triggerHints(letters: Boolean): List<HintKey> = listOf(
+    HintKey(PromptKey.L2, ""),
+    HintKey(PromptKey.R2, if (letters) Copy.letterJump else Copy.screenJump),
+)

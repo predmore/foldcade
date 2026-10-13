@@ -32,7 +32,7 @@ enum class Meaning {
     /** Delete on a keyboard. Removes the focused notice in R1, as Y does. */
     Dismiss,
 
-    /** Start. In a menu it runs the settings row (L1 then Start), and it closes Settings again. See [chords]. */
+    /** Start opens Settings from a grid, runs a menu's settings row, and closes Settings again. See [chords]. */
     Menu,
 
     /** Select. In a menu it runs the row that shows a view (L1 then Select is Play activity). See [chords]. */
@@ -70,10 +70,6 @@ fun meaningOf(
     if (repeatCount > 0 && keyCode in shoulderKeys) {
         return null
     }
-    if (homeKeys == HomeKeys.AllLibrary && repeatCount > 0) {
-        if (keyCode == KeyEvent.KEYCODE_DPAD_DOWN) return Meaning.LetterForward
-        if (keyCode == KeyEvent.KEYCODE_DPAD_UP) return Meaning.LetterBackward
-    }
     return when {
         keyCode == KeyEvent.KEYCODE_DPAD_UP -> Meaning.MoveUp
         keyCode == KeyEvent.KEYCODE_DPAD_DOWN -> Meaning.MoveDown
@@ -96,8 +92,13 @@ fun meaningOf(
         keyCode == KeyEvent.KEYCODE_BUTTON_SELECT && homeKeys != HomeKeys.Renaming -> Meaning.View
         (keyCode == KeyEvent.KEYCODE_DEL || keyCode == KeyEvent.KEYCODE_FORWARD_DEL) &&
             homeKeys != HomeKeys.Renaming -> Meaning.Dismiss
-        keyCode == KeyEvent.KEYCODE_BUTTON_L2 && homeKeys == HomeKeys.AllLibrary -> Meaning.LetterBackward
-        keyCode == KeyEvent.KEYCODE_BUTTON_R2 && homeKeys == HomeKeys.AllLibrary -> Meaning.LetterForward
+        keyCode == KeyEvent.KEYCODE_BUTTON_L2 -> Meaning.LetterBackward
+        keyCode == KeyEvent.KEYCODE_BUTTON_R2 -> Meaning.LetterForward
         else -> null
     }
 }
+
+/** Unused controller buttons must not reach Android's activating key fallback. */
+fun consumesUnmapped(keyCode: Int): Boolean =
+    keyCode in KeyEvent.KEYCODE_BUTTON_A..KeyEvent.KEYCODE_BUTTON_MODE ||
+        keyCode in KeyEvent.KEYCODE_BUTTON_1..KeyEvent.KEYCODE_BUTTON_16

@@ -216,7 +216,7 @@ class ShellController(
     private var platformOrder: List<Int> = emptyList()
     private var loggedHomeTile: String? = null
 
-    fun onMeaning(meaning: Meaning, screen: HostScreen): Effect? {
+    fun onMeaning(meaning: Meaning, screen: HostScreen, repeatCount: Int = 0): Effect? {
             if (homeActive()) {
             val before = model
             val wasInFolder = home.board.openFolderId != null
@@ -235,7 +235,7 @@ class ShellController(
         }
         val before = model
         val current = if (model.libraryGrid) model else withShelf(model)
-        val (next, effect) = reduce(current, meaning, screen)
+        val (next, effect) = reduce(current, meaning, screen, repeatCount)
         if (!next.connectOpen) connectToken = ""
         val packageName = focusedGame()?.androidPackage
         val panelLabel = next.panel?.let { panel ->
@@ -1477,7 +1477,18 @@ class ShellController(
 
     private fun withShelf(next: PickerModel): PickerModel {
         val count = countFor(next.homeGrid)
-        val counted = next.copy(count = count, playerSaves = playerSaveSettings(), recentFirst = recentOrder())
+        home.sort = next.sort
+        home.lastPlayed = lastPlayedMillis
+        val alphabetical = next.homeGrid != HomeGrid.StandIns ||
+            (home.board.allOpen && next.sort == app.foldcade.language.LibrarySort.Listed)
+        val labels = if (!alphabetical) emptyList() else if (next.homeGrid == HomeGrid.StandIns) {
+            home.faces().map { it.title }
+        } else listed(next.homeGrid).map { it.label }
+        val lastOccupied = if (next.homeGrid == HomeGrid.StandIns && !home.board.allOpen) {
+            app.foldcade.language.visibleSlots(home.board).indexOfLast { it != null }
+        } else count - 1
+        val counted = next.copy(count = count, playerSaves = playerSaveSettings(), recentFirst = recentOrder(),
+            gridLabels = labels, lastOccupiedIndex = lastOccupied)
         val game = tileOn(counted)
         val onHome = showingHome(counted)
         val tile = if (onHome) home.actions(counted.focus.cellIndex) else null
@@ -1552,6 +1563,10 @@ class ShellController(
 
     /** Play history changed. Recently played order follows the new last-played times. */
     fun notePlayChanged() {
+        if (showingHome() && home.board.allOpen) {
+            model = withShelf(model.copy(shelfEpoch = model.shelfEpoch + 1))
+            return
+        }
         val next = recentOrder()
         if (next == model.recentFirst) return
         model = model.copy(recentFirst = next)
@@ -1619,7 +1634,7 @@ class ShellController(
         HomeGrid.AndroidGames -> appsOn(AndroidShelf.Games, installed, shelfState, playerPackages)
         HomeGrid.Apps -> appsOn(AndroidShelf.Apps, installed, shelfState, playerPackages)
         HomeGrid.HiddenApps -> hiddenApps(installed, shelfState, playerPackages)
-    }
+    }.sortedWith(compareBy<LaunchableApp> { it.label.lowercase() }.thenBy { it.packageName })
 
     private fun actionsFor(snapshot: PickerModel, game: ShelfGame?): AppActions? {
         val packageName = game?.androidPackage ?: return null
@@ -1629,7 +1644,7 @@ class ShellController(
             favorite = record.favorite,
             onGamesShelf = snapshot.homeGrid == HomeGrid.AndroidGames,
             hiddenShelf = snapshot.homeGrid == HomeGrid.HiddenApps,
-            destinations = home.placementDestinations(),
+            destinations = home.placementDestinations(androidHomeId(packageName)),
         )
     }
 

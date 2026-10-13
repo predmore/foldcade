@@ -16,6 +16,9 @@ import androidx.compose.animation.core.tween
  * Durations are never 0. The toolkit must not apply [Settings.Global.ANIMATOR_DURATION_SCALE] again.
  */
 open class MotionStyle(private val style: ThemeStyle = ThemeStyle()) {
+    val durationLetterHold = 360L
+    val durationLetterFade = 120
+
     val durationShort = style.motion.durationShort
     val durationFocus = style.motion.durationFocus
     val durationTravel = style.motion.durationTravel

@@ -443,29 +443,30 @@ fun leaveEdit(board: HomeBoard): HomeBoard = cancelHold(board).copy(editing = fa
 
 private val gameKinds = setOf(HomeKind.Rom, HomeKind.AndroidGame, HomeKind.GameNative, HomeKind.Moonlight, HomeKind.DroidDeck)
 
-/** The All library: every game, A to Z. */
-fun allItems(items: List<HomeItem>): List<HomeItem> = items.distinctBy { it.id }
+/** All lists every game alphabetically, or played games newest first with unplayed games A to Z. */
+fun allItems(items: List<HomeItem>, sort: LibrarySort = LibrarySort.Listed): List<HomeItem> = items.distinctBy { it.id }
     .filter { !it.placeholder && it.kind in gameKinds }
-    .sortedWith(compareBy({ it.title.lowercase() }, { it.id }))
+    .sortedWith(compareBy<HomeItem> { if (sort == LibrarySort.RecentlyPlayed) -it.lastPlayedMillis else 0L }
+        .thenBy { it.title.lowercase() }.thenBy { it.id })
 
 /** Next letter group. Forward lands on its first row. Backward lands on the previous group's first row. Stays put at the ends. Does not wrap. */
 fun jumpLetter(labels: List<String>, index: Int, forward: Boolean): Int {
     if (labels.isEmpty()) return 0
     val current = index.coerceIn(0, labels.lastIndex)
-    val letter = labels[current].firstOrNull()?.uppercaseChar()
+    val letter = letterGroup(labels[current])
     if (forward) {
         for (step in (current + 1)..labels.lastIndex) {
-            if (labels[step].firstOrNull()?.uppercaseChar() != letter) return step
+            if (letterGroup(labels[step]) != letter) return step
         }
         return current
     }
     val groupStart = (current downTo 0).first { step ->
-        step == 0 || labels[step - 1].firstOrNull()?.uppercaseChar() != letter
+        step == 0 || letterGroup(labels[step - 1]) != letter
     }
     if (groupStart == 0) return current
-    val previous = labels[groupStart - 1].firstOrNull()?.uppercaseChar()
+    val previous = letterGroup(labels[groupStart - 1])
     return (groupStart - 1 downTo 0).first { step ->
-        step == 0 || labels[step - 1].firstOrNull()?.uppercaseChar() != previous
+        step == 0 || letterGroup(labels[step - 1]) != previous
     }
 }
 
@@ -721,3 +722,11 @@ private fun writeVisible(board: HomeBoard, slots: List<String?>): HomeBoard {
 private fun decodeSlots(bits: List<String>, encoded: Boolean): List<String?> =
     if (encoded) bits.map { it.ifEmpty { null } }
     else bits.filter { it.isNotEmpty() }.map { if (it == "-") null else it }
+
+fun letterGroup(title: String): String =
+    title.firstOrNull()?.takeIf { it.isLetter() }?.uppercaseChar()?.toString() ?: "#"
+
+/** Shelf destinations include only folders that can actually receive this item. */
+fun placementChoices(board: HomeBoard, item: HomeItem?, platforms: List<HomePlatform>): List<FolderChoice> =
+    listOf(FolderChoice(null, Copy.homeSlot)) + board.slots.mapNotNull { board.folders[it] }
+        .filter { folderTakes(it, item, platforms) }.map { FolderChoice(it.id, it.name) }

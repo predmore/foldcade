@@ -291,17 +291,15 @@ private fun Island(
 @Composable
 private fun ActingHeader(app: FoldcadeApp, modifier: Modifier) {
     val theme = LocalFoldTheme.current.theme
-    val name = app.shell.focusedHero()?.let { heroCopy(it).title }
+    val name = app.shell.focusedHero()?.let { heroCopy(it).title }?.takeIf { it.isNotBlank() } ?: Copy.emptySlot
     Row(modifier, verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
         PromptImage(promptGlyph(PromptKey.FaceY), 26.dp)
-        if (name != null) {
-            BasicText(
-                text = name,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-                style = TextStyle(color = theme.onBackground, fontSize = theme.style.type.sideRow, fontFamily = theme.font, fontWeight = FontWeight.SemiBold),
-            )
-        }
+        BasicText(
+            text = name,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            style = TextStyle(color = theme.onBackground, fontSize = theme.style.type.sideRow, fontFamily = theme.font, fontWeight = FontWeight.SemiBold),
+        )
     }
 }
 
