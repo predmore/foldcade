@@ -413,6 +413,14 @@ class HomeGridOrderTest {
         val at = shell.model.focus.cellIndex
         assertEquals(lastColumn + GridStrip.trailing, GridStrip.column(at))
         assertEquals(lifted, titles(shell)[at])
+
+        // The slots it walked past are empty now. The top screen shows nothing for them.
+        shell.onMeaning(Meaning.Activate, HostScreen.Bottom)
+        val hole = (0 until shell.model.count).first { shell.homeFace(it)?.empty == true }
+        focus(shell, hole)
+        assertNull(shell.focusedHero())
+        focus(shell, at)
+        assertEquals(lifted, (shell.focusedHero() as? app.foldcade.language.HeroSubject.Item)?.item?.title)
     }
 
     @Test
