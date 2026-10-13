@@ -196,8 +196,12 @@ fun mergeHome(
     return next
 }
 
+/**
+ * Lifts the tile at [index], or the empty slot there. A lifted gap walks the way a tile
+ * does, so carrying one onto a tile brings that tile back to where the gap was.
+ */
 fun pickUp(board: HomeBoard, index: Int): HomeBoard {
-    val id = visibleSlots(board).getOrNull(index) ?: return board
+    if (index < 0) return board
     if (board.hold != null) return drop(board, index)
     return board.copy(
         hold = HomeHold(
@@ -214,17 +218,18 @@ fun pickUp(board: HomeBoard, index: Int): HomeBoard {
  * Walks the held tile to [toIndex]. It trades places with the tile there, and every tile it
  * passed on the way is back where it was at pickup, so a long move disturbs one other tile.
  * Onto a folder that takes it, a game drops in. Onto one that does not, it trades places.
+ * A held gap trades places too, and never drops into a folder.
  */
 fun moveHeld(board: HomeBoard, toIndex: Int, catalog: List<HomeItem>, platforms: List<HomePlatform>): HomeBoard {
     val hold = board.hold ?: return board
     if (toIndex < 0) return board
     val before = hold.openFolderId?.let { hold.folders[it]?.slots } ?: hold.slots
-    val moving = before.getOrNull(hold.origin) ?: return board
+    val moving = before.getOrNull(hold.origin)
     val slots = before.toMutableList()
-    while (slots.size <= toIndex) slots += null
+    while (slots.size <= maxOf(toIndex, hold.origin)) slots += null
     val target = slots[toIndex]
     val targetFolder = target?.let { board.folders[it] }
-    if (targetFolder != null && moving != HOME_ALL && board.folders[moving] == null &&
+    if (moving != null && targetFolder != null && moving != HOME_ALL && board.folders[moving] == null &&
         folderTakes(targetFolder, catalog.firstOrNull { it.id == moving }, platforms)
     ) {
         slots[hold.origin] = null
@@ -232,6 +237,8 @@ fun moveHeld(board: HomeBoard, toIndex: Int, catalog: List<HomeItem>, platforms:
     }
     slots[hold.origin] = target
     slots[toIndex] = moving
+    // A gap walked past the last tile leaves no empty slots behind it.
+    while (slots.size > before.size && slots.last() == null) slots.removeAt(slots.lastIndex)
     return writeVisible(board, slots).copy(hold = hold.copy(index = toIndex))
 }
 

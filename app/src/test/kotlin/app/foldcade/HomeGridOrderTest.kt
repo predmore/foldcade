@@ -12,6 +12,7 @@ import app.foldcade.language.HomeGrid
 import app.foldcade.language.HostScreen
 import app.foldcade.language.LaunchableApp
 import app.foldcade.language.GridStrip
+import app.foldcade.language.Metrics
 import app.foldcade.language.Meaning
 import app.foldcade.language.Motion
 import app.foldcade.language.SyncMark
@@ -400,9 +401,9 @@ class HomeGridOrderTest {
         val lastColumn = GridStrip.columns(count) - 1
         repeat(lastColumn + GridStrip.trailing + 2) { shell.onMeaning(Meaning.MoveRight, HostScreen.Bottom) }
         assertEquals(GridStrip.index(lastColumn + GridStrip.trailing, 0), shell.model.focus.cellIndex)
-        // An empty slot shows no game and offers only a new folder, as an empty slot between tiles does.
+        // An empty slot shows no game and offers a move and a new folder, as an empty slot between tiles does.
         assertNull(shell.focusedGame())
-        assertEquals(listOf(Row.NewFolder), optionRows(shell))
+        assertEquals(listOf(Row.MoveTile, Row.NewFolder), optionRows(shell))
         shell.onMeaning(Meaning.MoveDown, HostScreen.Bottom)
         assertEquals(GridStrip.index(lastColumn + GridStrip.trailing, 1), shell.model.focus.cellIndex)
 
@@ -413,6 +414,36 @@ class HomeGridOrderTest {
         val at = shell.model.focus.cellIndex
         assertEquals(lastColumn + GridStrip.trailing, GridStrip.column(at))
         assertEquals(lifted, titles(shell)[at])
+    }
+
+    @Test
+    fun aLiftedGapBringsTheTileItLandsOnBackToWhereItWas() {
+        val shell = shell()
+        shell.ingestLibrary(
+            "local-folder",
+            listOf(entry("puzzle", "Puzzle", "nintendo-3ds"), entry("drift", "Drift", "nintendo-ds")),
+            emptyList(),
+        )
+        val count = shell.model.count
+        val before = titles(shell)
+        // The gap just past the last tile, carried onto a tile, sends that tile to where the gap was.
+        val (step, onto) = if (GridStrip.row(count) > 0) Meaning.MoveUp to count - 1 else Meaning.MoveLeft to count - Metrics.rows
+        focus(shell, count)
+        choose(shell, Row.MoveTile)
+        assertEquals(HomeKeys.Moving, shell.homeKeys())
+        shell.onMeaning(step, HostScreen.Bottom)
+        assertEquals(onto, shell.model.focus.cellIndex)
+        assertEquals(before[onto], titles(shell)[count])
+        shell.onMeaning(Meaning.CancelHold, HostScreen.Bottom)
+        assertEquals(before, titles(shell))
+
+        focus(shell, count)
+        choose(shell, Row.MoveTile)
+        shell.onMeaning(step, HostScreen.Bottom)
+        shell.onMeaning(Meaning.Activate, HostScreen.Bottom)
+        assertEquals(HomeKeys.Idle, shell.homeKeys())
+        assertEquals(before[onto], titles(shell)[count])
+        assertEquals("", titles(shell)[onto])
     }
 
     @Test

@@ -2393,8 +2393,10 @@ private fun StripColumn(
             val index = GridStrip.index(column, row)
             // The activity runs what a second tap opens, as it does for A.
             val tap = { (context as? FoldcadeHomeActivity)?.dispatch(shell.touchCell(index, screen)) }
-            // A tile's height with its title is the row pitch the cursor steps by. Past the last tile, nothing is drawn.
-            val past = index >= shell.model.count
+            // A tile's height with its title is the row pitch the cursor steps by. Past the last tile,
+            // nothing is drawn but a lifted gap.
+            val beyond = index >= shell.model.count
+            val past = beyond && !(showingHome && lifted == index)
             Box(if (row == 0 && !past) Modifier.onSizeChanged { onRowHeight(it.height) } else Modifier) {
                 if (past) {
                     // A tap rests the cursor here, as on any empty slot.
@@ -2427,7 +2429,7 @@ private fun StripColumn(
                         corner = radius,
                         icon = launcherIcon(game?.androidPackage),
                         favorite = game?.favorite == true,
-                        empty = face?.empty == true,
+                        empty = face?.empty == true || beyond,
                         lifted = lifted == index,
                         editing = editing,
                         marked = onHomeMark,
@@ -2709,8 +2711,19 @@ private fun Cell(
                                 style = Stroke(width = strokePx),
                             )
                         }
+                    } else if (lifted) {
+                        // A lifted gap is the ring alone, so the space being carried shows where it is.
+                        val strokePx = 9f
+                        val inset = strokePx / 2f
+                        drawRoundRect(
+                            color = theme.focus,
+                            topLeft = Offset(inset, inset),
+                            size = Size(bounds.width - strokePx, bounds.height - strokePx),
+                            cornerRadius = CornerRadius(cornerPx, cornerPx),
+                            style = Stroke(width = strokePx),
+                        )
                     }
-                    // An empty slot draws nothing, so the grid ends where its tiles do.
+                    // Any other empty slot draws nothing, so the grid ends where its tiles do.
                 }
                 // The ring and glows above draw outside. The art itself stays inside the
                 // rounded tile, so a mark's square backing does not show at the corners.
