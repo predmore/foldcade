@@ -123,6 +123,7 @@ import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
@@ -268,9 +269,14 @@ fun PanelHost(activity: FoldcadeHomeActivity, displays: Displays) {
     val dimmed = panel != null && app.commandCenter.dimmed(panel)
     // Either panel's level can move while dimmed, and a darker one still wins.
     LaunchedEffect(dimmed, app.brightness.revision) { activity.applyCommandCenterDim(dimmed) }
+    // Leaving a window forgets what each graphics layer reads, and the next window
+    // only lays out and draws again, so the grid's ring stopped where it was. A layer
+    // runs again when its density changes: each window gets the same one, new.
+    val base = LocalDensity.current
+    val density = remember(base, activity.panelWindows) { WindowDensity(base) }
     // A closed menu draws neither the blur nor the scrim. A graphics layer
     // left over the library, even at zero alpha, keeps the accessibility dump empty.
-    CompositionLocalProvider(LocalFoldTheme provides paint) {
+    CompositionLocalProvider(LocalFoldTheme provides paint, LocalDensity provides density) {
         Box(
             Modifier
                 .fillMaxSize()
@@ -383,6 +389,9 @@ private fun PanelBody(
         Box(Modifier.fillMaxSize().rise { played.progress.value }) { PlayActivityScreen(app, shown) }
     }
 }
+
+/** [base] under its own identity, so every layer under it counts it as a new density. */
+private class WindowDensity(base: Density) : Density by base
 
 /** Dim painted with the content, not a second full-screen node on top of it. */
 private fun Modifier.menuDim(progress: () -> Float): Modifier = drawWithContent {
