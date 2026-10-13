@@ -56,8 +56,12 @@ fun settingsRows(category: SettingsCategory, model: PickerModel): List<Row> = wh
         if (model.offerButtonLabels) add(Row.ButtonLabels)
     }
     SettingsCategory.Sound -> listOf(Row.Music, Row.MusicTrack, Row.MusicVolume)
-    SettingsCategory.Library -> libraryRows(model.signedIn, model.folders) +
-        listOf(Row.Order, Row.AddNewGames, Row.Artwork, Row.ArtKey, Row.UsageAccess)
+    SettingsCategory.Library -> buildList {
+        // Only once there is a folder or a server to read.
+        if (model.signedIn.isNotEmpty() || model.folders.isNotEmpty()) add(Row.SyncLibrary)
+        addAll(libraryRows(model.signedIn, model.folders))
+        addAll(listOf(Row.Order, Row.AddNewGames, Row.Artwork, Row.ArtKey, Row.UsageAccess))
+    }
     SettingsCategory.Players -> model.playerSaves.map { Row.PlayerSave(it.playerId) }
     SettingsCategory.Screens -> buildList {
         add(Row.Primary)

@@ -12,6 +12,7 @@ import app.foldcade.language.Side
 import app.foldcade.language.Row
 import app.foldcade.language.SettingsCategory
 import app.foldcade.language.settingsCategories
+import app.foldcade.language.settingsRows
 import app.foldcade.language.leftRows
 import app.foldcade.language.DialogKind
 import app.foldcade.language.homePrompt
@@ -40,7 +41,8 @@ class SecondRommServerTest {
         shell.touchPanel(leftRows().indexOf(Row.Settings), HostScreen.Top)
         shell.touchPanel(leftRows().indexOf(Row.Settings), HostScreen.Top)
         shell.touchSettingsCategory(settingsCategories(shell.model).indexOf(SettingsCategory.Library), HostScreen.Top)
-        assertNull(shell.touchSettingsRow(1, HostScreen.Top))
+        val library = settingsRows(SettingsCategory.Library, shell.model)
+        assertNull(shell.touchSettingsRow(library.indexOfFirst { it is Row.RommConnection && it.pluginId == "romm#2" }, HostScreen.Top))
         assertEquals(PanelLevel.RommConnection, shell.model.panel?.level)
         assertFalse(shell.model.connectOpen)
 

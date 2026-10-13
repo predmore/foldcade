@@ -12,6 +12,7 @@ import android.net.NetworkCapabilities
 import android.net.Uri
 import android.os.Handler
 import android.os.Looper
+import android.os.SystemClock
 import android.provider.DocumentsContract
 import android.util.Log
 import androidx.compose.runtime.getValue
@@ -57,6 +58,7 @@ import app.foldcade.language.BackgroundMotion
 import app.foldcade.language.Motion
 import app.foldcade.language.Copy
 import app.foldcade.language.EmptyGrid
+import app.foldcade.language.GridKind
 import app.foldcade.language.LibraryFolder
 import app.foldcade.language.SignedInBackend
 import app.foldcade.language.builtInTheme
@@ -236,7 +238,7 @@ class FoldcadeApp : Application() {
     private val libraryTicket = AtomicInteger()
     private val rommTicket = AtomicInteger()
     private var rommRefreshJob: Job? = null
-    private var libraryRetry: () -> Unit = { reloadFolder() }
+    private var libraryRetry: () -> Job = { reloadFolder() }
     private lateinit var rommPublish: RommPublish
 
     private val packageChanges = object : BroadcastReceiver() {
@@ -828,19 +830,28 @@ class FoldcadeApp : Application() {
     @Volatile
     private var folderRefresh: Job? = null
 
+    /** The folders the backend is bound to, so a background walk can tell whether it reached them all. */
+    @Volatile
+    private var boundForest: FolderForest? = null
+
     /**
      * Returning Home walks the folders again in the background, so a DroidDeck or
      * GameNative sync shows without a restart. The board stays as it is while the
-     * walk runs, and an unchanged or unreadable folder leaves it alone.
+     * walk runs, and an unchanged or unreadable folder leaves it alone, as does a
+     * walk that could not reach every saved folder: a card that is briefly away
+     * keeps its games on Home. A reload that binds the folders again wins. Returns the walk,
+     * or the one already running.
      */
-    fun refreshFolderQuietly() {
-        if (folderRefresh?.isActive == true) return
-        folderRefresh = pluginLoad.launch {
+    fun refreshFolderQuietly(): Job {
+        folderRefresh?.takeIf { it.isActive }?.let { return it }
+        return pluginLoad.launch {
             pluginsReady.await()
             if (store.folderTrees().isEmpty()) return@launch
             val backend = plugins.library(LocalFolderBackend.ID) as? LocalFolderBackend ?: return@launch
+            val forest = boundForest ?: return@launch
             val loaded = try {
                 if (!backend.rescan()) return@launch
+                if (!forest.complete) return@launch
                 loadPlatforms(
                     plugins,
                     LocalFolderBackend.ID,
@@ -855,7 +866,10 @@ class FoldcadeApp : Application() {
                 Log.w("Foldcade", "Folder refresh failed", failure)
                 return@launch
             }
-            useSteamFiles(backend.steamShortcuts())
+            if (loaded == LoadedLibrary.Unreachable) return@launch
+            folderRead.withLock {
+                if (boundForest === forest) useSteamFiles(backend.steamShortcuts())
+            }
             val games = when (loaded) {
                 is LoadedLibrary.Platforms -> try {
                     loadEveryGame(LocalFolderBackend.ID, loaded)
@@ -865,12 +879,11 @@ class FoldcadeApp : Application() {
                     Log.w("Foldcade", "Folder refresh failed", failure)
                     return@launch
                 }
-                LoadedLibrary.NoPlatforms -> emptyList()
-                LoadedLibrary.Unreachable -> return@launch
+                else -> emptyList()
             }
             withContext(Dispatchers.Main.immediate) {
                 // The last folder was forgotten meanwhile, and its games already left.
-                if (store.folderTrees().isEmpty()) return@withContext
+                if (store.folderTrees().isEmpty() || boundForest !== forest) return@withContext
                 if (loaded is LoadedLibrary.Platforms) {
                     shell.ingestLibrary(
                         LocalFolderBackend.ID,
@@ -884,19 +897,19 @@ class FoldcadeApp : Application() {
                 val waiting = shell.model.libraryGrid && shell.model.emptyGrid != EmptyGrid.Loading
                 if (waiting && shell.hasLibraryGames()) shell.showCuratedHome()
             }
-        }
+        }.also { folderRefresh = it }
     }
 
-    fun reloadFolder() {
+    fun reloadFolder(): Job {
         libraryRetry = { reloadFolder() }
         val ticket = libraryTicket.incrementAndGet()
-        pluginLoad.launch {
+        return pluginLoad.launch {
             pluginsReady.await()
             if (ticket != libraryTicket.get()) return@launch
             val saved = store.folderTrees()
             withContext(Dispatchers.Main.immediate) { shell.setFolders(libraryFolders()) }
             if (saved.isEmpty()) {
-                useSteamFiles(emptyList())
+                folderRead.withLock { useSteamFiles(emptyList()) }
                 withContext(Dispatchers.Main.immediate) {
                     if (ticket != libraryTicket.get()) return@withContext
                     // The last folder was forgotten: its games leave the board.
@@ -915,25 +928,78 @@ class FoldcadeApp : Application() {
                 showFailure(ticket, insidePlatform = false)
                 return@launch
             }
-            val loaded = try {
-                val forest = FolderForest(contentResolver, saved.map(Uri::parse))
-                backend.bindTree(forest.root(), forest::children)
-                loadPlatforms(
-                    plugins,
-                    LocalFolderBackend.ID,
-                    folderName = backend::folderName,
-                    occupiesBoth = { platformOccupiesBoth(plugins, it) },
-                ).also { useSteamFiles(backend.steamShortcuts()) }
-            } catch (cancelled: CancellationException) {
-                throw cancelled
-            } catch (fatal: VirtualMachineError) {
-                throw fatal
-            } catch (failure: Exception) {
-                Log.w("Foldcade", "Folder library failed", failure)
-                null
-            }
-            deliverLibrary(ticket, LocalFolderBackend.ID, loaded)
+            deliverLibrary(ticket, LocalFolderBackend.ID, readFolders(ticket, backend, saved))
         }
+    }
+
+    /** One folder read at a time, since each binds the backend to its own tree. */
+    private val folderRead = Mutex()
+
+    /** Scans [saved] and routes their .steam files. Null when the read failed. */
+    private suspend fun readFolders(ticket: Int, backend: LocalFolderBackend, saved: List<String>): LoadedLibrary? = folderRead.withLock {
+        try {
+            val forest = FolderForest(contentResolver, saved.map(Uri::parse))
+            backend.bindTree(forest.root(), forest::children)
+            boundForest = forest
+            val loaded = loadPlatforms(
+                plugins,
+                LocalFolderBackend.ID,
+                folderName = backend::folderName,
+                occupiesBoth = { platformOccupiesBoth(plugins, it) },
+            )
+            // A failed read says nothing about the .steam files, and a newer reload has its own.
+            if (loaded != LoadedLibrary.Unreachable && ticket == libraryTicket.get()) {
+                useSteamFiles(backend.steamShortcuts())
+            }
+            loaded
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (fatal: VirtualMachineError) {
+            throw fatal
+        } catch (failure: Exception) {
+            Log.w("Foldcade", "Folder library failed", failure)
+            null
+        }
+    }
+
+    internal val libraryResync = LibraryResync(
+        scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate),
+        intervalMillis = RESYNC_INTERVAL_MILLIS,
+        now = SystemClock::elapsedRealtime,
+        onRunning = { shell.setLibrarySyncing(it) },
+        work = ::resyncLibraries,
+    )
+
+    /** A Home screen was shown or covered. The resync clock runs while any one is shown. */
+    internal fun noteHomeShown() {
+        libraryResync.noteShown(homes.values.any { it.get()?.shellVisible == true })
+    }
+
+    /**
+     * Every library reads its games again: the folders, each RomM server, and the GameNative
+     * catalog. New games join the board, gone ones leave it, and nothing else moves. The
+     * Moonlight and DroidDeck shortcuts are read each time Home comes forward, so not here.
+     */
+    private suspend fun resyncLibraries() {
+        pluginsReady.await()
+        Log.i("Foldcade", "library-resync start")
+        val model = shell.model
+        val folders = when {
+            store.folderTrees().isEmpty() -> null
+            !model.libraryGrid -> refreshFolderQuietly()
+            // A failed read tries again, and an empty folder looks again. An open platform is left alone.
+            model.gridKind == GridKind.Unreachable -> retryLibrary()
+            model.emptyGrid == EmptyGrid.NoPlatforms -> reloadFolder()
+            else -> null
+        }
+        val romm = synchronized(rommTicket) { rommRefreshJob?.takeIf { it.isActive } } ?: syncRomm()
+        withContext(Dispatchers.IO) {
+            // After the folders, which route their .steam files into the catalog.
+            folders?.join()
+            refreshGameNative()
+        }
+        romm.join()
+        Log.i("Foldcade", "library-resync end")
     }
 
     fun openPlatform(index: Int) {
@@ -951,13 +1017,13 @@ class FoldcadeApp : Application() {
         shell.restorePlatforms()
     }
 
-    fun retryLibrary() {
-        libraryRetry()
+    fun retryLibrary(): Job {
+        return libraryRetry()
     }
 
-    private fun openPlatformId(libraryId: String, platformId: String) {
+    private fun openPlatformId(libraryId: String, platformId: String): Job {
         val ticket = libraryTicket.incrementAndGet()
-        pluginLoad.launch {
+        return pluginLoad.launch {
             pluginsReady.await()
             if (ticket != libraryTicket.get()) return@launch
             withContext(Dispatchers.Main.immediate) {
@@ -1023,11 +1089,11 @@ class FoldcadeApp : Application() {
      * once no server is saved. The grid does not change mode while this runs. A
      * server that cannot be reached leaves the board as it was, placed tiles included.
      */
-    fun syncRomm() {
+    fun syncRomm(): Job {
         synchronized(rommTicket) {
             val ticket = rommTicket.incrementAndGet()
             rommRefreshJob?.cancel()
-            rommRefreshJob = pluginLoad.launch {
+            return pluginLoad.launch {
                 pluginsReady.await()
                 if (ticket != rommTicket.get()) return@launch
                 configureSavedRomm()
@@ -1073,7 +1139,7 @@ class FoldcadeApp : Application() {
                         }
                     },
                 )
-            }
+            }.also { rommRefreshJob = it }
         }
     }
 

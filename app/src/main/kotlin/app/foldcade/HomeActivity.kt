@@ -233,6 +233,7 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
                 folderPurpose = FolderPurpose.Library
                 folderPicker.launch(null)
             }
+            Effect.SyncLibrary -> foldcade.libraryResync.syncNow()
             is Effect.ChoosePlayerSave -> choosePlayerSave(effect.playerId)
             Effect.PinApp, is Effect.AddAppTo, Effect.MoveApp, Effect.HideApp, Effect.ShowApp -> Unit
             // The shell applies Y's tile actions and A on a text field itself and hands back null; these never arrive.
@@ -517,6 +518,7 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
     private fun refreshShellVisible() {
         val state = display?.state ?: Display.STATE_ON
         shellVisible = resumed && state == Display.STATE_ON
+        foldcade.noteHomeShown()
         refreshRecoveryWindow()
     }
 

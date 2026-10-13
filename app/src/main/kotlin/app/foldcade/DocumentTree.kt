@@ -127,13 +127,18 @@ private const val MAX_STEAM_BYTES: Int = 256
 internal class FolderForest(resolver: ContentResolver, trees: List<Uri>) {
     private val parts = trees.map { tree -> tree.toString() to DocumentTree(resolver, tree) }
 
+    /** False once a scan found a saved folder it could not reach. */
+    @Volatile
+    var complete = true
+        private set
+
     fun root(): FolderEntry = parts.singleOrNull()?.second?.root()
         ?: FolderEntry(documentUri = FOREST_ROOT, displayName = "", mimeType = DOCUMENT_DIRECTORY_MIME)
 
     fun children(parent: FolderEntry): List<FolderEntry> {
         if (parent.documentUri == FOREST_ROOT) {
             // A folder that is gone or no longer granted drops out. The rest still scan.
-            return parts.mapNotNull { (_, tree) ->
+            val roots = parts.mapNotNull { (_, tree) ->
                 try {
                     tree.root()
                 } catch (_: PluginException) {
@@ -142,6 +147,8 @@ internal class FolderForest(resolver: ContentResolver, trees: List<Uri>) {
                     null
                 }
             }
+            complete = roots.size == parts.size
+            return roots
         }
         val owner = parts.firstOrNull { (prefix, _) -> parent.documentUri.startsWith("$prefix/document/") }
             ?: throw PluginException.Unavailable("Couldn’t reach the library")
