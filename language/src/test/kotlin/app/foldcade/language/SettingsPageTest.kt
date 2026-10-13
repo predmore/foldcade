@@ -125,6 +125,18 @@ class SettingsPageTest {
     }
 
     @Test
+    fun syncGamesWaitsForALibraryThenStaysOpenWhileItRuns() {
+        assertFalse(Row.SyncLibrary in settingsRows(SettingsCategory.Library, home))
+        val withFolder = home.copy(folders = listOf(LibraryFolder("content://roms", "roms")))
+        assertEquals(Row.SyncLibrary, settingsRows(SettingsCategory.Library, withFolder).first())
+        val (syncing, effect) = reduce(withFolder.onSetting(Row.SyncLibrary), Meaning.Activate)
+        assertEquals(Effect.SyncLibrary, effect)
+        assertTrue(syncing.settings!!.onRows)
+        assertEquals(RowControl.None, rowControl(Row.SyncLibrary, syncing))
+        assertEquals(RowControl.Value(Copy.syncing), rowControl(Row.SyncLibrary, syncing.copy(librarySyncing = true)))
+    }
+
+    @Test
     fun backStepsOutThenCloses() {
         var model = openFromMenu()
         model = reduce(model, Meaning.MoveRight).first

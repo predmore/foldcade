@@ -246,6 +246,9 @@ sealed interface Row {
     data object AndroidSettings : Row
     data object DefaultHomeApp : Row
     data object AddFolder : Row
+
+    /** Reads every library again now. The same sync runs on its own while Home is in front. */
+    data object SyncLibrary : Row
     data class RommConnection(val pluginId: String, val label: String) : Row
     data class EditRomm(val pluginId: String) : Row
 
@@ -583,6 +586,7 @@ fun rowText(row: Row, model: PickerModel): RowText = when (row) {
         if (model.brightnessAllowed) BrightnessCopy.percent(model.brightness) else BrightnessCopy.allow,
     )
     Row.AddFolder -> RowText(Copy.addFolder)
+    Row.SyncLibrary -> RowText(Copy.syncGames, if (model.librarySyncing) Copy.syncing else null)
     is Row.RommConnection -> RowText(row.label)
     is Row.EditRomm -> RowText(Copy.editRommConnection)
     Row.AddRomm -> RowText(Copy.addRommServer)
@@ -645,6 +649,7 @@ sealed interface Effect {
     data object LeavePlatform : Effect
     data object TryAgain : Effect
     data object AddFolder : Effect
+    data object SyncLibrary : Effect
     data class EditRommConnection(val pluginId: String) : Effect
 
     /** The connect form for a new server. */
@@ -813,6 +818,8 @@ data class PickerModel(
     val playActivity: PlayActivityPage? = null,
     /** Two saves waiting for a choice on the bottom screen. Null while there is nothing to ask. */
     val saveConflict: SaveConflictPrompt? = null,
+    /** Every library is being read again. */
+    val librarySyncing: Boolean = false,
 )
 
 fun reduce(
@@ -1435,6 +1442,8 @@ private fun activateRow(
             } else {
                 model to Effect.AddFolder
             }
+        // The row stays in view and reads Syncing until every library has answered.
+        Row.SyncLibrary -> model.copy(panel = panel) to Effect.SyncLibrary
         is Row.RommConnection -> model.copy(
             panel = panel.copy(
                 level = PanelLevel.RommConnection,

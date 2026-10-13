@@ -109,6 +109,8 @@ object Copy {
     const val top = "Top"
     const val bottom = "Bottom"
     const val addFolder = "Add a folder"
+    const val syncGames = "Sync games"
+    const val syncing = "Syncing"
     const val rommConnection = "RomM connection"
     const val editRommConnection = "Edit connection"
     const val addRommServer = "Add a RomM server"

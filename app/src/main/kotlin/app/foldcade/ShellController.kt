@@ -734,6 +734,10 @@ class ShellController(
         if (model.artKeySaved != saved) model = model.copy(artKeySaved = saved)
     }
 
+    fun setLibrarySyncing(syncing: Boolean) {
+        if (model.librarySyncing != syncing) model = model.copy(librarySyncing = syncing)
+    }
+
     fun showSetupHint(hint: String?, retry: Boolean = false) {
         model = model.copy(connectHint = hint, connectRetry = retry)
     }
