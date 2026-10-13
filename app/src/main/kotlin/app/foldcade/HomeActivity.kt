@@ -344,6 +344,7 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
         displays.panelFor(this, foldcade.store.session.defaultDisplayIsTop)?.let(foldcade.music::onHomeResume)
         foldcade.refreshMoonlightShelf()
         foldcade.refreshDroidDeckShelf()
+        foldcade.refreshFolderQuietly()
         foldcade.refreshBrightness()
         foldcade.brightness.refreshOther()
         foldcade.refreshNoticeAccess()

@@ -825,6 +825,68 @@ class FoldcadeApp : Application() {
         }
     }
 
+    @Volatile
+    private var folderRefresh: Job? = null
+
+    /**
+     * Returning Home walks the folders again in the background, so a DroidDeck or
+     * GameNative sync shows without a restart. The board stays as it is while the
+     * walk runs, and an unchanged or unreadable folder leaves it alone.
+     */
+    fun refreshFolderQuietly() {
+        if (folderRefresh?.isActive == true) return
+        folderRefresh = pluginLoad.launch {
+            pluginsReady.await()
+            if (store.folderTrees().isEmpty()) return@launch
+            val backend = plugins.library(LocalFolderBackend.ID) as? LocalFolderBackend ?: return@launch
+            val loaded = try {
+                if (!backend.rescan()) return@launch
+                loadPlatforms(
+                    plugins,
+                    LocalFolderBackend.ID,
+                    folderName = backend::folderName,
+                    occupiesBoth = { platformOccupiesBoth(plugins, it) },
+                )
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (fatal: VirtualMachineError) {
+                throw fatal
+            } catch (failure: Exception) {
+                Log.w("Foldcade", "Folder refresh failed", failure)
+                return@launch
+            }
+            useSteamFiles(backend.steamShortcuts())
+            val games = when (loaded) {
+                is LoadedLibrary.Platforms -> try {
+                    loadEveryGame(LocalFolderBackend.ID, loaded)
+                } catch (cancelled: CancellationException) {
+                    throw cancelled
+                } catch (failure: Exception) {
+                    Log.w("Foldcade", "Folder refresh failed", failure)
+                    return@launch
+                }
+                LoadedLibrary.NoPlatforms -> emptyList()
+                LoadedLibrary.Unreachable -> return@launch
+            }
+            withContext(Dispatchers.Main.immediate) {
+                // The last folder was forgotten meanwhile, and its games already left.
+                if (store.folderTrees().isEmpty()) return@withContext
+                if (loaded is LoadedLibrary.Platforms) {
+                    shell.ingestLibrary(
+                        LocalFolderBackend.ID,
+                        games,
+                        plugins.platformDefinitions(),
+                        loaded.entries.associate { (it.platformId ?: it.id) to it.title },
+                    )
+                } else {
+                    shell.dropLibrary(LocalFolderBackend.ID)
+                }
+                val waiting = shell.model.libraryGrid && shell.model.emptyGrid != EmptyGrid.Loading
+                if (waiting && shell.hasLibraryGames()) shell.showCuratedHome()
+            }
+        }
+    }
+
     fun reloadFolder() {
         libraryRetry = { reloadFolder() }
         val ticket = libraryTicket.incrementAndGet()

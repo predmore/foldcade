@@ -45,7 +45,7 @@ Foldcade shows the playlist as one game and hides the files it names. The emulat
 
 ## New games and removed folders
 
-Folders are scanned at startup and when you add or remove one. After changing files, [fully restart Foldcade](README.md#discovery-and-updates) to update the list.
+Folders are scanned at startup, when you add or remove one, and [in the background when you return to Foldcade](README.md#discovery-and-updates).
 
 Remove a folder's row in **Settings › Library** to stop reading it; its files stay on the device. **Y › Remove from Home** on a game hides only its Home tile; it remains in All.
 
@@ -57,9 +57,9 @@ The emulator keeps its saves. For server-backed saves, launch the game from [Rom
 
 ## If a game is missing or will not start
 
-- **Missing from All:** Check the extension, system folder, and Android folder grant, then restart Foldcade.
+- **Missing from All:** Check the extension, system folder, and Android folder grant, then return to Foldcade.
 - **In All but missing from Home:** Check [New games on Home](README.md#a-game-is-in-all-but-missing-from-home) or add the tile back with Y.
-- **Wrong system:** Move a shared-format file into the correct system folder and restart Foldcade.
+- **Wrong system:** Move a shared-format file into the correct system folder and return to Foldcade.
 - **Will not launch:** Check the [supported emulator](emulators.md) and try the game directly in it.
 
 [All integration guides](README.md)
