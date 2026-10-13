@@ -8,6 +8,7 @@ import app.foldcade.api.plugin.SyncResult
 import app.foldcade.api.plugin.MemoryCredentialStore
 import app.foldcade.host.PluginHost
 import app.foldcade.language.Copy
+import app.foldcade.language.Effect
 import app.foldcade.language.HomeGrid
 import app.foldcade.language.HostScreen
 import app.foldcade.language.LaunchableApp
@@ -534,6 +535,125 @@ class HomeGridOrderTest {
         focus(shell, titles(shell).indexOf("Nintendo 3DS"))
         shell.onMeaning(Meaning.Activate, HostScreen.Bottom)
         assertTrue("Puzzle" in titles(shell))
+    }
+
+    @Test
+    fun yDeletesADownloadedServerGameAndItsTileShowsTheCloudAgain() {
+        val shell = shell()
+        shell.ingestLibrary(
+            "romm",
+            listOf(entry("drift", "Drift", "nintendo-3ds", backendId = "romm", availability = Availability.Cached)),
+            emptyList(),
+        )
+        focus(shell, titles(shell).indexOf("Nintendo 3DS"))
+        shell.onMeaning(Meaning.Activate, HostScreen.Bottom)
+        focus(shell, titles(shell).indexOf("Drift"))
+        assertEquals(
+            listOf(Row.MoveTile, Row.MoveTileTo, Row.NewFolder, Row.RemoveTile, Row.RemoveDownload),
+            optionRows(shell),
+        )
+        // A copy still arriving is not offered.
+        shell.noteActivity("romm", "drift", GameActivity.Downloading(1, 2), nowMillis = 0)
+        shell.onMeaning(Meaning.Options, HostScreen.Bottom)
+        assertFalse(Row.RemoveDownload in panelRows(shell.model.panel!!, shell.model))
+        assertNull(shell.focusedDownload())
+        shell.onMeaning(Meaning.Back, HostScreen.Bottom)
+        shell.settleActivity("romm", "drift")
+
+        shell.onMeaning(Meaning.Options, HostScreen.Bottom)
+        val rows = panelRows(shell.model.panel!!, shell.model)
+        repeat(rows.indexOf(Row.RemoveDownload)) { shell.onMeaning(Meaning.MoveDown, HostScreen.Bottom) }
+        assertEquals(Effect.RemoveDownload, shell.onMeaning(Meaning.Activate, HostScreen.Bottom))
+        assertNull(shell.model.panel)
+        assertEquals("drift", shell.focusedDownload()?.remoteKey)
+
+        shell.noteOffDevice("romm", "drift")
+        assertEquals(true, shell.homeFace(titles(shell).indexOf("Drift"))?.onServer)
+        assertNull(shell.focusedDownload())
+        assertFalse(Row.RemoveDownload in optionRows(shell))
+    }
+
+    @Test
+    fun aDeleteUnderWayIsNotOfferedTwice() {
+        val shell = shell()
+        shell.ingestLibrary(
+            "romm",
+            listOf(entry("drift", "Drift", "nintendo-3ds", backendId = "romm", availability = Availability.Cached)),
+            emptyList(),
+        )
+        focus(shell, titles(shell).indexOf("Nintendo 3DS"))
+        shell.onMeaning(Meaning.Activate, HostScreen.Bottom)
+        focus(shell, titles(shell).indexOf("Drift"))
+        assertTrue(shell.beginRemove("romm", "drift"))
+        assertFalse(shell.beginRemove("romm", "drift"))
+        assertEquals(setOf(homeGameId("romm", "drift")), shell.removing)
+        assertNull(shell.focusedDownload())
+        shell.onMeaning(Meaning.Options, HostScreen.Bottom)
+        assertFalse(Row.RemoveDownload in panelRows(shell.model.panel!!, shell.model))
+        shell.onMeaning(Meaning.Back, HostScreen.Bottom)
+        shell.endRemove("romm", "drift")
+        assertEquals("drift", shell.focusedDownload()?.remoteKey)
+    }
+
+    @Test
+    fun aScanThatReadTheDiskBeforeADeleteDoesNotBringTheCopyBack() {
+        val shell = shell()
+        val cached = listOf(entry("drift", "Drift", "nintendo-3ds", backendId = "romm", availability = Availability.Cached))
+        shell.ingestLibrary("romm", cached, emptyList())
+        val onServer = { shell.homeFace(titles(shell).indexOf("Drift"))?.onServer }
+        val before = shell.deviceMark()
+        shell.noteOffDevice("romm", "drift")
+        // The scan read the disk before the delete and lands after it.
+        shell.ingestLibrary("romm", cached, emptyList(), readAt = before)
+        shell.openHomeAll()
+        assertEquals(true, onServer())
+        // A scan that started after the delete is the truth again.
+        shell.ingestLibrary("romm", cached, emptyList(), readAt = shell.deviceMark())
+        assertEquals(false, onServer())
+    }
+
+    @Test
+    fun anotherServerHoldsDeleteDownloadUntilItListsItsGames() {
+        val shell = shell()
+        val cached = listOf(entry("42", "Drift", "nintendo-3ds", backendId = "romm#2", availability = Availability.Cached))
+        shell.ingestLibrary("romm#2", cached, emptyList())
+        shell.openHomeAll()
+        focus(shell, titles(shell).indexOf("Drift"))
+        assertEquals("42", shell.focusedDownload()?.remoteKey)
+        val before = shell.deviceMark()
+        // ROM 42 on the new server is another game, so the old tile's copy is not the one it would delete.
+        shell.noteServerChanged("romm#2")
+        assertNull(shell.focusedDownload())
+        shell.onMeaning(Meaning.Options, HostScreen.Bottom)
+        assertNull(shell.model.panel)
+        // Refreshes that started before the change, or while it was saving, list the old server.
+        shell.ingestLibrary("romm#2", cached, emptyList(), readAt = before)
+        shell.ingestLibrary("romm#2", cached, emptyList(), readAt = shell.deviceMark())
+        assertNull(shell.focusedDownload())
+        shell.settleServerChange("romm#2")
+        val published = shell.deviceMark()
+        shell.settleServerChange("romm#2")
+        assertEquals(published, shell.deviceMark())
+        shell.ingestLibrary("romm#2", cached, emptyList(), readAt = before)
+        assertNull(shell.focusedDownload())
+        shell.ingestLibrary("romm#2", cached, emptyList(), readAt = published)
+        assertEquals("42", shell.focusedDownload()?.remoteKey)
+    }
+
+    @Test
+    fun yInAllDeletesTheDownloadOfAGameAlreadyOnHome() {
+        val shell = shell()
+        shell.ingestLibrary(
+            "romm",
+            listOf(entry("drift", "Drift", "nintendo-3ds", backendId = "romm", availability = Availability.Cached)),
+            emptyList(),
+        )
+        shell.openHomeAll()
+        focus(shell, titles(shell).indexOf("Drift"))
+        assertEquals(listOf(Row.RemoveDownload), optionRows(shell))
+        shell.noteOffDevice("romm", "drift")
+        shell.onMeaning(Meaning.Options, HostScreen.Bottom)
+        assertNull(shell.model.panel)
     }
 
     private fun entry(

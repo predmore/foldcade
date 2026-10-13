@@ -96,6 +96,10 @@ class ChordTest {
         assertEquals(Meaning.Options, keys[both.indexOf(Row.MoveTile)])
         assertNull(keys[both.indexOf(Row.MoveApp)])
         assertEquals(PromptKey.FaceX, rowKeys(both)[both.indexOf(Row.RemoveTile)])
+        // X stays Remove from Home beside Delete download, and is Delete download where it is alone.
+        val downloaded = actionRows(tile.copy(removeDownload = true), null)
+        assertNull(chords(downloaded)[downloaded.indexOf(Row.RemoveDownload)])
+        assertEquals(listOf(Meaning.ActivateBottom), chords(actionRows(TileActions(removeDownload = true), null)))
     }
 
     @Test

@@ -8,8 +8,8 @@ package app.foldcade.api.plugin
  * First-party and community backends share this type. There is no blocking variant.
  *
  * [id] and [displayName] are already loaded and stay ordinary properties.
- * [connect], [disconnect], [listPlatforms], [listGames], [ensureLocal], [saves],
- * [prepareLaunch], and [reconcile] read or write the backend. Each is a cancellable
+ * [connect], [disconnect], [listPlatforms], [listGames], [ensureLocal], [removeLocal],
+ * [saves], [prepareLaunch], and [reconcile] read or write the backend. Each is a cancellable
  * `suspend` function. An implementation must stop that work when the calling
  * coroutine is cancelled, including a scan or an HTTP call.
  * Implementations rethrow [kotlin.coroutines.cancellation.CancellationException].
@@ -70,6 +70,15 @@ interface LibraryBackend {
      * and does not download. The shell does not parse [Game.remoteKey].
      */
     suspend fun ensureLocal(game: Game): LaunchTarget
+
+    /**
+     * Deletes the copy [ensureLocal] downloaded for [game], so it is on the server
+     * only again and the next launch downloads it. Saves stay. The host offers
+     * this only for an [Availability.Cached] game. A backend that keeps no
+     * copy leaves the default, which refuses.
+     */
+    suspend fun removeLocal(game: Game): Unit =
+        throw PluginException.Unavailable("No downloaded copy to remove")
 
     suspend fun saves(game: Game): SaveSet
 

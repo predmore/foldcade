@@ -113,7 +113,7 @@ class PluginContractTest {
         assertTrue(aliases.isDefault)
         assertTrue(IdlePlatform().aliases.isEmpty())
         assertEquals(1, PLUGIN_API_VERSION)
-        assertEquals(7, PLUGIN_API_MINOR)
+        assertEquals(8, PLUGIN_API_MINOR)
         val bind = PluginEntry::class.java.methods.single { it.name == "bind" }
         assertTrue(bind.isDefault)
         val saveFileName = Player::class.java.methods.single { it.name == "saveFileName" }
@@ -131,6 +131,7 @@ class PluginContractTest {
         assertTrue(LibraryBackend::class.java.methods.single { it.name == "setup" }.isDefault)
         assertTrue(LibraryBackend::class.java.methods.single { it.name == "beginDeviceCode" }.isDefault)
         assertTrue(LibraryBackend::class.java.methods.single { it.name == "pollDeviceCode" }.isDefault)
+        assertTrue(LibraryBackend::class.java.methods.single { it.name == "removeLocal" }.isDefault)
         assertTrue(PluginEntry::class.java.methods.single { it.name == "openLibrary" }.isDefault)
     }
 
@@ -147,6 +148,12 @@ class PluginContractTest {
             override val apiVersion = PLUGIN_API_VERSION
         }
         assertNull(entry.openLibrary(LibraryInstance("sample#2", "library.sample")))
+    }
+
+    @Test
+    fun removeLocalRefusesByDefault() = runBlocking {
+        val failure = runCatching { IdleLibrary().removeLocal(game) }.exceptionOrNull()
+        assertTrue(failure is PluginException.Unavailable)
     }
 
     @Test
@@ -226,6 +233,7 @@ class PluginContractTest {
                 "listPlatforms",
                 "listGames",
                 "ensureLocal",
+                "removeLocal",
                 "saves",
                 "prepareLaunch",
                 "reconcile",

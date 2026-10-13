@@ -80,6 +80,9 @@ data class Session(
 
     fun bothScreensFree(): Boolean = topApp == null && bottomApp == null
 
+    /** True while the app or game [id] holds either panel. */
+    fun runs(id: String): Boolean = topApp?.id == id || bottomApp?.id == id
+
     /** The island menus open on the top screen. An app there would cover them, so L1 and R1 do nothing. */
     fun islandsOpen(): Boolean = topApp == null
 

@@ -22,6 +22,14 @@ class SessionTest {
     }
 
     @Test
+    fun runsSeesAGameOnEitherScreen() {
+        assertFalse(Session().runs(one.id))
+        assertTrue(Session().launch(one, Panel.Bottom).runs(one.id))
+        assertTrue(Session().launch(one, Panel.Top).launch(two, Panel.Bottom).runs(one.id))
+        assertFalse(Session().launch(two, Panel.Top).runs(one.id))
+    }
+
+    @Test
     fun xLaunchesOnTheBottomAndLeavesTheCommandCenterOnTop() {
         val launched = Session().launch(one, Panel.Bottom)
         assertEquals(one, launched.bottomApp)

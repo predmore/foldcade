@@ -186,6 +186,20 @@ class ShellController(
     var downloading by mutableStateOf<Set<String>>(emptySet())
         private set
 
+    /** Home ids of games whose download is being deleted now. They do not launch until it is gone. */
+    var removing by mutableStateOf<Set<String>>(emptySet())
+        private set
+
+    /**
+     * Libraries pointed at another server since their games were listed, with the
+     * [deviceEdits] stamp of that change. Their copies are not theirs to delete.
+     */
+    private val relisting = HashMap<String, Long>()
+
+    /** Counts on-device and server changes, so a scan that read before one does not undo it. */
+    @Volatile private var deviceEdits = 0L
+    private val deviceEdited = HashMap<String, Pair<Long, Availability>>()
+
     /** What libraries are doing with games, by home id. Tiles and the top screen show it. */
     var activity by mutableStateOf<Map<String, TileActivity>>(emptyMap())
         private set
@@ -447,9 +461,13 @@ class ShellController(
         entries: List<GridEntry>,
         platforms: List<Platform>,
         listedNames: Map<String, String> = emptyMap(),
+        readAt: Long = deviceMark(),
     ) {
         listedPlatformNames.putAll(listedNames.filterValues { it.isNotBlank() })
         val prefix = "lib:$libraryId:"
+        if ((relisting[libraryId] ?: 0L) <= readAt) relisting.remove(libraryId)
+        // A download or delete after [readAt] is newer than what the scan saw on disk.
+        deviceEdited.entries.removeAll { (id, edit) -> id.startsWith(prefix) && edit.first <= readAt }
         val items = ArrayList<HomeItem>()
         val remembered = HashMap<String, Game>()
         for (entry in entries) {
@@ -469,7 +487,7 @@ class ShellController(
                 mark = kitMark(game.platformId),
                 lastPlayedMillis = lastPlayedMillis(id) ?: 0L,
             )
-            remembered[id] = game
+            remembered[id] = deviceEdited[id]?.let { (_, availability) -> game.copy(availability = availability) } ?: game
         }
         libraryItems = libraryItems.filterNot { it.id.startsWith(prefix) } + items
         settledLibraries += libraryId
@@ -489,6 +507,7 @@ class ShellController(
     /** A library that is no longer set up takes its tiles off the board. */
     fun dropLibrary(libraryId: String) {
         val prefix = "lib:$libraryId:"
+        relisting.remove(libraryId)
         libraryItems = libraryItems.filterNot { it.id.startsWith(prefix) }
         settledLibraries += libraryId
         libraryGames.keys.removeAll { it.startsWith(prefix) }
@@ -497,11 +516,67 @@ class ShellController(
 
     /** A server game was downloaded. Its tile drops the cloud. */
     fun noteOnDevice(libraryId: String, remoteKey: String) {
+        noteAvailability(libraryId, remoteKey, from = Availability.RemoteOnly, to = Availability.Cached)
+    }
+
+    /** A server game's download was deleted. Its tile shows the cloud again. */
+    fun noteOffDevice(libraryId: String, remoteKey: String) {
+        noteAvailability(libraryId, remoteKey, from = Availability.Cached, to = Availability.RemoteOnly)
+    }
+
+    private fun noteAvailability(libraryId: String, remoteKey: String, from: Availability, to: Availability) {
         val id = homeGameId(libraryId, remoteKey)
+        deviceEdits += 1
+        deviceEdited[id] = deviceEdits to to
         val game = libraryGames[id] ?: return
-        if (game.availability != Availability.RemoteOnly) return
-        libraryGames[id] = game.copy(availability = Availability.Cached)
+        if (game.availability != from) return
+        libraryGames[id] = game.copy(availability = to)
         noteShelfChanged()
+    }
+
+    /** Taken before a library scan reads the disk, and handed back to [ingestLibrary]. */
+    fun deviceMark(): Long = deviceEdits
+
+    /**
+     * The focused home tile's game when its download can be deleted. Null when
+     * it has no copy here, or while that copy is arriving, being checked, or deleted.
+     */
+    fun focusedDownload(): Game? {
+        if (!showingHome()) return null
+        val id = home.face(model.focus.cellIndex)?.id ?: return null
+        if (busyOnDevice(id)) return null
+        return home.game(id)?.takeIf { it.availability == Availability.Cached }
+    }
+
+    private fun busyOnDevice(id: String): Boolean =
+        id in downloading || id in removing || libraryOf(id) in relisting ||
+            activity[id].let { it is TileActivity.Downloading || it == TileActivity.Checking }
+
+    /**
+     * [libraryId]'s connection is moving to another server. Delete download waits,
+     * and no list clears that until [settleServerChange].
+     */
+    fun noteServerChanged(libraryId: String) {
+        relisting[libraryId] = Long.MAX_VALUE
+    }
+
+    /** The move is saved and published, or failed. A list read after this clears the hold. */
+    fun settleServerChange(libraryId: String) {
+        if (relisting[libraryId] != Long.MAX_VALUE) return
+        deviceEdits += 1
+        relisting[libraryId] = deviceEdits
+    }
+
+    /** False when this game's download is already being deleted. */
+    fun beginRemove(libraryId: String, remoteKey: String): Boolean {
+        val id = homeGameId(libraryId, remoteKey)
+        if (id in removing) return false
+        removing = removing + id
+        return true
+    }
+
+    fun endRemove(libraryId: String, remoteKey: String) {
+        removing = removing - homeGameId(libraryId, remoteKey)
     }
 
     /** False when this game is already downloading, so a second press does nothing. */
@@ -1406,9 +1481,12 @@ class ShellController(
         val game = tileOn(counted)
         val onHome = showingHome(counted)
         val tile = if (onHome) home.actions(counted.focus.cellIndex) else null
+        // A copy still arriving, or already going, is not one to delete.
+        val busy = home.face(counted.focus.cellIndex)?.id?.let(::busyOnDevice) == true
+        val offered = if (tile?.removeDownload == true && busy) tile.copy(removeDownload = false) else tile
         // A merge can close the open folder, when its last game left, so read where the board is now.
         val root = if (onHome) home.board.openFolderId == null && !home.board.allOpen else counted.atLibraryRoot
-        return counted.copy(appActions = actionsFor(counted, game), tileActions = tile, atLibraryRoot = root)
+        return counted.copy(appActions = actionsFor(counted, game), tileActions = offered, atLibraryRoot = root)
     }
 
     private fun tileOn(snapshot: PickerModel): ShelfGame? {

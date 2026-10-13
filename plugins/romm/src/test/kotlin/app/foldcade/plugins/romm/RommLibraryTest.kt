@@ -57,6 +57,7 @@ import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
+import kotlinx.coroutines.yield
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
@@ -162,6 +163,81 @@ class RommLibraryTest {
             cold.connect()
             cold.listPlatforms()
             assertEquals("Renamed online", cold.listGames("3ds", GameQuery()).games.single().label)
+        } finally {
+            harness.library.disconnect()
+            harness.wiring.cacheRoot.toFile().deleteRecursively()
+            harness.wiring.dataRoot.toFile().deleteRecursively()
+        }
+    }
+
+    @Test
+    fun removingADownloadPutsTheGameBackOnTheServerAndKeepsItsSaves() = runBlocking {
+        val ops = ScriptedOps()
+        val listed = rom("3ds", 3)
+        ops.onPlatforms = { listOf(platform(3, "3ds")) }
+        ops.onRoms = { page(listed) }
+        val harness = harness(ops)
+        try {
+            harness.library.listPlatforms()
+            val spec = listed.bytes()
+            val target = RommClient.romCacheFile(harness.wiring.romRoot, listed.id, spec.fileName, spec.fileIds)
+            Files.createDirectories(target.parent)
+            Files.write(target, ByteArray(9))
+            writeRomSpec(harness.wiring.romRoot, listed.id, spec)
+            val save = harness.wiring.data.slotFile(listed.id, "main")
+            Files.createDirectories(save.parent)
+            Files.write(save, "progress".toByteArray())
+            val game = harness.library.listGames("3ds", GameQuery()).games.single()
+            assertEquals(Availability.Cached, game.availability)
+
+            harness.library.removeLocal(game)
+
+            assertFalse(Files.exists(target.parent))
+            assertNull(readRomSpec(harness.wiring.romRoot, listed.id))
+            assertEquals("progress", String(Files.readAllBytes(save)))
+            assertEquals(Availability.RemoteOnly, harness.library.listGames("3ds", GameQuery()).games.single().availability)
+            // Nothing left to delete is not a failure.
+            harness.library.removeLocal(game)
+        } finally {
+            harness.library.disconnect()
+            harness.wiring.cacheRoot.toFile().deleteRecursively()
+            harness.wiring.dataRoot.toFile().deleteRecursively()
+        }
+    }
+
+    @Test
+    fun aDeleteWaitsForTheDownloadUnderWay() = runBlocking {
+        val ops = ScriptedOps()
+        val listed = rom("3ds", 3)
+        ops.onPlatforms = { listOf(platform(3, "3ds")) }
+        ops.onRoms = { page(listed) }
+        val started = CompletableDeferred<Unit>()
+        val release = CompletableDeferred<Unit>()
+        ops.onDownload = { _, fileName, root, ids, _, _ ->
+            started.complete(Unit)
+            release.await()
+            RommClient.romCacheFile(root, listed.id, fileName, ids).also {
+                Files.createDirectories(it.parent)
+                Files.write(it, ByteArray(9))
+            }
+        }
+        val harness = harness(ops)
+        try {
+            harness.library.listPlatforms()
+            val game = harness.library.listGames("3ds", GameQuery()).games.single()
+            val download = launch { harness.library.ensureLocal(game) }
+            withTimeout(2_000) { started.await() }
+            var deleted = false
+            val delete = launch {
+                harness.library.removeLocal(game)
+                deleted = true
+            }
+            yield()
+            assertFalse(deleted)
+            release.complete(Unit)
+            withTimeout(2_000) { download.join(); delete.join() }
+            assertTrue(deleted)
+            assertEquals(Availability.RemoteOnly, harness.library.listGames("3ds", GameQuery()).games.single().availability)
         } finally {
             harness.library.disconnect()
             harness.wiring.cacheRoot.toFile().deleteRecursively()

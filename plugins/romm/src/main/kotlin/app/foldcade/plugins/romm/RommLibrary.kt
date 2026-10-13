@@ -142,6 +142,8 @@ internal class RommLibrary internal constructor(
     )
     private val pendingRunning = AtomicBoolean(false)
     private val romLocks = ConcurrentHashMap<Long, Mutex>()
+    /** One ROM's file at a time: a download, a launch's check of it, or a delete. */
+    private val fileLocks = ConcurrentHashMap<Long, Mutex>()
     @Volatile private var offlineCatalog = false
 
     @Volatile
@@ -347,7 +349,7 @@ internal class RommLibrary internal constructor(
      * ROM is downloaded, checked against RomM's size and hash, and its file
      * list is kept beside it for the next offline start.
      */
-    override suspend fun ensureLocal(game: Game): LaunchTarget {
+    override suspend fun ensureLocal(game: Game): LaunchTarget = fileLock(game.romId()).withLock {
         val wiring = gate.wiring()
         val romId = game.romId()
         val catalog = gate.restoreCatalog(wiring)
@@ -355,11 +357,11 @@ internal class RommLibrary internal constructor(
             val spec = catalog.rom(game.remoteKey)?.bytes() ?: readRomSpec(wiring.romRoot, romId)
             spec?.let { verifiedRom(wiring.romRoot, romId, it) }
         }
-        if (cached != null) return LaunchTarget.ContentUri(uri = wiring.contentUris.uriFor(cached))
+        if (cached != null) return@withLock LaunchTarget.ContentUri(uri = wiring.contentUris.uriFor(cached))
         report(romId, GameActivity.Downloading(0L, null))
         var done = false
         try {
-            return gate.call { current, ops ->
+            gate.call { current, ops ->
                 val rom = romFor(game, ops, gate.catalog(current))
                 val spec = rom.bytes()
                 val path = ops.downloadRom(
@@ -377,6 +379,20 @@ internal class RommLibrary internal constructor(
         } finally {
             // A finished download is followed by the launch's save sync, which reports next.
             if (!done) report(romId, GameActivity.Idle)
+        }
+    }
+
+    /**
+     * Deletes [game]'s downloaded ROM and the file list kept beside it, with no
+     * network call. Saves are under the data root, so they stay and sync as before.
+     */
+    override suspend fun removeLocal(game: Game): Unit = fileLock(game.romId()).withLock {
+        val wiring = gate.wiring()
+        val romId = game.romId()
+        try {
+            runInterruptible(Dispatchers.IO) { dropRom(wiring.romRoot, romId) }
+        } catch (error: IOException) {
+            throw PluginException.Unavailable(error.message ?: "The download could not be deleted", error)
         }
     }
 
@@ -509,6 +525,8 @@ internal class RommLibrary internal constructor(
     }
 
     private fun romLock(romId: Long): Mutex = romLocks.computeIfAbsent(romId) { Mutex() }
+
+    private fun fileLock(romId: Long): Mutex = fileLocks.computeIfAbsent(romId) { Mutex() }
 
     private suspend fun rememberDevice(wiring: RommWiring, ops: RommOps) {
         val hostname = runInterruptible(Dispatchers.IO) { wiring.data.hostName() }
@@ -713,7 +731,16 @@ internal fun readRomSpec(cacheRoot: Path, romId: Long): RomBytes? = try {
 }
 
 private fun romSpecFile(cacheRoot: Path, romId: Long): Path =
-    cacheRoot.resolve("roms").resolve(romId.toString()).resolve(ROM_SPEC_FILE)
+    romDir(cacheRoot, romId).resolve(ROM_SPEC_FILE)
+
+/** Everything downloaded for [romId]: its file, a partial one, and its file list. */
+private fun romDir(cacheRoot: Path, romId: Long): Path =
+    cacheRoot.resolve("roms").resolve(romId.toString())
+
+internal fun dropRom(cacheRoot: Path, romId: Long) {
+    val dir = romDir(cacheRoot, romId)
+    if (Files.exists(dir) && !dir.toFile().deleteRecursively()) throw IOException("Could not delete $dir")
+}
 
 internal fun alignedPlatformId(definitions: Iterable<Platform>, slug: String): String =
     canonicalPlatformId(definitions, slug) ?: slug

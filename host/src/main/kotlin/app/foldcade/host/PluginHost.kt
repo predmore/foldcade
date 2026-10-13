@@ -425,6 +425,11 @@ class PluginHost(
         return offMain(libraryId) { library.ensureLocal(game) }
     }
 
+    suspend fun removeLocal(libraryId: String, game: Game) {
+        val library = requireLibrary(libraryId)
+        offMain(libraryId) { library.removeLocal(game) }
+    }
+
     suspend fun saves(libraryId: String, game: Game): SaveSet {
         val library = requireLibrary(libraryId)
         return offMain(libraryId) { library.saves(game) }

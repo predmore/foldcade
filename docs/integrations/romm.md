@@ -33,6 +33,8 @@ The catalog loads at startup and after connecting or editing a connection. After
 
 Press A or X on a game. Foldcade downloads and checks its files before launch, showing progress on the tile and top screen. Verified downloads are reused.
 
+**Y › Delete download** frees the space a downloaded game takes. Its saves stay, and its tile shows the cloud again until the next launch downloads it.
+
 Downloaded games with a cached catalog can be played offline. New downloads need the server. Provide a format the emulator can open; Foldcade does not handle server-side conversion.
 
 ## Save sync

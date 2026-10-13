@@ -240,6 +240,7 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
             Effect.MoveTile, is Effect.MoveTileTo, Effect.NewFolder, Effect.RenameFolder,
             Effect.ChooseFolderIcon, Effect.RemoveTile, Effect.AddToHome, Effect.GoHome, Effect.EditField,
             -> Unit
+            Effect.RemoveDownload -> removeDownload()
             Effect.OpenAll -> foldcade.shell.openHomeAll()
             Effect.ToggleAddNew -> foldcade.shell.applyHomeAddNew(foldcade.shell.model.addNewToHome)
             is Effect.EditRommConnection -> {
@@ -788,6 +789,8 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
     ) {
         // Play history and the per-game screen choice use the home id from every grid.
         val id = homeGameId(libraryId, game.remoteKey)
+        // Its download is being deleted. A press once that is done downloads it again.
+        if (id in foldcade.shell.removing) return
         // A server game downloads first. Its tile pulses until then, and a second press waits.
         val fetching = game.availability == Availability.RemoteOnly
         if (fetching && !foldcade.shell.beginDownload(libraryId, game.remoteKey)) return
@@ -920,6 +923,53 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
                 GameLaunch.NotAFile -> foldcade.retryLibrary()
             }
         }
+    }
+
+    /**
+     * Y's Delete download. Not while a launch is under way or the game holds
+     * either screen, since either may be reading that copy. The game does not
+     * launch until the copy is gone.
+     */
+    private fun removeDownload() {
+        if (foldcade.launchWork.active) return
+        val game = foldcade.shell.focusedDownload() ?: return
+        val libraryId = game.backendId
+        if (foldcade.store.session.runs(homeGameId(libraryId, game.remoteKey))) return
+        if (!foldcade.shell.beginRemove(libraryId, game.remoteKey)) return
+        foldcade.scope.launch {
+            var removed = false
+            try {
+                foldcade.plugins.removeLocal(libraryId, game)
+                removed = true
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (fatal: VirtualMachineError) {
+                throw fatal
+            } catch (_: Exception) {
+                Unit
+            } finally {
+                // In one step, so a press in between never launches a copy that is gone.
+                withContext(NonCancellable + Dispatchers.Main.immediate) {
+                    if (removed) foldcade.shell.noteOffDevice(libraryId, game.remoteKey)
+                    foldcade.shell.endRemove(libraryId, game.remoteKey)
+                }
+            }
+            if (!removed) withContext(Dispatchers.Main.immediate) { showDeleteFailed(game.label) }
+        }
+    }
+
+    private fun showDeleteFailed(title: String) {
+        foldcade.shell.showDialog(
+            DialogState(
+                kind = DialogKind.Ok,
+                title = "${Copy.deleteFailed} $title",
+                body = Copy.deleteFailedBody,
+                buttons = listOf(DialogButton.Ok),
+                index = 0,
+                safeIndex = 0,
+                screen = hostScreen(),
+            ),
+        )
     }
 
     private fun showDownloadFailed(title: String) {
@@ -1325,6 +1375,11 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
                             if (instanceId != RommCredentials.PLUGIN_ID && foldcade.store.rommServerOrigin(instanceId) == null) {
                                 return@editCredentials
                             }
+                            val before = foldcade.store.rommServerOrigin(instanceId)
+                            // Its tiles name the old server's ROM ids until the new one lists its games.
+                            if (before == null || !rommOriginAlreadyConfigured(listOf(before), origin)) {
+                                withContext(Dispatchers.Main.immediate) { foldcade.shell.noteServerChanged(instanceId) }
+                            }
                             saveRommConnection(foldcade.store, foldcade.credentials, instanceId, origin, token)
                             true
                         }
@@ -1338,6 +1393,8 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
                         foldcade.art.forgetMisses()
                     }
                     withContext(Dispatchers.Main.immediate) {
+                        // Before the refresh, so only a list from the server now saved clears the hold.
+                        foldcade.shell.settleServerChange(instanceId)
                         if (saved) {
                             refreshRommSignedIn()
                             if (foldcade.shell.setupValidationCurrent(ticket)) foldcade.shell.closeConnect()
@@ -1349,6 +1406,7 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
                 }
             } finally {
                 withContext(NonCancellable + Dispatchers.Main.immediate) {
+                    foldcade.shell.settleServerChange(instanceId)
                     foldcade.shell.finishSetupValidation(ticket)
                 }
             }

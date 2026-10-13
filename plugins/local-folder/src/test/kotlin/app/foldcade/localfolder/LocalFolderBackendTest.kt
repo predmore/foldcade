@@ -54,6 +54,7 @@ class LocalFolderBackendTest {
                 "listPlatforms",
                 "listGames",
                 "ensureLocal",
+                "removeLocal",
                 "saves",
                 "prepareLaunch",
                 "reconcile",
