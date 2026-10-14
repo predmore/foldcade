@@ -110,7 +110,7 @@ class HomeSession(raw: String?, nowMillis: Long = System.currentTimeMillis()) {
      * was at pickup, so a library's report then waits in [pendingMerge]: merged into that walk,
      * it would be undone by the next step. Whatever puts the tile down, or back, merges it.
      */
-    var board: HomeBoard = decodeHome(raw, nowMillis)
+    var board: HomeBoard = decodeHome(raw, nowMillis).let { it.copy(collectionSerial = app.foldcade.language.collectionHighWater(it)) }
         private set(value) {
             field = value
             val waiting = pendingMerge ?: return

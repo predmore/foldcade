@@ -152,6 +152,8 @@ data class HomeBoard(
      */
     val offHome: Set<String> = emptySet(),
     val hiddenSlots: Map<String, List<HiddenSlot>> = emptyMap(),
+    /** Highest collection number ever issued; deleting a collection never lowers it. */
+    val collectionSerial: Long = 0L,
 )
 
 /** What X does to a tile on Home, and what its row says. */
@@ -648,7 +650,12 @@ fun removeFolder(board: HomeBoard, folderId: String): HomeBoard {
     return when {
         folder.system -> gone.copy(retired = board.retired + folderId)
         folder.recent -> gone.copy(retired = board.retired + folderId)
-        else -> keepOff(board, gone.copy(folders = board.folders - folderId, hiddenSlots = gone.hiddenSlots - folderId))
+        else -> keepOff(board, gone.copy(
+            folders = board.folders - folderId,
+            collectionSerial = collectionHighWater(board),
+            hiddenSlots = gone.hiddenSlots.filterKeys { it != folderId }
+                .mapValues { (_, places) -> places.filter { it.group != folderId } }.filterValues { it.isNotEmpty() },
+        ))
     }
 }
 
@@ -658,10 +665,13 @@ fun removeFolder(board: HomeBoard, folderId: String): HomeBoard {
  */
 fun newCollection(board: HomeBoard, collectionId: String, name: String, at: Int? = null, member: String? = null): HomeBoard {
     if (collectionId in board.folders || collectionId == HOME_ALL) return board
+    val serial = collectionNumber(collectionId)
+    if (serial != null && serial <= board.collectionSerial) return board
     val game = member?.takeIf { it != HOME_ALL && board.folders[it] == null }
     val folder = HomeFolder(id = collectionId, name = name, userMade = true, mark = MARK_FOLDER, slots = listOfNotNull(game))
     val admitted = game?.let { admit(board, it) } ?: board
-    val made = admitted.copy(folders = admitted.folders + (collectionId to folder), hold = null)
+    val made = admitted.copy(folders = admitted.folders + (collectionId to folder), hold = null,
+        collectionSerial = maxOf(collectionHighWater(admitted), serial ?: 0L))
     val target = at?.takeIf { it >= 0 && made.slots.getOrNull(it) == null } ?: return placeOnRoot(made, collectionId)
     val slots = made.slots.toMutableList()
     while (slots.size <= target) slots += null
@@ -767,12 +777,14 @@ fun renameFolder(board: HomeBoard, folderId: String, name: String): HomeBoard {
     return board.copy(folders = board.folders + (folderId to renamed))
 }
 
-fun nextUserFolderId(board: HomeBoard): String {
-    val taken = board.folders.keys.mapNotNull { id ->
-        id.removePrefix("home.user.").toIntOrNull()
-    }.maxOrNull() ?: 0
-    return "home.user.${taken + 1}"
-}
+private fun collectionNumber(id: String): Long? = id.removePrefix("home.user.").takeIf { it != id }?.toLongOrNull()
+
+/** Older saves have no counter; surviving ids and hidden references establish its lower bound. */
+fun collectionHighWater(board: HomeBoard): Long = maxOf(board.collectionSerial,
+    (board.folders.keys + board.hiddenSlots.keys + board.hiddenSlots.values.flatten().mapNotNull { it.group })
+        .mapNotNull(::collectionNumber).maxOrNull() ?: 0L)
+
+fun nextUserFolderId(board: HomeBoard): String = "home.user.${collectionHighWater(board) + 1L}"
 
 /**
  * The folder [item] is filed in, while it is on Home: its platform's folder for a ROM,
@@ -864,6 +876,7 @@ fun encodeHome(board: HomeBoard): String {
         homeRow("emulatorsFiled", listOf(if (saved.emulatorsFiled) "1" else "0"))
         homeRow("recentAfter", listOf(saved.recentAfter.toString()))
         homeRow("offHome", saved.offHome.sorted())
+        if (saved.collectionSerial > 0L) homeRow("collectionSerial", listOf(saved.collectionSerial.toString()))
         saved.hiddenSlots.toSortedMap().forEach { (id, places) ->
             places.forEach { homeRow("hiddenSlot", listOf(id, it.group.orEmpty(), it.index.toString())) }
         }
@@ -928,6 +941,7 @@ fun decodeHome(raw: String?, nowMillis: Long = 0L): HomeBoard {
             "recentAfter" -> bits.getOrNull(1)?.toLongOrNull()?.let { board = board.copy(recentAfter = it) }
             "offHome" -> board = board.copy(offHome = bits.drop(1).filter { it.isNotEmpty() }.toSet())
             "tint" -> if (bits.size >= 3 && bits[2].isNotEmpty()) tints[bits[1]] = bits[2]
+            "collectionSerial" -> bits.getOrNull(1)?.toLongOrNull()?.takeIf { it >= 0L }?.let { board = board.copy(collectionSerial = it) }
             "hiddenSlot" -> {
                 val id = bits.getOrNull(1) ?: continue
                 val index = bits.getOrNull(3)?.toIntOrNull()?.takeIf { it >= 0 } ?: continue
