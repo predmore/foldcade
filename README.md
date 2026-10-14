@@ -65,7 +65,7 @@ Press **A** to play on the top screen or **X** on the bottom. Games that need bo
 
 <img src="docs/images/menu-y.webp" alt="The Y menu over Super Mario 3D Land's art, with Move, Move to, New folder, and Remove from Home." width="640">
 
-Press **Y** on any tile for what it can do. Press Y twice to pick up a tile and slide it into place.
+Press **Y** on any tile for what it can do. Press Y twice to pick up a tile, walk it with the D-pad, and press Y or A to put it down; B puts it back. Carried over a collection, a game drops in. Push up from the top row of a folder or collection to carry a game out to Home. **Tidy**, on an empty slot, closes the gaps.
 
 - **Folders** are Foldcade's own, one for each system and source. Each always holds every game of its kind on Home, so a game you file elsewhere never goes missing from its folder.
 - **Collections** are yours. Name them on an on-screen keyboard made for the controller, with quick names like Playing and Backlog one press away, and put a game in as many as you like with **Add to**. Adding a game to a collection leaves it in its folder. A collection is a glossy folder card, so it never looks like one of Foldcade's folders: **Y › Icon** opens an editor on the top screen with ten colors and a glyph for every kind of collection (star, trophy, sword, ghost, hourglass, and more, plus every system). The tile and the preview wear each choice as you move; **A** keeps it, **B** puts the old look back, and **L1**/**R1** change the color from anywhere.

@@ -162,30 +162,30 @@ class CollectionsTest {
         board = newCollection(board, "home.user.1", "Quests", member = zelda.id)
         board = addToCollection(board, "home.user.1", mario.id)
         val inCollection = openFolder(board, "home.user.1")
-        val moved = drop(moveHeld(pickUp(inCollection, 0), 1, catalog, platforms), 1)
+        val moved = drop(moveHeld(pickUp(inCollection, 0), 1, catalog, platforms), catalog, platforms)
         assertEquals(listOf(mario.id, zelda.id), moved.folders.getValue("home.user.1").slots)
         assertEquals(listOf(zelda.id, mario.id), moved.folders.getValue(threeDs).slots)
         assertEquals(board.slots, moved.slots)
         val inFolder = openFolder(board, threeDs)
-        val shuffled = drop(moveHeld(pickUp(inFolder, 0), 1, catalog, platforms), 1)
+        val shuffled = drop(moveHeld(pickUp(inFolder, 0), 1, catalog, platforms), catalog, platforms)
         assertEquals(listOf(mario.id, zelda.id), shuffled.folders.getValue(threeDs).slots)
         assertEquals(listOf(zelda.id, mario.id), shuffled.folders.getValue("home.user.1").slots)
     }
 
     @Test
-    fun aPinCarriedOntoACollectionDropsInAndOntoItsFolderGoesHome() {
+    fun aPinDroppedOnACollectionGoesInAndOnItsFolderGoesHome() {
         var board = mergeHome(HomeBoard(), catalog, platforms)
         board = newCollection(board, "home.user.1", "Quests")
         board = pinToHome(board, zelda.id)
         val pin = board.slots.indexOf(zelda.id)
         val collection = board.slots.indexOf("home.user.1")
-        val dropped = moveHeld(pickUp(board, pin), collection, catalog, platforms)
+        val dropped = drop(moveHeld(pickUp(board, pin), collection, catalog, platforms), catalog, platforms)
         assertNull(dropped.hold)
         assertNull(dropped.slots[pin])
         assertEquals(listOf(zelda.id), dropped.folders.getValue("home.user.1").slots)
         assertTrue(zelda.id in dropped.folders.getValue(threeDs).slots)
         // Onto its own folder the pin goes, and the folder keeps it once.
-        val home = moveHeld(pickUp(board, pin), board.slots.indexOf(threeDs), catalog, platforms)
+        val home = drop(moveHeld(pickUp(board, pin), board.slots.indexOf(threeDs), catalog, platforms), catalog, platforms)
         assertNull(home.slots[pin])
         assertEquals(listOf(zelda.id, mario.id), home.folders.getValue(threeDs).slots)
     }

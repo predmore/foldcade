@@ -100,6 +100,7 @@ import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.clipPath
+import androidx.compose.ui.graphics.drawscope.scale
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.PointerEventPass
@@ -231,6 +232,11 @@ import kotlin.math.ceil
 import kotlin.math.floor
 import kotlin.math.min
 import kotlin.math.roundToInt
+import kotlin.math.hypot
+import app.foldcade.HomeCarry
+import app.foldcade.HomeFace
+import app.foldcade.ShelfGame
+import androidx.compose.animation.core.AnimationVector1D
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.coroutines.delay
@@ -2336,6 +2342,7 @@ private fun GridHints(app: FoldcadeApp, modifier: Modifier = Modifier) {
         model.faceMap,
         screens = gridKeys && shell.focusedLaunchesOnOneScreen(),
         options = gridKeys && !model.connectOpen && shell.hasOptions(),
+        drop = shell.homeHoldDrop(),
     )) + if (gridKeys && model.settings == null && model.playActivity == null &&
         (model.homeGrid != HomeGrid.StandIns || shell.homeKeys() == HomeKeys.AllLibrary)
     ) triggerHints(model.gridLabels.isNotEmpty()) else emptyList()
@@ -2418,7 +2425,10 @@ private fun StripGrid(
     val width = cell * Metrics.columns + gap * (Metrics.columns - 1)
     val pitchPx = with(LocalDensity.current) { (cell + gap).toPx() }
     val lastColumn = GridStrip.reachColumns(model.count) - 1
+    val context = LocalContext.current
     val folderToken = app.shell.homeAnimToken()
+    val carry = if (followDrag) app.shell.homeCarry() else null
+    val memory = rememberSlotMemory(if (followDrag) app.shell.homeSlots() else emptyList(), folderToken)
     val folderPop = remember { Animatable(1f) }
     LaunchedEffect(folderToken, scale) {
         folderPop.snapTo(0.92f)
@@ -2486,8 +2496,14 @@ private fun StripGrid(
                             alpha = (1f - outside).coerceIn(0f, 1f)
                         },
                 ) {
-                    StripColumn(app, screen, cell, gap, drawn, showTitle) { rowPx = it }
+                    StripColumn(app, screen, cell, gap, drawn, showTitle, carry, memory, pitchPx, { rowPx }) { rowPx = it }
                 }
+            }
+        }
+        if (followDrag) {
+            HomeTarget(carry, cell, width, pitchPx, shownFirst, scale)
+            CarriedTile(app, carry, memory, cell, gap, rowPx, pitchPx, shownFirst, scale) { at ->
+                (context as? FoldcadeHomeActivity)?.dispatch(app.shell.touchCell(at, screen))
             }
         }
         GridCursor(
@@ -2591,6 +2607,10 @@ private fun StripColumn(
     gap: Dp,
     column: Int,
     showTitle: Boolean,
+    carry: HomeCarry?,
+    memory: SlotMemory,
+    pitchPx: Float,
+    rowPx: () -> Int,
     onRowHeight: (Int) -> Unit,
 ) {
     val context = LocalContext.current
@@ -2612,7 +2632,18 @@ private fun StripColumn(
             // nothing is drawn but a lifted gap.
             val beyond = index >= shell.model.count
             val past = beyond && !(showingHome && lifted == index)
-            Box(if (row == 0 && !past) Modifier.onSizeChanged { onRowHeight(it.height) } else Modifier) {
+            val id = if (showingHome && !past) shell.homeFace(index)?.id else null
+            val glide = slotGlide(memory, id, index, carry?.id)
+            val placed = if (row == 0 && !past) Modifier.onSizeChanged { onRowHeight(it.height) } else Modifier
+            Box(
+                placed.then(
+                    if (glide == null) Modifier else Modifier.zIndex(1f).graphicsLayer {
+                        val pitchY = (if (rowPx() > 0) rowPx().toFloat() else cell.toPx()) + gap.toPx()
+                        translationX = glide.x.value * pitchPx
+                        translationY = glide.y.value * pitchY
+                    },
+                ),
+            ) {
                 if (past) {
                     // A tap rests the cursor here, as on any empty slot.
                     Box(Modifier.size(cell).hostPress { tap() })
@@ -2620,20 +2651,18 @@ private fun StripColumn(
                     val source = if (showingHome) index else order.getOrElse(index) { index }
                     val face = if (showingHome) shell.homeFace(index) else null
                     val game = shell.tileFromOrder(source)
+                    // A tile in the hand draws itself over the grid, so its slot is only
+                    // the space it left, and focus is where it is held.
                     val focused = shell.model.dialog == null &&
                         shell.model.panel == null &&
                         !shell.model.connectOpen &&
                         focus.chrome == null &&
-                        focus.cellIndex == index
+                        focus.cellIndex == index &&
+                        carry == null
                     val label = game?.title.orEmpty()
                     val libraryTile = library && face == null
                     val onHomeMark = face != null && allOpen && face.onGrid && !face.folder && !face.allTile
-                    // A folder or an empty slot keeps its mark. A game asks for its art.
-                    val artGame = game?.takeIf { face?.folder != true && face?.empty != true }
-                    val art = key(artGame?.id) {
-                        val found = rememberArt(app, artGame?.let(shell::artRecord), artGame?.let(shell::artQuery))
-                        found?.let { rememberCoverPainter(app, it.square ?: it.cover, TILE_PX)?.painter }
-                    }
+                    val art = tileArt(app, game, face)
                     Cell(
                         title = label,
                         mark = game?.mark,
@@ -2645,7 +2674,9 @@ private fun StripColumn(
                         icon = if (art == null) launcherIcon(game?.androidPackage) else null,
                         favorite = game?.favorite == true,
                         empty = face?.empty == true || beyond,
-                        lifted = lifted == index,
+                        lifted = lifted == index && carry == null,
+                        socket = carry?.slot == index,
+                        opened = carry?.over == index,
                         editing = editing,
                         marked = onHomeMark,
                         onServer = face?.onServer == true,
@@ -2664,12 +2695,412 @@ private fun StripColumn(
                         } else {
                             null
                         },
+                        onDrop = { (context as? FoldcadeHomeActivity)?.dispatch(shell.onMeaning(Meaning.Activate, screen)) },
                     )
                 }
             }
         }
     }
 }
+
+/** A game tile's art, or null for a group, an empty slot, or art not found yet. */
+@Composable
+private fun tileArt(app: FoldcadeApp, game: ShelfGame?, face: HomeFace?): Painter? {
+    val shell = app.shell
+    // A folder or an empty slot keeps its mark. A game asks for its art.
+    val artGame = game?.takeIf { face?.folder != true && face?.empty != true }
+    return key(artGame?.id) {
+        val found = rememberArt(app, artGame?.let(shell::artRecord), artGame?.let(shell::artQuery))
+        found?.let { rememberCoverPainter(app, it.square ?: it.cover, TILE_PX)?.painter }
+    }
+}
+
+/**
+ * Where each Home tile was drawn last, so one that changes slots, in a swap, a cancel or a
+ * Tidy, glides there from its old slot instead of appearing in the new one. A new board, a
+ * folder opened or closed, starts over.
+ */
+private class SlotMemory {
+    var token: Any? = null
+    var placed: Map<String, Int> = emptyMap()
+
+    /** Tiles still on their way, by id, so a move made mid-glide starts from where they are. */
+    val moving = HashMap<String, SlotGlide>()
+
+    /** The grid was under a menu's blur, and when that menu last closed. */
+    var under = false
+    var clearedAt = 0L
+
+    /**
+     * How long a change made as a menu closes waits, so its motion is not lost under the blur
+     * easing out: Tidy chosen in the Y menu, or a tile Move lifted.
+     */
+    fun wait(blurMillis: Long): Long = (clearedAt + blurMillis - SystemClock.uptimeMillis()).coerceAtLeast(0L)
+}
+
+/** How far a tile is from its slot, in columns and rows. Both ease to 0. */
+private class SlotGlide(val x: Animatable<Float, AnimationVector1D>, val y: Animatable<Float, AnimationVector1D>)
+
+@Composable
+private fun rememberSlotMemory(slots: List<String?>, token: Any): SlotMemory {
+    val memory = remember { SlotMemory() }
+    val under = LocalUnderMenu.current
+    if (memory.under && !under) memory.clearedAt = SystemClock.uptimeMillis()
+    memory.under = under
+    if (memory.token != token) {
+        memory.token = token
+        memory.placed = emptyMap()
+        memory.moving.clear()
+    }
+    SideEffect {
+        memory.placed = buildMap { slots.forEachIndexed { index, id -> if (id != null && id !in this) put(id, index) } }
+    }
+    return memory
+}
+
+/** The glide of tile [id], new in slot [index], from where it was drawn. Null for one that did not move, or [held]. */
+@Composable
+private fun slotGlide(memory: SlotMemory, id: String?, index: Int, held: String?): SlotGlide? {
+    val motion = LocalFoldTheme.current.theme.motion
+    val scale = motion.animatorScale(LocalContext.current.contentResolver)
+    val glide = remember(id, index) {
+        val was = id?.takeIf { it != held }?.let { memory.placed[it] }
+        if (id == null || was == null || was == index) {
+            null
+        } else {
+            val flying = memory.moving[id]
+            val dx = (GridStrip.column(was) - GridStrip.column(index)) + (flying?.x?.value ?: 0f)
+            val dy = (GridStrip.row(was) - GridStrip.row(index)) + (flying?.y?.value ?: 0f)
+            SlotGlide(Animatable(dx), Animatable(dy)).also { memory.moving[id] = it }
+        }
+    }
+    if (glide != null) {
+        LaunchedEffect(glide) {
+            // A swap is one slot and quick. A tile Tidy sends a long way takes longer, so it is seen going.
+            val far = hypot(glide.x.value, glide.y.value).coerceIn(1f, SLOT_GLIDE_FAR)
+            val base = (motion.durationTravel * (1f + (far - 1f) * SLOT_GLIDE_STRETCH)).toInt()
+            delay(memory.wait(motion.duration(motion.durationFocus, scale).toLong()))
+            withContext(SteadyMenu) {
+                launch { glide.x.animateTo(0f, motion.arrive(base, scale)) }
+                glide.y.animateTo(0f, motion.arrive(base, scale))
+            }
+            if (memory.moving[id] === glide) memory.moving.remove(id)
+        }
+    }
+    return glide
+}
+
+/**
+ * Above an open folder or collection, while a game is held on its top row: the way out.
+ * It peeks in faintly there, and lights up with the focus ring once Up raises the tile to
+ * it. It sits over the held tile's column and follows it along the row.
+ */
+@Composable
+private fun HomeTarget(
+    carry: HomeCarry?,
+    cell: Dp,
+    width: Dp,
+    pitchPx: Float,
+    shownFirst: () -> Float,
+    scale: Float,
+) {
+    val motion = LocalFoldTheme.current.theme.motion
+    val theme = foldTheme()
+    val near = carry?.canTakeOut == true && GridStrip.row(carry.at) == 0
+    val lit = carry?.overHome == true
+    val presence by eased(if (near) 1f else 0f, motion.durationFocus, scale)
+    val glow by bouncy(if (lit) 1f else 0f, scale)
+    val column by glideState(GridStrip.column(carry?.at ?: 0).toFloat(), motion.durationTravel, scale)
+    val shownNow by remember { derivedStateOf { presence > 0f } }
+    if (!shownNow) return
+    val pillWidth = px(HOME_TARGET_WIDTH)
+    val pillHeight = px(HOME_TARGET_HEIGHT)
+    val ring = remember(theme) { FocusRing(theme) }
+    val cellPx = with(LocalDensity.current) { cell.toPx() }
+    val widthPx = with(LocalDensity.current) { width.toPx() }
+    val rise = px(HOME_TARGET_RISE)
+    Box(
+        Modifier
+            .offset(y = -pillHeight - rise)
+            .size(pillWidth, pillHeight)
+            .graphicsLayer {
+                val pill = pillWidth.toPx()
+                val center = (column - shownFirst()) * pitchPx + cellPx / 2f
+                translationX = (center - pill / 2f).coerceIn(0f, (widthPx - pill).coerceAtLeast(0f))
+                alpha = presence * (HOME_TARGET_PEEK + (1f - HOME_TARGET_PEEK) * glow.coerceIn(0f, 1f))
+                val grow = 0.9f + 0.1f * presence + 0.08f * glow
+                scaleX = grow
+                scaleY = grow
+                translationY = (1f - presence) * pillHeight.toPx() * 0.5f
+                clip = false
+            }
+            .drawBehind {
+                val corner = size.height / 2f
+                drawRoundRect(color = theme.surface, cornerRadius = CornerRadius(corner, corner))
+                drawRoundRect(
+                    color = theme.focus.copy(alpha = 0.35f * (1f - glow.coerceIn(0f, 1f))),
+                    cornerRadius = CornerRadius(corner, corner),
+                    style = Stroke(width = 3f),
+                )
+                if (glow > 0f) with(ring) { drawFocusRing(corner, pronounced = true, alpha = glow.coerceIn(0f, 1f)) }
+            },
+        contentAlignment = Alignment.Center,
+    ) {
+        Row(
+            horizontalArrangement = Arrangement.spacedBy(px(14f)),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Image(
+                painter = themeIconPainter(R.drawable.mark_console),
+                contentDescription = null,
+                modifier = Modifier.size(px(HOME_TARGET_HEIGHT * 0.7f)),
+            )
+            BasicText(
+                text = Copy.home,
+                style = text(theme.onBackground, LocalFoldTheme.current.theme.style.type.sideRow, theme),
+                maxLines = 1,
+            )
+        }
+    }
+}
+
+/** One stretch of a tile in the hand: [held] while it is, or the drop or cancel that ended it ([from]). */
+private class CarryTurn(val held: Boolean, val from: HomeCarry?)
+
+/** Where a tile that was put down settles: in its slot, or shrinking into the group it went in. */
+private data class Landing(val index: Int, val into: Boolean)
+
+/**
+ * The tile in the hand, drawn over the grid. It lifts off its slot with a little stretch,
+ * a size larger with a soft shadow under it, and bobs slowly while held. It glides from slot
+ * to slot with the D-pad; over a group that would take it, it shrinks a little, as if about
+ * to drop in; raised to the Home target, it reaches up. Put down, it settles into its slot
+ * with a small squash, or shrinks away into the group. Motion Off holds it still: no bob and
+ * no squash.
+ */
+@Composable
+private fun CarriedTile(
+    app: FoldcadeApp,
+    carry: HomeCarry?,
+    memory: SlotMemory,
+    cell: Dp,
+    gap: Dp,
+    rowPx: Int,
+    pitchPx: Float,
+    shownFirst: () -> Float,
+    scale: Float,
+    onTap: (Int) -> Unit,
+) {
+    val motion = LocalFoldTheme.current.theme.motion
+    val theme = foldTheme()
+    val shell = app.shell
+    val speed = shell.model.motionSpeed
+    val held = carry != null
+    val previous = remember { arrayOfNulls<HomeCarry>(1) }
+    val turn = remember(held) { CarryTurn(held, if (held) null else previous[0]) }
+    SideEffect { previous[0] = carry }
+    val landing = remember(turn) {
+        val from = turn.from ?: return@remember null
+        val at = shell.homeSlots().indexOf(from.id)
+        when {
+            at >= 0 -> Landing(at, into = false)
+            from.over != null -> Landing(from.over, into = true)
+            else -> null
+        }
+    }
+    val shown = carry ?: turn.from?.takeIf { landing != null }
+    var done by remember(turn) { mutableStateOf(false) }
+    // Where it is going, in columns along the strip and rows down.
+    val goalColumn = GridStrip.column(carry?.at ?: landing?.index ?: 0).toFloat()
+    val goalRow = when {
+        carry?.overHome == true -> -HOME_REACH
+        else -> GridStrip.row(carry?.at ?: landing?.index ?: 0).toFloat()
+    }
+    val liftGoal = when {
+        carry == null -> if (landing?.into == true) INTO_SCALE else motion.scaleFocus
+        carry.overHome -> motion.scaleOver
+        carry.over != null -> motion.scaleOver
+        else -> motion.scaleLift
+    }
+    val x = remember { Animatable(goalColumn) }
+    val y = remember { Animatable(goalRow) }
+    val lift = remember { Animatable(motion.scaleFocus) }
+    val squash = remember { Animatable(0f) }
+    val fade = remember { Animatable(1f) }
+    val goal = rememberUpdatedState(Offset(goalColumn, goalRow))
+    LaunchedEffect(turn) {
+        if (turn.held) {
+            x.snapTo(goal.value.x)
+            y.snapTo(goal.value.y)
+            fade.snapTo(1f)
+        }
+        withContext(SteadyMenu) {
+            snapshotFlow { goal.value }.collect { next ->
+                launch { x.animateTo(next.x, motion.glide(motion.durationTravel, scale, next.x - x.value, x.velocity)) }
+                launch { y.animateTo(next.y, motion.glide(motion.durationTravel, scale, next.y - y.value, y.velocity)) }
+            }
+        }
+    }
+    val liftTo = rememberUpdatedState(liftGoal)
+    LaunchedEffect(turn) {
+        withContext(SteadyMenu) {
+            val back = motion.squashBack(speed, scale)
+            if (turn.held) {
+                // Picked up: a quick stretch as it leaves the grid, then it springs to size. A Move
+                // chosen in a menu waits for the menu's blur to clear, so the lift is seen.
+                lift.snapTo(motion.scaleFocus)
+                delay(memory.wait(motion.duration(motion.durationFocus, scale).toLong()))
+                if (back != null) {
+                    launch {
+                        squash.animateTo(-1f, motion.arrive(motion.durationShort, scale))
+                        squash.animateTo(0f, back)
+                    }
+                }
+                // Motion Off grows it without the overshoot, as it holds the bob and squash.
+                val grow = if (back != null) motion.playful(motion.durationSelect, scale) else motion.arrive(motion.durationFocus, scale)
+                snapshotFlow { liftTo.value }.collect { next ->
+                    launch { lift.animateTo(next, grow) }
+                }
+            } else if (landing != null) {
+                launch { lift.animateTo(liftTo.value, motion.arrive(motion.durationTravel, scale)) }
+                if (landing.into) {
+                    fade.animateTo(0f, motion.leave(motion.durationTravel, scale))
+                } else {
+                    delay(motion.duration(motion.durationTravel, scale).toLong() / 2)
+                    // Put down: it lands with a small squash and wobbles still.
+                    if (back != null) {
+                        squash.animateTo(1f, motion.arrive(motion.durationShort, scale))
+                        squash.animateTo(0f, back)
+                    } else {
+                        delay(motion.duration(motion.durationTravel, scale).toLong() / 2)
+                    }
+                }
+                done = true
+            }
+        }
+    }
+    // Lifted 0 to 1: the shadow and the bob follow it, so both fade as the tile lands.
+    val raised by remember { derivedStateOf { ((lift.value - motion.scaleFocus) / (motion.scaleLift - motion.scaleFocus)).coerceIn(0f, 1f) } }
+    val bobSpec = motion.bob(speed, scale)
+    val bob = if (bobSpec != null && held) {
+        rememberInfiniteTransition(label = "carry").animateFloat(0f, 1f, bobSpec, label = "bob")
+    } else {
+        null
+    }
+    if (shown == null || done) return
+    val face = remember(shown.id, shell.model.shelfEpoch) { shell.homeFaceOf(shown.id) }
+    val game = remember(shown.id, shell.model.shelfEpoch) { shell.homeTileOf(shown.id) }
+    val art = tileArt(app, game, face)
+    val radius = cell * theme.iconRadius
+    val ring = remember(theme) { FocusRing(theme) }
+    val ringPath = remember { Path() }
+    val bobPx = with(LocalDensity.current) { px(motion.bobPx).toPx() }
+    val glowPx = with(LocalDensity.current) { px(motion.liftGlowPx).toPx() }
+    val underGlow = game.mark?.let { markGlyph(it) }?.accent ?: theme.focus
+    val glowStyle = LocalFoldTheme.current.theme.style.glow
+    val underStops = remember { FloatArray(GlowFalloff.STOPS.size) }
+    Box(
+        Modifier
+            .size(cell)
+            .zIndex(2f)
+            .graphicsLayer {
+                val pitchY = (if (rowPx > 0) rowPx.toFloat() else cell.toPx()) + gap.toPx()
+                translationX = (x.value - shownFirst()) * pitchPx
+                translationY = y.value * pitchY
+                alpha = fade.value
+                clip = false
+            },
+    ) {
+        // A dark shadow is lost on a black grid, so the tile casts a pool of its own light on
+        // the grid under it instead. It stays put as the tile bobs, and dims as the tile rises.
+        // Drawn without a layer of its own: a faded layer would clip the light to the tile's box.
+        Box(
+            Modifier
+                .matchParentSize()
+                .drawBehind {
+                    val rise = bob?.value ?: 0f
+                    val pool = Offset(size.width / 2f, size.height + glowPx * raised + rise * bobPx * 0.5f)
+                    SoftGlow.fillStops(underStops, glowStyle.focusTightness, glowStyle.focusRim)
+                    scale(lift.value * (1f - 0.06f * rise), lift.value * LIFT_GLOW_FLAT, pivot = pool) {
+                        val peak = motion.liftGlowPeak * raised * (1f - 0.25f * rise)
+                        drawRadialGlow(pool, size.width * LIFT_GLOW_REACH, underGlow, underStops, peak)
+                    }
+                },
+        )
+        Box(
+            Modifier
+                .matchParentSize()
+                .graphicsLayer {
+                    val stretch = motion.squash * squash.value
+                    val by = lift.value / motion.scaleFocus
+                    scaleX = by * (1f + stretch)
+                    scaleY = by * (1f - stretch)
+                    translationY = -(bob?.value ?: 0f) * bobPx * raised
+                    transformOrigin = TransformOrigin(0.5f, 1f)
+                    clip = false
+                },
+        ) {
+            Cell(
+                title = game.title,
+                mark = game.mark,
+                art = art,
+                showTitle = false,
+                focused = true,
+                size = cell,
+                corner = radius,
+                icon = if (art == null) launcherIcon(game.androidPackage) else null,
+                favorite = game.favorite,
+                onServer = face.onServer,
+                downloading = face.id != null && face.id in shell.downloading,
+                // A tap on the tile in the hand puts it down, as a tap on its slot did.
+                onClick = { carry?.let { onTap(it.at) } },
+            )
+            // The ring hugs the drawn tile, which the cell scales to focus size itself.
+            Box(
+                Modifier
+                    .matchParentSize()
+                    .graphicsLayer {
+                        scaleX = motion.scaleFocus
+                        scaleY = motion.scaleFocus
+                        clip = false
+                    }
+                    .drawBehind {
+                        val cornerPx = radius.toPx()
+                        ringPath.reset()
+                        ringPath.addRoundRect(RoundRect(Rect(Offset.Zero, size), CornerRadius(cornerPx, cornerPx)))
+                        clipPath(ringPath, ClipOp.Difference) {
+                            with(ring) { drawFocusRing(cornerPx, alpha = 0.4f + 0.6f * raised) }
+                        }
+                    },
+            )
+        }
+    }
+}
+
+/** Slots past which a gliding tile takes no longer, and how much longer each slot makes it. */
+private const val SLOT_GLIDE_FAR = 4f
+private const val SLOT_GLIDE_STRETCH = 0.6f
+
+/** A held slot's outline, faint. */
+private const val SOCKET_ALPHA = 0.16f
+
+/** The light a held tile casts under it: how wide it reaches, as a share of the tile, and how flat it lies. */
+private const val LIFT_GLOW_REACH = 0.62f
+private const val LIFT_GLOW_FLAT = 0.42f
+
+/** A tile put into a group shrinks to this as it goes in. */
+private const val INTO_SCALE = 0.3f
+
+/** How far up a held tile reaches toward the Home target, in rows. */
+private const val HOME_REACH = 0.12f
+
+/** The Home target, in panel pixels, and how far above the top row it sits. */
+private const val HOME_TARGET_WIDTH = 220f
+private const val HOME_TARGET_HEIGHT = 64f
+private const val HOME_TARGET_RISE = 18f
+
+/** How visible the Home target is while it only peeks in, before the tile reaches it. */
+private const val HOME_TARGET_PEEK = 0.45f
 
 private const val FOCUS_GLOW_OVERFLOW = 64f
 private const val REST_GLOW_OVERFLOW = 18f
@@ -2846,6 +3277,10 @@ private fun Cell(
     favorite: Boolean,
     empty: Boolean = false,
     lifted: Boolean = false,
+    /** The slot a tile in the hand left. It draws only a faint outline. */
+    socket: Boolean = false,
+    /** A group a held game is over. It opens up and lights, ready to take it. */
+    opened: Boolean = false,
     editing: Boolean = false,
     marked: Boolean = false,
     onServer: Boolean = false,
@@ -2857,6 +3292,7 @@ private fun Cell(
     onClick: () -> Unit,
     onPickUp: (() -> Unit)? = null,
     onDrag: ((Meaning) -> Unit)? = null,
+    onDrop: (() -> Unit)? = null,
 ) {
     val motion = LocalFoldTheme.current.theme.motion
     val theme = foldTheme()
@@ -2872,6 +3308,8 @@ private fun Cell(
         }
     }
     val scaleTarget = when {
+        opened -> motion.scaleOpen
+        socket -> motion.scaleRest
         lifted -> motion.scaleFocus * motion.scaleFocus
         focused -> motion.scaleFocus
         else -> motion.scaleRest
@@ -2881,7 +3319,7 @@ private fun Cell(
     // How focused the tile looks, 0 at rest to 1 focused. Read in draw and layer blocks,
     // so the art, glow, and edge ease with the scale without recomposing the tile.
     val unscaledFocus = if (motion.scaleFocus == motion.scaleRest) motionFloat(
-        target = if (focused || lifted) 1f else 0f,
+        target = if (focused || lifted || opened) 1f else 0f,
         spec = motion.arrive(motion.durationFocus, animatorScale),
     ) else 0f
     val lit = {
@@ -2891,7 +3329,7 @@ private fun Cell(
     val glowStops = remember { FloatArray(GlowFalloff.STOPS.size) }
     Column(
         horizontalAlignment = Alignment.CenterHorizontally,
-        modifier = Modifier.zIndex(if (focused || lifted) 1f else 0f),
+        modifier = Modifier.zIndex(if (focused || lifted || opened) 1f else 0f),
     ) {
         val accent = glyph?.accent
         Box(
@@ -2907,7 +3345,7 @@ private fun Cell(
                     val bounds = this.size
                     val cornerPx = corner.toPx()
                     val focusShown = lit()
-                    if (glow != null) {
+                    if (glow != null && !socket) {
                         val half = min(bounds.width, bounds.height) * 0.5f
                         val reach = half + lerp(theme.style.glow.restOverflow, theme.style.glow.focusOverflow, focusShown)
                         val tightness = lerp(theme.style.glow.restTightness, theme.style.glow.focusTightness, focusShown)
@@ -2916,7 +3354,18 @@ private fun Cell(
                         SoftGlow.fillStops(glowStops, tightness, rim)
                         drawRadialGlow(center, reach, glow, glowStops, peak)
                     }
-                    if (!empty) {
+                    if (socket) {
+                        // The space a held tile left: a faint outline, so the eye knows where it was.
+                        val strokePx = 3f
+                        val inset = strokePx / 2f
+                        drawRoundRect(
+                            color = theme.onBackground.copy(alpha = SOCKET_ALPHA),
+                            topLeft = Offset(inset, inset),
+                            size = Size(bounds.width - strokePx, bounds.height - strokePx),
+                            cornerRadius = CornerRadius(cornerPx, cornerPx),
+                            style = Stroke(width = strokePx),
+                        )
+                    } else if (!empty) {
                         // Every tile is a filled card, as on Cocoon's grid. A mark's glow is left
                         // as a halo around it. Focus is the grid's sliding ring; at rest a quiet edge.
                         drawRoundRect(color = theme.surface, cornerRadius = CornerRadius(cornerPx, cornerPx))
@@ -2934,10 +3383,10 @@ private fun Cell(
                             )
                         }
                         if (editing) {
-                            val strokePx = if (focused || lifted) 9f else 3f
+                            val strokePx = if (focused || lifted || opened) 9f else 3f
                             val inset = strokePx / 2f
                             drawRoundRect(
-                                color = theme.focus.copy(alpha = if (focused || lifted) 1f else 0.45f),
+                                color = theme.focus.copy(alpha = if (focused || lifted || opened) 1f else 0.45f),
                                 topLeft = Offset(inset, inset),
                                 size = Size(bounds.width - strokePx, bounds.height - strokePx),
                                 cornerRadius = CornerRadius(cornerPx, cornerPx),
@@ -2970,6 +3419,8 @@ private fun Cell(
                                     walked = Offset.Zero
                                     onPickUp()
                                 },
+                                // Letting go puts the tile down where it is, into a group it is over.
+                                onDragEnd = { onDrop?.invoke() },
                                 onDrag = { _, amount ->
                                     walked += amount
                                     val step = size.toPx() * 0.45f
@@ -2996,6 +3447,7 @@ private fun Cell(
                 .clearAndSetSemantics { this[SemanticsProperties.Text] = listOf(AnnotatedString(title)) },
             contentAlignment = Alignment.Center,
         ) {
+            if (socket) return@Box
             if (icon != null) {
                 Image(
                     bitmap = icon,
@@ -3073,7 +3525,7 @@ private fun Cell(
         }
         if (showTitle) {
             BasicText(
-                text = title,
+                text = if (socket) "" else title,
                 modifier = Modifier
                     .zIndex(1f)
                     .clearAndSetSemantics { }

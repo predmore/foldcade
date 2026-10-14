@@ -79,6 +79,8 @@ private val shoulderKeys = setOf(
     KeyEvent.KEYCODE_RIGHT_BRACKET,
     KeyEvent.KEYCODE_BUTTON_START,
     KeyEvent.KEYCODE_BUTTON_SELECT,
+    // Held, Y would open a menu, then run its Move chord, then drop, over and over.
+    KeyEvent.KEYCODE_BUTTON_Y,
 )
 
 fun meaningOf(
@@ -92,6 +94,11 @@ fun meaningOf(
         (keyCode == KeyEvent.KEYCODE_BUTTON_L2 || keyCode == KeyEvent.KEYCODE_BUTTON_R2)) return null
     if (repeatCount > 0 && keyCode in shoulderKeys) {
         return null
+    }
+    // Y puts a held tile down as A does, so Y then Y lifts and Y drops without moving a thumb.
+    // A held tile drops once per press.
+    if (homeKeys == HomeKeys.Moving && (keyCode == KeyEvent.KEYCODE_BUTTON_Y || keyCode == faces.confirmKey)) {
+        return if (repeatCount == 0) Meaning.Activate else null
     }
     return when {
         keyCode == KeyEvent.KEYCODE_DPAD_UP -> Meaning.MoveUp

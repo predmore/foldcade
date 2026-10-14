@@ -279,6 +279,9 @@ sealed interface Row {
     data object ChooseArt : Row
     data object MoveTile : Row
 
+    /** Closes the gaps on the board on screen. */
+    data object Tidy : Row
+
     /** Opens [PanelLevel.Collections]. */
     data object AddToCollection : Row
 
@@ -391,10 +394,14 @@ fun leftRows(): List<Row> = listOf(
 
 /**
  * The focused tile's actions, the same ones Y offers, then what applies to the
- * whole board: whether new games join it, and the apps hidden from it.
+ * whole board: Tidy while it has gaps, whether new games join it, and the apps
+ * hidden from it.
  */
-fun editHomeRows(model: PickerModel): List<Row> =
-    actionRows(model.tileActions, model.appActions) + listOf(Row.AddNewGames, Row.HiddenApps)
+fun editHomeRows(model: PickerModel): List<Row> {
+    val tile = actionRows(model.tileActions, model.appActions)
+    val tidy = if (model.tileActions?.tidyBoard == true && Row.Tidy !in tile) listOf(Row.Tidy) else emptyList()
+    return tile + tidy + listOf(Row.AddNewGames, Row.HiddenApps)
+}
 
 data class SignedInBackend(
     val pluginId: String,
@@ -487,6 +494,10 @@ data class TileActions(
     val removeDownload: Boolean = false,
     /** The game these rows act on. Null for a tile that is not a game, or one off the home grid. */
     val game: String? = null,
+    /** Tidy, on an empty slot of a board with gaps to close. */
+    val tidy: Boolean = false,
+    /** The board on screen has gaps to close, so Edit home offers Tidy whatever the tile. */
+    val tidyBoard: Boolean = false,
 )
 
 /** Y's menu: the tile's own actions, then an Android app's shelf actions. */
@@ -498,6 +509,7 @@ fun actionRows(tile: TileActions?, app: AppActions?): List<Row> = buildList {
         if (tile.art && app == null) add(Row.ChooseArt)
         if (tile.pin) add(Row.PinTile)
         if (tile.newCollection) add(Row.NewCollection)
+        if (tile.tidy) add(Row.Tidy)
         if (tile.rename) add(Row.RenameFolder)
         if (tile.icon) add(Row.FolderIcon)
         if (tile.remove != null) add(Row.RemoveTile)
@@ -639,6 +651,7 @@ fun rowText(row: Row, model: PickerModel): RowText = when (row) {
     Row.ShowApp -> RowText(Copy.showApp)
     Row.ChooseArt -> RowText(ArtCopy.art)
     Row.MoveTile -> RowText(Copy.move)
+    Row.Tidy -> RowText(Copy.tidy)
     Row.AddToCollection -> RowText(Copy.addTo)
     is Row.Collection -> RowText(row.label)
     Row.Favorite -> RowText(if (model.tileActions?.favorite == true) Copy.unfavorite else Copy.favorite)
@@ -715,6 +728,9 @@ sealed interface Effect {
     data class ChooseArt(val gameId: String? = null) : Effect
     /** Pick up the focused tile to move it. */
     data object MoveTile : Effect
+
+    /** Close the gaps on the board on screen. */
+    data object Tidy : Effect
 
     /*
      * The tile menu's effects name the game they act on ([TileActions.game]), so a menu that
@@ -1591,6 +1607,7 @@ private fun activateRow(
         is Row.Destination -> model.copy(panel = null, focus = panel.grid) to Effect.AddAppTo(row.folderId)
         Row.ChooseArt -> model.copy(panel = null, focus = panel.grid) to Effect.ChooseArt(model.tileActions?.game)
         Row.MoveTile -> model.copy(panel = null, focus = panel.grid) to Effect.MoveTile
+        Row.Tidy -> model.copy(panel = null, focus = panel.grid) to Effect.Tidy
         Row.NewCollection -> model.copy(panel = null, focus = panel.grid) to Effect.NewCollection(model.tileActions?.game)
         Row.RenameFolder -> model.copy(panel = null, focus = panel.grid) to Effect.RenameFolder
         Row.FolderIcon -> model.copy(panel = null, focus = panel.grid) to Effect.ChooseFolderIcon
