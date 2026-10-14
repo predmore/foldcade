@@ -3,6 +3,8 @@ package app.foldcade.ui
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.ui.layout.onSizeChanged
 import android.content.Context
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
@@ -23,6 +25,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.text.BasicText
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -170,6 +173,9 @@ private fun Island(
     // A new level or a new notice changes the rows, and the card eases to the new height.
     var rowsHeight by remember(side) { mutableStateOf(Dp.Hairline) }
     val reach = ringReach()
+    val availableRows = maxHeight * 0.88f - pillHeight - reach * 2 - MENU_BOTTOM_DP.dp
+    val scroll = rememberScrollState()
+    var viewport by remember { mutableStateOf(0) }
     val fitted = if (rowsHeight > Dp.Hairline) {
         minOf(maxHeight * 0.88f, pillHeight + rowsHeight + reach * 2 + MENU_BOTTOM_DP.dp)
     } else {
@@ -268,7 +274,10 @@ private fun Island(
                     .width(openWidth)
                     .padding(start = 6.dp, end = 6.dp, top = pillHeight, bottom = MENU_BOTTOM_DP.dp)
                     // The scroll clips. This keeps the focus ring's glow on every row inside it.
-                    .ringScroll(),
+                    .onSizeChanged { viewport = it.height }
+                    .menuFade(scroll)
+                    .verticalScroll(scroll)
+                    .padding(reach),
             ) {
                 SlideSwap(
                     target = panel,
@@ -281,7 +290,9 @@ private fun Island(
                 ) { shownPanel ->
                     // Rows on their way out take no taps: their indices belong to the old level.
                     val arriving = shownPanel.level == panel.level && shownPanel.connection == panel.connection
-                    menuRows(shownPanel, readOpening, interactive && arriving)
+                    CompositionLocalProvider(LocalIslandScroll provides IslandScroll(availableRows, scroll, viewport)) {
+                        menuRows(shownPanel, readOpening, interactive && arriving)
+                    }
                 }
             }
         }

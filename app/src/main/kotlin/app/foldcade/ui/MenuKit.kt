@@ -2,6 +2,7 @@ package app.foldcade.ui
 
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.FiniteAnimationSpec
+import androidx.compose.foundation.ScrollState
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -15,6 +16,7 @@ import androidx.compose.foundation.relocation.bringIntoViewRequester
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.text.BasicText
+import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.State
@@ -30,11 +32,14 @@ import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.MotionDurationScale
+import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.BlendMode
+import androidx.compose.ui.graphics.CompositingStrategy
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.PathMeasure
@@ -205,6 +210,28 @@ internal fun ringReach(): Dp {
     val ring = LocalFoldTheme.current.theme.style.focusRing
     return with(LocalDensity.current) { (ring.gap + ring.stroke + ring.glowSpread).toDp() } + 4.dp
 }
+
+internal data class IslandScroll(val available: Dp, val state: ScrollState, val viewport: Int)
+internal val LocalIslandScroll = staticCompositionLocalOf<IslandScroll?> { null }
+
+/** Fade only edges with rows beyond them; the ring remains inside the scroll padding. */
+internal fun Modifier.menuFade(scroll: ScrollState): Modifier =
+    graphicsLayer { compositingStrategy = CompositingStrategy.Offscreen }.drawWithContent {
+        drawContent()
+        val edge = minOf(12.dp.toPx(), size.height / 2f)
+        if (size.height <= 0f) return@drawWithContent
+        val clear = androidx.compose.ui.graphics.Color.Transparent
+        val solid = androidx.compose.ui.graphics.Color.Black
+        drawRect(
+            Brush.verticalGradient(
+                0f to if (scroll.value > 0) clear else solid,
+                edge / size.height to solid,
+                1f - edge / size.height to solid,
+                1f to if (scroll.value < scroll.maxValue) clear else solid,
+            ),
+            blendMode = BlendMode.DstIn,
+        )
+    }
 
 /** A scrolling menu column with room for the focus ring's glow inside its clip, plus [extra]. */
 @Composable
