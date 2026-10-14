@@ -412,6 +412,8 @@ class ShellController(
             -> null
             is Effect.ChooseArt -> {
                 if (artPickerAvailable()) {
+                    // The picker previews on the game's own tile and hero, so from Find it goes there first.
+                    if (find != null) effect.gameId?.let(::bringForArt)
                     val game = effect.gameId?.takeIf { showingHome() }?.let { homeShelf(home.faceOf(it)) } ?: focusedGame()
                     game?.let(::artQuery)?.let { artPicker = ArtPickerState(it.key, match = savedArtMatch(it.key)) }
                 }
@@ -632,20 +634,37 @@ class ShellController(
      * [app.foldcade.language.homeLanding]), opening its folder or collection when it is in one,
      * and lands the ring there with a burst.
      */
-    fun showOnHome(id: String?) {
-        if (id == null) return
+    fun showOnHome(id: String?): Boolean = showOnHome(id, burst = true)
+
+    /** [showOnHome], with the ring's burst and sound only when [burst]. False when [id] is nowhere on Home. */
+    private fun showOnHome(id: String?, burst: Boolean): Boolean {
+        if (id == null) return false
         artPicker = null
         find = null
         val index = home.reveal(id)
         if (index == null) {
             publish(model)
-            return
+            return false
         }
         store.saveHomeBoard(home.encoded())
         showBoard(GridFocus(cellIndex = index, lastColumn = GridStrip.column(index)), keepDialog = true)
-        revealPulse++
-        cue(model.themeIndex, "notify")
+        if (burst) {
+            revealPulse++
+            cue(model.themeIndex, "notify")
+        }
         Log.i("Foldcade", "home-ui shown ${home.face(index)?.title.orEmpty()}")
+        return true
+    }
+
+    /**
+     * Art chosen from Find's menu: Find closes onto the game's place on Home, as Show on Home
+     * lands there, or onto the game in All when it is nowhere on Home. The picker then opens on it.
+     */
+    private fun bringForArt(id: String) {
+        if (showOnHome(id, burst = false)) return
+        openHomeAll()
+        val at = home.allIndexOf(id).takeIf { it >= 0 } ?: return
+        showBoard(GridFocus(cellIndex = at, lastColumn = GridStrip.column(at)), keepDialog = true)
     }
 
     /** Runs one Y menu action Find opened on its focused result. Find stays, over the same grid. */
@@ -1907,7 +1926,9 @@ class ShellController(
         val offered = if (tile?.removeDownload == true && busy) tile.copy(removeDownload = false) else tile
         // A merge can close the open folder, when its last game left, so read where the board is now.
         val root = if (onHome) home.board.openFolderId == null && !home.board.allOpen else counted.atLibraryRoot
-        val withArt = if (found == null && counted.artKeySaved && artPickerAvailable() && game?.let(::artQuery) != null) {
+        // On Find's results the art is the result's: Art there goes to the game, then opens the picker.
+        val artGame = if (found != null) found.game?.let(::findGame) else game
+        val withArt = if (counted.artKeySaved && artPickerAvailable() && artGame?.let(::artQuery) != null) {
             (offered ?: TileActions()).copy(art = true)
         } else offered
         val apps = if (found == null) actionsFor(counted, game) else null

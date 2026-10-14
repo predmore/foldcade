@@ -723,6 +723,9 @@ class HomeSession(raw: String?, nowMillis: Long = System.currentTimeMillis()) {
         return step(null, restore)
     }
 
+    /** Where game [id] sits in All, or -1 when All does not list it. */
+    fun allIndexOf(id: String): Int = allRows().indexOfFirst { it.id == id }
+
     private fun allRows(): List<HomeItem> =
         allItems(catalog().map { it.copy(lastPlayedMillis = lastPlayed(it.id) ?: it.lastPlayedMillis) }, sort)
 

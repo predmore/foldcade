@@ -303,6 +303,39 @@ class FindFlowTest {
         assertTrue(shell.model.tileActions?.collections?.first()?.member == true)
     }
 
+    @Test
+    fun artFromFindShowsTheGameOnHomeThenOpensThePicker() {
+        val shell = shell()
+        shell.setArtKeySaved(true)
+        shell.onMeaning(Meaning.View, HostScreen.Bottom)
+        type(shell, "drift")
+        shell.onMeaning(Meaning.Done, HostScreen.Bottom)
+        shell.onMeaning(Meaning.Options, HostScreen.Bottom)
+        choose(shell, Row.ChooseArt)
+        assertNull(shell.find)
+        assertEquals("Drift", shell.focusedGame()?.title)
+        assertEquals(shell.focusedGame()?.id, shell.artPicker?.gameId)
+        // It landed in the game's folder, as Show on Home does.
+        assertEquals("Drift", shell.homeFace(shell.model.focus.cellIndex)?.title)
+        assertFalse(shell.homeAllOpen())
+    }
+
+    @Test
+    fun artFromFindForAGameNotOnHomeOpensThePickerFromAll() {
+        val shell = shell()
+        shell.setArtKeySaved(true)
+        hide(shell, "Drift")
+        shell.onMeaning(Meaning.View, HostScreen.Bottom)
+        type(shell, "drift")
+        shell.onMeaning(Meaning.Done, HostScreen.Bottom)
+        shell.onMeaning(Meaning.Options, HostScreen.Bottom)
+        choose(shell, Row.ChooseArt)
+        assertNull(shell.find)
+        assertTrue(shell.homeAllOpen())
+        assertEquals("Drift", shell.focusedGame()?.title)
+        assertEquals(shell.focusedGame()?.id, shell.artPicker?.gameId)
+    }
+
     /** Hides [title] from inside its folder, with Y then X. */
     private fun hide(shell: ShellController, title: String) {
         focus(shell, titles(shell).indexOf("Nintendo 3DS"))
