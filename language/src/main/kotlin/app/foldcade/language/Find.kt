@@ -228,7 +228,8 @@ private fun place(word: Int, edges: Array<IntArray>, owner: IntArray, seen: Bool
         if (seen[title]) continue
         seen[title] = true
         val held = owner[title]
-        if (held == pinned) continue
+        // A free title word (-1) is never the pinned one, even when nothing is pinned (-1 too).
+        if (held >= 0 && held == pinned) continue
         if (held < 0 || place(held, edges, owner, seen, pinned)) {
             owner[title] = word
             return true

@@ -67,6 +67,13 @@ class FindTest {
         assertEquals(MatchTier.Typo, matchTitle("Mario Kart DS", "mraio kart")?.tier)
         assertEquals(MatchTier.Typo, matchTitle("Metroid Prime", "metriod")?.tier)
         assertEquals(MatchTier.Typo, matchTitle("Kirby", "kirbby")?.tier)
+        // Review r2: one typo across several words, in the first, middle or last of them.
+        assertEquals(MatchTier.Typo, matchTitle("Super Mario Kart", "mraio kart")?.tier)
+        assertEquals(MatchTier.Typo, matchTitle("Super Mario Kart", "supr mario kart")?.tier)
+        assertEquals(MatchTier.Typo, matchTitle("Super Mario Kart", "super mraio kart")?.tier)
+        assertEquals(MatchTier.Typo, matchTitle("Super Mario Kart", "super mario katr")?.tier)
+        assertEquals(MatchTier.Typo, matchTitle("Super Mario Kart", "kart mraio")?.tier)
+        assertNull(matchTitle("Super Mario Kart", "supr mraio kart"))
         // Two typos, or one in a very short query, are not a match.
         assertNull(matchTitle("Mario Kart DS", "mraio krat"))
         assertNull(matchTitle("Mario", "mx"))
