@@ -724,7 +724,7 @@ class HomeGridOrderTest {
         assertEquals(listOf(""), titles(shell))
         // Back in its menu, the rest acts on that game too: Unfavorite, and the menu closes.
         shell.onMeaning(Meaning.Back, HostScreen.Bottom)
-        val held = panelRows(shell.model.panel!!, shell.model)
+        val held = panelRows(shell.model.panel!!, shell.model).filterNot { it == Row.Undo }
         assertEquals(listOf(Row.AddToCollection, Row.Favorite), held)
         assertEquals(Copy.unfavorite, rowText(Row.Favorite, shell.model).label)
         shell.onMeaning(Meaning.MoveDown, HostScreen.Bottom)
@@ -866,7 +866,9 @@ class HomeGridOrderTest {
         shell.onMeaning(Meaning.Options, HostScreen.Bottom)
         val rows = panelRows(shell.model.panel!!, shell.model)
         repeat(rows.indexOf(Row.RemoveDownload)) { shell.onMeaning(Meaning.MoveDown, HostScreen.Bottom) }
-        assertEquals(Effect.RemoveDownload(homeGameId("romm", "drift")), shell.onMeaning(Meaning.Activate, HostScreen.Bottom))
+        assertNull(shell.onMeaning(Meaning.Activate, HostScreen.Bottom))
+        recoveryTime += 800L
+        assertEquals(Effect.RemoveDownload(homeGameId("romm", "drift")), shell.tickRecovery())
         assertNull(shell.model.panel)
         assertEquals("drift", shell.focusedDownload()?.remoteKey)
 
@@ -917,7 +919,9 @@ class HomeGridOrderTest {
         assertFalse(Row.ChooseArt in rows)
         assertTrue(Row.RemoveDownload in rows)
         repeat(rows.indexOf(Row.RemoveDownload)) { shell.onMeaning(Meaning.MoveDown, HostScreen.Bottom) }
-        val effect = shell.onMeaning(Meaning.Activate, HostScreen.Bottom)
+        assertNull(shell.onMeaning(Meaning.Activate, HostScreen.Bottom))
+        recoveryTime += 800L
+        val effect = shell.tickRecovery()
         assertEquals(Effect.RemoveDownload(drift), effect)
         assertNull(shell.model.panel)
         // The slot is empty, so only the named game finds the copy to delete.
@@ -1080,7 +1084,7 @@ class HomeGridOrderTest {
     }
 
     private fun optionRows(shell: ShellController): List<Row> =
-        actionRows(shell.model.tileActions, shell.model.appActions)
+        actionRows(shell.model.tileActions, shell.model.appActions).filterNot { it == Row.Undo }
 
     /** Y, down the menu to [row], then A. */
     private fun choose(shell: ShellController, row: Row) {
@@ -1107,6 +1111,8 @@ class HomeGridOrderTest {
     private fun titles(shell: ShellController): List<String> =
         List(shell.model.count) { index -> shell.homeFace(index)?.title.orEmpty() }
 
+    private var recoveryTime = 0L
+
     private fun shell(): ShellController =
-        ShellController(SessionStore(MemoryPrefs()), PluginHost(Dispatchers.Unconfined, MemoryCredentialStore()))
+        ShellController(SessionStore(MemoryPrefs()), PluginHost(Dispatchers.Unconfined, MemoryCredentialStore()), nowMillis = { recoveryTime })
 }

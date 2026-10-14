@@ -92,6 +92,7 @@ sealed interface RowControl {
 /** [value] is the row's [rowText] value, for a caller that already has it. */
 fun rowControl(row: Row, model: PickerModel, value: String? = rowText(row, model).value): RowControl = when (row) {
     Row.Music -> RowControl.Toggle(model.music.enabled)
+    Row.PinApp -> RowControl.Toggle(model.appActions?.favorite == true)
     Row.AddNewGames -> RowControl.Toggle(model.addNewToHome)
     Row.Artwork -> RowControl.Toggle(model.artwork)
     in choiceRows -> RowControl.Choice(value.orEmpty())

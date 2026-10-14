@@ -89,6 +89,7 @@ data class AppShelfState(
 /** Y's actions for the focused installed app. */
 data class AppActions(
     val favorite: Boolean,
+    val keepOnTop: Boolean = true,
     val onGamesShelf: Boolean,
     val hiddenShelf: Boolean,
     val destinations: List<FolderChoice> = emptyList(),

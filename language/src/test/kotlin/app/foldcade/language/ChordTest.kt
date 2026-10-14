@@ -12,6 +12,20 @@ class ChordTest {
     private val home = PickerModel(count = 8, rowsPerPage = 2, tileActions = tile, themes = listOf(Copy.builtIn, "Afterglow"))
 
     @Test
+    fun hiddenShowUsesYAndUndoLeavesMoveAndRemoveChordsAlone() {
+        val hidden = actionRows(TileActions(show = true, undo = true), null)
+        assertEquals(listOf(Row.Undo, Row.ShowHidden), hidden)
+        assertEquals(listOf(null, Meaning.Options), chords(hidden))
+        for (verb in RemoveVerb.entries) {
+            val rows = actionRows(TileActions(move = true, undo = true, remove = verb, deleteShortcut = true), null)
+            assertEquals(rows.indexOf(Row.MoveTile), chordIndex(rows, Meaning.Options))
+            assertEquals(rows.indexOf(Row.RemoveTile), chordIndex(rows, Meaning.ActivateBottom))
+            assertNull(chords(rows)[rows.indexOf(Row.DeleteShortcut)])
+        }
+        assertNull(chordIndex(listOf(Row.MoveApp), Meaning.Options))
+    }
+
+    @Test
     fun startAndSelectAreMeaningsOncePerPress() {
         assertEquals(Meaning.Menu, meaningOf(KeyEvent.KEYCODE_BUTTON_START))
         assertEquals(Meaning.View, meaningOf(KeyEvent.KEYCODE_BUTTON_SELECT))

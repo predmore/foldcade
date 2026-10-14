@@ -88,7 +88,7 @@ class MoonlightHomeTest {
     }
 
     @Test
-    fun removingAMoonlightGameFromHomeUnpinsOnlyThatGame() {
+    fun hidingAMoonlightGameKeepsItsShortcut() {
         val removed = mutableListOf<String>()
         Shelf.moonlightGames = listOf(tile(hades, "Hades"))
         val shell = ShellController(
@@ -103,7 +103,7 @@ class MoonlightHomeTest {
 
         focus(shell, titles(shell).indexOf("Hades"))
         choose(shell, Row.RemoveTile)
-        assertEquals(listOf(hades), removed)
+        assertEquals(emptyList<String>(), removed)
     }
 
     @Test

@@ -1,0 +1,206 @@
+package app.foldcade
+
+import app.foldcade.api.plugin.MemoryCredentialStore
+import app.foldcade.host.PluginHost
+import app.foldcade.language.*
+import kotlinx.coroutines.Dispatchers
+import org.junit.After
+import org.junit.Assert.*
+import org.junit.Test
+
+class HomeRecoveryHostTest {
+    private var time = 100L
+    private val app = LaunchableApp("notes", "Notes", false)
+    private val other = LaunchableApp("browser", "Browser", false)
+    private val prefs = MemoryPrefs()
+    private val store = SessionStore(prefs)
+    private fun shell(deleted: MutableList<String> = mutableListOf()) = ShellController(store,
+        PluginHost(Dispatchers.Unconfined, MemoryCredentialStore()), nowMillis = { time }, onMoonlightRemoved = { deleted += it })
+
+    @After fun clean() { Shelf.moonlightGames = emptyList() }
+
+    @Test fun shelfHideIsSharedShowRestoresAndUndoRestoresTheExactBoardAndShelf() {
+        val shell = shell()
+        shell.setInstalledApps(listOf(app, other), emptySet())
+        shell.showHomeGrid(HomeGrid.Apps)
+        focus(shell, 1)
+        shell.onMeaning(Meaning.Options, HostScreen.Bottom)
+        choose(shell, Row.PinTile)
+        val before = decodeHome(store.homeBoardRaw())
+        val shelves = store.appShelfState()
+        shell.onMeaning(Meaning.Options, HostScreen.Bottom)
+        choose(shell, Row.RemoveTile)
+        assertTrue(androidHomeId("notes") in decodeHome(store.homeBoardRaw()).hidden)
+        assertTrue(store.appShelfState().record("notes").hidden)
+        assertEquals(Copy.hidden, shell.model.undoVerb)
+        shell.onMeaning(Meaning.Options, HostScreen.Bottom)
+        assertEquals(Row.Undo, panelRows(shell.model.panel!!, shell.model).first())
+        assertEquals(0, shell.model.panel!!.index)
+        shell.onMeaning(Meaning.Activate, HostScreen.Bottom)
+        assertEquals(before, decodeHome(store.homeBoardRaw()))
+        assertEquals(shelves, store.appShelfState())
+        assertNull(shell.model.undoVerb)
+        assertEquals(1, shell.model.rewind)
+
+        shell.onMeaning(Meaning.Options, HostScreen.Bottom)
+        choose(shell, Row.RemoveTile)
+        shell.showHomeGrid(HomeGrid.HiddenApps)
+        assertEquals("Notes", shell.focusedGame()?.title)
+        shell.onMeaning(Meaning.Options, HostScreen.Bottom)
+        shell.onMeaning(Meaning.Options, HostScreen.Bottom)
+        assertEquals(0, shell.model.count)
+        assertEquals(before.slots, decodeHome(store.homeBoardRaw()).slots)
+        assertFalse(store.appShelfState().record("notes").hidden)
+    }
+
+    @Test fun undoExpiresAndMoveInvalidatesItWithoutSavingUndo() {
+        val shell = shell()
+        shell.setInstalledApps(listOf(app, other), emptySet())
+        shell.showHomeGrid(HomeGrid.Apps)
+        shell.onMeaning(Meaning.Options, HostScreen.Bottom)
+        choose(shell, Row.RemoveTile)
+        time += UNDO_MILLIS
+        shell.tickRecovery()
+        assertNull(shell.model.undoVerb)
+        shell.showHomeGrid(HomeGrid.HiddenApps)
+        shell.onMeaning(Meaning.Options, HostScreen.Bottom)
+        choose(shell, Row.ShowHidden)
+        shell.goHome()
+        focus(shell, 1)
+        shell.onMeaning(Meaning.Activate, HostScreen.Bottom)
+        shell.onMeaning(Meaning.Options, HostScreen.Bottom)
+        choose(shell, Row.RemoveTile)
+        assertNotNull(shell.model.undoVerb)
+        shell.onMeaning(Meaning.Options, HostScreen.Bottom)
+        shell.onMeaning(Meaning.Options, HostScreen.Bottom)
+        assertNull(shell.model.undoVerb)
+        val restarted = shell()
+        restarted.setInstalledApps(listOf(app, other), emptySet())
+        assertNull(restarted.model.undoVerb)
+    }
+
+    @Test fun aShortReleaseCancelsButAFullHoldDeletesExactlyOneShortcutOnce() {
+        val key = "f81d4fae-7dec-11d0-a765-00a0c91e6bf6|7"
+        Shelf.moonlightGames = listOf(ShelfGame(key, "Hades", "Moonlight", platformId = "moonlight", mark = "moonlight", libraryId = "moonlight", remoteKey = key))
+        val deleted = mutableListOf<String>()
+        val shell = shell(deleted)
+        shell.settleMoonlight()
+        shell.noteShelfChanged()
+        focus(shell, List(shell.model.count) { shell.homeFace(it)?.title }.indexOf("Moonlight"))
+        shell.onMeaning(Meaning.Activate, HostScreen.Bottom)
+        shell.onMeaning(Meaning.Options, HostScreen.Bottom)
+        choose(shell, Row.DeleteShortcut)
+        assertNotNull(shell.model.deleteHold)
+        assertTrue(deleted.isEmpty())
+        shell.setPromptHeld(PromptKey.FaceA, true)
+        time += 799L
+        shell.tickRecovery()
+        shell.setPromptHeld(PromptKey.FaceA, false)
+        time += 1L
+        assertNull(shell.tickRecovery())
+        assertTrue(deleted.isEmpty())
+        assertEquals(1, shell.model.deleteShake)
+        shell.onMeaning(Meaning.Activate, HostScreen.Bottom)
+        time += DELETE_HOLD_MILLIS
+        shell.tickRecovery()
+        assertEquals(listOf(key), deleted)
+        assertFalse(key in decodeHome(store.homeBoardRaw()).hidden)
+        assertTrue(key in decodeHome(store.homeBoardRaw()).offHome)
+        shell.tickRecovery()
+        assertEquals(listOf(key), deleted)
+    }
+
+    @Test fun folderAndCollectionRemovalUndoRestoresPositionsAndMemberships() {
+        val folder = HomeFolder(HOME_ANDROID_APPS, Copy.androidAppsFolder, bucket = HomeKind.AndroidApp,
+            slots = listOf(null, androidHomeId("notes")))
+        val collection = HomeFolder("home.user.1", "Tools", userMade = true, slots = listOf(androidHomeId("notes"), null))
+        val board = HomeBoard(slots = listOf(HOME_ALL, null, folder.id, collection.id),
+            folders = mapOf(folder.id to folder, collection.id to collection), emulatorsFiled = true)
+        store.saveHomeBoard(encodeHome(board))
+        val shell = shell()
+        shell.setInstalledApps(listOf(app), emptySet())
+        for (target in listOf(folder.id, collection.id)) {
+            shell.goHome()
+            val saved = store.homeBoardRaw()
+            focus(shell, decodeHome(saved).slots.indexOf(target))
+            shell.onMeaning(Meaning.Options, HostScreen.Bottom)
+            choose(shell, Row.RemoveTile)
+            assertEquals(Copy.removed, shell.model.undoVerb)
+            shell.onMeaning(Meaning.Options, HostScreen.Bottom)
+            shell.onMeaning(Meaning.Activate, HostScreen.Bottom)
+            assertEquals(saved, store.homeBoardRaw())
+        }
+    }
+
+    @Test fun appMenusShareClassificationAndShelfYDoesNotMoveIt() {
+        val shell = shell()
+        shell.setInstalledApps(listOf(app), emptySet())
+        shell.showHomeGrid(HomeGrid.Apps)
+        shell.onMeaning(Meaning.Options, HostScreen.Bottom)
+        val rows = panelRows(shell.model.panel!!, shell.model)
+        assertTrue(Row.PinTile in rows && Row.AddToCollection in rows && Row.RemoveTile in rows)
+        assertNull(chordIndex(rows, Meaning.Options))
+        shell.onMeaning(Meaning.Options, HostScreen.Bottom)
+        assertNull(store.appShelfState().record("notes").shelf)
+        choose(shell, Row.MoveApp)
+        assertEquals(AndroidShelf.Games, store.appShelfState().record("notes").shelf)
+        assertTrue(androidHomeId("notes") in decodeHome(store.homeBoardRaw()).folders.getValue(HOME_ANDROID_GAMES).slots)
+    }
+
+    @Test fun aHoldCanceledWhenTheSurfaceHidesCannotDeleteLater() {
+        val key = "f81d4fae-7dec-11d0-a765-00a0c91e6bf6|7"
+        Shelf.moonlightGames = listOf(ShelfGame(key, "Hades", "Moonlight", platformId = "moonlight", mark = "moonlight", libraryId = "moonlight", remoteKey = key))
+        val deleted = mutableListOf<String>()
+        val shell = shell(deleted)
+        shell.settleMoonlight()
+        shell.noteShelfChanged()
+        focus(shell, List(shell.model.count) { shell.homeFace(it)?.title }.indexOf("Moonlight"))
+        shell.onMeaning(Meaning.Activate, HostScreen.Bottom)
+        shell.onMeaning(Meaning.Options, HostScreen.Bottom)
+        choose(shell, Row.DeleteShortcut)
+        shell.cancelDeleteHold()
+        time += 1000L
+        shell.tickRecovery()
+        assertTrue(deleted.isEmpty())
+    }
+
+    @Test fun keyboardConfirmationReleaseCancelsBeforeTheDeadlineAndCompletesAtIt() {
+        val key = "f81d4fae-7dec-11d0-a765-00a0c91e6bf6|7"
+        Shelf.moonlightGames = listOf(ShelfGame(key, "Hades", "Moonlight", platformId = "moonlight", mark = "moonlight", libraryId = "moonlight", remoteKey = key))
+        val deleted = mutableListOf<String>()
+        val shell = shell(deleted)
+        shell.settleMoonlight()
+        shell.noteShelfChanged()
+        focus(shell, List(shell.model.count) { shell.homeFace(it)?.title }.indexOf("Moonlight"))
+        shell.onMeaning(Meaning.Activate, HostScreen.Bottom)
+        shell.onMeaning(Meaning.Options, HostScreen.Bottom)
+        choose(shell, Row.DeleteShortcut)
+        time += 799L
+        shell.releaseMeaning(Meaning.Activate)
+        time += 1L
+        shell.tickRecovery()
+        assertTrue(deleted.isEmpty())
+        shell.onMeaning(Meaning.Activate, HostScreen.Bottom)
+        time += DELETE_HOLD_MILLIS
+        shell.releaseMeaning(Meaning.Activate)
+        assertEquals(listOf(key), deleted)
+    }
+
+    private fun focus(shell: ShellController, target: Int) {
+        val columns = GridStrip.column(target) - GridStrip.column(shell.model.focus.cellIndex)
+        repeat(kotlin.math.abs(columns)) { shell.onMeaning(if (columns > 0) Meaning.MoveRight else Meaning.MoveLeft, HostScreen.Bottom) }
+        val rows = GridStrip.row(target) - GridStrip.row(shell.model.focus.cellIndex)
+        repeat(kotlin.math.abs(rows)) { shell.onMeaning(if (rows > 0) Meaning.MoveDown else Meaning.MoveUp, HostScreen.Bottom) }
+        assertEquals(target, shell.model.focus.cellIndex)
+    }
+
+    private fun choose(shell: ShellController, row: Row) {
+        val rows = panelRows(shell.model.panel!!, shell.model)
+        val target = rows.indexOf(row)
+        assertTrue("Missing $row in $rows", target >= 0)
+        repeat(kotlin.math.abs(target - shell.model.panel!!.index)) {
+            shell.onMeaning(if (target > shell.model.panel!!.index) Meaning.MoveDown else Meaning.MoveUp, HostScreen.Bottom)
+        }
+        shell.onMeaning(Meaning.Activate, HostScreen.Bottom)
+    }
+}

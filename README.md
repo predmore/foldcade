@@ -71,7 +71,17 @@ Press **Y** on any tile for what it can do. Press Y twice to pick up a tile, wal
 - **Collections** are yours. Name them on an on-screen keyboard made for the controller, with quick names like Playing and Backlog one press away, and put a game in as many as you like with **Add to**. Adding a game to a collection leaves it in its folder. A collection is a glossy folder card, so it never looks like one of Foldcade's folders: **Y › Icon** opens an editor on the top screen with ten colors and a glyph for every kind of collection (star, trophy, sword, ghost, hourglass, and more, plus every system). The tile and the preview wear each choice as you move; **A** keeps it, **B** puts the old look back, and **L1**/**R1** change the color from anywhere.
 - **Pin to Home** puts a shortcut to a game on Home itself. **Unpin** takes only the shortcut away.
 - **Favorite** a game and **Favorites** appears on Home. **Recently played** shows up after you play something and lists your last 12 games, newest first.
-- **Hide** takes a game off Home everywhere. It stays in **All**, where Y brings it back.
+- **Hide** takes a game off Home everywhere and keeps its games, downloads, and Android shortcuts intact.
+
+### Hiding and bringing things back
+
+Open **L1 › Edit home › Hidden** for hidden games, apps, emulators, streams, and folders removed from Home. The grid is alphabetical; **L2/R2** jumps between letters. Press **Y** on an item, then **Y** again for **Show**. A game returns to its old folder slot when free, its Home pin, and every collection it was in. A removed folder returns to its old Home slot when free.
+
+After **Hide**, **Unpin**, or **Remove**, the hint bar offers **Y Undo** for eight seconds. Press Y, then A on the first **Undo** row to put the whole layout back. Only the last removal can be undone; another edit clears it. Y twice still means **Move**.
+
+**Delete download** and **Delete shortcut** require holding **A** for 0.8 seconds while their row fills. Release early to cancel. Where the row has an X shortcut, hold X after opening the Y menu instead. **Delete shortcut** removes a Moonlight or DroidDeck shortcut from Android and Home; **Hide** lets you bring it back through Hidden.
+
+Android shelves share Hide and Show with the Home folders. **Pin to Home** puts a tile on Home; the shelf's **Keep on top** switch keeps an app first on its shelf. **Move to Android Games/Apps** changes its classification and has no Y chord.
 
 ### Find anything with Select
 

@@ -1,5 +1,12 @@
 package app.foldcade
 
+import app.foldcade.language.HomeUndo
+import app.foldcade.language.DeleteHold
+import app.foldcade.language.Row
+import app.foldcade.language.promptKeyOf
+import app.foldcade.language.assignedShelf
+import app.foldcade.language.HOME_ANDROID_GAMES
+import app.foldcade.language.HOME_ANDROID_APPS
 import app.foldcade.language.ArtMatch
 import app.foldcade.language.ArtKind
 import app.foldcade.language.ArtPickerState
@@ -125,15 +132,16 @@ class ShellController(
     private val homeTracks: List<MusicTrack> = emptyList(),
     private val themeTracks: List<MusicTrack?> = emptyList(),
     private val lastPlayedMillis: (String) -> Long? = { null },
-    /** A Moonlight game left Home. The app drops its pinned shortcut. */
+    /** Delete shortcut was confirmed. The app drops its pinned shortcut. */
     private val onMoonlightRemoved: (remoteKey: String) -> Unit = {},
-    /** A DroidDeck game left Home. The app drops its pinned shortcut. */
+    /** Delete shortcut was confirmed. The app drops its pinned shortcut. */
     private val onDroidDeckRemoved: (remoteKey: String) -> Unit = {},
     /** The R1 slider moved to this position. The app stores it. */
     private val onBrightness: (position: Int) -> Unit = {},
     private val onArtApply: (String, ArtKind, String?) -> Unit = { _, _, _ -> },
     private val savedArtMatch: (String) -> ArtMatch? = { null },
     private val onArtMatch: (String, ArtMatch) -> Unit = { _, _ -> },
+    private val nowMillis: () -> Long = { System.currentTimeMillis() },
 ) {
     var artPicker by mutableStateOf<ArtPickerState?>(null)
         private set
@@ -308,7 +316,75 @@ class ShellController(
     private var platformOrder: List<Int> = emptyList()
     private var loggedHomeTile: String? = null
 
+    private var undo: HomeUndo? = null
+    private var undoFocus = GridFocus()
+    private var undoGrid = HomeGrid.StandIns
+    private var completingDelete = false
+
+    private fun activeUndo(): HomeUndo? = undo?.takeIf { it.available(nowMillis()) }
+
+    fun tickRecovery(): Effect? {
+        if (undo != null && activeUndo() == null) { undo = null; publish(model.copy(undoVerb = null)) }
+        val hold = model.deleteHold ?: return null
+        val selected = model.panel?.let { panelRows(it, model).getOrNull(it.index) }
+        if (selected != hold.row || model.tileActions?.game != hold.gameId) { cancelDelete(); return null }
+        if (hold.complete(nowMillis())) {
+            model = model.copy(deleteHold = null, deleteProgress = 0f)
+            completingDelete = true
+            cue(model.themeIndex, "notify")
+            return try { onMeaning(Meaning.Activate, HostScreen.Top) } finally { completingDelete = false }
+        }
+        model = model.copy(deleteProgress = hold.progress(nowMillis()))
+        return null
+    }
+
+    fun cancelDeleteHold() = cancelDelete()
+
+    private fun cancelDelete() {
+        if (model.deleteHold == null) return
+        model = model.copy(deleteHold = null, deleteProgress = 0f, deleteShake = model.deleteShake + 1)
+        cue(model.themeIndex, "back")
+    }
+
     fun onMeaning(meaning: Meaning, screen: HostScreen, repeatCount: Int = 0): Effect? {
+        val panel = model.panel
+        val rows = panel?.let { panelRows(it, model) }.orEmpty()
+        val at = if (meaning == Meaning.Activate) panel?.index?.coerceIn(0, (rows.size - 1).coerceAtLeast(0)) else chordIndex(rows, meaning)
+        val row = at?.let { rows.getOrNull(it) }
+        if (!completingDelete && row != null && (row == Row.RemoveDownload || row == Row.DeleteShortcut)) {
+            if (model.deleteHold == null && repeatCount == 0) {
+                val key = if (meaning == Meaning.ActivateBottom) PromptKey.FaceX else promptKeyOf(model.faceMap.confirmKey) ?: PromptKey.FaceA
+                model = model.copy(panel = panel?.copy(index = at), deleteHold = DeleteHold(row, key, nowMillis(), model.tileActions?.game, meaning), deleteProgress = 0f)
+            }
+            return null
+        }
+        if (model.deleteHold != null) {
+            if (meaning == Meaning.Activate || meaning == Meaning.ActivateBottom) return null
+            cancelDelete()
+        }
+        if (model.homeGrid == HomeGrid.HiddenApps && model.panel == null && (meaning == Meaning.Activate || meaning == Meaning.ActivateBottom)) return null
+        val before = home.board
+        val shelves = shelfState
+        val beforeFocus = model.focus
+        val beforeGrid = model.homeGrid
+        val beforeSaved = home.encoded()
+        val target = model.tileActions?.game
+        val removeVerb = model.tileActions?.remove
+        val result = applyMeaning(meaning, screen, repeatCount)
+        if (row != Row.Undo && (home.encoded() != beforeSaved || shelfState != shelves || row == Row.MoveTile)) {
+            val reversible = row == Row.RemoveTile || row == Row.HideApp ||
+                (row is Row.Collection && before.folders[row.folderId]?.slots?.contains(target) == true)
+            undo = if (reversible) HomeUndo(before, shelves,
+                when { row == Row.HideApp || removeVerb == RemoveVerb.Hide -> Copy.hidden
+                    removeVerb == RemoveVerb.Unpin -> Copy.unpinned
+                    else -> Copy.removed }, nowMillis()) else null
+            if (undo != null) { undoFocus = beforeFocus; undoGrid = beforeGrid }
+            publish(model.copy(undoVerb = activeUndo()?.verb))
+        }
+        return result
+    }
+
+    private fun applyMeaning(meaning: Meaning, screen: HostScreen, repeatCount: Int = 0): Effect? {
         if (artPicker != null) {
             artInput(meaning)
             return null
@@ -368,28 +444,35 @@ class ShellController(
             // Add to stays open, so the next collection is one press away, even when the game
             // leaves the collection on screen: the menu keeps acting on that game.
             is Effect.ToggleCollection -> {
-                if (showingHome() || find != null) {
+                if (!model.libraryGrid) {
                     home.toggleCollection(next.focus.cellIndex, effect.folderId, effect.gameId)
+                    reconcileShownApps()
                     syncHome()
                 }
                 publish(next)
             }
             Effect.MoveApp -> {
                 if (packageName != null) {
-                    val destination = if (current.homeGrid == HomeGrid.AndroidGames) {
+                    val destination = if (current.appActions?.onGamesShelf == true) {
                         AndroidShelf.Apps
                     } else {
                         AndroidShelf.Games
                     }
                     shelfState = shelfState.move(packageName, destination)
                     store.saveAppShelfState(shelfState)
+                    val target = if (destination == AndroidShelf.Games) HOME_ANDROID_GAMES else HOME_ANDROID_APPS
+                    home.ensureAppFolder(target)
+                    home.placeIn(androidHomeId(packageName), target)
+                    syncHome()
                 }
                 publish(next)
             }
             Effect.HideApp -> {
                 if (packageName != null) {
+                    home.hide(androidHomeId(packageName))
                     shelfState = shelfState.hide(packageName)
                     store.saveAppShelfState(shelfState)
+                    syncHome()
                 }
                 publish(next)
             }
@@ -441,16 +524,67 @@ class ShellController(
             Effect.RenameFolder -> changeHome { home.startRename(it); it }
             Effect.ChooseFolderIcon -> changeHome { home.pickIcon(it); it }
             Effect.RemoveTile -> {
-                // Only hiding takes a game off Home, so only hiding drops its pinned shortcut.
-                // An unpinned game is still in its folder, and a folder has no library.
-                val hides = home.removeVerb(model.focus.cellIndex) == RemoveVerb.Hide
-                val removed = home.face(model.focus.cellIndex)?.takeIf { hides }?.let(::homeShelf)
-                val moonlight = removed?.takeIf { it.libraryId == MoonlightLibrary.ID }?.remoteKey
-                val droidDeck = removed?.takeIf { it.libraryId == DroidDeckLibrary.ID }?.remoteKey
-                changeHome { home.remove(it) }.also {
-                    if (moonlight != null) onMoonlightRemoved(moonlight)
-                    if (droidDeck != null) onDroidDeckRemoved(droidDeck)
+                if (showingHome()) {
+                    val packageId = home.face(model.focus.cellIndex)?.androidPackage
+                    val hides = home.removeVerb(model.focus.cellIndex) == RemoveVerb.Hide
+                    changeHome { home.remove(it) }
+                    if (hides && packageId != null) {
+                        shelfState = shelfState.hide(packageId)
+                        store.saveAppShelfState(shelfState)
+                        publish(model)
+                    }
+                } else {
+                    model.tileActions?.game?.let { id ->
+                        home.hide(id)
+                        packageName?.let { shelfState = shelfState.hide(it); store.saveAppShelfState(shelfState) }
+                        syncHome()
+                        publish(model)
+                    }
                 }
+                null
+            }
+            is Effect.ShowHidden -> {
+                effect.id?.let { id ->
+                    val wasFolder = id in home.board.retired
+                    home.show(id)
+                    installed.firstOrNull { androidHomeId(it.packageName) == id }?.let {
+                        shelfState = shelfState.show(it.packageName, it.packageName in playerPackages)
+                        store.saveAppShelfState(shelfState)
+                    }
+                    if (!wasFolder) syncHome() else store.saveHomeBoard(home.encoded())
+                    publish(model.copy(shelfEpoch = model.shelfEpoch + 1))
+                }
+                null
+            }
+            Effect.Undo -> {
+                activeUndo()?.let { saved ->
+                    undo = null
+                    home.restore(saved.board)
+                    shelfState = saved.shelves
+                    store.saveAppShelfState(shelfState)
+                    store.saveHomeBoard(home.encoded())
+                    model = model.copy(undoVerb = null, rewind = model.rewind + 1, panel = null)
+                    if (undoGrid == HomeGrid.StandIns) showBoard(undoFocus, keepDialog = false)
+                    else publish(model.copy(homeGrid = undoGrid, focus = undoFocus))
+                    cue(model.themeIndex, "back")
+                }
+                null
+            }
+            is Effect.DeleteShortcut -> {
+                effect.gameId?.let { id ->
+                    val removed = homeShelf(home.faceOf(id))
+                    home.deleteShortcut(id)
+                    store.saveHomeBoard(home.encoded())
+                    removed.remoteKey?.let { key ->
+                        when (removed.libraryId) {
+                            MoonlightLibrary.ID -> onMoonlightRemoved(key)
+                            DroidDeckLibrary.ID -> onDroidDeckRemoved(key)
+                        }
+                    }
+                    showBoard(model.focus, keepDialog = false)
+                    cue(model.themeIndex, "notify")
+                }
+                null
             }
             Effect.OpenAll -> {
                 openHomeAll()
@@ -738,12 +872,15 @@ class ShellController(
 
     /** Runs one Y menu action on the focused home tile. [change] returns the index to focus after. */
     private fun changeHome(change: (Int) -> Int): Effect? {
-        if (!showingHome()) return null
+        if (model.libraryGrid) return null
+        val onHome = showingHome()
         val index = change(model.focus.cellIndex)
+        reconcileShownApps()
         // A folder Foldcade made goes the moment its last game leaves it, not at the next scan.
         syncHome()
         store.saveHomeBoard(home.encoded())
-        showBoard(GridFocus(cellIndex = index, lastColumn = GridStrip.column(index)), keepDialog = true)
+        if (home.renamingId != null || onHome) showBoard(GridFocus(cellIndex = index, lastColumn = GridStrip.column(index)), keepDialog = true)
+        else publish(model.copy(shelfEpoch = model.shelfEpoch + 1))
         return null
     }
 
@@ -777,6 +914,7 @@ class ShellController(
     }
 
     fun applyHomeAddNew(enabled: Boolean) {
+        if (enabled != home.board.addNewToHome) undo = null
         home.applyAddNew(enabled)
         syncHome()
         publish(
@@ -790,6 +928,7 @@ class ShellController(
     fun pickUpHome(index: Int) {
         if (model.libraryGrid || model.homeGrid != HomeGrid.StandIns) return
         if (model.dialog != null || model.panel != null || model.connectOpen) return
+        undo = null
         home.startMove(index)
         if (home.board.hold != null) Log.i("Foldcade", "home-ui lifted")
         store.saveHomeBoard(home.encoded())
@@ -1055,10 +1194,21 @@ class ShellController(
         )
     }
 
-    fun setPromptHeld(key: PromptKey, down: Boolean) {
+    fun releaseMeaning(meaning: Meaning): Effect? =
+        if (model.deleteHold?.meaning == meaning) releaseDeleteHold() else null
+
+    private fun releaseDeleteHold(): Effect? {
+        val hold = model.deleteHold ?: return null
+        if (hold.release(nowMillis())) return tickRecovery()
+        cancelDelete()
+        return null
+    }
+
+    fun setPromptHeld(key: PromptKey, down: Boolean): Effect? {
+        val effect = if (!down && model.deleteHold?.key == key) releaseDeleteHold() else null
         val next = if (down) model.held + key else model.held - key
-        if (next == model.held) return
-        model = model.copy(held = next)
+        if (next != model.held) model = model.copy(held = next)
+        return effect
     }
 
     fun applyFacePrompt(style: ThorStyle?, deviceKey: String, firstSession: Boolean) {
@@ -1432,6 +1582,7 @@ class ShellController(
      */
     fun placeDroidDeckPin(shelfId: String) {
         if (!home.place(shelfId)) return
+        undo = null
         store.saveHomeBoard(home.encoded())
         noteShelfChanged()
     }
@@ -1442,6 +1593,7 @@ class ShellController(
      */
     fun placeMoonlightPin(remoteKey: String) {
         if (!home.place(remoteKey)) return
+        undo = null
         store.saveHomeBoard(home.encoded())
         noteShelfChanged()
     }
@@ -1709,6 +1861,7 @@ class ShellController(
         model.libraryGrid -> entries.getOrNull(source)?.asShelf()
         showingHome() -> home.face(source)?.let(::homeShelf)
         model.homeGrid == HomeGrid.StandIns -> Shelf.games.getOrNull(source)
+        model.homeGrid == HomeGrid.HiddenApps -> hiddenTile(source)
         else -> listed(model.homeGrid).getOrNull(source)?.asTile(model.homeGrid)
     }
 
@@ -1907,7 +2060,7 @@ class ShellController(
             (home.board.allOpen && next.sort == app.foldcade.language.LibrarySort.Listed)
         val labels = if (!alphabetical) emptyList() else if (next.homeGrid == HomeGrid.StandIns) {
             home.faces().map { it.title }
-        } else listed(next.homeGrid).map { it.label }
+        } else if (next.homeGrid == HomeGrid.HiddenApps) hiddenRows().map { it.title } else listed(next.homeGrid).map { it.label }
         val lastOccupied = if (next.homeGrid == HomeGrid.StandIns && !home.board.allOpen) {
             app.foldcade.language.visibleSlots(home.board).indexOfLast { it != null }
         } else count - 1
@@ -1920,7 +2073,12 @@ class ShellController(
         // open menu keeps the result it opened on, however the results move under it.
         if (counted.panel == null) find?.releaseMenu()
         val found = find?.let { it.menuId ?: it.subject?.id?.takeIf { _ -> it.onResults } }?.let(home::findActions)
-        val tile = found ?: if (onHome) home.actions(counted.focus.cellIndex) else null
+        val tile = found ?: when {
+            counted.homeGrid == HomeGrid.HiddenApps -> game?.let { TileActions(show = true, game = it.id) }
+            onHome -> home.actions(counted.focus.cellIndex)
+            game?.androidPackage != null -> home.shelfActions(game.id)
+            else -> null
+        }
         // A copy still arriving, or already going, is not one to delete.
         val busy = (tile?.game ?: home.face(counted.focus.cellIndex)?.id)?.let(::busyOnDevice) == true
         val offered = if (tile?.removeDownload == true && busy) tile.copy(removeDownload = false) else tile
@@ -1932,7 +2090,7 @@ class ShellController(
             (offered ?: TileActions()).copy(art = true)
         } else offered
         val apps = if (found == null) actionsFor(counted, game) else null
-        return counted.copy(appActions = apps, tileActions = withArt, atLibraryRoot = root)
+        return counted.copy(appActions = apps, tileActions = (withArt ?: TileActions()).copy(undo = activeUndo() != null), undoVerb = activeUndo()?.verb, atLibraryRoot = root)
     }
 
     private fun tileOn(snapshot: PickerModel): ShelfGame? {
@@ -1942,6 +2100,7 @@ class ShellController(
         val source = displaySource(snapshot)
         return when (snapshot.homeGrid) {
             HomeGrid.StandIns -> Shelf.games.getOrNull(source)
+            HomeGrid.HiddenApps -> hiddenTile(source)
             else -> listed(snapshot.homeGrid).getOrNull(source)?.asTile(snapshot.homeGrid)
         }
     }
@@ -2072,23 +2231,31 @@ class ShellController(
 
     private fun countFor(grid: HomeGrid): Int = when (grid) {
         HomeGrid.StandIns -> home.visibleCount()
+        HomeGrid.HiddenApps -> hiddenRows().size
         else -> listed(grid).size
+    }
+
+    private fun hiddenRows(): List<HomeItem> = home.hiddenItems(installed, shelfState, playerPackages)
+
+    private fun hiddenTile(index: Int): ShelfGame? = hiddenRows().getOrNull(index)?.let { item ->
+        homeShelf(home.faceOf(item.id)).copy(id = item.id, title = item.title, mark = item.mark ?: home.faceOf(item.id).mark)
     }
 
     private fun listed(grid: HomeGrid): List<LaunchableApp> = when (grid) {
         HomeGrid.StandIns -> emptyList()
-        HomeGrid.AndroidGames -> appsOn(AndroidShelf.Games, installed, shelfState, playerPackages)
-        HomeGrid.Apps -> appsOn(AndroidShelf.Apps, installed, shelfState, playerPackages)
+        HomeGrid.AndroidGames -> appsOn(AndroidShelf.Games, installed, shelfState, playerPackages).filter { androidHomeId(it.packageName) !in home.board.hidden }
+        HomeGrid.Apps -> appsOn(AndroidShelf.Apps, installed, shelfState, playerPackages).filter { androidHomeId(it.packageName) !in home.board.hidden }
         HomeGrid.HiddenApps -> hiddenApps(installed, shelfState, playerPackages)
-    }.sortedWith(compareBy<LaunchableApp> { it.label.lowercase() }.thenBy { it.packageName })
+    }.sortedWith(compareByDescending<LaunchableApp> { shelfState.record(it.packageName).favorite }.thenBy { it.label.lowercase() }.thenBy { it.packageName })
 
     private fun actionsFor(snapshot: PickerModel, game: ShelfGame?): AppActions? {
         val packageName = game?.androidPackage ?: return null
-        if (snapshot.homeGrid == HomeGrid.StandIns) return null
+        if (snapshot.homeGrid == HomeGrid.HiddenApps) return null
         val record = shelfState.record(packageName)
         return AppActions(
             favorite = record.favorite,
-            onGamesShelf = snapshot.homeGrid == HomeGrid.AndroidGames,
+            keepOnTop = snapshot.homeGrid != HomeGrid.StandIns,
+            onGamesShelf = installed.firstOrNull { it.packageName == packageName }?.let { assignedShelf(it, record) == AndroidShelf.Games } == true,
             hiddenShelf = snapshot.homeGrid == HomeGrid.HiddenApps,
             destinations = home.placementDestinations(androidHomeId(packageName)),
         )
@@ -2166,7 +2333,15 @@ class ShellController(
     private fun libraryOf(id: String): String? =
         id.removePrefix("lib:").takeIf { it != id }?.substringBefore(':')
 
+    private fun reconcileShownApps() {
+        installed.filter { shelfState.record(it.packageName).hidden && androidHomeId(it.packageName) !in home.board.hidden }.forEach {
+            shelfState = shelfState.show(it.packageName, it.packageName in playerPackages)
+        }
+        store.saveAppShelfState(shelfState)
+    }
+
     private fun syncHome() {
+        val before = home.encoded()
         home.rememberShelf(Shelf.games)
         home.remerge(
             shelfItems(),
@@ -2183,6 +2358,8 @@ class ShellController(
                     (GameNativeLibrary.ID !in settledLibraries && id.startsWith("gamenative."))
             },
         )
+        installed.filter { shelfState.record(it.packageName).hidden }.forEach { home.hide(androidHomeId(it.packageName)) }
+        if (home.encoded() != before) undo = null
         store.saveHomeBoard(home.encoded())
         find?.refresh(findEntries())
     }

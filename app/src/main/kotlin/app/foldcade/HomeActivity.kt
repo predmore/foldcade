@@ -183,10 +183,14 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
     override fun faceMap(): app.foldcade.language.FaceMap = foldcade.shell.model.faceMap
 
     override fun onPromptHeld(key: PromptKey, held: Boolean) {
-        foldcade.shell.setPromptHeld(key, held)
+        dispatch(foldcade.shell.setPromptHeld(key, held))
     }
 
     override fun capturingConfirm(): Boolean = foldcade.shell.model.capturingConfirm
+
+    override fun onMeaningReleased(meaning: app.foldcade.language.Meaning) {
+        dispatch(foldcade.shell.releaseMeaning(meaning))
+    }
 
     override fun onCalibrateConfirm(key: PromptKey) {
         foldcade.shell.calibrateConfirm(key)
@@ -239,7 +243,7 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
             }
             Effect.SyncLibrary -> foldcade.libraryResync.syncNow()
             is Effect.ChoosePlayerSave -> choosePlayerSave(effect.playerId)
-            Effect.PinApp, is Effect.AddAppTo, Effect.MoveApp, Effect.HideApp, Effect.ShowApp -> Unit
+            Effect.Undo, is Effect.ShowHidden, is Effect.DeleteShortcut, Effect.PinApp, is Effect.AddAppTo, Effect.MoveApp, Effect.HideApp, Effect.ShowApp -> Unit
             // The shell applies Y's tile actions and A on a text field itself and hands back null; these never arrive.
             is Effect.ChooseArt, Effect.MoveTile, is Effect.ShowOnHome, is Effect.ToggleCollection, is Effect.NewCollection, is Effect.ToggleFavorite, is Effect.PinTile,
             Effect.RenameFolder, Effect.ChooseFolderIcon, Effect.RemoveTile, Effect.Tidy, Effect.GoHome, Effect.EditField,

@@ -297,6 +297,9 @@ sealed interface Row {
     data object RenameFolder : Row
     data object FolderIcon : Row
     data object RemoveTile : Row
+    data object Undo : Row
+    data object ShowHidden : Row
+    data object DeleteShortcut : Row
     data object RemoveDownload : Row
     data class QuickTile(val setting: QuickSetting) : Row
 
@@ -480,6 +483,9 @@ data class CollectionChoice(val folderId: String, val name: String, val member: 
 data class TileActions(
     /** The game or group Show on Home goes to. Null leaves the row out: it is nowhere on Home. */
     val showOnHome: String? = null,
+    val undo: Boolean = false,
+    val show: Boolean = false,
+    val deleteShortcut: Boolean = false,
     val art: Boolean = false,
     /** Pick the tile up and walk it with the D-pad. */
     val move: Boolean = false,
@@ -508,6 +514,8 @@ data class TileActions(
 /** Y's menu: the tile's own actions, then an Android app's shelf actions. */
 fun actionRows(tile: TileActions?, app: AppActions?): List<Row> = buildList {
     if (tile != null) {
+        if (tile.undo) add(Row.Undo)
+        if (tile.show) add(Row.ShowHidden)
         if (tile.showOnHome != null) add(Row.ShowOnHome)
         if (tile.move) add(Row.MoveTile)
         if (tile.collections != null) add(Row.AddToCollection)
@@ -520,17 +528,18 @@ fun actionRows(tile: TileActions?, app: AppActions?): List<Row> = buildList {
         if (tile.icon) add(Row.FolderIcon)
         if (tile.remove != null) add(Row.RemoveTile)
         if (tile.removeDownload) add(Row.RemoveDownload)
+        if (tile.deleteShortcut) add(Row.DeleteShortcut)
     }
     if (app != null) {
         if (app.hiddenShelf) {
             add(Row.ShowApp)
             if (tile?.art == true) add(Row.ChooseArt)
         } else {
-            add(Row.PinApp)
-            if (app.destinations.isNotEmpty()) add(Row.AddAppTo)
+            if (app.keepOnTop) add(Row.PinApp)
+            if (tile?.collections == null && app.destinations.isNotEmpty()) add(Row.AddAppTo)
             if (tile?.art == true) add(Row.ChooseArt)
             add(Row.MoveApp)
-            add(Row.HideApp)
+            if (tile?.remove == null) add(Row.HideApp)
         }
     }
 }
@@ -544,6 +553,7 @@ fun panelHints(model: PickerModel): List<HintKey>? {
     if (model.dialog != null) return null
     val back = HintKey(promptKeyOf(model.faceMap.backKey) ?: PromptKey.FaceB, Copy.back)
     return when (val row = panelRows(panel, model).getOrNull(panel.index)) {
+        Row.RemoveDownload, Row.DeleteShortcut -> listOf(HintKey(model.deleteHold?.key ?: promptKeyOf(model.faceMap.confirmKey) ?: PromptKey.FaceA, ""), back)
         Row.Brightness -> if (model.brightnessAllowed) listOf(HintKey(PromptKey.DpadSides, BrightnessCopy.adjust), back) else null
         is Row.Notice -> {
             val notice = model.notices.firstOrNull { it.id == row.id } ?: return null
@@ -650,7 +660,7 @@ fun rowText(row: Row, model: PickerModel): RowText = when (row) {
     Row.AddNewGames -> RowText(Copy.addNewGames, if (model.addNewToHome) Copy.on else Copy.off)
     Row.Artwork -> RowText(Copy.artwork, if (model.artwork) Copy.on else Copy.off)
     Row.ArtKey -> RowText(Copy.steamGridDb, if (model.artKeySaved) Copy.forgetKey else Copy.addKey)
-    Row.PinApp -> RowText(if (model.appActions?.favorite == true) Copy.unpin else Copy.pin)
+    Row.PinApp -> RowText(Copy.keepOnTop)
     Row.AddAppTo -> RowText(Copy.addTo)
     Row.MoveApp -> RowText(if (model.appActions?.onGamesShelf == true) Copy.moveToApps else Copy.moveToGames)
     Row.HideApp -> RowText(Copy.hideApp)
@@ -674,6 +684,9 @@ fun rowText(row: Row, model: PickerModel): RowText = when (row) {
             RemoveVerb.Remove, null -> Copy.remove
         },
     )
+    Row.Undo -> RowText(Copy.undo)
+    Row.ShowHidden -> RowText(Copy.showApp)
+    Row.DeleteShortcut -> RowText(Copy.deleteShortcut)
     Row.RemoveDownload -> RowText(Copy.deleteDownload)
     Row.ButtonLabels -> RowText(
         Copy.buttonLabels,
@@ -762,6 +775,9 @@ sealed interface Effect {
     data object RemoveTile : Effect
 
     /** Delete the server game's downloaded copy. Its saves stay. */
+    data object Undo : Effect
+    data class ShowHidden(val id: String?) : Effect
+    data class DeleteShortcut(val gameId: String?) : Effect
     data class RemoveDownload(val gameId: String? = null) : Effect
     data object OpenAll : Effect
     data object ToggleAddNew : Effect
@@ -871,6 +887,11 @@ data class PickerModel(
     val thorGlyphs: Boolean = true,
     val offerButtonLabels: Boolean = false,
     val capturingConfirm: Boolean = false,
+    val undoVerb: String? = null,
+    val deleteHold: DeleteHold? = null,
+    val deleteProgress: Float = 0f,
+    val deleteShake: Int = 0,
+    val rewind: Int = 0,
     val held: Set<PromptKey> = emptySet(),
     val libraryGrid: Boolean = false,
     val gridKind: GridKind = GridKind.Games,
@@ -1623,6 +1644,9 @@ private fun activateRow(
         Row.RenameFolder -> model.copy(panel = null, focus = panel.grid) to Effect.RenameFolder
         Row.FolderIcon -> model.copy(panel = null, focus = panel.grid) to Effect.ChooseFolderIcon
         Row.RemoveTile -> model.copy(panel = null, focus = panel.grid) to Effect.RemoveTile
+        Row.Undo -> model.copy(panel = null, focus = panel.grid) to Effect.Undo
+        Row.ShowHidden -> model.copy(panel = null, focus = panel.grid) to Effect.ShowHidden(model.tileActions?.game)
+        Row.DeleteShortcut -> model.copy(panel = null, focus = panel.grid) to Effect.DeleteShortcut(model.tileActions?.game)
         Row.RemoveDownload -> model.copy(panel = null, focus = panel.grid) to Effect.RemoveDownload(model.tileActions?.game)
         Row.ButtonLabels -> if (model.capturingConfirm) {
             model.copy(capturingConfirm = false, offerButtonLabels = false) to Effect.DismissButtonLabels

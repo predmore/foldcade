@@ -368,7 +368,7 @@ class HomeBoardTest {
         val folderId = platformFolderId("nintendo-ds")
         val placed = mergeHome(HomeBoard(), listOf(drift), platforms)
         val hidden = mergeHome(removeFromHome(openFolder(placed, folderId), 0), listOf(drift), platforms)
-        assertFalse(hidden.folders.containsKey(folderId))
+        assertTrue(hidden.folders.containsKey(folderId))
         assertFalse(hidden.slots.contains(folderId))
         assertNull(hidden.openFolderId)
 

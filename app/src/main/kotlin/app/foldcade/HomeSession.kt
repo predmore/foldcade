@@ -4,6 +4,13 @@ import app.foldcade.api.plugin.Availability
 import app.foldcade.api.plugin.Game
 import app.foldcade.language.LibrarySort
 import app.foldcade.language.Copy
+import app.foldcade.language.LaunchableApp
+import app.foldcade.language.AppShelfState
+import app.foldcade.language.HomeKind
+import app.foldcade.language.hideGame
+import app.foldcade.language.showHidden
+import app.foldcade.language.hiddenItems
+import app.foldcade.language.deleteShortcut
 import app.foldcade.language.Effect
 import app.foldcade.language.GridFocus
 import app.foldcade.language.GridStrip
@@ -28,7 +35,6 @@ import app.foldcade.language.TypingCue
 import app.foldcade.language.TypingStep
 import app.foldcade.language.quickNames
 import app.foldcade.language.folderCountLine
-import app.foldcade.language.HomeKind
 import app.foldcade.language.HomePlatform
 import app.foldcade.language.MARK_LIBRARY
 import app.foldcade.language.Meaning
@@ -286,6 +292,7 @@ class HomeSession(raw: String?, nowMillis: Long = System.currentTimeMillis()) {
         pin = pin,
         remove = remove,
         removeDownload = downloaded(id),
+        deleteShortcut = shelfById[id]?.libraryId in setOf("moonlight", "droiddeck") && shelfById[id]?.remoteKey != null,
         game = id,
     )
 
@@ -368,6 +375,18 @@ class HomeSession(raw: String?, nowMillis: Long = System.currentTimeMillis()) {
 
     /** The face of game [id], wherever it is, as a menu that kept its game shows it. */
     fun faceOf(id: String): HomeFace = faceFor(id)
+
+    fun restore(snapshot: HomeBoard) { board = snapshot; menuGame = null }
+    fun ensureAppFolder(id: String) {
+        if (id in board.folders) return
+        board = app.foldcade.language.ensureAppFolder(board, id)
+    }
+    fun hide(id: String) { board = hideGame(board, id) }
+    fun show(id: String) { board = showHidden(board, id, catalog(), platforms) }
+    fun deleteShortcut(id: String) { board = deleteShortcut(board, id) }
+    fun shelfActions(id: String): TileActions = gameActions(id, false, !pinned(board, id), RemoveVerb.Hide)
+    fun hiddenItems(apps: List<LaunchableApp>, state: AppShelfState, players: Set<String>): List<HomeItem> =
+        hiddenItems(board, catalog(), apps, state, players)
 
     /** The game at [index] in All or on the board. Null for a group, the All tile, or an empty slot. */
     private fun slotGame(index: Int): String? {

@@ -34,7 +34,7 @@ Press **A** or **X** to launch on the chosen screen. DroidDeck starts Steam if n
 
 A game found through both a pin and an export gets one entry. See the shared [artwork setup](README.md#artwork) for more art.
 
-**Y › Hide** takes the game off Home and drops its pin. Choose **Add to home screen** in DroidDeck to restore it. A synced export keeps the game in All. Remove the export folder's row in **Settings › Library** to stop reading it; its files and installed games stay on the device.
+**Y › Hide** takes the game off Home and keeps its Android shortcut. **Show** in **L1 › Edit home › Hidden** restores it. Hold **A** on **Delete shortcut** to remove its Android shortcut and Home tile. Choose **Add to home screen** in DroidDeck to create it again. A synced export keeps the game in All. Remove the export folder's row in **Settings › Library** to stop reading it; its files and installed games stay on the device.
 
 ## If a game is missing or opens the wrong app
 

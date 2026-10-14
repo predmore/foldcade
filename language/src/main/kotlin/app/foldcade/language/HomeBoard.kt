@@ -124,6 +124,8 @@ enum class HoldDrop {
     /** It is over the Home target: it leaves the open group and is carried on along the root. */
     TakeOut,
 }
+/** Slots remembered while a tile is hidden. A null group means the Home root. */
+data class HiddenSlot(val group: String?, val index: Int)
 
 data class HomeBoard(
     val slots: List<String?> = listOf(HOME_ALL),
@@ -149,6 +151,7 @@ data class HomeBoard(
      * takes it off this list.
      */
     val offHome: Set<String> = emptySet(),
+    val hiddenSlots: Map<String, List<HiddenSlot>> = emptyMap(),
 )
 
 /** What X does to a tile on Home, and what its row says. */
@@ -597,7 +600,7 @@ fun removeFromHome(board: HomeBoard, index: Int): HomeBoard {
  * it hidden for the next merge to strip.
  */
 private fun admit(board: HomeBoard, id: String): HomeBoard =
-    if (id !in board.hidden && id !in board.offHome) board else board.copy(hidden = board.hidden - id, offHome = board.offHome - id)
+    if (id !in board.hidden && id !in board.offHome) board else restoreHiddenSlots(board.copy(hidden = board.hidden - id, offHome = board.offHome - id), id)
 
 /** [after] a removal from [before], with every game it left nowhere on [HomeBoard.offHome]. */
 private fun keepOff(before: HomeBoard, after: HomeBoard): HomeBoard {
@@ -607,11 +610,19 @@ private fun keepOff(before: HomeBoard, after: HomeBoard): HomeBoard {
 
 /**
  * Hides [id] from every place on Home: pins, folders and collections. All still lists it,
- * and Add to Home there brings it back to its folder. Collections it was in forget it.
+ * and Show restores its previous slots, including collection memberships and pins.
  */
 fun hideGame(board: HomeBoard, id: String): HomeBoard {
     if (id == HOME_ALL || board.folders[id] != null) return board
+    if (id in board.hidden) return board
+    val remembered = buildList {
+        board.slots.forEachIndexed { index, value -> if (value == id) add(HiddenSlot(null, index)) }
+        board.folders.values.forEach { folder ->
+            folder.slots.forEachIndexed { index, value -> if (value == id) add(HiddenSlot(folder.id, index)) }
+        }
+    }
     return board.copy(
+        hiddenSlots = board.hiddenSlots + (id to remembered),
         slots = board.slots.map { if (it == id) null else it },
         folders = board.folders.mapValues { (_, folder) -> folder.copy(slots = folder.slots.map { if (it == id) null else it }) },
         hidden = board.hidden + id,
@@ -629,14 +640,15 @@ fun removeFolder(board: HomeBoard, folderId: String): HomeBoard {
     if (folderId == HOME_ALL) return board
     val folder = board.folders[folderId] ?: return board
     val gone = board.copy(
+        hiddenSlots = board.hiddenSlots + (folderId to listOf(HiddenSlot(null, board.slots.indexOf(folderId))).filter { it.index >= 0 }),
         slots = board.slots.map { if (it == folderId) null else it },
         openFolderId = board.openFolderId?.takeIf { it != folderId },
         hold = null,
     )
     return when {
         folder.system -> gone.copy(retired = board.retired + folderId)
-        folder.recent -> gone.copy(folders = board.folders - folderId, retired = board.retired + folderId)
-        else -> keepOff(board, gone.copy(folders = board.folders - folderId))
+        folder.recent -> gone.copy(retired = board.retired + folderId)
+        else -> keepOff(board, gone.copy(folders = board.folders - folderId, hiddenSlots = gone.hiddenSlots - folderId))
     }
 }
 
@@ -713,6 +725,7 @@ fun pinItemToHome(board: HomeBoard, item: HomeItem, platforms: List<HomePlatform
     val folderId = systemFolderId(item, platforms) ?: return pinned
     val folder = pinned.folders[folderId]
     return when {
+        folder != null && item.id in folder.slots -> pinned
         folder != null -> pinned.copy(folders = pinned.folders + (folderId to folder.copy(slots = atEnd(folder.slots, item.id))))
         folderId in pinned.retired -> pinned
         else -> placeNew(pinned, item, platforms)
@@ -850,6 +863,9 @@ fun encodeHome(board: HomeBoard): String {
         homeRow("emulatorsFiled", listOf(if (saved.emulatorsFiled) "1" else "0"))
         homeRow("recentAfter", listOf(saved.recentAfter.toString()))
         homeRow("offHome", saved.offHome.sorted())
+        saved.hiddenSlots.toSortedMap().forEach { (id, places) ->
+            places.forEach { homeRow("hiddenSlot", listOf(id, it.group.orEmpty(), it.index.toString())) }
+        }
         for (folder in saved.folders.values.sortedBy { it.id }) {
             homeRow(
                 "folder",
@@ -911,6 +927,12 @@ fun decodeHome(raw: String?, nowMillis: Long = 0L): HomeBoard {
             "recentAfter" -> bits.getOrNull(1)?.toLongOrNull()?.let { board = board.copy(recentAfter = it) }
             "offHome" -> board = board.copy(offHome = bits.drop(1).filter { it.isNotEmpty() }.toSet())
             "tint" -> if (bits.size >= 3 && bits[2].isNotEmpty()) tints[bits[1]] = bits[2]
+            "hiddenSlot" -> {
+                val id = bits.getOrNull(1) ?: continue
+                val index = bits.getOrNull(3)?.toIntOrNull()?.takeIf { it >= 0 } ?: continue
+                val place = HiddenSlot(bits.getOrNull(2)?.ifEmpty { null }, index)
+                board = board.copy(hiddenSlots = board.hiddenSlots + (id to (board.hiddenSlots[id].orEmpty() + place)))
+            }
             "folder" -> {
                 if (bits.size < 8) continue
                 val bucket = bits[4].takeIf { it.isNotEmpty() }?.let { runCatching { HomeKind.valueOf(it) }.getOrNull() }
@@ -1084,13 +1106,16 @@ private fun dropEmptySystemFolders(board: HomeBoard, waiting: Boolean): HomeBoar
     // folder. Until it is known, every folder stays, its name and slot with it.
     if (board.hold != null || waiting) return board
     val gone = board.folders.values.filter { folder ->
-        !folder.userMade && (folder.platformId != null || folder.bucket != null) && folder.slots.all { it == null }
+        !folder.userMade && (folder.platformId != null || folder.bucket != null) && folder.id !in board.retired && folder.slots.all { it == null }
     }.map { it.id }.toSet()
     if (gone.isEmpty()) return board
+    val recoverable = board.hiddenSlots.values.flatten().mapNotNull { it.group }.toSet()
+    val remembered = gone.filter { it in recoverable && it in board.slots }.associateWith { listOf(HiddenSlot(null, board.slots.indexOf(it))) }
     val slots = board.slots.map { if (it in gone) null else it }.dropLastWhile { it == null }
     return board.copy(
+        hiddenSlots = board.hiddenSlots + remembered,
         slots = slots,
-        folders = board.folders - gone,
+        folders = board.folders - (gone - recoverable),
         openFolderId = board.openFolderId?.takeIf { it !in gone },
     )
 }
@@ -1240,4 +1265,81 @@ fun placementChoices(board: HomeBoard, item: HomeItem?, platforms: List<HomePlat
     return home + board.slots.mapNotNull { board.folders[it] }.distinctBy { it.id }
         .filter { (id == null || id !in it.slots) && folderTakes(it, item, platforms) }
         .map { FolderChoice(it.id, it.name) }
+}
+
+/** Hidden games and retired groups, alphabetically, without duplicate Android entries. */
+fun hiddenItems(board: HomeBoard, catalog: List<HomeItem>, apps: List<LaunchableApp>, state: AppShelfState, players: Set<String>): List<HomeItem> {
+    val games = catalog.filter { it.id in board.hidden }
+    val installed = hiddenApps(apps, state, players).map { HomeItem(androidHomeId(it.packageName), it.label, HomeKind.AndroidApp) }
+    val groups = board.retired.mapNotNull { id ->
+        retiredFolder(board, id, catalog, emptyList())?.let { HomeItem(id, it.name, HomeKind.Loose, mark = it.mark) }
+    }
+    return (games + installed + groups).distinctBy { it.id }.sortedWith(compareBy<HomeItem> { it.title.lowercase() }.thenBy { it.id })
+}
+
+private fun restoredSlot(slots: List<String?>, id: String, previous: Int, root: Boolean): List<String?> {
+    if (id in slots) return slots
+    val at = if (previous >= 0 && slots.getOrNull(previous) == null) previous
+        else if (root) slots.indexOfFirst { it == null }.takeIf { it >= 0 } ?: slots.size
+        else slots.indexOfLast { it != null } + 1
+    val next = slots.toMutableList()
+    while (next.size <= at) next += null
+    next[at] = id
+    return next
+}
+
+private fun restoreHiddenSlots(board: HomeBoard, id: String): HomeBoard {
+    var next = board
+    for (place in board.hiddenSlots[id].orEmpty()) {
+        val group = place.group
+        if (group == null) next = next.copy(slots = restoredSlot(next.slots, id, place.index, root = true))
+        else next.folders[group]?.let { folder ->
+            next = next.copy(folders = next.folders + (group to folder.copy(slots = restoredSlot(folder.slots, id, place.index, root = false))))
+            if (folder.system && group !in next.retired && group !in next.slots) {
+                next = next.copy(slots = restoredSlot(next.slots, group, next.hiddenSlots[group]?.firstOrNull()?.index ?: -1, root = true), hiddenSlots = next.hiddenSlots - group)
+            }
+        }
+    }
+    return next.copy(hiddenSlots = next.hiddenSlots - id)
+}
+
+private fun retiredFolder(board: HomeBoard, id: String, catalog: List<HomeItem>, platforms: List<HomePlatform>): HomeFolder? {
+    board.folders[id]?.let { return it }
+    if (id == HOME_RECENT) return HomeFolder(id, Copy.recentlyPlayed, mark = MARK_RECENT)
+    specialFolders().firstOrNull { it.id == id }?.let { return it }
+    val platform = platforms.firstOrNull { platformFolderId(it.id) == id }
+    if (platform != null) return HomeFolder(id, platform.name, platformId = platform.id, mark = kitMark(platform.id))
+    val item = catalog.firstOrNull { systemFolderId(it, platforms) == id } ?: return null
+    val platformId = romPlatformId(item, platforms) ?: return null
+    return HomeFolder(id, platformId, platformId = platformId, mark = kitMark(platformId))
+}
+
+/** Show restores a game's old places, or a retired folder's old root slot when free. */
+fun showHidden(board: HomeBoard, id: String, catalog: List<HomeItem>, platforms: List<HomePlatform>): HomeBoard {
+    if (id in board.retired) {
+        val restored = retiredFolder(board, id, catalog, platforms) ?: return board
+        val folder = if (id in board.folders || restored.recent) restored else restored.copy(
+            slots = catalog.filter { it.id !in board.hidden && systemFolderId(it, platforms) == id }.map { it.id },
+        )
+        val previous = board.hiddenSlots[id]?.firstOrNull()?.index ?: -1
+        val next = board.copy(folders = board.folders + (id to folder), retired = board.retired - id,
+            slots = restoredSlot(board.slots, id, previous, root = true), hiddenSlots = board.hiddenSlots - id)
+        return next
+    }
+    val item = catalog.firstOrNull { it.id == id } ?: return board
+    val shown = admit(board, id)
+    return if (placedIds(shown).contains(id)) shown else addItemToHome(shown, item, platforms)
+}
+
+/** A shortcut deleted from Android cannot be recovered through Hidden or a stale scan. */
+fun deleteShortcut(board: HomeBoard, id: String): HomeBoard {
+    val gone = hideGame(board, id)
+    return gone.copy(hidden = gone.hidden - id, hiddenSlots = gone.hiddenSlots - id, offHome = gone.offHome + id)
+}
+
+/** Classification can move an app into a folder that has never been created. */
+fun ensureAppFolder(board: HomeBoard, id: String): HomeBoard {
+    if (id in board.folders) return board
+    val spec = specialFolders().firstOrNull { it.id == id && it.bucket in INSTALLED_KINDS } ?: return board
+    return placeOnRoot(board.copy(folders = board.folders + (id to spec), retired = board.retired - id), id)
 }

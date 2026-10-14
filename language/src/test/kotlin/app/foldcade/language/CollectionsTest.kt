@@ -81,12 +81,12 @@ class CollectionsTest {
         assertFalse(zelda.id in hidden.slots)
         assertTrue(hidden.folders.values.none { zelda.id in it.slots })
         assertFalse(onHome(hidden, zelda.id))
-        // Add to Home in All brings it back to its folder. Collections and the pin forgot it.
+        // Add to Home also restores the pin and collection memberships saved at Hide.
         val back = mergeHome(addItemToHome(hidden, zelda, platforms), catalog, platforms)
         assertTrue(zelda.id in back.folders.getValue(threeDs).slots)
-        assertFalse(zelda.id in back.slots)
-        assertFalse(favorite(back, zelda.id))
-        assertFalse(zelda.id in back.folders.getValue("home.user.1").slots)
+        assertTrue(zelda.id in back.slots)
+        assertTrue(favorite(back, zelda.id))
+        assertTrue(zelda.id in back.folders.getValue("home.user.1").slots)
     }
 
     @Test
@@ -264,7 +264,7 @@ class CollectionsTest {
         assertTrue(HOME_RECENT in removed.retired)
         val later = mergeHome(removed, listOf(old.copy(lastPlayedMillis = 700L)), platforms)
         assertFalse(HOME_RECENT in later.slots)
-        assertFalse(HOME_RECENT in later.folders)
+        assertTrue(HOME_RECENT in later.folders)
         // A board with no saved Home starts fresh, so its first play shows it.
         assertTrue(HOME_RECENT in mergeHome(decodeHome(null, nowMillis = 500L), listOf(old), platforms).folders)
     }

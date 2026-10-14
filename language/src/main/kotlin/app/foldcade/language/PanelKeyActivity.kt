@@ -22,6 +22,8 @@ abstract class PanelKeyActivity : ComponentActivity() {
 
     protected abstract fun onMeaning(meaning: Meaning)
 
+    protected open fun onMeaningReleased(meaning: Meaning) = Unit
+
     protected open fun onMeaningRepeated(meaning: Meaning, repeatCount: Int) = onMeaning(meaning)
 
     protected open fun faceMap(): FaceMap = FaceMap.standard()
@@ -92,6 +94,7 @@ abstract class PanelKeyActivity : ComponentActivity() {
         val prompt = promptKeyOf(keyCode)
         if (prompt != null) onPromptHeld(prompt, false)
         typingKeys.up(keyCode, event.isCanceled)
+        meaningOf(keyCode, 0, faceMap(), homeKeys())?.let(::onMeaningReleased)
         return consumesUnmapped(keyCode)
     }
 }
