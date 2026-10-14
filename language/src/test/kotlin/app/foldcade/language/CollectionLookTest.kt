@@ -67,6 +67,22 @@ class CollectionLookTest {
     }
 
     @Test
+    fun aLegacyPacksBlackBackedGlyphScreensIntoTheWell() {
+        val afterglow = resolveThemeResources(readThemeZip(afterglowZip().inputStream())!!)
+        val legacy = resolveThemeResources(ThemeZip(parseThemeJson("""{"name":"Old marks"}""")!!, mapOf("marks/star.png" to byteArrayOf(1))))
+        val decode = { asset: ThemeIconAsset -> "decoded ${asset.owner}/${asset.file}" }
+        // The pack's star wins over Afterglow's and keeps its Screen blending into the collection's well.
+        val packed = resolveThemeIcon(ThemeComposition(afterglow, iconProvider = legacy).iconCandidates("mark.star"), decode)
+        assertEquals(ThemeIconBlend.Screen, packed?.asset?.blend)
+        assertEquals(packed?.image, screenedInset(packed))
+        // Afterglow's own vector glyphs, and the folder card, draw as they are.
+        val stock = resolveThemeIcon(ThemeComposition(afterglow).iconCandidates("mark.star"), decode)
+        assertEquals("icons/mark_star.xml", stock?.asset?.file)
+        assertNull(screenedInset(stock))
+        assertNull(screenedInset<String>(null))
+    }
+
+    @Test
     fun theCursorPicksAsItMovesAndCrossesToTheChoiceInUse() {
         val start = IconPick.open(made.id, CollectionLook("sword", CollectionTint.Indigo))
         assertEquals(FOLDER_ICONS.indexOf("sword"), start.glyph)

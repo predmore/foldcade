@@ -20,7 +20,9 @@ import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.clipPath
 import androidx.compose.ui.graphics.painter.Painter
 import androidx.compose.runtime.remember
+import androidx.compose.ui.graphics.ImageBitmap
 import app.foldcade.language.CollectionLook
+import app.foldcade.language.screenedInset
 import app.foldcade.language.ThemeIconBlend
 import kotlin.math.min
 import kotlin.math.roundToInt
@@ -117,8 +119,11 @@ private fun markDrawable(mark: String): Int? = when (mark) {
 private fun collectionGlyph(look: CollectionLook, pixels: Int): MarkGlyph {
     val body = themeIcon("mark.collection-body", R.drawable.mark_collection_body, pixels).painter
     val face = themeIcon("mark.collection-face", R.drawable.mark_collection_face, pixels).painter
-    val inset = markGlyph(look.glyph, pixels)?.icon?.painter
-    val painter = remember(body, face, inset, look.tint) { CollectionPainter(body, face, inset, look.tint.color) }
+    val inset = markGlyph(look.glyph, pixels)?.icon
+    val screened = screenedInset(inset?.resolved)?.let { remember(it) { it.asImageBitmap() } }
+    val painter = remember(body, face, inset?.painter, screened, look.tint) {
+        CollectionPainter(body, face, inset?.painter, screened, look.tint.color)
+    }
     return MarkGlyph(ThemeIconPainter(painter, null), look.tint.color)
 }
 
@@ -126,6 +131,8 @@ private class CollectionPainter(
     private val body: Painter,
     private val face: Painter,
     private val glyph: Painter?,
+    /** A legacy pack's black-backed glyph, screened so its black disappears into the well. */
+    private val screened: ImageBitmap?,
     private val tint: Color,
 ) : Painter() {
     override val intrinsicSize: Size get() = body.intrinsicSize
@@ -142,9 +149,16 @@ private class CollectionPainter(
         )
         val box = GLYPH_BOX * unit
         clipPath(Path().apply { addRoundRect(well) }) {
-            translate((WELL_X + WELL_W / 2f) * unit - box / 2f, (WELL_Y + WELL_H / 2f) * unit - box / 2f) {
-                with(glyph) { draw(Size(box, box)) }
-            }
+            val left = (WELL_X + WELL_W / 2f) * unit - box / 2f
+            val top = (WELL_Y + WELL_H / 2f) * unit - box / 2f
+            if (screened != null) {
+                drawImage(
+                    screened,
+                    dstOffset = IntOffset(left.roundToInt(), top.roundToInt()),
+                    dstSize = IntSize(box.roundToInt().coerceAtLeast(1), box.roundToInt().coerceAtLeast(1)),
+                    blendMode = BlendMode.Screen,
+                )
+            } else translate(left, top) { with(glyph) { draw(Size(box, box)) } }
         }
     }
 }

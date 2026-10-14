@@ -367,7 +367,7 @@ private fun PanelBody(
                 when (shown) {
                     null -> Unit
                     Surface.Hero -> if (connectHere) Unit else ArtPreviewHero(app, screen, scale, activity::dispatch)
-                    Surface.Picker -> Picker(app, screen, scale, activity::dispatch)
+                    Surface.Picker -> Picker(app, screen, scale, activity::dispatch, editorHere = session.editorPanel() == panel)
                     Surface.CommandCenter -> CommandCenterScreen(
                         app,
                         CenterSubject.App(panel, app.commandCenter.beside(panel)),
@@ -893,15 +893,7 @@ private fun Hero(app: FoldcadeApp, screen: HostScreen, scale: Float, onEffect: (
     val design = LocalFoldTheme.current.theme.style
     val theme = foldTheme()
     val model = app.shell.model
-    app.shell.folderIconPick()?.let { (pick, name) ->
-        Box(Modifier.fillMaxSize()) {
-            FolderIconPicker(app, pick, name, top = screen == HostScreen.Top, scale = scale)
-            TopIslands(app, screen, scale) { panelState, progress, interactive ->
-                PanelRows(app, screen, panelState, progress, interactive, scale, onEffect)
-            }
-        }
-        return
-    }
+    val editor = presence(app.shell.folderIconPick(), motion.durationIsland, scale)
     // While a name is typed the hero is what is being named, wherever the grid's focus is.
     val naming = app.shell.typingHero()
     val subject = naming ?: app.shell.focusedHero()
@@ -921,92 +913,96 @@ private fun Hero(app: FoldcadeApp, screen: HostScreen, scale: Float, onEffect: (
     val sceneArt = scene != null || shown?.let { rememberArt(app, records[it.key], queries[it.key]) } != null
     val fadeOnly = motion.heroFadeOnly(model.motionSpeed, scale)
     BoxWithConstraints(Modifier.fillMaxSize()) {
-        // The game fills the screen behind everything: its wide art, or its box art blurred.
-        // It travels less than the art in front, so the two read at different depths.
-        HeroCrossfade(
-            target = shown,
-            travel = staged.travel,
-            travelMillis = motion.sceneDuration(model.motionSpeed, scale),
-            fadeOnly = fadeOnly,
-            keyOf = { it.key },
-            layer = Modifier.fillMaxSize(),
-            depth = motion.sceneDepth,
-            grows = false,
-            dissolves = true,
-        ) { layer ->
-            SceneBackdrop(app, records[layer.key], queries[layer.key], model.motionSpeed, scale)
-        }
-        val inset = px(design.metrics.heroInsetPx)
-        // Wide enough for a platform, both screens, and play time on one line.
-        val cardMax = maxWidth * 0.72f
-        // Cocoon's hero: the art centred between the islands, a name card centred under it.
-        Column(
-            Modifier
-                .fillMaxSize()
-                .padding(
-                    start = inset,
-                    end = inset,
-                    top = if (screen == HostScreen.Top) inset + 48.dp else inset,
-                    bottom = inset,
-                ),
-            horizontalAlignment = Alignment.CenterHorizontally,
-        ) {
-            Box(
+        // The collection icon editor takes the hero's place while it is open.
+        Box(Modifier.fillMaxSize().graphicsLayer { alpha = 1f - editor.progress.value }) {
+            // The game fills the screen behind everything: its wide art, or its box art blurred.
+            // It travels less than the art in front, so the two read at different depths.
+            HeroCrossfade(
+                target = shown,
+                travel = staged.travel,
+                travelMillis = motion.sceneDuration(model.motionSpeed, scale),
+                fadeOnly = fadeOnly,
+                keyOf = { it.key },
+                layer = Modifier.fillMaxSize(),
+                depth = motion.sceneDepth,
+                grows = false,
+                dissolves = true,
+            ) { layer ->
+                SceneBackdrop(app, records[layer.key], queries[layer.key], model.motionSpeed, scale)
+            }
+            val inset = px(design.metrics.heroInsetPx)
+            // Wide enough for a platform, both screens, and play time on one line.
+            val cardMax = this@BoxWithConstraints.maxWidth * 0.72f
+            // Cocoon's hero: the art centred between the islands, a name card centred under it.
+            Column(
                 Modifier
-                    .weight(1f)
-                    .fillMaxWidth(),
-                contentAlignment = Alignment.Center,
+                    .fillMaxSize()
+                    .padding(
+                        start = inset,
+                        end = inset,
+                        top = if (screen == HostScreen.Top) inset + 48.dp else inset,
+                        bottom = inset,
+                    ),
+                horizontalAlignment = Alignment.CenterHorizontally,
             ) {
-                HeroCrossfade(
-                    target = shown,
-                    travel = staged.travel,
-                    travelMillis = motion.heroDuration(model.motionSpeed, scale),
-                    fadeOnly = fadeOnly,
-                    keyOf = { it.key },
-                ) { layer ->
-                    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                        when (layer) {
-                            is HeroSubject.Item -> HeroArt(
-                                app = app,
-                                title = layer.item.title,
-                                mark = layer.item.mark,
-                                packageName = layer.item.packageName,
-                                record = records[layer.key],
-                                query = queries[layer.key],
+                Box(
+                    Modifier
+                        .weight(1f)
+                        .fillMaxWidth(),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    HeroCrossfade(
+                        target = shown,
+                        travel = staged.travel,
+                        travelMillis = motion.heroDuration(model.motionSpeed, scale),
+                        fadeOnly = fadeOnly,
+                        keyOf = { it.key },
+                    ) { layer ->
+                        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                            when (layer) {
+                                is HeroSubject.Item -> HeroArt(
+                                    app = app,
+                                    title = layer.item.title,
+                                    mark = layer.item.mark,
+                                    packageName = layer.item.packageName,
+                                    record = records[layer.key],
+                                    query = queries[layer.key],
+                                )
+                                is HeroSubject.Folder -> HeroArt(app, layer.folder.name, layer.folder.mark, null, null, null)
+                            }
+                        }
+                    }
+                }
+                if (subject != null) {
+                    Spacer(Modifier.height(px(24f)))
+                    // A name being typed takes the name card's place, under the art of what it names.
+                    val typing = presence(app.shell.typing()?.typing, motion.durationIsland, scale)
+                    Box(contentAlignment = Alignment.Center) {
+                        Box(Modifier.graphicsLayer { alpha = 1f - typing.progress.value }) {
+                            HeroLabel(
+                                app,
+                                subject,
+                                cellFocused,
+                                cardMax,
+                                overArt = sceneArt,
+                                // A logo on wide art already says the name, once that art is the focused game's.
+                                named = !(shown?.key == subject.key && scene?.background != null && scene.logo != null),
                             )
-                            is HeroSubject.Folder -> HeroArt(app, layer.folder.name, layer.folder.mark, null, null, null)
+                        }
+                        typing.shown?.let { shown ->
+                            TypingField(
+                                typing = shown,
+                                style = text(theme.onBackground, design.type.heroTitle * TYPED_TITLE, theme),
+                                background = if (sceneArt) theme.surface.copy(alpha = SCENE_CARD_ALPHA) else theme.surface,
+                                scale = scale,
+                                modifier = Modifier.width(cardMax).rise { typing.progress.value },
+                            )
                         }
                     }
                 }
             }
-            if (subject != null) {
-                Spacer(Modifier.height(px(24f)))
-                // A name being typed takes the name card's place, under the art of what it names.
-                val typing = presence(app.shell.typing()?.typing, motion.durationIsland, scale)
-                Box(contentAlignment = Alignment.Center) {
-                    Box(Modifier.graphicsLayer { alpha = 1f - typing.progress.value }) {
-                        HeroLabel(
-                            app,
-                            subject,
-                            cellFocused,
-                            cardMax,
-                            overArt = sceneArt,
-                            // A logo on wide art already says the name, once that art is the focused game's.
-                            named = !(shown?.key == subject.key && scene?.background != null && scene.logo != null),
-                        )
-                    }
-                    typing.shown?.let { shown ->
-                        TypingField(
-                            typing = shown,
-                            style = text(theme.onBackground, design.type.heroTitle * TYPED_TITLE, theme),
-                            background = if (sceneArt) theme.surface.copy(alpha = SCENE_CARD_ALPHA) else theme.surface,
-                            scale = scale,
-                            modifier = Modifier.width(cardMax).rise { typing.progress.value },
-                        )
-                    }
-                }
-            }
         }
+        IconEditorLayer(app, editor, screen, scale)
         TopIslands(app, screen, scale) { panelState, progress, interactive ->
             PanelRows(app, screen, panelState, progress, interactive, scale, onEffect)
         }
@@ -1140,6 +1136,24 @@ private fun <T> HeroCrossfade(
         }
     }
 }
+
+/**
+ * The collection icon editor rising over the hero, or over the grid when no screen has a hero.
+ * Over a grid it brings the grid's hint row along, since those name its keys.
+ */
+@Composable
+private fun IconEditorLayer(app: FoldcadeApp, editor: Presence<Pair<IconPick, String>>, screen: HostScreen, scale: Float, hints: Boolean = false) {
+    val (pick, name) = editor.shown ?: return
+    Column(Modifier.fillMaxSize().rise { editor.progress.value }, horizontalAlignment = Alignment.CenterHorizontally) {
+        Box(Modifier.weight(1f).fillMaxWidth()) {
+            FolderIconPicker(app, pick, name, top = screen == HostScreen.Top, scale = scale)
+        }
+        if (hints) GridHints(app, Modifier.padding(bottom = px(EDITOR_HINT_INSET)))
+    }
+}
+
+/** How far the hint row sits off the bottom edge under the editor, as it does under the grid. */
+private const val EDITOR_HINT_INSET = 32f
 
 /**
  * The collection icon editor, on the top screen. The collection stands on the left as its hero
@@ -1857,12 +1871,15 @@ private fun Picker(
     screen: HostScreen,
     scale: Float,
     onEffect: (Effect?) -> Unit,
+    /** No screen has a hero, so the collection icon editor covers this grid while it is open. */
+    editorHere: Boolean = false,
 ) {
     val design = LocalFoldTheme.current.theme.style
     val theme = foldTheme()
     val shell = app.shell
     val model = shell.model
     val motion = LocalFoldTheme.current.theme.motion
+    val editor = presence(shell.folderIconPick()?.takeIf { editorHere }, motion.durationIsland, scale)
     // The keyboard takes the grid's place: the grid sinks away as the keys rise in.
     val typing = presence(shell.typing()?.typing, motion.durationIsland, scale)
     val gridGone by remember { derivedStateOf { typing.progress.value >= 1f } }
@@ -1882,6 +1899,8 @@ private fun Picker(
         Column(
             Modifier
                 .fillMaxSize()
+                // The grid gives way to the icon editor, which repeats its hints.
+                .graphicsLayer { alpha = 1f - editor.progress.value }
                 .padding(horizontal = inset)
                 .padding(top = inset, bottom = inset),
         ) {
@@ -1969,6 +1988,7 @@ private fun Picker(
             // Under an open menu the blur would smear these. MenuHints draws them above it.
             GridHints(app, Modifier.alpha(if (LocalUnderMenu.current) 0f else 1f))
         }
+        IconEditorLayer(app, editor, screen, scale, hints = true)
         TopIslands(app, screen, scale) { panelState, progress, interactive ->
             PanelRows(app, screen, panelState, progress, interactive, scale, onEffect)
         }

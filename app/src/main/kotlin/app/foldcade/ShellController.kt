@@ -440,11 +440,13 @@ class ShellController(
     fun homeFace(index: Int): HomeFace? = home.face(index)
 
     /**
-     * True while a grid opened from a command center must stay: a dialog or menu is up, or a
-     * name is being typed. Its idle timer would otherwise drop the grid mid-word and leave
-     * the keyboard open with nothing to type into.
+     * True while a grid opened from a command center must stay: a dialog or menu is up, a
+     * name is being typed, or a collection's icon is being chosen. Its idle timer would
+     * otherwise drop the grid mid-word or mid-choice and leave the keyboard or editor open
+     * with nothing to act on.
      */
-    fun holdsCommandCenter(): Boolean = model.dialog != null || model.panel != null || model.connectOpen || typing() != null
+    fun holdsCommandCenter(): Boolean =
+        model.dialog != null || model.panel != null || model.connectOpen || typing() != null || home.iconPick != null
 
     /**
      * The collection or folder being named, as the top screen shows it over the name field.

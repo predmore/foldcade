@@ -76,6 +76,13 @@ data class Session(
     fun browse(panel: Panel): Session =
         if (surfaceOn(panel) == Surface.CommandCenter) copy(browsing = panel) else this
 
+    /**
+     * Where the collection icon editor shows: the screen with the hero, which shows the focused
+     * collection large. Beside an app there is no hero, so it covers the grid it was opened from.
+     */
+    fun editorPanel(): Panel? =
+        Panel.entries.firstOrNull { surfaceOn(it) == Surface.Hero } ?: Panel.entries.firstOrNull { surfaceOn(it) == Surface.Picker }
+
     fun stopBrowsing(): Session = if (browsing == null) this else copy(browsing = null)
 
     fun bothScreensFree(): Boolean = topApp == null && bottomApp == null

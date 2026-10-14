@@ -129,6 +129,12 @@ data class IconPick(
     }
 }
 
+/**
+ * The image a collection screens into its well, for a glyph from a pack's legacy black-backed
+ * `marks/<name>.png`, as a tile does with that mark. Null draws the glyph as it is.
+ */
+fun <T> screenedInset(glyph: ResolvedThemeIcon<T>?): T? = glyph?.takeIf { it.asset.blend == ThemeIconBlend.Screen }?.image
+
 /** One or two words under the icon grid. */
 fun glyphName(mark: String): String = when (mark) {
     MARK_STAR -> "Star"

@@ -414,7 +414,10 @@ class HomeSession(raw: String?, nowMillis: Long = System.currentTimeMillis()) {
         return true
     }
 
-    /** Leaves any folder, All, a lifted tile, or a name field. Returns the root tile to focus. */
+    /**
+     * Leaves any folder, All, a lifted tile, a name field, or the icon editor, whose collection
+     * keeps the look it had: nothing it showed was saved. Returns the root tile to focus.
+     */
     fun showRoot(): Int {
         closeTyping()
         iconPick = null

@@ -396,6 +396,16 @@ class HomeGridOrderTest {
         assertFalse(chosen.mark == shell.homeFace(folder)?.mark)
         shell.onMeaning(Meaning.CancelHold, HostScreen.Bottom)
         assertEquals(chosen.mark, shell.homeFace(folder)?.mark)
+        // An open editor holds a command center's grid; going home closes it with the old look.
+        assertFalse(shell.holdsCommandCenter())
+        choose(shell, Row.FolderIcon)
+        assertTrue(shell.holdsCommandCenter())
+        shell.onMeaning(Meaning.RightPanel, HostScreen.Bottom)
+        shell.goHome()
+        assertNull(shell.folderIconPick())
+        assertFalse(shell.holdsCommandCenter())
+        assertEquals(HomeKeys.Idle, shell.homeKeys())
+        assertEquals(chosen.mark, List(shell.model.count) { shell.homeFace(it) }.firstOrNull { it?.title == "Handhelds" }?.mark)
         // A system folder can be renamed but keeps its own icon.
         shell.ingestLibrary("local-folder", listOf(entry("drift", "Drift", "nintendo-ds")), emptyList())
         focus(shell, titles(shell).indexOf("Nintendo DS"))
