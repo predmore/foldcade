@@ -129,6 +129,20 @@ class FindFlowTest {
     }
 
     @Test
+    fun theBurstWaitsForTheGridThatComesBackAndPlaysOnce() {
+        // Review r1: the grid's ring was drawn afresh after Find closed, and took the landing as already seen.
+        val shell = shell()
+        shell.onMeaning(Meaning.View, HostScreen.Bottom)
+        type(shell, "drift")
+        shell.onMeaning(Meaning.Done, HostScreen.Bottom)
+        shell.onMeaning(Meaning.Options, HostScreen.Bottom)
+        shell.onMeaning(Meaning.View, HostScreen.Top)
+        // The first ring drawn after the landing bursts; any ring drawn later, as after a game, does not.
+        assertTrue(shell.takeRevealBurst())
+        assertFalse(shell.takeRevealBurst())
+    }
+
+    @Test
     fun aHiddenGameIsFoundAndPinningItBringsItBack() {
         val shell = shell()
         // Hide Puzzle from inside its folder.

@@ -146,6 +146,19 @@ class ShellController(
     var revealPulse by mutableStateOf(0)
         private set
 
+    /** The last landing a ring burst for. A ring drawn later, as after a game, does not burst again. */
+    private var revealBurst = 0
+
+    /**
+     * True once for each Show on Home landing: for the first grid ring to see it, which is the
+     * new one drawn as Find closes, when it was Find that went there.
+     */
+    fun takeRevealBurst(): Boolean {
+        if (revealPulse == revealBurst) return false
+        revealBurst = revealPulse
+        return true
+    }
+
     private fun closeArtAfterFocusChange() {
         val state = artPicker ?: return
         if (model.focus.chrome != null || focusedGame()?.let(::artQuery)?.key != state.gameId) artPicker = null

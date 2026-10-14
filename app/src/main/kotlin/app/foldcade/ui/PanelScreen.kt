@@ -2620,11 +2620,10 @@ private fun GridCursor(
     val y by glideState(row, motion.durationTravel, scale, snap = lands, jump = jump)
     // Show on Home: once the ring has reached the tile, two rings burst out of it and fade.
     val burst = remember { Animatable(1f) }
-    // A grid drawn afresh, as after a game, does not replay a landing it never saw.
-    val seen = remember { intArrayOf(shell.revealPulse) }
+    // The shell hands each landing to one ring: the one drawn as Find closes, or this one when
+    // it was All that went there. A ring drawn later, as after a game, plays nothing.
     LaunchedEffect(shell.revealPulse) {
-        if (shell.revealPulse == seen[0]) return@LaunchedEffect
-        seen[0] = shell.revealPulse
+        if (!shell.takeRevealBurst()) return@LaunchedEffect
         burst.snapTo(1f)
         delay(motion.duration(motion.durationTravel, scale).toLong())
         burst.snapTo(0f)
