@@ -94,8 +94,22 @@ data class HomeFace(
  * The catalog is every ROM and app. The board is only what the user placed.
  */
 class HomeSession(raw: String?, nowMillis: Long = System.currentTimeMillis()) {
+    /**
+     * The board on screen. While a tile is held, the walk is measured against the board as it
+     * was at pickup, so a library's report then waits in [pendingMerge]: merged into that walk,
+     * it would be undone by the next step. Whatever puts the tile down, or back, merges it.
+     */
     var board: HomeBoard = decodeHome(raw, nowMillis)
-        private set
+        private set(value) {
+            field = value
+            val waiting = pendingMerge ?: return
+            if (value.hold != null) return
+            pendingMerge = null
+            merge(waiting)
+        }
+
+    /** The last report that came while a tile was held. Null when none waits. */
+    private var pendingMerge: PendingMerge? = null
 
     var sort: LibrarySort = LibrarySort.Listed
     var lastPlayed: (String) -> Long? = { null }
@@ -141,12 +155,22 @@ class HomeSession(raw: String?, nowMillis: Long = System.currentTimeMillis()) {
         remembered: Map<String, Game> = emptyMap(),
         unsettled: (String) -> Boolean = { false },
     ) {
-        shelf = shelfItems
-        apps = appItems
-        library = libraryItems
-        platforms = platformList
-        remembered.forEach { (id, game) -> games[id] = game }
-        board = mergeHome(board, catalog(), platforms, unsettled)
+        val report = PendingMerge(shelfItems, appItems, libraryItems, platformList, remembered, unsettled)
+        // A later report replaces one still waiting; the games it remembers add up.
+        if (board.hold != null) {
+            pendingMerge = report.copy(remembered = pendingMerge?.remembered.orEmpty() + remembered)
+            return
+        }
+        merge(report)
+    }
+
+    private fun merge(report: PendingMerge) {
+        shelf = report.shelf
+        apps = report.apps
+        library = report.library
+        platforms = report.platforms
+        report.remembered.forEach { (id, game) -> games[id] = game }
+        board = mergeHome(board, catalog(), platforms, report.unsettled)
     }
 
     fun asShelf(face: HomeFace): ShelfGame {
@@ -749,6 +773,16 @@ data class HomeCarry(
     val over: Int?,
     val overHome: Boolean,
     val canTakeOut: Boolean,
+)
+
+/** One library report to [HomeSession.remerge], kept while a tile is held. */
+private data class PendingMerge(
+    val shelf: List<HomeItem>,
+    val apps: List<HomeItem>,
+    val library: List<HomeItem>,
+    val platforms: List<HomePlatform>,
+    val remembered: Map<String, Game>,
+    val unsettled: (String) -> Boolean,
 )
 
 /** A held D-pad walks a carried tile one slot per this many key repeats. */

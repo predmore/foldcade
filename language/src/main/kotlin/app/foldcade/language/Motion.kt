@@ -134,8 +134,11 @@ open class MotionStyle(private val style: ThemeStyle = ThemeStyle()) {
     /** How far a held tile rises and falls, in panel pixels. */
     val bobPx = 7f
 
-    /** How far below a held tile its shadow falls, in panel pixels. */
-    val liftShadowPx = 48f
+    /** How far below a held tile the light it casts falls, in panel pixels. */
+    val liftGlowPx = 30f
+
+    /** How bright that light is at its centre, at full lift. */
+    val liftGlowPeak = 0.7f
 
     /** How much a tile squashes as it lands, or stretches as it lifts, at most. */
     val squash = 0.08f

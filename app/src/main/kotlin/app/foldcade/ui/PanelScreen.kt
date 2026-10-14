@@ -2994,7 +2994,10 @@ private fun CarriedTile(
     val ring = remember(theme) { FocusRing(theme) }
     val ringPath = remember { Path() }
     val bobPx = with(LocalDensity.current) { px(motion.bobPx).toPx() }
-    val shadowPx = with(LocalDensity.current) { px(motion.liftShadowPx).toPx() }
+    val glowPx = with(LocalDensity.current) { px(motion.liftGlowPx).toPx() }
+    val underGlow = game.mark?.let { markGlyph(it) }?.accent ?: theme.focus
+    val glowStyle = LocalFoldTheme.current.theme.style.glow
+    val underStops = remember { FloatArray(GlowFalloff.STOPS.size) }
     Box(
         Modifier
             .size(cell)
@@ -3007,20 +3010,24 @@ private fun CarriedTile(
                 clip = false
             },
     ) {
-        // The shadow stays on the grid as the tile rises and falls over it.
+        // A dark shadow is lost on a black grid, so the tile casts a pool of its own light on
+        // the grid under it instead. It stays put as the tile bobs, and dims as the tile rises.
         Box(
             Modifier
                 .matchParentSize()
                 .graphicsLayer {
-                    val rise = (bob?.value ?: 0f) * bobPx
-                    translationY = shadowPx * raised + rise * 0.5f
-                    val grow = lift.value * (0.94f - 0.04f * (bob?.value ?: 0f))
-                    scaleX = grow
-                    scaleY = grow
-                    alpha = SHADOW_ALPHA * raised
+                    val rise = bob?.value ?: 0f
+                    translationY = glowPx * raised + rise * bobPx * 0.5f
+                    scaleX = lift.value * (1f - 0.06f * rise)
+                    scaleY = lift.value * LIFT_GLOW_FLAT
+                    alpha = raised * (1f - 0.25f * rise)
+                    transformOrigin = TransformOrigin(0.5f, 1f)
+                    clip = false
                 }
-                .blur(px(SHADOW_BLUR), BlurredEdgeTreatment.Unbounded)
-                .background(theme.background, RoundedCornerShape(radius)),
+                .drawBehind {
+                    SoftGlow.fillStops(underStops, glowStyle.focusTightness, glowStyle.focusRim)
+                    drawRadialGlow(Offset(size.width / 2f, size.height), size.width * LIFT_GLOW_REACH, underGlow, underStops, motion.liftGlowPeak)
+                },
         )
         Box(
             Modifier
@@ -3079,20 +3086,20 @@ private const val SLOT_GLIDE_STRETCH = 0.6f
 /** A held slot's outline, faint. */
 private const val SOCKET_ALPHA = 0.16f
 
-/** The shadow under a held tile, at full lift. */
-private const val SHADOW_ALPHA = 0.85f
-private const val SHADOW_BLUR = 28f
+/** The light a held tile casts under it: how wide it reaches, as a share of the tile, and how flat it lies. */
+private const val LIFT_GLOW_REACH = 0.62f
+private const val LIFT_GLOW_FLAT = 0.42f
 
 /** A tile put into a group shrinks to this as it goes in. */
 private const val INTO_SCALE = 0.3f
 
 /** How far up a held tile reaches toward the Home target, in rows. */
-private const val HOME_REACH = 0.22f
+private const val HOME_REACH = 0.12f
 
 /** The Home target, in panel pixels, and how far above the top row it sits. */
 private const val HOME_TARGET_WIDTH = 220f
 private const val HOME_TARGET_HEIGHT = 64f
-private const val HOME_TARGET_RISE = 14f
+private const val HOME_TARGET_RISE = 18f
 
 /** How visible the Home target is while it only peeks in, before the tile reaches it. */
 private const val HOME_TARGET_PEEK = 0.45f
