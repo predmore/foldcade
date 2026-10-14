@@ -67,6 +67,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.util.lerp
+import androidx.compose.ui.graphics.lerp
 import android.content.Context
 import android.os.SystemClock
 import androidx.compose.ui.Alignment
@@ -137,7 +138,6 @@ import app.foldcade.language.ArtKind
 import app.foldcade.FoldcadeApp
 import app.foldcade.FoldcadeHomeActivity
 import app.foldcade.Panel
-import app.foldcade.FolderIconPick
 import app.foldcade.Surface
 import app.foldcade.RunningApp
 import app.foldcade.CenterFocus
@@ -173,6 +173,9 @@ import app.foldcade.language.ConnectKind
 import app.foldcade.language.Copy
 import app.foldcade.language.HomeGrid
 import app.foldcade.language.FOLDER_ICONS
+import app.foldcade.language.CollectionLook
+import app.foldcade.language.CollectionTint
+import app.foldcade.language.IconPick
 import app.foldcade.language.homeGridLabel
 import app.foldcade.language.DialogButton
 import app.foldcade.language.Effect
@@ -892,7 +895,7 @@ private fun Hero(app: FoldcadeApp, screen: HostScreen, scale: Float, onEffect: (
     val model = app.shell.model
     app.shell.folderIconPick()?.let { (pick, name) ->
         Box(Modifier.fillMaxSize()) {
-            FolderIconPicker(pick, name, top = screen == HostScreen.Top)
+            FolderIconPicker(app, pick, name, top = screen == HostScreen.Top, scale = scale)
             TopIslands(app, screen, scale) { panelState, progress, interactive ->
                 PanelRows(app, screen, panelState, progress, interactive, scale, onEffect)
             }
@@ -1139,63 +1142,161 @@ private fun <T> HeroCrossfade(
 }
 
 /**
- * The icons a folder the user made can wear, in rows on the top screen. The
- * focused icon wears the focus ring. The bottom screen names A and B.
+ * The collection icon editor, on the top screen. The collection stands on the left as its hero
+ * shows it, wearing whatever is focused; the colours and glyphs sit on the right, one colour per
+ * column over the glyph grid. One ring glides between choices, and the focused one is named
+ * under the grid. The bottom screen's tile wears the choice too. See [IconPick].
  */
 @Composable
-private fun FolderIconPicker(pick: FolderIconPick, name: String, top: Boolean) {
+private fun FolderIconPicker(app: FoldcadeApp, pick: IconPick, name: String, top: Boolean, scale: Float) {
     val design = LocalFoldTheme.current.theme.style
+    val motion = LocalFoldTheme.current.theme.motion
     val theme = foldTheme()
-    val columns = FolderIconPick.COLUMNS
-    val rows = FOLDER_ICONS.chunked(columns)
     val inset = px(design.metrics.heroInsetPx)
-    Column(
+    Row(
         Modifier
             .fillMaxSize()
             .padding(start = inset, end = inset, bottom = inset, top = if (top) inset + 48.dp else inset),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.spacedBy(px(24f)),
+        horizontalArrangement = Arrangement.spacedBy(px(40f)),
+        verticalAlignment = Alignment.CenterVertically,
     ) {
-        BasicText(
-            text = "${Copy.collectionIcon} · $name",
-            style = text(theme.onBackground, LocalFoldTheme.current.theme.style.type.dialogTitle, theme),
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-        )
-        BoxWithConstraints(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
-            val gap = px(20f)
-            val cell = minOf(
-                (maxWidth - gap * (columns - 1)) / columns,
-                (maxHeight - gap * (rows.size - 1)) / rows.size,
+        Column(
+            Modifier.weight(0.36f).fillMaxHeight(),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(px(16f)),
+        ) {
+            Box(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
+                Crossfade(pick.look.mark, animationSpec = motion.arrive(motion.durationFocus, scale)) { mark ->
+                    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                        HeroArt(app, name, mark, null, null, null)
+                    }
+                }
+            }
+            BasicText(
+                text = name,
+                style = text(theme.onBackground, design.type.dialogTitle, theme),
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
             )
+        }
+        IconChoices(pick, scale, Modifier.weight(0.64f).fillMaxHeight())
+    }
+}
+
+/** The colour row over the glyph grid, with one gliding ring and the focused choice's name. */
+@Composable
+private fun IconChoices(pick: IconPick, scale: Float, modifier: Modifier) {
+    val design = LocalFoldTheme.current.theme.style
+    val motion = LocalFoldTheme.current.theme.motion
+    val theme = foldTheme()
+    val density = LocalDensity.current
+    val columns = IconPick.COLUMNS
+    val glyphRows = (FOLDER_ICONS.size + columns - 1) / columns
+    val reach = ringReach()
+    Column(modifier, horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
+        BoxWithConstraints(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
+            val gap = px(12f)
+            // The colours stand a little apart from the glyphs.
+            val apart = px(14f)
+            val cell = minOf(
+                (maxWidth - reach * 2 - gap * (columns - 1)) / columns,
+                (maxHeight - reach * 2 - apart - gap * glyphRows) / (glyphRows + 1),
+            )
+            val swatch = cell * SWATCH_SHARE
             val corner = cell * theme.iconRadius
-            Column(verticalArrangement = Arrangement.spacedBy(gap)) {
-                rows.forEachIndexed { rowIndex, row ->
-                    Row(horizontalArrangement = Arrangement.spacedBy(gap)) {
-                        row.forEachIndexed { columnIndex, mark ->
-                            val focused = rowIndex * columns + columnIndex == pick.index
-                            Box(
-                                Modifier
-                                    .size(cell)
-                                    .graphicsLayer { clip = false }
-                                    .drawBehind {
-                                        val cornerPx = corner.toPx()
-                                        drawRoundRect(color = theme.surface, cornerRadius = CornerRadius(cornerPx, cornerPx))
-                                        if (focused) with(FocusRing(theme)) { drawFocusRing(cornerPx) }
-                                    },
-                                contentAlignment = Alignment.Center,
-                            ) {
-                                Box(Modifier.graphicsLayer { alpha = if (focused) 1f else 0.7f }) {
-                                    MarkIcon(mark, theme.artScale)
-                                }
-                            }
-                        }
+            val width = cell * columns + gap * (columns - 1)
+            val height = cell * (glyphRows + 1) + gap * glyphRows + apart
+            fun glyphTop(row: Int) = (cell + gap) * (row + 1) + apart
+            // The ring's target: the focused colour's circle, or the focused glyph's tile.
+            val ringLeft: Dp
+            val ringTop: Dp
+            val ringSize: Dp
+            val ringCorner: Dp
+            if (pick.onTints) {
+                ringLeft = (cell + gap) * pick.tint + (cell - swatch) / 2
+                ringTop = (cell - swatch) / 2
+                ringSize = swatch
+                ringCorner = swatch / 2
+            } else {
+                ringLeft = (cell + gap) * (pick.glyph % columns)
+                ringTop = glyphTop(pick.glyph / columns)
+                ringSize = cell
+                ringCorner = corner
+            }
+            val glide = motion.playful(motion.durationSelect, scale)
+            val x by motionState(with(density) { ringLeft.toPx() }, glide)
+            val y by motionState(with(density) { ringTop.toPx() }, glide)
+            val side by motionState(with(density) { ringSize.toPx() }, glide)
+            val round by motionState(with(density) { ringCorner.toPx() }, glide)
+            val focusRing = FocusRing(LocalFoldTheme.current.theme)
+            Box(
+                Modifier
+                    .size(width, height)
+                    .drawWithContent {
+                        drawContent()
+                        with(focusRing) { drawFocusRing(round, bounds = Rect(Offset(x, y), Size(side, side))) }
+                    },
+            ) {
+                CollectionTint.entries.forEachIndexed { index, tint ->
+                    val chosen = index == pick.tint
+                    val grown by motionState(if (chosen) 1f else SWATCH_REST, glide)
+                    Box(
+                        Modifier
+                            .offset(x = (cell + gap) * index + (cell - swatch) / 2, y = (cell - swatch) / 2)
+                            .size(swatch)
+                            .drawBehind {
+                                val radius = size.minDimension / 2f * grown
+                                drawCircle(
+                                    brush = Brush.verticalGradient(
+                                        listOf(lerp(tint.color, Color.White, 0.35f), tint.color, lerp(tint.color, Color.Black, 0.3f)),
+                                        startY = center.y - radius,
+                                        endY = center.y + radius,
+                                    ),
+                                    radius = radius,
+                                )
+                                // The colour in use keeps a white rim, so it shows while the glyphs are focused.
+                                if (chosen) drawCircle(Color.White, radius = radius - 2.5f, style = Stroke(width = 3f), alpha = 0.85f)
+                            },
+                    )
+                }
+                FOLDER_ICONS.forEachIndexed { index, mark ->
+                    val chosen = index == pick.glyph
+                    val lit by motionState(if (chosen) 1f else 0f, motion.arrive(motion.durationFocus, scale))
+                    Box(
+                        Modifier
+                            .offset(x = (cell + gap) * (index % columns), y = glyphTop(index / columns))
+                            .size(cell)
+                            .drawBehind {
+                                val cornerPx = corner.toPx()
+                                drawRoundRect(
+                                    color = lerp(theme.surface, theme.onBackground, CHOSEN_LIFT * lit),
+                                    cornerRadius = CornerRadius(cornerPx, cornerPx),
+                                )
+                            },
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        markGlyph(mark)?.let { glyph -> MarkIcon(glyph, theme.artScale) { lerp(GLYPH_REST_ALPHA, 1f, lit) } }
                     }
                 }
             }
         }
+        Crossfade(pick.focusedName, animationSpec = motion.arrive(motion.durationFocus, scale)) { label ->
+            BasicText(
+                text = label,
+                modifier = Modifier.fillMaxWidth(),
+                style = text(theme.muted, design.type.hint, theme).copy(textAlign = TextAlign.Center),
+                maxLines = 1,
+            )
+        }
     }
 }
+
+/** A colour's circle in its column, and how far an unchosen one shrinks. */
+private const val SWATCH_SHARE = 0.72f
+private const val SWATCH_REST = 0.78f
+
+/** How far the chosen glyph's tile lightens toward the text colour. */
+private const val CHOSEN_LIFT = 0.1f
 
 /**
  * One name and one line of facts for the focus that just arrived.
@@ -2531,6 +2632,7 @@ private fun StripColumn(
                         downloading = face?.id != null && face.id in shell.downloading,
                         activity = shell.activityAt(source),
                         library = libraryTile,
+                        settledAt = if (face?.folder == true) shell.settledAt(face.id) else 0L,
                         onClick = { tap() },
                         onDrag = if (editing) {
                             { meaning -> shell.dragHome(meaning) }
@@ -2705,6 +2807,12 @@ private const val DOWNLOAD_LINE_PX = 6f
 /** A sync mark grows in from this scale. */
 private const val SYNC_MARK_FROM = 0.6f
 
+/** A collection settling into its new look starts this small, then overshoots back to size. */
+private const val SETTLE_FROM = 0.86f
+
+/** Only a look taken this recently settles; the tile sees it as soon as the editor closes. */
+private const val SETTLE_WINDOW_MILLIS = 600L
+
 @Composable
 private fun Cell(
     title: String,
@@ -2724,6 +2832,8 @@ private fun Cell(
     downloading: Boolean = false,
     activity: TileActivity? = null,
     library: Boolean = false,
+    /** When this tile last took a new look (see [ShellController.settledAt]), or 0. */
+    settledAt: Long = 0L,
     onClick: () -> Unit,
     onPickUp: (() -> Unit)? = null,
     onDrag: ((Meaning) -> Unit)? = null,
@@ -2732,6 +2842,15 @@ private fun Cell(
     val theme = foldTheme()
     val glyph = mark?.let { markGlyph(it) }
     val animatorScale = motion.animatorScale(LocalContext.current.contentResolver)
+    // A collection that just took a new look dips and springs back into it, once. A tile that
+    // scrolls back into view later does not replay it.
+    val settle = remember { Animatable(1f) }
+    LaunchedEffect(settledAt) {
+        if (settledAt > 0L && System.currentTimeMillis() - settledAt < SETTLE_WINDOW_MILLIS && !motion.reduced(animatorScale)) {
+            settle.snapTo(SETTLE_FROM)
+            withContext(SteadyMenu) { settle.animateTo(1f, motion.playful(motion.durationIsland, animatorScale)) }
+        }
+    }
     val scaleTarget = when {
         lifted -> motion.scaleFocus * motion.scaleFocus
         focused -> motion.scaleFocus
@@ -2760,8 +2879,8 @@ private fun Cell(
                 .size(size)
                 .graphicsLayer {
                     clip = false
-                    scaleX = drawn
-                    scaleY = drawn
+                    scaleX = drawn * settle.value
+                    scaleY = drawn * settle.value
                 }
                 .drawBehind {
                     val glow = accent
@@ -2887,7 +3006,14 @@ private fun Cell(
                 )
             } else if (!empty) {
                 val glyphAlpha = { lerp(GLYPH_REST_ALPHA, 1f, lit()) }
-                if (glyph != null) {
+                if (glyph != null && CollectionLook.parse(mark) != null) {
+                    // A collection being dressed changes as the cursor moves, so each look fades in.
+                    Crossfade(mark, animationSpec = motion.arrive(motion.durationFocus, animatorScale)) { shown ->
+                        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                            shown?.let { markGlyph(it) }?.let { MarkIcon(it, theme.artScale, glyphAlpha) }
+                        }
+                    }
+                } else if (glyph != null) {
                     MarkIcon(glyph, theme.artScale, glyphAlpha)
                 } else {
                     BasicText(

@@ -246,6 +246,7 @@ object Copy {
     const val hintDrop = "Drop"
     const val hintCancel = "Cancel"
     const val hintChoose = "Choose"
+    const val hintColor = "Color"
     const val hintOptions = "Options"
     const val collectionIcon = "Collection icon"
     const val hintTop = "Top"
@@ -314,9 +315,12 @@ fun gridHints(
             HintKey(confirm, Copy.hintDrop),
             HintKey(back, Copy.hintCancel),
         )
+        // B puts the old look back, so it reads as Cancel.
         HomeKeys.PickingIcon -> listOf(
             HintKey(confirm, Copy.hintChoose),
-            HintKey(back, Copy.back),
+            HintKey(PromptKey.L1, ""),
+            HintKey(PromptKey.R1, Copy.hintColor),
+            HintKey(back, Copy.hintCancel),
         )
         // A types the key under the ring, which needs no word.
         HomeKeys.Typing -> listOf(

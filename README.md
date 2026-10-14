@@ -68,7 +68,7 @@ Press **A** to play on the top screen or **X** on the bottom. Games that need bo
 Press **Y** on any tile for what it can do. Press Y twice to pick up a tile and slide it into place.
 
 - **Folders** are Foldcade's own, one for each system and source. Each always holds every game of its kind on Home, so a game you file elsewhere never goes missing from its folder.
-- **Collections** are yours. Name them on an on-screen keyboard made for the controller, with quick names like Playing and Backlog one press away, pick an icon, and put a game in as many as you like with **Add to**. Adding a game to a collection leaves it in its folder.
+- **Collections** are yours. Name them on an on-screen keyboard made for the controller, with quick names like Playing and Backlog one press away, and put a game in as many as you like with **Add to**. Adding a game to a collection leaves it in its folder. A collection is a glossy folder card, so it never looks like one of Foldcade's folders: **Y › Icon** opens an editor on the top screen with ten colors and a glyph for every kind of collection (star, trophy, sword, ghost, hourglass, and more, plus every system). The tile and the preview wear each choice as you move; **A** keeps it, **B** puts the old look back, and **L1**/**R1** change the color from anywhere.
 - **Pin to Home** puts a shortcut to a game on Home itself. **Unpin** takes only the shortcut away.
 - **Favorite** a game and **Favorites** appears on Home. **Recently played** shows up after you play something and lists your last 12 games, newest first.
 - **Hide** takes a game off Home everywhere. It stays in **All**, where Y brings it back.

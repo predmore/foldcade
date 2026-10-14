@@ -74,6 +74,8 @@ data class HomeFolder(
     val userMade: Boolean = false,
     val namedByUser: Boolean = false,
     val slots: List<String?> = emptyList(),
+    /** A collection's [CollectionTint] id. Null is the default, gold, which every collection saved before colours wears. */
+    val tint: String? = null,
 ) {
     /** Foldcade's folder for one platform or library. A game sits in one folder at a time. */
     val system: Boolean get() = !userMade && (platformId != null || bucket != null)
@@ -149,22 +151,24 @@ const val MARK_CONSOLE: String = "console"
 const val MARK_FOLDER: String = "folder"
 const val MARK_LIBRARY: String = "library"
 
-/** Recently played wears the lit disc until it has a mark of its own. */
-const val MARK_RECENT: String = "disc"
+/** Recently played wears the clock, on a collection's folder card (see [collectionLook]). */
+const val MARK_RECENT: String = MARK_CLOCK
 
 /**
- * The icons a collection can wear, in the picker's order: the
- * folder, the libraries, then every platform.
+ * The glyphs a collection can wear, in the picker's order: the theme glyphs, the
+ * libraries, then every platform. A collection is already a folder, so the folder is not one.
  */
 val FOLDER_ICONS: List<String> =
-    listOf(MARK_FOLDER, MARK_LIBRARY, "android-games", "android-apps", "pc", "moonlight", "droiddeck", "emulators", MARK_CONSOLE) +
+    COLLECTION_GLYPHS +
+        listOf(MARK_LIBRARY, "android-games", "android-apps", "pc", "moonlight", "droiddeck", "emulators", MARK_CONSOLE) +
         PLATFORM_MARKS
 
-/** Gives a collection the icon [mark]. A folder keeps its platform's. */
-fun setFolderIcon(board: HomeBoard, folderId: String, mark: String): HomeBoard {
+/** Gives a collection the glyph [mark], and the colour [tint] when one is given. A folder keeps its platform's. */
+fun setFolderIcon(board: HomeBoard, folderId: String, mark: String, tint: CollectionTint? = null): HomeBoard {
     val folder = board.folders[folderId] ?: return board
     if (!folder.userMade || mark !in FOLDER_ICONS) return board
-    return board.copy(folders = board.folders + (folderId to folder.copy(mark = mark)))
+    val worn = folder.copy(mark = mark, tint = tint?.id ?: folder.tint)
+    return board.copy(folders = board.folders + (folderId to worn))
 }
 
 /** Kit mark for a canonical platform id. Not a console logo. A platform without its own mark gets a controller. */
@@ -677,6 +681,10 @@ fun encodeHome(board: HomeBoard): String {
                 ) + folder.slots.map { it.orEmpty() },
             )
         }
+        // A row of its own, so a release before colours reads the folder rows it knows and skips these.
+        for (folder in saved.folders.values.sortedBy { it.id }) {
+            folder.tint?.let { homeRow("tint", listOf(folder.id, it)) }
+        }
     }
 }
 
@@ -702,6 +710,7 @@ fun decodeHome(raw: String?, nowMillis: Long = 0L): HomeBoard {
     val encoded = raw.lineSequence().firstOrNull() == "v2"
     val decoder = Base64.getUrlDecoder()
     var board = HomeBoard(slots = emptyList(), recentAfter = nowMillis)
+    val tints = HashMap<String, String>()
     for (line in raw.lineSequence()) {
         if (line.isBlank()) continue
         val fields = line.split('\t')
@@ -723,6 +732,7 @@ fun decodeHome(raw: String?, nowMillis: Long = 0L): HomeBoard {
             "emulatorsFiled" -> board = board.copy(emulatorsFiled = bits.getOrNull(1) == "1")
             "recentAfter" -> bits.getOrNull(1)?.toLongOrNull()?.let { board = board.copy(recentAfter = it) }
             "offHome" -> board = board.copy(offHome = bits.drop(1).filter { it.isNotEmpty() }.toSet())
+            "tint" -> if (bits.size >= 3 && bits[2].isNotEmpty()) tints[bits[1]] = bits[2]
             "folder" -> {
                 if (bits.size < 8) continue
                 val bucket = bits[4].takeIf { it.isNotEmpty() }?.let { runCatching { HomeKind.valueOf(it) }.getOrNull() }
@@ -742,6 +752,7 @@ fun decodeHome(raw: String?, nowMillis: Long = 0L): HomeBoard {
             }
         }
     }
+    board = board.copy(folders = board.folders.mapValues { (id, folder) -> tints[id]?.let { folder.copy(tint = it) } ?: folder })
     if (board.slots.isEmpty()) board = board.copy(slots = listOf(HOME_ALL))
     if (HOME_ALL !in board.slots) board = board.copy(slots = listOf(HOME_ALL) + board.slots)
     return refreshFolderNames(board, emptyList())

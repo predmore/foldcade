@@ -9,7 +9,8 @@ import app.foldcade.language.GridFocus
 import app.foldcade.language.GridStrip
 import app.foldcade.language.HOME_ALL
 import app.foldcade.language.HOME_FAVORITES
-import app.foldcade.language.FOLDER_ICONS
+import app.foldcade.language.IconPick
+import app.foldcade.language.collectionLook
 import app.foldcade.language.FolderChoice
 import app.foldcade.language.RemoveVerb
 import app.foldcade.language.TileActions
@@ -108,8 +109,12 @@ class HomeSession(raw: String?, nowMillis: Long = System.currentTimeMillis()) {
     /** The game an open menu keeps acting on after Add to took it out of the slot on screen. */
     private var menuGame: String? = null
 
-    /** The folder whose icon is being chosen, and the focused choice in [FOLDER_ICONS]. Null when closed. */
-    var iconPick: FolderIconPick? = null
+    /** The collection whose icon is being chosen, and what is focused. Null when closed. */
+    var iconPick: IconPick? = null
+        private set
+
+    /** The collection that last took a new look, and when, so its tile can settle into it. */
+    var settled: Pair<String, Long>? = null
         private set
     private var iconCell: Int = 0
     private var rootIndex: Int = 0
@@ -368,8 +373,8 @@ class HomeSession(raw: String?, nowMillis: Long = System.currentTimeMillis()) {
     /** Opens the icon picker for the collection at [index]. */
     fun pickIcon(index: Int) {
         val id = visibleSlots(board).getOrNull(index) ?: return
-        val folder = board.folders[id]?.takeIf { it.userMade } ?: return
-        iconPick = FolderIconPick(id, FOLDER_ICONS.indexOf(folder.mark).coerceAtLeast(0))
+        val look = board.folders[id]?.takeIf { it.userMade }?.let(::collectionLook) ?: return
+        iconPick = IconPick.open(id, look)
         iconCell = index
     }
 
@@ -440,24 +445,19 @@ class HomeSession(raw: String?, nowMillis: Long = System.currentTimeMillis()) {
 
     fun encoded(): String = encodeHome(board)
 
-    /** The D-pad walks the icons, A wears the focused one, B leaves the folder as it was. */
-    private fun handleIconPick(pick: FolderIconPick, meaning: Meaning): HomeStep {
-        val last = FOLDER_ICONS.lastIndex
-        val columns = FolderIconPick.COLUMNS
-        val next = when (meaning) {
-            Meaning.MoveLeft -> pick.index - 1
-            Meaning.MoveRight -> pick.index + 1
-            Meaning.MoveUp -> pick.index - columns
-            Meaning.MoveDown -> pick.index + columns
-            else -> null
-        }
-        when {
-            next != null -> iconPick = pick.copy(index = next.coerceIn(0, last))
-            meaning == Meaning.Activate -> {
-                board = setFolderIcon(board, pick.folderId, FOLDER_ICONS[pick.index])
+    /**
+     * The D-pad walks the colours and glyphs, and the tile wears each as it goes (see [IconPick]).
+     * A keeps the look, B puts the old one back. Nothing is saved until A.
+     */
+    private fun handleIconPick(pick: IconPick, meaning: Meaning): HomeStep {
+        when (meaning) {
+            Meaning.Activate -> {
+                board = setFolderIcon(board, pick.folderId, pick.look.glyph, pick.look.tint)
+                settled = pick.folderId to System.currentTimeMillis()
                 iconPick = null
             }
-            meaning == Meaning.Back || meaning == Meaning.CancelHold -> iconPick = null
+            Meaning.Back, Meaning.CancelHold -> iconPick = null
+            else -> iconPick = pick.step(meaning)
         }
         return step(null, iconCell)
     }
@@ -584,7 +584,8 @@ class HomeSession(raw: String?, nowMillis: Long = System.currentTimeMillis()) {
                 id = id,
                 title = folder.name,
                 shortText = folderCountLine(count, apps = folder.bucket == HomeKind.AndroidApp),
-                mark = folder.mark,
+                // A collection wears its folder card; the one being edited shows the focused choice.
+                mark = (iconPick?.takeIf { it.folderId == id }?.look ?: collectionLook(folder))?.mark ?: folder.mark,
                 empty = false,
                 folder = true,
                 allTile = false,
@@ -645,14 +646,6 @@ class HomeSession(raw: String?, nowMillis: Long = System.currentTimeMillis()) {
             effect = effect,
             focus = GridFocus(cellIndex = index.coerceAtLeast(0), lastColumn = GridStrip.column(index.coerceAtLeast(0))),
         )
-}
-
-/** The icon picker for one folder the user made. [index] is the focused icon in [FOLDER_ICONS]. */
-data class FolderIconPick(val folderId: String, val index: Int) {
-    companion object {
-        /** The picker lays the icons out in rows of this many. */
-        const val COLUMNS: Int = 7
-    }
 }
 
 /** [cue] is the open keyboard's sound for this press. Null leaves the sound to the meaning. */
