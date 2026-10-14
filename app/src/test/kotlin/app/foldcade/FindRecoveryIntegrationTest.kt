@@ -21,6 +21,30 @@ class FindRecoveryIntegrationTest {
             Game("local-folder", "drift", "gba", Availability.LocalOnly, "Drift"))), emptyList())
     }
 
+    @Test fun aGroupResultOwnsItsMenuOverAnEmptyShelf() {
+        for (collection in listOf(false, true)) {
+            val store = SessionStore(MemoryPrefs())
+            val id = if (collection) "home.user.1" else HOME_ANDROID_APPS
+            val group = HomeFolder(id, "Tools", userMade = collection,
+                bucket = if (collection) null else HomeKind.AndroidApp, slots = listOf(androidHomeId("notes")))
+            store.saveHomeBoard(encodeHome(HomeBoard(slots = listOf(HOME_ALL, id),
+                folders = mapOf(id to group), emulatorsFiled = true)))
+            val shell = shell(store)
+            shell.showHomeGrid(HomeGrid.AndroidGames)
+            assertEquals(0, shell.model.count)
+            shell.openFind()
+            focusResult(shell, id)
+            shell.onMeaning(Meaning.Options, HostScreen.Bottom)
+            assertNotNull(shell.model.panel)
+            assertEquals(id, shell.model.tileActions!!.showOnHome)
+            assertNull(shell.model.tileActions!!.game)
+            assertEquals(listOf(Row.ShowOnHome), panelRows(shell.model.panel!!, shell.model))
+            shell.onMeaning(Meaning.Activate, HostScreen.Top)
+            assertNull(shell.find)
+            assertEquals(id, shell.homeFace(shell.model.focus.cellIndex)!!.id)
+        }
+    }
+
     @Test fun findsHiddenFilterAndShowUseEveryKindOfUnifiedHiddenItem() {
         val ids = setOf(game, androidHomeId("notes"), androidHomeId("emu"), HOME_MOONLIGHT)
         for (target in ids) {

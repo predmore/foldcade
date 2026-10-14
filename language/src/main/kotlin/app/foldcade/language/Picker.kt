@@ -62,6 +62,8 @@ data class SidePanel(
     val connection: SignedInBackend? = null,
     /** A connection opened from Settings returns to that page on Back. */
     val connectionSettings: SettingsPage? = null,
+    /** An empty view opened Undo rather than a tile menu. Its rows do not depend on the covered grid. */
+    val recoveryOnly: Boolean = false,
 )
 
 fun signInAgainPrompt(screen: HostScreen = HostScreen.Top): DialogState = DialogState(
@@ -614,7 +616,7 @@ fun panelRows(panel: SidePanel, model: PickerModel): List<Row> = validMenuRows(
     model.menuRows.firstOrNull { it.page == panel.page() }?.rows ?: livePanelRows(panel, model), model)
 
 private fun livePanelRows(panel: SidePanel, model: PickerModel): List<Row> = when (panel.level) {
-    PanelLevel.Actions -> if (model.count <= 0 && model.tileActions?.game == null) {
+    PanelLevel.Actions -> if (panel.recoveryOnly) {
         if (model.tileActions?.undo == true) listOf(Row.Undo) else emptyList()
     } else actionRows(model.tileActions, model.appActions)
     PanelLevel.Collections -> collectionRows(model.tileActions)
@@ -1147,7 +1149,8 @@ private fun openActions(model: PickerModel): PickerModel {
         if (model.tileActions?.undo != true) return model
     } else if (model.focus.chrome != null) return model
     if (actionRows(model.tileActions, model.appActions).isEmpty()) return model
-    return model.copy(panel = freshPanel(Side.Left, model.focus).copy(level = PanelLevel.Actions))
+    return model.copy(panel = freshPanel(Side.Left, model.focus).copy(
+        level = PanelLevel.Actions, recoveryOnly = model.count <= 0))
 }
 
 private fun backGrid(model: PickerModel): Pair<PickerModel, Effect?> {

@@ -48,6 +48,13 @@ class MenuRowsTest {
         assertEquals(rows, panelRows(restored.panel!!, restored))
     }
 
+    @Test fun overlayRowsDependOnTheirTargetRatherThanTheCoveredViewsCount() {
+        val target = PickerModel(1, 3, panel = panel, tileActions = TileActions(showOnHome = "home.user.1"))
+        for (count in listOf(0, 1, 20)) {
+            assertEquals(listOf(Row.ShowOnHome), panelRows(panel, target.copy(count = count)))
+        }
+    }
+
     @Test fun everyEmptyViewCanOpenJustUndo() {
         for (grid in HomeGrid.entries) {
             val empty = PickerModel(0, 3, homeGrid = grid, atLibraryRoot = false,
