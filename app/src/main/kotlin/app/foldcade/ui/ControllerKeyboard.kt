@@ -84,7 +84,7 @@ import kotlinx.coroutines.withContext
  * quick-name chips above them, and one highlight that glides from key to key and up to
  * the chips, landing with the menus' little bounce. A key flashes when it acts, even
  * when a button did the work (X flashes Erase, Start flashes Done), and each of those
- * keys wears its button's glyph. Letters roll between cases with Shift. [field] draws
+ * keys wears its button's glyph. Letters roll between cases with Shift. [fieldStyle] draws
  * the text above the chips, for a screen with no top screen beside it. [buttons] says
  * which face buttons erase and type a space under the player's calibration, so the keys
  * show the right glyphs. A tap presses a key through [onTap]; nothing here raises
@@ -98,7 +98,7 @@ internal fun ControllerKeyboard(
     scale: Float,
     onTap: (KeyFocus) -> Unit,
     modifier: Modifier = Modifier,
-    field: (@Composable (Modifier) -> Unit)? = null,
+    fieldStyle: TextStyle? = null,
 ) {
     val theme = LocalFoldTheme.current.theme
     val motion = theme.motion
@@ -114,13 +114,18 @@ internal fun ControllerKeyboard(
     }
     BoxWithConstraints(modifier.fillMaxSize()) {
         val rows = KeyboardLayout.rows.size
-        val fieldUnits = if (field != null) FIELD_HEIGHT + FIELD_GAP else 0f
-        val tallUnits = fieldUnits + CHIP_HEIGHT + CHIP_GAP + rows * ROW_PITCH - KEY_GAP
-        val unit = minOf((maxWidth - reach * 2) / KeyboardLayout.WIDTH, (maxHeight - reach * 2) / tallUnits)
+        // The field keeps its full height, whatever the screen; the keys get what is left.
+        val fieldHeight = fieldStyle?.let { typingFieldHeight(it) } ?: 0.dp
+        val fieldBlock = if (fieldStyle != null) fieldHeight + FIELD_GAP.dp else 0.dp
+        val tallUnits = CHIP_HEIGHT + CHIP_GAP + rows * ROW_PITCH - KEY_GAP
+        val unit = minOf(
+            (maxWidth - reach * 2) / KeyboardLayout.WIDTH,
+            (maxHeight - reach * 2 - fieldBlock) / tallUnits,
+        ).coerceAtLeast(0.dp)
         val blockWidth = unit * KeyboardLayout.WIDTH
         val left = (maxWidth - blockWidth) / 2
-        val top = (maxHeight - unit * tallUnits) / 2
-        val chipsTop = top + unit * fieldUnits
+        val top = ((maxHeight - fieldBlock - unit * tallUnits) / 2).coerceAtLeast(0.dp)
+        val chipsTop = top + fieldBlock
         val keysTop = chipsTop + unit * (CHIP_HEIGHT + CHIP_GAP)
         val unitPx = with(density) { unit.toPx() }
         val leftPx = with(density) { left.toPx() }
@@ -182,11 +187,15 @@ internal fun ControllerKeyboard(
                     with(ring) { drawFocusRing(corner, bounds = rect) }
                 },
         ) {
-            if (field != null) {
-                field(
-                    Modifier
+            if (fieldStyle != null) {
+                TypingField(
+                    typing = typing,
+                    style = fieldStyle,
+                    background = theme.surface,
+                    scale = scale,
+                    modifier = Modifier
                         .offset(left, top)
-                        .size(blockWidth, unit * FIELD_HEIGHT),
+                        .size(blockWidth, fieldHeight),
                 )
             }
             ChipStrip(
@@ -283,7 +292,7 @@ internal fun TypingField(
                 drawRoundRect(color = background, cornerRadius = CornerRadius(radius, radius))
                 with(ring) { drawFocusRing(radius, alpha = 0.55f) }
             }
-            .padding(horizontal = 32.dp, vertical = 18.dp),
+            .padding(horizontal = 32.dp, vertical = FIELD_PAD.dp),
         contentAlignment = Alignment.Center,
     ) {
         BoxWithConstraints(Modifier.fillMaxWidth()) {
@@ -339,7 +348,7 @@ internal fun TypingField(
                             blendMode = BlendMode.DstIn,
                         )
                     }
-                    .padding(vertical = 6.dp),
+                    .padding(vertical = FIELD_INNER_PAD.dp),
             ) {
                 BasicText(
                     text = draft.text,
@@ -396,6 +405,15 @@ internal fun TypingField(
             }
         }
     }
+}
+
+/** How tall [TypingField] stands for text in [style]: one line and its padding. */
+@Composable
+private fun typingFieldHeight(style: TextStyle): Dp {
+    val measurer = rememberTextMeasurer()
+    val density = LocalDensity.current
+    val line = remember(style, density) { measurer.measure("Ag", style, maxLines = 1).size.height }
+    return with(density) { line.toDp() } + ((FIELD_PAD + FIELD_INNER_PAD) * 2).dp
 }
 
 /** The quick names, scrolled so the focused one is in view. Each pill is as wide as its word. */
@@ -791,8 +809,10 @@ private const val CHIP_PAD = 0.42f
 private const val CHIP_LABEL = 0.34f
 private const val CHIP_FADE = 0.9f
 private const val CHIP_PEEK = 1.4f
-private const val FIELD_HEIGHT = 1.5f
-private const val FIELD_GAP = 0.3f
+/** The field's padding around its text, outside and inside its clip, and its gap above the chips, in dp. */
+private const val FIELD_PAD = 18f
+private const val FIELD_INNER_PAD = 6f
+private const val FIELD_GAP = 12f
 
 /** The smallest a long name shrinks to in the top field, as a share of its size. */
 private const val TYPED_FLOOR = 0.7f

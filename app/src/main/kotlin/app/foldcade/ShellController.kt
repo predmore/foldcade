@@ -436,6 +436,13 @@ class ShellController(
 
     fun homeFace(index: Int): HomeFace? = home.face(index)
 
+    /**
+     * True while a grid opened from a command center must stay: a dialog or menu is up, or a
+     * name is being typed. Its idle timer would otherwise drop the grid mid-word and leave
+     * the keyboard open with nothing to type into.
+     */
+    fun holdsCommandCenter(): Boolean = model.dialog != null || model.panel != null || model.connectOpen || typing() != null
+
     /** The open controller keyboard on Home. Null when none is open. */
     fun typing(): TypingSession? = if (showingHome()) home.typing else null
 

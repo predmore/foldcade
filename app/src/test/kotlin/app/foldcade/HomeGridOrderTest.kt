@@ -337,6 +337,8 @@ class HomeGridOrderTest {
         // The new collection takes the focus and opens its name field.
         assertEquals(folder, shell.model.focus.cellIndex)
         assertEquals(HomeKeys.Typing, shell.homeKeys())
+        // A grid opened from a command center stays while a name is typed.
+        assertTrue(shell.holdsCommandCenter())
         assertEquals("${Copy.collection} 1", shell.renameDraft())
         // A new collection's keyboard starts on the quick names; A picks one and Start saves it.
         assertTrue(shell.typing()!!.typing.focus.onChips)
@@ -346,6 +348,7 @@ class HomeGridOrderTest {
         shell.onMeaning(Meaning.Done, HostScreen.Bottom)
         assertNull(shell.renameDraft())
         assertEquals(HomeKeys.Idle, shell.homeKeys())
+        assertFalse(shell.holdsCommandCenter())
         assertEquals("Handhelds", shell.homeFace(folder)?.title)
         assertEquals(folder, shell.model.focus.cellIndex)
         // Renaming starts with the old name selected: X clears it, a tapped key types, B keeps the old name.

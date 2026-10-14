@@ -1854,15 +1854,7 @@ private fun Picker(
                         onTap = shell::tapTyping,
                         modifier = Modifier.rise { typing.progress.value },
                         // With no top screen beside it, the text shows over the keys.
-                        field = if (iconsOnly) null else { fieldModifier ->
-                            TypingField(
-                                typing = shown,
-                                style = text(theme.onBackground, LocalFoldTheme.current.theme.style.type.heroTitle, theme),
-                                background = theme.surface,
-                                scale = scale,
-                                modifier = fieldModifier,
-                            )
-                        },
+                        fieldStyle = if (iconsOnly) null else text(theme.onBackground, LocalFoldTheme.current.theme.style.type.heroTitle, theme),
                     )
                 }
             }
