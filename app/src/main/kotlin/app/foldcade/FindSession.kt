@@ -45,8 +45,18 @@ class FindSession(entries: List<FindEntry>) {
     var onResults: Boolean by mutableStateOf(false)
         private set
 
-    /** The focused result, while [onResults]. */
+    /** The focused result, while [onResults]. Set through [focus], which keeps [focusedId] with it. */
     var index: Int by mutableIntStateOf(0)
+        private set
+
+    /** The focused result's id, so a refresh that moves it keeps the focus on it. */
+    private var focusedId: String? = null
+
+    /**
+     * The result a Y menu opened on. The menu keeps acting on it however the results move,
+     * even when it leaves them, until the menu closes ([releaseMenu]).
+     */
+    var menuId: String? = null
         private set
 
     /** Counts searches that changed the results, so the strip can pop them in again. */
@@ -62,7 +72,17 @@ class FindSession(entries: List<FindEntry>) {
     /** What the top screen shows: the focused result on the results, else the best one. */
     val subject: FindEntry? get() = if (onResults) results.getOrNull(index) else results.firstOrNull()
 
-    /** Home changed under Find. The query, filter and focus stay where they can. */
+    /** The Y menu is opening on the focused result. */
+    fun holdMenu() {
+        menuId = subject?.id
+    }
+
+    /** The menu closed; the next one reads the focused result again. */
+    fun releaseMenu() {
+        menuId = null
+    }
+
+    /** Home changed under Find. The query, filter and focus stay where they can, the focus on the same result. */
     fun refresh(next: List<FindEntry>) {
         if (next == entries) return
         val chosen = filters.getOrNull(filter)
@@ -87,7 +107,7 @@ class FindSession(entries: List<FindEntry>) {
         val entry = results.getOrNull(at) ?: return FindOutcome.Stay(TypingCue.None)
         if (onResults && index == at) return open(entry, onBottom = false)
         onResults = true
-        index = at
+        focus(at)
         return FindOutcome.Stay(TypingCue.Move)
     }
 
@@ -117,7 +137,7 @@ class FindSession(entries: List<FindEntry>) {
             Meaning.MoveLeft, Meaning.MoveRight -> {
                 val next = index + if (meaning == Meaning.MoveRight) 1 else -1
                 if (next !in results.indices) return FindOutcome.Stay(TypingCue.None)
-                index = next
+                focus(next)
                 FindOutcome.Stay(TypingCue.Move)
             }
             Meaning.MoveDown, Meaning.Back, Meaning.CancelHold -> {
@@ -140,7 +160,7 @@ class FindSession(entries: List<FindEntry>) {
     private fun toResults(): FindOutcome {
         if (results.isEmpty()) return FindOutcome.Stay(TypingCue.None)
         onResults = true
-        index = 0
+        focus(0)
         return FindOutcome.Stay(TypingCue.Move)
     }
 
@@ -160,9 +180,15 @@ class FindSession(entries: List<FindEntry>) {
         val next = findResults(entries, query, filters.getOrElse(filter) { filters.first() })
         if (next.map { it.id } != results.map { it.id }) searched++
         results = next
-        if (fresh) index = 0
-        index = index.coerceIn(0, (next.size - 1).coerceAtLeast(0))
+        val kept = focusedId?.takeIf { !fresh }?.let { id -> next.indexOfFirst { it.id == id } }?.takeIf { it >= 0 }
+        focus(kept ?: if (fresh) 0 else index)
         if (next.isEmpty()) onResults = false
+    }
+
+    /** Focuses result [at], or the nearest one there is. */
+    private fun focus(at: Int) {
+        index = at.coerceIn(0, (results.size - 1).coerceAtLeast(0))
+        focusedId = results.getOrNull(index)?.id
     }
 }
 

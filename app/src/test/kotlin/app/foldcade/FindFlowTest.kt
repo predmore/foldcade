@@ -159,6 +159,64 @@ class FindFlowTest {
     }
 
     @Test
+    fun anOpenMenuKeepsItsGameWhenTheResultsReorder() {
+        // Review r1: unhiding a game moved it up the list, and the menu went on to the game now at its old place.
+        val shell = shell()
+        hide(shell, "Drift")
+        shell.onMeaning(Meaning.View, HostScreen.Bottom)
+        val find = shell.find!!
+        val drift = find.results.indexOfFirst { it.title == "Drift" }
+        assertEquals(find.results.lastIndex, drift)
+        shell.onMeaning(Meaning.Done, HostScreen.Bottom)
+        repeat(drift) { shell.onMeaning(Meaning.MoveRight, HostScreen.Bottom) }
+        shell.onMeaning(Meaning.Options, HostScreen.Bottom)
+        val game = shell.model.tileActions?.game
+        assertEquals("Drift", find.subject?.title)
+        // Add to, then Favorites: that brings Drift back, which sorts it among the games on Home.
+        shell.onMeaning(Meaning.Activate, HostScreen.Top)
+        assertEquals(PanelLevel.Collections, shell.model.panel?.level)
+        shell.onMeaning(Meaning.Activate, HostScreen.Top)
+        assertFalse(find.results.first { it.title == "Drift" }.hidden)
+        assertTrue(find.results.indexOfFirst { it.title == "Drift" } < drift)
+        assertEquals(game, shell.model.tileActions?.game)
+        assertTrue(shell.model.tileActions?.collections?.first()?.member == true)
+        // The focus went with it, so the menu closing leaves the ring on Drift.
+        shell.onMeaning(Meaning.Back, HostScreen.Top)
+        shell.onMeaning(Meaning.Back, HostScreen.Top)
+        assertEquals("Drift", find.subject?.title)
+    }
+
+    @Test
+    fun anOpenMenuKeepsItsGameWhenItsFilterGoes() {
+        val shell = shell()
+        hide(shell, "Drift")
+        shell.onMeaning(Meaning.View, HostScreen.Bottom)
+        val find = shell.find!!
+        while (find.filters[find.filter].kind != FindFilterKind.Hidden) shell.onMeaning(Meaning.LetterForward, HostScreen.Bottom)
+        shell.onMeaning(Meaning.Done, HostScreen.Bottom)
+        shell.onMeaning(Meaning.Options, HostScreen.Bottom)
+        val game = shell.model.tileActions?.game
+        shell.onMeaning(Meaning.Activate, HostScreen.Top)
+        shell.onMeaning(Meaning.Activate, HostScreen.Top)
+        // Back on Home, Drift is no longer hidden, so the Hidden filter has nothing left and goes,
+        // and Find falls back to All. The menu still names Drift.
+        assertEquals(FindFilterKind.All, find.filters[find.filter].kind)
+        assertTrue(find.filters.none { it.kind == FindFilterKind.Hidden })
+        assertEquals(game, shell.model.tileActions?.game)
+        assertTrue(shell.model.tileActions?.collections?.first()?.member == true)
+    }
+
+    /** Hides [title] from inside its folder, with Y then X. */
+    private fun hide(shell: ShellController, title: String) {
+        focus(shell, titles(shell).indexOf("Nintendo 3DS"))
+        shell.onMeaning(Meaning.Activate, HostScreen.Bottom)
+        focus(shell, titles(shell).indexOf(title))
+        shell.onMeaning(Meaning.Options, HostScreen.Bottom)
+        shell.onMeaning(Meaning.ActivateBottom, HostScreen.Top)
+        shell.onMeaning(Meaning.Back, HostScreen.Bottom)
+    }
+
+    @Test
     fun aOnAFolderResultOpensIt() {
         val shell = shell()
         shell.onMeaning(Meaning.View, HostScreen.Bottom)
