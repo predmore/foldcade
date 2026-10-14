@@ -612,7 +612,9 @@ fun panelRows(panel: SidePanel, model: PickerModel): List<Row> = validMenuRows(
     model.menuRows.firstOrNull { it.page == panel.page() }?.rows ?: livePanelRows(panel, model), model)
 
 private fun livePanelRows(panel: SidePanel, model: PickerModel): List<Row> = when (panel.level) {
-    PanelLevel.Actions -> actionRows(model.tileActions, model.appActions)
+    PanelLevel.Actions -> if (model.count <= 0) {
+        if (model.tileActions?.undo == true) listOf(Row.Undo) else emptyList()
+    } else actionRows(model.tileActions, model.appActions)
     PanelLevel.Collections -> collectionRows(model.tileActions)
     PanelLevel.AddTo -> model.appActions?.destinations.orEmpty().map { Row.Destination(it.folderId, it.name) }
     PanelLevel.RommConnection -> panel.connection?.let {
@@ -1138,7 +1140,10 @@ private fun applyGrid(
  * options. R1 is the device's. With nothing to offer, it stays shut.
  */
 private fun openActions(model: PickerModel): PickerModel {
-    if (model.focus.chrome != null || model.arranging || model.count <= 0) return model
+    if (model.arranging) return model
+    if (model.count <= 0) {
+        if (model.tileActions?.undo != true) return model
+    } else if (model.focus.chrome != null) return model
     if (actionRows(model.tileActions, model.appActions).isEmpty()) return model
     return model.copy(panel = freshPanel(Side.Left, model.focus).copy(level = PanelLevel.Actions))
 }

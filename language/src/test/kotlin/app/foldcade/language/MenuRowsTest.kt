@@ -48,6 +48,17 @@ class MenuRowsTest {
         assertEquals(rows, panelRows(restored.panel!!, restored))
     }
 
+    @Test fun everyEmptyViewCanOpenJustUndo() {
+        for (grid in HomeGrid.entries) {
+            val empty = PickerModel(0, 3, homeGrid = grid, atLibraryRoot = false,
+                tileActions = TileActions(undo = true, move = true))
+            val (opened, effect) = reduce(empty, Meaning.Options, HostScreen.Bottom)
+            assertNull(effect)
+            assertNotNull(opened.panel)
+            assertEquals(listOf(Row.Undo), panelRows(opened.panel!!, opened))
+        }
+    }
+
     @Test fun aMenuThatOfferedUndoJustBeforeTheDeadlineKeepsItAtTheBoundary() {
         val undo = HomeUndo(HomeBoard(), AppShelfState(), Copy.hidden, 100L)
         assertTrue(undo.available(8_099L))
