@@ -131,7 +131,7 @@ data class HomeBoard(
     val slots: List<String?> = listOf(HOME_ALL),
     val folders: Map<String, HomeFolder> = emptyMap(),
     val hidden: Set<String> = emptySet(),
-    /** System folders the user deleted. A later new game may recreate one. */
+    /** Folders the user explicitly took off Home; scans keep them off until Show. */
     val retired: Set<String> = emptySet(),
     val addNewToHome: Boolean = true,
     val openFolderId: String? = null,
@@ -312,7 +312,7 @@ fun mergeHome(
     for (item in catalog) {
         if (item.id in next.hidden || item.id in next.offHome || item.id in known) continue
         if (!next.addNewToHome) continue
-        next = placeNew(next, item, platforms)
+        next = placeNew(next, item, platforms, reviveRetired = false)
         known += item.id
     }
     next = completeFolders(next, catalog, platforms)
@@ -1144,16 +1144,16 @@ private fun specialFolders(): List<HomeFolder> = listOf(
     HomeFolder(HOME_EMULATORS, "Emulators", bucket = HomeKind.Emulator, mark = bucketMark(HomeKind.Emulator)),
 )
 
-private fun placeNew(board: HomeBoard, item: HomeItem, platforms: List<HomePlatform>): HomeBoard {
+private fun placeNew(board: HomeBoard, item: HomeItem, platforms: List<HomePlatform>, reviveRetired: Boolean = true): HomeBoard {
     return when (item.kind) {
         HomeKind.Rom -> {
             val platform = resolvePlatform(platforms, item.platformId)
                 ?: item.platformId?.takeIf { it.isNotBlank() }?.let { raw ->
                     HomePlatform(id = raw, name = raw, mark = kitMark(raw))
                 }
-            if (platform == null) placeOnRoot(board, item.id) else placeInPlatform(board, item.id, platform)
+            if (platform == null) placeOnRoot(board, item.id) else placeInPlatform(board, item.id, platform, reviveRetired)
         }
-        else -> bucketFolderId(item.kind)?.let { placeInBucket(board, item.id, it) } ?: placeOnRoot(board, item.id)
+        else -> bucketFolderId(item.kind)?.let { placeInBucket(board, item.id, it, reviveRetired) } ?: placeOnRoot(board, item.id)
     }
 }
 
@@ -1168,7 +1168,7 @@ private fun bucketFolderId(kind: HomeKind): String? = when (kind) {
     HomeKind.Rom, HomeKind.Loose -> null
 }
 
-private fun placeInPlatform(board: HomeBoard, itemId: String, platform: HomePlatform): HomeBoard {
+private fun placeInPlatform(board: HomeBoard, itemId: String, platform: HomePlatform, reviveRetired: Boolean): HomeBoard {
     val folderId = platformFolderId(platform.id)
     val existing = board.folders[folderId]
     val folder = existing ?: HomeFolder(
@@ -1179,28 +1179,24 @@ private fun placeInPlatform(board: HomeBoard, itemId: String, platform: HomePlat
     )
     var next = board.copy(
         folders = board.folders + (folderId to folder),
-        retired = board.retired - folderId,
+        retired = if (reviveRetired) board.retired - folderId else board.retired,
     )
-    // A new folder, or one taken off Home, takes the first free root slot.
-    if ((existing == null || folderId in board.retired) && folderId !in next.slots) {
-        next = placeOnRoot(next, folderId)
+    // An automatically emptied folder returns with a new game; an explicit removal waits for Show.
+    if (folderId !in next.slots && (folderId !in board.retired || reviveRetired)) {
+        next = placeOnRoot(next, folderId).copy(hiddenSlots = next.hiddenSlots - folderId)
     }
     return dropInto(next, folderId, itemId)
 }
 
-private fun placeInBucket(board: HomeBoard, itemId: String, folderId: String): HomeBoard {
-    if (board.folders[folderId] == null) {
-        val spec = specialFolders().first { it.id == folderId }
-        var next = board.copy(
-            folders = board.folders + (folderId to spec),
-            retired = board.retired - folderId,
-        )
-        if (folderId !in next.slots) next = placeOnRoot(next, folderId)
-        return dropInto(next, folderId, itemId)
+private fun placeInBucket(board: HomeBoard, itemId: String, folderId: String, reviveRetired: Boolean): HomeBoard {
+    val folder = board.folders[folderId] ?: specialFolders().first { it.id == folderId }
+    var next = board.copy(
+        folders = board.folders + (folderId to folder),
+        retired = if (reviveRetired) board.retired - folderId else board.retired,
+    )
+    if (folderId !in next.slots && (folderId !in board.retired || reviveRetired)) {
+        next = placeOnRoot(next, folderId).copy(hiddenSlots = next.hiddenSlots - folderId)
     }
-    var next = board.copy(retired = board.retired - folderId)
-    // A folder taken off Home comes back to the root with this item.
-    if (folderId in board.retired && folderId !in next.slots) next = placeOnRoot(next, folderId)
     return dropInto(next, folderId, itemId)
 }
 
