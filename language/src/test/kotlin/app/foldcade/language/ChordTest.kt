@@ -8,7 +8,7 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class ChordTest {
-    private val tile = TileActions(move = true, destinations = listOf(FolderChoice(null, "Home")), rename = true, remove = true)
+    private val tile = TileActions(move = true, collections = emptyList(), rename = true, remove = RemoveVerb.Unpin)
     private val home = PickerModel(count = 8, rowsPerPage = 2, tileActions = tile, themes = listOf(Copy.builtIn, "Afterglow"))
 
     @Test

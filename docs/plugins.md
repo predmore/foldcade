@@ -76,7 +76,7 @@ Moonlight puts a game on the home screen by asking Android to pin a shortcut. An
 
 A launcher never sees a shortcut's intent, so `readMoonlightShortcuts` reads the host and app from the shortcut's id and label. Moonlight's game shortcut id is the 36-character host UUID followed by the app id, and its label is the app name followed by the computer name in parentheses. Moonlight's dynamic computer shortcuts, with the host UUID as id and the computer name as label, tell the parser which suffix to take off a label. Disabled shortcuts are skipped; Moonlight disables a game's shortcut when its host or app goes away.
 
-`MoonlightLibrary` lists the enabled pinned game shortcuts Foldcade last read, and every one is on Home in the Moonlight folder. There is no import step and no source setting. Remove from Home on a Moonlight game also drops Foldcade's pin with `LauncherApps.pinShortcuts`, so the game stays gone until the user pins it again.
+`MoonlightLibrary` lists the enabled pinned game shortcuts Foldcade last read, and every one is on Home in the Moonlight folder. There is no import step and no source setting. Hide on a Moonlight game also drops Foldcade's pin with `LauncherApps.pinShortcuts`, so the game stays gone until the user pins it again.
 
 The last read is saved, so Moonlight tiles keep their names at start. Their tile ids are the bare remote key, not a `lib:` id, so the shell keeps them on Home, hidden ones included, until the first live shortcut read. A Moonlight game is taken off Home only once Android says its pin is gone.
 
@@ -90,7 +90,7 @@ DroidDeck has its own platform, not `pc`, so a DroidDeck game always opens in Dr
 
 Games reach `DroidDeckLibrary` two ways:
 
-- **Add to home screen.** DroidDeck pins a shortcut, which reaches `PinShortcutActivity` the same way Moonlight's does. Its id is `game:` and the game id, its long label the whole name. `readDroidDeckShortcuts` reads enabled pinned ones. DroidDeck publishes no dynamic shortcuts. Remove from Home drops Foldcade's pin.
+- **Add to home screen.** DroidDeck pins a shortcut, which reaches `PinShortcutActivity` the same way Moonlight's does. Its id is `game:` and the game id, its long label the whole name. `readDroidDeckShortcuts` reads enabled pinned ones. DroidDeck publishes no dynamic shortcuts. Hide drops Foldcade's pin. Unpin, on a Home shortcut, does not, since the game stays in its folder.
 - **Game-file sync.** DroidDeck can keep a folder of `.steam` files in step with its library. Added as a library folder, it is recognised by the `.droiddeck-sync.json` inventory DroidDeck keeps there, and every `.steam` file beside it is a DroidDeck game.
 
 `routeSteamFiles` splits the folders' `.steam` files. A file DroidDeck synced, or one with an id past an int, goes to DroidDeck. Any other goes to GameNative, unless DroidDeck is the only one of the two installed. Installing or removing either app routes them again.

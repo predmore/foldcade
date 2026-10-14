@@ -8,13 +8,13 @@ Foldcade automatically finds installed apps with launcher icons. Games start in 
 2. Find it in **Android Games**, **Android Apps**, or **All**. The L1 drawer also opens the Games and Apps lists.
 3. Press **A** to open it on the top screen or **X** on the bottom.
 
-Android decides whether an app is a game. Use **Y › Move to** to change a tile's folder.
+Android decides whether an app is a game. To file an app in the other Android folder, use **Y › Add to** on its shelf in L1.
 
 Empty default folders are hidden. If Android Games is absent, check Android Apps and All.
 
 ## Arrange your apps
 
-Press **Y** to move tiles, create folders, or **Remove from Home**. Removed tiles stay in All; **Y › Add to Home** restores them without reinstalling the app.
+Press **Y** to move tiles, add them to collections, or **Hide** them. Hidden tiles stay in All; **Y › Pin to Home** there brings them back without reinstalling the app.
 
 Check [New games on Home](README.md#a-game-is-in-all-but-missing-from-home) if new apps appear only in All.
 

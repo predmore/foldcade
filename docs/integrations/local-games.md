@@ -47,7 +47,7 @@ Foldcade shows the playlist as one game and hides the files it names. The emulat
 
 Folders are scanned at startup, when you add or remove one, and [in the background when you return to Foldcade](README.md#discovery-and-updates).
 
-Remove a folder's row in **Settings › Library** to stop reading it; its files stay on the device. **Y › Remove from Home** on a game hides only its Home tile; it remains in All.
+Remove a folder's row in **Settings › Library** to stop reading it; its files stay on the device. **Y › Hide** on a game takes it off Home; it remains in All.
 
 For exported `.steam` files, follow [GameNative](gamenative.md) or [DroidDeck](droiddeck.md).
 

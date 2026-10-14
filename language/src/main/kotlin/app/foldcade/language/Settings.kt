@@ -75,12 +75,14 @@ fun settingsRows(category: SettingsCategory, model: PickerModel): List<Row> = wh
 }
 
 /**
- * How a row shows its value on the right. A [Toggle] is a switch that A flips. A [Choice]
+ * How a row shows its value on the right. A [Toggle] is a switch that A flips. A [Check]
+ * marks a choice that A puts in or takes out, as a game in a collection. A [Choice]
  * reads ‹ value ›, and left and right step it. [Opens] leads somewhere else. [Value] is
  * plain text. Sliders draw their own row, so they show [None] here.
  */
 sealed interface RowControl {
     data class Toggle(val on: Boolean) : RowControl
+    data class Check(val on: Boolean) : RowControl
     data class Choice(val value: String) : RowControl
     data object Opens : RowControl
     data class Value(val text: String) : RowControl
@@ -94,7 +96,8 @@ fun rowControl(row: Row, model: PickerModel, value: String? = rowText(row, model
     Row.Artwork -> RowControl.Toggle(model.artwork)
     in choiceRows -> RowControl.Choice(value.orEmpty())
     Row.MusicVolume, Row.Brightness -> RowControl.None
-    Row.EditHome, Row.MoveTileTo, Row.AddAppTo, is Row.RommConnection,
+    is Row.Collection -> RowControl.Check(model.tileActions?.collections?.any { it.folderId == row.folderId && it.member } == true)
+    Row.EditHome, Row.AddToCollection, Row.AddAppTo, is Row.RommConnection,
     Row.AddFolder, Row.AddRomm, Row.SetAsHome, Row.DefaultHomeApp, Row.AndroidSettings, Row.Licenses,
     -> RowControl.Opens
     else -> value?.takeIf { it.isNotEmpty() }?.let(RowControl::Value) ?: RowControl.None

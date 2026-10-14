@@ -13,7 +13,7 @@ package app.foldcade.language
 private fun Row.chord(): Meaning? = when (this) {
     Row.Settings, Row.QuickTile(QuickSetting.Settings) -> Meaning.Menu
     Row.PlayActivity -> Meaning.View
-    Row.EditHome, Row.MoveTile, Row.AddToHome, Row.MoveApp, Row.ShowApp -> Meaning.Options
+    Row.EditHome, Row.MoveTile, Row.MoveApp, Row.ShowApp -> Meaning.Options
     Row.RemoveTile, Row.RemoveDownload, Row.HideApp -> Meaning.ActivateBottom
     else -> null
 }

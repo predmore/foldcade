@@ -107,6 +107,32 @@ class MoonlightHomeTest {
     }
 
     @Test
+    fun unpinningAMoonlightGameKeepsItsShortcutSinceItStaysInItsFolder() {
+        val removed = mutableListOf<String>()
+        Shelf.moonlightGames = listOf(tile(hades, "Hades"))
+        val shell = ShellController(
+            SessionStore(MemoryPrefs()),
+            plugins(),
+            onMoonlightRemoved = { removed += it },
+        )
+        shell.settleMoonlight()
+        shell.noteShelfChanged()
+        focus(shell, titles(shell).indexOf("Moonlight"))
+        shell.onMeaning(Meaning.Activate, HostScreen.Bottom)
+        focus(shell, titles(shell).indexOf("Hades"))
+        choose(shell, Row.PinTile)
+        shell.onMeaning(Meaning.Back, HostScreen.Bottom)
+
+        focus(shell, titles(shell).indexOf("Hades"))
+        choose(shell, Row.RemoveTile)
+        assertFalse("Hades" in titles(shell))
+        assertEquals(emptyList<String>(), removed)
+        focus(shell, titles(shell).indexOf("Moonlight"))
+        shell.onMeaning(Meaning.Activate, HostScreen.Bottom)
+        assertEquals(listOf("Hades"), titles(shell))
+    }
+
+    @Test
     fun theLastReadIsKeptAndTheImportSheetsKeysAreGone() {
         val prefs = MemoryPrefs()
         prefs.edit()

@@ -159,7 +159,7 @@ class SettingsPersistenceTest {
     fun folderNamesIconsAndPlacementSurviveEditsThroughTheShell() {
         val prefs = MemoryPrefs()
         val changed = shell(prefs)
-        changed.chooseHomeAction(Row.NewFolder)
+        changed.chooseHomeAction(Row.NewCollection)
         changed.editRename("My favorites")
         changed.onMeaning(Meaning.Activate, HostScreen.Bottom)
         val index = changed.model.focus.cellIndex

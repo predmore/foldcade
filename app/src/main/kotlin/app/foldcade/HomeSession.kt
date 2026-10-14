@@ -8,8 +8,10 @@ import app.foldcade.language.Effect
 import app.foldcade.language.GridFocus
 import app.foldcade.language.GridStrip
 import app.foldcade.language.HOME_ALL
+import app.foldcade.language.HOME_FAVORITES
 import app.foldcade.language.FOLDER_ICONS
 import app.foldcade.language.FolderChoice
+import app.foldcade.language.RemoveVerb
 import app.foldcade.language.TileActions
 import app.foldcade.language.HomeBoard
 import app.foldcade.language.HomeItem
@@ -25,26 +27,33 @@ import app.foldcade.language.allItems
 import app.foldcade.language.cancelHold
 import app.foldcade.language.closeAll
 import app.foldcade.language.closeFolder
-import app.foldcade.language.folderAround
+import app.foldcade.language.collectionChoices
 import app.foldcade.language.decodeHome
 import app.foldcade.language.encodeHome
 import app.foldcade.language.enterEdit
+import app.foldcade.language.favorite
+import app.foldcade.language.fileGame
 import app.foldcade.language.folderTakes
 import app.foldcade.language.folderCount
 import app.foldcade.language.leaveEdit
 import app.foldcade.language.mergeHome
 import app.foldcade.language.moveHeld
-import app.foldcade.language.moveToFolder
+import app.foldcade.language.newCollection
 import app.foldcade.language.nextUserFolderId
 import app.foldcade.language.onHome
 import app.foldcade.language.openAll
 import app.foldcade.language.openFolder
 import app.foldcade.language.pickUp
+import app.foldcade.language.pinItemToHome
+import app.foldcade.language.pinToHome
+import app.foldcade.language.pinned
 import app.foldcade.language.removeFromHome
+import app.foldcade.language.removeVerb
 import app.foldcade.language.renameFolder
-import app.foldcade.language.resolvePlatform
 import app.foldcade.language.setFolderIcon
 import app.foldcade.language.setAddNewToHome
+import app.foldcade.language.toggleCollection
+import app.foldcade.language.toggleFavorite
 import app.foldcade.language.visibleSlots
 
 /** One cell the grid can draw. A null [id] is an empty slot. */
@@ -54,8 +63,10 @@ data class HomeFace(
     val shortText: String,
     val mark: String?,
     val empty: Boolean,
+    /** A folder, a collection, or Recently played: A opens it. */
     val folder: Boolean,
-    val pinned: Boolean,
+    /** The All tile, which A opens as the whole library. */
+    val allTile: Boolean,
     val onGrid: Boolean,
     val platformId: String?,
     val androidPackage: String?,
@@ -68,8 +79,8 @@ data class HomeFace(
  * Layout for the bottom-screen home grid.
  * The catalog is every ROM and app. The board is only what the user placed.
  */
-class HomeSession(raw: String?) {
-    var board: HomeBoard = decodeHome(raw)
+class HomeSession(raw: String?, nowMillis: Long = System.currentTimeMillis()) {
+    var board: HomeBoard = decodeHome(raw, nowMillis)
         private set
 
     var sort: LibrarySort = LibrarySort.Listed
@@ -81,11 +92,17 @@ class HomeSession(raw: String?) {
     private var platforms: List<HomePlatform> = emptyList()
     private val games = HashMap<String, Game>()
     private val shelfById = HashMap<String, ShelfGame>()
-    /** The folder whose name field is open. Null when closed. */
+    /** The folder or collection whose name field is open. Null when closed. */
     var renamingId: String? = null
         private set
     var renameDraft: String = ""
         private set
+
+    /** The cell focus goes back to when the name field closes. */
+    private var renameCell: Int = 0
+
+    /** The game an open menu keeps acting on after Add to took it out of the slot on screen. */
+    private var menuGame: String? = null
 
     /** The folder whose icon is being chosen, and the focused choice in [FOLDER_ICONS]. Null when closed. */
     var iconPick: FolderIconPick? = null
@@ -177,80 +194,131 @@ class HomeSession(raw: String?) {
     }
 
     /**
-     * What Y offers for the tile at [index]. In All, adding an item that is not
-     * placed yet. On the board, moving, folders, and removing. A downloaded
-     * server game can be deleted from either. Null while a tile moves or a
-     * picker or name field is open.
+     * What Y offers for the tile at [index]. A game can always join collections and be a
+     * favorite; where it sits decides the rest (see [removeVerb]). In All, a game not pinned
+     * can be, which brings a hidden one back. A group can move, be renamed and come off Home,
+     * and a collection takes an icon. An empty slot moves, and on the root makes a collection.
+     * A downloaded server game can be deleted from anywhere. While Add to has taken the game
+     * out of the collection on screen, the menu keeps acting on that game. Null while a tile
+     * moves or a picker or name field is open.
      */
     fun actions(index: Int): TileActions? {
         if (iconPick != null || renamingId != null || board.editing) return null
+        val held = menuGame
+        if (held != null && slotGame(index) != held) return gameActions(held, move = false, pin = false, remove = null)
         if (board.allOpen) {
             val item = allRows().getOrNull(index) ?: return null
-            val downloaded = downloaded(item.id)
-            if (onHome(board, item.id)) return if (downloaded) TileActions(removeDownload = true) else null
-            // Named for where it would land, including a folder that comes back with it.
-            val placed = addItemToHome(board, item, platforms)
-            val into = placed.folders.values.firstOrNull { item.id in it.slots }?.name
-            return TileActions(
-                addToHome = if (into != null) "${Copy.addTo} $into" else Copy.addToHome,
-                removeDownload = downloaded,
-            )
+            return gameActions(item.id, move = false, pin = !pinned(board, item.id), remove = null)
         }
         if (index < 0) return null
-        val atRoot = board.openFolderId == null
-        // An empty slot, or one past the last tile, moves as a tile does, and offers a new folder on the root.
-        val id = visibleSlots(board).getOrNull(index) ?: return TileActions(move = true, newFolder = atRoot)
-        if (id == HOME_ALL) return TileActions(move = true, newFolder = true)
+        val open = board.openFolderId?.let { board.folders[it] }
+        val id = visibleSlots(board).getOrNull(index)
+        if (open?.recent == true) {
+            return id?.let { gameActions(it, move = false, pin = !pinned(board, it), remove = null) }
+        }
+        // An empty slot, or one past the last tile, moves as a tile does, and makes a collection on the root.
+        if (id == null) return TileActions(move = true, newCollection = open == null)
+        if (id == HOME_ALL) return TileActions(move = true, newCollection = true)
         val folder = board.folders[id]
         if (folder != null) {
-            return TileActions(move = true, rename = true, icon = folder.userMade, remove = true, removeIsFolder = true)
+            return TileActions(move = true, rename = true, icon = folder.userMade, remove = removeVerb(board, index))
         }
-        val here = board.openFolderId
-        val item = catalog().firstOrNull { it.id == id }
-        val destinations = buildList {
-            if (here != null) add(FolderChoice(null, Copy.homeSlot))
-            board.slots.mapNotNull { slot -> board.folders[slot] }
-                .filter { it.id != here && folderTakes(it, item, platforms) }
-                .forEach { add(FolderChoice(it.id, it.name)) }
-        }
-        return TileActions(
-            move = true,
-            destinations = destinations,
-            newFolder = true,
-            remove = true,
-            removeDownload = downloaded(id),
-        )
+        return gameActions(id, move = true, pin = open?.system == true && !pinned(board, id), remove = removeVerb(board, index))
     }
+
+    private fun gameActions(id: String, move: Boolean, pin: Boolean, remove: RemoveVerb?): TileActions = TileActions(
+        move = move,
+        collections = collectionChoices(board, id),
+        favorite = favorite(board, id),
+        pin = pin,
+        remove = remove,
+        removeDownload = downloaded(id),
+        game = id,
+    )
+
+    /** What X does to the tile at [index]. Null in All, or where X does nothing. */
+    fun removeVerb(index: Int): RemoveVerb? = if (board.allOpen) null else removeVerb(board, index)
 
     /** A server game with a copy on this device. */
     private fun downloaded(id: String): Boolean = games[id]?.availability == Availability.Cached
+
+    /**
+     * The game a menu effect acts on: the one it names ([gameId], see [TileActions.game]),
+     * else the one Add to took out of the collection on screen, else the one at [index].
+     */
+    private fun gameAt(index: Int, gameId: String? = null): String? =
+        gameId?.takeIf { it != HOME_ALL && board.folders[it] == null } ?: menuGame ?: slotGame(index)
+
+    /** The face of game [id], wherever it is, as a menu that kept its game shows it. */
+    fun faceOf(id: String): HomeFace = faceFor(id)
+
+    /** The game at [index] in All or on the board. Null for a group, the All tile, or an empty slot. */
+    private fun slotGame(index: Int): String? {
+        val id = if (board.allOpen) allRows().getOrNull(index)?.id else visibleSlots(board).getOrNull(index)
+        return id?.takeIf { it != HOME_ALL && board.folders[it] == null }
+    }
+
+    /**
+     * Ends a menu's hold on its game, so the next menu reads the focused slot again. True
+     * when there was one, and the menu's rows need reading again.
+     */
+    fun releaseMenu(): Boolean {
+        if (menuGame == null) return false
+        menuGame = null
+        return true
+    }
 
     /** Move: lifts the tile or empty slot at [index]. The D-pad walks it, A drops it, B puts it back. */
     fun startMove(index: Int) {
         if (index < 0) return
         board = pickUp(enterEdit(board), index)
-    }
-
-    /** Sends the game at [index] to [folderId], or the root when null. Returns where focus goes. */
-    fun moveTo(index: Int, folderId: String?): Int {
-        val id = visibleSlots(board).getOrNull(index) ?: return index
-        board = moveToFolder(board, id, folderId, catalog(), platforms)
-        return index
+        if (board.hold == null) board = leaveEdit(board)
     }
 
     /**
-     * A new folder around the game at [index], then its name field. Made from
-     * inside a folder, it lands on the root, so the open folder closes onto it.
+     * Puts the game at [index] in collection [folderId], or takes it out. Favorites is made
+     * when missing. The open menu keeps this game even when it leaves the slot on screen.
      */
-    fun newFolder(index: Int): Int {
-        val folderId = nextUserFolderId(board)
-        val count = board.folders.values.count { it.userMade } + 1
-        board = folderAround(board, index, folderId, "${Copy.newFolder} $count")
-        if (folderId !in board.folders) return index
-        if (board.openFolderId != null) board = closeFolder(board)
-        val placed = board.slots.indexOf(folderId).coerceAtLeast(0)
-        startRename(placed)
-        return placed
+    fun toggleCollection(index: Int, folderId: String, gameId: String? = null) {
+        val id = gameAt(index, gameId) ?: return
+        menuGame = id
+        board = toggleCollection(board, folderId, id)
+    }
+
+    fun toggleFavorite(index: Int, gameId: String? = null) {
+        val id = gameAt(index, gameId) ?: return
+        board = toggleFavorite(board, id)
+    }
+
+    /**
+     * A pin for the game at [index] in the first free root slot. The focus stays on the game.
+     * A game nowhere on the board is filed in its folder too.
+     */
+    fun pin(index: Int, gameId: String? = null) {
+        val id = gameAt(index, gameId) ?: return
+        val item = catalog().firstOrNull { it.id == id }
+        board = if (item != null) pinItemToHome(board, item, platforms) else pinToHome(board, id)
+    }
+
+    /**
+     * A new collection, then its name field. On a game it holds that game, which stays where it
+     * is, and so does the focus. On an empty root slot the collection takes that slot, and on the
+     * All tile the first free one; the focus goes to it. Returns where focus goes.
+     */
+    fun newCollection(index: Int, gameId: String? = null): Int {
+        val collectionId = nextUserFolderId(board)
+        val count = board.folders.values.count { it.collection && it.id != HOME_FAVORITES } + 1
+        val name = "${Copy.collection} $count"
+        val game = gameAt(index, gameId)
+        val atRoot = !board.allOpen && board.openFolderId == null
+        if (game == null && !atRoot) return index
+        board = newCollection(board, collectionId, name, at = index.takeIf { game == null }, member = game)
+        if (collectionId !in board.folders) return index
+        val focus = if (game == null) board.slots.indexOf(collectionId).coerceAtLeast(0) else index
+        renamingId = collectionId
+        renameDraft = name
+        renameCell = focus
+        return focus
     }
 
     /** Opens the name field for the folder at [index]. */
@@ -259,13 +327,18 @@ class HomeSession(raw: String?) {
         val folder = board.folders[id] ?: return
         renamingId = id
         renameDraft = folder.name
+        renameCell = index
     }
+
+    /** What the name field is for: a collection, or one of Foldcade's folders. */
+    fun renameLabel(): String =
+        if (renamingId?.let { board.folders[it] }?.collection == true) Copy.collectionName else Copy.folderName
 
     fun editRename(text: String) {
         if (renamingId != null) renameDraft = text.replace('\n', ' ')
     }
 
-    /** Opens the icon picker for the folder the user made at [index]. */
+    /** Opens the icon picker for the collection at [index]. */
     fun pickIcon(index: Int) {
         val id = visibleSlots(board).getOrNull(index) ?: return
         val folder = board.folders[id]?.takeIf { it.userMade } ?: return
@@ -273,19 +346,10 @@ class HomeSession(raw: String?) {
         iconCell = index
     }
 
-    /** Hides the tile at [index], or spills the folder there. Returns where focus goes. */
+    /** Does what X says for the tile at [index] (see [removeVerb]). Returns where focus goes. */
     fun remove(index: Int): Int {
         board = removeFromHome(board, index)
         return index.coerceAtMost((visibleCount() - 1).coerceAtLeast(0))
-    }
-
-    /**
-     * Places the All item at [index] on Home: back in its platform's or library's
-     * folder, else the first free slot.
-     */
-    fun addFocused(index: Int) {
-        val item = allRows().getOrNull(index) ?: return
-        board = addItemToHome(board, item, platforms)
     }
 
     /**
@@ -301,15 +365,18 @@ class HomeSession(raw: String?) {
         return true
     }
 
-    /** Destinations for placing an app from a shelf, with Home first. */
+    /** Where an app from a shelf can go (see [app.foldcade.language.placementChoices]). */
     fun placementDestinations(id: String): List<FolderChoice> =
         app.foldcade.language.placementChoices(board, catalog().firstOrNull { it.id == id }, platforms)
 
-    /** Places a catalog item at the chosen destination, moving any existing home tile. */
+    /**
+     * Places a catalog item at the chosen destination: a pin on Home, a collection, or a folder,
+     * which it then sits in instead of its old one. A hidden item comes back.
+     */
     fun placeIn(id: String, folderId: String?): Boolean {
         if (catalog().none { it.id == id }) return false
         if (folderId != null && folderId !in board.folders) return false
-        val next = moveToFolder(board.copy(hidden = board.hidden - id), id, folderId, catalog(), platforms)
+        val next = fileGame(board, id, folderId, catalog(), platforms)
         if (next == board) return false
         board = next
         return true
@@ -368,7 +435,10 @@ class HomeSession(raw: String?) {
         return step(null, iconCell)
     }
 
-    /** A saves the name, B keeps the old one. The keyboard types into [renameDraft]. */
+    /**
+     * A saves the name, B keeps the old one. The keyboard types into [renameDraft]. The focus
+     * stays where the field opened, which is the new collection or the game it was made for.
+     */
     private fun handleRename(meaning: Meaning): HomeStep {
         val id = renamingId ?: return step(null, focusIndex())
         when (meaning) {
@@ -379,8 +449,7 @@ class HomeSession(raw: String?) {
             Meaning.Back, Meaning.CancelHold -> renamingId = null
             else -> Unit
         }
-        val at = visibleSlots(board).indexOf(id)
-        return step(null, if (at >= 0) at else focusIndex())
+        return step(null, renameCell)
     }
 
     /**
@@ -435,7 +504,7 @@ class HomeSession(raw: String?) {
     private fun activateCell(index: Int, onBottom: Boolean = false): HomeStep {
         val face = face(index) ?: return step(null, index)
         val id = face.id ?: return step(null, index)
-        if (face.pinned) {
+        if (face.allTile) {
             rootIndex = index
             board = openAll(board)
             return step(null, 0)
@@ -469,7 +538,7 @@ class HomeSession(raw: String?) {
                 mark = null,
                 empty = true,
                 folder = false,
-                pinned = false,
+                allTile = false,
                 onGrid = false,
                 platformId = null,
                 androidPackage = null,
@@ -484,7 +553,7 @@ class HomeSession(raw: String?) {
                 mark = MARK_LIBRARY,
                 empty = false,
                 folder = false,
-                pinned = true,
+                allTile = true,
                 onGrid = true,
                 platformId = null,
                 androidPackage = null,
@@ -501,7 +570,7 @@ class HomeSession(raw: String?) {
                 mark = folder.mark,
                 empty = false,
                 folder = true,
-                pinned = false,
+                allTile = false,
                 onGrid = true,
                 platformId = folder.platformId,
                 androidPackage = null,
@@ -517,7 +586,7 @@ class HomeSession(raw: String?) {
             mark = item?.mark,
             empty = false,
             folder = false,
-            pinned = false,
+            allTile = false,
             onGrid = true,
             platformId = item?.platformId ?: game?.platformId,
             androidPackage = id.removePrefix("android:").takeIf { id.startsWith("android:") },

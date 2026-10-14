@@ -3,6 +3,7 @@ package app.foldcade
 import android.content.SharedPreferences
 import app.foldcade.language.BackgroundMotion
 import app.foldcade.language.MotionSpeed
+import app.foldcade.language.savedBeforeCollections
 import app.foldcade.language.AndroidShelf
 import app.foldcade.language.AppShelfRecord
 import app.foldcade.language.AppShelfState
@@ -222,6 +223,20 @@ class SessionStore(private val prefs: SharedPreferences) : SaveMarks {
 
     fun homeBoardRaw(): String? = prefs.getString(KEY_HOME_BOARD, null)?.takeIf { it.isNotBlank() }
 
+    /**
+     * Keeps the saved board, exactly as a release before collections wrote it, the first time
+     * this release loads it. It is written once and never replaced, so a later release could
+     * put the old Home back. Nothing reads it yet.
+     */
+    fun keepHomeBoardBeforeCollections() {
+        val raw = homeBoardRaw() ?: return
+        if (!savedBeforeCollections(raw) || prefs.contains(KEY_HOME_BOARD_BEFORE_COLLECTIONS)) return
+        prefs.edit().putString(KEY_HOME_BOARD_BEFORE_COLLECTIONS, raw).apply()
+    }
+
+    /** The board [keepHomeBoardBeforeCollections] kept, or null when there was none to keep. */
+    fun homeBoardBeforeCollections(): String? = prefs.getString(KEY_HOME_BOARD_BEFORE_COLLECTIONS, null)
+
     fun saveHomeBoard(raw: String) {
         // Focus, open panels, and unfinished edits can publish the same saved layout.
         if (raw == homeBoardRaw()) return
@@ -390,6 +405,7 @@ class SessionStore(private val prefs: SharedPreferences) : SaveMarks {
         private const val KEY_THEME = "theme"
         private const val KEY_LIBRARY_SORT = "library_sort"
         private const val KEY_HOME_BOARD = "home_board"
+        private const val KEY_HOME_BOARD_BEFORE_COLLECTIONS = "home_board_before_collections"
         private const val KEY_SHELF_GAMES = "android_shelf_games"
         private const val KEY_SHELF_APPS = "android_shelf_apps"
         private const val KEY_SHELF_HIDDEN = "android_shelf_hidden"
