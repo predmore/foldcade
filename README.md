@@ -59,13 +59,13 @@ Press **A** to play on the top screen or **X** on the bottom. Games that need bo
 | :---: | :---: |
 | ![The L1 drawer: this week's play activity as a small bar chart, round buttons for Home, All, Games, and Apps, then Edit home and Settings.](docs/images/menu-l1.webp) | ![The R1 drawer: date, battery, and Wi-Fi, round buttons for Wi-Fi, Bluetooth, Battery, and Android settings, and a brightness slider.](docs/images/menu-r1.webp) |
 
-**L1** opens Home, All, Games, Apps, Edit home, and Settings. **Start** opens Settings from the grid and closes it again. **Select** opens Find. **L2 / R2** jump letters in All and the Android shelves, with a brief letter on the top screen; on Home and inside folders they move four columns at a time. Stick clicks do nothing. The Android Home button closes a folder, All, or a shelf and returns to its Home tile. **R1** gives you Wi-Fi, Bluetooth, battery, brightness for both screens, and notifications you can open or clear.
+**L1** opens Home, All, Games, Apps, Edit home, and Settings. **Start** opens Settings from the grid and closes it again. **Select** opens Find. **L2 / R2** jump letters in All (when sorted A–Z), the Android shelves, and Hidden, with a brief letter on the top screen; on Home, inside folders and inside collections they move one screen (four columns) at a time. Stick clicks do nothing. The Android Home button closes a folder, All, or a shelf and returns to its Home tile. **R1** gives you Wi-Fi, Bluetooth, battery, brightness for both screens, and notifications you can open or clear.
 
 ### Tidy up with one button
 
-<img src="docs/images/menu-y.webp" alt="The Y menu over Super Mario 3D Land's art, with Move, Move to, New folder, and Remove from Home." width="640">
+<img src="docs/images/menu-y.webp" alt="The Y menu over Super Mario 3D Land's art, with Move, Add to, Favorite, Art, Pin to Home, Select, and Hide." width="640">
 
-Press **Y** on any tile for what it can do. Press Y twice to pick up a tile, walk it with the D-pad, and press Y or A to put it down; B puts it back. Carried over a collection, a game drops in. Push up from the top row of a folder or collection to carry a game out to Home. **Tidy**, on an empty slot, closes the gaps.
+Press **Y** on any tile for what it can do. Press Y twice to pick up a tile, walk it with the D-pad, and press Y or A to put it down; B puts it back. Carried over a collection, a game waits there: **A** or **Y** adds it, and the D-pad walks on past. While you hold a game in a folder or collection, push **Up** from the top row to raise it to the Home target, then **A** or **Y** carries it onto Home still in your hand. From a folder it stays in the folder and becomes a pin. From a collection it leaves the collection. **New collection** is **Y** on an empty Home slot, on the All tile, or the last row of **Add to ›**. **Select** in the Y menu checks several tiles with **A**, then **Y** to **Add to**, **New collection**, **Pin to Home**, **Favorite**, or **Hide** them at once, with one Undo. **Tidy**, on an empty slot, closes the gaps.
 
 - **Folders** are Foldcade's own, one for each system and source. Each always holds every game of its kind on Home, so a game you file elsewhere never goes missing from its folder.
 - **Collections** are yours. Name them on an on-screen keyboard made for the controller, with quick names like Playing and Backlog one press away, and put a game in as many as you like with **Add to**. Adding a game to a collection leaves it in its folder. A collection is a glossy folder card, so it never looks like one of Foldcade's folders: **Y › Icon** opens an editor on the top screen with ten colors and a glyph for every kind of collection (star, trophy, sword, ghost, hourglass, and more, plus every system). The tile and the preview wear each choice as you move; **A** keeps it, **B** puts the old look back, and **L1**/**R1** change the color from anywhere.
@@ -73,7 +73,7 @@ Press **Y** on any tile for what it can do. Press Y twice to pick up a tile, wal
 - **Favorite** a game and **Favorites** appears on Home. **Recently played** shows up after you play something and lists your last 12 games, newest first.
 - **Hide** takes a game off Home everywhere and keeps its games, downloads, and Android shortcuts intact.
 
-Use **Y › Select** on a game to check several tiles in the current view. The D-pad moves, **A** checks or clears a game, **Y** opens Actions, and **B** finishes without changing anything. File the checked games into a collection, make a new one, pin or favorite them, or hide the whole batch. A mixed collection check means some are already members; choosing it adds the rest. One Undo restores a batch hide.
+During **Select**, the D-pad moves, **A** checks or clears a game, **Y** opens Actions, and **B** finishes without changing anything. A mixed collection check means some are already members; choosing it adds the rest. One Undo restores a batch hide.
 
 ### Hiding and bringing things back
 
