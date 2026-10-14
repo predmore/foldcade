@@ -179,6 +179,21 @@ class MoveFeelTest {
     }
 
     @Test
+    fun yDropsOnlyWhenItIsNotTheCalibratedBack() {
+        // Confirm calibrated to X makes Y the back key: Y then cancels, as the hint says.
+        val xConfirms = FaceMap.standard().copy(confirmKey = KeyEvent.KEYCODE_BUTTON_X, backKey = KeyEvent.KEYCODE_BUTTON_Y)
+        assertEquals(Meaning.CancelHold, meaningOf(KeyEvent.KEYCODE_BUTTON_Y, faces = xConfirms, homeKeys = HomeKeys.Moving))
+        assertEquals(Meaning.Activate, meaningOf(KeyEvent.KEYCODE_BUTTON_X, faces = xConfirms, homeKeys = HomeKeys.Moving))
+        assertEquals(Copy.hintCancel, gridHints(null, HomeKeys.Moving, xConfirms).first { it.key == PromptKey.FaceY }.label)
+        // Confirm on Y: Y drops, as confirm.
+        val yConfirms = FaceMap.standard().copy(confirmKey = KeyEvent.KEYCODE_BUTTON_Y, backKey = KeyEvent.KEYCODE_BUTTON_B)
+        assertEquals(Meaning.Activate, meaningOf(KeyEvent.KEYCODE_BUTTON_Y, faces = yConfirms, homeKeys = HomeKeys.Moving))
+        // The standard map: Y drops silently beside A.
+        assertEquals(Meaning.Activate, meaningOf(KeyEvent.KEYCODE_BUTTON_Y, homeKeys = HomeKeys.Moving))
+        assertEquals(Meaning.CancelHold, meaningOf(KeyEvent.KEYCODE_BUTTON_B, homeKeys = HomeKeys.Moving))
+    }
+
+    @Test
     fun theHintNamesWhatTheDropDoes() {
         fun drop(kind: HoldDrop) = gridHints(null, HomeKeys.Moving, FaceMap.standard(), drop = kind).map { it.label }
         assertEquals(listOf(Copy.hintDrop, Copy.hintCancel), drop(HoldDrop.Place))

@@ -95,9 +95,11 @@ fun meaningOf(
     if (repeatCount > 0 && keyCode in shoulderKeys) {
         return null
     }
-    // Y puts a held tile down as A does, so Y then Y lifts and Y drops without moving a thumb.
-    // A held tile drops once per press.
-    if (homeKeys == HomeKeys.Moving && (keyCode == KeyEvent.KEYCODE_BUTTON_Y || keyCode == faces.confirmKey)) {
+    // Y puts a held tile down as confirm does, so Y then Y lifts and Y drops without moving a
+    // thumb, unless calibration made Y the back key: then it cancels, as the hint says. A held
+    // tile drops once per press.
+    val yDrops = keyCode == KeyEvent.KEYCODE_BUTTON_Y && faces.backKey != KeyEvent.KEYCODE_BUTTON_Y
+    if (homeKeys == HomeKeys.Moving && (yDrops || keyCode == faces.confirmKey)) {
         return if (repeatCount == 0) Meaning.Activate else null
     }
     return when {

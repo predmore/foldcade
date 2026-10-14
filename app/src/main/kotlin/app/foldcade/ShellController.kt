@@ -706,7 +706,7 @@ class ShellController(
 
     fun focusedDownload(): Game? {
         if (!showingHome()) return null
-        val id = home.face(model.focus.cellIndex)?.id ?: return null
+        val id = focusedHomeFace()?.id ?: return null
         if (busyOnDevice(id)) return null
         return home.game(id)?.takeIf { it.availability == Availability.Cached }
     }
@@ -808,6 +808,7 @@ class ShellController(
     /** The activity of the focused game, for the top screen. */
     fun focusedActivity(): TileActivity? {
         if (activity.isEmpty()) return null
+        if (!model.libraryGrid) homeCarry()?.let { return activity[it.id] }
         val source = if (model.libraryGrid) {
             displayOrder(model).getOrElse(model.focus.cellIndex) { model.focus.cellIndex }
         } else {
@@ -1333,9 +1334,17 @@ class ShellController(
     }
 
     fun focusedGame(): ShelfGame? = when {
-        showingHome() -> home.face(model.focus.cellIndex)?.let(::homeShelf)
+        showingHome() -> focusedHomeFace()?.let(::homeShelf)
         else -> tileFromOrder(displaySource(model))
     }
+
+    /**
+     * The Home tile the top screen is about: the one in the hand while a tile is held, which
+     * may be over a group or the Home target, away from the slot under the cursor, else the
+     * focused one. Every hero, record and art lookup reads this, so they agree on one game.
+     */
+    private fun focusedHomeFace(): HomeFace? =
+        homeCarry()?.let { home.faceOf(it.id) } ?: home.face(model.focus.cellIndex)
 
     /** The game cell [index] shows, as [focusedGame] reads the focused cell. Null off the grid. */
     fun gameAt(index: Int): ShelfGame? = when {
@@ -1422,7 +1431,7 @@ class ShellController(
 
     /** The library record behind the focused cell, for its metadata. Null for an app or a shelf tile. */
     fun focusedRecord(): Game? = when {
-        showingHome() -> home.face(model.focus.cellIndex)?.id?.let(home::game)
+        showingHome() -> focusedHomeFace()?.id?.let(home::game)
         else -> focusedEntry()?.game
     }
 
@@ -1434,7 +1443,7 @@ class ShellController(
      */
     fun focusedHero(): HeroSubject? {
         // A tile in the hand stays on top while it walks, over a group too.
-        val carried = homeCarry()?.let { home.face(it.slot) }?.let(::homeShelf)
+        val carried = homeCarry()?.let { home.faceOf(it.id) }?.let(::homeShelf)
         if (carried != null) return heroItem(carried)
         if (showingHome() && home.face(model.focus.cellIndex)?.empty == true) return null
         if (model.gridKind == GridKind.Platforms) {
