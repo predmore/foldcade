@@ -20,6 +20,21 @@ data class HomeUndo(
     } ?: this
     fun afterEdit(before: HomeBoard, after: HomeBoard): HomeUndo? = if (before == after) this else null
 
+    /** Include folder tiles removed by cleanup, without recording unrelated catalog arrivals. */
+    fun withFolderCleanup(current: HomeBoard): HomeUndo {
+        val emptied = board.folders.values.filter { folder ->
+            folder.system && folder.slots.any { it != null } &&
+                after.folders[folder.id]?.slots?.all { it == null } == true &&
+                folder.id in after.slots && folder.id !in current.slots
+        }.map { it.id }.toSet()
+        if (emptied.isEmpty()) return this
+        return copy(after = after.copy(
+            slots = after.slots.map { if (it in emptied) null else it },
+            folders = after.folders - emptied.filter { it !in current.folders }.toSet(),
+            hiddenSlots = after.hiddenSlots + current.hiddenSlots.filterKeys { it in emptied },
+        ))
+    }
+
     /** Catalog arrivals keep their slots; only fields changed by the removal are reversed. */
     fun restore(current: HomeBoard): HomeBoard {
         val folders = current.folders.toMutableMap()

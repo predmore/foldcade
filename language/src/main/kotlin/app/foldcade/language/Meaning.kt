@@ -63,6 +63,7 @@ enum class HomeKeys {
     /** A tile picked up with Move is following the D-pad. */
     Moving,
     AllLibrary,
+    Selecting,
     /** Picker navigation repeats normally; triggers choose a game match. */
     ChoosingArt,
     /** The icon picker for a folder the user made is open. */
@@ -84,7 +85,7 @@ enum class HomeKeys {
  * True while a held key must keep its repeats to itself until it comes up: on the controller
  * keyboard, for a name or for Find, and on Find's results, which can close under a held A.
  */
-val HomeKeys.guardsHeldKeys: Boolean get() = this == HomeKeys.Typing || this == HomeKeys.Finding || this == HomeKeys.FindResults
+val HomeKeys.guardsHeldKeys: Boolean get() = this == HomeKeys.Selecting || this == HomeKeys.Typing || this == HomeKeys.Finding || this == HomeKeys.FindResults
 
 /** Keys that act once per press. Holding one does not repeat it. */
 private val shoulderKeys = setOf(
@@ -133,10 +134,10 @@ fun meaningOf(
         keyCode == KeyEvent.KEYCODE_BUTTON_L1 || keyCode == KeyEvent.KEYCODE_LEFT_BRACKET -> Meaning.LeftPanel
         keyCode == KeyEvent.KEYCODE_BUTTON_R1 || keyCode == KeyEvent.KEYCODE_RIGHT_BRACKET -> Meaning.RightPanel
         keyCode == KeyEvent.KEYCODE_BUTTON_X && (homeKeys == HomeKeys.Idle || homeKeys == HomeKeys.AllLibrary ||
-            homeKeys == HomeKeys.ChoosingArt || homeKeys == HomeKeys.FindResults) ->
+            homeKeys == HomeKeys.ChoosingArt || homeKeys == HomeKeys.FindResults || homeKeys == HomeKeys.Selecting) ->
             Meaning.ActivateBottom
         keyCode == KeyEvent.KEYCODE_BUTTON_Y &&
-            (homeKeys == HomeKeys.Idle || homeKeys == HomeKeys.AllLibrary || homeKeys == HomeKeys.FindResults) ->
+            (homeKeys == HomeKeys.Idle || homeKeys == HomeKeys.AllLibrary || homeKeys == HomeKeys.FindResults || homeKeys == HomeKeys.Selecting) ->
             Meaning.Options
         keyCode == KeyEvent.KEYCODE_BUTTON_START -> Meaning.Menu
         keyCode == KeyEvent.KEYCODE_BUTTON_SELECT -> Meaning.View

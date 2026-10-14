@@ -73,6 +73,8 @@ Press **Y** on any tile for what it can do. Press Y twice to pick up a tile, wal
 - **Favorite** a game and **Favorites** appears on Home. **Recently played** shows up after you play something and lists your last 12 games, newest first.
 - **Hide** takes a game off Home everywhere and keeps its games, downloads, and Android shortcuts intact.
 
+Use **Y › Select** on a game to check several tiles in the current view. The D-pad moves, **A** checks or clears a game, **Y** opens Actions, and **B** finishes without changing anything. File the checked games into a collection, make a new one, pin or favorite them, or hide the whole batch. A mixed collection check means some are already members; choosing it adds the rest. One Undo restores a batch hide.
+
 ### Hiding and bringing things back
 
 Open **L1 › Edit home › Hidden** for hidden games, apps, emulators, streams, and folders removed from Home. The grid is alphabetical; **L2/R2** jumps between letters. Press **Y** on an item, then **Y** again for **Show**. A game returns to its old folder slot when free, its Home pin, and every collection it was in. A removed folder returns to its old Home slot when free.

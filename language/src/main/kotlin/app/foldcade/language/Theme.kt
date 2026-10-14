@@ -330,6 +330,7 @@ fun gridHints(
     val menu = if (options) listOf(HintKey(PromptKey.FaceY, Copy.hintOptions)) else emptyList()
     return when (homeKeys) {
         // Y drops too, unnamed: the thumb that lifted the tile is already on it.
+        HomeKeys.Selecting -> listOf(HintKey(confirm, SelectionCopy.check), HintKey(PromptKey.FaceY, SelectionCopy.actions), HintKey(back, SelectionCopy.done))
         HomeKeys.Moving -> listOf(
             HintKey(confirm, dropLabel(drop)),
             HintKey(back, Copy.hintCancel),

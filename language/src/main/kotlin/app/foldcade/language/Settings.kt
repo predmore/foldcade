@@ -82,7 +82,7 @@ fun settingsRows(category: SettingsCategory, model: PickerModel): List<Row> = wh
  */
 sealed interface RowControl {
     data class Toggle(val on: Boolean) : RowControl
-    data class Check(val on: Boolean) : RowControl
+    data class Check(val on: Boolean, val some: Boolean = false) : RowControl
     data class Choice(val value: String) : RowControl
     data object Opens : RowControl
     data class Value(val text: String) : RowControl
@@ -97,7 +97,7 @@ fun rowControl(row: Row, model: PickerModel, value: String? = rowText(row, model
     Row.Artwork -> RowControl.Toggle(model.artwork)
     in choiceRows -> RowControl.Choice(value.orEmpty())
     Row.MusicVolume, Row.Brightness -> RowControl.None
-    is Row.Collection -> RowControl.Check(model.tileActions?.collections?.any { it.folderId == row.folderId && it.member } == true)
+    is Row.Collection -> model.tileActions?.collections?.firstOrNull { it.folderId == row.folderId }.let { RowControl.Check(it?.member == true, it?.some == true) }
     Row.EditHome, Row.AddToCollection, Row.AddAppTo, is Row.RommConnection,
     Row.AddFolder, Row.AddRomm, Row.SetAsHome, Row.DefaultHomeApp, Row.AndroidSettings, Row.Licenses,
     -> RowControl.Opens

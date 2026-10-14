@@ -292,6 +292,7 @@ sealed interface Row {
 
     /** One collection in Add to. A toggles the focused game in it and the menu stays open. */
     data class Collection(val folderId: String, val label: String) : Row
+    data object SelectTile : Row
     data object Favorite : Row
     data object PinTile : Row
     data class Destination(val folderId: String?, val label: String) : Row
@@ -476,13 +477,15 @@ fun rightStart(): Int = quickSettings().size
 data class FolderChoice(val folderId: String?, val name: String)
 
 /** A collection Add to lists, and whether the focused game is in it. */
-data class CollectionChoice(val folderId: String, val name: String, val member: Boolean)
+data class CollectionChoice(val folderId: String, val name: String, val member: Boolean, val some: Boolean = false)
 
 /**
  * What Y offers for the focused tile on the home board or in All.
  * The menu lists only what applies, so an empty one does not open.
  */
 data class TileActions(
+    val select: Boolean = false,
+    val bulk: List<String>? = null,
     /** The game or group Show on Home goes to. Null leaves the row out: it is nowhere on Home. */
     val showOnHome: String? = null,
     /** The menu still targets a game that left the focused slot. Slot actions no longer apply. */
@@ -517,11 +520,20 @@ data class TileActions(
 
 /** Y's menu: the tile's own actions, then an Android app's shelf actions. */
 fun actionRows(tile: TileActions?, app: AppActions?): List<Row> = buildList {
+    if (tile?.bulk != null) {
+        if (tile.collections != null) add(Row.AddToCollection)
+        if (tile.newCollection) add(Row.NewCollection)
+        if (tile.pin) add(Row.PinTile)
+        if (tile.favorite != null) add(Row.Favorite)
+        if (tile.remove != null) add(Row.RemoveTile)
+        return@buildList
+    }
     if (tile != null) {
         if (tile.undo) add(Row.Undo)
         if (tile.show) add(Row.ShowHidden)
         if (tile.showOnHome != null) add(Row.ShowOnHome)
         if (tile.move) add(Row.MoveTile)
+        if (tile.select) add(Row.SelectTile)
         if (tile.collections != null) add(Row.AddToCollection)
         if (tile.favorite != null) add(Row.Favorite)
         if (tile.art && app == null) add(Row.ChooseArt)
@@ -609,7 +621,7 @@ fun retainMenuRows(previous: PickerModel, next: PickerModel): PickerModel {
 
 private fun validMenuRows(rows: List<Row>, model: PickerModel): List<Row> = rows.filterNot {
     (it == Row.Undo && model.tileActions?.undo != true) ||
-        (model.tileActions?.kept == true && (it == Row.MoveTile || it == Row.RemoveTile || it == Row.HideApp))
+        (model.tileActions?.kept == true && (it == Row.SelectTile || it == Row.MoveTile || it == Row.RemoveTile || it == Row.HideApp))
 }
 
 fun panelRows(panel: SidePanel, model: PickerModel): List<Row> = validMenuRows(
@@ -712,6 +724,7 @@ fun rowText(row: Row, model: PickerModel): RowText = when (row) {
     Row.ShowOnHome -> RowText(FindCopy.showOnHome)
     Row.AddToCollection -> RowText(Copy.addTo)
     is Row.Collection -> RowText(row.label)
+    Row.SelectTile -> RowText(SelectionCopy.select)
     Row.Favorite -> RowText(if (model.tileActions?.favorite == true) Copy.unfavorite else Copy.favorite)
     Row.PinTile -> RowText(Copy.pinToHome)
     is Row.Destination -> RowText(row.label)
@@ -787,6 +800,10 @@ sealed interface Effect {
     data object DismissButtonLabels : Effect
     /** Choose art for [gameId], or the focused game when null. */
     data class ChooseArt(val gameId: String? = null) : Effect
+    /** Start checking games in the current view, with this game already checked. */
+    data class SelectTile(val gameId: String) : Effect
+    /** The checked ids in view order, retained by the menu rather than read from grid focus. */
+    data class Bulk(val action: BulkAction, val ids: List<String>, val collectionId: String? = null) : Effect
     /** Pick up the focused tile to move it. */
     data object MoveTile : Effect
 
@@ -1677,19 +1694,21 @@ private fun activateRow(
         Row.ShowApp -> model.copy(panel = null, focus = panel.grid) to Effect.ShowApp
         Row.AddToCollection -> model.copy(panel = panel.copy(level = PanelLevel.Collections, index = 0, via = panel.level)) to null
         // The check flips here so it moves at once. The shell's own list replaces this one.
-        is Row.Collection -> model.copy(panel = panel, tileActions = model.tileActions?.toggled(row.folderId)) to
+        is Row.Collection -> if (model.tileActions?.bulk != null) model.copy(panel = null, focus = panel.grid) to
+            Effect.Bulk(BulkAction.Collection, model.tileActions.bulk, row.folderId) else model.copy(panel = panel, tileActions = model.tileActions?.toggled(row.folderId)) to
             Effect.ToggleCollection(row.folderId, model.tileActions?.game)
-        Row.Favorite -> model.copy(panel = null, focus = panel.grid) to Effect.ToggleFavorite(model.tileActions?.game)
-        Row.PinTile -> model.copy(panel = null, focus = panel.grid) to Effect.PinTile(model.tileActions?.game)
+        Row.SelectTile -> model.copy(panel = null, focus = panel.grid) to model.tileActions?.game?.let(Effect::SelectTile)
+        Row.Favorite -> model.copy(panel = null, focus = panel.grid) to (model.tileActions?.bulk?.let { Effect.Bulk(BulkAction.Favorite, it) } ?: Effect.ToggleFavorite(model.tileActions?.game))
+        Row.PinTile -> model.copy(panel = null, focus = panel.grid) to (model.tileActions?.bulk?.let { Effect.Bulk(BulkAction.Pin, it) } ?: Effect.PinTile(model.tileActions?.game))
         is Row.Destination -> model.copy(panel = null, focus = panel.grid) to Effect.AddAppTo(row.folderId)
         Row.ChooseArt -> model.copy(panel = null, focus = panel.grid) to Effect.ChooseArt(model.tileActions?.game)
         Row.MoveTile -> model.copy(panel = null, focus = panel.grid) to Effect.MoveTile
         Row.Tidy -> model.copy(panel = null, focus = panel.grid) to Effect.Tidy
         Row.ShowOnHome -> model.copy(panel = null, focus = panel.grid) to Effect.ShowOnHome(model.tileActions?.showOnHome)
-        Row.NewCollection -> model.copy(panel = null, focus = panel.grid) to Effect.NewCollection(model.tileActions?.game)
+        Row.NewCollection -> model.copy(panel = null, focus = panel.grid) to (model.tileActions?.bulk?.let { Effect.Bulk(BulkAction.NewCollection, it) } ?: Effect.NewCollection(model.tileActions?.game))
         Row.RenameFolder -> model.copy(panel = null, focus = panel.grid) to Effect.RenameFolder
         Row.FolderIcon -> model.copy(panel = null, focus = panel.grid) to Effect.ChooseFolderIcon
-        Row.RemoveTile -> model.copy(panel = null, focus = panel.grid) to Effect.RemoveTile
+        Row.RemoveTile -> model.copy(panel = null, focus = panel.grid) to (model.tileActions?.bulk?.let { Effect.Bulk(BulkAction.Hide, it) } ?: Effect.RemoveTile)
         Row.Undo -> model.copy(panel = null, focus = panel.grid) to Effect.Undo
         Row.ShowHidden -> model.copy(panel = null, focus = panel.grid) to Effect.ShowHidden(model.tileActions?.game)
         Row.DeleteShortcut -> model.copy(panel = null, focus = panel.grid) to Effect.DeleteShortcut(model.tileActions?.game)

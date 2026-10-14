@@ -2,6 +2,12 @@ package app.foldcade
 
 import app.foldcade.api.plugin.Availability
 import app.foldcade.api.plugin.Game
+import app.foldcade.language.HomeSelection
+import app.foldcade.language.BulkAction
+import app.foldcade.language.bulkCollectionChoices
+import app.foldcade.language.bulkCollection
+import app.foldcade.language.bulkNewCollection
+import app.foldcade.language.bulkHide
 import app.foldcade.language.LibrarySort
 import app.foldcade.language.Copy
 import app.foldcade.language.LaunchableApp
@@ -108,19 +114,70 @@ class HomeSession(raw: String?, nowMillis: Long = System.currentTimeMillis()) {
     /**
      * The board on screen. While a tile is held, the walk is measured against the board as it
      * was at pickup, so a library's report then waits in [pendingMerge]: merged into that walk,
-     * it would be undone by the next step. Whatever puts the tile down, or back, merges it.
+     * it would be undone by the next step. Selection also keeps its view steady until it ends.
+     * Putting a tile down, cancelling, or finishing selection merges the latest report.
      */
     var board: HomeBoard = decodeHome(raw, nowMillis).let { it.copy(collectionSerial = app.foldcade.language.collectionHighWater(it)) }
         private set(value) {
             field = value
+            selection = selection?.inView(animToken())
             val waiting = pendingMerge ?: return
-            if (value.hold != null) return
+            if (value.hold != null || selection != null) return
             pendingMerge = null
             merge(waiting)
         }
 
-    /** The last report that came while a tile was held. Null when none waits. */
+    /** The last report that came while a tile was held or games were checked. Null when none waits. */
     private var pendingMerge: PendingMerge? = null
+
+    var selection: HomeSelection? = null
+        private set
+
+    fun selectedIds(): List<String> = selection?.ordered(faces().map { it.id }).orEmpty()
+
+    fun startSelection(id: String) {
+        if (faces().none { it.id == id && !it.folder && !it.allTile && !it.empty }) return
+        selection = HomeSelection(animToken(), setOf(id))
+    }
+
+    fun finishSelection() {
+        selection = null
+        board = board
+    }
+
+    /** Undo records only the edit, after the deferred report and before folder cleanup. */
+    var bulkBefore: HomeBoard? = null
+        private set
+    var bulkAfter: HomeBoard? = null
+        private set
+
+    fun bulk(action: BulkAction, ids: List<String>, collectionId: String?, index: Int): Int {
+        if (selection == null || ids.isEmpty()) return index
+        finishSelection()
+        bulkBefore = board
+        val name = "${Copy.collection} ${board.folders.values.count { it.collection && it.id != HOME_FAVORITES } + 1}"
+        val made = nextUserFolderId(board)
+        board = when (action) {
+            BulkAction.Collection -> collectionId?.let { bulkCollection(board, it, ids) } ?: board
+            BulkAction.NewCollection -> bulkNewCollection(board, made, name, ids)
+            BulkAction.Hide -> bulkHide(board, ids)
+            BulkAction.Favorite -> ids.fold(board) { next, id -> if (favorite(next, id)) next else toggleFavorite(next, id) }
+            BulkAction.Pin -> ids.filter { !pinned(board, it) }.fold(board) { next, id ->
+                catalog().firstOrNull { it.id == id }?.let { pinItemToHome(next, it, platforms) } ?: pinToHome(next, id)
+            }
+        }
+        bulkAfter = board
+        if (action == BulkAction.NewCollection && made in board.folders) openNaming(made, index, fresh = true)
+        return index
+    }
+
+    private fun bulkActions(): TileActions {
+        val ids = selectedIds()
+        if (ids.isEmpty()) return TileActions()
+        return TileActions(bulk = ids, collections = bulkCollectionChoices(board, ids), newCollection = true,
+            favorite = false.takeIf { ids.any { !favorite(board, it) } },
+            pin = ids.any { !pinned(board, it) }, remove = RemoveVerb.Hide.takeIf { ids.any { it !in board.hidden } })
+    }
 
     var sort: LibrarySort = LibrarySort.Listed
     var lastPlayed: (String) -> Long? = { null }
@@ -169,7 +226,7 @@ class HomeSession(raw: String?, nowMillis: Long = System.currentTimeMillis()) {
     ) {
         val report = PendingMerge(shelfItems, appItems, libraryItems, platformList, remembered, unsettled, hidden)
         // A later report replaces one still waiting; the games it remembers add up.
-        if (board.hold != null) {
+        if (board.hold != null || selection != null) {
             pendingMerge = report.copy(remembered = pendingMerge?.remembered.orEmpty() + remembered)
             return
         }
@@ -228,6 +285,7 @@ class HomeSession(raw: String?, nowMillis: Long = System.currentTimeMillis()) {
         iconPick != null -> HomeKeys.PickingIcon
         typing != null -> HomeKeys.Typing
         board.hold != null -> HomeKeys.Moving
+        selection != null -> HomeKeys.Selecting
         board.allOpen -> HomeKeys.AllLibrary
         else -> HomeKeys.Idle
     }
@@ -241,6 +299,18 @@ class HomeSession(raw: String?, nowMillis: Long = System.currentTimeMillis()) {
         if (board.editing) return handleMove(meaning, index, repeatCount)
         // A held A or X opens or launches once. Still down after a drop, it does nothing more.
         if (repeatCount > 0 && (meaning == Meaning.Activate || meaning == Meaning.ActivateBottom)) return step(null, index)
+        selection?.let { checks ->
+            when (meaning) {
+                Meaning.Activate -> {
+                    if (repeatCount == 0) selection = checks.toggle(slotGame(index), index)
+                    return step(null, index)
+                }
+                Meaning.Back -> { finishSelection(); return step(null, index) }
+                Meaning.ActivateBottom, Meaning.View, Meaning.Menu, Meaning.LeftPanel, Meaning.RightPanel -> return step(null, index)
+                else -> Unit
+            }
+            return null
+        }
         if (board.allOpen) return handleAll(meaning, index)
         return when (meaning) {
             Meaning.Activate -> activateCell(index)
@@ -261,18 +331,19 @@ class HomeSession(raw: String?, nowMillis: Long = System.currentTimeMillis()) {
      */
     fun actions(index: Int): TileActions? {
         if (iconPick != null || renamingId != null || board.editing) return null
+        if (selection != null) return bulkActions()
         val held = menuGame
         if (held != null && slotGame(index) != held) return gameActions(held, move = false, pin = false, remove = null).copy(kept = true)
         if (board.allOpen) {
             val item = allRows().getOrNull(index) ?: return null
             return gameActions(item.id, move = false, pin = !pinned(board, item.id), remove = null)
-                .copy(showOnHome = item.id.takeIf { homeLanding(board, it) != null })
+                .copy(select = true, showOnHome = item.id.takeIf { homeLanding(board, it) != null })
         }
         if (index < 0) return null
         val open = board.openFolderId?.let { board.folders[it] }
         val id = visibleSlots(board).getOrNull(index)
         if (open?.recent == true) {
-            return id?.let { gameActions(it, move = false, pin = !pinned(board, it), remove = null) }
+            return id?.let { gameActions(it, move = false, pin = !pinned(board, it), remove = null).copy(select = true) }
         }
         val gaps = canTidy(board)
         // An empty slot, or one past the last tile, moves as a tile does, makes a collection on
@@ -283,7 +354,7 @@ class HomeSession(raw: String?, nowMillis: Long = System.currentTimeMillis()) {
         if (folder != null) {
             return TileActions(move = true, rename = true, icon = folder.userMade, remove = removeVerb(board, index), tidyBoard = gaps)
         }
-        return gameActions(id, move = true, pin = open?.system == true && !pinned(board, id), remove = removeVerb(board, index), tidyBoard = gaps)
+        return gameActions(id, move = true, pin = open?.system == true && !pinned(board, id), remove = removeVerb(board, index), tidyBoard = gaps).copy(select = true)
     }
 
     private fun gameActions(id: String, move: Boolean, pin: Boolean, remove: RemoveVerb?, tidyBoard: Boolean = false): TileActions = TileActions(
@@ -342,6 +413,7 @@ class HomeSession(raw: String?, nowMillis: Long = System.currentTimeMillis()) {
      */
     fun reveal(id: String): Int? {
         val spot = homeLanding(board, id) ?: return null
+        finishSelection()
         closeTyping()
         iconPick = null
         board = closeAll(closeFolder(leaveEdit(board)))
@@ -402,6 +474,10 @@ class HomeSession(raw: String?, nowMillis: Long = System.currentTimeMillis()) {
      * Ends a menu's hold on its game, so the next menu reads the focused slot again. True
      * when there was one, and the menu's rows need reading again.
      */
+    fun keepMenu(id: String?) {
+        menuGame = id?.takeIf { it != HOME_ALL && it !in board.folders }
+    }
+
     fun releaseMenu(): Boolean {
         if (menuGame == null) return false
         menuGame = null
@@ -562,6 +638,7 @@ class HomeSession(raw: String?, nowMillis: Long = System.currentTimeMillis()) {
      * keeps the look it had: nothing it showed was saved. Returns the root tile to focus.
      */
     fun showRoot(): Int {
+        finishSelection()
         closeTyping()
         iconPick = null
         board = closeAll(closeFolder(cancelHold(board)))
@@ -574,6 +651,7 @@ class HomeSession(raw: String?, nowMillis: Long = System.currentTimeMillis()) {
     }
 
     fun showAll() {
+        finishSelection()
         closeTyping()
         board = openAll(board)
     }
