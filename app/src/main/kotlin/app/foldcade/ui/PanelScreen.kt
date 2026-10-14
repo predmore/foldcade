@@ -274,6 +274,10 @@ fun PanelHost(activity: FoldcadeHomeActivity, displays: Displays) {
         Panel.Bottom -> HostScreen.Bottom
         null -> null
     }
+    androidx.compose.runtime.DisposableEffect(screen, activity.inputWindow) {
+        screen?.let { app.shell.registerInputWindow(it, activity.inputWindow) }
+        onDispose { app.shell.cancelDeleteHold(activity.inputWindow) }
+    }
     val ownsBottom = session.surfaceOn(Panel.Bottom) != null
     // A full-screen page on the other screen leaves this one its command center, not a blurred grid.
     val besidePage = screen != null && pageBeside(model, session, screen) != null
@@ -2141,10 +2145,10 @@ private fun PanelRows(
             val destructive = row == LanguageRow.RemoveDownload || row == LanguageRow.DeleteShortcut
             val press = if (!interactive) Modifier else if (destructive) Modifier.pointerInput(row) {
                 detectTapGestures(onPress = {
-                    app.shell.setPromptHeld(promptKeyOf(app.shell.model.faceMap.confirmKey) ?: PromptKey.FaceA, true)
+                    app.shell.setPromptHeld(promptKeyOf(app.shell.model.faceMap.confirmKey) ?: PromptKey.FaceA, true, app.shell.inputWindow(screen))
                     app.shell.touchPanel(index, screen)
                     try { tryAwaitRelease() } finally {
-                        onEffect(app.shell.setPromptHeld(promptKeyOf(app.shell.model.faceMap.confirmKey) ?: PromptKey.FaceA, false))
+                        onEffect(app.shell.setPromptHeld(promptKeyOf(app.shell.model.faceMap.confirmKey) ?: PromptKey.FaceA, false, app.shell.inputWindow(screen)))
                     }
                 })
             } else Modifier.hostPress(step)

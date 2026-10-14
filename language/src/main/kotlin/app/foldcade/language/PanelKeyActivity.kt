@@ -22,6 +22,10 @@ abstract class PanelKeyActivity : ComponentActivity() {
 
     protected abstract fun onMeaning(meaning: Meaning)
 
+    protected open fun onInputKey(meaning: Meaning?, key: Int): Boolean = false
+
+    protected open fun onInputCanceled() = Unit
+
     protected open fun onMeaningReleased(meaning: Meaning) = Unit
 
     protected open fun onMeaningRepeated(meaning: Meaning, repeatCount: Int) = onMeaning(meaning)
@@ -75,6 +79,7 @@ abstract class PanelKeyActivity : ComponentActivity() {
     override fun onKeyDown(keyCode: Int, event: KeyEvent): Boolean {
         val prompt = promptKeyOf(keyCode)
         if (prompt != null && event.repeatCount == 0) onPromptHeld(prompt, true)
+        if (onInputKey(meaningOf(keyCode, 0, faceMap(), homeKeys()), keyCode)) return true
         if (prompt != null && prompt.face && event.repeatCount == 0 && capturingConfirm()) {
             onCalibrateConfirm(prompt)
             return true
@@ -91,6 +96,7 @@ abstract class PanelKeyActivity : ComponentActivity() {
     }
 
     override fun onKeyUp(keyCode: Int, event: KeyEvent): Boolean {
+        if (event.isCanceled) onInputCanceled()
         val prompt = promptKeyOf(keyCode)
         if (prompt != null) onPromptHeld(prompt, false)
         typingKeys.up(keyCode, event.isCanceled)

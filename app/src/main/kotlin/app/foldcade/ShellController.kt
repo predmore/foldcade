@@ -239,7 +239,12 @@ class ShellController(
     var model: PickerModel
         get() = current
         private set(next) {
-            current = next.copy(firstColumn = shownFirstColumn(current))
+            val canceled = current.deleteHold != null && (next.panel == null || next.panel != current.panel || next.dialog != null || next.settings != null || next.connectOpen)
+            current = next.copy(firstColumn = shownFirstColumn(current),
+                deleteHold = if (canceled) null else next.deleteHold,
+                deleteProgress = if (canceled) 0f else next.deleteProgress,
+                deleteShake = next.deleteShake + if (canceled) 1 else 0)
+            if (canceled) cue(next.themeIndex, "back")
             closeArtAfterFocusChange()
         }
 
@@ -322,25 +327,48 @@ class ShellController(
     private var undoFocus = GridFocus()
     private var undoGrid = HomeGrid.StandIns
     private var completingDelete = false
+    private val inputWindows = mutableMapOf<String, Boolean>()
+    private val screenWindows = mutableMapOf<HostScreen, String>()
+    private val inputKeys = mutableMapOf<String, Int>()
+
+    fun registerInputWindow(screen: HostScreen, window: String) { screenWindows[screen] = window }
+    fun inputWindow(screen: HostScreen): String = screenWindows[screen] ?: screen.name
+
+    fun inputFocus(window: String, focused: Boolean) {
+        inputWindows[window] = focused
+        if (!focused) cancelDeleteHold(window)
+    }
+
+    /** A second key belongs to a fresh action, so it first cancels and consumes this hold. */
+    fun inputKey(meaning: Meaning?, window: String, key: Int? = null): Boolean {
+        if (key != null) inputKeys[window] = key
+        val hold = model.deleteHold ?: return false
+        if (hold.meaning == meaning && hold.inputWindow == window && (hold.inputKey == null || hold.inputKey == key)) return false
+        cancelDelete()
+        return true
+    }
 
     private fun activeUndo(): HomeUndo? = undo?.takeIf { it.available(nowMillis()) }
 
     fun tickRecovery(): Effect? {
         if (undo != null && activeUndo() == null) { undo = null; publish(model.copy(undoVerb = null)) }
         val hold = model.deleteHold ?: return null
+        if (inputWindows[hold.inputWindow] == false) { cancelDelete(); return null }
         val selected = model.panel?.let { panelRows(it, model).getOrNull(it.index) }
         if (selected != hold.row || model.tileActions?.game != hold.gameId) { cancelDelete(); return null }
         if (hold.complete(nowMillis())) {
             model = model.copy(deleteHold = null, deleteProgress = 0f)
             completingDelete = true
             cue(model.themeIndex, "notify")
-            return try { onMeaning(Meaning.Activate, HostScreen.Top) } finally { completingDelete = false }
+            return try { onMeaning(Meaning.Activate, HostScreen.Top, inputWindow = hold.inputWindow) } finally { completingDelete = false }
         }
         model = model.copy(deleteProgress = hold.progress(nowMillis()))
         return null
     }
 
-    fun cancelDeleteHold() = cancelDelete()
+    fun cancelDeleteHold(window: String? = null) {
+        if (window == null || model.deleteHold?.inputWindow == window) cancelDelete()
+    }
 
     private fun cancelDelete() {
         if (model.deleteHold == null) return
@@ -348,21 +376,21 @@ class ShellController(
         cue(model.themeIndex, "back")
     }
 
-    fun onMeaning(meaning: Meaning, screen: HostScreen, repeatCount: Int = 0): Effect? {
+    fun onMeaning(meaning: Meaning, screen: HostScreen, repeatCount: Int = 0, inputWindow: String = inputWindow(screen)): Effect? {
+        if (!completingDelete && model.deleteHold != null) {
+            inputKey(meaning, inputWindow, inputKeys[inputWindow])
+            return null
+        }
         val panel = model.panel
         val rows = panel?.let { panelRows(it, model) }.orEmpty()
         val at = if (meaning == Meaning.Activate) panel?.index?.coerceIn(0, (rows.size - 1).coerceAtLeast(0)) else chordIndex(rows, meaning)
         val row = at?.let { rows.getOrNull(it) }
         if (!completingDelete && row != null && (row == Row.RemoveDownload || row == Row.DeleteShortcut)) {
-            if (model.deleteHold == null && repeatCount == 0) {
+            if (model.deleteHold == null && repeatCount == 0 && inputWindows[inputWindow] != false) {
                 val key = if (meaning == Meaning.ActivateBottom) PromptKey.FaceX else promptKeyOf(model.faceMap.confirmKey) ?: PromptKey.FaceA
-                model = model.copy(panel = panel?.copy(index = at), deleteHold = DeleteHold(row, key, nowMillis(), model.tileActions?.game, meaning), deleteProgress = 0f)
+                model = model.copy(panel = panel?.copy(index = at), deleteHold = DeleteHold(row, key, nowMillis(), model.tileActions?.game, meaning, inputWindow, inputKeys[inputWindow]), deleteProgress = 0f)
             }
             return null
-        }
-        if (model.deleteHold != null) {
-            if (meaning == Meaning.Activate || meaning == Meaning.ActivateBottom) return null
-            cancelDelete()
         }
         if (model.homeGrid == HomeGrid.HiddenApps && model.panel == null && (meaning == Meaning.Activate || meaning == Meaning.ActivateBottom)) return null
         val before = home.board
@@ -1202,8 +1230,8 @@ class ShellController(
         )
     }
 
-    fun releaseMeaning(meaning: Meaning): Effect? =
-        if (model.deleteHold?.meaning == meaning) releaseDeleteHold() else null
+    fun releaseMeaning(meaning: Meaning, window: String? = null): Effect? =
+        if (model.deleteHold?.meaning == meaning && (window == null || model.deleteHold?.inputWindow == window)) releaseDeleteHold() else null
 
     private fun releaseDeleteHold(): Effect? {
         val hold = model.deleteHold ?: return null
@@ -1212,8 +1240,8 @@ class ShellController(
         return null
     }
 
-    fun setPromptHeld(key: PromptKey, down: Boolean): Effect? {
-        val effect = if (!down && model.deleteHold?.key == key) releaseDeleteHold() else null
+    fun setPromptHeld(key: PromptKey, down: Boolean, window: String? = null): Effect? {
+        val effect = if (!down && model.deleteHold?.key == key && (window == null || model.deleteHold?.inputWindow == window)) releaseDeleteHold() else null
         val next = if (down) model.held + key else model.held - key
         if (next != model.held) model = model.copy(held = next)
         return effect
@@ -1520,7 +1548,7 @@ class ShellController(
             publish(model.copy(panel = panel.copy(index = index)))
             return null
         }
-        return onMeaning(Meaning.Activate, screen)
+        return onMeaning(Meaning.Activate, screen, inputWindow = inputWindow(screen))
     }
 
     /** A tap on a settings category shows its rows. A second tap steps into them. */

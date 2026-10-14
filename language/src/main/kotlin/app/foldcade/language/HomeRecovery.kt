@@ -89,7 +89,7 @@ private fun reverseSlots(before: List<String?>, after: List<String?>, current: L
 }
 
 /** Time comes from the host; release never completes an unfinished hold. */
-data class DeleteHold(val row: Row, val key: PromptKey, val started: Long, val gameId: String?, val meaning: Meaning = Meaning.Activate) {
+data class DeleteHold(val row: Row, val key: PromptKey, val started: Long, val gameId: String?, val meaning: Meaning = Meaning.Activate, val inputWindow: String = "", val inputKey: Int? = null) {
     fun progress(now: Long): Float = ((now - started).toFloat() / DELETE_HOLD_MILLIS).coerceIn(0f, 1f)
     fun complete(now: Long): Boolean = now >= started && now - started >= DELETE_HOLD_MILLIS
     fun release(now: Long): Boolean = complete(now)

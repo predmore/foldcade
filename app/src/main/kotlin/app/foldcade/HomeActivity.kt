@@ -180,16 +180,22 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
         return foldcade.store.session.surfaceOn(panel) != null
     }
 
+    internal val inputWindow: String = java.util.UUID.randomUUID().toString()
+
+    override fun onInputKey(meaning: app.foldcade.language.Meaning?, key: Int): Boolean = foldcade.shell.inputKey(meaning, inputWindow, key)
+
+    override fun onInputCanceled() { foldcade.shell.cancelDeleteHold(inputWindow) }
+
     override fun faceMap(): app.foldcade.language.FaceMap = foldcade.shell.model.faceMap
 
     override fun onPromptHeld(key: PromptKey, held: Boolean) {
-        dispatch(foldcade.shell.setPromptHeld(key, held))
+        dispatch(foldcade.shell.setPromptHeld(key, held, inputWindow))
     }
 
     override fun capturingConfirm(): Boolean = foldcade.shell.model.capturingConfirm
 
     override fun onMeaningReleased(meaning: app.foldcade.language.Meaning) {
-        dispatch(foldcade.shell.releaseMeaning(meaning))
+        dispatch(foldcade.shell.releaseMeaning(meaning, inputWindow))
     }
 
     override fun onCalibrateConfirm(key: PromptKey) {
@@ -216,7 +222,7 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
         foldcade.music.duckForThemeSound(meaning)
         val panel = displays.panelFor(this, foldcade.store.session.defaultDisplayIsTop) ?: return
         val screen = if (panel == Panel.Top) HostScreen.Top else HostScreen.Bottom
-        dispatch(foldcade.shell.onMeaning(meaning, screen, repeatCount))
+        dispatch(foldcade.shell.onMeaning(meaning, screen, repeatCount, inputWindow))
     }
 
     /** The command center on this screen, or the grid opened from it, takes the key first. */
@@ -398,6 +404,7 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
     }
 
     override fun onPause() {
+        foldcade.shell.inputFocus(inputWindow, false)
         resumed = false
         refreshShellVisible()
         displays.panelFor(this, foldcade.store.session.defaultDisplayIsTop)?.let(foldcade.music::onHomePause)
@@ -406,6 +413,7 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
 
     override fun onWindowFocusChanged(hasFocus: Boolean) {
         super.onWindowFocusChanged(hasFocus)
+        foldcade.shell.inputFocus(inputWindow, hasFocus)
         if (hasFocus) hideSystemBars()
     }
 
