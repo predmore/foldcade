@@ -418,7 +418,7 @@ class ShellController(
                     row == Row.Tidy -> Copy.tidied
                     row == Row.HideApp || removeVerb == RemoveVerb.Hide -> Copy.hidden
                     removeVerb == RemoveVerb.Unpin -> Copy.unpinned
-                    else -> Copy.removed }, nowMillis(), after = if (bulkIds != null) home.bulkAfter ?: home.board else home.board, shelvesAfter = shelfState)
+                    else -> Copy.removed }, nowMillis(), after = if (bulkIds != null) home.bulkAfter ?: home.board else home.board, shelvesAfter = shelfState).withFolderCleanup(home.board)
                 undoFocus = beforeFocus
                 undoGrid = beforeGrid
             }

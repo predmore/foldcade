@@ -19,6 +19,26 @@ class HomeRecoveryHostTest {
 
     @After fun clean() { Shelf.moonlightGames = emptyList() }
 
+    @Test fun hidingTheLastGameThenUndoRestoresTheSystemFolderInItsRootSlot() {
+        val game = LaunchableApp("solo", "Solo", true)
+        val id = androidHomeId(game.packageName)
+        val folder = HomeFolder(HOME_ANDROID_GAMES, "Games", bucket = HomeKind.AndroidGame, slots = listOf(id))
+        store.saveHomeBoard(encodeHome(HomeBoard(slots = listOf(HOME_ALL, null, folder.id), folders = mapOf(folder.id to folder))))
+        val shell = shell()
+        shell.setInstalledApps(listOf(game), emptySet())
+        focus(shell, 2)
+        shell.onMeaning(Meaning.Activate, HostScreen.Bottom)
+        val before = decodeHome(store.homeBoardRaw())
+        shell.onMeaning(Meaning.Options, HostScreen.Bottom)
+        choose(shell, Row.RemoveTile)
+        assertFalse(folder.id in decodeHome(store.homeBoardRaw()).slots)
+        shell.onMeaning(Meaning.Options, HostScreen.Bottom)
+        choose(shell, Row.Undo)
+        val restored = decodeHome(store.homeBoardRaw())
+        assertEquals(before.slots, restored.slots)
+        assertEquals(before.folders, restored.folders)
+    }
+
     @Test fun shelfHideIsSharedShowRestoresAndUndoRestoresTheExactBoardAndShelf() {
         val shell = shell()
         shell.setInstalledApps(listOf(app, other), emptySet())
