@@ -48,6 +48,17 @@ class SessionTest {
     }
 
     @Test
+    fun theIconEditorTakesTheHeroOrBesideAnAppTheGrid() {
+        assertEquals(Panel.Top, Session().editorPanel())
+        // A game on the bottom: the top browses, and the editor covers that grid.
+        val bottom = Session().launch(one, Panel.Bottom)
+        assertNull(bottom.editorPanel())
+        assertEquals(Panel.Top, bottom.browse(Panel.Top).editorPanel())
+        assertEquals(Panel.Bottom, Session().launch(one).browse(Panel.Bottom).editorPanel())
+        assertNull(Session().launch(one).launch(two).editorPanel())
+    }
+
+    @Test
     fun secondLaunchFillsTheOnlyFreePanel() {
         val bothFull = Session().launch(one).launch(two)
         assertEquals(one, bothFull.topApp)

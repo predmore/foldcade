@@ -12,6 +12,17 @@ import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.drawscope.translate
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.IntSize
+import androidx.compose.ui.geometry.CornerRadius
+import androidx.compose.ui.geometry.RoundRect
+import androidx.compose.ui.graphics.ColorFilter
+import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.drawscope.DrawScope
+import androidx.compose.ui.graphics.drawscope.clipPath
+import androidx.compose.ui.graphics.painter.Painter
+import androidx.compose.runtime.remember
+import androidx.compose.ui.graphics.ImageBitmap
+import app.foldcade.language.CollectionLook
+import app.foldcade.language.screenedInset
 import app.foldcade.language.ThemeIconBlend
 import kotlin.math.min
 import kotlin.math.roundToInt
@@ -29,6 +40,7 @@ internal data class MarkGlyph(
 
 @Composable
 internal fun markGlyph(mark: String, pixels: Int = 256): MarkGlyph? {
+    CollectionLook.parse(mark)?.let { return collectionGlyph(it, pixels) }
     val paint = LocalFoldTheme.current
     val drawable = when (mark) {
         "clamshell" -> R.drawable.mark_clamshell_lit
@@ -73,8 +85,91 @@ private fun markDrawable(mark: String): Int? = when (mark) {
     "folder" -> R.drawable.mark_folder
     "library" -> R.drawable.mark_library
     "console" -> R.drawable.mark_console
+    "star" -> R.drawable.mark_star
+    "heart" -> R.drawable.mark_heart
+    "trophy" -> R.drawable.mark_trophy
+    "crown" -> R.drawable.mark_crown
+    "gem" -> R.drawable.mark_gem
+    "sword" -> R.drawable.mark_sword
+    "shield" -> R.drawable.mark_shield
+    "skull" -> R.drawable.mark_skull
+    "flame" -> R.drawable.mark_flame
+    "rocket" -> R.drawable.mark_rocket
+    "racing-flag" -> R.drawable.mark_racing_flag
+    "puzzle" -> R.drawable.mark_puzzle
+    "ghost" -> R.drawable.mark_ghost
+    "mushroom" -> R.drawable.mark_mushroom
+    "music" -> R.drawable.mark_music
+    "two-players" -> R.drawable.mark_two_players
+    "hourglass" -> R.drawable.mark_hourglass
+    "play-badge" -> R.drawable.mark_play_badge
+    "check-badge" -> R.drawable.mark_check_badge
+    "clock" -> R.drawable.mark_clock
+    "leaf" -> R.drawable.mark_leaf
+    "paw" -> R.drawable.mark_paw
     else -> null
 }
+
+/**
+ * A collection: the folder card in its colour, its gloss, then the glyph in the well on its face.
+ * One body serves every colour, multiplied by the tint, so a pack overrides the shape once.
+ * The tint also paints the tile's glow and edge.
+ */
+@Composable
+private fun collectionGlyph(look: CollectionLook, pixels: Int): MarkGlyph {
+    val body = themeIcon("mark.collection-body", R.drawable.mark_collection_body, pixels).painter
+    val face = themeIcon("mark.collection-face", R.drawable.mark_collection_face, pixels).painter
+    val inset = markGlyph(look.glyph, pixels)?.icon
+    val screened = screenedInset(inset?.resolved)?.let { remember(it) { it.asImageBitmap() } }
+    val painter = remember(body, face, inset?.painter, screened, look.tint) {
+        CollectionPainter(body, face, inset?.painter, screened, look.tint.color)
+    }
+    return MarkGlyph(ThemeIconPainter(painter, null), look.tint.color)
+}
+
+private class CollectionPainter(
+    private val body: Painter,
+    private val face: Painter,
+    private val glyph: Painter?,
+    /** A legacy pack's black-backed glyph, screened so its black disappears into the well. */
+    private val screened: ImageBitmap?,
+    private val tint: Color,
+) : Painter() {
+    override val intrinsicSize: Size get() = body.intrinsicSize
+
+    override fun DrawScope.onDraw() {
+        with(body) { draw(size, colorFilter = ColorFilter.tint(tint, BlendMode.Modulate)) }
+        with(face) { draw(size) }
+        val glyph = glyph ?: return
+        // The well, in the art's 64-unit grid (tools/art/collection_art.py: WELL, GLYPH_BOX).
+        val unit = min(size.width, size.height) / ART_UNITS
+        val well = RoundRect(
+            left = WELL_X * unit, top = WELL_Y * unit, right = (WELL_X + WELL_W) * unit, bottom = (WELL_Y + WELL_H) * unit,
+            cornerRadius = CornerRadius(WELL_R * unit),
+        )
+        val box = GLYPH_BOX * unit
+        clipPath(Path().apply { addRoundRect(well) }) {
+            val left = (WELL_X + WELL_W / 2f) * unit - box / 2f
+            val top = (WELL_Y + WELL_H / 2f) * unit - box / 2f
+            if (screened != null) {
+                drawImage(
+                    screened,
+                    dstOffset = IntOffset(left.roundToInt(), top.roundToInt()),
+                    dstSize = IntSize(box.roundToInt().coerceAtLeast(1), box.roundToInt().coerceAtLeast(1)),
+                    blendMode = BlendMode.Screen,
+                )
+            } else translate(left, top) { with(glyph) { draw(Size(box, box)) } }
+        }
+    }
+}
+
+private const val ART_UNITS = 64f
+private const val WELL_X = 11.2f
+private const val WELL_Y = 25f
+private const val WELL_W = 41.6f
+private const val WELL_H = 29.2f
+private const val WELL_R = 7.4f
+private const val GLYPH_BOX = 36f
 
 @Composable
 internal fun MarkIcon(mark: String, scale: Float) {

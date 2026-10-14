@@ -273,8 +273,10 @@ class HomeBoardTest {
         assertEquals(iconed, setFolderIcon(iconed, "home.user.1", "not-an-icon"))
         val system = mergeHome(HomeBoard(), emptyList(), platforms)
         assertEquals(system, setFolderIcon(system, HOME_GAMENATIVE, "nintendo-3ds"))
-        assertEquals(MARK_FOLDER, FOLDER_ICONS.first())
+        // Theme glyphs lead, then the libraries and platforms. A collection is a folder already.
+        assertEquals(COLLECTION_GLYPHS, FOLDER_ICONS.take(COLLECTION_GLYPHS.size))
         assertTrue(FOLDER_ICONS.containsAll(PLATFORM_MARKS))
+        assertFalse(MARK_FOLDER in FOLDER_ICONS)
     }
 
     @Test

@@ -3,6 +3,8 @@ package app.foldcade
 import app.foldcade.language.ArtMatch
 import app.foldcade.language.ArtKind
 import app.foldcade.language.ArtPickerState
+import app.foldcade.language.IconPick
+import app.foldcade.language.collectionLook
 import app.foldcade.language.TileActions
 import android.util.Log
 import app.foldcade.api.plugin.Availability
@@ -438,11 +440,13 @@ class ShellController(
     fun homeFace(index: Int): HomeFace? = home.face(index)
 
     /**
-     * True while a grid opened from a command center must stay: a dialog or menu is up, or a
-     * name is being typed. Its idle timer would otherwise drop the grid mid-word and leave
-     * the keyboard open with nothing to type into.
+     * True while a grid opened from a command center must stay: a dialog or menu is up, a
+     * name is being typed, or a collection's icon is being chosen. Its idle timer would
+     * otherwise drop the grid mid-word or mid-choice and leave the keyboard or editor open
+     * with nothing to act on.
      */
-    fun holdsCommandCenter(): Boolean = model.dialog != null || model.panel != null || model.connectOpen || typing() != null
+    fun holdsCommandCenter(): Boolean =
+        model.dialog != null || model.panel != null || model.connectOpen || typing() != null || home.iconPick != null
 
     /**
      * The collection or folder being named, as the top screen shows it over the name field.
@@ -453,7 +457,8 @@ class ShellController(
         if (!showingHome()) return null
         val id = home.renamingId ?: return null
         val folder = home.board.folders[id] ?: return null
-        return HeroSubject.Folder(HeroFolder(key = id, name = folder.name, count = folderCount(home.board, id), mark = folder.mark))
+        val mark = collectionLook(folder)?.mark ?: folder.mark
+        return HeroSubject.Folder(HeroFolder(key = id, name = folder.name, count = folderCount(home.board, id), mark = mark))
     }
 
     /** The open controller keyboard on Home. Null when none is open. */
@@ -472,11 +477,14 @@ class ShellController(
     }
 
     /** The open collection icon picker and that collection's name, for the top screen. Null when closed. */
-    fun folderIconPick(): Pair<FolderIconPick, String>? {
+    fun folderIconPick(): Pair<IconPick, String>? {
         if (!showingHome()) return null
         val pick = home.iconPick ?: return null
         return pick to home.board.folders[pick.folderId]?.name.orEmpty()
     }
+
+    /** When the home tile [id] last took a new look, or 0. Its tile settles into it. */
+    fun settledAt(id: String?): Long = home.settled?.takeIf { it.first == id }?.second ?: 0L
 
     /**
      * True when the focused tile is a game that A opens on the top screen and X

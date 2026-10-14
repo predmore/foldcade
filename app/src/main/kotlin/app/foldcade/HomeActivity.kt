@@ -200,7 +200,7 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
 
     override fun onMeaningRepeated(meaning: app.foldcade.language.Meaning, repeatCount: Int) {
         if (commandCenterKey(meaning)) return
-        if (app.foldcade.language.opensTopMenu(meaning) && !foldcade.store.session.islandsOpen()) return
+        if (app.foldcade.language.topMenuKeyBlocked(meaning, foldcade.shell.homeKeys(), foldcade.store.session.islandsOpen())) return
         if (app.foldcade.language.cancelsPendingLaunch(
                 meaning,
                 dialogOpen = foldcade.shell.model.dialog != null,

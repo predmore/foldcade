@@ -101,6 +101,27 @@ class ControllerGridTest {
         val dialog = model.copy(dialog = homePrompt())
         assertNull(reduce(dialog, Meaning.Menu).first.settings)
     }
+    @Test fun theIconEditorKeepsItsShouldersWhenAnAppCoversTheIslands() {
+        // An app on the top screen: L1, R1 and Start have no islands to open.
+        for (meaning in listOf(Meaning.LeftPanel, Meaning.RightPanel, Meaning.Menu)) {
+            assertTrue(topMenuKeyBlocked(meaning, HomeKeys.Idle, islandsOpen = false))
+            assertFalse(topMenuKeyBlocked(meaning, HomeKeys.Idle, islandsOpen = true))
+        }
+        // The editor on the bottom screen still steps its colour with them, as its hint says.
+        val l1 = meaningOf(KeyEvent.KEYCODE_BUTTON_L1, homeKeys = HomeKeys.PickingIcon)
+        val r1 = meaningOf(KeyEvent.KEYCODE_BUTTON_R1, homeKeys = HomeKeys.PickingIcon)
+        assertEquals(Meaning.LeftPanel, l1)
+        assertFalse(topMenuKeyBlocked(l1!!, HomeKeys.PickingIcon, islandsOpen = false))
+        assertFalse(topMenuKeyBlocked(r1!!, HomeKeys.PickingIcon, islandsOpen = false))
+        assertTrue(topMenuKeyBlocked(Meaning.Menu, HomeKeys.PickingIcon, islandsOpen = false))
+        // The keyboard's shoulders move its caret, so they never meet this guard.
+        for (key in listOf(KeyEvent.KEYCODE_BUTTON_L1, KeyEvent.KEYCODE_BUTTON_R1)) {
+            val caret = meaningOf(key, homeKeys = HomeKeys.Typing)!!
+            assertFalse(opensTopMenu(caret))
+            assertFalse(topMenuKeyBlocked(caret, HomeKeys.Typing, islandsOpen = false))
+        }
+    }
+
     @Test fun startSharesMenuOwnershipAndPendingLaunchCancellation() {
         for (meaning in listOf(Meaning.LeftPanel, Meaning.RightPanel, Meaning.Menu)) {
             assertTrue(opensTopMenu(meaning))

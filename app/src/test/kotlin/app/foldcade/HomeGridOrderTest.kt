@@ -24,7 +24,9 @@ import app.foldcade.language.HomeKeys
 import app.foldcade.language.KeyCap
 import app.foldcade.language.KeyboardCopy
 import app.foldcade.language.KeyboardLayout
-import app.foldcade.language.MARK_FOLDER
+import app.foldcade.language.CollectionLook
+import app.foldcade.language.CollectionTint
+import app.foldcade.language.MARK_LIBRARY
 import app.foldcade.language.HOME_FAVORITES
 import app.foldcade.language.PanelLevel
 import app.foldcade.language.RemoveVerb
@@ -333,7 +335,9 @@ class HomeGridOrderTest {
         val shell = shell()
         // On the All tile there is no game to hold, so the collection takes the first free slot.
         choose(shell, Row.NewCollection)
-        val folder = List(shell.model.count) { shell.homeFace(it) }.indexOfFirst { it?.folder == true && it.mark == MARK_FOLDER }
+        // A new collection is a gold folder card showing the stack of games.
+        val plain = CollectionLook(MARK_LIBRARY, CollectionTint.Gold).mark
+        val folder = List(shell.model.count) { shell.homeFace(it) }.indexOfFirst { it?.folder == true && it.mark == plain }
         assertTrue(folder >= 0)
         // The new collection takes the focus and opens its name field.
         assertEquals(folder, shell.model.focus.cellIndex)
@@ -372,19 +376,36 @@ class HomeGridOrderTest {
 
         choose(shell, Row.FolderIcon)
         assertEquals(HomeKeys.PickingIcon, shell.homeKeys())
-        assertEquals(0, shell.folderIconPick()?.first?.index)
-        shell.onMeaning(Meaning.MoveDown, HostScreen.Bottom)
+        assertEquals(FOLDER_ICONS.indexOf(MARK_LIBRARY), shell.folderIconPick()?.first?.glyph)
+        // The tile wears each choice as the cursor reaches it.
         shell.onMeaning(Meaning.MoveRight, HostScreen.Bottom)
-        val chosen = FOLDER_ICONS[FolderIconPick.COLUMNS + 1]
+        val glyph = FOLDER_ICONS[FOLDER_ICONS.indexOf(MARK_LIBRARY) + 1]
+        assertEquals(CollectionLook(glyph, CollectionTint.Gold).mark, shell.homeFace(folder)?.mark)
+        // R1 steps the colour without moving off the glyph.
+        shell.onMeaning(Meaning.RightPanel, HostScreen.Bottom)
+        val chosen = CollectionLook(glyph, CollectionTint.Coral)
+        assertEquals(chosen.mark, shell.homeFace(folder)?.mark)
         shell.onMeaning(Meaning.Activate, HostScreen.Bottom)
         assertNull(shell.folderIconPick())
-        assertEquals(chosen, shell.homeFace(folder)?.mark)
+        assertEquals(chosen.mark, shell.homeFace(folder)?.mark)
+        assertTrue(shell.settledAt(shell.homeFace(folder)?.id) > 0L)
         assertEquals(folder, shell.model.focus.cellIndex)
-        // B leaves the icon as it was.
+        // B puts the old look back, though the tile wore the new one while it was focused.
         choose(shell, Row.FolderIcon)
         shell.onMeaning(Meaning.MoveRight, HostScreen.Bottom)
+        assertFalse(chosen.mark == shell.homeFace(folder)?.mark)
         shell.onMeaning(Meaning.CancelHold, HostScreen.Bottom)
-        assertEquals(chosen, shell.homeFace(folder)?.mark)
+        assertEquals(chosen.mark, shell.homeFace(folder)?.mark)
+        // An open editor holds a command center's grid; going home closes it with the old look.
+        assertFalse(shell.holdsCommandCenter())
+        choose(shell, Row.FolderIcon)
+        assertTrue(shell.holdsCommandCenter())
+        shell.onMeaning(Meaning.RightPanel, HostScreen.Bottom)
+        shell.goHome()
+        assertNull(shell.folderIconPick())
+        assertFalse(shell.holdsCommandCenter())
+        assertEquals(HomeKeys.Idle, shell.homeKeys())
+        assertEquals(chosen.mark, List(shell.model.count) { shell.homeFace(it) }.firstOrNull { it?.title == "Handhelds" }?.mark)
         // A system folder can be renamed but keeps its own icon.
         shell.ingestLibrary("local-folder", listOf(entry("drift", "Drift", "nintendo-ds")), emptyList())
         focus(shell, titles(shell).indexOf("Nintendo DS"))
@@ -916,7 +937,8 @@ class HomeGridOrderTest {
         // The keyboard's hero is the collection being named.
         val named = shell.typingHero()
         assertEquals("${Copy.collection} 2", (named as HeroSubject.Folder).folder.name)
-        assertEquals(MARK_FOLDER, named.folder.mark)
+        // It wears its folder card, as its tile will.
+        assertEquals(CollectionLook(MARK_LIBRARY, CollectionTint.Gold).mark, named.folder.mark)
         shell.onMeaning(Meaning.Back, HostScreen.Bottom)
         assertNull(shell.typingHero())
     }
