@@ -119,6 +119,50 @@ open class MotionStyle(private val style: ThemeStyle = ThemeStyle()) {
         return tween(durationMillis = millis, easing = CubicBezierEasing(reach, arriveCurve[1], arriveCurve[2], arriveCurve[3]))
     }
 
+    /** A held tile's size: lifted off the grid, over its neighbours. */
+    val scaleLift = 1.1f
+
+    /** A held game over a group it can go into shrinks to this, as if about to drop in. */
+    val scaleOver = 0.74f
+
+    /** A group a held game is over opens up to this, and its glow comes on. */
+    val scaleOpen = 1.14f
+
+    /** One slow rise and fall of a held tile. */
+    val durationBob = 1800
+
+    /** How far a held tile rises and falls, in panel pixels. */
+    val bobPx = 7f
+
+    /** How far below a held tile its shadow falls, in panel pixels. */
+    val liftShadowPx = 48f
+
+    /** How much a tile squashes as it lands, or stretches as it lifts, at most. */
+    val squash = 0.08f
+
+    /**
+     * A held tile's bob, for as long as it is held, rising and falling once per
+     * [durationBob]. Slower takes twice as long. Null when Motion is Off or Android
+     * removes animations, so the tile holds still.
+     */
+    fun bob(speed: MotionSpeed, animatorScale: Float): InfiniteRepeatableSpec<Float>? {
+        if (speed == MotionSpeed.Off || reduced(animatorScale)) return null
+        val base = if (speed == MotionSpeed.Slower) durationBob * 2 else durationBob
+        return infiniteRepeatable(
+            tween(durationMillis = duration(base, animatorScale), easing = easingPulse),
+            RepeatMode.Reverse,
+        )
+    }
+
+    /**
+     * A squash or stretch springing back to none, with the playful overshoot so it wobbles
+     * once. Null when Motion is Off or Android removes animations: the tile just lands.
+     */
+    fun squashBack(speed: MotionSpeed, animatorScale: Float): FiniteAnimationSpec<Float>? {
+        if (speed == MotionSpeed.Off || reduced(animatorScale)) return null
+        return spec(if (speed == MotionSpeed.Slower) durationSelect * 2 else durationSelect, animatorScale, easingPlayful)
+    }
+
     /** Fades up and back for as long as it runs. Callers hold still when [reduced]. */
     fun pulse(animatorScale: Float): InfiniteRepeatableSpec<Float> =
         infiniteRepeatable(

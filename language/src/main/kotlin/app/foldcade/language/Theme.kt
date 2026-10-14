@@ -228,6 +228,8 @@ object Copy {
     const val artwork = "Game art"
     const val homeSlot = "Home"
     const val move = "Move"
+    /** Closes the gaps on the board on screen. */
+    const val tidy = "Tidy"
     const val rename = "Rename"
     const val icon = "Icon"
     const val favorite = "Favorite"
@@ -244,6 +246,12 @@ object Copy {
     const val letterJump = "Letter"
     const val screenJump = "Screen"
     const val hintDrop = "Drop"
+    /** A held game over a group that does not have it yet. */
+    const val hintAdd = "Add"
+    /** A held pin over a group the game is already in. */
+    const val hintPutBack = "Put back"
+    /** A held game over the Home target above a group's grid. */
+    const val hintTakeOut = "Take out"
     const val hintCancel = "Cancel"
     const val hintChoose = "Choose"
     const val hintColor = "Color"
@@ -303,6 +311,7 @@ fun gridHints(
     faceMap: FaceMap,
     screens: Boolean = false,
     options: Boolean = false,
+    drop: HoldDrop = HoldDrop.Place,
 ): List<HintKey> {
     val confirm = promptKeyOf(faceMap.confirmKey) ?: PromptKey.FaceA
     val back = promptKeyOf(faceMap.backKey) ?: PromptKey.FaceB
@@ -311,8 +320,9 @@ fun gridHints(
     // Y names its menu only when the focused tile has one.
     val menu = if (options) listOf(HintKey(PromptKey.FaceY, Copy.hintOptions)) else emptyList()
     return when (homeKeys) {
+        // Y drops too, unnamed: the thumb that lifted the tile is already on it.
         HomeKeys.Moving -> listOf(
-            HintKey(confirm, Copy.hintDrop),
+            HintKey(confirm, dropLabel(drop)),
             HintKey(back, Copy.hintCancel),
         )
         // B puts the old look back, so it reads as Cancel.
@@ -344,6 +354,14 @@ fun gridHints(
             if (actions?.back == true) add(HintKey(back, Copy.back))
         }
     }
+}
+
+/** What A says while a tile is held. */
+fun dropLabel(drop: HoldDrop): String = when (drop) {
+    HoldDrop.Place -> Copy.hintDrop
+    HoldDrop.Add -> Copy.hintAdd
+    HoldDrop.PutBack -> Copy.hintPutBack
+    HoldDrop.TakeOut -> Copy.hintTakeOut
 }
 
 fun triggerHints(letters: Boolean): List<HintKey> = listOf(

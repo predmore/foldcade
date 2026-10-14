@@ -40,6 +40,7 @@ import app.foldcade.language.Copy
 import app.foldcade.language.DialogKind
 import app.foldcade.language.DialogState
 import app.foldcade.language.HomeGrid
+import app.foldcade.language.HoldDrop
 import app.foldcade.language.LaunchableApp
 import app.foldcade.language.appsOn
 import app.foldcade.language.hiddenApps
@@ -290,12 +291,14 @@ class ShellController(
             val wasInFolder = home.board.openFolderId != null
             val wasAll = home.board.allOpen
             val wasHeld = home.board.hold != null
-            val step = home.handle(meaning, model.focus.cellIndex)
+            val wasInGroup = home.board.hold?.openFolderId != null
+            val step = home.handle(meaning, model.focus.cellIndex, repeatCount)
             if (step != null && step.handled) {
                 store.saveHomeBoard(home.encoded())
                 showBoard(step.focus ?: model.focus, keepDialog = true)
                 if (!wasInFolder && home.openedFolderHasGame()) Log.i("Foldcade", "library-ui games")
                 if (!wasHeld && home.board.hold != null) Log.i("Foldcade", "home-ui lifted")
+                if (wasInGroup && home.board.hold?.openFolderId == null && home.board.hold != null) Log.i("Foldcade", "home-ui carried out")
                 if (home.board.allOpen && !wasAll) Log.i("Foldcade", "home-ui all-games")
                 val typed = step.cue
                 if (typed != null) typed.slot?.let { cue(model.themeIndex, it) } else cueMeaning(meaning, before, model)
@@ -383,6 +386,7 @@ class ShellController(
                 pickUpHome(model.focus.cellIndex)
                 null
             }
+            Effect.Tidy -> changeHome { home.tidyBoard(it) }
             is Effect.NewCollection -> changeHome { home.newCollection(it, effect.gameId) }
             is Effect.ToggleFavorite -> changeHome { home.toggleFavorite(it, effect.gameId); it }
             is Effect.PinTile -> changeHome { home.pin(it, effect.gameId); it }
@@ -510,6 +514,25 @@ class ShellController(
         showingHome() && home.board.allOpen && model.dialog == null && model.panel == null
 
     fun homeLiftedIndex(): Int? = home.board.hold?.index
+
+    /** The tile in the hand on Home, for the grid to draw lifted. Null while none is. */
+    fun homeCarry(): HomeCarry? = if (homeEditing()) home.carry() else null
+
+    /**
+     * The ids in the Home board's slots on screen, a folder's when one is open. Empty in All
+     * or off Home. The grid reads it to glide a tile that changed slots.
+     */
+    fun homeSlots(): List<String?> =
+        if (showingHome() && !home.board.allOpen) app.foldcade.language.visibleSlots(home.board) else emptyList()
+
+    /** The face of Home game or group [id] wherever it is, for a tile drawn in the hand. */
+    fun homeFaceOf(id: String): HomeFace = home.faceOf(id)
+
+    /** The tile [homeFaceOf] draws, with what its art is found by. */
+    fun homeTileOf(id: String): ShelfGame = homeShelf(home.faceOf(id))
+
+    /** What a drop does now on Home, which A's hint names. */
+    fun homeHoldDrop(): HoldDrop = home.holdDrop() ?: HoldDrop.Place
 
     fun homeAnimToken(): String = home.animToken()
 
@@ -1410,6 +1433,9 @@ class ShellController(
      * so the background shows through instead of a blank name card.
      */
     fun focusedHero(): HeroSubject? {
+        // A tile in the hand stays on top while it walks, over a group too.
+        val carried = homeCarry()?.let { home.face(it.slot) }?.let(::homeShelf)
+        if (carried != null) return heroItem(carried)
         if (showingHome() && home.face(model.focus.cellIndex)?.empty == true) return null
         if (model.gridKind == GridKind.Platforms) {
             val entry = focusedEntry() ?: return null
@@ -1424,18 +1450,20 @@ class ShellController(
         }
         if (model.libraryGrid && model.gridKind != GridKind.Games) return null
         val game = focusedGame() ?: return null
-        return HeroSubject.Item(
-            HeroItem(
-                key = game.id,
-                title = game.title,
-                detail = libraryPlatformName(game.platformId) ?: game.shortText,
-                mark = game.mark,
-                packageName = game.androidPackage,
-                emptyShelfHint = game.emptyShelfHint,
-                availability = game.availabilityLabel,
-            ),
-        )
+        return heroItem(game)
     }
+
+    private fun heroItem(game: ShelfGame): HeroSubject = HeroSubject.Item(
+        HeroItem(
+            key = game.id,
+            title = game.title,
+            detail = libraryPlatformName(game.platformId) ?: game.shortText,
+            mark = game.mark,
+            packageName = game.androidPackage,
+            emptyShelfHint = game.emptyShelfHint,
+            availability = game.availabilityLabel,
+        ),
+    )
 
     fun tileFromOrder(source: Int): ShelfGame? = when {
         model.libraryGrid -> entries.getOrNull(source)?.asShelf()

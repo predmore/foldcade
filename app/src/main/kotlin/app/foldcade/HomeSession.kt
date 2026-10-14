@@ -16,6 +16,7 @@ import app.foldcade.language.RemoveVerb
 import app.foldcade.language.TileActions
 import app.foldcade.language.HomeBoard
 import app.foldcade.language.HomeItem
+import app.foldcade.language.HomeHold
 import app.foldcade.language.HomeKeys
 import app.foldcade.language.KeyFocus
 import app.foldcade.language.TypingCue
@@ -29,6 +30,9 @@ import app.foldcade.language.Meaning
 import app.foldcade.language.Metrics
 import app.foldcade.language.addItemToHome
 import app.foldcade.language.allItems
+import app.foldcade.language.HoldDrop
+import app.foldcade.language.canTakeOut
+import app.foldcade.language.canTidy
 import app.foldcade.language.cancelHold
 import app.foldcade.language.closeAll
 import app.foldcade.language.closeFolder
@@ -59,6 +63,11 @@ import app.foldcade.language.setFolderIcon
 import app.foldcade.language.setAddNewToHome
 import app.foldcade.language.toggleCollection
 import app.foldcade.language.toggleFavorite
+import app.foldcade.language.heldId
+import app.foldcade.language.heldOver
+import app.foldcade.language.holdDrop
+import app.foldcade.language.raiseToHome
+import app.foldcade.language.tidy
 import app.foldcade.language.visibleSlots
 
 /** One cell the grid can draw. A null [id] is an empty slot. */
@@ -189,10 +198,12 @@ class HomeSession(raw: String?, nowMillis: Long = System.currentTimeMillis()) {
     fun animToken(): String = "${board.openFolderId}:${board.allOpen}"
 
     /** True when this meaning was applied. False lets the shared grid reducer move focus. */
-    fun handle(meaning: Meaning, index: Int): HomeStep? {
+    fun handle(meaning: Meaning, index: Int, repeatCount: Int = 0): HomeStep? {
         iconPick?.let { return handleIconPick(it, meaning) }
         typed { it.handle(meaning) }?.let { return it }
-        if (board.editing) return handleMove(meaning, index)
+        if (board.editing) return handleMove(meaning, index, repeatCount)
+        // A held A or X opens or launches once. Still down after a drop, it does nothing more.
+        if (repeatCount > 0 && (meaning == Meaning.Activate || meaning == Meaning.ActivateBottom)) return step(null, index)
         if (board.allOpen) return handleAll(meaning, index)
         return when (meaning) {
             Meaning.Activate -> activateCell(index)
@@ -225,17 +236,20 @@ class HomeSession(raw: String?, nowMillis: Long = System.currentTimeMillis()) {
         if (open?.recent == true) {
             return id?.let { gameActions(it, move = false, pin = !pinned(board, it), remove = null) }
         }
-        // An empty slot, or one past the last tile, moves as a tile does, and makes a collection on the root.
-        if (id == null) return TileActions(move = true, newCollection = open == null)
-        if (id == HOME_ALL) return TileActions(move = true, newCollection = true)
+        val gaps = canTidy(board)
+        // An empty slot, or one past the last tile, moves as a tile does, makes a collection on
+        // the root, and closes the board's gaps.
+        if (id == null) return TileActions(move = true, newCollection = open == null, tidy = gaps, tidyBoard = gaps)
+        if (id == HOME_ALL) return TileActions(move = true, newCollection = true, tidyBoard = gaps)
         val folder = board.folders[id]
         if (folder != null) {
-            return TileActions(move = true, rename = true, icon = folder.userMade, remove = removeVerb(board, index))
+            return TileActions(move = true, rename = true, icon = folder.userMade, remove = removeVerb(board, index), tidyBoard = gaps)
         }
-        return gameActions(id, move = true, pin = open?.system == true && !pinned(board, id), remove = removeVerb(board, index))
+        return gameActions(id, move = true, pin = open?.system == true && !pinned(board, id), remove = removeVerb(board, index), tidyBoard = gaps)
     }
 
-    private fun gameActions(id: String, move: Boolean, pin: Boolean, remove: RemoveVerb?): TileActions = TileActions(
+    private fun gameActions(id: String, move: Boolean, pin: Boolean, remove: RemoveVerb?, tidyBoard: Boolean = false): TileActions = TileActions(
+        tidyBoard = tidyBoard,
         move = move,
         collections = collectionChoices(board, id),
         favorite = favorite(board, id),
@@ -378,6 +392,18 @@ class HomeSession(raw: String?, nowMillis: Long = System.currentTimeMillis()) {
         iconCell = index
     }
 
+    /**
+     * Closes the gaps on the board on screen. The focus keeps its tile, which may have moved
+     * up the strip, or stays in its slot when that was empty. Returns where focus goes.
+     */
+    fun tidyBoard(index: Int): Int {
+        val focused = visibleSlots(board).getOrNull(index)
+        board = tidy(board)
+        val slots = visibleSlots(board)
+        val at = focused?.let { slots.indexOf(it) }?.takeIf { it >= 0 } ?: index
+        return at.coerceAtMost(GridStrip.reach(slots.indexOfLast { it != null } + 1) - 1).coerceAtLeast(0)
+    }
+
     /** Does what X says for the tile at [index] (see [removeVerb]). Returns where focus goes. */
     fun remove(index: Int): Int {
         board = removeFromHome(board, index)
@@ -439,11 +465,12 @@ class HomeSession(raw: String?, nowMillis: Long = System.currentTimeMillis()) {
         board = setAddNewToHome(board, enabled)
     }
 
+    /** A touch drag walks the held tile, as the D-pad does. Letting go drops it, as A does. */
     fun drag(meaning: Meaning) {
         val hold = board.hold ?: return
+        if (hold.overHome) return
         val to = neighbor(hold.index, meaning) ?: return
         board = moveHeld(board, to, catalog(), platforms)
-        if (board.hold == null) board = leaveEdit(board)
     }
 
     fun encoded(): String = encodeHome(board)
@@ -473,10 +500,13 @@ class HomeSession(raw: String?, nowMillis: Long = System.currentTimeMillis()) {
     }
 
     /**
-     * A tile or gap lifted with Move. The D-pad walks it, and onto a folder a game drops in.
-     * A drops it, B puts it back. Either way the board is back to plain browsing.
+     * A tile or gap lifted with Move. The D-pad walks it, and passes over a group that would
+     * take it; A or Y drops it, into that group when it is over one. Inside a group, Up from
+     * the top row raises a game to the Home target, and a drop there carries it out onto the
+     * root, still held. B puts everything back. A held direction stops at the last tile's
+     * column, so it never races off into the empty strip; a fresh press goes on.
      */
-    private fun handleMove(meaning: Meaning, index: Int): HomeStep {
+    private fun handleMove(meaning: Meaning, index: Int, repeatCount: Int): HomeStep {
         val hold = board.hold
         if (hold == null) {
             board = leaveEdit(board)
@@ -484,22 +514,78 @@ class HomeSession(raw: String?, nowMillis: Long = System.currentTimeMillis()) {
         }
         return when (meaning) {
             Meaning.MoveLeft, Meaning.MoveRight, Meaning.MoveUp, Meaning.MoveDown -> {
+                if (hold.overHome) {
+                    // Down comes back to the slot it rose from. Nothing else leads off the target.
+                    if (meaning == Meaning.MoveDown) board = moveHeld(board, hold.index, catalog(), platforms)
+                    return step(null, hold.index)
+                }
+                if (meaning == Meaning.MoveUp && GridStrip.row(hold.index) == 0) {
+                    if (repeatCount == 0) board = raiseToHome(board)
+                    return step(null, hold.index)
+                }
+                // Held, the tile steps on every other repeat, so each swap can be seen.
+                if (repeatCount % CARRY_REPEAT != 0) return step(null, hold.index)
                 val to = neighbor(hold.index, meaning) ?: return step(null, hold.index)
+                if (repeatCount > 0 && GridStrip.column(to) > GridStrip.column(lastTile())) return step(null, hold.index)
                 board = moveHeld(board, to, catalog(), platforms)
-                val at = board.hold?.index ?: to
-                if (board.hold == null) board = leaveEdit(board)
-                step(null, at)
+                step(null, board.hold?.index ?: to)
             }
             Meaning.Activate -> {
-                board = leaveEdit(app.foldcade.language.drop(board, hold.index))
+                board = app.foldcade.language.drop(board, catalog(), platforms)
+                val carried = board.hold
+                if (carried != null) {
+                    // Carried out of a group: the walk goes on along the root, from the group's slot.
+                    rootIndex = carried.index
+                    return step(null, carried.index)
+                }
+                board = leaveEdit(board)
                 step(null, hold.index)
             }
             Meaning.CancelHold, Meaning.Back -> {
+                val origin = heldStart(hold)
                 board = leaveEdit(board)
-                step(null, hold.origin)
+                step(null, origin)
             }
             else -> step(null, hold.index)
         }
+    }
+
+    /** Where the held tile was lifted. For one carried out of a group, that is in the group cancel reopens. */
+    private fun heldStart(hold: HomeHold): Int {
+        val start = hold.start ?: return hold.origin
+        val id = heldId(board) ?: return hold.origin
+        val slots = start.openFolderId?.let { start.folders[it]?.slots } ?: start.slots
+        return slots.indexOf(id).coerceAtLeast(0)
+    }
+
+    /** The slots the held tile walks, as they were at pickup. */
+    private fun heldBoard(): List<String?> {
+        val hold = board.hold ?: return emptyList()
+        return hold.openFolderId?.let { hold.folders[it]?.slots } ?: hold.slots
+    }
+
+    /** The last tile on [heldBoard]. */
+    private fun lastTile(): Int = heldBoard().indexOfLast { it != null }.coerceAtLeast(0)
+
+    /** What a drop does now, for the hint row. Null while nothing is held. */
+    fun holdDrop(): HoldDrop? = holdDrop(board)
+
+    /**
+     * The carried tile, for the grid to draw in the hand: the slot its own tile sits in, where
+     * it is held now, and the group it is over. Null while nothing, or only a gap, is held.
+     */
+    fun carry(): HomeCarry? {
+        val hold = board.hold ?: return null
+        val id = heldId(board) ?: return null
+        val slot = visibleSlots(board).indexOf(id).takeIf { it >= 0 } ?: return null
+        return HomeCarry(
+            id = id,
+            slot = slot,
+            at = hold.index,
+            over = heldOver(board)?.let { visibleSlots(board).indexOf(it) }?.takeIf { it >= 0 },
+            overHome = hold.overHome,
+            canTakeOut = canTakeOut(board),
+        )
     }
 
     private fun handleAll(meaning: Meaning, index: Int): HomeStep {
@@ -637,7 +723,7 @@ class HomeSession(raw: String?, nowMillis: Long = System.currentTimeMillis()) {
             Meaning.MoveDown -> if (row == rows - 1) null else index + 1
             else -> null
         } ?: return null
-        val lifted = visibleSlots(cancelHold(board)).indexOfLast { it != null } + 1
+        val lifted = heldBoard().indexOfLast { it != null } + 1
         return target.takeIf { it < GridStrip.reach(lifted) }
     }
 
@@ -650,6 +736,23 @@ class HomeSession(raw: String?, nowMillis: Long = System.currentTimeMillis()) {
             focus = GridFocus(cellIndex = index.coerceAtLeast(0), lastColumn = GridStrip.column(index.coerceAtLeast(0))),
         )
 }
+
+/**
+ * A tile in the hand, as the grid draws it. [slot] is where its own tile sits, which a drop
+ * would leave, and [at] where it is held: the same slot, or a group it hovers over ([over]).
+ * [overHome] holds it over the Home target, which [canTakeOut] says the group on screen has.
+ */
+data class HomeCarry(
+    val id: String,
+    val slot: Int,
+    val at: Int,
+    val over: Int?,
+    val overHome: Boolean,
+    val canTakeOut: Boolean,
+)
+
+/** A held D-pad walks a carried tile one slot per this many key repeats. */
+private const val CARRY_REPEAT = 2
 
 /** [cue] is the open keyboard's sound for this press. Null leaves the sound to the meaning. */
 data class HomeStep(

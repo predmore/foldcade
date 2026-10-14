@@ -442,6 +442,107 @@ class HomeGridOrderTest {
     }
 
     @Test
+    fun aGameCarriedOutOfItsFolderWalksOnAlongHomeAndBPutsItAllBack() {
+        val shell = shell()
+        shell.ingestLibrary(
+            "local-folder",
+            listOf(entry("puzzle", "Puzzle", "nintendo-3ds"), entry("drift", "Drift", "nintendo-3ds")),
+            emptyList(),
+        )
+        val root = titles(shell)
+        val folder = root.indexOf("Nintendo 3DS")
+        focus(shell, folder)
+        shell.onMeaning(Meaning.Activate, HostScreen.Bottom)
+        val inside = titles(shell)
+        choose(shell, Row.MoveTile)
+        // Up from the top row rises to the Home target; Y takes the game out, still held.
+        shell.onMeaning(Meaning.MoveUp, HostScreen.Bottom)
+        assertEquals(app.foldcade.language.HoldDrop.TakeOut, shell.homeHoldDrop())
+        assertEquals(true, shell.homeCarry()?.overHome)
+        shell.onMeaning(Meaning.Activate, HostScreen.Bottom)
+        assertEquals(HomeKeys.Moving, shell.homeKeys())
+        assertEquals(folder, shell.model.focus.cellIndex)
+        assertEquals(inside[0], titles(shell)[folder])
+        assertTrue("Nintendo 3DS" in titles(shell))
+        // The top screen shows the game in the hand.
+        assertEquals(inside[0], (shell.focusedHero() as? app.foldcade.language.HeroSubject.Item)?.item?.title)
+        // B puts it all back: the folder is open again, with the game where it was.
+        shell.onMeaning(Meaning.CancelHold, HostScreen.Bottom)
+        assertEquals(HomeKeys.Idle, shell.homeKeys())
+        assertEquals(inside, titles(shell))
+        assertEquals(0, shell.model.focus.cellIndex)
+        shell.onMeaning(Meaning.Back, HostScreen.Bottom)
+        assertEquals(root, titles(shell))
+
+        // Carried out again and put down, it is a pin, and its folder still has it.
+        focus(shell, folder)
+        shell.onMeaning(Meaning.Activate, HostScreen.Bottom)
+        choose(shell, Row.MoveTile)
+        shell.onMeaning(Meaning.MoveUp, HostScreen.Bottom)
+        shell.onMeaning(Meaning.Activate, HostScreen.Bottom)
+        shell.onMeaning(Meaning.Activate, HostScreen.Bottom)
+        assertEquals(HomeKeys.Idle, shell.homeKeys())
+        assertEquals(inside[0], titles(shell)[folder])
+        val moved = titles(shell).indexOf("Nintendo 3DS")
+        focus(shell, moved)
+        shell.onMeaning(Meaning.Activate, HostScreen.Bottom)
+        assertEquals(inside, titles(shell))
+    }
+
+    @Test
+    fun aHeldDirectionStopsAtTheLastColumnAndAHeldADoesNotLaunch() {
+        val shell = shell()
+        shell.ingestLibrary(
+            "local-folder",
+            listOf(entry("puzzle", "Puzzle", "nintendo-3ds"), entry("drift", "Drift", "nintendo-ds")),
+            emptyList(),
+        )
+        val last = GridStrip.column(shell.model.count - 1)
+        focus(shell, 0)
+        choose(shell, Row.MoveTile)
+        // Held, it steps on every other repeat.
+        shell.onMeaning(Meaning.MoveDown, HostScreen.Bottom, repeatCount = 1)
+        assertEquals(0, shell.model.focus.cellIndex)
+        shell.onMeaning(Meaning.MoveDown, HostScreen.Bottom, repeatCount = 2)
+        assertEquals(1, shell.model.focus.cellIndex)
+        repeat(GridStrip.trailing + 3) { shell.onMeaning(Meaning.MoveRight, HostScreen.Bottom, repeatCount = it + 1) }
+        assertEquals(last, GridStrip.column(shell.model.focus.cellIndex))
+        // A fresh press goes on into the empty strip.
+        shell.onMeaning(Meaning.MoveRight, HostScreen.Bottom)
+        assertEquals(last + 1, GridStrip.column(shell.model.focus.cellIndex))
+        shell.onMeaning(Meaning.CancelHold, HostScreen.Bottom)
+        val folder = titles(shell).indexOf("Nintendo 3DS")
+        focus(shell, folder)
+        shell.onMeaning(Meaning.Activate, HostScreen.Bottom)
+        // Still down after it opened the folder, A launches nothing.
+        assertNull(shell.onMeaning(Meaning.Activate, HostScreen.Bottom, repeatCount = 1))
+        assertTrue(shell.onMeaning(Meaning.Activate, HostScreen.Bottom) is Effect.Launch)
+    }
+
+    @Test
+    fun tidyOnAnEmptySlotClosesTheGaps() {
+        val shell = shell()
+        shell.ingestLibrary(
+            "local-folder",
+            listOf(entry("puzzle", "Puzzle", "nintendo-3ds"), entry("drift", "Drift", "nintendo-ds")),
+            emptyList(),
+        )
+        val before = titles(shell)
+        // Carry the first folder past the end, which leaves a gap where it was.
+        val first = before.indexOf("Nintendo 3DS")
+        focus(shell, first)
+        choose(shell, Row.MoveTile)
+        repeat(GridStrip.trailing) { shell.onMeaning(Meaning.MoveRight, HostScreen.Bottom) }
+        shell.onMeaning(Meaning.Activate, HostScreen.Bottom)
+        focus(shell, first)
+        assertTrue(Row.Tidy in optionRows(shell))
+        choose(shell, Row.Tidy)
+        assertEquals(before.filter { it != "Nintendo 3DS" } + "Nintendo 3DS", titles(shell).filter { it.isNotEmpty() })
+        assertTrue(titles(shell).dropLastWhile { it.isEmpty() }.none { it.isEmpty() })
+        assertFalse(Row.Tidy in optionRows(shell))
+    }
+
+    @Test
     fun theCursorWalksPastTheLastTileAndALiftedTileGoesAsFar() {
         val shell = shell()
         shell.ingestLibrary(

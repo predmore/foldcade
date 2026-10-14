@@ -58,13 +58,17 @@ class HomeBoardTest {
     }
 
     @Test
-    fun movingOntoAFolderDropsTheTileInside() {
+    fun droppingOntoAFolderPutsTheTileInside() {
         val folder = HomeFolder("folder.gba", "Game Boy Advance", platformId = "game-boy-advance")
         val board = HomeBoard(
             slots = listOf("game.cart", "folder.gba"),
             folders = mapOf("folder.gba" to folder),
         )
-        val dropped = moveHeld(pickUp(board, 0), 1, listOf(item("game.cart", platformId = "gba")), platforms)
+        val catalog = listOf(item("game.cart", platformId = "gba"))
+        val over = moveHeld(pickUp(board, 0), 1, catalog, platforms)
+        // Walking onto it only hovers. The drop puts it in.
+        assertEquals(board.slots, over.slots)
+        val dropped = drop(over, catalog, platforms)
         assertNull(dropped.hold)
         assertEquals(listOf(null, "folder.gba"), dropped.slots)
         assertEquals(listOf("game.cart"), dropped.folders.getValue("folder.gba").slots)
@@ -104,7 +108,7 @@ class HomeBoardTest {
         assertEquals(listOf(ds.id, "game.3ds", "folder.mine", HOME_ANDROID_GAMES), passed.slots)
         assertTrue(passed.folders.getValue(ds.id).slots.isEmpty())
         // A collection takes it, and the pin drops in.
-        val inMine = moveHeld(passed, 2, catalog, platforms)
+        val inMine = drop(moveHeld(passed, 2, catalog, platforms), catalog, platforms)
         assertNull(inMine.hold)
         assertEquals(listOf("game.3ds"), inMine.folders.getValue("folder.mine").slots)
         assertFalse("game.3ds" in inMine.slots)

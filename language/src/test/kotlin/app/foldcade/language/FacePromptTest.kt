@@ -156,10 +156,10 @@ class FacePromptTest {
     }
 
     @Test
-    fun yOpensOptionsOnAGridAndBPutsAMovingTileBack() {
+    fun yOpensOptionsOnAGridDropsAMovingTileAndBPutsItBack() {
         assertEquals(Meaning.Options, meaningOf(KeyEvent.KEYCODE_BUTTON_Y))
         assertEquals(Meaning.Options, meaningOf(KeyEvent.KEYCODE_BUTTON_Y, homeKeys = HomeKeys.AllLibrary))
-        assertNull(meaningOf(KeyEvent.KEYCODE_BUTTON_Y, homeKeys = HomeKeys.Moving))
+        assertEquals(Meaning.Activate, meaningOf(KeyEvent.KEYCODE_BUTTON_Y, homeKeys = HomeKeys.Moving))
         assertEquals(Meaning.Space, meaningOf(KeyEvent.KEYCODE_BUTTON_Y, homeKeys = HomeKeys.Typing))
         assertNull(meaningOf(KeyEvent.KEYCODE_BUTTON_X, homeKeys = HomeKeys.Moving))
         for (keys in listOf(HomeKeys.Moving, HomeKeys.PickingIcon)) {

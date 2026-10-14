@@ -86,6 +86,10 @@ data class HomeFolder(
     val collection: Boolean get() = !system && !recent
 }
 
+/**
+ * A tile in the hand. [slots], [folders] and [openFolderId] are the board the walk is
+ * measured against, as it was when the tile was lifted on the board on screen.
+ */
 data class HomeHold(
     val index: Int,
     val slots: List<String?>,
@@ -93,7 +97,33 @@ data class HomeHold(
     val openFolderId: String?,
     /** Where the tile was picked up. Cancel puts it back here. */
     val origin: Int = index,
+    /** Held over the Home target above an open group's grid. A drop there carries the tile out. */
+    val overHome: Boolean = false,
+    /** The board before the tile was carried out of a group. Cancel puts all of it back. Null when it was not. */
+    val start: HomeSpot? = null,
 )
+
+/** Where a board stood: its root, its groups, and the open one. */
+data class HomeSpot(
+    val slots: List<String?>,
+    val folders: Map<String, HomeFolder>,
+    val openFolderId: String?,
+)
+
+/** What dropping the held tile does now, which the hint row names. */
+enum class HoldDrop {
+    /** It stays where it is. */
+    Place,
+
+    /** It goes into the collection or folder it is over. */
+    Add,
+
+    /** It is over a group it is already in: the tile goes, and the game stays in there. */
+    PutBack,
+
+    /** It is over the Home target: it leaves the open group and is carried on along the root. */
+    TakeOut,
+}
 
 data class HomeBoard(
     val slots: List<String?> = listOf(HOME_ALL),
@@ -298,7 +328,8 @@ fun mergeHome(
  */
 fun pickUp(board: HomeBoard, index: Int): HomeBoard {
     if (index < 0) return board
-    if (board.hold != null) return drop(board, index)
+    // A second lift, a long press on another tile, puts the first one down where it is.
+    if (board.hold != null) return board.copy(hold = null)
     if (board.openFolderId?.let { board.folders[it] }?.recent == true) return board
     return board.copy(
         hold = HomeHold(
@@ -314,30 +345,147 @@ fun pickUp(board: HomeBoard, index: Int): HomeBoard {
 /**
  * Walks the held tile to [toIndex]. It trades places with the tile there, and every tile it
  * passed on the way is back where it was at pickup, so a long move disturbs one other tile.
- * Onto a group that takes it, a game drops in: a pin leaves the root for that collection, or
- * for its folder. Onto one that does not, it trades places. A held gap trades places too,
- * and never drops into a group.
+ *
+ * Onto a group that takes it, a game hovers instead: the group stays put, and every tile is
+ * where it was at pickup, so walking on passes over the group. Dropping there files the game
+ * in it ([drop]). Onto a group that does not take it, it trades places. A held gap or group
+ * trades places too, and never hovers.
  */
 fun moveHeld(board: HomeBoard, toIndex: Int, catalog: List<HomeItem>, platforms: List<HomePlatform>): HomeBoard {
     val hold = board.hold ?: return board
     if (toIndex < 0) return board
-    val before = hold.openFolderId?.let { hold.folders[it]?.slots } ?: hold.slots
+    val before = holdBase(hold)
     val moving = before.getOrNull(hold.origin)
     val slots = before.toMutableList()
     while (slots.size <= maxOf(toIndex, hold.origin)) slots += null
     val target = slots[toIndex]
-    val targetFolder = target?.let { board.folders[it] }
-    if (moving != null && targetFolder != null && moving != HOME_ALL && board.folders[moving] == null &&
-        folderTakes(targetFolder, catalog.firstOrNull { it.id == moving }, platforms)
-    ) {
-        slots[hold.origin] = null
-        return fileGame(writeVisible(board, slots), moving, targetFolder.id, catalog, platforms).copy(hold = null)
+    val walked = hold.copy(index = toIndex, overHome = false)
+    if (hoversOver(board, moving, target, catalog, platforms)) {
+        return writeVisible(board, before).copy(hold = walked)
     }
     slots[hold.origin] = target
     slots[toIndex] = moving
     // A gap walked past the last tile leaves no empty slots behind it.
     while (slots.size > before.size && slots.last() == null) slots.removeAt(slots.lastIndex)
-    return writeVisible(board, slots).copy(hold = hold.copy(index = toIndex))
+    return writeVisible(board, slots).copy(hold = walked)
+}
+
+/** The held game would go into [target], a group that takes it. */
+private fun hoversOver(
+    board: HomeBoard,
+    moving: String?,
+    target: String?,
+    catalog: List<HomeItem>,
+    platforms: List<HomePlatform>,
+): Boolean {
+    if (moving == null || target == null || target == moving || !isGame(board, moving)) return false
+    val group = board.folders[target] ?: return false
+    return folderTakes(group, catalog.firstOrNull { it.id == moving }, platforms)
+}
+
+private fun isGame(board: HomeBoard, id: String): Boolean = id != HOME_ALL && board.folders[id] == null
+
+/** The slots the held tile walks against: the open group's, or the root's, as they were at pickup. */
+private fun holdBase(hold: HomeHold): List<String?> =
+    hold.openFolderId?.let { hold.folders[it]?.slots } ?: hold.slots
+
+/** The game, group or All tile in the hand. Null for a held gap, or nothing held. */
+fun heldId(board: HomeBoard): String? {
+    val hold = board.hold ?: return null
+    return holdBase(hold).getOrNull(hold.origin)
+}
+
+/**
+ * The group the held game is over, which a drop files it in. Null while it is not over one.
+ * Over a group, the tile there is the group and not the game, as [moveHeld] leaves it.
+ */
+fun heldOver(board: HomeBoard): String? {
+    val hold = board.hold ?: return null
+    if (hold.overHome) return null
+    val id = heldId(board) ?: return null
+    val over = visibleSlots(board).getOrNull(hold.index) ?: return null
+    return over.takeIf { it != id && board.folders[it] != null }
+}
+
+/** What a drop does now. Null while nothing is held. */
+fun holdDrop(board: HomeBoard): HoldDrop? {
+    val hold = board.hold ?: return null
+    if (hold.overHome) return HoldDrop.TakeOut
+    val over = heldOver(board) ?: return HoldDrop.Place
+    val id = heldId(board)
+    return if (board.folders[over]?.slots?.contains(id) == true) HoldDrop.PutBack else HoldDrop.Add
+}
+
+/**
+ * Whether the held tile can rise to the Home target: it is a game, in a folder or a
+ * collection. Recently played keeps its own order, so nothing lifts there to begin with.
+ */
+fun canTakeOut(board: HomeBoard): Boolean {
+    val hold = board.hold ?: return false
+    val open = hold.openFolderId?.let { board.folders[it] } ?: return false
+    val id = heldId(board) ?: return false
+    return !open.recent && isGame(board, id)
+}
+
+/**
+ * Holds the tile over the Home target above the open group's grid. Every tile there is back
+ * where it was at pickup, as over a group. [HomeHold.index] keeps the slot it rose from, so
+ * Down comes back to it.
+ */
+fun raiseToHome(board: HomeBoard): HomeBoard {
+    val hold = board.hold ?: return board
+    if (!canTakeOut(board)) return board
+    return writeVisible(board, holdBase(hold)).copy(hold = hold.copy(overHome = true))
+}
+
+/**
+ * Carries the held game out of the open group onto the root, still in the hand. From a folder
+ * it stays filed there, and from a collection it leaves it; either group is as it was at
+ * pickup otherwise. On the root it is a pin over the group's slot, and the group stands aside
+ * in the nearest free slot, as the tile under a held one does. An older pin of the game gives
+ * its slot up. Cancel puts back the board as it was before any of this.
+ */
+fun carryOut(board: HomeBoard): HomeBoard {
+    val hold = board.hold ?: return board
+    if (!hold.overHome || !canTakeOut(board)) return board
+    val openId = hold.openFolderId ?: return board
+    val group = board.folders[openId] ?: return board
+    val before = holdBase(hold)
+    val id = before[hold.origin] ?: return board
+    val left = if (group.collection) before.mapIndexed { index, value -> if (index == hold.origin) null else value } else before
+    val folders = board.folders + (openId to group.copy(slots = left))
+    val root = board.slots.map { if (it == id) null else it }.toMutableList()
+    val at = root.indexOf(openId).takeIf { it >= 0 }
+        ?: root.indexOfFirst { it == null }.takeIf { it >= 0 }
+        ?: root.size
+    val aside = if (root.getOrNull(at) == null) at else freeSlot(root, at)
+    while (root.size <= maxOf(at, aside)) root += null
+    // The walk is measured from a root with the pin in the free slot, so a step away
+    // brings the group back to its own slot and leaves the free one to the tile passed.
+    val base = root.toMutableList().also { it[aside] = id }
+    val carried = base.toMutableList().also {
+        it[aside] = base[at]
+        it[at] = id
+    }
+    val start = hold.start ?: HomeSpot(hold.slots, hold.folders, hold.openFolderId)
+    return board.copy(
+        slots = carried,
+        folders = folders,
+        openFolderId = null,
+        offHome = board.offHome - id,
+        hold = HomeHold(index = at, slots = base, folders = folders, openFolderId = null, origin = aside, start = start),
+    )
+}
+
+/** The empty slot nearest [at], after it on a tie. Past the last slot is always free. */
+private fun freeSlot(slots: List<String?>, at: Int): Int {
+    for (step in 1..slots.size + 1) {
+        val after = at + step
+        if (after >= slots.size || slots[after] == null) return after
+        val before = at - step
+        if (before >= 0 && slots[before] == null) return before
+    }
+    return slots.size
 }
 
 /**
@@ -359,19 +507,49 @@ fun folderTakes(folder: HomeFolder, item: HomeItem?, platforms: List<HomePlatfor
 
 private val INSTALLED_KINDS: Set<HomeKind> = setOf(HomeKind.AndroidGame, HomeKind.AndroidApp, HomeKind.Emulator)
 
-fun drop(board: HomeBoard, index: Int): HomeBoard {
-    if (board.hold == null) return board
-    return board.copy(hold = null)
+/**
+ * Puts the held tile down where it is. Over a group, the game goes into it: a pin leaves the
+ * root for that collection, or for its folder, and every other tile is where it was at
+ * pickup. Over the Home target nothing is put down yet: the tile is carried out ([carryOut]).
+ */
+fun drop(board: HomeBoard, catalog: List<HomeItem>, platforms: List<HomePlatform>): HomeBoard {
+    val hold = board.hold ?: return board
+    if (hold.overHome) return carryOut(board)
+    val over = heldOver(board) ?: return board.copy(hold = null)
+    val id = heldId(board) ?: return board.copy(hold = null)
+    val slots = holdBase(hold).mapIndexed { index, value -> if (index == hold.origin) null else value }
+    return fileGame(writeVisible(board, slots), id, over, catalog, platforms).copy(hold = null)
 }
 
+/** Puts everything back as it was at pickup, the group a tile was carried out of included. */
 fun cancelHold(board: HomeBoard): HomeBoard {
     val hold = board.hold ?: return board
+    val spot = hold.start ?: HomeSpot(hold.slots, hold.folders, hold.openFolderId)
     return board.copy(
-        slots = hold.slots,
-        folders = hold.folders,
-        openFolderId = hold.openFolderId,
+        slots = spot.slots,
+        folders = spot.folders,
+        openFolderId = spot.openFolderId,
         hold = null,
     )
+}
+
+/**
+ * Closes the gaps on the board on screen, the root or the open group: its tiles keep their
+ * reading order, column by column and top to bottom, and close up from the first slot.
+ */
+fun tidy(board: HomeBoard): HomeBoard {
+    if (!canTidy(board)) return board
+    val packed = visibleSlots(board).filterNotNull()
+    return writeVisible(board, packed)
+}
+
+/** The board on screen has a gap before its last tile, and is one the player arranges. */
+fun canTidy(board: HomeBoard): Boolean {
+    if (board.hold != null || board.allOpen) return false
+    if (board.openFolderId?.let { board.folders[it] }?.recent == true) return false
+    val slots = visibleSlots(board)
+    val last = slots.indexOfLast { it != null }
+    return (0 until last).any { slots[it] == null }
 }
 
 /**
