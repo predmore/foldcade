@@ -231,6 +231,8 @@ class ShellController(
     /** Platform names a library listed, by platform id. Used when nothing else names it. */
     private val listedPlatformNames = HashMap<String, String>()
 
+    private var committedHome: String? = store.homeBoardRaw()
+    private var committedShelves = shelfState
     private var current by mutableStateOf(initial())
 
     /** Every change keeps the columns the grid showed, so the next focus scrolls only as far as it must. */
@@ -374,11 +376,14 @@ class ShellController(
         if (row != Row.Undo && (home.encoded() != beforeSaved || shelfState != shelves || row == Row.MoveTile)) {
             val reversible = row == Row.RemoveTile || row == Row.HideApp ||
                 (row is Row.Collection && before.folders[row.folderId]?.slots?.contains(target) == true)
-            undo = if (reversible) HomeUndo(before, shelves,
+            if (reversible) {
+                undo = HomeUndo(before, shelves,
                 when { row == Row.HideApp || removeVerb == RemoveVerb.Hide -> Copy.hidden
                     removeVerb == RemoveVerb.Unpin -> Copy.unpinned
-                    else -> Copy.removed }, nowMillis()) else null
-            if (undo != null) { undoFocus = beforeFocus; undoGrid = beforeGrid }
+                    else -> Copy.removed }, nowMillis(), after = home.board, shelvesAfter = shelfState)
+                undoFocus = beforeFocus
+                undoGrid = beforeGrid
+            }
             publish(model.copy(undoVerb = activeUndo()?.verb))
         }
         return result
@@ -403,7 +408,7 @@ class ShellController(
             val wasInGroup = home.board.hold?.openFolderId != null
             val step = home.handle(meaning, model.focus.cellIndex, repeatCount)
             if (step != null && step.handled) {
-                store.saveHomeBoard(home.encoded())
+                commitHome()
                 showBoard(step.focus ?: model.focus, keepDialog = true)
                 if (!wasInFolder && home.openedFolderHasGame()) Log.i("Foldcade", "library-ui games")
                 if (!wasHeld && home.board.hold != null) Log.i("Foldcade", "home-ui lifted")
@@ -433,12 +438,12 @@ class ShellController(
                 if (packageName != null) {
                     val favorite = !shelfState.record(packageName).favorite
                     shelfState = shelfState.pin(packageName, favorite)
-                    store.saveAppShelfState(shelfState)
+                    commitShelves()
                 }
                 publish(focusPackage(next, packageName))
             }
             is Effect.AddAppTo -> {
-                if (packageName != null && home.placeIn(androidHomeId(packageName), effect.folderId)) syncHome()
+                if (packageName != null && home.placeIn(androidHomeId(packageName), effect.folderId)) { commitHome(); syncHome() }
                 publish(next.copy(shelfEpoch = next.shelfEpoch + 1))
             }
             // Add to stays open, so the next collection is one press away, even when the game
@@ -446,6 +451,7 @@ class ShellController(
             is Effect.ToggleCollection -> {
                 if (!model.libraryGrid) {
                     home.toggleCollection(next.focus.cellIndex, effect.folderId, effect.gameId)
+                    commitHome()
                     reconcileShownApps()
                     syncHome()
                 }
@@ -459,10 +465,11 @@ class ShellController(
                         AndroidShelf.Games
                     }
                     shelfState = shelfState.move(packageName, destination)
-                    store.saveAppShelfState(shelfState)
+                    commitShelves()
                     val target = if (destination == AndroidShelf.Games) HOME_ANDROID_GAMES else HOME_ANDROID_APPS
                     home.ensureAppFolder(target)
                     home.placeIn(androidHomeId(packageName), target)
+                    commitHome()
                     syncHome()
                 }
                 publish(next)
@@ -471,7 +478,7 @@ class ShellController(
                 if (packageName != null) {
                     home.hide(androidHomeId(packageName))
                     shelfState = shelfState.hide(packageName)
-                    store.saveAppShelfState(shelfState)
+                    commitShelves()
                     syncHome()
                 }
                 publish(next)
@@ -479,7 +486,7 @@ class ShellController(
             Effect.ShowApp -> {
                 if (packageName != null) {
                     shelfState = shelfState.show(packageName, packageName in playerPackages)
-                    store.saveAppShelfState(shelfState)
+                    commitShelves()
                 }
                 publish(next)
             }
@@ -530,13 +537,13 @@ class ShellController(
                     changeHome { home.remove(it) }
                     if (hides && packageId != null) {
                         shelfState = shelfState.hide(packageId)
-                        store.saveAppShelfState(shelfState)
+                        commitShelves()
                         publish(model)
                     }
                 } else {
                     model.tileActions?.game?.let { id ->
                         home.hide(id)
-                        packageName?.let { shelfState = shelfState.hide(it); store.saveAppShelfState(shelfState) }
+                        packageName?.let { shelfState = shelfState.hide(it); commitShelves() }
                         syncHome()
                         publish(model)
                     }
@@ -547,11 +554,12 @@ class ShellController(
                 effect.id?.let { id ->
                     val wasFolder = id in home.board.retired
                     home.show(id)
+                    commitHome()
                     installed.firstOrNull { androidHomeId(it.packageName) == id }?.let {
                         shelfState = shelfState.show(it.packageName, it.packageName in playerPackages)
-                        store.saveAppShelfState(shelfState)
+                        commitShelves()
                     }
-                    if (!wasFolder) syncHome() else store.saveHomeBoard(home.encoded())
+                    if (!wasFolder) syncHome() else commitHome()
                     publish(model.copy(shelfEpoch = model.shelfEpoch + 1))
                 }
                 null
@@ -559,10 +567,10 @@ class ShellController(
             Effect.Undo -> {
                 activeUndo()?.let { saved ->
                     undo = null
-                    home.restore(saved.board)
-                    shelfState = saved.shelves
-                    store.saveAppShelfState(shelfState)
-                    store.saveHomeBoard(home.encoded())
+                    home.restore(saved.restore(home.board))
+                    shelfState = saved.restore(shelfState)
+                    commitShelves()
+                    syncHome()
                     model = model.copy(undoVerb = null, rewind = model.rewind + 1, panel = null)
                     if (undoGrid == HomeGrid.StandIns) showBoard(undoFocus, keepDialog = false)
                     else publish(model.copy(homeGrid = undoGrid, focus = undoFocus))
@@ -574,7 +582,7 @@ class ShellController(
                 effect.gameId?.let { id ->
                     val removed = homeShelf(home.faceOf(id))
                     home.deleteShortcut(id)
-                    store.saveHomeBoard(home.encoded())
+                    commitHome()
                     removed.remoteKey?.let { key ->
                         when (removed.libraryId) {
                             MoonlightLibrary.ID -> onMoonlightRemoved(key)
@@ -660,7 +668,7 @@ class ShellController(
     fun tapTyping(at: KeyFocus) {
         if (!homeActive()) return
         val step = home.tapTyping(at) ?: return
-        store.saveHomeBoard(home.encoded())
+        commitHome()
         showBoard(step.focus ?: model.focus, keepDialog = true)
         step.cue?.slot?.let { cue(model.themeIndex, it) }
     }
@@ -875,10 +883,11 @@ class ShellController(
         if (model.libraryGrid) return null
         val onHome = showingHome()
         val index = change(model.focus.cellIndex)
+        commitHome()
         reconcileShownApps()
         // A folder Foldcade made goes the moment its last game leaves it, not at the next scan.
         syncHome()
-        store.saveHomeBoard(home.encoded())
+        commitHome()
         if (home.renamingId != null || onHome) showBoard(GridFocus(cellIndex = index, lastColumn = GridStrip.column(index)), keepDialog = true)
         else publish(model.copy(shelfEpoch = model.shelfEpoch + 1))
         return null
@@ -909,13 +918,13 @@ class ShellController(
         find = null
         if (showingHome()) home.rememberRootFocus(model.focus.cellIndex)
         home.showAll()
-        store.saveHomeBoard(home.encoded())
+        commitHome()
         showBoard(GridFocus(), keepDialog = true)
     }
 
     fun applyHomeAddNew(enabled: Boolean) {
-        if (enabled != home.board.addNewToHome) undo = null
         home.applyAddNew(enabled)
+        commitHome()
         syncHome()
         publish(
             model.copy(
@@ -928,10 +937,9 @@ class ShellController(
     fun pickUpHome(index: Int) {
         if (model.libraryGrid || model.homeGrid != HomeGrid.StandIns) return
         if (model.dialog != null || model.panel != null || model.connectOpen) return
-        undo = null
         home.startMove(index)
         if (home.board.hold != null) Log.i("Foldcade", "home-ui lifted")
-        store.saveHomeBoard(home.encoded())
+        commitHome()
         showBoard(GridFocus(cellIndex = index, lastColumn = GridStrip.column(index)), keepDialog = true)
     }
 
@@ -939,7 +947,7 @@ class ShellController(
         if (home.board.hold == null) return
         home.drag(meaning)
         val index = home.board.hold?.index ?: return
-        store.saveHomeBoard(home.encoded())
+        commitHome()
         showBoard(GridFocus(cellIndex = index, lastColumn = GridStrip.column(index)), keepDialog = true)
     }
 
@@ -1582,8 +1590,7 @@ class ShellController(
      */
     fun placeDroidDeckPin(shelfId: String) {
         if (!home.place(shelfId)) return
-        undo = null
-        store.saveHomeBoard(home.encoded())
+        commitHome()
         noteShelfChanged()
     }
 
@@ -1593,8 +1600,7 @@ class ShellController(
      */
     fun placeMoonlightPin(remoteKey: String) {
         if (!home.place(remoteKey)) return
-        undo = null
-        store.saveHomeBoard(home.encoded())
+        commitHome()
         noteShelfChanged()
     }
 
@@ -2337,11 +2343,23 @@ class ShellController(
         installed.filter { shelfState.record(it.packageName).hidden && androidHomeId(it.packageName) !in home.board.hidden }.forEach {
             shelfState = shelfState.show(it.packageName, it.packageName in playerPackages)
         }
+        commitShelves()
+    }
+
+    private fun commitShelves() {
+        if (shelfState != committedShelves) undo = null
+        committedShelves = shelfState
         store.saveAppShelfState(shelfState)
     }
 
+    private fun commitHome(catalog: Boolean = false) {
+        val saved = home.encoded()
+        if (!catalog && (saved != committedHome || home.board.editing)) undo = null
+        committedHome = saved
+        store.saveHomeBoard(saved)
+    }
+
     private fun syncHome() {
-        val before = home.encoded()
         home.rememberShelf(Shelf.games)
         home.remerge(
             shelfItems(),
@@ -2359,8 +2377,7 @@ class ShellController(
             },
         )
         installed.filter { shelfState.record(it.packageName).hidden }.forEach { home.hide(androidHomeId(it.packageName)) }
-        if (home.encoded() != before) undo = null
-        store.saveHomeBoard(home.encoded())
+        commitHome(catalog = true)
         find?.refresh(findEntries())
     }
 
