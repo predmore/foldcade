@@ -2423,8 +2423,8 @@ class ShellController(
                     (!installedAppsSettled && id.startsWith("android:")) ||
                     (GameNativeLibrary.ID !in settledLibraries && id.startsWith("gamenative."))
             },
+            hidden = installed.filter { shelfState.record(it.packageName).hidden }.map { androidHomeId(it.packageName) }.toSet(),
         )
-        installed.filter { shelfState.record(it.packageName).hidden }.forEach { home.hide(androidHomeId(it.packageName)) }
         commitHome(catalog = true)
         find?.refresh(findEntries())
     }

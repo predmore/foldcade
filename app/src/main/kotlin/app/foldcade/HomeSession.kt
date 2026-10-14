@@ -165,8 +165,9 @@ class HomeSession(raw: String?, nowMillis: Long = System.currentTimeMillis()) {
         platformList: List<HomePlatform>,
         remembered: Map<String, Game> = emptyMap(),
         unsettled: (String) -> Boolean = { false },
+        hidden: Set<String> = emptySet(),
     ) {
-        val report = PendingMerge(shelfItems, appItems, libraryItems, platformList, remembered, unsettled)
+        val report = PendingMerge(shelfItems, appItems, libraryItems, platformList, remembered, unsettled, hidden)
         // A later report replaces one still waiting; the games it remembers add up.
         if (board.hold != null) {
             pendingMerge = report.copy(remembered = pendingMerge?.remembered.orEmpty() + remembered)
@@ -181,7 +182,8 @@ class HomeSession(raw: String?, nowMillis: Long = System.currentTimeMillis()) {
         library = report.library
         platforms = report.platforms
         report.remembered.forEach { (id, game) -> games[id] = game }
-        board = mergeHome(board, catalog(), platforms, report.unsettled)
+        val reconciled = report.hidden.fold(board) { current, id -> hideGame(current, id) }
+        board = mergeHome(reconciled, catalog(), platforms, report.unsettled)
     }
 
     fun asShelf(face: HomeFace): ShelfGame {
@@ -875,6 +877,7 @@ private data class PendingMerge(
     val platforms: List<HomePlatform>,
     val remembered: Map<String, Game>,
     val unsettled: (String) -> Boolean,
+    val hidden: Set<String>,
 )
 
 /** A held D-pad walks a carried tile one slot per this many key repeats. */

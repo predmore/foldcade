@@ -161,6 +161,39 @@ class HomeRecoveryHostTest {
         assertEquals(listOf(key), deleted)
     }
 
+    @Test fun reinstallingAShelfHiddenAppCannotEndACarryBeforeCancelOrDrop() {
+        for (finish in listOf(Meaning.Back, Meaning.Activate)) {
+            val session = SessionStore(MemoryPrefs())
+            val shell = ShellController(session, PluginHost(Dispatchers.Unconfined, MemoryCredentialStore()), nowMillis = { time })
+            shell.setInstalledApps(listOf(app, other), emptySet())
+            shell.showHomeGrid(HomeGrid.Apps)
+            focus(shell, 1)
+            shell.onMeaning(Meaning.Options, HostScreen.Bottom)
+            choose(shell, Row.RemoveTile)
+            assertTrue(session.appShelfState().record("notes").hidden)
+            shell.setInstalledApps(listOf(other), emptySet())
+            assertFalse(androidHomeId("notes") in decodeHome(session.homeBoardRaw()).hidden)
+            shell.goHome()
+            val before = decodeHome(session.homeBoardRaw())
+            val origin = before.slots.indexOf(HOME_ANDROID_APPS)
+            focus(shell, origin)
+            shell.pickUpHome(origin)
+            shell.dragHome(Meaning.MoveRight)
+            val carried = shell.homeAnimToken()
+            val destination = shell.model.focus.cellIndex
+            assertNotEquals(origin, destination)
+            shell.setInstalledApps(listOf(app, other), emptySet())
+            assertEquals(carried, shell.homeAnimToken())
+            assertEquals(destination, shell.homeLiftedIndex())
+            assertEquals(before.slots, decodeHome(session.homeBoardRaw()).slots)
+            shell.onMeaning(finish, HostScreen.Bottom)
+            val after = decodeHome(session.homeBoardRaw())
+            assertEquals(if (finish == Meaning.Back) origin else destination, after.slots.indexOf(HOME_ANDROID_APPS))
+            assertTrue(androidHomeId("notes") in after.hidden)
+            assertFalse(after.folders.values.any { androidHomeId("notes") in it.slots })
+        }
+    }
+
     @Test fun tidyFromTheNewMoveMenusCanBeUndone() {
         val folder = HomeFolder(HOME_ANDROID_APPS, Copy.androidAppsFolder, bucket = HomeKind.AndroidApp,
             slots = listOf(androidHomeId("notes"), null, androidHomeId("browser")))
