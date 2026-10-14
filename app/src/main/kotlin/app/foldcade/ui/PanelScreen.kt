@@ -2108,24 +2108,24 @@ private fun PanelRows(
     val model = app.shell.model
     val rows = panelRows(panel, model)
     val island = LocalIslandScroll.current
+    val density = LocalDensity.current
     val gap = px(6f)
-    val fixedHeights = remember(panel.level, rows) { mutableStateMapOf<Int, Float>() }
+    val fixedHeights = remember(panel.level, rows) { mutableStateMapOf<Int, Int>() }
     val fixedRows = rows.indices.filter { rows[it].tiled() || rows[it] is Row.PlayActivity ||
         rows[it] is Row.Notice || rows[it] is Row.Brightness || rows[it] is Row.MusicVolume }
     val regularRows = rows.size - fixedRows.size
     val tiled = rows.count { it.tiled() }
     val blocks = rows.size - tiled + if (tiled > 0) 1 else 0
     val fixedHeight = fixedHeights.values.sum()
-    val available = (island?.available?.value ?: Float.MAX_VALUE) - fixedHeight -
-        gap.value * (blocks - 1 + if (panel.connection != null) 1 else 0).coerceAtLeast(0)
-    val fit = menuFit(regularRows, available)
-    val rowHeight by eased(fit.rowHeight, theme.motion.durationSelect, scale)
+    val available = with(density) { island?.available?.roundToPx() ?: Int.MAX_VALUE } - fixedHeight -
+        with(density) { gap.roundToPx() } * (blocks - 1 + if (panel.connection != null) 1 else 0).coerceAtLeast(0)
+    val fit = menuFit(regularRows, available, density.density)
+    val heights = rows.indices.filter { it !in fixedRows }.zip(fit.rowHeights).toMap()
     val keys = remember(rows) { rowKeys(rows) }
     val tileStart = rows.indexOfFirst { it.tiled() }
     val slots = rememberSelectionSlots()
-    val density = LocalDensity.current
     val reachPx = with(density) { ringReach().toPx() }
-    LaunchedEffect(panel.level, panel.index, interactive, island?.viewport, rowHeight, slots.rows.toMap()) {
+    LaunchedEffect(panel.level, panel.index, interactive, island?.viewport, fit.rowHeights, slots.rows.toMap()) {
         if (island == null || !interactive || island.viewport <= 0) return@LaunchedEffect
         val focused = slots.rows[panel.index] ?: return@LaunchedEffect
         val previous = slots.rows[panel.index - 1] ?: focused
@@ -2149,7 +2149,7 @@ private fun PanelRows(
         verticalArrangement = Arrangement.spacedBy(gap),
     ) {
         panel.connection?.let { connection ->
-            Column(Modifier.onSizeChanged { fixedHeights[-1] = with(density) { it.height.toDp().value } }.padding(horizontal = px(28f), vertical = px(8f)).cascade(0, progress)) {
+            Column(Modifier.onSizeChanged { fixedHeights[-1] = it.height }.padding(horizontal = px(28f), vertical = px(8f)).cascade(0, progress)) {
                 BasicText(
                     text = connection.label,
                     style = rowStyle.copy(fontWeight = FontWeight.SemiBold),
@@ -2177,7 +2177,7 @@ private fun PanelRows(
                         tileStart = tileStart,
                         interactive = interactive,
                         scale = scale,
-                        modifier = Modifier.onSizeChanged { fixedHeights[index] = with(density) { it.height.toDp().value } }.cascade(index, progress),
+                        modifier = Modifier.onSizeChanged { fixedHeights[index] = it.height }.cascade(index, progress),
                         onEffect = onEffect,
                     )
                 }
@@ -2199,7 +2199,7 @@ private fun PanelRows(
             val place = Modifier
                 .fillMaxWidth()
                 .selectionSlot(slots, index)
-                .onSizeChanged { if (index in fixedRows) fixedHeights[index] = with(density) { it.height.toDp().value } }
+                .onSizeChanged { if (index in fixedRows) fixedHeights[index] = it.height }
                 .then(if (island == null) Modifier.keepInView(focused) else Modifier)
                 .cascade(index + 1, progress)
             val parts = rowText(row, model)
@@ -2247,7 +2247,10 @@ private fun PanelRows(
                     scale = scale,
                     modifier = place.then(press).then(feedback),
                     labelStyle = rowStyle,
-                    height = rowHeight.dp,
+                    height = with(density) {
+                        eased((heights[index] ?: (52f * density.density).roundToInt()).toFloat(),
+                            theme.motion.durationSelect, scale).value.toDp()
+                    },
                 )
             }
         }

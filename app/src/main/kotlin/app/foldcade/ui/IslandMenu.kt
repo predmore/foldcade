@@ -173,13 +173,15 @@ private fun Island(
     // A new level or a new notice changes the rows, and the card eases to the new height.
     var rowsHeight by remember(side) { mutableStateOf(Dp.Hairline) }
     val reach = ringReach()
-    val availableRows = maxHeight * 0.88f - pillHeight - reach * 2 - MENU_BOTTOM_DP.dp
+    val maximumHeight = with(density) { (maxHeight * 0.88f).roundToPx() }
+    val reservedHeight = with(density) { pillHeight.roundToPx() + reach.roundToPx() * 2 + MENU_BOTTOM_DP.dp.roundToPx() }
+    val availableRows = with(density) { (maximumHeight - reservedHeight).toDp() }
     val scroll = rememberScrollState()
     var viewport by remember { mutableStateOf(0) }
     val fitted = if (rowsHeight > Dp.Hairline) {
-        minOf(maxHeight * 0.88f, pillHeight + rowsHeight + reach * 2 + MENU_BOTTOM_DP.dp)
+        with(density) { minOf(maximumHeight, reservedHeight + rowsHeight.roundToPx()).toDp() }
     } else {
-        maxHeight * 0.88f
+        with(density) { maximumHeight.toDp() }
     }
     // The first measured height lands at once; a change of rows eases to the next.
     var settled by remember(side) { mutableStateOf(false) }

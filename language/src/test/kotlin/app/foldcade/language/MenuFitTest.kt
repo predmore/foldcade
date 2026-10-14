@@ -5,21 +5,34 @@ import org.junit.Test
 
 class MenuFitTest {
     @Test fun shortMenusKeepTheirHeight() {
-        assertEquals(MenuFit(52f, false), menuFit(3, 360f, 3f))
-        assertEquals(MenuFit(52f, false), menuFit(0, 0f))
+        assertEquals(MenuFit(List(3) { 52 }, false), menuFit(3, 360, 1f, 3))
+        assertEquals(MenuFit(emptyList(), false), menuFit(0, 0, 1f))
     }
     @Test fun commonGameMenusFitWithoutScrolling() {
         for (rows in 7..8) {
-            val fit = menuFit(rows, 350f, 3f)
-            assertTrue(fit.rowHeight in 40f..52f)
+            val fit = menuFit(rows, 350, 1f, 3)
+            assertTrue(fit.rowHeights.all { it in 40..52 })
             assertFalse(fit.scrolls)
-            assertTrue(rows * fit.rowHeight + (rows - 1) * 3f <= 350.01f)
+            assertEquals(350, fit.rowHeights.sum() + (rows - 1) * 3)
+            assertTrue(fit.rowHeights.max() - fit.rowHeights.min() <= 1)
         }
     }
+    @Test fun eightRowsShareTheThorPixelRemainderWithoutOverflow() {
+        val fit = menuFit(8, 837, 2.25f)
+        assertEquals(listOf(105, 105, 105, 105, 105, 104, 104, 104), fit.rowHeights)
+        assertEquals(837, fit.rowHeights.sum())
+        assertFalse(fit.scrolls)
+        // Six-pixel gaps are also paid from the rounded viewport, not fractional dp.
+        val spaced = menuFit(8, 837, 2.25f, 6)
+        assertEquals(837, spaced.rowHeights.sum() + 7 * 6)
+        assertFalse(spaced.scrolls)
+    }
     @Test fun longMenusScrollOnlyAtMinimumHeight() {
-        assertEquals(MenuFit(40f, true), menuFit(20, 350f, 3f))
-        assertEquals(MenuFit(40f, false), menuFit(8, 320f))
-        assertEquals(MenuFit(40f, true), menuFit(1, 20f))
+        assertEquals(MenuFit(List(20) { 40 }, true), menuFit(20, 350, 1f, 3))
+        assertEquals(MenuFit(List(8) { 40 }, false), menuFit(8, 320, 1f))
+        assertEquals(MenuFit(listOf(40), true), menuFit(1, 20, 1f))
+        assertEquals(MenuFit(List(8) { 90 }, false), menuFit(8, 720, 2.25f))
+        assertEquals(MenuFit(List(8) { 90 }, true), menuFit(8, 719, 2.25f))
     }
     @Test fun scrollingKeepsNeighborContextAndClampsAtEnds() {
         assertEquals(70f, menuScrollTarget(200f, 240f, 160f, 280f, 220f, 0f, 600f, 10f), 0.01f)
@@ -30,6 +43,19 @@ class MenuFitTest {
     @Test fun narrowViewportsStillKeepOneNeighborWhenPossible() {
         assertEquals(190f, menuScrollTarget(200f, 240f, 160f, 280f, 100f, 0f, 600f, 10f), 0.01f)
         assertEquals(150f, menuScrollTarget(200f, 240f, 160f, 240f, 100f, 300f, 600f, 10f), 0.01f)
+    }
+    @Test fun androidGameArtPrecedesPinSelectionAndHide() {
+        val tile = TileActions(move = true, select = true, collections = emptyList(),
+            favorite = false, art = true, pin = true, remove = RemoveVerb.Hide)
+        val app = AppActions(favorite = false, keepOnTop = false, onGamesShelf = true, hiddenShelf = false)
+        val rows = actionRows(tile, app)
+        assertEquals(listOf(Row.MoveTile, Row.AddToCollection, Row.Favorite, Row.ChooseArt,
+            Row.PinTile, Row.SelectTile, Row.RemoveTile, Row.MoveApp), rows)
+        assertEquals(1, rows.count { it == Row.ChooseArt })
+    }
+    @Test fun hiddenAndroidAppsKeepShowBeforeArt() {
+        val app = AppActions(favorite = false, onGamesShelf = false, hiddenShelf = true)
+        assertEquals(listOf(Row.ShowApp, Row.ChooseArt), actionRows(TileActions(art = true), app))
     }
     @Test fun gameRowsPutFilingBeforeSelectionAndKeepUndoFirst() {
         val rows = actionRows(TileActions(undo = true, move = true, select = true,

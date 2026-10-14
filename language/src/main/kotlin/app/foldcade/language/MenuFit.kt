@@ -1,13 +1,19 @@
 package app.foldcade.language
 
-/** Row padding contracts before a menu needs to scroll. Heights are in dp. */
-data class MenuFit(val rowHeight: Float, val scrolls: Boolean)
+import kotlin.math.roundToInt
 
-fun menuFit(rows: Int, availableHeight: Float, gap: Float = 0f): MenuFit {
-    if (rows <= 0) return MenuFit(52f, false)
-    val room = (availableHeight - gap * (rows - 1)).coerceAtLeast(0f)
-    val height = (room / rows).coerceIn(40f, 52f)
-    return MenuFit(height, rows * height > room + 0.01f)
+/** Row padding contracts before a menu needs to scroll. Heights are whole pixels. */
+data class MenuFit(val rowHeights: List<Int>, val scrolls: Boolean)
+
+fun menuFit(rows: Int, availableHeight: Int, density: Float, gap: Int = 0): MenuFit {
+    if (rows <= 0) return MenuFit(emptyList(), false)
+    val minimum = (40f * density).roundToInt()
+    val normal = (52f * density).roundToInt()
+    val room = (availableHeight - gap * (rows - 1)).coerceAtLeast(0)
+    val height = (room / rows).coerceIn(minimum, normal)
+    // Share the remaining pixels, so rounding each row cannot overrun a fitted menu.
+    val remainder = if (height < normal && room >= rows * minimum) room % rows else 0
+    return MenuFit(List(rows) { height + if (it < remainder) 1 else 0 }, rows * minimum > room)
 }
 
 /** Keep the focus and a neighboring row inside the viewport, including the glow. */
