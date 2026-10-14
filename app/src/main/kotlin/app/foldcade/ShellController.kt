@@ -555,7 +555,7 @@ class ShellController(
                 null
             }
             Effect.MoveTile -> {
-                pickUpHome(model.focus.cellIndex)
+                if (current.tileActions?.move == true) pickUpHome(model.focus.cellIndex)
                 null
             }
             Effect.Tidy -> changeHome { home.tidyBoard(it) }

@@ -483,6 +483,8 @@ data class CollectionChoice(val folderId: String, val name: String, val member: 
 data class TileActions(
     /** The game or group Show on Home goes to. Null leaves the row out: it is nowhere on Home. */
     val showOnHome: String? = null,
+    /** The menu still targets a game that left the focused slot. Slot actions no longer apply. */
+    val kept: Boolean = false,
     val undo: Boolean = false,
     val show: Boolean = false,
     val deleteShortcut: Boolean = false,
@@ -576,22 +578,38 @@ fun collectionRows(tile: TileActions?): List<Row> {
     return collections.map { Row.Collection(it.folderId, it.name) } + Row.NewCollection
 }
 
-/** A page keeps its row identities until the island closes; values can still update. */
+/** Catalog reports keep rows stable; removing a game from its slot discards that slot's actions. */
 data class MenuRows(val page: SidePanel, val rows: List<Row>)
 
 private fun SidePanel.page() = copy(index = 0, retiring = false, pendingSide = null)
 
 fun retainMenuRows(previous: PickerModel, next: PickerModel): PickerModel {
     val panel = next.panel ?: return next.copy(menuRows = emptyList())
-    val retained = if (previous.panel?.side == panel.side) previous.menuRows else emptyList()
+    val retained = (if (previous.panel?.side == panel.side) previous.menuRows else emptyList())
+        .map { it.copy(rows = validMenuRows(it.rows, next)) }
     val page = panel.page()
     val pages = if (retained.any { it.page == page }) retained else
         retained + MenuRows(page, livePanelRows(panel, next))
-    return next.copy(menuRows = pages)
+    val stable = next.copy(menuRows = pages)
+    val oldPanel = previous.panel
+    if (oldPanel != null && oldPanel.page() == page) {
+        val oldRows = panelRows(oldPanel, previous)
+        val rows = panelRows(panel, stable)
+        if (oldRows != rows) {
+            val selected = oldRows.getOrNull(oldPanel.index)
+            val index = rows.indexOf(selected).takeIf { it >= 0 }
+                ?: panel.index.coerceIn(0, rows.lastIndex.coerceAtLeast(0))
+            return stable.copy(panel = panel.copy(index = index))
+        }
+    }
+    return stable
 }
 
-fun panelRows(panel: SidePanel, model: PickerModel): List<Row> =
-    model.menuRows.firstOrNull { it.page == panel.page() }?.rows ?: livePanelRows(panel, model)
+private fun validMenuRows(rows: List<Row>, model: PickerModel): List<Row> =
+    if (model.tileActions?.kept == true) rows.filterNot { it == Row.MoveTile || it == Row.RemoveTile || it == Row.HideApp } else rows
+
+fun panelRows(panel: SidePanel, model: PickerModel): List<Row> = validMenuRows(
+    model.menuRows.firstOrNull { it.page == panel.page() }?.rows ?: livePanelRows(panel, model), model)
 
 private fun livePanelRows(panel: SidePanel, model: PickerModel): List<Row> = when (panel.level) {
     PanelLevel.Actions -> actionRows(model.tileActions, model.appActions)

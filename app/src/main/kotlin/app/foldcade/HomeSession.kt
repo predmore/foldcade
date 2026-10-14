@@ -262,7 +262,7 @@ class HomeSession(raw: String?, nowMillis: Long = System.currentTimeMillis()) {
     fun actions(index: Int): TileActions? {
         if (iconPick != null || renamingId != null || board.editing) return null
         val held = menuGame
-        if (held != null && slotGame(index) != held) return gameActions(held, move = false, pin = false, remove = null)
+        if (held != null && slotGame(index) != held) return gameActions(held, move = false, pin = false, remove = null).copy(kept = true)
         if (board.allOpen) {
             val item = allRows().getOrNull(index) ?: return null
             return gameActions(item.id, move = false, pin = !pinned(board, item.id), remove = null)

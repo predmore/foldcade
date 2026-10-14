@@ -32,6 +32,22 @@ class MenuRowsTest {
         assertEquals(Row.Undo, panelRows(parent.panel!!, parent).first())
     }
 
+    @Test fun aKeptGameLosesOnlySlotActionsAndKeepsItsSelectedRow() {
+        val closed = PickerModel(1, 3, tileActions = TileActions(move = true,
+            collections = emptyList(), favorite = false, remove = RemoveVerb.Remove, removeDownload = true))
+        val opened = retainMenuRows(closed, closed.copy(panel = panel.copy(index = 1)))
+        val changed = opened.copy(tileActions = TileActions(kept = true,
+            collections = emptyList(), favorite = false, removeDownload = true))
+        val kept = retainMenuRows(opened, changed)
+        val rows = panelRows(kept.panel!!, kept)
+        assertEquals(listOf(Row.AddToCollection, Row.Favorite, Row.RemoveDownload), rows)
+        assertEquals(Row.AddToCollection, rows[kept.panel!!.index])
+        assertNull(chordIndex(rows, Meaning.Options))
+        assertEquals(Row.RemoveDownload, rows[chordIndex(rows, Meaning.ActivateBottom)!!])
+        val restored = retainMenuRows(kept, kept.copy(tileActions = closed.tileActions))
+        assertEquals(rows, panelRows(restored.panel!!, restored))
+    }
+
     @Test fun aMenuThatOfferedUndoJustBeforeTheDeadlineKeepsItAtTheBoundary() {
         val undo = HomeUndo(HomeBoard(), AppShelfState(), Copy.hidden, 100L)
         assertTrue(undo.available(8_099L))

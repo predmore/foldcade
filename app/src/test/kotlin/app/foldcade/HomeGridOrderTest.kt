@@ -726,7 +726,7 @@ class HomeGridOrderTest {
         // Back in its menu, the rest acts on that game too: Unfavorite, and the menu closes.
         shell.onMeaning(Meaning.Back, HostScreen.Bottom)
         val held = panelRows(shell.model.panel!!, shell.model).filterNot { it == Row.Undo }
-        assertEquals(listOf(Row.MoveTile, Row.AddToCollection, Row.Favorite, Row.RemoveTile), held)
+        assertEquals(listOf(Row.AddToCollection, Row.Favorite), held)
         assertEquals(Copy.unfavorite, rowText(Row.Favorite, shell.model).label)
         pickRowFocus(shell, Row.Favorite)
         shell.onMeaning(Meaning.Activate, HostScreen.Bottom)
