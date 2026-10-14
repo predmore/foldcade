@@ -179,13 +179,14 @@ class ContractTest {
     }
 
     @Test
-    fun yOpensTheTileMenuAndMoveToStepsBackToIt() {
+    fun yOpensTheTileMenuAndAddToTogglesCollectionsAndStepsBackToIt() {
         val focus = GridFocus(cellIndex = 2, lastColumn = 2)
         val tile = TileActions(
             move = true,
-            destinations = listOf(FolderChoice(null, Copy.homeSlot), FolderChoice("home.user.1", "Mine")),
-            newFolder = true,
-            remove = true,
+            collections = listOf(CollectionChoice(HOME_FAVORITES, Copy.favorites, false), CollectionChoice("home.user.1", "Mine", true)),
+            favorite = false,
+            pin = true,
+            remove = RemoveVerb.Hide,
         )
         val model = PickerModel(count = 6, rowsPerPage = 1, focus = focus, tileActions = tile)
         val open = reduce(model, Meaning.Options).first
@@ -193,28 +194,68 @@ class ContractTest {
         assertEquals(Side.Left, panel.side)
         assertEquals(PanelLevel.Actions, panel.level)
         assertEquals(
-            listOf(Row.MoveTile, Row.MoveTileTo, Row.NewFolder, Row.RemoveTile),
+            listOf(Row.MoveTile, Row.AddToCollection, Row.Favorite, Row.PinTile, Row.RemoveTile),
             panelRows(panel, open),
         )
-        assertEquals(Copy.removeFromHome, rowText(Row.RemoveTile, open).label)
-        val moveTo = reduce(open.copy(panel = panel.copy(index = 1)), Meaning.Activate).first
-        assertEquals(PanelLevel.MoveTo, moveTo.panel?.level)
+        assertEquals(Copy.hideApp, rowText(Row.RemoveTile, open).label)
+        assertEquals(Copy.favorite, rowText(Row.Favorite, open).label)
+        assertEquals(RowControl.Opens, rowControl(Row.AddToCollection, open))
+        val addTo = reduce(open.copy(panel = panel.copy(index = 1)), Meaning.Activate).first
+        assertEquals(PanelLevel.Collections, addTo.panel?.level)
+        val rows = panelRows(addTo.panel!!, addTo)
         assertEquals(
-            listOf(Row.Destination(null, Copy.homeSlot), Row.Destination("home.user.1", "Mine")),
-            panelRows(moveTo.panel!!, moveTo),
+            listOf(Row.Collection(HOME_FAVORITES, Copy.favorites), Row.Collection("home.user.1", "Mine"), Row.NewCollection),
+            rows,
         )
-        val chosen = reduce(moveTo.copy(panel = moveTo.panel!!.copy(index = 1)), Meaning.Activate)
-        assertEquals(Effect.MoveTileTo("home.user.1"), chosen.second)
-        assertNull(chosen.first.panel)
-        assertEquals(focus, chosen.first.focus)
-        // B from Move to lands back on its row, and B again closes the menu.
-        val back = reduce(moveTo, Meaning.Back).first
+        assertEquals(RowControl.Check(false), rowControl(rows[0], addTo))
+        assertEquals(RowControl.Check(true), rowControl(rows[1], addTo))
+        // A toggles the check and the menu stays open on that row.
+        val (toggled, effect) = reduce(addTo, Meaning.Activate)
+        assertEquals(Effect.ToggleCollection(HOME_FAVORITES), effect)
+        assertEquals(PanelLevel.Collections, toggled.panel?.level)
+        assertEquals(0, toggled.panel?.index)
+        assertEquals(RowControl.Check(true), rowControl(rows[0], toggled))
+        // New collection closes the menu for the name field.
+        val made = reduce(addTo.copy(panel = addTo.panel!!.copy(index = 2)), Meaning.Activate)
+        assertEquals(Effect.NewCollection, made.second)
+        assertNull(made.first.panel)
+        assertEquals(focus, made.first.focus)
+        // B from Add to lands back on its row, and B again closes the menu.
+        val back = reduce(addTo, Meaning.Back).first
         assertEquals(PanelLevel.Actions, back.panel?.level)
         assertEquals(1, back.panel?.index)
         assertNull(reduce(back, Meaning.Back).first.panel)
         // A tile with nothing to offer keeps Y shut, and so does the status island.
         assertNull(reduce(model.copy(tileActions = null), Meaning.Options).first.panel)
         assertNull(reduce(model.copy(focus = focus.copy(chrome = Chrome.StatusCluster)), Meaning.Options).first.panel)
+    }
+
+    @Test
+    fun eachTileOffersItsRowsInOneOrder() {
+        val choices = emptyList<CollectionChoice>()
+        // A pin on the root.
+        assertEquals(
+            listOf(Row.MoveTile, Row.AddToCollection, Row.Favorite, Row.RemoveTile, Row.RemoveDownload),
+            actionRows(TileActions(move = true, collections = choices, favorite = true, remove = RemoveVerb.Unpin, removeDownload = true), null),
+        )
+        // In Recently played.
+        assertEquals(
+            listOf(Row.AddToCollection, Row.Favorite, Row.PinTile),
+            actionRows(TileActions(collections = choices, favorite = false, pin = true), null),
+        )
+        // A collection, then an empty slot.
+        assertEquals(
+            listOf(Row.MoveTile, Row.RenameFolder, Row.FolderIcon, Row.RemoveTile),
+            actionRows(TileActions(move = true, rename = true, icon = true, remove = RemoveVerb.Remove), null),
+        )
+        assertEquals(listOf(Row.MoveTile, Row.NewCollection), actionRows(TileActions(move = true, newCollection = true), null))
+        val model = PickerModel(count = 1, rowsPerPage = 1)
+        assertEquals(Copy.unpin, rowText(Row.RemoveTile, model.copy(tileActions = TileActions(remove = RemoveVerb.Unpin))).label)
+        assertEquals(Copy.remove, rowText(Row.RemoveTile, model.copy(tileActions = TileActions(remove = RemoveVerb.Remove))).label)
+        assertEquals(Copy.unfavorite, rowText(Row.Favorite, model.copy(tileActions = TileActions(favorite = true))).label)
+        assertEquals(Copy.newCollection, rowText(Row.NewCollection, model).label)
+        assertEquals(Copy.pinToHome, rowText(Row.PinTile, model).label)
+        assertEquals(Copy.icon, rowText(Row.FolderIcon, model).label)
     }
 
     @Test

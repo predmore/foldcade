@@ -13,6 +13,7 @@ import app.foldcade.api.plugin.StartDisplay
 import app.foldcade.host.PluginHost
 import app.foldcade.language.Copy
 import app.foldcade.language.HOME_ALL
+import app.foldcade.language.HOME_ANDROID_APPS
 import app.foldcade.language.HOME_ANDROID_GAMES
 import app.foldcade.language.HomeBoard
 import app.foldcade.language.HomeFolder
@@ -198,9 +199,11 @@ class AndroidShelfHostTest {
         assertEquals(HomeGrid.Apps, shell.model.homeGrid)
         assertEquals("Settings", shell.focusedGame()?.title)
         assertNull(store.appShelfState().record(settings.packageName).shelf)
+        // A pin on Home, and still in its folder: one tile on the root, one in the folder.
         val placed = decodeHome(store.homeBoardRaw())
         assertTrue(androidHomeId(settings.packageName) in placed.slots)
-        assertEquals(1, (placed.slots + placed.folders.values.flatMap { it.slots }).count { it == androidHomeId(settings.packageName) })
+        assertEquals(1, placed.slots.count { it == androidHomeId(settings.packageName) })
+        assertEquals(listOf(HOME_ANDROID_APPS), placed.folders.values.filter { androidHomeId(settings.packageName) in it.slots }.map { it.id })
 
         val restarted = ShellController(SessionStore(prefs), PluginHost(Dispatchers.Unconfined, MemoryCredentialStore()))
         restarted.setInstalledApps(listOf(settings, game), emptySet())

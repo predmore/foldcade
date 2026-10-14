@@ -21,9 +21,14 @@ import app.foldcade.language.TileActivity
 import app.foldcade.language.FOLDER_ICONS
 import app.foldcade.language.HomeKeys
 import app.foldcade.language.MARK_FOLDER
+import app.foldcade.language.HOME_FAVORITES
+import app.foldcade.language.PanelLevel
+import app.foldcade.language.RemoveVerb
 import app.foldcade.language.Row
 import app.foldcade.language.actionRows
+import app.foldcade.language.folderCountLine
 import app.foldcade.language.panelRows
+import app.foldcade.language.rowText
 import app.foldcade.language.homeGameId
 import app.foldcade.localfolder.LocalFolderEntry
 import app.foldcade.plugins.melonds.MelonDsEntry
@@ -44,7 +49,7 @@ class HomeGridOrderTest {
         assertTrue(shell.model.addNewToHome)
         // No games, no folder: not even for GameNative, Moonlight, DroidDeck, or Android.
         assertEquals(listOf(Copy.allLibrary), titles(shell))
-        assertTrue(shell.homeFace(0)?.pinned == true)
+        assertTrue(shell.homeFace(0)?.allTile == true)
         assertEquals("library", shell.homeFace(0)?.mark)
 
         // Each folder comes with its first game.
@@ -320,16 +325,17 @@ class HomeGridOrderTest {
     }
 
     @Test
-    fun yMakesANamedFolderThatWearsTheIconYouPick() {
+    fun yMakesANamedCollectionThatWearsTheIconYouPick() {
         val shell = shell()
-        // On the All tile there is no game to wrap, so the folder takes the first free slot.
-        choose(shell, Row.NewFolder)
+        // On the All tile there is no game to hold, so the collection takes the first free slot.
+        choose(shell, Row.NewCollection)
         val folder = List(shell.model.count) { shell.homeFace(it) }.indexOfFirst { it?.folder == true && it.mark == MARK_FOLDER }
         assertTrue(folder >= 0)
-        // The new folder takes the focus and opens its name field.
+        // The new collection takes the focus and opens its name field.
         assertEquals(folder, shell.model.focus.cellIndex)
         assertEquals(HomeKeys.Renaming, shell.homeKeys())
-        assertEquals("${Copy.newFolder} 1", shell.renameDraft())
+        assertEquals("${Copy.collection} 1", shell.renameDraft())
+        assertEquals(Copy.collectionName, shell.renameLabel())
         shell.editRename("Handhelds")
         shell.onMeaning(Meaning.Activate, HostScreen.Bottom)
         assertNull(shell.renameDraft())
@@ -402,9 +408,9 @@ class HomeGridOrderTest {
         val lastColumn = GridStrip.columns(count) - 1
         repeat(lastColumn + GridStrip.trailing + 2) { shell.onMeaning(Meaning.MoveRight, HostScreen.Bottom) }
         assertEquals(GridStrip.index(lastColumn + GridStrip.trailing, 0), shell.model.focus.cellIndex)
-        // An empty slot shows no game and offers a move and a new folder, as an empty slot between tiles does.
+        // An empty slot shows no game and offers a move and a new collection, as an empty slot between tiles does.
         assertNull(shell.focusedGame())
-        assertEquals(listOf(Row.MoveTile, Row.NewFolder), optionRows(shell))
+        assertEquals(listOf(Row.MoveTile, Row.NewCollection), optionRows(shell))
         shell.onMeaning(Meaning.MoveDown, HostScreen.Bottom)
         assertEquals(GridStrip.index(lastColumn + GridStrip.trailing, 1), shell.model.focus.cellIndex)
 
@@ -456,7 +462,7 @@ class HomeGridOrderTest {
     }
 
     @Test
-    fun moveToTakesAGameOutOfItsFolderAndNewFolderWrapsIt() {
+    fun aGameInAFolderPinsJoinsCollectionsAndStaysInItsFolder() {
         val shell = shell()
         shell.ingestLibrary(
             "local-folder",
@@ -466,31 +472,127 @@ class HomeGridOrderTest {
         focus(shell, titles(shell).indexOf("Nintendo 3DS"))
         shell.onMeaning(Meaning.Activate, HostScreen.Bottom)
         focus(shell, titles(shell).indexOf("Puzzle"))
-        shell.onMeaning(Meaning.Options, HostScreen.Bottom)
-        val rows = panelRows(shell.model.panel!!, shell.model)
-        assertEquals(listOf(Row.MoveTile, Row.MoveTileTo, Row.NewFolder, Row.RemoveTile), rows)
-        repeat(rows.indexOf(Row.MoveTileTo)) { shell.onMeaning(Meaning.MoveDown, HostScreen.Bottom) }
-        shell.onMeaning(Meaning.Activate, HostScreen.Bottom)
-        // Home first, then every folder but the one it is in.
-        val destinations = panelRows(shell.model.panel!!, shell.model)
-        assertEquals(Row.Destination(null, Copy.homeSlot), destinations.first())
-        assertFalse(destinations.any { it is Row.Destination && it.label == "Nintendo 3DS" })
-        shell.onMeaning(Meaning.Activate, HostScreen.Bottom)
-        assertFalse("Puzzle" in titles(shell))
-        shell.onMeaning(Meaning.Back, HostScreen.Bottom)
-        assertTrue("Puzzle" in titles(shell))
+        assertEquals(
+            listOf(Row.MoveTile, Row.AddToCollection, Row.Favorite, Row.PinTile, Row.RemoveTile),
+            optionRows(shell),
+        )
+        assertEquals(RemoveVerb.Hide, shell.model.tileActions?.remove)
+        // Pin to Home leaves the game in its folder, and the focus on it.
+        choose(shell, Row.PinTile)
+        val inside = titles(shell)
+        assertEquals(listOf("Puzzle", "Drift"), inside)
+        assertEquals("Puzzle", shell.focusedGame()?.title)
+        assertFalse(Row.PinTile in optionRows(shell))
 
-        // Inside a folder, New folder lands on the root with the game in it.
-        assertEquals("Nintendo 3DS", shell.focusedGame()?.title)
+        // Add to: the first collection is made from the menu, holding the game, which stays where it is.
+        focus(shell, inside.indexOf("Drift"))
+        choose(shell, Row.AddToCollection)
+        assertEquals(PanelLevel.Collections, shell.model.panel?.level)
+        assertEquals(listOf(Row.Collection(HOME_FAVORITES, Copy.favorites), Row.NewCollection), panelRows(shell.model.panel!!, shell.model))
+        shell.onMeaning(Meaning.MoveDown, HostScreen.Bottom)
         shell.onMeaning(Meaning.Activate, HostScreen.Bottom)
-        focus(shell, titles(shell).indexOf("Drift"))
-        choose(shell, Row.NewFolder)
         assertEquals(HomeKeys.Renaming, shell.homeKeys())
+        shell.editRename("Quests")
         shell.onMeaning(Meaning.Activate, HostScreen.Bottom)
-        val made = shell.model.focus.cellIndex
-        assertEquals("${Copy.newFolder} 1", shell.homeFace(made)?.title)
+        assertEquals(inside, titles(shell))
+        assertEquals("Drift", shell.focusedGame()?.title)
+
+        // A toggles a collection and the menu stays open with its check.
+        choose(shell, Row.AddToCollection)
+        val quests = panelRows(shell.model.panel!!, shell.model).indexOfFirst { it is Row.Collection && it.label == "Quests" }
+        assertEquals(1, quests)
+        assertTrue(shell.model.tileActions!!.collections!![quests].member)
+        shell.onMeaning(Meaning.MoveDown, HostScreen.Bottom)
         shell.onMeaning(Meaning.Activate, HostScreen.Bottom)
-        assertEquals(listOf("Drift"), titles(shell).filter { it.isNotEmpty() })
+        assertEquals(PanelLevel.Collections, shell.model.panel?.level)
+        assertFalse(shell.model.tileActions!!.collections!![quests].member)
+        shell.onMeaning(Meaning.Activate, HostScreen.Bottom)
+        assertTrue(shell.model.tileActions!!.collections!![quests].member)
+        // Favorites, first in the list, is made by choosing it.
+        shell.onMeaning(Meaning.MoveUp, HostScreen.Bottom)
+        shell.onMeaning(Meaning.Activate, HostScreen.Bottom)
+        assertTrue(shell.model.tileActions!!.collections!![0].member)
+        assertEquals(Copy.unfavorite, rowText(Row.Favorite, shell.model).label)
+        shell.onMeaning(Meaning.Back, HostScreen.Bottom)
+        shell.onMeaning(Meaning.Back, HostScreen.Bottom)
+
+        shell.onMeaning(Meaning.Back, HostScreen.Bottom)
+        val root = titles(shell)
+        assertTrue("Puzzle" in root)
+        assertTrue("Quests" in root)
+        assertTrue(Copy.favorites in root)
+        assertEquals(folderCountLine(1), shell.homeFace(root.indexOf("Quests"))?.shortText)
+        // Unpin takes only the root tile.
+        focus(shell, root.indexOf("Puzzle"))
+        assertEquals(listOf(Row.MoveTile, Row.AddToCollection, Row.Favorite, Row.RemoveTile), optionRows(shell))
+        assertEquals(Copy.unpin, rowText(Row.RemoveTile, shell.model).label)
+        choose(shell, Row.RemoveTile)
+        assertFalse("Puzzle" in titles(shell))
+        focus(shell, titles(shell).indexOf("Nintendo 3DS"))
+        shell.onMeaning(Meaning.Activate, HostScreen.Bottom)
+        assertEquals(inside, titles(shell))
+
+        // Out of the collection on screen, the menu closes and the game stays in its folder.
+        shell.onMeaning(Meaning.Back, HostScreen.Bottom)
+        focus(shell, titles(shell).indexOf("Quests"))
+        shell.onMeaning(Meaning.Activate, HostScreen.Bottom)
+        assertEquals(listOf("Drift"), titles(shell))
+        assertEquals(listOf(Row.MoveTile, Row.AddToCollection, Row.Favorite, Row.RemoveTile), optionRows(shell))
+        assertEquals(Copy.remove, rowText(Row.RemoveTile, shell.model).label)
+        choose(shell, Row.AddToCollection)
+        shell.onMeaning(Meaning.MoveDown, HostScreen.Bottom)
+        shell.onMeaning(Meaning.Activate, HostScreen.Bottom)
+        assertNull(shell.model.panel)
+        assertEquals(listOf(""), titles(shell))
+        shell.onMeaning(Meaning.Back, HostScreen.Bottom)
+        focus(shell, titles(shell).indexOf("Nintendo 3DS"))
+        shell.onMeaning(Meaning.Activate, HostScreen.Bottom)
+        assertEquals(inside, titles(shell))
+    }
+
+    @Test
+    fun removingAFolderFromHomeSpillsNothingOntoTheRoot() {
+        val shell = shell()
+        shell.ingestLibrary("local-folder", listOf(entry("puzzle", "Puzzle", "nintendo-3ds")), emptyList())
+        val folder = titles(shell).indexOf("Nintendo 3DS")
+        focus(shell, folder)
+        assertEquals(listOf(Row.MoveTile, Row.RenameFolder, Row.RemoveTile), optionRows(shell))
+        choose(shell, Row.RemoveTile)
+        assertEquals(listOf(Copy.allLibrary, ""), titles(shell))
+        // A rescan leaves it off Home. Puzzle is still in All, and not on Home.
+        shell.ingestLibrary("local-folder", listOf(entry("puzzle", "Puzzle", "nintendo-3ds")), emptyList())
+        assertFalse("Nintendo 3DS" in titles(shell))
+        shell.openHomeAll()
+        val puzzle = titles(shell).indexOf("Puzzle")
+        assertFalse(shell.homeFace(puzzle)!!.onGrid)
+        focus(shell, puzzle)
+        // Add to brings its folder back with it.
+        assertEquals("${Copy.addTo} Nintendo 3DS", shell.model.tileActions?.addToHome)
+        choose(shell, Row.AddToHome)
+        shell.goHome()
+        assertTrue("Nintendo 3DS" in titles(shell))
+    }
+
+    @Test
+    fun aPlayBringsRecentlyPlayedAndItOpensReadOnly() {
+        val played = HashMap<String, Long>()
+        val shell = ShellController(
+            SessionStore(MemoryPrefs()),
+            PluginHost(Dispatchers.Unconfined, MemoryCredentialStore()),
+            lastPlayedMillis = { played[it] },
+        )
+        shell.ingestLibrary("local-folder", listOf(entry("puzzle", "Puzzle", "nintendo-3ds")), emptyList())
+        assertFalse(Copy.recentlyPlayed in titles(shell))
+        played[homeGameId("local-folder", "puzzle")] = System.currentTimeMillis() + 60_000L
+        shell.notePlayChanged()
+        val recent = titles(shell).indexOf(Copy.recentlyPlayed)
+        assertTrue(recent >= 0)
+        focus(shell, recent)
+        assertEquals(listOf(Row.MoveTile, Row.RenameFolder, Row.RemoveTile), optionRows(shell))
+        shell.onMeaning(Meaning.Activate, HostScreen.Bottom)
+        assertEquals(listOf("Puzzle"), titles(shell))
+        // Nothing moves or comes out of it, and the game can still be pinned and filed.
+        assertEquals(listOf(Row.AddToCollection, Row.Favorite, Row.PinTile), optionRows(shell))
     }
 
     @Test
@@ -527,9 +629,8 @@ class HomeGridOrderTest {
         assertEquals("${Copy.addTo} Nintendo 3DS", shell.model.tileActions?.addToHome)
         choose(shell, Row.AddToHome)
         assertTrue(shell.homeFace(puzzle)?.onGrid == true)
-        // Placed now, so Y has nothing to offer and stays shut.
-        shell.onMeaning(Meaning.Options, HostScreen.Bottom)
-        assertNull(shell.model.panel)
+        // Placed now, so Y offers what a game on Home has.
+        assertEquals(listOf(Row.AddToCollection, Row.Favorite, Row.PinTile), optionRows(shell))
         shell.onMeaning(Meaning.Back, HostScreen.Bottom)
         assertFalse("Puzzle" in titles(shell))
         focus(shell, titles(shell).indexOf("Nintendo 3DS"))
@@ -549,7 +650,7 @@ class HomeGridOrderTest {
         shell.onMeaning(Meaning.Activate, HostScreen.Bottom)
         focus(shell, titles(shell).indexOf("Drift"))
         assertEquals(
-            listOf(Row.MoveTile, Row.MoveTileTo, Row.NewFolder, Row.RemoveTile, Row.RemoveDownload),
+            listOf(Row.MoveTile, Row.AddToCollection, Row.Favorite, Row.PinTile, Row.RemoveTile, Row.RemoveDownload),
             optionRows(shell),
         )
         // A copy still arriving is not offered.
@@ -625,7 +726,8 @@ class HomeGridOrderTest {
         shell.noteServerChanged("romm#2")
         assertNull(shell.focusedDownload())
         shell.onMeaning(Meaning.Options, HostScreen.Bottom)
-        assertNull(shell.model.panel)
+        assertFalse(Row.RemoveDownload in panelRows(shell.model.panel!!, shell.model))
+        shell.onMeaning(Meaning.Back, HostScreen.Bottom)
         // Refreshes that started before the change, or while it was saving, list the old server.
         shell.ingestLibrary("romm#2", cached, emptyList(), readAt = before)
         shell.ingestLibrary("romm#2", cached, emptyList(), readAt = shell.deviceMark())
@@ -650,10 +752,9 @@ class HomeGridOrderTest {
         )
         shell.openHomeAll()
         focus(shell, titles(shell).indexOf("Drift"))
-        assertEquals(listOf(Row.RemoveDownload), optionRows(shell))
+        assertEquals(listOf(Row.AddToCollection, Row.Favorite, Row.PinTile, Row.RemoveDownload), optionRows(shell))
         shell.noteOffDevice("romm", "drift")
-        shell.onMeaning(Meaning.Options, HostScreen.Bottom)
-        assertNull(shell.model.panel)
+        assertFalse(Row.RemoveDownload in optionRows(shell))
     }
 
     private fun entry(

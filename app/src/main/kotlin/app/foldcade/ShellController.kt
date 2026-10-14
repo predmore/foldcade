@@ -72,6 +72,7 @@ import app.foldcade.language.MotionSpeed
 import app.foldcade.language.GridStrip
 import app.foldcade.language.shownFirstColumn
 import app.foldcade.language.PromptKey
+import app.foldcade.language.RemoveVerb
 import app.foldcade.language.ThorStyle
 import app.foldcade.language.faceMapWithConfirm
 import app.foldcade.language.offerButtonCalibration
@@ -316,6 +317,17 @@ class ShellController(
                 if (packageName != null && home.placeIn(androidHomeId(packageName), effect.folderId)) syncHome()
                 publish(next.copy(shelfEpoch = next.shelfEpoch + 1))
             }
+            // Add to stays open, so the next collection is one press away. Taking the game out
+            // of the collection on screen closes it, since the tile it acted on is gone.
+            is Effect.ToggleCollection -> {
+                val index = next.focus.cellIndex
+                val leaving = showingHome() && home.leavesOpenCollection(index, effect.folderId)
+                if (showingHome()) {
+                    home.toggleCollection(index, effect.folderId)
+                    syncHome()
+                }
+                if (leaving) showBoard(next.focus, keepDialog = true) else publish(next)
+            }
             Effect.MoveApp -> {
                 if (packageName != null) {
                     val destination = if (current.homeGrid == HomeGrid.AndroidGames) {
@@ -344,12 +356,13 @@ class ShellController(
             }
             else -> publish(next)
         }
-        cueMeaning(meaning, before, model)
+        // A pin lands out of sight, so it answers with its own sound.
+        if (effect == Effect.PinTile) cue(model.themeIndex, "notify") else cueMeaning(meaning, before, model)
         if (effect == Effect.DismissButtonLabels) {
             store.saveButtonPrompt(inputDeviceKey, store.buttonPromptConfirm(inputDeviceKey), dismissed = true)
         }
         return when (effect) {
-            Effect.PinApp, is Effect.AddAppTo, Effect.MoveApp, Effect.HideApp, Effect.ShowApp,
+            Effect.PinApp, is Effect.AddAppTo, Effect.MoveApp, Effect.HideApp, Effect.ShowApp, is Effect.ToggleCollection,
             -> null
             Effect.ChooseArt -> {
                 if (artPickerAvailable()) {
@@ -361,13 +374,16 @@ class ShellController(
                 pickUpHome(model.focus.cellIndex)
                 null
             }
-            is Effect.MoveTileTo -> changeHome { home.moveTo(it, effect.folderId) }
-            Effect.NewFolder -> changeHome { home.newFolder(it) }
+            Effect.NewCollection -> changeHome { home.newCollection(it) }
+            Effect.ToggleFavorite -> changeHome { home.toggleFavorite(it); it }
+            Effect.PinTile -> changeHome { home.pin(it); it }
             Effect.RenameFolder -> changeHome { home.startRename(it); it }
             Effect.ChooseFolderIcon -> changeHome { home.pickIcon(it); it }
             Effect.RemoveTile -> {
-                // A folder has no library, so removing one never unpins what it held.
-                val removed = home.face(model.focus.cellIndex)?.let(::homeShelf)
+                // Only hiding takes a game off Home, so only hiding drops its pinned shortcut.
+                // An unpinned game is still in its folder, and a folder has no library.
+                val hides = home.removeVerb(model.focus.cellIndex) == RemoveVerb.Hide
+                val removed = home.face(model.focus.cellIndex)?.takeIf { hides }?.let(::homeShelf)
                 val moonlight = removed?.takeIf { it.libraryId == MoonlightLibrary.ID }?.remoteKey
                 val droidDeck = removed?.takeIf { it.libraryId == DroidDeckLibrary.ID }?.remoteKey
                 changeHome { home.remove(it) }.also {
@@ -415,12 +431,15 @@ class ShellController(
     /** The text in the open folder name field. Null when no name field is open. */
     fun renameDraft(): String? = if (showingHome() && home.renamingId != null) home.renameDraft else null
 
+    /** The words over the name field: a collection's, or a folder's. */
+    fun renameLabel(): String = home.renameLabel()
+
     fun editRename(text: String) {
         home.editRename(text)
         showBoard(model.focus, keepDialog = true)
     }
 
-    /** The open folder icon picker and that folder's name, for the top screen. Null when closed. */
+    /** The open collection icon picker and that collection's name, for the top screen. Null when closed. */
     fun folderIconPick(): Pair<FolderIconPick, String>? {
         if (!showingHome()) return null
         val pick = home.iconPick ?: return null
@@ -435,7 +454,7 @@ class ShellController(
         if (!store.session.bothScreensFree() || model.focus.chrome != null) return false
         if (model.libraryGrid && model.gridKind != GridKind.Games) return false
         val face = if (showingHome() || home.board.allOpen) home.face(model.focus.cellIndex) else null
-        if (face != null && (face.folder || face.pinned || face.empty)) return false
+        if (face != null && (face.folder || face.allTile || face.empty)) return false
         val game = focusedGame() ?: return false
         return !game.emptyShelfHint && !game.occupiesBothDisplays
     }
@@ -1650,15 +1669,23 @@ class ShellController(
         }
     }
 
-    /** Play history changed. Recently played order follows the new last-played times. */
+    /**
+     * Play history changed. The Recent sort and the Recently played collection follow the new
+     * last-played times.
+     */
     fun notePlayChanged() {
+        // All's Recent sort reorders its rows, which the board does not see.
         if (showingHome() && home.board.allOpen) {
+            syncHome()
             model = withShelf(model.copy(shelfEpoch = model.shelfEpoch + 1))
             return
         }
+        val before = home.board
+        syncHome()
         val next = recentOrder()
-        if (next == model.recentFirst) return
-        model = model.copy(recentFirst = next)
+        if (home.board == before && next == model.recentFirst) return
+        noteShelfChanged()
+        if (model.recentFirst != next) model = model.copy(recentFirst = next)
     }
 
     private fun publish(next: PickerModel) {
@@ -1817,7 +1844,8 @@ class ShellController(
         home.remerge(
             shelfItems(),
             appItems(),
-            libraryItems,
+            // Read now, since a game played since its library listed it moves up Recently played.
+            libraryItems.map { item -> item.copy(lastPlayedMillis = lastPlayedMillis(item.id) ?: 0L) },
             homePlatforms(),
             libraryGames,
             unsettled = { id ->
@@ -1865,6 +1893,7 @@ class ShellController(
             title = app.label,
             kind = kind,
             mark = bucketMark(kind),
+            lastPlayedMillis = lastPlayedMillis(androidHomeId(app.packageName)) ?: 0L,
         )
     }
 

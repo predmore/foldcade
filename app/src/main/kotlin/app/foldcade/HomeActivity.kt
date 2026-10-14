@@ -239,8 +239,8 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
             is Effect.ChoosePlayerSave -> choosePlayerSave(effect.playerId)
             Effect.PinApp, is Effect.AddAppTo, Effect.MoveApp, Effect.HideApp, Effect.ShowApp -> Unit
             // The shell applies Y's tile actions and A on a text field itself and hands back null; these never arrive.
-            Effect.ChooseArt, Effect.MoveTile, is Effect.MoveTileTo, Effect.NewFolder, Effect.RenameFolder,
-            Effect.ChooseFolderIcon, Effect.RemoveTile, Effect.AddToHome, Effect.GoHome, Effect.EditField,
+            Effect.ChooseArt, Effect.MoveTile, is Effect.ToggleCollection, Effect.NewCollection, Effect.ToggleFavorite, Effect.PinTile,
+            Effect.RenameFolder, Effect.ChooseFolderIcon, Effect.RemoveTile, Effect.AddToHome, Effect.GoHome, Effect.EditField,
             -> Unit
             Effect.RemoveDownload -> removeDownload()
             Effect.OpenAll -> foldcade.shell.openHomeAll()

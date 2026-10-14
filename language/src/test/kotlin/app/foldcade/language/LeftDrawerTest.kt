@@ -9,7 +9,7 @@ import java.time.ZoneOffset
 import java.util.Locale
 
 class LeftDrawerTest {
-    private val tile = TileActions(move = true, destinations = listOf(FolderChoice(null, "Home")), rename = true)
+    private val tile = TileActions(move = true, collections = listOf(CollectionChoice(HOME_FAVORITES, "Favorites", false)), rename = true)
 
     @Test
     fun lOneIsPlayThenWhereToGoThenEditHomeAndSettings() {
@@ -32,29 +32,29 @@ class LeftDrawerTest {
         val edit = reduce(at(opened, Row.EditHome), Meaning.Activate).first
         assertEquals(PanelLevel.EditHome, edit.panel?.level)
         assertEquals(
-            listOf(Row.MoveTile, Row.MoveTileTo, Row.RenameFolder, Row.AddNewGames, Row.HiddenApps),
+            listOf(Row.MoveTile, Row.AddToCollection, Row.RenameFolder, Row.AddNewGames, Row.HiddenApps),
             panelRows(edit.panel!!, edit),
         )
-        // Move to, then Back, returns to Edit home on Move to, then to L1 on Edit home.
-        val moveTo = reduce(at(edit, Row.MoveTileTo), Meaning.Activate).first
-        assertEquals(PanelLevel.MoveTo, moveTo.panel?.level)
+        // Add to, then Back, returns to Edit home on Add to, then to L1 on Edit home.
+        val moveTo = reduce(at(edit, Row.AddToCollection), Meaning.Activate).first
+        assertEquals(PanelLevel.Collections, moveTo.panel?.level)
         val back = reduce(moveTo, Meaning.Back).first
         assertEquals(PanelLevel.EditHome, back.panel?.level)
-        assertEquals(Row.MoveTileTo, panelRows(back.panel!!, back)[back.panel!!.index])
+        assertEquals(Row.AddToCollection, panelRows(back.panel!!, back)[back.panel!!.index])
         val root = reduce(back, Meaning.Back).first
         assertEquals(PanelLevel.Root, root.panel?.level)
         assertEquals(Row.EditHome, panelRows(root.panel!!, root)[root.panel!!.index])
     }
 
     @Test
-    fun yOpensTheTilesMenuOnTheLeftAndMoveToComesBackToIt() {
+    fun yOpensTheTilesMenuOnTheLeftAndAddToComesBackToIt() {
         val actions = reduce(model(), Meaning.Options).first
         assertEquals(Side.Left, actions.panel?.side)
         assertEquals(PanelLevel.Actions, actions.panel?.level)
-        val moveTo = reduce(at(actions, Row.MoveTileTo), Meaning.Activate).first
+        val moveTo = reduce(at(actions, Row.AddToCollection), Meaning.Activate).first
         val back = reduce(moveTo, Meaning.Back).first
         assertEquals(PanelLevel.Actions, back.panel?.level)
-        assertEquals(Row.MoveTileTo, panelRows(back.panel!!, back)[back.panel!!.index])
+        assertEquals(Row.AddToCollection, panelRows(back.panel!!, back)[back.panel!!.index])
     }
 
     @Test

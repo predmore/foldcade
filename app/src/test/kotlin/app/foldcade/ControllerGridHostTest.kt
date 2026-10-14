@@ -44,7 +44,8 @@ class ControllerGridHostTest {
         shell.showHomeGrid(HomeGrid.Apps)
         assertEquals(listOf("Alpha", "Beta"), shell.model.gridLabels)
         assertTrue(shell.model.appActions!!.destinations.any { it.folderId == HOME_ANDROID_GAMES })
-        assertTrue(shell.model.appActions!!.destinations.any { it.folderId == HOME_ANDROID_APPS })
+        // Alpha is already in Android Apps, so that choice would do nothing and is left out.
+        assertFalse(shell.model.appActions!!.destinations.any { it.folderId == HOME_ANDROID_APPS })
         shell.onMeaning(Meaning.LetterForward, HostScreen.Bottom)
         assertEquals(1, shell.model.focus.cellIndex)
         assertEquals("B", shell.model.letterJump)
@@ -60,7 +61,7 @@ class ControllerGridHostTest {
         assertNotNull(home.board.openFolderId)
         assertEquals(folder, home.showRoot())
         assertNull(home.board.openFolderId)
-        val all = root.indexOfFirst { it.pinned }
+        val all = root.indexOfFirst { it.allTile }
         home.handle(Meaning.Activate, all)
         assertTrue(home.board.allOpen)
         assertEquals(all, home.showRoot())

@@ -36,6 +36,11 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.PathMeasure
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.StrokeJoin
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.graphics.luminance
@@ -353,6 +358,52 @@ internal fun ToggleSwitch(on: Boolean, focused: Boolean, scale: Float) {
 }
 
 /**
+ * A check in a ring, for a choice that is in or out. Checked, the ring fills with the focus
+ * colors and the tick draws itself in with a small pop. Cleared, it draws back out.
+ */
+@Composable
+internal fun CheckMark(on: Boolean, focused: Boolean, scale: Float) {
+    val theme = LocalFoldTheme.current.theme
+    val tick by eased(if (on) 1f else 0f, theme.motion.durationSelect, scale)
+    val pop by bouncy(if (on) 1f else 0f, scale)
+    val ring = remember(theme) { FocusRing(theme) }
+    val start = ring.start
+    val end = ring.end
+    Box(
+        Modifier
+            .size(30.dp)
+            .graphicsLayer {
+                val grow = 0.86f + 0.14f * pop
+                scaleX = grow
+                scaleY = grow
+            }
+            .drawBehind {
+                val radius = size.minDimension / 2f
+                val edge = 2.dp.toPx()
+                drawCircle(
+                    color = theme.onBackground.copy(alpha = if (focused) 0.42f else 0.26f),
+                    radius = radius - edge / 2f,
+                    style = Stroke(edge),
+                )
+                val lit = tick.coerceIn(0f, 1f)
+                if (lit <= 0f) return@drawBehind
+                drawCircle(brush = Brush.linearGradient(listOf(start, end)), radius = radius, alpha = lit)
+                val path = Path().apply {
+                    moveTo(size.width * 0.29f, size.height * 0.52f)
+                    lineTo(size.width * 0.44f, size.height * 0.67f)
+                    lineTo(size.width * 0.72f, size.height * 0.37f)
+                }
+                val measure = PathMeasure().apply { setPath(path, false) }
+                val drawn = Path()
+                measure.getSegment(0f, measure.length * lit, drawn, true)
+                // A light fill, as a white focus color makes it, takes a dark tick.
+                val tickColor = if (start.luminance() > 0.6f) theme.background else theme.onBackground
+                drawPath(drawn, color = tickColor, style = Stroke(width = 3.dp.toPx(), cap = StrokeCap.Round, join = StrokeJoin.Round))
+            },
+    )
+}
+
+/**
  * ‹ value ›. The chevrons show while the row has focus, since left and right then change it.
  * A new value rolls up into place as the old one rolls away.
  */
@@ -514,6 +565,7 @@ internal fun MenuRow(
         val valueStyle = labelStyle.copy(color = theme.muted, textAlign = TextAlign.End)
         when (control) {
             is RowControl.Toggle -> ToggleSwitch(control.on, focused, scale)
+            is RowControl.Check -> CheckMark(control.on, focused, scale)
             is RowControl.Choice -> ChoiceValue(control.value, focused, valueStyle.copy(color = if (focused) theme.onBackground else theme.muted), scale)
             is RowControl.Value -> BasicText(control.text, style = valueStyle, maxLines = 1, overflow = TextOverflow.Ellipsis)
             RowControl.Opens -> if (chord == null) OpensChevron(focused, labelStyle, scale)

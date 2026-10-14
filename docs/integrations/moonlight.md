@@ -22,7 +22,7 @@ Saves stay on the computer or with the game's cloud service; Foldcade does not s
 
 ## Remove or restore a game
 
-**Y › Remove from Home** removes the tile and its pin. Restore it with **Create shortcut** in Moonlight. The game stays installed on your computer.
+**Y › Hide** takes the game off Home and drops its pin. **Unpin** on a Home shortcut keeps the game in the Moonlight folder. Restore it with **Create shortcut** in Moonlight. The game stays installed on your computer.
 
 Foldcade skips shortcuts Moonlight disables after their computer or game is removed.
 

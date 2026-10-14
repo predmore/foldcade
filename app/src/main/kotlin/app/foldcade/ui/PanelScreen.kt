@@ -1143,7 +1143,7 @@ private fun FolderIconPicker(pick: FolderIconPick, name: String, top: Boolean) {
         verticalArrangement = Arrangement.spacedBy(px(24f)),
     ) {
         BasicText(
-            text = "${Copy.folderIcon} · $name",
+            text = "${Copy.collectionIcon} · $name",
             style = text(theme.onBackground, LocalFoldTheme.current.theme.style.type.dialogTitle, theme),
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
@@ -2468,7 +2468,7 @@ private fun StripColumn(
                         focus.cellIndex == index
                     val label = game?.title.orEmpty()
                     val libraryTile = library && face == null
-                    val onHomeMark = face != null && allOpen && face.onGrid && !face.folder && !face.pinned
+                    val onHomeMark = face != null && allOpen && face.onGrid && !face.folder && !face.allTile
                     // A folder or an empty slot keeps its mark. A game asks for its art.
                     val artGame = game?.takeIf { face?.folder != true && face?.empty != true }
                     val art = key(artGame?.id) {
@@ -3089,7 +3089,7 @@ private fun RenameField(
         keyboard?.show()
     }
     Column(Modifier.fillMaxWidth().padding(top = px(8f)), horizontalAlignment = Alignment.CenterHorizontally) {
-        BasicText(text = Copy.folderName, style = text(theme.muted, LocalFoldTheme.current.theme.style.type.hint, theme))
+        BasicText(text = app.shell.renameLabel(), style = text(theme.muted, LocalFoldTheme.current.theme.style.type.hint, theme))
         BasicTextField(
             value = field,
             onValueChange = { next ->

@@ -34,8 +34,8 @@ enum class PanelLevel(val depth: Int, val actsOnTile: Boolean = false) {
     /** Y's menu for the focused tile, in the left island. */
     Actions(1, actsOnTile = true),
 
-    /** The folders Move to can send the focused game into. */
-    MoveTo(2, actsOnTile = true),
+    /** Add to: the collections the focused game can join, each checked while it is in it. */
+    Collections(2, actsOnTile = true),
 
     /** Home and the folders Add to can place an installed app in. */
     AddTo(2, actsOnTile = true),
@@ -278,9 +278,16 @@ sealed interface Row {
     data object ShowApp : Row
     data object ChooseArt : Row
     data object MoveTile : Row
-    data object MoveTileTo : Row
+
+    /** Opens [PanelLevel.Collections]. */
+    data object AddToCollection : Row
+
+    /** One collection in Add to. A toggles the focused game in it and the menu stays open. */
+    data class Collection(val folderId: String, val label: String) : Row
+    data object Favorite : Row
+    data object PinTile : Row
     data class Destination(val folderId: String?, val label: String) : Row
-    data object NewFolder : Row
+    data object NewCollection : Row
     data object RenameFolder : Row
     data object FolderIcon : Row
     data object RemoveTile : Row
@@ -451,8 +458,11 @@ fun rightRows(notices: List<FoldNotice>): List<Row> = buildList {
 /** Where R1 opens: the brightness slider, under the tiles. */
 fun rightStart(): Int = quickSettings().size
 
-/** A folder Move to can send a game into. A null [folderId] is the home root. */
+/** A place an installed app can be added to from its shelf. A null [folderId] is the home root. */
 data class FolderChoice(val folderId: String?, val name: String)
+
+/** A collection Add to lists, and whether the focused game is in it. */
+data class CollectionChoice(val folderId: String, val name: String, val member: Boolean)
 
 /**
  * What Y offers for the focused tile on the home board or in All.
@@ -462,15 +472,18 @@ data class TileActions(
     val art: Boolean = false,
     /** Pick the tile up and walk it with the D-pad. */
     val move: Boolean = false,
-    /** Where Move to can send it. Empty leaves the row out. */
-    val destinations: List<FolderChoice> = emptyList(),
-    val newFolder: Boolean = false,
+    /** Add to: Favorites, then every collection on Home. Null leaves the row out. */
+    val collections: List<CollectionChoice>? = null,
+    /** Whether the game is a favorite, so the row reads Unfavorite. Null leaves the row out. */
+    val favorite: Boolean? = null,
+    /** Pin to Home: the game has no tile on the root yet. */
+    val pin: Boolean = false,
+    val newCollection: Boolean = false,
     val rename: Boolean = false,
-    /** A folder the user made can wear an icon they choose. */
+    /** A collection can wear an icon the user chooses. */
     val icon: Boolean = false,
-    val remove: Boolean = false,
-    /** Remove spills a folder instead of hiding a tile, and says so. */
-    val removeIsFolder: Boolean = false,
+    /** What X does to the tile. Null leaves the row out. */
+    val remove: RemoveVerb? = null,
     /** The All row's label, such as "Add to Home". Null when the item is already placed. */
     val addToHome: String? = null,
     /** A server game downloaded to this device can be deleted again. */
@@ -482,12 +495,14 @@ fun actionRows(tile: TileActions?, app: AppActions?): List<Row> = buildList {
     if (tile != null) {
         if (tile.addToHome != null) add(Row.AddToHome)
         if (tile.move) add(Row.MoveTile)
-        if (tile.destinations.isNotEmpty()) add(Row.MoveTileTo)
+        if (tile.collections != null) add(Row.AddToCollection)
+        if (tile.favorite != null) add(Row.Favorite)
         if (tile.art && app == null) add(Row.ChooseArt)
-        if (tile.newFolder) add(Row.NewFolder)
+        if (tile.pin) add(Row.PinTile)
+        if (tile.newCollection) add(Row.NewCollection)
         if (tile.rename) add(Row.RenameFolder)
         if (tile.icon) add(Row.FolderIcon)
-        if (tile.remove) add(Row.RemoveTile)
+        if (tile.remove != null) add(Row.RemoveTile)
         if (tile.removeDownload) add(Row.RemoveDownload)
     }
     if (app != null) {
@@ -529,12 +544,15 @@ fun panelHints(model: PickerModel): List<HintKey>? {
     }
 }
 
-fun destinationRows(tile: TileActions?): List<Row> =
-    tile?.destinations.orEmpty().map { Row.Destination(it.folderId, it.name) }
+/** Add to's rows: each collection, then one that makes a new collection holding the game. */
+fun collectionRows(tile: TileActions?): List<Row> {
+    val collections = tile?.collections ?: return emptyList()
+    return collections.map { Row.Collection(it.folderId, it.name) } + Row.NewCollection
+}
 
 fun panelRows(panel: SidePanel, model: PickerModel): List<Row> = when (panel.level) {
     PanelLevel.Actions -> actionRows(model.tileActions, model.appActions)
-    PanelLevel.MoveTo -> destinationRows(model.tileActions)
+    PanelLevel.Collections -> collectionRows(model.tileActions)
     PanelLevel.AddTo -> model.appActions?.destinations.orEmpty().map { Row.Destination(it.folderId, it.name) }
     PanelLevel.RommConnection -> panel.connection?.let {
         listOf(Row.EditRomm(it.pluginId), Row.SignOut(it.pluginId, it.label))
@@ -623,12 +641,21 @@ fun rowText(row: Row, model: PickerModel): RowText = when (row) {
     Row.ShowApp -> RowText(Copy.showApp)
     Row.ChooseArt -> RowText(ArtCopy.art)
     Row.MoveTile -> RowText(Copy.move)
-    Row.MoveTileTo -> RowText(Copy.moveTo)
+    Row.AddToCollection -> RowText(Copy.addTo)
+    is Row.Collection -> RowText(row.label)
+    Row.Favorite -> RowText(if (model.tileActions?.favorite == true) Copy.unfavorite else Copy.favorite)
+    Row.PinTile -> RowText(Copy.pinToHome)
     is Row.Destination -> RowText(row.label)
-    Row.NewFolder -> RowText(Copy.makeFolder)
+    Row.NewCollection -> RowText(Copy.newCollection)
     Row.RenameFolder -> RowText(Copy.rename)
-    Row.FolderIcon -> RowText(Copy.changeIcon)
-    Row.RemoveTile -> RowText(if (model.tileActions?.removeIsFolder == true) Copy.removeFolder else Copy.removeFromHome)
+    Row.FolderIcon -> RowText(Copy.icon)
+    Row.RemoveTile -> RowText(
+        when (model.tileActions?.remove) {
+            RemoveVerb.Unpin -> Copy.unpin
+            RemoveVerb.Hide -> Copy.hideApp
+            RemoveVerb.Remove, null -> Copy.remove
+        },
+    )
     Row.RemoveDownload -> RowText(Copy.deleteDownload)
     Row.AddToHome -> RowText(model.tileActions?.addToHome ?: Copy.addToHome)
     Row.ButtonLabels -> RowText(
@@ -691,9 +718,15 @@ sealed interface Effect {
     /** Pick up the focused tile to move it. */
     data object MoveTile : Effect
 
-    /** Send the focused game into [folderId], or onto the home root when null. */
-    data class MoveTileTo(val folderId: String?) : Effect
-    data object NewFolder : Effect
+    /** Put the focused game in collection [folderId], or take it out. The menu stays open. */
+    data class ToggleCollection(val folderId: String) : Effect
+
+    /** A new collection, holding the focused game when there is one, then its name field. */
+    data object NewCollection : Effect
+    data object ToggleFavorite : Effect
+
+    /** A tile for the focused game on the root. It stays where it is too. */
+    data object PinTile : Effect
     data object RenameFolder : Effect
     data object ChooseFolderIcon : Effect
     data object RemoveTile : Effect
@@ -1433,9 +1466,9 @@ private fun backPanel(model: PickerModel, panel: SidePanel): Pair<PickerModel, E
             else model.copy(panel = null, focus = panel.grid) to null
         }
         PanelLevel.EditHome -> model.copy(panel = panel.copy(level = PanelLevel.Root, index = leftRows().indexOf(Row.EditHome))) to null
-        PanelLevel.MoveTo, PanelLevel.AddTo -> {
+        PanelLevel.Collections, PanelLevel.AddTo -> {
             val parent = panel.copy(level = panel.via)
-            val action = if (panel.level == PanelLevel.AddTo) Row.AddAppTo else Row.MoveTileTo
+            val action = if (panel.level == PanelLevel.AddTo) Row.AddAppTo else Row.AddToCollection
             val row = panelRows(parent, model).indexOf(action).coerceAtLeast(0)
             model.copy(panel = parent.copy(index = row)) to null
         }
@@ -1546,12 +1579,16 @@ private fun activateRow(
         Row.MoveApp -> model.copy(panel = null, focus = panel.grid) to Effect.MoveApp
         Row.HideApp -> model.copy(panel = null, focus = panel.grid) to Effect.HideApp
         Row.ShowApp -> model.copy(panel = null, focus = panel.grid) to Effect.ShowApp
-        Row.MoveTileTo -> model.copy(panel = panel.copy(level = PanelLevel.MoveTo, index = 0, via = panel.level)) to null
-        is Row.Destination -> model.copy(panel = null, focus = panel.grid) to
-            if (panel.level == PanelLevel.AddTo) Effect.AddAppTo(row.folderId) else Effect.MoveTileTo(row.folderId)
+        Row.AddToCollection -> model.copy(panel = panel.copy(level = PanelLevel.Collections, index = 0, via = panel.level)) to null
+        // The check flips here so it moves at once. The shell's own list replaces this one.
+        is Row.Collection -> model.copy(panel = panel, tileActions = model.tileActions?.toggled(row.folderId)) to
+            Effect.ToggleCollection(row.folderId)
+        Row.Favorite -> model.copy(panel = null, focus = panel.grid) to Effect.ToggleFavorite
+        Row.PinTile -> model.copy(panel = null, focus = panel.grid) to Effect.PinTile
+        is Row.Destination -> model.copy(panel = null, focus = panel.grid) to Effect.AddAppTo(row.folderId)
         Row.ChooseArt -> model.copy(panel = null, focus = panel.grid) to Effect.ChooseArt
         Row.MoveTile -> model.copy(panel = null, focus = panel.grid) to Effect.MoveTile
-        Row.NewFolder -> model.copy(panel = null, focus = panel.grid) to Effect.NewFolder
+        Row.NewCollection -> model.copy(panel = null, focus = panel.grid) to Effect.NewCollection
         Row.RenameFolder -> model.copy(panel = null, focus = panel.grid) to Effect.RenameFolder
         Row.FolderIcon -> model.copy(panel = null, focus = panel.grid) to Effect.ChooseFolderIcon
         Row.RemoveTile -> model.copy(panel = null, focus = panel.grid) to Effect.RemoveTile
@@ -1564,6 +1601,10 @@ private fun activateRow(
         }
     }
 }
+
+private fun TileActions.toggled(folderId: String): TileActions = copy(
+    collections = collections?.map { if (it.folderId == folderId) it.copy(member = !it.member) else it },
+)
 
 /**
  * A, or X for the bottom screen. An app's notice opens that app and R1 closes.

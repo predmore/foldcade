@@ -7,7 +7,7 @@ Settings and confirmed Home edits are restored from the app-private `foldcade` s
 - Personalization: theme name, whether the background was explicitly selected, background motion, motion speed, and controller confirmation/dismissal choices per device.
 - Sound: music enabled, volume, and track id. Theme and track selections fall back when unavailable without overwriting the saved choice during startup. Nonfinite volume values fall back to the default.
 - Library: source folder URIs, RomM origin, listed/recent order, automatic placement of new games, and the artwork switch.
-- Home: tile positions and empty slots, user folders, confirmed folder names and icons, hidden tiles, removed system folders, and All's selected tab, sort, system filter, and destination folder.
+- Home: tile positions and empty slots, collections (folders the user made in older releases become collections), confirmed names and icons, hidden tiles, removed system folders with the games still filed in them, when Recently played may first appear, and All's selected tab, sort, system filter, and destination folder.
 - Apps: games/apps shelf overrides, hidden apps, favorites, and overrides that show player apps.
 - Players: save folder URIs, skipped folder offers, save hashes, and pending save returns.
 - Onboarding: Home, library-folder, usage-access, and controller prompt answers.

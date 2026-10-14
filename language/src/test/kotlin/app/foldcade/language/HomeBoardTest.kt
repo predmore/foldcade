@@ -103,33 +103,63 @@ class HomeBoardTest {
         val passed = moveHeld(pickUp(board, 0), 1, catalog, platforms)
         assertEquals(listOf(ds.id, "game.3ds", "folder.mine", HOME_ANDROID_GAMES), passed.slots)
         assertTrue(passed.folders.getValue(ds.id).slots.isEmpty())
-        // A folder the user made takes it.
+        // A collection takes it, and the pin drops in.
         val inMine = moveHeld(passed, 2, catalog, platforms)
         assertNull(inMine.hold)
         assertEquals(listOf("game.3ds"), inMine.folders.getValue("folder.mine").slots)
+        assertFalse("game.3ds" in inMine.slots)
 
-        assertEquals(board, moveToFolder(board, "game.3ds", ds.id, catalog, platforms))
-        assertEquals(board, moveToFolder(board, "game.3ds", HOME_ANDROID_GAMES, catalog, platforms))
-        // Not in the catalog yet, so it only goes in a folder the user made.
-        assertEquals(board, moveToFolder(board, "game.3ds", ds.id, emptyList(), platforms))
-        assertEquals(listOf("game.3ds"), moveToFolder(board, "game.3ds", "folder.mine", emptyList(), platforms).folders.getValue("folder.mine").slots)
+        assertEquals(board, fileGame(board, "game.3ds", ds.id, catalog, platforms))
+        assertEquals(board, fileGame(board, "game.3ds", HOME_ANDROID_GAMES, catalog, platforms))
+        // Not in the catalog yet, so it only goes in a collection.
+        assertEquals(board, fileGame(board, "game.3ds", ds.id, emptyList(), platforms))
+        val filed = fileGame(board, "game.3ds", "folder.mine", emptyList(), platforms)
+        assertEquals(listOf("game.3ds"), filed.folders.getValue("folder.mine").slots)
+        // Filed in a collection, the game keeps its pin.
+        assertEquals(board.slots, filed.slots)
     }
 
     @Test
-    fun deleteFolderMovesContentsOutAndKeepsTheGames() {
-        val folder = HomeFolder("folder.gba", "Game Boy Advance", slots = listOf("game.cart", null, "game.drift"))
-        val board = HomeBoard(
-            slots = listOf(HOME_ALL, "folder.gba", "loose"),
-            folders = mapOf("folder.gba" to folder),
-        )
-        val deleted = deleteFolder(board, "folder.gba")
-        assertFalse(deleted.folders.containsKey("folder.gba"))
-        assertFalse(deleted.slots.contains("folder.gba"))
-        assertTrue(deleted.slots.contains("game.cart"))
-        assertTrue(deleted.slots.contains("game.drift"))
-        assertTrue(deleted.slots.contains("loose"))
-        assertTrue(deleted.slots.contains(HOME_ALL))
-        assertEquals(listOf("game.cart", "game.drift"), deleted.slots.filter { it == "game.cart" || it == "game.drift" })
+    fun removingAFolderRetiresItWithItsGamesAndSpillsNothing() {
+        val gba = platformFolderId("game-boy-advance")
+        val cart = item("game.cart", platformId = "gba")
+        val drift = item("game.drift", platformId = "gba")
+        val placed = mergeHome(HomeBoard(), listOf(cart, drift), platforms)
+        val pinned = pinToHome(placed, cart.id)
+        val removed = removeFolder(pinned, gba)
+        assertFalse(gba in removed.slots)
+        assertTrue(gba in removed.retired)
+        // Nothing lands on the root, and the pin stays.
+        assertEquals(pinned.slots.map { if (it == gba) null else it }, removed.slots)
+        assertEquals(listOf(cart.id, drift.id), removed.folders.getValue(gba).slots)
+        assertTrue(onHome(removed, cart.id))
+        assertFalse(onHome(removed, drift.id))
+        // A rescan does not take its games for new ones and bring it back.
+        val again = mergeHome(removed, listOf(cart, drift), platforms)
+        assertFalse(gba in again.slots)
+        assertTrue(gba in again.retired)
+        assertFalse(onHome(again, drift.id))
+        // A new game for it brings it back whole, in the first free slot.
+        val fresh = item("game.fresh", platformId = "gba")
+        val back = mergeHome(again, listOf(cart, drift, fresh), platforms)
+        assertTrue(gba in back.slots)
+        assertFalse(gba in back.retired)
+        assertEquals(listOf(cart.id, drift.id, fresh.id), back.folders.getValue(gba).slots)
+    }
+
+    @Test
+    fun removingACollectionDeletesOnlyTheCollection() {
+        val cart = item("game.cart", platformId = "gba")
+        val placed = mergeHome(HomeBoard(), listOf(cart), platforms)
+        val made = newCollection(placed, "home.user.1", "Mine", member = cart.id)
+        val index = made.slots.indexOf("home.user.1")
+        assertEquals(RemoveVerb.Remove, removeVerb(made, index))
+        val removed = removeFromHome(made, index)
+        assertFalse("home.user.1" in removed.folders)
+        assertNull(removed.slots[index])
+        assertFalse("home.user.1" in removed.retired)
+        assertEquals(placed.folders, removed.folders)
+        assertTrue(onHome(removed, cart.id))
     }
 
     @Test
@@ -143,22 +173,22 @@ class HomeBoardTest {
         val rescanned = mergeHome(hidden, catalog, platforms)
         assertTrue("game.cart" in rescanned.hidden)
         assertFalse(onHome(rescanned, "game.cart"))
-        val shown = addToHome(rescanned, "game.cart")
+        val shown = pinToHome(rescanned, "game.cart")
         assertFalse("game.cart" in shown.hidden)
         assertTrue(onHome(shown, "game.cart"))
-        assertEquals(catalog, catalog)
     }
 
     @Test
-    fun addToHomeUsesTheFirstFreeSlotOrAChosenFolder() {
+    fun pinToHomeUsesTheFirstFreeSlotAndFilingAddsToACollection() {
         val folder = HomeFolder("folder.user", "Mine", userMade = true, slots = listOf(null, "kept"))
         val board = HomeBoard(
             slots = listOf(HOME_ALL, "taken", null),
             folders = mapOf("folder.user" to folder),
         )
-        val rooted = addToHome(board, "game.cart")
+        val rooted = pinToHome(board, "game.cart")
         assertEquals(listOf(HOME_ALL, "taken", "game.cart"), rooted.slots)
-        val chosen = addToHome(board, "game.drift", "folder.user")
+        assertEquals(rooted, pinToHome(rooted, "game.cart"))
+        val chosen = fileGame(board, "game.drift", "folder.user", emptyList(), platforms)
         assertEquals(listOf("game.drift", "kept"), chosen.folders.getValue("folder.user").slots)
         assertFalse(chosen.slots.contains("game.drift"))
     }
@@ -219,7 +249,7 @@ class HomeBoardTest {
         assertEquals(listOf("a", "b", null), restored.slots)
         assertNull(restored.hold)
         val renamed = renameFolder(
-            createFolder(board, "home.user.1", "Mine"),
+            newCollection(board, "home.user.1", "Mine"),
             "home.user.1",
             "Night\nshift",
         )
@@ -232,7 +262,7 @@ class HomeBoardTest {
 
     @Test
     fun aFolderTheUserMadeKeepsTheIconTheyChose() {
-        val made = createFolder(HomeBoard(), "home.user.1", "Zelda")
+        val made = newCollection(HomeBoard(), "home.user.1", "Zelda")
         val iconed = setFolderIcon(made, "home.user.1", "nintendo-3ds")
         assertEquals("nintendo-3ds", iconed.folders.getValue("home.user.1").mark)
         // A rescan and a saved board keep it.
@@ -387,7 +417,7 @@ class HomeBoardTest {
         assertTrue(decodeHome(encodeHome(filed)).emulatorsFiled)
 
         // The user moves it back. It stays.
-        val moved = moveToFolder(filed, azahar.id, HOME_ANDROID_APPS, listOf(azahar, notes), platforms)
+        val moved = fileGame(filed, azahar.id, HOME_ANDROID_APPS, listOf(azahar, notes), platforms)
         val again = mergeHome(decodeHome(encodeHome(moved)), listOf(azahar, notes), platforms)
         assertTrue(azahar.id in again.folders.getValue(HOME_ANDROID_APPS).slots)
         assertFalse(again.folders.containsKey(HOME_EMULATORS))
@@ -441,50 +471,47 @@ class HomeBoardTest {
     }
 
     @Test
-    fun aNewFolderWrapsTheGameInItsPlace() {
+    fun aNewCollectionHoldsTheGameAndLeavesItWhereItIs() {
         val board = board(listOf(HOME_ALL, "game.cart", "game.drift"))
-        val made = folderAround(board, 1, "home.user.1", "Folder 1")
-        assertEquals(listOf(HOME_ALL, "home.user.1", "game.drift"), made.slots)
-        val folder = made.folders.getValue("home.user.1")
-        assertEquals(listOf("game.cart"), folder.slots)
-        assertTrue(folder.userMade)
-        assertEquals(MARK_FOLDER, folder.mark)
-        // On the All tile there is no game to wrap, so the folder takes the first free slot.
-        val empty = folderAround(board(listOf(HOME_ALL, null, "game.drift")), 0, "home.user.1", "Folder 1")
-        assertEquals(listOf(HOME_ALL, "home.user.1", "game.drift"), empty.slots)
-        assertEquals(emptyList<String?>(), empty.folders.getValue("home.user.1").slots)
+        val made = newCollection(board, "home.user.1", "Collection 1", member = "game.cart")
+        assertEquals(listOf(HOME_ALL, "game.cart", "game.drift", "home.user.1"), made.slots)
+        val collection = made.folders.getValue("home.user.1")
+        assertEquals(listOf("game.cart"), collection.slots)
+        assertTrue(collection.userMade)
+        assertTrue(collection.collection)
+        assertEquals(MARK_FOLDER, collection.mark)
+        // On an empty slot it takes that slot, even one past the last tile.
+        val gap = newCollection(board(listOf(HOME_ALL, null, "game.drift")), "home.user.1", "Collection 1", at = 1)
+        assertEquals(listOf(HOME_ALL, "home.user.1", "game.drift"), gap.slots)
+        assertEquals(emptyList<String?>(), gap.folders.getValue("home.user.1").slots)
+        val beyond = newCollection(board, "home.user.1", "Collection 1", at = 4)
+        assertEquals(listOf(HOME_ALL, "game.cart", "game.drift", null, "home.user.1"), beyond.slots)
+        // On a taken slot it takes the first free one.
+        val taken = newCollection(board(listOf(HOME_ALL, null, "game.drift")), "home.user.1", "Collection 1", at = 0)
+        assertEquals(listOf(HOME_ALL, "home.user.1", "game.drift"), taken.slots)
     }
 
     @Test
-    fun aNewFolderMadeInsideAFolderLandsOnTheRoot() {
-        val gba = HomeFolder("folder.gba", "Game Boy Advance", slots = listOf("game.cart", "game.drift"))
-        val board = HomeBoard(
-            slots = listOf(HOME_ALL, "folder.gba"),
-            folders = mapOf("folder.gba" to gba),
-            openFolderId = "folder.gba",
-        )
-        val made = folderAround(board, 1, "home.user.1", "Folder 1")
-        assertEquals(listOf(HOME_ALL, "folder.gba", "home.user.1"), made.slots)
-        assertEquals(listOf("game.cart", null), made.folders.getValue("folder.gba").slots)
-        assertEquals(listOf("game.drift"), made.folders.getValue("home.user.1").slots)
-    }
-
-    @Test
-    fun moveToSendsAGameIntoAFolderOrBackToTheRoot() {
-        val mine = HomeFolder("folder.mine", "Mine", userMade = true, slots = listOf("kept"))
-        val board = HomeBoard(
-            slots = listOf(HOME_ALL, "game.cart", "folder.mine"),
-            folders = mapOf("folder.mine" to mine),
-        )
-        val inside = moveToFolder(board, "game.cart", "folder.mine", emptyList(), platforms)
-        assertEquals(listOf(HOME_ALL, null, "folder.mine"), inside.slots)
-        assertEquals(listOf("kept", "game.cart"), inside.folders.getValue("folder.mine").slots)
-        val back = moveToFolder(inside, "game.cart", null, emptyList(), platforms)
-        assertEquals(listOf(HOME_ALL, "game.cart", "folder.mine"), back.slots)
-        assertEquals(listOf("kept", null), back.folders.getValue("folder.mine").slots)
-        // Folders and the All tile stay where they are.
-        assertEquals(board, moveToFolder(board, "folder.mine", null, emptyList(), platforms))
-        assertEquals(board, moveToFolder(board, HOME_ALL, "folder.mine", emptyList(), platforms))
+    fun unpinTakesOnlyTheRootTileAndALoneTileHidesInstead() {
+        val cart = item("game.cart", platformId = "gba")
+        val loose = item("game.loose")
+        val placed = pinToHome(pinToHome(mergeHome(HomeBoard(), listOf(cart, loose), platforms), cart.id), loose.id)
+        val gba = platformFolderId("game-boy-advance")
+        assertTrue(cart.id in placed.folders.getValue(gba).slots)
+        val at = placed.slots.indexOf(cart.id)
+        assertEquals(RemoveVerb.Unpin, removeVerb(placed, at))
+        val unpinned = removeFromHome(placed, at)
+        assertNull(unpinned.slots[at])
+        assertTrue(cart.id in unpinned.folders.getValue(gba).slots)
+        assertTrue(onHome(unpinned, cart.id))
+        assertFalse(cart.id in unpinned.hidden)
+        // A game with no folder is only on Home through its tile, so X hides it.
+        val lone = placed.slots.indexOf(loose.id)
+        assertEquals(RemoveVerb.Hide, removeVerb(placed, lone))
+        assertTrue(loose.id in removeFromHome(placed, lone).hidden)
+        // In a collection as well, its tile can go.
+        val kept = newCollection(placed, "home.user.1", "Mine", member = loose.id)
+        assertEquals(RemoveVerb.Unpin, removeVerb(kept, lone))
     }
 
     @Test
@@ -497,8 +524,8 @@ class HomeBoardTest {
         // No app has made the Android Apps folder.
         assertNull(homeFolderFor(placed, app, platforms))
         assertEquals(listOf("android:example"), addItemToHome(placed, app, platforms).folders.getValue(HOME_ANDROID_APPS).slots)
-        // With its folder removed there is nowhere to return to, so it goes on the root.
-        val removed = deleteFolder(placed, gba)
+        // With its folder taken off Home there is nowhere on Home to return to.
+        val removed = removeFolder(placed, gba)
         assertNull(homeFolderFor(removed, cart, platforms))
         assertNull(homeFolderFor(placed, item("loose", kind = HomeKind.Loose), platforms))
     }
