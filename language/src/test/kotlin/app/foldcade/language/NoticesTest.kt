@@ -106,10 +106,10 @@ class NoticesTest {
     }
 
     @Test
-    fun deleteDismissesExceptWhileNamingAFolder() {
+    fun deleteDismissesExceptWhileTyping() {
         assertEquals(Meaning.Dismiss, meaningOf(KeyEvent.KEYCODE_DEL))
         assertEquals(Meaning.Dismiss, meaningOf(KeyEvent.KEYCODE_FORWARD_DEL))
-        assertNull(meaningOf(KeyEvent.KEYCODE_DEL, homeKeys = HomeKeys.Renaming))
+        assertEquals(Meaning.Erase, meaningOf(KeyEvent.KEYCODE_DEL, homeKeys = HomeKeys.Typing))
     }
 
     @Test

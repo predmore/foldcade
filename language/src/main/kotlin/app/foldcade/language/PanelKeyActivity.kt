@@ -10,6 +10,11 @@ import androidx.activity.OnBackPressedCallback
  * When the picker is not the focused surface, the map is not consulted.
  */
 abstract class PanelKeyActivity : ComponentActivity() {
+    private companion object {
+        /** Keys held while typing keep their repeats away from the grid until they come up, on either screen. */
+        val typingKeys = TypingKeyGuard()
+    }
+
     protected abstract fun pickerIsFocused(): Boolean
 
     /** Hero and picker both count. An external app does not. */
@@ -21,7 +26,7 @@ abstract class PanelKeyActivity : ComponentActivity() {
 
     protected open fun faceMap(): FaceMap = FaceMap.standard()
 
-    /** Moving a tile, picking an icon, naming a folder, and All library keys. Idle everywhere else. */
+    /** Moving a tile, picking an icon, typing, and All library keys. Idle everywhere else. */
     protected open fun homeKeys(): HomeKeys = HomeKeys.Idle
 
     protected open fun onPromptHeld(key: PromptKey, held: Boolean) = Unit
@@ -72,6 +77,7 @@ abstract class PanelKeyActivity : ComponentActivity() {
             onCalibrateConfirm(prompt)
             return true
         }
+        if (typingKeys.swallows(keyCode, event.repeatCount, homeKeys() == HomeKeys.Typing)) return true
         if (keyCode == KeyEvent.KEYCODE_BACK) return false
         val meaning = meaningOf(keyCode, event.repeatCount, faceMap(), homeKeys()) ?: return consumesUnmapped(keyCode)
         val shoulder = meaning == Meaning.LeftPanel || meaning == Meaning.RightPanel
@@ -85,6 +91,7 @@ abstract class PanelKeyActivity : ComponentActivity() {
     override fun onKeyUp(keyCode: Int, event: KeyEvent): Boolean {
         val prompt = promptKeyOf(keyCode)
         if (prompt != null) onPromptHeld(prompt, false)
+        typingKeys.up(keyCode, event.isCanceled)
         return consumesUnmapped(keyCode)
     }
 }

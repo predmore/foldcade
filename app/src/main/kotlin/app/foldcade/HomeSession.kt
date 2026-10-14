@@ -16,6 +16,10 @@ import app.foldcade.language.TileActions
 import app.foldcade.language.HomeBoard
 import app.foldcade.language.HomeItem
 import app.foldcade.language.HomeKeys
+import app.foldcade.language.KeyFocus
+import app.foldcade.language.TypingCue
+import app.foldcade.language.TypingStep
+import app.foldcade.language.quickNames
 import app.foldcade.language.folderCountLine
 import app.foldcade.language.HomeKind
 import app.foldcade.language.HomePlatform
@@ -92,10 +96,10 @@ class HomeSession(raw: String?, nowMillis: Long = System.currentTimeMillis()) {
     private var platforms: List<HomePlatform> = emptyList()
     private val games = HashMap<String, Game>()
     private val shelfById = HashMap<String, ShelfGame>()
-    /** The folder or collection whose name field is open. Null when closed. */
+    /** The folder or collection whose name is being typed, and the keyboard typing it. Null when closed. */
     var renamingId: String? = null
         private set
-    var renameDraft: String = ""
+    var typing: TypingSession? = null
         private set
 
     /** The cell focus goes back to when the name field closes. */
@@ -171,7 +175,7 @@ class HomeSession(raw: String?, nowMillis: Long = System.currentTimeMillis()) {
 
     fun keys(): HomeKeys = when {
         iconPick != null -> HomeKeys.PickingIcon
-        renamingId != null -> HomeKeys.Renaming
+        typing != null -> HomeKeys.Typing
         board.hold != null -> HomeKeys.Moving
         board.allOpen -> HomeKeys.AllLibrary
         else -> HomeKeys.Idle
@@ -182,7 +186,7 @@ class HomeSession(raw: String?, nowMillis: Long = System.currentTimeMillis()) {
     /** True when this meaning was applied. False lets the shared grid reducer move focus. */
     fun handle(meaning: Meaning, index: Int): HomeStep? {
         iconPick?.let { return handleIconPick(it, meaning) }
-        if (renamingId != null) return handleRename(meaning)
+        typed { it.handle(meaning) }?.let { return it }
         if (board.editing) return handleMove(meaning, index)
         if (board.allOpen) return handleAll(meaning, index)
         return when (meaning) {
@@ -315,27 +319,50 @@ class HomeSession(raw: String?, nowMillis: Long = System.currentTimeMillis()) {
         board = newCollection(board, collectionId, name, at = index.takeIf { game == null }, member = game)
         if (collectionId !in board.folders) return index
         val focus = if (game == null) board.slots.indexOf(collectionId).coerceAtLeast(0) else index
-        renamingId = collectionId
-        renameDraft = name
-        renameCell = focus
+        openNaming(collectionId, focus, fresh = true)
         return focus
     }
 
-    /** Opens the name field for the folder at [index]. */
+    /** Opens the keyboard on the name of the folder or collection at [index], all of it selected. */
     fun startRename(index: Int) {
         val id = visibleSlots(board).getOrNull(index) ?: return
-        val folder = board.folders[id] ?: return
-        renamingId = id
-        renameDraft = folder.name
-        renameCell = index
+        if (id !in board.folders) return
+        openNaming(id, index, fresh = false)
     }
 
-    /** What the name field is for: a collection, or one of Foldcade's folders. */
-    fun renameLabel(): String =
-        if (renamingId?.let { board.folders[it] }?.collection == true) Copy.collectionName else Copy.folderName
+    /**
+     * The keyboard over [id]'s name; focus goes back to [cell] when it closes. Quick names
+     * offer the platform its games share, then ideas for a collection, leaving out names
+     * the user already gave another collection. A [fresh] one starts the cursor on them.
+     */
+    private fun openNaming(id: String, cell: Int, fresh: Boolean) {
+        val folder = board.folders[id] ?: return
+        val shared = folder.slots.filterNotNull()
+            .map { slot -> platformName(catalog().firstOrNull { it.id == slot }?.platformId ?: games[slot]?.platformId) }
+            .distinct()
+            .singleOrNull()
+            ?.takeIf { it.isNotEmpty() }
+        val taken = board.folders.values.filter { it.collection && it.id != id }.map { it.name }
+        renamingId = id
+        renameCell = cell
+        typing = TypingSession(
+            text = folder.name,
+            chips = quickNames(listOfNotNull(shared), taken),
+            startOnChips = fresh,
+            onDone = { name ->
+                board = renameFolder(board, id, name)
+                closeTyping()
+            },
+            onCancel = ::closeTyping,
+        )
+    }
 
-    fun editRename(text: String) {
-        if (renamingId != null) renameDraft = text.replace('\n', ' ')
+    /** A tap on the open keyboard. Null when none is open. */
+    fun tapTyping(at: KeyFocus): HomeStep? = typed { it.press(at) }
+
+    private fun closeTyping() {
+        renamingId = null
+        typing = null
     }
 
     /** Opens the icon picker for the collection at [index]. */
@@ -384,7 +411,7 @@ class HomeSession(raw: String?, nowMillis: Long = System.currentTimeMillis()) {
 
     /** Leaves any folder, All, a lifted tile, or a name field. Returns the root tile to focus. */
     fun showRoot(): Int {
-        renamingId = null
+        closeTyping()
         iconPick = null
         board = closeAll(closeFolder(cancelHold(board)))
         return rootIndex
@@ -396,7 +423,7 @@ class HomeSession(raw: String?, nowMillis: Long = System.currentTimeMillis()) {
     }
 
     fun showAll() {
-        renamingId = null
+        closeTyping()
         board = openAll(board)
     }
 
@@ -435,21 +462,11 @@ class HomeSession(raw: String?, nowMillis: Long = System.currentTimeMillis()) {
         return step(null, iconCell)
     }
 
-    /**
-     * A saves the name, B keeps the old one. The keyboard types into [renameDraft]. The focus
-     * stays where the field opened, which is the new collection or the game it was made for.
-     */
-    private fun handleRename(meaning: Meaning): HomeStep {
-        val id = renamingId ?: return step(null, focusIndex())
-        when (meaning) {
-            Meaning.Activate -> {
-                board = renameFolder(board, id, renameDraft)
-                renamingId = null
-            }
-            Meaning.Back, Meaning.CancelHold -> renamingId = null
-            else -> Unit
-        }
-        return step(null, renameCell)
+    /** Every key goes to the open keyboard. Focus stays where naming began, saved or not. */
+    private fun typed(press: (TypingSession) -> TypingStep): HomeStep? {
+        val session = typing ?: return null
+        val cue = press(session).cue
+        return step(null, renameCell).copy(cue = cue)
     }
 
     /**
@@ -638,8 +655,10 @@ data class FolderIconPick(val folderId: String, val index: Int) {
     }
 }
 
+/** [cue] is the open keyboard's sound for this press. Null leaves the sound to the meaning. */
 data class HomeStep(
     val handled: Boolean,
     val effect: Effect?,
     val focus: GridFocus?,
+    val cue: TypingCue? = null,
 )

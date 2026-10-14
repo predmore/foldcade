@@ -257,6 +257,16 @@ internal fun Modifier.rise(progress: () -> Float): Modifier = graphicsLayer {
     translationY = (1f - t) * 24.dp.toPx()
 }
 
+/** Content giving way as [progress] goes to 1: it fades and settles back, as the grid does under the keyboard. */
+internal fun Modifier.sinking(progress: () -> Float): Modifier = graphicsLayer {
+    val t = progress()
+    alpha = 1f - t
+    val shrink = 1f - 0.06f * t
+    scaleX = shrink
+    scaleY = shrink
+    translationY = -t * 16.dp.toPx()
+}
+
 /** A filled card's surface, lit a little at the top by [lift]. */
 internal fun cardFill(theme: Theme, lift: Float): Brush =
     Brush.verticalGradient(listOf(lerp(theme.surface, theme.onBackground, lift), theme.surface))

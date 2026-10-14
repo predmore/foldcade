@@ -160,8 +160,8 @@ class SettingsPersistenceTest {
         val prefs = MemoryPrefs()
         val changed = shell(prefs)
         changed.chooseHomeAction(Row.NewCollection)
-        changed.editRename("My favorites")
-        changed.onMeaning(Meaning.Activate, HostScreen.Bottom)
+        changed.typing()?.setText("My favorites")
+        changed.onMeaning(Meaning.Done, HostScreen.Bottom)
         val index = changed.model.focus.cellIndex
 
         changed.chooseHomeAction(Row.FolderIcon)

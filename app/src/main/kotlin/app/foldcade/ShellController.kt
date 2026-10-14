@@ -22,6 +22,7 @@ import app.foldcade.plugins.moonlight.MoonlightLibrary
 import app.foldcade.plugins.moonlight.isMoonlightRemoteKey
 import app.foldcade.host.PluginHost
 import app.foldcade.language.FoldNotice
+import app.foldcade.language.KeyFocus
 import app.foldcade.language.brightnessPrompt
 import app.foldcade.language.brightnessPosition
 import app.foldcade.language.settingsCategories
@@ -293,7 +294,8 @@ class ShellController(
                 if (!wasInFolder && home.openedFolderHasGame()) Log.i("Foldcade", "library-ui games")
                 if (!wasHeld && home.board.hold != null) Log.i("Foldcade", "home-ui lifted")
                 if (home.board.allOpen && !wasAll) Log.i("Foldcade", "home-ui all-games")
-                cueMeaning(meaning, before, model)
+                val typed = step.cue
+                if (typed != null) typed.slot?.let { cue(model.themeIndex, it) } else cueMeaning(meaning, before, model)
                 return step.effect
             }
         }
@@ -434,15 +436,19 @@ class ShellController(
 
     fun homeFace(index: Int): HomeFace? = home.face(index)
 
-    /** The text in the open folder name field. Null when no name field is open. */
-    fun renameDraft(): String? = if (showingHome() && home.renamingId != null) home.renameDraft else null
+    /** The open controller keyboard on Home. Null when none is open. */
+    fun typing(): TypingSession? = if (showingHome()) home.typing else null
 
-    /** The words over the name field: a collection's, or a folder's. */
-    fun renameLabel(): String = home.renameLabel()
+    /** The text being typed for a folder's name. Null when no keyboard is open. */
+    fun renameDraft(): String? = typing()?.text
 
-    fun editRename(text: String) {
-        home.editRename(text)
-        showBoard(model.focus, keepDialog = true)
+    /** A tap on the open keyboard: the cursor goes to that key or chip and presses it. */
+    fun tapTyping(at: KeyFocus) {
+        if (!homeActive()) return
+        val step = home.tapTyping(at) ?: return
+        store.saveHomeBoard(home.encoded())
+        showBoard(step.focus ?: model.focus, keepDialog = true)
+        step.cue?.slot?.let { cue(model.themeIndex, it) }
     }
 
     /** The open collection icon picker and that collection's name, for the top screen. Null when closed. */

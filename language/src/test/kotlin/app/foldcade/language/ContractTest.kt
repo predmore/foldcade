@@ -102,8 +102,8 @@ class ContractTest {
             gridHints(null, HomeKeys.Moving, map),
         )
         assertEquals(
-            listOf(HintKey(PromptKey.FaceA, Copy.hintSave), HintKey(PromptKey.FaceB, Copy.hintCancel)),
-            gridHints(null, HomeKeys.Renaming, map),
+            listOf(PromptKey.FaceX, PromptKey.FaceY, PromptKey.L1, PromptKey.R1, PromptKey.L2, PromptKey.Start, PromptKey.FaceB),
+            gridHints(null, HomeKeys.Typing, map).map { it.key },
         )
         assertEquals(
             listOf(PromptKey.FaceB),

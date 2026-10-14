@@ -37,6 +37,24 @@ enum class Meaning {
 
     /** Select. In a menu it runs the row that shows a view (L1 then Select is Play activity). See [chords]. */
     View,
+
+    /** X while typing: the selection, or the character before the caret. */
+    Erase,
+
+    /** Y while typing. */
+    Space,
+
+    /** L2 while typing: one capital, then caps lock, then off. */
+    Shift,
+
+    /** L1 while typing. */
+    CaretBack,
+
+    /** R1 while typing. */
+    CaretForward,
+
+    /** Start while typing: saves the text. */
+    Done,
 }
 
 /** Extra keys that exist only on the home grid. Idle keeps the shared map. */
@@ -49,8 +67,8 @@ enum class HomeKeys {
     ChoosingArt,
     /** The icon picker for a folder the user made is open. */
     PickingIcon,
-    /** The name field for a folder is open. */
-    Renaming,
+    /** The controller keyboard is open. Every key types or edits; no menu or drawer opens. */
+    Typing,
 }
 
 /** Keys that act once per press. Holding one does not repeat it. */
@@ -69,6 +87,7 @@ fun meaningOf(
     faces: FaceMap = FaceMap.standard(),
     homeKeys: HomeKeys = HomeKeys.Idle,
 ): Meaning? {
+    if (homeKeys == HomeKeys.Typing) return typingMeaningOf(keyCode, repeatCount, faces)
     if (homeKeys == HomeKeys.ChoosingArt && repeatCount > 0 &&
         (keyCode == KeyEvent.KEYCODE_BUTTON_L2 || keyCode == KeyEvent.KEYCODE_BUTTON_R2)) return null
     if (repeatCount > 0 && keyCode in shoulderKeys) {
@@ -92,10 +111,9 @@ fun meaningOf(
             Meaning.ActivateBottom
         keyCode == KeyEvent.KEYCODE_BUTTON_Y && (homeKeys == HomeKeys.Idle || homeKeys == HomeKeys.AllLibrary) ->
             Meaning.Options
-        keyCode == KeyEvent.KEYCODE_BUTTON_START && homeKeys != HomeKeys.Renaming -> Meaning.Menu
-        keyCode == KeyEvent.KEYCODE_BUTTON_SELECT && homeKeys != HomeKeys.Renaming -> Meaning.View
-        (keyCode == KeyEvent.KEYCODE_DEL || keyCode == KeyEvent.KEYCODE_FORWARD_DEL) &&
-            homeKeys != HomeKeys.Renaming -> Meaning.Dismiss
+        keyCode == KeyEvent.KEYCODE_BUTTON_START -> Meaning.Menu
+        keyCode == KeyEvent.KEYCODE_BUTTON_SELECT -> Meaning.View
+        keyCode == KeyEvent.KEYCODE_DEL || keyCode == KeyEvent.KEYCODE_FORWARD_DEL -> Meaning.Dismiss
         keyCode == KeyEvent.KEYCODE_BUTTON_L2 -> Meaning.LetterBackward
         keyCode == KeyEvent.KEYCODE_BUTTON_R2 -> Meaning.LetterForward
         else -> null
@@ -113,3 +131,69 @@ fun opensTopMenu(meaning: Meaning): Boolean =
 
 fun cancelsPendingLaunch(meaning: Meaning, dialogOpen: Boolean, conflictOpen: Boolean): Boolean =
     !dialogOpen && !conflictOpen && (opensTopMenu(meaning) || meaning == Meaning.Back)
+
+/**
+ * Which face button does what while typing. Confirm types the focused key and back
+ * cancels, wherever calibration put them. Erase keeps X and Space keeps Y when those
+ * are free; a role whose button is taken goes to A, then B, so the same calibration
+ * always lands the same way.
+ */
+data class TypingFaces(val type: Int, val cancel: Int, val erase: Int, val space: Int) {
+    val eraseGlyph: PromptKey get() = promptKeyOf(erase) ?: PromptKey.FaceX
+    val spaceGlyph: PromptKey get() = promptKeyOf(space) ?: PromptKey.FaceY
+}
+
+fun typingFaces(faces: FaceMap): TypingFaces {
+    val x = KeyEvent.KEYCODE_BUTTON_X
+    val y = KeyEvent.KEYCODE_BUTTON_Y
+    val free = listOf(x, y, KeyEvent.KEYCODE_BUTTON_A, KeyEvent.KEYCODE_BUTTON_B)
+        .filter { it != faces.confirmKey && it != faces.backKey }
+    val erase = x.takeIf { it in free }
+    val space = y.takeIf { it in free }
+    val rest = (free - listOfNotNull(erase, space)).iterator()
+    return TypingFaces(
+        type = faces.confirmKey,
+        cancel = faces.backKey,
+        erase = erase ?: rest.next(),
+        space = space ?: rest.next(),
+    )
+}
+
+/** Keys that repeat while held on the keyboard: the D-pad walks, Erase erases, L1 and R1 glide the caret. */
+private val typingRepeats = setOf(
+    KeyEvent.KEYCODE_DPAD_UP,
+    KeyEvent.KEYCODE_DPAD_DOWN,
+    KeyEvent.KEYCODE_DPAD_LEFT,
+    KeyEvent.KEYCODE_DPAD_RIGHT,
+    KeyEvent.KEYCODE_DEL,
+    KeyEvent.KEYCODE_BUTTON_L1,
+    KeyEvent.KEYCODE_BUTTON_R1,
+)
+
+/**
+ * The keyboard's own map. The face buttons, Start and the shoulders mean something else
+ * on a grid, so they are only read this way here; [typingFaces] says which face does
+ * what. Typing acts once per press, so a held confirm never types a run of letters or
+ * flips Shift back and forth. A keyboard's Enter saves.
+ */
+private fun typingMeaningOf(keyCode: Int, repeatCount: Int, faces: FaceMap): Meaning? {
+    val roles = typingFaces(faces)
+    if (repeatCount > 0 && keyCode !in typingRepeats && keyCode != roles.erase) return null
+    return when {
+        keyCode == KeyEvent.KEYCODE_DPAD_UP -> Meaning.MoveUp
+        keyCode == KeyEvent.KEYCODE_DPAD_DOWN -> Meaning.MoveDown
+        keyCode == KeyEvent.KEYCODE_DPAD_LEFT -> Meaning.MoveLeft
+        keyCode == KeyEvent.KEYCODE_DPAD_RIGHT -> Meaning.MoveRight
+        keyCode == roles.type || keyCode == KeyEvent.KEYCODE_DPAD_CENTER -> Meaning.Activate
+        keyCode == KeyEvent.KEYCODE_BACK || keyCode == KeyEvent.KEYCODE_ESCAPE || keyCode == roles.cancel -> Meaning.Back
+        keyCode == roles.erase || keyCode == KeyEvent.KEYCODE_DEL -> Meaning.Erase
+        keyCode == roles.space || keyCode == KeyEvent.KEYCODE_SPACE -> Meaning.Space
+        keyCode == KeyEvent.KEYCODE_BUTTON_L1 -> Meaning.CaretBack
+        keyCode == KeyEvent.KEYCODE_BUTTON_R1 -> Meaning.CaretForward
+        keyCode == KeyEvent.KEYCODE_BUTTON_L2 -> Meaning.Shift
+        keyCode == KeyEvent.KEYCODE_BUTTON_START ||
+            keyCode == KeyEvent.KEYCODE_ENTER ||
+            keyCode == KeyEvent.KEYCODE_NUMPAD_ENTER -> Meaning.Done
+        else -> null
+    }
+}

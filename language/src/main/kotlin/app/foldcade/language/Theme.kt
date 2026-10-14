@@ -245,12 +245,9 @@ object Copy {
     const val screenJump = "Screen"
     const val hintDrop = "Drop"
     const val hintCancel = "Cancel"
-    const val hintSave = "Save"
     const val hintChoose = "Choose"
     const val hintOptions = "Options"
     const val collectionIcon = "Collection icon"
-    const val folderName = "Folder name"
-    const val collectionName = "Collection name"
     const val hintTop = "Top"
     const val hintBottom = "Bottom"
     const val onHomeMark = "On home"
@@ -321,8 +318,14 @@ fun gridHints(
             HintKey(confirm, Copy.hintChoose),
             HintKey(back, Copy.back),
         )
-        HomeKeys.Renaming -> listOf(
-            HintKey(confirm, Copy.hintSave),
+        // A types the key under the ring, which needs no word.
+        HomeKeys.Typing -> listOf(
+            HintKey(typingFaces(faceMap).eraseGlyph, KeyboardCopy.erase),
+            HintKey(typingFaces(faceMap).spaceGlyph, KeyboardCopy.space),
+            HintKey(PromptKey.L1, ""),
+            HintKey(PromptKey.R1, KeyboardCopy.caret),
+            HintKey(PromptKey.L2, KeyboardCopy.shift),
+            HintKey(PromptKey.Start, KeyboardCopy.done),
             HintKey(back, Copy.hintCancel),
         )
         HomeKeys.ChoosingArt -> artPickerHints(faceMap)
