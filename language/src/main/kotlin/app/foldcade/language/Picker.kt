@@ -533,11 +533,11 @@ fun actionRows(tile: TileActions?, app: AppActions?): List<Row> = buildList {
         if (tile.show) add(Row.ShowHidden)
         if (tile.showOnHome != null) add(Row.ShowOnHome)
         if (tile.move) add(Row.MoveTile)
-        if (tile.select) add(Row.SelectTile)
         if (tile.collections != null) add(Row.AddToCollection)
         if (tile.favorite != null) add(Row.Favorite)
-        if (tile.art && app == null) add(Row.ChooseArt)
+        if (tile.art && app?.hiddenShelf != true) add(Row.ChooseArt)
         if (tile.pin) add(Row.PinTile)
+        if (tile.select) add(Row.SelectTile)
         if (tile.newCollection) add(Row.NewCollection)
         if (tile.tidy) add(Row.Tidy)
         if (tile.rename) add(Row.RenameFolder)
@@ -553,7 +553,6 @@ fun actionRows(tile: TileActions?, app: AppActions?): List<Row> = buildList {
         } else {
             if (app.keepOnTop) add(Row.PinApp)
             if (tile?.collections == null && app.destinations.isNotEmpty()) add(Row.AddAppTo)
-            if (tile?.art == true) add(Row.ChooseArt)
             add(Row.MoveApp)
             if (tile?.remove == null) add(Row.HideApp)
         }

@@ -60,6 +60,7 @@ import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
+import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
@@ -218,6 +219,8 @@ import app.foldcade.language.letterbox
 import app.foldcade.language.cursorBrush
 import app.foldcade.language.displayOrder
 import app.foldcade.language.heroCopy
+import app.foldcade.language.menuFit
+import app.foldcade.language.menuScrollTarget
 import app.foldcade.language.heroCrossfadeActive
 import app.foldcade.language.monogram
 import app.foldcade.language.panelRows
@@ -2104,9 +2107,38 @@ private fun PanelRows(
     val theme = foldTheme()
     val model = app.shell.model
     val rows = panelRows(panel, model)
+    val island = LocalIslandScroll.current
+    val density = LocalDensity.current
+    val gap = px(6f)
+    val fixedHeights = remember(panel.level, rows) { mutableStateMapOf<Int, Int>() }
+    val fixedRows = rows.indices.filter { rows[it].tiled() || rows[it] is Row.PlayActivity ||
+        rows[it] is Row.Notice || rows[it] is Row.Brightness || rows[it] is Row.MusicVolume }
+    val regularRows = rows.size - fixedRows.size
+    val tiled = rows.count { it.tiled() }
+    val blocks = rows.size - tiled + if (tiled > 0) 1 else 0
+    val fixedHeight = fixedHeights.values.sum()
+    val available = with(density) { island?.available?.roundToPx() ?: Int.MAX_VALUE } - fixedHeight -
+        with(density) { gap.roundToPx() } * (blocks - 1 + if (panel.connection != null) 1 else 0).coerceAtLeast(0)
+    val fit = menuFit(regularRows, available, density.density)
+    val heights = rows.indices.filter { it !in fixedRows }.zip(fit.rowHeights).toMap()
     val keys = remember(rows) { rowKeys(rows) }
     val tileStart = rows.indexOfFirst { it.tiled() }
     val slots = rememberSelectionSlots()
+    val reachPx = with(density) { ringReach().toPx() }
+    LaunchedEffect(panel.level, panel.index, interactive, island?.viewport, fit.rowHeights, slots.rows.toMap()) {
+        if (island == null || !interactive || island.viewport <= 0) return@LaunchedEffect
+        val focused = slots.rows[panel.index] ?: return@LaunchedEffect
+        val previous = slots.rows[panel.index - 1] ?: focused
+        val next = slots.rows[panel.index + 1] ?: focused
+        val target = menuScrollTarget(
+            focused.top + reachPx, focused.bottom + reachPx,
+            previous.top + reachPx, next.bottom + reachPx,
+            island.viewport.toFloat(), island.state.value.toFloat(), island.state.maxValue.toFloat(), reachPx,
+        )
+        kotlinx.coroutines.withContext(SteadyMenu) {
+            island.state.animateScrollTo(target.roundToInt(), theme.motion.arrive(theme.motion.durationSelect, scale))
+        }
+    }
     val iconSlot = rows.any { !it.tiled() && rowIcon(it) != null }
     // The tiles light their own circle. The highlight serves every other row.
     val listFocus = panel.index.takeIf { rows.getOrNull(it)?.tiled() == false }
@@ -2114,10 +2146,10 @@ private fun PanelRows(
     Column(
         Modifier
             .selectionHighlight(slots, listFocus, ring = true, scale = scale),
-        verticalArrangement = Arrangement.spacedBy(px(6f)),
+        verticalArrangement = Arrangement.spacedBy(gap),
     ) {
         panel.connection?.let { connection ->
-            Column(Modifier.padding(horizontal = px(28f), vertical = px(8f)).cascade(0, progress)) {
+            Column(Modifier.onSizeChanged { fixedHeights[-1] = it.height }.padding(horizontal = px(28f), vertical = px(8f)).cascade(0, progress)) {
                 BasicText(
                     text = connection.label,
                     style = rowStyle.copy(fontWeight = FontWeight.SemiBold),
@@ -2145,7 +2177,7 @@ private fun PanelRows(
                         tileStart = tileStart,
                         interactive = interactive,
                         scale = scale,
-                        modifier = Modifier.cascade(index, progress),
+                        modifier = Modifier.onSizeChanged { fixedHeights[index] = it.height }.cascade(index, progress),
                         onEffect = onEffect,
                     )
                 }
@@ -2167,7 +2199,8 @@ private fun PanelRows(
             val place = Modifier
                 .fillMaxWidth()
                 .selectionSlot(slots, index)
-                .keepInView(focused)
+                .onSizeChanged { if (index in fixedRows) fixedHeights[index] = it.height }
+                .then(if (island == null) Modifier.keepInView(focused) else Modifier)
                 .cascade(index + 1, progress)
             val parts = rowText(row, model)
             val notice = (row as? Row.Notice)?.let { item -> model.notices.firstOrNull { it.id == item.id } }
@@ -2214,6 +2247,10 @@ private fun PanelRows(
                     scale = scale,
                     modifier = place.then(press).then(feedback),
                     labelStyle = rowStyle,
+                    height = with(density) {
+                        eased((heights[index] ?: (52f * density.density).roundToInt()).toFloat(),
+                            theme.motion.durationSelect, scale).value.toDp()
+                    },
                 )
             }
         }
