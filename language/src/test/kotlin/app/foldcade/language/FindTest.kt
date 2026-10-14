@@ -243,6 +243,14 @@ class FindTest {
     }
 
     @Test
+    fun openingFindCancelsAPendingLaunch() {
+        // Review r1: Select opened Find over a launch still waiting, which then went ahead.
+        assertTrue(cancelsPendingLaunch(Meaning.View, dialogOpen = false, conflictOpen = false))
+        assertFalse(cancelsPendingLaunch(Meaning.View, dialogOpen = true, conflictOpen = false))
+        assertFalse(cancelsPendingLaunch(Meaning.View, dialogOpen = false, conflictOpen = true))
+    }
+
+    @Test
     fun hintsNameFindsKeysAndSelectJoinsARootRowWithRoom() {
         val faces = FaceMap.standard()
         assertEquals(FindCopy.close, findKeyboardHints(faces, typed = false).last().label)

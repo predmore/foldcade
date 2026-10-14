@@ -167,8 +167,9 @@ fun topMenuKeyBlocked(meaning: Meaning, homeKeys: HomeKeys, islandsOpen: Boolean
     return !(homeKeys == HomeKeys.PickingIcon && (meaning == Meaning.LeftPanel || meaning == Meaning.RightPanel))
 }
 
+/** A launch still waiting to start is dropped by a key that opens something over it, Find's Select included, or by B. */
 fun cancelsPendingLaunch(meaning: Meaning, dialogOpen: Boolean, conflictOpen: Boolean): Boolean =
-    !dialogOpen && !conflictOpen && (opensTopMenu(meaning) || meaning == Meaning.Back)
+    !dialogOpen && !conflictOpen && (opensTopMenu(meaning) || meaning == Meaning.View || meaning == Meaning.Back)
 
 /**
  * Which face button does what while typing. Confirm types the focused key and back
