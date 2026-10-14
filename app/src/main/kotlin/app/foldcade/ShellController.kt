@@ -166,10 +166,14 @@ class ShellController(
         revealBurst = revealPulse
         return true
     }
+    private var keptArtTarget: Pair<String, GridFocus>? = null
 
     private fun closeArtAfterFocusChange() {
         val state = artPicker ?: return
-        if (model.focus.chrome != null || focusedGame()?.let(::artQuery)?.key != state.gameId) artPicker = null
+        val focused = focusedGame()
+        val retained = keptArtTarget?.takeIf { it.second == model.focus && focused?.id.isNullOrEmpty() }?.first
+        val game = retained?.let { homeShelf(home.faceOf(it)) } ?: focused
+        if (model.focus.chrome != null || game?.let(::artQuery)?.key != state.gameId) artPicker = null
     }
 
     fun artCandidates(state: ArtPickerState, loadingResult: Boolean = true) {
@@ -470,7 +474,8 @@ class ShellController(
             return null
         }
         if (!next.connectOpen) connectToken = ""
-        val packageName = focusedGame()?.androidPackage
+        val targetGame = actionGame(current)
+        val packageName = targetGame?.androidPackage
         val panelLabel = next.panel?.let { panel ->
             val row = app.foldcade.language.panelRows(panel, next).getOrNull(panel.index) ?: return@let null
             app.foldcade.language.rowText(row, next).label
@@ -549,8 +554,11 @@ class ShellController(
                 if (artPickerAvailable()) {
                     // The picker previews on the game's own tile and hero, so from Find it goes there first.
                     if (find != null) effect.gameId?.let(::bringForArt)
-                    val game = effect.gameId?.takeIf { showingHome() }?.let { homeShelf(home.faceOf(it)) } ?: focusedGame()
-                    game?.let(::artQuery)?.let { artPicker = ArtPickerState(it.key, match = savedArtMatch(it.key)) }
+                    val game = actionGame(current, effect.gameId ?: current.tileActions?.game)
+                    game?.let(::artQuery)?.let {
+                        keptArtTarget = if (current.tileActions?.kept == true) game.id to current.focus else null
+                        artPicker = ArtPickerState(it.key, match = savedArtMatch(it.key))
+                    }
                 }
                 null
             }
@@ -577,8 +585,8 @@ class ShellController(
             Effect.ChooseFolderIcon -> changeHome { home.pickIcon(it); it }
             Effect.RemoveTile -> {
                 if (showingHome()) {
-                    val packageId = home.face(model.focus.cellIndex)?.androidPackage
-                    val hides = home.removeVerb(model.focus.cellIndex) == RemoveVerb.Hide
+                    val packageId = packageName
+                    val hides = current.tileActions?.remove == RemoveVerb.Hide
                     changeHome { home.remove(it) }
                     if (hides && packageId != null) {
                         shelfState = shelfState.hide(packageId)
@@ -586,7 +594,7 @@ class ShellController(
                         publish(model)
                     }
                 } else {
-                    model.tileActions?.game?.let { id ->
+                    current.tileActions?.game?.let { id ->
                         home.hide(id)
                         packageName?.let { shelfState = shelfState.hide(it); commitShelves() }
                         syncHome()
@@ -2133,18 +2141,23 @@ class ShellController(
             game?.androidPackage != null -> home.shelfActions(game.id)
             else -> null
         }
+        val targetGame = actionGame(counted, tile?.game)
         // A copy still arriving, or already going, is not one to delete.
         val busy = (tile?.game ?: home.face(counted.focus.cellIndex)?.id)?.let(::busyOnDevice) == true
         val offered = if (tile?.removeDownload == true && busy) tile.copy(removeDownload = false) else tile
         // A merge can close the open folder, when its last game left, so read where the board is now.
         val root = if (onHome) home.board.openFolderId == null && !home.board.allOpen else counted.atLibraryRoot
-        // On Find's results the art is the result's: Art there goes to the game, then opens the picker.
-        val artGame = if (found != null) found.game?.let(::findGame) else game
-        val withArt = if (counted.artKeySaved && artPickerAvailable() && artGame?.let(::artQuery) != null) {
+        val withArt = if (counted.artKeySaved && artPickerAvailable() && targetGame?.let(::artQuery) != null) {
             (offered ?: TileActions()).copy(art = true)
         } else offered
-        val apps = if (found == null) actionsFor(counted, game) else null
-        return counted.copy(appActions = apps, tileActions = (withArt ?: TileActions()).copy(undo = activeUndo() != null), undoVerb = activeUndo()?.verb, atLibraryRoot = root)
+        return counted.copy(appActions = if (found == null) actionsFor(counted, targetGame) else null, tileActions = (withArt ?: TileActions()).copy(undo = activeUndo() != null), undoVerb = activeUndo()?.verb, atLibraryRoot = root)
+    }
+
+    /** A menu acts on its named game even after Add to leaves the focused slot empty. */
+    private fun actionGame(snapshot: PickerModel, gameId: String? = snapshot.tileActions?.game): ShelfGame? = when {
+        snapshot.libraryGrid -> libraryEntry(snapshot)?.asShelf()
+        gameId != null -> homeShelf(home.faceOf(gameId))
+        else -> tileOn(snapshot)
     }
 
     private fun tileOn(snapshot: PickerModel): ShelfGame? {
