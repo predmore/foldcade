@@ -490,6 +490,29 @@ class HomeGridOrderTest {
     }
 
     @Test
+    fun theTopScreenReadsTheTileInTheHandNotTheSlotUnderTheCursor() {
+        val shell = shell()
+        shell.ingestLibrary(
+            "local-folder",
+            listOf(entry("puzzle", "Puzzle", "nintendo-3ds"), entry("drift", "Drift", "nintendo-3ds")),
+            emptyList(),
+        )
+        focus(shell, titles(shell).indexOf("Nintendo 3DS"))
+        shell.onMeaning(Meaning.Activate, HostScreen.Bottom)
+        focus(shell, titles(shell).indexOf("Drift"))
+        choose(shell, Row.MoveTile)
+        // Up onto the top row, then Up to the Home target: the slots go back and Puzzle is under the cursor.
+        shell.onMeaning(Meaning.MoveUp, HostScreen.Bottom)
+        shell.onMeaning(Meaning.MoveUp, HostScreen.Bottom)
+        assertEquals(true, shell.homeCarry()?.overHome)
+        assertEquals("Puzzle", titles(shell)[shell.model.focus.cellIndex])
+        val hero = (shell.focusedHero() as? app.foldcade.language.HeroSubject.Item)?.item
+        assertEquals("Drift", hero?.title)
+        assertEquals(hero?.key, shell.focusedGame()?.id)
+        assertEquals("drift", shell.focusedRecord()?.remoteKey)
+    }
+
+    @Test
     fun aHeldDirectionStopsAtTheLastColumnAndAHeldADoesNotLaunch() {
         val shell = shell()
         shell.ingestLibrary(
