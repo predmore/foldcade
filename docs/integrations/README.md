@@ -31,7 +31,7 @@ Folders are not watched continuously. Returning to Foldcade rescans them in the 
 
 ## A game is in All but missing from Home
 
-Check **Settings › Library › New games on Home**. When it is off, discovered games stay in **All** until you select one and choose **Y › Add to Home**. Folder, server, and Android games removed from Home can also be added back from All.
+Check **Settings › Library › New games on Home**. When it is off, discovered games stay in **All** until you select one and choose **Y › Pin to Home**, which also files it in its folder. Games hidden or taken off Home can be brought back the same way.
 
 A new Moonlight or DroidDeck pin goes on Home even with that switch off. Removing its game tile also drops Foldcade's pin. Request the shortcut again in the source app to restore it; a DroidDeck game with a synced export remains in All.
 

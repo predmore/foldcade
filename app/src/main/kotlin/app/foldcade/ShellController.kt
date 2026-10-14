@@ -172,7 +172,11 @@ class ShellController(
     private var shelfState: AppShelfState = store.appShelfState()
     private var installed: List<LaunchableApp> = emptyList()
     private var playerPackages: Set<String> = emptySet()
-    private val home = HomeSession(store.homeBoardRaw())
+    // A board from before collections is kept as it was before this release first rewrites it.
+    private val home = store.run {
+        keepHomeBoardBeforeCollections()
+        HomeSession(homeBoardRaw())
+    }
     private var libraryItems: List<HomeItem> = emptyList()
 
     /** Libraries that have reported their games since launch. Until then their home tiles are kept. */
@@ -276,7 +280,8 @@ class ShellController(
             artInput(meaning)
             return null
         }
-            if (homeActive()) {
+        if (model.panel == null && home.releaseMenu()) publish(model)
+        if (homeActive()) {
             val before = model
             val wasInFolder = home.board.openFolderId != null
             val wasAll = home.board.allOpen
@@ -317,16 +322,14 @@ class ShellController(
                 if (packageName != null && home.placeIn(androidHomeId(packageName), effect.folderId)) syncHome()
                 publish(next.copy(shelfEpoch = next.shelfEpoch + 1))
             }
-            // Add to stays open, so the next collection is one press away. Taking the game out
-            // of the collection on screen closes it, since the tile it acted on is gone.
+            // Add to stays open, so the next collection is one press away, even when the game
+            // leaves the collection on screen: the menu keeps acting on that game.
             is Effect.ToggleCollection -> {
-                val index = next.focus.cellIndex
-                val leaving = showingHome() && home.leavesOpenCollection(index, effect.folderId)
                 if (showingHome()) {
-                    home.toggleCollection(index, effect.folderId)
+                    home.toggleCollection(next.focus.cellIndex, effect.folderId)
                     syncHome()
                 }
-                if (leaving) showBoard(next.focus, keepDialog = true) else publish(next)
+                publish(next)
             }
             Effect.MoveApp -> {
                 if (packageName != null) {
@@ -361,7 +364,7 @@ class ShellController(
         if (effect == Effect.DismissButtonLabels) {
             store.saveButtonPrompt(inputDeviceKey, store.buttonPromptConfirm(inputDeviceKey), dismissed = true)
         }
-        return when (effect) {
+        val handled = when (effect) {
             Effect.PinApp, is Effect.AddAppTo, Effect.MoveApp, Effect.HideApp, Effect.ShowApp, is Effect.ToggleCollection,
             -> null
             Effect.ChooseArt -> {
@@ -391,7 +394,6 @@ class ShellController(
                     if (droidDeck != null) onDroidDeckRemoved(droidDeck)
                 }
             }
-            Effect.AddToHome -> changeHome { home.addFocused(it); it }
             Effect.OpenAll -> {
                 openHomeAll()
                 Log.i("Foldcade", "home-ui all-games")
@@ -411,6 +413,9 @@ class ShellController(
             }
             else -> effect
         }
+        // Once the menu has closed and acted, the grid's focused slot leads again.
+        if (model.panel == null && home.releaseMenu()) publish(model)
+        return handled
     }
 
     fun homeKeys(): app.foldcade.language.HomeKeys {
@@ -1004,6 +1009,7 @@ class ShellController(
     fun completeIslandRetire() {
         val finished = finishIslandRetire(model)
         if (finished.panel == model.panel && finished.focus == model.focus) return
+        if (finished.panel == null) home.releaseMenu()
         publish(finished)
     }
 

@@ -239,7 +239,6 @@ object Copy {
     const val favorites = "Favorites"
     const val recentlyPlayed = "Recently played"
     const val deleteDownload = "Delete download"
-    const val addToHome = "Add to Home"
     const val addTo = "Add to"
     const val emptySlot = "Empty slot"
     const val letterJump = "Letter"

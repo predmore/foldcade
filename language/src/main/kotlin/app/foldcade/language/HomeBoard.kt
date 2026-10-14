@@ -111,6 +111,12 @@ data class HomeBoard(
      * saved before collections starts it at the update, so the update itself adds no tile.
      */
     val recentAfter: Long = 0L,
+    /**
+     * Games the user took off Home by removing their last place, without hiding them. A merge
+     * does not take them for new games, so a removal never places anything. Placing one again
+     * takes it off this list.
+     */
+    val offHome: Set<String> = emptySet(),
 )
 
 /** What X does to a tile on Home, and what its row says. */
@@ -191,14 +197,20 @@ fun visibleSlots(board: HomeBoard): List<String?> {
 }
 
 /**
- * Reachable from Home: pinned on the root, or in a folder or collection there. A folder
- * taken off Home no longer counts, and nor does Recently played, which only reflects play.
+ * Reachable from Home: pinned on the root, or in a folder, a collection, or Recently played
+ * there. All's dot shows this. A folder taken off Home no longer counts.
  */
-fun onHome(board: HomeBoard, id: String): Boolean {
+fun onHome(board: HomeBoard, id: String): Boolean = reachable(board, id, viaRecent = true)
+
+/**
+ * [onHome], with or without Recently played. Placing a game asks without it: Recently played
+ * only reflects play, so a game seen only there is still put in its folder.
+ */
+private fun reachable(board: HomeBoard, id: String, viaRecent: Boolean): Boolean {
     if (id == HOME_ALL) return true
     if (id in board.hidden) return false
     if (board.slots.contains(id)) return true
-    return board.slots.any { slot -> board.folders[slot]?.takeIf { !it.recent }?.slots?.contains(id) == true }
+    return board.slots.any { slot -> board.folders[slot]?.takeIf { viaRecent || !it.recent }?.slots?.contains(id) == true }
 }
 
 /** The game is a pin: its own tile on the root. */
@@ -254,17 +266,19 @@ fun mergeHome(
             folder.copy(slots = tidySlots(folder.slots, keep, board.folders, hidden))
         },
         hidden = hidden,
+        offHome = board.offHome.filter(keep).toSet(),
     )
     next = fileEmulators(next, catalog, platforms)
     val known = placedIds(next)
     for (item in catalog) {
-        if (item.id in next.hidden || item.id in known) continue
+        if (item.id in next.hidden || item.id in next.offHome || item.id in known) continue
         if (!next.addNewToHome) continue
         next = placeNew(next, item, platforms)
         known += item.id
     }
     next = completeFolders(next, catalog, platforms)
-    next = dropEmptySystemFolders(next)
+    next = dropEmptySystemFolders(next, waiting = unfiledIds(next).any { it !in ids && unsettled(it) })
+    next = next.copy(offHome = next.offHome - placedIds(next))
     next = refreshRecent(next, catalog, unsettled)
     next = refreshFolderNames(next, platforms)
     if (HOME_ALL !in next.slots) {
@@ -385,13 +399,19 @@ fun removeFromHome(board: HomeBoard, index: Int): HomeBoard {
     val id = visibleSlots(board).getOrNull(index) ?: return board
     return when (removeVerb(board, index)) {
         null -> board
-        RemoveVerb.Unpin -> board.copy(slots = board.slots.mapIndexed { slot, value -> if (slot == index) null else value }, hold = null)
+        RemoveVerb.Unpin -> keepOff(board, board.copy(slots = board.slots.mapIndexed { slot, value -> if (slot == index) null else value }, hold = null))
         RemoveVerb.Hide -> hideGame(board, id)
         RemoveVerb.Remove -> {
             val openId = board.openFolderId
             if (openId == null) removeFolder(board, id) else removeFromCollection(board, openId, id)
         }
     }
+}
+
+/** [after] a removal from [before], with every game it left nowhere on [HomeBoard.offHome]. */
+private fun keepOff(before: HomeBoard, after: HomeBoard): HomeBoard {
+    val left = placedIds(before) - placedIds(after) - after.hidden - after.folders.keys - HOME_ALL
+    return if (left.isEmpty()) after else after.copy(offHome = after.offHome + left)
 }
 
 /**
@@ -425,7 +445,7 @@ fun removeFolder(board: HomeBoard, folderId: String): HomeBoard {
     return when {
         folder.system -> gone.copy(retired = board.retired + folderId)
         folder.recent -> gone.copy(folders = board.folders - folderId, retired = board.retired + folderId)
-        else -> gone.copy(folders = board.folders - folderId)
+        else -> keepOff(board, gone.copy(folders = board.folders - folderId))
     }
 }
 
@@ -449,7 +469,7 @@ fun newCollection(board: HomeBoard, collectionId: String, name: String, at: Int?
 fun addToCollection(board: HomeBoard, collectionId: String, id: String): HomeBoard {
     if (id == HOME_ALL || board.folders[id] != null) return board
     if (board.folders[collectionId]?.collection != true) return board
-    return dropInto(board, collectionId, id)
+    return dropInto(board.copy(hidden = board.hidden - id), collectionId, id)
 }
 
 /** Takes the game [id] out of [collectionId]. Its slot there is left empty. */
@@ -457,7 +477,7 @@ fun removeFromCollection(board: HomeBoard, collectionId: String, id: String): Ho
     val folder = board.folders[collectionId]?.takeIf { it.collection } ?: return board
     if (id !in folder.slots) return board
     val left = folder.copy(slots = folder.slots.map { if (it == id) null else it })
-    return board.copy(folders = board.folders + (collectionId to left), hold = null)
+    return keepOff(board, board.copy(folders = board.folders + (collectionId to left), hold = null))
 }
 
 /** Adds [id] to [collectionId], or takes it out when it is already there. Favorites is made when it is missing. */
@@ -481,13 +501,31 @@ fun toggleFavorite(board: HomeBoard, id: String): HomeBoard {
         val favorites = HomeFolder(HOME_FAVORITES, Copy.favorites, userMade = true, mark = MARK_FOLDER)
         placeOnRoot(board.copy(folders = board.folders + (HOME_FAVORITES to favorites)), HOME_FAVORITES)
     }
-    return dropInto(made, HOME_FAVORITES, id)
+    return dropInto(made.copy(hidden = made.hidden - id), HOME_FAVORITES, id)
 }
 
 /** A pin for [id] in the first free root slot. The game stays in its folder. A hidden one comes back. */
 fun pinToHome(board: HomeBoard, id: String): HomeBoard {
     if (id == HOME_ALL || id.isBlank() || board.folders[id] != null) return board
     return placeOnRoot(board.copy(hidden = board.hidden - id, hold = null), id)
+}
+
+/**
+ * Pins [item], and files it in its folder too when it was nowhere on the board, so a game
+ * brought back from All has both. Its folder is made when the board has none, as a new game's
+ * would be, but one the user took off Home stays off.
+ */
+fun pinItemToHome(board: HomeBoard, item: HomeItem, platforms: List<HomePlatform>): HomeBoard {
+    val unplaced = item.id !in placedIds(board)
+    val pinned = pinToHome(board, item.id)
+    if (!unplaced || pinned == board) return pinned
+    val folderId = systemFolderId(item, platforms) ?: return pinned
+    val folder = pinned.folders[folderId]
+    return when {
+        folder != null -> pinned.copy(folders = pinned.folders + (folderId to folder.copy(slots = atEnd(folder.slots, item.id))))
+        folderId in pinned.retired -> pinned
+        else -> placeNew(pinned, item, platforms)
+    }
 }
 
 /**
@@ -555,8 +593,8 @@ private fun romPlatformId(item: HomeItem, platforms: List<HomePlatform>): String
  */
 fun addItemToHome(board: HomeBoard, item: HomeItem, platforms: List<HomePlatform>): HomeBoard {
     if (item.id == HOME_ALL || item.id.isBlank()) return board
-    val shown = board.copy(hidden = board.hidden - item.id)
-    if (onHome(shown, item.id)) return shown
+    val shown = board.copy(hidden = board.hidden - item.id, offHome = board.offHome - item.id)
+    if (reachable(shown, item.id, viaRecent = false)) return shown
     return placeNew(shown, item, platforms)
 }
 
@@ -620,6 +658,7 @@ fun encodeHome(board: HomeBoard): String {
         homeRow("slots", saved.slots.map { it.orEmpty() })
         homeRow("emulatorsFiled", listOf(if (saved.emulatorsFiled) "1" else "0"))
         homeRow("recentAfter", listOf(saved.recentAfter.toString()))
+        homeRow("offHome", saved.offHome.sorted())
         for (folder in saved.folders.values.sortedBy { it.id }) {
             homeRow(
                 "folder",
@@ -640,6 +679,10 @@ private fun StringBuilder.homeRow(kind: String, fields: List<String>) {
     append(fields.joinToString("\t") { encoder.encodeToString(it.toByteArray(Charsets.UTF_8)) })
     append('\n')
 }
+
+/** A board saved by a release before collections. Its first load keeps a copy of it as it was. */
+fun savedBeforeCollections(raw: String?): Boolean =
+    !raw.isNullOrBlank() && raw.lineSequence().none { it == "recentAfter" || it.startsWith("recentAfter\t") }
 
 /**
  * Reads a saved board. Folders the user made come back as collections. A board saved before
@@ -670,6 +713,7 @@ fun decodeHome(raw: String?, nowMillis: Long = 0L): HomeBoard {
             "slots" -> board = board.copy(slots = decodeSlots(bits.drop(1), encoded))
             "emulatorsFiled" -> board = board.copy(emulatorsFiled = bits.getOrNull(1) == "1")
             "recentAfter" -> bits.getOrNull(1)?.toLongOrNull()?.let { board = board.copy(recentAfter = it) }
+            "offHome" -> board = board.copy(offHome = bits.drop(1).filter { it.isNotEmpty() }.toSet())
             "folder" -> {
                 if (bits.size < 8) continue
                 val bucket = bits[4].takeIf { it.isNotEmpty() }?.let { runCatching { HomeKind.valueOf(it) }.getOrNull() }
@@ -741,9 +785,30 @@ private fun placedIds(board: HomeBoard): MutableSet<String> {
  */
 private fun completeFolders(board: HomeBoard, catalog: List<HomeItem>, platforms: List<HomePlatform>): HomeBoard {
     if (board.hold != null) return board
+    val unfiled = unfiledIds(board)
+    if (unfiled.isEmpty()) return board
+    val byId = catalog.associateBy { it.id }
+    val filed = HashSet<String>()
+    var next = board
+    for (id in unfiled) {
+        if (id in filed || id in board.hidden) continue
+        val item = byId[id] ?: continue
+        val folderId = systemFolderId(item, platforms) ?: continue
+        val folder = next.folders[folderId]?.takeIf { it.system } ?: continue
+        next = next.copy(folders = next.folders + (folderId to folder.copy(slots = atEnd(folder.slots, id))))
+        filed += id
+    }
+    return next
+}
+
+/**
+ * Games pinned on the root or in collections that no folder holds, in the root's order, then
+ * collections off the root.
+ */
+private fun unfiledIds(board: HomeBoard): List<String> {
     val filed = HashSet<String>()
     board.folders.values.filter { it.system }.forEach { it.slots.filterNotNullTo(filed) }
-    val onBoard = buildList {
+    return buildList {
         for (slot in board.slots) {
             val folder = slot?.let { board.folders[it] }
             when {
@@ -754,19 +819,7 @@ private fun completeFolders(board: HomeBoard, catalog: List<HomeItem>, platforms
         }
         board.folders.values.filter { it.collection && it.id !in board.slots }.sortedBy { it.id }
             .forEach { addAll(it.slots.filterNotNull()) }
-    }.distinct()
-    if (onBoard.all { it in filed }) return board
-    val byId = catalog.associateBy { it.id }
-    var next = board
-    for (id in onBoard) {
-        if (id in filed || id in board.hidden) continue
-        val item = byId[id] ?: continue
-        val folderId = systemFolderId(item, platforms) ?: continue
-        val folder = next.folders[folderId]?.takeIf { it.system } ?: continue
-        next = next.copy(folders = next.folders + (folderId to folder.copy(slots = atEnd(folder.slots, id))))
-        filed += id
-    }
-    return next
+    }.distinct().filter { it !in filed }
 }
 
 /** [id] after the last tile in [slots], in the empty slot there if there is one. */
@@ -828,8 +881,10 @@ private fun fileEmulators(board: HomeBoard, catalog: List<HomeItem>, platforms: 
  * A folder the user made, or any folder while a tile is held, stays. A game whose
  * source has not reported yet keeps its slot, so it keeps its folder too.
  */
-private fun dropEmptySystemFolders(board: HomeBoard): HomeBoard {
-    if (board.hold != null) return board
+private fun dropEmptySystemFolders(board: HomeBoard, waiting: Boolean): HomeBoard {
+    // A game on Home but in no folder, whose source has not reported, may belong in an empty
+    // folder. Until it is known, every folder stays, its name and slot with it.
+    if (board.hold != null || waiting) return board
     val gone = board.folders.values.filter { folder ->
         !folder.userMade && (folder.platformId != null || folder.bucket != null) && folder.slots.all { it == null }
     }.map { it.id }.toSet()
@@ -912,26 +967,26 @@ private fun placeInBucket(board: HomeBoard, itemId: String, folderId: String): H
 }
 
 private fun placeOnRoot(board: HomeBoard, id: String): HomeBoard {
-    if (board.slots.contains(id)) return board
+    if (board.slots.contains(id)) return board.copy(offHome = board.offHome - id)
     val hole = board.slots.indexOfFirst { it == null }
     val slots = if (hole >= 0) {
         board.slots.mapIndexed { index, value -> if (index == hole) id else value }
     } else {
         board.slots + id
     }
-    return board.copy(slots = slots)
+    return board.copy(slots = slots, offHome = board.offHome - id)
 }
 
 private fun dropInto(board: HomeBoard, folderId: String, id: String): HomeBoard {
     val folder = board.folders[folderId] ?: return placeOnRoot(board, id)
-    if (folder.slots.contains(id)) return board
+    if (folder.slots.contains(id)) return board.copy(offHome = board.offHome - id)
     val hole = folder.slots.indexOfFirst { it == null }
     val slots = if (hole >= 0) {
         folder.slots.mapIndexed { index, value -> if (index == hole) id else value }
     } else {
         folder.slots + id
     }
-    return board.copy(folders = board.folders + (folderId to folder.copy(slots = slots)))
+    return board.copy(folders = board.folders + (folderId to folder.copy(slots = slots)), offHome = board.offHome - id)
 }
 
 /**

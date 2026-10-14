@@ -14,7 +14,7 @@ Empty default folders are hidden. If Android Games is absent, check Android Apps
 
 ## Arrange your apps
 
-Press **Y** to move tiles, add them to collections, or **Hide** them. Hidden tiles stay in All; **Y › Add to Home** there restores them without reinstalling the app.
+Press **Y** to move tiles, add them to collections, or **Hide** them. Hidden tiles stay in All; **Y › Pin to Home** there brings them back without reinstalling the app.
 
 Check [New games on Home](README.md#a-game-is-in-all-but-missing-from-home) if new apps appear only in All.
 

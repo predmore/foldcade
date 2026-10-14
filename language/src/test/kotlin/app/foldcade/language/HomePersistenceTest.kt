@@ -19,6 +19,16 @@ class HomePersistenceTest {
     }
 
     @Test
+    fun gamesTakenOffHomeAndTheRecentStartRoundTrip() {
+        val board = HomeBoard(offHome = setOf("lib:a\tb", "lib:c"), recentAfter = 1234L)
+        val restored = decodeHome(encodeHome(board), nowMillis = 9999L)
+        assertEquals(board, restored)
+        assertFalse(savedBeforeCollections(encodeHome(board)))
+        assertTrue(savedBeforeCollections("v2\nslots\taG9tZS5hbGw\n"))
+        assertFalse(savedBeforeCollections(null))
+    }
+
+    @Test
     fun v1LayoutsMigrateWithoutLosingNamesIconsHiddenItemsOrEmptySlots() {
         val raw = "v1\naddNew\t0\nhidden\tlib:source:hidden\nretired\thome.android-apps\n" +
             "slots\thome.all\t-\thome.user.1\nfolder\thome.user.1\tFavorites\t\t\t1\t1\tpsp\tlib:source:game\t-\n"

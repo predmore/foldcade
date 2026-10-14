@@ -292,7 +292,6 @@ sealed interface Row {
     data object FolderIcon : Row
     data object RemoveTile : Row
     data object RemoveDownload : Row
-    data object AddToHome : Row
     data class QuickTile(val setting: QuickSetting) : Row
 
     /** The R1 slider for both screens' brightness. */
@@ -484,8 +483,6 @@ data class TileActions(
     val icon: Boolean = false,
     /** What X does to the tile. Null leaves the row out. */
     val remove: RemoveVerb? = null,
-    /** The All row's label, such as "Add to Home". Null when the item is already placed. */
-    val addToHome: String? = null,
     /** A server game downloaded to this device can be deleted again. */
     val removeDownload: Boolean = false,
 )
@@ -493,7 +490,6 @@ data class TileActions(
 /** Y's menu: the tile's own actions, then an Android app's shelf actions. */
 fun actionRows(tile: TileActions?, app: AppActions?): List<Row> = buildList {
     if (tile != null) {
-        if (tile.addToHome != null) add(Row.AddToHome)
         if (tile.move) add(Row.MoveTile)
         if (tile.collections != null) add(Row.AddToCollection)
         if (tile.favorite != null) add(Row.Favorite)
@@ -657,7 +653,6 @@ fun rowText(row: Row, model: PickerModel): RowText = when (row) {
         },
     )
     Row.RemoveDownload -> RowText(Copy.deleteDownload)
-    Row.AddToHome -> RowText(model.tileActions?.addToHome ?: Copy.addToHome)
     Row.ButtonLabels -> RowText(
         Copy.buttonLabels,
         if (model.capturingConfirm) Copy.pressConfirm else null,
@@ -733,7 +728,6 @@ sealed interface Effect {
 
     /** Delete the focused server game's downloaded copy. Its saves stay. */
     data object RemoveDownload : Effect
-    data object AddToHome : Effect
     data object OpenAll : Effect
     data object ToggleAddNew : Effect
 
@@ -1593,7 +1587,6 @@ private fun activateRow(
         Row.FolderIcon -> model.copy(panel = null, focus = panel.grid) to Effect.ChooseFolderIcon
         Row.RemoveTile -> model.copy(panel = null, focus = panel.grid) to Effect.RemoveTile
         Row.RemoveDownload -> model.copy(panel = null, focus = panel.grid) to Effect.RemoveDownload
-        Row.AddToHome -> model.copy(panel = null, focus = panel.grid) to Effect.AddToHome
         Row.ButtonLabels -> if (model.capturingConfirm) {
             model.copy(capturingConfirm = false, offerButtonLabels = false) to Effect.DismissButtonLabels
         } else {

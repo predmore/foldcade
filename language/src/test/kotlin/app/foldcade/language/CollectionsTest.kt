@@ -242,9 +242,6 @@ class CollectionsTest {
         assertEquals(recent.slots, visibleSlots(open))
         assertNull(pickUp(open, 0).hold)
         assertFalse(folderTakes(recent, played.first(), platforms))
-        // It reflects play, so it does not put a game on Home.
-        val onlyRecent = HomeBoard(slots = listOf(HOME_ALL, HOME_RECENT), folders = mapOf(HOME_RECENT to recent))
-        assertFalse(onHome(onlyRecent, "lib:local:g13"))
     }
 
     @Test
@@ -300,6 +297,116 @@ class CollectionsTest {
         assertFalse(notes.id in moved.folders.getValue(HOME_ANDROID_APPS).slots)
         assertTrue(notes.id in moved.folders.getValue("home.user.1").slots)
         assertTrue(notes.id in moved.slots)
+    }
+
+    @Test
+    fun aRenamedFolderWaitsWhileAGameThatBelongsInItIsStillLoading() {
+        // Review r1 #1: its only member left with RomM, while a 3DS game in a collection still loads.
+        val gone = "lib:romm:gone"
+        val local = rom("lib:local-folder:zelda", "3ds")
+        val board = HomeBoard(
+            slots = listOf(HOME_ALL, threeDs, "home.user.1"),
+            folders = mapOf(
+                threeDs to HomeFolder(threeDs, "My 3DS", platformId = "nintendo-3ds", namedByUser = true, slots = listOf(gone)),
+                "home.user.1" to HomeFolder("home.user.1", "Quests", userMade = true, slots = listOf(local.id)),
+            ),
+        )
+        val loading = mergeHome(board, emptyList(), platforms, unsettled = { it.startsWith("lib:local-folder:") })
+        assertEquals(1, loading.slots.indexOf(threeDs))
+        assertEquals("My 3DS", loading.folders.getValue(threeDs).name)
+        // A restart while it still loads keeps it too.
+        val restarted = mergeHome(decodeHome(encodeHome(loading)), emptyList(), platforms, unsettled = { it.startsWith("lib:local-folder:") })
+        assertEquals(1, restarted.slots.indexOf(threeDs))
+        val loaded = mergeHome(restarted, listOf(local), platforms)
+        assertEquals(1, loaded.slots.indexOf(threeDs))
+        assertEquals("My 3DS", loaded.folders.getValue(threeDs).name)
+        assertEquals(listOf(local.id), loaded.folders.getValue(threeDs).slots)
+        // With nothing left that could belong in it, it goes as before.
+        assertFalse(threeDs in mergeHome(board, emptyList(), platforms).folders)
+    }
+
+    @Test
+    fun takingAGameOutOfItsLastPlaceNeverPlacesIt() {
+        // Review r1 #2: an older release deleted the DS folder; its game lives on only in a collection.
+        val board = HomeBoard(
+            slots = listOf(HOME_ALL, "home.user.1", threeDs),
+            folders = mapOf(
+                "home.user.1" to HomeFolder("home.user.1", "Mix", userMade = true, slots = listOf(kirby.id)),
+                threeDs to HomeFolder(threeDs, "Nintendo 3DS", platformId = "nintendo-3ds", slots = listOf(zelda.id, mario.id)),
+            ),
+            retired = setOf(ds),
+        )
+        val removed = mergeHome(removeFromHome(board, 1), catalog, platforms)
+        assertFalse(ds in removed.folders)
+        assertTrue(ds in removed.retired)
+        assertEquals(listOf(HOME_ALL, null, threeDs), removed.slots)
+        assertFalse(onHome(removed, kirby.id))
+        assertFalse(kirby.id in removed.hidden)
+        // Out of the collection instead, and after a restart, the same.
+        val out = mergeHome(decodeHome(encodeHome(removeFromHome(openFolder(board, "home.user.1"), 0))), catalog, platforms)
+        assertFalse(ds in out.folders)
+        assertFalse(kirby.id in out.slots)
+        // A loose game with no folder does not come back as a pin either.
+        val loose = HomeItem("lib:local:loose", "Loose", HomeKind.Rom)
+        val looseBoard = newCollection(HomeBoard(), "home.user.1", "Mix", member = loose.id)
+        val unfiled = mergeHome(removeFromCollection(looseBoard, "home.user.1", loose.id), listOf(loose), platforms)
+        assertFalse(loose.id in unfiled.slots)
+        // Pin to Home brings it back, and then a new game for DS makes its folder as before.
+        val pinned = mergeHome(pinToHome(removed, kirby.id), catalog, platforms)
+        assertTrue(kirby.id in pinned.slots)
+        assertFalse(kirby.id in pinned.offHome)
+        val fresh = rom("lib:local:fresh", "nds")
+        assertTrue(ds in mergeHome(removed, catalog + fresh, platforms).slots)
+    }
+
+    @Test
+    fun theAllDotCountsAGameReachedThroughRecentlyPlayed() {
+        // Review r1 #5.
+        val recent = HomeFolder(HOME_RECENT, "Recently played", slots = listOf(zelda.id))
+        val board = HomeBoard(slots = listOf(HOME_ALL, HOME_RECENT), folders = mapOf(HOME_RECENT to recent))
+        assertTrue(onHome(board, zelda.id))
+        assertFalse(onHome(board.copy(slots = listOf(HOME_ALL)), zelda.id))
+        // It only reflects play, so it does not count as placed: Add to Home still files it.
+        assertTrue(zelda.id in addItemToHome(board, zelda, platforms).folders[threeDs]!!.slots)
+    }
+
+    @Test
+    fun pinToHomeFilesAGameThatWasNowhereOnTheBoard() {
+        // Review r1 #4: with Add to Home gone from All, Pin to Home must not lose the folder.
+        val quiet = mergeHome(HomeBoard(addNewToHome = false), catalog, platforms)
+        assertFalse(onHome(quiet, zelda.id))
+        val pinned = pinItemToHome(quiet, zelda, platforms)
+        assertTrue(zelda.id in pinned.slots)
+        assertEquals(listOf(zelda.id), pinned.folders.getValue(threeDs).slots)
+        assertEquals(pinned, mergeHome(pinned, catalog, platforms))
+        // Into a folder the board already has, at its end.
+        val withMario = pinItemToHome(pinned, mario, platforms)
+        assertEquals(listOf(zelda.id, mario.id), withMario.folders.getValue(threeDs).slots)
+        // A folder the user took off Home stays off.
+        val retired = HomeBoard(addNewToHome = false, retired = setOf(ds))
+        val kirbyPinned = pinItemToHome(retired, kirby, platforms)
+        assertTrue(kirby.id in kirbyPinned.slots)
+        assertFalse(ds in kirbyPinned.folders)
+        assertTrue(ds in kirbyPinned.retired)
+        // A game already filed only gets its pin.
+        val placed = mergeHome(HomeBoard(), catalog, platforms)
+        assertEquals(pinToHome(placed, zelda.id), pinItemToHome(placed, zelda, platforms))
+        // All's rows: nothing takes Y, since All has no Move.
+        val all = actionRows(TileActions(collections = emptyList(), favorite = false, pin = true, removeDownload = true), null)
+        assertEquals(listOf(Row.AddToCollection, Row.Favorite, Row.PinTile, Row.RemoveDownload), all)
+        assertNull(chordIndex(all, Meaning.Options))
+    }
+
+    @Test
+    fun addingAHiddenGameToACollectionBringsItBack() {
+        val hidden = hideGame(mergeHome(HomeBoard(), catalog, platforms), zelda.id)
+        val made = newCollection(hidden, "home.user.1", "Quests")
+        val added = mergeHome(toggleCollection(made, "home.user.1", zelda.id), catalog, platforms)
+        assertFalse(zelda.id in added.hidden)
+        assertEquals(listOf(zelda.id), added.folders.getValue("home.user.1").slots)
+        assertTrue(zelda.id in added.folders.getValue(threeDs).slots)
+        val loved = mergeHome(toggleFavorite(hidden, zelda.id), catalog, platforms)
+        assertTrue(favorite(loved, zelda.id))
     }
 
     private fun rom(id: String, platform: String, lastPlayed: Long = 0L): HomeItem =

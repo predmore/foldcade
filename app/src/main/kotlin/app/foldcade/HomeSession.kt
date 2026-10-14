@@ -44,6 +44,7 @@ import app.foldcade.language.onHome
 import app.foldcade.language.openAll
 import app.foldcade.language.openFolder
 import app.foldcade.language.pickUp
+import app.foldcade.language.pinItemToHome
 import app.foldcade.language.pinToHome
 import app.foldcade.language.pinned
 import app.foldcade.language.removeFromHome
@@ -99,6 +100,9 @@ class HomeSession(raw: String?, nowMillis: Long = System.currentTimeMillis()) {
 
     /** The cell focus goes back to when the name field closes. */
     private var renameCell: Int = 0
+
+    /** The game an open menu keeps acting on after Add to took it out of the slot on screen. */
+    private var menuGame: String? = null
 
     /** The folder whose icon is being chosen, and the focused choice in [FOLDER_ICONS]. Null when closed. */
     var iconPick: FolderIconPick? = null
@@ -191,24 +195,20 @@ class HomeSession(raw: String?, nowMillis: Long = System.currentTimeMillis()) {
 
     /**
      * What Y offers for the tile at [index]. A game can always join collections and be a
-     * favorite; where it sits decides the rest (see [removeVerb]). In All, an item not on Home
-     * can go back there, and a hidden one only that. A group can move, be renamed and come off
-     * Home, and a collection takes an icon. An empty slot moves, and on the root makes a
-     * collection. A downloaded server game can be deleted from anywhere. Null while a tile
+     * favorite; where it sits decides the rest (see [removeVerb]). In All, a game not pinned
+     * can be, which brings a hidden one back. A group can move, be renamed and come off Home,
+     * and a collection takes an icon. An empty slot moves, and on the root makes a collection.
+     * A downloaded server game can be deleted from anywhere. While Add to has taken the game
+     * out of the collection on screen, the menu keeps acting on that game. Null while a tile
      * moves or a picker or name field is open.
      */
     fun actions(index: Int): TileActions? {
         if (iconPick != null || renamingId != null || board.editing) return null
+        val held = menuGame
+        if (held != null && slotGame(index) != held) return gameActions(held, move = false, pin = false, remove = null)
         if (board.allOpen) {
             val item = allRows().getOrNull(index) ?: return null
-            val downloaded = downloaded(item.id)
-            // Named for where it would land, including a folder that comes back with it.
-            val placed = addItemToHome(board, item, platforms)
-            val into = placed.slots.mapNotNull { placed.folders[it] }.firstOrNull { item.id in it.slots }?.name
-            val addToHome = if (into != null) "${Copy.addTo} $into" else Copy.addToHome
-            if (item.id in board.hidden) return TileActions(addToHome = addToHome, removeDownload = downloaded)
             return gameActions(item.id, move = false, pin = !pinned(board, item.id), remove = null)
-                .copy(addToHome = addToHome.takeIf { !onHome(board, item.id) })
         }
         if (index < 0) return null
         val open = board.openFolderId?.let { board.folders[it] }
@@ -241,10 +241,26 @@ class HomeSession(raw: String?, nowMillis: Long = System.currentTimeMillis()) {
     /** A server game with a copy on this device. */
     private fun downloaded(id: String): Boolean = games[id]?.availability == Availability.Cached
 
+    /**
+     * The game the open menu acts on: the one at [index], or the one Add to took out of the
+     * collection on screen while its menu stayed open.
+     */
+    private fun gameAt(index: Int): String? = menuGame ?: slotGame(index)
+
     /** The game at [index] in All or on the board. Null for a group, the All tile, or an empty slot. */
-    private fun gameAt(index: Int): String? {
+    private fun slotGame(index: Int): String? {
         val id = if (board.allOpen) allRows().getOrNull(index)?.id else visibleSlots(board).getOrNull(index)
         return id?.takeIf { it != HOME_ALL && board.folders[it] == null }
+    }
+
+    /**
+     * Ends a menu's hold on its game, so the next menu reads the focused slot again. True
+     * when there was one, and the menu's rows need reading again.
+     */
+    fun releaseMenu(): Boolean {
+        if (menuGame == null) return false
+        menuGame = null
+        return true
     }
 
     /** Move: lifts the tile or empty slot at [index]. The D-pad walks it, A drops it, B puts it back. */
@@ -254,17 +270,14 @@ class HomeSession(raw: String?, nowMillis: Long = System.currentTimeMillis()) {
         if (board.hold == null) board = leaveEdit(board)
     }
 
-    /** Puts the game at [index] in collection [folderId], or takes it out. Favorites is made when missing. */
+    /**
+     * Puts the game at [index] in collection [folderId], or takes it out. Favorites is made
+     * when missing. The open menu keeps this game even when it leaves the slot on screen.
+     */
     fun toggleCollection(index: Int, folderId: String) {
         val id = gameAt(index) ?: return
+        menuGame = id
         board = toggleCollection(board, folderId, id)
-    }
-
-    /** True when toggling [folderId] would take the game at [index] out of the collection on screen. */
-    fun leavesOpenCollection(index: Int, folderId: String): Boolean {
-        if (board.allOpen || board.openFolderId != folderId) return false
-        val id = gameAt(index) ?: return false
-        return board.folders[folderId]?.slots?.contains(id) == true
     }
 
     fun toggleFavorite(index: Int) {
@@ -272,10 +285,14 @@ class HomeSession(raw: String?, nowMillis: Long = System.currentTimeMillis()) {
         board = toggleFavorite(board, id)
     }
 
-    /** A pin for the game at [index] in the first free root slot. The focus stays on the game. */
+    /**
+     * A pin for the game at [index] in the first free root slot. The focus stays on the game.
+     * A game nowhere on the board is filed in its folder too.
+     */
     fun pin(index: Int) {
         val id = gameAt(index) ?: return
-        board = pinToHome(board, id)
+        val item = catalog().firstOrNull { it.id == id }
+        board = if (item != null) pinItemToHome(board, item, platforms) else pinToHome(board, id)
     }
 
     /**
@@ -328,15 +345,6 @@ class HomeSession(raw: String?, nowMillis: Long = System.currentTimeMillis()) {
     fun remove(index: Int): Int {
         board = removeFromHome(board, index)
         return index.coerceAtMost((visibleCount() - 1).coerceAtLeast(0))
-    }
-
-    /**
-     * Places the All item at [index] on Home: back in its platform's or library's
-     * folder, else the first free slot.
-     */
-    fun addFocused(index: Int) {
-        val item = allRows().getOrNull(index) ?: return
-        board = addItemToHome(board, item, platforms)
     }
 
     /**
