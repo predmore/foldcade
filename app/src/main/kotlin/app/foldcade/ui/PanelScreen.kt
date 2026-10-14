@@ -100,6 +100,7 @@ import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.clipPath
+import androidx.compose.ui.graphics.drawscope.scale
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.PointerEventPass
@@ -3012,21 +3013,18 @@ private fun CarriedTile(
     ) {
         // A dark shadow is lost on a black grid, so the tile casts a pool of its own light on
         // the grid under it instead. It stays put as the tile bobs, and dims as the tile rises.
+        // Drawn without a layer of its own: a faded layer would clip the light to the tile's box.
         Box(
             Modifier
                 .matchParentSize()
-                .graphicsLayer {
-                    val rise = bob?.value ?: 0f
-                    translationY = glowPx * raised + rise * bobPx * 0.5f
-                    scaleX = lift.value * (1f - 0.06f * rise)
-                    scaleY = lift.value * LIFT_GLOW_FLAT
-                    alpha = raised * (1f - 0.25f * rise)
-                    transformOrigin = TransformOrigin(0.5f, 1f)
-                    clip = false
-                }
                 .drawBehind {
+                    val rise = bob?.value ?: 0f
+                    val pool = Offset(size.width / 2f, size.height + glowPx * raised + rise * bobPx * 0.5f)
                     SoftGlow.fillStops(underStops, glowStyle.focusTightness, glowStyle.focusRim)
-                    drawRadialGlow(Offset(size.width / 2f, size.height), size.width * LIFT_GLOW_REACH, underGlow, underStops, motion.liftGlowPeak)
+                    scale(lift.value * (1f - 0.06f * rise), lift.value * LIFT_GLOW_FLAT, pivot = pool) {
+                        val peak = motion.liftGlowPeak * raised * (1f - 0.25f * rise)
+                        drawRadialGlow(pool, size.width * LIFT_GLOW_REACH, underGlow, underStops, peak)
+                    }
                 },
         )
         Box(
