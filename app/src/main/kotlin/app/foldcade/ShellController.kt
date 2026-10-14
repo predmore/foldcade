@@ -588,12 +588,13 @@ class ShellController(
                 cue(model.themeIndex, "activate")
             }
             // The tile menu, for the focused result, in the left island as Y opens it on a grid.
+            // The menu holds its result from here, and opens in the same step: a model published
+            // without it in between would read as the menu closing.
             FindOutcome.Options -> {
-                find?.holdMenu()
-                publish(model)
-                if (actionRows(model.tileActions, model.appActions).isNotEmpty()) {
-                    publish(model.copy(panel = SidePanel(Side.Left, HostScreen.Top, PanelLevel.Actions, 0, model.focus)))
-                }
+                val session = find ?: return null
+                session.holdMenu()
+                val menu = model.copy(panel = SidePanel(Side.Left, HostScreen.Top, PanelLevel.Actions, 0, model.focus))
+                if (actionRows(withShelf(menu).tileActions, null).isNotEmpty()) publish(menu) else session.releaseMenu()
             }
         }
         return null
@@ -1899,7 +1900,7 @@ class ShellController(
         // On Find's results, Y's menu is the focused result's, wherever the grid under it is. An
         // open menu keeps the result it opened on, however the results move under it.
         if (counted.panel == null) find?.releaseMenu()
-        val found = find?.takeIf { it.onResults }?.let { it.menuId ?: it.subject?.id }?.let(home::findActions)
+        val found = find?.let { it.menuId ?: it.subject?.id?.takeIf { _ -> it.onResults } }?.let(home::findActions)
         val tile = found ?: if (onHome) home.actions(counted.focus.cellIndex) else null
         // A copy still arriving, or already going, is not one to delete.
         val busy = (tile?.game ?: home.face(counted.focus.cellIndex)?.id)?.let(::busyOnDevice) == true

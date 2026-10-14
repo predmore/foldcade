@@ -73,8 +73,13 @@ class FindSession(entries: List<FindEntry>) {
 
     val query: String get() = typing.text
 
-    /** What the top screen shows: the focused result on the results, else the best one. */
-    val subject: FindEntry? get() = if (onResults) results.getOrNull(index) else results.firstOrNull()
+    /**
+     * What the top screen and the menu's header show: the result a menu is open on, even one
+     * gone from the results, else the focused result on the results, else the best one.
+     */
+    val subject: FindEntry? get() =
+        menuId?.let { id -> entries.firstOrNull { it.id == id } }
+            ?: if (onResults) results.getOrNull(index) else results.firstOrNull()
 
     /** The Y menu is opening on the focused result. */
     fun holdMenu() {
