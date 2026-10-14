@@ -81,12 +81,12 @@ class CollectionsTest {
         assertFalse(zelda.id in hidden.slots)
         assertTrue(hidden.folders.values.none { zelda.id in it.slots })
         assertFalse(onHome(hidden, zelda.id))
-        // Add to Home in All brings it back to its folder. Collections and the pin forgot it.
+        // Add to Home also restores the pin and collection memberships saved at Hide.
         val back = mergeHome(addItemToHome(hidden, zelda, platforms), catalog, platforms)
         assertTrue(zelda.id in back.folders.getValue(threeDs).slots)
-        assertFalse(zelda.id in back.slots)
-        assertFalse(favorite(back, zelda.id))
-        assertFalse(zelda.id in back.folders.getValue("home.user.1").slots)
+        assertTrue(zelda.id in back.slots)
+        assertTrue(favorite(back, zelda.id))
+        assertTrue(zelda.id in back.folders.getValue("home.user.1").slots)
     }
 
     @Test
@@ -264,7 +264,7 @@ class CollectionsTest {
         assertTrue(HOME_RECENT in removed.retired)
         val later = mergeHome(removed, listOf(old.copy(lastPlayedMillis = 700L)), platforms)
         assertFalse(HOME_RECENT in later.slots)
-        assertFalse(HOME_RECENT in later.folders)
+        assertTrue(HOME_RECENT in later.folders)
         // A board with no saved Home starts fresh, so its first play shows it.
         assertTrue(HOME_RECENT in mergeHome(decodeHome(null, nowMillis = 500L), listOf(old), platforms).folders)
     }
@@ -351,12 +351,14 @@ class CollectionsTest {
         val looseBoard = newCollection(HomeBoard(), "home.user.1", "Mix", member = loose.id)
         val unfiled = mergeHome(removeFromCollection(looseBoard, "home.user.1", loose.id), listOf(loose), platforms)
         assertFalse(loose.id in unfiled.slots)
-        // Pin to Home brings it back, and then a new game for DS makes its folder as before.
+        // Pin to Home brings it back. A scan keeps the explicitly removed DS folder off Home.
         val pinned = mergeHome(pinToHome(removed, kirby.id), catalog, platforms)
         assertTrue(kirby.id in pinned.slots)
         assertFalse(kirby.id in pinned.offHome)
         val fresh = rom("lib:local:fresh", "nds")
-        assertTrue(ds in mergeHome(removed, catalog + fresh, platforms).slots)
+        val arrived = mergeHome(removed, catalog + fresh, platforms)
+        assertFalse(ds in arrived.slots)
+        assertTrue(ds in arrived.retired)
     }
 
     @Test
@@ -456,11 +458,14 @@ class CollectionsTest {
         assertFalse(zelda.id in unpinned.offHome)
         assertEquals(listOf(zelda.id, mario.id), unpinned.folders.getValue(threeDs).slots)
         assertEquals(listOf(zelda.id), unpinned.folders.getValue(HOME_RECENT).slots)
-        // A new 3DS game brings the folder back with the game where it was.
+        // New games join the retired folder, and Show returns it with its order intact.
         val fresh = rom("lib:local:fresh", "3ds")
         val back = mergeHome(unpinned, played + fresh, platforms)
-        assertTrue(threeDs in back.slots)
-        assertEquals(listOf(zelda.id, mario.id, fresh.id), back.folders.getValue(threeDs).slots)
+        assertFalse(threeDs in back.slots)
+        assertTrue(threeDs in back.retired)
+        val shown = showHidden(back, threeDs, played + fresh, platforms)
+        assertTrue(threeDs in shown.slots)
+        assertEquals(listOf(zelda.id, mario.id, fresh.id), shown.folders.getValue(threeDs).slots)
         assertTrue(onHome(back, zelda.id))
         // A pin with no other place at all still hides.
         val loose = HomeItem("lib:local:loose", "Loose", HomeKind.Rom)

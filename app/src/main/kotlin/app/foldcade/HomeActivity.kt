@@ -180,13 +180,25 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
         return foldcade.store.session.surfaceOn(panel) != null
     }
 
+    internal val inputWindow: String = java.util.UUID.randomUUID().toString()
+
+    override fun onInputKey(meaning: app.foldcade.language.Meaning?, key: Int): Boolean = foldcade.shell.inputKey(meaning, inputWindow, key)
+
+    override fun onInputCanceled() { foldcade.shell.cancelDeleteHold(inputWindow) }
+
     override fun faceMap(): app.foldcade.language.FaceMap = foldcade.shell.model.faceMap
 
     override fun onPromptHeld(key: PromptKey, held: Boolean) {
-        foldcade.shell.setPromptHeld(key, held)
+        dispatch(foldcade.shell.setPromptHeld(key, held, inputWindow))
     }
 
+    override fun capturingHold(): Boolean = foldcade.shell.model.deleteHold?.inputWindow == inputWindow
+
     override fun capturingConfirm(): Boolean = foldcade.shell.model.capturingConfirm
+
+    override fun onMeaningReleased(meaning: app.foldcade.language.Meaning, canceled: Boolean) {
+        dispatch(foldcade.shell.releaseMeaning(meaning, inputWindow, canceled))
+    }
 
     override fun onCalibrateConfirm(key: PromptKey) {
         foldcade.shell.calibrateConfirm(key)
@@ -212,7 +224,7 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
         foldcade.music.duckForThemeSound(meaning)
         val panel = displays.panelFor(this, foldcade.store.session.defaultDisplayIsTop) ?: return
         val screen = if (panel == Panel.Top) HostScreen.Top else HostScreen.Bottom
-        dispatch(foldcade.shell.onMeaning(meaning, screen, repeatCount))
+        dispatch(foldcade.shell.onMeaning(meaning, screen, repeatCount, inputWindow))
     }
 
     /** The command center on this screen, or the grid opened from it, takes the key first. */
@@ -239,7 +251,7 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
             }
             Effect.SyncLibrary -> foldcade.libraryResync.syncNow()
             is Effect.ChoosePlayerSave -> choosePlayerSave(effect.playerId)
-            Effect.PinApp, is Effect.AddAppTo, Effect.MoveApp, Effect.HideApp, Effect.ShowApp -> Unit
+            Effect.Undo, is Effect.ShowHidden, is Effect.DeleteShortcut, Effect.PinApp, is Effect.AddAppTo, Effect.MoveApp, Effect.HideApp, Effect.ShowApp -> Unit
             // The shell applies Y's tile actions and A on a text field itself and hands back null; these never arrive.
             is Effect.ChooseArt, Effect.MoveTile, is Effect.ShowOnHome, is Effect.ToggleCollection, is Effect.NewCollection, is Effect.ToggleFavorite, is Effect.PinTile,
             Effect.RenameFolder, Effect.ChooseFolderIcon, Effect.RemoveTile, Effect.Tidy, Effect.GoHome, Effect.EditField,
@@ -394,6 +406,7 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
     }
 
     override fun onPause() {
+        foldcade.shell.inputFocus(inputWindow, false)
         resumed = false
         refreshShellVisible()
         displays.panelFor(this, foldcade.store.session.defaultDisplayIsTop)?.let(foldcade.music::onHomePause)
@@ -402,6 +415,7 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
 
     override fun onWindowFocusChanged(hasFocus: Boolean) {
         super.onWindowFocusChanged(hasFocus)
+        foldcade.shell.inputFocus(inputWindow, hasFocus)
         if (hasFocus) hideSystemBars()
     }
 

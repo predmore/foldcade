@@ -418,21 +418,20 @@ object KeyboardCopy {
 }
 
 /**
- * Keys that went down while the keyboard was open. Until each comes up, its repeats
- * belong to the keyboard, however the keyboard closed: by Start, by A on Done, by B,
- * by a tap on Done while X was still held, or by something else closing it. A held X
- * or A then never lands on the grid as Bottom or Open.
+ * Keys captured by a keyboard or confirmation hold. Until each comes up, its repeats
+ * belong to that input context, even after typing closes or deletion completes. A held
+ * X or A never lands on the grid as Bottom or Open.
  *
  * One guard serves both screens. A tap moves input focus to the screen it lands on,
  * and Android then hands a held key's repeats to that screen's window, after telling
  * the first window the key was cancelled. A cancelled key is still held.
  */
-class TypingKeyGuard {
+class HeldKeyGuard {
     private val held = HashSet<Int>()
 
-    /** True when this key-down must go nowhere. [typing] is whether the keyboard is open now. */
-    fun swallows(keyCode: Int, repeatCount: Int, typing: Boolean): Boolean {
-        if (typing) {
+    /** True when this key-down must go nowhere after its owning input context closes. */
+    fun swallows(keyCode: Int, repeatCount: Int, capturing: Boolean): Boolean {
+        if (capturing) {
             held += keyCode
             return false
         }
@@ -445,7 +444,12 @@ class TypingKeyGuard {
         return true
     }
 
+    fun capture(keyCode: Int) { held += keyCode }
+
     fun up(keyCode: Int, canceled: Boolean = false) {
         if (!canceled) held -= keyCode
     }
 }
+
+/** Kept for keyboard callers; both keyboards and confirmation holds use the same guard. */
+typealias TypingKeyGuard = HeldKeyGuard

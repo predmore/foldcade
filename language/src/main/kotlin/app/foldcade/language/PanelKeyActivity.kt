@@ -11,8 +11,8 @@ import androidx.activity.OnBackPressedCallback
  */
 abstract class PanelKeyActivity : ComponentActivity() {
     private companion object {
-        /** Keys held while typing, or on Find's results, keep their repeats away from the grid until they come up, on either screen. */
-        val typingKeys = TypingKeyGuard()
+        /** Keys captured by typing or a confirmation hold stay away from the grid until key-up, on either screen. */
+        val capturedKeys = HeldKeyGuard()
     }
 
     protected abstract fun pickerIsFocused(): Boolean
@@ -22,6 +22,12 @@ abstract class PanelKeyActivity : ComponentActivity() {
 
     protected abstract fun onMeaning(meaning: Meaning)
 
+    protected open fun onInputKey(meaning: Meaning?, key: Int): Boolean = false
+
+    protected open fun onInputCanceled() = Unit
+
+    protected open fun onMeaningReleased(meaning: Meaning, canceled: Boolean) = Unit
+
     protected open fun onMeaningRepeated(meaning: Meaning, repeatCount: Int) = onMeaning(meaning)
 
     protected open fun faceMap(): FaceMap = FaceMap.standard()
@@ -30,6 +36,8 @@ abstract class PanelKeyActivity : ComponentActivity() {
     protected open fun homeKeys(): HomeKeys = HomeKeys.Idle
 
     protected open fun onPromptHeld(key: PromptKey, held: Boolean) = Unit
+
+    protected open fun capturingHold(): Boolean = false
 
     protected open fun capturingConfirm(): Boolean = false
 
@@ -73,25 +81,29 @@ abstract class PanelKeyActivity : ComponentActivity() {
     override fun onKeyDown(keyCode: Int, event: KeyEvent): Boolean {
         val prompt = promptKeyOf(keyCode)
         if (prompt != null && event.repeatCount == 0) onPromptHeld(prompt, true)
+        if (onInputKey(meaningOf(keyCode, 0, faceMap(), homeKeys()), keyCode)) return true
         if (prompt != null && prompt.face && event.repeatCount == 0 && capturingConfirm()) {
             onCalibrateConfirm(prompt)
             return true
         }
-        if (typingKeys.swallows(keyCode, event.repeatCount, homeKeys().guardsHeldKeys)) return true
+        if (capturedKeys.swallows(keyCode, event.repeatCount, homeKeys().guardsHeldKeys || capturingHold())) return true
         if (keyCode == KeyEvent.KEYCODE_BACK) return false
         val meaning = meaningOf(keyCode, event.repeatCount, faceMap(), homeKeys()) ?: return consumesUnmapped(keyCode)
         val shoulder = meaning == Meaning.LeftPanel || meaning == Meaning.RightPanel
         if (pickerIsFocused() || (shoulder && foldcadeSurfaceFocused())) {
             onMeaningRepeated(meaning, event.repeatCount)
+            if (capturingHold()) capturedKeys.capture(keyCode)
             return true
         }
         return consumesUnmapped(keyCode)
     }
 
     override fun onKeyUp(keyCode: Int, event: KeyEvent): Boolean {
+        if (event.isCanceled) onInputCanceled()
         val prompt = promptKeyOf(keyCode)
         if (prompt != null) onPromptHeld(prompt, false)
-        typingKeys.up(keyCode, event.isCanceled)
+        capturedKeys.up(keyCode, event.isCanceled)
+        meaningOf(keyCode, 0, faceMap(), homeKeys())?.let { onMeaningReleased(it, event.isCanceled) }
         return consumesUnmapped(keyCode)
     }
 }

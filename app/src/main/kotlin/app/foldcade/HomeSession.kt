@@ -4,6 +4,13 @@ import app.foldcade.api.plugin.Availability
 import app.foldcade.api.plugin.Game
 import app.foldcade.language.LibrarySort
 import app.foldcade.language.Copy
+import app.foldcade.language.LaunchableApp
+import app.foldcade.language.AppShelfState
+import app.foldcade.language.HomeKind
+import app.foldcade.language.hideGame
+import app.foldcade.language.showHidden
+import app.foldcade.language.hiddenItems
+import app.foldcade.language.deleteShortcut
 import app.foldcade.language.Effect
 import app.foldcade.language.GridFocus
 import app.foldcade.language.GridStrip
@@ -28,7 +35,6 @@ import app.foldcade.language.TypingCue
 import app.foldcade.language.TypingStep
 import app.foldcade.language.quickNames
 import app.foldcade.language.folderCountLine
-import app.foldcade.language.HomeKind
 import app.foldcade.language.HomePlatform
 import app.foldcade.language.MARK_LIBRARY
 import app.foldcade.language.Meaning
@@ -104,7 +110,7 @@ class HomeSession(raw: String?, nowMillis: Long = System.currentTimeMillis()) {
      * was at pickup, so a library's report then waits in [pendingMerge]: merged into that walk,
      * it would be undone by the next step. Whatever puts the tile down, or back, merges it.
      */
-    var board: HomeBoard = decodeHome(raw, nowMillis)
+    var board: HomeBoard = decodeHome(raw, nowMillis).let { it.copy(collectionSerial = app.foldcade.language.collectionHighWater(it)) }
         private set(value) {
             field = value
             val waiting = pendingMerge ?: return
@@ -159,8 +165,9 @@ class HomeSession(raw: String?, nowMillis: Long = System.currentTimeMillis()) {
         platformList: List<HomePlatform>,
         remembered: Map<String, Game> = emptyMap(),
         unsettled: (String) -> Boolean = { false },
+        hidden: Set<String> = emptySet(),
     ) {
-        val report = PendingMerge(shelfItems, appItems, libraryItems, platformList, remembered, unsettled)
+        val report = PendingMerge(shelfItems, appItems, libraryItems, platformList, remembered, unsettled, hidden)
         // A later report replaces one still waiting; the games it remembers add up.
         if (board.hold != null) {
             pendingMerge = report.copy(remembered = pendingMerge?.remembered.orEmpty() + remembered)
@@ -175,7 +182,8 @@ class HomeSession(raw: String?, nowMillis: Long = System.currentTimeMillis()) {
         library = report.library
         platforms = report.platforms
         report.remembered.forEach { (id, game) -> games[id] = game }
-        board = mergeHome(board, catalog(), platforms, report.unsettled)
+        val reconciled = report.hidden.fold(board) { current, id -> hideGame(current, id) }
+        board = mergeHome(reconciled, catalog(), platforms, report.unsettled)
     }
 
     fun asShelf(face: HomeFace): ShelfGame {
@@ -254,7 +262,7 @@ class HomeSession(raw: String?, nowMillis: Long = System.currentTimeMillis()) {
     fun actions(index: Int): TileActions? {
         if (iconPick != null || renamingId != null || board.editing) return null
         val held = menuGame
-        if (held != null && slotGame(index) != held) return gameActions(held, move = false, pin = false, remove = null)
+        if (held != null && slotGame(index) != held) return gameActions(held, move = false, pin = false, remove = null).copy(kept = true)
         if (board.allOpen) {
             val item = allRows().getOrNull(index) ?: return null
             return gameActions(item.id, move = false, pin = !pinned(board, item.id), remove = null)
@@ -286,18 +294,21 @@ class HomeSession(raw: String?, nowMillis: Long = System.currentTimeMillis()) {
         pin = pin,
         remove = remove,
         removeDownload = downloaded(id),
+        deleteShortcut = shelfById[id]?.libraryId in setOf("moonlight", "droiddeck") && shelfById[id]?.remoteKey != null,
         game = id,
     )
 
     /**
      * What Y offers for [id] among Find's results. A game or app is offered where it lives on
-     * Home, then what it is offered in All; one nowhere on Home is offered a pin instead. A
-     * group is only shown where it is.
+     * Home, then what it is offered in All. Hidden items offer Show; visible games and apps
+     * offer Hide, and a pin when not pinned. A retired group offers Show too.
      */
-    fun findActions(id: String): TileActions {
+    fun findActions(id: String, hidden: Boolean = id in board.hidden || id in board.retired): TileActions {
+        if (id in board.retired) return TileActions(show = true, game = id)
         val shown = id.takeIf { homeLanding(board, it) != null }
         if (board.folders[id] != null) return TileActions(showOnHome = shown)
-        return gameActions(id, move = false, pin = !pinned(board, id), remove = null).copy(showOnHome = shown)
+        return gameActions(id, move = false, pin = !hidden && !pinned(board, id),
+            remove = RemoveVerb.Hide.takeUnless { hidden }).copy(showOnHome = shown.takeUnless { hidden }, show = hidden)
     }
 
     /**
@@ -368,6 +379,18 @@ class HomeSession(raw: String?, nowMillis: Long = System.currentTimeMillis()) {
 
     /** The face of game [id], wherever it is, as a menu that kept its game shows it. */
     fun faceOf(id: String): HomeFace = faceFor(id)
+
+    fun restore(snapshot: HomeBoard) { board = snapshot; menuGame = null }
+    fun ensureAppFolder(id: String) {
+        if (id in board.folders) return
+        board = app.foldcade.language.ensureAppFolder(board, id)
+    }
+    fun hide(id: String) { board = hideGame(board, id) }
+    fun show(id: String) { board = showHidden(board, id, catalog(), platforms) }
+    fun deleteShortcut(id: String) { board = deleteShortcut(board, id) }
+    fun shelfActions(id: String): TileActions = gameActions(id, false, !pinned(board, id), RemoveVerb.Hide)
+    fun hiddenItems(apps: List<LaunchableApp>, state: AppShelfState, players: Set<String>): List<HomeItem> =
+        hiddenItems(board, catalog(), apps, state, players, platforms)
 
     /** The game at [index] in All or on the board. Null for a group, the All tile, or an empty slot. */
     private fun slotGame(index: Int): String? {
@@ -856,6 +879,7 @@ private data class PendingMerge(
     val platforms: List<HomePlatform>,
     val remembered: Map<String, Game>,
     val unsettled: (String) -> Boolean,
+    val hidden: Set<String>,
 )
 
 /** A held D-pad walks a carried tile one slot per this many key repeats. */

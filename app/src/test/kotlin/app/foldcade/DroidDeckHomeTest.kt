@@ -80,7 +80,7 @@ class DroidDeckHomeTest {
     }
 
     @Test
-    fun removingADroidDeckGameFromHomeUnpinsOnlyThatGame() {
+    fun hidingADroidDeckGameKeepsItsShortcut() {
         val removed = mutableListOf<String>()
         Shelf.droidDeckGames = listOf(tile(hades, "Hades II"))
         val shell = ShellController(
@@ -95,7 +95,7 @@ class DroidDeckHomeTest {
 
         focus(shell, titles(shell).indexOf("Hades II"))
         choose(shell, Row.RemoveTile)
-        assertEquals(listOf("1145350"), removed)
+        assertEquals(emptyList<String>(), removed)
     }
 
     @Test

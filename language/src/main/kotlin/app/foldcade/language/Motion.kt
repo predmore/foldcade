@@ -16,6 +16,9 @@ import androidx.compose.animation.core.tween
  * Durations are never 0. The toolkit must not apply [Settings.Global.ANIMATOR_DURATION_SCALE] again.
  */
 open class MotionStyle(private val style: ThemeStyle = ThemeStyle()) {
+    /** Confirmation follows real elapsed time, independently of Android animation scaling. */
+    fun holdFill(progress: Float): Float = easingDissolve.transform(progress.coerceIn(0f, 1f))
+
     val durationLetterHold = 360L
     val durationLetterFade = 120
 

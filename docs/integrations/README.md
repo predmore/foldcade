@@ -33,7 +33,7 @@ Folders are not watched continuously. Returning to Foldcade rescans them in the 
 
 Check **Settings › Library › New games on Home**. When it is off, discovered games stay in **All** until you select one and choose **Y › Pin to Home**, which also files it in its folder. Games hidden or taken off Home can be brought back the same way.
 
-A new Moonlight or DroidDeck pin goes on Home even with that switch off. Removing its game tile also drops Foldcade's pin. Request the shortcut again in the source app to restore it; a DroidDeck game with a synced export remains in All.
+A new Moonlight or DroidDeck pin goes on Home even with that switch off. Hide keeps its Android shortcut and Show in Hidden restores it. Hold A on Delete shortcut to remove its Android shortcut and Home tile. Request the shortcut again in the source app to recreate it; a DroidDeck game with a synced export remains in All.
 
 System and source folders appear with their first game. An emulator's own tile goes in **Emulators** and opens the app; its games need to be added separately.
 

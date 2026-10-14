@@ -143,11 +143,11 @@ class HomeBoardTest {
         assertFalse(gba in again.slots)
         assertTrue(gba in again.retired)
         assertFalse(onHome(again, drift.id))
-        // A new game for it brings it back whole, in the first free slot.
+        // New games join it, but an explicit removal stays off Home until Show.
         val fresh = item("game.fresh", platformId = "gba")
         val back = mergeHome(again, listOf(cart, drift, fresh), platforms)
-        assertTrue(gba in back.slots)
-        assertFalse(gba in back.retired)
+        assertFalse(gba in back.slots)
+        assertTrue(gba in back.retired)
         assertEquals(listOf(cart.id, drift.id, fresh.id), back.folders.getValue(gba).slots)
     }
 
@@ -368,7 +368,7 @@ class HomeBoardTest {
         val folderId = platformFolderId("nintendo-ds")
         val placed = mergeHome(HomeBoard(), listOf(drift), platforms)
         val hidden = mergeHome(removeFromHome(openFolder(placed, folderId), 0), listOf(drift), platforms)
-        assertFalse(hidden.folders.containsKey(folderId))
+        assertTrue(hidden.folders.containsKey(folderId))
         assertFalse(hidden.slots.contains(folderId))
         assertNull(hidden.openFolderId)
 

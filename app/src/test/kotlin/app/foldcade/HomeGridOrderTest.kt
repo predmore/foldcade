@@ -41,6 +41,7 @@ import app.foldcade.plugins.melonds.MelonDsEntry
 import kotlinx.coroutines.Dispatchers
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -724,10 +725,10 @@ class HomeGridOrderTest {
         assertEquals(listOf(""), titles(shell))
         // Back in its menu, the rest acts on that game too: Unfavorite, and the menu closes.
         shell.onMeaning(Meaning.Back, HostScreen.Bottom)
-        val held = panelRows(shell.model.panel!!, shell.model)
+        val held = panelRows(shell.model.panel!!, shell.model).filterNot { it == Row.Undo }
         assertEquals(listOf(Row.AddToCollection, Row.Favorite), held)
         assertEquals(Copy.unfavorite, rowText(Row.Favorite, shell.model).label)
-        shell.onMeaning(Meaning.MoveDown, HostScreen.Bottom)
+        pickRowFocus(shell, Row.Favorite)
         shell.onMeaning(Meaning.Activate, HostScreen.Bottom)
         assertNull(shell.model.panel)
         // The focus rests on the empty slot it left, and Y there is the slot's own menu.
@@ -841,6 +842,47 @@ class HomeGridOrderTest {
     }
 
     @Test
+    fun undoExpiryCannotMoveDeleteUnderTheFocusedPinRow() {
+        val shell = shell()
+        shell.ingestLibrary("romm", listOf(entry("drift", "Drift", "nintendo-3ds", backendId = "romm", availability = Availability.Cached)), emptyList())
+        focus(shell, titles(shell).indexOf("Nintendo 3DS"))
+        shell.onMeaning(Meaning.Activate, HostScreen.Bottom)
+        choose(shell, Row.RemoveTile)
+        shell.openHomeAll()
+        shell.onMeaning(Meaning.Options, HostScreen.Bottom)
+        pickRowFocus(shell, Row.PinTile)
+        val rows = panelRows(shell.model.panel!!, shell.model)
+        recoveryTime += 8001L
+        shell.tickRecovery()
+        assertEquals(rows, panelRows(shell.model.panel!!, shell.model))
+        assertNull(shell.onMeaning(Meaning.Activate, HostScreen.Bottom))
+        assertNull(shell.model.deleteHold)
+        shell.goHome()
+        assertTrue("Drift" in titles(shell))
+    }
+
+    private fun pickRowFocus(shell: ShellController, row: Row) {
+        val target = panelRows(shell.model.panel!!, shell.model).indexOf(row)
+        assertTrue(target >= 0)
+        while (shell.model.panel!!.index != target) shell.onMeaning(if (shell.model.panel!!.index < target) Meaning.MoveDown else Meaning.MoveUp, HostScreen.Bottom)
+    }
+
+    @Test
+    fun deleteDownloadSuppressesTheConfirmRepeatUntilKeyUp() {
+        val shell = shell()
+        shell.ingestLibrary("romm", listOf(entry("drift", "Drift", "nintendo-3ds", backendId = "romm", availability = Availability.Cached)), emptyList())
+        shell.openHomeAll()
+        choose(shell, Row.RemoveDownload)
+        recoveryTime += 800L
+        assertEquals(Effect.RemoveDownload(homeGameId("romm", "drift")), shell.tickRecovery())
+        assertNull(shell.onMeaning(Meaning.Activate, HostScreen.Bottom, repeatCount = 1))
+        shell.releaseMeaning(Meaning.Activate, canceled = true)
+        assertNull(shell.onMeaning(Meaning.Activate, HostScreen.Top, repeatCount = 2))
+        shell.releaseMeaning(Meaning.Activate)
+        assertNotNull(shell.onMeaning(Meaning.Activate, HostScreen.Bottom))
+    }
+
+    @Test
     fun yDeletesADownloadedServerGameAndItsTileShowsTheCloudAgain() {
         val shell = shell()
         shell.ingestLibrary(
@@ -866,7 +908,9 @@ class HomeGridOrderTest {
         shell.onMeaning(Meaning.Options, HostScreen.Bottom)
         val rows = panelRows(shell.model.panel!!, shell.model)
         repeat(rows.indexOf(Row.RemoveDownload)) { shell.onMeaning(Meaning.MoveDown, HostScreen.Bottom) }
-        assertEquals(Effect.RemoveDownload(homeGameId("romm", "drift")), shell.onMeaning(Meaning.Activate, HostScreen.Bottom))
+        assertNull(shell.onMeaning(Meaning.Activate, HostScreen.Bottom))
+        recoveryTime += 800L
+        assertEquals(Effect.RemoveDownload(homeGameId("romm", "drift")), shell.tickRecovery())
         assertNull(shell.model.panel)
         assertEquals("drift", shell.focusedDownload()?.remoteKey)
 
@@ -913,11 +957,13 @@ class HomeGridOrderTest {
         shell.onMeaning(Meaning.Back, HostScreen.Bottom)
         val rows = panelRows(shell.model.panel!!, shell.model)
         assertEquals(drift, shell.model.tileActions?.game)
-        // Art previews on the focused game's hero, which an empty slot has none of, so a kept menu leaves it out.
-        assertFalse(Row.ChooseArt in rows)
+        // Returning to the parent keeps the rows it showed before the collection toggle.
+        assertTrue(Row.ChooseArt in rows)
         assertTrue(Row.RemoveDownload in rows)
         repeat(rows.indexOf(Row.RemoveDownload)) { shell.onMeaning(Meaning.MoveDown, HostScreen.Bottom) }
-        val effect = shell.onMeaning(Meaning.Activate, HostScreen.Bottom)
+        assertNull(shell.onMeaning(Meaning.Activate, HostScreen.Bottom))
+        recoveryTime += 800L
+        val effect = shell.tickRecovery()
         assertEquals(Effect.RemoveDownload(drift), effect)
         assertNull(shell.model.panel)
         // The slot is empty, so only the named game finds the copy to delete.
@@ -1080,7 +1126,7 @@ class HomeGridOrderTest {
     }
 
     private fun optionRows(shell: ShellController): List<Row> =
-        actionRows(shell.model.tileActions, shell.model.appActions)
+        actionRows(shell.model.tileActions, shell.model.appActions).filterNot { it == Row.Undo }
 
     /** Y, down the menu to [row], then A. */
     private fun choose(shell: ShellController, row: Row) {
@@ -1107,6 +1153,8 @@ class HomeGridOrderTest {
     private fun titles(shell: ShellController): List<String> =
         List(shell.model.count) { index -> shell.homeFace(index)?.title.orEmpty() }
 
+    private var recoveryTime = 0L
+
     private fun shell(): ShellController =
-        ShellController(SessionStore(MemoryPrefs()), PluginHost(Dispatchers.Unconfined, MemoryCredentialStore()))
+        ShellController(SessionStore(MemoryPrefs()), PluginHost(Dispatchers.Unconfined, MemoryCredentialStore()), nowMillis = { recoveryTime })
 }

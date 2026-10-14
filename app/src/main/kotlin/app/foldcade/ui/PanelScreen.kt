@@ -105,6 +105,7 @@ import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.PointerEventType
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.layout.onSizeChanged
@@ -226,6 +227,7 @@ import app.foldcade.language.noticeAge
 import app.foldcade.language.quickTileColumns
 import app.foldcade.language.rowLabel
 import app.foldcade.language.retargetHero
+import app.foldcade.language.Row as LanguageRow
 import app.foldcade.language.rowText
 import app.foldcade.language.TileActivity
 import app.foldcade.language.activityLine
@@ -257,10 +259,24 @@ fun PanelHost(activity: FoldcadeHomeActivity, displays: Displays) {
     val motion = paint.theme.motion
     val scale = motion.animatorScale(LocalContext.current.contentResolver)
     val model = app.shell.model
+    LaunchedEffect(activity.shellVisible, panel, model.deleteHold?.started, model.undoVerb) {
+        if (panel != Panel.Top || !activity.shellVisible) {
+            if (panel == Panel.Top) app.shell.cancelDeleteHold()
+            return@LaunchedEffect
+        }
+        while (app.shell.model.deleteHold != null || app.shell.model.undoVerb != null) {
+            activity.dispatch(app.shell.tickRecovery())
+            kotlinx.coroutines.delay(if (app.shell.model.deleteHold != null) 16L else 100L)
+        }
+    }
     val screen = when (panel) {
         Panel.Top -> HostScreen.Top
         Panel.Bottom -> HostScreen.Bottom
         null -> null
+    }
+    androidx.compose.runtime.DisposableEffect(screen, activity.inputWindow) {
+        screen?.let { app.shell.registerInputWindow(it, activity.inputWindow) }
+        onDispose { app.shell.cancelDeleteHold(activity.inputWindow) }
     }
     val ownsBottom = session.surfaceOn(Panel.Bottom) != null
     // A full-screen page on the other screen leaves this one its command center, not a blurred grid.
@@ -313,7 +329,15 @@ fun PanelHost(activity: FoldcadeHomeActivity, displays: Displays) {
             // keeps the backdrop's clock and the grid's state, and the blur eases out.
             Box(Modifier.fillMaxSize().menuBlur { blur }.menuDim { blur }) {
                 CompositionLocalProvider(LocalUnderMenu provides blurHere) {
-                    PanelBody(activity, panel, screen, scale)
+                    val rewind = remember { androidx.compose.animation.core.Animatable(1f) }
+                    LaunchedEffect(model.rewind) {
+                        if (model.rewind == 0) return@LaunchedEffect
+                        rewind.snapTo(0.94f)
+                        rewind.animateTo(1f, motion.playful(motion.durationTravel, scale))
+                    }
+                    Box(Modifier.fillMaxSize().graphicsLayer { scaleX = rewind.value; scaleY = rewind.value }) {
+                        PanelBody(activity, panel, screen, scale)
+                    }
                 }
             }
             if (screen == HostScreen.Top) LetterOverlay(app, scale)
@@ -2118,7 +2142,17 @@ private fun PanelRows(
             }
             val focused = panel.index == index
             val step: () -> Unit = { onEffect(app.shell.touchPanel(index, screen)) }
-            val press = if (interactive) Modifier.hostPress(step) else Modifier
+            val destructive = row == LanguageRow.RemoveDownload || row == LanguageRow.DeleteShortcut
+            val press = if (!interactive) Modifier else if (destructive) Modifier.pointerInput(row) {
+                detectTapGestures(onPress = {
+                    app.shell.setPromptHeld(promptKeyOf(app.shell.model.faceMap.confirmKey) ?: PromptKey.FaceA, true, app.shell.inputWindow(screen))
+                    app.shell.touchPanel(index, screen)
+                    try { tryAwaitRelease() } finally {
+                        onEffect(app.shell.setPromptHeld(promptKeyOf(app.shell.model.faceMap.confirmKey) ?: PromptKey.FaceA, false, app.shell.inputWindow(screen)))
+                    }
+                })
+            } else Modifier.hostPress(step)
+            val feedback = recoveryRowFeedback(model, row, scale)
             val place = Modifier
                 .fillMaxWidth()
                 .selectionSlot(slots, index)
@@ -2167,7 +2201,7 @@ private fun PanelRows(
                     chord = keys[index],
                     held = model.held,
                     scale = scale,
-                    modifier = place.then(press),
+                    modifier = place.then(press).then(feedback),
                     labelStyle = rowStyle,
                 )
             }
@@ -2401,9 +2435,13 @@ private fun GridHints(app: FoldcadeApp, modifier: Modifier = Modifier) {
         drop = shell.homeHoldDrop(),
     )) + if (gridKeys && model.settings == null && model.playActivity == null &&
         (model.homeGrid != HomeGrid.StandIns || shell.homeKeys() == HomeKeys.AllLibrary)
-    ) triggerHints(model.gridLabels.isNotEmpty()) else emptyList())
+    ) {
+        if (model.homeGrid == HomeGrid.HiddenApps && model.count == 0) emptyList()
+        else triggerHints(model.gridLabels.isNotEmpty())
+    } else emptyList())
+    val destructive = model.panel?.let { panelRows(it, model).getOrNull(it.index) }?.let { it == LanguageRow.RemoveDownload || it == LanguageRow.DeleteShortcut } == true
     val back = promptKeyOf(model.faceMap.backKey) ?: PromptKey.FaceB
-    val shown = if (gridKeys && (shell.downloading.isNotEmpty() || shell.activity.values.any { it is TileActivity.Downloading || it == TileActivity.Checking })) {
+    val shown = if (model.undoVerb != null && model.panel == null && model.dialog == null) listOf(HintKey(PromptKey.FaceY, Copy.undo)) else if (gridKeys && (shell.downloading.isNotEmpty() || shell.activity.values.any { it is TileActivity.Downloading || it == TileActivity.Checking })) {
         normalKeys.filterNot { it.key == back } + HintKey(back, "Cancel download")
     } else normalKeys
     // The root grid names Select's Find while the row has room, so the button can be found.
@@ -2416,6 +2454,8 @@ private fun GridHints(app: FoldcadeApp, modifier: Modifier = Modifier) {
         horizontalArrangement = Arrangement.spacedBy(px(16f), Alignment.CenterHorizontally),
         verticalAlignment = Alignment.CenterVertically,
     ) {
+        if (model.undoVerb != null && model.panel == null && model.dialog == null) BasicText(text = model.undoVerb + " ·", style = text(foldTheme().muted, LocalFoldTheme.current.theme.style.type.hint, foldTheme()))
+        if (destructive) BasicText(text = Copy.hold, style = text(foldTheme().muted, LocalFoldTheme.current.theme.style.type.hint, foldTheme()))
         keys.forEach { key -> HintWord(model, key) }
     }
 }
@@ -4069,5 +4109,24 @@ private fun LetterOverlay(app: FoldcadeApp, scale: Float) {
             style = text(theme.onBackground, theme.style.type.heroTitle * 4, theme)
                 .copy(fontWeight = FontWeight.SemiBold, textAlign = TextAlign.Center),
         )
+    }
+}
+
+@Composable
+private fun recoveryRowFeedback(model: app.foldcade.language.PickerModel, row: app.foldcade.language.Row, scale: Float): Modifier {
+    val theme = foldTheme()
+    val motion = theme.motion
+    if (row != LanguageRow.RemoveDownload && row != LanguageRow.DeleteShortcut) return Modifier
+    val shake = remember { androidx.compose.animation.core.Animatable(0f) }
+    LaunchedEffect(model.deleteShake) {
+        if (model.deleteShake == 0) return@LaunchedEffect
+        shake.snapTo(-8f)
+        shake.animateTo(8f, motion.playful(motion.durationShort, scale))
+        shake.animateTo(0f, motion.playful(motion.durationShort, scale))
+    }
+    return Modifier.graphicsLayer { translationX = shake.value }.drawBehind {
+        if (model.deleteHold?.row == row) drawRoundRect(theme.focus.copy(alpha = 0.3f),
+            size = androidx.compose.ui.geometry.Size(size.width * motion.holdFill(model.deleteProgress), size.height),
+            cornerRadius = androidx.compose.ui.geometry.CornerRadius(22.dp.toPx()))
     }
 }

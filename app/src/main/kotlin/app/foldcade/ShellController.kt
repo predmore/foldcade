@@ -1,5 +1,12 @@
 package app.foldcade
 
+import app.foldcade.language.HomeUndo
+import app.foldcade.language.DeleteHold
+import app.foldcade.language.Row
+import app.foldcade.language.promptKeyOf
+import app.foldcade.language.assignedShelf
+import app.foldcade.language.HOME_ANDROID_GAMES
+import app.foldcade.language.HOME_ANDROID_APPS
 import app.foldcade.language.ArtMatch
 import app.foldcade.language.ArtKind
 import app.foldcade.language.ArtPickerState
@@ -125,15 +132,16 @@ class ShellController(
     private val homeTracks: List<MusicTrack> = emptyList(),
     private val themeTracks: List<MusicTrack?> = emptyList(),
     private val lastPlayedMillis: (String) -> Long? = { null },
-    /** A Moonlight game left Home. The app drops its pinned shortcut. */
+    /** Delete shortcut was confirmed. The app drops its pinned shortcut. */
     private val onMoonlightRemoved: (remoteKey: String) -> Unit = {},
-    /** A DroidDeck game left Home. The app drops its pinned shortcut. */
+    /** Delete shortcut was confirmed. The app drops its pinned shortcut. */
     private val onDroidDeckRemoved: (remoteKey: String) -> Unit = {},
     /** The R1 slider moved to this position. The app stores it. */
     private val onBrightness: (position: Int) -> Unit = {},
     private val onArtApply: (String, ArtKind, String?) -> Unit = { _, _, _ -> },
     private val savedArtMatch: (String) -> ArtMatch? = { null },
     private val onArtMatch: (String, ArtMatch) -> Unit = { _, _ -> },
+    private val nowMillis: () -> Long = { System.currentTimeMillis() },
 ) {
     var artPicker by mutableStateOf<ArtPickerState?>(null)
         private set
@@ -158,10 +166,14 @@ class ShellController(
         revealBurst = revealPulse
         return true
     }
+    private var keptArtTarget: Pair<String, GridFocus>? = null
 
     private fun closeArtAfterFocusChange() {
         val state = artPicker ?: return
-        if (model.focus.chrome != null || focusedGame()?.let(::artQuery)?.key != state.gameId) artPicker = null
+        val focused = focusedGame()
+        val retained = keptArtTarget?.takeIf { it.second == model.focus && focused?.id.isNullOrEmpty() }?.first
+        val game = retained?.let { homeShelf(home.faceOf(it)) } ?: focused
+        if (model.focus.chrome != null || game?.let(::artQuery)?.key != state.gameId) artPicker = null
     }
 
     fun artCandidates(state: ArtPickerState, loadingResult: Boolean = true) {
@@ -223,13 +235,26 @@ class ShellController(
     /** Platform names a library listed, by platform id. Used when nothing else names it. */
     private val listedPlatformNames = HashMap<String, String>()
 
+    private var committedHome: String? = store.homeBoardRaw()
+    private var committedShelves = shelfState
     private var current by mutableStateOf(initial())
 
     /** Every change keeps the columns the grid showed, so the next focus scrolls only as far as it must. */
     var model: PickerModel
         get() = current
         private set(next) {
-            current = next.copy(firstColumn = shownFirstColumn(current))
+            val canceled = current.deleteHold != null && (next.panel == null || next.panel != current.panel || next.dialog != null || next.settings != null || next.connectOpen)
+            val stable = app.foldcade.language.retainMenuRows(current, next)
+            undo = when {
+                stable.panel == null -> undo?.resume(nowMillis())
+                stable.panel?.let { Row.Undo in panelRows(it, stable) } == true -> undo?.pause(nowMillis())
+                else -> undo
+            }
+            current = stable.copy(firstColumn = shownFirstColumn(current),
+                deleteHold = if (canceled) null else next.deleteHold,
+                deleteProgress = if (canceled) 0f else next.deleteProgress,
+                deleteShake = next.deleteShake + if (canceled) 1 else 0)
+            if (canceled) cue(next.themeIndex, "back")
             closeArtAfterFocusChange()
         }
 
@@ -308,7 +333,97 @@ class ShellController(
     private var platformOrder: List<Int> = emptyList()
     private var loggedHomeTile: String? = null
 
-    fun onMeaning(meaning: Meaning, screen: HostScreen, repeatCount: Int = 0): Effect? {
+    private var undo: HomeUndo? = null
+    private var undoFocus = GridFocus()
+    private var undoGrid = HomeGrid.StandIns
+    private var completingDelete = false
+    private val inputWindows = mutableMapOf<String, Boolean>()
+    private val screenWindows = mutableMapOf<HostScreen, String>()
+    private val inputKeys = mutableMapOf<String, Int>()
+    private val heldActions = app.foldcade.language.HeldKeyGuard()
+
+    fun registerInputWindow(screen: HostScreen, window: String) { screenWindows[screen] = window }
+    fun inputWindow(screen: HostScreen): String = screenWindows[screen] ?: screen.name
+
+    fun inputFocus(window: String, focused: Boolean) {
+        inputWindows[window] = focused
+        if (!focused) cancelDeleteHold(window)
+    }
+
+    /** A second key belongs to a fresh action, so it first cancels and consumes this hold. */
+    fun inputKey(meaning: Meaning?, window: String, key: Int? = null): Boolean {
+        if (key != null) inputKeys[window] = key
+        val hold = model.deleteHold ?: return false
+        if (hold.meaning == meaning && hold.inputWindow == window && (hold.inputKey == null || hold.inputKey == key)) return false
+        cancelDelete()
+        return true
+    }
+
+    private fun activeUndo(): HomeUndo? = undo?.takeIf { it.available(nowMillis()) }
+
+    fun tickRecovery(): Effect? {
+        if (undo != null && activeUndo() == null) { undo = null; publish(model.copy(undoVerb = null)) }
+        val hold = model.deleteHold ?: return null
+        if (inputWindows[hold.inputWindow] == false) { cancelDelete(); return null }
+        val selected = model.panel?.let { panelRows(it, model).getOrNull(it.index) }
+        if (selected != hold.row || model.tileActions?.game != hold.gameId) { cancelDelete(); return null }
+        if (hold.complete(nowMillis())) {
+            model = model.copy(deleteHold = null, deleteProgress = 0f)
+            completingDelete = true
+            cue(model.themeIndex, "notify")
+            return try { onMeaning(Meaning.Activate, HostScreen.Top, inputWindow = hold.inputWindow) } finally { completingDelete = false }
+        }
+        model = model.copy(deleteProgress = hold.progress(nowMillis()))
+        return null
+    }
+
+    fun cancelDeleteHold(window: String? = null) {
+        if (window == null || model.deleteHold?.inputWindow == window) cancelDelete()
+    }
+
+    private fun cancelDelete() {
+        if (model.deleteHold == null) return
+        model = model.copy(deleteHold = null, deleteProgress = 0f, deleteShake = model.deleteShake + 1)
+        cue(model.themeIndex, "back")
+    }
+
+    fun onMeaning(meaning: Meaning, screen: HostScreen, repeatCount: Int = 0, inputWindow: String = inputWindow(screen)): Effect? {
+        if (!completingDelete && heldActions.swallows(meaning.ordinal, repeatCount, capturing = model.deleteHold?.meaning == meaning)) return null
+        if (!completingDelete && model.deleteHold != null) {
+            inputKey(meaning, inputWindow, inputKeys[inputWindow])
+            return null
+        }
+        val panel = model.panel
+        val rows = panel?.let { panelRows(it, model) }.orEmpty()
+        val at = if (meaning == Meaning.Activate) panel?.index?.coerceIn(0, (rows.size - 1).coerceAtLeast(0)) else chordIndex(rows, meaning)
+        val row = at?.let { rows.getOrNull(it) }
+        if (find == null && model.homeGrid == HomeGrid.HiddenApps && model.panel == null && (meaning == Meaning.Activate || meaning == Meaning.ActivateBottom)) return null
+        val before = home.board
+        val shelves = shelfState
+        val beforeFocus = model.focus
+        val beforeGrid = model.homeGrid
+        val beforeSaved = home.encoded()
+        val target = model.tileActions?.game
+        val removeVerb = model.tileActions?.remove
+        val result = applyMeaning(meaning, screen, repeatCount, inputWindow)
+        if (row != Row.Undo && (home.encoded() != beforeSaved || shelfState != shelves || row == Row.MoveTile)) {
+            val reversible = row == Row.RemoveTile || row == Row.HideApp || row == Row.Tidy ||
+                (row is Row.Collection && before.folders[row.folderId]?.slots?.contains(target) == true)
+            if (reversible) {
+                undo = HomeUndo(before, shelves,
+                when { row == Row.Tidy -> Copy.tidied
+                    row == Row.HideApp || removeVerb == RemoveVerb.Hide -> Copy.hidden
+                    removeVerb == RemoveVerb.Unpin -> Copy.unpinned
+                    else -> Copy.removed }, nowMillis(), after = home.board, shelvesAfter = shelfState)
+                undoFocus = beforeFocus
+                undoGrid = beforeGrid
+            }
+            publish(model.copy(undoVerb = activeUndo()?.verb))
+        }
+        return result
+    }
+
+    private fun applyMeaning(meaning: Meaning, screen: HostScreen, repeatCount: Int, inputWindow: String): Effect? {
         if (artPicker != null) {
             artInput(meaning)
             return null
@@ -327,7 +442,7 @@ class ShellController(
             val wasInGroup = home.board.hold?.openFolderId != null
             val step = home.handle(meaning, model.focus.cellIndex, repeatCount)
             if (step != null && step.handled) {
-                store.saveHomeBoard(home.encoded())
+                commitHome()
                 showBoard(step.focus ?: model.focus, keepDialog = true)
                 if (!wasInFolder && home.openedFolderHasGame()) Log.i("Foldcade", "library-ui games")
                 if (!wasHeld && home.board.hold != null) Log.i("Foldcade", "home-ui lifted")
@@ -343,8 +458,24 @@ class ShellController(
         val (next, effect) = reduce(current, meaning, screen, repeatCount)
         // L1 or R1 opening over Find's menu leaves Find: those drawers go places of their own.
         if (find != null && next.panel?.let { it.level == PanelLevel.Root || it.pendingSide != null } == true) find = null
+        // Rows may change while a key is arriving (for example, Undo just expired). Guard
+        // the reducer's actual effect, rather than trusting the row last drawn on screen.
+        if (!completingDelete && (effect is Effect.RemoveDownload || effect is Effect.DeleteShortcut)) {
+            val row = if (effect is Effect.RemoveDownload) Row.RemoveDownload else Row.DeleteShortcut
+            val game = if (effect is Effect.RemoveDownload) effect.gameId else (effect as Effect.DeleteShortcut).gameId
+            val panel = current.panel ?: return null
+            val index = panelRows(panel, current).indexOf(row)
+            if (index >= 0 && repeatCount == 0 && inputWindows[inputWindow] != false) {
+                val key = if (meaning == Meaning.ActivateBottom) PromptKey.FaceX else promptKeyOf(current.faceMap.confirmKey) ?: PromptKey.FaceA
+                heldActions.capture(meaning.ordinal)
+                model = current.copy(panel = panel.copy(index = index),
+                    deleteHold = DeleteHold(row, key, nowMillis(), game, meaning, inputWindow, inputKeys[inputWindow]), deleteProgress = 0f)
+            }
+            return null
+        }
         if (!next.connectOpen) connectToken = ""
-        val packageName = focusedGame()?.androidPackage
+        val targetGame = actionGame(current)
+        val packageName = targetGame?.androidPackage
         val panelLabel = next.panel?.let { panel ->
             val row = app.foldcade.language.panelRows(panel, next).getOrNull(panel.index) ?: return@let null
             app.foldcade.language.rowText(row, next).label
@@ -357,46 +488,55 @@ class ShellController(
                 if (packageName != null) {
                     val favorite = !shelfState.record(packageName).favorite
                     shelfState = shelfState.pin(packageName, favorite)
-                    store.saveAppShelfState(shelfState)
+                    commitShelves()
                 }
                 publish(focusPackage(next, packageName))
             }
             is Effect.AddAppTo -> {
-                if (packageName != null && home.placeIn(androidHomeId(packageName), effect.folderId)) syncHome()
+                if (packageName != null && home.placeIn(androidHomeId(packageName), effect.folderId)) { commitHome(); syncHome() }
                 publish(next.copy(shelfEpoch = next.shelfEpoch + 1))
             }
             // Add to stays open, so the next collection is one press away, even when the game
             // leaves the collection on screen: the menu keeps acting on that game.
             is Effect.ToggleCollection -> {
-                if (showingHome() || find != null) {
+                if (!model.libraryGrid) {
                     home.toggleCollection(next.focus.cellIndex, effect.folderId, effect.gameId)
+                    commitHome()
+                    reconcileShownApps()
                     syncHome()
                 }
                 publish(next)
             }
             Effect.MoveApp -> {
                 if (packageName != null) {
-                    val destination = if (current.homeGrid == HomeGrid.AndroidGames) {
+                    val destination = if (current.appActions?.onGamesShelf == true) {
                         AndroidShelf.Apps
                     } else {
                         AndroidShelf.Games
                     }
                     shelfState = shelfState.move(packageName, destination)
-                    store.saveAppShelfState(shelfState)
+                    commitShelves()
+                    val target = if (destination == AndroidShelf.Games) HOME_ANDROID_GAMES else HOME_ANDROID_APPS
+                    home.ensureAppFolder(target)
+                    home.placeIn(androidHomeId(packageName), target)
+                    commitHome()
+                    syncHome()
                 }
                 publish(next)
             }
             Effect.HideApp -> {
                 if (packageName != null) {
+                    home.hide(androidHomeId(packageName))
                     shelfState = shelfState.hide(packageName)
-                    store.saveAppShelfState(shelfState)
+                    commitShelves()
+                    syncHome()
                 }
                 publish(next)
             }
             Effect.ShowApp -> {
                 if (packageName != null) {
                     shelfState = shelfState.show(packageName, packageName in playerPackages)
-                    store.saveAppShelfState(shelfState)
+                    commitShelves()
                 }
                 publish(next)
             }
@@ -414,13 +554,16 @@ class ShellController(
                 if (artPickerAvailable()) {
                     // The picker previews on the game's own tile and hero, so from Find it goes there first.
                     if (find != null) effect.gameId?.let(::bringForArt)
-                    val game = effect.gameId?.takeIf { showingHome() }?.let { homeShelf(home.faceOf(it)) } ?: focusedGame()
-                    game?.let(::artQuery)?.let { artPicker = ArtPickerState(it.key, match = savedArtMatch(it.key)) }
+                    val game = actionGame(current, effect.gameId ?: current.tileActions?.game)
+                    game?.let(::artQuery)?.let {
+                        keptArtTarget = if (current.tileActions?.kept == true) game.id to current.focus else null
+                        artPicker = ArtPickerState(it.key, match = savedArtMatch(it.key))
+                    }
                 }
                 null
             }
             Effect.MoveTile -> {
-                pickUpHome(model.focus.cellIndex)
+                if (current.tileActions?.move == true) pickUpHome(model.focus.cellIndex)
                 null
             }
             Effect.Tidy -> changeHome { home.tidyBoard(it) }
@@ -441,16 +584,75 @@ class ShellController(
             Effect.RenameFolder -> changeHome { home.startRename(it); it }
             Effect.ChooseFolderIcon -> changeHome { home.pickIcon(it); it }
             Effect.RemoveTile -> {
-                // Only hiding takes a game off Home, so only hiding drops its pinned shortcut.
-                // An unpinned game is still in its folder, and a folder has no library.
-                val hides = home.removeVerb(model.focus.cellIndex) == RemoveVerb.Hide
-                val removed = home.face(model.focus.cellIndex)?.takeIf { hides }?.let(::homeShelf)
-                val moonlight = removed?.takeIf { it.libraryId == MoonlightLibrary.ID }?.remoteKey
-                val droidDeck = removed?.takeIf { it.libraryId == DroidDeckLibrary.ID }?.remoteKey
-                changeHome { home.remove(it) }.also {
-                    if (moonlight != null) onMoonlightRemoved(moonlight)
-                    if (droidDeck != null) onDroidDeckRemoved(droidDeck)
+                if (find != null) {
+                    current.tileActions?.game?.let { id ->
+                        changeFound {
+                            home.hide(id)
+                            packageName?.let { shelfState = shelfState.hide(it); commitShelves() }
+                        }
+                    }
+                } else if (showingHome()) {
+                    val packageId = packageName
+                    val hides = current.tileActions?.remove == RemoveVerb.Hide
+                    changeHome { home.remove(it) }
+                    if (hides && packageId != null) {
+                        shelfState = shelfState.hide(packageId)
+                        commitShelves()
+                        publish(model)
+                    }
+                } else {
+                    current.tileActions?.game?.let { id ->
+                        home.hide(id)
+                        packageName?.let { shelfState = shelfState.hide(it); commitShelves() }
+                        syncHome()
+                        publish(model)
+                    }
                 }
+                null
+            }
+            is Effect.ShowHidden -> {
+                effect.id?.let { id ->
+                    val wasFolder = id in home.board.retired
+                    home.show(id)
+                    commitHome()
+                    installed.firstOrNull { androidHomeId(it.packageName) == id }?.let {
+                        shelfState = shelfState.show(it.packageName, it.packageName in playerPackages)
+                        commitShelves()
+                    }
+                    if (!wasFolder) syncHome() else { commitHome(); find?.refresh(findEntries()) }
+                    publish(model.copy(shelfEpoch = model.shelfEpoch + 1))
+                }
+                null
+            }
+            Effect.Undo -> {
+                activeUndo()?.let { saved ->
+                    undo = null
+                    home.restore(saved.restore(home.board))
+                    shelfState = saved.restore(shelfState)
+                    commitShelves()
+                    syncHome()
+                    model = model.copy(undoVerb = null, rewind = model.rewind + 1, panel = null)
+                    if (undoGrid == HomeGrid.StandIns) showBoard(undoFocus, keepDialog = false)
+                    else publish(model.copy(homeGrid = undoGrid, focus = undoFocus))
+                    cue(model.themeIndex, "back")
+                }
+                null
+            }
+            is Effect.DeleteShortcut -> {
+                effect.gameId?.let { id ->
+                    val removed = homeShelf(home.faceOf(id))
+                    home.deleteShortcut(id)
+                    commitHome()
+                    removed.remoteKey?.let { key ->
+                        when (removed.libraryId) {
+                            MoonlightLibrary.ID -> onMoonlightRemoved(key)
+                            DroidDeckLibrary.ID -> onDroidDeckRemoved(key)
+                        }
+                    }
+                    showBoard(model.focus, keepDialog = false)
+                    cue(model.themeIndex, "notify")
+                }
+                null
             }
             Effect.OpenAll -> {
                 openHomeAll()
@@ -526,7 +728,7 @@ class ShellController(
     fun tapTyping(at: KeyFocus) {
         if (!homeActive()) return
         val step = home.tapTyping(at) ?: return
-        store.saveHomeBoard(home.encoded())
+        commitHome()
         showBoard(step.focus ?: model.focus, keepDialog = true)
         step.cue?.slot?.let { cue(model.themeIndex, it) }
     }
@@ -563,8 +765,15 @@ class ShellController(
 
     /** Everything Find lists. An app its shelf hides counts as hidden, as a game hidden from Home does. */
     private fun findEntries(): List<FindEntry> {
-        val shelfHidden = hiddenApps(installed, shelfState, playerPackages).map { androidHomeId(it.packageName) }.toSet()
-        return home.findEntries { it in shelfHidden }
+        val hidden = hiddenRows()
+        val hiddenIds = hidden.map { it.id }.toSet()
+        val entries = home.findEntries { it in hiddenIds }.map { it.copy(hidden = it.id in hiddenIds) }
+        val listed = entries.map { it.id }.toSet()
+        return entries + hidden.filter { it.id !in listed }.map {
+            FindEntry(it.id, it.title, if (it.id in home.board.retired) FindKind.Group
+                else if (it.kind == HomeKind.AndroidApp || it.kind == HomeKind.Emulator) FindKind.App else FindKind.Game,
+                hidden = true, mark = it.mark)
+        }
     }
 
     /** Does what a key in Find asked. A launch is the activity's to run, and Find closes once it has. */
@@ -585,7 +794,7 @@ class ShellController(
             is FindOutcome.OpenGroup -> {
                 find = null
                 val at = home.openGroup(outcome.id)
-                store.saveHomeBoard(home.encoded())
+                commitHome()
                 showBoard(at?.let { GridFocus(cellIndex = it, lastColumn = GridStrip.column(it)) } ?: model.focus, keepDialog = true)
                 cue(model.themeIndex, "activate")
             }
@@ -646,7 +855,7 @@ class ShellController(
             publish(model)
             return false
         }
-        store.saveHomeBoard(home.encoded())
+        commitHome()
         showBoard(GridFocus(cellIndex = index, lastColumn = GridStrip.column(index)), keepDialog = true)
         if (burst) {
             revealPulse++
@@ -670,8 +879,9 @@ class ShellController(
     /** Runs one Y menu action Find opened on its focused result. Find stays, over the same grid. */
     private fun changeFound(change: (Int) -> Unit): Effect? {
         change(model.focus.cellIndex)
+        commitHome()
+        reconcileShownApps()
         syncHome()
-        store.saveHomeBoard(home.encoded())
         publish(model.copy(shelfEpoch = model.shelfEpoch + 1))
         return null
     }
@@ -738,12 +948,16 @@ class ShellController(
 
     /** Runs one Y menu action on the focused home tile. [change] returns the index to focus after. */
     private fun changeHome(change: (Int) -> Int): Effect? {
-        if (!showingHome()) return null
+        if (model.libraryGrid) return null
+        val onHome = showingHome()
         val index = change(model.focus.cellIndex)
+        commitHome()
+        reconcileShownApps()
         // A folder Foldcade made goes the moment its last game leaves it, not at the next scan.
         syncHome()
-        store.saveHomeBoard(home.encoded())
-        showBoard(GridFocus(cellIndex = index, lastColumn = GridStrip.column(index)), keepDialog = true)
+        commitHome()
+        if (home.renamingId != null || onHome) showBoard(GridFocus(cellIndex = index, lastColumn = GridStrip.column(index)), keepDialog = true)
+        else publish(model.copy(shelfEpoch = model.shelfEpoch + 1))
         return null
     }
 
@@ -772,12 +986,13 @@ class ShellController(
         find = null
         if (showingHome()) home.rememberRootFocus(model.focus.cellIndex)
         home.showAll()
-        store.saveHomeBoard(home.encoded())
+        commitHome()
         showBoard(GridFocus(), keepDialog = true)
     }
 
     fun applyHomeAddNew(enabled: Boolean) {
         home.applyAddNew(enabled)
+        commitHome()
         syncHome()
         publish(
             model.copy(
@@ -792,7 +1007,7 @@ class ShellController(
         if (model.dialog != null || model.panel != null || model.connectOpen) return
         home.startMove(index)
         if (home.board.hold != null) Log.i("Foldcade", "home-ui lifted")
-        store.saveHomeBoard(home.encoded())
+        commitHome()
         showBoard(GridFocus(cellIndex = index, lastColumn = GridStrip.column(index)), keepDialog = true)
     }
 
@@ -800,7 +1015,7 @@ class ShellController(
         if (home.board.hold == null) return
         home.drag(meaning)
         val index = home.board.hold?.index ?: return
-        store.saveHomeBoard(home.encoded())
+        commitHome()
         showBoard(GridFocus(cellIndex = index, lastColumn = GridStrip.column(index)), keepDialog = true)
     }
 
@@ -1055,10 +1270,24 @@ class ShellController(
         )
     }
 
-    fun setPromptHeld(key: PromptKey, down: Boolean) {
+    fun releaseMeaning(meaning: Meaning, window: String? = null, canceled: Boolean = false): Effect? {
+        heldActions.up(meaning.ordinal, canceled)
+        if (canceled) { cancelDeleteHold(window); return null }
+        return if (model.deleteHold?.meaning == meaning && (window == null || model.deleteHold?.inputWindow == window)) releaseDeleteHold() else null
+    }
+
+    private fun releaseDeleteHold(): Effect? {
+        val hold = model.deleteHold ?: return null
+        if (hold.release(nowMillis())) return tickRecovery()
+        cancelDelete()
+        return null
+    }
+
+    fun setPromptHeld(key: PromptKey, down: Boolean, window: String? = null): Effect? {
+        val effect = if (!down && model.deleteHold?.key == key && (window == null || model.deleteHold?.inputWindow == window)) releaseDeleteHold() else null
         val next = if (down) model.held + key else model.held - key
-        if (next == model.held) return
-        model = model.copy(held = next)
+        if (next != model.held) model = model.copy(held = next)
+        return effect
     }
 
     fun applyFacePrompt(style: ThorStyle?, deviceKey: String, firstSession: Boolean) {
@@ -1362,7 +1591,7 @@ class ShellController(
             publish(model.copy(panel = panel.copy(index = index)))
             return null
         }
-        return onMeaning(Meaning.Activate, screen)
+        return onMeaning(Meaning.Activate, screen, inputWindow = inputWindow(screen))
     }
 
     /** A tap on a settings category shows its rows. A second tap steps into them. */
@@ -1432,7 +1661,7 @@ class ShellController(
      */
     fun placeDroidDeckPin(shelfId: String) {
         if (!home.place(shelfId)) return
-        store.saveHomeBoard(home.encoded())
+        commitHome()
         noteShelfChanged()
     }
 
@@ -1442,7 +1671,7 @@ class ShellController(
      */
     fun placeMoonlightPin(remoteKey: String) {
         if (!home.place(remoteKey)) return
-        store.saveHomeBoard(home.encoded())
+        commitHome()
         noteShelfChanged()
     }
 
@@ -1709,6 +1938,7 @@ class ShellController(
         model.libraryGrid -> entries.getOrNull(source)?.asShelf()
         showingHome() -> home.face(source)?.let(::homeShelf)
         model.homeGrid == HomeGrid.StandIns -> Shelf.games.getOrNull(source)
+        model.homeGrid == HomeGrid.HiddenApps -> hiddenTile(source)
         else -> listed(model.homeGrid).getOrNull(source)?.asTile(model.homeGrid)
     }
 
@@ -1907,7 +2137,7 @@ class ShellController(
             (home.board.allOpen && next.sort == app.foldcade.language.LibrarySort.Listed)
         val labels = if (!alphabetical) emptyList() else if (next.homeGrid == HomeGrid.StandIns) {
             home.faces().map { it.title }
-        } else listed(next.homeGrid).map { it.label }
+        } else if (next.homeGrid == HomeGrid.HiddenApps) hiddenRows().map { it.title } else listed(next.homeGrid).map { it.label }
         val lastOccupied = if (next.homeGrid == HomeGrid.StandIns && !home.board.allOpen) {
             app.foldcade.language.visibleSlots(home.board).indexOfLast { it != null }
         } else count - 1
@@ -1919,20 +2149,32 @@ class ShellController(
         // On Find's results, Y's menu is the focused result's, wherever the grid under it is. An
         // open menu keeps the result it opened on, however the results move under it.
         if (counted.panel == null) find?.releaseMenu()
-        val found = find?.let { it.menuId ?: it.subject?.id?.takeIf { _ -> it.onResults } }?.let(home::findActions)
-        val tile = found ?: if (onHome) home.actions(counted.focus.cellIndex) else null
+        val found = find?.let { it.menuId ?: it.subject?.id?.takeIf { _ -> it.onResults } }?.let { id ->
+            home.findActions(id, hidden = hiddenRows().any { it.id == id })
+        }
+        val tile = found ?: when {
+            counted.homeGrid == HomeGrid.HiddenApps -> game?.let { TileActions(show = true, game = it.id) }
+            onHome -> home.actions(counted.focus.cellIndex)
+            game?.androidPackage != null -> home.shelfActions(game.id)
+            else -> null
+        }
+        val targetGame = actionGame(counted, tile?.game)
         // A copy still arriving, or already going, is not one to delete.
         val busy = (tile?.game ?: home.face(counted.focus.cellIndex)?.id)?.let(::busyOnDevice) == true
         val offered = if (tile?.removeDownload == true && busy) tile.copy(removeDownload = false) else tile
         // A merge can close the open folder, when its last game left, so read where the board is now.
         val root = if (onHome) home.board.openFolderId == null && !home.board.allOpen else counted.atLibraryRoot
-        // On Find's results the art is the result's: Art there goes to the game, then opens the picker.
-        val artGame = if (found != null) found.game?.let(::findGame) else game
-        val withArt = if (counted.artKeySaved && artPickerAvailable() && artGame?.let(::artQuery) != null) {
+        val withArt = if (counted.artKeySaved && artPickerAvailable() && targetGame?.let(::artQuery) != null) {
             (offered ?: TileActions()).copy(art = true)
         } else offered
-        val apps = if (found == null) actionsFor(counted, game) else null
-        return counted.copy(appActions = apps, tileActions = withArt, atLibraryRoot = root)
+        return counted.copy(appActions = if (found == null) actionsFor(counted, targetGame) else null, tileActions = (withArt ?: TileActions()).copy(undo = activeUndo() != null), undoVerb = activeUndo()?.verb, atLibraryRoot = root)
+    }
+
+    /** A menu acts on its named game even after Add to leaves the focused slot empty. */
+    private fun actionGame(snapshot: PickerModel, gameId: String? = snapshot.tileActions?.game): ShelfGame? = when {
+        snapshot.libraryGrid -> libraryEntry(snapshot)?.asShelf()
+        gameId != null -> homeShelf(home.faceOf(gameId))
+        else -> tileOn(snapshot)
     }
 
     private fun tileOn(snapshot: PickerModel): ShelfGame? {
@@ -1942,6 +2184,7 @@ class ShellController(
         val source = displaySource(snapshot)
         return when (snapshot.homeGrid) {
             HomeGrid.StandIns -> Shelf.games.getOrNull(source)
+            HomeGrid.HiddenApps -> hiddenTile(source)
             else -> listed(snapshot.homeGrid).getOrNull(source)?.asTile(snapshot.homeGrid)
         }
     }
@@ -2072,23 +2315,31 @@ class ShellController(
 
     private fun countFor(grid: HomeGrid): Int = when (grid) {
         HomeGrid.StandIns -> home.visibleCount()
+        HomeGrid.HiddenApps -> hiddenRows().size
         else -> listed(grid).size
+    }
+
+    private fun hiddenRows(): List<HomeItem> = home.hiddenItems(installed, shelfState, playerPackages)
+
+    private fun hiddenTile(index: Int): ShelfGame? = hiddenRows().getOrNull(index)?.let { item ->
+        homeShelf(home.faceOf(item.id)).copy(id = item.id, title = item.title, mark = item.mark ?: home.faceOf(item.id).mark)
     }
 
     private fun listed(grid: HomeGrid): List<LaunchableApp> = when (grid) {
         HomeGrid.StandIns -> emptyList()
-        HomeGrid.AndroidGames -> appsOn(AndroidShelf.Games, installed, shelfState, playerPackages)
-        HomeGrid.Apps -> appsOn(AndroidShelf.Apps, installed, shelfState, playerPackages)
+        HomeGrid.AndroidGames -> appsOn(AndroidShelf.Games, installed, shelfState, playerPackages).filter { androidHomeId(it.packageName) !in home.board.hidden }
+        HomeGrid.Apps -> appsOn(AndroidShelf.Apps, installed, shelfState, playerPackages).filter { androidHomeId(it.packageName) !in home.board.hidden }
         HomeGrid.HiddenApps -> hiddenApps(installed, shelfState, playerPackages)
-    }.sortedWith(compareBy<LaunchableApp> { it.label.lowercase() }.thenBy { it.packageName })
+    }.sortedWith(compareByDescending<LaunchableApp> { shelfState.record(it.packageName).favorite }.thenBy { it.label.lowercase() }.thenBy { it.packageName })
 
     private fun actionsFor(snapshot: PickerModel, game: ShelfGame?): AppActions? {
         val packageName = game?.androidPackage ?: return null
-        if (snapshot.homeGrid == HomeGrid.StandIns) return null
+        if (snapshot.homeGrid == HomeGrid.HiddenApps) return null
         val record = shelfState.record(packageName)
         return AppActions(
             favorite = record.favorite,
-            onGamesShelf = snapshot.homeGrid == HomeGrid.AndroidGames,
+            keepOnTop = snapshot.homeGrid != HomeGrid.StandIns,
+            onGamesShelf = installed.firstOrNull { it.packageName == packageName }?.let { assignedShelf(it, record) == AndroidShelf.Games } == true,
             hiddenShelf = snapshot.homeGrid == HomeGrid.HiddenApps,
             destinations = home.placementDestinations(androidHomeId(packageName)),
         )
@@ -2166,6 +2417,26 @@ class ShellController(
     private fun libraryOf(id: String): String? =
         id.removePrefix("lib:").takeIf { it != id }?.substringBefore(':')
 
+    private fun reconcileShownApps() {
+        installed.filter { shelfState.record(it.packageName).hidden && androidHomeId(it.packageName) !in home.board.hidden }.forEach {
+            shelfState = shelfState.show(it.packageName, it.packageName in playerPackages)
+        }
+        commitShelves()
+    }
+
+    private fun commitShelves() {
+        if (shelfState != committedShelves) undo = null
+        committedShelves = shelfState
+        store.saveAppShelfState(shelfState)
+    }
+
+    private fun commitHome(catalog: Boolean = false) {
+        val saved = home.encoded()
+        if (!catalog && (saved != committedHome || home.board.editing)) undo = null
+        committedHome = saved
+        store.saveHomeBoard(saved)
+    }
+
     private fun syncHome() {
         home.rememberShelf(Shelf.games)
         home.remerge(
@@ -2182,8 +2453,9 @@ class ShellController(
                     (!installedAppsSettled && id.startsWith("android:")) ||
                     (GameNativeLibrary.ID !in settledLibraries && id.startsWith("gamenative."))
             },
+            hidden = installed.filter { shelfState.record(it.packageName).hidden }.map { androidHomeId(it.packageName) }.toSet(),
         )
-        store.saveHomeBoard(home.encoded())
+        commitHome(catalog = true)
         find?.refresh(findEntries())
     }
 

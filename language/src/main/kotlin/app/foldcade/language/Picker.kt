@@ -62,6 +62,8 @@ data class SidePanel(
     val connection: SignedInBackend? = null,
     /** A connection opened from Settings returns to that page on Back. */
     val connectionSettings: SettingsPage? = null,
+    /** An empty view opened Undo rather than a tile menu. Its rows do not depend on the covered grid. */
+    val recoveryOnly: Boolean = false,
 )
 
 fun signInAgainPrompt(screen: HostScreen = HostScreen.Top): DialogState = DialogState(
@@ -297,6 +299,9 @@ sealed interface Row {
     data object RenameFolder : Row
     data object FolderIcon : Row
     data object RemoveTile : Row
+    data object Undo : Row
+    data object ShowHidden : Row
+    data object DeleteShortcut : Row
     data object RemoveDownload : Row
     data class QuickTile(val setting: QuickSetting) : Row
 
@@ -480,6 +485,11 @@ data class CollectionChoice(val folderId: String, val name: String, val member: 
 data class TileActions(
     /** The game or group Show on Home goes to. Null leaves the row out: it is nowhere on Home. */
     val showOnHome: String? = null,
+    /** The menu still targets a game that left the focused slot. Slot actions no longer apply. */
+    val kept: Boolean = false,
+    val undo: Boolean = false,
+    val show: Boolean = false,
+    val deleteShortcut: Boolean = false,
     val art: Boolean = false,
     /** Pick the tile up and walk it with the D-pad. */
     val move: Boolean = false,
@@ -508,6 +518,8 @@ data class TileActions(
 /** Y's menu: the tile's own actions, then an Android app's shelf actions. */
 fun actionRows(tile: TileActions?, app: AppActions?): List<Row> = buildList {
     if (tile != null) {
+        if (tile.undo) add(Row.Undo)
+        if (tile.show) add(Row.ShowHidden)
         if (tile.showOnHome != null) add(Row.ShowOnHome)
         if (tile.move) add(Row.MoveTile)
         if (tile.collections != null) add(Row.AddToCollection)
@@ -520,17 +532,18 @@ fun actionRows(tile: TileActions?, app: AppActions?): List<Row> = buildList {
         if (tile.icon) add(Row.FolderIcon)
         if (tile.remove != null) add(Row.RemoveTile)
         if (tile.removeDownload) add(Row.RemoveDownload)
+        if (tile.deleteShortcut) add(Row.DeleteShortcut)
     }
     if (app != null) {
         if (app.hiddenShelf) {
             add(Row.ShowApp)
             if (tile?.art == true) add(Row.ChooseArt)
         } else {
-            add(Row.PinApp)
-            if (app.destinations.isNotEmpty()) add(Row.AddAppTo)
+            if (app.keepOnTop) add(Row.PinApp)
+            if (tile?.collections == null && app.destinations.isNotEmpty()) add(Row.AddAppTo)
             if (tile?.art == true) add(Row.ChooseArt)
             add(Row.MoveApp)
-            add(Row.HideApp)
+            if (tile?.remove == null) add(Row.HideApp)
         }
     }
 }
@@ -544,6 +557,7 @@ fun panelHints(model: PickerModel): List<HintKey>? {
     if (model.dialog != null) return null
     val back = HintKey(promptKeyOf(model.faceMap.backKey) ?: PromptKey.FaceB, Copy.back)
     return when (val row = panelRows(panel, model).getOrNull(panel.index)) {
+        Row.RemoveDownload, Row.DeleteShortcut -> listOf(HintKey(model.deleteHold?.key ?: promptKeyOf(model.faceMap.confirmKey) ?: PromptKey.FaceA, ""), back)
         Row.Brightness -> if (model.brightnessAllowed) listOf(HintKey(PromptKey.DpadSides, BrightnessCopy.adjust), back) else null
         is Row.Notice -> {
             val notice = model.notices.firstOrNull { it.id == row.id } ?: return null
@@ -566,8 +580,45 @@ fun collectionRows(tile: TileActions?): List<Row> {
     return collections.map { Row.Collection(it.folderId, it.name) } + Row.NewCollection
 }
 
-fun panelRows(panel: SidePanel, model: PickerModel): List<Row> = when (panel.level) {
-    PanelLevel.Actions -> actionRows(model.tileActions, model.appActions)
+/** Catalog reports keep rows stable; removing a game from its slot discards that slot's actions. */
+data class MenuRows(val page: SidePanel, val rows: List<Row>)
+
+private fun SidePanel.page() = copy(index = 0, retiring = false, pendingSide = null)
+
+fun retainMenuRows(previous: PickerModel, next: PickerModel): PickerModel {
+    val panel = next.panel ?: return next.copy(menuRows = emptyList())
+    val retained = (if (previous.panel?.side == panel.side) previous.menuRows else emptyList())
+        .map { it.copy(rows = validMenuRows(it.rows, next)) }
+    val page = panel.page()
+    val pages = if (retained.any { it.page == page }) retained else
+        retained + MenuRows(page, livePanelRows(panel, next))
+    val stable = next.copy(menuRows = pages)
+    val oldPanel = previous.panel
+    if (oldPanel != null && oldPanel.page() == page) {
+        val oldRows = panelRows(oldPanel, previous)
+        val rows = panelRows(panel, stable)
+        if (oldRows != rows) {
+            val selected = oldRows.getOrNull(oldPanel.index)
+            val index = rows.indexOf(selected).takeIf { it >= 0 }
+                ?: panel.index.coerceIn(0, rows.lastIndex.coerceAtLeast(0))
+            return stable.copy(panel = panel.copy(index = index))
+        }
+    }
+    return stable
+}
+
+private fun validMenuRows(rows: List<Row>, model: PickerModel): List<Row> = rows.filterNot {
+    (it == Row.Undo && model.tileActions?.undo != true) ||
+        (model.tileActions?.kept == true && (it == Row.MoveTile || it == Row.RemoveTile || it == Row.HideApp))
+}
+
+fun panelRows(panel: SidePanel, model: PickerModel): List<Row> = validMenuRows(
+    model.menuRows.firstOrNull { it.page == panel.page() }?.rows ?: livePanelRows(panel, model), model)
+
+private fun livePanelRows(panel: SidePanel, model: PickerModel): List<Row> = when (panel.level) {
+    PanelLevel.Actions -> if (panel.recoveryOnly) {
+        if (model.tileActions?.undo == true) listOf(Row.Undo) else emptyList()
+    } else actionRows(model.tileActions, model.appActions)
     PanelLevel.Collections -> collectionRows(model.tileActions)
     PanelLevel.AddTo -> model.appActions?.destinations.orEmpty().map { Row.Destination(it.folderId, it.name) }
     PanelLevel.RommConnection -> panel.connection?.let {
@@ -650,7 +701,7 @@ fun rowText(row: Row, model: PickerModel): RowText = when (row) {
     Row.AddNewGames -> RowText(Copy.addNewGames, if (model.addNewToHome) Copy.on else Copy.off)
     Row.Artwork -> RowText(Copy.artwork, if (model.artwork) Copy.on else Copy.off)
     Row.ArtKey -> RowText(Copy.steamGridDb, if (model.artKeySaved) Copy.forgetKey else Copy.addKey)
-    Row.PinApp -> RowText(if (model.appActions?.favorite == true) Copy.unpin else Copy.pin)
+    Row.PinApp -> RowText(Copy.keepOnTop)
     Row.AddAppTo -> RowText(Copy.addTo)
     Row.MoveApp -> RowText(if (model.appActions?.onGamesShelf == true) Copy.moveToApps else Copy.moveToGames)
     Row.HideApp -> RowText(Copy.hideApp)
@@ -674,6 +725,9 @@ fun rowText(row: Row, model: PickerModel): RowText = when (row) {
             RemoveVerb.Remove, null -> Copy.remove
         },
     )
+    Row.Undo -> RowText(Copy.undo)
+    Row.ShowHidden -> RowText(Copy.showApp)
+    Row.DeleteShortcut -> RowText(Copy.deleteShortcut)
     Row.RemoveDownload -> RowText(Copy.deleteDownload)
     Row.ButtonLabels -> RowText(
         Copy.buttonLabels,
@@ -762,6 +816,9 @@ sealed interface Effect {
     data object RemoveTile : Effect
 
     /** Delete the server game's downloaded copy. Its saves stay. */
+    data object Undo : Effect
+    data class ShowHidden(val id: String?) : Effect
+    data class DeleteShortcut(val gameId: String?) : Effect
     data class RemoveDownload(val gameId: String? = null) : Effect
     data object OpenAll : Effect
     data object ToggleAddNew : Effect
@@ -811,6 +868,7 @@ data class PickerModel(
     /** The first column the grid showed. The next focus scrolls from here, see [shownFirstColumn]. */
     val firstColumn: Int = 0,
     val panel: SidePanel? = null,
+    val menuRows: List<MenuRows> = emptyList(),
     /** The full-screen settings page. Null while it is closed. */
     val settings: SettingsPage? = null,
     val dialog: DialogState? = null,
@@ -871,6 +929,11 @@ data class PickerModel(
     val thorGlyphs: Boolean = true,
     val offerButtonLabels: Boolean = false,
     val capturingConfirm: Boolean = false,
+    val undoVerb: String? = null,
+    val deleteHold: DeleteHold? = null,
+    val deleteProgress: Float = 0f,
+    val deleteShake: Int = 0,
+    val rewind: Int = 0,
     val held: Set<PromptKey> = emptySet(),
     val libraryGrid: Boolean = false,
     val gridKind: GridKind = GridKind.Games,
@@ -1081,9 +1144,13 @@ private fun applyGrid(
  * options. R1 is the device's. With nothing to offer, it stays shut.
  */
 private fun openActions(model: PickerModel): PickerModel {
-    if (model.focus.chrome != null || model.arranging || model.count <= 0) return model
+    if (model.arranging) return model
+    if (model.count <= 0) {
+        if (model.tileActions?.undo != true) return model
+    } else if (model.focus.chrome != null) return model
     if (actionRows(model.tileActions, model.appActions).isEmpty()) return model
-    return model.copy(panel = freshPanel(Side.Left, model.focus).copy(level = PanelLevel.Actions))
+    return model.copy(panel = freshPanel(Side.Left, model.focus).copy(
+        level = PanelLevel.Actions, recoveryOnly = model.count <= 0))
 }
 
 private fun backGrid(model: PickerModel): Pair<PickerModel, Effect?> {
@@ -1623,6 +1690,9 @@ private fun activateRow(
         Row.RenameFolder -> model.copy(panel = null, focus = panel.grid) to Effect.RenameFolder
         Row.FolderIcon -> model.copy(panel = null, focus = panel.grid) to Effect.ChooseFolderIcon
         Row.RemoveTile -> model.copy(panel = null, focus = panel.grid) to Effect.RemoveTile
+        Row.Undo -> model.copy(panel = null, focus = panel.grid) to Effect.Undo
+        Row.ShowHidden -> model.copy(panel = null, focus = panel.grid) to Effect.ShowHidden(model.tileActions?.game)
+        Row.DeleteShortcut -> model.copy(panel = null, focus = panel.grid) to Effect.DeleteShortcut(model.tileActions?.game)
         Row.RemoveDownload -> model.copy(panel = null, focus = panel.grid) to Effect.RemoveDownload(model.tileActions?.game)
         Row.ButtonLabels -> if (model.capturingConfirm) {
             model.copy(capturingConfirm = false, offerButtonLabels = false) to Effect.DismissButtonLabels

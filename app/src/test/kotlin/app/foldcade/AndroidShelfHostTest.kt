@@ -113,10 +113,9 @@ class AndroidShelfHostTest {
         assertFalse(host.openInstalledApp(settings.packageName).needsSaveFolder)
 
         shell.onMeaning(Meaning.Options, HostScreen.Bottom)
-        assertEquals(Copy.pin, rowLabelAt(shell, 0))
-        shell.onMeaning(Meaning.Activate, HostScreen.Bottom)
+        choose(shell, Row.PinApp)
         assertTrue(shell.focusedGame()?.favorite == true)
-        assertEquals(Copy.unpin, rowLabelAt(shell, 0))
+        assertEquals(Copy.keepOnTop, app.foldcade.language.rowLabel(Row.PinApp, shell.model))
 
         repeat(panelRows(shell.model.panel!!, shell.model).indexOf(Row.MoveApp)) {
             shell.onMeaning(Meaning.MoveDown, HostScreen.Bottom)
@@ -128,7 +127,7 @@ class AndroidShelfHostTest {
         shell.onMeaning(Meaning.LeftPanel, HostScreen.Bottom)
         choose(shell, Row.AndroidGames)
         assertEquals(HomeGrid.AndroidGames, shell.model.homeGrid)
-        assertEquals(listOf("Example", "Settings"), titles(shell))
+        assertEquals(listOf("Settings", "Example"), titles(shell))
 
         // Hidden apps are under Edit home.
         shell.onMeaning(Meaning.LeftPanel, HostScreen.Bottom)
@@ -154,7 +153,7 @@ class AndroidShelfHostTest {
         shell.setInstalledApps(listOf(settings), emptySet())
         shell.showHomeGrid(HomeGrid.Apps)
         shell.onMeaning(Meaning.Options, HostScreen.Bottom)
-        shell.onMeaning(Meaning.Activate, HostScreen.Bottom)
+        choose(shell, Row.PinApp)
         val restored = SessionStore(prefs).appShelfState()
         assertTrue(restored.record(settings.packageName).favorite)
     }
@@ -184,17 +183,7 @@ class AndroidShelfHostTest {
         shell.setInstalledApps(listOf(settings, game), emptySet())
         shell.showHomeGrid(HomeGrid.Apps)
         shell.onMeaning(Meaning.Options, HostScreen.Bottom)
-        choose(shell, Row.AddAppTo)
-        val destinations = panelRows(shell.model.panel!!, shell.model)
-        assertEquals(Row.Destination(null, Copy.homeSlot), destinations.first())
-        assertTrue(Row.Destination(HOME_ANDROID_GAMES, "Android Games") in destinations)
-        val before = store.homeBoardRaw()
-        shell.onMeaning(Meaning.Back, HostScreen.Bottom)
-        assertEquals(Row.AddAppTo, panelRows(shell.model.panel!!, shell.model)[shell.model.panel!!.index])
-        assertEquals(before, store.homeBoardRaw())
-
-        shell.onMeaning(Meaning.Activate, HostScreen.Bottom)
-        shell.onMeaning(Meaning.Activate, HostScreen.Bottom)
+        choose(shell, Row.PinTile)
         assertNull(shell.model.panel)
         assertEquals(HomeGrid.Apps, shell.model.homeGrid)
         assertEquals("Settings", shell.focusedGame()?.title)
@@ -229,11 +218,15 @@ class AndroidShelfHostTest {
         val shell = ShellController(store, PluginHost(Dispatchers.Unconfined, MemoryCredentialStore()))
         shell.setInstalledApps(listOf(settings, notes), emptySet())
         shell.showHomeGrid(HomeGrid.Apps)
+        shell.showHomeGrid(HomeGrid.HiddenApps)
+        shell.onMeaning(Meaning.Options, HostScreen.Bottom)
+        choose(shell, Row.ShowHidden)
+        shell.showHomeGrid(HomeGrid.Apps)
         shell.onMeaning(Meaning.MoveDown, HostScreen.Bottom)
         assertEquals("Settings", shell.focusedGame()?.title)
         shell.onMeaning(Meaning.Options, HostScreen.Bottom)
-        choose(shell, Row.AddAppTo)
-        choose(shell, Row.Destination(folder.id, folder.name))
+        choose(shell, Row.AddToCollection)
+        choose(shell, Row.Collection(folder.id, folder.name))
 
         val placed = decodeHome(store.homeBoardRaw())
         assertEquals(listOf(id), placed.folders[folder.id]?.slots)
