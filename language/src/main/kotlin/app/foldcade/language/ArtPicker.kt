@@ -72,6 +72,9 @@ data class ArtPickerState(
 ) {
     val focused: ArtCandidate? get() = candidates.getOrNull(index)
 
+    fun withoutQuery(): ArtPickerState = copy(findingMatches = false, loading = false, error = true,
+        candidates = emptyList(), index = 0, preview = false)
+
     fun navigate(meaning: Meaning): ArtPickerState {
         if (meaning == Meaning.LetterBackward || meaning == Meaning.LetterForward) {
             if (matches.isEmpty()) return this

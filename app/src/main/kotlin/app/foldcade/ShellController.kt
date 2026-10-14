@@ -125,7 +125,13 @@ class ShellController(
     var artPicker by mutableStateOf<ArtPickerState?>(null)
         private set
 
+    private fun closeArtAfterFocusChange() {
+        val state = artPicker ?: return
+        if (model.focus.chrome != null || focusedGame()?.let(::artQuery)?.key != state.gameId) artPicker = null
+    }
+
     fun artCandidates(state: ArtPickerState, loadingResult: Boolean = true) {
+        closeArtAfterFocusChange()
         val current = artPicker ?: return
         if (current.gameId == state.gameId && current.kind == state.kind && current.match?.id == state.match?.id) {
             artPicker = if (loadingResult) state.copy(preview = current.preview) else state
@@ -133,6 +139,7 @@ class ShellController(
     }
 
     fun artMatches(gameId: String, matches: List<ArtMatch>, error: Boolean = false) {
+        closeArtAfterFocusChange()
         val state = artPicker?.takeIf { it.gameId == gameId } ?: return
         val choices = (listOfNotNull(state.match) + matches).distinctBy { it.id }.take(8)
         artPicker = state.copy(matches = choices, match = state.match ?: choices.firstOrNull(), findingMatches = false,
@@ -140,6 +147,7 @@ class ShellController(
     }
 
     fun artInput(meaning: Meaning) {
+        closeArtAfterFocusChange()
         val state = artPicker ?: return
         when (meaning) {
             Meaning.Back, Meaning.CancelHold -> artPicker = null
@@ -184,6 +192,7 @@ class ShellController(
         get() = current
         private set(next) {
             current = next.copy(firstColumn = shownFirstColumn(current))
+            closeArtAfterFocusChange()
         }
 
     private var inputDeviceKey: String = "builtin"
@@ -460,6 +469,7 @@ class ShellController(
 
     /** L1's Home: the board's top level, from a folder, All, or a shelf. The last root tile keeps the focus. */
     fun goHome() {
+        artPicker = null
         val rootFocus = model.focus.takeIf {
             showingHome() && home.board.openFolderId == null && !home.board.allOpen
         }
@@ -477,6 +487,7 @@ class ShellController(
             ?: installed.firstOrNull { androidHomeId(it.packageName) == gameId }?.label
 
     fun openHomeAll() {
+        artPicker = null
         if (showingHome()) home.rememberRootFocus(model.focus.cellIndex)
         home.showAll()
         store.saveHomeBoard(home.encoded())
@@ -718,6 +729,7 @@ class ShellController(
 
     /** The scanned library is on the home grid. Emulator waits for this line. */
     fun showCuratedHome() {
+        artPicker = null
         syncHome()
         showBoard(GridFocus(), keepDialog = true)
         Log.i("Foldcade", "library-ui home")
@@ -732,6 +744,7 @@ class ShellController(
     }
 
     fun showHomeGrid(grid: HomeGrid) {
+        artPicker = null
         publish(
             model.copy(
                 homeGrid = grid,
@@ -1507,6 +1520,7 @@ class ShellController(
         focus: GridFocus,
         order: List<Int>,
     ) {
+        artPicker = null
         entries = cells
         val source = if (order.size == count && count > 0) {
             order.getOrElse(focus.cellIndex) { focus.cellIndex }

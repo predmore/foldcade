@@ -42,9 +42,12 @@ import kotlin.coroutines.cancellation.CancellationException
 @Composable
 internal fun ArtPickerScreen(app: FoldcadeApp, state: ArtPickerState, scale: Float) {
     val theme = LocalFoldTheme.current.theme
-    val query = app.shell.focusedGame()?.let(app.shell::artQuery)
-    LaunchedEffect(state.gameId) {
-        if (query == null) return@LaunchedEffect
+    val query = app.shell.focusedGame()?.let(app.shell::artQuery)?.takeIf { it.key == state.gameId }
+    LaunchedEffect(state.gameId, query?.key) {
+        if (query == null) {
+            app.shell.artCandidates(state.withoutQuery())
+            return@LaunchedEffect
+        }
         try {
             val matches = app.steamGridDb.games(query).map { ArtMatch(it.id, it.name) }
             app.shell.artMatches(state.gameId, matches)
@@ -54,8 +57,12 @@ internal fun ArtPickerScreen(app: FoldcadeApp, state: ArtPickerState, scale: Flo
             app.shell.artMatches(state.gameId, emptyList(), error = true)
         }
     }
-    LaunchedEffect(state.gameId, state.kind, state.match?.id, state.findingMatches) {
-        if (query == null || state.findingMatches) return@LaunchedEffect
+    LaunchedEffect(state.gameId, state.kind, state.match?.id, state.findingMatches, query?.key) {
+        if (query == null) {
+            app.shell.artCandidates(state.withoutQuery())
+            return@LaunchedEffect
+        }
+        if (state.findingMatches) return@LaunchedEffect
         val match = state.match ?: return@LaunchedEffect
         try {
             val kind = when (state.kind) { ArtKind.Tile -> "grids"; ArtKind.Hero -> "heroes"; ArtKind.Logo -> "logos" }

@@ -139,4 +139,16 @@ class ArtPickerTest {
         assertFalse(state.error)
     }
 
+    @Test fun aMissingQuerySettlesBothSearchAndCandidateLoading() {
+        for (match in listOf(null, ArtMatch(1, "Game"))) {
+            val state = ArtPickerState("game", match = match, candidates = candidates, index = 4).withoutQuery()
+            assertFalse(state.findingMatches)
+            assertFalse(state.loading)
+            assertFalse(state.preview)
+            assertTrue(state.error)
+            assertTrue(state.candidates.isEmpty())
+            assertNull(state.focused)
+        }
+    }
+
 }
