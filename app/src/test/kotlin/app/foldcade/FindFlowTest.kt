@@ -7,7 +7,9 @@ import app.foldcade.host.PluginHost
 import app.foldcade.language.Copy
 import app.foldcade.language.Effect
 import app.foldcade.language.HeroSubject
+import app.foldcade.language.FindCopy
 import app.foldcade.language.FindFilterKind
+import app.foldcade.language.findResults
 import app.foldcade.language.GridStrip
 import app.foldcade.language.HomeGrid
 import app.foldcade.language.HomeKeys
@@ -55,9 +57,15 @@ class FindFlowTest {
         // The top screen shows the best result while the keys have the D-pad.
         assertEquals("Puzzle", shell.focusedGame()?.title)
         // Start goes to the results, on the best one, where A, X and Y mean what they do on a tile.
+        // The keys' own hints while typing; the results' only once they have the D-pad.
+        assertEquals(FindCopy.type, shell.findHints()!!.first().label)
         shell.onMeaning(Meaning.Done, HostScreen.Bottom)
         assertTrue(find.onResults)
         assertEquals(HomeKeys.FindResults, shell.homeKeys())
+        assertEquals(Copy.hintOptions, shell.findHints()!!.first { it.label == Copy.hintOptions }.label)
+        // Start lands on the best result, which is the first in the strip: the strip is the ranking.
+        assertEquals(0, find.index)
+        assertEquals(findResults(find.results, "puz", find.filters[find.filter]), find.results)
         val launch = shell.onMeaning(Meaning.ActivateBottom, HostScreen.Bottom)
         assertEquals(Effect.Launch(shell.model.focus.cellIndex, onBottom = true), launch)
         assertEquals("Puzzle", shell.focusedGame()?.title)

@@ -382,12 +382,14 @@ fun findFacts(board: HomeBoard, entry: FindEntry): List<String> {
 }
 
 /**
- * Find's keys while its keyboard has them. A types the key under the ring, which needs no
- * word. B clears what was typed, and closes Find once nothing is.
+ * Find's keys while its keyboard has them: A types the key under the ring, and B clears what
+ * was typed, then closes Find once nothing is. The results' keys show only once they have the D-pad.
  */
 fun findKeyboardHints(faceMap: FaceMap, typed: Boolean): List<HintKey> {
+    val confirm = promptKeyOf(faceMap.confirmKey) ?: PromptKey.FaceA
     val back = promptKeyOf(faceMap.backKey) ?: PromptKey.FaceB
     return listOf(
+        HintKey(confirm, FindCopy.type),
         HintKey(typingFaces(faceMap).eraseGlyph, KeyboardCopy.erase),
         HintKey(typingFaces(faceMap).spaceGlyph, KeyboardCopy.space),
         HintKey(PromptKey.L2, ""),
@@ -435,6 +437,7 @@ object FindCopy {
     const val hidden = "Hidden"
     const val recent = "Recent"
     const val filter = "Filter"
+    const val type = "Type"
     const val results = "Results"
     const val clear = "Clear"
     const val close = "Close"

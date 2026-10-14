@@ -256,6 +256,9 @@ class FindTest {
         assertEquals(FindCopy.close, findKeyboardHints(faces, typed = false).last().label)
         assertEquals(FindCopy.clear, findKeyboardHints(faces, typed = true).last().label)
         assertTrue(findKeyboardHints(faces, typed = false).any { it.key == PromptKey.R2 && it.label == FindCopy.filter })
+        // On the keys, A types: the row says so, and never names the results' Top or Bottom.
+        assertEquals(HintKey(PromptKey.FaceA, FindCopy.type), findKeyboardHints(faces, typed = false).first())
+        assertTrue(findKeyboardHints(faces, typed = true).none { it.label == Copy.hintTop || it.label == Copy.hintBottom || it.label == Copy.hintOptions })
         val results = findResultHints(faces, screens = true, options = true).map { it.key }
         assertEquals(listOf(PromptKey.FaceA, PromptKey.FaceX, PromptKey.FaceY, PromptKey.L2, PromptKey.R2, PromptKey.FaceB), results)
         val root = listOf(HintKey(PromptKey.FaceY, Copy.hintOptions))
