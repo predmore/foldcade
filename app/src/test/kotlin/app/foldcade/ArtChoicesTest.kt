@@ -139,4 +139,42 @@ class ArtChoicesTest {
         assertEquals(2, restarted.artQuery(restarted.focusedGame()!!)!!.steamGridDbGameId)
     }
 
+    @Test fun artIsOfferedOnlyWhileFoldcadeOwnsTheBottomScreen() {
+        val cases = listOf(
+            Session() to true,
+            Session().launch(ExternalApp("bottom"), Panel.Bottom).browse(Panel.Top) to false,
+            Session().launch(ExternalApp("top"), Panel.Top).browse(Panel.Bottom) to true,
+            Session().launch(ExternalApp("both", occupiesBothDisplays = true)) to false,
+        )
+        for ((session, available) in cases) {
+            val store = SessionStore(MemoryPrefs())
+            val shell = ShellController(store, plugins)
+            shell.setInstalledApps(listOf(LaunchableApp("game", "Game", true)), emptySet())
+            shell.openHomeAll()
+            shell.setArtKeySaved(true)
+            store.update { session }
+            shell.onMeaning(Meaning.Options, HostScreen.Top)
+            val rows = actionRows(shell.model.tileActions, shell.model.appActions)
+            assertEquals(session.toString(), available, Row.ChooseArt in rows)
+            assertNull(shell.artPicker)
+        }
+    }
+
+    @Test fun losingTheBottomScreenAfterOpeningTheMenuCannotOpenAnInvisibleArtPicker() {
+        val store = SessionStore(MemoryPrefs())
+        val shell = ShellController(store, plugins)
+        shell.setInstalledApps(listOf(LaunchableApp("game", "Game", true)), emptySet())
+        shell.openHomeAll()
+        shell.setArtKeySaved(true)
+        shell.onMeaning(Meaning.Options, HostScreen.Top)
+        val index = panelRows(shell.model.panel!!, shell.model).indexOf(Row.ChooseArt)
+        assertTrue(index >= 0)
+        store.update { it.launch(ExternalApp("bottom"), Panel.Bottom).browse(Panel.Top) }
+        shell.touchPanel(index, HostScreen.Top)
+        shell.touchPanel(index, HostScreen.Top)
+        assertNull(shell.artPicker)
+        assertNull(store.session.surfaceOn(Panel.Bottom))
+        assertEquals(Surface.Picker, store.session.surfaceOn(Panel.Top))
+    }
+
 }

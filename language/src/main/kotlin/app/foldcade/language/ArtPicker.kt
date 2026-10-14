@@ -86,7 +86,11 @@ data class ArtPickerState(
             Meaning.RightPanel -> (kind.ordinal + 1) % 3
             else -> kind.ordinal
         }
-        if (tab != kind.ordinal) return copy(preview = true, kind = ArtKind.entries[tab], index = 0, candidates = emptyList(), loading = true, error = false)
+        if (tab != kind.ordinal) {
+            val willLoad = findingMatches || match != null
+            return copy(preview = true, kind = ArtKind.entries[tab], index = 0, candidates = emptyList(),
+                loading = willLoad, error = if (willLoad) false else error)
+        }
         val target = when (meaning) {
             Meaning.MoveUp -> if (index % 3 > 0) index - 1 else index
             Meaning.MoveDown -> if (index % 3 < 2) index + 1 else index

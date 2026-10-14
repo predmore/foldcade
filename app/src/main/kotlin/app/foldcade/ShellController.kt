@@ -343,7 +343,9 @@ class ShellController(
             Effect.PinApp, is Effect.AddAppTo, Effect.MoveApp, Effect.HideApp, Effect.ShowApp,
             -> null
             Effect.ChooseArt -> {
-                focusedGame()?.let(::artQuery)?.let { artPicker = ArtPickerState(it.key, match = savedArtMatch(it.key)) }
+                if (artPickerAvailable()) {
+                    focusedGame()?.let(::artQuery)?.let { artPicker = ArtPickerState(it.key, match = savedArtMatch(it.key)) }
+                }
                 null
             }
             Effect.MoveTile -> {
@@ -1542,6 +1544,8 @@ class ShellController(
         return displayOrder(snapshot).getOrElse(index) { index }
     }
 
+    private fun artPickerAvailable(): Boolean = store.session.surfaceOn(Panel.Bottom) != null
+
     private fun withShelf(next: PickerModel): PickerModel {
         val count = countFor(next.homeGrid)
         home.sort = next.sort
@@ -1565,7 +1569,7 @@ class ShellController(
         val offered = if (tile?.removeDownload == true && busy) tile.copy(removeDownload = false) else tile
         // A merge can close the open folder, when its last game left, so read where the board is now.
         val root = if (onHome) home.board.openFolderId == null && !home.board.allOpen else counted.atLibraryRoot
-        val withArt = if (counted.artKeySaved && game?.let(::artQuery) != null) {
+        val withArt = if (counted.artKeySaved && artPickerAvailable() && game?.let(::artQuery) != null) {
             (offered ?: TileActions()).copy(art = true)
         } else offered
         return counted.copy(appActions = actionsFor(counted, game), tileActions = withArt, atLibraryRoot = root)

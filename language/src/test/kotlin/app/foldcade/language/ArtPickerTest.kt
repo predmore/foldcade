@@ -38,7 +38,8 @@ class ArtPickerTest {
     }
 
     @Test fun tabsWrapAndDiscardThePreviousCandidatesAndError() {
-        val state = ArtPickerState("game", index = 9, candidates = candidates, loading = false, error = true)
+        val state = ArtPickerState("game", match = ArtMatch(1, "Game"), findingMatches = false,
+            index = 9, candidates = candidates, loading = false, error = true)
         val logo = state.navigate(Meaning.LeftPanel)
         assertEquals(ArtKind.Logo, logo.kind)
         assertEquals(0, logo.index)
@@ -110,6 +111,32 @@ class ArtPickerTest {
         assertEquals(listOf(HintKey(PromptKey.L2, ""), HintKey(PromptKey.R2, ArtCopy.match)), groups[1])
         assertEquals(1, artPickerHints(FaceMap.standard()).count { it.label == ArtCopy.kind })
         assertEquals(1, artPickerHints(FaceMap.standard()).count { it.label == ArtCopy.match })
+    }
+
+    @Test fun changingKindsAfterAnEmptyOrFailedMatchSearchKeepsItsSettledState() {
+        for (failed in listOf(false, true)) {
+            for (direction in listOf(Meaning.LeftPanel, Meaning.RightPanel)) {
+                var state = ArtPickerState("game", findingMatches = false, loading = false, error = failed)
+                repeat(3) {
+                    val previous = state.kind
+                    state = state.navigate(direction)
+                    assertNotEquals(previous, state.kind)
+                    assertFalse("No request can load candidates without a match", state.loading)
+                    assertEquals(failed, state.error)
+                    assertNull(state.match)
+                    assertTrue(state.candidates.isEmpty())
+                }
+                assertEquals(ArtKind.Tile, state.kind)
+            }
+        }
+    }
+
+    @Test fun changingKindsWhileTheMatchSearchIsRunningKeepsLoadingUntilItFinishes() {
+        val state = ArtPickerState("game").navigate(Meaning.RightPanel)
+        assertEquals(ArtKind.Hero, state.kind)
+        assertTrue(state.findingMatches)
+        assertTrue(state.loading)
+        assertFalse(state.error)
     }
 
 }
