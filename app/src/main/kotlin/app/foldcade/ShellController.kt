@@ -24,6 +24,13 @@ import app.foldcade.plugins.moonlight.MoonlightLibrary
 import app.foldcade.plugins.moonlight.isMoonlightRemoteKey
 import app.foldcade.host.PluginHost
 import app.foldcade.language.FoldNotice
+import app.foldcade.language.FindEntry
+import app.foldcade.language.FindKind
+import app.foldcade.language.HintKey
+import app.foldcade.language.HomeKeys
+import app.foldcade.language.PanelLevel
+import app.foldcade.language.findKeyboardHints
+import app.foldcade.language.findResultHints
 import app.foldcade.language.KeyFocus
 import app.foldcade.language.brightnessPrompt
 import app.foldcade.language.brightnessPosition
@@ -129,6 +136,14 @@ class ShellController(
     private val onArtMatch: (String, ArtMatch) -> Unit = { _, _ -> },
 ) {
     var artPicker by mutableStateOf<ArtPickerState?>(null)
+        private set
+
+    /** Find, open over the grid, which stays as it was under it. Null while it is closed. */
+    var find by mutableStateOf<FindSession?>(null)
+        private set
+
+    /** Counts Show on Home landings. The grid's ring bursts on the focused tile at each new one. */
+    var revealPulse by mutableStateOf(0)
         private set
 
     private fun closeArtAfterFocusChange() {
@@ -286,6 +301,11 @@ class ShellController(
             return null
         }
         if (model.panel == null && home.releaseMenu()) publish(model)
+        find?.takeIf { findActive() }?.let { return findOutcome(it.handle(meaning)) }
+        if (meaning == Meaning.View && canOpenFind()) {
+            openFind()
+            return null
+        }
         if (homeActive()) {
             val before = model
             val wasInFolder = home.board.openFolderId != null
@@ -308,6 +328,8 @@ class ShellController(
         val before = model
         val current = if (model.libraryGrid) model else withShelf(model)
         val (next, effect) = reduce(current, meaning, screen, repeatCount)
+        // L1 or R1 opening over Find's menu leaves Find: those drawers go places of their own.
+        if (find != null && next.panel?.let { it.level == PanelLevel.Root || it.pendingSide != null } == true) find = null
         if (!next.connectOpen) connectToken = ""
         val packageName = focusedGame()?.androidPackage
         val panelLabel = next.panel?.let { panel ->
@@ -333,7 +355,7 @@ class ShellController(
             // Add to stays open, so the next collection is one press away, even when the game
             // leaves the collection on screen: the menu keeps acting on that game.
             is Effect.ToggleCollection -> {
-                if (showingHome()) {
+                if (showingHome() || find != null) {
                     home.toggleCollection(next.focus.cellIndex, effect.folderId, effect.gameId)
                     syncHome()
                 }
@@ -387,9 +409,20 @@ class ShellController(
                 null
             }
             Effect.Tidy -> changeHome { home.tidyBoard(it) }
-            is Effect.NewCollection -> changeHome { home.newCollection(it, effect.gameId) }
-            is Effect.ToggleFavorite -> changeHome { home.toggleFavorite(it, effect.gameId); it }
-            is Effect.PinTile -> changeHome { home.pin(it, effect.gameId); it }
+            is Effect.NewCollection -> {
+                // Naming takes the keyboard Find has, so Find gives way to it, on Home.
+                if (find != null) {
+                    find = null
+                    if (!showingHome()) home.showRoot().let { showBoard(GridFocus(cellIndex = it, lastColumn = GridStrip.column(it)), keepDialog = true) }
+                }
+                changeHome { home.newCollection(it, effect.gameId) }
+            }
+            is Effect.ToggleFavorite -> if (find != null) changeFound { home.toggleFavorite(it, effect.gameId) } else changeHome { home.toggleFavorite(it, effect.gameId); it }
+            is Effect.PinTile -> if (find != null) changeFound { home.pin(it, effect.gameId) } else changeHome { home.pin(it, effect.gameId); it }
+            is Effect.ShowOnHome -> {
+                showOnHome(effect.id)
+                null
+            }
             Effect.RenameFolder -> changeHome { home.startRename(it); it }
             Effect.ChooseFolderIcon -> changeHome { home.pickIcon(it); it }
             Effect.RemoveTile -> {
@@ -435,6 +468,8 @@ class ShellController(
         ) {
             return app.foldcade.language.HomeKeys.Idle
         }
+        // On its results Find takes the grid's keys: A, X and Y mean what they do on a tile.
+        find?.takeIf { findActive() }?.let { return if (it.onResults) HomeKeys.Idle else HomeKeys.Finding }
         if (model.libraryGrid || model.homeGrid != HomeGrid.StandIns) {
             return app.foldcade.language.HomeKeys.Idle
         }
@@ -445,12 +480,12 @@ class ShellController(
 
     /**
      * True while a grid opened from a command center must stay: a dialog or menu is up, a
-     * name is being typed, or a collection's icon is being chosen. Its idle timer would
+     * name is being typed, a collection's icon is being chosen, or Find is open. Its idle timer would
      * otherwise drop the grid mid-word or mid-choice and leave the keyboard or editor open
      * with nothing to act on.
      */
     fun holdsCommandCenter(): Boolean =
-        model.dialog != null || model.panel != null || model.connectOpen || typing() != null || home.iconPick != null
+        model.dialog != null || model.panel != null || model.connectOpen || typing() != null || home.iconPick != null || find != null
 
     /**
      * The collection or folder being named, as the top screen shows it over the name field.
@@ -480,6 +515,132 @@ class ShellController(
         step.cue?.slot?.let { cue(model.themeIndex, it) }
     }
 
+    /**
+     * Select opens Find over any grid of Home, All or a shelf, unless something else has
+     * the keys: a menu, a page, a lifted tile, the keyboard, or a picker.
+     */
+    private fun canOpenFind(): Boolean =
+        find == null && artPicker == null && !model.libraryGrid && model.dialog == null && model.panel == null &&
+            model.settings == null && model.playActivity == null && model.saveConflict == null && !model.connectOpen &&
+            (!showingHome() || home.keys().let { it == HomeKeys.Idle || it == HomeKeys.AllLibrary })
+
+    /** Opens Find on everything Home knows, the most recently played first. */
+    fun openFind() {
+        if (!canOpenFind()) return
+        find = FindSession(findEntries())
+        Log.i("Foldcade", "home-ui find")
+        cue(model.themeIndex, "activate")
+        publish(model)
+    }
+
+    /** Closes Find. The grid under it still has its focus. */
+    fun closeFind() {
+        if (find == null) return
+        find = null
+        publish(model)
+    }
+
+    /** True while Find has the keys: open, with no menu, page or dialog over it. */
+    private fun findActive(): Boolean =
+        find != null && artPicker == null && model.dialog == null && model.panel == null && model.settings == null &&
+            model.playActivity == null && model.saveConflict == null && !model.connectOpen
+
+    /** Everything Find lists. An app its shelf hides counts as hidden, as a game hidden from Home does. */
+    private fun findEntries(): List<FindEntry> {
+        val shelfHidden = hiddenApps(installed, shelfState, playerPackages).map { androidHomeId(it.packageName) }.toSet()
+        return home.findEntries { it in shelfHidden }
+    }
+
+    /** Does what a key in Find asked. A launch is the activity's to run, and Find closes once it has. */
+    private fun findOutcome(outcome: FindOutcome): Effect? {
+        when (outcome) {
+            is FindOutcome.Stay -> {
+                outcome.cue.slot?.let { cue(model.themeIndex, it) }
+                publish(model)
+            }
+            FindOutcome.Close -> {
+                closeFind()
+                cue(model.themeIndex, "back")
+            }
+            is FindOutcome.Launch -> {
+                cue(model.themeIndex, "activate")
+                return Effect.Launch(model.focus.cellIndex, outcome.onBottom)
+            }
+            is FindOutcome.OpenGroup -> {
+                find = null
+                val at = home.openGroup(outcome.id)
+                store.saveHomeBoard(home.encoded())
+                showBoard(at?.let { GridFocus(cellIndex = it, lastColumn = GridStrip.column(it)) } ?: model.focus, keepDialog = true)
+                cue(model.themeIndex, "activate")
+            }
+            // The tile menu, for the focused result, in the left island as Y opens it on a grid.
+            FindOutcome.Options -> {
+                publish(model)
+                if (actionRows(model.tileActions, model.appActions).isNotEmpty()) {
+                    publish(model.copy(panel = SidePanel(Side.Left, HostScreen.Top, PanelLevel.Actions, 0, model.focus)))
+                }
+            }
+        }
+        return null
+    }
+
+    /** The line under a Find result's name: its platform or count, where it lives, and whether it is hidden. */
+    fun findFacts(entry: FindEntry): List<String> = app.foldcade.language.findFacts(home.board, entry)
+
+    /** A Find result as a game, for its tile's art and icon. */
+    fun findGame(id: String): ShelfGame = homeShelf(home.faceOf(id))
+
+    /** A launch from Find has started. Find closes, so the grid is there to come back to. */
+    fun closeFindAfterLaunch() {
+        closeFind()
+    }
+
+    /** A tap on Find's keyboard. */
+    fun tapFind(at: KeyFocus): Effect? = find?.takeIf { findActive() }?.let { findOutcome(it.tap(at)) }
+
+    /** A tap on one of Find's results: the first focuses it, a second opens it. */
+    fun tapFindResult(at: Int): Effect? = find?.takeIf { findActive() }?.let { findOutcome(it.tapResult(at)) }
+
+    /** Find's keys for the hint row. Null while Find is closed or covered. */
+    fun findHints(): List<HintKey>? {
+        val session = find?.takeIf { findActive() } ?: return null
+        return if (session.onResults) {
+            findResultHints(model.faceMap, screens = focusedLaunchesOnOneScreen(), options = hasOptions())
+        } else {
+            findKeyboardHints(model.faceMap, typed = session.query.isNotEmpty())
+        }
+    }
+
+    /**
+     * Show on Home: leaves Find, All, or whatever is open for where [id] lives on Home (see
+     * [app.foldcade.language.homeLanding]), opening its folder or collection when it is in one,
+     * and lands the ring there with a burst.
+     */
+    fun showOnHome(id: String?) {
+        if (id == null) return
+        artPicker = null
+        find = null
+        val index = home.reveal(id)
+        if (index == null) {
+            publish(model)
+            return
+        }
+        store.saveHomeBoard(home.encoded())
+        showBoard(GridFocus(cellIndex = index, lastColumn = GridStrip.column(index)), keepDialog = true)
+        revealPulse++
+        cue(model.themeIndex, "notify")
+        Log.i("Foldcade", "home-ui shown ${home.face(index)?.title.orEmpty()}")
+    }
+
+    /** Runs one Y menu action Find opened on its focused result. Find stays, over the same grid. */
+    private fun changeFound(change: (Int) -> Unit): Effect? {
+        change(model.focus.cellIndex)
+        syncHome()
+        store.saveHomeBoard(home.encoded())
+        publish(model.copy(shelfEpoch = model.shelfEpoch + 1))
+        return null
+    }
+
     /** The open collection icon picker and that collection's name, for the top screen. Null when closed. */
     fun folderIconPick(): Pair<IconPick, String>? {
         if (!showingHome()) return null
@@ -497,7 +658,9 @@ class ShellController(
     fun focusedLaunchesOnOneScreen(): Boolean {
         if (!store.session.bothScreensFree() || model.focus.chrome != null) return false
         if (model.libraryGrid && model.gridKind != GridKind.Games) return false
-        val face = if (showingHome() || home.board.allOpen) home.face(model.focus.cellIndex) else null
+        val found = find?.subject
+        if (found != null && found.kind == FindKind.Group) return false
+        val face = if (find == null && (showingHome() || home.board.allOpen)) home.face(model.focus.cellIndex) else null
         if (face != null && (face.folder || face.allTile || face.empty)) return false
         val game = focusedGame() ?: return false
         return !game.emptyShelfHint && !game.occupiesBothDisplays
@@ -505,7 +668,7 @@ class ShellController(
 
     /** True when Y would open a menu for the focused tile. */
     fun hasOptions(): Boolean =
-        model.focus.chrome == null && actionRows(model.tileActions, model.appActions).isNotEmpty()
+        (model.focus.chrome == null || find != null) && actionRows(model.tileActions, model.appActions).isNotEmpty()
 
     fun homeEditing(): Boolean =
         showingHome() && home.board.editing && model.dialog == null && model.panel == null
@@ -552,6 +715,7 @@ class ShellController(
     /** L1's Home: the board's top level, from a folder, All, or a shelf. The last root tile keeps the focus. */
     fun goHome() {
         artPicker = null
+        find = null
         val rootFocus = model.focus.takeIf {
             showingHome() && home.board.openFolderId == null && !home.board.allOpen
         }
@@ -570,6 +734,7 @@ class ShellController(
 
     fun openHomeAll() {
         artPicker = null
+        find = null
         if (showingHome()) home.rememberRootFocus(model.focus.cellIndex)
         home.showAll()
         store.saveHomeBoard(home.encoded())
@@ -700,7 +865,7 @@ class ShellController(
      */
     fun downloadFor(gameId: String?): Game? {
         if (gameId == null) return focusedDownload()
-        if (!showingHome() || busyOnDevice(gameId)) return null
+        if ((!showingHome() && find == null) || busyOnDevice(gameId)) return null
         return home.game(gameId)?.takeIf { it.availability == Availability.Cached }
     }
 
@@ -823,6 +988,7 @@ class ShellController(
     /** The scanned library is on the home grid. Emulator waits for this line. */
     fun showCuratedHome() {
         artPicker = null
+        find = null
         syncHome()
         showBoard(GridFocus(), keepDialog = true)
         Log.i("Foldcade", "library-ui home")
@@ -838,6 +1004,7 @@ class ShellController(
 
     fun showHomeGrid(grid: HomeGrid) {
         artPicker = null
+        find = null
         publish(
             model.copy(
                 homeGrid = grid,
@@ -1125,7 +1292,7 @@ class ShellController(
 
     /** One tap focuses a tile. A second tap on it activates, and hands back what that opens. */
     fun touchCell(index: Int, screen: HostScreen): Effect? {
-        if (artPicker != null || model.dialog != null || model.panel != null || model.connectOpen) return null
+        if (find != null || artPicker != null || model.dialog != null || model.panel != null || model.connectOpen) return null
         val current = model.focus
         val already = current.chrome == null && current.cellIndex == index
         if (!already) {
@@ -1145,7 +1312,7 @@ class ShellController(
     }
 
     fun touchChrome(chrome: Chrome, screen: HostScreen) {
-        if (model.dialog != null || model.panel != null || model.connectOpen) return
+        if (find != null || model.dialog != null || model.panel != null || model.connectOpen) return
         publish(model.copy(focus = model.focus.copy(chrome = chrome)))
         onMeaning(Meaning.Activate, screen)
     }
@@ -1334,6 +1501,7 @@ class ShellController(
     }
 
     fun focusedGame(): ShelfGame? = when {
+        find != null -> foundGame()
         showingHome() -> focusedHomeFace()?.let(::homeShelf)
         else -> tileFromOrder(displaySource(model))
     }
@@ -1351,6 +1519,12 @@ class ShellController(
         index !in 0 until model.count -> null
         showingHome() -> home.face(index)?.let(::homeShelf)
         else -> tileFromOrder(displayOrder(model).getOrElse(index) { index })
+    }
+
+    /** Find's subject as a game: the focused result, or the best one on the keys. Null for a group. */
+    private fun foundGame(): ShelfGame? {
+        val entry = find?.subject?.takeIf { it.kind != FindKind.Group } ?: return null
+        return homeShelf(home.faceOf(entry.id))
     }
 
     /**
@@ -1431,6 +1605,7 @@ class ShellController(
 
     /** The library record behind the focused cell, for its metadata. Null for an app or a shelf tile. */
     fun focusedRecord(): Game? = when {
+        find != null -> find?.subject?.id?.let(home::game)
         showingHome() -> focusedHomeFace()?.id?.let(home::game)
         else -> focusedEntry()?.game
     }
@@ -1442,6 +1617,7 @@ class ShellController(
      * so the background shows through instead of a blank name card.
      */
     fun focusedHero(): HeroSubject? {
+        find?.let { return foundHero(it) }
         // A tile in the hand stays on top while it walks, over a group too.
         val carried = homeCarry()?.let { home.faceOf(it.id) }?.let(::homeShelf)
         if (carried != null) return heroItem(carried)
@@ -1473,6 +1649,26 @@ class ShellController(
             availability = game.availabilityLabel,
         ),
     )
+
+    /** Find's subject as the top screen shows it. A group shows as its folder does. */
+    private fun foundHero(session: FindSession): HeroSubject? {
+        val entry = session.subject ?: return null
+        if (entry.kind == FindKind.Group) {
+            val folder = home.board.folders[entry.id]
+            return HeroSubject.Folder(HeroFolder(key = entry.id, name = entry.title, count = folderCount(home.board, entry.id), mark = folder?.mark))
+        }
+        val game = foundGame() ?: return null
+        return HeroSubject.Item(
+            HeroItem(
+                key = game.id,
+                title = game.title,
+                detail = game.shortText,
+                mark = game.mark,
+                packageName = game.androidPackage,
+                availability = game.availabilityLabel,
+            ),
+        )
+    }
 
     fun tileFromOrder(source: Int): ShelfGame? = when {
         model.libraryGrid -> entries.getOrNull(source)?.asShelf()
@@ -1628,6 +1824,7 @@ class ShellController(
         order: List<Int>,
     ) {
         artPicker = null
+        find = null
         entries = cells
         val source = if (order.size == count && count > 0) {
             order.getOrElse(focus.cellIndex) { focus.cellIndex }
@@ -1684,16 +1881,19 @@ class ShellController(
             screenJumpLastColumn = if (showingHome(next) && !home.board.allOpen) GridStrip.column(lastOccupied.coerceAtLeast(0)) else null)
         val game = tileOn(counted)
         val onHome = showingHome(counted)
-        val tile = if (onHome) home.actions(counted.focus.cellIndex) else null
+        // On Find's results, Y's menu is the focused result's, wherever the grid under it is.
+        val found = find?.takeIf { it.onResults }?.subject?.let { home.findActions(it.id) }
+        val tile = found ?: if (onHome) home.actions(counted.focus.cellIndex) else null
         // A copy still arriving, or already going, is not one to delete.
         val busy = (tile?.game ?: home.face(counted.focus.cellIndex)?.id)?.let(::busyOnDevice) == true
         val offered = if (tile?.removeDownload == true && busy) tile.copy(removeDownload = false) else tile
         // A merge can close the open folder, when its last game left, so read where the board is now.
         val root = if (onHome) home.board.openFolderId == null && !home.board.allOpen else counted.atLibraryRoot
-        val withArt = if (counted.artKeySaved && artPickerAvailable() && game?.let(::artQuery) != null) {
+        val withArt = if (found == null && counted.artKeySaved && artPickerAvailable() && game?.let(::artQuery) != null) {
             (offered ?: TileActions()).copy(art = true)
         } else offered
-        return counted.copy(appActions = actionsFor(counted, game), tileActions = withArt, atLibraryRoot = root)
+        val apps = if (found == null) actionsFor(counted, game) else null
+        return counted.copy(appActions = apps, tileActions = withArt, atLibraryRoot = root)
     }
 
     private fun tileOn(snapshot: PickerModel): ShelfGame? {
@@ -1889,7 +2089,7 @@ class ShellController(
 
     /** The home grid's top level with nothing open over it, where B has nothing left to close. */
     fun atRest(): Boolean =
-        homeActive() && home.board.openFolderId == null && !home.board.allOpen && home.board.hold == null &&
+        find == null && homeActive() && home.board.openFolderId == null && !home.board.allOpen && home.board.hold == null &&
             home.iconPick == null && renameDraft() == null
 
     private fun homeActive(): Boolean =
@@ -1945,6 +2145,7 @@ class ShellController(
             },
         )
         store.saveHomeBoard(home.encoded())
+        find?.refresh(findEntries())
     }
 
     private fun shelfItems(): List<HomeItem> = Shelf.games.mapNotNull { game ->

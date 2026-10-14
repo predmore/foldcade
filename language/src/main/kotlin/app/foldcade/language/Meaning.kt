@@ -69,7 +69,16 @@ enum class HomeKeys {
     PickingIcon,
     /** The controller keyboard is open. Every key types or edits; no menu or drawer opens. */
     Typing,
+
+    /**
+     * Find's keyboard. It types as [Typing] does, except that a search has no case, so
+     * L2 and R2 step the filters instead of Shift, and Select closes Find.
+     */
+    Finding,
 }
+
+/** True while the controller keyboard has the keys, for a name or for Find. */
+val HomeKeys.typing: Boolean get() = this == HomeKeys.Typing || this == HomeKeys.Finding
 
 /** Keys that act once per press. Holding one does not repeat it. */
 private val shoulderKeys = setOf(
@@ -90,6 +99,7 @@ fun meaningOf(
     homeKeys: HomeKeys = HomeKeys.Idle,
 ): Meaning? {
     if (homeKeys == HomeKeys.Typing) return typingMeaningOf(keyCode, repeatCount, faces)
+    if (homeKeys == HomeKeys.Finding) return findingMeaningOf(keyCode, repeatCount, faces)
     if (homeKeys == HomeKeys.ChoosingArt && repeatCount > 0 &&
         (keyCode == KeyEvent.KEYCODE_BUTTON_L2 || keyCode == KeyEvent.KEYCODE_BUTTON_R2)) return null
     if (repeatCount > 0 && keyCode in shoulderKeys) {
@@ -216,4 +226,12 @@ private fun typingMeaningOf(keyCode: Int, repeatCount: Int, faces: FaceMap): Mea
             keyCode == KeyEvent.KEYCODE_NUMPAD_ENTER -> Meaning.Done
         else -> null
     }
+}
+
+/** Find's keyboard: [typingMeaningOf], with the triggers stepping filters and Select closing. */
+private fun findingMeaningOf(keyCode: Int, repeatCount: Int, faces: FaceMap): Meaning? = when (keyCode) {
+    KeyEvent.KEYCODE_BUTTON_L2 -> Meaning.LetterBackward.takeIf { repeatCount == 0 }
+    KeyEvent.KEYCODE_BUTTON_R2 -> Meaning.LetterForward.takeIf { repeatCount == 0 }
+    KeyEvent.KEYCODE_BUTTON_SELECT -> Meaning.View.takeIf { repeatCount == 0 }
+    else -> typingMeaningOf(keyCode, repeatCount, faces)
 }

@@ -831,7 +831,8 @@ class HomeGridOrderTest {
         // Pin to Home brings a hidden game back: a pin, and back in its folder, which comes back with it.
         choose(shell, Row.PinTile)
         assertTrue(shell.homeFace(puzzle)?.onGrid == true)
-        assertEquals(listOf(Row.AddToCollection, Row.Favorite), optionRows(shell))
+        // Back on Home, it can be shown there.
+        assertEquals(listOf(Row.ShowOnHome, Row.AddToCollection, Row.Favorite), optionRows(shell))
         shell.onMeaning(Meaning.Back, HostScreen.Bottom)
         assertTrue("Puzzle" in titles(shell))
         focus(shell, titles(shell).indexOf("Nintendo 3DS"))
@@ -1005,7 +1006,7 @@ class HomeGridOrderTest {
         )
         shell.openHomeAll()
         focus(shell, titles(shell).indexOf("Drift"))
-        assertEquals(listOf(Row.AddToCollection, Row.Favorite, Row.PinTile, Row.RemoveDownload), optionRows(shell))
+        assertEquals(listOf(Row.ShowOnHome, Row.AddToCollection, Row.Favorite, Row.PinTile, Row.RemoveDownload), optionRows(shell))
         shell.noteOffDevice("romm", "drift")
         assertFalse(Row.RemoveDownload in optionRows(shell))
     }

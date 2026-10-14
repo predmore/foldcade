@@ -3,7 +3,8 @@ package app.foldcade.language
 /**
  * A menu's shortcuts. The key that opens a menu, then one more key, runs a row
  * without walking to it: L1 then Start is Settings, Y then Y is Move. The second
- * key means the same thing in every menu: Start is settings, Select is a view,
+ * key means the same thing in every menu: Start is settings, Select is a view
+ * (Play activity, or Show on Home for a game Find or All found),
  * Y moves or edits, and X takes away. A confirms the focused row and B goes back,
  * so neither is ever a chord. Each row shows its key on its right.
  *
@@ -12,7 +13,7 @@ package app.foldcade.language
  */
 private fun Row.chord(): Meaning? = when (this) {
     Row.Settings, Row.QuickTile(QuickSetting.Settings) -> Meaning.Menu
-    Row.PlayActivity -> Meaning.View
+    Row.PlayActivity, Row.ShowOnHome -> Meaning.View
     Row.EditHome, Row.MoveTile, Row.MoveApp, Row.ShowApp -> Meaning.Options
     Row.RemoveTile, Row.RemoveDownload, Row.HideApp -> Meaning.ActivateBottom
     else -> null
