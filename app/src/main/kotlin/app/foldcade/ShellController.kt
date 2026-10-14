@@ -48,6 +48,7 @@ import app.foldcade.language.actionRows
 import app.foldcade.language.chordIndex
 import app.foldcade.language.GridKind
 import app.foldcade.language.HeroFolder
+import app.foldcade.language.folderCount
 import app.foldcade.language.HeroItem
 import app.foldcade.language.HeroSubject
 import app.foldcade.language.HomeItem
@@ -442,6 +443,18 @@ class ShellController(
      * the keyboard open with nothing to type into.
      */
     fun holdsCommandCenter(): Boolean = model.dialog != null || model.panel != null || model.connectOpen || typing() != null
+
+    /**
+     * The collection or folder being named, as the top screen shows it over the name field.
+     * Everything the keyboard shows comes from what it names, never from the grid's focus:
+     * naming can begin with the focus on a game, or on a slot Add to just emptied.
+     */
+    fun typingHero(): HeroSubject? {
+        if (!showingHome()) return null
+        val id = home.renamingId ?: return null
+        val folder = home.board.folders[id] ?: return null
+        return HeroSubject.Folder(HeroFolder(key = id, name = folder.name, count = folderCount(home.board, id), mark = folder.mark))
+    }
 
     /** The open controller keyboard on Home. Null when none is open. */
     fun typing(): TypingSession? = if (showingHome()) home.typing else null

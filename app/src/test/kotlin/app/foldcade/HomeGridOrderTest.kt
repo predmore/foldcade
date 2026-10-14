@@ -19,6 +19,7 @@ import app.foldcade.language.Motion
 import app.foldcade.language.SyncMark
 import app.foldcade.language.TileActivity
 import app.foldcade.language.FOLDER_ICONS
+import app.foldcade.language.HeroSubject
 import app.foldcade.language.HomeKeys
 import app.foldcade.language.KeyCap
 import app.foldcade.language.KeyboardCopy
@@ -887,6 +888,50 @@ class HomeGridOrderTest {
     )
 
     /** Y's rows for the focused tile, with the menu left closed. */
+    @Test
+    fun namingShowsWhatIsBeingNamedNotWhatTheGridHasFocused() {
+        // Review r4: inside a collection, Add to unchecks it, which empties the focused slot,
+        // and New collection then had no hero, so the name and caret were nowhere to be seen.
+        val shell = shell()
+        shell.ingestLibrary("local-folder", listOf(entry("drift", "Drift", "nintendo-3ds")), emptyList())
+        focus(shell, titles(shell).indexOf("Nintendo 3DS"))
+        shell.onMeaning(Meaning.Activate, HostScreen.Bottom)
+        focus(shell, titles(shell).indexOf("Drift"))
+        choose(shell, Row.AddToCollection)
+        pickRow(shell) { it == Row.NewCollection }
+        shell.typing()?.setText("Racers")
+        shell.onMeaning(Meaning.Done, HostScreen.Bottom)
+        shell.onMeaning(Meaning.Back, HostScreen.Bottom)
+        shell.onMeaning(Meaning.Back, HostScreen.Bottom)
+        focus(shell, titles(shell).indexOf("Racers"))
+        shell.onMeaning(Meaning.Activate, HostScreen.Bottom)
+        assertEquals(listOf("Drift"), titles(shell).filter { it.isNotEmpty() })
+
+        choose(shell, Row.AddToCollection)
+        pickRow(shell) { it is Row.Collection && it.label == "Racers" }
+        pickRow(shell) { it == Row.NewCollection }
+        assertEquals(HomeKeys.Typing, shell.homeKeys())
+        // The slot the grid has focused is empty now, so it has no hero of its own.
+        assertNull(shell.focusedHero())
+        // The keyboard's hero is the collection being named.
+        val named = shell.typingHero()
+        assertEquals("${Copy.collection} 2", (named as HeroSubject.Folder).folder.name)
+        assertEquals(MARK_FOLDER, named.folder.mark)
+        shell.onMeaning(Meaning.Back, HostScreen.Bottom)
+        assertNull(shell.typingHero())
+    }
+
+    /** Down the open menu to the first row that matches, then A. */
+    private fun pickRow(shell: ShellController, match: (Row) -> Boolean) {
+        val panel = shell.model.panel ?: error("no menu open")
+        val rows = panelRows(panel, shell.model)
+        val to = rows.indexOfFirst(match)
+        assertTrue("no such row in $rows", to >= 0)
+        repeat(to - panel.index) { shell.onMeaning(Meaning.MoveDown, HostScreen.Bottom) }
+        repeat(panel.index - to) { shell.onMeaning(Meaning.MoveUp, HostScreen.Bottom) }
+        shell.onMeaning(Meaning.Activate, HostScreen.Bottom)
+    }
+
     private fun optionRows(shell: ShellController): List<Row> =
         actionRows(shell.model.tileActions, shell.model.appActions)
 

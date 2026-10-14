@@ -899,13 +899,15 @@ private fun Hero(app: FoldcadeApp, screen: HostScreen, scale: Float, onEffect: (
         }
         return
     }
-    val subject = app.shell.focusedHero()
+    // While a name is typed the hero is what is being named, wherever the grid's focus is.
+    val naming = app.shell.typingHero()
+    val subject = naming ?: app.shell.focusedHero()
     val cellFocused = model.dialog == null && model.panel == null && !model.connectOpen && model.focus.chrome == null
     // The record behind each subject, so a layer that is fading out keeps its own cover.
     val records = remember { mutableMapOf<String, Game>() }
     val queries = remember { mutableMapOf<String, ArtQuery>() }
-    app.shell.focusedRecord()?.let { record -> if (subject != null) records[subject.key] = record }
-    app.shell.focusedGame()?.let(app.shell::artQuery)?.let { query -> if (subject != null) queries[subject.key] = query }
+    app.shell.focusedRecord()?.let { record -> if (subject != null && naming == null) records[subject.key] = record }
+    app.shell.focusedGame()?.let(app.shell::artQuery)?.let { query -> if (subject != null && naming == null) queries[subject.key] = query }
     val place = subject?.let { HeroPlace(gridToken(app), model.focus.cellIndex) }
     // The label follows focus at once. The art follows once it is whole.
     val staged = rememberStagedHero(app, subject, place, records, queries, scale)
