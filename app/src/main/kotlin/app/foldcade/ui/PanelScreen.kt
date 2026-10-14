@@ -130,6 +130,10 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.zIndex
 import app.foldcade.language.heroPlayLine
 import app.foldcade.language.typingFaces
+import app.foldcade.language.FindEntry
+import app.foldcade.language.FindKind
+import app.foldcade.language.withFindHint
+import app.foldcade.api.plugin.Availability
 import app.foldcade.language.heroFacts
 import app.foldcade.R
 import app.foldcade.language.QuickSetting
@@ -230,6 +234,7 @@ import java.time.ZoneId
 import kotlin.math.abs
 import kotlin.math.ceil
 import kotlin.math.floor
+import kotlin.math.max
 import kotlin.math.min
 import kotlin.math.roundToInt
 import kotlin.math.hypot
@@ -903,17 +908,23 @@ private fun Hero(app: FoldcadeApp, screen: HostScreen, scale: Float, onEffect: (
     // While a name is typed the hero is what is being named, wherever the grid's focus is.
     val naming = app.shell.typingHero()
     val subject = naming ?: app.shell.focusedHero()
+    // Find shows its best result, or the focused one, and travels along its strip.
+    val find = app.shell.find
     val cellFocused = model.dialog == null && model.panel == null && !model.connectOpen && model.focus.chrome == null
     // The record behind each subject, so a layer that is fading out keeps its own cover.
     val records = remember { mutableMapOf<String, Game>() }
     val queries = remember { mutableMapOf<String, ArtQuery>() }
     app.shell.focusedRecord()?.let { record -> if (subject != null && naming == null) records[subject.key] = record }
     app.shell.focusedGame()?.let(app.shell::artQuery)?.let { query -> if (subject != null && naming == null) queries[subject.key] = query }
-    val place = subject?.let { HeroPlace(gridToken(app), model.focus.cellIndex) }
+    val place = subject?.let {
+        if (find != null) HeroPlace("find/${find.filter}", (if (find.onResults) find.index else 0) * Metrics.rows)
+        else HeroPlace(gridToken(app), model.focus.cellIndex)
+    }
     // The label follows focus at once. The art follows once it is whole.
     val staged = rememberStagedHero(app, subject, place, records, queries, scale)
     val shown = staged.subject
-    WarmNeighbours(app, place)
+    // The grid's neighbours, not Find's: the grid is what is under the ring.
+    WarmNeighbours(app, place.takeIf { find == null })
     // The shown game's scene decides how the name card sits over it.
     val scene = shown?.let { rememberScene(app, records[it.key], queries[it.key]) }
     val sceneArt = scene != null || shown?.let { rememberArt(app, records[it.key], queries[it.key]) } != null
@@ -979,12 +990,13 @@ private fun Hero(app: FoldcadeApp, screen: HostScreen, scale: Float, onEffect: (
                         }
                     }
                 }
-                if (subject != null) {
+                // A name being typed, or Find, takes the name card's place, under the art.
+                val typing = presence(app.shell.typing()?.typing, motion.durationIsland, scale)
+                val finding = presence(find, motion.durationIsland, scale)
+                if (subject != null || finding.shown != null) {
                     Spacer(Modifier.height(px(24f)))
-                    // A name being typed takes the name card's place, under the art of what it names.
-                    val typing = presence(app.shell.typing()?.typing, motion.durationIsland, scale)
                     Box(contentAlignment = Alignment.Center) {
-                        Box(Modifier.graphicsLayer { alpha = 1f - typing.progress.value }) {
+                        if (subject != null) Box(Modifier.graphicsLayer { alpha = 1f - max(typing.progress.value, finding.progress.value) }) {
                             HeroLabel(
                                 app,
                                 subject,
@@ -993,6 +1005,26 @@ private fun Hero(app: FoldcadeApp, screen: HostScreen, scale: Float, onEffect: (
                                 overArt = sceneArt,
                                 // A logo on wide art already says the name, once that art is the focused game's.
                                 named = !(shown?.key == subject.key && scene?.background != null && scene.logo != null),
+                            )
+                        }
+                        finding.shown?.let { session ->
+                            val found = session.subject
+                            FindCard(
+                                session = session,
+                                line = FoundLine(
+                                    key = found?.id,
+                                    title = found?.title,
+                                    facts = found?.let(app.shell::findFacts)?.joinToString(" · ").orEmpty(),
+                                    order = if (session.onResults) session.index else 0,
+                                ),
+                                fieldStyle = text(theme.onBackground, design.type.heroTitle, theme),
+                                titleStyle = text(theme.onBackground, design.type.dialogTitle, theme),
+                                factStyle = text(theme.muted, design.type.heroMeta, theme),
+                                chipStyle = text(theme.muted, design.type.hint, theme),
+                                background = if (sceneArt) theme.surface.copy(alpha = SCENE_CARD_ALPHA) else theme.surface,
+                                width = cardMax,
+                                scale = scale,
+                                modifier = Modifier.rise { finding.progress.value },
                             )
                         }
                         typing.shown?.let { shown ->
@@ -1886,9 +1918,12 @@ private fun Picker(
     val model = shell.model
     val motion = LocalFoldTheme.current.theme.motion
     val editor = presence(shell.folderIconPick()?.takeIf { editorHere }, motion.durationIsland, scale)
-    // The keyboard takes the grid's place: the grid sinks away as the keys rise in.
+    // The keyboard takes the grid's place: the grid sinks away as the keys rise in. Find
+    // slides up from the bottom edge the same way.
     val typing = presence(shell.typing()?.typing, motion.durationIsland, scale)
-    val gridGone by remember { derivedStateOf { typing.progress.value >= 1f } }
+    val finding = presence(shell.find, motion.durationIsland, scale)
+    val covered = { max(typing.progress.value, finding.progress.value) }
+    val gridGone by remember { derivedStateOf { covered() >= 1f } }
     // The hero on the other screen carries the focused name, so the grid is
     // icons only. With one screen free there is no hero, and tiles keep labels.
     val iconsOnly = app.store.session.bothScreensFree()
@@ -1960,7 +1995,7 @@ private fun Picker(
                         style = text(theme.muted, LocalFoldTheme.current.theme.style.type.dialogBody, theme),
                     )
                 } else {
-                    Box(Modifier.sinking { typing.progress.value }) {
+                    Box(Modifier.sinking(covered)) {
                         StripGrid(
                             app = app,
                             screen = screen,
@@ -1985,9 +2020,29 @@ private fun Picker(
                         fieldStyle = if (iconsOnly) null else text(theme.onBackground, LocalFoldTheme.current.theme.style.type.heroTitle, theme),
                     )
                 }
+                finding.shown?.let { session ->
+                    FindKeys(
+                        session = session,
+                        buttons = typingFaces(model.faceMap),
+                        held = model.held,
+                        scale = scale,
+                        gap = gap,
+                        ring = ring,
+                        titleBlock = titleBlock,
+                        // With no top screen beside it, the query and filters show over the results, a
+                        // size down so the keys keep their room.
+                        fieldStyle = if (iconsOnly) null else text(theme.onBackground, design.type.dialogTitle, theme),
+                        chipStyle = text(theme.muted, design.type.hint, theme),
+                        emptyStyle = text(theme.muted, design.type.dialogBody, theme),
+                        onTapKey = { at -> onEffect(shell.tapFind(at)) },
+                        onTapResult = { at -> onEffect(shell.tapFindResult(at)) },
+                        tile = { entry, focused, size, onClick -> FoundTile(app, entry, focused, size, !iconsOnly, onClick) },
+                        modifier = Modifier.slidingUp { finding.progress.value },
+                    )
+                }
             }
             if (!gridGone) {
-                Box(Modifier.sinking { typing.progress.value }) {
+                Box(Modifier.sinking(covered)) {
                     StripBar(count = model.count, first = shownFirstColumn(model), scale = scale)
                 }
             }
@@ -2336,7 +2391,8 @@ private fun GridHints(app: FoldcadeApp, modifier: Modifier = Modifier) {
     // The grid's own keys only count while nothing covers it.
     val gridKeys = model.panel == null && model.dialog == null && model.saveConflict == null && !model.connectOpen
     val page = model.playActivity?.takeIf { model.dialog == null }?.let { playActivityHints(model) }
-    val normalKeys = (page ?: panelHints(model) ?: gridHints(
+    val find = shell.findHints()
+    val normalKeys = find ?: ((page ?: panelHints(model) ?: gridHints(
         actions,
         if (model.connectOpen) HomeKeys.Idle else shell.homeKeys(),
         model.faceMap,
@@ -2345,11 +2401,15 @@ private fun GridHints(app: FoldcadeApp, modifier: Modifier = Modifier) {
         drop = shell.homeHoldDrop(),
     )) + if (gridKeys && model.settings == null && model.playActivity == null &&
         (model.homeGrid != HomeGrid.StandIns || shell.homeKeys() == HomeKeys.AllLibrary)
-    ) triggerHints(model.gridLabels.isNotEmpty()) else emptyList()
+    ) triggerHints(model.gridLabels.isNotEmpty()) else emptyList())
     val back = promptKeyOf(model.faceMap.backKey) ?: PromptKey.FaceB
-    val keys = if (gridKeys && (shell.downloading.isNotEmpty() || shell.activity.values.any { it is TileActivity.Downloading || it == TileActivity.Checking })) {
+    val shown = if (gridKeys && (shell.downloading.isNotEmpty() || shell.activity.values.any { it is TileActivity.Downloading || it == TileActivity.Checking })) {
         normalKeys.filterNot { it.key == back } + HintKey(back, "Cancel download")
     } else normalKeys
+    // The root grid names Select's Find while the row has room, so the button can be found.
+    val atRoot = gridKeys && find == null && shell.find == null && model.settings == null && model.playActivity == null &&
+        model.homeGrid == HomeGrid.StandIns && !model.libraryGrid && model.atLibraryRoot && shell.homeKeys() == HomeKeys.Idle
+    val keys = withFindHint(shown, atRoot)
     if (keys.isEmpty()) return
     Row(
         modifier.fillMaxWidth(),
@@ -2558,6 +2618,17 @@ private fun GridCursor(
     val lands = !shown || !visible
     val x by glideState(column, motion.durationTravel, scale, snap = lands, jump = jump)
     val y by glideState(row, motion.durationTravel, scale, snap = lands, jump = jump)
+    // Show on Home: once the ring has reached the tile, two rings burst out of it and fade.
+    val burst = remember { Animatable(1f) }
+    // The shell hands each landing to one ring: the one drawn as Find closes, or this one when
+    // it was All that went there. A ring drawn later, as after a game, plays nothing.
+    LaunchedEffect(shell.revealPulse) {
+        if (!shell.takeRevealBurst()) return@LaunchedEffect
+        burst.snapTo(1f)
+        delay(motion.duration(motion.durationTravel, scale).toLong())
+        burst.snapTo(0f)
+        withContext(SteadyMenu) { burst.animateTo(1f, motion.leave(motion.durationIsland * BURST_SPAN, scale)) }
+    }
     if (!visible) return
     val theme = foldTheme()
     val radius = cell * theme.iconRadius
@@ -2580,11 +2651,33 @@ private fun GridCursor(
                 ring.addRoundRect(RoundRect(Rect(Offset.Zero, size), CornerRadius(cornerPx, cornerPx)))
                 // Only outside the tile, so the glow never washes over the art.
                 clipPath(ring, ClipOp.Difference) {
-                    with(FocusRing(theme)) { drawFocusRing(cornerPx) }
+                    with(FocusRing(theme)) {
+                        drawFocusRing(cornerPx)
+                        val t = burst.value
+                        if (t < 1f) {
+                            for (wave in 0 until BURST_WAVES) {
+                                // Each wave starts a little after the one before and grows as it fades.
+                                val local = ((t - wave * BURST_LAG) / (1f - BURST_LAG)).coerceIn(0f, 1f)
+                                if (local <= 0f || local >= 1f) continue
+                                val grow = BURST_REACH * size.minDimension * local
+                                drawFocusRing(
+                                    cornerPx + grow,
+                                    alpha = 1f - local,
+                                    bounds = Rect(-grow, -grow, size.width + grow, size.height + grow),
+                                )
+                            }
+                        }
+                    }
                 }
             },
     )
 }
+
+/** Show on Home's burst: how many rings, how far apart they start, how far out they reach, and how long. */
+private const val BURST_WAVES = 2
+private const val BURST_LAG = 0.3f
+private const val BURST_REACH = 0.32f
+private const val BURST_SPAN = 3
 
 /** Titles of [size] tiles from [start], the same labels [StripColumn] draws. */
 private fun shownTitles(app: FoldcadeApp, start: Int, size: Int): List<String> {
@@ -3077,6 +3170,40 @@ private fun CarriedTile(
     }
 }
 
+/**
+ * One of Find's results, drawn as the grid draws its tile: the game's art, an app's icon,
+ * or a group's mark. A hidden one wears a badge, since Find shows it all the same.
+ */
+@Composable
+private fun FoundTile(app: FoldcadeApp, entry: FindEntry, focused: Boolean, size: Dp, showTitle: Boolean, onClick: () -> Unit) {
+    val shell = app.shell
+    val game = if (entry.kind == FindKind.Group) null else shell.findGame(entry.id)
+    val art = key(game?.id) {
+        val found = rememberArt(app, game?.let(shell::artRecord), game?.let(shell::artQuery))
+        found?.let { rememberCoverPainter(app, it.square ?: it.cover, TILE_PX)?.painter }
+    }
+    val corner = size * foldTheme().iconRadius
+    Box {
+        Cell(
+            title = entry.title,
+            mark = entry.mark ?: game?.mark,
+            art = art,
+            showTitle = showTitle,
+            focused = focused,
+            size = size,
+            corner = corner,
+            icon = if (art == null) launcherIcon(game?.androidPackage) else null,
+            favorite = false,
+            onServer = shell.catalogGame(entry.id)?.availability == Availability.RemoteOnly,
+            downloading = entry.id in shell.downloading,
+            onClick = onClick,
+        )
+        if (entry.hidden) {
+            HiddenBadge(px(HIDDEN_BADGE_PX), Modifier.padding(maxOf(px(8f), corner * CORNER_SAFE)))
+        }
+    }
+}
+
 /** Slots past which a gliding tile takes no longer, and how much longer each slot makes it. */
 private const val SLOT_GLIDE_FAR = 4f
 private const val SLOT_GLIDE_STRETCH = 0.6f
@@ -3101,6 +3228,8 @@ private const val HOME_TARGET_RISE = 18f
 
 /** How visible the Home target is while it only peeks in, before the tile reaches it. */
 private const val HOME_TARGET_PEEK = 0.45f
+
+private const val HIDDEN_BADGE_PX = 40f
 
 private const val FOCUS_GLOW_OVERFLOW = 64f
 private const val REST_GLOW_OVERFLOW = 18f

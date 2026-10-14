@@ -12,6 +12,11 @@ import app.foldcade.language.HOME_FAVORITES
 import app.foldcade.language.IconPick
 import app.foldcade.language.collectionLook
 import app.foldcade.language.FolderChoice
+import app.foldcade.language.FindEntry
+import app.foldcade.language.FindKind
+import app.foldcade.language.HomeLanding
+import app.foldcade.language.homeLanding
+import app.foldcade.language.resolvePlatform
 import app.foldcade.language.RemoveVerb
 import app.foldcade.language.TileActions
 import app.foldcade.language.HomeBoard
@@ -253,6 +258,7 @@ class HomeSession(raw: String?, nowMillis: Long = System.currentTimeMillis()) {
         if (board.allOpen) {
             val item = allRows().getOrNull(index) ?: return null
             return gameActions(item.id, move = false, pin = !pinned(board, item.id), remove = null)
+                .copy(showOnHome = item.id.takeIf { homeLanding(board, it) != null })
         }
         if (index < 0) return null
         val open = board.openFolderId?.let { board.folders[it] }
@@ -282,6 +288,70 @@ class HomeSession(raw: String?, nowMillis: Long = System.currentTimeMillis()) {
         removeDownload = downloaded(id),
         game = id,
     )
+
+    /**
+     * What Y offers for [id] among Find's results. A game or app is offered where it lives on
+     * Home, then what it is offered in All; one nowhere on Home is offered a pin instead. A
+     * group is only shown where it is.
+     */
+    fun findActions(id: String): TileActions {
+        val shown = id.takeIf { homeLanding(board, it) != null }
+        if (board.folders[id] != null) return TileActions(showOnHome = shown)
+        return gameActions(id, move = false, pin = !pinned(board, id), remove = null).copy(showOnHome = shown)
+    }
+
+    /**
+     * Everything Find can list: each game and app the catalog knows, hidden ones marked, and
+     * the groups on the root by their names. [shelfHidden] says which apps their shelf hides.
+     */
+    fun findEntries(shelfHidden: (String) -> Boolean = { false }): List<FindEntry> {
+        val items = catalog().filter { !it.placeholder }.map { item ->
+            val platform = if (item.kind == HomeKind.Rom) resolvePlatform(platforms, item.platformId) else null
+            FindEntry(
+                id = item.id,
+                title = item.title,
+                kind = if (item.kind == HomeKind.AndroidApp || item.kind == HomeKind.Emulator) FindKind.App else FindKind.Game,
+                platformId = platform?.id ?: item.platformId?.takeIf { item.kind == HomeKind.Rom && it.isNotBlank() },
+                platformName = platform?.name,
+                hidden = item.id in board.hidden || shelfHidden(item.id),
+                lastPlayedMillis = lastPlayed(item.id) ?: item.lastPlayedMillis,
+                mark = item.mark,
+            )
+        }
+        val groups = board.slots.mapNotNull { slot -> slot?.let { board.folders[it] } }.distinctBy { it.id }
+            // A collection wears its look, a coloured card, and Recently played its clock, as on Home.
+            .map { FindEntry(id = it.id, title = it.name, kind = FindKind.Group, mark = collectionLook(it)?.mark ?: it.mark) }
+        return items + groups
+    }
+
+    /**
+     * Leaves whatever is open for the place [id] has on Home (see [homeLanding]): the root, or
+     * the group that holds it, opened. Returns the tile to focus there, or null when [id] is
+     * nowhere on Home and nothing changed.
+     */
+    fun reveal(id: String): Int? {
+        val spot = homeLanding(board, id) ?: return null
+        closeTyping()
+        iconPick = null
+        board = closeAll(closeFolder(leaveEdit(board)))
+        return when (spot) {
+            is HomeLanding.Root -> spot.index.also { rootIndex = it }
+            is HomeLanding.Inside -> {
+                rootIndex = spot.rootIndex
+                board = openFolder(board, spot.groupId)
+                spot.index
+            }
+        }
+    }
+
+    /** Opens the group [id] from wherever the board is, as A on its root tile would. Null when it is not on the root. */
+    fun openGroup(id: String): Int? {
+        if (board.folders[id] == null) return null
+        val at = reveal(id) ?: return null
+        rootIndex = at
+        board = openFolder(board, id)
+        return 0
+    }
 
     /** What X does to the tile at [index]. Null in All, or where X does nothing. */
     fun removeVerb(index: Int): RemoveVerb? = if (board.allOpen) null else removeVerb(board, index)
@@ -652,6 +722,9 @@ class HomeSession(raw: String?, nowMillis: Long = System.currentTimeMillis()) {
         board = closeFolder(board)
         return step(null, restore)
     }
+
+    /** Where game [id] sits in All, or -1 when All does not list it. */
+    fun allIndexOf(id: String): Int = allRows().indexOfFirst { it.id == id }
 
     private fun allRows(): List<HomeItem> =
         allItems(catalog().map { it.copy(lastPlayedMillis = lastPlayed(it.id) ?: it.lastPlayedMillis) }, sort)

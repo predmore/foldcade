@@ -69,7 +69,22 @@ enum class HomeKeys {
     PickingIcon,
     /** The controller keyboard is open. Every key types or edits; no menu or drawer opens. */
     Typing,
+
+    /**
+     * Find's keyboard. It types as [Typing] does, except that a search has no case, so
+     * L2 and R2 step the filters instead of Shift, and Select closes Find.
+     */
+    Finding,
+
+    /** Find's results. They take a grid's keys: A and X open, Y is the menu. */
+    FindResults,
 }
+
+/**
+ * True while a held key must keep its repeats to itself until it comes up: on the controller
+ * keyboard, for a name or for Find, and on Find's results, which can close under a held A.
+ */
+val HomeKeys.guardsHeldKeys: Boolean get() = this == HomeKeys.Typing || this == HomeKeys.Finding || this == HomeKeys.FindResults
 
 /** Keys that act once per press. Holding one does not repeat it. */
 private val shoulderKeys = setOf(
@@ -90,6 +105,7 @@ fun meaningOf(
     homeKeys: HomeKeys = HomeKeys.Idle,
 ): Meaning? {
     if (homeKeys == HomeKeys.Typing) return typingMeaningOf(keyCode, repeatCount, faces)
+    if (homeKeys == HomeKeys.Finding) return findingMeaningOf(keyCode, repeatCount, faces)
     if (homeKeys == HomeKeys.ChoosingArt && repeatCount > 0 &&
         (keyCode == KeyEvent.KEYCODE_BUTTON_L2 || keyCode == KeyEvent.KEYCODE_BUTTON_R2)) return null
     if (repeatCount > 0 && keyCode in shoulderKeys) {
@@ -116,9 +132,11 @@ fun meaningOf(
         // A keyboard has no shoulders. The bracket keys sit where L1 and R1 would.
         keyCode == KeyEvent.KEYCODE_BUTTON_L1 || keyCode == KeyEvent.KEYCODE_LEFT_BRACKET -> Meaning.LeftPanel
         keyCode == KeyEvent.KEYCODE_BUTTON_R1 || keyCode == KeyEvent.KEYCODE_RIGHT_BRACKET -> Meaning.RightPanel
-        keyCode == KeyEvent.KEYCODE_BUTTON_X && (homeKeys == HomeKeys.Idle || homeKeys == HomeKeys.AllLibrary || homeKeys == HomeKeys.ChoosingArt) ->
+        keyCode == KeyEvent.KEYCODE_BUTTON_X && (homeKeys == HomeKeys.Idle || homeKeys == HomeKeys.AllLibrary ||
+            homeKeys == HomeKeys.ChoosingArt || homeKeys == HomeKeys.FindResults) ->
             Meaning.ActivateBottom
-        keyCode == KeyEvent.KEYCODE_BUTTON_Y && (homeKeys == HomeKeys.Idle || homeKeys == HomeKeys.AllLibrary) ->
+        keyCode == KeyEvent.KEYCODE_BUTTON_Y &&
+            (homeKeys == HomeKeys.Idle || homeKeys == HomeKeys.AllLibrary || homeKeys == HomeKeys.FindResults) ->
             Meaning.Options
         keyCode == KeyEvent.KEYCODE_BUTTON_START -> Meaning.Menu
         keyCode == KeyEvent.KEYCODE_BUTTON_SELECT -> Meaning.View
@@ -149,8 +167,9 @@ fun topMenuKeyBlocked(meaning: Meaning, homeKeys: HomeKeys, islandsOpen: Boolean
     return !(homeKeys == HomeKeys.PickingIcon && (meaning == Meaning.LeftPanel || meaning == Meaning.RightPanel))
 }
 
+/** A launch still waiting to start is dropped by a key that opens something over it, Find's Select included, or by B. */
 fun cancelsPendingLaunch(meaning: Meaning, dialogOpen: Boolean, conflictOpen: Boolean): Boolean =
-    !dialogOpen && !conflictOpen && (opensTopMenu(meaning) || meaning == Meaning.Back)
+    !dialogOpen && !conflictOpen && (opensTopMenu(meaning) || meaning == Meaning.View || meaning == Meaning.Back)
 
 /**
  * Which face button does what while typing. Confirm types the focused key and back
@@ -216,4 +235,12 @@ private fun typingMeaningOf(keyCode: Int, repeatCount: Int, faces: FaceMap): Mea
             keyCode == KeyEvent.KEYCODE_NUMPAD_ENTER -> Meaning.Done
         else -> null
     }
+}
+
+/** Find's keyboard: [typingMeaningOf], with the triggers stepping filters and Select closing. */
+private fun findingMeaningOf(keyCode: Int, repeatCount: Int, faces: FaceMap): Meaning? = when (keyCode) {
+    KeyEvent.KEYCODE_BUTTON_L2 -> Meaning.LetterBackward.takeIf { repeatCount == 0 }
+    KeyEvent.KEYCODE_BUTTON_R2 -> Meaning.LetterForward.takeIf { repeatCount == 0 }
+    KeyEvent.KEYCODE_BUTTON_SELECT -> Meaning.View.takeIf { repeatCount == 0 }
+    else -> typingMeaningOf(keyCode, repeatCount, faces)
 }

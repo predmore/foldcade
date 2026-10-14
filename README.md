@@ -59,7 +59,7 @@ Press **A** to play on the top screen or **X** on the bottom. Games that need bo
 | :---: | :---: |
 | ![The L1 drawer: this week's play activity as a small bar chart, round buttons for Home, All, Games, and Apps, then Edit home and Settings.](docs/images/menu-l1.webp) | ![The R1 drawer: date, battery, and Wi-Fi, round buttons for Wi-Fi, Bluetooth, Battery, and Android settings, and a brightness slider.](docs/images/menu-r1.webp) |
 
-**L1** opens Home, All, Games, Apps, Edit home, and Settings. **Start** opens Settings from the grid and closes it again. **L2 / R2** jump letters in All and the Android shelves, with a brief letter on the top screen; on Home and inside folders they move four columns at a time. Stick clicks do nothing. The Android Home button closes a folder, All, or a shelf and returns to its Home tile. **R1** gives you Wi-Fi, Bluetooth, battery, brightness for both screens, and notifications you can open or clear.
+**L1** opens Home, All, Games, Apps, Edit home, and Settings. **Start** opens Settings from the grid and closes it again. **Select** opens Find. **L2 / R2** jump letters in All and the Android shelves, with a brief letter on the top screen; on Home and inside folders they move four columns at a time. Stick clicks do nothing. The Android Home button closes a folder, All, or a shelf and returns to its Home tile. **R1** gives you Wi-Fi, Bluetooth, battery, brightness for both screens, and notifications you can open or clear.
 
 ### Tidy up with one button
 
@@ -72,6 +72,10 @@ Press **Y** on any tile for what it can do. Press Y twice to pick up a tile, wal
 - **Pin to Home** puts a shortcut to a game on Home itself. **Unpin** takes only the shortcut away.
 - **Favorite** a game and **Favorites** appears on Home. **Recently played** shows up after you play something and lists your last 12 games, newest first.
 - **Hide** takes a game off Home everywhere. It stays in **All**, where Y brings it back.
+
+### Find anything with Select
+
+Press **Select** on any grid and start typing on the controller keyboard. Results line up above the keys as you type, with the best match's art on the top screen and where it lives on Home under its name. A few letters are enough: "ze" finds Zelda, "oot" finds Ocarina of Time, and one wrong letter is forgiven. With nothing typed, Find lists what you played last. **L2 / R2** filter to games, apps, collections, hidden games, recent play, or one system. Press **Up** or **Start** to reach the results, then **A** or **X** to play, or **Y** for the game's menu, where **Show on Home** takes you to its tile, opening its folder or collection on the way. **Show on Home** is in All's Y menu too. **B** clears what you typed, then closes Find.
 
 ### The other screen stays useful
 

@@ -282,6 +282,9 @@ sealed interface Row {
     /** Closes the gaps on the board on screen. */
     data object Tidy : Row
 
+    /** Closes Find or All and lands on the tile where the game, or the group, lives on Home. */
+    data object ShowOnHome : Row
+
     /** Opens [PanelLevel.Collections]. */
     data object AddToCollection : Row
 
@@ -475,6 +478,8 @@ data class CollectionChoice(val folderId: String, val name: String, val member: 
  * The menu lists only what applies, so an empty one does not open.
  */
 data class TileActions(
+    /** The game or group Show on Home goes to. Null leaves the row out: it is nowhere on Home. */
+    val showOnHome: String? = null,
     val art: Boolean = false,
     /** Pick the tile up and walk it with the D-pad. */
     val move: Boolean = false,
@@ -503,6 +508,7 @@ data class TileActions(
 /** Y's menu: the tile's own actions, then an Android app's shelf actions. */
 fun actionRows(tile: TileActions?, app: AppActions?): List<Row> = buildList {
     if (tile != null) {
+        if (tile.showOnHome != null) add(Row.ShowOnHome)
         if (tile.move) add(Row.MoveTile)
         if (tile.collections != null) add(Row.AddToCollection)
         if (tile.favorite != null) add(Row.Favorite)
@@ -652,6 +658,7 @@ fun rowText(row: Row, model: PickerModel): RowText = when (row) {
     Row.ChooseArt -> RowText(ArtCopy.art)
     Row.MoveTile -> RowText(Copy.move)
     Row.Tidy -> RowText(Copy.tidy)
+    Row.ShowOnHome -> RowText(FindCopy.showOnHome)
     Row.AddToCollection -> RowText(Copy.addTo)
     is Row.Collection -> RowText(row.label)
     Row.Favorite -> RowText(if (model.tileActions?.favorite == true) Copy.unfavorite else Copy.favorite)
@@ -731,6 +738,9 @@ sealed interface Effect {
 
     /** Close the gaps on the board on screen. */
     data object Tidy : Effect
+
+    /** Go to where [id], a game or a group, lives on Home, and light it up there. */
+    data class ShowOnHome(val id: String?) : Effect
 
     /*
      * The tile menu's effects name the game they act on ([TileActions.game]), so a menu that
@@ -1608,6 +1618,7 @@ private fun activateRow(
         Row.ChooseArt -> model.copy(panel = null, focus = panel.grid) to Effect.ChooseArt(model.tileActions?.game)
         Row.MoveTile -> model.copy(panel = null, focus = panel.grid) to Effect.MoveTile
         Row.Tidy -> model.copy(panel = null, focus = panel.grid) to Effect.Tidy
+        Row.ShowOnHome -> model.copy(panel = null, focus = panel.grid) to Effect.ShowOnHome(model.tileActions?.showOnHome)
         Row.NewCollection -> model.copy(panel = null, focus = panel.grid) to Effect.NewCollection(model.tileActions?.game)
         Row.RenameFolder -> model.copy(panel = null, focus = panel.grid) to Effect.RenameFolder
         Row.FolderIcon -> model.copy(panel = null, focus = panel.grid) to Effect.ChooseFolderIcon
