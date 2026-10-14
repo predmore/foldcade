@@ -52,6 +52,7 @@ import app.foldcade.FoldcadeApp
 import app.foldcade.R
 import app.foldcade.Panel
 import app.foldcade.language.Chrome
+import app.foldcade.language.SelectionCopy
 import app.foldcade.language.Copy
 import app.foldcade.language.HostScreen
 import app.foldcade.language.Meaning
@@ -291,7 +292,7 @@ private fun Island(
 @Composable
 private fun ActingHeader(app: FoldcadeApp, modifier: Modifier) {
     val theme = LocalFoldTheme.current.theme
-    val name = app.shell.focusedHero()?.let { heroCopy(it).title }?.takeIf { it.isNotBlank() } ?: Copy.emptySlot
+    val name = app.shell.model.tileActions?.bulk?.let { SelectionCopy.count(it.size) } ?: app.shell.focusedHero()?.let { heroCopy(it).title }?.takeIf { it.isNotBlank() } ?: Copy.emptySlot
     Row(modifier, verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
         PromptImage(promptGlyph(PromptKey.FaceY), 26.dp)
         BasicText(

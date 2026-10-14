@@ -241,6 +241,7 @@ import kotlin.math.min
 import kotlin.math.roundToInt
 import kotlin.math.hypot
 import app.foldcade.HomeCarry
+import app.foldcade.language.SelectionCopy
 import app.foldcade.HomeFace
 import app.foldcade.ShelfGame
 import androidx.compose.animation.core.AnimationVector1D
@@ -1063,6 +1064,16 @@ private fun Hero(app: FoldcadeApp, screen: HostScreen, scale: Float, onEffect: (
                     }
                 }
             }
+        }
+        val checks = app.shell.homeSelection()
+        val selected = presence(checks?.checked?.size?.takeIf { model.panel == null }, motion.durationFocus, scale)
+        selected.shown?.let { count ->
+            BasicText(SelectionCopy.count(count),
+                modifier = Modifier.align(Alignment.TopCenter).padding(top = px(32f))
+                    .graphicsLayer { alpha = selected.progress.value }
+                    .clip(RoundedCornerShape(50)).background(theme.surface.copy(alpha = 0.94f))
+                    .padding(horizontal = px(24f), vertical = px(12f)),
+                style = text(theme.onBackground, design.type.hint, theme))
         }
         IconEditorLayer(app, editor, screen, scale)
         TopIslands(app, screen, scale) { panelState, progress, interactive ->
@@ -2441,7 +2452,8 @@ private fun GridHints(app: FoldcadeApp, modifier: Modifier = Modifier) {
     } else emptyList())
     val destructive = model.panel?.let { panelRows(it, model).getOrNull(it.index) }?.let { it == LanguageRow.RemoveDownload || it == LanguageRow.DeleteShortcut } == true
     val back = promptKeyOf(model.faceMap.backKey) ?: PromptKey.FaceB
-    val shown = if (model.undoVerb != null && model.panel == null && model.dialog == null) listOf(HintKey(PromptKey.FaceY, Copy.undo)) else if (gridKeys && (shell.downloading.isNotEmpty() || shell.activity.values.any { it is TileActivity.Downloading || it == TileActivity.Checking })) {
+    val selecting = gridKeys && shell.homeSelection() != null
+    val shown = if (!selecting && model.undoVerb != null && model.panel == null && model.dialog == null) listOf(HintKey(PromptKey.FaceY, Copy.undo)) else if (!selecting && gridKeys && (shell.downloading.isNotEmpty() || shell.activity.values.any { it is TileActivity.Downloading || it == TileActivity.Checking })) {
         normalKeys.filterNot { it.key == back } + HintKey(back, "Cancel download")
     } else normalKeys
     // The root grid names Select's Find while the row has room, so the button can be found.
@@ -2454,7 +2466,8 @@ private fun GridHints(app: FoldcadeApp, modifier: Modifier = Modifier) {
         horizontalArrangement = Arrangement.spacedBy(px(16f), Alignment.CenterHorizontally),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        if (model.undoVerb != null && model.panel == null && model.dialog == null) BasicText(text = model.undoVerb + " ·", style = text(foldTheme().muted, LocalFoldTheme.current.theme.style.type.hint, foldTheme()))
+        if (selecting) BasicText(SelectionCopy.count(shell.homeSelection()!!.checked.size) + " ·", style = text(foldTheme().muted, LocalFoldTheme.current.theme.style.type.hint, foldTheme()))
+        if (!selecting && model.undoVerb != null && model.panel == null && model.dialog == null) BasicText(text = model.undoVerb + " ·", style = text(foldTheme().muted, LocalFoldTheme.current.theme.style.type.hint, foldTheme()))
         if (destructive) BasicText(text = Copy.hold, style = text(foldTheme().muted, LocalFoldTheme.current.theme.style.type.hint, foldTheme()))
         keys.forEach { key -> HintWord(model, key) }
     }
@@ -2676,6 +2689,7 @@ private fun GridCursor(
     Box(
         Modifier
             .size(cell)
+            .then(selectionFeedback(shell.homeSelection()?.refusals?.takeIf { shell.homeSelection()?.refusedAt == index } ?: 0))
             .graphicsLayer {
                 val pitchY = (if (rowPx > 0) rowPx.toFloat() else cell.toPx()) + gap.toPx()
                 translationX = (x - shownFirst()) * pitchPx
@@ -2769,7 +2783,7 @@ private fun StripColumn(
             val glide = slotGlide(memory, id, index, carry?.id)
             val placed = if (row == 0 && !past) Modifier.onSizeChanged { onRowHeight(it.height) } else Modifier
             Box(
-                placed.then(
+                placed.then(selectionFeedback(shell.homeSelection()?.refusals?.takeIf { shell.homeSelection()?.refusedAt == index } ?: 0)).then(
                     if (glide == null) Modifier else Modifier.zIndex(1f).graphicsLayer {
                         val pitchY = (if (rowPx() > 0) rowPx().toFloat() else cell.toPx()) + gap.toPx()
                         translationX = glide.x.value * pitchPx
@@ -2807,6 +2821,7 @@ private fun StripColumn(
                         icon = if (art == null) launcherIcon(game?.androidPackage) else null,
                         favorite = game?.favorite == true,
                         empty = face?.empty == true || beyond,
+                        selected = face?.id in shell.homeSelection()?.checked.orEmpty(),
                         lifted = lifted == index && carry == null,
                         socket = carry?.slot == index,
                         opened = carry?.over == index,
@@ -3445,6 +3460,7 @@ private fun Cell(
     icon: ImageBitmap?,
     favorite: Boolean,
     empty: Boolean = false,
+    selected: Boolean = false,
     lifted: Boolean = false,
     /** The slot a tile in the hand left. It draws only a faint outline. */
     socket: Boolean = false,
@@ -3467,6 +3483,7 @@ private fun Cell(
     val theme = foldTheme()
     val glyph = mark?.let { markGlyph(it) }
     val animatorScale = motion.animatorScale(LocalContext.current.contentResolver)
+    val checked by motionState(if (selected) 1f else 0f, motion.playful(motion.durationFocus, animatorScale))
     // A collection that just took a new look dips and springs back into it, once. A tile that
     // scrolls back into view later does not replay it.
     val settle = remember { Animatable(1f) }
@@ -3480,6 +3497,7 @@ private fun Cell(
         opened -> motion.scaleOpen
         socket -> motion.scaleRest
         lifted -> motion.scaleFocus * motion.scaleFocus
+        selected -> if (focused) motion.scaleFocus * 1.02f else motion.scaleRest * 1.03f
         focused -> motion.scaleFocus
         else -> motion.scaleRest
     }
@@ -3508,6 +3526,7 @@ private fun Cell(
                     clip = false
                     scaleX = drawn * settle.value
                     scaleY = drawn * settle.value
+                    translationY = -size.toPx() * 0.025f * checked
                 }
                 .drawBehind {
                     val glow = accent
@@ -3670,7 +3689,14 @@ private fun Cell(
                     )
                 }
             }
-            if (marked) {
+            val check = presence(true.takeIf { selected }, motion.durationFocus, animatorScale)
+            if (check.shown != null) Box(Modifier.align(Alignment.TopStart)
+                .padding(maxOf(px(8f), corner * CORNER_SAFE))
+                .graphicsLayer { alpha = check.progress.value; scaleX = checked; scaleY = checked }
+                .clip(CircleShape).background(theme.background)) {
+                CheckMark(true, focused, animatorScale)
+            }
+            if (marked && !selected) {
                 Box(
                     Modifier
                         .align(Alignment.TopStart)
@@ -4129,4 +4155,20 @@ private fun recoveryRowFeedback(model: app.foldcade.language.PickerModel, row: a
             size = androidx.compose.ui.geometry.Size(size.width * motion.holdFill(model.deleteProgress), size.height),
             cornerRadius = androidx.compose.ui.geometry.CornerRadius(22.dp.toPx()))
     }
+}
+
+@Composable
+private fun selectionFeedback(refusals: Int): Modifier {
+    val motion = foldTheme().motion
+    val scale = motion.animatorScale(LocalContext.current.contentResolver)
+    val shake = remember { Animatable(0f) }
+    LaunchedEffect(refusals) {
+        if (refusals == 0) return@LaunchedEffect
+        withContext(SteadyMenu) {
+            shake.snapTo(-8f)
+            shake.animateTo(8f, motion.playful(motion.durationShort, scale))
+            shake.animateTo(0f, motion.playful(motion.durationShort, scale))
+        }
+    }
+    return Modifier.graphicsLayer { translationX = shake.value }
 }

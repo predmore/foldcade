@@ -12,6 +12,8 @@ import app.foldcade.language.ArtKind
 import app.foldcade.language.ArtPickerState
 import app.foldcade.language.IconPick
 import app.foldcade.language.collectionLook
+import app.foldcade.language.BulkAction
+import app.foldcade.language.HomeSelection
 import app.foldcade.language.TileActions
 import android.util.Log
 import app.foldcade.api.plugin.Availability
@@ -404,17 +406,19 @@ class ShellController(
         val beforeGrid = model.homeGrid
         val beforeSaved = home.encoded()
         val target = model.tileActions?.game
+        val bulkIds = model.tileActions?.bulk
         val removeVerb = model.tileActions?.remove
         val result = applyMeaning(meaning, screen, repeatCount, inputWindow)
         if (row != Row.Undo && (home.encoded() != beforeSaved || shelfState != shelves || row == Row.MoveTile)) {
             val reversible = row == Row.RemoveTile || row == Row.HideApp || row == Row.Tidy ||
-                (row is Row.Collection && before.folders[row.folderId]?.slots?.contains(target) == true)
+                (row is Row.Collection && (bulkIds?.all { it in before.folders[row.folderId]?.slots.orEmpty() } == true || before.folders[row.folderId]?.slots?.contains(target) == true))
             if (reversible) {
                 undo = HomeUndo(before, shelves,
-                when { row == Row.Tidy -> Copy.tidied
+                when { row is Row.Collection -> Copy.removed
+                    row == Row.Tidy -> Copy.tidied
                     row == Row.HideApp || removeVerb == RemoveVerb.Hide -> Copy.hidden
                     removeVerb == RemoveVerb.Unpin -> Copy.unpinned
-                    else -> Copy.removed }, nowMillis(), after = home.board, shelvesAfter = shelfState)
+                    else -> Copy.removed }, nowMillis(), after = if (bulkIds != null) home.bulkAfter ?: home.board else home.board, shelvesAfter = shelfState)
                 undoFocus = beforeFocus
                 undoGrid = beforeGrid
             }
@@ -438,11 +442,12 @@ class ShellController(
             val before = model
             val wasInFolder = home.board.openFolderId != null
             val wasAll = home.board.allOpen
+            val wasSelecting = home.selection != null
             val wasHeld = home.board.hold != null
             val wasInGroup = home.board.hold?.openFolderId != null
             val step = home.handle(meaning, model.focus.cellIndex, repeatCount)
             if (step != null && step.handled) {
-                commitHome()
+                commitHome(catalog = wasSelecting && meaning == Meaning.Back)
                 showBoard(step.focus ?: model.focus, keepDialog = true)
                 if (!wasInFolder && home.openedFolderHasGame()) Log.i("Foldcade", "library-ui games")
                 if (!wasHeld && home.board.hold != null) Log.i("Foldcade", "home-ui lifted")
@@ -456,6 +461,9 @@ class ShellController(
         val before = model
         val current = if (model.libraryGrid) model else withShelf(model)
         val (next, effect) = reduce(current, meaning, screen, repeatCount)
+        if (current.panel == null && next.panel?.level == PanelLevel.Actions && showingHome() && find == null) {
+            home.keepMenu(current.tileActions?.game)
+        }
         // L1 or R1 opening over Find's menu leaves Find: those drawers go places of their own.
         if (find != null && next.panel?.let { it.level == PanelLevel.Root || it.pendingSide != null } == true) find = null
         // Rows may change while a key is arriving (for example, Undo just expired). Guard
@@ -560,6 +568,24 @@ class ShellController(
                         artPicker = ArtPickerState(it.key, match = savedArtMatch(it.key))
                     }
                 }
+                null
+            }
+            is Effect.SelectTile -> {
+                home.startSelection(effect.gameId)
+                showBoard(model.focus, keepDialog = true)
+                null
+            }
+            is Effect.Bulk -> {
+                val focus = model.focus.cellIndex
+                home.bulk(effect.action, effect.ids, effect.collectionId, focus)
+                if (effect.action == BulkAction.Hide) {
+                    effect.ids.filter { it.startsWith("android:") }.forEach { shelfState = shelfState.hide(it.removePrefix("android:")) }
+                    commitShelves()
+                }
+                commitHome()
+                reconcileShownApps()
+                syncHome()
+                showBoard(model.focus, keepDialog = true)
                 null
             }
             Effect.MoveTile -> {
@@ -680,6 +706,7 @@ class ShellController(
 
     fun homeKeys(): app.foldcade.language.HomeKeys {
         if (artPicker != null) return app.foldcade.language.HomeKeys.ChoosingArt
+        if (model.panel != null && home.selection != null) return HomeKeys.Selecting
         if (model.dialog != null || model.panel != null || model.playActivity != null ||
             model.saveConflict != null || model.connectOpen
         ) {
@@ -694,6 +721,8 @@ class ShellController(
         return home.keys()
     }
 
+    fun homeSelection(): HomeSelection? = if (showingHome()) home.selection else null
+
     fun homeFace(index: Int): HomeFace? = home.face(index)
 
     /**
@@ -703,7 +732,7 @@ class ShellController(
      * with nothing to act on.
      */
     fun holdsCommandCenter(): Boolean =
-        model.dialog != null || model.panel != null || model.connectOpen || typing() != null || home.iconPick != null || find != null
+        model.dialog != null || model.panel != null || model.connectOpen || typing() != null || home.iconPick != null || home.selection != null || find != null
 
     /**
      * The collection or folder being named, as the top screen shows it over the name field.
@@ -1253,6 +1282,7 @@ class ShellController(
     }
 
     fun showHomeGrid(grid: HomeGrid) {
+        home.finishSelection()
         artPicker = null
         find = null
         publish(
@@ -2164,10 +2194,10 @@ class ShellController(
         val offered = if (tile?.removeDownload == true && busy) tile.copy(removeDownload = false) else tile
         // A merge can close the open folder, when its last game left, so read where the board is now.
         val root = if (onHome) home.board.openFolderId == null && !home.board.allOpen else counted.atLibraryRoot
-        val withArt = if (counted.artKeySaved && artPickerAvailable() && targetGame?.let(::artQuery) != null) {
+        val withArt = if (tile?.bulk == null && home.selection == null && counted.artKeySaved && artPickerAvailable() && targetGame?.let(::artQuery) != null) {
             (offered ?: TileActions()).copy(art = true)
         } else offered
-        return counted.copy(appActions = if (found == null) actionsFor(counted, targetGame) else null, tileActions = (withArt ?: TileActions()).copy(undo = activeUndo() != null), undoVerb = activeUndo()?.verb, atLibraryRoot = root)
+        return counted.copy(appActions = if (found == null && home.selection == null) actionsFor(counted, targetGame) else null, tileActions = (withArt ?: TileActions()).copy(undo = home.selection == null && activeUndo() != null), undoVerb = activeUndo()?.verb, atLibraryRoot = root)
     }
 
     /** A menu acts on its named game even after Add to leaves the focused slot empty. */
@@ -2380,7 +2410,7 @@ class ShellController(
     /** The home grid's top level with nothing open over it, where B has nothing left to close. */
     fun atRest(): Boolean =
         find == null && homeActive() && home.board.openFolderId == null && !home.board.allOpen && home.board.hold == null &&
-            home.iconPick == null && renameDraft() == null
+            home.iconPick == null && home.selection == null && renameDraft() == null
 
     private fun homeActive(): Boolean =
         showingHome() && model.dialog == null && model.panel == null && model.settings == null &&

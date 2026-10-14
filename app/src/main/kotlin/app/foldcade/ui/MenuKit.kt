@@ -372,10 +372,10 @@ internal fun ToggleSwitch(on: Boolean, focused: Boolean, scale: Float) {
  * colors and the tick draws itself in with a small pop. Cleared, it draws back out.
  */
 @Composable
-internal fun CheckMark(on: Boolean, focused: Boolean, scale: Float) {
+internal fun CheckMark(on: Boolean, focused: Boolean, scale: Float, some: Boolean = false) {
     val theme = LocalFoldTheme.current.theme
-    val tick by eased(if (on) 1f else 0f, theme.motion.durationSelect, scale)
-    val pop by bouncy(if (on) 1f else 0f, scale)
+    val tick by eased(if (on || some) 1f else 0f, theme.motion.durationSelect, scale)
+    val pop by bouncy(if (on || some) 1f else 0f, scale)
     val ring = remember(theme) { FocusRing(theme) }
     val start = ring.start
     val end = ring.end
@@ -399,9 +399,14 @@ internal fun CheckMark(on: Boolean, focused: Boolean, scale: Float) {
                 if (lit <= 0f) return@drawBehind
                 drawCircle(brush = Brush.linearGradient(listOf(start, end)), radius = radius, alpha = lit)
                 val path = Path().apply {
-                    moveTo(size.width * 0.29f, size.height * 0.52f)
-                    lineTo(size.width * 0.44f, size.height * 0.67f)
-                    lineTo(size.width * 0.72f, size.height * 0.37f)
+                    if (some) {
+                        moveTo(size.width * 0.28f, size.height * 0.5f)
+                        lineTo(size.width * 0.72f, size.height * 0.5f)
+                    } else {
+                        moveTo(size.width * 0.29f, size.height * 0.52f)
+                        lineTo(size.width * 0.44f, size.height * 0.67f)
+                        lineTo(size.width * 0.72f, size.height * 0.37f)
+                    }
                 }
                 val measure = PathMeasure().apply { setPath(path, false) }
                 val drawn = Path()
@@ -575,7 +580,7 @@ internal fun MenuRow(
         val valueStyle = labelStyle.copy(color = theme.muted, textAlign = TextAlign.End)
         when (control) {
             is RowControl.Toggle -> ToggleSwitch(control.on, focused, scale)
-            is RowControl.Check -> CheckMark(control.on, focused, scale)
+            is RowControl.Check -> CheckMark(control.on, focused, scale, control.some)
             is RowControl.Choice -> ChoiceValue(control.value, focused, valueStyle.copy(color = if (focused) theme.onBackground else theme.muted), scale)
             is RowControl.Value -> BasicText(control.text, style = valueStyle, maxLines = 1, overflow = TextOverflow.Ellipsis)
             RowControl.Opens -> if (chord == null) OpensChevron(focused, labelStyle, scale)
