@@ -245,8 +245,18 @@ class ShellController(
     var model: PickerModel
         get() = current
         private set(next) {
+            val changedView = next.homeGrid != current.homeGrid || next.libraryGrid != current.libraryGrid ||
+                next.gridKind != current.gridKind || next.primaryIsTop != current.primaryIsTop ||
+                (next.settings != null && current.settings == null) ||
+                (next.playActivity != null && current.playActivity == null) ||
+                (next.connectOpen && !current.connectOpen)
+            val prepared = if (home.selection != null && changedView) {
+                home.finishSelection()
+                commitHome(catalog = true)
+                if (next.libraryGrid) next else withShelf(next)
+            } else next
             val canceled = current.deleteHold != null && (next.panel == null || next.panel != current.panel || next.dialog != null || next.settings != null || next.connectOpen)
-            val stable = app.foldcade.language.retainMenuRows(current, next)
+            val stable = app.foldcade.language.retainMenuRows(current, prepared)
             undo = when {
                 stable.panel == null -> undo?.resume(nowMillis())
                 stable.panel?.let { Row.Undo in panelRows(it, stable) } == true -> undo?.pause(nowMillis())
@@ -1282,7 +1292,6 @@ class ShellController(
     }
 
     fun showHomeGrid(grid: HomeGrid) {
-        home.finishSelection()
         artPicker = null
         find = null
         publish(
