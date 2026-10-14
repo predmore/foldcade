@@ -6,6 +6,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import app.foldcade.language.FindEntry
 import app.foldcade.language.FindFilter
+import app.foldcade.language.FindIndex
 import app.foldcade.language.FindKind
 import app.foldcade.language.KeyCap
 import app.foldcade.language.KeyFocus
@@ -27,6 +28,9 @@ import app.foldcade.language.findResults
  */
 class FindSession(entries: List<FindEntry>) {
     private var entries: List<FindEntry> = entries
+
+    /** [entries] made ready to search, so a key press only matches. Built again when Home changes. */
+    private var library = FindIndex(entries)
 
     /** The keyboard, in live mode: every change to the query searches again. */
     val typing = TypingSession(text = "", live = { search(fresh = true) }, onDone = { toResults() }, onCancel = {})
@@ -87,6 +91,7 @@ class FindSession(entries: List<FindEntry>) {
         if (next == entries) return
         val chosen = filters.getOrNull(filter)
         entries = next
+        library = FindIndex(next)
         filters = findFilters(next)
         filter = filters.indexOfFirst { it.kind == chosen?.kind && it.platformId == chosen.platformId }.coerceAtLeast(0)
         search(fresh = false)
@@ -177,7 +182,7 @@ class FindSession(entries: List<FindEntry>) {
      * best and leaves them for the keys when there are none. A refresh keeps the focus.
      */
     private fun search(fresh: Boolean) {
-        val next = findResults(entries, query, filters.getOrElse(filter) { filters.first() })
+        val next = findResults(library, query, filters.getOrElse(filter) { filters.first() })
         if (next.map { it.id } != results.map { it.id }) searched++
         results = next
         val kept = focusedId?.takeIf { !fresh }?.let { id -> next.indexOfFirst { it.id == id } }?.takeIf { it >= 0 }

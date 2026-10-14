@@ -2,8 +2,8 @@ package app.foldcade.language
 
 import java.text.Normalizer
 import java.util.Locale
+import java.util.PriorityQueue
 import kotlin.math.abs
-import kotlin.math.min
 
 /**
  * Find: every game, app and group on Home, by name, a few presses away. Select opens it
@@ -125,96 +125,158 @@ private val MARKS = Regex("\\p{M}+")
 private val SPACES = Regex(" +")
 
 /** The match of [title] for [query], or null when it does not answer it at all. A blank query matches nothing. */
-fun matchTitle(title: String, query: String): FindMatch? = matchFolded(foldForFind(title), foldForFind(query))
+fun matchTitle(title: String, query: String): FindMatch? = FoldedTitle(foldForFind(title)).match(FoldedQuery(foldForFind(query)))
 
-/** [matchTitle] for a title and query already through [foldForFind]. */
-private fun matchFolded(t: String, q: String): FindMatch? {
-    if (q.isEmpty() || t.isEmpty()) return null
-    val words = t.split(' ')
-    val asked = q.split(' ')
-    val compact = t.replace(" ", "")
-    val compactQuery = q.replace(" ", "")
-    if (t.startsWith(q) || compact.startsWith(compactQuery)) return FindMatch(MatchTier.Start, 0)
-    wordsMatch(asked, words, typos = 0)?.let { return FindMatch(MatchTier.Words, it) }
-    if (compactQuery.length >= 2 && ' ' !in q) {
-        val initials = words.joinToString("") { word -> if (word.all(Char::isDigit)) word else word.take(1) }
-        val at = initials.indexOf(compactQuery)
-        if (at >= 0) return FindMatch(MatchTier.Initials, at)
+/**
+ * A title made ready to match once, when Find's list is built, rather than on every key:
+ * folded, split into at most [TITLE_WORDS] words, run together, and its words' initials.
+ */
+internal class FoldedTitle(val text: String) {
+    val words: List<String> = if (text.isEmpty()) emptyList() else text.split(' ').take(TITLE_WORDS)
+    val compact: String = text.replace(" ", "")
+    val initials: String = words.joinToString("") { word -> if (word.all(Char::isDigit)) word else word.take(1) }
+
+    /** The best tier this title reaches for [query], or null. */
+    fun match(query: FoldedQuery): FindMatch? {
+        val q = query.text
+        if (q.isEmpty() || text.isEmpty()) return null
+        if (text.startsWith(q) || compact.startsWith(query.compact)) return FindMatch(MatchTier.Start, 0)
+        wordsMatch(query.words, words)?.let { return FindMatch(MatchTier.Words, it) }
+        if (query.compact.length >= 2 && query.words.size == 1) {
+            val at = initials.indexOf(query.compact)
+            if (at >= 0) return FindMatch(MatchTier.Initials, at)
+        }
+        if (query.compact.length >= 2) {
+            val at = compact.indexOf(query.compact)
+            if (at >= 0) return FindMatch(MatchTier.Contains, at)
+        }
+        if (query.compact.length >= TYPO_FLOOR) {
+            typoMatch(query.words, words)?.let { return FindMatch(MatchTier.Typo, it) }
+            if (prefixWithin(query.compact, compact)) return FindMatch(MatchTier.Typo, 0)
+        }
+        return null
     }
-    if (compactQuery.length >= 2) {
-        val at = compact.indexOf(compactQuery)
-        if (at >= 0) return FindMatch(MatchTier.Contains, at)
-    }
-    if (compactQuery.length >= TYPO_FLOOR) {
-        wordsMatch(asked, words, typos = 1)?.let { return FindMatch(MatchTier.Typo, it) }
-        if (prefixWithin(compactQuery, compact, 1)) return FindMatch(MatchTier.Typo, 0)
-    }
-    return null
+}
+
+/** A query made ready once per key: folded, split into words, and run together. The keyboard keeps it short. */
+internal class FoldedQuery(val text: String) {
+    val words: List<String> = if (text.isEmpty()) emptyList() else text.split(' ')
+    val compact: String = text.replace(" ", "")
 }
 
 /** A query this short is too easy to be one letter off from almost anything. */
 private const val TYPO_FLOOR = 3
 
+/** A title's words past this many are left out of word matching, which keeps it quick however long a name is. */
+private const val TITLE_WORDS = 24
+
 /**
- * Where the first query word landed when every query word begins a different title word,
- * in any order, with at most [typos] letters wrong between them all. Null when they do not.
- * A word under [TYPO_FLOOR] letters must match exactly.
+ * Where the first query word landed when every query word begins a different title word, in
+ * any order, at the earliest title word it can take. Null when they cannot all be placed. Each
+ * placing is a bipartite matching, so it grows with the words' counts, never with their orders.
  */
-private fun wordsMatch(asked: List<String>, words: List<String>, typos: Int): Int? {
-    var best: Int? = null
-    fun place(at: Int, used: Set<Int>, spent: Int, first: Int?) {
-        if (best == 0) return
-        if (at == asked.size) {
-            val landed = first ?: 0
-            if (best == null || landed < best!!) best = landed
-            return
-        }
-        val word = asked[at]
-        for (index in words.indices) {
-            if (index in used) continue
-            val cost = when {
-                words[index].startsWith(word) -> 0
-                spent < typos && word.length >= TYPO_FLOOR && prefixWithin(word, words[index], 1) -> 1
-                else -> continue
-            }
-            place(at + 1, used + index, spent + cost, first ?: index)
-        }
-    }
-    place(0, emptySet(), 0, null)
-    return best
+private fun wordsMatch(asked: List<String>, words: List<String>): Int? {
+    if (asked.isEmpty() || asked.size > words.size) return null
+    val edges = Array(asked.size) { i -> words.indices.filter { words[it].startsWith(asked[i]) }.toIntArray() }
+    return earliestFirst(edges, words.size)
 }
 
-/** True when some start of [text], as long as [query] give or take one, is within [limit] edits of it. */
-private fun prefixWithin(query: String, text: String, limit: Int): Boolean {
-    for (length in (query.length - limit)..(query.length + limit)) {
+/**
+ * [wordsMatch] with one letter wrong in one word, of [TYPO_FLOOR] letters or more. Only tried
+ * once the words cannot all be placed exactly, so at most one is missing; each one-letter-off
+ * pairing for it is tried in turn.
+ */
+private fun typoMatch(asked: List<String>, words: List<String>): Int? {
+    if (asked.isEmpty() || asked.size > words.size) return null
+    val exact = Array(asked.size) { i -> words.indices.filter { words[it].startsWith(asked[i]) }.toIntArray() }
+    // One typo places at most one more word, so a matching short by two or more cannot be saved.
+    if (matchedCount(exact, words.size) < asked.size - 1) return null
+    for (i in asked.indices) {
+        if (asked[i].length < TYPO_FLOOR) continue
+        for (k in words.indices) {
+            if (k in exact[i] || !prefixWithin(asked[i], words[k])) continue
+            val edges = exact.copyOf()
+            edges[i] = intArrayOf(k)
+            earliestFirst(edges, words.size)?.let { return it }
+        }
+    }
+    return null
+}
+
+/** The earliest title word the first query word can take with every other word still placed, or null. */
+private fun earliestFirst(edges: Array<IntArray>, titleWords: Int): Int? {
+    for (first in edges[0]) {
+        val owner = IntArray(titleWords) { -1 }
+        owner[first] = 0
+        if ((1 until edges.size).all { place(it, edges, owner, BooleanArray(titleWords), pinned = 0) }) return first
+    }
+    return null
+}
+
+/** How many query words can take different title words at once. */
+private fun matchedCount(edges: Array<IntArray>, titleWords: Int): Int {
+    val owner = IntArray(titleWords) { -1 }
+    return edges.indices.count { place(it, edges, owner, BooleanArray(titleWords), pinned = -1) }
+}
+
+/**
+ * Finds query word [word] a title word of its own, moving others along to theirs if it must
+ * (an augmenting path). Query word [pinned] keeps the title word it was given.
+ */
+private fun place(word: Int, edges: Array<IntArray>, owner: IntArray, seen: BooleanArray, pinned: Int): Boolean {
+    for (title in edges[word]) {
+        if (seen[title]) continue
+        seen[title] = true
+        val held = owner[title]
+        if (held == pinned) continue
+        if (held < 0 || place(held, edges, owner, seen, pinned)) {
+            owner[title] = word
+            return true
+        }
+    }
+    return false
+}
+
+/** True when some start of [text], as long as [query] give or take one letter, is [oneOff] from it. */
+private fun prefixWithin(query: String, text: String): Boolean {
+    for (length in (query.length - 1)..(query.length + 1)) {
         if (length <= 0 || length > text.length) continue
-        if (editDistance(query, text.substring(0, length), limit) <= limit) return true
+        if (oneOff(query, text, length)) return true
     }
     return false
 }
 
 /**
- * Letters changed, added, dropped, or two side by side swapped, to turn [a] into [b].
- * Counting stops past [limit]; anything further is reported as one more than it.
+ * True when [a] and the first [length] letters of [b] are the same, or one letter apart: one
+ * changed, added or dropped, or two side by side swapped. It walks both once and copies
+ * nothing, since a search asks this of most titles on every key.
  */
-internal fun editDistance(a: String, b: String, limit: Int): Int {
-    if (abs(a.length - b.length) > limit) return limit + 1
-    val rows = Array(a.length + 1) { IntArray(b.length + 1) }
-    for (i in 0..a.length) rows[i][0] = i
-    for (j in 0..b.length) rows[0][j] = j
-    for (i in 1..a.length) {
-        var lowest = Int.MAX_VALUE
-        for (j in 1..b.length) {
-            val cost = if (a[i - 1] == b[j - 1]) 0 else 1
-            var value = min(min(rows[i - 1][j] + 1, rows[i][j - 1] + 1), rows[i - 1][j - 1] + cost)
-            if (i > 1 && j > 1 && a[i - 1] == b[j - 2] && a[i - 2] == b[j - 1]) value = min(value, rows[i - 2][j - 2] + 1)
-            rows[i][j] = value
-            lowest = min(lowest, value)
-        }
-        if (lowest > limit) return limit + 1
+internal fun oneOff(a: String, b: String, length: Int = b.length): Boolean {
+    if (abs(a.length - length) > 1) return false
+    var at = 0
+    while (at < a.length && at < length && a[at] == b[at]) at++
+    if (at == a.length || at == length) return true
+    return when {
+        a.length == length ->
+            b.regionMatches(at + 1, a, at + 1, length - at - 1) ||
+                (at + 1 < length && a[at] == b[at + 1] && a[at + 1] == b[at] && b.regionMatches(at + 2, a, at + 2, length - at - 2))
+        a.length > length -> b.regionMatches(at, a, at + 1, length - at)
+        else -> b.regionMatches(at + 1, a, at, a.length - at)
     }
-    return rows[a.length][b.length]
 }
+
+/**
+ * Find's list, made ready to search: each entry's title folded and split once, when the list
+ * is built, so a key press only matches. The shell builds one when Home changes.
+ */
+class FindIndex(entries: List<FindEntry>) {
+    internal val rows: List<Pair<FindEntry, FoldedTitle>> =
+        entries.distinctBy { it.id }.map { it to FoldedTitle(foldForFind(it.title)) }
+}
+
+/** [findResults] over a list built for this search alone. */
+fun findResults(entries: List<FindEntry>, query: String, filter: FindFilter, limit: Int = FIND_LIMIT): List<FindEntry> =
+    findResults(FindIndex(entries), query, filter, limit)
 
 /**
  * What Find shows for [query] under [filter], best first, at most [limit]. A match ranks
@@ -224,30 +286,44 @@ internal fun editDistance(a: String, b: String, limit: Int): Int {
  * With no query it is a list to browse: what was played, newest first, then everything
  * else A to Z, hidden things last.
  */
-fun findResults(entries: List<FindEntry>, query: String, filter: FindFilter, limit: Int = FIND_LIMIT): List<FindEntry> {
-    val shown = entries.filter(filter::admits).distinctBy { it.id }
-    // Each title is folded once, not once per comparison.
-    val folded = shown.associate { it.id to foldForFind(it.title) }
-    val q = foldForFind(query)
-    if (q.isEmpty()) return browse(shown, folded).take(limit)
-    return shown.mapNotNull { entry -> matchFolded(folded.getValue(entry.id), q)?.let { entry to it } }
-        .sortedWith(
-            compareBy<Pair<FindEntry, FindMatch>> { it.second.tier }
-                .thenBy { it.second.at }
+fun findResults(index: FindIndex, query: String, filter: FindFilter, limit: Int = FIND_LIMIT): List<FindEntry> {
+    val shown = index.rows.filter { filter.admits(it.first) }
+    val asked = FoldedQuery(foldForFind(query))
+    if (asked.text.isEmpty()) return browse(shown, limit)
+    return shown.mapNotNull { (entry, title) -> title.match(asked)?.let { Triple(entry, title, it) } }
+        .best(
+            limit,
+            compareBy<Triple<FindEntry, FoldedTitle, FindMatch>> { it.third.tier }
+                .thenBy { it.third.at }
                 .thenBy { it.first.hidden }
                 .thenByDescending { it.first.lastPlayedMillis }
-                .thenBy { folded.getValue(it.first.id) }
+                .thenBy { it.second.text }
                 .thenBy { it.first.id },
         )
-        .take(limit)
         .map { it.first }
 }
 
 /** Played first, newest first; then the rest A to Z, with what is hidden after what is on Home. */
-private fun browse(entries: List<FindEntry>, folded: Map<String, String>): List<FindEntry> {
-    val (played, rest) = entries.partition { it.kind != FindKind.Group && it.lastPlayedMillis > 0L }
-    return played.sortedWith(compareByDescending<FindEntry> { it.lastPlayedMillis }.thenBy { it.id }) +
-        rest.sortedWith(compareBy<FindEntry> { it.hidden }.thenBy { folded.getValue(it.id) }.thenBy { it.id })
+private fun browse(rows: List<Pair<FindEntry, FoldedTitle>>, limit: Int): List<FindEntry> {
+    val (played, rest) = rows.partition { it.first.kind != FindKind.Group && it.first.lastPlayedMillis > 0L }
+    val first = played.best(limit, compareByDescending<Pair<FindEntry, FoldedTitle>> { it.first.lastPlayedMillis }.thenBy { it.first.id })
+    val then = rest.best(limit - first.size, compareBy<Pair<FindEntry, FoldedTitle>> { it.first.hidden }.thenBy { it.second.text }.thenBy { it.first.id })
+    return (first + then).map { it.first }
+}
+
+/**
+ * The first [limit] of this list in [order]. Only those few are kept in order as it goes, so a
+ * query that matches most of a big library does not sort all of it on every key.
+ */
+private fun <T> List<T>.best(limit: Int, order: Comparator<T>): List<T> {
+    if (limit <= 0) return emptyList()
+    if (size <= limit) return sortedWith(order)
+    val kept = PriorityQueue(limit + 1, order.reversed())
+    for (item in this) {
+        kept.add(item)
+        if (kept.size > limit) kept.poll()
+    }
+    return kept.sortedWith(order)
 }
 
 /**

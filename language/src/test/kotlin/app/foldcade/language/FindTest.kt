@@ -74,11 +74,17 @@ class FindTest {
     }
 
     @Test
-    fun editDistanceCountsASwapAsOne() {
-        assertEquals(1, editDistance("zleda", "zelda", 1))
-        assertEquals(1, editDistance("kirb", "kirby", 1))
-        assertEquals(2, editDistance("abcd", "badc", 1))
-        assertEquals(0, editDistance("mario", "mario", 1))
+    fun oneOffCountsAChangeAnAddADropOrASwap() {
+        assertTrue(oneOff("zleda", "zelda"))
+        assertTrue(oneOff("zelda", "zelda"))
+        assertTrue(oneOff("zeldx", "zelda"))
+        assertTrue(oneOff("kirb", "kirby"))
+        assertTrue(oneOff("kirbby", "kirby"))
+        assertFalse(oneOff("abcd", "badc"))
+        assertFalse(oneOff("mario", "mxrxo"))
+        assertFalse(oneOff("ab", "abcd"))
+        // Against the start of a longer word, as a prefix is matched.
+        assertTrue(oneOff("metriod", "metroid prime", 7))
     }
 
     @Test
