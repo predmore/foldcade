@@ -622,7 +622,7 @@ fun hideGame(board: HomeBoard, id: String): HomeBoard {
         }
     }
     return board.copy(
-        hiddenSlots = board.hiddenSlots + (id to remembered),
+        hiddenSlots = if (remembered.isEmpty()) board.hiddenSlots - id else board.hiddenSlots + (id to remembered),
         slots = board.slots.map { if (it == id) null else it },
         folders = board.folders.mapValues { (_, folder) -> folder.copy(slots = folder.slots.map { if (it == id) null else it }) },
         hidden = board.hidden + id,
@@ -1268,11 +1268,11 @@ fun placementChoices(board: HomeBoard, item: HomeItem?, platforms: List<HomePlat
 }
 
 /** Hidden games and retired groups, alphabetically, without duplicate Android entries. */
-fun hiddenItems(board: HomeBoard, catalog: List<HomeItem>, apps: List<LaunchableApp>, state: AppShelfState, players: Set<String>): List<HomeItem> {
+fun hiddenItems(board: HomeBoard, catalog: List<HomeItem>, apps: List<LaunchableApp>, state: AppShelfState, players: Set<String>, platforms: List<HomePlatform> = emptyList()): List<HomeItem> {
     val games = catalog.filter { it.id in board.hidden }
     val installed = hiddenApps(apps, state, players).map { HomeItem(androidHomeId(it.packageName), it.label, HomeKind.AndroidApp) }
     val groups = board.retired.mapNotNull { id ->
-        retiredFolder(board, id, catalog, emptyList())?.let { HomeItem(id, it.name, HomeKind.Loose, mark = it.mark) }
+        retiredFolder(board, id, catalog, platforms)?.let { HomeItem(id, it.name, HomeKind.Loose, mark = it.mark) }
     }
     return (games + installed + groups).distinctBy { it.id }.sortedWith(compareBy<HomeItem> { it.title.lowercase() }.thenBy { it.id })
 }
@@ -1309,8 +1309,9 @@ private fun retiredFolder(board: HomeBoard, id: String, catalog: List<HomeItem>,
     specialFolders().firstOrNull { it.id == id }?.let { return it }
     val platform = platforms.firstOrNull { platformFolderId(it.id) == id }
     if (platform != null) return HomeFolder(id, platform.name, platformId = platform.id, mark = kitMark(platform.id))
-    val item = catalog.firstOrNull { systemFolderId(it, platforms) == id } ?: return null
-    val platformId = romPlatformId(item, platforms) ?: return null
+    val item = catalog.firstOrNull { systemFolderId(it, platforms) == id }
+    val platformId = item?.let { romPlatformId(it, platforms) }
+        ?: id.removePrefix("home.platform.").takeIf { it != id && it.isNotBlank() } ?: return null
     return HomeFolder(id, platformId, platformId = platformId, mark = kitMark(platformId))
 }
 

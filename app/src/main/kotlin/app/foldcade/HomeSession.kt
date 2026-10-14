@@ -386,7 +386,7 @@ class HomeSession(raw: String?, nowMillis: Long = System.currentTimeMillis()) {
     fun deleteShortcut(id: String) { board = deleteShortcut(board, id) }
     fun shelfActions(id: String): TileActions = gameActions(id, false, !pinned(board, id), RemoveVerb.Hide)
     fun hiddenItems(apps: List<LaunchableApp>, state: AppShelfState, players: Set<String>): List<HomeItem> =
-        hiddenItems(board, catalog(), apps, state, players)
+        hiddenItems(board, catalog(), apps, state, players, platforms)
 
     /** The game at [index] in All or on the board. Null for a group, the All tile, or an empty slot. */
     private fun slotGame(index: Int): String? {

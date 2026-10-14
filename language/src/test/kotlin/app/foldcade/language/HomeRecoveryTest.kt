@@ -89,6 +89,20 @@ class HomeRecoveryTest {
         assertNull(snapshot.afterEdit(before, hideGame(before, game.id)))
     }
 
+    @Test fun oldRetiredPlatformFoldersAreListedEvenBeforeTheirLibraryReports() {
+        val board = HomeBoard(retired = setOf(folder))
+        val rows = hiddenItems(board, emptyList(), emptyList(), AppShelfState(), emptySet(), platforms)
+        assertEquals(listOf("Game Boy Advance"), rows.map { it.title })
+        assertEquals(folder, rows.single().id)
+    }
+
+    @Test fun hidingAnUnplacedGameRoundTripsWithoutAnEmptySlotRecord() {
+        val hidden = hideGame(HomeBoard(addNewToHome = false), game.id)
+        assertEquals(hidden, decodeHome(encodeHome(hidden)))
+        assertTrue(hidden.hiddenSlots.isEmpty())
+        assertTrue(game.id in hidden.hidden)
+    }
+
     @Test fun holdUsesElapsedTimeAndAnEarlyReleaseNeverCompletes() {
         val hold = DeleteHold(Row.RemoveDownload, PromptKey.FaceA, 100L, game.id)
         assertEquals(0f, hold.progress(99L), 0f)
