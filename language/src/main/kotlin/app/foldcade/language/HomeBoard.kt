@@ -660,9 +660,10 @@ fun newCollection(board: HomeBoard, collectionId: String, name: String, at: Int?
     if (collectionId in board.folders || collectionId == HOME_ALL) return board
     val game = member?.takeIf { it != HOME_ALL && board.folders[it] == null }
     val folder = HomeFolder(id = collectionId, name = name, userMade = true, mark = MARK_FOLDER, slots = listOfNotNull(game))
-    val made = (game?.let { admit(board, it) } ?: board).copy(folders = board.folders + (collectionId to folder), hold = null)
-    val target = at?.takeIf { it >= 0 && board.slots.getOrNull(it) == null } ?: return placeOnRoot(made, collectionId)
-    val slots = board.slots.toMutableList()
+    val admitted = game?.let { admit(board, it) } ?: board
+    val made = admitted.copy(folders = admitted.folders + (collectionId to folder), hold = null)
+    val target = at?.takeIf { it >= 0 && made.slots.getOrNull(it) == null } ?: return placeOnRoot(made, collectionId)
+    val slots = made.slots.toMutableList()
     while (slots.size <= target) slots += null
     slots[target] = collectionId
     return made.copy(slots = slots)
