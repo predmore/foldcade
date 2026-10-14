@@ -55,4 +55,61 @@ class ArtPickerTest {
         assertNull(chords(rows)[2])
         assertFalse(actionRows(TileActions(move = true), null).contains(Row.ChooseArt))
     }
+
+    @Test fun leftAtTheFirstColumnKeepsEveryRow() {
+        for (row in 0..2) {
+            val state = ArtPickerState("game", candidates = candidates, index = row, loading = false)
+            assertEquals(row, state.navigate(Meaning.MoveLeft).index)
+            assertEquals(row, state.copy(index = row + 3).navigate(Meaning.MoveLeft).index)
+        }
+    }
+
+    @Test fun pickerKeysKeepHeldVerticalMovementAndUseTriggersOnlyOncePerPress() {
+        val context = HomeKeys.ChoosingArt
+        assertEquals(Meaning.MoveUp, meaningOf(android.view.KeyEvent.KEYCODE_DPAD_UP, repeatCount = 4, homeKeys = context))
+        assertEquals(Meaning.MoveDown, meaningOf(android.view.KeyEvent.KEYCODE_DPAD_DOWN, repeatCount = 4, homeKeys = context))
+        assertEquals(Meaning.ActivateBottom, meaningOf(android.view.KeyEvent.KEYCODE_BUTTON_X, homeKeys = context))
+        assertEquals(Meaning.LetterBackward, meaningOf(android.view.KeyEvent.KEYCODE_BUTTON_L2, homeKeys = context))
+        assertEquals(Meaning.LetterForward, meaningOf(android.view.KeyEvent.KEYCODE_BUTTON_R2, homeKeys = context))
+        assertNull(meaningOf(android.view.KeyEvent.KEYCODE_BUTTON_R2, repeatCount = 1, homeKeys = context))
+        assertEquals(Meaning.MoveDown, meaningOf(android.view.KeyEvent.KEYCODE_DPAD_DOWN, repeatCount = 4, homeKeys = HomeKeys.AllLibrary))
+    }
+
+    @Test fun matchesCycleWithWrapAndDiscardOnlyTheCandidateSelection() {
+        val matches = listOf(ArtMatch(1, "One"), ArtMatch(2, "Two"), ArtMatch(3, "Three"))
+        val state = ArtPickerState("game", kind = ArtKind.Logo, matches = matches, match = matches[0],
+            findingMatches = false, candidates = candidates, index = 5, loading = false, error = true)
+        val next = state.navigate(Meaning.LetterBackward)
+        assertEquals(matches[2], next.match)
+        assertEquals(ArtKind.Logo, next.kind)
+        assertEquals(matches, next.matches)
+        assertTrue(next.loading)
+        assertFalse(next.error)
+        assertTrue(next.candidates.isEmpty())
+        assertEquals(0, next.index)
+        assertEquals(matches[0], next.navigate(Meaning.LetterForward).match)
+        assertEquals(state, state.copy(matches = listOf(matches[0])).navigate(Meaning.LetterForward).copy(matches = matches))
+    }
+
+    @Test fun chosenMatchesRoundTripAlongsideOldOverridesAndSurviveReset() {
+        val original = ArtChoices.decode("""{"game":{"Tile":"https://cdn/tile"}}""")
+        val choices = original.setMatch("game", ArtMatch(7, "QuackShot"))
+            .setMatch("match-only", ArtMatch(8, "Other"))
+        assertEquals(choices, ArtChoices.decode(choices.encode()))
+        val reset = choices.set("game", ArtKind.Tile, null)
+        assertEquals(ArtMatch(7, "QuackShot"), ArtChoices.decode(reset.encode()).matches["game"])
+        assertTrue(reset.values.isEmpty())
+        assertEquals(mapOf("game" to mapOf(ArtKind.Tile to "https://cdn/tile")), original.values)
+        assertTrue(original.matches.isEmpty())
+    }
+
+    @Test fun hintsPairBothKindsAndMatchesWithOneLabelEach() {
+        val groups = artPickerHintGroups(FaceMap.standard())
+        assertEquals(5, groups.size)
+        assertEquals(listOf(HintKey(PromptKey.L1, ""), HintKey(PromptKey.R1, ArtCopy.kind)), groups[0])
+        assertEquals(listOf(HintKey(PromptKey.L2, ""), HintKey(PromptKey.R2, ArtCopy.match)), groups[1])
+        assertEquals(1, artPickerHints(FaceMap.standard()).count { it.label == ArtCopy.kind })
+        assertEquals(1, artPickerHints(FaceMap.standard()).count { it.label == ArtCopy.match })
+    }
+
 }

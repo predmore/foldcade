@@ -6,7 +6,8 @@ package app.foldcade.artwork
  * [key] is the tile's home id. Results are remembered under it.
  * [platformId] is a canonical platform id, such as `nintendo-3ds`.
  * [fileName] is a ROM's whole file name, tags and extension included.
- * [steamAppId] is set for a Steam game.
+ * [steamAppId] is set for a Steam game. [steamGridDbGameId] is the player’s chosen
+ * match; it has its own cache entry so earlier automatic art cannot hide a correction.
  */
 data class ArtQuery(
     val key: String,
@@ -14,7 +15,10 @@ data class ArtQuery(
     val platformId: String? = null,
     val fileName: String? = null,
     val steamAppId: Int? = null,
-)
+    val steamGridDbGameId: Int? = null,
+) {
+    val cacheKey: String get() = steamGridDbGameId?.let { "$key\u0000sgdb:$it" } ?: key
+}
 
 /**
  * Image addresses one source found for a game. [cover] is box art or a

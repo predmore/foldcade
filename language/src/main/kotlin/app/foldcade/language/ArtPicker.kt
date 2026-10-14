@@ -5,13 +5,20 @@ import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.intOrNull
 import kotlinx.serialization.json.put
 
 enum class ArtKind { Tile, Hero, Logo }
 
 data class ArtCandidate(val id: String, val url: String, val thumbnail: String)
 
-data class ArtChoices(val values: Map<String, Map<ArtKind, String>> = emptyMap()) {
+data class ArtMatch(val id: Int, val name: String)
+
+data class ArtChoices(
+    val values: Map<String, Map<ArtKind, String>> = emptyMap(),
+    val matches: Map<String, ArtMatch> = emptyMap(),
+) {
+    fun setMatch(id: String, match: ArtMatch): ArtChoices = copy(matches = matches + (id to match))
     fun get(id: String, kind: ArtKind): String? = values[id]?.get(kind)
 
     fun set(id: String, kind: ArtKind, url: String?): ArtChoices {
@@ -19,12 +26,16 @@ data class ArtChoices(val values: Map<String, Map<ArtKind, String>> = emptyMap()
         if (url == null) parts.remove(kind) else parts[kind] = url
         val next = values.toMutableMap()
         if (parts.isEmpty()) next.remove(id) else next[id] = parts
-        return ArtChoices(next)
+        return copy(values = next)
     }
 
     fun encode(): String = buildJsonObject {
-        values.forEach { (id, parts) -> put(id, buildJsonObject {
-            parts.forEach { (kind, url) -> put(kind.name, url) }
+        (values.keys + matches.keys).forEach { id -> put(id, buildJsonObject {
+            values[id].orEmpty().forEach { (kind, url) -> put(kind.name, url) }
+            matches[id]?.let { match -> put("match", buildJsonObject {
+                put("id", match.id)
+                put("name", match.name)
+            }) }
         }) }
     }.toString()
 
@@ -37,7 +48,12 @@ data class ArtChoices(val values: Map<String, Map<ArtKind, String>> = emptyMap()
                     val url = (value as? JsonPrimitive)?.content ?: return@mapNotNull null
                     if (url.startsWith("https://")) kind to url else null
                 }.toMap()
-            }.filterValues { it.isNotEmpty() })
+            }.filterValues { it.isNotEmpty() }, root.mapNotNull { (id, value) ->
+                val match = (value as? JsonObject)?.get("match") as? JsonObject ?: return@mapNotNull null
+                val game = (match["id"] as? JsonPrimitive)?.intOrNull?.takeIf { it > 0 } ?: return@mapNotNull null
+                val name = (match["name"] as? JsonPrimitive)?.content?.takeIf { it.isNotBlank() } ?: return@mapNotNull null
+                id to ArtMatch(game, name)
+            }.toMap())
         } catch (_: Exception) { ArtChoices() }
     }
 }
@@ -45,6 +61,9 @@ data class ArtChoices(val values: Map<String, Map<ArtKind, String>> = emptyMap()
 data class ArtPickerState(
     val gameId: String,
     val kind: ArtKind = ArtKind.Tile,
+    val matches: List<ArtMatch> = emptyList(),
+    val match: ArtMatch? = null,
+    val findingMatches: Boolean = true,
     val index: Int = 0,
     val candidates: List<ArtCandidate> = emptyList(),
     val preview: Boolean = true,
@@ -54,6 +73,14 @@ data class ArtPickerState(
     val focused: ArtCandidate? get() = candidates.getOrNull(index)
 
     fun navigate(meaning: Meaning): ArtPickerState {
+        if (meaning == Meaning.LetterBackward || meaning == Meaning.LetterForward) {
+            if (matches.isEmpty()) return this
+            val current = matches.indexOfFirst { it.id == match?.id }.coerceAtLeast(0)
+            val delta = if (meaning == Meaning.LetterForward) 1 else -1
+            val next = matches[(current + delta + matches.size) % matches.size]
+            if (next == match) return this
+            return copy(match = next, index = 0, candidates = emptyList(), preview = true, loading = true, error = false)
+        }
         val tab = when (meaning) {
             Meaning.LeftPanel -> (kind.ordinal + 2) % 3
             Meaning.RightPanel -> (kind.ordinal + 1) % 3
@@ -63,7 +90,7 @@ data class ArtPickerState(
         val target = when (meaning) {
             Meaning.MoveUp -> if (index % 3 > 0) index - 1 else index
             Meaning.MoveDown -> if (index % 3 < 2) index + 1 else index
-            Meaning.MoveLeft -> index - 3
+            Meaning.MoveLeft -> if (index >= 3) index - 3 else index
             Meaning.MoveRight -> index + 3
             else -> return this
         }
@@ -73,19 +100,23 @@ data class ArtPickerState(
 
 object ArtCopy {
     const val art = "Art"
+    fun matched(name: String): String = "SteamGridDB · $name"
     val tabs = listOf("Tile", "Hero", "Logo")
     const val empty = "No art found"
     const val error = "Couldn’t load art"
     const val kind = "Kind"
+    const val match = "Match"
     const val apply = "Apply"
     const val automatic = "Automatic"
     const val current = "✓"
 }
 
-fun artPickerHints(faces: FaceMap): List<HintKey> = listOf(
-    HintKey(PromptKey.L1, ArtCopy.kind),
-    HintKey(PromptKey.R1, ArtCopy.kind),
-    HintKey(promptKeyOf(faces.confirmKey) ?: PromptKey.FaceA, ArtCopy.apply),
-    HintKey(PromptKey.FaceX, ArtCopy.automatic),
-    HintKey(promptKeyOf(faces.backKey) ?: PromptKey.FaceB, Copy.back),
+fun artPickerHintGroups(faces: FaceMap): List<List<HintKey>> = listOf(
+    listOf(HintKey(PromptKey.L1, ""), HintKey(PromptKey.R1, ArtCopy.kind)),
+    listOf(HintKey(PromptKey.L2, ""), HintKey(PromptKey.R2, ArtCopy.match)),
+    listOf(HintKey(promptKeyOf(faces.confirmKey) ?: PromptKey.FaceA, ArtCopy.apply)),
+    listOf(HintKey(PromptKey.FaceX, ArtCopy.automatic)),
+    listOf(HintKey(promptKeyOf(faces.backKey) ?: PromptKey.FaceB, Copy.back)),
 )
+
+fun artPickerHints(faces: FaceMap): List<HintKey> = artPickerHintGroups(faces).flatten()

@@ -31,7 +31,7 @@ class ArtFinder(
     private val perKey = ConcurrentHashMap<String, Mutex>()
 
     /** What is already known for [query], with no lookup. */
-    fun cached(query: ArtQuery): ArtSet? = if (enabled()) index.hit(query.key)?.let(::artSetOf) else null
+    fun cached(query: ArtQuery): ArtSet? = if (enabled()) index.hit(query.cacheKey)?.let(::artSetOf) else null
 
     suspend fun find(query: ArtQuery): ArtSet? = lookUp(index, query) { available, _ ->
         var failed = false
@@ -45,7 +45,7 @@ class ArtFinder(
     }?.let(::artSetOf)
 
     /** The scene already known for [query], with no lookup. */
-    fun cachedScene(query: ArtQuery): ArtScene? = if (enabled()) scenes.hit(query.key)?.let(::sceneOf) else null
+    fun cachedScene(query: ArtQuery): ArtScene? = if (enabled()) scenes.hit(query.cacheKey)?.let(::sceneOf) else null
 
     /**
      * Wide art, a logo, and a title screen for [query]. Each part comes from the
@@ -91,22 +91,25 @@ class ArtFinder(
         ask: suspend (List<ArtSource>, List<String>?) -> Answer,
     ): List<String>? {
         if (!enabled()) return null
-        val available = sources().filter { it.handles(query) }
+        // A deliberate match gets first say among public sources, then the usual fallbacks.
+        val available = sources().filter { it.handles(query) }.let { all ->
+            if (query.steamGridDbGameId == null) all else all.sortedBy { if (it is SteamGridDb) 0 else 1 }
+        }
         val sourceIds = available.map { it.id }
-        when (val known = store.lookup(query.key, sourceIds, partial)) {
+        when (val known = store.lookup(query.cacheKey, sourceIds, partial)) {
             is ArtIndex.Known.Hit -> return known.fields
             ArtIndex.Known.Miss -> return null
             null -> Unit
         }
         // The hero and its tile ask at once. The second waits, then reads what the first found.
-        return perKey.computeIfAbsent("${store.file.name}\u0000${query.key}") { Mutex() }.withLock {
-            when (val known = store.lookup(query.key, sourceIds, partial)) {
+        return perKey.computeIfAbsent("${store.file.name}\u0000${query.cacheKey}") { Mutex() }.withLock {
+            when (val known = store.lookup(query.cacheKey, sourceIds, partial)) {
                 is ArtIndex.Known.Hit -> known.fields
                 ArtIndex.Known.Miss -> null
                 null -> gate.withPermit {
-                    val answer = ask(available, store.hit(query.key))
+                    val answer = ask(available, store.hit(query.cacheKey))
                     if (answer.fields != null || !answer.failed) {
-                        store.put(query.key, answer.fields, sourceIds, answer.partial, retry = answer.failed && answer.partial)
+                        store.put(query.cacheKey, answer.fields, sourceIds, answer.partial, retry = answer.failed && answer.partial)
                     }
                     answer.fields
                 }

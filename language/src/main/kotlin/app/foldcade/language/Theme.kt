@@ -322,6 +322,7 @@ fun gridHints(
             HintKey(confirm, Copy.hintSave),
             HintKey(back, Copy.hintCancel),
         )
+        HomeKeys.ChoosingArt -> artPickerHints(faceMap)
         HomeKeys.AllLibrary -> launch + menu + HintKey(back, Copy.back)
         HomeKeys.Idle -> buildList {
             if (launch.isNotEmpty()) {

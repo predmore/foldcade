@@ -1,5 +1,6 @@
 package app.foldcade
 
+import app.foldcade.language.ArtMatch
 import app.foldcade.language.ArtKind
 import app.foldcade.language.ArtPickerState
 import app.foldcade.language.TileActions
@@ -118,27 +119,44 @@ class ShellController(
     /** The R1 slider moved to this position. The app stores it. */
     private val onBrightness: (position: Int) -> Unit = {},
     private val onArtApply: (String, ArtKind, String?) -> Unit = { _, _, _ -> },
+    private val savedArtMatch: (String) -> ArtMatch? = { null },
+    private val onArtMatch: (String, ArtMatch) -> Unit = { _, _ -> },
 ) {
     var artPicker by mutableStateOf<ArtPickerState?>(null)
         private set
 
     fun artCandidates(state: ArtPickerState, loadingResult: Boolean = true) {
         val current = artPicker ?: return
-        if (current.gameId == state.gameId && current.kind == state.kind) {
+        if (current.gameId == state.gameId && current.kind == state.kind && current.match?.id == state.match?.id) {
             artPicker = if (loadingResult) state.copy(preview = current.preview) else state
         }
+    }
+
+    fun artMatches(gameId: String, matches: List<ArtMatch>, error: Boolean = false) {
+        val state = artPicker?.takeIf { it.gameId == gameId } ?: return
+        val choices = (listOfNotNull(state.match) + matches).distinctBy { it.id }.take(8)
+        artPicker = state.copy(matches = choices, match = state.match ?: choices.firstOrNull(), findingMatches = false,
+            loading = choices.isNotEmpty(), error = error)
     }
 
     fun artInput(meaning: Meaning) {
         val state = artPicker ?: return
         when (meaning) {
             Meaning.Back, Meaning.CancelHold -> artPicker = null
-            Meaning.Activate -> state.focused?.let { onArtApply(state.gameId, state.kind, it.url) }
+            Meaning.Activate -> state.focused?.let {
+                state.match?.takeIf { it != savedArtMatch(state.gameId) }?.let { onArtMatch(state.gameId, it) }
+                onArtApply(state.gameId, state.kind, it.url)
+            }
             Meaning.ActivateBottom -> {
+                state.match?.takeIf { it != savedArtMatch(state.gameId) }?.let { onArtMatch(state.gameId, it) }
                 onArtApply(state.gameId, state.kind, null)
                 artPicker = state.copy(preview = false)
             }
-            else -> artPicker = state.navigate(meaning)
+            else -> {
+                val next = state.navigate(meaning)
+                next.match?.takeIf { it != state.match }?.let { onArtMatch(state.gameId, it) }
+                artPicker = next
+            }
         }
     }
 
@@ -325,7 +343,7 @@ class ShellController(
             Effect.PinApp, is Effect.AddAppTo, Effect.MoveApp, Effect.HideApp, Effect.ShowApp,
             -> null
             Effect.ChooseArt -> {
-                focusedGame()?.let(::artQuery)?.let { artPicker = ArtPickerState(it.key) }
+                focusedGame()?.let(::artQuery)?.let { artPicker = ArtPickerState(it.key, match = savedArtMatch(it.key)) }
                 null
             }
             Effect.MoveTile -> {
@@ -369,6 +387,7 @@ class ShellController(
     }
 
     fun homeKeys(): app.foldcade.language.HomeKeys {
+        if (artPicker != null) return app.foldcade.language.HomeKeys.ChoosingArt
         if (model.dialog != null || model.panel != null || model.playActivity != null ||
             model.saveConflict != null || model.connectOpen
         ) {
@@ -1265,7 +1284,7 @@ class ShellController(
             val isGame = shelfState.record(packageName).shelf?.let { it == AndroidShelf.Games }
                 ?: installed.firstOrNull { it.packageName == packageName }?.systemGame == true
             if (!isGame) return null
-            return ArtQuery(key = game.id, title = game.title)
+            return matchedArtQuery(ArtQuery(key = game.id, title = game.title))
         }
         val record = artRecord(game)
         val libraryId = record?.backendId ?: game.libraryId ?: return null
@@ -1273,7 +1292,7 @@ class ShellController(
         val platformId = (record?.platformId ?: game.platformId)?.let { id ->
             resolvePlatform(homePlatforms(), id)?.id ?: id
         }
-        return ArtQuery(
+        return matchedArtQuery(ArtQuery(
             key = if (model.libraryGrid && record != null) homeGameId(libraryId, record.remoteKey) else game.id,
             title = game.title,
             platformId = platformId,
@@ -1283,8 +1302,11 @@ class ShellController(
                 DroidDeckLibrary.ID -> remoteKey?.let(::droidDeckSteamAppId)
                 else -> null
             },
-        )
+        ))
     }
+
+    private fun matchedArtQuery(query: ArtQuery): ArtQuery =
+        query.copy(steamGridDbGameId = savedArtMatch(query.key)?.id)
 
     /** The library record behind [game], on the home grid or the library grid. */
     fun artRecord(game: ShelfGame): Game? =

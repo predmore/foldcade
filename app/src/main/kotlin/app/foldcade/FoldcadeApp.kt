@@ -1,6 +1,7 @@
 package app.foldcade
 
 import app.foldcade.language.ArtChoices
+import app.foldcade.language.ArtMatch
 import app.foldcade.language.ArtKind
 import android.app.Application
 import android.content.BroadcastReceiver
@@ -134,7 +135,14 @@ class FoldcadeApp : Application() {
         private set
 
     fun chooseArt(id: String, kind: ArtKind, url: String?) {
-        val next = artChoices.set(id, kind, url)
+        saveArtChoices(artChoices.set(id, kind, url))
+    }
+
+    fun chooseArtMatch(id: String, match: ArtMatch) {
+        saveArtChoices(artChoices.setMatch(id, match))
+    }
+
+    private fun saveArtChoices(next: ArtChoices) {
         artChoiceFile.parentFile?.mkdirs()
         val temp = File(artChoiceFile.parentFile, "choices.tmp")
         temp.writeText(next.encode())
@@ -315,6 +323,8 @@ class FoldcadeApp : Application() {
             plugins,
             music::apply,
             onArtApply = ::chooseArt,
+            savedArtMatch = { artChoices.matches[it] },
+            onArtMatch = ::chooseArtMatch,
             onTheme = { index -> music.setThemeChoice(themeTrackList.getOrNull(index)) },
             themeNames = names,
             themeMotions = motions,

@@ -135,6 +135,7 @@ import app.foldcade.language.heroFacts
 import app.foldcade.R
 import app.foldcade.language.QuickSetting
 import app.foldcade.Displays
+import app.foldcade.language.ArtCopy
 import app.foldcade.language.ArtKind
 import app.foldcade.FoldcadeApp
 import app.foldcade.FoldcadeHomeActivity
@@ -864,8 +865,25 @@ private fun ArtPreviewHero(app: FoldcadeApp, screen: HostScreen, scale: Float, o
     val picker = app.shell.artPicker?.takeIf { it.preview }
     val preview = picker?.focused?.let { ArtPreview(picker.gameId, picker.kind, it.url) }
     val motion = LocalFoldTheme.current.theme.motion
-    Crossfade(preview, animationSpec = motion.arrive(motion.durationScene, scale)) { shown ->
-        CompositionLocalProvider(LocalArtPreview provides shown) { Hero(app, screen, scale, onEffect) }
+    Box(Modifier.fillMaxSize()) {
+        Crossfade(preview, animationSpec = motion.arrive(motion.durationScene, scale)) { shown ->
+            CompositionLocalProvider(LocalArtPreview provides shown) { Hero(app, screen, scale, onEffect) }
+        }
+        if (screen == HostScreen.Top) {
+            Crossfade(app.shell.artPicker?.match?.name,
+                animationSpec = motion.arrive(motion.durationShort, scale),
+                modifier = Modifier.align(Alignment.TopCenter).padding(top = 76.dp, start = 24.dp, end = 24.dp),
+            ) { name ->
+                if (name != null) {
+                    val theme = foldTheme()
+                    Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
+                        BasicText(ArtCopy.matched(name), Modifier.clip(RoundedCornerShape(8.dp))
+                            .background(theme.surface.copy(alpha = 0.85f)).padding(horizontal = 12.dp, vertical = 4.dp),
+                            style = text(theme.muted, theme.style.type.hint, theme), maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    }
+                }
+            }
+        }
     }
 }
 
@@ -3238,7 +3256,7 @@ private fun focused(model: app.foldcade.language.PickerModel, field: ConnectFiel
 }
 
 @Composable
-private fun Modifier.hostPress(onClick: () -> Unit): Modifier {
+internal fun Modifier.hostPress(onClick: () -> Unit): Modifier {
     val source = remember { MutableInteractionSource() }
     return this
         .focusProperties { canFocus = false }

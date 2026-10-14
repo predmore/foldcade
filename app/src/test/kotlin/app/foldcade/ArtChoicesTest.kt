@@ -79,6 +79,7 @@ class ArtChoicesTest {
         shell.touchPanel(index, HostScreen.Top)
         val state = shell.artPicker!!
         assertEquals(homeGameId("local-folder", "game"), state.gameId)
+        assertEquals(HomeKeys.ChoosingArt, shell.homeKeys())
         shell.artCandidates(state.copy(loading = false, candidates = listOf(ArtCandidate("1", "https://cdn/one", "https://cdn/thumb"))))
         assertNull(shell.onMeaning(Meaning.Activate, HostScreen.Bottom))
         assertEquals(Triple(state.gameId, ArtKind.Tile, "https://cdn/one"), applied.last())
@@ -91,6 +92,51 @@ class ArtChoicesTest {
         shell.onMeaning(Meaning.Back, HostScreen.Bottom)
         assertNull(shell.artPicker)
         assertTrue(shell.homeAllOpen())
+        assertEquals(HomeKeys.AllLibrary, shell.homeKeys())
+    }
+
+    @Test fun changingTheMatchPersistsItRejectsOldCandidatesAndKeepsOtherOverrides() {
+        val id = homeGameId("local-folder", "game")
+        var saved = ArtChoices().set(id, ArtKind.Logo, "https://cdn/chosen-logo")
+        fun shell(): ShellController {
+            val shell = ShellController(SessionStore(MemoryPrefs()), plugins,
+                savedArtMatch = { saved.matches[it] },
+                onArtMatch = { gameId, match -> saved = saved.setMatch(gameId, match) })
+            shell.ingestLibrary("local-folder", listOf(GridEntry(
+                id = "game", title = "Game", shortText = "Nintendo 3DS", platformId = "nintendo-3ds",
+                availabilityLabel = null, occupiesBothDisplays = false,
+                game = app.foldcade.api.plugin.Game("local-folder", "game", "nintendo-3ds",
+                    app.foldcade.api.plugin.Availability.LocalOnly, "Game"),
+            )), emptyList())
+            shell.onMeaning(Meaning.Activate, HostScreen.Bottom)
+            shell.setArtKeySaved(true)
+            shell.onMeaning(Meaning.Options, HostScreen.Bottom)
+            val index = panelRows(shell.model.panel!!, shell.model).indexOf(Row.ChooseArt)
+            shell.touchPanel(index, HostScreen.Top)
+            shell.touchPanel(index, HostScreen.Top)
+            return shell
+        }
+        val first = ArtMatch(1, "Wrong Collection")
+        val second = ArtMatch(2, "QuackShot")
+        val picker = shell()
+        picker.artMatches(id, listOf(first, second))
+        val previous = picker.artPicker!!.copy(loading = false, candidates = listOf(ArtCandidate("old", "https://cdn/old", "https://cdn/thumb")))
+        picker.artCandidates(previous)
+        picker.onMeaning(Meaning.LetterForward, HostScreen.Bottom)
+        assertEquals(second, saved.matches[id])
+        assertEquals(second, picker.artPicker!!.match)
+        assertTrue(picker.artPicker!!.candidates.isEmpty())
+        assertEquals(2, picker.artQuery(picker.focusedGame()!!)!!.steamGridDbGameId)
+        picker.artCandidates(previous)
+        assertTrue("Old match results replaced the new match", picker.artPicker!!.candidates.isEmpty())
+        assertEquals("https://cdn/chosen-logo", saved.get(id, ArtKind.Logo))
+        picker.onMeaning(Meaning.Back, HostScreen.Bottom)
+        saved = ArtChoices.decode(saved.encode())
+        val restarted = shell()
+        assertEquals(second, restarted.artPicker!!.match)
+        restarted.artMatches(id, listOf(first))
+        assertEquals(listOf(second, first), restarted.artPicker!!.matches)
+        assertEquals(2, restarted.artQuery(restarted.focusedGame()!!)!!.steamGridDbGameId)
     }
 
 }

@@ -5,7 +5,6 @@ import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.rememberLazyListState
@@ -27,28 +26,40 @@ import coil3.compose.rememberAsyncImagePainter
 import coil3.request.ImageRequest
 import app.foldcade.CoverImage
 import app.foldcade.artwork.ArtQuery
-import app.foldcade.language.artPickerHints
+import app.foldcade.language.artPickerHintGroups
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.unit.dp
 import app.foldcade.FoldcadeApp
 import app.foldcade.language.ArtCandidate
 import app.foldcade.language.ArtCopy
+import app.foldcade.language.ArtMatch
 import app.foldcade.language.ArtKind
 import app.foldcade.language.ArtPickerState
 import app.foldcade.language.Meaning
-import app.foldcade.language.TypeRamp
 import kotlin.coroutines.cancellation.CancellationException
 
 @Composable
 internal fun ArtPickerScreen(app: FoldcadeApp, state: ArtPickerState, scale: Float) {
     val theme = LocalFoldTheme.current.theme
     val query = app.shell.focusedGame()?.let(app.shell::artQuery)
-    LaunchedEffect(state.gameId, state.kind) {
+    LaunchedEffect(state.gameId) {
         if (query == null) return@LaunchedEffect
         try {
+            val matches = app.steamGridDb.games(query).map { ArtMatch(it.id, it.name) }
+            app.shell.artMatches(state.gameId, matches)
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (_: Exception) {
+            app.shell.artMatches(state.gameId, emptyList(), error = true)
+        }
+    }
+    LaunchedEffect(state.gameId, state.kind, state.match?.id, state.findingMatches) {
+        if (query == null || state.findingMatches) return@LaunchedEffect
+        val match = state.match ?: return@LaunchedEffect
+        try {
             val kind = when (state.kind) { ArtKind.Tile -> "grids"; ArtKind.Hero -> "heroes"; ArtKind.Logo -> "logos" }
-            val candidates = app.steamGridDb.candidates(query, kind).map { ArtCandidate(it.id, it.url, it.thumbnail) }
+            val candidates = app.steamGridDb.candidates(query, kind, match.id).map { ArtCandidate(it.id, it.url, it.thumbnail) }
             val current = selectedArt(app, state, query)
             val index = candidates.indexOfFirst { it.url == current }.coerceAtLeast(0)
             app.shell.artCandidates(state.copy(candidates = candidates, index = index, loading = false))
@@ -58,18 +69,18 @@ internal fun ArtPickerScreen(app: FoldcadeApp, state: ArtPickerState, scale: Flo
             app.shell.artCandidates(state.copy(loading = false, error = true))
         }
     }
-    val tabs = remember { mutableMapOf<ArtKind, ArtPickerState>() }
+    val tabs = remember(state.match?.id) { mutableMapOf<ArtKind, ArtPickerState>() }
     tabs[state.kind] = state
     val slots = rememberSelectionSlots()
     val reach = ringReach()
     Column(Modifier.fillMaxSize().background(theme.background).padding(reach)) {
         Row(Modifier.fillMaxWidth().selectionHighlight(slots, state.kind.ordinal, true, scale)) {
             ArtCopy.tabs.forEachIndexed { index, title ->
-                Box(Modifier.weight(1f).height(44.dp).selectionSlot(slots, index).clickable {
+                Box(Modifier.weight(1f).height(44.dp).selectionSlot(slots, index).hostPress {
                     val distance = (index - state.kind.ordinal + 3) % 3
                     repeat(distance) { app.shell.artInput(Meaning.RightPanel) }
                 }, contentAlignment = Alignment.Center) {
-                    BasicText(title, style = TextStyle(color = theme.onBackground, fontSize = TypeRamp.menuRow))
+                    BasicText(title, style = TextStyle(color = theme.onBackground, fontSize = theme.style.type.menuRow, fontFamily = theme.font))
                 }
             }
         }
@@ -100,7 +111,8 @@ internal fun ArtPickerScreen(app: FoldcadeApp, state: ArtPickerState, scale: Flo
                                                 val topLeft = coordinates.positionInRoot() - origin
                                                 val rect = Rect(topLeft, coordinates.size.toSize())
                                                 if (gridSlots.rows[index] != rect) gridSlots.rows[index] = rect
-                                            }.clickable(enabled = candidate != null) {
+                                            }.hostPress {
+                                                if (candidate == null) return@hostPress
                                                 app.shell.artCandidates(shown.copy(index = index, preview = true), loadingResult = false)
                                                 app.shell.artInput(Meaning.Activate)
                                             }, scale)
@@ -114,12 +126,16 @@ internal fun ArtPickerScreen(app: FoldcadeApp, state: ArtPickerState, scale: Flo
                 Box(Modifier.fillMaxSize().selectionHighlight(gridSlots, shown.index.takeIf { !shown.loading && shown.candidates.isNotEmpty() }, true, scale))
                 if (!shown.loading && shown.candidates.isEmpty()) BasicText(
                     if (shown.error) ArtCopy.error else ArtCopy.empty,
-                    modifier = Modifier.align(Alignment.Center), style = TextStyle(color = theme.muted, fontSize = TypeRamp.menuRow),
+                    modifier = Modifier.align(Alignment.Center), style = TextStyle(color = theme.muted, fontSize = theme.style.type.menuRow, fontFamily = theme.font),
                 )
             }
         }
         Row(Modifier.fillMaxWidth().padding(top = 8.dp), horizontalArrangement = Arrangement.SpaceEvenly) {
-            artPickerHints(app.shell.model.faceMap).forEach { HintWord(app.shell.model, it) }
+            artPickerHintGroups(app.shell.model.faceMap).forEach { group ->
+                Row(horizontalArrangement = Arrangement.spacedBy(4.dp), verticalAlignment = Alignment.CenterVertically) {
+                    group.forEach { HintWord(app.shell.model, it) }
+                }
+            }
         }
     }
 }
@@ -138,7 +154,7 @@ private fun ArtCandidateTile(app: FoldcadeApp, candidate: ArtCandidate?, current
             if (loaded) Image(painter, null, Modifier.fillMaxSize(), contentScale = ContentScale.Fit)
             else if (candidate != null && status is AsyncImagePainter.State.Error) {
                 Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                    BasicText(ArtCopy.error, style = TextStyle(color = theme.muted, fontSize = TypeRamp.hint), maxLines = 1)
+                    BasicText(ArtCopy.error, style = TextStyle(color = theme.muted, fontSize = theme.style.type.hint, fontFamily = theme.font), maxLines = 1)
                 }
             } else {
                 val transition = rememberInfiniteTransition()
@@ -149,7 +165,7 @@ private fun ArtCandidateTile(app: FoldcadeApp, candidate: ArtCandidate?, current
                 )))
             }
         }
-        if (current) BasicText(ArtCopy.current, Modifier.align(Alignment.TopEnd).background(theme.surface).padding(6.dp), style = TextStyle(color = theme.focus, fontSize = TypeRamp.menuRow))
+        if (current) BasicText(ArtCopy.current, Modifier.align(Alignment.TopEnd).background(theme.surface).padding(6.dp), style = TextStyle(color = theme.focus, fontSize = theme.style.type.menuRow, fontFamily = theme.font))
     }
 }
 

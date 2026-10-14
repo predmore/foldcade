@@ -52,8 +52,8 @@ class PublicHttps(
         headers: Map<String, String> = emptyMap(),
         maxBytes: Int = MAX_BODY_BYTES,
     ): PublicResponse = withContext(Dispatchers.IO) {
-        call(url, "GET", headers).use { open ->
-            val body = open.body ?: return@use PublicResponse(open.code, ByteArray(0))
+        call(url, "GET", headers) { open ->
+            val body = open.body ?: return@call PublicResponse(open.code, ByteArray(0))
             val declared = body.contentLength()
             if (declared > maxBytes) throw PublicHttpsException("Body is over $maxBytes bytes")
             val bytes = body.byteStream().use { stream ->
@@ -67,16 +67,16 @@ class PublicHttps(
 
     /** One HEAD request's status, so a caller can check an image exists without its bytes. */
     suspend fun status(url: String, headers: Map<String, String> = emptyMap()): Int = withContext(Dispatchers.IO) {
-        call(url, "HEAD", headers).use { it.code }
+        call(url, "HEAD", headers) { it.code }
     }
 
-    private suspend fun call(url: String, method: String, headers: Map<String, String>): Response {
+    private suspend fun <T> call(url: String, method: String, headers: Map<String, String>, read: (Response) -> T): T {
         if (!allows(url)) throw PublicHttpsException("Refused $url")
         val request = Request.Builder().url(url).method(method, null).apply {
             headers.forEach { (name, value) -> header(name, value) }
         }.build()
         return try {
-            http.newCall(request).await()
+            http.newCall(request).readResponse(read)
         } catch (e: IOException) {
             throw PublicHttpsException(e.message ?: "Unreachable", e)
         }
@@ -115,11 +115,18 @@ private class HostGuard(private val hosts: Set<String>) : Interceptor {
     }
 }
 
-private suspend fun Call.await(): Response = suspendCancellableCoroutine { continuation ->
+/** Keep cancellation attached until the body is consumed, not just until headers arrive. */
+internal suspend fun <T> Call.readResponse(read: (Response) -> T): T = suspendCancellableCoroutine { continuation ->
     continuation.invokeOnCancellation { cancel() }
     enqueue(object : Callback {
         override fun onResponse(call: Call, response: Response) {
-            continuation.resume(response) { _, _, _ -> response.close() }
+            if (continuation.isCancelled) { response.close(); return }
+            try {
+                val result = response.use(read)
+                continuation.resume(result)
+            } catch (e: Exception) {
+                if (!continuation.isCancelled) continuation.resumeWithException(e)
+            }
         }
 
         override fun onFailure(call: Call, e: IOException) {
