@@ -230,6 +230,7 @@ object Copy {
     const val move = "Move"
     /** Closes the gaps on the board on screen. */
     const val tidy = "Tidy"
+    const val tidied = "Tidied"
     const val rename = "Rename"
     const val icon = "Icon"
     const val favorite = "Favorite"

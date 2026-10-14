@@ -726,9 +726,9 @@ class HomeGridOrderTest {
         // Back in its menu, the rest acts on that game too: Unfavorite, and the menu closes.
         shell.onMeaning(Meaning.Back, HostScreen.Bottom)
         val held = panelRows(shell.model.panel!!, shell.model).filterNot { it == Row.Undo }
-        assertEquals(listOf(Row.AddToCollection, Row.Favorite), held)
+        assertEquals(listOf(Row.MoveTile, Row.AddToCollection, Row.Favorite, Row.RemoveTile), held)
         assertEquals(Copy.unfavorite, rowText(Row.Favorite, shell.model).label)
-        shell.onMeaning(Meaning.MoveDown, HostScreen.Bottom)
+        pickRowFocus(shell, Row.Favorite)
         shell.onMeaning(Meaning.Activate, HostScreen.Bottom)
         assertNull(shell.model.panel)
         // The focus rests on the empty slot it left, and Y there is the slot's own menu.
@@ -842,7 +842,7 @@ class HomeGridOrderTest {
     }
 
     @Test
-    fun undoExpiryCannotSkipTheHoldWhenRowsShiftUnderConfirm() {
+    fun undoExpiryCannotMoveDeleteUnderTheFocusedPinRow() {
         val shell = shell()
         shell.ingestLibrary("romm", listOf(entry("drift", "Drift", "nintendo-3ds", backendId = "romm", availability = Availability.Cached)), emptyList())
         focus(shell, titles(shell).indexOf("Nintendo 3DS"))
@@ -851,9 +851,14 @@ class HomeGridOrderTest {
         shell.openHomeAll()
         shell.onMeaning(Meaning.Options, HostScreen.Bottom)
         pickRowFocus(shell, Row.PinTile)
+        val rows = panelRows(shell.model.panel!!, shell.model)
         recoveryTime += 8001L
+        shell.tickRecovery()
+        assertEquals(rows, panelRows(shell.model.panel!!, shell.model))
         assertNull(shell.onMeaning(Meaning.Activate, HostScreen.Bottom))
-        assertEquals(Row.RemoveDownload, shell.model.deleteHold?.row)
+        assertNull(shell.model.deleteHold)
+        shell.goHome()
+        assertTrue("Drift" in titles(shell))
     }
 
     private fun pickRowFocus(shell: ShellController, row: Row) {
@@ -952,8 +957,8 @@ class HomeGridOrderTest {
         shell.onMeaning(Meaning.Back, HostScreen.Bottom)
         val rows = panelRows(shell.model.panel!!, shell.model)
         assertEquals(drift, shell.model.tileActions?.game)
-        // Art previews on the focused game's hero, which an empty slot has none of, so a kept menu leaves it out.
-        assertFalse(Row.ChooseArt in rows)
+        // Returning to the parent keeps the rows it showed before the collection toggle.
+        assertTrue(Row.ChooseArt in rows)
         assertTrue(Row.RemoveDownload in rows)
         repeat(rows.indexOf(Row.RemoveDownload)) { shell.onMeaning(Meaning.MoveDown, HostScreen.Bottom) }
         assertNull(shell.onMeaning(Meaning.Activate, HostScreen.Bottom))

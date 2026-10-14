@@ -53,6 +53,57 @@ class HomeRecoveryHostTest {
         assertFalse(store.appShelfState().record("notes").hidden)
     }
 
+    @Test fun undoStaysFocusedPastItsDeadlineUntilTheMenuCloses() {
+        val shell = shell()
+        shell.setInstalledApps(listOf(app, other), emptySet())
+        shell.showHomeGrid(HomeGrid.Apps)
+        shell.onMeaning(Meaning.Options, HostScreen.Bottom)
+        choose(shell, Row.RemoveTile)
+        time += 7_000L
+        shell.onMeaning(Meaning.Options, HostScreen.Bottom)
+        val rows = panelRows(shell.model.panel!!, shell.model)
+        assertEquals(Row.Undo, rows.first())
+        time += 30_000L
+        shell.tickRecovery()
+        assertEquals(rows, panelRows(shell.model.panel!!, shell.model))
+        assertEquals(0, shell.model.panel!!.index)
+        shell.onMeaning(Meaning.Activate, HostScreen.Bottom)
+        assertFalse(store.appShelfState().records.values.any { it.hidden })
+        assertNull(shell.model.undoVerb)
+    }
+
+    @Test fun closingTheMenuResumesTheRemainingUndoTime() {
+        val shell = shell()
+        shell.setInstalledApps(listOf(app, other), emptySet())
+        shell.showHomeGrid(HomeGrid.Apps)
+        shell.onMeaning(Meaning.Options, HostScreen.Bottom)
+        choose(shell, Row.RemoveTile)
+        time += 7_000L
+        shell.onMeaning(Meaning.Options, HostScreen.Bottom)
+        chooseFocus(shell, Row.AddToCollection)
+        shell.onMeaning(Meaning.Activate, HostScreen.Bottom)
+        time += 30_000L
+        shell.tickRecovery()
+        assertNotNull(shell.model.undoVerb)
+        shell.onMeaning(Meaning.Back, HostScreen.Bottom)
+        assertEquals(Row.Undo, panelRows(shell.model.panel!!, shell.model).first())
+        shell.onMeaning(Meaning.Back, HostScreen.Bottom)
+        assertNull(shell.model.panel)
+        time += 999L
+        shell.tickRecovery()
+        assertNotNull(shell.model.undoVerb)
+        time += 1L
+        shell.tickRecovery()
+        assertNull(shell.model.undoVerb)
+    }
+
+    private fun chooseFocus(shell: ShellController, row: Row) {
+        val target = panelRows(shell.model.panel!!, shell.model).indexOf(row)
+        assertTrue(target >= 0)
+        while (shell.model.panel!!.index != target) shell.onMeaning(
+            if (target > shell.model.panel!!.index) Meaning.MoveDown else Meaning.MoveUp, HostScreen.Bottom)
+    }
+
     @Test fun undoExpiresAndMoveInvalidatesItWithoutSavingUndo() {
         val shell = shell()
         shell.setInstalledApps(listOf(app, other), emptySet())
@@ -108,6 +159,24 @@ class HomeRecoveryHostTest {
         assertTrue(key in decodeHome(store.homeBoardRaw()).offHome)
         shell.tickRecovery()
         assertEquals(listOf(key), deleted)
+    }
+
+    @Test fun tidyFromTheNewMoveMenusCanBeUndone() {
+        val folder = HomeFolder(HOME_ANDROID_APPS, Copy.androidAppsFolder, bucket = HomeKind.AndroidApp,
+            slots = listOf(androidHomeId("notes"), null, androidHomeId("browser")))
+        store.saveHomeBoard(encodeHome(HomeBoard(slots = listOf(HOME_ALL, null, folder.id),
+            folders = mapOf(folder.id to folder), emulatorsFiled = true)))
+        val shell = shell()
+        shell.setInstalledApps(listOf(app, other), emptySet())
+        val saved = store.homeBoardRaw()
+        focus(shell, 1)
+        shell.onMeaning(Meaning.Options, HostScreen.Bottom)
+        choose(shell, Row.Tidy)
+        assertNotEquals(saved, store.homeBoardRaw())
+        assertNotNull(shell.model.undoVerb)
+        shell.onMeaning(Meaning.Options, HostScreen.Bottom)
+        shell.onMeaning(Meaning.Activate, HostScreen.Bottom)
+        assertEquals(saved, store.homeBoardRaw())
     }
 
     @Test fun folderAndCollectionRemovalUndoRestoresPositionsAndMemberships() {

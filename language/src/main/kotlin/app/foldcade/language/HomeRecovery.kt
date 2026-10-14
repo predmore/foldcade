@@ -11,8 +11,13 @@ data class HomeUndo(
     val started: Long,
     val after: HomeBoard = board,
     val shelvesAfter: AppShelfState = shelves,
+    val pausedAt: Long? = null,
 ) {
-    fun available(now: Long): Boolean = now >= started && now - started < UNDO_MILLIS
+    fun available(now: Long): Boolean = pausedAt != null || (now >= started && now - started < UNDO_MILLIS)
+    fun pause(now: Long): HomeUndo = if (pausedAt == null) copy(pausedAt = now) else this
+    fun resume(now: Long): HomeUndo = pausedAt?.let {
+        copy(started = started + (now - it).coerceAtLeast(0), pausedAt = null)
+    } ?: this
     fun afterEdit(before: HomeBoard, after: HomeBoard): HomeUndo? = if (before == after) this else null
 
     /** Catalog arrivals keep their slots; only fields changed by the removal are reversed. */
@@ -72,14 +77,18 @@ private fun <K, V> reverseMap(before: Map<K, V>, after: Map<K, V>, current: Map<
 private fun reverseSlots(before: List<String?>, after: List<String?>, current: List<String?>): List<String?> {
     val restored = current.toMutableList()
     while (restored.size < before.size) restored += null
-    for (index in 0 until maxOf(before.size, after.size)) {
-        val previous = before.getOrNull(index)
-        val removed = after.getOrNull(index)
-        if (previous == removed) continue
-        if (restored.getOrNull(index) == removed) {
+    val changed = (0 until maxOf(before.size, after.size)).filter { before.getOrNull(it) != after.getOrNull(it) }
+    // Release moved tiles first, so reversing Tidy never loses a tile still in its compacted slot.
+    for (index in changed) {
+        if (index < restored.size && restored[index] == after.getOrNull(index)) restored[index] = null
+    }
+    for (index in changed) {
+        val previous = before.getOrNull(index) ?: continue
+        if (previous in restored) continue
+        if (restored.getOrNull(index) == null) {
             while (restored.size <= index) restored += null
-            restored[index] = previous?.takeUnless { it in restored }
-        } else if (previous != null && previous !in restored) {
+            restored[index] = previous
+        } else {
             // A new catalog tile has taken this gap. Keep it there and use the first free slot.
             val free = restored.indexOfFirst { it == null }
             if (free < 0) restored += previous else restored[free] = previous

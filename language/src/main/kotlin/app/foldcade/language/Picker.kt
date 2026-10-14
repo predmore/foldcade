@@ -576,7 +576,24 @@ fun collectionRows(tile: TileActions?): List<Row> {
     return collections.map { Row.Collection(it.folderId, it.name) } + Row.NewCollection
 }
 
-fun panelRows(panel: SidePanel, model: PickerModel): List<Row> = when (panel.level) {
+/** A page keeps its row identities until the island closes; values can still update. */
+data class MenuRows(val page: SidePanel, val rows: List<Row>)
+
+private fun SidePanel.page() = copy(index = 0, retiring = false, pendingSide = null)
+
+fun retainMenuRows(previous: PickerModel, next: PickerModel): PickerModel {
+    val panel = next.panel ?: return next.copy(menuRows = emptyList())
+    val retained = if (previous.panel?.side == panel.side) previous.menuRows else emptyList()
+    val page = panel.page()
+    val pages = if (retained.any { it.page == page }) retained else
+        retained + MenuRows(page, livePanelRows(panel, next))
+    return next.copy(menuRows = pages)
+}
+
+fun panelRows(panel: SidePanel, model: PickerModel): List<Row> =
+    model.menuRows.firstOrNull { it.page == panel.page() }?.rows ?: livePanelRows(panel, model)
+
+private fun livePanelRows(panel: SidePanel, model: PickerModel): List<Row> = when (panel.level) {
     PanelLevel.Actions -> actionRows(model.tileActions, model.appActions)
     PanelLevel.Collections -> collectionRows(model.tileActions)
     PanelLevel.AddTo -> model.appActions?.destinations.orEmpty().map { Row.Destination(it.folderId, it.name) }
@@ -827,6 +844,7 @@ data class PickerModel(
     /** The first column the grid showed. The next focus scrolls from here, see [shownFirstColumn]. */
     val firstColumn: Int = 0,
     val panel: SidePanel? = null,
+    val menuRows: List<MenuRows> = emptyList(),
     /** The full-screen settings page. Null while it is closed. */
     val settings: SettingsPage? = null,
     val dialog: DialogState? = null,

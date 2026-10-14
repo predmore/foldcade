@@ -77,7 +77,7 @@ Press **Y** on any tile for what it can do. Press Y twice to pick up a tile, wal
 
 Open **L1 › Edit home › Hidden** for hidden games, apps, emulators, streams, and folders removed from Home. The grid is alphabetical; **L2/R2** jumps between letters. Press **Y** on an item, then **Y** again for **Show**. A game returns to its old folder slot when free, its Home pin, and every collection it was in. A removed folder returns to its old Home slot when free.
 
-After **Hide**, **Unpin**, or **Remove**, the hint bar offers **Y Undo** for eight seconds. Press Y, then A on the first **Undo** row to restore that removal. Games discovered meanwhile keep their places. Only the last removal can be undone; saving another edit clears it. Y twice still means **Move**.
+After **Hide**, **Unpin**, **Remove**, or **Tidy**, the hint bar offers **Y Undo** for eight seconds. Press Y, then A on the first **Undo** row to restore that removal. Opening a menu with Undo pauses its remaining time until the menu closes; rows stay in place while you choose. Games discovered meanwhile keep their places. Only the last removal can be undone; saving another edit clears it. Y twice still means **Move**.
 
 **Delete download** and **Delete shortcut** require holding **A** for 0.8 seconds while their row fills. Release early to cancel. Where the row has an X shortcut, hold X after opening the Y menu instead. **Delete shortcut** removes a Moonlight or DroidDeck shortcut from Android and Home; **Hide** lets you bring it back through Hidden.
 

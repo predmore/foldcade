@@ -240,7 +240,13 @@ class ShellController(
         get() = current
         private set(next) {
             val canceled = current.deleteHold != null && (next.panel == null || next.panel != current.panel || next.dialog != null || next.settings != null || next.connectOpen)
-            current = next.copy(firstColumn = shownFirstColumn(current),
+            val stable = app.foldcade.language.retainMenuRows(current, next)
+            undo = when {
+                stable.panel == null -> undo?.resume(nowMillis())
+                stable.panel?.let { Row.Undo in panelRows(it, stable) } == true -> undo?.pause(nowMillis())
+                else -> undo
+            }
+            current = stable.copy(firstColumn = shownFirstColumn(current),
                 deleteHold = if (canceled) null else next.deleteHold,
                 deleteProgress = if (canceled) 0f else next.deleteProgress,
                 deleteShake = next.deleteShake + if (canceled) 1 else 0)
@@ -397,11 +403,12 @@ class ShellController(
         val removeVerb = model.tileActions?.remove
         val result = applyMeaning(meaning, screen, repeatCount, inputWindow)
         if (row != Row.Undo && (home.encoded() != beforeSaved || shelfState != shelves || row == Row.MoveTile)) {
-            val reversible = row == Row.RemoveTile || row == Row.HideApp ||
+            val reversible = row == Row.RemoveTile || row == Row.HideApp || row == Row.Tidy ||
                 (row is Row.Collection && before.folders[row.folderId]?.slots?.contains(target) == true)
             if (reversible) {
                 undo = HomeUndo(before, shelves,
-                when { row == Row.HideApp || removeVerb == RemoveVerb.Hide -> Copy.hidden
+                when { row == Row.Tidy -> Copy.tidied
+                    row == Row.HideApp || removeVerb == RemoveVerb.Hide -> Copy.hidden
                     removeVerb == RemoveVerb.Unpin -> Copy.unpinned
                     else -> Copy.removed }, nowMillis(), after = home.board, shelvesAfter = shelfState)
                 undoFocus = beforeFocus
