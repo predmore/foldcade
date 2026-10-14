@@ -18,7 +18,7 @@ class MenuRowsTest {
         assertEquals(listOf(Row.MoveTile, Row.ChooseArt), panelRows(reopened.panel!!, reopened))
     }
 
-    @Test fun collectionCheckmarksUpdateWithoutChangingRowsOrTheParentPage() {
+    @Test fun collectionCheckmarksStayInPlaceWhileInvalidUndoLeavesTheParentPage() {
         val closed = PickerModel(1, 3, tileActions = TileActions(undo = true,
             collections = listOf(CollectionChoice("one", "One", false))))
         val opened = retainMenuRows(closed, closed.copy(panel = panel))
@@ -29,7 +29,7 @@ class MenuRowsTest {
         assertEquals(rows, panelRows(updated.panel!!, updated))
         assertTrue(updated.tileActions!!.collections!!.first().member)
         val parent = retainMenuRows(updated, updated.copy(panel = panel))
-        assertEquals(Row.Undo, panelRows(parent.panel!!, parent).first())
+        assertEquals(listOf(Row.AddToCollection), panelRows(parent.panel!!, parent))
     }
 
     @Test fun aKeptGameLosesOnlySlotActionsAndKeepsItsSelectedRow() {

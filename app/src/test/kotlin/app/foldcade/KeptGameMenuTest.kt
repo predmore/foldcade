@@ -50,6 +50,28 @@ class KeptGameMenuTest {
         assertTrue(androidHomeId("notes") in decodeHome(store.homeBoardRaw()).folders.getValue(collection.id).slots)
     }
 
+    @Test fun keepingTheRemainingAppOnTopRemovesUndoWithoutActivatingAnotherRow() {
+        val store = SessionStore(MemoryPrefs())
+        val shell = ShellController(store, PluginHost(Dispatchers.Unconfined, MemoryCredentialStore()), nowMillis = { 100L })
+        shell.setInstalledApps(listOf(other, app), emptySet())
+        shell.showHomeGrid(HomeGrid.Apps)
+        shell.onMeaning(Meaning.Options, HostScreen.Bottom)
+        choose(shell, Row.RemoveTile)
+        shell.onMeaning(Meaning.Options, HostScreen.Bottom)
+        assertEquals(Row.Undo, panelRows(shell.model.panel!!, shell.model).first())
+        choose(shell, Row.PinApp)
+        assertNull(shell.model.undoVerb)
+        assertNotNull(shell.model.panel)
+        val rows = panelRows(shell.model.panel!!, shell.model)
+        assertFalse(Row.Undo in rows)
+        assertEquals(Row.PinApp, rows[shell.model.panel!!.index])
+        assertTrue(store.appShelfState().record("notes").favorite)
+        assertTrue(store.appShelfState().record("browser").hidden)
+        shell.onMeaning(Meaning.Back, HostScreen.Bottom)
+        shell.onMeaning(Meaning.Options, HostScreen.Bottom)
+        assertFalse(Row.Undo in panelRows(shell.model.panel!!, shell.model))
+    }
+
     private fun focus(shell: ShellController, target: Int) {
         val columns = GridStrip.column(target) - GridStrip.column(shell.model.focus.cellIndex)
         repeat(kotlin.math.abs(columns)) { shell.onMeaning(if (columns > 0) Meaning.MoveRight else Meaning.MoveLeft, HostScreen.Bottom) }

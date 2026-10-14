@@ -605,8 +605,10 @@ fun retainMenuRows(previous: PickerModel, next: PickerModel): PickerModel {
     return stable
 }
 
-private fun validMenuRows(rows: List<Row>, model: PickerModel): List<Row> =
-    if (model.tileActions?.kept == true) rows.filterNot { it == Row.MoveTile || it == Row.RemoveTile || it == Row.HideApp } else rows
+private fun validMenuRows(rows: List<Row>, model: PickerModel): List<Row> = rows.filterNot {
+    (it == Row.Undo && model.tileActions?.undo != true) ||
+        (model.tileActions?.kept == true && (it == Row.MoveTile || it == Row.RemoveTile || it == Row.HideApp))
+}
 
 fun panelRows(panel: SidePanel, model: PickerModel): List<Row> = validMenuRows(
     model.menuRows.firstOrNull { it.page == panel.page() }?.rows ?: livePanelRows(panel, model), model)
