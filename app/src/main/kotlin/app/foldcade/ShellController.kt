@@ -1,5 +1,9 @@
 package app.foldcade
 
+import app.foldcade.language.ArtMatch
+import app.foldcade.language.ArtKind
+import app.foldcade.language.ArtPickerState
+import app.foldcade.language.TileActions
 import android.util.Log
 import app.foldcade.api.plugin.Availability
 import app.foldcade.api.plugin.Game
@@ -114,7 +118,56 @@ class ShellController(
     private val onDroidDeckRemoved: (remoteKey: String) -> Unit = {},
     /** The R1 slider moved to this position. The app stores it. */
     private val onBrightness: (position: Int) -> Unit = {},
+    private val onArtApply: (String, ArtKind, String?) -> Unit = { _, _, _ -> },
+    private val savedArtMatch: (String) -> ArtMatch? = { null },
+    private val onArtMatch: (String, ArtMatch) -> Unit = { _, _ -> },
 ) {
+    var artPicker by mutableStateOf<ArtPickerState?>(null)
+        private set
+
+    private fun closeArtAfterFocusChange() {
+        val state = artPicker ?: return
+        if (model.focus.chrome != null || focusedGame()?.let(::artQuery)?.key != state.gameId) artPicker = null
+    }
+
+    fun artCandidates(state: ArtPickerState, loadingResult: Boolean = true) {
+        closeArtAfterFocusChange()
+        val current = artPicker ?: return
+        if (current.gameId == state.gameId && current.kind == state.kind && current.match?.id == state.match?.id) {
+            artPicker = if (loadingResult) state.copy(preview = current.preview) else state
+        }
+    }
+
+    fun artMatches(gameId: String, matches: List<ArtMatch>, error: Boolean = false) {
+        closeArtAfterFocusChange()
+        val state = artPicker?.takeIf { it.gameId == gameId } ?: return
+        val choices = (listOfNotNull(state.match) + matches).distinctBy { it.id }.take(8)
+        artPicker = state.copy(matches = choices, match = state.match ?: choices.firstOrNull(), findingMatches = false,
+            loading = choices.isNotEmpty(), error = error)
+    }
+
+    fun artInput(meaning: Meaning) {
+        closeArtAfterFocusChange()
+        val state = artPicker ?: return
+        when (meaning) {
+            Meaning.Back, Meaning.CancelHold -> artPicker = null
+            Meaning.Activate -> state.focused?.let {
+                state.match?.takeIf { it != savedArtMatch(state.gameId) }?.let { onArtMatch(state.gameId, it) }
+                onArtApply(state.gameId, state.kind, it.url)
+            }
+            Meaning.ActivateBottom -> {
+                state.match?.takeIf { it != savedArtMatch(state.gameId) }?.let { onArtMatch(state.gameId, it) }
+                onArtApply(state.gameId, state.kind, null)
+                artPicker = state.copy(preview = false)
+            }
+            else -> {
+                val next = state.navigate(meaning)
+                next.match?.takeIf { it != state.match }?.let { onArtMatch(state.gameId, it) }
+                artPicker = next
+            }
+        }
+    }
+
     private var shelfState: AppShelfState = store.appShelfState()
     private var installed: List<LaunchableApp> = emptyList()
     private var playerPackages: Set<String> = emptySet()
@@ -139,6 +192,7 @@ class ShellController(
         get() = current
         private set(next) {
             current = next.copy(firstColumn = shownFirstColumn(current))
+            closeArtAfterFocusChange()
         }
 
     private var inputDeviceKey: String = "builtin"
@@ -217,6 +271,10 @@ class ShellController(
     private var loggedHomeTile: String? = null
 
     fun onMeaning(meaning: Meaning, screen: HostScreen, repeatCount: Int = 0): Effect? {
+        if (artPicker != null) {
+            artInput(meaning)
+            return null
+        }
             if (homeActive()) {
             val before = model
             val wasInFolder = home.board.openFolderId != null
@@ -293,6 +351,12 @@ class ShellController(
         return when (effect) {
             Effect.PinApp, is Effect.AddAppTo, Effect.MoveApp, Effect.HideApp, Effect.ShowApp,
             -> null
+            Effect.ChooseArt -> {
+                if (artPickerAvailable()) {
+                    focusedGame()?.let(::artQuery)?.let { artPicker = ArtPickerState(it.key, match = savedArtMatch(it.key)) }
+                }
+                null
+            }
             Effect.MoveTile -> {
                 pickUpHome(model.focus.cellIndex)
                 null
@@ -334,6 +398,7 @@ class ShellController(
     }
 
     fun homeKeys(): app.foldcade.language.HomeKeys {
+        if (artPicker != null) return app.foldcade.language.HomeKeys.ChoosingArt
         if (model.dialog != null || model.panel != null || model.playActivity != null ||
             model.saveConflict != null || model.connectOpen
         ) {
@@ -404,6 +469,7 @@ class ShellController(
 
     /** L1's Home: the board's top level, from a folder, All, or a shelf. The last root tile keeps the focus. */
     fun goHome() {
+        artPicker = null
         val rootFocus = model.focus.takeIf {
             showingHome() && home.board.openFolderId == null && !home.board.allOpen
         }
@@ -421,6 +487,7 @@ class ShellController(
             ?: installed.firstOrNull { androidHomeId(it.packageName) == gameId }?.label
 
     fun openHomeAll() {
+        artPicker = null
         if (showingHome()) home.rememberRootFocus(model.focus.cellIndex)
         home.showAll()
         store.saveHomeBoard(home.encoded())
@@ -662,6 +729,7 @@ class ShellController(
 
     /** The scanned library is on the home grid. Emulator waits for this line. */
     fun showCuratedHome() {
+        artPicker = null
         syncHome()
         showBoard(GridFocus(), keepDialog = true)
         Log.i("Foldcade", "library-ui home")
@@ -676,6 +744,7 @@ class ShellController(
     }
 
     fun showHomeGrid(grid: HomeGrid) {
+        artPicker = null
         publish(
             model.copy(
                 homeGrid = grid,
@@ -962,7 +1031,7 @@ class ShellController(
 
     /** One tap focuses a tile. A second tap on it activates, and hands back what that opens. */
     fun touchCell(index: Int, screen: HostScreen): Effect? {
-        if (model.dialog != null || model.panel != null || model.connectOpen) return null
+        if (artPicker != null || model.dialog != null || model.panel != null || model.connectOpen) return null
         val current = model.focus
         val already = current.chrome == null && current.cellIndex == index
         if (!already) {
@@ -1221,18 +1290,24 @@ class ShellController(
     fun focusedRunningApp(): RunningApp? = focusedGame()?.takeUnless { it.emptyShelfHint }?.let(::runningApp)
 
     /**
-     * What the art sources need to look [game] up. Null for an app, which draws its
-     * launcher icon, and for a tile with no game behind it, such as a folder.
+     * What the art sources need to look [game] up. Non-game apps keep their launcher
+     * icons, and folders have no game to look up.
      */
     fun artQuery(game: ShelfGame): ArtQuery? {
-        if (game.androidPackage != null || game.emptyShelfHint || game.id.isEmpty()) return null
+        if (game.emptyShelfHint || game.id.isEmpty()) return null
+        game.androidPackage?.let { packageName ->
+            val isGame = shelfState.record(packageName).shelf?.let { it == AndroidShelf.Games }
+                ?: installed.firstOrNull { it.packageName == packageName }?.systemGame == true
+            if (!isGame) return null
+            return matchedArtQuery(ArtQuery(key = game.id, title = game.title))
+        }
         val record = artRecord(game)
         val libraryId = record?.backendId ?: game.libraryId ?: return null
         val remoteKey = record?.remoteKey ?: game.remoteKey
         val platformId = (record?.platformId ?: game.platformId)?.let { id ->
             resolvePlatform(homePlatforms(), id)?.id ?: id
         }
-        return ArtQuery(
+        return matchedArtQuery(ArtQuery(
             key = if (model.libraryGrid && record != null) homeGameId(libraryId, record.remoteKey) else game.id,
             title = game.title,
             platformId = platformId,
@@ -1242,8 +1317,11 @@ class ShellController(
                 DroidDeckLibrary.ID -> remoteKey?.let(::droidDeckSteamAppId)
                 else -> null
             },
-        )
+        ))
     }
+
+    private fun matchedArtQuery(query: ArtQuery): ArtQuery =
+        query.copy(steamGridDbGameId = savedArtMatch(query.key)?.id)
 
     /** The library record behind [game], on the home grid or the library grid. */
     fun artRecord(game: ShelfGame): Game? =
@@ -1442,6 +1520,7 @@ class ShellController(
         focus: GridFocus,
         order: List<Int>,
     ) {
+        artPicker = null
         entries = cells
         val source = if (order.size == count && count > 0) {
             order.getOrElse(focus.cellIndex) { focus.cellIndex }
@@ -1479,6 +1558,8 @@ class ShellController(
         return displayOrder(snapshot).getOrElse(index) { index }
     }
 
+    private fun artPickerAvailable(): Boolean = store.session.surfaceOn(Panel.Bottom) != null
+
     private fun withShelf(next: PickerModel): PickerModel {
         val count = countFor(next.homeGrid)
         home.sort = next.sort
@@ -1502,7 +1583,10 @@ class ShellController(
         val offered = if (tile?.removeDownload == true && busy) tile.copy(removeDownload = false) else tile
         // A merge can close the open folder, when its last game left, so read where the board is now.
         val root = if (onHome) home.board.openFolderId == null && !home.board.allOpen else counted.atLibraryRoot
-        return counted.copy(appActions = actionsFor(counted, game), tileActions = offered, atLibraryRoot = root)
+        val withArt = if (counted.artKeySaved && artPickerAvailable() && game?.let(::artQuery) != null) {
+            (offered ?: TileActions()).copy(art = true)
+        } else offered
+        return counted.copy(appActions = actionsFor(counted, game), tileActions = withArt, atLibraryRoot = root)
     }
 
     private fun tileOn(snapshot: PickerModel): ShelfGame? {

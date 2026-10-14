@@ -12,6 +12,7 @@ import java.net.URLEncoder
 import java.nio.charset.StandardCharsets
 import java.text.Normalizer
 import java.util.Locale
+import java.util.concurrent.ConcurrentHashMap
 
 /**
  * Covers and square art from SteamGridDB, with the user's own API key.
@@ -52,18 +53,66 @@ class SteamGridDb(
         return ArtScene(background = background, logo = logo).takeUnless { it.isEmpty }
     }
 
+    private val matches = ConcurrentHashMap<ArtQuery, Int>()
+
+    private val searches = ConcurrentHashMap<String, List<GridGame>>()
+    private val steamGames = ConcurrentHashMap<Int, GridGame>()
+
+    private suspend fun steamGame(token: String, appId: Int, title: String): GridGame? {
+        steamGames[appId]?.let { return it }
+        val found = data(token, "games/steam/$appId") as? JsonObject ?: return null
+        val id = found["id"]?.jsonPrimitive?.int ?: return null
+        val name = found["name"]?.jsonPrimitive?.content ?: title
+        return GridGame(id, name).also { steamGames[appId] = it }
+    }
+
+    suspend fun games(query: ArtQuery): List<GridGame> {
+        val token = key() ?: return emptyList()
+        val titles = artworkSearchTitles(query.title)
+        val found = titles.firstOrNull()?.let { search(token, it) }.orEmpty().toMutableList()
+        if (found.maxOfOrNull { artworkMatchScore(it.name, query.title) }?.let { it >= 0.85 } != true) {
+            titles.drop(1).forEach { found += search(token, it) }
+        }
+        val steam = query.steamAppId?.let { steamGame(token, it, query.title) }
+        return (listOfNotNull(steam) + rankedArtworkGames(query.title, found)).distinctBy { it.id }.take(8)
+    }
+
+    private suspend fun search(token: String, title: String): List<GridGame> {
+        searches[title]?.let { return it }
+        val result = data(token, "search/autocomplete/${segment(title)}") as? JsonArray ?: return emptyList()
+        return result.mapNotNull { element ->
+            val game = element as? JsonObject ?: return@mapNotNull null
+            val id = game["id"]?.jsonPrimitive?.int ?: return@mapNotNull null
+            val name = game["name"]?.jsonPrimitive?.content ?: return@mapNotNull null
+            GridGame(id, name)
+        }.also { searches[title] = it }
+    }
+
+    suspend fun candidates(query: ArtQuery, kind: String, gameId: Int? = null): List<GridCandidate> {
+        require(kind in listOf("grids", "heroes", "logos"))
+        val token = key() ?: return emptyList()
+        val game = gameId ?: gameId(token, query) ?: games(query).firstOrNull()?.id ?: return emptyList()
+        val dimensions = if (kind == "grids") "dimensions=512x512,1024x1024&" else ""
+        val images = data(token, "$kind/game/$game?$dimensions$SAFE") as? JsonArray ?: return emptyList()
+        return images.mapNotNull { element ->
+            val image = element as? JsonObject ?: return@mapNotNull null
+            val url = image["url"]?.jsonPrimitive?.content?.takeIf { it.startsWith("https://") } ?: return@mapNotNull null
+            val thumb = image["thumb"]?.jsonPrimitive?.content?.takeIf { it.startsWith("https://") } ?: url
+            GridCandidate(image["id"]?.jsonPrimitive?.content ?: url, url, thumb)
+        }.distinctBy { it.url }
+    }
+
     private suspend fun gameId(token: String, query: ArtQuery): Int? {
+        query.steamGridDbGameId?.let { return it }
+        matches[query]?.let { return it }
         query.steamAppId?.let { appId ->
-            val found = data(token, "games/steam/$appId")
-            (found as? JsonObject)?.get("id")?.jsonPrimitive?.int?.let { return it }
+            steamGame(token, appId, query.title)?.id?.let { matches[query] = it; return it }
         }
         val title = query.title.trim()
         if (title.isEmpty()) return null
-        val results = data(token, "search/autocomplete/${segment(title)}") as? JsonArray ?: return null
-        // Autocomplete answers every search with something, so only a game of the same name is taken.
-        return results.mapNotNull { it as? JsonObject }
-            .firstOrNull { artworkTitleMatches(it["name"]?.jsonPrimitive?.content.orEmpty(), title) }
-            ?.get("id")?.jsonPrimitive?.int
+        // Automatic art keeps exact title matching unless the player chose a match.
+        return search(token, title).firstOrNull { artworkTitleMatches(it.name, title) }
+            ?.id?.also { matches[query] = it }
     }
 
     private suspend fun firstImage(token: String, path: String): String? {
@@ -134,3 +183,7 @@ private fun normalized(name: String): String =
 
 private fun segment(text: String): String =
     URLEncoder.encode(text, StandardCharsets.UTF_8).replace("+", "%20")
+
+data class GridCandidate(val id: String, val url: String, val thumbnail: String)
+
+data class GridGame(val id: Int, val name: String)

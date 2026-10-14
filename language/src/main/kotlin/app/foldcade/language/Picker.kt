@@ -276,6 +276,7 @@ sealed interface Row {
     data object MoveApp : Row
     data object HideApp : Row
     data object ShowApp : Row
+    data object ChooseArt : Row
     data object MoveTile : Row
     data object MoveTileTo : Row
     data class Destination(val folderId: String?, val label: String) : Row
@@ -458,6 +459,7 @@ data class FolderChoice(val folderId: String?, val name: String)
  * The menu lists only what applies, so an empty one does not open.
  */
 data class TileActions(
+    val art: Boolean = false,
     /** Pick the tile up and walk it with the D-pad. */
     val move: Boolean = false,
     /** Where Move to can send it. Empty leaves the row out. */
@@ -481,6 +483,7 @@ fun actionRows(tile: TileActions?, app: AppActions?): List<Row> = buildList {
         if (tile.addToHome != null) add(Row.AddToHome)
         if (tile.move) add(Row.MoveTile)
         if (tile.destinations.isNotEmpty()) add(Row.MoveTileTo)
+        if (tile.art && app == null) add(Row.ChooseArt)
         if (tile.newFolder) add(Row.NewFolder)
         if (tile.rename) add(Row.RenameFolder)
         if (tile.icon) add(Row.FolderIcon)
@@ -490,9 +493,11 @@ fun actionRows(tile: TileActions?, app: AppActions?): List<Row> = buildList {
     if (app != null) {
         if (app.hiddenShelf) {
             add(Row.ShowApp)
+            if (tile?.art == true) add(Row.ChooseArt)
         } else {
             add(Row.PinApp)
             if (app.destinations.isNotEmpty()) add(Row.AddAppTo)
+            if (tile?.art == true) add(Row.ChooseArt)
             add(Row.MoveApp)
             add(Row.HideApp)
         }
@@ -616,6 +621,7 @@ fun rowText(row: Row, model: PickerModel): RowText = when (row) {
     Row.MoveApp -> RowText(if (model.appActions?.onGamesShelf == true) Copy.moveToApps else Copy.moveToGames)
     Row.HideApp -> RowText(Copy.hideApp)
     Row.ShowApp -> RowText(Copy.showApp)
+    Row.ChooseArt -> RowText(ArtCopy.art)
     Row.MoveTile -> RowText(Copy.move)
     Row.MoveTileTo -> RowText(Copy.moveTo)
     is Row.Destination -> RowText(row.label)
@@ -681,6 +687,7 @@ sealed interface Effect {
     data class OpenAndroidSetting(val setting: AndroidSetting) : Effect
     data object OpenLicenses : Effect
     data object DismissButtonLabels : Effect
+    data object ChooseArt : Effect
     /** Pick up the focused tile to move it. */
     data object MoveTile : Effect
 
@@ -1542,6 +1549,7 @@ private fun activateRow(
         Row.MoveTileTo -> model.copy(panel = panel.copy(level = PanelLevel.MoveTo, index = 0, via = panel.level)) to null
         is Row.Destination -> model.copy(panel = null, focus = panel.grid) to
             if (panel.level == PanelLevel.AddTo) Effect.AddAppTo(row.folderId) else Effect.MoveTileTo(row.folderId)
+        Row.ChooseArt -> model.copy(panel = null, focus = panel.grid) to Effect.ChooseArt
         Row.MoveTile -> model.copy(panel = null, focus = panel.grid) to Effect.MoveTile
         Row.NewFolder -> model.copy(panel = null, focus = panel.grid) to Effect.NewFolder
         Row.RenameFolder -> model.copy(panel = null, focus = panel.grid) to Effect.RenameFolder

@@ -45,6 +45,8 @@ enum class HomeKeys {
     /** A tile picked up with Move is following the D-pad. */
     Moving,
     AllLibrary,
+    /** Picker navigation repeats normally; triggers choose a game match. */
+    ChoosingArt,
     /** The icon picker for a folder the user made is open. */
     PickingIcon,
     /** The name field for a folder is open. */
@@ -67,6 +69,8 @@ fun meaningOf(
     faces: FaceMap = FaceMap.standard(),
     homeKeys: HomeKeys = HomeKeys.Idle,
 ): Meaning? {
+    if (homeKeys == HomeKeys.ChoosingArt && repeatCount > 0 &&
+        (keyCode == KeyEvent.KEYCODE_BUTTON_L2 || keyCode == KeyEvent.KEYCODE_BUTTON_R2)) return null
     if (repeatCount > 0 && keyCode in shoulderKeys) {
         return null
     }
@@ -84,7 +88,7 @@ fun meaningOf(
         // A keyboard has no shoulders. The bracket keys sit where L1 and R1 would.
         keyCode == KeyEvent.KEYCODE_BUTTON_L1 || keyCode == KeyEvent.KEYCODE_LEFT_BRACKET -> Meaning.LeftPanel
         keyCode == KeyEvent.KEYCODE_BUTTON_R1 || keyCode == KeyEvent.KEYCODE_RIGHT_BRACKET -> Meaning.RightPanel
-        keyCode == KeyEvent.KEYCODE_BUTTON_X && (homeKeys == HomeKeys.Idle || homeKeys == HomeKeys.AllLibrary) ->
+        keyCode == KeyEvent.KEYCODE_BUTTON_X && (homeKeys == HomeKeys.Idle || homeKeys == HomeKeys.AllLibrary || homeKeys == HomeKeys.ChoosingArt) ->
             Meaning.ActivateBottom
         keyCode == KeyEvent.KEYCODE_BUTTON_Y && (homeKeys == HomeKeys.Idle || homeKeys == HomeKeys.AllLibrary) ->
             Meaning.Options
