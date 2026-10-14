@@ -440,6 +440,34 @@ class CollectionsTest {
         }
     }
 
+    @Test
+    fun unpinningAGameWhoseFolderIsOffHomeKeepsItFiledForWhenTheFolderReturns() {
+        // Review r3 #1: X on the pin offered Hide, which erased the game's place in its retired folder.
+        val played = listOf(zelda.copy(lastPlayedMillis = 100L), mario, kirby)
+        var board = mergeHome(HomeBoard(), played, platforms)
+        board = mergeHome(pinToHome(board, zelda.id), played, platforms)
+        board = mergeHome(removeFolder(board, threeDs), played, platforms)
+        assertTrue(threeDs in board.retired)
+        val pin = board.slots.indexOf(zelda.id)
+        assertEquals(RemoveVerb.Unpin, removeVerb(board, pin))
+        val unpinned = mergeHome(decodeHome(encodeHome(removeFromHome(board, pin))), played, platforms)
+        assertFalse(zelda.id in unpinned.slots)
+        assertFalse(zelda.id in unpinned.hidden)
+        assertFalse(zelda.id in unpinned.offHome)
+        assertEquals(listOf(zelda.id, mario.id), unpinned.folders.getValue(threeDs).slots)
+        assertEquals(listOf(zelda.id), unpinned.folders.getValue(HOME_RECENT).slots)
+        // A new 3DS game brings the folder back with the game where it was.
+        val fresh = rom("lib:local:fresh", "3ds")
+        val back = mergeHome(unpinned, played + fresh, platforms)
+        assertTrue(threeDs in back.slots)
+        assertEquals(listOf(zelda.id, mario.id, fresh.id), back.folders.getValue(threeDs).slots)
+        assertTrue(onHome(back, zelda.id))
+        // A pin with no other place at all still hides.
+        val loose = HomeItem("lib:local:loose", "Loose", HomeKind.Rom)
+        val alone = mergeHome(HomeBoard(), listOf(loose), platforms)
+        assertEquals(RemoveVerb.Hide, removeVerb(alone, alone.slots.indexOf(loose.id)))
+    }
+
     private fun rom(id: String, platform: String, lastPlayed: Long = 0L): HomeItem =
         HomeItem(id = id, title = id.substringAfterLast(':'), kind = HomeKind.Rom, platformId = platform, lastPlayedMillis = lastPlayed)
 }

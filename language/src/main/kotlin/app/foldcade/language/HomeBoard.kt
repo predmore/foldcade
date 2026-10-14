@@ -372,8 +372,9 @@ fun cancelHold(board: HomeBoard): HomeBoard {
 
 /**
  * What X does to the tile at [index], or null when it does nothing. On the root a group
- * comes off Home, and a pin comes off the root while the game is still on Home through its
- * folder or a collection. A pin that is the only way to the game hides it instead. In a
+ * comes off Home, and a pin comes off the root while the game is still filed in a folder,
+ * one taken off Home included, or a collection: those places keep it, so a folder that comes
+ * back has it. A pin that is the game's only place hides it instead. In a
  * collection X takes the game out of it, and in a folder it hides the game. Recently
  * played and the All tile keep what they show.
  */
@@ -383,7 +384,7 @@ fun removeVerb(board: HomeBoard, index: Int): RemoveVerb? {
     val openId = board.openFolderId
     if (openId == null) {
         if (board.folders[id] != null) return RemoveVerb.Remove
-        val elsewhere = board.slots.any { slot -> board.folders[slot]?.takeIf { !it.recent }?.slots?.contains(id) == true }
+        val elsewhere = board.folders.values.any { !it.recent && id in it.slots }
         return if (elsewhere) RemoveVerb.Unpin else RemoveVerb.Hide
     }
     val open = board.folders[openId] ?: return null
