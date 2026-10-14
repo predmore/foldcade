@@ -300,13 +300,15 @@ class HomeSession(raw: String?, nowMillis: Long = System.currentTimeMillis()) {
 
     /**
      * What Y offers for [id] among Find's results. A game or app is offered where it lives on
-     * Home, then what it is offered in All; one nowhere on Home is offered a pin instead. A
-     * group is only shown where it is.
+     * Home, then what it is offered in All. Hidden items offer Show; visible games and apps
+     * offer Hide, and a pin when not pinned. A retired group offers Show too.
      */
-    fun findActions(id: String): TileActions {
+    fun findActions(id: String, hidden: Boolean = id in board.hidden || id in board.retired): TileActions {
+        if (id in board.retired) return TileActions(show = true, game = id)
         val shown = id.takeIf { homeLanding(board, it) != null }
         if (board.folders[id] != null) return TileActions(showOnHome = shown)
-        return gameActions(id, move = false, pin = !pinned(board, id), remove = null).copy(showOnHome = shown)
+        return gameActions(id, move = false, pin = !hidden && !pinned(board, id),
+            remove = RemoveVerb.Hide.takeUnless { hidden }).copy(showOnHome = shown.takeUnless { hidden }, show = hidden)
     }
 
     /**

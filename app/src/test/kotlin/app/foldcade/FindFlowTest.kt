@@ -126,7 +126,7 @@ class FindFlowTest {
         assertEquals(PanelLevel.Actions, panel.level)
         val rows = panelRows(panel, shell.model)
         assertEquals(Row.ShowOnHome, rows.first())
-        assertTrue(Row.MoveTile !in rows && Row.RemoveTile !in rows)
+        assertTrue(Row.MoveTile !in rows && Row.RemoveTile in rows)
         // Y then Select: Show on Home.
         shell.onMeaning(Meaning.View, HostScreen.Top)
         assertNull(shell.find)
@@ -174,12 +174,14 @@ class FindFlowTest {
     /** Runs [row] in the open Y menu by walking to it. */
     private fun choose(shell: ShellController, row: Row) {
         val at = panelRows(shell.model.panel!!, shell.model).indexOf(row)
-        repeat(at) { shell.onMeaning(Meaning.MoveDown, HostScreen.Top) }
+        assertTrue(at >= 0)
+        while (shell.model.panel!!.index != at) shell.onMeaning(
+            if (shell.model.panel!!.index < at) Meaning.MoveDown else Meaning.MoveUp, HostScreen.Top)
         shell.onMeaning(Meaning.Activate, HostScreen.Top)
     }
 
     @Test
-    fun aHiddenGameIsFoundAndPinningItBringsItBack() {
+    fun aHiddenGameIsFoundAndShowBringsItBack() {
         val shell = shell()
         // Hide Puzzle from inside its folder.
         val folder = titles(shell).indexOf("Nintendo 3DS")
@@ -198,10 +200,9 @@ class FindFlowTest {
         shell.onMeaning(Meaning.Options, HostScreen.Bottom)
         val rows = panelRows(shell.model.panel!!, shell.model)
         assertTrue(Row.ShowOnHome !in rows)
-        assertTrue(Row.PinTile in rows)
-        val pin = rows.indexOf(Row.PinTile)
-        repeat(pin) { shell.onMeaning(Meaning.MoveDown, HostScreen.Top) }
-        shell.onMeaning(Meaning.Activate, HostScreen.Top)
+        assertTrue(Row.ShowHidden in rows)
+        assertTrue(Row.PinTile !in rows)
+        shell.onMeaning(Meaning.Options, HostScreen.Top)
         // Find stays open, now on a game that is back on Home.
         assertFalse(shell.find!!.results.first().hidden)
         shell.onMeaning(Meaning.Options, HostScreen.Bottom)
@@ -223,7 +224,7 @@ class FindFlowTest {
         val game = shell.model.tileActions?.game
         assertEquals("Drift", find.subject?.title)
         // Add to, then Favorites: that brings Drift back, which sorts it among the games on Home.
-        shell.onMeaning(Meaning.Activate, HostScreen.Top)
+        choose(shell, Row.AddToCollection)
         assertEquals(PanelLevel.Collections, shell.model.panel?.level)
         shell.onMeaning(Meaning.Activate, HostScreen.Top)
         assertFalse(find.results.first { it.title == "Drift" }.hidden)
@@ -246,7 +247,7 @@ class FindFlowTest {
         shell.onMeaning(Meaning.Done, HostScreen.Bottom)
         shell.onMeaning(Meaning.Options, HostScreen.Bottom)
         val game = shell.model.tileActions?.game
-        shell.onMeaning(Meaning.Activate, HostScreen.Top)
+        choose(shell, Row.AddToCollection)
         shell.onMeaning(Meaning.Activate, HostScreen.Top)
         // Back on Home, Drift is no longer hidden, so the Hidden filter has nothing left and goes,
         // and Find falls back to All. The menu still names Drift.
@@ -269,7 +270,7 @@ class FindFlowTest {
         shell.onMeaning(Meaning.Done, HostScreen.Bottom)
         shell.onMeaning(Meaning.Options, HostScreen.Bottom)
         val drift = shell.model.tileActions?.game
-        shell.onMeaning(Meaning.Activate, HostScreen.Top)
+        choose(shell, Row.AddToCollection)
         shell.onMeaning(Meaning.Activate, HostScreen.Top)
         assertEquals(listOf("Puzzle"), find.results.map { it.title })
         assertEquals(drift, shell.model.tileActions?.game)
@@ -295,7 +296,7 @@ class FindFlowTest {
         shell.onMeaning(Meaning.Done, HostScreen.Bottom)
         shell.onMeaning(Meaning.Options, HostScreen.Bottom)
         val drift = shell.model.tileActions?.game
-        shell.onMeaning(Meaning.Activate, HostScreen.Top)
+        choose(shell, Row.AddToCollection)
         shell.onMeaning(Meaning.Activate, HostScreen.Top)
         assertTrue(find.results.isEmpty())
         assertEquals(PanelLevel.Collections, shell.model.panel?.level)

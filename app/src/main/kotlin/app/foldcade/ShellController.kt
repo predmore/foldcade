@@ -397,7 +397,7 @@ class ShellController(
         val rows = panel?.let { panelRows(it, model) }.orEmpty()
         val at = if (meaning == Meaning.Activate) panel?.index?.coerceIn(0, (rows.size - 1).coerceAtLeast(0)) else chordIndex(rows, meaning)
         val row = at?.let { rows.getOrNull(it) }
-        if (model.homeGrid == HomeGrid.HiddenApps && model.panel == null && (meaning == Meaning.Activate || meaning == Meaning.ActivateBottom)) return null
+        if (find == null && model.homeGrid == HomeGrid.HiddenApps && model.panel == null && (meaning == Meaning.Activate || meaning == Meaning.ActivateBottom)) return null
         val before = home.board
         val shelves = shelfState
         val beforeFocus = model.focus
@@ -584,7 +584,14 @@ class ShellController(
             Effect.RenameFolder -> changeHome { home.startRename(it); it }
             Effect.ChooseFolderIcon -> changeHome { home.pickIcon(it); it }
             Effect.RemoveTile -> {
-                if (showingHome()) {
+                if (find != null) {
+                    current.tileActions?.game?.let { id ->
+                        changeFound {
+                            home.hide(id)
+                            packageName?.let { shelfState = shelfState.hide(it); commitShelves() }
+                        }
+                    }
+                } else if (showingHome()) {
                     val packageId = packageName
                     val hides = current.tileActions?.remove == RemoveVerb.Hide
                     changeHome { home.remove(it) }
@@ -612,7 +619,7 @@ class ShellController(
                         shelfState = shelfState.show(it.packageName, it.packageName in playerPackages)
                         commitShelves()
                     }
-                    if (!wasFolder) syncHome() else commitHome()
+                    if (!wasFolder) syncHome() else { commitHome(); find?.refresh(findEntries()) }
                     publish(model.copy(shelfEpoch = model.shelfEpoch + 1))
                 }
                 null
@@ -758,8 +765,15 @@ class ShellController(
 
     /** Everything Find lists. An app its shelf hides counts as hidden, as a game hidden from Home does. */
     private fun findEntries(): List<FindEntry> {
-        val shelfHidden = hiddenApps(installed, shelfState, playerPackages).map { androidHomeId(it.packageName) }.toSet()
-        return home.findEntries { it in shelfHidden }
+        val hidden = hiddenRows()
+        val hiddenIds = hidden.map { it.id }.toSet()
+        val entries = home.findEntries { it in hiddenIds }.map { it.copy(hidden = it.id in hiddenIds) }
+        val listed = entries.map { it.id }.toSet()
+        return entries + hidden.filter { it.id !in listed }.map {
+            FindEntry(it.id, it.title, if (it.id in home.board.retired) FindKind.Group
+                else if (it.kind == HomeKind.AndroidApp || it.kind == HomeKind.Emulator) FindKind.App else FindKind.Game,
+                hidden = true, mark = it.mark)
+        }
     }
 
     /** Does what a key in Find asked. A launch is the activity's to run, and Find closes once it has. */
@@ -780,7 +794,7 @@ class ShellController(
             is FindOutcome.OpenGroup -> {
                 find = null
                 val at = home.openGroup(outcome.id)
-                store.saveHomeBoard(home.encoded())
+                commitHome()
                 showBoard(at?.let { GridFocus(cellIndex = it, lastColumn = GridStrip.column(it)) } ?: model.focus, keepDialog = true)
                 cue(model.themeIndex, "activate")
             }
@@ -841,7 +855,7 @@ class ShellController(
             publish(model)
             return false
         }
-        store.saveHomeBoard(home.encoded())
+        commitHome()
         showBoard(GridFocus(cellIndex = index, lastColumn = GridStrip.column(index)), keepDialog = true)
         if (burst) {
             revealPulse++
@@ -865,8 +879,9 @@ class ShellController(
     /** Runs one Y menu action Find opened on its focused result. Find stays, over the same grid. */
     private fun changeFound(change: (Int) -> Unit): Effect? {
         change(model.focus.cellIndex)
+        commitHome()
+        reconcileShownApps()
         syncHome()
-        store.saveHomeBoard(home.encoded())
         publish(model.copy(shelfEpoch = model.shelfEpoch + 1))
         return null
     }
@@ -2134,7 +2149,9 @@ class ShellController(
         // On Find's results, Y's menu is the focused result's, wherever the grid under it is. An
         // open menu keeps the result it opened on, however the results move under it.
         if (counted.panel == null) find?.releaseMenu()
-        val found = find?.let { it.menuId ?: it.subject?.id?.takeIf { _ -> it.onResults } }?.let(home::findActions)
+        val found = find?.let { it.menuId ?: it.subject?.id?.takeIf { _ -> it.onResults } }?.let { id ->
+            home.findActions(id, hidden = hiddenRows().any { it.id == id })
+        }
         val tile = found ?: when {
             counted.homeGrid == HomeGrid.HiddenApps -> game?.let { TileActions(show = true, game = it.id) }
             onHome -> home.actions(counted.focus.cellIndex)

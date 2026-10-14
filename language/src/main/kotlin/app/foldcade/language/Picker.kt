@@ -614,7 +614,7 @@ fun panelRows(panel: SidePanel, model: PickerModel): List<Row> = validMenuRows(
     model.menuRows.firstOrNull { it.page == panel.page() }?.rows ?: livePanelRows(panel, model), model)
 
 private fun livePanelRows(panel: SidePanel, model: PickerModel): List<Row> = when (panel.level) {
-    PanelLevel.Actions -> if (model.count <= 0) {
+    PanelLevel.Actions -> if (model.count <= 0 && model.tileActions?.game == null) {
         if (model.tileActions?.undo == true) listOf(Row.Undo) else emptyList()
     } else actionRows(model.tileActions, model.appActions)
     PanelLevel.Collections -> collectionRows(model.tileActions)
