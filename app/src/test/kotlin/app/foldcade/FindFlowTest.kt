@@ -55,7 +55,7 @@ class FindFlowTest {
         // Start goes to the results, on the best one, where A, X and Y mean what they do on a tile.
         shell.onMeaning(Meaning.Done, HostScreen.Bottom)
         assertTrue(find.onResults)
-        assertEquals(HomeKeys.Idle, shell.homeKeys())
+        assertEquals(HomeKeys.FindResults, shell.homeKeys())
         val launch = shell.onMeaning(Meaning.ActivateBottom, HostScreen.Bottom)
         assertEquals(Effect.Launch(shell.model.focus.cellIndex, onBottom = true), launch)
         assertEquals("Puzzle", shell.focusedGame()?.title)

@@ -223,8 +223,23 @@ class FindTest {
         assertEquals(Meaning.Done, meaningOf(KeyEvent.KEYCODE_BUTTON_START, homeKeys = keys))
         assertEquals(Meaning.CaretBack, meaningOf(KeyEvent.KEYCODE_BUTTON_L1, homeKeys = keys))
         assertEquals(Meaning.Shift, meaningOf(KeyEvent.KEYCODE_BUTTON_L2, homeKeys = HomeKeys.Typing))
-        assertTrue(keys.typing && HomeKeys.Typing.typing)
-        assertFalse(HomeKeys.Idle.typing)
+        assertTrue(keys.guardsHeldKeys && HomeKeys.Typing.guardsHeldKeys)
+        assertFalse(HomeKeys.Idle.guardsHeldKeys)
+    }
+
+    @Test
+    fun findsResultsTakeTheGridsKeysAndKeepAHeldKeyToThemselves() {
+        val keys = HomeKeys.FindResults
+        assertEquals(Meaning.Activate, meaningOf(KeyEvent.KEYCODE_BUTTON_A, homeKeys = keys))
+        assertEquals(Meaning.ActivateBottom, meaningOf(KeyEvent.KEYCODE_BUTTON_X, homeKeys = keys))
+        assertEquals(Meaning.Options, meaningOf(KeyEvent.KEYCODE_BUTTON_Y, homeKeys = keys))
+        assertEquals(Meaning.View, meaningOf(KeyEvent.KEYCODE_BUTTON_SELECT, homeKeys = keys))
+        // Review r1: A held on a folder result opened it, and its repeats then launched the first game.
+        val guard = TypingKeyGuard()
+        assertFalse(guard.swallows(KeyEvent.KEYCODE_BUTTON_A, 0, keys.guardsHeldKeys))
+        assertTrue(guard.swallows(KeyEvent.KEYCODE_BUTTON_A, 1, HomeKeys.Idle.guardsHeldKeys))
+        guard.up(KeyEvent.KEYCODE_BUTTON_A)
+        assertFalse(guard.swallows(KeyEvent.KEYCODE_BUTTON_A, 0, HomeKeys.Idle.guardsHeldKeys))
     }
 
     @Test

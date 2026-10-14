@@ -344,6 +344,7 @@ fun gridHints(
         )
         // The shell names Find's own keys, which depend on what has been typed.
         HomeKeys.Finding -> findKeyboardHints(faceMap, typed = false)
+        HomeKeys.FindResults -> findResultHints(faceMap, screens, options)
         HomeKeys.ChoosingArt -> artPickerHints(faceMap)
         HomeKeys.AllLibrary -> launch + menu + HintKey(back, Copy.back)
         HomeKeys.Idle -> buildList {

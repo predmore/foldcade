@@ -468,8 +468,9 @@ class ShellController(
         ) {
             return app.foldcade.language.HomeKeys.Idle
         }
-        // On its results Find takes the grid's keys: A, X and Y mean what they do on a tile.
-        find?.takeIf { findActive() }?.let { return if (it.onResults) HomeKeys.Idle else HomeKeys.Finding }
+        // On its results Find takes the grid's keys: A, X and Y mean what they do on a tile. Its
+        // own state still guards a held key, since A on a folder closes Find under it.
+        find?.takeIf { findActive() }?.let { return if (it.onResults) HomeKeys.FindResults else HomeKeys.Finding }
         if (model.libraryGrid || model.homeGrid != HomeGrid.StandIns) {
             return app.foldcade.language.HomeKeys.Idle
         }

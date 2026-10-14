@@ -75,10 +75,16 @@ enum class HomeKeys {
      * L2 and R2 step the filters instead of Shift, and Select closes Find.
      */
     Finding,
+
+    /** Find's results. They take a grid's keys: A and X open, Y is the menu. */
+    FindResults,
 }
 
-/** True while the controller keyboard has the keys, for a name or for Find. */
-val HomeKeys.typing: Boolean get() = this == HomeKeys.Typing || this == HomeKeys.Finding
+/**
+ * True while a held key must keep its repeats to itself until it comes up: on the controller
+ * keyboard, for a name or for Find, and on Find's results, which can close under a held A.
+ */
+val HomeKeys.guardsHeldKeys: Boolean get() = this == HomeKeys.Typing || this == HomeKeys.Finding || this == HomeKeys.FindResults
 
 /** Keys that act once per press. Holding one does not repeat it. */
 private val shoulderKeys = setOf(
@@ -126,9 +132,11 @@ fun meaningOf(
         // A keyboard has no shoulders. The bracket keys sit where L1 and R1 would.
         keyCode == KeyEvent.KEYCODE_BUTTON_L1 || keyCode == KeyEvent.KEYCODE_LEFT_BRACKET -> Meaning.LeftPanel
         keyCode == KeyEvent.KEYCODE_BUTTON_R1 || keyCode == KeyEvent.KEYCODE_RIGHT_BRACKET -> Meaning.RightPanel
-        keyCode == KeyEvent.KEYCODE_BUTTON_X && (homeKeys == HomeKeys.Idle || homeKeys == HomeKeys.AllLibrary || homeKeys == HomeKeys.ChoosingArt) ->
+        keyCode == KeyEvent.KEYCODE_BUTTON_X && (homeKeys == HomeKeys.Idle || homeKeys == HomeKeys.AllLibrary ||
+            homeKeys == HomeKeys.ChoosingArt || homeKeys == HomeKeys.FindResults) ->
             Meaning.ActivateBottom
-        keyCode == KeyEvent.KEYCODE_BUTTON_Y && (homeKeys == HomeKeys.Idle || homeKeys == HomeKeys.AllLibrary) ->
+        keyCode == KeyEvent.KEYCODE_BUTTON_Y &&
+            (homeKeys == HomeKeys.Idle || homeKeys == HomeKeys.AllLibrary || homeKeys == HomeKeys.FindResults) ->
             Meaning.Options
         keyCode == KeyEvent.KEYCODE_BUTTON_START -> Meaning.Menu
         keyCode == KeyEvent.KEYCODE_BUTTON_SELECT -> Meaning.View

@@ -11,7 +11,7 @@ import androidx.activity.OnBackPressedCallback
  */
 abstract class PanelKeyActivity : ComponentActivity() {
     private companion object {
-        /** Keys held while typing keep their repeats away from the grid until they come up, on either screen. */
+        /** Keys held while typing, or on Find's results, keep their repeats away from the grid until they come up, on either screen. */
         val typingKeys = TypingKeyGuard()
     }
 
@@ -77,7 +77,7 @@ abstract class PanelKeyActivity : ComponentActivity() {
             onCalibrateConfirm(prompt)
             return true
         }
-        if (typingKeys.swallows(keyCode, event.repeatCount, homeKeys().typing)) return true
+        if (typingKeys.swallows(keyCode, event.repeatCount, homeKeys().guardsHeldKeys)) return true
         if (keyCode == KeyEvent.KEYCODE_BACK) return false
         val meaning = meaningOf(keyCode, event.repeatCount, faceMap(), homeKeys()) ?: return consumesUnmapped(keyCode)
         val shoulder = meaning == Meaning.LeftPanel || meaning == Meaning.RightPanel
