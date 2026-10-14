@@ -413,7 +413,7 @@ class ShellController(
             val reversible = row == Row.RemoveTile || row == Row.HideApp || row == Row.Tidy ||
                 (row is Row.Collection && (bulkIds?.all { it in before.folders[row.folderId]?.slots.orEmpty() } == true || before.folders[row.folderId]?.slots?.contains(target) == true))
             if (reversible) {
-                undo = HomeUndo(before, shelves,
+                undo = HomeUndo(if (bulkIds != null) home.bulkBefore ?: before else before, shelves,
                 when { row is Row.Collection -> Copy.removed
                     row == Row.Tidy -> Copy.tidied
                     row == Row.HideApp || removeVerb == RemoveVerb.Hide -> Copy.hidden

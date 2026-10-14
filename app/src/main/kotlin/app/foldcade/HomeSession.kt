@@ -145,12 +145,16 @@ class HomeSession(raw: String?, nowMillis: Long = System.currentTimeMillis()) {
         board = board
     }
 
-    /** Undo reverses the batch before deferred catalog arrivals are merged into it. */
+    /** Undo records only the edit, after the deferred report and before folder cleanup. */
+    var bulkBefore: HomeBoard? = null
+        private set
     var bulkAfter: HomeBoard? = null
         private set
 
     fun bulk(action: BulkAction, ids: List<String>, collectionId: String?, index: Int): Int {
         if (selection == null || ids.isEmpty()) return index
+        finishSelection()
+        bulkBefore = board
         val name = "${Copy.collection} ${board.folders.values.count { it.collection && it.id != HOME_FAVORITES } + 1}"
         val made = nextUserFolderId(board)
         board = when (action) {
@@ -163,7 +167,6 @@ class HomeSession(raw: String?, nowMillis: Long = System.currentTimeMillis()) {
             }
         }
         bulkAfter = board
-        finishSelection()
         if (action == BulkAction.NewCollection && made in board.folders) openNaming(made, index, fresh = true)
         return index
     }
