@@ -160,13 +160,13 @@ class FacePromptTest {
         assertEquals(Meaning.Options, meaningOf(KeyEvent.KEYCODE_BUTTON_Y))
         assertEquals(Meaning.Options, meaningOf(KeyEvent.KEYCODE_BUTTON_Y, homeKeys = HomeKeys.AllLibrary))
         assertNull(meaningOf(KeyEvent.KEYCODE_BUTTON_Y, homeKeys = HomeKeys.Moving))
-        assertNull(meaningOf(KeyEvent.KEYCODE_BUTTON_Y, homeKeys = HomeKeys.Renaming))
+        assertEquals(Meaning.Space, meaningOf(KeyEvent.KEYCODE_BUTTON_Y, homeKeys = HomeKeys.Typing))
         assertNull(meaningOf(KeyEvent.KEYCODE_BUTTON_X, homeKeys = HomeKeys.Moving))
         for (keys in listOf(HomeKeys.Moving, HomeKeys.PickingIcon)) {
             assertEquals(Meaning.CancelHold, meaningOf(KeyEvent.KEYCODE_BUTTON_B, homeKeys = keys))
             assertEquals(Meaning.CancelHold, meaningOf(KeyEvent.KEYCODE_BACK, homeKeys = keys))
         }
-        assertEquals(Meaning.Back, meaningOf(KeyEvent.KEYCODE_BUTTON_B, homeKeys = HomeKeys.Renaming))
+        assertEquals(Meaning.Back, meaningOf(KeyEvent.KEYCODE_BUTTON_B, homeKeys = HomeKeys.Typing))
         assertEquals(Meaning.Activate, meaningOf(KeyEvent.KEYCODE_BUTTON_A, homeKeys = HomeKeys.PickingIcon))
     }
 }

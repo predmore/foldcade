@@ -50,7 +50,6 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicText
 import androidx.compose.foundation.text.BasicTextField
-import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
@@ -116,12 +115,9 @@ import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.text.TextStyle
-import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.input.ImeAction
-import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
-import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -131,6 +127,7 @@ import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.zIndex
 import app.foldcade.language.heroPlayLine
+import app.foldcade.language.typingFaces
 import app.foldcade.language.heroFacts
 import app.foldcade.R
 import app.foldcade.language.QuickSetting
@@ -367,7 +364,7 @@ private fun PanelBody(
                 when (shown) {
                     null -> Unit
                     Surface.Hero -> if (connectHere) Unit else ArtPreviewHero(app, screen, scale, activity::dispatch)
-                    Surface.Picker -> Picker(app, screen, scale, activity::dispatch, activity::takeKeyboardFocus)
+                    Surface.Picker -> Picker(app, screen, scale, activity::dispatch)
                     Surface.CommandCenter -> CommandCenterScreen(
                         app,
                         CenterSubject.App(panel, app.commandCenter.beside(panel)),
@@ -902,13 +899,15 @@ private fun Hero(app: FoldcadeApp, screen: HostScreen, scale: Float, onEffect: (
         }
         return
     }
-    val subject = app.shell.focusedHero()
+    // While a name is typed the hero is what is being named, wherever the grid's focus is.
+    val naming = app.shell.typingHero()
+    val subject = naming ?: app.shell.focusedHero()
     val cellFocused = model.dialog == null && model.panel == null && !model.connectOpen && model.focus.chrome == null
     // The record behind each subject, so a layer that is fading out keeps its own cover.
     val records = remember { mutableMapOf<String, Game>() }
     val queries = remember { mutableMapOf<String, ArtQuery>() }
-    app.shell.focusedRecord()?.let { record -> if (subject != null) records[subject.key] = record }
-    app.shell.focusedGame()?.let(app.shell::artQuery)?.let { query -> if (subject != null) queries[subject.key] = query }
+    app.shell.focusedRecord()?.let { record -> if (subject != null && naming == null) records[subject.key] = record }
+    app.shell.focusedGame()?.let(app.shell::artQuery)?.let { query -> if (subject != null && naming == null) queries[subject.key] = query }
     val place = subject?.let { HeroPlace(gridToken(app), model.focus.cellIndex) }
     // The label follows focus at once. The art follows once it is whole.
     val staged = rememberStagedHero(app, subject, place, records, queries, scale)
@@ -979,15 +978,30 @@ private fun Hero(app: FoldcadeApp, screen: HostScreen, scale: Float, onEffect: (
             }
             if (subject != null) {
                 Spacer(Modifier.height(px(24f)))
-                HeroLabel(
-                    app,
-                    subject,
-                    cellFocused,
-                    cardMax,
-                    overArt = sceneArt,
-                    // A logo on wide art already says the name, once that art is the focused game's.
-                    named = !(shown?.key == subject.key && scene?.background != null && scene.logo != null),
-                )
+                // A name being typed takes the name card's place, under the art of what it names.
+                val typing = presence(app.shell.typing()?.typing, motion.durationIsland, scale)
+                Box(contentAlignment = Alignment.Center) {
+                    Box(Modifier.graphicsLayer { alpha = 1f - typing.progress.value }) {
+                        HeroLabel(
+                            app,
+                            subject,
+                            cellFocused,
+                            cardMax,
+                            overArt = sceneArt,
+                            // A logo on wide art already says the name, once that art is the focused game's.
+                            named = !(shown?.key == subject.key && scene?.background != null && scene.logo != null),
+                        )
+                    }
+                    typing.shown?.let { shown ->
+                        TypingField(
+                            typing = shown,
+                            style = text(theme.onBackground, design.type.heroTitle * TYPED_TITLE, theme),
+                            background = if (sceneArt) theme.surface.copy(alpha = SCENE_CARD_ALPHA) else theme.surface,
+                            scale = scale,
+                            modifier = Modifier.width(cardMax).rise { typing.progress.value },
+                        )
+                    }
+                }
             }
         }
         TopIslands(app, screen, scale) { panelState, progress, interactive ->
@@ -1726,6 +1740,9 @@ private const val SCREEN_PX = 1024
 private const val LOGO_WIDTH = 0.6f
 private const val LOGO_HEIGHT = 0.7f
 private const val SCENE_CARD_ALPHA = 0.72f
+
+/** A name being typed on the top screen reads a size up from the hero's title. */
+private const val TYPED_TITLE = 1.25f
 private const val AMBIENT_DIM = 0.55f
 private val AMBIENT_BLUR = 48.dp
 private const val TILE_PX = 384
@@ -1739,12 +1756,15 @@ private fun Picker(
     screen: HostScreen,
     scale: Float,
     onEffect: (Effect?) -> Unit,
-    takeKeyboardFocus: suspend () -> Unit,
 ) {
     val design = LocalFoldTheme.current.theme.style
     val theme = foldTheme()
     val shell = app.shell
     val model = shell.model
+    val motion = LocalFoldTheme.current.theme.motion
+    // The keyboard takes the grid's place: the grid sinks away as the keys rise in.
+    val typing = presence(shell.typing()?.typing, motion.durationIsland, scale)
+    val gridGone by remember { derivedStateOf { typing.progress.value >= 1f } }
     // The hero on the other screen carries the focused name, so the grid is
     // icons only. With one screen free there is no hero, and tiles keep labels.
     val iconsOnly = app.store.session.bothScreensFree()
@@ -1804,7 +1824,9 @@ private fun Picker(
                 val cell = minOf(fromHeight, fromWidth).coerceAtLeast(px(56f))
                 SideEffect { shell.setRowsPerPage(rows) }
                 val emptyTitle = emptyTitle(model)
-                if (model.libraryGrid && emptyTitle != null) {
+                if (gridGone) {
+                    Unit
+                } else if (model.libraryGrid && emptyTitle != null) {
                     EmptyLibrary(app, screen, emptyTitle, emptyActions(model))
                 } else if (!model.libraryGrid && model.homeGrid != HomeGrid.StandIns && model.count == 0) {
                     BasicText(
@@ -1812,21 +1834,37 @@ private fun Picker(
                         style = text(theme.muted, LocalFoldTheme.current.theme.style.type.dialogBody, theme),
                     )
                 } else {
-                    StripGrid(
-                        app = app,
-                        screen = screen,
-                        cell = cell,
-                        gap = gap,
-                        pad = ring,
+                    Box(Modifier.sinking { typing.progress.value }) {
+                        StripGrid(
+                            app = app,
+                            screen = screen,
+                            cell = cell,
+                            gap = gap,
+                            pad = ring,
+                            scale = scale,
+                            showTitle = !iconsOnly,
+                            followDrag = showingHome,
+                        )
+                    }
+                }
+                typing.shown?.let { shown ->
+                    ControllerKeyboard(
+                        typing = shown,
+                        buttons = typingFaces(model.faceMap),
+                        held = model.held,
                         scale = scale,
-                        showTitle = !iconsOnly,
-                        followDrag = showingHome,
+                        onTap = shell::tapTyping,
+                        modifier = Modifier.rise { typing.progress.value },
+                        // With no top screen beside it, the text shows over the keys.
+                        fieldStyle = if (iconsOnly) null else text(theme.onBackground, LocalFoldTheme.current.theme.style.type.heroTitle, theme),
                     )
                 }
             }
-            StripBar(count = model.count, first = shownFirstColumn(model), scale = scale)
-            val draft = shell.renameDraft()
-            if (draft != null) RenameField(app, screen, draft, takeKeyboardFocus)
+            if (!gridGone) {
+                Box(Modifier.sinking { typing.progress.value }) {
+                    StripBar(count = model.count, first = shownFirstColumn(model), scale = scale)
+                }
+            }
             // Under an open menu the blur would smear these. MenuHints draws them above it.
             GridHints(app, Modifier.alpha(if (LocalUnderMenu.current) 0f else 1f))
         }
@@ -3065,49 +3103,6 @@ private fun DialogAction(label: String, focused: Boolean, onClick: () -> Unit) {
             theme,
         ).copy(textAlign = TextAlign.Center),
     )
-}
-
-/**
- * The name field for a folder, under the grid. It takes focus and raises the
- * keyboard as it opens. The keyboard's Done saves like A; B keeps the old name.
- */
-@Composable
-private fun RenameField(
-    app: FoldcadeApp,
-    screen: HostScreen,
-    draft: String,
-    takeKeyboardFocus: suspend () -> Unit,
-) {
-    val theme = foldTheme()
-    val focus = remember { FocusRequester() }
-    val keyboard = LocalSoftwareKeyboardController.current
-    // The draft starts as the old name. The cursor goes after it so typing adds on, and select-all would hide it.
-    var field by remember { mutableStateOf(TextFieldValue(draft, TextRange(draft.length))) }
-    LaunchedEffect(Unit) {
-        takeKeyboardFocus()
-        focus.requestFocus()
-        keyboard?.show()
-    }
-    Column(Modifier.fillMaxWidth().padding(top = px(8f)), horizontalAlignment = Alignment.CenterHorizontally) {
-        BasicText(text = app.shell.renameLabel(), style = text(theme.muted, LocalFoldTheme.current.theme.style.type.hint, theme))
-        BasicTextField(
-            value = field,
-            onValueChange = { next ->
-                field = next
-                app.shell.editRename(next.text)
-            },
-            singleLine = true,
-            textStyle = text(theme.onBackground, LocalFoldTheme.current.theme.style.type.dialogBody, theme).copy(textAlign = TextAlign.Center),
-            cursorBrush = cursorBrush(theme),
-            keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Words, imeAction = ImeAction.Done),
-            keyboardActions = KeyboardActions(onDone = { app.shell.onMeaning(Meaning.Activate, screen) }),
-            modifier = Modifier
-                .fillMaxWidth(0.6f)
-                .focusRequester(focus)
-                .chip(true)
-                .padding(horizontal = px(20f), vertical = px(10f)),
-        )
-    }
 }
 
 @Composable

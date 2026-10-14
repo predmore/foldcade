@@ -350,10 +350,8 @@ class FoldcadeApp : Application() {
                 plugins.metadataIds().firstNotNullOfOrNull { id -> plugins.fetchAchievements(id, record) }
             },
             showHome = shell::goHome,
-        ) {
-            val model = shell.model
-            model.dialog != null || model.panel != null || model.connectOpen
-        }
+            busy = shell::holdsCommandCenter,
+        )
         brightness = ScreenBrightness(this)
         // The Thor's own quick settings, or Android's, can move it too. The slider follows.
         brightness.observe(::refreshBrightness)

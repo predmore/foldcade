@@ -19,7 +19,11 @@ import app.foldcade.language.Motion
 import app.foldcade.language.SyncMark
 import app.foldcade.language.TileActivity
 import app.foldcade.language.FOLDER_ICONS
+import app.foldcade.language.HeroSubject
 import app.foldcade.language.HomeKeys
+import app.foldcade.language.KeyCap
+import app.foldcade.language.KeyboardCopy
+import app.foldcade.language.KeyboardLayout
 import app.foldcade.language.MARK_FOLDER
 import app.foldcade.language.HOME_FAVORITES
 import app.foldcade.language.PanelLevel
@@ -333,18 +337,38 @@ class HomeGridOrderTest {
         assertTrue(folder >= 0)
         // The new collection takes the focus and opens its name field.
         assertEquals(folder, shell.model.focus.cellIndex)
-        assertEquals(HomeKeys.Renaming, shell.homeKeys())
+        assertEquals(HomeKeys.Typing, shell.homeKeys())
+        // A grid opened from a command center stays while a name is typed.
+        assertTrue(shell.holdsCommandCenter())
         assertEquals("${Copy.collection} 1", shell.renameDraft())
-        assertEquals(Copy.collectionName, shell.renameLabel())
-        shell.editRename("Handhelds")
+        // A new collection's keyboard starts on the quick names; A picks one and Start saves it.
+        assertTrue(shell.typing()!!.typing.focus.onChips)
         shell.onMeaning(Meaning.Activate, HostScreen.Bottom)
+        assertEquals(KeyboardCopy.quickNames.first(), shell.renameDraft())
+        shell.typing()?.setText("Handhelds")
+        shell.onMeaning(Meaning.Done, HostScreen.Bottom)
+        assertNull(shell.renameDraft())
+        assertEquals(HomeKeys.Idle, shell.homeKeys())
+        assertFalse(shell.holdsCommandCenter())
+        assertEquals("Handhelds", shell.homeFace(folder)?.title)
+        assertEquals(folder, shell.model.focus.cellIndex)
+        // Renaming starts with the old name selected: X clears it, a tapped key types, B keeps the old name.
+        choose(shell, Row.RenameFolder)
+        assertFalse(shell.typing()!!.typing.focus.onChips)
+        shell.onMeaning(Meaning.Erase, HostScreen.Bottom)
+        shell.tapTyping(KeyboardLayout.find(KeyCap.Glyph('n')))
+        assertEquals("N", shell.renameDraft())
+        shell.onMeaning(Meaning.LeftPanel, HostScreen.Bottom)
+        assertNull(shell.model.panel)
+        shell.onMeaning(Meaning.Back, HostScreen.Bottom)
         assertNull(shell.renameDraft())
         assertEquals("Handhelds", shell.homeFace(folder)?.title)
-        // B on the name field keeps the name it had.
+        // Done on an empty name keeps the keyboard open with the old name back.
         choose(shell, Row.RenameFolder)
-        shell.editRename("Nope")
+        shell.onMeaning(Meaning.Erase, HostScreen.Bottom)
+        shell.onMeaning(Meaning.Done, HostScreen.Bottom)
+        assertEquals("Handhelds", shell.renameDraft())
         shell.onMeaning(Meaning.Back, HostScreen.Bottom)
-        assertEquals("Handhelds", shell.homeFace(folder)?.title)
 
         choose(shell, Row.FolderIcon)
         assertEquals(HomeKeys.PickingIcon, shell.homeKeys())
@@ -491,9 +515,11 @@ class HomeGridOrderTest {
         assertEquals(listOf(Row.Collection(HOME_FAVORITES, Copy.favorites), Row.NewCollection), panelRows(shell.model.panel!!, shell.model))
         shell.onMeaning(Meaning.MoveDown, HostScreen.Bottom)
         shell.onMeaning(Meaning.Activate, HostScreen.Bottom)
-        assertEquals(HomeKeys.Renaming, shell.homeKeys())
-        shell.editRename("Quests")
-        shell.onMeaning(Meaning.Activate, HostScreen.Bottom)
+        assertEquals(HomeKeys.Typing, shell.homeKeys())
+        // The game's platform leads the quick names.
+        assertEquals("Nintendo 3DS", shell.typing()?.typing?.chips?.first())
+        shell.typing()?.setText("Quests")
+        shell.onMeaning(Meaning.Done, HostScreen.Bottom)
         assertEquals(inside, titles(shell))
         assertEquals("Drift", shell.focusedGame()?.title)
 
@@ -720,8 +746,8 @@ class HomeGridOrderTest {
         choose(shell, Row.AddToCollection)
         shell.onMeaning(Meaning.MoveDown, HostScreen.Bottom)
         shell.onMeaning(Meaning.Activate, HostScreen.Bottom)
-        shell.editRename("Racers")
-        shell.onMeaning(Meaning.Activate, HostScreen.Bottom)
+        shell.typing()?.setText("Racers")
+        shell.onMeaning(Meaning.Done, HostScreen.Bottom)
         shell.onMeaning(Meaning.Back, HostScreen.Bottom)
         focus(shell, titles(shell).indexOf("Racers"))
         shell.onMeaning(Meaning.Activate, HostScreen.Bottom)
@@ -862,6 +888,50 @@ class HomeGridOrderTest {
     )
 
     /** Y's rows for the focused tile, with the menu left closed. */
+    @Test
+    fun namingShowsWhatIsBeingNamedNotWhatTheGridHasFocused() {
+        // Review r4: inside a collection, Add to unchecks it, which empties the focused slot,
+        // and New collection then had no hero, so the name and caret were nowhere to be seen.
+        val shell = shell()
+        shell.ingestLibrary("local-folder", listOf(entry("drift", "Drift", "nintendo-3ds")), emptyList())
+        focus(shell, titles(shell).indexOf("Nintendo 3DS"))
+        shell.onMeaning(Meaning.Activate, HostScreen.Bottom)
+        focus(shell, titles(shell).indexOf("Drift"))
+        choose(shell, Row.AddToCollection)
+        pickRow(shell) { it == Row.NewCollection }
+        shell.typing()?.setText("Racers")
+        shell.onMeaning(Meaning.Done, HostScreen.Bottom)
+        shell.onMeaning(Meaning.Back, HostScreen.Bottom)
+        shell.onMeaning(Meaning.Back, HostScreen.Bottom)
+        focus(shell, titles(shell).indexOf("Racers"))
+        shell.onMeaning(Meaning.Activate, HostScreen.Bottom)
+        assertEquals(listOf("Drift"), titles(shell).filter { it.isNotEmpty() })
+
+        choose(shell, Row.AddToCollection)
+        pickRow(shell) { it is Row.Collection && it.label == "Racers" }
+        pickRow(shell) { it == Row.NewCollection }
+        assertEquals(HomeKeys.Typing, shell.homeKeys())
+        // The slot the grid has focused is empty now, so it has no hero of its own.
+        assertNull(shell.focusedHero())
+        // The keyboard's hero is the collection being named.
+        val named = shell.typingHero()
+        assertEquals("${Copy.collection} 2", (named as HeroSubject.Folder).folder.name)
+        assertEquals(MARK_FOLDER, named.folder.mark)
+        shell.onMeaning(Meaning.Back, HostScreen.Bottom)
+        assertNull(shell.typingHero())
+    }
+
+    /** Down the open menu to the first row that matches, then A. */
+    private fun pickRow(shell: ShellController, match: (Row) -> Boolean) {
+        val panel = shell.model.panel ?: error("no menu open")
+        val rows = panelRows(panel, shell.model)
+        val to = rows.indexOfFirst(match)
+        assertTrue("no such row in $rows", to >= 0)
+        repeat(to - panel.index) { shell.onMeaning(Meaning.MoveDown, HostScreen.Bottom) }
+        repeat(panel.index - to) { shell.onMeaning(Meaning.MoveUp, HostScreen.Bottom) }
+        shell.onMeaning(Meaning.Activate, HostScreen.Bottom)
+    }
+
     private fun optionRows(shell: ShellController): List<Row> =
         actionRows(shell.model.tileActions, shell.model.appActions)
 

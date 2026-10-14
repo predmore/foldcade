@@ -16,7 +16,7 @@ class ChordTest {
         assertEquals(Meaning.Menu, meaningOf(KeyEvent.KEYCODE_BUTTON_START))
         assertEquals(Meaning.View, meaningOf(KeyEvent.KEYCODE_BUTTON_SELECT))
         assertNull(meaningOf(KeyEvent.KEYCODE_BUTTON_START, repeatCount = 1))
-        assertNull(meaningOf(KeyEvent.KEYCODE_BUTTON_SELECT, homeKeys = HomeKeys.Renaming))
+        assertNull(meaningOf(KeyEvent.KEYCODE_BUTTON_SELECT, homeKeys = HomeKeys.Typing))
     }
 
     @Test
