@@ -319,7 +319,8 @@ class HomeSession(raw: String?, nowMillis: Long = System.currentTimeMillis()) {
             )
         }
         val groups = board.slots.mapNotNull { slot -> slot?.let { board.folders[it] } }.distinctBy { it.id }
-            .map { FindEntry(id = it.id, title = it.name, kind = FindKind.Group, mark = it.mark) }
+            // A collection wears its look, a coloured card, and Recently played its clock, as on Home.
+            .map { FindEntry(id = it.id, title = it.name, kind = FindKind.Group, mark = collectionLook(it)?.mark ?: it.mark) }
         return items + groups
     }
 

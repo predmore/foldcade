@@ -4,7 +4,9 @@ import app.foldcade.api.plugin.Availability
 import app.foldcade.api.plugin.Game
 import app.foldcade.api.plugin.MemoryCredentialStore
 import app.foldcade.host.PluginHost
+import app.foldcade.language.Copy
 import app.foldcade.language.Effect
+import app.foldcade.language.HeroSubject
 import app.foldcade.language.FindFilterKind
 import app.foldcade.language.GridStrip
 import app.foldcade.language.HomeGrid
@@ -140,6 +142,32 @@ class FindFlowTest {
         // The first ring drawn after the landing bursts; any ring drawn later, as after a game, does not.
         assertTrue(shell.takeRevealBurst())
         assertFalse(shell.takeRevealBurst())
+    }
+
+    @Test
+    fun aCollectionLooksInFindAsItDoesOnHome() {
+        // Review r1: Find drew a collection with its saved glyph alone, not its coloured card.
+        val shell = shell()
+        focus(shell, titles(shell).indexOf("Nintendo 3DS"))
+        shell.onMeaning(Meaning.Activate, HostScreen.Bottom)
+        focus(shell, titles(shell).indexOf("Drift"))
+        shell.onMeaning(Meaning.Options, HostScreen.Bottom)
+        choose(shell, Row.Favorite)
+        shell.onMeaning(Meaning.Back, HostScreen.Bottom)
+        val onHome = shell.homeFace(titles(shell).indexOf(Copy.favorites))!!.mark
+        shell.onMeaning(Meaning.View, HostScreen.Bottom)
+        type(shell, "favor")
+        val found = shell.find!!.results.first()
+        assertEquals(Copy.favorites, found.title)
+        assertEquals(onHome, found.mark)
+        assertEquals(onHome, (shell.focusedHero() as HeroSubject.Folder).folder.mark)
+    }
+
+    /** Runs [row] in the open Y menu by walking to it. */
+    private fun choose(shell: ShellController, row: Row) {
+        val at = panelRows(shell.model.panel!!, shell.model).indexOf(row)
+        repeat(at) { shell.onMeaning(Meaning.MoveDown, HostScreen.Top) }
+        shell.onMeaning(Meaning.Activate, HostScreen.Top)
     }
 
     @Test

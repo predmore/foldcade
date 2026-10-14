@@ -1668,9 +1668,9 @@ class ShellController(
     /** Find's subject as the top screen shows it. A group shows as its folder does. */
     private fun foundHero(session: FindSession): HeroSubject? {
         val entry = session.subject ?: return null
+        // A group's mark is already its look, as its result tile shows it.
         if (entry.kind == FindKind.Group) {
-            val folder = home.board.folders[entry.id]
-            return HeroSubject.Folder(HeroFolder(key = entry.id, name = entry.title, count = folderCount(home.board, entry.id), mark = folder?.mark))
+            return HeroSubject.Folder(HeroFolder(key = entry.id, name = entry.title, count = folderCount(home.board, entry.id), mark = entry.mark))
         }
         val game = foundGame() ?: return null
         return HeroSubject.Item(
