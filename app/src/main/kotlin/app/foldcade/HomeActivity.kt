@@ -192,10 +192,12 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
         dispatch(foldcade.shell.setPromptHeld(key, held, inputWindow))
     }
 
+    override fun capturingHold(): Boolean = foldcade.shell.model.deleteHold?.inputWindow == inputWindow
+
     override fun capturingConfirm(): Boolean = foldcade.shell.model.capturingConfirm
 
-    override fun onMeaningReleased(meaning: app.foldcade.language.Meaning) {
-        dispatch(foldcade.shell.releaseMeaning(meaning, inputWindow))
+    override fun onMeaningReleased(meaning: app.foldcade.language.Meaning, canceled: Boolean) {
+        dispatch(foldcade.shell.releaseMeaning(meaning, inputWindow, canceled))
     }
 
     override fun onCalibrateConfirm(key: PromptKey) {

@@ -13,29 +13,29 @@ class TypingKeyGuardTest {
     fun aKeyHeldWhileTypingStaysQuietAfterATapCloses() {
         val guard = TypingKeyGuard()
         // X goes down and repeats while the keyboard is open: the keyboard hears every one.
-        assertFalse(guard.swallows(x, repeatCount = 0, typing = true))
-        assertFalse(guard.swallows(x, repeatCount = 1, typing = true))
+        assertFalse(guard.swallows(x, repeatCount = 0, capturing = true))
+        assertFalse(guard.swallows(x, repeatCount = 1, capturing = true))
         // A tap on Done closes it with X still held. Its repeats never reach the grid.
-        assertTrue(guard.swallows(x, repeatCount = 2, typing = false))
-        assertTrue(guard.swallows(x, repeatCount = 3, typing = false))
+        assertTrue(guard.swallows(x, repeatCount = 2, capturing = false))
+        assertTrue(guard.swallows(x, repeatCount = 3, capturing = false))
         // Once X comes up, the next press is the grid's.
         guard.up(x)
-        assertFalse(guard.swallows(x, repeatCount = 0, typing = false))
-        assertFalse(guard.swallows(x, repeatCount = 1, typing = false))
+        assertFalse(guard.swallows(x, repeatCount = 0, capturing = false))
+        assertFalse(guard.swallows(x, repeatCount = 1, capturing = false))
     }
 
     @Test
     fun theKeyThatClosesTheKeyboardIsHeldBackToo() {
         val guard = TypingKeyGuard()
-        assertFalse(guard.swallows(a, repeatCount = 0, typing = true))
-        assertTrue(guard.swallows(a, repeatCount = 1, typing = false))
+        assertFalse(guard.swallows(a, repeatCount = 0, capturing = true))
+        assertTrue(guard.swallows(a, repeatCount = 1, capturing = false))
     }
 
     @Test
     fun keysPressedOnTheGridAreLeftAlone() {
         val guard = TypingKeyGuard()
-        assertFalse(guard.swallows(a, repeatCount = 0, typing = false))
-        assertFalse(guard.swallows(a, repeatCount = 4, typing = false))
+        assertFalse(guard.swallows(a, repeatCount = 0, capturing = false))
+        assertFalse(guard.swallows(a, repeatCount = 4, capturing = false))
     }
 
     @Test
@@ -43,19 +43,19 @@ class TypingKeyGuardTest {
         // X goes down on the top screen; the tap on Done moves focus to the bottom one. The top
         // window hears X cancelled, and the bottom one gets its repeats. They stay quiet.
         val guard = TypingKeyGuard()
-        guard.swallows(x, repeatCount = 0, typing = true)
+        guard.swallows(x, repeatCount = 0, capturing = true)
         guard.up(x, canceled = true)
-        assertTrue(guard.swallows(x, repeatCount = 5, typing = false))
+        assertTrue(guard.swallows(x, repeatCount = 5, capturing = false))
         guard.up(x)
-        assertFalse(guard.swallows(x, repeatCount = 0, typing = false))
+        assertFalse(guard.swallows(x, repeatCount = 0, capturing = false))
     }
 
     @Test
     fun aLostKeyUpDoesNotEatTheNextPress() {
         val guard = TypingKeyGuard()
-        guard.swallows(x, repeatCount = 0, typing = true)
+        guard.swallows(x, repeatCount = 0, capturing = true)
         // No key-up arrived (focus moved). A fresh press is the grid's, and so are its repeats.
-        assertFalse(guard.swallows(x, repeatCount = 0, typing = false))
-        assertFalse(guard.swallows(x, repeatCount = 1, typing = false))
+        assertFalse(guard.swallows(x, repeatCount = 0, capturing = false))
+        assertFalse(guard.swallows(x, repeatCount = 1, capturing = false))
     }
 }

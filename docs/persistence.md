@@ -46,4 +46,6 @@ Run all unit tests and API 33 checks with:
 
 These tests cover application save/restore logic and file round trips. Preference tests use an in-memory Android interface implementation; they do not simulate an interrupted Android disk write. Physical-device force-stop/relaunch, power-loss, and device-transfer checks remain separate validation steps.
 
-Undo keeps only the most recent removal snapshot in memory for eight seconds. It is never saved across restarts.
+Collection ids use a saved high-water counter and are never reused after removal. Deleting a collection also drops hidden membership references to it. Older layouts infer the counter from surviving ids and recovery records.
+
+Undo keeps the before/after delta of the most recent removal in memory for eight seconds. It applies that inverse to the current board, preserving catalog arrivals and their positions. Any later saved user edit clears undo; library merges do not. The current catalog is reapplied after Undo so games that no longer exist are not resurrected. Undo is never saved across restarts.

@@ -41,6 +41,7 @@ import app.foldcade.plugins.melonds.MelonDsEntry
 import kotlinx.coroutines.Dispatchers
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -838,6 +839,42 @@ class HomeGridOrderTest {
         focus(shell, titles(shell).indexOf("Nintendo 3DS"))
         shell.onMeaning(Meaning.Activate, HostScreen.Bottom)
         assertEquals(listOf("Puzzle"), titles(shell))
+    }
+
+    @Test
+    fun undoExpiryCannotSkipTheHoldWhenRowsShiftUnderConfirm() {
+        val shell = shell()
+        shell.ingestLibrary("romm", listOf(entry("drift", "Drift", "nintendo-3ds", backendId = "romm", availability = Availability.Cached)), emptyList())
+        focus(shell, titles(shell).indexOf("Nintendo 3DS"))
+        shell.onMeaning(Meaning.Activate, HostScreen.Bottom)
+        choose(shell, Row.RemoveTile)
+        shell.openHomeAll()
+        shell.onMeaning(Meaning.Options, HostScreen.Bottom)
+        pickRowFocus(shell, Row.PinTile)
+        recoveryTime += 8001L
+        assertNull(shell.onMeaning(Meaning.Activate, HostScreen.Bottom))
+        assertEquals(Row.RemoveDownload, shell.model.deleteHold?.row)
+    }
+
+    private fun pickRowFocus(shell: ShellController, row: Row) {
+        val target = panelRows(shell.model.panel!!, shell.model).indexOf(row)
+        assertTrue(target >= 0)
+        while (shell.model.panel!!.index != target) shell.onMeaning(if (shell.model.panel!!.index < target) Meaning.MoveDown else Meaning.MoveUp, HostScreen.Bottom)
+    }
+
+    @Test
+    fun deleteDownloadSuppressesTheConfirmRepeatUntilKeyUp() {
+        val shell = shell()
+        shell.ingestLibrary("romm", listOf(entry("drift", "Drift", "nintendo-3ds", backendId = "romm", availability = Availability.Cached)), emptyList())
+        shell.openHomeAll()
+        choose(shell, Row.RemoveDownload)
+        recoveryTime += 800L
+        assertEquals(Effect.RemoveDownload(homeGameId("romm", "drift")), shell.tickRecovery())
+        assertNull(shell.onMeaning(Meaning.Activate, HostScreen.Bottom, repeatCount = 1))
+        shell.releaseMeaning(Meaning.Activate, canceled = true)
+        assertNull(shell.onMeaning(Meaning.Activate, HostScreen.Top, repeatCount = 2))
+        shell.releaseMeaning(Meaning.Activate)
+        assertNotNull(shell.onMeaning(Meaning.Activate, HostScreen.Bottom))
     }
 
     @Test

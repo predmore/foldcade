@@ -330,6 +330,7 @@ class ShellController(
     private val inputWindows = mutableMapOf<String, Boolean>()
     private val screenWindows = mutableMapOf<HostScreen, String>()
     private val inputKeys = mutableMapOf<String, Int>()
+    private val heldActions = app.foldcade.language.HeldKeyGuard()
 
     fun registerInputWindow(screen: HostScreen, window: String) { screenWindows[screen] = window }
     fun inputWindow(screen: HostScreen): String = screenWindows[screen] ?: screen.name
@@ -377,6 +378,7 @@ class ShellController(
     }
 
     fun onMeaning(meaning: Meaning, screen: HostScreen, repeatCount: Int = 0, inputWindow: String = inputWindow(screen)): Effect? {
+        if (!completingDelete && heldActions.swallows(meaning.ordinal, repeatCount, capturing = model.deleteHold?.meaning == meaning)) return null
         if (!completingDelete && model.deleteHold != null) {
             inputKey(meaning, inputWindow, inputKeys[inputWindow])
             return null
@@ -385,13 +387,6 @@ class ShellController(
         val rows = panel?.let { panelRows(it, model) }.orEmpty()
         val at = if (meaning == Meaning.Activate) panel?.index?.coerceIn(0, (rows.size - 1).coerceAtLeast(0)) else chordIndex(rows, meaning)
         val row = at?.let { rows.getOrNull(it) }
-        if (!completingDelete && row != null && (row == Row.RemoveDownload || row == Row.DeleteShortcut)) {
-            if (model.deleteHold == null && repeatCount == 0 && inputWindows[inputWindow] != false) {
-                val key = if (meaning == Meaning.ActivateBottom) PromptKey.FaceX else promptKeyOf(model.faceMap.confirmKey) ?: PromptKey.FaceA
-                model = model.copy(panel = panel?.copy(index = at), deleteHold = DeleteHold(row, key, nowMillis(), model.tileActions?.game, meaning, inputWindow, inputKeys[inputWindow]), deleteProgress = 0f)
-            }
-            return null
-        }
         if (model.homeGrid == HomeGrid.HiddenApps && model.panel == null && (meaning == Meaning.Activate || meaning == Meaning.ActivateBottom)) return null
         val before = home.board
         val shelves = shelfState
@@ -400,7 +395,7 @@ class ShellController(
         val beforeSaved = home.encoded()
         val target = model.tileActions?.game
         val removeVerb = model.tileActions?.remove
-        val result = applyMeaning(meaning, screen, repeatCount)
+        val result = applyMeaning(meaning, screen, repeatCount, inputWindow)
         if (row != Row.Undo && (home.encoded() != beforeSaved || shelfState != shelves || row == Row.MoveTile)) {
             val reversible = row == Row.RemoveTile || row == Row.HideApp ||
                 (row is Row.Collection && before.folders[row.folderId]?.slots?.contains(target) == true)
@@ -417,7 +412,7 @@ class ShellController(
         return result
     }
 
-    private fun applyMeaning(meaning: Meaning, screen: HostScreen, repeatCount: Int = 0): Effect? {
+    private fun applyMeaning(meaning: Meaning, screen: HostScreen, repeatCount: Int, inputWindow: String): Effect? {
         if (artPicker != null) {
             artInput(meaning)
             return null
@@ -452,6 +447,21 @@ class ShellController(
         val (next, effect) = reduce(current, meaning, screen, repeatCount)
         // L1 or R1 opening over Find's menu leaves Find: those drawers go places of their own.
         if (find != null && next.panel?.let { it.level == PanelLevel.Root || it.pendingSide != null } == true) find = null
+        // Rows may change while a key is arriving (for example, Undo just expired). Guard
+        // the reducer's actual effect, rather than trusting the row last drawn on screen.
+        if (!completingDelete && (effect is Effect.RemoveDownload || effect is Effect.DeleteShortcut)) {
+            val row = if (effect is Effect.RemoveDownload) Row.RemoveDownload else Row.DeleteShortcut
+            val game = if (effect is Effect.RemoveDownload) effect.gameId else (effect as Effect.DeleteShortcut).gameId
+            val panel = current.panel ?: return null
+            val index = panelRows(panel, current).indexOf(row)
+            if (index >= 0 && repeatCount == 0 && inputWindows[inputWindow] != false) {
+                val key = if (meaning == Meaning.ActivateBottom) PromptKey.FaceX else promptKeyOf(current.faceMap.confirmKey) ?: PromptKey.FaceA
+                heldActions.capture(meaning.ordinal)
+                model = current.copy(panel = panel.copy(index = index),
+                    deleteHold = DeleteHold(row, key, nowMillis(), game, meaning, inputWindow, inputKeys[inputWindow]), deleteProgress = 0f)
+            }
+            return null
+        }
         if (!next.connectOpen) connectToken = ""
         val packageName = focusedGame()?.androidPackage
         val panelLabel = next.panel?.let { panel ->
@@ -1230,8 +1240,11 @@ class ShellController(
         )
     }
 
-    fun releaseMeaning(meaning: Meaning, window: String? = null): Effect? =
-        if (model.deleteHold?.meaning == meaning && (window == null || model.deleteHold?.inputWindow == window)) releaseDeleteHold() else null
+    fun releaseMeaning(meaning: Meaning, window: String? = null, canceled: Boolean = false): Effect? {
+        heldActions.up(meaning.ordinal, canceled)
+        if (canceled) { cancelDeleteHold(window); return null }
+        return if (model.deleteHold?.meaning == meaning && (window == null || model.deleteHold?.inputWindow == window)) releaseDeleteHold() else null
+    }
 
     private fun releaseDeleteHold(): Effect? {
         val hold = model.deleteHold ?: return null
