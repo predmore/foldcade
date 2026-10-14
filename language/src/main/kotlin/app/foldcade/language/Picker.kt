@@ -485,6 +485,8 @@ data class TileActions(
     val remove: RemoveVerb? = null,
     /** A server game downloaded to this device can be deleted again. */
     val removeDownload: Boolean = false,
+    /** The game these rows act on. Null for a tile that is not a game, or one off the home grid. */
+    val game: String? = null,
 )
 
 /** Y's menu: the tile's own actions, then an Android app's shelf actions. */
@@ -709,25 +711,32 @@ sealed interface Effect {
     data class OpenAndroidSetting(val setting: AndroidSetting) : Effect
     data object OpenLicenses : Effect
     data object DismissButtonLabels : Effect
-    data object ChooseArt : Effect
+    /** Choose art for [gameId], or the focused game when null. */
+    data class ChooseArt(val gameId: String? = null) : Effect
     /** Pick up the focused tile to move it. */
     data object MoveTile : Effect
 
-    /** Put the focused game in collection [folderId], or take it out. The menu stays open. */
-    data class ToggleCollection(val folderId: String) : Effect
+    /*
+     * The tile menu's effects name the game they act on ([TileActions.game]), so a menu that
+     * kept its game after the slot on screen emptied still acts on that game. Null means the
+     * focused tile.
+     */
 
-    /** A new collection, holding the focused game when there is one, then its name field. */
-    data object NewCollection : Effect
-    data object ToggleFavorite : Effect
+    /** Put the game in collection [folderId], or take it out. The menu stays open. */
+    data class ToggleCollection(val folderId: String, val gameId: String? = null) : Effect
 
-    /** A tile for the focused game on the root. It stays where it is too. */
-    data object PinTile : Effect
+    /** A new collection, holding the game when there is one, then its name field. */
+    data class NewCollection(val gameId: String? = null) : Effect
+    data class ToggleFavorite(val gameId: String? = null) : Effect
+
+    /** A tile for the game on the root. It stays where it is too. */
+    data class PinTile(val gameId: String? = null) : Effect
     data object RenameFolder : Effect
     data object ChooseFolderIcon : Effect
     data object RemoveTile : Effect
 
-    /** Delete the focused server game's downloaded copy. Its saves stay. */
-    data object RemoveDownload : Effect
+    /** Delete the server game's downloaded copy. Its saves stay. */
+    data class RemoveDownload(val gameId: String? = null) : Effect
     data object OpenAll : Effect
     data object ToggleAddNew : Effect
 
@@ -1576,17 +1585,17 @@ private fun activateRow(
         Row.AddToCollection -> model.copy(panel = panel.copy(level = PanelLevel.Collections, index = 0, via = panel.level)) to null
         // The check flips here so it moves at once. The shell's own list replaces this one.
         is Row.Collection -> model.copy(panel = panel, tileActions = model.tileActions?.toggled(row.folderId)) to
-            Effect.ToggleCollection(row.folderId)
-        Row.Favorite -> model.copy(panel = null, focus = panel.grid) to Effect.ToggleFavorite
-        Row.PinTile -> model.copy(panel = null, focus = panel.grid) to Effect.PinTile
+            Effect.ToggleCollection(row.folderId, model.tileActions?.game)
+        Row.Favorite -> model.copy(panel = null, focus = panel.grid) to Effect.ToggleFavorite(model.tileActions?.game)
+        Row.PinTile -> model.copy(panel = null, focus = panel.grid) to Effect.PinTile(model.tileActions?.game)
         is Row.Destination -> model.copy(panel = null, focus = panel.grid) to Effect.AddAppTo(row.folderId)
-        Row.ChooseArt -> model.copy(panel = null, focus = panel.grid) to Effect.ChooseArt
+        Row.ChooseArt -> model.copy(panel = null, focus = panel.grid) to Effect.ChooseArt(model.tileActions?.game)
         Row.MoveTile -> model.copy(panel = null, focus = panel.grid) to Effect.MoveTile
-        Row.NewCollection -> model.copy(panel = null, focus = panel.grid) to Effect.NewCollection
+        Row.NewCollection -> model.copy(panel = null, focus = panel.grid) to Effect.NewCollection(model.tileActions?.game)
         Row.RenameFolder -> model.copy(panel = null, focus = panel.grid) to Effect.RenameFolder
         Row.FolderIcon -> model.copy(panel = null, focus = panel.grid) to Effect.ChooseFolderIcon
         Row.RemoveTile -> model.copy(panel = null, focus = panel.grid) to Effect.RemoveTile
-        Row.RemoveDownload -> model.copy(panel = null, focus = panel.grid) to Effect.RemoveDownload
+        Row.RemoveDownload -> model.copy(panel = null, focus = panel.grid) to Effect.RemoveDownload(model.tileActions?.game)
         Row.ButtonLabels -> if (model.capturingConfirm) {
             model.copy(capturingConfirm = false, offerButtonLabels = false) to Effect.DismissButtonLabels
         } else {

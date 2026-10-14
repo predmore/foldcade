@@ -694,7 +694,7 @@ class HomeGridOrderTest {
         shell.onMeaning(Meaning.Options, HostScreen.Bottom)
         val rows = panelRows(shell.model.panel!!, shell.model)
         repeat(rows.indexOf(Row.RemoveDownload)) { shell.onMeaning(Meaning.MoveDown, HostScreen.Bottom) }
-        assertEquals(Effect.RemoveDownload, shell.onMeaning(Meaning.Activate, HostScreen.Bottom))
+        assertEquals(Effect.RemoveDownload(homeGameId("romm", "drift")), shell.onMeaning(Meaning.Activate, HostScreen.Bottom))
         assertNull(shell.model.panel)
         assertEquals("drift", shell.focusedDownload()?.remoteKey)
 
@@ -702,6 +702,58 @@ class HomeGridOrderTest {
         assertEquals(true, shell.homeFace(titles(shell).indexOf("Drift"))?.onServer)
         assertNull(shell.focusedDownload())
         assertFalse(Row.RemoveDownload in optionRows(shell))
+    }
+
+    @Test
+    fun aMenuThatKeptItsGameDeletesThatGamesDownload() {
+        // Review r2 #2: the game left the collection on screen, and Delete download read the empty slot.
+        val shell = shell()
+        shell.setArtKeySaved(true)
+        val drift = homeGameId("romm", "drift")
+        shell.ingestLibrary(
+            "romm",
+            listOf(entry("drift", "Drift", "nintendo-3ds", backendId = "romm", availability = Availability.Cached)),
+            emptyList(),
+        )
+        focus(shell, titles(shell).indexOf("Nintendo 3DS"))
+        shell.onMeaning(Meaning.Activate, HostScreen.Bottom)
+        choose(shell, Row.AddToCollection)
+        shell.onMeaning(Meaning.MoveDown, HostScreen.Bottom)
+        shell.onMeaning(Meaning.Activate, HostScreen.Bottom)
+        shell.editRename("Racers")
+        shell.onMeaning(Meaning.Activate, HostScreen.Bottom)
+        shell.onMeaning(Meaning.Back, HostScreen.Bottom)
+        focus(shell, titles(shell).indexOf("Racers"))
+        shell.onMeaning(Meaning.Activate, HostScreen.Bottom)
+        assertEquals(listOf("Drift"), titles(shell))
+        // In the slot, Art names the game and opens on it.
+        assertTrue(Row.ChooseArt in optionRows(shell))
+        assertEquals(drift, shell.model.tileActions?.game)
+        choose(shell, Row.ChooseArt)
+        assertEquals(drift, shell.artPicker?.gameId)
+        shell.artInput(Meaning.Back)
+        assertNull(shell.artPicker)
+
+        choose(shell, Row.AddToCollection)
+        shell.onMeaning(Meaning.MoveDown, HostScreen.Bottom)
+        shell.onMeaning(Meaning.Activate, HostScreen.Bottom)
+        assertEquals(listOf(""), titles(shell))
+        shell.onMeaning(Meaning.Back, HostScreen.Bottom)
+        val rows = panelRows(shell.model.panel!!, shell.model)
+        assertEquals(drift, shell.model.tileActions?.game)
+        // Art previews on the focused game's hero, which an empty slot has none of, so a kept menu leaves it out.
+        assertFalse(Row.ChooseArt in rows)
+        assertTrue(Row.RemoveDownload in rows)
+        repeat(rows.indexOf(Row.RemoveDownload)) { shell.onMeaning(Meaning.MoveDown, HostScreen.Bottom) }
+        val effect = shell.onMeaning(Meaning.Activate, HostScreen.Bottom)
+        assertEquals(Effect.RemoveDownload(drift), effect)
+        assertNull(shell.model.panel)
+        // The slot is empty, so only the named game finds the copy to delete.
+        assertNull(shell.focusedDownload())
+        assertEquals("drift", shell.downloadFor((effect as Effect.RemoveDownload).gameId)?.remoteKey)
+        // While it is being deleted, it is not offered again.
+        assertTrue(shell.beginRemove("romm", "drift"))
+        assertNull(shell.downloadFor(drift))
     }
 
     @Test

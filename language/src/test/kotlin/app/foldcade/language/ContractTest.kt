@@ -217,7 +217,20 @@ class ContractTest {
         assertEquals(RowControl.Check(true), rowControl(rows[0], toggled))
         // New collection closes the menu for the name field.
         val made = reduce(addTo.copy(panel = addTo.panel!!.copy(index = 2)), Meaning.Activate)
-        assertEquals(Effect.NewCollection, made.second)
+        assertEquals(Effect.NewCollection(), made.second)
+        // Each effect names the game the rows act on, so a menu that kept its game still acts on it.
+        val held = addTo.copy(tileActions = addTo.tileActions!!.copy(game = "lib:romm:7", removeDownload = true))
+        assertEquals(Effect.ToggleCollection(HOME_FAVORITES, "lib:romm:7"), reduce(held, Meaning.Activate).second)
+        assertEquals(Effect.NewCollection("lib:romm:7"), reduce(held.copy(panel = held.panel!!.copy(index = 2)), Meaning.Activate).second)
+        val actions = held.copy(panel = held.panel!!.copy(level = PanelLevel.Actions, index = 0))
+        val heldRows = panelRows(actions.panel!!, actions)
+        fun pick(row: Row) = reduce(actions.copy(panel = actions.panel!!.copy(index = heldRows.indexOf(row))), Meaning.Activate).second
+        assertEquals(Effect.ToggleFavorite("lib:romm:7"), pick(Row.Favorite))
+        assertEquals(Effect.PinTile("lib:romm:7"), pick(Row.PinTile))
+        assertEquals(Effect.RemoveDownload("lib:romm:7"), pick(Row.RemoveDownload))
+        val withArt = actions.copy(tileActions = actions.tileActions!!.copy(art = true))
+        val artRows = panelRows(withArt.panel!!, withArt)
+        assertEquals(Effect.ChooseArt("lib:romm:7"), reduce(withArt.copy(panel = withArt.panel!!.copy(index = artRows.indexOf(Row.ChooseArt))), Meaning.Activate).second)
         assertNull(made.first.panel)
         assertEquals(focus, made.first.focus)
         // B from Add to lands back on its row, and B again closes the menu.

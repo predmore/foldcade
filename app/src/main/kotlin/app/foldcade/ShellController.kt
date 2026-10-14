@@ -326,7 +326,7 @@ class ShellController(
             // leaves the collection on screen: the menu keeps acting on that game.
             is Effect.ToggleCollection -> {
                 if (showingHome()) {
-                    home.toggleCollection(next.focus.cellIndex, effect.folderId)
+                    home.toggleCollection(next.focus.cellIndex, effect.folderId, effect.gameId)
                     syncHome()
                 }
                 publish(next)
@@ -360,16 +360,17 @@ class ShellController(
             else -> publish(next)
         }
         // A pin lands out of sight, so it answers with its own sound.
-        if (effect == Effect.PinTile) cue(model.themeIndex, "notify") else cueMeaning(meaning, before, model)
+        if (effect is Effect.PinTile) cue(model.themeIndex, "notify") else cueMeaning(meaning, before, model)
         if (effect == Effect.DismissButtonLabels) {
             store.saveButtonPrompt(inputDeviceKey, store.buttonPromptConfirm(inputDeviceKey), dismissed = true)
         }
         val handled = when (effect) {
             Effect.PinApp, is Effect.AddAppTo, Effect.MoveApp, Effect.HideApp, Effect.ShowApp, is Effect.ToggleCollection,
             -> null
-            Effect.ChooseArt -> {
+            is Effect.ChooseArt -> {
                 if (artPickerAvailable()) {
-                    focusedGame()?.let(::artQuery)?.let { artPicker = ArtPickerState(it.key, match = savedArtMatch(it.key)) }
+                    val game = effect.gameId?.takeIf { showingHome() }?.let { homeShelf(home.faceOf(it)) } ?: focusedGame()
+                    game?.let(::artQuery)?.let { artPicker = ArtPickerState(it.key, match = savedArtMatch(it.key)) }
                 }
                 null
             }
@@ -377,9 +378,9 @@ class ShellController(
                 pickUpHome(model.focus.cellIndex)
                 null
             }
-            Effect.NewCollection -> changeHome { home.newCollection(it) }
-            Effect.ToggleFavorite -> changeHome { home.toggleFavorite(it); it }
-            Effect.PinTile -> changeHome { home.pin(it); it }
+            is Effect.NewCollection -> changeHome { home.newCollection(it, effect.gameId) }
+            is Effect.ToggleFavorite -> changeHome { home.toggleFavorite(it, effect.gameId); it }
+            is Effect.PinTile -> changeHome { home.pin(it, effect.gameId); it }
             Effect.RenameFolder -> changeHome { home.startRename(it); it }
             Effect.ChooseFolderIcon -> changeHome { home.pickIcon(it); it }
             Effect.RemoveTile -> {
@@ -636,6 +637,16 @@ class ShellController(
      * The focused home tile's game when its download can be deleted. Null when
      * it has no copy here, or while that copy is arriving, being checked, or deleted.
      */
+    /**
+     * The game a menu's Delete download named, when its download can be deleted: [gameId], or
+     * the focused tile's game when null. The menu may have kept a game that left the slot on screen.
+     */
+    fun downloadFor(gameId: String?): Game? {
+        if (gameId == null) return focusedDownload()
+        if (!showingHome() || busyOnDevice(gameId)) return null
+        return home.game(gameId)?.takeIf { it.availability == Availability.Cached }
+    }
+
     fun focusedDownload(): Game? {
         if (!showingHome()) return null
         val id = home.face(model.focus.cellIndex)?.id ?: return null
@@ -1604,7 +1615,7 @@ class ShellController(
         val onHome = showingHome(counted)
         val tile = if (onHome) home.actions(counted.focus.cellIndex) else null
         // A copy still arriving, or already going, is not one to delete.
-        val busy = home.face(counted.focus.cellIndex)?.id?.let(::busyOnDevice) == true
+        val busy = (tile?.game ?: home.face(counted.focus.cellIndex)?.id)?.let(::busyOnDevice) == true
         val offered = if (tile?.removeDownload == true && busy) tile.copy(removeDownload = false) else tile
         // A merge can close the open folder, when its last game left, so read where the board is now.
         val root = if (onHome) home.board.openFolderId == null && !home.board.allOpen else counted.atLibraryRoot

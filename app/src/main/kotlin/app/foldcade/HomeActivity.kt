@@ -239,10 +239,10 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
             is Effect.ChoosePlayerSave -> choosePlayerSave(effect.playerId)
             Effect.PinApp, is Effect.AddAppTo, Effect.MoveApp, Effect.HideApp, Effect.ShowApp -> Unit
             // The shell applies Y's tile actions and A on a text field itself and hands back null; these never arrive.
-            Effect.ChooseArt, Effect.MoveTile, is Effect.ToggleCollection, Effect.NewCollection, Effect.ToggleFavorite, Effect.PinTile,
+            is Effect.ChooseArt, Effect.MoveTile, is Effect.ToggleCollection, is Effect.NewCollection, is Effect.ToggleFavorite, is Effect.PinTile,
             Effect.RenameFolder, Effect.ChooseFolderIcon, Effect.RemoveTile, Effect.GoHome, Effect.EditField,
             -> Unit
-            Effect.RemoveDownload -> removeDownload()
+            is Effect.RemoveDownload -> removeDownload(effect.gameId)
             Effect.OpenAll -> foldcade.shell.openHomeAll()
             Effect.ToggleAddNew -> foldcade.shell.applyHomeAddNew(foldcade.shell.model.addNewToHome)
             is Effect.EditRommConnection -> {
@@ -934,9 +934,9 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
      * either screen, since either may be reading that copy. The game does not
      * launch until the copy is gone.
      */
-    private fun removeDownload() {
+    private fun removeDownload(gameId: String?) {
         if (foldcade.launchWork.active) return
-        val game = foldcade.shell.focusedDownload() ?: return
+        val game = foldcade.shell.downloadFor(gameId) ?: return
         val libraryId = game.backendId
         if (foldcade.store.session.runs(homeGameId(libraryId, game.remoteKey))) return
         if (!foldcade.shell.beginRemove(libraryId, game.remoteKey)) return

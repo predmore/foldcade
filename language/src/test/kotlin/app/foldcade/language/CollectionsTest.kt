@@ -409,6 +409,37 @@ class CollectionsTest {
         assertTrue(favorite(loved, zelda.id))
     }
 
+    @Test
+    fun everyWayOfAddingAGameBringsItBackFromHiddenOrOffHome() {
+        // Review r2 #1: a hidden game made into a new collection was stripped at the next merge.
+        val placed = mergeHome(HomeBoard(), catalog, platforms)
+        val hidden = hideGame(placed, zelda.id)
+        val made = mergeHome(newCollection(hidden, "home.user.1", "Quests", member = zelda.id), catalog, platforms)
+        assertEquals(listOf(zelda.id), made.folders.getValue("home.user.1").slots)
+        assertFalse(zelda.id in made.hidden)
+        assertTrue(zelda.id in made.folders.getValue(threeDs).slots)
+        // A game the user took off Home comes back the same way, by every path that adds it.
+        val off = HomeBoard(slots = listOf(HOME_ALL, "home.user.2"), folders = mapOf("home.user.2" to HomeFolder("home.user.2", "Mix", userMade = true)), offHome = setOf(kirby.id))
+        val paths = listOf<(HomeBoard) -> HomeBoard>(
+            { newCollection(it, "home.user.1", "New", member = kirby.id) },
+            { addToCollection(it, "home.user.2", kirby.id) },
+            { toggleCollection(it, "home.user.2", kirby.id) },
+            { toggleFavorite(it, kirby.id) },
+            { pinToHome(it, kirby.id) },
+            { pinItemToHome(it, kirby, platforms) },
+            { fileGame(it, kirby.id, "home.user.2", catalog, platforms) },
+            { addItemToHome(it, kirby, platforms) },
+        )
+        for ((n, path) in paths.withIndex()) {
+            for (start in listOf(off, off.copy(offHome = emptySet(), hidden = setOf(kirby.id)))) {
+                val added = path(start)
+                assertFalse("path $n", kirby.id in added.hidden)
+                assertFalse("path $n", kirby.id in added.offHome)
+                assertTrue("path $n", onHome(mergeHome(added, catalog, platforms), kirby.id))
+            }
+        }
+    }
+
     private fun rom(id: String, platform: String, lastPlayed: Long = 0L): HomeItem =
         HomeItem(id = id, title = id.substringAfterLast(':'), kind = HomeKind.Rom, platformId = platform, lastPlayedMillis = lastPlayed)
 }

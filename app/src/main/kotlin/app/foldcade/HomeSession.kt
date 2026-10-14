@@ -233,6 +233,7 @@ class HomeSession(raw: String?, nowMillis: Long = System.currentTimeMillis()) {
         pin = pin,
         remove = remove,
         removeDownload = downloaded(id),
+        game = id,
     )
 
     /** What X does to the tile at [index]. Null in All, or where X does nothing. */
@@ -242,10 +243,14 @@ class HomeSession(raw: String?, nowMillis: Long = System.currentTimeMillis()) {
     private fun downloaded(id: String): Boolean = games[id]?.availability == Availability.Cached
 
     /**
-     * The game the open menu acts on: the one at [index], or the one Add to took out of the
-     * collection on screen while its menu stayed open.
+     * The game a menu effect acts on: the one it names ([gameId], see [TileActions.game]),
+     * else the one Add to took out of the collection on screen, else the one at [index].
      */
-    private fun gameAt(index: Int): String? = menuGame ?: slotGame(index)
+    private fun gameAt(index: Int, gameId: String? = null): String? =
+        gameId?.takeIf { it != HOME_ALL && board.folders[it] == null } ?: menuGame ?: slotGame(index)
+
+    /** The face of game [id], wherever it is, as a menu that kept its game shows it. */
+    fun faceOf(id: String): HomeFace = faceFor(id)
 
     /** The game at [index] in All or on the board. Null for a group, the All tile, or an empty slot. */
     private fun slotGame(index: Int): String? {
@@ -274,14 +279,14 @@ class HomeSession(raw: String?, nowMillis: Long = System.currentTimeMillis()) {
      * Puts the game at [index] in collection [folderId], or takes it out. Favorites is made
      * when missing. The open menu keeps this game even when it leaves the slot on screen.
      */
-    fun toggleCollection(index: Int, folderId: String) {
-        val id = gameAt(index) ?: return
+    fun toggleCollection(index: Int, folderId: String, gameId: String? = null) {
+        val id = gameAt(index, gameId) ?: return
         menuGame = id
         board = toggleCollection(board, folderId, id)
     }
 
-    fun toggleFavorite(index: Int) {
-        val id = gameAt(index) ?: return
+    fun toggleFavorite(index: Int, gameId: String? = null) {
+        val id = gameAt(index, gameId) ?: return
         board = toggleFavorite(board, id)
     }
 
@@ -289,8 +294,8 @@ class HomeSession(raw: String?, nowMillis: Long = System.currentTimeMillis()) {
      * A pin for the game at [index] in the first free root slot. The focus stays on the game.
      * A game nowhere on the board is filed in its folder too.
      */
-    fun pin(index: Int) {
-        val id = gameAt(index) ?: return
+    fun pin(index: Int, gameId: String? = null) {
+        val id = gameAt(index, gameId) ?: return
         val item = catalog().firstOrNull { it.id == id }
         board = if (item != null) pinItemToHome(board, item, platforms) else pinToHome(board, id)
     }
@@ -300,11 +305,11 @@ class HomeSession(raw: String?, nowMillis: Long = System.currentTimeMillis()) {
      * is, and so does the focus. On an empty root slot the collection takes that slot, and on the
      * All tile the first free one; the focus goes to it. Returns where focus goes.
      */
-    fun newCollection(index: Int): Int {
+    fun newCollection(index: Int, gameId: String? = null): Int {
         val collectionId = nextUserFolderId(board)
         val count = board.folders.values.count { it.collection && it.id != HOME_FAVORITES } + 1
         val name = "${Copy.collection} $count"
-        val game = gameAt(index)
+        val game = gameAt(index, gameId)
         val atRoot = !board.allOpen && board.openFolderId == null
         if (game == null && !atRoot) return index
         board = newCollection(board, collectionId, name, at = index.takeIf { game == null }, member = game)

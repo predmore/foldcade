@@ -408,6 +408,14 @@ fun removeFromHome(board: HomeBoard, index: Int): HomeBoard {
     }
 }
 
+/**
+ * [board] ready to take [id] somewhere: not hidden, and not off Home. Every way a game is
+ * added (a collection, Favorites, a pin, a folder) goes through this, so none of them leaves
+ * it hidden for the next merge to strip.
+ */
+private fun admit(board: HomeBoard, id: String): HomeBoard =
+    if (id !in board.hidden && id !in board.offHome) board else board.copy(hidden = board.hidden - id, offHome = board.offHome - id)
+
 /** [after] a removal from [before], with every game it left nowhere on [HomeBoard.offHome]. */
 private fun keepOff(before: HomeBoard, after: HomeBoard): HomeBoard {
     val left = placedIds(before) - placedIds(after) - after.hidden - after.folders.keys - HOME_ALL
@@ -457,7 +465,7 @@ fun newCollection(board: HomeBoard, collectionId: String, name: String, at: Int?
     if (collectionId in board.folders || collectionId == HOME_ALL) return board
     val game = member?.takeIf { it != HOME_ALL && board.folders[it] == null }
     val folder = HomeFolder(id = collectionId, name = name, userMade = true, mark = MARK_FOLDER, slots = listOfNotNull(game))
-    val made = board.copy(folders = board.folders + (collectionId to folder), hold = null)
+    val made = (game?.let { admit(board, it) } ?: board).copy(folders = board.folders + (collectionId to folder), hold = null)
     val target = at?.takeIf { it >= 0 && board.slots.getOrNull(it) == null } ?: return placeOnRoot(made, collectionId)
     val slots = board.slots.toMutableList()
     while (slots.size <= target) slots += null
@@ -469,7 +477,7 @@ fun newCollection(board: HomeBoard, collectionId: String, name: String, at: Int?
 fun addToCollection(board: HomeBoard, collectionId: String, id: String): HomeBoard {
     if (id == HOME_ALL || board.folders[id] != null) return board
     if (board.folders[collectionId]?.collection != true) return board
-    return dropInto(board.copy(hidden = board.hidden - id), collectionId, id)
+    return dropInto(admit(board, id), collectionId, id)
 }
 
 /** Takes the game [id] out of [collectionId]. Its slot there is left empty. */
@@ -501,13 +509,13 @@ fun toggleFavorite(board: HomeBoard, id: String): HomeBoard {
         val favorites = HomeFolder(HOME_FAVORITES, Copy.favorites, userMade = true, mark = MARK_FOLDER)
         placeOnRoot(board.copy(folders = board.folders + (HOME_FAVORITES to favorites)), HOME_FAVORITES)
     }
-    return dropInto(made.copy(hidden = made.hidden - id), HOME_FAVORITES, id)
+    return dropInto(admit(made, id), HOME_FAVORITES, id)
 }
 
 /** A pin for [id] in the first free root slot. The game stays in its folder. A hidden one comes back. */
 fun pinToHome(board: HomeBoard, id: String): HomeBoard {
     if (id == HOME_ALL || id.isBlank() || board.folders[id] != null) return board
-    return placeOnRoot(board.copy(hidden = board.hidden - id, hold = null), id)
+    return placeOnRoot(admit(board, id).copy(hold = null), id)
 }
 
 /**
@@ -544,7 +552,7 @@ fun fileGame(
     if (folderId == null) return pinToHome(board, id)
     val folder = board.folders[folderId] ?: return board
     if (!folderTakes(folder, catalog.firstOrNull { it.id == id }, platforms)) return board
-    val shown = board.copy(hidden = board.hidden - id, hold = null)
+    val shown = admit(board, id).copy(hold = null)
     if (folder.collection) return addToCollection(shown, folderId, id)
     val moved = shown.copy(
         folders = shown.folders.mapValues { (key, other) ->
@@ -593,7 +601,7 @@ private fun romPlatformId(item: HomeItem, platforms: List<HomePlatform>): String
  */
 fun addItemToHome(board: HomeBoard, item: HomeItem, platforms: List<HomePlatform>): HomeBoard {
     if (item.id == HOME_ALL || item.id.isBlank()) return board
-    val shown = board.copy(hidden = board.hidden - item.id, offHome = board.offHome - item.id)
+    val shown = admit(board, item.id)
     if (reachable(shown, item.id, viaRecent = false)) return shown
     return placeNew(shown, item, platforms)
 }
