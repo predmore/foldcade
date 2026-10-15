@@ -197,7 +197,7 @@ object Copy {
     const val retroArchStorageBody = "Open RetroArch once and allow access to files. Then start the game again."
     const val retroArchStoreBuildBody = "RetroArch from Google Play can’t open games from other apps. Install it from retroarch.com or F-Droid."
     const val openRetroArch = "Open RetroArch"
-    const val retroArchWrongFolder = "That folder isn’t RetroArch’s. In the picker’s menu, choose RetroArch, then Use this folder."
+    const val retroArchWrongFolder = "That folder has no cores. Choose RetroArch’s top folder, the one that holds cores, then Use this folder."
     const val retroArchCores = "RetroArch cores"
     const val showCores = "Show"
     const val cores = "cores"
