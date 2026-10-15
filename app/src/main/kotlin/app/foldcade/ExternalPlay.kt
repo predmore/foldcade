@@ -17,11 +17,11 @@ class ExternalPlay {
     var displayId: Int? = null
         private set
 
-    fun open(plays: PlaySessions, gameId: String, displayId: Int, launch: () -> Unit) {
+    fun open(plays: PlaySessions, gameId: String, name: String, displayId: Int, launch: () -> Unit) {
         sessionId?.let { plays.signal(it, PlaySignal.End) }
         sessionId = null
         this.displayId = null
-        val id = plays.start(gameId)
+        val id = plays.start(gameId, name)
         try {
             launch()
         } catch (cancelled: CancellationException) {

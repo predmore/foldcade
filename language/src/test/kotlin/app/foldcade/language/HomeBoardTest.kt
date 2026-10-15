@@ -14,6 +14,19 @@ class HomeBoardTest {
     )
 
     @Test
+    fun aHomeGameIdGivesBackItsWholeRemoteKey() {
+        val uri = "content://com.android.externalstorage.documents/tree/primary%3AROMs/document/primary%3AROMs%2Fa.gba"
+        assertEquals(uri, homeGameKey(homeGameId("local-folder", uri)))
+        assertEquals("1234", homeGameKey(homeGameId("romm", "1234")))
+        assertNull(homeGameKey(uri))
+        assertNull(homeGameKey("android:com.example"))
+        assertNull(homeGameKey("lib:"))
+        assertNull(homeGameKey("lib:romm"))
+        assertNull(homeGameKey("lib:romm:"))
+        assertNull(homeGameKey("lib::1234"))
+    }
+
+    @Test
     fun moveLeavesAnEmptySlotAndSwapsANeighbor() {
         val board = board(listOf("a", null, "b"))
         val moved = moveHeld(pickUp(board, 0), 1, emptyList(), platforms)
