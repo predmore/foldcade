@@ -51,7 +51,7 @@ See the [integration guides](docs/integrations/README.md) for setup and troubles
 
 ### One press, and you are playing
 
-Press **A** to play on the top screen or **X** on the bottom. Games that need both screens get both. Foldcade opens the appropriate app; when several emulators support a system, it uses the first installed one on its list.
+Press **A** to play on the top screen or **X** on the bottom. Games that need both screens get both. Foldcade opens the appropriate app; when several emulators support a system, it uses the first installed one on its list. [RetroArch](docs/integrations/retroarch.md) goes first for a system once you install a core for it.
 
 ### Two drawers, always a press away
 
@@ -114,7 +114,7 @@ Track how long you played and when, see your week in L1, and sort All by **Recen
 
 ## Get Foldcade
 
-Foldcade is early and in active development. It is built for the Thor, and RetroArch is not supported yet.
+Foldcade is early and in active development. It is built for the Thor.
 
 Install with **Obtainium** to get automatic updates.
 

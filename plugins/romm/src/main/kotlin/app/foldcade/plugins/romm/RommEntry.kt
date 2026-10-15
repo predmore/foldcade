@@ -31,9 +31,11 @@ fun interface SaveBytes {
  * One configured RomM server.
  * [tokenSource] supplies the client token. This object does not write that token.
  *
- * [cacheRoot] holds downloaded ROMs. The system may clear it, and a ROM can be
- * downloaded again. [dataRoot] holds saves, the sync ledger, and the device id,
- * none of which can be downloaded again, so it must not be a cache directory.
+ * [cacheRoot] holds downloaded ROMs, which can be downloaded again. A host may
+ * keep it in shared storage, so a player that opens games by path can read them.
+ * [artCacheRoot] holds cover art, which the system may clear; it defaults to
+ * [cacheRoot]. [dataRoot] holds saves, the sync ledger, and the device id, none
+ * of which can be downloaded again, so it must not be a cache directory.
  * ROMs and saves are kept apart per [origin].
  *
  * [rememberedDevice] is the RomM device for [origin]. It is kept in [dataRoot],
@@ -56,11 +58,15 @@ class RommWiring(
     val clientVersion: String = "0.1.0",
     val deviceName: String = "Foldcade",
     val saveBytes: SaveBytes = SaveBytes { null },
+    val artCacheRoot: Path = cacheRoot,
 ) {
     internal val data = RommData(dataRoot, origin)
 
     /** Downloaded ROMs for [origin]. A ROM id names a different game on another server. */
     internal val romRoot: Path = cacheRoot.resolve("servers").resolve(RommData.serverKey(origin))
+
+    /** Cover art for [origin]. */
+    internal val artRoot: Path = artCacheRoot.resolve("servers").resolve(RommData.serverKey(origin)).resolve("artwork")
 
     @Volatile
     private var device: RegisteredDevice? = null
@@ -103,6 +109,7 @@ class RommSupply(
     val deviceName: String = "Foldcade",
     val saveBytes: SaveBytes = SaveBytes { null },
     val tokenFor: (credentialKey: String) -> String? = { null },
+    val artCacheRoot: Path = cacheRoot,
 ) {
     fun wiring(origin: String, credentialKey: String): RommWiring = RommWiring(
         origin = origin,
@@ -114,6 +121,7 @@ class RommSupply(
         clientVersion = clientVersion,
         deviceName = deviceName,
         saveBytes = saveBytes,
+        artCacheRoot = artCacheRoot,
     )
 }
 

@@ -19,6 +19,17 @@ sealed interface LaunchTarget {
     ) : LaunchTarget
 
     /**
+     * A game file at an absolute [path] in shared storage, for a player that
+     * opens files by path, see [Player.opensByPath]. [uri] is the same file as
+     * the content URI the backend returned. The shell builds this; a backend
+     * returns [ContentUri]. Added in API minor 9.
+     */
+    data class SharedFile(
+        val path: String,
+        val uri: String,
+    ) : LaunchTarget
+
+    /**
      * Values the player already knows how to read. Not a file.
      *
      * GameNative fits as `app_id` (decimal string) and `game_source`.

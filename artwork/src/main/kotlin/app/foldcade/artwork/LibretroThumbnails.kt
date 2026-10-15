@@ -120,6 +120,19 @@ class LibretroThumbnails(
             "game-gear" to "Sega - Game Gear",
             "saturn" to "Sega - Saturn",
             "dreamcast" to "Sega - Dreamcast",
+            "sega-cd" to "Sega - Mega-CD - Sega CD",
+            "sega-32x" to "Sega - 32X",
+            "pc-engine" to "NEC - PC Engine - TurboGrafx 16",
+            "pc-engine-cd" to "NEC - PC Engine CD - TurboGrafx-CD",
+            "atari-2600" to "Atari - 2600",
+            "atari-7800" to "Atari - 7800",
+            "atari-lynx" to "Atari - Lynx",
+            "neo-geo-pocket" to "SNK - Neo Geo Pocket",
+            "neo-geo-pocket-color" to "SNK - Neo Geo Pocket Color",
+            "wonderswan" to "Bandai - WonderSwan",
+            "wonderswan-color" to "Bandai - WonderSwan Color",
+            "virtual-boy" to "Nintendo - Virtual Boy",
+            "colecovision" to "Coleco - ColecoVision",
         )
 
         internal fun imageUrl(system: String, name: String, kind: String = "Named_Boxarts"): String =

@@ -33,19 +33,25 @@ The catalog loads at startup and after connecting or editing a connection. After
 
 Press A or X on a game. Foldcade downloads and checks its files before launch, showing progress on the tile and top screen. Verified downloads are reused.
 
-**Y › Delete download** frees the space a downloaded game takes. Its saves stay, and its tile shows the cloud again until the next launch downloads it.
+Downloads are kept in `Android/media/app.foldcade/romm` on internal storage, where emulators that open games by path, such as [RetroArch](retroarch.md), can read them. Android does not clear them to free space. **Y › Delete download** frees the space a downloaded game takes. Its saves stay, and its tile shows the cloud again until the next launch downloads it. Uninstalling Foldcade removes its downloads too.
 
 Downloaded games with a cached catalog can be played offline. New downloads need the server. Provide a format the emulator can open; Foldcade does not handle server-side conversion.
 
 ## Save sync
 
-Save sync currently supports **melonDS `.sav` files** with RomM **5.4.0 or newer**:
+Save sync supports **melonDS `.sav` files** and **RetroArch `.srm` battery saves** with RomM **5.4.0 or newer**.
+
+For melonDS:
 
 1. In melonDS, select a shared save directory and turn **Save next to ROM file** off.
-2. Select the same directory in **Foldcade Settings › Saves › melonDS**, or at the save-folder prompt, and grant access.
+2. Select the same directory in **Foldcade Settings › Emulators › melonDS**, or at the save-folder prompt, and grant access.
 3. Launch the game from Foldcade's RomM catalog. Foldcade transfers saves before launch and when you return.
 
-Keep filenames consistent: `Puzzle.nds` uses `Puzzle.sav`. A separate [local-folder tile](local-games.md) is not connected to RomM save sync.
+Keep filenames consistent: `Puzzle.nds` uses `Puzzle.sav`.
+
+For RetroArch, choose `RetroArch/saves` in **Foldcade Settings › Emulators › RetroArch** and keep RetroArch's default save layout; see [RetroArch saves](retroarch.md#saves). Every system shares that one folder.
+
+A separate [local-folder tile](local-games.md) is not connected to RomM save sync.
 
 Azahar's save-folder setting does not yet enable title-save transfer. Other emulators and sources manage their own saves. Save-state sync is not implemented.
 

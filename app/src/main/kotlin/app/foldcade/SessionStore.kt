@@ -166,9 +166,11 @@ class SessionStore(private val prefs: SharedPreferences) : SaveMarks {
         prefs.edit().putString(saveFolderKey(playerId), uri).apply()
     }
 
-    /** A tree grant can be shared by a library source and several players. */
+    /** A tree grant can be shared by a library source, several players, and RetroArch's cores. */
     fun folderTreeInUse(uri: String): Boolean = uri in folderTrees() ||
-        prefs.all.any { (key, value) -> key.startsWith(PLAYER_SAVE_FOLDER_PREFIX) && value == uri }
+        prefs.all.any { (key, value) ->
+            (key.startsWith(PLAYER_SAVE_FOLDER_PREFIX) || key.startsWith(CORES_FOLDER_PREFIX)) && value == uri
+        }
 
     override fun mark(key: String): String? = prefs.getString(saveMarkKey(key), null)
 
@@ -196,6 +198,43 @@ class SessionStore(private val prefs: SharedPreferences) : SaveMarks {
 
     fun setSaveFolderPromptSkipped(playerId: String) {
         prefs.edit().putBoolean(saveFolderSkipKey(playerId), true).apply()
+    }
+
+    /**
+     * A key for the last intent started for [packageName], for a player that
+     * cannot switch games in place. Kept across restarts of Foldcade, since the
+     * player can outlive it.
+     */
+    fun lastPlayerStart(packageName: String): String? = prefs.getString(LAST_START_PREFIX + packageName, null)
+
+    fun setLastPlayerStart(packageName: String, key: String) {
+        prefs.edit().putString(LAST_START_PREFIX + packageName, key).commit()
+    }
+
+    /**
+     * True while a save was written for players keyed [saveFolderKey] and none
+     * of them has started since. A player still holding that game must start fresh.
+     */
+    fun saveAwaitsLoad(saveFolderKey: String): Boolean = prefs.getBoolean(SAVE_AWAITS_LOAD_PREFIX + saveFolderKey, false)
+
+    fun setSaveAwaitsLoad(saveFolderKey: String, waiting: Boolean) {
+        prefs.edit().apply {
+            if (waiting) putBoolean(SAVE_AWAITS_LOAD_PREFIX + saveFolderKey, true) else remove(SAVE_AWAITS_LOAD_PREFIX + saveFolderKey)
+        }.commit()
+    }
+
+    /** The tree the user chose so Foldcade can list [packageName]'s cores. */
+    fun retroArchCoresFolder(packageName: String): String? = prefs.getString(CORES_FOLDER_PREFIX + packageName, null)
+
+    fun setRetroArchCoresFolder(packageName: String, uri: String) {
+        prefs.edit().putString(CORES_FOLDER_PREFIX + packageName, uri).apply()
+    }
+
+    /** True once Foldcade asked to see RetroArch's cores at a launch. Settings still offers it. */
+    fun retroArchCoresOffered(): Boolean = prefs.getBoolean(KEY_RETROARCH_CORES_OFFERED, false)
+
+    fun setRetroArchCoresOffered() {
+        prefs.edit().putBoolean(KEY_RETROARCH_CORES_OFFERED, true).apply()
     }
 
     fun appShelfState(): AppShelfState {
@@ -413,6 +452,10 @@ class SessionStore(private val prefs: SharedPreferences) : SaveMarks {
         private const val KEY_SHELF_SHOWN = "android_shelf_shown"
         private const val KEY_BUTTON_PROMPT_SEEN = "button_prompt_seen"
         private const val KEY_USAGE_PROMPTED = "usage_prompted"
+        private const val KEY_RETROARCH_CORES_OFFERED = "retroarch_cores_offered"
+        private const val LAST_START_PREFIX = "last_player_start:"
+        private const val SAVE_AWAITS_LOAD_PREFIX = "save_awaits_load:"
+        private const val CORES_FOLDER_PREFIX = "retroarch_cores_folder:"
         private const val KEY_MOONLIGHT_PINS = "moonlight_pins"
         private const val KEY_DROIDDECK_PINS = "droiddeck_pins"
         private const val PIN_FIELD = "\u001f"

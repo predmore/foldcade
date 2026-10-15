@@ -60,7 +60,9 @@ internal fun readRommToken(
  * Points [RommPlugins] at [store]. A blank [origin] removes the wiring.
  * The token is not copied into the wiring.
  *
- * [cacheRoot] holds downloaded ROMs and may be cleared by the system.
+ * [cacheRoot] holds downloaded ROMs, which can be downloaded again. [cachePath]
+ * is its first segment in a content URI, the name the FileProvider gives that root.
+ * [artCacheRoot] holds cover art, in the app cache.
  * [dataRoot] holds saves and the device id, and must not be a cache directory.
  * [saveBytes] reads a save the player wrote at a content URI.
  *
@@ -73,16 +75,19 @@ fun publishRommWiring(
     cacheRoot: Path,
     platforms: List<Platform> = emptyList(),
     contentAuthority: String = ROMM_CONTENT_AUTHORITY,
+    cachePath: String = "romm",
     dataRoot: Path,
+    artCacheRoot: Path = cacheRoot,
     saveBytes: SaveBytes = SaveBytes { null },
 ) {
     val supply = RommSupply(
         cacheRoot = cacheRoot,
         dataRoot = dataRoot,
         platforms = platforms,
-        contentUris = CachePathContentUri(cacheRoot, contentAuthority, dataRoot),
+        contentUris = CachePathContentUri(cacheRoot, contentAuthority, dataRoot, cachePath),
         saveBytes = saveBytes,
         tokenFor = { key -> readRommToken(store, onMainThread = rommTokenReadOnMainThread(), key = key) },
+        artCacheRoot = artCacheRoot,
     )
     RommPlugins.installSupply(supply)
     val current = RommPlugins.wiring
@@ -94,6 +99,7 @@ fun publishRommWiring(
         current != null &&
         current.origin == origin &&
         current.cacheRoot == cacheRoot &&
+        current.artCacheRoot == artCacheRoot &&
         current.dataRoot == dataRoot &&
         current.platforms == platforms
     ) {

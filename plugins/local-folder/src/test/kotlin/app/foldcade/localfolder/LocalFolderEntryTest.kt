@@ -65,6 +65,14 @@ class LocalFolderEntryTest {
         assertEquals("playstation-2", canonicalPlatformId(entry.platforms, "ps2"))
         assertEquals("master-system", canonicalPlatformId(entry.platforms, "sms"))
         assertEquals("game-gear", canonicalPlatformId(entry.platforms, "gamegear"))
+        // RomM's slugs for the systems RetroArch runs.
+        assertEquals("sega-cd", canonicalPlatformId(entry.platforms, "segacd"))
+        assertEquals("sega-32x", canonicalPlatformId(entry.platforms, "sega32"))
+        assertEquals("pc-engine", canonicalPlatformId(entry.platforms, "tg16"))
+        assertEquals("pc-engine-cd", canonicalPlatformId(entry.platforms, "turbografx-cd"))
+        assertEquals("atari-lynx", canonicalPlatformId(entry.platforms, "lynx"))
+        assertEquals("virtual-boy", canonicalPlatformId(entry.platforms, "virtualboy"))
+        assertEquals("neo-geo-pocket-color", canonicalPlatformId(entry.platforms, "neo-geo-pocket-color"))
         assertFalse(MetadataProvider::class.java.isAssignableFrom(entry.folder.javaClass))
 
         val advertised = LocalFolderEntry::class.java.classLoader

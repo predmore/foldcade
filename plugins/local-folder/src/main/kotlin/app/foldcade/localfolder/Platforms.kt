@@ -166,6 +166,93 @@ internal object PlatformCatalog {
             // RomM's slug is dc.
             aliases = setOf("dc"),
         ),
+        // Systems RetroArch runs. Folder names follow ES-DE; aliases are RomM's slugs.
+        spec(
+            id = "sega-cd",
+            name = "Sega CD",
+            folders = setOf("segacd", "sega cd", "megacd", "mega cd", "megacdjp"),
+            folderOnlyExtensions = setOf("cue", "chd", "iso", "m3u"),
+            aliases = setOf("segacd"),
+        ),
+        spec(
+            id = "sega-32x",
+            name = "Sega 32X",
+            folders = setOf("sega32x", "sega 32x", "32x", "sega32xjp", "sega32xna"),
+            extensions = setOf("32x"),
+            aliases = setOf("sega32"),
+        ),
+        spec(
+            id = "pc-engine",
+            name = "PC Engine",
+            folders = setOf("pcengine", "pc engine", "tg16", "turbografx16", "turbografx 16"),
+            extensions = setOf("pce", "sgx"),
+            aliases = setOf("tg16"),
+        ),
+        spec(
+            id = "pc-engine-cd",
+            name = "PC Engine CD",
+            folders = setOf("pcenginecd", "pc engine cd", "tg cd", "turbografx cd"),
+            folderOnlyExtensions = setOf("cue", "chd", "ccd", "m3u"),
+            aliases = setOf("turbografx-cd"),
+        ),
+        spec(
+            id = "atari-2600",
+            name = "Atari 2600",
+            folders = setOf("atari2600", "atari 2600", "a2600"),
+            extensions = setOf("a26"),
+            aliases = setOf("atari2600"),
+        ),
+        spec(
+            id = "atari-7800",
+            name = "Atari 7800",
+            folders = setOf("atari7800", "atari 7800", "a7800"),
+            extensions = setOf("a78"),
+            aliases = setOf("atari7800"),
+        ),
+        spec(
+            id = "atari-lynx",
+            name = "Atari Lynx",
+            folders = setOf("atarilynx", "atari lynx", "lynx"),
+            extensions = setOf("lnx"),
+            aliases = setOf("lynx"),
+        ),
+        spec(
+            id = "neo-geo-pocket",
+            name = "Neo Geo Pocket",
+            folders = setOf("ngp", "neo geo pocket"),
+            extensions = setOf("ngp"),
+        ),
+        spec(
+            id = "neo-geo-pocket-color",
+            name = "Neo Geo Pocket Color",
+            folders = setOf("ngpc", "neo geo pocket color"),
+            extensions = setOf("ngc", "ngpc"),
+        ),
+        spec(
+            id = "wonderswan",
+            name = "WonderSwan",
+            folders = setOf("wonderswan", "wonder swan", "ws"),
+            extensions = setOf("ws"),
+        ),
+        spec(
+            id = "wonderswan-color",
+            name = "WonderSwan Color",
+            folders = setOf("wonderswancolor", "wonderswan color", "wonder swan color", "wsc"),
+            extensions = setOf("wsc"),
+        ),
+        spec(
+            id = "virtual-boy",
+            name = "Virtual Boy",
+            folders = setOf("virtualboy", "virtual boy", "vb"),
+            extensions = setOf("vb", "vboy"),
+            aliases = setOf("virtualboy"),
+        ),
+        spec(
+            id = "colecovision",
+            name = "ColecoVision",
+            folders = setOf("colecovision", "coleco"),
+            extensions = setOf("col"),
+        ),
     )
 
     val byId: Map<String, PlatformSpec>

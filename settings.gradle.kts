@@ -27,6 +27,7 @@ include(
     ":plugins:gamenative",
     ":plugins:local-folder",
     ":plugins:melonds",
+    ":plugins:retroarch",
     ":plugins:moonlight",
     ":plugins:sample",
     ":plugins:romm",

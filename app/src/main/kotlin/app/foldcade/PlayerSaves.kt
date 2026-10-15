@@ -32,10 +32,16 @@ internal interface SaveDocuments {
     /** Display name of the document at [uri], or null. */
     fun displayName(uri: String): String?
 
-    /** The document named [name] directly inside the tree [folderUri], or null. */
+    /**
+     * The document at [name] inside the tree [folderUri], or null. [name] may
+     * hold folders separated by `/`.
+     */
     fun find(folderUri: String, name: String): String?
 
-    /** A new empty document named exactly [name] inside [folderUri], or null. */
+    /**
+     * A new empty document at exactly [name] inside [folderUri], or null.
+     * A folder [name] holds is created when it is missing.
+     */
     fun create(folderUri: String, name: String): String?
 
     fun read(uri: String): ByteArray?
@@ -81,7 +87,11 @@ internal class PlayerSaves(
     private val backups: Path,
 ) {
     fun spots(player: Player, game: Game, target: LaunchTarget): List<SaveSpot> {
-        val uri = (target as? LaunchTarget.ContentUri)?.uri ?: return emptyList()
+        val uri = when (target) {
+            is LaunchTarget.ContentUri -> target.uri
+            is LaunchTarget.SharedFile -> target.uri
+            else -> return emptyList()
+        }
         val romName = docs.displayName(uri) ?: return emptyList()
         return player.saveDeclarations(game).mapNotNull { declaration ->
             val folder = declaration.locationUri ?: return@mapNotNull null
@@ -127,9 +137,18 @@ internal class PlayerSaves(
     /**
      * Writes each of [placed] into its spot. False when a write could not be
      * finished and checked. The game must not start then, or it would play
-     * from a save the library does not know.
+     * from a save the library does not know. Each slot whose file got new
+     * bytes is added to [changed], so a player still holding the game can be
+     * started fresh.
      */
-    fun place(libraryId: String, game: Game, player: Player, spots: List<SaveSpot>, placed: List<PlacedSave>): Boolean {
+    fun place(
+        libraryId: String,
+        game: Game,
+        player: Player,
+        spots: List<SaveSpot>,
+        placed: List<PlacedSave>,
+        changed: MutableList<String>? = null,
+    ): Boolean {
         for (spot in spots) {
             val save = placed.firstOrNull { it.slot == spot.slot } ?: continue
             val key = key(libraryId, game, player, spot)
@@ -161,6 +180,7 @@ internal class PlayerSaves(
                 return false
             }
             settle(key, save.contentHash)
+            changed?.add(spot.slot)
         }
         return true
     }
@@ -229,6 +249,16 @@ internal class PlayerSaves(
     }
 }
 
+/**
+ * The folders and file name in a save name such as `mGBA/Game.srm`. Null for
+ * an empty part, `.` or `..`, so a save never lands outside the folder the user picked.
+ */
+internal fun savePathParts(name: String): List<String>? {
+    val parts = name.split('/')
+    if (parts.any { it.isEmpty() || it == "." || it == ".." }) return null
+    return parts
+}
+
 internal fun md5Hex(bytes: ByteArray): String =
     MessageDigest.getInstance("MD5").digest(bytes).joinToString("") { "%02x".format(it) }
 
@@ -244,17 +274,14 @@ internal class AndroidSaveDocuments(private val resolver: ContentResolver) : Sav
 
     override fun find(folderUri: String, name: String): String? {
         val tree = Uri.parse(folderUri)
-        val columns = arrayOf(DocumentsContract.Document.COLUMN_DOCUMENT_ID, DocumentsContract.Document.COLUMN_DISPLAY_NAME)
+        val parts = savePathParts(name) ?: return null
         return try {
-            val children = DocumentsContract.buildChildDocumentsUriUsingTree(tree, DocumentsContract.getTreeDocumentId(tree))
-            resolver.query(children, columns, null, null, null)?.use { cursor ->
-                while (cursor.moveToNext()) {
-                    if (cursor.getString(1) == name) {
-                        return@use DocumentsContract.buildDocumentUriUsingTree(tree, cursor.getString(0)).toString()
-                    }
-                }
-                null
+            var parent = DocumentsContract.getTreeDocumentId(tree)
+            for (part in parts.dropLast(1)) {
+                parent = child(tree, parent, part, directory = true) ?: return null
             }
+            child(tree, parent, parts.last(), directory = false)
+                ?.let { DocumentsContract.buildDocumentUriUsingTree(tree, it).toString() }
         } catch (_: Exception) {
             null
         }
@@ -262,14 +289,21 @@ internal class AndroidSaveDocuments(private val resolver: ContentResolver) : Sav
 
     override fun create(folderUri: String, name: String): String? {
         val tree = Uri.parse(folderUri)
+        val parts = savePathParts(name) ?: return null
         val created = try {
-            val parent = DocumentsContract.buildDocumentUriUsingTree(tree, DocumentsContract.getTreeDocumentId(tree))
-            DocumentsContract.createDocument(resolver, parent, "application/octet-stream", name)
+            var parent = DocumentsContract.getTreeDocumentId(tree)
+            for (part in parts.dropLast(1)) {
+                parent = child(tree, parent, part, directory = true)
+                    ?: createIn(tree, parent, DocumentsContract.Document.MIME_TYPE_DIR, part)
+                    ?: return null
+            }
+            val parentUri = DocumentsContract.buildDocumentUriUsingTree(tree, parent)
+            DocumentsContract.createDocument(resolver, parentUri, "application/octet-stream", parts.last())
         } catch (_: Exception) {
             null
         } ?: return find(folderUri, name)
         // A provider that renamed the file would leave the player reading a different one.
-        if (displayName(created.toString()) != name) {
+        if (displayName(created.toString()) != parts.last()) {
             try {
                 DocumentsContract.deleteDocument(resolver, created)
             } catch (_: Exception) {
@@ -278,6 +312,34 @@ internal class AndroidSaveDocuments(private val resolver: ContentResolver) : Sav
             return null
         }
         return created.toString()
+    }
+
+    /** The id of the child of [parentId] named exactly [name], a folder or not as asked, or null. */
+    private fun child(tree: Uri, parentId: String, name: String, directory: Boolean): String? {
+        val columns = arrayOf(
+            DocumentsContract.Document.COLUMN_DOCUMENT_ID,
+            DocumentsContract.Document.COLUMN_DISPLAY_NAME,
+            DocumentsContract.Document.COLUMN_MIME_TYPE,
+        )
+        val children = DocumentsContract.buildChildDocumentsUriUsingTree(tree, parentId)
+        return resolver.query(children, columns, null, null, null)?.use { cursor ->
+            while (cursor.moveToNext()) {
+                val isDirectory = cursor.getString(2) == DocumentsContract.Document.MIME_TYPE_DIR
+                if (cursor.getString(1) == name && isDirectory == directory) return@use cursor.getString(0)
+            }
+            null
+        }
+    }
+
+    /** A new folder named exactly [name] in [parentId], or null. */
+    private fun createIn(tree: Uri, parentId: String, mime: String, name: String): String? {
+        val parent = DocumentsContract.buildDocumentUriUsingTree(tree, parentId)
+        val created = DocumentsContract.createDocument(resolver, parent, mime, name) ?: return null
+        if (displayName(created.toString()) != name) {
+            DocumentsContract.deleteDocument(resolver, created)
+            return null
+        }
+        return DocumentsContract.getDocumentId(created)
     }
 
     override fun read(uri: String): ByteArray? = try {

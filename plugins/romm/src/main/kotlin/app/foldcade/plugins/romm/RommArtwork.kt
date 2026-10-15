@@ -58,7 +58,7 @@ class RommArtwork(
         removed.forEach { root -> held.remove(root)?.let(::retire) }
         held.getOrPut(current.romRoot) {
             val ops = current.open(current.origin) { null }
-            Held(ops, ArtBytes(current.romRoot.resolve("artwork").toFile(), { ops.artwork(it) }))
+            Held(ops, ArtBytes(current.artRoot.toFile(), { ops.artwork(it) }))
         }.also { it.users++ }
     }
 

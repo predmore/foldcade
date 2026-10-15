@@ -25,7 +25,7 @@ The service file name is `META-INF/services/app.foldcade.api.plugin.PluginEntry`
 
 `PluginHost.load` reads every entry that class loader advertises. The caller supplies the loader. This is the path for a bundled jar and for an out-of-tree jar. It does not discover or open an installed package. `load` runs off the main thread. One bad provider is recorded in `rejected` and does not stop the providers that follow. `load` does not throw, except `VirtualMachineError`.
 
-`apiVersion` must equal `PLUGIN_API_VERSION` (1). The host rejects a different major. Set `apiMinor` to `PLUGIN_API_MINOR` (8). That is the additive revision this plugin was compiled against. The host loads a minor less than or equal to its own and rejects a newer minor. The interface default is 0, so a plugin that does not declare a minor still loads, marked as an older minor.
+`apiVersion` must equal `PLUGIN_API_VERSION` (1). The host rejects a different major. Set `apiMinor` to `PLUGIN_API_MINOR` (9). That is the additive revision this plugin was compiled against. The host loads a minor less than or equal to its own and rejects a newer minor. The interface default is 0, so a plugin that does not declare a minor still loads, marked as an older minor.
 
 Public value types in `:api` are frozen data classes, or sealed interfaces whose leaves are frozen data classes. Adding, removing, reordering, or changing the type of a constructor property bumps the major. Adding an interface member with a default body bumps the minor and does not bump the major. Open enums and sealed types must be branched with an `else`. Adding a value there bumps the minor. Any other enum or sealed type in the module is closed. Adding a value there bumps the major.
 
@@ -43,6 +43,8 @@ A library can ask for setup and can have more than one configured copy (API mino
 
 A library that downloads games can delete one again (API minor 8). `removeLocal` deletes what `ensureLocal` downloaded, so the game is `RemoteOnly` and the next launch downloads it. Saves stay. The Y menu offers Delete download only for a `Cached` game. The default refuses with `Unavailable`.
 
+A player can open games by path (API minor 9). `Player.opensByPath` asks the shell for a `LaunchTarget.SharedFile`: the absolute path of the game in shared storage, beside the content URI the backend returned. The shell builds it for a document of Android's external storage provider and for a RomM download in Foldcade's shared media folder. A game with neither has no path, and the shell does not start the player. `LaunchFlag.ReplaceRunning` marks a player that quits, rather than switch games, when handed a different one while it runs; the shell starts that intent again if the player quits within moments. `SaveFolderHolder.saveFolderKey` lets several players share one save folder, which the shell asks for and lists once, and `suggestedSaveFolder` is where the picker opens. `saveFileName` may name folders below the save folder, separated by `/`; the shell creates them. The defaults keep the earlier behaviour.
+
 `openLibrary` adds a copy after load. The host mints ids such as `romm#2`. A type id may not contain `#` or `:`, and registration refuses `#`. The host refuses the result unless `id` is the requested type and `instanceId` is the minted id. The default RomM instance stays `romm` with credential key `access-token`. Another server adds `access-token@romm#2` under the same plugin id. Removing one server calls `forget` on that key, never `forgetPlugin("romm")`. A second account on the same canonical origin is refused. `https://host/` and `https://host/api` are one server. Local folders stay one forest on `local-folder`. One `romm.metadata` slot routes each game by `backendId` to that instance's connection and catalog.
 
 Setup runs again only when nothing is stored, when credential lookup returns `Unreadable`, or when connect throws `NotAuthenticated`. Not on `Unavailable`, and not on a network error.
@@ -58,7 +60,7 @@ Plugin authors may choose any license for their original work. The API, bundled 
 - Each emulator becomes one player per platform. The player id is `emulator.platform`, such as `dolphin.wii`.
 - Players for one platform keep the table order. The shell launches the first one with an installed package (`preferredPlayer`). With none installed, the missing-player dialog names the first one and lists every package.
 - The game is always a content URI with a read grant. When the emulator reads it from an extra, the same URI is also the intent data, because the shell grants read on the data only.
-- A launch that needs a file path is not in the table. RetroArch is one.
+- A launch that needs a file path is not in the table. RetroArch has its own plugin.
 - The entry declares no platforms and no save slots. These players do not ask for a save folder.
 - Every application id must be in the app manifest's `<queries>`. `PlayerLaunchTest` checks that.
 
@@ -67,6 +69,16 @@ Plugin authors may choose any license for their original work. The API, bundled 
 An emulator goes in the table when its launch is data only: application ids, activities, an action, a handoff, fixed extras, and flags. An emulator that needs its own code gets its own plugin, the way `:plugins:azahar` and `:plugins:melonds` do. Own code means save slots or a save folder, both displays, extension rules, or a launch the table cannot express. An emulator in the table that gains one of these moves out to its own plugin.
 
 The host stores an entry whole or not at all. One bad row in the table drops every emulator in it. `EmulatorPlayerTest` checks that ids are unique, and `ShellHostTest` checks that no bundled entry is rejected.
+
+## RetroArch
+
+`:plugins:retroarch` (`RetroArchEntry`) is RetroArch, `com.retroarch.aarch64`, `com.retroarch`, or `com.retroarch.ra32`, in that order. `SYSTEMS` lists one row per local-folder platform with the libretro cores to start, best first. Each row becomes a player, `retroarch.<platform>`.
+
+- The launch starts `RetroActivityFuture` with string extras: `ROM` is the game's path, `LIBRETRO` the core in RetroArch's `cores/` directory, and `CONFIGFILE`, `DATADIR`, `SDCARD`, and `EXTERNAL` are what RetroArch's own launcher passes. RetroArch 1.22 reads only these, opens games only by path, and does not read the intent data. The player sets `opensByPath` and `ReplaceRunning`.
+- A missing core leaves RetroArch on a black screen. The shell keeps `RetroArchCores` current through a tree the user grants on RetroArch's documents provider (`<package>.documents`, whose root is RetroArch's data directory). Nightly builds also answer a `com.retroarch.QUERY_INSTALLED_CORES` broadcast, but any app can send its reply, so the shell does not use it. `coreChoice` is the first installed core, a missing one, or unknown. The shell asks once to see the cores, names a missing core, and checks RetroArch's storage permission before a start.
+- With a core installed, RetroArch goes ahead of a standalone emulator for its platform, except the DS (`aheadOfStandalone`). Without one, it gives way.
+- Battery saves are `<save folder>/<core library name>/<game>.srm`, RetroArch's default. Every player shares one save folder, keyed `retroarch`. RetroArch tells games apart by the `ROM` and `LIBRETRO` strings, and `freshStart` names the same core the other way, through `/data/data`. The shell keeps a key for the last intent it started per package. A start normally repeats that spelling so the game resumes; after the shell writes a save the player has not started with, it uses the other one, so RetroArch quits and starts fresh with the new save.
+- Every application id must be in the app manifest's `<queries>`.
 
 ## Moonlight
 

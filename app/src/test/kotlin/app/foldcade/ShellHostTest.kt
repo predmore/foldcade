@@ -172,6 +172,7 @@ class ShellHostTest {
                 "app.foldcade.plugins.gamenative.GameNativeEntry",
                 "app.foldcade.plugins.melonds.MelonDsEntry",
                 "app.foldcade.plugins.moonlight.MoonlightEntry",
+                "app.foldcade.plugins.retroarch.RetroArchEntry",
                 "app.foldcade.plugins.romm.RommEntry",
             ),
             loaded,
@@ -223,6 +224,7 @@ class ShellHostTest {
                 "app.foldcade.plugins.gamenative.GameNativeEntry",
                 "app.foldcade.plugins.melonds.MelonDsEntry",
                 "app.foldcade.plugins.moonlight.MoonlightEntry",
+                "app.foldcade.plugins.retroarch.RetroArchEntry",
                 "app.foldcade.plugins.romm.RommEntry",
             ),
             loaded.map { it.javaClass.name }.toSet(),
@@ -235,12 +237,20 @@ class ShellHostTest {
         assertEquals("azahar", host.player("azahar")?.id)
         assertEquals("nintendo-3ds", host.playersFor("3ds").single().platformId)
         assertEquals("melonds", host.player("melonds")?.id)
-        assertEquals("nintendo-ds", host.playersFor("nds").single().platformId)
+        assertEquals(listOf("nintendo-ds"), host.playersFor("nds").map { it.platformId }.distinct())
+        assertEquals(setOf("melonds", "retroarch.nintendo-ds"), host.playersFor("nds").map { it.id }.toSet())
         assertTrue(host.playerIds().containsAll(listOf("azahar", "melonds", "gamenative", "moonlight")))
         assertEquals(
             listOf("my-boy.game-boy-advance", "pizza-boy-gba.game-boy-advance", "gba-emu.game-boy-advance"),
-            host.playersFor("gba").map { it.id },
+            host.playersFor("gba").map { it.id }.filterNot { it.startsWith("retroarch.") },
         )
+        assertTrue("retroarch.game-boy-advance" in host.playersFor("gba").map { it.id })
+        // RetroArch brings the systems no standalone emulator here runs.
+        assertEquals(listOf("retroarch.sega-cd"), host.playersFor("segacd").map { it.id })
+        assertEquals(listOf("retroarch.pc-engine"), host.playersFor("tg16").map { it.id })
+        // Every RetroArch system is a platform the folder catalog declares.
+        val retroArch = host.playerIds().filter { it.startsWith("retroarch.") }
+        assertEquals(app.foldcade.plugins.retroarch.SYSTEMS.size, retroArch.size)
         assertEquals("nintendo-switch", host.playersFor("switch").single().platformId)
         assertEquals("dreamcast", host.playersFor("dc").first().platformId)
         assertEquals("GameNative", host.library("gamenative")?.displayName)

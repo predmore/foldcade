@@ -56,4 +56,18 @@ class ContentUriTest {
         assertNull(CachePathContentUri(cache).pathFor(uri))
         assertNull(adapter.pathFor("content://app.foldcade.romm.cache/romm-data/../device.json"))
     }
+
+    @Test
+    fun sharedDownloadsUseTheirOwnPrefix() {
+        val media = Files.createTempDirectory("romm-media")
+        val data = Files.createTempDirectory("romm-data")
+        val adapter = CachePathContentUri(media, dataRoot = data, cachePath = ROMM_MEDIA_PATH)
+        val rom = media.resolve("servers/abc/roms/11/Mario Kart.gba")
+        val uri = adapter.uriFor(rom)
+        assertEquals("content://app.foldcade.romm.cache/romm-media/servers/abc/roms/11/Mario%20Kart.gba", uri)
+        assertEquals(rom.toAbsolutePath().normalize(), adapter.pathFor(uri)!!.toAbsolutePath().normalize())
+        // The private-cache prefix is not this root.
+        assertNull(adapter.pathFor(uri.replace("/romm-media/", "/romm/")))
+        assertTrue(adapter.uriFor(data.resolve("saves/1/s.sav")).contains("/romm-data/"))
+    }
 }

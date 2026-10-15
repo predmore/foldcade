@@ -324,6 +324,34 @@ class SettingsPersistenceTest {
         assertTrue(SessionStore(prefs).folderTreeInUse("content://tree/other"))
     }
 
+    @Test
+    fun retroArchsCoresFolderKeepsItsGrantInUse() {
+        val prefs = MemoryPrefs()
+        val uri = "content://com.retroarch.aarch64.documents/tree/%2Fdata%2Fuser%2F0%2Fcom.retroarch.aarch64"
+        val store = SessionStore(prefs)
+        store.addFolderTree(uri)
+        store.setRetroArchCoresFolder("com.retroarch.aarch64", uri)
+        store.removeFolderTree(uri)
+        assertTrue(SessionStore(prefs).folderTreeInUse(uri))
+        assertEquals(uri, SessionStore(prefs).retroArchCoresFolder("com.retroarch.aarch64"))
+        store.setRetroArchCoresFolder("com.retroarch.aarch64", "content://other")
+        assertFalse(SessionStore(prefs).folderTreeInUse(uri))
+    }
+
+    @Test
+    fun aWrittenSaveWaitsAndTheLastStartIsKept() {
+        val prefs = MemoryPrefs()
+        val store = SessionStore(prefs)
+        assertFalse(store.saveAwaitsLoad("retroarch"))
+        store.setSaveAwaitsLoad("retroarch", true)
+        assertTrue(SessionStore(prefs).saveAwaitsLoad("retroarch"))
+        assertFalse(SessionStore(prefs).saveAwaitsLoad("melonds"))
+        store.setSaveAwaitsLoad("retroarch", false)
+        assertFalse(SessionStore(prefs).saveAwaitsLoad("retroarch"))
+        store.setLastPlayerStart("com.retroarch.aarch64", "key")
+        assertEquals("key", SessionStore(prefs).lastPlayerStart("com.retroarch.aarch64"))
+    }
+
     private fun shell(prefs: MemoryPrefs, themes: List<String> = listOf("Built-in", "Afterglow")): ShellController =
         ShellController(
             SessionStore(prefs), PluginHost(Dispatchers.Unconfined, MemoryCredentialStore()),

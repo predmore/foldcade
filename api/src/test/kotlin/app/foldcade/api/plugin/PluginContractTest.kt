@@ -113,7 +113,7 @@ class PluginContractTest {
         assertTrue(aliases.isDefault)
         assertTrue(IdlePlatform().aliases.isEmpty())
         assertEquals(1, PLUGIN_API_VERSION)
-        assertEquals(8, PLUGIN_API_MINOR)
+        assertEquals(9, PLUGIN_API_MINOR)
         val bind = PluginEntry::class.java.methods.single { it.name == "bind" }
         assertTrue(bind.isDefault)
         val saveFileName = Player::class.java.methods.single { it.name == "saveFileName" }
@@ -133,6 +133,9 @@ class PluginContractTest {
         assertTrue(LibraryBackend::class.java.methods.single { it.name == "pollDeviceCode" }.isDefault)
         assertTrue(LibraryBackend::class.java.methods.single { it.name == "removeLocal" }.isDefault)
         assertTrue(PluginEntry::class.java.methods.single { it.name == "openLibrary" }.isDefault)
+        assertTrue(Player::class.java.methods.single { it.name == "getOpensByPath" }.isDefault)
+        assertTrue(SaveFolderHolder::class.java.methods.single { it.name == "getSaveFolderKey" }.isDefault)
+        assertTrue(SaveFolderHolder::class.java.methods.single { it.name == "getSuggestedSaveFolder" }.isDefault)
     }
 
     @Test

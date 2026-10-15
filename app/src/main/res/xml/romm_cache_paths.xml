@@ -1,8 +1,11 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- RomM downloads under cacheDir/romm, and RomM saves under filesDir/romm.
-     URIs are content://<authority>/romm/<path under the cache root> or
+<!-- RomM downloads under Android/media/<application id>/romm, or under cacheDir/romm when
+     there is no shared storage, and RomM saves under filesDir/romm.
+     URIs are content://<authority>/romm-media/<path under the shared download root>,
+     content://<authority>/romm/<path under the cache root>, or
      content://<authority>/romm-data/<path under the data root>, the same mapping as CachePathContentUri. -->
 <paths>
+    <external-media-path name="romm-media" path="romm/" />
     <cache-path name="romm" path="romm/" />
     <files-path name="romm-data" path="romm/" />
 </paths>
