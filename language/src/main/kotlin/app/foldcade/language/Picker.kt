@@ -1309,6 +1309,29 @@ private fun page(focus: GridFocus, towardEnd: Boolean, model: PickerModel, lastC
     return across(focus, target, GridStrip.row(index), model)
 }
 
+/**
+ * A finger let the strip go at [first]. The strip rests there, as far along as it can go.
+ * The cursor keeps its tile while that tile is on screen. Otherwise it comes in along
+ * its row to the nearer edge, where the tiles slid out from under it.
+ */
+fun scrolledTo(model: PickerModel, first: Int): PickerModel {
+    // A cursor that walks only the tiles, as with a tile in the hand, keeps the strip where its moves put it.
+    if (model.count <= 0 || reach(model) != GridStrip.reach(model.count)) return model
+    val shown = model.columnsShown
+    val resting = first.coerceIn(0, GridStrip.lastFirst(model.count, shown))
+    val onScreen = resting until resting + shown
+    val focus = model.focus
+    val column = GridStrip.column(focus.cellIndex).coerceIn(onScreen)
+    return model.copy(
+        firstColumn = resting,
+        // From a pill, down lands on the column under it, so that comes along too.
+        focus = focus.copy(
+            cellIndex = GridStrip.index(column, GridStrip.row(focus.cellIndex)),
+            lastColumn = focus.lastColumn.coerceIn(onScreen),
+        ),
+    )
+}
+
 /** A, or X when [onBottom]. X launches a game on the bottom screen and does what A does anywhere else. */
 private fun activate(model: PickerModel, screen: HostScreen, onBottom: Boolean = false): Pair<PickerModel, Effect?> {
     return when (model.focus.chrome) {

@@ -195,6 +195,53 @@ class ContractTest {
     }
 
     @Test
+    fun aSwipeRestsTheStripWhereItWasLeftAndBringsTheCursorAlong() {
+        val count = 7 * Metrics.rows
+        val row = Metrics.rows - 1
+        val model = PickerModel(count = count, rowsPerPage = Metrics.rows, focus = GridFocus(GridStrip.index(1, row), 1))
+        // Its tile still on screen, the cursor stays on it.
+        val near = scrolledTo(model, 1)
+        assertEquals(1, shownFirstColumn(near))
+        assertEquals(GridStrip.index(1, row), near.focus.cellIndex)
+        // Dragged off the left edge, it comes in along its row to the first column on screen.
+        val far = scrolledTo(model, 4)
+        assertEquals(4, shownFirstColumn(far))
+        assertEquals(GridStrip.index(4, row), far.focus.cellIndex)
+        assertEquals(4, far.focus.lastColumn)
+        // Dragged back, off the right edge, to the last column on screen.
+        val back = scrolledTo(far, 0)
+        assertEquals(0, shownFirstColumn(back))
+        assertEquals(GridStrip.index(Metrics.columns - 1, row), back.focus.cellIndex)
+        // Never past either end of what the cursor can reach.
+        val last = GridStrip.reachColumns(count) - Metrics.columns
+        assertEquals(last, shownFirstColumn(scrolledTo(model, 99)))
+        assertEquals(0, shownFirstColumn(scrolledTo(far, -3)))
+        // A tile in the hand keeps the strip where its moves put it.
+        val holding = model.copy(hold = Hold(index = 1, origin = 1, orderBefore = (0 until count).toList()))
+        assertEquals(holding, scrolledTo(holding, 4))
+        // A wide panel follows the same way across its own columns, not the bottom screen's four.
+        val wide = model.copy(columnsShown = 8)
+        val wideNear = scrolledTo(wide, 1)
+        assertEquals(1, shownFirstColumn(wideNear))
+        assertEquals(GridStrip.index(1, row), wideNear.focus.cellIndex)
+        // Off the left edge of the eight, it comes in to the first column on that screen.
+        val wideFar = scrolledTo(wide, 2)
+        assertEquals(2, shownFirstColumn(wideFar))
+        assertEquals(GridStrip.index(2, row), wideFar.focus.cellIndex)
+        assertEquals(2, wideFar.focus.lastColumn)
+        // Off the right edge, to the last of the eight.
+        val wideBack = scrolledTo(wide.copy(focus = GridFocus(GridStrip.index(8, row), 8)), 0)
+        assertEquals(0, shownFirstColumn(wideBack))
+        assertEquals(GridStrip.index(7, row), wideBack.focus.cellIndex)
+        assertEquals(7, wideBack.focus.lastColumn)
+        // The wide screen reaches its end sooner, and still stops at the start.
+        assertEquals(GridStrip.reachColumns(count) - 8, shownFirstColumn(scrolledTo(wide, 99)))
+        assertEquals(0, shownFirstColumn(scrolledTo(wideFar, -3)))
+        val holdingWide = wide.copy(hold = Hold(index = 1, origin = 1, orderBefore = (0 until count).toList()))
+        assertEquals(holdingWide, scrolledTo(holdingWide, 2))
+    }
+
+    @Test
     fun aLaunchesOnTopAndXOnTheBottom() {
         val model = PickerModel(count = 6, rowsPerPage = 1, focus = GridFocus(cellIndex = 2, lastColumn = 2))
         assertEquals(Effect.Launch(2, onBottom = false), reduce(model, Meaning.Activate).second)

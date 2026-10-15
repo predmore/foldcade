@@ -248,6 +248,8 @@ import app.foldcade.language.SelectionCopy
 import app.foldcade.HomeFace
 import app.foldcade.ShelfGame
 import androidx.compose.animation.core.AnimationVector1D
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.ui.input.pointer.util.VelocityTracker
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.coroutines.delay
@@ -516,12 +518,20 @@ private data class GlideTo(val target: Float, val snap: Boolean, val jump: Any?,
  * [target] reached with [motion.glide], as state. One coroutine follows every change and
  * reads the speed while the last move still runs, so a held move carries it on instead
  * of starting over at each repeat. Cancelling an animation clears its speed, so a keyed
- * effect could not. [snap], or a new [jump], lands at once.
+ * effect could not. [snap], or a new [jump], lands at once. Pass [anim] to move it
+ * by hand between targets: the next glide starts from wherever it was left, and a
+ * glide started there to the new target is left to run.
  */
 @Composable
-private fun glideState(target: Float, base: Int, scale: Float, snap: Boolean = false, jump: Any? = null): State<Float> {
+private fun glideState(
+    target: Float,
+    base: Int,
+    scale: Float,
+    snap: Boolean = false,
+    jump: Any? = null,
+    anim: Animatable<Float, AnimationVector1D> = remember { Animatable(target) },
+): State<Float> {
     val motion = LocalFoldTheme.current.theme.motion
-    val anim = remember { Animatable(target) }
     val latest = rememberUpdatedState(GlideTo(target, snap, jump, scale))
     LaunchedEffect(anim, base) {
         var landed = latest.value.jump
@@ -532,6 +542,8 @@ private fun glideState(target: Float, base: Int, scale: Float, snap: Boolean = f
                     anim.snapTo(next.target)
                     return@collect
                 }
+                // Already on its way there, as a strip let go by a finger is: it keeps the speed it was given.
+                if (anim.isRunning && anim.targetValue == next.target) return@collect
                 val velocity = anim.velocity
                 val spec = motion.glide(base, next.scale, next.target - anim.value, velocity)
                 launch { anim.animateTo(next.target, spec) }
@@ -2003,27 +2015,7 @@ private fun Picker(
             BoxWithConstraints(
                 Modifier
                     .weight(1f)
-                    .fillMaxWidth()
-                    .pointerInput(model.panel, model.dialog, model.connectOpen, shell.homeEditing(), showingHome) {
-                        if (showingHome) return@pointerInput
-                        if (model.panel != null || model.dialog != null || model.connectOpen) {
-                            return@pointerInput
-                        }
-                        if (shell.homeEditing()) return@pointerInput
-                        var dragged = 0f
-                        detectHorizontalDragGestures(
-                            onHorizontalDrag = { _, amount -> dragged += amount },
-                            onDragEnd = {
-                                val meaning = when {
-                                    dragged > viewConfiguration.touchSlop -> Meaning.PageTowardStart
-                                    dragged < -viewConfiguration.touchSlop -> Meaning.PageTowardEnd
-                                    else -> null
-                                }
-                                dragged = 0f
-                                if (meaning != null) shell.onMeaning(meaning, screen)
-                            },
-                        )
-                    },
+                    .fillMaxWidth(),
                 contentAlignment = Alignment.Center,
             ) {
                 // Rows are the same on every panel, so a Home layout reads the same on both.
@@ -2071,7 +2063,7 @@ private fun Picker(
                             pad = ring,
                             scale = scale,
                             showTitle = !iconsOnly,
-                            followDrag = showingHome,
+                            homeTiles = showingHome,
                         )
                     }
                 }
@@ -2467,6 +2459,22 @@ private fun StripBar(count: Int, first: Int, shown: Int, scale: Float) {
 
 private const val STRIP_BAR_WIDTH = 160f
 
+/** How far ahead a flick carries the strip: its speed as the finger lifts, for this long. */
+private const val STRIP_FLICK_SECONDS = 0.15f
+
+/** How stiffly the strip gives past either end. It never gives a whole column. */
+private const val STRIP_GIVE = 0.55f
+
+/** [raw] columns along a strip that rests from 0 to [last], with the overshoot past either end damped. */
+private fun stretched(raw: Float, last: Float): Float {
+    fun give(over: Float) = over * STRIP_GIVE / (1f + over * STRIP_GIVE)
+    return when {
+        raw < 0f -> -give(-raw)
+        raw > last -> last + give(raw - last)
+        else -> raw
+    }
+}
+
 /** True inside the blurred layer under an open menu. */
 private val LocalUnderMenu = compositionLocalOf { false }
 
@@ -2589,7 +2597,7 @@ private fun StripGrid(
     pad: Dp,
     scale: Float,
     showTitle: Boolean,
-    followDrag: Boolean = false,
+    homeTiles: Boolean = false,
 ) {
     val motion = LocalFoldTheme.current.theme.motion
     val model = app.shell.model
@@ -2600,21 +2608,45 @@ private fun StripGrid(
     LaunchedEffect(titles) {
         Log.i("Foldcade", "library-ui page " + titles.joinToString(" | "))
     }
-    val position = glideState(first.toFloat(), motion.durationTravel, scale)
+    val strip = remember { Animatable(first.toFloat()) }
+    val position = glideState(first.toFloat(), motion.durationTravel, scale, anim = strip)
     WarmColumns(app, first, columns)
-    var dragColumns by remember { mutableStateOf(0f) }
-    LaunchedEffect(first, scale) { dragColumns = 0f }
+    // Where a finger holds the strip, in columns. Null while no finger does.
+    var held by remember { mutableStateOf<Float?>(null) }
     val reduced = motion.reduced(scale)
     // Read where it is used, in offsets and layers, so scrolling redraws without
     // recomposing the columns. Composition only hears which columns are on screen.
-    val shownFirst = { position.value - dragColumns }
+    val shownFirst = remember { { held ?: position.value } }
     val width = cell * columns + columnGap * (columns - 1)
     val pitchPx = with(LocalDensity.current) { (cell + columnGap).toPx() }
     val lastColumn = GridStrip.reachColumns(model.count) - 1
     val context = LocalContext.current
+    val scope = rememberCoroutineScope()
     val folderToken = app.shell.homeAnimToken()
-    val carry = if (followDrag) app.shell.homeCarry() else null
-    val memory = rememberSlotMemory(if (followDrag) app.shell.homeSlots() else emptyList(), folderToken)
+    val carry = if (homeTiles) app.shell.homeCarry() else null
+    val memory = rememberSlotMemory(if (homeTiles) app.shell.homeSlots() else emptyList(), folderToken)
+    val swipes = app.shell.scrollsByTouch()
+    // Read as the finger moves, so tiles arriving mid-drag don't restart the gesture.
+    val lastFirst by rememberUpdatedState(GridStrip.lastFirst(model.count, columns))
+    // The finger lets go: the strip carries on from where it was left, at the speed it was
+    // going, and settles on the column nearest where that speed would take it. With
+    // animations off, it lands there at once.
+    val release by rememberUpdatedState<(Float) -> Unit> release@{ pixelsPerSecond ->
+        val from = held ?: return@release
+        val speed = if (pitchPx > 0f) -pixelsPerSecond / pitchPx else 0f
+        val rest = (from + speed * STRIP_FLICK_SECONDS).roundToInt()
+        scope.launch {
+            app.shell.touchScroll(rest)
+            val target = shownFirstColumn(app.shell.model, columns).toFloat()
+            // The strip takes over from the finger in one step, so no frame shows it anywhere else.
+            strip.snapTo(if (reduced) target else from)
+            held = null
+            if (reduced) return@launch
+            withContext(SteadyMenu) {
+                strip.animateTo(target, motion.glide(motion.durationTravel, scale, target - from, speed), initialVelocity = speed)
+            }
+        }
+    }
     val folderPop = remember { Animatable(1f) }
     LaunchedEffect(folderToken, scale) {
         folderPop.snapTo(0.92f)
@@ -2622,7 +2654,8 @@ private fun StripGrid(
             folderPop.animateTo(1f, motion.arrive(motion.durationShort, scale))
         }
     }
-    val fading by remember(reduced, first) { derivedStateOf { reduced && abs(shownFirst() - first) > 0.001f } }
+    // A finger moves the strip itself, so it is never faded out from under it.
+    val fading by remember(reduced, first) { derivedStateOf { reduced && held == null && abs(shownFirst() - first) > 0.001f } }
     val popping by remember { derivedStateOf { folderPop.value != 1f } }
     Box(
         Modifier
@@ -2630,7 +2663,7 @@ private fun StripGrid(
             .then(
                 if (fading || popping) {
                     Modifier.graphicsLayer {
-                        if (reduced) this.alpha = (1f - abs(shownFirst() - first)).coerceIn(0.35f, 1f)
+                        if (fading) this.alpha = (1f - abs(shownFirst() - first)).coerceIn(0.35f, 1f)
                         scaleX = folderPop.value
                         scaleY = folderPop.value
                     }
@@ -2638,26 +2671,39 @@ private fun StripGrid(
                     Modifier
                 },
             )
-            .pointerInput(followDrag, app.shell.homeEditing(), pitchPx) {
-                if (!followDrag || app.shell.homeEditing() || pitchPx <= 0f) return@pointerInput
+            .pointerInput(swipes, pitchPx) {
+                if (!swipes || pitchPx <= 0f) return@pointerInput
+                // The strip moves under the finger, column for column, and gives a little past either end.
+                val tracker = VelocityTracker()
+                var from = 0f
                 var walked = 0f
-                detectHorizontalDragGestures(
-                    onHorizontalDrag = { _, amount ->
-                        walked += amount
-                        dragColumns = walked / pitchPx
-                    },
-                    onDragEnd = {
-                        val columns = dragColumns
-                        dragColumns = 0f
-                        walked = 0f
-                        val meaning = when {
-                            columns > 0.3f -> Meaning.PageTowardStart
-                            columns < -0.3f -> Meaning.PageTowardEnd
-                            else -> null
-                        }
-                        if (meaning != null) app.shell.onMeaning(meaning, screen)
-                    },
-                )
+                var at = Offset.Zero
+                try {
+                    detectHorizontalDragGestures(
+                        onDragStart = {
+                            from = shownFirst()
+                            walked = 0f
+                            tracker.resetTracking()
+                            held = from
+                            scope.launch { strip.stop() }
+                        },
+                        onDragEnd = {
+                            // The lift counts as a sample, so a finger that stopped before lifting lets go still.
+                            tracker.addPosition(SystemClock.uptimeMillis(), at)
+                            release(tracker.calculateVelocity().x)
+                        },
+                        onDragCancel = { release(0f) },
+                        onHorizontalDrag = { change, amount ->
+                            walked += amount
+                            at = change.position
+                            tracker.addPosition(change.uptimeMillis, at)
+                            held = stretched(from - walked / pitchPx, lastFirst.toFloat())
+                        },
+                    )
+                } finally {
+                    // A grid that changes under the finger still lets the strip settle.
+                    release(0f)
+                }
             }
             .padding(pad),
     ) {
@@ -2686,7 +2732,7 @@ private fun StripGrid(
                 }
             }
         }
-        if (followDrag) {
+        if (homeTiles) {
             HomeTarget(carry, cell, width, pitchPx, shownFirst, scale)
             CarriedTile(app, carry, memory, cell, rowGap, rowPx, pitchPx, shownFirst, scale) { at ->
                 (context as? FoldcadeHomeActivity)?.dispatch(app.shell.touchCell(at, screen))
@@ -2697,6 +2743,7 @@ private fun StripGrid(
             index = model.focus.cellIndex,
             cell = cell,
             gap = rowGap,
+            columns = columns,
             pitchPx = pitchPx,
             rowPx = rowPx,
             shownFirst = shownFirst,
@@ -2719,6 +2766,8 @@ private fun GridCursor(
     index: Int,
     cell: Dp,
     gap: Dp,
+    /** Columns this panel fits. A fading panel keeps its own edge, not the panel the grid moved to. */
+    columns: Int,
     pitchPx: Float,
     rowPx: Int,
     shownFirst: () -> Float,
@@ -2766,7 +2815,8 @@ private fun GridCursor(
             .then(selectionFeedback(shell.homeSelection()?.refusals?.takeIf { shell.homeSelection()?.refusedAt == index } ?: 0))
             .graphicsLayer {
                 val pitchY = (if (rowPx > 0) rowPx.toFloat() else cell.toPx()) + gap.toPx()
-                translationX = (x - shownFirst()) * pitchPx
+                // Kept on screen: a finger can drag its tile away, and then the ring waits at the edge.
+                translationX = (x - shownFirst()).coerceIn(0f, columns - 1f) * pitchPx
                 translationY = y * pitchY
                 clip = false
                 scaleX = motion.scaleFocus

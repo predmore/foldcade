@@ -96,6 +96,7 @@ import app.foldcade.language.LibraryFolder
 import app.foldcade.language.Meaning
 import app.foldcade.language.MotionSpeed
 import app.foldcade.language.GridStrip
+import app.foldcade.language.scrolledTo
 import app.foldcade.language.shownFirstColumn
 import app.foldcade.language.PromptKey
 import app.foldcade.language.RemoveVerb
@@ -246,7 +247,10 @@ class ShellController(
     private var committedShelves = shelfState
     private var current by mutableStateOf(initial())
 
-    /** Every change keeps the columns the grid showed, so the next focus scrolls only as far as it must. */
+    /**
+     * Every change keeps the columns the grid showed, so the next focus scrolls only as far as it must.
+     * A change that scrolls the strip itself, as a swipe does, keeps where it put it.
+     */
     var model: PickerModel
         get() = current
         private set(next) {
@@ -267,7 +271,7 @@ class ShellController(
                 stable.panel?.let { Row.Undo in panelRows(it, stable) } == true -> undo?.pause(nowMillis())
                 else -> undo
             }
-            current = stable.copy(firstColumn = shownFirstColumn(current),
+            current = stable.copy(firstColumn = shownFirstColumn(stable),
                 deleteHold = if (canceled) null else next.deleteHold,
                 deleteProgress = if (canceled) 0f else next.deleteProgress,
                 deleteShake = next.deleteShake + if (canceled) 1 else 0)
@@ -1631,8 +1635,12 @@ class ShellController(
     }
 
     /** One tap focuses a tile. A second tap on it activates, and hands back what that opens. */
+    /** Whether the grid itself takes touches: nothing covers it. */
+    private fun gridTouchable(): Boolean =
+        find == null && artPicker == null && model.dialog == null && model.panel == null && !model.connectOpen
+
     fun touchCell(index: Int, screen: HostScreen): Effect? {
-        if (find != null || artPicker != null || model.dialog != null || model.panel != null || model.connectOpen) return null
+        if (!gridTouchable()) return null
         val current = model.focus
         val already = current.chrome == null && current.cellIndex == index
         if (!already) {
@@ -1649,6 +1657,19 @@ class ShellController(
             return null
         }
         return onMeaning(Meaning.Activate, screen)
+    }
+
+    /** Whether a finger can scroll the grid's strip now. */
+    fun scrollsByTouch(): Boolean = gridTouchable() && !homeEditing() && model.hold == null
+
+    /** A finger let the strip go at [first]. It rests there, and the cursor comes onto the screen if it was left behind. */
+    fun touchScroll(first: Int) {
+        if (!scrollsByTouch()) return
+        val before = model.focus
+        val next = scrolledTo(model, first)
+        if (next == model) return
+        publish(next)
+        if (next.focus != before) cue(model.themeIndex, "move")
     }
 
     fun touchChrome(chrome: Chrome, screen: HostScreen) {
