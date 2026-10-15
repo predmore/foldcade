@@ -69,7 +69,7 @@ class SettingsPageTest {
     }
 
     @Test
-    fun theSteamGridDbRowAsksForAKeyThenForgetsIt() {
+    fun theSteamGridDbRowAsksForAKey() {
         val (form, open) = reduce(home.onSetting(Row.ArtKey), Meaning.Activate)
         assertEquals(Effect.OpenArtKey, open)
         assertNull(form.settings)
@@ -80,11 +80,49 @@ class SettingsPageTest {
         val onSave = form.copy(connectIndex = 1)
         assertEquals(Effect.SaveArtKey, reduce(onSave, Meaning.Activate).second)
 
+    }
+
+    @Test
+    fun aSavedKeyIsOnlyForgottenByTheDialogsForgetKey() {
         val saved = home.copy(artKeySaved = true).onSetting(Row.ArtKey)
-        val (forgot, effect) = reduce(saved, Meaning.Activate)
-        assertEquals(Effect.ForgetArtKey, effect)
-        assertTrue(forgot.settings != null)
-        assertFalse(forgot.connectOpen)
+        val (asked, effect) = reduce(saved, Meaning.Activate)
+        // A only asks. The page stays open under the dialog, which opens on Keep key.
+        assertNull(effect)
+        val dialog = asked.dialog!!
+        assertEquals(DialogKind.ForgetArtKey, dialog.kind)
+        assertEquals(listOf(DialogButton.ForgetKey, DialogButton.KeepKey), dialog.buttons)
+        assertEquals(DialogButton.KeepKey, dialog.buttons[dialog.index])
+        assertEquals(DialogButton.KeepKey, dialog.buttons[dialog.safeIndex])
+        assertEquals(HostScreen.Top, dialog.screen)
+        assertEquals(saved.settings, asked.settings)
+        assertFalse(asked.connectOpen)
+
+        val keep = Effect.DialogChoice(DialogButton.KeepKey, DialogKind.ForgetArtKey)
+        val forget = Effect.DialogChoice(DialogButton.ForgetKey, DialogKind.ForgetArtKey)
+        // A second press, as from a bounce or a held A, lands on Keep key.
+        val (again, second) = reduce(asked, Meaning.Activate, repeatCount = 1)
+        assertEquals(keep, second)
+        assertNull(again.dialog)
+        assertEquals(saved.settings, again.settings)
+        // Back keeps the key and leaves the page where it was.
+        val (backed, back) = reduce(asked, Meaning.Back)
+        assertEquals(keep, back)
+        assertNull(backed.dialog)
+        assertEquals(saved.settings, backed.settings)
+        assertTrue(backed.artKeySaved)
+        // The drawers and Start do not leave the dialog, and choose nothing.
+        for (away in listOf(Meaning.LeftPanel, Meaning.RightPanel, Meaning.Menu, Meaning.MoveUp, Meaning.MoveDown, Meaning.MoveRight)) {
+            val (stays, none) = reduce(asked, away)
+            assertNull(none)
+            assertEquals(DialogButton.KeepKey, stays.dialog!!.buttons[stays.dialog!!.index])
+        }
+        // Forget key takes a move onto it and a press, or a tap on it.
+        val onForget = reduce(asked, Meaning.MoveLeft).first
+        assertNull(reduce(asked, Meaning.MoveLeft).second)
+        assertEquals(forget, reduce(onForget, Meaning.Activate).second)
+        assertEquals(keep, reduce(onForget, Meaning.Back).second)
+        assertEquals(forget, focusAndActivateDialog(asked, 0).second)
+        assertEquals(keep, focusAndActivateDialog(asked, 1).second)
     }
 
     @Test

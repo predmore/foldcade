@@ -3838,6 +3838,8 @@ private fun DialogCard(
                         DialogButton.ContinueGrant -> Copy.continueGrant
                         DialogButton.Ok -> Copy.ok
                         DialogButton.CloseIt -> Copy.closeIt
+                        DialogButton.ForgetKey -> Copy.forgetKey
+                        DialogButton.KeepKey -> Copy.keepKey
                     }
                     DialogAction(
                         label = label,
