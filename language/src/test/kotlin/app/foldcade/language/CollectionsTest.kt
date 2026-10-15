@@ -473,6 +473,24 @@ class CollectionsTest {
         assertEquals(RemoveVerb.Hide, removeVerb(alone, alone.slots.indexOf(loose.id)))
     }
 
+    @Test
+    fun onlyAnOpenCollectionWithNoGameIsEmpty() {
+        var board = mergeHome(HomeBoard(), listOf(zelda.copy(lastPlayedMillis = 5L)), platforms)
+        board = newCollection(board, "home.user.1", "Couch", member = null)
+        assertNull(emptyCollection(board))
+        val open = openFolder(board, "home.user.1")
+        assertEquals("Couch", emptyCollection(open)?.name)
+        // A collection whose last game was taken out is empty too, though its slot remains.
+        val emptied = toggleCollection(toggleCollection(open, "home.user.1", zelda.id), "home.user.1", zelda.id)
+        assertEquals(listOf(null), emptied.folders.getValue("home.user.1").slots)
+        assertEquals("home.user.1", emptyCollection(emptied)?.id)
+        assertNull(emptyCollection(toggleCollection(open, "home.user.1", zelda.id)))
+        assertNull(emptyCollection(openAll(open)))
+        assertNull(emptyCollection(openFolder(board, threeDs)))
+        assertNull(emptyCollection(openFolder(board, HOME_RECENT)))
+        assertNull(emptyCollection(pickUp(enterEdit(emptied), 0)))
+    }
+
     private fun rom(id: String, platform: String, lastPlayed: Long = 0L): HomeItem =
         HomeItem(id = id, title = id.substringAfterLast(':'), kind = HomeKind.Rom, platformId = platform, lastPlayedMillis = lastPlayed)
 }

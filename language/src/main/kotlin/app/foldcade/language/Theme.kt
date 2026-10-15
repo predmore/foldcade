@@ -241,6 +241,10 @@ object Copy {
     const val collection = "Collection"
     const val favorites = "Favorites"
     const val recentlyPlayed = "Recently played"
+    /** An open collection with nothing in it, and the way to fill it. */
+    const val noGamesYet = "No games yet"
+    const val addGamesHow = "Add games opens All. Press Y on a game, then Add to."
+    const val addGames = "Add games"
     const val undo = "Undo"
     const val hidden = "Hidden"
     const val unpinned = "Unpinned"

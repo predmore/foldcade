@@ -935,7 +935,8 @@ private fun Hero(app: FoldcadeApp, screen: HostScreen, scale: Float, onEffect: (
     val editor = presence(app.shell.folderIconPick(), motion.durationIsland, scale)
     // While a name is typed the hero is what is being named, wherever the grid's focus is.
     val naming = app.shell.typingHero()
-    val subject = naming ?: app.shell.focusedHero()
+    // An empty collection has no tile to focus, so the top screen shows the collection.
+    val subject = naming ?: app.shell.focusedHero() ?: app.shell.emptyCollectionHero()
     // Find shows its best result, or the focused one, and travels along its strip.
     val find = app.shell.find
     val cellFocused = model.dialog == null && model.panel == null && !model.connectOpen && model.focus.chrome == null
@@ -2023,10 +2024,13 @@ private fun Picker(
                 val cell = minOf(fromHeight, fromWidth).coerceAtLeast(px(56f))
                 SideEffect { shell.setRowsPerPage(rows) }
                 val emptyTitle = emptyTitle(model)
+                val emptyCollection = shell.emptyCollection()
                 if (gridGone) {
                     Unit
                 } else if (model.libraryGrid && emptyTitle != null) {
                     EmptyLibrary(app, screen, emptyTitle, emptyActions(model))
+                } else if (emptyCollection != null) {
+                    EmptyCollection(app, screen, emptyCollection.name)
                 } else if (!model.libraryGrid && model.homeGrid != HomeGrid.StandIns && model.count == 0) {
                     BasicText(
                         text = emptyShelf(model.homeGrid),
@@ -2487,12 +2491,16 @@ private fun GridHints(app: FoldcadeApp, modifier: Modifier = Modifier) {
         if (model.homeGrid == HomeGrid.HiddenApps && model.count == 0) emptyList()
         else triggerHints(model.gridLabels.isNotEmpty())
     } else emptyList())
+    // An empty collection's one button, named on A.
+    val addGames = if (gridKeys && find == null && model.settings == null && model.playActivity == null && shell.emptyCollection() != null) {
+        listOf(HintKey(promptKeyOf(model.faceMap.confirmKey) ?: PromptKey.FaceA, Copy.addGames))
+    } else emptyList()
     val destructive = model.panel?.let { panelRows(it, model).getOrNull(it.index) }?.let { it == LanguageRow.RemoveDownload || it == LanguageRow.DeleteShortcut } == true
     val back = promptKeyOf(model.faceMap.backKey) ?: PromptKey.FaceB
     val selecting = gridKeys && shell.homeSelection() != null
     val shown = if (!selecting && model.undoVerb != null && model.panel == null && model.dialog == null) listOf(HintKey(PromptKey.FaceY, Copy.undo)) else if (!selecting && gridKeys && (shell.downloading.isNotEmpty() || shell.activity.values.any { it is TileActivity.Downloading || it == TileActivity.Checking })) {
         normalKeys.filterNot { it.key == back } + HintKey(back, "Cancel download")
-    } else normalKeys
+    } else addGames + normalKeys
     // The root grid names Select's Find while the row has room, so the button can be found.
     val atRoot = gridKeys && find == null && shell.find == null && model.settings == null && model.playActivity == null &&
         model.homeGrid == HomeGrid.StandIns && !model.libraryGrid && model.atLibraryRoot && shell.homeKeys() == HomeKeys.Idle
@@ -3899,6 +3907,54 @@ private fun EmptyLibrary(
                 }
             }
         }
+    }
+}
+
+/**
+ * An open collection with nothing in it: its name, so it is still the collection on the
+ * bottom screen alone, what fills it, and Add games, which A, X or a tap presses.
+ */
+@Composable
+private fun EmptyCollection(
+    app: FoldcadeApp,
+    screen: HostScreen,
+    name: String,
+) {
+    val context = LocalContext.current
+    val theme = foldTheme()
+    val type = LocalFoldTheme.current.theme.style.type
+    Column(
+        Modifier.fillMaxSize().padding(horizontal = px(32f)),
+        verticalArrangement = Arrangement.Center,
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
+        BasicText(
+            text = name,
+            style = text(theme.onBackground, type.dialogTitle, theme).copy(textAlign = TextAlign.Center),
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
+        BasicText(
+            text = Copy.noGamesYet,
+            modifier = Modifier.padding(top = px(8f)),
+            style = text(theme.onBackground, type.dialogBody, theme).copy(textAlign = TextAlign.Center),
+        )
+        BasicText(
+            text = Copy.addGamesHow,
+            modifier = Modifier.padding(top = px(4f)),
+            style = text(theme.muted, type.dialogBody, theme).copy(textAlign = TextAlign.Center),
+            maxLines = 2,
+            overflow = TextOverflow.Ellipsis,
+        )
+        BasicText(
+            text = Copy.addGames,
+            modifier = Modifier
+                .padding(top = px(20f))
+                .chip(app.shell.model.focus.chrome == null)
+                .hostPress { (context as? FoldcadeHomeActivity)?.dispatch(app.shell.touchAddGames(screen)) }
+                .padding(horizontal = px(20f), vertical = px(10f)),
+            style = text(theme.onBackground, type.dialogBody, theme),
+        )
     }
 }
 
