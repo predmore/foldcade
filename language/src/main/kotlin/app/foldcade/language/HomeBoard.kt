@@ -244,6 +244,16 @@ fun visibleSlots(board: HomeBoard): List<String?> {
 }
 
 /**
+ * The collection open on screen while it holds no game, so the grid has nothing to show.
+ * Null for a folder, Recently played, All, the root, or while a tile is in the hand.
+ */
+fun emptyCollection(board: HomeBoard): HomeFolder? {
+    if (board.allOpen || board.hold != null) return null
+    val folder = board.openFolderId?.let { board.folders[it] } ?: return null
+    return folder.takeIf { it.collection && visibleSlots(board).all { slot -> slot == null } }
+}
+
+/**
  * Reachable from Home: pinned on the root, or in a folder, a collection, or Recently played
  * there. All's dot shows this. A folder taken off Home no longer counts.
  */

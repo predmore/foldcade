@@ -33,6 +33,7 @@ import app.foldcade.language.resolvePlatform
 import app.foldcade.language.RemoveVerb
 import app.foldcade.language.TileActions
 import app.foldcade.language.HomeBoard
+import app.foldcade.language.HomeFolder
 import app.foldcade.language.HomeItem
 import app.foldcade.language.HomeHold
 import app.foldcade.language.HomeKeys
@@ -55,6 +56,7 @@ import app.foldcade.language.closeAll
 import app.foldcade.language.closeFolder
 import app.foldcade.language.collectionChoices
 import app.foldcade.language.decodeHome
+import app.foldcade.language.emptyCollection
 import app.foldcade.language.encodeHome
 import app.foldcade.language.enterEdit
 import app.foldcade.language.favorite
@@ -210,6 +212,9 @@ class HomeSession(raw: String?, nowMillis: Long = System.currentTimeMillis()) {
     private var iconCell: Int = 0
     private var rootIndex: Int = 0
 
+    /** The empty collection Add games left for All. Back from All opens it again. */
+    private var addingTo: String? = null
+
     fun rememberShelf(gamesOnShelf: List<ShelfGame>) {
         shelfById.clear()
         gamesOnShelf.forEach { game -> shelfById[game.id] = game }
@@ -313,11 +318,27 @@ class HomeSession(raw: String?, nowMillis: Long = System.currentTimeMillis()) {
         }
         if (board.allOpen) return handleAll(meaning, index)
         return when (meaning) {
-            Meaning.Activate -> activateCell(index)
-            Meaning.ActivateBottom -> activateCell(index, onBottom = true)
+            Meaning.Activate, Meaning.ActivateBottom -> emptyCollection()?.let { addGames(it.id) }
+                ?: activateCell(index, onBottom = meaning == Meaning.ActivateBottom)
+            // With no tile to land on, Down from L1 or R1 comes back to Add games.
+            Meaning.MoveDown -> emptyCollection()?.let { step(null, 0) }
             Meaning.Back -> if (board.openFolderId != null) closeOpenFolder() else null
             else -> null
         }
+    }
+
+    /**
+     * The collection on screen while it holds no game and nothing else is open over it.
+     * A or X there is Add games ([addGames]).
+     */
+    fun emptyCollection(): HomeFolder? =
+        if (iconPick != null || typing != null || selection != null || board.editing) null else emptyCollection(board)
+
+    /** Opens All to fill collection [id] from, with Y › Add to. Back from All comes back to it. */
+    private fun addGames(id: String): HomeStep {
+        board = openAll(board)
+        addingTo = id
+        return step(null, 0)
     }
 
     /**
@@ -413,6 +434,7 @@ class HomeSession(raw: String?, nowMillis: Long = System.currentTimeMillis()) {
      */
     fun reveal(id: String): Int? {
         val spot = homeLanding(board, id) ?: return null
+        addingTo = null
         finishSelection()
         closeTyping()
         iconPick = null
@@ -452,7 +474,7 @@ class HomeSession(raw: String?, nowMillis: Long = System.currentTimeMillis()) {
     /** The face of game [id], wherever it is, as a menu that kept its game shows it. */
     fun faceOf(id: String): HomeFace = faceFor(id)
 
-    fun restore(snapshot: HomeBoard) { board = snapshot; menuGame = null }
+    fun restore(snapshot: HomeBoard) { board = snapshot; menuGame = null; addingTo = null }
     fun ensureAppFolder(id: String) {
         if (id in board.folders) return
         board = app.foldcade.language.ensureAppFolder(board, id)
@@ -638,6 +660,7 @@ class HomeSession(raw: String?, nowMillis: Long = System.currentTimeMillis()) {
      * keeps the look it had: nothing it showed was saved. Returns the root tile to focus.
      */
     fun showRoot(): Int {
+        addingTo = null
         finishSelection()
         closeTyping()
         iconPick = null
@@ -651,6 +674,7 @@ class HomeSession(raw: String?, nowMillis: Long = System.currentTimeMillis()) {
     }
 
     fun showAll() {
+        addingTo = null
         finishSelection()
         closeTyping()
         board = openAll(board)
@@ -788,6 +812,12 @@ class HomeSession(raw: String?, nowMillis: Long = System.currentTimeMillis()) {
             Meaning.Activate -> activateCell(index)
             Meaning.ActivateBottom -> activateCell(index, onBottom = true)
             Meaning.Back -> {
+                val back = addingTo?.takeIf { it in board.folders }
+                addingTo = null
+                if (back != null) {
+                    board = openFolder(board, back)
+                    return step(null, 0)
+                }
                 board = closeAll(board)
                 step(null, rootIndex)
             }
@@ -807,6 +837,7 @@ class HomeSession(raw: String?, nowMillis: Long = System.currentTimeMillis()) {
         val id = face.id ?: return step(null, index)
         if (face.allTile) {
             rootIndex = index
+            addingTo = null
             board = openAll(board)
             return step(null, 0)
         }
