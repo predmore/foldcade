@@ -70,6 +70,7 @@ import app.foldcade.language.HeroFolder
 import app.foldcade.language.folderCount
 import app.foldcade.language.HeroItem
 import app.foldcade.language.HeroSubject
+import app.foldcade.language.HomeFolder
 import app.foldcade.language.HomeItem
 import app.foldcade.language.HomeKind
 import app.foldcade.language.HomePlatform
@@ -753,9 +754,27 @@ class ShellController(
     fun typingHero(): HeroSubject? {
         if (!showingHome()) return null
         val id = home.renamingId ?: return null
-        val folder = home.board.folders[id] ?: return null
+        return home.board.folders[id]?.let(::folderHero)
+    }
+
+    /**
+     * The collection open on Home while it holds no game, so its grid shows how to fill it
+     * instead of tiles. Null anywhere else, and while Find is open over it.
+     */
+    fun emptyCollection(): HomeFolder? = if (showingHome() && find == null) home.emptyCollection() else null
+
+    /** An empty collection keeps its name and look on the top screen, where an empty slot shows nothing. */
+    fun emptyCollectionHero(): HeroSubject? = emptyCollection()?.let(::folderHero)
+
+    private fun folderHero(folder: HomeFolder): HeroSubject {
         val mark = collectionLook(folder)?.mark ?: folder.mark
-        return HeroSubject.Folder(HeroFolder(key = id, name = folder.name, count = folderCount(home.board, id), mark = mark))
+        return HeroSubject.Folder(HeroFolder(key = folder.id, name = folder.name, count = folderCount(home.board, folder.id), mark = mark))
+    }
+
+    /** A tap on an empty collection's Add games does what A does there, in one tap: it is the only thing to press. */
+    fun touchAddGames(screen: HostScreen): Effect? {
+        if (!homeActive() || artPicker != null || emptyCollection() == null) return null
+        return onMeaning(Meaning.Activate, screen)
     }
 
     /** The open controller keyboard on Home. Null when none is open. */
@@ -951,9 +970,10 @@ class ShellController(
         return !game.emptyShelfHint && !game.occupiesBothDisplays
     }
 
-    /** True when Y would open a menu for the focused tile. */
+    /** True when Y would open a menu for the focused tile. A grid with no tiles opens one only for Undo. */
     fun hasOptions(): Boolean =
-        (model.focus.chrome == null || find != null) && actionRows(model.tileActions, model.appActions).isNotEmpty()
+        (model.focus.chrome == null || find != null) && actionRows(model.tileActions, model.appActions).isNotEmpty() &&
+            (find != null || model.count > 0 || model.tileActions?.undo == true)
 
     fun homeEditing(): Boolean =
         showingHome() && home.board.editing && model.dialog == null && model.panel == null
