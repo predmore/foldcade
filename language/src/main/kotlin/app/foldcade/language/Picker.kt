@@ -97,6 +97,12 @@ enum class DialogKind {
 
     /** Settings › SteamGridDB with a key saved. Only Forget key forgets it. */
     ForgetArtKey,
+
+    /** Offers to show Foldcade RetroArch's installed cores, once. Not now still starts the game. */
+    RetroArchCores,
+
+    /** Something RetroArch needs before the game can start, such as a core. */
+    RetroArchSetup,
 }
 
 enum class DialogButton {
@@ -108,6 +114,7 @@ enum class DialogButton {
     CloseIt,
     ForgetKey,
     KeepKey,
+    OpenRetroArch,
 }
 
 data class DialogState(
@@ -198,6 +205,53 @@ fun saveFolderDialog(screen: HostScreen): DialogState = DialogState(
     screen = screen,
 )
 
+/** Opens on Continue: the picker is the only way Foldcade learns which cores RetroArch has. */
+fun retroArchCoresDialog(screen: HostScreen): DialogState = DialogState(
+    kind = DialogKind.RetroArchCores,
+    title = Copy.retroArchCoresTitle,
+    body = Copy.retroArchCoresBody,
+    buttons = listOf(DialogButton.ContinueGrant, DialogButton.NotNow),
+    index = 0,
+    safeIndex = 1,
+    screen = screen,
+)
+
+/** No core for [platformName] is installed. [coreName] is the one to install first. */
+fun missingCoreDialog(platformName: String, coreName: String, screen: HostScreen): DialogState = retroArchSetupDialog(
+    title = "${Copy.missingCoreTitle} $platformName",
+    body = "${Copy.missingCoreBodyStart} $coreName${Copy.missingCoreBodyEnd}",
+    screen = screen,
+)
+
+/** RetroArch has not been allowed to read the device's storage. */
+fun retroArchStorageDialog(screen: HostScreen): DialogState =
+    retroArchSetupDialog(Copy.retroArchStorageTitle, Copy.retroArchStorageBody, screen)
+
+/** A Google Play RetroArch, which cannot read storage at all. */
+fun retroArchStoreBuildDialog(screen: HostScreen): DialogState =
+    retroArchSetupDialog(Copy.retroArchStorageTitle, Copy.retroArchStoreBuildBody, screen)
+
+private fun retroArchSetupDialog(title: String, body: String, screen: HostScreen): DialogState = DialogState(
+    kind = DialogKind.RetroArchSetup,
+    title = title,
+    body = body,
+    buttons = listOf(DialogButton.OpenRetroArch, DialogButton.Ok),
+    index = 0,
+    safeIndex = 1,
+    screen = screen,
+)
+
+/** A player that opens games by path, and this game's file has no path it can read. */
+fun noSharedPathDialog(playerName: String, screen: HostScreen): DialogState = DialogState(
+    kind = DialogKind.Ok,
+    title = "$playerName ${Copy.noSharedPathTitle}",
+    body = Copy.noSharedPathBody,
+    buttons = listOf(DialogButton.Ok),
+    index = 0,
+    safeIndex = 0,
+    screen = screen,
+)
+
 fun playerNotice(title: String, body: String, screen: HostScreen): DialogState = DialogState(
     kind = DialogKind.Ok,
     title = title,
@@ -238,6 +292,9 @@ fun previewDialogState(kind: String, index: Int, screen: HostScreen): DialogStat
         "close-player" -> closeBothPanelDialog(screen)
         "missing-player" -> missingPlayerDialog("Azahar", screen)
         "forget-art-key" -> forgetArtKeyPrompt(screen)
+        "retroarch-cores" -> retroArchCoresDialog(screen)
+        "missing-core" -> missingCoreDialog("Game Boy Advance", "mGBA", screen)
+        "retroarch-storage" -> retroArchStorageDialog(screen)
         else -> return null
     }
     val last = dialog.buttons.lastIndex.coerceAtLeast(0)
@@ -283,6 +340,9 @@ sealed interface Row {
     data class SignOut(val pluginId: String, val label: String) : Row
     data class ForgetFolder(val uri: String, val label: String) : Row
     data class PlayerSave(val playerId: String) : Row
+
+    /** Whether Foldcade can see RetroArch's cores. A shows them. */
+    data object RetroArchCores : Row
     data object AndroidGames : Row
     data object Apps : Row
     data object HiddenApps : Row
@@ -404,6 +464,14 @@ data class PlayerSaveSetting(
     val playerId: String,
     val label: String,
     val chosen: Boolean,
+)
+
+/**
+ * RetroArch, when it is installed. [cores] is how many cores Foldcade can see,
+ * or null when it cannot see them.
+ */
+data class RetroArchSetting(
+    val cores: Int?,
 )
 
 /**
@@ -726,6 +794,10 @@ fun rowText(row: Row, model: PickerModel): RowText = when (row) {
         val chosen = if (setting?.chosen == true) Copy.playerSavesSet else Copy.playerSavesUnset
         RowText(setting?.label ?: row.playerId, chosen)
     }
+    Row.RetroArchCores -> RowText(
+        Copy.retroArchCores,
+        model.retroArch?.cores?.let { if (it == 1) Copy.oneCore else "$it ${Copy.cores}" } ?: Copy.showCores,
+    )
     Row.AndroidGames -> RowText(Copy.androidGames)
     Row.Apps -> RowText(Copy.apps)
     Row.HiddenApps -> RowText(Copy.hiddenAppsRow)
@@ -814,6 +886,9 @@ sealed interface Effect {
     data object EditField : Effect
     data object RequestHome : Effect
     data class ChoosePlayerSave(val playerId: String) : Effect
+
+    /** Settings › RetroArch cores: the picker that lets Foldcade see them. */
+    data object ShowRetroArchCores : Effect
     data object PinApp : Effect
     /** Place the focused installed app on Home, or in the chosen folder. */
     data class AddAppTo(val folderId: String?) : Effect
@@ -963,6 +1038,8 @@ data class PickerModel(
     val connectRetry: Boolean = false,
     val reLoginPending: Boolean = false,
     val playerSaves: List<PlayerSaveSetting> = emptyList(),
+    /** Null while RetroArch is not installed. */
+    val retroArch: RetroArchSetting? = null,
     val homeGrid: HomeGrid = HomeGrid.StandIns,
     val appActions: AppActions? = null,
     /** What Y offers for the focused home or All tile. Null elsewhere. */
@@ -1725,6 +1802,7 @@ private fun activateRow(
             notices = model.notices.filter { !it.dismissable },
         ) to Effect.ClearNotices
         is Row.PlayerSave -> model.copy(panel = null, focus = panel.grid) to Effect.ChoosePlayerSave(row.playerId)
+        Row.RetroArchCores -> model.copy(panel = null, focus = panel.grid) to Effect.ShowRetroArchCores
         Row.AndroidGames -> openGrid(model, panel, HomeGrid.AndroidGames)
         Row.Apps -> openGrid(model, panel, HomeGrid.Apps)
         Row.HiddenApps -> openGrid(model, panel, HomeGrid.HiddenApps)

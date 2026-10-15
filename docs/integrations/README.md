@@ -6,6 +6,7 @@ Choose a guide for where your games live. You can combine sources on the same Ho
 | --- | --- | --- |
 | ROMs on internal storage or an SD card | [Local games](local-games.md) | Scans the folders you select. |
 | Games for Azahar, melonDS, Dolphin, PPSSPP, and other emulators | [Emulators](emulators.md) | Detects supported emulators; games come from folders or RomM. |
+| Games for RetroArch and its cores | [RetroArch](retroarch.md) | Uses the cores you install; games come from folders or RomM. |
 | A collection on your RomM server | [RomM](romm.md) | Loads the server's catalog after sign-in. |
 | Android games and apps | [Android](android.md) | Discovers installed apps automatically. |
 | Steam games installed in GameNative | [GameNative](gamenative.md) | Scans exported `.steam` files. |

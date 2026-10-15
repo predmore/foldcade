@@ -29,7 +29,7 @@ object SettingsCopy {
     const val personalization = "Look"
     const val sound = "Sound"
     const val library = "Library"
-    const val players = "Saves"
+    const val players = "Emulators"
     const val screens = "System"
     const val about = "About"
 }
@@ -43,7 +43,7 @@ fun settingsTitle(category: SettingsCategory): String = when (category) {
     SettingsCategory.About -> SettingsCopy.about
 }
 
-/** Categories with at least one row. Players appears once a player has a save folder setting. */
+/** Categories with at least one row. Players appears once a player has a save folder setting, or RetroArch is installed. */
 fun settingsCategories(model: PickerModel): List<SettingsCategory> =
     SettingsCategory.entries.filter { settingsRows(it, model).isNotEmpty() }
 
@@ -63,7 +63,10 @@ fun settingsRows(category: SettingsCategory, model: PickerModel): List<Row> = wh
         addAll(libraryRows(model.signedIn, model.folders))
         addAll(listOf(Row.Order, Row.AddNewGames, Row.Artwork, Row.ArtKey, Row.UsageAccess))
     }
-    SettingsCategory.Players -> model.playerSaves.map { Row.PlayerSave(it.playerId) }
+    SettingsCategory.Players -> buildList {
+        if (model.retroArch != null) add(Row.RetroArchCores)
+        addAll(model.playerSaves.map { Row.PlayerSave(it.playerId) })
+    }
     SettingsCategory.Screens -> buildList {
         add(Row.Primary)
         if (!model.homeRoleHeld) add(Row.SetAsHome)

@@ -106,6 +106,7 @@ import app.foldcade.language.offerButtonCalibration
 import app.foldcade.language.resolveFaceMap
 import app.foldcade.language.PickerModel
 import app.foldcade.language.PlayerSaveSetting
+import app.foldcade.language.RetroArchSetting
 import app.foldcade.language.Side
 import app.foldcade.language.SignedInBackend
 import app.foldcade.language.connectFields
@@ -2063,6 +2064,12 @@ class ShellController(
         model = model.copy(playerSaves = playerSaveSettings())
     }
 
+    /** Null while RetroArch is not installed. */
+    fun setRetroArch(setting: RetroArchSetting?) {
+        if (model.retroArch == setting) return
+        model = model.copy(retroArch = setting)
+    }
+
     private fun libraryEntry(snapshot: PickerModel): GridEntry? {
         if (!snapshot.libraryGrid) return null
         val source = displayOrder(snapshot).getOrElse(snapshot.focus.cellIndex) { snapshot.focus.cellIndex }
@@ -2306,16 +2313,17 @@ class ShellController(
         }
     }
 
+    /** One row per save folder. Players that share a folder, as RetroArch's systems do, share a row. */
     private fun playerSaveSettings(): List<PlayerSaveSetting> =
         plugins.playerIds().mapNotNull { id ->
             val player = plugins.player(id) ?: return@mapNotNull null
             if (player !is SaveFolderHolder) return@mapNotNull null
-            PlayerSaveSetting(
+            player.saveFolderId() to PlayerSaveSetting(
                 playerId = player.id,
                 label = player.displayName,
                 chosen = player.hasSaveFolder(),
             )
-        }
+        }.distinctBy { it.first }.map { it.second }
 
     fun setMusicVolume(volume: Float) {
         publish(model.copy(music = model.music.withVolume(volume)))

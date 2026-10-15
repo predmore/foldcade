@@ -27,16 +27,50 @@ enum class LaunchBlock {
     MissingPlayer,
     NoLocalFile,
     SaveFolder,
+
+    /** The player opens games by path, and this game's file has none another app can read. */
+    NoSharedPath,
 }
 
 /**
- * The player that opens a game whose platform has [players].
- * The first player with an installed package wins, in registration order.
- * With none installed, the first player is returned so the missing-player
- * dialog can name it. Null only when [players] is empty.
+ * [players] in the order a launch tries them: by [rank], lowest first, each
+ * rank in registration order. A player that is installed and [runnable] comes
+ * before one that is installed and is not, so RetroArch without a core for
+ * the platform gives way to a standalone emulator.
  */
+fun rankPlayers(
+    players: List<Player>,
+    installed: (Player) -> Boolean,
+    runnable: (Player) -> Boolean = { true },
+    rank: (Player) -> Int = { 0 },
+): List<Player> {
+    val ordered = players.sortedBy(rank)
+    val ready = ordered.filter { installed(it) && runnable(it) }
+    return ready + ordered.filterNot { it in ready }
+}
+
+/**
+ * The player that opens a game whose platform has [players]: the first
+ * installed one in [rankPlayers] order. With none installed, the first ranked
+ * player is returned so the missing-player dialog can name it. Null only when [players] is empty.
+ */
+fun preferredPlayer(
+    players: List<Player>,
+    runnable: (Player) -> Boolean,
+    rank: (Player) -> Int,
+    installed: (String) -> Boolean,
+): Player? {
+    val isInstalled = { player: Player -> player.packageNames.any(installed) }
+    val ranked = rankPlayers(players, isInstalled, runnable, rank)
+    return ranked.firstOrNull(isInstalled) ?: ranked.firstOrNull()
+}
+
+/** [preferredPlayer] in registration order, every installed player runnable. */
 fun preferredPlayer(players: List<Player>, installed: (String) -> Boolean): Player? =
-    players.firstOrNull { player -> player.packageNames.any(installed) } ?: players.firstOrNull()
+    preferredPlayer(players, runnable = { true }, rank = { 0 }, installed = installed)
+
+/** The key a save folder is stored, asked for, and listed under. Players can share one. */
+fun Player.saveFolderId(): String = (this as? SaveFolderHolder)?.saveFolderKey ?: id
 
 /** True when a different both-panel player already owns the screens. */
 fun anotherBothPanelRunning(session: Session, gameId: String): Boolean {
@@ -55,6 +89,8 @@ fun anotherBothPanelRunning(session: Session, gameId: String): Boolean {
  * never blocks play. Save sync is the caller that reads [SaveFolderHolder].
  * [componentResolves] is the shell's `resolveActivity` check. A null result
  * is the missing-player state, not a crash.
+ * A player that opens games by path gets [sharedFile]'s answer for a content
+ * URI, and is blocked when there is none.
  */
 fun planPlayerLaunch(
     player: Player,
@@ -65,19 +101,25 @@ fun planPlayerLaunch(
     closeConfirmed: Boolean,
     saveFolderSettled: Boolean = false,
     componentResolves: (PlayerIntent) -> Boolean = { true },
+    sharedFile: (String) -> LaunchTarget.SharedFile? = { null },
 ): PlayerLaunch {
     if (player.occupiesBothDisplays && anotherBothPanelRunning && !closeConfirmed) {
         return PlayerLaunch.Blocked(LaunchBlock.CloseFirst, player.displayName)
     }
     val resolved = player.packageNames.firstOrNull { it in installedPackages }
         ?: return PlayerLaunch.Blocked(LaunchBlock.MissingPlayer, player.displayName)
-    if (player.needsLocalFile && target !is LaunchTarget.ContentUri) {
+    if (player.needsLocalFile && target !is LaunchTarget.ContentUri && target !is LaunchTarget.SharedFile) {
         return PlayerLaunch.Blocked(LaunchBlock.NoLocalFile, player.displayName)
+    }
+    val opened = if (player.opensByPath && target is LaunchTarget.ContentUri) {
+        sharedFile(target.uri) ?: return PlayerLaunch.Blocked(LaunchBlock.NoSharedPath, player.displayName)
+    } else {
+        target
     }
     if (player is SaveFolderHolder && !player.hasSaveFolder() && !saveFolderSettled) {
         return PlayerLaunch.Blocked(LaunchBlock.SaveFolder, player.displayName)
     }
-    val handoff = target ?: LaunchTarget.AppRef(emptyMap())
+    val handoff = opened ?: LaunchTarget.AppRef(emptyMap())
     val intent = player.launchIntent(LaunchRequest(game, handoff, resolved))
     if (!componentResolves(intent)) {
         return PlayerLaunch.Blocked(LaunchBlock.MissingPlayer, player.displayName)

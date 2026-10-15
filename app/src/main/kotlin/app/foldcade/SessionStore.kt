@@ -198,6 +198,13 @@ class SessionStore(private val prefs: SharedPreferences) : SaveMarks {
         prefs.edit().putBoolean(saveFolderSkipKey(playerId), true).apply()
     }
 
+    /** True once Foldcade asked to see RetroArch's cores at a launch. Settings still offers it. */
+    fun retroArchCoresOffered(): Boolean = prefs.getBoolean(KEY_RETROARCH_CORES_OFFERED, false)
+
+    fun setRetroArchCoresOffered() {
+        prefs.edit().putBoolean(KEY_RETROARCH_CORES_OFFERED, true).apply()
+    }
+
     fun appShelfState(): AppShelfState {
         val games = stringSet(KEY_SHELF_GAMES)
         val apps = stringSet(KEY_SHELF_APPS)
@@ -413,6 +420,7 @@ class SessionStore(private val prefs: SharedPreferences) : SaveMarks {
         private const val KEY_SHELF_SHOWN = "android_shelf_shown"
         private const val KEY_BUTTON_PROMPT_SEEN = "button_prompt_seen"
         private const val KEY_USAGE_PROMPTED = "usage_prompted"
+        private const val KEY_RETROARCH_CORES_OFFERED = "retroarch_cores_offered"
         private const val KEY_MOONLIGHT_PINS = "moonlight_pins"
         private const val KEY_DROIDDECK_PINS = "droiddeck_pins"
         private const val PIN_FIELD = "\u001f"

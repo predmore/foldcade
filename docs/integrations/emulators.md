@@ -6,6 +6,8 @@ Set up an emulator on your Thor, then add its games through [local folders](loca
 
 Foldcade uses the first installed emulator in each row. There is currently no emulator selector in Settings.
 
+[RetroArch](retroarch.md) with a core for a system goes ahead of these emulators, except on the Nintendo DS. It also runs systems this table doesn't list, such as the Sega CD, PC Engine, and Atari consoles.
+
 | System | Example folder | Recognized game formats | Emulators, in priority order |
 | --- | --- | --- | --- |
 | Game Boy | `gb` | `.gb` | My OldBoy!, Pizza Boy GBC, GBC.emu |
@@ -48,7 +50,7 @@ Install [melonDS Android](https://github.com/rafaelvcaetano/melonDS-android) 2.0
 
 Stable and nightly builds are recognized; stable has priority when both are installed.
 
-For [RomM save sync](romm.md#save-sync), choose the same save directory in melonDS and **Foldcade Settings › Saves › melonDS**, with **Save next to ROM file** off. A ROM named `Puzzle.nds` uses `Puzzle.sav`; keep filenames consistent across devices.
+For [RomM save sync](romm.md#save-sync), choose the same save directory in melonDS and **Foldcade Settings › Emulators › melonDS**, with **Save next to ROM file** off. A ROM named `Puzzle.nds` uses `Puzzle.sav`; keep filenames consistent across devices.
 
 Choose **Not now** at the save-folder prompt to play with melonDS's own saves.
 
@@ -62,8 +64,6 @@ Disc tracks and other related files may need the emulator's own game-directory a
 
 Forks with different Android package names are not detected automatically. Install a supported build or report the build you use.
 
-Recognized packages are listed in the source for [standalone emulators](../../plugins/emulators/src/main/kotlin/app/foldcade/plugins/emulators/Emulators.kt), [Azahar](../../plugins/azahar/src/main/kotlin/app/foldcade/plugins/azahar/AzaharEntry.kt), and [melonDS](../../plugins/melonds/src/main/kotlin/app/foldcade/plugins/melonds/MelonDsEntry.kt).
-
-RetroArch is not supported yet; it needs a filesystem path that Foldcade's current launch does not supply.
+Recognized packages are listed in the source for [standalone emulators](../../plugins/emulators/src/main/kotlin/app/foldcade/plugins/emulators/Emulators.kt), [Azahar](../../plugins/azahar/src/main/kotlin/app/foldcade/plugins/azahar/AzaharEntry.kt), [melonDS](../../plugins/melonds/src/main/kotlin/app/foldcade/plugins/melonds/MelonDsEntry.kt), and [RetroArch](../../plugins/retroarch/src/main/kotlin/app/foldcade/plugins/retroarch/RetroArchEntry.kt).
 
 [All integration guides](README.md)

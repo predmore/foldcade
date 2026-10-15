@@ -13,6 +13,7 @@ import android.net.ConnectivityManager
 import android.net.Network
 import android.net.NetworkCapabilities
 import android.net.Uri
+import android.os.Environment
 import android.os.Handler
 import android.os.Looper
 import android.os.SystemClock
@@ -24,9 +25,13 @@ import androidx.compose.runtime.setValue
 import app.foldcade.api.plugin.Credential
 import app.foldcade.api.plugin.CredentialLookup
 import app.foldcade.api.plugin.CredentialStore
+import app.foldcade.api.plugin.LaunchFlag
 import app.foldcade.api.plugin.LibraryInstance
+import app.foldcade.api.plugin.Player
+import app.foldcade.api.plugin.PlayerIntent
 import app.foldcade.api.plugin.PluginException
 import app.foldcade.api.plugin.SaveFolderHolder
+import app.foldcade.language.RetroArchSetting
 import app.foldcade.plugins.droiddeck.DroidDeckGame
 import app.foldcade.plugins.droiddeck.DroidDeckLibrary
 import app.foldcade.plugins.droiddeck.DroidDeckPlayer
@@ -38,6 +43,10 @@ import app.foldcade.plugins.moonlight.MoonlightLibrary
 import app.foldcade.plugins.moonlight.moonlightShortcutKey
 import app.foldcade.credentials.AndroidCredentialStore
 import app.foldcade.host.PluginHost
+import app.foldcade.plugins.retroarch.PACKAGES as RETROARCH_PACKAGES
+import app.foldcade.plugins.retroarch.RetroArchPlayer
+import app.foldcade.plugins.romm.CachePathContentUri
+import app.foldcade.plugins.romm.ROMM_MEDIA_PATH
 import app.foldcade.plugins.romm.ROMM_ORIGIN_KEY
 import app.foldcade.plugins.romm.RommArtwork
 import app.foldcade.plugins.romm.RommCoverArt
@@ -71,13 +80,14 @@ import app.foldcade.music.HomeMusic
 import app.foldcade.ui.FoldPaint
 import java.io.File
 import java.nio.file.Path
+import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicInteger
 import kotlin.coroutines.cancellation.CancellationException
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.SupervisorJob
 import java.lang.ref.WeakReference
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
@@ -278,6 +288,7 @@ class FoldcadeApp : Application() {
                     reloadInstalledApps()
                     val changed = intent.data?.schemeSpecificPart
                     if (changed in GameNativePlayer.PACKAGES || changed == DroidDeckPlayer.PACKAGE) rerouteSteamFiles()
+                    if (changed in RETROARCH_PACKAGES) refreshRetroArchCores()
                 }
             }
         }
@@ -314,7 +325,7 @@ class FoldcadeApp : Application() {
         val sliderTick = SliderTick()
         plays.packageOf = { gameId ->
             val platform = Shelf.games.firstOrNull { it.id == gameId }?.platformId
-            val player = platform?.let { preferredPlayer(plugins.playersFor(it), ::packageInstalled) }
+            val player = platform?.let(::playerFor)
             player?.packageNames?.let { names -> names.firstOrNull(::packageInstalled) ?: names.firstOrNull() }
         }
         artChoices = ArtChoices.decode(artChoiceFile.takeIf { it.isFile }?.readText())
@@ -386,8 +397,10 @@ class FoldcadeApp : Application() {
                     request.cacheRoot,
                     request.platforms,
                     // The manifest's FileProvider authority. The debug build's id ends in .debug.
-                    contentAuthority = "$packageName.romm.cache",
+                    contentAuthority = rommAuthority,
+                    cachePath = rommCachePath(request.cacheRoot),
                     dataRoot = request.dataRoot,
+                    artCacheRoot = rommPrivateRoot(),
                     saveBytes = SaveBytes { uri -> AndroidSaveDocuments(contentResolver).read(uri) },
                 )
             },
@@ -409,6 +422,8 @@ class FoldcadeApp : Application() {
             try {
                 plugins.load(classLoader)
                 restorePlayerSaveFolders()
+                readRetroArchCores()
+                moveRommDownloadsToSharedStorage()
                 publishRomm()
                 refreshGameNative()
                 restoreMoonlightPins()
@@ -599,11 +614,74 @@ class FoldcadeApp : Application() {
 
     private fun restorePlayerSaveFolders() {
         for (id in plugins.playerIds()) {
-            val player = plugins.player(id) as? SaveFolderHolder ?: continue
-            val uri = store.playerSaveFolder(id) ?: continue
+            val player = plugins.player(id) ?: continue
+            if (player !is SaveFolderHolder) continue
+            val uri = store.playerSaveFolder(player.saveFolderId()) ?: continue
             player.bindSaveFolder(uri)
         }
     }
+
+    /**
+     * The player a game on [platformId] launches with, see [rankPlayers]. RetroArch
+     * counts as runnable only with a core Foldcade knows is installed.
+     */
+    fun playerFor(platformId: String): Player? = preferredPlayer(
+        plugins.playersFor(platformId),
+        runnable = { runnableWith(it, it.packageNames.firstOrNull(::packageInstalled)) },
+        rank = ::playerRank,
+        installed = ::packageInstalled,
+    )
+
+    /** Every player for [platformId], in the order [playerFor] tries them. */
+    fun rankedPlayers(platformId: String): List<Player> = rankPlayers(
+        plugins.playersFor(platformId),
+        installed = { player -> player.packageNames.any(::packageInstalled) },
+        runnable = { runnableWith(it, it.packageNames.firstOrNull(::packageInstalled)) },
+        rank = ::playerRank,
+    )
+
+    private val retroArchCoreReader: RetroArchCoreReader by lazy { RetroArchCoreReader(this) }
+    private val retroArchRead = Mutex()
+
+    /** Any RetroArch player. They share one view of the cores. */
+    fun retroArchPlayer(): RetroArchPlayer? =
+        plugins.playerIds().firstNotNullOfOrNull { plugins.player(it) as? RetroArchPlayer }
+
+    /** Reads RetroArch's cores again, off the main thread. */
+    fun refreshRetroArchCores(): Job = pluginLoad.launch { readRetroArchCores() }
+
+    /**
+     * Which cores each installed RetroArch has, for the players and for Settings.
+     * Runs at start, when a RetroArch package changes, when Foldcade comes back
+     * to the front, and before each RetroArch launch.
+     */
+    suspend fun readRetroArchCores() = retroArchRead.withLock {
+        val player = retroArchPlayer() ?: return@withLock
+        val installed = RETROARCH_PACKAGES.filter(::packageInstalled)
+        val byPackage = installed.associateWith { retroArchCoreReader.read(it) }
+        player.cores.update(byPackage)
+        val active = player.cores.activePackage()
+        val setting = active?.let { RetroArchSetting(cores = byPackage[it]?.size) }
+        withContext(Dispatchers.Main.immediate) { shell.setRetroArch(setting) }
+    }
+
+    /** The last intent started for each package that cannot switch games while it runs. */
+    private val lastStarts = ConcurrentHashMap<String, PlayerIntent>()
+
+    /**
+     * True when [intent] asks for [LaunchFlag.ReplaceRunning] and is not the
+     * last one started for its package, so the player may quit when it arrives.
+     * RetroArch 1.22 does: handed another game, it quits and expects its launcher
+     * to start it again. Records [intent] as the last start.
+     */
+    fun replacesRunning(intent: PlayerIntent): Boolean {
+        if (LaunchFlag.ReplaceRunning !in intent.flags) return false
+        return lastStarts.put(intent.packageName, intent) != intent
+    }
+
+    /** A start to repeat if Foldcade comes back before [until], see [replacesRunning]. */
+    @Volatile
+    var pendingRestart: PendingRestart? = null
 
     /** Reads Moonlight's pinned games again and puts them on the shelf. */
     fun refreshMoonlightShelf() {
@@ -767,7 +845,44 @@ class FoldcadeApp : Application() {
         }
     }
 
-    private fun rommCacheRoot(): Path = cacheDir.toPath().resolve("romm")
+    /**
+     * Downloaded RomM games. They live in Foldcade's folder under `Android/media`,
+     * which a player that opens games by path, such as RetroArch, can read. Only
+     * without shared storage do they stay in the app cache.
+     */
+    private fun rommCacheRoot(): Path = rommSharedRoot() ?: rommPrivateRoot()
+
+    private fun rommPrivateRoot(): Path = cacheDir.toPath().resolve("romm")
+
+    private fun rommSharedRoot(): Path? {
+        val media = externalMediaDirs.firstOrNull() ?: return null
+        if (Environment.getExternalStorageState(media) != Environment.MEDIA_MOUNTED) return null
+        return media.toPath().resolve("romm")
+    }
+
+    private fun rommCachePath(root: Path): String = if (root == rommPrivateRoot()) "romm" else ROMM_MEDIA_PATH
+
+    private val rommAuthority: String get() = "$packageName.romm.cache"
+
+    /** Downloads an older version kept in the app cache, moved once to the shared root. Cover art stays. */
+    private fun moveRommDownloadsToSharedStorage() {
+        val shared = rommSharedRoot() ?: return
+        val old = rommPrivateRoot()
+        for (folder in listOf("servers", "roms")) {
+            moveRommDownloads(old.resolve(folder), shared.resolve(folder)) { it.any { part -> part.toString() == "artwork" } }
+        }
+    }
+
+    /** Paths for games a player opens by path. RomM downloads count only in the shared root. */
+    internal val sharedPaths: SharedPaths by lazy {
+        SharedPaths(
+            ownFile = { uri ->
+                val root = rommCacheRoot()
+                CachePathContentUri(root, rommAuthority, rommDataRoot(), rommCachePath(root)).pathFor(uri)
+            },
+            sharedRoots = { listOfNotNull(rommSharedRoot()) },
+        )
+    }
 
     /** Saves and the RomM device id. Not the cache: the system may clear that. */
     private fun rommDataRoot(): Path = filesDir.toPath().resolve("romm")

@@ -3943,6 +3943,7 @@ private fun DialogCard(
                         DialogButton.CloseIt -> Copy.closeIt
                         DialogButton.ForgetKey -> Copy.forgetKey
                         DialogButton.KeepKey -> Copy.keepKey
+                        DialogButton.OpenRetroArch -> Copy.openRetroArch
                     }
                     DialogAction(
                         label = label,

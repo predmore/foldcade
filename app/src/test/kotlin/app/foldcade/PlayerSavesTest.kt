@@ -182,6 +182,41 @@ class PlayerSavesTest {
         assertEquals(0, docs.writes)
     }
 
+    @Test
+    fun onlyNewBytesCountAsAChangedSave() {
+        docs.library["lib://sav"] = "server".toByteArray()
+        val spots = saves.spots(PLAYER, GAME, LaunchTarget.ContentUri(ROM_URI))
+        val first = mutableListOf<String>()
+        assertTrue(saves.place("romm", GAME, PLAYER, spots, listOf(placed("server")), first))
+        assertEquals(listOf("sav"), first)
+        val again = mutableListOf<String>()
+        assertTrue(saves.place("romm", GAME, PLAYER, spots, listOf(placed("server")), again))
+        assertTrue(again.isEmpty())
+    }
+
+    @Test
+    fun retroArchSavesUnderItsCoreFolderForAGameOpenedByPath() {
+        val entry = app.foldcade.plugins.retroarch.RetroArchEntry()
+        entry.cores.update(mapOf("com.retroarch.aarch64" to setOf("melondsds_libretro_android.so")))
+        val player = entry.players.single { it.platformId == "nintendo-ds" }
+        player as app.foldcade.api.plugin.SaveFolderHolder
+        player.bindSaveFolder(FOLDER)
+        val target = LaunchTarget.SharedFile("/storage/emulated/0/Android/media/app.foldcade/romm/1.nds", ROM_URI)
+        assertEquals(
+            listOf(SaveSpot("srm", FOLDER, "melonDS DS/Mario Kart DS (USA).srm")),
+            saves.spots(player, GAME, target),
+        )
+    }
+
+    @Test
+    fun aSaveNameStaysInsideThePickedFolder() {
+        assertEquals(listOf("mGBA", "Game.srm"), savePathParts("mGBA/Game.srm"))
+        assertEquals(listOf("Game.sav"), savePathParts("Game.sav"))
+        for (name in listOf("", "/Game.srm", "mGBA//Game.srm", "../Game.srm", "mGBA/./Game.srm", "mGBA/")) {
+            assertEquals(name, null, savePathParts(name))
+        }
+    }
+
     private fun placed(text: String) = PlacedSave("sav", "lib://sav", md5Hex(text.toByteArray()))
 
     private class FakeDocuments : SaveDocuments {

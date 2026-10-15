@@ -23,6 +23,7 @@ tasks.register("testDebugUnitTest") {
         ":plugins:gamenative:test",
         ":plugins:local-folder:test",
         ":plugins:melonds:test",
+        ":plugins:retroarch:test",
         ":plugins:moonlight:test",
         ":plugins:sample:test",
         ":plugins:romm:test",

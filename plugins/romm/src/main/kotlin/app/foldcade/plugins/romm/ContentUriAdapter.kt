@@ -12,6 +12,8 @@ import java.nio.file.Path
  * The URI is `content://<authority>/romm/` plus the path under the cache root, or
  * `content://<authority>/romm-data/` plus the path under the data root. The host
  * serves both with a FileProvider whose authority is `<application id>.romm.cache`.
+ * A host that keeps downloads in shared storage names that root with its own
+ * prefix, such as [ROMM_MEDIA_PATH].
  */
 interface ContentUriAdapter {
     fun uriFor(path: Path): String
@@ -20,13 +22,15 @@ interface ContentUriAdapter {
 }
 
 /**
- * [root] is the evictable download cache. [dataRoot] holds saves, which must
- * survive a cache clear. A null [dataRoot] maps only the cache.
+ * [root] holds downloads, which can be downloaded again. [dataRoot] holds saves,
+ * which must survive a cache clear. A null [dataRoot] maps only the downloads.
+ * [cachePath] is the URI's first segment for [root].
  */
 class CachePathContentUri(
     private val root: Path,
     private val authority: String = ROMM_CONTENT_AUTHORITY,
     private val dataRoot: Path? = null,
+    private val cachePath: String = CACHE_PATH,
 ) : ContentUriAdapter {
     override fun uriFor(path: Path): String {
         val absolute = path.toAbsolutePath().normalize()
@@ -38,14 +42,14 @@ class CachePathContentUri(
         val (prefix, relative) = if (inData) {
             DATA_PATH to relativeTo(dataBase!!, absolute)
         } else {
-            CACHE_PATH to relativeTo(cacheBase, absolute)
+            cachePath to relativeTo(cacheBase, absolute)
         }
         val encoded = relative.joinToString("/") { segment -> encode(segment.toString()) }
         return "content://$authority/$prefix/$encoded"
     }
 
     override fun pathFor(uri: String): Path? {
-        val cache = "content://$authority/$CACHE_PATH/"
+        val cache = "content://$authority/$cachePath/"
         val data = "content://$authority/$DATA_PATH/"
         val (base, encoded) = when {
             uri.startsWith(cache) -> root to uri.removePrefix(cache)
@@ -83,3 +87,6 @@ class CachePathContentUri(
 
 internal const val CACHE_PATH = "romm"
 internal const val DATA_PATH = "romm-data"
+
+/** The URI segment for downloads a host keeps in its shared media folder. */
+const val ROMM_MEDIA_PATH = "romm-media"

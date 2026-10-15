@@ -101,6 +101,10 @@ class PlatformDetectionTest {
     fun platformIdsStayPut() {
         assertEquals(
             listOf(
+                "atari-2600",
+                "atari-7800",
+                "atari-lynx",
+                "colecovision",
                 "dreamcast",
                 "game-boy",
                 "game-boy-advance",
@@ -109,17 +113,26 @@ class PlatformDetectionTest {
                 "gamecube",
                 "genesis",
                 "master-system",
+                "neo-geo-pocket",
+                "neo-geo-pocket-color",
                 "nes",
                 "nintendo-3ds",
                 "nintendo-64",
                 "nintendo-ds",
                 "nintendo-switch",
+                "pc-engine",
+                "pc-engine-cd",
                 "playstation",
                 "playstation-2",
                 "psp",
                 "saturn",
+                "sega-32x",
+                "sega-cd",
                 "snes",
+                "virtual-boy",
                 "wii",
+                "wonderswan",
+                "wonderswan-color",
             ),
             PlatformCatalog.specs.map { it.platform.id }.sorted(),
         )
@@ -143,5 +156,30 @@ class PlatformDetectionTest {
             "Game (Europe) (Disk 1 of 3).adf" to "Game (Disk 1 of 3)",
         )
         cases.forEach { (file, title) -> assertEquals(file, title, titleFromFileName(file)) }
+    }
+
+    @Test
+    fun retroSystemsFollowEsDeFoldersAndUniqueExtensions() {
+        assertEquals("sega-cd", platformFromFolderName("segacd")?.id)
+        assertEquals("sega-cd", platformFromFolderName("Mega-CD")?.id)
+        assertEquals("sega-cd", resolvePlatform("chd", platformFromFolderName("segacd"))?.id)
+        assertEquals("sega-32x", platformFromExtension("32x")?.id)
+        assertEquals("pc-engine", platformFromExtension("pce")?.id)
+        assertEquals("pc-engine", platformFromFolderName("tg16")?.id)
+        assertEquals("pc-engine-cd", resolvePlatform("cue", platformFromFolderName("pcenginecd"))?.id)
+        assertEquals("atari-2600", platformFromExtension("a26")?.id)
+        assertEquals("atari-7800", platformFromExtension("a78")?.id)
+        assertEquals("atari-lynx", platformFromExtension("lnx")?.id)
+        assertEquals("neo-geo-pocket", platformFromExtension("ngp")?.id)
+        assertEquals("neo-geo-pocket-color", platformFromExtension("ngc")?.id)
+        assertEquals("wonderswan", platformFromExtension("ws")?.id)
+        assertEquals("wonderswan-color", platformFromExtension("wsc")?.id)
+        assertEquals("virtual-boy", platformFromExtension("vb")?.id)
+        assertEquals("colecovision", platformFromExtension("col")?.id)
+        // A disc image outside a system folder is still nobody's.
+        assertNull(platformFromExtension("cue"))
+        // A zip in a 2600 folder is that system's; a .bin is a disc track everywhere.
+        assertEquals("atari-2600", resolvePlatform("zip", platformFromFolderName("atari2600"))?.id)
+        assertNull(resolvePlatform("bin", platformFromFolderName("atari2600")))
     }
 }
