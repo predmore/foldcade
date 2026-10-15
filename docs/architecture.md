@@ -52,7 +52,7 @@ Release publishing is specified in [releases.md](releases.md). Three workflows r
 
 ### Release
 
-`.github/workflows/release.yml` runs on pushes to `main`, on pull requests, and on `workflow_dispatch`. Signing and publishing run on a push to `main` only, after the unit tests in that workflow. Pull requests and manual runs assemble an unsigned release to prove `versionCode`. They do not publish. This workflow does not boot an emulator. It does not run on tag pushes.
+`.github/workflows/release.yml` runs on pushes to `main`, on pull requests, on `workflow_dispatch`, and on a `v0.x.y` tag. Signing and publishing run on a push to `main`, and on that tag, after the unit tests in that workflow. A push to `main` publishes the rolling pre-release. The `v0.x.y` tag publishes a full release that is not a pre-release, with asset `foldcade.apk`, and does not move the rolling pre-release tag. Pull requests and manual runs assemble an unsigned release to prove `versionCode`. They do not publish. This workflow does not boot an emulator.
 
 ### Home music
 
