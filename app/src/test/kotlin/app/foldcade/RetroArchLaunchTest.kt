@@ -160,6 +160,25 @@ class RetroArchLaunchTest {
         }
     }
 
+    @Test
+    fun aGameResumesUnderItsSpellingAndAFreshSaveSwitchesIt() {
+        retroArch.cores.update(mapOf(AARCH64 to setOf("mgba_libretro_android.so")))
+        val player = retroArch("game-boy-advance")
+        val usual = player.launchIntent(
+            app.foldcade.api.plugin.LaunchRequest(game(player.platformId), LaunchTarget.SharedFile("/storage/emulated/0/a.gba", "content://a"), AARCH64),
+        )
+        val other = player.freshStart(usual)
+        // Nothing known, or another game: the usual spelling.
+        assertEquals(usual, chooseStart(usual, other, last = null, fresh = true))
+        assertEquals(usual, chooseStart(usual, other, last = "another game", fresh = false))
+        // The same game resumes under whichever spelling started it.
+        assertEquals(usual, chooseStart(usual, other, startKey(usual), fresh = false))
+        assertEquals(other, chooseStart(usual, other, startKey(other), fresh = false))
+        // A save it has not loaded switches spelling, every time.
+        assertEquals(other, chooseStart(usual, other, startKey(usual), fresh = true))
+        assertEquals(usual, chooseStart(usual, other, startKey(other), fresh = true))
+    }
+
     private companion object {
         const val AARCH64 = "com.retroarch.aarch64"
         const val MY_BOY = "com.fastemulator.gba"

@@ -30,7 +30,6 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
-import app.foldcade.api.plugin.PlayerIntent
 import app.foldcade.host.play.PlaySignal
 import app.foldcade.api.isAndroidHomeRecall
 import app.foldcade.api.plugin.Availability
@@ -587,6 +586,8 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
 
     private fun acceptHome(intent: Intent) {
         if (!isAndroidHomeRecall(intent.action, intent.categories ?: emptySet())) return
+        // The user left the game. Only a player quitting by itself is started again.
+        foldcade.pendingRestart = null
         val panel = displays.panelFor(this, foldcade.store.session.defaultDisplayIsTop) ?: return
         val surface = foldcade.store.session.surfaceOn(panel)
         if (surface == Surface.Picker || surface == Surface.Hero) foldcade.shell.goHome()
@@ -651,7 +652,7 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
                     if (!launchCurrent(generation) || pendingLaunch != index) return@withContext
                     if (notPlaced) showSaveNotPlaced(game.title)
                     if (prepared == null) return@withContext
-                    finishLaunch(index, game, player, prepared.target, apiGame, generation, prepared.spots, freshSave = prepared.freshSave)
+                    finishLaunch(index, game, player, prepared.target, apiGame, generation, prepared.spots)
                 }
             }
             return
@@ -676,14 +677,13 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
         generation: Int,
         spots: List<SaveSpot> = emptyList(),
         retroArchChecked: Boolean = false,
-        freshSave: Boolean = false,
     ) {
         if (!launchCurrent(generation)) return
         if (player is RetroArchPlayer && !retroArchChecked) {
             foldcade.launchWork.job = foldcade.scope.launch {
                 if (retroArchHeld(player, generation) { launchGame(index) }) return@launch
                 withContext(Dispatchers.Main.immediate) {
-                    finishLaunch(index, game, player, target, apiGame, generation, spots, retroArchChecked = true, freshSave = freshSave)
+                    finishLaunch(index, game, player, target, apiGame, generation, spots, retroArchChecked = true)
                 }
             }
             return
@@ -724,8 +724,7 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
             }
             is PlayerLaunch.Ready -> {
                 clearPendingLaunch()
-                val ready = if (freshSave) decision.copy(intent = freshStart(player, decision.intent)) else decision
-                startPlayer(game, ready, apiGame, player, generation, spots)
+                startPlayer(game, decision, apiGame, player, generation, spots)
             }
         }
     }
@@ -930,10 +929,9 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
             local
         }
         // Saves go into the player's folder before it starts, and come back when it returns.
-        var freshSave = false
         val spots = if (plan is GameLaunch.Installed) {
             try {
-                prepareSaves(libraryId, game, plan.player, target).also { freshSave = it.freshSave }.spots
+                prepareSaves(libraryId, game, plan.player, target).spots
             } catch (cancelled: CancellationException) {
                 throw cancelled
             } catch (fatal: VirtualMachineError) {
@@ -955,7 +953,7 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
                 foldcade.plugins.launchIntent(
                     plan.player.id,
                     LaunchRequest(game, target, plan.packageName),
-                ).let { if (freshSave) freshStart(plan.player, it) else it }
+                ).let { foldcade.startIntent(plan.player, it) }
             } catch (cancelled: CancellationException) {
                 throw cancelled
             } catch (fatal: VirtualMachineError) {
@@ -984,7 +982,7 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
                         game.platformId,
                         plan.player.occupiesBothDisplays,
                         installedIntent,
-                        replacing = playerIntent?.let(foldcade::replacesRunning) == true,
+                        noteStart = { playerIntent?.let { foldcade.noteStarted(plan.player, it) } == true },
                     )
                     if (started) rememberReturn(LibraryReturn(libraryId, game, plan.player, spots))
                 } else if (launchCurrent(generation)) {
@@ -1097,8 +1095,11 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
             }
             val placement = foldcade.plugins.prepareLaunch(libraryId, game, player)
             val written = mutableListOf<String>()
-            if (!saves.place(libraryId, game, player, spots, placement.savesToPlace, written)) throw SaveNotPlaced()
-            PreparedLaunch(placement.target, spots, freshSave = written.isNotEmpty())
+            val placed = saves.place(libraryId, game, player, spots, placement.savesToPlace, written)
+            // Kept until the player starts, so a launch cancelled now still starts it fresh next time.
+            if (written.isNotEmpty()) foldcade.store.setSaveAwaitsLoad(player.saveFolderId(), true)
+            if (!placed) throw SaveNotPlaced()
+            PreparedLaunch(placement.target, spots)
         } catch (cancelled: CancellationException) {
             throw cancelled
         } catch (failure: Exception) {
@@ -1146,7 +1147,7 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
         platformId: String?,
         occupiesBoth: Boolean,
         intent: Intent,
-        replacing: Boolean = false,
+        noteStart: () -> Boolean = { false },
     ): Boolean {
         val session = foldcade.store.session
         val external = ExternalApp(id, occupiesBoth)
@@ -1165,7 +1166,7 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
         }
         foldcade.externalPlay.open(foldcade.plays, id, title, displayId) {
             startOnDisplay(intent, displayId)
-            if (replacing) armRestart(intent, displayId)
+            if (noteStart()) armRestart(intent, displayId)
         }
         return true
     }
@@ -1235,10 +1236,10 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
         try {
             foldcade.externalPlay.open(foldcade.plays, game.id, game.title, displayId) {
                 val options = ActivityOptions.makeBasic().apply { launchDisplayId = displayId }
-                val replacing = foldcade.replacesRunning(ready.intent)
-                val start = ready.intent.toAndroidIntent()
+                val intent = foldcade.startIntent(player, ready.intent)
+                val start = intent.toAndroidIntent()
                 startActivity(start, options.toBundle())
-                if (replacing) armRestart(start, displayId)
+                if (foldcade.noteStarted(player, intent)) armRestart(start, displayId)
             }
             if (game.libraryId != null) {
                 rememberReturn(LibraryReturn(game.libraryId, apiGame, player, spots))
@@ -1335,6 +1336,7 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
     private fun cancelLaunches() {
         foldcade.launchWork.cancel()
         clearPendingLaunch()
+        retroArchRetry = null
     }
 
     private fun launchCurrent(generation: Int): Boolean = foldcade.launchWork.current(generation)
@@ -1748,16 +1750,8 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
         }
     }
 
-    /**
-     * A save was just written for this game. A RetroArch still holding the game
-     * would resume with the old one in memory and later write it back, so it
-     * gets an intent it treats as another game, and starts fresh.
-     */
-    private fun freshStart(player: Player, intent: PlayerIntent): PlayerIntent =
-        (player as? RetroArchPlayer)?.freshStart(intent) ?: intent
-
-    /** The launch to try again once the RetroArch cores offer is answered. */
-    private var retroArchRetry: (() -> Unit)? = null
+    /** The launch to try again once the RetroArch cores offer is answered, and its generation. */
+    private var retroArchRetry: Pair<Int, () -> Unit>? = null
 
     /**
      * What RetroArch needs before [player] starts: storage access, and a core
@@ -1780,7 +1774,7 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
             val screen = hostScreen()
             when (gate) {
                 RetroArchGate.OfferCores -> {
-                    retroArchRetry = retry
+                    retroArchRetry = generation to retry
                     foldcade.shell.present(retroArchCoresDialog(screen))
                 }
                 is RetroArchGate.MissingCore -> {
@@ -1798,7 +1792,7 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
     }
 
     /** Android's picker, opened at RetroArch's data folder. Choosing it lets Foldcade list the cores. */
-    private fun showRetroArchCores(retry: (() -> Unit)?) {
+    private fun showRetroArchCores(retry: Pair<Int, () -> Unit>?) {
         val packageName = foldcade.retroArchPlayer()?.cores?.activePackage()
         retroArchRetry = retry
         folderPurpose = FolderPurpose.RetroArchCores
@@ -1808,29 +1802,54 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
     /** The offer was answered without a folder. Launches try the system's first core from now on. */
     private fun settleRetroArchCores() {
         foldcade.store.setRetroArchCoresOffered()
-        val retry = retroArchRetry
+        retryAfterRetroArchCores(retroArchRetry)
+    }
+
+    /** Starts the launch the cores offer held, unless a newer launch or a cancel replaced it. */
+    private fun retryAfterRetroArchCores(retry: Pair<Int, () -> Unit>?) {
         retroArchRetry = null
-        retry?.invoke()
+        val (generation, launch) = retry ?: return
+        if (launchCurrent(generation)) launch()
     }
 
     private fun useRetroArchFolder(uri: Uri) {
-        if (RetroArchCoreReader.packageOf(uri) == null) {
-            retroArchRetry = null
-            cancelLaunches()
-            foldcade.shell.present(playerNotice(Copy.retroArchCoresTitle, Copy.retroArchWrongFolder, hostScreen()))
-            return
-        }
-        try {
-            contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
-        } catch (_: SecurityException) {
-            Unit
-        }
-        foldcade.store.setRetroArchCoresOffered()
         val retry = retroArchRetry
         retroArchRetry = null
+        val packageName = RetroArchCoreReader.packageOf(uri)
+        val read = Intent.FLAG_GRANT_READ_URI_PERMISSION
+        val granted = packageName != null && try {
+            contentResolver.takePersistableUriPermission(uri, read)
+            true
+        } catch (_: SecurityException) {
+            false
+        }
         foldcade.scope.launch {
+            // A folder without cores, such as one inside RetroArch's, would only ever read as none installed.
+            val holdsCores = granted && foldcade.retroArchCoreReader.holdsCores(uri)
+            withContext(Dispatchers.Main.immediate) {
+                if (!holdsCores) {
+                    if (granted) releaseGrant(uri, read)
+                    cancelLaunches()
+                    foldcade.shell.present(playerNotice(Copy.retroArchCoresTitle, Copy.retroArchWrongFolder, hostScreen()))
+                    return@withContext
+                }
+                // The folder just chosen is the one read from now on.
+                contentResolver.persistedUriPermissions
+                    .filter { it.uri != uri && it.uri.authority == uri.authority }
+                    .forEach { releaseGrant(it.uri, read) }
+                foldcade.store.setRetroArchCoresOffered()
+            }
+            if (!holdsCores) return@launch
             foldcade.readRetroArchCores()
-            withContext(Dispatchers.Main.immediate) { retry?.invoke() }
+            withContext(Dispatchers.Main.immediate) { retryAfterRetroArchCores(retry) }
+        }
+    }
+
+    private fun releaseGrant(uri: Uri, flags: Int) {
+        try {
+            contentResolver.releasePersistableUriPermission(uri, flags)
+        } catch (_: SecurityException) {
+            Unit
         }
     }
 
@@ -2126,8 +2145,7 @@ private fun decodeLibraryReturn(json: JSONObject, player: Player): LibraryReturn
     )
 }
 
-/** [freshSave] is true when a save was just written that the player has not loaded. */
-private class PreparedLaunch(val target: LaunchTarget, val spots: List<SaveSpot>, val freshSave: Boolean = false)
+private class PreparedLaunch(val target: LaunchTarget, val spots: List<SaveSpot>)
 
 /** A library save could not be written into the player's folder and checked. */
 private class SaveNotPlaced : Exception("save could not be placed")

@@ -198,6 +198,29 @@ class SessionStore(private val prefs: SharedPreferences) : SaveMarks {
         prefs.edit().putBoolean(saveFolderSkipKey(playerId), true).apply()
     }
 
+    /**
+     * A key for the last intent started for [packageName], for a player that
+     * cannot switch games in place. Kept across restarts of Foldcade, since the
+     * player can outlive it.
+     */
+    fun lastPlayerStart(packageName: String): String? = prefs.getString(LAST_START_PREFIX + packageName, null)
+
+    fun setLastPlayerStart(packageName: String, key: String) {
+        prefs.edit().putString(LAST_START_PREFIX + packageName, key).commit()
+    }
+
+    /**
+     * True while a save was written for players keyed [saveFolderKey] and none
+     * of them has started since. A player still holding that game must start fresh.
+     */
+    fun saveAwaitsLoad(saveFolderKey: String): Boolean = prefs.getBoolean(SAVE_AWAITS_LOAD_PREFIX + saveFolderKey, false)
+
+    fun setSaveAwaitsLoad(saveFolderKey: String, waiting: Boolean) {
+        prefs.edit().apply {
+            if (waiting) putBoolean(SAVE_AWAITS_LOAD_PREFIX + saveFolderKey, true) else remove(SAVE_AWAITS_LOAD_PREFIX + saveFolderKey)
+        }.commit()
+    }
+
     /** True once Foldcade asked to see RetroArch's cores at a launch. Settings still offers it. */
     fun retroArchCoresOffered(): Boolean = prefs.getBoolean(KEY_RETROARCH_CORES_OFFERED, false)
 
@@ -421,6 +444,8 @@ class SessionStore(private val prefs: SharedPreferences) : SaveMarks {
         private const val KEY_BUTTON_PROMPT_SEEN = "button_prompt_seen"
         private const val KEY_USAGE_PROMPTED = "usage_prompted"
         private const val KEY_RETROARCH_CORES_OFFERED = "retroarch_cores_offered"
+        private const val LAST_START_PREFIX = "last_player_start:"
+        private const val SAVE_AWAITS_LOAD_PREFIX = "save_awaits_load:"
         private const val KEY_MOONLIGHT_PINS = "moonlight_pins"
         private const val KEY_DROIDDECK_PINS = "droiddeck_pins"
         private const val PIN_FIELD = "\u001f"

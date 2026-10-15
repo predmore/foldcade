@@ -7,6 +7,7 @@ import app.foldcade.api.plugin.Player
 import app.foldcade.api.plugin.PlayerIntent
 import app.foldcade.api.plugin.SaveFolderHolder
 import app.foldcade.api.plugin.StartDisplay
+import java.security.MessageDigest
 
 /**
  * What the shell should do before it starts a player.
@@ -130,3 +131,22 @@ fun planPlayerLaunch(
         startDisplay = player.startDisplay,
     )
 }
+
+/** A key for [intent], kept to tell whether the next start is the same one. */
+internal fun startKey(intent: PlayerIntent): String =
+    MessageDigest.getInstance("SHA-256").digest(intent.toString().toByteArray())
+        .joinToString("") { "%02x".format(it) }
+
+/**
+ * [intent] or [other], two spellings of the same game for a player that tells
+ * games apart by their strings, given the key of the one [last] started.
+ * The same spelling resumes the game, so it is kept, unless a save is
+ * [fresh]: then the other one makes the player quit and start anew. Any
+ * other game was running, or none, so [intent] starts it.
+ */
+internal fun chooseStart(intent: PlayerIntent, other: PlayerIntent, last: String?, fresh: Boolean): PlayerIntent =
+    when (last) {
+        startKey(intent) -> if (fresh) other else intent
+        startKey(other) -> if (fresh) intent else other
+        else -> intent
+    }

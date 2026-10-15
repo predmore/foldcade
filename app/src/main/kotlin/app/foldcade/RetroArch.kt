@@ -1,12 +1,8 @@
 package app.foldcade
 
-import android.content.BroadcastReceiver
 import android.content.ContentResolver
 import android.content.Context
-import android.content.Intent
-import android.content.IntentFilter
 import android.content.pm.PackageInfo
-import android.content.pm.PackageManager
 import android.net.Uri
 import android.provider.DocumentsContract
 import app.foldcade.api.plugin.Player
@@ -15,30 +11,28 @@ import app.foldcade.plugins.retroarch.CoreChoice
 import app.foldcade.plugins.retroarch.INTERNAL_DATA
 import app.foldcade.plugins.retroarch.PACKAGES
 import app.foldcade.plugins.retroarch.RetroArchPlayer
-import java.util.concurrent.ConcurrentHashMap
-import kotlinx.coroutines.CompletableDeferred
-import kotlinx.coroutines.sync.Mutex
-import kotlinx.coroutines.sync.withLock
-import kotlinx.coroutines.withTimeoutOrNull
 
 /**
  * Which cores each installed RetroArch has. RetroArch keeps them in its
- * private data directory, which no other app can list, so Foldcade reads them
- * one of two ways:
- * - through a folder the user granted once in Android's picker. RetroArch
- *   publishes its data directory, `cores/` included, as a documents provider
- *   named `<package>.documents`;
- * - by asking, on RetroArch builds that answer `com.retroarch.QUERY_INSTALLED_CORES`
- *   (nightly builds since March 2026). A build that does not answer is not
- *   asked again until it is updated.
- * Null means Foldcade cannot see the cores.
+ * private data directory, which no other app can list. It publishes that
+ * directory, `cores/` included, as a documents provider named
+ * `<package>.documents`, so Foldcade reads the cores through a folder the user
+ * granted once in Android's picker. Null means Foldcade cannot see them.
+ *
+ * Nightly builds also answer a `com.retroarch.QUERY_INSTALLED_CORES` broadcast.
+ * Its reply is a broadcast any app could send, and Android 13 cannot tell who
+ * sent it, so Foldcade does not use it.
  */
 internal class RetroArchCoreReader(private val context: Context) {
-    private val silent = ConcurrentHashMap<String, Long>()
-    private val asking = Mutex()
+    fun read(packageName: String): Set<String>? = fromGrantedFolder(packageName)
 
-    suspend fun read(packageName: String): Set<String>? =
-        fromGrantedFolder(packageName) ?: fromQuery(packageName)
+    /** True when [tree] lists RetroArch's cores: its data folder, or `cores/` itself. */
+    fun holdsCores(tree: Uri): Boolean = try {
+        val children = children(context.contentResolver, tree, DocumentsContract.getTreeDocumentId(tree))
+        children.any { it.name == CORES && it.directory } || children.any { !it.directory && it.name.endsWith(CORE_SUFFIX) }
+    } catch (_: Exception) {
+        false
+    }
 
     /** The grant the user gave for [packageName]'s documents provider, if any. */
     fun grantedFolder(packageName: String): Uri? =
@@ -59,35 +53,6 @@ internal class RetroArchCoreReader(private val context: Context) {
         } catch (_: Exception) {
             null
         }
-    }
-
-    private suspend fun fromQuery(packageName: String): Set<String>? = asking.withLock {
-        val version = versionOf(packageName) ?: return@withLock null
-        if (silent[packageName] == version) return@withLock null
-        val answer = CompletableDeferred<Set<String>>()
-        val receiver = object : BroadcastReceiver() {
-            override fun onReceive(context: Context, intent: Intent) {
-                val cores = intent.getStringArrayExtra(EXTRA_CORES) ?: return
-                answer.complete(cores.filter { it.endsWith(CORE_SUFFIX) }.toSet())
-            }
-        }
-        context.registerReceiver(receiver, IntentFilter(ACTION_RESULT), Context.RECEIVER_EXPORTED)
-        try {
-            val query = Intent(ACTION_QUERY)
-                .setPackage(packageName)
-                .addFlags(Intent.FLAG_INCLUDE_STOPPED_PACKAGES)
-            context.sendBroadcast(query)
-            withTimeoutOrNull(QUERY_TIMEOUT_MS) { answer.await() }
-                .also { if (it == null) silent[packageName] = version }
-        } finally {
-            context.unregisterReceiver(receiver)
-        }
-    }
-
-    private fun versionOf(packageName: String): Long? = try {
-        context.packageManager.getPackageInfo(packageName, 0).lastUpdateTime
-    } catch (_: PackageManager.NameNotFoundException) {
-        null
     }
 
     private class Child(val id: String, val name: String, val directory: Boolean)
@@ -111,12 +76,8 @@ internal class RetroArchCoreReader(private val context: Context) {
     }
 
     companion object {
-        const val ACTION_QUERY: String = "com.retroarch.QUERY_INSTALLED_CORES"
-        const val ACTION_RESULT: String = "com.retroarch.INSTALLED_CORES_RESULT"
-        const val EXTRA_CORES: String = "CORES"
         private const val CORES = "cores"
         private const val CORE_SUFFIX = "_libretro_android.so"
-        private const val QUERY_TIMEOUT_MS = 1_500L
 
         fun documentsAuthority(packageName: String): String = "$packageName.documents"
 

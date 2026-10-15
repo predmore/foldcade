@@ -80,7 +80,6 @@ import app.foldcade.music.HomeMusic
 import app.foldcade.ui.FoldPaint
 import java.io.File
 import java.nio.file.Path
-import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicInteger
 import kotlin.coroutines.cancellation.CancellationException
 import kotlinx.coroutines.CompletableDeferred
@@ -640,7 +639,7 @@ class FoldcadeApp : Application() {
         rank = ::playerRank,
     )
 
-    private val retroArchCoreReader: RetroArchCoreReader by lazy { RetroArchCoreReader(this) }
+    internal val retroArchCoreReader: RetroArchCoreReader by lazy { RetroArchCoreReader(this) }
     private val retroArchRead = Mutex()
 
     /** Any RetroArch player. They share one view of the cores. */
@@ -681,21 +680,35 @@ class FoldcadeApp : Application() {
         withContext(Dispatchers.Main.immediate) { shell.setRetroArch(setting) }
     }
 
-    /** The last intent started for each package that cannot switch games while it runs. */
-    private val lastStarts = ConcurrentHashMap<String, PlayerIntent>()
-
     /**
-     * True when [intent] asks for [LaunchFlag.ReplaceRunning] and is not the
-     * last one started for its package, so the player may quit when it arrives.
-     * RetroArch 1.22 does: handed another game, it quits and expects its launcher
-     * to start it again. Records [intent] as the last start.
+     * The intent to start for [player]. A player that cannot switch games in
+     * place ([LaunchFlag.ReplaceRunning]) may run this game already, under
+     * either of the two ways RetroArch can name it. Normally the start uses the
+     * one it was last started with, so the game resumes. When a save was written
+     * since, it uses the other one, so the player starts fresh and loads it.
      */
-    fun replacesRunning(intent: PlayerIntent): Boolean {
-        if (LaunchFlag.ReplaceRunning !in intent.flags) return false
-        return lastStarts.put(intent.packageName, intent) != intent
+    fun startIntent(player: Player, intent: PlayerIntent): PlayerIntent {
+        if (LaunchFlag.ReplaceRunning !in intent.flags) return intent
+        val other = (player as? RetroArchPlayer)?.freshStart(intent) ?: return intent
+        return chooseStart(intent, other, store.lastPlayerStart(intent.packageName), store.saveAwaitsLoad(player.saveFolderId()))
     }
 
-    /** A start to repeat if Foldcade comes back before [until], see [replacesRunning]. */
+    /**
+     * Records [intent] as started for [player]. True when it asks for
+     * [LaunchFlag.ReplaceRunning] and is not the last one started for its
+     * package, so the player may quit when it arrives. RetroArch 1.22 does:
+     * handed another game, it quits and expects its launcher to start it again.
+     */
+    fun noteStarted(player: Player, intent: PlayerIntent): Boolean {
+        store.setSaveAwaitsLoad(player.saveFolderId(), false)
+        if (LaunchFlag.ReplaceRunning !in intent.flags) return false
+        val key = startKey(intent)
+        val replacing = store.lastPlayerStart(intent.packageName) != key
+        store.setLastPlayerStart(intent.packageName, key)
+        return replacing
+    }
+
+    /** A start to repeat if Foldcade comes back before [PendingRestart.until], see [noteStarted]. */
     @Volatile
     var pendingRestart: PendingRestart? = null
 
