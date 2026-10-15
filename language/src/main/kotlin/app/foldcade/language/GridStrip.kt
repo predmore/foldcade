@@ -30,14 +30,18 @@ object GridStrip {
     fun reach(count: Int): Int = index(reachColumns(count), 0)
 
     /**
+     * The furthest the strip scrolls along [count] tiles: the first column of the
+     * last screen the cursor can reach, with [shown] columns on screen.
+     */
+    fun lastFirst(count: Int, shown: Int): Int = (reachColumns(count) - shown).coerceAtLeast(0)
+
+    /**
      * The first column on screen once the cursor is in [column], when [first]
      * was on screen before and [shown] columns fit. It moves only as far as it
      * must, and never past the last screen the cursor can reach.
      */
-    fun follow(first: Int, column: Int, count: Int, shown: Int): Int {
-        val last = (reachColumns(count) - shown).coerceAtLeast(0)
-        return first.coerceIn(column - shown + 1, column).coerceIn(0, last)
-    }
+    fun follow(first: Int, column: Int, count: Int, shown: Int): Int =
+        first.coerceIn(column - shown + 1, column).coerceIn(0, lastFirst(count, shown))
 }
 
 /** The first column the grid shows for [model]'s focus, with [shown] columns on screen. */
