@@ -408,7 +408,14 @@ private fun PanelBody(
                 when (shown) {
                     null -> Unit
                     Surface.Hero -> if (connectHere) Unit else ArtPreviewHero(app, screen, scale, activity::dispatch)
-                    Surface.Picker -> Picker(app, screen, scale, activity::dispatch, editorHere = session.editorPanel() == panel)
+                    Surface.Picker -> Picker(
+                        app,
+                        screen,
+                        scale,
+                        activity::dispatch,
+                        editorHere = session.editorPanel() == panel,
+                        live = session.surfaceOn(panel) == Surface.Picker,
+                    )
                     Surface.CommandCenter -> CommandCenterScreen(
                         app,
                         CenterSubject.App(panel, app.commandCenter.beside(panel)),
@@ -1870,14 +1877,14 @@ private const val HERO_ART_WAIT_MS = 400L
  * [first], so a column slides in with its art drawn rather than filling in behind it.
  */
 @Composable
-private fun WarmColumns(app: FoldcadeApp, first: Int) {
+private fun WarmColumns(app: FoldcadeApp, first: Int, columns: Int) {
     val context = LocalContext.current
     // A folder opens at the start too, so the grid itself is part of the key.
-    LaunchedEffect(first, gridToken(app), app.shell.model.count) {
+    LaunchedEffect(first, columns, gridToken(app), app.shell.model.count) {
         delay(HERO_WARM_DELAY_MS)
         val shell = app.shell
-        val screenful = Metrics.columns * Metrics.rows
-        val ahead = GridStrip.index(first + Metrics.columns, 0)
+        val screenful = columns * Metrics.rows
+        val ahead = GridStrip.index(first + columns, 0)
         val behind = GridStrip.index(first, 0) - screenful
         for (index in (ahead until ahead + screenful) + (behind until behind + screenful)) {
             val game = shell.gameAt(index) ?: continue
@@ -1952,6 +1959,8 @@ private fun Picker(
     onEffect: (Effect?) -> Unit,
     /** No screen has a hero, so the collection icon editor covers this grid while it is open. */
     editorHere: Boolean = false,
+    /** This panel is where the grid is, not one it is fading out of. Only it sets how many columns show. */
+    live: Boolean,
 ) {
     val design = LocalFoldTheme.current.theme.style
     val theme = foldTheme()
@@ -1970,7 +1979,8 @@ private fun Picker(
     val iconsOnly = app.store.session.bothScreensFree()
     BoxWithConstraints(Modifier.fillMaxSize()) {
         val inset = maxWidth * design.metrics.insetFraction
-        val gap = maxWidth * design.metrics.gapFraction
+        // A wide panel spaces its tiles as a 4:3 one would, and spends the rest of its width on columns.
+        val gap = minOf(maxWidth, maxHeight * WIDE_SPAN) * design.metrics.gapFraction
         val titlePx = rememberTextMeasurer().measure(
             text = "Ag",
             style = text(theme.onBackground, LocalFoldTheme.current.theme.style.type.gridLabel, theme),
@@ -2016,15 +2026,26 @@ private fun Picker(
                     },
                 contentAlignment = Alignment.Center,
             ) {
+                // Rows are the same on every panel, so a Home layout reads the same on both.
+                // Columns are as many as the width holds, never fewer than Metrics.columns.
                 val rows = Metrics.rows
-                val columns = Metrics.columns
                 // Room for the focused tile's scale and ring. The glow is not clipped.
-                val ring = focusOutset(maxWidth / columns) + px(GRID_RING_PAD)
+                val ring = focusOutset(minOf(maxWidth / Metrics.columns, maxHeight / rows)) + px(GRID_RING_PAD)
                 val titleBlock = if (iconsOnly) Dp.Hairline else px(20f) + titleLine
-                val fromHeight = (maxHeight - ring * 2 - gap * (rows - 1)) / rows - titleBlock
-                val fromWidth = (maxWidth - ring * 2 - gap * (columns - 1)) / columns
+                // A title already parts its row from the next, so titled rows sit closer.
+                val rowGap = if (iconsOnly) gap else gap * TITLED_ROW_GAP
+                val fromHeight = (maxHeight - ring * 2 - rowGap * (rows - 1)) / rows - titleBlock
+                val fromWidth = (maxWidth - ring * 2 - gap * (Metrics.columns - 1)) / Metrics.columns
                 val cell = minOf(fromHeight, fromWidth).coerceAtLeast(px(56f))
-                SideEffect { shell.setRowsPerPage(rows) }
+                val span = maxWidth - ring * 2
+                val columns = max(Metrics.columns, floor((span + gap) / (cell + gap)).toInt())
+                // What width is left spreads into the gaps, so the strip reaches both edges. Past
+                // a point it would look sparse, and the strip centres instead.
+                val columnGap = ((span - cell * columns) / (columns - 1)).coerceIn(gap, gap * MAX_COLUMN_SPREAD)
+                SideEffect {
+                    shell.setRowsPerPage(rows)
+                    if (live) shell.setColumnsShown(columns)
+                }
                 val emptyTitle = emptyTitle(model)
                 val emptyCollection = shell.emptyCollection()
                 if (gridGone) {
@@ -2044,7 +2065,9 @@ private fun Picker(
                             app = app,
                             screen = screen,
                             cell = cell,
-                            gap = gap,
+                            rowGap = rowGap,
+                            columnGap = columnGap,
+                            columns = columns,
                             pad = ring,
                             scale = scale,
                             showTitle = !iconsOnly,
@@ -2087,7 +2110,7 @@ private fun Picker(
             }
             if (!gridGone) {
                 Box(Modifier.sinking(covered)) {
-                    StripBar(count = model.count, first = shownFirstColumn(model), scale = scale)
+                    StripBar(count = model.count, first = shownFirstColumn(model), shown = model.columnsShown, scale = scale)
                 }
             }
             // Under an open menu the blur would smear these. MenuHints draws them above it.
@@ -2413,14 +2436,14 @@ private fun GridHeader(shell: app.foldcade.ShellController) {
  * last tile included. None while the tiles fit on one screen.
  */
 @Composable
-private fun StripBar(count: Int, first: Int, scale: Float) {
+private fun StripBar(count: Int, first: Int, shown: Int, scale: Float) {
     val columns = GridStrip.reachColumns(count)
     val motion = LocalFoldTheme.current.theme.motion
     val start by glideState(first.toFloat(), motion.durationTravel, scale)
-    if (GridStrip.columns(count) <= Metrics.columns) return
+    if (GridStrip.columns(count) <= shown) return
     val theme = foldTheme()
     val track = px(STRIP_BAR_WIDTH)
-    val thumb = track * (Metrics.columns.toFloat() / columns)
+    val thumb = track * (shown.toFloat() / columns)
     Box(
         Modifier.fillMaxWidth().padding(top = px(5f), bottom = px(9f)),
         contentAlignment = Alignment.Center,
@@ -2559,7 +2582,10 @@ private fun StripGrid(
     app: FoldcadeApp,
     screen: HostScreen,
     cell: Dp,
-    gap: Dp,
+    rowGap: Dp,
+    columnGap: Dp,
+    /** Columns this panel fits. A panel the grid is fading out of keeps its own, not the new panel's. */
+    columns: Int,
     pad: Dp,
     scale: Float,
     showTitle: Boolean,
@@ -2567,23 +2593,23 @@ private fun StripGrid(
 ) {
     val motion = LocalFoldTheme.current.theme.motion
     val model = app.shell.model
-    val first = shownFirstColumn(model)
-    val screenful = Metrics.columns * Metrics.rows
+    val first = shownFirstColumn(model, columns)
+    val screenful = columns * Metrics.rows
     val titles = shownTitles(app, GridStrip.index(first, 0), screenful)
     // The emulator reads this line. A presentation-display dump is empty while that display has focus.
     LaunchedEffect(titles) {
         Log.i("Foldcade", "library-ui page " + titles.joinToString(" | "))
     }
     val position = glideState(first.toFloat(), motion.durationTravel, scale)
-    WarmColumns(app, first)
+    WarmColumns(app, first, columns)
     var dragColumns by remember { mutableStateOf(0f) }
     LaunchedEffect(first, scale) { dragColumns = 0f }
     val reduced = motion.reduced(scale)
     // Read where it is used, in offsets and layers, so scrolling redraws without
     // recomposing the columns. Composition only hears which columns are on screen.
     val shownFirst = { position.value - dragColumns }
-    val width = cell * Metrics.columns + gap * (Metrics.columns - 1)
-    val pitchPx = with(LocalDensity.current) { (cell + gap).toPx() }
+    val width = cell * columns + columnGap * (columns - 1)
+    val pitchPx = with(LocalDensity.current) { (cell + columnGap).toPx() }
     val lastColumn = GridStrip.reachColumns(model.count) - 1
     val context = LocalContext.current
     val folderToken = app.shell.homeAnimToken()
@@ -2638,8 +2664,8 @@ private fun StripGrid(
         val low by remember(lastColumn) {
             derivedStateOf { floor(shownFirst()).toInt().coerceIn(0, lastColumn.coerceAtLeast(0)) }
         }
-        val high by remember(lastColumn) {
-            derivedStateOf { ceil(shownFirst() + Metrics.columns - 1).toInt().coerceIn(0, lastColumn.coerceAtLeast(0)) }
+        val high by remember(lastColumn, columns) {
+            derivedStateOf { ceil(shownFirst() + columns - 1).toInt().coerceIn(0, lastColumn.coerceAtLeast(0)) }
         }
         var rowPx by remember { mutableStateOf(0) }
         for (drawn in low..high) {
@@ -2652,17 +2678,17 @@ private fun StripGrid(
                         .graphicsLayer {
                             // A column fades as it slides past either edge, so the strip has no cut ends.
                             val along = drawn - shownFirst()
-                            val outside = maxOf(-along, along - (Metrics.columns - 1), 0f)
+                            val outside = maxOf(-along, along - (columns - 1), 0f)
                             alpha = (1f - outside).coerceIn(0f, 1f)
                         },
                 ) {
-                    StripColumn(app, screen, cell, gap, drawn, showTitle, carry, memory, pitchPx, { rowPx }) { rowPx = it }
+                    StripColumn(app, screen, cell, rowGap, cell + columnGap / 2, drawn, showTitle, carry, memory, pitchPx, { rowPx }) { rowPx = it }
                 }
             }
         }
         if (followDrag) {
             HomeTarget(carry, cell, width, pitchPx, shownFirst, scale)
-            CarriedTile(app, carry, memory, cell, gap, rowPx, pitchPx, shownFirst, scale) { at ->
+            CarriedTile(app, carry, memory, cell, rowGap, rowPx, pitchPx, shownFirst, scale) { at ->
                 (context as? FoldcadeHomeActivity)?.dispatch(app.shell.touchCell(at, screen))
             }
         }
@@ -2670,7 +2696,8 @@ private fun StripGrid(
             app = app,
             index = model.focus.cellIndex,
             cell = cell,
-            gap = gap,
+            gap = rowGap,
+            pitchPx = pitchPx,
             rowPx = rowPx,
             shownFirst = shownFirst,
             jump = folderToken,
@@ -2692,6 +2719,7 @@ private fun GridCursor(
     index: Int,
     cell: Dp,
     gap: Dp,
+    pitchPx: Float,
     rowPx: Int,
     shownFirst: () -> Float,
     jump: String,
@@ -2711,7 +2739,6 @@ private fun GridCursor(
     )
     val column = GridStrip.column(index).toFloat()
     val row = GridStrip.row(index).toFloat()
-    val pitchPx = with(LocalDensity.current) { (cell + gap).toPx() }
     // A new folder, or a ring coming back from elsewhere, starts on its tile.
     // Held moves glide from tile to tile.
     val visible by remember { derivedStateOf { alpha > 0f } }
@@ -2799,6 +2826,8 @@ private fun StripColumn(
     screen: HostScreen,
     cell: Dp,
     gap: Dp,
+    /** A title may reach a little into the gaps beside its tile. */
+    titleWidth: Dp,
     column: Int,
     showTitle: Boolean,
     carry: HomeCarry?,
@@ -2864,6 +2893,7 @@ private fun StripColumn(
                         showTitle = showTitle,
                         focused = focused,
                         size = cell,
+                        titleWidth = titleWidth,
                         corner = radius,
                         icon = if (art == null) launcherIcon(game?.androidPackage) else null,
                         favorite = game?.favorite == true,
@@ -3337,6 +3367,15 @@ private const val FOCUS_GLOW_OVERFLOW = 64f
 private const val REST_GLOW_OVERFLOW = 18f
 private const val GRID_RING_PAD = 8f
 
+/** The widest a panel spaces its grid for, as a share of its height. Wider panels add columns. */
+private const val WIDE_SPAN = 4f / 3f
+
+/** Titled rows' gap, as a share of the gap between columns. */
+private const val TITLED_ROW_GAP = 0.5f
+
+/** The most the gap between columns grows to spread the strip across its panel, as a multiple of the gap. */
+private const val MAX_COLUMN_SPREAD = 1.5f
+
 @Composable
 private fun emptyShelf(grid: HomeGrid): String = when (grid) {
     HomeGrid.AndroidGames -> Copy.noGames
@@ -3503,6 +3542,7 @@ private fun Cell(
     showTitle: Boolean,
     focused: Boolean,
     size: Dp,
+    titleWidth: Dp = size,
     corner: Dp,
     icon: ImageBitmap?,
     favorite: Boolean,
@@ -3772,7 +3812,9 @@ private fun Cell(
                     .zIndex(1f)
                     .clearAndSetSemantics { }
                     .padding(top = focusOutset(size) + px(12f))
-                    .width(size),
+                    // The tile's slot stays its width. A wider title spills evenly either side.
+                    .width(size)
+                    .requiredWidth(titleWidth),
                 style = text(
                     if (focused) theme.onBackground else theme.muted,
                     LocalFoldTheme.current.theme.style.type.gridLabel,

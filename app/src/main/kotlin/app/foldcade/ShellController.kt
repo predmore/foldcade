@@ -1614,6 +1614,12 @@ class ShellController(
         model = model.copy(rowsPerPage = next)
     }
 
+    /** How many columns the panel showing the grid fits, see [app.foldcade.language.GridStrip]. */
+    fun setColumnsShown(columns: Int) {
+        if (model.columnsShown == columns) return
+        model = model.copy(columnsShown = columns)
+    }
+
     fun setHomeRoleHeld(held: Boolean) {
         if (model.homeRoleHeld == held) return
         model = model.copy(homeRoleHeld = held)
