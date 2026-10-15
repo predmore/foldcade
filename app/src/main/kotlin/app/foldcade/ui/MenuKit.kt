@@ -320,14 +320,14 @@ internal fun Modifier.cascade(index: Int, progress: () -> Float): Modifier = gra
 private const val CASCADE_STEP = 0.05f
 private const val CASCADE_SPAN = 0.35f
 
-/** The art-kit name of a key's glyph. */
+/** The art-kit name of a key's glyph. Select and Start wear the Thor's round caps: a square and a ▷ in a ring. */
 internal fun promptGlyph(key: PromptKey): String = when (key) {
     PromptKey.FaceA -> "ic_btn_a"
     PromptKey.FaceB -> "ic_btn_b"
     PromptKey.FaceX -> "ic_btn_x"
     PromptKey.FaceY -> "ic_btn_y"
-    PromptKey.Select -> "ic_btn_select"
-    PromptKey.Start -> "ic_btn_start"
+    PromptKey.Select -> "ic_btn_square"
+    PromptKey.Start -> "ic_btn_triangle"
     PromptKey.Home -> "ic_btn_home"
     PromptKey.Back -> "ic_btn_back"
     PromptKey.L1 -> "ic_btn_l1"
