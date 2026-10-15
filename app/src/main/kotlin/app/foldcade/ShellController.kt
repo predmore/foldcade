@@ -76,6 +76,7 @@ import app.foldcade.language.HomePlatform
 import app.foldcade.language.androidHomeId
 import app.foldcade.language.bucketMark
 import app.foldcade.language.homeGameId
+import app.foldcade.language.homeGameKey
 import app.foldcade.language.Motion
 import app.foldcade.language.SyncMark
 import app.foldcade.language.TileActivity
@@ -1013,12 +1014,17 @@ class ShellController(
         Log.i("Foldcade", "library-ui home")
     }
 
-    /** A game's name for the Play activity page, wherever it lives. Null for one Foldcade no longer knows. */
+    /**
+     * A game's name for the Play activity page, wherever it lives. Null for one
+     * Foldcade no longer knows. History from before the home id kept a library
+     * game under its bare remote key, so a key one library game still has names it.
+     */
     fun playTitle(gameId: String): String? =
         home.catalog().firstOrNull { it.id == gameId }?.title
             ?: home.game(gameId)?.label
             ?: Shelf.games.firstOrNull { it.id == gameId }?.title
             ?: installed.firstOrNull { androidHomeId(it.packageName) == gameId }?.label
+            ?: home.catalog().singleOrNull { homeGameKey(it.id) == gameId }?.title
 
     fun openHomeAll() {
         artPicker = null

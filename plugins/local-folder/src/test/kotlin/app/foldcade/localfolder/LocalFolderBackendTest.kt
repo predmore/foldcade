@@ -624,4 +624,17 @@ private fun unusedPlayer(id: String): Player = object : Player {
         org.junit.Assert.assertEquals("game", LocalFolderBackend.fileNameOf("content://tree/game"))
         org.junit.Assert.assertEquals(null, LocalFolderBackend.fileNameOf("content://tree/"))
     }
+
+    @Test
+    fun aDocumentUriTitlesItsFileAsTheScanDoes() {
+        val uri = "content://com.android.externalstorage.documents/tree/primary%3Aroms/document/" +
+            "primary%3Aroms%2Fgba%2FPok%C3%A9mon%20-%20Emerald%20Version%20(USA%2C%20Europe)%20%5B!%5D.gba"
+        org.junit.Assert.assertEquals("Pokémon - Emerald Version", LocalFolderBackend.titleOf(uri))
+        org.junit.Assert.assertEquals(
+            titleFromFileName("Pokémon - Emerald Version (USA, Europe) [!].gba"),
+            LocalFolderBackend.titleOf(uri),
+        )
+        org.junit.Assert.assertEquals(null, LocalFolderBackend.titleOf("content://tree/"))
+        org.junit.Assert.assertEquals(null, LocalFolderBackend.titleOf("content://tree/document/primary%3Aroms%2F%E0%A4%A"))
+    }
 }

@@ -170,6 +170,14 @@ enum class RemoveVerb {
 
 fun homeGameId(backendId: String, remoteKey: String): String = "lib:$backendId:$remoteKey"
 
+/** The remote key in a [homeGameId]. Null for any other id. */
+fun homeGameKey(homeId: String): String? {
+    val rest = homeId.removePrefix("lib:").takeIf { it != homeId } ?: return null
+    val colon = rest.indexOf(':')
+    if (colon <= 0 || colon == rest.lastIndex) return null
+    return rest.substring(colon + 1)
+}
+
 fun androidHomeId(packageName: String): String = "android:$packageName"
 
 fun platformFolderId(canonicalId: String): String = "home.platform.$canonicalId"

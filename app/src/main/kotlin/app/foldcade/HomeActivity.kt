@@ -1108,7 +1108,7 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
                 Panel.Bottom -> assignment.bottomDisplayId ?: return false
             }
         }
-        foldcade.externalPlay.open(foldcade.plays, id, displayId) {
+        foldcade.externalPlay.open(foldcade.plays, id, title, displayId) {
             startOnDisplay(intent, displayId)
         }
         return true
@@ -1136,7 +1136,7 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
 
     /** Opens a play session, then starts the stand-in. That activity reports the rest of the session. */
     private fun beginPlay(game: ShelfGame, displayId: Int) {
-        val playId = foldcade.plays.start(game.id)
+        val playId = foldcade.plays.start(game.id, game.title)
         try {
             startOnDisplay(StandInActivity::class.java, displayId) {
                 putExtra(StandInActivity.EXTRA_ID, game.id)
@@ -1177,7 +1177,7 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
             foldcade.store.place(panel, external)
         }
         try {
-            foldcade.externalPlay.open(foldcade.plays, game.id, displayId) {
+            foldcade.externalPlay.open(foldcade.plays, game.id, game.title, displayId) {
                 val options = ActivityOptions.makeBasic().apply { launchDisplayId = displayId }
                 startActivity(ready.intent.toAndroidIntent(), options.toBundle())
             }

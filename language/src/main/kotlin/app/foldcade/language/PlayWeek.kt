@@ -41,6 +41,9 @@ object PlayCopy {
     const val mostPlayed = "Most played"
     const val nothing = "Nothing played these days"
     const val week = "Week"
+
+    /** A game that left every catalog and left nothing readable behind. */
+    const val removedGame = "Removed game"
 }
 
 /** How many games the page lists under the schedule. */
