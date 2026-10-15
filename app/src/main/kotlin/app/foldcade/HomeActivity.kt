@@ -270,7 +270,6 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
             Effect.RetryRommDeviceCode -> beginRommDeviceCode()
             Effect.OpenArtKey -> foldcade.shell.openArtKey()
             Effect.SaveArtKey -> saveArtKey()
-            Effect.ForgetArtKey -> forgetArtKey()
             is Effect.ForgetCredentials -> forget(effect.pluginId)
             is Effect.ForgetFolder -> foldcade.forgetFolder(effect.uri)
             is Effect.DialogChoice -> onDialog(effect)
@@ -1322,6 +1321,7 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
             } else {
                 cancelLaunches()
             }
+            DialogKind.ForgetArtKey -> if (effect.button == DialogButton.ForgetKey) forgetArtKey()
             DialogKind.SaveFolder -> if (effect.button == DialogButton.ContinueGrant) {
                 folderPurpose = FolderPurpose.LaunchOffer
                 folderPicker.launch(null)

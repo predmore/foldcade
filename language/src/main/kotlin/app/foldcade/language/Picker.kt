@@ -94,6 +94,9 @@ enum class DialogKind {
 
     /** All of one Foldcade notice's text. */
     Notice,
+
+    /** Settings › SteamGridDB with a key saved. Only Forget key forgets it. */
+    ForgetArtKey,
 }
 
 enum class DialogButton {
@@ -103,6 +106,8 @@ enum class DialogButton {
     Allow,
     Ok,
     CloseIt,
+    ForgetKey,
+    KeepKey,
 }
 
 data class DialogState(
@@ -172,6 +177,17 @@ fun closeBothPanelDialog(screen: HostScreen): DialogState = DialogState(
     screen = screen,
 )
 
+/** Forgetting the key opens on Keep key, and Back keeps it too. */
+fun forgetArtKeyPrompt(screen: HostScreen): DialogState = DialogState(
+    kind = DialogKind.ForgetArtKey,
+    title = Copy.forgetArtKeyTitle,
+    body = Copy.forgetArtKeyBody,
+    buttons = listOf(DialogButton.ForgetKey, DialogButton.KeepKey),
+    index = 1,
+    safeIndex = 1,
+    screen = screen,
+)
+
 fun saveFolderDialog(screen: HostScreen): DialogState = DialogState(
     kind = DialogKind.SaveFolder,
     title = Copy.saveFolderTitle,
@@ -221,6 +237,7 @@ fun previewDialogState(kind: String, index: Int, screen: HostScreen): DialogStat
         "save-folder" -> saveFolderDialog(screen)
         "close-player" -> closeBothPanelDialog(screen)
         "missing-player" -> missingPlayerDialog("Azahar", screen)
+        "forget-art-key" -> forgetArtKeyPrompt(screen)
         else -> return null
     }
     val last = dialog.buttons.lastIndex.coerceAtLeast(0)
@@ -782,7 +799,6 @@ sealed interface Effect {
     data object OpenArtKey : Effect
     data object SaveArtKey : Effect
     data object RetryRommDeviceCode : Effect
-    data object ForgetArtKey : Effect
     data class DialogChoice(val button: DialogButton, val kind: DialogKind) : Effect
     data class ForgetCredentials(val pluginId: String) : Effect
     data class ForgetFolder(val uri: String) : Effect
@@ -1678,8 +1694,9 @@ private fun activateRow(
         Row.AllLibrary -> model.copy(panel = null, focus = panel.grid, arranging = false, hold = null) to Effect.OpenAll
         Row.AddNewGames -> model.copy(panel = panel, addNewToHome = !model.addNewToHome) to Effect.ToggleAddNew
         Row.Artwork -> model.copy(panel = panel, artwork = !model.artwork) to null
+        // A saved key is a credential: A only asks, and the dialog's Forget key forgets it.
         Row.ArtKey -> if (model.artKeySaved) {
-            model.copy(panel = panel) to Effect.ForgetArtKey
+            model.copy(panel = panel, dialog = forgetArtKeyPrompt(screen)) to null
         } else {
             model.copy(
                 panel = null,

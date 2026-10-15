@@ -1649,6 +1649,7 @@ class ShellController(
 
     /** One tap moves focus to that row. A second tap on it activates. */
     fun touchPanel(index: Int, screen: HostScreen): Effect? {
+        if (modalOpen()) return null
         val panel = model.panel ?: return null
         if (panel.screen != screen) return null
         val rows = panelRows(panel, model)
@@ -1662,6 +1663,7 @@ class ShellController(
 
     /** A tap on a settings category shows its rows. A second tap steps into them. */
     fun touchSettingsCategory(index: Int, screen: HostScreen): Effect? {
+        if (modalOpen()) return null
         val page = model.settings ?: return null
         if (page.screen != screen) return null
         if (index !in settingsCategories(model).indices) return null
@@ -1674,6 +1676,7 @@ class ShellController(
 
     /** One tap on a settings row focuses it and acts on it, the same as a menu row. */
     fun touchSettingsRow(index: Int, screen: HostScreen): Effect? {
+        if (modalOpen()) return null
         val page = model.settings ?: return null
         if (page.screen != screen) return null
         publish(model.copy(
@@ -1685,15 +1688,23 @@ class ShellController(
 
     /** A tap on the Play activity page's back pill. */
     fun closePlayActivity() {
+        if (modalOpen()) return
         val page = model.playActivity ?: return
         publish(model.copy(playActivity = null, focus = page.grid))
     }
 
     fun closeSettings(): Effect? {
+        if (modalOpen()) return null
         val page = model.settings ?: return null
         publish(model.copy(settings = null, focus = page.grid, capturingConfirm = false))
         return null
     }
+
+    /**
+     * A dialog or save choice takes every key, so a touch on the page under it does nothing.
+     * A tap on a Settings row once went on to activate the dialog's focused button.
+     */
+    private fun modalOpen(): Boolean = model.dialog != null || model.saveConflict != null
 
     /** One tap focuses the button and activates it. Keys still move, then Activate. */
     fun touchDialog(index: Int, screen: HostScreen): Effect? {
