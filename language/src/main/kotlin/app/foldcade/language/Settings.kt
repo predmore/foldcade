@@ -53,7 +53,8 @@ fun settingsRows(category: SettingsCategory, model: PickerModel): List<Row> = wh
         add(Row.IconTheme)
         add(Row.Background)
         add(Row.MotionSpeed)
-        if (model.offerButtonLabels) add(Row.ButtonLabels)
+        // Calibration can be corrected even after the one-time setup hint is settled.
+        add(Row.ButtonLabels)
     }
     SettingsCategory.Sound -> listOf(Row.Music, Row.MusicTrack, Row.MusicVolume)
     SettingsCategory.Library -> buildList {
