@@ -59,6 +59,37 @@ class ArtKeyForgetTest {
         assertEquals(Copy.forgetKey, rowText(Row.ArtKey, shell.model).value)
     }
 
+    @Test fun touchesOnSettingsUnderTheDialogDoNothing() {
+        val shell = shell()
+        onArtKeyRow(shell)
+        shell.onMeaning(Meaning.Activate, HostScreen.Bottom)
+        val dialog = shell.model.dialog!!
+        assertEquals(DialogKind.ForgetArtKey, dialog.kind)
+        // Focus on Forget key, so a stray Activate would forget the key.
+        shell.onMeaning(Meaning.MoveLeft, HostScreen.Bottom)
+        val page = shell.model.settings!!
+        val sound = settingsCategories(shell.model).indexOf(SettingsCategory.Sound)
+        val effects = mutableListOf<Effect?>()
+        for (screen in HostScreen.entries) {
+            effects += shell.touchSettingsCategory(sound, screen)
+            effects += shell.touchSettingsCategory(page.category, screen)
+            settingsRows(SettingsCategory.Library, shell.model).indices.forEach { row ->
+                effects += shell.touchSettingsRow(row, screen)
+            }
+            effects += shell.touchPanel(0, screen)
+        }
+        // The back pill beside the page, on the other screen.
+        effects += shell.closeSettings()
+        assertTrue(effects.all { it == null })
+        assertEquals(page, shell.model.settings)
+        assertEquals(dialog.copy(index = 0), shell.model.dialog)
+        assertTrue(shell.model.artKeySaved)
+        // The dialog's own buttons still answer.
+        assertEquals(keep, shell.touchDialog(1, dialog.screen))
+        assertNull(shell.model.dialog)
+        assertEquals(page, shell.model.settings)
+    }
+
     @Test fun forgetKeyIsTheOneChoiceThatForgets() {
         val shell = shell()
         onArtKeyRow(shell)

@@ -3807,6 +3807,7 @@ private fun DialogCard(
     Box(
         Modifier
             .fillMaxSize()
+            .blocksTouch()
             .background(Color.Black.copy(alpha = 0.72f))
             .padding(px(design.metrics.dialogInsetPx)),
         contentAlignment = Alignment.Center,
@@ -3849,6 +3850,17 @@ private fun DialogCard(
                 }
             }
         }
+    }
+}
+
+/**
+ * A full-screen layer that takes every touch the page under it would have had. Drawing
+ * alone passes taps through: a tap on the dialog's own text once changed the Settings
+ * category behind it. Nothing is consumed, so the dialog's buttons still see a whole tap.
+ */
+private fun Modifier.blocksTouch(): Modifier = pointerInput(Unit) {
+    awaitPointerEventScope {
+        while (true) awaitPointerEvent()
     }
 }
 
@@ -3925,9 +3937,11 @@ private fun DialogAction(label: String, focused: Boolean, onClick: () -> Unit) {
                 scaleX = drawn
                 scaleY = drawn
             }
+            // The margin around the chip is part of the button, so a tap just off it
+            // presses it rather than landing on the dimmer and doing nothing.
+            .hostPress(onClick)
             .padding(horizontal = px(16f), vertical = px(18f))
             .chip(focused)
-            .hostPress(onClick)
             .padding(horizontal = px(22f), vertical = px(12f)),
         style = text(
             if (focused) theme.onBackground else theme.muted,
