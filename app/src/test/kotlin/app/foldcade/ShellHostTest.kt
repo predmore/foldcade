@@ -416,6 +416,23 @@ class ShellHostTest {
         assertTrue(shell.model.settings != null)
     }
 
+    @Test
+    fun saveConflictStartsOnKeepBothAndATouchOnDecideLaterIsB() {
+        val shell = shell(PluginHost(Dispatchers.Unconfined, MemoryCredentialStore()))
+        shell.showSaveConflictPreview()
+        assertEquals(app.foldcade.language.SaveConflictFocus.KeepBoth, shell.model.saveConflict?.focus)
+        val later = shell.touchSaveConflictLater() as app.foldcade.language.Effect.ResolveSaveConflict
+        assertEquals(app.foldcade.language.SaveConflictAction.DecideLater, later.action)
+        assertTrue(later.preview)
+        assertNull(shell.model.saveConflict)
+        assertNull(shell.touchSaveConflictLater())
+
+        shell.showSaveConflictPreview()
+        val both = shell.touchSaveConflict(app.foldcade.language.SaveConflictFocus.KeepBoth)
+            as app.foldcade.language.Effect.ResolveSaveConflict
+        assertEquals(app.foldcade.language.SaveConflictAction.KeepBoth, both.action)
+    }
+
     private fun shell(host: PluginHost) = ShellController(SessionStore(MemoryPrefs()), host)
 
     /** L1, down to Settings, then down to [row]'s category and right into its rows, key by key. */

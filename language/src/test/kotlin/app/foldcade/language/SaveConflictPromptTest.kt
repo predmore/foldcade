@@ -3,7 +3,9 @@ package app.foldcade.language
 import java.time.Instant
 import java.time.ZoneOffset
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class SaveConflictPromptTest {
@@ -88,5 +90,34 @@ class SaveConflictPromptTest {
         assertEquals("18 Apr 2026, 09:12", whenLocal)
         assertEquals("32 KB", formatSaveSize(prompt.local.sizeBytes))
         assertEquals("30.5 KB", formatSaveSize(prompt.remote.sizeBytes))
+    }
+
+    @Test
+    fun thorBottomCardsShareOneWidthAndUseTheTightSpacing() {
+        // 1240 × 1080 px at 419 dpi is about 473 × 412 dp.
+        val fit = saveConflictFit(1240f / 2.61875f, 1080f / 2.61875f)
+        assertTrue(fit.compact)
+        assertEquals(1240f / 2.61875f, fit.edge * 2 + fit.cardWidth * 2 + fit.gap, 0.01f)
+        assertTrue("each card keeps room for a source and a stamp", fit.cardWidth >= 200f)
+    }
+
+    @Test
+    fun aWideShortPanelCapsTheCardsAndStaysCompact() {
+        val fit = saveConflictFit(1920f / 2.61875f, 1080f / 2.61875f)
+        assertTrue(fit.compact)
+        assertEquals((600f - fit.gap) / 2f, fit.cardWidth, 0.01f)
+    }
+
+    @Test
+    fun aTallPanelKeepsTheRoomySpacing() {
+        val fit = saveConflictFit(560f, 600f)
+        assertFalse(fit.compact)
+        assertEquals(28f, fit.edge)
+        assertEquals(560f - 56f, fit.cardWidth * 2 + fit.gap, 0.01f)
+    }
+
+    @Test
+    fun aNarrowPanelNeverGivesACardANegativeWidth() {
+        assertEquals(0f, saveConflictFit(20f, 300f).cardWidth)
     }
 }
