@@ -344,8 +344,8 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
     override fun onResume() {
         super.onResume()
         if (restartReplacedPlayer()) return
-        // A core installed in RetroArch a moment ago counts at the next launch.
-        foldcade.refreshRetroArchCores()
+        // A core installed in RetroArch counts for the order of players. Its launch reads them again anyway.
+        foldcade.refreshRetroArchCoresOnReturn()
         val displayId = display?.displayId
         val ending = displayId != null &&
             foldcade.externalPlay.sessionId != null &&

@@ -650,6 +650,21 @@ class FoldcadeApp : Application() {
     /** Reads RetroArch's cores again, off the main thread. */
     fun refreshRetroArchCores(): Job = pluginLoad.launch { readRetroArchCores() }
 
+    @Volatile
+    private var retroArchReadAt = 0L
+
+    /**
+     * [refreshRetroArchCores] when Foldcade comes back to the front, at most once a minute.
+     * Listing RetroArch's folder starts its process, so not on every return.
+     * A RetroArch launch reads them again regardless.
+     */
+    fun refreshRetroArchCoresOnReturn() {
+        val now = SystemClock.elapsedRealtime()
+        if (retroArchReadAt != 0L && now - retroArchReadAt < RETROARCH_RETURN_READ_MS) return
+        retroArchReadAt = now
+        refreshRetroArchCores()
+    }
+
     /**
      * Which cores each installed RetroArch has, for the players and for Settings.
      * Runs at start, when a RetroArch package changes, when Foldcade comes back
@@ -657,6 +672,7 @@ class FoldcadeApp : Application() {
      */
     suspend fun readRetroArchCores() = retroArchRead.withLock {
         val player = retroArchPlayer() ?: return@withLock
+        retroArchReadAt = SystemClock.elapsedRealtime()
         val installed = RETROARCH_PACKAGES.filter(::packageInstalled)
         val byPackage = installed.associateWith { retroArchCoreReader.read(it) }
         player.cores.update(byPackage)
@@ -1359,3 +1375,6 @@ class FoldcadeApp : Application() {
         }
     }
 }
+
+/** The shortest time between two reads of RetroArch's cores when Foldcade returns to the front. */
+private const val RETROARCH_RETURN_READ_MS = 60_000L
