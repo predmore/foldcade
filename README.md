@@ -108,6 +108,8 @@ Track how long you played and when, see your week in L1, and sort All by **Recen
 - **Afterglow:** True black and soft neon tiles, with drifting ribbons, embers, a still background, or plain black. Adjust the motion speed in Settings.
 - **Music:** Lanternlight, an original track, plays while you browse and fades when you launch a game. Adjust its volume or turn it off.
 
+**Settings › Look › Button labels** shows your current Confirm button. Open it to choose a different face button, or press Start to cancel. You can change it again at any time.
+
 <img src="docs/images/settings.webp" alt="Settings, with Look, Sound, Library, Saves, and System on the left, and Theme, Icons, Background, Motion, and Button labels on the right." width="640">
 
 ## Get Foldcade

@@ -1,5 +1,6 @@
 package app.foldcade
 
+import android.view.KeyEvent
 import app.foldcade.api.plugin.MemoryCredentialStore
 import app.foldcade.host.PluginHost
 import app.foldcade.language.AndroidShelf
@@ -17,11 +18,14 @@ import app.foldcade.language.MotionSpeed
 import app.foldcade.language.MusicTrack
 import app.foldcade.language.PromptKey
 import app.foldcade.language.Row
+import app.foldcade.language.SettingsCategory
+import app.foldcade.language.ThorStyle
 import app.foldcade.language.decodeHome
 import app.foldcade.language.defaultLanternlightTrack
 import app.foldcade.language.encodeHome
 import app.foldcade.language.leftRows
 import app.foldcade.language.panelRows
+import app.foldcade.language.rowText
 import app.foldcade.language.settingsCategories
 import app.foldcade.language.settingsRows
 import kotlinx.coroutines.Dispatchers
@@ -32,6 +36,79 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class SettingsPersistenceTest {
+    @Test
+    fun savedCalibrationCanBeChangedBackAndStillBeChangedAfterRestart() {
+        val prefs = MemoryPrefs()
+        SessionStore(prefs).saveButtonPrompt("controller", PromptKey.FaceB, dismissed = true)
+        val changed = shell(prefs)
+        changed.applyFacePrompt(ThorStyle.Standard, "controller", firstSession = true)
+        assertFalse(changed.model.offerButtonLabels)
+        assertTrue(Row.ButtonLabels in settingsRows(SettingsCategory.Personalization, changed.model))
+        changed.openSetting(Row.ButtonLabels)
+        changed.onMeaning(Meaning.Activate, HostScreen.Bottom)
+        assertTrue(changed.model.capturingConfirm)
+        changed.calibrateConfirm(PromptKey.FaceA)
+        assertFalse(changed.model.capturingConfirm)
+        assertEquals(KeyEvent.KEYCODE_BUTTON_A, changed.model.faceMap.confirmKey)
+        assertEquals(PromptKey.FaceA, SessionStore(prefs).buttonPromptConfirm("controller"))
+
+        val restored = shell(prefs)
+        restored.applyFacePrompt(ThorStyle.Standard, "controller", firstSession = false)
+        assertEquals(KeyEvent.KEYCODE_BUTTON_A, restored.model.faceMap.confirmKey)
+        assertEquals("Confirm: A", rowText(Row.ButtonLabels, restored.model).value)
+        restored.openSetting(Row.ButtonLabels)
+        restored.onMeaning(Meaning.Activate, HostScreen.Bottom)
+        assertTrue(restored.model.capturingConfirm)
+        restored.calibrateConfirm(PromptKey.FaceB)
+        assertEquals(PromptKey.FaceB, SessionStore(prefs).buttonPromptConfirm("controller"))
+    }
+
+    @Test
+    fun leavingCalibrationDisarmsItWithoutReplacingTheSavedButton() {
+        val cancellations: List<ShellController.() -> Unit> = listOf(
+            { onMeaning(Meaning.MoveUp, HostScreen.Bottom) },
+            { onMeaning(Meaning.MoveDown, HostScreen.Bottom) },
+            { onMeaning(Meaning.MoveLeft, HostScreen.Bottom) },
+            { onMeaning(Meaning.Back, HostScreen.Bottom) },
+            { onMeaning(Meaning.Menu, HostScreen.Bottom) },
+            { onMeaning(Meaning.LeftPanel, HostScreen.Bottom) },
+            { onMeaning(Meaning.RightPanel, HostScreen.Bottom) },
+            { touchSettingsCategory(1, model.settings!!.screen) },
+            { touchSettingsRow(0, model.settings!!.screen) },
+            { closeSettings() },
+        )
+        for ((index, cancel) in cancellations.withIndex()) {
+            val prefs = MemoryPrefs()
+            SessionStore(prefs).saveButtonPrompt("controller", PromptKey.FaceB, dismissed = false)
+            val changed = shell(prefs)
+            changed.applyFacePrompt(null, "controller", firstSession = false)
+            changed.openSetting(Row.ButtonLabels)
+            changed.onMeaning(Meaning.Activate, HostScreen.Bottom)
+            assertTrue("armed before cancellation $index", changed.model.capturingConfirm)
+            changed.cancel()
+            assertFalse("disarmed after cancellation $index", changed.model.capturingConfirm)
+            changed.calibrateConfirm(PromptKey.FaceA)
+            assertEquals("saved button after cancellation $index", PromptKey.FaceB, SessionStore(prefs).buttonPromptConfirm("controller"))
+        }
+    }
+
+    @Test
+    fun refreshingTheSameControllerKeepsCalibrationButChangingControllerCancelsIt() {
+        val prefs = MemoryPrefs()
+        SessionStore(prefs).saveButtonPrompt("controller", PromptKey.FaceB, dismissed = false)
+        val changed = shell(prefs)
+        changed.applyFacePrompt(ThorStyle.Standard, "controller", firstSession = false)
+        changed.openSetting(Row.ButtonLabels)
+        changed.onMeaning(Meaning.Activate, HostScreen.Bottom)
+        changed.applyFacePrompt(ThorStyle.Standard, "controller", firstSession = false)
+        assertTrue(changed.model.capturingConfirm)
+        changed.applyFacePrompt(ThorStyle.Standard, "other-controller", firstSession = false)
+        assertFalse(changed.model.capturingConfirm)
+        changed.calibrateConfirm(PromptKey.FaceA)
+        assertNull(SessionStore(prefs).buttonPromptConfirm("other-controller"))
+        assertEquals(PromptKey.FaceB, SessionStore(prefs).buttonPromptConfirm("controller"))
+    }
+
     @Test
     fun iconProviderSelectionPersistsIndependentlyOfTheBaseTheme() {
         val prefs = MemoryPrefs()

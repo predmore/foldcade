@@ -32,13 +32,16 @@ import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
 import app.foldcade.FoldcadeApp
 import app.foldcade.R
+import app.foldcade.language.Copy
 import app.foldcade.language.Effect
 import app.foldcade.language.HostScreen
+import app.foldcade.language.PromptKey
 import app.foldcade.language.Row
 import app.foldcade.language.SettingsCategory
 import app.foldcade.language.SettingsCopy
 import app.foldcade.language.SettingsPage
 import app.foldcade.language.Theme
+import app.foldcade.language.promptKeyOf
 import app.foldcade.language.rowControl
 import app.foldcade.language.rowText
 import app.foldcade.language.settingsCategories
@@ -65,7 +68,20 @@ internal fun SettingsScreen(app: FoldcadeApp, screen: HostScreen, page: Settings
             .background(theme.background)
             .padding(horizontal = 40.dp, vertical = 24.dp),
     ) {
-        Header(theme) { onEffect(app.shell.closeSettings()) }
+        val back = if (model.capturingConfirm) PromptKey.Start else promptKeyOf(model.faceMap.backKey) ?: PromptKey.FaceB
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(20.dp),
+        ) {
+            Header(theme, back) { onEffect(app.shell.closeSettings()) }
+            if (model.capturingConfirm) {
+                BasicText(
+                    Copy.buttonCalibrationHelp,
+                    modifier = Modifier.weight(1f),
+                    style = style(theme.muted, theme.style.type.hint, theme),
+                )
+            }
+        }
         Row(
             Modifier
                 .fillMaxSize()
@@ -197,7 +213,7 @@ private fun categoryIcon(category: SettingsCategory): Int = when (category) {
 }
 
 @Composable
-private fun Header(theme: Theme, onBack: () -> Unit) {
+private fun Header(theme: Theme, back: PromptKey, onBack: () -> Unit) {
     Row(
         Modifier
             .clip(RoundedCornerShape(50))
@@ -207,7 +223,7 @@ private fun Header(theme: Theme, onBack: () -> Unit) {
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(12.dp),
     ) {
-        Image(themeIconPainter(R.drawable.ic_btn_b), contentDescription = null, modifier = Modifier.size(32.dp))
+        PromptImage(promptGlyph(back), 32.dp)
         BasicText(SettingsCopy.title, style = style(theme.onBackground, theme.style.type.heroTitle, theme, bold = true))
     }
 }

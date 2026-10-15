@@ -170,6 +170,8 @@ object Copy {
     const val loading = "Loading"
     const val buttonLabels = "Button labels"
     const val pressConfirm = "Press Confirm"
+    const val setUp = "Set up"
+    const val buttonCalibrationHelp = "Press the face button you want for Confirm. Start cancels."
     const val confirm = "Confirm"
     const val back = "Back"
     const val missingPlayerBody = "Foldcade can’t start this game without it."
