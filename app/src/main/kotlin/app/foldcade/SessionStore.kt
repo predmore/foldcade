@@ -221,6 +221,13 @@ class SessionStore(private val prefs: SharedPreferences) : SaveMarks {
         }.commit()
     }
 
+    /** The tree the user chose so Foldcade can list [packageName]'s cores. */
+    fun retroArchCoresFolder(packageName: String): String? = prefs.getString(CORES_FOLDER_PREFIX + packageName, null)
+
+    fun setRetroArchCoresFolder(packageName: String, uri: String) {
+        prefs.edit().putString(CORES_FOLDER_PREFIX + packageName, uri).apply()
+    }
+
     /** True once Foldcade asked to see RetroArch's cores at a launch. Settings still offers it. */
     fun retroArchCoresOffered(): Boolean = prefs.getBoolean(KEY_RETROARCH_CORES_OFFERED, false)
 
@@ -446,6 +453,7 @@ class SessionStore(private val prefs: SharedPreferences) : SaveMarks {
         private const val KEY_RETROARCH_CORES_OFFERED = "retroarch_cores_offered"
         private const val LAST_START_PREFIX = "last_player_start:"
         private const val SAVE_AWAITS_LOAD_PREFIX = "save_awaits_load:"
+        private const val CORES_FOLDER_PREFIX = "retroarch_cores_folder:"
         private const val KEY_MOONLIGHT_PINS = "moonlight_pins"
         private const val KEY_DROIDDECK_PINS = "droiddeck_pins"
         private const val PIN_FIELD = "\u001f"

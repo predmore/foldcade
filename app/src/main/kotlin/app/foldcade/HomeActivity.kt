@@ -634,6 +634,8 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
             val apiGame = shelfGame(game)
             foldcade.launchWork.job = foldcade.scope.launch {
                 var notPlaced = false
+                // The core decides where RetroArch keeps the save, so it is fixed before saves are placed.
+                if (player is RetroArchPlayer) foldcade.readRetroArchCores()
                 val prepared = try {
                     val local = foldcade.plugins.ensureLocal(libraryId, apiGame)
                     withContext(Dispatchers.Main.immediate) { foldcade.shell.noteOnDevice(libraryId, remoteKey) }
@@ -652,7 +654,7 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
                     if (!launchCurrent(generation) || pendingLaunch != index) return@withContext
                     if (notPlaced) showSaveNotPlaced(game.title)
                     if (prepared == null) return@withContext
-                    finishLaunch(index, game, player, prepared.target, apiGame, generation, prepared.spots)
+                    finishLaunch(index, game, player, prepared.target, apiGame, generation, prepared.spots, coresRead = true)
                 }
             }
             return
@@ -677,11 +679,12 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
         generation: Int,
         spots: List<SaveSpot> = emptyList(),
         retroArchChecked: Boolean = false,
+        coresRead: Boolean = false,
     ) {
         if (!launchCurrent(generation)) return
         if (player is RetroArchPlayer && !retroArchChecked) {
             foldcade.launchWork.job = foldcade.scope.launch {
-                if (retroArchHeld(player, generation) { launchGame(index) }) return@launch
+                if (retroArchHeld(player, generation, readCores = !coresRead) { launchGame(index) }) return@launch
                 withContext(Dispatchers.Main.immediate) {
                     finishLaunch(index, game, player, target, apiGame, generation, spots, retroArchChecked = true)
                 }
@@ -888,7 +891,7 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
         val first = players.firstOrNull { installedPackage(it) != null }
         if (first is RetroArchPlayer) {
             val retry = { launchBackendGame(title, platformId, libraryId, game) }
-            if (retroArchHeld(first, generation, retry)) {
+            if (retroArchHeld(first, generation, retry = retry)) {
                 if (fetching) withContext(Dispatchers.Main.immediate) { foldcade.shell.endDownload(libraryId, game.remoteKey) }
                 return
             }
@@ -1755,13 +1758,19 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
 
     /**
      * What RetroArch needs before [player] starts: storage access, and a core
-     * for the system. Reads the cores again first, so a core installed a moment
-     * ago counts. Shows what is missing and returns true when the launch stops.
-     * [retry] starts the launch again after the cores offer.
+     * for the system. Reads the cores again first, unless this launch already
+     * did before placing saves, so a core installed a moment ago counts. Shows
+     * what is missing and returns true when the launch stops. [retry] starts
+     * the launch again after the cores offer.
      */
-    private suspend fun retroArchHeld(player: RetroArchPlayer, generation: Int, retry: () -> Unit): Boolean {
+    private suspend fun retroArchHeld(
+        player: RetroArchPlayer,
+        generation: Int,
+        readCores: Boolean = true,
+        retry: () -> Unit,
+    ): Boolean {
         val packageName = player.packageNames.firstOrNull(::packageInstalled) ?: return false
-        foldcade.readRetroArchCores()
+        if (readCores) foldcade.readRetroArchCores()
         val storage = try {
             retroArchStorage(packageManager.getPackageInfo(packageName, PackageManager.GET_PERMISSIONS))
         } catch (_: PackageManager.NameNotFoundException) {
@@ -1827,22 +1836,28 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
             // A folder without cores, such as one inside RetroArch's, would only ever read as none installed.
             val holdsCores = granted && foldcade.retroArchCoreReader.holdsCores(uri)
             withContext(Dispatchers.Main.immediate) {
-                if (!holdsCores) {
-                    if (granted) releaseGrant(uri, read)
+                if (!holdsCores || packageName == null) {
+                    if (granted) releaseUnlessUsed(uri.toString(), read)
                     cancelLaunches()
                     foldcade.shell.present(playerNotice(Copy.retroArchCoresTitle, Copy.retroArchWrongFolder, hostScreen()))
                     return@withContext
                 }
-                // The folder just chosen is the one read from now on.
-                contentResolver.persistedUriPermissions
-                    .filter { it.uri != uri && it.uri.authority == uri.authority }
-                    .forEach { releaseGrant(it.uri, read) }
+                // The folder just chosen is the one read from now on. A grant a library or save folder uses stays.
+                val previous = foldcade.store.retroArchCoresFolder(packageName)
+                foldcade.store.setRetroArchCoresFolder(packageName, uri.toString())
+                if (previous != null && previous != uri.toString()) releaseUnlessUsed(previous, read)
                 foldcade.store.setRetroArchCoresOffered()
             }
-            if (!holdsCores) return@launch
+            if (!holdsCores || packageName == null) return@launch
             foldcade.readRetroArchCores()
             withContext(Dispatchers.Main.immediate) { retryAfterRetroArchCores(retry) }
         }
+    }
+
+    private fun releaseUnlessUsed(uri: String, flags: Int) {
+        if (foldcade.store.folderTreeInUse(uri)) return
+        if (RetroArchCoreReader.packageOf(Uri.parse(uri))?.let(foldcade.store::retroArchCoresFolder) == uri) return
+        releaseGrant(Uri.parse(uri), flags)
     }
 
     private fun releaseGrant(uri: Uri, flags: Int) {
@@ -1896,7 +1911,11 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
         if (player is SaveFolderHolder) {
             val key = player.saveFolderId()
             val previous = foldcade.store.playerSaveFolder(key)
-            player.bindSaveFolder(uri.toString())
+            // Every player that shares the folder gets it, as at startup.
+            for (id in foldcade.plugins.playerIds()) {
+                val sharing = foldcade.plugins.player(id) ?: continue
+                if (sharing is SaveFolderHolder && sharing.saveFolderId() == key) sharing.bindSaveFolder(uri.toString())
+            }
             foldcade.store.setPlayerSaveFolder(key, uri.toString())
             if (previous != null && previous != uri.toString()) {
                 foldcade.releaseUnusedFolderGrant(previous, read or write)

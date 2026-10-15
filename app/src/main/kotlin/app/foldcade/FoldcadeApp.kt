@@ -639,7 +639,7 @@ class FoldcadeApp : Application() {
         rank = ::playerRank,
     )
 
-    internal val retroArchCoreReader: RetroArchCoreReader by lazy { RetroArchCoreReader(this) }
+    internal val retroArchCoreReader: RetroArchCoreReader by lazy { RetroArchCoreReader(this, store::retroArchCoresFolder) }
     private val retroArchRead = Mutex()
 
     /** Any RetroArch player. They share one view of the cores. */

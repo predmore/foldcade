@@ -23,7 +23,10 @@ import app.foldcade.plugins.retroarch.RetroArchPlayer
  * Its reply is a broadcast any app could send, and Android 13 cannot tell who
  * sent it, so Foldcade does not use it.
  */
-internal class RetroArchCoreReader(private val context: Context) {
+internal class RetroArchCoreReader(
+    private val context: Context,
+    private val chosenFolder: (packageName: String) -> String?,
+) {
     fun read(packageName: String): Set<String>? = fromGrantedFolder(packageName)
 
     /** True when [tree] lists RetroArch's cores: its data folder, or `cores/` itself. */
@@ -34,11 +37,12 @@ internal class RetroArchCoreReader(private val context: Context) {
         false
     }
 
-    /** The grant the user gave for [packageName]'s documents provider, if any. */
-    fun grantedFolder(packageName: String): Uri? =
-        context.contentResolver.persistedUriPermissions
-            .firstOrNull { it.isReadPermission && it.uri.authority == documentsAuthority(packageName) }
-            ?.uri
+    /** The folder the user chose for [packageName]'s cores, while Foldcade still holds its grant. */
+    fun grantedFolder(packageName: String): Uri? {
+        val chosen = chosenFolder(packageName)?.let(Uri::parse) ?: return null
+        val held = context.contentResolver.persistedUriPermissions.any { it.isReadPermission && it.uri == chosen }
+        return chosen.takeIf { held && it.authority == documentsAuthority(packageName) }
+    }
 
     private fun fromGrantedFolder(packageName: String): Set<String>? {
         val tree = grantedFolder(packageName) ?: return null
