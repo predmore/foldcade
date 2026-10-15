@@ -352,9 +352,11 @@ fun PanelHost(activity: FoldcadeHomeActivity, displays: Displays) {
             val conflict = model.saveConflict
             if (conflict != null && screen == HostScreen.Top) SaveConflictTop(conflict)
             if (conflict != null && screen == HostScreen.Bottom) {
-                SaveConflictBottom(conflict) { focus ->
-                    activity.dispatch(app.shell.touchSaveConflict(focus))
-                }
+                SaveConflictBottom(
+                    conflict,
+                    onFocus = { focus -> activity.dispatch(app.shell.touchSaveConflict(focus)) },
+                    onLater = { activity.dispatch(app.shell.touchSaveConflictLater()) },
+                )
             }
         }
     }
