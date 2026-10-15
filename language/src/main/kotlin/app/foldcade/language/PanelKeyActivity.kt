@@ -84,6 +84,8 @@ abstract class PanelKeyActivity : ComponentActivity() {
         if (onInputKey(meaningOf(keyCode, 0, faceMap(), homeKeys()), keyCode)) return true
         if (prompt != null && prompt.face && event.repeatCount == 0 && capturingConfirm()) {
             onCalibrateConfirm(prompt)
+            // Holding the newly chosen Confirm must not immediately arm calibration again.
+            capturedKeys.capture(keyCode)
             return true
         }
         if (capturedKeys.swallows(keyCode, event.repeatCount, homeKeys().guardsHeldKeys || capturingHold())) return true
