@@ -29,6 +29,7 @@ import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -40,6 +41,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.layout.layout
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.graphics.Brush
@@ -49,6 +51,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.IntOffset
+import androidx.compose.ui.unit.isSpecified
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.zIndex
 import app.foldcade.FoldcadeApp
@@ -162,12 +165,12 @@ private fun Island(
     if (live != null) shown = live
     val panel = shown
     val inset = maxWidth * design.metrics.insetFraction
-    // The closed pill fits what it shows. It is measured closed, so the status the
-    // open card adds does not widen it, and it eases when a bell or a digit comes or goes.
-    var fitWidth by remember(side) { mutableStateOf(Dp.Unspecified) }
+    // The closed pill fits its row. Whatever comes or goes in the row opens or closes its
+    // place, and the pill follows. The status the open card adds opens with the card.
+    var rowWidth by remember(side) { mutableStateOf(Dp.Unspecified) }
     val pillHeight = 44.dp
-    val pillWidth = fittedWidth(fitWidth, scale) ?: pillHeight
-    val closed by rememberUpdatedState(progress == 0f)
+    val pillWidth = rowWidth.takeIf { it.isSpecified } ?: pillHeight
+    val edge = if (side == Side.Left) Alignment.Start else Alignment.End
     val openWidth = maxWidth * 0.48f
     // The open card fits its rows, up to most of the screen. A taller menu scrolls.
     // A new level or a new notice changes the rows, and the card eases to the new height.
@@ -242,11 +245,12 @@ private fun Island(
     ) {
         // The chip leads on both sides, so the clock is the last thing on the right.
         // The chip art carries its own margin. The text end gets a little more.
+        // The row holds to the card's outer edge, so the clock stays put while the card grows.
         Row(
             Modifier
                 .align(if (side == Side.Left) Alignment.TopStart else Alignment.TopEnd)
-                .wrapContentWidth(unbounded = true)
-                .onSizeChanged { if (closed) fitWidth = with(density) { it.width.toDp() } }
+                .wrapContentWidth(edge, unbounded = true)
+                .onSizeChanged { rowWidth = with(density) { it.width.toDp() } }
                 .height(pillHeight)
                 .padding(start = 8.dp, end = 14.dp)
                 .graphicsLayer { alpha = 1f - actingShown },
@@ -259,8 +263,8 @@ private fun Island(
             } else {
                 ShoulderChip(R.drawable.ic_btn_r1, R.drawable.ic_btn_r1_filled, progress, "R1")
                 // The status stays while R1 is open, and says more: the date, the battery
-                // percent, and Bluetooth. The bell leaves, since the notices are listed below it.
-                StatusIcons(app, progress)
+                // percent, and Bluetooth. The bell stays too, since the notices are still there.
+                StatusIcons(app, readOpening, scale)
             }
         }
         if (side == Side.Left && actingShown > 0f) {
@@ -272,7 +276,7 @@ private fun Island(
             Column(
                 Modifier
                     .fillMaxHeight()
-                    .wrapContentWidth(if (side == Side.Left) Alignment.Start else Alignment.End, unbounded = true)
+                    .wrapContentWidth(edge, unbounded = true)
                     .width(openWidth)
                     .padding(start = 6.dp, end = 6.dp, top = pillHeight, bottom = MENU_BOTTOM_DP.dp)
                     // The scroll clips. This keeps the focus ring's glow on every row inside it.
@@ -352,29 +356,12 @@ private fun islandProgress(
                     anim.animateTo(target, spec)
                 }
             }
-            if (abs(anim.value - target) > 0.02f) anim.snapTo(target)
         }
+        // Every run lands on its target, so a closed island reads exactly 0.
+        if (anim.value != target) anim.snapTo(target)
         if (handoff && anim.value <= 0.02f) onHandoff()
     }
     return if (snap) target else anim.value
-}
-
-/** Null until the pill is first measured. The first width lands at once, later ones ease. */
-@Composable
-private fun fittedWidth(target: Dp, scale: Float): Dp? {
-    val motion = LocalFoldTheme.current.theme.motion
-    val anim = remember { androidx.compose.animation.core.Animatable(Float.NaN) }
-    LaunchedEffect(target) {
-        if (target == Dp.Unspecified) return@LaunchedEffect
-        if (anim.value.isNaN()) {
-            anim.snapTo(target.value)
-        } else {
-            kotlinx.coroutines.withContext(SteadyMenu) {
-                anim.animateTo(target.value, motion.arrive(motion.durationFocus, scale))
-            }
-        }
-    }
-    return anim.value.takeUnless { it.isNaN() }?.dp
 }
 
 /**
@@ -467,10 +454,10 @@ internal fun bellStatusIcon(count: Int): Int? = when {
 
 /**
  * Time, battery, Wi-Fi, and the bell. As R1 opens ([open] toward 1) the date,
- * the battery percent, and Bluetooth fade in, and the bell fades out.
+ * the battery percent, and Bluetooth open their places beside the others and fade in.
  */
 @Composable
-private fun StatusIcons(app: FoldcadeApp, open: Float) {
+private fun StatusIcons(app: FoldcadeApp, open: () -> Float, scale: Float) {
     val theme = LocalFoldTheme.current.theme
     val context = LocalContext.current
     var status by remember { mutableStateOf(readDeviceStatus(context)) }
@@ -481,28 +468,53 @@ private fun StatusIcons(app: FoldcadeApp, open: Float) {
         }
     }
     // Battery, Wi-Fi, and Bluetooth change between minutes. Opening R1 reads them again.
-    LaunchedEffect(open > 0f) {
-        if (open > 0f) status = readDeviceStatus(context)
+    val opened by remember { derivedStateOf { open() > 0f } }
+    LaunchedEffect(opened) {
+        if (opened) status = readDeviceStatus(context)
     }
+    // The bell opens its place as the first notice comes and closes it after the last,
+    // still showing the count it had.
+    val notices = app.shell.model.notices.size
+    var bell by remember { mutableStateOf<Int?>(null) }
+    bellStatusIcon(notices)?.let { bell = it }
+    val ringing = eased(if (notices > 0) 1f else 0f, theme.motion.durationFocus, scale)
     val style = TextStyle(color = theme.onBackground, fontSize = LocalFoldTheme.current.theme.style.type.hint, fontFamily = theme.font)
     val muted = style.copy(color = theme.muted)
     // Read from the edge in: the clock, then the date, battery, Wi-Fi, Bluetooth, and the bell.
-    val bell = bellStatusIcon(app.shell.model.notices.size)
-    if (bell != null && open < 1f) {
-        Box(Modifier.graphicsLayer { alpha = 1f - open }) { Glyph(bell, null) }
+    // Each carries the gap after it, so a place opening or closing takes its gap along.
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        bell?.let { art -> StatusPlace({ ringing.value }) { Glyph(art, null) } }
+        if (opened && status.bluetooth) StatusPlace(open) { Glyph(R.drawable.ic_status_bluetooth, null) }
+        StatusPlace { Glyph(wifiStatusIcon(status.network, status.wifiBars), null) }
+        if (opened) StatusPlace(open) { BasicText(text = "${status.batteryPercent}%", style = style) }
+        StatusPlace { Glyph(batteryStatusIcon(status.batteryPercent, status.charging), null) }
+        if (opened && status.date.isNotEmpty()) StatusPlace(open) { BasicText(text = status.date, style = muted) }
+        BasicText(text = status.time, style = style)
     }
-    if (open > 0f && status.bluetooth) {
-        Box(Modifier.graphicsLayer { alpha = open }) { Glyph(R.drawable.ic_status_bluetooth, null) }
+}
+
+/**
+ * One status item and the gap after it. [shown] opens its place from nothing to its full
+ * width and fades it in. The item holds to the place's end, so it stays still while its
+ * place opens beside the clock, instead of sliding.
+ */
+@Composable
+private fun StatusPlace(shown: (() -> Float)? = null, content: @Composable () -> Unit) {
+    val place = if (shown == null) {
+        Modifier
+    } else {
+        Modifier
+            .graphicsLayer {
+                alpha = shown()
+                clip = true
+            }
+            .layout { measurable, constraints ->
+                val placeable = measurable.measure(constraints)
+                val width = (placeable.width * shown().coerceIn(0f, 1f)).roundToInt()
+                layout(width, placeable.height) { placeable.place(width - placeable.width, 0) }
+            }
     }
-    Glyph(wifiStatusIcon(status.network, status.wifiBars), null)
-    if (open > 0f) {
-        BasicText(text = "${status.batteryPercent}%", style = style, modifier = Modifier.graphicsLayer { alpha = open })
-    }
-    Glyph(batteryStatusIcon(status.batteryPercent, status.charging), null)
-    if (open > 0f && status.date.isNotEmpty()) {
-        BasicText(text = status.date, style = muted, modifier = Modifier.graphicsLayer { alpha = open })
-    }
-    BasicText(text = status.time, style = style)
+    Box(place.padding(end = 8.dp), contentAlignment = Alignment.Center) { content() }
 }
 
 /**
