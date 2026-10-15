@@ -1,6 +1,7 @@
 package app.foldcade
 
 import app.foldcade.language.HOME_ALL
+import app.foldcade.language.HOME_FAVORITES
 import app.foldcade.language.HomeBoard
 import app.foldcade.language.HomeFolder
 import app.foldcade.language.HomeItem
@@ -38,6 +39,7 @@ class HomeMergeDuringMoveTest {
                 threeDs to HomeFolder(threeDs, "Nintendo 3DS", platformId = "nintendo-3ds", slots = listOf(zelda.id, mario.id)),
             ),
             recentAfter = Long.MAX_VALUE,
+            retired = setOf(HOME_FAVORITES),
         )
         return HomeSession(encodeHome(board)).also { it.remerge(emptyList(), emptyList(), listOf(zelda, mario), platforms) }
     }

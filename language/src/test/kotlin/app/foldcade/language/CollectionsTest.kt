@@ -61,6 +61,61 @@ class CollectionsTest {
     }
 
     @Test
+    fun favoritesWaitsOnAFreshBoardAndSwitchingItOffKeepsItsGames() {
+        // A board loads through withFavorites before any library reports, so Favorites leads.
+        var board = mergeHome(withFavorites(HomeBoard()), catalog, platforms)
+        assertEquals(1, board.slots.indexOf(HOME_FAVORITES))
+        assertTrue(groupOnHome(board, HOME_FAVORITES))
+        assertTrue(board.folders.getValue(HOME_FAVORITES).slots.isEmpty())
+        board = toggleFavorite(board, zelda.id)
+        // Off, it leaves the root and keeps Zelda. No load or scan brings it back.
+        val off = setGroupOnHome(board, HOME_FAVORITES, false, catalog, platforms)
+        assertFalse(groupOnHome(off, HOME_FAVORITES))
+        assertTrue(HOME_FAVORITES in off.retired)
+        assertTrue(favorite(off, zelda.id))
+        assertEquals(off, withFavorites(off))
+        assertFalse(HOME_FAVORITES in mergeHome(off, catalog, platforms).slots)
+        assertFalse(HOME_FAVORITES in withFavorites(decodeHome(encodeHome(off))).slots)
+        // Favorite still files a game in it, out of sight.
+        val loved = toggleFavorite(off, mario.id)
+        assertFalse(groupOnHome(loved, HOME_FAVORITES))
+        assertTrue(favorite(loved, mario.id))
+        // On, it is back in its old slot with both.
+        val on = setGroupOnHome(loved, HOME_FAVORITES, true, catalog, platforms)
+        assertEquals(1, on.slots.indexOf(HOME_FAVORITES))
+        assertFalse(HOME_FAVORITES in on.retired)
+        assertEquals(listOf(zelda.id, mario.id), on.folders.getValue(HOME_FAVORITES).slots)
+        // X on its tile does what the switch does, rather than deleting it as it would a collection.
+        assertEquals(off, removeFolder(board, HOME_FAVORITES))
+        // Switched off before it was ever made, the first favorite makes it off Home.
+        val never = setGroupOnHome(mergeHome(HomeBoard(), catalog, platforms), HOME_FAVORITES, false, catalog, platforms)
+        assertTrue(HOME_FAVORITES in never.retired)
+        val first = toggleFavorite(never, kirby.id)
+        assertFalse(groupOnHome(first, HOME_FAVORITES))
+        assertTrue(favorite(first, kirby.id))
+    }
+
+    @Test
+    fun recentlyPlayedSwitchesOnWithPlaysFromBeforeAndOffUntilSwitchedBack() {
+        val old = rom("lib:local:old", "3ds", lastPlayed = 100L)
+        val board = mergeHome(HomeBoard(recentAfter = 500L), listOf(old, kirby), platforms)
+        assertFalse(HOME_RECENT in board.folders)
+        val on = setGroupOnHome(board, HOME_RECENT, true, listOf(old, kirby), platforms)
+        assertTrue(groupOnHome(on, HOME_RECENT))
+        assertEquals(listOf(old.id), on.folders.getValue(HOME_RECENT).slots)
+        val at = on.slots.indexOf(HOME_RECENT)
+        val off = setGroupOnHome(on, HOME_RECENT, false, listOf(old, kirby), platforms)
+        assertTrue(HOME_RECENT in off.retired)
+        assertFalse(HOME_RECENT in mergeHome(off, listOf(old.copy(lastPlayedMillis = 700L), kirby), platforms).slots)
+        val played = listOf(old, kirby.copy(lastPlayedMillis = 800L))
+        val back = setGroupOnHome(off, HOME_RECENT, true, played, platforms)
+        assertEquals(at, back.slots.indexOf(HOME_RECENT))
+        assertEquals(listOf(kirby.id, old.id), back.folders.getValue(HOME_RECENT).slots)
+        // Only these two groups switch.
+        assertEquals(on, setGroupOnHome(on, threeDs, false, listOf(old, kirby), platforms))
+    }
+
+    @Test
     fun aCollectionWithNothingInItStays() {
         val made = newCollection(mergeHome(HomeBoard(), catalog, platforms), "home.user.1", "Later")
         val again = mergeHome(made, emptyList(), platforms)

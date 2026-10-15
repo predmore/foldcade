@@ -2,6 +2,7 @@ package app.foldcade
 
 import app.foldcade.api.plugin.MemoryCredentialStore
 import app.foldcade.host.PluginHost
+import app.foldcade.language.HOME_FAVORITES
 import app.foldcade.language.*
 import kotlinx.coroutines.Dispatchers
 import org.junit.After
@@ -137,7 +138,8 @@ class HomeRecoveryHostTest {
         shell.onMeaning(Meaning.Options, HostScreen.Bottom)
         choose(shell, Row.ShowHidden)
         shell.goHome()
-        focus(shell, 1)
+        // Past Favorites to Android Apps.
+        focus(shell, 2)
         shell.onMeaning(Meaning.Activate, HostScreen.Bottom)
         shell.onMeaning(Meaning.Options, HostScreen.Bottom)
         choose(shell, Row.RemoveTile)
@@ -218,7 +220,7 @@ class HomeRecoveryHostTest {
         val folder = HomeFolder(HOME_ANDROID_APPS, Copy.androidAppsFolder, bucket = HomeKind.AndroidApp,
             slots = listOf(androidHomeId("notes"), null, androidHomeId("browser")))
         store.saveHomeBoard(encodeHome(HomeBoard(slots = listOf(HOME_ALL, null, folder.id),
-            folders = mapOf(folder.id to folder), emulatorsFiled = true)))
+            folders = mapOf(folder.id to folder), emulatorsFiled = true, retired = setOf(HOME_FAVORITES))))
         val shell = shell()
         shell.setInstalledApps(listOf(app, other), emptySet())
         val saved = store.homeBoardRaw()

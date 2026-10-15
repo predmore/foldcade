@@ -209,7 +209,7 @@ class MoveFeelTest {
         val game = TileActions(move = true, collections = emptyList(), favorite = false, tidyBoard = true)
         assertFalse(Row.Tidy in actionRows(game, null))
         val model = PickerModel(count = 4, rowsPerPage = 3, tileActions = game)
-        assertEquals(listOf(Row.MoveTile, Row.AddToCollection, Row.Favorite, Row.Tidy, Row.AddNewGames, Row.HiddenApps), editHomeRows(model))
+        assertEquals(listOf(Row.MoveTile, Row.AddToCollection, Row.Favorite, Row.Tidy, Row.FavoritesOnHome, Row.RecentOnHome, Row.AddNewGames, Row.HiddenApps), editHomeRows(model))
         assertEquals(1, editHomeRows(model.copy(tileActions = slot)).count { it == Row.Tidy })
         assertFalse(Row.Tidy in editHomeRows(model.copy(tileActions = game.copy(tidyBoard = false))))
         // A runs it, and it has no chord: Y stays Move.

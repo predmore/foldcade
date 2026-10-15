@@ -7,6 +7,9 @@ import app.foldcade.language.promptKeyOf
 import app.foldcade.language.assignedShelf
 import app.foldcade.language.HOME_ANDROID_GAMES
 import app.foldcade.language.HOME_ANDROID_APPS
+import app.foldcade.language.HOME_FAVORITES
+import app.foldcade.language.HOME_RECENT
+import app.foldcade.language.groupOnHome
 import app.foldcade.language.ArtMatch
 import app.foldcade.language.ArtKind
 import app.foldcade.language.ArtPickerState
@@ -701,6 +704,7 @@ class ShellController(
                 applyHomeAddNew(next.addNewToHome)
                 null
             }
+            is Effect.GroupOnHome -> changeHome { home.setGroupOnHome(effect.id, effect.on, it) }
             Effect.GoHome -> {
                 goHome()
                 null
@@ -2490,6 +2494,8 @@ class ShellController(
                     lastColumn = if (count == 0) 0 else GridStrip.column(cell),
                 ),
                 addNewToHome = home.board.addNewToHome,
+                favoritesOnHome = groupOnHome(home.board, HOME_FAVORITES),
+                recentOnHome = groupOnHome(home.board, HOME_RECENT),
                 shelfEpoch = model.shelfEpoch + 1,
                 gridKind = GridKind.Games,
                 emptyGrid = EmptyGrid.None,
@@ -2632,6 +2638,8 @@ class ShellController(
         return PickerModel(
             count = home.visibleCount(),
             addNewToHome = home.board.addNewToHome,
+            favoritesOnHome = groupOnHome(home.board, HOME_FAVORITES),
+            recentOnHome = groupOnHome(home.board, HOME_RECENT),
             rowsPerPage = 2,
             primaryIsTop = store.session.defaultDisplayIsTop,
             folderGrantPending = store.folderGrantPending(),
