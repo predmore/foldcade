@@ -4,14 +4,18 @@ name: Release
 # versionCode is git rev-list --count HEAD, passed as -PfoldcadeVersionCode.
 # A push that changes versionName in app/build.gradle.kts also creates tag
 # vX.Y.Z and a non-prerelease GitHub release.
+# A push of tag v0.x.y (v0.1.0 and the same shape) signs again and publishes
+# a full GitHub Release that is not a pre-release. The asset stays
+# foldcade.apk. That run does not move the rolling pre-release tag.
 # Pull requests and workflow_dispatch build an unsigned release to prove that
-# versionCode. They do not publish. Signing runs on push to main only.
-# This workflow does not boot an emulator.
-# Stable releases are cut by the merge. This workflow does not run on tag pushes.
+# versionCode. They do not publish. Signing runs on push to main and on a
+# v0.x.y tag. This workflow does not boot an emulator.
 on:
   push:
     branches:
       - main
+    tags:
+      - "v0.*"
   pull_request:
   workflow_dispatch:
 
@@ -90,6 +94,7 @@ jobs:
 
   release:
     name: signed release APK
+    # Push covers main and a v0.* tag. Pull requests skip this job.
     if: github.event_name == 'push'
     needs: test
     runs-on: ubuntu-24.04

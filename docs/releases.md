@@ -2,7 +2,7 @@
 
 `versionName` in `app/build.gradle.kts` is the stable release name. The `versionCode` in that file is the local fallback. A merge to `main` computes `versionCode` with `git rev-list --count HEAD` and publishes a pre-release. A merge that changes `versionName` also creates tag `vX.Y.Z` and a stable GitHub release. That stable build uses the same computed code, so it is higher than every earlier pre-release. An existing tag is left in place.
 
-`versionName` must be `X.Y.Z`, so the tag is `vX.Y.Z`. A `versionCode`-only edit is not a stable bump. Pull requests run `.github/release/check-version-bump.sh` to enforce that. Publishing runs `.github/release/publish.sh` from the Release workflow, and only on a push to `main`.
+`versionName` must be `X.Y.Z`, so the tag is `vX.Y.Z`. A `versionCode`-only edit is not a stable bump. Pull requests run `.github/release/check-version-bump.sh` to enforce that. Publishing runs `.github/release/publish.sh` from the Release workflow on a push to `main`, and on a push of a `v0.x.y` tag that matches `versionName`.
 
 A debug install is `app.foldcade.debug`. The signed release stays `app.foldcade`, so the two do not replace each other.
 
@@ -75,6 +75,8 @@ On a push to `main`, the workflow runs unit tests, then a signed release. It ref
 
 `publish.sh` drops the old `pre-release` tag and creates it again on the built commit before the APK upload, so GitHub's source archive matches the binary. The new pre-release stays a draft until the APK is uploaded, then it is marked a pre-release and not latest. If `versionName` changed, the script also creates tag `vX.Y.Z` and a non-prerelease release. An existing tag that points somewhere else is not recreated. A tag that already points at this commit is left in place, and a missing `foldcade.apk` is filled in.
 
-Pull requests and `workflow_dispatch` assemble an unsigned release with `-PfoldcadeAllowUnsigned=true` to prove that `versionCode`. They do not publish. The workflow does not boot an emulator, and it does not run on tag pushes. Stable releases are cut by the merge to `main`.
+A push of tag `v0.x.y` whose name matches `versionName` signs the same way and publishes a full GitHub release. That release is not a pre-release. The asset name stays `foldcade.apk`, which is what Obtainium's `^foldcade\.apk$` filter matches. Notes committed at `.github/release/notes/v0.x.y.md` are the release body. This tag run does not delete or move the rolling `pre-release` tag. `versionCode` stays `git rev-list --count HEAD`, so it matches the pre-release built from that same commit and is higher than a pre-release on any older commit.
+
+Pull requests and `workflow_dispatch` assemble an unsigned release with `-PfoldcadeAllowUnsigned=true` to prove that `versionCode`. They do not publish. The workflow does not boot an emulator. Signing is skipped on pull requests and runs on a push to `main` and on a `v0.x.y` tag.
 
 The other workflows are in [architecture.md](architecture.md).
