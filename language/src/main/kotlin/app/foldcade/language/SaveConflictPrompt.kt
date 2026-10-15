@@ -91,6 +91,21 @@ fun applySaveConflict(
     }
 }
 
+/**
+ * Spacing for the bottom-screen choice, in dp. The two cards always share one [cardWidth].
+ * A short panel, such as Thor's 1240 × 1080 bottom display at about 412 dp, is [compact],
+ * so both cards, Keep both and Decide later fit without scrolling.
+ */
+data class SaveConflictFit(val edge: Float, val gap: Float, val cardWidth: Float, val compact: Boolean)
+
+fun saveConflictFit(width: Float, height: Float): SaveConflictFit {
+    val compact = height < 520f
+    val edge = if (compact) 16f else 28f
+    val gap = if (compact) 14f else 28f
+    val row = (width - edge * 2f).coerceIn(0f, 600f)
+    return SaveConflictFit(edge, gap, ((row - gap) / 2f).coerceAtLeast(0f), compact)
+}
+
 /** The two copies a debug capture shows, so the bottom screen can be opened without a server. */
 fun previewSaveConflict(): SaveConflictPrompt = SaveConflictPrompt(
     id = "preview",
