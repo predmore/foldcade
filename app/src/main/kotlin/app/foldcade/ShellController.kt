@@ -1827,6 +1827,12 @@ class ShellController(
         return onMeaning(Meaning.Activate, HostScreen.Bottom)
     }
 
+    /** A touch on Decide later, the same as B. Both copies stay and the prompt returns next launch. */
+    fun touchSaveConflictLater(): Effect? {
+        if (model.saveConflict == null) return null
+        return onMeaning(Meaning.Back, HostScreen.Bottom)
+    }
+
     fun focusedGame(): ShelfGame? = when {
         find != null -> foundGame()
         showingHome() -> focusedHomeFace()?.let(::homeShelf)
