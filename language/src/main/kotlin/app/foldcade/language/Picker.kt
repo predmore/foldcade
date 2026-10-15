@@ -912,6 +912,8 @@ data class PickerModel(
     val focus: GridFocus = GridFocus(),
     /** The first column the grid showed. The next focus scrolls from here, see [shownFirstColumn]. */
     val firstColumn: Int = 0,
+    /** Columns on screen. The panel showing the grid sets it from its width, see [GridStrip]. */
+    val columnsShown: Int = Metrics.columns,
     val panel: SidePanel? = null,
     val menuRows: List<MenuRows> = emptyList(),
     /** The full-screen settings page. Null while it is closed. */
@@ -1284,7 +1286,7 @@ private fun land(focus: GridFocus, index: Int, model: PickerModel): GridFocus {
 /** Up from the top row reaches the pill on that side of the screen: L1 from the left half, R1 from the right. */
 private fun upToChrome(focus: GridFocus, column: Int, model: PickerModel): GridFocus {
     val onScreen = column - shownFirstColumn(model)
-    val chrome = if (onScreen < Metrics.columns / 2) Chrome.LeftIsland else Chrome.StatusCluster
+    val chrome = if (onScreen < model.columnsShown / 2) Chrome.LeftIsland else Chrome.StatusCluster
     return focus.copy(chrome = chrome, lastColumn = column)
 }
 
@@ -1299,7 +1301,7 @@ private fun page(focus: GridFocus, towardEnd: Boolean, model: PickerModel, lastC
     if (model.count <= 0 || focus.chrome != null) return focus
     val index = focus.cellIndex
     val column = GridStrip.column(index)
-    val step = if (towardEnd) Metrics.columns else -Metrics.columns
+    val step = if (towardEnd) model.columnsShown else -model.columnsShown
     val last = (lastColumn ?: (reachColumns(model) - 1)).coerceIn(0, reachColumns(model) - 1)
     if (towardEnd && column >= last) return focus
     val target = (column + step).coerceIn(0, last)

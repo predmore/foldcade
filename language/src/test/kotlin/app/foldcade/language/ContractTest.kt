@@ -150,21 +150,48 @@ class ContractTest {
     @Test
     fun theStripScrollsOnlyAsFarAsTheCursorGoes() {
         val count = 7 * Metrics.rows
-        assertEquals(0, GridStrip.follow(first = 0, column = Metrics.columns - 1, count = count))
-        assertEquals(1, GridStrip.follow(first = 0, column = Metrics.columns, count = count))
+        assertEquals(0, GridStrip.follow(first = 0, column = Metrics.columns - 1, count = count, shown = Metrics.columns))
+        assertEquals(1, GridStrip.follow(first = 0, column = Metrics.columns, count = count, shown = Metrics.columns))
         // Back left, the screen holds until the cursor reaches its first column.
-        assertEquals(3, GridStrip.follow(first = 3, column = 4, count = count))
-        assertEquals(2, GridStrip.follow(first = 3, column = 2, count = count))
+        assertEquals(3, GridStrip.follow(first = 3, column = 4, count = count, shown = Metrics.columns))
+        assertEquals(2, GridStrip.follow(first = 3, column = 2, count = count, shown = Metrics.columns))
         // Never past the screen with the last tiles at its left edge.
-        assertEquals(6, GridStrip.follow(first = 9, column = 9, count = count))
+        assertEquals(6, GridStrip.follow(first = 9, column = 9, count = count, shown = Metrics.columns))
         // A strip that fits scrolls only once the cursor walks off its screen into the empty columns.
-        assertEquals(0, GridStrip.follow(first = 0, column = 3, count = 6))
-        assertEquals(1, GridStrip.follow(first = 0, column = 4, count = 6))
+        assertEquals(0, GridStrip.follow(first = 0, column = 3, count = 6, shown = Metrics.columns))
+        assertEquals(1, GridStrip.follow(first = 0, column = 4, count = 6, shown = Metrics.columns))
         // Up reads the pill from where the column sits on screen, not along the strip.
         val scrolled = PickerModel(count = count, rowsPerPage = 1, firstColumn = 3, focus = GridFocus(GridStrip.index(4, 0), 4))
         assertEquals(Chrome.LeftIsland, reduce(scrolled, Meaning.MoveUp).first.focus.chrome)
         val far = scrolled.copy(focus = GridFocus(GridStrip.index(6, 0), 6))
         assertEquals(Chrome.StatusCluster, reduce(far, Meaning.MoveUp).first.focus.chrome)
+    }
+
+    @Test
+    fun aWidePanelShowsMoreColumnsOfTheSameRows() {
+        val count = 12 * Metrics.rows
+        val wide = PickerModel(count = count, rowsPerPage = 1, columnsShown = 8)
+        // Eight columns on screen: the strip holds still until the cursor walks past the eighth.
+        assertEquals(0, GridStrip.follow(first = 0, column = 7, count = count, shown = 8))
+        assertEquals(1, GridStrip.follow(first = 0, column = 8, count = count, shown = 8))
+        // Never past the screen whose last column is the last the cursor can reach.
+        assertEquals(GridStrip.reachColumns(count) - 8, GridStrip.follow(first = 20, column = 14, count = count, shown = 8))
+        val moved = wide.copy(focus = GridFocus(GridStrip.index(8, 0), 8))
+        assertEquals(1, shownFirstColumn(moved))
+        // A tile keeps its row and column: the same index sits in the same place as on a narrow panel.
+        assertEquals(GridStrip.index(8, 0), moved.focus.cellIndex)
+        // A swipe moves a screen of the panel's own columns.
+        assertEquals(GridStrip.index(8, 0), reduce(wide, Meaning.PageTowardEnd).first.focus.cellIndex)
+        // Up reads the pill from the half of this panel the column is in.
+        val leftHalf = wide.copy(focus = GridFocus(GridStrip.index(3, 0), 3))
+        assertEquals(Chrome.LeftIsland, reduce(leftHalf, Meaning.MoveUp).first.focus.chrome)
+        val rightHalf = wide.copy(focus = GridFocus(GridStrip.index(4, 0), 4))
+        assertEquals(Chrome.StatusCluster, reduce(rightHalf, Meaning.MoveUp).first.focus.chrome)
+        // Moving to a narrower panel scrolls only as far as keeps the cursor on screen.
+        val far = wide.copy(focus = GridFocus(GridStrip.index(7, 0), 7))
+        assertEquals(0, shownFirstColumn(far))
+        assertEquals(7 - Metrics.columns + 1, shownFirstColumn(far.copy(columnsShown = Metrics.columns)))
+        assertEquals(7 - Metrics.columns + 1, shownFirstColumn(far, Metrics.columns))
     }
 
     @Test
