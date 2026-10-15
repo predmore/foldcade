@@ -13,7 +13,7 @@ import java.util.Base64
  */
 const val HOME_ALL: String = "home.all"
 
-/** The collection Favorite fills. It joins the root the first time a game is favorited. */
+/** The collection Favorite fills. It is on the root from the first launch until Edit home switches it off. */
 const val HOME_FAVORITES: String = "home.favorites"
 
 /** The games played last, newest first. Foldcade fills it, so nothing is filed in it by hand. */
@@ -653,8 +653,8 @@ fun hideGame(board: HomeBoard, id: String): HomeBoard {
 /**
  * Takes the group [folderId] off Home. Its slot is left empty. A folder is retired with its
  * games still filed in it, so it comes back whole; they stay in All, collections and pins
- * meanwhile. A collection is deleted, and the games in it stay everywhere else. Recently
- * played is retired and does not come back on its own.
+ * meanwhile. A collection is deleted, and the games in it stay everywhere else. Favorites
+ * and Recently played are retired, Favorites with its games, and come back from Edit home.
  */
 fun removeFolder(board: HomeBoard, folderId: String): HomeBoard {
     if (folderId == HOME_ALL) return board
@@ -667,7 +667,7 @@ fun removeFolder(board: HomeBoard, folderId: String): HomeBoard {
     )
     return when {
         folder.system -> gone.copy(retired = board.retired + folderId)
-        folder.recent -> gone.copy(retired = board.retired + folderId)
+        folder.recent || folderId == HOME_FAVORITES -> gone.copy(retired = board.retired + folderId)
         else -> keepOff(board, gone.copy(
             folders = board.folders - folderId,
             collectionSerial = collectionHighWater(board),
@@ -720,20 +720,55 @@ fun toggleCollection(board: HomeBoard, collectionId: String, id: String): HomeBo
 }
 
 /**
- * Favorites [id], or unfavorites it. The first favorite makes Favorites, in the first free
- * root slot. Once made it stays, empty or not, until the user takes it off Home.
+ * Favorites [id], or unfavorites it. Favorites is made when missing, on the root unless Edit
+ * home switched it off. Switched off, it still keeps what is favorited, out of sight.
  */
 fun toggleFavorite(board: HomeBoard, id: String): HomeBoard {
     if (id == HOME_ALL || id.isBlank() || board.folders[id] != null) return board
     val existing = board.folders[HOME_FAVORITES]
     if (existing != null && id in existing.slots) return removeFromCollection(board, HOME_FAVORITES, id)
-    val made = if (existing != null) {
-        board
-    } else {
-        val favorites = HomeFolder(HOME_FAVORITES, Copy.favorites, userMade = true, mark = MARK_FOLDER)
-        placeOnRoot(board.copy(folders = board.folders + (HOME_FAVORITES to favorites)), HOME_FAVORITES)
+    val made = when {
+        existing != null -> board
+        HOME_FAVORITES in board.retired -> board.copy(folders = board.folders + (HOME_FAVORITES to favoritesFolder()))
+        else -> withFavorites(board)
     }
     return dropInto(admit(made, id), HOME_FAVORITES, id)
+}
+
+private fun favoritesFolder(): HomeFolder = HomeFolder(HOME_FAVORITES, Copy.favorites, userMade = true, mark = MARK_FOLDER)
+
+/**
+ * Favorites on the root, in the first free slot, empty until a game is favorited. A board
+ * loads through this, so Favorites is there from the first launch. Switched off, it stays off.
+ */
+fun withFavorites(board: HomeBoard): HomeBoard {
+    if (HOME_FAVORITES in board.retired || HOME_FAVORITES in board.slots) return board
+    val folder = board.folders[HOME_FAVORITES] ?: favoritesFolder()
+    return placeOnRoot(board.copy(folders = board.folders + (HOME_FAVORITES to folder)), HOME_FAVORITES)
+}
+
+/** The groups Edit home switches on and off. */
+val SWITCHED_GROUPS: Set<String> = setOf(HOME_FAVORITES, HOME_RECENT)
+
+/** The group [id] has its tile on the root. */
+fun groupOnHome(board: HomeBoard, id: String): Boolean = id in board.slots
+
+/**
+ * Edit home's switch for Favorites or Recently played. Off takes the tile off Home as X does;
+ * Favorites keeps its games. On puts it back in its old slot when that is free, else the
+ * first free one, and makes it when there was none yet.
+ */
+fun setGroupOnHome(board: HomeBoard, id: String, on: Boolean, catalog: List<HomeItem>, platforms: List<HomePlatform>): HomeBoard {
+    if (id !in SWITCHED_GROUPS || board.hold != null) return board
+    // Off holds even with no tile yet, so neither the first play nor a load puts one there.
+    if (!on) return if (groupOnHome(board, id) && id in board.folders) removeFolder(board, id) else board.copy(retired = board.retired + id)
+    if (groupOnHome(board, id)) return board
+    var next = if (id in board.retired) showHidden(board, id, catalog, platforms) else board
+    if (!groupOnHome(next, id)) {
+        val folder = next.folders[id] ?: if (id == HOME_RECENT) HomeFolder(id, Copy.recentlyPlayed, mark = MARK_RECENT) else favoritesFolder()
+        next = placeOnRoot(next.copy(folders = next.folders + (id to folder), retired = next.retired - id), id)
+    }
+    return if (id == HOME_RECENT) refreshRecent(next, catalog) { false } else next
 }
 
 /** A pin for [id] in the first free root slot. The game stays in its folder. A hidden one comes back. */

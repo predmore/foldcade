@@ -95,6 +95,8 @@ fun rowControl(row: Row, model: PickerModel, value: String? = rowText(row, model
     Row.Music -> RowControl.Toggle(model.music.enabled)
     Row.PinApp -> RowControl.Toggle(model.appActions?.favorite == true)
     Row.AddNewGames -> RowControl.Toggle(model.addNewToHome)
+    Row.FavoritesOnHome -> RowControl.Toggle(model.favoritesOnHome)
+    Row.RecentOnHome -> RowControl.Toggle(model.recentOnHome)
     Row.Artwork -> RowControl.Toggle(model.artwork)
     in choiceRows -> RowControl.Choice(value.orEmpty())
     Row.MusicVolume, Row.Brightness -> RowControl.None

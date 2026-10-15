@@ -17,7 +17,8 @@ class UndoCommitTest {
         choose(shell, Row.RemoveTile)
         assertNotNull(shell.model.undoVerb)
         shell.goHome()
-        shell.onMeaning(Meaning.MoveDown, HostScreen.Bottom)
+        // Past Favorites to Android Apps.
+        repeat(2) { shell.onMeaning(Meaning.MoveDown, HostScreen.Bottom) }
         shell.onMeaning(Meaning.Options, HostScreen.Bottom)
         choose(shell, Row.RenameFolder)
         shell.typing()!!.setText("Renamed apps")

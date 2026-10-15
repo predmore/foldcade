@@ -288,6 +288,10 @@ sealed interface Row {
     data object HiddenApps : Row
     data object AllLibrary : Row
     data object AddNewGames : Row
+
+    /** Edit home's switches for the Favorites and Recently played tiles. */
+    data object FavoritesOnHome : Row
+    data object RecentOnHome : Row
     data object Artwork : Row
     data object ArtKey : Row
     data object PinApp : Row
@@ -420,13 +424,13 @@ fun leftRows(): List<Row> = listOf(
 
 /**
  * The focused tile's actions, the same ones Y offers, then what applies to the
- * whole board: Tidy while it has gaps, whether new games join it, and the apps
- * hidden from it.
+ * whole board: Tidy while it has gaps, the Favorites and Recently played tiles,
+ * whether new games join it, and the apps hidden from it.
  */
 fun editHomeRows(model: PickerModel): List<Row> {
     val tile = actionRows(model.tileActions, model.appActions)
     val tidy = if (model.tileActions?.tidyBoard == true && Row.Tidy !in tile) listOf(Row.Tidy) else emptyList()
-    return tile + tidy + listOf(Row.AddNewGames, Row.HiddenApps)
+    return tile + tidy + listOf(Row.FavoritesOnHome, Row.RecentOnHome, Row.AddNewGames, Row.HiddenApps)
 }
 
 data class SignedInBackend(
@@ -727,6 +731,8 @@ fun rowText(row: Row, model: PickerModel): RowText = when (row) {
     Row.HiddenApps -> RowText(Copy.hiddenAppsRow)
     Row.AllLibrary -> RowText(Copy.allLibrary)
     Row.AddNewGames -> RowText(Copy.addNewGames, if (model.addNewToHome) Copy.on else Copy.off)
+    Row.FavoritesOnHome -> RowText(Copy.favorites, if (model.favoritesOnHome) Copy.on else Copy.off)
+    Row.RecentOnHome -> RowText(Copy.recentlyPlayed, if (model.recentOnHome) Copy.on else Copy.off)
     Row.Artwork -> RowText(Copy.artwork, if (model.artwork) Copy.on else Copy.off)
     Row.ArtKey -> RowText(Copy.steamGridDb, if (model.artKeySaved) Copy.forgetKey else Copy.addKey)
     Row.PinApp -> RowText(Copy.keepOnTop)
@@ -859,6 +865,9 @@ sealed interface Effect {
     data object OpenAll : Effect
     data object ToggleAddNew : Effect
 
+    /** Edit home's switch put Favorites or Recently played, [id], on Home or took it off. */
+    data class GroupOnHome(val id: String, val on: Boolean) : Effect
+
     /** Open the notice's app on the top screen, or the bottom when [onBottom]. */
     data class OpenNotice(val id: String, val onBottom: Boolean) : Effect
     data class DismissNotice(val id: String) : Effect
@@ -977,6 +986,9 @@ data class PickerModel(
     val usageGranted: Boolean = false,
     /** Mirrors the home board. Off keeps new scans out of the grid. */
     val addNewToHome: Boolean = true,
+    /** Mirror the home board: the Favorites and Recently played tiles are on the root. */
+    val favoritesOnHome: Boolean = true,
+    val recentOnHome: Boolean = false,
     /** Download game art from public sources. Off sends nothing; RomM's own covers still show. */
     val artwork: Boolean = true,
     /** A SteamGridDB key is saved. */
@@ -1693,6 +1705,8 @@ private fun activateRow(
         Row.HiddenApps -> openGrid(model, panel, HomeGrid.HiddenApps)
         Row.AllLibrary -> model.copy(panel = null, focus = panel.grid, arranging = false, hold = null) to Effect.OpenAll
         Row.AddNewGames -> model.copy(panel = panel, addNewToHome = !model.addNewToHome) to Effect.ToggleAddNew
+        Row.FavoritesOnHome -> model.copy(panel = panel, favoritesOnHome = !model.favoritesOnHome) to Effect.GroupOnHome(HOME_FAVORITES, !model.favoritesOnHome)
+        Row.RecentOnHome -> model.copy(panel = panel, recentOnHome = !model.recentOnHome) to Effect.GroupOnHome(HOME_RECENT, !model.recentOnHome)
         Row.Artwork -> model.copy(panel = panel, artwork = !model.artwork) to null
         // A saved key is a credential: A only asks, and the dialog's Forget key forgets it.
         Row.ArtKey -> if (model.artKeySaved) {

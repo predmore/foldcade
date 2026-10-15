@@ -2,6 +2,7 @@ package app.foldcade
 
 import app.foldcade.api.plugin.MemoryCredentialStore
 import app.foldcade.host.PluginHost
+import app.foldcade.language.HOME_FAVORITES
 import app.foldcade.language.*
 import kotlinx.coroutines.Dispatchers
 import org.junit.Assert.*
@@ -16,7 +17,7 @@ class HomeSelectionFolderUndoTest {
         val b = androidHomeId("beta")
         val folder = HomeFolder(HOME_ANDROID_GAMES, "Games", bucket = HomeKind.AndroidGame, slots = listOf(a, b))
         val store = SessionStore(MemoryPrefs()).also { it.saveHomeBoard(encodeHome(HomeBoard(
-            slots = listOf(HOME_ALL, null, folder.id), folders = mapOf(folder.id to folder)))) }
+            slots = listOf(HOME_ALL, null, folder.id), folders = mapOf(folder.id to folder), retired = setOf(HOME_FAVORITES)))) }
         val shell = ShellController(store, PluginHost(Dispatchers.Unconfined, MemoryCredentialStore()))
         val apps = listOf(LaunchableApp("alpha", "Alpha", true), LaunchableApp("beta", "Beta", true))
         shell.setInstalledApps(apps, emptySet())

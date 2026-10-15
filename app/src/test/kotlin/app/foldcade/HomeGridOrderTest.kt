@@ -54,8 +54,8 @@ class HomeGridOrderTest {
         assertEquals(HomeGrid.StandIns, shell.model.homeGrid)
         assertFalse(shell.model.libraryGrid)
         assertTrue(shell.model.addNewToHome)
-        // No games, no folder: not even for GameNative, Moonlight, DroidDeck, or Android.
-        assertEquals(listOf(Copy.allLibrary), titles(shell))
+        // No games, no folder: not even for GameNative, Moonlight, DroidDeck, or Android. Favorites waits, empty.
+        assertEquals(listOf(Copy.allLibrary, Copy.favorites), titles(shell))
         assertTrue(shell.homeFace(0)?.allTile == true)
         assertEquals("library", shell.homeFace(0)?.mark)
 
@@ -65,10 +65,10 @@ class HomeGridOrderTest {
             emptySet(),
         )
         shell.ingestLibrary("local-folder", listOf(entry("puzzle", "Puzzle", "nintendo-3ds")), emptyList())
-        assertEquals(listOf(Copy.allLibrary, "Android Games", "Android Apps", "Nintendo 3DS"), titles(shell))
-        assertTrue((1..3).all { shell.homeFace(it)?.folder == true })
-        assertEquals("android-games", shell.homeFace(1)?.mark)
-        assertEquals("android-apps", shell.homeFace(2)?.mark)
+        assertEquals(listOf(Copy.allLibrary, Copy.favorites, "Android Games", "Android Apps", "Nintendo 3DS"), titles(shell))
+        assertTrue((1..4).all { shell.homeFace(it)?.folder == true })
+        assertEquals("android-games", shell.homeFace(2)?.mark)
+        assertEquals("android-apps", shell.homeFace(3)?.mark)
         assertTrue(titles(shell).none { it == "GameNative" || it == "Moonlight" || it == "DroidDeck" || it == "Nintendo DS" })
     }
 
@@ -220,7 +220,7 @@ class HomeGridOrderTest {
         // No games, no folder: the folder closed under the focus, and Back has nothing left to close.
         assertTrue(titles(shell).none { it == "Nintendo DS" })
         assertTrue(shell.model.atLibraryRoot)
-        assertEquals(listOf(Copy.allLibrary), titles(shell))
+        assertEquals(listOf(Copy.allLibrary, Copy.favorites), titles(shell))
     }
 
     @Test
@@ -267,9 +267,9 @@ class HomeGridOrderTest {
             emptyList(),
         )
         assertEquals("Game Boy Advance", titles(shell).last())
-        assertEquals(2, shell.model.count)
+        assertEquals(3, shell.model.count)
 
-        focus(shell, 1)
+        focus(shell, 2)
         assertEquals("Game Boy Advance", shell.focusedGame()?.title)
         shell.onMeaning(Meaning.Activate, HostScreen.Bottom)
         assertEquals("Cart", shell.focusedGame()?.title)
@@ -752,7 +752,7 @@ class HomeGridOrderTest {
         focus(shell, folder)
         assertEquals(listOf(Row.MoveTile, Row.RenameFolder, Row.RemoveTile), optionRows(shell))
         choose(shell, Row.RemoveTile)
-        assertEquals(listOf(Copy.allLibrary, ""), titles(shell))
+        assertEquals(listOf(Copy.allLibrary, Copy.favorites, ""), titles(shell))
         // A rescan leaves it off Home. Puzzle is still in All, and not on Home.
         shell.ingestLibrary("local-folder", listOf(entry("puzzle", "Puzzle", "nintendo-3ds")), emptyList())
         assertFalse("Nintendo 3DS" in titles(shell))

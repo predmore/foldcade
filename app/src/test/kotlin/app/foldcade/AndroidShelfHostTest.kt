@@ -162,7 +162,8 @@ class AndroidShelfHostTest {
     fun bAfterLOneAppsReturnsToHomeWhenOpenedFromAFolder() {
         val shell = ShellController(SessionStore(MemoryPrefs()), PluginHost(Dispatchers.Unconfined, MemoryCredentialStore()))
         shell.setInstalledApps(listOf(settings), emptySet())
-        shell.onMeaning(Meaning.MoveDown, HostScreen.Bottom)
+        // Past Favorites to Android Apps.
+        repeat(2) { shell.onMeaning(Meaning.MoveDown, HostScreen.Bottom) }
         shell.onMeaning(Meaning.Activate, HostScreen.Bottom)
         assertEquals("Settings", shell.focusedGame()?.title)
 

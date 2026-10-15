@@ -2,6 +2,7 @@ package app.foldcade
 
 import app.foldcade.api.plugin.MemoryCredentialStore
 import app.foldcade.host.PluginHost
+import app.foldcade.language.HOME_FAVORITES
 import app.foldcade.language.*
 import kotlinx.coroutines.Dispatchers
 import org.junit.Assert.*
@@ -12,7 +13,7 @@ class HomeSelectionHostTest {
     private val b = androidHomeId("browser")
     private val c = androidHomeId("camera")
     private val group = HomeFolder("home.user.1", "Quests", userMade = true, slots = listOf(a))
-    private val initial = HomeBoard(slots = listOf(HOME_ALL, a, b, null, group.id), folders = mapOf(group.id to group))
+    private val initial = HomeBoard(slots = listOf(HOME_ALL, a, b, null, group.id), folders = mapOf(group.id to group), retired = setOf(HOME_FAVORITES))
     private val apps = listOf(LaunchableApp("notes", "Notes", false), LaunchableApp("browser", "Browser", false))
     private val store = SessionStore(MemoryPrefs()).also { it.saveHomeBoard(encodeHome(initial)) }
     private fun shell() = ShellController(store, PluginHost(Dispatchers.Unconfined, MemoryCredentialStore())).also { it.setInstalledApps(apps, emptySet()) }

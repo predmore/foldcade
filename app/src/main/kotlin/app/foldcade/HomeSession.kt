@@ -56,6 +56,8 @@ import app.foldcade.language.closeAll
 import app.foldcade.language.closeFolder
 import app.foldcade.language.collectionChoices
 import app.foldcade.language.decodeHome
+import app.foldcade.language.setGroupOnHome
+import app.foldcade.language.withFavorites
 import app.foldcade.language.emptyCollection
 import app.foldcade.language.encodeHome
 import app.foldcade.language.enterEdit
@@ -119,7 +121,7 @@ class HomeSession(raw: String?, nowMillis: Long = System.currentTimeMillis()) {
      * it would be undone by the next step. Selection also keeps its view steady until it ends.
      * Putting a tile down, cancelling, or finishing selection merges the latest report.
      */
-    var board: HomeBoard = decodeHome(raw, nowMillis).let { it.copy(collectionSerial = app.foldcade.language.collectionHighWater(it)) }
+    var board: HomeBoard = decodeHome(raw, nowMillis).let { withFavorites(it.copy(collectionSerial = app.foldcade.language.collectionHighWater(it))) }
         private set(value) {
             field = value
             selection = selection?.inView(animToken())
@@ -481,6 +483,12 @@ class HomeSession(raw: String?, nowMillis: Long = System.currentTimeMillis()) {
     }
     fun hide(id: String) { board = hideGame(board, id) }
     fun show(id: String) { board = showHidden(board, id, catalog(), platforms) }
+
+    /** Edit home's switch for Favorites or Recently played. Returns where focus goes: it stays. */
+    fun setGroupOnHome(id: String, on: Boolean, index: Int): Int {
+        board = setGroupOnHome(board, id, on, catalog(), platforms)
+        return index
+    }
     fun deleteShortcut(id: String) { board = deleteShortcut(board, id) }
     fun shelfActions(id: String): TileActions = gameActions(id, false, !pinned(board, id), RemoveVerb.Hide)
     fun hiddenItems(apps: List<LaunchableApp>, state: AppShelfState, players: Set<String>): List<HomeItem> =
