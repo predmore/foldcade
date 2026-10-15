@@ -1856,7 +1856,6 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
 
     private fun releaseUnlessUsed(uri: String, flags: Int) {
         if (foldcade.store.folderTreeInUse(uri)) return
-        if (RetroArchCoreReader.packageOf(Uri.parse(uri))?.let(foldcade.store::retroArchCoresFolder) == uri) return
         releaseGrant(Uri.parse(uri), flags)
     }
 

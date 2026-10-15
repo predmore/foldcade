@@ -166,9 +166,11 @@ class SessionStore(private val prefs: SharedPreferences) : SaveMarks {
         prefs.edit().putString(saveFolderKey(playerId), uri).apply()
     }
 
-    /** A tree grant can be shared by a library source and several players. */
+    /** A tree grant can be shared by a library source, several players, and RetroArch's cores. */
     fun folderTreeInUse(uri: String): Boolean = uri in folderTrees() ||
-        prefs.all.any { (key, value) -> key.startsWith(PLAYER_SAVE_FOLDER_PREFIX) && value == uri }
+        prefs.all.any { (key, value) ->
+            (key.startsWith(PLAYER_SAVE_FOLDER_PREFIX) || key.startsWith(CORES_FOLDER_PREFIX)) && value == uri
+        }
 
     override fun mark(key: String): String? = prefs.getString(saveMarkKey(key), null)
 
