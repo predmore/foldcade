@@ -244,6 +244,14 @@ class LocalFolderBackend(
             }
             return documentId.substringAfterLast('/').substringAfterLast(':').ifEmpty { null }
         }
+
+        /**
+         * The title the scan gives the file in a remote key, read from the key
+         * alone. Play activity uses it for a game no longer in the folder.
+         */
+        fun titleOf(remoteKey: String): String? =
+            fileNameOf(remoteKey)?.let(::titleFromFileName)?.trim()?.ifEmpty { null }
+
         const val DISPLAY_NAME: String = "Local folder"
     }
 }

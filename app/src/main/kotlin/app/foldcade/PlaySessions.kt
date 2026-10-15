@@ -10,6 +10,7 @@ import app.foldcade.host.play.PlayEvent
 import app.foldcade.host.play.PlayKind
 import app.foldcade.language.PlaySpan
 import app.foldcade.host.play.PlayLog
+import app.foldcade.host.play.PlayNames
 import app.foldcade.host.play.PlaySignal
 import app.foldcade.host.play.QueuedPlaySink
 import app.foldcade.host.play.PackagePlay
@@ -19,6 +20,9 @@ import app.foldcade.host.play.UsageSample
 import app.foldcade.host.play.packagePlay
 import app.foldcade.host.play.shownPlay
 import app.foldcade.host.play.usageSpans
+import app.foldcade.language.PlayCopy
+import app.foldcade.language.homeGameKey
+import app.foldcade.localfolder.LocalFolderBackend
 import java.io.File
 
 /**
@@ -32,9 +36,13 @@ import java.io.File
  *
  * [subscribe] and [events] are the internal stream. A later companion plugin
  * and RomM sync read [PlayEvent] as stored here. This type is not on the plugin API.
+ *
+ * Each game's name when it was played is kept in [PlayNames], beside the log,
+ * so its history still reads once the game leaves every catalog.
  */
 class PlaySessions private constructor(
     private val log: PlayLog,
+    private val names: PlayNames,
 ) {
     var stamp by mutableIntStateOf(0)
         private set
@@ -48,7 +56,9 @@ class PlaySessions private constructor(
     private var usageGranted = false
     private var usageByPackage = emptyMap<String, PackagePlay>()
 
-    fun start(gameId: String): String {
+    /** Opens a session. [name] is the game's name as the launch showed it. */
+    fun start(gameId: String, name: String? = null): String {
+        if (name != null) names.remember(gameId, name)
         val id = log.start(gameId)
         changed()
         return id
@@ -84,6 +94,14 @@ class PlaySessions private constructor(
 
     fun events(): List<PlayEvent> = log.events()
 
+    /** The name [gameId] had when it was last played or seen in a catalog. */
+    fun name(gameId: String): String? = names.name(gameId)
+
+    /** Keeps a catalog's name for [gameId], for when the catalog no longer has it. */
+    fun rememberName(gameId: String, name: String) {
+        names.remember(gameId, name)
+    }
+
     /** Every stretch a game was in front, for the Play activity page. */
     fun spans(): List<PlaySpan> = playSpans(log.events())
 
@@ -96,7 +114,10 @@ class PlaySessions private constructor(
 
     companion object {
         fun open(file: File, clock: PlayClock = WallAndElapsedClock): PlaySessions =
-            PlaySessions(PlayLog(clock, QueuedPlaySink(FilePlayLog(file))))
+            PlaySessions(
+                PlayLog(clock, QueuedPlaySink(FilePlayLog(file))),
+                PlayNames(File(file.absoluteFile.parentFile, "names.log")),
+            )
     }
 }
 
@@ -119,6 +140,26 @@ internal fun playSpans(events: List<PlayEvent>): List<PlaySpan> {
         }
     }
     return spans
+}
+
+/**
+ * The name Play activity shows for [gameId]. A catalog that still has the game
+ * names it, so a rename shows. Then the name it had when last played. Then a
+ * name read from the id itself: a storage document's file name, titled as the
+ * folder scan titles it. Older history kept a folder game under its bare
+ * document URI, so that reads the same way. An id with nothing readable in it,
+ * such as a server's number, is [PlayCopy.removedGame], never the id.
+ */
+internal fun playName(gameId: String, current: String?, remembered: String?): String =
+    current?.trim()?.ifEmpty { null }
+        ?: remembered?.trim()?.ifEmpty { null }
+        ?: nameFromId(gameId)
+        ?: PlayCopy.removedGame
+
+private fun nameFromId(gameId: String): String? {
+    val key = homeGameKey(gameId) ?: gameId
+    if (!key.startsWith("content://") && !key.startsWith("file://")) return null
+    return LocalFolderBackend.titleOf(key)
 }
 
 private object WallAndElapsedClock : PlayClock {

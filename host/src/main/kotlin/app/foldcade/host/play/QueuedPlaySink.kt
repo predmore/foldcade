@@ -18,7 +18,7 @@ import java.util.concurrent.Executors
  */
 class QueuedPlaySink(
     private val delegate: PlaySink,
-    private val writer: ExecutorService = SharedWriter,
+    private val writer: ExecutorService = PlayLogWriter,
 ) : PlaySink {
     override fun append(event: PlayEvent) {
         writer.execute { delegate.append(event) }
@@ -35,10 +35,9 @@ class QueuedPlaySink(
     override fun clearCheckpoint(sessionId: String) {
         writer.execute { delegate.clearCheckpoint(sessionId) }
     }
+}
 
-    private companion object {
-        val SharedWriter: ExecutorService = Executors.newSingleThreadExecutor { task ->
-            Thread(task, "foldcade-play-log").apply { isDaemon = true }
-        }
-    }
+/** The one play-log thread in the process. [PlayNames] writes on it too. */
+internal val PlayLogWriter: ExecutorService = Executors.newSingleThreadExecutor { task ->
+    Thread(task, "foldcade-play-log").apply { isDaemon = true }
 }

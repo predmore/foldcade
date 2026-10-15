@@ -15,7 +15,7 @@ class ExternalPlayTest {
         val plays = plays()
         val external = ExternalPlay()
         val failure = runCatching {
-            external.open(plays, "nintendo-ds.melonds", 2) { error("missing") }
+            external.open(plays, "nintendo-ds.melonds", "Game", 2) { error("missing") }
         }
         assertTrue(failure.exceptionOrNull() is IllegalStateException)
         assertNull(external.sessionId)
@@ -31,7 +31,7 @@ class ExternalPlayTest {
         val plays = plays()
         val external = ExternalPlay()
         val failure = runCatching {
-            external.open(plays, "nintendo-3ds.azahar", 2) { throw CancellationException("stopped") }
+            external.open(plays, "nintendo-3ds.azahar", "Game", 2) { throw CancellationException("stopped") }
         }
         assertTrue(failure.exceptionOrNull() is CancellationException)
         assertEquals(listOf(PlayKind.Started, PlayKind.Ended), plays.events().map { it.kind })
@@ -42,7 +42,7 @@ class ExternalPlayTest {
     fun theSessionStaysOpenUntilTheLaunchDisplayIsHome() {
         val plays = plays()
         val external = ExternalPlay()
-        external.open(plays, "nintendo-ds.melonds", 2) {}
+        external.open(plays, "nintendo-ds.melonds", "Game", 2) {}
         assertEquals(listOf(PlayKind.Started), plays.events().map { it.kind })
         external.endIfDisplayHome(plays, 1)
         assertEquals(1, plays.events().size)
@@ -57,8 +57,8 @@ class ExternalPlayTest {
     fun aSecondLaunchEndsTheSessionStillOpen() {
         val plays = plays()
         val external = ExternalPlay()
-        external.open(plays, "nintendo-3ds.azahar", 2) {}
-        external.open(plays, "nintendo-ds.melonds", 2) {}
+        external.open(plays, "nintendo-3ds.azahar", "Game", 2) {}
+        external.open(plays, "nintendo-ds.melonds", "Game", 2) {}
         assertEquals(
             listOf(PlayKind.Started, PlayKind.Ended, PlayKind.Started),
             plays.events().map { it.kind },
