@@ -760,7 +760,11 @@ fun rowText(row: Row, model: PickerModel): RowText = when (row) {
     Row.RemoveDownload -> RowText(Copy.deleteDownload)
     Row.ButtonLabels -> RowText(
         Copy.buttonLabels,
-        if (model.capturingConfirm) Copy.pressConfirm else null,
+        when {
+            model.capturingConfirm -> Copy.pressConfirm
+            model.offerButtonLabels -> Copy.setUp
+            else -> "${Copy.confirm}: ${letterOfKey(model.faceMap.confirmKey)?.name.orEmpty()}"
+        },
     )
 }
 
@@ -1542,15 +1546,15 @@ private fun applySettings(
     }
     val row = rows.getOrNull(rowIndex) ?: return model.copy(settings = current.copy(onRows = false)) to null
     return when (meaning) {
-        Meaning.MoveUp -> model.copy(settings = current.copy(row = (rowIndex - 1).coerceAtLeast(0))) to null
-        Meaning.MoveDown -> model.copy(settings = current.copy(row = (rowIndex + 1).coerceAtMost(rows.lastIndex))) to null
+        Meaning.MoveUp -> model.copy(capturingConfirm = false, settings = current.copy(row = (rowIndex - 1).coerceAtLeast(0))) to null
+        Meaning.MoveDown -> model.copy(capturingConfirm = false, settings = current.copy(row = (rowIndex + 1).coerceAtMost(rows.lastIndex))) to null
         Meaning.MoveLeft, Meaning.MoveRight -> {
             val direction = if (meaning == Meaning.MoveLeft) -1 else 1
             val nudged = stepRow(model, row, direction)
             when {
-                nudged != null -> nudged.copy(settings = current) to null
-                meaning == Meaning.MoveLeft -> model.copy(settings = current.copy(onRows = false)) to null
-                else -> model.copy(settings = current) to null
+                nudged != null -> nudged.copy(capturingConfirm = false, settings = current) to null
+                meaning == Meaning.MoveLeft -> model.copy(capturingConfirm = false, settings = current.copy(onRows = false)) to null
+                else -> model.copy(capturingConfirm = false, settings = current) to null
             }
         }
         Meaning.Back -> if (model.capturingConfirm) {

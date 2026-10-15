@@ -116,7 +116,7 @@ class FacePromptTest {
     }
 
     @Test
-    fun calibrationStaysOffUntilALaterLaunchAndFollowsTheDevice() {
+    fun calibrationHintWaitsForALaterLaunchAndFollowsTheDevice() {
         assertFalse(offerButtonCalibration(firstSession = true, styleKnown = false, dismissed = false, calibrated = false))
         assertFalse(offerButtonCalibration(firstSession = false, styleKnown = true, dismissed = false, calibrated = false))
         assertFalse(offerButtonCalibration(firstSession = false, styleKnown = false, dismissed = true, calibrated = false))
@@ -142,7 +142,7 @@ class FacePromptTest {
     }
 
     @Test
-    fun buttonLabelRowOffersPressConfirmAndCanBeDismissed() {
+    fun dismissingTheSetupHintKeepsCalibrationAvailable() {
         val root = PickerModel(count = 1, rowsPerPage = 1, offerButtonLabels = true)
         val rows = settingsRows(SettingsCategory.Personalization, root)
         assertTrue(rows.indexOf(Row.ButtonLabels) > rows.indexOf(Row.MotionSpeed))
@@ -153,6 +153,18 @@ class FacePromptTest {
         assertEquals(Effect.DismissButtonLabels, effect)
         assertFalse(dismissed.offerButtonLabels)
         assertFalse(dismissed.capturingConfirm)
+        assertTrue(Row.ButtonLabels in settingsRows(SettingsCategory.Personalization, dismissed))
+        assertTrue(reduce(dismissed, Meaning.Activate).first.capturingConfirm)
+    }
+
+    @Test
+    fun buttonLabelsShowTheCurrentConfirmAfterSetup() {
+        assertEquals(Copy.setUp, rowText(Row.ButtonLabels, PickerModel(count = 1, rowsPerPage = 1, offerButtonLabels = true)).value)
+        for (key in listOf(PromptKey.FaceA, PromptKey.FaceB, PromptKey.FaceX, PromptKey.FaceY)) {
+            val model = PickerModel(count = 1, rowsPerPage = 1, faceMap = resolveFaceMap(ThorStyle.Standard, key))
+            assertTrue(Row.ButtonLabels in settingsRows(SettingsCategory.Personalization, model))
+            assertEquals("Confirm: ${letterOfKey(model.faceMap.confirmKey)?.name}", rowText(Row.ButtonLabels, model).value)
+        }
     }
 
     @Test
