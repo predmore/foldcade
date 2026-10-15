@@ -4,16 +4,22 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -24,6 +30,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -34,6 +41,7 @@ import app.foldcade.language.SaveConflictSide
 import app.foldcade.language.formatSaveSize
 import app.foldcade.language.formatSaveWhen
 import app.foldcade.language.previewSaveConflict
+import app.foldcade.language.saveConflictFit
 
 /**
  * The top screen names the game. The choice itself is on the bottom screen.
@@ -53,75 +61,100 @@ internal fun SaveConflictTop(prompt: SaveConflictPrompt) {
 }
 
 /**
- * Both saves, side by side, with Keep this one under each and Keep both focused first.
+ * Both saves, side by side at one width, with Keep this one under each and Keep both focused first.
  * The ring is the same green-to-blue stroke as every other chip, drawn heavier so a
- * controller focus reads across the bottom screen.
+ * controller focus reads across the bottom screen. Decide later is B, or a touch.
+ * A short panel tightens the spacing. Anything that still does not fit scrolls, and the
+ * focused action brings itself into view.
  */
 @Composable
 internal fun SaveConflictBottom(
     prompt: SaveConflictPrompt,
     onFocus: (SaveConflictFocus) -> Unit,
+    onLater: () -> Unit,
 ) {
     val theme = LocalFoldTheme.current.theme
-    Box(
+    val type = theme.style.type
+    BoxWithConstraints(
         Modifier
             .fillMaxSize()
-            .background(Color.Black.copy(alpha = 0.82f))
-            .padding(28.dp),
+            .background(Color.Black.copy(alpha = 0.82f)),
     ) {
+        val fit = saveConflictFit(maxWidth.value, maxHeight.value)
+        val edge = fit.edge.dp
+        val gap = fit.gap.dp
         Column(
-            Modifier.fillMaxSize(),
+            Modifier
+                .fillMaxSize()
+                .verticalScroll(rememberScrollState())
+                .padding(edge)
+                .heightIn(min = (maxHeight - edge * 2).coerceAtLeast(0.dp)),
             verticalArrangement = Arrangement.Center,
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
-            BasicLine(Copy.saveConflictTitle, theme.onBackground, LocalFoldTheme.current.theme.style.type.heroTitle.value, theme, TextAlign.Center)
-            BasicLine(prompt.gameLabel, theme.onBackground, LocalFoldTheme.current.theme.style.type.heroMeta.value, theme, TextAlign.Center)
-            BasicLine(Copy.saveConflictBody, theme.muted, LocalFoldTheme.current.theme.style.type.dialogBody.value, theme, TextAlign.Center)
+            BasicLine(Copy.saveConflictTitle, theme.onBackground, type.heroTitle.value, theme, TextAlign.Center, maxLines = 1)
+            BasicLine(prompt.gameLabel, theme.onBackground, type.heroMeta.value, theme, TextAlign.Center, maxLines = 2)
+            BasicLine(Copy.saveConflictBody, theme.muted, type.dialogBody.value, theme, TextAlign.Center)
             Row(
-                Modifier.padding(top = 28.dp),
-                horizontalArrangement = Arrangement.spacedBy(28.dp),
+                Modifier
+                    .padding(top = gap)
+                    .width(fit.cardWidth.dp * 2 + gap)
+                    .height(IntrinsicSize.Min),
+                horizontalArrangement = Arrangement.spacedBy(gap),
                 verticalAlignment = Alignment.Top,
             ) {
-                SaveColumn(prompt.local, prompt.focus == SaveConflictFocus.Local) { onFocus(SaveConflictFocus.Local) }
-                SaveColumn(prompt.remote, prompt.focus == SaveConflictFocus.Remote) { onFocus(SaveConflictFocus.Remote) }
+                SaveColumn(prompt.local, prompt.focus == SaveConflictFocus.Local, fit.compact, Modifier.weight(1f)) {
+                    onFocus(SaveConflictFocus.Local)
+                }
+                SaveColumn(prompt.remote, prompt.focus == SaveConflictFocus.Remote, fit.compact, Modifier.weight(1f)) {
+                    onFocus(SaveConflictFocus.Remote)
+                }
             }
             ConflictChip(
                 label = Copy.keepBoth,
                 focused = prompt.focus == SaveConflictFocus.KeepBoth,
-                modifier = Modifier.padding(top = 28.dp).widthIn(min = 220.dp),
+                compact = fit.compact,
+                modifier = Modifier.padding(top = gap).widthIn(min = 220.dp),
                 onClick = { onFocus(SaveConflictFocus.KeepBoth) },
             )
-            BasicLine(
-                "B  ${Copy.decideLater}",
-                theme.muted,
-                LocalFoldTheme.current.theme.style.type.hint.value,
-                theme,
-                TextAlign.Center,
+            LaterChip(
+                compact = fit.compact,
+                modifier = Modifier.padding(top = if (fit.compact) 8.dp else 16.dp),
+                onClick = onLater,
             )
         }
     }
 }
 
 @Composable
-private fun SaveColumn(side: SaveConflictSide, focused: Boolean, onKeep: () -> Unit) {
+private fun SaveColumn(
+    side: SaveConflictSide,
+    focused: Boolean,
+    compact: Boolean,
+    modifier: Modifier,
+    onKeep: () -> Unit,
+) {
     val theme = LocalFoldTheme.current.theme
-    Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.widthIn(min = 200.dp, max = 280.dp)) {
+    val type = theme.style.type
+    Column(modifier.fillMaxHeight(), horizontalAlignment = Alignment.CenterHorizontally) {
         Column(
             Modifier
+                .weight(1f)
                 .fillMaxWidth()
                 .clip(RoundedCornerShape(22.dp))
                 .background(theme.surface)
-                .padding(horizontal = 18.dp, vertical = 16.dp),
-            verticalArrangement = Arrangement.spacedBy(6.dp),
+                .padding(horizontal = if (compact) 14.dp else 18.dp, vertical = if (compact) 10.dp else 16.dp),
+            verticalArrangement = Arrangement.spacedBy(if (compact) 2.dp else 6.dp),
         ) {
-            BasicLine(side.source, theme.onBackground, LocalFoldTheme.current.theme.style.type.menuRow.value, theme, TextAlign.Start)
-            BasicLine(formatSaveWhen(side.updatedAtMillis), theme.onBackground, LocalFoldTheme.current.theme.style.type.dialogBody.value, theme, TextAlign.Start)
-            BasicLine(formatSaveSize(side.sizeBytes), theme.muted, LocalFoldTheme.current.theme.style.type.dialogBody.value, theme, TextAlign.Start)
+            BasicLine(side.source, theme.onBackground, type.menuRow.value, theme, TextAlign.Start, maxLines = 2)
+            BasicLine(formatSaveWhen(side.updatedAtMillis), theme.onBackground, type.dialogBody.value, theme, TextAlign.Start, maxLines = 2)
+            BasicLine(formatSaveSize(side.sizeBytes), theme.muted, type.dialogBody.value, theme, TextAlign.Start, maxLines = 1)
         }
         ConflictChip(
             label = Copy.keepThisOne,
             focused = focused,
-            modifier = Modifier.padding(top = 16.dp),
+            compact = compact,
+            modifier = Modifier.padding(top = if (compact) 10.dp else 16.dp),
             onClick = onKeep,
         )
     }
@@ -131,6 +164,7 @@ private fun SaveColumn(side: SaveConflictSide, focused: Boolean, onKeep: () -> U
 private fun ConflictChip(
     label: String,
     focused: Boolean,
+    compact: Boolean,
     modifier: Modifier,
     onClick: () -> Unit,
 ) {
@@ -141,6 +175,7 @@ private fun ConflictChip(
     androidx.compose.foundation.text.BasicText(
         text = label,
         modifier = modifier
+            .keepInView(focused)
             .graphicsLayer {
                 clip = false
                 scaleX = scale
@@ -148,13 +183,35 @@ private fun ConflictChip(
             }
             .conflictChip(focused)
             .clickable(interactionSource = source, indication = null, onClick = onClick)
-            .padding(horizontal = 22.dp, vertical = 14.dp),
+            .padding(horizontal = 22.dp, vertical = if (compact) 10.dp else 14.dp),
         style = TextStyle(
             color = if (focused) theme.onBackground else theme.muted,
             fontSize = LocalFoldTheme.current.theme.style.type.dialogBody,
             fontFamily = theme.font,
             textAlign = TextAlign.Center,
         ),
+        maxLines = 1,
+    )
+}
+
+/** B on a controller. On touch it is its own quiet chip, never focused, so A cannot reach it. */
+@Composable
+private fun LaterChip(compact: Boolean, modifier: Modifier, onClick: () -> Unit) {
+    val theme = LocalFoldTheme.current.theme
+    val source = remember { MutableInteractionSource() }
+    androidx.compose.foundation.text.BasicText(
+        text = "B  ${Copy.decideLater}",
+        modifier = modifier
+            .conflictChip(focused = false)
+            .clickable(interactionSource = source, indication = null, onClick = onClick)
+            .padding(horizontal = 18.dp, vertical = if (compact) 8.dp else 10.dp),
+        style = TextStyle(
+            color = theme.muted,
+            fontSize = theme.style.type.hint,
+            fontFamily = theme.font,
+            textAlign = TextAlign.Center,
+        ),
+        maxLines = 1,
     )
 }
 
@@ -165,6 +222,7 @@ private fun BasicLine(
     sizeSp: Float,
     theme: app.foldcade.language.Theme,
     align: TextAlign,
+    maxLines: Int = Int.MAX_VALUE,
 ) {
     androidx.compose.foundation.text.BasicText(
         text = text,
@@ -175,6 +233,8 @@ private fun BasicLine(
             fontFamily = theme.font,
             textAlign = align,
         ),
+        overflow = TextOverflow.Ellipsis,
+        maxLines = maxLines,
     )
 }
 
@@ -193,8 +253,29 @@ private fun Modifier.conflictChip(focused: Boolean): Modifier {
     }
 }
 
-@Preview(name = "Save conflict", device = "spec:width=1240px,height=1080px,dpi=419")
+@Preview(name = "Save conflict, Thor bottom", device = "spec:width=1240px,height=1080px,dpi=419")
 @Composable
 private fun SaveConflictPreview() {
-    SaveConflictBottom(previewSaveConflict(), onFocus = {})
+    SaveConflictBottom(previewSaveConflict(), onFocus = {}, onLater = {})
+}
+
+@Preview(name = "Save conflict, 16:9", device = "spec:width=1920px,height=1080px,dpi=419")
+@Composable
+private fun SaveConflictWidePreview() {
+    SaveConflictBottom(previewSaveConflict(), onFocus = {}, onLater = {})
+}
+
+@Preview(name = "Save conflict, long names", device = "spec:width=1240px,height=1080px,dpi=419")
+@Composable
+private fun SaveConflictLongPreview() {
+    val prompt = previewSaveConflict()
+    SaveConflictBottom(
+        prompt.copy(
+            gameLabel = "The Legend of Zelda: Spirit Tracks and the Very Long Subtitle Edition",
+            local = prompt.local.copy(source = "This device · Azahar Nightly (com.azahar.debug)"),
+            remote = prompt.remote.copy(source = "Living room Steam Deck OLED · Azahar"),
+        ),
+        onFocus = {},
+        onLater = {},
+    )
 }
