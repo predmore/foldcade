@@ -200,8 +200,8 @@ fun clusterFilled(role: ClusterRole, held: Set<PromptKey>, map: FaceMap): Boolea
 }
 
 /**
- * One-time L1 row. Never on the first launch, never when the style setting was readable,
- * and never again for this device after a press or a dismiss.
+ * One-time setup hint in the persistent Button labels setting. It waits for a later
+ * launch when the style is unreadable, then settles after a choice or dismissal.
  */
 fun offerButtonCalibration(
     firstSession: Boolean,
