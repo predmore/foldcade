@@ -1336,9 +1336,10 @@ class ShellController(
     }
 
     fun applyFacePrompt(style: ThorStyle?, deviceKey: String, firstSession: Boolean) {
-        inputDeviceKey = deviceKey
         val confirm = store.buttonPromptConfirm(deviceKey)
         val map = resolveFaceMap(style, confirm)
+        val keepCapture = model.capturingConfirm && inputDeviceKey == deviceKey && model.faceMap == map
+        inputDeviceKey = deviceKey
         val offer = offerButtonCalibration(
             firstSession = firstSession,
             styleKnown = style != null,
@@ -1348,12 +1349,12 @@ class ShellController(
         model = model.copy(
             faceMap = map,
             offerButtonLabels = offer,
-            capturingConfirm = if (offer) model.capturingConfirm else false,
+            capturingConfirm = keepCapture,
         )
     }
 
     fun calibrateConfirm(key: PromptKey) {
-        if (!key.face) return
+        if (!model.capturingConfirm || !key.face) return
         store.saveButtonPrompt(inputDeviceKey, key, dismissed = false)
         model = model.copy(
             faceMap = faceMapWithConfirm(model.faceMap, key),
@@ -1645,7 +1646,7 @@ class ShellController(
         if (page.screen != screen) return null
         if (index !in settingsCategories(model).indices) return null
         if (page.category != index || page.onRows) {
-            publish(model.copy(settings = page.copy(category = index, row = 0, onRows = false)))
+            publish(model.copy(capturingConfirm = false, settings = page.copy(category = index, row = 0, onRows = false)))
             return null
         }
         return onMeaning(Meaning.MoveRight, screen)
@@ -1655,7 +1656,10 @@ class ShellController(
     fun touchSettingsRow(index: Int, screen: HostScreen): Effect? {
         val page = model.settings ?: return null
         if (page.screen != screen) return null
-        publish(model.copy(settings = page.copy(row = index, onRows = true)))
+        publish(model.copy(
+            capturingConfirm = model.capturingConfirm && page.onRows && page.row == index,
+            settings = page.copy(row = index, onRows = true),
+        ))
         return onMeaning(Meaning.Activate, screen)
     }
 
@@ -1667,7 +1671,7 @@ class ShellController(
 
     fun closeSettings(): Effect? {
         val page = model.settings ?: return null
-        publish(model.copy(settings = null, focus = page.grid))
+        publish(model.copy(settings = null, focus = page.grid, capturingConfirm = false))
         return null
     }
 
