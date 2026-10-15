@@ -101,7 +101,7 @@ internal fun decodeCheckpoint(line: String): PlayCheckpoint? {
     return PlayCheckpoint(parts[0], active, at)
 }
 
-private fun escape(value: String): String = buildString(value.length) {
+internal fun escape(value: String): String = buildString(value.length) {
     for (ch in value) {
         when (ch) {
             '\\' -> append("\\\\")
@@ -113,7 +113,7 @@ private fun escape(value: String): String = buildString(value.length) {
     }
 }
 
-private fun splitFields(line: String): List<String> {
+internal fun splitFields(line: String): List<String> {
     val fields = mutableListOf<String>()
     val current = StringBuilder()
     var escaped = false

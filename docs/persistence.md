@@ -26,7 +26,7 @@ No games, no folder. A folder Foldcade makes, for a platform or for Android, Gam
 
 ## Files, secrets, and transfer
 
-Confirmed GameNative catalogs use the existing durable-file writer: write a temporary sibling, sync its bytes, replace the destination, and attempt to sync the parent directory. Play history is appended and synced under `files/play-sessions`. RomM's durable device/save data and replaced player-save backups remain under `filesDir`; downloaded games and regenerable artwork bytes use cache storage.
+Confirmed GameNative catalogs use the existing durable-file writer: write a temporary sibling, sync its bytes, replace the destination, and attempt to sync the parent directory. Play history is appended and synced under `files/play-sessions`, with each game's name at launch in `names.log` beside `events.log`, so Play activity still names a game that has left every catalog. RomM's durable device/save data and replaced player-save backups remain under `filesDir`; downloaded games and regenerable artwork bytes use cache storage.
 
 RomM also keeps a server-scoped catalog under `files/romm/servers/<server key>/catalog.json`. It restores titles, platform metadata, artwork addresses, and complete platform listings after a cold offline start. Searches and interrupted pagination retain the last complete listing. Network recovery reconnects and ingests the refreshed catalog in the running shell. Authentication failures still require sign-in; an unavailable server can use its saved catalog. Verified downloaded ROMs can launch without a network request.
 

@@ -19,6 +19,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicText
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -34,6 +35,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import app.foldcade.FoldcadeApp
 import app.foldcade.R
+import app.foldcade.playName
 import app.foldcade.language.HostScreen
 import app.foldcade.language.PlayActivityPage
 import app.foldcade.language.PlayCopy
@@ -133,10 +135,15 @@ internal fun PlayActivityScreen(app: FoldcadeApp, page: PlayActivityPage) {
                 if (week.top.isEmpty()) {
                     BasicText(PlayCopy.nothing, style = playText(theme.muted, theme, LocalFoldTheme.current.theme.style.type.sideRow))
                 }
-                week.top.forEach { (gameId, millis) ->
+                val current = week.top.map { (gameId, _) -> gameId to app.shell.playTitle(gameId) }
+                // A name a catalog still has is kept, so the row still reads once the game is gone.
+                LaunchedEffect(current) {
+                    current.forEach { (gameId, title) -> if (title != null) app.plays.rememberName(gameId, title) }
+                }
+                week.top.forEachIndexed { index, (gameId, millis) ->
                     Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
                         BasicText(
-                            app.shell.playTitle(gameId) ?: gameId,
+                            playName(gameId, current[index].second, app.plays.name(gameId)),
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis,
                             style = playText(theme.onBackground, theme, LocalFoldTheme.current.theme.style.type.sideRow, bold = true),
