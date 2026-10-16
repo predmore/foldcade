@@ -13,10 +13,10 @@ import app.foldcade.language.*
 import kotlin.math.*
 
 /** One independent instance per surface. Shader programs, textures and path buffers are reused. */
-internal class SceneRenderer(val scene: ThemeScene) {
+internal class SceneRenderer(val scene: ThemeScene, seed: Double = 0.0) {
     val metrics = SceneMetrics()
     val diagnostics = mutableListOf<ThemeDiagnostic>()
-    private val evaluation = SceneEvaluation(scene, ::report)
+    private val evaluation = SceneEvaluation(scene, ::report, seed)
     private val state = evaluation.state
     private val textures = scene.textures.mapNotNull { (path, bytes) ->
         try {

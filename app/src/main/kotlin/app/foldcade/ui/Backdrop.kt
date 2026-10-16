@@ -15,6 +15,7 @@ import app.foldcade.language.*
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
+import kotlin.random.Random
 
 /** The host schedules a theme scene. No background algorithm lives in this renderer. */
 @Composable
@@ -26,11 +27,15 @@ fun Backdrop(
     held: Boolean = false,
     panel: Float = 0f,
     previewTime: Double? = null,
+    seed: Double? = null,
     onMetrics: ((SceneMetrics) -> Unit)? = null,
 ) {
     if (scene == null) return
-    var renderer by remember(scene) { mutableStateOf<SceneRenderer?>(null) }
-    LaunchedEffect(scene) { renderer = withContext(Dispatchers.Default) { SceneRenderer(scene) } }
+    // Each surface rolls its own seed, so two panels showing one scene start apart.
+    val rolled = remember(scene) { Random.nextDouble() }
+    val surfaceSeed = seed ?: rolled
+    var renderer by remember(scene, surfaceSeed) { mutableStateOf<SceneRenderer?>(null) }
+    LaunchedEffect(scene, surfaceSeed) { renderer = withContext(Dispatchers.Default) { SceneRenderer(scene, surfaceSeed) } }
     val prepared = renderer ?: return
     val clock = if (scene.animateWhenMotionOff && animatorScale > 0f) 1f
         else backdropClock(speed, animatorScale).coerceAtMost(scene.maxClock)

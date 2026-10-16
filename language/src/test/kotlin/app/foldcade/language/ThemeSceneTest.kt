@@ -74,6 +74,41 @@ class ThemeSceneTest {
     }
 
     @Test
+    fun eachSeedShowsItsOwnMomentOfEveryScene() {
+        val pack = afterglow()
+        for (id in listOf("ribbons", "static", "embers")) {
+            val scene = pack.scenes.getValue(BackgroundMotion("afterglow:$id"))
+            fun inputs(seed: Double, time: Double): List<Double> {
+                val state = scene.state(seed).apply { update(time, 1240f, 1080f, true, 0f) }
+                return scene.layers.flatMap { layer ->
+                    (0 until layer.repeat).flatMap { index ->
+                        state.instance(index)
+                        when (layer) {
+                            is SceneLayer.Shader -> layer.uniforms.values.flatten()
+                            is SceneLayer.Disc -> listOf(layer.x, layer.y, layer.along) + layer.color
+                            is SceneLayer.Line -> listOf(layer.y)
+                            is SceneLayer.Image -> emptyList()
+                        }.map { it.evaluate(state.values) }
+                    }
+                }
+            }
+            for (time in listOf(0.0, 47.0, 900.0)) {
+                val one = inputs(0.25, time)
+                assertNotEquals("$id two seeds at $time", one, inputs(0.75, time))
+                assertEquals("$id is deterministic for a seed", one, inputs(0.25, time))
+            }
+        }
+    }
+
+    @Test
+    fun aSceneThatDeclaresItsOwnSeedKeepsIt() {
+        val scene = parseThemeScene("""{"version":1,"id":"own","name":"Own",
+          "variables":{"seed":17,"twice":"seed * 2"},"layers":[]}""", "own.json", emptyMap())!!
+        val state = scene.state(0.4).apply { update(3.0, 100f, 100f, true, 0f) }
+        assertEquals(34.0, state.values[scene.symbols.index("twice")], 1e-9)
+    }
+
+    @Test
     fun scenesExtendABaseSceneByOverridingVariablesAndReusingLayers() {
         val shader = "uniform float gain; half4 main(float2 p) { return half4(gain); }".toByteArray()
         val base = """{"version":1,"id":"base","name":"Base","frameRate":30,

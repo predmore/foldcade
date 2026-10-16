@@ -6,10 +6,11 @@
   "maxClock": 1.25,
   "renderScale": 1,
   "variables": {
-    "breath": "if(moving,1+0.08*sin(2*pi*time/48),1)",
-    "lift": "sin(2*pi*time/84)*8",
+    "pace": "time + 3600*seed",
+    "breath": "if(moving,1+0.08*sin(2*pi*pace/48),1)",
+    "lift": "sin(2*pi*pace/84)*8",
     "cycle": "66+(index % 4)*6",
-    "rise": "fract(time/cycle+index*0.137)",
+    "rise": "fract(pace/cycle+index*0.137)",
     "edge": "if(rise < 0.12,smooth(rise/0.12),if(rise > 0.88,smooth((1-rise)/0.12),1))"
   },
   "layers": [
@@ -33,7 +34,7 @@
       "name": "embers",
       "type": "disc",
       "repeat": 12,
-      "x": "(0.06+(index*73 % 88)/100)*width+sin(2*pi*time/96+index)*14",
+      "x": "(0.06+(index*73 % 88)/100)*width+sin(2*pi*pace/96+index)*14",
       "y": "height+10-rise*(height+20)",
       "radius": 3.565,
       "tightness": 2.2,

@@ -45,6 +45,8 @@ class ThemePreviewActivity : ComponentActivity() {
         val requested = intent.getStringExtra("scene")
         val panel = intent.getIntExtra("panel", 0).toFloat()
         val fixedTime = intent.getStringExtra("time")?.toDoubleOrNull()
+        // A fixed time is for snapshots, so it pins the seed too unless one is given.
+        val seed = intent.getStringExtra("seed")?.toDoubleOrNull() ?: fixedTime?.let { 0.0 }
         val chrome = intent.getBooleanExtra("chrome", true)
         setContent {
             val referenceIcons = if (intent.getBooleanExtra("validateIcons", false) && base?.resources?.id == "afterglow") {
@@ -79,7 +81,7 @@ class ThemePreviewActivity : ComponentActivity() {
                 }
                 Box(Modifier.fillMaxSize().background(paint.theme.background)) {
                     Backdrop(scene, MotionSpeed.Slow, if (reduced) 0f else 1f, running, paused,
-                        panel = panel, previewTime = fixedTime, onMetrics = { metrics = it })
+                        panel = panel, previewTime = fixedTime, seed = seed, onMetrics = { metrics = it })
                     if (chrome) Column(Modifier.padding(24.dp).background(paint.theme.surface).padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                         fun label() = TextStyle(color = paint.theme.onBackground, fontFamily = paint.theme.font,
                             fontSize = paint.theme.style.type.hint)
