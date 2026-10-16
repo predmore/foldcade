@@ -225,6 +225,8 @@ class ShellController(
 
     private var shelfState: AppShelfState = store.appShelfState()
     private var installed: List<LaunchableApp> = emptyList()
+    /** [installed]'s packages, so the hero can ask which emulator a game opens in without asking Android. */
+    private var installedPackages: Set<String> = emptySet()
     private var playerPackages: Set<String> = emptySet()
     // A board from before collections is kept as it was before this release first rewrites it.
     private val home = store.run {
@@ -1320,6 +1322,7 @@ class ShellController(
 
     fun setInstalledApps(apps: List<LaunchableApp>, players: Set<String>) {
         installed = apps.distinctBy { it.packageName }
+        installedPackages = installed.mapTo(HashSet()) { it.packageName }
         installedAppsSettled = true
         playerPackages = players
         syncHome()
@@ -1917,7 +1920,7 @@ class ShellController(
         val game = home.asShelf(face)
         val platformId = game.platformId
         if (game.libraryId == null || platformId == null) return game
-        return game.copy(occupiesBothDisplays = platformOccupiesBoth(plugins, platformId))
+        return game.copy(occupiesBothDisplays = platformOccupiesBoth(plugins, platformId, installedPackages::contains))
     }
 
     /**

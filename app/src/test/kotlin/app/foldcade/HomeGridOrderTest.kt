@@ -38,6 +38,8 @@ import app.foldcade.language.rowText
 import app.foldcade.language.homeGameId
 import app.foldcade.localfolder.LocalFolderEntry
 import app.foldcade.plugins.melonds.MelonDsEntry
+import app.foldcade.plugins.melonds.MelonDsPlayer
+import app.foldcade.plugins.retroarch.RetroArchEntry
 import kotlinx.coroutines.Dispatchers
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -299,6 +301,29 @@ class HomeGridOrderTest {
         // Off the library grid the hero reads play history under the id it launched with.
         assertEquals(game?.id, shell.playId(game!!.id))
         assertTrue(game.occupiesBothDisplays)
+    }
+
+    @Test
+    fun aDsGameReadsAsBothScreensBesideRetroArchsDsCoresUntilOnlyRetroArchIsInstalled() {
+        // RetroArch also runs DS games now, on one screen, ranked behind melonDS. The hero and
+        // the launch keys follow the emulator the game opens in, not every one that could.
+        val plugins = PluginHost(Dispatchers.Unconfined, MemoryCredentialStore())
+        plugins.register(LocalFolderEntry())
+        plugins.register(MelonDsEntry())
+        plugins.register(RetroArchEntry())
+        val shell = ShellController(SessionStore(MemoryPrefs()), plugins)
+        shell.ingestLibrary("local-folder", listOf(entry("tetris", "Tetris DS", "nintendo-ds")), emptyList())
+        focus(shell, titles(shell).indexOf("Nintendo DS"))
+        shell.onMeaning(Meaning.Activate, HostScreen.Bottom)
+        assertTrue(shell.focusedGame()!!.occupiesBothDisplays)
+        assertFalse(shell.focusedLaunchesOnOneScreen())
+
+        shell.setInstalledApps(listOf(LaunchableApp(MelonDsPlayer.STABLE_PACKAGE, "melonDS", false), LaunchableApp(RETROARCH, "RetroArch", false)), emptySet())
+        assertTrue(shell.focusedGame()!!.occupiesBothDisplays)
+
+        shell.setInstalledApps(listOf(LaunchableApp(RETROARCH, "RetroArch", false)), emptySet())
+        assertFalse(shell.focusedGame()!!.occupiesBothDisplays)
+        assertTrue(shell.focusedLaunchesOnOneScreen())
     }
 
     @Test
@@ -1158,3 +1183,5 @@ class HomeGridOrderTest {
     private fun shell(): ShellController =
         ShellController(SessionStore(MemoryPrefs()), PluginHost(Dispatchers.Unconfined, MemoryCredentialStore()), nowMillis = { recoveryTime })
 }
+
+private const val RETROARCH = "com.retroarch.aarch64"

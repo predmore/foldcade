@@ -1029,7 +1029,7 @@ class FoldcadeApp : Application() {
                     plugins,
                     LocalFolderBackend.ID,
                     folderName = backend::folderName,
-                    occupiesBoth = { platformOccupiesBoth(plugins, it) },
+                    occupiesBoth = { platformOccupiesBoth(plugins, it, ::packageInstalled) },
                 )
             } catch (cancelled: CancellationException) {
                 throw cancelled
@@ -1118,7 +1118,7 @@ class FoldcadeApp : Application() {
                 plugins,
                 LocalFolderBackend.ID,
                 folderName = backend::folderName,
-                occupiesBoth = { platformOccupiesBoth(plugins, it) },
+                occupiesBoth = { platformOccupiesBoth(plugins, it, ::packageInstalled) },
             )
             // A failed read says nothing about the .steam files, and a newer reload has its own.
             if (loaded != LoadedLibrary.Unreachable && ticket == libraryTicket.get()) {
@@ -1211,7 +1211,7 @@ class FoldcadeApp : Application() {
                     libraryId,
                     platformId,
                     folderName = folderName,
-                    occupiesBoth = { platformOccupiesBoth(plugins, it) },
+                    occupiesBoth = { platformOccupiesBoth(plugins, it, ::packageInstalled) },
                 )
             } catch (cancelled: CancellationException) {
                 throw cancelled
@@ -1284,7 +1284,7 @@ class FoldcadeApp : Application() {
                         when (val listed = loadPlatforms(
                             plugins,
                             libraryId,
-                            occupiesBoth = { platformOccupiesBoth(plugins, it) },
+                            occupiesBoth = { platformOccupiesBoth(plugins, it, ::packageInstalled) },
                         )) {
                             is LoadedLibrary.Platforms -> listed to loadEveryGame(libraryId, listed)
                             LoadedLibrary.NoPlatforms -> null to emptyList<GridEntry>()
@@ -1376,7 +1376,7 @@ class FoldcadeApp : Application() {
                 libraryId,
                 platformId,
                 folderName = folderName,
-                occupiesBoth = { platformOccupiesBoth(plugins, it) },
+                occupiesBoth = { platformOccupiesBoth(plugins, it, ::packageInstalled) },
             )
         }
         return games
