@@ -85,7 +85,7 @@ Layers are drawn in order. Each supports a name, a positive integer `repeat` (de
 - **line:** `x`, `y`, `endX`, `endY`, stroke `width`, and RGBA `color`.
 - **image:** `file`, `x`, `y`, `width`, `height`, optional `alpha` (default 1) and `rotation` in degrees.
 
-Numeric properties can be numbers, arithmetic-expression strings, or keyframe tracks. Expressions evaluate in double precision, so `time` stays exact through months of uptime. Values reach shaders as 32-bit floats, which lose a frame's worth of precision after about a day. Pass shaders a wrapped phase such as `fract(time / 20)` or `2*pi*fract(time / 20)`, not raw `time`. Available inputs are `time` in design seconds, `width`/`height` of the render target, `panel` (top 0, bottom 1), `moving` (0/1), `clock`, repeated-layer `index`, and sampled-path `u` (0–1). `pi` is constant. Variables are evaluated in declaration order and can refer to preceding variables. Repeat-local variables are reevaluated for each instance.
+Numeric properties can be numbers, arithmetic-expression strings, or keyframe tracks. Expressions evaluate in double precision, so `time` stays exact through months of uptime. Values reach shaders as 32-bit floats, which lose a frame's worth of precision after about a day. Pass shaders a wrapped phase such as `fract(time / 20)` or `2*pi*fract(time / 20)`, not raw `time`. Available inputs are `time` in design seconds, `width`/`height` of the render target, `panel` (top 0, bottom 1), `seed`, `moving` (0/1), `clock`, repeated-layer `index`, and sampled-path `u` (0–1). `seed` is a random 0–1 value each panel chooses when its scene starts and keeps until the scene changes. Two panels start a scene together, so without it both screens show the same moment. Afterglow adds `3600*seed` to its time. A scene that declares its own `seed` variable keeps it instead. `pi` is constant. Variables are evaluated in declaration order and can refer to preceding variables. Repeat-local variables are reevaluated for each instance.
 
 Path samples reevaluate variables that depend directly or indirectly on `u`, including keyframe tracks, then restore the instance's values. Runtime errors in scene-wide variables or `frameRate` stop that scene and emit one diagnostic; layer errors disable only the failed layer.
 
@@ -95,7 +95,7 @@ Keyframes are increasing `[time, value]` pairs. They loop by default; `loop: fal
 
 `frameRate` may be an expression to request different cadences during a scene; zero stops the frame clock. Actual updates are synchronized to display frames. `renderScale` chooses the resolution of an offscreen surface when different from 1. Coordinates and fixed pixel sizes use that render target's pixels; the surface is scaled to fill the panel. Authors choose how their artwork responds to reduced resolution. `maxClock` optionally caps the scene's design-time rate. `frozenTime` defaults to zero. `animateWhenMotionOff` opts into slow movement even when the user-selected motion speed is Off; Afterglow's Static uses this to preserve its subtle drift. Android's remove-animations setting still stops the clock.
 
-The host pauses hidden/inactive scenes and respects their panel lifecycle. Each panel has independent rendering state. Identical time inputs give deterministic frames, which the native preview can freeze for comparison.
+The host pauses hidden/inactive scenes and respects their panel lifecycle. Each panel has independent rendering state. Identical time and seed inputs give deterministic frames, which the native preview can freeze for comparison.
 
 ## Package and preview
 
@@ -124,6 +124,7 @@ Optional extras:
 - `time`: string design time, such as `--es time 3.5`, for deterministic snapshots.
 - `chrome`: `--ez chrome false` for an unobstructed scene.
 - `validateIcons`: `--ez validateIcons true` decodes every base-pack icon and writes `files/theme-preview-icons.txt`; Afterglow vectors also compare against the original Compose resource painters.
+- `seed`: string seed in 0–1, such as `--es seed 0.4`. It defaults to 0 when `time` is given and to a random value otherwise.
 - `panel`: `--ei panel 1` for bottom-panel scene inputs; use `am start --display <id>` to preview on that display.
 
 The overlay switches scenes, reduced motion, and pause. It reports draw cadence, CPU submission time, layer count, and decoded texture memory. CPU submission is not GPU render time. Collect Android frame timing or profile on the target device for GPU cost:

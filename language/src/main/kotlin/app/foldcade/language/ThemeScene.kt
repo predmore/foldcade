@@ -18,7 +18,7 @@ data class ThemeScene(
     val frozenTime: Double,
     val textures: Map<String, ByteArray>,
 ) {
-    fun state(): SceneState = SceneState(this)
+    fun state(seed: Double = 0.0): SceneState = SceneState(this, seed)
     /** Only variables that depend on u need reevaluating at every path sample. */
     internal val sampledVariables: List<Pair<Int, AnimationExpression>> = run {
         val dependent = mutableSetOf(symbols.index("u"))
@@ -29,8 +29,8 @@ data class ThemeScene(
 }
 
 /** A failure in scene-wide evaluation stops this surface and produces one source-linked diagnostic. */
-class SceneEvaluation(val scene: ThemeScene, private val report: (ThemeDiagnostic) -> Unit = {}) {
-    val state = scene.state()
+class SceneEvaluation(val scene: ThemeScene, private val report: (ThemeDiagnostic) -> Unit = {}, seed: Double = 0.0) {
+    val state = scene.state(seed)
     var failed = false
         private set
 
@@ -52,9 +52,12 @@ class SceneEvaluation(val scene: ThemeScene, private val report: (ThemeDiagnosti
         }
 }
 
-class SceneState(val scene: ThemeScene) {
+/** [seed] stays fixed for the life of the surface, so each panel can start somewhere of its own. */
+class SceneState(val scene: ThemeScene, seed: Double = 0.0) {
     val values = DoubleArray(scene.symbols.size)
     fun set(name: String, value: Double) { values[scene.symbols.index(name)] = value }
+    // A scene's own `seed` variable overwrites this at every update.
+    init { set("seed", seed) }
     fun update(time: Double, width: Float, height: Float, moving: Boolean, panel: Float, clock: Float = 1f) {
         set("time", time); set("width", width.toDouble()); set("height", height.toDouble())
         set("moving", if (moving) 1.0 else 0.0); set("panel", panel.toDouble())
@@ -153,6 +156,8 @@ fun parseThemeScene(
     require(root["version"]?.jsonPrimitive?.int == 1) { "Unsupported scene version" }
     val symbols = AnimationSymbols()
     listOf("time", "width", "height", "moving", "panel", "index", "u", "clock").forEach(symbols::define)
+    // `seed` came later than scene version 1. A scene that already declares its own keeps it.
+    if (root["variables"]?.jsonObject?.containsKey("seed") != true) symbols.define("seed")
     fun expr(value: JsonElement?, fallback: String = "0"): AnimationExpression {
         if (value !is JsonObject) return symbols.compile(value?.jsonPrimitive?.content ?: fallback)
         val frames = value["keyframes"]!!.jsonArray.map { it.jsonArray }

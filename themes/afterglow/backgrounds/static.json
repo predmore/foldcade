@@ -6,7 +6,7 @@
   "frameRate": 0.125,
   "animateWhenMotionOff": true,
   "variables": {
-    "pace": "time / 1200",
+    "pace": "time / 1200 + offset",
     "live": "0",
     "breath": "0.28"
   },
