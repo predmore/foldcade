@@ -463,7 +463,8 @@ class ShellController(
             openFind()
             return null
         }
-        if (homeActive()) {
+        syncPills()
+        if (homeActive() && !opensPill(meaning)) {
             val before = model
             val wasInFolder = home.board.openFolderId != null
             val wasAll = home.board.allOpen
@@ -788,6 +789,8 @@ class ShellController(
     /** A tap on an empty collection's Add games does what A does there, in one tap: it is the only thing to press. */
     fun touchAddGames(screen: HostScreen): Effect? {
         if (!homeActive() || artPicker != null || emptyCollection() == null) return null
+        // The cursor may be on a pill. The tap names Add games, so it takes the cursor back first.
+        if (model.focus.chrome != null) publish(model.copy(focus = model.focus.copy(chrome = null)))
         return onMeaning(Meaning.Activate, screen)
     }
 
@@ -2521,6 +2524,25 @@ class ShellController(
     private fun homeActive(): Boolean =
         showingHome() && model.dialog == null && model.panel == null && model.settings == null &&
             model.playActivity == null && model.saveConflict == null && !model.connectOpen
+
+    /**
+     * A or X with the cursor on L1's or R1's pill opens that drawer, as the grid reducer
+     * does. Home would act on the tile the cursor left. Typing, a held tile, an icon pick
+     * and a selection keep their own keys.
+     */
+    private fun opensPill(meaning: Meaning): Boolean =
+        model.focus.chrome != null && (meaning == Meaning.Activate || meaning == Meaning.ActivateBottom) &&
+            home.keys().let { it == HomeKeys.Idle || it == HomeKeys.AllLibrary }
+
+    /**
+     * The pills are drawn on the top screen, so an app there leaves the cursor on the grid.
+     * A selection keeps L1 and R1 shut, so their pills are out of reach then too.
+     */
+    private fun syncPills() {
+        val shown = store.session.islandsOpen() && home.keys() != HomeKeys.Selecting
+        if (model.pills == shown) return
+        model = model.copy(pills = shown, focus = if (shown) model.focus else model.focus.copy(chrome = null))
+    }
 
     private fun showBoard(focus: GridFocus, keepDialog: Boolean) {
         val count = home.visibleCount()

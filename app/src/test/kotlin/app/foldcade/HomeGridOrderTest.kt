@@ -27,7 +27,12 @@ import app.foldcade.language.KeyboardLayout
 import app.foldcade.language.CollectionLook
 import app.foldcade.language.CollectionTint
 import app.foldcade.language.MARK_LIBRARY
+import app.foldcade.language.HOME_ALL
 import app.foldcade.language.HOME_FAVORITES
+import app.foldcade.language.HomeBoard
+import app.foldcade.language.HomeFolder
+import app.foldcade.language.androidHomeId
+import app.foldcade.language.encodeHome
 import app.foldcade.language.PanelLevel
 import app.foldcade.language.RemoveVerb
 import app.foldcade.language.Row
@@ -612,6 +617,44 @@ class HomeGridOrderTest {
     }
 
     @Test
+    fun theLastTileTakenOffHomeTakesItsSlotAndTheStripsReachWithIt() {
+        val shell = shell()
+        shell.ingestLibrary(
+            "local-folder",
+            listOf(entry("puzzle", "Puzzle", "nintendo-3ds"), entry("drift", "Drift", "nintendo-ds")),
+            emptyList(),
+        )
+        val count = shell.model.count
+        val lastTitle = titles(shell).last()
+        focus(shell, count - 1)
+        choose(shell, Row.RemoveTile)
+        assertFalse(lastTitle in titles(shell))
+        // No empty slot is left at the end, so the reach is the remaining tiles' own.
+        assertEquals(count - 1, shell.model.count)
+        assertFalse(shell.homeFace(shell.model.count - 1)?.empty == true)
+        repeat(GridStrip.columns(count) + GridStrip.trailing + 2) { shell.onMeaning(Meaning.MoveRight, HostScreen.Bottom) }
+        assertEquals(GridStrip.columns(count - 1) - 1 + GridStrip.trailing, GridStrip.column(shell.model.focus.cellIndex))
+    }
+
+    @Test
+    fun aHomeSavedWithEmptySlotsAtItsEndReachesOnlyAsFarAsItsTiles() {
+        // Boards saved before this kept the slot a removed last tile left behind.
+        val store = SessionStore(MemoryPrefs())
+        val folder = HomeFolder("mine", "Mine", userMade = true, slots = listOf(androidHomeId("app")))
+        store.saveHomeBoard(encodeHome(HomeBoard(
+            slots = listOf(HOME_ALL, folder.id, null, null, null, null),
+            folders = mapOf(folder.id to folder), addNewToHome = false,
+        )))
+        val shell = ShellController(store, PluginHost(Dispatchers.Unconfined, MemoryCredentialStore()))
+        shell.setInstalledApps(listOf(LaunchableApp("app", "App", false)), emptySet())
+        // All, Mine, and Favorites, which comes on by default, fill one column.
+        assertEquals(1, GridStrip.columns(shell.model.count))
+        assertFalse(shell.homeFace(shell.model.count - 1)?.empty == true)
+        repeat(Metrics.columns * 3) { shell.onMeaning(Meaning.MoveRight, HostScreen.Bottom) }
+        assertEquals(GridStrip.trailing, GridStrip.column(shell.model.focus.cellIndex))
+    }
+
+    @Test
     fun theCursorWalksPastTheLastTileAndALiftedTileGoesAsFar() {
         val shell = shell()
         shell.ingestLibrary(
@@ -797,7 +840,8 @@ class HomeGridOrderTest {
         focus(shell, folder)
         assertEquals(listOf(Row.MoveTile, Row.RenameFolder, Row.RemoveTile), optionRows(shell))
         choose(shell, Row.RemoveTile)
-        assertEquals(listOf(Copy.allLibrary, Copy.favorites, ""), titles(shell))
+        // The folder was the last tile, so its empty slot goes with it.
+        assertEquals(listOf(Copy.allLibrary, Copy.favorites), titles(shell))
         // A rescan leaves it off Home. Puzzle is still in All, and not on Home.
         shell.ingestLibrary("local-folder", listOf(entry("puzzle", "Puzzle", "nintendo-3ds")), emptyList())
         assertFalse("Nintendo 3DS" in titles(shell))
