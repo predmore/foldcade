@@ -1170,11 +1170,13 @@ fun reduce(
 
 private fun coerce(focus: GridFocus, model: PickerModel): GridFocus {
     var next = focus
-    if (model.count <= 0) {
-        return next.copy(chrome = next.chrome ?: Chrome.StatusCluster, cellIndex = 0, lastColumn = 0)
-    }
     // A pill the cursor was on before an app covered it gives the cursor back to the grid.
     if (!model.pills && next.chrome != null) next = next.copy(chrome = null)
+    if (model.count <= 0) {
+        // An empty grid has nothing but R1 to rest on, when the pills are there to reach.
+        val chrome = if (model.pills) next.chrome ?: Chrome.StatusCluster else null
+        return next.copy(chrome = chrome, cellIndex = 0, lastColumn = 0)
+    }
     if (next.chrome == null && next.cellIndex !in 0 until reach(model)) {
         val index = (model.count - 1).coerceAtLeast(0)
         next = next.copy(cellIndex = index, lastColumn = GridStrip.column(index))
@@ -1326,7 +1328,7 @@ private fun move(focus: GridFocus, meaning: Meaning, model: PickerModel): GridFo
             else -> focus
         }
     }
-    if (model.count <= 0) return focus.copy(chrome = Chrome.StatusCluster)
+    if (model.count <= 0) return if (model.pills) focus.copy(chrome = Chrome.StatusCluster) else focus
     if (model.libraryGrid && model.gridKind == GridKind.NoLibrary) return alongButtons(focus, meaning, model)
     val column = GridStrip.column(focus.cellIndex)
     val row = GridStrip.row(focus.cellIndex)

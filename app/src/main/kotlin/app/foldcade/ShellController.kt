@@ -784,6 +784,8 @@ class ShellController(
     /** A tap on an empty collection's Add games does what A does there, in one tap: it is the only thing to press. */
     fun touchAddGames(screen: HostScreen): Effect? {
         if (!homeActive() || artPicker != null || emptyCollection() == null) return null
+        // The cursor may be on a pill. The tap names Add games, so it takes the cursor back first.
+        if (model.focus.chrome != null) publish(model.copy(focus = model.focus.copy(chrome = null)))
         return onMeaning(Meaning.Activate, screen)
     }
 
@@ -2528,8 +2530,7 @@ class ShellController(
     private fun syncPills() {
         val shown = store.session.islandsOpen() && home.keys() != HomeKeys.Selecting
         if (model.pills == shown) return
-        val focus = if (shown || model.count <= 0) model.focus else model.focus.copy(chrome = null)
-        model = model.copy(pills = shown, focus = focus)
+        model = model.copy(pills = shown, focus = if (shown) model.focus else model.focus.copy(chrome = null))
     }
 
     private fun showBoard(focus: GridFocus, keepDialog: Boolean) {

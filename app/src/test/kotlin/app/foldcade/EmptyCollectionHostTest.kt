@@ -111,6 +111,28 @@ class EmptyCollectionHostTest {
         assertNull(shell.emptyCollection())
     }
 
+    @Test fun besideAnAppUpStaysOnAddGamesForAToPress() {
+        // The pills are on the top screen, so with an app there Up has nowhere to go.
+        store.place(Panel.Top, ExternalApp("game"))
+        val shell = shell()
+        open(shell, board().slots.indexOf(group.id))
+        shell.onMeaning(Meaning.MoveUp, HostScreen.Bottom)
+        assertNull(shell.model.focus.chrome)
+        assertNull(shell.onMeaning(Meaning.Activate, HostScreen.Bottom))
+        assertNull(shell.model.panel)
+        assertEquals(HomeKeys.AllLibrary, shell.homeKeys())
+    }
+
+    @Test fun aTapOnAddGamesAddsGamesWhileAPillIsLit() {
+        val shell = shell()
+        open(shell, board().slots.indexOf(group.id))
+        shell.onMeaning(Meaning.MoveUp, HostScreen.Bottom)
+        assertNotNull(shell.model.focus.chrome)
+        assertNull(shell.touchAddGames(HostScreen.Bottom))
+        assertNull(shell.model.panel)
+        assertEquals(HomeKeys.AllLibrary, shell.homeKeys())
+    }
+
     private fun open(shell: ShellController, index: Int) {
         focus(shell, index)
         shell.onMeaning(Meaning.Activate, HostScreen.Bottom)

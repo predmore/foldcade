@@ -68,6 +68,21 @@ class PillFocusHostTest {
         assertEquals(GridStrip.index(1, 0), shell.model.focus.cellIndex)
     }
 
+    @Test fun anEmptyGridBesideAnAppHasNoPillToRestOn() {
+        val store = SessionStore(MemoryPrefs())
+        val shell = shell(store)
+        store.place(Panel.Top, ExternalApp("game"))
+        shell.showGames(emptyList())
+        shell.onMeaning(Meaning.MoveUp, HostScreen.Bottom)
+        assertNull(shell.model.focus.chrome)
+        shell.onMeaning(Meaning.Activate, HostScreen.Bottom)
+        assertNull(shell.model.panel)
+        // With the top screen free again, R1 is what an empty grid rests on.
+        store.update { it.home(Panel.Top) }
+        shell.onMeaning(Meaning.MoveUp, HostScreen.Bottom)
+        assertEquals(Chrome.StatusCluster, shell.model.focus.chrome)
+    }
+
     @Test fun aSelectionKeepsThePillsOutOfReach() {
         val shell = shell()
         shell.openHomeAll()
