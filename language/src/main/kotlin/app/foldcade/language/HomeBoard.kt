@@ -239,10 +239,14 @@ fun resolvePlatform(platforms: List<HomePlatform>, idOrAlias: String?): HomePlat
     }
 }
 
-/** The open group's slots, or the root's. An id listed twice shows once, at its first place. */
+/**
+ * The open group's slots, or the root's. An id listed twice shows once, at its first place.
+ * The root ends at its last tile: a slot emptied there, by Hide, Unpin or Remove, would
+ * otherwise push the strip's reach a column further each time, past the last tiles' screen.
+ */
 fun visibleSlots(board: HomeBoard): List<String?> {
     val folderId = board.openFolderId
-    if (folderId == null) return firstOnly(board.slots)
+    if (folderId == null) return firstOnly(board.slots).dropLastWhile { it == null }
     return firstOnly(board.folders[folderId]?.slots ?: emptyList())
 }
 
