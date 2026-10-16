@@ -7,17 +7,21 @@ name: Release
 # A push of tag v0.x.y (v0.1.0 and the same shape) signs again and publishes
 # a full GitHub Release that is not a pre-release. The asset stays
 # foldcade.apk. That run does not move the rolling pre-release tag.
-# Pull requests and workflow_dispatch build an unsigned release to prove that
-# versionCode. They do not publish. Signing runs on push to main and on a
-# v0.x.y tag. This workflow does not boot an emulator.
+# This file does not run on pull_request, pull_request_target, workflow_run,
+# or workflow_dispatch. Signing secrets are read only by the signed release
+# job, and only on a push to main or a v* tag of predmore/foldcade. The
+# unsigned dry-run lives in unsigned-release.yml. This workflow does not boot
+# an emulator.
 on:
   push:
     branches:
       - main
     tags:
       - "v0.*"
-  pull_request:
-  workflow_dispatch:
+
+# contents: write is granted only on the job that publishes the GitHub Release.
+permissions:
+  contents: read
 
 # A cancelled run can clobber the APK off the release and leave nothing.
 # This stays false. Only the emulator workflow and the unit-test pull-request job cancel in progress.
@@ -28,11 +32,13 @@ concurrency:
 jobs:
   test:
     name: testDebugUnitTest
-    if: github.event_name == 'push'
+    # Same refs as the signed job. A skipped test must not let a release publish.
+    if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v'))
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     permissions:
       contents: read
+      actions: write
     steps:
       - uses: actions/checkout@v7
 
@@ -85,7 +91,7 @@ jobs:
           echo "ANDROID_HOME=$SDK_ROOT" >> "$GITHUB_ENV"
           echo "ANDROID_SDK_ROOT=$SDK_ROOT" >> "$GITHUB_ENV"
 
-      - uses: gradle/actions/setup-gradle@v6
+      - uses: gradle/actions/setup-gradle@3f5f9adaf7d9fecd50b5935e54106014257a94e6 # v6.4.0
         with:
           cache-read-only: true
 
@@ -94,13 +100,19 @@ jobs:
 
   release:
     name: signed release APK
-    # Push covers main and a v0.* tag. Pull requests skip this job.
-    if: github.event_name == 'push'
+    # Secrets stay in this job. pull_request cannot start this workflow, and
+    # this condition still refuses anything that is not a push to main or a v* tag.
+    if: >-
+      github.event_name == 'push' &&
+      github.repository == 'predmore/foldcade' &&
+      github.event.repository.fork == false &&
+      (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v'))
     needs: test
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     permissions:
       contents: write
+      actions: write
     steps:
       - uses: actions/checkout@v7
         with:
@@ -180,7 +192,7 @@ jobs:
           echo "ANDROID_HOME=$SDK_ROOT" >> "$GITHUB_ENV"
           echo "ANDROID_SDK_ROOT=$SDK_ROOT" >> "$GITHUB_ENV"
 
-      - uses: gradle/actions/setup-gradle@v6
+      - uses: gradle/actions/setup-gradle@3f5f9adaf7d9fecd50b5935e54106014257a94e6 # v6.4.0
         with:
           # The release configuration reads the keystore passwords. Do not write that cache.
           cache-read-only: true
@@ -263,95 +275,3 @@ jobs:
       - name: Remove the release keystore
         if: always()
         run: rm -f "${RUNNER_TEMP}/foldcade-release.jks"
-
-  unsigned-release:
-    name: unsigned release dry-run
-    if: github.event_name == 'pull_request' || github.event_name == 'workflow_dispatch'
-    runs-on: ubuntu-24.04
-    timeout-minutes: 30
-    permissions:
-      contents: read
-    steps:
-      - uses: actions/checkout@v7
-        with:
-          fetch-depth: 0
-
-      - uses: actions/setup-java@v6
-        with:
-          distribution: temurin
-          java-version: "21"
-
-      - name: Android SDK root
-        id: sdk
-        run: echo "root=$HOME/android-sdk" >> "$GITHUB_OUTPUT"
-
-      - name: Cache Android SDK packages
-        uses: actions/cache@v6
-        with:
-          path: |
-            ${{ steps.sdk.outputs.root }}/cmdline-tools
-            ${{ steps.sdk.outputs.root }}/platforms
-            ${{ steps.sdk.outputs.root }}/build-tools
-            ${{ steps.sdk.outputs.root }}/platform-tools
-            ${{ steps.sdk.outputs.root }}/licenses
-          key: android-sdk-33-37.0-build-tools-37.0.0-platform-tools-v1
-
-      - name: Install Android SDK packages
-        env:
-          SDK_ROOT: ${{ steps.sdk.outputs.root }}
-        run: |
-          set -euo pipefail
-          mkdir -p "$SDK_ROOT"
-          if [ ! -x "$SDK_ROOT/cmdline-tools/latest/bin/sdkmanager" ]; then
-            tmp="$(mktemp -d)"
-            curl -fsSL -o "$tmp/cmdlinetools.zip" \
-              https://dl.google.com/android/repository/commandlinetools-linux-12266719_latest.zip
-            unzip -q "$tmp/cmdlinetools.zip" -d "$tmp"
-            mkdir -p "$SDK_ROOT/cmdline-tools"
-            rm -rf "$SDK_ROOT/cmdline-tools/latest"
-            mv "$tmp/cmdline-tools" "$SDK_ROOT/cmdline-tools/latest"
-          fi
-          sdkmanager="$SDK_ROOT/cmdline-tools/latest/bin/sdkmanager"
-          # sdkmanager closes stdin, so `yes` exits 141. Licenses are still accepted.
-          yes | "$sdkmanager" --sdk_root="$SDK_ROOT" --licenses >/dev/null || true
-          # Do not install the legacy `tools` package. Current cmdline-tools do not ship it.
-          # compileSdk is release(37), so compilation needs platforms;android-37.0.
-          # platforms;android-33 is the min and target platform.
-          "$sdkmanager" --sdk_root="$SDK_ROOT" --install \
-            "platforms;android-33" \
-            "platforms;android-37.0" \
-            "build-tools;37.0.0" \
-            "platform-tools"
-          echo "ANDROID_HOME=$SDK_ROOT" >> "$GITHUB_ENV"
-          echo "ANDROID_SDK_ROOT=$SDK_ROOT" >> "$GITHUB_ENV"
-
-      - uses: gradle/actions/setup-gradle@v6
-        with:
-          cache-read-only: true
-
-      # Same render step as the signed release job. No cross-workflow wait.
-      - name: Render home music
-        uses: ./.github/actions/render-home-music
-
-      - name: Assemble unsigned release
-        run: |
-          set -euo pipefail
-          code="$(git rev-list --count HEAD)"
-          ./gradlew --configuration-cache \
-            -PfoldcadeVersionCode="$code" \
-            -PfoldcadeAllowUnsigned=true \
-            :app:printFoldcadeIdentity :app:assembleRelease
-          grep -qx "versionCode=${code}" app/build/foldcade-identity.txt
-          mapfile -t apks < <(find app/build/outputs/apk/release -name '*.apk' -type f | sort)
-          if [ "${#apks[@]}" -ne 1 ]; then
-            echo "::error::Expected one unsigned release APK, found ${#apks[@]}."
-            printf '%s\n' "${apks[@]:-}"
-            exit 1
-          fi
-          apk="${apks[0]}"
-          unzip -l "$apk" | grep -q 'assets/music/lanternlight.ogg'
-          unzip -l "$apk" | grep -q 'assets/music/manifest.json'
-          if "$ANDROID_HOME/build-tools/37.0.0/apksigner" verify "$apk"; then
-            echo "::error::Unsigned dry-run produced a signed APK."
-            exit 1
-          fi

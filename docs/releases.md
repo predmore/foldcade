@@ -69,7 +69,7 @@ Local release builds read the same keystore through `FOLDCADE_RELEASE_KEYSTORE`,
 
 ## What CI publishes
 
-`.github/workflows/release.yml` runs on a push to `main`, on pull requests, and on `workflow_dispatch`. `cancel-in-progress` stays false. A cancelled run must not strip the APK off a release and leave nothing.
+`.github/workflows/release.yml` runs on a push to `main` and on a `v0.x.y` tag. It does not run on pull requests. `cancel-in-progress` stays false. A cancelled run must not strip the APK off a release and leave nothing. Signing secrets are referenced only in the signed release job.
 
 On a push to `main`, the workflow runs unit tests, then a signed release. It refuses to build or upload if any of the four secrets is missing. It decodes the keystore in the runner temp directory, checks the alias, assembles with `-PfoldcadeVersionCode` from `git rev-list --count HEAD`, and refuses to upload unless `apksigner` reports that same key. The uploaded asset is copied to `foldcade.apk`. The keystore file is removed at the end of the job. Home music is rendered in the job before the keystore is decoded, and that step does not receive the signing secrets.
 
@@ -77,6 +77,6 @@ On a push to `main`, the workflow runs unit tests, then a signed release. It ref
 
 A push of tag `v0.x.y` whose name matches `versionName` signs the same way and publishes a full GitHub release. That release is not a pre-release. The asset name stays `foldcade.apk`, which is what Obtainium's `^foldcade\.apk$` filter matches. Notes committed at `.github/release/notes/v0.x.y.md` are the release body. This tag run does not delete or move the rolling `pre-release` tag. `versionCode` stays `git rev-list --count HEAD`, so it matches the pre-release built from that same commit and is higher than a pre-release on any older commit.
 
-Pull requests and `workflow_dispatch` assemble an unsigned release with `-PfoldcadeAllowUnsigned=true` to prove that `versionCode`. They do not publish. The workflow does not boot an emulator. Signing is skipped on pull requests and runs on a push to `main` and on a `v0.x.y` tag.
+Pull requests and `workflow_dispatch` run `.github/workflows/unsigned-release.yml`. That workflow assembles an unsigned release with `-PfoldcadeAllowUnsigned=true` to prove that `versionCode`. It does not publish, and it has no signing secrets. Neither workflow boots an emulator. Signing runs on a push to `main` and on a `v0.x.y` tag.
 
 The other workflows are in [architecture.md](architecture.md).

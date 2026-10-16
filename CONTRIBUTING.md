@@ -1,5 +1,7 @@
 # Contributing
 
+Outside pull requests are welcome. Jon reviews them before merging.
+
 Foldcade's original code, artwork, and music are licensed under [MIT](LICENSE), including the plugin API, bundled plugins, samples, and tools. The plain-language map is [licensing](docs/licensing.md).
 
 Original contributions are accepted under MIT. Preserve the license and attribution notices for third-party material, including the Nunito font and MuseScore General SoundFont.
