@@ -67,19 +67,14 @@ class CollectionLookTest {
     }
 
     @Test
-    fun aLegacyPacksBlackBackedGlyphScreensIntoTheWell() {
-        val afterglow = resolveThemeResources(readThemeZip(afterglowZip().inputStream())!!)
-        val legacy = resolveThemeResources(ThemeZip(parseThemeJson("""{"name":"Old marks"}""")!!, mapOf("marks/star.png" to byteArrayOf(1))))
-        val decode = { asset: ThemeIconAsset -> "decoded ${asset.owner}/${asset.file}" }
-        // The pack's star wins over Afterglow's and keeps its Screen blending into the collection's well.
-        val packed = resolveThemeIcon(ThemeComposition(afterglow, iconProvider = legacy).iconCandidates("mark.star"), decode)
-        assertEquals(ThemeIconBlend.Screen, packed?.asset?.blend)
-        assertEquals(packed?.image, screenedInset(packed))
-        // Afterglow's own vector glyphs, and the folder card, draw as they are.
-        val stock = resolveThemeIcon(ThemeComposition(afterglow).iconCandidates("mark.star"), decode)
-        assertEquals("icons/mark_star.xml", stock?.asset?.file)
-        assertNull(screenedInset(stock))
-        assertNull(screenedInset<String>(null))
+    fun everyGlyphACollectionCanWearShipsAsATintableSymbol() {
+        // The picker shows these, and the folder presses them into its face in the collection's colour.
+        val afterglow = ThemeComposition(resolveThemeResources(readThemeZip(afterglowZip().inputStream())!!))
+        for (glyph in FOLDER_ICONS) {
+            val symbol = resolveThemeIcon(afterglow.iconCandidates("symbol.$glyph")) { it.file }
+            assertEquals("icons/symbol_${glyph.replace('-', '_')}.xml", symbol?.image)
+            assertTrue(glyph, symbol?.asset?.tint == true)
+        }
     }
 
     @Test

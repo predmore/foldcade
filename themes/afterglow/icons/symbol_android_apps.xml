@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Foldcade original art, MIT licensed (see LICENSE). Afterglow symbol: A grid of apps -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:aapt="http://schemas.android.com/aapt"
+    android:width="48dp"
+    android:height="48dp"
+    android:viewportWidth="64"
+    android:viewportHeight="64">
+    <path
+        android:pathData="M15,8H23A7,7 0 0 1 30,15V23A7,7 0 0 1 23,30H15A7,7 0 0 1 8,23V15A7,7 0 0 1 15,8ZM41,8H49A7,7 0 0 1 56,15V23A7,7 0 0 1 49,30H41A7,7 0 0 1 34,23V15A7,7 0 0 1 41,8ZM15,34H23A7,7 0 0 1 30,41V49A7,7 0 0 1 23,56H15A7,7 0 0 1 8,49V41A7,7 0 0 1 15,34ZM41,34H49A7,7 0 0 1 56,41V49A7,7 0 0 1 49,56H41A7,7 0 0 1 34,49V41A7,7 0 0 1 41,34Z"
+        android:fillColor="#FFF4F1EA"
+        android:fillType="evenOdd" />
+</vector>

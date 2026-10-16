@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Foldcade original art, MIT licensed (see LICENSE). Afterglow symbol: Switch-style tablet between two controllers -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:aapt="http://schemas.android.com/aapt"
+    android:width="48dp"
+    android:height="48dp"
+    android:viewportWidth="64"
+    android:viewportHeight="64">
+    <path
+        android:pathData="M14,18 V46 H11 Q3,46 3,38 V26 Q3,18 11,18 ZM50,18 H53 Q61,18 61,26 V38 Q61,46 53,46 H50 ZM17,18H47A1.5,1.5 0 0 1 48.5,19.5V44.5A1.5,1.5 0 0 1 47,46H17A1.5,1.5 0 0 1 15.5,44.5V19.5A1.5,1.5 0 0 1 17,18ZM18.5,20H45.5A1,1 0 0 1 46.5,21V43A1,1 0 0 1 45.5,44H18.5A1,1 0 0 1 17.5,43V21A1,1 0 0 1 18.5,20ZM19.1,21H44.9A0.6,0.6 0 0 1 45.5,21.6V42.4A0.6,0.6 0 0 1 44.9,43H19.1A0.6,0.6 0 0 1 18.5,42.4V21.6A0.6,0.6 0 0 1 19.1,21ZM4.9,24.5A3.7,3.7 0 1 1 12.3,24.5A3.7,3.7 0 1 1 4.9,24.5ZM6.2,24.5A2.4,2.4 0 1 1 11,24.5A2.4,2.4 0 1 1 6.2,24.5ZM51.7,38.5A3.7,3.7 0 1 1 59.1,38.5A3.7,3.7 0 1 1 51.7,38.5ZM53,38.5A2.4,2.4 0 1 1 57.8,38.5A2.4,2.4 0 1 1 53,38.5Z"
+        android:fillColor="#FFF4F1EA"
+        android:fillType="evenOdd" />
+</vector>

@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Foldcade original art, MIT licensed (see LICENSE). Afterglow collection glyph: Two players -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:aapt="http://schemas.android.com/aapt"
+    android:width="48dp"
+    android:height="48dp"
+    android:viewportWidth="64"
+    android:viewportHeight="64">
+    <path
+        android:pathData="M11,23.5A7,7 0 1 1 25,23.5A7,7 0 1 1 11,23.5ZM5,53 V48.5 Q5,36 18,36 Q31,36 31,48.5 V53 ZM37,20.5A8.5,8.5 0 1 1 54,20.5A8.5,8.5 0 1 1 37,20.5ZM33,55 V49 Q33,34 45.5,34 Q58,34 58,49 V55 Z"
+        android:fillColor="#FFF4F1EA"
+        android:fillType="evenOdd" />
+</vector>

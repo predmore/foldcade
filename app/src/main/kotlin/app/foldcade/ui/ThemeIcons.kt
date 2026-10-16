@@ -64,6 +64,8 @@ internal fun iconSlot(resource: String): String = when {
     resource.startsWith("ic_btn_") -> "button." + resource.removePrefix("ic_btn_").replace('_', '.')
     resource.startsWith("ic_status_") -> "status." + resource.removePrefix("ic_status_").replace('_', '.')
     resource.startsWith("ic_badge_") -> "badge." + resource.removePrefix("ic_badge_").replace('_', '.')
+    resource.startsWith("mark_") -> "mark." + resource.removePrefix("mark_").replace('_', '-')
+    resource.startsWith("symbol_") -> "symbol." + resource.removePrefix("symbol_").replace('_', '-')
     else -> resource
 }
 

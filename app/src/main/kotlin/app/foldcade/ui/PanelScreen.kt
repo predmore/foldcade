@@ -19,7 +19,6 @@ import androidx.compose.animation.core.FiniteAnimationSpec
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.foundation.Image
-import androidx.core.graphics.drawable.toBitmap
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.focusable
@@ -82,6 +81,7 @@ import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.draw.drawWithCache
 import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.geometry.CornerRadius
@@ -91,6 +91,7 @@ import androidx.compose.ui.geometry.RoundRect
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.compositeOver
 import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.graphics.FilterQuality
 import androidx.compose.ui.graphics.ClipOp
@@ -891,12 +892,7 @@ private fun CenterArt(app: FoldcadeApp, running: RunningApp?) {
                 .clip(RoundedCornerShape(design.metrics.cardCornerDp.dp / 2)),
             contentScale = ContentScale.Crop,
         )
-        icon != null -> Image(
-            bitmap = icon,
-            contentDescription = null,
-            modifier = Modifier.fillMaxSize(theme.artScale),
-            contentScale = ContentScale.Fit,
-        )
+        icon != null -> LauncherImage(icon, contentDescription = null, modifier = Modifier.fillMaxSize(theme.artScale))
         else -> markGlyph(mark)?.let { MarkIcon(it, it.heroScale(theme.artScale)) }
     }
 }
@@ -1389,7 +1385,7 @@ private fun IconChoices(pick: IconPick, scale: Float, modifier: Modifier) {
                             },
                         contentAlignment = Alignment.Center,
                     ) {
-                        markGlyph(mark)?.let { glyph -> MarkIcon(glyph, theme.artScale) { lerp(GLYPH_REST_ALPHA, 1f, lit) } }
+                        SymbolIcon(mark, PICKER_SYMBOL_SCALE, theme.onBackground) { lerp(REST_ALPHA, 1f, lit) }
                     }
                 }
             }
@@ -1730,12 +1726,7 @@ private fun HeroArt(
                     .clip(RoundedCornerShape(design.metrics.cardCornerDp.dp)),
                 contentScale = ContentScale.Crop,
             )
-            icon != null -> Image(
-                bitmap = icon,
-                contentDescription = title,
-                modifier = Modifier.fillMaxSize(theme.artScale),
-                contentScale = ContentScale.Fit,
-            )
+            icon != null -> LauncherImage(icon, contentDescription = title, modifier = Modifier.fillMaxSize(theme.artScale))
             glyph != null -> MarkIcon(glyph, glyph.heroScale(theme.artScale))
             else -> BasicText(
                 text = monogram(title),
@@ -1960,9 +1951,11 @@ private const val SCENE_CARD_ALPHA = 0.72f
 private const val TYPED_TITLE = 1.25f
 private const val AMBIENT_DIM = 0.55f
 private val AMBIENT_BLUR = 48.dp
-private const val TILE_PX = 384
-private const val TILE_ART_REST_ALPHA = 0.82f
-private const val GLYPH_REST_ALPHA = 0.58f
+internal const val TILE_PX = 384
+/** How bright a tile's art rests, cover or mark alike, so focus reads by lifting it to full. */
+private const val REST_ALPHA = 0.82f
+/** The picker's glyphs are flat symbols, drawn a little inside their cell. */
+private const val PICKER_SYMBOL_SCALE = 0.7f
 private const val COVER_HEIGHT = 0.92f
 
 @Composable
@@ -2292,7 +2285,7 @@ private fun NoticeRow(notice: FoldNotice, focused: Boolean, modifier: Modifier =
     ) {
         Box(Modifier.size(px(48f)), contentAlignment = Alignment.Center) {
             if (icon != null) {
-                Image(bitmap = icon, contentDescription = null, modifier = Modifier.fillMaxSize())
+                LauncherImage(icon, contentDescription = null, modifier = Modifier.fillMaxSize())
             }
         }
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(px(2f))) {
@@ -3128,7 +3121,7 @@ private fun HomeTarget(
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Image(
-                painter = themeIconPainter(R.drawable.mark_console),
+                painter = themeIconPainter(R.drawable.symbol_home),
                 contentDescription = null,
                 modifier = Modifier.size(px(HOME_TARGET_HEIGHT * 0.7f)),
             )
@@ -3436,17 +3429,6 @@ private fun emptyShelf(grid: HomeGrid): String = when (grid) {
     HomeGrid.StandIns -> Copy.noGames
 }
 
-@Composable
-private fun launcherIcon(packageName: String?): ImageBitmap? {
-    val context = LocalContext.current
-    return remember(packageName) {
-        if (packageName == null) return@remember null
-        val drawable = runCatching { context.packageManager.getApplicationIcon(packageName) }.getOrNull()
-            ?: return@remember null
-        runCatching { drawable.toBitmap().asImageBitmap() }.getOrNull()
-    }
-}
-
 /**
  * A game's state on its tile, in one small chip in the tile's corner: the cloud
  * while it is only on the server, the cloud breathing in the focus colour while
@@ -3564,6 +3546,15 @@ private fun syncMarkShown(synced: TileActivity.Synced, animatorScale: Float): St
     return shown.asState()
 }
 
+/**
+ * The light a mark sits on: centred this share of the tile down, reaching this share of
+ * its width, the mark's colour at this strength in the middle, gone to the card by [MARK_LIGHT_FADE].
+ */
+private const val MARK_LIGHT_TOP = 0.12f
+private const val MARK_LIGHT_REACH = 0.85f
+private const val MARK_LIGHT_PEAK = 0.34f
+private const val MARK_LIGHT_FADE = 0.72f
+
 /** A status chip sits this share of the tile's corner radius in from each edge, clear of the curve. */
 private const val CORNER_SAFE = 0.3f
 
@@ -3596,7 +3587,7 @@ private fun Cell(
     size: Dp,
     titleWidth: Dp = size,
     corner: Dp,
-    icon: ImageBitmap?,
+    icon: LauncherArt?,
     favorite: Boolean,
     empty: Boolean = false,
     selected: Boolean = false,
@@ -3667,72 +3658,72 @@ private fun Cell(
                     scaleY = drawn * settle.value
                     translationY = -size.toPx() * 0.025f * checked
                 }
-                .drawBehind {
-                    val glow = accent
-                    val bounds = this.size
-                    val cornerPx = corner.toPx()
-                    val focusShown = lit()
-                    if (glow != null && !socket) {
-                        val half = min(bounds.width, bounds.height) * 0.5f
-                        val reach = half + lerp(theme.style.glow.restOverflow, theme.style.glow.focusOverflow, focusShown)
-                        val tightness = lerp(theme.style.glow.restTightness, theme.style.glow.focusTightness, focusShown)
-                        val rim = lerp(theme.style.glow.restRim, theme.style.glow.focusRim, focusShown)
-                        val peak = lerp(theme.style.glow.restPeak, theme.style.glow.focusPeak, focusShown)
-                        SoftGlow.fillStops(glowStops, tightness, rim)
-                        drawRadialGlow(center, reach, glow, glowStops, peak)
-                    }
-                    if (socket) {
-                        // The space a held tile left: a faint outline, so the eye knows where it was.
-                        val strokePx = 3f
-                        val inset = strokePx / 2f
-                        drawRoundRect(
-                            color = theme.onBackground.copy(alpha = SOCKET_ALPHA),
-                            topLeft = Offset(inset, inset),
-                            size = Size(bounds.width - strokePx, bounds.height - strokePx),
-                            cornerRadius = CornerRadius(cornerPx, cornerPx),
-                            style = Stroke(width = strokePx),
+                .drawWithCache {
+                    // The light behind a mark, built when the tile's size or mark changes, not each frame.
+                    val light = accent?.takeIf { art == null && icon == null }?.let {
+                        Brush.radialGradient(
+                            0f to it.copy(alpha = MARK_LIGHT_PEAK).compositeOver(theme.surface),
+                            MARK_LIGHT_FADE to theme.surface,
+                            center = Offset(this.size.width * 0.5f, this.size.height * MARK_LIGHT_TOP),
+                            radius = this.size.width * MARK_LIGHT_REACH,
                         )
-                    } else if (!empty) {
-                        // Every tile is a filled card, as on Cocoon's grid. A mark's glow is left
-                        // as a halo around it. Focus is the grid's sliding ring; at rest a quiet edge.
-                        drawRoundRect(color = theme.surface, cornerRadius = CornerRadius(cornerPx, cornerPx))
-                        // The quiet edge fades as the ring arrives, and back as it leaves.
-                        if (!editing && focusShown < 1f) {
-                            val strokePx = 2.5f
+                    }
+                    onDrawBehind {
+                        val glow = accent
+                        val bounds = this.size
+                        val cornerPx = corner.toPx()
+                        val focusShown = lit()
+                        if (glow != null && !socket) {
+                            val half = min(bounds.width, bounds.height) * 0.5f
+                            val reach = half + lerp(theme.style.glow.restOverflow, theme.style.glow.focusOverflow, focusShown)
+                            val tightness = lerp(theme.style.glow.restTightness, theme.style.glow.focusTightness, focusShown)
+                            val rim = lerp(theme.style.glow.restRim, theme.style.glow.focusRim, focusShown)
+                            val peak = lerp(theme.style.glow.restPeak, theme.style.glow.focusPeak, focusShown)
+                            SoftGlow.fillStops(glowStops, tightness, rim)
+                            drawRadialGlow(center, reach, glow, glowStops, peak)
+                        }
+                        if (socket) {
+                            // The space a held tile left: a faint outline, so the eye knows where it was.
+                            val strokePx = 3f
                             val inset = strokePx / 2f
-                            val rest = 1f - focusShown
                             drawRoundRect(
-                                color = glow?.copy(alpha = 0.42f * rest) ?: theme.onBackground.copy(alpha = 0.10f * rest),
+                                color = theme.onBackground.copy(alpha = SOCKET_ALPHA),
+                                topLeft = Offset(inset, inset),
+                                size = Size(bounds.width - strokePx, bounds.height - strokePx),
+                                cornerRadius = CornerRadius(cornerPx, cornerPx),
+                                style = Stroke(width = strokePx),
+                            )
+                        } else if (!empty) {
+                            // Every tile is a filled card, as on Cocoon's grid. A mark's glow is left
+                            // as a halo around it. Focus is the grid's sliding ring, the only border it draws.
+                            drawRoundRect(color = theme.surface, cornerRadius = CornerRadius(cornerPx, cornerPx))
+                            // A mark sits on a soft light in its own colour, kept inside the card.
+                            if (light != null) drawRoundRect(brush = light, cornerRadius = CornerRadius(cornerPx, cornerPx))
+                            if (editing) {
+                                val strokePx = if (focused || lifted || opened) 9f else 3f
+                                val inset = strokePx / 2f
+                                drawRoundRect(
+                                    color = theme.focus.copy(alpha = if (focused || lifted || opened) 1f else 0.45f),
+                                    topLeft = Offset(inset, inset),
+                                    size = Size(bounds.width - strokePx, bounds.height - strokePx),
+                                    cornerRadius = CornerRadius(cornerPx, cornerPx),
+                                    style = Stroke(width = strokePx),
+                                )
+                            }
+                        } else if (lifted) {
+                            // A lifted gap is the ring alone, so the space being carried shows where it is.
+                            val strokePx = 9f
+                            val inset = strokePx / 2f
+                            drawRoundRect(
+                                color = theme.focus,
                                 topLeft = Offset(inset, inset),
                                 size = Size(bounds.width - strokePx, bounds.height - strokePx),
                                 cornerRadius = CornerRadius(cornerPx, cornerPx),
                                 style = Stroke(width = strokePx),
                             )
                         }
-                        if (editing) {
-                            val strokePx = if (focused || lifted || opened) 9f else 3f
-                            val inset = strokePx / 2f
-                            drawRoundRect(
-                                color = theme.focus.copy(alpha = if (focused || lifted || opened) 1f else 0.45f),
-                                topLeft = Offset(inset, inset),
-                                size = Size(bounds.width - strokePx, bounds.height - strokePx),
-                                cornerRadius = CornerRadius(cornerPx, cornerPx),
-                                style = Stroke(width = strokePx),
-                            )
-                        }
-                    } else if (lifted) {
-                        // A lifted gap is the ring alone, so the space being carried shows where it is.
-                        val strokePx = 9f
-                        val inset = strokePx / 2f
-                        drawRoundRect(
-                            color = theme.focus,
-                            topLeft = Offset(inset, inset),
-                            size = Size(bounds.width - strokePx, bounds.height - strokePx),
-                            cornerRadius = CornerRadius(cornerPx, cornerPx),
-                            style = Stroke(width = strokePx),
-                        )
+                        // Any other empty slot draws nothing, so the grid ends where its tiles do.
                     }
-                    // Any other empty slot draws nothing, so the grid ends where its tiles do.
                 }
                 // The ring and glows above draw outside. The art itself stays inside the
                 // rounded tile, so a mark's square backing does not show at the corners.
@@ -3776,14 +3767,26 @@ private fun Cell(
         ) {
             if (socket) return@Box
             if (icon != null) {
-                Image(
-                    bitmap = icon,
-                    contentDescription = title,
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .scale(theme.artScale),
-                    contentScale = ContentScale.Fit,
-                )
+                if (icon.fullBleed) {
+                    // An adaptive icon fills the tile edge to edge, resting back like a cover.
+                    Image(
+                        bitmap = icon.image,
+                        contentDescription = title,
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .graphicsLayer { alpha = lerp(REST_ALPHA, 1f, lit()) },
+                        contentScale = ContentScale.Crop,
+                    )
+                } else {
+                    Image(
+                        bitmap = icon.image,
+                        contentDescription = title,
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .scale(theme.artScale),
+                        contentScale = ContentScale.Fit,
+                    )
+                }
                 if (favorite) {
                     Box(
                         Modifier
@@ -3800,11 +3803,11 @@ private fun Cell(
                     contentDescription = title,
                     modifier = Modifier
                         .fillMaxSize()
-                        .graphicsLayer { alpha = lerp(TILE_ART_REST_ALPHA, 1f, lit()) },
+                        .graphicsLayer { alpha = lerp(REST_ALPHA, 1f, lit()) },
                     contentScale = ContentScale.Crop,
                 )
             } else if (!empty) {
-                val glyphAlpha = { lerp(GLYPH_REST_ALPHA, 1f, lit()) }
+                val glyphAlpha = { lerp(REST_ALPHA, 1f, lit()) }
                 if (glyph != null && CollectionLook.parse(mark) != null) {
                     // A collection being dressed changes as the cursor moves, so each look fades in.
                     Crossfade(mark, animationSpec = motion.arrive(motion.durationFocus, animatorScale)) { shown ->

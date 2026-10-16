@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Foldcade original art, MIT licensed (see LICENSE). Afterglow symbol: Game Gear-style landscape handheld -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:aapt="http://schemas.android.com/aapt"
+    android:width="48dp"
+    android:height="48dp"
+    android:viewportWidth="64"
+    android:viewportHeight="64">
+    <path
+        android:pathData="M13,16H51A11,11 0 0 1 62,27V38A11,11 0 0 1 51,49H13A11,11 0 0 1 2,38V27A11,11 0 0 1 13,16ZM20,19.5H44A2.5,2.5 0 0 1 46.5,22V43A2.5,2.5 0 0 1 44,45.5H20A2.5,2.5 0 0 1 17.5,43V22A2.5,2.5 0 0 1 20,19.5ZM20,21.1H44A0.9,0.9 0 0 1 44.9,22V43A0.9,0.9 0 0 1 44,43.9H20A0.9,0.9 0 0 1 19.1,43V22A0.9,0.9 0 0 1 20,21.1ZM8.15,29.312 Q8.15,28.5 8.962,28.5 H10.238 Q11.05,28.5 11.05,29.312 V31.05 H12.788 Q13.6,31.05 13.6,31.862 V33.138 Q13.6,33.95 12.788,33.95 H11.05 V35.688 Q11.05,36.5 10.238,36.5 H8.962 Q8.15,36.5 8.15,35.688 V33.95 H6.412 Q5.6,33.95 5.6,33.138 V31.862 Q5.6,31.05 6.412,31.05 H8.15 ZM48.7,35.5A2.8,2.8 0 1 1 54.3,35.5A2.8,2.8 0 1 1 48.7,35.5ZM53.8,30A2.8,2.8 0 1 1 59.4,30A2.8,2.8 0 1 1 53.8,30Z"
+        android:fillColor="#FFF4F1EA"
+        android:fillType="evenOdd" />
+</vector>

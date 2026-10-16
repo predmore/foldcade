@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Foldcade original art, MIT licensed (see LICENSE). Afterglow collection glyph: A puzzle piece -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:aapt="http://schemas.android.com/aapt"
+    android:width="48dp"
+    android:height="48dp"
+    android:viewportWidth="64"
+    android:viewportHeight="64">
+    <path
+        android:pathData="M10,19L24,19A6,6 0 1 1 36,19L48,19L48,31A6,6 0 1 1 48,43L48,55L36,55A6,6 0 1 0 24,55L10,55L10,43A6,6 0 1 0 10,31Z"
+        android:fillColor="#FFF4F1EA"
+        android:fillType="evenOdd"
+        android:strokeColor="#FFF4F1EA"
+        android:strokeWidth="2"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round" />
+</vector>

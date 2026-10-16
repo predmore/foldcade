@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Foldcade original art, MIT licensed (see LICENSE). Afterglow symbol: A folder -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:aapt="http://schemas.android.com/aapt"
+    android:width="48dp"
+    android:height="48dp"
+    android:viewportWidth="64"
+    android:viewportHeight="64">
+    <path
+        android:pathData="M5.2,27 Q5.4,23 9.4,23 H54.6 Q58.6,23 58.8,27 L57.6,52 Q57.4,56 53.4,56 H10.6 Q6.6,56 6.4,52 ZM6,15 Q6,10 11,10 H23.5 Q26,10 27.6,12 L30.6,16 H53 Q58,16 58,21 V20 H6 Z"
+        android:fillColor="#FFF4F1EA"
+        android:fillType="evenOdd" />
+</vector>

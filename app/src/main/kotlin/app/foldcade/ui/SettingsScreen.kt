@@ -206,8 +206,8 @@ private val ROW_HEIGHT = 60.dp
 private fun categoryIcon(category: SettingsCategory): Int = when (category) {
     SettingsCategory.Personalization -> R.drawable.ic_status_display
     SettingsCategory.Sound -> R.drawable.ic_status_volume_3
-    SettingsCategory.Library -> R.drawable.mark_library
-    SettingsCategory.Players -> R.drawable.mark_cartridge_lit
+    SettingsCategory.Library -> R.drawable.symbol_library
+    SettingsCategory.Players -> R.drawable.symbol_two_players
     SettingsCategory.Screens -> R.drawable.ic_status_settings
     SettingsCategory.About -> R.drawable.ic_status_info
 }

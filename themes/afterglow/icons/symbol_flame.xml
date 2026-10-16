@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Foldcade original art, MIT licensed (see LICENSE). Afterglow collection glyph: A flame -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:aapt="http://schemas.android.com/aapt"
+    android:width="48dp"
+    android:height="48dp"
+    android:viewportWidth="64"
+    android:viewportHeight="64">
+    <path
+        android:pathData="M32,5 C35,15 49,22 49,38 A17,17 0 0 1 15,38 C15,29 20,24 23,17 C27,23 27.5,26 30,28.5 C33,22 31.5,13 32,5 ZM32,32 C34,38 40,40 40,46 A8,8 0 0 1 24,46 C24,41 29,38 32,32 Z"
+        android:fillColor="#FFF4F1EA"
+        android:fillType="evenOdd" />
+</vector>

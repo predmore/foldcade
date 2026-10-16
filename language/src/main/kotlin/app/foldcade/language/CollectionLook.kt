@@ -3,9 +3,9 @@ package app.foldcade.language
 import androidx.compose.ui.graphics.Color
 
 /**
- * How a collection looks: a folder card in one of ten colours, with a glyph inset on its face.
+ * How a collection looks: a folder in one of ten colours, with a glyph pressed into its face.
  * Foldcade's own folders keep their platform's mark on the dark tile, so the two never read alike.
- * The art is drawn by tools/art/collection_art.py.
+ * The art is drawn by tools/art/marks.py; docs/iconography.md explains the parts.
  */
 enum class CollectionTint(val id: String, val color: Color, val label: String) {
     Gold("gold", Color(0xFFFFC15A), "Gold"),
@@ -128,12 +128,6 @@ data class IconPick(
         )
     }
 }
-
-/**
- * The image a collection screens into its well, for a glyph from a pack's legacy black-backed
- * `marks/<name>.png`, as a tile does with that mark. Null draws the glyph as it is.
- */
-fun <T> screenedInset(glyph: ResolvedThemeIcon<T>?): T? = glyph?.takeIf { it.asset.blend == ThemeIconBlend.Screen }?.image
 
 /** One or two words under the icon grid. */
 fun glyphName(mark: String): String = when (mark) {

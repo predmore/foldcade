@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Foldcade original art, MIT licensed (see LICENSE). Afterglow symbol: A game cartridge -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:aapt="http://schemas.android.com/aapt"
+    android:width="48dp"
+    android:height="48dp"
+    android:viewportWidth="64"
+    android:viewportHeight="64">
+    <path
+        android:pathData="M17,5 H42 L51,14 V55 Q51,59 47,59 H17 Q13,59 13,55 V9 Q13,5 17,5 ZM20,11H44A2,2 0 0 1 46,13V34A2,2 0 0 1 44,36H20A2,2 0 0 1 18,34V13A2,2 0 0 1 20,11ZM20.4,12.6H43.6A0.8,0.8 0 0 1 44.4,13.4V33.6A0.8,0.8 0 0 1 43.6,34.4H20.4A0.8,0.8 0 0 1 19.6,33.6V13.4A0.8,0.8 0 0 1 20.4,12.6ZM19.8,44 L19.8,52.5 A1.2,1.2 0 0 0 22.2,52.5 L22.2,44 A1.2,1.2 0 0 0 19.8,44 ZM25.3,44 L25.3,52.5 A1.2,1.2 0 0 0 27.7,52.5 L27.7,44 A1.2,1.2 0 0 0 25.3,44 ZM30.8,44 L30.8,52.5 A1.2,1.2 0 0 0 33.2,52.5 L33.2,44 A1.2,1.2 0 0 0 30.8,44 ZM36.3,44 L36.3,52.5 A1.2,1.2 0 0 0 38.7,52.5 L38.7,44 A1.2,1.2 0 0 0 36.3,44 ZM41.8,44 L41.8,52.5 A1.2,1.2 0 0 0 44.2,52.5 L44.2,44 A1.2,1.2 0 0 0 41.8,44 Z"
+        android:fillColor="#FFF4F1EA"
+        android:fillType="evenOdd" />
+</vector>

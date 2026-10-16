@@ -335,6 +335,189 @@
       "file": "icons/ic_btn_y_filled.xml",
       "tint": false
     },
+    "mark.android-apps": {
+      "file": "icons/mark_android_apps.xml",
+      "tint": false,
+      "accent": "#3DDC84"
+    },
+    "mark.android-games": {
+      "file": "icons/mark_android_games.xml",
+      "tint": false,
+      "accent": "#3DDC84"
+    },
+    "mark.cartridge": {
+      "file": "icons/mark_cartridge.xml",
+      "tint": false,
+      "accent": "#3EE0C3"
+    },
+    "mark.clamshell": {
+      "file": "icons/mark_clamshell.xml",
+      "tint": false,
+      "accent": "#FF5C7A"
+    },
+    "mark.cloud": {
+      "file": "icons/mark_cloud.xml",
+      "tint": false,
+      "accent": "#40D6FF"
+    },
+    "mark.collection-body": {
+      "file": "icons/mark_collection_body.xml",
+      "tint": false
+    },
+    "mark.collection-face": {
+      "file": "icons/mark_collection_face.xml",
+      "tint": false
+    },
+    "mark.console": {
+      "file": "icons/mark_console.xml",
+      "tint": false,
+      "accent": "#FFB547"
+    },
+    "mark.disc": {
+      "file": "icons/mark_disc.xml",
+      "tint": false,
+      "accent": "#BC9CFF"
+    },
+    "mark.dreamcast": {
+      "file": "icons/mark_dreamcast.xml",
+      "tint": false,
+      "accent": "#FF8A3D"
+    },
+    "mark.droiddeck": {
+      "file": "icons/mark_droiddeck.xml",
+      "tint": false,
+      "accent": "#66C0F4"
+    },
+    "mark.emulators": {
+      "file": "icons/mark_emulators.xml",
+      "tint": false,
+      "accent": "#B48CFF"
+    },
+    "mark.folder": {
+      "file": "icons/mark_folder.xml",
+      "tint": false,
+      "accent": "#FFB547"
+    },
+    "mark.game-boy": {
+      "file": "icons/mark_game_boy.xml",
+      "tint": false,
+      "accent": "#B6F25C"
+    },
+    "mark.game-boy-advance": {
+      "file": "icons/mark_game_boy_advance.xml",
+      "tint": false,
+      "accent": "#7C8CFF"
+    },
+    "mark.game-boy-color": {
+      "file": "icons/mark_game_boy_color.xml",
+      "tint": false,
+      "accent": "#C77DFF"
+    },
+    "mark.game-gear": {
+      "file": "icons/mark_game_gear.xml",
+      "tint": false,
+      "accent": "#3EE6C0"
+    },
+    "mark.gamecube": {
+      "file": "icons/mark_gamecube.xml",
+      "tint": false,
+      "accent": "#9B7BFF"
+    },
+    "mark.genesis": {
+      "file": "icons/mark_genesis.xml",
+      "tint": false,
+      "accent": "#FF3B52"
+    },
+    "mark.handheld": {
+      "file": "icons/mark_handheld.xml",
+      "tint": false,
+      "accent": "#FFBA48"
+    },
+    "mark.home": {
+      "file": "icons/mark_home.xml",
+      "tint": false,
+      "accent": "#FFB547"
+    },
+    "mark.library": {
+      "file": "icons/mark_library.xml",
+      "tint": false,
+      "accent": "#3EE6C0"
+    },
+    "mark.master-system": {
+      "file": "icons/mark_master_system.xml",
+      "tint": false,
+      "accent": "#FF5E3A"
+    },
+    "mark.moonlight": {
+      "file": "icons/mark_moonlight.xml",
+      "tint": false,
+      "accent": "#A9BCFF"
+    },
+    "mark.nes": {
+      "file": "icons/mark_nes.xml",
+      "tint": false,
+      "accent": "#FF4D5A"
+    },
+    "mark.nintendo-3ds": {
+      "file": "icons/mark_nintendo_3ds.xml",
+      "tint": false,
+      "accent": "#FF5C7A"
+    },
+    "mark.nintendo-64": {
+      "file": "icons/mark_nintendo_64.xml",
+      "tint": false,
+      "accent": "#3EE68A"
+    },
+    "mark.nintendo-ds": {
+      "file": "icons/mark_nintendo_ds.xml",
+      "tint": false,
+      "accent": "#FF7A45"
+    },
+    "mark.nintendo-switch": {
+      "file": "icons/mark_nintendo_switch.xml",
+      "tint": false,
+      "accent": "#FF4F5E"
+    },
+    "mark.pc": {
+      "file": "icons/mark_pc.xml",
+      "tint": false,
+      "accent": "#4CC9FF"
+    },
+    "mark.playstation": {
+      "file": "icons/mark_playstation.xml",
+      "tint": false,
+      "accent": "#C3CEDF"
+    },
+    "mark.playstation-2": {
+      "file": "icons/mark_playstation_2.xml",
+      "tint": false,
+      "accent": "#4C8DFF"
+    },
+    "mark.psp": {
+      "file": "icons/mark_psp.xml",
+      "tint": false,
+      "accent": "#6FC3FF"
+    },
+    "mark.saturn": {
+      "file": "icons/mark_saturn.xml",
+      "tint": false,
+      "accent": "#FFC15A"
+    },
+    "mark.slim": {
+      "file": "icons/mark_slim.xml",
+      "tint": false,
+      "accent": "#FF7A45"
+    },
+    "mark.snes": {
+      "file": "icons/mark_snes.xml",
+      "tint": false,
+      "accent": "#B39DFF"
+    },
+    "mark.wii": {
+      "file": "icons/mark_wii.xml",
+      "tint": false,
+      "accent": "#8FDFFF"
+    },
     "status.battery.0": {
       "file": "icons/ic_status_battery_0.xml",
       "tint": false
@@ -347,16 +530,16 @@
       "file": "icons/ic_status_battery_10.xml",
       "tint": false
     },
+    "status.battery.10.charging": {
+      "file": "icons/ic_status_battery_10_charging.xml",
+      "tint": false
+    },
     "status.battery.100": {
       "file": "icons/ic_status_battery_100.xml",
       "tint": false
     },
     "status.battery.100.charging": {
       "file": "icons/ic_status_battery_100_charging.xml",
-      "tint": false
-    },
-    "status.battery.10.charging": {
-      "file": "icons/ic_status_battery_10_charging.xml",
       "tint": false
     },
     "status.battery.20": {
@@ -547,293 +730,233 @@
       "file": "icons/ic_status_wrench.xml",
       "tint": false
     },
-    "mark.android-apps": {
-      "file": "icons/mark_android_apps.xml",
-      "tint": false,
-      "accent": "#3DDC84"
+    "symbol.android-apps": {
+      "file": "icons/symbol_android_apps.xml",
+      "tint": true
     },
-    "mark.android-games": {
-      "file": "icons/mark_android_games.xml",
-      "tint": false,
-      "accent": "#3DDC84"
+    "symbol.android-games": {
+      "file": "icons/symbol_android_games.xml",
+      "tint": true
     },
-    "mark.cartridge": {
-      "file": "icons/mark_cartridge_lit.xml",
-      "tint": false,
-      "accent": "#3EE0C3"
+    "symbol.cartridge": {
+      "file": "icons/symbol_cartridge.xml",
+      "tint": true
     },
-    "mark.check-badge": {
-      "file": "icons/mark_check_badge.xml",
-      "tint": false,
-      "accent": "#3EE68A"
+    "symbol.check-badge": {
+      "file": "icons/symbol_check_badge.xml",
+      "tint": true
     },
-    "mark.clamshell": {
-      "file": "icons/mark_clamshell_lit.xml",
-      "tint": false,
-      "accent": "#FF5C7A"
+    "symbol.clamshell": {
+      "file": "icons/symbol_clamshell.xml",
+      "tint": true
     },
-    "mark.clock": {
-      "file": "icons/mark_clock.xml",
-      "tint": false,
-      "accent": "#3EE6C0"
+    "symbol.clock": {
+      "file": "icons/symbol_clock.xml",
+      "tint": true
     },
-    "mark.cloud": {
-      "file": "icons/mark_cloud_lit.xml",
-      "tint": false,
-      "accent": "#40D6FF"
+    "symbol.cloud": {
+      "file": "icons/symbol_cloud.xml",
+      "tint": true
     },
-    "mark.collection-body": {
-      "file": "icons/mark_collection_body.xml",
-      "tint": false
+    "symbol.console": {
+      "file": "icons/symbol_console.xml",
+      "tint": true
     },
-    "mark.collection-face": {
-      "file": "icons/mark_collection_face.xml",
-      "tint": false
+    "symbol.crown": {
+      "file": "icons/symbol_crown.xml",
+      "tint": true
     },
-    "mark.console": {
-      "file": "icons/mark_console.xml",
-      "tint": false,
-      "accent": "#FFB547"
+    "symbol.disc": {
+      "file": "icons/symbol_disc.xml",
+      "tint": true
     },
-    "mark.crown": {
-      "file": "icons/mark_crown.xml",
-      "tint": false,
-      "accent": "#FFD24C"
+    "symbol.dreamcast": {
+      "file": "icons/symbol_dreamcast.xml",
+      "tint": true
     },
-    "mark.disc": {
-      "file": "icons/mark_disc_lit.xml",
-      "tint": false,
-      "accent": "#BC9CFF"
+    "symbol.droiddeck": {
+      "file": "icons/symbol_droiddeck.xml",
+      "tint": true
     },
-    "mark.dreamcast": {
-      "file": "icons/mark_dreamcast.xml",
-      "tint": false,
-      "accent": "#FF8A3D"
+    "symbol.emulators": {
+      "file": "icons/symbol_emulators.xml",
+      "tint": true
     },
-    "mark.droiddeck": {
-      "file": "icons/mark_droiddeck.xml",
-      "tint": false,
-      "accent": "#66C0F4"
+    "symbol.flame": {
+      "file": "icons/symbol_flame.xml",
+      "tint": true
     },
-    "mark.emulators": {
-      "file": "icons/mark_emulators.xml",
-      "tint": false,
-      "accent": "#B48CFF"
+    "symbol.folder": {
+      "file": "icons/symbol_folder.xml",
+      "tint": true
     },
-    "mark.flame": {
-      "file": "icons/mark_flame.xml",
-      "tint": false,
-      "accent": "#FF7A2E"
+    "symbol.game-boy": {
+      "file": "icons/symbol_game_boy.xml",
+      "tint": true
     },
-    "mark.folder": {
-      "file": "icons/mark_folder.xml",
-      "tint": false,
-      "accent": "#FFB547"
+    "symbol.game-boy-advance": {
+      "file": "icons/symbol_game_boy_advance.xml",
+      "tint": true
     },
-    "mark.game-boy": {
-      "file": "icons/mark_game_boy.xml",
-      "tint": false,
-      "accent": "#B6F25C"
+    "symbol.game-boy-color": {
+      "file": "icons/symbol_game_boy_color.xml",
+      "tint": true
     },
-    "mark.game-boy-advance": {
-      "file": "icons/mark_game_boy_advance.xml",
-      "tint": false,
-      "accent": "#7C8CFF"
+    "symbol.game-gear": {
+      "file": "icons/symbol_game_gear.xml",
+      "tint": true
     },
-    "mark.game-boy-color": {
-      "file": "icons/mark_game_boy_color.xml",
-      "tint": false,
-      "accent": "#C77DFF"
+    "symbol.gamecube": {
+      "file": "icons/symbol_gamecube.xml",
+      "tint": true
     },
-    "mark.game-gear": {
-      "file": "icons/mark_game_gear.xml",
-      "tint": false,
-      "accent": "#3EE6C0"
+    "symbol.gem": {
+      "file": "icons/symbol_gem.xml",
+      "tint": true
     },
-    "mark.gamecube": {
-      "file": "icons/mark_gamecube.xml",
-      "tint": false,
-      "accent": "#9B7BFF"
+    "symbol.genesis": {
+      "file": "icons/symbol_genesis.xml",
+      "tint": true
     },
-    "mark.gem": {
-      "file": "icons/mark_gem.xml",
-      "tint": false,
-      "accent": "#5CE8FF"
+    "symbol.ghost": {
+      "file": "icons/symbol_ghost.xml",
+      "tint": true
     },
-    "mark.genesis": {
-      "file": "icons/mark_genesis.xml",
-      "tint": false,
-      "accent": "#FF3B52"
+    "symbol.handheld": {
+      "file": "icons/symbol_handheld.xml",
+      "tint": true
     },
-    "mark.ghost": {
-      "file": "icons/mark_ghost.xml",
-      "tint": false,
-      "accent": "#B39DFF"
+    "symbol.heart": {
+      "file": "icons/symbol_heart.xml",
+      "tint": true
     },
-    "mark.handheld": {
-      "file": "icons/mark_handheld_lit.xml",
-      "tint": false,
-      "accent": "#FFBA48"
+    "symbol.home": {
+      "file": "icons/symbol_home.xml",
+      "tint": true
     },
-    "mark.heart": {
-      "file": "icons/mark_heart.xml",
-      "tint": false,
-      "accent": "#FF4F6E"
+    "symbol.hourglass": {
+      "file": "icons/symbol_hourglass.xml",
+      "tint": true
     },
-    "mark.hourglass": {
-      "file": "icons/mark_hourglass.xml",
-      "tint": false,
-      "accent": "#FFB547"
+    "symbol.leaf": {
+      "file": "icons/symbol_leaf.xml",
+      "tint": true
     },
-    "mark.leaf": {
-      "file": "icons/mark_leaf.xml",
-      "tint": false,
-      "accent": "#3EE68A"
+    "symbol.library": {
+      "file": "icons/symbol_library.xml",
+      "tint": true
     },
-    "mark.library": {
-      "file": "icons/mark_library.xml",
-      "tint": false,
-      "accent": "#3EE6C0"
+    "symbol.master-system": {
+      "file": "icons/symbol_master_system.xml",
+      "tint": true
     },
-    "mark.master-system": {
-      "file": "icons/mark_master_system.xml",
-      "tint": false,
-      "accent": "#FF5E3A"
+    "symbol.moonlight": {
+      "file": "icons/symbol_moonlight.xml",
+      "tint": true
     },
-    "mark.moonlight": {
-      "file": "icons/mark_moonlight.xml",
-      "tint": false,
-      "accent": "#A9BCFF"
+    "symbol.mushroom": {
+      "file": "icons/symbol_mushroom.xml",
+      "tint": true
     },
-    "mark.mushroom": {
-      "file": "icons/mark_mushroom.xml",
-      "tint": false,
-      "accent": "#FF4D5A"
+    "symbol.music": {
+      "file": "icons/symbol_music.xml",
+      "tint": true
     },
-    "mark.music": {
-      "file": "icons/mark_music.xml",
-      "tint": false,
-      "accent": "#FF6FD8"
+    "symbol.nes": {
+      "file": "icons/symbol_nes.xml",
+      "tint": true
     },
-    "mark.nes": {
-      "file": "icons/mark_nes.xml",
-      "tint": false,
-      "accent": "#FF4D5A"
+    "symbol.nintendo-3ds": {
+      "file": "icons/symbol_nintendo_3ds.xml",
+      "tint": true
     },
-    "mark.nintendo-3ds": {
-      "file": "icons/mark_nintendo_3ds.xml",
-      "tint": false,
-      "accent": "#FF5C7A"
+    "symbol.nintendo-64": {
+      "file": "icons/symbol_nintendo_64.xml",
+      "tint": true
     },
-    "mark.nintendo-64": {
-      "file": "icons/mark_nintendo_64.xml",
-      "tint": false,
-      "accent": "#3EE68A"
+    "symbol.nintendo-ds": {
+      "file": "icons/symbol_nintendo_ds.xml",
+      "tint": true
     },
-    "mark.nintendo-ds": {
-      "file": "icons/mark_nintendo_ds.xml",
-      "tint": false,
-      "accent": "#FF7A45"
+    "symbol.nintendo-switch": {
+      "file": "icons/symbol_nintendo_switch.xml",
+      "tint": true
     },
-    "mark.nintendo-switch": {
-      "file": "icons/mark_nintendo_switch.xml",
-      "tint": false,
-      "accent": "#FF4F5E"
+    "symbol.paw": {
+      "file": "icons/symbol_paw.xml",
+      "tint": true
     },
-    "mark.paw": {
-      "file": "icons/mark_paw.xml",
-      "tint": false,
-      "accent": "#FF9ACB"
+    "symbol.pc": {
+      "file": "icons/symbol_pc.xml",
+      "tint": true
     },
-    "mark.pc": {
-      "file": "icons/mark_pc.xml",
-      "tint": false,
-      "accent": "#4CC9FF"
+    "symbol.play-badge": {
+      "file": "icons/symbol_play_badge.xml",
+      "tint": true
     },
-    "mark.play-badge": {
-      "file": "icons/mark_play_badge.xml",
-      "tint": false,
-      "accent": "#4CC9FF"
+    "symbol.playstation": {
+      "file": "icons/symbol_playstation.xml",
+      "tint": true
     },
-    "mark.playstation": {
-      "file": "icons/mark_playstation.xml",
-      "tint": false,
-      "accent": "#C3CEDF"
+    "symbol.playstation-2": {
+      "file": "icons/symbol_playstation_2.xml",
+      "tint": true
     },
-    "mark.playstation-2": {
-      "file": "icons/mark_playstation_2.xml",
-      "tint": false,
-      "accent": "#4C8DFF"
+    "symbol.psp": {
+      "file": "icons/symbol_psp.xml",
+      "tint": true
     },
-    "mark.psp": {
-      "file": "icons/mark_psp.xml",
-      "tint": false,
-      "accent": "#6FC3FF"
+    "symbol.puzzle": {
+      "file": "icons/symbol_puzzle.xml",
+      "tint": true
     },
-    "mark.puzzle": {
-      "file": "icons/mark_puzzle.xml",
-      "tint": false,
-      "accent": "#B6F25C"
+    "symbol.racing-flag": {
+      "file": "icons/symbol_racing_flag.xml",
+      "tint": true
     },
-    "mark.racing-flag": {
-      "file": "icons/mark_racing_flag.xml",
-      "tint": false,
-      "accent": "#C9F7FF"
+    "symbol.rocket": {
+      "file": "icons/symbol_rocket.xml",
+      "tint": true
     },
-    "mark.rocket": {
-      "file": "icons/mark_rocket.xml",
-      "tint": false,
-      "accent": "#FF8A3D"
+    "symbol.saturn": {
+      "file": "icons/symbol_saturn.xml",
+      "tint": true
     },
-    "mark.saturn": {
-      "file": "icons/mark_saturn.xml",
-      "tint": false,
-      "accent": "#FFC15A"
+    "symbol.shield": {
+      "file": "icons/symbol_shield.xml",
+      "tint": true
     },
-    "mark.shield": {
-      "file": "icons/mark_shield.xml",
-      "tint": false,
-      "accent": "#7C8CFF"
+    "symbol.skull": {
+      "file": "icons/symbol_skull.xml",
+      "tint": true
     },
-    "mark.skull": {
-      "file": "icons/mark_skull.xml",
-      "tint": false,
-      "accent": "#FF3B52"
+    "symbol.slim": {
+      "file": "icons/symbol_slim.xml",
+      "tint": true
     },
-    "mark.slim": {
-      "file": "icons/mark_slim_lit.xml",
-      "tint": false,
-      "accent": "#FF7A45"
+    "symbol.snes": {
+      "file": "icons/symbol_snes.xml",
+      "tint": true
     },
-    "mark.snes": {
-      "file": "icons/mark_snes.xml",
-      "tint": false,
-      "accent": "#B39DFF"
+    "symbol.star": {
+      "file": "icons/symbol_star.xml",
+      "tint": true
     },
-    "mark.star": {
-      "file": "icons/mark_star.xml",
-      "tint": false,
-      "accent": "#FFC15A"
+    "symbol.sword": {
+      "file": "icons/symbol_sword.xml",
+      "tint": true
     },
-    "mark.sword": {
-      "file": "icons/mark_sword.xml",
-      "tint": false,
-      "accent": "#9FC2FF"
+    "symbol.trophy": {
+      "file": "icons/symbol_trophy.xml",
+      "tint": true
     },
-    "mark.trophy": {
-      "file": "icons/mark_trophy.xml",
-      "tint": false,
-      "accent": "#FFB547"
+    "symbol.two-players": {
+      "file": "icons/symbol_two_players.xml",
+      "tint": true
     },
-    "mark.two-players": {
-      "file": "icons/mark_two_players.xml",
-      "tint": false,
-      "accent": "#4CC9FF"
-    },
-    "mark.wii": {
-      "file": "icons/mark_wii.xml",
-      "tint": false,
-      "accent": "#8FDFFF"
+    "symbol.wii": {
+      "file": "icons/symbol_wii.xml",
+      "tint": true
     }
   },
   "scenes": [
@@ -874,7 +997,7 @@
       "focusTightness": 0.85,
       "restRim": 0.42,
       "focusRim": 0.66,
-      "restPeak": 0.22,
+      "restPeak": 0,
       "focusPeak": 1,
       "heroPeak": 0.45
     },

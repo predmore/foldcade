@@ -544,14 +544,14 @@ internal fun <T> SlideSwap(
 
 /** The art a row leads with, or null for a row that is only words. */
 internal fun rowIcon(row: Row): Int? = when (row) {
-    Row.Home -> R.drawable.mark_console
-    Row.AllLibrary -> R.drawable.mark_library
-    Row.AndroidGames -> R.drawable.mark_android_games
-    Row.Apps -> R.drawable.mark_android_apps
+    Row.Home -> R.drawable.symbol_home
+    Row.AllLibrary -> R.drawable.symbol_library
+    Row.AndroidGames -> R.drawable.symbol_android_games
+    Row.Apps -> R.drawable.symbol_android_apps
     Row.EditHome -> R.drawable.ic_status_tools
     Row.Settings -> R.drawable.ic_status_settings
-    is Row.RommConnection, is Row.SignOut -> R.drawable.mark_cloud_lit
-    is Row.ForgetFolder -> R.drawable.mark_folder
+    is Row.RommConnection, is Row.SignOut -> R.drawable.symbol_cloud
+    is Row.ForgetFolder -> R.drawable.symbol_folder
     else -> null
 }
 

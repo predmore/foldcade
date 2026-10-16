@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Foldcade original art, MIT licensed (see LICENSE). Afterglow collection glyph: A skull, for hard games -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:aapt="http://schemas.android.com/aapt"
+    android:width="48dp"
+    android:height="48dp"
+    android:viewportWidth="64"
+    android:viewportHeight="64">
+    <path
+        android:pathData="M32,7 C46,7 54,16 54,28.5 C54,35.5 51,39.5 47,41.5 V48 Q47,51 44,51 H20 Q17,51 17,48 V41.5 C13,39.5 10,35.5 10,28.5 C10,16 18,7 32,7 ZM17,29A6,6 0 1 1 29,29A6,6 0 1 1 17,29ZM35,29A6,6 0 1 1 47,29A6,6 0 1 1 35,29ZM32,35 L35.4,41.5 H28.6 ZM26.2,45H28.8V51.5H26.2V45ZM35.2,45H37.8V51.5H35.2V45Z"
+        android:fillColor="#FFF4F1EA"
+        android:fillType="evenOdd" />
+</vector>

@@ -6,6 +6,7 @@ Original contributions are accepted under MIT. Preserve the license and attribut
 
 - [Building](docs/building.md)
 - [Plugins](docs/plugins.md)
+- [Iconography](docs/iconography.md)
 - [Licensing](docs/licensing.md)
 - [Releases, versioning, and signing](docs/releases.md)
 - [Architecture and CI](docs/architecture.md)
