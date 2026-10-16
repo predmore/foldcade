@@ -5,7 +5,7 @@ import numpy as np, cairosvg
 from PIL import Image, ImageDraw, ImageFont, ImageFilter
 from art import *
 from palette import *
-import glyphs, marks, appicon, sprites, platforms
+import icons, symbols, appicon, sprites
 
 OUT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 RES = f"{OUT}/res"; SVG = f"{OUT}/svg"; PREV = f"{OUT}/previews"
@@ -26,11 +26,11 @@ def write(a, sub):
 for d in (RES, SVG, f"{OUT}/play", f"{OUT}/themes", f"{OUT}/shaders"):
     shutil.rmtree(d, ignore_errors=True)
 
-ctrl, stat, mk = glyphs.controller_assets(), glyphs.status_assets(), marks.marks_assets()
-for a in ctrl: write(a, "controller")
-for a in stat: write(a, "status")
-for a in mk: write(a, "marks")
-for a in platforms.platform_assets(): write(a, "marks")
+# Theme icons: symbols, marks, and collections (tools/art/icons.py, docs/iconography.md)
+icons.main()
+ctrl, stat = symbols.controller_assets(), symbols.status_assets()
+made = {a.name: a for a, _, _ in icons.assets()}
+mk = [made[f"mark_{n}"] for n in ("nintendo_3ds", "game_boy", "snes", "library", "playstation_2", "cloud")]
 
 # ---------------- app icon (concept A) ----------------
 K = 0.86
@@ -145,9 +145,9 @@ def compose_preview(path, W=1280, H=720):
         dr.rounded_rectangle([x, y, x + ts2, y + ts2], radius=int(ts2 * 0.28), fill=(0, 0, 0, 255),
                              outline=((200, 255, 228, 255) if i == 1 else (60, 62, 70, 255)), width=(4 if i == 1 else 2))
         m = png(a, int(ts2 * 0.72)); base.alpha_composite(m, (x + int(ts2 * 0.14), y + int(ts2 * 0.14)))
-        lab = a.name.replace("mark_", "").replace("_lit", "").replace("slim", "slim dual").title()
+        lab = a.name.replace("mark_", "").replace("_", " ").title()
         ft = font(24, 700); dr.text((x + ts2 / 2 - dr.textlength(lab, font=ft) / 2, y + ts2 + 14), lab, font=ft, fill=(244, 241, 234))
     base.convert("RGB").save(path)
 os.makedirs(f"{OUT}/themes/afterglow", exist_ok=True)
 compose_preview(f"{OUT}/themes/afterglow/preview.png")
-print("built", len(ctrl), "controller,", len(stat), "status,", len(mk), "marks")
+print("built", len(made), "icons")

@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Foldcade original art, MIT licensed (see LICENSE). Afterglow collection glyph: A clock, for Recently played -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:aapt="http://schemas.android.com/aapt"
+    android:width="48dp"
+    android:height="48dp"
+    android:viewportWidth="64"
+    android:viewportHeight="64">
+    <path
+        android:pathData="M7,32A25,25 0 1 1 57,32A25,25 0 1 1 7,32ZM12,32A20,20 0 1 1 52,32A20,20 0 1 1 12,32Z"
+        android:fillColor="#FFF4F1EA"
+        android:fillType="evenOdd" />
+    <path
+        android:pathData="M34.2,32 L34.2,18.5 A2.2,2.2 0 0 0 29.8,18.5 L29.8,32 A2.2,2.2 0 0 0 34.2,32 Z"
+        android:fillColor="#FFF4F1EA"
+        android:fillType="evenOdd" />
+    <path
+        android:pathData="M30.898,33.904 L40.398,39.404 A2.2,2.2 0 0 0 42.602,35.596 L33.102,30.096 A2.2,2.2 0 0 0 30.898,33.904 Z"
+        android:fillColor="#FFF4F1EA"
+        android:fillType="evenOdd" />
+</vector>

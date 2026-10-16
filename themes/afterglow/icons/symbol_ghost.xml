@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Foldcade original art, MIT licensed (see LICENSE). Afterglow collection glyph: A ghost -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:aapt="http://schemas.android.com/aapt"
+    android:width="48dp"
+    android:height="48dp"
+    android:viewportWidth="64"
+    android:viewportHeight="64">
+    <path
+        android:pathData="M13,31 Q13,9 32,9 Q51,9 51,31 V53.5 Q51,56 48.6,54.6 L44.5,51.5 L38.3,55.2 L32,51.5 L25.7,55.2 L19.5,51.5 L15.4,54.6 Q13,56 13,53.5 ZM25.5,24H25.5A3,3 0 0 1 28.5,27V30A3,3 0 0 1 25.5,33H25.5A3,3 0 0 1 22.5,30V27A3,3 0 0 1 25.5,24ZM38.5,24H38.5A3,3 0 0 1 41.5,27V30A3,3 0 0 1 38.5,33H38.5A3,3 0 0 1 35.5,30V27A3,3 0 0 1 38.5,24Z"
+        android:fillColor="#FFF4F1EA"
+        android:fillType="evenOdd" />
+</vector>

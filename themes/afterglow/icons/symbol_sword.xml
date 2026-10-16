@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Foldcade original art, MIT licensed (see LICENSE). Afterglow collection glyph: A sword -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:aapt="http://schemas.android.com/aapt"
+    android:width="48dp"
+    android:height="48dp"
+    android:viewportWidth="64"
+    android:viewportHeight="64">
+    <path
+        android:pathData="M51.481,12.519L50.809,19.908L31.328,39.389L24.611,32.672L44.092,13.191ZM44.024,18.498L30.589,31.933A1.045,1.045 45 0 0 32.067,33.411L45.502,19.976A1.045,1.045 45 0 0 44.024,18.498ZM20.58,28.641L35.359,43.42A2.85,2.85 45 0 1 35.359,47.45L35.359,47.45A2.85,2.85 45 0 1 31.328,47.45L16.55,32.672A2.85,2.85 45 0 1 16.55,28.641L16.55,28.641A2.85,2.85 45 0 1 20.58,28.641ZM23.267,39.389L24.611,40.733A1.9,1.9 45 0 1 24.611,43.42L19.908,48.122A1.9,1.9 45 0 1 17.221,48.122L15.878,46.779A1.9,1.9 45 0 1 15.878,44.092L20.58,39.389A1.9,1.9 45 0 1 23.267,39.389ZM11.847,47.585A3.23,3.23 45 1 1 16.415,52.153A3.23,3.23 45 1 1 11.847,47.585Z"
+        android:fillColor="#FFF4F1EA"
+        android:fillType="evenOdd" />
+</vector>

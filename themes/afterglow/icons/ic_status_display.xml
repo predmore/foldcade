@@ -1,16 +1,18 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Foldcade original art, MIT licensed (see LICENSE). Display brightness sun -->
+<!-- Foldcade original art, MIT licensed (see LICENSE). Personalization: brightness -->
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:aapt="http://schemas.android.com/aapt"
     android:width="24dp"
     android:height="24dp"
     android:viewportWidth="24"
     android:viewportHeight="24">
     <path
-        android:pathData="M8,12A4,4 0 1 1 16,12A4,4 0 1 1 8,12Z"
-        android:fillColor="#FFFFFFFF" />
+        android:pathData="M7.8,12A4.2,4.2 0 1 1 16.2,12A4.2,4.2 0 1 1 7.8,12Z"
+        android:fillColor="#FFF4F1EA" />
     <path
-        android:pathData="M12,2.8L12,5.2M12,18.8L12,21.2M2.8,12L5.2,12M18.8,12L21.2,12M5.5,5.5L7.2,7.2M16.8,16.8L18.5,18.5M5.5,18.5L7.2,16.8M16.8,7.2L18.5,5.5"
-        android:strokeColor="#FFFFFFFF"
-        android:strokeWidth="1.8"
-        android:strokeLineCap="round" />
+        android:pathData="M18.6,12 L21,12M16.667,16.667 L18.364,18.364M12,18.6 L12,21M7.333,16.667 L5.636,18.364M5.4,12 L3,12M7.333,7.333 L5.636,5.636M12,5.4 L12,3M16.667,7.333 L18.364,5.636"
+        android:strokeColor="#FFF4F1EA"
+        android:strokeWidth="2"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round" />
 </vector>

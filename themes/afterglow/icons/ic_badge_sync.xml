@@ -1,24 +1,27 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Foldcade original art, MIT licensed (see LICENSE). Tile badge: the game's saves are syncing. Tinted at draw time. -->
+<!-- Foldcade original art, MIT licensed (see LICENSE). Tile badge: saves are syncing. Tinted at draw time. -->
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:aapt="http://schemas.android.com/aapt"
     android:width="24dp"
     android:height="24dp"
     android:viewportWidth="24"
     android:viewportHeight="24">
     <path
-        android:pathData="M5,12A7,7 0 0 1 18.58,9.61"
+        android:pathData="M5,12 A7,7 0 0 1 18.58,9.61"
+        android:strokeColor="#FFF4F1EA"
         android:strokeWidth="2.4"
-        android:strokeColor="#FFFFFFFF"
-        android:strokeLineCap="round" />
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round" />
     <path
-        android:fillColor="#FFFFFFFF"
-        android:pathData="M20.84,8.79L19.47,12.05L16.32,10.43Z" />
+        android:pathData="M20.84,8.79 L19.47,12.05 L16.32,10.43 Z"
+        android:fillColor="#FFF4F1EA" />
     <path
-        android:pathData="M19,12A7,7 0 0 1 5.42,14.39"
+        android:pathData="M19,12 A7,7 0 0 1 5.42,14.39"
+        android:strokeColor="#FFF4F1EA"
         android:strokeWidth="2.4"
-        android:strokeColor="#FFFFFFFF"
-        android:strokeLineCap="round" />
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round" />
     <path
-        android:fillColor="#FFFFFFFF"
-        android:pathData="M3.16,15.21L4.53,11.95L7.68,13.57Z" />
+        android:pathData="M3.16,15.21 L4.53,11.95 L7.68,13.57 Z"
+        android:fillColor="#FFF4F1EA" />
 </vector>

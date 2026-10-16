@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Foldcade original art, MIT licensed (see LICENSE). Tools island (sliders) -->
+<!-- Foldcade original art, MIT licensed (see LICENSE). Tools: three sliders -->
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:aapt="http://schemas.android.com/aapt"
     android:width="24dp"
@@ -7,60 +7,27 @@
     android:viewportWidth="24"
     android:viewportHeight="24">
     <path
-        android:pathData="M0.5,12A11.5,11.5 0 1 1 23.5,12A11.5,11.5 0 1 1 0.5,12Z">
-        <aapt:attr name="android:fillColor">
-          <gradient android:type="radial" android:centerX="12" android:centerY="12" android:gradientRadius="11.5">
-            <item android:offset="0" android:color="#33FFB547" />
-            <item android:offset="0.1" android:color="#2AFFB547" />
-            <item android:offset="0.2" android:color="#1FFFB547" />
-            <item android:offset="0.3" android:color="#14FFB547" />
-            <item android:offset="0.4" android:color="#0CFFB547" />
-            <item android:offset="0.5" android:color="#06FFB547" />
-            <item android:offset="0.6" android:color="#03FFB547" />
-            <item android:offset="0.7" android:color="#01FFB547" />
-            <item android:offset="0.8" android:color="#00FFB547" />
-            <item android:offset="0.9" android:color="#00FFB547" />
-            <item android:offset="1" android:color="#00FFB547" />
-          </gradient>
-        </aapt:attr>
-    </path>
-    <path
         android:pathData="M4,7 H20 M4,12 H20 M4,17 H20"
-        android:strokeColor="#FF3A3E47"
-        android:strokeWidth="1.6"
+        android:strokeColor="#FFF4F1EA"
+        android:strokeWidth="2"
         android:strokeLineCap="round"
         android:strokeLineJoin="round" />
     <path
-        android:pathData="M4,7 H9 M4,12 H15 M4,17 H7"
-        android:strokeWidth="1.6"
-        android:strokeLineCap="round"
-        android:strokeLineJoin="round">
-        <aapt:attr name="android:strokeColor">
-          <gradient android:type="linear" android:startX="4" android:startY="0" android:endX="15" android:endY="0">
-            <item android:offset="0" android:color="#FFFFB547" />
-            <item android:offset="1" android:color="#FFFFE2B0" />
-          </gradient>
-        </aapt:attr>
-    </path>
+        android:pathData="M5.6,7A3.4,3.4 0 1 1 12.4,7A3.4,3.4 0 1 1 5.6,7Z"
+        android:fillColor="#FF000000" />
     <path
-        android:pathData="M6.9,7A2.1,2.1 0 1 1 11.1,7A2.1,2.1 0 1 1 6.9,7Z"
-        android:fillColor="#FFF4F1EA"
-        android:strokeColor="#FF000000"
-        android:strokeWidth="0.8"
-        android:strokeLineCap="round"
-        android:strokeLineJoin="round" />
+        android:pathData="M6.4,7A2.6,2.6 0 1 1 11.6,7A2.6,2.6 0 1 1 6.4,7Z"
+        android:fillColor="#FFF4F1EA" />
     <path
-        android:pathData="M12.9,12A2.1,2.1 0 1 1 17.1,12A2.1,2.1 0 1 1 12.9,12Z"
-        android:fillColor="#FFF4F1EA"
-        android:strokeColor="#FF000000"
-        android:strokeWidth="0.8"
-        android:strokeLineCap="round"
-        android:strokeLineJoin="round" />
+        android:pathData="M11.6,12A3.4,3.4 0 1 1 18.4,12A3.4,3.4 0 1 1 11.6,12Z"
+        android:fillColor="#FF000000" />
     <path
-        android:pathData="M4.9,17A2.1,2.1 0 1 1 9.1,17A2.1,2.1 0 1 1 4.9,17Z"
-        android:fillColor="#FFF4F1EA"
-        android:strokeColor="#FF000000"
-        android:strokeWidth="0.8"
-        android:strokeLineCap="round"
-        android:strokeLineJoin="round" />
+        android:pathData="M12.4,12A2.6,2.6 0 1 1 17.6,12A2.6,2.6 0 1 1 12.4,12Z"
+        android:fillColor="#FFF4F1EA" />
+    <path
+        android:pathData="M4.1,17A3.4,3.4 0 1 1 10.9,17A3.4,3.4 0 1 1 4.1,17Z"
+        android:fillColor="#FF000000" />
+    <path
+        android:pathData="M4.9,17A2.6,2.6 0 1 1 10.1,17A2.6,2.6 0 1 1 4.9,17Z"
+        android:fillColor="#FFF4F1EA" />
 </vector>

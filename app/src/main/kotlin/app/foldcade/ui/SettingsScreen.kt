@@ -206,8 +206,8 @@ private val ROW_HEIGHT = 60.dp
 private fun categoryIcon(category: SettingsCategory): Int = when (category) {
     SettingsCategory.Personalization -> R.drawable.ic_status_display
     SettingsCategory.Sound -> R.drawable.ic_status_volume_3
-    SettingsCategory.Library -> R.drawable.mark_library
-    SettingsCategory.Players -> R.drawable.mark_cartridge_lit
+    SettingsCategory.Library -> R.drawable.symbol_library
+    SettingsCategory.Players -> R.drawable.symbol_two_players
     SettingsCategory.Screens -> R.drawable.ic_status_settings
     SettingsCategory.About -> R.drawable.ic_status_info
 }
@@ -252,9 +252,11 @@ private fun CategoryRow(
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(16.dp),
     ) {
+        val art = themeIcon(icon)
         Image(
-            painter = themeIconPainter(icon),
+            painter = art.painter,
             contentDescription = null,
+            colorFilter = art.tint(theme.onBackground),
             modifier = Modifier.size(34.dp).lifted(chosen, lift, grow = 0.14f, rest = 0.7f),
         )
         BasicText(

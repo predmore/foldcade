@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Foldcade original art, MIT licensed (see LICENSE). Afterglow collection glyph: A checkered flag -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:aapt="http://schemas.android.com/aapt"
+    android:width="48dp"
+    android:height="48dp"
+    android:viewportWidth="64"
+    android:viewportHeight="64">
+    <path
+        android:pathData="M11,8 L11,58 A2,2 0 0 0 15,58 L15,8 A2,2 0 0 0 11,8 ZM18,10 C26,6.5 32,13.5 40,10 C46,7.5 50,8.5 54,10 V34 C48,32.5 46,32 40,34.5 C32,38 26,30.5 18,34 ZM18,13.5H24V19.5H18V13.5ZM30,13.5H36V19.5H30V13.5ZM42,13.5H48V19.5H42V13.5ZM24,19.5H30V25.5H24V19.5ZM36,19.5H42V25.5H36V19.5ZM48,19.5H54V25.5H48V19.5ZM18,25.5H24V31.5H18V25.5ZM30,25.5H36V31.5H30V25.5ZM42,25.5H48V31.5H42V25.5Z"
+        android:fillColor="#FFF4F1EA"
+        android:fillType="evenOdd" />
+</vector>

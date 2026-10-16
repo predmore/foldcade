@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Foldcade original art, MIT licensed (see LICENSE). Afterglow symbol: A ringed planet for Saturn -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:aapt="http://schemas.android.com/aapt"
+    android:width="48dp"
+    android:height="48dp"
+    android:viewportWidth="64"
+    android:viewportHeight="64">
+    <path
+        android:pathData="M16.5,32A15.5,15.5 0 1 1 47.5,32A15.5,15.5 0 1 1 16.5,32ZM4.419,40.961A29,8.5 -18 0 0 59.581,23.039L52.448,25.356A21.5,4.6 -18 0 1 11.552,38.644Z"
+        android:fillColor="#FFF4F1EA"
+        android:fillType="evenOdd" />
+    <path
+        android:pathData="M4.419,40.961A29,8.5 -18 0 1 59.581,23.039L52.448,25.356A21.5,4.6 -18 0 0 11.552,38.644Z"
+        android:fillColor="#FFF4F1EA"
+        android:fillType="evenOdd" />
+</vector>

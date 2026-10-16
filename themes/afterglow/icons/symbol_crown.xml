@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Foldcade original art, MIT licensed (see LICENSE). Afterglow collection glyph: A crown -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:aapt="http://schemas.android.com/aapt"
+    android:width="48dp"
+    android:height="48dp"
+    android:viewportWidth="64"
+    android:viewportHeight="64">
+    <path
+        android:pathData="M9,45 L12,21 L23.5,33.5 L32,14 L40.5,33.5 L52,21 L55,45 ZM11.5,48.5H52.5A2.5,2.5 0 0 1 55,51V53A2.5,2.5 0 0 1 52.5,55.5H11.5A2.5,2.5 0 0 1 9,53V51A2.5,2.5 0 0 1 11.5,48.5Z"
+        android:fillColor="#FFF4F1EA"
+        android:fillType="evenOdd"
+        android:strokeColor="#FFF4F1EA"
+        android:strokeWidth="2.4"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round" />
+    <path
+        android:pathData="M8.4,17.5A3.6,3.6 0 1 1 15.6,17.5A3.6,3.6 0 1 1 8.4,17.5ZM28.4,10.5A3.6,3.6 0 1 1 35.6,10.5A3.6,3.6 0 1 1 28.4,10.5ZM48.4,17.5A3.6,3.6 0 1 1 55.6,17.5A3.6,3.6 0 1 1 48.4,17.5Z"
+        android:fillColor="#FFF4F1EA"
+        android:fillType="evenOdd" />
+</vector>

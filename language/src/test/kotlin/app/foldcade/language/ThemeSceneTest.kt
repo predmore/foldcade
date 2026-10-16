@@ -23,9 +23,10 @@ class ThemeSceneTest {
         assertNotNull(pack.icons["mark.emulators"])
         assertNotNull(pack.icons["mark.collection-body"])
         assertNotNull(pack.icons["mark.collection-face"])
-        assertNotNull(pack.icons["mark.star"])
-        assertNotNull(pack.icons["mark.two-players"])
-        assertEquals(192, pack.icons.size)
+        assertNotNull(pack.icons["symbol.star"])
+        assertNotNull(pack.icons["symbol.two-players"])
+        assertNotNull(pack.icons["symbol.nintendo-3ds"])
+        assertEquals(228, pack.icons.size)
     }
 
     @Test
