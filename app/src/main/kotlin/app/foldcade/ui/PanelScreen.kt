@@ -820,7 +820,9 @@ private fun AchievementList(
             Modifier
                 .weight(1f)
                 .fillMaxWidth()
-                .verticalScroll(rememberScrollState()),
+                .verticalScroll(rememberScrollState())
+                // The scroll clips above and below, so the first and last rows' rings need this room.
+                .padding(vertical = ringReach()),
             verticalArrangement = Arrangement.spacedBy(px(8f)),
         ) {
             rows.forEachIndexed { row, achievement ->
