@@ -220,7 +220,7 @@ class HomeRecoveryHostTest {
         val folder = HomeFolder(HOME_ANDROID_APPS, Copy.androidAppsFolder, bucket = HomeKind.AndroidApp,
             slots = listOf(androidHomeId("notes"), null, androidHomeId("browser")))
         store.saveHomeBoard(encodeHome(HomeBoard(slots = listOf(HOME_ALL, null, folder.id),
-            folders = mapOf(folder.id to folder), emulatorsFiled = true, retired = setOf(HOME_FAVORITES))))
+            folders = mapOf(folder.id to folder), retired = setOf(HOME_FAVORITES))))
         val shell = shell()
         shell.setInstalledApps(listOf(app, other), emptySet())
         val saved = store.homeBoardRaw()
@@ -239,7 +239,7 @@ class HomeRecoveryHostTest {
             slots = listOf(null, androidHomeId("notes")))
         val collection = HomeFolder("home.user.1", "Tools", userMade = true, slots = listOf(androidHomeId("notes"), null))
         val board = HomeBoard(slots = listOf(HOME_ALL, null, folder.id, collection.id),
-            folders = mapOf(folder.id to folder, collection.id to collection), emulatorsFiled = true)
+            folders = mapOf(folder.id to folder, collection.id to collection))
         store.saveHomeBoard(encodeHome(board))
         val shell = shell()
         shell.setInstalledApps(listOf(app), emptySet())

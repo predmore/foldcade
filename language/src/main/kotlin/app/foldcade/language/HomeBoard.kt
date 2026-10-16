@@ -138,8 +138,11 @@ data class HomeBoard(
     val allOpen: Boolean = false,
     val editing: Boolean = false,
     val hold: HomeHold? = null,
-    /** Emulators an older release filed with the Android apps have moved to Emulators. */
-    val emulatorsFiled: Boolean = false,
+    /**
+     * Emulators this board has filed: each moved once out of the Android folders, where an
+     * older release, or the app before it had a player, put it. Later moves are the user's.
+     */
+    val filedEmulators: Set<String> = emptySet(),
     /**
      * Recently played joins the root on its own once a game is played after this time. A board
      * saved before collections starts it at the update, so the update itself adds no tile.
@@ -324,6 +327,7 @@ fun mergeHome(
         },
         hidden = hidden,
         offHome = board.offHome.filter(keep).toSet(),
+        filedEmulators = board.filedEmulators.filter(keep).toSet(),
     )
     next = fileEmulators(next, catalog, platforms)
     val known = placedIds(next)
@@ -926,7 +930,7 @@ fun encodeHome(board: HomeBoard): String {
         homeRow("hidden", saved.hidden.sorted())
         homeRow("retired", saved.retired.sorted())
         homeRow("slots", saved.slots.map { it.orEmpty() })
-        homeRow("emulatorsFiled", listOf(if (saved.emulatorsFiled) "1" else "0"))
+        homeRow("filedEmulators", saved.filedEmulators.sorted())
         homeRow("recentAfter", listOf(saved.recentAfter.toString()))
         homeRow("offHome", saved.offHome.sorted())
         if (saved.collectionSerial > 0L) homeRow("collectionSerial", listOf(saved.collectionSerial.toString()))
@@ -990,7 +994,8 @@ fun decodeHome(raw: String?, nowMillis: Long = 0L): HomeBoard {
             "hidden" -> board = board.copy(hidden = bits.drop(1).filter { it.isNotEmpty() }.toSet())
             "retired" -> board = board.copy(retired = bits.drop(1).filter { it.isNotEmpty() }.toSet())
             "slots" -> board = board.copy(slots = decodeSlots(bits.drop(1), encoded))
-            "emulatorsFiled" -> board = board.copy(emulatorsFiled = bits.getOrNull(1) == "1")
+            // An older release's emulatorsFiled is not read: it covered only the emulators of its day.
+            "filedEmulators" -> board = board.copy(filedEmulators = bits.drop(1).filter { it.isNotEmpty() }.toSet())
             "recentAfter" -> bits.getOrNull(1)?.toLongOrNull()?.let { board = board.copy(recentAfter = it) }
             "offHome" -> board = board.copy(offHome = bits.drop(1).filter { it.isNotEmpty() }.toSet())
             "tint" -> if (bits.size >= 3 && bits[2].isNotEmpty()) tints[bits[1]] = bits[2]
@@ -1144,13 +1149,14 @@ private fun refreshRecent(board: HomeBoard, catalog: List<HomeItem>, unsettled: 
 }
 
 /**
- * Once, an emulator still in the Android Games or Android Apps folder, where releases
- * before the Emulators folder put it, moves to Emulators. Later moves are the user's.
+ * Once per emulator, one in the Android Games or Android Apps folder moves to Emulators.
+ * Releases before the Emulators folder put emulators there, and so does a merge before
+ * the app's player loaded: RetroArch says it is a game. Later moves are the user's.
  * Waits until the installed apps have reported, which is when an emulator is in [catalog].
  */
 private fun fileEmulators(board: HomeBoard, catalog: List<HomeItem>, platforms: List<HomePlatform>): HomeBoard {
-    if (board.emulatorsFiled || board.hold != null) return board
-    val emulators = catalog.filter { it.kind == HomeKind.Emulator }
+    if (board.hold != null) return board
+    val emulators = catalog.filter { it.kind == HomeKind.Emulator && it.id !in board.filedEmulators }
     if (emulators.isEmpty()) return board
     var next = board
     for (item in emulators) {
@@ -1159,7 +1165,7 @@ private fun fileEmulators(board: HomeBoard, catalog: List<HomeItem>, platforms: 
         val left = from.copy(slots = from.slots.map { if (it == item.id) null else it })
         next = placeNew(next.copy(folders = next.folders + (from.id to left)), item, platforms)
     }
-    return next.copy(emulatorsFiled = true)
+    return next.copy(filedEmulators = next.filedEmulators + emulators.map { it.id })
 }
 
 /**

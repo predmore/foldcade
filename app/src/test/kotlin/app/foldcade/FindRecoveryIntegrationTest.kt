@@ -28,7 +28,7 @@ class FindRecoveryIntegrationTest {
             val group = HomeFolder(id, "Tools", userMade = collection,
                 bucket = if (collection) null else HomeKind.AndroidApp, slots = listOf(androidHomeId("notes")))
             store.saveHomeBoard(encodeHome(HomeBoard(slots = listOf(HOME_ALL, id),
-                folders = mapOf(id to group), emulatorsFiled = true)))
+                folders = mapOf(id to group))))
             val shell = shell(store)
             shell.showHomeGrid(HomeGrid.AndroidGames)
             assertEquals(0, shell.model.count)

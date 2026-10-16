@@ -70,7 +70,7 @@ class UndoMenuAvailabilityTest {
                 "Tools", userMade = collection, bucket = if (collection) null else HomeKind.AndroidApp,
                 slots = listOf(androidHomeId("notes")))
             store.saveHomeBoard(encodeHome(HomeBoard(slots = listOf(HOME_ALL, folder.id),
-                folders = mapOf(folder.id to folder), emulatorsFiled = true)))
+                folders = mapOf(folder.id to folder))))
             val shell = shell(store)
             shell.setInstalledApps(listOf(notes), emptySet())
             focus(shell, 1)

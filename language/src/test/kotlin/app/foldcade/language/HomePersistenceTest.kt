@@ -141,7 +141,6 @@ class HomePersistenceTest {
             folders = folders,
             hidden = setOf(hidden3ds.id),
             retired = setOf(HOME_MOONLIGHT),
-            emulatorsFiled = true,
         )
 
         /** The board as the last release saved it, which had no Recently played start. */
