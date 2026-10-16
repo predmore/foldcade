@@ -123,11 +123,15 @@ internal fun availabilityCopy(availability: Availability): String = when (availa
     Availability.LocalOnly -> Copy.inFolder
 }
 
-/** True when every stored player for [platformId] takes both screens. No player does not. */
-internal fun platformOccupiesBoth(plugins: PluginHost, platformId: String): Boolean {
-    val players = plugins.playersFor(platformId)
-    return players.isNotEmpty() && players.all { it.occupiesBothDisplays }
-}
+/**
+ * True when the player a launch picks for [platformId] takes both screens: the first
+ * [installed] one in [playerRank] order, so melonDS ahead of RetroArch's DS cores. With
+ * none installed, the first ranked one. No player does not. [FoldcadeApp.playerFor] also
+ * passes over RetroArch without a core, which this does not know.
+ */
+internal fun platformOccupiesBoth(plugins: PluginHost, platformId: String, installed: (String) -> Boolean = { false }): Boolean =
+    preferredPlayer(plugins.playersFor(platformId), runnable = { true }, rank = ::playerRank, installed = installed)
+        ?.occupiesBothDisplays == true
 
 sealed interface GameLaunch {
     /** No player is registered. The stand-in opens this content URI with a read grant. */
