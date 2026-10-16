@@ -225,8 +225,11 @@ class ShellController(
 
     private var shelfState: AppShelfState = store.appShelfState()
     private var installed: List<LaunchableApp> = emptyList()
-    /** [installed]'s packages, so the hero can ask which emulator a game opens in without asking Android. */
-    private var installedPackages: Set<String> = emptySet()
+    /**
+     * The emulators on the device, so the hero can tell which one a game opens in without
+     * asking Android while it draws. State, so a hero already drawn follows an install.
+     */
+    private var installedPlayers by mutableStateOf<Set<String>>(emptySet())
     private var playerPackages: Set<String> = emptySet()
     // A board from before collections is kept as it was before this release first rewrites it.
     private val home = store.run {
@@ -1320,9 +1323,14 @@ class ShellController(
         Log.i("Foldcade", "library-ui home")
     }
 
-    fun setInstalledApps(apps: List<LaunchableApp>, players: Set<String>) {
+    /** [installedPlayers] are the emulator packages Android has, launcher entry or not. */
+    fun setInstalledApps(
+        apps: List<LaunchableApp>,
+        players: Set<String>,
+        installedPlayers: Set<String> = apps.mapTo(HashSet()) { it.packageName },
+    ) {
         installed = apps.distinctBy { it.packageName }
-        installedPackages = installed.mapTo(HashSet()) { it.packageName }
+        this.installedPlayers = installedPlayers
         installedAppsSettled = true
         playerPackages = players
         syncHome()
@@ -1920,7 +1928,7 @@ class ShellController(
         val game = home.asShelf(face)
         val platformId = game.platformId
         if (game.libraryId == null || platformId == null) return game
-        return game.copy(occupiesBothDisplays = platformOccupiesBoth(plugins, platformId, installedPackages::contains))
+        return game.copy(occupiesBothDisplays = platformOccupiesBoth(plugins, platformId, installedPlayers::contains))
     }
 
     /**

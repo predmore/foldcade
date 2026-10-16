@@ -40,6 +40,7 @@ import app.foldcade.localfolder.LocalFolderEntry
 import app.foldcade.plugins.melonds.MelonDsEntry
 import app.foldcade.plugins.melonds.MelonDsPlayer
 import app.foldcade.plugins.retroarch.RetroArchEntry
+import androidx.compose.runtime.snapshots.Snapshot
 import kotlinx.coroutines.Dispatchers
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -324,6 +325,25 @@ class HomeGridOrderTest {
         shell.setInstalledApps(listOf(LaunchableApp(RETROARCH, "RetroArch", false)), emptySet())
         assertFalse(shell.focusedGame()!!.occupiesBothDisplays)
         assertTrue(shell.focusedLaunchesOnOneScreen())
+
+        // An emulator with no launcher entry still counts, as it does at launch.
+        val apps = listOf(LaunchableApp(RETROARCH, "RetroArch", false))
+        shell.setInstalledApps(apps, emptySet(), installedPlayers = setOf(RETROARCH, MelonDsPlayer.STABLE_PACKAGE))
+        assertTrue(shell.focusedGame()!!.occupiesBothDisplays)
+
+        // A hero already drawn reads state that an install changes, so it draws again.
+        val reads = mutableSetOf<Any>()
+        Snapshot.observe(readObserver = { reads += it }) { shell.focusedGame() }
+        val changed = mutableSetOf<Any>()
+        val handle = Snapshot.registerApplyObserver { objects, _ -> changed.addAll(objects) }
+        try {
+            shell.setInstalledApps(apps, emptySet(), installedPlayers = setOf(RETROARCH))
+            Snapshot.sendApplyNotifications()
+        } finally {
+            handle.dispose()
+        }
+        assertTrue(reads.any { it in changed })
+        assertFalse(shell.focusedGame()!!.occupiesBothDisplays)
     }
 
     @Test

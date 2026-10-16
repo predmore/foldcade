@@ -517,8 +517,10 @@ class FoldcadeApp : Application() {
         scope.launch {
             val apps = InstalledAppCatalog(packageManager, packageName).list()
             val players = plugins.playerPackageNames()
+            // Checked as a launch checks them: an emulator may hide its launcher entry.
+            val installedPlayers = players.filterTo(HashSet(), ::packageInstalled)
             withContext(Dispatchers.Main.immediate) {
-                if (::shell.isInitialized) shell.setInstalledApps(apps, players)
+                if (::shell.isInitialized) shell.setInstalledApps(apps, players, installedPlayers)
             }
         }
     }
