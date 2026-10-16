@@ -49,6 +49,7 @@ def main():
     made = assets()
     names = [a.name for a, _, _ in made]
     assert len(names) == len(set(names)), "two icons share a name"
+    os.makedirs(ICONS, exist_ok=True); os.makedirs(SVG, exist_ok=True)
     for folder in (ICONS, *(f"{SVG}/{d}" for d in os.listdir(SVG))):
         for file in os.listdir(folder):
             if file.startswith(OWNED) and os.path.splitext(file)[0] not in names:
