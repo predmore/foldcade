@@ -997,6 +997,11 @@ data class PickerModel(
     val connectOpen: Boolean = false,
     val atLibraryRoot: Boolean = true,
     val primaryIsTop: Boolean = true,
+    /**
+     * Up from the top row can reach L1's and R1's pills. They are on the top screen, so an
+     * app there covers them, and a selection keeps their drawers shut. Up then stays on the grid.
+     */
+    val pills: Boolean = true,
     val themes: List<String> = listOf(Copy.builtIn),
     val themeIds: List<String> = themes,
     val themeIndex: Int = 0,
@@ -1168,6 +1173,8 @@ private fun coerce(focus: GridFocus, model: PickerModel): GridFocus {
     if (model.count <= 0) {
         return next.copy(chrome = next.chrome ?: Chrome.StatusCluster, cellIndex = 0, lastColumn = 0)
     }
+    // A pill the cursor was on before an app covered it gives the cursor back to the grid.
+    if (!model.pills && next.chrome != null) next = next.copy(chrome = null)
     if (next.chrome == null && next.cellIndex !in 0 until reach(model)) {
         val index = (model.count - 1).coerceAtLeast(0)
         next = next.copy(cellIndex = index, lastColumn = GridStrip.column(index))
@@ -1360,8 +1367,12 @@ private fun land(focus: GridFocus, index: Int, model: PickerModel): GridFocus {
     return focus.copy(cellIndex = index, lastColumn = GridStrip.column(index), chrome = null)
 }
 
-/** Up from the top row reaches the pill on that side of the screen: L1 from the left half, R1 from the right. */
+/**
+ * Up from the top row reaches the pill on that side of the screen: L1 from the left half, R1 from the right.
+ * With the pills out of reach ([PickerModel.pills]) it stays.
+ */
 private fun upToChrome(focus: GridFocus, column: Int, model: PickerModel): GridFocus {
+    if (!model.pills) return focus
     val onScreen = column - shownFirstColumn(model)
     val chrome = if (onScreen < model.columnsShown / 2) Chrome.LeftIsland else Chrome.StatusCluster
     return focus.copy(chrome = chrome, lastColumn = column)
