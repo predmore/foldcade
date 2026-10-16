@@ -32,6 +32,23 @@ class DeleteHoldLifecycleTest {
         assertTrue("Pause must cancel the owning hold", pause.contains("shell.inputFocus"))
     }
 
+    @Test fun resumeGivesBackTheFocusAPauseTookWhenTheWindowKeptIt() {
+        // Home, or a new intent to the screen in front, pauses and resumes it without a
+        // focus change. Marked unfocused by the pause, every hold to delete was refused.
+        val source = File("src/main/kotlin/app/foldcade/HomeActivity.kt").readText()
+        val resume = source.substringAfter("override fun onResume").substringBefore("override fun onStop")
+        assertTrue(resume.contains("shell.inputFocus(inputWindow, hasWindowFocus())"))
+        val shell = heldShortcut()
+        shell.inputFocus(HostScreen.Bottom.name, false)
+        assertNull(shell.model.deleteHold)
+        shell.inputFocus(HostScreen.Bottom.name, true)
+        shell.onMeaning(Meaning.Activate, HostScreen.Bottom)
+        assertNotNull(shell.model.deleteHold)
+        time += 1000L
+        shell.tickRecovery()
+        assertEquals(listOf(key), deleted)
+    }
+
     @Test fun losingTheInputWindowCancelsWhileTheOtherScreenRemainsVisible() {
         val shell = heldShortcut()
         assertEquals(HostScreen.Bottom.name, shell.model.deleteHold?.inputWindow)
