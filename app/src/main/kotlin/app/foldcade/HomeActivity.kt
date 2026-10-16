@@ -342,6 +342,10 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
 
     override fun onResume() {
         super.onResume()
+        // onPause marked this window unfocused. A pause that kept focus, as Home or a new
+        // intent to this screen does, brings no focus change to mark it focused again,
+        // and a hold to delete would wait for one.
+        foldcade.shell.inputFocus(inputWindow, hasWindowFocus())
         if (restartReplacedPlayer()) return
         // A core installed in RetroArch counts for the order of players. Its launch reads them again anyway.
         foldcade.refreshRetroArchCoresOnReturn()
