@@ -123,6 +123,8 @@ Where the glyph sits is `FACE_GLYPH` in `marks.py`. `icons.py` prints the finish
 
 A collection can wear any glyph, any place, or any platform (`FOLDER_ICONS`). That is why every place and platform needs a symbol.
 
+A theme pack from before symbols may draw a glyph only as `mark.<glyph>`. If no pack ahead of Afterglow draws `symbol.<glyph>`, that mark is drawn on the folder as it is (`collectionGlyphSlot`). A legacy black-backed `marks/<name>.png` is screened onto the folder.
+
 ## Adding an icon
 
 ### A platform or a place
@@ -159,7 +161,7 @@ Draw it in `tools/art/symbols.py` on the 24-unit grid and add an `Asset` to `con
 ### Before shipping
 
 - [ ] It is recognisable at a glance, beside the rest of its row on the sheet, at 32 px for a symbol and on a tile for an object.
-- [ ] A symbol is one ink, with cuts of at least 2.5 units, and colour only for state.
+- [ ] A symbol is one ink, with cuts of at least 2.5 units, and colour only for state. Where it's drawn, the host passes its colour through `ThemeIconPainter.tint`.
 - [ ] An object uses only parts from the recipe, its body in its accent, and no new light source.
 - [ ] A platform is drawn as the thing you hold, seen from the front, with no logo.
 - [ ] Nothing new draws a border or edge inside a grid tile.

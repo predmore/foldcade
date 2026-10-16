@@ -13,11 +13,14 @@ import androidx.compose.ui.graphics.drawscope.translate
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.graphics.ColorFilter
+import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.painter.Painter
 import androidx.compose.runtime.remember
 import app.foldcade.language.CollectionLook
+import app.foldcade.language.collectionGlyphSlot
+import app.foldcade.language.screenedInset
 import app.foldcade.language.ThemeIconBlend
 import kotlin.math.min
 import kotlin.math.roundToInt
@@ -123,14 +126,20 @@ private val GLYPHS: Map<String, Int> = mapOf(
 /**
  * A collection: the folder in its colour, its glyph pressed into the front, then the parts that keep
  * their own colour. One body serves every colour, multiplied by the tint, so a pack overrides the shape once.
- * The tint also paints the tile's light and glow.
+ * The tint also paints the tile's light and glow. A pack from before symbols keeps its glyph's mark,
+ * drawn on the front as it is (see [collectionGlyphSlot]).
  */
 @Composable
 private fun collectionGlyph(look: CollectionLook, pixels: Int): MarkGlyph {
+    val paint = LocalFoldTheme.current
     val body = themeIcon("mark.collection-body", R.drawable.mark_collection_body, pixels).painter
     val face = themeIcon("mark.collection-face", R.drawable.mark_collection_face, pixels).painter
-    val glyph = symbolIcon(look.glyph, pixels)?.painter
-    val painter = remember(body, face, glyph, look.tint) { CollectionPainter(body, face, glyph, look.tint.color) }
+    val pressed = remember(paint.icons, look.glyph) { collectionGlyphSlot(look.glyph) { paint.icons[it].orEmpty() }.startsWith("symbol.") }
+    val glyph = if (pressed) symbolIcon(look.glyph, pixels) else markGlyph(look.glyph, pixels)?.icon
+    val screened = screenedInset(glyph?.resolved)?.let { remember(it) { it.asImageBitmap() } }
+    val painter = remember(body, face, glyph?.painter, pressed, screened, look.tint) {
+        CollectionPainter(body, face, glyph?.painter, pressed, screened, look.tint.color)
+    }
     return MarkGlyph(ThemeIconPainter(painter, null), look.tint.color)
 }
 
@@ -138,10 +147,14 @@ private class CollectionPainter(
     private val body: Painter,
     private val face: Painter,
     private val glyph: Painter?,
+    /** A symbol, pressed in. Otherwise a pack's own mark, drawn as it is. */
+    private val pressed: Boolean,
+    /** A legacy pack's black-backed glyph, screened so its black disappears into the folder. */
+    private val screened: ImageBitmap?,
     tint: Color,
 ) : Painter() {
     private val tinted = ColorFilter.tint(tint, BlendMode.Modulate)
-    private val pressed = ColorFilter.tint(lerp(tint, Color.Black, PRESSED_DEPTH))
+    private val deep = ColorFilter.tint(lerp(tint, Color.Black, PRESSED_DEPTH))
     private val lip = ColorFilter.tint(Color.White)
 
     override val intrinsicSize: Size get() = body.intrinsicSize
@@ -154,9 +167,20 @@ private class CollectionPainter(
             val box = Size(GLYPH_SIZE * unit, GLYPH_SIZE * unit)
             val left = GLYPH_X * unit - box.width / 2f
             val top = GLYPH_Y * unit - box.height / 2f
-            // Pressed in: a faint light lip on its lower edge, under the shape in a deep shade of the tint.
-            translate(left, top + box.height * LIP_DROP) { with(glyph) { draw(box, alpha = LIP_ALPHA, colorFilter = lip) } }
-            translate(left, top) { with(glyph) { draw(box, colorFilter = pressed) } }
+            when {
+                // Pressed in: a faint light lip on its lower edge, under the shape in a deep shade of the tint.
+                pressed -> {
+                    translate(left, top + box.height * LIP_DROP) { with(glyph) { draw(box, alpha = LIP_ALPHA, colorFilter = lip) } }
+                    translate(left, top) { with(glyph) { draw(box, colorFilter = deep) } }
+                }
+                screened != null -> drawImage(
+                    screened,
+                    dstOffset = IntOffset(left.roundToInt(), top.roundToInt()),
+                    dstSize = IntSize(box.width.roundToInt().coerceAtLeast(1), box.height.roundToInt().coerceAtLeast(1)),
+                    blendMode = BlendMode.Screen,
+                )
+                else -> translate(left, top) { with(glyph) { draw(box) } }
+            }
         }
         with(face) { draw(size) }
     }

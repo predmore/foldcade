@@ -252,9 +252,11 @@ private fun CategoryRow(
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(16.dp),
     ) {
+        val art = themeIcon(icon)
         Image(
-            painter = themeIconPainter(icon),
+            painter = art.painter,
             contentDescription = null,
+            colorFilter = art.tint(theme.onBackground),
             modifier = Modifier.size(34.dp).lifted(chosen, lift, grow = 0.14f, rest = 0.7f),
         )
         BasicText(

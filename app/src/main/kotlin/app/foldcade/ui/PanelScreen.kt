@@ -3120,9 +3120,11 @@ private fun HomeTarget(
             horizontalArrangement = Arrangement.spacedBy(px(14f)),
             verticalAlignment = Alignment.CenterVertically,
         ) {
+            val home = themeIcon(R.drawable.symbol_home)
             Image(
-                painter = themeIconPainter(R.drawable.symbol_home),
+                painter = home.painter,
                 contentDescription = null,
+                colorFilter = home.tint(theme.onBackground),
                 modifier = Modifier.size(px(HOME_TARGET_HEIGHT * 0.7f)),
             )
             BasicText(
@@ -3783,7 +3785,8 @@ private fun Cell(
                         contentDescription = title,
                         modifier = Modifier
                             .fillMaxSize()
-                            .scale(theme.artScale),
+                            .scale(theme.artScale)
+                            .graphicsLayer { alpha = lerp(REST_ALPHA, 1f, lit()) },
                         contentScale = ContentScale.Fit,
                     )
                 }

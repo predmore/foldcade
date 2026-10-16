@@ -129,6 +129,26 @@ data class IconPick(
     }
 }
 
+/**
+ * The slot a collection's glyph comes from. It is the glyph's flat symbol, pressed into the folder,
+ * unless a pack drew the glyph only as a mark and no pack ahead of Afterglow drew its symbol. That pack
+ * predates symbols, so its mark keeps showing on the folder as it is. [candidates] lists a slot's icons,
+ * the composition's first choice first.
+ */
+fun collectionGlyphSlot(glyph: String, candidates: (String) -> List<ThemeIconAsset>): String {
+    val symbol = "symbol.$glyph"
+    val mark = candidates("mark.$glyph").firstOrNull() ?: return symbol
+    val symbols = candidates(symbol)
+    // Only the fallback pack draws every symbol, so a lone symbol from another owner is Afterglow's.
+    return if (symbols.size <= 1 && symbols.none { it.owner == mark.owner }) "mark.$glyph" else symbol
+}
+
+/**
+ * The image a collection screens onto its folder, for a glyph from a pack's legacy black-backed
+ * `marks/<name>.png`, as a tile does with that mark. Null draws the glyph as it is.
+ */
+fun <T> screenedInset(glyph: ResolvedThemeIcon<T>?): T? = glyph?.takeIf { it.asset.blend == ThemeIconBlend.Screen }?.image
+
 /** One or two words under the icon grid. */
 fun glyphName(mark: String): String = when (mark) {
     MARK_STAR -> "Star"

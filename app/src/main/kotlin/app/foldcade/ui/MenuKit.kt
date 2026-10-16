@@ -589,9 +589,12 @@ internal fun MenuRow(
         if (icon != null || iconSlot) {
             Box(Modifier.size(32.dp), contentAlignment = Alignment.Center) {
                 if (icon != null) {
+                    // A symbol is one ink, so it follows the theme's text colour.
+                    val art = themeIcon(icon)
                     Image(
-                        painter = themeIconPainter(icon),
+                        painter = art.painter,
                         contentDescription = null,
+                        colorFilter = art.tint(theme.onBackground),
                         modifier = Modifier.fillMaxSize().lifted(lit, lift, grow = 0.12f, rest = 0.78f),
                     )
                 }

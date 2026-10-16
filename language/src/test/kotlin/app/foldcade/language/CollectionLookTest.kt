@@ -78,6 +78,23 @@ class CollectionLookTest {
     }
 
     @Test
+    fun aPackThatOnlyDrewTheGlyphAsAMarkKeepsItsMarkOnTheFolder() {
+        val afterglow = resolveThemeResources(readThemeZip(afterglowZip().inputStream())!!)
+        val legacy = resolveThemeResources(ThemeZip(parseThemeJson("""{"name":"Old marks"}""")!!, mapOf("marks/star.png" to byteArrayOf(1))))
+        val stock = ThemeComposition(afterglow)
+        assertEquals("symbol.star", collectionGlyphSlot("star", stock::iconCandidates))
+        assertEquals("symbol.nintendo-3ds", collectionGlyphSlot("nintendo-3ds", stock::iconCandidates))
+        // The old pack's star wins, and keeps its Screen blending onto the folder.
+        val old = ThemeComposition(afterglow, iconProvider = legacy, fallback = afterglow)
+        assertEquals("mark.star", collectionGlyphSlot("star", old::iconCandidates))
+        val packed = resolveThemeIcon(old.iconCandidates("mark.star")) { "decoded ${it.owner}/${it.file}" }
+        assertEquals(ThemeIconBlend.Screen, packed?.asset?.blend)
+        assertEquals(packed?.image, screenedInset(packed))
+        assertEquals("symbol.heart", collectionGlyphSlot("heart", old::iconCandidates))
+        assertNull(screenedInset(resolveThemeIcon(stock.iconCandidates("symbol.star")) { it.file }))
+    }
+
+    @Test
     fun theCursorPicksAsItMovesAndCrossesToTheChoiceInUse() {
         val start = IconPick.open(made.id, CollectionLook("sword", CollectionTint.Indigo))
         assertEquals(FOLDER_ICONS.indexOf("sword"), start.glyph)
