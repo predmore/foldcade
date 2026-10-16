@@ -17,7 +17,7 @@ class KeptGameMenuTest {
     @Test fun aKeptGameMenuDropsSlotActionsAndNoOpsKeepItsUndo() {
         val collection = HomeFolder("home.user.1", "Tools", userMade = true, slots = listOf(androidHomeId("notes")))
         store.saveHomeBoard(encodeHome(HomeBoard(slots = listOf(HOME_ALL, collection.id),
-            folders = mapOf(collection.id to collection), emulatorsFiled = true)))
+            folders = mapOf(collection.id to collection))))
         val shell = shell()
         shell.setInstalledApps(listOf(app, other), emptySet())
         focus(shell, 1)
@@ -127,7 +127,7 @@ class KeptGameMenuTest {
         onArtApply: (String, ArtKind, String?) -> Unit = { _, _, _ -> }): ShellController {
         val collection = HomeFolder("home.user.1", "Tools", userMade = true, slots = listOf(androidHomeId("notes")))
         store.saveHomeBoard(encodeHome(HomeBoard(slots = listOf(HOME_ALL, collection.id),
-            folders = mapOf(collection.id to collection), emulatorsFiled = true)))
+            folders = mapOf(collection.id to collection))))
         val shell = ShellController(store, PluginHost(Dispatchers.Unconfined, MemoryCredentialStore()),
             nowMillis = { 100L }, onArtApply = onArtApply)
         shell.setInstalledApps(listOf(app.copy(systemGame = wasGame), other), emptySet())

@@ -408,7 +408,7 @@ class HomeBoardTest {
         assertEquals(listOf(stream.id), merged.folders.getValue(HOME_MOONLIGHT).slots)
         assertEquals("emulators", merged.folders.getValue(HOME_EMULATORS).mark)
         assertEquals("Emulators", merged.folders.getValue(HOME_EMULATORS).name)
-        assertTrue(merged.emulatorsFiled)
+        assertEquals(setOf(azahar.id, moonlight.id), merged.filedEmulators)
 
         // Uninstalled, the last emulator takes the folder with it.
         val gone = mergeHome(merged, listOf(stream), platforms)
@@ -427,19 +427,59 @@ class HomeBoardTest {
         )
         // Before the installed apps report, nothing moves.
         val loading = mergeHome(old, emptyList(), platforms, unsettled = { it.startsWith("android:") })
-        assertFalse(loading.emulatorsFiled)
+        assertTrue(loading.filedEmulators.isEmpty())
         assertEquals(listOf(azahar.id, notes.id), loading.folders.getValue(HOME_ANDROID_APPS).slots)
 
         val filed = mergeHome(loading, listOf(azahar, notes), platforms)
         assertEquals(listOf(null, notes.id), filed.folders.getValue(HOME_ANDROID_APPS).slots)
         assertEquals(listOf(azahar.id), filed.folders.getValue(HOME_EMULATORS).slots)
-        assertTrue(decodeHome(encodeHome(filed)).emulatorsFiled)
+        assertEquals(setOf(azahar.id), decodeHome(encodeHome(filed)).filedEmulators)
 
         // The user moves it back. It stays.
         val moved = fileGame(filed, azahar.id, HOME_ANDROID_APPS, listOf(azahar, notes), platforms)
         val again = mergeHome(decodeHome(encodeHome(moved)), listOf(azahar, notes), platforms)
         assertTrue(azahar.id in again.folders.getValue(HOME_ANDROID_APPS).slots)
         assertFalse(again.folders.containsKey(HOME_EMULATORS))
+    }
+
+    @Test
+    fun anAppThatBecomesAnEmulatorLaterMovesToEmulatorsOnce() {
+        val azahar = item("android:org.azahar_emu.azahar", kind = HomeKind.Emulator)
+        val asGame = item("android:com.retroarch.aarch64", kind = HomeKind.AndroidGame)
+        val retroArch = asGame.copy(kind = HomeKind.Emulator)
+        // RetroArch says it is a game. Before its player loads, it files with the Android games.
+        val before = mergeHome(HomeBoard(), listOf(azahar, asGame), platforms)
+        assertEquals(listOf(asGame.id), before.folders.getValue(HOME_ANDROID_GAMES).slots)
+        assertEquals(setOf(azahar.id), before.filedEmulators)
+
+        val after = mergeHome(decodeHome(encodeHome(before)), listOf(azahar, retroArch), platforms)
+        assertEquals(listOf(azahar.id, retroArch.id), after.folders.getValue(HOME_EMULATORS).slots)
+        assertFalse(after.folders.containsKey(HOME_ANDROID_GAMES))
+
+        // The user moves it back. It stays.
+        val withGame = listOf(azahar, retroArch, item("android:com.example.racer", kind = HomeKind.AndroidGame))
+        val moved = fileGame(mergeHome(after, withGame, platforms), retroArch.id, HOME_ANDROID_GAMES, withGame, platforms)
+        val again = mergeHome(decodeHome(encodeHome(moved)), withGame, platforms)
+        assertTrue(retroArch.id in again.folders.getValue(HOME_ANDROID_GAMES).slots)
+        assertFalse(retroArch.id in again.folders.getValue(HOME_EMULATORS).slots)
+    }
+
+    @Test
+    fun aBoardFiledByAnOlderReleaseFilesTheEmulatorsItMissed() {
+        val retroArch = item("android:com.retroarch.aarch64", kind = HomeKind.Emulator)
+        val old = decodeHome(
+            encodeHome(
+                HomeBoard(
+                    slots = listOf(HOME_ALL, HOME_ANDROID_GAMES),
+                    folders = mapOf(
+                        HOME_ANDROID_GAMES to HomeFolder(HOME_ANDROID_GAMES, "Android Games", bucket = HomeKind.AndroidGame, slots = listOf(retroArch.id)),
+                    ),
+                ),
+            ).replace("filedEmulators\n", "emulatorsFiled\tMQ\n"),
+        )
+        val merged = mergeHome(old, listOf(retroArch), platforms)
+        assertEquals(listOf(retroArch.id), merged.folders.getValue(HOME_EMULATORS).slots)
+        assertFalse(merged.folders.containsKey(HOME_ANDROID_GAMES))
     }
 
     @Test
