@@ -695,7 +695,7 @@ class ShellController(
             Effect.Undo -> {
                 activeUndo()?.let { saved ->
                     undo = null
-                    home.restore(saved.restore(home.board))
+                    home.restore(saved.adopt(sameAliases).restore(home.board))
                     shelfState = saved.restore(shelfState)
                     commitShelves()
                     syncHome()
@@ -2052,7 +2052,7 @@ class ShellController(
             resolvePlatform(homePlatforms(), id)?.id ?: id
         }
         return matchedArtQuery(ArtQuery(
-            key = if (model.libraryGrid && record != null) homeGameId(libraryId, record.remoteKey) else game.id,
+            key = if (model.libraryGrid && record != null) tileOf(homeGameId(libraryId, record.remoteKey)) else game.id,
             title = game.title,
             platformId = platformId,
             fileName = remoteKey?.takeIf { libraryId == LocalFolderBackend.ID }?.let(LocalFolderBackend::fileNameOf),

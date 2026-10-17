@@ -933,9 +933,10 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
             local
         }
         // Saves go into the player's folder before it starts, and come back when it returns.
+        var owner = route.saves
         val spots = if (plan is GameLaunch.Installed) {
             try {
-                prepareSaves(route, plan.player, target).spots
+                prepareSaves(route, plan.player, target).also { owner = it.owner ?: owner }.spots
             } catch (cancelled: CancellationException) {
                 throw cancelled
             } catch (fatal: VirtualMachineError) {
@@ -988,7 +989,7 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
                         installedIntent,
                         noteStart = { playerIntent?.let { foldcade.noteStarted(plan.player, it) } == true },
                     )
-                    if (started) rememberReturn(LibraryReturn(route.saves.backendId, route.saves, plan.player, spots))
+                    if (started) rememberReturn(LibraryReturn(owner.backendId, owner, plan.player, spots))
                 } else if (launchCurrent(generation)) {
                     showMissing(plan.player.displayName, emptyList())
                 }

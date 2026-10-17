@@ -126,14 +126,12 @@ fun adoptSameGames(board: HomeBoard, aliases: Map<String, String>): HomeBoard {
     val tiles = aliases.values.toSet()
     val shown = { id: String -> id !in tiles || id !in placed }
     val hidden = board.hidden.map(tile).filter(shown).toSet()
+    // Each hidden copy remembers its own places. Show brings the tile back to all of them, once per group.
     val hiddenSlots = LinkedHashMap<String, List<HiddenSlot>>()
-    for ((id, places) in board.hiddenSlots) {
+    for ((id, places) in board.hiddenSlots.entries.sortedBy { (id, _) -> if (id in tiles) 0 else 1 }) {
         val to = tile(id)
-        if (to == id) {
-            hiddenSlots[id] = places
-        } else if (to in hidden && to !in hiddenSlots && to !in board.hiddenSlots) {
-            hiddenSlots[to] = places
-        }
+        if (to != id && to !in hidden) continue
+        hiddenSlots[to] = (hiddenSlots[to].orEmpty() + places).distinctBy { it.group }
     }
     return board.copy(
         slots = slots,

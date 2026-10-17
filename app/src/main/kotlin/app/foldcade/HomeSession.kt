@@ -121,6 +121,12 @@ class HomeSession(
     /** Each copy's id to the one tile it folds into ([foldSameGames]), as last saved. */
     sameGames: Map<String, String> = emptyMap(),
 ) {
+    /** Each copy's id to its tile, as the last merge folded them. */
+    private var sameGames: Map<String, String> = sameGames
+
+    /** The tile [id] is shown as now. A menu or a selection made before a copy folded names the copy. */
+    private fun tileOf(id: String): String = sameGames[id] ?: id
+
     /**
      * The board on screen. While a tile is held, the walk is measured against the board as it
      * was at pickup, so a library's report then waits in [pendingMerge]: merged into that walk,
@@ -163,9 +169,11 @@ class HomeSession(
     var bulkAfter: HomeBoard? = null
         private set
 
-    fun bulk(action: BulkAction, ids: List<String>, collectionId: String?, index: Int): Int {
-        if (selection == null || ids.isEmpty()) return index
+    fun bulk(action: BulkAction, selected: List<String>, collectionId: String?, index: Int): Int {
+        if (selection == null || selected.isEmpty()) return index
         finishSelection()
+        // The report that waited on the selection may have folded a checked copy into its tile.
+        val ids = selected.map(::tileOf).distinct()
         bulkBefore = board
         val name = "${Copy.collection} ${board.folders.values.count { it.collection && it.id != HOME_FAVORITES } + 1}"
         val made = nextUserFolderId(board)
@@ -258,6 +266,7 @@ class HomeSession(
         platforms = report.platforms
         report.remembered.forEach { (id, game) -> games[id] = game }
         report.copies.forEach { (id, listed) -> if (listed.isNotEmpty()) copies[id] = listed }
+        sameGames = report.sameGames
         // Copies folded since the board was saved bring their places onto their tile first.
         val adopted = adoptSameGames(board, report.sameGames)
         val reconciled = report.hidden.fold(adopted) { current, id -> hideGame(current, id) }
@@ -491,7 +500,7 @@ class HomeSession(
      * else the one Add to took out of the collection on screen, else the one at [index].
      */
     private fun gameAt(index: Int, gameId: String? = null): String? =
-        gameId?.takeIf { it != HOME_ALL && board.folders[it] == null } ?: menuGame ?: slotGame(index)
+        (gameId?.takeIf { it != HOME_ALL && board.folders[it] == null } ?: menuGame ?: slotGame(index))?.let(::tileOf)
 
     /** The face of game [id], wherever it is, as a menu that kept its game shows it. */
     fun faceOf(id: String): HomeFace = faceFor(id)

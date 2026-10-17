@@ -1,5 +1,6 @@
 package app.foldcade
 
+import app.foldcade.api.plugin.Game
 import app.foldcade.api.plugin.LaunchTarget
 import app.foldcade.api.plugin.Player
 import app.foldcade.host.PluginHost
@@ -24,7 +25,7 @@ internal class LaunchSaves(
      * The caller runs one save flow at a time.
      */
     suspend fun prepare(route: GameRoute, player: Player, local: LaunchTarget): PreparedLaunch {
-        val owner = route.saves
+        val owner = owner(route)
         val libraryId = owner.backendId
         // Saves are named after the file that opens, which a folded copy shares by definition.
         val spots = saves.spots(player, owner, local)
@@ -44,7 +45,7 @@ internal class LaunchSaves(
             // Kept until the player starts, so a launch cancelled now still starts it fresh next time.
             if (written.isNotEmpty()) awaitLoad(player.saveFolderId())
             if (!placed) throw SaveNotPlaced()
-            return PreparedLaunch(placement.target, spots)
+            return PreparedLaunch(placement.target, spots, owner)
         } catch (cancelled: CancellationException) {
             throw cancelled
         } catch (failure: Exception) {
@@ -52,9 +53,27 @@ internal class LaunchSaves(
             if (spots.isNotEmpty() && failure !is SaveNotPlaced) throw SaveNotPlaced() else throw failure
         }
     }
+
+    /**
+     * [GameRoute.saves], unless it holds no save and another server's copy does. Then that copy
+     * keeps them, so a device with no save of its own loads the progress a server already has.
+     */
+    private suspend fun owner(route: GameRoute): Game {
+        if (route.servers.size < 2) return route.saves
+        return (listOf(route.saves) + route.servers).distinct().firstOrNull { holdsSaves(it) } ?: route.saves
+    }
+
+    private suspend fun holdsSaves(game: Game): Boolean = try {
+        plugins.saves(game.backendId, game).slots.isNotEmpty()
+    } catch (cancelled: CancellationException) {
+        throw cancelled
+    } catch (_: Exception) {
+        false
+    }
 }
 
-internal class PreparedLaunch(val target: LaunchTarget, val spots: List<SaveSpot>)
+/** [owner] is the copy whose library kept the saves, which the read-back returns them to. */
+internal class PreparedLaunch(val target: LaunchTarget, val spots: List<SaveSpot>, val owner: Game? = null)
 
 /** A library save could not be written into the player's folder and checked. */
 internal class SaveNotPlaced : Exception("save could not be placed")

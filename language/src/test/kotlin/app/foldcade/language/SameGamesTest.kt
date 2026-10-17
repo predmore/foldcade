@@ -171,6 +171,24 @@ class SameGamesTest {
     }
 
     @Test
+    fun aHiddenGameRemembersEveryCopysPlaces() {
+        val quests = "home.user.1"
+        val board = HomeBoard(
+            slots = listOf(HOME_ALL, quests),
+            folders = mapOf(
+                quests to HomeFolder(quests, "Quests", userMade = true, slots = listOf(local)),
+                HOME_FAVORITES to HomeFolder(HOME_FAVORITES, "Favorites", slots = listOf(server)),
+            ),
+        )
+        val hidden = hideGame(hideGame(board, local), server)
+        val adopted = adoptSameGames(hidden, mapOf(local to tile, server to tile))
+        assertEquals(setOf(quests, HOME_FAVORITES), adopted.hiddenSlots.getValue(tile).map { it.group }.toSet())
+        val shown = showHidden(mergeHome(adopted, listOf(rom(tile, "RF4")), platforms), tile, listOf(rom(tile, "RF4")), platforms)
+        assertTrue(tile in shown.folders.getValue(quests).slots)
+        assertTrue(tile in shown.folders.getValue(HOME_FAVORITES).slots)
+    }
+
+    @Test
     fun aGameTakenOffHomeStaysOff() {
         val adopted = adoptSameGames(HomeBoard(offHome = setOf(server)), mapOf(server to tile, local to tile))
         assertEquals(setOf(tile), adopted.offHome)

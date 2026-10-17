@@ -19,6 +19,7 @@ import app.foldcade.api.plugin.PlayerIntent
 import app.foldcade.api.plugin.PluginEntry
 import app.foldcade.api.plugin.SaveDeclaration
 import app.foldcade.api.plugin.SaveSet
+import app.foldcade.api.plugin.SaveSlot
 import app.foldcade.api.plugin.StartDisplay
 import app.foldcade.api.plugin.SyncOutcome
 import app.foldcade.api.plugin.SyncResult
@@ -70,6 +71,23 @@ class LaunchSavesTest {
     }
 
     @Test
+    fun aServerThatAlreadyHoldsTheSaveKeepsItOnADeviceWithNone() = runBlocking {
+        val other = RecordingLibrary("other")
+        plugins.register(object : PluginEntry {
+            override val apiVersion = PLUGIN_API_VERSION
+            override val apiMinor = PLUGIN_API_MINOR
+            override val libraries: List<LibraryBackend> = listOf(other)
+        })
+        val second = Game("other", "4", "nintendo-ds", Availability.Cached, "Tetris")
+        other.held = listOf("sav")
+        val route = GameRoute("tile", play, owner, servers = listOf(owner, second))
+        val prepared = LaunchSaves(saves, plugins) { awaiting += it }.prepare(route, Melon, local)
+        assertEquals(second, prepared.owner)
+        assertEquals(listOf("prepareSaves:4"), other.calls)
+        assertEquals(emptyList<String>(), server.calls)
+    }
+
+    @Test
     fun aCopyThatKeepsItsOwnSavesLaunchesAsBefore() = runBlocking {
         LaunchSaves(saves, plugins) { awaiting += it }.prepare(GameRoute("tile", owner, owner), Melon, local)
         assertEquals(listOf("prepareLaunch:12"), server.calls)
@@ -80,13 +98,14 @@ class LaunchSavesTest {
         val calls = mutableListOf<String>()
         val observed = mutableListOf<String>()
         var toPlace: String? = null
+        var held: List<String> = emptyList()
 
         override suspend fun connect() = Unit
         override suspend fun disconnect() = Unit
         override suspend fun listPlatforms(): List<ListedPlatform> = emptyList()
         override suspend fun listGames(platformId: String, query: GameQuery) = GamePage(emptyList(), null)
         override suspend fun ensureLocal(game: Game): LaunchTarget = error("no download")
-        override suspend fun saves(game: Game) = SaveSet(id, emptyList())
+        override suspend fun saves(game: Game) = SaveSet(id, held.map { SaveSlot(it, "0".repeat(32), null) })
 
         override suspend fun prepareLaunch(game: Game, player: Player): Placement {
             calls += "prepareLaunch:${game.remoteKey}"

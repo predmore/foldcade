@@ -27,10 +27,15 @@ class SameGameRouteTest {
     }
 
     @Test
-    fun theCopyALibraryGridPressedPlays() {
+    fun theCopyALibraryGridPressedPlaysAndKeepsItsSaves() {
         val route = routeSameGame("t", listOf(folder, server), pressed = server, libraryRank = rank)
         assertEquals(server, route.play)
         assertEquals(server, route.saves)
         assertEquals("t", route.tileId)
+        val second = routeSameGame("t", listOf(folder, server, this.second), pressed = this.second, libraryRank = rank)
+        assertEquals(this.second, second.saves)
+        assertEquals(listOf(server, this.second), second.servers)
+        // A pressed folder copy plays, and its saves still go to the server.
+        assertEquals(server, routeSameGame("t", listOf(folder, server), pressed = folder, libraryRank = rank).saves)
     }
 }
