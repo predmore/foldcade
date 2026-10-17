@@ -69,7 +69,7 @@ const val FALLBACK_THEME_ID: String = "afterglow"
 fun resolveThemeResources(zip: ThemeZip, inherit: ThemeResources? = null): ThemeResources {
     val diagnostics = mutableListOf<ThemeDiagnostic>()
     val file = inherit?.let { zip.file.inheriting(it.file) } ?: zip.file
-    val style = ThemeStyle(file.style, diagnostics::add, inherit?.file?.style ?: JsonObject(emptyMap()))
+    val style = ThemeStyle(file.style, diagnostics::add, inheritedStyle(zip.file, inherit))
     val legacyIcons = zip.entries.filterKeys { it.startsWith("marks/") && it.endsWith(".png") }.map { (path, bytes) ->
         "mark." + path.removePrefix("marks/").removeSuffix(".png") to
             ThemeIconAsset(file.id, path, bytes, null, false, ThemeIconBlend.Screen)
@@ -94,6 +94,19 @@ fun resolveThemeResources(zip: ThemeZip, inherit: ThemeResources? = null): Theme
         }
     }
     return ThemeResources(file.id, file.name, file, icons, scenes, diagnostics, style)
+}
+
+/**
+ * The style a pack inherits. A pack that names its own `focus` and leaves the ring's ends out wants
+ * a ring in that colour, not Afterglow's gradient, so those two tokens are not inherited then.
+ */
+private fun inheritedStyle(own: ThemeFile, inherit: ThemeResources?): JsonObject {
+    val base = inherit?.file?.style ?: return JsonObject(emptyMap())
+    val ring = base["focusRing"] as? JsonObject ?: return base
+    if ("focus" !in own.root) return base
+    val ownRing = own.style["focusRing"] as? JsonObject
+    val kept = ring.filterKeys { it !in setOf("start", "end") || ownRing?.containsKey(it) == true }
+    return JsonObject(base + ("focusRing" to JsonObject(kept)))
 }
 
 /** Asset ownership stays with its pack. Categories never merge another pack's internal files. */

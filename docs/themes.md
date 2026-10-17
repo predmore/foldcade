@@ -66,7 +66,7 @@ Every token below is optional. A pack's value replaces Afterglow's; anything it 
 
 ### `focusRing`
 
-The focus ring every focusable thing shares. Without `start`/`end` it is the manifest's `focus` colour.
+The focus ring every focusable thing shares. A pack that sets its own `focus` and leaves out `start` and `end` gets a ring in its `focus` colour; one that sets neither inherits Afterglow's gradient.
 
 | Token | Afterglow | Controls |
 | --- | --- | --- |

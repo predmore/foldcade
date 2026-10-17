@@ -190,7 +190,8 @@ class ThemeSounds(context: Context, entries: Map<String, ByteArray>, private val
         }
     }
 
-    fun has(slot: String): Boolean = (ids[slot] ?: 0) != 0
+    /** True when [slot] is heard: the clip loaded and the theme's volume is above zero. */
+    fun has(slot: String): Boolean = volume > 0f && (ids[slot] ?: 0) != 0
 
     /** True when this theme has [slot] and the tick was started. */
     fun play(slot: String): Boolean {

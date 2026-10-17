@@ -103,11 +103,17 @@ internal fun themeIconOrNull(slot: String, pixels: Int = 256): ThemeIconPainter?
     val candidates = LocalFoldTheme.current.icons[slot].orEmpty()
     if (candidates.isEmpty() && fallback == 0) return null
     var resolved by remember(candidates, pixels) { mutableStateOf(ThemeIconImages.cached(candidates, pixels)) }
-    LaunchedEffect(candidates, pixels) { resolved = ThemeIconImages.load(candidates, pixels) }
+    var loaded by remember(candidates, pixels) { mutableStateOf(resolved != null) }
+    LaunchedEffect(candidates, pixels) {
+        resolved = ThemeIconImages.load(candidates, pixels)
+        loaded = true
+    }
     val image = resolved?.image
     val painter = when {
         image != null -> remember(image) { BitmapPainter(image.asImageBitmap()) }
         fallback != 0 -> painterResource(fallback)
+        // Every candidate failed to decode, so the caller can fall back, as a missing slot does.
+        loaded -> return null
         else -> EmptyPainter
     }
     return ThemeIconPainter(painter, resolved)

@@ -51,6 +51,20 @@ class ThemeInheritanceTest {
     }
 
     @Test
+    fun aPackWithItsOwnFocusColourGetsARingInIt() {
+        fun pack(json: String) = resolveThemeResources(ThemeZip(parseThemeJson(json)!!, emptyMap()), afterglow).style.focusRing
+        val red = pack("""{"version":2,"id":"red","name":"Red","focus":"#FF2020"}""")
+        assertEquals(null, red.start)
+        assertEquals(null, red.end)
+        val half = pack("""{"version":2,"id":"half","name":"Half","focus":"#FF2020","style":{"focusRing":{"start":"#102030"}}}""")
+        assertEquals(Color(0xFF102030), half.start)
+        assertEquals(null, half.end)
+        val plain = pack("""{"version":2,"id":"plain","name":"Plain"}""")
+        assertEquals(afterglow.style.focusRing.start, plain.start)
+        assertEquals(afterglow.style.focusRing.end, plain.end)
+    }
+
+    @Test
     fun withoutAfterglowAPackKeepsTheEngineDefaults() {
         val file = parseThemeJson("""{"name":"Alone","style":{"shape":{"round":0.25}}}""")!!
         val alone = resolveThemeResources(ThemeZip(file, emptyMap()))
