@@ -61,6 +61,49 @@ def diamond(cx, cy, off, r):
     """Four round buttons in a diamond, as one path per button."""
     return [circle(cx + dx, cy + dy, r) for dx, dy in ((0, -off), (off, 0), (0, off), (-off, 0))]
 
+def sector(cx, cy, ro, ri, a0, a1):
+    """A ring's slice from angle [a0] to [a1] degrees (clockwise from east), with straight ends."""
+    pt = lambda r, a: (cx + r * math.cos(math.radians(a)), cy + r * math.sin(math.radians(a)))
+    large = 1 if (a1 - a0) % 360 > 180 else 0
+    (x0, y0), (x1, y1), (x2, y2), (x3, y3) = pt(ro, a0), pt(ro, a1), pt(ri, a1), pt(ri, a0)
+    return (f"M{f(x0)},{f(y0)} A{f(ro)},{f(ro)} 0 {large} 1 {f(x1)},{f(y1)} L{f(x2)},{f(y2)} "
+            f"A{f(ri)},{f(ri)} 0 {large} 0 {f(x3)},{f(y3)} Z")
+
+def gear(cx, cy, ro, ri, teeth, top=0.34, root=0.5):
+    """A cog: [teeth] flat-topped teeth from radius [ri] out to [ro]. [top] and [root] are the share of
+    each tooth's pitch its flat top and its widest point take."""
+    pts = []
+    for i in range(teeth):
+        a = 2 * math.pi * i / teeth - math.pi / 2; step = 2 * math.pi / teeth
+        for da, r in ((-root / 2, ri), (-top / 2, ro), (top / 2, ro), (root / 2, ri)):
+            pts.append((cx + r * math.cos(a + da * step), cy + r * math.sin(a + da * step)))
+    return poly(pts)
+
+def pixels(rows, x, y, cell):
+    """Pixel art as one outline per connected shape, holes included: rows of 'X' and '.' from the top.
+    Shared edges between cells cancel, so the lit rim follows only the outside."""
+    on = {(c, r) for r, row in enumerate(rows) for c, ch in enumerate(row) if ch == "X"}
+    edges = {}
+    for c, r in on:
+        for a, b in (((c, r), (c + 1, r)), ((c + 1, r), (c + 1, r + 1)), ((c + 1, r + 1), (c, r + 1)), ((c, r + 1), (c, r))):
+            if (b, a) in edges: del edges[(b, a)]
+            else: edges[(a, b)] = True
+    nxt = {}
+    for a, b in edges: nxt.setdefault(a, []).append(b)
+    d = []
+    while nxt:
+        start = next(iter(nxt)); p = start; loop = []
+        while True:
+            loop.append(p); q = nxt[p].pop()
+            if not nxt[p]: del nxt[p]
+            p = q
+            if p == start: break
+        # Drop the points in the middle of a straight run.
+        pts = [loop[i] for i in range(len(loop))
+               if (loop[i - 1][0] - loop[i][0], loop[i - 1][1] - loop[i][1]) != (loop[i][0] - loop[(i + 1) % len(loop)][0], loop[i][1] - loop[(i + 1) % len(loop)][1])]
+        d.append(poly([(x + px * cell, y + py * cell) for px, py in pts]))
+    return "".join(d)
+
 def points(d):
     """Every on-curve and control point of a path, after H and V are spelled out."""
     t = re.findall(r"[MLCQAZ]|-?\d*\.?\d+(?:e-?\d+)?", xf(d)); out = []; i = 0; cmd = None

@@ -11,6 +11,636 @@
   "version": 2,
   "id": "afterglow",
   "icons": {
+    "app.app.gamenative": {
+      "file": "icons/app_gamenative.xml",
+      "tint": false,
+      "accent": "#4CC9FF"
+    },
+    "app.app.gamenative.gold": {
+      "file": "icons/app_gamenative.xml",
+      "tint": false,
+      "accent": "#4CC9FF"
+    },
+    "app.com.android.calculator2": {
+      "file": "icons/app_calculator.xml",
+      "tint": false,
+      "accent": "#3EE6C0"
+    },
+    "app.com.android.calendar": {
+      "file": "icons/app_calendar.xml",
+      "tint": false,
+      "accent": "#4C8DFF"
+    },
+    "app.com.android.camera": {
+      "file": "icons/app_camera.xml",
+      "tint": false,
+      "accent": "#7C8CFF"
+    },
+    "app.com.android.camera2": {
+      "file": "icons/app_camera.xml",
+      "tint": false,
+      "accent": "#7C8CFF"
+    },
+    "app.com.android.chrome": {
+      "file": "icons/app_chrome.xml",
+      "tint": false,
+      "accent": "#4C8DFF"
+    },
+    "app.com.android.contacts": {
+      "file": "icons/app_contacts.xml",
+      "tint": false,
+      "accent": "#4CC9FF"
+    },
+    "app.com.android.deskclock": {
+      "file": "icons/app_clock.xml",
+      "tint": false,
+      "accent": "#FF5C7A"
+    },
+    "app.com.android.dialer": {
+      "file": "icons/app_phone.xml",
+      "tint": false,
+      "accent": "#3EE68A"
+    },
+    "app.com.android.documentsui": {
+      "file": "icons/app_files.xml",
+      "tint": false,
+      "accent": "#5AA9FF"
+    },
+    "app.com.android.gallery3d": {
+      "file": "icons/app_gallery.xml",
+      "tint": false,
+      "accent": "#FFB547"
+    },
+    "app.com.android.messaging": {
+      "file": "icons/app_messages.xml",
+      "tint": false,
+      "accent": "#8FB4FF"
+    },
+    "app.com.android.mms": {
+      "file": "icons/app_messages.xml",
+      "tint": false,
+      "accent": "#8FB4FF"
+    },
+    "app.com.android.music": {
+      "file": "icons/app_music.xml",
+      "tint": false,
+      "accent": "#FF8A3D"
+    },
+    "app.com.android.settings": {
+      "file": "icons/app_settings.xml",
+      "tint": false,
+      "accent": "#A7B6CC"
+    },
+    "app.com.android.soundrecorder": {
+      "file": "icons/app_recorder.xml",
+      "tint": false,
+      "accent": "#C3CEDF"
+    },
+    "app.com.android.vending": {
+      "file": "icons/app_play_store.xml",
+      "tint": false,
+      "accent": "#3DDC84"
+    },
+    "app.com.armsx2": {
+      "file": "icons/app_armsx2.xml",
+      "tint": false,
+      "accent": "#6FA0FF"
+    },
+    "app.com.armsx2.nightly": {
+      "file": "icons/app_armsx2.xml",
+      "tint": false,
+      "accent": "#6FA0FF"
+    },
+    "app.com.chrome.beta": {
+      "file": "icons/app_chrome.xml",
+      "tint": false,
+      "accent": "#4C8DFF"
+    },
+    "app.com.chrome.canary": {
+      "file": "icons/app_chrome.xml",
+      "tint": false,
+      "accent": "#4C8DFF"
+    },
+    "app.com.chrome.dev": {
+      "file": "icons/app_chrome.xml",
+      "tint": false,
+      "accent": "#4C8DFF"
+    },
+    "app.com.discord": {
+      "file": "icons/app_discord.xml",
+      "tint": false,
+      "accent": "#7584FF"
+    },
+    "app.com.droiddeck.launcher": {
+      "file": "icons/app_droiddeck.xml",
+      "tint": false,
+      "accent": "#66C0F4"
+    },
+    "app.com.explusalpha.GbaEmu": {
+      "file": "icons/app_gba_emu.xml",
+      "tint": false,
+      "accent": "#7C8CFF"
+    },
+    "app.com.explusalpha.GbcEmu": {
+      "file": "icons/app_gbc_emu.xml",
+      "tint": false,
+      "accent": "#C77DFF"
+    },
+    "app.com.explusalpha.MdEmu": {
+      "file": "icons/app_md_emu.xml",
+      "tint": false,
+      "accent": "#4C7DFF"
+    },
+    "app.com.explusalpha.NesEmu": {
+      "file": "icons/app_nes_emu.xml",
+      "tint": false,
+      "accent": "#FF4D5A"
+    },
+    "app.com.explusalpha.SaturnEmu": {
+      "file": "icons/app_saturn_emu.xml",
+      "tint": false,
+      "accent": "#FFC15A"
+    },
+    "app.com.explusalpha.Snes9xPlus": {
+      "file": "icons/app_snes9x_ex.xml",
+      "tint": false,
+      "accent": "#AEB6CC"
+    },
+    "app.com.fastemulator.gba": {
+      "file": "icons/app_my_boy.xml",
+      "tint": false,
+      "accent": "#5C7CFF"
+    },
+    "app.com.fastemulator.gbc": {
+      "file": "icons/app_my_oldboy.xml",
+      "tint": false,
+      "accent": "#A070FF"
+    },
+    "app.com.flycast.emulator": {
+      "file": "icons/app_flycast.xml",
+      "tint": false,
+      "accent": "#8C7CFF"
+    },
+    "app.com.gamepass": {
+      "file": "icons/app_xbox.xml",
+      "tint": false,
+      "accent": "#6BDB3A"
+    },
+    "app.com.github.stenzek.duckstation": {
+      "file": "icons/app_duckstation.xml",
+      "tint": false,
+      "accent": "#FFD23C"
+    },
+    "app.com.google.android.GoogleCamera": {
+      "file": "icons/app_camera.xml",
+      "tint": false,
+      "accent": "#7C8CFF"
+    },
+    "app.com.google.android.apps.docs": {
+      "file": "icons/app_drive.xml",
+      "tint": false,
+      "accent": "#3DD47A"
+    },
+    "app.com.google.android.apps.maps": {
+      "file": "icons/app_maps.xml",
+      "tint": false,
+      "accent": "#6FD487"
+    },
+    "app.com.google.android.apps.messaging": {
+      "file": "icons/app_messages.xml",
+      "tint": false,
+      "accent": "#8FB4FF"
+    },
+    "app.com.google.android.apps.nbu.files": {
+      "file": "icons/app_files.xml",
+      "tint": false,
+      "accent": "#5AA9FF"
+    },
+    "app.com.google.android.apps.photos": {
+      "file": "icons/app_photos.xml",
+      "tint": false,
+      "accent": "#FFC93C"
+    },
+    "app.com.google.android.apps.photosgo": {
+      "file": "icons/app_photos.xml",
+      "tint": false,
+      "accent": "#FFC93C"
+    },
+    "app.com.google.android.apps.recorder": {
+      "file": "icons/app_recorder.xml",
+      "tint": false,
+      "accent": "#C3CEDF"
+    },
+    "app.com.google.android.apps.youtube.music": {
+      "file": "icons/app_youtube_music.xml",
+      "tint": false,
+      "accent": "#FF2E63"
+    },
+    "app.com.google.android.calculator": {
+      "file": "icons/app_calculator.xml",
+      "tint": false,
+      "accent": "#3EE6C0"
+    },
+    "app.com.google.android.calendar": {
+      "file": "icons/app_calendar.xml",
+      "tint": false,
+      "accent": "#4C8DFF"
+    },
+    "app.com.google.android.contacts": {
+      "file": "icons/app_contacts.xml",
+      "tint": false,
+      "accent": "#4CC9FF"
+    },
+    "app.com.google.android.deskclock": {
+      "file": "icons/app_clock.xml",
+      "tint": false,
+      "accent": "#FF5C7A"
+    },
+    "app.com.google.android.dialer": {
+      "file": "icons/app_phone.xml",
+      "tint": false,
+      "accent": "#3EE68A"
+    },
+    "app.com.google.android.documentsui": {
+      "file": "icons/app_files.xml",
+      "tint": false,
+      "accent": "#5AA9FF"
+    },
+    "app.com.google.android.gm": {
+      "file": "icons/app_gmail.xml",
+      "tint": false,
+      "accent": "#FF5A4E"
+    },
+    "app.com.google.android.gm.lite": {
+      "file": "icons/app_gmail.xml",
+      "tint": false,
+      "accent": "#FF5A4E"
+    },
+    "app.com.google.android.keep": {
+      "file": "icons/app_keep.xml",
+      "tint": false,
+      "accent": "#FFD23F"
+    },
+    "app.com.google.android.youtube": {
+      "file": "icons/app_youtube.xml",
+      "tint": false,
+      "accent": "#FF3B3B"
+    },
+    "app.com.limelight": {
+      "file": "icons/app_moonlight.xml",
+      "tint": false,
+      "accent": "#A9BCFF"
+    },
+    "app.com.magneticchen.daijishou": {
+      "file": "icons/app_daijisho.xml",
+      "tint": false,
+      "accent": "#A57CFF"
+    },
+    "app.com.metallic.chiaki": {
+      "file": "icons/app_chiaki.xml",
+      "tint": false,
+      "accent": "#C8EE3C"
+    },
+    "app.com.microsoft.xboxone.smartglass": {
+      "file": "icons/app_xbox.xml",
+      "tint": false,
+      "accent": "#6BDB3A"
+    },
+    "app.com.nendo.argosy": {
+      "file": "icons/app_argosy.xml",
+      "tint": false,
+      "accent": "#8C8AFF"
+    },
+    "app.com.odin.odinlauncher": {
+      "file": "icons/app_odin_launcher.xml",
+      "tint": false,
+      "accent": "#9FB8FF"
+    },
+    "app.com.playstation.remoteplay": {
+      "file": "icons/app_ps_remote_play.xml",
+      "tint": false,
+      "accent": "#3F8CFF"
+    },
+    "app.com.plexapp.android": {
+      "file": "icons/app_plex.xml",
+      "tint": false,
+      "accent": "#FFB61F"
+    },
+    "app.com.radikal.gamelauncher": {
+      "file": "icons/app_beacon.xml",
+      "tint": false,
+      "accent": "#FF6FAE"
+    },
+    "app.com.reddit.frontpage": {
+      "file": "icons/app_reddit.xml",
+      "tint": false,
+      "accent": "#FF5A1F"
+    },
+    "app.com.retroarch": {
+      "file": "icons/app_retroarch.xml",
+      "tint": false,
+      "accent": "#B39DFF"
+    },
+    "app.com.retroarch.aarch64": {
+      "file": "icons/app_retroarch.xml",
+      "tint": false,
+      "accent": "#B39DFF"
+    },
+    "app.com.retroarch.ra32": {
+      "file": "icons/app_retroarch.xml",
+      "tint": false,
+      "accent": "#B39DFF"
+    },
+    "app.com.simplemobiletools.gallery.pro": {
+      "file": "icons/app_gallery.xml",
+      "tint": false,
+      "accent": "#FFB547"
+    },
+    "app.com.spotify.music": {
+      "file": "icons/app_spotify.xml",
+      "tint": false,
+      "accent": "#3FE06E"
+    },
+    "app.com.termux": {
+      "file": "icons/app_termux.xml",
+      "tint": false,
+      "accent": "#9EABC2"
+    },
+    "app.com.valvesoftware.android.steam.community": {
+      "file": "icons/app_steam.xml",
+      "tint": false,
+      "accent": "#47AEFF"
+    },
+    "app.com.valvesoftware.steamlink": {
+      "file": "icons/app_steam_link.xml",
+      "tint": false,
+      "accent": "#A9CBEF"
+    },
+    "app.com.whatsapp": {
+      "file": "icons/app_whatsapp.xml",
+      "tint": false,
+      "accent": "#33DB76"
+    },
+    "app.com.whatsapp.w4b": {
+      "file": "icons/app_whatsapp.xml",
+      "tint": false,
+      "accent": "#33DB76"
+    },
+    "app.com.winlator": {
+      "file": "icons/app_winlator.xml",
+      "tint": false,
+      "accent": "#4F8EFF"
+    },
+    "app.com.xiaoji.egggame": {
+      "file": "icons/app_gamehub.xml",
+      "tint": false,
+      "accent": "#B4BFCF"
+    },
+    "app.dev.eden.eden_emulator": {
+      "file": "icons/app_eden.xml",
+      "tint": false,
+      "accent": "#FF5FA8"
+    },
+    "app.dev.imranr.obtainium": {
+      "file": "icons/app_obtainium.xml",
+      "tint": false,
+      "accent": "#C47BFF"
+    },
+    "app.dev.legacy.eden_emulator": {
+      "file": "icons/app_eden.xml",
+      "tint": false,
+      "accent": "#FF5FA8"
+    },
+    "app.io.github.lime3ds.android": {
+      "file": "icons/app_azahar.xml",
+      "tint": false,
+      "accent": "#F2BE86"
+    },
+    "app.io.recompiled.redream": {
+      "file": "icons/app_redream.xml",
+      "tint": false,
+      "accent": "#3F8CFF"
+    },
+    "app.it.dbtecno.pizzaboy": {
+      "file": "icons/app_pizza_boy_gbc.xml",
+      "tint": false,
+      "accent": "#FFB547"
+    },
+    "app.it.dbtecno.pizzaboygba": {
+      "file": "icons/app_pizza_boy_gba.xml",
+      "tint": false,
+      "accent": "#7C8CFF"
+    },
+    "app.it.dbtecno.pizzaboygbapro": {
+      "file": "icons/app_pizza_boy_gba.xml",
+      "tint": false,
+      "accent": "#7C8CFF"
+    },
+    "app.it.dbtecno.pizzaboypro": {
+      "file": "icons/app_pizza_boy_gbc.xml",
+      "tint": false,
+      "accent": "#FFB547"
+    },
+    "app.it.dbtecno.pizzaboyscbasic": {
+      "file": "icons/app_pizza_boy_sc.xml",
+      "tint": false,
+      "accent": "#FF4D5A"
+    },
+    "app.it.dbtecno.pizzaboyscpro": {
+      "file": "icons/app_pizza_boy_sc.xml",
+      "tint": false,
+      "accent": "#FF4D5A"
+    },
+    "app.me.magnum.melonds": {
+      "file": "icons/app_melonds.xml",
+      "tint": false,
+      "accent": "#FF5468"
+    },
+    "app.me.magnum.melonds.nightly": {
+      "file": "icons/app_melonds.xml",
+      "tint": false,
+      "accent": "#FF5468"
+    },
+    "app.org.azahar_emu.azahar": {
+      "file": "icons/app_azahar.xml",
+      "tint": false,
+      "accent": "#F2BE86"
+    },
+    "app.org.citra.citra_emu": {
+      "file": "icons/app_citra.xml",
+      "tint": false,
+      "accent": "#FF9A2E"
+    },
+    "app.org.devmiyax.yabasanshioro2": {
+      "file": "icons/app_yaba_sanshiro.xml",
+      "tint": false,
+      "accent": "#7F94C6"
+    },
+    "app.org.devmiyax.yabasanshioro2.pro": {
+      "file": "icons/app_yaba_sanshiro.xml",
+      "tint": false,
+      "accent": "#7F94C6"
+    },
+    "app.org.dolphinemu.dolphinemu": {
+      "file": "icons/app_dolphin.xml",
+      "tint": false,
+      "accent": "#3CB4F2"
+    },
+    "app.org.dolphinemu.mmjr": {
+      "file": "icons/app_dolphin_mmjr.xml",
+      "tint": false,
+      "accent": "#C25CFF"
+    },
+    "app.org.es_de.frontend": {
+      "file": "icons/app_es_de.xml",
+      "tint": false,
+      "accent": "#FF3D55"
+    },
+    "app.org.fdroid.basic": {
+      "file": "icons/app_fdroid.xml",
+      "tint": false,
+      "accent": "#4D96F0"
+    },
+    "app.org.fdroid.fdroid": {
+      "file": "icons/app_fdroid.xml",
+      "tint": false,
+      "accent": "#4D96F0"
+    },
+    "app.org.fossify.gallery": {
+      "file": "icons/app_gallery.xml",
+      "tint": false,
+      "accent": "#FFB547"
+    },
+    "app.org.jellyfin.androidtv": {
+      "file": "icons/app_jellyfin.xml",
+      "tint": false,
+      "accent": "#BC6CF0"
+    },
+    "app.org.jellyfin.mobile": {
+      "file": "icons/app_jellyfin.xml",
+      "tint": false,
+      "accent": "#BC6CF0"
+    },
+    "app.org.lineageos.aperture": {
+      "file": "icons/app_camera.xml",
+      "tint": false,
+      "accent": "#7C8CFF"
+    },
+    "app.org.mm.jr": {
+      "file": "icons/app_dolphin_mmjr.xml",
+      "tint": false,
+      "accent": "#C25CFF"
+    },
+    "app.org.mozilla.fenix": {
+      "file": "icons/app_firefox.xml",
+      "tint": false,
+      "accent": "#FF7A2E"
+    },
+    "app.org.mozilla.fennec_fdroid": {
+      "file": "icons/app_firefox.xml",
+      "tint": false,
+      "accent": "#FF7A2E"
+    },
+    "app.org.mozilla.firefox": {
+      "file": "icons/app_firefox.xml",
+      "tint": false,
+      "accent": "#FF7A2E"
+    },
+    "app.org.mozilla.firefox_beta": {
+      "file": "icons/app_firefox.xml",
+      "tint": false,
+      "accent": "#FF7A2E"
+    },
+    "app.org.mupen64plusae.v3.alpha": {
+      "file": "icons/app_mupen64plus_ae.xml",
+      "tint": false,
+      "accent": "#8EE04A"
+    },
+    "app.org.mupen64plusae.v3.fzurita": {
+      "file": "icons/app_m64plus_fz.xml",
+      "tint": false,
+      "accent": "#B4E43C"
+    },
+    "app.org.mupen64plusae.v3.fzurita.amazon": {
+      "file": "icons/app_m64plus_fz.xml",
+      "tint": false,
+      "accent": "#B4E43C"
+    },
+    "app.org.mupen64plusae.v3.fzurita.pro": {
+      "file": "icons/app_m64plus_fz.xml",
+      "tint": false,
+      "accent": "#B4E43C"
+    },
+    "app.org.pegasus_frontend.android": {
+      "file": "icons/app_pegasus.xml",
+      "tint": false,
+      "accent": "#FF4B3E"
+    },
+    "app.org.ppsspp.ppsspp": {
+      "file": "icons/app_ppsspp.xml",
+      "tint": false,
+      "accent": "#5D9BE0"
+    },
+    "app.org.ppsspp.ppssppgold": {
+      "file": "icons/app_ppsspp_gold.xml",
+      "tint": false,
+      "accent": "#F2B51E"
+    },
+    "app.org.telegram.messenger": {
+      "file": "icons/app_telegram.xml",
+      "tint": false,
+      "accent": "#3FA9F5"
+    },
+    "app.org.telegram.messenger.web": {
+      "file": "icons/app_telegram.xml",
+      "tint": false,
+      "accent": "#3FA9F5"
+    },
+    "app.org.thunderdog.challegram": {
+      "file": "icons/app_telegram.xml",
+      "tint": false,
+      "accent": "#3FA9F5"
+    },
+    "app.org.videolan.vlc": {
+      "file": "icons/app_vlc.xml",
+      "tint": false,
+      "accent": "#FF8A1F"
+    },
+    "app.org.xbmc.kodi": {
+      "file": "icons/app_kodi.xml",
+      "tint": false,
+      "accent": "#34BEF0"
+    },
+    "app.rip.moth.cocoonshell": {
+      "file": "icons/app_cocoonshell.xml",
+      "tint": false,
+      "accent": "#6EDDB0"
+    },
+    "app.tv.twitch.android.app": {
+      "file": "icons/app_twitch.xml",
+      "tint": false,
+      "accent": "#A970FF"
+    },
+    "app.ws.xsoh.etar": {
+      "file": "icons/app_calendar.xml",
+      "tint": false,
+      "accent": "#4C8DFF"
+    },
+    "app.xyz.aethersx2.android": {
+      "file": "icons/app_nethersx2.xml",
+      "tint": false,
+      "accent": "#FF4848"
+    },
+    "app.xyz.aethersx2.cturnip": {
+      "file": "icons/app_nethersx2.xml",
+      "tint": false,
+      "accent": "#FF4848"
+    },
+    "app.xyz.aethersx2.tturnip": {
+      "file": "icons/app_nethersx2.xml",
+      "tint": false,
+      "accent": "#FF4848"
+    },
     "badge.check": {
       "file": "icons/ic_badge_check.xml",
       "tint": true

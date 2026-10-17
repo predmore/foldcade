@@ -26,7 +26,11 @@ class ThemeSceneTest {
         assertNotNull(pack.icons["symbol.star"])
         assertNotNull(pack.icons["symbol.two-players"])
         assertNotNull(pack.icons["symbol.nintendo-3ds"])
-        assertEquals(236, pack.icons.size)
+        // Every build of an app wears its one object.
+        assertEquals(pack.icons["app.com.retroarch"]?.file, pack.icons["app.com.retroarch.aarch64"]?.file)
+        assertNotNull(pack.icons["app.com.android.chrome"])
+        assertNotNull(pack.icons["app.org.azahar_emu.azahar"])
+        assertEquals(362, pack.icons.size)
     }
 
     @Test

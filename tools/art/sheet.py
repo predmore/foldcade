@@ -6,13 +6,13 @@
 Open it in any browser. Grid objects sit on tiles drawn the way the home grid draws them: the
 surface, the light in the mark's colour, the tile's corner, and the resting brightness. Symbols
 show at menu size and large. Collections show every colour. Check a new icon here, beside the
-rest of its family, before shipping it (docs/iconography.md).
+rest of its family, before shipping it (docs/iconography.md). App objects follow the grid objects.
 """
 import sys
 from art import Asset, to_svg
 from objects import object_layers, symbol_layers, tone
 from palette import INK
-import marks, symbols
+import apps, marks, symbols
 
 SURFACE = "#1C1C20"
 TINTS = {"gold": "#FFC15A", "coral": "#FF7F5C", "rose": "#FF5C8A", "violet": "#B48CFF", "indigo": "#7C8CFF",
@@ -47,6 +47,11 @@ def main(out):
     for name, (draw, accent, about) in marks.MARKS.items():
         tiles.append(tile(svg(object_layers(draw(accent)), ids=name), accent, name.replace("_", "-")))
     sections.append(("Grid objects", "On a tile, focused (full brightness).", f'<div class="tiles">{"".join(tiles)}</div>'))
+    for title, group in (("Apps", apps.apps_android), ("Popular apps", apps.apps_popular), ("Emulators and front-ends", apps.apps_emulators)):
+        cells = [tile(svg(object_layers(draw(accent)), ids="a" + name), accent, name.replace("_", "-"))
+                 for name, (draw, accent, about, _) in group.APPS.items()]
+        sections.append((title, "App objects, on a tile, focused. Each fills the app.<package> slots of every build it lists.",
+                         f'<div class="tiles">{"".join(cells)}</div>'))
     rest = [tile(svg(object_layers(marks.MARKS[n][0](marks.MARKS[n][1])), ids="r" + n), marks.MARKS[n][1], n, rest=True)
             for n in ("nintendo_3ds", "game_boy", "snes", "library", "android_apps", "cloud")]
     sections.append(("At rest", "Unfocused tiles rest at 82%, the same as covers.", f'<div class="tiles">{"".join(rest)}</div>'))

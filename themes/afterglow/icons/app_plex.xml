@@ -1,0 +1,58 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Foldcade original art, MIT licensed (see LICENSE). Afterglow app object: Plex: a gold chevron -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:aapt="http://schemas.android.com/aapt"
+    android:width="48dp"
+    android:height="48dp"
+    android:viewportWidth="64"
+    android:viewportHeight="64">
+    <group
+        android:pivotX="32"
+        android:pivotY="32"
+        android:scaleX="0.88"
+        android:scaleY="0.88">
+        <group android:pivotX="32" android:pivotY="59" android:scaleX="1" android:scaleY="0.167">
+            <path
+                android:pathData="M14,59A18,18 0 1 1 50,59A18,18 0 1 1 14,59Z">
+                <aapt:attr name="android:fillColor">
+                  <gradient android:type="radial" android:centerX="32" android:centerY="59" android:gradientRadius="18">
+                    <item android:offset="0" android:color="#8C000000" />
+                    <item android:offset="0.6" android:color="#3F000000" />
+                    <item android:offset="1" android:color="#00000000" />
+                  </gradient>
+                </aapt:attr>
+            </path>
+        </group>
+        <path
+            android:pathData="M16.838,9.371 Q15,7 18,7 L28,7 Q31,7 32.838,9.371 L47.549,28.339 Q50,31.5 47.549,34.661 L32.838,53.629 Q31,56 28,56 L18,56 Q15,56 16.838,53.629 L32.774,33.08 Q34,31.5 32.774,29.92 Z">
+            <aapt:attr name="android:fillColor">
+              <gradient android:type="linear" android:startX="0" android:startY="7" android:endX="0" android:endY="56">
+                <item android:offset="0" android:color="#FFFFCA5E" />
+                <item android:offset="0.45" android:color="#FFFFB61F" />
+                <item android:offset="1" android:color="#FF9E7113" />
+              </gradient>
+            </aapt:attr>
+        </path>
+        <path
+            android:pathData="M16.838,9.371 Q15,7 18,7 L28,7 Q31,7 32.838,9.371 L47.549,28.339 Q50,31.5 47.549,34.661 L32.838,53.629 Q31,56 28,56 L18,56 Q15,56 16.838,53.629 L32.774,33.08 Q34,31.5 32.774,29.92 Z">
+            <aapt:attr name="android:fillColor">
+              <gradient android:type="linear" android:startX="0" android:startY="7" android:endX="0" android:endY="31.5">
+                <item android:offset="0" android:color="#4CFFFFFF" />
+                <item android:offset="1" android:color="#00FFFFFF" />
+              </gradient>
+            </aapt:attr>
+        </path>
+        <path
+            android:pathData="M16.838,9.371 Q15,7 18,7 L28,7 Q31,7 32.838,9.371 L47.549,28.339 Q50,31.5 47.549,34.661 L32.838,53.629 Q31,56 28,56 L18,56 Q15,56 16.838,53.629 L32.774,33.08 Q34,31.5 32.774,29.92 Z"
+            android:strokeWidth="0.9"
+            android:strokeLineCap="round"
+            android:strokeLineJoin="round">
+            <aapt:attr name="android:strokeColor">
+              <gradient android:type="linear" android:startX="0" android:startY="7" android:endX="0" android:endY="36.4">
+                <item android:offset="0" android:color="#A6FFFFFF" />
+                <item android:offset="1" android:color="#00FFFFFF" />
+              </gradient>
+            </aapt:attr>
+        </path>
+    </group>
+</vector>
