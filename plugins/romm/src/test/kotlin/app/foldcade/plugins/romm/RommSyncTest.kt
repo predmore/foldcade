@@ -97,6 +97,9 @@ class RommSyncTest {
         assertEquals(null, library().fileName(GAME.copy(remoteKey = "77")))
         writeRomSpec(romRoot(), 55, RomBytes("disc.cue", listOf(1L, 2L), null))
         assertEquals(null, library().fileName(GAME.copy(remoteKey = "55")))
+        // The name the download is stored under, which is the one the player opens.
+        writeRomSpec(romRoot(), 56, RomBytes(" Tetris.nds", emptyList(), null))
+        assertEquals("Tetris.nds", library().fileName(GAME.copy(remoteKey = "56")))
     }
 
     @Test

@@ -1,6 +1,7 @@
 package app.foldcade
 
 import app.foldcade.language.HomeUndo
+import app.foldcade.plugins.romm.isRommInstance
 import app.foldcade.language.SAME_PREFIX
 import app.foldcade.language.SameSource
 import app.foldcade.language.foldSameGames
@@ -2645,6 +2646,14 @@ class ShellController(
         )
     }
 
+    /**
+     * [libraryId] has not listed its games since launch and may still. A RomM server no longer
+     * saved never will, so a copy a folded tile remembers from it does not hold the tile.
+     */
+    private fun awaitingLibrary(libraryId: String): Boolean =
+        libraryId !in settledLibraries &&
+            (!isRommInstance(libraryId) || store.rommServers().any { it.first == libraryId })
+
     /** The library a [homeGameId] belongs to, or null for a tile that is not a library game. */
     private fun libraryOf(id: String): String? =
         id.removePrefix("lib:").takeIf { it != id }?.substringBefore(':')
@@ -2689,7 +2698,7 @@ class ShellController(
             // A tile's art and details come from its first copy: a server's, which knows the game.
             libraryGames + copies.mapNotNull { (tile, games) -> games.firstOrNull()?.let { tile to it } },
             unsettled = { id ->
-                tileIds(id).any { one -> libraryOf(one)?.let { it !in settledLibraries } == true } ||
+                tileIds(id).any { one -> libraryOf(one)?.let(::awaitingLibrary) == true } ||
                     (!moonlightSettled && isMoonlightRemoteKey(id)) ||
                     (!droidDeckSettled && id.startsWith(Shelf.DROIDDECK_PREFIX)) ||
                     (!installedAppsSettled && id.startsWith("android:")) ||

@@ -442,8 +442,13 @@ internal class RommLibrary internal constructor(
         val catalog = gate.restoreCatalog(wiring)
         val spec = runInterruptible(Dispatchers.IO) {
             catalog.rom(game.remoteKey)?.bytes() ?: readRomSpec(wiring.romRoot, romId)
+        }?.takeIf { it.fileIds.isEmpty() } ?: return null
+        // The name the download is stored under, which is the file the player opens.
+        return try {
+            RommClient.romCacheFile(wiring.romRoot, romId, spec.fileName, spec.fileIds).fileName.toString()
+        } catch (_: IllegalArgumentException) {
+            null
         }
-        return spec?.takeIf { it.fileIds.isEmpty() }?.fileName
     }
 
     private suspend fun negotiate(game: Game, player: Player, target: LaunchTarget): Placement {

@@ -71,6 +71,22 @@ class SameGameHomeTest {
     }
 
     @Test
+    fun aServerNoLongerSavedDoesNotHoldItsTileAfterARestart() {
+        val shell = shell()
+        listFolder(shell)
+        shell.ingestLibrary(
+            "romm#2",
+            listOf(entry("31", RF4_FILE, "romm#2", Availability.RemoteOnly, RF4_FILE)),
+            emptyList(),
+        )
+        assertEquals(mapOf(local to tile, "lib:romm#2:31" to tile), store.sameGames())
+        // romm#2 is not a saved server. After a restart the folder lists without the game.
+        val again = shell()
+        again.ingestLibrary("local-folder", listOf(entry("other", "Other", "local-folder", Availability.LocalOnly, "Other.cci")), emptyList())
+        assertFalse(tile in folderSlots(again, platformFolderId("nintendo-3ds")))
+    }
+
+    @Test
     fun theFolderCopyPlaysAndTheServerKeepsTheSaves() {
         val shell = shell()
         listBoth(shell, serverAvailability = Availability.RemoteOnly)
