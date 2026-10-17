@@ -17,6 +17,8 @@ package app.foldcade.api.plugin
  * The host calls these off the main thread and does not block on them.
  *
  * The shell calls [ensureLocal], then [prepareLaunch], then [reconcile], in that order.
+ * For a launch that opens another library's copy of the same file, it calls
+ * [prepareSaves] in place of [ensureLocal] and [prepareLaunch].
  */
 interface LibraryBackend {
     val id: String
@@ -88,6 +90,25 @@ interface LibraryBackend {
      * into the player's locations.
      */
     suspend fun prepareLaunch(game: Game, player: Player): Placement
+
+    /**
+     * Negotiate [game]'s saves for a launch that opens another library's copy of the
+     * same file. [target] is that copy, and [Placement.target] returns it unchanged.
+     * The shell calls [reconcile] afterwards as usual. The default calls [prepareLaunch],
+     * which may fetch this library's copy too. A backend that keeps saves apart from
+     * its copy overrides this. Added in API minor 10.
+     */
+    suspend fun prepareSaves(game: Game, player: Player, target: LaunchTarget): Placement =
+        prepareLaunch(game, player).copy(target = target)
+
+    /**
+     * The name of the file a player opens for [game], such as `Tetris DS (USA).nds`,
+     * even before it is here. Players name a game's saves after it, so the host shows
+     * games of two libraries with the same platform and file name as one game with
+     * one save. Null when the game is more than one file, or the name is not known
+     * without the network. The default is null. Added in API minor 10.
+     */
+    suspend fun fileName(game: Game): String? = null
 
     /**
      * After the player returns, record what it wrote and sync when this backend does.

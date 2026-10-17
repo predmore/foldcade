@@ -36,6 +36,10 @@ data class HomeUndo(
     }
 
     /** Catalog arrivals keep their slots; only fields changed by the removal are reversed. */
+    /** The same Undo with copies folded since into their tiles, so it reverses the board as it is now. */
+    fun adopt(sameGames: Map<String, String>): HomeUndo =
+        copy(board = adoptSameGames(board, sameGames), after = adoptSameGames(after, sameGames))
+
     fun restore(current: HomeBoard): HomeBoard {
         val folders = current.folders.toMutableMap()
         for (id in board.folders.keys + after.folders.keys) {

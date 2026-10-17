@@ -149,12 +149,19 @@ class PlayLog(
 
     fun events(): List<PlayEvent> = synchronized(lock) { history.toList() }
 
-    fun totals(gameId: String): PlayTotals = synchronized(lock) {
+    fun totals(gameId: String): PlayTotals = totals(gameId, setOf(gameId))
+
+    /**
+     * One game's play recorded under several ids, as [gameId]: the active time of
+     * all [gameIds] added up, and the latest of their last plays.
+     */
+    fun totals(gameId: String, gameIds: Set<String>): PlayTotals = synchronized(lock) {
         val elapsed = clock.elapsedNow()
         val running = open.values.sumOf { session ->
-            if (session.gameId == gameId) session.currentActive(elapsed) else 0L
+            if (session.gameId in gameIds) session.currentActive(elapsed) else 0L
         }
-        PlayTotals(gameId, (completedActive[gameId] ?: 0L) + running, lastAt[gameId])
+        val completed = gameIds.sumOf { completedActive[it] ?: 0L }
+        PlayTotals(gameId, completed + running, gameIds.mapNotNull { lastAt[it] }.maxOrNull())
     }
 
     /**

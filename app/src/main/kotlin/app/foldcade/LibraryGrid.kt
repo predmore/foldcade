@@ -25,6 +25,8 @@ data class GridEntry(
     val availabilityLabel: String?,
     val occupiesBothDisplays: Boolean,
     val game: Game? = null,
+    /** The file [game] opens as, when its library knows it. Copies with one name are one game. */
+    val fileName: String? = null,
 )
 
 sealed interface LoadedLibrary {
@@ -113,6 +115,7 @@ internal suspend fun loadGames(
             availabilityLabel = availabilityCopy(game.availability),
             occupiesBothDisplays = both,
             game = game,
+            fileName = plugins.fileName(libraryId, game),
         )
     }
 }

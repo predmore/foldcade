@@ -440,6 +440,27 @@ class PluginHost(
         return offMain(libraryId) { library.prepareLaunch(game, player) }
     }
 
+    /** [game]'s saves for a launch of another library's copy at [target]. Nothing is fetched. */
+    suspend fun prepareSaves(libraryId: String, game: Game, player: Player, target: LaunchTarget): Placement {
+        val library = requireLibrary(libraryId)
+        return offMain(libraryId) { library.prepareSaves(game, player, target) }
+    }
+
+    /**
+     * The file [game] opens as, off the main thread. Null when the library does not
+     * know it or fails, so one game the library cannot name never fails a listing.
+     */
+    suspend fun fileName(libraryId: String, game: Game): String? {
+        val library = catalog.libraries[libraryId] ?: return null
+        return try {
+            offMain(libraryId) { library.fileName(game) }?.takeIf { it.isNotBlank() }
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (_: Exception) {
+            null
+        }
+    }
+
     suspend fun reconcile(
         libraryId: String,
         game: Game,

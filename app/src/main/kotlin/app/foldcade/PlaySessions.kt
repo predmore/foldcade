@@ -53,6 +53,15 @@ class PlaySessions private constructor(
     /** Player package for a game id. Null for a stand-in that has no package. */
     var packageOf: (String) -> String? = { null }
 
+    /**
+     * Every id a tile's play is kept under. A game several libraries have is one tile, and
+     * each copy kept its own history before it folded. That history stays under its id.
+     */
+    var historyIds: (String) -> Set<String> = { setOf(it) }
+
+    /** The tile a game id is shown as now, so a folded game's play is one row. */
+    var tileOf: (String) -> String = { it }
+
     private var usageGranted = false
     private var usageByPackage = emptyMap<String, PackagePlay>()
 
@@ -73,10 +82,10 @@ class PlaySessions private constructor(
         log.checkpoint(sessionId)
     }
 
-    fun totals(gameId: String): PlayTotals = log.totals(gameId)
+    fun totals(gameId: String): PlayTotals = log.totals(gameId, historyIds(gameId))
 
     fun shown(gameId: String): ShownPlay {
-        val lifecycle = log.totals(gameId)
+        val lifecycle = totals(gameId)
         val usage = packageOf(gameId)?.let { usageByPackage[it] }
         return shownPlay(lifecycle.activeMillis, lifecycle.lastPlayedMillis, usage, usageGranted)
     }
@@ -95,7 +104,8 @@ class PlaySessions private constructor(
     fun events(): List<PlayEvent> = log.events()
 
     /** The name [gameId] had when it was last played or seen in a catalog. */
-    fun name(gameId: String): String? = names.name(gameId)
+    fun name(gameId: String): String? =
+        names.name(gameId) ?: historyIds(gameId).firstNotNullOfOrNull { names.name(it) }
 
     /** Keeps a catalog's name for [gameId], for when the catalog no longer has it. */
     fun rememberName(gameId: String, name: String) {
@@ -103,7 +113,7 @@ class PlaySessions private constructor(
     }
 
     /** Every stretch a game was in front, for the Play activity page. */
-    fun spans(): List<PlaySpan> = playSpans(log.events())
+    fun spans(): List<PlaySpan> = playSpans(log.events()).map { it.copy(gameId = tileOf(it.gameId)) }
 
     fun subscribe(listener: (PlayEvent) -> Unit): AutoCloseable = log.subscribe(listener)
 

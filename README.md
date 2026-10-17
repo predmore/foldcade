@@ -47,6 +47,8 @@ Combine any of these sources in one home. Systems and sources get their own fold
 - **[DroidDeck](docs/integrations/droiddeck.md):** Games running in its on-device Steam client.
 - **[Moonlight](docs/integrations/moonlight.md):** Games streamed from your computer.
 
+A game in a local folder that your RomM server also has is one tile: it opens the file already on your Thor, and its saves sync through RomM.
+
 See the [integration guides](docs/integrations/README.md) for setup and troubleshooting, and the [emulator guide](docs/integrations/emulators.md) for supported apps and formats.
 
 ### One press, and you are playing

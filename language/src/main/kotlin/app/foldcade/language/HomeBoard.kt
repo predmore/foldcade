@@ -1060,7 +1060,7 @@ private fun tidySlots(
     },
 )
 
-private fun firstOnly(slots: List<String?>): List<String?> {
+internal fun firstOnly(slots: List<String?>): List<String?> {
     val seen = HashSet<String>()
     return slots.map { id -> id?.takeIf { seen.add(it) } }
 }

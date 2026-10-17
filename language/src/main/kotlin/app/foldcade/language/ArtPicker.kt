@@ -29,6 +29,28 @@ data class ArtChoices(
         return copy(values = next)
     }
 
+    /**
+     * Moves each copy's choices onto the one tile in [groups] it folds into: tile id to its
+     * copies, first preferred. The tile keeps a choice of its own, else takes the first copy's,
+     * kind by kind and for the match. The copies' choices go, so a choice cleared on the tile
+     * stays cleared.
+     */
+    fun adopt(groups: Map<String, List<String>>): ArtChoices {
+        var next = this
+        for ((tile, copies) in groups) {
+            val moved = copies.filter { it != tile && (it in values || it in matches) }
+            if (moved.isEmpty()) continue
+            val parts = values[tile].orEmpty().toMutableMap()
+            for (copy in moved) values[copy].orEmpty().forEach { (kind, url) -> parts.putIfAbsent(kind, url) }
+            val match = matches[tile] ?: moved.firstNotNullOfOrNull { matches[it] }
+            next = next.copy(
+                values = (next.values - moved.toSet()).let { if (parts.isEmpty()) it - tile else it + (tile to parts) },
+                matches = (next.matches - moved.toSet()).let { if (match == null) it else it + (tile to match) },
+            )
+        }
+        return next
+    }
+
     fun encode(): String = buildJsonObject {
         (values.keys + matches.keys).forEach { id -> put(id, buildJsonObject {
             values[id].orEmpty().forEach { (kind, url) -> put(kind.name, url) }

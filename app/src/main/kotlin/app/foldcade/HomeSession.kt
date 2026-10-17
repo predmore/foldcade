@@ -3,6 +3,7 @@ package app.foldcade
 import app.foldcade.api.plugin.Availability
 import app.foldcade.api.plugin.Game
 import app.foldcade.language.HomeSelection
+import app.foldcade.language.adoptSameGames
 import app.foldcade.language.BulkAction
 import app.foldcade.language.bulkCollectionChoices
 import app.foldcade.language.bulkCollection
@@ -114,14 +115,27 @@ data class HomeFace(
  * Layout for the bottom-screen home grid.
  * The catalog is every ROM and app. The board is only what the user placed.
  */
-class HomeSession(raw: String?, nowMillis: Long = System.currentTimeMillis()) {
+class HomeSession(
+    raw: String?,
+    nowMillis: Long = System.currentTimeMillis(),
+    /** Each copy's id to the one tile it folds into ([foldSameGames]), as last saved. */
+    sameGames: Map<String, String> = emptyMap(),
+) {
+    /** Each copy's id to its tile, as the last merge folded them. */
+    private var sameGames: Map<String, String> = sameGames
+
+    /** The tile [id] is shown as now. A menu or a selection made before a copy folded names the copy. */
+    private fun tileOf(id: String): String = sameGames[id] ?: id
+
     /**
      * The board on screen. While a tile is held, the walk is measured against the board as it
      * was at pickup, so a library's report then waits in [pendingMerge]: merged into that walk,
      * it would be undone by the next step. Selection also keeps its view steady until it ends.
      * Putting a tile down, cancelling, or finishing selection merges the latest report.
      */
-    var board: HomeBoard = decodeHome(raw, nowMillis).let { withFavorites(it.copy(collectionSerial = app.foldcade.language.collectionHighWater(it))) }
+    var board: HomeBoard = decodeHome(raw, nowMillis)
+        .let { withFavorites(it.copy(collectionSerial = app.foldcade.language.collectionHighWater(it))) }
+        .let { adoptSameGames(it, sameGames) }
         private set(value) {
             field = value
             selection = selection?.inView(animToken())
@@ -155,9 +169,11 @@ class HomeSession(raw: String?, nowMillis: Long = System.currentTimeMillis()) {
     var bulkAfter: HomeBoard? = null
         private set
 
-    fun bulk(action: BulkAction, ids: List<String>, collectionId: String?, index: Int): Int {
-        if (selection == null || ids.isEmpty()) return index
+    fun bulk(action: BulkAction, selected: List<String>, collectionId: String?, index: Int): Int {
+        if (selection == null || selected.isEmpty()) return index
         finishSelection()
+        // The report that waited on the selection may have folded a checked copy into its tile.
+        val ids = selected.map(::tileOf).distinct()
         bulkBefore = board
         val name = "${Copy.collection} ${board.folders.values.count { it.collection && it.id != HOME_FAVORITES } + 1}"
         val made = nextUserFolderId(board)
@@ -191,6 +207,7 @@ class HomeSession(raw: String?, nowMillis: Long = System.currentTimeMillis()) {
     private var library: List<HomeItem> = emptyList()
     private var platforms: List<HomePlatform> = emptyList()
     private val games = HashMap<String, Game>()
+    private val copies = HashMap<String, List<Game>>()
     private val shelfById = HashMap<String, ShelfGame>()
     /** The folder or collection whose name is being typed, and the keyboard typing it. Null when closed. */
     var renamingId: String? = null
@@ -230,8 +247,10 @@ class HomeSession(raw: String?, nowMillis: Long = System.currentTimeMillis()) {
         remembered: Map<String, Game> = emptyMap(),
         unsettled: (String) -> Boolean = { false },
         hidden: Set<String> = emptySet(),
+        sameGames: Map<String, String> = emptyMap(),
+        copies: Map<String, List<Game>> = emptyMap(),
     ) {
-        val report = PendingMerge(shelfItems, appItems, libraryItems, platformList, remembered, unsettled, hidden)
+        val report = PendingMerge(shelfItems, appItems, libraryItems, platformList, remembered, unsettled, hidden, sameGames, copies)
         // A later report replaces one still waiting; the games it remembers add up.
         if (board.hold != null || selection != null) {
             pendingMerge = report.copy(remembered = pendingMerge?.remembered.orEmpty() + remembered)
@@ -246,7 +265,13 @@ class HomeSession(raw: String?, nowMillis: Long = System.currentTimeMillis()) {
         library = report.library
         platforms = report.platforms
         report.remembered.forEach { (id, game) -> games[id] = game }
-        val reconciled = report.hidden.fold(board) { current, id -> hideGame(current, id) }
+        report.copies.forEach { (id, listed) -> if (listed.isNotEmpty()) copies[id] = listed }
+        sameGames = report.sameGames
+        // A menu open on a copy reads and acts on the tile it folded into.
+        menuGame = menuGame?.let(::tileOf)
+        // Copies folded since the board was saved bring their places onto their tile first.
+        val adopted = adoptSameGames(board, report.sameGames)
+        val reconciled = report.hidden.fold(adopted) { current, id -> hideGame(current, id) }
         board = mergeHome(reconciled, catalog(), platforms, report.unsettled)
     }
 
@@ -276,6 +301,12 @@ class HomeSession(raw: String?, nowMillis: Long = System.currentTimeMillis()) {
     }
 
     fun game(id: String): Game? = games[id]
+
+    /**
+     * The library games behind the tile [id]: each copy of a game several libraries have, in
+     * rank order, or the one game of any other tile. Kept while a copy's library is still loading.
+     */
+    fun copies(id: String): List<Game> = copies[id] ?: listOfNotNull(games[id])
 
     fun catalog(): List<HomeItem> = (shelf + apps + library).distinctBy { it.id }
 
@@ -464,14 +495,14 @@ class HomeSession(raw: String?, nowMillis: Long = System.currentTimeMillis()) {
     fun removeVerb(index: Int): RemoveVerb? = if (board.allOpen) null else removeVerb(board, index)
 
     /** A server game with a copy on this device. */
-    private fun downloaded(id: String): Boolean = games[id]?.availability == Availability.Cached
+    private fun downloaded(id: String): Boolean = copies(id).any { it.availability == Availability.Cached }
 
     /**
      * The game a menu effect acts on: the one it names ([gameId], see [TileActions.game]),
      * else the one Add to took out of the collection on screen, else the one at [index].
      */
     private fun gameAt(index: Int, gameId: String? = null): String? =
-        gameId?.takeIf { it != HOME_ALL && board.folders[it] == null } ?: menuGame ?: slotGame(index)
+        (gameId?.takeIf { it != HOME_ALL && board.folders[it] == null } ?: menuGame ?: slotGame(index))?.let(::tileOf)
 
     /** The face of game [id], wherever it is, as a menu that kept its game shows it. */
     fun faceOf(id: String): HomeFace = faceFor(id)
@@ -935,7 +966,7 @@ class HomeSession(raw: String?, nowMillis: Long = System.currentTimeMillis()) {
             platformId = item?.platformId ?: game?.platformId,
             androidPackage = id.removePrefix("android:").takeIf { id.startsWith("android:") },
             occupiesBoth = false,
-            onServer = game?.availability == Availability.RemoteOnly,
+            onServer = copies(id).let { it.isNotEmpty() && it.all { copy -> copy.availability == Availability.RemoteOnly } },
         )
     }
 
@@ -997,6 +1028,8 @@ private data class PendingMerge(
     val remembered: Map<String, Game>,
     val unsettled: (String) -> Boolean,
     val hidden: Set<String>,
+    val sameGames: Map<String, String>,
+    val copies: Map<String, List<Game>>,
 )
 
 /** A held D-pad walks a carried tile one slot per this many key repeats. */

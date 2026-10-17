@@ -1,6 +1,12 @@
 package app.foldcade
 
 import app.foldcade.language.HomeUndo
+import app.foldcade.plugins.romm.isRommInstance
+import app.foldcade.language.SAME_PREFIX
+import app.foldcade.language.SameSource
+import app.foldcade.language.foldSameGames
+import app.foldcade.language.sameGameIds
+import app.foldcade.language.sameKey
 import app.foldcade.language.DeleteHold
 import app.foldcade.language.Row
 import app.foldcade.language.promptKeyOf
@@ -151,6 +157,8 @@ class ShellController(
     private val savedArtMatch: (String) -> ArtMatch? = { null },
     private val onArtMatch: (String, ArtMatch) -> Unit = { _, _ -> },
     private val nowMillis: () -> Long = { System.currentTimeMillis() },
+    /** Copies were folded into new tiles: tile id to its copies, first preferred. The app moves their art. */
+    private val onSameGames: (Map<String, List<String>>) -> Unit = {},
 ) {
     var artPicker by mutableStateOf<ArtPickerState?>(null)
         private set
@@ -231,10 +239,19 @@ class ShellController(
      */
     private var installedPlayers by mutableStateOf<Set<String>>(emptySet())
     private var playerPackages: Set<String> = emptySet()
+    /** Each copy's id to the tile a game several libraries have is shown as. */
+    private var sameAliases: Map<String, String> = store.sameGames()
+
+    /** What [foldSameGames] knows of each library game, by its own home id. */
+    private val sameSources = HashMap<String, SameSource>()
+
+    /** Each folded tile's copies listed now, first preferred. */
+    private var sameCopies: Map<String, List<String>> = emptyMap()
+
     // A board from before collections is kept as it was before this release first rewrites it.
     private val home = store.run {
         keepHomeBoardBeforeCollections()
-        HomeSession(homeBoardRaw())
+        HomeSession(homeBoardRaw(), sameGames = sameAliases)
     }
     private var libraryItems: List<HomeItem> = emptyList()
 
@@ -679,7 +696,7 @@ class ShellController(
             Effect.Undo -> {
                 activeUndo()?.let { saved ->
                     undo = null
-                    home.restore(saved.restore(home.board))
+                    home.restore(saved.adopt(sameAliases).restore(home.board))
                     shelfState = saved.restore(shelfState)
                     commitShelves()
                     syncHome()
@@ -1021,7 +1038,12 @@ class ShellController(
 
     fun homeAnimToken(): String = home.animToken()
 
-    fun catalogGame(id: String): Game? = home.game(id)
+    /** The tile [id]'s game is only on a server: no copy of it is on this device. */
+    fun onServer(id: String): Boolean =
+        home.copies(id).let { copies -> copies.isNotEmpty() && copies.all { it.availability == Availability.RemoteOnly } }
+
+    /** A copy of the tile [id]'s game is downloading. The tile pulses its cloud. */
+    fun isDownloading(id: String?): Boolean = id != null && downloading.isNotEmpty() && tileIds(id).any { it in downloading }
 
     /** Runs one Y menu action on the focused home tile. [change] returns the index to focus after. */
     private fun changeHome(change: (Int) -> Int): Effect? {
@@ -1120,6 +1142,7 @@ class ShellController(
         deviceEdited.entries.removeAll { (id, edit) -> id.startsWith(prefix) && edit.first <= readAt }
         val items = ArrayList<HomeItem>()
         val remembered = HashMap<String, Game>()
+        sameSources.keys.removeAll { it.startsWith(prefix) }
         for (entry in entries) {
             val game = entry.game ?: continue
             val id = homeGameId(libraryId, game.remoteKey)
@@ -1129,14 +1152,24 @@ class ShellController(
                 DroidDeckLibrary.ID -> HomeKind.DroidDeck
                 else -> HomeKind.Rom
             }
+            val title = entry.title.ifBlank { game.label }
             items += HomeItem(
                 id = id,
-                title = entry.title.ifBlank { game.label },
+                title = title,
                 kind = kind,
                 platformId = game.platformId,
                 mark = kitMark(game.platformId),
                 lastPlayedMillis = lastPlayedMillis(id) ?: 0L,
             )
+            if (kind == HomeKind.Rom) {
+                val fileName = entry.fileName
+                sameSources[id] = SameSource(
+                    key = sameKey(game.platformId, fileName),
+                    rank = libraryRank(libraryId),
+                    // A title that is only the file name, as a server without a match gives, does not name the tile.
+                    named = fileName == null || (title != fileName && title != fileName.substringBeforeLast('.')),
+                )
+            }
             remembered[id] = deviceEdited[id]?.let { (_, availability) -> game.copy(availability = availability) } ?: game
         }
         libraryItems = libraryItems.filterNot { it.id.startsWith(prefix) } + items
@@ -1161,6 +1194,7 @@ class ShellController(
         libraryItems = libraryItems.filterNot { it.id.startsWith(prefix) }
         settledLibraries += libraryId
         libraryGames.keys.removeAll { it.startsWith(prefix) }
+        sameSources.keys.removeAll { it.startsWith(prefix) }
         noteShelfChanged()
     }
 
@@ -1198,19 +1232,31 @@ class ShellController(
     fun downloadFor(gameId: String?): Game? {
         if (gameId == null) return focusedDownload()
         if ((!showingHome() && find == null) || busyOnDevice(gameId)) return null
-        return home.game(gameId)?.takeIf { it.availability == Availability.Cached }
+        return downloadOf(gameId)
     }
 
     fun focusedDownload(): Game? {
         if (!showingHome()) return null
         val id = focusedHomeFace()?.id ?: return null
         if (busyOnDevice(id)) return null
-        return home.game(id)?.takeIf { it.availability == Availability.Cached }
+        return downloadOf(id)
     }
 
-    private fun busyOnDevice(id: String): Boolean =
-        id in downloading || id in removing || libraryOf(id) in relisting ||
-            activity[id].let { it is TileActivity.Downloading || it == TileActivity.Checking }
+    /** The downloaded copy behind the tile [id]. Deleting it leaves a copy in a folder on the tile. */
+    private fun downloadOf(id: String): Game? =
+        home.copies(id).firstOrNull { it.availability == Availability.Cached }
+
+    private fun busyOnDevice(id: String): Boolean = tileIds(id).any { one ->
+        one in downloading || one in removing || libraryOf(one) in relisting ||
+            activity[one].let { it is TileActivity.Downloading || it == TileActivity.Checking }
+    }
+
+    /** The tile [id] and the home id of each copy folded into it. */
+    private fun tileIds(id: String): List<String> =
+        if (id.startsWith(SAME_PREFIX)) listOf(id) + sameAliases.filterValues { it == id }.keys else listOf(id)
+
+    /** What a library is doing with the tile [id]'s game, or with any copy of it. */
+    private fun activityOf(id: String): TileActivity? = tileIds(id).firstNotNullOfOrNull { activity[it] }
 
     /**
      * [libraryId]'s connection is moving to another server. Delete download waits,
@@ -1299,13 +1345,13 @@ class ShellController(
             showingHome() -> home.face(source)?.id
             else -> null
         }
-        return id?.let { activity[it] }
+        return id?.let(::activityOf)
     }
 
     /** The activity of the focused game, for the top screen. */
     fun focusedActivity(): TileActivity? {
         if (activity.isEmpty()) return null
-        if (!model.libraryGrid) homeCarry()?.let { return activity[it.id] }
+        if (!model.libraryGrid) homeCarry()?.let { return activityOf(it.id) }
         val source = if (model.libraryGrid) {
             displayOrder(model).getOrElse(model.focus.cellIndex) { model.focus.cellIndex }
         } else {
@@ -1940,8 +1986,35 @@ class ShellController(
      */
     fun playId(id: String): String {
         val libraryId = activeLibraryId
-        return if (model.libraryGrid && libraryId != null) homeGameId(libraryId, id) else id
+        return tileOf(if (model.libraryGrid && libraryId != null) homeGameId(libraryId, id) else id)
     }
+
+    /** The tile a library game's [homeId] is shown as: the one its copies fold into, or its own. */
+    fun tileOf(homeId: String): String = sameAliases[homeId] ?: homeId
+
+    /** Every id [tileId]'s play is kept under: the tile's, and each copy's from before it folded. */
+    fun historyIds(tileId: String): Set<String> = sameGameIds(tileOf(tileId), sameAliases)
+
+    /** Each folded tile and its copies, first preferred, the ones not listed now after. */
+    fun sameGroups(): Map<String, List<String>> = sameAliases.entries.groupBy({ it.value }, { it.key })
+        .mapValues { (tile, ids) -> sameCopies[tile].orEmpty().let { listed -> listed + ids.filter { it !in listed }.sorted() } }
+
+    /**
+     * How a Home tile starts: which copy plays, and which keeps its saves. [pressed] is the copy
+     * a library grid named, which plays. Null when the tile has no library game.
+     */
+    internal fun launchRoute(tileId: String, pressed: Game? = null): GameRoute? {
+        val copies = home.copies(tileId).ifEmpty { listOfNotNull(pressed) }
+        if (copies.isEmpty()) return null
+        return routeSameGame(tileId, copies, pressed, ::libraryRank)
+    }
+
+    /**
+     * Each RomM server in the order it was added, then every other library. The first server's
+     * copy keeps a folded game's saves and gives its tile a name and art.
+     */
+    private fun libraryRank(libraryId: String): Int =
+        store.rommServers().indexOfFirst { it.first == libraryId }.let { if (it < 0) Int.MAX_VALUE / 2 else it }
 
     /** A library game's platform, by the name its folder shows. Null off the library grid. */
     private fun libraryPlatformName(platformId: String?): String? {
@@ -1980,7 +2053,7 @@ class ShellController(
             resolvePlatform(homePlatforms(), id)?.id ?: id
         }
         return matchedArtQuery(ArtQuery(
-            key = if (model.libraryGrid && record != null) homeGameId(libraryId, record.remoteKey) else game.id,
+            key = if (model.libraryGrid && record != null) tileOf(homeGameId(libraryId, record.remoteKey)) else game.id,
             title = game.title,
             platformId = platformId,
             fileName = remoteKey?.takeIf { libraryId == LocalFolderBackend.ID }?.let(LocalFolderBackend::fileNameOf),
@@ -2573,6 +2646,14 @@ class ShellController(
         )
     }
 
+    /**
+     * [libraryId] has not listed its games since launch and may still. A RomM server no longer
+     * saved never will, so a copy a folded tile remembers from it does not hold the tile.
+     */
+    private fun awaitingLibrary(libraryId: String): Boolean =
+        libraryId !in settledLibraries &&
+            (!isRommInstance(libraryId) || store.rommServers().any { it.first == libraryId })
+
     /** The library a [homeGameId] belongs to, or null for a tile that is not a library game. */
     private fun libraryOf(id: String): String? =
         id.removePrefix("lib:").takeIf { it != id }?.substringBefore(':')
@@ -2599,21 +2680,33 @@ class ShellController(
 
     private fun syncHome() {
         home.rememberShelf(Shelf.games)
+        val folded = foldSameGames(libraryItems, sameSources, sameAliases)
+        sameCopies = folded.members
+        if (folded.aliases != sameAliases) {
+            val joined = folded.aliases.filter { (id, tile) -> sameAliases[id] != tile }.values.toSet()
+            sameAliases = folded.aliases
+            store.saveSameGames(sameAliases)
+            onSameGames(sameGroups().filterKeys { it in joined })
+        }
+        val copies = folded.members.mapValues { (_, ids) -> ids.mapNotNull(libraryGames::get) }
         home.remerge(
             shelfItems(),
             appItems(),
             // Read now, since a game played since its library listed it moves up Recently played.
-            libraryItems.map { item -> item.copy(lastPlayedMillis = lastPlayedMillis(item.id) ?: 0L) },
+            folded.items.map { item -> item.copy(lastPlayedMillis = lastPlayedMillis(item.id) ?: 0L) },
             homePlatforms(),
-            libraryGames,
+            // A tile's art and details come from its first copy: a server's, which knows the game.
+            libraryGames + copies.mapNotNull { (tile, games) -> games.firstOrNull()?.let { tile to it } },
             unsettled = { id ->
-                libraryOf(id)?.let { it !in settledLibraries } == true ||
+                tileIds(id).any { one -> libraryOf(one)?.let(::awaitingLibrary) == true } ||
                     (!moonlightSettled && isMoonlightRemoteKey(id)) ||
                     (!droidDeckSettled && id.startsWith(Shelf.DROIDDECK_PREFIX)) ||
                     (!installedAppsSettled && id.startsWith("android:")) ||
                     (GameNativeLibrary.ID !in settledLibraries && id.startsWith("gamenative."))
             },
             hidden = installed.filter { shelfState.record(it.packageName).hidden }.map { androidHomeId(it.packageName) }.toSet(),
+            sameGames = sameAliases,
+            copies = copies,
         )
         commitHome(catalog = true)
         find?.refresh(findEntries())
