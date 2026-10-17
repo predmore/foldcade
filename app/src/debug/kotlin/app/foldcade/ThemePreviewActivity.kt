@@ -27,17 +27,17 @@ class ThemePreviewActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         window.decorView.windowInsetsController?.hide(android.view.WindowInsets.Type.systemBars())
+        val fallback = PackagedTheme.load(this)
         fun pack(extra: String): PackagedTheme? = intent.getStringExtra(extra)?.let { path ->
             val file = File(filesDir, path)
             if (!file.canonicalPath.startsWith(filesDir.canonicalPath + File.separator)) return@let null
-            try { PackagedTheme.load(this, file.inputStream()) } catch (error: Exception) {
+            try { PackagedTheme.load(this, file.inputStream(), fallback) } catch (error: Exception) {
                 Log.w("FoldcadeTheme", "$path: ${error.message}"); null
             }
         }
-        val base = pack("pack") ?: PackagedTheme.load(this)
+        val base = pack("pack") ?: fallback
         val backgrounds = pack("backgrounds") ?: base
         val icons = pack("icons")
-        val fallback = PackagedTheme.load(this)
         val composition = ThemeComposition(base?.resources, icons?.resources, fallback?.resources)
         val slots = (composition.base?.icons?.keys.orEmpty() + composition.iconProvider?.icons?.keys.orEmpty() + composition.fallback?.icons?.keys.orEmpty()).toSet()
         val paint = (base?.paint ?: FoldPaint(builtInTheme())).copy(icons = slots.associateWith(composition::iconCandidates))

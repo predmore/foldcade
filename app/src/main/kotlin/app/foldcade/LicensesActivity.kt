@@ -21,7 +21,6 @@ import app.foldcade.language.LicenseCopy
 import app.foldcade.language.Meaning
 import app.foldcade.language.PanelKeyActivity
 import app.foldcade.language.Theme
-import app.foldcade.language.TypeRamp
 import kotlinx.coroutines.launch
 
 /** Asset names for the source notices packaged by packageLicenses. */
@@ -87,7 +86,7 @@ private fun LicensesScreen(theme: Theme, notice: String, scroll: ScrollState) {
             style = TextStyle(
                 color = theme.onBackground,
                 fontFamily = theme.font,
-                fontSize = TypeRamp.dialogTitle,
+                fontSize = theme.style.type.dialogTitle,
             ),
         )
         Column(
@@ -101,7 +100,7 @@ private fun LicensesScreen(theme: Theme, notice: String, scroll: ScrollState) {
                 style = TextStyle(
                     color = theme.onBackground,
                     fontFamily = theme.font,
-                    fontSize = TypeRamp.dialogBody,
+                    fontSize = theme.style.type.dialogBody,
                 ),
             )
         }
@@ -111,7 +110,7 @@ private fun LicensesScreen(theme: Theme, notice: String, scroll: ScrollState) {
             style = TextStyle(
                 color = theme.muted,
                 fontFamily = theme.font,
-                fontSize = TypeRamp.hint,
+                fontSize = theme.style.type.hint,
             ),
         )
     }

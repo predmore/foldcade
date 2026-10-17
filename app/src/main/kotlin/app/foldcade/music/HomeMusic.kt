@@ -52,6 +52,8 @@ import java.util.Locale
 class HomeMusic(
     private val app: Application,
     private val store: SessionStore,
+    /** Whether the selected theme has the UI sound for a slot. Its clips live in its zip, not the app's assets. */
+    private val themeHasSound: (slot: String) -> Boolean = { false },
 ) {
     private val handler = Handler(Looper.getMainLooper())
     private val audio = app.getSystemService(AudioManager::class.java)
@@ -180,7 +182,7 @@ class HomeMusic(
             Meaning.Back -> "back"
             else -> return
         }
-        if (!assetExists("sounds/$slot.ogg")) return
+        if (!themeHasSound(slot)) return
         val existing = player ?: return
         if (!existing.isPlaying) return
         val generation = duck.begin()

@@ -19,8 +19,8 @@ open class MotionStyle(private val style: ThemeStyle = ThemeStyle()) {
     /** Confirmation follows real elapsed time, independently of Android animation scaling. */
     fun holdFill(progress: Float): Float = easingDissolve.transform(progress.coerceIn(0f, 1f))
 
-    val durationLetterHold = 360L
-    val durationLetterFade = 120
+    val durationLetterHold = style.motion.durationLetterHold.toLong()
+    val durationLetterFade = style.motion.durationLetterFade
 
     val durationShort = style.motion.durationShort
     val durationFocus = style.motion.durationFocus
@@ -123,28 +123,28 @@ open class MotionStyle(private val style: ThemeStyle = ThemeStyle()) {
     }
 
     /** A held tile's size: lifted off the grid, over its neighbours. */
-    val scaleLift = 1.1f
+    val scaleLift = style.motion.scaleLift
 
     /** A held game over a group it can go into shrinks to this, as if about to drop in. */
-    val scaleOver = 0.74f
+    val scaleOver = style.motion.scaleOver
 
     /** A group a held game is over opens up to this, and its glow comes on. */
-    val scaleOpen = 1.14f
+    val scaleOpen = style.motion.scaleOpen
 
     /** One slow rise and fall of a held tile. */
-    val durationBob = 1800
+    val durationBob = style.motion.durationBob
 
     /** How far a held tile rises and falls, in panel pixels. */
-    val bobPx = 7f
+    val bobPx = style.motion.bobPx
 
     /** How far below a held tile the light it casts falls, in panel pixels. */
-    val liftGlowPx = 30f
+    val liftGlowPx = style.motion.liftGlowPx
 
     /** How bright that light is at its centre, at full lift. */
-    val liftGlowPeak = 0.7f
+    val liftGlowPeak = style.motion.liftGlowPeak
 
     /** How much a tile squashes as it lands, or stretches as it lifts, at most. */
-    val squash = 0.08f
+    val squash = style.motion.squash
 
     /**
      * A held tile's bob, for as long as it is held, rising and falling once per

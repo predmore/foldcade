@@ -4,7 +4,7 @@ icon slots in themes/afterglow/theme.json. Standard library only.
 
     python3 tools/art/icons.py
 
-The script owns every ic_btn_, ic_status_, ic_badge_, mark_ and symbol_ file in those folders, so an
+The script owns every ic_btn_, ic_status_, ic_badge_, ic_control_, mark_ and symbol_ file in those folders, so an
 icon it no longer draws is removed. See docs/iconography.md before adding one.
 """
 import json, os
@@ -15,11 +15,11 @@ import marks, symbols
 REPO = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 ICONS = f"{REPO}/themes/afterglow/icons"
 SVG = f"{REPO}/art/svg"
-OWNED = ("ic_btn_", "ic_status_", "ic_badge_", "mark_", "symbol_")
+OWNED = ("ic_btn_", "ic_status_", "ic_badge_", "ic_control_", "mark_", "symbol_")
 
 def slot(name):
     """The manifest slot an icon file fills: ic_btn_a_filled -> button.a.filled, mark_game_boy -> mark.game-boy."""
-    for prefix, kind, sep in (("ic_btn_", "button", "."), ("ic_status_", "status", "."), ("ic_badge_", "badge", "."),
+    for prefix, kind, sep in (("ic_btn_", "button", "."), ("ic_status_", "status", "."), ("ic_badge_", "badge", "."), ("ic_control_", "control", "."),
                               ("mark_", "mark", "-"), ("symbol_", "symbol", "-")):
         if name.startswith(prefix):
             return f"{kind}.{name[len(prefix):].replace('_', sep)}"
@@ -30,6 +30,7 @@ def assets():
     out = [(a, "controller", None) for a in symbols.controller_assets()]
     out += [(a, "status", None) for a in symbols.status_assets()]
     out += [(a, "badges", None) for a in symbols.badge_assets()]
+    out += [(a, "controls", None) for a in symbols.control_assets()]
     for name, (draw, accent, about) in marks.MARKS.items():
         parts = draw(accent)
         out.append((Asset(f"mark_{name}", 64, 64, object_layers(parts), dp=(48, 48), note=f"Afterglow mark: {about}"),

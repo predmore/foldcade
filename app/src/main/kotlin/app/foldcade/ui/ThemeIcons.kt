@@ -9,6 +9,9 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.graphics.painter.BitmapPainter
 import androidx.compose.ui.graphics.painter.Painter
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.drawscope.DrawScope
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalResources
 import androidx.compose.ui.res.painterResource
 import app.foldcade.language.ThemeIconAsset
@@ -47,6 +50,12 @@ internal data class ThemeIconPainter(
     val resolved: ResolvedThemeIcon<Bitmap>?,
 ) {
     fun tint(color: Color): ColorFilter? = if (resolved?.asset?.tint != false) ColorFilter.tint(color) else null
+
+    /**
+     * [color] only for an icon its pack marked `"tint": true`. For slots whose art may carry state
+     * colours, such as status icons, so the built-in drawables keep theirs.
+     */
+    fun requestedTint(color: Color): ColorFilter? = if (resolved?.asset?.tint == true) ColorFilter.tint(color) else null
 }
 
 /** Semantic keys are stable across packs; drawable ids are only the emergency fallback. */
@@ -59,14 +68,61 @@ internal fun themeIcon(slot: String, fallback: Int, pixels: Int = 256): ThemeIco
     return ThemeIconPainter(painter, resolved)
 }
 
+/** Afterglow's file prefix for each slot family, and the separator its slot names use for `_`. */
+private val SLOT_FAMILIES = listOf(
+    Triple("ic_btn_", "button.", '.'),
+    Triple("ic_status_", "status.", '.'),
+    Triple("ic_badge_", "badge.", '.'),
+    Triple("ic_control_", "control.", '.'),
+    Triple("mark_", "mark.", '-'),
+    Triple("symbol_", "symbol.", '-'),
+)
+
 /** Converts the old art-kit resource names to stable public slots. */
-internal fun iconSlot(resource: String): String = when {
-    resource.startsWith("ic_btn_") -> "button." + resource.removePrefix("ic_btn_").replace('_', '.')
-    resource.startsWith("ic_status_") -> "status." + resource.removePrefix("ic_status_").replace('_', '.')
-    resource.startsWith("ic_badge_") -> "badge." + resource.removePrefix("ic_badge_").replace('_', '.')
-    resource.startsWith("mark_") -> "mark." + resource.removePrefix("mark_").replace('_', '-')
-    resource.startsWith("symbol_") -> "symbol." + resource.removePrefix("symbol_").replace('_', '-')
-    else -> resource
+internal fun iconSlot(resource: String): String {
+    val (file, slot, separator) = SLOT_FAMILIES.firstOrNull { resource.startsWith(it.first) } ?: return resource
+    return slot + resource.removePrefix(file).replace('_', separator)
+}
+
+/** The emergency drawable's name for [slot]: Afterglow's file, compiled into the app. */
+internal fun slotResource(slot: String): String? {
+    val (file, prefix, separator) = SLOT_FAMILIES.firstOrNull { slot.startsWith(it.second) } ?: return null
+    return file + slot.removePrefix(prefix).replace(separator, '_')
+}
+
+/**
+ * The icon in [slot] from the theme, else Afterglow's compiled copy. Null when neither has it,
+ * so a pack can add slots the app has no drawable for, such as a new platform's mark.
+ */
+@Composable
+internal fun themeIconOrNull(slot: String, pixels: Int = 256): ThemeIconPainter? {
+    val context = LocalContext.current
+    val fallback = remember(slot) {
+        slotResource(slot)?.let { context.resources.getIdentifier(it, "drawable", context.packageName) } ?: 0
+    }
+    val candidates = LocalFoldTheme.current.icons[slot].orEmpty()
+    if (candidates.isEmpty() && fallback == 0) return null
+    var resolved by remember(candidates, pixels) { mutableStateOf(ThemeIconImages.cached(candidates, pixels)) }
+    var loaded by remember(candidates, pixels) { mutableStateOf(resolved != null) }
+    LaunchedEffect(candidates, pixels) {
+        resolved = ThemeIconImages.load(candidates, pixels)
+        loaded = true
+    }
+    val image = resolved?.image
+    val painter = when {
+        image != null -> remember(image) { BitmapPainter(image.asImageBitmap()) }
+        fallback != 0 -> painterResource(fallback)
+        // Every candidate failed to decode, so the caller can fall back, as a missing slot does.
+        loaded -> return null
+        else -> EmptyPainter
+    }
+    return ThemeIconPainter(painter, resolved)
+}
+
+/** Draws nothing, while a pack-only icon decodes. */
+private object EmptyPainter : Painter() {
+    override val intrinsicSize: Size get() = Size.Unspecified
+    override fun DrawScope.onDraw() = Unit
 }
 
 @Composable

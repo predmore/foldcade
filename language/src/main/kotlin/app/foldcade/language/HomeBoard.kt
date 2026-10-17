@@ -185,7 +185,7 @@ fun androidHomeId(packageName: String): String = "android:$packageName"
 
 fun platformFolderId(canonicalId: String): String = "home.platform.$canonicalId"
 
-/** Platforms with their own drawn mark. The mark name is the canonical id. */
+/** Platforms Afterglow draws, offered in the collection picker. The mark name is the canonical id. */
 val PLATFORM_MARKS: Set<String> = setOf(
     "nintendo-3ds", "nintendo-ds", "game-boy", "game-boy-color", "game-boy-advance",
     "nes", "snes", "nintendo-64", "gamecube", "wii", "nintendo-switch",
@@ -217,9 +217,12 @@ fun setFolderIcon(board: HomeBoard, folderId: String, mark: String, tint: Collec
     return board.copy(folders = board.folders + (folderId to worn))
 }
 
-/** Kit mark for a canonical platform id. Not a console logo. A platform without its own mark gets a controller. */
+/**
+ * Kit mark for a canonical platform id: the id itself, so a theme can draw `mark.<id>` for any
+ * platform. Not a console logo. A platform no theme has drawn shows the controller ([MARK_CONSOLE]).
+ */
 fun kitMark(canonicalId: String): String =
-    canonicalId.takeIf { it in PLATFORM_MARKS } ?: MARK_CONSOLE
+    canonicalId.takeIf { it.isNotBlank() } ?: MARK_CONSOLE
 
 fun bucketMark(kind: HomeKind): String = when (kind) {
     HomeKind.AndroidGame -> "android-games"

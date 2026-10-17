@@ -78,7 +78,7 @@ internal fun SaveConflictBottom(
     BoxWithConstraints(
         Modifier
             .fillMaxSize()
-            .background(Color.Black.copy(alpha = 0.82f)),
+            .background(theme.style.colors.scrim.copy(alpha = theme.style.dialog.conflictScrimAlpha)),
     ) {
         val fit = saveConflictFit(maxWidth.value, maxHeight.value)
         val edge = fit.edge.dp
@@ -141,7 +141,7 @@ private fun SaveColumn(
             Modifier
                 .weight(1f)
                 .fillMaxWidth()
-                .clip(RoundedCornerShape(22.dp))
+                .clip(RoundedCornerShape(theme.style.shape.highlightCornerDp.dp))
                 .background(theme.surface)
                 .padding(horizontal = if (compact) 14.dp else 18.dp, vertical = if (compact) 10.dp else 16.dp),
             verticalArrangement = Arrangement.spacedBy(if (compact) 2.dp else 6.dp),
@@ -243,10 +243,12 @@ private fun BasicLine(
 private fun Modifier.conflictChip(focused: Boolean): Modifier {
     val theme = LocalFoldTheme.current.theme
     val lift = theme.onBackground
+    val dialog = theme.style.dialog
+    val round = theme.style.shape.round
     return this.graphicsLayer { clip = false }.drawBehind {
-        val corner = size.height / 2f
+        val corner = size.height * round
         drawRoundRect(
-            color = lift.copy(alpha = if (focused) 0.16f else 0.06f),
+            color = lift.copy(alpha = if (focused) dialog.chipStrongAlpha else dialog.chipAlpha),
             cornerRadius = CornerRadius(corner, corner),
         )
         if (focused) with(FocusRing(theme)) { drawFocusRing(corner, pronounced = true) }

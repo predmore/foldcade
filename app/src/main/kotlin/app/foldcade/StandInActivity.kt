@@ -26,8 +26,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.style.TextAlign
-import app.foldcade.language.TypeRamp
-import app.foldcade.language.builtInTheme
 
 /**
  * A stand-in for an external app. Keys are delivered here and not interpreted
@@ -49,8 +47,9 @@ class StandInActivity : ComponentActivity() {
         if (opened != null) {
             runCatching { contentResolver.openInputStream(opened)?.close() }
         }
+        val app = application as FoldcadeApp
+        val theme = app.paintFor(app.shell.model.themeIndex).theme
         setContent {
-            val theme = builtInTheme()
             val title = intent.getStringExtra(EXTRA_TITLE) ?: intent.getStringExtra(EXTRA_ID) ?: ""
             val key = lastKey
             Box(
@@ -62,7 +61,7 @@ class StandInActivity : ComponentActivity() {
                     style = TextStyle(
                         color = theme.onBackground,
                         fontFamily = theme.font,
-                        fontSize = TypeRamp.heroTitle,
+                        fontSize = theme.style.type.heroTitle,
                         textAlign = TextAlign.Center,
                     ),
                 )

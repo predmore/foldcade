@@ -19,6 +19,10 @@
       "file": "icons/ic_badge_cloud.xml",
       "tint": true
     },
+    "badge.hidden": {
+      "file": "icons/ic_badge_hidden.xml",
+      "tint": true
+    },
     "badge.sync": {
       "file": "icons/ic_badge_sync.xml",
       "tint": true
@@ -334,6 +338,34 @@
     "button.y.filled": {
       "file": "icons/ic_btn_y_filled.xml",
       "tint": false
+    },
+    "control.check": {
+      "file": "icons/ic_control_check.xml",
+      "tint": true
+    },
+    "control.dash": {
+      "file": "icons/ic_control_dash.xml",
+      "tint": true
+    },
+    "control.erase": {
+      "file": "icons/ic_control_erase.xml",
+      "tint": true
+    },
+    "control.search": {
+      "file": "icons/ic_control_search.xml",
+      "tint": true
+    },
+    "control.shift": {
+      "file": "icons/ic_control_shift.xml",
+      "tint": true
+    },
+    "control.shift.on": {
+      "file": "icons/ic_control_shift_on.xml",
+      "tint": true
+    },
+    "control.space": {
+      "file": "icons/ic_control_space.xml",
+      "tint": true
     },
     "mark.android-apps": {
       "file": "icons/mark_android_apps.xml",
@@ -988,7 +1020,9 @@
       "menuRow": 18,
       "sideRow": 18,
       "hint": 14,
-      "clock": 64
+      "clock": 64,
+      "bodyWeight": 400,
+      "strongWeight": 600
     },
     "glow": {
       "focusOverflow": 64,
@@ -999,7 +1033,11 @@
       "focusRim": 0.66,
       "restPeak": 0,
       "focusPeak": 1,
-      "heroPeak": 0.45
+      "heroPeak": 0.45,
+      "markLightTop": 0.12,
+      "markLightReach": 0.85,
+      "markLightPeak": 0.34,
+      "markLightFade": 0.72
     },
     "motion": {
       "durationShort": 100,
@@ -1019,6 +1057,25 @@
       "durationScene": 360,
       "durationShowcase": 1400,
       "durationSelect": 280,
+      "durationBob": 1800,
+      "durationLetterHold": 360,
+      "durationLetterFade": 120,
+      "scaleLift": 1.1,
+      "scaleOver": 0.74,
+      "scaleOpen": 1.14,
+      "bobPx": 7.0,
+      "liftGlowPx": 30.0,
+      "liftGlowPeak": 0.7,
+      "squash": 0.08,
+      "keySquash": 0.07,
+      "riseFrom": 0.96,
+      "riseDp": 24,
+      "sinkScale": 0.06,
+      "sinkDp": 16,
+      "cascadeDp": 14,
+      "cascadeStep": 0.05,
+      "cascadeSpan": 0.35,
+      "popFrom": 0.72,
       "arrive": [
         0.05,
         0.7,
@@ -1060,6 +1117,155 @@
       "cardCornerDp": 28,
       "heroArtFraction": 0.62,
       "chromeClearancePx": 28
+    },
+    "colors": {
+      "scrim": "#000000",
+      "shade": "#000000",
+      "shine": "#FFFFFF"
+    },
+    "shape": {
+      "round": 0.5,
+      "highlightCornerDp": 22,
+      "rowCornerPx": 22,
+      "chipCornerPx": 44,
+      "keyCorner": 0.2,
+      "badgeCornerPx": 8,
+      "toastCornerDp": 8,
+      "thumbCornerDp": 12
+    },
+    "tile": {
+      "restAlpha": 0.82,
+      "socketAlpha": 0.16,
+      "outlinePx": 3,
+      "editStrokePx": 9,
+      "editRestAlpha": 0.45,
+      "dotPx": 10,
+      "statusChipPx": 36,
+      "statusIconPx": 24,
+      "statusBackingAlpha": 0.72,
+      "downloadBarPx": 6,
+      "downloadTrackAlpha": 0.22
+    },
+    "hero": {
+      "markScale": 0.86,
+      "cardAlpha": 0.72,
+      "pillAlpha": 0.94,
+      "logoShadeAlpha": 0.62,
+      "sceneShadeTop": 0.45,
+      "sceneShadeBottom": 0.8,
+      "ambientBlurDp": 48,
+      "ambientDim": 0.55
+    },
+    "menu": {
+      "highlightStartAlpha": 0.2,
+      "highlightEndAlpha": 0.08,
+      "labelRestAlpha": 0.72,
+      "artRestAlpha": 0.78,
+      "artGrow": 0.12,
+      "scrimAlpha": 0.32,
+      "scrimAlphaUnblurred": 0.55,
+      "blurPx": 28,
+      "islandLift": 0.04,
+      "islandBorderDp": 1,
+      "islandFocusBorderDp": 2,
+      "islandRimAlpha": 0.08,
+      "islandRimLitAlpha": 0.34,
+      "quickTileAlpha": 0.08,
+      "quickTileLitAlpha": 0.16,
+      "quickArtGrow": 0.14
+    },
+    "controls": {
+      "switchWidthDp": 54,
+      "switchHeightDp": 30,
+      "switchKnobInsetDp": 4,
+      "trackAlpha": 0.12,
+      "trackFocusAlpha": 0.2,
+      "checkSizeDp": 30,
+      "checkStrokeDp": 2,
+      "checkRingAlpha": 0.26,
+      "checkRingFocusAlpha": 0.42,
+      "sliderTrackDp": 6,
+      "sliderTrackAlpha": 0.28,
+      "sliderKnobDp": 7,
+      "sliderGlow": 2.2
+    },
+    "keyboard": {
+      "highlightStartAlpha": 0.26,
+      "highlightEndAlpha": 0.1,
+      "inactiveHighlight": 0.3,
+      "keyAlpha": 0.92,
+      "glassAlpha": 0.12,
+      "modifierGlassAlpha": 0.05,
+      "litGlassAlpha": 0.06,
+      "doneAlpha": 0.55,
+      "shiftAlpha": 0.38,
+      "pressAlpha": 0.22,
+      "sheenAlpha": 0.1,
+      "rimTopAlpha": 0.22,
+      "rimBottomAlpha": 0.04,
+      "rimDp": 1,
+      "glyphRestAlpha": 0.62,
+      "chipAlpha": 0.08,
+      "chipFlashAlpha": 0.2,
+      "chipRimAlpha": 0.12,
+      "chipLabelRestAlpha": 0.82
+    },
+    "field": {
+      "ringAlpha": 0.55,
+      "selectionStartAlpha": 0.55,
+      "selectionEndAlpha": 0.4,
+      "caretDp": 4,
+      "caretGlowDp": 6,
+      "caretGlowAlpha": 0.22,
+      "caretLowAlpha": 0.35
+    },
+    "dialog": {
+      "scrimAlpha": 0.72,
+      "conflictScrimAlpha": 0.82,
+      "borderAlpha": 0.08,
+      "chipAlpha": 0.06,
+      "chipFocusAlpha": 0.1,
+      "chipStrongAlpha": 0.16,
+      "rowAlpha": 0.06,
+      "toastAlpha": 0.85
+    },
+    "settings": {
+      "labelRestAlpha": 0.62,
+      "artRestAlpha": 0.7,
+      "artGrow": 0.14,
+      "cardLift": 0.035,
+      "borderAlpha": 0.06
+    },
+    "find": {
+      "ringRestAlpha": 0.38,
+      "filterAlpha": 0.07,
+      "chosenAlpha": 0.3,
+      "chosenRimDp": 1.5,
+      "hiddenBackingAlpha": 0.78
+    },
+    "collections": {
+      "gold": "#FFC15A",
+      "coral": "#FF7F5C",
+      "rose": "#FF5C8A",
+      "violet": "#B48CFF",
+      "indigo": "#7C8CFF",
+      "sky": "#4CC9FF",
+      "teal": "#3EE6C0",
+      "mint": "#8CF2A6",
+      "lime": "#C6EE5A",
+      "slate": "#A3B1C6",
+      "glyphX": 32,
+      "glyphY": 39.48,
+      "glyphSize": 29.3,
+      "pressedDepth": 0.62,
+      "lipDrop": 0.025,
+      "lipAlpha": 0.32,
+      "swatchShine": 0.35,
+      "swatchShade": 0.3,
+      "swatchRimAlpha": 0.85
+    },
+    "sound": {
+      "volume": 0.4
     }
   }
 }

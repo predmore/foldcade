@@ -21,6 +21,9 @@ import androidx.compose.ui.layout.positionInRoot
 import androidx.compose.ui.unit.toSize
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.foundation.layout.size
+import androidx.compose.ui.platform.LocalDensity
+import app.foldcade.R
 import coil3.compose.AsyncImagePainter
 import coil3.compose.rememberAsyncImagePainter
 import coil3.request.ImageRequest
@@ -156,7 +159,7 @@ private fun ArtCandidateTile(app: FoldcadeApp, candidate: ArtCandidate?, current
     }
     val painter = rememberAsyncImagePainter(request, app.images)
     val status by painter.state.collectAsState()
-    Box(modifier.clip(RoundedCornerShape(12.dp)).background(theme.surface)) {
+    Box(modifier.clip(RoundedCornerShape(theme.style.shape.thumbCornerDp.dp)).background(theme.surface)) {
         Crossfade(status is AsyncImagePainter.State.Success, animationSpec = theme.motion.arrive(theme.motion.durationFocus, scale)) { loaded ->
             if (loaded) Image(painter, null, Modifier.fillMaxSize(), contentScale = ContentScale.Fit)
             else if (candidate != null && status is AsyncImagePainter.State.Error) {
@@ -172,7 +175,17 @@ private fun ArtCandidateTile(app: FoldcadeApp, candidate: ArtCandidate?, current
                 )))
             }
         }
-        if (current) BasicText(ArtCopy.current, Modifier.align(Alignment.TopEnd).background(theme.surface).padding(6.dp), style = TextStyle(color = theme.focus, fontSize = theme.style.type.menuRow, fontFamily = theme.font))
+        if (current) {
+            // The art in use wears the sync check, in the focus colour.
+            val check = themeIcon("badge.check", R.drawable.ic_badge_check)
+            val side = with(LocalDensity.current) { theme.style.type.menuRow.toDp() }
+            Image(
+                check.painter,
+                contentDescription = ArtCopy.current,
+                colorFilter = check.tint(theme.focus),
+                modifier = Modifier.align(Alignment.TopEnd).background(theme.surface).padding(6.dp).size(side),
+            )
+        }
     }
 }
 

@@ -29,6 +29,11 @@ class MapOwnershipTest {
                 assertFalse(text.contains("fun onKeyDown"))
             }
             assertFalse("$file names a text size", text.contains(Regex("\\d\\.sp\\b")))
+            // The look belongs to the theme: weights, pills and circles, and scrims are style tokens.
+            assertFalse("$file names a font weight; use theme.style.type", text.contains(Regex("FontWeight\\.[A-Z]")))
+            assertFalse("$file draws a fixed circle; use theme.style.shape.control()", text.contains("CircleShape"))
+            assertFalse("$file names a pill; use theme.style.shape.control()", text.contains(Regex("RoundedCornerShape\\((percent = )?50\\)")))
+            assertFalse("$file names white or a black scrim; use theme.style.colors", text.contains("Color.White") || text.contains("Color.Black.copy("))
         }
         val standIn = File(root, "app/src/main/kotlin/app/foldcade/StandInActivity.kt").readText()
         val handler = standIn.substringAfter("override fun onKeyDown")

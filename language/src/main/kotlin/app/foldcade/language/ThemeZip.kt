@@ -7,7 +7,8 @@ import java.util.zip.ZipInputStream
 import kotlinx.serialization.json.*
 
 /**
- * Paint read from a theme zip. A missing or rejected field keeps the built-in value.
+ * Paint read from a theme zip. A missing or rejected field keeps the inherited value: Afterglow's,
+ * for every other pack (see [inheriting]), else the built-in one.
  * A document that is not a theme object, or that has no name, is rejected.
  */
 data class ThemeFile(
@@ -25,28 +26,36 @@ data class ThemeFile(
     val icons: Map<String, ThemeIconFile> = emptyMap(),
     val sceneFiles: List<String> = emptyList(),
     val style: JsonObject = JsonObject(emptyMap()),
-)
+    /** The manifest as written, so the same document can resolve again over another base. */
+    val root: JsonObject = JsonObject(emptyMap()),
+) {
+    /** This manifest with [base] filling whatever it leaves out. Scenes and icons stay this pack's own. */
+    fun inheriting(base: ThemeFile): ThemeFile = themeFile(root, base) ?: this
+}
 
 data class ThemeIconFile(val file: String, val accent: Color? = null, val tint: Boolean = false)
 
-fun parseThemeJson(text: String): ThemeFile? = try { parseThemeJsonFields(text) } catch (_: Exception) { null }
+fun parseThemeJson(text: String, inherit: ThemeFile? = null): ThemeFile? = try {
+    themeFile(Json.parseToJsonElement(text).jsonObject, inherit)
+} catch (_: Exception) { null }
 
-private fun parseThemeJsonFields(text: String): ThemeFile? {
-    val fields = parseFlatObject(text) ?: return null
+private fun themeFile(root: JsonObject, inherit: ThemeFile?): ThemeFile? = try { themeFileFields(root, inherit) } catch (_: Exception) { null }
+
+private fun themeFileFields(root: JsonObject, inherit: ThemeFile?): ThemeFile? {
+    val fields = flatFields(root)
     val name = fields["name"] as? String ?: return null
     if (name.isBlank()) return null
-    val root = try { Json.parseToJsonElement(text).jsonObject } catch (_: Exception) { return null }
     val version = root["version"]?.jsonPrimitive?.intOrNull ?: 1
     if (version !in 1..2) return null
     val id = root["id"]?.jsonPrimitive?.contentOrNull ?: name
     if (version == 2 && (!id.matches(Regex("[A-Za-z0-9._-]+")) || id == "builtin")) return null
-    val fallback = builtInTheme()
-    val background = colorField(fields, "background", fallback.background)
-    val surface = colorField(fields, "surface", fallback.surface)
-    val onBackground = colorField(fields, "onBackground", fallback.onBackground)
-    val muted = colorField(fields, "muted", fallback.muted)
-    var focus = colorField(fields, "focus", fallback.focus)
-    if (focus == background) focus = fallback.focus
+    val builtIn = builtInTheme()
+    val background = colorField(fields, "background", inherit?.background ?: builtIn.background)
+    val surface = colorField(fields, "surface", inherit?.surface ?: builtIn.surface)
+    val onBackground = colorField(fields, "onBackground", inherit?.onBackground ?: builtIn.onBackground)
+    val muted = colorField(fields, "muted", inherit?.muted ?: builtIn.muted)
+    var focus = colorField(fields, "focus", inherit?.focus ?: builtIn.focus)
+    if (focus == background) focus = inherit?.focus?.takeIf { it != background } ?: builtIn.focus
     return ThemeFile(
         name = name,
         background = background,
@@ -54,8 +63,8 @@ private fun parseThemeJsonFields(text: String): ThemeFile? {
         onBackground = onBackground,
         muted = muted,
         focus = focus,
-        iconRadius = numberField(fields, "iconRadius", fallback.iconRadius, 0f, 0.5f),
-        artScale = numberField(fields, "artScale", fallback.artScale, 0.7f, 1f),
+        iconRadius = numberField(fields, "iconRadius", inherit?.iconRadius ?: builtIn.iconRadius, 0f, 0.5f),
+        artScale = numberField(fields, "artScale", inherit?.artScale ?: builtIn.artScale, 0.7f, 1f),
         backgroundMotion = motionField(fields, "backgroundMotion"),
         id = id,
         version = version,
@@ -68,6 +77,7 @@ private fun parseThemeJsonFields(text: String): ThemeFile? {
         }?.toMap().orEmpty(),
         sceneFiles = (root["scenes"] as? JsonArray)?.mapNotNull { (it as? JsonPrimitive)?.contentOrNull }.orEmpty(),
         style = root["style"] as? JsonObject ?: JsonObject(emptyMap()),
+        root = root,
     )
 }
 
@@ -196,18 +206,16 @@ private fun parseRgb(text: String): Color? {
     return Color(0xFF000000 or raw)
 }
 
-internal fun parseFlatObject(text: String): Map<String, Any?>? = try {
-    Json.parseToJsonElement(text).jsonObject.mapValues { (_, element) ->
-        if (element is JsonPrimitive) {
-            when {
-                element is JsonNull -> null
-                element.isString -> element.content
-                element.booleanOrNull != null -> element.boolean
-                else -> element.doubleOrNull
-            }
-        } else element
-    }
-} catch (_: Exception) { null }
+private fun flatFields(root: JsonObject): Map<String, Any?> = root.mapValues { (_, element) ->
+    if (element is JsonPrimitive) {
+        when {
+            element is JsonNull -> null
+            element.isString -> element.content
+            element.booleanOrNull != null -> element.boolean
+            else -> element.doubleOrNull
+        }
+    } else element
+}
 
 private fun readCappedEntries(input: InputStream): Map<String, ByteArray> {
     val entries = linkedMapOf<String, ByteArray>()

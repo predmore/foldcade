@@ -22,7 +22,8 @@ Both scripts use only the Python standard library. Open the sheet in any browser
 | --- | --- | --- | --- |
 | `button.*` | `ic_btn_*.xml` | Symbol, 24 units | Controller hints. `.filled` is the held state. |
 | `status.*` | `ic_status_*.xml` | Symbol, 24 units | The L1 and R1 islands, and Settings categories. |
-| `badge.*` | `ic_badge_*.xml` | Symbol, 24 units, tinted | The chip in a tile's corner. |
+| `badge.*` | `ic_badge_*.xml` | Symbol, 24 units, tinted | The chip in a tile's corner, and Find's hidden mark. |
+| `control.*` | `ic_control_*.xml` | Symbol, 24 units, tinted | The host's own controls: a checkmark's tick, the keyboard's Shift, Erase and Space, Find's magnifier. |
 | `symbol.*` | `symbol_*.xml` | Symbol, 64 units, tinted | Menu rows, the collection picker, and the glyph pressed into a collection. |
 | `mark.*` | `mark_*.xml` | Object, 64 units | Grid tiles and the hero. Its `accent` is the light behind the tile. |
 | `mark.collection-body`, `mark.collection-face` | `mark_collection_*.xml` | Object parts | A collection's folder. See [Collections](#collections). |
@@ -109,17 +110,17 @@ The home grid draws every tile the same way:
 - **One border.** The focus ring is the only border drawn on the grid. It sits just outside the tile and follows the tile's corner. Nothing draws an edge inside a tile.
 - **Light behind marks.** A mark's tile is the surface with a soft light in the mark's accent near its top. It replaces the old coloured edge.
 - **Apps fill their tiles.** An adaptive Android icon is drawn from its background and foreground layers, clipped to the tile's corner, like a cover. An icon that only ships a fixed shape stays on the surface.
-- **One resting brightness.** Unfocused covers, apps, and marks all rest at 82%.
+- **One resting brightness.** Unfocused covers, apps, and marks all rest at 82% (`style.tile.restAlpha`).
 
 ## Collections
 
 A collection is a folder in one of ten colours with a glyph pressed into its face. One set of files serves every colour. `Marks.kt` (`CollectionPainter`) draws it in three passes:
 
 1. `mark_collection_body`: the folder in greys, multiplied by the tint. White becomes the tint itself and grey becomes a darker shade.
-2. The glyph's `symbol.*`: a faint white lip just below it, then the glyph itself in a deep shade of the tint (62% toward black). Together they look pressed into the face.
+2. The glyph's `symbol.*`: a faint white lip just below it, then the glyph itself in a deep shade of the tint (62% toward black, `style.collections.pressedDepth`). Together they look pressed into the face.
 3. `mark_collection_face`: the parts that keep their own colour, drawn last: the sheet inside, gloss, and rims.
 
-Where the glyph sits is `FACE_GLYPH` in `marks.py`. `icons.py` prints the finished position after `OBJECT_SCALE`. `Marks.kt` keeps the same numbers in `GLYPH_X`, `GLYPH_Y`, and `GLYPH_SIZE`; change both together.
+Where the glyph sits is `FACE_GLYPH` in `marks.py`. `icons.py` prints the finished position after `OBJECT_SCALE`. Afterglow's `theme.json` keeps the same numbers in `style.collections.glyphX`, `glyphY`, and `glyphSize`; change both together. The ten colours are `style.collections` too, so another pack can redraw the folder, move the glyph, and recolour it without touching the app.
 
 A collection can wear any glyph, any place, or any platform (`FOLDER_ICONS`). That is why every place and platform needs a symbol.
 
@@ -141,8 +142,7 @@ A theme pack from before symbols may draw a glyph only as `mark.<glyph>`. If no 
 2. **Register it** in `MARKS` with its accent and what it stands for: `"lynx": (lynx, "#FFB547", "Lynx-style landscape handheld")`. Use underscores. The slot replaces them with hyphens (`mark.lynx`), so the name must match the platform's canonical id.
 3. **Regenerate** with `python3 tools/art/icons.py`. This writes `mark_lynx.xml`, `symbol_lynx.xml`, their SVGs, and both manifest slots.
 4. **Wire it up.**
-   - Add a row to `MARKS` in `app/src/main/kotlin/app/foldcade/ui/Marks.kt`.
-   - For a platform, add its id to `PLATFORM_MARKS` in `language/.../HomeBoard.kt`, so its folder and the collection picker use it.
+   - Its folder and tiles use the mark as soon as the slot exists; the app looks marks up by slot, so a pack can do the same. For a platform, add its id to `PLATFORM_MARKS` in `language/.../HomeBoard.kt`, so the collection picker offers it.
    - Give it a short picker name in `glyphName` in `CollectionLook.kt`.
 5. **Check it** on the contact sheet beside its neighbours (see the checklist below), then on the device. Bump the icon count in `ThemeSceneTest` and run the tests.
 
@@ -150,13 +150,13 @@ A theme pack from before symbols may draw a glyph only as `mark.<glyph>`. If no 
 
 1. Draw it in `marks.py` as a function with no arguments, returning `outline()` and `line()` parts, and add it to `GLYPHS`.
 2. Regenerate. This writes `symbol_<name>.xml`.
-3. Add it to `GLYPHS` in `Marks.kt`, to `COLLECTION_GLYPHS` (in picker order), and to `glyphName`.
+3. Add it to `COLLECTION_GLYPHS` (in picker order) and to `glyphName`.
 
 A glyph is a solid silhouette. It must read when it is pressed into the folder at about a third of the tile's width, so give it one strong outline and at most three cut-out details.
 
 ### A controller, status, or badge symbol
 
-Draw it in `tools/art/symbols.py` on the 24-unit grid and add an `Asset` to `controller_assets()`, `status_assets()`, or `badge_assets()`. The file name sets the slot: `ic_status_cast_on` becomes `status.cast.on`. Regenerate. The app refers to it as `R.drawable.ic_status_cast_on`, and `themeIcon` resolves the slot.
+Draw it in `tools/art/symbols.py` on the 24-unit grid and add an `Asset` to `controller_assets()`, `status_assets()`, `badge_assets()`, or `control_assets()`. The file name sets the slot: `ic_status_cast_on` becomes `status.cast.on`. Regenerate. The app refers to it as `R.drawable.ic_status_cast_on`, and `themeIcon` resolves the slot.
 
 ### Before shipping
 

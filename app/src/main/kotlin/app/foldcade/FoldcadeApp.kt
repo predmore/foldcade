@@ -76,6 +76,7 @@ import app.foldcade.language.SignedInBackend
 import app.foldcade.language.builtInTheme
 import app.foldcade.localfolder.LocalFolderBackend
 import app.foldcade.localfolder.SteamShortcut
+import app.foldcade.language.FALLBACK_THEME_ID
 import app.foldcade.music.HomeMusic
 import app.foldcade.ui.FoldPaint
 import java.io.File
@@ -300,13 +301,15 @@ class FoldcadeApp : Application() {
         if (buttonPromptFirstSession) store.setButtonPromptSeenLaunch()
         credentials = AndroidCredentialStore(this)
         plugins = PluginHost(Dispatchers.IO, credentials)
-        music = HomeMusic(this, store)
+        music = HomeMusic(this, store) { slot ->
+            ::shell.isInitialized && themePacks.getOrNull(shell.model.themeIndex - 1)?.sounds?.has(slot) == true
+        }
         store.afterSessionChanged = {
             music.onSessionChanged()
             refreshHomeRecovery()
         }
         themePacks = PackagedTheme.loadAll(this)
-        packaged = themePacks.firstOrNull { it.resources.id == "afterglow" }
+        packaged = themePacks.firstOrNull { it.resources.id == FALLBACK_THEME_ID }
         val names = listOf(Copy.builtIn) + themePacks.map { it.name }
         val ids = listOf("builtin") + themePacks.map { it.resources.id }
         val sceneChoices = themePacks.flatMap { pack -> pack.resources.scenes.map { (id, scene) ->
