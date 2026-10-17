@@ -1,7 +1,8 @@
 package app.foldcade.ui
 
 import androidx.compose.animation.core.Animatable
-import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.Image
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -51,7 +52,6 @@ import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.positionInParent
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.TextStyle
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
@@ -164,6 +164,7 @@ private fun ResultStrip(
 ) {
     val theme = LocalFoldTheme.current.theme
     val motion = theme.motion
+    val popFrom = theme.style.motion.popFrom
     val density = LocalDensity.current
     val results = session.results
     BoxWithConstraints(Modifier.fillMaxWidth().height(cell + titleBlock + pad * 2)) {
@@ -205,7 +206,7 @@ private fun ResultStrip(
                             // A result fades as it slides past either edge, so the strip has no cut ends.
                             val along = at - shownFirst
                             val outside = maxOf(-along, along - (across - 1), 0f)
-                            val grown = POP_FROM + (1f - POP_FROM) * pop.value
+                            val grown = popFrom + (1f - popFrom) * pop.value
                             alpha = (1f - outside).coerceIn(0f, 1f) * pop.value.coerceIn(0f, 1f)
                             scaleX = grown
                             scaleY = grown
@@ -237,7 +238,7 @@ private fun ResultStrip(
 private fun ResultRing(index: Int, lit: Boolean, cell: Dp, left: () -> Float, top: Float, pitchPx: Float, scale: Float) {
     val theme = LocalFoldTheme.current.theme
     val motion = theme.motion
-    val strength by eased(if (lit) 1f else RING_RESTING, motion.durationFocus, scale)
+    val strength by eased(if (lit) 1f else theme.style.find.ringRestAlpha, motion.durationFocus, scale)
     val x by eased(index.toFloat(), motion.durationTravel, scale)
     val ring = remember(theme) { FocusRing(theme) }
     val path = remember { Path() }
@@ -296,7 +297,7 @@ internal fun FindCard(
             Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
                 BasicText(
                     text = shown.title ?: FindCopy.noMatches,
-                    style = titleStyle.copy(fontWeight = FontWeight.SemiBold, textAlign = TextAlign.Center),
+                    style = titleStyle.copy(fontWeight = theme.style.type.strongWeight, textAlign = TextAlign.Center),
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                 )
@@ -367,6 +368,8 @@ internal fun FindFilters(session: FindSession, style: TextStyle, scale: Float, m
                 }
             }
             val ring = remember(theme) { FocusRing(theme) }
+            val find = theme.style.find
+            val round = theme.style.shape.round
             Row(
                 Modifier
                     .wrapContentWidth(Alignment.Start, unbounded = true)
@@ -375,12 +378,12 @@ internal fun FindFilters(session: FindSession, style: TextStyle, scale: Float, m
                         drawContent()
                         if (!placed) return@drawWithContent
                         // Over the pills, so the chosen one is lit glass with the ring's colours at its rim.
-                        val corner = size.height / 2f
+                        val corner = size.height * round
                         val topLeft = Offset(highlight.value, 0f)
                         val pill = Size(width.value, size.height)
                         drawRoundRect(
                             brush = Brush.horizontalGradient(
-                                listOf(ring.start.copy(alpha = CHOSEN_FILL), ring.end.copy(alpha = CHOSEN_FILL * 0.6f)),
+                                listOf(ring.start.copy(alpha = find.chosenAlpha), ring.end.copy(alpha = find.chosenAlpha * 0.6f)),
                                 startX = topLeft.x,
                                 endX = topLeft.x + pill.width,
                             ),
@@ -393,7 +396,7 @@ internal fun FindFilters(session: FindSession, style: TextStyle, scale: Float, m
                             topLeft = topLeft,
                             size = pill,
                             cornerRadius = CornerRadius(corner, corner),
-                            style = Stroke(CHOSEN_RIM.dp.toPx()),
+                            style = Stroke(find.chosenRimDp.dp.toPx()),
                         )
                     },
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -406,8 +409,8 @@ internal fun FindFilters(session: FindSession, style: TextStyle, scale: Float, m
                                 val rect = Rect(it.positionInParent(), it.size.toSize())
                                 if (spans[index] != rect) spans[index] = rect
                             }
-                            .clip(RoundedCornerShape(percent = 50))
-                            .drawBehind { drawRoundRect(theme.onBackground.copy(alpha = 0.07f), cornerRadius = CornerRadius(size.height / 2f)) }
+                            .clip(theme.style.shape.control())
+                            .drawBehind { drawRoundRect(theme.onBackground.copy(alpha = find.filterAlpha), cornerRadius = CornerRadius(size.height * round)) }
                             .padding(horizontal = 16.dp, vertical = 6.dp),
                     ) {
                         BasicText(
@@ -440,41 +443,28 @@ private fun Modifier.fadeEnds(spans: Map<Int, Rect>, density: androidx.compose.u
 
 private fun lerpInk(from: Color, to: Color, t: Float): Color = androidx.compose.ui.graphics.lerp(from, to, t.coerceIn(0f, 1f))
 
-/** A magnifying glass, drawn in [ink] at [size], so the field reads as a search before anything is typed. */
+/** A magnifying glass (`control.search`), in [ink] at [size], so the field reads as a search before anything is typed. */
 @Composable
 private fun Magnifier(ink: Color, size: Dp) {
-    Canvas(Modifier.size(size)) {
-        val w = this.size.width
-        val stroke = w * 0.11f
-        val radius = w * 0.3f
-        val center = Offset(w * 0.42f, w * 0.42f)
-        drawCircle(ink, radius, center, style = Stroke(stroke))
-        val reach = radius * 0.72f
-        drawLine(ink, Offset(center.x + reach, center.y + reach), Offset(w * 0.9f, w * 0.9f), stroke, StrokeCap.Round)
-    }
+    val icon = themeIconOrNull("control.search", 128) ?: return
+    Image(icon.painter, contentDescription = null, colorFilter = icon.tint(ink), modifier = Modifier.size(size))
 }
 
 /**
- * A small eye with a line through it, on a dark pill, in a hidden result's corner. Hidden
- * things still show in Find, so this tells them apart at a glance.
+ * A small eye with a line through it (`badge.hidden`), on a dark disc, in a hidden result's
+ * corner. Hidden things still show in Find, so this tells them apart at a glance.
  */
 @Composable
 internal fun HiddenBadge(size: Dp, modifier: Modifier = Modifier) {
     val theme = LocalFoldTheme.current.theme
-    Canvas(modifier.size(size)) {
-        val w = this.size.width
-        drawCircle(theme.background.copy(alpha = 0.78f), w / 2f)
-        val ink = theme.onBackground
-        val stroke = w * 0.08f
-        val eye = Path().apply {
-            moveTo(w * 0.18f, w * 0.5f)
-            quadraticTo(w * 0.5f, w * 0.16f, w * 0.82f, w * 0.5f)
-            quadraticTo(w * 0.5f, w * 0.84f, w * 0.18f, w * 0.5f)
-            close()
-        }
-        drawPath(eye, ink, style = Stroke(stroke))
-        drawCircle(ink, w * 0.09f, Offset(w * 0.5f, w * 0.5f))
-        drawLine(ink, Offset(w * 0.24f, w * 0.78f), Offset(w * 0.76f, w * 0.22f), stroke * 1.2f, StrokeCap.Round)
+    val icon = themeIconOrNull("badge.hidden", 128)
+    Box(
+        modifier
+            .size(size)
+            .clip(theme.style.shape.control())
+            .background(theme.background.copy(alpha = theme.style.find.hiddenBackingAlpha)),
+    ) {
+        if (icon != null) Image(icon.painter, contentDescription = null, colorFilter = icon.tint(theme.onBackground), modifier = Modifier.fillMaxSize())
     }
 }
 
@@ -495,14 +485,6 @@ private const val MIN_CELL = 48f
 /** Results pop in this far apart, and only the first few wait their turn. */
 private const val POP_STAGGER_MS = 28L
 private const val POP_STAGGER_LIMIT = 8
-private const val POP_FROM = 0.72f
-
-/** How strongly the ring marks the best result while the keys have the D-pad. */
-private const val RING_RESTING = 0.38f
-
-/** The chosen filter's lit fill and its rim, in dp. */
-private const val CHOSEN_FILL = 0.30f
-private const val CHOSEN_RIM = 1.5f
 
 /** The L2 and R2 glyphs beside the filters, as a share of their text. */
 private const val GLYPH_SHARE = 1.5f

@@ -47,7 +47,6 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.text.TextStyle
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.IntOffset
@@ -196,7 +195,7 @@ private fun Island(
     if (rowsHeight > Dp.Hairline) SideEffect { settled = true }
     val width = lerp(pillWidth, openWidth, progress)
     val height = lerp(pillHeight, openHeight, progress)
-    val radius = lerp(pillHeight / 2, design.metrics.cardCornerDp.dp, progress)
+    val radius = lerp(pillHeight * design.shape.round, design.metrics.cardCornerDp.dp, progress)
     val shape = RoundedCornerShape(radius)
     val x = if (side == Side.Left) inset else maxWidth - inset - width
     val focusedIsland = progress < 0.08f && app.shell.model.panel == null && app.shell.model.dialog == null &&
@@ -225,22 +224,24 @@ private fun Island(
             // A filled card. A faint edge keeps it apart from a black backdrop, and lights
             // with the focus colors as the menu opens.
             .border(
-                if (focusedIsland) 2.dp else 1.dp,
+                if (focusedIsland) design.menu.islandFocusBorderDp.dp else design.menu.islandBorderDp.dp,
                 if (focusedIsland) {
                     SolidColor(theme.focus)
                 } else {
+                    val edge = design.menu.islandRimAlpha
+                    val lit = design.menu.islandRimLitAlpha
                     Brush.linearGradient(
                         listOf(
-                            rim.start.copy(alpha = 0.08f + 0.34f * progress),
-                            theme.onBackground.copy(alpha = 0.06f),
-                            rim.end.copy(alpha = 0.08f + 0.26f * progress),
+                            rim.start.copy(alpha = edge + lit * progress),
+                            theme.onBackground.copy(alpha = edge * RIM_MIDDLE),
+                            rim.end.copy(alpha = edge + lit * RIM_END * progress),
                         ),
                     )
                 },
                 shape,
             )
             .clip(shape)
-            .background(cardFill(theme, 0.04f * progress))
+            .background(cardFill(theme, design.menu.islandLift * progress))
             .then(if (!interactive) Modifier.islandPress { app.shell.onMeaning(side.meaning(), HostScreen.Top) } else Modifier),
     ) {
         // The chip leads on both sides, so the clock is the last thing on the right.
@@ -316,13 +317,17 @@ private fun ActingHeader(app: FoldcadeApp, modifier: Modifier) {
             text = name,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
-            style = TextStyle(color = theme.onBackground, fontSize = theme.style.type.sideRow, fontFamily = theme.font, fontWeight = FontWeight.SemiBold),
+            style = TextStyle(color = theme.onBackground, fontSize = theme.style.type.sideRow, fontFamily = theme.font, fontWeight = theme.style.type.strongWeight),
         )
     }
 }
 
 /** The open card's margin under its scroll. The rows keep the ring's reach inside it as well. */
 private const val MENU_BOTTOM_DP = 6f
+
+/** The island's rim, at its middle and at its end, as shares of the theme's rim at its start. */
+private const val RIM_MIDDLE = 0.06f / 0.08f
+private const val RIM_END = 0.26f / 0.34f
 
 private fun Side.meaning(): Meaning = if (this == Side.Left) Meaning.LeftPanel else Meaning.RightPanel
 
@@ -387,8 +392,10 @@ private fun ShoulderChip(outline: Int, filled: Int, openFraction: Float, label: 
 
 @Composable
 private fun Glyph(id: Int, description: String?) {
+    val icon = themeIcon(id)
     Image(
-        painter = themeIconPainter(id),
+        painter = icon.painter,
+        colorFilter = icon.requestedTint(LocalFoldTheme.current.theme.onBackground),
         contentDescription = description,
         modifier = Modifier.size(18.dp),
         contentScale = ContentScale.Fit,

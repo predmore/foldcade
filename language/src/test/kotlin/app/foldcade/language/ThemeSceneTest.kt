@@ -26,7 +26,7 @@ class ThemeSceneTest {
         assertNotNull(pack.icons["symbol.star"])
         assertNotNull(pack.icons["symbol.two-players"])
         assertNotNull(pack.icons["symbol.nintendo-3ds"])
-        assertEquals(228, pack.icons.size)
+        assertEquals(236, pack.icons.size)
     }
 
     @Test

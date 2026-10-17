@@ -29,7 +29,6 @@ import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.text.TextStyle
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -75,7 +74,7 @@ internal fun PlayActivityScreen(app: FoldcadeApp, page: PlayActivityPage) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Row(
                 Modifier
-                    .clip(RoundedCornerShape(50))
+                    .clip(theme.style.shape.control())
                     .background(theme.surface)
                     .clickable(remember { MutableInteractionSource() }, indication = null) {
                         app.shell.closePlayActivity()
@@ -177,7 +176,8 @@ private fun HourScale(theme: Theme) {
 private fun DayTrack(blocks: List<ClosedFloatingPointRange<Float>>, theme: Theme, modifier: Modifier) {
     Box(
         modifier.drawBehind {
-            val radius = CornerRadius(size.height / 4f, size.height / 4f)
+            // Half as round as the theme's other controls, so the sessions read as bars.
+            val radius = CornerRadius(size.height * theme.style.shape.round / 2f, size.height * theme.style.shape.round / 2f)
             drawRoundRect(color = theme.onBackground.copy(alpha = 0.06f), cornerRadius = radius)
             listOf(0.25f, 0.5f, 0.75f).forEach { mark ->
                 val x = size.width * mark
@@ -240,4 +240,4 @@ internal fun PlayStrip(app: FoldcadeApp, focused: Boolean, chord: PromptKey? = n
 }
 
 private fun playText(color: androidx.compose.ui.graphics.Color, theme: Theme, size: androidx.compose.ui.unit.TextUnit, bold: Boolean = false) =
-    TextStyle(color = color, fontSize = size, fontFamily = theme.font, fontWeight = if (bold) FontWeight.SemiBold else null)
+    TextStyle(color = color, fontSize = size, fontFamily = theme.font, fontWeight = if (bold) theme.style.type.strongWeight else theme.style.type.bodyWeight)

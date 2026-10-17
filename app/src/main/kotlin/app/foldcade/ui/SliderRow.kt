@@ -57,6 +57,8 @@ fun SliderRow(
     val theme = LocalFoldTheme.current.theme
     val fraction = fraction.coerceIn(0f, 1f)
     val accent = theme.focus
+    val controls = theme.style.controls
+    val round = theme.style.shape.round
     val lit by eased(if (focused) 1f else 0f, theme.motion.durationFocus, scale)
     // The same margins as a menu row, so the words line up down the list.
     Column(modifier.fillMaxWidth().padding(start = 14.dp, end = 14.dp, top = 8.dp, bottom = 8.dp)) {
@@ -79,7 +81,7 @@ fun SliderRow(
         ) {
             BasicText(
                 text = label,
-                modifier = Modifier.weight(1f).graphicsLayer { alpha = 0.72f + 0.28f * lit },
+                modifier = Modifier.weight(1f).graphicsLayer { alpha = theme.style.menu.labelRestAlpha.let { it + (1f - it) * lit } },
                 style = (labelStyle ?: TextStyle(fontSize = theme.style.type.sideRow, fontFamily = theme.font))
                     .copy(color = theme.onBackground),
             )
@@ -101,18 +103,18 @@ fun SliderRow(
                 .height(36.dp)
                 .graphicsLayer { clip = false }
                 .drawWithContent {
-                    val trackHeight = 6.dp.toPx()
+                    val trackHeight = controls.sliderTrackDp.dp.toPx()
                     val trackTop = (size.height - trackHeight) / 2f
-                    val trackRadius = CornerRadius(trackHeight / 2f, trackHeight / 2f)
+                    val trackRadius = CornerRadius(trackHeight * round, trackHeight * round)
                     drawRoundRect(
-                        color = accent.copy(alpha = 0.28f),
+                        color = accent.copy(alpha = controls.sliderTrackAlpha),
                         topLeft = Offset(0f, trackTop),
                         size = Size(size.width, trackHeight),
                         cornerRadius = trackRadius,
                     )
                     val fillWidth = size.width * fraction
                     if (fillWidth > 1f) {
-                        val cap = min(trackHeight / 2f, fillWidth / 2f)
+                        val cap = min(trackHeight * round, fillWidth / 2f)
                         drawRoundRect(
                             color = accent,
                             topLeft = Offset(0f, trackTop),
@@ -120,12 +122,12 @@ fun SliderRow(
                             cornerRadius = CornerRadius(cap, cap),
                         )
                     }
-                    val thumbRadius = 7.dp.toPx()
+                    val thumbRadius = controls.sliderKnobDp.dp.toPx()
                     val center = Offset(
                         x = (size.width * fraction).coerceIn(thumbRadius, (size.width - thumbRadius).coerceAtLeast(thumbRadius)),
                         y = size.height / 2f,
                     )
-                    val glow = thumbRadius * 2.2f
+                    val glow = thumbRadius * controls.sliderGlow
                     drawCircle(
                         brush = Brush.radialGradient(
                             colorStops = arrayOf(

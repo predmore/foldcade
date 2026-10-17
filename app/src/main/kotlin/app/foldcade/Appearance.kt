@@ -9,6 +9,7 @@ import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.text.font.Font
 import androidx.compose.ui.text.font.FontFamily
 import app.foldcade.language.BackgroundMotion
+import app.foldcade.language.FALLBACK_THEME_ID
 import app.foldcade.language.MusicTrack
 import app.foldcade.language.Theme
 import app.foldcade.language.ThemeResources
@@ -25,7 +26,10 @@ import app.foldcade.language.wallpaperZipName
 import app.foldcade.ui.FoldPaint
 import java.io.File
 
-/** The reference theme zip, selected unless the user cycles back to the built-in theme. */
+/**
+ * One loaded theme zip. Afterglow, the reference pack, loads first, and every other pack inherits
+ * from it: colours, style tokens, font and sounds the pack leaves out are Afterglow's.
+ */
 class PackagedTheme(
     val name: String,
     val paint: FoldPaint,
@@ -33,6 +37,8 @@ class PackagedTheme(
     val backgroundMotion: BackgroundMotion,
     val music: MusicTrack?,
     val resources: ThemeResources,
+    /** The archive's files, so a pack loaded after this one can inherit them. */
+    internal val entries: Map<String, ByteArray> = emptyMap(),
 ) {
     companion object {
         private const val ASSET = "themes/afterglow.zip"
@@ -50,23 +56,29 @@ class PackagedTheme(
                 try { open().use(::readThemeZip) }
                 catch (error: Exception) { Log.w("FoldcadeTheme", "Theme $source ignored", error); null }
             }
-            return loadThemeCatalog(archives, { zip -> load(context, zip) }) { diagnostic ->
+            var fallback: PackagedTheme? = null
+            return loadThemeCatalog(archives, { zip ->
+                load(context, zip, fallback)?.also { if (fallback == null && it.resources.id == FALLBACK_THEME_ID) fallback = it }
+            }) { diagnostic ->
                 Log.w("FoldcadeTheme", "${diagnostic.source}: ${diagnostic.message}")
             }
         }
 
-        fun load(context: Context, input: InputStream): PackagedTheme? {
+        /** One zip, inheriting from [inherit] as [loadAll] has every pack but Afterglow inherit. */
+        fun load(context: Context, input: InputStream, inherit: PackagedTheme? = null): PackagedTheme? {
             val zip = input.use { readThemeZip(it) } ?: return null
-            return load(context, zip)
+            return load(context, zip, inherit?.takeIf { zip.file.id != it.resources.id })
         }
 
-        private fun load(context: Context, zip: ThemeZip): PackagedTheme? = try {
+        private fun load(context: Context, zip: ThemeZip, inherit: PackagedTheme? = null): PackagedTheme? = try {
             val entries = zip.entries
-            val file = zip.file
-            val resources = resolveThemeResources(zip)
-            resources.diagnostics.forEach { Log.w("FoldcadeTheme", "${it.source}: ${it.message}") }
+            val resources = resolveThemeResources(zip, inherit?.resources)
+            val file = resources.file
+            resources.diagnostics.forEach { Log.w("FoldcadeTheme", "${file.id}/${it.source}: ${it.message}") }
             val json = entries["theme.json"]?.decodeToString()
-            val fontName = fontZipName(entries.keys)
+            // A pack without its own font or sounds wears Afterglow's.
+            val fontEntries = if (fontZipName(entries.keys) != null) entries else inherit?.entries.orEmpty()
+            val fontName = fontZipName(fontEntries.keys)
             val theme = Theme(
                 background = file.background,
                 surface = file.surface,
@@ -75,7 +87,7 @@ class PackagedTheme(
                 focus = file.focus,
                 iconRadius = file.iconRadius,
                 artScale = file.artScale,
-                font = loadFont(context, fontName?.let { entries[it] }, fontName),
+                font = loadFont(context, fontName?.let { fontEntries[it] }, fontName),
                 style = resources.style,
             )
             PackagedTheme(
@@ -86,10 +98,11 @@ class PackagedTheme(
                     wallpaperBottom = decode(wallpaperZipName(entries.keys, top = false)?.let { entries[it] }),
                     icons = resources.icons.mapValues { (_, icon) -> listOf(icon) },
                 ),
-                sounds = ThemeSounds(context, entries),
+                sounds = ThemeSounds(context, entries + inherit?.entries.orEmpty().filterKeys { it.startsWith("sounds/") && it !in entries }, resources.style.sound.volume),
                 backgroundMotion = resources.defaultBackground,
                 music = themeMusic(context, file.name, json, entries),
                 resources = resources,
+                entries = entries,
             )
         } catch (error: Exception) {
             Log.w("Foldcade", "Theme zip ignored", error)
@@ -150,8 +163,8 @@ class PackagedTheme(
     }
 }
 
-/** The four theme sound slots. A missing clip is skipped. */
-class ThemeSounds(context: Context, entries: Map<String, ByteArray>) {
+/** The four theme sound slots, played at [volume]. A missing clip is skipped. */
+class ThemeSounds(context: Context, entries: Map<String, ByteArray>, private val volume: Float) {
     private val pool = SoundPool.Builder()
         .setMaxStreams(3)
         .setAudioAttributes(
@@ -177,11 +190,13 @@ class ThemeSounds(context: Context, entries: Map<String, ByteArray>) {
         }
     }
 
+    fun has(slot: String): Boolean = (ids[slot] ?: 0) != 0
+
     /** True when this theme has [slot] and the tick was started. */
     fun play(slot: String): Boolean {
         val id = ids[slot] ?: return false
         if (id == 0) return false
-        pool.play(id, 0.4f, 0.4f, 1, 0, 1f)
+        pool.play(id, volume, volume, 1, 0, 1f)
         return true
     }
 }

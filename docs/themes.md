@@ -2,13 +2,17 @@
 
 Themes are ZIPs containing JSON, images, Android vector XML, fonts, audio, and AGSL shaders. They contain no Java, Kotlin, DEX, native libraries, or application scripts. The native renderer provides the machinery; packs own their design and performance. There is no automatic quality reduction or cap on scene layers, particles, shader complexity, or requested frame rate.
 
-Afterglow is the reference pack in `themes/afterglow/`. Its icon artwork, focus styling, typography, motion settings, layout metrics, and backgrounds live there. The app generates its emergency drawable resources from those same icon files. Tests keep a CPU model of the Afterglow backgrounds. It is updated alongside the scenes and checks their uniforms, lit budget, and motion pacing.
+Afterglow is the reference pack in `themes/afterglow/`. Its icon artwork, colours, focus styling, typography, motion, shapes, component styling, layout metrics, and backgrounds live there, and it declares every [style token](#style-tokens) the engine reads; a test fails if the engine reads one Afterglow leaves out. The app generates its emergency drawable resources from those same icon files. Tests keep a CPU model of the Afterglow backgrounds. It is updated alongside the scenes and checks their uniforms, lit budget, and motion pacing.
 
-The current version exposes the existing launcher's presentation tokens and components. It does not yet let a pack replace the controller's grid/navigation topology or author arbitrary screen layouts. Downloading/installing external packs through the UI is also future work; the loader already accepts resource packs from private `files/themes/*.zip` storage.
+The current version exposes the launcher's presentation: colours, type, icons, shapes, motion, and the look of each component. It does not let a pack replace the controller's grid/navigation topology, author arbitrary screen layouts, or change layout proportions such as row heights and the keyboard's key pitch. Downloading/installing external packs through the UI is also future work; the loader already accepts resource packs from private `files/themes/*.zip` storage.
+
+## Inheritance
+
+Every pack inherits from Afterglow. A colour, `iconRadius`, `artScale`, style token, font, or sound a pack leaves out, or gets wrong, is Afterglow's. An icon slot it leaves out is Afterglow's too, slot by slot. A pack can therefore change one thing, say `{"name": "Square", "style": {"shape": {"round": 0}}}`, and look like Afterglow otherwise. A pack that wants a slot quiet or blank ships a silent clip or an empty icon in it. Scenes are not inherited; they are listed separately (see below). If Afterglow itself cannot load, packs fall back to the engine's built-in values, which the Built-in theme also uses.
 
 ## Compose providers
 
-The Theme setting selects the base colors, font, styling, sounds, and music. Icons can follow that theme or select another pack independently. Missing or unreadable override icons fall through to the base pack and then Afterglow. Built-in selects the native emergency icons explicitly.
+The Theme setting selects the base colors, font, styling, sounds, and music, each inherited from Afterglow where the pack has none. Icons can follow that theme or select another pack independently. Missing or unreadable override icons fall through to the base pack and then Afterglow. Built-in selects the native emergency icons explicitly.
 
 Background lists are discovered from every installed pack. Selecting one pins it independently of the base theme. Each scene keeps its provider's shaders, textures, palette, variables, and timeline; unrelated icon packs cannot replace those internal assets. IDs are `pack-id:scene-id`. The host's Off choice means no scene. Old `ribbons`, `embers`, and `static` preferences migrate when the scene name is unambiguous. Unavailable theme/icon selections remain saved for when the provider returns.
 
@@ -38,12 +42,15 @@ Background lists are discovered from every installed pack. Selecting one pins it
     "type": {"heroTitle": 28, "hint": 14},
     "motion": {"durationFocus": 180, "scaleFocus": 1.05, "arrive": [0.05, 0.7, 0.1, 1]},
     "metrics": {"cardCornerDp": 28},
-    "glow": {"focusOverflow": 64, "focusPeak": 1}
+    "glow": {"focusOverflow": 64, "focusPeak": 1},
+    "colors": {"scrim": "#0B0820"},
+    "shape": {"round": 0.25, "highlightCornerDp": 12},
+    "collections": {"gold": "#F2C14E", "glyphY": 38}
   }
 }
 ```
 
-Category-only packs can omit colors, style, icons, or scenes. A name is required; give v2 packs a stable id using letters, numbers, dots, underscores or hyphens. The id `builtin` is reserved. Icons accept PNG, WebP, or self-contained Android vector XML with literal colors. XML supports paths, group transforms, clipping, strokes, and inline linear/radial/sweep gradients. XML may not refer to application resource IDs. The underlying vector grammar is documented by [Android](https://developer.android.com/reference/android/graphics/drawable/VectorDrawable). All asset paths are relative to the archive root. See Afterglow's manifest for the complete stock slot list and styling tokens. Platforms use `mark.<canonical-platform-id>` on the grid and `symbol.<canonical-platform-id>` in menus, folders use `mark.folder`, controller hints use `button.a`/`button.a.filled`, and status variants use slots such as `status.battery.100.charging`.
+Category-only packs can omit colors, style, icons, or scenes. A name is required; give v2 packs a stable id using letters, numbers, dots, underscores or hyphens. The id `builtin` is reserved. Icons accept PNG, WebP, or self-contained Android vector XML with literal colors. XML supports paths, group transforms, clipping, strokes, and inline linear/radial/sweep gradients. XML may not refer to application resource IDs. The underlying vector grammar is documented by [Android](https://developer.android.com/reference/android/graphics/drawable/VectorDrawable). All asset paths are relative to the archive root. See Afterglow's manifest for the complete stock slot list and styling tokens. Platforms use `mark.<canonical-platform-id>` on the grid and `symbol.<canonical-platform-id>` in menus, folders use `mark.folder`, controller hints use `button.a`/`button.a.filled`, and status variants use slots such as `status.battery.100.charging`. Any platform's id works, not only the ones Afterglow draws: a pack that fills `mark.sega-cd` gives Sega CD its own tile, and a platform no pack draws wears `mark.console`. The host's own controls draw `control.check` and `control.dash` (a checkmark's tick, wiped in from the left), `control.shift` and `control.shift.on` (crossfaded as Shift lights), `control.erase`, `control.space` (2.4 times as wide as it is tall), and `control.search`; Find marks hidden results with `badge.hidden`. Mark these one-ink icons `"tint": true`, so they follow the theme's ink.
 
 An icon's accent is the light behind its tile and its hero glow. How Afterglow's icons are drawn is in [iconography](iconography.md). Badge icons use their own colors unless `tint` is true, which requests the control's semantic tint. Game cover art and installed app artwork retain their normal content priority.
 
@@ -51,7 +58,346 @@ The resolved icon carries its accent, tint, and blending metadata together with 
 
 V1 conventions remain accepted: `font.ttf`/`font.otf`, `marks/<name>.png`, `wallpaper-top.png`/`.webp`, `wallpaper-bottom.png`/`.webp`, and `sounds/{move,activate,back,notify}.ogg`. Font, wallpaper, and sound failures leave usable defaults. Wallpapers are letterboxed. Theme music follows the existing optional `music/theme.ogg` contract.
 
-Styles are resolved once into typed values. Invalid tokens report their manifest path and use their defaults: padding and dimensions must be nonnegative, type sizes/scales and durations positive, alpha/peak values in 0–1, rim values in 0–1 excluding 1, and glow steps whole nonnegative integers. Insets use 0–0.5 and art fractions use 0–1 excluding 0. Motion offsets and depth may be signed; easing y control points may overshoot. These domains prevent invalid native inputs; they do not cap rendering complexity. Duplicate pack IDs are ignored before fonts/audio are materialized, and cached files are keyed by their asset contents.
+Styles are resolved once into typed values. An unknown token or group is reported, so a misspelling does not go unnoticed. Invalid tokens report their manifest path and use Afterglow's value: padding and dimensions must be nonnegative, type sizes/scales and durations positive, alpha/peak values in 0–1, rim values in 0–1 excluding 1, and glow steps whole nonnegative integers. Insets use 0–0.5 and art fractions use 0–1 excluding 0. Motion offsets and depth may be signed; easing y control points may overshoot. These domains prevent invalid native inputs; they do not cap rendering complexity. Duplicate pack IDs are ignored before fonts/audio are materialized, and cached files are keyed by their asset contents.
+
+## Style tokens
+
+Every token below is optional. A pack's value replaces Afterglow's; anything it leaves out is Afterglow's. `Dp` values are density-independent, `Px` values are panel pixels, and an `Alpha` is 0–1, usually a strength over `onBackground`, the focus ring's colours, or `colors.scrim`. Colours are `#RRGGBB`.
+
+### `focusRing`
+
+The focus ring every focusable thing shares. Without `start`/`end` it is the manifest's `focus` colour.
+
+| Token | Afterglow | Controls |
+| --- | --- | --- |
+| `focusRing.start` | #52B788 | Gradient colour at the top left |
+| `focusRing.end` | #3E8EC0 | Gradient colour at the bottom right |
+| `focusRing.stroke` | 6 | Stroke width, px |
+| `focusRing.gap` | 2 | Space between the shape and the ring, px |
+| `focusRing.glowSpread` | 10 | How far the glow reaches past the stroke, px |
+| `focusRing.glowAlpha` | 0.1 | Glow strength, 0–1 |
+| `focusRing.glowSteps` | 4 | Strokes the glow is built from, whole number |
+| `focusRing.pronouncedStroke` | 10 | Stroke of the heavier ring for choices read from across the screen |
+| `focusRing.pronouncedSpread` | 22 | Its glow reach |
+| `focusRing.pronouncedAlpha` | 0.22 | Its glow strength |
+
+### `type`
+
+Text sizes in sp, and weights (CSS weights, 1–1000). One `font.ttf` is synthesised to the other weight.
+
+| Token | Afterglow | Controls |
+| --- | --- | --- |
+| `type.heroTitle` | 28 | The top screen's title |
+| `type.conflictGame` | 40 | The game on a save-conflict card |
+| `type.heroMeta` | 18 | Facts under the hero title |
+| `type.availability` | 16 | Where a game is |
+| `type.gridLabel` | 16 | Titles under tiles |
+| `type.dialogTitle` | 20 | Dialog titles |
+| `type.dialogBody` | 16 | Dialog text |
+| `type.menuRow` | 18 | Menu and Settings rows |
+| `type.sideRow` | 18 | Island rows and sliders |
+| `type.hint` | 14 | Hint row, chips, small print |
+| `type.clock` | 64 | The command center's clock |
+| `type.bodyWeight` | 400 | Running text |
+| `type.strongWeight` | 600 | Titles, headers, the typed name, Done |
+
+### `glow`
+
+The soft light behind marks and around focus.
+
+| Token | Afterglow | Controls |
+| --- | --- | --- |
+| `glow.focusOverflow` | 64 | Glow reach past a focused tile, px |
+| `glow.restOverflow` | 18 | Glow reach past a resting tile, px |
+| `glow.restTightness` | 2.4 | Falloff at rest (higher is tighter) |
+| `glow.focusTightness` | 0.85 | Falloff when focused |
+| `glow.restRim` | 0.42 | Where the falloff starts at rest, 0–1 |
+| `glow.focusRim` | 0.66 | Where it starts when focused |
+| `glow.restPeak` | 0 | Glow strength at rest |
+| `glow.focusPeak` | 1 | Glow strength when focused |
+| `glow.heroPeak` | 0.45 | The light behind a lone cover or mark in the hero |
+| `glow.markLightTop` | 0.12 | Centre of the light inside a mark's tile, from its top, share of the tile |
+| `glow.markLightReach` | 0.85 | Its reach, share of the tile's width |
+| `glow.markLightPeak` | 0.34 | Its strength |
+| `glow.markLightFade` | 0.72 | Where it has faded into the tile, 0–1 |
+
+### `motion`
+
+Durations in ms, scales, distances, and cubic-bézier curves `[x1, y1, x2, y2]`. Android's animator scale and the Motion setting still apply.
+
+| Token | Afterglow | Controls |
+| --- | --- | --- |
+| `motion.durationShort` | 100 | Small changes, and every move when animations are off |
+| `motion.durationFocus` | 180 | Focus moving |
+| `motion.durationTravel` | 200 | Hero art travelling with the cursor |
+| `motion.durationIsland` | 320 | An island opening |
+| `motion.durationPulse` | 720 | One breath of a busy badge |
+| `motion.durationSyncMark` | 2400 | How long a finished sync's mark stays |
+| `motion.durationScene` | 360 | Wide art crossfading |
+| `motion.durationShowcase` | 1400 | Wide art settling |
+| `motion.durationSelect` | 280 | A highlight landing, a switch flipping |
+| `motion.durationBob` | 1800 | One rise and fall of a held tile |
+| `motion.durationLetterHold` | 360 | How long the letter-jump letter stays |
+| `motion.durationLetterFade` | 120 | Its fade |
+| `motion.scaleRest` | 1 | A resting tile |
+| `motion.scaleFocus` | 1.05 | A focused tile, key or result |
+| `motion.heroScaleFrom` | 0.96 | Incoming hero art's starting scale |
+| `motion.heroSlideUpPx` | 24 | How far hero art rises after a jump |
+| `motion.heroTravelPx` | 64 | How far hero art travels with the cursor |
+| `motion.sceneDepth` | 0.35 | Wide art's share of that travel |
+| `motion.sceneOverscan` | 1.05 | How much larger wide art is drawn |
+| `motion.sceneSettleFrom` | 1.1 | Wide art's starting scale |
+| `motion.scaleLift` | 1.1 | A held tile |
+| `motion.scaleOver` | 0.74 | A held game over a group it can go into |
+| `motion.scaleOpen` | 1.14 | That group, opening |
+| `motion.bobPx` | 7 | How far a held tile bobs |
+| `motion.liftGlowPx` | 30 | How far below a held tile its light falls |
+| `motion.liftGlowPeak` | 0.7 | That light's strength |
+| `motion.squash` | 0.08 | A tile's squash as it lands |
+| `motion.keySquash` | 0.07 | A key's squash as it acts |
+| `motion.riseFrom` | 0.96 | A page or card's starting scale as it rises in |
+| `motion.riseDp` | 24 | How far it rises |
+| `motion.sinkScale` | 0.06 | How much content shrinks as it gives way |
+| `motion.sinkDp` | 16 | How far it sinks |
+| `motion.cascadeDp` | 14 | How far each menu row rises as a menu opens |
+| `motion.cascadeStep` | 0.05 | The delay between rows, share of the opening |
+| `motion.cascadeSpan` | 0.35 | The most any row waits |
+| `motion.popFrom` | 0.72 | A Find result's starting scale |
+| `motion.arrive` | [0.05, 0.7, 0.1, 1] | Things arriving |
+| `motion.leave` | [0.3, 0, 0.8, 0.15] | Things leaving |
+| `motion.pulse` | [0.4, 0, 0.6, 1] | Breathing |
+| `motion.dissolve` | [0.2, 0, 0, 1] | Art crossing over art |
+| `motion.playful` | [0.34, 1.36, 0.64, 1] | Landings that overshoot a little |
+
+### `metrics`
+
+Layout distances. Grid columns and rows are the host's.
+
+| Token | Afterglow | Controls |
+| --- | --- | --- |
+| `metrics.insetFraction` | 0.04 | Panel inset, share of the width (0–0.5) |
+| `metrics.gapFraction` | 0.04 | Gap between tiles, share of the width |
+| `metrics.focusStrokePx` | 3 | Room kept for a focused tile's stroke |
+| `metrics.heroInsetPx` | 48 | Inset of the top screen's content |
+| `metrics.dialogInsetPx` | 48 | Dialog inset and padding |
+| `metrics.dialogBorderPx` | 2 | Dialog border width |
+| `metrics.cardCornerDp` | 28 | Cards: islands, dialogs, Settings, the hero's name card, the typing field |
+| `metrics.heroArtFraction` | 0.62 | Reach of the hero's glow and logo shade, share of the art |
+| `metrics.chromeClearancePx` | 28 | Space between the hint row and a focus stroke |
+
+### `colors`
+
+Colours beyond the manifest's five, as `#RRGGBB`.
+
+| Token | Afterglow | Controls |
+| --- | --- | --- |
+| `colors.scrim` | #000000 | What dims the screen under menus and dialogs, and shades art behind text |
+| `colors.shade` | #000000 | The dark end of art's shading: a pressed glyph, a swatch's base |
+| `colors.shine` | #FFFFFF | The light end: a pressed glyph's lip, a swatch's top and chosen rim |
+
+### `shape`
+
+Corners. `round` is a share of a small control's shorter side: 0.5 makes pills and circles, 0 makes them square.
+
+| Token | Afterglow | Controls |
+| --- | --- | --- |
+| `shape.round` | 0.5 | Switches, sliders, chips, pills, dots, badges, the caret, the closed islands |
+| `shape.highlightCornerDp` | 22 | The highlight gliding between menu and Settings rows, save cards, a delete hold |
+| `shape.rowCornerPx` | 22 | A row highlight in the command center's lists |
+| `shape.chipCornerPx` | 44 | The largest corner a text chip takes |
+| `shape.keyCorner` | 0.2 | A keyboard key, share of its width (0–0.5) |
+| `shape.badgeCornerPx` | 8 | An achievement badge |
+| `shape.toastCornerDp` | 8 | The art-match toast |
+| `shape.thumbCornerDp` | 12 | An art candidate in the art picker |
+
+### `tile`
+
+A home grid tile, beyond its corner (`iconRadius`) and glow.
+
+| Token | Afterglow | Controls |
+| --- | --- | --- |
+| `tile.restAlpha` | 0.82 | How bright art rests when not focused |
+| `tile.socketAlpha` | 0.16 | The outline left where a held tile was |
+| `tile.outlinePx` | 3 | That outline, and tiles while Edit home is open |
+| `tile.editStrokePx` | 9 | The tile Edit home is on, and a carried gap |
+| `tile.editRestAlpha` | 0.45 | Edit home's outline on other tiles |
+| `tile.dotPx` | 10 | The favourite and on-Home dots |
+| `tile.statusChipPx` | 36 | The status chip's height |
+| `tile.statusIconPx` | 24 | Its badge |
+| `tile.statusBackingAlpha` | 0.72 | Its backing over cover art |
+| `tile.downloadBarPx` | 6 | The download bar's thickness |
+| `tile.downloadTrackAlpha` | 0.22 | Its empty track |
+
+### `hero`
+
+The top screen's selected item.
+
+| Token | Afterglow | Controls |
+| --- | --- | --- |
+| `hero.markScale` | 0.86 | A drawn mark's share of the hero box (legacy PNG marks use `artScale`) |
+| `hero.cardAlpha` | 0.72 | The name card over game art |
+| `hero.pillAlpha` | 0.94 | The selection count and letter-jump card |
+| `hero.logoShadeAlpha` | 0.62 | The shade behind a game's logo |
+| `hero.sceneShadeTop` | 0.45 | Wide art's shade at the top |
+| `hero.sceneShadeBottom` | 0.8 | And at the bottom |
+| `hero.ambientBlurDp` | 48 | Blur of the box-art backdrop |
+| `hero.ambientDim` | 0.55 | Its dim |
+
+### `menu`
+
+The L1, R1 and Y menus and their islands.
+
+| Token | Afterglow | Controls |
+| --- | --- | --- |
+| `menu.highlightStartAlpha` | 0.2 | The row highlight's fill where the ring starts |
+| `menu.highlightEndAlpha` | 0.08 | And where it ends |
+| `menu.labelRestAlpha` | 0.72 | Unfocused row labels and slider labels |
+| `menu.artRestAlpha` | 0.78 | Unfocused row art |
+| `menu.artGrow` | 0.12 | How much a focused row's art grows |
+| `menu.scrimAlpha` | 0.32 | The dim behind an open menu, over the blur |
+| `menu.scrimAlphaUnblurred` | 0.55 | The dim on Android 11 and older, which has no blur |
+| `menu.blurPx` | 28 | The blur behind an open menu |
+| `menu.islandLift` | 0.04 | How lit an open island's top is |
+| `menu.islandBorderDp` | 1 | An island's rim |
+| `menu.islandFocusBorderDp` | 2 | A focused closed island's rim |
+| `menu.islandRimAlpha` | 0.08 | The rim at rest |
+| `menu.islandRimLitAlpha` | 0.34 | How much it lights as the island opens |
+| `menu.quickTileAlpha` | 0.08 | R1's round tiles at rest |
+| `menu.quickTileLitAlpha` | 0.16 | And focused |
+| `menu.quickArtGrow` | 0.14 | How much their art grows |
+
+### `controls`
+
+Switches, checkmarks and sliders. The checkmark's tick is the `control.check` icon.
+
+| Token | Afterglow | Controls |
+| --- | --- | --- |
+| `controls.switchWidthDp` | 54 | Switch width |
+| `controls.switchHeightDp` | 30 | Switch height |
+| `controls.switchKnobInsetDp` | 4 | Space around the knob |
+| `controls.trackAlpha` | 0.12 | An off track |
+| `controls.trackFocusAlpha` | 0.2 | An off track, focused |
+| `controls.checkSizeDp` | 30 | Checkmark size |
+| `controls.checkStrokeDp` | 2 | Its ring |
+| `controls.checkRingAlpha` | 0.26 | The ring at rest |
+| `controls.checkRingFocusAlpha` | 0.42 | Focused |
+| `controls.sliderTrackDp` | 6 | Slider track thickness |
+| `controls.sliderTrackAlpha` | 0.28 | Its empty part |
+| `controls.sliderKnobDp` | 7 | Knob radius |
+| `controls.sliderGlow` | 2.2 | The knob's glow, as a multiple of its radius |
+
+### `keyboard`
+
+The on-screen keyboard and its name chips. Shift, Erase and Space are `control.` icons.
+
+| Token | Afterglow | Controls |
+| --- | --- | --- |
+| `keyboard.highlightStartAlpha` | 0.26 | The key highlight's fill at the top |
+| `keyboard.highlightEndAlpha` | 0.1 | At the bottom |
+| `keyboard.inactiveHighlight` | 0.3 | How much highlight stays while the D-pad is elsewhere |
+| `keyboard.keyAlpha` | 0.92 | A key's glass |
+| `keyboard.glassAlpha` | 0.12 | How lit a letter key is |
+| `keyboard.modifierGlassAlpha` | 0.05 | How lit Shift, Erase, Space and Done are |
+| `keyboard.litGlassAlpha` | 0.06 | How much more a focused key lights |
+| `keyboard.doneAlpha` | 0.55 | Done's colour |
+| `keyboard.shiftAlpha` | 0.38 | Shift's colour while on |
+| `keyboard.pressAlpha` | 0.22 | The flash as a key acts |
+| `keyboard.sheenAlpha` | 0.1 | The sheen across a key's top |
+| `keyboard.rimTopAlpha` | 0.22 | A key's rim at the top |
+| `keyboard.rimBottomAlpha` | 0.04 | At the bottom |
+| `keyboard.rimDp` | 1 | Rim width, keys and chips |
+| `keyboard.glyphRestAlpha` | 0.62 | A button glyph on a key until it is held |
+| `keyboard.chipAlpha` | 0.08 | A name chip |
+| `keyboard.chipFlashAlpha` | 0.2 | Its flash as it acts |
+| `keyboard.chipRimAlpha` | 0.12 | Its rim |
+| `keyboard.chipLabelRestAlpha` | 0.82 | Its word while unfocused |
+
+### `field`
+
+The text field Find, rename and connect type into.
+
+| Token | Afterglow | Controls |
+| --- | --- | --- |
+| `field.ringAlpha` | 0.55 | The ring always on the field |
+| `field.selectionStartAlpha` | 0.55 | A selection's start |
+| `field.selectionEndAlpha` | 0.4 | Its end |
+| `field.caretDp` | 4 | Caret width |
+| `field.caretGlowDp` | 6 | Its glow |
+| `field.caretGlowAlpha` | 0.22 | The glow's strength |
+| `field.caretLowAlpha` | 0.35 | The caret's faintest as it breathes |
+
+### `dialog`
+
+Dialogs, save cards, and the chips their buttons sit in.
+
+| Token | Afterglow | Controls |
+| --- | --- | --- |
+| `dialog.scrimAlpha` | 0.72 | The dim behind a dialog |
+| `dialog.conflictScrimAlpha` | 0.82 | The dim behind the save-conflict cards |
+| `dialog.borderAlpha` | 0.08 | A dialog's border |
+| `dialog.chipAlpha` | 0.06 | A chip at rest |
+| `dialog.chipFocusAlpha` | 0.1 | A focused chip |
+| `dialog.chipStrongAlpha` | 0.16 | A focused save-card action |
+| `dialog.rowAlpha` | 0.06 | A command-center row highlight |
+| `dialog.toastAlpha` | 0.85 | The art-match toast |
+
+### `settings`
+
+The Settings page.
+
+| Token | Afterglow | Controls |
+| --- | --- | --- |
+| `settings.labelRestAlpha` | 0.62 | Unchosen category labels |
+| `settings.artRestAlpha` | 0.7 | Unchosen category art |
+| `settings.artGrow` | 0.14 | How much the chosen category's art grows |
+| `settings.cardLift` | 0.035 | How lit the detail card's top is |
+| `settings.borderAlpha` | 0.06 | The detail card's border |
+
+### `find`
+
+Find. The magnifier is `control.search` and the hidden mark is `badge.hidden`.
+
+| Token | Afterglow | Controls |
+| --- | --- | --- |
+| `find.ringRestAlpha` | 0.38 | The ring on the best result before the D-pad reaches it |
+| `find.filterAlpha` | 0.07 | A filter pill |
+| `find.chosenAlpha` | 0.3 | The chosen filter's fill |
+| `find.chosenRimDp` | 1.5 | Its rim |
+| `find.hiddenBackingAlpha` | 0.78 | The disc behind `badge.hidden` |
+
+### `collections`
+
+A collection's folder. Colours are keyed by the ids collections save, so a pack recolours them without renaming any. The glyph's place is in the 64-unit grid of `mark.collection-body`, so a pack that redraws the folder moves the glyph with it.
+
+| Token | Afterglow | Controls |
+| --- | --- | --- |
+| `collections.gold` | #FFC15A | The default colour |
+| `collections.coral` | #FF7F5C | A collection colour |
+| `collections.rose` | #FF5C8A | A collection colour |
+| `collections.violet` | #B48CFF | A collection colour |
+| `collections.indigo` | #7C8CFF | A collection colour |
+| `collections.sky` | #4CC9FF | A collection colour |
+| `collections.teal` | #3EE6C0 | Recently played |
+| `collections.mint` | #8CF2A6 | A collection colour |
+| `collections.lime` | #C6EE5A | A collection colour |
+| `collections.slate` | #A3B1C6 | A collection colour |
+| `collections.glyphX` | 32 | The glyph's centre across |
+| `collections.glyphY` | 39.48 | Its centre down |
+| `collections.glyphSize` | 29.3 | Its size |
+| `collections.pressedDepth` | 0.62 | How far toward `colors.shade` the pressed glyph is |
+| `collections.lipDrop` | 0.025 | How far below it its light lip sits, share of the glyph |
+| `collections.lipAlpha` | 0.32 | The lip's strength |
+| `collections.swatchShine` | 0.35 | How far an editor swatch's top lightens toward `colors.shine` |
+| `collections.swatchShade` | 0.3 | How far its base darkens toward `colors.shade` |
+| `collections.swatchRimAlpha` | 0.85 | The chosen swatch's rim |
+
+### `sound`
+
+UI sounds.
+
+| Token | Afterglow | Controls |
+| --- | --- | --- |
+| `sound.volume` | 0.4 | Playback volume of `sounds/*.ogg`, 0–1 |
 
 ## Scene version 1
 

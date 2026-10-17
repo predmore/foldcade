@@ -41,18 +41,14 @@ import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.BlendMode
 import androidx.compose.ui.graphics.CompositingStrategy
 import androidx.compose.ui.graphics.Brush
-import androidx.compose.ui.graphics.Path
-import androidx.compose.ui.graphics.PathMeasure
-import androidx.compose.ui.graphics.StrokeCap
-import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.drawscope.clipRect
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.layout.positionInParent
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.style.TextAlign
@@ -125,9 +121,6 @@ internal fun Modifier.selectionSlot(slots: SelectionSlots, index: Int): Modifier
         if (slots.rows[index] != rect) slots.rows[index] = rect
     }
 
-/** The corner of a menu's highlight and focus ring. */
-internal val HIGHLIGHT_CORNER = 22.dp
-
 /**
  * One highlight behind the column's focused row. It travels to the next row and lands
  * with a little bounce, the same size at rest wherever it is. A move made while it is
@@ -185,14 +178,15 @@ internal fun Modifier.selectionHighlight(
     val shown by eased(if (present) 1f else 0f, motion.durationFocus, scale)
     val ringShown by eased(if (ring) 1f else 0f, motion.durationFocus, scale)
     val focusRing = remember(theme) { FocusRing(theme) }
+    val design = theme.style
     return drawBehind {
         if (!placed || shown <= 0f) return@drawBehind
         val rect = Rect(Offset(left.value, top.value), Size(width.value, height.value))
-        val cornerPx = HIGHLIGHT_CORNER.toPx()
+        val cornerPx = design.shape.highlightCornerDp.dp.toPx()
         // A lit glass fill, brighter where the ring's green starts.
         drawRoundRect(
             brush = Brush.horizontalGradient(
-                listOf(focusRing.start.copy(alpha = 0.20f * shown), focusRing.end.copy(alpha = 0.08f * shown)),
+                listOf(focusRing.start.copy(alpha = design.menu.highlightStartAlpha * shown), focusRing.end.copy(alpha = design.menu.highlightEndAlpha * shown)),
                 startX = rect.left,
                 endX = rect.right,
             ),
@@ -275,23 +269,31 @@ internal fun <T : Any> presence(value: T?, base: Int, scale: Float): Presence<T>
 }
 
 /** A card or page arriving: it fades up from just under full size and a little lower. */
-internal fun Modifier.rise(progress: () -> Float): Modifier = graphicsLayer {
-    val t = progress()
-    alpha = t
-    val grow = 0.96f + 0.04f * t
-    scaleX = grow
-    scaleY = grow
-    translationY = (1f - t) * 24.dp.toPx()
+@Composable
+internal fun Modifier.rise(progress: () -> Float): Modifier {
+    val motion = LocalFoldTheme.current.theme.style.motion
+    return graphicsLayer {
+        val t = progress()
+        alpha = t
+        val grow = motion.riseFrom + (1f - motion.riseFrom) * t
+        scaleX = grow
+        scaleY = grow
+        translationY = (1f - t) * motion.riseDp.dp.toPx()
+    }
 }
 
 /** Content giving way as [progress] goes to 1: it fades and settles back, as the grid does under the keyboard. */
-internal fun Modifier.sinking(progress: () -> Float): Modifier = graphicsLayer {
-    val t = progress()
-    alpha = 1f - t
-    val shrink = 1f - 0.06f * t
-    scaleX = shrink
-    scaleY = shrink
-    translationY = -t * 16.dp.toPx()
+@Composable
+internal fun Modifier.sinking(progress: () -> Float): Modifier {
+    val motion = LocalFoldTheme.current.theme.style.motion
+    return graphicsLayer {
+        val t = progress()
+        alpha = 1f - t
+        val shrink = 1f - motion.sinkScale * t
+        scaleX = shrink
+        scaleY = shrink
+        translationY = -t * motion.sinkDp.dp.toPx()
+    }
 }
 
 /** A filled card's surface, lit a little at the top by [lift]. */
@@ -310,15 +312,17 @@ internal fun Modifier.lifted(lit: State<Float>, lift: State<Float>, grow: Float,
  * Rows arrive one after another as a menu opens, each rising a little into place,
  * and leave in the same order as it closes. [progress] is the menu's own open fraction.
  */
-internal fun Modifier.cascade(index: Int, progress: () -> Float): Modifier = graphicsLayer {
-    val lag = (index * CASCADE_STEP).coerceAtMost(CASCADE_SPAN)
-    val local = ((progress() - lag) / (1f - CASCADE_SPAN)).coerceIn(0f, 1f)
-    alpha = local
-    translationY = (1f - local) * 14.dp.toPx()
+@Composable
+internal fun Modifier.cascade(index: Int, progress: () -> Float): Modifier {
+    val motion = LocalFoldTheme.current.theme.style.motion
+    return graphicsLayer {
+        val span = motion.cascadeSpan.coerceAtMost(0.99f)
+        val lag = (index * motion.cascadeStep).coerceAtMost(span)
+        val local = ((progress() - lag) / (1f - span)).coerceIn(0f, 1f)
+        alpha = local
+        translationY = (1f - local) * motion.cascadeDp.dp.toPx()
+    }
 }
-
-private const val CASCADE_STEP = 0.05f
-private const val CASCADE_SPAN = 0.35f
 
 /** The art-kit name of a key's glyph. Select and Start wear the Thor's round caps: a square and a ▷ in a ring. */
 internal fun promptGlyph(key: PromptKey): String = when (key) {
@@ -339,14 +343,11 @@ internal fun promptGlyph(key: PromptKey): String = when (key) {
 
 @Composable
 internal fun PromptImage(name: String, size: Dp, modifier: Modifier = Modifier) {
-    val context = LocalContext.current
-    val id = remember(name) {
-        context.resources.getIdentifier(name, "drawable", context.packageName)
-    }
-    if (id == 0) return
+    val icon = themeIconOrNull(iconSlot(name), 128) ?: return
     Image(
-        painter = themeIconPainter(id),
+        painter = icon.painter,
         contentDescription = null,
+        colorFilter = icon.requestedTint(LocalFoldTheme.current.theme.onBackground),
         modifier = modifier.size(size),
     )
 }
@@ -368,13 +369,15 @@ internal fun ToggleSwitch(on: Boolean, focused: Boolean, scale: Float) {
     val ring = remember(theme) { FocusRing(theme) }
     val start = ring.start
     val end = ring.end
+    val controls = theme.style.controls
+    val round = theme.style.shape.round
     Box(
         Modifier
-            .size(54.dp, 30.dp)
+            .size(controls.switchWidthDp.dp, controls.switchHeightDp.dp)
             .drawBehind {
-                val radius = size.height / 2f
+                val radius = size.height * round
                 drawRoundRect(
-                    color = theme.onBackground.copy(alpha = if (focused) 0.20f else 0.12f),
+                    color = theme.onBackground.copy(alpha = if (focused) controls.trackFocusAlpha else controls.trackAlpha),
                     cornerRadius = CornerRadius(radius, radius),
                 )
                 if (lit > 0f) {
@@ -384,19 +387,27 @@ internal fun ToggleSwitch(on: Boolean, focused: Boolean, scale: Float) {
                         cornerRadius = CornerRadius(radius, radius),
                     )
                 }
-                val inset = 4.dp.toPx()
-                val knobRadius = radius - inset
-                val x = inset + knobRadius + (size.width - 2f * (inset + knobRadius)) * knob
+                val inset = controls.switchKnobInsetDp.dp.toPx()
+                // The knob is as tall as the track inside its inset, and as round as the theme's controls.
+                val knobSize = (size.height - 2f * inset).coerceAtLeast(0f)
+                val x = inset + (size.width - 2f * inset - knobSize) * knob
                 // A light track, as a white focus color makes it, takes a dark knob.
                 val knobColor = if (start.luminance() > 0.6f) lerp(theme.onBackground, theme.background, lit.coerceIn(0f, 1f)) else theme.onBackground
-                drawCircle(color = knobColor, radius = knobRadius, center = Offset(x, radius))
+                val knobCorner = knobSize * round
+                drawRoundRect(
+                    color = knobColor,
+                    topLeft = Offset(x, inset),
+                    size = Size(knobSize, knobSize),
+                    cornerRadius = CornerRadius(knobCorner, knobCorner),
+                )
             },
     )
 }
 
 /**
  * A check in a ring, for a choice that is in or out. Checked, the ring fills with the focus
- * colors and the tick draws itself in with a small pop. Cleared, it draws back out.
+ * colors and the tick (`control.check`, or `control.dash` for some) wipes in from the left
+ * with a small pop. Cleared, it wipes back out.
  */
 @Composable
 internal fun CheckMark(on: Boolean, focused: Boolean, scale: Float, some: Boolean = false) {
@@ -406,9 +417,14 @@ internal fun CheckMark(on: Boolean, focused: Boolean, scale: Float, some: Boolea
     val ring = remember(theme) { FocusRing(theme) }
     val start = ring.start
     val end = ring.end
+    val controls = theme.style.controls
+    val glyph = themeIconOrNull(if (some) "control.dash" else "control.check", 128)
+    // A light fill, as a white focus color makes it, takes a dark tick.
+    val tickColor = if (start.luminance() > 0.6f) theme.background else theme.onBackground
+    val filter = remember(glyph, tickColor) { glyph?.tint(tickColor) }
     Box(
         Modifier
-            .size(30.dp)
+            .size(controls.checkSizeDp.dp)
             .graphicsLayer {
                 val grow = 0.86f + 0.14f * pop
                 scaleX = grow
@@ -416,31 +432,16 @@ internal fun CheckMark(on: Boolean, focused: Boolean, scale: Float, some: Boolea
             }
             .drawBehind {
                 val radius = size.minDimension / 2f
-                val edge = 2.dp.toPx()
+                val edge = controls.checkStrokeDp.dp.toPx()
                 drawCircle(
-                    color = theme.onBackground.copy(alpha = if (focused) 0.42f else 0.26f),
+                    color = theme.onBackground.copy(alpha = if (focused) controls.checkRingFocusAlpha else controls.checkRingAlpha),
                     radius = radius - edge / 2f,
                     style = Stroke(edge),
                 )
                 val lit = tick.coerceIn(0f, 1f)
-                if (lit <= 0f) return@drawBehind
+                if (lit <= 0f || glyph == null) return@drawBehind
                 drawCircle(brush = Brush.linearGradient(listOf(start, end)), radius = radius, alpha = lit)
-                val path = Path().apply {
-                    if (some) {
-                        moveTo(size.width * 0.28f, size.height * 0.5f)
-                        lineTo(size.width * 0.72f, size.height * 0.5f)
-                    } else {
-                        moveTo(size.width * 0.29f, size.height * 0.52f)
-                        lineTo(size.width * 0.44f, size.height * 0.67f)
-                        lineTo(size.width * 0.72f, size.height * 0.37f)
-                    }
-                }
-                val measure = PathMeasure().apply { setPath(path, false) }
-                val drawn = Path()
-                measure.getSegment(0f, measure.length * lit, drawn, true)
-                // A light fill, as a white focus color makes it, takes a dark tick.
-                val tickColor = if (start.luminance() > 0.6f) theme.background else theme.onBackground
-                drawPath(drawn, color = tickColor, style = Stroke(width = 3.dp.toPx(), cap = StrokeCap.Round, join = StrokeJoin.Round))
+                clipRect(right = size.width * lit) { with(glyph.painter) { draw(size, colorFilter = filter) } }
             },
     )
 }
@@ -595,14 +596,14 @@ internal fun MenuRow(
                         painter = art.painter,
                         contentDescription = null,
                         colorFilter = art.tint(theme.onBackground),
-                        modifier = Modifier.fillMaxSize().lifted(lit, lift, grow = 0.12f, rest = 0.78f),
+                        modifier = Modifier.fillMaxSize().lifted(lit, lift, grow = theme.style.menu.artGrow, rest = theme.style.menu.artRestAlpha),
                     )
                 }
             }
         }
         BasicText(
             text = label,
-            modifier = Modifier.weight(1f).graphicsLayer { alpha = 0.72f + 0.28f * lit.value },
+            modifier = Modifier.weight(1f).graphicsLayer { alpha = theme.style.menu.labelRestAlpha.let { it + (1f - it) * lit.value } },
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
             style = labelStyle.copy(color = theme.onBackground),

@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Foldcade original art, MIT licensed (see LICENSE). Find badge: a hidden result. The host draws the disc behind it. Tinted at draw time. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:aapt="http://schemas.android.com/aapt"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+    <path
+        android:pathData="M4.32,12 Q12,3.84 19.68,12 Q12,20.16 4.32,12 Z"
+        android:strokeColor="#FFF4F1EA"
+        android:strokeWidth="1.92"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round" />
+    <path
+        android:pathData="M9.84,12A2.16,2.16 0 1 1 14.16,12A2.16,2.16 0 1 1 9.84,12Z"
+        android:fillColor="#FFF4F1EA" />
+    <path
+        android:pathData="M5.76,18.72 L18.24,5.28"
+        android:strokeColor="#FFF4F1EA"
+        android:strokeWidth="2.304"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round" />
+</vector>

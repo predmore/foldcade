@@ -297,11 +297,36 @@ def status_assets():
     return A
 
 # ---------------- tile badges (tinted by the host) ----------------
+# ---------------- controls ----------------
+def control_assets():
+    """Glyphs the host's own controls draw: a checkmark's tick, the keyboard's keys, and Find's field.
+    They are drawn at the weights the host drew them with before they were theme slots, so a 24-unit
+    stroke here is 9% of the key the glyph sits on (2.16), or a tenth of the checkmark (2.4)."""
+    key = 2.16
+    tick = poly([(6.96, 12.48), (10.56, 16.08), (17.28, 8.88)], close=False)
+    arrow = poly([(12, 1.92), (22.56, 12.48), (16.8, 12.48), (16.8, 18.24), (7.2, 18.24), (7.2, 12.48), (1.44, 12.48)])
+    tag = poly([(0.96, 12), (7.68, 4.32), (23.04, 4.32), (23.04, 19.68), (7.68, 19.68)])
+    cross = "M11.28,8.4 L18.48,15.6 M11.28,15.6 L18.48,8.4"
+    space = "M2.304,8.64 V15.84 H55.296 V8.64"
+    glass = circle(10.08, 10.08, 7.2)
+    handle = "M15.264,15.264 L21.6,21.6"
+    note = "Tinted at draw time."
+    return [Asset("ic_control_check", 24, 24, [ink(tick, sw=2.4)], note=f"A checkmark's tick, revealed left to right as it turns on. {note}", tint=True),
+            Asset("ic_control_dash", 24, 24, [ink("M6.72,12 H17.28", sw=2.4)], note=f"A checkmark for a choice that is partly on. {note}", tint=True),
+            Asset("ic_control_shift", 24, 24, [L(arrow, stroke=INK, sw=key, cap="butt")], note=f"Keyboard Shift while it is off. {note}", tint=True),
+            Asset("ic_control_shift_on", 24, 24, [L(arrow, fill=INK, stroke=INK, sw=key, cap="butt")], note=f"Keyboard Shift while it is on; it fades in over the outline. {note}", tint=True),
+            Asset("ic_control_erase", 24, 24, [L(tag, stroke=INK, sw=key), ink(cross, sw=key)], note=f"Keyboard Erase. {note}", tint=True),
+            Asset("ic_control_space", 57.6, 24, [ink(space, sw=key)], dp=(57.6, 24), note=f"Keyboard Space, 2.4 keys' glyphs wide. {note}", tint=True),
+            Asset("ic_control_search", 24, 24, [ink(glass, sw=2.64), ink(handle, sw=2.64)], note=f"Find's field before anything is typed. {note}", tint=True)]
+
 def badge_assets():
     cloud = "M7,19 H17.5 A4.5,4.5 0 0 0 18.1,10.04 A6,6 0 0 0 6.6,9.1 A5,5 0 0 0 7,19 Z"
     check = circle(12, 12, 10) + "M6.4,12.4 L8,10.8 L10.5,13.3 L16,7.8 L17.6,9.4 L10.5,16.5 Z"
+    eye = "M4.32,12 Q12,3.84 19.68,12 Q12,20.16 4.32,12 Z"
     arrows = [ink("M5,12 A7,7 0 0 1 18.58,9.61", INK, 2.4), solid("M20.84,8.79 L19.47,12.05 L16.32,10.43 Z"),
               ink("M19,12 A7,7 0 0 1 5.42,14.39", INK, 2.4), solid("M3.16,15.21 L4.53,11.95 L7.68,13.57 Z")]
     return [Asset("ic_badge_cloud", 24, 24, [solid(cloud)], note="Tile badge: the game is on its server, not this device. Tinted at draw time.", tint=True),
             Asset("ic_badge_check", 24, 24, [solid(check, evenodd=True)], note="Tile badge: the sync worked. Tinted at draw time.", tint=True),
-            Asset("ic_badge_sync", 24, 24, arrows, note="Tile badge: saves are syncing. Tinted at draw time.", tint=True)]
+            Asset("ic_badge_sync", 24, 24, arrows, note="Tile badge: saves are syncing. Tinted at draw time.", tint=True),
+            Asset("ic_badge_hidden", 24, 24, [ink(eye, sw=1.92), solid(circle(12, 12, 2.16)), ink("M5.76,18.72 L18.24,5.28", sw=2.304)],
+                  note="Find badge: a hidden result. The host draws the disc behind it. Tinted at draw time.", tint=True)]

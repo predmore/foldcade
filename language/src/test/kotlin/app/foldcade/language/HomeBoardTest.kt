@@ -524,7 +524,8 @@ class HomeBoardTest {
         )
         val folders = decodeHome(encodeHome(saved)).folders
         assertEquals("nintendo-3ds", folders.getValue(platformFolderId("nintendo-3ds")).mark)
-        assertEquals("console", folders.getValue(platformFolderId("segacd")).mark)
+        // A platform Afterglow has not drawn keeps its own id, so a theme can draw it; the UI shows the controller until one does.
+        assertEquals("segacd", folders.getValue(platformFolderId("segacd")).mark)
         assertEquals("moonlight", folders.getValue(HOME_MOONLIGHT).mark)
         assertEquals("folder", folders.getValue("folder.mine").mark)
     }

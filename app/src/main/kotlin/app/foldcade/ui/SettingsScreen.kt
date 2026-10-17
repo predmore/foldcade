@@ -26,7 +26,6 @@ import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.text.TextStyle
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
@@ -116,8 +115,8 @@ internal fun SettingsScreen(app: FoldcadeApp, screen: HostScreen, page: Settings
                     .weight(0.68f)
                     .fillMaxHeight()
                     .clip(card)
-                    .background(cardFill(theme, 0.035f))
-                    .border(1.dp, theme.onBackground.copy(alpha = 0.06f), card),
+                    .background(cardFill(theme, design.settings.cardLift))
+                    .border(1.dp, theme.onBackground.copy(alpha = design.settings.borderAlpha), card),
             ) {
                 // A new category's rows rise in from the way the focus went.
                 SlideSwap(
@@ -216,7 +215,7 @@ private fun categoryIcon(category: SettingsCategory): Int = when (category) {
 private fun Header(theme: Theme, back: PromptKey, onBack: () -> Unit) {
     Row(
         Modifier
-            .clip(RoundedCornerShape(50))
+            .clip(theme.style.shape.control())
             .background(theme.surface)
             .press(onBack)
             .padding(start = 12.dp, end = 24.dp, top = 8.dp, bottom = 8.dp),
@@ -257,12 +256,12 @@ private fun CategoryRow(
             painter = art.painter,
             contentDescription = null,
             colorFilter = art.tint(theme.onBackground),
-            modifier = Modifier.size(34.dp).lifted(chosen, lift, grow = 0.14f, rest = 0.7f),
+            modifier = Modifier.size(34.dp).lifted(chosen, lift, grow = theme.style.settings.artGrow, rest = theme.style.settings.artRestAlpha),
         )
         BasicText(
             title,
             modifier = Modifier.graphicsLayer {
-                alpha = 0.62f + 0.38f * chosen.value
+                alpha = theme.style.settings.labelRestAlpha.let { it + (1f - it) * chosen.value }
                 translationX = chosen.value * 4.dp.toPx()
             },
             style = style(theme.onBackground, theme.style.type.menuRow, theme, bold = true),
@@ -283,5 +282,5 @@ private fun style(color: Color, size: TextUnit, theme: Theme, bold: Boolean = fa
     color = color,
     fontSize = size,
     fontFamily = theme.font,
-    fontWeight = if (bold) FontWeight.SemiBold else FontWeight.Normal,
+    fontWeight = if (bold) theme.style.type.strongWeight else theme.style.type.bodyWeight,
 )

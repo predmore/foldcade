@@ -45,9 +45,6 @@ import androidx.compose.ui.graphics.BlendMode
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.CompositingStrategy
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.Path
-import androidx.compose.ui.graphics.StrokeCap
-import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.graphicsLayer
@@ -57,7 +54,6 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.TextLayoutResult
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.rememberTextMeasurer
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.IntOffset
@@ -173,7 +169,8 @@ internal fun ControllerKeyboard(
             },
         )
         val highlight = rememberGlidingRect({ target }, scale)
-        val lit by eased(if (active) 1f else INACTIVE_HIGHLIGHT, motion.durationFocus, scale)
+        val keyboard = theme.style.keyboard
+        val lit by eased(if (active) 1f else keyboard.inactiveHighlight, motion.durationFocus, scale)
 
         Box(
             Modifier
@@ -181,10 +178,10 @@ internal fun ControllerKeyboard(
                 .drawWithContent {
                     drawContent()
                     val rect = highlight.rect() ?: return@drawWithContent
-                    val corner = unitPx * KEY_CORNER * lift
+                    val corner = unitPx * theme.style.shape.keyCorner * lift
                     drawRoundRect(
                         brush = Brush.verticalGradient(
-                            listOf(ring.start.copy(alpha = 0.26f * lit), ring.end.copy(alpha = 0.10f * lit)),
+                            listOf(ring.start.copy(alpha = keyboard.highlightStartAlpha * lit), ring.end.copy(alpha = keyboard.highlightEndAlpha * lit)),
                             startY = rect.top,
                             endY = rect.bottom,
                         ),
@@ -278,7 +275,7 @@ internal fun TypingField(
     val breath = if (motion.reduced(scale)) {
         remember { mutableStateOf(1f) }
     } else {
-        rememberInfiniteTransition(label = "caret").animateFloat(CARET_DIM, 1f, motion.pulse(scale), label = "caret")
+        rememberInfiniteTransition(label = "caret").animateFloat(theme.style.field.caretLowAlpha, 1f, motion.pulse(scale), label = "caret")
     }
     var layout by remember { mutableStateOf<TextLayoutResult?>(null) }
     val draft = typing.draft
@@ -296,7 +293,9 @@ internal fun TypingField(
             caretX.animateTo(to, motion.glide(motion.durationFocus, scale, to - caretX.value, caretX.velocity))
         }
     }
-    val corner = LocalFoldTheme.current.theme.style.metrics.cardCornerDp.dp
+    val corner = theme.style.metrics.cardCornerDp.dp
+    val field = theme.style.field
+    val round = theme.style.shape.round
     Box(
         modifier
             .graphicsLayer {
@@ -306,7 +305,7 @@ internal fun TypingField(
             .drawBehind {
                 val radius = corner.toPx()
                 drawRoundRect(color = background, cornerRadius = CornerRadius(radius, radius))
-                with(ring) { drawFocusRing(radius, alpha = 0.55f) }
+                with(ring) { drawFocusRing(radius, alpha = field.ringAlpha) }
             }
             .padding(horizontal = if (compact) COMPACT_SIDE.dp else 32.dp, vertical = if (compact) COMPACT_PAD.dp else FIELD_PAD.dp),
         contentAlignment = Alignment.Center,
@@ -316,7 +315,7 @@ internal fun TypingField(
             BoxWithConstraints(Modifier.weight(1f)) {
                 val room = constraints.maxWidth.toFloat()
                 val density = LocalDensity.current
-                val base = style.copy(textAlign = TextAlign.Start, fontWeight = FontWeight.SemiBold)
+                val base = style.copy(textAlign = TextAlign.Start, fontWeight = theme.style.type.strongWeight)
                 // A long name first shrinks, down to a floor, so more of it stays readable at once.
                 val measurer = rememberTextMeasurer()
                 val natural = remember(draft.text, base, density) {
@@ -389,8 +388,8 @@ internal fun TypingField(
                                     drawRoundRect(
                                         brush = Brush.horizontalGradient(
                                             listOf(
-                                                ring.start.copy(alpha = 0.55f * (0.7f + 0.3f * breath.value)),
-                                                ring.end.copy(alpha = 0.40f * (0.7f + 0.3f * breath.value)),
+                                                ring.start.copy(alpha = field.selectionStartAlpha * (0.7f + 0.3f * breath.value)),
+                                                ring.end.copy(alpha = field.selectionEndAlpha * (0.7f + 0.3f * breath.value)),
                                             ),
                                         ),
                                         topLeft = Offset(from - pad, lineTop),
@@ -400,21 +399,22 @@ internal fun TypingField(
                                 }
                                 drawContent()
                                 if (!draft.selecting) {
-                                    val width = 4.dp.toPx()
+                                    val width = field.caretDp.dp.toPx()
                                     val inset = (lineBottom - lineTop) * 0.1f
-                                    val glow = 6.dp.toPx()
+                                    val glow = field.caretGlowDp.dp.toPx()
+                                    val cap = width * round
                                     drawRoundRect(
                                         brush = Brush.verticalGradient(listOf(ring.start, ring.end), startY = lineTop, endY = lineBottom),
                                         topLeft = Offset(caretX.value - width / 2f - glow, lineTop + inset - glow / 2f),
                                         size = Size(width + glow * 2f, lineBottom - lineTop - inset * 2f + glow),
-                                        cornerRadius = CornerRadius(width / 2f + glow, width / 2f + glow),
-                                        alpha = 0.22f * breath.value,
+                                        cornerRadius = CornerRadius(cap + glow, cap + glow),
+                                        alpha = field.caretGlowAlpha * breath.value,
                                     )
                                     drawRoundRect(
                                         brush = Brush.verticalGradient(listOf(ring.start, ring.end), startY = lineTop, endY = lineBottom),
                                         topLeft = Offset(caretX.value - width / 2f, lineTop + inset),
                                         size = Size(width, lineBottom - lineTop - inset * 2f),
-                                        cornerRadius = CornerRadius(width / 2f, width / 2f),
+                                        cornerRadius = CornerRadius(cap, cap),
                                         alpha = breath.value,
                                     )
                                 }
@@ -447,6 +447,8 @@ private fun ChipStrip(
     modifier: Modifier,
 ) {
     val theme = LocalFoldTheme.current.theme
+    val keyboard = theme.style.keyboard
+    val round = theme.style.shape.round
     val density = LocalDensity.current
     val labelSize = with(density) { (unit * CHIP_LABEL).toSp() }
     val fadePx = with(density) { (unit * CHIP_FADE).toPx() }
@@ -492,15 +494,15 @@ private fun ChipStrip(
                             if (spans[index] != rect) spans[index] = rect
                         }
                         .drawBehind {
-                            val radius = size.height / 2f
+                            val radius = size.height * round
                             drawRoundRect(
-                                color = theme.onBackground.copy(alpha = 0.08f + 0.20f * if (flashed) flash() else 0f),
+                                color = theme.onBackground.copy(alpha = keyboard.chipAlpha + keyboard.chipFlashAlpha * if (flashed) flash() else 0f),
                                 cornerRadius = CornerRadius(radius, radius),
                             )
                             drawRoundRect(
-                                color = theme.onBackground.copy(alpha = 0.12f),
+                                color = theme.onBackground.copy(alpha = keyboard.chipRimAlpha),
                                 cornerRadius = CornerRadius(radius, radius),
-                                style = Stroke(1.dp.toPx()),
+                                style = Stroke(keyboard.rimDp.dp.toPx()),
                             )
                         }
                         .tap { onTap(KeyFocus(CHIP_ROW, index, typing.focus.x)) }
@@ -511,7 +513,7 @@ private fun ChipStrip(
                         text = name,
                         maxLines = 1,
                         style = TextStyle(
-                            color = theme.onBackground.copy(alpha = if (focused) 1f else 0.82f),
+                            color = theme.onBackground.copy(alpha = if (focused) 1f else keyboard.chipLabelRestAlpha),
                             fontSize = labelSize,
                             fontFamily = theme.font,
                         ),
@@ -545,6 +547,7 @@ private fun Key(
 ) {
     val theme = LocalFoldTheme.current.theme
     val ring = remember(theme) { FocusRing(theme) }
+    val keyboard = theme.style.keyboard
     val lift by bouncy(if (focused) 1f else 0f, scale)
     val lit by eased(if (focused) 1f else 0f, theme.motion.durationFocus, scale)
     val cap = placed.cap
@@ -560,41 +563,41 @@ private fun Key(
             .graphicsLayer {
                 clip = false
                 val pressed = if (flashed) flash() else 0f
-                val grown = 1f + (focusScale - 1f) * lift - KEY_SQUASH * pressed
+                val grown = 1f + (focusScale - 1f) * lift - theme.style.motion.keySquash * pressed
                 scaleX = grown
                 scaleY = grown
             }
             .drawBehind {
-                val corner = unit.toPx() * KEY_CORNER
+                val corner = unit.toPx() * theme.style.shape.keyCorner
                 val radius = CornerRadius(corner, corner)
                 val modifierKey = cap !is KeyCap.Glyph
-                val body = if (modifierKey) 0.05f else 0.12f
+                val body = if (modifierKey) keyboard.modifierGlassAlpha else keyboard.glassAlpha
                 // Glass: lit at the top, the theme's surface below, the backdrop faintly through it.
                 drawRoundRect(
                     brush = Brush.verticalGradient(
                         listOf(
-                            androidx.compose.ui.graphics.lerp(theme.surface, theme.onBackground, body + 0.06f * lit),
+                            androidx.compose.ui.graphics.lerp(theme.surface, theme.onBackground, body + keyboard.litGlassAlpha * lit),
                             theme.surface,
                         ),
                     ),
                     cornerRadius = radius,
-                    alpha = KEY_ALPHA,
+                    alpha = keyboard.keyAlpha,
                 )
                 if (cap == KeyCap.Done || shiftLit > 0f) {
                     drawRoundRect(
                         brush = Brush.linearGradient(listOf(ring.start, ring.end), Offset.Zero, Offset(size.width, size.height)),
                         cornerRadius = radius,
-                        alpha = if (cap == KeyCap.Done) DONE_ALPHA else SHIFT_ALPHA * shiftLit,
+                        alpha = if (cap == KeyCap.Done) keyboard.doneAlpha else keyboard.shiftAlpha * shiftLit,
                     )
                 }
                 val pressed = if (flashed) flash() else 0f
                 if (pressed > 0f) {
-                    drawRoundRect(color = theme.onBackground, cornerRadius = radius, alpha = 0.22f * pressed)
+                    drawRoundRect(color = theme.onBackground, cornerRadius = radius, alpha = keyboard.pressAlpha * pressed)
                 }
                 // A sheen across the top half, and a rim that catches the light at the top edge.
                 drawRoundRect(
                     brush = Brush.verticalGradient(
-                        listOf(theme.onBackground.copy(alpha = 0.10f), Color.Transparent),
+                        listOf(theme.onBackground.copy(alpha = keyboard.sheenAlpha), Color.Transparent),
                         startY = 0f,
                         endY = size.height * 0.5f,
                     ),
@@ -602,10 +605,10 @@ private fun Key(
                 )
                 drawRoundRect(
                     brush = Brush.verticalGradient(
-                        listOf(theme.onBackground.copy(alpha = 0.22f), theme.onBackground.copy(alpha = 0.04f)),
+                        listOf(theme.onBackground.copy(alpha = keyboard.rimTopAlpha), theme.onBackground.copy(alpha = keyboard.rimBottomAlpha)),
                     ),
                     cornerRadius = radius,
-                    style = Stroke(1.dp.toPx()),
+                    style = Stroke(keyboard.rimDp.dp.toPx()),
                 )
             },
         contentAlignment = Alignment.Center,
@@ -637,16 +640,24 @@ private fun Key(
                     )
                 }
             }
-            KeyCap.Shift -> KeyArt(shiftButton, held, glyphSize) { drawShift(ink, shiftLit, lamp, ring) }
-            KeyCap.Erase -> KeyArt(buttons.eraseGlyph, held, glyphSize) { drawErase(ink) }
-            KeyCap.Space -> KeyArt(buttons.spaceGlyph, held, glyphSize, artWidth = 2.4f) { drawSpace(ink) }
+            KeyCap.Shift -> {
+                val off = themeIconOrNull("control.shift", 128)
+                val on = themeIconOrNull("control.shift.on", 128)
+                KeyArt(shiftButton, held, glyphSize) {
+                    keyGlyph(off, ink)
+                    if (shiftLit > 0f) keyGlyph(on, ink, shiftLit)
+                    drawLamp(lamp, ring)
+                }
+            }
+            KeyCap.Erase -> themeIconOrNull("control.erase", 128).let { art -> KeyArt(buttons.eraseGlyph, held, glyphSize) { keyGlyph(art, ink) } }
+            KeyCap.Space -> themeIconOrNull("control.space", 128).let { art -> KeyArt(buttons.spaceGlyph, held, glyphSize, artWidth = 2.4f) { keyGlyph(art, ink) } }
             KeyCap.Done -> Row(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(unit * 0.16f),
             ) {
                 BasicText(
                     done,
-                    style = TextStyle(color = ink, fontSize = wordSize, fontFamily = theme.font, fontWeight = FontWeight.SemiBold),
+                    style = TextStyle(color = ink, fontSize = wordSize, fontFamily = theme.font, fontWeight = theme.style.type.strongWeight),
                 )
                 ButtonGlyph(PromptKey.Start, held, glyphSize)
             }
@@ -668,76 +679,36 @@ private fun KeyArt(button: PromptKey?, held: Set<PromptKey>, glyph: Dp, artWidth
 private fun ButtonGlyph(button: PromptKey, held: Set<PromptKey>, size: Dp) {
     val glyph = promptGlyph(button)
     val down = button in held
-    PromptImage(if (down) "${glyph}_filled" else glyph, size, Modifier.graphicsLayer { alpha = if (down) 1f else 0.62f })
+    val rest = LocalFoldTheme.current.theme.style.keyboard.glyphRestAlpha
+    PromptImage(if (down) "${glyph}_filled" else glyph, size, Modifier.graphicsLayer { alpha = if (down) 1f else rest })
 }
 
-/** An upward arrow: outlined while Shift is off, filled as it lights, with a lamp under it for caps lock. */
-private fun DrawScope.drawShift(ink: Color, lit: Float, lamp: Float, ring: FocusRing) {
-    val w = size.width
-    val h = size.height
-    val arrow = Path().apply {
-        moveTo(w * 0.5f, h * 0.08f)
-        lineTo(w * 0.94f, h * 0.52f)
-        lineTo(w * 0.70f, h * 0.52f)
-        lineTo(w * 0.70f, h * 0.76f)
-        lineTo(w * 0.30f, h * 0.76f)
-        lineTo(w * 0.30f, h * 0.52f)
-        lineTo(w * 0.06f, h * 0.52f)
-        close()
-    }
-    if (lit > 0f) drawPath(arrow, ink, alpha = lit)
-    drawPath(arrow, ink, style = Stroke(width = h * 0.09f, join = StrokeJoin.Round))
-    if (lamp > 0f) {
-        val brush = Brush.horizontalGradient(listOf(ring.start, ring.end))
-        drawRoundRect(
-            brush = brush,
-            topLeft = Offset(w * 0.02f, h * 0.80f),
-            size = Size(w * 0.96f, h * 0.26f),
-            cornerRadius = CornerRadius(h * 0.13f, h * 0.13f),
-            alpha = 0.3f * lamp,
-        )
-        drawRoundRect(
-            brush = brush,
-            topLeft = Offset(w * 0.12f, h * 0.86f),
-            size = Size(w * 0.76f, h * 0.14f),
-            cornerRadius = CornerRadius(h * 0.07f, h * 0.07f),
-            alpha = lamp,
-        )
-    }
+/** A key's symbol from its `control.` slot, in the key's [ink], filling the art's box. */
+private fun DrawScope.keyGlyph(art: ThemeIconPainter?, ink: Color, alpha: Float = 1f) {
+    art ?: return
+    with(art.painter) { draw(size, alpha = alpha, colorFilter = art.tint(ink)) }
 }
 
-/** A tag pointing left with a cross in it. */
-private fun DrawScope.drawErase(ink: Color) {
+/** Caps lock's lamp under the Shift arrow, in the focus ring's colours. */
+private fun DrawScope.drawLamp(lamp: Float, ring: FocusRing) {
+    if (lamp <= 0f) return
     val w = size.width
     val h = size.height
-    val stroke = Stroke(width = h * 0.09f, join = StrokeJoin.Round, cap = StrokeCap.Round)
-    val tag = Path().apply {
-        moveTo(w * 0.04f, h * 0.5f)
-        lineTo(w * 0.32f, h * 0.18f)
-        lineTo(w * 0.96f, h * 0.18f)
-        lineTo(w * 0.96f, h * 0.82f)
-        lineTo(w * 0.32f, h * 0.82f)
-        close()
-    }
-    drawPath(tag, ink, style = stroke)
-    val cx = w * 0.62f
-    val cy = h * 0.5f
-    val arm = h * 0.15f
-    drawLine(ink, Offset(cx - arm, cy - arm), Offset(cx + arm, cy + arm), stroke.width, StrokeCap.Round)
-    drawLine(ink, Offset(cx - arm, cy + arm), Offset(cx + arm, cy - arm), stroke.width, StrokeCap.Round)
-}
-
-/** The space bar's open bracket. */
-private fun DrawScope.drawSpace(ink: Color) {
-    val w = size.width
-    val h = size.height
-    val bracket = Path().apply {
-        moveTo(w * 0.04f, h * 0.36f)
-        lineTo(w * 0.04f, h * 0.66f)
-        lineTo(w * 0.96f, h * 0.66f)
-        lineTo(w * 0.96f, h * 0.36f)
-    }
-    drawPath(bracket, ink, style = Stroke(width = h * 0.09f, join = StrokeJoin.Round, cap = StrokeCap.Round))
+    val brush = Brush.horizontalGradient(listOf(ring.start, ring.end))
+    drawRoundRect(
+        brush = brush,
+        topLeft = Offset(w * 0.02f, h * 0.80f),
+        size = Size(w * 0.96f, h * 0.26f),
+        cornerRadius = CornerRadius(h * 0.13f, h * 0.13f),
+        alpha = 0.3f * lamp,
+    )
+    drawRoundRect(
+        brush = brush,
+        topLeft = Offset(w * 0.12f, h * 0.86f),
+        size = Size(w * 0.76f, h * 0.14f),
+        cornerRadius = CornerRadius(h * 0.07f, h * 0.07f),
+        alpha = lamp,
+    )
 }
 
 /** Where [key] in [row] sits, in pixels, with the gap between keys taken off its edges. */
@@ -812,20 +783,13 @@ private fun Modifier.tap(onTap: () -> Unit): Modifier {
     return focusProperties { canFocus = false }.clickable(interactionSource = source, indication = null, onClick = onTap)
 }
 
-/** How much of the highlight stays on its key while something else has the D-pad. */
-private const val INACTIVE_HIGHLIGHT = 0.3f
 
 // The keyboard's proportions, in key widths. A key is a little taller than it is wide.
 private const val ROW_PITCH = 1.12f
 private const val KEY_GAP = 0.14f
-private const val KEY_CORNER = 0.2f
 private const val KEY_LABEL = 0.44f
 private const val KEY_WORD = 0.36f
 private const val KEY_GLYPH = 0.46f
-private const val KEY_ALPHA = 0.92f
-private const val KEY_SQUASH = 0.07f
-private const val DONE_ALPHA = 0.55f
-private const val SHIFT_ALPHA = 0.38f
 private const val CHIP_HEIGHT = 0.84f
 private const val CHIP_GAP = 0.42f
 private const val CHIP_SPACING = 0.2f
@@ -850,7 +814,5 @@ private const val CARET_ROOM = 72f
 private const val FIELD_FADE = 28f
 private const val CARET_END = 12f
 
-/** How far down the caret and a selection breathe between beats. */
-private const val CARET_DIM = 0.35f
 private const val SHAKE_SWINGS = 3f
 private const val SHAKE_REACH = 12f

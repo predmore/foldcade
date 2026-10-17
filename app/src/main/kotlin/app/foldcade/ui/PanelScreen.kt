@@ -6,7 +6,6 @@ import android.graphics.RenderEffect
 import android.graphics.Shader
 import android.os.Build
 import android.util.Log
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.graphics.TransformOrigin
@@ -45,7 +44,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.requiredWidth
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicText
 import androidx.compose.foundation.text.BasicTextField
@@ -455,23 +453,30 @@ private fun PanelBody(
 private class WindowDensity(base: Density) : Density by base
 
 /** Dim painted with the content, not a second full-screen node on top of it. */
-private fun Modifier.menuDim(progress: () -> Float): Modifier = drawWithContent {
-    drawContent()
-    val amount = progress()
-    if (amount <= 0f) return@drawWithContent
-    val dim = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) 0.32f else 0.55f
-    drawRect(Color.Black.copy(alpha = dim * amount.coerceIn(0f, 1f)))
+@Composable
+private fun Modifier.menuDim(progress: () -> Float): Modifier {
+    val design = foldTheme().style
+    val scrim = design.colors.scrim
+    // Without a blur behind it, the dim alone has to quiet the grid.
+    val dim = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) design.menu.scrimAlpha else design.menu.scrimAlphaUnblurred
+    return drawWithContent {
+        drawContent()
+        val amount = progress()
+        if (amount <= 0f) return@drawWithContent
+        drawRect(scrim.copy(alpha = dim * amount.coerceIn(0f, 1f)))
+    }
 }
 
 /** Blur only while the radius is visible. A zero-radius graphics layer still hides nodes. */
 @Composable
 private fun Modifier.menuBlur(progress: () -> Float): Modifier {
     if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S) return this
+    val reach = rememberUpdatedState(foldTheme().style.menu.blurPx)
     val latest = rememberUpdatedState(progress)
-    val visible by remember { derivedStateOf { latest.value() * 28f >= 0.5f } }
+    val visible by remember { derivedStateOf { latest.value() * reach.value >= 0.5f } }
     if (!visible) return this
     return graphicsLayer {
-        val radius = (progress() * 28f).coerceAtLeast(0.5f)
+        val radius = (progress() * reach.value).coerceAtLeast(0.5f)
         renderEffect = RenderEffect.createBlurEffect(radius, radius, Shader.TileMode.CLAMP).asComposeRenderEffect()
     }
 }
@@ -678,7 +683,7 @@ private fun CommandCenterScreen(
     BoxWithConstraints(
         Modifier
             .fillMaxSize()
-            .background(Color.Black),
+            .background(theme.background),
     ) {
         if (panel != null && achievements != null && center.listOn == panel) {
             AchievementList(app, achievements, center.listIndex, onBack = center::closeList)
@@ -702,7 +707,7 @@ private fun CommandCenterScreen(
                             modifier = Modifier.fillMaxSize(0.62f),
                             contentScale = ContentScale.Fit,
                         )
-                        subject.mark != null -> MarkIcon(subject.mark, 0.86f)
+                        subject.mark != null -> MarkIcon(subject.mark, theme.style.hero.markScale)
                     }
                 }
             }
@@ -842,7 +847,7 @@ private fun AchievementList(
                             Image(
                                 painter = badge.painter,
                                 contentDescription = null,
-                                modifier = Modifier.fillMaxSize().clip(RoundedCornerShape(px(8f))),
+                                modifier = Modifier.fillMaxSize().clip(RoundedCornerShape(px(design.shape.badgeCornerPx))),
                                 contentScale = ContentScale.Crop,
                             )
                         }
@@ -893,7 +898,7 @@ private fun CenterArt(app: FoldcadeApp, running: RunningApp?) {
             contentScale = ContentScale.Crop,
         )
         icon != null -> LauncherImage(icon, contentDescription = null, modifier = Modifier.fillMaxSize(theme.artScale))
-        else -> markGlyph(mark)?.let { MarkIcon(it, it.heroScale(theme.artScale)) }
+        else -> markGlyph(mark)?.let { MarkIcon(it, it.heroScale(theme)) }
     }
 }
 
@@ -935,8 +940,8 @@ private fun ArtPreviewHero(app: FoldcadeApp, screen: HostScreen, scale: Float, o
                 if (name != null) {
                     val theme = foldTheme()
                     Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
-                        BasicText(ArtCopy.matched(name), Modifier.clip(RoundedCornerShape(8.dp))
-                            .background(theme.surface.copy(alpha = 0.85f)).padding(horizontal = 12.dp, vertical = 4.dp),
+                        BasicText(ArtCopy.matched(name), Modifier.clip(RoundedCornerShape(theme.style.shape.toastCornerDp.dp))
+                            .background(theme.surface.copy(alpha = theme.style.dialog.toastAlpha)).padding(horizontal = 12.dp, vertical = 4.dp),
                             style = text(theme.muted, theme.style.type.hint, theme), maxLines = 1, overflow = TextOverflow.Ellipsis)
                     }
                 }
@@ -1069,7 +1074,7 @@ private fun Hero(app: FoldcadeApp, screen: HostScreen, scale: Float, onEffect: (
                                 titleStyle = text(theme.onBackground, design.type.dialogTitle, theme),
                                 factStyle = text(theme.muted, design.type.heroMeta, theme),
                                 chipStyle = text(theme.muted, design.type.hint, theme),
-                                background = if (sceneArt) theme.surface.copy(alpha = SCENE_CARD_ALPHA) else theme.surface,
+                                background = if (sceneArt) theme.surface.copy(alpha = design.hero.cardAlpha) else theme.surface,
                                 width = cardMax,
                                 scale = scale,
                                 modifier = Modifier.rise { finding.progress.value },
@@ -1079,7 +1084,7 @@ private fun Hero(app: FoldcadeApp, screen: HostScreen, scale: Float, onEffect: (
                             TypingField(
                                 typing = shown,
                                 style = text(theme.onBackground, design.type.heroTitle * TYPED_TITLE, theme),
-                                background = if (sceneArt) theme.surface.copy(alpha = SCENE_CARD_ALPHA) else theme.surface,
+                                background = if (sceneArt) theme.surface.copy(alpha = design.hero.cardAlpha) else theme.surface,
                                 scale = scale,
                                 modifier = Modifier.width(cardMax).rise { typing.progress.value },
                             )
@@ -1094,7 +1099,7 @@ private fun Hero(app: FoldcadeApp, screen: HostScreen, scale: Float, onEffect: (
             BasicText(SelectionCopy.count(count),
                 modifier = Modifier.align(Alignment.TopCenter).padding(top = px(32f))
                     .graphicsLayer { alpha = selected.progress.value }
-                    .clip(RoundedCornerShape(50)).background(theme.surface.copy(alpha = 0.94f))
+                    .clip(design.shape.control()).background(theme.surface.copy(alpha = design.hero.pillAlpha))
                     .padding(horizontal = px(24f), vertical = px(12f)),
                 style = text(theme.onBackground, design.type.hint, theme))
         }
@@ -1347,25 +1352,42 @@ private fun IconChoices(pick: IconPick, scale: Float, modifier: Modifier) {
                         with(focusRing) { drawFocusRing(round, bounds = Rect(Offset(x, y), Size(side, side))) }
                     },
             ) {
+                val design = theme.style
+                val folder = design.collections
                 CollectionTint.entries.forEachIndexed { index, tint ->
                     val chosen = index == pick.tint
                     val grown by motionState(if (chosen) 1f else SWATCH_REST, glide)
+                    val color = folder.color(tint)
                     Box(
                         Modifier
                             .offset(x = (cell + gap) * index + (cell - swatch) / 2, y = (cell - swatch) / 2)
                             .size(swatch)
                             .drawBehind {
-                                val radius = size.minDimension / 2f * grown
-                                drawCircle(
+                                val half = size.minDimension / 2f * grown
+                                val corner = half * 2f * design.shape.round
+                                drawRoundRect(
                                     brush = Brush.verticalGradient(
-                                        listOf(lerp(tint.color, Color.White, 0.35f), tint.color, lerp(tint.color, Color.Black, 0.3f)),
-                                        startY = center.y - radius,
-                                        endY = center.y + radius,
+                                        listOf(lerp(color, design.colors.shine, folder.swatchShine), color, lerp(color, design.colors.shade, folder.swatchShade)),
+                                        startY = center.y - half,
+                                        endY = center.y + half,
                                     ),
-                                    radius = radius,
+                                    topLeft = Offset(center.x - half, center.y - half),
+                                    size = Size(half * 2f, half * 2f),
+                                    cornerRadius = CornerRadius(corner, corner),
                                 )
-                                // The colour in use keeps a white rim, so it shows while the glyphs are focused.
-                                if (chosen) drawCircle(Color.White, radius = radius - 2.5f, style = Stroke(width = 3f), alpha = 0.85f)
+                                // The colour in use keeps a light rim, so it shows while the glyphs are focused.
+                                if (chosen) {
+                                    val rim = half - 2.5f
+                                    val rimCorner = (rim * 2f * design.shape.round).coerceAtLeast(0f)
+                                    drawRoundRect(
+                                        design.colors.shine,
+                                        topLeft = Offset(center.x - rim, center.y - rim),
+                                        size = Size(rim * 2f, rim * 2f),
+                                        cornerRadius = CornerRadius(rimCorner, rimCorner),
+                                        style = Stroke(width = 3f),
+                                        alpha = folder.swatchRimAlpha,
+                                    )
+                                }
                             },
                     )
                 }
@@ -1385,7 +1407,7 @@ private fun IconChoices(pick: IconPick, scale: Float, modifier: Modifier) {
                             },
                         contentAlignment = Alignment.Center,
                     ) {
-                        SymbolIcon(mark, PICKER_SYMBOL_SCALE, theme.onBackground) { lerp(REST_ALPHA, 1f, lit) }
+                        SymbolIcon(mark, PICKER_SYMBOL_SCALE, theme.onBackground) { lerp(design.tile.restAlpha, 1f, lit) }
                     }
                 }
             }
@@ -1430,7 +1452,7 @@ private fun HeroLabel(
             .widthIn(min = px(360f), max = maxWidth)
             .clip(RoundedCornerShape(design.metrics.cardCornerDp.dp))
             // Over the game's art the card lets it through.
-            .background(if (overArt) theme.surface.copy(alpha = SCENE_CARD_ALPHA) else theme.surface)
+            .background(if (overArt) theme.surface.copy(alpha = design.hero.cardAlpha) else theme.surface)
             .padding(horizontal = px(40f), vertical = px(20f)),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.spacedBy(px(4f)),
@@ -1438,7 +1460,7 @@ private fun HeroLabel(
         if (named) {
             BasicText(
                 text = copy.title,
-                style = centred.copy(fontWeight = FontWeight.SemiBold),
+                style = centred.copy(fontWeight = design.type.strongWeight),
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
@@ -1564,15 +1586,17 @@ private fun SceneBackdrop(app: FoldcadeApp, record: Game?, query: ArtQuery?, spe
                     },
                 contentScale = ContentScale.Crop,
             )
+            val hero = foldTheme().style
+            val scrim = hero.colors.scrim
             Box(
                 Modifier
                     .fillMaxSize()
                     .background(
                         Brush.verticalGradient(
-                            0f to Color.Black.copy(alpha = 0.45f),
-                            0.22f to Color.Transparent,
-                            0.55f to Color.Transparent,
-                            1f to Color.Black.copy(alpha = 0.8f),
+                            0f to scrim.copy(alpha = hero.hero.sceneShadeTop),
+                            0.22f to scrim.copy(alpha = 0f),
+                            0.55f to scrim.copy(alpha = 0f),
+                            1f to scrim.copy(alpha = hero.hero.sceneShadeBottom),
                         ),
                     ),
             )
@@ -1581,16 +1605,17 @@ private fun SceneBackdrop(app: FoldcadeApp, record: Game?, query: ArtQuery?, spe
     }
     val cover = rememberArt(app, record, query)?.cover ?: return
     val ambient = rememberCoverPainter(app, cover, AMBIENT_PX) ?: return
+    val design = foldTheme().style
     CoversBackdrop()
     Image(
         painter = ambient.painter,
         contentDescription = null,
         modifier = Modifier
             .fillMaxSize()
-            .blur(AMBIENT_BLUR, BlurredEdgeTreatment.Rectangle)
+            .blur(design.hero.ambientBlurDp.dp, BlurredEdgeTreatment.Rectangle)
             .drawWithContent {
                 drawContent()
-                drawRect(Color.Black.copy(alpha = AMBIENT_DIM))
+                drawRect(design.colors.scrim.copy(alpha = design.hero.ambientDim))
             },
         contentScale = ContentScale.Crop,
     )
@@ -1647,12 +1672,13 @@ private fun HeroArt(
             .then(if (staged) Modifier.fillMaxWidth() else Modifier.aspectRatio(1f))
             .drawBehind {
                 if (staged) return@drawBehind
-                val reach = size.minDimension * 0.62f
+                val reach = size.minDimension * design.metrics.heroArtFraction
+                val peak = design.glow.heroPeak
                 drawCircle(
                     brush = Brush.radialGradient(
                         colorStops = arrayOf(
-                            0f to accent.copy(alpha = 0.45f),
-                            0.42f to accent.copy(alpha = 0.16f),
+                            0f to accent.copy(alpha = peak),
+                            0.42f to accent.copy(alpha = peak * HERO_GLOW_SHOULDER),
                             1f to Color.Transparent,
                         ),
                         center = center,
@@ -1675,12 +1701,12 @@ private fun HeroArt(
                     .fillMaxHeight(LOGO_HEIGHT)
                     // A soft shade behind the logo keeps a dark logo readable over busy art.
                     .drawBehind {
-                        val reach = size.maxDimension * 0.62f
+                        val reach = size.maxDimension * design.metrics.heroArtFraction
                         drawCircle(
                             brush = Brush.radialGradient(
                                 colorStops = arrayOf(
-                                    0f to Color.Black.copy(alpha = 0.62f),
-                                    1f to Color.Transparent,
+                                    0f to design.colors.scrim.copy(alpha = design.hero.logoShadeAlpha),
+                                    1f to design.colors.scrim.copy(alpha = 0f),
                                 ),
                                 center = center,
                                 radius = reach,
@@ -1727,7 +1753,7 @@ private fun HeroArt(
                 contentScale = ContentScale.Crop,
             )
             icon != null -> LauncherImage(icon, contentDescription = title, modifier = Modifier.fillMaxSize(theme.artScale))
-            glyph != null -> MarkIcon(glyph, glyph.heroScale(theme.artScale))
+            glyph != null -> MarkIcon(glyph, glyph.heroScale(theme))
             else -> BasicText(
                 text = monogram(title),
                 modifier = Modifier.scale(4f),
@@ -1945,15 +1971,12 @@ private const val LOGO_PX = 800
 private const val SCREEN_PX = 1024
 private const val LOGO_WIDTH = 0.6f
 private const val LOGO_HEIGHT = 0.7f
-private const val SCENE_CARD_ALPHA = 0.72f
+/** The hero glow's middle stop, as a share of its peak (`glow.heroPeak`). */
+private const val HERO_GLOW_SHOULDER = 0.16f / 0.45f
 
 /** A name being typed on the top screen reads a size up from the hero's title. */
 private const val TYPED_TITLE = 1.25f
-private const val AMBIENT_DIM = 0.55f
-private val AMBIENT_BLUR = 48.dp
 internal const val TILE_PX = 384
-/** How bright a tile's art rests, cover or mark alike, so focus reads by lifting it to full. */
-private const val REST_ALPHA = 0.82f
 /** The picker's glyphs are flat symbols, drawn a little inside their cell. */
 private const val PICKER_SYMBOL_SCALE = 0.7f
 private const val COVER_HEIGHT = 0.92f
@@ -2168,7 +2191,7 @@ private fun PanelRows(
             Column(Modifier.onSizeChanged { fixedHeights[-1] = it.height }.padding(horizontal = px(28f), vertical = px(8f)).cascade(0, progress)) {
                 BasicText(
                     text = connection.label,
-                    style = rowStyle.copy(fontWeight = FontWeight.SemiBold),
+                    style = rowStyle.copy(fontWeight = foldTheme().style.type.strongWeight),
                 )
                 app.store.rommServerOrigin(connection.pluginId)?.let { origin ->
                     BasicText(
@@ -2356,8 +2379,12 @@ private fun QuickTiles(
                             .keepInView(focused)
                             .graphicsLayer { clip = false }
                             .drawBehind {
-                                val radius = size.minDimension / 2f
-                                drawCircle(theme.onBackground.copy(alpha = 0.08f + 0.08f * lit.value))
+                                val menu = theme.style.menu
+                                val radius = size.minDimension * theme.style.shape.round
+                                drawRoundRect(
+                                    theme.onBackground.copy(alpha = menu.quickTileAlpha + (menu.quickTileLitAlpha - menu.quickTileAlpha) * lit.value),
+                                    cornerRadius = CornerRadius(radius, radius),
+                                )
                                 if (lit.value > 0f) with(ring) { drawFocusRing(radius, alpha = lit.value) }
                             }
                             .then(press)
@@ -2367,13 +2394,15 @@ private fun QuickTiles(
                         val quick = (row as? Row.QuickTile)?.setting?.let(::quickIcon)
                         val icon = quick ?: rowIcon(row)
                         if (icon != null) {
+                            val art = themeIcon(icon)
                             Image(
-                                painter = themeIconPainter(icon),
+                                painter = art.painter,
                                 contentDescription = null,
+                                colorFilter = art.requestedTint(theme.onBackground),
                                 modifier = Modifier
                                     // A place's art is a whole lit disc, so it fills more of its tile.
                                     .size((QUICK_BUTTON_DP * if (quick != null) 0.46f else 0.74f).dp)
-                                    .lifted(lit, lift, grow = 0.14f, rest = 0.78f),
+                                    .lifted(lit, lift, grow = theme.style.menu.quickArtGrow, rest = theme.style.menu.artRestAlpha),
                             )
                         }
                         // A round tile has no right side, so its chord's key sits on its rim.
@@ -2439,14 +2468,14 @@ private fun StripBar(count: Int, first: Int, shown: Int, scale: Float) {
             Modifier
                 .width(track)
                 .height(px(6f))
-                .background(theme.muted.copy(alpha = 0.45f), CircleShape),
+                .background(theme.muted.copy(alpha = 0.45f), theme.style.shape.control()),
         ) {
             Box(
                 Modifier
                     .graphicsLayer { translationX = (track * (start / columns)).toPx() }
                     .width(thumb)
                     .fillMaxHeight()
-                    .background(theme.onBackground, CircleShape),
+                    .background(theme.onBackground, theme.style.shape.control()),
             )
         }
     }
@@ -3387,9 +3416,6 @@ private fun FoundTile(app: FoldcadeApp, entry: FindEntry, focused: Boolean, size
 private const val SLOT_GLIDE_FAR = 4f
 private const val SLOT_GLIDE_STRETCH = 0.6f
 
-/** A held slot's outline, faint. */
-private const val SOCKET_ALPHA = 0.16f
-
 /** The light a held tile casts under it: how wide it reaches, as a share of the tile, and how flat it lies. */
 private const val LIFT_GLOW_REACH = 0.62f
 private const val LIFT_GLOW_FLAT = 0.42f
@@ -3410,8 +3436,6 @@ private const val HOME_TARGET_PEEK = 0.45f
 
 private const val HIDDEN_BADGE_PX = 40f
 
-private const val FOCUS_GLOW_OVERFLOW = 64f
-private const val REST_GLOW_OVERFLOW = 18f
 private const val GRID_RING_PAD = 8f
 
 /** The widest a panel spaces its grid for, as a share of its height. Wider panels add columns. */
@@ -3448,6 +3472,7 @@ private fun TileStatus(
 ) {
     val motion = LocalFoldTheme.current.theme.motion
     val theme = foldTheme()
+    val tile = theme.style.tile
     val busy = downloading || (activity != null && activity !is TileActivity.Synced)
     val breath = if (busy && !motion.reduced(animatorScale)) {
         rememberInfiniteTransition(label = "busy").animateFloat(
@@ -3473,10 +3498,10 @@ private fun TileStatus(
                 scaleY = grown
                 transformOrigin = TransformOrigin(1f, 0.5f)
             }
-            .height(px(STATUS_CHIP_PX))
-            .clip(RoundedCornerShape(percent = 50))
-            .background(theme.background.copy(alpha = STATUS_BACKING_ALPHA))
-            .padding(horizontal = px((STATUS_CHIP_PX - STATUS_ICON_PX) / 2f)),
+            .height(px(tile.statusChipPx))
+            .clip(theme.style.shape.control())
+            .background(theme.background.copy(alpha = tile.statusBackingAlpha))
+            .padding(horizontal = px(((tile.statusChipPx - tile.statusIconPx) / 2f).coerceAtLeast(0f))),
         horizontalArrangement = Arrangement.spacedBy(px(8f)),
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -3505,7 +3530,7 @@ private fun TileStatus(
             contentDescription = null,
             colorFilter = badge.tint(tint),
             modifier = Modifier
-                .size(px(STATUS_ICON_PX))
+                .size(px(tile.statusIconPx))
                 // Read in the layer, so each frame redraws without recomposing the tile.
                 .graphicsLayer { alpha = if (synced == null) breath?.value ?: 1f else 1f },
         )
@@ -3521,12 +3546,13 @@ private fun DownloadBar(fraction: Float, animatorScale: Float, modifier: Modifie
         target = fraction.coerceIn(0f, 1f),
         spec = motion.arrive(motion.durationTravel, animatorScale),
     )
+    val tile = theme.style.tile
     Box(
         modifier
-            .height(px(DOWNLOAD_LINE_PX))
-            .clip(RoundedCornerShape(percent = 50))
+            .height(px(tile.downloadBarPx))
+            .clip(theme.style.shape.control())
             .drawBehind {
-                drawRect(theme.onBackground.copy(alpha = 0.22f))
+                drawRect(theme.onBackground.copy(alpha = tile.downloadTrackAlpha))
                 drawRect(color = theme.focus, size = Size(size.width * filled, size.height))
             },
     )
@@ -3548,27 +3574,8 @@ private fun syncMarkShown(synced: TileActivity.Synced, animatorScale: Float): St
     return shown.asState()
 }
 
-/**
- * The light a mark sits on: centred this share of the tile down, reaching this share of
- * its width, the mark's colour at this strength in the middle, gone to the card by [MARK_LIGHT_FADE].
- */
-private const val MARK_LIGHT_TOP = 0.12f
-private const val MARK_LIGHT_REACH = 0.85f
-private const val MARK_LIGHT_PEAK = 0.34f
-private const val MARK_LIGHT_FADE = 0.72f
-
 /** A status chip sits this share of the tile's corner radius in from each edge, clear of the curve. */
 private const val CORNER_SAFE = 0.3f
-
-/** Height of a tile's status chip and the badge in it, in panel pixels. */
-private const val STATUS_CHIP_PX = 36f
-private const val STATUS_ICON_PX = 24f
-
-/** The chip's backing, so the badge reads over bright cover art. */
-private const val STATUS_BACKING_ALPHA = 0.72f
-
-/** Thickness of the download line, in panel pixels. */
-private const val DOWNLOAD_LINE_PX = 6f
 
 /** A sync mark grows in from this scale. */
 private const val SYNC_MARK_FROM = 0.6f
@@ -3613,6 +3620,7 @@ private fun Cell(
 ) {
     val motion = LocalFoldTheme.current.theme.motion
     val theme = foldTheme()
+    val tile = theme.style.tile
     val glyph = mark?.let { markGlyph(it) }
     val animatorScale = motion.animatorScale(LocalContext.current.contentResolver)
     val checked by motionState(if (selected) 1f else 0f, motion.playful(motion.durationFocus, animatorScale))
@@ -3662,12 +3670,13 @@ private fun Cell(
                 }
                 .drawWithCache {
                     // The light behind a mark, built when the tile's size or mark changes, not each frame.
+                    val markLight = theme.style.glow
                     val light = accent?.takeIf { art == null && icon == null }?.let {
                         Brush.radialGradient(
-                            0f to it.copy(alpha = MARK_LIGHT_PEAK).compositeOver(theme.surface),
-                            MARK_LIGHT_FADE to theme.surface,
-                            center = Offset(this.size.width * 0.5f, this.size.height * MARK_LIGHT_TOP),
-                            radius = this.size.width * MARK_LIGHT_REACH,
+                            0f to it.copy(alpha = markLight.markLightPeak).compositeOver(theme.surface),
+                            markLight.markLightFade to theme.surface,
+                            center = Offset(this.size.width * 0.5f, this.size.height * markLight.markLightTop),
+                            radius = this.size.width * markLight.markLightReach,
                         )
                     }
                     onDrawBehind {
@@ -3686,10 +3695,10 @@ private fun Cell(
                         }
                         if (socket) {
                             // The space a held tile left: a faint outline, so the eye knows where it was.
-                            val strokePx = 3f
+                            val strokePx = tile.outlinePx
                             val inset = strokePx / 2f
                             drawRoundRect(
-                                color = theme.onBackground.copy(alpha = SOCKET_ALPHA),
+                                color = theme.onBackground.copy(alpha = tile.socketAlpha),
                                 topLeft = Offset(inset, inset),
                                 size = Size(bounds.width - strokePx, bounds.height - strokePx),
                                 cornerRadius = CornerRadius(cornerPx, cornerPx),
@@ -3702,10 +3711,10 @@ private fun Cell(
                             // A mark sits on a soft light in its own colour, kept inside the card.
                             if (light != null) drawRoundRect(brush = light, cornerRadius = CornerRadius(cornerPx, cornerPx))
                             if (editing) {
-                                val strokePx = if (focused || lifted || opened) 9f else 3f
+                                val strokePx = if (focused || lifted || opened) tile.editStrokePx else tile.outlinePx
                                 val inset = strokePx / 2f
                                 drawRoundRect(
-                                    color = theme.focus.copy(alpha = if (focused || lifted || opened) 1f else 0.45f),
+                                    color = theme.focus.copy(alpha = if (focused || lifted || opened) 1f else tile.editRestAlpha),
                                     topLeft = Offset(inset, inset),
                                     size = Size(bounds.width - strokePx, bounds.height - strokePx),
                                     cornerRadius = CornerRadius(cornerPx, cornerPx),
@@ -3714,7 +3723,7 @@ private fun Cell(
                             }
                         } else if (lifted) {
                             // A lifted gap is the ring alone, so the space being carried shows where it is.
-                            val strokePx = 9f
+                            val strokePx = tile.editStrokePx
                             val inset = strokePx / 2f
                             drawRoundRect(
                                 color = theme.focus,
@@ -3776,7 +3785,7 @@ private fun Cell(
                         contentDescription = title,
                         modifier = Modifier
                             .fillMaxSize()
-                            .graphicsLayer { alpha = lerp(REST_ALPHA, 1f, lit()) },
+                            .graphicsLayer { alpha = lerp(tile.restAlpha, 1f, lit()) },
                         contentScale = ContentScale.Crop,
                     )
                 } else {
@@ -3786,7 +3795,7 @@ private fun Cell(
                         modifier = Modifier
                             .fillMaxSize()
                             .scale(theme.artScale)
-                            .graphicsLayer { alpha = lerp(REST_ALPHA, 1f, lit()) },
+                            .graphicsLayer { alpha = lerp(tile.restAlpha, 1f, lit()) },
                         contentScale = ContentScale.Fit,
                     )
                 }
@@ -3795,8 +3804,8 @@ private fun Cell(
                         Modifier
                             .align(Alignment.TopEnd)
                             .padding(px(8f))
-                            .size(px(10f))
-                            .background(theme.focus, CircleShape),
+                            .size(px(tile.dotPx))
+                            .background(theme.focus, theme.style.shape.control()),
                     )
                 }
             } else if (art != null) {
@@ -3806,11 +3815,11 @@ private fun Cell(
                     contentDescription = title,
                     modifier = Modifier
                         .fillMaxSize()
-                        .graphicsLayer { alpha = lerp(REST_ALPHA, 1f, lit()) },
+                        .graphicsLayer { alpha = lerp(tile.restAlpha, 1f, lit()) },
                     contentScale = ContentScale.Crop,
                 )
             } else if (!empty) {
-                val glyphAlpha = { lerp(REST_ALPHA, 1f, lit()) }
+                val glyphAlpha = { lerp(tile.restAlpha, 1f, lit()) }
                 if (glyph != null && CollectionLook.parse(mark) != null) {
                     // A collection being dressed changes as the cursor moves, so each look fades in.
                     Crossfade(mark, animationSpec = motion.arrive(motion.durationFocus, animatorScale)) { shown ->
@@ -3838,7 +3847,7 @@ private fun Cell(
             if (check.shown != null) Box(Modifier.align(Alignment.TopStart)
                 .padding(maxOf(px(8f), corner * CORNER_SAFE))
                 .graphicsLayer { alpha = check.progress.value; scaleX = checked; scaleY = checked }
-                .clip(CircleShape).background(theme.background)) {
+                .clip(theme.style.shape.control()).background(theme.background)) {
                 CheckMark(true, focused, animatorScale)
             }
             if (marked && !selected) {
@@ -3846,8 +3855,8 @@ private fun Cell(
                     Modifier
                         .align(Alignment.TopStart)
                         .padding(px(8f))
-                        .size(px(10f))
-                        .background(theme.focus, CircleShape),
+                        .size(px(tile.dotPx))
+                        .background(theme.focus, theme.style.shape.control()),
                 )
             }
             // On the server, not on this device. A downloaded game has no badge at all.
@@ -3918,7 +3927,7 @@ private fun DialogCard(
         Modifier
             .fillMaxSize()
             .blocksTouch()
-            .background(Color.Black.copy(alpha = 0.72f))
+            .background(design.colors.scrim.copy(alpha = design.dialog.scrimAlpha))
             .padding(px(design.metrics.dialogInsetPx)),
         contentAlignment = Alignment.Center,
     ) {
@@ -3927,7 +3936,7 @@ private fun DialogCard(
                 .fillMaxWidth()
                 .clip(RoundedCornerShape(design.metrics.cardCornerDp.dp))
                 .background(theme.surface)
-                .border(1.dp, theme.onBackground.copy(alpha = 0.08f), RoundedCornerShape(design.metrics.cardCornerDp.dp))
+                .border(px(design.metrics.dialogBorderPx), theme.onBackground.copy(alpha = design.dialog.borderAlpha), RoundedCornerShape(design.metrics.cardCornerDp.dp))
                 .padding(px(design.metrics.dialogInsetPx)),
             verticalArrangement = Arrangement.spacedBy(px(12f)),
         ) {
@@ -4282,6 +4291,7 @@ private fun text(
     color = color,
     fontSize = size,
     fontFamily = theme.font,
+    fontWeight = theme.style.type.bodyWeight,
     textAlign = TextAlign.Start,
 )
 
@@ -4294,13 +4304,14 @@ private fun focusOutset(cell: Dp): Dp =
 private fun Modifier.rowHighlight(focused: Boolean): Modifier {
     val theme = foldTheme()
     val lift = theme.onBackground
+    val corner = theme.style.shape.rowCornerPx
     return this.graphicsLayer { clip = false }.drawBehind {
         if (!focused) return@drawBehind
         drawRoundRect(
-            color = lift.copy(alpha = 0.06f),
-            cornerRadius = CornerRadius(22f, 22f),
+            color = lift.copy(alpha = theme.style.dialog.rowAlpha),
+            cornerRadius = CornerRadius(corner, corner),
         )
-        with(FocusRing(theme)) { drawFocusRing(22f) }
+        with(FocusRing(theme)) { drawFocusRing(corner) }
     }
 }
 
@@ -4312,17 +4323,19 @@ private fun Modifier.rowHighlight(focused: Boolean): Modifier {
 private fun Modifier.chip(focused: Boolean): Modifier {
     val theme = foldTheme()
     val lift = theme.onBackground
+    val dialog = theme.style.dialog
+    val most = theme.style.shape.chipCornerPx
+    val round = theme.style.shape.round
     return this.graphicsLayer { clip = false }.drawBehind {
-        val corner = min(size.height / 2f, CHIP_CORNER_PX)
+        val corner = min(size.height * round, most)
         drawRoundRect(
-            color = lift.copy(alpha = if (focused) 0.10f else 0.06f),
+            color = lift.copy(alpha = if (focused) dialog.chipFocusAlpha else dialog.chipAlpha),
             cornerRadius = CornerRadius(corner, corner),
         )
         if (focused) with(FocusRing(theme)) { drawFocusRing(corner) }
     }
 }
 
-private const val CHIP_CORNER_PX = 44f
 
 /** The trigger's letter is brief enough to read without covering the hero for long. */
 @Composable
@@ -4342,10 +4355,10 @@ private fun LetterOverlay(app: FoldcadeApp, scale: Float) {
             text = letter,
             modifier = Modifier.graphicsLayer { this.alpha = alpha.value }
                 .clip(RoundedCornerShape(theme.style.metrics.cardCornerDp.dp * 2))
-                .background(theme.surface.copy(alpha = 0.94f))
+                .background(theme.surface.copy(alpha = theme.style.hero.pillAlpha))
                 .padding(horizontal = px(128f), vertical = px(64f)),
             style = text(theme.onBackground, theme.style.type.heroTitle * 4, theme)
-                .copy(fontWeight = FontWeight.SemiBold, textAlign = TextAlign.Center),
+                .copy(fontWeight = theme.style.type.strongWeight, textAlign = TextAlign.Center),
         )
     }
 }
@@ -4365,7 +4378,7 @@ private fun recoveryRowFeedback(model: app.foldcade.language.PickerModel, row: a
     return Modifier.graphicsLayer { translationX = shake.value }.drawBehind {
         if (model.deleteHold?.row == row) drawRoundRect(theme.focus.copy(alpha = 0.3f),
             size = androidx.compose.ui.geometry.Size(size.width * motion.holdFill(model.deleteProgress), size.height),
-            cornerRadius = androidx.compose.ui.geometry.CornerRadius(22.dp.toPx()))
+            cornerRadius = androidx.compose.ui.geometry.CornerRadius(theme.style.shape.highlightCornerDp.dp.toPx()))
     }
 }
 

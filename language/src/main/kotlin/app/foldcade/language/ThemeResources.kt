@@ -58,33 +58,42 @@ data class ThemeResources(
     } ?: BackgroundMotion.Off
 }
 
-fun resolveThemeResources(zip: ThemeZip): ThemeResources {
+/** The id of the pack every other pack inherits from, and whose icons back every composition. */
+const val FALLBACK_THEME_ID: String = "afterglow"
+
+/**
+ * One pack's resources. With [inherit], Afterglow's for any other pack, colours and style tokens
+ * the pack leaves out or gets wrong come from [inherit]. Icons and scenes stay the pack's own;
+ * [ThemeComposition] falls back to the inherited icons slot by slot.
+ */
+fun resolveThemeResources(zip: ThemeZip, inherit: ThemeResources? = null): ThemeResources {
     val diagnostics = mutableListOf<ThemeDiagnostic>()
-    val style = ThemeStyle(zip.file.style, diagnostics::add)
+    val file = inherit?.let { zip.file.inheriting(it.file) } ?: zip.file
+    val style = ThemeStyle(file.style, diagnostics::add, inherit?.file?.style ?: JsonObject(emptyMap()))
     val legacyIcons = zip.entries.filterKeys { it.startsWith("marks/") && it.endsWith(".png") }.map { (path, bytes) ->
         "mark." + path.removePrefix("marks/").removeSuffix(".png") to
-            ThemeIconAsset(zip.file.id, path, bytes, null, false, ThemeIconBlend.Screen)
+            ThemeIconAsset(file.id, path, bytes, null, false, ThemeIconBlend.Screen)
     }.toMap()
-    val icons = legacyIcons + zip.file.icons.mapNotNull { (slot, icon) ->
+    val icons = legacyIcons + file.icons.mapNotNull { (slot, icon) ->
         val bytes = zip.entries[icon.file]
         if (bytes == null) { diagnostics += ThemeDiagnostic(icon.file, "Missing icon for '$slot'"); null }
-        else slot to ThemeIconAsset(zip.file.id, icon.file, bytes, icon.accent, icon.tint)
+        else slot to ThemeIconAsset(file.id, icon.file, bytes, icon.accent, icon.tint)
     }.toMap()
     val scenes = linkedMapOf<BackgroundMotion, ThemeScene>()
-    zip.file.sceneFiles.forEach { path ->
+    file.sceneFiles.forEach { path ->
         val bytes = zip.entries[path]
         if (themeZipEntryName(path) != path || bytes == null) {
             diagnostics += ThemeDiagnostic(path, "Missing scene asset")
         } else {
             val scene = parseThemeScene(bytes.decodeToString(), path, zip.entries, diagnostics::add)
             if (scene != null) {
-                val key = BackgroundMotion("${zip.file.id}:${scene.id}")
+                val key = BackgroundMotion("${file.id}:${scene.id}")
                 if (key in scenes) diagnostics += ThemeDiagnostic(path, "Duplicate scene id '${scene.id}'")
                 else scenes[key] = scene
             }
         }
     }
-    return ThemeResources(zip.file.id, zip.file.name, zip.file, icons, scenes, diagnostics, style)
+    return ThemeResources(file.id, file.name, file, icons, scenes, diagnostics, style)
 }
 
 /** Asset ownership stays with its pack. Categories never merge another pack's internal files. */

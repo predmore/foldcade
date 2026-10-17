@@ -22,6 +22,9 @@ import app.foldcade.language.CollectionLook
 import app.foldcade.language.collectionGlyphSlot
 import app.foldcade.language.screenedInset
 import app.foldcade.language.ThemeIconBlend
+import app.foldcade.language.MARK_CONSOLE
+import app.foldcade.language.Theme
+import app.foldcade.language.ThemeStyle
 import kotlin.math.min
 import kotlin.math.roundToInt
 
@@ -35,112 +38,49 @@ internal data class MarkGlyph(
     val icon: ThemeIconPainter,
     val accent: Color,
 ) {
-    fun heroScale(artScale: Float): Float = if (icon.resolved?.asset?.blend == ThemeIconBlend.Screen) artScale else 0.86f
+    /** Legacy Screen PNGs fill [artScale] of the hero like a cover; drawn marks use the theme's hero scale. */
+    fun heroScale(theme: Theme): Float =
+        if (icon.resolved?.asset?.blend == ThemeIconBlend.Screen) theme.artScale else theme.style.hero.markScale
 }
 
+/**
+ * The object for a place or platform, from its `mark.` slot. Any slot a pack fills works, so a pack
+ * can draw a platform Afterglow has not. A mark nobody drew, such as a platform without art, wears
+ * the controller.
+ */
 @Composable
 internal fun markGlyph(mark: String, pixels: Int = 256): MarkGlyph? {
     CollectionLook.parse(mark)?.let { return collectionGlyph(it, pixels) }
     val paint = LocalFoldTheme.current
-    val drawable = MARKS[mark]?.mark
-        ?: R.drawable.mark_console.takeIf { paint.icons["mark.$mark"].orEmpty().isNotEmpty() }
-        ?: return null
-    val icon = themeIcon("mark.$mark", drawable, pixels)
+    val icon = themeIconOrNull("mark.$mark", pixels) ?: themeIconOrNull("mark.$MARK_CONSOLE", pixels) ?: return null
     return MarkGlyph(icon, icon.resolved?.asset?.accent ?: paint.theme.focus)
 }
 
 /** The flat symbol for a place, a platform, or a collection glyph. It is one ink, so it takes a tint. */
 @Composable
-internal fun symbolIcon(mark: String, pixels: Int = 256): ThemeIconPainter? {
-    val drawable = MARKS[mark]?.symbol ?: GLYPHS[mark] ?: return null
-    return themeIcon("symbol.$mark", drawable, pixels)
-}
-
-private class MarkArt(val mark: Int, val symbol: Int)
-
-/** Places and platforms, by mark name. A platform's mark is named by its canonical id. */
-private val MARKS: Map<String, MarkArt> = mapOf(
-    "console" to MarkArt(R.drawable.mark_console, R.drawable.symbol_console),
-    "home" to MarkArt(R.drawable.mark_home, R.drawable.symbol_home),
-    "library" to MarkArt(R.drawable.mark_library, R.drawable.symbol_library),
-    "android-apps" to MarkArt(R.drawable.mark_android_apps, R.drawable.symbol_android_apps),
-    "android-games" to MarkArt(R.drawable.mark_android_games, R.drawable.symbol_android_games),
-    "folder" to MarkArt(R.drawable.mark_folder, R.drawable.symbol_folder),
-    "cloud" to MarkArt(R.drawable.mark_cloud, R.drawable.symbol_cloud),
-    "moonlight" to MarkArt(R.drawable.mark_moonlight, R.drawable.symbol_moonlight),
-    "pc" to MarkArt(R.drawable.mark_pc, R.drawable.symbol_pc),
-    "droiddeck" to MarkArt(R.drawable.mark_droiddeck, R.drawable.symbol_droiddeck),
-    "emulators" to MarkArt(R.drawable.mark_emulators, R.drawable.symbol_emulators),
-    "nintendo-3ds" to MarkArt(R.drawable.mark_nintendo_3ds, R.drawable.symbol_nintendo_3ds),
-    "nintendo-ds" to MarkArt(R.drawable.mark_nintendo_ds, R.drawable.symbol_nintendo_ds),
-    "game-boy" to MarkArt(R.drawable.mark_game_boy, R.drawable.symbol_game_boy),
-    "game-boy-color" to MarkArt(R.drawable.mark_game_boy_color, R.drawable.symbol_game_boy_color),
-    "game-boy-advance" to MarkArt(R.drawable.mark_game_boy_advance, R.drawable.symbol_game_boy_advance),
-    "nes" to MarkArt(R.drawable.mark_nes, R.drawable.symbol_nes),
-    "snes" to MarkArt(R.drawable.mark_snes, R.drawable.symbol_snes),
-    "nintendo-64" to MarkArt(R.drawable.mark_nintendo_64, R.drawable.symbol_nintendo_64),
-    "gamecube" to MarkArt(R.drawable.mark_gamecube, R.drawable.symbol_gamecube),
-    "wii" to MarkArt(R.drawable.mark_wii, R.drawable.symbol_wii),
-    "nintendo-switch" to MarkArt(R.drawable.mark_nintendo_switch, R.drawable.symbol_nintendo_switch),
-    "playstation" to MarkArt(R.drawable.mark_playstation, R.drawable.symbol_playstation),
-    "playstation-2" to MarkArt(R.drawable.mark_playstation_2, R.drawable.symbol_playstation_2),
-    "psp" to MarkArt(R.drawable.mark_psp, R.drawable.symbol_psp),
-    "genesis" to MarkArt(R.drawable.mark_genesis, R.drawable.symbol_genesis),
-    "master-system" to MarkArt(R.drawable.mark_master_system, R.drawable.symbol_master_system),
-    "game-gear" to MarkArt(R.drawable.mark_game_gear, R.drawable.symbol_game_gear),
-    "saturn" to MarkArt(R.drawable.mark_saturn, R.drawable.symbol_saturn),
-    "dreamcast" to MarkArt(R.drawable.mark_dreamcast, R.drawable.symbol_dreamcast),
-    "clamshell" to MarkArt(R.drawable.mark_clamshell, R.drawable.symbol_clamshell),
-    "slim" to MarkArt(R.drawable.mark_slim, R.drawable.symbol_slim),
-    "handheld" to MarkArt(R.drawable.mark_handheld, R.drawable.symbol_handheld),
-    "cartridge" to MarkArt(R.drawable.mark_cartridge, R.drawable.symbol_cartridge),
-    "disc" to MarkArt(R.drawable.mark_disc, R.drawable.symbol_disc),
-)
-
-/** Collection glyphs: they have no object of their own, since the folder is the object. */
-private val GLYPHS: Map<String, Int> = mapOf(
-    "star" to R.drawable.symbol_star,
-    "heart" to R.drawable.symbol_heart,
-    "trophy" to R.drawable.symbol_trophy,
-    "crown" to R.drawable.symbol_crown,
-    "gem" to R.drawable.symbol_gem,
-    "sword" to R.drawable.symbol_sword,
-    "shield" to R.drawable.symbol_shield,
-    "skull" to R.drawable.symbol_skull,
-    "flame" to R.drawable.symbol_flame,
-    "rocket" to R.drawable.symbol_rocket,
-    "racing-flag" to R.drawable.symbol_racing_flag,
-    "puzzle" to R.drawable.symbol_puzzle,
-    "ghost" to R.drawable.symbol_ghost,
-    "mushroom" to R.drawable.symbol_mushroom,
-    "music" to R.drawable.symbol_music,
-    "two-players" to R.drawable.symbol_two_players,
-    "hourglass" to R.drawable.symbol_hourglass,
-    "play-badge" to R.drawable.symbol_play_badge,
-    "check-badge" to R.drawable.symbol_check_badge,
-    "clock" to R.drawable.symbol_clock,
-    "leaf" to R.drawable.symbol_leaf,
-    "paw" to R.drawable.symbol_paw,
-)
+internal fun symbolIcon(mark: String, pixels: Int = 256): ThemeIconPainter? = themeIconOrNull("symbol.$mark", pixels)
 
 /**
  * A collection: the folder in its colour, its glyph pressed into the front, then the parts that keep
  * their own colour. One body serves every colour, multiplied by the tint, so a pack overrides the shape once.
  * The tint also paints the tile's light and glow. A pack from before symbols keeps its glyph's mark,
- * drawn on the front as it is (see [collectionGlyphSlot]).
+ * drawn on the front as it is (see [collectionGlyphSlot]). Colours, where the glyph sits, and how deep
+ * it is pressed are the theme's `style.collections`.
  */
 @Composable
 private fun collectionGlyph(look: CollectionLook, pixels: Int): MarkGlyph {
     val paint = LocalFoldTheme.current
+    val style = paint.theme.style
     val body = themeIcon("mark.collection-body", R.drawable.mark_collection_body, pixels).painter
     val face = themeIcon("mark.collection-face", R.drawable.mark_collection_face, pixels).painter
     val pressed = remember(paint.icons, look.glyph) { collectionGlyphSlot(look.glyph) { paint.icons[it].orEmpty() }.startsWith("symbol.") }
     val glyph = if (pressed) symbolIcon(look.glyph, pixels) else markGlyph(look.glyph, pixels)?.icon
     val screened = screenedInset(glyph?.resolved)?.let { remember(it) { it.asImageBitmap() } }
-    val painter = remember(body, face, glyph?.painter, pressed, screened, look.tint) {
-        CollectionPainter(body, face, glyph?.painter, pressed, screened, look.tint.color)
+    val tint = style.collections.color(look.tint)
+    val painter = remember(body, face, glyph?.painter, pressed, screened, tint, style) {
+        CollectionPainter(body, face, glyph?.painter, pressed, screened, tint, style)
     }
-    return MarkGlyph(ThemeIconPainter(painter, null), look.tint.color)
+    return MarkGlyph(ThemeIconPainter(painter, null), tint)
 }
 
 private class CollectionPainter(
@@ -152,10 +92,12 @@ private class CollectionPainter(
     /** A legacy pack's black-backed glyph, screened so its black disappears into the folder. */
     private val screened: ImageBitmap?,
     tint: Color,
+    style: ThemeStyle,
 ) : Painter() {
+    private val folder = style.collections
     private val tinted = ColorFilter.tint(tint, BlendMode.Modulate)
-    private val deep = ColorFilter.tint(lerp(tint, Color.Black, PRESSED_DEPTH))
-    private val lip = ColorFilter.tint(Color.White)
+    private val deep = ColorFilter.tint(lerp(tint, style.colors.shade, folder.pressedDepth))
+    private val lip = ColorFilter.tint(style.colors.shine)
 
     override val intrinsicSize: Size get() = body.intrinsicSize
 
@@ -164,13 +106,13 @@ private class CollectionPainter(
         glyph?.let { glyph ->
             // Where the glyph sits, in the art's 64-unit grid (tools/art/marks.py: face_glyph).
             val unit = min(size.width, size.height) / ART_UNITS
-            val box = Size(GLYPH_SIZE * unit, GLYPH_SIZE * unit)
-            val left = GLYPH_X * unit - box.width / 2f
-            val top = GLYPH_Y * unit - box.height / 2f
+            val box = Size(folder.glyphSize * unit, folder.glyphSize * unit)
+            val left = folder.glyphX * unit - box.width / 2f
+            val top = folder.glyphY * unit - box.height / 2f
             when {
                 // Pressed in: a faint light lip on its lower edge, under the shape in a deep shade of the tint.
                 pressed -> {
-                    translate(left, top + box.height * LIP_DROP) { with(glyph) { draw(box, alpha = LIP_ALPHA, colorFilter = lip) } }
+                    translate(left, top + box.height * folder.lipDrop) { with(glyph) { draw(box, alpha = folder.lipAlpha, colorFilter = lip) } }
                     translate(left, top) { with(glyph) { draw(box, colorFilter = deep) } }
                 }
                 screened != null -> drawImage(
@@ -186,13 +128,8 @@ private class CollectionPainter(
     }
 }
 
+/** The folder art's grid. The glyph's place on it is the theme's. */
 private const val ART_UNITS = 64f
-private const val GLYPH_X = 32f
-private const val GLYPH_Y = 39.48f
-private const val GLYPH_SIZE = 29.3f
-private const val PRESSED_DEPTH = 0.62f
-private const val LIP_DROP = 0.025f
-private const val LIP_ALPHA = 0.32f
 
 @Composable
 internal fun MarkIcon(mark: String, scale: Float) {
