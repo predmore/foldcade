@@ -353,7 +353,13 @@ class FoldcadeApp : Application() {
             onMoonlightRemoved = ::unpinMoonlightGame,
             onDroidDeckRemoved = ::unpinDroidDeckGame,
             onBrightness = { position -> brightness.write(brightnessLevel(position)) },
+            onSameGames = { groups -> saveArtChoices(artChoices.adopt(groups)) },
         )
+        // A game several libraries have is one tile, and its copies' play counts on it.
+        plays.historyIds = shell::historyIds
+        plays.tileOf = shell::tileOf
+        // Moving art is saved apart from the tiles, so a stop between the two is put right here.
+        artChoices.adopt(shell.sameGroups()).takeIf { it != artChoices }?.let(::saveArtChoices)
         plays.onChanged = shell::notePlayChanged
         commandCenter = CommandCenter(
             store = store,

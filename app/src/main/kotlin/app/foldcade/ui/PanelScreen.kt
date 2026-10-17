@@ -134,7 +134,6 @@ import app.foldcade.language.typingFaces
 import app.foldcade.language.FindEntry
 import app.foldcade.language.FindKind
 import app.foldcade.language.withFindHint
-import app.foldcade.api.plugin.Availability
 import app.foldcade.language.heroFacts
 import app.foldcade.R
 import app.foldcade.language.QuickSetting
@@ -2990,7 +2989,7 @@ private fun StripColumn(
                         editing = editing,
                         marked = onHomeMark,
                         onServer = face?.onServer == true,
-                        downloading = face?.id != null && face.id in shell.downloading,
+                        downloading = shell.isDownloading(face?.id),
                         activity = shell.activityAt(source),
                         library = libraryTile,
                         settledAt = if (face?.folder == true) shell.settledAt(face.id) else 0L,
@@ -3365,7 +3364,7 @@ private fun CarriedTile(
                 icon = if (art == null && themedApp == null) launcherIcon(game.androidPackage) else null,
                 favorite = game.favorite,
                 onServer = face.onServer,
-                downloading = face.id != null && face.id in shell.downloading,
+                downloading = shell.isDownloading(face.id),
                 // A tap on the tile in the hand puts it down, as a tap on its slot did.
                 onClick = { carry?.let { onTap(it.at) } },
             )
@@ -3417,8 +3416,8 @@ private fun FoundTile(app: FoldcadeApp, entry: FindEntry, focused: Boolean, size
             corner = corner,
             icon = if (art == null && themedApp == null) launcherIcon(game?.androidPackage) else null,
             favorite = false,
-            onServer = shell.catalogGame(entry.id)?.availability == Availability.RemoteOnly,
-            downloading = entry.id in shell.downloading,
+            onServer = shell.onServer(entry.id),
+            downloading = shell.isDownloading(entry.id),
             onClick = onClick,
         )
         if (entry.hidden) {

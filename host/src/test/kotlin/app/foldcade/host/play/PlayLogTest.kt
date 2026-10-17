@@ -77,6 +77,26 @@ class PlayLogTest {
     }
 
     @Test
+    fun oneGameUnderSeveralIdsAddsUp() {
+        val log = memoryLog()
+        val local = log.start("local")
+        now = 4_000
+        log.signal(local, PlaySignal.End)
+        val server = log.start("server")
+        now = 5_000
+        log.signal(server, PlaySignal.End)
+        val tile = log.start("tile")
+        now = 7_000
+        val both = log.totals("tile", setOf("tile", "local", "server"))
+        assertEquals("tile", both.gameId)
+        assertEquals(7_000L, both.activeMillis)
+        assertEquals(5_000L, both.lastPlayedMillis)
+        log.signal(tile, PlaySignal.End)
+        assertEquals(4_000L, log.totals("local").activeMillis)
+        assertNull(log.totals("tile", setOf("other")).lastPlayedMillis)
+    }
+
+    @Test
     fun unknownSessionIsIgnored() {
         val log = memoryLog()
         log.signal("missing", PlaySignal.End)

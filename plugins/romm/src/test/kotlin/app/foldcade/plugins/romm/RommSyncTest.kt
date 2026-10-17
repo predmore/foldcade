@@ -77,6 +77,29 @@ class RommSyncTest {
     }
 
     @Test
+    fun savesForAnotherLibrarysCopyNeverDownloadThisOne() = runBlocking {
+        writeSlot("sav", "progress")
+        ops.onDownload = { _, _, _, _, _, _ -> error("no download") }
+        ops.onSync = { _, _, _, _ -> throw RommUnavailable("offline") }
+        val local = LaunchTarget.ContentUri("content://folder/mario.nds")
+        val remote = GAME.copy(availability = Availability.RemoteOnly)
+        val placement = library().prepareSaves(remote, NamedPlayer, local)
+        assertEquals(local, placement.target)
+        assertEquals(SyncOutcome.Queued, placement.sync.outcome)
+        assertEquals(md5("progress"), placement.savesToPlace.single().contentHash)
+        assertFalse(Files.exists(romRoot().resolve("roms/1234")))
+    }
+
+    @Test
+    fun aDownloadsFileNameIsKnownOfflineFromItsFileList() = runBlocking {
+        cacheRom()
+        assertEquals("mario.nds", library().fileName(GAME))
+        assertEquals(null, library().fileName(GAME.copy(remoteKey = "77")))
+        writeRomSpec(romRoot(), 55, RomBytes("disc.cue", listOf(1L, 2L), null))
+        assertEquals(null, library().fileName(GAME.copy(remoteKey = "55")))
+    }
+
+    @Test
     fun aServerErrorOrAPortalPageDoesNotStopTheLaunch() = runBlocking {
         cacheRom()
         writeSlot("sav", "progress")

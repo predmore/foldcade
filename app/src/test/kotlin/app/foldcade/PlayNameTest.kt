@@ -85,6 +85,28 @@ class PlayNameTest {
     }
 
     @Test
+    fun aFoldedGamesCopiesCountAndReadAsItsTile() {
+        var now = 1_000L
+        val plays = PlaySessions.open(eventsFile(), app.foldcade.host.play.PlayClock { now })
+        val local = homeGameId("local-folder", "content://rf4")
+        val server = homeGameId("romm", "31")
+        val first = plays.start(local, "Rune Factory 4")
+        now += 45_000L
+        plays.signal(first, app.foldcade.host.play.PlaySignal.End)
+        val second = plays.start(server)
+        now += 5_000L
+        plays.signal(second, app.foldcade.host.play.PlaySignal.End)
+        val ids = setOf("same:rf4", local, server)
+        plays.historyIds = { if (it in ids) ids else setOf(it) }
+        plays.tileOf = { if (it in ids) "same:rf4" else it }
+        assertEquals(50_000L, plays.totals("same:rf4").activeMillis)
+        assertEquals(51_000L, plays.lastPlayedMillis("same:rf4"))
+        assertEquals(listOf("same:rf4", "same:rf4"), plays.spans().map { it.gameId })
+        // The tile was never played under its own id, so a copy's name reads for it.
+        assertEquals("Rune Factory 4", plays.name("same:rf4"))
+    }
+
+    @Test
     fun aCatalogNameSeenOnThePageIsKept() {
         val file = eventsFile()
         PlaySessions.open(file).rememberName(emerald, "Pokémon Emerald")

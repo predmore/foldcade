@@ -422,8 +422,31 @@ internal class RommLibrary internal constructor(
      * finish does not stop the launch: the local saves are placed and stay
      * unsynced until RomM answers.
      */
-    override suspend fun prepareLaunch(game: Game, player: Player): Placement {
-        val target = ensureLocal(game)
+    override suspend fun prepareLaunch(game: Game, player: Player): Placement =
+        negotiate(game, player, ensureLocal(game))
+
+    /**
+     * The same sync as [prepareLaunch], for a launch that opens another library's copy
+     * of this ROM. Saves are kept apart from the download, so nothing is downloaded.
+     */
+    override suspend fun prepareSaves(game: Game, player: Player, target: LaunchTarget): Placement =
+        negotiate(game, player, target)
+
+    /**
+     * The file a download of [game] is saved as, from the catalog or, offline, from
+     * the file list kept beside a download. Null for a ROM of several files.
+     */
+    override suspend fun fileName(game: Game): String? {
+        val wiring = gate.peek() ?: return null
+        val romId = game.remoteKey.toLongOrNull() ?: return null
+        val catalog = gate.restoreCatalog(wiring)
+        val spec = runInterruptible(Dispatchers.IO) {
+            catalog.rom(game.remoteKey)?.bytes() ?: readRomSpec(wiring.romRoot, romId)
+        }
+        return spec?.takeIf { it.fileIds.isEmpty() }?.fileName
+    }
+
+    private suspend fun negotiate(game: Game, player: Player, target: LaunchTarget): Placement {
         val wiring = gate.wiring()
         val romId = game.romId()
         // A slow server does not hold the game. A cut-short sync leaves files whole: each write is a rename.

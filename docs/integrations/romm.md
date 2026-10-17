@@ -35,6 +35,8 @@ Press A or X on a game. Foldcade downloads and checks its files before launch, s
 
 Downloads are kept in `Android/media/app.foldcade/romm` on internal storage, where emulators that open games by path, such as [RetroArch](retroarch.md), can read them. Android does not clear them to free space. **Y › Delete download** frees the space a downloaded game takes. Its saves stay, and its tile shows the cloud again until the next launch downloads it. Uninstalling Foldcade removes its downloads too.
 
+A game you also have in a [local folder](local-games.md) is one tile when the two files have the same name and system. It opens the folder's copy, so it does not download, and **Y › Delete download** frees a copy downloaded earlier without taking the tile away.
+
 Downloaded games with a cached catalog can be played offline. New downloads need the server. Provide a format the emulator can open; Foldcade does not handle server-side conversion.
 
 ## Save sync
@@ -51,7 +53,7 @@ Keep filenames consistent: `Puzzle.nds` uses `Puzzle.sav`.
 
 For RetroArch, choose `RetroArch/saves` in **Foldcade Settings › Emulators › RetroArch** and keep RetroArch's default save layout; see [RetroArch saves](retroarch.md#saves). Every system shares that one folder.
 
-A separate [local-folder tile](local-games.md) is not connected to RomM save sync.
+A game that is also in a [local folder](local-games.md) syncs through RomM too, whichever copy opens. Its first launch after the two become one tile hands the emulator's save to RomM as progress, so a save made from the folder is kept. If another device saved since, Foldcade asks which to play and keeps both.
 
 Azahar's save-folder setting does not yet enable title-save transfer. Other emulators and sources manage their own saves. Save-state sync is not implemented.
 

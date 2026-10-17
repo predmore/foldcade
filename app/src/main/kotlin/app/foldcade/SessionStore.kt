@@ -3,6 +3,8 @@ package app.foldcade
 import android.content.SharedPreferences
 import app.foldcade.language.BackgroundMotion
 import app.foldcade.language.MotionSpeed
+import app.foldcade.language.decodeSameGames
+import app.foldcade.language.encodeSameGames
 import app.foldcade.language.savedBeforeCollections
 import app.foldcade.language.AndroidShelf
 import app.foldcade.language.AppShelfRecord
@@ -282,6 +284,14 @@ class SessionStore(private val prefs: SharedPreferences) : SaveMarks {
         prefs.edit().putString(KEY_HOME_BOARD, raw).apply()
     }
 
+    /** Each copy's id to the tile it folds into, so a tile keeps its id while a copy is away. */
+    fun sameGames(): Map<String, String> = decodeSameGames(prefs.getString(KEY_SAME_GAMES, null))
+
+    fun saveSameGames(aliases: Map<String, String>) {
+        // Written before the board that uses it. A board saved without it heals at the next merge.
+        prefs.edit().putString(KEY_SAME_GAMES, encodeSameGames(aliases)).commit()
+    }
+
     fun saveAppShelfState(state: AppShelfState) {
         val games = mutableSetOf<String>()
         val apps = mutableSetOf<String>()
@@ -444,6 +454,7 @@ class SessionStore(private val prefs: SharedPreferences) : SaveMarks {
         private const val KEY_THEME = "theme"
         private const val KEY_LIBRARY_SORT = "library_sort"
         private const val KEY_HOME_BOARD = "home_board"
+        private const val KEY_SAME_GAMES = "same_games"
         private const val KEY_HOME_BOARD_BEFORE_COLLECTIONS = "home_board_before_collections"
         private const val KEY_SHELF_GAMES = "android_shelf_games"
         private const val KEY_SHELF_APPS = "android_shelf_apps"

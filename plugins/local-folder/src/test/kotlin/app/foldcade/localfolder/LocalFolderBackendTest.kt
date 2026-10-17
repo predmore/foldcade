@@ -57,6 +57,8 @@ class LocalFolderBackendTest {
                 "removeLocal",
                 "saves",
                 "prepareLaunch",
+                "prepareSaves",
+                "fileName",
                 "reconcile",
                 "pendingSaveConflicts",
                 "resolveSaveConflict",
@@ -297,6 +299,18 @@ class LocalFolderBackendTest {
         val game = backend.listGames("nintendo-ds", GameQuery()).games.single()
         assertEquals("nds", backend.folderName(game.remoteKey))
         assertEquals("", backend.folderName("content://missing"))
+    }
+
+    @Test
+    fun aGamesFileNameIsTheScannedDisplayNameNotItsKey() = runBlocking {
+        val backend = newBackend(
+            folderDir("content://3ds", "3ds", listOf(folderFile("content://msf%3A12", "Rune Factory 4 (USA).cci"))),
+        )
+        val game = backend.listGames("nintendo-3ds", GameQuery()).games.single()
+        assertEquals("Rune Factory 4 (USA).cci", backend.fileName(game))
+        val gone = game.copy(remoteKey = "content://tree/primary%3AROMs/document/primary%3AROMs%2Fnds%2FTetris.nds")
+        assertEquals("Tetris.nds", backend.fileName(gone))
+        assertNull(backend.fileName(game.copy(backendId = "romm")))
     }
 
     @Test

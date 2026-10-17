@@ -10,6 +10,7 @@ Settings and confirmed Home edits are restored from the app-private `foldcade` s
 - Home: tile positions and empty slots, collections (folders the user made in older releases become collections), confirmed names and icons, hidden tiles and their former root/group slots, removed system folders with their root slots and games still filed in them, and when Recently played may first appear.
 - Apps: games/apps shelf overrides, hidden apps, favorites, and overrides that show player apps.
 - Players: save folder URIs, skipped folder offers, save hashes, and pending save returns.
+- Same games: `same_games` maps each copy of a game several libraries have (same system and file name) to the one tile it is shown as. It is kept when a copy goes away, so the tile keeps its id while a server is offline or removed. The Home board and art choices move onto the tile when it forms; play history stays under each copy's id and is read through the tile.
 - Onboarding: Home, library-folder, usage-access, and controller prompt answers.
 
 Brightness, the Home role, notification access, and usage access belong to Android. The shell reads their current state rather than restoring an app-owned copy. Folder URIs are saved after acquiring persistable access. Removing or replacing one folder reference keeps its grant while another saved source or player still uses that tree.

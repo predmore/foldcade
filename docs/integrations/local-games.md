@@ -53,7 +53,7 @@ For exported `.steam` files, follow [GameNative](gamenative.md) or [DroidDeck](d
 
 ## Saves
 
-The emulator keeps its saves. For server-backed saves, launch the game from [RomM](romm.md#save-sync) with a supported save setup; adding a local folder does not enable RomM sync.
+The emulator keeps its saves. When a [RomM](romm.md#save-sync) server has the same file, with the same name and system, the folder's game and the server's are one tile with one save: it opens the folder's copy and syncs saves through RomM with a supported save setup. Its play time, places, and art carry over from both. A file renamed later is a new game.
 
 ## If a game is missing or will not start
 

@@ -208,6 +208,17 @@ class LocalFolderBackend(
     }
 
     /**
+     * The file's display name from the last scan. A game the scan does not hold
+     * falls back to the name in its key, which a provider with opaque ids lacks.
+     */
+    override suspend fun fileName(game: Game): String? {
+        if (game.backendId != id) return null
+        val current = binding.get()
+        val snap = stored?.takeIf { current != null && it.generation == current.generation }
+        return snap?.byUri?.get(game.remoteKey)?.fileName ?: fileNameOf(game.remoteKey)
+    }
+
+    /**
      * Display name of the directory that contains [remoteKey].
      * Empty when this library has no published scan, or the file has no directory.
      * The shell uses it as the hero short text. It does not parse [remoteKey].
@@ -265,7 +276,9 @@ private class Binding(
 private class StoredScan(
     val generation: Int,
     val scan: FolderScan,
-)
+) {
+    val byUri: Map<String, FolderGame> by lazy { scan.games.associateBy { it.documentUri } }
+}
 
 private data class RememberedSave(
     val slot: String,
