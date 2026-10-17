@@ -3,7 +3,7 @@
 Every icon in Foldcade belongs to one family, drawn in two finishes:
 
 - **Symbols** are flat shapes in one warm-white ink. They are used wherever the icon sits in the chrome: controller hints, the status islands, tile badges, menu rows, and the collection picker.
-- **Objects** are the same shapes rendered as lit things. They are used on the home grid and in the top screen's hero, where they sit beside detailed cover art and Android app icons.
+- **Objects** are the same shapes rendered as lit things. They are used on the home grid and in the top screen's hero, where they sit beside detailed cover art. Common Android apps and the emulators Foldcade launches get objects too, so their tiles match the platforms beside them.
 
 A flat icon beside a 3D cover reads as a sticker, and a glossy icon in a menu row reads as noise. One drawing serves both: the art pipeline renders each place and platform once as an object and once as a symbol.
 
@@ -12,9 +12,10 @@ The source is Python in `tools/art`. It writes Android vector drawables to `them
 ```sh
 python3 tools/art/icons.py                          # write every icon and the manifest's icon slots
 python3 tools/art/sheet.py /tmp/afterglow-icons.html  # a contact sheet of the whole set
+python3 tools/art/preview.py /tmp/apps.png chrome dolphin game_boy  # grid tiles as a PNG, on macOS
 ```
 
-Both scripts use only the Python standard library. Open the sheet in any browser.
+The scripts use only the Python standard library. Open the sheet in any browser. The preview renders through macOS Quick Look, so you can check a drawing without one; elsewhere it writes the SVG beside the PNG.
 
 ## Where each icon is used
 
@@ -27,6 +28,7 @@ Both scripts use only the Python standard library. Open the sheet in any browser
 | `symbol.*` | `symbol_*.xml` | Symbol, 64 units, tinted | Menu rows, the collection picker, and the glyph pressed into a collection. |
 | `mark.*` | `mark_*.xml` | Object, 64 units | Grid tiles and the hero. Its `accent` is the light behind the tile. |
 | `mark.collection-body`, `mark.collection-face` | `mark_collection_*.xml` | Object parts | A collection's folder. See [Collections](#collections). |
+| `app.<package>` | `app_*.xml` | Object, 64 units | An installed app's tile, its hero, and its notices, in place of its launcher icon. See [Apps](#apps). |
 
 A place or platform has both a `mark.` and a `symbol.` slot with the same name, for example `mark.game-boy` and `symbol.game-boy`. A platform's name is its canonical platform id. A collection glyph has only a `symbol.` slot, because on the grid the folder is the object.
 
@@ -109,7 +111,8 @@ The home grid draws every tile the same way:
 - **One corner.** Every tile is a rounded square at the theme's `iconRadius` (0.28).
 - **One border.** The focus ring is the only border drawn on the grid. It sits just outside the tile and follows the tile's corner. Nothing draws an edge inside a tile.
 - **Light behind marks.** A mark's tile is the surface with a soft light in the mark's accent near its top. It replaces the old coloured edge.
-- **Apps fill their tiles.** An adaptive Android icon is drawn from its background and foreground layers, clipped to the tile's corner, like a cover. An icon that only ships a fixed shape stays on the surface.
+- **Apps the theme draws are objects.** An app with an `app.<package>` slot sits on the light in its accent, like a mark.
+- **Other apps fill their tiles.** An adaptive Android icon is drawn from its background and foreground layers, clipped to the tile's corner, like a cover. An icon that only ships a fixed shape stays on the surface.
 - **One resting brightness.** Unfocused covers, apps, and marks all rest at 82% (`style.tile.restAlpha`).
 
 ## Collections
@@ -125,6 +128,25 @@ Where the glyph sits is `FACE_GLYPH` in `marks.py`. `icons.py` prints the finish
 A collection can wear any glyph, any place, or any platform (`FOLDER_ICONS`). That is why every place and platform needs a symbol.
 
 A theme pack from before symbols may draw a glyph only as `mark.<glyph>`. If no pack ahead of Afterglow draws `symbol.<glyph>`, that mark is drawn on the folder as it is (`collectionGlyphSlot`). A legacy black-backed `marks/<name>.png` is screened onto the folder.
+
+## Apps
+
+Afterglow draws an object for the apps people open on a handheld: the Thor's own apps (Chrome, Files, Settings, the Play Store, and the rest), common Android apps, and every emulator and front-end Foldcade launches. They live in three modules, one per group, gathered by `tools/art/apps.py`:
+
+| Module | Draws |
+| --- | --- |
+| `apps_android.py` | Android's own apps and Google's |
+| `apps_popular.py` | Popular third-party apps: browsers, media, chat, stores, and tools |
+| `apps_emulators.py` | Emulators and game front-ends |
+
+An app's object follows the same recipe as a platform's, with two more rules:
+
+1. **Draw what the app does, or the one thing its icon is known by.** A browser can be the ring of colours people know Chrome by, and RetroArch is its invader. Keep the cue, change the drawing: echo the colour and the motif, never trace the logo, and never draw lettering.
+2. **An emulator is not its platform.** DuckStation is a duck, not a PlayStation controller. When an emulator's own icon is the console, draw what sets the emulator apart, so its tile never passes for the platform's.
+
+Each entry in a module's `APPS` names the packages that wear it, and every package gets its own `app.<package>` slot pointing at the one file. List every package an app ships under: its store build, its F-Droid or nightly build, and its paid build. A theme can then restyle one build or all of them.
+
+An app no pack draws keeps its own launcher icon. Android games always do: draw only apps, never a game.
 
 ## Adding an icon
 
@@ -146,6 +168,14 @@ A theme pack from before symbols may draw a glyph only as `mark.<glyph>`. If no 
    - Give it a short picker name in `glyphName` in `CollectionLook.kt`.
 5. **Check it** on the contact sheet beside its neighbours (see the checklist below), then on the device. Bump the icon count in `ThemeSceneTest` and run the tests.
 
+### An app
+
+1. **Draw it** in the module for its group, as a function of its accent that returns parts, the same as a platform.
+2. **Register it** in that module's `APPS`: `"vlc": (vlc, "#FF8A1F", "VLC: a traffic cone", ["org.videolan.vlc"])`. The name is only the file's (`app_vlc.xml`). The slots are the packages.
+3. **Check it** with `python3 tools/art/preview.py /tmp/vlc.png vlc nes chrome` beside a platform and another app, then regenerate with `python3 tools/art/icons.py`. Bump the icon count in `ThemeSceneTest`.
+
+The app needs no code. Any tile or hero for a package with a slot draws the object.
+
 ### A collection glyph
 
 1. Draw it in `marks.py` as a function with no arguments, returning `outline()` and `line()` parts, and add it to `GLYPHS`.
@@ -164,5 +194,6 @@ Draw it in `tools/art/symbols.py` on the 24-unit grid and add an `Asset` to `con
 - [ ] A symbol is one ink, with cuts of at least 2.5 units, and colour only for state. Where it's drawn, the host passes its colour through `ThemeIconPainter.tint`.
 - [ ] An object uses only parts from the recipe, its body in its accent, and no new light source.
 - [ ] A platform is drawn as the thing you hold, seen from the front, with no logo.
+- [ ] An app echoes its own icon's colour and motif without tracing its logo or drawing letters, and an emulator doesn't pass for its platform.
 - [ ] Nothing new draws a border or edge inside a grid tile.
 - [ ] The XML came from `icons.py`, not a hand edit, and the tests pass.

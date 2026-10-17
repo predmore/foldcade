@@ -879,12 +879,16 @@ private fun AchievementList(
 
 private const val ACHIEVEMENT_BADGE_PX = 96f
 
-/** The app's cover, then its launcher icon, then its platform mark. An app Foldcade did not open shows Android's. */
+/**
+ * The app's cover, then the theme's object for it or its launcher icon, then its platform mark.
+ * An app Foldcade did not open shows Android's.
+ */
 @Composable
 private fun CenterArt(app: FoldcadeApp, running: RunningApp?) {
     val design = LocalFoldTheme.current.theme.style
     val theme = foldTheme()
-    val icon = launcherIcon(running?.packageName)
+    val themedApp = appGlyph(running?.packageName)
+    val icon = if (themedApp == null) launcherIcon(running?.packageName) else null
     val cover = running?.let { rememberArt(app, it.record, it.query) }?.cover?.let { rememberCoverPainter(app, it, COVER_PX) }
     val mark = running?.mark ?: "android-apps"
     when {
@@ -898,7 +902,7 @@ private fun CenterArt(app: FoldcadeApp, running: RunningApp?) {
             contentScale = ContentScale.Crop,
         )
         icon != null -> LauncherImage(icon, contentDescription = null, modifier = Modifier.fillMaxSize(theme.artScale))
-        else -> markGlyph(mark)?.let { MarkIcon(it, it.heroScale(theme)) }
+        else -> (themedApp ?: markGlyph(mark))?.let { MarkIcon(it, it.heroScale(theme)) }
     }
 }
 
@@ -1654,13 +1658,14 @@ private fun HeroArt(
 ) {
     val design = LocalFoldTheme.current.theme.style
     val theme = foldTheme()
-    val icon = launcherIcon(packageName)
+    val themedApp = appGlyph(packageName, 640)
+    val icon = if (themedApp == null) launcherIcon(packageName) else null
     val cover = rememberArt(app, record, query)?.cover
     val scene = rememberScene(app, record, query)
     val logo = scene?.logo?.takeIf { scene.background != null }?.let { rememberCoverPainter(app, it, LOGO_PX) }
     val screenShot = scene?.screen?.takeIf { scene.background == null }
         ?.let { rememberCoverPainter(app, it, SCREEN_PX, FilterQuality.None) }
-    val glyph = mark?.let { markGlyph(it, 640) }
+    val glyph = themedApp ?: mark?.let { markGlyph(it, 640) }
     val accent = glyph?.accent ?: theme.focus
     val loaded = cover?.let { rememberCoverPainter(app, it, COVER_PX) }
     // A logo, or a box beside its title screen, takes the width it needs. The game's own
@@ -2300,14 +2305,18 @@ private fun PanelRows(
 @Composable
 private fun NoticeRow(notice: FoldNotice, focused: Boolean, modifier: Modifier = Modifier) {
     val theme = foldTheme()
-    val icon = launcherIcon(notice.packageName ?: LocalContext.current.packageName)
+    val packageName = notice.packageName ?: LocalContext.current.packageName
+    val themedApp = appGlyph(packageName, 128)
+    val icon = if (themedApp == null) launcherIcon(packageName) else null
     Row(
         modifier.padding(start = px(16f), end = px(16f), top = px(10f), bottom = px(10f)),
         horizontalArrangement = Arrangement.spacedBy(px(16f)),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Box(Modifier.size(px(48f)), contentAlignment = Alignment.Center) {
-            if (icon != null) {
+            if (themedApp != null) {
+                Image(painter = themedApp.icon.painter, contentDescription = null, modifier = Modifier.fillMaxSize())
+            } else if (icon != null) {
                 LauncherImage(icon, contentDescription = null, modifier = Modifier.fillMaxSize())
             }
         }
@@ -2960,16 +2969,18 @@ private fun StripColumn(
                     val libraryTile = library && face == null
                     val onHomeMark = face != null && allOpen && face.onGrid && !face.folder && !face.allTile
                     val art = tileArt(app, game, face)
+                    val themedApp = if (art == null) appGlyph(game?.androidPackage) else null
                     Cell(
                         title = label,
                         mark = game?.mark,
+                        themedApp = themedApp,
                         art = art,
                         showTitle = showTitle,
                         focused = focused,
                         size = cell,
                         titleWidth = titleWidth,
                         corner = radius,
-                        icon = if (art == null) launcherIcon(game?.androidPackage) else null,
+                        icon = if (art == null && themedApp == null) launcherIcon(game?.androidPackage) else null,
                         favorite = game?.favorite == true,
                         empty = face?.empty == true || beyond,
                         selected = face?.id in shell.homeSelection()?.checked.orEmpty(),
@@ -3341,15 +3352,17 @@ private fun CarriedTile(
                     clip = false
                 },
         ) {
+            val themedApp = if (art == null) appGlyph(game.androidPackage) else null
             Cell(
                 title = game.title,
                 mark = game.mark,
+                themedApp = themedApp,
                 art = art,
                 showTitle = false,
                 focused = true,
                 size = cell,
                 corner = radius,
-                icon = if (art == null) launcherIcon(game.androidPackage) else null,
+                icon = if (art == null && themedApp == null) launcherIcon(game.androidPackage) else null,
                 favorite = game.favorite,
                 onServer = face.onServer,
                 downloading = face.id != null && face.id in shell.downloading,
@@ -3379,7 +3392,7 @@ private fun CarriedTile(
 }
 
 /**
- * One of Find's results, drawn as the grid draws its tile: the game's art, an app's icon,
+ * One of Find's results, drawn as the grid draws its tile: the game's art, an app's object or icon,
  * or a group's mark. A hidden one wears a badge, since Find shows it all the same.
  */
 @Composable
@@ -3391,16 +3404,18 @@ private fun FoundTile(app: FoldcadeApp, entry: FindEntry, focused: Boolean, size
         found?.let { rememberCoverPainter(app, it.square ?: it.cover, TILE_PX)?.painter }
     }
     val corner = size * foldTheme().iconRadius
+    val themedApp = if (art == null) appGlyph(game?.androidPackage) else null
     Box {
         Cell(
             title = entry.title,
             mark = entry.mark ?: game?.mark,
+            themedApp = themedApp,
             art = art,
             showTitle = showTitle,
             focused = focused,
             size = size,
             corner = corner,
-            icon = if (art == null) launcherIcon(game?.androidPackage) else null,
+            icon = if (art == null && themedApp == null) launcherIcon(game?.androidPackage) else null,
             favorite = false,
             onServer = shell.catalogGame(entry.id)?.availability == Availability.RemoteOnly,
             downloading = entry.id in shell.downloading,
@@ -3590,6 +3605,8 @@ private const val SETTLE_WINDOW_MILLIS = 600L
 private fun Cell(
     title: String,
     mark: String?,
+    /** The theme's object for an app ([appGlyph]), drawn in place of [mark] and its launcher [icon]. */
+    themedApp: MarkGlyph? = null,
     art: Painter? = null,
     showTitle: Boolean,
     focused: Boolean,
@@ -3621,7 +3638,7 @@ private fun Cell(
     val motion = LocalFoldTheme.current.theme.motion
     val theme = foldTheme()
     val tile = theme.style.tile
-    val glyph = mark?.let { markGlyph(it) }
+    val glyph = themedApp ?: mark?.let { markGlyph(it) }
     val animatorScale = motion.animatorScale(LocalContext.current.contentResolver)
     val checked by motionState(if (selected) 1f else 0f, motion.playful(motion.durationFocus, animatorScale))
     // A collection that just took a new look dips and springs back into it, once. A tile that
@@ -3799,15 +3816,6 @@ private fun Cell(
                         contentScale = ContentScale.Fit,
                     )
                 }
-                if (favorite) {
-                    Box(
-                        Modifier
-                            .align(Alignment.TopEnd)
-                            .padding(px(8f))
-                            .size(px(tile.dotPx))
-                            .background(theme.focus, theme.style.shape.control()),
-                    )
-                }
             } else if (art != null) {
                 // Cover art fills the rounded tile. At rest it sits a little back, so focus reads.
                 Image(
@@ -3820,7 +3828,7 @@ private fun Cell(
                 )
             } else if (!empty) {
                 val glyphAlpha = { lerp(tile.restAlpha, 1f, lit()) }
-                if (glyph != null && CollectionLook.parse(mark) != null) {
+                if (themedApp == null && glyph != null && CollectionLook.parse(mark) != null) {
                     // A collection being dressed changes as the cursor moves, so each look fades in.
                     Crossfade(mark, animationSpec = motion.arrive(motion.durationFocus, animatorScale)) { shown ->
                         Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
@@ -3842,6 +3850,16 @@ private fun Cell(
                         overflow = TextOverflow.Clip,
                     )
                 }
+            }
+            // A pinned app's dot, on its launcher icon or on the theme's object for it.
+            if (favorite && (icon != null || themedApp != null)) {
+                Box(
+                    Modifier
+                        .align(Alignment.TopEnd)
+                        .padding(px(8f))
+                        .size(px(tile.dotPx))
+                        .background(theme.focus, theme.style.shape.control()),
+                )
             }
             val check = presence(true.takeIf { selected }, motion.durationFocus, animatorScale)
             if (check.shown != null) Box(Modifier.align(Alignment.TopStart)

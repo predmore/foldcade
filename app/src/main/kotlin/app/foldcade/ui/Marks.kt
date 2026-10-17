@@ -56,6 +56,17 @@ internal fun markGlyph(mark: String, pixels: Int = 256): MarkGlyph? {
     return MarkGlyph(icon, icon.resolved?.asset?.accent ?: paint.theme.focus)
 }
 
+/**
+ * The theme's object for an installed app, from its `app.<package>` slot, or null when no pack draws one.
+ * A themed app is drawn like a mark, on the light in its accent, in place of its launcher icon.
+ */
+@Composable
+internal fun appGlyph(packageName: String?, pixels: Int = 256): MarkGlyph? {
+    if (packageName == null) return null
+    val icon = themeIconOrNull("app.$packageName", pixels) ?: return null
+    return MarkGlyph(icon, icon.resolved?.asset?.accent ?: LocalFoldTheme.current.theme.focus)
+}
+
 /** The flat symbol for a place, a platform, or a collection glyph. It is one ink, so it takes a tint. */
 @Composable
 internal fun symbolIcon(mark: String, pixels: Int = 256): ThemeIconPainter? = themeIconOrNull("symbol.$mark", pixels)

@@ -4,18 +4,18 @@ icon slots in themes/afterglow/theme.json. Standard library only.
 
     python3 tools/art/icons.py
 
-The script owns every ic_btn_, ic_status_, ic_badge_, ic_control_, mark_ and symbol_ file in those folders, so an
+The script owns every ic_btn_, ic_status_, ic_badge_, ic_control_, mark_, symbol_ and app_ file in those folders, so an
 icon it no longer draws is removed. See docs/iconography.md before adding one.
 """
 import json, os
 from art import Asset, to_svg, to_vd
 from objects import object_layers, symbol_layers
-import marks, symbols
+import apps, marks, symbols
 
 REPO = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 ICONS = f"{REPO}/themes/afterglow/icons"
 SVG = f"{REPO}/art/svg"
-OWNED = ("ic_btn_", "ic_status_", "ic_badge_", "ic_control_", "mark_", "symbol_")
+OWNED = ("ic_btn_", "ic_status_", "ic_badge_", "ic_control_", "mark_", "symbol_", "app_")
 
 def slot(name):
     """The manifest slot an icon file fills: ic_btn_a_filled -> button.a.filled, mark_game_boy -> mark.game-boy."""
@@ -24,6 +24,12 @@ def slot(name):
         if name.startswith(prefix):
             return f"{kind}.{name[len(prefix):].replace('_', sep)}"
     raise ValueError(name)
+
+def slots(asset):
+    """Every manifest slot an icon fills. An app's object fills one `app.<package>` slot per package that wears it."""
+    if asset.name.startswith("app_"):
+        return [f"app.{p}" for p in apps.APPS[asset.name[len("app_"):]][3]]
+    return [slot(asset.name)]
 
 def assets():
     """(asset, svg folder, accent or None) for every icon."""
@@ -40,6 +46,9 @@ def assets():
     for name, (draw, about) in marks.GLYPHS.items():
         out.append((Asset(f"symbol_{name}", 64, 64, symbol_layers(draw()), dp=(48, 48), tint=True,
                           note=f"Afterglow collection glyph: {about}"), "symbols", None))
+    for name, (draw, accent, about, _) in apps.APPS.items():
+        out.append((Asset(f"app_{name}", 64, 64, object_layers(draw(accent)), dp=(48, 48), note=f"Afterglow app object: {about}"),
+                    "apps", accent))
     out += [(Asset("mark_collection_body", 64, 64, marks.collection_body(), dp=(48, 48),
                    note="Afterglow collection folder in greys; the host multiplies it by the collection's tint"), "collections", None),
             (Asset("mark_collection_face", 64, 64, marks.collection_face(), dp=(48, 48),
@@ -50,6 +59,8 @@ def main():
     made = assets()
     names = [a.name for a, _, _ in made]
     assert len(names) == len(set(names)), "two icons share a name"
+    filled = [s for a, _, _ in made for s in slots(a)]
+    assert len(filled) == len(set(filled)), "two icons fill one slot"
     os.makedirs(ICONS, exist_ok=True); os.makedirs(SVG, exist_ok=True)
     for folder in (ICONS, *(f"{SVG}/{d}" for d in os.listdir(SVG))):
         for file in os.listdir(folder):
@@ -67,7 +78,7 @@ def main():
     for a, _, accent in made:
         entry = {"file": f"icons/{a.name}.xml", "tint": a.tint}
         if accent: entry["accent"] = accent.upper()
-        kept[slot(a.name)] = entry
+        for s in slots(a): kept[s] = dict(entry)
     theme["icons"] = dict(sorted(kept.items()))
     open(path, "w").write(json.dumps(theme, indent=2, ensure_ascii=False) + "\n")
     print(f"wrote {len(made)} icons; the collection glyph sits at {tuple(round(v, 3) for v in marks.face_glyph())}")
