@@ -79,6 +79,17 @@ def gear(cx, cy, ro, ri, teeth, top=0.34, root=0.5):
             pts.append((cx + r * math.cos(a + da * step), cy + r * math.sin(a + da * step)))
     return poly(pts)
 
+def rpoly(pts, r):
+    """A polygon with its corners rounded by [r] (one radius, or one per corner)."""
+    n = len(pts); rs = r if isinstance(r, (list, tuple)) else [r] * n; out = []
+    for i in range(n):
+        (x0, y0), (x1, y1), (x2, y2) = pts[i - 1], pts[i], pts[(i + 1) % n]
+        la, lb = math.hypot(x0 - x1, y0 - y1), math.hypot(x2 - x1, y2 - y1)
+        ta, tb = min(rs[i] / la, 0.5), min(rs[i] / lb, 0.5)
+        a = (x1 + (x0 - x1) * ta, y1 + (y0 - y1) * ta); b = (x1 + (x2 - x1) * tb, y1 + (y2 - y1) * tb)
+        out.append(f"{'M' if i == 0 else 'L'}{f(a[0])},{f(a[1])} Q{f(x1)},{f(y1)} {f(b[0])},{f(b[1])}")
+    return " ".join(out) + " Z"
+
 def pixels(rows, x, y, cell):
     """Pixel art as one outline per connected shape, holes included: rows of 'X' and '.' from the top.
     Shared edges between cells cancel, so the lit rim follows only the outside."""

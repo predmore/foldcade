@@ -3816,15 +3816,6 @@ private fun Cell(
                         contentScale = ContentScale.Fit,
                     )
                 }
-                if (favorite) {
-                    Box(
-                        Modifier
-                            .align(Alignment.TopEnd)
-                            .padding(px(8f))
-                            .size(px(tile.dotPx))
-                            .background(theme.focus, theme.style.shape.control()),
-                    )
-                }
             } else if (art != null) {
                 // Cover art fills the rounded tile. At rest it sits a little back, so focus reads.
                 Image(
@@ -3859,6 +3850,16 @@ private fun Cell(
                         overflow = TextOverflow.Clip,
                     )
                 }
+            }
+            // A pinned app's dot, on its launcher icon or on the theme's object for it.
+            if (favorite && (icon != null || themedApp != null)) {
+                Box(
+                    Modifier
+                        .align(Alignment.TopEnd)
+                        .padding(px(8f))
+                        .size(px(tile.dotPx))
+                        .background(theme.focus, theme.style.shape.control()),
+                )
             }
             val check = presence(true.takeIf { selected }, motion.durationFocus, animatorScale)
             if (check.shown != null) Box(Modifier.align(Alignment.TopStart)

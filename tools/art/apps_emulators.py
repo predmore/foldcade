@@ -7,19 +7,6 @@ from marks import rr, ci, stick, bezel, hinge, _ring_half
 from marks import moonlight, pc, droiddeck, MOON, DECK
 
 # ---- shape helpers for this module
-def rpoly(pts, r):
-    """A polygon with every corner rounded by [r], or by r[i] at corner i."""
-    n = len(pts); rs = r if isinstance(r, (list, tuple)) else [r] * n
-    def toward(a, b, dist):
-        dx, dy = b[0] - a[0], b[1] - a[1]; t = min(dist, math.hypot(dx, dy) / 2) / math.hypot(dx, dy)
-        return (a[0] + dx * t, a[1] + dy * t)
-    d = ""
-    for i in range(n):
-        p0, p1, p2 = pts[i - 1], pts[i], pts[(i + 1) % n]
-        a, b = toward(p1, p0, rs[i]), toward(p1, p2, rs[i])
-        d += ("M" if i == 0 else "L") + f"{f(a[0])},{f(a[1])} Q{f(p1[0])},{f(p1[1])} {f(b[0])},{f(b[1])} "
-    return d + "Z"
-
 def squash(pts, sy, cy):
     """Points pressed flat toward the line y = [cy], for a disc seen at an angle."""
     return [(x, cy + (y - cy) * sy) for x, y in pts]
