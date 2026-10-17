@@ -267,6 +267,8 @@ class HomeSession(
         report.remembered.forEach { (id, game) -> games[id] = game }
         report.copies.forEach { (id, listed) -> if (listed.isNotEmpty()) copies[id] = listed }
         sameGames = report.sameGames
+        // A menu open on a copy reads and acts on the tile it folded into.
+        menuGame = menuGame?.let(::tileOf)
         // Copies folded since the board was saved bring their places onto their tile first.
         val adopted = adoptSameGames(board, report.sameGames)
         val reconciled = report.hidden.fold(adopted) { current, id -> hideGame(current, id) }

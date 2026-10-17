@@ -14,13 +14,15 @@ class SameGamesTest {
     private val tile = sameGameId(key)
 
     @Test
-    fun oneFileOnOnePlatformIsOneGameWhateverItsCase() {
-        assertEquals(key, sameKey("Nintendo-3DS", "rune factory 4 (usa).CCI"))
+    fun oneFileOnOnePlatformIsOneGameSpelledTheSame() {
+        assertEquals(key, sameKey("Nintendo-3DS", "Rune Factory 4 (USA).cci"))
+        // A player names the save after the file as written, so another case is another save.
+        assertFalse(key == sameKey("nintendo-3ds", "rune factory 4 (usa).CCI"))
         // A name spelled with a combining accent is the same name as its composed form.
         assertEquals(sameKey("snes", "Pokémon.sfc"), sameKey("snes", "Pokémon.sfc"))
         assertNull(sameKey("nintendo-3ds", " "))
         assertNull(sameKey(null, "a.cci"))
-        assertEquals("rune factory 4 (usa).cci", sameGameFileName(tile))
+        assertEquals("Rune Factory 4 (USA).cci", sameGameFileName(tile))
         assertNull(sameGameFileName(server))
     }
 

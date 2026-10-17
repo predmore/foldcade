@@ -33,6 +33,7 @@ import org.junit.Test
 
 /** A folder copy that plays keeps its saves on the server copy of the same file. */
 class LaunchSavesTest {
+    private val libraries = HashMap<String, RecordingLibrary>()
     private val folder = RecordingLibrary("folder")
     private val server = RecordingLibrary("server")
     private val docs = Documents()
@@ -80,6 +81,7 @@ class LaunchSavesTest {
         })
         val second = Game("other", "4", "nintendo-ds", Availability.Cached, "Tetris")
         other.held = listOf("sav")
+        other.toPlace = "kept on the second server"
         val route = GameRoute("tile", play, owner, servers = listOf(owner, second))
         val prepared = LaunchSaves(saves, plugins) { awaiting += it }.prepare(route, Melon, local)
         assertEquals(second, prepared.owner)
@@ -88,12 +90,36 @@ class LaunchSavesTest {
     }
 
     @Test
+    fun aSaveOnlyTheSecondServerHasStillLoadsOnADeviceWithNone() = runBlocking {
+        val other = RecordingLibrary("other")
+        plugins.register(object : PluginEntry {
+            override val apiVersion = PLUGIN_API_VERSION
+            override val apiMinor = PLUGIN_API_MINOR
+            override val libraries: List<LibraryBackend> = listOf(other)
+        })
+        val second = Game("other", "4", "nintendo-ds", Availability.Cached, "Tetris")
+        // Neither keeps a save here yet. Only the second server's sync brings one.
+        other.toPlace = "from the second server"
+        server.toPlace = null
+        val prepared = LaunchSaves(saves, plugins) { awaiting += it }
+            .prepare(GameRoute("tile", play, owner, servers = listOf(owner, second)), Melon, local)
+        assertEquals(second, prepared.owner)
+        assertEquals(listOf("prepareSaves:12"), server.calls)
+        assertEquals(listOf("prepareSaves:4"), other.calls)
+        assertEquals("from the second server", String(docs.files.getValue("$SAVES/Tetris DS (USA).sav")))
+    }
+
+    @Test
     fun aCopyThatKeepsItsOwnSavesLaunchesAsBefore() = runBlocking {
         LaunchSaves(saves, plugins) { awaiting += it }.prepare(GameRoute("tile", owner, owner), Melon, local)
         assertEquals(listOf("prepareLaunch:12"), server.calls)
     }
 
-    private class RecordingLibrary(override val id: String) : LibraryBackend {
+    private inner class RecordingLibrary(override val id: String) : LibraryBackend {
+        init {
+            libraries[id] = this
+        }
+
         override val displayName = id
         val calls = mutableListOf<String>()
         val observed = mutableListOf<String>()
@@ -135,7 +161,7 @@ class LaunchSavesTest {
         override fun find(folderUri: String, name: String): String? = "$folderUri/$name".takeIf { it in files }
         override fun create(folderUri: String, name: String): String = "$folderUri/$name".also { files[it] = ByteArray(0) }
         override fun read(uri: String): ByteArray? =
-            if (uri.startsWith("lib://")) server.toPlace?.toByteArray() else files[uri]
+            if (uri.startsWith("lib://")) libraries[uri.removePrefix("lib://")]?.toPlace?.toByteArray() else files[uri]
         override fun delete(uri: String): Boolean = files.remove(uri) != null
         override fun write(uri: String, bytes: ByteArray) {
             files[uri] = bytes

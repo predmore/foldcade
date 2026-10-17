@@ -48,6 +48,17 @@ class SameGameSessionTest {
     }
 
     @Test
+    fun aMenuOpenOnAFavoriteCopyStillSeesTheTileAsAFavorite() {
+        val home = home()
+        home.toggleFavorite(1, local.id)
+        home.keepMenu(local.id)
+        home.remerge(emptyList(), emptyList(), listOf(tile, other), emptyList(), sameGames = aliases)
+        assertEquals(true, home.actions(1)?.favorite)
+        home.toggleFavorite(1)
+        assertFalse(home.board.folders.getValue(app.foldcade.language.HOME_FAVORITES).slots.contains(tile.id))
+    }
+
+    @Test
     fun anUndoTakenBeforeACopyFoldedPutsTheTileBack() {
         val before = HomeBoard(slots = listOf(HOME_ALL, null, local.id, other.id))
         val tidied = tidy(before)

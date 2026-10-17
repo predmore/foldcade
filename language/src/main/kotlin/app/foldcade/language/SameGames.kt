@@ -14,14 +14,15 @@ import java.util.Locale
  */
 const val SAME_PREFIX: String = "same:"
 
-/** A platform and a file name, both already folded for comparison. */
+/** A platform, folded to lowercase, and a file name in Unicode's composed form. */
 data class SameKey(val platformId: String, val fileName: String)
 
-/** The key two copies of one game share. Null without a platform or a file name. */
+/** The key two copies of one game share: the platform, and the file name spelled the same. Null without either. */
 fun sameKey(platformId: String?, fileName: String?): SameKey? {
     val platform = platformId?.trim()?.lowercase(Locale.ROOT)?.ifEmpty { null } ?: return null
     val name = fileName?.trim()?.ifEmpty { null } ?: return null
-    return SameKey(platform, Normalizer.normalize(name, Normalizer.Form.NFC).lowercase(Locale.ROOT))
+    // The name as written: a player looks for a save of exactly that name, so case counts.
+    return SameKey(platform, Normalizer.normalize(name, Normalizer.Form.NFC))
 }
 
 fun sameGameId(key: SameKey): String = "$SAME_PREFIX${key.platformId}:${key.fileName}"

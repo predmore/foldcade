@@ -2,6 +2,7 @@ package app.foldcade
 
 import app.foldcade.api.plugin.Game
 import app.foldcade.api.plugin.LaunchTarget
+import app.foldcade.api.plugin.Placement
 import app.foldcade.api.plugin.Player
 import app.foldcade.host.PluginHost
 import kotlin.coroutines.cancellation.CancellationException
@@ -25,7 +26,41 @@ internal class LaunchSaves(
      * The caller runs one save flow at a time.
      */
     suspend fun prepare(route: GameRoute, player: Player, local: LaunchTarget): PreparedLaunch {
-        val owner = owner(route)
+        val candidates = candidates(route)
+        var chosen: Negotiated? = null
+        for (owner in candidates) {
+            val negotiated = try {
+                negotiate(route, owner, player, local)
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (failure: Exception) {
+                // Only the first copy's failure stops the launch. A later one was a second look.
+                if (chosen == null) throw failure else continue
+            }
+            if (chosen == null) chosen = negotiated
+            // A device with no save of its own takes the first server copy that has one.
+            if (negotiated.placement.savesToPlace.isNotEmpty() || negotiated.spots.isEmpty()) {
+                chosen = negotiated
+                break
+            }
+        }
+        val (owner, spots, placement) = chosen ?: negotiate(route, route.saves, player, local)
+        try {
+            val written = mutableListOf<String>()
+            val placed = saves.place(owner.backendId, owner, player, spots, placement.savesToPlace, written)
+            // Kept until the player starts, so a launch cancelled now still starts it fresh next time.
+            if (written.isNotEmpty()) awaitLoad(player.saveFolderId())
+            if (!placed) throw SaveNotPlaced()
+            return PreparedLaunch(placement.target, spots, owner)
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (failure: Exception) {
+            if (spots.isNotEmpty() && failure !is SaveNotPlaced) throw SaveNotPlaced() else throw failure
+        }
+    }
+
+    /** [owner]'s saves for this launch: any outside change handed to it first, then its sync. */
+    private suspend fun negotiate(route: GameRoute, owner: Game, player: Player, local: LaunchTarget): Negotiated {
         val libraryId = owner.backendId
         // Saves are named after the file that opens, which a folded copy shares by definition.
         val spots = saves.spots(player, owner, local)
@@ -40,27 +75,25 @@ internal class LaunchSaves(
             } else {
                 plugins.prepareSaves(libraryId, owner, player, local)
             }
-            val written = mutableListOf<String>()
-            val placed = saves.place(libraryId, owner, player, spots, placement.savesToPlace, written)
-            // Kept until the player starts, so a launch cancelled now still starts it fresh next time.
-            if (written.isNotEmpty()) awaitLoad(player.saveFolderId())
-            if (!placed) throw SaveNotPlaced()
-            return PreparedLaunch(placement.target, spots, owner)
+            return Negotiated(owner, spots, placement)
         } catch (cancelled: CancellationException) {
             throw cancelled
         } catch (failure: Exception) {
             // With a save folder in play, any failure here would start the game from a save the library does not know.
-            if (spots.isNotEmpty() && failure !is SaveNotPlaced) throw SaveNotPlaced() else throw failure
+            if (spots.isNotEmpty()) throw SaveNotPlaced() else throw failure
         }
     }
 
     /**
-     * [GameRoute.saves], unless it holds no save and another server's copy does. Then that copy
-     * keeps them, so a device with no save of its own loads the progress a server already has.
+     * The copies that may keep the saves, [GameRoute.saves] first. With several servers, one
+     * that already keeps a save here goes first, and each after it is asked in turn when the one
+     * before had nothing, so a device with no save loads the progress any server has.
      */
-    private suspend fun owner(route: GameRoute): Game {
-        if (route.servers.size < 2) return route.saves
-        return (listOf(route.saves) + route.servers).distinct().firstOrNull { holdsSaves(it) } ?: route.saves
+    private suspend fun candidates(route: GameRoute): List<Game> {
+        if (route.servers.size < 2) return listOf(route.saves)
+        val all = (listOf(route.saves) + route.servers).distinct()
+        val held = all.filter { holdsSaves(it) }
+        return held + (all - held.toSet())
     }
 
     private suspend fun holdsSaves(game: Game): Boolean = try {
@@ -70,6 +103,8 @@ internal class LaunchSaves(
     } catch (_: Exception) {
         false
     }
+
+    private data class Negotiated(val owner: Game, val spots: List<SaveSpot>, val placement: Placement)
 }
 
 /** [owner] is the copy whose library kept the saves, which the read-back returns them to. */
