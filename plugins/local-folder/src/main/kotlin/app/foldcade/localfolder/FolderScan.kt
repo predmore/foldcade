@@ -37,6 +37,8 @@ data class FolderGame(
     val title: String,
     val platformId: String,
     val folderName: String = "",
+    /** The name exactly as the folder lists it, spaces included, which a player names its save after. */
+    val displayName: String = fileName,
 )
 
 data class FolderScan(
@@ -214,6 +216,7 @@ private fun toGame(
         title = titleFromFileName(name),
         platformId = platform.id,
         folderName = folderName,
+        displayName = entry.displayName,
     )
 }
 

@@ -215,7 +215,7 @@ class LocalFolderBackend(
         if (game.backendId != id) return null
         val current = binding.get()
         val snap = stored?.takeIf { current != null && it.generation == current.generation }
-        return snap?.byUri?.get(game.remoteKey)?.fileName ?: fileNameOf(game.remoteKey)
+        return snap?.byUri?.get(game.remoteKey)?.displayName ?: fileNameOf(game.remoteKey)
     }
 
     /**

@@ -311,6 +311,9 @@ class LocalFolderBackendTest {
         val gone = game.copy(remoteKey = "content://tree/primary%3AROMs/document/primary%3AROMs%2Fnds%2FTetris.nds")
         assertEquals("Tetris.nds", backend.fileName(gone))
         assertNull(backend.fileName(game.copy(backendId = "romm")))
+        val spaced = newBackend(folderDir("content://3ds", "3ds", listOf(folderFile("content://a", " Tetris.nds"))))
+        val listed = spaced.listGames("nintendo-ds", GameQuery()).games.single()
+        assertEquals(" Tetris.nds", spaced.fileName(listed))
     }
 
     @Test

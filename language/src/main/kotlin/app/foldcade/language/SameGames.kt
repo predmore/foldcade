@@ -20,8 +20,8 @@ data class SameKey(val platformId: String, val fileName: String)
 /** The key two copies of one game share: the platform, and the file name spelled the same. Null without either. */
 fun sameKey(platformId: String?, fileName: String?): SameKey? {
     val platform = platformId?.trim()?.lowercase(Locale.ROOT)?.ifEmpty { null } ?: return null
-    val name = fileName?.trim()?.ifEmpty { null } ?: return null
-    // The name as written: a player looks for a save of exactly that name, so case counts.
+    val name = fileName?.takeIf { it.isNotBlank() } ?: return null
+    // The name as written: a player looks for a save of exactly that name, so case and spaces count.
     return SameKey(platform, Normalizer.normalize(name, Normalizer.Form.NFC))
 }
 
