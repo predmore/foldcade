@@ -23,9 +23,9 @@ import kotlin.math.abs
 internal val LocalTilt = staticCompositionLocalOf<State<Offset>> { mutableStateOf(Offset.Zero) }
 
 /**
- * The Thor's lean from the way it was lately held, while [enabled]. The sensor is only
- * listened to while it is: off, the layers are home and nothing wakes. A device without
- * a gyroscope has no game rotation vector, and its layers stay home.
+ * The Thor's lean from the way it was lately held, while [enabled] and the theme slides
+ * anything. The sensor is only listened to then: otherwise the layers are home and nothing
+ * wakes. A device without a gyroscope has no game rotation vector, and its layers stay home.
  */
 @Composable
 internal fun rememberTilt(enabled: Boolean, motion: MotionStyle): State<Offset> {
@@ -35,10 +35,10 @@ internal fun rememberTilt(enabled: Boolean, motion: MotionStyle): State<Offset> 
         tilt.value = Offset.Zero
         val sensors = context.getSystemService(Context.SENSOR_SERVICE) as? SensorManager
         val rotation = sensors?.getDefaultSensor(Sensor.TYPE_GAME_ROTATION_VECTOR)
-        if (!enabled || sensors == null || rotation == null) return@DisposableEffect onDispose { }
+        if (!enabled || motion.tiltPx <= 0f || sensors == null || rotation == null) return@DisposableEffect onDispose { }
         val follower = TiltFollower(motion.tiltDegrees, motion.durationTiltRecenter / 1000f)
         // Moves under a quarter pixel are not drawn, so a Thor at rest draws no frames.
-        val step = if (motion.tiltPx > 0f) TILT_STEP_PX / motion.tiltPx else Float.MAX_VALUE
+        val step = TILT_STEP_PX / motion.tiltPx
         val quaternion = FloatArray(4)
         var last = 0L
         val listener = object : SensorEventListener {
