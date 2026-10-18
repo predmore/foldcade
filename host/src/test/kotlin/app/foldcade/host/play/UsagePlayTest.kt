@@ -88,6 +88,58 @@ class UsagePlayTest {
     }
 
     @Test
+    fun aClosedLidDoesNotCountForTheGameStillInFront() {
+        val spans = usageSpans(
+            listOf(
+                UsageSample("org.game", UsageMove.Resumed, 1_000),
+                UsageSample("android", UsageMove.ScreenOff, 4_000),
+                UsageSample("android", UsageMove.ScreenOn, 3_604_000),
+                UsageSample("org.game", UsageMove.Paused, 3_606_000),
+            ),
+        )
+        assertEquals(5_000L, packagePlay(spans, nowMillis = 3_700_000)["org.game"]?.activeMillis)
+    }
+
+    @Test
+    fun aGameStillAsleepAtNowStopsAtTheScreenTurningOff() {
+        val spans = usageSpans(
+            listOf(
+                UsageSample("org.game", UsageMove.Resumed, 1_000),
+                UsageSample("android", UsageMove.ScreenOff, 4_000),
+            ),
+        )
+        val play = packagePlay(spans, nowMillis = 3_600_000)["org.game"]
+        assertEquals(3_000L, play?.activeMillis)
+        assertEquals(4_000L, play?.lastPlayedMillis)
+    }
+
+    @Test
+    fun aGameThatLeftWhileTheScreenWasOffDoesNotComeBack() {
+        val spans = usageSpans(
+            listOf(
+                UsageSample("org.game", UsageMove.Resumed, 1_000),
+                UsageSample("android", UsageMove.ScreenOff, 4_000),
+                UsageSample("org.game", UsageMove.Paused, 5_000),
+                UsageSample("android", UsageMove.ScreenOn, 9_000),
+            ),
+        )
+        assertEquals(3_000L, packagePlay(spans, nowMillis = 20_000)["org.game"]?.activeMillis)
+    }
+
+    @Test
+    fun aGameThatResumedWhileTheScreenWasOffStartsWhenItTurnsOn() {
+        val spans = usageSpans(
+            listOf(
+                UsageSample("android", UsageMove.ScreenOff, 1_000),
+                UsageSample("org.game", UsageMove.Resumed, 2_000),
+                UsageSample("android", UsageMove.ScreenOn, 8_000),
+                UsageSample("org.game", UsageMove.Paused, 10_000),
+            ),
+        )
+        assertEquals(2_000L, packagePlay(spans, nowMillis = 20_000)["org.game"]?.activeMillis)
+    }
+
+    @Test
     fun withoutAccessLifecycleTimeStaysApproximate() {
         val shown = shownPlay(
             lifecycleActive = 6_000L,

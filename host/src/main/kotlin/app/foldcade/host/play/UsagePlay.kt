@@ -3,10 +3,13 @@ package app.foldcade.host.play
 /**
  * One move from [android.app.usage.UsageStatsManager.queryEvents].
  * Wall timestamps, because that is what the usage log stores.
+ * [ScreenOff] and [ScreenOn] are the device's, not a package's.
  */
 enum class UsageMove {
     Resumed,
     Paused,
+    ScreenOff,
+    ScreenOn,
 }
 
 data class UsageSample(
@@ -42,19 +45,43 @@ data class ShownPlay(
  * A second resume while one is open does not restart it.
  * A pause with nothing open is ignored. Packages stay separate,
  * so a game played from Recents or another launcher is still a stretch.
+ * The screen turning off, as it does with the lid closed, ends every open
+ * stretch. Each package still in front when it turns back on starts a new one.
  */
 fun usageSpans(samples: List<UsageSample>): List<UsageSpan> {
     val open = HashMap<String, Long>()
+    val asleep = HashSet<String>()
+    var screenOn = true
     val spans = mutableListOf<UsageSpan>()
-    val ordered = samples.filter { it.packageName.isNotBlank() }.sortedBy { it.atMillis }
+    val ordered = samples
+        .filter { it.move == UsageMove.ScreenOff || it.move == UsageMove.ScreenOn || it.packageName.isNotBlank() }
+        .sortedBy { it.atMillis }
     for (sample in ordered) {
         when (sample.move) {
-            UsageMove.Resumed -> if (sample.packageName !in open) {
-                open[sample.packageName] = sample.atMillis
+            UsageMove.Resumed -> when {
+                !screenOn -> asleep += sample.packageName
+                sample.packageName !in open -> open[sample.packageName] = sample.atMillis
             }
             UsageMove.Paused -> {
+                if (!screenOn) {
+                    asleep -= sample.packageName
+                    continue
+                }
                 val started = open.remove(sample.packageName) ?: continue
                 spans += UsageSpan(sample.packageName, started, sample.atMillis)
+            }
+            UsageMove.ScreenOff -> if (screenOn) {
+                screenOn = false
+                for ((packageName, started) in open) {
+                    spans += UsageSpan(packageName, started, sample.atMillis)
+                }
+                asleep += open.keys
+                open.clear()
+            }
+            UsageMove.ScreenOn -> if (!screenOn) {
+                screenOn = true
+                for (packageName in asleep) open[packageName] = sample.atMillis
+                asleep.clear()
             }
         }
     }

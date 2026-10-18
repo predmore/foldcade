@@ -1147,6 +1147,7 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
             startOnDisplay(intent, displayId)
             if (noteStart()) armRestart(intent, displayId)
         }
+        foldcade.notePlayScreen()
         return true
     }
 
@@ -1220,6 +1221,7 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
                 startActivity(start, options.toBundle())
                 if (foldcade.noteStarted(player, intent)) armRestart(start, displayId)
             }
+            foldcade.notePlayScreen()
             if (game.libraryId != null) {
                 rememberReturn(LibraryReturn(game.libraryId, apiGame, player, spots))
             }
