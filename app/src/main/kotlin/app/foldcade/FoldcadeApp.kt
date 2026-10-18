@@ -294,7 +294,8 @@ class FoldcadeApp : Application() {
         }
     }
 
-    private fun notePlayScreen() {
+    /** Reads the external game's screen now. A game opened with the lid already closed starts asleep. */
+    internal fun notePlayScreen() {
         val displayId = externalPlay.displayId ?: return
         val interactive = getSystemService(PowerManager::class.java)?.isInteractive ?: true
         val state = getSystemService(DisplayManager::class.java)?.getDisplay(displayId)?.state
