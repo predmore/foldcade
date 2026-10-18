@@ -1,5 +1,7 @@
 package app.foldcade
 
+import app.foldcade.host.play.PlayAway
+import app.foldcade.host.play.PlayClock
 import app.foldcade.host.play.PlayKind
 import java.io.File
 import java.nio.file.Files
@@ -66,8 +68,40 @@ class ExternalPlayTest {
         assertEquals("nintendo-ds.melonds", plays.events().last().gameId)
     }
 
-    private fun plays(): PlaySessions {
+    @Test
+    fun timeWithTheLaunchDisplayOffDoesNotCount() {
+        var now = 0L
+        val plays = plays(PlayClock { now })
+        val external = ExternalPlay()
+        external.open(plays, "nintendo-3ds.azahar", "Game", 2) {}
+        now = 5_000L
+        external.displayOn(plays, false)
+        now = 3_605_000L
+        external.displayOn(plays, false)
+        external.displayOn(plays, true)
+        external.displayOn(plays, true)
+        now = 3_607_000L
+        external.endIfDisplayHome(plays, 2)
+        assertEquals(
+            listOf(PlayKind.Started, PlayKind.Backgrounded, PlayKind.Resumed, PlayKind.Ended),
+            plays.events().map { it.kind },
+        )
+        assertEquals(PlayAway.Sleep, plays.events()[1].away)
+        assertEquals(7_000L, plays.totals("nintendo-3ds.azahar").activeMillis)
+    }
+
+    @Test
+    fun theDisplayTurningOffWithNoSessionOpenRecordsNothing() {
+        val plays = plays()
+        val external = ExternalPlay()
+        external.displayOn(plays, false)
+        external.displayOn(plays, true)
+        assertTrue(plays.events().isEmpty())
+    }
+
+    private fun plays(clock: PlayClock? = null): PlaySessions {
         val dir = Files.createTempDirectory("external-play")
-        return PlaySessions.open(File(dir.toFile(), "events.log"))
+        val file = File(dir.toFile(), "events.log")
+        return if (clock == null) PlaySessions.open(file) else PlaySessions.open(file, clock)
     }
 }

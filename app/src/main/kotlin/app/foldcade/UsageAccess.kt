@@ -43,9 +43,12 @@ class UsageAccess(private val context: Context) {
             val move = when (event.eventType) {
                 UsageEvents.Event.ACTIVITY_RESUMED -> UsageMove.Resumed
                 UsageEvents.Event.ACTIVITY_PAUSED -> UsageMove.Paused
+                UsageEvents.Event.SCREEN_NON_INTERACTIVE -> UsageMove.ScreenOff
+                UsageEvents.Event.SCREEN_INTERACTIVE -> UsageMove.ScreenOn
                 else -> null
             } ?: continue
-            val packageName = event.packageName ?: continue
+            // A screen move belongs to the device. A blank package is dropped for the rest.
+            val packageName = event.packageName ?: ""
             samples += UsageSample(packageName, move, event.timeStamp)
         }
         return samples

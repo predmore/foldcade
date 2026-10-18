@@ -9,6 +9,7 @@ import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
 import android.content.pm.PackageManager
+import android.hardware.display.DisplayManager
 import android.net.ConnectivityManager
 import android.net.Network
 import android.net.NetworkCapabilities
@@ -16,9 +17,11 @@ import android.net.Uri
 import android.os.Environment
 import android.os.Handler
 import android.os.Looper
+import android.os.PowerManager
 import android.os.SystemClock
 import android.provider.DocumentsContract
 import android.util.Log
+import android.view.Display
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
@@ -278,6 +281,26 @@ class FoldcadeApp : Application() {
     private var libraryRetry: () -> Job = { reloadFolder() }
     private lateinit var rommPublish: RommPublish
 
+    /** Closing the lid turns the screens off. An external game's time stops until its screen is on again. */
+    private val playScreen = object : BroadcastReceiver() {
+        override fun onReceive(context: Context?, intent: Intent?) = notePlayScreen()
+    }
+
+    private val playDisplay = object : DisplayManager.DisplayListener {
+        override fun onDisplayAdded(displayId: Int) = Unit
+        override fun onDisplayRemoved(displayId: Int) = onDisplayChanged(displayId)
+        override fun onDisplayChanged(displayId: Int) {
+            if (displayId == externalPlay.displayId) notePlayScreen()
+        }
+    }
+
+    private fun notePlayScreen() {
+        val displayId = externalPlay.displayId ?: return
+        val interactive = getSystemService(PowerManager::class.java)?.isInteractive ?: true
+        val state = getSystemService(DisplayManager::class.java)?.getDisplay(displayId)?.state
+        externalPlay.displayOn(plays, interactive && state == Display.STATE_ON)
+    }
+
     private val packageChanges = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
             when (intent?.action) {
@@ -423,6 +446,15 @@ class FoldcadeApp : Application() {
             },
             RECEIVER_EXPORTED,
         )
+        registerReceiver(
+            playScreen,
+            IntentFilter().apply {
+                addAction(Intent.ACTION_SCREEN_OFF)
+                addAction(Intent.ACTION_SCREEN_ON)
+            },
+            RECEIVER_NOT_EXPORTED,
+        )
+        getSystemService(DisplayManager::class.java)?.registerDisplayListener(playDisplay, main)
         getSystemService(ConnectivityManager::class.java)?.registerDefaultNetworkCallback(rommReconnect)
         refreshCredentials()
         reloadInstalledApps()
