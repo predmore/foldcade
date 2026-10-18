@@ -378,23 +378,30 @@ private fun PanelBody(
     val settingsOver = pageHere && foldTheme().background.alpha >= 1f
     val page = screen?.let { pageBeside(model, session, it) }
     val centerHere = page != null || (panel != null && session.surfaceOn(panel) == Surface.CommandCenter)
-    Backdrop(
-        scene = app.backgroundFor(model.backgroundMotion),
-        panel = if (panel == Panel.Bottom) 1f else 0f,
-        speed = model.motionSpeed,
-        animatorScale = scale,
-        running = activity.shellVisible && session.bothScreensFree(),
-        // Opaque game art or Settings over it, or the menu's blur, leaves nothing to watch move.
-        held = cover.covered || settingsOver || LocalUnderMenu.current || centerHere,
-    )
+    val motion = LocalFoldTheme.current.theme.motion
+    val running = activity.shellVisible && session.bothScreensFree()
+    // Moving the Thor slides the hero's layers a touch, deepest most. Only on the top screen's hero.
+    val tiltHere = panel == Panel.Top && running && session.surfaceOn(panel) == Surface.Hero &&
+        !motion.heroFadeOnly(model.motionSpeed, scale)
+    val tilt = rememberTilt(tiltHere, motion)
+    Box(if (panel == Panel.Top) Modifier.fillMaxSize().tilted(tilt, motion, 1f, cover = true) else Modifier.fillMaxSize()) {
+        Backdrop(
+            scene = app.backgroundFor(model.backgroundMotion),
+            panel = if (panel == Panel.Bottom) 1f else 0f,
+            speed = model.motionSpeed,
+            animatorScale = scale,
+            running = running,
+            // Opaque game art or Settings over it, or the menu's blur, leaves nothing to watch move.
+            held = cover.covered || settingsOver || LocalUnderMenu.current || centerHere,
+        )
+    }
     if (panel == null || screen == null) return
     val connectHere = model.connectOpen && model.connectScreen == screen
     // Settings and Play activity rise over the panel and sink away again. Each keeps its
     // last state while it leaves, so it fades out as it was rather than vanishing.
-    val artPage = presence(app.shell.artPicker, LocalFoldTheme.current.theme.motion.durationIsland, scale)
+    val artPage = presence(app.shell.artPicker, motion.durationIsland, scale)
     val settingsPage = model.settings?.takeIf { it.screen == screen }
     val activityPage = model.playActivity?.takeIf { it.screen == screen }
-    val motion = LocalFoldTheme.current.theme.motion
     val settings = presence(settingsPage, motion.durationIsland, scale)
     val played = presence(activityPage, motion.durationIsland, scale)
     val beside = presence(page, motion.durationIsland, scale)
@@ -403,7 +410,7 @@ private fun PanelBody(
         derivedStateOf { maxOf(settings.progress.value, played.progress.value, beside.progress.value) >= 1f }
     }
     if (!covered) {
-        CompositionLocalProvider(LocalBackdropCover provides cover) {
+        CompositionLocalProvider(LocalBackdropCover provides cover, LocalTilt provides tilt) {
             TravelFade(target = session.surfaceOn(panel), scale = scale) { shown ->
                 when (shown) {
                     null -> Unit
@@ -985,6 +992,7 @@ private fun Hero(app: FoldcadeApp, screen: HostScreen, scale: Float, onEffect: (
     val scene = shown?.let { rememberScene(app, records[it.key], queries[it.key]) }
     val sceneArt = scene != null || shown?.let { rememberArt(app, records[it.key], queries[it.key]) } != null
     val fadeOnly = motion.heroFadeOnly(model.motionSpeed, scale)
+    val tilt = LocalTilt.current
     BoxWithConstraints(Modifier.fillMaxSize()) {
         // The collection icon editor takes the hero's place while it is open.
         Box(Modifier.fillMaxSize().graphicsLayer { alpha = 1f - editor.progress.value }) {
@@ -996,7 +1004,8 @@ private fun Hero(app: FoldcadeApp, screen: HostScreen, scale: Float, onEffect: (
                 travelMillis = motion.sceneDuration(model.motionSpeed, scale),
                 fadeOnly = fadeOnly,
                 keyOf = { it.key },
-                layer = Modifier.fillMaxSize(),
+                // The scene is as deep as the theme's backdrop, so moving the Thor slides it as far.
+                layer = Modifier.fillMaxSize().tilted(tilt, motion, 1f, cover = true),
                 depth = motion.sceneDepth,
                 grows = false,
                 dissolves = true,
@@ -1021,7 +1030,9 @@ private fun Hero(app: FoldcadeApp, screen: HostScreen, scale: Float, onEffect: (
                 Box(
                     Modifier
                         .weight(1f)
-                        .fillMaxWidth(),
+                        .fillMaxWidth()
+                        // Nearer than the scene, so it slides less; the name card under it stays.
+                        .tilted(tilt, motion, motion.tiltArtShare),
                     contentAlignment = Alignment.Center,
                 ) {
                     HeroCrossfade(

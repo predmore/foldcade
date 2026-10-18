@@ -61,6 +61,21 @@ open class MotionStyle(private val style: ThemeStyle = ThemeStyle()) {
     /** One wide-art crossfade. Longer than [durationTravel], so the game's art dissolves rather than cuts. */
     val durationScene = style.motion.durationScene
 
+    /**
+     * Moving the Thor slides the top screen's backdrop this many pixels at most, like
+     * a view through a window. The name card and the islands sit on the glass and stay.
+     */
+    val tiltPx = style.motion.tiltPx
+
+    /** A lean this many degrees from how the Thor was being held takes nearly all of [tiltPx]. */
+    val tiltDegrees = style.motion.tiltDegrees
+
+    /** The hero art's share of [tiltPx]. Less than the backdrop's, so it reads nearer. */
+    val tiltArtShare = style.motion.tiltArtShare
+
+    /** How long a held lean takes to become the new rest, so the layers drift home. */
+    val durationTiltRecenter = style.motion.durationTiltRecenter
+
     /** Wide art's slow settle after it arrives. */
     val durationShowcase = style.motion.durationShowcase
 
@@ -213,6 +228,10 @@ open class MotionStyle(private val style: ThemeStyle = ThemeStyle()) {
 
     /** Wide art's drawn scale. [settle] is 1 as it arrives and 0 once it has settled. */
     fun sceneScale(settle: Float): Float = sceneOverscan + (sceneSettleFrom - sceneOverscan) * settle.coerceIn(0f, 1f)
+
+    /** How much larger a full-screen layer is drawn so [tiltPx] never shows its edge. */
+    fun tiltCover(shortestSidePx: Float): Float =
+        if (shortestSidePx > 0f) 1f + 2f * tiltPx / shortestSidePx else 1f
 
     private fun heroSpan(base: Int, speed: MotionSpeed, animatorScale: Float): Int {
         if (heroFadeOnly(speed, animatorScale)) return durationShort
