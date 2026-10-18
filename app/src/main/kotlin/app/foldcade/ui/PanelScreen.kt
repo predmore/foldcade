@@ -390,9 +390,11 @@ private fun PanelBody(
     val covered by remember {
         derivedStateOf { maxOf(settings.progress.value, played.progress.value, beside.progress.value) >= 1f }
     }
+    // The connection form takes the hero's place.
+    val connectHere = screen != null && model.connectOpen && model.connectScreen == screen
     val running = activity.shellVisible && session.bothScreensFree()
     // Moving the Thor slides the hero's layers a touch, deepest most. Only while the top screen's hero shows.
-    val tiltHere = panel == Panel.Top && running && session.surfaceOn(panel) == Surface.Hero && !covered &&
+    val tiltHere = panel == Panel.Top && running && session.surfaceOn(panel) == Surface.Hero && !covered && !connectHere &&
         !motion.heroFadeOnly(model.motionSpeed, scale)
     val tilt = rememberTilt(tiltHere, motion)
     Box(if (panel == Panel.Top) Modifier.fillMaxSize().tilted(tilt, motion, 1f, cover = true) else Modifier.fillMaxSize()) {
@@ -407,7 +409,6 @@ private fun PanelBody(
         )
     }
     if (panel == null || screen == null) return
-    val connectHere = model.connectOpen && model.connectScreen == screen
     val artPage = presence(app.shell.artPicker, motion.durationIsland, scale)
     if (!covered) {
         CompositionLocalProvider(LocalBackdropCover provides cover, LocalTilt provides tilt) {
