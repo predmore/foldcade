@@ -393,13 +393,16 @@ private fun PanelBody(
     // The connection form takes the hero's place.
     val connectHere = screen != null && model.connectOpen && model.connectScreen == screen
     val running = activity.shellVisible && session.bothScreensFree()
+    val backdrop = app.backgroundFor(model.backgroundMotion)
+    // The icon editor hides the hero's art, so with no backdrop behind it nothing is left to slide.
+    val nothingToSlide = backdrop == null && app.shell.folderIconPick() != null
     // Moving the Thor slides the hero's layers a touch, deepest most. Only while the top screen's hero shows.
     val tiltHere = panel == Panel.Top && running && session.surfaceOn(panel) == Surface.Hero && !covered && !connectHere &&
-        !motion.heroFadeOnly(model.motionSpeed, scale)
+        !nothingToSlide && !motion.heroFadeOnly(model.motionSpeed, scale)
     val tilt = rememberTilt(tiltHere, motion)
     Box(if (panel == Panel.Top) Modifier.fillMaxSize().tilted(tilt, motion, 1f, cover = true) else Modifier.fillMaxSize()) {
         Backdrop(
-            scene = app.backgroundFor(model.backgroundMotion),
+            scene = backdrop,
             panel = if (panel == Panel.Bottom) 1f else 0f,
             speed = model.motionSpeed,
             animatorScale = scale,
