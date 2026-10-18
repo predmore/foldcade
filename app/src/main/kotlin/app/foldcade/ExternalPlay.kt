@@ -8,7 +8,8 @@ import kotlin.coroutines.cancellation.CancellationException
  *
  * [open] records the same start a stand-in records. A start that throws ends
  * the session. A start that returns stays open until the display it launched
- * on is home again.
+ * on is home again. While that display is off, as it is with the lid closed,
+ * the session is asleep and its time does not count.
  */
 class ExternalPlay {
     var sessionId: String? = null
@@ -33,6 +34,12 @@ class ExternalPlay {
         }
         sessionId = id
         this.displayId = displayId
+    }
+
+    /** The launch display turned off or back on. A session already in that state is unchanged. */
+    fun displayOn(plays: PlaySessions, on: Boolean) {
+        val id = sessionId ?: return
+        plays.signal(id, if (on) PlaySignal.Resume else PlaySignal.Sleep)
     }
 
     /** Ends the open session when [displayId] is the one the player launched on. */
