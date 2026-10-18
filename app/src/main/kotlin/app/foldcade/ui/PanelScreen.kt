@@ -379,9 +379,20 @@ private fun PanelBody(
     val page = screen?.let { pageBeside(model, session, it) }
     val centerHere = page != null || (panel != null && session.surfaceOn(panel) == Surface.CommandCenter)
     val motion = LocalFoldTheme.current.theme.motion
+    // Settings and Play activity rise over the panel and sink away again. Each keeps its
+    // last state while it leaves, so it fades out as it was rather than vanishing.
+    val settingsPage = model.settings?.takeIf { it.screen == screen }
+    val activityPage = model.playActivity?.takeIf { it.screen == screen }
+    val settings = presence(settingsPage, motion.durationIsland, scale)
+    val played = presence(activityPage, motion.durationIsland, scale)
+    val beside = presence(page, motion.durationIsland, scale)
+    // Only whether a page fully covers the panel, so the fades do not recompose it each frame.
+    val covered by remember {
+        derivedStateOf { maxOf(settings.progress.value, played.progress.value, beside.progress.value) >= 1f }
+    }
     val running = activity.shellVisible && session.bothScreensFree()
-    // Moving the Thor slides the hero's layers a touch, deepest most. Only on the top screen's hero.
-    val tiltHere = panel == Panel.Top && running && session.surfaceOn(panel) == Surface.Hero &&
+    // Moving the Thor slides the hero's layers a touch, deepest most. Only while the top screen's hero shows.
+    val tiltHere = panel == Panel.Top && running && session.surfaceOn(panel) == Surface.Hero && !covered &&
         !motion.heroFadeOnly(model.motionSpeed, scale)
     val tilt = rememberTilt(tiltHere, motion)
     Box(if (panel == Panel.Top) Modifier.fillMaxSize().tilted(tilt, motion, 1f, cover = true) else Modifier.fillMaxSize()) {
@@ -397,18 +408,7 @@ private fun PanelBody(
     }
     if (panel == null || screen == null) return
     val connectHere = model.connectOpen && model.connectScreen == screen
-    // Settings and Play activity rise over the panel and sink away again. Each keeps its
-    // last state while it leaves, so it fades out as it was rather than vanishing.
     val artPage = presence(app.shell.artPicker, motion.durationIsland, scale)
-    val settingsPage = model.settings?.takeIf { it.screen == screen }
-    val activityPage = model.playActivity?.takeIf { it.screen == screen }
-    val settings = presence(settingsPage, motion.durationIsland, scale)
-    val played = presence(activityPage, motion.durationIsland, scale)
-    val beside = presence(page, motion.durationIsland, scale)
-    // Only whether a page fully covers the panel, so the fades do not recompose it each frame.
-    val covered by remember {
-        derivedStateOf { maxOf(settings.progress.value, played.progress.value, beside.progress.value) >= 1f }
-    }
     if (!covered) {
         CompositionLocalProvider(LocalBackdropCover provides cover, LocalTilt provides tilt) {
             TravelFade(target = session.surfaceOn(panel), scale = scale) { shown ->
