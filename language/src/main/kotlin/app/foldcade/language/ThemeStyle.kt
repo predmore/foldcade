@@ -182,6 +182,10 @@ class ThemeMotion internal constructor(private val reader: ThemeStyleReader) {
     val sceneDepth = reader.number("motion", "sceneDepth", .35f) { true }
     val sceneOverscan = reader.number("motion", "sceneOverscan", 1.05f) { it > 0f }
     val sceneSettleFrom = reader.number("motion", "sceneSettleFrom", 1.1f) { it > 0f }
+    val tiltPx = reader.number("motion", "tiltPx", 18f) { it >= 0f }
+    val tiltDegrees = reader.number("motion", "tiltDegrees", 6f) { it > 0f }
+    val tiltArtShare = reader.fraction("motion", "tiltArtShare", .4f)
+    val durationTiltRecenter = ms("durationTiltRecenter", 2400)
     val durationScene = ms("durationScene", 360)
     val durationShowcase = ms("durationShowcase", 1400)
     val durationSelect = ms("durationSelect", 280)
