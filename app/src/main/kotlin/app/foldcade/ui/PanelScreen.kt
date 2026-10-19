@@ -1642,18 +1642,21 @@ private fun SceneBackdrop(app: FoldcadeApp, record: Game?, query: ArtQuery?, spe
 /**
  * Art for a tile or the hero: at once when it is already known, otherwise after
  * one lookup. A provider's cover for [record] comes before the public sources.
- * Changing artwork sources or the Game art setting asks again.
+ * Changing artwork sources or the Game art setting asks again. Without [automatic], only
+ * the art the user chose or is choosing.
  */
 @Composable
-private fun rememberArt(app: FoldcadeApp, record: Game?, query: ArtQuery?): ArtSet? {
+private fun rememberArt(app: FoldcadeApp, record: Game?, query: ArtQuery?, automatic: Boolean = true): ArtSet? {
     val allowed = app.shell.model.artwork
     val connections = app.shell.model.signedIn
     val revision = app.artRevision
     val artKeySaved = app.shell.model.artKeySaved
-    val held = remember(record, query, allowed, connections, artKeySaved, revision) { app.covers.cached(record, query) }
-    var fetched by remember(record, query, allowed, connections, artKeySaved, revision) { mutableStateOf<ArtSet?>(null) }
-    LaunchedEffect(record, query, allowed, connections, artKeySaved, revision) {
-        if ((record != null || query != null) && held == null) fetched = app.covers.fetch(record, query)
+    val held = remember(record, query, allowed, connections, artKeySaved, revision, automatic) {
+        if (automatic) app.covers.cached(record, query) else null
+    }
+    var fetched by remember(record, query, allowed, connections, artKeySaved, revision, automatic) { mutableStateOf<ArtSet?>(null) }
+    LaunchedEffect(record, query, allowed, connections, artKeySaved, revision, automatic) {
+        if (automatic && (record != null || query != null) && held == null) fetched = app.covers.fetch(record, query)
     }
     val set = app.covers.chosen(held ?: fetched, query)
     val picker = LocalArtPreview.current?.takeIf { it.gameId == query?.key && it.kind == ArtKind.Tile }
@@ -2982,8 +2985,9 @@ private fun StripColumn(
                     val label = game?.title.orEmpty()
                     val libraryTile = library && face == null
                     val onHomeMark = face != null && allOpen && face.onGrid && !face.folder && !face.allTile
-                    val art = tileArt(app, game, face)
-                    val themedApp = if (art == null) appGlyph(game?.androidPackage) else null
+                    val appObject = appGlyph(game?.androidPackage)
+                    val art = tileArt(app, game, face, automatic = appObject == null)
+                    val themedApp = if (art == null) appObject else null
                     Cell(
                         title = label,
                         mark = game?.mark,
@@ -3027,14 +3031,18 @@ private fun StripColumn(
     }
 }
 
-/** A game tile's art, or null for a group, an empty slot, or art not found yet. */
+/**
+ * A game tile's art, or null for a group, an empty slot, or art not found yet. An app the theme
+ * draws passes [automatic] false: its object beats found art, which the top screen still shows,
+ * and only art the user picked replaces it.
+ */
 @Composable
-private fun tileArt(app: FoldcadeApp, game: ShelfGame?, face: HomeFace?): Painter? {
+private fun tileArt(app: FoldcadeApp, game: ShelfGame?, face: HomeFace?, automatic: Boolean = true): Painter? {
     val shell = app.shell
     // A folder or an empty slot keeps its mark. A game asks for its art.
     val artGame = game?.takeIf { face?.folder != true && face?.empty != true }
     return key(artGame?.id) {
-        val found = rememberArt(app, artGame?.let(shell::artRecord), artGame?.let(shell::artQuery))
+        val found = rememberArt(app, artGame?.let(shell::artRecord), artGame?.let(shell::artQuery), automatic)
         found?.let { rememberCoverPainter(app, it.square ?: it.cover, TILE_PX)?.painter }
     }
 }
@@ -3316,7 +3324,8 @@ private fun CarriedTile(
     if (shown == null || done) return
     val face = remember(shown.id, shell.model.shelfEpoch) { shell.homeFaceOf(shown.id) }
     val game = remember(shown.id, shell.model.shelfEpoch) { shell.homeTileOf(shown.id) }
-    val art = tileArt(app, game, face)
+    val appObject = appGlyph(game?.androidPackage)
+    val art = tileArt(app, game, face, automatic = appObject == null)
     val radius = cell * theme.iconRadius
     val ring = remember(theme) { FocusRing(theme) }
     val ringPath = remember { Path() }
@@ -3366,7 +3375,7 @@ private fun CarriedTile(
                     clip = false
                 },
         ) {
-            val themedApp = if (art == null) appGlyph(game.androidPackage) else null
+            val themedApp = if (art == null) appObject else null
             Cell(
                 title = game.title,
                 mark = game.mark,
@@ -3413,12 +3422,13 @@ private fun CarriedTile(
 private fun FoundTile(app: FoldcadeApp, entry: FindEntry, focused: Boolean, size: Dp, showTitle: Boolean, onClick: () -> Unit) {
     val shell = app.shell
     val game = if (entry.kind == FindKind.Group) null else shell.findGame(entry.id)
+    val appObject = appGlyph(game?.androidPackage)
     val art = key(game?.id) {
-        val found = rememberArt(app, game?.let(shell::artRecord), game?.let(shell::artQuery))
+        val found = rememberArt(app, game?.let(shell::artRecord), game?.let(shell::artQuery), automatic = appObject == null)
         found?.let { rememberCoverPainter(app, it.square ?: it.cover, TILE_PX)?.painter }
     }
     val corner = size * foldTheme().iconRadius
-    val themedApp = if (art == null) appGlyph(game?.androidPackage) else null
+    val themedApp = if (art == null) appObject else null
     Box {
         Cell(
             title = entry.title,
