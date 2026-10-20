@@ -257,10 +257,9 @@ class ContractTest {
         val focus = GridFocus(cellIndex = 2, lastColumn = 2)
         val tile = TileActions(
             move = true,
-            collections = listOf(CollectionChoice(HOME_FAVORITES, Copy.favorites, false), CollectionChoice("home.user.1", "Mine", true)),
-            favorite = false,
-            pin = true,
-            remove = RemoveVerb.Hide,
+            collections = listOf(CollectionChoice(HOME_ROOT, Copy.home, false), CollectionChoice("home.user.1", "Mine", true)),
+            remove = RemoveVerb.Remove,
+            hide = true,
         )
         val model = PickerModel(count = 6, rowsPerPage = 1, focus = focus, tileActions = tile)
         val open = reduce(model, Meaning.Options).first
@@ -268,24 +267,24 @@ class ContractTest {
         assertEquals(Side.Left, panel.side)
         assertEquals(PanelLevel.Actions, panel.level)
         assertEquals(
-            listOf(Row.MoveTile, Row.AddToCollection, Row.Favorite, Row.PinTile, Row.RemoveTile),
+            listOf(Row.MoveTile, Row.AddToCollection, Row.RemoveTile, Row.Hide),
             panelRows(panel, open),
         )
-        assertEquals(Copy.hideApp, rowText(Row.RemoveTile, open).label)
-        assertEquals(Copy.favorite, rowText(Row.Favorite, open).label)
+        assertEquals(Copy.remove, rowText(Row.RemoveTile, open).label)
+        assertEquals(Copy.hideApp, rowText(Row.Hide, open).label)
         assertEquals(RowControl.Opens, rowControl(Row.AddToCollection, open))
         val addTo = reduce(open.copy(panel = panel.copy(index = 1)), Meaning.Activate).first
         assertEquals(PanelLevel.Collections, addTo.panel?.level)
         val rows = panelRows(addTo.panel!!, addTo)
         assertEquals(
-            listOf(Row.Collection(HOME_FAVORITES, Copy.favorites), Row.Collection("home.user.1", "Mine"), Row.NewCollection),
+            listOf(Row.Collection(HOME_ROOT, Copy.home), Row.Collection("home.user.1", "Mine"), Row.NewCollection),
             rows,
         )
         assertEquals(RowControl.Check(false), rowControl(rows[0], addTo))
         assertEquals(RowControl.Check(true), rowControl(rows[1], addTo))
         // A toggles the check and the menu stays open on that row.
         val (toggled, effect) = reduce(addTo, Meaning.Activate)
-        assertEquals(Effect.ToggleCollection(HOME_FAVORITES), effect)
+        assertEquals(Effect.ToggleCollection(HOME_ROOT), effect)
         assertEquals(PanelLevel.Collections, toggled.panel?.level)
         assertEquals(0, toggled.panel?.index)
         assertEquals(RowControl.Check(true), rowControl(rows[0], toggled))
@@ -294,13 +293,13 @@ class ContractTest {
         assertEquals(Effect.NewCollection(), made.second)
         // Each effect names the game the rows act on, so a menu that kept its game still acts on it.
         val held = addTo.copy(tileActions = addTo.tileActions!!.copy(game = "lib:romm:7", removeDownload = true))
-        assertEquals(Effect.ToggleCollection(HOME_FAVORITES, "lib:romm:7"), reduce(held, Meaning.Activate).second)
+        assertEquals(Effect.ToggleCollection(HOME_ROOT, "lib:romm:7"), reduce(held, Meaning.Activate).second)
         assertEquals(Effect.NewCollection("lib:romm:7"), reduce(held.copy(panel = held.panel!!.copy(index = 2)), Meaning.Activate).second)
         val actions = held.copy(panel = held.panel!!.copy(level = PanelLevel.Actions, index = 0))
         val heldRows = panelRows(actions.panel!!, actions)
         fun pick(row: Row) = reduce(actions.copy(panel = actions.panel!!.copy(index = heldRows.indexOf(row))), Meaning.Activate).second
-        assertEquals(Effect.ToggleFavorite("lib:romm:7"), pick(Row.Favorite))
-        assertEquals(Effect.PinTile("lib:romm:7"), pick(Row.PinTile))
+        assertEquals(Effect.Hide("lib:romm:7"), pick(Row.Hide))
+        assertEquals(Effect.RemoveTile, pick(Row.RemoveTile))
         assertEquals(Effect.RemoveDownload("lib:romm:7"), pick(Row.RemoveDownload))
         val withArt = actions.copy(tileActions = actions.tileActions!!.copy(art = true))
         val artRows = panelRows(withArt.panel!!, withArt)
@@ -322,86 +321,68 @@ class ContractTest {
         val choices = emptyList<CollectionChoice>()
         // A pin on the root.
         assertEquals(
-            listOf(Row.MoveTile, Row.AddToCollection, Row.Favorite, Row.RemoveTile, Row.RemoveDownload),
-            actionRows(TileActions(move = true, collections = choices, favorite = true, remove = RemoveVerb.Unpin, removeDownload = true), null),
+            listOf(Row.MoveTile, Row.AddToCollection, Row.RemoveTile, Row.Hide, Row.RemoveDownload),
+            actionRows(TileActions(move = true, collections = choices, remove = RemoveVerb.Unpin, hide = true, removeDownload = true)),
         )
-        // In Recently played.
+        // In Recently played, or a folder: nothing to remove, so Hide alone.
         assertEquals(
-            listOf(Row.AddToCollection, Row.Favorite, Row.PinTile),
-            actionRows(TileActions(collections = choices, favorite = false, pin = true), null),
+            listOf(Row.AddToCollection, Row.Hide),
+            actionRows(TileActions(collections = choices, hide = true)),
+        )
+        // An installed app in an Android folder can move to the other one, after Add to.
+        assertEquals(
+            listOf(Row.MoveTile, Row.AddToCollection, Row.MoveApp, Row.Hide),
+            actionRows(TileActions(move = true, collections = choices, hide = true, moveTo = HOME_ANDROID_GAMES)),
         )
         // A collection, then an empty slot.
         assertEquals(
             listOf(Row.MoveTile, Row.RenameFolder, Row.FolderIcon, Row.RemoveTile),
-            actionRows(TileActions(move = true, rename = true, icon = true, remove = RemoveVerb.Remove), null),
+            actionRows(TileActions(move = true, rename = true, icon = true, remove = RemoveVerb.Remove)),
         )
-        assertEquals(listOf(Row.MoveTile, Row.NewCollection), actionRows(TileActions(move = true, newCollection = true), null))
+        assertEquals(listOf(Row.MoveTile, Row.NewCollection), actionRows(TileActions(move = true, newCollection = true)))
+        // On a game, New collection lives at the end of Add to, not in Y's menu.
+        assertEquals(
+            listOf(Row.AddToCollection, Row.SelectTile),
+            actionRows(TileActions(collections = choices, select = true, newCollection = true)),
+        )
+        assertEquals(listOf(Row.AddToCollection), actionRows(TileActions(bulk = listOf("a"), collections = choices, newCollection = true)))
         val model = PickerModel(count = 1, rowsPerPage = 1)
         assertEquals(Copy.unpin, rowText(Row.RemoveTile, model.copy(tileActions = TileActions(remove = RemoveVerb.Unpin))).label)
         assertEquals(Copy.remove, rowText(Row.RemoveTile, model.copy(tileActions = TileActions(remove = RemoveVerb.Remove))).label)
-        assertEquals(Copy.unfavorite, rowText(Row.Favorite, model.copy(tileActions = TileActions(favorite = true))).label)
         assertEquals(Copy.newCollection, rowText(Row.NewCollection, model).label)
-        assertEquals(Copy.pinToHome, rowText(Row.PinTile, model).label)
+        assertEquals(Copy.moveToApps, rowText(Row.MoveApp, model.copy(tileActions = TileActions(moveTo = HOME_ANDROID_APPS))).label)
+        assertEquals(Copy.moveToGames, rowText(Row.MoveApp, model.copy(tileActions = TileActions(moveTo = HOME_ANDROID_GAMES))).label)
         assertEquals(Copy.icon, rowText(Row.FolderIcon, model).label)
     }
 
     @Test
-    fun yOnAnAndroidAppOffersItsShelfActionsAndR1NoLongerDoes() {
-        val apps = AppActions(favorite = false, onGamesShelf = false, hiddenShelf = false)
-        val model = PickerModel(count = 3, rowsPerPage = 1, appActions = apps)
-        val open = reduce(model, Meaning.Options).first
-        assertEquals(listOf(Row.PinApp, Row.MoveApp, Row.HideApp), panelRows(open.panel!!, open))
-        val r1 = reduce(model, Meaning.RightPanel).first
-        assertTrue(panelRows(r1.panel!!, r1).none { it == Row.PinApp || it == Row.MoveApp || it == Row.HideApp })
-    }
-
-    @Test
-    fun appShelvesGoHomeOnBackEvenWhenEmptyOrOpenedFromAFolder() {
-        for (grid in listOf(HomeGrid.Apps, HomeGrid.AndroidGames, HomeGrid.HiddenApps)) {
-            for (count in listOf(0, 3)) {
-                for (atRoot in listOf(false, true)) {
-                    val model = PickerModel(count = count, rowsPerPage = 1, homeGrid = grid, atLibraryRoot = atRoot)
-                    assertEquals(Effect.GoHome, reduce(model, Meaning.Back).second)
-                    val menu = reduce(model, Meaning.LeftPanel).first
-                    val closed = reduce(menu, Meaning.Back)
-                    assertNull(closed.first.panel)
-                    assertNull(closed.second)
-                    assertEquals(grid, closed.first.homeGrid)
-                }
-            }
-        }
-    }
-
-    @Test
-    fun appAddToOffersDestinationsAndBackReturnsToItsActionRow() {
+    fun moveAppNamesItsGameAndFolderAndR1NeverOffersIt() {
         val focus = GridFocus(cellIndex = 2, lastColumn = 0)
-        val apps = AppActions(
-            favorite = false,
-            onGamesShelf = false,
-            hiddenShelf = false,
-            destinations = listOf(FolderChoice(null, Copy.homeSlot), FolderChoice("home.user.1", "Mine")),
-        )
-        val model = PickerModel(count = 3, rowsPerPage = 1, focus = focus, homeGrid = HomeGrid.Apps, appActions = apps)
-        for (level in listOf(PanelLevel.Actions, PanelLevel.EditHome)) {
-            val open = reduce(model, Meaning.Options).first
-            val panel = open.panel!!.copy(level = level, index = 1)
-            assertEquals(Row.AddAppTo, panelRows(panel, open)[panel.index])
-            assertEquals(Copy.addTo, rowText(Row.AddAppTo, open).label)
-            val picker = reduce(open.copy(panel = panel), Meaning.Activate).first
-            assertEquals(PanelLevel.AddTo, picker.panel?.level)
-            assertEquals(
-                listOf(Row.Destination(null, Copy.homeSlot), Row.Destination("home.user.1", "Mine")),
-                panelRows(picker.panel!!, picker),
-            )
-            for ((index, folderId) in listOf(null, "home.user.1").withIndex()) {
-                val chosen = reduce(picker.copy(panel = picker.panel!!.copy(index = index)), Meaning.Activate)
-                assertEquals(Effect.AddAppTo(folderId), chosen.second)
-                assertNull(chosen.first.panel)
-                assertEquals(focus, chosen.first.focus)
+        val tile = TileActions(collections = emptyList(), hide = true, moveTo = HOME_ANDROID_APPS, game = "android:notes")
+        val model = PickerModel(count = 3, rowsPerPage = 1, focus = focus, tileActions = tile)
+        val open = reduce(model, Meaning.Options).first
+        val rows = panelRows(open.panel!!, open)
+        assertEquals(listOf(Row.AddToCollection, Row.MoveApp, Row.Hide), rows)
+        val moved = reduce(open.copy(panel = open.panel!!.copy(index = rows.indexOf(Row.MoveApp))), Meaning.Activate)
+        assertEquals(Effect.MoveApp("android:notes", HOME_ANDROID_APPS), moved.second)
+        assertNull(moved.first.panel)
+        assertEquals(focus, moved.first.focus)
+        val r1 = reduce(model, Meaning.RightPanel).first
+        assertTrue(panelRows(r1.panel!!, r1).none { it == Row.MoveApp || it == Row.Hide })
+    }
+
+    @Test
+    fun hiddenGoesHomeOnBackEvenWhenEmptyOrOpenedFromAFolder() {
+        for (count in listOf(0, 3)) {
+            for (atRoot in listOf(false, true)) {
+                val model = PickerModel(count = count, rowsPerPage = 1, homeGrid = HomeGrid.Hidden, atLibraryRoot = atRoot)
+                assertEquals(Effect.GoHome, reduce(model, Meaning.Back).second)
+                val menu = reduce(model, Meaning.LeftPanel).first
+                val closed = reduce(menu, Meaning.Back)
+                assertNull(closed.first.panel)
+                assertNull(closed.second)
+                assertEquals(HomeGrid.Hidden, closed.first.homeGrid)
             }
-            val back = reduce(picker, Meaning.Back).first
-            assertEquals(level, back.panel?.level)
-            assertEquals(Row.AddAppTo, panelRows(back.panel!!, back)[back.panel!!.index])
         }
     }
 

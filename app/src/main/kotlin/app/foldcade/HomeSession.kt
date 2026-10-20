@@ -11,8 +11,6 @@ import app.foldcade.language.bulkNewCollection
 import app.foldcade.language.bulkHide
 import app.foldcade.language.LibrarySort
 import app.foldcade.language.Copy
-import app.foldcade.language.LaunchableApp
-import app.foldcade.language.AppShelfState
 import app.foldcade.language.HomeKind
 import app.foldcade.language.hideGame
 import app.foldcade.language.showHidden
@@ -22,16 +20,13 @@ import app.foldcade.language.Effect
 import app.foldcade.language.GridFocus
 import app.foldcade.language.GridStrip
 import app.foldcade.language.HOME_ALL
-import app.foldcade.language.HOME_FAVORITES
 import app.foldcade.language.IconPick
 import app.foldcade.language.collectionLook
-import app.foldcade.language.FolderChoice
 import app.foldcade.language.FindEntry
 import app.foldcade.language.FindKind
 import app.foldcade.language.HomeLanding
 import app.foldcade.language.homeLanding
 import app.foldcade.language.resolvePlatform
-import app.foldcade.language.RemoveVerb
 import app.foldcade.language.TileActions
 import app.foldcade.language.HomeBoard
 import app.foldcade.language.HomeFolder
@@ -57,12 +52,12 @@ import app.foldcade.language.closeAll
 import app.foldcade.language.closeFolder
 import app.foldcade.language.collectionChoices
 import app.foldcade.language.decodeHome
-import app.foldcade.language.setGroupOnHome
-import app.foldcade.language.withFavorites
+import app.foldcade.language.setRecentOnHome
+import app.foldcade.language.otherAppFolder
+import app.foldcade.language.RemoveVerb
 import app.foldcade.language.emptyCollection
 import app.foldcade.language.encodeHome
 import app.foldcade.language.enterEdit
-import app.foldcade.language.favorite
 import app.foldcade.language.fileGame
 import app.foldcade.language.folderTakes
 import app.foldcade.language.folderCount
@@ -75,16 +70,12 @@ import app.foldcade.language.onHome
 import app.foldcade.language.openAll
 import app.foldcade.language.openFolder
 import app.foldcade.language.pickUp
-import app.foldcade.language.pinItemToHome
-import app.foldcade.language.pinToHome
-import app.foldcade.language.pinned
 import app.foldcade.language.removeFromHome
 import app.foldcade.language.removeVerb
 import app.foldcade.language.renameFolder
 import app.foldcade.language.setFolderIcon
 import app.foldcade.language.setAddNewToHome
 import app.foldcade.language.toggleCollection
-import app.foldcade.language.toggleFavorite
 import app.foldcade.language.heldId
 import app.foldcade.language.heldOver
 import app.foldcade.language.holdDrop
@@ -134,7 +125,7 @@ class HomeSession(
      * Putting a tile down, cancelling, or finishing selection merges the latest report.
      */
     var board: HomeBoard = decodeHome(raw, nowMillis)
-        .let { withFavorites(it.copy(collectionSerial = app.foldcade.language.collectionHighWater(it))) }
+        .let { it.copy(collectionSerial = app.foldcade.language.collectionHighWater(it)) }
         .let { adoptSameGames(it, sameGames) }
         private set(value) {
             field = value
@@ -175,16 +166,13 @@ class HomeSession(
         // The report that waited on the selection may have folded a checked copy into its tile.
         val ids = selected.map(::tileOf).distinct()
         bulkBefore = board
-        val name = "${Copy.collection} ${board.folders.values.count { it.collection && it.id != HOME_FAVORITES } + 1}"
+        val name = "${Copy.collection} ${board.folders.values.count { it.collection } + 1}"
         val made = nextUserFolderId(board)
+        val items = catalog().associateBy { it.id }
         board = when (action) {
-            BulkAction.Collection -> collectionId?.let { bulkCollection(board, it, ids) } ?: board
+            BulkAction.Collection -> collectionId?.let { bulkCollection(board, it, ids, items::get, platforms) } ?: board
             BulkAction.NewCollection -> bulkNewCollection(board, made, name, ids)
             BulkAction.Hide -> bulkHide(board, ids)
-            BulkAction.Favorite -> ids.fold(board) { next, id -> if (favorite(next, id)) next else toggleFavorite(next, id) }
-            BulkAction.Pin -> ids.filter { !pinned(board, it) }.fold(board) { next, id ->
-                catalog().firstOrNull { it.id == id }?.let { pinItemToHome(next, it, platforms) } ?: pinToHome(next, id)
-            }
         }
         bulkAfter = board
         if (action == BulkAction.NewCollection && made in board.folders) openNaming(made, index, fresh = true)
@@ -195,8 +183,7 @@ class HomeSession(
         val ids = selectedIds()
         if (ids.isEmpty()) return TileActions()
         return TileActions(bulk = ids, collections = bulkCollectionChoices(board, ids), newCollection = true,
-            favorite = false.takeIf { ids.any { !favorite(board, it) } },
-            pin = ids.any { !pinned(board, it) }, remove = RemoveVerb.Hide.takeIf { ids.any { it !in board.hidden } })
+            hide = ids.any { it !in board.hidden })
     }
 
     var sort: LibrarySort = LibrarySort.Listed
@@ -375,10 +362,10 @@ class HomeSession(
     }
 
     /**
-     * What Y offers for the tile at [index]. A game can always join collections and be a
-     * favorite; where it sits decides the rest (see [removeVerb]). In All, a game not pinned
-     * can be, which brings a hidden one back. A group can move, be renamed and come off Home,
-     * and a collection takes an icon. An empty slot moves, and on the root makes a collection.
+     * What Y offers for the tile at [index]. A game can always be added to Home and to
+     * collections, and hidden; where it sits decides what Remove does (see [removeVerb]).
+     * A group can move, be renamed and come off Home, and a collection takes an icon. An
+     * empty slot moves, and on the root makes a collection.
      * A downloaded server game can be deleted from anywhere. While Add to has taken the game
      * out of the collection on screen, the menu keeps acting on that game. Null while a tile
      * moves or a picker or name field is open.
@@ -387,17 +374,17 @@ class HomeSession(
         if (iconPick != null || renamingId != null || board.editing) return null
         if (selection != null) return bulkActions()
         val held = menuGame
-        if (held != null && slotGame(index) != held) return gameActions(held, move = false, pin = false, remove = null).copy(kept = true)
+        if (held != null && slotGame(index) != held) return gameActions(held, move = false, remove = null).copy(kept = true)
         if (board.allOpen) {
             val item = allRows().getOrNull(index) ?: return null
-            return gameActions(item.id, move = false, pin = !pinned(board, item.id), remove = null)
+            return gameActions(item.id, move = false, remove = null)
                 .copy(select = true, showOnHome = item.id.takeIf { homeLanding(board, it) != null })
         }
         if (index < 0) return null
         val open = board.openFolderId?.let { board.folders[it] }
         val id = visibleSlots(board).getOrNull(index)
         if (open?.recent == true) {
-            return id?.let { gameActions(it, move = false, pin = !pinned(board, it), remove = null).copy(select = true) }
+            return id?.let { gameActions(it, move = false, remove = null).copy(select = true) }
         }
         val gaps = canTidy(board)
         // An empty slot, or one past the last tile, moves as a tile does, makes a collection on
@@ -408,16 +395,16 @@ class HomeSession(
         if (folder != null) {
             return TileActions(move = true, rename = true, icon = folder.userMade, remove = removeVerb(board, index), tidyBoard = gaps)
         }
-        return gameActions(id, move = true, pin = open?.system == true && !pinned(board, id), remove = removeVerb(board, index), tidyBoard = gaps).copy(select = true)
+        return gameActions(id, move = true, remove = removeVerb(board, index), tidyBoard = gaps).copy(select = true)
     }
 
-    private fun gameActions(id: String, move: Boolean, pin: Boolean, remove: RemoveVerb?, tidyBoard: Boolean = false): TileActions = TileActions(
+    private fun gameActions(id: String, move: Boolean, remove: RemoveVerb?, tidyBoard: Boolean = false): TileActions = TileActions(
         tidyBoard = tidyBoard,
         move = move,
         collections = collectionChoices(board, id),
-        favorite = favorite(board, id),
-        pin = pin,
         remove = remove,
+        hide = id !in board.hidden,
+        moveTo = otherAppFolder(board, id),
         removeDownload = downloaded(id),
         deleteShortcut = shelfById[id]?.libraryId in setOf("moonlight", "droiddeck") && shelfById[id]?.remoteKey != null,
         game = id,
@@ -425,22 +412,22 @@ class HomeSession(
 
     /**
      * What Y offers for [id] among Find's results. A game or app is offered where it lives on
-     * Home, then what it is offered in All. Hidden items offer Show; visible games and apps
-     * offer Hide, and a pin when not pinned. A retired group offers Show too.
+     * Home, then what it is offered in All. Hidden items offer Show, and visible ones Hide.
+     * A retired group offers Show too.
      */
     fun findActions(id: String, hidden: Boolean = id in board.hidden || id in board.retired): TileActions {
         if (id in board.retired) return TileActions(show = true, game = id)
         val shown = id.takeIf { homeLanding(board, it) != null }
         if (board.folders[id] != null) return TileActions(showOnHome = shown)
-        return gameActions(id, move = false, pin = !hidden && !pinned(board, id),
-            remove = RemoveVerb.Hide.takeUnless { hidden }).copy(showOnHome = shown.takeUnless { hidden }, show = hidden)
+        return gameActions(id, move = false, remove = null)
+            .copy(showOnHome = shown.takeUnless { hidden }, show = hidden, hide = !hidden)
     }
 
     /**
      * Everything Find can list: each game and app the catalog knows, hidden ones marked, and
-     * the groups on the root by their names. [shelfHidden] says which apps their shelf hides.
+     * the groups on the root by their names.
      */
-    fun findEntries(shelfHidden: (String) -> Boolean = { false }): List<FindEntry> {
+    fun findEntries(): List<FindEntry> {
         val items = catalog().filter { !it.placeholder }.map { item ->
             val platform = if (item.kind == HomeKind.Rom) resolvePlatform(platforms, item.platformId) else null
             FindEntry(
@@ -449,7 +436,7 @@ class HomeSession(
                 kind = if (item.kind == HomeKind.AndroidApp || item.kind == HomeKind.Emulator) FindKind.App else FindKind.Game,
                 platformId = platform?.id ?: item.platformId?.takeIf { item.kind == HomeKind.Rom && it.isNotBlank() },
                 platformName = platform?.name,
-                hidden = item.id in board.hidden || shelfHidden(item.id),
+                hidden = item.id in board.hidden,
                 lastPlayedMillis = lastPlayed(item.id) ?: item.lastPlayedMillis,
                 mark = item.mark,
             )
@@ -515,15 +502,13 @@ class HomeSession(
     fun hide(id: String) { board = hideGame(board, id) }
     fun show(id: String) { board = showHidden(board, id, catalog(), platforms) }
 
-    /** Edit home's switch for Favorites or Recently played. Returns where focus goes: it stays. */
-    fun setGroupOnHome(id: String, on: Boolean, index: Int): Int {
-        board = setGroupOnHome(board, id, on, catalog(), platforms)
+    /** Edit home's switch for Recently played. Returns where focus goes: it stays. */
+    fun setRecentOnHome(on: Boolean, index: Int): Int {
+        board = setRecentOnHome(board, on, catalog(), platforms)
         return index
     }
     fun deleteShortcut(id: String) { board = deleteShortcut(board, id) }
-    fun shelfActions(id: String): TileActions = gameActions(id, false, !pinned(board, id), RemoveVerb.Hide)
-    fun hiddenItems(apps: List<LaunchableApp>, state: AppShelfState, players: Set<String>): List<HomeItem> =
-        hiddenItems(board, catalog(), apps, state, players, platforms)
+    fun hiddenItems(): List<HomeItem> = hiddenItems(board, catalog(), platforms)
 
     /** The game at [index] in All or on the board. Null for a group, the All tile, or an empty slot. */
     private fun slotGame(index: Int): String? {
@@ -553,28 +538,14 @@ class HomeSession(
     }
 
     /**
-     * Puts the game at [index] in collection [folderId], or takes it out. Favorites is made
-     * when missing. The open menu keeps this game even when it leaves the slot on screen.
+     * Puts the game at [index] in collection [folderId], or takes it out; Home ([app.foldcade.language.HOME_ROOT])
+     * pins or unpins it, and a pin of a game nowhere on the board files it in its folder too.
+     * The open menu keeps this game even when it leaves the slot on screen.
      */
     fun toggleCollection(index: Int, folderId: String, gameId: String? = null) {
         val id = gameAt(index, gameId) ?: return
         menuGame = id
-        board = toggleCollection(board, folderId, id)
-    }
-
-    fun toggleFavorite(index: Int, gameId: String? = null) {
-        val id = gameAt(index, gameId) ?: return
-        board = toggleFavorite(board, id)
-    }
-
-    /**
-     * A pin for the game at [index] in the first free root slot. The focus stays on the game.
-     * A game nowhere on the board is filed in its folder too.
-     */
-    fun pin(index: Int, gameId: String? = null) {
-        val id = gameAt(index, gameId) ?: return
-        val item = catalog().firstOrNull { it.id == id }
-        board = if (item != null) pinItemToHome(board, item, platforms) else pinToHome(board, id)
+        board = toggleCollection(board, folderId, id, catalog().firstOrNull { it.id == id }, platforms)
     }
 
     /**
@@ -584,7 +555,7 @@ class HomeSession(
      */
     fun newCollection(index: Int, gameId: String? = null): Int {
         val collectionId = nextUserFolderId(board)
-        val count = board.folders.values.count { it.collection && it.id != HOME_FAVORITES } + 1
+        val count = board.folders.values.count { it.collection } + 1
         val name = "${Copy.collection} $count"
         val game = gameAt(index, gameId)
         val atRoot = !board.allOpen && board.openFolderId == null
@@ -677,10 +648,6 @@ class HomeSession(
         return true
     }
 
-    /** Where an app from a shelf can go (see [app.foldcade.language.placementChoices]). */
-    fun placementDestinations(id: String): List<FolderChoice> =
-        app.foldcade.language.placementChoices(board, catalog().firstOrNull { it.id == id }, platforms)
-
     /**
      * Places a catalog item at the chosen destination: a pin on Home, a collection, or a folder,
      * which it then sits in instead of its old one. A hidden item comes back.
@@ -705,6 +672,21 @@ class HomeSession(
         iconPick = null
         board = closeAll(closeFolder(cancelHold(board)))
         return rootIndex
+    }
+
+    /**
+     * Opens the board's folder [id], as L1's Games and Apps do: from wherever the board is, as
+     * A on its root tile would. One taken off Home opens where it is, and an Android folder the
+     * board has not made yet is made. Returns where focus goes.
+     */
+    fun openShelf(id: String): Int {
+        openGroup(id)?.let { return it }
+        ensureAppFolder(id)
+        if (id !in board.folders) return showRoot()
+        if (id in board.slots) return openGroup(id) ?: showRoot()
+        showRoot()
+        board = openFolder(board, id)
+        return 0
     }
 
     /** A shelf opened from a nested view keeps that view's original root opener. */

@@ -21,7 +21,7 @@ class FindRecoveryIntegrationTest {
             Game("local-folder", "drift", "gba", Availability.LocalOnly, "Drift"))), emptyList())
     }
 
-    @Test fun aGroupResultOwnsItsMenuOverAnEmptyShelf() {
+    @Test fun aGroupResultOwnsItsMenuOverAnEmptyHidden() {
         for (collection in listOf(false, true)) {
             val store = SessionStore(MemoryPrefs())
             val id = if (collection) "home.user.1" else HOME_ANDROID_APPS
@@ -30,7 +30,7 @@ class FindRecoveryIntegrationTest {
             store.saveHomeBoard(encodeHome(HomeBoard(slots = listOf(HOME_ALL, id),
                 folders = mapOf(id to group))))
             val shell = shell(store)
-            shell.showHomeGrid(HomeGrid.AndroidGames)
+            shell.showHomeGrid(HomeGrid.Hidden)
             assertEquals(0, shell.model.count)
             shell.openFind()
             focusResult(shell, id)
@@ -46,11 +46,11 @@ class FindRecoveryIntegrationTest {
     }
 
     @Test fun findsHiddenFilterAndShowUseEveryKindOfUnifiedHiddenItem() {
-        val ids = setOf(game, androidHomeId("notes"), androidHomeId("emu"), HOME_MOONLIGHT)
+        // An emulator a player covers is filed in Emulators, not hidden, so Hidden leaves it out.
+        val ids = setOf(game, androidHomeId("notes"), HOME_MOONLIGHT)
         for (target in ids) {
             val store = SessionStore(MemoryPrefs())
-            store.saveHomeBoard(encodeHome(HomeBoard(hidden = setOf(game), retired = setOf(HOME_MOONLIGHT))))
-            store.saveAppShelfState(AppShelfState().hide("notes"))
+            store.saveHomeBoard(encodeHome(HomeBoard(hidden = setOf(game, androidHomeId("notes")), retired = setOf(HOME_MOONLIGHT))))
             val shell = shell(store)
             shell.openFind()
             val find = shell.find!!
@@ -62,30 +62,30 @@ class FindRecoveryIntegrationTest {
             val rows = panelRows(shell.model.panel!!, shell.model)
             assertTrue(Row.ShowHidden in rows)
             assertEquals(rows.indexOf(Row.ShowHidden), chordIndex(rows, Meaning.Options))
-            assertFalse(Row.PinTile in rows)
+            assertFalse(Row.Hide in rows)
             shell.onMeaning(Meaning.Options, HostScreen.Top)
             assertNotNull(shell.find)
             assertFalse(shell.find!!.results.any { it.id == target })
             val board = decodeHome(store.homeBoardRaw())
             assertFalse(target in board.hidden || target in board.retired)
             if (target == HOME_MOONLIGHT) assertTrue(target in board.slots)
-            if (target == androidHomeId("notes")) assertFalse(store.appShelfState().record("notes").hidden)
-            if (target == androidHomeId("emu")) assertTrue(store.appShelfState().record("emu").showDespitePlayer)
+            if (target == androidHomeId("notes")) assertTrue(board.folders.getValue(HOME_ANDROID_APPS).slots.contains(target))
         }
     }
 
     @Test fun hideFromFindTargetsTheResultAndUndoPausesAndRestoresIt() {
-        for ((overShelf, target) in listOf(false, true).flatMap { shelf -> listOf(game, androidHomeId("notes")).map { shelf to it } }) {
+        for ((overHidden, target) in listOf(false, true).flatMap { hidden -> listOf(game, androidHomeId("notes")).map { hidden to it } }) {
             val store = SessionStore(MemoryPrefs())
             val shell = shell(store)
-            if (overShelf) shell.showHomeGrid(HomeGrid.AndroidGames)
+            if (overHidden) shell.showHomeGrid(HomeGrid.Hidden)
             val before = decodeHome(store.homeBoardRaw())
             shell.openFind()
             focusResult(shell, target)
             shell.onMeaning(Meaning.Options, HostScreen.Bottom)
-            choose(shell, Row.RemoveTile)
+            // Find has no spot to take a game off, so Remove is not offered; Hide is.
+            assertFalse(Row.RemoveTile in panelRows(shell.model.panel!!, shell.model))
+            choose(shell, Row.Hide)
             assertTrue(target in decodeHome(store.homeBoardRaw()).hidden)
-            if (target == androidHomeId("notes")) assertTrue(store.appShelfState().record("notes").hidden)
             assertEquals(Copy.hidden, shell.model.undoVerb)
             assertNotNull(shell.find)
             shell.onMeaning(Meaning.Options, HostScreen.Bottom)
@@ -101,7 +101,8 @@ class FindRecoveryIntegrationTest {
 
     @Test fun findEditsInvalidateUndoAndAMenuKeepsTheResultAfterTheFilterChanges() {
         val store = SessionStore(MemoryPrefs())
-        store.saveHomeBoard(encodeHome(HomeBoard(hidden = setOf(game))))
+        // Notes stays hidden, so the Hidden filter stays when Drift leaves it.
+        store.saveHomeBoard(encodeHome(HomeBoard(hidden = setOf(game, androidHomeId("notes")))))
         val shell = shell(store)
         shell.openFind()
         val find = shell.find!!
@@ -114,10 +115,12 @@ class FindRecoveryIntegrationTest {
         assertFalse(find.results.any { it.id == game })
         choose(shell, panelRows(shell.model.panel!!, shell.model).filterIsInstance<Row.Collection>().first())
         assertNotNull(shell.model.undoVerb)
-        shell.onMeaning(Meaning.Back, HostScreen.Top)
-        choose(shell, Row.Favorite)
-        assertTrue(game in decodeHome(store.homeBoardRaw()).folders.getValue(HOME_FAVORITES).slots)
-        assertFalse(androidHomeId("notes") in decodeHome(store.homeBoardRaw()).hidden)
+        // Add to's first choice is Home: the game was pinned, then unpinned, which Undo offers back.
+        assertEquals(HOME_ROOT, (panelRows(shell.model.panel!!, shell.model).first() as Row.Collection).folderId)
+        assertEquals(Copy.unpinned, shell.model.undoVerb)
+        choose(shell, panelRows(shell.model.panel!!, shell.model).filterIsInstance<Row.Collection>().first())
+        assertTrue(game in decodeHome(store.homeBoardRaw()).slots)
+        assertTrue(androidHomeId("notes") in decodeHome(store.homeBoardRaw()).hidden)
         assertNull(shell.model.undoVerb)
     }
 

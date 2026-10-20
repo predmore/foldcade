@@ -6,7 +6,7 @@ import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
-/** One game in several places: its folder, collections, Favorites, Recently played, and a pin. */
+/** One game in several places: its folder, collections, Recently played, and a pin. */
 class CollectionsTest {
     private val platforms = listOf(
         HomePlatform("nintendo-3ds", "Nintendo 3DS", setOf("3ds")),
@@ -30,7 +30,7 @@ class CollectionsTest {
         assertEquals(listOf(zelda.id), board.folders.getValue("home.user.2").slots)
         assertEquals(listOf(zelda.id, mario.id), board.folders.getValue(threeDs).slots)
         assertEquals(
-            listOf(CollectionChoice(HOME_FAVORITES, Copy.favorites, false), CollectionChoice("home.user.1", "Quests", true), CollectionChoice("home.user.2", "Couch", true)),
+            listOf(CollectionChoice(HOME_ROOT, Copy.home, false), CollectionChoice("home.user.1", "Quests", true), CollectionChoice("home.user.2", "Couch", true)),
             collectionChoices(board, zelda.id),
         )
         // Toggling again takes it out of that collection alone.
@@ -41,58 +41,87 @@ class CollectionsTest {
     }
 
     @Test
-    fun favoritesAppearsWithTheFirstFavoriteAndStaysEmpty() {
+    fun homeLeadsAddToAndPinsOrUnpinsTheGame() {
         val merged = mergeHome(HomeBoard(), catalog, platforms)
         val board = merged.copy(slots = listOf(HOME_ALL, null) + merged.slots.drop(1))
-        assertFalse(HOME_FAVORITES in board.folders)
-        val loved = toggleFavorite(board, kirby.id)
-        // The first free root slot, which is the gap.
-        assertEquals(1, loved.slots.indexOf(HOME_FAVORITES))
-        assertTrue(favorite(loved, kirby.id))
-        assertEquals(Copy.favorites, loved.folders.getValue(HOME_FAVORITES).name)
-        assertTrue(loved.folders.getValue(HOME_FAVORITES).collection)
-        val unloved = mergeHome(toggleFavorite(loved, kirby.id), catalog, platforms)
-        assertFalse(favorite(unloved, kirby.id))
-        assertEquals(1, unloved.slots.indexOf(HOME_FAVORITES))
-        // Favorites in Add to makes it too, and the game stays in its folder.
-        val chosen = toggleCollection(board, HOME_FAVORITES, mario.id)
-        assertTrue(favorite(chosen, mario.id))
-        assertTrue(mario.id in chosen.folders.getValue(threeDs).slots)
+        assertEquals(HOME_ROOT, collectionChoices(board, kirby.id).first().folderId)
+        assertFalse(collectionChoices(board, kirby.id).first().member)
+        // Home pins it in the first free root slot, the gap, and it stays in its folder.
+        val pinned = toggleCollection(board, HOME_ROOT, kirby.id)
+        assertEquals(1, pinned.slots.indexOf(kirby.id))
+        assertTrue(kirby.id in pinned.folders.getValue(ds).slots)
+        assertTrue(collectionChoices(pinned, kirby.id).first().member)
+        // Again, it unpins: the slot empties and the game stays filed, not hidden.
+        val unpinned = mergeHome(toggleCollection(pinned, HOME_ROOT, kirby.id), catalog, platforms)
+        assertFalse(kirby.id in unpinned.slots)
+        assertTrue(kirby.id in unpinned.folders.getValue(ds).slots)
+        assertFalse(kirby.id in unpinned.hidden)
+        assertEquals(unpinned, unpin(unpinned, kirby.id))
+        // Given its catalog item, a game nowhere on Home is filed in its folder too.
+        val quiet = mergeHome(HomeBoard(addNewToHome = false), catalog, platforms)
+        val filed = toggleCollection(quiet, HOME_ROOT, zelda.id, zelda, platforms)
+        assertTrue(zelda.id in filed.slots)
+        assertEquals(listOf(zelda.id), filed.folders.getValue(threeDs).slots)
+        // Without it, only the pin.
+        assertFalse(threeDs in toggleCollection(quiet, HOME_ROOT, zelda.id).folders)
     }
 
     @Test
-    fun favoritesWaitsOnAFreshBoardAndSwitchingItOffKeepsItsGames() {
-        // A board loads through withFavorites before any library reports, so Favorites leads.
-        var board = mergeHome(withFavorites(HomeBoard()), catalog, platforms)
-        assertEquals(1, board.slots.indexOf(HOME_FAVORITES))
-        assertTrue(groupOnHome(board, HOME_FAVORITES))
-        assertTrue(board.folders.getValue(HOME_FAVORITES).slots.isEmpty())
-        board = toggleFavorite(board, zelda.id)
-        // Off, it leaves the root and keeps Zelda. No load or scan brings it back.
-        val off = setGroupOnHome(board, HOME_FAVORITES, false, catalog, platforms)
-        assertFalse(groupOnHome(off, HOME_FAVORITES))
-        assertTrue(HOME_FAVORITES in off.retired)
-        assertTrue(favorite(off, zelda.id))
-        assertEquals(off, withFavorites(off))
-        assertFalse(HOME_FAVORITES in mergeHome(off, catalog, platforms).slots)
-        assertFalse(HOME_FAVORITES in withFavorites(decodeHome(encodeHome(off))).slots)
-        // Favorite still files a game in it, out of sight.
-        val loved = toggleFavorite(off, mario.id)
-        assertFalse(groupOnHome(loved, HOME_FAVORITES))
-        assertTrue(favorite(loved, mario.id))
-        // On, it is back in its old slot with both.
-        val on = setGroupOnHome(loved, HOME_FAVORITES, true, catalog, platforms)
-        assertEquals(1, on.slots.indexOf(HOME_FAVORITES))
-        assertFalse(HOME_FAVORITES in on.retired)
-        assertEquals(listOf(zelda.id, mario.id), on.folders.getValue(HOME_FAVORITES).slots)
-        // X on its tile does what the switch does, rather than deleting it as it would a collection.
-        assertEquals(off, removeFolder(board, HOME_FAVORITES))
-        // Switched off before it was ever made, the first favorite makes it off Home.
-        val never = setGroupOnHome(mergeHome(HomeBoard(), catalog, platforms), HOME_FAVORITES, false, catalog, platforms)
-        assertTrue(HOME_FAVORITES in never.retired)
-        val first = toggleFavorite(never, kirby.id)
-        assertFalse(groupOnHome(first, HOME_FAVORITES))
-        assertTrue(favorite(first, kirby.id))
+    fun aFreshBoardHasNoFavorites() {
+        assertFalse(HOME_FAVORITES in mergeHome(HomeBoard(), catalog, platforms).folders)
+        assertFalse(HOME_FAVORITES in mergeHome(decodeHome(null), catalog, platforms).folders)
+        assertEquals(listOf(HOME_ROOT), collectionChoices(HomeBoard(), zelda.id).map { it.folderId })
+    }
+
+    @Test
+    fun anEmptyFavoritesFromBeforeGoesOnceAndOneWithGamesStaysAStarredCollection() {
+        val empty = HomeFolder(HOME_FAVORITES, "Favorites", userMade = true, mark = MARK_FOLDER)
+        val older = HomeBoard(
+            slots = listOf(HOME_ALL, HOME_FAVORITES, threeDs),
+            folders = mapOf(HOME_FAVORITES to empty, threeDs to HomeFolder(threeDs, "Nintendo 3DS", platformId = "nintendo-3ds", slots = listOf(zelda.id))),
+        )
+        // A release with built-in Favorites wrote no plainFavorites row.
+        val raw = encodeHome(older).lines().filter { !it.startsWith("plainFavorites") }.joinToString("\n")
+        val dropped = decodeHome(raw)
+        assertFalse(HOME_FAVORITES in dropped.folders)
+        assertEquals(listOf(HOME_ALL, null, threeDs), dropped.slots)
+        assertTrue(dropped.plainFavorites)
+        // Switched off while empty, it goes from Hidden too.
+        val off = encodeHome(older.copy(slots = listOf(HOME_ALL, null, threeDs), retired = setOf(HOME_FAVORITES)))
+            .lines().filter { !it.startsWith("plainFavorites") }.joinToString("\n")
+        assertFalse(HOME_FAVORITES in decodeHome(off).retired)
+        assertFalse(HOME_FAVORITES in decodeHome(off).folders)
+        // One holding games stays, a collection like any other, and keeps its star.
+        val loved = encodeHome(older.copy(folders = older.folders + (HOME_FAVORITES to empty.copy(slots = listOf(mario.id)))))
+            .lines().filter { !it.startsWith("plainFavorites") }.joinToString("\n")
+        val kept = decodeHome(loved).folders.getValue(HOME_FAVORITES)
+        assertEquals(listOf(mario.id), kept.slots)
+        assertTrue(kept.collection)
+        assertEquals(MARK_STAR, kept.mark)
+        assertEquals(MARK_STAR, collectionLook(kept)?.glyph)
+        // A chosen icon is the user's, and stays.
+        val chosen = encodeHome(older.copy(folders = older.folders + (HOME_FAVORITES to empty.copy(mark = "trophy", slots = listOf(mario.id)))))
+            .lines().filter { !it.startsWith("plainFavorites") }.joinToString("\n")
+        assertEquals("trophy", decodeHome(chosen).folders.getValue(HOME_FAVORITES).mark)
+        // Renamed, an empty one is the user's too.
+        val renamed = encodeHome(older.copy(folders = older.folders + (HOME_FAVORITES to empty.copy(name = "Best", namedByUser = true))))
+            .lines().filter { !it.startsWith("plainFavorites") }.joinToString("\n")
+        assertEquals("Best", decodeHome(renamed).folders.getValue(HOME_FAVORITES).name)
+        // Its only game hidden, it still holds that game, and Show puts the game back in it.
+        val hiding = hideGame(older.copy(folders = older.folders + (HOME_FAVORITES to empty.copy(slots = listOf(mario.id)))), mario.id)
+        val hidRaw = encodeHome(hiding).lines().filter { !it.startsWith("plainFavorites") }.joinToString("\n")
+        val hid = decodeHome(hidRaw)
+        assertTrue(HOME_FAVORITES in hid.folders)
+        assertTrue(mario.id in showHidden(hid, mario.id, catalog, platforms).folders.getValue(HOME_FAVORITES).slots)
+        // Settled once: emptied later, it is an empty collection, which stays.
+        val settled = decodeHome(loved)
+        val emptied = removeFromCollection(settled, HOME_FAVORITES, mario.id)
+        val reloaded = decodeHome(encodeHome(emptied))
+        assertTrue(HOME_FAVORITES in reloaded.folders)
+        assertEquals(1, reloaded.slots.indexOf(HOME_FAVORITES))
+        // Remove deletes it, as any collection.
+        assertFalse(HOME_FAVORITES in removeFolder(reloaded, HOME_FAVORITES).folders)
+        assertFalse(HOME_FAVORITES in removeFolder(reloaded, HOME_FAVORITES).retired)
     }
 
     @Test
@@ -100,19 +129,17 @@ class CollectionsTest {
         val old = rom("lib:local:old", "3ds", lastPlayed = 100L)
         val board = mergeHome(HomeBoard(recentAfter = 500L), listOf(old, kirby), platforms)
         assertFalse(HOME_RECENT in board.folders)
-        val on = setGroupOnHome(board, HOME_RECENT, true, listOf(old, kirby), platforms)
+        val on = setRecentOnHome(board, true, listOf(old, kirby), platforms)
         assertTrue(groupOnHome(on, HOME_RECENT))
         assertEquals(listOf(old.id), on.folders.getValue(HOME_RECENT).slots)
         val at = on.slots.indexOf(HOME_RECENT)
-        val off = setGroupOnHome(on, HOME_RECENT, false, listOf(old, kirby), platforms)
+        val off = setRecentOnHome(on, false, listOf(old, kirby), platforms)
         assertTrue(HOME_RECENT in off.retired)
         assertFalse(HOME_RECENT in mergeHome(off, listOf(old.copy(lastPlayedMillis = 700L), kirby), platforms).slots)
         val played = listOf(old, kirby.copy(lastPlayedMillis = 800L))
-        val back = setGroupOnHome(off, HOME_RECENT, true, played, platforms)
+        val back = setRecentOnHome(off, true, played, platforms)
         assertEquals(at, back.slots.indexOf(HOME_RECENT))
         assertEquals(listOf(kirby.id, old.id), back.folders.getValue(HOME_RECENT).slots)
-        // Only these two groups switch.
-        assertEquals(on, setGroupOnHome(on, threeDs, false, listOf(old, kirby), platforms))
     }
 
     @Test
@@ -128,10 +155,12 @@ class CollectionsTest {
         var board = mergeHome(HomeBoard(), catalog, platforms)
         board = pinToHome(board, zelda.id)
         board = newCollection(board, "home.user.1", "Quests", member = zelda.id)
-        board = toggleFavorite(board, zelda.id)
+        board = newCollection(board, "home.user.2", "Loved", member = zelda.id)
         val inFolder = openFolder(board, threeDs)
-        assertEquals(RemoveVerb.Hide, removeVerb(inFolder, 0))
-        val hidden = mergeHome(closeFolder(removeFromHome(inFolder, 0)), catalog, platforms)
+        // Remove has nothing to take out of a folder: Hide is its own action.
+        assertNull(removeVerb(inFolder, 0))
+        assertEquals(inFolder, removeFromHome(inFolder, 0))
+        val hidden = mergeHome(closeFolder(hideGame(inFolder, zelda.id)), catalog, platforms)
         assertTrue(zelda.id in hidden.hidden)
         assertFalse(zelda.id in hidden.slots)
         assertTrue(hidden.folders.values.none { zelda.id in it.slots })
@@ -140,7 +169,7 @@ class CollectionsTest {
         val back = mergeHome(addItemToHome(hidden, zelda, platforms), catalog, platforms)
         assertTrue(zelda.id in back.folders.getValue(threeDs).slots)
         assertTrue(zelda.id in back.slots)
-        assertTrue(favorite(back, zelda.id))
+        assertTrue(zelda.id in back.folders.getValue("home.user.2").slots)
         assertTrue(zelda.id in back.folders.getValue("home.user.1").slots)
     }
 
@@ -149,7 +178,7 @@ class CollectionsTest {
         var board = mergeHome(HomeBoard(), catalog, platforms)
         board = pinToHome(board, zelda.id)
         board = newCollection(board, "home.user.1", "Quests", member = zelda.id)
-        board = toggleFavorite(board, zelda.id)
+        board = newCollection(board, "home.user.2", "Loved", member = zelda.id)
         val loading = mergeHome(board, listOf(kirby), platforms, unsettled = { it.startsWith("lib:local:") })
         assertEquals(board.slots, loading.slots)
         assertEquals(board.folders, loading.folders)
@@ -159,7 +188,7 @@ class CollectionsTest {
         // The 3DS folder went with its last game. The collections stay, empty.
         assertFalse(threeDs in gone.folders)
         assertTrue("home.user.1" in gone.folders)
-        assertTrue(HOME_FAVORITES in gone.folders)
+        assertTrue("home.user.2" in gone.folders)
     }
 
     @Test
@@ -259,7 +288,7 @@ class CollectionsTest {
     }
 
     @Test
-    fun whatXDoesDependsOnWhereTheGameIs() {
+    fun removeTakesATileOffItsSpotAndNeverHides() {
         var board = mergeHome(HomeBoard(), catalog, platforms)
         board = newCollection(board, "home.user.1", "Quests", member = zelda.id)
         board = pinToHome(board, zelda.id)
@@ -270,7 +299,7 @@ class CollectionsTest {
         assertEquals(RemoveVerb.Remove, removeVerb(board, board.slots.indexOf("home.user.1")))
         assertEquals(RemoveVerb.Remove, removeVerb(board, board.slots.indexOf(HOME_RECENT)))
         assertEquals(RemoveVerb.Remove, removeVerb(openFolder(board, "home.user.1"), 0))
-        assertEquals(RemoveVerb.Hide, removeVerb(openFolder(board, threeDs), 0))
+        assertNull(removeVerb(openFolder(board, threeDs), 0))
         assertNull(removeVerb(openFolder(board, HOME_RECENT), 0))
         assertNull(removeVerb(board, 40))
         // Out of the collection on screen, the game stays everywhere else.
@@ -338,20 +367,23 @@ class CollectionsTest {
     }
 
     @Test
-    fun aShelfAppIsOfferedOnlyPlacesItIsNotYet() {
+    fun anAppTradesAndroidGamesForAndroidAppsAndKeepsItsOtherPlaces() {
         val notes = HomeItem("android:notes", "Notes", HomeKind.AndroidApp)
-        var board = mergeHome(HomeBoard(), listOf(notes, HomeItem("android:game", "Game", HomeKind.AndroidGame)), platforms)
+        val game = HomeItem("android:game", "Game", HomeKind.AndroidGame)
+        var board = mergeHome(HomeBoard(), listOf(notes, game), platforms)
+        assertEquals(HOME_ANDROID_GAMES, otherAppFolder(board, notes.id))
+        assertEquals(HOME_ANDROID_APPS, otherAppFolder(board, game.id))
+        assertNull(otherAppFolder(board, zelda.id))
         board = newCollection(board, "home.user.1", "Tools")
-        assertEquals(listOf(null, HOME_ANDROID_GAMES, "home.user.1"), placementChoices(board, notes, platforms).map { it.folderId })
         board = fileGame(board, notes.id, "home.user.1", listOf(notes), platforms)
         board = pinToHome(board, notes.id)
-        assertEquals(listOf(HOME_ANDROID_GAMES), placementChoices(board, notes, platforms).map { it.folderId })
         // Filed in the other Android folder, it leaves its old one.
         val moved = fileGame(board, notes.id, HOME_ANDROID_GAMES, listOf(notes), platforms)
         assertTrue(notes.id in moved.folders.getValue(HOME_ANDROID_GAMES).slots)
         assertFalse(notes.id in moved.folders.getValue(HOME_ANDROID_APPS).slots)
         assertTrue(notes.id in moved.folders.getValue("home.user.1").slots)
         assertTrue(notes.id in moved.slots)
+        assertEquals(HOME_ANDROID_APPS, otherAppFolder(moved, notes.id))
     }
 
     @Test
@@ -449,8 +481,8 @@ class CollectionsTest {
         val placed = mergeHome(HomeBoard(), catalog, platforms)
         assertEquals(pinToHome(placed, zelda.id), pinItemToHome(placed, zelda, platforms))
         // All's rows: nothing takes Y, since All has no Move.
-        val all = actionRows(TileActions(collections = emptyList(), favorite = false, pin = true, removeDownload = true), null)
-        assertEquals(listOf(Row.AddToCollection, Row.Favorite, Row.PinTile, Row.RemoveDownload), all)
+        val all = actionRows(TileActions(collections = emptyList(), hide = true, removeDownload = true))
+        assertEquals(listOf(Row.AddToCollection, Row.Hide, Row.RemoveDownload), all)
         assertNull(chordIndex(all, Meaning.Options))
     }
 
@@ -462,8 +494,9 @@ class CollectionsTest {
         assertFalse(zelda.id in added.hidden)
         assertEquals(listOf(zelda.id), added.folders.getValue("home.user.1").slots)
         assertTrue(zelda.id in added.folders.getValue(threeDs).slots)
-        val loved = mergeHome(toggleFavorite(hidden, zelda.id), catalog, platforms)
-        assertTrue(favorite(loved, zelda.id))
+        val pinned = mergeHome(toggleCollection(hidden, HOME_ROOT, zelda.id), catalog, platforms)
+        assertTrue(zelda.id in pinned.slots)
+        assertFalse(zelda.id in pinned.hidden)
     }
 
     @Test
@@ -481,7 +514,7 @@ class CollectionsTest {
             { newCollection(it, "home.user.1", "New", member = kirby.id) },
             { addToCollection(it, "home.user.2", kirby.id) },
             { toggleCollection(it, "home.user.2", kirby.id) },
-            { toggleFavorite(it, kirby.id) },
+            { toggleCollection(it, HOME_ROOT, kirby.id, kirby, platforms) },
             { pinToHome(it, kirby.id) },
             { pinItemToHome(it, kirby, platforms) },
             { fileGame(it, kirby.id, "home.user.2", catalog, platforms) },
@@ -522,10 +555,14 @@ class CollectionsTest {
         assertTrue(threeDs in shown.slots)
         assertEquals(listOf(zelda.id, mario.id, fresh.id), shown.folders.getValue(threeDs).slots)
         assertTrue(onHome(back, zelda.id))
-        // A pin with no other place at all still hides.
+        // A pin with no other place at all unpins too, and is never hidden: All and Find still list it.
         val loose = HomeItem("lib:local:loose", "Loose", HomeKind.Rom)
         val alone = mergeHome(HomeBoard(), listOf(loose), platforms)
-        assertEquals(RemoveVerb.Hide, removeVerb(alone, alone.slots.indexOf(loose.id)))
+        assertEquals(RemoveVerb.Unpin, removeVerb(alone, alone.slots.indexOf(loose.id)))
+        val gone = mergeHome(removeFromHome(alone, alone.slots.indexOf(loose.id)), listOf(loose), platforms)
+        assertFalse(loose.id in gone.slots)
+        assertFalse(loose.id in gone.hidden)
+        assertTrue(loose.id in gone.offHome)
     }
 
     @Test
