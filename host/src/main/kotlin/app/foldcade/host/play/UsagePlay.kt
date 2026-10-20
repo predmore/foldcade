@@ -92,9 +92,16 @@ fun usageSpans(samples: List<UsageSample>): List<UsageSpan> {
 }
 
 /**
+ * One foreground stretch longer than this is a clock set forward, not a sitting.
+ * Twelve hours still counts a long session. A jump of a day does not.
+ */
+const val MAX_USAGE_STRETCH_MS = 12L * 60L * 60L * 1000L
+
+/**
  * Active time per package. A negative gap counts as zero. An open stretch runs until [nowMillis].
  * A stamp ahead of [nowMillis] is a clock that jumped forward and was corrected: it does not
  * add time past now, and it does not stay as "last played" after the clock comes back.
+ * A stretch whose end is already in the past counts at most [MAX_USAGE_STRETCH_MS].
  */
 fun packagePlay(spans: List<UsageSpan>, nowMillis: Long): Map<String, PackagePlay> {
     val active = HashMap<String, Long>()
@@ -103,7 +110,11 @@ fun packagePlay(spans: List<UsageSpan>, nowMillis: Long): Map<String, PackagePla
         val rawEnd = span.pausedAt ?: nowMillis
         val end = rawEnd.coerceAtMost(nowMillis)
         val start = span.resumedAt.coerceAtMost(end)
-        val delta = (end - start).coerceAtLeast(0L)
+        val raw = (end - start).coerceAtLeast(0L)
+        // A pause still in the future is clamped to now above, and is not last played.
+        // A jump whose end is already in the past is capped.
+        val endedInThePast = span.pausedAt == null || span.pausedAt <= nowMillis
+        val delta = if (endedInThePast) raw.coerceAtMost(MAX_USAGE_STRETCH_MS) else raw
         active[span.packageName] = (active[span.packageName] ?: 0L) + delta
         val stamp = when {
             span.pausedAt == null -> nowMillis
