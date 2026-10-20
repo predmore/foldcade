@@ -105,6 +105,7 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
         const val EXTRA_DIALOG_INDEX = "foldcade.dialogIndex"
         const val EXTRA_DIALOG_SCREEN = "foldcade.dialogScreen"
         const val EXTRA_SAVE_CONFLICT = "foldcade.saveConflict"
+        const val STATE_FOLDER_PICKER = "foldcade.folderPicker"
     }
 
     private val displays by lazy { Displays(this) }
@@ -309,8 +310,21 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
         }
     }
 
+    override fun onSaveInstanceState(outState: Bundle) {
+        super.onSaveInstanceState(outState)
+        outState.putString(
+            STATE_FOLDER_PICKER,
+            FolderPickerState(folderPurpose, pendingLaunch, settingsPlayerId).encode(),
+        )
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        decodeFolderPickerState(savedInstanceState?.getString(STATE_FOLDER_PICKER)).let { restored ->
+            folderPurpose = restored.purpose
+            pendingLaunch = restored.pendingLaunch
+            settingsPlayerId = restored.settingsPlayerId
+        }
         foldcade.homeCreated(this)
         // Secondary Home may be created behind a running emulator. Resume reconciles its panel.
         if (launchesCompanion) acceptHome(intent)
@@ -2072,15 +2086,6 @@ class PendingRestart(val intent: Intent, val displayId: Int, val until: Long)
 
 /** How long after a start a return counts as the player quitting to switch games. */
 private const val RESTART_WINDOW_MS = 3_000L
-
-private enum class FolderPurpose {
-    Library,
-    LaunchOffer,
-    Settings,
-
-    /** RetroArch's data folder, so Foldcade can list its cores. */
-    RetroArchCores,
-}
 
 private fun shelfGame(game: ShelfGame): Game = Game(
     backendId = game.libraryId ?: "shelf",
