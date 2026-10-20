@@ -11,6 +11,16 @@ class ThemeSceneTest {
     )!!)
 
     @Test
+    fun aBrokenSceneWearsTheInheritedBackdrop() {
+        val afterglow = BackgroundMotion("afterglow:ribbons")
+        val asked = BackgroundMotion("night:ribbons")
+        assertEquals(afterglow, backdropAfterBrokenScene(BackgroundMotion.Off, asked, sceneFileCount = 1, afterglow))
+        assertEquals(asked, backdropAfterBrokenScene(asked, asked, sceneFileCount = 1, afterglow))
+        assertEquals(BackgroundMotion.Off, backdropAfterBrokenScene(BackgroundMotion.Off, BackgroundMotion.Off, sceneFileCount = 0, afterglow))
+        assertEquals(BackgroundMotion.Off, backdropAfterBrokenScene(BackgroundMotion.Off, asked, sceneFileCount = 1, null))
+    }
+
+    @Test
     fun referencePackContainsOnlyResourcesAndCompilesEveryScene() {
         val pack = afterglow()
         assertEquals(emptyList<ThemeDiagnostic>(), pack.diagnostics)

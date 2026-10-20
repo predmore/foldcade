@@ -91,17 +91,29 @@ fun usageSpans(samples: List<UsageSample>): List<UsageSpan> {
     return spans
 }
 
-/** Active time per package. A negative gap counts as zero. An open stretch runs until [nowMillis]. */
+/**
+ * Active time per package. A negative gap counts as zero. An open stretch runs until [nowMillis].
+ * A stamp ahead of [nowMillis] is a clock that jumped forward and was corrected: it does not
+ * add time past now, and it does not stay as "last played" after the clock comes back.
+ */
 fun packagePlay(spans: List<UsageSpan>, nowMillis: Long): Map<String, PackagePlay> {
     val active = HashMap<String, Long>()
     val last = HashMap<String, Long>()
     for (span in spans) {
-        val end = span.pausedAt ?: nowMillis
-        val delta = (end - span.resumedAt).coerceAtLeast(0L)
+        val rawEnd = span.pausedAt ?: nowMillis
+        val end = rawEnd.coerceAtMost(nowMillis)
+        val start = span.resumedAt.coerceAtMost(end)
+        val delta = (end - start).coerceAtLeast(0L)
         active[span.packageName] = (active[span.packageName] ?: 0L) + delta
-        val stamp = if (span.pausedAt != null) span.pausedAt else nowMillis
-        val known = last[span.packageName]
-        if (known == null || stamp >= known) last[span.packageName] = stamp
+        val stamp = when {
+            span.pausedAt == null -> nowMillis
+            span.pausedAt <= nowMillis -> span.pausedAt
+            else -> null
+        }
+        if (stamp != null) {
+            val known = last[span.packageName]
+            if (known == null || stamp >= known) last[span.packageName] = stamp
+        }
     }
     return active.keys.associateWith { packageName ->
         PackagePlay(packageName, active[packageName] ?: 0L, last[packageName])

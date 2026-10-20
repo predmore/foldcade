@@ -21,3 +21,12 @@ internal class LaunchWork {
 
     fun current(ticket: Int): Boolean = ticket == generation
 }
+
+/**
+ * The activity that started [ownedGeneration] is going away.
+ * Cancel only while that generation is still the one in flight, so the other
+ * screen being destroyed does not drop a launch it did not start.
+ */
+internal fun cancelLaunchIfOwned(work: LaunchWork, ownedGeneration: Int?) {
+    if (ownedGeneration != null && work.current(ownedGeneration)) work.cancel()
+}

@@ -1,6 +1,7 @@
 package app.foldcade
 
 import android.content.SharedPreferences
+import app.foldcade.language.FALLBACK_THEME_ID
 import app.foldcade.language.BackgroundMotion
 import app.foldcade.language.MotionSpeed
 import app.foldcade.language.decodeSameGames
@@ -315,7 +316,7 @@ class SessionStore(private val prefs: SharedPreferences) : SaveMarks {
         val saved = prefs.getString(KEY_THEME, null)
         return names.indexOf(saved).takeIf { it >= 0 }
             ?: legacyNames.indexOf(saved).takeIf { it >= 0 }
-            ?: if (names.size > 1) 1 else 0
+            ?: fallbackThemeIndex(names)
     }
 
     fun setTheme(name: String) {
@@ -455,4 +456,15 @@ class SessionStore(private val prefs: SharedPreferences) : SaveMarks {
 
         private const val PENDING_SAVE_RETURN_PREFIX = "pending_save_return:"
     }
+}
+
+/**
+ * Where a missing saved theme lands. Afterglow's slot when that pack loaded,
+ * otherwise slot 0. Slot 0 is the last resort when Afterglow itself failed to load.
+ */
+internal fun fallbackThemeIndex(ids: List<String>): Int {
+    val afterglow = ids.indexOfFirst {
+        it.equals(FALLBACK_THEME_ID, ignoreCase = true) || it.equals("Afterglow", ignoreCase = true)
+    }
+    return if (afterglow >= 0) afterglow else 0
 }

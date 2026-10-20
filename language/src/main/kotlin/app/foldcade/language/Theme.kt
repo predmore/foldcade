@@ -21,6 +21,13 @@ data class Theme(
     val motion: MotionStyle = MotionStyle(style),
 )
 
+/**
+ * A face that failed to load wears the inherited one. Afterglow's own failure,
+ * and a pack with nothing to inherit, uses [FontFamily.SansSerif].
+ */
+fun fontOrInherited(loaded: FontFamily?, inherited: FontFamily?): FontFamily =
+    loaded ?: inherited ?: FontFamily.SansSerif
+
 fun builtInTheme(): Theme = Theme(
     background = Color(0xFF000000),
     surface = Color(0xFF1C1C20),

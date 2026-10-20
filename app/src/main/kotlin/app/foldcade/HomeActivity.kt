@@ -105,6 +105,7 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
         const val EXTRA_DIALOG_INDEX = "foldcade.dialogIndex"
         const val EXTRA_DIALOG_SCREEN = "foldcade.dialogScreen"
         const val EXTRA_SAVE_CONFLICT = "foldcade.saveConflict"
+        const val STATE_FOLDER_PICKER = "foldcade.folderPicker"
     }
 
     private val displays by lazy { Displays(this) }
@@ -309,8 +310,21 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
         }
     }
 
+    override fun onSaveInstanceState(outState: Bundle) {
+        super.onSaveInstanceState(outState)
+        outState.putString(
+            STATE_FOLDER_PICKER,
+            FolderPickerState(folderPurpose, pendingLaunch, settingsPlayerId).encode(),
+        )
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        decodeFolderPickerState(savedInstanceState?.getString(STATE_FOLDER_PICKER)).let { restored ->
+            folderPurpose = restored.purpose
+            pendingLaunch = restored.pendingLaunch
+            settingsPlayerId = restored.settingsPlayerId
+        }
         foldcade.homeCreated(this)
         // Secondary Home may be created behind a running emulator. Resume reconciles its panel.
         if (launchesCompanion) acceptHome(intent)
@@ -505,6 +519,9 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
 
     override fun onDestroy() {
         usageReconcile.cancel()
+        // A download still running on this instance would finish on a dead
+        // activity and, if the start threw, send both screens home.
+        cancelLaunchIfOwned(foldcade.launchWork, ownedLaunch)
         recoveryWindow?.close()
         foldcade.homeDestroyed(this)
         val manager = getSystemService(DisplayManager::class.java)
@@ -1164,10 +1181,12 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
                 Panel.Bottom -> assignment.bottomDisplayId ?: return false
             }
         }
-        foldcade.externalPlay.open(foldcade.plays, id, title, displayId) {
+        val playerPackage = intent.component?.packageName
+        foldcade.externalPlay.open(foldcade.plays, id, title, displayId, playerPackage) {
             startOnDisplay(intent, displayId)
             if (noteStart()) armRestart(intent, displayId)
         }
+        foldcade.noteExternalPlayerOpened()
         foldcade.notePlayScreen()
         return true
     }
@@ -1235,13 +1254,14 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
             foldcade.store.place(panel, external)
         }
         try {
-            foldcade.externalPlay.open(foldcade.plays, game.id, game.title, displayId) {
+            val intent = foldcade.startIntent(player, ready.intent)
+            foldcade.externalPlay.open(foldcade.plays, game.id, game.title, displayId, intent.packageName) {
                 val options = ActivityOptions.makeBasic().apply { launchDisplayId = displayId }
-                val intent = foldcade.startIntent(player, ready.intent)
                 val start = intent.toAndroidIntent(foldcade.rommFolderAuthority)
                 startActivity(start, options.toBundle())
                 if (foldcade.noteStarted(player, intent)) armRestart(start, displayId)
             }
+            foldcade.noteExternalPlayerOpened()
             foldcade.notePlayScreen()
             if (game.libraryId != null) {
                 rememberReturn(LibraryReturn(game.libraryId, apiGame, player, spots))
@@ -1354,7 +1374,10 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
         closeConfirmed = false
     }
 
-    private fun beginLaunch(): Int = foldcade.launchWork.begin()
+    /** The generation this activity started, so its destruction does not cancel a later one. */
+    private var ownedLaunch: Int? = null
+
+    private fun beginLaunch(): Int = foldcade.launchWork.begin().also { ownedLaunch = it }
 
     /** Drops an in-flight launch so a late result cannot open a missing-player dialog. */
     private fun cancelLaunches() {
@@ -1768,6 +1791,7 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
         if (SystemClock.uptimeMillis() > pending.until) return false
         return try {
             startOnDisplay(pending.intent, pending.displayId)
+            foldcade.externalPlay.notePlayerRestarted()
             true
         } catch (_: ActivityNotFoundException) {
             false
@@ -2068,15 +2092,6 @@ class PendingRestart(val intent: Intent, val displayId: Int, val until: Long)
 
 /** How long after a start a return counts as the player quitting to switch games. */
 private const val RESTART_WINDOW_MS = 3_000L
-
-private enum class FolderPurpose {
-    Library,
-    LaunchOffer,
-    Settings,
-
-    /** RetroArch's data folder, so Foldcade can list its cores. */
-    RetroArchCores,
-}
 
 private fun shelfGame(game: ShelfGame): Game = Game(
     backendId = game.libraryId ?: "shelf",

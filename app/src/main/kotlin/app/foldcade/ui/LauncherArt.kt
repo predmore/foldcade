@@ -9,7 +9,11 @@ import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.wrapContentSize
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.ImageBitmap
@@ -18,6 +22,8 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.core.graphics.drawable.toBitmap
 import kotlin.math.roundToInt
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 
 /**
  * An app's launcher icon. A [fullBleed] one is an adaptive icon's layers with no mask,
@@ -28,12 +34,18 @@ internal data class LauncherArt(val image: ImageBitmap, val fullBleed: Boolean)
 @Composable
 internal fun launcherIcon(packageName: String?): LauncherArt? {
     val context = LocalContext.current
-    return remember(packageName) {
-        if (packageName == null) return@remember null
-        val drawable = runCatching { context.packageManager.getApplicationIcon(packageName) }.getOrNull()
-            ?: return@remember null
-        runCatching { launcherArt(drawable) }.getOrNull()
+    var art by remember(packageName) { mutableStateOf<LauncherArt?>(null) }
+    LaunchedEffect(packageName) {
+        art = null
+        if (packageName == null) return@LaunchedEffect
+        // Rasterizing an adaptive icon on the scroll thread hitches the grid.
+        art = withContext(Dispatchers.Default) {
+            val drawable = runCatching { context.packageManager.getApplicationIcon(packageName) }.getOrNull()
+                ?: return@withContext null
+            runCatching { launcherArt(drawable) }.getOrNull()
+        }
     }
+    return art
 }
 
 private fun launcherArt(drawable: Drawable): LauncherArt {
