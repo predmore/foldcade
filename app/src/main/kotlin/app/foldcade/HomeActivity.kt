@@ -1154,10 +1154,12 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
                 Panel.Bottom -> assignment.bottomDisplayId ?: return false
             }
         }
-        foldcade.externalPlay.open(foldcade.plays, id, title, displayId) {
+        val playerPackage = intent.component?.packageName
+        foldcade.externalPlay.open(foldcade.plays, id, title, displayId, playerPackage) {
             startOnDisplay(intent, displayId)
             if (noteStart()) armRestart(intent, displayId)
         }
+        foldcade.noteExternalPlayerOpened()
         foldcade.notePlayScreen()
         return true
     }
@@ -1225,13 +1227,14 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
             foldcade.store.place(panel, external)
         }
         try {
-            foldcade.externalPlay.open(foldcade.plays, game.id, game.title, displayId) {
+            val intent = foldcade.startIntent(player, ready.intent)
+            foldcade.externalPlay.open(foldcade.plays, game.id, game.title, displayId, intent.packageName) {
                 val options = ActivityOptions.makeBasic().apply { launchDisplayId = displayId }
-                val intent = foldcade.startIntent(player, ready.intent)
                 val start = intent.toAndroidIntent(foldcade.rommFolderAuthority)
                 startActivity(start, options.toBundle())
                 if (foldcade.noteStarted(player, intent)) armRestart(start, displayId)
             }
+            foldcade.noteExternalPlayerOpened()
             foldcade.notePlayScreen()
             if (game.libraryId != null) {
                 rememberReturn(LibraryReturn(game.libraryId, apiGame, player, spots))
@@ -1758,6 +1761,7 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
         if (SystemClock.uptimeMillis() > pending.until) return false
         return try {
             startOnDisplay(pending.intent, pending.displayId)
+            foldcade.externalPlay.notePlayerRestarted()
             true
         } catch (_: ActivityNotFoundException) {
             false
