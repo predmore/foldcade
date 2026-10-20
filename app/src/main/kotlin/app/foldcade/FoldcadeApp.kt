@@ -247,7 +247,7 @@ class FoldcadeApp : Application() {
     internal fun homeCreated(activity: FoldcadeHomeActivity) {
         val displayId = activity.display?.displayId ?: return
         val previous = homes.put(displayId, WeakReference(activity))?.get()
-        if (activity is CompanionHomeActivity) companionStarting = false
+        if (activity is CompanionHomeActivity) companionLaunch.arrived()
         if (previous != null && previous !== activity && !previous.isDestroyed) previous.finishAndRemoveTask()
     }
 
@@ -256,8 +256,8 @@ class FoldcadeApp : Application() {
         if (homes[displayId]?.get() === activity) homes.remove(displayId)
     }
 
-    /** A start for it is on its way, so a second resume does not start another. */
-    var companionStarting: Boolean = false
+    /** A start for the other screen is on its way, so a second resume does not start another. */
+    internal val companionLaunch = CompanionLaunch()
 
     /** True only for the process that first recorded a launch. Calibration waits for the next one. */
     var buttonPromptFirstSession: Boolean = false

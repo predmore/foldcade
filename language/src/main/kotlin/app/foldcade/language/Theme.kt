@@ -148,6 +148,7 @@ object Copy {
     const val ok = "OK"
     const val folderGrantTitle = "Choose a folder"
     const val folderGrantBody = "Foldcade lists games from a folder you choose."
+    const val folderGrantFailed = "That folder couldn’t be kept. Choose it again."
     const val wifi = "Wi-Fi"
     const val cellular = "Cellular"
     const val offline = "Offline"
