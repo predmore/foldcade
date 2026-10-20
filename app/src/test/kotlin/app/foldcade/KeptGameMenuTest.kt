@@ -50,23 +50,26 @@ class KeptGameMenuTest {
         assertTrue(androidHomeId("notes") in decodeHome(store.homeBoardRaw()).folders.getValue(collection.id).slots)
     }
 
-    @Test fun keepingTheRemainingAppOnTopRemovesUndoWithoutActivatingAnotherRow() {
+    @Test fun pinningTheRemainingAppFromAddToRemovesUndoWithoutActivatingAnotherRow() {
         val store = SessionStore(MemoryPrefs())
         val shell = ShellController(store, PluginHost(Dispatchers.Unconfined, MemoryCredentialStore()), nowMillis = { 100L })
         shell.setInstalledApps(listOf(other, app), emptySet())
-        shell.showHomeGrid(HomeGrid.Apps)
+        shell.openHomeFolder(HOME_ANDROID_APPS)
         shell.onMeaning(Meaning.Options, HostScreen.Bottom)
-        choose(shell, Row.RemoveTile)
+        choose(shell, Row.Hide)
+        focus(shell, (0 until shell.model.count).first { shell.homeFace(it)?.title == "Notes" })
         shell.onMeaning(Meaning.Options, HostScreen.Bottom)
         assertEquals(Row.Undo, panelRows(shell.model.panel!!, shell.model).first())
-        choose(shell, Row.PinApp)
+        choose(shell, Row.AddToCollection)
+        val home = Row.Collection(HOME_ROOT, Copy.home)
+        choose(shell, home)
         assertNull(shell.model.undoVerb)
         assertNotNull(shell.model.panel)
-        val rows = panelRows(shell.model.panel!!, shell.model)
-        assertFalse(Row.Undo in rows)
-        assertEquals(Row.PinApp, rows[shell.model.panel!!.index])
-        assertTrue(store.appShelfState().record("notes").favorite)
-        assertTrue(store.appShelfState().record("browser").hidden)
+        assertEquals(home, panelRows(shell.model.panel!!, shell.model)[shell.model.panel!!.index])
+        val board = decodeHome(store.homeBoardRaw())
+        assertTrue(androidHomeId("notes") in board.slots)
+        assertTrue(androidHomeId("browser") in board.hidden)
+        shell.onMeaning(Meaning.Back, HostScreen.Bottom)
         shell.onMeaning(Meaning.Back, HostScreen.Bottom)
         shell.onMeaning(Meaning.Options, HostScreen.Bottom)
         assertFalse(Row.Undo in panelRows(shell.model.panel!!, shell.model))
@@ -77,26 +80,26 @@ class KeptGameMenuTest {
             val store = SessionStore(MemoryPrefs())
             val shell = keptApp(store, wasGame)
             choose(shell, Row.MoveApp)
-            val destination = if (wasGame) AndroidShelf.Apps else AndroidShelf.Games
-            assertEquals(destination, store.appShelfState().record("notes").shelf)
             val board = decodeHome(store.homeBoardRaw())
             val folder = if (wasGame) HOME_ANDROID_APPS else HOME_ANDROID_GAMES
             assertTrue(androidHomeId("notes") in board.folders.getValue(folder).slots)
             assertFalse(androidHomeId("notes") in board.folders.getValue("home.user.1").slots)
-            assertNull(store.appShelfState().record("browser").shelf)
+            assertFalse(androidHomeId("notes") in board.folders.getValue(if (wasGame) HOME_ANDROID_GAMES else HOME_ANDROID_APPS).slots)
+            // The other app stays where it was filed.
+            assertTrue(androidHomeId("browser") in board.folders.getValue(if (wasGame) HOME_ANDROID_GAMES else HOME_ANDROID_APPS).slots)
         }
     }
 
-    @Test fun keptAndroidActionsCarryTheirGameThroughFavoritesCollectionsAndArtResults() {
-        for (row in listOf(Row.Favorite, Row.NewCollection, Row.ChooseArt)) {
+    @Test fun keptAndroidActionsCarryTheirGameThroughHomeCollectionsAndArtResults() {
+        for (row in listOf(Row.Collection(HOME_ROOT, Copy.home), Row.NewCollection, Row.ChooseArt)) {
             val store = SessionStore(MemoryPrefs())
             val applied = mutableListOf<String>()
             val shell = keptApp(store, true) { id, _, _ -> applied += id }
-            if (row == Row.NewCollection) choose(shell, Row.AddToCollection)
+            if (row != Row.ChooseArt) choose(shell, Row.AddToCollection)
             choose(shell, row)
             val gameId = androidHomeId("notes")
             when (row) {
-                Row.Favorite -> assertTrue(gameId in decodeHome(store.homeBoardRaw()).folders.getValue(HOME_FAVORITES).slots)
+                is Row.Collection -> assertTrue(gameId in decodeHome(store.homeBoardRaw()).slots)
                 Row.NewCollection -> {
                     shell.typing()!!.setText("New tools")
                     shell.onMeaning(Meaning.Done, HostScreen.Bottom)
@@ -130,7 +133,8 @@ class KeptGameMenuTest {
             folders = mapOf(collection.id to collection))))
         val shell = ShellController(store, PluginHost(Dispatchers.Unconfined, MemoryCredentialStore()),
             nowMillis = { 100L }, onArtApply = onArtApply)
-        shell.setInstalledApps(listOf(app.copy(systemGame = wasGame), other), emptySet())
+        // Both apps the same kind, so the board has the Android folder they are filed in.
+        shell.setInstalledApps(listOf(app.copy(systemGame = wasGame), other.copy(systemGame = wasGame)), emptySet())
         shell.setArtKeySaved(true)
         focus(shell, 1)
         shell.onMeaning(Meaning.Activate, HostScreen.Bottom)

@@ -68,7 +68,7 @@ class ArtChoicesTest {
         )), emptyList())
         shell.onMeaning(Meaning.Activate, HostScreen.Bottom)
         shell.onMeaning(Meaning.Options, HostScreen.Bottom)
-        assertFalse(actionRows(shell.model.tileActions, shell.model.appActions).contains(Row.ChooseArt))
+        assertFalse(actionRows(shell.model.tileActions).contains(Row.ChooseArt))
         if (shell.model.panel != null) shell.onMeaning(Meaning.Back, HostScreen.Top)
         shell.setArtKeySaved(true)
         shell.onMeaning(Meaning.Options, HostScreen.Bottom)
@@ -154,7 +154,7 @@ class ArtChoicesTest {
             shell.setArtKeySaved(true)
             store.update { session }
             shell.onMeaning(Meaning.Options, HostScreen.Top)
-            val rows = actionRows(shell.model.tileActions, shell.model.appActions)
+            val rows = actionRows(shell.model.tileActions)
             assertEquals(session.toString(), available, Row.ChooseArt in rows)
             assertNull(shell.artPicker)
         }

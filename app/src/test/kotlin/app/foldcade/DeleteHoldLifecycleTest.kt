@@ -69,7 +69,7 @@ class DeleteHoldLifecycleTest {
 
     @Test fun closingTheMenuCancelsImmediately() {
         val shell = heldShortcut()
-        shell.showHomeGrid(HomeGrid.Apps)
+        shell.showHomeGrid(HomeGrid.Hidden)
         assertNull(shell.model.deleteHold)
         time += 1000L
         shell.tickRecovery()

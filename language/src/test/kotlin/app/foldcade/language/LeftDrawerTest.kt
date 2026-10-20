@@ -32,7 +32,7 @@ class LeftDrawerTest {
         val edit = reduce(at(opened, Row.EditHome), Meaning.Activate).first
         assertEquals(PanelLevel.EditHome, edit.panel?.level)
         assertEquals(
-            listOf(Row.MoveTile, Row.AddToCollection, Row.RenameFolder, Row.FavoritesOnHome, Row.RecentOnHome, Row.AddNewGames, Row.HiddenApps),
+            listOf(Row.MoveTile, Row.AddToCollection, Row.RenameFolder, Row.RecentOnHome, Row.AddNewGames, Row.Hidden),
             panelRows(edit.panel!!, edit),
         )
         // Add to, then Back, returns to Edit home on Add to, then to L1 on Edit home.

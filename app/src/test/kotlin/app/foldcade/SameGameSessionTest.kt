@@ -3,10 +3,11 @@ package app.foldcade
 import app.foldcade.language.BulkAction
 import app.foldcade.language.HOME_ALL
 import app.foldcade.language.HomeBoard
+import app.foldcade.language.HomeFolder
 import app.foldcade.language.HomeItem
 import app.foldcade.language.HomeKind
 import app.foldcade.language.HomeUndo
-import app.foldcade.language.AppShelfState
+import app.foldcade.language.HOME_ROOT
 import app.foldcade.language.encodeHome
 import app.foldcade.language.tidy
 import org.junit.Assert.assertEquals
@@ -40,29 +41,30 @@ class SameGameSessionTest {
 
     @Test
     fun aMenuThatKeptACopyActsOnItsTile() {
-        val home = home()
+        val quests = HomeFolder("home.user.1", "Quests", userMade = true)
+        val home = HomeSession(encodeHome(HomeBoard(slots = listOf(HOME_ALL, local.id, other.id, quests.id), folders = mapOf(quests.id to quests))))
+            .also { it.remerge(emptyList(), emptyList(), listOf(local, other), emptyList()) }
         home.keepMenu(local.id)
         home.remerge(emptyList(), emptyList(), listOf(tile, other), emptyList(), sameGames = aliases)
-        home.toggleFavorite(0)
-        assertTrue(home.board.folders.values.any { folder -> tile.id in folder.slots && folder.id == app.foldcade.language.HOME_FAVORITES })
+        home.toggleCollection(0, quests.id)
+        assertEquals(listOf(tile.id), home.board.folders.getValue(quests.id).slots)
     }
 
     @Test
-    fun aMenuOpenOnAFavoriteCopyStillSeesTheTileAsAFavorite() {
+    fun aMenuOpenOnAPinnedCopyStillSeesTheTileAsPinned() {
         val home = home()
-        home.toggleFavorite(1, local.id)
         home.keepMenu(local.id)
         home.remerge(emptyList(), emptyList(), listOf(tile, other), emptyList(), sameGames = aliases)
-        assertEquals(true, home.actions(1)?.favorite)
-        home.toggleFavorite(1)
-        assertFalse(home.board.folders.getValue(app.foldcade.language.HOME_FAVORITES).slots.contains(tile.id))
+        assertEquals(true, home.actions(1)?.collections?.single { it.folderId == HOME_ROOT }?.member)
+        home.toggleCollection(1, HOME_ROOT)
+        assertFalse(home.board.slots.contains(tile.id))
     }
 
     @Test
     fun anUndoTakenBeforeACopyFoldedPutsTheTileBack() {
         val before = HomeBoard(slots = listOf(HOME_ALL, null, local.id, other.id))
         val tidied = tidy(before)
-        val undo = HomeUndo(before, AppShelfState(), "Tidied", 0L, after = tidied)
+        val undo = HomeUndo(before, "Tidied", 0L, after = tidied)
         val folded = app.foldcade.language.adoptSameGames(tidied, aliases)
         val restored = undo.adopt(aliases).restore(folded)
         assertEquals(listOf(HOME_ALL, null, tile.id, other.id), restored.slots)

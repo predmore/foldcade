@@ -35,8 +35,8 @@ class ArtPickerFocusTest {
     @Test fun explicitPlaceAndViewChangesCloseArtEvenWhenTheSameGameRemainsSelected() {
         val changes = listOf<Pair<String, (ShellController) -> Unit>>(
             "All" to { it.openHomeAll() },
-            "Games" to { it.showHomeGrid(HomeGrid.AndroidGames) },
-            "Apps" to { it.showHomeGrid(HomeGrid.Apps) },
+            "Games" to { it.openHomeFolder(app.foldcade.language.HOME_ANDROID_GAMES) },
+            "Apps" to { it.openHomeFolder(app.foldcade.language.HOME_ANDROID_APPS) },
             "Curated Home" to { it.showCuratedHome() },
             "Library" to { it.showNoLibrary() },
             "Chrome focus" to { it.touchChrome(Chrome.StatusCluster, HostScreen.Top) },

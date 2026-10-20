@@ -2571,7 +2571,7 @@ private fun GridHints(app: FoldcadeApp, modifier: Modifier = Modifier) {
     )) + if (gridKeys && model.settings == null && model.playActivity == null &&
         (model.homeGrid != HomeGrid.StandIns || shell.homeKeys() == HomeKeys.AllLibrary)
     ) {
-        if (model.homeGrid == HomeGrid.HiddenApps && model.count == 0) emptyList()
+        if (model.homeGrid == HomeGrid.Hidden && model.count == 0) emptyList()
         else triggerHints(model.gridLabels.isNotEmpty())
     } else emptyList())
     // An empty collection's one button, named on A.
@@ -3488,9 +3488,7 @@ private const val MAX_COLUMN_SPREAD = 1.5f
 
 @Composable
 private fun emptyShelf(grid: HomeGrid): String = when (grid) {
-    HomeGrid.AndroidGames -> Copy.noGames
-    HomeGrid.Apps -> Copy.noApps
-    HomeGrid.HiddenApps -> Copy.noHiddenApps
+    HomeGrid.Hidden -> Copy.noHiddenApps
     HomeGrid.StandIns -> Copy.noGames
 }
 
