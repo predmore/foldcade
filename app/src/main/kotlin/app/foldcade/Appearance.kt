@@ -8,6 +8,7 @@ import android.util.Log
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.text.font.Font
 import androidx.compose.ui.text.font.FontFamily
+import app.foldcade.language.backdropAfterBrokenScene
 import app.foldcade.language.BackgroundMotion
 import app.foldcade.language.FALLBACK_THEME_ID
 import app.foldcade.language.MusicTrack
@@ -103,7 +104,12 @@ class PackagedTheme(
                     icons = resources.icons.mapValues { (_, icon) -> listOf(icon) },
                 ),
                 sounds = ThemeSounds(context, entries + inherit?.entries.orEmpty().filterKeys { it.startsWith("sounds/") && it !in entries }, resources.style.sound.volume),
-                backgroundMotion = resources.defaultBackground,
+                backgroundMotion = backdropAfterBrokenScene(
+                    resources.defaultBackground,
+                    resources.file.backgroundMotion,
+                    resources.file.sceneFiles.size,
+                    inherit?.resources?.defaultBackground,
+                ),
                 music = themeMusic(context, file.name, json, entries),
                 resources = resources,
                 entries = entries,
