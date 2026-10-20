@@ -404,14 +404,15 @@ fun findKeyboardHints(faceMap: FaceMap, typed: Boolean): List<HintKey> {
 fun findResultHints(faceMap: FaceMap, screens: Boolean, options: Boolean): List<HintKey> {
     val confirm = promptKeyOf(faceMap.confirmKey) ?: PromptKey.FaceA
     val back = promptKeyOf(faceMap.backKey) ?: PromptKey.FaceB
+    val roles = actionFaces(faceMap)
     return buildList {
         if (screens) {
             add(HintKey(confirm, Copy.hintTop))
-            add(HintKey(PromptKey.FaceX, Copy.hintBottom))
+            add(HintKey(roles.bottomGlyph, Copy.hintBottom))
         } else {
             add(HintKey(confirm, FindCopy.open))
         }
-        if (options) add(HintKey(PromptKey.FaceY, Copy.hintOptions))
+        if (options) add(HintKey(roles.optionsGlyph, Copy.hintOptions))
         add(HintKey(PromptKey.L2, ""))
         add(HintKey(PromptKey.R2, FindCopy.filter))
         add(HintKey(back, Copy.back))

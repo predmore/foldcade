@@ -173,8 +173,8 @@ fun playDuration(millis: Long): String {
  * Up and down move between the days; left goes a week back and right a week
  * forward, up to this week. A lists the day's sessions, which the shell reads
  * from the log ([Effect.OpenPlayDay]). B, L1, and R1 close the page and put the
- * grid focus back. On the list, up and down move, X removes the session in
- * focus (the shell has it held first), and B goes back to the week.
+ * grid focus back. On the list, up and down move, the bottom button removes
+ * the session in focus (the shell has it held first), and back goes to the week.
  */
 internal fun applyPlayActivity(model: PickerModel, page: PlayActivityPage, meaning: Meaning): Pair<PickerModel, Effect?> {
     val listed = page.sessions
@@ -211,7 +211,7 @@ internal fun applyPlayActivity(model: PickerModel, page: PlayActivityPage, meani
 fun playActivityHints(model: PickerModel): List<HintKey> {
     val back = HintKey(promptKeyOf(model.faceMap.backKey) ?: PromptKey.FaceB, Copy.back)
     if (model.playActivity?.sessions != null) {
-        return listOf(HintKey(PromptKey.FaceX, PlayCopy.remove), back)
+        return listOf(HintKey(actionFaces(model.faceMap).bottomGlyph, PlayCopy.remove), back)
     }
     return listOf(
         HintKey(promptKeyOf(model.faceMap.confirmKey) ?: PromptKey.FaceA, PlayCopy.sessions),

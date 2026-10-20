@@ -105,6 +105,7 @@ import app.foldcade.language.shownFirstColumn
 import app.foldcade.language.PromptKey
 import app.foldcade.language.RemoveVerb
 import app.foldcade.language.ThorStyle
+import app.foldcade.language.actionFaces
 import app.foldcade.language.faceMapWithConfirm
 import app.foldcade.language.offerButtonCalibration
 import app.foldcade.language.resolveFaceMap
@@ -542,7 +543,7 @@ class ShellController(
             val panel = current.panel ?: return null
             val index = panelRows(panel, current).indexOf(row)
             if (index >= 0 && repeatCount == 0 && inputWindows[inputWindow] != false) {
-                val key = if (meaning == Meaning.ActivateBottom) PromptKey.FaceX else promptKeyOf(current.faceMap.confirmKey) ?: PromptKey.FaceA
+                val key = if (meaning == Meaning.ActivateBottom) actionFaces(current.faceMap).bottomGlyph else promptKeyOf(current.faceMap.confirmKey) ?: PromptKey.FaceA
                 heldActions.capture(meaning.ordinal)
                 model = current.copy(panel = panel.copy(index = index),
                     deleteHold = DeleteHold(row, key, nowMillis(), game, meaning, inputWindow, inputKeys[inputWindow]), deleteProgress = 0f)
@@ -553,7 +554,8 @@ class ShellController(
         if (!completingDelete && effect is Effect.RemovePlaySession) {
             if (current.playActivity?.sessions != null && repeatCount == 0 && inputWindows[inputWindow] != false) {
                 heldActions.capture(meaning.ordinal)
-                model = current.copy(deleteHold = DeleteHold(Row.RemoveSession, PromptKey.FaceX, nowMillis(), effect.sessionId, meaning, inputWindow, inputKeys[inputWindow]), deleteProgress = 0f)
+                val key = actionFaces(current.faceMap).bottomGlyph
+                model = current.copy(deleteHold = DeleteHold(Row.RemoveSession, key, nowMillis(), effect.sessionId, meaning, inputWindow, inputKeys[inputWindow]), deleteProgress = 0f)
             }
             return null
         }
