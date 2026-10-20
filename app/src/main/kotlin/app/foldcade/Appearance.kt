@@ -19,6 +19,7 @@ import app.foldcade.language.loadThemeCatalog
 import app.foldcade.language.themeAssetCacheKey
 import app.foldcade.language.ThemeZip
 import java.io.InputStream
+import app.foldcade.language.fontOrInherited
 import app.foldcade.language.fontZipName
 import app.foldcade.language.readThemeZip
 import app.foldcade.language.soundZipName
@@ -88,7 +89,10 @@ class PackagedTheme(
                 focus = file.focus,
                 iconRadius = file.iconRadius,
                 artScale = file.artScale,
-                font = loadFont(context, fontName?.let { fontEntries[it] }, fontName),
+                font = fontOrInherited(
+                    loadFont(context, fontName?.let { fontEntries[it] }, fontName),
+                    inherit?.paint?.theme?.font,
+                ),
                 style = resources.style,
             )
             PackagedTheme(
@@ -116,8 +120,8 @@ class PackagedTheme(
         }
 
 
-        private fun loadFont(context: Context, bytes: ByteArray?, name: String?): FontFamily {
-            if (bytes == null || name == null) return FontFamily.SansSerif
+        private fun loadFont(context: Context, bytes: ByteArray?, name: String?): FontFamily? {
+            if (bytes == null || name == null) return null
             return try {
                 val ext = name.substringAfterLast('.', "ttf")
                 val file = File(context.cacheDir, "theme-${themeAssetCacheKey(bytes)}-font.$ext")
@@ -125,7 +129,7 @@ class PackagedTheme(
                 FontFamily(Font(file))
             } catch (error: Exception) {
                 Log.w("Foldcade", "Theme font ignored", error)
-                FontFamily.SansSerif
+                null
             }
         }
 

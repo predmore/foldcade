@@ -356,6 +356,7 @@ fun PanelHost(activity: FoldcadeHomeActivity, displays: Displays) {
                     conflict,
                     onFocus = { focus -> activity.dispatch(app.shell.touchSaveConflict(focus)) },
                     onLater = { activity.dispatch(app.shell.touchSaveConflictLater()) },
+                    backKey = promptKeyOf(model.faceMap.backKey) ?: PromptKey.FaceB,
                 )
             }
         }
