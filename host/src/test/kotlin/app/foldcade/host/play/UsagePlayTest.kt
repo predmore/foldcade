@@ -158,4 +158,15 @@ class UsagePlayTest {
         assertEquals(4_000L, shown.activeMillis)
         assertFalse(shown.approximate)
     }
+
+    @Test
+    fun aFuturePauseDoesNotInflateTimeOrStayLastPlayed() {
+        val spans = listOf(
+            UsageSpan("org.game", resumedAt = 1_000, pausedAt = 4_000),
+            UsageSpan("org.game", resumedAt = 5_000, pausedAt = 5_000_000),
+        )
+        val play = packagePlay(spans, nowMillis = 9_000)["org.game"]
+        assertEquals(7_000L, play?.activeMillis)
+        assertEquals(4_000L, play?.lastPlayedMillis)
+    }
 }

@@ -347,11 +347,20 @@ class RommClientTest {
         server.route("GET", "/api/roms/1234/content/game.zip") { exchange, _ ->
             bytes(exchange, 200, "zip".toByteArray())
         }
+        val cache = dir.resolve("cache")
         runClient(token = { "rmm_test" }) { client ->
-            val file = client.downloadRom(1234, "game.zip", dir.resolve("cache"), fileIds = listOf(7, 8))
-            assertTrue(file.toString().contains("f7-8"))
-            assertEquals("zip", Files.readString(file))
+            val error = suspendCatching {
+                client.downloadRom(1234, "game.zip", cache, fileIds = listOf(7, 8))
+            }.exceptionOrNull()
+            assertTrue(error is RommResponseException)
         }
+        val target = RommClient.romCacheFile(cache, 1234, "game.zip", listOf(7, 8))
+        assertFalse(Files.exists(target))
+        assertTrue(Files.exists(RommClient.partialOf(target)))
+        assertFalse(RommClient.isVerifiedRom(target, null, null))
+        assertFalse(RommClient.canCheckRom(listOf(7L, 8L), null, null))
+        assertTrue(RommClient.canCheckRom(listOf(7L), 9L, null))
+        assertTrue(RommClient.canCheckRom(emptyList(), null, null))
         val query = server.recorded.single().query.orEmpty()
         assertTrue(query.contains("file_ids=7%2C8") || query.contains("file_ids=7,8"))
         assertTrue(query.contains("purpose=play"))
