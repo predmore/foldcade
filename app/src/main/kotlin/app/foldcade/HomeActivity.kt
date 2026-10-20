@@ -105,6 +105,7 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
         const val EXTRA_DIALOG_INDEX = "foldcade.dialogIndex"
         const val EXTRA_DIALOG_SCREEN = "foldcade.dialogScreen"
         const val EXTRA_SAVE_CONFLICT = "foldcade.saveConflict"
+        const val STATE_FOLDER_PICKER = "foldcade.folderPicker"
     }
 
     private val displays by lazy { Displays(this) }
@@ -152,12 +153,20 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
         when (purpose) {
             FolderPurpose.RetroArchCores -> useRetroArchFolder(uri)
             FolderPurpose.Library -> {
-                contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
-                foldcade.useFolder(uri)
+                if (persistTreeGrant(write = false) { flags ->
+                    contentResolver.takePersistableUriPermission(uri, flags)
+                }) {
+                    foldcade.useFolder(uri)
+                } else {
+                    foldcade.shell.present(playerNotice(Copy.folderGrantTitle, Copy.folderGrantFailed, hostScreen()))
+                }
             }
             FolderPurpose.LaunchOffer -> {
-                rememberSaveFolder(uri, playerForPendingLaunch())
-                pendingLaunch?.let { launchGame(it) }
+                if (rememberSaveFolder(uri, playerForPendingLaunch())) {
+                    pendingLaunch?.let { launchGame(it) }
+                } else {
+                    cancelLaunches()
+                }
             }
             FolderPurpose.Settings -> {
                 val player = settingsPlayerId?.let { foldcade.plugins.player(it) }
@@ -301,8 +310,21 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
         }
     }
 
+    override fun onSaveInstanceState(outState: Bundle) {
+        super.onSaveInstanceState(outState)
+        outState.putString(
+            STATE_FOLDER_PICKER,
+            FolderPickerState(folderPurpose, pendingLaunch, settingsPlayerId).encode(),
+        )
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        decodeFolderPickerState(savedInstanceState?.getString(STATE_FOLDER_PICKER)).let { restored ->
+            folderPurpose = restored.purpose
+            pendingLaunch = restored.pendingLaunch
+            settingsPlayerId = restored.settingsPlayerId
+        }
         foldcade.homeCreated(this)
         // Secondary Home may be created behind a running emulator. Resume reconciles its panel.
         if (launchesCompanion) acceptHome(intent)
@@ -497,6 +519,9 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
 
     override fun onDestroy() {
         usageReconcile.cancel()
+        // A download still running on this instance would finish on a dead
+        // activity and, if the start threw, send both screens home.
+        cancelLaunchIfOwned(foldcade.launchWork, ownedLaunch)
         recoveryWindow?.close()
         foldcade.homeDestroyed(this)
         val manager = getSystemService(DisplayManager::class.java)
@@ -1347,7 +1372,10 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
         closeConfirmed = false
     }
 
-    private fun beginLaunch(): Int = foldcade.launchWork.begin()
+    /** The generation this activity started, so its destruction does not cancel a later one. */
+    private var ownedLaunch: Int? = null
+
+    private fun beginLaunch(): Int = foldcade.launchWork.begin().also { ownedLaunch = it }
 
     /** Drops an in-flight launch so a late result cannot open a missing-player dialog. */
     private fun cancelLaunches() {
@@ -1914,13 +1942,12 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
         return game.platformId?.let(::playerFor)
     }
 
-    private fun rememberSaveFolder(uri: Uri, player: Player?) {
+    private fun rememberSaveFolder(uri: Uri, player: Player?): Boolean {
         val read = Intent.FLAG_GRANT_READ_URI_PERMISSION
         val write = Intent.FLAG_GRANT_WRITE_URI_PERMISSION
-        try {
-            contentResolver.takePersistableUriPermission(uri, read or write)
-        } catch (_: SecurityException) {
-            contentResolver.takePersistableUriPermission(uri, read)
+        if (!persistTreeGrant(write = true) { flags -> contentResolver.takePersistableUriPermission(uri, flags) }) {
+            foldcade.shell.present(playerNotice(Copy.saveFolderTitle, Copy.folderGrantFailed, hostScreen()))
+            return false
         }
         if (player is SaveFolderHolder) {
             val key = player.saveFolderId()
@@ -1936,6 +1963,7 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
             }
             foldcade.shell.refreshPlayerSaves()
         }
+        return true
     }
 
     private fun requestHome() {
@@ -2062,15 +2090,6 @@ class PendingRestart(val intent: Intent, val displayId: Int, val until: Long)
 
 /** How long after a start a return counts as the player quitting to switch games. */
 private const val RESTART_WINDOW_MS = 3_000L
-
-private enum class FolderPurpose {
-    Library,
-    LaunchOffer,
-    Settings,
-
-    /** RetroArch's data folder, so Foldcade can list its cores. */
-    RetroArchCores,
-}
 
 private fun shelfGame(game: ShelfGame): Game = Game(
     backendId = game.libraryId ?: "shelf",

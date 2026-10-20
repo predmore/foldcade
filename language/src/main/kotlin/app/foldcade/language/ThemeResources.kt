@@ -58,6 +58,22 @@ data class ThemeResources(
     } ?: BackgroundMotion.Off
 }
 
+/**
+ * A scene the pack asked for and did not load wears [inherited], which is
+ * Afterglow's backdrop when that pack loaded. A pack that asked for no scene
+ * stays off. A scene that loaded is kept.
+ */
+fun backdropAfterBrokenScene(
+    resolved: BackgroundMotion,
+    asked: BackgroundMotion,
+    sceneFileCount: Int,
+    inherited: BackgroundMotion?,
+): BackgroundMotion {
+    if (resolved != BackgroundMotion.Off) return resolved
+    if (asked == BackgroundMotion.Off || sceneFileCount == 0) return BackgroundMotion.Off
+    return inherited?.takeUnless { it == BackgroundMotion.Off } ?: BackgroundMotion.Off
+}
+
 /** The id of the pack every other pack inherits from, and whose icons back every composition. */
 const val FALLBACK_THEME_ID: String = "afterglow"
 

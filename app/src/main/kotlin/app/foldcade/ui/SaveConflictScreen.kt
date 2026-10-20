@@ -35,6 +35,7 @@ import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import app.foldcade.language.Copy
+import app.foldcade.language.PromptKey
 import app.foldcade.language.SaveConflictFocus
 import app.foldcade.language.SaveConflictPrompt
 import app.foldcade.language.SaveConflictSide
@@ -65,13 +66,14 @@ internal fun SaveConflictTop(prompt: SaveConflictPrompt) {
  * The ring is the same green-to-blue stroke as every other chip, drawn heavier so a
  * controller focus reads across the bottom screen. Decide later is B, or a touch.
  * A short panel tightens the spacing. Anything that still does not fit scrolls, and the
- * focused action brings itself into view.
+ * focused action brings itself into view. Decide later follows the calibrated back button.
  */
 @Composable
 internal fun SaveConflictBottom(
     prompt: SaveConflictPrompt,
     onFocus: (SaveConflictFocus) -> Unit,
     onLater: () -> Unit,
+    backKey: PromptKey = PromptKey.FaceB,
 ) {
     val theme = LocalFoldTheme.current.theme
     val type = theme.style.type
@@ -119,6 +121,7 @@ internal fun SaveConflictBottom(
             )
             LaterChip(
                 compact = fit.compact,
+                backKey = backKey,
                 modifier = Modifier.padding(top = if (fit.compact) 8.dp else 16.dp),
                 onClick = onLater,
             )
@@ -194,25 +197,31 @@ private fun ConflictChip(
     )
 }
 
-/** B on a controller. On touch it is its own quiet chip, never focused, so A cannot reach it. */
+/** The back button postpones the choice. On touch the chip is its own control, never focused. */
 @Composable
-private fun LaterChip(compact: Boolean, modifier: Modifier, onClick: () -> Unit) {
+private fun LaterChip(compact: Boolean, backKey: PromptKey, modifier: Modifier, onClick: () -> Unit) {
     val theme = LocalFoldTheme.current.theme
     val source = remember { MutableInteractionSource() }
-    androidx.compose.foundation.text.BasicText(
-        text = "B  ${Copy.decideLater}",
-        modifier = modifier
+    Row(
+        modifier
             .conflictChip(focused = false)
             .clickable(interactionSource = source, indication = null, onClick = onClick)
             .padding(horizontal = 18.dp, vertical = if (compact) 8.dp else 10.dp),
-        style = TextStyle(
-            color = theme.muted,
-            fontSize = theme.style.type.hint,
-            fontFamily = theme.font,
-            textAlign = TextAlign.Center,
-        ),
-        maxLines = 1,
-    )
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        PromptImage(promptGlyph(backKey), 18.dp)
+        androidx.compose.foundation.text.BasicText(
+            text = Copy.decideLater,
+            style = TextStyle(
+                color = theme.muted,
+                fontSize = theme.style.type.hint,
+                fontFamily = theme.font,
+                textAlign = TextAlign.Center,
+            ),
+            maxLines = 1,
+        )
+    }
 }
 
 @Composable
