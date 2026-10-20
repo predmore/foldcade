@@ -13,15 +13,19 @@ class ChordTest {
 
     @Test
     fun hiddenShowUsesYAndUndoLeavesMoveAndRemoveChordsAlone() {
-        val hidden = actionRows(TileActions(show = true, undo = true), null)
+        val hidden = actionRows(TileActions(show = true, undo = true))
         assertEquals(listOf(Row.Undo, Row.ShowHidden), hidden)
         assertEquals(listOf(null, Meaning.Options), chords(hidden))
         for (verb in RemoveVerb.entries) {
-            val rows = actionRows(TileActions(move = true, undo = true, remove = verb, deleteShortcut = true), null)
+            val rows = actionRows(TileActions(move = true, undo = true, remove = verb, hide = true, deleteShortcut = true))
             assertEquals(rows.indexOf(Row.MoveTile), chordIndex(rows, Meaning.Options))
             assertEquals(rows.indexOf(Row.RemoveTile), chordIndex(rows, Meaning.ActivateBottom))
             assertNull(chords(rows)[rows.indexOf(Row.DeleteShortcut)])
+            assertNull(chords(rows)[rows.indexOf(Row.Hide)])
         }
+        // Hide never takes X, even with no Remove row to share it with.
+        val folderGame = actionRows(TileActions(move = true, hide = true))
+        assertNull(chordIndex(folderGame, Meaning.ActivateBottom))
         assertNull(chordIndex(listOf(Row.MoveApp), Meaning.Options))
     }
 
@@ -104,16 +108,15 @@ class ChordTest {
         val rows = panelRows(drawer, home)
         assertEquals(PromptKey.Start, rowKeys(rows)[rows.indexOf(Row.Settings)])
         assertNull(rowKeys(rows)[rows.indexOf(Row.Home)])
-        val apps = AppActions(favorite = false, onGamesShelf = true, hiddenShelf = false, destinations = emptyList())
-        val both = actionRows(tile, apps)
+        val both = actionRows(tile.copy(moveTo = HOME_ANDROID_APPS))
         val keys = chords(both)
         assertEquals(Meaning.Options, keys[both.indexOf(Row.MoveTile)])
         assertNull(keys[both.indexOf(Row.MoveApp)])
         assertEquals(PromptKey.FaceX, rowKeys(both)[both.indexOf(Row.RemoveTile)])
         // X stays Remove from Home beside Delete download, and is Delete download where it is alone.
-        val downloaded = actionRows(tile.copy(removeDownload = true), null)
+        val downloaded = actionRows(tile.copy(removeDownload = true))
         assertNull(chords(downloaded)[downloaded.indexOf(Row.RemoveDownload)])
-        assertEquals(listOf(Meaning.ActivateBottom), chords(actionRows(TileActions(removeDownload = true), null)))
+        assertEquals(listOf(Meaning.ActivateBottom), chords(actionRows(TileActions(removeDownload = true))))
     }
 
     @Test

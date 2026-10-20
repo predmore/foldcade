@@ -44,23 +44,18 @@ class HomeSelectionSessionTest {
         assertTrue("c" in home.board.slots)
     }
 
-    @Test fun favoriteAndPinDisappearOnceTheyHaveNothingToAdd() {
+    @Test fun addToHomeIsCheckedOnceEveryGameIsPinnedAndAddsTheRest() {
         val home = home()
         home.startSelection("a")
         home.handle(Meaning.Activate, 2)
-        assertFalse(home.actions(2)!!.pin)
-        assertEquals(false, home.actions(2)!!.favorite)
-        home.bulk(BulkAction.Favorite, home.selectedIds(), null, 2)
-        assertNull(home.selection)
-        home.startSelection("a")
-        home.handle(Meaning.Activate, 2)
-        assertNull(home.actions(2)!!.favorite)
+        assertEquals(CollectionChoice(HOME_ROOT, Copy.home, member = true), home.actions(2)!!.collections!!.first())
+        assertTrue(home.actions(2)!!.hide)
         home.finishSelection()
         home.hide("b")
         home.showAll()
         home.startSelection("b")
-        assertTrue(home.actions(1)!!.pin)
-        home.bulk(BulkAction.Pin, home.selectedIds(), null, 1)
+        assertEquals(CollectionChoice(HOME_ROOT, Copy.home, member = false), home.actions(1)!!.collections!!.first())
+        home.bulk(BulkAction.Collection, home.selectedIds(), HOME_ROOT, 1)
         assertTrue("b" in home.board.slots)
         assertFalse("b" in home.board.hidden)
     }

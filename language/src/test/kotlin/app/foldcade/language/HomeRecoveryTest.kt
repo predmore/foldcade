@@ -9,13 +9,13 @@ class HomeRecoveryTest {
     private val platforms = listOf(HomePlatform("gba", "Game Boy Advance"))
     private val folder = platformFolderId("gba")
 
-    @Test fun hiddenCombinesGamesAppsDefaultHiddenEmulatorsAndRetiredFoldersOnce() {
-        val app = LaunchableApp("notes", "Notes", false)
-        val emulator = LaunchableApp("emu", "Emulator", false)
-        val board = HomeBoard(hidden = setOf(game.id, androidHomeId("notes")), retired = setOf(HOME_MOONLIGHT))
-        val rows = hiddenItems(board, listOf(game, HomeItem(androidHomeId("notes"), "Notes", HomeKind.AndroidApp)),
-            listOf(app, emulator), AppShelfState().hide("notes"), setOf("emu"))
-        assertEquals(listOf("Alpha", "Emulator", "Moonlight", "Notes"), rows.map { it.title })
+    @Test fun hiddenCombinesGamesAppsAndRetiredFoldersOnce() {
+        val notes = HomeItem(androidHomeId("notes"), "Notes", HomeKind.AndroidApp)
+        val emulator = HomeItem(androidHomeId("emu"), "Emulator", HomeKind.Emulator)
+        val board = HomeBoard(hidden = setOf(game.id, notes.id), retired = setOf(HOME_MOONLIGHT))
+        val rows = hiddenItems(board, listOf(game, notes, emulator))
+        // An emulator is filed in Emulators, not hidden, so only what the user hid is listed.
+        assertEquals(listOf("Alpha", "Moonlight", "Notes"), rows.map { it.title })
     }
 
     @Test fun showRestoresFreeSlotsPinsAndEveryCollectionAfterRestart() {
@@ -78,20 +78,18 @@ class HomeRecoveryTest {
 
     @Test fun undoExpiresAtEightSecondsAndAnyEditInvalidatesIt() {
         val before = HomeBoard(slots = listOf(HOME_ALL, null, game.id))
-        val shelves = AppShelfState().pin("notes", true)
-        val snapshot = HomeUndo(before, shelves, Copy.hidden, 100L)
+        val snapshot = HomeUndo(before, Copy.hidden, 100L)
         assertTrue(snapshot.available(8099L))
         assertFalse(snapshot.available(8100L))
         assertFalse(snapshot.available(99L))
         assertEquals(before, snapshot.board)
-        assertEquals(shelves, snapshot.shelves)
         assertEquals(snapshot, snapshot.afterEdit(before, before))
         assertNull(snapshot.afterEdit(before, hideGame(before, game.id)))
     }
 
     @Test fun oldRetiredPlatformFoldersAreListedEvenBeforeTheirLibraryReports() {
         val board = HomeBoard(retired = setOf(folder))
-        val rows = hiddenItems(board, emptyList(), emptyList(), AppShelfState(), emptySet(), platforms)
+        val rows = hiddenItems(board, emptyList(), platforms)
         assertEquals(listOf("Game Boy Advance"), rows.map { it.title })
         assertEquals(folder, rows.single().id)
     }
@@ -113,12 +111,12 @@ class HomeRecoveryTest {
     }
 
     @Test fun undoNeverTakesMoveOrShowChordsAndDeleteOnlyTakesAnUnusedX() {
-        val rows = actionRows(TileActions(undo = true, move = true, remove = RemoveVerb.Hide, deleteShortcut = true), null)
+        val rows = actionRows(TileActions(undo = true, move = true, remove = RemoveVerb.Unpin, hide = true, deleteShortcut = true))
         assertEquals(Row.Undo, rows.first())
         assertNull(chords(rows).first())
         assertEquals(rows.indexOf(Row.MoveTile), chordIndex(rows, Meaning.Options))
         assertEquals(rows.indexOf(Row.RemoveTile), chordIndex(rows, Meaning.ActivateBottom))
-        assertEquals(1, chordIndex(actionRows(TileActions(undo = true, show = true), null), Meaning.Options))
+        assertEquals(1, chordIndex(actionRows(TileActions(undo = true, show = true)), Meaning.Options))
         assertEquals(0, chordIndex(listOf(Row.DeleteShortcut), Meaning.ActivateBottom))
         assertNull(chordIndex(listOf(Row.MoveApp), Meaning.Options))
     }
