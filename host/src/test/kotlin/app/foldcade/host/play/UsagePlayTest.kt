@@ -140,6 +140,20 @@ class UsagePlayTest {
     }
 
     @Test
+    fun aForwardJumpThatStaysInThePastIsCapped() {
+        val start = 1_000L
+        val jump = start + MAX_USAGE_STRETCH_MS + 3_600_000L
+        val spans = listOf(UsageSpan("org.game", resumedAt = start, pausedAt = jump))
+        val play = packagePlay(spans, nowMillis = jump + 1_000L)["org.game"]
+        assertEquals(MAX_USAGE_STRETCH_MS, play?.activeMillis)
+        val sitting = packagePlay(
+            listOf(UsageSpan("org.game", resumedAt = start, pausedAt = start + 2 * 3_600_000L)),
+            nowMillis = start + 3 * 3_600_000L,
+        )["org.game"]
+        assertEquals(2 * 3_600_000L, sitting?.activeMillis)
+    }
+
+    @Test
     fun withoutAccessLifecycleTimeStaysApproximate() {
         val shown = shownPlay(
             lifecycleActive = 6_000L,
