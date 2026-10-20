@@ -297,6 +297,9 @@ class FoldcadeApp : Application() {
     val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     /** Both displays cancel the same pending launch, including its network transfer. */
     internal val launchWork = LaunchWork()
+
+    /** Battery, network, Bluetooth, and the clock. Both screens show the same reading. */
+    val deviceStatus: DeviceStatusWatcher by lazy { DeviceStatusWatcher(this, scope) }
     private val credentialGate = Mutex()
     private val pluginLoad = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val pluginsReady = CompletableDeferred<Unit>()
