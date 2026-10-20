@@ -23,6 +23,7 @@ import android.provider.DocumentsContract
 import android.util.Log
 import android.view.Display
 import androidx.compose.runtime.getValue
+import androidx.lifecycle.Lifecycle
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import app.foldcade.api.plugin.Credential
@@ -254,6 +255,23 @@ class FoldcadeApp : Application() {
     internal fun homeDestroyed(activity: FoldcadeHomeActivity) {
         val displayId = activity.display?.displayId ?: return
         if (homes[displayId]?.get() === activity) homes.remove(displayId)
+    }
+
+    /**
+     * The screen that started a download is gone. Ask a Home that is still up
+     * to show a save conflict that download left behind.
+     */
+    internal fun refreshSaveConflictOnSurvivor() {
+        val snapshot = homes.mapNotNull { (displayId, ref) ->
+            val activity = ref.get() ?: return@mapNotNull null
+            SaveConflictHome(
+                displayId,
+                destroyed = activity.isDestroyed,
+                resumed = activity.lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED),
+            )
+        }
+        val displayId = saveConflictSurvivor(starterAlive = false, snapshot) ?: return
+        homes[displayId]?.get()?.refreshSaveConflict()
     }
 
     /** A start for the other screen is on its way, so a second resume does not start another. */
