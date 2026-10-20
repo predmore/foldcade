@@ -15,6 +15,7 @@ import app.foldcade.language.Copy
 import app.foldcade.language.HOME_ALL
 import app.foldcade.language.HOME_ANDROID_APPS
 import app.foldcade.language.HOME_ANDROID_GAMES
+import app.foldcade.language.HOME_ROOT
 import app.foldcade.language.HomeBoard
 import app.foldcade.language.HomeFolder
 import app.foldcade.language.HomeGrid
@@ -33,6 +34,7 @@ import java.io.File
 import kotlinx.coroutines.Dispatchers
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -93,114 +95,198 @@ class AndroidShelfHostTest {
     }
 
     @Test
-    fun controllerOpensAppsPinsAndMovesWithoutBlockingOnSaves() {
+    fun lOneAppsAndGamesOpenTheAndroidFoldersWhereAppsMove() {
         val host = PluginHost(Dispatchers.Unconfined, MemoryCredentialStore())
         host.register(entry(SaveThrowingPlayer(listOf(azahar.packageName))))
-        val shell = ShellController(SessionStore(MemoryPrefs()), host)
+        val store = SessionStore(MemoryPrefs())
+        val shell = ShellController(store, host)
         shell.setHomeRoleHeld(true)
         shell.setInstalledApps(listOf(game, settings, azahar), host.playerPackageNames())
 
         shell.onMeaning(Meaning.LeftPanel, HostScreen.Bottom)
-        val opened = choose(shell, Row.Apps)
-        assertNull(opened)
-        assertEquals(HomeGrid.Apps, shell.model.homeGrid)
+        assertNull(choose(shell, Row.Apps))
+        // Apps is the board's Android Apps folder, not a grid of its own.
+        assertEquals(HomeGrid.StandIns, shell.model.homeGrid)
+        assertFalse(shell.model.atLibraryRoot)
         assertNull(shell.model.panel)
         assertEquals(0, shell.model.focus.cellIndex)
-        assertNull(shell.model.focus.chrome)
-        assertEquals(1, shell.model.count)
-        assertEquals("Settings", shell.focusedGame()?.title)
+        assertEquals(listOf("Settings"), titles(shell))
         assertEquals("android:com.android.settings", shell.focusedGame()?.id)
         assertFalse(host.openInstalledApp(settings.packageName).needsSaveFolder)
 
         shell.onMeaning(Meaning.Options, HostScreen.Bottom)
-        choose(shell, Row.PinApp)
-        assertTrue(shell.focusedGame()?.favorite == true)
-        assertEquals(Copy.keepOnTop, app.foldcade.language.rowLabel(Row.PinApp, shell.model))
-
-        repeat(panelRows(shell.model.panel!!, shell.model).indexOf(Row.MoveApp)) {
-            shell.onMeaning(Meaning.MoveDown, HostScreen.Bottom)
-        }
-        shell.onMeaning(Meaning.Activate, HostScreen.Bottom)
-        assertEquals(HomeGrid.Apps, shell.model.homeGrid)
-        assertEquals(0, shell.model.count)
+        val rows = panelRows(shell.model.panel!!, shell.model)
+        assertTrue(Row.MoveApp in rows)
+        assertTrue(Row.Hide in rows)
+        assertEquals(Copy.moveToGames, app.foldcade.language.rowLabel(Row.MoveApp, shell.model))
+        choose(shell, Row.MoveApp)
+        // Its last app gone, Android Apps leaves Home, so the grid is back on the root.
+        assertTrue(shell.model.atLibraryRoot)
+        assertFalse("Android Apps" in titles(shell))
+        val board = decodeHome(store.homeBoardRaw())
+        assertTrue(androidHomeId(settings.packageName) in board.folders.getValue(HOME_ANDROID_GAMES).slots)
+        assertFalse(androidHomeId(settings.packageName) in board.folders[HOME_ANDROID_APPS]?.slots.orEmpty())
 
         shell.onMeaning(Meaning.LeftPanel, HostScreen.Bottom)
         choose(shell, Row.AndroidGames)
-        assertEquals(HomeGrid.AndroidGames, shell.model.homeGrid)
-        assertEquals(listOf("Settings", "Example"), titles(shell))
+        assertFalse(shell.model.atLibraryRoot)
+        assertEquals(setOf("Example", "Settings"), titles(shell).filter { it.isNotEmpty() }.toSet())
+        // Moved to Games, it is a game: All lists it, and still does once it is hidden.
+        shell.openHomeAll()
+        assertTrue("Settings" in titles(shell))
+        shell.onMeaning(Meaning.LeftPanel, HostScreen.Bottom)
+        choose(shell, Row.AndroidGames)
+        // The grid fills each column top to bottom, so Settings, the second tile, is under the first.
+        shell.onMeaning(Meaning.MoveDown, HostScreen.Bottom)
+        assertEquals(androidHomeId(settings.packageName), shell.focusedGame()?.id)
+        shell.onMeaning(Meaning.Options, HostScreen.Bottom)
+        choose(shell, Row.Hide)
+        assertTrue(androidHomeId(settings.packageName) in decodeHome(store.homeBoardRaw()).hidden)
+        shell.openHomeAll()
+        assertTrue("Settings" in titles(shell))
+        shell.onMeaning(Meaning.LeftPanel, HostScreen.Bottom)
+        choose(shell, Row.AndroidGames)
+        // Back from it lands on Home, as from any folder.
+        shell.onMeaning(Meaning.Back, HostScreen.Bottom)
+        assertTrue(shell.model.atLibraryRoot)
+        assertTrue(shell.atRest())
 
-        // Hidden apps are under Edit home.
+        // The emulator is in Emulators, not hidden: Hidden lists only Settings.
         shell.onMeaning(Meaning.LeftPanel, HostScreen.Bottom)
         choose(shell, Row.EditHome)
-        val hiddenIndex = panelRows(shell.model.panel!!, shell.model).indexOf(Row.HiddenApps)
-        repeat(hiddenIndex) { shell.onMeaning(Meaning.MoveDown, HostScreen.Bottom) }
-        shell.onMeaning(Meaning.Activate, HostScreen.Bottom)
-        assertEquals(listOf("Azahar"), titles(shell))
-        shell.onMeaning(Meaning.Options, HostScreen.Bottom)
-        shell.onMeaning(Meaning.Activate, HostScreen.Bottom)
-        assertEquals(0, shell.model.count)
-
-        shell.onMeaning(Meaning.LeftPanel, HostScreen.Bottom)
-        choose(shell, Row.Apps)
-        assertEquals(listOf("Azahar"), titles(shell))
+        choose(shell, Row.Hidden)
+        assertEquals(HomeGrid.Hidden, shell.model.homeGrid)
+        assertEquals(listOf("Settings"), titles(shell))
     }
 
     @Test
-    fun shelfChoicesRoundTrip() {
-        val prefs = MemoryPrefs()
-        val store = SessionStore(prefs)
+    fun lOneGamesOpensARetiredFolderWithoutPuttingItBackOnHome() {
+        val store = SessionStore(MemoryPrefs())
+        val id = androidHomeId(game.packageName)
+        store.saveHomeBoard(encodeHome(HomeBoard(
+            slots = listOf(HOME_ALL),
+            folders = mapOf(HOME_ANDROID_GAMES to HomeFolder(HOME_ANDROID_GAMES, "Android Games", bucket = app.foldcade.language.HomeKind.AndroidGame, slots = listOf(id))),
+            retired = setOf(HOME_ANDROID_GAMES),
+        )))
+        val shell = ShellController(store, PluginHost(Dispatchers.Unconfined, MemoryCredentialStore()))
+        shell.setInstalledApps(listOf(game), emptySet())
+        assertFalse(HOME_ANDROID_GAMES in decodeHome(store.homeBoardRaw()).slots)
+
+        shell.onMeaning(Meaning.LeftPanel, HostScreen.Bottom)
+        choose(shell, Row.AndroidGames)
+        assertFalse(shell.model.atLibraryRoot)
+        assertEquals(listOf("Example"), titles(shell))
+        shell.onMeaning(Meaning.Back, HostScreen.Bottom)
+        assertTrue(shell.model.atLibraryRoot)
+        val board = decodeHome(store.homeBoardRaw())
+        assertFalse(HOME_ANDROID_GAMES in board.slots)
+        assertTrue(HOME_ANDROID_GAMES in board.retired)
+    }
+
+    @Test
+    fun lOneAppsMakesTheFolderWhenTheBoardHasNone() {
+        val store = SessionStore(MemoryPrefs())
+        // New games stay off Home, so no app was filed and the board has no Android Apps folder.
+        store.saveHomeBoard(encodeHome(HomeBoard(slots = listOf(HOME_ALL), addNewToHome = false)))
         val shell = ShellController(store, PluginHost(Dispatchers.Unconfined, MemoryCredentialStore()))
         shell.setInstalledApps(listOf(settings), emptySet())
-        shell.showHomeGrid(HomeGrid.Apps)
-        shell.onMeaning(Meaning.Options, HostScreen.Bottom)
-        choose(shell, Row.PinApp)
-        val restored = SessionStore(prefs).appShelfState()
-        assertTrue(restored.record(settings.packageName).favorite)
-    }
-
-    @Test
-    fun bAfterLOneAppsReturnsToHomeWhenOpenedFromAFolder() {
-        val shell = ShellController(SessionStore(MemoryPrefs()), PluginHost(Dispatchers.Unconfined, MemoryCredentialStore()))
-        shell.setInstalledApps(listOf(settings), emptySet())
-        // Past Favorites to Android Apps.
-        repeat(2) { shell.onMeaning(Meaning.MoveDown, HostScreen.Bottom) }
-        shell.onMeaning(Meaning.Activate, HostScreen.Bottom)
-        assertEquals("Settings", shell.focusedGame()?.title)
+        assertFalse(HOME_ANDROID_APPS in decodeHome(store.homeBoardRaw()).folders)
 
         shell.onMeaning(Meaning.LeftPanel, HostScreen.Bottom)
-        choose(shell, Row.Apps)
-        assertEquals(HomeGrid.Apps, shell.model.homeGrid)
-        assertNull(shell.onMeaning(Meaning.Back, HostScreen.Bottom))
+        assertNull(choose(shell, Row.Apps))
         assertEquals(HomeGrid.StandIns, shell.model.homeGrid)
+        assertNull(shell.model.panel)
+        assertTrue(HOME_ANDROID_APPS in decodeHome(store.homeBoardRaw()).folders)
+        shell.onMeaning(Meaning.Back, HostScreen.Bottom)
         assertTrue(shell.atRest())
-        assertTrue("Android Apps" in titles(shell))
     }
 
     @Test
-    fun addAppToHomeKeepsItInAppsAndRemembersOneHomeTile() {
+    fun appsHiddenOnAShelfAreHiddenOnHomeOnce() {
+        val prefs = MemoryPrefs()
+        prefs.edit()
+            .putStringSet("android_shelf_hidden", setOf(settings.packageName))
+            .putStringSet("android_shelf_favorites", setOf(game.packageName))
+            .putStringSet("android_shelf_games", setOf(settings.packageName))
+            .apply()
+        val shell = ShellController(SessionStore(prefs), PluginHost(Dispatchers.Unconfined, MemoryCredentialStore()))
+        shell.setInstalledApps(listOf(settings, game), emptySet())
+        val id = androidHomeId(settings.packageName)
+        assertTrue(id in decodeHome(SessionStore(prefs).homeBoardRaw()).hidden)
+        listOf("android_shelf_hidden", "android_shelf_favorites", "android_shelf_games", "android_shelf_apps", "android_shelf_shown")
+            .forEach { assertFalse(it, prefs.contains(it)) }
+
+        shell.showHomeGrid(HomeGrid.Hidden)
+        assertEquals(listOf("Settings"), titles(shell))
+        shell.onMeaning(Meaning.Options, HostScreen.Bottom)
+        choose(shell, Row.ShowHidden)
+        assertFalse(id in decodeHome(SessionStore(prefs).homeBoardRaw()).hidden)
+
+        // The next launch has nothing left to take, so Settings stays shown.
+        val restarted = ShellController(SessionStore(prefs), PluginHost(Dispatchers.Unconfined, MemoryCredentialStore()))
+        restarted.setInstalledApps(listOf(settings, game), emptySet())
+        assertFalse(id in decodeHome(SessionStore(prefs).homeBoardRaw()).hidden)
+        restarted.showHomeGrid(HomeGrid.Hidden)
+        assertEquals(0, restarted.model.count)
+    }
+
+    @Test
+    fun hideFromAnAndroidFolderIsUndone() {
+        val store = SessionStore(MemoryPrefs())
+        val shell = ShellController(store, PluginHost(Dispatchers.Unconfined, MemoryCredentialStore()))
+        shell.setInstalledApps(listOf(settings, game), emptySet())
+        shell.openHomeFolder(HOME_ANDROID_APPS)
+        assertEquals(listOf("Settings"), titles(shell))
+
+        shell.onMeaning(Meaning.Options, HostScreen.Bottom)
+        // Hide has no X: X takes a tile off its spot, and a folder keeps every game of its kind.
+        assertNull(app.foldcade.language.chordIndex(panelRows(shell.model.panel!!, shell.model), Meaning.ActivateBottom))
+        choose(shell, Row.Hide)
+        val id = androidHomeId(settings.packageName)
+        assertTrue(id in decodeHome(store.homeBoardRaw()).hidden)
+        assertEquals(Copy.hidden, shell.model.undoVerb)
+
+        shell.onMeaning(Meaning.Options, HostScreen.Bottom)
+        choose(shell, Row.Undo)
+        assertFalse(id in decodeHome(store.homeBoardRaw()).hidden)
+        assertEquals("Settings", titles(shell).firstOrNull { it.isNotEmpty() })
+    }
+
+    @Test
+    fun addToHomePinsAnAppAndUnpinningItIsUndone() {
         val prefs = MemoryPrefs()
         val store = SessionStore(prefs)
         val shell = ShellController(store, PluginHost(Dispatchers.Unconfined, MemoryCredentialStore()))
         shell.setInstalledApps(listOf(settings, game), emptySet())
-        shell.showHomeGrid(HomeGrid.Apps)
+        shell.openHomeFolder(HOME_ANDROID_APPS)
         shell.onMeaning(Meaning.Options, HostScreen.Bottom)
-        choose(shell, Row.PinTile)
-        assertNull(shell.model.panel)
-        assertEquals(HomeGrid.Apps, shell.model.homeGrid)
-        assertEquals("Settings", shell.focusedGame()?.title)
-        assertNull(store.appShelfState().record(settings.packageName).shelf)
+        choose(shell, Row.AddToCollection)
+        val home = Row.Collection(HOME_ROOT, Copy.home)
+        // Home is Add to's first choice.
+        assertEquals(home, panelRows(shell.model.panel!!, shell.model).first())
+        choose(shell, home)
+        // Add to stays open, so the next choice is one press away.
+        assertNotNull(shell.model.panel)
+        val id = androidHomeId(settings.packageName)
         // A pin on Home, and still in its folder: one tile on the root, one in the folder.
         val placed = decodeHome(store.homeBoardRaw())
-        assertTrue(androidHomeId(settings.packageName) in placed.slots)
-        assertEquals(1, placed.slots.count { it == androidHomeId(settings.packageName) })
-        assertEquals(listOf(HOME_ANDROID_APPS), placed.folders.values.filter { androidHomeId(settings.packageName) in it.slots }.map { it.id })
+        assertEquals(1, placed.slots.count { it == id })
+        assertEquals(listOf(HOME_ANDROID_APPS), placed.folders.values.filter { id in it.slots }.map { it.id })
+        assertNull(shell.model.undoVerb)
 
         val restarted = ShellController(SessionStore(prefs), PluginHost(Dispatchers.Unconfined, MemoryCredentialStore()))
         restarted.setInstalledApps(listOf(settings, game), emptySet())
         assertTrue("Settings" in titles(restarted))
+
+        choose(shell, home)
+        assertFalse(id in decodeHome(store.homeBoardRaw()).slots)
+        assertEquals(Copy.unpinned, shell.model.undoVerb)
         shell.onMeaning(Meaning.Back, HostScreen.Bottom)
-        assertTrue("Settings" in titles(shell))
-        assertTrue(shell.atRest())
+        shell.onMeaning(Meaning.Back, HostScreen.Bottom)
+        assertNull(shell.model.panel)
+        shell.onMeaning(Meaning.Options, HostScreen.Bottom)
+        choose(shell, Row.Undo)
+        assertEquals(1, decodeHome(store.homeBoardRaw()).slots.count { it == id })
     }
 
     @Test
@@ -218,13 +304,11 @@ class AndroidShelfHostTest {
         val notes = LaunchableApp("com.example.notes", "Notes", systemGame = false)
         val shell = ShellController(store, PluginHost(Dispatchers.Unconfined, MemoryCredentialStore()))
         shell.setInstalledApps(listOf(settings, notes), emptySet())
-        shell.showHomeGrid(HomeGrid.Apps)
-        shell.showHomeGrid(HomeGrid.HiddenApps)
+        shell.showHomeGrid(HomeGrid.Hidden)
         shell.onMeaning(Meaning.Options, HostScreen.Bottom)
         choose(shell, Row.ShowHidden)
-        shell.showHomeGrid(HomeGrid.Apps)
-        shell.onMeaning(Meaning.MoveDown, HostScreen.Bottom)
-        assertEquals("Settings", shell.focusedGame()?.title)
+        shell.openHomeFolder(HOME_ANDROID_APPS)
+        assertEquals(listOf("Settings"), titles(shell))
         shell.onMeaning(Meaning.Options, HostScreen.Bottom)
         choose(shell, Row.AddToCollection)
         choose(shell, Row.Collection(folder.id, folder.name))
@@ -233,9 +317,8 @@ class AndroidShelfHostTest {
         assertEquals(listOf(id), placed.folders[folder.id]?.slots)
         assertFalse(id in placed.hidden)
         assertFalse(placed.addNewToHome)
-        assertEquals(HomeGrid.Apps, shell.model.homeGrid)
-        assertEquals(listOf("Notes", "Settings"), titles(shell))
         assertFalse(androidHomeId(notes.packageName) in placed.slots)
+        assertFalse(placed.folders.values.any { androidHomeId(notes.packageName) in it.slots })
         shell.setInstalledApps(listOf(settings, notes), emptySet())
         assertEquals(listOf(id), decodeHome(store.homeBoardRaw()).folders[folder.id]?.slots)
     }
@@ -262,12 +345,6 @@ class AndroidShelfHostTest {
 
     private fun titles(shell: ShellController): List<String> {
         return List(shell.model.count) { index -> shell.tileFromOrder(index)?.title ?: "" }
-    }
-
-    private fun rowLabelAt(shell: ShellController, index: Int): String {
-        val panel = shell.model.panel ?: error("panel closed")
-        val rows = app.foldcade.language.panelRows(panel, shell.model)
-        return app.foldcade.language.rowLabel(rows[index], shell.model)
     }
 
     private fun entry(player: Player) = object : PluginEntry {

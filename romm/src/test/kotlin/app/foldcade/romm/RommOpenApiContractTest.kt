@@ -2,6 +2,7 @@ package app.foldcade.romm
 
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import org.junit.Assert.assertEquals
@@ -61,6 +62,11 @@ class RommOpenApiContractTest {
             ),
         )
         assertTrue(props(schemas, "DeviceCreatePayload").contains("allow_existing"))
+        // A folder ROM's game file, and the update and DLC downloaded beside it.
+        assertTrue(props(schemas, "SimpleRomSchema").contains("files"))
+        assertTrue(props(schemas, "RomFileSchema").containsAll(listOf("category", "is_top_level", "file_size_bytes", "md5_hash")))
+        val categories = schemas.getValue("RomFileCategory").jsonObject.getValue("enum").jsonArray.map { it.jsonPrimitive.content }
+        assertTrue(categories.containsAll(listOf("game", "update", "dlc")))
         // RetroAchievements on the command center: the ROM's list and the user's progress.
         assertTrue(props(schemas, "SimpleRomSchema").containsAll(listOf("ra_id", "merged_ra_metadata")))
         assertTrue(props(schemas, "RomRAMetadata").contains("achievements"))

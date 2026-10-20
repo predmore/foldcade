@@ -57,14 +57,14 @@ fun applySaveConflict(
     return when (meaning) {
         Meaning.MoveLeft -> prompt.copy(
             focus = when (focus) {
-                SaveConflictFocus.Remote -> SaveConflictFocus.KeepBoth
+                SaveConflictFocus.Remote -> SaveConflictFocus.Local
                 SaveConflictFocus.KeepBoth -> SaveConflictFocus.Local
                 SaveConflictFocus.Local -> SaveConflictFocus.Local
             },
         ) to null
         Meaning.MoveRight -> prompt.copy(
             focus = when (focus) {
-                SaveConflictFocus.Local -> SaveConflictFocus.KeepBoth
+                SaveConflictFocus.Local -> SaveConflictFocus.Remote
                 SaveConflictFocus.KeepBoth -> SaveConflictFocus.Remote
                 SaveConflictFocus.Remote -> SaveConflictFocus.Remote
             },
