@@ -6,11 +6,9 @@ const val DELETE_HOLD_MILLIS = 800L
 /** The before/after delta of one user removal, kept only while no later user edit is saved. */
 data class HomeUndo(
     val board: HomeBoard,
-    val shelves: AppShelfState,
     val verb: String,
     val started: Long,
     val after: HomeBoard = board,
-    val shelvesAfter: AppShelfState = shelves,
     val pausedAt: Long? = null,
 ) {
     fun available(now: Long): Boolean = pausedAt != null || (now >= started && now - started < UNDO_MILLIS)
@@ -72,9 +70,6 @@ data class HomeUndo(
             hold = null,
         )
     }
-
-    fun restore(current: AppShelfState): AppShelfState =
-        current.copy(records = reverseMap(shelves.records, shelvesAfter.records, current.records))
 }
 
 private fun <T> reverseValue(before: T, after: T, current: T): T =

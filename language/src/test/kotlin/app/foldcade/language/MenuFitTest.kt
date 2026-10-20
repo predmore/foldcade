@@ -44,25 +44,23 @@ class MenuFitTest {
         assertEquals(190f, menuScrollTarget(200f, 240f, 160f, 280f, 100f, 0f, 600f, 10f), 0.01f)
         assertEquals(150f, menuScrollTarget(200f, 240f, 160f, 240f, 100f, 300f, 600f, 10f), 0.01f)
     }
-    @Test fun androidGameArtPrecedesPinSelectionAndHide() {
+    @Test fun androidGameArtPrecedesSelectionAndHide() {
         val tile = TileActions(move = true, select = true, collections = emptyList(),
-            favorite = false, art = true, pin = true, remove = RemoveVerb.Hide)
-        val app = AppActions(favorite = false, keepOnTop = false, onGamesShelf = true, hiddenShelf = false)
-        val rows = actionRows(tile, app)
-        assertEquals(listOf(Row.MoveTile, Row.AddToCollection, Row.Favorite, Row.ChooseArt,
-            Row.PinTile, Row.SelectTile, Row.RemoveTile, Row.MoveApp), rows)
+            art = true, remove = RemoveVerb.Unpin, hide = true, moveTo = HOME_ANDROID_APPS)
+        val rows = actionRows(tile)
+        assertEquals(listOf(Row.MoveTile, Row.AddToCollection, Row.MoveApp, Row.ChooseArt,
+            Row.SelectTile, Row.RemoveTile, Row.Hide), rows)
         assertEquals(1, rows.count { it == Row.ChooseArt })
     }
-    @Test fun hiddenAndroidAppsKeepShowBeforeArt() {
-        val app = AppActions(favorite = false, onGamesShelf = false, hiddenShelf = true)
-        assertEquals(listOf(Row.ShowApp, Row.ChooseArt), actionRows(TileActions(art = true), app))
+    @Test fun hiddenItemsKeepShowBeforeArt() {
+        assertEquals(listOf(Row.ShowHidden, Row.ChooseArt), actionRows(TileActions(show = true, art = true)))
     }
     @Test fun gameRowsPutFilingBeforeSelectionAndKeepUndoFirst() {
         val rows = actionRows(TileActions(undo = true, move = true, select = true,
-            collections = emptyList(), favorite = false, art = true, pin = true,
-            remove = RemoveVerb.Hide, removeDownload = true, deleteShortcut = true), null)
-        assertEquals(listOf(Row.Undo, Row.MoveTile, Row.AddToCollection, Row.Favorite,
-            Row.ChooseArt, Row.PinTile, Row.SelectTile, Row.RemoveTile, Row.RemoveDownload, Row.DeleteShortcut), rows)
+            collections = emptyList(), art = true,
+            remove = RemoveVerb.Unpin, hide = true, removeDownload = true, deleteShortcut = true))
+        assertEquals(listOf(Row.Undo, Row.MoveTile, Row.AddToCollection,
+            Row.ChooseArt, Row.SelectTile, Row.RemoveTile, Row.Hide, Row.RemoveDownload, Row.DeleteShortcut), rows)
         assertEquals(Row.MoveTile, rows[chordIndex(rows, Meaning.Options)!!])
         assertEquals(Row.RemoveTile, rows[chordIndex(rows, Meaning.ActivateBottom)!!])
     }

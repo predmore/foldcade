@@ -126,7 +126,8 @@ class FindFlowTest {
         assertEquals(PanelLevel.Actions, panel.level)
         val rows = panelRows(panel, shell.model)
         assertEquals(Row.ShowOnHome, rows.first())
-        assertTrue(Row.MoveTile !in rows && Row.RemoveTile in rows)
+        // Find has no spot to take a game off, so no Remove; Hide is offered.
+        assertTrue(Row.MoveTile !in rows && Row.RemoveTile !in rows && Row.Hide in rows)
         // Y then Select: Show on Home.
         shell.onMeaning(Meaning.View, HostScreen.Top)
         assertNull(shell.find)
@@ -160,13 +161,17 @@ class FindFlowTest {
         shell.onMeaning(Meaning.Activate, HostScreen.Bottom)
         focus(shell, titles(shell).indexOf("Drift"))
         shell.onMeaning(Meaning.Options, HostScreen.Bottom)
-        choose(shell, Row.Favorite)
+        choose(shell, Row.AddToCollection)
+        choose(shell, Row.NewCollection)
+        // Back keeps the name it was given, Collection 1, and closes the keyboard.
         shell.onMeaning(Meaning.Back, HostScreen.Bottom)
-        val onHome = shell.homeFace(titles(shell).indexOf(Copy.favorites))!!.mark
+        shell.onMeaning(Meaning.Back, HostScreen.Bottom)
+        val name = "${Copy.collection} 1"
+        val onHome = shell.homeFace(titles(shell).indexOf(name))!!.mark
         shell.onMeaning(Meaning.View, HostScreen.Bottom)
-        type(shell, "favor")
+        type(shell, "collection")
         val found = shell.find!!.results.first()
-        assertEquals(Copy.favorites, found.title)
+        assertEquals(name, found.title)
         assertEquals(onHome, found.mark)
         assertEquals(onHome, (shell.focusedHero() as HeroSubject.Folder).folder.mark)
     }
@@ -189,7 +194,7 @@ class FindFlowTest {
         shell.onMeaning(Meaning.Activate, HostScreen.Bottom)
         focus(shell, titles(shell).indexOf("Puzzle"))
         shell.onMeaning(Meaning.Options, HostScreen.Bottom)
-        shell.onMeaning(Meaning.ActivateBottom, HostScreen.Top)
+        choose(shell, Row.Hide)
         assertFalse("Puzzle" in titles(shell))
         shell.onMeaning(Meaning.View, HostScreen.Bottom)
         type(shell, "puzzle")
@@ -201,7 +206,7 @@ class FindFlowTest {
         val rows = panelRows(shell.model.panel!!, shell.model)
         assertTrue(Row.ShowOnHome !in rows)
         assertTrue(Row.ShowHidden in rows)
-        assertTrue(Row.PinTile !in rows)
+        assertTrue(Row.Hide !in rows)
         shell.onMeaning(Meaning.Options, HostScreen.Top)
         // Find stays open, now on a game that is back on Home.
         assertFalse(shell.find!!.results.first().hidden)
@@ -223,7 +228,7 @@ class FindFlowTest {
         shell.onMeaning(Meaning.Options, HostScreen.Bottom)
         val game = shell.model.tileActions?.game
         assertEquals("Drift", find.subject?.title)
-        // Add to, then Favorites: that brings Drift back, which sorts it among the games on Home.
+        // Add to, then Home: that brings Drift back, which sorts it among the games on Home.
         choose(shell, Row.AddToCollection)
         assertEquals(PanelLevel.Collections, shell.model.panel?.level)
         shell.onMeaning(Meaning.Activate, HostScreen.Top)
@@ -343,7 +348,7 @@ class FindFlowTest {
         shell.onMeaning(Meaning.Activate, HostScreen.Bottom)
         focus(shell, titles(shell).indexOf(title))
         shell.onMeaning(Meaning.Options, HostScreen.Bottom)
-        shell.onMeaning(Meaning.ActivateBottom, HostScreen.Top)
+        choose(shell, Row.Hide)
         shell.onMeaning(Meaning.Back, HostScreen.Bottom)
     }
 
@@ -374,16 +379,16 @@ class FindFlowTest {
     }
 
     @Test
-    fun findOpensOverAShelfToo() {
+    fun findOpensOverHiddenToo() {
         val shell = shell()
-        shell.showHomeGrid(HomeGrid.Apps)
+        shell.showHomeGrid(HomeGrid.Hidden)
         shell.onMeaning(Meaning.View, HostScreen.Bottom)
         assertEquals(HomeKeys.Finding, shell.homeKeys())
         type(shell, "puz")
         shell.onMeaning(Meaning.Done, HostScreen.Bottom)
         shell.onMeaning(Meaning.Options, HostScreen.Bottom)
         shell.onMeaning(Meaning.View, HostScreen.Top)
-        // Show on Home leaves the shelf for Home.
+        // Show on Home leaves Hidden for Home.
         assertEquals(HomeGrid.StandIns, shell.model.homeGrid)
         assertEquals("Puzzle", shell.focusedGame()?.title)
     }

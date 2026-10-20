@@ -36,9 +36,31 @@ class HomeSelectionTest {
         assertEquals(board.slots, removed.slots)
         assertEquals(folder, removed.folders.getValue(folder.id))
         assertFalse(bulkCollectionChoices(removed, ids).first { it.folderId == collection.id }.some)
-        val favorites = bulkCollection(board, HOME_FAVORITES, ids)
-        assertEquals(ids, favorites.folders.getValue(HOME_FAVORITES).slots)
-        assertEquals(HOME_FAVORITES, bulkCollectionChoices(board, ids).first().folderId)
+        // Favorites is not built in: choosing it does nothing on a board without one.
+        assertEquals(board, bulkCollection(board, HOME_FAVORITES, ids))
+    }
+
+    @Test fun homeInAddToPinsTheMissingGamesAndUnpinsAWhollyPinnedBatch() {
+        val home = bulkCollectionChoices(board, listOf("a", "b")).first()
+        assertEquals(HOME_ROOT, home.folderId)
+        assertTrue(home.member)
+        val mixed = bulkCollectionChoices(board, listOf("a", "c")).first()
+        assertTrue(mixed.some)
+        assertFalse(mixed.member)
+        // The missing pin takes the first free root slot; the one already pinned stays put.
+        val pinned = bulkCollection(board, HOME_ROOT, listOf("a", "c"))
+        assertEquals(listOf(HOME_ALL, "a", "b", "c", collection.id, folder.id), pinned.slots)
+        assertTrue(bulkCollectionChoices(pinned, listOf("a", "c")).first().member)
+        // All pinned, the batch unpins, and every game stays in its folder.
+        val unpinned = bulkCollection(pinned, HOME_ROOT, listOf("a", "c"))
+        assertEquals(listOf(HOME_ALL, null, "b", null, collection.id, folder.id), unpinned.slots)
+        assertEquals(folder, unpinned.folders.getValue(folder.id))
+        // A game nowhere on Home is filed in its folder too when the catalog knows it.
+        val loose = HomeItem("d", "Dee", HomeKind.Rom, "gba")
+        val platforms = listOf(HomePlatform("gba", "Game Boy Advance"))
+        val filed = bulkCollection(board, HOME_ROOT, listOf("d"), { id -> loose.takeIf { it.id == id } }, platforms)
+        assertTrue("d" in filed.slots)
+        assertEquals(listOf("d"), filed.folders.getValue(platformFolderId("gba")).slots)
     }
 
     @Test fun newCollectionUsesTheFirstCheckedRootSlotWithoutLosingAnyPins() {
@@ -65,17 +87,17 @@ class HomeSelectionTest {
         val after = bulkHide(board, listOf("a", "b"))
         assertTrue(after.hidden.containsAll(listOf("a", "b")))
         assertTrue(after.folders.values.all { "a" !in it.slots && "b" !in it.slots })
-        val undo = HomeUndo(board, AppShelfState(), Copy.hidden, 0L, after)
+        val undo = HomeUndo(board, Copy.hidden, 0L, after)
         assertEquals(board, undo.restore(after))
         val arrived = after.copy(slots = after.slots + "new", folders = after.folders +
             (folder.id to after.folders.getValue(folder.id).copy(slots = after.folders.getValue(folder.id).slots + "new")))
         val restored = undo.restore(arrived)
         assertTrue("new" in restored.slots)
         assertEquals(listOf("a", "b", "c", "new"), restored.folders.getValue(folder.id).slots)
-        assertNull(undo.afterEdit(after, bulkCollection(after, HOME_FAVORITES, listOf("c"))))
+        assertNull(undo.afterEdit(after, bulkCollection(after, HOME_ROOT, listOf("c"))))
     }
 
-    @Test fun selectionKeysHintsAndBulkHideChordFollowTheSharedMap() {
+    @Test fun selectionKeysHintsAndBulkHideFollowTheSharedMap() {
         assertEquals(Meaning.Options, meaningOf(KeyEvent.KEYCODE_BUTTON_Y, homeKeys = HomeKeys.Selecting))
         assertEquals(Meaning.Activate, meaningOf(KeyEvent.KEYCODE_BUTTON_A, homeKeys = HomeKeys.Selecting))
         assertEquals(Meaning.Back, meaningOf(KeyEvent.KEYCODE_BUTTON_B, homeKeys = HomeKeys.Selecting))
@@ -84,8 +106,11 @@ class HomeSelectionTest {
         assertFalse(guard.swallows(KeyEvent.KEYCODE_BUTTON_A, 0, capturing = true))
         assertTrue(guard.swallows(KeyEvent.KEYCODE_BUTTON_A, 1, capturing = false))
         assertEquals(listOf(SelectionCopy.check, SelectionCopy.actions, SelectionCopy.done), gridHints(null, HomeKeys.Selecting, FaceMap.standard()).map { it.label })
-        val actions = TileActions(bulk = listOf("a", "b"), collections = bulkCollectionChoices(board, listOf("a", "b")), newCollection = true, remove = RemoveVerb.Hide)
-        assertEquals(Row.RemoveTile, actionRows(actions, null)[chordIndex(actionRows(actions, null), Meaning.ActivateBottom)!!])
-        assertTrue(actionRows(TileActions(), null).isEmpty())
+        val actions = TileActions(bulk = listOf("a", "b"), collections = bulkCollectionChoices(board, listOf("a", "b")), newCollection = true, hide = true)
+        assertEquals(listOf(Row.AddToCollection, Row.Hide), actionRows(actions))
+        assertEquals(Row.NewCollection, collectionRows(actions).last())
+        // Hide takes no chord: X never hides.
+        assertNull(chordIndex(actionRows(actions), Meaning.ActivateBottom))
+        assertTrue(actionRows(TileActions()).isEmpty())
     }
 }

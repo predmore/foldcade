@@ -2,7 +2,6 @@ package app.foldcade
 
 import app.foldcade.api.plugin.MemoryCredentialStore
 import app.foldcade.host.PluginHost
-import app.foldcade.language.HOME_FAVORITES
 import app.foldcade.language.*
 import kotlinx.coroutines.Dispatchers
 import org.junit.After
@@ -31,7 +30,7 @@ class HomeRecoveryHostTest {
         shell.onMeaning(Meaning.Activate, HostScreen.Bottom)
         val before = decodeHome(store.homeBoardRaw())
         shell.onMeaning(Meaning.Options, HostScreen.Bottom)
-        choose(shell, Row.RemoveTile)
+        choose(shell, Row.Hide)
         assertFalse(folder.id in decodeHome(store.homeBoardRaw()).slots)
         shell.onMeaning(Meaning.Options, HostScreen.Bottom)
         choose(shell, Row.Undo)
@@ -40,46 +39,48 @@ class HomeRecoveryHostTest {
         assertEquals(before.folders, restored.folders)
     }
 
-    @Test fun shelfHideIsSharedShowRestoresAndUndoRestoresTheExactBoardAndShelf() {
+    @Test fun hideFromAFolderShowRestoresAndUndoRestoresTheExactBoard() {
         val shell = shell()
         shell.setInstalledApps(listOf(app, other), emptySet())
-        shell.showHomeGrid(HomeGrid.Apps)
-        focus(shell, 1)
+        shell.openHomeFolder(HOME_ANDROID_APPS)
+        focusTitle(shell, "Notes")
         shell.onMeaning(Meaning.Options, HostScreen.Bottom)
-        choose(shell, Row.PinTile)
+        choose(shell, Row.AddToCollection)
+        choose(shell, Row.Collection(HOME_ROOT, Copy.home))
+        shell.onMeaning(Meaning.Back, HostScreen.Bottom)
+        shell.onMeaning(Meaning.Back, HostScreen.Bottom)
         val before = decodeHome(store.homeBoardRaw())
-        val shelves = store.appShelfState()
+        assertTrue(androidHomeId("notes") in before.slots)
         shell.onMeaning(Meaning.Options, HostScreen.Bottom)
-        choose(shell, Row.RemoveTile)
+        choose(shell, Row.Hide)
         assertTrue(androidHomeId("notes") in decodeHome(store.homeBoardRaw()).hidden)
-        assertTrue(store.appShelfState().record("notes").hidden)
         assertEquals(Copy.hidden, shell.model.undoVerb)
         shell.onMeaning(Meaning.Options, HostScreen.Bottom)
         assertEquals(Row.Undo, panelRows(shell.model.panel!!, shell.model).first())
         assertEquals(0, shell.model.panel!!.index)
         shell.onMeaning(Meaning.Activate, HostScreen.Bottom)
         assertEquals(before, decodeHome(store.homeBoardRaw()))
-        assertEquals(shelves, store.appShelfState())
         assertNull(shell.model.undoVerb)
         assertEquals(1, shell.model.rewind)
 
+        focusTitle(shell, "Notes")
         shell.onMeaning(Meaning.Options, HostScreen.Bottom)
-        choose(shell, Row.RemoveTile)
-        shell.showHomeGrid(HomeGrid.HiddenApps)
+        choose(shell, Row.Hide)
+        shell.showHomeGrid(HomeGrid.Hidden)
         assertEquals("Notes", shell.focusedGame()?.title)
         shell.onMeaning(Meaning.Options, HostScreen.Bottom)
         shell.onMeaning(Meaning.Options, HostScreen.Bottom)
         assertEquals(0, shell.model.count)
         assertEquals(before.slots, decodeHome(store.homeBoardRaw()).slots)
-        assertFalse(store.appShelfState().record("notes").hidden)
+        assertEquals(before.folders, decodeHome(store.homeBoardRaw()).folders)
     }
 
     @Test fun undoStaysFocusedPastItsDeadlineUntilTheMenuCloses() {
         val shell = shell()
         shell.setInstalledApps(listOf(app, other), emptySet())
-        shell.showHomeGrid(HomeGrid.Apps)
+        shell.openHomeFolder(HOME_ANDROID_APPS)
         shell.onMeaning(Meaning.Options, HostScreen.Bottom)
-        choose(shell, Row.RemoveTile)
+        choose(shell, Row.Hide)
         time += 7_000L
         shell.onMeaning(Meaning.Options, HostScreen.Bottom)
         val rows = panelRows(shell.model.panel!!, shell.model)
@@ -89,17 +90,19 @@ class HomeRecoveryHostTest {
         assertEquals(rows, panelRows(shell.model.panel!!, shell.model))
         assertEquals(0, shell.model.panel!!.index)
         shell.onMeaning(Meaning.Activate, HostScreen.Bottom)
-        assertFalse(store.appShelfState().records.values.any { it.hidden })
+        assertTrue(decodeHome(store.homeBoardRaw()).hidden.isEmpty())
         assertNull(shell.model.undoVerb)
     }
 
     @Test fun closingTheMenuResumesTheRemainingUndoTime() {
         val shell = shell()
         shell.setInstalledApps(listOf(app, other), emptySet())
-        shell.showHomeGrid(HomeGrid.Apps)
+        shell.openHomeFolder(HOME_ANDROID_APPS)
+        focusTitle(shell, "Notes")
         shell.onMeaning(Meaning.Options, HostScreen.Bottom)
-        choose(shell, Row.RemoveTile)
+        choose(shell, Row.Hide)
         time += 7_000L
+        focusTitle(shell, "Browser")
         shell.onMeaning(Meaning.Options, HostScreen.Bottom)
         chooseFocus(shell, Row.AddToCollection)
         shell.onMeaning(Meaning.Activate, HostScreen.Bottom)
@@ -128,21 +131,21 @@ class HomeRecoveryHostTest {
     @Test fun undoExpiresAndMoveInvalidatesItWithoutSavingUndo() {
         val shell = shell()
         shell.setInstalledApps(listOf(app, other), emptySet())
-        shell.showHomeGrid(HomeGrid.Apps)
+        shell.openHomeFolder(HOME_ANDROID_APPS)
         shell.onMeaning(Meaning.Options, HostScreen.Bottom)
-        choose(shell, Row.RemoveTile)
+        choose(shell, Row.Hide)
         time += UNDO_MILLIS
         shell.tickRecovery()
         assertNull(shell.model.undoVerb)
-        shell.showHomeGrid(HomeGrid.HiddenApps)
+        shell.showHomeGrid(HomeGrid.Hidden)
         shell.onMeaning(Meaning.Options, HostScreen.Bottom)
         choose(shell, Row.ShowHidden)
         shell.goHome()
-        // Past Favorites to Android Apps.
-        focus(shell, 2)
+        focus(shell, decodeHome(store.homeBoardRaw()).slots.indexOf(HOME_ANDROID_APPS))
         shell.onMeaning(Meaning.Activate, HostScreen.Bottom)
+        focusTitle(shell, "Notes")
         shell.onMeaning(Meaning.Options, HostScreen.Bottom)
-        choose(shell, Row.RemoveTile)
+        choose(shell, Row.Hide)
         assertNotNull(shell.model.undoVerb)
         shell.onMeaning(Meaning.Options, HostScreen.Bottom)
         shell.onMeaning(Meaning.Options, HostScreen.Bottom)
@@ -183,16 +186,17 @@ class HomeRecoveryHostTest {
         assertEquals(listOf(key), deleted)
     }
 
-    @Test fun reinstallingAShelfHiddenAppCannotEndACarryBeforeCancelOrDrop() {
+    @Test fun reinstallingAHiddenAppCannotEndACarryBeforeCancelOrDrop() {
         for (finish in listOf(Meaning.Back, Meaning.Activate)) {
             val session = SessionStore(MemoryPrefs())
             val shell = ShellController(session, PluginHost(Dispatchers.Unconfined, MemoryCredentialStore()), nowMillis = { time })
             shell.setInstalledApps(listOf(app, other), emptySet())
-            shell.showHomeGrid(HomeGrid.Apps)
-            focus(shell, 1)
+            shell.openHomeFolder(HOME_ANDROID_APPS)
+            focusTitle(shell, "Notes")
             shell.onMeaning(Meaning.Options, HostScreen.Bottom)
-            choose(shell, Row.RemoveTile)
-            assertTrue(session.appShelfState().record("notes").hidden)
+            choose(shell, Row.Hide)
+            assertTrue(androidHomeId("notes") in decodeHome(session.homeBoardRaw()).hidden)
+            // Uninstalled, it is no longer hidden: there is nothing left to hide.
             shell.setInstalledApps(listOf(other), emptySet())
             assertFalse(androidHomeId("notes") in decodeHome(session.homeBoardRaw()).hidden)
             shell.goHome()
@@ -211,16 +215,17 @@ class HomeRecoveryHostTest {
             shell.onMeaning(finish, HostScreen.Bottom)
             val after = decodeHome(session.homeBoardRaw())
             assertEquals(if (finish == Meaning.Back) origin else destination, after.slots.indexOf(HOME_ANDROID_APPS))
-            assertTrue(androidHomeId("notes") in after.hidden)
-            assertFalse(after.folders.values.any { androidHomeId("notes") in it.slots })
+            // Reinstalled, it is a new app, filed once the carry ends.
+            assertFalse(androidHomeId("notes") in after.hidden)
+            assertTrue(androidHomeId("notes") in after.folders.getValue(HOME_ANDROID_APPS).slots)
         }
     }
 
     @Test fun tidyFromTheNewMoveMenusCanBeUndone() {
-        val folder = HomeFolder(HOME_ANDROID_APPS, Copy.androidAppsFolder, bucket = HomeKind.AndroidApp,
+        val folder = HomeFolder(HOME_ANDROID_APPS, "Android Apps", bucket = HomeKind.AndroidApp,
             slots = listOf(androidHomeId("notes"), null, androidHomeId("browser")))
         store.saveHomeBoard(encodeHome(HomeBoard(slots = listOf(HOME_ALL, null, folder.id),
-            folders = mapOf(folder.id to folder), retired = setOf(HOME_FAVORITES))))
+            folders = mapOf(folder.id to folder))))
         val shell = shell()
         shell.setInstalledApps(listOf(app, other), emptySet())
         val saved = store.homeBoardRaw()
@@ -235,7 +240,7 @@ class HomeRecoveryHostTest {
     }
 
     @Test fun folderAndCollectionRemovalUndoRestoresPositionsAndMemberships() {
-        val folder = HomeFolder(HOME_ANDROID_APPS, Copy.androidAppsFolder, bucket = HomeKind.AndroidApp,
+        val folder = HomeFolder(HOME_ANDROID_APPS, "Android Apps", bucket = HomeKind.AndroidApp,
             slots = listOf(null, androidHomeId("notes")))
         val collection = HomeFolder("home.user.1", "Tools", userMade = true, slots = listOf(androidHomeId("notes"), null))
         val board = HomeBoard(slots = listOf(HOME_ALL, null, folder.id, collection.id),
@@ -256,19 +261,21 @@ class HomeRecoveryHostTest {
         }
     }
 
-    @Test fun appMenusShareClassificationAndShelfYDoesNotMoveIt() {
+    @Test fun anAppInItsFolderMovesBetweenAndroidFoldersAndHides() {
         val shell = shell()
         shell.setInstalledApps(listOf(app), emptySet())
-        shell.showHomeGrid(HomeGrid.Apps)
+        shell.openHomeFolder(HOME_ANDROID_APPS)
         shell.onMeaning(Meaning.Options, HostScreen.Bottom)
         val rows = panelRows(shell.model.panel!!, shell.model)
-        assertTrue(Row.PinTile in rows && Row.AddToCollection in rows && Row.RemoveTile in rows)
-        assertNull(chordIndex(rows, Meaning.Options))
-        shell.onMeaning(Meaning.Options, HostScreen.Bottom)
-        assertNull(store.appShelfState().record("notes").shelf)
+        assertTrue(Row.AddToCollection in rows && Row.MoveApp in rows && Row.Hide in rows)
+        // A folder holds every app of its kind, so there is nothing to Remove, and Y Y is Move.
+        assertFalse(Row.RemoveTile in rows)
+        assertEquals(rows.indexOf(Row.MoveTile), chordIndex(rows, Meaning.Options))
         choose(shell, Row.MoveApp)
-        assertEquals(AndroidShelf.Games, store.appShelfState().record("notes").shelf)
-        assertTrue(androidHomeId("notes") in decodeHome(store.homeBoardRaw()).folders.getValue(HOME_ANDROID_GAMES).slots)
+        val board = decodeHome(store.homeBoardRaw())
+        assertTrue(androidHomeId("notes") in board.folders.getValue(HOME_ANDROID_GAMES).slots)
+        // Its last app gone, Android Apps leaves Home.
+        assertFalse(androidHomeId("notes") in board.folders[HOME_ANDROID_APPS]?.slots.orEmpty())
     }
 
     @Test fun aHoldCanceledWhenTheSurfaceHidesCannotDeleteLater() {
@@ -317,6 +324,9 @@ class HomeRecoveryHostTest {
         repeat(kotlin.math.abs(rows)) { shell.onMeaning(if (rows > 0) Meaning.MoveDown else Meaning.MoveUp, HostScreen.Bottom) }
         assertEquals(target, shell.model.focus.cellIndex)
     }
+
+    private fun focusTitle(shell: ShellController, title: String) =
+        focus(shell, (0 until shell.model.count).first { shell.homeFace(it)?.title == title })
 
     private fun choose(shell: ShellController, row: Row) {
         val rows = panelRows(shell.model.panel!!, shell.model)

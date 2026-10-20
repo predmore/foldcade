@@ -96,15 +96,13 @@ sealed interface RowControl {
 /** [value] is the row's [rowText] value, for a caller that already has it. */
 fun rowControl(row: Row, model: PickerModel, value: String? = rowText(row, model).value): RowControl = when (row) {
     Row.Music -> RowControl.Toggle(model.music.enabled)
-    Row.PinApp -> RowControl.Toggle(model.appActions?.favorite == true)
     Row.AddNewGames -> RowControl.Toggle(model.addNewToHome)
-    Row.FavoritesOnHome -> RowControl.Toggle(model.favoritesOnHome)
     Row.RecentOnHome -> RowControl.Toggle(model.recentOnHome)
     Row.Artwork -> RowControl.Toggle(model.artwork)
     in choiceRows -> RowControl.Choice(value.orEmpty())
     Row.MusicVolume, Row.Brightness -> RowControl.None
     is Row.Collection -> model.tileActions?.collections?.firstOrNull { it.folderId == row.folderId }.let { RowControl.Check(it?.member == true, it?.some == true) }
-    Row.EditHome, Row.AddToCollection, Row.AddAppTo, is Row.RommConnection,
+    Row.EditHome, Row.AddToCollection, is Row.RommConnection,
     Row.AddFolder, Row.AddRomm, Row.SetAsHome, Row.DefaultHomeApp, Row.AndroidSettings, Row.Licenses,
     -> RowControl.Opens
     else -> value?.takeIf { it.isNotEmpty() }?.let(RowControl::Value) ?: RowControl.None
