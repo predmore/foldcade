@@ -2,7 +2,9 @@ package app.foldcade
 
 import app.foldcade.api.plugin.MemoryCredentialStore
 import app.foldcade.host.PluginHost
+import app.foldcade.language.Copy
 import app.foldcade.language.HOME_MOONLIGHT
+import app.foldcade.language.HOME_ROOT
 import app.foldcade.language.HomeBoard
 import app.foldcade.language.HostScreen
 import app.foldcade.language.GridStrip
@@ -102,7 +104,8 @@ class MoonlightHomeTest {
         shell.onMeaning(Meaning.Activate, HostScreen.Bottom)
 
         focus(shell, titles(shell).indexOf("Hades"))
-        choose(shell, Row.RemoveTile)
+        choose(shell, Row.Hide)
+        assertFalse("Hades" in titles(shell))
         assertEquals(emptyList<String>(), removed)
     }
 
@@ -120,7 +123,12 @@ class MoonlightHomeTest {
         focus(shell, titles(shell).indexOf("Moonlight"))
         shell.onMeaning(Meaning.Activate, HostScreen.Bottom)
         focus(shell, titles(shell).indexOf("Hades"))
-        choose(shell, Row.PinTile)
+        choose(shell, Row.AddToCollection)
+        // Home is Add to's first choice, where the menu opens.
+        assertEquals(Row.Collection(HOME_ROOT, Copy.home), panelRows(shell.model.panel!!, shell.model)[shell.model.panel!!.index])
+        shell.onMeaning(Meaning.Activate, HostScreen.Bottom)
+        shell.onMeaning(Meaning.Back, HostScreen.Bottom)
+        shell.onMeaning(Meaning.Back, HostScreen.Bottom)
         shell.onMeaning(Meaning.Back, HostScreen.Bottom)
 
         focus(shell, titles(shell).indexOf("Hades"))

@@ -36,19 +36,21 @@ class ControllerGridHostTest {
         assertNull(shell.model.settings)
     }
 
-    @Test fun shelfTriggersUseAlphabeticalLabelsAndCompatibleDestinations() {
-        val shell = ShellController(SessionStore(MemoryPrefs()),
-            PluginHost(Dispatchers.Unconfined, MemoryCredentialStore()))
+    @Test fun hiddenTriggersUseAlphabeticalLabelsAndAppsOfferTheOtherAndroidFolder() {
+        val store = SessionStore(MemoryPrefs())
+        store.saveHomeBoard(encodeHome(HomeBoard(hidden = setOf(androidHomeId("a"), androidHomeId("b")))))
+        val shell = ShellController(store, PluginHost(Dispatchers.Unconfined, MemoryCredentialStore()))
         shell.setInstalledApps(listOf(LaunchableApp("a", "Alpha", false),
             LaunchableApp("b", "Beta", false), LaunchableApp("g", "Game", true)), emptySet())
-        shell.showHomeGrid(HomeGrid.Apps)
+        shell.showHomeGrid(HomeGrid.Hidden)
         assertEquals(listOf("Alpha", "Beta"), shell.model.gridLabels)
-        assertTrue(shell.model.appActions!!.destinations.any { it.folderId == HOME_ANDROID_GAMES })
-        // Alpha is already in Android Apps, so that choice would do nothing and is left out.
-        assertFalse(shell.model.appActions!!.destinations.any { it.folderId == HOME_ANDROID_APPS })
         shell.onMeaning(Meaning.LetterForward, HostScreen.Bottom)
         assertEquals(1, shell.model.focus.cellIndex)
         assertEquals("B", shell.model.letterJump)
+
+        // An app in Android Games moves to Android Apps, the one other folder it can be in.
+        shell.openHomeFolder(HOME_ANDROID_GAMES)
+        assertEquals(HOME_ANDROID_APPS, shell.model.tileActions?.moveTo)
     }
 
     @Test fun returningHomeRestoresTheFolderOrAllOpener() {
@@ -67,7 +69,7 @@ class ControllerGridHostTest {
         assertEquals(all, home.showRoot())
         assertFalse(home.board.allOpen)
     }
-    @Test fun shelvesAndMenuAllRestoreTheirRootOpenerAndRootRecallKeepsFocus() {
+    @Test fun androidFoldersHiddenAndMenuAllRestoreTheirRootOpenerAndRootRecallKeepsFocus() {
         val shell = ShellController(SessionStore(MemoryPrefs()),
             PluginHost(Dispatchers.Unconfined, MemoryCredentialStore()))
         shell.setInstalledApps(listOf(LaunchableApp("app", "App", false)), emptySet())
@@ -76,8 +78,14 @@ class ControllerGridHostTest {
         val apps = panelRows(shell.model.panel!!, shell.model).indexOf(Row.Apps)
         shell.touchPanel(apps, HostScreen.Top)
         shell.touchPanel(apps, HostScreen.Top)
-        assertEquals(HomeGrid.Apps, shell.model.homeGrid)
-        shell.showHomeGrid(HomeGrid.AndroidGames)
+        assertFalse(shell.model.atLibraryRoot)
+        assertEquals("App", shell.focusedGame()?.title)
+        // L1 Apps opens the folder as A on its tile would, so Home comes back to that tile.
+        shell.goHome()
+        assertEquals(HOME_ANDROID_APPS, shell.homeFace(shell.model.focus.cellIndex)?.id)
+
+        shell.touchCell(5, HostScreen.Bottom)
+        shell.showHomeGrid(HomeGrid.Hidden)
         shell.goHome()
         assertEquals(5, shell.model.focus.cellIndex)
 
@@ -95,7 +103,7 @@ class ControllerGridHostTest {
         val folder = (0 until shell.model.count).first { shell.homeFace(it)?.folder == true }
         shell.touchCell(folder, HostScreen.Bottom)
         shell.onMeaning(Meaning.Activate, HostScreen.Bottom)
-        shell.showHomeGrid(HomeGrid.Apps)
+        shell.showHomeGrid(HomeGrid.Hidden)
         shell.goHome()
         assertEquals(folder, shell.model.focus.cellIndex)
     }

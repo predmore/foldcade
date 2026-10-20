@@ -182,7 +182,7 @@ class HomeBoardTest {
     @Test
     fun hideAndUnhideLeaveTheCatalogAlone() {
         val board = board(listOf(HOME_ALL, "game.cart", "game.drift"))
-        val hidden = removeFromHome(board, 1)
+        val hidden = hideGame(board, "game.cart")
         assertEquals(setOf("game.cart"), hidden.hidden)
         assertFalse(hidden.slots.contains("game.cart"))
         assertFalse(onHome(hidden, "game.cart"))
@@ -380,7 +380,7 @@ class HomeBoardTest {
         val drift = item("game.drift", platformId = "nds")
         val folderId = platformFolderId("nintendo-ds")
         val placed = mergeHome(HomeBoard(), listOf(drift), platforms)
-        val hidden = mergeHome(removeFromHome(openFolder(placed, folderId), 0), listOf(drift), platforms)
+        val hidden = mergeHome(hideGame(openFolder(placed, folderId), drift.id), listOf(drift), platforms)
         assertTrue(hidden.folders.containsKey(folderId))
         assertFalse(hidden.slots.contains(folderId))
         assertNull(hidden.openFolderId)
@@ -565,10 +565,11 @@ class HomeBoardTest {
         assertTrue(cart.id in unpinned.folders.getValue(gba).slots)
         assertTrue(onHome(unpinned, cart.id))
         assertFalse(cart.id in unpinned.hidden)
-        // A game with no folder is only on Home through its tile, so X hides it.
+        // A game with no folder is only on Home through its tile. Remove still only unpins it.
         val lone = placed.slots.indexOf(loose.id)
-        assertEquals(RemoveVerb.Hide, removeVerb(placed, lone))
-        assertTrue(loose.id in removeFromHome(placed, lone).hidden)
+        assertEquals(RemoveVerb.Unpin, removeVerb(placed, lone))
+        assertFalse(loose.id in removeFromHome(placed, lone).hidden)
+        assertTrue(loose.id in removeFromHome(placed, lone).offHome)
         // In a collection as well, its tile can go.
         val kept = newCollection(placed, "home.user.1", "Mine", member = loose.id)
         assertEquals(RemoveVerb.Unpin, removeVerb(kept, lone))

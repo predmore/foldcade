@@ -2,7 +2,6 @@ package app.foldcade
 
 import app.foldcade.api.plugin.MemoryCredentialStore
 import app.foldcade.host.PluginHost
-import app.foldcade.language.HOME_FAVORITES
 import app.foldcade.language.*
 import kotlinx.coroutines.Dispatchers
 import org.junit.Assert.*
@@ -13,7 +12,7 @@ class HomeSelectionHostTest {
     private val b = androidHomeId("browser")
     private val c = androidHomeId("camera")
     private val group = HomeFolder("home.user.1", "Quests", userMade = true, slots = listOf(a))
-    private val initial = HomeBoard(slots = listOf(HOME_ALL, a, b, null, group.id), folders = mapOf(group.id to group), retired = setOf(HOME_FAVORITES))
+    private val initial = HomeBoard(slots = listOf(HOME_ALL, a, b, null, group.id), folders = mapOf(group.id to group))
     private val apps = listOf(LaunchableApp("notes", "Notes", false), LaunchableApp("browser", "Browser", false))
     private val store = SessionStore(MemoryPrefs()).also { it.saveHomeBoard(encodeHome(initial)) }
     private fun shell() = ShellController(store, PluginHost(Dispatchers.Unconfined, MemoryCredentialStore())).also { it.setInstalledApps(apps, emptySet()) }
@@ -72,20 +71,19 @@ class HomeSelectionHostTest {
         shell.onMeaning(Meaning.Activate, HostScreen.Bottom)
         shell.setInstalledApps(apps + LaunchableApp("camera", "Camera", false), emptySet())
         shell.onMeaning(Meaning.Options, HostScreen.Bottom)
-        assertFalse(Row.PinTile in panelRows(shell.model.panel!!, shell.model))
-        shell.onMeaning(Meaning.ActivateBottom, HostScreen.Bottom)
+        // A batch has no spot to take its games off, so no Remove; Hide is its own row, without X.
+        val rows = panelRows(shell.model.panel!!, shell.model)
+        assertFalse(Row.RemoveTile in rows)
+        assertNull(chordIndex(rows, Meaning.ActivateBottom))
+        choose(shell, Row.Hide)
         assertNull(shell.homeSelection())
         assertTrue(board().hidden.containsAll(listOf(a, b)))
-        assertTrue(store.appShelfState().record("notes").hidden)
-        assertTrue(store.appShelfState().record("browser").hidden)
         assertEquals(Copy.hidden, shell.model.undoVerb)
         assertTrue(board().folders.values.any { c in it.slots })
         shell.onMeaning(Meaning.Options, HostScreen.Bottom)
         assertEquals(Row.Undo, panelRows(shell.model.panel!!, shell.model).first())
         shell.onMeaning(Meaning.Activate, HostScreen.Bottom)
         assertTrue(board().hidden.isEmpty())
-        assertFalse(store.appShelfState().record("notes").hidden)
-        assertFalse(store.appShelfState().record("browser").hidden)
         assertTrue(a in board().slots && b in board().slots)
         assertEquals(listOf(a), board().folders.getValue(group.id).slots)
         assertTrue(board().folders.values.any { c in it.slots })
@@ -99,7 +97,7 @@ class HomeSelectionHostTest {
         assertTrue(shell.homeSelection()!!.checked.isEmpty())
         shell.onMeaning(Meaning.Options, HostScreen.Bottom)
         assertNull(shell.model.panel)
-        shell.showHomeGrid(HomeGrid.Apps)
+        shell.showHomeGrid(HomeGrid.Hidden)
         assertNull(shell.homeSelection())
     }
 
@@ -109,6 +107,8 @@ class HomeSelectionHostTest {
         focus(shell, board().slots.indexOf(a))
         shell.onMeaning(Meaning.Activate, HostScreen.Bottom)
         shell.onMeaning(Meaning.Options, HostScreen.Bottom)
+        // New collection is Add to's last row, for a batch as for one game.
+        choose(shell, Row.AddToCollection)
         choose(shell, Row.NewCollection)
         assertNull(shell.homeSelection())
         assertEquals(HomeKeys.Typing, shell.homeKeys())
@@ -140,8 +140,10 @@ class HomeSelectionHostTest {
         choose(shell, Row.AddToCollection)
         choose(shell, Row.Collection(group.id, group.name))
         assertEquals(Copy.removed, shell.model.undoVerb)
+        start(shell, a)
         shell.onMeaning(Meaning.Options, HostScreen.Bottom)
-        choose(shell, Row.Favorite)
+        choose(shell, Row.AddToCollection)
+        choose(shell, Row.Collection(group.id, group.name))
         assertNull(shell.model.undoVerb)
     }
 
