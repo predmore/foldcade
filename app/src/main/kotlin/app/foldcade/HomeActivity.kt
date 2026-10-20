@@ -491,6 +491,7 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
     }
 
     override fun onDestroy() {
+        usageReconcile.cancel()
         recoveryWindow?.close()
         foldcade.homeDestroyed(this)
         val manager = getSystemService(DisplayManager::class.java)
@@ -1292,18 +1293,40 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
     /** Several emulators can serve one platform. See [FoldcadeApp.playerFor]. */
     private fun playerFor(platformId: String): Player? = foldcade.playerFor(platformId)
 
+    private val usageReconcile = UsageReconcile()
+
+    /**
+     * A week of usage events is too much for the frame that is resuming.
+     * The query runs on the app scope, and the result is applied only if this
+     * screen is still in front.
+     */
     private fun reconcileUsage() {
-        val now = System.currentTimeMillis()
-        val access = UsageAccess(this)
-        val granted = access.granted()
-        val samples = if (granted) {
-            access.samples(now - UsageAccess.LOOKBACK_MS, now)
-        } else {
-            emptyList()
-        }
-        foldcade.plays.applyUsage(granted, samples, now)
-        foldcade.shell.setUsageGranted(granted)
-        foldcade.shell.maybeOfferUsageAccess(foldcade.plays.hasTrackedSession(), granted, hostScreen())
+        val startedAt = System.currentTimeMillis()
+        usageReconcile.request(
+            scope = foldcade.scope,
+            deliver = Dispatchers.Main.immediate,
+            alive = { resumed && !isDestroyed },
+            read = {
+                val access = UsageAccess(this@FoldcadeHomeActivity)
+                val granted = access.granted()
+                val samples = if (granted) {
+                    access.samples(startedAt - UsageAccess.LOOKBACK_MS, startedAt)
+                } else {
+                    emptyList()
+                }
+                UsageSnapshot(granted, samples)
+            },
+            publish = { snapshot ->
+                val now = System.currentTimeMillis()
+                foldcade.plays.applyUsage(snapshot.granted, snapshot.samples, now)
+                foldcade.shell.setUsageGranted(snapshot.granted)
+                foldcade.shell.maybeOfferUsageAccess(
+                    foldcade.plays.hasTrackedSession(),
+                    snapshot.granted,
+                    hostScreen(),
+                )
+            },
+        )
     }
 
     private fun clearPendingLaunch() {
