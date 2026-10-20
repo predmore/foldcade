@@ -49,6 +49,7 @@ import app.foldcade.host.PluginHost
 import app.foldcade.plugins.retroarch.PACKAGES as RETROARCH_PACKAGES
 import app.foldcade.plugins.retroarch.RetroArchPlayer
 import app.foldcade.plugins.romm.CachePathContentUri
+import app.foldcade.plugins.romm.RomFolderDocuments
 import app.foldcade.plugins.romm.ROMM_MEDIA_PATH
 import app.foldcade.plugins.romm.ROMM_ORIGIN_KEY
 import app.foldcade.plugins.romm.RommArtwork
@@ -431,6 +432,7 @@ class FoldcadeApp : Application() {
                     // The manifest's FileProvider authority. The debug build's id ends in .debug.
                     contentAuthority = rommAuthority,
                     cachePath = rommCachePath(request.cacheRoot),
+                    folderAuthority = rommFolderAuthority,
                     dataRoot = request.dataRoot,
                     artCacheRoot = rommPrivateRoot(),
                     saveBytes = SaveBytes { uri -> AndroidSaveDocuments(contentResolver).read(uri) },
@@ -937,6 +939,17 @@ class FoldcadeApp : Application() {
 
     private val rommAuthority: String get() = "$packageName.romm.cache"
 
+    /** The manifest's [RommFolderProvider] authority. */
+    val rommFolderAuthority: String get() = "$packageName.romm.folders"
+
+    /** Document ids [RommFolderProvider] serves: downloads in either root, named as in their content URIs. */
+    internal fun rommFolderDocuments(): RomFolderDocuments = RomFolderDocuments(
+        buildMap {
+            put(rommCachePath(rommPrivateRoot()), rommPrivateRoot())
+            rommSharedRoot()?.let { put(ROMM_MEDIA_PATH, it) }
+        },
+    )
+
     /** Downloads an older version kept in the app cache, moved once to the shared root. Cover art stays. */
     private fun moveRommDownloadsToSharedStorage() {
         val shared = rommSharedRoot() ?: return
@@ -951,7 +964,8 @@ class FoldcadeApp : Application() {
         SharedPaths(
             ownFile = { uri ->
                 val root = rommCacheRoot()
-                CachePathContentUri(root, rommAuthority, rommDataRoot(), rommCachePath(root)).pathFor(uri)
+                CachePathContentUri(root, rommAuthority, rommDataRoot(), rommCachePath(root), rommFolderAuthority)
+                    .pathFor(uri)
             },
             sharedRoots = { listOfNotNull(rommSharedRoot()) },
         )

@@ -6,6 +6,7 @@ import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.boolean
+import kotlinx.serialization.json.booleanOrNull
 import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.contentOrNull
@@ -70,6 +71,12 @@ internal fun JsonObject.reqInt(name: String): Int = reqLong(name).toInt()
 internal fun JsonObject.reqBool(name: String): Boolean {
     val value = this[name] ?: throw RommResponseException("response missing $name")
     return value.jsonPrimitive.boolean
+}
+
+internal fun JsonObject.optBool(name: String): Boolean? {
+    val value = this[name] ?: return null
+    if (value is JsonNull) return null
+    return value.jsonPrimitive.booleanOrNull
 }
 
 internal fun JsonObject.stringList(name: String): List<String> {
@@ -246,6 +253,8 @@ internal fun parseRomFile(obj: JsonObject): RomFileSummary = RomFileSummary(
     fileName = obj.reqString("file_name"),
     fileSizeBytes = obj.reqLong("file_size_bytes"),
     md5Hash = obj.optString("md5_hash")?.lowercase()?.takeIf { it.length == 32 },
+    category = obj.optString("category"),
+    isTopLevel = obj.optBool("is_top_level"),
 )
 
 internal fun parseRom(obj: JsonObject): RomSummary = RomSummary(

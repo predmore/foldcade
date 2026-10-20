@@ -980,7 +980,7 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
         } else {
             null
         }
-        val installedIntent = playerIntent?.toStartIntent()
+        val installedIntent = playerIntent?.toStartIntent(foldcade.rommFolderAuthority)
         withContext(Dispatchers.Main.immediate) {
             if (!launchCurrent(generation)) return@withContext
             when (plan) {
@@ -1228,7 +1228,7 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
             foldcade.externalPlay.open(foldcade.plays, game.id, game.title, displayId) {
                 val options = ActivityOptions.makeBasic().apply { launchDisplayId = displayId }
                 val intent = foldcade.startIntent(player, ready.intent)
-                val start = intent.toAndroidIntent()
+                val start = intent.toAndroidIntent(foldcade.rommFolderAuthority)
                 startActivity(start, options.toBundle())
                 if (foldcade.noteStarted(player, intent)) armRestart(start, displayId)
             }

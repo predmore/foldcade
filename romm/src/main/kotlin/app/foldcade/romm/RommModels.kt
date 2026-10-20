@@ -65,6 +65,10 @@ data class RomFileSummary(
     val fileSizeBytes: Long,
     /** Lowercase hex MD5 RomM computed for this file, when it has one. */
     val md5Hash: String? = null,
+    /** `category`, such as `game`, `update`, or `dlc`. Null when RomM gave the file none. */
+    val category: String? = null,
+    /** `is_top_level`: the file sits in the ROM's folder itself, not a folder inside it. Null when not sent. */
+    val isTopLevel: Boolean? = null,
 )
 
 @Serializable

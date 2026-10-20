@@ -155,5 +155,16 @@
                 android:name="android.support.FILE_PROVIDER_PATHS"
                 android:resource="@xml/romm_cache_paths" />
         </provider>
+
+        <!-- A RomM download's folder, for a game whose update and DLC sit beside it. A
+             DocumentsProvider must be exported behind MANAGE_DOCUMENTS, which only the system
+             holds. It has no roots, so no picker lists it: a player reads one game's folder
+             through the prefix grant on that tree that the launch intent carries. -->
+        <provider
+            android:name=".RommFolderProvider"
+            android:authorities="${applicationId}.romm.folders"
+            android:exported="true"
+            android:grantUriPermissions="true"
+            android:permission="android.permission.MANAGE_DOCUMENTS" />
     </application>
 </manifest>

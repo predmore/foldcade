@@ -40,6 +40,8 @@ internal interface RommOps : AutoCloseable {
         expectedSize: Long?,
         expectedMd5: String?,
         progress: ((RomProgress) -> Unit)? = null,
+        /** Where the file goes. Null is [RommClient.romCacheFile]. */
+        target: Path? = null,
     ): Path
 
     suspend fun registerDevice(
@@ -92,7 +94,12 @@ internal class ClientRommOps(private val client: RommClient) : RommOps {
         expectedSize: Long?,
         expectedMd5: String?,
         progress: ((RomProgress) -> Unit)?,
-    ) = client.downloadRom(romId, fileName, cacheRoot, fileIds, expectedSize, expectedMd5, progress)
+        target: Path?,
+    ) = if (target == null) {
+        client.downloadRom(romId, fileName, cacheRoot, fileIds, expectedSize, expectedMd5, progress)
+    } else {
+        client.downloadRom(romId, fileName, cacheRoot, fileIds, expectedSize, expectedMd5, progress, target)
+    }
 
     override suspend fun registerDevice(
         stored: RegisteredDevice?,
