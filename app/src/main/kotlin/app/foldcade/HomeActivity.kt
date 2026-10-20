@@ -891,7 +891,9 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
                     // A game that started shows the conflict when Foldcade is in front again.
                     if (foldcade.externalPlay.sessionId == null && libraryReturn == null) {
                         foldcade.suppressSaveConflict = false
-                        refreshSaveConflict()
+                        // The screen that started the download may already be gone.
+                        if (!isDestroyed && !isFinishing) refreshSaveConflict()
+                        else foldcade.refreshSaveConflictOnSurvivor()
                     }
                 }
             }
@@ -2004,7 +2006,7 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
     }
 
     /** Shows the first conflict that is still waiting, unless a launch or a preview is up. */
-    private fun refreshSaveConflict() {
+    internal fun refreshSaveConflict() {
         if (foldcade.suppressSaveConflict) return
         if (foldcade.shell.model.saveConflict?.preview == true) return
         foldcade.scope.launch {
