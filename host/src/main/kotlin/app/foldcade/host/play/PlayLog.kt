@@ -161,7 +161,12 @@ class PlayLog(
             if (session.gameId in gameIds) session.currentActive(elapsed) else 0L
         }
         val completed = gameIds.sumOf { completedActive[it] ?: 0L }
-        PlayTotals(gameId, completed + running, gameIds.mapNotNull { lastAt[it] }.maxOrNull())
+        val now = clock.wallNow()
+        // A stamp written while the clock was ahead must not stay "last played" after it is corrected.
+        val last = history.asSequence()
+            .filter { it.gameId in gameIds && it.atMillis <= now }
+            .maxOfOrNull { it.atMillis }
+        PlayTotals(gameId, completed + running, last)
     }
 
     /**
