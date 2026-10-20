@@ -37,6 +37,14 @@ Downloads are kept in `Android/media/app.foldcade/romm` on internal storage, whe
 
 A game you also have in a [local folder](local-games.md) is one tile when the two files have the same name and system. It opens the folder's copy, so it does not download, and **Y › Delete download** frees a copy downloaded earlier without taking the tile away.
 
+### Updates and DLC
+
+A game can be a folder in RomM with its update and DLC beside it, such as a Switch game with the base `.nsp` at the top and its update in `updates/`. When RomM files the extras as **update** or **DLC**, Foldcade downloads the game file and each of them into one folder, and Eden loads them from there when the game starts: there is nothing to install in Eden. Other files in the folder, such as manuals, are not downloaded. When RomM replaces an update, the next launch downloads the new one and deletes the old.
+
+Eden reads that folder through Foldcade, and only for the game it was launched with.
+
+A folder that RomM does not split this way still downloads as RomM sends it.
+
 Downloaded games with a cached catalog can be played offline. New downloads need the server. Provide a format the emulator can open; Foldcade does not handle server-side conversion.
 
 ## Save sync

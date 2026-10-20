@@ -292,6 +292,9 @@ class RommClient(
      * gave them, and are synced to storage before the rename that publishes them.
      * Two calls for the same file take turns. [progress] hears the bytes as they
      * arrive, then [RomProgress.Checking] while the hash is computed.
+     *
+     * [target] is where the file is written. By default it is [romCacheFile];
+     * a game's update or DLC passes a file beside the game instead.
      */
     suspend fun downloadRom(
         romId: Long,
@@ -301,9 +304,9 @@ class RommClient(
         expectedSize: Long? = null,
         expectedMd5: String? = null,
         progress: ((RomProgress) -> Unit)? = null,
+        target: Path = romCacheFile(cacheRoot, romId, fileName, fileIds),
     ): Path {
         require(romId >= 1)
-        val target = romCacheFile(cacheRoot, romId, fileName, fileIds)
         // RomM hashes an archive by its members, not its bytes, so only its size can be checked.
         val md5 = expectedMd5?.lowercase()?.takeUnless { isArchiveName(fileName) }
         return romLock(target).withLock {
@@ -1173,6 +1176,9 @@ class RommClient(
             }
             return dir.resolve(safe)
         }
+
+        /** Where [downloadRom] keeps [fileName] in the same folder as [rom], such as a game's update. */
+        fun besideRom(rom: Path, fileName: String): Path = rom.resolveSibling(safeFileName(fileName))
 
         private fun encode(value: String): String =
             URLEncoder.encode(value, StandardCharsets.UTF_8).replace("+", "%20")
