@@ -23,6 +23,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.wrapContentWidth
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.background
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.border
 import androidx.compose.foundation.text.BasicText
 import androidx.compose.runtime.CompositionLocalProvider
@@ -40,6 +41,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.layout
 import androidx.compose.ui.platform.LocalDensity
@@ -106,6 +108,8 @@ internal fun TopIslands(
             .zIndex(4f)
             .focusProperties { canFocus = false },
     ) {
+        // A tap off the open card closes it, as its shoulder would. The cards sit above and keep their own taps.
+        if (!dialogCovers && model.panel?.screen == HostScreen.Top) Box(Modifier.fillMaxSize().closesIsland(app))
         Island(
             app = app,
             side = Side.Left,
@@ -241,7 +245,8 @@ private fun Island(
             )
             .clip(shape)
             .background(cardFill(theme, design.menu.islandLift * progress))
-            .then(if (!interactive) Modifier.islandPress { app.shell.onMeaning(side.meaning(), HostScreen.Top) } else Modifier),
+            // The open card holds a tap between its rows, so it never reaches the catch under it.
+            .then(if (!interactive) Modifier.islandPress { app.shell.onMeaning(side.meaning(), HostScreen.Top) } else Modifier.blocksTouch()),
     ) {
         // The chip leads on both sides, so the clock is the last thing on the right.
         // The chip art carries its own margin. The text end gets a little more.
@@ -543,6 +548,11 @@ private fun Modifier.islandPress(onClick: () -> Unit): Modifier {
     return this
         .focusProperties { canFocus = false }
         .clickable(interactionSource = source, indication = null, onClick = onClick)
+}
+
+/** Closes the open island on a tap, the way pressing its shoulder again would. A drag is left alone. */
+internal fun Modifier.closesIsland(app: FoldcadeApp): Modifier = pointerInput(app) {
+    detectTapGestures { app.shell.closePanel() }
 }
 
 private fun lerp(start: Dp, end: Dp, fraction: Float): Dp = start + (end - start) * fraction
