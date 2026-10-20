@@ -346,6 +346,8 @@ fun PanelHost(activity: FoldcadeHomeActivity, displays: Displays) {
             }
             if (screen == HostScreen.Top) LetterOverlay(app, scale)
             if (blurHere && session.surfaceOn(Panel.Bottom) == Surface.Picker) MenuHints(app)
+            // The blurred grid takes no taps of its own. A tap on it closes the island over it.
+            if (blurHere && model.panel?.screen == HostScreen.Top) Box(Modifier.fillMaxSize().closesIsland(app))
             if (panel != null && screen != null) {
                 DialogLayer(app, model.dialog, screen, scale, activity::dispatch)
             }
@@ -4019,7 +4021,7 @@ private fun DialogCard(
  * alone passes taps through: a tap on the dialog's own text once changed the Settings
  * category behind it. Nothing is consumed, so the dialog's buttons still see a whole tap.
  */
-private fun Modifier.blocksTouch(): Modifier = pointerInput(Unit) {
+internal fun Modifier.blocksTouch(): Modifier = pointerInput(Unit) {
     awaitPointerEventScope {
         while (true) awaitPointerEvent()
     }
