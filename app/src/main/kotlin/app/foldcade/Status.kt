@@ -1,17 +1,33 @@
 package app.foldcade
 
+import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
+import android.database.ContentObserver
 import android.net.ConnectivityManager
+import android.net.Network
 import android.net.NetworkCapabilities
 import android.net.wifi.WifiManager
 import android.os.BatteryManager
+import android.os.Handler
+import android.os.Looper
 import android.provider.Settings
 import android.text.format.DateFormat
 import app.foldcade.language.Copy
 import java.util.Date
 import java.util.Locale
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.channels.awaitClose
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.SharingStarted
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.callbackFlow
+import kotlinx.coroutines.flow.conflate
+import kotlinx.coroutines.flow.flowOn
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.stateIn
 
 data class DeviceStatus(
     val time: String,
@@ -23,7 +39,75 @@ data class DeviceStatus(
     /** Wi-Fi bars from 0 to 4. Zero off Wi-Fi. */
     val wifiBars: Int = 0,
     val bluetooth: Boolean = false,
+    /** Whole minutes since the epoch, for anything that steps with the clock. */
+    val minute: Long = 0L,
 )
+
+/**
+ * The device status, read again as soon as Android reports a change: the battery and
+ * charger, the default network and its signal, the Bluetooth radio, and the clock.
+ * It listens only while something collects [status], and reads afresh each time it starts.
+ */
+class DeviceStatusWatcher(private val context: Context, scope: CoroutineScope) {
+    val status: StateFlow<DeviceStatus> = changes()
+        .conflate()
+        .map { readDeviceStatus(context) }
+        .flowOn(Dispatchers.Default)
+        .stateIn(scope, SharingStarted.WhileSubscribed(), readDeviceStatus(context))
+
+    /** One signal per change, and one at the start. */
+    private fun changes(): Flow<Unit> = callbackFlow {
+        val receiver = object : BroadcastReceiver() {
+            override fun onReceive(context: Context, intent: Intent) {
+                trySend(Unit)
+            }
+        }
+        context.registerReceiver(
+            receiver,
+            IntentFilter().apply {
+                addAction(Intent.ACTION_BATTERY_CHANGED)
+                addAction(Intent.ACTION_TIME_TICK)
+                // A set clock, a new time zone, or the 12/24-hour setting.
+                addAction(Intent.ACTION_TIME_CHANGED)
+                addAction(Intent.ACTION_TIMEZONE_CHANGED)
+                addAction(Intent.ACTION_LOCALE_CHANGED)
+            },
+            Context.RECEIVER_NOT_EXPORTED,
+        )
+        val bluetooth = object : ContentObserver(Handler(Looper.getMainLooper())) {
+            override fun onChange(selfChange: Boolean) {
+                trySend(Unit)
+            }
+        }
+        context.contentResolver.registerContentObserver(
+            Settings.Global.getUriFor(Settings.Global.BLUETOOTH_ON),
+            false,
+            bluetooth,
+        )
+        val connectivity = context.getSystemService(ConnectivityManager::class.java)
+        // Signal strength comes in capability changes, so the bars move with it.
+        val network = object : ConnectivityManager.NetworkCallback() {
+            override fun onAvailable(network: Network) {
+                trySend(Unit)
+            }
+
+            override fun onCapabilitiesChanged(network: Network, capabilities: NetworkCapabilities) {
+                trySend(Unit)
+            }
+
+            override fun onLost(network: Network) {
+                trySend(Unit)
+            }
+        }
+        connectivity?.registerDefaultNetworkCallback(network)
+        trySend(Unit)
+        awaitClose {
+            context.unregisterReceiver(receiver)
+            context.contentResolver.unregisterContentObserver(bluetooth)
+            connectivity?.unregisterNetworkCallback(network)
+        }
+    }
+}
 
 fun readDeviceStatus(context: Context): DeviceStatus {
     val sticky = context.registerReceiver(null, IntentFilter(Intent.ACTION_BATTERY_CHANGED))
@@ -43,6 +127,7 @@ fun readDeviceStatus(context: Context): DeviceStatus {
         date = dateText(now),
         wifiBars = network.bars,
         bluetooth = bluetoothOn(context),
+        minute = now / 60_000L,
     )
 }
 
