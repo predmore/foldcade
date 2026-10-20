@@ -29,7 +29,7 @@ enum class CollectionTint(val id: String, val color: Color, val label: String) {
 const val MARK_STAR: String = "star"
 const val MARK_CLOCK: String = "clock"
 
-/** The theme glyphs, in the picker's order. Star is Favorites' and clock is Recently played's. */
+/** The theme glyphs, in the picker's order. Clock is Recently played's. */
 val COLLECTION_GLYPHS: List<String> = listOf(
     MARK_STAR, "heart", "trophy", "crown", "gem", "sword", "shield", "skull", "flame", "rocket",
     "racing-flag", "puzzle", "ghost", "mushroom", "music", "two-players", "hourglass", "play-badge", "check-badge", MARK_CLOCK,
@@ -55,14 +55,14 @@ data class CollectionLook(val glyph: String, val tint: CollectionTint) {
 
 /**
  * The look a group wears, or null for one of Foldcade's folders. A collection that never chose a
- * glyph, saved by an earlier release, shows the stack of games; Favorites shows a star. Every
+ * glyph, saved by an earlier release, shows the stack of games. Every
  * collection is gold until the user picks a colour, as folders were. Recently played is a teal clock.
  */
 fun collectionLook(folder: HomeFolder): CollectionLook? = when {
     folder.recent -> CollectionLook(MARK_CLOCK, CollectionTint.Teal)
     folder.collection -> CollectionLook(
         glyph = folder.mark?.takeIf { it in FOLDER_ICONS }
-            ?: if (folder.id == HOME_FAVORITES) MARK_STAR else MARK_LIBRARY,
+            ?: MARK_LIBRARY,
         tint = CollectionTint.of(folder.tint) ?: CollectionTint.Gold,
     )
     else -> null

@@ -41,7 +41,7 @@ fun Context.startOnDisplay(intent: Intent, displayId: Int) {
     startActivity(intent, options.toBundle())
 }
 
-internal fun PlayerIntent.toStartIntent(): Intent {
+internal fun PlayerIntent.toStartIntent(folderAuthority: String? = null): Intent {
     val intent = Intent()
     intent.component = ComponentName(packageName, componentClass)
     intent.action = action
@@ -53,6 +53,7 @@ internal fun PlayerIntent.toStartIntent(): Intent {
     }
     if (grantReadUri || parsed?.scheme == "content") {
         intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        intent.grantFolderTree(dataUri, folderAuthority)
     }
     if (LaunchFlag.GrantWriteUri in flags) intent.addFlags(Intent.FLAG_GRANT_WRITE_URI_PERMISSION)
     if (LaunchFlag.NewTask in flags) intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)

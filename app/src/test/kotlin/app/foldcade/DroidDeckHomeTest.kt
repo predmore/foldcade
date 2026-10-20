@@ -94,7 +94,8 @@ class DroidDeckHomeTest {
         shell.onMeaning(Meaning.Activate, HostScreen.Bottom)
 
         focus(shell, titles(shell).indexOf("Hades II"))
-        choose(shell, Row.RemoveTile)
+        choose(shell, Row.Hide)
+        assertFalse("Hades II" in titles(shell))
         assertEquals(emptyList<String>(), removed)
     }
 

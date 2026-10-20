@@ -7,12 +7,12 @@ class MenuRowsTest {
     private val panel = SidePanel(Side.Left, HostScreen.Top, PanelLevel.Actions, 0, GridFocus())
 
     @Test fun catalogChangesKeepTheSelectedRowUntilClose() {
-        val closed = PickerModel(1, 3, tileActions = TileActions(move = true, pin = true, removeDownload = true))
+        val closed = PickerModel(1, 3, tileActions = TileActions(move = true, hide = true, removeDownload = true))
         val opened = retainMenuRows(closed, closed.copy(panel = panel.copy(index = 1)))
         val rows = panelRows(opened.panel!!, opened)
         val refreshed = retainMenuRows(opened, opened.copy(tileActions = TileActions(move = true, art = true)))
         assertEquals(rows, panelRows(refreshed.panel!!, refreshed))
-        assertEquals(Row.PinTile, panelRows(refreshed.panel!!, refreshed)[refreshed.panel!!.index])
+        assertEquals(Row.Hide, panelRows(refreshed.panel!!, refreshed)[refreshed.panel!!.index])
         val dismissed = retainMenuRows(refreshed, refreshed.copy(panel = null))
         val reopened = retainMenuRows(dismissed, dismissed.copy(panel = panel))
         assertEquals(listOf(Row.MoveTile, Row.ChooseArt), panelRows(reopened.panel!!, reopened))
@@ -34,13 +34,14 @@ class MenuRowsTest {
 
     @Test fun aKeptGameLosesOnlySlotActionsAndKeepsItsSelectedRow() {
         val closed = PickerModel(1, 3, tileActions = TileActions(move = true,
-            collections = emptyList(), favorite = false, remove = RemoveVerb.Remove, removeDownload = true))
+            collections = emptyList(), remove = RemoveVerb.Remove, hide = true, removeDownload = true))
         val opened = retainMenuRows(closed, closed.copy(panel = panel.copy(index = 1)))
         val changed = opened.copy(tileActions = TileActions(kept = true,
-            collections = emptyList(), favorite = false, removeDownload = true))
+            collections = emptyList(), hide = true, removeDownload = true))
         val kept = retainMenuRows(opened, changed)
         val rows = panelRows(kept.panel!!, kept)
-        assertEquals(listOf(Row.AddToCollection, Row.Favorite, Row.RemoveDownload), rows)
+        // Hide still acts on the kept game, by its id, and takes no chord from Delete download.
+        assertEquals(listOf(Row.AddToCollection, Row.Hide, Row.RemoveDownload), rows)
         assertEquals(Row.AddToCollection, rows[kept.panel!!.index])
         assertNull(chordIndex(rows, Meaning.Options))
         assertEquals(Row.RemoveDownload, rows[chordIndex(rows, Meaning.ActivateBottom)!!])
@@ -67,7 +68,7 @@ class MenuRowsTest {
     }
 
     @Test fun aMenuThatOfferedUndoJustBeforeTheDeadlineKeepsItAtTheBoundary() {
-        val undo = HomeUndo(HomeBoard(), AppShelfState(), Copy.hidden, 100L)
+        val undo = HomeUndo(HomeBoard(), Copy.hidden, 100L)
         assertTrue(undo.available(8_099L))
         val paused = undo.pause(8_100L)
         assertTrue(paused.available(20_000L))
@@ -75,7 +76,7 @@ class MenuRowsTest {
     }
 
     @Test fun pausedUndoResumesWithExactlyItsRemainingTime() {
-        val undo = HomeUndo(HomeBoard(), AppShelfState(), Copy.hidden, 100L)
+        val undo = HomeUndo(HomeBoard(), Copy.hidden, 100L)
         val paused = undo.pause(7_100L)
         assertTrue(paused.available(100_000L))
         assertEquals(paused, paused.pause(100_000L))

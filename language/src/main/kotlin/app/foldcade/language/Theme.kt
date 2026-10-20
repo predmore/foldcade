@@ -223,7 +223,6 @@ object Copy {
     const val hiddenApps = "Hidden"
     /** The Edit home row that opens the Hidden grid. */
     const val hiddenAppsRow = "Hidden"
-    const val noApps = "No apps"
     const val noHiddenApps = "Nothing hidden"
     const val pin = "Pin"
     const val unpin = "Unpin"
@@ -231,8 +230,6 @@ object Copy {
     const val moveToApps = "Move to Apps"
     const val hideApp = "Hide"
     const val showApp = "Show"
-    const val androidGameMeta = "Android game"
-    const val appMeta = "App"
     const val allLibrary = "All library"
     /** The L1 tiles' words: All library and Android Games, said in one word each. */
     const val tileAll = "All"
@@ -242,20 +239,15 @@ object Copy {
     const val on = "On"
     const val off = "Off"
     const val artwork = "Game art"
-    const val homeSlot = "Home"
     const val move = "Move"
     /** Closes the gaps on the board on screen. */
     const val tidy = "Tidy"
     const val tidied = "Tidied"
     const val rename = "Rename"
     const val icon = "Icon"
-    const val favorite = "Favorite"
-    const val unfavorite = "Unfavorite"
-    const val pinToHome = "Pin to Home"
     const val newCollection = "New collection"
     /** A new collection's name, before a number: Collection 1. */
     const val collection = "Collection"
-    const val favorites = "Favorites"
     const val recentlyPlayed = "Recently played"
     /** An open collection with nothing in it, and the way to fill it. */
     const val noGamesYet = "No games yet"
@@ -267,8 +259,6 @@ object Copy {
     const val removed = "Removed"
     const val hold = "Hold"
     const val deleteShortcut = "Delete shortcut"
-    const val keepOnTop = "Keep on top"
-    const val androidAppsFolder = "Android Apps"
     const val deleteDownload = "Delete download"
     const val addTo = "Add to"
     const val emptySlot = "Empty slot"

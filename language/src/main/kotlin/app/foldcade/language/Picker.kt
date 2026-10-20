@@ -34,11 +34,8 @@ enum class PanelLevel(val depth: Int, val actsOnTile: Boolean = false) {
     /** Y's menu for the focused tile, in the left island. */
     Actions(1, actsOnTile = true),
 
-    /** Add to: the collections the focused game can join, each checked while it is in it. */
+    /** Add to: Home, then the collections the focused game can join, each checked while it is in it. */
     Collections(2, actsOnTile = true),
-
-    /** Home and the folders Add to can place an installed app in. */
-    AddTo(2, actsOnTile = true),
 
     /** L1's Edit home: the focused tile's actions, then the settings for the whole board. */
     EditHome(1, actsOnTile = true),
@@ -345,20 +342,20 @@ sealed interface Row {
     data object RetroArchCores : Row
     data object AndroidGames : Row
     data object Apps : Row
-    data object HiddenApps : Row
+    /** Edit home's way into the one Hidden place: hidden games and apps, and groups taken off Home. */
+    data object Hidden : Row
     data object AllLibrary : Row
     data object AddNewGames : Row
 
-    /** Edit home's switches for the Favorites and Recently played tiles. */
-    data object FavoritesOnHome : Row
+    /** Edit home's switch for the Recently played tile. */
     data object RecentOnHome : Row
     data object Artwork : Row
     data object ArtKey : Row
-    data object PinApp : Row
-    data object AddAppTo : Row
+    /** An installed app trades Android Games for Android Apps, or back. */
     data object MoveApp : Row
-    data object HideApp : Row
-    data object ShowApp : Row
+
+    /** Hides the game everywhere on Home. All and Find still list it, and Hidden shows it again. */
+    data object Hide : Row
     data object ChooseArt : Row
     data object MoveTile : Row
 
@@ -371,12 +368,9 @@ sealed interface Row {
     /** Opens [PanelLevel.Collections]. */
     data object AddToCollection : Row
 
-    /** One collection in Add to. A toggles the focused game in it and the menu stays open. */
+    /** One choice in Add to, Home or a collection. A toggles the focused game in it and the menu stays open. */
     data class Collection(val folderId: String, val label: String) : Row
     data object SelectTile : Row
-    data object Favorite : Row
-    data object PinTile : Row
-    data class Destination(val folderId: String?, val label: String) : Row
     data object NewCollection : Row
     data object RenameFolder : Row
     data object FolderIcon : Row
@@ -492,13 +486,13 @@ fun leftRows(): List<Row> = listOf(
 
 /**
  * The focused tile's actions, the same ones Y offers, then what applies to the
- * whole board: Tidy while it has gaps, the Favorites and Recently played tiles,
- * whether new games join it, and the apps hidden from it.
+ * whole board: Tidy while it has gaps, the Recently played tile, whether new
+ * games join it, and what is hidden from it.
  */
 fun editHomeRows(model: PickerModel): List<Row> {
-    val tile = actionRows(model.tileActions, model.appActions)
+    val tile = actionRows(model.tileActions)
     val tidy = if (model.tileActions?.tidyBoard == true && Row.Tidy !in tile) listOf(Row.Tidy) else emptyList()
-    return tile + tidy + listOf(Row.FavoritesOnHome, Row.RecentOnHome, Row.AddNewGames, Row.HiddenApps)
+    return tile + tidy + listOf(Row.RecentOnHome, Row.AddNewGames, Row.Hidden)
 }
 
 data class SignedInBackend(
@@ -562,10 +556,7 @@ fun rightRows(notices: List<FoldNotice>): List<Row> = buildList {
 /** Where R1 opens: the brightness slider, under the tiles. */
 fun rightStart(): Int = quickSettings().size
 
-/** A place an installed app can be added to from its shelf. A null [folderId] is the home root. */
-data class FolderChoice(val folderId: String?, val name: String)
-
-/** A collection Add to lists, and whether the focused game is in it. */
+/** A choice Add to lists, Home ([HOME_ROOT]) or a collection, and whether the focused game is in it. */
 data class CollectionChoice(val folderId: String, val name: String, val member: Boolean, val some: Boolean = false)
 
 /**
@@ -585,18 +576,19 @@ data class TileActions(
     val art: Boolean = false,
     /** Pick the tile up and walk it with the D-pad. */
     val move: Boolean = false,
-    /** Add to: Favorites, then every collection on Home. Null leaves the row out. */
+    /** Add to: Home, then every collection on Home. Null leaves the row out. */
     val collections: List<CollectionChoice>? = null,
-    /** Whether the game is a favorite, so the row reads Unfavorite. Null leaves the row out. */
-    val favorite: Boolean? = null,
-    /** Pin to Home: the game has no tile on the root yet. */
-    val pin: Boolean = false,
+    /** A collection, on a tile with no game for Add to: an empty slot, or the All tile. */
     val newCollection: Boolean = false,
     val rename: Boolean = false,
     /** A collection can wear an icon the user chooses. */
     val icon: Boolean = false,
-    /** What X does to the tile. Null leaves the row out. */
+    /** What Remove does to the tile. Null leaves the row out. */
     val remove: RemoveVerb? = null,
+    /** The game can be hidden from Home. */
+    val hide: Boolean = false,
+    /** The Android folder an installed app would move to, Games or Apps. Null leaves the row out. */
+    val moveTo: String? = null,
     /** A server game downloaded to this device can be deleted again. */
     val removeDownload: Boolean = false,
     /** The game these rows act on. Null for a tile that is not a game, or one off the home grid. */
@@ -607,45 +599,36 @@ data class TileActions(
     val tidyBoard: Boolean = false,
 )
 
-/** Y's menu: the tile's own actions, then an Android app's shelf actions. */
-fun actionRows(tile: TileActions?, app: AppActions?): List<Row> = buildList {
-    if (tile?.bulk != null) {
+/**
+ * Y's menu for the tile. Add to holds every place a game can be put, Home first, and New
+ * collection at its end, so a game's menu has one row for all of them. Remove takes the
+ * tile off the spot it is in, and Hide is its own row, after it.
+ */
+fun actionRows(tile: TileActions?): List<Row> = buildList {
+    if (tile == null) return@buildList
+    if (tile.bulk != null) {
         if (tile.collections != null) add(Row.AddToCollection)
-        if (tile.newCollection) add(Row.NewCollection)
-        if (tile.pin) add(Row.PinTile)
-        if (tile.favorite != null) add(Row.Favorite)
+        if (tile.newCollection && tile.collections == null) add(Row.NewCollection)
         if (tile.remove != null) add(Row.RemoveTile)
+        if (tile.hide) add(Row.Hide)
         return@buildList
     }
-    if (tile != null) {
-        if (tile.undo) add(Row.Undo)
-        if (tile.show) add(Row.ShowHidden)
-        if (tile.showOnHome != null) add(Row.ShowOnHome)
-        if (tile.move) add(Row.MoveTile)
-        if (tile.collections != null) add(Row.AddToCollection)
-        if (tile.favorite != null) add(Row.Favorite)
-        if (tile.art && app?.hiddenShelf != true) add(Row.ChooseArt)
-        if (tile.pin) add(Row.PinTile)
-        if (tile.select) add(Row.SelectTile)
-        if (tile.newCollection) add(Row.NewCollection)
-        if (tile.tidy) add(Row.Tidy)
-        if (tile.rename) add(Row.RenameFolder)
-        if (tile.icon) add(Row.FolderIcon)
-        if (tile.remove != null) add(Row.RemoveTile)
-        if (tile.removeDownload) add(Row.RemoveDownload)
-        if (tile.deleteShortcut) add(Row.DeleteShortcut)
-    }
-    if (app != null) {
-        if (app.hiddenShelf) {
-            add(Row.ShowApp)
-            if (tile?.art == true) add(Row.ChooseArt)
-        } else {
-            if (app.keepOnTop) add(Row.PinApp)
-            if (tile?.collections == null && app.destinations.isNotEmpty()) add(Row.AddAppTo)
-            add(Row.MoveApp)
-            if (tile?.remove == null) add(Row.HideApp)
-        }
-    }
+    if (tile.undo) add(Row.Undo)
+    if (tile.show) add(Row.ShowHidden)
+    if (tile.showOnHome != null) add(Row.ShowOnHome)
+    if (tile.move) add(Row.MoveTile)
+    if (tile.collections != null) add(Row.AddToCollection)
+    if (tile.moveTo != null) add(Row.MoveApp)
+    if (tile.art) add(Row.ChooseArt)
+    if (tile.select) add(Row.SelectTile)
+    if (tile.newCollection && tile.collections == null) add(Row.NewCollection)
+    if (tile.tidy) add(Row.Tidy)
+    if (tile.rename) add(Row.RenameFolder)
+    if (tile.icon) add(Row.FolderIcon)
+    if (tile.remove != null) add(Row.RemoveTile)
+    if (tile.hide) add(Row.Hide)
+    if (tile.removeDownload) add(Row.RemoveDownload)
+    if (tile.deleteShortcut) add(Row.DeleteShortcut)
 }
 
 /**
@@ -709,7 +692,7 @@ fun retainMenuRows(previous: PickerModel, next: PickerModel): PickerModel {
 
 private fun validMenuRows(rows: List<Row>, model: PickerModel): List<Row> = rows.filterNot {
     (it == Row.Undo && model.tileActions?.undo != true) ||
-        (model.tileActions?.kept == true && (it == Row.SelectTile || it == Row.MoveTile || it == Row.RemoveTile || it == Row.HideApp))
+        (model.tileActions?.kept == true && (it == Row.SelectTile || it == Row.MoveTile || it == Row.RemoveTile))
 }
 
 fun panelRows(panel: SidePanel, model: PickerModel): List<Row> = validMenuRows(
@@ -718,9 +701,8 @@ fun panelRows(panel: SidePanel, model: PickerModel): List<Row> = validMenuRows(
 private fun livePanelRows(panel: SidePanel, model: PickerModel): List<Row> = when (panel.level) {
     PanelLevel.Actions -> if (panel.recoveryOnly) {
         if (model.tileActions?.undo == true) listOf(Row.Undo) else emptyList()
-    } else actionRows(model.tileActions, model.appActions)
+    } else actionRows(model.tileActions)
     PanelLevel.Collections -> collectionRows(model.tileActions)
-    PanelLevel.AddTo -> model.appActions?.destinations.orEmpty().map { Row.Destination(it.folderId, it.name) }
     PanelLevel.RommConnection -> panel.connection?.let {
         listOf(Row.EditRomm(it.pluginId), Row.SignOut(it.pluginId, it.label))
     }.orEmpty()
@@ -800,18 +782,14 @@ fun rowText(row: Row, model: PickerModel): RowText = when (row) {
     )
     Row.AndroidGames -> RowText(Copy.androidGames)
     Row.Apps -> RowText(Copy.apps)
-    Row.HiddenApps -> RowText(Copy.hiddenAppsRow)
+    Row.Hidden -> RowText(Copy.hiddenAppsRow)
     Row.AllLibrary -> RowText(Copy.allLibrary)
     Row.AddNewGames -> RowText(Copy.addNewGames, if (model.addNewToHome) Copy.on else Copy.off)
-    Row.FavoritesOnHome -> RowText(Copy.favorites, if (model.favoritesOnHome) Copy.on else Copy.off)
     Row.RecentOnHome -> RowText(Copy.recentlyPlayed, if (model.recentOnHome) Copy.on else Copy.off)
     Row.Artwork -> RowText(Copy.artwork, if (model.artwork) Copy.on else Copy.off)
     Row.ArtKey -> RowText(Copy.steamGridDb, if (model.artKeySaved) Copy.forgetKey else Copy.addKey)
-    Row.PinApp -> RowText(Copy.keepOnTop)
-    Row.AddAppTo -> RowText(Copy.addTo)
-    Row.MoveApp -> RowText(if (model.appActions?.onGamesShelf == true) Copy.moveToApps else Copy.moveToGames)
-    Row.HideApp -> RowText(Copy.hideApp)
-    Row.ShowApp -> RowText(Copy.showApp)
+    Row.MoveApp -> RowText(if (model.tileActions?.moveTo == HOME_ANDROID_APPS) Copy.moveToApps else Copy.moveToGames)
+    Row.Hide -> RowText(Copy.hideApp)
     Row.ChooseArt -> RowText(ArtCopy.art)
     Row.MoveTile -> RowText(Copy.move)
     Row.Tidy -> RowText(Copy.tidy)
@@ -819,16 +797,12 @@ fun rowText(row: Row, model: PickerModel): RowText = when (row) {
     Row.AddToCollection -> RowText(Copy.addTo)
     is Row.Collection -> RowText(row.label)
     Row.SelectTile -> RowText(SelectionCopy.select)
-    Row.Favorite -> RowText(if (model.tileActions?.favorite == true) Copy.unfavorite else Copy.favorite)
-    Row.PinTile -> RowText(Copy.pinToHome)
-    is Row.Destination -> RowText(row.label)
     Row.NewCollection -> RowText(Copy.newCollection)
     Row.RenameFolder -> RowText(Copy.rename)
     Row.FolderIcon -> RowText(Copy.icon)
     Row.RemoveTile -> RowText(
         when (model.tileActions?.remove) {
             RemoveVerb.Unpin -> Copy.unpin
-            RemoveVerb.Hide -> Copy.hideApp
             RemoveVerb.Remove, null -> Copy.remove
         },
     )
@@ -889,12 +863,14 @@ sealed interface Effect {
 
     /** Settings › RetroArch cores: the picker that lets Foldcade see them. */
     data object ShowRetroArchCores : Effect
-    data object PinApp : Effect
-    /** Place the focused installed app on Home, or in the chosen folder. */
-    data class AddAppTo(val folderId: String?) : Effect
-    data object MoveApp : Effect
-    data object HideApp : Effect
-    data object ShowApp : Effect
+    /** Move the installed app [gameId] to the Android folder [folderId]. */
+    data class MoveApp(val gameId: String?, val folderId: String) : Effect
+
+    /** Hide [gameId] from Home, or the focused game when null. */
+    data class Hide(val gameId: String? = null) : Effect
+
+    /** Go to the board's folder [folderId] and open it, as L1's Games and Apps do. */
+    data class OpenFolder(val folderId: String) : Effect
     data class OpenAndroidSetting(val setting: AndroidSetting) : Effect
     data object OpenLicenses : Effect
     data object DismissButtonLabels : Effect
@@ -919,15 +895,11 @@ sealed interface Effect {
      * focused tile.
      */
 
-    /** Put the game in collection [folderId], or take it out. The menu stays open. */
+    /** Put the game in collection [folderId], or take it out; [HOME_ROOT] pins it. The menu stays open. */
     data class ToggleCollection(val folderId: String, val gameId: String? = null) : Effect
 
     /** A new collection, holding the game when there is one, then its name field. */
     data class NewCollection(val gameId: String? = null) : Effect
-    data class ToggleFavorite(val gameId: String? = null) : Effect
-
-    /** A tile for the game on the root. It stays where it is too. */
-    data class PinTile(val gameId: String? = null) : Effect
     data object RenameFolder : Effect
     data object ChooseFolderIcon : Effect
     data object RemoveTile : Effect
@@ -940,8 +912,8 @@ sealed interface Effect {
     data object OpenAll : Effect
     data object ToggleAddNew : Effect
 
-    /** Edit home's switch put Favorites or Recently played, [id], on Home or took it off. */
-    data class GroupOnHome(val id: String, val on: Boolean) : Effect
+    /** Edit home's switch put Recently played on Home or took it off. */
+    data class RecentOnHome(val on: Boolean) : Effect
 
     /** Open the notice's app on the top screen, or the bottom when [onBottom]. */
     data class OpenNotice(val id: String, val onBottom: Boolean) : Effect
@@ -1046,7 +1018,6 @@ data class PickerModel(
     /** Null while RetroArch is not installed. */
     val retroArch: RetroArchSetting? = null,
     val homeGrid: HomeGrid = HomeGrid.StandIns,
-    val appActions: AppActions? = null,
     /** What Y offers for the focused home or All tile. Null elsewhere. */
     val tileActions: TileActions? = null,
     /**
@@ -1070,8 +1041,7 @@ data class PickerModel(
     val usageGranted: Boolean = false,
     /** Mirrors the home board. Off keeps new scans out of the grid. */
     val addNewToHome: Boolean = true,
-    /** Mirror the home board: the Favorites and Recently played tiles are on the root. */
-    val favoritesOnHome: Boolean = true,
+    /** Mirrors the home board: the Recently played tile is on the root. */
     val recentOnHome: Boolean = false,
     /** Download game art from public sources. Off sends nothing; RomM's own covers still show. */
     val artwork: Boolean = true,
@@ -1284,7 +1254,7 @@ private fun openActions(model: PickerModel): PickerModel {
     if (model.count <= 0) {
         if (model.tileActions?.undo != true) return model
     } else if (model.focus.chrome != null) return model
-    if (actionRows(model.tileActions, model.appActions).isEmpty()) return model
+    if (actionRows(model.tileActions).isEmpty()) return model
     return model.copy(panel = freshPanel(Side.Left, model.focus).copy(
         level = PanelLevel.Actions, recoveryOnly = model.count <= 0))
 }
@@ -1725,10 +1695,9 @@ private fun backPanel(model: PickerModel, panel: SidePanel): Pair<PickerModel, E
             else model.copy(panel = null, focus = panel.grid) to null
         }
         PanelLevel.EditHome -> model.copy(panel = panel.copy(level = PanelLevel.Root, index = leftRows().indexOf(Row.EditHome))) to null
-        PanelLevel.Collections, PanelLevel.AddTo -> {
+        PanelLevel.Collections -> {
             val parent = panel.copy(level = panel.via)
-            val action = if (panel.level == PanelLevel.AddTo) Row.AddAppTo else Row.AddToCollection
-            val row = panelRows(parent, model).indexOf(action).coerceAtLeast(0)
+            val row = panelRows(parent, model).indexOf(Row.AddToCollection).coerceAtLeast(0)
             model.copy(panel = parent.copy(index = row)) to null
         }
         PanelLevel.Root, PanelLevel.Actions -> model.copy(panel = null, focus = panel.grid) to null
@@ -1816,13 +1785,12 @@ private fun activateRow(
         ) to Effect.ClearNotices
         is Row.PlayerSave -> model.copy(panel = null, focus = panel.grid) to Effect.ChoosePlayerSave(row.playerId)
         Row.RetroArchCores -> model.copy(panel = null, focus = panel.grid) to Effect.ShowRetroArchCores
-        Row.AndroidGames -> openGrid(model, panel, HomeGrid.AndroidGames)
-        Row.Apps -> openGrid(model, panel, HomeGrid.Apps)
-        Row.HiddenApps -> openGrid(model, panel, HomeGrid.HiddenApps)
+        Row.AndroidGames -> model.copy(panel = null, focus = panel.grid) to Effect.OpenFolder(HOME_ANDROID_GAMES)
+        Row.Apps -> model.copy(panel = null, focus = panel.grid) to Effect.OpenFolder(HOME_ANDROID_APPS)
+        Row.Hidden -> openGrid(model, panel, HomeGrid.Hidden)
         Row.AllLibrary -> model.copy(panel = null, focus = panel.grid, arranging = false, hold = null) to Effect.OpenAll
         Row.AddNewGames -> model.copy(panel = panel, addNewToHome = !model.addNewToHome) to Effect.ToggleAddNew
-        Row.FavoritesOnHome -> model.copy(panel = panel, favoritesOnHome = !model.favoritesOnHome) to Effect.GroupOnHome(HOME_FAVORITES, !model.favoritesOnHome)
-        Row.RecentOnHome -> model.copy(panel = panel, recentOnHome = !model.recentOnHome) to Effect.GroupOnHome(HOME_RECENT, !model.recentOnHome)
+        Row.RecentOnHome -> model.copy(panel = panel, recentOnHome = !model.recentOnHome) to Effect.RecentOnHome(!model.recentOnHome)
         Row.Artwork -> model.copy(panel = panel, artwork = !model.artwork) to null
         // A saved key is a credential: A only asks, and the dialog's Forget key forgets it.
         Row.ArtKey -> if (model.artKeySaved) {
@@ -1837,20 +1805,14 @@ private fun activateRow(
                 connectKind = ConnectKind.ArtKey,
             ) to Effect.OpenArtKey
         }
-        Row.PinApp -> model to Effect.PinApp
-        Row.AddAppTo -> model.copy(panel = panel.copy(level = PanelLevel.AddTo, index = 0, via = panel.level)) to null
-        Row.MoveApp -> model.copy(panel = null, focus = panel.grid) to Effect.MoveApp
-        Row.HideApp -> model.copy(panel = null, focus = panel.grid) to Effect.HideApp
-        Row.ShowApp -> model.copy(panel = null, focus = panel.grid) to Effect.ShowApp
+        Row.MoveApp -> model.copy(panel = null, focus = panel.grid) to model.tileActions?.moveTo?.let { Effect.MoveApp(model.tileActions.game, it) }
+        Row.Hide -> model.copy(panel = null, focus = panel.grid) to (model.tileActions?.bulk?.let { Effect.Bulk(BulkAction.Hide, it) } ?: Effect.Hide(model.tileActions?.game))
         Row.AddToCollection -> model.copy(panel = panel.copy(level = PanelLevel.Collections, index = 0, via = panel.level)) to null
         // The check flips here so it moves at once. The shell's own list replaces this one.
         is Row.Collection -> if (model.tileActions?.bulk != null) model.copy(panel = null, focus = panel.grid) to
             Effect.Bulk(BulkAction.Collection, model.tileActions.bulk, row.folderId) else model.copy(panel = panel, tileActions = model.tileActions?.toggled(row.folderId)) to
             Effect.ToggleCollection(row.folderId, model.tileActions?.game)
         Row.SelectTile -> model.copy(panel = null, focus = panel.grid) to model.tileActions?.game?.let(Effect::SelectTile)
-        Row.Favorite -> model.copy(panel = null, focus = panel.grid) to (model.tileActions?.bulk?.let { Effect.Bulk(BulkAction.Favorite, it) } ?: Effect.ToggleFavorite(model.tileActions?.game))
-        Row.PinTile -> model.copy(panel = null, focus = panel.grid) to (model.tileActions?.bulk?.let { Effect.Bulk(BulkAction.Pin, it) } ?: Effect.PinTile(model.tileActions?.game))
-        is Row.Destination -> model.copy(panel = null, focus = panel.grid) to Effect.AddAppTo(row.folderId)
         Row.ChooseArt -> model.copy(panel = null, focus = panel.grid) to Effect.ChooseArt(model.tileActions?.game)
         Row.MoveTile -> model.copy(panel = null, focus = panel.grid) to Effect.MoveTile
         Row.Tidy -> model.copy(panel = null, focus = panel.grid) to Effect.Tidy
@@ -1858,7 +1820,7 @@ private fun activateRow(
         Row.NewCollection -> model.copy(panel = null, focus = panel.grid) to (model.tileActions?.bulk?.let { Effect.Bulk(BulkAction.NewCollection, it) } ?: Effect.NewCollection(model.tileActions?.game))
         Row.RenameFolder -> model.copy(panel = null, focus = panel.grid) to Effect.RenameFolder
         Row.FolderIcon -> model.copy(panel = null, focus = panel.grid) to Effect.ChooseFolderIcon
-        Row.RemoveTile -> model.copy(panel = null, focus = panel.grid) to (model.tileActions?.bulk?.let { Effect.Bulk(BulkAction.Hide, it) } ?: Effect.RemoveTile)
+        Row.RemoveTile -> model.copy(panel = null, focus = panel.grid) to Effect.RemoveTile
         Row.Undo -> model.copy(panel = null, focus = panel.grid) to Effect.Undo
         Row.ShowHidden -> model.copy(panel = null, focus = panel.grid) to Effect.ShowHidden(model.tileActions?.game)
         Row.DeleteShortcut -> model.copy(panel = null, focus = panel.grid) to Effect.DeleteShortcut(model.tileActions?.game)

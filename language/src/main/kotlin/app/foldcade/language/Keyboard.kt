@@ -400,8 +400,9 @@ object KeyboardCopy {
     const val shift = "Shift"
     const val done = "Done"
 
-    /** Quick names, one or two words each. Favorites is left out: it is a collection of its own. */
+    /** Quick names, one or two words each. */
     val quickNames = listOf(
+        "Favorites",
         "Playing",
         "Backlog",
         "Finished",

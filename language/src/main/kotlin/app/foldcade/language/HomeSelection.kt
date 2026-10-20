@@ -16,21 +16,33 @@ data class HomeSelection(val view: String, val checked: Set<String> = emptySet()
     fun inView(next: String): HomeSelection? = takeIf { view == next }
 }
 
-enum class BulkAction { Collection, NewCollection, Pin, Favorite, Hide }
+enum class BulkAction { Collection, NewCollection, Hide }
+
+/** [id] is in the Add to choice [choiceId]: pinned, for [HOME_ROOT], else in that collection. */
+private fun inChoice(board: HomeBoard, choiceId: String, id: String): Boolean =
+    if (choiceId == HOME_ROOT) pinned(board, id) else id in board.folders[choiceId]?.slots.orEmpty()
 
 fun bulkCollectionChoices(board: HomeBoard, ids: List<String>): List<CollectionChoice> =
     if (ids.isEmpty()) emptyList() else collectionChoices(board, ids.first()).map { choice ->
-        val count = ids.count { it in board.folders[choice.folderId]?.slots.orEmpty() }
+        val count = ids.count { inChoice(board, choice.folderId, it) }
         choice.copy(member = count == ids.size, some = count > 0 && count < ids.size)
     }
 
-/** All means remove all; a partial or empty check means add the missing members. */
-fun bulkCollection(board: HomeBoard, collectionId: String, ids: List<String>): HomeBoard {
+/**
+ * All means remove all; a partial or empty check means add the missing members. [item] finds
+ * a game in the catalog, so a pin of one nowhere on Home files it in its folder too.
+ */
+fun bulkCollection(
+    board: HomeBoard,
+    collectionId: String,
+    ids: List<String>,
+    item: (String) -> HomeItem? = { null },
+    platforms: List<HomePlatform> = emptyList(),
+): HomeBoard {
     if (ids.isEmpty()) return board
-    val remove = ids.all { it in board.folders[collectionId]?.slots.orEmpty() }
+    val remove = ids.all { inChoice(board, collectionId, it) }
     return ids.distinct().fold(board) { next, id ->
-        val member = id in next.folders[collectionId]?.slots.orEmpty()
-        if (member == remove) toggleCollection(next, collectionId, id) else next
+        if (inChoice(next, collectionId, id) == remove) toggleCollection(next, collectionId, id, item(id), platforms) else next
     }
 }
 

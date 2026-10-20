@@ -3,8 +3,6 @@ package app.foldcade
 import android.view.KeyEvent
 import app.foldcade.api.plugin.MemoryCredentialStore
 import app.foldcade.host.PluginHost
-import app.foldcade.language.AndroidShelf
-import app.foldcade.language.AppShelfState
 import app.foldcade.language.BackgroundMotion
 import app.foldcade.language.HOME_ALL
 import app.foldcade.language.HomeBoard
@@ -261,8 +259,9 @@ class SettingsPersistenceTest {
         store.setRommOrigin("https://romm.example")
         store.saveButtonPrompt("controller", PromptKey.FaceA, dismissed = true)
         store.saveButtonPrompt("other", PromptKey.FaceB, dismissed = false)
-        val shelf = AppShelfState().move("game", AndroidShelf.Apps).hide("hidden").pin("favorite", true).show("player-app", true)
-        store.saveAppShelfState(shelf)
+        // What a release with Android shelves saved: read once, as the apps hidden there.
+        prefs.edit().putStringSet("android_shelf_apps", setOf("game")).putStringSet("android_shelf_hidden", setOf("hidden"))
+            .putStringSet("android_shelf_favorites", setOf("favorite")).putStringSet("android_shelf_shown", setOf("player-app")).apply()
         store.setHomePromptSettled()
         store.setFolderGrantExplained()
         store.setUsagePromptOffered()
@@ -278,7 +277,9 @@ class SettingsPersistenceTest {
         assertTrue(restored.buttonPromptDismissed("controller"))
         assertEquals(PromptKey.FaceB, restored.buttonPromptConfirm("other"))
         assertFalse(restored.buttonPromptDismissed("other"))
-        assertEquals(shelf, restored.appShelfState())
+        assertEquals(setOf("hidden"), restored.takeShelfHiddenApps())
+        assertEquals(emptySet<String>(), SessionStore(prefs).takeShelfHiddenApps())
+        assertFalse(prefs.all.keys.any { it.startsWith("android_shelf_") })
         assertTrue(restored.homePromptSettled())
         assertFalse(restored.folderGrantPending())
         assertTrue(restored.usagePromptOffered())
