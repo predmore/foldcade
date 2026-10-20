@@ -27,6 +27,7 @@ import app.foldcade.api.plugin.SyncOutcome
 import app.foldcade.api.plugin.SyncResult
 import app.foldcade.romm.KeptBoth
 import app.foldcade.romm.LocalSave
+import app.foldcade.romm.RomFileSummary
 import app.foldcade.romm.RomProgress
 import app.foldcade.romm.RomQuery
 import app.foldcade.romm.RomSummary
@@ -355,15 +356,23 @@ internal class RommLibrary internal constructor(
         val catalog = gate.restoreCatalog(wiring)
         val cached = runInterruptible(Dispatchers.IO) {
             val spec = catalog.rom(game.remoteKey)?.bytes() ?: readRomSpec(wiring.romRoot, romId)
-            spec?.let { verifiedRom(wiring.romRoot, romId, it) }
+            spec?.let { adoptCachedRom(wiring.romRoot, romId, it) }
         }
-        if (cached != null) return@withLock LaunchTarget.ContentUri(uri = wiring.contentUris.uriFor(cached))
+        if (cached != null) return@withLock launchTarget(wiring, cached.first, cached.second)
         report(romId, GameActivity.Downloading(0L, null))
         var done = false
         try {
             gate.call { current, ops ->
                 val rom = romFor(game, ops, gate.catalog(current))
                 val spec = rom.bytes()
+                val reporter = downloadReporter(rom.id)
+                // One bar for the game and its add-ons. A total is shown only when every size is known.
+                val sizes = listOf(spec.expectedSize) + spec.addOns.map { it.size }
+                val total = if (sizes.all { it != null }) sizes.sumOf { it!! } else null
+                var before = 0L
+                val progress: (RomProgress) -> Unit = { step ->
+                    reporter(if (step is RomProgress.Receiving) RomProgress.Receiving(before + step.bytes, total) else step)
+                }
                 val path = ops.downloadRom(
                     romId = rom.id,
                     fileName = spec.fileName,
@@ -371,16 +380,42 @@ internal class RommLibrary internal constructor(
                     fileIds = spec.fileIds,
                     expectedSize = spec.expectedSize,
                     expectedMd5 = spec.md5,
-                    progress = downloadReporter(rom.id),
+                    progress = progress,
                 )
-                runInterruptible(Dispatchers.IO) { writeRomSpec(current.romRoot, rom.id, spec) }
-                LaunchTarget.ContentUri(uri = current.contentUris.uriFor(path))
+                before += spec.expectedSize ?: 0L
+                for (addOn in spec.addOns) {
+                    ops.downloadRom(
+                        romId = rom.id,
+                        fileName = addOn.fileName,
+                        cacheRoot = current.romRoot,
+                        fileIds = listOf(addOn.id),
+                        expectedSize = addOn.size,
+                        expectedMd5 = addOn.md5,
+                        progress = progress,
+                        target = RommClient.besideRom(path, addOn.fileName),
+                    )
+                    before += addOn.size
+                }
+                runInterruptible(Dispatchers.IO) {
+                    if (spec.addOns.isNotEmpty()) pruneRomFolder(path, spec)
+                    writeRomSpec(current.romRoot, rom.id, spec)
+                }
+                launchTarget(current, path, spec)
             }.also { done = true }
         } finally {
             // A finished download is followed by the launch's save sync, which reports next.
             if (!done) report(romId, GameActivity.Idle)
         }
     }
+
+    /**
+     * The game file a player opens. A game with add-ons is handed over as a file in
+     * its folder, so a player such as Eden finds the update and DLC beside it.
+     */
+    private fun launchTarget(wiring: RommWiring, rom: Path, spec: RomBytes): LaunchTarget.ContentUri =
+        LaunchTarget.ContentUri(
+            uri = if (spec.addOns.isEmpty()) wiring.contentUris.uriFor(rom) else wiring.contentUris.folderUriFor(rom),
+        )
 
     /**
      * Deletes [game]'s downloaded ROM and the file list kept beside it, with no
@@ -705,6 +740,22 @@ internal fun Game.romId(): Long =
         ?: throw PluginException.NotFound("RomM game key is not a ROM id")
 
 internal fun RomSummary.bytes(): RomBytes {
+    soleGameFile()?.let { game ->
+        val taken = mutableSetOf(game.fileName.lowercase())
+        val addOns = files.filter { it.category in ADD_ON_CATEGORIES }.map { file ->
+            // Two files of one name in different folders still get a file each.
+            val name = if (taken.add(file.fileName.lowercase())) file.fileName else "${file.id}-${file.fileName}"
+            taken += name.lowercase()
+            AddOn(file.id, name, file.fileSizeBytes, file.md5Hash?.takeUnless { RommClient.isArchiveName(file.fileName) })
+        }
+        return RomBytes(
+            fileName = game.fileName,
+            fileIds = listOf(game.id),
+            expectedSize = game.fileSizeBytes,
+            md5 = game.md5Hash?.takeUnless { RommClient.isArchiveName(game.fileName) },
+            addOns = addOns,
+        )
+    }
     val multiple = hasMultipleFiles || hasNestedSingleFile
     val fileIds = if (multiple) files.map { it.id } else emptyList()
     val fileName = when {
@@ -718,19 +769,100 @@ internal fun RomSummary.bytes(): RomBytes {
     return RomBytes(fileName, fileIds, expectedSize, md5)
 }
 
+/**
+ * The one file a folder ROM boots, when RomM can say which: the only file at the
+ * top of the folder, with every other file filed under a category such as `update`,
+ * `dlc`, or `manual`. A Switch game with its update in `updates/` is one.
+ *
+ * Asked for several files, RomM sends one zip of them, which no player opens as
+ * the game. So the game is fetched alone, and its updates and DLC each on their own.
+ * A folder of one file, or one this cannot read, keeps the request it had.
+ */
+private fun RomSummary.soleGameFile(): RomFileSummary? {
+    if (hasSimpleSingleFile || files.size < 2) return null
+    val game = files.filter { it.isTopLevel == true }.singleOrNull() ?: return null
+    if (game.category != null && game.category != GAME_CATEGORY) return null
+    val rest = files.filter { it !== game }
+    if (rest.any { it.isTopLevel != false || it.category == null || it.category == GAME_CATEGORY }) return null
+    return game
+}
+
 /** What [RommClient.downloadRom] needs for one ROM. [md5] is null when RomM has no hash for it. */
 internal data class RomBytes(
     val fileName: String,
     val fileIds: List<Long>,
     val expectedSize: Long?,
     val md5: String? = null,
+    /** Updates and DLC, downloaded into the same folder as the game. */
+    val addOns: List<AddOn> = emptyList(),
 )
 
-/** The downloaded file for [spec] when its verified marker still matches, else null. */
+/** A file RomM files as `update` or `dlc` for a game. [fileName] is its name beside the game. */
+internal data class AddOn(
+    val id: Long,
+    val fileName: String,
+    val size: Long,
+    val md5: String? = null,
+)
+
+/** The downloaded game file for [spec] when it and its add-ons still match their verified markers, else null. */
 internal fun verifiedRom(cacheRoot: Path, romId: Long, spec: RomBytes): Path? {
     val target = RommClient.romCacheFile(cacheRoot, romId, spec.fileName, spec.fileIds)
-    return target.takeIf { RommClient.isVerifiedRom(it, spec.expectedSize, spec.md5) }
+    if (!RommClient.isVerifiedRom(target, spec.expectedSize, comparableMd5(spec))) return null
+    val addOnsVerified = spec.addOns.all { addOn ->
+        RommClient.isVerifiedRom(
+            RommClient.besideRom(target, addOn.fileName),
+            addOn.size,
+            comparableFileMd5(addOn.fileName, addOn.md5),
+        )
+    }
+    return target.takeIf { addOnsVerified }
 }
+
+/**
+ * Deletes finished downloads in [rom]'s folder that [spec] no longer names, such as
+ * an update RomM has since replaced, so a player that loads the folder finds only
+ * this game's current files.
+ */
+internal fun pruneRomFolder(rom: Path, spec: RomBytes) {
+    val keep = (listOf(rom) + spec.addOns.map { RommClient.besideRom(rom, it.fileName) })
+        .map { it.fileName.toString() }
+        .toSet()
+    val markers = Files.list(rom.parent).use { entries ->
+        entries.iterator().asSequence().filter { it.fileName.toString().endsWith(VERIFIED_SUFFIX) }.toList()
+    }
+    for (marker in markers) {
+        val file = marker.resolveSibling(marker.fileName.toString().removeSuffix(VERIFIED_SUFFIX))
+        if (file.fileName.toString() in keep) continue
+        Files.deleteIfExists(file)
+        Files.deleteIfExists(marker)
+    }
+}
+
+/**
+ * A finished download that matches [spec], even when the process died before the
+ * marker was written. The marker is written here, so an offline launch does not
+ * try the network. Add-ons have to match too. A file of the wrong size or hash
+ * is left for a real download.
+ */
+internal fun adoptCachedRom(cacheRoot: Path, romId: Long, spec: RomBytes): Pair<Path, RomBytes>? {
+    val target = RommClient.romCacheFile(cacheRoot, romId, spec.fileName, spec.fileIds)
+    if (!RommClient.adoptLocalRom(target, spec.expectedSize, comparableMd5(spec))) return null
+    val addOnsMatch = spec.addOns.all { addOn ->
+        RommClient.adoptLocalRom(
+            RommClient.besideRom(target, addOn.fileName),
+            addOn.size,
+            comparableFileMd5(addOn.fileName, addOn.md5),
+        )
+    }
+    return if (addOnsMatch) target to spec else null
+}
+
+/** RomM's hash of an archive is of the members, not the file, so it cannot be compared. */
+private fun comparableMd5(spec: RomBytes): String? = comparableFileMd5(spec.fileName, spec.md5)
+
+private fun comparableFileMd5(fileName: String, md5: String?): String? =
+    md5?.lowercase()?.takeUnless { RommClient.isArchiveName(fileName) }
 
 /** Kept beside the ROM, so a launch after a restart with no network can find it. */
 internal fun writeRomSpec(cacheRoot: Path, romId: Long, spec: RomBytes) {
@@ -739,6 +871,21 @@ internal fun writeRomSpec(cacheRoot: Path, romId: Long, spec: RomBytes) {
         put("file_ids", JsonArray(spec.fileIds.map { JsonPrimitive(it) }))
         spec.expectedSize?.let { put("expected_size", it) }
         spec.md5?.let { put("md5", it) }
+        if (spec.addOns.isNotEmpty()) {
+            put(
+                "add_ons",
+                JsonArray(
+                    spec.addOns.map { addOn ->
+                        buildJsonObject {
+                            put("id", addOn.id)
+                            put("file_name", addOn.fileName)
+                            put("size", addOn.size)
+                            addOn.md5?.let { put("md5", it) }
+                        }
+                    },
+                ),
+            )
+        }
     }
     writeDurably(romSpecFile(cacheRoot, romId), json.toString().toByteArray(Charsets.UTF_8))
 }
@@ -752,6 +899,15 @@ internal fun readRomSpec(cacheRoot: Path, romId: Long): RomBytes? = try {
             fileIds = it["file_ids"]?.jsonArray?.mapNotNull { id -> id.jsonPrimitive.longOrNull } ?: emptyList(),
             expectedSize = it["expected_size"]?.jsonPrimitive?.longOrNull,
             md5 = it["md5"]?.jsonPrimitive?.contentOrNull,
+            addOns = it["add_ons"]?.jsonArray?.map { element ->
+                val addOn = element as? JsonObject ?: return null
+                AddOn(
+                    id = addOn["id"]?.jsonPrimitive?.longOrNull ?: return null,
+                    fileName = addOn["file_name"]?.jsonPrimitive?.contentOrNull ?: return null,
+                    size = addOn["size"]?.jsonPrimitive?.longOrNull ?: return null,
+                    md5 = addOn["md5"]?.jsonPrimitive?.contentOrNull,
+                )
+            } ?: emptyList(),
         )
     }
 } catch (_: Exception) {
@@ -788,8 +944,11 @@ internal fun RomSummary.toGame(
 internal fun cacheAvailability(cacheRoot: Path, rom: RomSummary): Availability {
     val spec = rom.bytes()
     val target = RommClient.romCacheFile(cacheRoot, rom.id, spec.fileName, spec.fileIds)
-    val partial = target.resolveSibling(target.fileName.toString() + ".partial")
-    return if (Files.isRegularFile(target) && !Files.exists(partial)) {
+    val files = listOf(target) + spec.addOns.map { RommClient.besideRom(target, it.fileName) }
+    val whole = files.all { file ->
+        Files.isRegularFile(file) && !Files.exists(file.resolveSibling(file.fileName.toString() + ".partial"))
+    }
+    return if (whole) {
         Availability.Cached
     } else {
         Availability.RemoteOnly
@@ -933,3 +1092,12 @@ private const val LAUNCH_SYNC_LIMIT_MS = 20_000L
 internal const val ARCHIVE_SLOT = "archive"
 
 private const val ROM_SPEC_FILE = "rom.json"
+
+/** [RommClient.downloadRom] marks a finished, checked file with this sibling. */
+private const val VERIFIED_SUFFIX = ".verified"
+
+/** RomM's `category` for the file that boots. */
+private const val GAME_CATEGORY = "game"
+
+/** RomM's `category` values for files a player loads with the game, from its folder. */
+private val ADD_ON_CATEGORIES = setOf("update", "dlc")

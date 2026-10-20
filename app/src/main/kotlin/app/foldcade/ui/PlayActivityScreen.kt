@@ -40,6 +40,7 @@ import app.foldcade.language.PlayActivityPage
 import app.foldcade.language.PlayCopy
 import app.foldcade.language.PlayWeek
 import app.foldcade.language.PromptKey
+import app.foldcade.language.promptKeyOf
 import app.foldcade.language.Theme
 import app.foldcade.language.playDuration
 import app.foldcade.language.playWeek
@@ -83,7 +84,10 @@ internal fun PlayActivityScreen(app: FoldcadeApp, page: PlayActivityPage) {
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(12.dp),
             ) {
-                Image(themeIconPainter(R.drawable.ic_btn_b), contentDescription = null, modifier = Modifier.size(32.dp))
+                PromptImage(
+                    promptGlyph(promptKeyOf(app.shell.model.faceMap.backKey) ?: PromptKey.FaceB),
+                    32.dp,
+                )
                 BasicText(PlayCopy.activity, style = playText(theme.onBackground, theme, LocalFoldTheme.current.theme.style.type.heroTitle, bold = true))
             }
             Spacer(Modifier.weight(1f))

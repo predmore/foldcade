@@ -62,6 +62,8 @@ internal fun readRommToken(
  *
  * [cacheRoot] holds downloaded ROMs, which can be downloaded again. [cachePath]
  * is its first segment in a content URI, the name the FileProvider gives that root.
+ * [folderAuthority] is the documents provider for a game's download folder, see
+ * [RommFolderProvider]. Null hands every game over as one plain file.
  * [artCacheRoot] holds cover art, in the app cache.
  * [dataRoot] holds saves and the device id, and must not be a cache directory.
  * [saveBytes] reads a save the player wrote at a content URI.
@@ -76,6 +78,7 @@ fun publishRommWiring(
     platforms: List<Platform> = emptyList(),
     contentAuthority: String = ROMM_CONTENT_AUTHORITY,
     cachePath: String = "romm",
+    folderAuthority: String? = null,
     dataRoot: Path,
     artCacheRoot: Path = cacheRoot,
     saveBytes: SaveBytes = SaveBytes { null },
@@ -84,7 +87,7 @@ fun publishRommWiring(
         cacheRoot = cacheRoot,
         dataRoot = dataRoot,
         platforms = platforms,
-        contentUris = CachePathContentUri(cacheRoot, contentAuthority, dataRoot, cachePath),
+        contentUris = CachePathContentUri(cacheRoot, contentAuthority, dataRoot, cachePath, folderAuthority),
         saveBytes = saveBytes,
         tokenFor = { key -> readRommToken(store, onMainThread = rommTokenReadOnMainThread(), key = key) },
         artCacheRoot = artCacheRoot,

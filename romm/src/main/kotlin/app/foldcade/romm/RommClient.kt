@@ -292,6 +292,9 @@ class RommClient(
      * gave them, and are synced to storage before the rename that publishes them.
      * Two calls for the same file take turns. [progress] hears the bytes as they
      * arrive, then [RomProgress.Checking] while the hash is computed.
+     *
+     * [target] is where the file is written. By default it is [romCacheFile];
+     * a game's update or DLC passes a file beside the game instead.
      */
     suspend fun downloadRom(
         romId: Long,
@@ -301,9 +304,9 @@ class RommClient(
         expectedSize: Long? = null,
         expectedMd5: String? = null,
         progress: ((RomProgress) -> Unit)? = null,
+        target: Path = romCacheFile(cacheRoot, romId, fileName, fileIds),
     ): Path {
         require(romId >= 1)
-        val target = romCacheFile(cacheRoot, romId, fileName, fileIds)
         // RomM hashes an archive by its members, not its bytes, so only its size can be checked.
         val md5 = expectedMd5?.lowercase()?.takeUnless { isArchiveName(fileName) }
         return romLock(target).withLock {
@@ -326,12 +329,7 @@ class RommClient(
             if (isVerifiedRom(target, expectedSize, expectedMd5)) return target
             progress?.invoke(RomProgress.Checking)
             val reusable = withContext(Dispatchers.IO) {
-                val size = Files.size(target)
-                if (expectedSize != null && size != expectedSize) return@withContext false
-                val md5 = runInterruptible { md5File(target) }
-                if (expectedMd5 != null && md5 != expectedMd5) return@withContext false
-                writeVerifiedMarker(target, size, md5)
-                true
+                adoptLocalRom(target, expectedSize, expectedMd5)
             }
             if (reusable) return target
             // The old file stays until a verified replacement is renamed over it.
@@ -1174,6 +1172,9 @@ class RommClient(
             return dir.resolve(safe)
         }
 
+        /** Where [downloadRom] keeps [fileName] in the same folder as [rom], such as a game's update. */
+        fun besideRom(rom: Path, fileName: String): Path = rom.resolveSibling(safeFileName(fileName))
+
         private fun encode(value: String): String =
             URLEncoder.encode(value, StandardCharsets.UTF_8).replace("+", "%20")
 
@@ -1198,6 +1199,23 @@ class RommClient(
          * [expectedSize] and [expectedMd5]. A null expectation is not checked.
          * Reads no ROM bytes, so it is cheap enough for a launch with no network.
          */
+        /**
+         * A finished file whose size and hash match [expectedSize] and [expectedMd5],
+         * including one whose marker was never written. Writes the marker when the
+         * bytes match, so the next launch needs no network and no token. A partial
+         * download is left alone. A null expectation is not checked.
+         */
+        fun adoptLocalRom(target: Path, expectedSize: Long?, expectedMd5: String?): Boolean {
+            if (!Files.isRegularFile(target) || Files.exists(partialOf(target))) return false
+            if (isVerifiedRom(target, expectedSize, expectedMd5)) return true
+            val size = Files.size(target)
+            if (expectedSize != null && size != expectedSize) return false
+            val md5 = md5File(target)
+            if (expectedMd5 != null && !md5.equals(expectedMd5, ignoreCase = true)) return false
+            writeVerifiedMarker(target, size, md5)
+            return true
+        }
+
         fun isVerifiedRom(target: Path, expectedSize: Long?, expectedMd5: String?): Boolean {
             if (!Files.isRegularFile(target) || Files.exists(partialOf(target))) return false
             val size = Files.size(target)

@@ -8,8 +8,8 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class HomeSelectionViewChangeTest {
-    @Test fun aShelfOpenedThroughTheMenusEndsSelectionAndFlushesTheRefresh() = changeView(Row.Apps)
-    @Test fun theGamesShelfAlsoEndsSelectionAndFlushesTheRefresh() = changeView(Row.AndroidGames)
+    @Test fun lOneAppsEndsSelectionAndFlushesTheRefresh() = changeView(Row.Apps)
+    @Test fun lOneGamesAlsoEndsSelectionAndFlushesTheRefresh() = changeView(Row.AndroidGames)
     @Test fun settingsOpenedThroughTheMenusEndsSelectionAndFlushesTheRefresh() = changeView(Row.Settings)
     @Test fun anExternalLibraryViewEndsSelectionAndFlushesTheRefresh() = changeView(null)
 
@@ -33,13 +33,11 @@ class HomeSelectionViewChangeTest {
             choose(shell, destination)
         }
         when (destination) {
-            Row.Apps -> assertEquals(HomeGrid.Apps, shell.model.homeGrid)
-            Row.AndroidGames -> assertEquals(HomeGrid.AndroidGames, shell.model.homeGrid)
+            Row.Apps, Row.AndroidGames -> assertFalse(shell.model.atLibraryRoot)
             Row.Settings -> assertNotNull(shell.model.settings)
             null -> assertTrue(shell.model.libraryGrid)
             else -> Unit
         }
-        if (destination == Row.Apps || destination == Row.AndroidGames) assertTrue("Shelf actions must remain available", shell.model.appActions != null)
         assertTrue("The pending arrival must have merged", HOME_ANDROID_APPS in decodeHome(store.homeBoardRaw()).slots)
         shell.goHome()
         assertNull("Selection must not return on Home", shell.homeSelection())

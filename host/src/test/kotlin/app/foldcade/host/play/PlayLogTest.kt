@@ -189,6 +189,8 @@ class PlayLogTest {
         log.signal(id, PlaySignal.End)
         assertEquals(2_000L, log.totals("one").activeMillis)
         assertEquals(5_000_000L, log.totals("one").lastPlayedMillis)
+        wall = 2_000L
+        assertEquals(1_000L, log.totals("one").lastPlayedMillis)
     }
 
     @Test
