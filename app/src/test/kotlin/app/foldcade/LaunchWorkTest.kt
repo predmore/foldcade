@@ -35,4 +35,29 @@ class LaunchWorkTest {
         assertFalse(work.current(next))
         assertTrue(work.current(replacement))
     }
+
+    @Test
+    fun destroyingTheStarterCancelsOnlyItsLaunch() = runBlocking {
+        val work = LaunchWork()
+        val first = work.begin()
+        val second = work.begin()
+        cancelLaunchIfOwned(work, first)
+        assertTrue(work.current(second))
+
+        val started = CompletableDeferred<Unit>()
+        var delivered = false
+        val download = launch {
+            started.complete(Unit)
+            CompletableDeferred<Unit>().await()
+            delivered = true
+        }
+        work.job = download
+        started.await()
+        cancelLaunchIfOwned(work, second)
+        download.join()
+        assertFalse(delivered)
+        assertTrue(download.isCancelled)
+        assertFalse(work.current(second))
+        assertFalse(work.active)
+    }
 }

@@ -34,6 +34,9 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import kotlin.math.min
 
+/** The finger target. The drawn track stays the theme's height, centred in this box. */
+internal const val SLIDER_TOUCH_TARGET_DP = 48
+
 /**
  * A label, its value, and a slider under them: music volume in Settings, and
  * brightness in R1. Left and right step it from the keys. A tap on the label
@@ -100,7 +103,7 @@ fun SliderRow(
                 .padding(top = if (showLabel) 8.dp else 0.dp)
                 .fillMaxWidth()
                 .then(if (showLabel) Modifier else Modifier.semantics { contentDescription = "$label $value" })
-                .height(36.dp)
+                .height(SLIDER_TOUCH_TARGET_DP.dp)
                 .graphicsLayer { clip = false }
                 .drawWithContent {
                     val trackHeight = controls.sliderTrackDp.dp.toPx()

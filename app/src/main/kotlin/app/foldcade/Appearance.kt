@@ -8,6 +8,7 @@ import android.util.Log
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.text.font.Font
 import androidx.compose.ui.text.font.FontFamily
+import app.foldcade.language.backdropAfterBrokenScene
 import app.foldcade.language.BackgroundMotion
 import app.foldcade.language.FALLBACK_THEME_ID
 import app.foldcade.language.MusicTrack
@@ -18,6 +19,7 @@ import app.foldcade.language.loadThemeCatalog
 import app.foldcade.language.themeAssetCacheKey
 import app.foldcade.language.ThemeZip
 import java.io.InputStream
+import app.foldcade.language.fontOrInherited
 import app.foldcade.language.fontZipName
 import app.foldcade.language.readThemeZip
 import app.foldcade.language.soundZipName
@@ -87,7 +89,10 @@ class PackagedTheme(
                 focus = file.focus,
                 iconRadius = file.iconRadius,
                 artScale = file.artScale,
-                font = loadFont(context, fontName?.let { fontEntries[it] }, fontName),
+                font = fontOrInherited(
+                    loadFont(context, fontName?.let { fontEntries[it] }, fontName),
+                    inherit?.paint?.theme?.font,
+                ),
                 style = resources.style,
             )
             PackagedTheme(
@@ -99,7 +104,12 @@ class PackagedTheme(
                     icons = resources.icons.mapValues { (_, icon) -> listOf(icon) },
                 ),
                 sounds = ThemeSounds(context, entries + inherit?.entries.orEmpty().filterKeys { it.startsWith("sounds/") && it !in entries }, resources.style.sound.volume),
-                backgroundMotion = resources.defaultBackground,
+                backgroundMotion = backdropAfterBrokenScene(
+                    resources.defaultBackground,
+                    resources.file.backgroundMotion,
+                    resources.file.sceneFiles.size,
+                    inherit?.resources?.defaultBackground,
+                ),
                 music = themeMusic(context, file.name, json, entries),
                 resources = resources,
                 entries = entries,
@@ -110,8 +120,8 @@ class PackagedTheme(
         }
 
 
-        private fun loadFont(context: Context, bytes: ByteArray?, name: String?): FontFamily {
-            if (bytes == null || name == null) return FontFamily.SansSerif
+        private fun loadFont(context: Context, bytes: ByteArray?, name: String?): FontFamily? {
+            if (bytes == null || name == null) return null
             return try {
                 val ext = name.substringAfterLast('.', "ttf")
                 val file = File(context.cacheDir, "theme-${themeAssetCacheKey(bytes)}-font.$ext")
@@ -119,7 +129,7 @@ class PackagedTheme(
                 FontFamily(Font(file))
             } catch (error: Exception) {
                 Log.w("Foldcade", "Theme font ignored", error)
-                FontFamily.SansSerif
+                null
             }
         }
 

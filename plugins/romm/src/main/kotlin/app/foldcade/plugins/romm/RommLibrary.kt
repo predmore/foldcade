@@ -356,7 +356,7 @@ internal class RommLibrary internal constructor(
         val catalog = gate.restoreCatalog(wiring)
         val cached = runInterruptible(Dispatchers.IO) {
             val spec = catalog.rom(game.remoteKey)?.bytes() ?: readRomSpec(wiring.romRoot, romId)
-            spec?.let { known -> verifiedRom(wiring.romRoot, romId, known)?.let { it to known } }
+            spec?.let { adoptCachedRom(wiring.romRoot, romId, it) }
         }
         if (cached != null) return@withLock launchTarget(wiring, cached.first, cached.second)
         report(romId, GameActivity.Downloading(0L, null))
@@ -807,10 +807,15 @@ internal data class AddOn(
 
 /** The downloaded game file for [spec] when it and its add-ons still match their verified markers, else null. */
 internal fun verifiedRom(cacheRoot: Path, romId: Long, spec: RomBytes): Path? {
+    if (!RommClient.canCheckRom(spec.fileIds, spec.expectedSize, spec.md5)) return null
     val target = RommClient.romCacheFile(cacheRoot, romId, spec.fileName, spec.fileIds)
-    if (!RommClient.isVerifiedRom(target, spec.expectedSize, spec.md5)) return null
+    if (!RommClient.isVerifiedRom(target, spec.expectedSize, comparableMd5(spec))) return null
     val addOnsVerified = spec.addOns.all { addOn ->
-        RommClient.isVerifiedRom(RommClient.besideRom(target, addOn.fileName), addOn.size, addOn.md5)
+        RommClient.isVerifiedRom(
+            RommClient.besideRom(target, addOn.fileName),
+            addOn.size,
+            comparableFileMd5(addOn.fileName, addOn.md5),
+        )
     }
     return target.takeIf { addOnsVerified }
 }
@@ -834,6 +839,31 @@ internal fun pruneRomFolder(rom: Path, spec: RomBytes) {
         Files.deleteIfExists(marker)
     }
 }
+
+/**
+ * A finished download that matches [spec], even when the process died before the
+ * marker was written. The marker is written here, so an offline launch does not
+ * try the network. Add-ons have to match too. A file of the wrong size or hash
+ * is left for a real download.
+ */
+internal fun adoptCachedRom(cacheRoot: Path, romId: Long, spec: RomBytes): Pair<Path, RomBytes>? {
+    val target = RommClient.romCacheFile(cacheRoot, romId, spec.fileName, spec.fileIds)
+    if (!RommClient.adoptLocalRom(target, spec.expectedSize, comparableMd5(spec))) return null
+    val addOnsMatch = spec.addOns.all { addOn ->
+        RommClient.adoptLocalRom(
+            RommClient.besideRom(target, addOn.fileName),
+            addOn.size,
+            comparableFileMd5(addOn.fileName, addOn.md5),
+        )
+    }
+    return if (addOnsMatch) target to spec else null
+}
+
+/** RomM's hash of an archive is of the members, not the file, so it cannot be compared. */
+private fun comparableMd5(spec: RomBytes): String? = comparableFileMd5(spec.fileName, spec.md5)
+
+private fun comparableFileMd5(fileName: String, md5: String?): String? =
+    md5?.lowercase()?.takeUnless { RommClient.isArchiveName(fileName) }
 
 /** Kept beside the ROM, so a launch after a restart with no network can find it. */
 internal fun writeRomSpec(cacheRoot: Path, romId: Long, spec: RomBytes) {
