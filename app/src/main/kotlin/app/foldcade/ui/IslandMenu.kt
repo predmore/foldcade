@@ -44,7 +44,6 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.layout
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.SolidColor
@@ -55,6 +54,7 @@ import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.isSpecified
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.zIndex
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import app.foldcade.FoldcadeApp
 import app.foldcade.R
 import app.foldcade.Panel
@@ -70,7 +70,6 @@ import app.foldcade.language.SidePanel
 import app.foldcade.language.playDuration
 import app.foldcade.language.playToday
 import app.foldcade.millisUntilNextMinute
-import app.foldcade.readDeviceStatus
 import java.time.LocalDate
 import java.time.ZoneId
 import kotlin.math.abs
@@ -471,19 +470,8 @@ internal fun bellStatusIcon(count: Int): Int? = when {
 @Composable
 private fun StatusIcons(app: FoldcadeApp, open: () -> Float, scale: Float) {
     val theme = LocalFoldTheme.current.theme
-    val context = LocalContext.current
-    var status by remember { mutableStateOf(readDeviceStatus(context)) }
-    LaunchedEffect(context) {
-        while (true) {
-            status = readDeviceStatus(context)
-            delay(millisUntilNextMinute(System.currentTimeMillis()))
-        }
-    }
-    // Battery, Wi-Fi, and Bluetooth change between minutes. Opening R1 reads them again.
+    val status by app.deviceStatus.status.collectAsStateWithLifecycle()
     val opened by remember { derivedStateOf { open() > 0f } }
-    LaunchedEffect(opened) {
-        if (opened) status = readDeviceStatus(context)
-    }
     // The bell opens its place as the first notice comes and closes it after the last,
     // still showing the count it had.
     val notices = app.shell.model.notices.size

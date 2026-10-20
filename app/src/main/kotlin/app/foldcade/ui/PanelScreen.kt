@@ -129,6 +129,7 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.zIndex
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import app.foldcade.language.heroPlayLine
 import app.foldcade.language.typingFaces
 import app.foldcade.language.FindEntry
@@ -149,8 +150,6 @@ import app.foldcade.CenterFocus
 import app.foldcade.language.AchievementCopy
 import app.foldcade.language.achievementLine
 import app.foldcade.language.achievementPoints
-import app.foldcade.millisUntilNextMinute
-import app.foldcade.readDeviceStatus
 import app.foldcade.language.PlayCopy
 import app.foldcade.language.SettingsCopy
 import app.foldcade.language.promptKeyOf
@@ -674,18 +673,9 @@ private fun CommandCenterScreen(
 ) {
     val design = LocalFoldTheme.current.theme.style
     val theme = foldTheme()
-    val context = LocalContext.current
-    var status by remember { mutableStateOf(readDeviceStatus(context)) }
+    val status by app.deviceStatus.status.collectAsStateWithLifecycle()
     // The wall clock's minute, so the cluster keeps stepping when this screen is shown again.
-    var minute by remember { mutableStateOf(System.currentTimeMillis() / 60_000L) }
-    LaunchedEffect(context) {
-        while (true) {
-            status = readDeviceStatus(context)
-            minute = System.currentTimeMillis() / 60_000L
-            delay(millisUntilNextMinute(System.currentTimeMillis()))
-        }
-    }
-    val (driftX, driftY) = CENTER_DRIFT[(minute % CENTER_DRIFT.size).toInt()]
+    val (driftX, driftY) = CENTER_DRIFT[(status.minute % CENTER_DRIFT.size).toInt()]
     val center = app.commandCenter
     val panel = (subject as? CenterSubject.App)?.panel
     val achievements = panel?.let(center::achievements)

@@ -945,15 +945,23 @@ internal fun RomSummary.toGame(
 internal fun cacheAvailability(cacheRoot: Path, rom: RomSummary): Availability {
     val spec = rom.bytes()
     val target = RommClient.romCacheFile(cacheRoot, rom.id, spec.fileName, spec.fileIds)
-    val files = listOf(target) + spec.addOns.map { RommClient.besideRom(target, it.fileName) }
-    val whole = files.all { file ->
-        Files.isRegularFile(file) && !Files.exists(file.resolveSibling(file.fileName.toString() + ".partial"))
+    val files = listOf(target to (spec.expectedSize to spec.md5)) + spec.addOns.map { addOn ->
+        val hash = addOn.md5?.takeUnless { RommClient.isArchiveName(addOn.fileName) }
+        RommClient.besideRom(target, addOn.fileName) to (addOn.size as Long? to hash)
     }
-    return if (whole) {
-        Availability.Cached
-    } else {
-        Availability.RemoteOnly
+    val whole = files.all { (file, expected) ->
+        Files.isRegularFile(file) &&
+            !Files.exists(file.resolveSibling(file.fileName.toString() + ".partial")) &&
+            localRomMatches(file, expected.first, expected.second)
     }
+    return if (whole) Availability.Cached else Availability.RemoteOnly
+}
+
+/** A file on disk matches the size and hash RomM published. A missing check is not a mismatch. */
+internal fun localRomMatches(target: Path, expectedSize: Long?, expectedMd5: String?): Boolean {
+    if (expectedSize != null && Files.size(target) != expectedSize) return false
+    if (expectedMd5 != null && !md5File(target).equals(expectedMd5, ignoreCase = true)) return false
+    return true
 }
 
 internal fun SaveSyncReport.toResult(): SyncResult {
