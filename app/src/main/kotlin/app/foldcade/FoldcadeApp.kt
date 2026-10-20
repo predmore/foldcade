@@ -3,6 +3,7 @@ package app.foldcade
 import app.foldcade.language.ArtChoices
 import app.foldcade.language.ArtMatch
 import app.foldcade.language.ArtKind
+import android.app.ActivityManager
 import android.app.Application
 import android.content.BroadcastReceiver
 import android.content.Context
@@ -92,6 +93,8 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
 import java.lang.ref.WeakReference
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
@@ -222,6 +225,9 @@ class FoldcadeApp : Application() {
     /** The external player session opened by the host launch path. */
     val externalPlay = ExternalPlay()
 
+    /** Looks for the open player's process exit while Home stays behind it. */
+    private var playerExitWatch: Job? = null
+
     /** The quiet screen beside a single-screen app, and how bright it is. */
     lateinit var commandCenter: CommandCenter
         private set
@@ -293,6 +299,46 @@ class FoldcadeApp : Application() {
         override fun onDisplayChanged(displayId: Int) {
             if (displayId == externalPlay.displayId) notePlayScreen()
         }
+    }
+
+    /**
+     * After a player start, watch that package's process exits. Home coming
+     * forward still ends the session the usual way. A crash that never brings
+     * Home forward ends it here, so play time stops. Foldcade's own package
+     * is the stand-in and is not watched. Without usage access the lookup
+     * throws and the watch stops; the session then waits for Home, as before.
+     */
+    internal fun noteExternalPlayerOpened() {
+        playerExitWatch?.cancel()
+        playerExitWatch = null
+        val watched = externalPlay.packageName
+        if (watched == null || !watchPlayerPackage(watched, packageName)) return
+        playerExitWatch = scope.launch {
+            while (isActive) {
+                delay(PLAYER_EXIT_POLL_MS)
+                if (externalPlay.sessionId == null || externalPlay.packageName != watched) return@launch
+                val exits = try {
+                    playerExitTimestamps(watched)
+                } catch (_: SecurityException) {
+                    return@launch
+                }
+                val ended = withContext(Dispatchers.Main.immediate) {
+                    if (externalPlay.sessionId == null || externalPlay.packageName != watched) return@withContext true
+                    if (restartStillExpected(SystemClock.uptimeMillis(), pendingRestart?.until)) return@withContext false
+                    val started = externalPlay.startedAtMillis ?: return@withContext true
+                    if (!playerDiedAfterStart(started, exits)) return@withContext false
+                    externalPlay.endBecausePlayerGone(plays)
+                    true
+                }
+                if (ended) return@launch
+            }
+        }
+    }
+
+    /** Process-exit times for [packageName], newest history Android still has. */
+    internal fun playerExitTimestamps(packageName: String): List<Long> {
+        val manager = getSystemService(ActivityManager::class.java) ?: return emptyList()
+        return manager.getHistoricalProcessExitReasons(packageName, 0, 20).map { it.timestamp }
     }
 
     /** Reads the external game's screen now. A game opened with the lid already closed starts asleep. */
