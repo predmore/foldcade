@@ -81,7 +81,18 @@ class SaveConflictPromptTest {
         val local = prompt.copy(focus = SaveConflictFocus.Local)
         assertEquals(SaveConflictFocus.KeepBoth, applySaveConflict(local, Meaning.MoveDown).first.focus)
         val remote = prompt.copy(focus = SaveConflictFocus.Remote)
-        assertEquals(SaveConflictFocus.KeepBoth, applySaveConflict(remote, Meaning.MoveLeft).first.focus)
+        assertEquals(SaveConflictFocus.KeepBoth, applySaveConflict(remote, Meaning.MoveDown).first.focus)
+    }
+
+    @Test
+    fun leftAndRightMoveBetweenTheTwoCopies() {
+        val local = prompt.copy(focus = SaveConflictFocus.Local)
+        val remote = prompt.copy(focus = SaveConflictFocus.Remote)
+        assertEquals(SaveConflictFocus.Remote, applySaveConflict(local, Meaning.MoveRight).first.focus)
+        assertEquals(SaveConflictFocus.Local, applySaveConflict(remote, Meaning.MoveLeft).first.focus)
+        assertEquals(SaveConflictFocus.Local, applySaveConflict(local, Meaning.MoveLeft).first.focus)
+        assertEquals(SaveConflictFocus.Remote, applySaveConflict(remote, Meaning.MoveRight).first.focus)
+        assertEquals(SaveConflictFocus.Local, applySaveConflict(prompt, Meaning.MoveUp).first.focus)
     }
 
     @Test
