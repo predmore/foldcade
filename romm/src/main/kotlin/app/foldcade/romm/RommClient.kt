@@ -329,12 +329,7 @@ class RommClient(
             if (isVerifiedRom(target, expectedSize, expectedMd5)) return target
             progress?.invoke(RomProgress.Checking)
             val reusable = withContext(Dispatchers.IO) {
-                val size = Files.size(target)
-                if (expectedSize != null && size != expectedSize) return@withContext false
-                val md5 = runInterruptible { md5File(target) }
-                if (expectedMd5 != null && md5 != expectedMd5) return@withContext false
-                writeVerifiedMarker(target, size, md5)
-                true
+                adoptLocalRom(target, expectedSize, expectedMd5)
             }
             if (reusable) return target
             // The old file stays until a verified replacement is renamed over it.
@@ -1204,6 +1199,23 @@ class RommClient(
          * [expectedSize] and [expectedMd5]. A null expectation is not checked.
          * Reads no ROM bytes, so it is cheap enough for a launch with no network.
          */
+        /**
+         * A finished file whose size and hash match [expectedSize] and [expectedMd5],
+         * including one whose marker was never written. Writes the marker when the
+         * bytes match, so the next launch needs no network and no token. A partial
+         * download is left alone. A null expectation is not checked.
+         */
+        fun adoptLocalRom(target: Path, expectedSize: Long?, expectedMd5: String?): Boolean {
+            if (!Files.isRegularFile(target) || Files.exists(partialOf(target))) return false
+            if (isVerifiedRom(target, expectedSize, expectedMd5)) return true
+            val size = Files.size(target)
+            if (expectedSize != null && size != expectedSize) return false
+            val md5 = md5File(target)
+            if (expectedMd5 != null && !md5.equals(expectedMd5, ignoreCase = true)) return false
+            writeVerifiedMarker(target, size, md5)
+            return true
+        }
+
         fun isVerifiedRom(target: Path, expectedSize: Long?, expectedMd5: String?): Boolean {
             if (!Files.isRegularFile(target) || Files.exists(partialOf(target))) return false
             val size = Files.size(target)
