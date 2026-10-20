@@ -505,6 +505,9 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
 
     override fun onDestroy() {
         usageReconcile.cancel()
+        // A download still running on this instance would finish on a dead
+        // activity and, if the start threw, send both screens home.
+        cancelLaunchIfOwned(foldcade.launchWork, ownedLaunch)
         recoveryWindow?.close()
         foldcade.homeDestroyed(this)
         val manager = getSystemService(DisplayManager::class.java)
@@ -1352,7 +1355,10 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
         closeConfirmed = false
     }
 
-    private fun beginLaunch(): Int = foldcade.launchWork.begin()
+    /** The generation this activity started, so its destruction does not cancel a later one. */
+    private var ownedLaunch: Int? = null
+
+    private fun beginLaunch(): Int = foldcade.launchWork.begin().also { ownedLaunch = it }
 
     /** Drops an in-flight launch so a late result cannot open a missing-player dialog. */
     private fun cancelLaunches() {
