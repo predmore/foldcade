@@ -6,9 +6,6 @@ import app.foldcade.language.MotionSpeed
 import app.foldcade.language.decodeSameGames
 import app.foldcade.language.encodeSameGames
 import app.foldcade.language.savedBeforeCollections
-import app.foldcade.language.AndroidShelf
-import app.foldcade.language.AppShelfRecord
-import app.foldcade.language.AppShelfState
 import app.foldcade.language.HomeMusicSetting
 import app.foldcade.language.LibrarySort
 import app.foldcade.language.PromptKey
@@ -239,27 +236,15 @@ class SessionStore(private val prefs: SharedPreferences) : SaveMarks {
         prefs.edit().putBoolean(KEY_RETROARCH_CORES_OFFERED, true).apply()
     }
 
-    fun appShelfState(): AppShelfState {
-        val games = stringSet(KEY_SHELF_GAMES)
-        val apps = stringSet(KEY_SHELF_APPS)
+    /**
+     * The apps a release with Android shelves hid there, once: the shelves' saved state is
+     * forgotten as it is read. Installed apps are filed on Home now, which hides them itself.
+     */
+    fun takeShelfHiddenApps(): Set<String> {
         val hidden = stringSet(KEY_SHELF_HIDDEN)
-        val favorites = stringSet(KEY_SHELF_FAVORITES)
-        val shown = stringSet(KEY_SHELF_SHOWN)
-        val names = games + apps + hidden + favorites + shown
-        return AppShelfState(
-            names.associateWith { name ->
-                AppShelfRecord(
-                    shelf = when {
-                        name in games -> AndroidShelf.Games
-                        name in apps -> AndroidShelf.Apps
-                        else -> null
-                    },
-                    hidden = name in hidden,
-                    favorite = name in favorites,
-                    showDespitePlayer = name in shown,
-                )
-            },
-        )
+        val keys = listOf(KEY_SHELF_GAMES, KEY_SHELF_APPS, KEY_SHELF_HIDDEN, KEY_SHELF_FAVORITES, KEY_SHELF_SHOWN)
+        if (keys.any(prefs::contains)) prefs.edit().apply { keys.forEach(::remove) }.apply()
+        return hidden
     }
 
     fun homeBoardRaw(): String? = prefs.getString(KEY_HOME_BOARD, null)?.takeIf { it.isNotBlank() }
@@ -290,31 +275,6 @@ class SessionStore(private val prefs: SharedPreferences) : SaveMarks {
     fun saveSameGames(aliases: Map<String, String>) {
         // Written before the board that uses it. A board saved without it heals at the next merge.
         prefs.edit().putString(KEY_SAME_GAMES, encodeSameGames(aliases)).commit()
-    }
-
-    fun saveAppShelfState(state: AppShelfState) {
-        val games = mutableSetOf<String>()
-        val apps = mutableSetOf<String>()
-        val hidden = mutableSetOf<String>()
-        val favorites = mutableSetOf<String>()
-        val shown = mutableSetOf<String>()
-        state.records.forEach { (name, record) ->
-            when (record.shelf) {
-                AndroidShelf.Games -> games += name
-                AndroidShelf.Apps -> apps += name
-                null -> Unit
-            }
-            if (record.hidden) hidden += name
-            if (record.favorite) favorites += name
-            if (record.showDespitePlayer) shown += name
-        }
-        prefs.edit()
-            .putStringSet(KEY_SHELF_GAMES, games)
-            .putStringSet(KEY_SHELF_APPS, apps)
-            .putStringSet(KEY_SHELF_HIDDEN, hidden)
-            .putStringSet(KEY_SHELF_FAVORITES, favorites)
-            .putStringSet(KEY_SHELF_SHOWN, shown)
-            .apply()
     }
 
     private fun stringSet(key: String): Set<String> = prefs.getStringSet(key, emptySet()).orEmpty().toSet()

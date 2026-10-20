@@ -2,7 +2,6 @@ package app.foldcade
 
 import app.foldcade.api.plugin.MemoryCredentialStore
 import app.foldcade.host.PluginHost
-import app.foldcade.language.HOME_FAVORITES
 import app.foldcade.language.*
 import kotlinx.coroutines.Dispatchers
 import org.junit.Assert.*
@@ -17,7 +16,7 @@ class HomeSelectionFolderUndoTest {
         val b = androidHomeId("beta")
         val folder = HomeFolder(HOME_ANDROID_GAMES, "Games", bucket = HomeKind.AndroidGame, slots = listOf(a, b))
         val store = SessionStore(MemoryPrefs()).also { it.saveHomeBoard(encodeHome(HomeBoard(
-            slots = listOf(HOME_ALL, null, folder.id), folders = mapOf(folder.id to folder), retired = setOf(HOME_FAVORITES)))) }
+            slots = listOf(HOME_ALL, null, folder.id), folders = mapOf(folder.id to folder)))) }
         val shell = ShellController(store, PluginHost(Dispatchers.Unconfined, MemoryCredentialStore()))
         val apps = listOf(LaunchableApp("alpha", "Alpha", true), LaunchableApp("beta", "Beta", true))
         shell.setInstalledApps(apps, emptySet())
@@ -30,7 +29,7 @@ class HomeSelectionFolderUndoTest {
         shell.onMeaning(Meaning.Activate, HostScreen.Bottom)
         if (arrival) shell.setInstalledApps(apps + LaunchableApp("notes", "Notes", false), emptySet())
         shell.onMeaning(Meaning.Options, HostScreen.Bottom)
-        shell.onMeaning(Meaning.ActivateBottom, HostScreen.Bottom)
+        choose(shell, Row.Hide)
         val hidden = decodeHome(store.homeBoardRaw())
         assertFalse(folder.id in hidden.slots)
         assertEquals(Copy.hidden, shell.model.undoVerb)

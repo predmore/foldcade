@@ -14,8 +14,9 @@ package app.foldcade.language
 private fun Row.chord(): Meaning? = when (this) {
     Row.Settings, Row.QuickTile(QuickSetting.Settings) -> Meaning.Menu
     Row.PlayActivity, Row.ShowOnHome -> Meaning.View
-    Row.EditHome, Row.MoveTile, Row.ShowHidden, Row.ShowApp -> Meaning.Options
-    Row.RemoveTile, Row.HideApp, Row.RemoveDownload, Row.DeleteShortcut -> Meaning.ActivateBottom
+    Row.EditHome, Row.MoveTile, Row.ShowHidden -> Meaning.Options
+    // Hide has no chord: X takes a tile off its spot, and never hides a game.
+    Row.RemoveTile, Row.RemoveDownload, Row.DeleteShortcut -> Meaning.ActivateBottom
     else -> null
 }
 
