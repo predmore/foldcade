@@ -58,6 +58,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
 import kotlinx.coroutines.yield
+import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
@@ -626,6 +627,63 @@ class RommLibraryTest {
     }
 
     @Test
+    fun aSwitchFolderDownloadsTheGameAndItsUpdateAsFilesInOneFolder() = runBlocking {
+        val server = TinyServer()
+        val cache = Files.createTempDirectory("romm-folder")
+        val game = "base-game".toByteArray()
+        val update = "upd".toByteArray()
+        try {
+            server.route("GET", "/api/platforms") { exchange, _ ->
+                json(exchange, 200, """[{"id":3,"slug":"switch","fs_slug":"switch","rom_count":1,"name":"Nintendo Switch"}]""")
+            }
+            server.route("GET", "/api/roms") { exchange, _ -> json(exchange, 200, switchFolderPage(game, update)) }
+            server.route("GET", "/api/roms/35/content/Fantasy Life i.nsp") { exchange, _ -> bytes(exchange, 200, game) }
+            server.route("GET", "/api/roms/35/content/Fantasy Life i [Update v2.2.0].nsp") { exchange, _ ->
+                bytes(exchange, 200, update)
+            }
+            val wiring = RommWiring(
+                server.origin,
+                RommTokenSource { "rmm_test" },
+                cache,
+                Files.createTempDirectory("romm-data"),
+                contentUris = CachePathContentUri(cache, folderAuthority = "app.foldcade.romm.folders"),
+            )
+            val library = RommLibrary(RommGate { wiring })
+            val heard = java.util.Collections.synchronizedList(mutableListOf<GameActivity>())
+            library.observeActivity { _, activity -> heard += activity }
+            val listed = library.listGames("switch", GameQuery()).games.single()
+            assertEquals(Availability.RemoteOnly, listed.availability)
+
+            val target = library.ensureLocal(listed) as LaunchTarget.ContentUri
+
+            // Each file on its own: asked for both at once, RomM sends a zip.
+            val gameHit = server.recorded.single { it.path.endsWith("/Fantasy Life i.nsp") }
+            val updateHit = server.recorded.single { it.path.endsWith("[Update v2.2.0].nsp") }
+            assertTrue(gameHit.query.orEmpty().contains("file_ids=35"))
+            assertFalse(gameHit.query.orEmpty().contains("36"))
+            assertTrue(updateHit.query.orEmpty().contains("file_ids=36"))
+            assertTrue(target.uri.startsWith("content://app.foldcade.romm.folders/tree/"))
+            val gameFile = wiring.contentUris.pathFor(target.uri)!!
+            assertEquals("Fantasy Life i.nsp", gameFile.fileName.toString())
+            assertArrayEquals(game, Files.readAllBytes(gameFile))
+            assertArrayEquals(update, Files.readAllBytes(gameFile.resolveSibling("Fantasy Life i [Update v2.2.0].nsp")))
+            // One bar for both files.
+            assertEquals(GameActivity.Downloading(12L, 12L), heard.last { it is GameActivity.Downloading })
+            assertEquals(Availability.Cached, library.listGames("switch", GameQuery()).games.single().availability)
+
+            // Offline, the kept file list still knows the update.
+            val spec = readRomSpec(wiring.romRoot, 35)!!
+            assertEquals(listOf(AddOn(36, "Fantasy Life i [Update v2.2.0].nsp", 3, md5Hex(update))), spec.addOns)
+            assertEquals(gameFile, verifiedRom(wiring.romRoot, 35, spec))
+            val hits = server.recorded.size
+            assertEquals(target, library.ensureLocal(listed))
+            assertEquals(hits, server.recorded.size)
+        } finally {
+            server.close()
+        }
+    }
+
+    @Test
     fun aDownloadAndALaunchSyncTellTheHostWhatTheyAreDoing() = runBlocking {
         val server = TinyServer()
         val cache = Files.createTempDirectory("romm-activity")
@@ -1058,6 +1116,7 @@ internal class ScriptedOps : RommOps {
         expectedSize: Long?,
         expectedMd5: String?,
         progress: ((RomProgress) -> Unit)?,
+        target: Path?,
     ): Path {
         downloadSteps.forEach { progress?.invoke(it) }
         return onDownload(romId, fileName, cacheRoot, fileIds, expectedSize, expectedMd5)
@@ -1194,6 +1253,17 @@ private fun indexOf(data: ByteArray, needle: ByteArray): Int {
     }
     return -1
 }
+
+/** Fantasy Life i as RomM files it: the game at the top of its folder, the update in `updates/`. */
+private fun switchFolderPage(game: ByteArray, update: ByteArray): String = """
+{"items":[{"id":35,"name":"Fantasy Life i","fs_name":"Fantasy Life i","fs_extension":"","fs_size_bytes":${game.size + update.size},"platform_id":3,"platform_slug":"switch","platform_fs_slug":"switch","platform_display_name":"Nintendo Switch","alternative_names":[],"path_cover_small":null,"path_cover_large":null,"url_cover":null,"has_simple_single_file":false,"has_nested_single_file":true,"has_multiple_files":false,"files":[
+{"id":36,"file_name":"Fantasy Life i [Update v2.2.0].nsp","file_size_bytes":${update.size},"md5_hash":"${md5Hex(update)}","category":"update","is_top_level":false},
+{"id":35,"file_name":"Fantasy Life i.nsp","file_size_bytes":${game.size},"md5_hash":"${md5Hex(game)}","category":"game","is_top_level":true}
+]}],"total":1,"limit":50,"offset":0}
+"""
+
+private fun md5Hex(bytes: ByteArray): String =
+    java.security.MessageDigest.getInstance("MD5").digest(bytes).joinToString("") { "%02x".format(it) }
 
 private const val ROM_PAGE = """
 {"items":[{"id":1234,"name":"Super Mario","fs_name":"mario.cci","fs_extension":"cci","fs_size_bytes":9,"platform_id":3,"platform_slug":"3ds","platform_fs_slug":"3ds","platform_display_name":"Nintendo 3DS","alternative_names":[],"path_cover_small":"/assets/cover/small.jpg","path_cover_large":"/assets/cover/large.jpg","url_cover":null,"has_simple_single_file":true,"has_nested_single_file":false,"has_multiple_files":false,"files":[{"id":7,"file_name":"mario.cci","file_size_bytes":9}]}],"total":1,"limit":50,"offset":0}
