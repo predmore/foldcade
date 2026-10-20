@@ -151,12 +151,20 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
         when (purpose) {
             FolderPurpose.RetroArchCores -> useRetroArchFolder(uri)
             FolderPurpose.Library -> {
-                contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
-                foldcade.useFolder(uri)
+                if (persistTreeGrant(write = false) { flags ->
+                    contentResolver.takePersistableUriPermission(uri, flags)
+                }) {
+                    foldcade.useFolder(uri)
+                } else {
+                    foldcade.shell.present(playerNotice(Copy.folderGrantTitle, Copy.folderGrantFailed, hostScreen()))
+                }
             }
             FolderPurpose.LaunchOffer -> {
-                rememberSaveFolder(uri, playerForPendingLaunch())
-                pendingLaunch?.let { launchGame(it) }
+                if (rememberSaveFolder(uri, playerForPendingLaunch())) {
+                    pendingLaunch?.let { launchGame(it) }
+                } else {
+                    cancelLaunches()
+                }
             }
             FolderPurpose.Settings -> {
                 val player = settingsPlayerId?.let { foldcade.plugins.player(it) }
@@ -1877,13 +1885,12 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
         return game.platformId?.let(::playerFor)
     }
 
-    private fun rememberSaveFolder(uri: Uri, player: Player?) {
+    private fun rememberSaveFolder(uri: Uri, player: Player?): Boolean {
         val read = Intent.FLAG_GRANT_READ_URI_PERMISSION
         val write = Intent.FLAG_GRANT_WRITE_URI_PERMISSION
-        try {
-            contentResolver.takePersistableUriPermission(uri, read or write)
-        } catch (_: SecurityException) {
-            contentResolver.takePersistableUriPermission(uri, read)
+        if (!persistTreeGrant(write = true) { flags -> contentResolver.takePersistableUriPermission(uri, flags) }) {
+            foldcade.shell.present(playerNotice(Copy.saveFolderTitle, Copy.folderGrantFailed, hostScreen()))
+            return false
         }
         if (player is SaveFolderHolder) {
             val key = player.saveFolderId()
@@ -1899,6 +1906,7 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
             }
             foldcade.shell.refreshPlayerSaves()
         }
+        return true
     }
 
     private fun requestHome() {
