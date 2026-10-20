@@ -205,6 +205,25 @@ class RommLibraryTest {
     }
 
     @Test
+    fun aMismatchedFileDoesNotShowAsOnDevice() {
+        val root = Files.createTempDirectory("rom-badge")
+        try {
+            val listed = rom("3ds", 3)
+            val spec = listed.bytes()
+            val target = RommClient.romCacheFile(root, listed.id, spec.fileName, spec.fileIds)
+            Files.createDirectories(target.parent)
+            Files.write(target, ByteArray(4))
+            assertEquals(Availability.RemoteOnly, cacheAvailability(root, listed))
+            Files.write(target, ByteArray(9))
+            assertEquals(Availability.Cached, cacheAvailability(root, listed))
+            val wrongHash = listed.copy(files = listOf(RomFileSummary(7, "mario.cci", 9, md5Hash = "0".repeat(32))))
+            assertEquals(Availability.RemoteOnly, cacheAvailability(root, wrongHash))
+        } finally {
+            root.toFile().deleteRecursively()
+        }
+    }
+
+    @Test
     fun removingADownloadPutsTheGameBackOnTheServerAndKeepsItsSaves() = runBlocking {
         val ops = ScriptedOps()
         val listed = rom("3ds", 3)
