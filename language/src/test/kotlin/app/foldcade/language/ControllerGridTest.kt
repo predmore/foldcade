@@ -76,18 +76,17 @@ class ControllerGridTest {
         assertEquals(listOf("z", "c", "a", "b"), allItems(items, LibrarySort.RecentlyPlayed).map { it.id })
     }
 
-    @Test fun appDestinationsExcludeIncompatibleFolders() {
+    @Test fun installedAppsGoOnlyInTheAndroidFoldersAndCollections() {
         val folders = listOf(
             HomeFolder("roms", "ROMs", platformId = "ds"),
             HomeFolder("games", "Games", bucket = HomeKind.AndroidGame),
             HomeFolder("apps", "Apps", bucket = HomeKind.AndroidApp),
             HomeFolder("mine", "Mine", userMade = true),
         )
-        val board = HomeBoard(slots = folders.map { it.id }, folders = folders.associateBy { it.id })
         val game = HomeItem("g", "Game", HomeKind.AndroidGame)
         val app = HomeItem("a", "App", HomeKind.AndroidApp)
-        assertEquals(listOf(null, "games", "apps", "mine"), placementChoices(board, game, emptyList()).map { it.folderId })
-        assertEquals(listOf(null, "games", "apps", "mine"), placementChoices(board, app, emptyList()).map { it.folderId })
+        assertEquals(listOf("games", "apps", "mine"), folders.filter { folderTakes(it, game, emptyList()) }.map { it.id })
+        assertEquals(listOf("games", "apps", "mine"), folders.filter { folderTakes(it, app, emptyList()) }.map { it.id })
     }
 
     @Test fun startUsesTheSameSettingsPageAsTheMenuAndClosesIt() {

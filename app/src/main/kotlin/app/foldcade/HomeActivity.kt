@@ -55,7 +55,8 @@ import app.foldcade.language.DialogKind
 import app.foldcade.language.DialogState
 import app.foldcade.language.Effect
 import app.foldcade.language.GridKind
-import app.foldcade.language.HomeGrid
+import app.foldcade.language.HOME_ANDROID_APPS
+import app.foldcade.language.HOME_ANDROID_GAMES
 import app.foldcade.language.HomeKeys
 import app.foldcade.language.HostScreen
 import app.foldcade.language.closeBothPanelDialog
@@ -152,12 +153,20 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
         when (purpose) {
             FolderPurpose.RetroArchCores -> useRetroArchFolder(uri)
             FolderPurpose.Library -> {
-                contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
-                foldcade.useFolder(uri)
+                if (persistTreeGrant(write = false) { flags ->
+                    contentResolver.takePersistableUriPermission(uri, flags)
+                }) {
+                    foldcade.useFolder(uri)
+                } else {
+                    foldcade.shell.present(playerNotice(Copy.folderGrantTitle, Copy.folderGrantFailed, hostScreen()))
+                }
             }
             FolderPurpose.LaunchOffer -> {
-                rememberSaveFolder(uri, playerForPendingLaunch())
-                pendingLaunch?.let { launchGame(it) }
+                if (rememberSaveFolder(uri, playerForPendingLaunch())) {
+                    pendingLaunch?.let { launchGame(it) }
+                } else {
+                    cancelLaunches()
+                }
             }
             FolderPurpose.Settings -> {
                 val player = settingsPlayerId?.let { foldcade.plugins.player(it) }
@@ -177,7 +186,9 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
             launchCompanionIfNeeded()
         }
 
-        override fun onDisplayRemoved(displayId: Int) = Unit
+        override fun onDisplayRemoved(displayId: Int) {
+            foldcade.companionLaunch.displayRemoved(displayId, foldcade.companionAlive(displayId))
+        }
 
         override fun onDisplayChanged(displayId: Int) = Unit
     }
@@ -263,13 +274,15 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
             Effect.SyncLibrary -> foldcade.libraryResync.syncNow()
             is Effect.ChoosePlayerSave -> choosePlayerSave(effect.playerId)
             Effect.ShowRetroArchCores -> showRetroArchCores(retry = null)
-            Effect.Undo, is Effect.ShowHidden, is Effect.DeleteShortcut, Effect.PinApp, is Effect.AddAppTo, Effect.MoveApp, Effect.HideApp, Effect.ShowApp -> Unit
+            Effect.Undo, is Effect.ShowHidden, is Effect.DeleteShortcut -> Unit
             // The shell applies Y's tile actions and A on a text field itself and hands back null; these never arrive.
-            is Effect.SelectTile, is Effect.Bulk, is Effect.ChooseArt, Effect.MoveTile, is Effect.ShowOnHome, is Effect.ToggleCollection, is Effect.NewCollection, is Effect.ToggleFavorite, is Effect.PinTile, is Effect.GroupOnHome,
+            is Effect.SelectTile, is Effect.Bulk, is Effect.ChooseArt, Effect.MoveTile, is Effect.ShowOnHome, is Effect.ToggleCollection, is Effect.NewCollection, is Effect.RecentOnHome,
+            is Effect.MoveApp, is Effect.Hide,
             Effect.RenameFolder, Effect.ChooseFolderIcon, Effect.RemoveTile, Effect.Tidy, Effect.GoHome, Effect.EditField,
             -> Unit
             is Effect.RemoveDownload -> removeDownload(effect.gameId)
             Effect.OpenAll -> foldcade.shell.openHomeAll()
+            is Effect.OpenFolder -> foldcade.shell.openHomeFolder(effect.folderId)
             Effect.ToggleAddNew -> foldcade.shell.applyHomeAddNew(foldcade.shell.model.addNewToHome)
             is Effect.EditRommConnection -> {
                 if (foldcade.shell.editRommConnection(effect.pluginId)) beginRommDeviceCode()
@@ -505,6 +518,10 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
     }
 
     override fun onDestroy() {
+        usageReconcile.cancel()
+        // A download still running on this instance would finish on a dead
+        // activity and, if the start threw, send both screens home.
+        cancelLaunchIfOwned(foldcade.launchWork, ownedLaunch)
         recoveryWindow?.close()
         foldcade.homeDestroyed(this)
         val manager = getSystemService(DisplayManager::class.java)
@@ -622,12 +639,17 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
     private fun launchCompanionIfNeeded() {
         val assignment = displays.assignment(foldcade.store.session.defaultDisplayIsTop)
         val other = assignment.allIds().firstOrNull { it != Display.DEFAULT_DISPLAY } ?: return
-        if (foldcade.companionAlive(other) || foldcade.companionStarting) return
-        foldcade.companionStarting = true
+        if (foldcade.companionAlive(other)) return
+        if (!foldcade.companionLaunch.begin(other)) return
         val intent = Intent(this, CompanionHomeActivity::class.java)
             .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP)
         val options = ActivityOptions.makeBasic().apply { launchDisplayId = other }
-        startActivity(intent, options.toBundle())
+        try {
+            startActivity(intent, options.toBundle())
+        } catch (failure: RuntimeException) {
+            foldcade.companionLaunch.failed()
+            Log.w("Foldcade", "Could not open the other screen", failure)
+        }
     }
 
     private fun launchGame(index: Int) {
@@ -752,12 +774,12 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
     }
 
     private fun acceptShelf(intent: Intent) {
-        val grid = when (intent.getStringExtra(EXTRA_ANDROID_SHELF)) {
-            "games" -> HomeGrid.AndroidGames
-            "apps" -> HomeGrid.Apps
+        val folder = when (intent.getStringExtra(EXTRA_ANDROID_SHELF)) {
+            "games" -> HOME_ANDROID_GAMES
+            "apps" -> HOME_ANDROID_APPS
             else -> return
         }
-        foldcade.shell.showHomeGrid(grid)
+        foldcade.shell.openHomeFolder(folder)
     }
 
     /** Emulator hook, same kind as the Android shelf extra. A saved folder still loads on its own. */
@@ -983,7 +1005,7 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
         } else {
             null
         }
-        val installedIntent = playerIntent?.toStartIntent()
+        val installedIntent = playerIntent?.toStartIntent(foldcade.rommFolderAuthority)
         withContext(Dispatchers.Main.immediate) {
             if (!launchCurrent(generation)) return@withContext
             when (plan) {
@@ -1231,7 +1253,7 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
             foldcade.externalPlay.open(foldcade.plays, game.id, game.title, displayId) {
                 val options = ActivityOptions.makeBasic().apply { launchDisplayId = displayId }
                 val intent = foldcade.startIntent(player, ready.intent)
-                val start = intent.toAndroidIntent()
+                val start = intent.toAndroidIntent(foldcade.rommFolderAuthority)
                 startActivity(start, options.toBundle())
                 if (foldcade.noteStarted(player, intent)) armRestart(start, displayId)
             }
@@ -1306,18 +1328,40 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
     /** Several emulators can serve one platform. See [FoldcadeApp.playerFor]. */
     private fun playerFor(platformId: String): Player? = foldcade.playerFor(platformId)
 
+    private val usageReconcile = UsageReconcile()
+
+    /**
+     * A week of usage events is too much for the frame that is resuming.
+     * The query runs on the app scope, and the result is applied only if this
+     * screen is still in front.
+     */
     private fun reconcileUsage() {
-        val now = System.currentTimeMillis()
-        val access = UsageAccess(this)
-        val granted = access.granted()
-        val samples = if (granted) {
-            access.samples(now - UsageAccess.LOOKBACK_MS, now)
-        } else {
-            emptyList()
-        }
-        foldcade.plays.applyUsage(granted, samples, now)
-        foldcade.shell.setUsageGranted(granted)
-        foldcade.shell.maybeOfferUsageAccess(foldcade.plays.hasTrackedSession(), granted, hostScreen())
+        val startedAt = System.currentTimeMillis()
+        usageReconcile.request(
+            scope = foldcade.scope,
+            deliver = Dispatchers.Main.immediate,
+            alive = { resumed && !isDestroyed },
+            read = {
+                val access = UsageAccess(this@FoldcadeHomeActivity)
+                val granted = access.granted()
+                val samples = if (granted) {
+                    access.samples(startedAt - UsageAccess.LOOKBACK_MS, startedAt)
+                } else {
+                    emptyList()
+                }
+                UsageSnapshot(granted, samples)
+            },
+            publish = { snapshot ->
+                val now = System.currentTimeMillis()
+                foldcade.plays.applyUsage(snapshot.granted, snapshot.samples, now)
+                foldcade.shell.setUsageGranted(snapshot.granted)
+                foldcade.shell.maybeOfferUsageAccess(
+                    foldcade.plays.hasTrackedSession(),
+                    snapshot.granted,
+                    hostScreen(),
+                )
+            },
+        )
     }
 
     private fun clearPendingLaunch() {
@@ -1325,7 +1369,10 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
         closeConfirmed = false
     }
 
-    private fun beginLaunch(): Int = foldcade.launchWork.begin()
+    /** The generation this activity started, so its destruction does not cancel a later one. */
+    private var ownedLaunch: Int? = null
+
+    private fun beginLaunch(): Int = foldcade.launchWork.begin().also { ownedLaunch = it }
 
     /** Drops an in-flight launch so a late result cannot open a missing-player dialog. */
     private fun cancelLaunches() {
@@ -1891,13 +1938,12 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
         return game.platformId?.let(::playerFor)
     }
 
-    private fun rememberSaveFolder(uri: Uri, player: Player?) {
+    private fun rememberSaveFolder(uri: Uri, player: Player?): Boolean {
         val read = Intent.FLAG_GRANT_READ_URI_PERMISSION
         val write = Intent.FLAG_GRANT_WRITE_URI_PERMISSION
-        try {
-            contentResolver.takePersistableUriPermission(uri, read or write)
-        } catch (_: SecurityException) {
-            contentResolver.takePersistableUriPermission(uri, read)
+        if (!persistTreeGrant(write = true) { flags -> contentResolver.takePersistableUriPermission(uri, flags) }) {
+            foldcade.shell.present(playerNotice(Copy.saveFolderTitle, Copy.folderGrantFailed, hostScreen()))
+            return false
         }
         if (player is SaveFolderHolder) {
             val key = player.saveFolderId()
@@ -1913,6 +1959,7 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
             }
             foldcade.shell.refreshPlayerSaves()
         }
+        return true
     }
 
     private fun requestHome() {

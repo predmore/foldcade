@@ -1,5 +1,6 @@
 package app.foldcade
 
+import android.content.ClipData
 import android.content.ComponentName
 import android.content.Intent
 import android.net.Uri
@@ -11,8 +12,9 @@ import app.foldcade.api.plugin.PlayerIntent
  * Turns a plugin intent into a start.
  * The read grant is applied when the plugin asked for it.
  * This function does not name a player or a save path.
+ * [folderAuthority] is [FoldcadeApp.rommFolderAuthority], see [grantFolderTree].
  */
-fun PlayerIntent.toAndroidIntent(): Intent {
+fun PlayerIntent.toAndroidIntent(folderAuthority: String? = null): Intent {
     val intent = Intent(action)
     intent.component = ComponentName(packageName, componentClass)
     if (dataUri != null && mimeType != null) {
@@ -22,7 +24,10 @@ fun PlayerIntent.toAndroidIntent(): Intent {
     } else if (mimeType != null) {
         intent.type = mimeType
     }
-    if (grantReadUri) intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+    if (grantReadUri) {
+        intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        intent.grantFolderTree(dataUri, folderAuthority)
+    }
     flags.forEach { flag ->
         when (flag) {
             LaunchFlag.GrantWriteUri -> intent.addFlags(Intent.FLAG_GRANT_WRITE_URI_PERMISSION)
@@ -42,4 +47,30 @@ fun PlayerIntent.toAndroidIntent(): Intent {
         }
     }
     return intent
+}
+
+/**
+ * The tree to grant along with [dataUri] when it is a file in one of Foldcade's own
+ * download folders, `content://<folderAuthority>/tree/<folder>/document/<file>`.
+ * Null for any other URI. The grant covers that one folder, so the player can
+ * list and open the files beside the game, and nothing outside it.
+ */
+internal fun folderTreeOf(dataUri: String, folderAuthority: String): String? {
+    val prefix = "content://$folderAuthority/tree/"
+    if (!dataUri.startsWith(prefix)) return null
+    val segments = dataUri.removePrefix(prefix).substringBefore('?').substringBefore('#').split('/')
+    if (segments.size != 3 || segments[0].isEmpty() || segments[1] != "document" || segments[2].isEmpty()) return null
+    return prefix + segments[0]
+}
+
+/**
+ * Adds a read grant on [dataUri]'s folder when [folderTreeOf] names one. The tree
+ * rides in the clip data, and the prefix flag lets the grant cover the files in it.
+ * Call this only where read on [dataUri] is already granted.
+ */
+internal fun Intent.grantFolderTree(dataUri: String?, folderAuthority: String?) {
+    if (dataUri == null || folderAuthority == null) return
+    val tree = folderTreeOf(dataUri, folderAuthority) ?: return
+    clipData = ClipData.newRawUri(null, Uri.parse(tree))
+    addFlags(Intent.FLAG_GRANT_PREFIX_URI_PERMISSION)
 }

@@ -52,12 +52,11 @@ class ArtPickerTest {
 
     @Test fun artIsOfferedAfterFilingAndBeforeRemovalWithoutTakingAChord() {
         val rows = actionRows(
-            TileActions(move = true, art = true, collections = listOf(CollectionChoice("c", "Collection", false)), favorite = false, pin = true, remove = RemoveVerb.Hide),
-            null,
+            TileActions(move = true, art = true, collections = listOf(CollectionChoice("c", "Collection", false)), remove = RemoveVerb.Unpin, hide = true),
         )
-        assertEquals(listOf(Row.MoveTile, Row.AddToCollection, Row.Favorite, Row.ChooseArt, Row.PinTile, Row.RemoveTile), rows)
-        assertNull(chords(rows)[3])
-        assertFalse(actionRows(TileActions(move = true), null).contains(Row.ChooseArt))
+        assertEquals(listOf(Row.MoveTile, Row.AddToCollection, Row.ChooseArt, Row.RemoveTile, Row.Hide), rows)
+        assertNull(chords(rows)[2])
+        assertFalse(actionRows(TileActions(move = true)).contains(Row.ChooseArt))
     }
 
     @Test fun leftAtTheFirstColumnKeepsEveryRow() {

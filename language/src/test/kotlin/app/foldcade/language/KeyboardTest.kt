@@ -221,7 +221,9 @@ class KeyboardTest {
         assertFalse(names.any { it.equals("Backlog", ignoreCase = true) })
         assertEquals(1, names.count { it.equals("Playing", ignoreCase = true) })
         assertTrue(names.all { it.split(' ').size <= 2 })
-        assertFalse("Favorites" in quickNames(emptyList()))
+        // Favorites is not built in, so it is the first idea for a collection, until one has the name.
+        assertEquals("Favorites", quickNames(emptyList()).first())
+        assertFalse("Favorites" in quickNames(emptyList(), taken = listOf("favorites")))
         assertFalse(quickNames(listOf("z".repeat(NAME_LIMIT + 1))).any { it.length > NAME_LIMIT })
     }
 
