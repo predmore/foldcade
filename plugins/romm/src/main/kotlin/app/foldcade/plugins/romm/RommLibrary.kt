@@ -807,6 +807,7 @@ internal data class AddOn(
 
 /** The downloaded game file for [spec] when it and its add-ons still match their verified markers, else null. */
 internal fun verifiedRom(cacheRoot: Path, romId: Long, spec: RomBytes): Path? {
+    if (!RommClient.canCheckRom(spec.fileIds, spec.expectedSize, spec.md5)) return null
     val target = RommClient.romCacheFile(cacheRoot, romId, spec.fileName, spec.fileIds)
     if (!RommClient.isVerifiedRom(target, spec.expectedSize, comparableMd5(spec))) return null
     val addOnsVerified = spec.addOns.all { addOn ->

@@ -325,7 +325,8 @@ class RommClient(
     ): Path {
         val partial = partialOf(target)
         val validatorFile = target.resolveSibling(target.fileName.toString() + VALIDATOR_SUFFIX)
-        if (Files.isRegularFile(target) && !Files.exists(partial)) {
+        val checkable = canCheckRom(fileIds, expectedSize, expectedMd5)
+        if (checkable && Files.isRegularFile(target) && !Files.exists(partial)) {
             if (isVerifiedRom(target, expectedSize, expectedMd5)) return target
             progress?.invoke(RomProgress.Checking)
             val reusable = withContext(Dispatchers.IO) {
@@ -361,6 +362,11 @@ class RommClient(
         withContext(Dispatchers.IO) {
             val size = Files.size(partial)
             val md5 = runInterruptible { md5File(partial) }
+            if (!checkable) {
+                Files.deleteIfExists(markerOf(target))
+                Files.deleteIfExists(target)
+                throw RommResponseException("This ROM has no size or hash to check, so it was not kept.")
+            }
             if ((expectedSize != null && size != expectedSize) || (expectedMd5 != null && md5 != expectedMd5)) {
                 Files.deleteIfExists(partial)
                 Files.deleteIfExists(validatorFile)
@@ -1193,6 +1199,14 @@ class RommClient(
             System.arraycopy(ending, 0, body, header.size + bytes.size, ending.size)
             return "multipart/form-data; boundary=$boundary" to body
         }
+
+        /**
+         * A multi-file ROM with neither a size nor a hash cannot be told from a
+         * short or wrong body. It stays incomplete. A single file, or a multi-file
+         * ROM that has a size or a hash, can still be checked.
+         */
+        fun canCheckRom(fileIds: List<Long>, expectedSize: Long?, expectedMd5: String?): Boolean =
+            fileIds.isEmpty() || expectedSize != null || expectedMd5 != null
 
         /**
          * True when [target] is a finished download whose verified marker matches
