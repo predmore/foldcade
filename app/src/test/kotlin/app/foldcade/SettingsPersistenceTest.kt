@@ -172,6 +172,17 @@ class SettingsPersistenceTest {
     }
 
     @Test
+    fun aMissingAfterglowFallsBackToSlotZero() {
+        val prefs = MemoryPrefs()
+        val store = SessionStore(prefs)
+        store.setTheme("afterglow")
+        assertEquals(0, store.themeIndex(listOf("builtin", "night")))
+        assertEquals(0, fallbackThemeIndex(listOf("builtin")))
+        assertEquals(1, fallbackThemeIndex(listOf("builtin", "afterglow")))
+        assertEquals(2, fallbackThemeIndex(listOf("Built-in", "Night", "Afterglow")))
+    }
+
+    @Test
     fun savedThemeFollowsItsNameAndAMissingThemeDoesNotEraseTheChoice() {
         val prefs = MemoryPrefs()
         SessionStore(prefs).setTheme("Afterglow")

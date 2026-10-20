@@ -172,6 +172,39 @@ class RommLibraryTest {
     }
 
     @Test
+    fun aFinishedRomWithoutItsMarkerStillLaunchesOffline() = runBlocking {
+        val ops = ScriptedOps()
+        val listed = rom("3ds", 3)
+        ops.onPlatforms = { listOf(platform(3, "3ds")) }
+        ops.onRoms = { page(listed) }
+        val harness = harness(ops)
+        try {
+            harness.library.listPlatforms()
+            val game = harness.library.listGames("3ds", GameQuery()).games.single()
+            val spec = listed.bytes()
+            val target = RommClient.romCacheFile(harness.wiring.romRoot, listed.id, spec.fileName, spec.fileIds)
+            Files.createDirectories(target.parent)
+            Files.write(target, ByteArray(9))
+            writeRomSpec(harness.wiring.romRoot, listed.id, spec)
+            ops.onHeartbeat = { throw RommUnavailable("offline") }
+            ops.onDownload = { _, _, _, _, _, _ -> error("offline launch must not download") }
+            val cold = RommLibrary(RommGate { harness.wiring })
+            cold.connect()
+            assertTrue(cold.ensureLocal(game) is LaunchTarget.ContentUri)
+            assertTrue(RommClient.isVerifiedRom(target, spec.expectedSize, spec.md5))
+
+            Files.write(target, ByteArray(4))
+            Files.deleteIfExists(target.resolveSibling(target.fileName.toString() + ".verified"))
+            assertTrue(runCatching { cold.ensureLocal(game) }.isFailure)
+            assertFalse(RommClient.isVerifiedRom(target, spec.expectedSize, spec.md5))
+        } finally {
+            harness.library.disconnect()
+            harness.wiring.cacheRoot.toFile().deleteRecursively()
+            harness.wiring.dataRoot.toFile().deleteRecursively()
+        }
+    }
+
+    @Test
     fun removingADownloadPutsTheGameBackOnTheServerAndKeepsItsSaves() = runBlocking {
         val ops = ScriptedOps()
         val listed = rom("3ds", 3)
