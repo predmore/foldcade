@@ -177,7 +177,9 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
             launchCompanionIfNeeded()
         }
 
-        override fun onDisplayRemoved(displayId: Int) = Unit
+        override fun onDisplayRemoved(displayId: Int) {
+            foldcade.companionLaunch.displayRemoved(displayId, foldcade.companionAlive(displayId))
+        }
 
         override fun onDisplayChanged(displayId: Int) = Unit
     }
@@ -612,12 +614,17 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
     private fun launchCompanionIfNeeded() {
         val assignment = displays.assignment(foldcade.store.session.defaultDisplayIsTop)
         val other = assignment.allIds().firstOrNull { it != Display.DEFAULT_DISPLAY } ?: return
-        if (foldcade.companionAlive(other) || foldcade.companionStarting) return
-        foldcade.companionStarting = true
+        if (foldcade.companionAlive(other)) return
+        if (!foldcade.companionLaunch.begin(other)) return
         val intent = Intent(this, CompanionHomeActivity::class.java)
             .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP)
         val options = ActivityOptions.makeBasic().apply { launchDisplayId = other }
-        startActivity(intent, options.toBundle())
+        try {
+            startActivity(intent, options.toBundle())
+        } catch (failure: RuntimeException) {
+            foldcade.companionLaunch.failed()
+            Log.w("Foldcade", "Could not open the other screen", failure)
+        }
     }
 
     private fun launchGame(index: Int) {
