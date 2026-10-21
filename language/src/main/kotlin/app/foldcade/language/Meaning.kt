@@ -124,7 +124,10 @@ fun meaningOf(
     if (homeKeys == HomeKeys.Finding) return findingMeaningOf(keyCode, repeatCount, faces)
     if (homeKeys == HomeKeys.ChoosingArt && repeatCount > 0 &&
         (keyCode == KeyEvent.KEYCODE_BUTTON_L2 || keyCode == KeyEvent.KEYCODE_BUTTON_R2)) return null
-    if (repeatCount > 0 && keyCode in shoulderKeys) {
+    val roles = actionFaces(faces)
+    // Options must not repeat: a held press would open a menu and run its chord. The options
+    // button moves when calibration takes Y, so the check follows that button, not a fixed Y.
+    if (repeatCount > 0 && (keyCode in shoulderKeys || keyCode == roles.options)) {
         return null
     }
     // Y puts a held tile down as confirm does, so Y then Y lifts and Y drops without moving a
@@ -134,6 +137,10 @@ fun meaningOf(
     if (homeKeys == HomeKeys.Moving && (yDrops || keyCode == faces.confirmKey)) {
         return if (repeatCount == 0) Meaning.Activate else null
     }
+    val bottomScreens = homeKeys == HomeKeys.Idle || homeKeys == HomeKeys.AllLibrary ||
+        homeKeys == HomeKeys.ChoosingArt || homeKeys == HomeKeys.FindResults || homeKeys == HomeKeys.Selecting
+    val optionScreens = homeKeys == HomeKeys.Idle || homeKeys == HomeKeys.AllLibrary ||
+        homeKeys == HomeKeys.FindResults || homeKeys == HomeKeys.Selecting
     return when {
         keyCode == KeyEvent.KEYCODE_DPAD_UP -> Meaning.MoveUp
         keyCode == KeyEvent.KEYCODE_DPAD_DOWN -> Meaning.MoveDown
@@ -148,12 +155,8 @@ fun meaningOf(
         // A keyboard has no shoulders. The bracket keys sit where L1 and R1 would.
         keyCode == KeyEvent.KEYCODE_BUTTON_L1 || keyCode == KeyEvent.KEYCODE_LEFT_BRACKET -> Meaning.LeftPanel
         keyCode == KeyEvent.KEYCODE_BUTTON_R1 || keyCode == KeyEvent.KEYCODE_RIGHT_BRACKET -> Meaning.RightPanel
-        keyCode == KeyEvent.KEYCODE_BUTTON_X && (homeKeys == HomeKeys.Idle || homeKeys == HomeKeys.AllLibrary ||
-            homeKeys == HomeKeys.ChoosingArt || homeKeys == HomeKeys.FindResults || homeKeys == HomeKeys.Selecting) ->
-            Meaning.ActivateBottom
-        keyCode == KeyEvent.KEYCODE_BUTTON_Y &&
-            (homeKeys == HomeKeys.Idle || homeKeys == HomeKeys.AllLibrary || homeKeys == HomeKeys.FindResults || homeKeys == HomeKeys.Selecting) ->
-            Meaning.Options
+        keyCode == roles.bottom && bottomScreens -> Meaning.ActivateBottom
+        keyCode == roles.options && optionScreens -> Meaning.Options
         keyCode == KeyEvent.KEYCODE_BUTTON_START -> Meaning.Menu
         keyCode == KeyEvent.KEYCODE_BUTTON_SELECT -> Meaning.View
         keyCode == KeyEvent.KEYCODE_DEL || keyCode == KeyEvent.KEYCODE_FORWARD_DEL -> Meaning.Dismiss
@@ -196,6 +199,35 @@ fun cancelsPendingLaunch(meaning: Meaning, dialogOpen: Boolean, conflictOpen: Bo
 data class TypingFaces(val type: Int, val cancel: Int, val erase: Int, val space: Int) {
     val eraseGlyph: PromptKey get() = promptKeyOf(erase) ?: PromptKey.FaceX
     val spaceGlyph: PromptKey get() = promptKeyOf(space) ?: PromptKey.FaceY
+}
+
+/**
+ * Which face button launches on the bottom screen, and which opens a menu.
+ * Confirm and back keep the calibrated keys. Bottom stays on X and options stays
+ * on Y while those are free. A role whose button was taken moves to A, then B,
+ * the same way [typingFaces] moves erase and space. The hint must name these keys.
+ */
+data class ActionFaces(val confirm: Int, val back: Int, val bottom: Int, val options: Int) {
+    val bottomGlyph: PromptKey get() = promptKeyOf(bottom) ?: PromptKey.FaceX
+    val optionsGlyph: PromptKey get() = promptKeyOf(options) ?: PromptKey.FaceY
+}
+
+fun actionFaces(faces: FaceMap): ActionFaces {
+    val free = listOf(
+        KeyEvent.KEYCODE_BUTTON_X,
+        KeyEvent.KEYCODE_BUTTON_Y,
+        KeyEvent.KEYCODE_BUTTON_A,
+        KeyEvent.KEYCODE_BUTTON_B,
+    ).filter { it != faces.confirmKey && it != faces.backKey }
+    val bottom = KeyEvent.KEYCODE_BUTTON_X.takeIf { it in free }
+    val options = KeyEvent.KEYCODE_BUTTON_Y.takeIf { it in free }
+    val rest = (free - listOfNotNull(bottom, options)).iterator()
+    return ActionFaces(
+        confirm = faces.confirmKey,
+        back = faces.backKey,
+        bottom = bottom ?: rest.next(),
+        options = options ?: rest.next(),
+    )
 }
 
 fun typingFaces(faces: FaceMap): TypingFaces {

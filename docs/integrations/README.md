@@ -4,10 +4,10 @@ Choose a guide for where your games live. You can combine sources on the same Ho
 
 | Your games | Guide | How Foldcade finds them |
 | --- | --- | --- |
+| A library on your RomM server | [RomM](romm.md) | Loads the server's catalog after sign-in, downloads games as you play them, and syncs saves. |
 | ROMs on internal storage or an SD card | [Local games](local-games.md) | Scans the folders you select. |
 | Games for Azahar, melonDS, Dolphin, PPSSPP, and other emulators | [Emulators](emulators.md) | Detects supported emulators; games come from folders or RomM. |
 | Games for RetroArch and its cores | [RetroArch](retroarch.md) | Uses the cores you install; games come from folders or RomM. |
-| A collection on your RomM server | [RomM](romm.md) | Loads the server's catalog after sign-in. |
 | Android games and apps | [Android](android.md) | Discovers installed apps automatically. |
 | Steam games installed in GameNative | [GameNative](gamenative.md) | Scans exported `.steam` files. |
 | Steam and added games in DroidDeck | [DroidDeck](droiddeck.md) | Reads pinned game shortcuts or scans its synced export folder. |
@@ -15,7 +15,7 @@ Choose a guide for where your games live. You can combine sources on the same Ho
 
 ## Start here
 
-Open **L1 › Settings › Library** to add game folders or a RomM server. For Moonlight or DroidDeck shortcuts, first choose Foldcade under **Settings › System › Home app**; Android sends shortcut requests to its default home app.
+Open **L1 › Settings › Library** to add game folders or a RomM server. If your games are on a RomM server, start there: one sign-in brings the whole library, and with RomM 5.4 or newer your saves follow you between Thors. A game in a folder with the same system and file name as a RomM game joins its tile instead of doubling it. For Moonlight or DroidDeck shortcuts, first choose Foldcade under **Settings › System › Home app**; Android sends shortcut requests to its default home app.
 
 Finish setup in the source app or emulator and check that your game plays there. In Foldcade, press **A** to play on the top screen or **X** on the bottom. Azahar and melonDS use both screens; configure their layout in the emulator.
 
@@ -32,7 +32,7 @@ Folders are not watched continuously. Returning to Foldcade rescans them in the 
 
 ## A game is in All but missing from Home
 
-Check **Settings › Library › New games on Home**. When it is off, discovered games stay in **All** until you select one and choose **Y › Pin to Home**, which also files it in its folder. Games hidden or taken off Home can be brought back the same way.
+Check **Settings › Library › New games on Home**. When it is off, discovered games stay in **All** until you select one and choose **Y › Add to › Home**, which also files it in its folder. Games hidden or taken off Home can be brought back the same way.
 
 A new Moonlight or DroidDeck pin goes on Home even with that switch off. Hide keeps its Android shortcut and Show in Hidden restores it. Hold A on Delete shortcut to remove its Android shortcut and Home tile. Request the shortcut again in the source app to recreate it; a DroidDeck game with a synced export remains in All.
 

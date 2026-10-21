@@ -691,11 +691,12 @@ fun panelHints(model: PickerModel): List<HintKey>? {
         is Row.Notice -> {
             val notice = model.notices.firstOrNull { it.id == row.id } ?: return null
             buildList {
+                val roles = actionFaces(model.faceMap)
                 if (notice.openable) {
                     add(HintKey(promptKeyOf(model.faceMap.confirmKey) ?: PromptKey.FaceA, Copy.hintTop))
-                    add(HintKey(PromptKey.FaceX, Copy.hintBottom))
+                    add(HintKey(roles.bottomGlyph, Copy.hintBottom))
                 }
-                if (notice.dismissable) add(HintKey(PromptKey.FaceY, NoticeCopy.dismiss))
+                if (notice.dismissable) add(HintKey(roles.optionsGlyph, NoticeCopy.dismiss))
                 add(back)
             }
         }

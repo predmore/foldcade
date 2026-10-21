@@ -273,7 +273,8 @@ object Copy {
     const val recentlyPlayed = "Recently played"
     /** An open collection with nothing in it, and the way to fill it. */
     const val noGamesYet = "No games yet"
-    const val addGamesHow = "Add games opens All. Press Y on a game, then Add to."
+    const val addGamesHowBefore = "Add games opens All. Press"
+    const val addGamesHowAfter = "on a game, then Add to."
     const val addGames = "Add games"
     const val undo = "Undo"
     const val hidden = "Hidden"
@@ -372,19 +373,20 @@ fun gridHints(
 ): List<HintKey> {
     val confirm = promptKeyOf(faceMap.confirmKey) ?: PromptKey.FaceA
     val back = promptKeyOf(faceMap.backKey) ?: PromptKey.FaceB
-    // A one-screen game opens on the top screen with A and on the bottom with X.
-    // A game that takes both screens says Play, so A is named on every game; one still open says Resume.
+    val roles = actionFaces(faceMap)
+    // A one-screen game opens on the top screen with confirm and on the bottom with the free face button, X unless calibration took it.
+    // A game that takes both screens says Play, so confirm is named on every game; one still open says Resume.
     val launch = when {
         play == PlayKey.Resume -> listOf(HintKey(confirm, Copy.hintResume))
-        screens -> listOf(HintKey(confirm, Copy.hintTop), HintKey(PromptKey.FaceX, Copy.hintBottom))
+        screens -> listOf(HintKey(confirm, Copy.hintTop), HintKey(roles.bottomGlyph, Copy.hintBottom))
         play == PlayKey.Play -> listOf(HintKey(confirm, Copy.hintPlay))
         else -> emptyList()
     }
-    // Y names its menu only when the focused tile has one.
-    val menu = if (options) listOf(HintKey(PromptKey.FaceY, Copy.hintOptions)) else emptyList()
+    // The options button names its menu only when the focused tile has one.
+    val menu = if (options) listOf(HintKey(roles.optionsGlyph, Copy.hintOptions)) else emptyList()
     return when (homeKeys) {
-        // Y drops too, unnamed: the thumb that lifted the tile is already on it.
-        HomeKeys.Selecting -> listOf(HintKey(confirm, SelectionCopy.check), HintKey(PromptKey.FaceY, SelectionCopy.actions), HintKey(back, SelectionCopy.done))
+        // The options button drops too, unnamed: the thumb that lifted the tile is already on it.
+        HomeKeys.Selecting -> listOf(HintKey(confirm, SelectionCopy.check), HintKey(roles.optionsGlyph, SelectionCopy.actions), HintKey(back, SelectionCopy.done))
         HomeKeys.Moving -> listOf(
             HintKey(confirm, dropLabel(drop)),
             HintKey(back, Copy.hintCancel),
