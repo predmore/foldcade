@@ -39,15 +39,19 @@ class ThemeInstallsTest {
         return out.toByteArray()
     }
 
-    /** One start: trials, then the packs load as [PackagedTheme.loadAll] reads them. */
-    private fun start(vararg exits: ThemeProcessExit, choices: Set<String> = setOf("neon")): Pair<ThemeInstalls, List<app.foldcade.language.ThemeRollback>> {
+    /** One start: trials, then the packs load as [PackagedTheme.loadAll] reads them, with [inUse] chosen. */
+    private fun start(vararg exits: ThemeProcessExit, inUse: Set<String> = setOf("neon.zip")): Pair<ThemeInstalls, List<app.foldcade.language.ThemeRollback>> {
         val installs = ThemeInstalls(root)
-        val rollbacks = installs.begin(exits.toList(), choices)
-        installs.loaded(themes.listFiles().orEmpty().associate { file ->
+        val rollbacks = installs.begin(exits.toList())
+        val manifests = themes.listFiles().orEmpty().associate { file ->
             file.name to parseThemeJson(java.util.zip.ZipFile(file).use { zip -> zip.getInputStream(zip.getEntry("theme.json")).readBytes().decodeToString() })!!
-        })
+        }
+        installs.loaded(manifests, inUse intersect manifests.keys)
         return installs to rollbacks
     }
+
+    /** A start that showed Home long enough for the packs in use to end their trials. */
+    private fun startAndProve() = start().first.shown(10 * 60_000L)
 
     private fun crash() = ThemeProcessExit(++clock, abnormal = true)
 
@@ -80,7 +84,7 @@ class ThemeInstallsTest {
     fun anUpdateThatCrashesPutsTheCopyBeforeItBack() {
         install(start().first, pack("1.0.0"))
         // Shown long enough, the first release ends its trial.
-        start().first.shown(setOf("neon"), 10 * 60_000L)
+        startAndProve()
         val (installs, _) = start()
         assertNull(installs.ledger.theme("neon.zip")!!.trial)
         assertTrue(install(installs, pack("1.1.0")) is ThemeInstallResult.Installed)
@@ -100,9 +104,9 @@ class ThemeInstallsTest {
     @Test
     fun aCrashWithAnotherPackInUseDoesNotCount() {
         install(start().first, pack("1.0.0"))
-        start()
-        start(crash(), choices = setOf("afterglow"))
-        val (installs, rollbacks) = start(crash(), choices = setOf("afterglow"))
+        start(inUse = emptySet())
+        start(crash(), inUse = emptySet())
+        val (installs, rollbacks) = start(crash(), inUse = emptySet())
         assertEquals(emptyList<Any>(), rollbacks)
         assertEquals(ThemeTrial(), installs.ledger.theme("neon.zip")!!.trial)
     }
@@ -124,7 +128,7 @@ class ThemeInstallsTest {
     @Test
     fun anUpdateCutOffMidMoveIsFinishedAtTheNextStart() {
         install(start().first, pack("1.0.0"))
-        start().first.shown(setOf("neon"), 10 * 60_000L)
+        startAndProve()
         // Staged and written down, then stopped before the old archive moved aside.
         val staged = File(root, "themes-staging/neon.zip").apply { parentFile.mkdirs(); writeBytes(pack("1.1.0")) }
         val ledgerFile = File(root, "theme-installs.json")
@@ -142,7 +146,7 @@ class ThemeInstallsTest {
     @Test
     fun aPackPushedOverAnUpdateForgetsTheCopyKeptForThatUpdate() {
         install(start().first, pack("1.0.0"))
-        start().first.shown(setOf("neon"), 10 * 60_000L)
+        startAndProve()
         install(start().first, pack("1.1.0"))
         assertTrue(File(root, "themes-previous/neon.zip").isFile)
         File(themes, "neon.zip").apply { writeBytes(pack("5.0.0")); setLastModified(lastModified() + 5_000) }
@@ -157,8 +161,39 @@ class ThemeInstallsTest {
     fun packsAlreadyThereWhenTheLedgerStartsAreNotOnTrial() {
         themes.mkdirs()
         File(themes, "mine.zip").writeBytes(pack("1.0.0", id = "mine", name = "Mine"))
-        val (installs, _) = start(crash(), crash(), choices = setOf("mine"))
+        val (installs, _) = start(crash(), crash(), inUse = setOf("mine.zip"))
         assertNull(installs.ledger.theme("mine.zip")!!.trial)
         assertEquals("mine", installs.ledger.theme("mine.zip")!!.id)
+    }
+
+    @Test
+    fun anUpdateOverOneStillOnTrialKeepsTheProvenCopy() {
+        install(start().first, pack("1.0.0"))
+        startAndProve()
+        install(start().first, pack("1.1.0"))
+        // 1.1.0 is still on trial when 1.2.0 arrives, so 1.0.0 stays the copy kept.
+        install(start().first, pack("1.2.0"))
+        assertEquals(ThemeRelease(1), ThemeInstalls(root).also { it.begin(emptyList()) }.ledger.theme("neon.zip")!!.previous)
+        start()
+        start(crash())
+        val (_, rollbacks) = start(crash())
+        assertTrue(rollbacks.single().restored)
+        assertEquals("1.0.0", installedRelease())
+    }
+
+    @Test
+    fun aRollbackCutOffAfterItsRefusalIsFinishedAndStillRefused() {
+        install(start().first, pack("1.0.0"))
+        start()
+        start(crash())
+        // The refusal was written; the stop came before the archive moved.
+        val ledgerFile = File(root, "theme-installs.json")
+        val struck = ThemeLedger.decode(ledgerFile.readText())!!
+        val theme = struck.theme("neon.zip")!!
+        ledgerFile.writeText(struck.withTheme(theme.copy(trial = ThemeTrial(strikes = 2))).refuse("neon.zip").encode())
+        val (installs, rollbacks) = start()
+        assertFalse(rollbacks.single().restored)
+        assertFalse(File(themes, "neon.zip").exists())
+        assertEquals(ThemeInstallResult.Refused(ThemeInstallRefusal.WentBack), install(installs, pack("1.0.0")))
     }
 }

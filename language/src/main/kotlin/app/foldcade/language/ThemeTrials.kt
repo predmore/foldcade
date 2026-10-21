@@ -38,10 +38,7 @@ data class InstalledTheme(
     /** The release of the copy kept beside it, when an update replaced one. */
     val previous: ThemeRelease? = null,
     val trial: ThemeTrial? = null,
-) {
-    /** True when the saved choice [choice], a pack id or an old display name, means this pack. */
-    fun answers(choice: String): Boolean = choice == id || (choice == name && name != null)
-}
+)
 
 /** An archive that went back: to the copy before it ([restored]), or out of `files/themes`. */
 data class ThemeRollback(val file: String, val name: String?, val release: ThemeRelease?, val restored: Boolean)
@@ -54,7 +51,8 @@ data class ThemeProcessExit(val timestampMillis: Long, val abnormal: Boolean)
  * it is set before the archives move, so a start that finds it can finish or undo the move.
  * [loading] holds the archives on trial a start was loading; still set at the next start, it means
  * that start died loading them. [running] is each archive's stamp as the running process loaded
- * it, so an update installed while it runs is not blamed for what the old copy does.
+ * it, so an update installed while it runs is not blamed for what the old copy does. [inUse] are
+ * the archives its saved theme, icon and background choices resolved to.
  */
 data class ThemeLedger(
     val themes: List<InstalledTheme> = emptyList(),
@@ -62,6 +60,7 @@ data class ThemeLedger(
     val refused: Map<String, Set<ThemeRelease>> = emptyMap(),
     val loading: Set<String> = emptySet(),
     val running: Map<String, String> = emptyMap(),
+    val inUse: Set<String> = emptySet(),
     val pending: InstalledTheme? = null,
     /** The newest exit already counted, so no exit counts twice. */
     val lastExitMillis: Long = 0,
@@ -92,31 +91,28 @@ data class ThemeLedger(
 
     /**
      * Counts [exits] newer than the last one counted against every pack on trial that the exiting
-     * process was using: those in [exposed], and every pack it was still loading. Returns the
-     * archives that now have [THEME_TRIAL_STRIKES]. Call it before [startRunning].
+     * process was using: those [inUse], and every pack it was still loading. Returns the archives
+     * that now have [THEME_TRIAL_STRIKES]. Call it before [startRunning].
      */
-    fun afterExits(exits: List<ThemeProcessExit>, exposed: Set<String>): Pair<ThemeLedger, List<String>> {
+    fun afterExits(exits: List<ThemeProcessExit>): Pair<ThemeLedger, List<String>> {
+        val exposed = inUse + loading
         val fresh = exits.filter { it.timestampMillis > lastExitMillis }
         val abnormal = fresh.count { it.abnormal }
         val newest = fresh.maxOfOrNull { it.timestampMillis } ?: lastExitMillis
         val struck = themes.map { theme ->
             val trial = theme.trial
-            if (trial == null || abnormal == 0 || !runs(theme) || (theme.file !in exposed && theme.file !in loading)) theme
+            if (trial == null || abnormal == 0 || !runs(theme) || theme.file !in exposed) theme
             else theme.copy(trial = trial.copy(strikes = trial.strikes + abnormal))
         }
         val failed = struck.filter { (it.trial?.strikes ?: 0) >= THEME_TRIAL_STRIKES }.map { it.file }
         return copy(themes = struck, lastExitMillis = newest) to failed
     }
 
-    /** The archives in use: the saved choices that name a pack. */
-    fun filesFor(choices: Set<String>): Set<String> =
-        themes.filter { theme -> choices.any(theme::answers) }.map { it.file }.toSet()
-
-    /** [millis] more of Home shown with [files] in use. A trial that reached its time ends. */
-    fun shown(files: Set<String>, millis: Long): ThemeLedger = copy(
+    /** [millis] more of Home shown with the archives [inUse]. A trial that reached its time ends. */
+    fun shown(millis: Long): ThemeLedger = copy(
         themes = themes.map { theme ->
             val trial = theme.trial
-            if (trial == null || theme.file !in files || !runs(theme)) theme
+            if (trial == null || theme.file !in inUse || !runs(theme)) theme
             else (trial.shownMillis + millis).let { total ->
                 theme.copy(trial = if (total >= THEME_TRIAL_SHOWN_MILLIS) null else trial.copy(shownMillis = total))
             }
@@ -127,24 +123,31 @@ data class ThemeLedger(
     fun startRunning(): ThemeLedger = copy(
         loading = themes.filter { it.trial != null }.map { it.file }.toSet(),
         running = themes.associate { it.file to it.stamp },
+        inUse = emptySet(),
     )
 
-    /** Loading finished, and each archive in [manifests] loaded with that manifest. */
-    fun loaded(manifests: Map<String, ThemeFile>): ThemeLedger = copy(
+    /** Loading finished: each archive in [manifests] loaded with that manifest, and [inUse] are in use. */
+    fun loaded(manifests: Map<String, ThemeFile>, inUse: Set<String>): ThemeLedger = copy(
         loading = emptySet(),
+        inUse = inUse,
         themes = themes.map { theme ->
             manifests[theme.file]?.let { theme.copy(id = it.id, name = it.name, release = it.release, source = it.source) } ?: theme
         },
     )
 
-    /** [file] went back. Its release is refused from now on; [restored] is the copy now in its place. */
-    fun rolledBack(file: String, restored: InstalledTheme?): ThemeLedger {
+    /** The release in [file] is refused from now on. Written down before the archive moves. */
+    fun refuse(file: String): ThemeLedger {
         val theme = theme(file) ?: return this
-        val refusedNow = theme.id?.let { id ->
-            theme.release?.let { release -> refused + (id to (refused[id].orEmpty() + release)) }
-        } ?: refused
-        val rest = themes.filter { it.file != file }
-        return copy(themes = (rest + listOfNotNull(restored)).sortedBy { it.file }, refused = refusedNow)
+        val id = theme.id ?: return this
+        val release = theme.release ?: return this
+        return copy(refused = refused + (id to (refused[id].orEmpty() + release)))
+    }
+
+    /** [file] went back, and its release is refused; [restored] is the copy now in its place. */
+    fun rolledBack(file: String, restored: InstalledTheme?): ThemeLedger {
+        if (theme(file) == null) return this
+        val rest = refuse(file).themes.filter { it.file != file }
+        return refuse(file).copy(themes = (rest + listOfNotNull(restored)).sortedBy { it.file })
     }
 
     fun encode(): String = buildJsonObject {
@@ -154,6 +157,7 @@ data class ThemeLedger(
         })
         put("loading", buildJsonArray { loading.sorted().forEach { add(JsonPrimitive(it)) } })
         put("running", buildJsonObject { running.toSortedMap().forEach { (file, stamp) -> put(file, stamp) } })
+        put("inUse", buildJsonArray { inUse.sorted().forEach { add(JsonPrimitive(it)) } })
         pending?.let { put("pending", encodeTheme(it)) }
         put("lastExitMillis", lastExitMillis)
     }.toString()
@@ -171,6 +175,7 @@ data class ThemeLedger(
                 running = (root["running"] as? JsonObject)?.mapNotNull { (file, stamp) ->
                     (stamp as? JsonPrimitive)?.contentOrNull?.let { file to it }
                 }?.toMap().orEmpty(),
+                inUse = (root["inUse"] as? JsonArray)?.mapNotNull { (it as? JsonPrimitive)?.contentOrNull }?.toSet().orEmpty(),
                 pending = decodeTheme(root["pending"] as? JsonObject),
                 lastExitMillis = (root["lastExitMillis"] as? JsonPrimitive)?.longOrNull ?: 0,
             )

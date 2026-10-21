@@ -418,11 +418,10 @@ class FoldcadeApp : Application() {
         }
         // Before the packs load, so a pack that crashed Foldcade twice is already back out of the way.
         val themeRollbacks = try {
-            themeInstalls.begin(processExits(), store.themeChoices())
+            themeInstalls.begin(processExits())
         } catch (error: Exception) { Log.w("FoldcadeTheme", "Theme trials skipped", error); emptyList() }
         val manifests = mutableMapOf<String, ThemeFile>()
         themePacks = PackagedTheme.loadAll(this) { archive, manifest -> manifests[archive] = manifest }
-        try { themeInstalls.loaded(manifests) } catch (error: Exception) { Log.w("FoldcadeTheme", "Theme trials not saved", error) }
         bundledThemeIds = themePacks.map { it.resources.id }.toSet() - manifests.values.map { it.id }.toSet()
         packaged = themePacks.firstOrNull { it.resources.id == FALLBACK_THEME_ID }
         val names = listOf(Copy.builtIn) + themePacks.map { it.name }
@@ -470,6 +469,8 @@ class FoldcadeApp : Application() {
             onBrightness = { position -> brightness.write(brightnessLevel(position)) },
             onSameGames = { groups -> saveArtChoices(artChoices.adopt(groups)) },
         )
+        // Loading ends once the shell has resolved the choices against the packs.
+        try { themeInstalls.loaded(manifests, themeArchivesInUse()) } catch (error: Exception) { Log.w("FoldcadeTheme", "Theme trials not saved", error) }
         themeRollbacks.forEach { postNotice(themeRollbackNotice(it)) }
         // A game several libraries have is one tile, and its copies' play counts on it.
         plays.historyIds = shell::historyIds
@@ -1305,11 +1306,37 @@ class FoldcadeApp : Application() {
         themeTrialClock?.cancel()
         themeTrialClock = if (!shown) null else scope.launch {
             while (themeInstalls.ledger.themes.any { it.trial != null }) {
+                noteThemeArchivesInUse()
                 delay(THEME_TRIAL_TICK_MILLIS)
-                try { themeInstalls.shown(store.themeChoices(), THEME_TRIAL_TICK_MILLIS) }
-                catch (error: Exception) { Log.w("FoldcadeTheme", "Theme trial not saved", error) }
+                if (noteThemeArchivesInUse()) {
+                    try { themeInstalls.shown(THEME_TRIAL_TICK_MILLIS) }
+                    catch (error: Exception) { Log.w("FoldcadeTheme", "Theme trial not saved", error) }
+                }
             }
         }
+    }
+
+    /** Writes down the archives in use now. False when that could not be saved. */
+    private suspend fun noteThemeArchivesInUse(): Boolean = try {
+        themeInstalls.using(withContext(Dispatchers.Main.immediate) { themeArchivesInUse() })
+        true
+    } catch (cancelled: CancellationException) {
+        throw cancelled
+    } catch (error: Exception) {
+        Log.w("FoldcadeTheme", "Theme trial not saved", error)
+        false
+    }
+
+    /**
+     * The archives in files/themes the shell has in use: its theme, its icon theme, and the pack
+     * of the background it shows. Main thread.
+     */
+    private fun themeArchivesInUse(): Set<String> {
+        val model = shell.model
+        val theme = themePacks.getOrNull(model.themeIndex - 1)
+        val icons = model.iconThemeIndex?.let { themePacks.getOrNull(it - 1) }
+        val background = themePacks.firstOrNull { model.backgroundMotion in it.resources.scenes }
+        return listOfNotNull(theme, icons, background).mapNotNull { it.archive }.toSet()
     }
 
     /** Android's record of how this process ended before. A crash or ANR counts against a pack on trial. */

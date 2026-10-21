@@ -45,11 +45,11 @@ internal class ThemeInstalls(private val root: File) {
 
     /**
      * Before the packs load: finishes an interrupted update, notes what arrived, counts the
-     * [exits] since the last start against the packs on trial that [choices] (the saved theme,
-     * icon and background choices) had in use, and puts back each pack that reached its strikes.
+     * [exits] since the last start against the packs on trial the last process had in use, and
+     * puts back each pack that reached its strikes.
      */
     @Synchronized
-    fun begin(exits: List<ThemeProcessExit>, choices: Set<String>): List<ThemeRollback> {
+    fun begin(exits: List<ThemeProcessExit>): List<ThemeRollback> {
         val stored = ledgerFile.takeIf { it.isFile }?.let { file -> runCatching { file.readText() }.getOrNull() }?.let(ThemeLedger::decode)
         ledger = stored ?: ThemeLedger()
         ledger.pending?.let(::finish)
@@ -62,26 +62,39 @@ internal class ThemeInstalls(private val root: File) {
             val stamp = present[kept.name]
             if (stamp == null || (stored != null && before.theme(kept.name)?.stamp != stamp)) kept.delete()
         }
-        val (struck, failed) = ledger.afterExits(exits, ledger.filesFor(choices))
-        ledger = struck
+        val (struck, failed) = ledger.afterExits(exits)
+        // The refusals and strikes are on disk before an archive moves, so a stop part way through
+        // a rollback still refuses the release, and the next start finishes the rollback.
+        ledger = failed.fold(struck, ThemeLedger::refuse)
+        if (failed.isNotEmpty()) write()
         val rollbacks = failed.map(::rollBack)
         ledger = ledger.startRunning()
         write()
         return rollbacks
     }
 
-    /** The packs loaded: each archive's name and its manifest. Loading did not stop them. */
+    /**
+     * The packs loaded: each archive's name and its manifest. Loading did not stop them. [inUse]
+     * are the archives the saved choices resolved to.
+     */
     @Synchronized
-    fun loaded(manifests: Map<String, ThemeFile>) {
-        ledger = ledger.loaded(manifests)
+    fun loaded(manifests: Map<String, ThemeFile>, inUse: Set<String>) {
+        ledger = ledger.loaded(manifests, inUse)
         write()
     }
 
-    /** [millis] more of Home shown with the packs [choices] name in use. */
+    /** The saved choices now resolve to the archives [inUse]. */
     @Synchronized
-    fun shown(choices: Set<String>, millis: Long) {
-        if (ledger.themes.none { it.trial != null }) return
-        val next = ledger.shown(ledger.filesFor(choices), millis)
+    fun using(inUse: Set<String>) {
+        if (inUse == ledger.inUse) return
+        ledger = ledger.copy(inUse = inUse)
+        write()
+    }
+
+    /** [millis] more of Home shown with the archives in use. */
+    @Synchronized
+    fun shown(millis: Long) {
+        val next = ledger.shown(millis)
         if (next == ledger) return
         ledger = next
         write()
@@ -112,7 +125,8 @@ internal class ThemeInstalls(private val root: File) {
                 name = zip.file.name,
                 release = zip.file.release,
                 source = zip.file.source,
-                previous = existing?.release,
+                // A copy still on trial is not kept: the proven one kept before it stays.
+                previous = if (existing?.trial != null) existing.previous else existing?.release,
                 trial = ThemeTrial(),
             )
             ledger = ledger.copy(pending = theme)
@@ -126,8 +140,8 @@ internal class ThemeInstalls(private val root: File) {
     }
 
     /**
-     * Moves the staged [theme] into place, keeping the archive it replaces. Run again after a stop
-     * part way, it carries on from where that stop left the files.
+     * Moves the staged [theme] into place, keeping the archive it replaces unless that one is still
+     * on trial. Run again after a stop part way, it carries on from where that stop left the files.
      */
     private fun finish(theme: InstalledTheme) {
         val active = File(themes, theme.file)
@@ -135,7 +149,9 @@ internal class ThemeInstalls(private val root: File) {
         val kept = File(previous, theme.file)
         if (staged.isFile && stamp(staged) == theme.stamp) {
             themes.mkdirs()
-            if (active.isFile) {
+            val replaced = ledger.theme(theme.file)
+            val unproven = replaced?.trial != null && active.isFile && stamp(active) == replaced.stamp
+            if (active.isFile && !unproven) {
                 previous.mkdirs()
                 check(active.renameTo(kept)) { "Cannot keep ${theme.file}" }
             }

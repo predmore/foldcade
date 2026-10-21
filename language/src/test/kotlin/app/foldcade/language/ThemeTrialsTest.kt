@@ -65,16 +65,16 @@ class ThemeTrialsTest {
     @Test
     fun onlyCrashesWhileTheTrialCopyWasInUseCount() {
         val ledger = ThemeLedger().arrive(mapOf("neon.zip" to "1:1", "dusk.zip" to "1:1")).startRunning()
-            .loaded(mapOf("neon.zip" to manifest(), "dusk.zip" to manifest().copy(id = "dusk", name = "Dusk")))
+            .loaded(mapOf("neon.zip" to manifest(), "dusk.zip" to manifest().copy(id = "dusk", name = "Dusk")), setOf("neon.zip"))
         val crash = listOf(ThemeProcessExit(10, abnormal = true))
-        val (once, none) = ledger.afterExits(crash, ledger.filesFor(setOf("neon")))
+        val (once, none) = ledger.afterExits(crash)
         assertEquals(1, once.theme("neon.zip")!!.trial!!.strikes)
         assertEquals(0, once.theme("dusk.zip")!!.trial!!.strikes)
         assertEquals(emptyList<String>(), none)
         // The same exit is not counted twice, and a clean one counts nothing.
-        val (again, _) = once.afterExits(crash + ThemeProcessExit(11, abnormal = false), setOf("neon.zip"))
+        val (again, _) = once.afterExits(crash + ThemeProcessExit(11, abnormal = false))
         assertEquals(1, again.theme("neon.zip")!!.trial!!.strikes)
-        val (twice, failed) = again.afterExits(listOf(ThemeProcessExit(12, abnormal = true)), setOf("neon.zip"))
+        val (twice, failed) = again.afterExits(listOf(ThemeProcessExit(12, abnormal = true)))
         assertEquals(listOf("neon.zip"), failed)
         assertEquals(2, twice.theme("neon.zip")!!.trial!!.strikes)
     }
@@ -82,34 +82,37 @@ class ThemeTrialsTest {
     @Test
     fun aStartThatDiedLoadingBlamesEveryPackOnTrialItWasLoading() {
         val loading = ThemeLedger().arrive(mapOf("neon.zip" to "1:1")).startRunning()
-        val (struck, _) = loading.afterExits(listOf(ThemeProcessExit(1, abnormal = true)), emptySet())
+        val (struck, _) = loading.afterExits(listOf(ThemeProcessExit(1, abnormal = true)))
         assertEquals(1, struck.theme("neon.zip")!!.trial!!.strikes)
-        val (clean, _) = loading.loaded(emptyMap()).afterExits(listOf(ThemeProcessExit(1, abnormal = true)), emptySet())
+        val (clean, _) = loading.loaded(emptyMap(), emptySet()).afterExits(listOf(ThemeProcessExit(1, abnormal = true)))
         assertEquals(0, clean.theme("neon.zip")!!.trial!!.strikes)
     }
 
     @Test
     fun anUpdateInstalledWhileTheOldCopyRanIsNotBlamedForIt() {
-        val running = ThemeLedger().arrive(mapOf("neon.zip" to "1:1"), adopt = true).startRunning().loaded(mapOf("neon.zip" to manifest()))
+        val running = ThemeLedger().arrive(mapOf("neon.zip" to "1:1"), adopt = true).startRunning()
+            .loaded(mapOf("neon.zip" to manifest()), setOf("neon.zip"))
         val updated = running.withTheme(running.theme("neon.zip")!!.copy(stamp = "2:2", trial = ThemeTrial()))
-        val (after, _) = updated.afterExits(listOf(ThemeProcessExit(1, abnormal = true)), setOf("neon.zip"))
+        val (after, _) = updated.afterExits(listOf(ThemeProcessExit(1, abnormal = true)))
         assertEquals(0, after.theme("neon.zip")!!.trial!!.strikes)
-        assertEquals(ThemeTrial(), updated.shown(setOf("neon.zip"), THEME_TRIAL_SHOWN_MILLIS).theme("neon.zip")!!.trial)
+        assertEquals(ThemeTrial(), updated.shown(THEME_TRIAL_SHOWN_MILLIS).theme("neon.zip")!!.trial)
     }
 
     @Test
     fun aTrialEndsOnceItsPackHasBeenShownLongEnough() {
-        val ledger = ThemeLedger().arrive(mapOf("neon.zip" to "1:1")).startRunning()
-        val partway = ledger.shown(setOf("neon.zip"), THEME_TRIAL_SHOWN_MILLIS - 1)
+        val ledger = ThemeLedger().arrive(mapOf("neon.zip" to "1:1")).startRunning().loaded(emptyMap(), setOf("neon.zip"))
+        val partway = ledger.shown(THEME_TRIAL_SHOWN_MILLIS - 1)
         assertEquals(THEME_TRIAL_SHOWN_MILLIS - 1, partway.theme("neon.zip")!!.trial!!.shownMillis)
-        assertEquals(partway, partway.shown(setOf("other.zip"), 60_000))
-        assertNull(partway.shown(setOf("neon.zip"), 1).theme("neon.zip")!!.trial)
+        val elsewhere = partway.copy(inUse = setOf("other.zip"))
+        assertEquals(elsewhere, elsewhere.shown(60_000))
+        assertNull(partway.shown(1).theme("neon.zip")!!.trial)
     }
 
     @Test
     fun aReleaseThatWentBackIsRefusedAfterwards() {
         val ledger = ThemeLedger().arrive(mapOf("neon.zip" to "1:1")).startRunning()
-            .loaded(mapOf("neon.zip" to manifest(""", "release": "2.0.0"""")))
+            .loaded(mapOf("neon.zip" to manifest(""", "release": "2.0.0"""")), emptySet())
+        assertEquals(setOf(ThemeRelease(2)), ledger.refuse("neon.zip").refused["neon"])
         val back = ledger.rolledBack("neon.zip", restored = null)
         assertEquals(emptyList<InstalledTheme>(), back.themes)
         assertEquals(setOf(ThemeRelease(2)), back.refused["neon"])
@@ -121,7 +124,7 @@ class ThemeTrialsTest {
     fun anUpdateMustComeFromTheSameSourceWithAHigherRelease() {
         val github = """, "source": {"github": "a/neon"}"""
         val installed = ThemeLedger().arrive(mapOf("neon.zip" to "1:1"), adopt = true)
-            .loaded(mapOf("neon.zip" to manifest(""", "release": "1.2.0"$github""")))
+            .loaded(mapOf("neon.zip" to manifest(""", "release": "1.2.0"$github""")), emptySet())
         val bundled = setOf("afterglow")
         fun check(extra: String) = checkThemeInstall(manifest(extra), installed, bundled)
         assertNull(check(""", "release": "1.3"$github"""))
@@ -142,6 +145,7 @@ class ThemeTrialsTest {
             refused = mapOf("neon" to setOf(ThemeRelease(1, 3))),
             loading = setOf("neon.zip"),
             running = mapOf("neon.zip" to "1:2"),
+            inUse = setOf("neon.zip"),
             pending = InstalledTheme("dusk.zip", "3:4", trial = ThemeTrial()),
             lastExitMillis = 99,
         )

@@ -44,6 +44,8 @@ class PackagedTheme(
     val resources: ThemeResources,
     /** The archive's files, so a pack loaded after this one can inherit them. */
     internal val entries: Map<String, ByteArray> = emptyMap(),
+    /** Its archive's name in files/themes. Null for a pack Foldcade ships. */
+    val archive: String? = null,
 ) {
     companion object {
         private const val ASSET = "themes/afterglow.zip"
@@ -59,13 +61,15 @@ class PackagedTheme(
                 .map { name -> Triple("themes/$name", null) { context.assets.open("themes/$name") } } +
                 File(context.filesDir, "themes").listFiles().orEmpty().filter { it.extension == "zip" }.sortedBy { it.name }
                     .map { file -> Triple(file.name, file.name) { file.inputStream() } }
+            val archiveOf = java.util.IdentityHashMap<ThemeZip, String>()
             val archives = sources.asSequence().mapNotNull { (source, archive, open) ->
-                try { open().use(::readThemeZip)?.also { zip -> archive?.let { read(it, zip.file) } } }
-                catch (error: Exception) { Log.w("FoldcadeTheme", "Theme $source ignored", error); null }
+                try {
+                    open().use(::readThemeZip)?.also { zip -> archive?.let { archiveOf[zip] = it; read(it, zip.file) } }
+                } catch (error: Exception) { Log.w("FoldcadeTheme", "Theme $source ignored", error); null }
             }
             var fallback: PackagedTheme? = null
             return loadThemeCatalog(archives, { zip ->
-                load(context, zip, fallback)?.also { if (fallback == null && it.resources.id == FALLBACK_THEME_ID) fallback = it }
+                load(context, zip, fallback, archiveOf[zip])?.also { if (fallback == null && it.resources.id == FALLBACK_THEME_ID) fallback = it }
             }) { diagnostic ->
                 Log.w("FoldcadeTheme", "${diagnostic.source}: ${diagnostic.message}")
             }
@@ -77,7 +81,7 @@ class PackagedTheme(
             return load(context, zip, inherit?.takeIf { zip.file.id != it.resources.id })
         }
 
-        private fun load(context: Context, zip: ThemeZip, inherit: PackagedTheme? = null): PackagedTheme? = try {
+        private fun load(context: Context, zip: ThemeZip, inherit: PackagedTheme? = null, archive: String? = null): PackagedTheme? = try {
             val entries = zip.entries
             val resources = resolveThemeResources(zip, inherit?.resources)
             val file = resources.file
@@ -118,6 +122,7 @@ class PackagedTheme(
                 music = themeMusic(context, file.name, json, entries),
                 resources = resources,
                 entries = entries,
+                archive = archive,
             )
         } catch (error: Exception) {
             Log.w("Foldcade", "Theme zip ignored", error)
