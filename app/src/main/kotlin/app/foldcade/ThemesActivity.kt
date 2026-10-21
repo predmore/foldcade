@@ -66,6 +66,14 @@ class ThemesActivity : PanelKeyActivity() {
 
     override fun pickerIsFocused(): Boolean = true
 
+    /**
+     * Only the D-pad repeats here. A held X would otherwise arm a removal and confirm it in one
+     * press, and a held A would open the picker again as it closes.
+     */
+    override fun onMeaningRepeated(meaning: Meaning, repeatCount: Int) {
+        if (repeatCount == 0 || meaning == Meaning.MoveUp || meaning == Meaning.MoveDown) onMeaning(meaning)
+    }
+
     /** The player's own Confirm and Back, as Home reads them. */
     override fun faceMap(): app.foldcade.language.FaceMap = app.shell.model.faceMap
 
