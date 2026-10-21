@@ -38,5 +38,7 @@ class PlaySpansTest {
             PlayEvent("night", "game", PlayKind.Removed, 61_000_000L, null, 0L),
         )
         assertEquals(listOf(PlaySpan("game", 60_000_000L, 60_600_000L, "short")), playSpans(events))
+        // Usage stats saw the removed night too, from when it came to the front to when it left.
+        assertEquals(listOf("game" to (1_000L..54_001_000L)), removedStretches(events))
     }
 }

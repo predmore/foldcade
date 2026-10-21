@@ -183,4 +183,22 @@ class UsagePlayTest {
         assertEquals(7_000L, play?.activeMillis)
         assertEquals(4_000L, play?.lastPlayedMillis)
     }
+
+    @Test
+    fun aRemovedStretchComesOutOfItsPackagesUsageTime() {
+        val spans = listOf(
+            UsageSpan("org.game", 0L, 10_000L),
+            UsageSpan("org.game", 20_000L, null),
+            UsageSpan("org.other", 0L, 10_000L),
+        )
+        val cut = withoutStretches(spans, mapOf("org.game" to listOf(2_000L..4_000L, 22_000L..23_000L)), nowMillis = 30_000L)
+        val play = packagePlay(cut, nowMillis = 30_000L)
+        // 10s less 2s, and the open 10s less 1s; another package keeps all its time.
+        assertEquals(17_000L, play["org.game"]?.activeMillis)
+        assertEquals(30_000L, play["org.game"]?.lastPlayedMillis)
+        assertEquals(10_000L, play["org.other"]?.activeMillis)
+        // A stretch cut whole is gone, and with it its last play.
+        val gone = packagePlay(withoutStretches(listOf(UsageSpan("org.game", 0L, 10_000L)), mapOf("org.game" to listOf(0L..10_000L)), 30_000L), 30_000L)
+        assertNull(gone["org.game"])
+    }
 }
