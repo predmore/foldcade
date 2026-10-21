@@ -1293,8 +1293,11 @@ class ShellController(
         id != null && running.isNotEmpty() && (tileOf(id) in running || tileIds(id).any { it in running })
 
     /** Still open in its player and on neither screen now: it waits behind Home, where A brings it back. */
-    fun isPaused(id: String?): Boolean =
-        id != null && resumable && isRunning(id) && !store.session.runs(id) && !store.session.runs(tileOf(id))
+    fun isPaused(id: String?): Boolean {
+        if (id == null || !resumable || !isRunning(id)) return false
+        // On a screen under any id the tile has had, as a game started before a merge is.
+        return (tileIds(tileOf(id)) + id).none(store.session::runs)
+    }
 
     /** The tile [id] and the home id of each copy folded into it. */
     private fun tileIds(id: String): List<String> =

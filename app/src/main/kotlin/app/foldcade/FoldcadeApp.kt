@@ -265,6 +265,9 @@ class FoldcadeApp : Application() {
     /** A library launch held while its player's save folder is asked for. It outlives a recreated Home, as the ask does. */
     internal var pendingSaveAsk: PendingBackendLaunch? = null
 
+    /** The tile Restart asked about, until its dialog closes. The app keeps it, as it keeps the dialog, for either Home to answer. */
+    internal var restartAsk: String? = null
+
     /** The running game on tile [tileId], under whichever id its tile has now. */
     internal fun runningOn(tileId: String): RunningGame? = runningGames.forTile(tileId, shell::tileOf)
 

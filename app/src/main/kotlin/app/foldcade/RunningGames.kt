@@ -8,7 +8,7 @@ import android.content.Intent
  * tile then brings that task back ([RESUME_FLAGS]), rather than a second start
  * that opens another copy of the player, or makes it load the game again.
  */
-internal class RunningGame(
+internal data class RunningGame(
     val tileId: String,
     val title: String,
     val platformId: String?,
