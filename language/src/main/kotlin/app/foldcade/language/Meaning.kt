@@ -87,6 +87,21 @@ enum class HomeKeys {
  */
 val HomeKeys.guardsHeldKeys: Boolean get() = this == HomeKeys.Selecting || this == HomeKeys.Typing || this == HomeKeys.Finding || this == HomeKeys.FindResults
 
+/** True while a field takes text: a name on the keyboard, or Find's query, from its results too. */
+val HomeKeys.takesText: Boolean get() = this == HomeKeys.Typing || this == HomeKeys.Finding || this == HomeKeys.FindResults
+
+/**
+ * What a hardware keyboard's key types while [homeKeys] take text, from its [unicodeChar]
+ * (the key event's character under its meta state). Null for controller buttons and the
+ * D-pad, which have none; for a dead accent waiting on its letter, which reads negative;
+ * and for spaces and control characters, whose keys already mean Space, Erase, Done or Back.
+ */
+fun typedText(unicodeChar: Int, homeKeys: HomeKeys): String? {
+    if (!homeKeys.takesText || unicodeChar <= 0 || !Character.isValidCodePoint(unicodeChar)) return null
+    if (Character.isISOControl(unicodeChar) || Character.isWhitespace(unicodeChar) || Character.isSpaceChar(unicodeChar)) return null
+    return String(Character.toChars(unicodeChar))
+}
+
 /** Keys that act once per press. Holding one does not repeat it. */
 private val shoulderKeys = setOf(
     KeyEvent.KEYCODE_BUTTON_L1,

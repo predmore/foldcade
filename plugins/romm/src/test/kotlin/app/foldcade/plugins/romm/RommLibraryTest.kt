@@ -224,6 +224,19 @@ class RommLibraryTest {
     }
 
     @Test
+    fun aListedGameCarriesRommsSizeForItsDownload() {
+        val root = Files.createTempDirectory("rom-size")
+        try {
+            val listed = rom("3ds", 3).copy(fsSizeBytes = 512L * 1024 * 1024)
+            assertEquals(512L * 1024 * 1024, listed.toGame(root, emptyList()).sizeBytes)
+            // RomM reports nothing for a ROM it has not sized; the hero then shows no size.
+            assertEquals(null, listed.copy(fsSizeBytes = 0).toGame(root, emptyList()).sizeBytes)
+        } finally {
+            root.toFile().deleteRecursively()
+        }
+    }
+
+    @Test
     fun removingADownloadPutsTheGameBackOnTheServerAndKeepsItsSaves() = runBlocking {
         val ops = ScriptedOps()
         val listed = rom("3ds", 3)

@@ -1727,9 +1727,7 @@ private fun HeroArt(
         // The cover, then the same art the focused tile shows. A letter is the last resort.
         when {
             // Wide art fills the screen behind; the logo names the game over it.
-            logo != null -> Image(
-                painter = logo.painter,
-                contentDescription = title,
+            logo != null -> Box(
                 modifier = Modifier
                     .fillMaxWidth(LOGO_WIDTH)
                     .fillMaxHeight(LOGO_HEIGHT)
@@ -1749,8 +1747,30 @@ private fun HeroArt(
                             center = center,
                         )
                     },
-                contentScale = ContentScale.Fit,
-            )
+            ) {
+                // The logo's own shape, blurred and in the scrim's colour, under it: a dark logo
+                // on art of its own hue keeps an edge, and a light one is not muddied by a blot.
+                val shadow = design.hero.logoShadowAlpha
+                if (shadow > 0f) {
+                    val blur = design.hero.logoShadowBlurDp.dp
+                    Image(
+                        painter = logo.painter,
+                        contentDescription = null,
+                        modifier = Modifier
+                            .matchParentSize()
+                            .then(if (blur > 0.dp) Modifier.blur(blur, BlurredEdgeTreatment.Unbounded) else Modifier),
+                        contentScale = ContentScale.Fit,
+                        alpha = shadow,
+                        colorFilter = ColorFilter.tint(design.colors.scrim, BlendMode.SrcIn),
+                    )
+                }
+                Image(
+                    painter = logo.painter,
+                    contentDescription = title,
+                    modifier = Modifier.matchParentSize(),
+                    contentScale = ContentScale.Fit,
+                )
+            }
             // A real title screen beside the box, drawn crisp.
             loaded != null && screenShot != null -> Row(
                 Modifier.fillMaxHeight(COVER_HEIGHT),

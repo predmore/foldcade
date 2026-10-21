@@ -44,6 +44,7 @@ import app.foldcade.host.PluginHost
 import app.foldcade.language.FoldNotice
 import app.foldcade.language.FindEntry
 import app.foldcade.language.FindKind
+import app.foldcade.language.downloadFacts
 import app.foldcade.language.HintKey
 import app.foldcade.language.HomeKeys
 import app.foldcade.language.PanelLevel
@@ -761,6 +762,17 @@ class ShellController(
         step.cue?.slot?.let { cue(model.themeIndex, it) }
     }
 
+    /** Characters a hardware keyboard typed: onto Find's query, or the name on the open keyboard. */
+    fun typeText(text: String): Effect? {
+        find?.takeIf { findActive() }?.let { return findOutcome(it.typeText(text)) }
+        if (!homeActive()) return null
+        val step = home.typeText(text) ?: return null
+        commitHome()
+        showBoard(step.focus ?: model.focus, keepDialog = true)
+        step.cue?.slot?.let { cue(model.themeIndex, it) }
+        return null
+    }
+
     /**
      * Select opens Find over any grid of Home, All or a shelf, unless something else has
      * the keys: a menu, a page, a lifted tile, the keyboard, or a picker.
@@ -840,7 +852,8 @@ class ShellController(
     }
 
     /** The line under a Find result's name: its platform or count, where it lives, and whether it is hidden. */
-    fun findFacts(entry: FindEntry): List<String> = app.foldcade.language.findFacts(home.board, entry)
+    fun findFacts(entry: FindEntry): List<String> =
+        app.foldcade.language.findFacts(home.board, entry) + listOfNotNull(entry.id.takeIf { entry.kind != FindKind.Group }?.let(::downloadLine))
 
     /** A Find result as a game, for its tile's art and icon. */
     fun findGame(id: String): ShelfGame = homeShelf(home.faceOf(id))
@@ -2095,9 +2108,20 @@ class ShellController(
             mark = game.mark,
             packageName = game.androidPackage,
             emptyShelfHint = game.emptyShelfHint,
-            availability = game.availabilityLabel,
+            availability = game.availabilityLabel ?: downloadLine(game.id),
         ),
     )
+
+    /**
+     * What playing the tile [id]'s game would download, as [downloadFacts] says it, while no
+     * copy is on the device ([onServer]). Null once one is, and while one is downloading: the
+     * live activity line says that. The first copy is the one a launch fetches.
+     */
+    private fun downloadLine(id: String): String? {
+        if (id.isEmpty() || !onServer(id) || isDownloading(id)) return null
+        val copy = home.copies(id).firstOrNull() ?: return null
+        return downloadFacts(plugins.library(copy.backendId)?.displayName, copy.sizeBytes)
+    }
 
     /** Find's subject as the top screen shows it. A group shows as its folder does. */
     private fun foundHero(session: FindSession): HeroSubject? {
@@ -2115,7 +2139,7 @@ class ShellController(
                 detail = game.shortText,
                 mark = game.mark,
                 packageName = game.androidPackage,
-                availability = game.availabilityLabel,
+                availability = game.availabilityLabel ?: downloadLine(game.id),
             ),
         )
     }

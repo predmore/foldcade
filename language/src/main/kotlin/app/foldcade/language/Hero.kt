@@ -53,6 +53,33 @@ fun heroFacts(title: String, vararg parts: String?): String =
         .distinct()
         .joinToString(" · ")
 
+/**
+ * The hero's word on a game that is only on a server: where it is, and how much playing it
+ * downloads when the library knows, as "On RomM · 512 MB". [server] is the library's own
+ * name; without one it is only not here.
+ */
+fun downloadFacts(server: String?, sizeBytes: Long?): String = listOfNotNull(
+    server?.trim()?.ifEmpty { null }?.let { "On $it" } ?: Copy.notOnDevice,
+    sizeBytes?.takeIf { it > 0L }?.let(::formatDownloadSize),
+).joinToString(" · ")
+
+/** A download's size, as a save's is shown, on up to GB: "512 MB", "1.4 GB". A whole number drops its ".0". */
+fun formatDownloadSize(bytes: Long): String {
+    val size = bytes.coerceAtLeast(0L)
+    val units = listOf("KB", "MB", "GB", "TB")
+    if (size < 1024L) return "$size B"
+    var value = size / 1024.0
+    var unit = 0
+    while (value >= 1024.0 && unit < units.lastIndex) {
+        value /= 1024.0
+        unit++
+    }
+    val shown = String.format(java.util.Locale.US, "%.1f", value).removeSuffix(".0")
+    // Rounding can reach the next unit's 1024, as 1023.96 MB does; that reads as 1 GB.
+    if (shown == "1024" && unit < units.lastIndex) return "1 ${units[unit + 1]}"
+    return "$shown ${units[unit]}"
+}
+
 /** Count under a folder name. One stays singular. A folder of apps (Android Apps, Emulators) counts apps. */
 fun folderCountLine(count: Int, apps: Boolean = false): String {
     val total = count.coerceAtLeast(0)

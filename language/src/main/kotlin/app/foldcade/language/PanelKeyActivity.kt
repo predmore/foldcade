@@ -26,6 +26,9 @@ abstract class PanelKeyActivity : ComponentActivity() {
 
     protected open fun onInputCanceled() = Unit
 
+    /** Characters a hardware keyboard typed into the open field (see [typedText]). Its keys have no [Meaning]. */
+    protected open fun onTypedText(text: String) = Unit
+
     protected open fun onMeaningReleased(meaning: Meaning, canceled: Boolean) = Unit
 
     protected open fun onMeaningRepeated(meaning: Meaning, repeatCount: Int) = onMeaning(meaning)
@@ -90,7 +93,8 @@ abstract class PanelKeyActivity : ComponentActivity() {
         }
         if (capturedKeys.swallows(keyCode, event.repeatCount, homeKeys().guardsHeldKeys || capturingHold())) return true
         if (keyCode == KeyEvent.KEYCODE_BACK) return false
-        val meaning = meaningOf(keyCode, event.repeatCount, faceMap(), homeKeys()) ?: return consumesUnmapped(keyCode)
+        val meaning = meaningOf(keyCode, event.repeatCount, faceMap(), homeKeys())
+            ?: return typesText(event) || consumesUnmapped(keyCode)
         val shoulder = meaning == Meaning.LeftPanel || meaning == Meaning.RightPanel
         if (pickerIsFocused() || (shoulder && foldcadeSurfaceFocused())) {
             onMeaningRepeated(meaning, event.repeatCount)
@@ -98,6 +102,17 @@ abstract class PanelKeyActivity : ComponentActivity() {
             return true
         }
         return consumesUnmapped(keyCode)
+    }
+
+    /**
+     * A letter, digit or mark from a hardware keyboard, while a field takes text. Held, it
+     * repeats as a keyboard's keys do. A shortcut with Ctrl or Meta types nothing.
+     */
+    private fun typesText(event: KeyEvent): Boolean {
+        if (event.isCtrlPressed || event.isMetaPressed || !pickerIsFocused()) return false
+        val text = typedText(event.getUnicodeChar(event.metaState), homeKeys()) ?: return false
+        onTypedText(text)
+        return true
     }
 
     override fun onKeyUp(keyCode: Int, event: KeyEvent): Boolean {

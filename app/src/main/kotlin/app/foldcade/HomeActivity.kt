@@ -235,6 +235,13 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
 
     override fun onInputCanceled() { foldcade.shell.cancelDeleteHold(inputWindow) }
 
+    override fun onTypedText(text: String) {
+        // The command center on this screen covers the field; its keys are its own.
+        val panel = displays.panelFor(this, foldcade.store.session.defaultDisplayIsTop) ?: return
+        if (foldcade.store.session.surfaceOn(panel) == Surface.CommandCenter) return
+        dispatch(foldcade.shell.typeText(text))
+    }
+
     override fun faceMap(): app.foldcade.language.FaceMap = foldcade.shell.model.faceMap
 
     override fun onPromptHeld(key: PromptKey, held: Boolean) {

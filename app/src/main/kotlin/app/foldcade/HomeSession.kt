@@ -610,6 +610,9 @@ class HomeSession(
     /** A tap on the open keyboard. Null when none is open. */
     fun tapTyping(at: KeyFocus): HomeStep? = typed { it.press(at) }
 
+    /** Characters from a hardware keyboard, into the open keyboard's name. Null when none is open. */
+    fun typeText(text: String): HomeStep? = typed { it.typeText(text) }
+
     private fun closeTyping() {
         renamingId = null
         typing = null

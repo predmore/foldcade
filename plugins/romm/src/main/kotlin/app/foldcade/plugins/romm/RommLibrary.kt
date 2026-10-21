@@ -961,6 +961,8 @@ internal fun RomSummary.toGame(
     platformId = alignedPlatformId(definitions, platformSlug),
     availability = cacheAvailability(cacheRoot, this),
     label = name?.takeIf { it.isNotBlank() } ?: fsName,
+    // RomM's own figure for the whole ROM, as its web page shows it.
+    sizeBytes = fsSizeBytes.takeIf { it > 0 },
 )
 
 internal fun cacheAvailability(cacheRoot: Path, rom: RomSummary): Availability {

@@ -88,6 +88,15 @@ object KeyboardLayout {
         error("$cap is not on the keyboard")
     }
 
+    /** The key that types [char], in either case. Null for a character the board has no key for. */
+    fun glyph(char: Char): KeyFocus? {
+        rows.forEachIndexed { row, keys ->
+            val index = keys.indexOfFirst { (it.cap as? KeyCap.Glyph)?.let { cap -> cap.lower == char || cap.upper == char } == true }
+            if (index >= 0) return KeyFocus(row, index, keys[index].center)
+        }
+        return null
+    }
+
     /** G, in the middle of the home row: the shortest reach to anything. */
     val start: KeyFocus get() = find(KeyCap.Glyph('g'))
 
@@ -339,7 +348,7 @@ private fun Typing.pressFocused(): TypingStep {
 }
 
 /** Types [chars]. A letter spends any capital. A digit or a mark spends a word's own capital, not one chosen with L2. */
-private fun Typing.type(chars: String, key: KeyFocus): TypingStep {
+private fun Typing.type(chars: String, key: KeyFocus?): TypingStep {
     val next = draft.insert(chars, limit)
     if (next == draft) return TypingStep(copy(refusals = refusals + 1).pressing(key), TypingCue.None)
     val typed = when {
@@ -371,13 +380,24 @@ private fun Typing.done(key: KeyFocus): TypingStep {
     return TypingStep(edited(restored).copy(refusals = refusals + 1).pressing(key), TypingCue.None)
 }
 
+/**
+ * [text] from a hardware keyboard, typed at the caret as a key would type it, up to the
+ * limit. It arrives already cased, so Shift does not change it, though a letter still
+ * spends a capital. The board's own key for it flashes when it has one; the cursor stays.
+ */
+fun Typing.typeText(text: String): TypingStep {
+    val chars = text.filterNot { it.isISOControl() }
+    if (chars.isEmpty()) return TypingStep(this, TypingCue.None)
+    return type(chars, chars.singleOrNull()?.let(KeyboardLayout::glyph))
+}
+
 /** [text] in place of everything, caret at its end, as a host clearing a search would set it. */
 fun Typing.withText(text: String): Typing = edited(TextDraft(clipName(text, limit)))
 
 private fun Typing.edited(next: TextDraft, spent: Boolean = false): Typing =
     copy(draft = next, shift = settleShift(shift, next, spent))
 
-private fun Typing.pressing(key: KeyFocus): Typing = copy(pressed = pressed + 1, pressedKey = key)
+private fun Typing.pressing(key: KeyFocus?): Typing = copy(pressed = pressed + 1, pressedKey = key)
 
 /**
  * One-press names for something new: the caller's own ideas first (such as the platform

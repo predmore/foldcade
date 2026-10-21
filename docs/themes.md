@@ -255,7 +255,9 @@ The top screen's selected item.
 | `hero.markScale` | 0.86 | A drawn mark's share of the hero box (legacy PNG marks use `artScale`) |
 | `hero.cardAlpha` | 0.72 | The name card over game art |
 | `hero.pillAlpha` | 0.94 | The selection count and letter-jump card |
-| `hero.logoShadeAlpha` | 0.62 | The shade behind a game's logo |
+| `hero.logoShadeAlpha` | 0.42 | The round shade behind a game's logo |
+| `hero.logoShadowAlpha` | 0.85 | The soft shadow a logo casts in its own shape, in the scrim colour |
+| `hero.logoShadowBlurDp` | 10 | How soft that shadow is; 0 is a hard copy |
 | `hero.sceneShadeTop` | 0.45 | Wide art's shade at the top |
 | `hero.sceneShadeBottom` | 0.8 | And at the bottom |
 | `hero.ambientBlurDp` | 48 | Blur of the box-art backdrop |
