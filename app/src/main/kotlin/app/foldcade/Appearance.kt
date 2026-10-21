@@ -60,6 +60,8 @@ class PackagedTheme(
     /** The packs this one builds on, nearest first, Afterglow left out. */
     val parents: List<PackagedTheme> = emptyList(),
     private val musicBytes: () -> ByteArray? = { null },
+    /** The faces this pack resolved to, so a pack that builds on it can take each one it leaves out. */
+    internal val faces: ThemeFaces = ThemeFaces(),
 ) {
     /**
      * Writes the pack's loop where the player reads it, the first time it is wanted, and returns
@@ -146,17 +148,18 @@ class PackagedTheme(
             val json = entries["theme.json"]?.decodeToString()
             val parents = inherit?.takeIf { it.resources.id in resources.parents }?.let { listOf(it) + it.parents }.orEmpty()
             val style = resources.style
-            // A pack without faces of its own wears its parent's.
-            val regular = file.fonts["regular"] ?: fontZipName(entries.keys)
-            val inheritedFont = inherit?.paint?.theme
-            val font = fontOrInherited(
-                regular?.let { loadFont(context, entries[it], it, file.fonts["bold"]?.let { bold -> entries[bold]?.let { bold to it } }, style.type.bodyWeight, style.type.strongWeight) },
-                inheritedFont?.font,
+            // Each face a pack leaves out is its parent's, but a parent's bold belongs to the parent's
+            // regular face, so it carries over only when the pack keeps that face too.
+            val ownRegular = face(context, entries, file.fonts["regular"] ?: fontZipName(entries.keys))
+            val ownBold = face(context, entries, file.fonts["bold"])
+            val inheritedFaces = inherit?.faces
+            val faces = ThemeFaces(
+                regular = ownRegular ?: inheritedFaces?.regular,
+                bold = ownBold ?: inheritedFaces?.bold?.takeIf { ownRegular == null },
+                display = face(context, entries, file.fonts["display"]) ?: inheritedFaces?.display,
             )
-            // A display face of the parent's own carries over; one the parent only inherited as its font does not.
-            val display = file.fonts["display"]?.let { loadFont(context, entries[it], it, null, style.type.bodyWeight, style.type.strongWeight) }
-                ?: inheritedFont?.displayFont?.takeIf { regular == null && it !== inheritedFont.font }
-                ?: font
+            val font = fontOrInherited(faces.regular?.let { family(it, faces.bold, style.type.bodyWeight, style.type.strongWeight) }, inherit?.paint?.theme?.font)
+            val display = faces.display?.let { family(it, null, style.type.bodyWeight, style.type.strongWeight) } ?: font
             val theme = Theme(
                 background = file.background,
                 surface = file.surface,
@@ -197,37 +200,34 @@ class PackagedTheme(
                 archive = archive,
                 parents = parents,
                 musicBytes = { described?.let { entries[it.file] } },
+                faces = faces,
             )
         } catch (error: Exception) {
             Log.w("Foldcade", "Theme zip ignored", error)
             null
         }
 
+        /** The face at [name] in [entries], written where Android can read it. Null when there is none or it cannot be. */
+        private fun face(context: Context, entries: Map<String, ByteArray>, name: String?): ThemeFace? {
+            val bytes = name?.let { entries[it] }?.takeIf { it.isNotEmpty() } ?: return null
+            return try { ThemeFace(cachedFont(context, bytes, name), variableWeight(bytes)) }
+            catch (error: Exception) { Log.w("Foldcade", "Theme font ignored", error); null }
+        }
+
         /**
-         * [name]'s face, with [bold] as its strong weight when the pack has one. A variable face
-         * (one with a `wght` axis) is set to [body] and [strong] itself, so it needs no faux bold.
+         * [regular] at [body], with [bold] as its [strong] weight when there is one. A variable face
+         * (one with a `wght` axis) is set to both weights itself, so it needs no faux bold.
          */
-        private fun loadFont(
-            context: Context,
-            bytes: ByteArray?,
-            name: String,
-            bold: Pair<String, ByteArray>?,
-            body: FontWeight,
-            strong: FontWeight,
-        ): FontFamily? {
-            if (bytes == null) return null
-            return try {
-                val regular = cachedFont(context, bytes, name)
-                val faces = if (variableWeight(bytes)) {
-                    listOf(body, strong).distinct().map { weight -> Font(regular, weight, variationSettings = FontVariation.Settings(FontVariation.weight(weight.weight))) }
-                } else {
-                    listOf(Font(regular, body)) + listOfNotNull(bold?.let { (boldName, boldBytes) -> Font(cachedFont(context, boldBytes, boldName), strong) })
-                }
-                FontFamily(faces)
-            } catch (error: Exception) {
-                Log.w("Foldcade", "Theme font ignored", error)
-                null
+        private fun family(regular: ThemeFace, bold: ThemeFace?, body: FontWeight, strong: FontWeight): FontFamily? = try {
+            val faces = if (regular.variable) {
+                listOf(body, strong).distinct().map { weight -> Font(regular.file, weight, variationSettings = FontVariation.Settings(FontVariation.weight(weight.weight))) }
+            } else {
+                listOf(Font(regular.file, body)) + listOfNotNull(bold?.let { Font(it.file, strong) })
             }
+            FontFamily(faces)
+        } catch (error: Exception) {
+            Log.w("Foldcade", "Theme font ignored", error)
+            null
         }
 
         private fun cachedFont(context: Context, bytes: ByteArray, name: String): File {
@@ -249,6 +249,12 @@ class PackagedTheme(
         }
     }
 }
+
+/** A font file in the cache, and whether it varies by weight. */
+class ThemeFace(val file: File, val variable: Boolean)
+
+/** A pack's regular, bold and display faces, after inheritance. */
+data class ThemeFaces(val regular: ThemeFace? = null, val bold: ThemeFace? = null, val display: ThemeFace? = null)
 
 /** True when the OpenType face in [bytes] has a `wght` variation axis. */
 internal fun variableWeight(bytes: ByteArray): Boolean {
@@ -309,6 +315,9 @@ class ThemeSounds(private val context: Context, internal val layers: List<Map<St
     private var pool: SoundPool? = null
     private val ids = mutableMapOf<Pair<Int, String>, Int>()
 
+    /** Sample ids that finished decoding. One still loading plays nothing, and says so. */
+    private val ready = mutableSetOf<Int>()
+
     /** Loads the clips now, so the first cue is not lost while they decode. */
     @Synchronized
     fun warm() {
@@ -322,6 +331,7 @@ class ThemeSounds(private val context: Context, internal val layers: List<Map<St
                     .build(),
             )
             .build()
+        made.setOnLoadCompleteListener { _, id, status -> if (status == 0) synchronized(this) { ready += id } }
         pool = made
         clips.values.distinct().forEach { clip ->
             val (layer, slot) = clip
@@ -340,13 +350,15 @@ class ThemeSounds(private val context: Context, internal val layers: List<Map<St
     /** True when [slot] is heard: a clip in its chain is there and the theme's volume is above zero. */
     fun has(slot: String): Boolean = volume > 0f && slot in clips
 
-    /** True when this theme has a clip for [slot] and the tick was started. */
+    /**
+     * True when this theme's clip for [slot] started. A clip still decoding, the first moments
+     * after a theme is chosen, plays nothing and returns false, so a caller can fall back.
+     */
     @Synchronized
     fun play(slot: String): Boolean {
         val clip = clips[slot] ?: return false
         warm()
-        val id = ids[clip] ?: return false
-        pool?.play(id, volume, volume, 1, 0, 1f)
-        return true
+        val id = ids[clip]?.takeIf { it in ready } ?: return false
+        return (pool?.play(id, volume, volume, 1, 0, 1f) ?: 0) != 0
     }
 }

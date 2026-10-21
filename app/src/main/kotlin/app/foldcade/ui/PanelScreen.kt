@@ -399,7 +399,8 @@ private fun sceneLive(app: FoldcadeApp, scene: app.foldcade.language.ThemeScene?
     return remember(red, green, blue, status, moved, readsAccent, readsMove) {
         {
             val now = java.time.LocalTime.now()
-            val since = moved.longValue.takeIf { readsMove && it != Long.MIN_VALUE }?.let { (SystemClock.elapsedRealtime() - it) / 1000f }
+            // Read only by a scene that uses it, so moving the cursor redraws no other scene.
+            val since = if (!readsMove) null else moved.longValue.takeIf { it != Long.MIN_VALUE }?.let { (SystemClock.elapsedRealtime() - it) / 1000f }
             SceneLive(
                 accentR = if (readsAccent) red.value else 1f,
                 accentG = if (readsAccent) green.value else 1f,

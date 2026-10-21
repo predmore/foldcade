@@ -14,6 +14,9 @@ import androidx.compose.ui.graphics.graphicsLayer
 import app.foldcade.language.*
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.drop
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.coroutines.withContext
 import kotlin.random.Random
 
@@ -57,7 +60,13 @@ fun Backdrop(
             }
             val rate = prepared.frameRate(time, viewport.width.toFloat(), viewport.height.toFloat(), moving, panel, clock, live())
                 ?: return@LaunchedEffect
-            if (rate == 0f) return@LaunchedEffect
+            if (rate == 0f) {
+                // Stopped, until an input the scene reads changes or a minute passes for `hour`.
+                withTimeoutOrNull(STOPPED_RECHECK_MILLIS) { snapshotFlow { live() }.drop(1).first() }
+                last = 0L
+                wait = 0f
+                continue
+            }
             wait = 1f / rate
             val due = last + (wait * 1_000_000_000f).toLong() - 4_000_000L
             val sleep = (due - System.nanoTime()) / 1_000_000L
@@ -79,6 +88,9 @@ fun Backdrop(
         onMetrics?.invoke(prepared.metrics)
     }
 }
+
+/** How often a stopped scene asks its frame rate again, so one that waits for an hour wakes. */
+private const val STOPPED_RECHECK_MILLIS = 60_000L
 
 /**
  * Opaque layers over one panel's backdrop. While any is composed the backdrop is

@@ -66,6 +66,9 @@ class ThemesActivity : PanelKeyActivity() {
 
     override fun pickerIsFocused(): Boolean = true
 
+    /** The player's own Confirm and Back, as Home reads them. */
+    override fun faceMap(): app.foldcade.language.FaceMap = app.shell.model.faceMap
+
     override fun onMeaning(meaning: Meaning) {
         val (next, action) = page.on(meaning)
         page = next
