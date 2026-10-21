@@ -1658,7 +1658,7 @@ private fun SceneBackdrop(app: FoldcadeApp, record: Game?, query: ArtQuery?, spe
  * the art the user chose or is choosing.
  */
 @Composable
-private fun rememberArt(app: FoldcadeApp, record: Game?, query: ArtQuery?, automatic: Boolean = true): ArtSet? {
+internal fun rememberArt(app: FoldcadeApp, record: Game?, query: ArtQuery?, automatic: Boolean = true): ArtSet? {
     val allowed = app.shell.model.artwork
     val connections = app.shell.model.signedIn
     val revision = app.artRevision
@@ -1819,7 +1819,7 @@ private fun HeroArt(
     }
 }
 
-private class LoadedCover(val painter: Painter, val ratio: Float)
+internal class LoadedCover(val painter: Painter, val ratio: Float)
 
 /**
  * Memory-cache keys of covers already decoded, by size and address. A painter made
@@ -1990,7 +1990,7 @@ private const val HERO_WARM_DELAY_MS = 300L
  * is fixed, so the request starts before the painter is drawn.
  */
 @Composable
-private fun rememberCoverPainter(
+internal fun rememberCoverPainter(
     app: FoldcadeApp,
     uri: String,
     px: Int,
@@ -2629,7 +2629,8 @@ private fun GridHints(app: FoldcadeApp, modifier: Modifier = Modifier) {
     val addGames = if (gridKeys && find == null && model.settings == null && model.playActivity == null && shell.emptyCollection() != null) {
         listOf(HintKey(promptKeyOf(model.faceMap.confirmKey) ?: PromptKey.FaceA, Copy.addGames))
     } else emptyList()
-    val destructive = model.panel?.let { panelRows(it, model).getOrNull(it.index) }?.let { it == LanguageRow.RemoveDownload || it == LanguageRow.DeleteShortcut } == true
+    val destructive = model.panel?.let { panelRows(it, model).getOrNull(it.index) }?.let { it == LanguageRow.RemoveDownload || it == LanguageRow.DeleteShortcut } == true ||
+        model.playActivity?.sessions != null
     val back = promptKeyOf(model.faceMap.backKey) ?: PromptKey.FaceB
     val selecting = gridKeys && shell.homeSelection() != null
     val shown = if (!selecting && model.undoVerb != null && model.panel == null && model.dialog == null) listOf(HintKey(PromptKey.FaceY, Copy.undo)) else if (!selecting && gridKeys && (shell.downloading.isNotEmpty() || shell.activity.values.any { it is TileActivity.Downloading || it == TileActivity.Checking })) {

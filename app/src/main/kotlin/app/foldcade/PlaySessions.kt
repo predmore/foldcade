@@ -103,6 +103,14 @@ class PlaySessions private constructor(
 
     fun events(): List<PlayEvent> = log.events()
 
+    /**
+     * Takes a session out of the history, as one left running overnight. The
+     * schedule, the totals on tiles, and Recently played all stop counting it.
+     */
+    fun remove(sessionId: String) {
+        if (log.remove(sessionId)) changed()
+    }
+
     /** The name [gameId] had when it was last played or seen in a catalog. */
     fun name(gameId: String): String? =
         names.name(gameId) ?: historyIds(gameId).firstNotNullOfOrNull { names.name(it) }
@@ -135,18 +143,22 @@ class PlaySessions private constructor(
  * The log's events as stretches in front. Each starts at the wall time the game
  * came to the front and lasts as long as the active time it gained, so sleep and
  * time away never count. A session still in front has no stretch until it leaves.
+ * A session the player removed has none at all.
  */
 internal fun playSpans(events: List<PlayEvent>): List<PlaySpan> {
+    val removed = events.filter { it.kind == PlayKind.Removed }.mapTo(HashSet()) { it.sessionId }
     val front = HashMap<String, PlayEvent>()
     val spans = mutableListOf<PlaySpan>()
     for (event in events) {
+        if (event.sessionId in removed) continue
         when (event.kind) {
             PlayKind.Started, PlayKind.Resumed -> front[event.sessionId] = event
             PlayKind.Backgrounded, PlayKind.Ended -> {
                 val since = front.remove(event.sessionId) ?: continue
                 val active = event.activeMillis - since.activeMillis
-                if (active > 0L) spans += PlaySpan(event.gameId, since.atMillis, since.atMillis + active)
+                if (active > 0L) spans += PlaySpan(event.gameId, since.atMillis, since.atMillis + active, event.sessionId)
             }
+            PlayKind.Removed -> Unit
         }
     }
     return spans

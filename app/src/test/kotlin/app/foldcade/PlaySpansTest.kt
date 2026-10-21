@@ -21,10 +21,22 @@ class PlaySpansTest {
         )
         assertEquals(
             listOf(
-                PlaySpan("game", 1_000L, 601_000L),
-                PlaySpan("game", 4_201_000L, 4_501_000L),
+                PlaySpan("game", 1_000L, 601_000L, "s1"),
+                PlaySpan("game", 4_201_000L, 4_501_000L, "s1"),
             ),
             playSpans(events),
         )
+    }
+
+    @Test
+    fun aRemovedSessionHasNoStretchesAndTheOthersKeepTheirs() {
+        val events = listOf(
+            PlayEvent("night", "game", PlayKind.Started, 1_000L, null, 0L),
+            PlayEvent("night", "game", PlayKind.Ended, 54_001_000L, null, 54_000_000L),
+            PlayEvent("short", "game", PlayKind.Started, 60_000_000L, null, 0L),
+            PlayEvent("short", "game", PlayKind.Ended, 60_600_000L, null, 600_000L),
+            PlayEvent("night", "game", PlayKind.Removed, 61_000_000L, null, 0L),
+        )
+        assertEquals(listOf(PlaySpan("game", 60_000_000L, 60_600_000L, "short")), playSpans(events))
     }
 }

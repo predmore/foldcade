@@ -316,6 +316,9 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
             -> Unit
             is Effect.RemoveDownload -> removeDownload(effect.gameId)
             is Effect.RestartGame -> askRestart(effect.gameId)
+            is Effect.RemovePlaySession -> foldcade.plays.remove(effect.sessionId)
+            // The shell lists the day's sessions itself.
+            is Effect.OpenPlayDay -> Unit
             Effect.OpenAll -> foldcade.shell.openHomeAll()
             is Effect.OpenFolder -> foldcade.shell.openHomeFolder(effect.folderId)
             Effect.ToggleAddNew -> foldcade.shell.applyHomeAddNew(foldcade.shell.model.addNewToHome)

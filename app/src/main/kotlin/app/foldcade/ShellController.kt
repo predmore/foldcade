@@ -290,7 +290,10 @@ class ShellController(
                 commitHome(catalog = true)
                 if (next.libraryGrid) next else withShelf(next)
             } else next
-            val canceled = current.deleteHold != null && (next.panel == null || next.panel != current.panel || next.dialog != null || next.settings != null || next.connectOpen)
+            // A session's hold lives on Play activity's list, which has no menu: that list changing cancels it.
+            val holdMoved = if (current.deleteHold?.row == Row.RemoveSession) next.playActivity != current.playActivity
+                else next.panel == null || next.panel != current.panel
+            val canceled = current.deleteHold != null && (holdMoved || next.dialog != null || next.settings != null || next.connectOpen)
             val stable = app.foldcade.language.retainMenuRows(current, prepared)
             undo = when {
                 stable.panel == null -> undo?.resume(nowMillis())
@@ -415,13 +418,21 @@ class ShellController(
         if (undo != null && activeUndo() == null) { undo = null; publish(model.copy(undoVerb = null)) }
         val hold = model.deleteHold ?: return null
         if (inputWindows[hold.inputWindow] == false) { cancelDelete(); return null }
-        val selected = model.panel?.let { panelRows(it, model).getOrNull(it.index) }
-        if (selected != hold.row || model.tileActions?.game != hold.gameId) { cancelDelete(); return null }
+        val session = hold.row == Row.RemoveSession
+        if (session) {
+            val page = model.playActivity
+            if (page?.sessions?.getOrNull(page.session) != hold.gameId) { cancelDelete(); return null }
+        } else {
+            val selected = model.panel?.let { panelRows(it, model).getOrNull(it.index) }
+            if (selected != hold.row || model.tileActions?.game != hold.gameId) { cancelDelete(); return null }
+        }
         if (hold.complete(nowMillis())) {
             model = model.copy(deleteHold = null, deleteProgress = 0f)
             completingDelete = true
             cue(model.themeIndex, "notify")
-            return try { onMeaning(Meaning.Activate, HostScreen.Top, inputWindow = hold.inputWindow) } finally { completingDelete = false }
+            // A menu row runs on A; a session's list has no rows, so the key held is pressed again.
+            val press = if (session) hold.meaning else Meaning.Activate
+            return try { onMeaning(press, HostScreen.Top, inputWindow = hold.inputWindow) } finally { completingDelete = false }
         }
         model = model.copy(deleteProgress = hold.progress(nowMillis()))
         return null
@@ -447,7 +458,7 @@ class ShellController(
         val rows = panel?.let { panelRows(it, model) }.orEmpty()
         val at = if (meaning == Meaning.Activate) panel?.index?.coerceIn(0, (rows.size - 1).coerceAtLeast(0)) else chordIndex(rows, meaning)
         val row = at?.let { rows.getOrNull(it) }
-        if (find == null && model.homeGrid == HomeGrid.Hidden && model.panel == null && (meaning == Meaning.Activate || meaning == Meaning.ActivateBottom)) return null
+        if (find == null && model.homeGrid == HomeGrid.Hidden && model.panel == null && model.playActivity == null && (meaning == Meaning.Activate || meaning == Meaning.ActivateBottom)) return null
         val before = home.board
         val beforeFocus = model.focus
         val beforeGrid = model.homeGrid
@@ -530,6 +541,14 @@ class ShellController(
                 heldActions.capture(meaning.ordinal)
                 model = current.copy(panel = panel.copy(index = index),
                     deleteHold = DeleteHold(row, key, nowMillis(), game, meaning, inputWindow, inputKeys[inputWindow]), deleteProgress = 0f)
+            }
+            return null
+        }
+        // Removing a play session is held first, as deleting a download is.
+        if (!completingDelete && effect is Effect.RemovePlaySession) {
+            if (current.playActivity?.sessions != null && repeatCount == 0 && inputWindows[inputWindow] != false) {
+                heldActions.capture(meaning.ordinal)
+                model = current.copy(deleteHold = DeleteHold(Row.RemoveSession, PromptKey.FaceX, nowMillis(), effect.sessionId, meaning, inputWindow, inputKeys[inputWindow]), deleteProgress = 0f)
             }
             return null
         }
@@ -673,6 +692,10 @@ class ShellController(
             }
             Effect.EditField -> {
                 typingRequest++
+                null
+            }
+            is Effect.OpenPlayDay -> {
+                openPlayDay(effect.weeksBack, effect.day)
                 null
             }
             else -> effect
@@ -1772,6 +1795,19 @@ class ShellController(
         return onMeaning(Meaning.Activate, screen)
     }
 
+    /**
+     * The session ids Play activity lists for a day of a week, first started first.
+     * The app reads them from its play log; see [app.foldcade.language.playDaySessions].
+     */
+    var playDaySessions: (weeksBack: Int, day: Int) -> List<String> = { _, _ -> emptyList() }
+
+    /** A on a day of Play activity lists its sessions. A day without any stays as it is. */
+    private fun openPlayDay(weeksBack: Int, day: Int) {
+        val page = model.playActivity ?: return
+        val ids = playDaySessions(weeksBack, day).takeIf { it.isNotEmpty() } ?: return
+        publish(model.copy(playActivity = page.copy(sessions = ids, session = 0)))
+    }
+
     /** A tap on the Play activity page's back pill. */
     fun closePlayActivity() {
         if (modalOpen()) return
@@ -2800,7 +2836,8 @@ class ShellController(
                 }
             }
             Meaning.MoveUp, Meaning.MoveDown, Meaning.MoveLeft, Meaning.MoveRight -> {
-                val moved = before.focus != after.focus || before.panel?.index != after.panel?.index
+                val moved = before.focus != after.focus || before.panel?.index != after.panel?.index ||
+                    before.playActivity != after.playActivity
                 val slid = valueAdjusted(before, after)
                 if (slid) tickSlider(after.themeIndex) else if (moved) cue(after.themeIndex, "move")
             }

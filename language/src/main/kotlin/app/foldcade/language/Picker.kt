@@ -397,6 +397,9 @@ sealed interface Row {
 
     /** A game still open in its player starts over. */
     data object RestartGame : Row
+
+    /** X on a session in Play activity's list: held, it takes the session out. Not a menu row. */
+    data object RemoveSession : Row
     data class QuickTile(val setting: QuickSetting) : Row
 
     /** The R1 slider for both screens' brightness. */
@@ -842,6 +845,7 @@ fun rowText(row: Row, model: PickerModel): RowText = when (row) {
     Row.DeleteShortcut -> RowText(Copy.deleteShortcut)
     Row.RemoveDownload -> RowText(Copy.deleteDownload)
     Row.RestartGame -> RowText(Copy.restart)
+    Row.RemoveSession -> RowText(PlayCopy.remove)
     Row.ButtonLabels -> RowText(
         Copy.buttonLabels,
         when {
@@ -947,6 +951,12 @@ sealed interface Effect {
 
     /** Ask, then start the game open in its player over. */
     data class RestartGame(val gameId: String?) : Effect
+
+    /** A on a day of Play activity: list that day's sessions. The shell fills them in. */
+    data class OpenPlayDay(val weeksBack: Int, val day: Int) : Effect
+
+    /** Take a play session out of the history, after its X was held. */
+    data class RemovePlaySession(val sessionId: String) : Effect
     data object OpenAll : Effect
     data object ToggleAddNew : Effect
 
@@ -1869,6 +1879,8 @@ private fun activateRow(
         Row.DeleteShortcut -> model.copy(panel = null, focus = panel.grid) to Effect.DeleteShortcut(model.tileActions?.game)
         Row.RemoveDownload -> model.copy(panel = null, focus = panel.grid) to Effect.RemoveDownload(model.tileActions?.game)
         Row.RestartGame -> model.copy(panel = null, focus = panel.grid) to Effect.RestartGame(model.tileActions?.game)
+        // Play activity's list removes a session itself; no menu lists this row.
+        Row.RemoveSession -> model to null
         Row.ButtonLabels -> if (model.capturingConfirm) {
             model.copy(capturingConfirm = false, offerButtonLabels = false) to Effect.DismissButtonLabels
         } else {
