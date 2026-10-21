@@ -121,7 +121,7 @@ internal fun SettingsScreen(app: FoldcadeApp, screen: HostScreen, page: Settings
                     .fillMaxHeight()
                     .clip(card)
                     .background(cardFill(theme, design.settings.cardLift))
-                    .border(1.dp, theme.onBackground.copy(alpha = design.settings.borderAlpha), card),
+                    .border(design.settings.borderDp.dp, theme.onBackground.copy(alpha = design.settings.borderAlpha), card),
             ) {
                 // A new category's rows rise in from the way the focus went.
                 SlideSwap(
@@ -250,7 +250,7 @@ private fun Header(theme: Theme, back: PromptKey, onBack: () -> Unit) {
         horizontalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         PromptImage(promptGlyph(back), 32.dp)
-        BasicText(SettingsCopy.title, style = style(theme.onBackground, theme.style.type.heroTitle, theme, bold = true))
+        BasicText(SettingsCopy.title, style = style(theme.onBackground, theme.style.type.heroTitle, theme, bold = true, display = true))
     }
 }
 
@@ -305,9 +305,9 @@ private fun Modifier.press(onClick: () -> Unit): Modifier {
         .clickable(interactionSource = source, indication = null, onClick = onClick)
 }
 
-private fun style(color: Color, size: TextUnit, theme: Theme, bold: Boolean = false): TextStyle = TextStyle(
+private fun style(color: Color, size: TextUnit, theme: Theme, bold: Boolean = false, display: Boolean = false): TextStyle = TextStyle(
     color = color,
     fontSize = size,
-    fontFamily = theme.font,
+    fontFamily = if (display) theme.displayFont else theme.font,
     fontWeight = if (bold) theme.style.type.strongWeight else theme.style.type.bodyWeight,
 )

@@ -19,6 +19,9 @@ data class ThemeScene(
     val textures: Map<String, ByteArray>,
 ) {
     fun state(seed: Double = 0.0): SceneState = SceneState(this, seed)
+
+    /** True when an expression reads [input], so the host can leave unread inputs alone. */
+    fun reads(input: String): Boolean = input in symbols.referenced
     /** Only variables that depend on u need reevaluating at every path sample. */
     internal val sampledVariables: List<Pair<Int, AnimationExpression>> = run {
         val dependent = mutableSetOf(symbols.index("u"))
@@ -43,14 +46,37 @@ class SceneEvaluation(val scene: ThemeScene, private val report: (ThemeDiagnosti
         }
     }
 
-    fun frameRate(time: Double, width: Float, height: Float, moving: Boolean, panel: Float, clock: Float): Float? =
+    fun frameRate(time: Double, width: Float, height: Float, moving: Boolean, panel: Float, clock: Float, live: SceneLive = SceneLive()): Float? =
         evaluate("frameRate") {
-            state.update(time, width, height, moving, panel, clock)
+            state.update(time, width, height, moving, panel, clock, live)
             scene.frameRate.evaluate(state.values).toFloat().also {
                 require(it.isFinite() && it >= 0f) { "frameRate must be finite and nonnegative" }
             }
         }
 }
+
+/**
+ * What the shell tells a scene each frame besides its clock: the focused item's accent, the time
+ * of day, the battery, and how long since the cursor moved. [ThemeContract.sceneInputs] says each.
+ */
+data class SceneLive(
+    val accentR: Float = 1f,
+    val accentG: Float = 1f,
+    val accentB: Float = 1f,
+    val hour: Float = 12f,
+    val battery: Float = 1f,
+    val charging: Boolean = false,
+    val sinceMove: Float = SCENE_SINCE_MOVE_MAX,
+)
+
+/** The most [SceneLive.sinceMove] counts to, so it stays exact as a float. */
+const val SCENE_SINCE_MOVE_MAX: Float = 3600f
+
+/**
+ * Inputs added after scene version 1. A scene that declares a variable of the same name keeps
+ * its own, so an input added later never changes a scene written before it.
+ */
+private val LATER_SCENE_INPUTS = listOf("seed", "accentR", "accentG", "accentB", "hour", "battery", "charging", "sinceMove")
 
 /** [seed] stays fixed for the life of the surface, so each panel can start somewhere of its own. */
 class SceneState(val scene: ThemeScene, seed: Double = 0.0) {
@@ -58,10 +84,13 @@ class SceneState(val scene: ThemeScene, seed: Double = 0.0) {
     fun set(name: String, value: Double) { values[scene.symbols.index(name)] = value }
     // A scene's own `seed` variable overwrites this at every update.
     init { set("seed", seed) }
-    fun update(time: Double, width: Float, height: Float, moving: Boolean, panel: Float, clock: Float = 1f) {
+    fun update(time: Double, width: Float, height: Float, moving: Boolean, panel: Float, clock: Float = 1f, live: SceneLive = SceneLive()) {
         set("time", time); set("width", width.toDouble()); set("height", height.toDouble())
         set("moving", if (moving) 1.0 else 0.0); set("panel", panel.toDouble())
         set("clock", clock.toDouble())
+        set("accentR", live.accentR.toDouble()); set("accentG", live.accentG.toDouble()); set("accentB", live.accentB.toDouble())
+        set("hour", live.hour.toDouble()); set("battery", live.battery.toDouble())
+        set("charging", if (live.charging) 1.0 else 0.0); set("sinceMove", live.sinceMove.toDouble())
         set("index", 0.0); set("u", 0.0)
         scene.variables.forEach { (slot, expression) -> values[slot] = expression.evaluate(values) }
     }
@@ -156,8 +185,8 @@ fun parseThemeScene(
     require(root["version"]?.jsonPrimitive?.int == 1) { "Unsupported scene version" }
     val symbols = AnimationSymbols()
     listOf("time", "width", "height", "moving", "panel", "index", "u", "clock").forEach(symbols::define)
-    // `seed` came later than scene version 1. A scene that already declares its own keeps it.
-    if (root["variables"]?.jsonObject?.containsKey("seed") != true) symbols.define("seed")
+    // These came later than scene version 1. A scene that already declares one keeps its own.
+    LATER_SCENE_INPUTS.filter { root["variables"]?.jsonObject?.containsKey(it) != true }.forEach(symbols::define)
     fun expr(value: JsonElement?, fallback: String = "0"): AnimationExpression {
         if (value !is JsonObject) return symbols.compile(value?.jsonPrimitive?.content ?: fallback)
         val frames = value["keyframes"]!!.jsonArray.map { it.jsonArray }

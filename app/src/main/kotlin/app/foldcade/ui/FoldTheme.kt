@@ -12,10 +12,22 @@ import kotlin.math.roundToInt
 /** Paint plus the images a loaded theme zip contributed. */
 data class FoldPaint(
     val theme: Theme,
-    val wallpaperTop: ImageBitmap? = null,
-    val wallpaperBottom: ImageBitmap? = null,
+    val wallpapers: ThemeWallpapers = ThemeWallpapers.None,
     val icons: Map<String, List<app.foldcade.language.ThemeIconAsset>> = emptyMap(),
-)
+) {
+    val wallpaperTop: ImageBitmap? get() = wallpapers.top
+    val wallpaperBottom: ImageBitmap? get() = wallpapers.bottom
+}
+
+/** A pack's two wallpapers, decoded the first time a panel shows one. */
+class ThemeWallpapers(private val decode: (top: Boolean) -> ImageBitmap?) {
+    val top: ImageBitmap? by lazy { decode(true) }
+    val bottom: ImageBitmap? by lazy { decode(false) }
+
+    companion object {
+        val None = ThemeWallpapers { null }
+    }
+}
 
 val LocalFoldTheme = staticCompositionLocalOf { FoldPaint(builtInTheme()) }
 

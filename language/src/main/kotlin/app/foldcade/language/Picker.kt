@@ -410,6 +410,9 @@ sealed interface Row {
     data object ButtonLabels : Row
     data object Licenses : Row
 
+    /** Settings › Look: every pack, Add a theme, and what Foldcade found in each. */
+    data object Themes : Row
+
     /** About's version. A copies one line of debug info for a bug report. */
     data object Version : Row
     data object Settings : Row
@@ -796,6 +799,7 @@ fun rowText(row: Row, model: PickerModel): RowText = when (row) {
     Row.SetAsHome -> RowText(Copy.setAsHome)
     Row.AndroidSettings -> RowText(Copy.androidSettings)
     Row.Licenses -> RowText(LicenseCopy.row)
+    Row.Themes -> RowText(ThemesCopy.row)
     Row.Version -> RowText(AboutCopy.version, if (model.versionCopied) AboutCopy.copied else model.appVersion)
     Row.DefaultHomeApp -> RowText(Copy.defaultHomeApp)
     is Row.QuickTile -> RowText(
@@ -924,6 +928,7 @@ sealed interface Effect {
     data class OpenFolder(val folderId: String) : Effect
     data class OpenAndroidSetting(val setting: AndroidSetting) : Effect
     data object OpenLicenses : Effect
+    data object OpenThemes : Effect
 
     /** Copy Foldcade's version and the device's to the clipboard, for a bug report. */
     data object CopyDebugInfo : Effect
@@ -1808,6 +1813,7 @@ private fun activateRow(
         Row.SetAsHome -> model to Effect.RequestHome
         Row.AndroidSettings -> model.copy(panel = panel) to Effect.OpenAndroidSetting(AndroidSetting.Settings)
         Row.Licenses -> model.copy(panel = panel) to Effect.OpenLicenses
+        Row.Themes -> model.copy(panel = panel) to Effect.OpenThemes
         Row.Version -> model.copy(panel = panel, versionCopied = true) to Effect.CopyDebugInfo
         Row.DefaultHomeApp -> model.copy(panel = panel) to Effect.OpenAndroidSetting(AndroidSetting.Home)
         is Row.QuickTile -> model.copy(panel = panel) to Effect.OpenAndroidSetting(row.setting.androidSetting())

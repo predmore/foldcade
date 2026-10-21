@@ -181,7 +181,7 @@ internal fun ControllerKeyboard(
                     val corner = unitPx * theme.style.shape.keyCorner * lift
                     drawRoundRect(
                         brush = Brush.verticalGradient(
-                            listOf(ring.start.copy(alpha = keyboard.highlightStartAlpha * lit), ring.end.copy(alpha = keyboard.highlightEndAlpha * lit)),
+                            listOf(ring.highlightStart.copy(alpha = keyboard.highlightStartAlpha * lit), ring.highlightEnd.copy(alpha = keyboard.highlightEndAlpha * lit)),
                             startY = rect.top,
                             endY = rect.bottom,
                         ),
@@ -384,12 +384,12 @@ internal fun TypingField(
                                     val from = laid.getHorizontalPosition(draft.start, true)
                                     val to = laid.getHorizontalPosition(draft.end, true)
                                     val pad = 6.dp.toPx()
-                                    val radius = 10.dp.toPx()
+                                    val radius = field.selectionCornerDp.dp.toPx()
                                     drawRoundRect(
                                         brush = Brush.horizontalGradient(
                                             listOf(
-                                                ring.start.copy(alpha = field.selectionStartAlpha * (0.7f + 0.3f * breath.value)),
-                                                ring.end.copy(alpha = field.selectionEndAlpha * (0.7f + 0.3f * breath.value)),
+                                                ring.highlightStart.copy(alpha = field.selectionStartAlpha * (field.selectionLowAlpha + (1f - field.selectionLowAlpha) * breath.value)),
+                                                ring.highlightEnd.copy(alpha = field.selectionEndAlpha * (field.selectionLowAlpha + (1f - field.selectionLowAlpha) * breath.value)),
                                             ),
                                         ),
                                         topLeft = Offset(from - pad, lineTop),
@@ -646,7 +646,7 @@ private fun Key(
                 KeyArt(shiftButton, held, glyphSize) {
                     keyGlyph(off, ink)
                     if (shiftLit > 0f) keyGlyph(on, ink, shiftLit)
-                    drawLamp(lamp, ring)
+                    drawLamp(lamp, ring, keyboard.lampHaloAlpha)
                 }
             }
             KeyCap.Erase -> themeIconOrNull("control.erase", 128).let { art -> KeyArt(buttons.eraseGlyph, held, glyphSize) { keyGlyph(art, ink) } }
@@ -690,7 +690,7 @@ private fun DrawScope.keyGlyph(art: ThemeIconPainter?, ink: Color, alpha: Float 
 }
 
 /** Caps lock's lamp under the Shift arrow, in the focus ring's colours. */
-private fun DrawScope.drawLamp(lamp: Float, ring: FocusRing) {
+private fun DrawScope.drawLamp(lamp: Float, ring: FocusRing, haloAlpha: Float) {
     if (lamp <= 0f) return
     val w = size.width
     val h = size.height
@@ -700,7 +700,7 @@ private fun DrawScope.drawLamp(lamp: Float, ring: FocusRing) {
         topLeft = Offset(w * 0.02f, h * 0.80f),
         size = Size(w * 0.96f, h * 0.26f),
         cornerRadius = CornerRadius(h * 0.13f, h * 0.13f),
-        alpha = 0.3f * lamp,
+        alpha = haloAlpha * lamp,
     )
     drawRoundRect(
         brush = brush,

@@ -279,14 +279,16 @@ fun openTyping(
     return Typing(draft, start, settleShift(ShiftState.Off, draft), focus, chips, limit = limit)
 }
 
-/** The sound a press makes, by theme slot. */
+/** The sound a press makes, by theme cue. `type` and `erase` fall back to `activate` and `back`. */
 enum class TypingCue(val slot: String?) {
     None(null),
     Move("move"),
-    Type("activate"),
-    Erase("back"),
+    Type("type"),
+    Erase("erase"),
     Done("activate"),
     Cancel("back"),
+    /** A press the field turned down. Silent unless the pack ships a `refuse` clip. */
+    Refuse("refuse"),
 }
 
 /**
@@ -350,7 +352,7 @@ private fun Typing.pressFocused(): TypingStep {
 /** Types [chars]. A letter spends any capital. A digit or a mark spends a word's own capital, not one chosen with L2. */
 private fun Typing.type(chars: String, key: KeyFocus?): TypingStep {
     val next = draft.insert(chars, limit)
-    if (next == draft) return TypingStep(copy(refusals = refusals + 1).pressing(key), TypingCue.None)
+    if (next == draft) return TypingStep(copy(refusals = refusals + 1).pressing(key), TypingCue.Refuse)
     val typed = when {
         chars.any { it.isLetter() } -> edited(next, spent = true)
         chars.any { it == ' ' } -> edited(next)
@@ -377,7 +379,7 @@ private fun Typing.done(key: KeyFocus): TypingStep {
     val name = draft.text.trim()
     if (name.isNotEmpty()) return TypingStep(pressing(key), TypingCue.Done, saved = name)
     val restored = TextDraft.selectAll(original)
-    return TypingStep(edited(restored).copy(refusals = refusals + 1).pressing(key), TypingCue.None)
+    return TypingStep(edited(restored).copy(refusals = refusals + 1).pressing(key), TypingCue.Refuse)
 }
 
 /**

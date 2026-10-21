@@ -68,6 +68,7 @@ fun settingsRows(category: SettingsCategory, model: PickerModel): List<Row> = wh
         add(Row.Theme)
         add(Row.IconTheme)
         add(Row.Background)
+        add(Row.Themes)
         add(Row.MotionSpeed)
         // Calibration can be corrected even after the one-time setup hint is settled.
         add(Row.ButtonLabels)
@@ -130,7 +131,7 @@ fun rowControl(row: Row, model: PickerModel, value: String? = rowText(row, model
     Row.MusicVolume, Row.Brightness -> RowControl.None
     is Row.Collection -> model.tileActions?.collections?.firstOrNull { it.folderId == row.folderId }.let { RowControl.Check(it?.member == true, it?.some == true) }
     Row.EditHome, Row.AddToCollection, is Row.RommConnection,
-    Row.AddFolder, Row.AddRomm, Row.SetAsHome, Row.DefaultHomeApp, Row.AndroidSettings, Row.Licenses,
+    Row.AddFolder, Row.AddRomm, Row.SetAsHome, Row.DefaultHomeApp, Row.AndroidSettings, Row.Licenses, Row.Themes,
     -> RowControl.Opens
     else -> value?.takeIf { it.isNotEmpty() }?.let(RowControl::Value) ?: RowControl.None
 }

@@ -1631,6 +1631,14 @@
     "backgrounds/static.json"
   ],
   "style": {
+    "base": {
+      "cornerScale": 1,
+      "strokeScale": 1,
+      "glowScale": 1,
+      "fillScale": 1,
+      "typeScale": 1,
+      "durationScale": 1
+    },
     "focusRing": {
       "start": "#52B788",
       "end": "#3E8EC0",
@@ -1743,7 +1751,10 @@
         1.36,
         0.64,
         1
-      ]
+      ],
+      "shakePx": 8,
+      "rewindFrom": 0.94,
+      "folderPopFrom": 0.92
     },
     "metrics": {
       "insetFraction": 0.04,
@@ -1754,12 +1765,16 @@
       "dialogBorderPx": 2,
       "cardCornerDp": 28,
       "heroArtFraction": 0.62,
-      "chromeClearancePx": 28
+      "chromeClearancePx": 28,
+      "glyphScale": 1
     },
     "colors": {
       "scrim": "#000000",
       "shade": "#000000",
-      "shine": "#FFFFFF"
+      "shine": "#FFFFFF",
+      "highlight": null,
+      "on": null,
+      "progress": null
     },
     "shape": {
       "round": 0.5,
@@ -1782,7 +1797,12 @@
       "statusIconPx": 24,
       "statusBackingAlpha": 0.72,
       "downloadBarPx": 6,
-      "downloadTrackAlpha": 0.22
+      "downloadTrackAlpha": 0.22,
+      "stripPx": 6,
+      "stripAlpha": 0.45,
+      "homeTargetStrokePx": 3,
+      "homeTargetAlpha": 0.35,
+      "carriedRingAlpha": 0.4
     },
     "hero": {
       "markScale": 0.86,
@@ -1814,7 +1834,10 @@
       "quickTileAlpha": 0.08,
       "quickTileLitAlpha": 0.16,
       "quickTileOnAlpha": 0.6,
-      "quickArtGrow": 0.14
+      "quickArtGrow": 0.14,
+      "quickLabelRestAlpha": 0.6,
+      "noticeRestAlpha": 0.86,
+      "holdAlpha": 0.3
     },
     "controls": {
       "switchWidthDp": 54,
@@ -1829,7 +1852,10 @@
       "sliderTrackDp": 6,
       "sliderTrackAlpha": 0.28,
       "sliderKnobDp": 7,
-      "sliderGlow": 2.2
+      "sliderGlow": 2.2,
+      "sliderGlowAlpha": 0.9,
+      "sliderGlowMidAlpha": 0.34,
+      "sliderGlowMid": 0.42
     },
     "keyboard": {
       "highlightStartAlpha": 0.26,
@@ -1850,7 +1876,8 @@
       "chipAlpha": 0.08,
       "chipFlashAlpha": 0.2,
       "chipRimAlpha": 0.12,
-      "chipLabelRestAlpha": 0.82
+      "chipLabelRestAlpha": 0.82,
+      "lampHaloAlpha": 0.3
     },
     "field": {
       "ringAlpha": 0.55,
@@ -1859,7 +1886,9 @@
       "caretDp": 4,
       "caretGlowDp": 6,
       "caretGlowAlpha": 0.22,
-      "caretLowAlpha": 0.35
+      "caretLowAlpha": 0.35,
+      "selectionLowAlpha": 0.7,
+      "selectionCornerDp": 10
     },
     "dialog": {
       "scrimAlpha": 0.72,
@@ -1876,7 +1905,8 @@
       "artRestAlpha": 0.7,
       "artGrow": 0.14,
       "cardLift": 0.035,
-      "borderAlpha": 0.06
+      "borderAlpha": 0.06,
+      "borderDp": 1
     },
     "find": {
       "ringRestAlpha": 0.38,
@@ -1884,6 +1914,17 @@
       "chosenAlpha": 0.3,
       "chosenRimDp": 1.5,
       "hiddenBackingAlpha": 0.78
+    },
+    "picker": {
+      "shimmerAlpha": 0.18
+    },
+    "play": {
+      "backingAlpha": 0.06,
+      "trackAlpha": 0.06,
+      "hourAlpha": 0.1,
+      "hourDp": 1,
+      "emptyBarAlpha": 0.12,
+      "barCornerDp": 3
     },
     "collections": {
       "gold": "#FFC15A",
@@ -1904,7 +1945,9 @@
       "lipAlpha": 0.32,
       "swatchShine": 0.35,
       "swatchShade": 0.3,
-      "swatchRimAlpha": 0.85
+      "swatchRimAlpha": 0.85,
+      "swatchRimPx": 3,
+      "swatchRimInsetPx": 2.5
     },
     "sound": {
       "volume": 0.4

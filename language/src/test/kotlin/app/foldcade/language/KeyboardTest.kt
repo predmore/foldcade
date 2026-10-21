@@ -147,7 +147,7 @@ class KeyboardTest {
         val refused = full.on(Meaning.Space)
         assertEquals(NAME_LIMIT, refused.typing.draft.text.length)
         assertEquals(1, refused.typing.refusals)
-        assertEquals(TypingCue.None, refused.cue)
+        assertEquals(TypingCue.Refuse, refused.cue)
         // A long old name is cut to the limit, and a selection makes room.
         assertEquals(NAME_LIMIT, openTyping("y".repeat(40)).draft.text.length)
         assertEquals(TextDraft("abz", 3), TextDraft("abc", 3, 2).insert("zz", limit = 3))
@@ -421,7 +421,7 @@ class KeyboardTest {
         val full = openTyping("abc", limit = 3).on(Meaning.CaretForward).typing
         val refused = full.typeText("d")
         assertEquals("abc", refused.typing.draft.text)
-        assertEquals(TypingCue.None, refused.cue)
+        assertEquals(TypingCue.Refuse, refused.cue)
         assertEquals(full.refusals + 1, refused.typing.refusals)
         assertEquals("abcd", openTyping("ab", limit = 4).on(Meaning.CaretForward).typing.typeText("cdef").typing.draft.text)
     }

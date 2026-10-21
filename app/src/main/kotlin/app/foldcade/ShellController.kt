@@ -580,7 +580,7 @@ class ShellController(
             }
             else -> publish(next)
         }
-        cueMeaning(meaning, before, model)
+        cueMeaning(meaning, before, model, effect)
         if (effect == Effect.DismissButtonLabels) {
             store.saveButtonPrompt(inputDeviceKey, store.buttonPromptConfirm(inputDeviceKey), dismissed = true)
         }
@@ -819,7 +819,7 @@ class ShellController(
         if (!canOpenFind()) return
         find = FindSession(findEntries())
         Log.i("Foldcade", "home-ui find")
-        cue(model.themeIndex, "activate")
+        cue(model.themeIndex, "open")
         publish(model)
     }
 
@@ -857,10 +857,10 @@ class ShellController(
             }
             FindOutcome.Close -> {
                 closeFind()
-                cue(model.themeIndex, "back")
+                cue(model.themeIndex, "close")
             }
             is FindOutcome.Launch -> {
-                cue(model.themeIndex, "activate")
+                cue(model.themeIndex, "launch")
                 return Effect.Launch(model.focus.cellIndex, outcome.onBottom)
             }
             is FindOutcome.OpenGroup -> {
@@ -2859,22 +2859,29 @@ class ShellController(
             before.motionSpeed != after.motionSpeed || before.sort != after.sort ||
             before.primaryIsTop != after.primaryIsTop
 
-    private fun cueMeaning(meaning: Meaning, before: PickerModel, after: PickerModel) {
+    /**
+     * The sound of a key that did something. Each cue past the first four falls back to the one
+     * that played here before it existed (see [ThemeContract.soundCues]), so a pack that only
+     * ships `activate` sounds as it always did.
+     */
+    private fun cueMeaning(meaning: Meaning, before: PickerModel, after: PickerModel, effect: Effect? = null) {
         when (meaning) {
-            Meaning.Activate -> cue(after.themeIndex, "activate")
-            Meaning.Back -> cue(after.themeIndex, "back")
+            Meaning.Activate -> cue(after.themeIndex, activateCue(before, after, effect))
+            Meaning.Back -> cue(after.themeIndex, if (closed(before, after)) "close" else "back")
             // A chord runs a row, so it sounds as A on that row would.
             Meaning.Menu, Meaning.View, Meaning.Options, Meaning.ActivateBottom -> {
                 val panel = before.panel
                 if (panel != null && chordIndex(panelRows(panel, before), meaning) != null) {
-                    cue(after.themeIndex, "activate")
+                    cue(after.themeIndex, activateCue(before, after, effect))
                 }
             }
             Meaning.MoveUp, Meaning.MoveDown, Meaning.MoveLeft, Meaning.MoveRight -> {
                 val moved = before.focus != after.focus || before.panel?.index != after.panel?.index ||
                     before.playActivity != after.playActivity
                 val slid = valueAdjusted(before, after)
+                // A move that changed nothing at all ran into an edge. Silent unless the pack ships `edge`.
                 if (slid) tickSlider(after.themeIndex) else if (moved) cue(after.themeIndex, "move")
+                else if (before == after) cue(after.themeIndex, "edge")
             }
             else -> Unit
         }
@@ -2883,6 +2890,23 @@ class ShellController(
         }
         if (after.notices.size > before.notices.size) cue(after.themeIndex, "notify")
     }
+
+    private fun activateCue(before: PickerModel, after: PickerModel, effect: Effect?): String = when {
+        effect is Effect.Launch -> "launch"
+        before.music.enabled != after.music.enabled || before.addNewToHome != after.addNewToHome ||
+            before.recentOnHome != after.recentOnHome || before.artwork != after.artwork -> "toggle"
+        opened(before, after) -> "open"
+        else -> "activate"
+    }
+
+    /** A menu, a dialog, a page or the connection form came up. */
+    private fun opened(before: PickerModel, after: PickerModel): Boolean =
+        (before.panel == null && after.panel != null) || (before.dialog == null && after.dialog != null) ||
+            (before.settings == null && after.settings != null) || (before.playActivity == null && after.playActivity != null) ||
+            (!before.connectOpen && after.connectOpen)
+
+    /** One of them went away. */
+    private fun closed(before: PickerModel, after: PickerModel): Boolean = opened(after, before)
 }
 
 /** How a finished sync reads on its tile. Unchanged with a note is a sync that could not run. */

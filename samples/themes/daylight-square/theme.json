@@ -1,0 +1,15 @@
+{
+  "$schema": "../../../themes/theme.schema.json",
+  "version": 2,
+  "id": "daylight-square",
+  "name": "Daylight Square",
+  "release": "1.0.0",
+  "author": "Foldcade",
+  "description": "Daylight with every corner square: a pack that builds on another changes only what it names.",
+  "license": "MIT",
+  "extends": "daylight",
+  "style": {
+    "base": {"cornerScale": 0},
+    "shape": {"round": 0}
+  }
+}

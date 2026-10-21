@@ -28,6 +28,8 @@ fun Backdrop(
     panel: Float = 0f,
     previewTime: Double? = null,
     seed: Double? = null,
+    /** What the shell tells the scene besides its clock, read each time it draws. */
+    live: () -> SceneLive = { SceneLive() },
     onMetrics: ((SceneMetrics) -> Unit)? = null,
 ) {
     if (scene == null) return
@@ -53,7 +55,7 @@ fun Backdrop(
                 if (last != 0L) time += ((frame - last) / 1_000_000_000.0).coerceIn(0.0, wait + 0.05) * clock
                 last = frame
             }
-            val rate = prepared.frameRate(time, viewport.width.toFloat(), viewport.height.toFloat(), moving, panel, clock)
+            val rate = prepared.frameRate(time, viewport.width.toFloat(), viewport.height.toFloat(), moving, panel, clock, live())
                 ?: return@LaunchedEffect
             if (rate == 0f) return@LaunchedEffect
             wait = 1f / rate
@@ -73,7 +75,7 @@ fun Backdrop(
             scaleX = 1f / resolution; scaleY = 1f / resolution
             if (resolution != 1f) compositingStrategy = CompositingStrategy.Offscreen
     }) {
-        prepared.draw(this, previewTime ?: time, moving, panel, clock)
+        prepared.draw(this, previewTime ?: time, moving, panel, clock, live())
         onMetrics?.invoke(prepared.metrics)
     }
 }

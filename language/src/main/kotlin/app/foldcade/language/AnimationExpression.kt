@@ -20,7 +20,12 @@ internal class CompiledAnimationExpression(
 /** Symbols resolve once, while loading; frames only read a reusable value array. */
 class AnimationSymbols {
     private val names = linkedMapOf<String, Int>()
+    private val used = mutableSetOf<String>()
     val size: Int get() = names.size
+
+    /** Every name an expression compiled here reads, so a host can skip inputs nothing reads. */
+    val referenced: Set<String> get() = used
+    internal fun markUsed(name: String) { used += name }
     fun define(name: String): Int {
         require(name.matches(Regex("[A-Za-z_][A-Za-z0-9_]*"))) { "Invalid variable '$name'" }
         require(name !in names) { "Duplicate variable '$name'" }
@@ -89,6 +94,7 @@ private class ExpressionReader(private val source: String, private val symbols: 
         if (!take('(')) {
             if (name == "pi") return AnimationExpression { PI }
             val slot = symbols.index(name)
+            symbols.markUsed(name)
             dependencies += slot
             return AnimationExpression { it[slot] }
         }

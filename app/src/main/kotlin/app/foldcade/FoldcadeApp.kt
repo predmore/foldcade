@@ -3,6 +3,7 @@ package app.foldcade
 import app.foldcade.language.AboutCopy
 import app.foldcade.language.ArtChoices
 import app.foldcade.language.ThemeFile
+import app.foldcade.language.MusicTrack
 import app.foldcade.language.ThemeProcessExit
 import app.foldcade.language.ArtMatch
 import app.foldcade.language.ArtKind
@@ -154,7 +155,37 @@ class FoldcadeApp : Application() {
      * call it off the main thread.
      */
     internal fun installTheme(input: InputStream): ThemeInstallResult =
-        themeInstalls.install(input, bundledThemeIds) { zip -> themeInstallable(zip, packaged?.resources) }
+        themeInstalls.install(input, bundledThemeIds) { zip ->
+            // A pack that extends one already installed is checked over that one, as it will load.
+            val parent = zip.file.extends?.let { id -> themePacks.firstOrNull { it.resources.id == id } }
+            themeInstallable(zip, (parent ?: packaged)?.resources)
+        }.also { if (it is ThemeInstallResult.Installed) themesChanged = true }
+
+    /** Takes an installed pack out for the next start. False for a pack Foldcade ships. */
+    internal fun removeTheme(pack: PackagedTheme): Boolean {
+        val archive = pack.archive ?: return false
+        return themeInstalls.remove(archive).also { if (it) themesChanged = true }
+    }
+
+    /** A pack was installed or taken out since this process started; a restart shows it. */
+    var themesChanged by mutableStateOf(false)
+        private set
+
+    private val themeTurn = java.util.concurrent.atomic.AtomicInteger()
+
+    /**
+     * The theme the shell has chosen, with its sounds loaded and its loop written for the player.
+     * Only the latest choice reaches [then], so a slow write cannot put an older loop back.
+     */
+    private fun themeChosen(index: Int, then: (MusicTrack?) -> Unit) {
+        val pack = themePacks.getOrNull(index - 1)
+        val turn = themeTurn.incrementAndGet()
+        scope.launch {
+            pack?.sounds?.warm()
+            val track = pack?.prepareMusic()
+            if (turn == themeTurn.get()) then(track)
+        }
+    }
 
     /** Public art hosts over HTTPS only. RomM has its own client. */
     private val publicArt: PublicHttps by lazy { PublicHttps(ART_HOSTS) }
@@ -457,6 +488,8 @@ class FoldcadeApp : Application() {
 
     override fun onCreate() {
         super.onCreate()
+        // RestartActivity's process only brings Home back. It must not load packs or count exits.
+        if (getProcessName() != packageName) return
         store = SessionStore(getSharedPreferences("foldcade", MODE_PRIVATE))
         buttonPromptFirstSession = !store.buttonPromptSeenLaunch()
         if (buttonPromptFirstSession) store.setButtonPromptSeenLaunch()
@@ -492,7 +525,7 @@ class FoldcadeApp : Application() {
         }
         val themeTrackList = listOf(null) + themePacks.map { it.music }
         val initialTheme = store.themeIndex(ids, names)
-        music.setThemeChoice(themeTrackList.getOrNull(initialTheme))
+        themeChosen(initialTheme, music::setThemeChoice)
         plays = PlaySessions.open(File(filesDir, "play-sessions/events.log"))
         val sliderTick = SliderTick()
         plays.packageOf = { gameId ->
@@ -508,7 +541,7 @@ class FoldcadeApp : Application() {
             onArtApply = ::chooseArt,
             savedArtMatch = { artChoices.matches[it] },
             onArtMatch = ::chooseArtMatch,
-            onTheme = { index -> music.setThemeChoice(themeTrackList.getOrNull(index)) },
+            onTheme = { index -> themeChosen(index, music::setThemeChoice) },
             themeNames = names,
             themeMotions = motions,
             themeIds = ids,
@@ -1406,12 +1439,46 @@ class FoldcadeApp : Application() {
      * The archives in files/themes the shell has in use: its theme, its icon theme, and the pack
      * of the background it shows. Main thread.
      */
-    private fun themeArchivesInUse(): Set<String> {
+    private fun themeArchivesInUse(): Set<String> = themePacksInUse().mapNotNull { it.archive }.toSet()
+
+    /** The packs the saved theme, icon and background choices resolve to, with the packs each builds on. */
+    private fun themePacksInUse(): List<PackagedTheme> {
         val model = shell.model
         val theme = themePacks.getOrNull(model.themeIndex - 1)
         val icons = model.iconThemeIndex?.let { themePacks.getOrNull(it - 1) }
         val background = themePacks.firstOrNull { model.backgroundMotion in it.resources.scenes }
-        return listOfNotNull(theme, icons, background).mapNotNull { it.archive }.toSet()
+        // A pack that extends another draws that one's icons and sounds too.
+        return listOfNotNull(theme, icons, background).flatMap { listOf(it) + it.parents }.distinct()
+    }
+
+    /** Every pack as Settings › Look › Themes lists it. */
+    internal fun themeEntries(): List<app.foldcade.language.ThemeEntry> {
+        val inUse = themePacksInUse().map { it.resources.id }.toSet()
+        val trials = themeInstalls.ledger.themes.filter { it.trial != null }.map { it.file }.toSet()
+        return themePacks.map { pack ->
+            app.foldcade.language.ThemeEntry(
+                id = pack.resources.id,
+                name = pack.name,
+                release = pack.resources.file.release?.toString(),
+                about = pack.resources.file.about,
+                diagnostics = pack.resources.diagnostics,
+                removable = pack.archive != null,
+                inUse = pack.resources.id in inUse,
+                onTrial = pack.archive != null && pack.archive in trials,
+                parents = pack.parents.map { it.name },
+            )
+        }
+    }
+
+    /**
+     * Starts Foldcade again, so packs installed or taken out load. A helper in its own process
+     * brings Home back once this one has gone; this one leaves as an app does, not as a crash,
+     * so no pack on trial is blamed.
+     */
+    internal fun restart(from: android.app.Activity) {
+        from.startActivity(Intent(from, RestartActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+        from.finishAffinity()
+        Runtime.getRuntime().exit(0)
     }
 
     /** Android's record of how this process ended before. A crash or ANR counts against a pack on trial. */
