@@ -156,6 +156,8 @@ class ShellController(
     private val nowMillis: () -> Long = { System.currentTimeMillis() },
     /** Copies were folded into new tiles: tile id to its copies, first preferred. The app moves their art. */
     private val onSameGames: (Map<String, List<String>>) -> Unit = {},
+    /** "0.1.2 (230)", read from the installed package. Settings › About shows it. */
+    private val appVersion: String = "",
 ) {
     var artPicker by mutableStateOf<ArtPickerState?>(null)
         private set
@@ -1739,7 +1741,7 @@ class ShellController(
         if (page.screen != screen) return null
         if (index !in settingsCategories(model).indices) return null
         if (page.category != index || page.onRows) {
-            publish(model.copy(capturingConfirm = false, settings = page.copy(category = index, row = 0, onRows = false)))
+            publish(model.copy(capturingConfirm = false, versionCopied = false, settings = page.copy(category = index, row = 0, onRows = false)))
             return null
         }
         return onMeaning(Meaning.MoveRight, screen)
@@ -1767,7 +1769,7 @@ class ShellController(
     fun closeSettings(): Effect? {
         if (modalOpen()) return null
         val page = model.settings ?: return null
-        publish(model.copy(settings = null, focus = page.grid, capturingConfirm = false))
+        publish(model.copy(settings = null, focus = page.grid, capturingConfirm = false, versionCopied = false))
         return null
     }
 
@@ -2745,6 +2747,7 @@ class ShellController(
             artwork = store.artworkEnabled(),
             sort = store.librarySort(),
             recentFirst = recentOrder(),
+            appVersion = appVersion,
         )
     }
 

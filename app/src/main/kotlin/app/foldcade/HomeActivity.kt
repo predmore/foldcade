@@ -4,12 +4,15 @@ import android.app.Activity
 import android.app.ActivityOptions
 import android.app.role.RoleManager
 import android.content.ActivityNotFoundException
+import android.content.ClipData
+import android.content.ClipboardManager
 import android.content.Intent
 import android.content.pm.ApplicationInfo
 import android.content.pm.PackageManager
 import android.hardware.display.DisplayManager
 import android.hardware.input.InputManager
 import android.net.Uri
+import android.os.Build
 import android.os.SystemClock
 import android.util.Log
 import android.provider.Settings
@@ -46,6 +49,7 @@ import app.foldcade.api.plugin.SaveCopy
 import app.foldcade.api.plugin.SaveFolderHolder
 import app.foldcade.api.plugin.StartDisplay
 import app.foldcade.artwork.SteamGridDb
+import app.foldcade.language.AboutCopy
 import app.foldcade.language.SaveConflictAction
 import app.foldcade.language.SaveConflictPrompt
 import app.foldcade.language.SaveConflictSide
@@ -325,6 +329,7 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
             Effect.RequestHome -> requestHome()
             is Effect.OpenAndroidSetting -> openAndroidSetting(effect.setting)
             Effect.OpenLicenses -> startActivity(Intent(this, LicensesActivity::class.java))
+            Effect.CopyDebugInfo -> copyDebugInfo()
             Effect.DismissButtonLabels -> Unit
             is Effect.OpenNotice -> openNotice(effect.id, if (effect.onBottom) Panel.Bottom else Panel.Top)
             is Effect.DismissNotice -> foldcade.dismissNotice(effect.id)
@@ -332,6 +337,17 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
             is Effect.ResolveSaveConflict -> resolveSaveConflict(effect)
             null -> Unit
         }
+    }
+
+    /** One line a player can paste into a bug report: Foldcade's build, Android's, and the device's. */
+    private fun copyDebugInfo() {
+        val line = AboutCopy.debugLine(
+            version = foldcade.shell.model.appVersion,
+            android = Build.VERSION.RELEASE,
+            device = AboutCopy.device(Build.MANUFACTURER, Build.MODEL),
+            build = Build.DISPLAY,
+        )
+        getSystemService(ClipboardManager::class.java)?.setPrimaryClip(ClipData.newPlainText(AboutCopy.version, line))
     }
 
     override fun onSaveInstanceState(outState: Bundle) {

@@ -139,6 +139,7 @@ import app.foldcade.language.withFindHint
 import app.foldcade.language.heroFacts
 import app.foldcade.R
 import app.foldcade.language.QuickSetting
+import app.foldcade.DeviceStatus
 import app.foldcade.Displays
 import app.foldcade.language.ArtCopy
 import app.foldcade.language.ArtKind
@@ -778,13 +779,16 @@ private fun CommandCenterScreen(
     }
 }
 
-/** A command center button. The focused one carries the confirm key's glyph when keys can press it. */
+/**
+ * A command center button. The focused one carries the confirm key's glyph when keys can press it.
+ * Beside a page the keys drive the page, so no button wears the ring: they are plain touch buttons.
+ */
 @Composable
 private fun CenterButton(app: FoldcadeApp, label: String, focused: Boolean, keyed: Boolean, onClick: () -> Unit) {
     val theme = foldTheme()
     val confirm = promptKeyOf(app.shell.model.faceMap.confirmKey)
     Row(
-        Modifier.chip(focused).hostPress(onClick).padding(horizontal = px(24f), vertical = px(12f)),
+        Modifier.chip(focused && keyed).hostPress(onClick).padding(horizontal = px(24f), vertical = px(12f)),
         horizontalArrangement = Arrangement.spacedBy(px(10f)),
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -2281,11 +2285,12 @@ private fun PanelRows(
                     modifier = place.then(press),
                 )
                 notice != null -> NoticeRow(notice = notice, focused = focused, modifier = place.then(press))
-                // A bare slider under the tiles, as in Android's quick settings.
+                // A slider under the tiles, as in Android's quick settings: the sun, the track, the percent.
                 row is Row.Brightness -> SliderRow(
                     label = parts.label,
                     value = parts.value.orEmpty(),
                     showLabel = false,
+                    icon = R.drawable.ic_status_display,
                     fraction = model.brightness / 100f,
                     focused = focused,
                     interactive = interactive,
@@ -2385,8 +2390,9 @@ private fun QuickTiles(
 ) {
     val theme = foldTheme()
     val tiles = rows.drop(tileStart).takeWhile { it.tiled() }
-    // Round icon buttons in one row, like Cocoon's quick settings. R1's need no words; the
-    // label is for touch readers. L1's places say where they go, under each one.
+    // R1's Wi-Fi and Bluetooth tiles light while their radio is on, as Android's own do.
+    val status by app.deviceStatus.status.collectAsStateWithLifecycle()
+    // Round icon buttons in one row, like Cocoon's quick settings, each named under it.
     Column(modifier.padding(vertical = px(12f)), verticalArrangement = Arrangement.spacedBy(px(16f))) {
         tiles.chunked(quickTileColumns).forEachIndexed { rowIndex, chunk ->
             Row(
@@ -2406,6 +2412,13 @@ private fun QuickTiles(
                     val lift = bouncy(if (focused) 1f else 0f, scale)
                     val ring = remember(theme) { FocusRing(theme) }
                     val words = tileLabel(row)
+                    val setting = (row as? Row.QuickTile)?.setting
+                    val radioOn = when (setting) {
+                        QuickSetting.Wifi -> status.wifiOn
+                        QuickSetting.Bluetooth -> status.bluetooth
+                        else -> false
+                    }
+                    val on = eased(if (radioOn) 1f else 0f, LocalFoldTheme.current.theme.motion.durationSelect, scale)
                     Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Box(
                         Modifier
@@ -2419,13 +2432,21 @@ private fun QuickTiles(
                                     theme.onBackground.copy(alpha = menu.quickTileAlpha + (menu.quickTileLitAlpha - menu.quickTileAlpha) * lit.value),
                                     cornerRadius = CornerRadius(radius, radius),
                                 )
+                                // A radio that is on fills its tile with the focus colours, as a switch's track lights.
+                                if (on.value > 0f) {
+                                    drawRoundRect(
+                                        brush = Brush.linearGradient(listOf(ring.start, ring.end)),
+                                        alpha = (menu.quickTileOnAlpha * on.value).coerceIn(0f, 1f),
+                                        cornerRadius = CornerRadius(radius, radius),
+                                    )
+                                }
                                 if (lit.value > 0f) with(ring) { drawFocusRing(radius, alpha = lit.value) }
                             }
                             .then(press)
                             .semantics { contentDescription = label },
                         contentAlignment = Alignment.Center,
                     ) {
-                        val quick = (row as? Row.QuickTile)?.setting?.let(::quickIcon)
+                        val quick = setting?.let { quickIcon(it, status) }
                         val icon = quick ?: rowIcon(row)
                         if (icon != null) {
                             val art = themeIcon(icon)
@@ -2466,9 +2487,10 @@ private fun QuickTiles(
 
 private const val QUICK_BUTTON_DP = 56f
 
-private fun quickIcon(setting: QuickSetting): Int = when (setting) {
-    QuickSetting.Wifi -> R.drawable.ic_status_wifi_4
-    QuickSetting.Bluetooth -> R.drawable.ic_status_bluetooth
+/** A radio's tile wears its off icon while the radio is off. */
+private fun quickIcon(setting: QuickSetting, status: DeviceStatus): Int = when (setting) {
+    QuickSetting.Wifi -> if (status.wifiOn) R.drawable.ic_status_wifi_4 else R.drawable.ic_status_wifi_off
+    QuickSetting.Bluetooth -> if (status.bluetooth) R.drawable.ic_status_bluetooth else R.drawable.ic_status_bluetooth_off
     QuickSetting.Battery -> R.drawable.ic_status_battery_100
     QuickSetting.Settings -> R.drawable.ic_status_settings
 }

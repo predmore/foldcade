@@ -1,5 +1,6 @@
 package app.foldcade
 
+import app.foldcade.language.AboutCopy
 import app.foldcade.language.ArtChoices
 import app.foldcade.language.ThemeFile
 import app.foldcade.language.ThemeProcessExit
@@ -403,6 +404,14 @@ class FoldcadeApp : Application() {
         return manager.getHistoricalProcessExitReasons(packageName, 0, 20).map { it.timestamp }
     }
 
+    /** "0.1.2 (230)" from the installed package. The build has no BuildConfig to read it from. */
+    private fun installedVersion(): String = try {
+        val info = packageManager.getPackageInfo(packageName, 0)
+        AboutCopy.version(info.versionName.orEmpty(), info.longVersionCode)
+    } catch (_: PackageManager.NameNotFoundException) {
+        ""
+    }
+
     /** Reads the external game's screen now. A game opened with the lid already closed starts asleep. */
     internal fun notePlayScreen() {
         val displayId = externalPlay.displayId ?: return
@@ -496,6 +505,7 @@ class FoldcadeApp : Application() {
             onDroidDeckRemoved = ::unpinDroidDeckGame,
             onBrightness = { position -> brightness.write(brightnessLevel(position)) },
             onSameGames = { groups -> saveArtChoices(artChoices.adopt(groups)) },
+            appVersion = installedVersion(),
         )
         // Loading ends once the shell has resolved the choices against the packs.
         try { themeInstalls.loaded(manifests, themeArchivesInUse()) } catch (error: Exception) { Log.w("FoldcadeTheme", "Theme trials not saved", error) }

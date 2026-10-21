@@ -40,6 +40,8 @@ data class DeviceStatus(
     /** Wi-Fi bars from 0 to 4. Zero off Wi-Fi. */
     val wifiBars: Int = 0,
     val bluetooth: Boolean = false,
+    /** The Wi-Fi radio is on, whether or not it has joined a network. R1's Wi-Fi tile lights with it. */
+    val wifiOn: Boolean = false,
     /** Whole minutes since the epoch, for anything that steps with the clock. */
     val minute: Long = 0L,
     /** How every other date and time reads, so they all match the clock above. */
@@ -48,7 +50,7 @@ data class DeviceStatus(
 
 /**
  * The device status, read again as soon as Android reports a change: the battery and
- * charger, the default network and its signal, the Bluetooth radio, and the clock.
+ * charger, the default network and its signal, the Wi-Fi and Bluetooth radios, and the clock.
  * It listens only while something collects [status], and reads afresh each time it starts.
  */
 class DeviceStatusWatcher(private val context: Context, scope: CoroutineScope) {
@@ -74,6 +76,8 @@ class DeviceStatusWatcher(private val context: Context, scope: CoroutineScope) {
                 addAction(Intent.ACTION_TIME_CHANGED)
                 addAction(Intent.ACTION_TIMEZONE_CHANGED)
                 addAction(Intent.ACTION_LOCALE_CHANGED)
+                // The radio turned on or off, which no network change reports until it joins one.
+                addAction(WifiManager.WIFI_STATE_CHANGED_ACTION)
             },
             Context.RECEIVER_NOT_EXPORTED,
         )
@@ -130,6 +134,7 @@ fun readDeviceStatus(context: Context): DeviceStatus {
         date = dateText(now),
         wifiBars = network.bars,
         bluetooth = bluetoothOn(context),
+        wifiOn = wifiOn(context),
         minute = now / 60_000L,
         dateStyle = dateStyle(context),
     )
@@ -194,6 +199,13 @@ internal fun scaledBars(level: Int, max: Int): Int {
 /** Bluetooth radio on or off. Reading the global setting needs no Bluetooth permission. */
 private fun bluetoothOn(context: Context): Boolean =
     Settings.Global.getInt(context.contentResolver, Settings.Global.BLUETOOTH_ON, 0) != 0
+
+/** Wi-Fi radio on or off. Needs only ACCESS_WIFI_STATE, a normal permission. */
+private fun wifiOn(context: Context): Boolean = try {
+    context.getSystemService(WifiManager::class.java)?.isWifiEnabled == true
+} catch (_: SecurityException) {
+    false
+}
 
 fun batteryLabel(status: DeviceStatus): String =
     if (status.charging) "${status.batteryPercent}% +" else "${status.batteryPercent}%"

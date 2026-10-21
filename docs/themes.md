@@ -282,6 +282,7 @@ The L1, R1 and Y menus and their islands.
 | `menu.islandRimLitAlpha` | 0.34 | How much it lights as the island opens |
 | `menu.quickTileAlpha` | 0.08 | R1's round tiles at rest |
 | `menu.quickTileLitAlpha` | 0.16 | And focused |
+| `menu.quickTileOnAlpha` | 0.6 | The focus colours filling a tile whose radio (Wi-Fi, Bluetooth) is on |
 | `menu.quickArtGrow` | 0.14 | How much their art grows |
 
 ### `controls`

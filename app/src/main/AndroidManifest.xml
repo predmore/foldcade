@@ -7,6 +7,8 @@
         android:name="android.permission.PACKAGE_USAGE_STATS"
         tools:ignore="ProtectedPermissions" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <!-- R1's Wi-Fi tile shows whether the radio is on. -->
+    <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
     <!-- The R1 brightness slider. Granted from "Modify system settings", never at install. -->
     <uses-permission
         android:name="android.permission.WRITE_SETTINGS"

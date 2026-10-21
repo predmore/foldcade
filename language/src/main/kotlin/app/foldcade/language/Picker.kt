@@ -403,6 +403,9 @@ sealed interface Row {
     data object Brightness : Row
     data object ButtonLabels : Row
     data object Licenses : Row
+
+    /** About's version. A copies one line of debug info for a bug report. */
+    data object Version : Row
     data object Settings : Row
 
     /** L1's first row: the past week's play as bars. A opens the Play activity page. */
@@ -430,6 +433,12 @@ fun tileLabel(row: Row): String? = when (row) {
     Row.AllLibrary -> Copy.tileAll
     Row.AndroidGames -> Copy.tileGames
     Row.Apps -> Copy.apps
+    is Row.QuickTile -> when (row.setting) {
+        QuickSetting.Wifi -> Copy.wifi
+        QuickSetting.Bluetooth -> Copy.bluetooth
+        QuickSetting.Battery -> Copy.battery
+        QuickSetting.Settings -> SettingsCopy.title
+    }
     else -> null
 }
 
@@ -769,6 +778,7 @@ fun rowText(row: Row, model: PickerModel): RowText = when (row) {
     Row.SetAsHome -> RowText(Copy.setAsHome)
     Row.AndroidSettings -> RowText(Copy.androidSettings)
     Row.Licenses -> RowText(LicenseCopy.row)
+    Row.Version -> RowText(AboutCopy.version, if (model.versionCopied) AboutCopy.copied else model.appVersion)
     Row.DefaultHomeApp -> RowText(Copy.defaultHomeApp)
     is Row.QuickTile -> RowText(
         when (row.setting) {
@@ -895,6 +905,9 @@ sealed interface Effect {
     data class OpenFolder(val folderId: String) : Effect
     data class OpenAndroidSetting(val setting: AndroidSetting) : Effect
     data object OpenLicenses : Effect
+
+    /** Copy Foldcade's version and the device's to the clipboard, for a bug report. */
+    data object CopyDebugInfo : Effect
     data object DismissButtonLabels : Effect
     /** Choose art for [gameId], or the focused game when null. */
     data class ChooseArt(val gameId: String? = null) : Effect
@@ -1095,6 +1108,10 @@ data class PickerModel(
     val screenJumpLastColumn: Int? = null,
     val letterJump: String? = null,
     val letterJumpEpoch: Int = 0,
+    /** "0.1.2 (230)", from the installed package. Settings › About shows it. */
+    val appVersion: String = "",
+    /** A on Version copied the debug line. The row says so until the focus leaves it. */
+    val versionCopied: Boolean = false,
 )
 
 fun reduce(
@@ -1150,7 +1167,7 @@ fun reduce(
         }
     }
     val settings = coerced.settings
-    if (settings != null) return applySettings(coerced, settings, meaning)
+    if (settings != null) return applySettings(coerced, settings, meaning).let { (next, effect) -> next.versionCopySettled() to effect }
     val activity = coerced.playActivity
     if (activity != null) return applyPlayActivity(coerced, activity, meaning)
     val panel = coerced.panel
@@ -1755,6 +1772,7 @@ private fun activateRow(
         Row.SetAsHome -> model to Effect.RequestHome
         Row.AndroidSettings -> model.copy(panel = panel) to Effect.OpenAndroidSetting(AndroidSetting.Settings)
         Row.Licenses -> model.copy(panel = panel) to Effect.OpenLicenses
+        Row.Version -> model.copy(panel = panel, versionCopied = true) to Effect.CopyDebugInfo
         Row.DefaultHomeApp -> model.copy(panel = panel) to Effect.OpenAndroidSetting(AndroidSetting.Home)
         is Row.QuickTile -> model.copy(panel = panel) to Effect.OpenAndroidSetting(row.setting.androidSetting())
         // Left and right move the slider. A asks for access, and does nothing once it is granted.

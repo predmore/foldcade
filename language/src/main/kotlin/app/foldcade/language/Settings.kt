@@ -34,6 +34,22 @@ object SettingsCopy {
     const val about = "About"
 }
 
+/** About's version row, and the one line it copies for a bug report. */
+object AboutCopy {
+    const val version = "Version"
+    const val copied = "Copied"
+
+    /** "0.1.2 (230)": the name players see, and the build that tells two of them apart. */
+    fun version(name: String, code: Long): String = "$name ($code)"
+
+    /** The maker is left out when the model already starts with it, as "AYN Thor" might. */
+    fun device(manufacturer: String, model: String): String =
+        if (model.startsWith(manufacturer, ignoreCase = true)) model else "$manufacturer $model".trim()
+
+    fun debugLine(version: String, android: String, device: String, build: String): String =
+        listOf("Foldcade $version", "Android $android", device, build).filter { it.isNotBlank() }.joinToString(" · ")
+}
+
 fun settingsTitle(category: SettingsCategory): String = when (category) {
     SettingsCategory.Personalization -> SettingsCopy.personalization
     SettingsCategory.Sound -> SettingsCopy.sound
@@ -75,8 +91,19 @@ fun settingsRows(category: SettingsCategory, model: PickerModel): List<Row> = wh
         if (model.askNoticeAccess) add(Row.NoticeAccess)
         add(Row.AndroidSettings)
     }
-    SettingsCategory.About -> listOf(Row.Licenses)
+    SettingsCategory.About -> listOf(Row.Version, Row.Licenses)
 }
+
+/** The row the D-pad is on in the settings page, or null while the categories have it or the page is shut. */
+fun settingsFocus(model: PickerModel): Row? {
+    val page = model.settings?.takeIf { it.onRows } ?: return null
+    val category = settingsCategories(model).getOrNull(page.category) ?: return null
+    return settingsRows(category, model).getOrNull(page.row)
+}
+
+/** Version reads Copied only until the focus leaves it. */
+fun PickerModel.versionCopySettled(): PickerModel =
+    if (versionCopied && settingsFocus(this) != Row.Version) copy(versionCopied = false) else this
 
 /**
  * How a row shows its value on the right. A [Toggle] is a switch that A flips. A [Check]

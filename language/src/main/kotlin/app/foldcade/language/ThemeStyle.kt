@@ -301,6 +301,7 @@ class ThemeMenu internal constructor(reader: ThemeStyleReader) {
     val islandRimLitAlpha = reader.fraction("menu", "islandRimLitAlpha", .34f)
     val quickTileAlpha = reader.fraction("menu", "quickTileAlpha", .08f)
     val quickTileLitAlpha = reader.fraction("menu", "quickTileLitAlpha", .16f)
+    val quickTileOnAlpha = reader.fraction("menu", "quickTileOnAlpha", .6f)
     val quickArtGrow = reader.number("menu", "quickArtGrow", .14f)
 }
 
