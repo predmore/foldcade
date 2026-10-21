@@ -5,9 +5,9 @@ Connect a [RomM](https://romm.app) server, and its library becomes your Thor's. 
 What you get:
 
 - **Sign-in with a code** you approve on your phone. Foldcade stores a token, not your password.
-- **Verified downloads** that resume after an interruption and stay ready for offline play.
+- **Verified downloads** that resume after an interruption when the server allows it, and stay ready for offline play.
 - **[Save sync](#save-sync)** for melonDS and RetroArch, with a choice and both copies kept when two devices disagree.
-- **One tile** for a game that is both in a [local folder](local-games.md) and on the server, opening the copy already on your Thor.
+- **One tile** for a game that is in a [local folder](local-games.md) and on the server under the same system and file name, opening the copy already on your Thor.
 - **[Switch updates and DLC](#updates-and-dlc)** downloaded beside the game and loaded by Eden.
 - **RetroAchievements progress** on the other screen during a single-screen game.
 - **Any number of servers**, each with its own sign-in, on one Home.
@@ -43,7 +43,7 @@ The catalog loads at startup and after connecting or editing a connection. After
 
 ## Downloads and offline play
 
-Press A or X on a game. Foldcade downloads its files and checks each one against the size and checksum RomM lists before launch, showing progress on the tile and top screen. An interrupted download resumes where it stopped. Verified downloads are reused.
+Press A or X on a game. Foldcade downloads its files and checks each one against the size and checksum RomM lists before launch, showing progress on the tile and top screen. An archive is checked by size, since RomM's checksum describes what is inside it. An interrupted download resumes where it stopped when the server allows it, and starts over otherwise. Verified downloads are reused.
 
 Downloads are kept in `Android/media/app.foldcade/romm` on internal storage, where emulators that open games by path, such as [RetroArch](retroarch.md), can read them. Android does not clear them to free space. **Y › Delete download** frees the space a downloaded game takes. Its saves stay, and its tile shows the cloud again until the next launch downloads it. Uninstalling Foldcade removes its downloads too.
 
