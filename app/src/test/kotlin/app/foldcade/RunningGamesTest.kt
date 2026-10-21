@@ -23,6 +23,17 @@ class RunningGamesTest {
     }
 
     @Test
+    fun aGameFoldedIntoASharedTileIsStillFoundThere() {
+        val games = RunningGames()
+        games.note(game("lib:folder:mario", "azahar"))
+        val folded = mapOf("lib:folder:mario" to "same:mario", "lib:romm:12" to "same:mario")
+        val tileOf = { id: String -> folded[id] ?: id }
+        assertEquals("lib:folder:mario", games.forTile("same:mario", tileOf)?.tileId)
+        assertEquals("lib:folder:mario", games.forTile("lib:romm:12", tileOf)?.tileId)
+        assertNull(games.forTile("same:zelda", tileOf))
+    }
+
+    @Test
     fun aGameIsForgottenOnlyWhenItsPlayerExitedAfterItStarted() {
         val games = RunningGames()
         games.note(game("mario", "azahar", startedAt = 1_000L))

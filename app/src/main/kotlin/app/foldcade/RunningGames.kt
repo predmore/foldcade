@@ -33,7 +33,17 @@ internal class RunningGames {
         changed()
     }
 
-    fun forTile(tileId: String): RunningGame? = byPackage.values.firstOrNull { it.tileId == tileId }
+    /**
+     * The game on tile [tileId]. [tileOf] names the tile an id plays under now: a game
+     * noted under its own id may since have been folded into a tile it shares with
+     * another library's copy, and it is still the same game.
+     */
+    fun forTile(tileId: String, tileOf: (String) -> String = { it }): RunningGame? {
+        val tile = tileOf(tileId)
+        return byPackage.values.firstOrNull { it.tileId == tileId || tileOf(it.tileId) == tile }
+    }
+
+    fun tiles(): Set<String> = byPackage.values.map { it.tileId }.toSet()
 
     fun forPackage(packageName: String?): RunningGame? = packageName?.let { byPackage[it] }
 

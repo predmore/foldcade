@@ -136,8 +136,12 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
     private var folderPurpose = FolderPurpose.Library
     private var pendingLaunch: Int? = null
 
-    /** A library game waiting on the save-folder ask, see [askSaveFolder]. */
-    private var pendingBackend: PendingBackendLaunch? = null
+    /** A library game waiting on the save-folder ask, see [askSaveFolder]. Kept by the app, so a recreated Home still has it. */
+    private var pendingBackend: PendingBackendLaunch?
+        get() = foldcade.pendingSaveAsk
+        set(value) {
+            foldcade.pendingSaveAsk = value
+        }
 
     /** The tile Restart asked about, until its dialog closes. */
     private var restartId: String? = null
@@ -1123,7 +1127,10 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
     private fun noteRunning(id: String, title: String, platformId: String?, player: Player, intent: Intent, saves: LibraryReturn?) {
         val pkg = intent.component?.packageName ?: return
         if (pkg == packageName || player is RetroArchPlayer) return
-        val panel = if (player.occupiesBothDisplays) Panel.Top else launchScreen
+        // Where the game landed, which may not be where it was asked for when that screen was busy.
+        val panel = foldcade.externalPlay.displayId
+            ?.let { displays.assignment(foldcade.store.session.defaultDisplayIsTop).panelFor(it) }
+            ?: if (player.occupiesBothDisplays) Panel.Top else launchScreen
         foldcade.runningGames.note(RunningGame(id, title, platformId, pkg, panel, player.occupiesBothDisplays,
             System.currentTimeMillis(), saves))
     }
@@ -1135,13 +1142,27 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
      */
     private fun resumeRunning(tileId: String, title: String, platformId: String?): Boolean {
         foldcade.pruneRunningGames()
-        val running = foldcade.runningGames.forTile(tileId) ?: return false
-        // Already on a screen: A there is the player's, and this press came from the other one.
-        if (foldcade.store.session.runs(tileId)) return false
+        val running = foldcade.runningOn(tileId) ?: return false
         val front = packageManager.getLaunchIntentForPackage(running.packageName)?.apply { flags = RESUME_FLAGS } ?: run {
             foldcade.runningGames.forget(running.packageName)
             return false
         }
+        // Already on a screen, so this press came from the grid on the other one. The game
+        // comes forward where it is, untouched, rather than being started over.
+        if (foldcade.store.session.runs(tileId) || foldcade.store.session.runs(running.tileId)) {
+            val assignment = displays.assignment(foldcade.store.session.defaultDisplayIsTop)
+            val displayId = if (running.panel == Panel.Top) assignment.topDisplayId else assignment.bottomDisplayId
+            if (displayId != null) {
+                try {
+                    startOnDisplay(front, displayId, multipleTask = false)
+                } catch (_: ActivityNotFoundException) {
+                    Unit
+                }
+            }
+            return true
+        }
+        // Behind Home, a player that may have closed unseen would open its own menu, not the game.
+        if (!foldcade.exitsReadable) return false
         cancelLaunches()
         foldcade.music.onExternalLaunch()
         launchScreen = running.panel
@@ -1166,14 +1187,14 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
     /** Y's Restart asks first: what the game has not saved is lost. */
     private fun askRestart(gameId: String?) {
         val id = gameId?.let { foldcade.shell.tileOf(it) } ?: return
-        if (foldcade.runningGames.forTile(id) == null) return
+        if (foldcade.runningOn(id) == null) return
         restartId = id
         foldcade.shell.present(restartGameDialog(hostScreen()))
     }
 
     /** Starts the game on tile [id] over: a fresh start that replaces the task it is open in. */
     private fun restartGame(id: String) {
-        val running = foldcade.runningGames.forTile(id) ?: return
+        val running = foldcade.runningOn(id) ?: return
         val route = foldcade.shell.launchRoute(id) ?: return
         launchScreen = running.panel
         launchSubject = null
@@ -2264,7 +2285,7 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
 }
 
 /** A library launch held while its player's save folder is asked for. */
-private class PendingBackendLaunch(val title: String, val platformId: String?, val route: GameRoute, val playerId: String)
+internal class PendingBackendLaunch(val title: String, val platformId: String?, val route: GameRoute, val playerId: String)
 
 /** See [FoldcadeHomeActivity.armRestart]. */
 class PendingRestart(val intent: Intent, val displayId: Int, val until: Long)

@@ -376,6 +376,9 @@ class ShellController(
     /** Tiles whose game is still open in its player, see [RunningGames]. */
     var running by mutableStateOf<Set<String>>(emptySet())
 
+    /** False while Foldcade can't tell whether a player closed, see [FoldcadeApp.exitsReadable]. Nothing reads Paused then. */
+    var resumable by mutableStateOf(false)
+
     /** Cells for the current grid. Empty when the grid is an empty state. */
     var entries by mutableStateOf<List<GridEntry>>(emptyList())
         private set
@@ -1291,7 +1294,7 @@ class ShellController(
 
     /** Still open in its player and on neither screen now: it waits behind Home, where A brings it back. */
     fun isPaused(id: String?): Boolean =
-        id != null && isRunning(id) && !store.session.runs(id) && !store.session.runs(tileOf(id))
+        id != null && resumable && isRunning(id) && !store.session.runs(id) && !store.session.runs(tileOf(id))
 
     /** The tile [id] and the home id of each copy folded into it. */
     private fun tileIds(id: String): List<String> =

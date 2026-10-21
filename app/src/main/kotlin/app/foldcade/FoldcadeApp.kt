@@ -251,6 +251,23 @@ class FoldcadeApp : Application() {
         games.onChange = { ids -> if (::shell.isInitialized) shell.running = ids }
     }
 
+    /**
+     * True once Android has shown other apps' process exits, which takes usage access.
+     * Without it a game's player may have closed unseen, so its game is not offered as
+     * paused: the player's front door would open its own menu instead of the game.
+     */
+    internal var exitsReadable = false
+        private set(value) {
+            field = value
+            if (::shell.isInitialized) shell.resumable = value
+        }
+
+    /** A library launch held while its player's save folder is asked for. It outlives a recreated Home, as the ask does. */
+    internal var pendingSaveAsk: PendingBackendLaunch? = null
+
+    /** The running game on tile [tileId], under whichever id its tile has now. */
+    internal fun runningOn(tileId: String): RunningGame? = runningGames.forTile(tileId, shell::tileOf)
+
     /** The display whose Home last came back through the Home button, until its resume reads it. */
     internal var homeRecalledOn: Int? = null
 
@@ -387,19 +404,22 @@ class FoldcadeApp : Application() {
 
     /**
      * Forgets each game whose player has exited since it started, so its tile
-     * stops reading Paused. Without usage access the exits can't be read, and
-     * the games stay: A then sends the same start, which opens the game anew
-     * if its player is gone.
+     * stops reading Paused. Without usage access the exits can't be read: the
+     * games stay noted, so a start in their player still replaces their task,
+     * but none is offered as paused ([exitsReadable]).
      */
     internal fun pruneRunningGames() {
         if (runningGames.packages().isEmpty()) return
+        var readable = true
         runningGames.dropExited { pkg ->
             try {
                 playerExitTimestamps(pkg)
             } catch (_: SecurityException) {
+                readable = false
                 null
             }
         }
+        if (exitsReadable != readable) exitsReadable = readable
     }
 
     /** Process-exit times for [packageName], newest history Android still has. */
