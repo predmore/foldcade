@@ -26,6 +26,12 @@ data class ThemeFile(
     val icons: Map<String, ThemeIconFile> = emptyMap(),
     val sceneFiles: List<String> = emptyList(),
     val style: JsonObject = JsonObject(emptyMap()),
+    /** The pack's own version, which updates compare. Not inherited. */
+    val release: ThemeRelease? = null,
+    /** The [THEME_HOST_LEVEL] this pack needs, or null when the manifest's `host` is unreadable. */
+    val host: Int? = 1,
+    /** Where this pack's updates come from. Not inherited. */
+    val source: ThemeSource? = null,
     /** The manifest as written, so the same document can resolve again over another base. */
     val root: JsonObject = JsonObject(emptyMap()),
 ) {
@@ -77,6 +83,9 @@ private fun themeFileFields(root: JsonObject, inherit: ThemeFile?): ThemeFile? {
         }?.toMap().orEmpty(),
         sceneFiles = (root["scenes"] as? JsonArray)?.mapNotNull { (it as? JsonPrimitive)?.contentOrNull }.orEmpty(),
         style = root["style"] as? JsonObject ?: JsonObject(emptyMap()),
+        release = (root["release"] as? JsonPrimitive)?.takeIf { it.isString }?.content?.let(ThemeRelease::parse),
+        host = themeHostField(root["host"]),
+        source = ThemeSource.parse(root["source"]),
         root = root,
     )
 }

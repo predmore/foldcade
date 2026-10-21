@@ -4,7 +4,7 @@ Themes are ZIPs containing JSON, images, Android vector XML, fonts, audio, and A
 
 Afterglow is the reference pack in `themes/afterglow/`. Its icon artwork, colours, focus styling, typography, motion, shapes, component styling, layout metrics, and backgrounds live there, and it declares every [style token](#style-tokens) the engine reads; a test fails if the engine reads one Afterglow leaves out. The app generates its emergency drawable resources from those same icon files. Tests keep a CPU model of the Afterglow backgrounds. It is updated alongside the scenes and checks their uniforms, lit budget, and motion pacing.
 
-The current version exposes the launcher's presentation: colours, type, icons, shapes, motion, and the look of each component. It does not let a pack replace the controller's grid/navigation topology, author arbitrary screen layouts, or change layout proportions such as row heights and the keyboard's key pitch. Downloading/installing external packs through the UI is also future work; the loader already accepts resource packs from private `files/themes/*.zip` storage.
+The current version exposes the launcher's presentation: colours, type, icons, shapes, motion, and the look of each component. It does not let a pack replace the controller's grid/navigation topology, author arbitrary screen layouts, or change layout proportions such as row heights and the keyboard's key pitch. Downloading/installing external packs through the UI is also future work; the loader already accepts resource packs from private `files/themes/*.zip` storage, and [trials](#releases-and-trials) keep a pack there that crashes Foldcade from staying.
 
 ## Inheritance
 
@@ -23,6 +23,8 @@ Background lists are discovered from every installed pack. Selecting one pins it
   "version": 2,
   "id": "example",
   "name": "Example",
+  "release": "1.0.0",
+  "source": {"github": "someone/foldcade-example"},
   "background": "#000000",
   "surface": "#1C1C20",
   "onBackground": "#F4F1EA",
@@ -59,6 +61,18 @@ The resolved icon carries its accent, tint, and blending metadata together with 
 V1 conventions remain accepted: `font.ttf`/`font.otf`, `marks/<name>.png`, `wallpaper-top.png`/`.webp`, `wallpaper-bottom.png`/`.webp`, and `sounds/{move,activate,back,notify}.ogg`. Font, wallpaper, and sound failures leave usable defaults. Wallpapers are letterboxed. Theme music follows the existing optional `music/theme.ogg` contract.
 
 Styles are resolved once into typed values. An unknown token or group is reported, so a misspelling does not go unnoticed. Invalid tokens report their manifest path and use Afterglow's value: padding and dimensions must be nonnegative, type sizes/scales and durations positive, alpha/peak values in 0–1, rim values in 0–1 excluding 1, and glow steps whole nonnegative integers. Insets use 0–0.5 and art fractions use 0–1 excluding 0. Motion offsets and depth may be signed; easing y control points may overshoot. These domains prevent invalid native inputs; they do not cap rendering complexity. Duplicate pack IDs are ignored before fonts/audio are materialized, and cached files are keyed by their asset contents.
+
+## Releases and trials
+
+Three manifest fields describe a pack's versions. None is inherited from Afterglow, and getting one wrong is reported without stopping the pack loading.
+
+- `release` is the pack's own version, a string such as `"1.2.0"`. `"1.2"` means `1.2.0`. Updates compare it.
+- `host` is the theme format level the pack needs, a whole number from 1; left out, it is 1. This Foldcade reads level 1. A pack that needs a higher level still loads here, but is never installed as an update.
+- `source` is where its updates come from: `{"github": "owner/repo"}`, the releases of that GitHub repository. Case does not matter.
+
+An update installs only over a pack with the same `id` and the same `source`, and only with a higher `release`. The first install locks the source, so another repository cannot take over an id. A pack Foldcade ships cannot be replaced, a version 1 manifest has no stable id and never installs, and a pack with no `release` cannot be compared. Before an update replaces anything, it loads over Afterglow: every icon and scene it names must resolve and every shader must compile on the device. It is staged in `files/themes-staging`, written down in `files/theme-installs.json`, then renamed into `files/themes`. The archive it replaces is kept in `files/themes-previous`, unless that archive is itself still on trial: then the proven copy kept before it stays. A start that finds an update cut off part way finishes it. Installs take effect at the next start. Nothing downloads updates yet; `FoldcadeApp.installTheme` is where the updater will hand one over.
+
+Foldcade is the Home app, so a pack that crashes it could leave nothing to go back to. A pack that arrives in `files/themes`, or changes there, is on trial. Android's record of how Foldcade's process ended is read at the next start. Each crash or ANR counts against the packs on trial that were in use: the packs of the theme, icon theme, and background the shell had resolved, or every pack still loading when it stopped. A crash before a new copy loaded does not count against that copy. After two, the start refuses that release from then on, writes that down, and only then puts the copy kept in `themes-previous` back, or takes the pack out when there is none. R1 says which. A trial ends after three minutes of Home shown with the pack in use. Packs already in `files/themes` the first time Foldcade keeps the ledger are not on trial.
 
 ## Style tokens
 

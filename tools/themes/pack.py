@@ -2,6 +2,7 @@
 """Validate references and reproducibly package a Foldcade resource theme. Python standard library only."""
 import argparse
 import json
+import re
 from pathlib import Path, PurePosixPath
 import zipfile
 
@@ -12,6 +13,16 @@ def assets(root: Path):
     manifest = json.loads((root / "theme.json").read_text())
     if not manifest.get("name") or manifest.get("version", 1) not in (1, 2):
         raise ValueError("theme.json: expected a named theme with version 1 or 2")
+    if "release" in manifest and not (isinstance(manifest["release"], str) and re.fullmatch(r"\d{1,6}(\.\d{1,6}){0,2}", manifest["release"])):
+        raise ValueError("theme.json: release must be a version such as 1.2.0")
+    host = manifest.get("host", 1)
+    if isinstance(host, bool) or not isinstance(host, int) or host < 1:
+        raise ValueError("theme.json: host must be a whole number from 1")
+    if "source" in manifest:
+        source = manifest["source"]
+        github = source.get("github") if isinstance(source, dict) and set(source) == {"github"} else None
+        if not (isinstance(github, str) and re.fullmatch(r"[A-Za-z0-9](?:[A-Za-z0-9-]{0,37}[A-Za-z0-9])?/[A-Za-z0-9._-]{1,100}", github)) or github.split("/")[1] in (".", ".."):
+            raise ValueError('theme.json: source must be {"github": "owner/repo"}')
     files = {"theme.json"}
 
     def add(name):

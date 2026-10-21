@@ -2,6 +2,7 @@ package app.foldcade
 
 import android.content.Context
 import android.graphics.BitmapFactory
+import android.graphics.RuntimeShader
 import android.media.AudioAttributes
 import android.media.SoundPool
 import android.util.Log
@@ -13,6 +14,8 @@ import app.foldcade.language.BackgroundMotion
 import app.foldcade.language.FALLBACK_THEME_ID
 import app.foldcade.language.MusicTrack
 import app.foldcade.language.Theme
+import app.foldcade.language.ThemeFile
+import app.foldcade.language.SceneLayer
 import app.foldcade.language.ThemeResources
 import app.foldcade.language.resolveThemeResources
 import app.foldcade.language.loadThemeCatalog
@@ -41,6 +44,8 @@ class PackagedTheme(
     val resources: ThemeResources,
     /** The archive's files, so a pack loaded after this one can inherit them. */
     internal val entries: Map<String, ByteArray> = emptyMap(),
+    /** Its archive's name in files/themes. Null for a pack Foldcade ships. */
+    val archive: String? = null,
 ) {
     companion object {
         private const val ASSET = "themes/afterglow.zip"
@@ -49,18 +54,22 @@ class PackagedTheme(
             load(context, context.assets.open(ASSET))
         } catch (error: Exception) { Log.w("FoldcadeTheme", "Default theme ignored", error); null }
 
-        fun loadAll(context: Context): List<PackagedTheme> {
-            val sources: List<Pair<String, () -> InputStream>> = context.assets.list("themes").orEmpty().filter { it.endsWith(".zip") }.sorted()
-                .map { name -> "themes/$name" to { context.assets.open("themes/$name") } } +
+        /** Every pack, Afterglow first. [read] hears the manifest of each archive in `files/themes` that parsed. */
+        fun loadAll(context: Context, read: (archive: String, manifest: ThemeFile) -> Unit = { _, _ -> }): List<PackagedTheme> {
+            // The shipped packs have no archive name; those in files/themes are named for the ledger.
+            val sources: List<Triple<String, String?, () -> InputStream>> = context.assets.list("themes").orEmpty().filter { it.endsWith(".zip") }.sorted()
+                .map { name -> Triple("themes/$name", null) { context.assets.open("themes/$name") } } +
                 File(context.filesDir, "themes").listFiles().orEmpty().filter { it.extension == "zip" }.sortedBy { it.name }
-                    .map { file -> file.name to { file.inputStream() } }
-            val archives = sources.asSequence().mapNotNull { (source, open) ->
-                try { open().use(::readThemeZip) }
-                catch (error: Exception) { Log.w("FoldcadeTheme", "Theme $source ignored", error); null }
+                    .map { file -> Triple(file.name, file.name) { file.inputStream() } }
+            val archiveOf = java.util.IdentityHashMap<ThemeZip, String>()
+            val archives = sources.asSequence().mapNotNull { (source, archive, open) ->
+                try {
+                    open().use(::readThemeZip)?.also { zip -> archive?.let { archiveOf[zip] = it; read(it, zip.file) } }
+                } catch (error: Exception) { Log.w("FoldcadeTheme", "Theme $source ignored", error); null }
             }
             var fallback: PackagedTheme? = null
             return loadThemeCatalog(archives, { zip ->
-                load(context, zip, fallback)?.also { if (fallback == null && it.resources.id == FALLBACK_THEME_ID) fallback = it }
+                load(context, zip, fallback, archiveOf[zip])?.also { if (fallback == null && it.resources.id == FALLBACK_THEME_ID) fallback = it }
             }) { diagnostic ->
                 Log.w("FoldcadeTheme", "${diagnostic.source}: ${diagnostic.message}")
             }
@@ -72,7 +81,7 @@ class PackagedTheme(
             return load(context, zip, inherit?.takeIf { zip.file.id != it.resources.id })
         }
 
-        private fun load(context: Context, zip: ThemeZip, inherit: PackagedTheme? = null): PackagedTheme? = try {
+        private fun load(context: Context, zip: ThemeZip, inherit: PackagedTheme? = null, archive: String? = null): PackagedTheme? = try {
             val entries = zip.entries
             val resources = resolveThemeResources(zip, inherit?.resources)
             val file = resources.file
@@ -113,6 +122,7 @@ class PackagedTheme(
                 music = themeMusic(context, file.name, json, entries),
                 resources = resources,
                 entries = entries,
+                archive = archive,
             )
         } catch (error: Exception) {
             Log.w("Foldcade", "Theme zip ignored", error)
@@ -171,6 +181,25 @@ class PackagedTheme(
             }
         }
     }
+}
+
+/**
+ * True when [zip] is whole enough to replace a pack: every icon and scene it names resolves over
+ * [inherit], and every shader in its scenes compiles on this device.
+ */
+internal fun themeInstallable(zip: ThemeZip, inherit: ThemeResources?): Boolean = try {
+    val resources = resolveThemeResources(zip, inherit)
+    resources.file.icons.keys.all { it in resources.icons } &&
+        resources.scenes.size == resources.file.sceneFiles.size &&
+        resources.scenes.values.all { scene ->
+            scene.layers.filterIsInstance<SceneLayer.Shader>().all { layer ->
+                try { RuntimeShader(layer.source); true }
+                catch (error: IllegalArgumentException) { Log.w("FoldcadeTheme", "${scene.source}:${layer.name}", error); false }
+            }
+        }
+} catch (error: Exception) {
+    Log.w("FoldcadeTheme", "Theme ${zip.file.id} cannot install", error)
+    false
 }
 
 /** The four theme sound slots, played at [volume]. A missing clip is skipped. */
