@@ -356,7 +356,7 @@ fun homeLanding(board: HomeBoard, id: String): HomeLanding? {
         ?: holding.firstOrNull { it.second.collection }
         ?: holding.firstOrNull { it.second.recent }
         ?: return null
-    return HomeLanding.Inside(group.id, at, group.slots.indexOf(id))
+    return HomeLanding.Inside(group.id, at, groupSlots(board, group.id).indexOf(id))
 }
 
 /**

@@ -149,8 +149,13 @@ object Copy {
     const val playTimeEverywhere = "Everywhere"
     const val playTimeHere = "Foldcade only"
     const val sort = "Sort"
+
+    /** Settings › Library: the order All lists games in. Each folder's own Sort is on its Y menu. */
+    const val sortAll = "Sort All"
     const val sortRecent = "Recent"
-    const val sortListed = "Library"
+    const val sortListed = "A–Z"
+    const val sortCustom = "Custom"
+    const val sortMostPlayed = "Most played"
     const val continueGrant = "Continue"
     const val ok = "OK"
     const val folderGrantTitle = "Choose a folder"

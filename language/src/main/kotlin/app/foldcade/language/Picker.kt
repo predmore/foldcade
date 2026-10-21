@@ -377,6 +377,9 @@ sealed interface Row {
     /** Closes the gaps on the board on screen. */
     data object Tidy : Row
 
+    /** ‹ Custom › and the orders a folder can show instead ([TileActions.sort]). */
+    data object SortFolder : Row
+
     /** Closes Find or All and lands on the tile where the game, or the group, lives on Home. */
     data object ShowOnHome : Row
 
@@ -629,12 +632,18 @@ data class TileActions(
     val tidy: Boolean = false,
     /** The board on screen has gaps to close, so Edit home offers Tidy whatever the tile. */
     val tidyBoard: Boolean = false,
+    /** The folder Sort orders, the open one or the folder tile, and its order now. Null leaves the row out. */
+    val sort: FolderSortChoice? = null,
 )
+
+/** A folder's Sort row: which folder it orders, and how it orders it now. */
+data class FolderSortChoice(val folderId: String, val sort: FolderSort)
 
 /**
  * Y's menu for the tile. Add to holds every place a game can be put, Home first, and New
  * collection at its end, so a game's menu has one row for all of them. Remove takes the
- * tile off the spot it is in, and Hide is its own row, after it.
+ * tile off the spot it is in, and Hide is its own row, after it. Sort, for the whole folder
+ * rather than the tile, comes last.
  */
 fun actionRows(tile: TileActions?): List<Row> = buildList {
     if (tile == null) return@buildList
@@ -662,6 +671,7 @@ fun actionRows(tile: TileActions?): List<Row> = buildList {
     if (tile.hide) add(Row.Hide)
     if (tile.removeDownload) add(Row.RemoveDownload)
     if (tile.deleteShortcut) add(Row.DeleteShortcut)
+    if (tile.sort != null) add(Row.SortFolder)
 }
 
 /**
@@ -703,7 +713,11 @@ private fun SidePanel.page() = copy(index = 0, retiring = false, pendingSide = n
 
 fun retainMenuRows(previous: PickerModel, next: PickerModel): PickerModel {
     val panel = next.panel ?: return next.copy(menuRows = emptyList())
-    val retained = (if (previous.panel?.side == panel.side) previous.menuRows else emptyList())
+    // Sorting the folder changes what its menu offers: Move and Tidy mean something only in Custom.
+    val was = previous.tileActions?.sort
+    val now = next.tileActions?.sort
+    val resorted = was != null && now != null && was.folderId == now.folderId && was.sort != now.sort
+    val retained = (if (previous.panel?.side == panel.side && !resorted) previous.menuRows else emptyList())
         .map { it.copy(rows = validMenuRows(it.rows, next)) }
     val page = panel.page()
     val pages = if (retained.any { it.page == page }) retained else
@@ -774,7 +788,8 @@ fun rowText(row: Row, model: PickerModel): RowText = when (row) {
     Row.MotionSpeed -> RowText(Copy.motion, speedLabel(model.motionSpeed))
     Row.UsageAccess -> RowText(Copy.playTime, if (model.usageGranted) Copy.playTimeEverywhere else Copy.playTimeHere)
     Row.Primary -> RowText(Copy.primaryPanel, if (model.primaryIsTop) Copy.top else Copy.bottom)
-    Row.Order -> RowText(Copy.sort, if (model.sort == LibrarySort.RecentlyPlayed) Copy.sortRecent else Copy.sortListed)
+    Row.Order -> RowText(Copy.sortAll, if (model.sort == LibrarySort.RecentlyPlayed) Copy.sortRecent else Copy.sortListed)
+    Row.SortFolder -> RowText(Copy.sort, folderSortLabel(model.tileActions?.sort?.sort ?: FolderSort.Custom))
     Row.Music -> RowText(MusicCopy.row, if (model.music.enabled) MusicCopy.on else MusicCopy.off)
     Row.MusicTrack -> RowText(MusicCopy.track, model.trackTitle)
     Row.MusicVolume -> RowText(MusicCopy.volume, MusicCopy.volumeLabel(model.music.volume).substringAfter("  "))
@@ -924,6 +939,9 @@ sealed interface Effect {
 
     /** Close the gaps on the board on screen. */
     data object Tidy : Effect
+
+    /** Step folder [folderId]'s sort forward, or back for a negative [direction]. The menu stays open. */
+    data class SortFolder(val folderId: String, val direction: Int) : Effect
 
     /** Go to where [id], a game or a group, lives on Home, and light it up there. */
     data class ShowOnHome(val id: String?) : Effect
@@ -1565,6 +1583,8 @@ private fun applyPanel(
             model.copy(panel = current.copy(index = panelFocusIndex(rows, index, meaning))) to null
         Meaning.MoveLeft, Meaning.MoveRight -> {
             val direction = if (meaning == Meaning.MoveLeft) -1 else 1
+            // A folder's order is the board's, which the shell changes; the menu stays on the row.
+            if (rows[index] == Row.SortFolder) return model.copy(panel = current) to sortStep(model, direction)
             val nudged = stepRow(model, rows[index], direction)
             if (nudged != null) {
                 nudged.copy(panel = current) to null
@@ -1599,8 +1619,12 @@ private fun applyPanel(
  * The Settings page draws them as ‹ value ›.
  */
 internal val choiceRows: Set<Row> = setOf(
-    Row.Theme, Row.IconTheme, Row.Background, Row.MotionSpeed, Row.MusicTrack, Row.Order, Row.Primary,
+    Row.Theme, Row.IconTheme, Row.Background, Row.MotionSpeed, Row.MusicTrack, Row.Order, Row.Primary, Row.SortFolder,
 )
+
+/** The folder Sort row's step, or null when the menu names no folder. */
+private fun sortStep(model: PickerModel, direction: Int): Effect? =
+    model.tileActions?.sort?.let { Effect.SortFolder(it.folderId, direction) }
 
 /**
  * Left and right step a value and keep the row. Music volume moves by 5 points,
@@ -1770,6 +1794,8 @@ private fun activateRow(
         // The [choiceRows]. The list is spelled out so a new row cannot slip past this when.
         Row.Theme, Row.IconTheme, Row.Background, Row.MotionSpeed, Row.MusicTrack, Row.Order, Row.Primary ->
             stepRow(model, row, 1)!!.copy(panel = panel) to null
+        // A choice row too, whose value is the board's: the shell steps it.
+        Row.SortFolder -> model.copy(panel = panel) to sortStep(model, 1)
         Row.UsageAccess -> model.copy(dialog = usageAccessPrompt(screen)) to null
         Row.PlayActivity -> model.copy(
             panel = null,

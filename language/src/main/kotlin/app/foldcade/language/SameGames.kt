@@ -104,6 +104,7 @@ fun foldSameGames(
             id = tile,
             title = titled.title,
             lastPlayedMillis = copies.maxOf { it.lastPlayedMillis },
+            playMillis = copies.maxOf { it.playMillis },
         )
     }
     return SameFold(folded, members, nextAliases)

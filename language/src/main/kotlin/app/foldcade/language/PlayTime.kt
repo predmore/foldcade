@@ -15,8 +15,16 @@ fun LibrarySort.toggled(): LibrarySort = when (this) {
 }
 
 fun orderLabel(sort: LibrarySort): String = when (sort) {
-    LibrarySort.Listed -> "${Copy.sort}  ${Copy.sortListed}"
-    LibrarySort.RecentlyPlayed -> "${Copy.sort}  ${Copy.sortRecent}"
+    LibrarySort.Listed -> "${Copy.sortAll}  ${Copy.sortListed}"
+    LibrarySort.RecentlyPlayed -> "${Copy.sortAll}  ${Copy.sortRecent}"
+}
+
+/** A folder's Sort choice, as its Y menu reads it. */
+fun folderSortLabel(sort: FolderSort): String = when (sort) {
+    FolderSort.Custom -> Copy.sortCustom
+    FolderSort.Recent -> Copy.sortRecent
+    FolderSort.Alphabetical -> Copy.sortListed
+    FolderSort.MostPlayed -> Copy.sortMostPlayed
 }
 
 /** Shown when play time comes from Foldcade's own launches, not usage access. */

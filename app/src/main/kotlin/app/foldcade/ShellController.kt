@@ -145,6 +145,8 @@ class ShellController(
     private val homeTracks: List<MusicTrack> = emptyList(),
     private val themeTracks: List<MusicTrack?> = emptyList(),
     private val lastPlayedMillis: (String) -> Long? = { null },
+    /** A game's total play time, which a folder sorted by Most played orders by. */
+    private val playMillis: (String) -> Long? = { null },
     /** Delete shortcut was confirmed. The app drops its pinned shortcut. */
     private val onMoonlightRemoved: (remoteKey: String) -> Unit = {},
     /** Delete shortcut was confirmed. The app drops its pinned shortcut. */
@@ -622,6 +624,10 @@ class ShellController(
                 null
             }
             Effect.Tidy -> changeHome { home.tidyBoard(it) }
+            is Effect.SortFolder -> {
+                sortFolder(effect)
+                null
+            }
             is Effect.NewCollection -> {
                 // Naming takes the keyboard Find has, so Find gives way to it, on Home.
                 if (find != null) {
@@ -1041,6 +1047,26 @@ class ShellController(
 
     /** A copy of the tile [id]'s game is downloading. The tile pulses its cloud. */
     fun isDownloading(id: String?): Boolean = id != null && downloading.isNotEmpty() && tileIds(id).any { it in downloading }
+
+    /**
+     * Steps a folder's Sort from its menu, which stays open on that row. The grid reorders
+     * behind it, and the focus, the menu's own included, follows the game it was on.
+     */
+    private fun sortFolder(effect: Effect.SortFolder) {
+        if (!showingHome() || find != null) return
+        // Saved, as any edit is, then read again at once, so Most played orders by play time
+        // the catalog had not read yet.
+        val at = home.stepSort(effect.folderId, effect.direction, model.focus.cellIndex) {
+            commitHome()
+            syncHome()
+        }
+        val grid = GridFocus(cellIndex = at, lastColumn = GridStrip.column(at))
+        publish(model.copy(focus = grid, panel = model.panel?.copy(grid = grid), shelfEpoch = model.shelfEpoch + 1))
+        // Move and Tidy come and go with Custom, so the rows were read again. Sort keeps the highlight.
+        val open = model.panel ?: return
+        val row = panelRows(open, model).indexOf(Row.SortFolder)
+        if (row >= 0 && row != open.index) model = model.copy(panel = open.copy(index = row))
+    }
 
     /** Runs one Y menu action on the focused home tile. [change] returns the index to focus after. */
     private fun changeHome(change: (Int) -> Int): Effect? {
@@ -2665,11 +2691,14 @@ class ShellController(
             onSameGames(sameGroups().filterKeys { it in joined })
         }
         val copies = folded.members.mapValues { (_, ids) -> ids.mapNotNull(libraryGames::get) }
+        // Play time is read through every play, so only for the games a folder orders by it.
+        val ranked = home.rankedByPlay()
+        val timed = { item: HomeItem -> if (item.id in ranked) item.copy(playMillis = playMillis(item.id) ?: 0L) else item }
         home.remerge(
-            shelfItems(),
-            appItems(),
+            shelfItems().map(timed),
+            appItems().map(timed),
             // Read now, since a game played since its library listed it moves up Recently played.
-            folded.items.map { item -> item.copy(lastPlayedMillis = lastPlayedMillis(item.id) ?: 0L) },
+            folded.items.map { item -> timed(item.copy(lastPlayedMillis = lastPlayedMillis(item.id) ?: 0L)) },
             homePlatforms(),
             // A tile's art and details come from its first copy: a server's, which knows the game.
             libraryGames + copies.mapNotNull { (tile, games) -> games.firstOrNull()?.let { tile to it } },

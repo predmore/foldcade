@@ -66,10 +66,10 @@ class PlayTimeCopyTest {
         val opened = PickerModel(count = 1, rowsPerPage = 1).onSetting(Row.Order)
         val next = reduce(opened, Meaning.Activate).first
         assertEquals(LibrarySort.RecentlyPlayed, next.sort)
-        assertEquals("Sort  Recent", rowLabel(Row.Order, next))
+        assertEquals("Sort All  Recent", rowLabel(Row.Order, next))
         val back = reduce(next, Meaning.Activate).first
         assertEquals(LibrarySort.Listed, back.sort)
-        assertEquals("Sort  Library", orderLabel(back.sort))
+        assertEquals("Sort All  A–Z", orderLabel(back.sort))
     }
 
     @Test

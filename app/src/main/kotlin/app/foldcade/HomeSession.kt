@@ -28,6 +28,10 @@ import app.foldcade.language.HomeLanding
 import app.foldcade.language.homeLanding
 import app.foldcade.language.resolvePlatform
 import app.foldcade.language.TileActions
+import app.foldcade.language.FolderSort
+import app.foldcade.language.FolderSortChoice
+import app.foldcade.language.setFolderSort
+import app.foldcade.language.stepped
 import app.foldcade.language.HomeBoard
 import app.foldcade.language.HomeFolder
 import app.foldcade.language.HomeItem
@@ -375,33 +379,71 @@ class HomeSession(
      * A downloaded server game can be deleted from anywhere. While Add to has taken the game
      * out of the collection on screen, the menu keeps acting on that game. Null while a tile
      * moves or a picker or name field is open.
+     * Inside a folder or collection every menu ends with its Sort, as a folder tile's on the
+     * root does; while it is sorted, nothing in it moves.
      */
     fun actions(index: Int): TileActions? {
         if (iconPick != null || renamingId != null || board.editing) return null
         if (selection != null) return bulkActions()
+        val open = board.openFolderId?.let { board.folders[it] }?.takeUnless { board.allOpen }
+        val sort = open?.let(::sortChoice)
         val held = menuGame
-        if (held != null && slotGame(index) != held) return gameActions(held, move = false, remove = null).copy(kept = true)
+        if (held != null && slotGame(index) != held) return gameActions(held, move = false, remove = null).copy(kept = true, sort = sort)
         if (board.allOpen) {
             val item = allRows().getOrNull(index) ?: return null
             return gameActions(item.id, move = false, remove = null)
                 .copy(select = true, showOnHome = item.id.takeIf { homeLanding(board, it) != null })
         }
         if (index < 0) return null
-        val open = board.openFolderId?.let { board.folders[it] }
         val id = visibleSlots(board).getOrNull(index)
         if (open?.recent == true) {
             return id?.let { gameActions(it, move = false, remove = null).copy(select = true) }
         }
         val gaps = canTidy(board)
+        val moves = open?.sorted != true
         // An empty slot, or one past the last tile, moves as a tile does, makes a collection on
         // the root, and closes the board's gaps.
-        if (id == null) return TileActions(move = true, newCollection = open == null, tidy = gaps, tidyBoard = gaps)
+        if (id == null) return TileActions(move = moves, newCollection = open == null, tidy = gaps, tidyBoard = gaps, sort = sort)
         if (id == HOME_ALL) return TileActions(move = true, newCollection = true, tidyBoard = gaps)
         val folder = board.folders[id]
         if (folder != null) {
-            return TileActions(move = true, rename = true, icon = folder.userMade, remove = removeVerb(board, index), tidyBoard = gaps)
+            return TileActions(move = true, rename = true, icon = folder.userMade, remove = removeVerb(board, index), tidyBoard = gaps,
+                sort = sortChoice(folder))
         }
-        return gameActions(id, move = true, remove = removeVerb(board, index), tidyBoard = gaps).copy(select = true)
+        return gameActions(id, move = moves, remove = removeVerb(board, index), tidyBoard = gaps).copy(select = true, sort = sort)
+    }
+
+    /** The games in a folder sorted by Most played: the only ones whose play time a merge needs. */
+    fun rankedByPlay(): Set<String> = board.folders.values
+        .filter { it.sorted && it.sort == FolderSort.MostPlayed }
+        .flatMapTo(HashSet()) { it.slots.filterNotNull() }
+
+    /** The Sort row for [folder]. Recently played orders itself, so it has none. */
+    private fun sortChoice(folder: HomeFolder): FolderSortChoice? =
+        if (folder.recent) null else FolderSortChoice(folder.id, folder.sort)
+
+    /**
+     * Steps folder [folderId]'s sort by [direction]. The game the menu is on keeps the focus
+     * wherever it lands; an empty slot stays empty, past the last game when sorting closed the
+     * gap it was. [reread] runs once the sort is set, to read the play a new order needs
+     * ([rankedByPlay]). Returns where focus goes.
+     */
+    fun stepSort(folderId: String, direction: Int, index: Int, reread: () -> Unit = {}): Int {
+        val folder = board.folders[folderId] ?: return index
+        val focused = menuGame ?: visibleSlots(board).getOrNull(index)
+        val next = setFolderSort(board, folderId, folder.sort.stepped(direction), catalog())
+        if (next == board) return index
+        board = next
+        reread()
+        if (board.openFolderId != folderId) return index
+        val slots = visibleSlots(board)
+        val last = slots.indexOfLast { it != null }
+        val at = when {
+            focused != null -> slots.indexOf(focused).takeIf { it >= 0 } ?: index
+            slots.getOrNull(index) == null -> index
+            else -> last + 1
+        }
+        return at.coerceAtMost(GridStrip.reach(last + 1) - 1).coerceAtLeast(0)
     }
 
     private fun gameActions(id: String, move: Boolean, remove: RemoveVerb?, tidyBoard: Boolean = false): TileActions = TileActions(
