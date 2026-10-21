@@ -144,7 +144,7 @@ fun artPickerHintGroups(faces: FaceMap): List<List<HintKey>> = listOf(
     listOf(HintKey(PromptKey.L1, ""), HintKey(PromptKey.R1, ArtCopy.kind)),
     listOf(HintKey(PromptKey.L2, ""), HintKey(PromptKey.R2, ArtCopy.match)),
     listOf(HintKey(promptKeyOf(faces.confirmKey) ?: PromptKey.FaceA, ArtCopy.apply)),
-    listOf(HintKey(PromptKey.FaceX, ArtCopy.automatic)),
+    listOf(HintKey(actionFaces(faces).bottomGlyph, ArtCopy.automatic)),
     listOf(HintKey(promptKeyOf(faces.backKey) ?: PromptKey.FaceB, Copy.back)),
 )
 

@@ -119,6 +119,9 @@ class LeftDrawerTest {
         val page = reduce(at(reduce(model(), Meaning.LeftPanel).first, Row.PlayActivity), Meaning.Activate).first
         val listed = page.copy(playActivity = page.playActivity!!.copy(day = 3, sessions = listOf("s1", "s2", "s3")))
         assertEquals(listOf(PromptKey.FaceX, PromptKey.FaceB), playActivityHints(listed).map { it.key })
+        val calibrated = listed.copy(faceMap = faceMapWithConfirm(FaceMap.standard(), PromptKey.FaceX))
+        assertEquals(actionFaces(calibrated.faceMap).bottomGlyph, playActivityHints(calibrated).first().key)
+        assertEquals(PromptKey.FaceA, playActivityHints(calibrated).first().key)
         assertEquals(listOf(PlayCopy.remove, Copy.back), playActivityHints(listed).map { it.label })
         val second = reduce(listed, Meaning.MoveDown).first
         assertEquals(1, second.playActivity?.session)

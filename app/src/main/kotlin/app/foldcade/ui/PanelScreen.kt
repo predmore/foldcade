@@ -130,6 +130,7 @@ import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.zIndex
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import app.foldcade.language.actionFaces
 import app.foldcade.language.heroPlayLine
 import app.foldcade.language.DateStyle
 import app.foldcade.language.typingFaces
@@ -2257,7 +2258,7 @@ private fun PanelRows(
         with(density) { gap.roundToPx() } * (blocks - 1 + if (panel.connection != null) 1 else 0).coerceAtLeast(0)
     val fit = menuFit(regularRows, available, density.density)
     val heights = rows.indices.filter { it !in fixedRows }.zip(fit.rowHeights).toMap()
-    val keys = remember(rows) { rowKeys(rows) }
+    val keys = remember(rows, model.faceMap) { rowKeys(rows, model.faceMap) }
     val tileStart = rows.indexOfFirst { it.tiled() }
     val slots = rememberSelectionSlots()
     val reachPx = with(density) { ringReach().toPx() }
@@ -2676,7 +2677,8 @@ private fun GridHints(app: FoldcadeApp, modifier: Modifier = Modifier) {
         model.playActivity?.sessions != null
     val back = promptKeyOf(model.faceMap.backKey) ?: PromptKey.FaceB
     val selecting = gridKeys && shell.homeSelection() != null
-    val shown = if (!selecting && model.undoVerb != null && model.panel == null && model.dialog == null) listOf(HintKey(PromptKey.FaceY, Copy.undo)) else if (!selecting && gridKeys && (shell.downloading.isNotEmpty() || shell.activity.values.any { it is TileActivity.Downloading || it == TileActivity.Checking })) {
+    val optionsKey = actionFaces(model.faceMap).optionsGlyph
+    val shown = if (!selecting && model.undoVerb != null && model.panel == null && model.dialog == null) listOf(HintKey(optionsKey, Copy.undo)) else if (!selecting && gridKeys && (shell.downloading.isNotEmpty() || shell.activity.values.any { it is TileActivity.Downloading || it == TileActivity.Checking })) {
         normalKeys.filterNot { it.key == back } + HintKey(back, "Cancel download")
     } else addGames + normalKeys
     // The root grid names Select's Find while the row has room, so the button can be found.
@@ -4204,13 +4206,25 @@ private fun EmptyCollection(
             modifier = Modifier.padding(top = px(8f)),
             style = text(theme.onBackground, type.dialogBody, theme).copy(textAlign = TextAlign.Center),
         )
-        BasicText(
-            text = Copy.addGamesHow,
-            modifier = Modifier.padding(top = px(4f)),
-            style = text(theme.muted, type.dialogBody, theme).copy(textAlign = TextAlign.Center),
-            maxLines = 2,
-            overflow = TextOverflow.Ellipsis,
-        )
+        Row(
+            Modifier.padding(top = px(4f)),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(px(8f)),
+        ) {
+            BasicText(
+                text = Copy.addGamesHowBefore,
+                style = text(theme.muted, type.dialogBody, theme).copy(textAlign = TextAlign.Center),
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            PromptImage(promptGlyph(actionFaces(app.shell.model.faceMap).optionsGlyph), 22.dp)
+            BasicText(
+                text = Copy.addGamesHowAfter,
+                style = text(theme.muted, type.dialogBody, theme).copy(textAlign = TextAlign.Center),
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
         BasicText(
             text = Copy.addGames,
             modifier = Modifier
