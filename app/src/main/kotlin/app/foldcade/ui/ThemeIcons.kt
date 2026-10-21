@@ -3,7 +3,10 @@ package app.foldcade.ui
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.util.LruCache
+import androidx.compose.foundation.Image
 import androidx.compose.runtime.*
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ColorFilter
@@ -134,3 +137,16 @@ internal fun themeIcon(drawable: Int, pixels: Int = 128): ThemeIconPainter {
 
 @Composable
 internal fun themeIconPainter(drawable: Int, pixels: Int = 128): Painter = themeIcon(drawable, pixels).painter
+
+/** [drawable]'s art in the theme's ink when its pack drew it in one ink (`"tint": true`), else as drawn. */
+@Composable
+internal fun InkIcon(drawable: Int, modifier: Modifier = Modifier, contentScale: ContentScale = ContentScale.Fit) {
+    val art = themeIcon(drawable)
+    Image(
+        painter = art.painter,
+        contentDescription = null,
+        colorFilter = art.requestedTint(LocalFoldTheme.current.theme.onBackground),
+        modifier = modifier,
+        contentScale = contentScale,
+    )
+}

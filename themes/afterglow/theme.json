@@ -10,6 +10,9 @@
   "backgroundMotion": "ribbons",
   "version": 2,
   "id": "afterglow",
+  "author": "Foldcade",
+  "description": "True black, rounded tiles, and a soft neon glow. Every pack builds on it.",
+  "license": "MIT; Nunito under the SIL Open Font License",
   "icons": {
     "app.app.gamenative": {
       "file": "icons/app_gamenative.xml",
@@ -1186,7 +1189,7 @@
     },
     "status.battery.0": {
       "file": "icons/ic_status_battery_0.xml",
-      "tint": false
+      "tint": true
     },
     "status.battery.0.charging": {
       "file": "icons/ic_status_battery_0_charging.xml",
@@ -1202,7 +1205,7 @@
     },
     "status.battery.100": {
       "file": "icons/ic_status_battery_100.xml",
-      "tint": false
+      "tint": true
     },
     "status.battery.100.charging": {
       "file": "icons/ic_status_battery_100_charging.xml",
@@ -1210,7 +1213,7 @@
     },
     "status.battery.20": {
       "file": "icons/ic_status_battery_20.xml",
-      "tint": false
+      "tint": true
     },
     "status.battery.20.charging": {
       "file": "icons/ic_status_battery_20_charging.xml",
@@ -1218,7 +1221,7 @@
     },
     "status.battery.30": {
       "file": "icons/ic_status_battery_30.xml",
-      "tint": false
+      "tint": true
     },
     "status.battery.30.charging": {
       "file": "icons/ic_status_battery_30_charging.xml",
@@ -1226,7 +1229,7 @@
     },
     "status.battery.40": {
       "file": "icons/ic_status_battery_40.xml",
-      "tint": false
+      "tint": true
     },
     "status.battery.40.charging": {
       "file": "icons/ic_status_battery_40_charging.xml",
@@ -1234,7 +1237,7 @@
     },
     "status.battery.50": {
       "file": "icons/ic_status_battery_50.xml",
-      "tint": false
+      "tint": true
     },
     "status.battery.50.charging": {
       "file": "icons/ic_status_battery_50_charging.xml",
@@ -1242,7 +1245,7 @@
     },
     "status.battery.60": {
       "file": "icons/ic_status_battery_60.xml",
-      "tint": false
+      "tint": true
     },
     "status.battery.60.charging": {
       "file": "icons/ic_status_battery_60_charging.xml",
@@ -1250,7 +1253,7 @@
     },
     "status.battery.70": {
       "file": "icons/ic_status_battery_70.xml",
-      "tint": false
+      "tint": true
     },
     "status.battery.70.charging": {
       "file": "icons/ic_status_battery_70_charging.xml",
@@ -1258,7 +1261,7 @@
     },
     "status.battery.80": {
       "file": "icons/ic_status_battery_80.xml",
-      "tint": false
+      "tint": true
     },
     "status.battery.80.charging": {
       "file": "icons/ic_status_battery_80_charging.xml",
@@ -1266,7 +1269,7 @@
     },
     "status.battery.90": {
       "file": "icons/ic_status_battery_90.xml",
-      "tint": false
+      "tint": true
     },
     "status.battery.90.charging": {
       "file": "icons/ic_status_battery_90_charging.xml",
@@ -1274,7 +1277,7 @@
     },
     "status.bell": {
       "file": "icons/ic_status_bell.xml",
-      "tint": false
+      "tint": true
     },
     "status.bell.1": {
       "file": "icons/ic_status_bell_1.xml",
@@ -1322,7 +1325,7 @@
     },
     "status.bluetooth": {
       "file": "icons/ic_status_bluetooth.xml",
-      "tint": false
+      "tint": true
     },
     "status.bluetooth.off": {
       "file": "icons/ic_status_bluetooth_off.xml",
@@ -1330,23 +1333,23 @@
     },
     "status.display": {
       "file": "icons/ic_status_display.xml",
-      "tint": false
+      "tint": true
     },
     "status.info": {
       "file": "icons/ic_status_info.xml",
-      "tint": false
+      "tint": true
     },
     "status.playtime": {
       "file": "icons/ic_status_playtime.xml",
-      "tint": false
+      "tint": true
     },
     "status.power": {
       "file": "icons/ic_status_power.xml",
-      "tint": false
+      "tint": true
     },
     "status.settings": {
       "file": "icons/ic_status_settings.xml",
-      "tint": false
+      "tint": true
     },
     "status.tools": {
       "file": "icons/ic_status_tools.xml",
@@ -1354,39 +1357,39 @@
     },
     "status.volume.1": {
       "file": "icons/ic_status_volume_1.xml",
-      "tint": false
+      "tint": true
     },
     "status.volume.2": {
       "file": "icons/ic_status_volume_2.xml",
-      "tint": false
+      "tint": true
     },
     "status.volume.3": {
       "file": "icons/ic_status_volume_3.xml",
-      "tint": false
+      "tint": true
     },
     "status.volume.mute": {
       "file": "icons/ic_status_volume_mute.xml",
-      "tint": false
+      "tint": true
     },
     "status.wifi.0": {
       "file": "icons/ic_status_wifi_0.xml",
-      "tint": false
+      "tint": true
     },
     "status.wifi.1": {
       "file": "icons/ic_status_wifi_1.xml",
-      "tint": false
+      "tint": true
     },
     "status.wifi.2": {
       "file": "icons/ic_status_wifi_2.xml",
-      "tint": false
+      "tint": true
     },
     "status.wifi.3": {
       "file": "icons/ic_status_wifi_3.xml",
-      "tint": false
+      "tint": true
     },
     "status.wifi.4": {
       "file": "icons/ic_status_wifi_4.xml",
-      "tint": false
+      "tint": true
     },
     "status.wifi.off": {
       "file": "icons/ic_status_wifi_off.xml",
@@ -1394,7 +1397,7 @@
     },
     "status.wrench": {
       "file": "icons/ic_status_wrench.xml",
-      "tint": false
+      "tint": true
     },
     "symbol.android-apps": {
       "file": "icons/symbol_android_apps.xml",

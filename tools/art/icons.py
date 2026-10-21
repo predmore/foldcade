@@ -7,8 +7,9 @@ icon slots in themes/afterglow/theme.json. Standard library only.
 The script owns every ic_btn_, ic_status_, ic_badge_, ic_control_, mark_, symbol_ and app_ file in those folders, so an
 icon it no longer draws is removed. See docs/iconography.md before adding one.
 """
-import json, os
+import json, os, re
 from art import Asset, to_svg, to_vd
+from palette import INK
 from objects import object_layers, symbol_layers
 import apps, marks, symbols
 
@@ -30,6 +31,14 @@ def slots(asset):
     if asset.name.startswith("app_"):
         return [f"app.{p}" for p in apps.APPS[asset.name[len("app_"):]][3]]
     return [slot(asset.name)]
+
+def one_ink_status(asset):
+    """A status icon drawn only in INK follows the theme's ink, so it shows on a light pack too.
+    Afterglow's ink is INK, so tinting it changes nothing there. One with state colours keeps them."""
+    if not asset.name.startswith("ic_status_"):
+        return False
+    colours = set(re.findall(r'android:(?:fillColor|strokeColor|color)="#([0-9A-Fa-f]{8})"', to_vd(asset)))
+    return colours == {"FF" + INK.lstrip("#").upper()}
 
 def assets():
     """(asset, svg folder, accent or None) for every icon."""
@@ -76,7 +85,7 @@ def main():
     theme = json.loads(open(path).read())
     kept = {k: v for k, v in theme["icons"].items() if not v["file"].startswith(tuple(f"icons/{p}" for p in OWNED))}
     for a, _, accent in made:
-        entry = {"file": f"icons/{a.name}.xml", "tint": a.tint}
+        entry = {"file": f"icons/{a.name}.xml", "tint": a.tint or one_ink_status(a)}
         if accent: entry["accent"] = accent.upper()
         for s in slots(a): kept[s] = dict(entry)
     theme["icons"] = dict(sorted(kept.items()))

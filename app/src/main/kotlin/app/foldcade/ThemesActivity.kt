@@ -116,7 +116,9 @@ class ThemesActivity : PanelKeyActivity() {
         page = page.adding()
         lifecycleScope.launch {
             val removed = withContext(Dispatchers.IO) { runCatching { app.removeTheme(pack) }.getOrDefault(false) }
-            page = page.settled(if (removed) ThemesCopy.removed else ThemesCopy.notRemoved, changed = removed)
+            // A pack taken out leaves the list, though it stays in use until the restart.
+            page = if (removed) page.settled(ThemesCopy.removed, changed = true, packs = page.packs - entry)
+                else page.settled(ThemesCopy.notRemoved, changed = false)
         }
     }
 }

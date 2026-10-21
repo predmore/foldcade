@@ -25,7 +25,7 @@ One thing does move: a token a pack leaves out is Afterglow's, so when Afterglow
 
 Every pack inherits from Afterglow. A colour, `iconRadius`, `artScale`, style token, font, or sound a pack leaves out, or gets wrong, is Afterglow's. An icon slot it leaves out is Afterglow's too, slot by slot.
 
-A pack can build on another installed pack instead with `"extends": "<id>"`. It inherits that pack's resolved look, its fonts, its sounds, and its icons for slots it does not fill, and that pack in turn inherits from Afterglow. A family of variants then ships one base pack and small packs that each change a few things. A pack whose parent is not installed, or whose chain leads back to itself, builds on Afterglow, and its report says why. Packs a pack builds on count as in use for its [trial](#releases-and-trials). A pack can therefore change one thing, say `{"name": "Square", "style": {"shape": {"round": 0}}}`, and look like Afterglow otherwise. A pack that wants a slot quiet or blank ships a silent clip or an empty icon in it. Scenes are not inherited; they are listed separately (see below). If Afterglow itself cannot load, packs fall back to the engine's built-in values, which the Built-in theme also uses.
+A pack can build on another installed pack instead with `"extends": "<id>"`. It inherits that pack's resolved look, its fonts, its sounds, its icons for slots it does not fill, and, when it names no scene of its own, its default background. That pack in turn inherits from Afterglow. A family of variants then ships one base pack and small packs that each change a few things. A pack whose parent is not installed, or whose chain leads back to itself, builds on Afterglow, and its report says why. Packs a pack builds on count as in use for its [trial](#releases-and-trials). A pack can therefore change one thing, say `{"name": "Square", "style": {"shape": {"round": 0}}}`, and look like Afterglow otherwise. A pack that wants a slot quiet or blank ships a silent clip or an empty icon in it. Scenes are not inherited; they are listed separately (see below). If Afterglow itself cannot load, packs fall back to the engine's built-in values, which the Built-in theme also uses.
 
 ## Compose providers
 
@@ -134,7 +134,7 @@ Proportions a pack sets once for everything it inherits. Each multiplies the tok
 
 | Token | Afterglow | Controls |
 | --- | --- | --- |
-| `base.cornerScale` | 1 | Every corner and roundness. 0 squares the whole launcher |
+| `base.cornerScale` | 1 | Every corner and roundness, the tiles' inherited `iconRadius` too. 0 squares the whole launcher |
 | `base.strokeScale` | 1 | Every ring, rim, border and outline width. Above 0 |
 | `base.glowScale` | 1 | Every glow's strength |
 | `base.fillScale` | 1 | Every translucent fill, rim and track over the ink |

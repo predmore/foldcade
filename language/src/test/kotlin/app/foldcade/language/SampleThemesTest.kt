@@ -46,6 +46,9 @@ class SampleThemesTest {
         assertEquals(daylight.style.colors.highlight, square.style.colors.highlight)
         assertEquals(0f, square.style.metrics.cardCornerDp)
         assertEquals(0f, square.style.shape.keyCorner)
+        // The tiles too: their corner is a manifest field the corner scale also covers.
+        assertEquals(0f, square.file.iconRadius)
+        assertEquals(.2f, daylight.file.iconRadius)
         assertEquals(afterglow.style.metrics.cardCornerDp * .6f, daylight.style.metrics.cardCornerDp)
         assertEquals("daylight", square.icons.getValue("badge.cloud").owner)
         assertEquals(listOf("daylight"), square.parents)

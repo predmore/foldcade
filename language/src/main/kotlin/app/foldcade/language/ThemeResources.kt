@@ -147,10 +147,15 @@ const val FALLBACK_THEME_ID: String = "afterglow"
  */
 fun resolveThemeResources(zip: ThemeZip, inherit: ThemeResources? = null): ThemeResources {
     val diagnostics = mutableListOf<ThemeDiagnostic>()
-    val file = inherit?.let { zip.file.inheriting(it.file) } ?: zip.file
-    diagnostics += themeReleaseDiagnostics(file)
-    diagnostics += themeAboutDiagnostics(file, zip.entries.keys)
-    val style = ThemeStyle(file.style, diagnostics::add, inheritedStyle(zip.file, inherit))
+    val inherited = inherit?.let { zip.file.inheriting(it.file) } ?: zip.file
+    diagnostics += themeReleaseDiagnostics(inherited)
+    diagnostics += themeAboutDiagnostics(inherited, zip.entries.keys)
+    val style = ThemeStyle(inherited.style, diagnostics::add, inheritedStyle(zip.file, inherit))
+    // A tile's corner is a manifest field, not a token, but it is a corner all the same.
+    val corner = style.base.cornerScale
+    val file = if (inherit != null && corner != 1f && "iconRadius" !in zip.file.root) {
+        inherited.copy(iconRadius = (inherited.iconRadius * corner).coerceIn(0f, .5f))
+    } else inherited
     fun asset(path: String, accent: Color?, tint: Boolean, blend: ThemeIconBlend) =
         if (zip.key.isEmpty()) ThemeIconAsset(file.id, path, zip.entries[path] ?: ByteArray(0), accent, tint, blend)
         else ThemeIconAsset(file.id, path, { zip.entries[path] }, accent, tint, blend, zip.key)

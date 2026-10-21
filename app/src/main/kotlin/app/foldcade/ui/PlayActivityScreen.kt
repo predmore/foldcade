@@ -408,11 +408,7 @@ internal fun PlayStrip(app: FoldcadeApp, focused: Boolean, chord: PromptKey? = n
     val most = week.days.maxOfOrNull { it.totalMillis }?.coerceAtLeast(1L) ?: 1L
     Column(modifier.padding(start = 14.dp, end = 14.dp, top = 10.dp, bottom = 10.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            Image(
-                painter = themeIconPainter(R.drawable.ic_status_playtime),
-                contentDescription = null,
-                modifier = Modifier.size(24.dp),
-            )
+            InkIcon(R.drawable.ic_status_playtime, Modifier.size(24.dp))
             BasicText(
                 PlayCopy.activity,
                 modifier = Modifier.weight(1f),

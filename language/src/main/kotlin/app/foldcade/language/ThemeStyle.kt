@@ -224,6 +224,9 @@ internal class ThemeStyleReader(
 
     fun readScales() { scales }
 
+    /** The pack's own scale for [role]; 1 when it inherits one or sets none. */
+    fun ownScale(role: TokenRole): Float = scales[role] ?: 1f
+
     /** [value] times [role]'s scale, kept inside [domain]. A product that falls outside keeps [value]. */
     private fun scale(value: Float, role: TokenRole, domain: TokenDomain): Float {
         val factor = scales[role] ?: return value
@@ -285,6 +288,9 @@ internal class ThemeStyleReader(
  */
 class ThemeBase internal constructor(reader: ThemeStyleReader) {
     init { reader.readScales() }
+
+    /** The pack's own corner scale, which also rounds the tiles (`iconRadius`) it inherits. */
+    val cornerScale: Float = reader.ownScale(TokenRole.Corner)
 }
 
 class ThemeMetrics internal constructor(reader: ThemeStyleReader) {

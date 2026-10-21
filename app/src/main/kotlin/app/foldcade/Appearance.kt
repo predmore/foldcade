@@ -183,12 +183,14 @@ class PackagedTheme(
                     icons = resources.icons.mapValues { (_, icon) -> listOf(icon) },
                 ),
                 sounds = ThemeSounds(context, listOf(entries) + (inherit?.sounds?.layers.orEmpty()), style.sound.volume),
-                backgroundMotion = backdropAfterBrokenScene(
-                    resources.defaultBackground,
-                    resources.file.backgroundMotion,
-                    resources.file.sceneFiles.size,
-                    inherit?.resources?.defaultBackground,
-                ),
+                // A pack that extends another and names no scene of its own keeps its parent's backdrop.
+                backgroundMotion = if (parents.isNotEmpty() && "backgroundMotion" !in file.root && file.sceneFiles.isEmpty()) parents.first().backgroundMotion
+                    else backdropAfterBrokenScene(
+                        resources.defaultBackground,
+                        resources.file.backgroundMotion,
+                        resources.file.sceneFiles.size,
+                        inherit?.resources?.defaultBackground,
+                    ),
                 music = described?.takeIf { musicFile != null }?.copy(file = musicFile!!.absolutePath),
                 resources = resources,
                 entries = entries,

@@ -767,12 +767,7 @@ private fun CommandCenterScreen(
                 when (subject) {
                     is CenterSubject.App -> CenterArt(app, subject.running)
                     is CenterSubject.Page -> when {
-                        subject.icon != null -> Image(
-                            painter = themeIconPainter(subject.icon),
-                            contentDescription = null,
-                            modifier = Modifier.fillMaxSize(0.62f),
-                            contentScale = ContentScale.Fit,
-                        )
+                        subject.icon != null -> InkIcon(subject.icon, Modifier.fillMaxSize(0.62f))
                         subject.mark != null -> MarkIcon(subject.mark, theme.style.hero.markScale)
                     }
                 }
@@ -783,12 +778,7 @@ private fun CommandCenterScreen(
                     horizontalArrangement = Arrangement.spacedBy(px(10f)),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    Image(
-                        painter = themeIconPainter(batteryStatusIcon(status.batteryPercent, status.charging)),
-                        contentDescription = null,
-                        modifier = Modifier.size(px(54f), px(36f)),
-                        contentScale = ContentScale.Fit,
-                    )
+                    InkIcon(batteryStatusIcon(status.batteryPercent, status.charging), Modifier.size(px(54f), px(36f)))
                     BasicText(
                         text = listOf("${status.batteryPercent}%", status.date).filter { it.isNotEmpty() }.joinToString(" · "),
                         style = text(theme.muted, LocalFoldTheme.current.theme.style.type.heroMeta, theme),
