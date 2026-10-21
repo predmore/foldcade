@@ -124,7 +124,7 @@ internal fun PlayActivityScreen(app: FoldcadeApp, page: PlayActivityPage) {
                     promptGlyph(promptKeyOf(app.shell.model.faceMap.backKey) ?: PromptKey.FaceB),
                     32.dp,
                 )
-                BasicText(PlayCopy.activity, style = playText(theme.onBackground, theme, LocalFoldTheme.current.theme.style.type.heroTitle, bold = true))
+                BasicText(PlayCopy.activity, style = playText(theme.onBackground, theme, LocalFoldTheme.current.theme.style.type.heroTitle, bold = true, display = true))
             }
             Spacer(Modifier.weight(1f))
             BasicText(week.label, style = playText(theme.muted, theme, LocalFoldTheme.current.theme.style.type.heroMeta))
@@ -302,15 +302,15 @@ private fun removeFeedback(model: PickerModel, sessionId: String, theme: Theme, 
     LaunchedEffect(model.deleteShake) {
         if (model.deleteShake == 0 || !wasHeld) return@LaunchedEffect
         wasHeld = false
-        shake.snapTo(-8f)
-        shake.animateTo(8f, motion.playful(motion.durationShort, scale))
+        shake.snapTo(-theme.style.motion.shakePx)
+        shake.animateTo(theme.style.motion.shakePx, motion.playful(motion.durationShort, scale))
         shake.animateTo(0f, motion.playful(motion.durationShort, scale))
     }
     val progress = if (held != null) model.deleteProgress else 0f
     return Modifier.graphicsLayer { translationX = shake.value }.drawBehind {
         if (progress <= 0f) return@drawBehind
         drawRoundRect(
-            theme.focus.copy(alpha = 0.3f),
+            theme.focus.copy(alpha = theme.style.menu.holdAlpha),
             size = Size(size.width * motion.holdFill(progress), size.height),
             cornerRadius = CornerRadius(theme.style.shape.highlightCornerDp.dp.toPx()),
         )
@@ -336,7 +336,7 @@ private fun PlayCover(app: FoldcadeApp, gameId: String, size: Dp) {
         Modifier
             .size(size)
             .clip(RoundedCornerShape(size * theme.iconRadius))
-            .background(theme.onBackground.copy(alpha = 0.06f)),
+            .background(theme.onBackground.copy(alpha = theme.style.play.backingAlpha)),
         contentAlignment = Alignment.Center,
     ) {
         when {
@@ -384,16 +384,17 @@ private fun DayTrack(blocks: List<ClosedFloatingPointRange<Float>>, theme: Theme
         modifier.drawBehind {
             // Half as round as the theme's other controls, so the sessions read as bars.
             val radius = CornerRadius(size.height * theme.style.shape.round / 2f, size.height * theme.style.shape.round / 2f)
-            drawRoundRect(color = theme.onBackground.copy(alpha = 0.06f), cornerRadius = radius)
+            val play = theme.style.play
+            drawRoundRect(color = theme.onBackground.copy(alpha = play.trackAlpha), cornerRadius = radius)
             listOf(0.25f, 0.5f, 0.75f).forEach { mark ->
                 val x = size.width * mark
-                drawLine(theme.onBackground.copy(alpha = 0.10f), Offset(x, 0f), Offset(x, size.height), strokeWidth = 1.dp.toPx())
+                drawLine(theme.onBackground.copy(alpha = play.hourAlpha), Offset(x, 0f), Offset(x, size.height), strokeWidth = play.hourDp.dp.toPx())
             }
             blocks.forEach { block ->
                 val start = size.width * block.start
                 // A short session still shows as a sliver.
                 val width = (size.width * (block.endInclusive - block.start)).coerceAtLeast(2.dp.toPx())
-                drawRoundRect(color = theme.focus, topLeft = Offset(start, 0f), size = Size(width, size.height), cornerRadius = radius)
+                drawRoundRect(color = theme.style.colors.progress ?: theme.focus, topLeft = Offset(start, 0f), size = Size(width, size.height), cornerRadius = radius)
             }
         },
     )
@@ -407,11 +408,7 @@ internal fun PlayStrip(app: FoldcadeApp, focused: Boolean, chord: PromptKey? = n
     val most = week.days.maxOfOrNull { it.totalMillis }?.coerceAtLeast(1L) ?: 1L
     Column(modifier.padding(start = 14.dp, end = 14.dp, top = 10.dp, bottom = 10.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            Image(
-                painter = themeIconPainter(R.drawable.ic_status_playtime),
-                contentDescription = null,
-                modifier = Modifier.size(24.dp),
-            )
+            InkIcon(R.drawable.ic_status_playtime, Modifier.size(24.dp))
             BasicText(
                 PlayCopy.activity,
                 modifier = Modifier.weight(1f),
@@ -431,10 +428,10 @@ internal fun PlayStrip(app: FoldcadeApp, focused: Boolean, chord: PromptKey? = n
                             .drawBehind {
                                 val height = if (day.totalMillis > 0L) (size.height * share).coerceAtLeast(3.dp.toPx()) else 2.dp.toPx()
                                 drawRoundRect(
-                                    color = if (day.totalMillis > 0L) theme.focus else theme.onBackground.copy(alpha = 0.12f),
+                                    color = if (day.totalMillis > 0L) theme.style.colors.progress ?: theme.focus else theme.onBackground.copy(alpha = theme.style.play.emptyBarAlpha),
                                     topLeft = Offset(0f, size.height - height),
                                     size = Size(size.width, height),
-                                    cornerRadius = CornerRadius(3.dp.toPx(), 3.dp.toPx()),
+                                    cornerRadius = CornerRadius(theme.style.play.barCornerDp.dp.toPx(), theme.style.play.barCornerDp.dp.toPx()),
                                 )
                             },
                     )
@@ -445,5 +442,5 @@ internal fun PlayStrip(app: FoldcadeApp, focused: Boolean, chord: PromptKey? = n
     }
 }
 
-private fun playText(color: androidx.compose.ui.graphics.Color, theme: Theme, size: androidx.compose.ui.unit.TextUnit, bold: Boolean = false) =
-    TextStyle(color = color, fontSize = size, fontFamily = theme.font, fontWeight = if (bold) theme.style.type.strongWeight else theme.style.type.bodyWeight)
+private fun playText(color: androidx.compose.ui.graphics.Color, theme: Theme, size: androidx.compose.ui.unit.TextUnit, bold: Boolean = false, display: Boolean = false) =
+    TextStyle(color = color, fontSize = size, fontFamily = if (display) theme.displayFont else theme.font, fontWeight = if (bold) theme.style.type.strongWeight else theme.style.type.bodyWeight)

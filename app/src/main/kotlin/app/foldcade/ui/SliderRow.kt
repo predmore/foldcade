@@ -138,7 +138,7 @@ private const val WIDEST_PERCENT = "100%"
 @Composable
 private fun SliderTrack(fraction: Float, interactive: Boolean, onFraction: (Float) -> Unit, modifier: Modifier) {
     val theme = LocalFoldTheme.current.theme
-    val accent = theme.focus
+    val accent = theme.style.colors.progress ?: theme.focus
     val controls = theme.style.controls
     val round = theme.style.shape.round
     Box(
@@ -174,8 +174,8 @@ private fun SliderTrack(fraction: Float, interactive: Boolean, onFraction: (Floa
                 drawCircle(
                     brush = Brush.radialGradient(
                         colorStops = arrayOf(
-                            0f to accent.copy(alpha = 0.9f),
-                            0.42f to accent.copy(alpha = 0.34f),
+                            0f to accent.copy(alpha = controls.sliderGlowAlpha),
+                            controls.sliderGlowMid to accent.copy(alpha = controls.sliderGlowMidAlpha),
                             1f to Color.Transparent,
                         ),
                         center = center,

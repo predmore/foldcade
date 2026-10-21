@@ -56,8 +56,8 @@ internal fun SaveConflictTop(prompt: SaveConflictPrompt) {
         verticalArrangement = Arrangement.Center,
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
-        BasicLine(prompt.gameLabel, theme.onBackground, LocalFoldTheme.current.theme.style.type.conflictGame.value, theme, TextAlign.Center)
-        BasicLine(Copy.saveConflictTitle, theme.onBackground, LocalFoldTheme.current.theme.style.type.heroTitle.value, theme, TextAlign.Center)
+        BasicLine(prompt.gameLabel, theme.onBackground, LocalFoldTheme.current.theme.style.type.conflictGame.value, theme, TextAlign.Center, display = true)
+        BasicLine(Copy.saveConflictTitle, theme.onBackground, LocalFoldTheme.current.theme.style.type.heroTitle.value, theme, TextAlign.Center, display = true)
         BasicLine(Copy.saveConflictTop, theme.muted, LocalFoldTheme.current.theme.style.type.heroMeta.value, theme, TextAlign.Center)
     }
 }
@@ -96,7 +96,7 @@ internal fun SaveConflictBottom(
             verticalArrangement = Arrangement.Center,
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
-            BasicLine(Copy.saveConflictTitle, theme.onBackground, type.heroTitle.value, theme, TextAlign.Center, maxLines = 1)
+            BasicLine(Copy.saveConflictTitle, theme.onBackground, type.heroTitle.value, theme, TextAlign.Center, maxLines = 1, display = true)
             BasicLine(prompt.gameLabel, theme.onBackground, type.heroMeta.value, theme, TextAlign.Center, maxLines = 2)
             BasicLine(Copy.saveConflictBody, theme.muted, type.dialogBody.value, theme, TextAlign.Center)
             Row(
@@ -235,6 +235,7 @@ private fun BasicLine(
     theme: app.foldcade.language.Theme,
     align: TextAlign,
     maxLines: Int = Int.MAX_VALUE,
+    display: Boolean = false,
 ) {
     androidx.compose.foundation.text.BasicText(
         text = text,
@@ -242,7 +243,7 @@ private fun BasicLine(
         style = TextStyle(
             color = color,
             fontSize = sizeSp.sp,
-            fontFamily = theme.font,
+            fontFamily = if (display) theme.displayFont else theme.font,
             textAlign = align,
         ),
         overflow = TextOverflow.Ellipsis,

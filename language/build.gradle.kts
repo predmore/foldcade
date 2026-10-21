@@ -35,4 +35,8 @@ tasks.withType<Test>().configureEach {
     dependsOn(":app:packageAfterglowTheme")
     inputs.file(afterglowZip).withPathSensitivity(PathSensitivity.NONE)
     systemProperty("foldcade.afterglowZip", afterglowZip.get().asFile.absolutePath)
+    // -PwriteThemeContract=true rewrites themes/contract.json and themes/theme.schema.json.
+    systemProperty("foldcade.writeThemeContract", providers.gradleProperty("writeThemeContract").getOrElse("false"))
+    inputs.files(rootProject.file("themes/contract.json"), rootProject.file("themes/theme.schema.json")).optional()
+    inputs.dir(rootProject.file("samples/themes")).withPathSensitivity(PathSensitivity.RELATIVE)
 }

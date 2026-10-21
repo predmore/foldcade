@@ -9,7 +9,7 @@ import app.foldcade.language.ThemeRollback
 import app.foldcade.language.ThemeTrial
 import app.foldcade.language.ThemeZip
 import app.foldcade.language.checkThemeInstall
-import app.foldcade.language.readThemeZip
+import app.foldcade.language.openThemeArchive
 import app.foldcade.romm.writeDurably
 import java.io.File
 import java.io.FileOutputStream
@@ -120,9 +120,10 @@ internal class ThemeInstalls(private val root: File) {
         val download = File(staging, "download")
         try {
             if (!copyAtMost(input, download, MAX_THEME_INSTALL_BYTES)) return ThemeInstallResult.Refused(ThemeInstallRefusal.TooLarge)
-            val zip = download.inputStream().use(::readThemeZip) ?: return ThemeInstallResult.Refused(ThemeInstallRefusal.NotATheme)
-            checkThemeInstall(zip.file, ledger, bundled)?.let { return ThemeInstallResult.Refused(it) }
-            if (!validate(zip)) return ThemeInstallResult.Refused(ThemeInstallRefusal.Broken)
+            // Read the way the next start reads it, so what is checked is what loads.
+            val zip = openThemeArchive(download, key = "staged") ?: return ThemeInstallResult.Refused(ThemeInstallRefusal.NotATheme)
+            val valid = zip.use { checkThemeInstall(it.file, ledger, bundled) ?: if (validate(it)) null else ThemeInstallRefusal.Broken }
+            valid?.let { return ThemeInstallResult.Refused(it) }
             val existing = ledger.themes.firstOrNull { it.id == zip.file.id }
             val name = existing?.file ?: freeName(zip.file.id)
             val staged = File(staging, name)
@@ -146,6 +147,21 @@ internal class ThemeInstalls(private val root: File) {
         } finally {
             download.delete()
         }
+    }
+
+    /**
+     * Takes the pack in [file] out of `files/themes`, with the copy kept beside it. It stays in use
+     * until the next start, which no longer finds it. Its refused releases stay refused.
+     */
+    @Synchronized
+    fun remove(file: String): Boolean {
+        val theme = ledger.theme(file) ?: return false
+        val active = File(themes, theme.file)
+        if (active.isFile && !active.delete()) return false
+        File(previous, theme.file).delete()
+        ledger = ledger.copy(themes = ledger.themes.filter { it.file != file }, inUse = ledger.inUse - file, loading = ledger.loading - file)
+        write()
+        return true
     }
 
     /**

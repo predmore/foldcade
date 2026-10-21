@@ -1,5 +1,6 @@
 package app.foldcade
 
+import androidx.compose.ui.graphics.toArgb
 import android.app.Activity
 import android.app.ActivityOptions
 import android.app.role.RoleManager
@@ -349,6 +350,7 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
             Effect.RequestHome -> requestHome()
             is Effect.OpenAndroidSetting -> openAndroidSetting(effect.setting)
             Effect.OpenLicenses -> startActivity(Intent(this, LicensesActivity::class.java))
+            Effect.OpenThemes -> startActivity(Intent(this, ThemesActivity::class.java))
             Effect.CopyDebugInfo -> copyDebugInfo()
             Effect.DismissButtonLabels -> Unit
             is Effect.OpenNotice -> openNotice(effect.id, if (effect.onBottom) Panel.Bottom else Panel.Top)
@@ -424,9 +426,15 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
         }
         root.addView(panel, FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT)
         setContentView(root)
+        // What shows before the first frame and while the window moves is the theme's, not black.
+        window.setBackgroundDrawable(android.graphics.drawable.ColorDrawable(themeBackgroundArgb()))
         recoveryWindow = PanelRecoveryWindow(this, root, panel)
         hideSystemBars()
     }
+
+    /** The chosen theme's background, for windows drawn before Compose is. */
+    internal fun themeBackgroundArgb(): Int =
+        foldcade.paintFor(foldcade.shell.model.themeIndex).theme.background.toArgb()
 
     override fun onResume() {
         super.onResume()

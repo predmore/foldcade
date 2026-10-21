@@ -33,10 +33,10 @@ internal class SceneRenderer(val scene: ThemeScene, seed: Double = 0.0) {
         }
     }
 
-    fun draw(scope: DrawScope, time: Double, moving: Boolean, panel: Float, clock: Float = 1f) {
+    fun draw(scope: DrawScope, time: Double, moving: Boolean, panel: Float, clock: Float = 1f, live: SceneLive = SceneLive()) {
         val started = System.nanoTime()
         if (evaluation.evaluate("variables") {
-            state.update(time, scope.size.width, scope.size.height, moving, panel, clock)
+            state.update(time, scope.size.width, scope.size.height, moving, panel, clock, live)
             true
         } != true) return
         runtimes.forEach { runtime ->
@@ -57,9 +57,8 @@ internal class SceneRenderer(val scene: ThemeScene, seed: Double = 0.0) {
         metrics.layers = runtimes.count { it != null && !it.failed }
     }
 
-    fun frameRate(time: Double, width: Float, height: Float, moving: Boolean, panel: Float, clock: Float): Float? = evaluation.frameRate(
-        time, width, height, moving, panel, clock,
-    )
+    fun frameRate(time: Double, width: Float, height: Float, moving: Boolean, panel: Float, clock: Float, live: SceneLive = SceneLive()): Float? =
+        evaluation.frameRate(time, width, height, moving, panel, clock, live)
 
     private fun report(diagnostic: ThemeDiagnostic) {
         diagnostics += diagnostic

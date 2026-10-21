@@ -60,8 +60,9 @@ class StandInActivity : ComponentActivity() {
                     text = if (key == null) title else "$title\nkey $key",
                     style = TextStyle(
                         color = theme.onBackground,
-                        fontFamily = theme.font,
+                        fontFamily = theme.displayFont,
                         fontSize = theme.style.type.heroTitle,
+                        fontWeight = theme.style.type.bodyWeight,
                         textAlign = TextAlign.Center,
                     ),
                 )

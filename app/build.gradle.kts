@@ -228,6 +228,9 @@ val packageAfterglowTheme = tasks.register<PackageThemeTask>("packageAfterglowTh
     description = "Validate and package Afterglow from its source assets."
     script.set(rootProject.layout.projectDirectory.file("tools/themes/pack.py"))
     sourceDir.set(rootProject.layout.projectDirectory.dir("themes/afterglow"))
+    // Not --strict: a token added to the engine is in Afterglow before the tests write it into the
+    // contract. ThemeInheritanceTest holds Afterglow to no diagnostics at all.
+    contract.set(rootProject.layout.projectDirectory.file("themes/contract.json"))
     assetsDir.set(layout.buildDirectory.dir("generated/themeAssets"))
 }
 
@@ -260,6 +263,11 @@ abstract class PackageThemeTask : DefaultTask() {
     @get:PathSensitive(PathSensitivity.RELATIVE)
     abstract val sourceDir: DirectoryProperty
 
+    @get:InputFile
+    @get:Optional
+    @get:PathSensitive(PathSensitivity.RELATIVE)
+    abstract val contract: RegularFileProperty
+
     @get:OutputDirectory
     abstract val assetsDir: DirectoryProperty
 
@@ -267,13 +275,16 @@ abstract class PackageThemeTask : DefaultTask() {
     fun pack() {
         val destination = assetsDir.get().asFile
         destination.deleteRecursively()
+        val contractArgs = contract.orNull?.asFile?.takeIf { it.isFile }?.let { listOf("--contract", it.absolutePath) }.orEmpty()
         execOperations.exec {
             commandLine(
-                "python3",
-                script.get().asFile.absolutePath,
-                sourceDir.get().asFile.absolutePath,
-                "--output",
-                File(destination, "themes/afterglow.zip").absolutePath,
+                listOf(
+                    "python3",
+                    script.get().asFile.absolutePath,
+                    sourceDir.get().asFile.absolutePath,
+                    "--output",
+                    File(destination, "themes/afterglow.zip").absolutePath,
+                ) + contractArgs,
             )
         }.assertNormalExitValue()
     }

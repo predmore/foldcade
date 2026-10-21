@@ -2,7 +2,9 @@ package app.foldcade.language
 
 import androidx.compose.ui.graphics.Color
 import java.io.ByteArrayOutputStream
+import java.io.File
 import java.io.InputStream
+import java.util.zip.ZipFile
 import java.util.zip.ZipInputStream
 import kotlinx.serialization.json.*
 
@@ -34,12 +36,26 @@ data class ThemeFile(
     val source: ThemeSource? = null,
     /** The manifest as written, so the same document can resolve again over another base. */
     val root: JsonObject = JsonObject(emptyMap()),
+    /** The id of the pack this one builds on, before Afterglow. Not inherited. */
+    val extends: String? = null,
+    /** Who made it, what it is, its license and a picture of it, as the pack describes itself. Not inherited. */
+    val about: ThemeAbout = ThemeAbout(),
+    /** The pack's own faces, by [ThemeContract.fontFaces] name, as archive paths. */
+    val fonts: Map<String, String> = emptyMap(),
 ) {
     /** This manifest with [base] filling whatever it leaves out. Scenes and icons stay this pack's own. */
     fun inheriting(base: ThemeFile): ThemeFile = themeFile(root, base) ?: this
 }
 
 data class ThemeIconFile(val file: String, val accent: Color? = null, val tint: Boolean = false)
+
+/** A pack's description of itself, shown where packs are listed. [preview] is an archive path. */
+data class ThemeAbout(
+    val author: String? = null,
+    val description: String? = null,
+    val license: String? = null,
+    val preview: String? = null,
+)
 
 fun parseThemeJson(text: String, inherit: ThemeFile? = null): ThemeFile? = try {
     themeFile(Json.parseToJsonElement(text).jsonObject, inherit)
@@ -74,27 +90,61 @@ private fun themeFileFields(root: JsonObject, inherit: ThemeFile?): ThemeFile? {
         backgroundMotion = motionField(fields, "backgroundMotion"),
         id = id,
         version = version,
-        icons = (root["icons"] as? JsonObject)?.mapNotNull { (slot, value) ->
-            val icon = value as? JsonObject ?: return@mapNotNull null
-            val path = (icon["file"] as? JsonPrimitive)?.contentOrNull ?: return@mapNotNull null
-            if (themeZipEntryName(path) != path) return@mapNotNull null
-            slot to ThemeIconFile(path, (icon["accent"] as? JsonPrimitive)?.contentOrNull?.let(::parseRgb),
-                (icon["tint"] as? JsonPrimitive)?.booleanOrNull ?: false)
-        }?.toMap().orEmpty(),
+        icons = iconFields(root["icons"] as? JsonObject),
         sceneFiles = (root["scenes"] as? JsonArray)?.mapNotNull { (it as? JsonPrimitive)?.contentOrNull }.orEmpty(),
         style = root["style"] as? JsonObject ?: JsonObject(emptyMap()),
         release = (root["release"] as? JsonPrimitive)?.takeIf { it.isString }?.content?.let(ThemeRelease::parse),
         host = themeHostField(root["host"]),
         source = ThemeSource.parse(root["source"]),
         root = root,
+        extends = (root["extends"] as? JsonPrimitive)?.takeIf { it.isString }?.content
+            ?.takeIf { version == 2 && it.matches(Regex("[A-Za-z0-9._-]+")) && it != id && it != "builtin" },
+        about = ThemeAbout(
+            author = text(root, "author"),
+            description = text(root, "description"),
+            license = text(root, "license"),
+            preview = text(root, "preview")?.takeIf { themeZipEntryName(it) == it },
+        ),
+        fonts = (root["fonts"] as? JsonObject)?.mapNotNull { (face, value) ->
+            val path = (value as? JsonPrimitive)?.takeIf { it.isString }?.content ?: return@mapNotNull null
+            if (face !in ThemeContract.fontFaces || themeZipEntryName(path) != path) null else face to path
+        }?.toMap().orEmpty(),
     )
 }
 
-/** Bytes from a theme zip whose `theme.json` parsed. A bad zip is null. */
-data class ThemeZip(
+private fun text(root: JsonObject, key: String): String? =
+    (root[key] as? JsonPrimitive)?.takeIf { it.isString }?.content?.trim()?.takeIf { it.isNotEmpty() }
+
+/**
+ * A manifest's icon slots. A slot under a name it had before, in [ThemeContract.renamedSlots],
+ * fills the slot it became, unless the pack also fills that one itself.
+ */
+internal fun iconFields(icons: JsonObject?, renamedSlots: Map<String, String> = ThemeContract.renamedSlots): Map<String, ThemeIconFile> {
+    val parsed = icons?.mapNotNull { (slot, value) ->
+        val icon = value as? JsonObject ?: return@mapNotNull null
+        val path = (icon["file"] as? JsonPrimitive)?.contentOrNull ?: return@mapNotNull null
+        if (themeZipEntryName(path) != path) return@mapNotNull null
+        slot to ThemeIconFile(path, (icon["accent"] as? JsonPrimitive)?.contentOrNull?.let(::parseRgb),
+            (icon["tint"] as? JsonPrimitive)?.booleanOrNull ?: false)
+    }?.toMap().orEmpty()
+    val renamed = parsed.mapNotNull { (slot, icon) -> renamedSlots[slot]?.let { it to icon } }.toMap()
+    return renamed.filterKeys { it !in parsed } + parsed.filterKeys { it !in renamedSlots }
+}
+
+/**
+ * Bytes from a theme zip whose `theme.json` parsed. A bad zip is null. [entries] may read each
+ * file only when it is asked for, as [openThemeArchive] does. [key] names this copy of the
+ * archive, so files extracted from it can be found again without reading them.
+ */
+class ThemeZip(
     val file: ThemeFile,
     val entries: Map<String, ByteArray>,
-)
+    val key: String = "",
+    private val release: () -> Unit = {},
+) : java.io.Closeable {
+    /** Lets go of the archive [openThemeArchive] holds open. [entries] reads nothing after. */
+    override fun close() = release()
+}
 
 /** Where a wallpaper sits when letterboxed inside a panel. */
 data class LetterboxRect(
@@ -113,7 +163,7 @@ private val APPLICATION_CODE_EXTENSIONS = setOf("java", "kt", "kts", "class", "d
  * or a `theme.json` the host cannot parse returns null. An oversized entry is
  * skipped. A name that leaves the zip is skipped. Neither one throws.
  */
-fun readThemeZip(input: InputStream): ThemeZip? {
+fun readThemeZip(input: InputStream, key: String = ""): ThemeZip? {
     val entries = try {
         readCappedEntries(input)
     } catch (_: Exception) {
@@ -121,7 +171,57 @@ fun readThemeZip(input: InputStream): ThemeZip? {
     }
     val json = entries["theme.json"]?.decodeToString() ?: return null
     val file = parseThemeJson(json) ?: return null
-    return ThemeZip(file, entries)
+    return ThemeZip(file, entries, key)
+}
+
+/**
+ * An archive on disk, read in place: only `theme.json` is read now, and every other file when it is
+ * first asked for, so an installed pack nobody uses costs little more than its manifest. It holds
+ * the same files [readThemeZip] would: application code refuses the whole archive, and an
+ * oversized entry or a name that leaves the archive is left out. Null when it is not a theme.
+ */
+fun openThemeArchive(archive: File, key: String = "${archive.name}:${archive.length()}:${archive.lastModified()}"): ThemeZip? {
+    val zip = try { ZipFile(archive) } catch (_: Exception) { return null }
+    return try {
+        val named = linkedMapOf<String, java.util.zip.ZipEntry>()
+        var count = 0
+        for (entry in zip.entries()) {
+            count++
+            require(count <= MAX_THEME_ENTRIES) { "Too many theme archive entries" }
+            require(entry.name.substringAfterLast('.').lowercase() !in APPLICATION_CODE_EXTENSIONS) { "Themes cannot contain application code" }
+            if (entry.isDirectory || entry.size > MAX_THEME_ENTRY_BYTES) continue
+            val name = themeZipEntryName(entry.name) ?: continue
+            named[name] = entry
+        }
+        val entries = ZipFileEntries(zip, named)
+        val json = entries["theme.json"]?.decodeToString() ?: error("No theme.json")
+        val file = parseThemeJson(json) ?: error("Unreadable theme.json")
+        ThemeZip(file, entries, key) { zip.close() }
+    } catch (_: Exception) {
+        zip.close()
+        null
+    }
+}
+
+/** An open archive's files by name. Each value is read when it is asked for, and not kept. */
+private class ZipFileEntries(
+    private val zip: ZipFile,
+    private val named: Map<String, java.util.zip.ZipEntry>,
+) : AbstractMap<String, ByteArray>() {
+    override val keys: Set<String> get() = named.keys
+    override fun containsKey(key: String): Boolean = key in named
+    override fun get(key: String): ByteArray? {
+        val entry = named[key] ?: return null
+        return try { synchronized(zip) { zip.getInputStream(entry).use { readAtMost(it, MAX_THEME_ENTRY_BYTES) } } } catch (_: Exception) { null }
+    }
+    // Walking the files reads only the values that are looked at.
+    override val entries: Set<Map.Entry<String, ByteArray>>
+        get() = named.keys.mapTo(linkedSetOf()) { name ->
+            object : Map.Entry<String, ByteArray> {
+                override val key: String = name
+                override val value: ByteArray get() = get(name) ?: ByteArray(0)
+            }
+        }
 }
 
 /** `wallpaper-top.png` or `.webp`, and the same pair for the bottom panel. Png wins when both exist. */

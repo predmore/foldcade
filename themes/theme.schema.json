@@ -1,0 +1,2044 @@
+{
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "title": "Foldcade theme manifest",
+    "description": "Generated from Foldcade's theme engine. See docs/themes.md.",
+    "type": "object",
+    "required": [
+        "name"
+    ],
+    "properties": {
+        "version": {
+            "enum": [
+                1,
+                2
+            ]
+        },
+        "id": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9._-]+$"
+        },
+        "name": {
+            "type": "string",
+            "minLength": 1
+        },
+        "release": {
+            "type": "string",
+            "pattern": "^\\d{1,6}(\\.\\d{1,6}){0,2}$"
+        },
+        "host": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "The theme format level the pack needs. This Foldcade reads 1."
+        },
+        "source": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+                "github"
+            ],
+            "properties": {
+                "github": {
+                    "type": "string",
+                    "pattern": "^[A-Za-z0-9-]+/[A-Za-z0-9._-]+$"
+                }
+            }
+        },
+        "extends": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9._-]+$",
+            "description": "Another pack's id, inherited before Afterglow"
+        },
+        "author": {
+            "type": "string"
+        },
+        "description": {
+            "type": "string"
+        },
+        "license": {
+            "type": "string"
+        },
+        "preview": {
+            "type": "string"
+        },
+        "backgroundMotion": {
+            "type": "string"
+        },
+        "backgroundMusic": {
+            "type": "string"
+        },
+        "background": {
+            "type": "string",
+            "pattern": "^#[0-9A-Fa-f]{6}$"
+        },
+        "surface": {
+            "type": "string",
+            "pattern": "^#[0-9A-Fa-f]{6}$"
+        },
+        "onBackground": {
+            "type": "string",
+            "pattern": "^#[0-9A-Fa-f]{6}$"
+        },
+        "muted": {
+            "type": "string",
+            "pattern": "^#[0-9A-Fa-f]{6}$"
+        },
+        "focus": {
+            "type": "string",
+            "pattern": "^#[0-9A-Fa-f]{6}$"
+        },
+        "iconRadius": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 0.5
+        },
+        "artScale": {
+            "type": "number",
+            "minimum": 0.7,
+            "maximum": 1
+        },
+        "scenes": {
+            "type": "array",
+            "items": {
+                "type": "string"
+            }
+        },
+        "fonts": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+                "regular": {
+                    "type": "string",
+                    "description": "Running text, at type.bodyWeight"
+                },
+                "bold": {
+                    "type": "string",
+                    "description": "Strong text, at type.strongWeight; without it the regular face is made bolder"
+                },
+                "display": {
+                    "type": "string",
+                    "description": "The hero's title, dialog titles, the clock and the save-conflict game"
+                }
+            }
+        },
+        "icons": {
+            "type": "object",
+            "propertyNames": {
+                "anyOf": [
+                    {
+                        "enum": [
+                            "badge.check",
+                            "badge.cloud",
+                            "badge.hidden",
+                            "badge.paused",
+                            "badge.sync",
+                            "button.a",
+                            "button.a.filled",
+                            "button.b",
+                            "button.b.filled",
+                            "button.back",
+                            "button.back.filled",
+                            "button.dpad",
+                            "button.dpad.down",
+                            "button.dpad.filled",
+                            "button.dpad.left",
+                            "button.dpad.right",
+                            "button.dpad.up",
+                            "button.face.diamond",
+                            "button.face.diamond.a",
+                            "button.face.diamond.a.filled",
+                            "button.face.diamond.b",
+                            "button.face.diamond.b.filled",
+                            "button.face.diamond.blank",
+                            "button.face.diamond.blank.bottom",
+                            "button.face.diamond.blank.bottom.filled",
+                            "button.face.diamond.blank.filled",
+                            "button.face.diamond.blank.left",
+                            "button.face.diamond.blank.left.filled",
+                            "button.face.diamond.blank.right",
+                            "button.face.diamond.blank.right.filled",
+                            "button.face.diamond.blank.top",
+                            "button.face.diamond.blank.top.filled",
+                            "button.face.diamond.filled",
+                            "button.face.diamond.n",
+                            "button.face.diamond.n.a",
+                            "button.face.diamond.n.a.filled",
+                            "button.face.diamond.n.b",
+                            "button.face.diamond.n.b.filled",
+                            "button.face.diamond.n.filled",
+                            "button.face.diamond.n.x",
+                            "button.face.diamond.n.x.filled",
+                            "button.face.diamond.n.y",
+                            "button.face.diamond.n.y.filled",
+                            "button.face.diamond.x",
+                            "button.face.diamond.x.a",
+                            "button.face.diamond.x.a.filled",
+                            "button.face.diamond.x.b",
+                            "button.face.diamond.x.b.filled",
+                            "button.face.diamond.x.filled",
+                            "button.face.diamond.x.x",
+                            "button.face.diamond.x.x.filled",
+                            "button.face.diamond.x.y",
+                            "button.face.diamond.x.y.filled",
+                            "button.face.diamond.y",
+                            "button.face.diamond.y.filled",
+                            "button.home",
+                            "button.home.filled",
+                            "button.l1",
+                            "button.l1.filled",
+                            "button.l2",
+                            "button.l2.filled",
+                            "button.lstick",
+                            "button.lstick.filled",
+                            "button.lstick.press",
+                            "button.r1",
+                            "button.r1.filled",
+                            "button.r2",
+                            "button.r2.filled",
+                            "button.rstick",
+                            "button.rstick.filled",
+                            "button.rstick.press",
+                            "button.select",
+                            "button.select.filled",
+                            "button.square",
+                            "button.square.filled",
+                            "button.start",
+                            "button.start.filled",
+                            "button.triangle",
+                            "button.triangle.filled",
+                            "button.x",
+                            "button.x.filled",
+                            "button.y",
+                            "button.y.filled",
+                            "control.check",
+                            "control.dash",
+                            "control.erase",
+                            "control.search",
+                            "control.shift",
+                            "control.shift.on",
+                            "control.space",
+                            "status.battery.0",
+                            "status.battery.0.charging",
+                            "status.battery.10",
+                            "status.battery.10.charging",
+                            "status.battery.100",
+                            "status.battery.100.charging",
+                            "status.battery.20",
+                            "status.battery.20.charging",
+                            "status.battery.30",
+                            "status.battery.30.charging",
+                            "status.battery.40",
+                            "status.battery.40.charging",
+                            "status.battery.50",
+                            "status.battery.50.charging",
+                            "status.battery.60",
+                            "status.battery.60.charging",
+                            "status.battery.70",
+                            "status.battery.70.charging",
+                            "status.battery.80",
+                            "status.battery.80.charging",
+                            "status.battery.90",
+                            "status.battery.90.charging",
+                            "status.bell",
+                            "status.bell.1",
+                            "status.bell.2",
+                            "status.bell.3",
+                            "status.bell.4",
+                            "status.bell.5",
+                            "status.bell.6",
+                            "status.bell.7",
+                            "status.bell.8",
+                            "status.bell.9",
+                            "status.bell.9plus",
+                            "status.bell.dot",
+                            "status.bluetooth",
+                            "status.bluetooth.off",
+                            "status.display",
+                            "status.info",
+                            "status.playtime",
+                            "status.power",
+                            "status.settings",
+                            "status.tools",
+                            "status.volume.1",
+                            "status.volume.2",
+                            "status.volume.3",
+                            "status.volume.mute",
+                            "status.wifi.0",
+                            "status.wifi.1",
+                            "status.wifi.2",
+                            "status.wifi.3",
+                            "status.wifi.4",
+                            "status.wifi.off",
+                            "status.wrench"
+                        ]
+                    },
+                    {
+                        "pattern": "^(app|mark|symbol)\\."
+                    }
+                ]
+            },
+            "additionalProperties": {
+                "type": "object",
+                "required": [
+                    "file"
+                ],
+                "additionalProperties": false,
+                "properties": {
+                    "file": {
+                        "type": "string"
+                    },
+                    "accent": {
+                        "type": "string",
+                        "pattern": "^#[0-9A-Fa-f]{6}$"
+                    },
+                    "tint": {
+                        "type": "boolean"
+                    }
+                }
+            }
+        },
+        "style": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+                "base": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                        "cornerScale": {
+                            "type": "number",
+                            "minimum": 0.0,
+                            "default": 1.0
+                        },
+                        "strokeScale": {
+                            "type": "number",
+                            "exclusiveMinimum": 0.0,
+                            "default": 1.0
+                        },
+                        "glowScale": {
+                            "type": "number",
+                            "minimum": 0.0,
+                            "default": 1.0
+                        },
+                        "fillScale": {
+                            "type": "number",
+                            "minimum": 0.0,
+                            "default": 1.0
+                        },
+                        "typeScale": {
+                            "type": "number",
+                            "exclusiveMinimum": 0.0,
+                            "default": 1.0
+                        },
+                        "durationScale": {
+                            "type": "number",
+                            "exclusiveMinimum": 0.0,
+                            "default": 1.0
+                        }
+                    }
+                },
+                "metrics": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                        "insetFraction": {
+                            "type": "number",
+                            "minimum": 0.0,
+                            "maximum": 0.5,
+                            "default": 0.04
+                        },
+                        "gapFraction": {
+                            "type": "number",
+                            "minimum": 0.0,
+                            "default": 0.04
+                        },
+                        "focusStrokePx": {
+                            "type": "number",
+                            "minimum": 0.0,
+                            "default": 3.0,
+                            "description": "px"
+                        },
+                        "heroInsetPx": {
+                            "type": "number",
+                            "minimum": 0.0,
+                            "default": 48.0,
+                            "description": "px"
+                        },
+                        "dialogInsetPx": {
+                            "type": "number",
+                            "minimum": 0.0,
+                            "default": 48.0,
+                            "description": "px"
+                        },
+                        "dialogBorderPx": {
+                            "type": "number",
+                            "minimum": 0.0,
+                            "default": 2.0,
+                            "description": "px; follows base.strokeScale"
+                        },
+                        "cardCornerDp": {
+                            "type": "number",
+                            "minimum": 0.0,
+                            "default": 28.0,
+                            "description": "dp; follows base.cornerScale"
+                        },
+                        "heroArtFraction": {
+                            "type": "number",
+                            "exclusiveMinimum": 0.0,
+                            "maximum": 1.0,
+                            "default": 0.62
+                        },
+                        "chromeClearancePx": {
+                            "type": "number",
+                            "minimum": 0.0,
+                            "default": 28.0,
+                            "description": "px"
+                        },
+                        "glyphScale": {
+                            "type": "number",
+                            "exclusiveMinimum": 0.0,
+                            "default": 1.0
+                        }
+                    }
+                },
+                "glow": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                        "focusOverflow": {
+                            "type": "number",
+                            "minimum": 0.0,
+                            "default": 64.0
+                        },
+                        "restOverflow": {
+                            "type": "number",
+                            "minimum": 0.0,
+                            "default": 18.0
+                        },
+                        "restTightness": {
+                            "type": "number",
+                            "minimum": 0.0,
+                            "default": 2.4
+                        },
+                        "focusTightness": {
+                            "type": "number",
+                            "minimum": 0.0,
+                            "default": 0.85
+                        },
+                        "restRim": {
+                            "type": "number",
+                            "minimum": 0.0,
+                            "exclusiveMaximum": 1.0,
+                            "default": 0.42
+                        },
+                        "focusRim": {
+                            "type": "number",
+                            "minimum": 0.0,
+                            "exclusiveMaximum": 1.0,
+                            "default": 0.66
+                        },
+                        "restPeak": {
+                            "type": "number",
+                            "minimum": 0.0,
+                            "maximum": 1.0,
+                            "default": 0.0,
+                            "description": "follows base.glowScale"
+                        },
+                        "focusPeak": {
+                            "type": "number",
+                            "minimum": 0.0,
+                            "maximum": 1.0,
+                            "default": 1.0,
+                            "description": "follows base.glowScale"
+                        },
+                        "heroPeak": {
+                            "type": "number",
+                            "minimum": 0.0,
+                            "maximum": 1.0,
+                            "default": 0.45,
+                            "description": "follows base.glowScale"
+                        },
+                        "markLightTop": {
+                            "type": "number",
+                            "default": 0.12
+                        },
+                        "markLightReach": {
+                            "type": "number",
+                            "exclusiveMinimum": 0.0,
+                            "default": 0.85
+                        },
+                        "markLightPeak": {
+                            "type": "number",
+                            "minimum": 0.0,
+                            "maximum": 1.0,
+                            "default": 0.34,
+                            "description": "follows base.glowScale"
+                        },
+                        "markLightFade": {
+                            "type": "number",
+                            "exclusiveMinimum": 0.0,
+                            "exclusiveMaximum": 1.0,
+                            "default": 0.72
+                        }
+                    }
+                },
+                "focusRing": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                        "start": {
+                            "anyOf": [
+                                {
+                                    "type": "string",
+                                    "pattern": "^#[0-9A-Fa-f]{6}$"
+                                },
+                                {
+                                    "type": "null"
+                                }
+                            ],
+                            "default": "#52B788",
+                            "description": "null derives it from the pack's own colours"
+                        },
+                        "end": {
+                            "anyOf": [
+                                {
+                                    "type": "string",
+                                    "pattern": "^#[0-9A-Fa-f]{6}$"
+                                },
+                                {
+                                    "type": "null"
+                                }
+                            ],
+                            "default": "#3E8EC0",
+                            "description": "null derives it from the pack's own colours"
+                        },
+                        "stroke": {
+                            "type": "number",
+                            "minimum": 0.0,
+                            "default": 6.0,
+                            "description": "follows base.strokeScale"
+                        },
+                        "gap": {
+                            "type": "number",
+                            "minimum": 0.0,
+                            "default": 2.0
+                        },
+                        "glowSpread": {
+                            "type": "number",
+                            "minimum": 0.0,
+                            "default": 10.0
+                        },
+                        "glowAlpha": {
+                            "type": "number",
+                            "minimum": 0.0,
+                            "maximum": 1.0,
+                            "default": 0.1,
+                            "description": "follows base.glowScale"
+                        },
+                        "glowSteps": {
+                            "type": "integer",
+                            "minimum": 0.0,
+                            "maximum": 2.1474836E9,
+                            "default": 4.0
+                        },
+                        "pronouncedStroke": {
+                            "type": "number",
+                            "minimum": 0.0,
+                            "default": 10.0,
+                            "description": "follows base.strokeScale"
+                        },
+                        "pronouncedSpread": {
+                            "type": "number",
+                            "minimum": 0.0,
+                            "default": 22.0
+                        },
+                        "pronouncedAlpha": {
+                            "type": "number",
+                            "minimum": 0.0,
+                            "maximum": 1.0,
+                            "default": 0.22,
+                            "description": "follows base.glowScale"
+                        }
+                    }
+                },
+                "type": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                        "heroTitle": {
+                            "type": "number",
+                            "exclusiveMinimum": 0.0,
+                            "default": 28.0,
+                            "description": "sp; follows base.typeScale"
+                        },
+                        "conflictGame": {
+                            "type": "number",
+                            "exclusiveMinimum": 0.0,
+                            "default": 40.0,
+                            "description": "sp; follows base.typeScale"
+                        },
+                        "heroMeta": {
+                            "type": "number",
+                            "exclusiveMinimum": 0.0,
+                            "default": 18.0,
+                            "description": "sp; follows base.typeScale"
+                        },
+                        "availability": {
+                            "type": "number",
+                            "exclusiveMinimum": 0.0,
+                            "default": 16.0,
+                            "description": "sp; follows base.typeScale"
+                        },
+                        "gridLabel": {
+                            "type": "number",
+                            "exclusiveMinimum": 0.0,
+                            "default": 16.0,
+                            "description": "sp; follows base.typeScale"
+                        },
+                        "dialogTitle": {
+                            "type": "number",
+                            "exclusiveMinimum": 0.0,
+                            "default": 20.0,
+                            "description": "sp; follows base.typeScale"
+                        },
+                        "dialogBody": {
+                            "type": "number",
+                            "exclusiveMinimum": 0.0,
+                            "default": 16.0,
+                            "description": "sp; follows base.typeScale"
+                        },
+                        "menuRow": {
+                            "type": "number",
+                            "exclusiveMinimum": 0.0,
+                            "default": 18.0,
+                            "description": "sp; follows base.typeScale"
+                        },
+                        "sideRow": {
+                            "type": "number",
+                            "exclusiveMinimum": 0.0,
+                            "default": 18.0,
+                            "description": "sp; follows base.typeScale"
+                        },
+                        "hint": {
+                            "type": "number",
+                            "exclusiveMinimum": 0.0,
+                            "default": 14.0,
+                            "description": "sp; follows base.typeScale"
+                        },
+                        "clock": {
+                            "type": "number",
+                            "exclusiveMinimum": 0.0,
+                            "default": 64.0,
+                            "description": "sp; follows base.typeScale"
+                        },
+                        "bodyWeight": {
+                            "type": "integer",
+                            "minimum": 1.0,
+                            "maximum": 1000.0,
+                            "default": 400.0,
+                            "description": "weight"
+                        },
+                        "strongWeight": {
+                            "type": "integer",
+                            "minimum": 1.0,
+                            "maximum": 1000.0,
+                            "default": 600.0,
+                            "description": "weight"
+                        }
+                    }
+                },
+                "motion": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                        "durationShort": {
+                            "type": "number",
+                            "minimum": 1.0,
+                            "maximum": 2.1474836E9,
+                            "default": 100.0,
+                            "description": "ms; follows base.durationScale"
+                        },
+                        "durationFocus": {
+                            "type": "number",
+                            "minimum": 1.0,
+                            "maximum": 2.1474836E9,
+                            "default": 180.0,
+                            "description": "ms; follows base.durationScale"
+                        },
+                        "durationTravel": {
+                            "type": "number",
+                            "minimum": 1.0,
+                            "maximum": 2.1474836E9,
+                            "default": 200.0,
+                            "description": "ms; follows base.durationScale"
+                        },
+                        "durationIsland": {
+                            "type": "number",
+                            "minimum": 1.0,
+                            "maximum": 2.1474836E9,
+                            "default": 320.0,
+                            "description": "ms; follows base.durationScale"
+                        },
+                        "durationPulse": {
+                            "type": "number",
+                            "minimum": 1.0,
+                            "maximum": 2.1474836E9,
+                            "default": 720.0,
+                            "description": "ms; follows base.durationScale"
+                        },
+                        "durationSyncMark": {
+                            "type": "number",
+                            "minimum": 1.0,
+                            "maximum": 2.1474836E9,
+                            "default": 2400.0,
+                            "description": "ms; follows base.durationScale"
+                        },
+                        "scaleRest": {
+                            "type": "number",
+                            "exclusiveMinimum": 0.0,
+                            "default": 1.0
+                        },
+                        "scaleFocus": {
+                            "type": "number",
+                            "exclusiveMinimum": 0.0,
+                            "default": 1.05
+                        },
+                        "heroScaleFrom": {
+                            "type": "number",
+                            "exclusiveMinimum": 0.0,
+                            "default": 0.96
+                        },
+                        "heroSlideUpPx": {
+                            "type": "number",
+                            "default": 24.0,
+                            "description": "px"
+                        },
+                        "heroTravelPx": {
+                            "type": "number",
+                            "default": 64.0,
+                            "description": "px"
+                        },
+                        "sceneDepth": {
+                            "type": "number",
+                            "default": 0.35
+                        },
+                        "sceneOverscan": {
+                            "type": "number",
+                            "exclusiveMinimum": 0.0,
+                            "default": 1.05
+                        },
+                        "sceneSettleFrom": {
+                            "type": "number",
+                            "exclusiveMinimum": 0.0,
+                            "default": 1.1
+                        },
+                        "tiltPx": {
+                            "type": "number",
+                            "minimum": 0.0,
+                            "default": 18.0,
+                            "description": "px"
+                        },
+                        "tiltDegrees": {
+                            "type": "number",
+                            "exclusiveMinimum": 0.0,
+                            "default": 6.0
+                        },
+                        "tiltArtShare": {
+                            "type": "number",
+                            "minimum": 0.0,
+                            "maximum": 1.0,
+                            "default": 0.4
+                        },
+                        "durationTiltRecenter": {
+                            "type": "number",
+                            "minimum": 1.0,
+                            "maximum": 2.1474836E9,
+                            "default": 2400.0,
+                            "description": "ms; follows base.durationScale"
+                        },
+                        "durationScene": {
+                            "type": "number",
+                            "minimum": 1.0,
+                            "maximum": 2.1474836E9,
+                            "default": 360.0,
+                            "description": "ms; follows base.durationScale"
+                        },
+                        "durationShowcase": {
+                            "type": "number",
+                            "minimum": 1.0,
+                            "maximum": 2.1474836E9,
+                            "default": 1400.0,
+                            "description": "ms; follows base.durationScale"
+                        },
+                        "durationSelect": {
+                            "type": "number",
+                            "minimum": 1.0,
+                            "maximum": 2.1474836E9,
+                            "default": 280.0,
+                            "description": "ms; follows base.durationScale"
+                        },
+                        "durationBob": {
+                            "type": "number",
+                            "minimum": 1.0,
+                            "maximum": 2.1474836E9,
+                            "default": 1800.0,
+                            "description": "ms; follows base.durationScale"
+                        },
+                        "durationLetterHold": {
+                            "type": "number",
+                            "minimum": 1.0,
+                            "maximum": 2.1474836E9,
+                            "default": 360.0,
+                            "description": "ms; follows base.durationScale"
+                        },
+                        "durationLetterFade": {
+                            "type": "number",
+                            "minimum": 1.0,
+                            "maximum": 2.1474836E9,
+                            "default": 120.0,
+                            "description": "ms; follows base.durationScale"
+                        },
+                        "scaleLift": {
+                            "type": "number",
+                            "exclusiveMinimum": 0.0,
+                            "default": 1.1
+                        },
+                        "scaleOver": {
+                            "type": "number",
+                            "exclusiveMinimum": 0.0,
+                            "default": 0.74
+                        },
+                        "scaleOpen": {
+                            "type": "number",
+                            "exclusiveMinimum": 0.0,
+                            "default": 1.14
+                        },
+                        "bobPx": {
+                            "type": "number",
+                            "default": 7.0,
+                            "description": "px"
+                        },
+                        "liftGlowPx": {
+                            "type": "number",
+                            "default": 30.0,
+                            "description": "px"
+                        },
+                        "liftGlowPeak": {
+                            "type": "number",
+                            "minimum": 0.0,
+                            "maximum": 1.0,
+                            "default": 0.7,
+                            "description": "follows base.glowScale"
+                        },
+                        "squash": {
+                            "type": "number",
+                            "minimum": 0.0,
+                            "maximum": 0.5,
+                            "default": 0.08
+                        },
+                        "keySquash": {
+                            "type": "number",
+                            "minimum": 0.0,
+                            "maximum": 0.5,
+                            "default": 0.07
+                        },
+                        "riseFrom": {
+                            "type": "number",
+                            "exclusiveMinimum": 0.0,
+                            "default": 0.96
+                        },
+                        "riseDp": {
+                            "type": "number",
+                            "default": 24.0,
+                            "description": "dp"
+                        },
+                        "sinkScale": {
+                            "type": "number",
+                            "minimum": 0.0,
+                            "maximum": 1.0,
+                            "default": 0.06
+                        },
+                        "sinkDp": {
+                            "type": "number",
+                            "default": 16.0,
+                            "description": "dp"
+                        },
+                        "cascadeDp": {
+                            "type": "number",
+                            "default": 14.0,
+                            "description": "dp"
+                        },
+                        "cascadeStep": {
+                            "type": "number",
+                            "minimum": 0.0,
+                            "maximum": 1.0,
+                            "default": 0.05
+                        },
+                        "cascadeSpan": {
+                            "type": "number",
+                            "exclusiveMinimum": 0.0,
+                            "maximum": 1.0,
+                            "default": 0.35
+                        },
+                        "popFrom": {
+                            "type": "number",
+                            "exclusiveMinimum": 0.0,
+                            "default": 0.72
+                        },
+                        "shakePx": {
+                            "type": "number",
+                            "minimum": 0.0,
+                            "default": 8.0,
+                            "description": "px"
+                        },
+                        "rewindFrom": {
+                            "type": "number",
+                            "exclusiveMinimum": 0.0,
+                            "default": 0.94
+                        },
+                        "folderPopFrom": {
+                            "type": "number",
+                            "exclusiveMinimum": 0.0,
+                            "default": 0.92
+                        },
+                        "arrive": {
+                            "type": "array",
+                            "minItems": 4,
+                            "maxItems": 4,
+                            "items": {
+                                "type": "number"
+                            },
+                            "default": [
+                                0.05,
+                                0.7,
+                                0.1,
+                                1.0
+                            ]
+                        },
+                        "leave": {
+                            "type": "array",
+                            "minItems": 4,
+                            "maxItems": 4,
+                            "items": {
+                                "type": "number"
+                            },
+                            "default": [
+                                0.3,
+                                0.0,
+                                0.8,
+                                0.15
+                            ]
+                        },
+                        "pulse": {
+                            "type": "array",
+                            "minItems": 4,
+                            "maxItems": 4,
+                            "items": {
+                                "type": "number"
+                            },
+                            "default": [
+                                0.4,
+                                0.0,
+                                0.6,
+                                1.0
+                            ]
+                        },
+                        "dissolve": {
+                            "type": "array",
+                            "minItems": 4,
+                            "maxItems": 4,
+                            "items": {
+                                "type": "number"
+                            },
+                            "default": [
+                                0.2,
+                                0.0,
+                                0.0,
+                                1.0
+                            ]
+                        },
+                        "playful": {
+                            "type": "array",
+                            "minItems": 4,
+                            "maxItems": 4,
+                            "items": {
+                                "type": "number"
+                            },
+                            "default": [
+                                0.34,
+                                1.36,
+                                0.64,
+                                1.0
+                            ]
+                        }
+                    }
+                },
+                "colors": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                        "scrim": {
+                            "type": "string",
+                            "pattern": "^#[0-9A-Fa-f]{6}$",
+                            "default": "#000000"
+                        },
+                        "shade": {
+                            "type": "string",
+                            "pattern": "^#[0-9A-Fa-f]{6}$",
+                            "default": "#000000"
+                        },
+                        "shine": {
+                            "type": "string",
+                            "pattern": "^#[0-9A-Fa-f]{6}$",
+                            "default": "#FFFFFF"
+                        },
+                        "highlight": {
+                            "anyOf": [
+                                {
+                                    "type": "string",
+                                    "pattern": "^#[0-9A-Fa-f]{6}$"
+                                },
+                                {
+                                    "type": "null"
+                                }
+                            ],
+                            "default": null,
+                            "description": "null derives it from the pack's own colours"
+                        },
+                        "on": {
+                            "anyOf": [
+                                {
+                                    "type": "string",
+                                    "pattern": "^#[0-9A-Fa-f]{6}$"
+                                },
+                                {
+                                    "type": "null"
+                                }
+                            ],
+                            "default": null,
+                            "description": "null derives it from the pack's own colours"
+                        },
+                        "progress": {
+                            "anyOf": [
+                                {
+                                    "type": "string",
+                                    "pattern": "^#[0-9A-Fa-f]{6}$"
+                                },
+                                {
+                                    "type": "null"
+                                }
+                            ],
+                            "default": null,
+                            "description": "null derives it from the pack's own colours"
+                        }
+                    }
+                },
+                "shape": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                        "round": {
+                            "type": "number",
+                            "minimum": 0.0,
+                            "maximum": 0.5,
+                            "default": 0.5,
+                            "description": "follows base.cornerScale"
+                        },
+                        "highlightCornerDp": {
+                            "type": "number",
+                            "minimum": 0.0,
+                            "default": 22.0,
+                            "description": "dp; follows base.cornerScale"
+                        },
+                        "rowCornerPx": {
+                            "type": "number",
+                            "minimum": 0.0,
+                            "default": 22.0,
+                            "description": "px; follows base.cornerScale"
+                        },
+                        "chipCornerPx": {
+                            "type": "number",
+                            "minimum": 0.0,
+                            "default": 44.0,
+                            "description": "px; follows base.cornerScale"
+                        },
+                        "keyCorner": {
+                            "type": "number",
+                            "minimum": 0.0,
+                            "maximum": 0.5,
+                            "default": 0.2,
+                            "description": "follows base.cornerScale"
+                        },
+                        "badgeCornerPx": {
+                            "type": "number",
+                            "minimum": 0.0,
+                            "default": 8.0,
+                            "description": "px; follows base.cornerScale"
+                        },
+                        "toastCornerDp": {
+                            "type": "number",
+                            "minimum": 0.0,
+                            "default": 8.0,
+                            "description": "dp; follows base.cornerScale"
+                        },
+                        "thumbCornerDp": {
+                            "type": "number",
+                            "minimum": 0.0,
+                            "default": 12.0,
+                            "description": "dp; follows base.cornerScale"
+                        }
+                    }
+                },
+                "tile": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                        "restAlpha": {
+                            "type": "number",
+                            "minimum": 0.0,
+                            "maximum": 1.0,
+                            "default": 0.82
+                        },
+                        "socketAlpha": {
+                            "type": "number",
+                            "minimum": 0.0,
+                            "maximum": 1.0,
+                            "default": 0.16,
+                            "description": "follows base.fillScale"
+                        },
+                        "outlinePx": {
+                            "type": "number",
+                            "minimum": 0.0,
+                            "default": 3.0,
+                            "description": "px; follows base.strokeScale"
+                        },
+                        "editStrokePx": {
+                            "type": "number",
+                            "minimum": 0.0,
+                            "default": 9.0,
+                            "description": "px; follows base.strokeScale"
+                        },
+                        "editRestAlpha": {
+                            "type": "number",
+                            "minimum": 0.0,
+                            "maximum": 1.0,
+                            "default": 0.45
+                        },
+                        "dotPx": {
+                            "type": "number",
+                            "minimum": 0.0,
+                            "default": 10.0,
+                            "description": "px"
+                        },
+                        "statusChipPx": {
+                            "type": "number",
+                            "exclusiveMinimum": 0.0,
+                            "default": 36.0,
+                            "description": "px"
+                        },
+                        "statusIconPx": {
+                            "type": "number",
+                            "exclusiveMinimum": 0.0,
+                            "default": 24.0,
+                            "description": "px"
+                        },
+                        "statusBackingAlpha": {
+                            "type": "number",
+                            "minimum": 0.0,
+                            "maximum": 1.0,
+                            "default": 0.72,
+                            "description": "follows base.fillScale"
+                        },
+                        "downloadBarPx": {
+                            "type": "number",
+                            "minimum": 0.0,
+                            "default": 6.0,
+                            "description": "px; follows base.strokeScale"
+                        },
+                        "downloadTrackAlpha": {
+                            "type": "number",
+                            "minimum": 0.0,
+                            "maximum": 1.0,
+                            "default": 0.22,
+                            "description": "follows base.fillScale"
+                        },
+                        "stripPx": {
+                            "type": "number",
+                            "exclusiveMinimum": 0.0,
+                            "default": 6.0,
+                            "description": "px; follows base.strokeScale"
+                        },
+                        "stripAlpha": {
+                            "type": "number",
+                            "minimum": 0.0,
+                            "maximum": 1.0,
+                            "default": 0.45,
+                            "description": "follows base.fillScale"
+                        },
+                        "homeTargetStrokePx": {
+                            "type": "number",
+                            "minimum": 0.0,
+                            "default": 3.0,
+                            "description": "px; follows base.strokeScale"
+                        },
+                        "homeTargetAlpha": {
+                            "type": "number",
+                            "minimum": 0.0,
+                            "maximum": 1.0,
+                            "default": 0.35
+                        },
+                        "carriedRingAlpha": {
+                            "type": "number",
+                            "minimum": 0.0,
+                            "maximum": 1.0,
+                            "default": 0.4
+                        }
+                    }
+                },
+                "hero": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                        "markScale": {
+                            "type": "number",
+                            "exclusiveMinimum": 0.0,
+                            "maximum": 1.0,
+                            "default": 0.86
+                        },
+                        "cardAlpha": {
+                            "type": "number",
+                            "minimum": 0.0,
+                            "maximum": 1.0,
+                            "default": 0.72
+                        },
+                        "pillAlpha": {
+                            "type": "number",
+                            "minimum": 0.0,
+                            "maximum": 1.0,
+                            "default": 0.94
+                        },
+                        "logoShadeAlpha": {
+                            "type": "number",
+                            "minimum": 0.0,
+                            "maximum": 1.0,
+                            "default": 0.42
+                        },
+                        "logoShadowAlpha": {
+                            "type": "number",
+                            "minimum": 0.0,
+                            "maximum": 1.0,
+                            "default": 0.85
+                        },
+                        "logoShadowBlurDp": {
+                            "type": "number",
+                            "minimum": 0.0,
+                            "default": 10.0,
+                            "description": "dp"
+                        },
+                        "logoGlowBelow": {
+                            "type": "number",
+                            "minimum": 0.0,
+                            "maximum": 1.0,
+                            "default": 0.3
+                        },
+                        "sceneShadeTop": {
+                            "type": "number",
+                            "minimum": 0.0,
+                            "maximum": 1.0,
+                            "default": 0.45
+                        },
+                        "sceneShadeBottom": {
+                            "type": "number",
+                            "minimum": 0.0,
+                            "maximum": 1.0,
+                            "default": 0.8
+                        },
+                        "ambientBlurDp": {
+                            "type": "number",
+                            "minimum": 0.0,
+                            "default": 48.0,
+                            "description": "dp"
+                        },
+                        "ambientDim": {
+                            "type": "number",
+                            "minimum": 0.0,
+                            "maximum": 1.0,
+                            "default": 0.55
+                        }
+                    }
+                },
+                "menu": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                        "highlightStartAlpha": {
+                            "type": "number",
+                            "minimum": 0.0,
+                            "maximum": 1.0,
+                            "default": 0.2,
+                            "description": "follows base.fillScale"
+                        },
+                        "highlightEndAlpha": {
+                            "type": "number",
+                            "minimum": 0.0,
+                            "maximum": 1.0,
+                            "default": 0.08,
+                            "description": "follows base.fillScale"
+                        },
+                        "labelRestAlpha": {
+                            "type": "number",
+                            "minimum": 0.0,
+                            "maximum": 1.0,
+                            "default": 0.72
+                        },
+                        "artRestAlpha": {
+                            "type": "number",
+                            "minimum": 0.0,
+                            "maximum": 1.0,
+                            "default": 0.78
+                        },
+                        "artGrow": {
+                            "type": "number",
+                            "minimum": 0.0,
+                            "default": 0.12
+                        },
+                        "scrimAlpha": {
+                            "type": "number",
+                            "minimum": 0.0,
+                            "maximum": 1.0,
+                            "default": 0.32
+                        },
+                        "scrimAlphaUnblurred": {
+                            "type": "number",
+                            "minimum": 0.0,
+                            "maximum": 1.0,
+                            "default": 0.55
+                        },
+                        "blurPx": {
+                            "type": "number",
+                            "minimum": 0.0,
+                            "default": 28.0,
+                            "description": "px"
+                        },
+                        "islandLift": {
+                            "type": "number",
+                            "minimum": 0.0,
+                            "default": 0.04,
+                            "description": "follows base.fillScale"
+                        },
+                        "islandBorderDp": {
+                            "type": "number",
+                            "minimum": 0.0,
+                            "default": 1.0,
+                            "description": "dp; follows base.strokeScale"
+                        },
+                        "islandFocusBorderDp": {
+                            "type": "number",
+                            "minimum": 0.0,
+                            "default": 2.0,
+                            "description": "dp; follows base.strokeScale"
+                        },
+                        "islandRimAlpha": {
+                            "type": "number",
+                            "minimum": 0.0,
+                            "maximum": 1.0,
+                            "default": 0.08,
+                            "description": "follows base.fillScale"
+                        },
+                        "islandRimLitAlpha": {
+                            "type": "number",
+                            "minimum": 0.0,
+                            "maximum": 1.0,
+                            "default": 0.34,
+                            "description": "follows base.fillScale"
+                        },
+                        "quickTileAlpha": {
+                            "type": "number",
+                            "minimum": 0.0,
+                            "maximum": 1.0,
+                            "default": 0.08,
+                            "description": "follows base.fillScale"
+                        },
+                        "quickTileLitAlpha": {
+                            "type": "number",
+                            "minimum": 0.0,
+                            "maximum": 1.0,
+                            "default": 0.16,
+                            "description": "follows base.fillScale"
+                        },
+                        "quickTileOnAlpha": {
+                            "type": "number",
+                            "minimum": 0.0,
+                            "maximum": 1.0,
+                            "default": 0.6,
+                            "description": "follows base.fillScale"
+                        },
+                        "quickArtGrow": {
+                            "type": "number",
+                            "minimum": 0.0,
+                            "default": 0.14
+                        },
+                        "quickLabelRestAlpha": {
+                            "type": "number",
+                            "minimum": 0.0,
+                            "maximum": 1.0,
+                            "default": 0.6
+                        },
+                        "noticeRestAlpha": {
+                            "type": "number",
+                            "minimum": 0.0,
+                            "maximum": 1.0,
+                            "default": 0.86
+                        },
+                        "holdAlpha": {
+                            "type": "number",
+                            "minimum": 0.0,
+                            "maximum": 1.0,
+                            "default": 0.3,
+                            "description": "follows base.fillScale"
+                        }
+                    }
+                },
+                "controls": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                        "switchWidthDp": {
+                            "type": "number",
+                            "exclusiveMinimum": 0.0,
+                            "default": 54.0,
+                            "description": "dp"
+                        },
+                        "switchHeightDp": {
+                            "type": "number",
+                            "exclusiveMinimum": 0.0,
+                            "default": 30.0,
+                            "description": "dp"
+                        },
+                        "switchKnobInsetDp": {
+                            "type": "number",
+                            "minimum": 0.0,
+                            "default": 4.0,
+                            "description": "dp"
+                        },
+                        "trackAlpha": {
+                            "type": "number",
+                            "minimum": 0.0,
+                            "maximum": 1.0,
+                            "default": 0.12,
+                            "description": "follows base.fillScale"
+                        },
+                        "trackFocusAlpha": {
+                            "type": "number",
+                            "minimum": 0.0,
+                            "maximum": 1.0,
+                            "default": 0.2,
+                            "description": "follows base.fillScale"
+                        },
+                        "checkSizeDp": {
+                            "type": "number",
+                            "exclusiveMinimum": 0.0,
+                            "default": 30.0,
+                            "description": "dp"
+                        },
+                        "checkStrokeDp": {
+                            "type": "number",
+                            "minimum": 0.0,
+                            "default": 2.0,
+                            "description": "dp; follows base.strokeScale"
+                        },
+                        "checkRingAlpha": {
+                            "type": "number",
+                            "minimum": 0.0,
+                            "maximum": 1.0,
+                            "default": 0.26,
+                            "description": "follows base.fillScale"
+                        },
+                        "checkRingFocusAlpha": {
+                            "type": "number",
+                            "minimum": 0.0,
+                            "maximum": 1.0,
+                            "default": 0.42,
+                            "description": "follows base.fillScale"
+                        },
+                        "sliderTrackDp": {
+                            "type": "number",
+                            "exclusiveMinimum": 0.0,
+                            "default": 6.0,
+                            "description": "dp"
+                        },
+                        "sliderTrackAlpha": {
+                            "type": "number",
+                            "minimum": 0.0,
+                            "maximum": 1.0,
+                            "default": 0.28,
+                            "description": "follows base.fillScale"
+                        },
+                        "sliderKnobDp": {
+                            "type": "number",
+                            "exclusiveMinimum": 0.0,
+                            "default": 7.0,
+                            "description": "dp"
+                        },
+                        "sliderGlow": {
+                            "type": "number",
+                            "minimum": 1.0,
+                            "default": 2.2
+                        },
+                        "sliderGlowAlpha": {
+                            "type": "number",
+                            "minimum": 0.0,
+                            "maximum": 1.0,
+                            "default": 0.9,
+                            "description": "follows base.glowScale"
+                        },
+                        "sliderGlowMidAlpha": {
+                            "type": "number",
+                            "minimum": 0.0,
+                            "maximum": 1.0,
+                            "default": 0.34,
+                            "description": "follows base.glowScale"
+                        },
+                        "sliderGlowMid": {
+                            "type": "number",
+                            "exclusiveMinimum": 0.0,
+                            "exclusiveMaximum": 1.0,
+                            "default": 0.42
+                        }
+                    }
+                },
+                "keyboard": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                        "highlightStartAlpha": {
+                            "type": "number",
+                            "minimum": 0.0,
+                            "maximum": 1.0,
+                            "default": 0.26,
+                            "description": "follows base.fillScale"
+                        },
+                        "highlightEndAlpha": {
+                            "type": "number",
+                            "minimum": 0.0,
+                            "maximum": 1.0,
+                            "default": 0.1,
+                            "description": "follows base.fillScale"
+                        },
+                        "inactiveHighlight": {
+                            "type": "number",
+                            "minimum": 0.0,
+                            "maximum": 1.0,
+                            "default": 0.3
+                        },
+                        "keyAlpha": {
+                            "type": "number",
+                            "minimum": 0.0,
+                            "maximum": 1.0,
+                            "default": 0.92
+                        },
+                        "glassAlpha": {
+                            "type": "number",
+                            "minimum": 0.0,
+                            "maximum": 1.0,
+                            "default": 0.12,
+                            "description": "follows base.fillScale"
+                        },
+                        "modifierGlassAlpha": {
+                            "type": "number",
+                            "minimum": 0.0,
+                            "maximum": 1.0,
+                            "default": 0.05,
+                            "description": "follows base.fillScale"
+                        },
+                        "litGlassAlpha": {
+                            "type": "number",
+                            "minimum": 0.0,
+                            "maximum": 1.0,
+                            "default": 0.06,
+                            "description": "follows base.fillScale"
+                        },
+                        "doneAlpha": {
+                            "type": "number",
+                            "minimum": 0.0,
+                            "maximum": 1.0,
+                            "default": 0.55
+                        },
+                        "shiftAlpha": {
+                            "type": "number",
+                            "minimum": 0.0,
+                            "maximum": 1.0,
+                            "default": 0.38
+                        },
+                        "pressAlpha": {
+                            "type": "number",
+                            "minimum": 0.0,
+                            "maximum": 1.0,
+                            "default": 0.22,
+                            "description": "follows base.fillScale"
+                        },
+                        "sheenAlpha": {
+                            "type": "number",
+                            "minimum": 0.0,
+                            "maximum": 1.0,
+                            "default": 0.1,
+                            "description": "follows base.fillScale"
+                        },
+                        "rimTopAlpha": {
+                            "type": "number",
+                            "minimum": 0.0,
+                            "maximum": 1.0,
+                            "default": 0.22,
+                            "description": "follows base.fillScale"
+                        },
+                        "rimBottomAlpha": {
+                            "type": "number",
+                            "minimum": 0.0,
+                            "maximum": 1.0,
+                            "default": 0.04,
+                            "description": "follows base.fillScale"
+                        },
+                        "rimDp": {
+                            "type": "number",
+                            "minimum": 0.0,
+                            "default": 1.0,
+                            "description": "dp; follows base.strokeScale"
+                        },
+                        "glyphRestAlpha": {
+                            "type": "number",
+                            "minimum": 0.0,
+                            "maximum": 1.0,
+                            "default": 0.62
+                        },
+                        "chipAlpha": {
+                            "type": "number",
+                            "minimum": 0.0,
+                            "maximum": 1.0,
+                            "default": 0.08,
+                            "description": "follows base.fillScale"
+                        },
+                        "chipFlashAlpha": {
+                            "type": "number",
+                            "minimum": 0.0,
+                            "maximum": 1.0,
+                            "default": 0.2,
+                            "description": "follows base.fillScale"
+                        },
+                        "chipRimAlpha": {
+                            "type": "number",
+                            "minimum": 0.0,
+                            "maximum": 1.0,
+                            "default": 0.12,
+                            "description": "follows base.fillScale"
+                        },
+                        "chipLabelRestAlpha": {
+                            "type": "number",
+                            "minimum": 0.0,
+                            "maximum": 1.0,
+                            "default": 0.82
+                        },
+                        "lampHaloAlpha": {
+                            "type": "number",
+                            "minimum": 0.0,
+                            "maximum": 1.0,
+                            "default": 0.3,
+                            "description": "follows base.glowScale"
+                        }
+                    }
+                },
+                "field": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                        "ringAlpha": {
+                            "type": "number",
+                            "minimum": 0.0,
+                            "maximum": 1.0,
+                            "default": 0.55
+                        },
+                        "selectionStartAlpha": {
+                            "type": "number",
+                            "minimum": 0.0,
+                            "maximum": 1.0,
+                            "default": 0.55,
+                            "description": "follows base.fillScale"
+                        },
+                        "selectionEndAlpha": {
+                            "type": "number",
+                            "minimum": 0.0,
+                            "maximum": 1.0,
+                            "default": 0.4,
+                            "description": "follows base.fillScale"
+                        },
+                        "selectionLowAlpha": {
+                            "type": "number",
+                            "minimum": 0.0,
+                            "maximum": 1.0,
+                            "default": 0.7
+                        },
+                        "selectionCornerDp": {
+                            "type": "number",
+                            "minimum": 0.0,
+                            "default": 10.0,
+                            "description": "dp; follows base.cornerScale"
+                        },
+                        "caretDp": {
+                            "type": "number",
+                            "exclusiveMinimum": 0.0,
+                            "default": 4.0,
+                            "description": "dp; follows base.strokeScale"
+                        },
+                        "caretGlowDp": {
+                            "type": "number",
+                            "minimum": 0.0,
+                            "default": 6.0,
+                            "description": "dp"
+                        },
+                        "caretGlowAlpha": {
+                            "type": "number",
+                            "minimum": 0.0,
+                            "maximum": 1.0,
+                            "default": 0.22,
+                            "description": "follows base.glowScale"
+                        },
+                        "caretLowAlpha": {
+                            "type": "number",
+                            "minimum": 0.0,
+                            "maximum": 1.0,
+                            "default": 0.35
+                        }
+                    }
+                },
+                "dialog": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                        "scrimAlpha": {
+                            "type": "number",
+                            "minimum": 0.0,
+                            "maximum": 1.0,
+                            "default": 0.72
+                        },
+                        "conflictScrimAlpha": {
+                            "type": "number",
+                            "minimum": 0.0,
+                            "maximum": 1.0,
+                            "default": 0.82
+                        },
+                        "borderAlpha": {
+                            "type": "number",
+                            "minimum": 0.0,
+                            "maximum": 1.0,
+                            "default": 0.08,
+                            "description": "follows base.fillScale"
+                        },
+                        "chipAlpha": {
+                            "type": "number",
+                            "minimum": 0.0,
+                            "maximum": 1.0,
+                            "default": 0.06,
+                            "description": "follows base.fillScale"
+                        },
+                        "chipFocusAlpha": {
+                            "type": "number",
+                            "minimum": 0.0,
+                            "maximum": 1.0,
+                            "default": 0.1,
+                            "description": "follows base.fillScale"
+                        },
+                        "chipStrongAlpha": {
+                            "type": "number",
+                            "minimum": 0.0,
+                            "maximum": 1.0,
+                            "default": 0.16,
+                            "description": "follows base.fillScale"
+                        },
+                        "rowAlpha": {
+                            "type": "number",
+                            "minimum": 0.0,
+                            "maximum": 1.0,
+                            "default": 0.06,
+                            "description": "follows base.fillScale"
+                        },
+                        "toastAlpha": {
+                            "type": "number",
+                            "minimum": 0.0,
+                            "maximum": 1.0,
+                            "default": 0.85
+                        }
+                    }
+                },
+                "settings": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                        "labelRestAlpha": {
+                            "type": "number",
+                            "minimum": 0.0,
+                            "maximum": 1.0,
+                            "default": 0.62
+                        },
+                        "artRestAlpha": {
+                            "type": "number",
+                            "minimum": 0.0,
+                            "maximum": 1.0,
+                            "default": 0.7
+                        },
+                        "artGrow": {
+                            "type": "number",
+                            "minimum": 0.0,
+                            "default": 0.14
+                        },
+                        "cardLift": {
+                            "type": "number",
+                            "minimum": 0.0,
+                            "default": 0.035,
+                            "description": "follows base.fillScale"
+                        },
+                        "borderAlpha": {
+                            "type": "number",
+                            "minimum": 0.0,
+                            "maximum": 1.0,
+                            "default": 0.06,
+                            "description": "follows base.fillScale"
+                        },
+                        "borderDp": {
+                            "type": "number",
+                            "minimum": 0.0,
+                            "default": 1.0,
+                            "description": "dp; follows base.strokeScale"
+                        }
+                    }
+                },
+                "find": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                        "ringRestAlpha": {
+                            "type": "number",
+                            "minimum": 0.0,
+                            "maximum": 1.0,
+                            "default": 0.38
+                        },
+                        "filterAlpha": {
+                            "type": "number",
+                            "minimum": 0.0,
+                            "maximum": 1.0,
+                            "default": 0.07,
+                            "description": "follows base.fillScale"
+                        },
+                        "chosenAlpha": {
+                            "type": "number",
+                            "minimum": 0.0,
+                            "maximum": 1.0,
+                            "default": 0.3,
+                            "description": "follows base.fillScale"
+                        },
+                        "chosenRimDp": {
+                            "type": "number",
+                            "minimum": 0.0,
+                            "default": 1.5,
+                            "description": "dp; follows base.strokeScale"
+                        },
+                        "hiddenBackingAlpha": {
+                            "type": "number",
+                            "minimum": 0.0,
+                            "maximum": 1.0,
+                            "default": 0.78
+                        }
+                    }
+                },
+                "picker": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                        "shimmerAlpha": {
+                            "type": "number",
+                            "minimum": 0.0,
+                            "maximum": 1.0,
+                            "default": 0.18,
+                            "description": "follows base.fillScale"
+                        }
+                    }
+                },
+                "play": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                        "backingAlpha": {
+                            "type": "number",
+                            "minimum": 0.0,
+                            "maximum": 1.0,
+                            "default": 0.06,
+                            "description": "follows base.fillScale"
+                        },
+                        "trackAlpha": {
+                            "type": "number",
+                            "minimum": 0.0,
+                            "maximum": 1.0,
+                            "default": 0.06,
+                            "description": "follows base.fillScale"
+                        },
+                        "hourAlpha": {
+                            "type": "number",
+                            "minimum": 0.0,
+                            "maximum": 1.0,
+                            "default": 0.1,
+                            "description": "follows base.fillScale"
+                        },
+                        "hourDp": {
+                            "type": "number",
+                            "minimum": 0.0,
+                            "default": 1.0,
+                            "description": "dp; follows base.strokeScale"
+                        },
+                        "emptyBarAlpha": {
+                            "type": "number",
+                            "minimum": 0.0,
+                            "maximum": 1.0,
+                            "default": 0.12,
+                            "description": "follows base.fillScale"
+                        },
+                        "barCornerDp": {
+                            "type": "number",
+                            "minimum": 0.0,
+                            "default": 3.0,
+                            "description": "dp; follows base.cornerScale"
+                        }
+                    }
+                },
+                "collections": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                        "gold": {
+                            "type": "string",
+                            "pattern": "^#[0-9A-Fa-f]{6}$",
+                            "default": "#FFC15A"
+                        },
+                        "coral": {
+                            "type": "string",
+                            "pattern": "^#[0-9A-Fa-f]{6}$",
+                            "default": "#FF7F5C"
+                        },
+                        "rose": {
+                            "type": "string",
+                            "pattern": "^#[0-9A-Fa-f]{6}$",
+                            "default": "#FF5C8A"
+                        },
+                        "violet": {
+                            "type": "string",
+                            "pattern": "^#[0-9A-Fa-f]{6}$",
+                            "default": "#B48CFF"
+                        },
+                        "indigo": {
+                            "type": "string",
+                            "pattern": "^#[0-9A-Fa-f]{6}$",
+                            "default": "#7C8CFF"
+                        },
+                        "sky": {
+                            "type": "string",
+                            "pattern": "^#[0-9A-Fa-f]{6}$",
+                            "default": "#4CC9FF"
+                        },
+                        "teal": {
+                            "type": "string",
+                            "pattern": "^#[0-9A-Fa-f]{6}$",
+                            "default": "#3EE6C0"
+                        },
+                        "mint": {
+                            "type": "string",
+                            "pattern": "^#[0-9A-Fa-f]{6}$",
+                            "default": "#8CF2A6"
+                        },
+                        "lime": {
+                            "type": "string",
+                            "pattern": "^#[0-9A-Fa-f]{6}$",
+                            "default": "#C6EE5A"
+                        },
+                        "slate": {
+                            "type": "string",
+                            "pattern": "^#[0-9A-Fa-f]{6}$",
+                            "default": "#A3B1C6"
+                        },
+                        "glyphX": {
+                            "type": "number",
+                            "minimum": 0.0,
+                            "maximum": 64.0,
+                            "default": 32.0
+                        },
+                        "glyphY": {
+                            "type": "number",
+                            "minimum": 0.0,
+                            "maximum": 64.0,
+                            "default": 39.48
+                        },
+                        "glyphSize": {
+                            "type": "number",
+                            "exclusiveMinimum": 0.0,
+                            "maximum": 64.0,
+                            "default": 29.3
+                        },
+                        "pressedDepth": {
+                            "type": "number",
+                            "minimum": 0.0,
+                            "maximum": 1.0,
+                            "default": 0.62
+                        },
+                        "lipDrop": {
+                            "type": "number",
+                            "default": 0.025
+                        },
+                        "lipAlpha": {
+                            "type": "number",
+                            "minimum": 0.0,
+                            "maximum": 1.0,
+                            "default": 0.32
+                        },
+                        "swatchShine": {
+                            "type": "number",
+                            "minimum": 0.0,
+                            "maximum": 1.0,
+                            "default": 0.35
+                        },
+                        "swatchShade": {
+                            "type": "number",
+                            "minimum": 0.0,
+                            "maximum": 1.0,
+                            "default": 0.3
+                        },
+                        "swatchRimAlpha": {
+                            "type": "number",
+                            "minimum": 0.0,
+                            "maximum": 1.0,
+                            "default": 0.85
+                        },
+                        "swatchRimPx": {
+                            "type": "number",
+                            "minimum": 0.0,
+                            "default": 3.0,
+                            "description": "px; follows base.strokeScale"
+                        },
+                        "swatchRimInsetPx": {
+                            "type": "number",
+                            "minimum": 0.0,
+                            "default": 2.5,
+                            "description": "px"
+                        }
+                    }
+                },
+                "sound": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                        "volume": {
+                            "type": "number",
+                            "minimum": 0.0,
+                            "maximum": 1.0,
+                            "default": 0.4
+                        }
+                    }
+                }
+            }
+        }
+    }
+}

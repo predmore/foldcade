@@ -170,7 +170,7 @@ private fun ArtCandidateTile(app: FoldcadeApp, candidate: ArtCandidate?, current
                 val transition = rememberInfiniteTransition()
                 val shimmer by transition.animateFloat(0f, 1f, theme.motion.pulse(scale))
                 Box(Modifier.fillMaxSize().background(Brush.linearGradient(
-                    listOf(theme.surface, theme.focus.copy(alpha = 0.18f), theme.surface),
+                    listOf(theme.surface, theme.focus.copy(alpha = theme.style.picker.shimmerAlpha), theme.surface),
                     start = Offset(shimmer * 600f - 300f, 0f), end = Offset(shimmer * 600f, 300f),
                 )))
             }

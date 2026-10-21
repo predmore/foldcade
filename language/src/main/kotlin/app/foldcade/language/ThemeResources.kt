@@ -1,6 +1,7 @@
 package app.foldcade.language
 
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.toArgb
 import kotlinx.serialization.json.*
 
 fun themeColor(text: String): Color? {
@@ -9,17 +10,74 @@ fun themeColor(text: String): Color? {
     return Color(0xFF000000L or value)
 }
 
+/** [color] as a manifest writes it, `#RRGGBB`. */
+fun themeColorText(color: Color): String = "#%06X".format(color.toArgb() and 0xFFFFFF)
+
 enum class ThemeIconBlend { SrcOver, Screen }
 
-data class ThemeIconAsset(
-    val owner: String, val file: String, val bytes: ByteArray, val accent: Color?, val tint: Boolean,
+/**
+ * One icon file and how it is drawn. Its bytes are read from the archive each time [bytes] is
+ * asked for, so a pack's icons are not held in memory before they are drawn. [archive] names the
+ * copy of the archive they come from; without one the bytes themselves name the icon.
+ */
+class ThemeIconAsset(
+    val owner: String,
+    val file: String,
+    private val read: () -> ByteArray?,
+    val accent: Color?,
+    val tint: Boolean,
     val blend: ThemeIconBlend = ThemeIconBlend.SrcOver,
+    private val archive: String = "",
 ) {
-    val cacheKey: String by lazy { "$owner/$file/${themeAssetCacheKey(bytes)}" }
+    constructor(owner: String, file: String, bytes: ByteArray, accent: Color?, tint: Boolean, blend: ThemeIconBlend = ThemeIconBlend.SrcOver) :
+        this(owner, file, { bytes }, accent, tint, blend)
+
+    /** The file's bytes, or none when the archive no longer has them. */
+    val bytes: ByteArray get() = read() ?: ByteArray(0)
+
+    val cacheKey: String by lazy { if (archive.isNotEmpty()) "$owner/$file/$archive" else "$owner/$file/${themeAssetCacheKey(bytes)}" }
+
+    fun copy(
+        owner: String = this.owner,
+        accent: Color? = this.accent,
+        tint: Boolean = this.tint,
+        blend: ThemeIconBlend = this.blend,
+    ): ThemeIconAsset = ThemeIconAsset(owner, file, read, accent, tint, blend, archive)
 }
 
 fun themeAssetCacheKey(bytes: ByteArray): String = java.security.MessageDigest.getInstance("SHA-256")
     .digest(bytes).joinToString("") { "%02x".format(it) }
+
+/**
+ * [zips] in an order that loads each pack after the one it `extends`, with the id each builds on;
+ * null is Afterglow. A pack whose parent is not installed, or whose chain loops back to it, builds
+ * on Afterglow instead, and [report] says why. The first copy of an id is the one built on, as
+ * [loadThemeCatalog] keeps it.
+ */
+fun orderByExtends(zips: List<ThemeZip>, report: (ThemeZip, ThemeDiagnostic) -> Unit = { _, _ -> }): List<Pair<ThemeZip, String?>> {
+    val byId = linkedMapOf<String, ThemeZip>()
+    zips.forEach { byId.putIfAbsent(it.file.id, it) }
+    val ordered = mutableListOf<Pair<ThemeZip, String?>>()
+    val done = java.util.Collections.newSetFromMap(java.util.IdentityHashMap<ThemeZip, Boolean>())
+    val walking = java.util.Collections.newSetFromMap(java.util.IdentityHashMap<ThemeZip, Boolean>())
+    fun visit(zip: ThemeZip) {
+        if (zip in done) return
+        walking += zip
+        val wanted = zip.file.extends?.takeIf { it != FALLBACK_THEME_ID }
+        val parent = wanted?.let(byId::get)
+        val builtOn = when {
+            wanted == null -> null
+            parent == null -> null.also { report(zip, ThemeDiagnostic("theme.json", "extends '$wanted', which is not installed; building on Afterglow")) }
+            parent in walking -> null.also { report(zip, ThemeDiagnostic("theme.json", "extends '$wanted', which leads back to this pack; building on Afterglow")) }
+            else -> wanted.also { visit(parent) }
+        }
+        walking -= zip
+        done += zip
+        ordered += zip to builtOn
+    }
+    zips.forEach(::visit)
+    return ordered
+}
 
 /** Duplicate IDs are rejected before materialization can write caches or create native resources. */
 fun <T : Any> loadThemeCatalog(
@@ -52,6 +110,10 @@ data class ThemeResources(
     val scenes: Map<BackgroundMotion, ThemeScene>,
     val diagnostics: List<ThemeDiagnostic>,
     val style: ThemeStyle = ThemeStyle(file.style),
+    /** Every slot name Afterglow fills, which the host's closed slot families are checked against. */
+    val slotNames: Set<String> = icons.keys,
+    /** The packs this one builds on, nearest first, ending before Afterglow. */
+    val parents: List<String> = emptyList(),
 ) {
     val defaultBackground: BackgroundMotion get() = scenes.keys.firstOrNull {
         it == file.backgroundMotion || it.wire.substringAfter(':') == file.backgroundMotion.wire
@@ -80,22 +142,41 @@ const val FALLBACK_THEME_ID: String = "afterglow"
 /**
  * One pack's resources. With [inherit], Afterglow's for any other pack, colours and style tokens
  * the pack leaves out or gets wrong come from [inherit]. Icons and scenes stay the pack's own;
- * [ThemeComposition] falls back to the inherited icons slot by slot.
+ * [ThemeComposition] falls back to the inherited icons slot by slot. A pack that `extends` another
+ * has that pack as [inherit], and wears its icons where it has none of its own.
  */
 fun resolveThemeResources(zip: ThemeZip, inherit: ThemeResources? = null): ThemeResources {
     val diagnostics = mutableListOf<ThemeDiagnostic>()
-    val file = inherit?.let { zip.file.inheriting(it.file) } ?: zip.file
-    diagnostics += themeReleaseDiagnostics(file)
-    val style = ThemeStyle(file.style, diagnostics::add, inheritedStyle(zip.file, inherit))
-    val legacyIcons = zip.entries.filterKeys { it.startsWith("marks/") && it.endsWith(".png") }.map { (path, bytes) ->
-        "mark." + path.removePrefix("marks/").removeSuffix(".png") to
-            ThemeIconAsset(file.id, path, bytes, null, false, ThemeIconBlend.Screen)
+    val inherited = inherit?.let { zip.file.inheriting(it.file) } ?: zip.file
+    diagnostics += themeReleaseDiagnostics(inherited)
+    diagnostics += themeAboutDiagnostics(inherited, zip.entries.keys)
+    val style = ThemeStyle(inherited.style, diagnostics::add, inheritedStyle(zip.file, inherit))
+    // A tile's corner is a manifest field, not a token, but it is a corner all the same.
+    val corner = style.base.cornerScale
+    val file = if (inherit != null && corner != 1f && "iconRadius" !in zip.file.root) {
+        inherited.copy(iconRadius = (inherited.iconRadius * corner).coerceIn(0f, .5f))
+    } else inherited
+    fun asset(path: String, accent: Color?, tint: Boolean, blend: ThemeIconBlend) =
+        if (zip.key.isEmpty()) ThemeIconAsset(file.id, path, zip.entries[path] ?: ByteArray(0), accent, tint, blend)
+        else ThemeIconAsset(file.id, path, { zip.entries[path] }, accent, tint, blend, zip.key)
+    val legacyIcons = zip.entries.keys.filter { it.startsWith("marks/") && it.endsWith(".png") }.associate { path ->
+        "mark." + path.removePrefix("marks/").removeSuffix(".png") to asset(path, null, false, ThemeIconBlend.Screen)
+    }
+    val own = legacyIcons + file.icons.mapNotNull { (slot, icon) ->
+        if (icon.file !in zip.entries.keys) { diagnostics += ThemeDiagnostic(icon.file, "Missing icon for '$slot'"); null }
+        else slot to asset(icon.file, icon.accent, icon.tint, ThemeIconBlend.SrcOver)
     }.toMap()
-    val icons = legacyIcons + file.icons.mapNotNull { (slot, icon) ->
-        val bytes = zip.entries[icon.file]
-        if (bytes == null) { diagnostics += ThemeDiagnostic(icon.file, "Missing icon for '$slot'"); null }
-        else slot to ThemeIconAsset(file.id, icon.file, bytes, icon.accent, icon.tint)
-    }.toMap()
+    val known = inherit?.slotNames
+    if (known != null) file.icons.keys.filter { slot ->
+        slot.substringBefore('.') in ThemeContract.closedSlotFamilies && slot !in known
+    }.forEach { slot -> diagnostics += ThemeDiagnostic("theme.json:icons.$slot", "Unknown icon slot") }
+    file.icons.keys.filter { it in ThemeContract.retiredSlots }
+        .forEach { slot -> diagnostics += ThemeDiagnostic("theme.json:icons.$slot", "Retired; the host no longer draws this slot") }
+    (zip.file.root["icons"] as? JsonObject)?.keys?.mapNotNull { old -> ThemeContract.renamedSlots[old]?.let { old to it } }
+        ?.forEach { (old, new) -> diagnostics += ThemeDiagnostic("theme.json:icons.$old", "Renamed to $new; this name still works") }
+    // Building on Afterglow by name is what every pack does anyway; its icons stay a fallback.
+    val extended = inherit?.takeIf { file.extends != null && it.id == file.extends && it.id != FALLBACK_THEME_ID }
+    val icons = (extended?.icons.orEmpty()) + own
     val scenes = linkedMapOf<BackgroundMotion, ThemeScene>()
     file.sceneFiles.forEach { path ->
         val bytes = zip.entries[path]
@@ -110,7 +191,25 @@ fun resolveThemeResources(zip: ThemeZip, inherit: ThemeResources? = null): Theme
             }
         }
     }
-    return ThemeResources(file.id, file.name, file, icons, scenes, diagnostics, style)
+    return ThemeResources(
+        file.id, file.name, file, icons, scenes, diagnostics, style,
+        slotNames = known ?: icons.keys,
+        parents = extended?.let { listOf(it.id) + it.parents }.orEmpty(),
+    )
+}
+
+/** What a pack's description of itself names that its archive does not have. */
+private fun themeAboutDiagnostics(file: ThemeFile, names: Set<String>): List<ThemeDiagnostic> = buildList {
+    if ("extends" in file.root && file.extends == null) add(ThemeDiagnostic("theme.json", "extends must name another pack's id"))
+    if ("preview" in file.root && (file.about.preview == null || file.about.preview !in names)) add(ThemeDiagnostic("theme.json", "Missing preview image"))
+    (file.root["fonts"] as? JsonObject)?.keys?.forEach { face ->
+        val path = file.fonts[face]
+        when {
+            face !in ThemeContract.fontFaces -> add(ThemeDiagnostic("theme.json:fonts.$face", "Unknown font face"))
+            path == null -> add(ThemeDiagnostic("theme.json:fonts.$face", "A font face is an archive path"))
+            path !in names -> add(ThemeDiagnostic(path, "Missing font for '$face'"))
+        }
+    }
 }
 
 /**
@@ -118,7 +217,7 @@ fun resolveThemeResources(zip: ThemeZip, inherit: ThemeResources? = null): Theme
  * a ring in that colour, not Afterglow's gradient, so those two tokens are not inherited then.
  */
 private fun inheritedStyle(own: ThemeFile, inherit: ThemeResources?): JsonObject {
-    val base = inherit?.file?.style ?: return JsonObject(emptyMap())
+    val base = inherit?.style?.resolvedJson() ?: return JsonObject(emptyMap())
     val ring = base["focusRing"] as? JsonObject ?: return base
     if ("focus" !in own.root) return base
     val ownRing = own.style["focusRing"] as? JsonObject

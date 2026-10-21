@@ -14,6 +14,9 @@ import androidx.compose.ui.graphics.graphicsLayer
 import app.foldcade.language.*
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.drop
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.coroutines.withContext
 import kotlin.random.Random
 
@@ -28,6 +31,8 @@ fun Backdrop(
     panel: Float = 0f,
     previewTime: Double? = null,
     seed: Double? = null,
+    /** What the shell tells the scene besides its clock, read each time it draws. */
+    live: () -> SceneLive = { SceneLive() },
     onMetrics: ((SceneMetrics) -> Unit)? = null,
 ) {
     if (scene == null) return
@@ -53,9 +58,15 @@ fun Backdrop(
                 if (last != 0L) time += ((frame - last) / 1_000_000_000.0).coerceIn(0.0, wait + 0.05) * clock
                 last = frame
             }
-            val rate = prepared.frameRate(time, viewport.width.toFloat(), viewport.height.toFloat(), moving, panel, clock)
+            val rate = prepared.frameRate(time, viewport.width.toFloat(), viewport.height.toFloat(), moving, panel, clock, live())
                 ?: return@LaunchedEffect
-            if (rate == 0f) return@LaunchedEffect
+            if (rate == 0f) {
+                // Stopped, until an input the scene reads changes or a minute passes for `hour`.
+                withTimeoutOrNull(STOPPED_RECHECK_MILLIS) { snapshotFlow { live() }.drop(1).first() }
+                last = 0L
+                wait = 0f
+                continue
+            }
             wait = 1f / rate
             val due = last + (wait * 1_000_000_000f).toLong() - 4_000_000L
             val sleep = (due - System.nanoTime()) / 1_000_000L
@@ -73,10 +84,13 @@ fun Backdrop(
             scaleX = 1f / resolution; scaleY = 1f / resolution
             if (resolution != 1f) compositingStrategy = CompositingStrategy.Offscreen
     }) {
-        prepared.draw(this, previewTime ?: time, moving, panel, clock)
+        prepared.draw(this, previewTime ?: time, moving, panel, clock, live())
         onMetrics?.invoke(prepared.metrics)
     }
 }
+
+/** How often a stopped scene asks its frame rate again, so one that waits for an hour wakes. */
+private const val STOPPED_RECHECK_MILLIS = 60_000L
 
 /**
  * Opaque layers over one panel's backdrop. While any is composed the backdrop is

@@ -188,7 +188,7 @@ internal fun Modifier.selectionHighlight(
         // A lit glass fill, brighter where the ring's green starts.
         drawRoundRect(
             brush = Brush.horizontalGradient(
-                listOf(focusRing.start.copy(alpha = design.menu.highlightStartAlpha * shown), focusRing.end.copy(alpha = design.menu.highlightEndAlpha * shown)),
+                listOf(focusRing.highlightStart.copy(alpha = design.menu.highlightStartAlpha * shown), focusRing.highlightEnd.copy(alpha = design.menu.highlightEndAlpha * shown)),
                 startX = rect.left,
                 endX = rect.right,
             ),
@@ -346,11 +346,13 @@ internal fun promptGlyph(key: PromptKey): String = when (key) {
 @Composable
 internal fun PromptImage(name: String, size: Dp, modifier: Modifier = Modifier) {
     val icon = themeIconOrNull(iconSlot(name), 128) ?: return
+    val theme = LocalFoldTheme.current.theme
     Image(
         painter = icon.painter,
         contentDescription = null,
-        colorFilter = icon.requestedTint(LocalFoldTheme.current.theme.onBackground),
-        modifier = modifier.size(size),
+        colorFilter = icon.requestedTint(theme.onBackground),
+        // Each place sizes its glyph to its row; the theme scales them all alike.
+        modifier = modifier.size(size * theme.style.metrics.glyphScale),
     )
 }
 
@@ -369,8 +371,8 @@ internal fun ToggleSwitch(on: Boolean, focused: Boolean, scale: Float) {
     val knob by bouncy(if (on) 1f else 0f, scale)
     val lit by eased(if (on) 1f else 0f, theme.motion.durationSelect, scale)
     val ring = remember(theme) { FocusRing(theme) }
-    val start = ring.start
-    val end = ring.end
+    val start = ring.onStart
+    val end = ring.onEnd
     val controls = theme.style.controls
     val round = theme.style.shape.round
     Box(
@@ -417,8 +419,8 @@ internal fun CheckMark(on: Boolean, focused: Boolean, scale: Float, some: Boolea
     val tick by eased(if (on || some) 1f else 0f, theme.motion.durationSelect, scale)
     val pop by bouncy(if (on || some) 1f else 0f, scale)
     val ring = remember(theme) { FocusRing(theme) }
-    val start = ring.start
-    val end = ring.end
+    val start = ring.onStart
+    val end = ring.onEnd
     val controls = theme.style.controls
     val glyph = themeIconOrNull(if (some) "control.dash" else "control.check", 128)
     // A light fill, as a white focus color makes it, takes a dark tick.

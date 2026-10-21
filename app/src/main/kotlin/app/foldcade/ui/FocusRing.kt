@@ -26,6 +26,14 @@ internal class FocusRing(private val theme: Theme) {
     val start: Color get() = design.focusRing.start ?: theme.focus
     val end: Color get() = design.focusRing.end ?: theme.focus
 
+    /** The gliding highlights' ends: `colors.highlight` when the pack sets one, else the ring's. */
+    val highlightStart: Color get() = design.colors.highlight ?: start
+    val highlightEnd: Color get() = design.colors.highlight ?: end
+
+    /** What a switch, a check or a quick tile that is on fills with: `colors.on`, else the ring's. */
+    val onStart: Color get() = design.colors.on ?: start
+    val onEnd: Color get() = design.colors.on ?: end
+
     fun brush(size: Size, origin: Offset = Offset.Zero): Brush = Brush.linearGradient(
         colors = listOf(start, end),
         start = origin,

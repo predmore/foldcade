@@ -23,7 +23,7 @@ def write(a, sub):
     open(f"{destination}/{a.name}.xml", "w").write(to_vd(a))
     open(f"{SVG}/{sub}/{a.name}.svg", "w").write(to_svg(a))
 
-for d in (RES, SVG, f"{OUT}/play", f"{OUT}/themes", f"{OUT}/shaders"):
+for d in (RES, SVG, f"{OUT}/play", f"{OUT}/themes"):
     shutil.rmtree(d, ignore_errors=True)
 
 # Theme icons: symbols, marks, and collections (tools/art/icons.py, docs/iconography.md)
@@ -76,25 +76,12 @@ os.makedirs(f"{OUT}/play", exist_ok=True)
 c = round(1728 * 9 / 108)
 full.crop((c, c, 1728 - c, 1728 - c)).resize((512, 512), Image.LANCZOS).convert("RGB").save(f"{OUT}/play/ic_launcher-playstore.png")
 
-# ---------------- sprites ----------------
-SP = f"{OUT}/themes/afterglow/sprites"; os.makedirs(SP, exist_ok=True)
+# ---------------- preview glow ----------------
+# Afterglow draws its glows natively and its scenes in AGSL, so the pack ships no sprites or
+# effect shaders: a file there that nothing reads would look like a hook a theme could use.
 ACC = {"white": (255, 255, 255), "teal": (0x3E, 0xE6, 0xC0), "amber": (0xFF, 0xB5, 0x47), "rose": (0xFF, 0x5C, 0x7A),
        "violet": (0xB9, 0x8C, 0xFF), "blue": (0x4C, 0xC9, 0xFF), "mint": (0xC8, 0xFF, 0xE4)}
-for sz in (256, 512):
-    sprites.rgba(sprites.radial_glow(sz)).save(f"{SP}/glow_soft_{sz}.png")
-for k in ("teal", "amber", "rose", "violet", "blue"):
-    sprites.rgba(sprites.radial_glow(256), ACC[k]).save(f"{SP}/glow_soft_256_{k}.png")
-hs = sprites.hotspot()
-sprites.rgba(hs).save(f"{SP}/ribbon_hotspot.png")
-for k in ("teal", "amber"):
-    sprites.rgba(hs, ACC[k]).save(f"{SP}/ribbon_hotspot_{k}.png")
-os.makedirs(f"{RES}/drawable-nodpi", exist_ok=True)
-sprites.focus_ninepatch().save(f"{RES}/drawable-nodpi/focus_glow.9.png")
-sprites.focus_ninepatch(color=ACC["mint"]).save(f"{RES}/drawable-nodpi/focus_glow_mint.9.png")
-os.makedirs(f"{OUT}/shaders", exist_ok=True)
-shutil.copy(f"{OUT}/src/focus_glow.agsl", f"{OUT}/shaders/focus_glow.agsl")
-os.makedirs(f"{OUT}/themes/afterglow/effects", exist_ok=True)
-shutil.copy(f"{OUT}/src/focus_glow.agsl", f"{OUT}/themes/afterglow/effects/focus_glow.agsl")
+FOCUS_PATCH = sprites.focus_ninepatch(color=ACC["mint"])
 
 # ---------------- theme preview (1280x720) ----------------
 def ribbon_layer(W, H, pts_fn, color, width, sigma, peak, seed):
@@ -136,7 +123,7 @@ def compose_preview(path, W=1280, H=720):
     ts, gap, y0 = 196, 36, 404
     x0 = (W - (6 * ts + 5 * gap) * 0.86) / 2
     ts2 = int(ts * 0.86); gap2 = int(gap * 0.86)
-    glowpatch = Image.open(f"{RES}/drawable-nodpi/focus_glow_mint.9.png").crop((1, 1, 201, 201))
+    glowpatch = FOCUS_PATCH.crop((1, 1, 201, 201))
     for i, a in enumerate(mk):
         x = int(x0 + i * (ts2 + gap2)); y = y0
         if i == 1:

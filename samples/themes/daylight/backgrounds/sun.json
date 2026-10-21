@@ -1,0 +1,26 @@
+{
+  "version": 1,
+  "id": "sun",
+  "name": "Sun",
+  "frameRate": "if(moving,10,0)",
+  "variables": {
+    "day": "clamp((hour-6)/12,0,1)",
+    "height01": "sin(pi*day)",
+    "glowR": "mix(1,accentR,0.35)",
+    "glowG": "mix(0.86,accentG,0.35)",
+    "glowB": "mix(0.6,accentB,0.35)"
+  },
+  "layers": [
+    {
+      "name": "sun",
+      "type": "disc",
+      "x": "width*(0.15+0.7*day)",
+      "y": "height*(0.9-0.6*height01)",
+      "radius": "height*0.45",
+      "tightness": 1.6,
+      "rim": 0.2,
+      "color": ["glowR", "glowG", "glowB", "0.35*height01+0.05"],
+      "blend": "multiply"
+    }
+  ]
+}

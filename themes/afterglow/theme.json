@@ -10,6 +10,9 @@
   "backgroundMotion": "ribbons",
   "version": 2,
   "id": "afterglow",
+  "author": "Foldcade",
+  "description": "True black, rounded tiles, and a soft neon glow. Every pack builds on it.",
+  "license": "MIT; Nunito under the SIL Open Font License",
   "icons": {
     "app.app.gamenative": {
       "file": "icons/app_gamenative.xml",
@@ -1186,7 +1189,7 @@
     },
     "status.battery.0": {
       "file": "icons/ic_status_battery_0.xml",
-      "tint": false
+      "tint": true
     },
     "status.battery.0.charging": {
       "file": "icons/ic_status_battery_0_charging.xml",
@@ -1202,7 +1205,7 @@
     },
     "status.battery.100": {
       "file": "icons/ic_status_battery_100.xml",
-      "tint": false
+      "tint": true
     },
     "status.battery.100.charging": {
       "file": "icons/ic_status_battery_100_charging.xml",
@@ -1210,7 +1213,7 @@
     },
     "status.battery.20": {
       "file": "icons/ic_status_battery_20.xml",
-      "tint": false
+      "tint": true
     },
     "status.battery.20.charging": {
       "file": "icons/ic_status_battery_20_charging.xml",
@@ -1218,7 +1221,7 @@
     },
     "status.battery.30": {
       "file": "icons/ic_status_battery_30.xml",
-      "tint": false
+      "tint": true
     },
     "status.battery.30.charging": {
       "file": "icons/ic_status_battery_30_charging.xml",
@@ -1226,7 +1229,7 @@
     },
     "status.battery.40": {
       "file": "icons/ic_status_battery_40.xml",
-      "tint": false
+      "tint": true
     },
     "status.battery.40.charging": {
       "file": "icons/ic_status_battery_40_charging.xml",
@@ -1234,7 +1237,7 @@
     },
     "status.battery.50": {
       "file": "icons/ic_status_battery_50.xml",
-      "tint": false
+      "tint": true
     },
     "status.battery.50.charging": {
       "file": "icons/ic_status_battery_50_charging.xml",
@@ -1242,7 +1245,7 @@
     },
     "status.battery.60": {
       "file": "icons/ic_status_battery_60.xml",
-      "tint": false
+      "tint": true
     },
     "status.battery.60.charging": {
       "file": "icons/ic_status_battery_60_charging.xml",
@@ -1250,7 +1253,7 @@
     },
     "status.battery.70": {
       "file": "icons/ic_status_battery_70.xml",
-      "tint": false
+      "tint": true
     },
     "status.battery.70.charging": {
       "file": "icons/ic_status_battery_70_charging.xml",
@@ -1258,7 +1261,7 @@
     },
     "status.battery.80": {
       "file": "icons/ic_status_battery_80.xml",
-      "tint": false
+      "tint": true
     },
     "status.battery.80.charging": {
       "file": "icons/ic_status_battery_80_charging.xml",
@@ -1266,7 +1269,7 @@
     },
     "status.battery.90": {
       "file": "icons/ic_status_battery_90.xml",
-      "tint": false
+      "tint": true
     },
     "status.battery.90.charging": {
       "file": "icons/ic_status_battery_90_charging.xml",
@@ -1274,7 +1277,7 @@
     },
     "status.bell": {
       "file": "icons/ic_status_bell.xml",
-      "tint": false
+      "tint": true
     },
     "status.bell.1": {
       "file": "icons/ic_status_bell_1.xml",
@@ -1322,7 +1325,7 @@
     },
     "status.bluetooth": {
       "file": "icons/ic_status_bluetooth.xml",
-      "tint": false
+      "tint": true
     },
     "status.bluetooth.off": {
       "file": "icons/ic_status_bluetooth_off.xml",
@@ -1330,23 +1333,23 @@
     },
     "status.display": {
       "file": "icons/ic_status_display.xml",
-      "tint": false
+      "tint": true
     },
     "status.info": {
       "file": "icons/ic_status_info.xml",
-      "tint": false
+      "tint": true
     },
     "status.playtime": {
       "file": "icons/ic_status_playtime.xml",
-      "tint": false
+      "tint": true
     },
     "status.power": {
       "file": "icons/ic_status_power.xml",
-      "tint": false
+      "tint": true
     },
     "status.settings": {
       "file": "icons/ic_status_settings.xml",
-      "tint": false
+      "tint": true
     },
     "status.tools": {
       "file": "icons/ic_status_tools.xml",
@@ -1354,39 +1357,39 @@
     },
     "status.volume.1": {
       "file": "icons/ic_status_volume_1.xml",
-      "tint": false
+      "tint": true
     },
     "status.volume.2": {
       "file": "icons/ic_status_volume_2.xml",
-      "tint": false
+      "tint": true
     },
     "status.volume.3": {
       "file": "icons/ic_status_volume_3.xml",
-      "tint": false
+      "tint": true
     },
     "status.volume.mute": {
       "file": "icons/ic_status_volume_mute.xml",
-      "tint": false
+      "tint": true
     },
     "status.wifi.0": {
       "file": "icons/ic_status_wifi_0.xml",
-      "tint": false
+      "tint": true
     },
     "status.wifi.1": {
       "file": "icons/ic_status_wifi_1.xml",
-      "tint": false
+      "tint": true
     },
     "status.wifi.2": {
       "file": "icons/ic_status_wifi_2.xml",
-      "tint": false
+      "tint": true
     },
     "status.wifi.3": {
       "file": "icons/ic_status_wifi_3.xml",
-      "tint": false
+      "tint": true
     },
     "status.wifi.4": {
       "file": "icons/ic_status_wifi_4.xml",
-      "tint": false
+      "tint": true
     },
     "status.wifi.off": {
       "file": "icons/ic_status_wifi_off.xml",
@@ -1394,7 +1397,7 @@
     },
     "status.wrench": {
       "file": "icons/ic_status_wrench.xml",
-      "tint": false
+      "tint": true
     },
     "symbol.android-apps": {
       "file": "icons/symbol_android_apps.xml",
@@ -1631,6 +1634,14 @@
     "backgrounds/static.json"
   ],
   "style": {
+    "base": {
+      "cornerScale": 1,
+      "strokeScale": 1,
+      "glowScale": 1,
+      "fillScale": 1,
+      "typeScale": 1,
+      "durationScale": 1
+    },
     "focusRing": {
       "start": "#52B788",
       "end": "#3E8EC0",
@@ -1743,7 +1754,10 @@
         1.36,
         0.64,
         1
-      ]
+      ],
+      "shakePx": 8,
+      "rewindFrom": 0.94,
+      "folderPopFrom": 0.92
     },
     "metrics": {
       "insetFraction": 0.04,
@@ -1754,12 +1768,16 @@
       "dialogBorderPx": 2,
       "cardCornerDp": 28,
       "heroArtFraction": 0.62,
-      "chromeClearancePx": 28
+      "chromeClearancePx": 28,
+      "glyphScale": 1
     },
     "colors": {
       "scrim": "#000000",
       "shade": "#000000",
-      "shine": "#FFFFFF"
+      "shine": "#FFFFFF",
+      "highlight": null,
+      "on": null,
+      "progress": null
     },
     "shape": {
       "round": 0.5,
@@ -1782,7 +1800,12 @@
       "statusIconPx": 24,
       "statusBackingAlpha": 0.72,
       "downloadBarPx": 6,
-      "downloadTrackAlpha": 0.22
+      "downloadTrackAlpha": 0.22,
+      "stripPx": 6,
+      "stripAlpha": 0.45,
+      "homeTargetStrokePx": 3,
+      "homeTargetAlpha": 0.35,
+      "carriedRingAlpha": 0.4
     },
     "hero": {
       "markScale": 0.86,
@@ -1814,7 +1837,10 @@
       "quickTileAlpha": 0.08,
       "quickTileLitAlpha": 0.16,
       "quickTileOnAlpha": 0.6,
-      "quickArtGrow": 0.14
+      "quickArtGrow": 0.14,
+      "quickLabelRestAlpha": 0.6,
+      "noticeRestAlpha": 0.86,
+      "holdAlpha": 0.3
     },
     "controls": {
       "switchWidthDp": 54,
@@ -1829,7 +1855,10 @@
       "sliderTrackDp": 6,
       "sliderTrackAlpha": 0.28,
       "sliderKnobDp": 7,
-      "sliderGlow": 2.2
+      "sliderGlow": 2.2,
+      "sliderGlowAlpha": 0.9,
+      "sliderGlowMidAlpha": 0.34,
+      "sliderGlowMid": 0.42
     },
     "keyboard": {
       "highlightStartAlpha": 0.26,
@@ -1850,7 +1879,8 @@
       "chipAlpha": 0.08,
       "chipFlashAlpha": 0.2,
       "chipRimAlpha": 0.12,
-      "chipLabelRestAlpha": 0.82
+      "chipLabelRestAlpha": 0.82,
+      "lampHaloAlpha": 0.3
     },
     "field": {
       "ringAlpha": 0.55,
@@ -1859,7 +1889,9 @@
       "caretDp": 4,
       "caretGlowDp": 6,
       "caretGlowAlpha": 0.22,
-      "caretLowAlpha": 0.35
+      "caretLowAlpha": 0.35,
+      "selectionLowAlpha": 0.7,
+      "selectionCornerDp": 10
     },
     "dialog": {
       "scrimAlpha": 0.72,
@@ -1876,7 +1908,8 @@
       "artRestAlpha": 0.7,
       "artGrow": 0.14,
       "cardLift": 0.035,
-      "borderAlpha": 0.06
+      "borderAlpha": 0.06,
+      "borderDp": 1
     },
     "find": {
       "ringRestAlpha": 0.38,
@@ -1884,6 +1917,17 @@
       "chosenAlpha": 0.3,
       "chosenRimDp": 1.5,
       "hiddenBackingAlpha": 0.78
+    },
+    "picker": {
+      "shimmerAlpha": 0.18
+    },
+    "play": {
+      "backingAlpha": 0.06,
+      "trackAlpha": 0.06,
+      "hourAlpha": 0.1,
+      "hourDp": 1,
+      "emptyBarAlpha": 0.12,
+      "barCornerDp": 3
     },
     "collections": {
       "gold": "#FFC15A",
@@ -1904,7 +1948,9 @@
       "lipAlpha": 0.32,
       "swatchShine": 0.35,
       "swatchShade": 0.3,
-      "swatchRimAlpha": 0.85
+      "swatchRimAlpha": 0.85,
+      "swatchRimPx": 3,
+      "swatchRimInsetPx": 2.5
     },
     "sound": {
       "volume": 0.4

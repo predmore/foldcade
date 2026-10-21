@@ -1,0 +1,28 @@
+{
+  "$schema": "../../../themes/theme.schema.json",
+  "version": 2,
+  "id": "daylight",
+  "name": "Daylight",
+  "release": "1.0.0",
+  "author": "Foldcade",
+  "description": "A light sample pack: paper white, ink, and a sun that follows the clock.",
+  "license": "MIT",
+  "background": "#F4F1EA",
+  "surface": "#FFFFFF",
+  "onBackground": "#1E1B18",
+  "muted": "#6E675E",
+  "focus": "#2F6FDE",
+  "iconRadius": 0.2,
+  "backgroundMotion": "sun",
+  "scenes": ["backgrounds/sun.json"],
+  "icons": {
+    "badge.cloud": {"file": "icons/cloud.xml", "tint": true}
+  },
+  "style": {
+    "base": {"cornerScale": 0.6, "glowScale": 0.4, "durationScale": 0.9},
+    "focusRing": {"start": "#2F6FDE", "end": "#7B4FE0"},
+    "colors": {"scrim": "#1E1B18", "shade": "#5A5048", "shine": "#FFFFFF", "highlight": "#2F6FDE", "progress": "#2F6FDE"},
+    "menu": {"scrimAlpha": 0.18, "scrimAlphaUnblurred": 0.3},
+    "dialog": {"scrimAlpha": 0.4}
+  }
+}

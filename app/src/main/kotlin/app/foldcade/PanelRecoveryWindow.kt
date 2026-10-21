@@ -142,7 +142,7 @@ internal class PanelRecoveryWindow(
             super.onCreate(savedInstanceState)
             window?.apply {
                 addFlags(WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL)
-                setBackgroundDrawableResource(android.R.color.black)
+                setBackgroundDrawable(android.graphics.drawable.ColorDrawable(activity.themeBackgroundArgb()))
                 decorView.setViewTreeLifecycleOwner(activity)
                 decorView.setViewTreeViewModelStoreOwner(activity)
                 decorView.setViewTreeSavedStateRegistryOwner(activity)

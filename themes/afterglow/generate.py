@@ -2,8 +2,8 @@
 """Generate the Afterglow theme's original art.
 
 The script and its original sounds and font design are MIT licensed.
-The bundled Nunito font keeps its SIL Open Font License. The preview,
-sprites, and platform marks come from tools/art. Afterglow does not ship
+The bundled Nunito font keeps its SIL Open Font License. The preview
+and platform marks come from tools/art. Afterglow does not ship
 a wallpaper; its scene manifests define ribbons, embers, and Static.
 """
 

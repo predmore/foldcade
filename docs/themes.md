@@ -4,11 +4,28 @@ Themes are ZIPs containing JSON, images, Android vector XML, fonts, audio, and A
 
 Afterglow is the reference pack in `themes/afterglow/`. Its icon artwork, colours, focus styling, typography, motion, shapes, component styling, layout metrics, and backgrounds live there, and it declares every [style token](#style-tokens) the engine reads; a test fails if the engine reads one Afterglow leaves out. The app generates its emergency drawable resources from those same icon files. Tests keep a CPU model of the Afterglow backgrounds. It is updated alongside the scenes and checks their uniforms, lit budget, and motion pacing.
 
-The current version exposes the launcher's presentation: colours, type, icons, shapes, motion, and the look of each component. It does not let a pack replace the controller's grid/navigation topology, author arbitrary screen layouts, or change layout proportions such as row heights and the keyboard's key pitch. Downloading/installing external packs through the UI is also future work; the loader already accepts resource packs from private `files/themes/*.zip` storage, and [trials](#releases-and-trials) keep a pack there that crashes Foldcade from staying.
+The current version exposes the launcher's presentation: colours, type, icons, shapes, motion, sounds, and the look of each component. It does not let a pack replace the controller's grid/navigation topology, author arbitrary screen layouts, or change layout proportions such as row heights and the keyboard's key pitch. A player adds a pack from **Settings › Look › Themes › Add a theme**, which installs a zip from the file picker for the next start. [Trials](#releases-and-trials) keep a pack that crashes Foldcade from staying. The same page lists every pack with what it says about itself and what Foldcade found while loading it, so an author can read a pack's report on the device.
+
+## Compatibility
+
+A pack is written against a contract: the manifest fields, style tokens, icon slots, scene inputs, and sound cues of one Foldcade. [`themes/contract.json`](../themes/contract.json) lists every one, with each token's kind, unit, accepted values, the `base` scale it follows, and Afterglow's value. [`themes/theme.schema.json`](../themes/theme.schema.json) is a JSON Schema for `theme.json`. Point a manifest's `"$schema"` at it and an editor completes and checks the manifest as you write it. Both files are written from the engine by its tests, and a build fails when either is stale.
+
+What Foldcade promises a pack:
+
+- **Nothing in the contract disappears silently.** A test fails when a token or slot leaves it, unless the engine says where it went. A renamed token or slot keeps working under its old name, and the pack's report says what it became. A retired one is reported as doing nothing, and its name is never reused for something else.
+- **New things are additions.** A token added to the engine follows the pack's own [`base` scales](#base) and inherits Afterglow's value otherwise, so an older pack keeps its proportions. A scene input added later is shadowed by a scene variable of the same name, so it never changes a scene written before it. A sound cue added later falls back to a cue the pack already ships.
+- **`host` changes only for a break.** The theme format level is raised only when a pack written for the old level could load wrongly. Additions never raise it. A pack that needs a higher level still loads, and is never installed as an update.
+- **`version` stays 2.** A manifest version outside 1–2 is refused, so a future format that cannot be read safely is not read at all.
+
+One thing does move: a token a pack leaves out is Afterglow's, so when Afterglow's value changes, the pack's look changes with it. The contract lists Afterglow's values, so such a change shows in review. A pack that cares about a value sets it.
+
+`Px` tokens are the Thor's panel pixels, as the host's own layout is. `Dp` tokens are density-independent. `sp` is type.
 
 ## Inheritance
 
-Every pack inherits from Afterglow. A colour, `iconRadius`, `artScale`, style token, font, or sound a pack leaves out, or gets wrong, is Afterglow's. An icon slot it leaves out is Afterglow's too, slot by slot. A pack can therefore change one thing, say `{"name": "Square", "style": {"shape": {"round": 0}}}`, and look like Afterglow otherwise. A pack that wants a slot quiet or blank ships a silent clip or an empty icon in it. Scenes are not inherited; they are listed separately (see below). If Afterglow itself cannot load, packs fall back to the engine's built-in values, which the Built-in theme also uses.
+Every pack inherits from Afterglow. A colour, `iconRadius`, `artScale`, style token, font, or sound a pack leaves out, or gets wrong, is Afterglow's. An icon slot it leaves out is Afterglow's too, slot by slot.
+
+A pack can build on another installed pack instead with `"extends": "<id>"`. It inherits that pack's resolved look, its fonts, its sounds, its icons for slots it does not fill, and, when it names no scene of its own, its default background. That pack in turn inherits from Afterglow. A family of variants then ships one base pack and small packs that each change a few things. A pack whose parent is not installed, or whose chain leads back to itself, builds on Afterglow, and its report says why. Packs a pack builds on count as in use for its [trial](#releases-and-trials). A pack can therefore change one thing, say `{"name": "Square", "style": {"shape": {"round": 0}}}`, and look like Afterglow otherwise. A pack that wants a slot quiet or blank ships a silent clip or an empty icon in it. Scenes are not inherited; they are listed separately (see below). If Afterglow itself cannot load, packs fall back to the engine's built-in values, which the Built-in theme also uses.
 
 ## Compose providers
 
@@ -25,6 +42,12 @@ Background lists are discovered from every installed pack. Selecting one pins it
   "name": "Example",
   "release": "1.0.0",
   "source": {"github": "someone/foldcade-example"},
+  "author": "Someone",
+  "description": "Soft light on true black.",
+  "license": "CC-BY-4.0",
+  "preview": "preview.png",
+  "extends": "example-base",
+  "fonts": {"regular": "fonts/Body.ttf", "bold": "fonts/Body-Bold.ttf", "display": "fonts/Display.otf"},
   "background": "#000000",
   "surface": "#1C1C20",
   "onBackground": "#F4F1EA",
@@ -52,11 +75,36 @@ Background lists are discovered from every installed pack. Selecting one pins it
 }
 ```
 
+`author`, `description`, `license` and `preview` (an image in the archive) describe the pack where packs are listed. None is inherited.
+
 Category-only packs can omit colors, style, icons, or scenes. A name is required; give v2 packs a stable id using letters, numbers, dots, underscores or hyphens. The id `builtin` is reserved. Icons accept PNG, WebP, or self-contained Android vector XML with literal colors. XML supports paths, group transforms, clipping, strokes, and inline linear/radial/sweep gradients. XML may not refer to application resource IDs. The underlying vector grammar is documented by [Android](https://developer.android.com/reference/android/graphics/drawable/VectorDrawable). All asset paths are relative to the archive root. See Afterglow's manifest for the complete stock slot list and styling tokens. Platforms use `mark.<canonical-platform-id>` on the grid and `symbol.<canonical-platform-id>` in menus, folders use `mark.folder`, controller hints use `button.a`/`button.a.filled`, and status variants use slots such as `status.battery.100.charging`. Any platform's id works, not only the ones Afterglow draws: a pack that fills `mark.sega-cd` gives Sega CD its own tile, and a platform no pack draws wears `mark.console`. The host's own controls draw `control.check` and `control.dash` (a checkmark's tick, wiped in from the left), `control.shift` and `control.shift.on` (crossfaded as Shift lights), `control.erase`, `control.space` (2.4 times as wide as it is tall), and `control.search`; Find marks hidden results with `badge.hidden`. Mark these one-ink icons `"tint": true`, so they follow the theme's ink. An installed app wears `app.<package>`, for example `app.com.android.chrome`, on its tile, in the hero, and beside its notices, in place of its launcher icon; it is drawn like a mark, on the light in its accent. Afterglow fills one slot per package for each app it draws, so a pack can restyle one build of an app without the others.
 
 An icon's accent is the light behind its tile and its hero glow. How Afterglow's icons are drawn is in [iconography](iconography.md). Badge icons use their own colors unless `tint` is true, which requests the control's semantic tint. Game cover art keeps its normal priority. An app's own launcher icon shows only when no pack fills its `app.` slot.
 
 The resolved icon carries its accent, tint, and blending metadata together with its image; cache eviction does not change its appearance. Legacy `marks/<name>.png` files contribute `mark.<name>` slots and keep their original Screen blending. Explicit manifest slots take precedence over legacy files in the same pack.
+
+A slot in a family the host names (`button.`, `status.`, `badge.`, `control.`) that Afterglow does not fill is a misspelling, and is reported. The `mark.`, `symbol.` and `app.` families take names of the pack's own.
+
+### Fonts
+
+`fonts` names up to three faces. `regular` is running text at `type.bodyWeight`. `bold` is strong text at `type.strongWeight`; without it the regular face is made bolder. A variable face, one with a `wght` axis, is set to both weights itself and needs no bold file. `display` is the hero's title, dialog titles, the clock and the save-conflict game; without it they wear the regular face. Each face a pack leaves out is its parent's, and a missing or unreadable face falls back the same way. A parent's bold belongs to its regular face, so it carries over only when the pack keeps that face too.
+
+### Sounds
+
+A pack ships `sounds/<cue>.ogg`. The first four cues have always played: `move`, `activate`, `back` and `notify`. The others refine them, and each one falls back to the cue that played at that moment before it existed, so a pack with only the first four sounds as it always did:
+
+| Cue | Plays when | Falls back to |
+| --- | --- | --- |
+| `open` | A menu, dialog, page, Find or the connection form opens | `activate` |
+| `close` | One of them closes | `back` |
+| `launch` | A game or app starts | `activate` |
+| `toggle` | A switch flips | `activate` |
+| `type` | A key types on the on-screen keyboard | `activate` |
+| `erase` | A key erases | `back` |
+| `refuse` | The field turns a key down | nothing |
+| `edge` | A move runs into an edge and changes nothing | nothing |
+
+A cue plays the first clip of its chain the pack itself has, before looking in the pack it builds on and then in Afterglow.
 
 V1 conventions remain accepted: `font.ttf`/`font.otf`, `marks/<name>.png`, `wallpaper-top.png`/`.webp`, `wallpaper-bottom.png`/`.webp`, and `sounds/{move,activate,back,notify}.ogg`. Font, wallpaper, and sound failures leave usable defaults. Wallpapers are letterboxed. Theme music follows the existing optional `music/theme.ogg` contract.
 
@@ -70,13 +118,28 @@ Three manifest fields describe a pack's versions. None is inherited from Aftergl
 - `host` is the theme format level the pack needs, a whole number from 1; left out, it is 1. This Foldcade reads level 1. A pack that needs a higher level still loads here, but is never installed as an update.
 - `source` is where its updates come from: `{"github": "owner/repo"}`, the releases of that GitHub repository. Case does not matter.
 
-An update installs only over a pack with the same `id` and the same `source`, and only with a higher `release`. The first install locks the source, so another repository cannot take over an id. A pack Foldcade ships cannot be replaced, a version 1 manifest has no stable id and never installs, and a pack with no `release` cannot be compared. Before an update replaces anything, it loads over Afterglow: every icon and scene it names must resolve and every shader must compile on the device. It is staged in `files/themes-staging`, written down in `files/theme-installs.json`, then renamed into `files/themes`. The archive it replaces is kept in `files/themes-previous`, unless that archive is itself still on trial: then the proven copy kept before it stays. A start that finds an update cut off part way finishes it. Installs take effect at the next start. Nothing downloads updates yet; `FoldcadeApp.installTheme` is where the updater will hand one over.
+An update installs only over a pack with the same `id` and the same `source`, and only with a higher `release`. The first install locks the source, so another repository cannot take over an id. A pack Foldcade ships cannot be replaced, a version 1 manifest has no stable id and never installs, and a pack with no `release` cannot be compared. Before an update replaces anything, it loads over Afterglow: every icon and scene it names must resolve and every shader must compile on the device. It is staged in `files/themes-staging`, written down in `files/theme-installs.json`, then renamed into `files/themes`. The archive it replaces is kept in `files/themes-previous`, unless that archive is itself still on trial: then the proven copy kept before it stays. A start that finds an update cut off part way finishes it. Installs take effect at the next start. **Add a theme** in Settings › Look › Themes installs this way, and the page offers to restart. Pressing X twice on an installed pack there takes it out, with the copy kept beside it, at the next start; its refused releases stay refused. A pack Foldcade ships cannot be taken out. Nothing downloads updates yet; `FoldcadeApp.installTheme` is where the updater will hand one over. An install is read the way the next start reads it: the archive is opened in place, not streamed, so what was checked is what loads.
+
+An installed pack is read in place. At start Foldcade reads its manifest and scenes; its icons, wallpapers, sounds and music are read when something first draws or plays them. Installing many packs costs little more than their manifests until one is used.
 
 Foldcade is the Home app, so a pack that crashes it could leave nothing to go back to. A pack that arrives in `files/themes`, or changes there, is on trial. Android's record of how Foldcade's process ended is read at the next start. Each crash or ANR counts against the packs on trial that were in use: the packs of the theme, icon theme, and background the shell had resolved, or every pack still loading when it stopped. A crash before a new copy loaded does not count against that copy. After two, the start refuses that release from then on, writes that down, and only then puts the copy kept in `themes-previous` back, or takes the pack out when there is none. R1 says which. A trial ends after three minutes of Home shown with the pack in use. Packs already in `files/themes` the first time Foldcade keeps the ledger are not on trial.
 
 ## Style tokens
 
 Every token below is optional. A pack's value replaces Afterglow's; anything it leaves out is Afterglow's. `Dp` values are density-independent, `Px` values are panel pixels, and an `Alpha` is 0–1, usually a strength over `onBackground`, the focus ring's colours, or `colors.scrim`. Colours are `#RRGGBB`.
+
+### `base`
+
+Proportions a pack sets once for everything it inherits. Each multiplies the tokens of its kind the pack leaves out, including tokens added to Foldcade after the pack was made, so they come in at the pack's proportions rather than Afterglow's. A value the pack sets itself is never scaled. A scaled value stays inside its token's range. A pack that builds on another inherits that pack's scaled values, not its scales. Which scale a token follows is its `role` in the contract.
+
+| Token | Afterglow | Controls |
+| --- | --- | --- |
+| `base.cornerScale` | 1 | Every corner and roundness, the tiles' inherited `iconRadius` too. 0 squares the whole launcher |
+| `base.strokeScale` | 1 | Every ring, rim, border and outline width. Above 0 |
+| `base.glowScale` | 1 | Every glow's strength |
+| `base.fillScale` | 1 | Every translucent fill, rim and track over the ink |
+| `base.typeScale` | 1 | Every type size. Above 0 |
+| `base.durationScale` | 1 | Every duration. Above 0; below 1 is quicker |
 
 ### `focusRing`
 
@@ -181,6 +244,9 @@ Durations in ms, scales, distances, and cubic-bézier curves `[x1, y1, x2, y2]`.
 | `motion.cascadeStep` | 0.05 | The delay between rows, share of the opening |
 | `motion.cascadeSpan` | 0.35 | The most any row waits |
 | `motion.popFrom` | 0.72 | A Find result's starting scale |
+| `motion.shakePx` | 8 | How far a refused or cancelled row shakes each way |
+| `motion.rewindFrom` | 0.94 | The board's starting scale as an undo or a tidy puts it back |
+| `motion.folderPopFrom` | 0.92 | A folder's grid's starting scale as it opens |
 | `motion.arrive` | [0.05, 0.7, 0.1, 1] | Things arriving |
 | `motion.leave` | [0.3, 0, 0.8, 0.15] | Things leaving |
 | `motion.pulse` | [0.4, 0, 0.6, 1] | Breathing |
@@ -202,16 +268,20 @@ Layout distances. Grid columns and rows are the host's.
 | `metrics.cardCornerDp` | 28 | Cards: islands, dialogs, Settings, the hero's name card, the typing field |
 | `metrics.heroArtFraction` | 0.62 | Reach of the hero's glow and logo shade, share of the art |
 | `metrics.chromeClearancePx` | 28 | Space between the hint row and a focus stroke |
+| `metrics.glyphScale` | 1 | Controller glyphs beside rows, hints and chips, as a share of the size each place draws them |
 
 ### `colors`
 
-Colours beyond the manifest's five, as `#RRGGBB`.
+Colours beyond the manifest's five, as `#RRGGBB`. Those whose Afterglow value is `null` are derived from the pack's other colours unless it sets them; a pack that inherits one it does not want writes `null` to derive it again.
 
 | Token | Afterglow | Controls |
 | --- | --- | --- |
 | `colors.scrim` | #000000 | What dims the screen under menus and dialogs, and shades art behind text |
 | `colors.shade` | #000000 | The dark end of art's shading: a pressed glyph, a swatch's base |
 | `colors.shine` | #FFFFFF | The light end: a pressed glyph's lip, a swatch's top and chosen rim |
+| `colors.highlight` | null | The gliding highlights of menus, keys and a text selection. `null`: the focus ring's colours |
+| `colors.on` | null | A switch, a check or a quick tile that is on. `null`: the focus ring's colours |
+| `colors.progress` | null | What fills as something progresses: a download, a slider, the play-time bars. `null`: `focus` |
 
 ### `shape`
 
@@ -245,6 +315,11 @@ A home grid tile, beyond its corner (`iconRadius`) and glow.
 | `tile.statusBackingAlpha` | 0.72 | Its backing over cover art |
 | `tile.downloadBarPx` | 6 | The download bar's thickness |
 | `tile.downloadTrackAlpha` | 0.22 | Its empty track |
+| `tile.stripPx` | 6 | The bar under a wide grid that shows where the screen is |
+| `tile.stripAlpha` | 0.45 | Its track, over `muted` |
+| `tile.homeTargetStrokePx` | 3 | The Home pill's outline above a group's grid while a game is held |
+| `tile.homeTargetAlpha` | 0.35 | That outline's strength |
+| `tile.carriedRingAlpha` | 0.4 | The faintest a carried tile's ring gets before it is raised |
 
 ### `hero`
 
@@ -287,6 +362,9 @@ The L1, R1 and Y menus and their islands.
 | `menu.quickTileLitAlpha` | 0.16 | And focused |
 | `menu.quickTileOnAlpha` | 0.6 | The focus colours filling a tile whose radio (Wi-Fi, Bluetooth) is on |
 | `menu.quickArtGrow` | 0.14 | How much their art grows |
+| `menu.quickLabelRestAlpha` | 0.6 | A quick tile's word while it is not focused |
+| `menu.noticeRestAlpha` | 0.86 | A notice's title in R1 while it is not focused |
+| `menu.holdAlpha` | 0.3 | The fill that grows across a row while a delete is held |
 
 ### `controls`
 
@@ -307,6 +385,9 @@ Switches, checkmarks and sliders. The checkmark's tick is the `control.check` ic
 | `controls.sliderTrackAlpha` | 0.28 | Its empty part |
 | `controls.sliderKnobDp` | 7 | Knob radius |
 | `controls.sliderGlow` | 2.2 | The knob's glow, as a multiple of its radius |
+| `controls.sliderGlowAlpha` | 0.9 | That glow's strength at the knob |
+| `controls.sliderGlowMidAlpha` | 0.34 | Its strength at `sliderGlowMid` |
+| `controls.sliderGlowMid` | 0.42 | Where that middle strength sits, share of the glow (0–1, excluding both) |
 
 ### `keyboard`
 
@@ -333,6 +414,7 @@ The on-screen keyboard and its name chips. Shift, Erase and Space are `control.`
 | `keyboard.chipFlashAlpha` | 0.2 | Its flash as it acts |
 | `keyboard.chipRimAlpha` | 0.12 | Its rim |
 | `keyboard.chipLabelRestAlpha` | 0.82 | Its word while unfocused |
+| `keyboard.lampHaloAlpha` | 0.3 | The halo of the lamp under Shift while it is on |
 
 ### `field`
 
@@ -343,6 +425,8 @@ The text field Find, rename and connect type into.
 | `field.ringAlpha` | 0.55 | The ring always on the field |
 | `field.selectionStartAlpha` | 0.55 | A selection's start |
 | `field.selectionEndAlpha` | 0.4 | Its end |
+| `field.selectionLowAlpha` | 0.7 | A selection's faintest as it breathes, share of its strength |
+| `field.selectionCornerDp` | 10 | A selection's corner |
 | `field.caretDp` | 4 | Caret width |
 | `field.caretGlowDp` | 6 | Its glow |
 | `field.caretGlowAlpha` | 0.22 | The glow's strength |
@@ -374,6 +458,7 @@ The Settings page.
 | `settings.artGrow` | 0.14 | How much the chosen category's art grows |
 | `settings.cardLift` | 0.035 | How lit the detail card's top is |
 | `settings.borderAlpha` | 0.06 | The detail card's border |
+| `settings.borderDp` | 1 | Its width |
 
 ### `find`
 
@@ -386,6 +471,27 @@ Find. The magnifier is `control.search` and the hidden mark is `badge.hidden`.
 | `find.chosenAlpha` | 0.3 | The chosen filter's fill |
 | `find.chosenRimDp` | 1.5 | Its rim |
 | `find.hiddenBackingAlpha` | 0.78 | The disc behind `badge.hidden` |
+
+### `picker`
+
+The art picker.
+
+| Token | Afterglow | Controls |
+| --- | --- | --- |
+| `picker.shimmerAlpha` | 0.18 | The shimmer across a candidate still loading, in `focus` over `surface` |
+
+### `play`
+
+Play activity: the week, the days and their sessions. The bars are `colors.progress`.
+
+| Token | Afterglow | Controls |
+| --- | --- | --- |
+| `play.backingAlpha` | 0.06 | A game's backing while its art loads, or when it has none |
+| `play.trackAlpha` | 0.06 | A day's track |
+| `play.hourAlpha` | 0.1 | The hour lines across it |
+| `play.hourDp` | 1 | Their width |
+| `play.emptyBarAlpha` | 0.12 | A day of the week with no play |
+| `play.barCornerDp` | 3 | A day's bar's corner |
 
 ### `collections`
 
@@ -412,6 +518,8 @@ A collection's folder. Colours are keyed by the ids collections save, so a pack 
 | `collections.swatchShine` | 0.35 | How far an editor swatch's top lightens toward `colors.shine` |
 | `collections.swatchShade` | 0.3 | How far its base darkens toward `colors.shade` |
 | `collections.swatchRimAlpha` | 0.85 | The chosen swatch's rim |
+| `collections.swatchRimPx` | 3 | Its width |
+| `collections.swatchRimInsetPx` | 2.5 | How far inside the swatch's edge it sits |
 
 ### `sound`
 
@@ -453,7 +561,7 @@ Layers are drawn in order. Each supports a name, a positive integer `repeat` (de
 - **line:** `x`, `y`, `endX`, `endY`, stroke `width`, and RGBA `color`.
 - **image:** `file`, `x`, `y`, `width`, `height`, optional `alpha` (default 1) and `rotation` in degrees.
 
-Numeric properties can be numbers, arithmetic-expression strings, or keyframe tracks. Expressions evaluate in double precision, so `time` stays exact through months of uptime. Values reach shaders as 32-bit floats, which lose a frame's worth of precision after about a day. Pass shaders a wrapped phase such as `fract(time / 20)` or `2*pi*fract(time / 20)`, not raw `time`. Available inputs are `time` in design seconds, `width`/`height` of the render target, `panel` (top 0, bottom 1), `seed`, `moving` (0/1), `clock`, repeated-layer `index`, and sampled-path `u` (0–1). `seed` is a random 0–1 value each panel chooses when its scene starts and keeps until the scene changes. Two panels start a scene together, so without it both screens show the same moment. Afterglow adds `3600*seed` to its time. A scene that declares its own `seed` variable keeps it instead. `pi` is constant. Variables are evaluated in declaration order and can refer to preceding variables. Repeat-local variables are reevaluated for each instance.
+Numeric properties can be numbers, arithmetic-expression strings, or keyframe tracks. Expressions evaluate in double precision, so `time` stays exact through months of uptime. Values reach shaders as 32-bit floats, which lose a frame's worth of precision after about a day. Pass shaders a wrapped phase such as `fract(time / 20)` or `2*pi*fract(time / 20)`, not raw `time`. Available inputs are `time` in design seconds, `width`/`height` of the render target, `panel` (top 0, bottom 1), `seed`, `moving` (0/1), `clock`, repeated-layer `index`, and sampled-path `u` (0–1). The shell also tells a scene about the launcher: `accentR`, `accentG` and `accentB` are the focused item's accent (its app's or mark's light, a collection's colour, else `focus`), 0–1, eased as focus moves; `hour` is the local time of day, 0 to 24 with minutes as the fraction; `battery` is 0–1 and `charging` 0 or 1; `sinceMove` is real seconds since the cursor last moved, up to 3600. They are read each time the scene draws. A scene whose `frameRate` is 0 is asked again when the accent, the battery or a cursor move changes, and once a minute, so `if(charging,30,0)` starts when power is connected. A scene that never reads the accent or `sinceMove` is not redrawn for them. Every input added after scene version 1, `seed` included, is shadowed by a scene variable of the same name, so a scene written before an input existed keeps its own value. `seed` is a random 0–1 value each panel chooses when its scene starts and keeps until the scene changes. Two panels start a scene together, so without it both screens show the same moment. Afterglow adds `3600*seed` to its time. A scene that declares its own `seed` variable keeps it instead. `pi` is constant. Variables are evaluated in declaration order and can refer to preceding variables. Repeat-local variables are reevaluated for each instance.
 
 Path samples reevaluate variables that depend directly or indirectly on `u`, including keyframe tracks, then restore the instance's values. Runtime errors in scene-wide variables or `frameRate` stop that scene and emit one diagnostic; layer errors disable only the failed layer.
 
@@ -474,7 +582,11 @@ python3 tools/themes/pack.py /path/to/my-theme --output /tmp/my-theme.zip
 
 App builds and language tests automatically generate Afterglow from `themes/afterglow/` into `app/build/generated/themeAssets/themes/afterglow.zip`. Both debug and release APKs include it as `assets/themes/afterglow.zip`. Keep the theme sources in Git; the generated archive stays in the ignored build directory.
 
-The tool validates asset references and produces reproducible ZIPs using only Python's standard library. JSON/asset checks happen before packaging; the native loader validates expressions and the target device compiles shaders. Archive reading retains the existing 8 MiB per-entry transport limit (4096 entries); these are separate from scene rendering choices.
+The tool validates asset references and produces reproducible ZIPs using only Python's standard library. It also checks the manifest against [the contract](#compatibility): unknown or misspelt tokens and slots, values out of range, renamed and retired names, unknown font faces, and manifest fields this Foldcade does not read. It finds `themes/contract.json` beside itself in a Foldcade checkout; outside one, copy the contract next to `theme.json` or pass `--contract`. `--strict` fails on anything the engine would report. JSON/asset checks happen before packaging; the native loader validates expressions and the target device compiles shaders.
+
+[`samples/themes`](../samples/themes) has two packs written the way a third-party pack is: Daylight, a light pack with its own colours, scales, an icon and a scene that reads `hour` and the accent, and Daylight Square, which extends it and squares every corner. Every build loads both and fails if Foldcade reports anything about them.
+
+To try a pack on a release build, copy the zip to the device and add it from **Settings › Look › Themes › Add a theme**, then choose **Restart to see changes**. The page shows each pack's report: every diagnostic below, with its source. Archive reading retains the existing 8 MiB per-entry transport limit (4096 entries); these are separate from scene rendering choices.
 
 Build a debug APK. `ThemePreviewActivity` is available only in debug builds and uses the production loader and renderer. With the debug package installed:
 

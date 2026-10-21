@@ -2,9 +2,15 @@
 """Validate references and reproducibly package a Foldcade resource theme. Python standard library only."""
 import argparse
 import json
+import math
 import re
+import sys
 from pathlib import Path, PurePosixPath
 import zipfile
+
+# Written by the engine's tests. A copy beside the theme, or --contract, works outside the repository.
+DEFAULT_CONTRACT = Path(__file__).resolve().parents[2] / "themes" / "contract.json"
+COLOR = re.compile(r"#[0-9A-Fa-f]{6}")
 
 APPLICATION_CODE_EXTENSIONS = {".java", ".kt", ".kts", ".class", ".dex", ".jar", ".so", ".apk", ".aar", ".dll", ".dylib", ".wasm", ".js", ".mjs", ".cjs", ".py"}
 
@@ -37,6 +43,11 @@ def assets(root: Path):
 
     for icon in manifest.get("icons", {}).values():
         add(icon["file"])
+    for face, path in manifest.get("fonts", {}).items():
+        if isinstance(path, str):
+            add(path)
+    if isinstance(manifest.get("preview"), str):
+        add(manifest["preview"])
 
     def add_scene(name, chain=()):
         if name in chain:
@@ -73,13 +84,103 @@ def assets(root: Path):
     return manifest, sorted(files)
 
 
+def number_problem(value, token):
+    """What is wrong with a number for this token's contract entry, or None."""
+    if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value):
+        return "expects a number"
+    if "min" in token and value < token["min"]:
+        return f"must be at least {token['min']}"
+    if "above" in token and value <= token["above"]:
+        return f"must be above {token['above']}"
+    if "max" in token and value > token["max"]:
+        return f"must be at most {token['max']}"
+    if "below" in token and value >= token["below"]:
+        return f"must be below {token['below']}"
+    if token.get("whole") and value != int(value):
+        return "must be a whole number"
+    return None
+
+
+def value_problem(value, token):
+    kind = token["kind"]
+    if kind == "color":
+        if value is None:
+            return None if token.get("nullable") else "expects a #RRGGBB colour"
+        return None if isinstance(value, str) and COLOR.fullmatch(value) else "expects a #RRGGBB colour"
+    if kind == "curve":
+        if not (isinstance(value, list) and len(value) == 4 and all(isinstance(v, (int, float)) and not isinstance(v, bool) for v in value)):
+            return "expects [x1, y1, x2, y2]"
+        return None if 0 <= value[0] <= 1 and 0 <= value[2] <= 1 else "x1 and x2 must be 0 to 1"
+    return number_problem(value, token)
+
+
+def check_contract(manifest, contract):
+    """Problems the engine would report while loading this manifest, by manifest path."""
+    problems = []
+    tokens, renamed, retired = contract["tokens"], contract["renamedTokens"], set(contract["retiredTokens"])
+    style = manifest.get("style", {})
+    if not isinstance(style, dict):
+        return ["style: expects an object"]
+    groups = {name.split(".")[0] for name in list(tokens) + list(renamed) + list(retired)}
+    for group, values in style.items():
+        if group not in groups or not isinstance(values, dict):
+            problems.append(f"style.{group}: unknown token group")
+            continue
+        for name, value in values.items():
+            token = f"{group}.{name}"
+            if token in renamed:
+                problems.append(f"style.{token}: renamed to {renamed[token]}; the old name still works")
+                token = renamed[token]
+            elif token in retired:
+                problems.append(f"style.{token}: retired, and does nothing")
+                continue
+            if token not in tokens:
+                problems.append(f"style.{token}: unknown token")
+                continue
+            problem = value_problem(value, tokens[token])
+            if problem:
+                problems.append(f"style.{token}: {problem}; Afterglow's value is used")
+    slots, closed = set(contract["slots"]), set(contract["closedSlotFamilies"])
+    renamed_slots, retired_slots = contract["renamedSlots"], set(contract["retiredSlots"])
+    for slot in manifest.get("icons", {}):
+        if slot in renamed_slots:
+            problems.append(f"icons.{slot}: renamed to {renamed_slots[slot]}; the old name still works")
+        elif slot in retired_slots:
+            problems.append(f"icons.{slot}: retired, and the host no longer draws it")
+        elif slot.split(".")[0] in closed and slot not in slots:
+            problems.append(f"icons.{slot}: unknown icon slot")
+    for face in manifest.get("fonts", {}):
+        if face not in contract["fonts"]:
+            problems.append(f"fonts.{face}: unknown font face; use one of {', '.join(contract['fonts'])}")
+    for key in manifest:
+        if key not in contract["manifest"] and key != "$schema":
+            problems.append(f"{key}: not a manifest field this Foldcade reads")
+    host = manifest.get("host", 1)
+    if isinstance(host, int) and host > contract["host"]:
+        problems.append(f"host: {host} needs a newer Foldcade than this contract ({contract['host']})")
+    return problems
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("directory", type=Path)
     parser.add_argument("--output", type=Path)
+    parser.add_argument("--contract", type=Path, help="themes/contract.json from the Foldcade the pack is for")
+    parser.add_argument("--strict", action="store_true", help="fail on anything the engine would report")
     args = parser.parse_args()
     try:
         manifest, files = assets(args.directory)
+        contract_path = args.contract or (args.directory / "contract.json" if (args.directory / "contract.json").is_file() else DEFAULT_CONTRACT)
+        if contract_path.is_file():
+            problems = check_contract(manifest, json.loads(contract_path.read_text()))
+            for problem in problems:
+                print(f"theme.json:{problem}", file=sys.stderr)
+            if problems and args.strict:
+                raise ValueError(f"{len(problems)} problem(s) against {contract_path}")
+        elif args.strict:
+            raise ValueError(f"No contract at {contract_path}; pass --contract")
+        else:
+            print(f"No contract at {contract_path}; style tokens and icon slots were not checked.", file=sys.stderr)
         if args.output:
             args.output.parent.mkdir(parents=True, exist_ok=True)
             with zipfile.ZipFile(args.output, "w") as archive:

@@ -181,6 +181,9 @@ import app.foldcade.language.Copy
 import app.foldcade.language.HomeGrid
 import app.foldcade.language.FOLDER_ICONS
 import app.foldcade.language.CollectionLook
+import app.foldcade.language.MARK_CONSOLE
+import app.foldcade.language.SCENE_SINCE_MOVE_MAX
+import app.foldcade.language.SceneLive
 import app.foldcade.language.CollectionTint
 import app.foldcade.language.IconPick
 import app.foldcade.language.homeGridLabel
@@ -341,7 +344,7 @@ fun PanelHost(activity: FoldcadeHomeActivity, displays: Displays) {
                     val rewind = remember { androidx.compose.animation.core.Animatable(1f) }
                     LaunchedEffect(model.rewind) {
                         if (model.rewind == 0) return@LaunchedEffect
-                        rewind.snapTo(0.94f)
+                        rewind.snapTo(paint.theme.style.motion.rewindFrom)
                         rewind.animateTo(1f, motion.playful(motion.durationTravel, scale))
                     }
                     Box(Modifier.fillMaxSize().graphicsLayer { scaleX = rewind.value; scaleY = rewind.value }) {
@@ -369,6 +372,60 @@ fun PanelHost(activity: FoldcadeHomeActivity, displays: Displays) {
             }
         }
     }
+}
+
+/**
+ * What the shell tells a theme's scene each time it draws: the focused item's accent, eased as
+ * focus moves, the time of day, the battery, and how long since the cursor last moved.
+ */
+@Composable
+private fun sceneLive(app: FoldcadeApp, scene: app.foldcade.language.ThemeScene?, scale: Float): () -> SceneLive {
+    val paint = LocalFoldTheme.current
+    val motion = paint.theme.motion
+    val accent = sceneAccent(app, paint)
+    val spec = motion.arrive(motion.durationFocus, scale)
+    val red = motionState(accent.red, spec)
+    val green = motionState(accent.green, spec)
+    val blue = motionState(accent.blue, spec)
+    val status = app.deviceStatus.status.collectAsStateWithLifecycle()
+    val model = app.shell.model
+    val moves = remember { intArrayOf(0) }
+    val moved = remember { mutableLongStateOf(Long.MIN_VALUE) }
+    // The first focus is where the grid opened, not a move.
+    LaunchedEffect(model.focus, model.panel?.index) { if (moves[0]++ > 0) moved.longValue = SystemClock.elapsedRealtime() }
+    // Only what the scene reads is read while it draws, so a scene that ignores the accent is not
+    // drawn again each time focus moves.
+    val readsAccent = scene != null && listOf("accentR", "accentG", "accentB").any(scene::reads)
+    val readsMove = scene?.reads("sinceMove") == true
+    return remember(red, green, blue, status, moved, readsAccent, readsMove) {
+        {
+            val now = java.time.LocalTime.now()
+            // Read only by a scene that uses it, so moving the cursor redraws no other scene.
+            val since = if (!readsMove) null else moved.longValue.takeIf { it != Long.MIN_VALUE }?.let { (SystemClock.elapsedRealtime() - it) / 1000f }
+            SceneLive(
+                accentR = if (readsAccent) red.value else 1f,
+                accentG = if (readsAccent) green.value else 1f,
+                accentB = if (readsAccent) blue.value else 1f,
+                hour = now.hour + now.minute / 60f + now.second / 3600f,
+                battery = status.value.batteryPercent.coerceIn(0, 100) / 100f,
+                charging = status.value.charging,
+                sinceMove = (since ?: SCENE_SINCE_MOVE_MAX).coerceIn(0f, SCENE_SINCE_MOVE_MAX),
+            )
+        }
+    }
+}
+
+/** The light behind the focused item: its app's or mark's accent, a collection's colour, else `focus`. */
+private fun sceneAccent(app: FoldcadeApp, paint: FoldPaint): Color {
+    val (mark, packageName) = when (val subject = app.shell.focusedHero()) {
+        is app.foldcade.language.HeroSubject.Item -> subject.item.mark to subject.item.packageName
+        is app.foldcade.language.HeroSubject.Folder -> subject.folder.mark to null
+        null -> null to null
+    }
+    packageName?.let { paint.icons["app.$it"]?.firstOrNull()?.accent }?.let { return it }
+    CollectionLook.parse(mark)?.let { return paint.theme.style.collections.color(it.tint) }
+    mark?.let { (paint.icons["mark.$it"] ?: paint.icons["mark.$MARK_CONSOLE"])?.firstOrNull()?.accent }?.let { return it }
+    return paint.theme.focus
 }
 
 @Composable
@@ -418,6 +475,7 @@ private fun PanelBody(
             running = running,
             // Opaque game art or Settings over it, or the menu's blur, leaves nothing to watch move.
             held = cover.covered || settingsOver || LocalUnderMenu.current || centerHere,
+            live = sceneLive(app, backdrop, scale),
         )
     }
     if (panel == null || screen == null) return
@@ -711,28 +769,18 @@ private fun CommandCenterScreen(
                 when (subject) {
                     is CenterSubject.App -> CenterArt(app, subject.running)
                     is CenterSubject.Page -> when {
-                        subject.icon != null -> Image(
-                            painter = themeIconPainter(subject.icon),
-                            contentDescription = null,
-                            modifier = Modifier.fillMaxSize(0.62f),
-                            contentScale = ContentScale.Fit,
-                        )
+                        subject.icon != null -> InkIcon(subject.icon, Modifier.fillMaxSize(0.62f))
                         subject.mark != null -> MarkIcon(subject.mark, theme.style.hero.markScale)
                     }
                 }
             }
             Column(verticalArrangement = Arrangement.spacedBy(px(8f))) {
-                BasicText(text = status.time, style = text(theme.onBackground, LocalFoldTheme.current.theme.style.type.clock, theme), maxLines = 1)
+                BasicText(text = status.time, style = text(theme.onBackground, LocalFoldTheme.current.theme.style.type.clock, theme, display = true), maxLines = 1)
                 Row(
                     horizontalArrangement = Arrangement.spacedBy(px(10f)),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    Image(
-                        painter = themeIconPainter(batteryStatusIcon(status.batteryPercent, status.charging)),
-                        contentDescription = null,
-                        modifier = Modifier.size(px(54f), px(36f)),
-                        contentScale = ContentScale.Fit,
-                    )
+                    InkIcon(batteryStatusIcon(status.batteryPercent, status.charging), Modifier.size(px(54f), px(36f)))
                     BasicText(
                         text = listOf("${status.batteryPercent}%", status.date).filter { it.isNotEmpty() }.joinToString(" · "),
                         style = text(theme.muted, LocalFoldTheme.current.theme.style.type.heroMeta, theme),
@@ -1091,8 +1139,8 @@ private fun Hero(app: FoldcadeApp, screen: HostScreen, scale: Float, onEffect: (
                                     facts = found?.let(app.shell::findFacts)?.joinToString(" · ").orEmpty(),
                                     order = if (session.onResults) session.index else 0,
                                 ),
-                                fieldStyle = text(theme.onBackground, design.type.heroTitle, theme),
-                                titleStyle = text(theme.onBackground, design.type.dialogTitle, theme),
+                                fieldStyle = text(theme.onBackground, design.type.heroTitle, theme, display = true),
+                                titleStyle = text(theme.onBackground, design.type.dialogTitle, theme, display = true),
                                 factStyle = text(theme.muted, design.type.heroMeta, theme),
                                 chipStyle = text(theme.muted, design.type.hint, theme),
                                 background = if (sceneArt) theme.surface.copy(alpha = design.hero.cardAlpha) else theme.surface,
@@ -1104,7 +1152,7 @@ private fun Hero(app: FoldcadeApp, screen: HostScreen, scale: Float, onEffect: (
                         typing.shown?.let { shown ->
                             TypingField(
                                 typing = shown,
-                                style = text(theme.onBackground, design.type.heroTitle * TYPED_TITLE, theme),
+                                style = text(theme.onBackground, design.type.heroTitle * TYPED_TITLE, theme, display = true),
                                 background = if (sceneArt) theme.surface.copy(alpha = design.hero.cardAlpha) else theme.surface,
                                 scale = scale,
                                 modifier = Modifier.width(cardMax).rise { typing.progress.value },
@@ -1310,7 +1358,7 @@ private fun FolderIconPicker(app: FoldcadeApp, pick: IconPick, name: String, top
             }
             BasicText(
                 text = name,
-                style = text(theme.onBackground, design.type.dialogTitle, theme),
+                style = text(theme.onBackground, design.type.dialogTitle, theme, display = true),
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
@@ -1398,14 +1446,14 @@ private fun IconChoices(pick: IconPick, scale: Float, modifier: Modifier) {
                                 )
                                 // The colour in use keeps a light rim, so it shows while the glyphs are focused.
                                 if (chosen) {
-                                    val rim = half - 2.5f
+                                    val rim = half - folder.swatchRimInsetPx
                                     val rimCorner = (rim * 2f * design.shape.round).coerceAtLeast(0f)
                                     drawRoundRect(
                                         design.colors.shine,
                                         topLeft = Offset(center.x - rim, center.y - rim),
                                         size = Size(rim * 2f, rim * 2f),
                                         cornerRadius = CornerRadius(rimCorner, rimCorner),
-                                        style = Stroke(width = 3f),
+                                        style = Stroke(width = folder.swatchRimPx),
                                         alpha = folder.swatchRimAlpha,
                                     )
                                 }
@@ -1479,7 +1527,7 @@ private fun HeroLabel(
     val theme = foldTheme()
     val copy = heroCopy(shown)
     val dateStyle = rememberDateStyle(app)
-    val centred = text(theme.onBackground, LocalFoldTheme.current.theme.style.type.heroTitle, theme).copy(textAlign = TextAlign.Center)
+    val centred = text(theme.onBackground, LocalFoldTheme.current.theme.style.type.heroTitle, theme, display = true).copy(textAlign = TextAlign.Center)
     Column(
         Modifier
             .widthIn(min = px(360f), max = maxWidth)
@@ -1817,7 +1865,7 @@ private fun HeroArt(
             else -> BasicText(
                 text = monogram(title),
                 modifier = Modifier.scale(4f),
-                style = text(theme.onBackground, LocalFoldTheme.current.theme.style.type.heroTitle, theme),
+                style = text(theme.onBackground, LocalFoldTheme.current.theme.style.type.heroTitle, theme, display = true),
                 maxLines = 1,
                 overflow = TextOverflow.Clip,
             )
@@ -2192,7 +2240,7 @@ private fun Picker(
                         onTap = shell::tapTyping,
                         modifier = Modifier.rise { typing.progress.value },
                         // With no top screen beside it, the text shows over the keys.
-                        fieldStyle = if (iconsOnly) null else text(theme.onBackground, LocalFoldTheme.current.theme.style.type.heroTitle, theme),
+                        fieldStyle = if (iconsOnly) null else text(theme.onBackground, LocalFoldTheme.current.theme.style.type.heroTitle, theme, display = true),
                     )
                 }
                 finding.shown?.let { session ->
@@ -2206,7 +2254,7 @@ private fun Picker(
                         titleBlock = titleBlock,
                         // With no top screen beside it, the query and filters show over the results, a
                         // size down so the keys keep their room.
-                        fieldStyle = if (iconsOnly) null else text(theme.onBackground, design.type.dialogTitle, theme),
+                        fieldStyle = if (iconsOnly) null else text(theme.onBackground, design.type.dialogTitle, theme, display = true),
                         chipStyle = text(theme.muted, design.type.hint, theme),
                         emptyStyle = text(theme.muted, design.type.dialogBody, theme),
                         onTapKey = { at -> onEffect(shell.tapFind(at)) },
@@ -2419,7 +2467,7 @@ private fun NoticeRow(notice: FoldNotice, focused: Boolean, modifier: Modifier =
                 text = notice.title,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
-                style = text(if (focused) theme.onBackground else theme.onBackground.copy(alpha = 0.86f), LocalFoldTheme.current.theme.style.type.sideRow, theme),
+                style = text(if (focused) theme.onBackground else theme.onBackground.copy(alpha = LocalFoldTheme.current.theme.style.menu.noticeRestAlpha), LocalFoldTheme.current.theme.style.type.sideRow, theme),
             )
             if (notice.body.isNotEmpty()) {
                 BasicText(
@@ -2499,7 +2547,7 @@ private fun QuickTiles(
                                 // A radio that is on fills its tile with the focus colours, as a switch's track lights.
                                 if (on.value > 0f) {
                                     drawRoundRect(
-                                        brush = Brush.linearGradient(listOf(ring.start, ring.end)),
+                                        brush = Brush.linearGradient(listOf(ring.onStart, ring.onEnd)),
                                         alpha = (menu.quickTileOnAlpha * on.value).coerceIn(0f, 1f),
                                         cornerRadius = CornerRadius(radius, radius),
                                     )
@@ -2535,11 +2583,12 @@ private fun QuickTiles(
                         }
                     }
                     if (words != null) {
+                        val quickRest = LocalFoldTheme.current.theme.style.menu.quickLabelRestAlpha
                         BasicText(
                             text = words,
                             maxLines = 1,
                             style = text(theme.onBackground, LocalFoldTheme.current.theme.style.type.hint, theme),
-                            modifier = Modifier.graphicsLayer { alpha = 0.6f + 0.4f * lit.value },
+                            modifier = Modifier.graphicsLayer { alpha = quickRest + (1f - quickRest) * lit.value },
                         )
                     }
                     }
@@ -2587,8 +2636,8 @@ private fun StripBar(count: Int, first: Int, shown: Int, scale: Float) {
         Box(
             Modifier
                 .width(track)
-                .height(px(6f))
-                .background(theme.muted.copy(alpha = 0.45f), theme.style.shape.control()),
+                .height(px(theme.style.tile.stripPx))
+                .background(theme.muted.copy(alpha = theme.style.tile.stripAlpha), theme.style.shape.control()),
         ) {
             Box(
                 Modifier
@@ -2795,8 +2844,9 @@ private fun StripGrid(
         }
     }
     val folderPop = remember { Animatable(1f) }
+    val folderPopFrom = LocalFoldTheme.current.theme.style.motion.folderPopFrom
     LaunchedEffect(folderToken, scale) {
-        folderPop.snapTo(0.92f)
+        folderPop.snapTo(folderPopFrom)
         withContext(SteadyMenu) {
             folderPop.animateTo(1f, motion.arrive(motion.durationShort, scale))
         }
@@ -3267,9 +3317,9 @@ private fun HomeTarget(
                 val corner = size.height / 2f
                 drawRoundRect(color = theme.surface, cornerRadius = CornerRadius(corner, corner))
                 drawRoundRect(
-                    color = theme.focus.copy(alpha = 0.35f * (1f - glow.coerceIn(0f, 1f))),
+                    color = theme.focus.copy(alpha = theme.style.tile.homeTargetAlpha * (1f - glow.coerceIn(0f, 1f))),
                     cornerRadius = CornerRadius(corner, corner),
-                    style = Stroke(width = 3f),
+                    style = Stroke(width = theme.style.tile.homeTargetStrokePx),
                 )
                 if (glow > 0f) with(ring) { drawFocusRing(corner, pronounced = true, alpha = glow.coerceIn(0f, 1f)) }
             },
@@ -3490,6 +3540,7 @@ private fun CarriedTile(
                 onClick = { carry?.let { onTap(it.at) } },
             )
             // The ring hugs the drawn tile, which the cell scales to focus size itself.
+            val carriedFloor = LocalFoldTheme.current.theme.style.tile.carriedRingAlpha
             Box(
                 Modifier
                     .matchParentSize()
@@ -3503,7 +3554,7 @@ private fun CarriedTile(
                         ringPath.reset()
                         ringPath.addRoundRect(RoundRect(Rect(Offset.Zero, size), CornerRadius(cornerPx, cornerPx)))
                         clipPath(ringPath, ClipOp.Difference) {
-                            with(ring) { drawFocusRing(cornerPx, alpha = 0.4f + 0.6f * raised) }
+                            with(ring) { drawFocusRing(cornerPx, alpha = carriedFloor + (1f - carriedFloor) * raised) }
                         }
                     },
             )
@@ -3690,7 +3741,7 @@ private fun DownloadBar(fraction: Float, animatorScale: Float, modifier: Modifie
             .clip(theme.style.shape.control())
             .drawBehind {
                 drawRect(theme.onBackground.copy(alpha = tile.downloadTrackAlpha))
-                drawRect(color = theme.focus, size = Size(size.width * filled, size.height))
+                drawRect(color = theme.style.colors.progress ?: theme.focus, size = Size(size.width * filled, size.height))
             },
     )
 }
@@ -3967,6 +4018,7 @@ private fun Cell(
                             theme.onBackground,
                             LocalFoldTheme.current.theme.style.type.heroTitle,
                             theme,
+                            display = true,
                         ),
                         maxLines = 1,
                         overflow = TextOverflow.Clip,
@@ -4080,7 +4132,7 @@ private fun DialogCard(
                 .padding(px(design.metrics.dialogInsetPx)),
             verticalArrangement = Arrangement.spacedBy(px(12f)),
         ) {
-            BasicText(text = dialog.title, style = text(theme.onBackground, LocalFoldTheme.current.theme.style.type.dialogTitle, theme))
+            BasicText(text = dialog.title, style = text(theme.onBackground, LocalFoldTheme.current.theme.style.type.dialogTitle, theme, display = true))
             BasicText(text = dialog.body, style = text(theme.onBackground, LocalFoldTheme.current.theme.style.type.dialogBody, theme))
             val detail = dialog.detail
             if (!detail.isNullOrBlank()) {
@@ -4155,7 +4207,7 @@ private fun EmptyLibrary(
         verticalArrangement = Arrangement.Center,
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
-        BasicText(text = title, style = text(theme.onBackground, LocalFoldTheme.current.theme.style.type.dialogTitle, theme))
+        BasicText(text = title, style = text(theme.onBackground, LocalFoldTheme.current.theme.style.type.dialogTitle, theme, display = true))
         if (actions.isNotEmpty()) {
             Row(
                 modifier = Modifier.padding(top = px(16f)),
@@ -4197,7 +4249,7 @@ private fun EmptyCollection(
     ) {
         BasicText(
             text = name,
-            style = text(theme.onBackground, type.dialogTitle, theme).copy(textAlign = TextAlign.Center),
+            style = text(theme.onBackground, type.dialogTitle, theme, display = true).copy(textAlign = TextAlign.Center),
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
         )
@@ -4326,7 +4378,7 @@ private fun ConnectScreen(
                 !model.connectAnother && app.store.rommServerOrigin(app.shell.connectRommId) != null -> Copy.signInAgainTitle
                 else -> Copy.addRommServer
             },
-            style = text(theme.onBackground, LocalFoldTheme.current.theme.style.type.dialogTitle, theme),
+            style = text(theme.onBackground, LocalFoldTheme.current.theme.style.type.dialogTitle, theme, display = true),
         )
         if (!artKey) {
             BasicText(text = "Server", style = text(theme.muted, LocalFoldTheme.current.theme.style.type.hint, theme))
@@ -4440,10 +4492,12 @@ private fun text(
     color: Color,
     size: androidx.compose.ui.unit.TextUnit,
     theme: app.foldcade.language.Theme,
+    /** Titles, the clock and the typed name wear the pack's display face. */
+    display: Boolean = false,
 ): TextStyle = TextStyle(
     color = color,
     fontSize = size,
-    fontFamily = theme.font,
+    fontFamily = if (display) theme.displayFont else theme.font,
     fontWeight = theme.style.type.bodyWeight,
     textAlign = TextAlign.Start,
 )
@@ -4510,7 +4564,7 @@ private fun LetterOverlay(app: FoldcadeApp, scale: Float) {
                 .clip(RoundedCornerShape(theme.style.metrics.cardCornerDp.dp * 2))
                 .background(theme.surface.copy(alpha = theme.style.hero.pillAlpha))
                 .padding(horizontal = px(128f), vertical = px(64f)),
-            style = text(theme.onBackground, theme.style.type.heroTitle * 4, theme)
+            style = text(theme.onBackground, theme.style.type.heroTitle * 4, theme, display = true)
                 .copy(fontWeight = theme.style.type.strongWeight, textAlign = TextAlign.Center),
         )
     }
@@ -4524,12 +4578,12 @@ private fun recoveryRowFeedback(model: app.foldcade.language.PickerModel, row: a
     val shake = remember { androidx.compose.animation.core.Animatable(0f) }
     LaunchedEffect(model.deleteShake) {
         if (model.deleteShake == 0) return@LaunchedEffect
-        shake.snapTo(-8f)
-        shake.animateTo(8f, motion.playful(motion.durationShort, scale))
+        shake.snapTo(-theme.style.motion.shakePx)
+        shake.animateTo(theme.style.motion.shakePx, motion.playful(motion.durationShort, scale))
         shake.animateTo(0f, motion.playful(motion.durationShort, scale))
     }
     return Modifier.graphicsLayer { translationX = shake.value }.drawBehind {
-        if (model.deleteHold?.row == row) drawRoundRect(theme.focus.copy(alpha = 0.3f),
+        if (model.deleteHold?.row == row) drawRoundRect(theme.focus.copy(alpha = theme.style.menu.holdAlpha),
             size = androidx.compose.ui.geometry.Size(size.width * motion.holdFill(model.deleteProgress), size.height),
             cornerRadius = androidx.compose.ui.geometry.CornerRadius(theme.style.shape.highlightCornerDp.dp.toPx()))
     }
@@ -4538,13 +4592,14 @@ private fun recoveryRowFeedback(model: app.foldcade.language.PickerModel, row: a
 @Composable
 private fun selectionFeedback(refusals: Int): Modifier {
     val motion = foldTheme().motion
+    val shakePx = foldTheme().style.motion.shakePx
     val scale = motion.animatorScale(LocalContext.current.contentResolver)
     val shake = remember { Animatable(0f) }
     LaunchedEffect(refusals) {
         if (refusals == 0) return@LaunchedEffect
         withContext(SteadyMenu) {
-            shake.snapTo(-8f)
-            shake.animateTo(8f, motion.playful(motion.durationShort, scale))
+            shake.snapTo(-shakePx)
+            shake.animateTo(shakePx, motion.playful(motion.durationShort, scale))
             shake.animateTo(0f, motion.playful(motion.durationShort, scale))
         }
     }

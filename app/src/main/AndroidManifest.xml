@@ -146,6 +146,22 @@
             android:exported="false"
             android:launchMode="standard" />
 
+        <activity
+            android:name=".ThemesActivity"
+            android:exported="false"
+            android:launchMode="standard" />
+
+        <!-- Brings Home back after Foldcade's process leaves, so new theme packs load. Its own
+             process, so it outlives the one it restarts. It draws nothing. -->
+        <activity
+            android:name=".RestartActivity"
+            android:excludeFromRecents="true"
+            android:exported="false"
+            android:noHistory="true"
+            android:process=":restart"
+            android:taskAffinity=""
+            android:theme="@android:style/Theme.Translucent.NoTitleBar" />
+
         <!-- Players open RomM downloads through this provider. Not exported: a player gets
              one URI at a time through FLAG_GRANT_READ_URI_PERMISSION on the launch intent. -->
         <provider

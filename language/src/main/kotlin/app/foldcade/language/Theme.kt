@@ -19,6 +19,8 @@ data class Theme(
     val font: FontFamily,
     val style: ThemeStyle = ThemeStyle(),
     val motion: MotionStyle = MotionStyle(style),
+    /** The hero's title, dialog titles, the clock and the save-conflict game. [font] unless the pack has a display face. */
+    val displayFont: FontFamily = font,
 )
 
 /**

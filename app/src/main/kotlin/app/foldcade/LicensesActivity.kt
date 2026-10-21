@@ -85,8 +85,9 @@ private fun LicensesScreen(theme: Theme, notice: String, scroll: ScrollState) {
             text = LicenseCopy.title,
             style = TextStyle(
                 color = theme.onBackground,
-                fontFamily = theme.font,
+                fontFamily = theme.displayFont,
                 fontSize = theme.style.type.dialogTitle,
+                fontWeight = theme.style.type.bodyWeight,
             ),
         )
         Column(
@@ -101,6 +102,7 @@ private fun LicensesScreen(theme: Theme, notice: String, scroll: ScrollState) {
                     color = theme.onBackground,
                     fontFamily = theme.font,
                     fontSize = theme.style.type.dialogBody,
+                    fontWeight = theme.style.type.bodyWeight,
                 ),
             )
         }
@@ -111,6 +113,7 @@ private fun LicensesScreen(theme: Theme, notice: String, scroll: ScrollState) {
                 color = theme.muted,
                 fontFamily = theme.font,
                 fontSize = theme.style.type.hint,
+                fontWeight = theme.style.type.bodyWeight,
             ),
         )
     }
