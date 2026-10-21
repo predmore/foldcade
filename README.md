@@ -1,10 +1,12 @@
 # Foldcade
 
-**A calm, two-screen home for your AYN Thor.**
+**A calm, two-screen home for your AYN Thor, built around your RomM library.**
+
+Connect your [RomM](https://romm.app) server once, and every game on it is on your Thor: on Home, under its own art, one press from playing. Your saves go back to the server when you stop, so the library and your progress are the same on every Thor you own.
 
 Open the clamshell and your collection is waiting: browse on the bottom screen while the selected game's art fills the top. Pick a game, and Foldcade steps aside.
 
-Free and open source, with no ads, store, feeds, or required Foldcade account.
+Free and open source, with no ads, store, feeds, or required Foldcade account. RomM is optional: local folders, Android games, Steam, and Moonlight work on their own.
 
 <!--
 Hero clip and pair. Captured on a real Thor over adb, not an emulator.
@@ -18,9 +20,37 @@ Keep the hero-top.png and hero-bottom.png paths.
 
 <p align="center"><em>Captured on a real Thor. Move on the bottom screen, and the top screen becomes the game.</em></p>
 
-[Get Foldcade](#get-foldcade) · [Add your games](docs/integrations/README.md)
+[Get Foldcade](#get-foldcade) · [Connect RomM](docs/integrations/romm.md) · [Add your games](docs/integrations/README.md)
 
 ## What you get
+
+### Your RomM library, on your Thor
+
+Your games live on your own server, and Foldcade makes that server the Thor's library.
+
+- **Sign in with a code.** Type your server's address, approve the code on your phone, and you are in. Foldcade keeps a token, never your password.
+- **The whole catalog, nothing to copy first.** Every game on the server appears in Foldcade, filed by system, with RomM's covers. Press **A**, and Foldcade downloads the game, checks it against RomM, and starts it. The tile and the top screen show the progress.
+- **Downloads you can trust.** Every file must match the size and checksum RomM lists before it plays. A download that stops resumes where it left off. Downloaded games play offline, and **Y › Delete download** gives the space back without touching your saves.
+- **Saves that come with you.** With RomM 5.4 or newer, Foldcade sends your melonDS and RetroArch saves to the server when you return to Home and fetches the newest before you play. Stop on one Thor and keep going on another. Offline play waits for the next sync.
+- **Saves are never lost to a sync.** Before a sync replaces a save on your Thor, Foldcade sets the old one aside. If two devices both saved, it asks which one to play and keeps both.
+- **Already have the files?** A game in a folder on your SD card that your server also has is one tile. It opens the copy on your Thor without downloading, and its saves still sync through RomM.
+- **Switch updates and DLC, handled.** When RomM files a game's update and DLC beside it, Foldcade downloads them with the game, and [Eden](docs/integrations/emulators.md) loads them at start. There is nothing to install in Eden.
+- **Achievements on the other screen.** During a single-screen RomM game, the other screen shows your RetroAchievements progress for it.
+- **One home, any number of servers.** Add a server at home and a friend's; each keeps its own sign-in, and their games share one Home.
+
+RomM games sit beside everything else, in the same folders, collections, and Find. Read the [RomM guide](docs/integrations/romm.md) to connect and set up save sync.
+
+### Built for the Thor
+
+Foldcade is made for one device, so it uses everything the Thor has.
+
+- **Two screens, one home.** Browse on the bottom screen while the top shows the selected game large. Games that need both screens, such as DS and 3DS, get both.
+- **The other screen stays useful.** During a single-screen game, the other screen shows a dim command center with the time, battery, game art, and a RomM game's achievements. Press a button to wake it or open a second app there.
+- **Pick up where you left off.** Press Home during a game and its tile says **Paused**. **A** resumes the game already running instead of starting it a second time.
+- **Close the lid, stop the clock.** Play time stops counting while the clamshell is closed.
+- **A screen with depth.** The top screen's art slides slightly when you tilt the Thor and drifts back to rest. Motion Off keeps it still.
+- **Your Thor, one press away.** **R1** opens Wi-Fi, Bluetooth, battery, brightness for both screens, and notifications.
+- **Its apps, drawn to match.** The Thor's own apps, common apps, and emulators appear as Afterglow icons on the grid.
 
 ### Every game looks like itself
 
@@ -40,8 +70,8 @@ Art comes from RomM, Steam, libretro, and an optional SteamGridDB key. With a ke
 
 Combine any of these sources in one home. Systems and sources get their own folders; emulators and streaming apps live in **Emulators**.
 
+- **[RomM](docs/integrations/romm.md):** Your library from one or more RomM servers, with saves that sync.
 - **[Local games](docs/integrations/local-games.md):** ROMs on internal storage or an SD card.
-- **[RomM](docs/integrations/romm.md):** Collections from one or more home servers.
 - **[Android](docs/integrations/android.md):** Installed games and apps.
 - **[GameNative](docs/integrations/gamenative.md):** Steam games installed on your Thor.
 - **[DroidDeck](docs/integrations/droiddeck.md):** Games running in its on-device Steam client.
@@ -92,14 +122,6 @@ Installed apps live in the Android Games and Android Apps folders on Home, with 
 
 Press **Select** on any grid and start typing on the controller keyboard. Results line up above the keys as you type, with the best match's art on the top screen and where it lives on Home under its name. A few letters are enough: "ze" finds Zelda, "oot" finds Ocarina of Time, and one wrong letter is forgiven. With nothing typed, Find lists what you played last. **L2 / R2** filter to games, apps, collections, hidden items, recent play, or one system. Hidden includes games, apps and emulators, and removed folders. Press **Up** or **Start** to reach the results, then **A** or **X** to play, or **Y** for the game's menu, where **Show on Home** takes you to its tile, opening its folder or collection on the way. **Show on Home** is in All's Y menu too. Hidden results offer **Show** on the Y chord to restore their saved places. **Hide** from Find uses the same Undo window as Home. **B** clears what you typed, then closes Find.
 
-### The other screen stays useful
-
-During a single-screen game, the other display shows a dim command center with the time, battery, game art, and RetroAchievements progress for RomM games. Press a button to wake it or open a second app there.
-
-### Your saves follow you
-
-With RomM 5.4 or newer and a [supported save setup](docs/integrations/romm.md#save-sync), Foldcade syncs saves with your server. Offline changes wait for a later sync. If copies conflict, you choose which to play and both are kept. Tile badges show download and sync progress.
-
 ### See where the hours went
 
 Track how long you played and when, see your week in L1, and sort All by **Recent** to return to a game. **Library** sorts All A–Z; **Recent** puts the most recently played games first, followed by unplayed games A–Z. In Recent order, L2 / R2 move four columns at a time. **Settings › Library › Play time › Everywhere** also counts sessions started outside Foldcade.
@@ -138,6 +160,15 @@ No. Foldcade organizes and opens the games you already have.
 
 **Will it replace my Android home screen?**
 Only if you want it to. You can open Foldcade like any other app, or choose **Set as Home** in Settings › System so it is the first thing you see. You can switch back any time.
+
+**Do I need RomM?**
+No. Folders on your Thor or SD card, Android games, GameNative, DroidDeck, and Moonlight all work without a server. RomM is what lets the same library and saves follow you to every Thor.
+
+**Which RomM version do I need?**
+Any RomM 5.x server to browse, download, and play. Save sync needs 5.4.0 or newer.
+
+**Which saves sync?**
+melonDS saves and RetroArch battery saves, for every system RetroArch plays. Other emulators keep their saves on the Thor. Save states are not synced. See [save sync](docs/integrations/romm.md#save-sync) for setup.
 
 **Does Foldcade keep my password?**
 No. RomM sign-in uses a token, and Foldcade does not store your password.
