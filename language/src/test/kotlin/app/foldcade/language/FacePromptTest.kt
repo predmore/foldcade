@@ -65,8 +65,13 @@ class FacePromptTest {
         assertEquals(KeyEvent.KEYCODE_BUTTON_X, map.confirmKey)
         assertEquals(KeyEvent.KEYCODE_BUTTON_Y, map.backKey)
         assertEquals(Meaning.Activate, meaningOf(KeyEvent.KEYCODE_BUTTON_X, faces = map))
-        assertNull(meaningOf(KeyEvent.KEYCODE_BUTTON_A, faces = map))
+        assertEquals(Meaning.ActivateBottom, meaningOf(KeyEvent.KEYCODE_BUTTON_A, faces = map))
+        assertEquals(Meaning.Options, meaningOf(KeyEvent.KEYCODE_BUTTON_B, faces = map))
         assertEquals(Meaning.Back, meaningOf(KeyEvent.KEYCODE_BUTTON_Y, faces = map))
+        assertEquals(
+            listOf(PromptKey.FaceX, PromptKey.FaceA, PromptKey.FaceB),
+            gridHints(null, HomeKeys.Idle, map, screens = true, options = true).map { it.key },
+        )
         assertEquals(FaceSet.X, map.set)
         assertEquals("ic_btn_face_diamond_x_x", faceArt(FaceLetter.X, map, filled = false).diamond)
         assertEquals("ic_btn_face_diamond_x_x_filled", faceArt(FaceLetter.X, map, filled = true).diamond)

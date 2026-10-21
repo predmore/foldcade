@@ -5,7 +5,8 @@ package app.foldcade.language
  * without walking to it: L1 then Start is Settings, Y then Y is Move. The second
  * key means the same thing in every menu: Start is settings, Select is a view
  * (Play activity, or Show on Home for a game Find or All found),
- * Y moves or edits, and X takes away. A confirms the focused row and B goes back,
+ * The options button moves or edits, and the bottom button takes away. Those stay on
+ * Y and X until calibration takes them. A confirms the focused row and B goes back,
  * so neither is ever a chord. Each row shows its key on its right.
  *
  * A row lives in one menu, so its chord is its own. R1's notices keep Y and X for
@@ -30,12 +31,12 @@ fun chords(rows: List<Row>): List<Meaning?> {
 fun chordIndex(rows: List<Row>, meaning: Meaning): Int? =
     chords(rows).indexOf(meaning).takeIf { it >= 0 }
 
-/** The glyph for a chord's key. */
-fun chordKey(meaning: Meaning): PromptKey? = when (meaning) {
+/** The glyph for a chord's key. Bottom and options follow [actionFaces] after calibration. */
+fun chordKey(meaning: Meaning, faces: FaceMap = FaceMap.standard()): PromptKey? = when (meaning) {
     Meaning.Menu -> PromptKey.Start
     Meaning.View -> PromptKey.Select
-    Meaning.Options -> PromptKey.FaceY
-    Meaning.ActivateBottom -> PromptKey.FaceX
+    Meaning.Options -> actionFaces(faces).optionsGlyph
+    Meaning.ActivateBottom -> actionFaces(faces).bottomGlyph
     else -> null
 }
 
@@ -43,4 +44,5 @@ fun chordKey(meaning: Meaning): PromptKey? = when (meaning) {
  * The key each row shows on its right, or null. Only the key to press now: the menu
  * is already open, so the key that opened it would only read as a second step.
  */
-fun rowKeys(rows: List<Row>): List<PromptKey?> = chords(rows).map { it?.let(::chordKey) }
+fun rowKeys(rows: List<Row>, faces: FaceMap = FaceMap.standard()): List<PromptKey?> =
+    chords(rows).map { it?.let { meaning -> chordKey(meaning, faces) } }
