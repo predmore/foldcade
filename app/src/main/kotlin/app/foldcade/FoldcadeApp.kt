@@ -143,6 +143,9 @@ class FoldcadeApp : Application() {
     /** The packs in files/themes, and the trials that keep a crashing one from staying. */
     internal val themeInstalls: ThemeInstalls by lazy { ThemeInstalls(filesDir) }
     private var themeTrialClock: Job? = null
+    private val themeTrialScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
+    /** When Home's shown time was last counted towards the trials. Main thread. */
+    private var themeTrialMark = 0L
     private var bundledThemeIds: Set<String> = setOf(FALLBACK_THEME_ID)
 
     /**
@@ -422,7 +425,7 @@ class FoldcadeApp : Application() {
         } catch (error: Exception) { Log.w("FoldcadeTheme", "Theme trials skipped", error); emptyList() }
         val manifests = mutableMapOf<String, ThemeFile>()
         themePacks = PackagedTheme.loadAll(this) { archive, manifest -> manifests[archive] = manifest }
-        bundledThemeIds = themePacks.map { it.resources.id }.toSet() - manifests.values.map { it.id }.toSet()
+        bundledThemeIds = setOf(FALLBACK_THEME_ID) + themePacks.filter { it.archive == null }.map { it.resources.id }
         packaged = themePacks.firstOrNull { it.resources.id == FALLBACK_THEME_ID }
         val names = listOf(Copy.builtIn) + themePacks.map { it.name }
         val ids = listOf("builtin") + themePacks.map { it.resources.id }
@@ -1300,31 +1303,44 @@ class FoldcadeApp : Application() {
         noteThemeTrialShown(shown)
     }
 
-    /** While Home is shown, the packs in use on trial count the time towards ending their trial. */
+    /**
+     * While Home is shown, the packs in use on trial count the time towards ending their trial,
+     * every tick and the part of one when Home is covered. Main thread.
+     */
     private fun noteThemeTrialShown(shown: Boolean) {
         if (shown == (themeTrialClock?.isActive == true)) return
         themeTrialClock?.cancel()
-        themeTrialClock = if (!shown) null else scope.launch {
+        themeTrialClock = null
+        if (!shown) {
+            creditThemeTrial()
+            return
+        }
+        if (themeInstalls.ledger.themes.none { it.trial != null }) return
+        themeTrialMark = SystemClock.elapsedRealtime()
+        saveThemeTrial(themeArchivesInUse(), 0)
+        themeTrialClock = themeTrialScope.launch {
             while (themeInstalls.ledger.themes.any { it.trial != null }) {
-                noteThemeArchivesInUse()
                 delay(THEME_TRIAL_TICK_MILLIS)
-                if (noteThemeArchivesInUse()) {
-                    try { themeInstalls.shown(THEME_TRIAL_TICK_MILLIS) }
-                    catch (error: Exception) { Log.w("FoldcadeTheme", "Theme trial not saved", error) }
-                }
+                creditThemeTrial()
             }
         }
     }
 
-    /** Writes down the archives in use now. False when that could not be saved. */
-    private suspend fun noteThemeArchivesInUse(): Boolean = try {
-        themeInstalls.using(withContext(Dispatchers.Main.immediate) { themeArchivesInUse() })
-        true
-    } catch (cancelled: CancellationException) {
-        throw cancelled
-    } catch (error: Exception) {
-        Log.w("FoldcadeTheme", "Theme trial not saved", error)
-        false
+    /** Counts the time since the last credit towards the trials of the packs in use. Main thread. */
+    private fun creditThemeTrial() {
+        val now = SystemClock.elapsedRealtime()
+        val millis = (now - themeTrialMark).coerceAtLeast(0)
+        themeTrialMark = now
+        saveThemeTrial(themeArchivesInUse(), millis)
+    }
+
+    private fun saveThemeTrial(inUse: Set<String>, millis: Long) {
+        scope.launch {
+            try {
+                themeInstalls.using(inUse)
+                if (millis > 0) themeInstalls.shown(millis)
+            } catch (error: Exception) { Log.w("FoldcadeTheme", "Theme trial not saved", error) }
+        }
     }
 
     /**
