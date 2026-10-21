@@ -1,9 +1,12 @@
 package app.foldcade
 
 import app.foldcade.language.ArtChoices
+import app.foldcade.language.ThemeFile
+import app.foldcade.language.ThemeProcessExit
 import app.foldcade.language.ArtMatch
 import app.foldcade.language.ArtKind
 import android.app.ActivityManager
+import android.app.ApplicationExitInfo
 import android.app.Application
 import android.content.BroadcastReceiver
 import android.content.Context
@@ -86,6 +89,7 @@ import app.foldcade.language.FALLBACK_THEME_ID
 import app.foldcade.music.HomeMusic
 import app.foldcade.ui.FoldPaint
 import java.io.File
+import java.io.InputStream
 import java.nio.file.Path
 import java.util.concurrent.atomic.AtomicInteger
 import kotlin.coroutines.cancellation.CancellationException
@@ -135,6 +139,18 @@ class FoldcadeApp : Application() {
         private set
     var packaged: PackagedTheme? = null
         private set
+
+    /** The packs in files/themes, and the trials that keep a crashing one from staying. */
+    internal val themeInstalls: ThemeInstalls by lazy { ThemeInstalls(filesDir) }
+    private var themeTrialClock: Job? = null
+    private var bundledThemeIds: Set<String> = setOf(FALLBACK_THEME_ID)
+
+    /**
+     * Installs a downloaded pack, on trial from the next start. This is the theme updater's way in;
+     * call it off the main thread.
+     */
+    internal fun installTheme(input: InputStream): ThemeInstallResult =
+        themeInstalls.install(input, bundledThemeIds) { zip -> themeInstallable(zip, packaged?.resources) }
 
     /** Public art hosts over HTTPS only. RomM has its own client. */
     private val publicArt: PublicHttps by lazy { PublicHttps(ART_HOSTS) }
@@ -400,7 +416,14 @@ class FoldcadeApp : Application() {
             music.onSessionChanged()
             refreshHomeRecovery()
         }
-        themePacks = PackagedTheme.loadAll(this)
+        // Before the packs load, so a pack that crashed Foldcade twice is already back out of the way.
+        val themeRollbacks = try {
+            themeInstalls.begin(processExits(), store.themeChoices())
+        } catch (error: Exception) { Log.w("FoldcadeTheme", "Theme trials skipped", error); emptyList() }
+        val manifests = mutableMapOf<String, ThemeFile>()
+        themePacks = PackagedTheme.loadAll(this) { archive, manifest -> manifests[archive] = manifest }
+        try { themeInstalls.loaded(manifests) } catch (error: Exception) { Log.w("FoldcadeTheme", "Theme trials not saved", error) }
+        bundledThemeIds = themePacks.map { it.resources.id }.toSet() - manifests.values.map { it.id }.toSet()
         packaged = themePacks.firstOrNull { it.resources.id == FALLBACK_THEME_ID }
         val names = listOf(Copy.builtIn) + themePacks.map { it.name }
         val ids = listOf("builtin") + themePacks.map { it.resources.id }
@@ -447,6 +470,7 @@ class FoldcadeApp : Application() {
             onBrightness = { position -> brightness.write(brightnessLevel(position)) },
             onSameGames = { groups -> saveArtChoices(artChoices.adopt(groups)) },
         )
+        themeRollbacks.forEach { postNotice(themeRollbackNotice(it)) }
         // A game several libraries have is one tile, and its copies' play counts on it.
         plays.historyIds = shell::historyIds
         plays.tileOf = shell::tileOf
@@ -1268,9 +1292,32 @@ class FoldcadeApp : Application() {
         work = ::resyncLibraries,
     )
 
-    /** A Home screen was shown or covered. The resync clock runs while any one is shown. */
+    /** A Home screen was shown or covered. The resync and theme trial clocks run while any one is shown. */
     internal fun noteHomeShown() {
-        libraryResync.noteShown(homes.values.any { it.get()?.shellVisible == true })
+        val shown = homes.values.any { it.get()?.shellVisible == true }
+        libraryResync.noteShown(shown)
+        noteThemeTrialShown(shown)
+    }
+
+    /** While Home is shown, the packs in use on trial count the time towards ending their trial. */
+    private fun noteThemeTrialShown(shown: Boolean) {
+        if (shown == (themeTrialClock?.isActive == true)) return
+        themeTrialClock?.cancel()
+        themeTrialClock = if (!shown) null else scope.launch {
+            while (themeInstalls.ledger.themes.any { it.trial != null }) {
+                delay(THEME_TRIAL_TICK_MILLIS)
+                try { themeInstalls.shown(store.themeChoices(), THEME_TRIAL_TICK_MILLIS) }
+                catch (error: Exception) { Log.w("FoldcadeTheme", "Theme trial not saved", error) }
+            }
+        }
+    }
+
+    /** Android's record of how this process ended before. A crash or ANR counts against a pack on trial. */
+    private fun processExits(): List<ThemeProcessExit> {
+        val manager = getSystemService(ActivityManager::class.java) ?: return emptyList()
+        return manager.getHistoricalProcessExitReasons(packageName, 0, 16)
+            .filter { it.processName == packageName }
+            .map { ThemeProcessExit(it.timestamp, it.reason in ABNORMAL_EXITS) }
     }
 
     /**
@@ -1516,3 +1563,12 @@ class FoldcadeApp : Application() {
 
 /** The shortest time between two reads of RetroArch's cores when Foldcade returns to the front. */
 private const val RETROARCH_RETURN_READ_MS = 60_000L
+
+/** How often a shown Home adds to the trial of the packs in use. */
+private const val THEME_TRIAL_TICK_MILLIS = 15_000L
+
+private val ABNORMAL_EXITS = setOf(
+    ApplicationExitInfo.REASON_CRASH,
+    ApplicationExitInfo.REASON_CRASH_NATIVE,
+    ApplicationExitInfo.REASON_ANR,
+)

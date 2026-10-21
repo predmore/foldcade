@@ -85,6 +85,7 @@ const val FALLBACK_THEME_ID: String = "afterglow"
 fun resolveThemeResources(zip: ThemeZip, inherit: ThemeResources? = null): ThemeResources {
     val diagnostics = mutableListOf<ThemeDiagnostic>()
     val file = inherit?.let { zip.file.inheriting(it.file) } ?: zip.file
+    diagnostics += themeReleaseDiagnostics(file)
     val style = ThemeStyle(file.style, diagnostics::add, inheritedStyle(zip.file, inherit))
     val legacyIcons = zip.entries.filterKeys { it.startsWith("marks/") && it.endsWith(".png") }.map { (path, bytes) ->
         "mark." + path.removePrefix("marks/").removeSuffix(".png") to

@@ -319,6 +319,16 @@ class SessionStore(private val prefs: SharedPreferences) : SaveMarks {
             ?: fallbackThemeIndex(names)
     }
 
+    /**
+     * The packs the saved choices name: the theme (an id, or an old display name), the icons, and a
+     * pinned background's pack. A pack on trial is in use when one of these names it.
+     */
+    fun themeChoices(): Set<String> = setOfNotNull(
+        prefs.getString(KEY_THEME, null),
+        iconTheme(),
+        backgroundMotion().wire.takeIf { backgroundMotionPinned() && ':' in it }?.substringBefore(':'),
+    )
+
     fun setTheme(name: String) {
         prefs.edit().putString(KEY_THEME, name).apply()
     }
