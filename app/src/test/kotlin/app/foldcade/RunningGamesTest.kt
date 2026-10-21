@@ -43,11 +43,12 @@ class RunningGamesTest {
     }
 
     @Test
-    fun aResumeReusesThePlayersTaskAndClearsNothing() {
-        val launched = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_MULTIPLE_TASK or
-            Intent.FLAG_ACTIVITY_CLEAR_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_GRANT_READ_URI_PERMISSION
-        val flags = resumeFlags(launched)
-        assertEquals(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_GRANT_READ_URI_PERMISSION, flags)
+    fun aResumeBringsThePlayersTaskBackAndHandsItNothing() {
+        // No second task, nothing cleared, and no single-top delivery of a game to load.
+        assertEquals(0, RESUME_FLAGS and (Intent.FLAG_ACTIVITY_MULTIPLE_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK or
+            Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP))
+        assertTrue(RESUME_FLAGS and Intent.FLAG_ACTIVITY_RESET_TASK_IF_NEEDED != 0)
+        assertTrue(RESUME_FLAGS and Intent.FLAG_ACTIVITY_NEW_TASK != 0)
     }
 
     @Test
@@ -64,7 +65,6 @@ class RunningGamesTest {
         title = tile,
         platformId = "nintendo-3ds",
         packageName = pkg,
-        intent = Intent(),
         panel = Panel.Top,
         occupiesBoth = true,
         startedAtMillis = startedAt,

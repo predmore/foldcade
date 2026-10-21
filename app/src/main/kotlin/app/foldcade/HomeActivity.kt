@@ -435,8 +435,12 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
             foldcade.externalPlay.sessionId != null &&
             foldcade.externalPlay.displayId == displayId
         val pending = libraryReturn
+        val leftPlayer = foldcade.externalPlay.packageName.takeIf { ending }
         if (displayId != null) foldcade.externalPlay.endIfDisplayHome(foldcade.plays, displayId)
         val returned = ending && foldcade.externalPlay.sessionId == null
+        // Back here without the Home button: the player closed the game itself, so it is not paused.
+        if (returned && leftPlayer != null && foldcade.homeRecalledOn != displayId) foldcade.runningGames.forget(leftPlayer)
+        if (foldcade.homeRecalledOn == displayId) foldcade.homeRecalledOn = null
         if (returned) foldcade.suppressSaveConflict = false
         if (returned && pending != null) {
             libraryReturn = null
@@ -675,6 +679,8 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
 
     private fun acceptHome(intent: Intent) {
         if (!isAndroidHomeRecall(intent.action, intent.categories ?: emptySet())) return
+        // The player was left with Home, so the game it holds is still open there.
+        foldcade.homeRecalledOn = display?.displayId
         // The user left the game. Only a player quitting by itself is started again.
         foldcade.pendingRestart = null
         val panel = displays.panelFor(this, foldcade.store.session.defaultDisplayIsTop) ?: return
@@ -1118,7 +1124,7 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
         val pkg = intent.component?.packageName ?: return
         if (pkg == packageName || player is RetroArchPlayer) return
         val panel = if (player.occupiesBothDisplays) Panel.Top else launchScreen
-        foldcade.runningGames.note(RunningGame(id, title, platformId, pkg, Intent(intent), panel, player.occupiesBothDisplays,
+        foldcade.runningGames.note(RunningGame(id, title, platformId, pkg, panel, player.occupiesBothDisplays,
             System.currentTimeMillis(), saves))
     }
 
@@ -1132,12 +1138,16 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
         val running = foldcade.runningGames.forTile(tileId) ?: return false
         // Already on a screen: A there is the player's, and this press came from the other one.
         if (foldcade.store.session.runs(tileId)) return false
+        val front = packageManager.getLaunchIntentForPackage(running.packageName)?.apply { flags = RESUME_FLAGS } ?: run {
+            foldcade.runningGames.forget(running.packageName)
+            return false
+        }
         cancelLaunches()
         foldcade.music.onExternalLaunch()
         launchScreen = running.panel
         launchSubject = foldcade.shell.focusedRunningApp()
         val started = try {
-            startExternal(tileId, title, platformId ?: running.platformId, running.occupiesBoth, Intent(running.intent), resume = true)
+            startExternal(tileId, title, platformId ?: running.platformId, running.occupiesBoth, front, resume = true)
         } catch (_: ActivityNotFoundException) {
             foldcade.runningGames.forget(running.packageName)
             return false
@@ -1322,10 +1332,9 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
         }
         val playerPackage = intent.component?.packageName
         val replacing = !resume && foldcade.runningGames.forPackage(playerPackage) != null
-        when {
-            resume -> intent.flags = resumeFlags(intent.flags)
-            replacing -> intent.flags = replaceFlags(intent.flags)
-        }
+        if (replacing) intent.flags = replaceFlags(intent.flags)
+        // Only a Home press after this start says the game was left open.
+        foldcade.homeRecalledOn = null
         foldcade.externalPlay.open(foldcade.plays, id, title, displayId, playerPackage) {
             startOnDisplay(intent, displayId, multipleTask = !resume && !replacing)
             if (noteStart()) armRestart(intent, displayId)

@@ -258,6 +258,7 @@ The top screen's selected item.
 | `hero.logoShadeAlpha` | 0.42 | The round shade behind a game's logo |
 | `hero.logoShadowAlpha` | 0.85 | The soft shadow a logo casts in its own shape, in the scrim colour |
 | `hero.logoShadowBlurDp` | 10 | How soft that shadow is; 0 is a hard copy |
+| `hero.logoGlowBelow` | 0.3 | A logo darker than this (0 black, 1 white) casts that shadow in `colors.shine` instead, as a glow |
 | `hero.sceneShadeTop` | 0.45 | Wide art's shade at the top |
 | `hero.sceneShadeBottom` | 0.8 | And at the bottom |
 | `hero.ambientBlurDp` | 48 | Blur of the box-art backdrop |

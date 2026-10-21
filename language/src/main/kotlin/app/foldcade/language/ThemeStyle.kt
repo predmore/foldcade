@@ -282,6 +282,13 @@ class ThemeHero internal constructor(reader: ThemeStyleReader) {
     /** The soft shadow a logo casts in its own shape, in the scrim's colour: its strength and its blur. */
     val logoShadowAlpha = reader.fraction("hero", "logoShadowAlpha", .85f)
     val logoShadowBlurDp = reader.number("hero", "logoShadowBlurDp", 10f) { it >= 0f }
+
+    /**
+     * A logo darker than this (0 black to 1 white, over its opaque pixels) casts its
+     * shadow in the shine colour instead, as a glow: a dark shadow can't lift a dark
+     * logo off art of its own hue.
+     */
+    val logoGlowBelow = reader.fraction("hero", "logoGlowBelow", .3f)
     val sceneShadeTop = reader.fraction("hero", "sceneShadeTop", .45f)
     val sceneShadeBottom = reader.fraction("hero", "sceneShadeBottom", .8f)
     val ambientBlurDp = reader.number("hero", "ambientBlurDp", 48f)

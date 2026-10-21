@@ -1791,6 +1791,7 @@
       "logoShadeAlpha": 0.42,
       "logoShadowAlpha": 0.85,
       "logoShadowBlurDp": 10,
+      "logoGlowBelow": 0.3,
       "sceneShadeTop": 0.45,
       "sceneShadeBottom": 0.8,
       "ambientBlurDp": 48,

@@ -3,18 +3,16 @@ package app.foldcade
 import android.content.Intent
 
 /**
- * A game Foldcade started that may still be open in its player. Home coming back
+ * A game Foldcade started that may still be open in its player. The Home button
  * ends the play session, but the player keeps the game where it was. A on the
- * tile then sends [intent] again so Android brings that task back, rather than a
- * second start that opens another copy of the player beside the first.
+ * tile then brings that task back ([RESUME_FLAGS]), rather than a second start
+ * that opens another copy of the player, or makes it load the game again.
  */
 internal class RunningGame(
     val tileId: String,
     val title: String,
     val platformId: String?,
     val packageName: String,
-    /** The start as it was sent, with its flags. */
-    val intent: Intent,
     val panel: Panel,
     val occupiesBoth: Boolean,
     /** Wall time of the start. A process exit after it means the game is gone. */
@@ -59,14 +57,14 @@ internal class RunningGames {
 }
 
 /**
- * The flags that bring a running game's task back. Android reuses a task whose
- * root intent matches this one, so the player is handed nothing new: without
- * [Intent.FLAG_ACTIVITY_MULTIPLE_TASK] no second task opens, and without the
- * clear flags the game is not closed and started over.
+ * The flags on the player's own launcher intent that bring its open task back
+ * the way a launcher does. Sending the game's start again would not: a player
+ * whose game activity is single-top, as Azahar's is, takes it as a new game
+ * and loads it over the one in progress. With these flags Android finds the
+ * player's task, brings it to the front and drops the start, because the
+ * launcher activity is not the task's root.
  */
-internal fun resumeFlags(flags: Int): Int =
-    (flags and (Intent.FLAG_ACTIVITY_MULTIPLE_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP).inv()) or
-        Intent.FLAG_ACTIVITY_NEW_TASK
+internal const val RESUME_FLAGS: Int = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_RESET_TASK_IF_NEEDED
 
 /**
  * The flags for a start in a player that still holds another game, or the same

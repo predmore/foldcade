@@ -255,6 +255,8 @@ import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.Dispatchers
+import androidx.compose.runtime.produceState
 
 @Composable
 fun PanelHost(activity: FoldcadeHomeActivity, displays: Displays) {
@@ -1748,9 +1750,12 @@ private fun HeroArt(
                         )
                     },
             ) {
-                // The logo's own shape, blurred and in the scrim's colour, under it: a dark logo
-                // on art of its own hue keeps an edge, and a light one is not muddied by a blot.
+                // The logo's own shape, blurred and in the scrim's colour, under it: a light logo
+                // keeps an edge without a blot. A dark one glows in the shine colour instead, so
+                // it lifts off art of its own hue.
                 val shadow = design.hero.logoShadowAlpha
+                val lightness = rememberLightness(logo.image)
+                val glows = lightness != null && lightness < design.hero.logoGlowBelow
                 if (shadow > 0f) {
                     val blur = design.hero.logoShadowBlurDp.dp
                     Image(
@@ -1761,7 +1766,7 @@ private fun HeroArt(
                             .then(if (blur > 0.dp) Modifier.blur(blur, BlurredEdgeTreatment.Unbounded) else Modifier),
                         contentScale = ContentScale.Fit,
                         alpha = shadow,
-                        colorFilter = ColorFilter.tint(design.colors.scrim, BlendMode.SrcIn),
+                        colorFilter = ColorFilter.tint(if (glows) design.colors.shine else design.colors.scrim, BlendMode.SrcIn),
                     )
                 }
                 Image(
@@ -1819,7 +1824,45 @@ private fun HeroArt(
     }
 }
 
-internal class LoadedCover(val painter: Painter, val ratio: Float)
+internal class LoadedCover(val painter: Painter, val ratio: Float, val image: coil3.Image? = null)
+
+/** How light [image] is over its opaque pixels, 0 black to 1 white. Null until read, or for an image it can't read. */
+@Composable
+private fun rememberLightness(image: coil3.Image?): Float? {
+    val state = produceState<Float?>(null, image) {
+        value = image?.let { withContext(Dispatchers.Default) { lightness(it) } }
+    }
+    return state.value
+}
+
+/** Samples about 48 pixels across: enough to tell a dark logo from a light one. */
+private fun lightness(image: coil3.Image): Float? {
+    val source = (image as? coil3.BitmapImage)?.bitmap ?: return null
+    // A hardware bitmap can't be read pixel by pixel; a copy in memory can.
+    val bitmap = if (source.config == android.graphics.Bitmap.Config.HARDWARE) {
+        source.copy(android.graphics.Bitmap.Config.ARGB_8888, false) ?: return null
+    } else {
+        source
+    }
+    try {
+        val step = maxOf(1, maxOf(bitmap.width, bitmap.height) / 48)
+        var sum = 0.0
+        var weight = 0.0
+        for (y in 0 until bitmap.height step step) {
+            for (x in 0 until bitmap.width step step) {
+                val pixel = bitmap.getPixel(x, y)
+                val alpha = (pixel ushr 24) / 255.0
+                if (alpha < 0.5) continue
+                val luma = 0.2126 * ((pixel shr 16) and 0xFF) + 0.7152 * ((pixel shr 8) and 0xFF) + 0.0722 * (pixel and 0xFF)
+                sum += luma / 255.0 * alpha
+                weight += alpha
+            }
+        }
+        return if (weight > 0.0) (sum / weight).toFloat() else null
+    } finally {
+        if (bitmap !== source) bitmap.recycle()
+    }
+}
 
 /**
  * Memory-cache keys of covers already decoded, by size and address. A painter made
@@ -2005,13 +2048,13 @@ internal fun rememberCoverPainter(
         result.memoryCacheKey?.let { decodedCovers[coverId(uri, px)] = it }
         val image = result.image
         if (image.width <= 0 || image.height <= 0) return null
-        return LoadedCover(painter, image.width.toFloat() / image.height)
+        return LoadedCover(painter, image.width.toFloat() / image.height, image)
     }
     // Until the painter has it, the same cover already in memory draws at once.
     val held = remember(uri, px) {
         decodedCovers[coverId(uri, px)]?.let { app.images.memoryCache?.get(it)?.image }
             ?.takeIf { it.width > 0 && it.height > 0 }
-            ?.let { LoadedCover(it.asPainter(context, filterQuality), it.width.toFloat() / it.height) }
+            ?.let { LoadedCover(it.asPainter(context, filterQuality), it.width.toFloat() / it.height, it) }
     }
     return held
 }

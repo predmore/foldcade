@@ -251,6 +251,9 @@ class FoldcadeApp : Application() {
         games.onChange = { ids -> if (::shell.isInitialized) shell.running = ids }
     }
 
+    /** The display whose Home last came back through the Home button, until its resume reads it. */
+    internal var homeRecalledOn: Int? = null
+
     /** Looks for the open player's process exit while Home stays behind it. */
     private var playerExitWatch: Job? = null
 
@@ -374,6 +377,7 @@ class FoldcadeApp : Application() {
                     val started = externalPlay.startedAtMillis ?: return@withContext true
                     if (!playerDiedAfterStart(started, exits)) return@withContext false
                     externalPlay.endBecausePlayerGone(plays)
+                    runningGames.forget(watched)
                     true
                 }
                 if (ended) return@launch
