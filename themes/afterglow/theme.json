@@ -653,6 +653,10 @@
       "file": "icons/ic_badge_hidden.xml",
       "tint": true
     },
+    "badge.paused": {
+      "file": "icons/ic_badge_paused.xml",
+      "tint": true
+    },
     "badge.sync": {
       "file": "icons/ic_badge_sync.xml",
       "tint": true

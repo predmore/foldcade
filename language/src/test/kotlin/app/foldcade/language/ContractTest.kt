@@ -253,6 +253,36 @@ class ContractTest {
     }
 
     @Test
+    fun everyGameNamesAAndAGameStillOpenResumes() {
+        val map = FaceMap.standard()
+        // A game that takes both screens has no choice of screens, but A still plays it.
+        assertEquals(listOf(Copy.hintPlay), gridHints(null, HomeKeys.Idle, map, play = PlayKey.Play).map { it.label })
+        // One still open in its player comes back where it was, whichever screen it takes.
+        assertEquals(listOf(Copy.hintResume), gridHints(null, HomeKeys.Idle, map, screens = false, play = PlayKey.Resume).map { it.label })
+        assertEquals(
+            listOf(PromptKey.FaceA, PromptKey.FaceY),
+            gridHints(hintFor(HintPlace.RootGrid), HomeKeys.Idle, map, options = true, play = PlayKey.Resume).map { it.key },
+        )
+        assertEquals(Copy.paused, activityLine(TileActivity.Paused))
+    }
+
+    @Test
+    fun aGameStillOpenOffersRestartWhichAsksFirst() {
+        val rows = actionRows(TileActions(move = true, select = true, restart = true, hide = true, removeDownload = true, game = "g"))
+        assertEquals(listOf(Row.MoveTile, Row.SelectTile, Row.RestartGame, Row.Hide, Row.RemoveDownload), rows)
+        assertNull(chords(rows)[rows.indexOf(Row.RestartGame)])
+        val model = PickerModel(count = 6, rowsPerPage = 1, tileActions = TileActions(restart = true, game = "g"))
+        val menu = reduce(model, Meaning.Options).first
+        val index = panelRows(menu.panel!!, menu).indexOf(Row.RestartGame)
+        val (after, effect) = reduce(menu.copy(panel = menu.panel!!.copy(index = index)), Meaning.Activate)
+        assertEquals(Effect.RestartGame("g"), effect)
+        assertNull(after.panel)
+        val dialog = restartGameDialog(HostScreen.Top)
+        assertEquals(DialogButton.NotNow, dialog.buttons[dialog.index])
+        assertEquals(dialog.index, dialog.safeIndex)
+    }
+
+    @Test
     fun yOpensTheTileMenuAndAddToTogglesCollectionsAndStepsBackToIt() {
         val focus = GridFocus(cellIndex = 2, lastColumn = 2)
         val tile = TileActions(

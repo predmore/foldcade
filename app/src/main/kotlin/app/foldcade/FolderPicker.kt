@@ -9,6 +9,13 @@ package app.foldcade
 internal enum class FolderPurpose {
     Library,
     LaunchOffer,
+
+    /**
+     * A player's save folder, asked for before a library game whose saves sync.
+     * The player's id rides in [FolderPickerState.settingsPlayerId], so a new
+     * instance still knows whose folder it is.
+     */
+    SaveOffer,
     Settings,
 
     /** RetroArch's data folder, so Foldcade can list its cores. */
@@ -57,7 +64,8 @@ internal enum class FolderPickResult {
 
 internal fun folderPickResult(state: FolderPickerState, choseFolder: Boolean): FolderPickResult = when (state.purpose) {
     FolderPurpose.Library -> if (choseFolder) FolderPickResult.UseAsLibrary else FolderPickResult.Ignore
-    FolderPurpose.LaunchOffer -> if (choseFolder) FolderPickResult.RememberSaveAndLaunch else FolderPickResult.SkipSaveAndLaunch
+    FolderPurpose.LaunchOffer, FolderPurpose.SaveOffer ->
+        if (choseFolder) FolderPickResult.RememberSaveAndLaunch else FolderPickResult.SkipSaveAndLaunch
     FolderPurpose.Settings -> if (choseFolder) FolderPickResult.RememberSaveForPlayer else FolderPickResult.ClearSettingsPlayer
     FolderPurpose.RetroArchCores -> if (choseFolder) FolderPickResult.ImportCores else FolderPickResult.SettleCores
 }

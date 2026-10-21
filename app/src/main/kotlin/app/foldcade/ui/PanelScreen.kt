@@ -230,6 +230,7 @@ import app.foldcade.language.retargetHero
 import app.foldcade.language.Row as LanguageRow
 import app.foldcade.language.rowText
 import app.foldcade.language.TileActivity
+import app.foldcade.language.PlayKey
 import app.foldcade.language.activityLine
 import app.foldcade.language.worked
 import java.time.ZoneId
@@ -2561,6 +2562,7 @@ private fun GridHints(app: FoldcadeApp, modifier: Modifier = Modifier) {
         screens = gridKeys && shell.focusedLaunchesOnOneScreen(),
         options = gridKeys && !model.connectOpen && shell.hasOptions(),
         drop = shell.homeHoldDrop(),
+        play = if (gridKeys) shell.focusedPlayKey() else PlayKey.None,
     )) + if (gridKeys && model.settings == null && model.playActivity == null &&
         (model.homeGrid != HomeGrid.StandIns || shell.homeKeys() == HomeKeys.AllLibrary)
     ) {
@@ -3486,7 +3488,8 @@ private fun emptyShelf(grid: HomeGrid): String = when (grid) {
 }
 
 /**
- * A game's state on its tile, in one small chip in the tile's corner: the cloud
+ * A game's state on its tile, in one small chip in the tile's corner: the pause
+ * mark while the game waits open in its player behind Home, the cloud
  * while it is only on the server, the cloud breathing in the focus colour while
  * it downloads, with a bar that fills beside it, the sync mark breathing while
  * saves sync, and for a moment after, a check when the sync worked.
@@ -3503,7 +3506,8 @@ private fun TileStatus(
     val motion = LocalFoldTheme.current.theme.motion
     val theme = foldTheme()
     val tile = theme.style.tile
-    val busy = downloading || (activity != null && activity !is TileActivity.Synced)
+    // A paused game is waiting, not working, so its mark holds still.
+    val busy = downloading || (activity != null && activity !is TileActivity.Synced && activity != TileActivity.Paused)
     val breath = if (busy && !motion.reduced(animatorScale)) {
         rememberInfiniteTransition(label = "busy").animateFloat(
             initialValue = 0.35f,
@@ -3550,6 +3554,7 @@ private fun TileStatus(
                 R.drawable.ic_badge_sync to theme.muted
             }
             activity == TileActivity.Syncing -> R.drawable.ic_badge_sync to theme.focus
+            activity == TileActivity.Paused -> R.drawable.ic_badge_paused to theme.focus
             busy -> R.drawable.ic_badge_cloud to theme.focus
             focused -> R.drawable.ic_badge_cloud to theme.onBackground
             else -> R.drawable.ic_badge_cloud to theme.muted
@@ -3994,6 +3999,7 @@ private fun DialogCard(
                         DialogButton.ForgetKey -> Copy.forgetKey
                         DialogButton.KeepKey -> Copy.keepKey
                         DialogButton.OpenRetroArch -> Copy.openRetroArch
+                        DialogButton.Restart -> Copy.restart
                     }
                     DialogAction(
                         label = label,

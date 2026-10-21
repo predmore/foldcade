@@ -85,6 +85,7 @@ import app.foldcade.language.homeGameKey
 import app.foldcade.language.Motion
 import app.foldcade.language.SyncMark
 import app.foldcade.language.TileActivity
+import app.foldcade.language.PlayKey
 import app.foldcade.language.resolvePlatform
 import app.foldcade.language.kitMark
 import app.foldcade.host.play.recentlyPlayedIndices
@@ -362,6 +363,9 @@ class ShellController(
     /** What libraries are doing with games, by home id. Tiles and the top screen show it. */
     var activity by mutableStateOf<Map<String, TileActivity>>(emptyMap())
         private set
+
+    /** Tiles whose game is still open in its player, see [RunningGames]. */
+    var running by mutableStateOf<Set<String>>(emptySet())
 
     /** Cells for the current grid. Empty when the grid is an empty state. */
     var entries by mutableStateOf<List<GridEntry>>(emptyList())
@@ -927,15 +931,34 @@ class ShellController(
      * on the bottom: one that takes one screen, while both screens are Foldcade's.
      */
     fun focusedLaunchesOnOneScreen(): Boolean {
-        if (!store.session.bothScreensFree() || model.focus.chrome != null) return false
-        if (model.libraryGrid && model.gridKind != GridKind.Games) return false
-        val found = find?.subject
-        if (found != null && found.kind == FindKind.Group) return false
-        val face = if (find == null && (showingHome() || home.board.allOpen)) home.face(model.focus.cellIndex) else null
-        if (face != null && (face.folder || face.allTile || face.empty)) return false
-        val game = focusedGame() ?: return false
-        return !game.emptyShelfHint && !game.occupiesBothDisplays
+        if (!store.session.bothScreensFree()) return false
+        val game = focusedPlayable() ?: return false
+        return !game.occupiesBothDisplays && !isPaused(focusedTileId(game))
     }
+
+    /** What A says for the focused game when it is not a choice of screens. */
+    fun focusedPlayKey(): PlayKey {
+        val game = focusedPlayable() ?: return PlayKey.None
+        return when {
+            isPaused(focusedTileId(game)) -> PlayKey.Resume
+            game.occupiesBothDisplays -> PlayKey.Play
+            else -> PlayKey.None
+        }
+    }
+
+    /** The focused tile when it is a game A would start. */
+    private fun focusedPlayable(): ShelfGame? {
+        if (model.focus.chrome != null) return null
+        if (model.libraryGrid && model.gridKind != GridKind.Games) return null
+        val found = find?.subject
+        if (found != null && found.kind == FindKind.Group) return null
+        val face = if (find == null && (showingHome() || home.board.allOpen)) home.face(model.focus.cellIndex) else null
+        if (face != null && (face.folder || face.allTile || face.empty)) return null
+        return focusedGame()?.takeUnless { it.emptyShelfHint }
+    }
+
+    /** The tile a focused game plays under. A library grid names a copy, which may be folded into another tile. */
+    private fun focusedTileId(game: ShelfGame): String = tileOf(game.id)
 
     /** True when Y would open a menu for the focused tile. A grid with no tiles opens one only for Undo. */
     fun hasOptions(): Boolean =
@@ -1190,17 +1213,26 @@ class ShellController(
     private fun downloadOf(id: String): Game? =
         home.copies(id).firstOrNull { it.availability == Availability.Cached }
 
-    private fun busyOnDevice(id: String): Boolean = tileIds(id).any { one ->
+    private fun busyOnDevice(id: String): Boolean = isRunning(id) || tileIds(id).any { one ->
         one in downloading || one in removing || libraryOf(one) in relisting ||
             activity[one].let { it is TileActivity.Downloading || it == TileActivity.Checking }
     }
+
+    /** True while the game on [id]'s tile is still open in its player, in front or behind Home. */
+    fun isRunning(id: String?): Boolean =
+        id != null && running.isNotEmpty() && (tileOf(id) in running || tileIds(id).any { it in running })
+
+    /** Still open in its player and on neither screen now: it waits behind Home, where A brings it back. */
+    fun isPaused(id: String?): Boolean =
+        id != null && isRunning(id) && !store.session.runs(id) && !store.session.runs(tileOf(id))
 
     /** The tile [id] and the home id of each copy folded into it. */
     private fun tileIds(id: String): List<String> =
         if (id.startsWith(SAME_PREFIX)) listOf(id) + sameAliases.filterValues { it == id }.keys else listOf(id)
 
     /** What a library is doing with the tile [id]'s game, or with any copy of it. */
-    private fun activityOf(id: String): TileActivity? = tileIds(id).firstNotNullOfOrNull { activity[it] }
+    private fun activityOf(id: String): TileActivity? =
+        tileIds(id).firstNotNullOfOrNull { activity[it] } ?: TileActivity.Paused.takeIf { isPaused(id) }
 
     /**
      * [libraryId]'s connection is moving to another server. Delete download waits,
@@ -1283,7 +1315,7 @@ class ShellController(
 
     /** The activity of the game at [source] in the grid shown now. */
     fun activityAt(source: Int): TileActivity? {
-        if (activity.isEmpty()) return null
+        if (activity.isEmpty() && running.isEmpty()) return null
         val id = when {
             model.libraryGrid -> entries.getOrNull(source)?.game?.let { homeGameId(it.backendId, it.remoteKey) }
             showingHome() -> home.face(source)?.id
@@ -1294,7 +1326,7 @@ class ShellController(
 
     /** The activity of the focused game, for the top screen. */
     fun focusedActivity(): TileActivity? {
-        if (activity.isEmpty()) return null
+        if (activity.isEmpty() && running.isEmpty()) return null
         if (!model.libraryGrid) homeCarry()?.let { return activityOf(it.id) }
         val source = if (model.libraryGrid) {
             displayOrder(model).getOrElse(model.focus.cellIndex) { model.focus.cellIndex }
@@ -2313,7 +2345,9 @@ class ShellController(
         val targetGame = actionGame(counted, tile?.game)
         // A copy still arriving, or already going, is not one to delete.
         val busy = (tile?.game ?: home.face(counted.focus.cellIndex)?.id)?.let(::busyOnDevice) == true
-        val offered = if (tile?.removeDownload == true && busy) tile.copy(removeDownload = false) else tile
+        val offered = (if (tile?.removeDownload == true && busy) tile.copy(removeDownload = false) else tile)
+            // A game still open in its player can start over. Find's menu acts on a result that may not be a tile.
+            ?.let { if (found == null && isPaused(it.game)) it.copy(restart = true) else it }
         // A merge can close the open folder, when its last game left, so read where the board is now.
         val root = if (onHome) home.board.openFolderId == null && !home.board.allOpen else counted.atLibraryRoot
         val withArt = if (tile?.bulk == null && home.selection == null && counted.artKeySaved && artPickerAvailable() && targetGame?.let(::artQuery) != null) {

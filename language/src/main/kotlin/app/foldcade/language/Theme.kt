@@ -185,6 +185,8 @@ object Copy {
     const val closeIt = "Close it"
     const val saveFolderTitle = "Save folder"
     const val saveFolderBody = "This player keeps its own saves. Not now starts the game. You can choose one later in Settings."
+    /** The same ask before a game whose saves sync with its server. */
+    const val saveFolderSyncBody = "Choose where this player keeps its saves, so they sync. Not now starts the game without syncing."
     const val playerSavesSet = "Folder set"
     const val playerSavesUnset = "Choose folder"
     const val missingFileBody = "This game has no file Foldcade can hand to the player."
@@ -226,6 +228,8 @@ object Copy {
     const val savesKeptBoth = "Kept both saves"
     const val savesSyncLater = "Saves will sync later"
     const val savesNotSynced = "Saves didn’t sync"
+    /** The game is still open in its player, behind Home. A brings it back. */
+    const val paused = "Paused"
     const val notOnDevice = "Not on this device"
     const val onDevice = "On this device"
     const val inFolder = "In this folder"
@@ -271,6 +275,9 @@ object Copy {
     const val hold = "Hold"
     const val deleteShortcut = "Delete shortcut"
     const val deleteDownload = "Delete download"
+    const val restart = "Restart"
+    const val restartTitle = "Restart the game?"
+    const val restartBody = "It closes where you left it. Anything not saved is lost."
     const val addTo = "Add to"
     const val emptySlot = "Empty slot"
     const val letterJump = "Letter"
@@ -288,6 +295,8 @@ object Copy {
     const val hintOptions = "Options"
     const val collectionIcon = "Collection icon"
     const val hintTop = "Top"
+    const val hintPlay = "Play"
+    const val hintResume = "Resume"
     const val hintBottom = "Bottom"
     const val onHomeMark = "On home"
     const val stillInAll = "Still in All"
@@ -328,6 +337,16 @@ fun hintFor(place: HintPlace): HintActions? = when (place) {
     -> hintLine(activateDoesSomething = true, backDoesSomething = true)
 }
 
+/**
+ * What A does to the focused game when it is not a choice of screens: a game
+ * that takes both screens plays, and one still open in its player resumes.
+ */
+enum class PlayKey {
+    None,
+    Play,
+    Resume,
+}
+
 /** One glyph and one word in the hint row. */
 data class HintKey(val key: PromptKey, val label: String)
 
@@ -342,11 +361,18 @@ fun gridHints(
     screens: Boolean = false,
     options: Boolean = false,
     drop: HoldDrop = HoldDrop.Place,
+    play: PlayKey = PlayKey.None,
 ): List<HintKey> {
     val confirm = promptKeyOf(faceMap.confirmKey) ?: PromptKey.FaceA
     val back = promptKeyOf(faceMap.backKey) ?: PromptKey.FaceB
     // A one-screen game opens on the top screen with A and on the bottom with X.
-    val launch = if (screens) listOf(HintKey(confirm, Copy.hintTop), HintKey(PromptKey.FaceX, Copy.hintBottom)) else emptyList()
+    // A game that takes both screens says Play, so A is named on every game; one still open says Resume.
+    val launch = when {
+        play == PlayKey.Resume -> listOf(HintKey(confirm, Copy.hintResume))
+        screens -> listOf(HintKey(confirm, Copy.hintTop), HintKey(PromptKey.FaceX, Copy.hintBottom))
+        play == PlayKey.Play -> listOf(HintKey(confirm, Copy.hintPlay))
+        else -> emptyList()
+    }
     // Y names its menu only when the focused tile has one.
     val menu = if (options) listOf(HintKey(PromptKey.FaceY, Copy.hintOptions)) else emptyList()
     return when (homeKeys) {

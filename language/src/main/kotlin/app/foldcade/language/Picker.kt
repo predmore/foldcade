@@ -83,6 +83,9 @@ enum class DialogKind {
     ClosePlayer,
     SaveFolder,
 
+    /** Restart a game still open in its player. Not now leaves it paused. */
+    RestartGame,
+
     /** Android's "Modify system settings" access, for the R1 brightness slider. */
     Brightness,
 
@@ -112,6 +115,7 @@ enum class DialogButton {
     ForgetKey,
     KeepKey,
     OpenRetroArch,
+    Restart,
 }
 
 data class DialogState(
@@ -181,6 +185,17 @@ fun closeBothPanelDialog(screen: HostScreen): DialogState = DialogState(
     screen = screen,
 )
 
+/** Restarting loses what was not saved, so it opens on Not now, and Back keeps the game too. */
+fun restartGameDialog(screen: HostScreen): DialogState = DialogState(
+    kind = DialogKind.RestartGame,
+    title = Copy.restartTitle,
+    body = Copy.restartBody,
+    buttons = listOf(DialogButton.Restart, DialogButton.NotNow),
+    index = 1,
+    safeIndex = 1,
+    screen = screen,
+)
+
 /** Forgetting the key opens on Keep key, and Back keeps it too. */
 fun forgetArtKeyPrompt(screen: HostScreen): DialogState = DialogState(
     kind = DialogKind.ForgetArtKey,
@@ -192,10 +207,10 @@ fun forgetArtKeyPrompt(screen: HostScreen): DialogState = DialogState(
     screen = screen,
 )
 
-fun saveFolderDialog(screen: HostScreen): DialogState = DialogState(
+fun saveFolderDialog(screen: HostScreen, syncs: Boolean = false): DialogState = DialogState(
     kind = DialogKind.SaveFolder,
     title = Copy.saveFolderTitle,
-    body = Copy.saveFolderBody,
+    body = if (syncs) Copy.saveFolderSyncBody else Copy.saveFolderBody,
     buttons = listOf(DialogButton.ContinueGrant, DialogButton.NotNow),
     index = 1,
     safeIndex = 1,
@@ -379,6 +394,9 @@ sealed interface Row {
     data object ShowHidden : Row
     data object DeleteShortcut : Row
     data object RemoveDownload : Row
+
+    /** A game still open in its player starts over. */
+    data object RestartGame : Row
     data class QuickTile(val setting: QuickSetting) : Row
 
     /** The R1 slider for both screens' brightness. */
@@ -591,6 +609,8 @@ data class TileActions(
     val moveTo: String? = null,
     /** A server game downloaded to this device can be deleted again. */
     val removeDownload: Boolean = false,
+    /** The game is still open in its player, so it can start over. */
+    val restart: Boolean = false,
     /** The game these rows act on. Null for a tile that is not a game, or one off the home grid. */
     val game: String? = null,
     /** Tidy, on an empty slot of a board with gaps to close. */
@@ -626,6 +646,7 @@ fun actionRows(tile: TileActions?): List<Row> = buildList {
     if (tile.rename) add(Row.RenameFolder)
     if (tile.icon) add(Row.FolderIcon)
     if (tile.remove != null) add(Row.RemoveTile)
+    if (tile.restart) add(Row.RestartGame)
     if (tile.hide) add(Row.Hide)
     if (tile.removeDownload) add(Row.RemoveDownload)
     if (tile.deleteShortcut) add(Row.DeleteShortcut)
@@ -810,6 +831,7 @@ fun rowText(row: Row, model: PickerModel): RowText = when (row) {
     Row.ShowHidden -> RowText(Copy.showApp)
     Row.DeleteShortcut -> RowText(Copy.deleteShortcut)
     Row.RemoveDownload -> RowText(Copy.deleteDownload)
+    Row.RestartGame -> RowText(Copy.restart)
     Row.ButtonLabels -> RowText(
         Copy.buttonLabels,
         when {
@@ -909,6 +931,9 @@ sealed interface Effect {
     data class ShowHidden(val id: String?) : Effect
     data class DeleteShortcut(val gameId: String?) : Effect
     data class RemoveDownload(val gameId: String? = null) : Effect
+
+    /** Ask, then start the game open in its player over. */
+    data class RestartGame(val gameId: String?) : Effect
     data object OpenAll : Effect
     data object ToggleAddNew : Effect
 
@@ -1825,6 +1850,7 @@ private fun activateRow(
         Row.ShowHidden -> model.copy(panel = null, focus = panel.grid) to Effect.ShowHidden(model.tileActions?.game)
         Row.DeleteShortcut -> model.copy(panel = null, focus = panel.grid) to Effect.DeleteShortcut(model.tileActions?.game)
         Row.RemoveDownload -> model.copy(panel = null, focus = panel.grid) to Effect.RemoveDownload(model.tileActions?.game)
+        Row.RestartGame -> model.copy(panel = null, focus = panel.grid) to Effect.RestartGame(model.tileActions?.game)
         Row.ButtonLabels -> if (model.capturingConfirm) {
             model.copy(capturingConfirm = false, offerButtonLabels = false) to Effect.DismissButtonLabels
         } else {

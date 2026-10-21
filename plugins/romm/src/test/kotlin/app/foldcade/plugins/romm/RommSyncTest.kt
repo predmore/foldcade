@@ -2,6 +2,7 @@ package app.foldcade.plugins.romm
 
 import app.foldcade.api.plugin.Availability
 import app.foldcade.api.plugin.Game
+import app.foldcade.api.plugin.GameActivity
 import app.foldcade.api.plugin.LaunchRequest
 import app.foldcade.api.plugin.LaunchTarget
 import app.foldcade.api.plugin.ObservedSaves
@@ -24,6 +25,7 @@ import java.nio.file.Path
 import java.security.MessageDigest
 import java.util.Collections
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
 import org.junit.After
@@ -115,6 +117,35 @@ class RommSyncTest {
         token = null
         val signedOut = library().prepareLaunch(GAME, NamedPlayer)
         assertEquals(SyncOutcome.Queued, signedOut.sync.outcome)
+    }
+
+    @Test
+    fun aPlayerWithNoSaveFolderNeverReadsAsSynced() = runBlocking {
+        cacheRom()
+        ops.onSync = { _, _, _, _ -> report() }
+        val library = library()
+        val synced = Collections.synchronizedList(mutableListOf<GameActivity.Synced>())
+        library.observeActivity { _, activity -> if (activity is GameActivity.Synced) synced += activity }
+        // The server had nothing new, which alone reads as synced. Nothing reached the player's saves.
+        val placement = library.prepareLaunch(GAME, FolderlessPlayer)
+        assertEquals(SyncOutcome.Unchanged, synced.single().result.outcome)
+        assertEquals(NO_SAVE_FOLDER, synced.single().result.note)
+        // The launch's own result is the server's; only what the tile says changes.
+        assertEquals(null, placement.sync.note)
+        library.reconcile(GAME, FolderlessPlayer, ObservedSaves(emptyList()))
+        withTimeout(5_000) { while (synced.size < 2) delay(10) }
+        assertEquals(NO_SAVE_FOLDER, synced.last().result.note)
+    }
+
+    @Test
+    fun aPlayerWithItsSaveFolderReadsAsSynced() = runBlocking {
+        cacheRom()
+        ops.onSync = { _, _, _, _ -> report() }
+        val library = library()
+        val synced = Collections.synchronizedList(mutableListOf<GameActivity.Synced>())
+        library.observeActivity { _, activity -> if (activity is GameActivity.Synced) synced += activity }
+        library.prepareLaunch(GAME, NamedPlayer)
+        assertEquals(null, synced.single().result.note)
     }
 
     @Test
@@ -354,6 +385,11 @@ class RommSyncTest {
         override val requiresImportedGame = false
         override fun saveDeclarations(game: Game): List<SaveDeclaration> = emptyList()
         override fun launchIntent(request: LaunchRequest): PlayerIntent = error("unused")
+    }
+
+    /** Keeps a save slot where Foldcade has no place to read it, as a player with no save folder chosen. */
+    private object FolderlessPlayer : Player by NamedPlayer {
+        override fun saveDeclarations(game: Game): List<SaveDeclaration> = listOf(SaveDeclaration("sav", null))
     }
 
     private companion object {

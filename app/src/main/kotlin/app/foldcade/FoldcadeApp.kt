@@ -245,6 +245,11 @@ class FoldcadeApp : Application() {
     /** The external player session opened by the host launch path. */
     val externalPlay = ExternalPlay()
 
+    /** Games left open in their players behind Home. Their tiles read Paused, and A brings them back. */
+    internal val runningGames = RunningGames().also { games ->
+        games.onChange = { ids -> if (::shell.isInitialized) shell.running = ids }
+    }
+
     /** Looks for the open player's process exit while Home stays behind it. */
     private var playerExitWatch: Job? = null
 
@@ -371,6 +376,23 @@ class FoldcadeApp : Application() {
                     true
                 }
                 if (ended) return@launch
+            }
+        }
+    }
+
+    /**
+     * Forgets each game whose player has exited since it started, so its tile
+     * stops reading Paused. Without usage access the exits can't be read, and
+     * the games stay: A then sends the same start, which opens the game anew
+     * if its player is gone.
+     */
+    internal fun pruneRunningGames() {
+        if (runningGames.packages().isEmpty()) return
+        runningGames.dropExited { pkg ->
+            try {
+                playerExitTimestamps(pkg)
+            } catch (_: SecurityException) {
+                null
             }
         }
     }

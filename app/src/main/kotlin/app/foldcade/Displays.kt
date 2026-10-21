@@ -34,8 +34,13 @@ fun Context.startOnDisplay(activity: Class<*>, displayId: Int, configure: Intent
     startOnDisplay(Intent(this, activity).apply(configure), displayId)
 }
 
-fun Context.startOnDisplay(intent: Intent, displayId: Int) {
-    intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_MULTIPLE_TASK)
+/**
+ * Starts [intent] on [displayId] in a task of its own. A start that must reuse the
+ * task its player already has, to bring a game back or to replace it, passes
+ * [multipleTask] false and its own task flags.
+ */
+fun Context.startOnDisplay(intent: Intent, displayId: Int, multipleTask: Boolean = true) {
+    intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or if (multipleTask) Intent.FLAG_ACTIVITY_MULTIPLE_TASK else 0)
     val options = ActivityOptions.makeBasic()
     options.launchDisplayId = displayId
     startActivity(intent, options.toBundle())
