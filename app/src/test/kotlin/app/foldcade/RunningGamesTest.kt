@@ -34,16 +34,21 @@ class RunningGamesTest {
     }
 
     @Test
-    fun aResumeFoundTheGameOnlyWhenItsOwnActivityCameForward() {
+    fun aResumeFoundTheGameUnlessThePlayersMenuCameForward() {
         val game = "org.citra.citra_emu.activities.EmulationActivity"
         val menu = "org.citra.citra_emu.ui.main.MainActivity"
-        assertEquals(true, resumeFound(listOf(game), game))
+        assertEquals(true, resumeFound(listOf(game), menu, game))
         // The task was gone, so the player's front door opened its menu.
-        assertEquals(false, resumeFound(listOf(menu), game))
+        assertEquals(false, resumeFound(listOf(menu), menu, game))
         // The menu, then the game it opened: the game is in front now.
-        assertEquals(true, resumeFound(listOf(menu, game), game))
+        assertEquals(true, resumeFound(listOf(menu, game), menu, game))
+        // A player whose start hands the game to another activity, as Dolphin's does.
+        assertEquals(true, resumeFound(listOf("org.dolphinemu.dolphinemu.activities.EmulationActivity"),
+            "org.dolphinemu.dolphinemu.ui.main.MainActivity", "org.dolphinemu.dolphinemu.ui.main.TvMainActivity"))
+        // A front door that is also where the game started can't tell the menu from the game.
+        assertEquals(true, resumeFound(listOf(menu), menu, menu))
         // Nothing seen yet, or no usage access.
-        assertNull(resumeFound(emptyList(), game))
+        assertNull(resumeFound(emptyList(), menu, game))
     }
 
     @Test

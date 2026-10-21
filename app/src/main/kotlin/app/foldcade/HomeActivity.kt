@@ -1190,22 +1190,22 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
         running.saves?.let(::rememberReturn)
         // A busy screen sends it to the other one; the next resume looks for it there.
         landedPanel()?.takeIf { it != running.panel }?.let { foldcade.runningGames.note(running.copy(panel = it)) }
-        checkResume(running, sentAt)
+        checkResume(running, sentAt, front.component?.className)
         return true
     }
 
     /**
      * A moment after a resume, looks at what came to the front. If the player's own
-     * menu did, its task was gone, so the game starts afresh in its place, as A on a
-     * game not open would have. Nothing seen yet, or the game itself, leaves it be.
+     * menu ([frontDoor]) did, its task was gone, so the game starts afresh in its
+     * place, as A on a game not open would have. Anything else leaves it be.
      */
-    private fun checkResume(running: RunningGame, sentAt: Long) {
+    private fun checkResume(running: RunningGame, sentAt: Long, frontDoor: String?) {
         foldcade.scope.launch {
             delay(RESUME_CHECK_MS)
             val resumed = withContext(Dispatchers.IO) {
                 UsageAccess(this@FoldcadeHomeActivity).resumedSince(running.packageName, sentAt, System.currentTimeMillis())
             }
-            if (resumeFound(resumed, running.activity) != false) return@launch
+            if (resumeFound(resumed, frontDoor, running.activity) != false) return@launch
             withContext(Dispatchers.Main.immediate) {
                 // Only the same start of the same game, with its player still in front from this resume.
                 val now = foldcade.runningOn(running.tileId) ?: return@withContext

@@ -13,7 +13,7 @@ internal data class RunningGame(
     val title: String,
     val platformId: String?,
     val packageName: String,
-    /** The player's activity the game opened in. A resume that brings any other to the front found the game gone. */
+    /** The player's activity the game's start named. Some players hand the game on to another one. */
     val activity: String?,
     val panel: Panel,
     val occupiesBoth: Boolean,
@@ -60,14 +60,16 @@ internal class RunningGames {
 
 /**
  * What a resume brought to the front, from the player's activities that resumed
- * since it was sent, oldest first. The game's own [activity] means the game came
- * back. Another of the player's activities means its task was gone, as a task
- * swiped from Recents is, and the front door opened the player's own menu.
- * Nothing yet is not known.
+ * since it was sent, oldest first. Only the player's [frontDoor] (its launcher
+ * activity) in front says the game was gone, as after a swipe from Recents: the
+ * resume opened the player's own menu. Any other activity is the game, whichever
+ * one the player runs it in. A front door that is also where the game's start
+ * went ([started]) can't tell the two apart, so it never says gone. Nothing seen
+ * yet is not known.
  */
-internal fun resumeFound(resumed: List<String>, activity: String?): Boolean? {
+internal fun resumeFound(resumed: List<String>, frontDoor: String?, started: String?): Boolean? {
     val last = resumed.lastOrNull() ?: return null
-    return activity == null || last == activity
+    return frontDoor == null || frontDoor == started || last != frontDoor
 }
 
 /** How long after a resume to look at what came to the front. */
