@@ -2,7 +2,6 @@ package app.foldcade.language
 
 import java.time.Instant
 import java.time.ZoneId
-import java.time.format.DateTimeFormatter
 import java.util.Locale
 
 /** Which of the three actions has the controller. [KeepBoth] is the one that starts focused. */
@@ -124,9 +123,11 @@ fun previewSaveConflict(): SaveConflictPrompt = SaveConflictPrompt(
     preview = true,
 )
 
-fun formatSaveWhen(millis: Long, zone: ZoneId = ZoneId.systemDefault()): String =
-    DateTimeFormatter.ofPattern("d MMM yyyy, HH:mm", Locale.US)
-        .format(Instant.ofEpochMilli(millis).atZone(zone))
+/** When a save was written, in the device's date order and clock. */
+fun formatSaveWhen(millis: Long, style: DateStyle, zone: ZoneId = ZoneId.systemDefault()): String {
+    val at = Instant.ofEpochMilli(millis).atZone(zone)
+    return "${style.monthDayYear(at)}, ${style.time(at)}"
+}
 
 fun formatSaveSize(bytes: Long): String {
     val size = bytes.coerceAtLeast(0L)

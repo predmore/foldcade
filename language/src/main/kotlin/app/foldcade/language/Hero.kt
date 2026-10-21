@@ -17,13 +17,15 @@ data class HeroItem(
 
 /**
  * A focused platform folder. [count] is the game count when the library reported one.
- * Null means the count is unknown. [mark] is the platform's theme mark. This is not the folder grid.
+ * Null means the count is unknown. [mark] is the platform's theme mark. [apps] counts apps,
+ * not games, as [HomeFolder.holdsApps] does. This is not the folder grid.
  */
 data class HeroFolder(
     val key: String,
     val name: String,
     val count: Int?,
     val mark: String? = null,
+    val apps: Boolean = false,
 )
 
 sealed interface HeroSubject {
@@ -51,7 +53,7 @@ fun heroFacts(title: String, vararg parts: String?): String =
         .distinct()
         .joinToString(" · ")
 
-/** Count under a folder name. One stays singular. The Android Apps folder counts apps. */
+/** Count under a folder name. One stays singular. A folder of apps (Android Apps, Emulators) counts apps. */
 fun folderCountLine(count: Int, apps: Boolean = false): String {
     val total = count.coerceAtLeast(0)
     val noun = if (apps) "app" else "game"
@@ -66,7 +68,7 @@ fun heroCopy(subject: HeroSubject): HeroCopy = when (subject) {
     )
     is HeroSubject.Folder -> HeroCopy(
         title = subject.folder.name,
-        detail = subject.folder.count?.let(::folderCountLine).orEmpty(),
+        detail = subject.folder.count?.let { folderCountLine(it, apps = subject.folder.apps) }.orEmpty(),
         showsArt = subject.folder.mark != null,
     )
 }

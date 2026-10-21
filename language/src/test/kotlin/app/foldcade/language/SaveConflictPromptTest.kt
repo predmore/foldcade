@@ -2,6 +2,7 @@ package app.foldcade.language
 
 import java.time.Instant
 import java.time.ZoneOffset
+import java.util.Locale
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
@@ -97,8 +98,14 @@ class SaveConflictPromptTest {
 
     @Test
     fun aStampAndASizeReadAsAPersonWould() {
-        val whenLocal = formatSaveWhen(prompt.local.updatedAtMillis, ZoneOffset.UTC)
-        assertEquals("18 Apr 2026, 09:12", whenLocal)
+        // en-US on a 12-hour clock, the Thor's default.
+        assertEquals("Apr 18, 2026, 9:12 AM", formatSaveWhen(prompt.local.updatedAtMillis, DateStyle(), ZoneOffset.UTC))
+        assertEquals("Apr 18, 2026, 10:40 AM", formatSaveWhen(prompt.remote.updatedAtMillis, DateStyle(), ZoneOffset.UTC))
+        // A day-first locale on a 24-hour clock, from Android's en-GB patterns.
+        val gb = DateStyle(Locale.UK, monthDayPattern = "d MMM", monthDayYearPattern = "d MMM y", is24Hour = true, timePattern = "HH:mm")
+        assertEquals("18 Apr 2026, 09:12", formatSaveWhen(prompt.local.updatedAtMillis, gb, ZoneOffset.UTC))
+        // The 24-hour setting alone changes only the clock.
+        assertEquals("Apr 18, 2026, 21:12", formatSaveWhen(prompt.local.updatedAtMillis + 12 * 3_600_000L, DateStyle(is24Hour = true), ZoneOffset.UTC))
         assertEquals("32 KB", formatSaveSize(prompt.local.sizeBytes))
         assertEquals("30.5 KB", formatSaveSize(prompt.remote.sizeBytes))
     }

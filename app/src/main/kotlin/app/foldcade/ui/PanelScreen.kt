@@ -131,6 +131,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.zIndex
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import app.foldcade.language.heroPlayLine
+import app.foldcade.language.DateStyle
 import app.foldcade.language.typingFaces
 import app.foldcade.language.FindEntry
 import app.foldcade.language.FindKind
@@ -356,6 +357,7 @@ fun PanelHost(activity: FoldcadeHomeActivity, displays: Displays) {
             if (conflict != null && screen == HostScreen.Bottom) {
                 SaveConflictBottom(
                     conflict,
+                    dateStyle = rememberDateStyle(app),
                     onFocus = { focus -> activity.dispatch(app.shell.touchSaveConflict(focus)) },
                     onLater = { activity.dispatch(app.shell.touchSaveConflictLater()) },
                     backKey = promptKeyOf(model.faceMap.backKey) ?: PromptKey.FaceB,
@@ -1439,6 +1441,17 @@ private fun IconChoices(pick: IconPick, scale: Float, modifier: Modifier) {
 private const val SWATCH_SHARE = 0.72f
 private const val SWATCH_REST = 0.78f
 
+/**
+ * The device's date order and 12/24-hour clock, as the status clock reads them.
+ * Only a change to the style recomposes, not every minute's tick.
+ */
+@Composable
+internal fun rememberDateStyle(app: FoldcadeApp): DateStyle {
+    val status = app.deviceStatus.status.collectAsStateWithLifecycle()
+    val style by remember { derivedStateOf { status.value.dateStyle } }
+    return style
+}
+
 /** How far the chosen glyph's tile lightens toward the text colour. */
 private const val CHOSEN_LIFT = 0.1f
 
@@ -1458,6 +1471,7 @@ private fun HeroLabel(
     val design = LocalFoldTheme.current.theme.style
     val theme = foldTheme()
     val copy = heroCopy(shown)
+    val dateStyle = rememberDateStyle(app)
     val centred = text(theme.onBackground, LocalFoldTheme.current.theme.style.type.heroTitle, theme).copy(textAlign = TextAlign.Center)
     Column(
         Modifier
@@ -1492,7 +1506,7 @@ private fun HeroLabel(
                 item?.availability.takeIf { live == null },
                 Copy.usesBothScreens.takeIf { both },
                 played?.let {
-                    heroPlayLine(it.activeMillis, it.lastPlayedMillis, System.currentTimeMillis(), ZoneId.systemDefault())
+                    heroPlayLine(it.activeMillis, it.lastPlayedMillis, System.currentTimeMillis(), ZoneId.systemDefault(), dateStyle)
                 },
             )
             if (facts.isNotEmpty() || live != null) {

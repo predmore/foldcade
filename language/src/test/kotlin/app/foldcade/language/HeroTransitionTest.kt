@@ -147,6 +147,8 @@ class HeroTransitionTest {
         assertEquals("0 games", folderCountLine(-4))
         assertEquals("14 apps", folderCountLine(14, apps = true))
         assertEquals("1 app", folderCountLine(1, apps = true))
+        // Android Apps and Emulators count apps on the top screen as on their tiles.
+        assertEquals("7 apps", heroCopy(HeroSubject.Folder(HeroFolder(key = HOME_EMULATORS, name = "Emulators", count = 7, apps = true))).detail)
         val unknown = heroCopy(HeroSubject.Folder(HeroFolder(key = "nds", name = "Nintendo DS", count = null)))
         assertEquals("Nintendo DS", unknown.title)
         assertEquals("", unknown.detail)

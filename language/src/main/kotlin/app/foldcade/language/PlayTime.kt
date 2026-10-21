@@ -2,8 +2,6 @@ package app.foldcade.language
 
 import java.time.Instant
 import java.time.ZoneId
-import java.time.format.DateTimeFormatter
-import java.util.Locale
 
 /** Library order. Recently played uses the host's last-played times. */
 enum class LibrarySort {
@@ -39,26 +37,26 @@ fun playedLine(activeMillis: Long): String {
     return "Played  $body"
 }
 
-/** Last time this game was played. Null means it has not been played. */
-fun lastPlayedLine(atMillis: Long?, nowMillis: Long, zone: ZoneId): String {
+/**
+ * Last time this game was played, in the device's date order. Null means it has
+ * not been played.
+ */
+fun lastPlayedLine(atMillis: Long?, nowMillis: Long, zone: ZoneId, style: DateStyle): String {
     if (atMillis == null) return "Last played  —"
     val played = Instant.ofEpochMilli(atMillis).atZone(zone).toLocalDate()
     val today = Instant.ofEpochMilli(nowMillis).atZone(zone).toLocalDate()
     val whenText = when (played) {
         today -> "Today"
         today.minusDays(1) -> "Yesterday"
-        else -> {
-            val pattern = if (played.year == today.year) "d MMM" else "d MMM yyyy"
-            DateTimeFormatter.ofPattern(pattern, Locale.US).format(played)
-        }
+        else -> if (played.year == today.year) style.monthDay(played) else style.monthDayYear(played)
     }
     return "Last played  $whenText"
 }
 
 /** Time played and when, for the hero's line of facts. Null for a game never played. */
-fun heroPlayLine(activeMillis: Long, atMillis: Long?, nowMillis: Long, zone: ZoneId): String? {
+fun heroPlayLine(activeMillis: Long, atMillis: Long?, nowMillis: Long, zone: ZoneId, style: DateStyle): String? {
     if (activeMillis <= 0L && atMillis == null) return null
     val played = playedLine(activeMillis).removePrefix("Played  ")
-    val last = lastPlayedLine(atMillis, nowMillis, zone).removePrefix("Last played  ")
+    val last = lastPlayedLine(atMillis, nowMillis, zone, style).removePrefix("Last played  ")
     return "Played $played · $last"
 }

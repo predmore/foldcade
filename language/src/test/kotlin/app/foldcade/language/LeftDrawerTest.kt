@@ -100,7 +100,7 @@ class LeftDrawerTest {
             // Eight days ago is outside this week.
             PlaySpan("c", millis(2026, 10, 2, 12, 0, zone), millis(2026, 10, 2, 15, 0, zone)),
         )
-        val week = playWeek(spans, now, zone, locale = Locale.US)
+        val week = playWeek(spans, now, zone, DateStyle())
         assertEquals(PlayCopy.pastWeek, week.label)
         assertEquals(listOf("Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"), week.days.map { it.label })
         assertEquals(3_600_000L, week.days[5].totalMillis)
@@ -110,9 +110,19 @@ class LeftDrawerTest {
         val friday = week.days[5].blocks.single()
         assertEquals(23f / 24f, friday.start, 0.0001f)
         assertEquals(1f, friday.endInclusive, 0.0001f)
-        val earlier = playWeek(spans, now, zone, weeksBack = 1, locale = Locale.US)
+        val earlier = playWeek(spans, now, zone, DateStyle(), weeksBack = 1)
         assertEquals("Sep 27 – Oct 3", earlier.label)
         assertEquals(listOf("c" to 10_800_000L), earlier.top)
+    }
+
+    @Test
+    fun anEarlierWeekReadsInTheDevicesDateOrder() {
+        val zone = ZoneOffset.UTC
+        val now = millis(2026, 11, 20, 20, 0, zone)
+        // What Android's best patterns give for en-GB.
+        val gb = DateStyle(Locale.UK, monthDayPattern = "d MMM", monthDayYearPattern = "d MMM y", is24Hour = true)
+        assertEquals("7 Nov – 13 Nov", playWeek(emptyList(), now, zone, gb, weeksBack = 1).label)
+        assertEquals("Nov 7 – Nov 13", playWeek(emptyList(), now, zone, DateStyle(), weeksBack = 1).label)
     }
 
     @Test

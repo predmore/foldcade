@@ -15,6 +15,7 @@ import android.os.Looper
 import android.provider.Settings
 import android.text.format.DateFormat
 import app.foldcade.language.Copy
+import app.foldcade.language.DateStyle
 import java.util.Date
 import java.util.Locale
 import kotlinx.coroutines.CoroutineScope
@@ -41,6 +42,8 @@ data class DeviceStatus(
     val bluetooth: Boolean = false,
     /** Whole minutes since the epoch, for anything that steps with the clock. */
     val minute: Long = 0L,
+    /** How every other date and time reads, so they all match the clock above. */
+    val dateStyle: DateStyle = DateStyle(),
 )
 
 /**
@@ -128,6 +131,19 @@ fun readDeviceStatus(context: Context): DeviceStatus {
         wifiBars = network.bars,
         bluetooth = bluetoothOn(context),
         minute = now / 60_000L,
+        dateStyle = dateStyle(context),
+    )
+}
+
+/** The locale's month and day order and the device 12/24-hour setting, as the language formats them. */
+internal fun dateStyle(context: Context, locale: Locale = Locale.getDefault()): DateStyle {
+    val is24Hour = DateFormat.is24HourFormat(context)
+    return DateStyle(
+        locale = locale,
+        monthDayPattern = DateFormat.getBestDateTimePattern(locale, "MMMd"),
+        monthDayYearPattern = DateFormat.getBestDateTimePattern(locale, "yMMMd"),
+        is24Hour = is24Hour,
+        timePattern = DateFormat.getBestDateTimePattern(locale, if (is24Hour) "Hm" else "hm"),
     )
 }
 

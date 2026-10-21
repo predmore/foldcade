@@ -77,6 +77,7 @@ import app.foldcade.language.HeroSubject
 import app.foldcade.language.HomeFolder
 import app.foldcade.language.HomeItem
 import app.foldcade.language.HomeKind
+import app.foldcade.language.isApp
 import app.foldcade.language.HomePlatform
 import app.foldcade.language.androidHomeId
 import app.foldcade.language.bucketMark
@@ -730,7 +731,9 @@ class ShellController(
 
     private fun folderHero(folder: HomeFolder): HeroSubject {
         val mark = collectionLook(folder)?.mark ?: folder.mark
-        return HeroSubject.Folder(HeroFolder(key = folder.id, name = folder.name, count = folderCount(home.board, folder.id), mark = mark))
+        return HeroSubject.Folder(
+            HeroFolder(key = folder.id, name = folder.name, count = folderCount(home.board, folder.id), mark = mark, apps = folder.holdsApps),
+        )
     }
 
     /** A tap on an empty collection's Add games does what A does there, in one tap: it is the only thing to press. */
@@ -794,7 +797,7 @@ class ShellController(
         val listed = entries.map { it.id }.toSet()
         return entries + hidden.filter { it.id !in listed }.map {
             FindEntry(it.id, it.title, if (it.id in home.board.retired) FindKind.Group
-                else if (it.kind == HomeKind.AndroidApp || it.kind == HomeKind.Emulator) FindKind.App else FindKind.Game,
+                else if (it.kind.isApp) FindKind.App else FindKind.Game,
                 hidden = true, mark = it.mark)
         }
     }
@@ -2099,7 +2102,8 @@ class ShellController(
         val entry = session.subject ?: return null
         // A group's mark is already its look, as its result tile shows it.
         if (entry.kind == FindKind.Group) {
-            return HeroSubject.Folder(HeroFolder(key = entry.id, name = entry.title, count = folderCount(home.board, entry.id), mark = entry.mark))
+            val apps = home.board.folders[entry.id]?.holdsApps == true
+            return HeroSubject.Folder(HeroFolder(key = entry.id, name = entry.title, count = folderCount(home.board, entry.id), mark = entry.mark, apps = apps))
         }
         val game = foundGame() ?: return null
         return HeroSubject.Item(
@@ -2679,7 +2683,7 @@ class ShellController(
             HomePlatform("game-boy", "Game Boy", setOf("gb")),
             HomePlatform("game-boy-color", "Game Boy Color", setOf("gbc")),
             HomePlatform("game-boy-advance", "Game Boy Advance", setOf("gba")),
-            HomePlatform("game-gear", "Game Gear", setOf("gg")),
+            HomePlatform("game-gear", "Sega Game Gear", setOf("gg")),
             HomePlatform("psp", "PSP", setOf("psp")),
         )
         val byId = LinkedHashMap<String, HomePlatform>()

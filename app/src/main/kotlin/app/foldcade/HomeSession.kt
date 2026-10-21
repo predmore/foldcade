@@ -38,6 +38,8 @@ import app.foldcade.language.TypingCue
 import app.foldcade.language.TypingStep
 import app.foldcade.language.quickNames
 import app.foldcade.language.folderCountLine
+import app.foldcade.language.allCount
+import app.foldcade.language.isApp
 import app.foldcade.language.HomePlatform
 import app.foldcade.language.MARK_LIBRARY
 import app.foldcade.language.Meaning
@@ -193,6 +195,9 @@ class HomeSession(
     private var apps: List<HomeItem> = emptyList()
     private var library: List<HomeItem> = emptyList()
     private var platforms: List<HomePlatform> = emptyList()
+
+    /** The games All lists, counted once per merge rather than on every face. */
+    private var allGames: Int = 0
     private val games = HashMap<String, Game>()
     private val copies = HashMap<String, List<Game>>()
     private val shelfById = HashMap<String, ShelfGame>()
@@ -250,6 +255,7 @@ class HomeSession(
         shelf = report.shelf
         apps = report.apps
         library = report.library
+        allGames = allCount(catalog())
         platforms = report.platforms
         report.remembered.forEach { (id, game) -> games[id] = game }
         report.copies.forEach { (id, listed) -> if (listed.isNotEmpty()) copies[id] = listed }
@@ -433,7 +439,7 @@ class HomeSession(
             FindEntry(
                 id = item.id,
                 title = item.title,
-                kind = if (item.kind == HomeKind.AndroidApp || item.kind == HomeKind.Emulator) FindKind.App else FindKind.Game,
+                kind = if (item.kind.isApp) FindKind.App else FindKind.Game,
                 platformId = platform?.id ?: item.platformId?.takeIf { item.kind == HomeKind.Rom && it.isNotBlank() },
                 platformName = platform?.name,
                 hidden = item.id in board.hidden,
@@ -905,7 +911,7 @@ class HomeSession(
             return HomeFace(
                 id = id,
                 title = Copy.allLibrary,
-                shortText = "",
+                shortText = folderCountLine(allGames),
                 mark = MARK_LIBRARY,
                 empty = false,
                 folder = false,
@@ -922,7 +928,7 @@ class HomeSession(
             return HomeFace(
                 id = id,
                 title = folder.name,
-                shortText = folderCountLine(count, apps = folder.bucket == HomeKind.AndroidApp),
+                shortText = folderCountLine(count, apps = folder.holdsApps),
                 // A collection wears its folder card; the one being edited shows the focused choice.
                 mark = (iconPick?.takeIf { it.folderId == id }?.look ?: collectionLook(folder))?.mark ?: folder.mark,
                 empty = false,

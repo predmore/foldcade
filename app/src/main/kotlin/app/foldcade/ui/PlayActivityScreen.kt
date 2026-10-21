@@ -50,8 +50,9 @@ import java.time.ZoneId
 @Composable
 private fun rememberPlayWeek(app: FoldcadeApp, weeksBack: Int): PlayWeek {
     val stamp = app.plays.stamp
-    return remember(stamp, weeksBack) {
-        playWeek(app.plays.spans(), System.currentTimeMillis(), ZoneId.systemDefault(), weeksBack)
+    val dateStyle = rememberDateStyle(app)
+    return remember(stamp, weeksBack, dateStyle) {
+        playWeek(app.plays.spans(), System.currentTimeMillis(), ZoneId.systemDefault(), dateStyle, weeksBack)
     }
 }
 

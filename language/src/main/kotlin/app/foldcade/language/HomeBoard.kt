@@ -49,6 +49,9 @@ enum class HomeKind {
     Loose,
 }
 
+/** An app, not a game: Find lists it as one, and a folder of them counts apps. */
+val HomeKind.isApp: Boolean get() = this == HomeKind.AndroidApp || this == HomeKind.Emulator
+
 /** A platform the catalog can classify a ROM into. [id] is canonical. */
 data class HomePlatform(
     val id: String,
@@ -91,6 +94,9 @@ data class HomeFolder(
 
     /** A group the user names. It holds what they put in it, and only that. */
     val collection: Boolean get() = !system && !recent
+
+    /** Android Apps and Emulators: its count reads in apps. */
+    val holdsApps: Boolean get() = bucket?.isApp == true
 }
 
 /**
@@ -881,9 +887,14 @@ private val gameKinds = setOf(HomeKind.Rom, HomeKind.AndroidGame, HomeKind.GameN
 
 /** All lists every game alphabetically, or played games newest first with unplayed games A to Z. */
 fun allItems(items: List<HomeItem>, sort: LibrarySort = LibrarySort.Listed): List<HomeItem> = items.distinctBy { it.id }
-    .filter { !it.placeholder && it.kind in gameKinds }
+    .filter(::listedInAll)
     .sortedWith(compareBy<HomeItem> { if (sort == LibrarySort.RecentlyPlayed) -it.lastPlayedMillis else 0L }
         .thenBy { it.title.lowercase() }.thenBy { it.id })
+
+/** How many games [allItems] lists, without sorting them, for the All tile's count. */
+fun allCount(items: List<HomeItem>): Int = items.distinctBy { it.id }.count(::listedInAll)
+
+private fun listedInAll(item: HomeItem): Boolean = !item.placeholder && item.kind in gameKinds
 
 /** Next letter group. Forward lands on its first row. Backward lands on the previous group's first row. Stays put at the ends. Does not wrap. */
 fun jumpLetter(labels: List<String>, index: Int, forward: Boolean): Int {

@@ -3,9 +3,7 @@ package app.foldcade.language
 import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneId
-import java.time.format.DateTimeFormatter
 import java.time.format.TextStyle
-import java.util.Locale
 
 /** One stretch a game was in front, from Foldcade's play log. Wall-clock milliseconds. */
 data class PlaySpan(val gameId: String, val startMillis: Long, val endMillis: Long)
@@ -50,15 +48,16 @@ object PlayCopy {
 const val PLAY_TOP_GAMES = 4
 
 /**
- * The seven days that end [weeksBack] weeks before today, in [zone]. A stretch
- * that crosses midnight counts on both days, each for its own part.
+ * The seven days that end [weeksBack] weeks before today, in [zone], named and
+ * dated in the device's [style]. A stretch that crosses midnight counts on both
+ * days, each for its own part.
  */
 fun playWeek(
     spans: List<PlaySpan>,
     nowMillis: Long,
     zone: ZoneId,
+    style: DateStyle,
     weeksBack: Int = 0,
-    locale: Locale = Locale.getDefault(),
 ): PlayWeek {
     val today = Instant.ofEpochMilli(nowMillis).atZone(zone).toLocalDate()
     val last = today.minusWeeks(weeksBack.coerceAtLeast(0).toLong())
@@ -77,13 +76,12 @@ fun playWeek(
             perGame[span.gameId] = (perGame[span.gameId] ?: 0L) + (to - from)
             ((from - start) / length)..((to - start) / length)
         }
-        PlayDay(date, date.dayOfWeek.getDisplayName(TextStyle.SHORT, locale), blocks, total)
+        PlayDay(date, date.dayOfWeek.getDisplayName(TextStyle.SHORT, style.locale), blocks, total)
     }
     val label = if (weeksBack <= 0) {
         PlayCopy.pastWeek
     } else {
-        val format = DateTimeFormatter.ofPattern("MMM d", locale)
-        "${format.format(dates.first())} – ${format.format(dates.last())}"
+        "${style.monthDay(dates.first())} – ${style.monthDay(dates.last())}"
     }
     return PlayWeek(
         label = label,
