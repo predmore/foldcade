@@ -152,4 +152,13 @@ class ThemeTrialsTest {
         assertEquals(ledger, ThemeLedger.decode(ledger.encode()))
         assertNull(ThemeLedger.decode("not json"))
     }
+
+    @Test
+    fun aPackThatDiesLoadingIsStillRefusedOnceItsManifestWasRead() {
+        val reading = ThemeLedger().arrive(mapOf("neon.zip" to "1:1")).startRunning()
+            .read("neon.zip", manifest(""", "release": "3.0.0""""))
+        val (struck, _) = reading.afterExits(listOf(ThemeProcessExit(1, abnormal = true), ThemeProcessExit(2, abnormal = true)))
+        assertEquals(2, struck.theme("neon.zip")!!.trial!!.strikes)
+        assertEquals(setOf(ThemeRelease(3)), struck.refuse("neon.zip").refused["neon"])
+    }
 }

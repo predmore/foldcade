@@ -424,7 +424,10 @@ class FoldcadeApp : Application() {
             themeInstalls.begin(processExits())
         } catch (error: Exception) { Log.w("FoldcadeTheme", "Theme trials skipped", error); emptyList() }
         val manifests = mutableMapOf<String, ThemeFile>()
-        themePacks = PackagedTheme.loadAll(this) { archive, manifest -> manifests[archive] = manifest }
+        themePacks = PackagedTheme.loadAll(this) { archive, manifest ->
+            manifests[archive] = manifest
+            try { themeInstalls.read(archive, manifest) } catch (error: Exception) { Log.w("FoldcadeTheme", "Theme trials not saved", error) }
+        }
         bundledThemeIds = setOf(FALLBACK_THEME_ID) + themePacks.filter { it.archive == null }.map { it.resources.id }
         packaged = themePacks.firstOrNull { it.resources.id == FALLBACK_THEME_ID }
         val names = listOf(Copy.builtIn) + themePacks.map { it.name }

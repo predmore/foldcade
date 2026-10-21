@@ -126,14 +126,16 @@ data class ThemeLedger(
         inUse = emptySet(),
     )
 
+    /** [file] has [manifest]. Noted as each archive is read, so a pack that dies loading can still be refused. */
+    fun read(file: String, manifest: ThemeFile): ThemeLedger {
+        val theme = theme(file) ?: return this
+        return withTheme(theme.copy(id = manifest.id, name = manifest.name, release = manifest.release, source = manifest.source))
+    }
+
     /** Loading finished: each archive in [manifests] loaded with that manifest, and [inUse] are in use. */
-    fun loaded(manifests: Map<String, ThemeFile>, inUse: Set<String>): ThemeLedger = copy(
-        loading = emptySet(),
-        inUse = inUse,
-        themes = themes.map { theme ->
-            manifests[theme.file]?.let { theme.copy(id = it.id, name = it.name, release = it.release, source = it.source) } ?: theme
-        },
-    )
+    fun loaded(manifests: Map<String, ThemeFile>, inUse: Set<String>): ThemeLedger =
+        manifests.entries.fold(this) { ledger, (file, manifest) -> ledger.read(file, manifest) }
+            .copy(loading = emptySet(), inUse = inUse)
 
     /** The release in [file] is refused from now on. Written down before the archive moves. */
     fun refuse(file: String): ThemeLedger {

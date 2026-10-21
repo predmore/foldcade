@@ -73,6 +73,15 @@ internal class ThemeInstalls(private val root: File) {
         return rollbacks
     }
 
+    /** [file] was read with [manifest], before the pack is built from it. */
+    @Synchronized
+    fun read(file: String, manifest: ThemeFile) {
+        val next = ledger.read(file, manifest)
+        if (next == ledger) return
+        ledger = next
+        write()
+    }
+
     /**
      * The packs loaded: each archive's name and its manifest. Loading did not stop them. [inUse]
      * are the archives the saved choices resolved to.
