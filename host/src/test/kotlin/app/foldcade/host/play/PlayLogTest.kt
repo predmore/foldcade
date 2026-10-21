@@ -2,6 +2,7 @@ package app.foldcade.host.play
 
 import java.nio.file.Files
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -259,6 +260,85 @@ class PlayLogTest {
             }
         }
         assertEquals(listOf(1, 0, 2, 3), order)
+    }
+
+    @Test
+    fun aRemovedSessionLeavesTheTotalsAndLastPlayed() {
+        val log = memoryLog()
+        val kept = log.start("one")
+        now = 2_000
+        log.signal(kept, PlaySignal.End)
+        now = 10_000
+        val night = log.start("one")
+        now = 64_000
+        log.signal(night, PlaySignal.End)
+        assertEquals(56_000L, log.totals("one").activeMillis)
+        now = 70_000
+        assertTrue(log.remove(night))
+        assertEquals(2_000L, log.totals("one").activeMillis)
+        // The removal is not a play, and the removed session's own stamps no longer count.
+        assertEquals(2_000L, log.totals("one").lastPlayedMillis)
+        assertEquals(setOf(night), log.removedSessions())
+        val last = log.events().last()
+        assertEquals(PlayKind.Removed, last.kind)
+        assertEquals(night, last.sessionId)
+        assertEquals("one", last.gameId)
+        // Twice, or an id the log never had, does nothing.
+        assertFalse(log.remove(night))
+        assertFalse(log.remove("missing"))
+        assertEquals(1, log.events().count { it.kind == PlayKind.Removed })
+    }
+
+    @Test
+    fun aSessionRemovedWhileOpenNeverCounts() {
+        val log = memoryLog()
+        val id = log.start("one")
+        now = 5_000
+        log.signal(id, PlaySignal.Background)
+        assertTrue(log.remove(id))
+        assertEquals(0L, log.totals("one").activeMillis)
+        log.signal(id, PlaySignal.Resume)
+        now = 9_000
+        assertEquals(0L, log.totals("one").activeMillis)
+        log.signal(id, PlaySignal.End)
+        assertEquals(0L, log.totals("one").activeMillis)
+        assertNull(log.totals("one").lastPlayedMillis)
+    }
+
+    @Test
+    fun aRemovalIsKeptThroughAReload() {
+        val file = tempLog()
+        val first = PlayLog(PlayClock { now }, FilePlayLog(file)) { "session-${nextId++}" }
+        val kept = first.start("one")
+        now = 3_000
+        first.signal(kept, PlaySignal.End)
+        val night = first.start("one")
+        now = 50_000
+        first.signal(night, PlaySignal.End)
+        first.remove(night)
+        now = 90_000
+        val second = PlayLog(PlayClock { now }, FilePlayLog(file)) { "session-${nextId++}" }
+        assertEquals(3_000L, second.totals("one").activeMillis)
+        assertEquals(setOf(night), second.removedSessions())
+        assertEquals(first.events(), second.events())
+    }
+
+    @Test
+    fun aKindThisBuildDoesNotKnowIsSkippedAndTheRestReads() {
+        val file = tempLog()
+        val first = PlayLog(PlayClock { now }, FilePlayLog(file)) { "session-1" }
+        val id = first.start("one")
+        now = 4_000
+        first.signal(id, PlaySignal.End)
+        // A later build's fact, as an older build meets Removed.
+        file.appendText("$PLAY_EVENT_SCHEMA\tsession-1\tone\tRenamed\t5000\t-\t0\n")
+        assertNull(decodePlayEvent("$PLAY_EVENT_SCHEMA\tsession-1\tone\tRenamed\t5000\t-\t0"))
+        val second = PlayLog(PlayClock { now }, FilePlayLog(file)) { "session-2" }
+        assertEquals(4_000L, second.totals("one").activeMillis)
+        assertEquals(listOf(PlayKind.Started, PlayKind.Ended), second.events().map { it.kind })
+        // And Removed itself round-trips.
+        val removed = PlayEvent("session-1", "one", PlayKind.Removed, 6_000L, null, 0L)
+        assertEquals(removed, decodePlayEvent(encodePlayEvent(removed).trimEnd('\n')))
     }
 
     private fun memoryLog(): PlayLog = PlayLog(PlayClock { now }, MemoryPlaySink()) { "session-${nextId++}" }

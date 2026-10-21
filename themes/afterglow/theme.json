@@ -653,6 +653,10 @@
       "file": "icons/ic_badge_hidden.xml",
       "tint": true
     },
+    "badge.paused": {
+      "file": "icons/ic_badge_paused.xml",
+      "tint": true
+    },
     "badge.sync": {
       "file": "icons/ic_badge_sync.xml",
       "tint": true
@@ -1784,7 +1788,10 @@
       "markScale": 0.86,
       "cardAlpha": 0.72,
       "pillAlpha": 0.94,
-      "logoShadeAlpha": 0.62,
+      "logoShadeAlpha": 0.42,
+      "logoShadowAlpha": 0.85,
+      "logoShadowBlurDp": 10,
+      "logoGlowBelow": 0.3,
       "sceneShadeTop": 0.45,
       "sceneShadeBottom": 0.8,
       "ambientBlurDp": 48,
@@ -1806,6 +1813,7 @@
       "islandRimLitAlpha": 0.34,
       "quickTileAlpha": 0.08,
       "quickTileLitAlpha": 0.16,
+      "quickTileOnAlpha": 0.6,
       "quickArtGrow": 0.14
     },
     "controls": {

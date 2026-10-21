@@ -328,5 +328,7 @@ def badge_assets():
     return [Asset("ic_badge_cloud", 24, 24, [solid(cloud)], note="Tile badge: the game is on its server, not this device. Tinted at draw time.", tint=True),
             Asset("ic_badge_check", 24, 24, [solid(check, evenodd=True)], note="Tile badge: the sync worked. Tinted at draw time.", tint=True),
             Asset("ic_badge_sync", 24, 24, arrows, note="Tile badge: saves are syncing. Tinted at draw time.", tint=True),
+            Asset("ic_badge_paused", 24, 24, [solid(circle(12, 12, 10) + "M8.4,7.2 H11 V16.8 H8.4 Z M13,7.2 H15.6 V16.8 H13 Z", evenodd=True)],
+                  note="Tile badge: the game is still open in its player, behind Home. Tinted at draw time.", tint=True),
             Asset("ic_badge_hidden", 24, 24, [ink(eye, sw=1.92), solid(circle(12, 12, 2.16)), ink("M5.76,18.72 L18.24,5.28", sw=2.304)],
                   note="Find badge: a hidden result. The host draws the disc behind it. Tinted at draw time.", tint=True)]

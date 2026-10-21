@@ -112,6 +112,12 @@ class FindSession(entries: List<FindEntry>) {
         return FindOutcome.Stay(typing.press(at).cue)
     }
 
+    /** Characters from a hardware keyboard. They go on the query, from the results too, as a tap on a key does. */
+    fun typeText(text: String): FindOutcome {
+        onResults = false
+        return FindOutcome.Stay(typing.typeText(text).cue)
+    }
+
     /** A tap on result [at]: the first tap focuses it, a second opens it. */
     fun tapResult(at: Int): FindOutcome {
         val entry = results.getOrNull(at) ?: return FindOutcome.Stay(TypingCue.None)

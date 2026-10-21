@@ -16,6 +16,9 @@ sealed interface TileActivity {
 
     /** A sync ended. Its mark shows until [untilMillis], then the tile is quiet again. */
     data class Synced(val mark: SyncMark, val untilMillis: Long) : TileActivity
+
+    /** The game is still open in its player, behind Home. A brings it back where it was. */
+    data object Paused : TileActivity
 }
 
 /** How a finished sync reads. Only [Synced] and [KeptBoth] earn the check. */
@@ -36,6 +39,7 @@ fun activityLine(activity: TileActivity): String = when (activity) {
         ?: Copy.downloading
     TileActivity.Checking -> Copy.checkingDownload
     TileActivity.Syncing -> Copy.syncingSaves
+    TileActivity.Paused -> Copy.paused
     is TileActivity.Synced -> when (activity.mark) {
         SyncMark.Synced -> Copy.savesSynced
         SyncMark.KeptBoth -> Copy.savesKeptBoth

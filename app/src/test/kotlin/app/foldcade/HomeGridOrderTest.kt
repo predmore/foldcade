@@ -75,6 +75,9 @@ class HomeGridOrderTest {
         shell.ingestLibrary("local-folder", listOf(entry("puzzle", "Puzzle", "nintendo-3ds")), emptyList())
         assertEquals(listOf(Copy.allLibrary, "Android Games", "Android Apps", "Nintendo 3DS"), titles(shell))
         assertTrue((1..3).all { shell.homeFace(it)?.folder == true })
+        // All counts its games as every folder does; Notes is an app, so it is not one of them.
+        assertEquals("2 games", shell.homeFace(0)?.shortText)
+        assertEquals("1 app", shell.homeFace(2)?.shortText)
         assertEquals("android-games", shell.homeFace(1)?.mark)
         assertEquals("android-apps", shell.homeFace(2)?.mark)
         assertTrue(titles(shell).none { it == "GameNative" || it == "Moonlight" || it == "DroidDeck" || it == "Nintendo DS" })
@@ -731,7 +734,8 @@ class HomeGridOrderTest {
         shell.onMeaning(Meaning.Activate, HostScreen.Bottom)
         focus(shell, titles(shell).indexOf("Puzzle"))
         // A folder holds every game of its kind, so nothing is removed from it; Hide is its own row.
-        assertEquals(listOf(Row.MoveTile, Row.AddToCollection, Row.SelectTile, Row.Hide), optionRows(shell))
+        // The folder's Sort ends every menu inside it.
+        assertEquals(listOf(Row.MoveTile, Row.AddToCollection, Row.SelectTile, Row.Hide, Row.SortFolder), optionRows(shell))
         assertNull(shell.model.tileActions?.remove)
         // Add to › Home pins it, leaving the game in its folder, and the focus on it.
         choose(shell, Row.AddToCollection)
@@ -795,7 +799,7 @@ class HomeGridOrderTest {
         focus(shell, titles(shell).indexOf("Quests"))
         shell.onMeaning(Meaning.Activate, HostScreen.Bottom)
         assertEquals(listOf("Drift"), titles(shell))
-        assertEquals(listOf(Row.MoveTile, Row.AddToCollection, Row.SelectTile, Row.RemoveTile, Row.Hide), optionRows(shell))
+        assertEquals(listOf(Row.MoveTile, Row.AddToCollection, Row.SelectTile, Row.RemoveTile, Row.Hide, Row.SortFolder), optionRows(shell))
         assertEquals(Copy.remove, rowText(Row.RemoveTile, shell.model).label)
         choose(shell, Row.AddToCollection)
         shell.onMeaning(Meaning.MoveDown, HostScreen.Bottom)
@@ -816,14 +820,14 @@ class HomeGridOrderTest {
         // Back in its menu, the rest acts on that game too: Hide, and the menu closes.
         shell.onMeaning(Meaning.Back, HostScreen.Bottom)
         val held = panelRows(shell.model.panel!!, shell.model).filterNot { it == Row.Undo }
-        assertEquals(listOf(Row.AddToCollection, Row.Hide), held)
+        assertEquals(listOf(Row.AddToCollection, Row.Hide, Row.SortFolder), held)
         pickRowFocus(shell, Row.Hide)
         shell.onMeaning(Meaning.Activate, HostScreen.Bottom)
         assertNull(shell.model.panel)
         assertEquals(Copy.hidden, shell.model.undoVerb)
         // The focus rests on the empty slot it left, and Y there is the slot's own menu.
         assertEquals(0, shell.model.focus.cellIndex)
-        assertEquals(listOf(Row.MoveTile), optionRows(shell))
+        assertEquals(listOf(Row.MoveTile, Row.SortFolder), optionRows(shell))
         shell.onMeaning(Meaning.Back, HostScreen.Bottom)
         assertFalse("Drift" in titles(shell))
         focus(shell, titles(shell).indexOf("Nintendo 3DS"))
@@ -838,7 +842,7 @@ class HomeGridOrderTest {
         shell.ingestLibrary("local-folder", listOf(entry("puzzle", "Puzzle", "nintendo-3ds")), emptyList())
         val folder = titles(shell).indexOf("Nintendo 3DS")
         focus(shell, folder)
-        assertEquals(listOf(Row.MoveTile, Row.RenameFolder, Row.RemoveTile), optionRows(shell))
+        assertEquals(listOf(Row.MoveTile, Row.RenameFolder, Row.RemoveTile, Row.SortFolder), optionRows(shell))
         choose(shell, Row.RemoveTile)
         // The folder was the last tile, so its empty slot goes with it.
         assertEquals(listOf(Copy.allLibrary), titles(shell))
@@ -987,7 +991,7 @@ class HomeGridOrderTest {
         shell.onMeaning(Meaning.Activate, HostScreen.Bottom)
         focus(shell, titles(shell).indexOf("Drift"))
         assertEquals(
-            listOf(Row.MoveTile, Row.AddToCollection, Row.SelectTile, Row.Hide, Row.RemoveDownload),
+            listOf(Row.MoveTile, Row.AddToCollection, Row.SelectTile, Row.Hide, Row.RemoveDownload, Row.SortFolder),
             optionRows(shell),
         )
         // A copy still arriving is not offered.

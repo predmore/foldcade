@@ -118,4 +118,4 @@ data class DeleteHold(val row: Row, val key: PromptKey, val started: Long, val g
     fun release(now: Long): Boolean = complete(now)
 }
 
-fun Row.destructive(): Boolean = this == Row.RemoveDownload || this == Row.DeleteShortcut
+fun Row.destructive(): Boolean = this == Row.RemoveDownload || this == Row.DeleteShortcut || this == Row.RemoveSession

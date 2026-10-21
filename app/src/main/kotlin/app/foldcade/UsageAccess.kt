@@ -54,6 +54,29 @@ class UsageAccess(private val context: Context) {
         return samples
     }
 
+    /**
+     * The activities of [packageName] that came to the front since [sinceMillis],
+     * oldest first. Empty without usage access, which is the only way Android shows
+     * a normal app another app's activities; it keeps no record of their closing.
+     */
+    fun resumedSince(packageName: String, sinceMillis: Long, nowMillis: Long): List<String> {
+        if (!granted()) return emptyList()
+        val manager = context.getSystemService(UsageStatsManager::class.java) ?: return emptyList()
+        val events = try {
+            manager.queryEvents(sinceMillis, nowMillis)
+        } catch (_: SecurityException) {
+            return emptyList()
+        }
+        val event = UsageEvents.Event()
+        val resumed = mutableListOf<String>()
+        while (events.hasNextEvent()) {
+            events.getNextEvent(event)
+            if (event.eventType != UsageEvents.Event.ACTIVITY_RESUMED || event.packageName != packageName) continue
+            event.className?.let { resumed += it }
+        }
+        return resumed
+    }
+
     companion object {
         const val LOOKBACK_MS = 7L * 24L * 60L * 60L * 1000L
     }

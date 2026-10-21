@@ -35,6 +35,7 @@ import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import app.foldcade.language.Copy
+import app.foldcade.language.DateStyle
 import app.foldcade.language.PromptKey
 import app.foldcade.language.SaveConflictFocus
 import app.foldcade.language.SaveConflictPrompt
@@ -71,6 +72,7 @@ internal fun SaveConflictTop(prompt: SaveConflictPrompt) {
 @Composable
 internal fun SaveConflictBottom(
     prompt: SaveConflictPrompt,
+    dateStyle: DateStyle = DateStyle(),
     onFocus: (SaveConflictFocus) -> Unit,
     onLater: () -> Unit,
     backKey: PromptKey = PromptKey.FaceB,
@@ -105,10 +107,10 @@ internal fun SaveConflictBottom(
                 horizontalArrangement = Arrangement.spacedBy(gap),
                 verticalAlignment = Alignment.Top,
             ) {
-                SaveColumn(prompt.local, prompt.focus == SaveConflictFocus.Local, fit.compact, Modifier.weight(1f)) {
+                SaveColumn(prompt.local, dateStyle, prompt.focus == SaveConflictFocus.Local, fit.compact, Modifier.weight(1f)) {
                     onFocus(SaveConflictFocus.Local)
                 }
-                SaveColumn(prompt.remote, prompt.focus == SaveConflictFocus.Remote, fit.compact, Modifier.weight(1f)) {
+                SaveColumn(prompt.remote, dateStyle, prompt.focus == SaveConflictFocus.Remote, fit.compact, Modifier.weight(1f)) {
                     onFocus(SaveConflictFocus.Remote)
                 }
             }
@@ -132,6 +134,7 @@ internal fun SaveConflictBottom(
 @Composable
 private fun SaveColumn(
     side: SaveConflictSide,
+    dateStyle: DateStyle,
     focused: Boolean,
     compact: Boolean,
     modifier: Modifier,
@@ -150,7 +153,7 @@ private fun SaveColumn(
             verticalArrangement = Arrangement.spacedBy(if (compact) 2.dp else 6.dp),
         ) {
             BasicLine(side.source, theme.onBackground, type.menuRow.value, theme, TextAlign.Start, maxLines = 2)
-            BasicLine(formatSaveWhen(side.updatedAtMillis), theme.onBackground, type.dialogBody.value, theme, TextAlign.Start, maxLines = 2)
+            BasicLine(formatSaveWhen(side.updatedAtMillis, dateStyle), theme.onBackground, type.dialogBody.value, theme, TextAlign.Start, maxLines = 2)
             BasicLine(formatSaveSize(side.sizeBytes), theme.muted, type.dialogBody.value, theme, TextAlign.Start, maxLines = 1)
         }
         ConflictChip(

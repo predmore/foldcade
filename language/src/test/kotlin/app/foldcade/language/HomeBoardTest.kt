@@ -313,6 +313,9 @@ class HomeBoardTest {
             .map { item(it.name, kind = it) }
         val others = listOf(HomeKind.AndroidApp, HomeKind.Emulator, HomeKind.Loose).map { item(it.name, kind = it) }
         assertEquals(games.map { it.id }.toSet(), allItems(games + others).map { it.id }.toSet())
+        // The All tile counts the same games, a repeat and a setup tile left out.
+        val placeholder = item("empty-pc", kind = HomeKind.GameNative).copy(placeholder = true)
+        assertEquals(games.size, allCount(games + others + games.first() + placeholder))
     }
 
     @Test
@@ -409,6 +412,10 @@ class HomeBoardTest {
         assertEquals("emulators", merged.folders.getValue(HOME_EMULATORS).mark)
         assertEquals("Emulators", merged.folders.getValue(HOME_EMULATORS).name)
         assertEquals(setOf(azahar.id, moonlight.id), merged.filedEmulators)
+        // It holds apps, so it counts apps, as Android Apps does; Find says the same.
+        assertTrue(merged.folders.getValue(HOME_EMULATORS).holdsApps)
+        assertFalse(merged.folders.getValue(HOME_MOONLIGHT).holdsApps)
+        assertEquals("2 apps", findFacts(merged, FindEntry(HOME_EMULATORS, "Emulators", FindKind.Group)).first())
 
         // Uninstalled, the last emulator takes the folder with it.
         val gone = mergeHome(merged, listOf(stream), platforms)

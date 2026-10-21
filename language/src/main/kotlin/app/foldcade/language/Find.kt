@@ -356,7 +356,7 @@ fun homeLanding(board: HomeBoard, id: String): HomeLanding? {
         ?: holding.firstOrNull { it.second.collection }
         ?: holding.firstOrNull { it.second.recent }
         ?: return null
-    return HomeLanding.Inside(group.id, at, group.slots.indexOf(id))
+    return HomeLanding.Inside(group.id, at, groupSlots(board, group.id).indexOf(id))
 }
 
 /**
@@ -372,11 +372,11 @@ fun findFacts(board: HomeBoard, entry: FindEntry): List<String> {
         is HomeLanding.Inside -> board.folders[spot.groupId]?.name?.let(FindCopy::inPlace)
         null -> FindCopy.notOnHome.takeIf { !entry.hidden }
     }
-    // In its own platform's folder, "In Genesis" already says the platform.
+    // In its own platform's folder, "In Sega Genesis" already says the platform.
     val inOwnFolder = spot is HomeLanding.Inside && board.folders[spot.groupId]?.platformId == entry.platformId
     return listOfNotNull(
         entry.platformName?.takeIf { entry.kind == FindKind.Game && it.isNotBlank() && !inOwnFolder },
-        group?.let { folderCountLine(folderCount(board, it.id), apps = it.bucket == HomeKind.AndroidApp) },
+        group?.let { folderCountLine(folderCount(board, it.id), apps = it.holdsApps) },
         place,
         FindCopy.hidden.takeIf { entry.hidden },
     )

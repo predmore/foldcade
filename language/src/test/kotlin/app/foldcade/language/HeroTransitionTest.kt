@@ -147,6 +147,8 @@ class HeroTransitionTest {
         assertEquals("0 games", folderCountLine(-4))
         assertEquals("14 apps", folderCountLine(14, apps = true))
         assertEquals("1 app", folderCountLine(1, apps = true))
+        // Android Apps and Emulators count apps on the top screen as on their tiles.
+        assertEquals("7 apps", heroCopy(HeroSubject.Folder(HeroFolder(key = HOME_EMULATORS, name = "Emulators", count = 7, apps = true))).detail)
         val unknown = heroCopy(HeroSubject.Folder(HeroFolder(key = "nds", name = "Nintendo DS", count = null)))
         assertEquals("Nintendo DS", unknown.title)
         assertEquals("", unknown.detail)
@@ -169,6 +171,32 @@ class HeroTransitionTest {
         assertEquals("", heroFacts("Puzzle", null, ""))
         // A platform tile named for its platform does not repeat the name.
         assertEquals("", heroFacts("PC", "PC"))
+    }
+
+    @Test
+    fun aGameOnlyOnAServerSaysWhereAndHowMuchItDownloads() {
+        assertEquals("On RomM · 512 MB", downloadFacts("RomM", 512L * 1024 * 1024))
+        // The size is left out when the library does not know it; the server's name when it has none.
+        assertEquals("On RomM", downloadFacts("RomM", null))
+        assertEquals("On RomM", downloadFacts(" RomM ", 0L))
+        assertEquals("${Copy.notOnDevice} · 1.5 GB", downloadFacts(" ", 1536L * 1024 * 1024))
+        assertEquals(
+            "Nintendo 3DS · On RomM · 512 MB · Both screens",
+            heroFacts("Sonic 3D 2", "Nintendo 3DS", downloadFacts("RomM", 512L * 1024 * 1024), Copy.usesBothScreens),
+        )
+    }
+
+    @Test
+    fun downloadSizesReadAsAPlayerWouldSayThem() {
+        assertEquals("0 B", formatDownloadSize(-4))
+        assertEquals("900 B", formatDownloadSize(900))
+        assertEquals("2 KB", formatDownloadSize(2048))
+        assertEquals("1.5 KB", formatDownloadSize(1536))
+        assertEquals("512 MB", formatDownloadSize(512L * 1024 * 1024))
+        assertEquals("735.4 MB", formatDownloadSize((735.4 * 1024 * 1024).toLong()))
+        assertEquals("3.8 GB", formatDownloadSize((3.8 * 1024 * 1024 * 1024).toLong()))
+        // Just under a unit rounds up into it, not to "1024 MB".
+        assertEquals("1 GB", formatDownloadSize(1024L * 1024 * 1024 - 1))
     }
 
     @Test

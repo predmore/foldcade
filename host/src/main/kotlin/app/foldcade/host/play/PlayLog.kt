@@ -10,8 +10,10 @@ import java.util.UUID
  * game, the four lifecycle kinds, when it happened, why a background happened,
  * and the active time in that session after the event. Active time already
  * excludes background and sleep, so a subscriber uses [PlayEvent.activeMillis]
- * and does not subtract timestamps. Adding a field or a kind would be a
- * schema change. v1 does not need one.
+ * and does not subtract timestamps. Adding a field would be a schema change.
+ * [PlayKind.Removed] was added within v1: a reader that does not know a kind
+ * skips that line, so an older build still reads the rest, and only counts the
+ * removed session again.
  */
 const val PLAY_EVENT_SCHEMA = 1
 
@@ -23,12 +25,19 @@ enum class PlaySignal {
     End,
 }
 
-/** The four facts on the stream. Closed. */
+/** The lifecycle facts on the stream, and the player taking a session back out. */
 enum class PlayKind {
     Started,
     Backgrounded,
     Resumed,
     Ended,
+
+    /**
+     * The player took this session out of their history, as a game left running
+     * overnight. Its time no longer counts anywhere. The session's own events stay
+     * in the log, which is append-only; readers skip a session with this event.
+     */
+    Removed,
 }
 
 /**
@@ -123,6 +132,10 @@ class PlayLog(
     private val open = LinkedHashMap<String, OpenPlay>()
     private val completedActive = HashMap<String, Long>()
     private val lastAt = HashMap<String, Long>()
+
+    /** Each ended session's game and active time, so a removal can take it back out. */
+    private val ended = HashMap<String, Pair<String, Long>>()
+    private val removed = HashSet<String>()
     private val listeners = mutableListOf<(PlayEvent) -> Unit>()
 
     init {
@@ -158,13 +171,14 @@ class PlayLog(
     fun totals(gameId: String, gameIds: Set<String>): PlayTotals = synchronized(lock) {
         val elapsed = clock.elapsedNow()
         val running = open.values.sumOf { session ->
-            if (session.gameId in gameIds) session.currentActive(elapsed) else 0L
+            if (session.gameId in gameIds && session.sessionId !in removed) session.currentActive(elapsed) else 0L
         }
         val completed = gameIds.sumOf { completedActive[it] ?: 0L }
         val now = clock.wallNow()
         // A stamp written while the clock was ahead must not stay "last played" after it is corrected.
+        // A removed session was never played, as far as the player is concerned.
         val last = history.asSequence()
-            .filter { it.gameId in gameIds && it.atMillis <= now }
+            .filter { it.gameId in gameIds && it.atMillis <= now && it.kind != PlayKind.Removed && it.sessionId !in removed }
             .maxOfOrNull { it.atMillis }
         PlayTotals(gameId, completed + running, last)
     }
@@ -231,6 +245,24 @@ class PlayLog(
         }
     }
 
+    /** Sessions the player removed. Their events stay in [events]; readers leave them out. */
+    fun removedSessions(): Set<String> = synchronized(lock) { removed.toSet() }
+
+    /**
+     * Takes session [sessionId] out of the history: its time leaves the totals and
+     * its stretches leave the schedule. A session still open keeps logging, but
+     * still counts for nothing. Returns false for an unknown or already removed id.
+     */
+    fun remove(sessionId: String): Boolean {
+        val event = synchronized(lock) {
+            if (sessionId in removed) return@synchronized null
+            val gameId = open[sessionId]?.gameId ?: ended[sessionId]?.first ?: return@synchronized null
+            PlayEvent(sessionId, gameId, PlayKind.Removed, clock.wallNow(), null, 0L).also(::commitLocked)
+        } ?: return false
+        dispatch(listOf(event))
+        return true
+    }
+
     private fun commitLocked(event: PlayEvent) {
         sink.append(event)
         history.add(event)
@@ -238,6 +270,12 @@ class PlayLog(
     }
 
     private fun apply(event: PlayEvent) {
+        if (event.kind == PlayKind.Removed) {
+            if (!removed.add(event.sessionId)) return
+            val (gameId, active) = ended[event.sessionId] ?: return
+            completedActive[gameId] = ((completedActive[gameId] ?: 0L) - active).coerceAtLeast(0L)
+            return
+        }
         val known = lastAt[event.gameId]
         if (known == null || event.atMillis >= known) lastAt[event.gameId] = event.atMillis
         when (event.kind) {
@@ -262,9 +300,13 @@ class PlayLog(
                 lastAt = event.atMillis
             }
             PlayKind.Ended -> {
-                completedActive[event.gameId] = (completedActive[event.gameId] ?: 0L) + event.activeMillis
+                if (event.sessionId !in removed) {
+                    completedActive[event.gameId] = (completedActive[event.gameId] ?: 0L) + event.activeMillis
+                }
+                ended[event.sessionId] = event.gameId to event.activeMillis
                 open.remove(event.sessionId)
             }
+            PlayKind.Removed -> Unit
         }
     }
 

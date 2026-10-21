@@ -42,14 +42,14 @@ internal object PlatformCatalog {
         ),
         spec(
             id = "nes",
-            name = "Nintendo Entertainment System",
+            name = "NES",
             folders = setOf("nes", "famicom", "nintendo entertainment system"),
             extensions = setOf("nes", "fds"),
             aliases = setOf("famicom"),
         ),
         spec(
             id = "snes",
-            name = "Super Nintendo",
+            name = "SNES",
             folders = setOf(
                 "snes",
                 "super nintendo",
@@ -117,21 +117,21 @@ internal object PlatformCatalog {
         ),
         spec(
             id = "playstation-2",
-            name = "PlayStation 2",
+            name = "PS2",
             folders = setOf("ps2", "playstation 2"),
             folderOnlyExtensions = setOf("iso", "chd", "m3u"),
             aliases = setOf("ps2"),
         ),
         spec(
             id = "psp",
-            name = "PlayStation Portable",
+            name = "PSP",
             folders = setOf("psp", "playstation portable"),
             extensions = setOf("cso"),
             folderOnlyExtensions = setOf("iso", "pbp"),
         ),
         spec(
             id = "genesis",
-            name = "Genesis",
+            name = "Sega Genesis",
             folders = setOf("genesis", "mega drive", "megadrive", "md"),
             extensions = setOf("gen", "smd"),
             // .md is also markdown, so a bare file is not a Genesis game.
@@ -139,27 +139,27 @@ internal object PlatformCatalog {
         ),
         spec(
             id = "master-system",
-            name = "Master System",
+            name = "Sega Master System",
             folders = setOf("master system", "sega master system", "sms"),
             extensions = setOf("sms"),
             aliases = setOf("sms"),
         ),
         spec(
             id = "game-gear",
-            name = "Game Gear",
+            name = "Sega Game Gear",
             folders = setOf("game gear", "gamegear", "gg"),
             extensions = setOf("gg"),
             aliases = setOf("gamegear"),
         ),
         spec(
             id = "saturn",
-            name = "Saturn",
+            name = "Sega Saturn",
             folders = setOf("saturn", "sega saturn"),
             folderOnlyExtensions = setOf("cue", "chd", "iso", "ccd", "mds", "m3u"),
         ),
         spec(
             id = "dreamcast",
-            name = "Dreamcast",
+            name = "Sega Dreamcast",
             folders = setOf("dreamcast", "sega dreamcast", "dc"),
             extensions = setOf("gdi", "cdi"),
             folderOnlyExtensions = setOf("chd", "cue", "iso", "m3u"),

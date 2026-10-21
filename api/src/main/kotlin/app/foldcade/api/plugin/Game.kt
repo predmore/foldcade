@@ -17,9 +17,12 @@ enum class Availability {
 /**
  * A game is [backendId] plus [remoteKey], a platform, and [availability].
  * [label] is the name the backend already has, such as a file name.
+ * [sizeBytes] is how much a download of it fetches, when the backend already knows; null
+ * when it does not, or there is nothing to fetch. The shell shows it beside a game not
+ * on the device. `@JvmOverloads` keeps the five-argument constructor for older plugins.
  * Display metadata belongs to a [MetadataProvider], not to this record.
  */
-data class Game(
+data class Game @JvmOverloads constructor(
     val backendId: String,
     /**
      * Opaque key for this game inside the backend.
@@ -30,6 +33,7 @@ data class Game(
     val platformId: String,
     val availability: Availability,
     val label: String,
+    val sizeBytes: Long? = null,
 )
 
 /** Page request for [LibraryBackend.listGames]. An empty [text] is not a search. */

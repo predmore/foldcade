@@ -1,5 +1,6 @@
 package app.foldcade
 
+import app.foldcade.language.AboutCopy
 import app.foldcade.language.ArtChoices
 import app.foldcade.language.ThemeFile
 import app.foldcade.language.ThemeProcessExit
@@ -245,6 +246,35 @@ class FoldcadeApp : Application() {
     /** The external player session opened by the host launch path. */
     val externalPlay = ExternalPlay()
 
+    /** Games left open in their players behind Home. Their tiles read Paused, and A brings them back. */
+    internal val runningGames = RunningGames().also { games ->
+        games.onChange = { ids -> if (::shell.isInitialized) shell.running = ids }
+    }
+
+    /**
+     * True while usage access lets Foldcade see what a resume brought to the front
+     * (process exits would take DUMP, which no normal app holds). Without it a game
+     * may have closed unseen and its player's front door would open the player's own
+     * menu, so no game is offered as paused.
+     */
+    internal var closesVisible = false
+        private set(value) {
+            field = value
+            if (::shell.isInitialized) shell.resumable = value
+        }
+
+    /** A library launch held while its player's save folder is asked for. It outlives a recreated Home, as the ask does. */
+    internal var pendingSaveAsk: PendingBackendLaunch? = null
+
+    /** The tile Restart asked about, until its dialog closes. The app keeps it, as it keeps the dialog, for either Home to answer. */
+    internal var restartAsk: String? = null
+
+    /** The running game on tile [tileId], under whichever id its tile has now. */
+    internal fun runningOn(tileId: String): RunningGame? = runningGames.forTile(tileId, shell::tileOf)
+
+    /** The display whose Home last came back through the Home button, until its resume reads it. */
+    internal var homeRecalledOn: Int? = null
+
     /** Looks for the open player's process exit while Home stays behind it. */
     private var playerExitWatch: Job? = null
 
@@ -368,6 +398,7 @@ class FoldcadeApp : Application() {
                     val started = externalPlay.startedAtMillis ?: return@withContext true
                     if (!playerDiedAfterStart(started, exits)) return@withContext false
                     externalPlay.endBecausePlayerGone(plays)
+                    runningGames.forget(watched)
                     true
                 }
                 if (ended) return@launch
@@ -375,10 +406,29 @@ class FoldcadeApp : Application() {
         }
     }
 
+    /**
+     * Reads whether usage access is granted, which decides whether any game reads
+     * Paused ([closesVisible]). Without it the games stay noted, so a start in
+     * their player still replaces their task.
+     */
+    internal fun pruneRunningGames() {
+        if (runningGames.packages().isEmpty()) return
+        val visible = UsageAccess(this).granted()
+        if (closesVisible != visible) closesVisible = visible
+    }
+
     /** Process-exit times for [packageName], newest history Android still has. */
     internal fun playerExitTimestamps(packageName: String): List<Long> {
         val manager = getSystemService(ActivityManager::class.java) ?: return emptyList()
         return manager.getHistoricalProcessExitReasons(packageName, 0, 20).map { it.timestamp }
+    }
+
+    /** "0.1.2 (230)" from the installed package. The build has no BuildConfig to read it from. */
+    private fun installedVersion(): String = try {
+        val info = packageManager.getPackageInfo(packageName, 0)
+        AboutCopy.version(info.versionName.orEmpty(), info.longVersionCode)
+    } catch (_: PackageManager.NameNotFoundException) {
+        ""
     }
 
     /** Reads the external game's screen now. A game opened with the lid already closed starts asleep. */
@@ -470,10 +520,12 @@ class FoldcadeApp : Application() {
             homeTracks = music.homeTracks(),
             themeTracks = themeTrackList,
             lastPlayedMillis = plays::lastPlayedMillis,
+            playMillis = { plays.shown(it).activeMillis },
             onMoonlightRemoved = ::unpinMoonlightGame,
             onDroidDeckRemoved = ::unpinDroidDeckGame,
             onBrightness = { position -> brightness.write(brightnessLevel(position)) },
             onSameGames = { groups -> saveArtChoices(artChoices.adopt(groups)) },
+            appVersion = installedVersion(),
         )
         // Loading ends once the shell has resolved the choices against the packs.
         try { themeInstalls.loaded(manifests, themeArchivesInUse()) } catch (error: Exception) { Log.w("FoldcadeTheme", "Theme trials not saved", error) }
@@ -481,6 +533,10 @@ class FoldcadeApp : Application() {
         // A game several libraries have is one tile, and its copies' play counts on it.
         plays.historyIds = shell::historyIds
         plays.tileOf = shell::tileOf
+        shell.playDaySessions = { weeksBack, day ->
+            app.foldcade.language.playDaySessions(plays.spans(), System.currentTimeMillis(), java.time.ZoneId.systemDefault(), weeksBack, day)
+                .map { it.sessionId }
+        }
         // Moving art is saved apart from the tiles, so a stop between the two is put right here.
         artChoices.adopt(shell.sameGroups()).takeIf { it != artChoices }?.let(::saveArtChoices)
         plays.onChanged = shell::notePlayChanged

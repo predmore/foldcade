@@ -2,6 +2,7 @@ package app.foldcade.language
 
 import java.time.Instant
 import java.time.ZoneOffset
+import java.util.Locale
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
@@ -24,11 +25,22 @@ class PlayTimeCopyTest {
     fun lastPlayedLineUsesTheLocalDay() {
         val zone = ZoneOffset.UTC
         val now = Instant.parse("2026-10-09T15:00:00Z").toEpochMilli()
-        assertEquals("Last played  —", lastPlayedLine(null, now, zone))
-        assertEquals("Last played  Today", lastPlayedLine(Instant.parse("2026-10-09T01:00:00Z").toEpochMilli(), now, zone))
-        assertEquals("Last played  Yesterday", lastPlayedLine(Instant.parse("2026-10-08T23:00:00Z").toEpochMilli(), now, zone))
-        assertEquals("Last played  2 Mar", lastPlayedLine(Instant.parse("2026-03-02T12:00:00Z").toEpochMilli(), now, zone))
-        assertEquals("Last played  9 Oct 2025", lastPlayedLine(Instant.parse("2025-10-09T12:00:00Z").toEpochMilli(), now, zone))
+        val us = DateStyle()
+        assertEquals("Last played  —", lastPlayedLine(null, now, zone, us))
+        assertEquals("Last played  Today", lastPlayedLine(Instant.parse("2026-10-09T01:00:00Z").toEpochMilli(), now, zone, us))
+        assertEquals("Last played  Yesterday", lastPlayedLine(Instant.parse("2026-10-08T23:00:00Z").toEpochMilli(), now, zone, us))
+        assertEquals("Last played  Mar 2", lastPlayedLine(Instant.parse("2026-03-02T12:00:00Z").toEpochMilli(), now, zone, us))
+        assertEquals("Last played  Oct 9, 2025", lastPlayedLine(Instant.parse("2025-10-09T12:00:00Z").toEpochMilli(), now, zone, us))
+    }
+
+    @Test
+    fun lastPlayedLineFollowsADayFirstLocale() {
+        val zone = ZoneOffset.UTC
+        val now = Instant.parse("2026-10-09T15:00:00Z").toEpochMilli()
+        // What Android's best patterns give for en-GB.
+        val gb = DateStyle(Locale.UK, monthDayPattern = "d MMM", monthDayYearPattern = "d MMM y", is24Hour = true)
+        assertEquals("Last played  2 Mar", lastPlayedLine(Instant.parse("2026-03-02T12:00:00Z").toEpochMilli(), now, zone, gb))
+        assertEquals("Last played  9 Oct 2025", lastPlayedLine(Instant.parse("2025-10-09T12:00:00Z").toEpochMilli(), now, zone, gb))
     }
 
     @Test
@@ -54,10 +66,10 @@ class PlayTimeCopyTest {
         val opened = PickerModel(count = 1, rowsPerPage = 1).onSetting(Row.Order)
         val next = reduce(opened, Meaning.Activate).first
         assertEquals(LibrarySort.RecentlyPlayed, next.sort)
-        assertEquals("Sort  Recent", rowLabel(Row.Order, next))
+        assertEquals("Sort All  Recent", rowLabel(Row.Order, next))
         val back = reduce(next, Meaning.Activate).first
         assertEquals(LibrarySort.Listed, back.sort)
-        assertEquals("Sort  Library", orderLabel(back.sort))
+        assertEquals("Sort All  A–Z", orderLabel(back.sort))
     }
 
     @Test
@@ -78,8 +90,11 @@ class PlayTimeCopyTest {
     fun heroPlayLineIsOneLineOrNothing() {
         val zone = java.time.ZoneOffset.UTC
         val now = 1_760_000_000_000L
-        assertNull(heroPlayLine(0L, null, now, zone))
-        assertEquals("Played 1m · Today", heroPlayLine(61_000L, now, now, zone))
-        assertEquals("Played 2h 5m · Yesterday", heroPlayLine(125 * 60_000L, now - 86_400_000L, now, zone))
+        val us = DateStyle()
+        assertNull(heroPlayLine(0L, null, now, zone, us))
+        assertEquals("Played 1m · Today", heroPlayLine(61_000L, now, now, zone, us))
+        assertEquals("Played 2h 5m · Yesterday", heroPlayLine(125 * 60_000L, now - 86_400_000L, now, zone, us))
+        // 1_760_000_000_000 is 9 Oct 2025; a week before reads in the device's order.
+        assertEquals("Played 1m · Oct 2", heroPlayLine(61_000L, now - 7 * 86_400_000L, now, zone, us))
     }
 }

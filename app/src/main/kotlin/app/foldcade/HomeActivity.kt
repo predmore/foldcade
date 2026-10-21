@@ -4,12 +4,15 @@ import android.app.Activity
 import android.app.ActivityOptions
 import android.app.role.RoleManager
 import android.content.ActivityNotFoundException
+import android.content.ClipData
+import android.content.ClipboardManager
 import android.content.Intent
 import android.content.pm.ApplicationInfo
 import android.content.pm.PackageManager
 import android.hardware.display.DisplayManager
 import android.hardware.input.InputManager
 import android.net.Uri
+import android.os.Build
 import android.os.SystemClock
 import android.util.Log
 import android.provider.Settings
@@ -46,6 +49,7 @@ import app.foldcade.api.plugin.SaveCopy
 import app.foldcade.api.plugin.SaveFolderHolder
 import app.foldcade.api.plugin.StartDisplay
 import app.foldcade.artwork.SteamGridDb
+import app.foldcade.language.AboutCopy
 import app.foldcade.language.SaveConflictAction
 import app.foldcade.language.SaveConflictPrompt
 import app.foldcade.language.SaveConflictSide
@@ -71,6 +75,7 @@ import app.foldcade.language.retroArchCoresDialog
 import app.foldcade.language.retroArchStorageDialog
 import app.foldcade.language.retroArchStoreBuildDialog
 import app.foldcade.language.saveFolderDialog
+import app.foldcade.language.restartGameDialog
 import app.foldcade.language.PanelKeyActivity
 import app.foldcade.language.PromptKey
 import app.foldcade.language.interpretThorStyle
@@ -130,6 +135,20 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
 
     private var folderPurpose = FolderPurpose.Library
     private var pendingLaunch: Int? = null
+
+    /** A library game waiting on the save-folder ask, see [askSaveFolder]. Kept by the app, so a recreated Home still has it. */
+    private var pendingBackend: PendingBackendLaunch?
+        get() = foldcade.pendingSaveAsk
+        set(value) {
+            foldcade.pendingSaveAsk = value
+        }
+
+    /** The tile Restart asked about, see [FoldcadeApp.restartAsk]. */
+    private var restartId: String?
+        get() = foldcade.restartAsk
+        set(value) {
+            foldcade.restartAsk = value
+        }
     private var closeConfirmed = false
     private var settingsPlayerId: String? = null
     private var libraryReturn: LibraryReturn? = null
@@ -144,6 +163,10 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
         if (uri == null) {
             when (purpose) {
                 FolderPurpose.LaunchOffer -> skipSaveFolderAndLaunch()
+                FolderPurpose.SaveOffer -> {
+                    settingsPlayerId = null
+                    skipSaveFolderAndLaunch()
+                }
                 FolderPurpose.Settings -> settingsPlayerId = null
                 FolderPurpose.Library -> Unit
                 FolderPurpose.RetroArchCores -> settleRetroArchCores()
@@ -164,6 +187,19 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
             FolderPurpose.LaunchOffer -> {
                 if (rememberSaveFolder(uri, playerForPendingLaunch())) {
                     pendingLaunch?.let { launchGame(it) }
+                } else {
+                    cancelLaunches()
+                }
+            }
+            FolderPurpose.SaveOffer -> {
+                val player = settingsPlayerId?.let { foldcade.plugins.player(it) }
+                settingsPlayerId = null
+                // A recreated screen lost the game. The folder is kept, and the next press starts it.
+                val pending = pendingBackend
+                pendingBackend = null
+                if (rememberSaveFolder(uri, player) && pending != null) {
+                    launchScreen = pending.screen
+                    launchBackendGame(pending.title, pending.platformId, pending.route)
                 } else {
                     cancelLaunches()
                 }
@@ -207,6 +243,13 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
     override fun onInputKey(meaning: app.foldcade.language.Meaning?, key: Int): Boolean = foldcade.shell.inputKey(meaning, inputWindow, key)
 
     override fun onInputCanceled() { foldcade.shell.cancelDeleteHold(inputWindow) }
+
+    override fun onTypedText(text: String) {
+        // The command center on this screen covers the field; its keys are its own.
+        val panel = displays.panelFor(this, foldcade.store.session.defaultDisplayIsTop) ?: return
+        if (foldcade.store.session.surfaceOn(panel) == Surface.CommandCenter) return
+        dispatch(foldcade.shell.typeText(text))
+    }
 
     override fun faceMap(): app.foldcade.language.FaceMap = foldcade.shell.model.faceMap
 
@@ -279,8 +322,13 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
             is Effect.SelectTile, is Effect.Bulk, is Effect.ChooseArt, Effect.MoveTile, is Effect.ShowOnHome, is Effect.ToggleCollection, is Effect.NewCollection, is Effect.RecentOnHome,
             is Effect.MoveApp, is Effect.Hide,
             Effect.RenameFolder, Effect.ChooseFolderIcon, Effect.RemoveTile, Effect.Tidy, Effect.GoHome, Effect.EditField,
+            is Effect.SortFolder,
             -> Unit
             is Effect.RemoveDownload -> removeDownload(effect.gameId)
+            is Effect.RestartGame -> askRestart(effect.gameId)
+            is Effect.RemovePlaySession -> foldcade.plays.remove(effect.sessionId)
+            // The shell lists the day's sessions itself.
+            is Effect.OpenPlayDay -> Unit
             Effect.OpenAll -> foldcade.shell.openHomeAll()
             is Effect.OpenFolder -> foldcade.shell.openHomeFolder(effect.folderId)
             Effect.ToggleAddNew -> foldcade.shell.applyHomeAddNew(foldcade.shell.model.addNewToHome)
@@ -301,6 +349,7 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
             Effect.RequestHome -> requestHome()
             is Effect.OpenAndroidSetting -> openAndroidSetting(effect.setting)
             Effect.OpenLicenses -> startActivity(Intent(this, LicensesActivity::class.java))
+            Effect.CopyDebugInfo -> copyDebugInfo()
             Effect.DismissButtonLabels -> Unit
             is Effect.OpenNotice -> openNotice(effect.id, if (effect.onBottom) Panel.Bottom else Panel.Top)
             is Effect.DismissNotice -> foldcade.dismissNotice(effect.id)
@@ -308,6 +357,17 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
             is Effect.ResolveSaveConflict -> resolveSaveConflict(effect)
             null -> Unit
         }
+    }
+
+    /** One line a player can paste into a bug report: Foldcade's build, Android's, and the device's. */
+    private fun copyDebugInfo() {
+        val line = AboutCopy.debugLine(
+            version = foldcade.shell.model.appVersion,
+            android = Build.VERSION.RELEASE,
+            device = AboutCopy.device(Build.MANUFACTURER, Build.MODEL),
+            build = Build.DISPLAY,
+        )
+        getSystemService(ClipboardManager::class.java)?.setPrimaryClip(ClipData.newPlainText(AboutCopy.version, line))
     }
 
     override fun onSaveInstanceState(outState: Bundle) {
@@ -377,13 +437,19 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
         if (restartReplacedPlayer()) return
         // A core installed in RetroArch counts for the order of players. Its launch reads them again anyway.
         foldcade.refreshRetroArchCoresOnReturn()
+        // A game whose player closed while Home was away reads Paused no longer.
+        foldcade.pruneRunningGames()
         val displayId = display?.displayId
         val ending = displayId != null &&
             foldcade.externalPlay.sessionId != null &&
             foldcade.externalPlay.displayId == displayId
         val pending = libraryReturn
+        val leftPlayer = foldcade.externalPlay.packageName.takeIf { ending }
         if (displayId != null) foldcade.externalPlay.endIfDisplayHome(foldcade.plays, displayId)
         val returned = ending && foldcade.externalPlay.sessionId == null
+        // Back here without the Home button: the player closed the game itself, so it is not paused.
+        if (returned && leftPlayer != null && foldcade.homeRecalledOn != displayId) foldcade.runningGames.forget(leftPlayer)
+        if (foldcade.homeRecalledOn == displayId) foldcade.homeRecalledOn = null
         if (returned) foldcade.suppressSaveConflict = false
         if (returned && pending != null) {
             libraryReturn = null
@@ -622,6 +688,8 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
 
     private fun acceptHome(intent: Intent) {
         if (!isAndroidHomeRecall(intent.action, intent.categories ?: emptySet())) return
+        // The player was left with Home, so the game it holds is still open there.
+        foldcade.homeRecalledOn = display?.displayId
         // The user left the game. Only a player quitting by itself is started again.
         foldcade.pendingRestart = null
         val panel = displays.panelFor(this, foldcade.store.session.defaultDisplayIsTop) ?: return
@@ -805,6 +873,9 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
             Panel.Bottom -> assignment.bottomDisplayId ?: return
         }
         foldcade.music.onExternalLaunch()
+        // The player opened by its own icon is the player's to steer now, and its game may
+        // close without Foldcade seeing it, so that game is no longer held as paused.
+        foldcade.runningGames.forget(pkg)
         foldcade.commandCenter.note(external.id, foldcade.shell.runningApp(game))
         foldcade.store.place(panel, external)
         val options = ActivityOptions.makeBasic().apply { launchDisplayId = displayId }
@@ -868,7 +939,10 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
         title: String,
         platformId: String?,
         route: GameRoute,
+        fresh: Boolean = false,
     ) {
+        // A game still open in its player comes back where it was, with nothing downloaded or placed.
+        if (!fresh && resumeRunning(route.tileId, title, platformId)) return
         val game = route.play
         val libraryId = game.backendId
         // Play history uses the tile's id from every grid.
@@ -934,6 +1008,16 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
                 if (fetching) withContext(Dispatchers.Main.immediate) { foldcade.shell.endDownload(libraryId, game.remoteKey) }
                 return
             }
+        }
+        // A server keeps this game's saves, and they only move through a folder the player shares. Ask once, also before a download.
+        if (first is SaveFolderHolder && route.servers.isNotEmpty() && !first.hasSaveFolder() &&
+            !foldcade.store.saveFolderPromptSkipped(first.saveFolderId())
+        ) {
+            withContext(Dispatchers.Main.immediate) {
+                if (fetching) foldcade.shell.endDownload(libraryId, game.remoteKey)
+                if (launchCurrent(generation)) askSaveFolder(PendingBackendLaunch(title, platformId, route, first.id, launchScreen))
+            }
+            return
         }
         val local = try {
             foldcade.plugins.ensureLocal(libraryId, game).also {
@@ -1027,7 +1111,11 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
                         installedIntent,
                         noteStart = { playerIntent?.let { foldcade.noteStarted(plan.player, it) } == true },
                     )
-                    if (started) rememberReturn(LibraryReturn(owner.backendId, owner, plan.player, spots))
+                    if (started) {
+                        val saves = LibraryReturn(owner.backendId, owner, plan.player, spots)
+                        rememberReturn(saves)
+                        noteRunning(id, title, game.platformId, plan.player, installedIntent, saves)
+                    }
                 } else if (launchCurrent(generation)) {
                     showMissing(plan.player.displayName, emptyList())
                 }
@@ -1037,6 +1125,123 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
                 GameLaunch.NotAFile -> foldcade.retryLibrary()
             }
         }
+    }
+
+    /**
+     * Notes a game just started in [player], so A brings it back after Home
+     * instead of starting it again. RetroArch is left out: it keeps one game
+     * and switches by itself (see [FoldcadeApp.startIntent]).
+     */
+    private fun noteRunning(id: String, title: String, platformId: String?, player: Player, intent: Intent, saves: LibraryReturn?) {
+        val pkg = intent.component?.packageName ?: return
+        if (pkg == packageName || player is RetroArchPlayer) return
+        // Where the game landed, which may not be where it was asked for when that screen was busy.
+        val panel = landedPanel() ?: if (player.occupiesBothDisplays) Panel.Top else launchScreen
+        foldcade.runningGames.note(RunningGame(id, title, platformId, pkg, intent.component?.className, panel,
+            player.occupiesBothDisplays, System.currentTimeMillis(), saves))
+    }
+
+    /** The screen the game just started is on. */
+    private fun landedPanel(): Panel? = foldcade.externalPlay.displayId
+        ?.let { displays.assignment(foldcade.store.session.defaultDisplayIsTop).panelFor(it) }
+
+    /**
+     * Brings back the game on tile [tileId] if it is still open in its player.
+     * True when that start was sent. Its player may have closed since without
+     * Android saying so; the same start then opens the game anew.
+     */
+    private fun resumeRunning(tileId: String, title: String, platformId: String?): Boolean {
+        foldcade.pruneRunningGames()
+        val running = foldcade.runningOn(tileId) ?: return false
+        val front = packageManager.getLaunchIntentForPackage(running.packageName)?.apply { flags = RESUME_FLAGS } ?: run {
+            foldcade.runningGames.forget(running.packageName)
+            return false
+        }
+        // Already on a screen, so this press came from the grid on the other one. The game
+        // comes forward where it is, untouched, rather than being started over.
+        val session = foldcade.store.session
+        val shown = Panel.entries.firstOrNull { panel -> session.externalOn(panel)?.id.let { it == tileId || it == running.tileId } }
+        if (shown != null) {
+            val assignment = displays.assignment(session.defaultDisplayIsTop)
+            val displayId = if (shown == Panel.Top) assignment.topDisplayId else assignment.bottomDisplayId
+            if (displayId != null) {
+                try {
+                    startOnDisplay(front, displayId, multipleTask = false)
+                } catch (_: ActivityNotFoundException) {
+                    Unit
+                }
+            }
+            return true
+        }
+        // Behind Home, a player that may have closed unseen would open its own menu, not the game.
+        if (!foldcade.closesVisible) return false
+        cancelLaunches()
+        foldcade.music.onExternalLaunch()
+        launchScreen = running.panel
+        launchSubject = foldcade.shell.focusedRunningApp()
+        val sentAt = System.currentTimeMillis()
+        val started = try {
+            startExternal(tileId, title, platformId ?: running.platformId, running.occupiesBoth, front, resume = true)
+        } catch (_: ActivityNotFoundException) {
+            foldcade.runningGames.forget(running.packageName)
+            return false
+        }
+        if (!started) return false
+        running.saves?.let(::rememberReturn)
+        // A busy screen sends it to the other one; the next resume looks for it there.
+        landedPanel()?.takeIf { it != running.panel }?.let { foldcade.runningGames.note(running.copy(panel = it)) }
+        checkResume(running, sentAt, front.component?.className)
+        return true
+    }
+
+    /**
+     * A moment after a resume, looks at what came to the front. If the player's own
+     * menu ([frontDoor]) did, its task was gone, so the game starts afresh in its
+     * place, as A on a game not open would have. Anything else leaves it be.
+     */
+    private fun checkResume(running: RunningGame, sentAt: Long, frontDoor: String?) {
+        foldcade.scope.launch {
+            delay(RESUME_CHECK_MS)
+            val resumed = withContext(Dispatchers.IO) {
+                UsageAccess(this@FoldcadeHomeActivity).resumedSince(running.packageName, sentAt, System.currentTimeMillis())
+            }
+            if (resumeFound(resumed, frontDoor, running.activity) != false) return@launch
+            withContext(Dispatchers.Main.immediate) {
+                // Only the same start of the same game, with its player still in front from this resume.
+                val now = foldcade.runningOn(running.tileId) ?: return@withContext
+                if (now.packageName != running.packageName || now.startedAtMillis != running.startedAtMillis) return@withContext
+                if (foldcade.externalPlay.sessionId == null || foldcade.externalPlay.packageName != running.packageName) return@withContext
+                if (isDestroyed || isFinishing) return@withContext
+                val route = foldcade.shell.launchRoute(running.tileId) ?: return@withContext
+                launchScreen = now.panel
+                launchSubject = null
+                launchBackendGame(title = running.title, platformId = running.platformId, route = route, fresh = true)
+            }
+        }
+    }
+
+    /** Holds [pending] and asks for its player's save folder. Continue opens the picker, Not now starts the game. */
+    private fun askSaveFolder(pending: PendingBackendLaunch) {
+        pendingBackend = pending
+        foldcade.shell.present(saveFolderDialog(hostScreen(), syncs = true))
+    }
+
+    /** Y's Restart asks first: what the game has not saved is lost. */
+    private fun askRestart(gameId: String?) {
+        val id = gameId?.let { foldcade.shell.tileOf(it) } ?: return
+        if (foldcade.runningOn(id) == null) return
+        restartId = id
+        foldcade.shell.present(restartGameDialog(hostScreen()))
+    }
+
+    /** Starts the game on tile [id] over: a fresh start that replaces the task it is open in. */
+    private fun restartGame(id: String) {
+        val running = foldcade.runningOn(id) ?: return
+        val route = foldcade.shell.launchRoute(id) ?: return
+        launchScreen = running.panel
+        launchSubject = null
+        // Still noted, so the fresh start replaces the task the game is open in.
+        launchBackendGame(title = running.title, platformId = running.platformId, route = route, fresh = true)
     }
 
     /**
@@ -1050,6 +1255,8 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
         val libraryId = game.backendId
         val homeId = homeGameId(libraryId, game.remoteKey)
         if (foldcade.store.session.runs(homeId) || foldcade.store.session.runs(foldcade.shell.tileOf(homeId))) return
+        // A game still open in its player behind Home is reading that copy too.
+        if (foldcade.shell.isRunning(homeId)) return
         if (!foldcade.shell.beginRemove(libraryId, game.remoteKey)) return
         foldcade.scope.launch {
             var removed = false
@@ -1157,7 +1364,11 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
         startExternal(id, title, platformId, occupiesBoth, intent)
     }
 
-    /** True when the app was asked to start. */
+    /**
+     * True when the app was asked to start. [resume] brings back the task a game is
+     * still open in. A fresh start in a player that still holds a game Foldcade
+     * started replaces that game's task, so the player never runs two at once.
+     */
     private fun startExternal(
         id: String,
         title: String,
@@ -1165,6 +1376,7 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
         occupiesBoth: Boolean,
         intent: Intent,
         noteStart: () -> Boolean = { false },
+        resume: Boolean = false,
     ): Boolean {
         val session = foldcade.store.session
         val external = ExternalApp(id, occupiesBoth)
@@ -1182,10 +1394,16 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
             }
         }
         val playerPackage = intent.component?.packageName
+        val replacing = !resume && foldcade.runningGames.forPackage(playerPackage) != null
+        if (replacing) intent.flags = replaceFlags(intent.flags)
+        // Only a Home press after this start says the game was left open.
+        foldcade.homeRecalledOn = null
         foldcade.externalPlay.open(foldcade.plays, id, title, displayId, playerPackage) {
-            startOnDisplay(intent, displayId)
+            startOnDisplay(intent, displayId, multipleTask = !resume && !replacing)
             if (noteStart()) armRestart(intent, displayId)
         }
+        // The game it replaced is gone. This one is noted once the start is in.
+        if (replacing && playerPackage != null) foldcade.runningGames.forget(playerPackage)
         foldcade.noteExternalPlayerOpened()
         foldcade.notePlayScreen()
         return true
@@ -1371,6 +1589,7 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
 
     private fun clearPendingLaunch() {
         pendingLaunch = null
+        pendingBackend = null
         closeConfirmed = false
     }
 
@@ -1440,7 +1659,21 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
                 cancelLaunches()
                 if (effect.button == DialogButton.OpenRetroArch) openRetroArch()
             }
-            DialogKind.SaveFolder -> if (effect.button == DialogButton.ContinueGrant) {
+            DialogKind.RestartGame -> {
+                val id = restartId
+                restartId = null
+                if (effect.button == DialogButton.Restart && id != null) restartGame(id)
+            }
+            DialogKind.SaveFolder -> if (pendingBackend != null) {
+                val pending = pendingBackend ?: return
+                if (effect.button == DialogButton.ContinueGrant) {
+                    folderPurpose = FolderPurpose.SaveOffer
+                    settingsPlayerId = pending.playerId
+                    folderPicker.launch(suggestedSaveFolder(foldcade.plugins.player(pending.playerId)))
+                } else {
+                    skipSaveFolderAndLaunch()
+                }
+            } else if (effect.button == DialogButton.ContinueGrant) {
                 folderPurpose = FolderPurpose.LaunchOffer
                 folderPicker.launch(suggestedSaveFolder(playerForPendingLaunch()))
             } else {
@@ -1932,6 +2165,13 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
     }
 
     private fun skipSaveFolderAndLaunch() {
+        pendingBackend?.let { pending ->
+            pendingBackend = null
+            foldcade.plugins.player(pending.playerId)?.let { foldcade.store.setSaveFolderPromptSkipped(it.saveFolderId()) }
+            launchScreen = pending.screen
+            launchBackendGame(pending.title, pending.platformId, pending.route)
+            return
+        }
         val index = pendingLaunch ?: return
         val player = playerForPendingLaunch() ?: return
         foldcade.store.setSaveFolderPromptSkipped(player.saveFolderId())
@@ -2087,6 +2327,16 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
     }
 }
 
+/** A library launch held while its player's save folder is asked for. */
+internal class PendingBackendLaunch(
+    val title: String,
+    val platformId: String?,
+    val route: GameRoute,
+    val playerId: String,
+    /** The screen A or X asked for, which a recreated Home would not know. */
+    val screen: Panel,
+)
+
 /** See [FoldcadeHomeActivity.armRestart]. */
 class PendingRestart(val intent: Intent, val displayId: Int, val until: Long)
 
@@ -2131,7 +2381,7 @@ private fun SaveConflictAction.toChoice(): SaveConflictChoice = when (this) {
     SaveConflictAction.DecideLater -> SaveConflictChoice.DecideLater
 }
 
-private data class LibraryReturn(
+internal data class LibraryReturn(
     val libraryId: String,
     val game: Game,
     val player: Player,

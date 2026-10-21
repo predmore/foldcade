@@ -86,7 +86,91 @@ class LeftDrawerTest {
             assertNull(closed.playActivity)
             assertEquals(opened.panel!!.grid, closed.focus)
         }
-        assertEquals(listOf(PromptKey.DpadSides, PromptKey.FaceB), playActivityHints(page).map { it.key })
+        assertEquals(listOf(PromptKey.FaceA, PromptKey.DpadSides, PromptKey.FaceB), playActivityHints(page).map { it.key })
+        assertEquals(listOf(PlayCopy.sessions, PlayCopy.week, Copy.back), playActivityHints(page).map { it.label })
+    }
+
+    @Test
+    fun upAndDownMoveOverTheDaysAndAListsOne() {
+        val page = reduce(at(reduce(model(), Meaning.LeftPanel).first, Row.PlayActivity), Meaning.Activate).first
+        // Today, the last row, to start; down stays there.
+        assertEquals(PLAY_WEEK_DAYS - 1, page.playActivity?.day)
+        assertEquals(PLAY_WEEK_DAYS - 1, reduce(page, Meaning.MoveDown).first.playActivity?.day)
+        val saturday = reduce(page, Meaning.MoveUp).first
+        assertEquals(PLAY_WEEK_DAYS - 2, saturday.playActivity?.day)
+        val top = (1..10).fold(page) { at, _ -> reduce(at, Meaning.MoveUp).first }
+        assertEquals(0, top.playActivity?.day)
+        // A week back keeps the day.
+        val older = reduce(saturday, Meaning.MoveLeft).first.playActivity!!
+        assertEquals(1, older.weeksBack)
+        assertEquals(PLAY_WEEK_DAYS - 2, older.day)
+        // A asks the shell for that day's sessions; the page waits for them.
+        val (asked, effect) = reduce(saturday.copy(playActivity = older), Meaning.Activate)
+        assertEquals(Effect.OpenPlayDay(1, PLAY_WEEK_DAYS - 2), effect)
+        assertNull(asked.playActivity?.sessions)
+        // X does nothing on the week.
+        val (unchanged, none) = reduce(saturday, Meaning.ActivateBottom)
+        assertEquals(saturday.playActivity, unchanged.playActivity)
+        assertNull(none)
+    }
+
+    @Test
+    fun onADaysListXRemovesTheFocusedSessionAndBGoesBackToTheWeek() {
+        val page = reduce(at(reduce(model(), Meaning.LeftPanel).first, Row.PlayActivity), Meaning.Activate).first
+        val listed = page.copy(playActivity = page.playActivity!!.copy(day = 3, sessions = listOf("s1", "s2", "s3")))
+        assertEquals(listOf(PromptKey.FaceX, PromptKey.FaceB), playActivityHints(listed).map { it.key })
+        assertEquals(listOf(PlayCopy.remove, Copy.back), playActivityHints(listed).map { it.label })
+        val second = reduce(listed, Meaning.MoveDown).first
+        assertEquals(1, second.playActivity?.session)
+        assertEquals(2, reduce(reduce(second, Meaning.MoveDown).first, Meaning.MoveDown).first.playActivity?.session)
+        assertEquals(0, reduce(listed, Meaning.MoveUp).first.playActivity?.session)
+        // Left and right do not change the week under an open list.
+        assertEquals(second.playActivity, reduce(second, Meaning.MoveLeft).first.playActivity)
+        val (removed, effect) = reduce(second, Meaning.ActivateBottom)
+        assertEquals(Effect.RemovePlaySession("s2"), effect)
+        assertEquals(listOf("s1", "s3"), removed.playActivity?.sessions)
+        assertEquals(1, removed.playActivity?.session)
+        // The last row gone, the focus stays on the new last row.
+        val last = reduce(reduce(removed, Meaning.MoveDown).first, Meaning.ActivateBottom).first
+        assertEquals(listOf("s1"), last.playActivity?.sessions)
+        assertEquals(0, last.playActivity?.session)
+        // The day emptied, the week shows again on that day.
+        val emptied = reduce(last, Meaning.ActivateBottom).first.playActivity!!
+        assertNull(emptied.sessions)
+        assertEquals(3, emptied.day)
+        val back = reduce(second, Meaning.Back).first
+        assertNull(back.playActivity?.sessions)
+        assertEquals(3, back.playActivity?.day)
+        listOf(Meaning.LeftPanel, Meaning.RightPanel, Meaning.View).forEach { meaning ->
+            val closed = reduce(second, meaning).first
+            assertNull(closed.playActivity)
+            assertEquals(page.playActivity!!.grid, closed.focus)
+        }
+    }
+
+    @Test
+    fun aDaysSessionsAreWholeAndInTheOrderTheyStarted() {
+        val zone = ZoneOffset.UTC
+        val now = millis(2026, 10, 10, 20, 0, zone)
+        val spans = listOf(
+            // Left running overnight: Friday 21:00 to Saturday 12:00, in two stretches.
+            PlaySpan("a", millis(2026, 10, 9, 21, 0, zone), millis(2026, 10, 9, 23, 0, zone), "night"),
+            PlaySpan("a", millis(2026, 10, 9, 23, 30, zone), millis(2026, 10, 10, 12, 0, zone), "night"),
+            PlaySpan("b", millis(2026, 10, 10, 13, 0, zone), millis(2026, 10, 10, 13, 45, zone), "lunch"),
+            PlaySpan("c", millis(2026, 10, 10, 6, 0, zone), millis(2026, 10, 10, 6, 10, zone), "early"),
+            // Spans from before session ids were kept have nothing to remove by.
+            PlaySpan("d", millis(2026, 10, 10, 8, 0, zone), millis(2026, 10, 10, 9, 0, zone)),
+        )
+        val saturday = playDaySessions(spans, now, zone, 0, PLAY_WEEK_DAYS - 1)
+        assertEquals(listOf("night", "early", "lunch"), saturday.map { it.sessionId })
+        val night = saturday.first()
+        assertEquals("a", night.gameId)
+        assertEquals(millis(2026, 10, 9, 21, 0, zone), night.startMillis)
+        assertEquals(millis(2026, 10, 10, 12, 0, zone), night.endMillis)
+        assertEquals(2 * 3_600_000L + 12 * 3_600_000L + 30 * 60_000L, night.activeMillis)
+        assertEquals(listOf("night"), playDaySessions(spans, now, zone, 0, PLAY_WEEK_DAYS - 2).map { it.sessionId })
+        assertEquals(emptyList<DaySession>(), playDaySessions(spans, now, zone, 1, PLAY_WEEK_DAYS - 1))
+        assertEquals(emptyList<DaySession>(), playDaySessions(spans, now, zone, 0, PLAY_WEEK_DAYS))
     }
 
     @Test
@@ -100,7 +184,7 @@ class LeftDrawerTest {
             // Eight days ago is outside this week.
             PlaySpan("c", millis(2026, 10, 2, 12, 0, zone), millis(2026, 10, 2, 15, 0, zone)),
         )
-        val week = playWeek(spans, now, zone, locale = Locale.US)
+        val week = playWeek(spans, now, zone, DateStyle())
         assertEquals(PlayCopy.pastWeek, week.label)
         assertEquals(listOf("Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"), week.days.map { it.label })
         assertEquals(3_600_000L, week.days[5].totalMillis)
@@ -110,9 +194,19 @@ class LeftDrawerTest {
         val friday = week.days[5].blocks.single()
         assertEquals(23f / 24f, friday.start, 0.0001f)
         assertEquals(1f, friday.endInclusive, 0.0001f)
-        val earlier = playWeek(spans, now, zone, weeksBack = 1, locale = Locale.US)
+        val earlier = playWeek(spans, now, zone, DateStyle(), weeksBack = 1)
         assertEquals("Sep 27 – Oct 3", earlier.label)
         assertEquals(listOf("c" to 10_800_000L), earlier.top)
+    }
+
+    @Test
+    fun anEarlierWeekReadsInTheDevicesDateOrder() {
+        val zone = ZoneOffset.UTC
+        val now = millis(2026, 11, 20, 20, 0, zone)
+        // What Android's best patterns give for en-GB.
+        val gb = DateStyle(Locale.UK, monthDayPattern = "d MMM", monthDayYearPattern = "d MMM y", is24Hour = true)
+        assertEquals("7 Nov – 13 Nov", playWeek(emptyList(), now, zone, gb, weeksBack = 1).label)
+        assertEquals("Nov 7 – Nov 13", playWeek(emptyList(), now, zone, DateStyle(), weeksBack = 1).label)
     }
 
     @Test

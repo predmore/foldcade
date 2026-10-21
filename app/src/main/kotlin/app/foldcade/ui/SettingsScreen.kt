@@ -15,6 +15,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicText
 import androidx.compose.runtime.Composable
@@ -88,13 +89,17 @@ internal fun SettingsScreen(app: FoldcadeApp, screen: HostScreen, page: Settings
             horizontalArrangement = Arrangement.spacedBy(24.dp),
         ) {
             val master = rememberSelectionSlots()
+            // All six fit at rest on the Thor's top screen. Should they not, as at a large font
+            // size, the edge with more beyond it fades, so a hidden category still shows.
+            val categoryScroll = rememberScrollState()
             Column(
                 Modifier
                     .weight(0.32f)
                     .fillMaxHeight()
-                    .ringScroll()
+                    .menuFade(categoryScroll)
+                    .ringScroll(state = categoryScroll)
                     .selectionHighlight(master, categoryIndex, ring = !page.onRows, scale = scale),
-                verticalArrangement = Arrangement.spacedBy(6.dp),
+                verticalArrangement = Arrangement.spacedBy(ROW_GAP),
             ) {
                 categories.forEachIndexed { index, category ->
                     val selected = index == categoryIndex
@@ -147,7 +152,7 @@ private fun DetailRows(
     val theme = LocalFoldTheme.current.theme
     val rows = settingsRows(category, model)
     val slots = rememberSelectionSlots()
-    val iconSlot = rows.any { rowIcon(it) != null }
+    val iconSlot = rows.any { settingsRowIcon(it) != null }
     val focus = page.row.takeIf { current && page.onRows && it in rows.indices }
     val labelStyle = style(theme.onBackground, theme.style.type.menuRow, theme, bold = true)
     Column(
@@ -155,7 +160,7 @@ private fun DetailRows(
             .fillMaxSize()
             .ringScroll(extra = 6.dp)
             .selectionHighlight(slots, focus, ring = true, scale = scale),
-        verticalArrangement = Arrangement.spacedBy(4.dp),
+        verticalArrangement = Arrangement.spacedBy(ROW_GAP),
     ) {
         rows.forEachIndexed { index, row ->
             val focused = focus == index
@@ -181,7 +186,7 @@ private fun DetailRows(
             } else {
                 MenuRow(
                     label = parts.label,
-                    icon = rowIcon(row),
+                    icon = settingsRowIcon(row),
                     iconSlot = iconSlot,
                     focused = focused,
                     control = rowControl(row, model, parts.value),
@@ -198,17 +203,39 @@ private fun DetailRows(
     }
 }
 
-/** Categories and rows share one height, so both highlights are the same size. */
-private val ROW_HEIGHT = 60.dp
+/**
+ * Categories and rows share one height and one gap, so both highlights are the same size
+ * and both columns keep one rhythm. Six categories take 6 × 52 + 5 × 4 = 332dp, inside the
+ * Thor's 480dp top screen less the page's margins, header, and the ring's reach.
+ */
+private val ROW_HEIGHT = 52.dp
+private val ROW_GAP = 4.dp
 
 /** The art beside each category, from the theme's own set. */
 private fun categoryIcon(category: SettingsCategory): Int = when (category) {
     SettingsCategory.Personalization -> R.drawable.ic_status_display
     SettingsCategory.Sound -> R.drawable.ic_status_volume_3
     SettingsCategory.Library -> R.drawable.symbol_library
-    SettingsCategory.Players -> R.drawable.symbol_two_players
+    SettingsCategory.Players -> R.drawable.symbol_emulators
     SettingsCategory.Screens -> R.drawable.ic_status_settings
     SettingsCategory.About -> R.drawable.ic_status_info
+}
+
+/**
+ * A settings row's art. Every Library row leads with some, so that column reads as one
+ * list rather than art here and gaps there. The menus keep [rowIcon] alone.
+ */
+private fun settingsRowIcon(row: Row): Int? = rowIcon(row) ?: when (row) {
+    Row.SyncLibrary -> R.drawable.ic_badge_sync
+    Row.AddFolder -> R.drawable.symbol_folder
+    Row.AddRomm -> R.drawable.symbol_cloud
+    Row.Order -> R.drawable.symbol_library
+    Row.AddNewGames -> R.drawable.symbol_home
+    // A cartridge's label is its art.
+    Row.Artwork -> R.drawable.symbol_cartridge
+    Row.ArtKey -> R.drawable.ic_status_wrench
+    Row.UsageAccess -> R.drawable.ic_status_playtime
+    else -> null
 }
 
 @Composable

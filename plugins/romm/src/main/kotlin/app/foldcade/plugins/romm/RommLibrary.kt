@@ -191,14 +191,18 @@ internal class RommLibrary internal constructor(
         }
     }
 
-    /** One sync of [romId] the host can watch: syncing first, then its result. */
-    private suspend fun syncRomReported(romId: Long, emulator: String?): SyncResult {
+    /**
+     * One sync of [romId] the host can watch: syncing first, then its result. A
+     * player whose saves Foldcade can't reach ([unreachable]) handed nothing
+     * over, so the tile says the saves didn't sync, whatever the server did.
+     */
+    private suspend fun syncRomReported(romId: Long, emulator: String?, unreachable: Boolean = false): SyncResult {
         report(romId, GameActivity.SyncingSaves)
         var result: SyncResult? = null
         try {
             return syncRom(romId, emulator).also { result = it }
         } finally {
-            report(romId, result?.let { GameActivity.Synced(it) } ?: GameActivity.Idle)
+            report(romId, result?.let { GameActivity.Synced(if (unreachable) unreachableSync() else it) } ?: GameActivity.Idle)
         }
     }
 
@@ -493,7 +497,7 @@ internal class RommLibrary internal constructor(
         report(romId, GameActivity.SyncingSaves)
         val sync = withTimeoutOrNull(LAUNCH_SYNC_LIMIT_MS) { syncRom(romId, player.id) }
             ?: pending(wiring, romId, "RomM took too long. Saves will sync later.")
-        report(romId, GameActivity.Synced(sync))
+        report(romId, GameActivity.Synced(if (savesUnreachable(game, player)) unreachableSync() else sync))
         // A sync still running in the background may rename a save at any time, so
         // the shell gets copies whose hashes match their bytes.
         return Placement(target, snapshotSaves(wiring, romId), sync)
@@ -515,9 +519,26 @@ internal class RommLibrary internal constructor(
                 throw PluginException.Unavailable(error.message ?: "The save could not be kept", error)
             }
         }
-        background.launch { syncRomReported(romId, player.id) }
+        val unreachable = savesUnreachable(game, player)
+        background.launch { syncRomReported(romId, player.id, unreachable) }
         return pending(wiring, romId, null)
     }
+
+    /**
+     * True when [player] keeps a save slot where Foldcade has no place to read or
+     * write it, as a player with no save folder chosen does. Nothing moves
+     * between it and RomM then.
+     */
+    private fun savesUnreachable(game: Game, player: Player): Boolean = try {
+        player.saveDeclarations(game).any { it.locationUri == null }
+    } catch (cancelled: CancellationException) {
+        throw cancelled
+    } catch (_: Exception) {
+        false
+    }
+
+    /** How a sync reads when the player's saves could not be reached: not synced. */
+    private fun unreachableSync(): SyncResult = SyncResult(SyncOutcome.Unchanged, NO_SAVE_FOLDER)
 
     /**
      * One negotiate for [romId]. Never throws except for cancellation: an
@@ -940,6 +961,8 @@ internal fun RomSummary.toGame(
     platformId = alignedPlatformId(definitions, platformSlug),
     availability = cacheAvailability(cacheRoot, this),
     label = name?.takeIf { it.isNotBlank() } ?: fsName,
+    // RomM's own figure for the whole ROM, as its web page shows it.
+    sizeBytes = fsSizeBytes.takeIf { it > 0 },
 )
 
 internal fun cacheAvailability(cacheRoot: Path, rom: RomSummary): Availability {
@@ -1096,6 +1119,9 @@ private const val PROGRESS_GAP_NS = 100_000_000L
 
 /** How long a launch waits for its save sync. */
 private const val LAUNCH_SYNC_LIMIT_MS = 20_000L
+
+/** Why a sync with a player that has no save folder reads as not synced. */
+internal const val NO_SAVE_FOLDER = "Choose a save folder for this player so its saves sync"
 
 /** The slot name RomM uses for a save with no slot. */
 internal const val ARCHIVE_SLOT = "archive"

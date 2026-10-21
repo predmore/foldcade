@@ -284,29 +284,40 @@ internal fun FindCard(
     modifier: Modifier = Modifier,
 ) {
     val theme = LocalFoldTheme.current.theme
+    val density = LocalDensity.current
     Column(modifier.widthIn(max = width), horizontalAlignment = Alignment.CenterHorizontally) {
-        // The name slides the way the ring went along the strip.
-        SlideSwap(
-            target = line,
-            scale = scale,
-            distance = 32.dp,
-            vertical = false,
-            direction = { from, to -> to.order.compareTo(from.order) },
-            key = { it.key },
-        ) { shown ->
-            Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
-                BasicText(
-                    text = shown.title ?: FindCopy.noMatches,
-                    style = titleStyle.copy(fontWeight = theme.style.type.strongWeight, textAlign = TextAlign.Center),
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
-                BasicText(
-                    text = shown.facts,
-                    style = factStyle.copy(textAlign = TextAlign.Center),
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
+        // A card under the name, as Home's name card is, so bright art never washes it out. It
+        // stays put while the name in it slides.
+        Box(
+            Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(theme.style.metrics.cardCornerDp.dp))
+                .background(background)
+                .padding(horizontal = with(density) { CARD_SIDE_PX.toDp() }, vertical = with(density) { CARD_PAD_PX.toDp() }),
+        ) {
+            // The name slides the way the ring went along the strip.
+            SlideSwap(
+                target = line,
+                scale = scale,
+                distance = 32.dp,
+                vertical = false,
+                direction = { from, to -> to.order.compareTo(from.order) },
+                key = { it.key },
+            ) { shown ->
+                Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
+                    BasicText(
+                        text = shown.title ?: FindCopy.noMatches,
+                        style = titleStyle.copy(fontWeight = theme.style.type.strongWeight, textAlign = TextAlign.Center),
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                    BasicText(
+                        text = shown.facts,
+                        style = factStyle.copy(textAlign = TextAlign.Center),
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
             }
         }
         Spacer(Modifier.height(12.dp))
@@ -319,7 +330,17 @@ internal fun FindCard(
             lead = { Magnifier(theme.muted, with(LocalDensity.current) { fieldStyle.fontSize.toDp() }) },
         )
         Spacer(Modifier.height(12.dp))
-        FindFilters(session, chipStyle, scale, Modifier.fillMaxWidth())
+        // The filters sit on a pill of the same glass.
+        FindFilters(
+            session,
+            chipStyle,
+            scale,
+            Modifier
+                .fillMaxWidth()
+                .clip(theme.style.shape.control())
+                .background(background)
+                .padding(horizontal = 14.dp, vertical = 6.dp),
+        )
     }
 }
 
@@ -340,7 +361,7 @@ internal fun FindFilters(session: FindSession, style: TextStyle, scale: Float, m
     val glyph = with(density) { style.fontSize.toDp() } * GLYPH_SHARE
     Row(modifier, verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
         PromptImage(promptGlyph(PromptKey.L2), glyph)
-        BoxWithConstraints(Modifier.weight(1f).clipToBounds().fadeEnds(spans, density)) {
+        BoxWithConstraints(Modifier.weight(1f).clipToBounds()) {
             val room = with(density) { maxWidth.toPx() }
             val end = spans.values.maxOfOrNull { it.right } ?: 0f
             val target = spans[chosen]?.let { span ->
@@ -370,54 +391,61 @@ internal fun FindFilters(session: FindSession, style: TextStyle, scale: Float, m
             val ring = remember(theme) { FocusRing(theme) }
             val find = theme.style.find
             val round = theme.style.shape.round
-            Row(
-                Modifier
-                    .wrapContentWidth(Alignment.Start, unbounded = true)
-                    .graphicsLayer { translationX = -scroll }
-                    .drawWithContent {
-                        drawContent()
-                        if (!placed) return@drawWithContent
-                        // Over the pills, so the chosen one is lit glass with the ring's colours at its rim.
-                        val corner = size.height * round
-                        val topLeft = Offset(highlight.value, 0f)
-                        val pill = Size(width.value, size.height)
-                        drawRoundRect(
-                            brush = Brush.horizontalGradient(
-                                listOf(ring.start.copy(alpha = find.chosenAlpha), ring.end.copy(alpha = find.chosenAlpha * 0.6f)),
-                                startX = topLeft.x,
-                                endX = topLeft.x + pill.width,
-                            ),
-                            topLeft = topLeft,
-                            size = pill,
-                            cornerRadius = CornerRadius(corner, corner),
-                        )
-                        drawRoundRect(
-                            brush = Brush.horizontalGradient(listOf(ring.start, ring.end), startX = topLeft.x, endX = topLeft.x + pill.width),
-                            topLeft = topLeft,
-                            size = pill,
-                            cornerRadius = CornerRadius(corner, corner),
-                            style = Stroke(find.chosenRimDp.dp.toPx()),
-                        )
-                    },
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-            ) {
-                session.filters.forEachIndexed { index, filter ->
-                    val on by eased(if (index == chosen) 1f else 0f, motion.durationFocus, scale)
-                    Box(
-                        Modifier
-                            .onGloballyPositioned {
-                                val rect = Rect(it.positionInParent(), it.size.toSize())
-                                if (spans[index] != rect) spans[index] = rect
-                            }
-                            .clip(theme.style.shape.control())
-                            .drawBehind { drawRoundRect(theme.onBackground.copy(alpha = find.filterAlpha), cornerRadius = CornerRadius(size.height * round)) }
-                            .padding(horizontal = 16.dp, vertical = 6.dp),
-                    ) {
-                        BasicText(
-                            text = filter.label,
-                            maxLines = 1,
-                            style = style.copy(color = lerpInk(theme.muted, theme.onBackground, on)),
-                        )
+            Box(Modifier.fillMaxWidth().fadeEnds(spans, { spans[chosen] }, { scroll }, density)) {
+                Row(
+                    Modifier
+                        .wrapContentWidth(Alignment.Start, unbounded = true)
+                        .graphicsLayer { translationX = -scroll }
+                        .drawWithContent {
+                            drawContent()
+                            if (!placed) return@drawWithContent
+                            // Over the pills, so the chosen one is lit glass with the ring's colours at its rim.
+                            val corner = size.height * round
+                            val topLeft = Offset(highlight.value, 0f)
+                            val pill = Size(width.value, size.height)
+                            // The rim's stroke sits inside the pill, so the row's edge never cuts half of it off.
+                            val rim = find.chosenRimDp.dp.toPx()
+                            val inset = Offset(rim / 2f, rim / 2f)
+                            val rimSize = Size((pill.width - rim).coerceAtLeast(0f), (pill.height - rim).coerceAtLeast(0f))
+                            val rimCorner = (corner - rim / 2f).coerceAtLeast(0f)
+                            drawRoundRect(
+                                brush = Brush.horizontalGradient(
+                                    listOf(ring.start.copy(alpha = find.chosenAlpha), ring.end.copy(alpha = find.chosenAlpha * 0.6f)),
+                                    startX = topLeft.x,
+                                    endX = topLeft.x + pill.width,
+                                ),
+                                topLeft = topLeft,
+                                size = pill,
+                                cornerRadius = CornerRadius(corner, corner),
+                            )
+                            drawRoundRect(
+                                brush = Brush.horizontalGradient(listOf(ring.start, ring.end), startX = topLeft.x, endX = topLeft.x + pill.width),
+                                topLeft = topLeft + inset,
+                                size = rimSize,
+                                cornerRadius = CornerRadius(rimCorner, rimCorner),
+                                style = Stroke(rim),
+                            )
+                        },
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    session.filters.forEachIndexed { index, filter ->
+                        val on by eased(if (index == chosen) 1f else 0f, motion.durationFocus, scale)
+                        Box(
+                            Modifier
+                                .onGloballyPositioned {
+                                    val rect = Rect(it.positionInParent(), it.size.toSize())
+                                    if (spans[index] != rect) spans[index] = rect
+                                }
+                                .clip(theme.style.shape.control())
+                                .drawBehind { drawRoundRect(theme.onBackground.copy(alpha = find.filterAlpha), cornerRadius = CornerRadius(size.height * round)) }
+                                .padding(horizontal = 16.dp, vertical = 6.dp),
+                        ) {
+                            BasicText(
+                                text = filter.label,
+                                maxLines = 1,
+                                style = style.copy(color = lerpInk(theme.muted, theme.onBackground, on)),
+                            )
+                        }
                     }
                 }
             }
@@ -428,15 +456,41 @@ internal fun FindFilters(session: FindSession, style: TextStyle, scale: Float, m
     }
 }
 
-/** An edge with more pills past it fades out rather than cutting one in half. */
-private fun Modifier.fadeEnds(spans: Map<Int, Rect>, density: androidx.compose.ui.unit.Density): Modifier =
+/**
+ * An edge with more pills past it fades out rather than cutting one in half. Only that edge:
+ * scrolled to an end, the end has nothing more and stays plain. Each fade grows in with the
+ * [scroll], and shrinks away rather than reach over the [chosen] pill.
+ */
+private fun Modifier.fadeEnds(
+    spans: Map<Int, Rect>,
+    chosen: () -> Rect?,
+    scroll: () -> Float,
+    density: androidx.compose.ui.unit.Density,
+): Modifier =
     graphicsLayer { compositingStrategy = CompositingStrategy.Offscreen }.drawWithContent {
         drawContent()
+        val width = size.width
+        if (width <= 0f) return@drawWithContent
         val end = spans.values.maxOfOrNull { it.right } ?: 0f
-        if (end <= size.width) return@drawWithContent
-        val fade = with(density) { FADE.dp.toPx() } / size.width
+        val shift = scroll()
+        val fade = with(density) { FADE.dp.toPx() }
+        val pill = chosen()
+        // How far each fade may reach before it would touch the chosen pill on screen.
+        val leftReach = pill?.let { min(fade, max(0f, it.left - shift)) } ?: fade
+        val rightReach = pill?.let { min(fade, max(0f, width - (it.right - shift))) } ?: fade
+        // How much lies past each edge, up to a fade's width, scaled down as the reach shrinks.
+        val left = (shift / fade).coerceIn(0f, 1f) * (leftReach / fade)
+        val right = ((end - shift - width) / fade).coerceIn(0f, 1f) * (rightReach / fade)
+        if (left <= 0f && right <= 0f) return@drawWithContent
+        val leftStop = max(leftReach, 1f) / width
+        val rightStop = (1f - max(rightReach, 1f) / width).coerceAtLeast(leftStop)
         drawRect(
-            brush = Brush.horizontalGradient(0f to Color.Transparent, fade to Color.Black, 1f - fade to Color.Black, 1f to Color.Transparent),
+            brush = Brush.horizontalGradient(
+                0f to lerpInk(Color.Black, Color.Transparent, left),
+                leftStop to Color.Black,
+                rightStop to Color.Black,
+                1f to lerpInk(Color.Black, Color.Transparent, right),
+            ),
             blendMode = BlendMode.DstIn,
         )
     }
@@ -489,6 +543,10 @@ private const val POP_STAGGER_LIMIT = 8
 /** The L2 and R2 glyphs beside the filters, as a share of their text. */
 private const val GLYPH_SHARE = 1.5f
 private const val FADE = 28f
+
+/** The name card's padding, in the top screen's pixels, as Home's name card has. */
+private const val CARD_SIDE_PX = 40f
+private const val CARD_PAD_PX = 20f
 
 /** How far Find's layer travels up as it opens, as a share of its height. */
 private const val SLIDE_SHARE = 0.5f

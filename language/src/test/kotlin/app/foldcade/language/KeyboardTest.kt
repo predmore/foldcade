@@ -368,4 +368,61 @@ class KeyboardTest {
         assertEquals(listOf(PromptKey.FaceA, PromptKey.FaceB), hints.take(2))
         assertEquals(PromptKey.FaceY, hints.last())
     }
+
+    @Test
+    fun aHardwareKeyboardTypesItsCharactersOnlyWhereAFieldTakesText() {
+        // Letters have no meaning on the keyboard's map, so they come through as their character.
+        listOf(HomeKeys.Typing, HomeKeys.Finding, HomeKeys.FindResults).forEach { keys ->
+            assertNull(meaningOf(KeyEvent.KEYCODE_A, homeKeys = keys))
+            assertEquals("a", typedText('a'.code, keys))
+            assertEquals("Z", typedText('Z'.code, keys))
+            assertEquals("7", typedText('7'.code, keys))
+            assertEquals("@", typedText('@'.code, keys))
+            assertEquals("é", typedText('é'.code, keys))
+        }
+        assertEquals("🎮", typedText(0x1F3AE, HomeKeys.Typing))
+        // A grid, a lifted tile or a menu takes no text.
+        listOf(HomeKeys.Idle, HomeKeys.Moving, HomeKeys.AllLibrary, HomeKeys.Selecting, HomeKeys.ChoosingArt, HomeKeys.PickingIcon)
+            .forEach { assertNull(typedText('a'.code, it)) }
+        // Controller buttons and the D-pad have no character; space, Enter, Tab, Delete and Escape keep their meanings.
+        listOf(0, ' '.code, '\n'.code, '\t'.code, 0x7f, 0x1b, 0xa0).forEach { assertNull(typedText(it, HomeKeys.Finding)) }
+        // A dead accent reads negative until its letter comes.
+        assertNull(typedText(Int.MIN_VALUE or '`'.code, HomeKeys.Typing))
+        assertEquals(Meaning.Space, meaningOf(KeyEvent.KEYCODE_SPACE, homeKeys = HomeKeys.Typing))
+        assertEquals(Meaning.Erase, meaningOf(KeyEvent.KEYCODE_DEL, homeKeys = HomeKeys.Finding))
+    }
+
+    @Test
+    fun typedTextGoesInAtTheCaretAsCasedAndFlashesItsKey() {
+        val opened = openTyping("Mario")
+        // All of it is selected, so the first character replaces it.
+        val first = opened.typeText("z")
+        assertEquals("z", first.typing.draft.text)
+        assertEquals(TypingCue.Type, first.cue)
+        assertEquals(at('z'), first.typing.pressedKey)
+        assertEquals(opened.pressed + 1, first.typing.pressed)
+        assertEquals(opened.focus, first.typing.focus)
+        // Cased as the keyboard sent it: Shift neither lowers nor raises it, and a letter spends a word's capital.
+        val typed = "Zelda 2".fold(openTyping("")) { typing, char ->
+            if (char == ' ') typing.on(Meaning.Space).typing else typing.typeText(char.toString()).typing
+        }
+        assertEquals("Zelda 2", typed.draft.text)
+        assertEquals("aB", openTyping("").typeText("a").typing.typeText("B").typing.draft.text)
+        // A character the board has no key for still types; nothing flashes.
+        val at = openTyping("").typeText("@").typing
+        assertEquals("@", at.draft.text)
+        assertNull(at.pressedKey)
+        // Control characters type nothing.
+        assertEquals(TypingCue.None, openTyping("ab").typeText("\n").cue)
+    }
+
+    @Test
+    fun typedTextKeepsToTheFieldsLimit() {
+        val full = openTyping("abc", limit = 3).on(Meaning.CaretForward).typing
+        val refused = full.typeText("d")
+        assertEquals("abc", refused.typing.draft.text)
+        assertEquals(TypingCue.None, refused.cue)
+        assertEquals(full.refusals + 1, refused.typing.refusals)
+        assertEquals("abcd", openTyping("ab", limit = 4).on(Meaning.CaretForward).typing.typeText("cdef").typing.draft.text)
+    }
 }

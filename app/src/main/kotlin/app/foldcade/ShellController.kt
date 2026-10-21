@@ -44,6 +44,7 @@ import app.foldcade.host.PluginHost
 import app.foldcade.language.FoldNotice
 import app.foldcade.language.FindEntry
 import app.foldcade.language.FindKind
+import app.foldcade.language.downloadFacts
 import app.foldcade.language.HintKey
 import app.foldcade.language.HomeKeys
 import app.foldcade.language.PanelLevel
@@ -77,6 +78,7 @@ import app.foldcade.language.HeroSubject
 import app.foldcade.language.HomeFolder
 import app.foldcade.language.HomeItem
 import app.foldcade.language.HomeKind
+import app.foldcade.language.isApp
 import app.foldcade.language.HomePlatform
 import app.foldcade.language.androidHomeId
 import app.foldcade.language.bucketMark
@@ -85,6 +87,7 @@ import app.foldcade.language.homeGameKey
 import app.foldcade.language.Motion
 import app.foldcade.language.SyncMark
 import app.foldcade.language.TileActivity
+import app.foldcade.language.PlayKey
 import app.foldcade.language.resolvePlatform
 import app.foldcade.language.kitMark
 import app.foldcade.host.play.recentlyPlayedIndices
@@ -142,6 +145,8 @@ class ShellController(
     private val homeTracks: List<MusicTrack> = emptyList(),
     private val themeTracks: List<MusicTrack?> = emptyList(),
     private val lastPlayedMillis: (String) -> Long? = { null },
+    /** A game's total play time, which a folder sorted by Most played orders by. */
+    private val playMillis: (String) -> Long? = { null },
     /** Delete shortcut was confirmed. The app drops its pinned shortcut. */
     private val onMoonlightRemoved: (remoteKey: String) -> Unit = {},
     /** Delete shortcut was confirmed. The app drops its pinned shortcut. */
@@ -154,6 +159,8 @@ class ShellController(
     private val nowMillis: () -> Long = { System.currentTimeMillis() },
     /** Copies were folded into new tiles: tile id to its copies, first preferred. The app moves their art. */
     private val onSameGames: (Map<String, List<String>>) -> Unit = {},
+    /** "0.1.2 (230)", read from the installed package. Settings › About shows it. */
+    private val appVersion: String = "",
 ) {
     var artPicker by mutableStateOf<ArtPickerState?>(null)
         private set
@@ -285,7 +292,10 @@ class ShellController(
                 commitHome(catalog = true)
                 if (next.libraryGrid) next else withShelf(next)
             } else next
-            val canceled = current.deleteHold != null && (next.panel == null || next.panel != current.panel || next.dialog != null || next.settings != null || next.connectOpen)
+            // A session's hold lives on Play activity's list, which has no menu: that list changing cancels it.
+            val holdMoved = if (current.deleteHold?.row == Row.RemoveSession) next.playActivity != current.playActivity
+                else next.panel == null || next.panel != current.panel
+            val canceled = current.deleteHold != null && (holdMoved || next.dialog != null || next.settings != null || next.connectOpen)
             val stable = app.foldcade.language.retainMenuRows(current, prepared)
             undo = when {
                 stable.panel == null -> undo?.resume(nowMillis())
@@ -363,6 +373,12 @@ class ShellController(
     var activity by mutableStateOf<Map<String, TileActivity>>(emptyMap())
         private set
 
+    /** Tiles whose game is still open in its player, see [RunningGames]. */
+    var running by mutableStateOf<Set<String>>(emptySet())
+
+    /** False while Foldcade can't tell whether a player closed, see [FoldcadeApp.closesVisible]. Nothing reads Paused then. */
+    var resumable by mutableStateOf(false)
+
     /** Cells for the current grid. Empty when the grid is an empty state. */
     var entries by mutableStateOf<List<GridEntry>>(emptyList())
         private set
@@ -407,13 +423,21 @@ class ShellController(
         if (undo != null && activeUndo() == null) { undo = null; publish(model.copy(undoVerb = null)) }
         val hold = model.deleteHold ?: return null
         if (inputWindows[hold.inputWindow] == false) { cancelDelete(); return null }
-        val selected = model.panel?.let { panelRows(it, model).getOrNull(it.index) }
-        if (selected != hold.row || model.tileActions?.game != hold.gameId) { cancelDelete(); return null }
+        val session = hold.row == Row.RemoveSession
+        if (session) {
+            val page = model.playActivity
+            if (page?.sessions?.getOrNull(page.session) != hold.gameId) { cancelDelete(); return null }
+        } else {
+            val selected = model.panel?.let { panelRows(it, model).getOrNull(it.index) }
+            if (selected != hold.row || model.tileActions?.game != hold.gameId) { cancelDelete(); return null }
+        }
         if (hold.complete(nowMillis())) {
             model = model.copy(deleteHold = null, deleteProgress = 0f)
             completingDelete = true
             cue(model.themeIndex, "notify")
-            return try { onMeaning(Meaning.Activate, HostScreen.Top, inputWindow = hold.inputWindow) } finally { completingDelete = false }
+            // A menu row runs on A; a session's list has no rows, so the key held is pressed again.
+            val press = if (session) hold.meaning else Meaning.Activate
+            return try { onMeaning(press, HostScreen.Top, inputWindow = hold.inputWindow) } finally { completingDelete = false }
         }
         model = model.copy(deleteProgress = hold.progress(nowMillis()))
         return null
@@ -439,7 +463,7 @@ class ShellController(
         val rows = panel?.let { panelRows(it, model) }.orEmpty()
         val at = if (meaning == Meaning.Activate) panel?.index?.coerceIn(0, (rows.size - 1).coerceAtLeast(0)) else chordIndex(rows, meaning)
         val row = at?.let { rows.getOrNull(it) }
-        if (find == null && model.homeGrid == HomeGrid.Hidden && model.panel == null && (meaning == Meaning.Activate || meaning == Meaning.ActivateBottom)) return null
+        if (find == null && model.homeGrid == HomeGrid.Hidden && model.panel == null && model.playActivity == null && (meaning == Meaning.Activate || meaning == Meaning.ActivateBottom)) return null
         val before = home.board
         val beforeFocus = model.focus
         val beforeGrid = model.homeGrid
@@ -525,6 +549,14 @@ class ShellController(
             }
             return null
         }
+        // Removing a play session is held first, as deleting a download is.
+        if (!completingDelete && effect is Effect.RemovePlaySession) {
+            if (current.playActivity?.sessions != null && repeatCount == 0 && inputWindows[inputWindow] != false) {
+                heldActions.capture(meaning.ordinal)
+                model = current.copy(deleteHold = DeleteHold(Row.RemoveSession, PromptKey.FaceX, nowMillis(), effect.sessionId, meaning, inputWindow, inputKeys[inputWindow]), deleteProgress = 0f)
+            }
+            return null
+        }
         if (!next.connectOpen) connectToken = ""
         val targetGame = actionGame(current)
         val packageName = targetGame?.androidPackage
@@ -595,6 +627,10 @@ class ShellController(
                 null
             }
             Effect.Tidy -> changeHome { home.tidyBoard(it) }
+            is Effect.SortFolder -> {
+                sortFolder(effect)
+                null
+            }
             is Effect.NewCollection -> {
                 // Naming takes the keyboard Find has, so Find gives way to it, on Home.
                 if (find != null) {
@@ -667,6 +703,10 @@ class ShellController(
                 typingRequest++
                 null
             }
+            is Effect.OpenPlayDay -> {
+                openPlayDay(effect.weeksBack, effect.day)
+                null
+            }
             else -> effect
         }
         // Once the menu has closed and acted, the grid's focused slot leads again.
@@ -726,7 +766,9 @@ class ShellController(
 
     private fun folderHero(folder: HomeFolder): HeroSubject {
         val mark = collectionLook(folder)?.mark ?: folder.mark
-        return HeroSubject.Folder(HeroFolder(key = folder.id, name = folder.name, count = folderCount(home.board, folder.id), mark = mark))
+        return HeroSubject.Folder(
+            HeroFolder(key = folder.id, name = folder.name, count = folderCount(home.board, folder.id), mark = mark, apps = folder.holdsApps),
+        )
     }
 
     /** A tap on an empty collection's Add games does what A does there, in one tap: it is the only thing to press. */
@@ -750,6 +792,17 @@ class ShellController(
         commitHome()
         showBoard(step.focus ?: model.focus, keepDialog = true)
         step.cue?.slot?.let { cue(model.themeIndex, it) }
+    }
+
+    /** Characters a hardware keyboard typed: onto Find's query, or the name on the open keyboard. */
+    fun typeText(text: String): Effect? {
+        find?.takeIf { findActive() }?.let { return findOutcome(it.typeText(text)) }
+        if (!homeActive()) return null
+        val step = home.typeText(text) ?: return null
+        commitHome()
+        showBoard(step.focus ?: model.focus, keepDialog = true)
+        step.cue?.slot?.let { cue(model.themeIndex, it) }
+        return null
     }
 
     /**
@@ -790,7 +843,7 @@ class ShellController(
         val listed = entries.map { it.id }.toSet()
         return entries + hidden.filter { it.id !in listed }.map {
             FindEntry(it.id, it.title, if (it.id in home.board.retired) FindKind.Group
-                else if (it.kind == HomeKind.AndroidApp || it.kind == HomeKind.Emulator) FindKind.App else FindKind.Game,
+                else if (it.kind.isApp) FindKind.App else FindKind.Game,
                 hidden = true, mark = it.mark)
         }
     }
@@ -831,7 +884,8 @@ class ShellController(
     }
 
     /** The line under a Find result's name: its platform or count, where it lives, and whether it is hidden. */
-    fun findFacts(entry: FindEntry): List<String> = app.foldcade.language.findFacts(home.board, entry)
+    fun findFacts(entry: FindEntry): List<String> =
+        app.foldcade.language.findFacts(home.board, entry) + listOfNotNull(entry.id.takeIf { entry.kind != FindKind.Group }?.let(::downloadLine))
 
     /** A Find result as a game, for its tile's art and icon. */
     fun findGame(id: String): ShelfGame = homeShelf(home.faceOf(id))
@@ -927,15 +981,34 @@ class ShellController(
      * on the bottom: one that takes one screen, while both screens are Foldcade's.
      */
     fun focusedLaunchesOnOneScreen(): Boolean {
-        if (!store.session.bothScreensFree() || model.focus.chrome != null) return false
-        if (model.libraryGrid && model.gridKind != GridKind.Games) return false
-        val found = find?.subject
-        if (found != null && found.kind == FindKind.Group) return false
-        val face = if (find == null && (showingHome() || home.board.allOpen)) home.face(model.focus.cellIndex) else null
-        if (face != null && (face.folder || face.allTile || face.empty)) return false
-        val game = focusedGame() ?: return false
-        return !game.emptyShelfHint && !game.occupiesBothDisplays
+        if (!store.session.bothScreensFree()) return false
+        val game = focusedPlayable() ?: return false
+        return !game.occupiesBothDisplays && !isPaused(focusedTileId(game))
     }
+
+    /** What A says for the focused game when it is not a choice of screens. */
+    fun focusedPlayKey(): PlayKey {
+        val game = focusedPlayable() ?: return PlayKey.None
+        return when {
+            isPaused(focusedTileId(game)) -> PlayKey.Resume
+            game.occupiesBothDisplays -> PlayKey.Play
+            else -> PlayKey.None
+        }
+    }
+
+    /** The focused tile when it is a game A would start. */
+    private fun focusedPlayable(): ShelfGame? {
+        if (model.focus.chrome != null) return null
+        if (model.libraryGrid && model.gridKind != GridKind.Games) return null
+        val found = find?.subject
+        if (found != null && found.kind == FindKind.Group) return null
+        val face = if (find == null && (showingHome() || home.board.allOpen)) home.face(model.focus.cellIndex) else null
+        if (face != null && (face.folder || face.allTile || face.empty)) return null
+        return focusedGame()?.takeUnless { it.emptyShelfHint }
+    }
+
+    /** The tile a focused game plays under. A library grid names a copy, which may be folded into another tile. */
+    private fun focusedTileId(game: ShelfGame): String = tileOf(game.id)
 
     /** True when Y would open a menu for the focused tile. A grid with no tiles opens one only for Undo. */
     fun hasOptions(): Boolean =
@@ -977,6 +1050,26 @@ class ShellController(
 
     /** A copy of the tile [id]'s game is downloading. The tile pulses its cloud. */
     fun isDownloading(id: String?): Boolean = id != null && downloading.isNotEmpty() && tileIds(id).any { it in downloading }
+
+    /**
+     * Steps a folder's Sort from its menu, which stays open on that row. The grid reorders
+     * behind it, and the focus, the menu's own included, follows the game it was on.
+     */
+    private fun sortFolder(effect: Effect.SortFolder) {
+        if (!showingHome() || find != null) return
+        // Saved, as any edit is, then read again at once, so Most played orders by play time
+        // the catalog had not read yet.
+        val at = home.stepSort(effect.folderId, effect.direction, model.focus.cellIndex) {
+            commitHome()
+            syncHome()
+        }
+        val grid = GridFocus(cellIndex = at, lastColumn = GridStrip.column(at))
+        publish(model.copy(focus = grid, panel = model.panel?.copy(grid = grid), shelfEpoch = model.shelfEpoch + 1))
+        // Move and Tidy come and go with Custom, so the rows were read again. Sort keeps the highlight.
+        val open = model.panel ?: return
+        val row = panelRows(open, model).indexOf(Row.SortFolder)
+        if (row >= 0 && row != open.index) model = model.copy(panel = open.copy(index = row))
+    }
 
     /** Runs one Y menu action on the focused home tile. [change] returns the index to focus after. */
     private fun changeHome(change: (Int) -> Int): Effect? {
@@ -1190,9 +1283,20 @@ class ShellController(
     private fun downloadOf(id: String): Game? =
         home.copies(id).firstOrNull { it.availability == Availability.Cached }
 
-    private fun busyOnDevice(id: String): Boolean = tileIds(id).any { one ->
+    private fun busyOnDevice(id: String): Boolean = isRunning(id) || tileIds(id).any { one ->
         one in downloading || one in removing || libraryOf(one) in relisting ||
             activity[one].let { it is TileActivity.Downloading || it == TileActivity.Checking }
+    }
+
+    /** True while the game on [id]'s tile is still open in its player, in front or behind Home. */
+    fun isRunning(id: String?): Boolean =
+        id != null && running.isNotEmpty() && (tileOf(id) in running || tileIds(id).any { it in running })
+
+    /** Still open in its player and on neither screen now: it waits behind Home, where A brings it back. */
+    fun isPaused(id: String?): Boolean {
+        if (id == null || !resumable || !isRunning(id)) return false
+        // On a screen under any id the tile has had, as a game started before a merge is.
+        return (tileIds(tileOf(id)) + id).none(store.session::runs)
     }
 
     /** The tile [id] and the home id of each copy folded into it. */
@@ -1200,7 +1304,8 @@ class ShellController(
         if (id.startsWith(SAME_PREFIX)) listOf(id) + sameAliases.filterValues { it == id }.keys else listOf(id)
 
     /** What a library is doing with the tile [id]'s game, or with any copy of it. */
-    private fun activityOf(id: String): TileActivity? = tileIds(id).firstNotNullOfOrNull { activity[it] }
+    private fun activityOf(id: String): TileActivity? =
+        tileIds(id).firstNotNullOfOrNull { activity[it] } ?: TileActivity.Paused.takeIf { isPaused(id) }
 
     /**
      * [libraryId]'s connection is moving to another server. Delete download waits,
@@ -1283,7 +1388,7 @@ class ShellController(
 
     /** The activity of the game at [source] in the grid shown now. */
     fun activityAt(source: Int): TileActivity? {
-        if (activity.isEmpty()) return null
+        if (activity.isEmpty() && running.isEmpty()) return null
         val id = when {
             model.libraryGrid -> entries.getOrNull(source)?.game?.let { homeGameId(it.backendId, it.remoteKey) }
             showingHome() -> home.face(source)?.id
@@ -1294,7 +1399,7 @@ class ShellController(
 
     /** The activity of the focused game, for the top screen. */
     fun focusedActivity(): TileActivity? {
-        if (activity.isEmpty()) return null
+        if (activity.isEmpty() && running.isEmpty()) return null
         if (!model.libraryGrid) homeCarry()?.let { return activityOf(it.id) }
         val source = if (model.libraryGrid) {
             displayOrder(model).getOrElse(model.focus.cellIndex) { model.focus.cellIndex }
@@ -1704,7 +1809,7 @@ class ShellController(
         if (page.screen != screen) return null
         if (index !in settingsCategories(model).indices) return null
         if (page.category != index || page.onRows) {
-            publish(model.copy(capturingConfirm = false, settings = page.copy(category = index, row = 0, onRows = false)))
+            publish(model.copy(capturingConfirm = false, versionCopied = false, settings = page.copy(category = index, row = 0, onRows = false)))
             return null
         }
         return onMeaning(Meaning.MoveRight, screen)
@@ -1722,6 +1827,19 @@ class ShellController(
         return onMeaning(Meaning.Activate, screen)
     }
 
+    /**
+     * The session ids Play activity lists for a day of a week, first started first.
+     * The app reads them from its play log; see [app.foldcade.language.playDaySessions].
+     */
+    var playDaySessions: (weeksBack: Int, day: Int) -> List<String> = { _, _ -> emptyList() }
+
+    /** A on a day of Play activity lists its sessions. A day without any stays as it is. */
+    private fun openPlayDay(weeksBack: Int, day: Int) {
+        val page = model.playActivity ?: return
+        val ids = playDaySessions(weeksBack, day).takeIf { it.isNotEmpty() } ?: return
+        publish(model.copy(playActivity = page.copy(sessions = ids, session = 0)))
+    }
+
     /** A tap on the Play activity page's back pill. */
     fun closePlayActivity() {
         if (modalOpen()) return
@@ -1732,7 +1850,7 @@ class ShellController(
     fun closeSettings(): Effect? {
         if (modalOpen()) return null
         val page = model.settings ?: return null
-        publish(model.copy(settings = null, focus = page.grid, capturingConfirm = false))
+        publish(model.copy(settings = null, focus = page.grid, capturingConfirm = false, versionCopied = false))
         return null
     }
 
@@ -2058,16 +2176,28 @@ class ShellController(
             mark = game.mark,
             packageName = game.androidPackage,
             emptyShelfHint = game.emptyShelfHint,
-            availability = game.availabilityLabel,
+            availability = game.availabilityLabel ?: downloadLine(game.id),
         ),
     )
+
+    /**
+     * What playing the tile [id]'s game would download, as [downloadFacts] says it, while no
+     * copy is on the device ([onServer]). Null once one is, and while one is downloading: the
+     * live activity line says that. The first copy is the one a launch fetches.
+     */
+    private fun downloadLine(id: String): String? {
+        if (id.isEmpty() || !onServer(id) || isDownloading(id)) return null
+        val copy = home.copies(id).firstOrNull() ?: return null
+        return downloadFacts(plugins.library(copy.backendId)?.displayName, copy.sizeBytes)
+    }
 
     /** Find's subject as the top screen shows it. A group shows as its folder does. */
     private fun foundHero(session: FindSession): HeroSubject? {
         val entry = session.subject ?: return null
         // A group's mark is already its look, as its result tile shows it.
         if (entry.kind == FindKind.Group) {
-            return HeroSubject.Folder(HeroFolder(key = entry.id, name = entry.title, count = folderCount(home.board, entry.id), mark = entry.mark))
+            val apps = home.board.folders[entry.id]?.holdsApps == true
+            return HeroSubject.Folder(HeroFolder(key = entry.id, name = entry.title, count = folderCount(home.board, entry.id), mark = entry.mark, apps = apps))
         }
         val game = foundGame() ?: return null
         return HeroSubject.Item(
@@ -2077,7 +2207,7 @@ class ShellController(
                 detail = game.shortText,
                 mark = game.mark,
                 packageName = game.androidPackage,
-                availability = game.availabilityLabel,
+                availability = game.availabilityLabel ?: downloadLine(game.id),
             ),
         )
     }
@@ -2313,7 +2443,9 @@ class ShellController(
         val targetGame = actionGame(counted, tile?.game)
         // A copy still arriving, or already going, is not one to delete.
         val busy = (tile?.game ?: home.face(counted.focus.cellIndex)?.id)?.let(::busyOnDevice) == true
-        val offered = if (tile?.removeDownload == true && busy) tile.copy(removeDownload = false) else tile
+        val offered = (if (tile?.removeDownload == true && busy) tile.copy(removeDownload = false) else tile)
+            // A game still open in its player can start over. Find's menu acts on a result that may not be a tile.
+            ?.let { if (found == null && isPaused(it.game)) it.copy(restart = true) else it }
         // A merge can close the open folder, when its last game left, so read where the board is now.
         val root = if (onHome) home.board.openFolderId == null && !home.board.allOpen else counted.atLibraryRoot
         val withArt = if (tile?.bulk == null && home.selection == null && counted.artKeySaved && artPickerAvailable() && targetGame?.let(::artQuery) != null) {
@@ -2565,11 +2697,14 @@ class ShellController(
             onSameGames(sameGroups().filterKeys { it in joined })
         }
         val copies = folded.members.mapValues { (_, ids) -> ids.mapNotNull(libraryGames::get) }
+        // Play time is read through every play, so only for the games a folder orders by it.
+        val ranked = home.rankedByPlay()
+        val timed = { item: HomeItem -> if (item.id in ranked) item.copy(playMillis = playMillis(item.id) ?: 0L) else item }
         home.remerge(
-            shelfItems(),
-            appItems(),
+            shelfItems().map(timed),
+            appItems().map(timed),
             // Read now, since a game played since its library listed it moves up Recently played.
-            folded.items.map { item -> item.copy(lastPlayedMillis = lastPlayedMillis(item.id) ?: 0L) },
+            folded.items.map { item -> timed(item.copy(lastPlayedMillis = lastPlayedMillis(item.id) ?: 0L)) },
             homePlatforms(),
             // A tile's art and details come from its first copy: a server's, which knows the game.
             libraryGames + copies.mapNotNull { (tile, games) -> games.firstOrNull()?.let { tile to it } },
@@ -2645,7 +2780,7 @@ class ShellController(
             HomePlatform("game-boy", "Game Boy", setOf("gb")),
             HomePlatform("game-boy-color", "Game Boy Color", setOf("gbc")),
             HomePlatform("game-boy-advance", "Game Boy Advance", setOf("gba")),
-            HomePlatform("game-gear", "Game Gear", setOf("gg")),
+            HomePlatform("game-gear", "Sega Game Gear", setOf("gg")),
             HomePlatform("psp", "PSP", setOf("psp")),
         )
         val byId = LinkedHashMap<String, HomePlatform>()
@@ -2707,6 +2842,7 @@ class ShellController(
             artwork = store.artworkEnabled(),
             sort = store.librarySort(),
             recentFirst = recentOrder(),
+            appVersion = appVersion,
         )
     }
 
@@ -2735,7 +2871,8 @@ class ShellController(
                 }
             }
             Meaning.MoveUp, Meaning.MoveDown, Meaning.MoveLeft, Meaning.MoveRight -> {
-                val moved = before.focus != after.focus || before.panel?.index != after.panel?.index
+                val moved = before.focus != after.focus || before.panel?.index != after.panel?.index ||
+                    before.playActivity != after.playActivity
                 val slid = valueAdjusted(before, after)
                 if (slid) tickSlider(after.themeIndex) else if (moved) cue(after.themeIndex, "move")
             }

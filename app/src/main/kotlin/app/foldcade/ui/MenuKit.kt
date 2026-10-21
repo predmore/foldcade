@@ -46,6 +46,7 @@ import androidx.compose.ui.graphics.drawscope.clipRect
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.graphics.luminance
+import androidx.compose.ui.layout.layout
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.layout.positionInParent
@@ -62,6 +63,7 @@ import app.foldcade.language.PromptKey
 import app.foldcade.language.Row
 import app.foldcade.language.RowControl
 import app.foldcade.language.Theme
+import kotlin.math.roundToInt
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -229,8 +231,8 @@ internal fun Modifier.menuFade(scroll: ScrollState): Modifier =
 
 /** A scrolling menu column with room for the focus ring's glow inside its clip, plus [extra]. */
 @Composable
-internal fun Modifier.ringScroll(extra: Dp = 0.dp): Modifier =
-    verticalScroll(rememberScrollState()).padding(ringReach() + extra)
+internal fun Modifier.ringScroll(extra: Dp = 0.dp, state: ScrollState = rememberScrollState()): Modifier =
+    verticalScroll(state).padding(ringReach() + extra)
 
 /**
  * The D-pad moves the focus, not the scroll, so the focused row asks its scrolling
@@ -448,21 +450,41 @@ internal fun CheckMark(on: Boolean, focused: Boolean, scale: Float, some: Boolea
 
 /**
  * ‹ value ›. The chevrons show while the row has focus, since left and right then change it.
- * A new value rolls up into place as the old one rolls away.
+ * A new value rolls up into place as the old one rolls away. At rest the value ends on the
+ * row's edge, in one column with plain values, switches, and the way-in chevrons; the ›
+ * makes its room as the focus arrives, nudging the value aside.
  */
 @Composable
 internal fun ChoiceValue(value: String, focused: Boolean, style: TextStyle, scale: Float) {
     val theme = LocalFoldTheme.current.theme
     val arrows by eased(if (focused) 1f else 0f, theme.motion.durationFocus, scale)
     val arrow = style.copy(color = theme.onBackground)
-    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-        BasicText("‹", style = arrow, modifier = Modifier.graphicsLayer { alpha = arrows; translationX = (1f - arrows) * 8.dp.toPx() })
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        BasicText(
+            "‹",
+            style = arrow,
+            modifier = Modifier.padding(end = CHOICE_GAP).graphicsLayer { alpha = arrows; translationX = (1f - arrows) * 8.dp.toPx() },
+        )
         SlideSwap(target = value, scale = scale, distance = 18.dp, vertical = true, direction = { _, _ -> 1 }) { shown ->
             BasicText(shown, style = style, maxLines = 1, overflow = TextOverflow.Ellipsis)
         }
-        BasicText("›", style = arrow, modifier = Modifier.graphicsLayer { alpha = arrows; translationX = (arrows - 1f) * 8.dp.toPx() })
+        BasicText(
+            "›",
+            style = arrow,
+            // Read in layout, so the room grows frame by frame without recomposing the row.
+            modifier = Modifier.layout { measurable, constraints ->
+                val glyph = measurable.measure(constraints)
+                val room = ((glyph.width + CHOICE_GAP.roundToPx()) * arrows).roundToInt()
+                layout(room, glyph.height) {
+                    glyph.placeWithLayer(room - glyph.width, 0) { alpha = arrows }
+                }
+            },
+        )
     }
 }
+
+/** Between a choice's chevrons and its value. */
+private val CHOICE_GAP = 10.dp
 
 /** A way into something else. It nudges toward where it leads while its row has focus. */
 @Composable

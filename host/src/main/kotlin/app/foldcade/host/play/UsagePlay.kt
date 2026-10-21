@@ -98,6 +98,32 @@ fun usageSpans(samples: List<UsageSample>): List<UsageSpan> {
 const val MAX_USAGE_STRETCH_MS = 12L * 60L * 60L * 1000L
 
 /**
+ * [spans] with each wall-clock stretch in [cuts] taken out of its package's time,
+ * as for a session the player removed from their history. A stretch still open
+ * runs to [nowMillis]; a piece that reaches its end stays open, so it is still
+ * the package's last play.
+ */
+fun withoutStretches(spans: List<UsageSpan>, cuts: Map<String, List<LongRange>>, nowMillis: Long): List<UsageSpan> {
+    if (cuts.isEmpty()) return spans
+    return spans.flatMap { span ->
+        val taken = cuts[span.packageName].orEmpty()
+        if (taken.isEmpty()) return@flatMap listOf(span)
+        val end = span.pausedAt ?: nowMillis
+        var pieces = listOf(span.resumedAt to end)
+        for (cut in taken.sortedBy { it.first }) {
+            pieces = pieces.flatMap { (from, to) ->
+                if (cut.last <= from || cut.first >= to) {
+                    listOf(from to to)
+                } else {
+                    listOfNotNull((from to cut.first).takeIf { cut.first > from }, (cut.last to to).takeIf { cut.last < to })
+                }
+            }
+        }
+        pieces.map { (from, to) -> UsageSpan(span.packageName, from, if (to == end) span.pausedAt else to) }
+    }
+}
+
+/**
  * Active time per package. A negative gap counts as zero. An open stretch runs until [nowMillis].
  * A stamp ahead of [nowMillis] is a clock that jumped forward and was corrected: it does not
  * add time past now, and it does not stay as "last played" after the clock comes back.

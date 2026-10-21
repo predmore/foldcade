@@ -131,6 +131,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.zIndex
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import app.foldcade.language.heroPlayLine
+import app.foldcade.language.DateStyle
 import app.foldcade.language.typingFaces
 import app.foldcade.language.FindEntry
 import app.foldcade.language.FindKind
@@ -138,6 +139,7 @@ import app.foldcade.language.withFindHint
 import app.foldcade.language.heroFacts
 import app.foldcade.R
 import app.foldcade.language.QuickSetting
+import app.foldcade.DeviceStatus
 import app.foldcade.Displays
 import app.foldcade.language.ArtCopy
 import app.foldcade.language.ArtKind
@@ -230,6 +232,7 @@ import app.foldcade.language.retargetHero
 import app.foldcade.language.Row as LanguageRow
 import app.foldcade.language.rowText
 import app.foldcade.language.TileActivity
+import app.foldcade.language.PlayKey
 import app.foldcade.language.activityLine
 import app.foldcade.language.worked
 import java.time.ZoneId
@@ -252,6 +255,8 @@ import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.Dispatchers
+import androidx.compose.runtime.produceState
 
 @Composable
 fun PanelHost(activity: FoldcadeHomeActivity, displays: Displays) {
@@ -355,6 +360,7 @@ fun PanelHost(activity: FoldcadeHomeActivity, displays: Displays) {
             if (conflict != null && screen == HostScreen.Bottom) {
                 SaveConflictBottom(
                     conflict,
+                    dateStyle = rememberDateStyle(app),
                     onFocus = { focus -> activity.dispatch(app.shell.touchSaveConflict(focus)) },
                     onLater = { activity.dispatch(app.shell.touchSaveConflictLater()) },
                     backKey = promptKeyOf(model.faceMap.backKey) ?: PromptKey.FaceB,
@@ -775,13 +781,16 @@ private fun CommandCenterScreen(
     }
 }
 
-/** A command center button. The focused one carries the confirm key's glyph when keys can press it. */
+/**
+ * A command center button. The focused one carries the confirm key's glyph when keys can press it.
+ * Beside a page the keys drive the page, so no button wears the ring: they are plain touch buttons.
+ */
 @Composable
 private fun CenterButton(app: FoldcadeApp, label: String, focused: Boolean, keyed: Boolean, onClick: () -> Unit) {
     val theme = foldTheme()
     val confirm = promptKeyOf(app.shell.model.faceMap.confirmKey)
     Row(
-        Modifier.chip(focused).hostPress(onClick).padding(horizontal = px(24f), vertical = px(12f)),
+        Modifier.chip(focused && keyed).hostPress(onClick).padding(horizontal = px(24f), vertical = px(12f)),
         horizontalArrangement = Arrangement.spacedBy(px(10f)),
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -1438,6 +1447,17 @@ private fun IconChoices(pick: IconPick, scale: Float, modifier: Modifier) {
 private const val SWATCH_SHARE = 0.72f
 private const val SWATCH_REST = 0.78f
 
+/**
+ * The device's date order and 12/24-hour clock, as the status clock reads them.
+ * Only a change to the style recomposes, not every minute's tick.
+ */
+@Composable
+internal fun rememberDateStyle(app: FoldcadeApp): DateStyle {
+    val status = app.deviceStatus.status.collectAsStateWithLifecycle()
+    val style by remember { derivedStateOf { status.value.dateStyle } }
+    return style
+}
+
 /** How far the chosen glyph's tile lightens toward the text colour. */
 private const val CHOSEN_LIFT = 0.1f
 
@@ -1457,6 +1477,7 @@ private fun HeroLabel(
     val design = LocalFoldTheme.current.theme.style
     val theme = foldTheme()
     val copy = heroCopy(shown)
+    val dateStyle = rememberDateStyle(app)
     val centred = text(theme.onBackground, LocalFoldTheme.current.theme.style.type.heroTitle, theme).copy(textAlign = TextAlign.Center)
     Column(
         Modifier
@@ -1491,7 +1512,7 @@ private fun HeroLabel(
                 item?.availability.takeIf { live == null },
                 Copy.usesBothScreens.takeIf { both },
                 played?.let {
-                    heroPlayLine(it.activeMillis, it.lastPlayedMillis, System.currentTimeMillis(), ZoneId.systemDefault())
+                    heroPlayLine(it.activeMillis, it.lastPlayedMillis, System.currentTimeMillis(), ZoneId.systemDefault(), dateStyle)
                 },
             )
             if (facts.isNotEmpty() || live != null) {
@@ -1639,7 +1660,7 @@ private fun SceneBackdrop(app: FoldcadeApp, record: Game?, query: ArtQuery?, spe
  * the art the user chose or is choosing.
  */
 @Composable
-private fun rememberArt(app: FoldcadeApp, record: Game?, query: ArtQuery?, automatic: Boolean = true): ArtSet? {
+internal fun rememberArt(app: FoldcadeApp, record: Game?, query: ArtQuery?, automatic: Boolean = true): ArtSet? {
     val allowed = app.shell.model.artwork
     val connections = app.shell.model.signedIn
     val revision = app.artRevision
@@ -1708,9 +1729,7 @@ private fun HeroArt(
         // The cover, then the same art the focused tile shows. A letter is the last resort.
         when {
             // Wide art fills the screen behind; the logo names the game over it.
-            logo != null -> Image(
-                painter = logo.painter,
-                contentDescription = title,
+            logo != null -> Box(
                 modifier = Modifier
                     .fillMaxWidth(LOGO_WIDTH)
                     .fillMaxHeight(LOGO_HEIGHT)
@@ -1730,8 +1749,33 @@ private fun HeroArt(
                             center = center,
                         )
                     },
-                contentScale = ContentScale.Fit,
-            )
+            ) {
+                // The logo's own shape, blurred and in the scrim's colour, under it: a light logo
+                // keeps an edge without a blot. A dark one glows in the shine colour instead, so
+                // it lifts off art of its own hue.
+                val shadow = design.hero.logoShadowAlpha
+                val lightness = rememberLightness(logo.image)
+                val glows = lightness != null && lightness < design.hero.logoGlowBelow
+                if (shadow > 0f) {
+                    val blur = design.hero.logoShadowBlurDp.dp
+                    Image(
+                        painter = logo.painter,
+                        contentDescription = null,
+                        modifier = Modifier
+                            .matchParentSize()
+                            .then(if (blur > 0.dp) Modifier.blur(blur, BlurredEdgeTreatment.Unbounded) else Modifier),
+                        contentScale = ContentScale.Fit,
+                        alpha = shadow,
+                        colorFilter = ColorFilter.tint(if (glows) design.colors.shine else design.colors.scrim, BlendMode.SrcIn),
+                    )
+                }
+                Image(
+                    painter = logo.painter,
+                    contentDescription = title,
+                    modifier = Modifier.matchParentSize(),
+                    contentScale = ContentScale.Fit,
+                )
+            }
             // A real title screen beside the box, drawn crisp.
             loaded != null && screenShot != null -> Row(
                 Modifier.fillMaxHeight(COVER_HEIGHT),
@@ -1780,7 +1824,45 @@ private fun HeroArt(
     }
 }
 
-private class LoadedCover(val painter: Painter, val ratio: Float)
+internal class LoadedCover(val painter: Painter, val ratio: Float, val image: coil3.Image? = null)
+
+/** How light [image] is over its opaque pixels, 0 black to 1 white. Null until read, or for an image it can't read. */
+@Composable
+private fun rememberLightness(image: coil3.Image?): Float? {
+    val state = produceState<Float?>(null, image) {
+        value = image?.let { withContext(Dispatchers.Default) { lightness(it) } }
+    }
+    return state.value
+}
+
+/** Samples about 48 pixels across: enough to tell a dark logo from a light one. */
+private fun lightness(image: coil3.Image): Float? {
+    val source = (image as? coil3.BitmapImage)?.bitmap ?: return null
+    // A hardware bitmap can't be read pixel by pixel; a copy in memory can.
+    val bitmap = if (source.config == android.graphics.Bitmap.Config.HARDWARE) {
+        source.copy(android.graphics.Bitmap.Config.ARGB_8888, false) ?: return null
+    } else {
+        source
+    }
+    try {
+        val step = maxOf(1, maxOf(bitmap.width, bitmap.height) / 48)
+        var sum = 0.0
+        var weight = 0.0
+        for (y in 0 until bitmap.height step step) {
+            for (x in 0 until bitmap.width step step) {
+                val pixel = bitmap.getPixel(x, y)
+                val alpha = (pixel ushr 24) / 255.0
+                if (alpha < 0.5) continue
+                val luma = 0.2126 * ((pixel shr 16) and 0xFF) + 0.7152 * ((pixel shr 8) and 0xFF) + 0.0722 * (pixel and 0xFF)
+                sum += luma / 255.0 * alpha
+                weight += alpha
+            }
+        }
+        return if (weight > 0.0) (sum / weight).toFloat() else null
+    } finally {
+        if (bitmap !== source) bitmap.recycle()
+    }
+}
 
 /**
  * Memory-cache keys of covers already decoded, by size and address. A painter made
@@ -1951,7 +2033,7 @@ private const val HERO_WARM_DELAY_MS = 300L
  * is fixed, so the request starts before the painter is drawn.
  */
 @Composable
-private fun rememberCoverPainter(
+internal fun rememberCoverPainter(
     app: FoldcadeApp,
     uri: String,
     px: Int,
@@ -1966,13 +2048,13 @@ private fun rememberCoverPainter(
         result.memoryCacheKey?.let { decodedCovers[coverId(uri, px)] = it }
         val image = result.image
         if (image.width <= 0 || image.height <= 0) return null
-        return LoadedCover(painter, image.width.toFloat() / image.height)
+        return LoadedCover(painter, image.width.toFloat() / image.height, image)
     }
     // Until the painter has it, the same cover already in memory draws at once.
     val held = remember(uri, px) {
         decodedCovers[coverId(uri, px)]?.let { app.images.memoryCache?.get(it)?.image }
             ?.takeIf { it.width > 0 && it.height > 0 }
-            ?.let { LoadedCover(it.asPainter(context, filterQuality), it.width.toFloat() / it.height) }
+            ?.let { LoadedCover(it.asPainter(context, filterQuality), it.width.toFloat() / it.height, it) }
     }
     return held
 }
@@ -2266,11 +2348,12 @@ private fun PanelRows(
                     modifier = place.then(press),
                 )
                 notice != null -> NoticeRow(notice = notice, focused = focused, modifier = place.then(press))
-                // A bare slider under the tiles, as in Android's quick settings.
+                // A slider under the tiles, as in Android's quick settings: the sun, the track, the percent.
                 row is Row.Brightness -> SliderRow(
                     label = parts.label,
                     value = parts.value.orEmpty(),
                     showLabel = false,
+                    icon = R.drawable.ic_status_display,
                     fraction = model.brightness / 100f,
                     focused = focused,
                     interactive = interactive,
@@ -2370,8 +2453,9 @@ private fun QuickTiles(
 ) {
     val theme = foldTheme()
     val tiles = rows.drop(tileStart).takeWhile { it.tiled() }
-    // Round icon buttons in one row, like Cocoon's quick settings. R1's need no words; the
-    // label is for touch readers. L1's places say where they go, under each one.
+    // R1's Wi-Fi and Bluetooth tiles light while their radio is on, as Android's own do.
+    val status by app.deviceStatus.status.collectAsStateWithLifecycle()
+    // Round icon buttons in one row, like Cocoon's quick settings, each named under it.
     Column(modifier.padding(vertical = px(12f)), verticalArrangement = Arrangement.spacedBy(px(16f))) {
         tiles.chunked(quickTileColumns).forEachIndexed { rowIndex, chunk ->
             Row(
@@ -2391,6 +2475,13 @@ private fun QuickTiles(
                     val lift = bouncy(if (focused) 1f else 0f, scale)
                     val ring = remember(theme) { FocusRing(theme) }
                     val words = tileLabel(row)
+                    val setting = (row as? Row.QuickTile)?.setting
+                    val radioOn = when (setting) {
+                        QuickSetting.Wifi -> status.wifiOn
+                        QuickSetting.Bluetooth -> status.bluetooth
+                        else -> false
+                    }
+                    val on = eased(if (radioOn) 1f else 0f, LocalFoldTheme.current.theme.motion.durationSelect, scale)
                     Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Box(
                         Modifier
@@ -2404,13 +2495,21 @@ private fun QuickTiles(
                                     theme.onBackground.copy(alpha = menu.quickTileAlpha + (menu.quickTileLitAlpha - menu.quickTileAlpha) * lit.value),
                                     cornerRadius = CornerRadius(radius, radius),
                                 )
+                                // A radio that is on fills its tile with the focus colours, as a switch's track lights.
+                                if (on.value > 0f) {
+                                    drawRoundRect(
+                                        brush = Brush.linearGradient(listOf(ring.start, ring.end)),
+                                        alpha = (menu.quickTileOnAlpha * on.value).coerceIn(0f, 1f),
+                                        cornerRadius = CornerRadius(radius, radius),
+                                    )
+                                }
                                 if (lit.value > 0f) with(ring) { drawFocusRing(radius, alpha = lit.value) }
                             }
                             .then(press)
                             .semantics { contentDescription = label },
                         contentAlignment = Alignment.Center,
                     ) {
-                        val quick = (row as? Row.QuickTile)?.setting?.let(::quickIcon)
+                        val quick = setting?.let { quickIcon(it, status) }
                         val icon = quick ?: rowIcon(row)
                         if (icon != null) {
                             val art = themeIcon(icon)
@@ -2451,9 +2550,10 @@ private fun QuickTiles(
 
 private const val QUICK_BUTTON_DP = 56f
 
-private fun quickIcon(setting: QuickSetting): Int = when (setting) {
-    QuickSetting.Wifi -> R.drawable.ic_status_wifi_4
-    QuickSetting.Bluetooth -> R.drawable.ic_status_bluetooth
+/** A radio's tile wears its off icon while the radio is off. */
+private fun quickIcon(setting: QuickSetting, status: DeviceStatus): Int = when (setting) {
+    QuickSetting.Wifi -> if (status.wifiOn) R.drawable.ic_status_wifi_4 else R.drawable.ic_status_wifi_off
+    QuickSetting.Bluetooth -> if (status.bluetooth) R.drawable.ic_status_bluetooth else R.drawable.ic_status_bluetooth_off
     QuickSetting.Battery -> R.drawable.ic_status_battery_100
     QuickSetting.Settings -> R.drawable.ic_status_settings
 }
@@ -2561,6 +2661,7 @@ private fun GridHints(app: FoldcadeApp, modifier: Modifier = Modifier) {
         screens = gridKeys && shell.focusedLaunchesOnOneScreen(),
         options = gridKeys && !model.connectOpen && shell.hasOptions(),
         drop = shell.homeHoldDrop(),
+        play = if (gridKeys) shell.focusedPlayKey() else PlayKey.None,
     )) + if (gridKeys && model.settings == null && model.playActivity == null &&
         (model.homeGrid != HomeGrid.StandIns || shell.homeKeys() == HomeKeys.AllLibrary)
     ) {
@@ -2571,7 +2672,8 @@ private fun GridHints(app: FoldcadeApp, modifier: Modifier = Modifier) {
     val addGames = if (gridKeys && find == null && model.settings == null && model.playActivity == null && shell.emptyCollection() != null) {
         listOf(HintKey(promptKeyOf(model.faceMap.confirmKey) ?: PromptKey.FaceA, Copy.addGames))
     } else emptyList()
-    val destructive = model.panel?.let { panelRows(it, model).getOrNull(it.index) }?.let { it == LanguageRow.RemoveDownload || it == LanguageRow.DeleteShortcut } == true
+    val destructive = model.panel?.let { panelRows(it, model).getOrNull(it.index) }?.let { it == LanguageRow.RemoveDownload || it == LanguageRow.DeleteShortcut } == true ||
+        model.playActivity?.sessions != null
     val back = promptKeyOf(model.faceMap.backKey) ?: PromptKey.FaceB
     val selecting = gridKeys && shell.homeSelection() != null
     val shown = if (!selecting && model.undoVerb != null && model.panel == null && model.dialog == null) listOf(HintKey(PromptKey.FaceY, Copy.undo)) else if (!selecting && gridKeys && (shell.downloading.isNotEmpty() || shell.activity.values.any { it is TileActivity.Downloading || it == TileActivity.Checking })) {
@@ -3486,7 +3588,8 @@ private fun emptyShelf(grid: HomeGrid): String = when (grid) {
 }
 
 /**
- * A game's state on its tile, in one small chip in the tile's corner: the cloud
+ * A game's state on its tile, in one small chip in the tile's corner: the pause
+ * mark while the game waits open in its player behind Home, the cloud
  * while it is only on the server, the cloud breathing in the focus colour while
  * it downloads, with a bar that fills beside it, the sync mark breathing while
  * saves sync, and for a moment after, a check when the sync worked.
@@ -3503,7 +3606,8 @@ private fun TileStatus(
     val motion = LocalFoldTheme.current.theme.motion
     val theme = foldTheme()
     val tile = theme.style.tile
-    val busy = downloading || (activity != null && activity !is TileActivity.Synced)
+    // A paused game is waiting, not working, so its mark holds still.
+    val busy = downloading || (activity != null && activity !is TileActivity.Synced && activity != TileActivity.Paused)
     val breath = if (busy && !motion.reduced(animatorScale)) {
         rememberInfiniteTransition(label = "busy").animateFloat(
             initialValue = 0.35f,
@@ -3550,6 +3654,7 @@ private fun TileStatus(
                 R.drawable.ic_badge_sync to theme.muted
             }
             activity == TileActivity.Syncing -> R.drawable.ic_badge_sync to theme.focus
+            activity == TileActivity.Paused -> R.drawable.ic_badge_paused to theme.focus
             busy -> R.drawable.ic_badge_cloud to theme.focus
             focused -> R.drawable.ic_badge_cloud to theme.onBackground
             else -> R.drawable.ic_badge_cloud to theme.muted
@@ -3994,6 +4099,7 @@ private fun DialogCard(
                         DialogButton.ForgetKey -> Copy.forgetKey
                         DialogButton.KeepKey -> Copy.keepKey
                         DialogButton.OpenRetroArch -> Copy.openRetroArch
+                        DialogButton.Restart -> Copy.restart
                     }
                     DialogAction(
                         label = label,

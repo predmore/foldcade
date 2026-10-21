@@ -2,8 +2,6 @@ package app.foldcade.language
 
 import java.time.Instant
 import java.time.ZoneId
-import java.time.format.DateTimeFormatter
-import java.util.Locale
 
 /** Library order. Recently played uses the host's last-played times. */
 enum class LibrarySort {
@@ -17,8 +15,16 @@ fun LibrarySort.toggled(): LibrarySort = when (this) {
 }
 
 fun orderLabel(sort: LibrarySort): String = when (sort) {
-    LibrarySort.Listed -> "${Copy.sort}  ${Copy.sortListed}"
-    LibrarySort.RecentlyPlayed -> "${Copy.sort}  ${Copy.sortRecent}"
+    LibrarySort.Listed -> "${Copy.sortAll}  ${Copy.sortListed}"
+    LibrarySort.RecentlyPlayed -> "${Copy.sortAll}  ${Copy.sortRecent}"
+}
+
+/** A folder's Sort choice, as its Y menu reads it. */
+fun folderSortLabel(sort: FolderSort): String = when (sort) {
+    FolderSort.Custom -> Copy.sortCustom
+    FolderSort.Recent -> Copy.sortRecent
+    FolderSort.Alphabetical -> Copy.sortListed
+    FolderSort.MostPlayed -> Copy.sortMostPlayed
 }
 
 /** Shown when play time comes from Foldcade's own launches, not usage access. */
@@ -39,26 +45,26 @@ fun playedLine(activeMillis: Long): String {
     return "Played  $body"
 }
 
-/** Last time this game was played. Null means it has not been played. */
-fun lastPlayedLine(atMillis: Long?, nowMillis: Long, zone: ZoneId): String {
+/**
+ * Last time this game was played, in the device's date order. Null means it has
+ * not been played.
+ */
+fun lastPlayedLine(atMillis: Long?, nowMillis: Long, zone: ZoneId, style: DateStyle): String {
     if (atMillis == null) return "Last played  —"
     val played = Instant.ofEpochMilli(atMillis).atZone(zone).toLocalDate()
     val today = Instant.ofEpochMilli(nowMillis).atZone(zone).toLocalDate()
     val whenText = when (played) {
         today -> "Today"
         today.minusDays(1) -> "Yesterday"
-        else -> {
-            val pattern = if (played.year == today.year) "d MMM" else "d MMM yyyy"
-            DateTimeFormatter.ofPattern(pattern, Locale.US).format(played)
-        }
+        else -> if (played.year == today.year) style.monthDay(played) else style.monthDayYear(played)
     }
     return "Last played  $whenText"
 }
 
 /** Time played and when, for the hero's line of facts. Null for a game never played. */
-fun heroPlayLine(activeMillis: Long, atMillis: Long?, nowMillis: Long, zone: ZoneId): String? {
+fun heroPlayLine(activeMillis: Long, atMillis: Long?, nowMillis: Long, zone: ZoneId, style: DateStyle): String? {
     if (activeMillis <= 0L && atMillis == null) return null
     val played = playedLine(activeMillis).removePrefix("Played  ")
-    val last = lastPlayedLine(atMillis, nowMillis, zone).removePrefix("Last played  ")
+    val last = lastPlayedLine(atMillis, nowMillis, zone, style).removePrefix("Last played  ")
     return "Played $played · $last"
 }

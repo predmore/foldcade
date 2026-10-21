@@ -49,6 +49,9 @@ enum class HomeKind {
     Loose,
 }
 
+/** An app, not a game: Find lists it as one, and a folder of them counts apps. */
+val HomeKind.isApp: Boolean get() = this == HomeKind.AndroidApp || this == HomeKind.Emulator
+
 /** A platform the catalog can classify a ROM into. [id] is canonical. */
 data class HomePlatform(
     val id: String,
@@ -66,6 +69,37 @@ data class HomeItem(
     val lastPlayedMillis: Long = 0L,
     /** A setup/navigation tile, kept on Home but excluded from the All library tabs. */
     val placeholder: Boolean = false,
+    /** Total time played, which a folder sorted by Most played orders by. */
+    val playMillis: Long = 0L,
+)
+
+/**
+ * How a folder or collection orders its games. Custom is the player's own arrangement, gaps
+ * and all; the others show every game in their order, with no gaps, and leave that
+ * arrangement saved as it was for Custom to bring back.
+ */
+enum class FolderSort {
+    Custom,
+
+    /** Last played first, then the games never played, A to Z. */
+    Recent,
+    Alphabetical,
+
+    /** Most time played first, then A to Z. */
+    MostPlayed,
+}
+
+/** The next sort, or the one before for a negative [direction]. It wraps. */
+fun FolderSort.stepped(direction: Int): FolderSort {
+    val sorts = FolderSort.entries
+    return sorts[Math.floorMod(ordinal + direction.coerceIn(-1, 1), sorts.size)]
+}
+
+/** What a sorted folder orders a game by, as the last merge read it. */
+data class TileRank(
+    val title: String,
+    val lastPlayedMillis: Long = 0L,
+    val playMillis: Long = 0L,
 )
 
 /**
@@ -83,14 +117,22 @@ data class HomeFolder(
     val slots: List<String?> = emptyList(),
     /** A collection's [CollectionTint] id. Null is the default, gold, which every collection saved before colours wears. */
     val tint: String? = null,
+    /** How the group orders its games. Recently played orders itself, so it stays Custom. */
+    val sort: FolderSort = FolderSort.Custom,
 ) {
     /** Foldcade's folder for one platform or library. A game sits in one folder at a time. */
     val system: Boolean get() = !userMade && (platformId != null || bucket != null)
 
     val recent: Boolean get() = id == HOME_RECENT
 
+    /** Shown in an order of [sort]'s, not as arranged: no gaps, and nothing in it moves. */
+    val sorted: Boolean get() = sort != FolderSort.Custom && !recent
+
     /** A group the user names. It holds what they put in it, and only that. */
     val collection: Boolean get() = !system && !recent
+
+    /** Android Apps and Emulators: its count reads in apps. */
+    val holdsApps: Boolean get() = bucket?.isApp == true
 }
 
 /**
@@ -166,6 +208,11 @@ data class HomeBoard(
     val collectionSerial: Long = 0L,
     /** The first-launch Favorites ([HOME_FAVORITES]) has been settled into an ordinary collection. */
     val plainFavorites: Boolean = true,
+    /**
+     * Titles and play for each game in a sorted group ([HomeFolder.sorted]), as the last merge
+     * read them, so the board alone says the order its grid shows. Not saved.
+     */
+    val ranks: Map<String, TileRank> = emptyMap(),
 )
 
 /**
@@ -259,7 +306,65 @@ fun resolvePlatform(platforms: List<HomePlatform>, idOrAlias: String?): HomePlat
 fun visibleSlots(board: HomeBoard): List<String?> {
     val folderId = board.openFolderId
     if (folderId == null) return firstOnly(board.slots).dropLastWhile { it == null }
-    return firstOnly(board.folders[folderId]?.slots ?: emptyList())
+    return groupSlots(board, folderId)
+}
+
+/**
+ * The group [folderId]'s slots as its grid shows them: as arranged, or, while it is sorted,
+ * its games in that order with no gaps. Every index into an open group goes through this.
+ */
+fun groupSlots(board: HomeBoard, folderId: String): List<String?> {
+    val folder = board.folders[folderId] ?: return emptyList()
+    if (!folder.sorted) return firstOnly(folder.slots)
+    lastSorted?.let { (from, ranks, shown) -> if (from === folder && ranks === board.ranks) return shown }
+    val shown = sortedGames(firstOnly(folder.slots).filterNotNull(), folder.sort, board.ranks)
+    lastSorted = Triple(folder, board.ranks, shown)
+    return shown
+}
+
+/** The last order [groupSlots] worked out. Faces, menus and the grid all ask for it on one change. */
+@Volatile private var lastSorted: Triple<HomeFolder, Map<String, TileRank>, List<String?>>? = null
+
+/**
+ * [ids] in the order of [sort]. Titles compare without case, then ids, so the order is the
+ * same every time. A game [ranks] does not know yet, whose library has not reported, waits
+ * at the end in its arranged order.
+ */
+fun sortedGames(ids: List<String>, sort: FolderSort, ranks: Map<String, TileRank>): List<String> {
+    if (sort == FolderSort.Custom) return ids
+    val known = ids.mapNotNull { id -> ranks[id]?.let { SortKey(id, it, it.title.lowercase()) } }
+    val byTitle = compareBy<SortKey> { it.title }.thenBy { it.id }
+    val order = when (sort) {
+        FolderSort.Custom, FolderSort.Alphabetical -> byTitle
+        FolderSort.Recent -> compareByDescending<SortKey> { it.rank.lastPlayedMillis }.then(byTitle)
+        FolderSort.MostPlayed -> compareByDescending<SortKey> { it.rank.playMillis }.then(byTitle)
+    }
+    return known.sortedWith(order).map { it.id } + ids.filter { it !in ranks }
+}
+
+private class SortKey(val id: String, val rank: TileRank, val title: String)
+
+/**
+ * Sorts the group [folderId] by [sort]. Its arrangement stays saved as it was, so Custom
+ * brings it back. Recently played orders itself, and nothing changes while a tile is held.
+ */
+fun setFolderSort(board: HomeBoard, folderId: String, sort: FolderSort, catalog: List<HomeItem>): HomeBoard {
+    val folder = board.folders[folderId] ?: return board
+    if (folder.recent || board.hold != null || folder.sort == sort) return board
+    val sorted = board.copy(folders = board.folders + (folderId to folder.copy(sort = sort)))
+    return sorted.copy(ranks = sortRanks(sorted, catalog))
+}
+
+/** [TileRank]s for the games in sorted groups. A game the catalog no longer lists keeps the one it had. */
+private fun sortRanks(board: HomeBoard, catalog: List<HomeItem>): Map<String, TileRank> {
+    val ids = board.folders.values.filter { it.sorted }.flatMapTo(HashSet()) { it.slots.filterNotNull() }
+    if (ids.isEmpty()) return emptyMap()
+    val ranks = HashMap<String, TileRank>()
+    for (item in catalog) {
+        if (item.id in ids) ranks[item.id] = TileRank(item.title, item.lastPlayedMillis, item.playMillis)
+    }
+    for (id in ids) board.ranks[id]?.let { ranks.putIfAbsent(id, it) }
+    return if (ranks == board.ranks) board.ranks else ranks
 }
 
 /**
@@ -355,19 +460,20 @@ fun mergeHome(
     if (HOME_ALL !in next.slots) {
         next = next.copy(slots = listOf(HOME_ALL) + next.slots)
     }
-    return next
+    // A sorted group follows the titles and play this report brings.
+    return next.copy(ranks = sortRanks(next, catalog))
 }
 
 /**
  * Lifts the tile at [index], or the empty slot there. A lifted gap walks the way a tile
  * does, so carrying one onto a tile brings that tile back to where the gap was.
- * Recently played keeps its own order, so nothing in it lifts.
+ * Recently played keeps its own order, and so does a sorted group, so nothing in them lifts.
  */
 fun pickUp(board: HomeBoard, index: Int): HomeBoard {
     if (index < 0) return board
     // A second lift, a long press on another tile, puts the first one down where it is.
     if (board.hold != null) return board.copy(hold = null)
-    if (board.openFolderId?.let { board.folders[it] }?.recent == true) return board
+    if (board.openFolderId?.let { board.folders[it] }?.let { it.recent || it.sorted } == true) return board
     return board.copy(
         hold = HomeHold(
             index = index,
@@ -583,7 +689,8 @@ fun tidy(board: HomeBoard): HomeBoard {
 /** The board on screen has a gap before its last tile, and is one the player arranges. */
 fun canTidy(board: HomeBoard): Boolean {
     if (board.hold != null || board.allOpen) return false
-    if (board.openFolderId?.let { board.folders[it] }?.recent == true) return false
+    // A sorted group has no gaps on screen, and packing it would write its order over the arrangement.
+    if (board.openFolderId?.let { board.folders[it] }?.let { it.recent || it.sorted } == true) return false
     val slots = visibleSlots(board)
     val last = slots.indexOfLast { it != null }
     return (0 until last).any { slots[it] == null }
@@ -881,9 +988,14 @@ private val gameKinds = setOf(HomeKind.Rom, HomeKind.AndroidGame, HomeKind.GameN
 
 /** All lists every game alphabetically, or played games newest first with unplayed games A to Z. */
 fun allItems(items: List<HomeItem>, sort: LibrarySort = LibrarySort.Listed): List<HomeItem> = items.distinctBy { it.id }
-    .filter { !it.placeholder && it.kind in gameKinds }
+    .filter(::listedInAll)
     .sortedWith(compareBy<HomeItem> { if (sort == LibrarySort.RecentlyPlayed) -it.lastPlayedMillis else 0L }
         .thenBy { it.title.lowercase() }.thenBy { it.id })
+
+/** How many games [allItems] lists, without sorting them, for the All tile's count. */
+fun allCount(items: List<HomeItem>): Int = items.distinctBy { it.id }.count(::listedInAll)
+
+private fun listedInAll(item: HomeItem): Boolean = !item.placeholder && item.kind in gameKinds
 
 /** Next letter group. Forward lands on its first row. Backward lands on the previous group's first row. Stays put at the ends. Does not wrap. */
 fun jumpLetter(labels: List<String>, index: Int, forward: Boolean): Int {
@@ -936,6 +1048,10 @@ fun encodeHome(board: HomeBoard): String {
         for (folder in saved.folders.values.sortedBy { it.id }) {
             folder.tint?.let { homeRow("tint", listOf(folder.id, it)) }
         }
+        // Rows of their own too, so a release before sorting keeps the arrangement and shows it.
+        for (folder in saved.folders.values.sortedBy { it.id }) {
+            if (folder.sort != FolderSort.Custom) homeRow("sort", listOf(folder.id, folder.sort.name))
+        }
     }
 }
 
@@ -963,6 +1079,7 @@ fun decodeHome(raw: String?, nowMillis: Long = 0L): HomeBoard {
     val decoder = Base64.getUrlDecoder()
     var board = HomeBoard(slots = emptyList(), recentAfter = nowMillis, plainFavorites = false)
     val tints = HashMap<String, String>()
+    val sorts = HashMap<String, FolderSort>()
     for (line in raw.lineSequence()) {
         if (line.isBlank()) continue
         val fields = line.split('\t')
@@ -986,6 +1103,7 @@ fun decodeHome(raw: String?, nowMillis: Long = 0L): HomeBoard {
             "recentAfter" -> bits.getOrNull(1)?.toLongOrNull()?.let { board = board.copy(recentAfter = it) }
             "offHome" -> board = board.copy(offHome = bits.drop(1).filter { it.isNotEmpty() }.toSet())
             "tint" -> if (bits.size >= 3 && bits[2].isNotEmpty()) tints[bits[1]] = bits[2]
+            "sort" -> FolderSort.entries.firstOrNull { it.name == bits.getOrNull(2) }?.let { sorts[bits[1]] = it }
             "plainFavorites" -> board = board.copy(plainFavorites = true)
             "collectionSerial" -> bits.getOrNull(1)?.toLongOrNull()?.takeIf { it >= 0L }?.let { board = board.copy(collectionSerial = it) }
             "hiddenSlot" -> {
@@ -1013,7 +1131,9 @@ fun decodeHome(raw: String?, nowMillis: Long = 0L): HomeBoard {
             }
         }
     }
-    board = board.copy(folders = board.folders.mapValues { (id, folder) -> tints[id]?.let { folder.copy(tint = it) } ?: folder })
+    board = board.copy(folders = board.folders.mapValues { (id, folder) ->
+        folder.copy(tint = tints[id] ?: folder.tint, sort = sorts[id]?.takeUnless { folder.recent } ?: folder.sort)
+    })
     if (board.slots.isEmpty()) board = board.copy(slots = listOf(HOME_ALL))
     if (HOME_ALL !in board.slots) board = board.copy(slots = listOf(HOME_ALL) + board.slots)
     return refreshFolderNames(plainFavorites(board), emptyList())

@@ -12,6 +12,7 @@ import app.foldcade.language.TypingStep
 import app.foldcade.language.on
 import app.foldcade.language.openTyping
 import app.foldcade.language.press
+import app.foldcade.language.typeText
 import app.foldcade.language.withText
 
 /**
@@ -43,6 +44,9 @@ class TypingSession(
 
     /** A tap on a key or chip. */
     fun press(at: KeyFocus): TypingStep = apply(typing.press(at))
+
+    /** Characters from a hardware keyboard. */
+    fun typeText(text: String): TypingStep = apply(typing.typeText(text))
 
     /** Replaces the text outright, caret at its end, as a host clearing a search would. */
     fun setText(next: String) {
