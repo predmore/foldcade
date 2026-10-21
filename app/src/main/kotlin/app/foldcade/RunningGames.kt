@@ -13,9 +13,11 @@ internal data class RunningGame(
     val title: String,
     val platformId: String?,
     val packageName: String,
+    /** The player's activity the game opened in. A resume that brings any other to the front found the game gone. */
+    val activity: String?,
     val panel: Panel,
     val occupiesBoth: Boolean,
-    /** Wall time of the start. A process exit after it means the game is gone. */
+    /** Wall time of the start. */
     val startedAtMillis: Long,
     /** What to read back when the game returns again, for a library game. */
     val saves: LibraryReturn?,
@@ -53,18 +55,23 @@ internal class RunningGames {
         if (byPackage.remove(packageName) != null) changed()
     }
 
-    /** Drops each game whose player exited since it started. [exits] is null when it can't be read. */
-    fun dropExited(exits: (String) -> List<Long>?) {
-        val gone = byPackage.values.filter { game ->
-            exits(game.packageName)?.let { playerDiedAfterStart(game.startedAtMillis, it) } == true
-        }
-        if (gone.isEmpty()) return
-        gone.forEach { byPackage.remove(it.packageName) }
-        changed()
-    }
-
     private fun changed() = onChange(byPackage.values.map { it.tileId }.toSet())
 }
+
+/**
+ * What a resume brought to the front, from the player's activities that resumed
+ * since it was sent, oldest first. The game's own [activity] means the game came
+ * back. Another of the player's activities means its task was gone, as a task
+ * swiped from Recents is, and the front door opened the player's own menu.
+ * Nothing yet is not known.
+ */
+internal fun resumeFound(resumed: List<String>, activity: String?): Boolean? {
+    val last = resumed.lastOrNull() ?: return null
+    return activity == null || last == activity
+}
+
+/** How long after a resume to look at what came to the front. */
+internal const val RESUME_CHECK_MS = 1_500L
 
 /**
  * The flags on the player's own launcher intent that bring its open task back

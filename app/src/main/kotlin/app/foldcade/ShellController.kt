@@ -376,7 +376,7 @@ class ShellController(
     /** Tiles whose game is still open in its player, see [RunningGames]. */
     var running by mutableStateOf<Set<String>>(emptySet())
 
-    /** False while Foldcade can't tell whether a player closed, see [FoldcadeApp.exitsReadable]. Nothing reads Paused then. */
+    /** False while Foldcade can't tell whether a player closed, see [FoldcadeApp.closesVisible]. Nothing reads Paused then. */
     var resumable by mutableStateOf(false)
 
     /** Cells for the current grid. Empty when the grid is an empty state. */

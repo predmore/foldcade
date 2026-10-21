@@ -34,23 +34,16 @@ class RunningGamesTest {
     }
 
     @Test
-    fun aGameIsForgottenOnlyWhenItsPlayerExitedAfterItStarted() {
-        val games = RunningGames()
-        games.note(game("mario", "azahar", startedAt = 1_000L))
-        games.note(game("zelda", "melonds", startedAt = 1_000L))
-        games.note(game("toad", "eden", startedAt = 1_000L))
-        games.dropExited { pkg ->
-            when (pkg) {
-                // An exit from before this start was another game.
-                "azahar" -> listOf(500L)
-                "melonds" -> listOf(500L, 1_500L)
-                // Exits can't be read without usage access, so the game stays.
-                else -> null
-            }
-        }
-        assertEquals("mario", games.forTile("mario")?.tileId)
-        assertNull(games.forTile("zelda"))
-        assertEquals("toad", games.forTile("toad")?.tileId)
+    fun aResumeFoundTheGameOnlyWhenItsOwnActivityCameForward() {
+        val game = "org.citra.citra_emu.activities.EmulationActivity"
+        val menu = "org.citra.citra_emu.ui.main.MainActivity"
+        assertEquals(true, resumeFound(listOf(game), game))
+        // The task was gone, so the player's front door opened its menu.
+        assertEquals(false, resumeFound(listOf(menu), game))
+        // The menu, then the game it opened: the game is in front now.
+        assertEquals(true, resumeFound(listOf(menu, game), game))
+        // Nothing seen yet, or no usage access.
+        assertNull(resumeFound(emptyList(), game))
     }
 
     @Test
@@ -76,6 +69,7 @@ class RunningGamesTest {
         title = tile,
         platformId = "nintendo-3ds",
         packageName = pkg,
+        activity = "org.citra.citra_emu.activities.EmulationActivity",
         panel = Panel.Top,
         occupiesBoth = true,
         startedAtMillis = startedAt,

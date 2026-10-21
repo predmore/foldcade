@@ -1137,8 +1137,8 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
         if (pkg == packageName || player is RetroArchPlayer) return
         // Where the game landed, which may not be where it was asked for when that screen was busy.
         val panel = landedPanel() ?: if (player.occupiesBothDisplays) Panel.Top else launchScreen
-        foldcade.runningGames.note(RunningGame(id, title, platformId, pkg, panel, player.occupiesBothDisplays,
-            System.currentTimeMillis(), saves))
+        foldcade.runningGames.note(RunningGame(id, title, platformId, pkg, intent.component?.className, panel,
+            player.occupiesBothDisplays, System.currentTimeMillis(), saves))
     }
 
     /** The screen the game just started is on. */
@@ -1174,11 +1174,12 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
             return true
         }
         // Behind Home, a player that may have closed unseen would open its own menu, not the game.
-        if (!foldcade.exitsReadable) return false
+        if (!foldcade.closesVisible) return false
         cancelLaunches()
         foldcade.music.onExternalLaunch()
         launchScreen = running.panel
         launchSubject = foldcade.shell.focusedRunningApp()
+        val sentAt = System.currentTimeMillis()
         val started = try {
             startExternal(tileId, title, platformId ?: running.platformId, running.occupiesBoth, front, resume = true)
         } catch (_: ActivityNotFoundException) {
@@ -1189,7 +1190,34 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
         running.saves?.let(::rememberReturn)
         // A busy screen sends it to the other one; the next resume looks for it there.
         landedPanel()?.takeIf { it != running.panel }?.let { foldcade.runningGames.note(running.copy(panel = it)) }
+        checkResume(running, sentAt)
         return true
+    }
+
+    /**
+     * A moment after a resume, looks at what came to the front. If the player's own
+     * menu did, its task was gone, so the game starts afresh in its place, as A on a
+     * game not open would have. Nothing seen yet, or the game itself, leaves it be.
+     */
+    private fun checkResume(running: RunningGame, sentAt: Long) {
+        foldcade.scope.launch {
+            delay(RESUME_CHECK_MS)
+            val resumed = withContext(Dispatchers.IO) {
+                UsageAccess(this@FoldcadeHomeActivity).resumedSince(running.packageName, sentAt, System.currentTimeMillis())
+            }
+            if (resumeFound(resumed, running.activity) != false) return@launch
+            withContext(Dispatchers.Main.immediate) {
+                // Only the same start of the same game, with its player still in front from this resume.
+                val now = foldcade.runningOn(running.tileId) ?: return@withContext
+                if (now.packageName != running.packageName || now.startedAtMillis != running.startedAtMillis) return@withContext
+                if (foldcade.externalPlay.sessionId == null || foldcade.externalPlay.packageName != running.packageName) return@withContext
+                if (isDestroyed || isFinishing) return@withContext
+                val route = foldcade.shell.launchRoute(running.tileId) ?: return@withContext
+                launchScreen = now.panel
+                launchSubject = null
+                launchBackendGame(title = running.title, platformId = running.platformId, route = route, fresh = true)
+            }
+        }
     }
 
     /** Holds [pending] and asks for its player's save folder. Continue opens the picker, Not now starts the game. */

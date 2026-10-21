@@ -252,11 +252,12 @@ class FoldcadeApp : Application() {
     }
 
     /**
-     * True once Android has shown other apps' process exits, which takes usage access.
-     * Without it a game's player may have closed unseen, so its game is not offered as
-     * paused: the player's front door would open its own menu instead of the game.
+     * True while usage access lets Foldcade see what a resume brought to the front
+     * (process exits would take DUMP, which no normal app holds). Without it a game
+     * may have closed unseen and its player's front door would open the player's own
+     * menu, so no game is offered as paused.
      */
-    internal var exitsReadable = false
+    internal var closesVisible = false
         private set(value) {
             field = value
             if (::shell.isInitialized) shell.resumable = value
@@ -406,23 +407,14 @@ class FoldcadeApp : Application() {
     }
 
     /**
-     * Forgets each game whose player has exited since it started, so its tile
-     * stops reading Paused. Without usage access the exits can't be read: the
-     * games stay noted, so a start in their player still replaces their task,
-     * but none is offered as paused ([exitsReadable]).
+     * Reads whether usage access is granted, which decides whether any game reads
+     * Paused ([closesVisible]). Without it the games stay noted, so a start in
+     * their player still replaces their task.
      */
     internal fun pruneRunningGames() {
         if (runningGames.packages().isEmpty()) return
-        var readable = true
-        runningGames.dropExited { pkg ->
-            try {
-                playerExitTimestamps(pkg)
-            } catch (_: SecurityException) {
-                readable = false
-                null
-            }
-        }
-        if (exitsReadable != readable) exitsReadable = readable
+        val visible = UsageAccess(this).granted()
+        if (closesVisible != visible) closesVisible = visible
     }
 
     /** Process-exit times for [packageName], newest history Android still has. */
