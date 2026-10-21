@@ -873,6 +873,9 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
             Panel.Bottom -> assignment.bottomDisplayId ?: return
         }
         foldcade.music.onExternalLaunch()
+        // The player opened by its own icon is the player's to steer now, and its game may
+        // close without Foldcade seeing it, so that game is no longer held as paused.
+        foldcade.runningGames.forget(pkg)
         foldcade.commandCenter.note(external.id, foldcade.shell.runningApp(game))
         foldcade.store.place(panel, external)
         val options = ActivityOptions.makeBasic().apply { launchDisplayId = displayId }
