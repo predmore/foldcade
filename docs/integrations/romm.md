@@ -1,6 +1,16 @@
 # RomM
 
-Connect a [RomM](https://romm.app) server to browse its collection alongside your other games. Foldcade downloads selected games and opens them in a [supported emulator](emulators.md).
+Connect a [RomM](https://romm.app) server, and its library becomes your Thor's. Every game on the server shows up beside your other games, filed by system. Press A, and Foldcade downloads it, checks it, and opens it in a [supported emulator](emulators.md). With RomM 5.4 or newer, your saves go back to the server, so you can stop on one Thor and keep going on another.
+
+What you get:
+
+- **Sign-in with a code** you approve on your phone. Foldcade stores a token, not your password.
+- **Verified downloads** that resume after an interruption when the server allows it, and stay ready for offline play.
+- **[Save sync](#save-sync)** for melonDS and RetroArch, with a choice and both copies kept when two devices disagree.
+- **One tile** for a game that is in a [local folder](local-games.md) and on the server under the same system and file name, opening the copy already on your Thor.
+- **[Switch updates and DLC](#updates-and-dlc)** downloaded beside the game and loaded by Eden.
+- **RetroAchievements progress** on the other screen during a single-screen game.
+- **Any number of servers**, each with its own sign-in, on one Home.
 
 ## Before connecting
 
@@ -27,11 +37,13 @@ Use **Add a RomM server** again for another server. Connections have separate ca
 
 Select a server in **Settings › Library** to **Edit connection** or **Sign out**. Other connections are unaffected.
 
+Each Foldcade install registers as its own device in RomM and keeps it across restarts, so RomM keeps its sync history. Reinstalling Foldcade registers a new device.
+
 The catalog loads at startup and after connecting or editing a connection. After adding games, finish RomM's scan and [fully restart Foldcade](README.md#discovery-and-updates).
 
 ## Downloads and offline play
 
-Press A or X on a game. Foldcade downloads and checks its files before launch, showing progress on the tile and top screen. Verified downloads are reused.
+Press A or X on a game. Foldcade downloads its files and checks each one against the size and checksum RomM lists before launch, showing progress on the tile and top screen. An archive is checked by size, since RomM's checksum describes what is inside it. An interrupted download resumes where it stopped when the server allows it, and starts over otherwise. Verified downloads are reused.
 
 Downloads are kept in `Android/media/app.foldcade/romm` on internal storage, where emulators that open games by path, such as [RetroArch](retroarch.md), can read them. Android does not clear them to free space. **Y › Delete download** frees the space a downloaded game takes. Its saves stay, and its tile shows the cloud again until the next launch downloads it. Uninstalling Foldcade removes its downloads too.
 
