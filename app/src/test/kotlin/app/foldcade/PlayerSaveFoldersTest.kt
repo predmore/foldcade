@@ -17,6 +17,7 @@ import java.net.URI
 import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.Paths
+import java.util.TimeZone
 import java.util.zip.ZipEntry
 import java.util.zip.ZipOutputStream
 import org.junit.After
@@ -237,6 +238,35 @@ class PlayerSaveFoldersTest {
         assertTrue(saves.changedSince("romm", GAME, PLAYER, spots).slots.isEmpty())
         docs.put("$DATA/00000001/00.SAV", "played on its own")
         assertEquals(1, saves.changedSince("romm", GAME, PLAYER, spots).slots.size)
+    }
+
+    @Test
+    fun playAfterAnUndoThatFailedIsProgress() {
+        docs.put("$DATA/00000001/00.SAV", "old")
+        val spots = spots()
+        saves.noteHandedOver("romm", GAME, PLAYER, spots, saves.changedSince("romm", GAME, PLAYER, spots))
+        docs.library[SERVER] = zipOf("data/00000001/00.SAV" to "new")
+        // The write tears, and so does putting the old bytes back.
+        docs.failWritesTo = "$DATA/00000001/00.SAV"
+        assertFalse(saves.place("romm", GAME, PLAYER, spots, listOf(placed())))
+        docs.failWritesTo = null
+        assertTrue(saves.changedSince("romm", GAME, PLAYER, spots).slots.isEmpty())
+        docs.put("$DATA/00000001/00.SAV", "played on its own")
+        assertEquals(1, saves.changedSince("romm", GAME, PLAYER, spots).slots.size)
+    }
+
+    @Test
+    fun aZipIsTheSameBytesInAnyTimeZone() {
+        val entries = saveEntries(zipOf("data/a" to "x"), setOf("data"))!!
+        val zone = TimeZone.getDefault()
+        try {
+            TimeZone.setDefault(TimeZone.getTimeZone("America/Los_Angeles"))
+            val west = saveZip(entries)
+            TimeZone.setDefault(TimeZone.getTimeZone("Asia/Tokyo"))
+            assertArrayEquals(west, saveZip(entries))
+        } finally {
+            TimeZone.setDefault(zone)
+        }
     }
 
     @Test

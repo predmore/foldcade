@@ -332,7 +332,11 @@ internal class PlayerSaves(
         } catch (_: Exception) {
             null
         }
-        if (left != null) marks.setMark(tornKey(key), left)
+        if (left != null) {
+            marks.setMark(tornKey(key), left)
+            // What is left is recorded, so a change after this is progress.
+            marks.clearMark(pendingKey(key))
+        }
     }
 
     /** The hash of [spot]'s zip, or null when it holds nothing. Throws when it cannot be read. */
@@ -491,8 +495,12 @@ private fun partOf(name: String): String = name.substringBefore('/')
 /** The largest a save zip may unpack to, so a broken or hostile one cannot fill memory. */
 private const val SAVE_ZIP_LIMIT = 256L * 1024 * 1024
 
-/** One fixed time for every entry, as the zip's local date and time, so its bytes depend only on its entries. */
-private val SAVE_ZIP_TIME: Long =
+/**
+ * One fixed local date and time for every entry, so a zip's bytes depend only on
+ * its entries. A zip keeps local time, converted in the zone in force when the
+ * entry is made, so this is worked out then too: the zone can change while Foldcade runs.
+ */
+private fun saveZipTime(): Long =
     LocalDateTime.of(2000, 1, 1, 0, 0).atZone(ZoneId.systemDefault()).toInstant().toEpochMilli()
 
 /** [entries] as a zip whose bytes depend only on them: in name order, with one fixed time. */
@@ -500,7 +508,7 @@ internal fun saveZip(entries: Map<String, ByteArray?>): ByteArray {
     val out = ByteArrayOutputStream()
     ZipOutputStream(out).use { zip ->
         for ((name, bytes) in entries.toSortedMap()) {
-            zip.putNextEntry(ZipEntry(name).apply { time = SAVE_ZIP_TIME })
+            zip.putNextEntry(ZipEntry(name).apply { time = saveZipTime() })
             if (bytes != null) zip.write(bytes)
             zip.closeEntry()
         }
