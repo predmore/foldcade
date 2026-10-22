@@ -114,6 +114,8 @@ internal interface SaveMarks {
  * A placement is recorded as pending before it writes. A failed write is undone,
  * or its leftover bytes are recorded as torn: those bytes are not progress, so
  * [changedSince] does not hand them over and the next [place] replaces them.
+ * Folders still pending when read stopped part way, as when the app died, and
+ * are recorded as torn too.
  * Callers run one save flow at a time. A zip handed over waits in [handover]
  * until the library has kept it.
  */
@@ -165,7 +167,15 @@ internal class PlayerSaves(
                     null
                 }
                 marks.mark(tornKey(key)) -> null
-                else -> ObservedSlot(spot.slot, hash, player.id, uri ?: stage(key, bytes))
+                else -> if (spot.folders.isNotEmpty() && marks.mark(pendingKey(key)) != null) {
+                    // A folder placement is many writes, and one still pending stopped part way, so
+                    // these files are half the old save and half the new. Later changes are progress.
+                    marks.clearMark(pendingKey(key))
+                    marks.setMark(tornKey(key), hash)
+                    null
+                } else {
+                    ObservedSlot(spot.slot, hash, player.id, uri ?: stage(key, bytes))
+                }
             }
         }
         return ObservedSaves(changed)

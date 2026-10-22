@@ -24,6 +24,7 @@ import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
@@ -202,6 +203,43 @@ class PlayerSaveFoldersTest {
     }
 
     @Test
+    fun aPlacementTheAppDiedInIsNotHandedOverAsProgress() {
+        docs.put("$DATA/00000001/00.SAV", "old")
+        docs.put("$DATA/00000001/01.SAV", "old one")
+        val spots = spots()
+        saves.noteHandedOver("romm", GAME, PLAYER, spots, saves.changedSince("romm", GAME, PLAYER, spots))
+        docs.library[SERVER] = zipOf("data/00000001/00.SAV" to "new", "data/00000001/02.SAV" to "new two")
+        // The app dies creating the second file, after 01.SAV went and 00.SAV was written.
+        docs.dieWritingTo = "$DATA/00000001/02.SAV"
+        assertThrows(AppDied::class.java) { saves.place("romm", GAME, PLAYER, spots, listOf(placed())) }
+        assertEquals("new", docs.text("$DATA/00000001/00.SAV"))
+        assertNull(docs.text("$DATA/00000001/01.SAV"))
+        docs.dieWritingTo = null
+        assertTrue(saves.changedSince("romm", GAME, PLAYER, spots).slots.isEmpty())
+        // The next placement replaces the torn files.
+        assertTrue(saves.place("romm", GAME, PLAYER, spots, listOf(placed())))
+        assertEquals("new two", docs.text("$DATA/00000001/02.SAV"))
+        assertTrue(saves.changedSince("romm", GAME, PLAYER, spots).slots.isEmpty())
+        // Play after that is progress again.
+        docs.put("$DATA/00000001/00.SAV", "played")
+        assertEquals(1, saves.changedSince("romm", GAME, PLAYER, spots).slots.size)
+    }
+
+    @Test
+    fun aPlayerRunAfterAnInterruptedPlacementIsProgressOnceTheTornFilesAreRecorded() {
+        docs.put("$DATA/00000001/00.SAV", "old")
+        val spots = spots()
+        saves.noteHandedOver("romm", GAME, PLAYER, spots, saves.changedSince("romm", GAME, PLAYER, spots))
+        docs.library[SERVER] = zipOf("data/00000001/00.SAV" to "new", "data/00000001/02.SAV" to "new two")
+        docs.dieWritingTo = "$DATA/00000001/02.SAV"
+        assertThrows(AppDied::class.java) { saves.place("romm", GAME, PLAYER, spots, listOf(placed())) }
+        docs.dieWritingTo = null
+        assertTrue(saves.changedSince("romm", GAME, PLAYER, spots).slots.isEmpty())
+        docs.put("$DATA/00000001/00.SAV", "played on its own")
+        assertEquals(1, saves.changedSince("romm", GAME, PLAYER, spots).slots.size)
+    }
+
+    @Test
     fun twoZipsOfTheSameFilesHaveTheSameEntriesAndBytes() {
         val listed = saveEntries(zipOf("data/" to null, "data/a/" to null, "data/a/b" to "x"), setOf("data"))!!
         val bare = saveEntries(zipOf("data/a/b" to "x"), setOf("data"))!!
@@ -270,6 +308,7 @@ class PlayerSaveFoldersTest {
         var writes = 0
         var unlistable = false
         var failWritesTo: String? = null
+        var dieWritingTo: String? = null
 
         fun mkdirs(path: String) {
             var folder = path
@@ -297,6 +336,7 @@ class PlayerSaveFoldersTest {
         override fun find(folderUri: String, name: String): String? = uri(name).takeIf { name in files }
 
         override fun create(folderUri: String, name: String): String {
+            if (name == dieWritingTo) throw AppDied()
             mkdirs(name.substringBeforeLast('/', ""))
             files[name] = ByteArray(0)
             return uri(name)
@@ -335,6 +375,9 @@ class PlayerSaveFoldersTest {
             return true
         }
     }
+
+    /** The process going away: not an [Exception], so nothing in the save code catches it. */
+    private class AppDied : Error("app died")
 
     private companion object {
         const val TREE = "content://tree/azahar"
