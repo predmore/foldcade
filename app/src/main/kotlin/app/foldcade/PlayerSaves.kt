@@ -10,21 +10,41 @@ import app.foldcade.api.plugin.ObservedSaves
 import app.foldcade.api.plugin.ObservedSlot
 import app.foldcade.api.plugin.PlacedSave
 import app.foldcade.api.plugin.Player
+import app.foldcade.api.plugin.SaveFolderPart
+import java.io.ByteArrayInputStream
+import java.io.ByteArrayOutputStream
+import java.io.InputStream
 import java.nio.file.Files
 import java.nio.file.Path
 import java.security.MessageDigest
 import java.time.Instant
+import java.time.LocalDateTime
+import java.time.ZoneId
 import java.time.ZoneOffset
 import java.time.format.DateTimeFormatter
+import java.util.SortedMap
+import java.util.zip.ZipEntry
+import java.util.zip.ZipInputStream
+import java.util.zip.ZipOutputStream
 
 /**
  * One save file in a player's folder: the [slot] a library knows, the folder
  * the user picked for the player, and the file name the player uses there.
+ * A player that keeps the slot as [folders] has them moved as one zip, which
+ * [fileName] then names.
  */
 internal data class SaveSpot(
     val slot: String,
     val folderUri: String,
     val fileName: String,
+    val folders: List<SaveFolderPart> = emptyList(),
+)
+
+/** A file or folder below a folder, at [path] below it, separated by `/`. */
+internal data class SaveEntry(
+    val path: String,
+    val uri: String,
+    val isFolder: Boolean,
 )
 
 /** Content-resolver work [PlayerSaves] needs, so its decisions run on the JVM in tests. */
@@ -49,8 +69,21 @@ internal interface SaveDocuments {
     /** Replaces the whole document. */
     fun write(uri: String, bytes: ByteArray)
 
-    /** True when the document is gone. */
+    /** True when the document is gone. A folder goes with all it holds. */
     fun delete(uri: String): Boolean
+
+    /** Up to [size] bytes from the start of the document at [uri], or null. */
+    fun head(uri: String, size: Int): ByteArray? = null
+
+    /**
+     * Everything below the folder at [name] inside [folderUri], or null when
+     * there is no such folder. Throws when a folder cannot be listed, so a
+     * folder that is there is never taken for one that is not.
+     */
+    fun list(folderUri: String, name: String): List<SaveEntry>? = null
+
+    /** Makes the folder at exactly [name] inside [folderUri], and those it is in. False when it could not. */
+    fun createFolder(folderUri: String, name: String): Boolean = false
 }
 
 /** What the shell last placed in, or read from, each save file. */
@@ -65,7 +98,8 @@ internal interface SaveMarks {
 /**
  * Moves a library's saves into the player's save folder before a launch, and
  * reads them back after the player returns. The shell touches only the one
- * file [Player.saveFileName] names in the folder the player declares.
+ * file [Player.saveFileName] names in the folder the player declares, or the
+ * folders [Player.saveFolders] names there, which move as one zip.
  *
  * Nothing in the player's folder is overwritten unseen:
  * - a file whose hash differs from the last one the shell placed or read was
@@ -75,16 +109,19 @@ internal interface SaveMarks {
  * - a file about to be replaced is copied to [backups] first;
  * - a placed file is read back and must match the library's hash. A write that
  *   fails puts the old bytes back.
+ * Folders follow the same rules, with the hash of their zip.
  *
  * A placement is recorded as pending before it writes. A failed write is undone,
  * or its leftover bytes are recorded as torn: those bytes are not progress, so
  * [changedSince] does not hand them over and the next [place] replaces them.
- * Callers run one save flow at a time.
+ * Callers run one save flow at a time. A zip handed over waits in [handover]
+ * until the library has kept it.
  */
 internal class PlayerSaves(
     private val docs: SaveDocuments,
     private val marks: SaveMarks,
     private val backups: Path,
+    private val handover: Path,
 ) {
     fun spots(player: Player, game: Game, target: LaunchTarget): List<SaveSpot> {
         val uri = when (target) {
@@ -93,8 +130,17 @@ internal class PlayerSaves(
             else -> return emptyList()
         }
         val romName = docs.displayName(uri) ?: return emptyList()
+        val header by lazy {
+            if (player.romHeaderSize > 0) docs.head(uri, player.romHeaderSize) ?: ByteArray(0) else ByteArray(0)
+        }
         return player.saveDeclarations(game).mapNotNull { declaration ->
             val folder = declaration.locationUri ?: return@mapNotNull null
+            val folders = player.saveFolders(declaration.slot, romName, header)
+            if (folders != null) {
+                if (!validFolders(folders)) return@mapNotNull null
+                val zipName = romName.substringBeforeLast('.').ifEmpty { romName } + ".zip"
+                return@mapNotNull SaveSpot(declaration.slot, folder, zipName, folders)
+            }
             val name = player.saveFileName(declaration.slot, romName) ?: return@mapNotNull null
             SaveSpot(declaration.slot, folder, name)
         }
@@ -108,8 +154,7 @@ internal class PlayerSaves(
      */
     fun changedSince(libraryId: String, game: Game, player: Player, spots: List<SaveSpot>): ObservedSaves {
         val changed = spots.mapNotNull { spot ->
-            val uri = docs.find(spot.folderUri, spot.fileName) ?: return@mapNotNull null
-            val bytes = docs.read(uri) ?: return@mapNotNull null
+            val (bytes, uri) = readSpot(spot) ?: return@mapNotNull null
             val hash = md5Hex(bytes)
             val key = key(libraryId, game, player, spot)
             when (hash) {
@@ -120,7 +165,7 @@ internal class PlayerSaves(
                     null
                 }
                 marks.mark(tornKey(key)) -> null
-                else -> ObservedSlot(spot.slot, hash, player.id, uri)
+                else -> ObservedSlot(spot.slot, hash, player.id, uri ?: stage(key, bytes))
             }
         }
         return ObservedSaves(changed)
@@ -130,7 +175,9 @@ internal class PlayerSaves(
     fun noteHandedOver(libraryId: String, game: Game, player: Player, spots: List<SaveSpot>, observed: ObservedSaves) {
         for (slot in observed.slots) {
             val spot = spots.firstOrNull { it.slot == slot.slot } ?: continue
-            settle(key(libraryId, game, player, spot), slot.contentHash)
+            val key = key(libraryId, game, player, spot)
+            settle(key, slot.contentHash)
+            Files.deleteIfExists(handover.resolve("$key.zip"))
         }
     }
 
@@ -154,35 +201,198 @@ internal class PlayerSaves(
             val key = key(libraryId, game, player, spot)
             val bytes = docs.read(save.contentUri) ?: return false
             if (md5Hex(bytes) != save.contentHash) return false
-            val existing = docs.find(spot.folderUri, spot.fileName)
-            val current = existing?.let(docs::read)
-            // A file that is there and cannot be read is never written over blind.
-            if (existing != null && current == null) return false
-            val currentHash = current?.let(::md5Hex)
-            if (currentHash == save.contentHash) {
-                settle(key, save.contentHash)
-                continue
+            val outcome = if (spot.folders.isEmpty()) placeFile(key, player, spot, bytes) else placeFolders(key, player, spot, bytes)
+            when (outcome) {
+                Placing.Failed -> return false
+                Placing.Written -> changed?.add(spot.slot)
+                Placing.AlreadyThere -> Unit
             }
-            // Bytes the library has not kept, such as a player still writing: hand them over first.
-            val known = setOfNotNull(marks.mark(key), marks.mark(pendingKey(key)), marks.mark(tornKey(key)))
-            if (currentHash != null && currentHash !in known) return false
-            val target = existing ?: docs.create(spot.folderUri, spot.fileName) ?: return false
-            if (current != null) backup(player, spot.fileName, current)
-            marks.setMark(pendingKey(key), save.contentHash)
-            val written = try {
-                docs.write(target, bytes)
-                docs.read(target)
-            } catch (_: Exception) {
-                null
-            }
-            if (written == null || md5Hex(written) != save.contentHash) {
-                undo(key, target, current)
-                return false
-            }
-            settle(key, save.contentHash)
-            changed?.add(spot.slot)
         }
         return true
+    }
+
+    private enum class Placing { Failed, AlreadyThere, Written }
+
+    private fun placeFile(key: String, player: Player, spot: SaveSpot, bytes: ByteArray): Placing {
+        val hash = md5Hex(bytes)
+        val existing = docs.find(spot.folderUri, spot.fileName)
+        val current = existing?.let(docs::read)
+        // A file that is there and cannot be read is never written over blind.
+        if (existing != null && current == null) return Placing.Failed
+        val currentHash = current?.let(::md5Hex)
+        if (currentHash == hash) {
+            settle(key, hash)
+            return Placing.AlreadyThere
+        }
+        // Bytes the library has not kept, such as a player still writing: hand them over first.
+        if (currentHash != null && currentHash !in known(key)) return Placing.Failed
+        val target = existing ?: docs.create(spot.folderUri, spot.fileName) ?: return Placing.Failed
+        if (current != null) backup(player, spot.fileName, current)
+        marks.setMark(pendingKey(key), hash)
+        val written = try {
+            docs.write(target, bytes)
+            docs.read(target)
+        } catch (_: Exception) {
+            null
+        }
+        if (written == null || md5Hex(written) != hash) {
+            undo(key, target, current)
+            return Placing.Failed
+        }
+        settle(key, hash)
+        return Placing.Written
+    }
+
+    /**
+     * Makes the folders [zip] holds match it. A folder it does not hold keeps
+     * what it has, and the hash checked and marked is that of the whole spot.
+     */
+    private fun placeFolders(key: String, player: Player, spot: SaveSpot, zip: ByteArray): Placing {
+        val incoming = saveEntries(zip, spot.folders.map { it.name }.toSet()) ?: return Placing.Failed
+        val current = when (val held = readFolders(spot)) {
+            Held.Unreadable -> return Placing.Failed
+            Held.Missing -> FolderSave.EMPTY
+            is Held.Found -> held.save
+        }
+        val parts = incoming.filterValues { it != null }.keys.map(::partOf).toSet()
+        val wanted = sortedMapOf<String, ByteArray?>()
+        current.entries.filterKeys { partOf(it) !in parts }.let(wanted::putAll)
+        incoming.filterKeys { partOf(it) in parts }.let(wanted::putAll)
+        val hash = md5Hex(saveZip(wanted))
+        val currentZip = current.entries.takeIf { it.isNotEmpty() }?.let(::saveZip)
+        val currentHash = currentZip?.let(::md5Hex)
+        if (currentHash == hash) {
+            settle(key, hash)
+            return Placing.AlreadyThere
+        }
+        if (currentHash != null && currentHash !in known(key)) return Placing.Failed
+        if (currentZip != null) backup(player, spot.fileName, currentZip)
+        marks.setMark(pendingKey(key), hash)
+        val placed = try {
+            writeFolders(spot, current, wanted)
+            folderHash(spot) == hash
+        } catch (_: Exception) {
+            false
+        }
+        if (!placed) {
+            undoFolders(key, spot, current)
+            return Placing.Failed
+        }
+        settle(key, hash)
+        return Placing.Written
+    }
+
+    /** Turns what [from] holds into [to]: what is gone goes first, a folder's files before it. */
+    private fun writeFolders(spot: SaveSpot, from: FolderSave, to: SortedMap<String, ByteArray?>) {
+        for (name in from.entries.keys.reversed()) {
+            if (name in to) continue
+            if (!docs.delete(from.uris.getValue(name))) error("save could not be removed")
+        }
+        for ((name, bytes) in to) {
+            val path = documentPath(spot, name)
+            if (bytes == null) {
+                if (name !in from.entries && !docs.createFolder(spot.folderUri, path)) error("save folder could not be made")
+                continue
+            }
+            if (from.entries[name]?.contentEquals(bytes) == true) continue
+            val uri = from.uris[name] ?: docs.create(spot.folderUri, path) ?: error("save could not be made")
+            docs.write(uri, bytes)
+        }
+    }
+
+    /** After a failed write: puts [previous] back, or records what is left as torn. */
+    private fun undoFolders(key: String, spot: SaveSpot, previous: FolderSave) {
+        val undone = try {
+            val now = when (val held = readFolders(spot)) {
+                Held.Unreadable -> error("save could not be read")
+                Held.Missing -> FolderSave.EMPTY
+                is Held.Found -> held.save
+            }
+            writeFolders(spot, now, previous.entries)
+            folderHash(spot) == previous.entries.takeIf { it.isNotEmpty() }?.let { md5Hex(saveZip(it)) }
+        } catch (_: Exception) {
+            false
+        }
+        if (undone) {
+            marks.clearMark(pendingKey(key))
+            return
+        }
+        val left = try {
+            folderHash(spot)
+        } catch (_: Exception) {
+            null
+        }
+        if (left != null) marks.setMark(tornKey(key), left)
+    }
+
+    /** The hash of [spot]'s zip, or null when it holds nothing. Throws when it cannot be read. */
+    private fun folderHash(spot: SaveSpot): String? = when (val held = readFolders(spot)) {
+        Held.Unreadable -> error("save could not be read")
+        Held.Missing -> null
+        is Held.Found -> md5Hex(saveZip(held.save.entries))
+    }
+
+    /** The hashes a file may hold and still be replaced: what was placed or read, or a placement that stopped. */
+    private fun known(key: String): Set<String> =
+        setOfNotNull(marks.mark(key), marks.mark(pendingKey(key)), marks.mark(tornKey(key)))
+
+    /** The bytes [spot] holds and the document they are in, or null when it holds none or cannot be read. */
+    private fun readSpot(spot: SaveSpot): Pair<ByteArray, String?>? {
+        if (spot.folders.isNotEmpty()) {
+            val held = readFolders(spot) as? Held.Found ?: return null
+            return saveZip(held.save.entries) to null
+        }
+        val uri = docs.find(spot.folderUri, spot.fileName) ?: return null
+        return (docs.read(uri) ?: return null) to uri
+    }
+
+    /** Everything in [spot]'s folders, named as in its zip. */
+    private fun readFolders(spot: SaveSpot): Held {
+        val entries = sortedMapOf<String, ByteArray?>()
+        val uris = HashMap<String, String>()
+        try {
+            for (part in spot.folders) {
+                val listed = docs.list(spot.folderUri, part.path) ?: continue
+                for (entry in listed) {
+                    val name = "${part.name}/${entry.path}" + if (entry.isFolder) "/" else ""
+                    entries[name] = if (entry.isFolder) null else docs.read(entry.uri) ?: return Held.Unreadable
+                    uris[name] = entry.uri
+                }
+            }
+        } catch (_: Exception) {
+            return Held.Unreadable
+        }
+        return if (entries.isEmpty()) Held.Missing else Held.Found(FolderSave(entries, uris))
+    }
+
+    /** A zip the library reads from a file, as it has no document. */
+    private fun stage(key: String, bytes: ByteArray): String {
+        Files.createDirectories(handover)
+        val file = handover.resolve("$key.zip")
+        Files.write(file, bytes)
+        return file.toUri().toString()
+    }
+
+    /** Where the entry [name] of [spot]'s zip lives, below the player's folder. */
+    private fun documentPath(spot: SaveSpot, name: String): String {
+        val part = spot.folders.first { it.name == partOf(name) }
+        return part.path + "/" + name.substringAfter('/').removeSuffix("/")
+    }
+
+    /** What a spot kept as folders holds. */
+    private sealed interface Held {
+        data object Missing : Held
+
+        data object Unreadable : Held
+
+        class Found(val save: FolderSave) : Held
+    }
+
+    /** A spot's folders: zip entries and the document each is. */
+    private class FolderSave(val entries: SortedMap<String, ByteArray?>, val uris: Map<String, String>) {
+        companion object {
+            val EMPTY = FolderSave(sortedMapOf(), emptyMap())
+        }
     }
 
     /** Records [hash] as what the shell and the library agree the file holds. */
@@ -257,6 +467,91 @@ internal fun savePathParts(name: String): List<String>? {
     val parts = name.split('/')
     if (parts.any { it.isEmpty() || it == "." || it == ".." }) return null
     return parts
+}
+
+/** Folders the shell can move: at least one, each name one distinct part and each path inside the player's folder. */
+private fun validFolders(folders: List<SaveFolderPart>): Boolean =
+    folders.isNotEmpty() &&
+        folders.map { it.name }.distinct().size == folders.size &&
+        folders.all { savePathParts(it.name)?.size == 1 && savePathParts(it.path) != null }
+
+/** The part an entry of a save zip is in: its first folder. */
+private fun partOf(name: String): String = name.substringBefore('/')
+
+/** The largest a save zip may unpack to, so a broken or hostile one cannot fill memory. */
+private const val SAVE_ZIP_LIMIT = 256L * 1024 * 1024
+
+/** One fixed time for every entry, as the zip's local date and time, so its bytes depend only on its entries. */
+private val SAVE_ZIP_TIME: Long =
+    LocalDateTime.of(2000, 1, 1, 0, 0).atZone(ZoneId.systemDefault()).toInstant().toEpochMilli()
+
+/** [entries] as a zip whose bytes depend only on them: in name order, with one fixed time. */
+internal fun saveZip(entries: Map<String, ByteArray?>): ByteArray {
+    val out = ByteArrayOutputStream()
+    ZipOutputStream(out).use { zip ->
+        for ((name, bytes) in entries.toSortedMap()) {
+            zip.putNextEntry(ZipEntry(name).apply { time = SAVE_ZIP_TIME })
+            if (bytes != null) zip.write(bytes)
+            zip.closeEntry()
+        }
+    }
+    return out.toByteArray()
+}
+
+/**
+ * The entries of a save zip, a folder's name ending in `/` with null bytes.
+ * Every folder below a part is named, so two zips of the same files have the
+ * same entries, whichever folders they list. Null when [zip] is not a zip,
+ * holds no file, unpacks too large, or names anything outside [parts]: an
+ * unknown first folder, an empty name, `.`, `..`, or one name twice.
+ */
+internal fun saveEntries(zip: ByteArray, parts: Set<String>): SortedMap<String, ByteArray?>? {
+    val entries = sortedMapOf<String, ByteArray?>()
+    var total = 0L
+    try {
+        ZipInputStream(ByteArrayInputStream(zip)).use { input ->
+            while (true) {
+                val entry = input.nextEntry ?: break
+                val isFolder = entry.name.endsWith("/")
+                val segments = entry.name.removeSuffix("/").split('/')
+                if (segments.first() !in parts) return null
+                if (segments.any { it.isEmpty() || it == "." || it == ".." || '\\' in it }) return null
+                // A part's own folder is not an entry. A file cannot be one.
+                if (segments.size == 1) {
+                    if (isFolder) continue else return null
+                }
+                for (depth in 2 until segments.size) entries[segments.take(depth).joinToString("/") + "/"] = null
+                val name = entry.name.removeSuffix("/") + if (isFolder) "/" else ""
+                if (isFolder) {
+                    entries[name] = null
+                    continue
+                }
+                if (name in entries) return null
+                val bytes = readCapped(input, SAVE_ZIP_LIMIT - total) ?: return null
+                total += bytes.size
+                entries[name] = bytes
+            }
+        }
+    } catch (_: Exception) {
+        return null
+    }
+    // A name that is both a file and a folder cannot be written.
+    if (entries.any { (name, bytes) -> bytes != null && "$name/" in entries }) return null
+    return entries.takeIf { it.values.any { bytes -> bytes != null } }
+}
+
+/** All of [input], or null when it holds more than [limit] bytes. */
+private fun readCapped(input: InputStream, limit: Long): ByteArray? {
+    val out = ByteArrayOutputStream()
+    val buffer = ByteArray(64 * 1024)
+    var read = 0L
+    while (true) {
+        val count = input.read(buffer)
+        if (count < 0) return out.toByteArray()
+        read += count
+        if (read > limit) return null
+        out.write(buffer, 0, count)
+    }
 }
 
 internal fun md5Hex(bytes: ByteArray): String =
@@ -357,5 +652,77 @@ internal class AndroidSaveDocuments(private val resolver: ContentResolver) : Sav
         DocumentsContract.deleteDocument(resolver, Uri.parse(uri))
     } catch (_: Exception) {
         false
+    }
+
+    override fun head(uri: String, size: Int): ByteArray? = try {
+        resolver.openInputStream(Uri.parse(uri))?.use { input ->
+            val bytes = ByteArray(size)
+            var filled = 0
+            while (filled < size) {
+                val count = input.read(bytes, filled, size - filled)
+                if (count < 0) break
+                filled += count
+            }
+            bytes.copyOf(filled)
+        }
+    } catch (_: Exception) {
+        null
+    }
+
+    override fun list(folderUri: String, name: String): List<SaveEntry>? {
+        val tree = Uri.parse(folderUri)
+        val parts = savePathParts(name) ?: return null
+        var folder = DocumentsContract.getTreeDocumentId(tree)
+        for (part in parts) {
+            folder = listChildren(tree, folder).firstOrNull { it.name == part && it.isFolder }?.id ?: return null
+        }
+        val found = mutableListOf<SaveEntry>()
+        val pending = ArrayDeque(listOf("" to folder))
+        while (pending.isNotEmpty()) {
+            val (path, id) = pending.removeFirst()
+            for (child in listChildren(tree, id)) {
+                val childPath = if (path.isEmpty()) child.name else "$path/${child.name}"
+                val uri = DocumentsContract.buildDocumentUriUsingTree(tree, child.id).toString()
+                found += SaveEntry(childPath, uri, child.isFolder)
+                if (child.isFolder) pending += childPath to child.id
+            }
+        }
+        return found
+    }
+
+    override fun createFolder(folderUri: String, name: String): Boolean {
+        val tree = Uri.parse(folderUri)
+        val parts = savePathParts(name) ?: return false
+        return try {
+            var parent = DocumentsContract.getTreeDocumentId(tree)
+            for (part in parts) {
+                parent = child(tree, parent, part, directory = true)
+                    ?: createIn(tree, parent, DocumentsContract.Document.MIME_TYPE_DIR, part)
+                    ?: return false
+            }
+            true
+        } catch (_: Exception) {
+            false
+        }
+    }
+
+    private class Child(val id: String, val name: String, val isFolder: Boolean)
+
+    /** The children of [parentId]. Throws when the provider does not answer, unlike [child]. */
+    private fun listChildren(tree: Uri, parentId: String): List<Child> {
+        val columns = arrayOf(
+            DocumentsContract.Document.COLUMN_DOCUMENT_ID,
+            DocumentsContract.Document.COLUMN_DISPLAY_NAME,
+            DocumentsContract.Document.COLUMN_MIME_TYPE,
+        )
+        val children = DocumentsContract.buildChildDocumentsUriUsingTree(tree, parentId)
+        val cursor = resolver.query(children, columns, null, null, null) ?: error("save folder could not be listed")
+        return cursor.use {
+            buildList {
+                while (it.moveToNext()) {
+                    add(Child(it.getString(0), it.getString(1), it.getString(2) == DocumentsContract.Document.MIME_TYPE_DIR))
+                }
+            }
+        }
     }
 }

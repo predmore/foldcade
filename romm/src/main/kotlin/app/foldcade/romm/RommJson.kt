@@ -171,7 +171,7 @@ internal fun negotiateBody(
                             put("file_name", save.fileName)
                             if (save.slot == null) put("slot", JsonNull) else put("slot", save.slot)
                             if (save.emulator == null) put("emulator", JsonNull) else put("emulator", save.emulator)
-                            put("content_hash", md5Hex(bytes))
+                            put("content_hash", rommSaveHash(bytes) ?: md5Hex(bytes))
                             put("updated_at", instantText(save.updatedAt))
                             put("file_size_bytes", bytes.size.toLong())
                         },

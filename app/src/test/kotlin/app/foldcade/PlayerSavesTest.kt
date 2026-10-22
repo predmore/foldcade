@@ -27,7 +27,7 @@ class PlayerSavesTest {
     @Before
     fun setUp() {
         backups = Files.createTempDirectory("player-save-backups")
-        saves = PlayerSaves(docs, marks, backups)
+        saves = PlayerSaves(docs, marks, backups, backups.resolveSibling(backups.fileName.toString() + "-handover"))
         docs.names[ROM_URI] = "Mario Kart DS (USA).nds"
     }
 

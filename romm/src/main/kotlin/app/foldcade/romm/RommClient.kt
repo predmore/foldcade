@@ -560,7 +560,7 @@ class RommClient(
         val partial = partialOf(destination)
         streamGet(uri, partial, range = null)
         withContext(Dispatchers.IO) {
-            if (expectedHash != null && md5File(partial) != expectedHash.lowercase()) {
+            if (expectedHash != null && rommSaveHash(partial) != expectedHash.lowercase()) {
                 Files.deleteIfExists(partial)
                 throw RommResponseException("The save RomM sent does not match its hash")
             }
@@ -630,8 +630,9 @@ class RommClient(
                     "no_op" -> {
                         val local = pairedLocal(saves, op)
                         val hash = local?.let { withContext(Dispatchers.IO) { md5File(it.file) } }
+                        val sameAsServer = local?.let { withContext(Dispatchers.IO) { rommSaveHash(it.file) } }
                         val serverHash = comparableServerHash(op)
-                        if (local != null && hash != null && serverHash != null && hash != serverHash &&
+                        if (local != null && hash != null && serverHash != null && sameAsServer != serverHash &&
                             run.unsynced(local, hash)
                         ) {
                             // RomM saw an older timestamp. These bytes changed since the last sync here.
@@ -643,7 +644,7 @@ class RommClient(
                                 run.keepBoth(local, op, destination(op))
                             }
                         } else {
-                            if (local != null && hash != null && hash == serverHash) {
+                            if (local != null && hash != null && serverHash != null && sameAsServer == serverHash) {
                                 run.markSynced(local.slot, hash, op.emulator ?: local.emulator)
                             }
                             run.completed++
@@ -654,7 +655,7 @@ class RommClient(
                         val hash = withContext(Dispatchers.IO) { md5File(local.file) }
                         val serverHash = comparableServerHash(op)
                         when {
-                            serverHash == hash -> {
+                            serverHash != null && serverHash == withContext(Dispatchers.IO) { rommSaveHash(local.file) } -> {
                                 run.markSynced(local.slot, hash, local.emulator)
                                 run.completed++
                             }
@@ -866,13 +867,13 @@ class RommClient(
             val saveId = op.saveId ?: throw RommResponseException("${op.action} is missing save_id")
             val expected = comparableServerHash(op)
             withContext(Dispatchers.IO) {
-                if (Files.isRegularFile(path) && md5File(path) != expected) copySaveToTrash(path)
+                if (Files.isRegularFile(path) && rommSaveHash(path) != expected) copySaveToTrash(path)
             }
             downloadSave(saveId, deviceId, sessionId, path, expected)
             val hash = withContext(Dispatchers.IO) { md5File(path) }
             markSynced(op.slot, hash, op.emulator)
             downloaded.add(path)
-            confirmSaveDownloaded(saveId, deviceId, hash)
+            confirmSaveDownloaded(saveId, deviceId, withContext(Dispatchers.IO) { rommSaveHash(path) } ?: hash)
         }
 
         /**
@@ -894,7 +895,7 @@ class RommClient(
                     emulator = local.emulator,
                     deviceId = deviceId,
                     sessionId = sessionId,
-                    contentHash = hash,
+                    contentHash = rommSaveHash(bytes) ?: hash,
                     bytes = bytes,
                 )
             } catch (e: CancellationException) {
@@ -907,13 +908,9 @@ class RommClient(
             }
     }
 
-    /**
-     * RomM's hash of the server save when it is an MD5 of the file's bytes.
-     * RomM hashes an archive by its members, so an archive's hash cannot be
-     * compared with the file and is left unchecked.
-     */
+    /** RomM's hash of the server save, which [rommSaveHash] of the same bytes matches. */
     private fun comparableServerHash(op: SyncOperation): String? =
-        op.serverContentHash?.lowercase()?.takeUnless { isArchiveName(op.fileName) }
+        op.serverContentHash?.lowercase()?.takeIf { it.isNotEmpty() }
 
     private fun pairedLocal(saves: List<LocalSave>, op: SyncOperation): LocalSave? =
         saves.find { it.romId == op.romId && it.slot == op.slot && it.fileName == op.fileName }

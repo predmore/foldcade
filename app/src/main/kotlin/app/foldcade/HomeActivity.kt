@@ -48,6 +48,7 @@ import app.foldcade.api.plugin.SaveConflict
 import app.foldcade.api.plugin.SaveConflictChoice
 import app.foldcade.api.plugin.SaveCopy
 import app.foldcade.api.plugin.SaveFolderHolder
+import app.foldcade.api.plugin.SaveFolderPart
 import app.foldcade.api.plugin.StartDisplay
 import app.foldcade.artwork.SteamGridDb
 import app.foldcade.language.AboutCopy
@@ -2429,7 +2430,11 @@ private fun LibraryReturn.encode(): String = JSONObject().apply {
         "spots",
         JSONArray(
             spots.map { spot ->
-                JSONObject().put("slot", spot.slot).put("folder", spot.folderUri).put("file", spot.fileName)
+                JSONObject().put("slot", spot.slot).put("folder", spot.folderUri).put("file", spot.fileName).apply {
+                    if (spot.folders.isNotEmpty()) {
+                        put("parts", JSONArray(spot.folders.map { JSONObject().put("name", it.name).put("path", it.path) }))
+                    }
+                }
             },
         ),
     )
@@ -2463,7 +2468,12 @@ private fun decodeLibraryReturn(json: JSONObject, player: Player): LibraryReturn
         player = player,
         spots = (0 until spots.length()).map { index ->
             val spot = spots.getJSONObject(index)
-            SaveSpot(spot.getString("slot"), spot.getString("folder"), spot.getString("file"))
+            val parts = spot.optJSONArray("parts")
+            val folders = (0 until (parts?.length() ?: 0)).map { part ->
+                val folder = parts!!.getJSONObject(part)
+                SaveFolderPart(folder.getString("name"), folder.getString("path"))
+            }
+            SaveSpot(spot.getString("slot"), spot.getString("folder"), spot.getString("file"), folders)
         },
     )
 }

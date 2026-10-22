@@ -1,5 +1,6 @@
 package app.foldcade.romm
 
+import java.io.ByteArrayInputStream
 import java.io.IOException
 import java.nio.ByteBuffer
 import java.nio.channels.FileChannel
@@ -14,6 +15,7 @@ import java.time.ZoneOffset
 import java.time.format.DateTimeFormatter
 import java.util.UUID
 import java.util.stream.Collectors
+import java.util.zip.ZipInputStream
 
 /**
  * Writes [bytes] to a temp sibling, syncs it, renames it over [target], then
@@ -82,6 +84,57 @@ fun md5File(file: Path): String {
     }
     return digest.digest().joinToString("") { "%02x".format(it) }
 }
+
+/**
+ * RomM's hash of save bytes, the one its sync compares. A zip hashes as the MD5
+ * of one `name:md5` line per file entry, in name order, joined by newlines, so
+ * the same files hash the same however they were zipped. Anything else is the
+ * MD5 of its bytes. Null for a zip that cannot be read, as RomM keeps no hash
+ * then. Read from RomM 5.4's `hash_save_content` and `hash_zip_contents`.
+ */
+fun rommSaveHash(bytes: ByteArray): String? {
+    val end = zipEndRecord(bytes) ?: return md5Hex(bytes)
+    val lines = mutableListOf<String>()
+    var entries = 0
+    try {
+        ZipInputStream(ByteArrayInputStream(bytes)).use { zip ->
+            while (true) {
+                val entry = zip.nextEntry ?: break
+                entries++
+                if (!entry.name.endsWith("/")) lines += "${entry.name}:${md5Hex(zip.readBytes())}"
+            }
+        }
+    } catch (_: IOException) {
+        return null
+    } catch (_: IllegalArgumentException) {
+        // A name that is not UTF-8.
+        return null
+    }
+    // Entries the directory lists and the stream could not reach make the zip unreadable, as in Python.
+    val listed = (bytes[end + 10].toInt() and 0xff) or ((bytes[end + 11].toInt() and 0xff) shl 8)
+    if (listed != 0xffff && listed != entries) return null
+    return md5Hex(lines.sorted().joinToString("\n").toByteArray())
+}
+
+/** [rommSaveHash] of [file]. */
+fun rommSaveHash(file: Path): String? = rommSaveHash(Files.readAllBytes(file))
+
+/**
+ * Where a zip's end-of-central-directory record starts, found the way Python's
+ * `zipfile.is_zipfile` looks for it, or null when [bytes] have none.
+ */
+private fun zipEndRecord(bytes: ByteArray): Int? {
+    val earliest = maxOf(0, bytes.size - ZIP_END_RECORD - ZIP_COMMENT_MAX)
+    for (at in bytes.size - ZIP_END_RECORD downTo earliest) {
+        if (bytes[at] == 0x50.toByte() && bytes[at + 1] == 0x4b.toByte() && bytes[at + 2] == 0x05.toByte() && bytes[at + 3] == 0x06.toByte()) {
+            return at
+        }
+    }
+    return null
+}
+
+private const val ZIP_END_RECORD = 22
+private const val ZIP_COMMENT_MAX = 0xffff
 
 /**
  * Copies [file] into a `.trash` directory beside it under a unique name, then

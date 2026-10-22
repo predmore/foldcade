@@ -123,7 +123,12 @@ class FoldcadeApp : Application() {
 
     /** Moves library saves in and out of each player's save folder. Replaced files are kept in `save-backups`. */
     internal val playerSaves: PlayerSaves by lazy {
-        PlayerSaves(AndroidSaveDocuments(contentResolver), store, filesDir.toPath().resolve("save-backups"))
+        PlayerSaves(
+            AndroidSaveDocuments(contentResolver),
+            store,
+            filesDir.toPath().resolve("save-backups"),
+            filesDir.toPath().resolve("save-handover"),
+        )
     }
 
     /**

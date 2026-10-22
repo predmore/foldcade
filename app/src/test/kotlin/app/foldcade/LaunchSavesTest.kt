@@ -38,7 +38,7 @@ class LaunchSavesTest {
     private val server = RecordingLibrary("server")
     private val docs = Documents()
     private val marks = HashMap<String, String>()
-    private val saves = PlayerSaves(docs, Marks(marks), Files.createTempDirectory("launch-saves"))
+    private val saves = PlayerSaves(docs, Marks(marks), Files.createTempDirectory("launch-saves"), Files.createTempDirectory("launch-handover"))
     private val awaiting = mutableListOf<String>()
     private val plugins = PluginHost(Dispatchers.Unconfined, MemoryCredentialStore()).apply {
         register(object : PluginEntry {
