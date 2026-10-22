@@ -2,6 +2,7 @@ package app.foldcade
 
 import android.content.Intent
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -67,6 +68,38 @@ class RunningGamesTest {
         assertTrue(flags and Intent.FLAG_ACTIVITY_CLEAR_TASK != 0)
         assertTrue(flags and Intent.FLAG_ACTIVITY_NEW_TASK != 0)
         assertTrue(flags and Intent.FLAG_GRANT_READ_URI_PERMISSION != 0)
+    }
+
+    @Test
+    fun aPlayerAnEarlierProcessLeftAGameInStillHasItReplaced() {
+        val games = RunningGames()
+        val kept = mutableListOf<Set<String>>()
+        games.onPlayersChange = { kept += it }
+        games.restore(setOf("azahar"))
+        // Nothing is known about that game, so no tile reads Paused, but a start there replaces it.
+        assertTrue(games.mayHold("azahar"))
+        assertEquals(emptySet<String>(), games.tiles())
+        games.note(game("zelda", "melonds"))
+        assertEquals(setOf("azahar", "melonds"), kept.last())
+        games.note(game("mario", "azahar"))
+        assertEquals("mario", games.forPackage("azahar")?.tileId)
+        games.forget("azahar")
+        assertFalse(games.mayHold("azahar"))
+        assertEquals(setOf("melonds"), kept.last())
+        assertFalse(games.mayHold(null))
+    }
+
+    @Test
+    fun aPlayerWhoseFrontDoorRunsItsGamesOnlyHoldsOne() {
+        val games = RunningGames()
+        games.note(game("mario", "ppsspp"))
+        games.noteHolding("ppsspp")
+        assertNull(games.forTile("mario"))
+        assertTrue(games.mayHold("ppsspp"))
+        // Its launcher activity would stack a second copy over the game.
+        assertFalse(resumable("org.ppsspp.ppsspp.PpssppActivity", "org.ppsspp.ppsspp.PpssppActivity"))
+        assertTrue(resumable("org.citra.citra_emu.ui.main.MainActivity", "org.citra.citra_emu.activities.EmulationActivity"))
+        assertFalse(resumable(null, "org.citra.citra_emu.activities.EmulationActivity"))
     }
 
     private fun game(tile: String, pkg: String, startedAt: Long = 0L) = RunningGame(

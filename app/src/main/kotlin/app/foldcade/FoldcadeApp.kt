@@ -32,6 +32,7 @@ import androidx.compose.runtime.getValue
 import androidx.lifecycle.Lifecycle
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
 import app.foldcade.api.plugin.Credential
 import app.foldcade.api.plugin.CredentialLookup
 import app.foldcade.api.plugin.CredentialStore
@@ -491,6 +492,8 @@ class FoldcadeApp : Application() {
         // RestartActivity's process only brings Home back. It must not load packs or count exits.
         if (getProcessName() != packageName) return
         store = SessionStore(getSharedPreferences("foldcade", MODE_PRIVATE))
+        runningGames.restore(store.playersHoldingGames())
+        runningGames.onPlayersChange = store::setPlayersHoldingGames
         buttonPromptFirstSession = !store.buttonPromptSeenLaunch()
         if (buttonPromptFirstSession) store.setButtonPromptSeenLaunch()
         credentials = AndroidCredentialStore(this)
@@ -562,6 +565,12 @@ class FoldcadeApp : Application() {
         )
         // Loading ends once the shell has resolved the choices against the packs.
         try { themeInstalls.loaded(manifests, themeArchivesInUse()) } catch (error: Exception) { Log.w("FoldcadeTheme", "Theme trials not saved", error) }
+        // A pack chosen in Settings is in use from that moment, so a crash right after counts against it.
+        themeTrialScope.launch {
+            snapshotFlow { themeArchivesInUse() }.collect { inUse ->
+                if (themeInstalls.ledger.themes.any { it.trial != null }) saveThemeTrial(inUse, 0)
+            }
+        }
         themeRollbacks.forEach { postNotice(themeRollbackNotice(it)) }
         // A game several libraries have is one tile, and its copies' play counts on it.
         plays.historyIds = shell::historyIds
@@ -1455,7 +1464,8 @@ class FoldcadeApp : Application() {
     internal fun themeEntries(): List<app.foldcade.language.ThemeEntry> {
         val inUse = themePacksInUse().map { it.resources.id }.toSet()
         val trials = themeInstalls.ledger.themes.filter { it.trial != null }.map { it.file }.toSet()
-        return themePacks.map { pack ->
+        // A pack taken out still loads until the restart, but the page has let it go.
+        return themePacks.filter { pack -> pack.archive == null || themeInstalls.ledger.theme(pack.archive) != null }.map { pack ->
             app.foldcade.language.ThemeEntry(
                 id = pack.resources.id,
                 name = pack.name,

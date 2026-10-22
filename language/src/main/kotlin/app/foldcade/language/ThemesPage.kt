@@ -12,7 +12,8 @@ object ThemesCopy {
     const val builds = "Builds on"
     const val license = "License"
     const val report = "Nothing to report"
-    const val removeArmed = "Press X again to remove"
+    /** The removal waiting on a second press of the bottom-screen button, [letter] on the player's pad. */
+    fun removeArmed(letter: FaceLetter?): String = "Press ${letter?.name ?: "it"} again to remove"
     const val remove = "Remove"
     const val adding = "Adding"
     const val added = "Added. Restart to use it."
@@ -65,7 +66,8 @@ sealed interface ThemesAction {
 
 /**
  * The Themes page. Up and down move through the packs, then Add a theme, then Restart once
- * something changed. A on Add opens the file picker; X twice on an installed pack removes it.
+ * something changed. A on Add opens the file picker; the bottom-screen button (X, unless calibration
+ * took it) twice on an installed pack removes it.
  * [note] is the one line the page says back, such as why an install was refused.
  */
 data class ThemesPage(
@@ -80,7 +82,7 @@ data class ThemesPage(
 
     val focused: ThemesRow get() = rows[focus.coerceIn(0, rows.lastIndex)]
 
-    fun on(meaning: Meaning): Pair<ThemesPage, ThemesAction?> {
+    fun on(meaning: Meaning, faces: FaceMap = FaceMap.standard()): Pair<ThemesPage, ThemesAction?> {
         // An install in flight finishes before the page takes another key.
         if (busy) return this to null
         return when (meaning) {
@@ -95,7 +97,7 @@ data class ThemesPage(
             Meaning.ActivateBottom -> {
                 val pack = (focused as? ThemesRow.Pack)?.entry?.takeIf { it.removable } ?: return this to null
                 if (armed) copy(armed = false, note = null) to ThemesAction.Remove(pack)
-                else copy(armed = true, note = ThemesCopy.removeArmed) to null
+                else copy(armed = true, note = ThemesCopy.removeArmed(letterOfKey(actionFaces(faces).bottom))) to null
             }
             else -> this to null
         }
