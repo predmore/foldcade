@@ -18,16 +18,17 @@ import kotlinx.coroutines.ensureActive
  * `content://poster.com.limelight/boxart/<host UUID>/<app id>`, read-only.
  * The UUID is matched as Moonlight stored it, so its case is kept.
  *
- * A launcher cannot list that provider, so [posterExists] asks for one
- * address. The app sets it; until then no game has a poster.
+ * A launcher cannot list that provider, so [poster] asks for one game. The
+ * app sets it, and may answer with box art it got from a paired computer
+ * instead. Until it is set, no game has a poster.
  */
 class MoonlightArt(private val library: MoonlightLibrary) : MetadataProvider {
     override val id: String = ID
     override val displayName: String = MoonlightLibrary.DISPLAY_NAME
 
-    /** True when Moonlight serves an image at the address. Off the main thread. */
+    /** What is known of [MoonlightApp]'s box art. Off the main thread. */
     @Volatile
-    var posterExists: suspend (String) -> Boolean = { false }
+    var poster: suspend (MoonlightApp) -> Poster = { Poster.None }
 
     /** Each game asked about, by remote key: its poster address, or [NONE]. */
     private val found = ConcurrentHashMap<String, String>()
@@ -41,11 +42,20 @@ class MoonlightArt(private val library: MoonlightLibrary) : MetadataProvider {
         if (game.backendId != MoonlightLibrary.ID) return null
         found[game.remoteKey]?.let { return if (it == NONE) null else meta(game, it) }
         val app = library.app(game.remoteKey) ?: return null
-        val uri = moonlightPosterUri(app.hostUuid, app.appId)
-        val exists = posterExists(uri)
+        val answer = poster(app)
         coroutineContext.ensureActive()
-        found[game.remoteKey] = if (exists) uri else NONE
-        return if (exists) meta(game, uri) else null
+        // Not yet is asked again; a poster or a definite none is kept.
+        when (answer) {
+            is Poster.At -> found[game.remoteKey] = answer.uri
+            Poster.None -> found[game.remoteKey] = NONE
+            Poster.NotYet -> Unit
+        }
+        return (answer as? Poster.At)?.let { meta(game, it.uri) }
+    }
+
+    /** Asks again for every game of the computer [hostKey], a lower-case UUID. */
+    fun forgetHost(hostKey: String) {
+        found.keys.removeIf { it.startsWith("$hostKey|") }
     }
 
     private fun meta(game: Game, uri: String) = GameMeta(
@@ -57,6 +67,17 @@ class MoonlightArt(private val library: MoonlightLibrary) : MetadataProvider {
         const val ID: String = "moonlight"
         private const val NONE = ""
     }
+}
+
+/** What the app knows of one game's box art. */
+sealed interface Poster {
+    data class At(val uri: String) : Poster
+
+    /** There is none to find. */
+    data object None : Poster
+
+    /** There may be, once its computer answers. */
+    data object NotYet : Poster
 }
 
 /** Moonlight's poster for one game. [hostUuid] is as Moonlight stored it. */

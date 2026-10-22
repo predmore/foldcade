@@ -50,8 +50,6 @@ import app.foldcade.plugins.droiddeck.droidDeckShortcutKey
 import app.foldcade.plugins.gamenative.CatalogGame
 import app.foldcade.plugins.gamenative.GameNativeLibrary
 import app.foldcade.plugins.gamenative.GameNativePlayer
-import app.foldcade.gamestream.GameStreamClient
-import app.foldcade.net.LanHttp
 import app.foldcade.plugins.moonlight.MoonlightArt
 import app.foldcade.plugins.moonlight.MoonlightLibrary
 import app.foldcade.plugins.moonlight.isMoonlightPosterUri
@@ -260,6 +258,7 @@ class FoldcadeApp : Application() {
                     CoverFetcher.Factory { uri ->
                         when {
                             isMoonlightPosterUri(uri) -> readMoonlightPoster(this@FoldcadeApp, uri)
+                            moonlightStreams.isHostArt(uri) -> readHostArt(uri)
                             !publicArt.allows(uri) -> romm.load(uri)
                             shell.model.artwork -> artBytes.load(uri)
                             else -> null
@@ -387,9 +386,17 @@ class FoldcadeApp : Application() {
     /** Battery, network, Bluetooth, and the clock. Both screens show the same reading. */
     val deviceStatus: DeviceStatusWatcher by lazy { DeviceStatusWatcher(this, scope) }
 
-    /** Moonlight's computers on the local network, and the game each streams now. */
-    internal val moonlightHosts: MoonlightHosts by lazy {
-        MoonlightHosts(this, GameStreamClient(LanHttp(), store.gameStreamClientId()), scope) { shell.setMoonlightHosts(it) }
+    /** Moonlight's computers: how each is, the ones Foldcade paired with, and their apps. */
+    internal val moonlightStreams: MoonlightStreams by lazy {
+        MoonlightStreams(
+            context = this,
+            store = store,
+            scope = scope,
+            shell = { shell },
+            library = { plugins.library(MoonlightLibrary.ID) as? MoonlightLibrary },
+            refreshShelf = ::putMoonlightOnShelf,
+            refreshArt = ::refreshMoonlightArt,
+        )
     }
     private val credentialGate = Mutex()
     private val pluginLoad = CoroutineScope(SupervisorJob() + Dispatchers.IO)
@@ -982,7 +989,7 @@ class FoldcadeApp : Application() {
             library.replacePinned(read.games)
             store.setMoonlightPins(read.games)
             store.setMoonlightHostNames(read.hostNames)
-            moonlightHosts.knowNames(read.hostNames)
+            moonlightStreams.hosts.knowNames(read.hostNames)
         }
         Shelf.moonlightGames = plugins.moonlightShelfGames()
         withContext(Dispatchers.Main.immediate) {
@@ -995,12 +1002,42 @@ class FoldcadeApp : Application() {
     private suspend fun restoreMoonlightPins() {
         val library = plugins.library(MoonlightLibrary.ID) as? MoonlightLibrary ?: return
         library.replacePinned(store.moonlightPins())
-        (plugins.metadata(MoonlightArt.ID) as? MoonlightArt)?.posterExists = { moonlightPosterExists(this, it) }
-        val names = store.moonlightHostNames()
-        moonlightHosts.knowNames(names)
-        withContext(Dispatchers.Main.immediate) { shell.setMoonlightHosts(names.mapValues { MoonlightHost(it.value, online = null) }) }
+        (plugins.metadata(MoonlightArt.ID) as? MoonlightArt)?.poster = moonlightStreams::poster
+        moonlightStreams.restore(store.moonlightHostNames())
         Shelf.moonlightGames = plugins.moonlightShelfGames()
     }
+
+    /**
+     * The Moonlight catalog changed without a shortcut read: a paired computer listed its
+     * apps, or one was forgotten. That is a live answer, as a shortcut read is, so a game it
+     * dropped leaves Home even while Foldcade is not the home app and cannot read shortcuts.
+     */
+    private suspend fun putMoonlightOnShelf() {
+        Shelf.moonlightGames = plugins.moonlightShelfGames()
+        withContext(Dispatchers.Main.immediate) {
+            shell.settleMoonlight()
+            shell.noteShelfChanged()
+        }
+    }
+
+    /** Tiles of the computer [hostKey] ask for their art again. Main thread. */
+    private fun refreshMoonlightArt(hostKey: String) {
+        (plugins.metadata(MoonlightArt.ID) as? MoonlightArt)?.forgetHost(hostKey)
+        covers.forget(MoonlightLibrary.ID) { it.startsWith("$hostKey|") }
+        artRevision++
+    }
+
+    /** A paired computer's box art, as [MoonlightStreams.poster] saved it. */
+    private suspend fun readHostArt(uri: String): ByteArray? = withContext(Dispatchers.IO) {
+        android.net.Uri.parse(uri).path?.let(::File)?.takeIf { it.isFile && it.length() <= 8L * 1024 * 1024 }?.readBytes()
+    }
+
+    /** Settings › Library: pair with Moonlight's computer [key]. */
+    fun pairMoonlightHost(key: String, screen: app.foldcade.language.HostScreen) = moonlightStreams.pair(key, screen)
+
+    fun cancelMoonlightPairing() = moonlightStreams.cancelPairing()
+
+    fun forgetMoonlightHost(key: String) = moonlightStreams.forget(key)
 
     /**
      * [PinShortcutActivity] accepted Moonlight's Create shortcut for [shortcutId].
@@ -1418,7 +1455,7 @@ class FoldcadeApp : Application() {
         val shown = homes.values.any { it.get()?.shellVisible == true }
         libraryResync.noteShown(shown)
         noteThemeTrialShown(shown)
-        moonlightHosts.watch(shown)
+        moonlightStreams.hosts.watch(shown)
     }
 
     /**

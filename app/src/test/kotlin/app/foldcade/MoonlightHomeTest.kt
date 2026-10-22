@@ -8,6 +8,7 @@ import app.foldcade.language.HOME_ROOT
 import app.foldcade.language.HomeBoard
 import app.foldcade.language.HeroSubject
 import app.foldcade.language.HostScreen
+import app.foldcade.language.StreamHostSetting
 import app.foldcade.language.TileActivity
 import app.foldcade.language.activityLine
 import app.foldcade.language.GridStrip
@@ -221,6 +222,58 @@ class MoonlightHomeTest {
         assertEquals(id, SessionStore(prefs).gameStreamClientId())
     }
 
+    @Test
+    fun aListedGameHasNoShortcutToDelete() {
+        Shelf.moonlightGames = listOf(tile(hades, "Hades"), tile(celeste, "Celeste").copy(shortcut = false))
+        val shell = ShellController(SessionStore(MemoryPrefs()), plugins())
+        shell.settleMoonlight()
+        shell.noteShelfChanged()
+        focus(shell, titles(shell).indexOf("Moonlight"))
+        shell.onMeaning(Meaning.Activate, HostScreen.Bottom)
+        focus(shell, titles(shell).indexOf("Hades"))
+        assertTrue(Row.DeleteShortcut in menuRows(shell))
+        shell.onMeaning(Meaning.Back, HostScreen.Bottom)
+        focus(shell, titles(shell).indexOf("Celeste"))
+        assertFalse(Row.DeleteShortcut in menuRows(shell))
+    }
+
+    @Test
+    fun pairingsAreKeptOnlyForTheKeyTheyWereMadeWith() {
+        val prefs = MemoryPrefs()
+        val gameWin = PairedStreamHost("8FE9E201-578A-7C2C-B017-F2A9A9D86886", "game-win", 47984, HOST_CERT)
+        SessionStore(prefs).setPairedStreamHosts("aaaa", listOf(gameWin))
+        assertEquals(listOf(gameWin), SessionStore(prefs).pairedStreamHosts("aaaa"))
+        assertEquals("8fe9e201-578a-7c2c-b017-f2a9a9d86886", SessionStore(prefs).pairedStreamHosts("aaaa").single().key)
+        // Moved to another device, or Foldcade reinstalled: the key is new, so the pairing is gone.
+        assertEquals(emptyList<PairedStreamHost>(), SessionStore(prefs).pairedStreamHosts("bbbb"))
+        assertEquals(emptyList<PairedStreamHost>(), SessionStore(prefs).pairedStreamHosts(null))
+
+        val desktop = moonlightApp(gameWin.uuid, "881448767", "Desktop")!!
+        SessionStore(prefs).setListedStreamApps(listOf(desktop))
+        assertEquals(listOf(desktop), SessionStore(prefs).listedStreamApps())
+    }
+
+    @Test
+    fun settingsListsEachComputerWithWhetherItIsPaired() {
+        val shell = ShellController(SessionStore(MemoryPrefs()), plugins())
+        shell.setMoonlightHosts(
+            mapOf(
+                "b0000000-0000-0000-0000-000000000000" to MoonlightHost("loft", online = true),
+                host to MoonlightHost("game-win", online = null),
+            ),
+        )
+        shell.setPairedHosts(setOf(host))
+        assertEquals(
+            listOf(StreamHostSetting(host, "game-win", paired = true), StreamHostSetting("b0000000-0000-0000-0000-000000000000", "loft", paired = false)),
+            shell.model.streamHosts,
+        )
+    }
+
+    private fun menuRows(shell: ShellController): List<Row> {
+        shell.onMeaning(Meaning.Options, HostScreen.Bottom)
+        return panelRows(shell.model.panel ?: error("Y opened no menu"), shell.model)
+    }
+
     private fun availability(shell: ShellController): String? =
         (shell.focusedHero() as HeroSubject.Item).item.availability
 
@@ -239,6 +292,33 @@ class MoonlightHomeTest {
     private fun moonlightSlots(board: HomeBoard): List<String?> = board.folders[HOME_MOONLIGHT]?.slots.orEmpty()
 
     private fun plugins() = PluginHost(Dispatchers.Unconfined, MemoryCredentialStore())
+
+    private companion object {
+        /** A test-only certificate, the simulated host's from :gamestream's pairing tests. */
+        val HOST_CERT = app.foldcade.gamestream.certificate(
+            """
+-----BEGIN CERTIFICATE-----
+MIIDBjCCAe6gAwIBAgIUVL0uE69U96DAyaHIo47jBS6xxQwwDQYJKoZIhvcNAQEL
+BQAwIzEhMB8GA1UEAwwYU3Vuc2hpbmUgR2FtZXN0cmVhbSBIb3N0MB4XDTI2MTAy
+MjAyNDEwMFoXDTQ2MTAxNzAyNDEwMFowIzEhMB8GA1UEAwwYU3Vuc2hpbmUgR2Ft
+ZXN0cmVhbSBIb3N0MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAlrDX
+S0zo5QvPaVtE0uS+VfriaVgD6cf7TZ3oAMAbbWrPYxlxwZIu0XdFiN/xr6tgUUHs
+sZEe4W4LVqHzEkEP/cD0BvNUKJ/DShDihS5RDRD3VyKBcqhxb+A8ApLVpV6BHq+e
+8/Vypg35TL+XwtBnGgseFFyD9SIBRab7vcJgPzGyE0NK9obJmh0IAyw8KgxhyF2Y
+qWJYH1F/x0epBMNjmDoa4GhNl5eX2/HqPmzbwiv+PBUGanlnJ1ubl9BBRxccicLS
+8DUAWf5B+hrExUkS9c6SbVLHeKBjEw/b+aXKJhPf3Grp0G1tvzlBg0UpGNbWMHx4
+XFMFcQ0beXnFpxqkNQIDAQABozIwMDAdBgNVHQ4EFgQUt5oj50CWAPioMmulvP/z
+bOcUewYwDwYDVR0TAQH/BAUwAwEB/zANBgkqhkiG9w0BAQsFAAOCAQEAPr5K7HHf
+u+tRSEo+nj71axQ+ETzo+QUXuzZS1TS/2E6QX28/khQJ+3E96tv4Rysnj7AfVnbg
+FCO7s7UQ6VQ74fbhcwIzd7yC0h5+SFvaG2VLwVqLZlEtBMMZqGA0EdsGA5VdJCiy
+9eSCfgHs+m5pmVcinxmCh+qVHa2G+B4g/rUoYHwmqh346sA4smzJHMfA6KgpHPh6
+crNsCnh/eufMlY0i24EdMLjclgpzr1XgiFryQupYUY2xAhCy7dGFelw4jVCqAvEf
+B5thN81tSee8IJqQkjzrX3+0GHGChiP7QBchc/hgXD/Z7f98uuWiICy4TYT97AgN
+VQBRe5lqnnx88g==
+-----END CERTIFICATE-----
+            """.trimIndent().toByteArray(),
+        )!!
+    }
 
     /** Y, down the menu to [row], then A. */
     private fun choose(shell: ShellController, row: Row) {

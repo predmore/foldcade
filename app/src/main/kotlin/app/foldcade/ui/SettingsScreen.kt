@@ -234,6 +234,7 @@ private fun settingsRowIcon(row: Row): Int? = rowIcon(row) ?: when (row) {
     // A cartridge's label is its art.
     Row.Artwork -> R.drawable.symbol_cartridge
     Row.ArtKey -> R.drawable.ic_status_wrench
+    is Row.StreamHost -> R.drawable.symbol_moonlight
     Row.UsageAccess -> R.drawable.ic_status_playtime
     else -> null
 }

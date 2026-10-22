@@ -103,6 +103,12 @@ enum class DialogKind {
 
     /** Something RetroArch needs before the game can start, such as a core. */
     RetroArchSetup,
+
+    /** The code to type on a computer while Foldcade pairs with it. Not now stops. */
+    PairHost,
+
+    /** Stop listing a paired computer's games. Opens on Not now. */
+    ForgetHost,
 }
 
 enum class DialogButton {
@@ -116,6 +122,7 @@ enum class DialogButton {
     KeepKey,
     OpenRetroArch,
     Restart,
+    ForgetHost,
 }
 
 data class DialogState(
@@ -128,7 +135,57 @@ data class DialogState(
     val screen: HostScreen,
     /** A second muted line. The missing-player dialog lists package names here. */
     val detail: String? = null,
+    /** What the dialog is about, such as the computer a pairing dialog names. */
+    val subject: String? = null,
 )
+
+/** One of Moonlight's computers, for its Settings › Library switch. [key] is its lower-case UUID. */
+data class StreamHostSetting(val key: String, val name: String, val paired: Boolean)
+
+/** Foldcade shows [pin]; the user types it into Sunshine or Apollo on [name]. */
+fun pairHostDialog(name: String, pin: String, key: String, screen: HostScreen): DialogState = DialogState(
+    kind = DialogKind.PairHost,
+    title = "Enter $pin on $name",
+    body = Copy.pairHostBody,
+    buttons = listOf(DialogButton.NotNow),
+    index = 0,
+    safeIndex = 0,
+    screen = screen,
+    subject = key,
+)
+
+/** Forgetting opens on Not now, and Back keeps the pairing too. */
+fun forgetHostDialog(name: String, key: String, screen: HostScreen): DialogState = DialogState(
+    kind = DialogKind.ForgetHost,
+    title = "Forget $name?",
+    body = Copy.forgetHostBody,
+    buttons = listOf(DialogButton.ForgetHost, DialogButton.NotNow),
+    index = 1,
+    safeIndex = 1,
+    screen = screen,
+    subject = key,
+)
+
+/** Why a pairing with [name] did not finish. */
+fun pairFailedDialog(name: String, outcome: PairFailure, screen: HostScreen): DialogState = playerNotice(
+    title = when (outcome) {
+        PairFailure.WrongPin -> Copy.pairWrongPinTitle
+        PairFailure.Unreachable -> "$name didn’t answer"
+        PairFailure.Refused -> "$name didn’t pair"
+    },
+    body = when (outcome) {
+        PairFailure.WrongPin -> Copy.pairWrongPinBody
+        PairFailure.Unreachable -> Copy.pairUnreachableBody
+        PairFailure.Refused -> Copy.pairRefusedBody
+    },
+    screen = screen,
+)
+
+enum class PairFailure {
+    WrongPin,
+    Unreachable,
+    Refused,
+}
 
 fun usageAccessPrompt(screen: HostScreen = HostScreen.Bottom): DialogState = DialogState(
     kind = DialogKind.UsageAccess,
@@ -366,6 +423,9 @@ sealed interface Row {
     data object RecentOnHome : Row
     data object Artwork : Row
     data object ArtKey : Row
+
+    /** A switch for the games of one of Moonlight's computers, [StreamHostSetting.key]. On pairs; off forgets. */
+    data class StreamHost(val key: String) : Row
     /** An installed app trades Android Games for Android Apps, or back. */
     data object MoveApp : Row
 
@@ -842,6 +902,9 @@ fun rowText(row: Row, model: PickerModel): RowText = when (row) {
     Row.RecentOnHome -> RowText(Copy.recentlyPlayed, if (model.recentOnHome) Copy.on else Copy.off)
     Row.Artwork -> RowText(Copy.artwork, if (model.artwork) Copy.on else Copy.off)
     Row.ArtKey -> RowText(Copy.steamGridDb, if (model.artKeySaved) Copy.forgetKey else Copy.addKey)
+    is Row.StreamHost -> model.streamHosts.firstOrNull { it.key == row.key }.let { host ->
+        RowText("${Copy.gamesFrom} ${host?.name.orEmpty()}", if (host?.paired == true) Copy.on else Copy.off)
+    }
     Row.MoveApp -> RowText(if (model.tileActions?.moveTo == HOME_ANDROID_APPS) Copy.moveToApps else Copy.moveToGames)
     Row.Hide -> RowText(Copy.hideApp)
     Row.ChooseArt -> RowText(ArtCopy.art)
@@ -907,7 +970,10 @@ sealed interface Effect {
     data object OpenArtKey : Effect
     data object SaveArtKey : Effect
     data object RetryRommDeviceCode : Effect
-    data class DialogChoice(val button: DialogButton, val kind: DialogKind) : Effect
+    data class DialogChoice(val button: DialogButton, val kind: DialogKind, val subject: String? = null) : Effect
+
+    /** Pair with Moonlight's computer [key], so its games list themselves. */
+    data class PairStreamHost(val key: String) : Effect
     data class ForgetCredentials(val pluginId: String) : Effect
     data class ForgetFolder(val uri: String) : Effect
     data object SaveRommToken : Effect
@@ -1119,6 +1185,8 @@ data class PickerModel(
     val artwork: Boolean = true,
     /** A SteamGridDB key is saved. */
     val artKeySaved: Boolean = false,
+    /** Moonlight's computers, each with a switch in Settings › Library. */
+    val streamHosts: List<StreamHostSetting> = emptyList(),
     val connectKind: ConnectKind = ConnectKind.Romm,
     /** The open RomM form is adding a server besides the default instance. */
     val connectAnother: Boolean = false,
@@ -1159,7 +1227,7 @@ fun reduce(
     if (dialog != null) {
         if (meaning == Meaning.LeftPanel || meaning == Meaning.RightPanel) return coerced to null
         val (next, choice) = applyDialog(dialog, meaning)
-        val chosen = choice?.let { Effect.DialogChoice(it, dialog.kind) }
+        val chosen = choice?.let { Effect.DialogChoice(it, dialog.kind, dialog.subject) }
         val cleared = if (choice != null) null else next
         return coerced.copy(dialog = cleared) to chosen
     }
@@ -1891,6 +1959,11 @@ private fun activateRow(
                 connectKind = ConnectKind.ArtKey,
             ) to Effect.OpenArtKey
         }
+        // Pairing is asked on the computer, so A only starts it; forgetting asks here first.
+        is Row.StreamHost -> model.streamHosts.firstOrNull { it.key == row.key }?.let { host ->
+            if (host.paired) model.copy(panel = panel, dialog = forgetHostDialog(host.name, host.key, screen)) to null
+            else model.copy(panel = panel) to Effect.PairStreamHost(host.key)
+        } ?: (model.copy(panel = panel) to null)
         Row.MoveApp -> model.copy(panel = null, focus = panel.grid) to model.tileActions?.moveTo?.let { Effect.MoveApp(model.tileActions.game, it) }
         Row.Hide -> model.copy(panel = null, focus = panel.grid) to (model.tileActions?.bulk?.let { Effect.Bulk(BulkAction.Hide, it) } ?: Effect.Hide(model.tileActions?.game))
         Row.AddToCollection -> model.copy(panel = panel.copy(level = PanelLevel.Collections, index = 0, via = panel.level)) to null

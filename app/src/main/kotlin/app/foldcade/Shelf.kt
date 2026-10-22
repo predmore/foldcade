@@ -24,6 +24,8 @@ data class ShelfGame(
      */
     val emptyShelfHint: Boolean = false,
     val availabilityLabel: String? = null,
+    /** An Android shortcut stands for this game, so Delete shortcut can remove it. */
+    val shortcut: Boolean = true,
 )
 
 object Shelf {

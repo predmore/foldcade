@@ -78,6 +78,7 @@ fun settingsRows(category: SettingsCategory, model: PickerModel): List<Row> = wh
         // Only once there is a folder or a server to read.
         if (model.signedIn.isNotEmpty() || model.folders.isNotEmpty()) add(Row.SyncLibrary)
         addAll(libraryRows(model.signedIn, model.folders))
+        addAll(model.streamHosts.map { Row.StreamHost(it.key) })
         addAll(listOf(Row.Order, Row.AddNewGames, Row.Artwork, Row.ArtKey, Row.UsageAccess))
     }
     SettingsCategory.Players -> buildList {
@@ -127,6 +128,7 @@ fun rowControl(row: Row, model: PickerModel, value: String? = rowText(row, model
     Row.AddNewGames -> RowControl.Toggle(model.addNewToHome)
     Row.RecentOnHome -> RowControl.Toggle(model.recentOnHome)
     Row.Artwork -> RowControl.Toggle(model.artwork)
+    is Row.StreamHost -> RowControl.Toggle(model.streamHosts.any { it.key == row.key && it.paired })
     in choiceRows -> RowControl.Choice(value.orEmpty())
     Row.MusicVolume, Row.Brightness -> RowControl.None
     is Row.Collection -> model.tileActions?.collections?.firstOrNull { it.folderId == row.folderId }.let { RowControl.Check(it?.member == true, it?.some == true) }

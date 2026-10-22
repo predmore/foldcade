@@ -155,6 +155,7 @@ internal suspend fun PluginHost.moonlightShelfGames(): List<ShelfGame> {
             mark = "moonlight",
             libraryId = game.backendId,
             remoteKey = game.remoteKey,
+            shortcut = library.isPinned(game.remoteKey),
         )
     }
 }

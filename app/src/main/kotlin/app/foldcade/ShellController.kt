@@ -46,6 +46,7 @@ import app.foldcade.language.FoldNotice
 import app.foldcade.language.FindEntry
 import app.foldcade.language.FindKind
 import app.foldcade.language.downloadFacts
+import app.foldcade.language.StreamHostSetting
 import app.foldcade.language.streamHostLine
 import app.foldcade.language.HintKey
 import app.foldcade.language.HomeKeys
@@ -386,10 +387,27 @@ class ShellController(
     /** Moonlight tiles a computer is streaming now, with its name. */
     private var streaming by mutableStateOf<Map<String, String>>(emptyMap())
 
+    /** Computers Foldcade paired with itself, by host key. */
+    private var pairedHosts: Set<String> = emptySet()
+
     internal fun setMoonlightHosts(hosts: Map<String, MoonlightHost>) {
         if (hosts == moonlightHosts) return
         moonlightHosts = hosts
         streaming = streamingTiles(hosts)
+        publishStreamHosts()
+    }
+
+    fun setPairedHosts(keys: Set<String>) {
+        if (keys == pairedHosts) return
+        pairedHosts = keys
+        publishStreamHosts()
+    }
+
+    /** Settings › Library's switch for each computer, by name. */
+    private fun publishStreamHosts() {
+        val rows = moonlightHosts.map { (key, host) -> StreamHostSetting(key, host.name, key in pairedHosts) }
+            .sortedBy { it.name.lowercase() }
+        if (rows != model.streamHosts) model = model.copy(streamHosts = rows)
     }
 
     /** False while Foldcade can't tell whether a player closed, see [FoldcadeApp.closesVisible]. Nothing reads Paused then. */
@@ -1683,9 +1701,11 @@ class ShellController(
         else store.rommServerOrigin(reLoginRommId)?.let { rommServerLabel(reLoginRommId, it) },
     )
 
-    fun present(dialog: DialogState) {
-        if (model.dialog != null) return
+    /** Shows [dialog] unless another is open. True when it is shown. */
+    fun present(dialog: DialogState): Boolean {
+        if (model.dialog != null) return false
         model = model.copy(dialog = dialog)
+        return true
     }
 
     /** Drops a dialog without activating its button. Debug captures use this before opening a menu. */

@@ -346,6 +346,7 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
             Effect.SaveArtKey -> saveArtKey()
             is Effect.ForgetCredentials -> forget(effect.pluginId)
             is Effect.ForgetFolder -> foldcade.forgetFolder(effect.uri)
+            is Effect.PairStreamHost -> foldcade.pairMoonlightHost(effect.key, hostScreen())
             is Effect.DialogChoice -> onDialog(effect)
             Effect.RequestHome -> requestHome()
             is Effect.OpenAndroidSetting -> openAndroidSetting(effect.setting)
@@ -1662,6 +1663,9 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
                 cancelLaunches()
             }
             DialogKind.ForgetArtKey -> if (effect.button == DialogButton.ForgetKey) forgetArtKey()
+            // Its only button is Not now, which stops waiting for the code.
+            DialogKind.PairHost -> foldcade.cancelMoonlightPairing()
+            DialogKind.ForgetHost -> if (effect.button == DialogButton.ForgetHost) effect.subject?.let(foldcade::forgetMoonlightHost)
             DialogKind.RetroArchCores -> if (effect.button == DialogButton.ContinueGrant) {
                 showRetroArchCores(retroArchRetry)
             } else {
