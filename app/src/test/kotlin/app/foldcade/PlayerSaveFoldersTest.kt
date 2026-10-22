@@ -270,6 +270,20 @@ class PlayerSaveFoldersTest {
     }
 
     @Test
+    fun foldersWithNoFileAreNoSaveAndAreReplacedWhenOneIsPlaced() {
+        docs.mkdirs("$DATA/00000001")
+        docs.mkdirs("$DATA/00000002")
+        val spots = spots()
+        assertTrue(saves.changedSince("romm", GAME, PLAYER, spots).slots.isEmpty())
+        docs.library[SERVER] = zipOf("data/00000001/00.SAV" to "server")
+        assertTrue(saves.place("romm", GAME, PLAYER, spots, listOf(placed())))
+        assertEquals("server", docs.text("$DATA/00000001/00.SAV"))
+        assertFalse("$DATA/00000002" in docs.folders)
+        assertFalse(Files.list(backups).use { it.findAny().isPresent })
+        assertTrue(saves.changedSince("romm", GAME, PLAYER, spots).slots.isEmpty())
+    }
+
+    @Test
     fun twoZipsOfTheSameFilesHaveTheSameEntriesAndBytes() {
         val listed = saveEntries(zipOf("data/" to null, "data/a/" to null, "data/a/b" to "x"), setOf("data"))!!
         val bare = saveEntries(zipOf("data/a/b" to "x"), setOf("data"))!!

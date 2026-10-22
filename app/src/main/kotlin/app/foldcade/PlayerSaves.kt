@@ -275,8 +275,10 @@ internal class PlayerSaves(
             settle(key, hash)
             return Placing.AlreadyThere
         }
-        if (currentHash != null && currentHash !in known(key)) return Placing.Failed
-        if (currentZip != null) backup(player, spot.fileName, currentZip)
+        // Folders with no file in them hold no progress, so there is nothing to hand over or keep.
+        val progress = current.entries.values.any { it != null }
+        if (progress && currentHash !in known(key)) return Placing.Failed
+        if (progress && currentZip != null) backup(player, spot.fileName, currentZip)
         marks.setMark(pendingKey(key), hash)
         val placed = try {
             writeFolders(spot, current, wanted)
@@ -354,6 +356,8 @@ internal class PlayerSaves(
     private fun readSpot(spot: SaveSpot): Pair<ByteArray, String?>? {
         if (spot.folders.isNotEmpty()) {
             val held = readFolders(spot) as? Held.Found ?: return null
+            // Folders with no file are no save, and a zip of them could never be placed.
+            if (held.save.entries.values.none { it != null }) return null
             return saveZip(held.save.entries) to null
         }
         val uri = docs.find(spot.folderUri, spot.fileName) ?: return null
