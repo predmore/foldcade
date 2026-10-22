@@ -7,9 +7,9 @@ import kotlin.math.tanh
 /**
  * How far the Thor has turned from the way it was lately held, for the top screen's
  * layers to slide by. Fed the game rotation vector as a unit quaternion, device to
- * world with world z up. Turning left or right is read about world up, and tipping
- * about the hinge, so it does not matter which half holds the sensor or how far the
- * lid is open. [x] and [y] are shares of the full slide, in screen directions, each
+ * world with world z up. Tipping is read about the hinge, and turning left or right
+ * about world up or the level line toward the player, so it does not matter which
+ * half holds the sensor or how far the lid is open. [x] and [y] are shares of the full slide, in screen directions, each
  * between -1 and 1. A held lean drifts back to rest over [recenterSeconds].
  */
 class TiltFollower(
@@ -57,11 +57,25 @@ class TiltFollower(
         val hingeX = 1f - 2f * (ny * ny + nz * nz)
         val hingeY = 2f * (nx * ny + nw * nz)
         val hingeZ = 2f * (nx * nz - nw * ny)
+        val tip = turnX * hingeX + turnY * hingeY + turnZ * hingeZ
+        // What is left once the tip is taken out turns the Thor left or right. Hands do
+        // that as often by rolling it like a wheel, about the level line toward the player,
+        // as by swinging it about world up, so both count, the way gyro games read them.
+        val sideX = turnX - tip * hingeX
+        val sideY = turnY - tip * hingeY
+        val sideZ = turnZ - tip * hingeZ
+        // That line lies across the hinge's level part, so it fades out rather than
+        // flipping round as a Thor on its side brings the hinge upright.
+        val roll = sideX * hingeY - sideY * hingeX
+        val swing = sideZ + roll
+        val side = sqrt(sideX * sideX + sideY * sideY + sideZ * sideZ)
+        // A turn about an axis between the two is not both turns at once.
+        val turn = swing.coerceIn(-side, side)
         val full = Math.toRadians(fullDegrees.toDouble()).toFloat()
         // The view stays put in the world, so it slides the opposite way to the screen:
         // turning left moves it right, and tipping the top edge back moves it down.
-        val across = soft(turnZ / full)
-        val down = soft(-(turnX * hingeX + turnY * hingeY + turnZ * hingeZ) / full)
+        val across = soft(turn / full)
+        val down = soft(-tip / full)
         val follow = 1f - exp(-dt / smoothSeconds)
         x += (across - x) * follow
         y += (down - y) * follow

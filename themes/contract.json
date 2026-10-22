@@ -100,7 +100,7 @@
     "motion.sceneOverscan": {"kind":"number","above":0.0,"afterglow":1.05},
     "motion.sceneSettleFrom": {"kind":"number","above":0.0,"afterglow":1.1},
     "motion.tiltPx": {"kind":"number","unit":"px","min":0.0,"afterglow":18.0},
-    "motion.tiltDegrees": {"kind":"number","above":0.0,"afterglow":6.0},
+    "motion.tiltDegrees": {"kind":"number","above":0.0,"afterglow":3.0},
     "motion.tiltArtShare": {"kind":"number","min":0.0,"max":1.0,"afterglow":0.4},
     "motion.durationTiltRecenter": {"kind":"duration","unit":"ms","role":"duration","min":1.0,"max":2.1474836E9,"afterglow":2400.0},
     "motion.durationScene": {"kind":"duration","unit":"ms","role":"duration","min":1.0,"max":2.1474836E9,"afterglow":360.0},
