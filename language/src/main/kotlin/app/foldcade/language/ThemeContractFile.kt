@@ -37,15 +37,26 @@ fun contractSlots(afterglow: ThemeResources): List<String> = afterglow.icons.key
 
 /**
  * Names in an earlier [contract] that the engine and Afterglow no longer have, and that no
- * rename or retirement accounts for. A pack in the wild may still use each one.
+ * rename or retirement accounts for. A pack in the wild may still use each one. A rename or a
+ * retirement is a promise too: an old name stays working, or stays known to do nothing, for good.
+ * Scene inputs, sound cues, font faces and manifest fields have no renames, so none may leave.
  */
 fun vanishedFromContract(contract: JsonObject, afterglow: ThemeResources): List<String> {
-    val tokens = (contract["tokens"] as? JsonObject)?.keys.orEmpty()
-    val slots = (contract["slots"] as? JsonArray)?.mapNotNull { (it as? JsonPrimitive)?.contentOrNull }.orEmpty()
+    fun names(section: String): List<String> = when (val value = contract[section]) {
+        is JsonObject -> value.keys.toList()
+        is JsonArray -> value.mapNotNull { (it as? JsonPrimitive)?.contentOrNull }
+        else -> emptyList()
+    }
     val liveTokens = afterglow.style.specs.keys
     val liveSlots = contractSlots(afterglow).toSet()
-    return tokens.filter { it !in liveTokens && it !in ThemeContract.renamedTokens && it !in ThemeContract.retiredTokens }.map { "token $it" } +
-        slots.filter { it !in liveSlots && it !in ThemeContract.renamedSlots && it !in ThemeContract.retiredSlots }.map { "slot $it" }
+    val tokenKnown = { name: String -> name in liveTokens || name in ThemeContract.renamedTokens || name in ThemeContract.retiredTokens }
+    val slotKnown = { name: String -> name in liveSlots || name in ThemeContract.renamedSlots || name in ThemeContract.retiredSlots }
+    return (names("tokens") + names("renamedTokens") + names("retiredTokens")).distinct().filterNot(tokenKnown).map { "token $it" } +
+        (names("slots") + names("renamedSlots") + names("retiredSlots")).distinct().filterNot(slotKnown).map { "slot $it" } +
+        names("sceneInputs").filter { it !in ThemeContract.sceneInputs }.map { "scene input $it" } +
+        names("sounds").filter { it !in ThemeContract.soundCues }.map { "sound $it" } +
+        names("fonts").filter { it !in ThemeContract.fontFaces }.map { "font $it" } +
+        names("manifest").filter { it !in ThemeContract.manifestFields }.map { "manifest field $it" }
 }
 
 /** A JSON Schema for `theme.json`, for editors to complete and check a manifest as it is written. */

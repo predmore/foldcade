@@ -47,6 +47,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicText
 import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
@@ -4418,6 +4419,10 @@ private fun ConnectScreen(
             cursorBrush = cursorBrush(theme),
             // A password field to the keyboard too, so it neither shows nor learns the token.
             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password, imeAction = ImeAction.Done),
+            // Done saves, as Save below does, rather than only closing the keyboard.
+            keyboardActions = KeyboardActions(onDone = {
+                if (!model.connectBusy) onEffect(app.shell.touchConnect(fields.indexOf(ConnectField.Save), screen))
+            }),
             modifier = Modifier
                 .fillMaxWidth()
                 .focusRequester(token)

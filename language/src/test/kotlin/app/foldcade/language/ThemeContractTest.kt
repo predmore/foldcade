@@ -3,7 +3,14 @@ package app.foldcade.language
 import androidx.compose.ui.graphics.Color
 import java.io.File
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.add
+import kotlinx.serialization.json.buildJsonArray
+import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.put
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -30,6 +37,25 @@ class ThemeContractTest {
         val stale = "is stale: run ./gradlew :language:testDebugUnitTest --tests '*ThemeContractTest*' -PwriteThemeContract=true"
         assertEquals("themes/contract.json $stale", themeContractJson(afterglow), contract.readText())
         assertEquals("themes/theme.schema.json $stale", themeSchemaJson(afterglow), schema.readText())
+    }
+
+    @Test
+    fun aRenameOrRetirementCannotLeaveTheContractEither() {
+        val written = Json.parseToJsonElement(contract.readText()).jsonObject
+        fun with(section: String, value: JsonElement) = JsonObject(written + (section to value))
+        assertEquals(listOf("token shape.cornerRound"), vanishedFromContract(with("renamedTokens", buildJsonObject { put("shape.cornerRound", "shape.round") }), afterglow))
+        assertEquals(listOf("token tile.gone"), vanishedFromContract(with("retiredTokens", buildJsonArray { add("tile.gone") }), afterglow))
+        assertEquals(listOf("slot button.old"), vanishedFromContract(with("renamedSlots", buildJsonObject { put("button.old", "button.new") }), afterglow))
+        assertEquals(listOf("slot badge.gone"), vanishedFromContract(with("retiredSlots", buildJsonArray { add("badge.gone") }), afterglow))
+        val inputs = JsonObject((written["sceneInputs"] as JsonObject) + ("twilight" to JsonPrimitive("gone")))
+        assertEquals(listOf("scene input twilight"), vanishedFromContract(with("sceneInputs", inputs), afterglow))
+    }
+
+    @Test
+    fun everySceneInputTheContractNamesIsOneAScenesExpressionsCanRead() {
+        val scene = parseThemeScene("""{"version":1,"id":"s","name":"S","layers":[]}""", "s.json", emptyMap())!!
+        ThemeContract.sceneInputs.keys.forEach { scene.symbols.index(it) }
+        assertEquals("An input scenes read that the contract leaves out", ThemeContract.sceneInputs.size, scene.symbols.size)
     }
 
     @Test
