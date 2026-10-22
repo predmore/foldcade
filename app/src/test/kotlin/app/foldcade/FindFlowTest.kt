@@ -74,6 +74,26 @@ class FindFlowTest {
     }
 
     @Test
+    fun aGameThatDownloadsFirstLandsTheRingOnItsTile() {
+        // Thor 2026-10-22: Find closed onto the grid it was opened over, so nothing showed the download.
+        val shell = shell()
+        val before = shell.model.focus
+        shell.onMeaning(Meaning.View, HostScreen.Bottom)
+        type(shell, "drift")
+        shell.onMeaning(Meaning.Done, HostScreen.Bottom)
+        shell.onMeaning(Meaning.ActivateBottom, HostScreen.Bottom)
+        // The activity marks the download before Find closes.
+        assertTrue(shell.beginDownload("local-folder", "drift"))
+        shell.closeFindAfterLaunch()
+        assertNull(shell.find)
+        assertEquals("Drift", shell.focusedGame()?.title)
+        assertTrue(shell.isDownloading(shell.focusedGame()?.id))
+        assertFalse(before == shell.model.focus)
+        // Quietly: no burst and no sound, since the launch already cued.
+        assertEquals(0, shell.revealPulse)
+    }
+
+    @Test
     fun upFromTheTopRowReachesTheResultsAndDownComesBack() {
         val shell = shell()
         shell.onMeaning(Meaning.View, HostScreen.Bottom)
