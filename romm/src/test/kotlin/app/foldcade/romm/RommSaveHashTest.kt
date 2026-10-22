@@ -29,6 +29,12 @@ class RommSaveHashTest {
     }
 
     @Test
+    fun entriesAreOrderedByNameBeforeTheirHashesAreJoined() {
+        // Sorting whole `name:md5` lines would put `main.bak` first, as `.` sorts before `:`.
+        assertEquals("adfc46863a7cbf973e804e49868effc4", rommSaveHash(zipOf("data/main" to "one", "data/main.bak" to "two")))
+    }
+
+    @Test
     fun anythingElseIsTheMd5OfItsBytes() {
         assertEquals("8d90078ef0b3778140a7fa0ab541cfd6", rommSaveHash("plain save".toByteArray()))
         assertEquals(md5Hex(ByteArray(8192)), rommSaveHash(ByteArray(8192)))

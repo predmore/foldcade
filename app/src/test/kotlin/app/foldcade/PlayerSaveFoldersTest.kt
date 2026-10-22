@@ -168,6 +168,25 @@ class PlayerSaveFoldersTest {
     }
 
     @Test
+    fun aZipCutShortIsRefusedRatherThanReadAsFewerFiles() {
+        docs.put("$DATA/00000001/00.SAV", "old")
+        docs.put("$DATA/00000001/01.SAV", "old one")
+        val spots = spots()
+        saves.noteHandedOver("romm", GAME, PLAYER, spots, saves.changedSince("romm", GAME, PLAYER, spots))
+        val whole = zipOf("data/00000001/00.SAV" to "new", "data/00000001/01.SAV" to "new one")
+        // Cut just before the second entry's header: what is left still reads as a zip of one file.
+        val second = (4 until whole.size).first { at ->
+            whole[at] == 0x50.toByte() && whole[at + 1] == 0x4b.toByte() && whole[at + 2] == 0x03.toByte() && whole[at + 3] == 0x04.toByte()
+        }
+        val cut = whole.copyOf(second)
+        assertEquals(1, java.util.zip.ZipInputStream(cut.inputStream()).use { input -> generateSequence { input.nextEntry }.count() })
+        assertNull(saveEntries(cut, setOf("data", "extdata")))
+        docs.library[SERVER] = cut
+        assertFalse(saves.place("romm", GAME, PLAYER, spots, listOf(placed())))
+        assertEquals("old one", docs.text("$DATA/00000001/01.SAV"))
+    }
+
+    @Test
     fun aFailedWritePutsTheOldFilesBack() {
         docs.put("$DATA/00000001/00.SAV", "old")
         docs.put("$DATA/00000001/01.SAV", "old one")

@@ -501,17 +501,21 @@ internal fun saveZip(entries: Map<String, ByteArray?>): ByteArray {
 /**
  * The entries of a save zip, a folder's name ending in `/` with null bytes.
  * Every folder below a part is named, so two zips of the same files have the
- * same entries, whichever folders they list. Null when [zip] is not a zip,
- * holds no file, unpacks too large, or names anything outside [parts]: an
+ * same entries, whichever folders they list. Null when [zip] is not a whole
+ * zip, holds no file, unpacks too large, or names anything outside [parts]: an
  * unknown first folder, an empty name, `.`, `..`, or one name twice.
  */
 internal fun saveEntries(zip: ByteArray, parts: Set<String>): SortedMap<String, ByteArray?>? {
+    // A zip cut short still reads as one with fewer files, which would remove the rest.
+    val listed = zipEntryCount(zip) ?: return null
     val entries = sortedMapOf<String, ByteArray?>()
     var total = 0L
+    var read = 0
     try {
         ZipInputStream(ByteArrayInputStream(zip)).use { input ->
             while (true) {
                 val entry = input.nextEntry ?: break
+                read++
                 val isFolder = entry.name.endsWith("/")
                 val segments = entry.name.removeSuffix("/").split('/')
                 if (segments.first() !in parts) return null
@@ -535,10 +539,27 @@ internal fun saveEntries(zip: ByteArray, parts: Set<String>): SortedMap<String, 
     } catch (_: Exception) {
         return null
     }
+    if (read != listed) return null
     // A name that is both a file and a folder cannot be written.
     if (entries.any { (name, bytes) -> bytes != null && "$name/" in entries }) return null
     return entries.takeIf { it.values.any { bytes -> bytes != null } }
 }
+
+/**
+ * How many entries the zip's central directory lists, read from its end
+ * record, or null when [zip] has none: it is cut short, or not a zip.
+ */
+private fun zipEntryCount(zip: ByteArray): Int? {
+    val earliest = maxOf(0, zip.size - ZIP_END_RECORD - 0xffff)
+    for (at in zip.size - ZIP_END_RECORD downTo earliest) {
+        if (zip[at] == 0x50.toByte() && zip[at + 1] == 0x4b.toByte() && zip[at + 2] == 0x05.toByte() && zip[at + 3] == 0x06.toByte()) {
+            return (zip[at + 10].toInt() and 0xff) or ((zip[at + 11].toInt() and 0xff) shl 8)
+        }
+    }
+    return null
+}
+
+private const val ZIP_END_RECORD = 22
 
 /** All of [input], or null when it holds more than [limit] bytes. */
 private fun readCapped(input: InputStream, limit: Long): ByteArray? {

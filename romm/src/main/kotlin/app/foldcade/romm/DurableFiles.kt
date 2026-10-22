@@ -94,14 +94,15 @@ fun md5File(file: Path): String {
  */
 fun rommSaveHash(bytes: ByteArray): String? {
     val end = zipEndRecord(bytes) ?: return md5Hex(bytes)
-    val lines = mutableListOf<String>()
+    val files = mutableListOf<Pair<String, String>>()
     var entries = 0
     try {
         ZipInputStream(ByteArrayInputStream(bytes)).use { zip ->
             while (true) {
                 val entry = zip.nextEntry ?: break
                 entries++
-                if (!entry.name.endsWith("/")) lines += "${entry.name}:${md5Hex(zip.readBytes())}"
+                if (entry.name.endsWith("/")) continue
+                files += entry.name to (entryMd5(zip) ?: return null)
             }
         }
     } catch (_: IOException) {
@@ -113,8 +114,28 @@ fun rommSaveHash(bytes: ByteArray): String? {
     // Entries the directory lists and the stream could not reach make the zip unreadable, as in Python.
     val listed = (bytes[end + 10].toInt() and 0xff) or ((bytes[end + 11].toInt() and 0xff) shl 8)
     if (listed != 0xffff && listed != entries) return null
-    return md5Hex(lines.sorted().joinToString("\n").toByteArray())
+    // RomM sorts by name, then joins, so `a` comes before `a.bak` whatever their hashes.
+    val lines = files.sortedBy { it.first }.map { (name, hash) -> "$name:$hash" }
+    return md5Hex(lines.joinToString("\n").toByteArray())
 }
+
+/** The MD5 of the zip entry [zip] is at, read in blocks, or null past RomM's limit for one entry. */
+private fun entryMd5(zip: ZipInputStream): String? {
+    val digest = MessageDigest.getInstance("MD5")
+    val buffer = ByteArray(64 * 1024)
+    var read = 0L
+    while (true) {
+        val count = zip.read(buffer)
+        if (count < 0) break
+        read += count
+        if (read > ZIP_ENTRY_LIMIT) return null
+        digest.update(buffer, 0, count)
+    }
+    return digest.digest().joinToString("") { "%02x".format(it) }
+}
+
+/** RomM's `MAX_DECOMPRESSED_ENTRY_BYTES`: an entry larger than this gets no hash there either. */
+private const val ZIP_ENTRY_LIMIT = 512L * 1024 * 1024
 
 /** [rommSaveHash] of [file]. */
 fun rommSaveHash(file: Path): String? = rommSaveHash(Files.readAllBytes(file))
