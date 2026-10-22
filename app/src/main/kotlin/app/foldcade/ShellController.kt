@@ -925,8 +925,14 @@ class ShellController(
     /** A Find result as a game, for its tile's art and icon. */
     fun findGame(id: String): ShelfGame = homeShelf(home.faceOf(id))
 
-    /** A launch from Find has started. Find closes, so the grid is there to come back to. */
+    /**
+     * A launch from Find has started. Find closes, so the grid is there to come back to. A game
+     * that downloads first lands the ring on its place on Home, as Show on Home does but quietly,
+     * so its tile and the top screen show the download.
+     */
     fun closeFindAfterLaunch() {
+        val id = find?.subject?.id
+        if (isDownloading(id) && showOnHome(id, burst = false)) return
         closeFind()
     }
 
