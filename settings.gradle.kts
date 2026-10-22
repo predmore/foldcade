@@ -34,13 +34,14 @@ include(
     ":samples:out-of-tree",
     ":romm",
     ":net",
+    ":gamestream",
     ":artwork",
 )
 
-// :api, :host, :net, :artwork, :romm, and every :plugins:* module apply foldcade.jvm-api33.
+// :api, :host, :net, :artwork, :romm, :gamestream, and every :plugins:* module apply foldcade.jvm-api33.
 // New plugin modules inherit the API 33 Animal Sniffer check the same way.
 gradle.lifecycle.afterProject {
-    val appJvmModule = path == ":api" || path == ":host" || path == ":net" || path == ":artwork" || path == ":romm" || path.startsWith(":plugins:")
+    val appJvmModule = path == ":api" || path == ":host" || path == ":net" || path == ":artwork" || path == ":romm" || path == ":gamestream" || path.startsWith(":plugins:")
     if (appJvmModule && !pluginManager.hasPlugin("foldcade.jvm-api33")) {
         error("$path must apply id(\"foldcade.jvm-api33\")")
     }

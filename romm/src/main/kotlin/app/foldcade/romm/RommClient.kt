@@ -1,5 +1,6 @@
 package app.foldcade.romm
 
+import app.foldcade.net.isLanHost
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Dispatchers

@@ -10,8 +10,9 @@ Foldcade is an Android launcher for the AYN Thor. The shell is Compose. Plugins 
 | `:api` | Plugin contract. Unstable: see [plugins.md](plugins.md#stability). |
 | `:language` | Shared UI language: panels, the built-in theme, motion, copy, and the home-music setting. |
 | `:host` | `PluginHost`. Loads entries and calls library and metadata I/O off the main thread. |
-| `:net` | The only HTTP stack. Builds every OkHttp client; `PublicHttps` reaches a fixed list of public hosts over HTTPS only. `HttpStackGuardTest` fails a client built anywhere else. |
+| `:net` | The only HTTP stack. Builds every OkHttp client; `PublicHttps` reaches a fixed list of public hosts over HTTPS only; `LanHttp` reaches computers on the local network. `HttpStackGuardTest` fails a client built anywhere else. |
 | `:romm` | RomM HTTP client, on a client from `:net`. |
+| `:gamestream` | The parts of the GameStream protocol Sunshine and Apollo hosts speak that Foldcade uses: host status. On `LanHttp` from `:net`, which reaches LAN hosts only. |
 | `:artwork` | Artwork lookup and caching. The app tries Steam's CDN, libretro's thumbnails, the connected RomM server's cover search, then SteamGridDB with the user's key. Covers for tiles, and for the focused game a scene: wide art, a logo, and a title screen. Keeps what it found, and its misses, on disk. The Game art setting turns it off. |
 | `:plugins:droiddeck` | DroidDeck player and library: Steam on the device. Games from DroidDeck's Add to home screen and synced `.steam` files. |
 | `:plugins:emulators` | Standalone emulators for the other catalog platforms. One screen. Saves stay in the emulator. |
@@ -24,7 +25,7 @@ Foldcade is an Android launcher for the AYN Thor. The shell is Compose. Plugins 
 | `:samples:out-of-tree` | Sample that compiles against `:api` only. |
 | `build-logic` | `foldcade.jvm-api33`, the Animal Sniffer check for API 33. |
 
-`:api`, `:host`, `:net`, `:artwork`, `:romm`, and every `:plugins:*` module must apply `foldcade.jvm-api33`. A new plugin module inherits that check the same way. `settings.gradle.kts` fails configuration if one of those modules skips it.
+`:api`, `:host`, `:net`, `:artwork`, `:romm`, `:gamestream`, and every `:plugins:*` module must apply `foldcade.jvm-api33`. A new plugin module inherits that check the same way. `settings.gradle.kts` fails configuration if one of those modules skips it.
 
 ## Screens
 

@@ -6,7 +6,10 @@ import app.foldcade.language.Copy
 import app.foldcade.language.HOME_MOONLIGHT
 import app.foldcade.language.HOME_ROOT
 import app.foldcade.language.HomeBoard
+import app.foldcade.language.HeroSubject
 import app.foldcade.language.HostScreen
+import app.foldcade.language.TileActivity
+import app.foldcade.language.activityLine
 import app.foldcade.language.GridStrip
 import app.foldcade.language.Meaning
 import app.foldcade.language.Row
@@ -19,6 +22,7 @@ import kotlinx.coroutines.Dispatchers
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -154,6 +158,71 @@ class MoonlightHomeTest {
         store.setMoonlightPins(listOfNotNull(moonlightApp(host, "7", "Hades"), moonlightApp(host, "8", "Celeste")))
         assertEquals(listOf("Hades", "Celeste"), SessionStore(prefs).moonlightPins().map { it.label })
     }
+
+    @Test
+    fun aGameItsComputerIsStreamingReadsRunningThere() {
+        Shelf.moonlightGames = listOf(tile(hades, "Hades"), tile(celeste, "Celeste"))
+        val shell = ShellController(SessionStore(MemoryPrefs()), plugins())
+        shell.settleMoonlight()
+        shell.noteShelfChanged()
+        focus(shell, titles(shell).indexOf("Moonlight"))
+        shell.onMeaning(Meaning.Activate, HostScreen.Bottom)
+        focus(shell, titles(shell).indexOf("Hades"))
+        // Before any host is known, the line is the one it always was.
+        assertNull(availability(shell))
+        // The top screen asks Moonlight's poster through the same record.
+        assertEquals(hades, shell.focusedRecord()?.remoteKey)
+
+        shell.setMoonlightHosts(mapOf(host to MoonlightHost("game-win", online = null)))
+        assertEquals("On game-win", availability(shell))
+        assertNull(shell.focusedActivity())
+
+        shell.setMoonlightHosts(mapOf(host to MoonlightHost("game-win", online = true, runningAppId = "7")))
+        assertEquals(TileActivity.OnHost("game-win"), shell.focusedActivity())
+        assertEquals("Running on game-win", activityLine(shell.focusedActivity()!!))
+        focus(shell, titles(shell).indexOf("Celeste"))
+        assertNull(shell.focusedActivity())
+        assertEquals("On game-win", availability(shell))
+
+        // A computer that stopped answering streams nothing Foldcade can see.
+        shell.setMoonlightHosts(mapOf(host to MoonlightHost("game-win", online = false, runningAppId = "7")))
+        assertEquals("game-win is offline", availability(shell))
+        focus(shell, titles(shell).indexOf("Hades"))
+        assertNull(shell.focusedActivity())
+    }
+
+    @Test
+    fun onlyAnAnsweringHostsAppIsStreaming() {
+        val hosts = mapOf(
+            host to MoonlightHost("game-win", online = true, runningAppId = "7"),
+            "0b3e2a9c-1111-2222-3333-444455556666" to MoonlightHost("den", online = false, runningAppId = "9"),
+            "0b3e2a9c-1111-2222-3333-777788889999" to MoonlightHost("loft", online = true),
+        )
+        assertEquals(mapOf(hades to "game-win"), streamingTiles(hosts))
+    }
+
+    @Test
+    fun aMoonlightTileHasARecordSoMoonlightsPosterCanAnswer() {
+        val shell = ShellController(SessionStore(MemoryPrefs()), plugins())
+        val record = shell.artRecord(tile(hades, "Hades"))!!
+        assertEquals("moonlight", record.backendId)
+        assertEquals(hades, record.remoteKey)
+        assertEquals("Hades", record.label)
+        assertNull(shell.artRecord(tile(hades, "Hades").copy(libraryId = "droiddeck")))
+    }
+
+    @Test
+    fun hostNamesAndTheClientIdAreKept() {
+        val prefs = MemoryPrefs()
+        SessionStore(prefs).setMoonlightHostNames(mapOf("8FE9E201-578A-7C2C-B017-F2A9A9D86886" to "game-win"))
+        assertEquals(mapOf("8FE9E201-578A-7C2C-B017-F2A9A9D86886" to "game-win"), SessionStore(prefs).moonlightHostNames())
+        val id = SessionStore(prefs).gameStreamClientId()
+        assertTrue(Regex("[0-9a-f]{16}").matches(id))
+        assertEquals(id, SessionStore(prefs).gameStreamClientId())
+    }
+
+    private fun availability(shell: ShellController): String? =
+        (shell.focusedHero() as HeroSubject.Item).item.availability
 
     private fun tile(key: String, title: String) = ShelfGame(
         id = key,

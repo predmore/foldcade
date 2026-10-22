@@ -349,6 +349,35 @@ class SessionStore(private val prefs: SharedPreferences) : SaveMarks {
         prefs.edit().putString(KEY_MOONLIGHT_PINS, raw).apply()
     }
 
+    /** Moonlight's computer names by host UUID, as its shortcuts last gave them. */
+    fun moonlightHostNames(): Map<String, String> {
+        val raw = prefs.getString(KEY_MOONLIGHT_HOSTS, null)
+        if (raw.isNullOrBlank()) return emptyMap()
+        return raw.split(PIN_RECORD).mapNotNull { record ->
+            val bits = record.split(PIN_FIELD)
+            if (bits.size != 2 || bits[0].isBlank() || bits[1].isBlank()) null else bits[0] to bits[1]
+        }.toMap()
+    }
+
+    fun setMoonlightHostNames(names: Map<String, String>) {
+        val raw = names.entries.joinToString(PIN_RECORD) { (uuid, name) ->
+            listOf(uuid, name).joinToString(PIN_FIELD) { it.replace(PIN_FIELD, " ").replace(PIN_RECORD, " ") }
+        }
+        prefs.edit().putString(KEY_MOONLIGHT_HOSTS, raw).apply()
+    }
+
+    /**
+     * This device's GameStream client id: 16 hex digits, made once. Hosts see it
+     * when Foldcade asks them about themselves. It is not Moonlight's.
+     */
+    fun gameStreamClientId(): String {
+        prefs.getString(KEY_GAMESTREAM_CLIENT, null)?.takeIf { GAMESTREAM_CLIENT.matches(it) }?.let { return it }
+        val random = java.security.SecureRandom()
+        val made = buildString { repeat(16) { append("0123456789abcdef"[random.nextInt(16)]) } }
+        prefs.edit().putString(KEY_GAMESTREAM_CLIENT, made).apply()
+        return made
+    }
+
     /**
      * The DroidDeck games Foldcade last read from Android's pinned shortcuts.
      * They fill the shelf at start, so DroidDeck tiles keep their names before Android answers again.
@@ -429,6 +458,9 @@ class SessionStore(private val prefs: SharedPreferences) : SaveMarks {
         private const val SAVE_AWAITS_LOAD_PREFIX = "save_awaits_load:"
         private const val CORES_FOLDER_PREFIX = "retroarch_cores_folder:"
         private const val KEY_MOONLIGHT_PINS = "moonlight_pins"
+        private const val KEY_MOONLIGHT_HOSTS = "moonlight_hosts"
+        private const val KEY_GAMESTREAM_CLIENT = "gamestream_client_id"
+        private val GAMESTREAM_CLIENT = Regex("[0-9a-f]{16}")
         private const val KEY_DROIDDECK_PINS = "droiddeck_pins"
         private const val PIN_FIELD = "\u001f"
         private const val PIN_RECORD = "\u001e"

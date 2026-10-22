@@ -3659,8 +3659,9 @@ private fun TileStatus(
     val motion = LocalFoldTheme.current.theme.motion
     val theme = foldTheme()
     val tile = theme.style.tile
-    // A paused game is waiting, not working, so its mark holds still.
-    val busy = downloading || (activity != null && activity !is TileActivity.Synced && activity != TileActivity.Paused)
+    // A paused game, or one its computer is streaming, is waiting, not working, so its mark holds still.
+    val waiting = activity == TileActivity.Paused || activity is TileActivity.OnHost
+    val busy = downloading || (activity != null && activity !is TileActivity.Synced && !waiting)
     val breath = if (busy && !motion.reduced(animatorScale)) {
         rememberInfiniteTransition(label = "busy").animateFloat(
             initialValue = 0.35f,
@@ -3707,7 +3708,7 @@ private fun TileStatus(
                 R.drawable.ic_badge_sync to theme.muted
             }
             activity == TileActivity.Syncing -> R.drawable.ic_badge_sync to theme.focus
-            activity == TileActivity.Paused -> R.drawable.ic_badge_paused to theme.focus
+            waiting -> R.drawable.ic_badge_paused to theme.focus
             busy -> R.drawable.ic_badge_cloud to theme.focus
             focused -> R.drawable.ic_badge_cloud to theme.onBackground
             else -> R.drawable.ic_badge_cloud to theme.muted

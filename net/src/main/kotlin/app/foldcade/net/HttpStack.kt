@@ -12,6 +12,7 @@ import java.time.Duration
  * one never stops another:
  * - RomM's client follows its origin and its cleartext rule.
  * - [PublicHttps] reaches a fixed list of artwork hosts over HTTPS only.
+ * - [LanHttp] reaches computers on the local network and follows no redirect.
  */
 object HttpStack {
     /**
@@ -24,13 +25,14 @@ object HttpStack {
         readTimeout: Duration,
         writeTimeout: Duration,
         followSslRedirects: Boolean,
+        followRedirects: Boolean = true,
         network: List<Interceptor> = emptyList(),
         application: List<Interceptor> = emptyList(),
     ): OkHttpClient = OkHttpClient.Builder()
         .connectTimeout(connectTimeout)
         .readTimeout(readTimeout)
         .writeTimeout(writeTimeout)
-        .followRedirects(true)
+        .followRedirects(followRedirects)
         .followSslRedirects(followSslRedirects)
         .apply {
             network.forEach { addNetworkInterceptor(it) }

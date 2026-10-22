@@ -19,6 +19,9 @@ sealed interface TileActivity {
 
     /** The game is still open in its player, behind Home. A brings it back where it was. */
     data object Paused : TileActivity
+
+    /** The computer [host] is streaming this game now. A streams it again where it is. */
+    data class OnHost(val host: String) : TileActivity
 }
 
 /** How a finished sync reads. Only [Synced] and [KeptBoth] earn the check. */
@@ -40,6 +43,7 @@ fun activityLine(activity: TileActivity): String = when (activity) {
     TileActivity.Checking -> Copy.checkingDownload
     TileActivity.Syncing -> Copy.syncingSaves
     TileActivity.Paused -> Copy.paused
+    is TileActivity.OnHost -> "Running on ${activity.host}"
     is TileActivity.Synced -> when (activity.mark) {
         SyncMark.Synced -> Copy.savesSynced
         SyncMark.KeptBoth -> Copy.savesKeptBoth

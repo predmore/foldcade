@@ -18,7 +18,15 @@ Pins update at startup, when you return to Foldcade, and after creating a shortc
 
 Press **A** to stream on the top screen or **X** on the bottom. The other screen remains available to Foldcade. Your computer must be reachable.
 
-Saves stay on the computer or with the game's cloud service; Foldcade does not sync them through RomM. See the shared [artwork setup](README.md#artwork) for more art.
+Moonlight wakes a sleeping computer when it can, asks before quitting a different game that is running, and resumes the same one.
+
+Saves stay on the computer or with the game's cloud service; Foldcade does not sync them through RomM.
+
+## Art and status
+
+Each game shows the box art Moonlight keeps for it, the same art as in Moonlight's game list, with no key or account. A game Moonlight has not shown yet uses the shared [artwork setup](README.md#artwork) instead; open its computer in Moonlight once to fetch the rest.
+
+While Home is shown, Foldcade asks each of Moonlight's computers on your network how it is. The top screen names the computer the game is on, or says it is offline. With Sunshine, the game the computer is streaming reads **Running on** that computer, and its tile shows the paused mark. This works on the same network without pairing, and Foldcade asks each computer nothing else.
 
 ## Remove or restore a game
 

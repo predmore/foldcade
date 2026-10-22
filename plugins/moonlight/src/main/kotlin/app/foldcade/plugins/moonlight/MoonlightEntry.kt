@@ -18,9 +18,10 @@ import java.util.Locale
 import java.util.UUID
 
 /**
- * Moonlight platform, player, and library.
+ * Moonlight platform, player, library, and box art.
  * Pairing and the host's app list stay inside Moonlight. This entry does not
- * pair, and it does not open Moonlight's database.
+ * pair, and it does not open Moonlight's database. [art] reads only the
+ * posters Moonlight serves to other apps.
  *
  * This bundled entry is licensed under MIT.
  */
@@ -30,10 +31,12 @@ class MoonlightEntry : PluginEntry {
 
     val player: MoonlightPlayer = MoonlightPlayer()
     val library: MoonlightLibrary = MoonlightLibrary()
+    val art: MoonlightArt = MoonlightArt(library)
 
     override val platforms: List<Platform> = listOf(MoonlightPlatform)
     override val players: List<Player> = listOf(player)
     override val libraries = listOf(library)
+    override val metadataProviders = listOf(art)
 }
 
 /**
