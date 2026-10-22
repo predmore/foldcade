@@ -185,7 +185,7 @@ class AzaharPlayerTest {
         assertEquals(
             listOf(
                 SaveFolderPart("data", "$root/title/00040000/001d1900/data"),
-                SaveFolderPart("extdata", "$root/extdata/00000000/00001d19"),
+                SaveFolderPart("extdata", "$root/extdata/00000000/00001D19"),
             ),
             AzaharPlayer().saveFolders(AzaharPlayer.TITLE_SLOT, "Luigi's Mansion (USA).cci", header),
         )

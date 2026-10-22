@@ -199,7 +199,8 @@ fun titleSaveFolders(titleId: Long): List<SaveFolderPart> {
     val low = titleId.toInt()
     return listOf(
         SaveFolderPart(name = "data", path = "$SDMC_ROOT/title/%08x/%08x/data".format(high, low)),
-        SaveFolderPart(name = "extdata", path = "$SDMC_ROOT/extdata/00000000/%08x".format(low ushr 8)),
+        // Upper case, as Azahar's GetExtSaveDataPath names it; the title's folders are lower case.
+        SaveFolderPart(name = "extdata", path = "$SDMC_ROOT/extdata/00000000/%08X".format(low ushr 8)),
     )
 }
 
