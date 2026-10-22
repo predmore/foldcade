@@ -192,7 +192,7 @@ The soft light behind marks and around focus.
 | `glow.focusRim` | 0.66 | Where it starts when focused |
 | `glow.restPeak` | 0 | Glow strength at rest |
 | `glow.focusPeak` | 1 | Glow strength when focused |
-| `glow.heroPeak` | 0.45 | The light behind a lone cover or mark in the hero |
+| `glow.heroPeak` | 0 | The light behind a lone cover or mark in the hero. Afterglow draws none |
 | `glow.markLightTop` | 0.12 | Centre of the light inside a mark's tile, from its top, share of the tile |
 | `glow.markLightReach` | 0.85 | Its reach, share of the tile's width |
 | `glow.markLightPeak` | 0.34 | Its strength |

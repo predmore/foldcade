@@ -1750,16 +1750,17 @@ private fun HeroArt(
     val accent = glyph?.accent ?: theme.focus
     val loaded = cover?.let { rememberCoverPainter(app, it, COVER_PX) }
     // A logo, or a box beside its title screen, takes the width it needs. The game's own
-    // art is behind them, so they draw no glow. A lone box or mark stays in its glowing square.
+    // art is behind them, so they draw no glow. A lone box or mark stays in its square, lit
+    // from behind when the theme's glow.heroPeak asks for it (Afterglow's is 0).
     val staged = logo != null || (loaded != null && screenShot != null)
     Box(
         Modifier
             .fillMaxHeight()
             .then(if (staged) Modifier.fillMaxWidth() else Modifier.aspectRatio(1f))
             .drawBehind {
-                if (staged) return@drawBehind
-                val reach = size.minDimension * design.metrics.heroArtFraction
                 val peak = design.glow.heroPeak
+                if (staged || peak <= 0f) return@drawBehind
+                val reach = size.minDimension * design.metrics.heroArtFraction
                 drawCircle(
                     brush = Brush.radialGradient(
                         colorStops = arrayOf(
@@ -2118,7 +2119,7 @@ private const val LOGO_PX = 800
 private const val SCREEN_PX = 1024
 private const val LOGO_WIDTH = 0.6f
 private const val LOGO_HEIGHT = 0.7f
-/** The hero glow's middle stop, as a share of its peak (`glow.heroPeak`). */
+/** The hero glow's middle stop, as a share of its peak (`glow.heroPeak`, when a theme sets one). */
 private const val HERO_GLOW_SHOULDER = 0.16f / 0.45f
 
 /** A name being typed on the top screen reads a size up from the hero's title. */

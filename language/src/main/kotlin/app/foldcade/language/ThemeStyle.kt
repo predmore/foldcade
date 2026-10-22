@@ -317,7 +317,7 @@ class ThemeGlow internal constructor(reader: ThemeStyleReader) {
     val focusRim = reader.number("glow", "focusRim", .66f, TokenDomain.Rim)
     val restPeak = reader.fraction("glow", "restPeak", .22f, TokenRole.Glow)
     val focusPeak = reader.fraction("glow", "focusPeak", 1f, TokenRole.Glow)
-    val heroPeak = reader.fraction("glow", "heroPeak", .45f, TokenRole.Glow)
+    val heroPeak = reader.fraction("glow", "heroPeak", 0f, TokenRole.Glow)
 
     /** The light behind a mark on its tile: its centre, from the tile's top, as a share of the tile. */
     val markLightTop = reader.number("glow", "markLightTop", .12f, TokenDomain.Any)
