@@ -212,6 +212,18 @@ class SessionStore(private val prefs: SharedPreferences) : SaveMarks {
     }
 
     /**
+     * Players Foldcade started a game in that may still hold it. Kept across
+     * restarts of Foldcade, since the player can outlive it, so the next start
+     * there replaces that game instead of opening a second copy of the player.
+     */
+    fun playersHoldingGames(): Set<String> = stringSet(KEY_PLAYERS_HOLDING_GAMES)
+
+    fun setPlayersHoldingGames(packages: Set<String>) {
+        if (packages == playersHoldingGames()) return
+        prefs.edit().putStringSet(KEY_PLAYERS_HOLDING_GAMES, packages).commit()
+    }
+
+    /**
      * True while a save was written for players keyed [saveFolderKey] and none
      * of them has started since. A player still holding that game must start fresh.
      */
@@ -426,6 +438,7 @@ class SessionStore(private val prefs: SharedPreferences) : SaveMarks {
         private const val KEY_USAGE_PROMPTED = "usage_prompted"
         private const val KEY_RETROARCH_CORES_OFFERED = "retroarch_cores_offered"
         private const val LAST_START_PREFIX = "last_player_start:"
+        private const val KEY_PLAYERS_HOLDING_GAMES = "players_holding_games"
         private const val SAVE_AWAITS_LOAD_PREFIX = "save_awaits_load:"
         private const val CORES_FOLDER_PREFIX = "retroarch_cores_folder:"
         private const val KEY_MOONLIGHT_PINS = "moonlight_pins"

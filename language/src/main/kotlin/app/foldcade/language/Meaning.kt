@@ -130,11 +130,10 @@ fun meaningOf(
     if (repeatCount > 0 && (keyCode in shoulderKeys || keyCode == roles.options)) {
         return null
     }
-    // Y puts a held tile down as confirm does, so Y then Y lifts and Y drops without moving a
-    // thumb, unless calibration made Y the back key: then it cancels, as the hint says. A held
-    // tile drops once per press.
-    val yDrops = keyCode == KeyEvent.KEYCODE_BUTTON_Y && faces.backKey != KeyEvent.KEYCODE_BUTTON_Y
-    if (homeKeys == HomeKeys.Moving && (yDrops || keyCode == faces.confirmKey)) {
+    // The options button puts a held tile down as confirm does, so options then options lifts
+    // and options drops without moving a thumb. That is Y unless calibration took Y, and a Y
+    // made the back key cancels, as the hint says. A held tile drops once per press.
+    if (homeKeys == HomeKeys.Moving && (keyCode == roles.options || keyCode == faces.confirmKey)) {
         return if (repeatCount == 0) Meaning.Activate else null
     }
     val bottomScreens = homeKeys == HomeKeys.Idle || homeKeys == HomeKeys.AllLibrary ||
