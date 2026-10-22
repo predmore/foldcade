@@ -30,6 +30,9 @@ jobs:
           BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
         run: bash .github/release/check-version-bump.sh
 
+      - name: Pre-release publish must not leave a draft
+        run: bash .github/release/publish-prerelease.test.sh
+
   test:
     name: testDebugUnitTest
     runs-on: ubuntu-24.04
