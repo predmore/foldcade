@@ -12,17 +12,22 @@ import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.long
 import org.junit.After
+import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
+import java.io.ByteArrayOutputStream
 import java.nio.file.Files
 import java.time.Duration
 import java.time.Instant
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
+import java.util.zip.ZipEntry
+import java.util.zip.ZipOutputStream
 
 class RommClientTest {
     private lateinit var server: MockRomm
@@ -779,6 +784,35 @@ class RommClientTest {
         assertEquals(listOf("local"), trashed())
         val confirm = server.recorded.single { it.path == "/api/saves/99/downloaded" }
         assertTrue(confirm.body.toString(Charsets.UTF_8).contains(md5Hex(SERVER_SAVE.toByteArray())))
+    }
+
+    @Test
+    fun aZipSaveIsCheckedByRommsHashOfItsFilesWhateverItIsNamed() {
+        // Foldcade keeps every slot as `<slot>.sav`, and a 3DS save there is a zip.
+        val zip = ByteArrayOutputStream().also { out ->
+            ZipOutputStream(out).use { zip ->
+                zip.putNextEntry(ZipEntry("data/00000001/00.SAV"))
+                zip.write(SERVER_SAVE.toByteArray())
+                zip.closeEntry()
+            }
+        }.toByteArray()
+        val serverHash = rommSaveHash(zip)!!
+        assertNotEquals(md5Hex(zip), serverHash)
+        syncRoutes(operation("download", saveId = 99, serverHash = serverHash))
+        server.route("GET", "/api/saves/99/content") { exchange, _ ->
+            bytes(exchange, 200, zip)
+        }
+        val save = localSave("local")
+        val ledger = SaveLedger(dir.resolve("ledger.json"))
+        ledger.markSynced("autosave", md5Hex("local".toByteArray()), "azahar")
+        runClient(token = { "rmm_test" }) { client ->
+            val report = client.syncSaves("device-1", listOf(save), destination = { save.file }, ledger = ledger)
+            assertEquals(listOf(save.file), report.downloaded)
+        }
+        assertArrayEquals(zip, Files.readAllBytes(save.file))
+        assertEquals(md5Hex(zip), ledger.slot("autosave")!!.syncedHash)
+        val confirm = server.recorded.single { it.path == "/api/saves/99/downloaded" }
+        assertTrue(confirm.body.toString(Charsets.UTF_8).contains(serverHash))
     }
 
     @Test

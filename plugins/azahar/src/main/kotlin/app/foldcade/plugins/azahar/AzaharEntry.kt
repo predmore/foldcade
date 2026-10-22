@@ -12,6 +12,7 @@ import app.foldcade.api.plugin.PlayerIntent
 import app.foldcade.api.plugin.PluginEntry
 import app.foldcade.api.plugin.PluginException
 import app.foldcade.api.plugin.SaveDeclaration
+import app.foldcade.api.plugin.SaveFolderPart
 import app.foldcade.api.plugin.SaveFolderHolder
 import app.foldcade.api.plugin.StartDisplay
 
@@ -74,9 +75,11 @@ enum class ExtensionAcceptance {
  * The intent is `ACTION_VIEW` with the game content URI. There is no path extra.
  * [activityClass] picks the component for the installed application id.
  *
- * Saves are one slot per title. The location is a content URI the user already
- * picked. A missing folder does not stop launch. Azahar keeps its own saves.
- * This type does not invent a directory and does not read private storage.
+ * Saves are one slot per title. The location is Azahar's user folder, a content
+ * URI the user already picked. The slot is the title's save data and extra data
+ * there, named from the title id in the game's header. A missing folder does not
+ * stop launch: Azahar keeps its own saves and none sync. This type does not
+ * invent a directory and does not read private storage.
  */
 class AzaharPlayer : Player, SaveFolderHolder {
     override val id: String = ID
@@ -100,6 +103,14 @@ class AzaharPlayer : Player, SaveFolderHolder {
     override fun saveDeclarations(game: Game): List<SaveDeclaration> {
         val location = saveLocation(saveFolder)
         return listOf(SaveDeclaration(slot = location.slot, locationUri = location.locationUri))
+    }
+
+    override val romHeaderSize: Int = NCSD_HEADER_SIZE
+
+    /** The title's folders, for a game whose header names its title. A `.zcci` does not, so it does not sync. */
+    override fun saveFolders(slot: String, romFileName: String, romHeader: ByteArray): List<SaveFolderPart>? {
+        if (slot != TITLE_SLOT) return null
+        return titleId(romHeader)?.let(::titleSaveFolders)
     }
 
     override fun launchIntent(request: LaunchRequest): PlayerIntent {
@@ -159,6 +170,41 @@ fun activityClass(packageName: String): String? = when (packageName) {
 const val VANILLA_PACKAGE: String = "org.azahar_emu.azahar"
 const val PLAY_PACKAGE: String = "io.github.lime3ds.android"
 const val EMULATION_ACTIVITY: String = "org.citra.citra_emu.activities.EmulationActivity"
+
+/** Bytes of a CCI's NCSD header, which hold its title id. */
+const val NCSD_HEADER_SIZE: Int = 0x200
+
+/**
+ * The title id in a CCI (NCSD) header, or null for any other file, such as a
+ * compressed `.zcci`. Per 3dbrew's NCSD page, the magic `NCSD` is at 0x100 and
+ * the media id, which is the game's title id, is at 0x108, little-endian.
+ */
+fun titleId(header: ByteArray): Long? {
+    if (header.size < 0x110) return null
+    if (String(header, 0x100, 4, Charsets.US_ASCII) != "NCSD") return null
+    var id = 0L
+    for (i in 7 downTo 0) id = (id shl 8) or (header[0x108 + i].toLong() and 0xff)
+    return id.takeIf { it != 0L }
+}
+
+/**
+ * Where Azahar keeps a title's save, below its user folder: the save data, and
+ * the extra data most games keep under their unique id, the title id's low
+ * word without its last byte. Both sit on the emulated SD card, whose ids
+ * Azahar keeps at zeros. A zip of them holds `data/` and `extdata/`, the
+ * layout Argosy uploads to RomM.
+ */
+fun titleSaveFolders(titleId: Long): List<SaveFolderPart> {
+    val high = (titleId ushr 32).toInt()
+    val low = titleId.toInt()
+    return listOf(
+        SaveFolderPart(name = "data", path = "$SDMC_ROOT/title/%08x/%08x/data".format(high, low)),
+        // Upper case, as Azahar's GetExtSaveDataPath names it; the title's folders are lower case.
+        SaveFolderPart(name = "extdata", path = "$SDMC_ROOT/extdata/00000000/%08X".format(low ushr 8)),
+    )
+}
+
+private const val SDMC_ROOT = "sdmc/Nintendo 3DS/00000000000000000000000000000000/00000000000000000000000000000000"
 
 /**
  * Where the title save lives, if the user has already pointed at that folder.

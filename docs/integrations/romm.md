@@ -61,7 +61,7 @@ Downloaded games with a cached catalog can be played offline. New downloads need
 
 ## Save sync
 
-Save sync supports **melonDS `.sav` files** and **RetroArch `.srm` battery saves** with RomM **5.4.0 or newer**.
+Save sync supports **melonDS `.sav` files**, **RetroArch `.srm` battery saves** and **Azahar 3DS saves** with RomM **5.4.0 or newer**.
 
 For melonDS:
 
@@ -73,9 +73,11 @@ Keep filenames consistent: `Puzzle.nds` uses `Puzzle.sav`.
 
 For RetroArch, choose `RetroArch/saves` in **Foldcade Settings › Emulators › RetroArch** and keep RetroArch's default save layout; see [RetroArch saves](retroarch.md#saves). Every system shares that one folder.
 
+For Azahar, choose Azahar's user folder, the one that holds `sdmc`, `nand` and `config`, in **Foldcade Settings › Emulators › Azahar** or at the save-folder prompt. Foldcade finds each game's save there from the title id in its `.cci` header, and syncs the save data and the game's extra data together as one zip, in the layout Argosy also uploads. A `.zcci` has no title id Foldcade can read, so its saves stay with Azahar.
+
 A game that is also in a [local folder](local-games.md) syncs through RomM too, whichever copy opens. Its first launch after the two become one tile hands the emulator's save to RomM as progress, so a save made from the folder is kept. If another device saved since, Foldcade asks which to play and keeps both.
 
-Azahar's save-folder setting does not yet enable title-save transfer. Other emulators and sources manage their own saves. Save-state sync is not implemented.
+Other emulators and sources manage their own saves. Save-state sync is not implemented.
 
 Offline changes stay on the device for a later sync. When copies conflict, Foldcade asks which to play and keeps both.
 
@@ -84,6 +86,6 @@ Offline changes stay on the device for a later sync. When copies conflict, Foldc
 - **Cannot connect:** Try the address from the Thor, check network access, and get a new code or check the token's permissions.
 - **Missing game:** Check RomM's scan and account access, then restart Foldcade. If it is already in All, check [Home placement](README.md#a-game-is-in-all-but-missing-from-home).
 - **Will not launch:** Check the [emulator and format](emulators.md).
-- **Saves do not sync:** Check the server version and shared melonDS directory. **Not now** at the save-folder prompt allows play with the emulator's own saves.
+- **Saves do not sync:** Check the server version, the shared melonDS directory, and that Azahar's save folder is its user folder. **Not now** at the save-folder prompt allows play with the emulator's own saves.
 
 [All integration guides](README.md)

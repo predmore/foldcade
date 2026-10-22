@@ -42,7 +42,7 @@ Prefer decrypted `.cci` or `.zcci` games. `.3ds` is best-effort; Foldcade does n
 
 Both regular and Google Play builds are recognized; regular has priority when both are installed.
 
-Azahar keeps its own saves. Foldcade's save-folder setting does not yet enable title-save transfer or 3DS save sync.
+For [RomM save sync](romm.md#save-sync), choose Azahar's user folder, the one that holds `sdmc`, `nand` and `config`, in **Foldcade Settings › Emulators › Azahar**. Foldcade moves a game's save data and extra data there before launch and reads them back when you return. Choose **Not now** at the save-folder prompt to play with Azahar's own saves.
 
 ## melonDS: Nintendo DS and DSi
 

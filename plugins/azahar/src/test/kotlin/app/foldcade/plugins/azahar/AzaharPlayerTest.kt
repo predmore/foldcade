@@ -6,6 +6,7 @@ import app.foldcade.api.plugin.LaunchFlag
 import app.foldcade.api.plugin.LaunchRequest
 import app.foldcade.api.plugin.LaunchTarget
 import app.foldcade.api.plugin.PluginException
+import app.foldcade.api.plugin.SaveFolderPart
 import app.foldcade.api.plugin.StartDisplay
 import java.util.ServiceLoader
 import org.junit.Assert.assertEquals
@@ -171,5 +172,34 @@ class AzaharPlayerTest {
         assertEquals(AzaharPlayer.TITLE_SLOT, declared.slot)
         assertEquals(tree, declared.locationUri)
         assertFalse(saveLocation(tree).askForFolder)
+    }
+
+    @Test
+    fun aCciNamesItsTitlesSaveDataAndExtraData() {
+        // The NCSD header of Luigi's Mansion (USA), title 0004000000 1D1900.
+        val header = ByteArray(NCSD_HEADER_SIZE)
+        "NCSD".toByteArray().copyInto(header, 0x100)
+        byteArrayOf(0x00, 0x19, 0x1d, 0x00, 0x00, 0x00, 0x04, 0x00).copyInto(header, 0x108)
+        assertEquals(0x00040000001d1900L, titleId(header))
+        val root = "sdmc/Nintendo 3DS/00000000000000000000000000000000/00000000000000000000000000000000"
+        assertEquals(
+            listOf(
+                SaveFolderPart("data", "$root/title/00040000/001d1900/data"),
+                SaveFolderPart("extdata", "$root/extdata/00000000/00001D19"),
+            ),
+            AzaharPlayer().saveFolders(AzaharPlayer.TITLE_SLOT, "Luigi's Mansion (USA).cci", header),
+        )
+        assertEquals(NCSD_HEADER_SIZE, AzaharPlayer().romHeaderSize)
+        assertNull(AzaharPlayer().saveFolders("other", "Luigi's Mansion (USA).cci", header))
+    }
+
+    @Test
+    fun aFileWithoutAnNcsdHeaderHasNoSaveFolders() {
+        assertNull(titleId(ByteArray(NCSD_HEADER_SIZE)))
+        assertNull(titleId(ByteArray(0x10)))
+        val zeroId = ByteArray(NCSD_HEADER_SIZE).also { "NCSD".toByteArray().copyInto(it, 0x100) }
+        assertNull(titleId(zeroId))
+        assertNull(AzaharPlayer().saveFolders(AzaharPlayer.TITLE_SLOT, "Game.zcci", ByteArray(0)))
+        assertNull(AzaharPlayer().saveFileName(AzaharPlayer.TITLE_SLOT, "Game.cci"))
     }
 }

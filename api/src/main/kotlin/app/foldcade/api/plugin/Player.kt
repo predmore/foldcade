@@ -61,6 +61,25 @@ interface Player {
      */
     fun saveFileName(slot: String, romFileName: String): String? = null
 
+    /**
+     * How many bytes from the start of the game file the shell reads and passes
+     * to [saveFolders]. Zero reads none. Added in API minor 11.
+     */
+    val romHeaderSize: Int
+        get() = 0
+
+    /**
+     * The folders this player keeps [slot] in, below the folder
+     * [SaveDeclaration.locationUri], for a game file named [romFileName] that
+     * starts with [romHeader]: [romHeaderSize] bytes, or fewer for a shorter file.
+     * The shell moves them together as one zip, with the files below each
+     * [SaveFolderPart.path] under [SaveFolderPart.name], and reads and writes
+     * nothing else. Placing a zip makes each folder it holds match it, and leaves
+     * a folder it does not hold as it is. Null means the slot is not kept as
+     * folders. The shell asks for folders before [saveFileName]. Added in API minor 11.
+     */
+    fun saveFolders(slot: String, romFileName: String, romHeader: ByteArray): List<SaveFolderPart>? = null
+
     /** Builds the launch intent from [request]. Does not touch the network or disk. */
     fun launchIntent(request: LaunchRequest): PlayerIntent
 }
@@ -76,6 +95,16 @@ interface Player {
 data class SaveDeclaration(
     val slot: String,
     val locationUri: String?,
+)
+
+/**
+ * One folder of a save kept as folders. [path] is below the player's save
+ * folder, with folders separated by `/`. [name] is the folder the zip keeps
+ * its files under, one name with no `/`. Added in API minor 11.
+ */
+data class SaveFolderPart(
+    val name: String,
+    val path: String,
 )
 
 /**
