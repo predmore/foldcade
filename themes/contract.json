@@ -57,7 +57,7 @@
     "glow.focusRim": {"kind":"number","min":0.0,"below":1.0,"afterglow":0.66},
     "glow.restPeak": {"kind":"number","role":"glow","min":0.0,"max":1.0,"afterglow":0.0},
     "glow.focusPeak": {"kind":"number","role":"glow","min":0.0,"max":1.0,"afterglow":1.0},
-    "glow.heroPeak": {"kind":"number","role":"glow","min":0.0,"max":1.0,"afterglow":0.45},
+    "glow.heroPeak": {"kind":"number","role":"glow","min":0.0,"max":1.0,"afterglow":0.0},
     "glow.markLightTop": {"kind":"number","afterglow":0.12},
     "glow.markLightReach": {"kind":"number","above":0.0,"afterglow":0.85},
     "glow.markLightPeak": {"kind":"number","role":"glow","min":0.0,"max":1.0,"afterglow":0.34},
