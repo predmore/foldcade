@@ -18,6 +18,9 @@ import androidx.media3.common.C
 import androidx.media3.common.MediaItem
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
+import androidx.media3.common.util.ExperimentalApi
+import androidx.media3.common.util.UnstableApi
+import androidx.annotation.OptIn
 import androidx.media3.exoplayer.ExoPlayer
 import app.foldcade.Displays
 import app.foldcade.SessionStore
@@ -70,6 +73,11 @@ class HomeMusic(
     private val duck = DuckLatch()
     private var fadingOut = false
     private val catalog: List<MusicTrack> = loadCatalog()
+    private val decoded = DecodedLoop(app.cacheDir)
+    /** Changes with each install, so an asset's decoded copy is made again after an update. */
+    private val installStamp: Long by lazy {
+        runCatching { app.packageManager.getPackageInfo(app.packageName, 0).lastUpdateTime }.getOrDefault(0L)
+    }
 
     private val volumeReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
@@ -292,6 +300,7 @@ class HomeMusic(
         )
     }
 
+    @OptIn(ExperimentalApi::class, UnstableApi::class)
     private fun ensurePlayer(): ExoPlayer? {
         player?.let { return it }
         val playable = resolvedPlayable()
@@ -299,7 +308,8 @@ class HomeMusic(
             Log.e(TAG, "Home music asset is not in the apk. Rebuild so renderHomeMusic can package it.")
             return null
         }
-        val created = ExoPlayer.Builder(app).build()
+        // The playback thread sleeps until the audio sink wants more, not on a fixed short tick.
+        val created = ExoPlayer.Builder(app).experimentalSetDynamicSchedulingEnabled(true).build()
         created.setAudioAttributes(
             AudioAttributes.Builder()
                 .setUsage(C.USAGE_MEDIA)
@@ -412,7 +422,8 @@ class HomeMusic(
     private fun assetPlayable(track: MusicTrack): Playable? {
         val file = packagedHomeMusicFile(track.file, ::assetExists)
         if (!assetExists(file)) return null
-        return Playable(file, MediaItem.fromUri("asset:///$file"))
+        val source = DecodedLoop.Source("asset:$file:$installStamp", DecodedLoop.asset { app.assets.openFd(file) })
+        return Playable(file, decodedOr(source, Uri.parse("asset:///$file")))
     }
 
     /** Theme audio is a file this process wrote under its own cache. */
@@ -420,8 +431,15 @@ class HomeMusic(
         val file = runCatching { File(track.file).canonicalFile }.getOrNull() ?: return null
         val cache = runCatching { app.cacheDir.canonicalFile }.getOrNull() ?: return null
         if (file.parentFile != cache || !file.isFile) return null
-        return Playable(file.absolutePath, MediaItem.fromUri(Uri.fromFile(file)))
+        val source = DecodedLoop.Source("file:${file.absolutePath}:${file.length()}:${file.lastModified()}") {
+            it.setDataSource(file.absolutePath)
+        }
+        return Playable(file.absolutePath, decodedOr(source, Uri.fromFile(file)))
     }
+
+    /** The loop's decoded copy once it is made, else [encoded]. The key stays the track's, so a copy that lands mid-play does not restart it. */
+    private fun decodedOr(source: DecodedLoop.Source, encoded: Uri): MediaItem =
+        MediaItem.fromUri(decoded.ready(source)?.let(Uri::fromFile) ?: encoded)
 
     private fun reloadIfTrackChanged() {
         val existing = player ?: return

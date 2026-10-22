@@ -398,16 +398,20 @@ private fun sceneLive(app: FoldcadeApp, scene: app.foldcade.language.ThemeScene?
     // drawn again each time focus moves.
     val readsAccent = scene != null && listOf("accentR", "accentG", "accentB").any(scene::reads)
     val readsMove = scene?.reads("sinceMove") == true
-    return remember(red, green, blue, status, moved, readsAccent, readsMove) {
+    // The clock and the time zone cost more than the rest of a frame's inputs, and few scenes read them.
+    val readsHour = scene?.reads("hour") == true
+    return remember(red, green, blue, status, moved, readsAccent, readsMove, readsHour) {
         {
-            val now = java.time.LocalTime.now()
+            val hour = if (!readsHour) UNREAD_HOUR else java.time.LocalTime.now().let { now ->
+                now.hour + now.minute / 60f + now.second / 3600f
+            }
             // Read only by a scene that uses it, so moving the cursor redraws no other scene.
             val since = if (!readsMove) null else moved.longValue.takeIf { it != Long.MIN_VALUE }?.let { (SystemClock.elapsedRealtime() - it) / 1000f }
             SceneLive(
                 accentR = if (readsAccent) red.value else 1f,
                 accentG = if (readsAccent) green.value else 1f,
                 accentB = if (readsAccent) blue.value else 1f,
-                hour = now.hour + now.minute / 60f + now.second / 3600f,
+                hour = hour,
                 battery = status.value.batteryPercent.coerceIn(0, 100) / 100f,
                 charging = status.value.charging,
                 sinceMove = (since ?: SCENE_SINCE_MOVE_MAX).coerceIn(0f, SCENE_SINCE_MOVE_MAX),
@@ -415,6 +419,9 @@ private fun sceneLive(app: FoldcadeApp, scene: app.foldcade.language.ThemeScene?
         }
     }
 }
+
+/** What [SceneLive.hour] holds for a scene that never reads it. */
+private val UNREAD_HOUR = SceneLive().hour
 
 /** The light behind the focused item: its app's or mark's accent, a collection's colour, else `focus`. */
 private fun sceneAccent(app: FoldcadeApp, paint: FoldPaint): Color {
