@@ -224,8 +224,8 @@ Durations in ms, scales, distances, and cubic-bézier curves `[x1, y1, x2, y2]`.
 | `motion.sceneDepth` | 0.35 | Wide art's share of that travel |
 | `motion.sceneOverscan` | 1.05 | How much larger wide art is drawn |
 | `motion.sceneSettleFrom` | 1.1 | Wide art's starting scale |
-| `motion.tiltPx` | 18 | How far the top screen's backdrop slides when the Thor moves |
-| `motion.tiltDegrees` | 6 | The lean that takes nearly all of it |
+| `motion.tiltPx` | 18 | How far the top screen's backdrop slides when the Thor tips, turns, or rolls |
+| `motion.tiltDegrees` | 3 | The lean that takes nearly all of it |
 | `motion.tiltArtShare` | 0.4 | Hero art's share of that slide |
 | `motion.durationTiltRecenter` | 2400 | How long a held lean takes to become rest |
 | `motion.scaleLift` | 1.1 | A held tile |
