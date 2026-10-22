@@ -18,6 +18,7 @@ import app.foldcade.net.LanHttp
 import app.foldcade.plugins.moonlight.MoonlightApp
 import app.foldcade.plugins.moonlight.MoonlightLibrary
 import app.foldcade.plugins.moonlight.MoonlightPlayer
+import app.foldcade.plugins.moonlight.Poster
 import app.foldcade.plugins.moonlight.moonlightApp
 import app.foldcade.plugins.moonlight.moonlightPosterUri
 import java.io.File
@@ -48,6 +49,8 @@ internal class MoonlightStreams(
     private val library: () -> MoonlightLibrary?,
     /** Puts the library's catalog back on the shelf. Off the main thread. */
     private val refreshShelf: suspend () -> Unit,
+    /** The computer [hostKey]'s box art may be found now, or is gone: ask again. Main thread. */
+    private val refreshArt: (hostKey: String) -> Unit,
 ) {
     @Volatile
     private var identity: GameStreamIdentity? = null
@@ -59,7 +62,12 @@ internal class MoonlightStreams(
     private var paired: List<PairedStreamHost> = emptyList()
 
     private var pairing: Job? = null
-    private val listing = Mutex()
+
+    /** Pairings, and the apps they list, change one at a time. */
+    private val changing = Mutex()
+
+    /** Paired computers that listed their apps since Foldcade started. */
+    private val listedOnce = java.util.Collections.newSetFromMap(java.util.concurrent.ConcurrentHashMap<String, Boolean>())
 
     val hosts: MoonlightHosts = MoonlightHosts(
         context = context,
@@ -118,7 +126,9 @@ internal class MoonlightStreams(
                     val me = identity ?: GameStreamIdentity.load().also(::use)
                     val steps = GameStreamPairing(me)
                     val pin = steps.newPin()
-                    withContext(Dispatchers.Main.immediate) { shell().present(pairHostDialog(name, pin, key, screen)) }
+                    val shown = withContext(Dispatchers.Main.immediate) { shell().present(pairHostDialog(name, pin, key, screen)) }
+                    // A code no one can see would hold the computer's pairing for five minutes.
+                    if (!shown) return@launch
                     steps.pair(client.pairLink(at.address, at.httpsPort), pin)
                 } catch (failure: GeneralSecurityException) {
                     Log.w("Foldcade", "GameStream pairing failed", failure)
@@ -141,7 +151,9 @@ internal class MoonlightStreams(
             }
             if (outcome is PairOutcome.Paired && at != null) {
                 val me = identity ?: return@launch
-                keep(paired.filter { it.key != key } + PairedStreamHost(at.uuid, name, at.httpsPort, outcome.serverCertificate), me)
+                changing.withLock {
+                    keep(paired.filter { it.key != key } + PairedStreamHost(at.uuid, name, at.httpsPort, outcome.serverCertificate), me)
+                }
             }
         }
     }
@@ -160,13 +172,15 @@ internal class MoonlightStreams(
     fun forget(key: String) {
         scope.launch {
             val me = identity ?: return@launch
-            keep(paired.filter { it.key != key }, me)
-            listing.withLock {
+            changing.withLock {
+                keep(paired.filter { it.key != key }, me)
                 val rest = store.listedStreamApps().filter { it.hostUuid.lowercase(Locale.ROOT) != key }
                 store.setListedStreamApps(rest)
                 library()?.replaceListed(rest)
+                listedOnce.remove(key)
+                File(artDir, key).deleteRecursively()
             }
-            File(artDir, key).deleteRecursively()
+            withContext(Dispatchers.Main.immediate) { refreshArt(key) }
             refreshShelf()
         }
     }
@@ -175,19 +189,20 @@ internal class MoonlightStreams(
      * Where [app]'s box art is: Moonlight's poster when it has one, else this
      * device's copy of the host's, fetched once from a paired computer. Off the main thread.
      */
-    suspend fun poster(app: MoonlightApp): String? {
-        moonlightPosterUri(app.hostUuid, app.appId).takeIf { moonlightPosterExists(context, it) }?.let { return it }
+    suspend fun poster(app: MoonlightApp): Poster {
+        moonlightPosterUri(app.hostUuid, app.appId).takeIf { moonlightPosterExists(context, it) }?.let { return Poster.At(it) }
         val key = app.hostUuid.lowercase(Locale.ROOT)
         val file = File(File(artDir, key), "${app.appId}.png")
-        if (file.isFile) return Uri.fromFile(file).toString()
-        val host = paired.firstOrNull { it.key == key } ?: return null
-        val at = hosts.lastAt(key) ?: return null
-        val bytes = client.boxArt(PairedHost(at.address, host.httpsPort, host.certificate), app.appId) ?: return null
+        if (file.isFile) return Poster.At(Uri.fromFile(file).toString())
+        val host = paired.firstOrNull { it.key == key } ?: return Poster.None
+        // Until the computer answers, its art is not known to be missing.
+        val at = hosts.lastAt(key) ?: return Poster.NotYet
+        val bytes = client.boxArt(PairedHost(at.address, host.httpsPort, host.certificate), app.appId) ?: return Poster.NotYet
         return withContext(Dispatchers.IO) {
             file.parentFile?.mkdirs()
             val temp = File(file.parentFile, "${app.appId}.tmp")
             temp.writeBytes(bytes)
-            if (temp.renameTo(file)) Uri.fromFile(file).toString() else null
+            if (temp.renameTo(file)) Poster.At(Uri.fromFile(file).toString()) else Poster.NotYet
         }
     }
 
@@ -211,18 +226,25 @@ internal class MoonlightStreams(
         withContext(Dispatchers.Main.immediate) { shell().setPairedHosts(keys) }
     }
 
-    /** A paired computer listed [apps]: they replace what it listed before. */
+    /**
+     * A paired computer listed [apps]: they replace what it listed before. The first
+     * list since start also means it answers, so art it could not give before is asked again.
+     */
     private suspend fun listed(host: PairedStreamHost, apps: List<HostApp>) {
-        if (paired.none { it.key == host.key }) return
-        listing.withLock {
+        val changed = changing.withLock {
+            // Forgotten while it was asked.
+            if (paired.none { it.key == host.key }) return
             val mine = apps.mapNotNull { moonlightApp(hostUuid = host.uuid, appId = it.id, label = it.title) }
-            val others = store.listedStreamApps().filter { it.hostUuid.lowercase(Locale.ROOT) != host.key }
-            val all = others + mine
-            if (all == store.listedStreamApps()) return
-            store.setListedStreamApps(all)
-            library()?.replaceListed(all)
+            val before = store.listedStreamApps()
+            val all = before.filter { it.hostUuid.lowercase(Locale.ROOT) != host.key } + mine
+            if (all != before) {
+                store.setListedStreamApps(all)
+                library()?.replaceListed(all)
+            }
+            all != before
         }
-        refreshShelf()
+        if (listedOnce.add(host.key) || changed) withContext(Dispatchers.Main.immediate) { refreshArt(host.key) }
+        if (changed) refreshShelf()
     }
 
     private fun moonlightInstalled(): Boolean = try {

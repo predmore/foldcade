@@ -1701,9 +1701,11 @@ class ShellController(
         else store.rommServerOrigin(reLoginRommId)?.let { rommServerLabel(reLoginRommId, it) },
     )
 
-    fun present(dialog: DialogState) {
-        if (model.dialog != null) return
+    /** Shows [dialog] unless another is open. True when it is shown. */
+    fun present(dialog: DialogState): Boolean {
+        if (model.dialog != null) return false
         model = model.copy(dialog = dialog)
+        return true
     }
 
     /** Drops a dialog without activating its button. Debug captures use this before opening a menu. */

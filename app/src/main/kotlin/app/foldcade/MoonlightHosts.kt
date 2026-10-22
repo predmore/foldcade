@@ -3,6 +3,7 @@ package app.foldcade
 import android.content.Context
 import android.net.nsd.NsdManager
 import android.net.nsd.NsdServiceInfo
+import android.os.Build
 import android.util.Log
 import app.foldcade.gamestream.GAMESTREAM_HTTPS_PORT
 import app.foldcade.gamestream.GameStreamClient
@@ -108,6 +109,9 @@ internal class MoonlightHosts(
 
     private var loop: Job? = null
     private var lastDiscovery = 0L
+
+    /** Searches in a row that left a known host missing. */
+    private var quietRounds = 0
     private val wake = Channel<Unit>(Channel.CONFLATED)
 
     /** One round, or one [locate], at a time. */
@@ -172,12 +176,15 @@ internal class MoonlightHosts(
         }
         val since = System.currentTimeMillis() - lastDiscovery
         val missing = known().keys - seen.keys
-        // Look again soon for a host that went quiet, and now and then for a new one.
-        if ((missing.isNotEmpty() && since > DISCOVER_EVERY_MS) || since > LOOK_AROUND_MS) {
+        // Look again soon for a host that went quiet, less often the longer it stays quiet,
+        // and now and then for a new one.
+        val quietWait = minOf(DISCOVER_EVERY_MS shl quietRounds, LOOK_AROUND_MS)
+        if ((missing.isNotEmpty() && since > quietWait) || since > LOOK_AROUND_MS) {
             search(known().filterKeys { it in missing }).forEach { (key, answer) ->
                 if (key !in seen) seen[key] = answer.first
                 remember(answer.first, answer.second, key)
             }
+            quietRounds = if ((known().keys - seen.keys).isEmpty()) 0 else (quietRounds + 1).coerceAtMost(3)
         }
         val wanted = known()
         val running = seen.mapValues { (key, info) -> info.runningAppId ?: pairedRunning(key) }
@@ -274,7 +281,11 @@ internal class MoonlightHosts(
         try {
             withTimeoutOrNull(DISCOVER_MS) {
                 for (service in found) {
-                    resolve(nsd, service)?.let(addresses::add)
+                    when (val answer = resolve(nsd, service)) {
+                        is Resolved.Done -> answer.address?.let(addresses::add)
+                        // Android 13 cannot stop a resolve, and refuses another until it ends.
+                        Resolved.Stuck -> break
+                    }
                 }
             }
         } finally {
@@ -283,27 +294,35 @@ internal class MoonlightHosts(
         return addresses.toList()
     }
 
-    /** Android resolves one service at a time, so each waits its turn. */
-    private suspend fun resolve(nsd: NsdManager, service: NsdServiceInfo): String? = resolving.withLock {
-        withTimeoutOrNull(RESOLVE_MS) {
-            suspendCancellableCoroutine { done ->
-                @Suppress("DEPRECATION")
-                nsd.resolveService(
-                    service,
-                    object : NsdManager.ResolveListener {
-                        override fun onResolveFailed(info: NsdServiceInfo, errorCode: Int) {
-                            if (done.isActive) done.resume(null)
-                        }
+    private sealed interface Resolved {
+        data class Done(val address: String?) : Resolved
 
-                        override fun onServiceResolved(info: NsdServiceInfo) {
-                            @Suppress("DEPRECATION")
-                            val address = info.host?.let(::addressText)?.takeIf(::isLanHost)
-                            if (done.isActive) done.resume(address)
-                        }
-                    },
-                )
+        /** No answer in time. */
+        data object Stuck : Resolved
+    }
+
+    /** Android resolves one service at a time, so each waits its turn. */
+    private suspend fun resolve(nsd: NsdManager, service: NsdServiceInfo): Resolved = resolving.withLock {
+        withTimeoutOrNull(RESOLVE_MS) {
+            suspendCancellableCoroutine<Resolved> { done ->
+                val listener = object : NsdManager.ResolveListener {
+                    override fun onResolveFailed(info: NsdServiceInfo, errorCode: Int) {
+                        if (done.isActive) done.resume(Resolved.Done(null))
+                    }
+
+                    override fun onServiceResolved(info: NsdServiceInfo) {
+                        @Suppress("DEPRECATION")
+                        val address = info.host?.let(::addressText)?.takeIf(::isLanHost)
+                        if (done.isActive) done.resume(Resolved.Done(address))
+                    }
+                }
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+                    done.invokeOnCancellation { runCatching { nsd.stopServiceResolution(listener) } }
+                }
+                @Suppress("DEPRECATION")
+                nsd.resolveService(service, listener)
             }
-        }
+        } ?: Resolved.Stuck
     }
 
     private val resolving = Mutex()
@@ -323,12 +342,14 @@ internal class MoonlightHosts(
             }
         }.orEmpty()
             .sortedBy { it is Inet6Address }
-            .map(::addressText)
+            .mapNotNull(::addressText)
             .filter(::isLanHost)
     }
 
-    private fun addressText(address: InetAddress): String =
-        address.hostAddress.orEmpty().substringBefore('%')
+    /** An address to put in a URL. A link-local IPv6 one needs its interface, which a URL cannot carry. */
+    private fun addressText(address: InetAddress): String? =
+        if (address is Inet6Address && (address.isLinkLocalAddress || address.scopeId != 0)) null
+        else address.hostAddress?.takeIf { it.isNotEmpty() }
 
     private companion object {
         const val SERVICE_TYPE = "_nvstream._tcp"

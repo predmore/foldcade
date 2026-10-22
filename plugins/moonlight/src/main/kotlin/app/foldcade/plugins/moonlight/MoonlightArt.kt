@@ -26,9 +26,9 @@ class MoonlightArt(private val library: MoonlightLibrary) : MetadataProvider {
     override val id: String = ID
     override val displayName: String = MoonlightLibrary.DISPLAY_NAME
 
-    /** The address of [MoonlightApp]'s box art, or null when there is none. Off the main thread. */
+    /** What is known of [MoonlightApp]'s box art. Off the main thread. */
     @Volatile
-    var poster: suspend (MoonlightApp) -> String? = { null }
+    var poster: suspend (MoonlightApp) -> Poster = { Poster.None }
 
     /** Each game asked about, by remote key: its poster address, or [NONE]. */
     private val found = ConcurrentHashMap<String, String>()
@@ -42,10 +42,20 @@ class MoonlightArt(private val library: MoonlightLibrary) : MetadataProvider {
         if (game.backendId != MoonlightLibrary.ID) return null
         found[game.remoteKey]?.let { return if (it == NONE) null else meta(game, it) }
         val app = library.app(game.remoteKey) ?: return null
-        val uri = poster(app)
+        val answer = poster(app)
         coroutineContext.ensureActive()
-        found[game.remoteKey] = uri ?: NONE
-        return uri?.let { meta(game, it) }
+        // Not yet is asked again; a poster or a definite none is kept.
+        when (answer) {
+            is Poster.At -> found[game.remoteKey] = answer.uri
+            Poster.None -> found[game.remoteKey] = NONE
+            Poster.NotYet -> Unit
+        }
+        return (answer as? Poster.At)?.let { meta(game, it.uri) }
+    }
+
+    /** Asks again for every game of the computer [hostKey], a lower-case UUID. */
+    fun forgetHost(hostKey: String) {
+        found.keys.removeIf { it.startsWith("$hostKey|") }
     }
 
     private fun meta(game: Game, uri: String) = GameMeta(
@@ -57,6 +67,17 @@ class MoonlightArt(private val library: MoonlightLibrary) : MetadataProvider {
         const val ID: String = "moonlight"
         private const val NONE = ""
     }
+}
+
+/** What the app knows of one game's box art. */
+sealed interface Poster {
+    data class At(val uri: String) : Poster
+
+    /** There is none to find. */
+    data object None : Poster
+
+    /** There may be, once its computer answers. */
+    data object NotYet : Poster
 }
 
 /** Moonlight's poster for one game. [hostUuid] is as Moonlight stored it. */

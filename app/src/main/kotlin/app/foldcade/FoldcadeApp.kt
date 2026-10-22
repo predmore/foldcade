@@ -395,6 +395,7 @@ class FoldcadeApp : Application() {
             shell = { shell },
             library = { plugins.library(MoonlightLibrary.ID) as? MoonlightLibrary },
             refreshShelf = ::putMoonlightOnShelf,
+            refreshArt = ::refreshMoonlightArt,
         )
     }
     private val credentialGate = Mutex()
@@ -1017,6 +1018,13 @@ class FoldcadeApp : Application() {
             shell.settleMoonlight()
             shell.noteShelfChanged()
         }
+    }
+
+    /** Tiles of the computer [hostKey] ask for their art again. Main thread. */
+    private fun refreshMoonlightArt(hostKey: String) {
+        (plugins.metadata(MoonlightArt.ID) as? MoonlightArt)?.forgetHost(hostKey)
+        covers.forget(MoonlightLibrary.ID) { it.startsWith("$hostKey|") }
+        artRevision++
     }
 
     /** A paired computer's box art, as [MoonlightStreams.poster] saved it. */

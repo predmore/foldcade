@@ -77,6 +77,12 @@ class CoverArt(
     private fun merged(provided: ArtScene?, found: ArtScene?): ArtScene? =
         (provided ?: ArtScene()).or(found).takeUnless { it.isEmpty }
 
+    /** Asks the providers again for [backendId]'s games whose remote key [which] picks. */
+    fun forget(backendId: String, which: (String) -> Boolean) {
+        val prefix = backendId + "\u0000"
+        held.keys.removeIf { it.startsWith(prefix) && which(it.removePrefix(prefix)) }
+    }
+
     private fun cachedMeta(game: Game): GameMeta? {
         held[keyOf(game)]?.let { return it.meta }
         return plugins.metadataIds().firstNotNullOfOrNull { id ->

@@ -24,7 +24,7 @@ class MoonlightArtTest {
     @Test
     fun asksMoonlightForThePosterWithTheUuidAsStored() = runBlocking {
         val asked = mutableListOf<MoonlightApp>()
-        val art = MoonlightArt(library).apply { poster = { asked += it; moonlightPosterUri(it.hostUuid, it.appId) } }
+        val art = MoonlightArt(library).apply { poster = { asked += it; Poster.At(moonlightPosterUri(it.hostUuid, it.appId)) } }
         val cover = art.fetch(game)!!.artwork.single()
         assertEquals(ArtworkRole.Cover, cover.role)
         // Moonlight's poster files are named by the UUID as it stored it, upper case from Sunshine.
@@ -37,7 +37,7 @@ class MoonlightArtTest {
     @Test
     fun noPosterMeansNoArtAndIsAskedOnce() = runBlocking {
         var asks = 0
-        val art = MoonlightArt(library).apply { poster = { asks++; null } }
+        val art = MoonlightArt(library).apply { poster = { asks++; Poster.None } }
         assertNull(art.fetch(game))
         assertNull(art.fetch(game))
         assertNull(art.cached(game))
@@ -45,8 +45,23 @@ class MoonlightArtTest {
     }
 
     @Test
+    fun notYetIsAskedAgainAndAForgottenHostToo() = runBlocking {
+        var answer: Poster = Poster.NotYet
+        var asks = 0
+        val art = MoonlightArt(library).apply { poster = { asks++; answer } }
+        assertNull(art.fetch(game))
+        answer = Poster.At("file:///cache/moonlight/art/x/68174274.png")
+        assertEquals("file:///cache/moonlight/art/x/68174274.png", art.fetch(game)!!.artwork.single().uri)
+        assertEquals(2, asks)
+        art.forgetHost("8fe9e201-578a-7c2c-b017-f2a9a9d86886")
+        assertNull(art.cached(game))
+        art.fetch(game)
+        assertEquals(3, asks)
+    }
+
+    @Test
     fun answersOnlyForMoonlightGamesInTheCatalog() = runBlocking {
-        val art = MoonlightArt(library).apply { poster = { moonlightPosterUri(it.hostUuid, it.appId) } }
+        val art = MoonlightArt(library).apply { poster = { Poster.At(moonlightPosterUri(it.hostUuid, it.appId)) } }
         assertNull(art.fetch(game.copy(backendId = "romm")))
         assertNull(art.fetch(game.copy(remoteKey = "8fe9e201-578a-7c2c-b017-f2a9a9d86886|1")))
         // Until the app says how to ask, nothing has a poster.
