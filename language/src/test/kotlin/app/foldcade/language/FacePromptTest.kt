@@ -186,4 +186,14 @@ class FacePromptTest {
         assertEquals(Meaning.Back, meaningOf(KeyEvent.KEYCODE_BUTTON_B, homeKeys = HomeKeys.Typing))
         assertEquals(Meaning.Activate, meaningOf(KeyEvent.KEYCODE_BUTTON_A, homeKeys = HomeKeys.PickingIcon))
     }
+
+    @Test
+    fun theOptionsButtonCalibrationMovedDropsAMovingTile() {
+        // Confirm on X puts back on Y and options on B, so B lifts and B drops.
+        val map = faceMapWithConfirm(resolveFaceMap(ThorStyle.Xbox, null), PromptKey.FaceX)
+        assertEquals(Meaning.Activate, meaningOf(KeyEvent.KEYCODE_BUTTON_B, faces = map, homeKeys = HomeKeys.Moving))
+        assertEquals(Meaning.Activate, meaningOf(KeyEvent.KEYCODE_BUTTON_X, faces = map, homeKeys = HomeKeys.Moving))
+        assertEquals(Meaning.CancelHold, meaningOf(KeyEvent.KEYCODE_BUTTON_Y, faces = map, homeKeys = HomeKeys.Moving))
+        assertNull(meaningOf(KeyEvent.KEYCODE_BUTTON_B, repeatCount = 1, faces = map, homeKeys = HomeKeys.Moving))
+    }
 }

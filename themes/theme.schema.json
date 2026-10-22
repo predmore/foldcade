@@ -740,7 +740,7 @@
                         "tiltDegrees": {
                             "type": "number",
                             "exclusiveMinimum": 0.0,
-                            "default": 6.0
+                            "default": 3.0
                         },
                         "tiltArtShare": {
                             "type": "number",

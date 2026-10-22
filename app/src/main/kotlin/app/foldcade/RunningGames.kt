@@ -27,11 +27,35 @@ internal data class RunningGame(
 internal class RunningGames {
     private val byPackage = LinkedHashMap<String, RunningGame>()
 
+    /**
+     * Players that may hold a game no tile can bring back: one an earlier Foldcade
+     * process started, or one in a player whose front door is where its games run
+     * ([noteHolding]). No tile reads Paused for them, but a start there still
+     * replaces the task instead of opening a second one beside it.
+     */
+    private val holdingOnly = LinkedHashSet<String>()
+
     /** Called with every tile id still running, after each change. */
     var onChange: (Set<String>) -> Unit = {}
 
+    /** Called with every player that may still hold a game, after each change, to keep across restarts. */
+    var onPlayersChange: (Set<String>) -> Unit = {}
+
+    /** Players a previous process noted, read back once at start. */
+    fun restore(players: Set<String>) {
+        holdingOnly += players - byPackage.keys
+    }
+
     fun note(game: RunningGame) {
+        holdingOnly -= game.packageName
         byPackage[game.packageName] = game
+        changed()
+    }
+
+    /** [packageName] holds a game now that its front door would not bring back, see [resumable]. */
+    fun noteHolding(packageName: String) {
+        byPackage.remove(packageName)
+        holdingOnly += packageName
         changed()
     }
 
@@ -51,12 +75,27 @@ internal class RunningGames {
 
     fun packages(): Set<String> = byPackage.keys.toSet()
 
+    /** True when [packageName] may still hold a game Foldcade started, in this process or an earlier one. */
+    fun mayHold(packageName: String?): Boolean = packageName != null && (packageName in byPackage || packageName in holdingOnly)
+
     fun forget(packageName: String) {
-        if (byPackage.remove(packageName) != null) changed()
+        val known = byPackage.remove(packageName) != null
+        if (holdingOnly.remove(packageName) || known) changed()
     }
 
-    private fun changed() = onChange(byPackage.values.map { it.tileId }.toSet())
+    private fun changed() {
+        onChange(byPackage.values.map { it.tileId }.toSet())
+        onPlayersChange(byPackage.keys + holdingOnly)
+    }
 }
+
+/**
+ * True when the player's front door ([frontDoor], its launcher activity) can bring
+ * back a game started in [started]. When they are the same activity, the launcher
+ * intent is that activity again with another intent, which Android stacks as a
+ * second copy over the game rather than bringing the game's task back.
+ */
+internal fun resumable(frontDoor: String?, started: String?): Boolean = frontDoor != null && frontDoor != started
 
 /**
  * What a resume brought to the front, from the player's activities that resumed

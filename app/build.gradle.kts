@@ -285,6 +285,7 @@ abstract class PackageThemeTask : DefaultTask() {
                     sourceDir.get().asFile.absolutePath,
                     "--output",
                     File(destination, "themes/afterglow.zip").absolutePath,
+                    "--bundled",
                 ) + contractArgs,
             )
         }.assertNormalExitValue()

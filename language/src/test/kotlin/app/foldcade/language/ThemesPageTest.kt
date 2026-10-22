@@ -36,10 +36,19 @@ class ThemesPageTest {
         val dusk = page.on(Meaning.MoveDown).first
         val armed = dusk.on(Meaning.ActivateBottom).first
         assertTrue(armed.armed)
-        assertEquals(ThemesCopy.removeArmed, armed.note)
+        assertEquals("Press X again to remove", armed.note)
         assertEquals(ThemesAction.Remove(page.packs[1]), armed.on(Meaning.ActivateBottom).second)
         // Moving away disarms it.
         assertFalse(armed.on(Meaning.MoveUp).first.armed)
+    }
+
+    @Test
+    fun theRemovalNamesTheButtonCalibrationLeftForTheBottomScreen() {
+        // Confirm on X moves the bottom screen to the first face left free.
+        val faces = faceMapWithConfirm(FaceMap.standard(), PromptKey.FaceX)
+        val armed = page.on(Meaning.MoveDown, faces).first.on(Meaning.ActivateBottom, faces).first
+        assertEquals("Press ${letterOfKey(actionFaces(faces).bottom)?.name} again to remove", armed.note)
+        assertFalse(armed.note == "Press X again to remove")
     }
 
     @Test

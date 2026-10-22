@@ -11,14 +11,27 @@ import zipfile
 # Written by the engine's tests. A copy beside the theme, or --contract, works outside the repository.
 DEFAULT_CONTRACT = Path(__file__).resolve().parents[2] / "themes" / "contract.json"
 COLOR = re.compile(r"#[0-9A-Fa-f]{6}")
+# A pack id, and the id `extends` names. ThemeZip.kt reads both this way.
+PACK_ID = re.compile(r"[A-Za-z0-9._-]+")
 
 APPLICATION_CODE_EXTENSIONS = {".java", ".kt", ".kts", ".class", ".dex", ".jar", ".so", ".apk", ".aar", ".dll", ".dylib", ".wasm", ".js", ".mjs", ".cjs", ".py"}
 
 
+def normal_path(name):
+    """True when Foldcade reads the archive path as written, as themeZipEntryName does. It drops an icon at any other."""
+    parts = name.split("/")
+    return bool(name) and "\\" not in name and "\0" not in name and all(part not in ("", ".", "..") for part in parts)
+
+
 def assets(root: Path):
     manifest = json.loads((root / "theme.json").read_text())
-    if not manifest.get("name") or manifest.get("version", 1) not in (1, 2):
+    name, version = manifest.get("name"), manifest.get("version", 1)
+    if not isinstance(name, str) or not name.strip() or isinstance(version, bool) or version not in (1, 2):
         raise ValueError("theme.json: expected a named theme with version 1 or 2")
+    # Version 2 reads `id`, or the name without one. Foldcade can't read a manifest whose id it can't use.
+    pack_id = manifest.get("id", name)
+    if version == 2 and not (isinstance(pack_id, str) and PACK_ID.fullmatch(pack_id) and pack_id != "builtin"):
+        raise ValueError("theme.json: id must be letters, digits, '.', '_' or '-', and a name with other characters needs an id")
     if "release" in manifest and not (isinstance(manifest["release"], str) and re.fullmatch(r"\d{1,6}(\.\d{1,6}){0,2}", manifest["release"])):
         raise ValueError("theme.json: release must be a version such as 1.2.0")
     host = manifest.get("host", 1)
@@ -32,6 +45,8 @@ def assets(root: Path):
     files = {"theme.json"}
 
     def add(name):
+        if not isinstance(name, str) or not normal_path(name):
+            raise ValueError(f"Asset path must be relative, with no '.', '..', '\\' or empty parts: {name!r}")
         path = PurePosixPath(name)
         if path.suffix.lower() in APPLICATION_CODE_EXTENSIONS:
             raise ValueError(f"Executable application code is not a theme asset: {name}")
@@ -82,6 +97,21 @@ def assets(root: Path):
         if path.suffix.lower() in (".png", ".webp", ".ogg", ".ttf", ".otf", ".agsl") or path.name.startswith(("LICENSE", "OFL-")):
             add(relative)
     return manifest, sorted(files)
+
+
+def install_problems(manifest):
+    """What Add a theme refuses, and a bad `extends`, which the engine reports and ignores."""
+    problems = []
+    version, pack_id = manifest.get("version", 1), manifest.get("id", manifest.get("name"))
+    if version != 2:
+        problems.append("version: Add a theme installs version 2 packs only, with an id")
+    elif "release" not in manifest:
+        problems.append("release: Add a theme needs a release such as 1.0.0, so updates can be compared")
+    if "extends" in manifest:
+        parent = manifest["extends"]
+        if version != 2 or not (isinstance(parent, str) and PACK_ID.fullmatch(parent)) or parent in (pack_id, "builtin"):
+            problems.append("extends: must name another pack's id")
+    return problems
 
 
 def number_problem(value, token):
@@ -166,20 +196,22 @@ def main():
     parser.add_argument("directory", type=Path)
     parser.add_argument("--output", type=Path)
     parser.add_argument("--contract", type=Path, help="themes/contract.json from the Foldcade the pack is for")
-    parser.add_argument("--strict", action="store_true", help="fail on anything the engine would report")
+    parser.add_argument("--strict", action="store_true", help="fail on anything the engine would report, or Add a theme would refuse")
+    parser.add_argument("--bundled", action="store_true", help="a pack Foldcade ships, which is never added from Settings")
     args = parser.parse_args()
     try:
         manifest, files = assets(args.directory)
+        problems = [] if args.bundled else install_problems(manifest)
         contract_path = args.contract or (args.directory / "contract.json" if (args.directory / "contract.json").is_file() else DEFAULT_CONTRACT)
         if contract_path.is_file():
-            problems = check_contract(manifest, json.loads(contract_path.read_text()))
-            for problem in problems:
-                print(f"theme.json:{problem}", file=sys.stderr)
-            if problems and args.strict:
-                raise ValueError(f"{len(problems)} problem(s) against {contract_path}")
-        elif args.strict:
-            raise ValueError(f"No contract at {contract_path}; pass --contract")
-        else:
+            problems += check_contract(manifest, json.loads(contract_path.read_text()))
+        for problem in problems:
+            print(f"theme.json:{problem}", file=sys.stderr)
+        if problems and args.strict:
+            raise ValueError(f"{len(problems)} problem(s)" + (f" against {contract_path}" if contract_path.is_file() else ""))
+        if not contract_path.is_file():
+            if args.strict:
+                raise ValueError(f"No contract at {contract_path}; pass --contract")
             print(f"No contract at {contract_path}; style tokens and icon slots were not checked.", file=sys.stderr)
         if args.output:
             args.output.parent.mkdir(parents=True, exist_ok=True)

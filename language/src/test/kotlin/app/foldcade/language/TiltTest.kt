@@ -43,12 +43,48 @@ class TiltTest {
     }
 
     @Test
-    fun turningInThePlaneOfTheScreenSlidesNothing() {
+    fun rollingLeftLikeAWheelSlidesTheViewRightToo() {
+        // Upright, the line toward you is the world's -y, and a left roll turns about it.
         val tilt = TiltFollower(6f, 1000f)
-        // Upright, the screen's own axis is level, so a steering-wheel turn has no part about world up.
-        settle(tilt, upright, times(about(0f, -1f, 0f, 10f), upright))
-        assertEquals(0f, tilt.x, 0.02f)
+        settle(tilt, upright, times(about(0f, -1f, 0f, 4f), upright))
+        assertTrue(tilt.x > 0.4f)
         assertEquals(0f, tilt.y, 0.02f)
+
+        val right = TiltFollower(6f, 1000f)
+        settle(right, upright, times(about(0f, -1f, 0f, -4f), upright))
+        assertTrue(right.x < -0.4f)
+    }
+
+    @Test
+    fun aTurnBetweenSwingAndRollSlidesNoFurtherThanEither() {
+        val roll = TiltFollower(6f, 1000f)
+        settle(roll, upright, times(about(0f, -1f, 0f, 4f), upright))
+        val diagonal = .70710677f
+        val both = TiltFollower(6f, 1000f)
+        settle(both, upright, times(about(0f, -diagonal, diagonal, 4f), upright))
+        assertEquals(roll.x, both.x, 0.02f)
+        assertEquals(0f, both.y, 0.02f)
+    }
+
+    @Test
+    fun aThorOnItsSideDoesNotFlipAsTheHingeStandsUp() {
+        val rest = times(about(0f, -1f, 0f, 86f), upright)
+        val slides = listOf(89.9f, 89.95f, 90f, 90.05f, 90.1f).map { degrees ->
+            val tilt = TiltFollower(3f, 1000f)
+            settle(tilt, rest, times(about(0f, -1f, 0f, degrees), upright))
+            tilt.x
+        }
+        slides.zipWithNext { a, b -> assertEquals(a, b, 0.02f) }
+    }
+
+    @Test
+    fun aRolledThorStillTipsAboutItsHinge() {
+        val rolled = times(about(0f, -1f, 0f, 20f), upright)
+        val tilt = TiltFollower(6f, 1000f)
+        val hinge = floatArrayOf(cos(Math.toRadians(20.0)).toFloat(), 0f, sin(Math.toRadians(20.0)).toFloat())
+        settle(tilt, rolled, times(about(hinge[0], hinge[1], hinge[2], -4f), rolled))
+        assertTrue(tilt.y > 0.4f)
+        assertEquals(0f, tilt.x, 0.02f)
     }
 
     @Test

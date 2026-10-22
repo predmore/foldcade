@@ -200,7 +200,7 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
                 pendingBackend = null
                 if (rememberSaveFolder(uri, player) && pending != null) {
                     launchScreen = pending.screen
-                    launchBackendGame(pending.title, pending.platformId, pending.route)
+                    launchBackendGame(pending.title, pending.platformId, pending.route, pending.fresh)
                 } else {
                     cancelLaunches()
                 }
@@ -445,7 +445,7 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
         if (restartReplacedPlayer()) return
         // A core installed in RetroArch counts for the order of players. Its launch reads them again anyway.
         foldcade.refreshRetroArchCoresOnReturn()
-        // A game whose player closed while Home was away reads Paused no longer.
+        // Usage access may have changed while Home was away, and without it no game reads Paused.
         foldcade.pruneRunningGames()
         val displayId = display?.displayId
         val ending = displayId != null &&
@@ -964,7 +964,7 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
         foldcade.suppressSaveConflict = true
         foldcade.launchWork.job = foldcade.scope.launch {
             try {
-                runBackendLaunch(title, platformId, route, fetching, generation)
+                runBackendLaunch(title, platformId, route, fetching, generation, fresh)
             } finally {
                 // Opened or not, a half-told download or sync is stale now. A sync's mark stays.
                 withContext(NonCancellable + Dispatchers.Main.immediate) {
@@ -989,6 +989,7 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
         route: GameRoute,
         fetching: Boolean,
         generation: Int,
+        fresh: Boolean,
     ) {
         val game = route.play
         val libraryId = game.backendId
@@ -1023,7 +1024,7 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
         ) {
             withContext(Dispatchers.Main.immediate) {
                 if (fetching) foldcade.shell.endDownload(libraryId, game.remoteKey)
-                if (launchCurrent(generation)) askSaveFolder(PendingBackendLaunch(title, platformId, route, first.id, launchScreen))
+                if (launchCurrent(generation)) askSaveFolder(PendingBackendLaunch(title, platformId, route, first.id, launchScreen, fresh))
             }
             return
         }
@@ -1143,6 +1144,10 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
     private fun noteRunning(id: String, title: String, platformId: String?, player: Player, intent: Intent, saves: LibraryReturn?) {
         val pkg = intent.component?.packageName ?: return
         if (pkg == packageName || player is RetroArchPlayer) return
+        if (!resumable(packageManager.getLaunchIntentForPackage(pkg)?.component?.className, intent.component?.className)) {
+            foldcade.runningGames.noteHolding(pkg)
+            return
+        }
         // Where the game landed, which may not be where it was asked for when that screen was busy.
         val panel = landedPanel() ?: if (player.occupiesBothDisplays) Panel.Top else launchScreen
         foldcade.runningGames.note(RunningGame(id, title, platformId, pkg, intent.component?.className, panel,
@@ -1402,7 +1407,7 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
             }
         }
         val playerPackage = intent.component?.packageName
-        val replacing = !resume && foldcade.runningGames.forPackage(playerPackage) != null
+        val replacing = !resume && foldcade.runningGames.mayHold(playerPackage)
         if (replacing) intent.flags = replaceFlags(intent.flags)
         // Only a Home press after this start says the game was left open.
         foldcade.homeRecalledOn = null
@@ -2177,7 +2182,7 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
             pendingBackend = null
             foldcade.plugins.player(pending.playerId)?.let { foldcade.store.setSaveFolderPromptSkipped(it.saveFolderId()) }
             launchScreen = pending.screen
-            launchBackendGame(pending.title, pending.platformId, pending.route)
+            launchBackendGame(pending.title, pending.platformId, pending.route, pending.fresh)
             return
         }
         val index = pendingLaunch ?: return
@@ -2343,6 +2348,8 @@ internal class PendingBackendLaunch(
     val playerId: String,
     /** The screen A or X asked for, which a recreated Home would not know. */
     val screen: Panel,
+    /** Restart asked for it, so the answer starts the game over rather than bringing it back. */
+    val fresh: Boolean = false,
 )
 
 /** See [FoldcadeHomeActivity.armRestart]. */

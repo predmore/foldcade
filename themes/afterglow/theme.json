@@ -1700,7 +1700,7 @@
       "sceneOverscan": 1.05,
       "sceneSettleFrom": 1.1,
       "tiltPx": 18.0,
-      "tiltDegrees": 6.0,
+      "tiltDegrees": 3.0,
       "tiltArtShare": 0.4,
       "durationTiltRecenter": 2400,
       "durationScene": 360,
