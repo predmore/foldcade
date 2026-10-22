@@ -50,7 +50,11 @@ import app.foldcade.plugins.droiddeck.droidDeckShortcutKey
 import app.foldcade.plugins.gamenative.CatalogGame
 import app.foldcade.plugins.gamenative.GameNativeLibrary
 import app.foldcade.plugins.gamenative.GameNativePlayer
+import app.foldcade.gamestream.GameStreamClient
+import app.foldcade.net.LanHttp
+import app.foldcade.plugins.moonlight.MoonlightArt
 import app.foldcade.plugins.moonlight.MoonlightLibrary
+import app.foldcade.plugins.moonlight.isMoonlightPosterUri
 import app.foldcade.plugins.moonlight.moonlightShortcutKey
 import app.foldcade.credentials.AndroidCredentialStore
 import app.foldcade.host.PluginHost
@@ -255,6 +259,7 @@ class FoldcadeApp : Application() {
                 add(
                     CoverFetcher.Factory { uri ->
                         when {
+                            isMoonlightPosterUri(uri) -> readMoonlightPoster(this@FoldcadeApp, uri)
                             !publicArt.allows(uri) -> romm.load(uri)
                             shell.model.artwork -> artBytes.load(uri)
                             else -> null
@@ -381,6 +386,11 @@ class FoldcadeApp : Application() {
 
     /** Battery, network, Bluetooth, and the clock. Both screens show the same reading. */
     val deviceStatus: DeviceStatusWatcher by lazy { DeviceStatusWatcher(this, scope) }
+
+    /** Moonlight's computers on the local network, and the game each streams now. */
+    internal val moonlightHosts: MoonlightHosts by lazy {
+        MoonlightHosts(this, GameStreamClient(LanHttp(), store.gameStreamClientId()), scope) { shell.setMoonlightHosts(it) }
+    }
     private val credentialGate = Mutex()
     private val pluginLoad = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val pluginsReady = CompletableDeferred<Unit>()
@@ -971,6 +981,8 @@ class FoldcadeApp : Application() {
         if (read != null) {
             library.replacePinned(read.games)
             store.setMoonlightPins(read.games)
+            store.setMoonlightHostNames(read.hostNames)
+            moonlightHosts.knowNames(read.hostNames)
         }
         Shelf.moonlightGames = plugins.moonlightShelfGames()
         withContext(Dispatchers.Main.immediate) {
@@ -983,6 +995,10 @@ class FoldcadeApp : Application() {
     private suspend fun restoreMoonlightPins() {
         val library = plugins.library(MoonlightLibrary.ID) as? MoonlightLibrary ?: return
         library.replacePinned(store.moonlightPins())
+        (plugins.metadata(MoonlightArt.ID) as? MoonlightArt)?.posterExists = { moonlightPosterExists(this, it) }
+        val names = store.moonlightHostNames()
+        moonlightHosts.knowNames(names)
+        withContext(Dispatchers.Main.immediate) { shell.setMoonlightHosts(names.mapValues { MoonlightHost(it.value, online = null) }) }
         Shelf.moonlightGames = plugins.moonlightShelfGames()
     }
 
@@ -1402,6 +1418,7 @@ class FoldcadeApp : Application() {
         val shown = homes.values.any { it.get()?.shellVisible == true }
         libraryResync.noteShown(shown)
         noteThemeTrialShown(shown)
+        moonlightHosts.watch(shown)
     }
 
     /**

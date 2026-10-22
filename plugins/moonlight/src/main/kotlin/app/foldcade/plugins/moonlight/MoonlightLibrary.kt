@@ -43,6 +43,9 @@ class MoonlightLibrary : LibraryBackend {
 
     fun pinnedApps(): List<MoonlightApp> = synchronized(lock) { pinned.toList() }
 
+    /** The game with [remoteKey], or null when it is not in the catalog. */
+    fun app(remoteKey: String): MoonlightApp? = snapshot().firstOrNull { it.remoteKey == remoteKey }
+
     override suspend fun connect() {
         coroutineContext.ensureActive()
     }
@@ -110,7 +113,7 @@ class MoonlightLibrary : LibraryBackend {
         if (game.backendId != id) {
             throw PluginException.NotFound("Game is not in Moonlight.")
         }
-        return snapshot().firstOrNull { it.remoteKey == game.remoteKey }
+        return app(game.remoteKey)
             ?: throw PluginException.NotFound("Game is not in Moonlight.")
     }
 

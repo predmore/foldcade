@@ -2,6 +2,7 @@ package app.foldcade
 
 import android.content.Context
 import android.content.pm.LauncherApps
+import android.net.Uri
 import android.os.Process
 import app.foldcade.api.plugin.GameQuery
 import app.foldcade.host.PluginHost
@@ -11,7 +12,12 @@ import app.foldcade.plugins.moonlight.MoonlightPlayer
 import app.foldcade.plugins.moonlight.MoonlightShortcut
 import app.foldcade.plugins.moonlight.MoonlightShortcutRead
 import app.foldcade.plugins.moonlight.pinsWithout
+import app.foldcade.plugins.moonlight.POSTER_AUTHORITY
+import app.foldcade.plugins.moonlight.isMoonlightPosterUri
 import app.foldcade.plugins.moonlight.readMoonlightShortcuts
+import java.io.FileNotFoundException
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 
 /**
  * Moonlight's pinned game shortcuts and computer shortcuts, visible because
@@ -73,6 +79,54 @@ internal fun unpinMoonlightShortcut(context: Context, remoteKey: String): Boolea
         false
     }
 }
+
+/**
+ * True when Moonlight has a poster at [uri], one [isMoonlightPosterUri] accepts.
+ * Moonlight's provider opens the file or says it is not there; nothing is read.
+ */
+internal suspend fun moonlightPosterExists(context: Context, uri: String): Boolean {
+    if (!isMoonlightPosterUri(uri) || !postersAreMoonlights(context)) return false
+    return withContext(Dispatchers.IO) {
+        try {
+            context.contentResolver.openFileDescriptor(Uri.parse(uri), "r")?.use { true } ?: false
+        } catch (_: FileNotFoundException) {
+            false
+        } catch (_: SecurityException) {
+            false
+        } catch (_: IllegalArgumentException) {
+            false
+        } catch (_: IllegalStateException) {
+            false
+        }
+    }
+}
+
+/** The poster at [uri], at most [MAX_POSTER_BYTES], or null when Moonlight has none. */
+internal suspend fun readMoonlightPoster(context: Context, uri: String): ByteArray? {
+    if (!isMoonlightPosterUri(uri) || !postersAreMoonlights(context)) return null
+    return withContext(Dispatchers.IO) {
+        try {
+            context.contentResolver.openInputStream(Uri.parse(uri))?.use { stream ->
+                stream.readNBytes(MAX_POSTER_BYTES + 1).takeIf { it.size <= MAX_POSTER_BYTES }
+            }
+        } catch (_: FileNotFoundException) {
+            null
+        } catch (_: SecurityException) {
+            null
+        } catch (_: IllegalArgumentException) {
+            null
+        } catch (_: IllegalStateException) {
+            null
+        }
+    }
+}
+
+/** True when Moonlight itself serves [POSTER_AUTHORITY], not another app that took the name. */
+private fun postersAreMoonlights(context: Context): Boolean =
+    context.packageManager.resolveContentProvider(POSTER_AUTHORITY, 0)?.packageName == MoonlightPlayer.OFFICIAL_PACKAGE
+
+/** Moonlight's posters are about 300 KB; a much bigger file is not one. */
+private const val MAX_POSTER_BYTES = 8 * 1024 * 1024
 
 /** Games currently in [MoonlightLibrary], one shelf tile each. */
 internal suspend fun PluginHost.moonlightShelfGames(): List<ShelfGame> {

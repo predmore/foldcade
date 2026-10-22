@@ -39,12 +39,14 @@ import app.foldcade.plugins.droiddeck.droidDeckSteamAppId
 import app.foldcade.plugins.gamenative.GameNativeLibrary
 import app.foldcade.plugins.gamenative.steamAppId
 import app.foldcade.plugins.moonlight.MoonlightLibrary
+import app.foldcade.plugins.moonlight.MoonlightPlatform
 import app.foldcade.plugins.moonlight.isMoonlightRemoteKey
 import app.foldcade.host.PluginHost
 import app.foldcade.language.FoldNotice
 import app.foldcade.language.FindEntry
 import app.foldcade.language.FindKind
 import app.foldcade.language.downloadFacts
+import app.foldcade.language.streamHostLine
 import app.foldcade.language.HintKey
 import app.foldcade.language.HomeKeys
 import app.foldcade.language.PanelLevel
@@ -376,6 +378,19 @@ class ShellController(
 
     /** Tiles whose game is still open in its player, see [RunningGames]. */
     var running by mutableStateOf<Set<String>>(emptySet())
+
+    /** Moonlight's computers by host key, see [MoonlightHosts]. */
+    internal var moonlightHosts by mutableStateOf<Map<String, MoonlightHost>>(emptyMap())
+        private set
+
+    /** Moonlight tiles a computer is streaming now, with its name. */
+    private var streaming by mutableStateOf<Map<String, String>>(emptyMap())
+
+    internal fun setMoonlightHosts(hosts: Map<String, MoonlightHost>) {
+        if (hosts == moonlightHosts) return
+        moonlightHosts = hosts
+        streaming = streamingTiles(hosts)
+    }
 
     /** False while Foldcade can't tell whether a player closed, see [FoldcadeApp.closesVisible]. Nothing reads Paused then. */
     var resumable by mutableStateOf(false)
@@ -1308,6 +1323,7 @@ class ShellController(
     /** What a library is doing with the tile [id]'s game, or with any copy of it. */
     private fun activityOf(id: String): TileActivity? =
         tileIds(id).firstNotNullOfOrNull { activity[it] } ?: TileActivity.Paused.takeIf { isPaused(id) }
+            ?: streaming[id]?.let(TileActivity::OnHost)
 
     /**
      * [libraryId]'s connection is moving to another server. Delete download waits,
@@ -1390,7 +1406,7 @@ class ShellController(
 
     /** The activity of the game at [source] in the grid shown now. */
     fun activityAt(source: Int): TileActivity? {
-        if (activity.isEmpty() && running.isEmpty()) return null
+        if (activity.isEmpty() && running.isEmpty() && streaming.isEmpty()) return null
         val id = when {
             model.libraryGrid -> entries.getOrNull(source)?.game?.let { homeGameId(it.backendId, it.remoteKey) }
             showingHome() -> home.face(source)?.id
@@ -1401,7 +1417,7 @@ class ShellController(
 
     /** The activity of the focused game, for the top screen. */
     fun focusedActivity(): TileActivity? {
-        if (activity.isEmpty() && running.isEmpty()) return null
+        if (activity.isEmpty() && running.isEmpty() && streaming.isEmpty()) return null
         if (!model.libraryGrid) homeCarry()?.let { return activityOf(it.id) }
         val source = if (model.libraryGrid) {
             displayOrder(model).getOrElse(model.focus.cellIndex) { model.focus.cellIndex }
@@ -2133,14 +2149,30 @@ class ShellController(
 
     /** The library record behind [game], on the home grid or the library grid. */
     fun artRecord(game: ShelfGame): Game? =
-        home.game(game.id) ?: entries.firstOrNull { it.id == game.id }?.game
+        home.game(game.id) ?: entries.firstOrNull { it.id == game.id }?.game ?: streamRecord(game)
 
-    /** The library record behind the focused cell, for its metadata. Null for an app or a shelf tile. */
+    /** A Moonlight tile as its library lists it, so Moonlight's own poster can answer for it. */
+    private fun streamRecord(game: ShelfGame): Game? {
+        if (game.libraryId != MoonlightLibrary.ID) return null
+        val key = game.remoteKey ?: return null
+        return Game(
+            backendId = MoonlightLibrary.ID,
+            remoteKey = key,
+            platformId = game.platformId ?: MoonlightPlatform.ID,
+            availability = Availability.LocalOnly,
+            label = game.title,
+        )
+    }
+
+    /**
+     * The library record behind the focused cell, for its metadata and art. Null for an app
+     * or a shelf tile, except a Moonlight game's, whose poster comes from its library.
+     */
     fun focusedRecord(): Game? = when {
         find != null -> find?.subject?.id?.let(home::game)
         showingHome() -> focusedHomeFace()?.id?.let(home::game)
         else -> focusedEntry()?.game
-    }
+    } ?: focusedGame()?.let(::streamRecord)
 
     /**
      * What the idle top screen shows for the focused cell.
@@ -2178,7 +2210,7 @@ class ShellController(
             mark = game.mark,
             packageName = game.androidPackage,
             emptyShelfHint = game.emptyShelfHint,
-            availability = game.availabilityLabel ?: downloadLine(game.id),
+            availability = game.availabilityLabel ?: streamLine(game) ?: downloadLine(game.id),
         ),
     )
 
@@ -2209,9 +2241,16 @@ class ShellController(
                 detail = game.shortText,
                 mark = game.mark,
                 packageName = game.androidPackage,
-                availability = game.availabilityLabel ?: downloadLine(game.id),
+                availability = game.availabilityLabel ?: streamLine(game) ?: downloadLine(game.id),
             ),
         )
+    }
+
+    /** A Moonlight game's computer, and whether it answers. Null for any other game. */
+    private fun streamLine(game: ShelfGame): String? {
+        if (game.libraryId != MoonlightLibrary.ID) return null
+        val host = game.remoteKey?.substringBefore('|')?.let(moonlightHosts::get) ?: return null
+        return streamHostLine(host.name, host.online)
     }
 
     fun tileFromOrder(source: Int): ShelfGame? = when {

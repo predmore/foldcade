@@ -168,6 +168,7 @@ dependencies {
     implementation(project(":plugins:moonlight"))
     implementation(project(":romm"))
     implementation(project(":net"))
+    implementation(project(":gamestream"))
     implementation(project(":artwork"))
     implementation(project(":plugins:romm"))
     implementation(libs.androidx.core)

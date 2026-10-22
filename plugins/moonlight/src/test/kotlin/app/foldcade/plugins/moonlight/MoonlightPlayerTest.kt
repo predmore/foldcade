@@ -36,7 +36,7 @@ class MoonlightPlayerTest {
         assertTrue(entry.platforms.single().extensions.isEmpty())
         assertEquals(MoonlightPlayer.ID, entry.players.single().id)
         assertTrue(entry.library === entry.libraries.single())
-        assertTrue(entry.metadataProviders.isEmpty())
+        assertTrue(entry.art === entry.metadataProviders.single())
     }
 
     @Test

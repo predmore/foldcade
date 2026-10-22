@@ -1,5 +1,8 @@
 package app.foldcade.romm
 
+import app.foldcade.net.isLanHost
+import app.foldcade.net.isTailnetHost
+
 /**
  * Shown in setup when the origin is an allowed LAN http address.
  * The platform cannot name that host in the network-security config.

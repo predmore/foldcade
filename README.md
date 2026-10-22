@@ -60,7 +60,7 @@ Foldcade is made for one device, so it uses everything the Thor has.
 
 Move with the D-pad across a continuous shelf of box art. The selected game fills the top screen with wide art and a logo, or its cover beside a title-screen image.
 
-Art comes from RomM, Steam, libretro, and an optional SteamGridDB key. With a key saved, choose **Y › Art** on a game to browse tile art, heroes, and logos. L1/R1 switch kinds, L2/R2 change the matched game, A saves an image, X restores automatic art for that kind, and B returns Home. The top screen names the SteamGridDB match. Image choices and chosen matches stay with the game across restarts. See [artwork setup](docs/integrations/README.md#artwork) to configure downloads.
+Art comes from RomM, Steam, libretro, Moonlight's own box art, and an optional SteamGridDB key. With a key saved, choose **Y › Art** on a game to browse tile art, heroes, and logos. L1/R1 switch kinds, L2/R2 change the matched game, A saves an image, X restores automatic art for that kind, and B returns Home. The top screen names the SteamGridDB match. Image choices and chosen matches stay with the game across restarts. See [artwork setup](docs/integrations/README.md#artwork) to configure downloads.
 
 ### Everything in one place
 

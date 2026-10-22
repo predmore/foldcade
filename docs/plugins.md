@@ -84,7 +84,7 @@ The host stores an entry whole or not at all. One bad row in the table drops eve
 
 ## Moonlight
 
-`:plugins:moonlight` (`MoonlightEntry`) is the official Moonlight client, `com.limelight`. The player starts `com.limelight.ShortcutTrampoline` with the host UUID and a string `AppId`. It does not pair, and it does not open Moonlight's database.
+`:plugins:moonlight` (`MoonlightEntry`) is the official Moonlight client, `com.limelight`. The player starts `com.limelight.ShortcutTrampoline` with the host UUID and a string `AppId`. It does not pair, and it does not open Moonlight's database. Moonlight does the rest of a start itself: it wakes a sleeping computer it knows the MAC address of, asks before quitting a different running game, and resumes the same one. The UUID must be sent in the case Moonlight stored it, since its lookup is case-sensitive.
 
 Moonlight puts a game on the home screen by asking Android to pin a shortcut. Android sends that request to the default home app only, and it tells Moonlight pinning is unsupported unless the home app handles `CONFIRM_PIN_SHORTCUT`. `PinShortcutActivity` handles it. It accepts a Moonlight game shortcut without asking, because the user just chose Create shortcut, and it leaves every other request unanswered. After accepting, Foldcade reads the game back from Android's pinned shortcuts, not from the request, and places it in the Moonlight folder, even with Add new games off.
 
@@ -94,7 +94,11 @@ A launcher never sees a shortcut's intent, so `readMoonlightShortcuts` reads the
 
 The last read is saved, so Moonlight tiles keep their names at start. Their tile ids are the bare remote key, not a `lib:` id, so the shell keeps them on Home, hidden ones included, until the first live shortcut read. A Moonlight game is taken off Home only once Android says its pin is gone.
 
-`reconcile` does nothing. RomM does not configure this library: the entry has no metadata provider, and reconcile does not call RomM. The official client does not take both displays. The stream starts on the screen the picker targets, and the other screen keeps the picker.
+`MoonlightArt`, the entry's metadata provider, gives each game the box art Moonlight already keeps. Moonlight's exported `PosterContentProvider` serves it read-only at `content://poster.com.limelight/boxart/<host UUID>/<app id>` once Moonlight's game list has shown the game. A launcher cannot list that provider, so the app checks each address once (`moonlightPosterExists`) and loads only addresses of that exact shape. A game Moonlight has no poster for falls through to the public sources.
+
+`MoonlightHosts` in the app watches Moonlight's computers while a Home screen is shown. Moonlight's dynamic computer shortcuts name each one. It finds them by mDNS (`_nvstream._tcp`, which Sunshine and Apollo advertise) or by that name in DNS, then asks `/serverinfo` over plain http through `:gamestream` and `LanHttp`, which reach LAN addresses only. That needs no pairing. An answer counts only when its `uniqueid` is the host's UUID. Sunshine names the app it is streaming there, so that tile reads **Running on** the computer, with the paused badge; Apollo does not say over http. The top screen's line names the computer, or says it is offline once a computer that answered stops.
+
+`reconcile` does nothing. RomM does not configure this library, and reconcile does not call RomM. The official client does not take both displays. The stream starts on the screen the picker targets, and the other screen keeps the picker.
 
 ## DroidDeck
 

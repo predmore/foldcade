@@ -63,6 +63,13 @@ fun downloadFacts(server: String?, sizeBytes: Long?): String = listOfNotNull(
     sizeBytes?.takeIf { it > 0L }?.let(::formatDownloadSize),
 ).joinToString(" · ")
 
+/**
+ * Where a streamed game is: the computer [host], and that it does not answer
+ * when [reachable] is false. Null is not known yet, which reads as reachable.
+ */
+fun streamHostLine(host: String, reachable: Boolean?): String =
+    if (reachable == false) "$host is offline" else "On $host"
+
 /** A download's size, as a save's is shown, on up to GB: "512 MB", "1.4 GB". A whole number drops its ".0". */
 fun formatDownloadSize(bytes: Long): String {
     val size = bytes.coerceAtLeast(0L)
