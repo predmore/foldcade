@@ -44,6 +44,9 @@ fun parseServerInfo(xml: String): ServerInfo? {
 /** The GameStream port Sunshine and Apollo answer plain http on. */
 const val GAMESTREAM_HTTP_PORT: Int = 47989
 
+/** Their https port, when a host does not say. */
+const val GAMESTREAM_HTTPS_PORT: Int = 47984
+
 /** True for an app id a host sends: a non-negative 32-bit decimal. */
 fun isAppId(value: String): Boolean =
     value.isNotEmpty() && value.length <= 10 && value.all { it in '0'..'9' } && value.toLong() <= Int.MAX_VALUE

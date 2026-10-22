@@ -20,9 +20,10 @@ import kotlinx.coroutines.ensureActive
 /**
  * Games from a paired Moonlight host.
  *
- * The catalog is the enabled pinned game shortcuts Foldcade last read. Every
- * one is on Home; there is no separate imported list. This type does not open
- * Moonlight's database, and it does not pair.
+ * The catalog is the enabled pinned game shortcuts Foldcade last read, then
+ * the apps of each computer Foldcade itself paired with, as that computer last
+ * listed them. A game in both is listed once. This type does not open
+ * Moonlight's database, and it does not pair; the app does.
  *
  * [reconcile] is a no-op. Progress stays in Moonlight. RomM does not configure
  * this library: there is no metadata provider, and this method does not call RomM.
@@ -33,6 +34,7 @@ class MoonlightLibrary : LibraryBackend {
 
     private val lock = Any()
     private var pinned: List<MoonlightApp> = emptyList()
+    private var listed: List<MoonlightApp> = emptyList()
 
     /** Pinned shortcuts Foldcade read. These are the catalog. */
     fun replacePinned(apps: List<MoonlightApp>) {
@@ -42,6 +44,16 @@ class MoonlightLibrary : LibraryBackend {
     }
 
     fun pinnedApps(): List<MoonlightApp> = synchronized(lock) { pinned.toList() }
+
+    /** Apps the computers Foldcade paired with listed. These join the catalog after the pins. */
+    fun replaceListed(apps: List<MoonlightApp>) {
+        synchronized(lock) {
+            listed = apps.distinctBy { it.remoteKey }
+        }
+    }
+
+    /** True when an Android shortcut stands for [remoteKey], so Delete shortcut means something. */
+    fun isPinned(remoteKey: String): Boolean = synchronized(lock) { pinned.any { it.remoteKey == remoteKey } }
 
     /** The game with [remoteKey], or null when it is not in the catalog. */
     fun app(remoteKey: String): MoonlightApp? = snapshot().firstOrNull { it.remoteKey == remoteKey }
@@ -107,7 +119,7 @@ class MoonlightLibrary : LibraryBackend {
         return SyncResult(SyncOutcome.Unchanged)
     }
 
-    private fun snapshot(): List<MoonlightApp> = synchronized(lock) { pinned.toList() }
+    private fun snapshot(): List<MoonlightApp> = synchronized(lock) { (pinned + listed).distinctBy { it.remoteKey } }
 
     private fun requireApp(game: Game): MoonlightApp {
         if (game.backendId != id) {

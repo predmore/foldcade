@@ -18,16 +18,17 @@ import kotlinx.coroutines.ensureActive
  * `content://poster.com.limelight/boxart/<host UUID>/<app id>`, read-only.
  * The UUID is matched as Moonlight stored it, so its case is kept.
  *
- * A launcher cannot list that provider, so [posterExists] asks for one
- * address. The app sets it; until then no game has a poster.
+ * A launcher cannot list that provider, so [poster] asks for one game. The
+ * app sets it, and may answer with box art it got from a paired computer
+ * instead. Until it is set, no game has a poster.
  */
 class MoonlightArt(private val library: MoonlightLibrary) : MetadataProvider {
     override val id: String = ID
     override val displayName: String = MoonlightLibrary.DISPLAY_NAME
 
-    /** True when Moonlight serves an image at the address. Off the main thread. */
+    /** The address of [MoonlightApp]'s box art, or null when there is none. Off the main thread. */
     @Volatile
-    var posterExists: suspend (String) -> Boolean = { false }
+    var poster: suspend (MoonlightApp) -> String? = { null }
 
     /** Each game asked about, by remote key: its poster address, or [NONE]. */
     private val found = ConcurrentHashMap<String, String>()
@@ -41,11 +42,10 @@ class MoonlightArt(private val library: MoonlightLibrary) : MetadataProvider {
         if (game.backendId != MoonlightLibrary.ID) return null
         found[game.remoteKey]?.let { return if (it == NONE) null else meta(game, it) }
         val app = library.app(game.remoteKey) ?: return null
-        val uri = moonlightPosterUri(app.hostUuid, app.appId)
-        val exists = posterExists(uri)
+        val uri = poster(app)
         coroutineContext.ensureActive()
-        found[game.remoteKey] = if (exists) uri else NONE
-        return if (exists) meta(game, uri) else null
+        found[game.remoteKey] = uri ?: NONE
+        return uri?.let { meta(game, it) }
     }
 
     private fun meta(game: Game, uri: String) = GameMeta(

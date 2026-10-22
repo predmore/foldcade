@@ -75,7 +75,7 @@ Combine any of these sources in one home. Systems and sources get their own fold
 - **[Android](docs/integrations/android.md):** Installed games and apps.
 - **[GameNative](docs/integrations/gamenative.md):** Steam games installed on your Thor.
 - **[DroidDeck](docs/integrations/droiddeck.md):** Games running in its on-device Steam client.
-- **[Moonlight](docs/integrations/moonlight.md):** Games streamed from your computer.
+- **[Moonlight](docs/integrations/moonlight.md):** Every game on your Sunshine or Apollo computer, streamed through Moonlight. Pair once with a four-digit code, and the list keeps itself current.
 
 A game in a local folder that your RomM server also has is one tile: it opens the file already on your Thor, and its saves sync through RomM.
 

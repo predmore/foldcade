@@ -3,6 +3,9 @@ package app.foldcade.net
 import okhttp3.Interceptor
 import okhttp3.OkHttpClient
 import java.time.Duration
+import javax.net.ssl.HostnameVerifier
+import javax.net.ssl.SSLSocketFactory
+import javax.net.ssl.X509TrustManager
 
 /**
  * The app's only HTTP stack. This module is the one place an [OkHttpClient]
@@ -28,6 +31,7 @@ object HttpStack {
         followRedirects: Boolean = true,
         network: List<Interceptor> = emptyList(),
         application: List<Interceptor> = emptyList(),
+        tls: Tls? = null,
     ): OkHttpClient = OkHttpClient.Builder()
         .connectTimeout(connectTimeout)
         .readTimeout(readTimeout)
@@ -37,6 +41,17 @@ object HttpStack {
         .apply {
             network.forEach { addNetworkInterceptor(it) }
             application.forEach { addInterceptor(it) }
+            tls?.let {
+                sslSocketFactory(it.socketFactory, it.trustManager)
+                hostnameVerifier(it.hostnameVerifier)
+            }
         }
         .build()
+
+    /** A caller's own TLS: what it presents, what it trusts, and how it checks the host. */
+    class Tls(
+        val socketFactory: SSLSocketFactory,
+        val trustManager: X509TrustManager,
+        val hostnameVerifier: HostnameVerifier,
+    )
 }

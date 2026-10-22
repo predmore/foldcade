@@ -379,6 +379,55 @@ class SessionStore(private val prefs: SharedPreferences) : SaveMarks {
     }
 
     /**
+     * The computers Foldcade paired with, and the fingerprint of the key it paired
+     * as. Android moves these settings to a new device but never the key, so a
+     * list made with another key is dropped as it is read.
+     */
+    internal fun pairedStreamHosts(identity: String?): List<PairedStreamHost> {
+        val raw = prefs.getString(KEY_PAIRED_HOSTS, null)
+        if (raw.isNullOrBlank()) return emptyList()
+        val records = raw.split(PIN_RECORD)
+        if (identity == null || records.firstOrNull() != identity) return emptyList()
+        return records.drop(1).mapNotNull { record ->
+            val bits = record.split(PIN_FIELD)
+            if (bits.size != 4) return@mapNotNull null
+            val der = try {
+                java.util.Base64.getDecoder().decode(bits[3])
+            } catch (_: IllegalArgumentException) {
+                return@mapNotNull null
+            }
+            val certificate = app.foldcade.gamestream.certificate(der) ?: return@mapNotNull null
+            val port = bits[2].toIntOrNull()?.takeIf { it in 1..65535 } ?: return@mapNotNull null
+            PairedStreamHost(uuid = bits[0], name = bits[1], httpsPort = port, certificate = certificate)
+        }
+    }
+
+    internal fun setPairedStreamHosts(identity: String, hosts: List<PairedStreamHost>) {
+        val raw = (listOf(identity) + hosts.map { host ->
+            listOf(host.uuid, host.name, host.httpsPort.toString(), java.util.Base64.getEncoder().encodeToString(host.certificate.encoded))
+                .joinToString(PIN_FIELD) { it.replace(PIN_FIELD, " ").replace(PIN_RECORD, " ") }
+        }).joinToString(PIN_RECORD)
+        prefs.edit().putString(KEY_PAIRED_HOSTS, raw).apply()
+    }
+
+    /** The apps each paired computer last listed. They fill the shelf at start, before it answers again. */
+    fun listedStreamApps(): List<MoonlightApp> {
+        val raw = prefs.getString(KEY_LISTED_APPS, null)
+        if (raw.isNullOrBlank()) return emptyList()
+        return raw.split(PIN_RECORD).mapNotNull { record ->
+            val bits = record.split(PIN_FIELD)
+            if (bits.size != 3) null else moonlightApp(hostUuid = bits[0], appId = bits[1], label = bits[2])
+        }
+    }
+
+    fun setListedStreamApps(apps: List<MoonlightApp>) {
+        val raw = apps.joinToString(PIN_RECORD) { app ->
+            listOf(app.hostUuid, app.appId, app.label).joinToString(PIN_FIELD) { it.replace(PIN_FIELD, " ").replace(PIN_RECORD, " ") }
+        }
+        prefs.edit().putString(KEY_LISTED_APPS, raw).apply()
+    }
+
+    /**
      * This device's GameStream client id: 16 hex digits, made once. Hosts see it
      * when Foldcade asks them about themselves. It is not Moonlight's.
      */
@@ -473,6 +522,8 @@ class SessionStore(private val prefs: SharedPreferences) : SaveMarks {
         private const val KEY_MOONLIGHT_PINS = "moonlight_pins"
         private const val KEY_MOONLIGHT_HOSTS = "moonlight_hosts"
         private const val KEY_GAMESTREAM_CLIENT = "gamestream_client_id"
+        private const val KEY_PAIRED_HOSTS = "moonlight_paired_hosts"
+        private const val KEY_LISTED_APPS = "moonlight_listed_apps"
         private val GAMESTREAM_CLIENT = Regex("[0-9a-f]{16}")
         private const val KEY_DROIDDECK_PINS = "droiddeck_pins"
         private const val PIN_FIELD = "\u001f"

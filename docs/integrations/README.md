@@ -15,7 +15,7 @@ Choose a guide for where your games live. You can combine sources on the same Ho
 
 ## Start here
 
-Open **L1 › Settings › Library** to add game folders or a RomM server. If your games are on a RomM server, start there: one sign-in brings the whole library, and with RomM 5.4 or newer your saves follow you between Thors. A game in a folder with the same system and file name as a RomM game joins its tile instead of doubling it. For Moonlight or DroidDeck shortcuts, first choose Foldcade under **Settings › System › Home app**; Android sends shortcut requests to its default home app.
+Open **L1 › Settings › Library** to add game folders or a RomM server. If your games are on a RomM server, start there: one sign-in brings the whole library, and with RomM 5.4 or newer your saves follow you between Thors. A game in a folder with the same system and file name as a RomM game joins its tile instead of doubling it. For Moonlight, turn on **Games from** your computer in the same place to list all its games. For Moonlight or DroidDeck shortcuts, first choose Foldcade under **Settings › System › Home app**; Android sends shortcut requests to its default home app.
 
 Finish setup in the source app or emulator and check that your game plays there. In Foldcade, press **A** to play on the top screen or **X** on the bottom. Azahar and melonDS use both screens; configure their layout in the emulator.
 
@@ -27,6 +27,7 @@ Finish setup in the source app or emulator and check that your game plays there.
 | RomM | At startup and when a connection is added or changed. |
 | Android apps | At startup, when you return to Foldcade, and when apps are installed, removed, or changed. |
 | Moonlight and DroidDeck pinned shortcuts | At startup, when you return to Foldcade, and after Foldcade accepts a new game shortcut. |
+| Moonlight computers Foldcade paired with | Right after pairing, then every few minutes while Home is shown and the computer answers. |
 
 Folders are not watched continuously. Returning to Foldcade rescans them in the background; Home keeps showing the current list until the scan finds a change. After changing a server's catalog, fully restart Foldcade: open Android's **App info** for Foldcade, choose **Force stop**, then reopen it.
 
