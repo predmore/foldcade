@@ -1,7 +1,9 @@
 #!/usr/bin/env bash
 # Attach foldcade.apk to a GitHub Release.
-# Every push to main recreates the pre-release tag "pre-release" on the built
+# Every push to main moves the pre-release tag "pre-release" onto the built
 # commit before the APK is uploaded, so the source archive matches the binary.
+# The tag is updated in place. Deleting it queues a GitHub event that can land
+# after the new release is published and force that release back into a draft.
 # A push that changes versionName in app/build.gradle.kts also cuts tag vX.Y.Z
 # and a non-prerelease release. An existing tag is not recreated.
 # A push of an existing tag v0.x.y that matches versionName publishes that
@@ -137,23 +139,130 @@ commit: ${GITHUB_SHA}
 Asset name: foldcade.apk
 EOF
 
-# Drop the old pre-release, including its git tag, then create it again on the
-# built commit before the APK upload. GitHub's source archive is generated from
-# the tag. The new release stays a draft until the APK is uploaded.
+# Remove the release object and leave its git tag in place.
+# --cleanup-tag queues a "tag deleted" event. GitHub can apply that event
+# after the replacement release is already public and force the new release
+# back into an untagged draft. The job would still be green.
+delete_prerelease_object() {
+  local pre_tag="$1"
+  if gh release view "$pre_tag" >/dev/null 2>&1; then
+    echo "Deleting the ${pre_tag} release object without deleting its tag."
+    gh release delete "$pre_tag" --yes
+  fi
+}
+
+# Point the rolling tag at the built commit. Create the ref when it is missing.
+# A ref update does not queue the tag-deleted event that drafts the new release.
+point_prerelease_tag() {
+  local pre_tag="$1"
+  local sha attempt
+  if sha="$(existing_tag_commit "$pre_tag")"; then
+    if [ "$sha" = "$GITHUB_SHA" ]; then
+      echo "Tag ${pre_tag} already points at ${GITHUB_SHA}."
+      return 0
+    fi
+    echo "Moving ${pre_tag} from ${sha} to ${GITHUB_SHA}."
+    for attempt in 1 2 3 4 5; do
+      if gh api --method PATCH "repos/${GITHUB_REPOSITORY}/git/refs/tags/${pre_tag}" \
+        -f sha="$GITHUB_SHA" \
+        -F force=true >/dev/null
+      then
+        return 0
+      fi
+      echo "Moving ${pre_tag} failed (attempt ${attempt})."
+      sleep $((attempt * 2))
+    done
+    echo "::error::Could not move ${pre_tag} to ${GITHUB_SHA}."
+    return 1
+  fi
+  echo "Creating ${pre_tag} at ${GITHUB_SHA}."
+  gh api --method POST "repos/${GITHUB_REPOSITORY}/git/refs" \
+    -f ref="refs/tags/${pre_tag}" \
+    -f sha="$GITHUB_SHA" >/dev/null
+}
+
+# The tag already points at this commit. --verify-tag refuses to invent one.
+create_prerelease_draft() {
+  local pre_tag="$1"
+  local attempt
+  for attempt in 1 2 3 4 5; do
+    if gh release create "$pre_tag" \
+      --draft \
+      --target "$GITHUB_SHA" \
+      --title "Pre-release ${VERSION_NAME}" \
+      --notes-file "$notes" \
+      --prerelease \
+      --latest=false \
+      --verify-tag
+    then
+      return 0
+    fi
+    echo "Creating draft ${pre_tag} failed (attempt ${attempt}). The previous release may still be deleting."
+    sleep $((attempt * 2))
+  done
+  echo "::error::Could not create the ${pre_tag} draft."
+  return 1
+}
+
+# The public tag endpoint 404s for drafts. gh release view does not: it falls
+# back to the draft, which is how a green job left Obtainium with a 404.
+prerelease_is_public() {
+  local pre_tag="$1"
+  local json target asset
+  if ! json="$(gh api "repos/${GITHUB_REPOSITORY}/releases/tags/${pre_tag}" 2>/dev/null)"; then
+    return 1
+  fi
+  target="$(printf '%s\n' "$json" | jq -r '.target_commitish // empty')"
+  if [ "$target" != "$GITHUB_SHA" ]; then
+    if git cat-file -e "${target}^{commit}" 2>/dev/null; then
+      target="$(git rev-parse "${target}^{commit}")"
+    fi
+  fi
+  asset="$(printf '%s\n' "$json" | jq -r '[.assets[].name] | index("foldcade.apk") != null')"
+  [ "$(printf '%s\n' "$json" | jq -r '.draft')" = "false" ] \
+    && [ "$(printf '%s\n' "$json" | jq -r '.prerelease')" = "true" ] \
+    && [ "$(printf '%s\n' "$json" | jq -r '.tag_name')" = "$pre_tag" ] \
+    && [ "$target" = "$GITHUB_SHA" ] \
+    && [ "$asset" = "true" ]
+}
+
+# Publish again when the release is still a draft, then require the public
+# tag endpoint to show a non-draft pre-release with foldcade.apk. The waits
+# cover the tag-deleted event arriving after the first publish.
+confirm_prerelease() {
+  local pre_tag="pre-release"
+  local attempt
+  local -a waits=(0 2 4 8 8 8 10 10 10)
+  for attempt in "${!waits[@]}"; do
+    if [ "${waits[$attempt]}" -gt 0 ]; then
+      sleep "${waits[$attempt]}"
+    fi
+    if prerelease_is_public "$pre_tag"; then
+      echo "pre-release is public at ${pre_tag} on ${GITHUB_SHA} with foldcade.apk."
+      return 0
+    fi
+    echo "pre-release is missing or still a draft (check $((attempt + 1)))."
+    if gh release view "$pre_tag" >/dev/null 2>&1; then
+      if ! gh release view "$pre_tag" --json assets --jq '.assets[].name' | grep -qx 'foldcade.apk'; then
+        gh release upload "$pre_tag" "$apk" --clobber
+      fi
+      gh release edit "$pre_tag" --draft=false --prerelease=true --latest=false
+    fi
+  done
+  echo "::error::Release ${pre_tag} is missing, still a draft, or has no foldcade.apk."
+  return 1
+}
+
+# Replace the rolling pre-release on this commit. The release stays a draft
+# until foldcade.apk is uploaded, then it is published and checked.
 recreate_prerelease() {
   local pre_tag="pre-release"
-  if gh release view "$pre_tag" >/dev/null 2>&1; then
-    gh release delete "$pre_tag" --yes --cleanup-tag
-  fi
-  gh release create "$pre_tag" \
-    --draft \
-    --target "$GITHUB_SHA" \
-    --title "Pre-release ${VERSION_NAME}" \
-    --notes-file "$notes" \
-    --prerelease \
-    --latest=false
-  gh release upload "$pre_tag" "$apk"
+  delete_prerelease_object "$pre_tag"
+  point_prerelease_tag "$pre_tag"
+  create_prerelease_draft "$pre_tag"
+  gh release upload "$pre_tag" "$apk" --clobber
   gh release edit "$pre_tag" --draft=false --prerelease=true --latest=false
+  confirm_prerelease
 }
 
 # Generated notes do not include the computed versionCode. Put it on the release

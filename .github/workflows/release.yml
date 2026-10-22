@@ -266,6 +266,8 @@ jobs:
           unzip -l "$signed" | grep -q 'assets/music/manifest.json'
           cp "$signed" "${RUNNER_TEMP}/foldcade.apk"
 
+      # publish.sh moves the pre-release tag without deleting it, uploads
+      # foldcade.apk, then fails unless the public pre-release tag is not a draft.
       - name: Publish GitHub Release
         env:
           GH_TOKEN: ${{ github.token }}
