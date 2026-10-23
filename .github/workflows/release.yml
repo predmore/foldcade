@@ -199,9 +199,11 @@ jobs:
 
       # Same render as the unsigned dry-run and the home-music workflow.
       # This step does not receive the release signing secrets, and it runs
-      # before the keystore is decoded.
+      # before the keystore is decoded. A healthy render takes about two minutes.
+      # Fail this step instead of holding the job until its 30 minute limit.
       - name: Render home music
         uses: ./.github/actions/render-home-music
+        timeout-minutes: 10
 
       - name: Decode the release keystore
         env:
