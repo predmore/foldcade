@@ -84,8 +84,10 @@ jobs:
           cache-read-only: true
 
       # Same render step as the signed release job. No cross-workflow wait.
+      # A healthy render takes about two minutes. Fail here instead of the job limit.
       - name: Render home music
         uses: ./.github/actions/render-home-music
+        timeout-minutes: 10
 
       - name: Assemble unsigned release
         run: |
