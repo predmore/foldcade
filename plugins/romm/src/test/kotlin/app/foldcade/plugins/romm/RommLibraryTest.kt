@@ -2,6 +2,7 @@ package app.foldcade.plugins.romm
 
 import app.foldcade.api.plugin.Availability
 import app.foldcade.api.plugin.DeviceCodePoll
+import app.foldcade.api.plugin.FirmwareOffer
 import app.foldcade.api.plugin.Game
 import app.foldcade.api.plugin.Setup
 import app.foldcade.api.plugin.GameActivity
@@ -17,6 +18,9 @@ import app.foldcade.api.plugin.PluginException
 import app.foldcade.api.plugin.SaveDeclaration
 import app.foldcade.api.plugin.StartDisplay
 import app.foldcade.api.plugin.SyncOutcome
+import java.io.ByteArrayOutputStream
+import java.util.zip.ZipEntry
+import java.util.zip.ZipOutputStream
 import app.foldcade.romm.DeviceAuthChallenge
 import app.foldcade.romm.FirmwareSummary
 import app.foldcade.romm.DeviceTokenPoll
@@ -50,10 +54,14 @@ import com.sun.net.httpserver.HttpServer
 import java.net.InetSocketAddress
 import java.nio.file.Files
 import java.nio.file.Path
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
+import java.util.concurrent.atomic.AtomicLong
 import kotlin.coroutines.cancellation.CancellationException
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.async
 import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -891,10 +899,63 @@ class RommLibraryTest {
         }
     }
 
-    @Test(timeout = 20_000)
-    fun firmwareTooSlowForOneLaunchIsThereForTheNext() = runBlocking {
+    @Test
+    fun aZipOfFirmwareIsOfferedAsItsFilesAndKeptForOffline() = runBlocking {
+        val server = TinyServer()
+        val cache = Files.createTempDirectory("romm-firmware-zip")
+        val zip = ByteArrayOutputStream().also { raw ->
+            ZipOutputStream(raw).use { archive ->
+                archive.putNextEntry(ZipEntry("boot.bin"))
+                archive.write("the-bios".toByteArray())
+                archive.closeEntry()
+                archive.putNextEntry(ZipEntry("note.txt"))
+                archive.write("skip".toByteArray())
+                archive.closeEntry()
+            }
+        }.toByteArray()
+        val firmwareUp = AtomicBoolean(true)
+        try {
+            server.route("GET", "/api/platforms") { exchange, _ ->
+                json(exchange, 200, """[{"id":3,"slug":"3ds","fs_slug":"3ds","rom_count":1,"name":"Nintendo 3DS"}]""")
+            }
+            server.route("GET", "/api/roms") { exchange, _ -> json(exchange, 200, ROM_PAGE) }
+            server.route("GET", "/api/firmware") { exchange, _ ->
+                if (!firmwareUp.get()) return@route json(exchange, 503, "{}")
+                json(
+                    exchange,
+                    200,
+                    """[{"id":9,"platform_id":3,"file_name":"bios.zip","file_size_bytes":${zip.size},"md5_hash":"${md5Hex(zip)}"}]""",
+                )
+            }
+            server.route("GET", "/api/firmware/9/content/bios.zip") { exchange, _ -> bytes(exchange, 200, zip) }
+            val library = live(server, cache)
+            val game = library.listGames("3ds", GameQuery()).games.single()
+            val spec = rom("3ds", 3).bytes()
+            val roms = cache.resolve("servers").resolve(RommData.serverKey(server.origin))
+            val cached = RommClient.romCacheFile(roms, 1234, spec.fileName, spec.fileIds)
+            Files.createDirectories(cached.parent)
+            Files.write(cached, "hello-rom".toByteArray())
+            val player = BiosPlayer(setOf("bios.zip", "bios.zip/boot.bin"))
+
+            val online = (library.prepareLaunch(game, player).target as LaunchTarget.ContentUri).firmware.map { it.name }
+            assertEquals(listOf("bios.zip", "bios.zip/boot.bin"), online.sorted())
+            val kept = roms.resolve("firmware/3/bios.zip.unpacked/boot.bin")
+            assertArrayEquals("the-bios".toByteArray(), Files.readAllBytes(kept))
+            // The other file is unpacked too. The player did not ask for it, so it is not offered.
+            assertTrue(Files.exists(roms.resolve("firmware/3/bios.zip.unpacked/note.txt")))
+
+            firmwareUp.set(false)
+            val offline = (library.prepareLaunch(game, player).target as LaunchTarget.ContentUri).firmware.map { it.name }
+            assertEquals(online.sorted(), offline.sorted())
+        } finally {
+            server.close()
+        }
+    }
+
+    @Test(timeout = 30_000)
+    fun aFirstLaunchWaitsOutAFirmwareFetch() = runBlocking {
         val server = TinyServer(concurrent = true)
-        val cache = Files.createTempDirectory("romm-firmware-slow")
+        val cache = Files.createTempDirectory("romm-firmware-first")
         val bios = "the-platform-bios".toByteArray()
         val release = AtomicBoolean(false)
         try {
@@ -917,17 +978,350 @@ class RommLibraryTest {
             Files.createDirectories(cached.parent)
             Files.write(cached, "hello-rom".toByteArray())
             val player = BiosPlayer(setOf("boot9.bin"))
+            val heard = java.util.Collections.synchronizedList(mutableListOf<GameActivity>())
+            val synced = CompletableDeferred<Unit>()
+            library.observeActivity { _, activity ->
+                heard += activity
+                if (activity is GameActivity.Synced && heard.count { it is GameActivity.Synced } == 1) synced.complete(Unit)
+            }
 
-            // The launch goes without it once its saves have synced, and the download goes on.
-            assertTrue((library.prepareLaunch(game, player).target as LaunchTarget.ContentUri).firmware.isEmpty())
+            // Nothing is checked yet. The download is held past the short wait, and the launch stays with it.
+            val pending = async { library.prepareLaunch(game, player) }
+            withTimeout(10_000) { synced.await() }
+            delay(6_000)
+            assertFalse(pending.isCompleted)
+            val sync = heard[1] as GameActivity.Synced
+            // The tile shows the firmware download through the wait, and has not finished yet.
+            assertEquals(
+                listOf(GameActivity.SyncingSaves, sync, GameActivity.Downloading(0L, bios.size.toLong())),
+                heard.toList(),
+            )
             release.set(true)
-            val kept = roms.resolve("firmware/3/boot9.bin")
-            withTimeout(10_000) { while (!RommClient.isVerifiedRom(kept, bios.size.toLong(), md5Hex(bios))) delay(20) }
-            val next = (library.prepareLaunch(game, player).target as LaunchTarget.ContentUri).firmware
-            assertEquals(listOf("boot9.bin"), next.map { it.name })
-            assertEquals(1, server.recorded.count { it.path.startsWith("/api/firmware/9/content/") })
+            val placement = withTimeout(15_000) { pending.await() }
+            val firmware = (placement.target as LaunchTarget.ContentUri).firmware
+            assertEquals(listOf("boot9.bin"), firmware.map { it.name })
+            assertArrayEquals(bios, Files.readAllBytes(roms.resolve("firmware/3/boot9.bin")))
+            assertEquals(GameActivity.Synced(placement.sync), sync)
+            // Bytes as they arrive, then the hash check, then the same sync mark again.
+            assertEquals(
+                listOf(
+                    GameActivity.SyncingSaves,
+                    sync,
+                    GameActivity.Downloading(0L, bios.size.toLong()),
+                    GameActivity.Downloading(bios.size.toLong(), bios.size.toLong()),
+                    GameActivity.Checking,
+                    sync,
+                ),
+                heard.toList(),
+            )
         } finally {
             release.set(true)
+            server.close()
+        }
+    }
+
+    @Test(timeout = 20_000)
+    fun aWaitedFirmwareZipReportsCheckingWhileItUnpacks() = runBlocking {
+        val server = TinyServer(concurrent = true)
+        val cache = Files.createTempDirectory("romm-firmware-zip-wait")
+        val zip = ByteArrayOutputStream().also { raw ->
+            ZipOutputStream(raw).use { archive ->
+                archive.putNextEntry(ZipEntry("boot.bin"))
+                archive.write("the-bios".toByteArray())
+                archive.closeEntry()
+            }
+        }.toByteArray()
+        val release = AtomicBoolean(false)
+        try {
+            server.route("GET", "/api/platforms") { exchange, _ ->
+                json(exchange, 200, """[{"id":3,"slug":"3ds","fs_slug":"3ds","rom_count":1,"name":"Nintendo 3DS"}]""")
+            }
+            server.route("GET", "/api/roms") { exchange, _ -> json(exchange, 200, ROM_PAGE) }
+            server.route("GET", "/api/firmware") { exchange, _ ->
+                json(exchange, 200, """[{"id":9,"platform_id":3,"file_name":"bios.zip","file_size_bytes":${zip.size},"md5_hash":"${md5Hex(zip)}"}]""")
+            }
+            server.route("GET", "/api/firmware/9/content/bios.zip") { exchange, _ ->
+                while (!release.get()) Thread.sleep(20)
+                bytes(exchange, 200, zip)
+            }
+            val library = live(server, cache)
+            val game = library.listGames("3ds", GameQuery()).games.single()
+            val spec = rom("3ds", 3).bytes()
+            val roms = cache.resolve("servers").resolve(RommData.serverKey(server.origin))
+            val cached = RommClient.romCacheFile(roms, 1234, spec.fileName, spec.fileIds)
+            Files.createDirectories(cached.parent)
+            Files.write(cached, "hello-rom".toByteArray())
+            val player = BiosPlayer(setOf("bios.zip", "bios.zip/boot.bin"))
+            val heard = java.util.Collections.synchronizedList(mutableListOf<GameActivity>())
+            val sawDownload = CompletableDeferred<Unit>()
+            library.observeActivity { _, activity ->
+                heard += activity
+                if (activity is GameActivity.Downloading && heard.any { it is GameActivity.Synced }) sawDownload.complete(Unit)
+            }
+
+            val pending = async { library.prepareLaunch(game, player) }
+            withTimeout(10_000) { sawDownload.await() }
+            release.set(true)
+            val placement = withTimeout(15_000) { pending.await() }
+            val sync = GameActivity.Synced(placement.sync)
+            assertEquals(
+                listOf(
+                    GameActivity.SyncingSaves,
+                    sync,
+                    GameActivity.Downloading(0L, zip.size.toLong()),
+                    GameActivity.Downloading(zip.size.toLong(), zip.size.toLong()),
+                    GameActivity.Checking,
+                    GameActivity.Checking,
+                    sync,
+                ),
+                heard.toList(),
+            )
+            assertEquals(listOf("bios.zip", "bios.zip/boot.bin"), (placement.target as LaunchTarget.ContentUri).firmware.map { it.name }.sorted())
+        } finally {
+            release.set(true)
+            server.close()
+        }
+    }
+
+    @Test(timeout = 25_000)
+    fun aSlowFirmwareFetchFallsBackToTheCheckedCopy() = runBlocking {
+        val server = TinyServer(concurrent = true)
+        val cache = Files.createTempDirectory("romm-firmware-checked")
+        val bios = "already-checked".toByteArray()
+        val replacement = "a-newer-bios".toByteArray()
+        val release = AtomicBoolean(false)
+        try {
+            server.route("GET", "/api/platforms") { exchange, _ ->
+                json(exchange, 200, """[{"id":3,"slug":"3ds","fs_slug":"3ds","rom_count":1,"name":"Nintendo 3DS"}]""")
+            }
+            server.route("GET", "/api/roms") { exchange, _ -> json(exchange, 200, ROM_PAGE) }
+            server.route("GET", "/api/firmware") { exchange, _ ->
+                json(exchange, 200, """[{"id":9,"platform_id":3,"file_name":"boot9.bin","file_size_bytes":${replacement.size},"md5_hash":"${md5Hex(replacement)}"}]""")
+            }
+            server.route("GET", "/api/firmware/9/content/boot9.bin") { exchange, _ ->
+                while (!release.get()) Thread.sleep(20)
+                bytes(exchange, 200, replacement)
+            }
+            val library = live(server, cache)
+            val game = library.listGames("3ds", GameQuery()).games.single()
+            val spec = rom("3ds", 3).bytes()
+            val roms = cache.resolve("servers").resolve(RommData.serverKey(server.origin))
+            val cached = RommClient.romCacheFile(roms, 1234, spec.fileName, spec.fileIds)
+            Files.createDirectories(cached.parent)
+            Files.write(cached, "hello-rom".toByteArray())
+            val kept = roms.resolve("firmware/3/boot9.bin")
+            Files.createDirectories(kept.parent)
+            Files.write(kept, bios)
+            Files.write(kept.resolveSibling("boot9.bin.verified"), """{"size":${bios.size},"md5":"${md5Hex(bios)}"}""".toByteArray())
+            // chooseFirmware stays the default, so any one checked file keeps the short wait.
+            val player = BiosPlayer(setOf("boot9.bin"))
+            val heard = java.util.Collections.synchronizedList(mutableListOf<GameActivity>())
+            val syncedAt = AtomicLong(0)
+            library.observeActivity { _, activity ->
+                heard += activity
+                if (activity is GameActivity.Synced) syncedAt.compareAndSet(0, System.nanoTime())
+            }
+
+            val placement = library.prepareLaunch(game, player)
+            val waitedMs = (System.nanoTime() - syncedAt.get()) / 1_000_000
+            // The short wait, not the download. The checked copy is what launches.
+            assertTrue("fell back after ${waitedMs}ms", waitedMs in 4_000..15_000)
+            val firmware = (placement.target as LaunchTarget.ContentUri).firmware
+            assertEquals(listOf("boot9.bin"), firmware.map { it.name })
+            assertArrayEquals(bios, Files.readAllBytes(CachePathContentUri(cache).pathFor(firmware.single().contentUri)!!))
+            // A checked copy keeps the sync mark and does not show the firmware download.
+            assertEquals(
+                listOf(GameActivity.SyncingSaves, GameActivity.Synced(placement.sync)),
+                heard.toList(),
+            )
+        } finally {
+            release.set(true)
+            server.close()
+        }
+    }
+
+    @Test(timeout = 30_000)
+    fun keyFilesCheckedStillWaitForTheBiosDownload() = runBlocking {
+        val server = TinyServer(concurrent = true)
+        val cache = Files.createTempDirectory("romm-firmware-keys")
+        val keys = listOf("civ.bin", "cks.bin", "eks.bin", "kek.bin").associateWith { "$it-key".toByteArray() }
+        val bios = "BIOS-usa".toByteArray()
+        val member = "ps2-0230a-20080220.bin"
+        val zip = zipOf(mapOf(member to bios))
+        val release = AtomicBoolean(false)
+        try {
+            server.route("GET", "/api/platforms") { exchange, _ ->
+                json(exchange, 200, """[{"id":3,"slug":"3ds","fs_slug":"3ds","rom_count":1,"name":"Nintendo 3DS"}]""")
+            }
+            server.route("GET", "/api/roms") { exchange, _ -> json(exchange, 200, ROM_PAGE) }
+            server.route("GET", "/api/firmware") { exchange, _ ->
+                val listed = keys.entries.mapIndexed { index, (name, bytes) -> firmwareItem(index + 1L, name, bytes) }
+                    .plus(firmwareItem(9, "PS2_BIOS.zip", zip))
+                    .joinToString(",")
+                json(exchange, 200, "[$listed]")
+            }
+            server.route("GET", "/api/firmware/9/content/PS2_BIOS.zip") { exchange, _ ->
+                while (!release.get()) Thread.sleep(20)
+                bytes(exchange, 200, zip)
+            }
+            val library = live(server, cache)
+            val game = library.listGames("3ds", GameQuery()).games.single()
+            val spec = rom("3ds", 3).bytes()
+            val roms = cache.resolve("servers").resolve(RommData.serverKey(server.origin))
+            val cached = RommClient.romCacheFile(roms, 1234, spec.fileName, spec.fileIds)
+            Files.createDirectories(cached.parent)
+            Files.write(cached, "hello-rom".toByteArray())
+            val firmwareDir = roms.resolve("firmware/3")
+            keys.forEach { (name, bytes) -> plantCheckedFile(firmwareDir, name, bytes) }
+            val player = ChoosingBiosPlayer(
+                wants = keys.keys + setOf("PS2_BIOS.zip", "PS2_BIOS.zip/$member"),
+                marker = "BIOS".toByteArray(),
+            )
+            val heard = java.util.Collections.synchronizedList(mutableListOf<GameActivity>())
+            val synced = CompletableDeferred<Unit>()
+            library.observeActivity { _, activity ->
+                heard += activity
+                if (activity is GameActivity.Synced && heard.count { it is GameActivity.Synced } == 1) synced.complete(Unit)
+            }
+
+            // The key files are checked, and none of them is a BIOS. The launch stays with the zip.
+            val pending = async { library.prepareLaunch(game, player) }
+            withTimeout(10_000) { synced.await() }
+            delay(6_000)
+            assertFalse(pending.isCompleted)
+            val total = keys.values.sumOf { it.size.toLong() } + zip.size
+            assertTrue(heard.any { it is GameActivity.Downloading && it.totalBytes == total })
+            release.set(true)
+            val placement = withTimeout(15_000) { pending.await() }
+            val firmware = (placement.target as LaunchTarget.ContentUri).firmware
+            assertEquals(
+                (keys.keys + setOf("PS2_BIOS.zip", "PS2_BIOS.zip/$member")).sorted(),
+                firmware.map { it.name }.sorted(),
+            )
+            val written = firmware.single { it.name == "PS2_BIOS.zip/$member" }
+            assertArrayEquals(bios, Files.readAllBytes(CachePathContentUri(cache).pathFor(written.contentUri)!!))
+            assertEquals(GameActivity.Synced(placement.sync), heard.last())
+        } finally {
+            release.set(true)
+            server.close()
+        }
+    }
+
+    @Test(timeout = 25_000)
+    fun aCheckedBiosTakesTheShortWait() = runBlocking {
+        val server = TinyServer(concurrent = true)
+        val cache = Files.createTempDirectory("romm-firmware-bios")
+        val keys = listOf("civ.bin", "cks.bin", "eks.bin", "kek.bin").associateWith { "$it-key".toByteArray() }
+        val bios = "BIOS-usa".toByteArray()
+        val member = "ps2-0230a-20080220.bin"
+        val zip = zipOf(mapOf(member to bios))
+        val replacement = "a-newer-bios-zip".toByteArray()
+        val release = AtomicBoolean(false)
+        try {
+            server.route("GET", "/api/platforms") { exchange, _ ->
+                json(exchange, 200, """[{"id":3,"slug":"3ds","fs_slug":"3ds","rom_count":1,"name":"Nintendo 3DS"}]""")
+            }
+            server.route("GET", "/api/roms") { exchange, _ -> json(exchange, 200, ROM_PAGE) }
+            server.route("GET", "/api/firmware") { exchange, _ ->
+                val listed = keys.entries.mapIndexed { index, (name, bytes) -> firmwareItem(index + 1L, name, bytes) }
+                    .plus(firmwareItem(9, "PS2_BIOS.zip", replacement))
+                    .joinToString(",")
+                json(exchange, 200, "[$listed]")
+            }
+            server.route("GET", "/api/firmware/9/content/PS2_BIOS.zip") { exchange, _ ->
+                while (!release.get()) Thread.sleep(20)
+                bytes(exchange, 200, replacement)
+            }
+            val library = live(server, cache)
+            val game = library.listGames("3ds", GameQuery()).games.single()
+            val spec = rom("3ds", 3).bytes()
+            val roms = cache.resolve("servers").resolve(RommData.serverKey(server.origin))
+            val cached = RommClient.romCacheFile(roms, 1234, spec.fileName, spec.fileIds)
+            Files.createDirectories(cached.parent)
+            Files.write(cached, "hello-rom".toByteArray())
+            val firmwareDir = roms.resolve("firmware/3")
+            keys.forEach { (name, bytes) -> plantCheckedFile(firmwareDir, name, bytes) }
+            plantCheckedZip(firmwareDir, "PS2_BIOS.zip", zip, mapOf(member to bios))
+            val player = ChoosingBiosPlayer(
+                wants = keys.keys + setOf("PS2_BIOS.zip", "PS2_BIOS.zip/$member"),
+                marker = "BIOS".toByteArray(),
+            )
+            val heard = java.util.Collections.synchronizedList(mutableListOf<GameActivity>())
+            val syncedAt = AtomicLong(0)
+            library.observeActivity { _, activity ->
+                heard += activity
+                if (activity is GameActivity.Synced) syncedAt.compareAndSet(0, System.nanoTime())
+            }
+
+            val placement = library.prepareLaunch(game, player)
+            val waitedMs = (System.nanoTime() - syncedAt.get()) / 1_000_000
+            // The unpacked BIOS is one this player would write, so the short wait stands.
+            assertTrue("fell back after ${waitedMs}ms", waitedMs in 4_000..15_000)
+            val firmware = (placement.target as LaunchTarget.ContentUri).firmware
+            val written = firmware.single { it.name == "PS2_BIOS.zip/$member" }
+            assertArrayEquals(bios, Files.readAllBytes(CachePathContentUri(cache).pathFor(written.contentUri)!!))
+            assertEquals(
+                listOf(GameActivity.SyncingSaves, GameActivity.Synced(placement.sync)),
+                heard.toList(),
+            )
+        } finally {
+            release.set(true)
+            server.close()
+        }
+    }
+
+    @Test
+    fun aThrowWhileChoosingFirmwareStillLaunchesTheCheckedCopy() = runBlocking {
+        val server = TinyServer()
+        val cache = Files.createTempDirectory("romm-firmware-choose-throws")
+        val key = "civ-key".toByteArray()
+        try {
+            server.route("GET", "/api/platforms") { exchange, _ ->
+                json(exchange, 200, """[{"id":3,"slug":"3ds","fs_slug":"3ds","rom_count":1,"name":"Nintendo 3DS"}]""")
+            }
+            server.route("GET", "/api/roms") { exchange, _ -> json(exchange, 200, ROM_PAGE) }
+            server.route("GET", "/api/firmware") { exchange, _ -> json(exchange, 503, "{}") }
+            val library = live(server, cache)
+            val game = library.listGames("3ds", GameQuery()).games.single()
+            val spec = rom("3ds", 3).bytes()
+            val roms = cache.resolve("servers").resolve(RommData.serverKey(server.origin))
+            val cached = RommClient.romCacheFile(roms, 1234, spec.fileName, spec.fileIds)
+            Files.createDirectories(cached.parent)
+            Files.write(cached, "hello-rom".toByteArray())
+            plantCheckedFile(roms.resolve("firmware/3"), "civ.bin", key)
+            val player = ChoosingBiosPlayer(setOf("civ.bin"), "BIOS".toByteArray(), fail = true)
+
+            val placement = library.prepareLaunch(game, player)
+            val firmware = (placement.target as LaunchTarget.ContentUri).firmware
+            assertEquals(listOf("civ.bin"), firmware.map { it.name })
+            assertArrayEquals(key, Files.readAllBytes(CachePathContentUri(cache).pathFor(firmware.single().contentUri)!!))
+        } finally {
+            server.close()
+        }
+    }
+
+    @Test(timeout = 20_000)
+    fun aFailedFirmwareFetchStillLaunches() = runBlocking {
+        val server = TinyServer()
+        val cache = Files.createTempDirectory("romm-firmware-failed")
+        try {
+            server.route("GET", "/api/platforms") { exchange, _ ->
+                json(exchange, 200, """[{"id":3,"slug":"3ds","fs_slug":"3ds","rom_count":1,"name":"Nintendo 3DS"}]""")
+            }
+            server.route("GET", "/api/roms") { exchange, _ -> json(exchange, 200, ROM_PAGE) }
+            server.route("GET", "/api/firmware") { exchange, _ -> json(exchange, 503, "{}") }
+            val library = live(server, cache)
+            val game = library.listGames("3ds", GameQuery()).games.single()
+            val spec = rom("3ds", 3).bytes()
+            val roms = cache.resolve("servers").resolve(RommData.serverKey(server.origin))
+            val cached = RommClient.romCacheFile(roms, 1234, spec.fileName, spec.fileIds)
+            Files.createDirectories(cached.parent)
+            Files.write(cached, "hello-rom".toByteArray())
+
+            val placement = library.prepareLaunch(game, BiosPlayer(setOf("boot9.bin")))
+            assertTrue(placement.target is LaunchTarget.ContentUri)
+            assertTrue((placement.target as LaunchTarget.ContentUri).firmware.isEmpty())
+        } finally {
             server.close()
         }
     }
@@ -1153,6 +1547,63 @@ class RommLibraryTest {
             data.toFile().deleteRecursively()
         }
     }
+
+    @Test(timeout = 8_000)
+    fun anInFlightFirmwareNotePublishesNothingAfterStop() {
+        assertNothingPublishesAfterStop { progress, sink ->
+            progress.follow(sink)
+            listOf(Thread { progress.note(GameActivity.Downloading(1L, 10L)) }.also { it.start() })
+        }
+    }
+
+    @Test(timeout = 8_000)
+    fun replayingFirmwareProgressPublishesNothingAfterStop() {
+        assertNothingPublishesAfterStop { progress, sink ->
+            progress.note(GameActivity.Downloading(1L, 10L))
+            listOf(Thread { progress.follow(sink) }.also { it.start() })
+        }
+    }
+
+    /**
+     * [start] begins a delivery that blocks inside [sink]. [LaunchProgress.stop]
+     * takes the same lock as that delivery, so it must not return while the
+     * delivery can still publish. A note after [stop] publishes nothing.
+     */
+    private fun assertNothingPublishesAfterStop(
+        start: (progress: LaunchProgress, sink: (GameActivity) -> Unit) -> List<Thread>,
+    ) {
+        val progress = LaunchProgress()
+        val deliveryEntered = CountDownLatch(1)
+        val releaseDelivery = CountDownLatch(1)
+        val events = java.util.Collections.synchronizedList(mutableListOf<String>())
+        val sink = { _: GameActivity ->
+            deliveryEntered.countDown()
+            if (releaseDelivery.await(5, TimeUnit.SECONDS)) events += "published" else events += "delivery-timed-out"
+        }
+        val workers = start(progress, sink)
+        assertTrue(deliveryEntered.await(5, TimeUnit.SECONDS))
+        val stopped = CountDownLatch(1)
+        val stopping = Thread {
+            progress.stop()
+            events += "stopped"
+            stopped.countDown()
+        }
+        stopping.start()
+        // The delivery holds the lock. Give stop long enough to return if it does not wait.
+        assertFalse(
+            "stop returned while a delivery was still in flight",
+            stopped.await(200, TimeUnit.MILLISECONDS),
+        )
+        releaseDelivery.countDown()
+        assertTrue(stopped.await(5, TimeUnit.SECONDS))
+        (workers + stopping).forEach { thread ->
+            thread.join(5_000)
+            assertFalse(thread.isAlive)
+        }
+        assertEquals(listOf("published", "stopped"), events.toList())
+        progress.note(GameActivity.Checking)
+        assertEquals(listOf("published", "stopped"), events.toList())
+    }
 }
 
 private fun harness(ops: ScriptedOps, platforms: List<Platform> = emptyList()): Harness {
@@ -1252,6 +1703,33 @@ private class BiosPlayer(private val wants: Set<String>) : Player {
     override fun launchIntent(request: LaunchRequest): PlayerIntent = error("unused")
 }
 
+/**
+ * A player that names [wants] and writes a file whose header starts with [marker].
+ * Anything else it names is offered and then left out.
+ */
+private class ChoosingBiosPlayer(
+    private val wants: Set<String>,
+    private val marker: ByteArray,
+    private val fail: Boolean = false,
+) : Player {
+    override val id = "choosing-bios"
+    override val displayName = id
+    override val platformId = "nintendo-3ds"
+    override val packageNames = emptyList<String>()
+    override val needsLocalFile = true
+    override val startDisplay = StartDisplay.Primary
+    override val occupiesBothDisplays = false
+    override val requiresImportedGame = false
+    override val firmwareHeaderSize: Int = marker.size
+    override fun saveDeclarations(game: Game): List<SaveDeclaration> = emptyList()
+    override fun firmwareFileName(name: String): String? = if (name in wants) "bios/${name.substringAfterLast('/')}" else null
+    override fun chooseFirmware(offered: List<FirmwareOffer>): List<FirmwareOffer> {
+        if (fail) error("no")
+        return offered.filter { it.header.size >= marker.size && it.header.copyOfRange(0, marker.size).contentEquals(marker) }
+    }
+    override fun launchIntent(request: LaunchRequest): PlayerIntent = error("unused")
+}
+
 internal class ScriptedOps : RommOps {
     var onHeartbeat: suspend () -> Heartbeat = { Heartbeat("5.4.0") }
     var onSearchCovers: suspend (String) -> List<app.foldcade.romm.RomCoverMatch> = { emptyList() }
@@ -1273,6 +1751,9 @@ internal class ScriptedOps : RommOps {
     var downloadSteps: List<RomProgress> = emptyList()
     var onFirmware: suspend (Long) -> List<app.foldcade.romm.FirmwareSummary> = { emptyList() }
     var onDownloadFirmware: suspend (app.foldcade.romm.FirmwareSummary, Path) -> Path = { _, _ -> error("firmware") }
+
+    /** What a firmware download reports before [onDownloadFirmware] answers. */
+    var firmwareSteps: List<RomProgress> = emptyList()
 
     override suspend fun heartbeat() = onHeartbeat()
     override suspend fun artwork(uri: String) = onArtwork(uri)
@@ -1301,7 +1782,10 @@ internal class ScriptedOps : RommOps {
         firmware: app.foldcade.romm.FirmwareSummary,
         target: Path,
         progress: ((RomProgress) -> Unit)?,
-    ) = onDownloadFirmware(firmware, target)
+    ): Path {
+        firmwareSteps.forEach { progress?.invoke(it) }
+        return onDownloadFirmware(firmware, target)
+    }
 
     override suspend fun registerDevice(
         stored: RegisteredDevice?,
@@ -1449,6 +1933,36 @@ private fun switchFolderPage(game: ByteArray, update: ByteArray): String = """
 
 private fun md5Hex(bytes: ByteArray): String =
     java.security.MessageDigest.getInstance("MD5").digest(bytes).joinToString("") { "%02x".format(it) }
+
+private fun firmwareItem(id: Long, name: String, bytes: ByteArray): String =
+    """{"id":$id,"platform_id":3,"file_name":"$name","file_size_bytes":${bytes.size},"md5_hash":"${md5Hex(bytes)}"}"""
+
+private fun zipOf(entries: Map<String, ByteArray>): ByteArray = ByteArrayOutputStream().also { raw ->
+    ZipOutputStream(raw).use { archive ->
+        entries.forEach { (name, bytes) ->
+            archive.putNextEntry(ZipEntry(name))
+            archive.write(bytes)
+            archive.closeEntry()
+        }
+    }
+}.toByteArray()
+
+private fun plantCheckedFile(dir: Path, name: String, bytes: ByteArray) {
+    val file = dir.resolve(name)
+    Files.createDirectories(file.parent)
+    Files.write(file, bytes)
+    Files.write(file.resolveSibling("$name.verified"), """{"size":${bytes.size},"md5":"${md5Hex(bytes)}"}""".toByteArray())
+}
+
+/** A checked zip and its unpack, stamped with the same marker so the members count as checked. */
+private fun plantCheckedZip(dir: Path, name: String, bytes: ByteArray, members: Map<String, ByteArray>) {
+    plantCheckedFile(dir, name, bytes)
+    val stamp = Files.readAllBytes(dir.resolve("$name.verified"))
+    val unpacked = dir.resolve("$name.unpacked")
+    Files.createDirectories(unpacked)
+    members.forEach { (member, memberBytes) -> Files.write(unpacked.resolve(member), memberBytes) }
+    Files.write(dir.resolve("$name.unpacked.verified"), stamp)
+}
 
 private const val ROM_PAGE = """
 {"items":[{"id":1234,"name":"Super Mario","fs_name":"mario.cci","fs_extension":"cci","fs_size_bytes":9,"platform_id":3,"platform_slug":"3ds","platform_fs_slug":"3ds","platform_display_name":"Nintendo 3DS","alternative_names":[],"path_cover_small":"/assets/cover/small.jpg","path_cover_large":"/assets/cover/large.jpg","url_cover":null,"has_simple_single_file":true,"has_nested_single_file":false,"has_multiple_files":false,"files":[{"id":7,"file_name":"mario.cci","file_size_bytes":9}]}],"total":1,"limit":50,"offset":0}

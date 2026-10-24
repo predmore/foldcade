@@ -521,13 +521,17 @@ class RommClientTest {
         }
         server.route("GET", "/api/firmware/1/content/SCPH1001.BIN") { exchange, _ -> bytes(exchange, 200, bios) }
         val target = dir.resolve("firmware/46/SCPH1001.BIN")
+        val steps = mutableListOf<RomProgress>()
         runClient(token = { "rmm_test" }) { client ->
             val listed = client.firmware(46).single()
             assertEquals(FirmwareSummary(1, 46, "SCPH1001.BIN", bios.size.toLong(), md5Hex(bios)), listed)
-            assertEquals(target, client.downloadFirmware(listed, target))
-            // A verified copy is reused without the network.
-            assertEquals(target, client.downloadFirmware(listed, target))
+            assertEquals(target, client.downloadFirmware(listed, target) { steps += it })
+            // A verified copy is reused without the network, and without progress.
+            assertEquals(target, client.downloadFirmware(listed, target) { error("checked firmware is not downloaded again") })
         }
+        assertEquals(RomProgress.Receiving(0L, bios.size.toLong()), steps.first())
+        assertEquals(RomProgress.Receiving(bios.size.toLong(), bios.size.toLong()), steps.last { it is RomProgress.Receiving })
+        assertEquals(RomProgress.Checking, steps.last())
         assertArrayEquals(bios, Files.readAllBytes(target))
         assertTrue(RommClient.isVerifiedRom(target, bios.size.toLong(), md5Hex(bios)))
         assertEquals("platform_id=46", server.recorded.first().query)

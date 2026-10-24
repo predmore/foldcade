@@ -18,6 +18,7 @@ tasks.register("testDebugUnitTest") {
         ":romm:test",
         ":gamestream:test",
         ":host:test",
+        ":plugins:armsx2:test",
         ":plugins:azahar:test",
         ":plugins:droiddeck:test",
         ":plugins:duckstation:test",

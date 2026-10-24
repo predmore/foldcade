@@ -160,12 +160,13 @@ class FoldcadeApp : Application() {
 
     /** Moves library saves in and out of each player's save folder. Replaced files are kept in `save-backups`. */
     internal val playerSaves: PlayerSaves by lazy {
+        val documents = AndroidSaveDocuments(contentResolver)
         PlayerSaves(
-            AndroidSaveDocuments(contentResolver),
+            documents,
             store,
             filesDir.toPath().resolve("save-backups"),
             filesDir.toPath().resolve("save-handover"),
-        )
+        ) { uri -> ContentGameFile(contentResolver, uri) }
     }
 
     /**
@@ -742,8 +743,10 @@ class FoldcadeApp : Application() {
                 refreshMoonlightShelf()
                 restoreDroidDeckPins()
                 refreshDroidDeckShelf()
+                val sync = readSaveSync()
                 withContext(Dispatchers.Main.immediate) {
                     refreshEdenSetting()
+                    shell.setSaveSync(sync)
                     shell.refreshPlayerSaves()
                     shell.noteShelfChanged()
                 }
@@ -952,6 +955,30 @@ class FoldcadeApp : Application() {
                 (plugins.player(id) as? HostedSaveFolder)?.let { HostedFolder(id, it.hostedFolderTitle) }
             }
         }
+    }
+
+    /**
+     * Reads whether each player's saves sync, off the main thread, and updates
+     * Settings. A card image is large, so this is not part of drawing a frame.
+     */
+    fun refreshSaveSync() {
+        if (!::plugins.isInitialized || !::shell.isInitialized) return
+        pluginLoad.launch {
+            val sync = readSaveSync()
+            withContext(Dispatchers.Main.immediate) { shell.setSaveSync(sync) }
+        }
+    }
+
+    private fun readSaveSync(): Map<String, app.foldcade.api.plugin.SaveSyncState> {
+        val states = linkedMapOf<String, app.foldcade.api.plugin.SaveSyncState>()
+        for (id in plugins.playerIds()) {
+            val player = plugins.player(id) ?: continue
+            if (player !is app.foldcade.api.plugin.SaveFolderHolder) continue
+            val uri = store.playerSaveFolder(player.saveFolderId()) ?: continue
+            val state = playerSaves.saveSync(player, uri) ?: continue
+            states[player.id] = state
+        }
+        return states
     }
 
     /**

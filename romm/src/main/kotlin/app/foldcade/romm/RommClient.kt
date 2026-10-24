@@ -467,7 +467,10 @@ class RommClient(
                     partial,
                     range = null,
                     onBytes = onBytes,
-                )
+                ) { _, _ ->
+                    received = 0L
+                    progress?.invoke(RomProgress.Receiving(0L, total))
+                }
             } catch (failure: Throwable) {
                 // Stopped or failed: the copy already checked stays the one to use.
                 withContext(NonCancellable) { Files.deleteIfExists(partial) }

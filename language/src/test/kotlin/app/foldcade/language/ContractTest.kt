@@ -674,6 +674,30 @@ class ContractTest {
     }
 
     @Test
+    fun theMemoryCardRowReadsSyncingOrSetUp() {
+        val syncing = PlayerSaveSetting("armsx2", "ARMSX2", chosen = true, saveSyncing = true)
+        val model = PickerModel(count = 1, rowsPerPage = 1, homeRoleHeld = true, playerSaves = listOf(syncing))
+        assertEquals(
+            listOf(Row.PlayerSave("armsx2"), Row.SaveSync("armsx2")),
+            settingsRows(SettingsCategory.Players, model),
+        )
+        assertEquals("ARMSX2 memory card  Syncing", rowLabel(Row.SaveSync("armsx2"), model))
+        val (leftSyncing, open) = reduce(model.onSetting(Row.SaveSync("armsx2")), Meaning.Activate)
+        assertEquals(Effect.OpenPlayer("armsx2"), open)
+        assertNull(leftSyncing.settings)
+        val steps = "Slot 1 needs a folder card to sync."
+        val asking = model.copy(playerSaves = listOf(syncing.copy(saveSyncing = false, saveSyncSteps = steps)))
+        assertEquals("ARMSX2 memory card  Set up", rowLabel(Row.SaveSync("armsx2"), asking))
+        val (closed, effect) = reduce(asking.onSetting(Row.SaveSync("armsx2")), Meaning.Activate)
+        assertEquals(Effect.ShowSaveSync("armsx2"), effect)
+        assertNull(closed.settings)
+        val dialog = saveSyncDialog("ARMSX2", steps, HostScreen.Top)
+        assertEquals("Sync ARMSX2 memory card", dialog.title)
+        assertEquals(steps, dialog.body)
+        assertEquals("Open ARMSX2", openPlayerLabel(dialog.subject))
+    }
+
+    @Test
     fun motionTokensAreTheSharedScale() {
         assertEquals(100, Motion.durationShort)
         assertEquals(180, Motion.durationFocus)

@@ -29,10 +29,11 @@ internal class LaunchSaves(
      */
     suspend fun prepare(route: GameRoute, player: Player, local: LaunchTarget): PreparedLaunch {
         val candidates = candidates(route)
+        val setup = mutableListOf<String>()
         var chosen: Negotiated? = null
         for (owner in candidates) {
             val negotiated = try {
-                negotiate(route, owner, player, local)
+                negotiate(route, owner, player, local, setup)
             } catch (cancelled: CancellationException) {
                 throw cancelled
             } catch (failure: Exception) {
@@ -46,12 +47,13 @@ internal class LaunchSaves(
                 break
             }
         }
-        val (owner, spots, placement) = chosen ?: negotiate(route, route.saves, player, local)
+        val (owner, spots, placement) = chosen ?: negotiate(route, route.saves, player, local, setup)
         try {
             val written = mutableListOf<String>()
             val placed = saves.place(owner.backendId, owner, player, spots, placement.savesToPlace, written)
             // Kept until the player starts, so a launch cancelled now still starts it fresh next time.
-            if (written.isNotEmpty()) awaitLoad(player.saveFolderId())
+            // Card setup counts as a change too: a running player would still be holding the old card.
+            if (written.isNotEmpty() || setup.isNotEmpty()) awaitLoad(player.saveFolderId())
             if (!placed) throw SaveNotPlaced()
             // A BIOS the library has goes beside the saves. A file already there stays.
             saves.placeFirmware(player, owner, placement.target, pickedFolder(player))
@@ -64,10 +66,17 @@ internal class LaunchSaves(
     }
 
     /** [owner]'s saves for this launch: any outside change handed to it first, then its sync. */
-    private suspend fun negotiate(route: GameRoute, owner: Game, player: Player, local: LaunchTarget): Negotiated {
+    private suspend fun negotiate(
+        route: GameRoute,
+        owner: Game,
+        player: Player,
+        local: LaunchTarget,
+        setup: MutableList<String>,
+    ): Negotiated {
         val libraryId = owner.backendId
         // Saves are named after the file that opens, which a folded copy shares by definition.
-        val spots = saves.spots(player, owner, local)
+        // forLaunch: the card may be created here, and must not be on the way back.
+        val spots = saves.spots(player, owner, local, forLaunch = true, changed = setup)
         try {
             val outside = saves.changedSince(libraryId, owner, player, spots)
             if (outside.slots.isNotEmpty()) {

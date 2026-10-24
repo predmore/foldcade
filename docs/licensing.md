@@ -19,5 +19,6 @@ Plugin authors may choose any license for their original work. Retain the MIT no
 - Nunito Regular remains under the [SIL Open Font License](../themes/afterglow/OFL-Nunito.txt).
 - MuseScore General remains under its [MIT license and acknowledgements](../licenses/MuseScore_General_License.md). Retain these notices for the rendered home music.
 - Dependencies retain their own licenses and notices.
+- XZ for Java (`org.tukaani:xz`) decompresses raw LZMA inside PlayStation 2 CHD images for the ARMSX2 plugin. It is under the [BSD Zero Clause License](https://opensource.org/license/0bsd). The notice is in [credits](../licenses/CREDITS.md).
 
 The APK bundles Foldcade's MIT notice and the MuseScore General notice, and displays both on the Licenses screen. The bundled Afterglow ZIP includes its MIT notice and Nunito's OFL notice. Full credits are in [licenses/CREDITS.md](../licenses/CREDITS.md).

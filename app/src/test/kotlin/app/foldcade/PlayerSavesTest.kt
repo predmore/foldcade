@@ -430,6 +430,53 @@ class PlayerSavesTest {
     }
 
     @Test
+    fun onlyTheFirmwareThePlayerChoosesIsWritten() {
+        docs.library["lib://a"] = "AAAA".toByteArray()
+        docs.library["lib://b"] = "BBBB".toByteArray()
+        val target = LaunchTarget.ContentUri(
+            ROM_URI,
+            firmware = listOf(FirmwareBytes("a.bin", "lib://a"), FirmwareBytes("b.bin", "lib://b")),
+        )
+        val player = object : Player by Melon(FOLDER, firmware = setOf("a.bin", "b.bin")) {
+            override val firmwareHeaderSize = 1
+            override fun chooseFirmware(offered: List<app.foldcade.api.plugin.FirmwareOffer>) =
+                offered.filter { it.header.firstOrNull() == 'B'.code.toByte() }
+        }
+        assertEquals(listOf("b.bin"), saves.placeFirmware(player, GAME, target))
+        assertEquals(null, docs.text(FOLDER, "a.bin"))
+        assertEquals("BBBB", docs.text(FOLDER, "b.bin"))
+    }
+
+    @Test
+    fun aPlayerThatThrowsWritesNoFirmware() {
+        docs.library["lib://bios"] = "bios".toByteArray()
+        val target = LaunchTarget.ContentUri(ROM_URI, firmware = listOf(FirmwareBytes("SCPH1001.BIN", "lib://bios")))
+        val choosing = object : Player by Melon(FOLDER, firmware = setOf("SCPH1001.BIN")) {
+            override fun chooseFirmware(offered: List<app.foldcade.api.plugin.FirmwareOffer>): Nothing = error("no")
+        }
+        assertTrue(saves.placeFirmware(choosing, GAME, target).isEmpty())
+        assertEquals(null, docs.text(FOLDER, "SCPH1001.BIN"))
+        val sizing = object : Player by Melon(FOLDER, firmware = setOf("SCPH1001.BIN")) {
+            override val firmwareHeaderSize: Int get() = error("no")
+        }
+        assertTrue(saves.placeFirmware(sizing, GAME, target).isEmpty())
+        assertEquals(null, docs.text(FOLDER, "SCPH1001.BIN"))
+        // A throw while the offers are being named drops every file, not only the one that threw.
+        docs.library["lib://a"] = "AAAA".toByteArray()
+        docs.library["lib://b"] = "BBBB".toByteArray()
+        val both = LaunchTarget.ContentUri(
+            ROM_URI,
+            firmware = listOf(FirmwareBytes("a.bin", "lib://a"), FirmwareBytes("b.bin", "lib://b")),
+        )
+        val naming = object : Player by Melon(FOLDER, firmware = setOf("a.bin", "b.bin")) {
+            override fun firmwareFileName(name: String): String? = if (name == "b.bin") error("no") else name
+        }
+        assertTrue(saves.placeFirmware(naming, GAME, both).isEmpty())
+        assertEquals(null, docs.text(FOLDER, "a.bin"))
+        assertEquals(null, docs.text(FOLDER, "b.bin"))
+    }
+
+    @Test
     fun aPickedFolderWithNoneOfWhatThePlayersHoldsIsNotIt() {
         val duck = object : Player by Melon(FOLDER), app.foldcade.api.plugin.SaveFolderHolder {
             override fun bindSaveFolder(contentUri: String) = Unit
@@ -508,6 +555,11 @@ class PlayerSavesTest {
             if (uri in unreadable) return null
             val folder = uri.substringBeforeLast('/')
             return folders[folder]?.get(uri.substringAfterLast('/'))
+        }
+
+        override fun head(uri: String, size: Int): ByteArray? {
+            val bytes = read(uri) ?: return null
+            return bytes.copyOf(minOf(size, bytes.size))
         }
 
         var deletes = true

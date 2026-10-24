@@ -340,6 +340,14 @@ fun hostedSavesDialog(playerName: String, title: String, steps: String, beforeLa
         subject = playerName,
     )
 
+/**
+ * How to point [playerName]'s memory card at a folder card, once, in its own
+ * settings. Opens on Open, which opens the player. The row reads the same way
+ * as a folder Foldcade hosts.
+ */
+fun saveSyncDialog(playerName: String, steps: String, screen: HostScreen): DialogState =
+    hostedSavesDialog(playerName, "$playerName ${Copy.memoryCard}", steps, beforeLaunch = false, screen)
+
 /** Opens on Continue: the picker is the only way Foldcade learns which cores RetroArch has. */
 fun retroArchCoresDialog(screen: HostScreen): DialogState = DialogState(
     kind = DialogKind.RetroArchCores,
@@ -525,6 +533,9 @@ sealed interface Row {
     /** The folder Foldcade hosts for a player's saves, and whether the player has it. */
     data class HostedSaves(val playerId: String) : Row
 
+    /** The player's memory card: Syncing, or Set up. */
+    data class SaveSync(val playerId: String) : Row
+
     /** Whether Foldcade can see RetroArch's cores. A shows them. */
     data object RetroArchCores : Row
 
@@ -676,6 +687,10 @@ data class PlayerSaveSetting(
     val hostedTitle: String? = null,
     /** True when the player has been given the folder Foldcade hosts. */
     val hostedInUse: Boolean = false,
+    /** True when the player's memory card syncs. False when [saveSyncSteps] says how to start. */
+    val saveSyncing: Boolean = false,
+    /** What the user does once, in the player, when the memory card is not syncing. */
+    val saveSyncSteps: String? = null,
 )
 
 /**
@@ -1022,6 +1037,12 @@ fun rowText(row: Row, model: PickerModel): RowText = when (row) {
         val inUse = if (setting?.hostedInUse == true) Copy.hostedSavesSet else Copy.hostedSavesUnset
         RowText(setting?.hostedTitle ?: row.playerId, inUse)
     }
+    is Row.SaveSync -> {
+        val setting = model.playerSaves.firstOrNull { it.playerId == row.playerId }
+        val state = if (setting?.saveSyncing == true) Copy.hostedSavesSet else Copy.hostedSavesUnset
+        val name = setting?.label ?: row.playerId
+        RowText("$name ${Copy.memoryCard}", state)
+    }
     Row.RetroArchCores -> RowText(
         Copy.retroArchCores,
         model.retroArch?.cores?.let { if (it == 1) Copy.oneCore else "$it ${Copy.cores}" } ?: Copy.showCores,
@@ -1120,6 +1141,12 @@ sealed interface Effect {
     data class ChoosePlayerSave(val playerId: String) : Effect
     /** How to point the player at the folder Foldcade hosts for its saves. */
     data class SetUpHostedSaves(val playerId: String) : Effect
+
+    /** How to switch the player's memory card so its saves can sync. */
+    data class ShowSaveSync(val playerId: String) : Effect
+
+    /** Opens the player, as Open on the memory-card dialog does. */
+    data class OpenPlayer(val playerId: String) : Effect
 
     /** Settings › RetroArch cores: the picker that lets Foldcade see them. */
     data object ShowRetroArchCores : Effect
@@ -2082,6 +2109,18 @@ private fun activateRow(
         ) to Effect.ClearNotices
         is Row.PlayerSave -> model.copy(panel = null, focus = panel.grid) to Effect.ChoosePlayerSave(row.playerId)
         is Row.HostedSaves -> model.copy(panel = null, focus = panel.grid) to Effect.SetUpHostedSaves(row.playerId)
+        is Row.SaveSync -> {
+            val setting = model.playerSaves.firstOrNull { it.playerId == row.playerId }
+            when {
+                // Not syncing yet: the steps, and Open on that dialog starts the player.
+                setting?.saveSyncSteps != null && !setting.saveSyncing ->
+                    model.copy(panel = null, focus = panel.grid) to Effect.ShowSaveSync(row.playerId)
+                // Already syncing: A opens the player directly, as that dialog's Open does.
+                setting?.saveSyncing == true ->
+                    model.copy(panel = null, focus = panel.grid) to Effect.OpenPlayer(row.playerId)
+                else -> model.copy(panel = panel) to null
+            }
+        }
         Row.RetroArchCores -> model.copy(panel = null, focus = panel.grid) to Effect.ShowRetroArchCores
         Row.EdenFolder -> model.copy(panel = null, focus = panel.grid) to Effect.ShowEdenFolder
         Row.AndroidGames -> model.copy(panel = null, focus = panel.grid) to Effect.OpenFolder(HOME_ANDROID_GAMES)

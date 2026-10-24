@@ -223,6 +223,8 @@ object Copy {
     const val openPlayer = "Open"
     const val hostedSavesSet = "Syncing"
     const val hostedSavesUnset = "Set up"
+    /** The row under a player's folder: "ARMSX2 memory card". */
+    const val memoryCard = "memory card"
     /** A player's memory cards or other saves, synced through a folder Foldcade hosts. */
     const val hostedSavesTitle = "Sync"
     const val hostedSavesLater = "Not now starts the game without syncing them. Settings › Emulators sets it up later."

@@ -6,6 +6,7 @@ import android.content.pm.PackageInfo
 import android.net.Uri
 import android.provider.DocumentsContract
 import app.foldcade.api.plugin.Player
+import app.foldcade.plugins.armsx2.ArmsX2Player
 import app.foldcade.plugins.retroarch.Core
 import app.foldcade.plugins.retroarch.CoreChoice
 import app.foldcade.plugins.retroarch.INTERNAL_DATA
@@ -166,10 +167,19 @@ internal fun runnableWith(player: Player, installedPackage: String?): Boolean {
 }
 
 /**
- * Launch order across apps, lowest first: RetroArch, then standalone emulators,
- * then RetroArch for a system whose standalone emulator is the better fit.
+ * Launch order across apps, lowest first.
+ *
+ * RetroArch leads a platform when its core is the better fit, and gives way
+ * when a standalone player is (`aheadOfStandalone`). Every other player shares
+ * one rank, in the order plugins were registered, except ARMSX2. NetherSX2 and
+ * EmuCoreX stay in the emulators table, so registration order would put
+ * whichever plugin loaded first ahead. ARMSX2's own rank puts it ahead of that
+ * table whichever plugin is registered first. DuckStation does not need this:
+ * the PlayStation row left the table, and RetroArch gives way there.
  */
-internal fun playerRank(player: Player): Int {
-    val retroArch = player as? RetroArchPlayer ?: return 1
-    return if (retroArch.system.aheadOfStandalone) 0 else 2
+internal fun playerRank(player: Player): Int = when {
+    player is RetroArchPlayer && player.system.aheadOfStandalone -> 0
+    player is ArmsX2Player -> 1
+    player is RetroArchPlayer -> 3
+    else -> 2
 }
