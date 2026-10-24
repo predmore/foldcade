@@ -3,6 +3,7 @@ package app.foldcade.plugins.romm
 import app.foldcade.api.plugin.Availability
 import app.foldcade.api.plugin.DeviceCodeChallenge
 import app.foldcade.api.plugin.DeviceCodePoll
+import app.foldcade.api.plugin.FirmwareBytes
 import app.foldcade.api.plugin.Game
 import app.foldcade.api.plugin.GameActivity
 import app.foldcade.api.plugin.GameActivityListener
@@ -54,7 +55,9 @@ import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.async
 import kotlinx.coroutines.cancelChildren
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runInterruptible
 import kotlinx.coroutines.sync.Mutex
@@ -362,7 +365,10 @@ internal class RommLibrary internal constructor(
             val spec = catalog.rom(game.remoteKey)?.bytes() ?: readRomSpec(wiring.romRoot, romId)
             spec?.let { adoptCachedRom(wiring.romRoot, romId, it) }
         }
-        if (cached != null) return@withLock launchTarget(wiring, cached.first, cached.second)
+        if (cached != null) {
+            val boot = runInterruptible(Dispatchers.IO) { bootFile(cached.first, cached.second, game.platformId) }
+            return@withLock launchTarget(wiring, boot)
+        }
         report(romId, GameActivity.Downloading(0L, null))
         var done = false
         try {
@@ -400,11 +406,12 @@ internal class RommLibrary internal constructor(
                     )
                     before += addOn.size
                 }
-                runInterruptible(Dispatchers.IO) {
+                val boot = runInterruptible(Dispatchers.IO) {
                     if (spec.addOns.isNotEmpty()) pruneRomFolder(path, spec)
                     writeRomSpec(current.romRoot, rom.id, spec)
+                    bootFile(path, spec, game.platformId)
                 }
-                launchTarget(current, path, spec)
+                launchTarget(current, boot)
             }.also { done = true }
         } finally {
             // A finished download is followed by the launch's save sync, which reports next.
@@ -413,13 +420,13 @@ internal class RommLibrary internal constructor(
     }
 
     /**
-     * The game file a player opens. A game with add-ons is handed over as a file in
-     * its folder, so a player such as Eden finds the update and DLC beside it.
+     * The game file a player opens, as a file in its folder: Eden finds a game's
+     * update and DLC beside it, a player handed a `.cue` finds its tracks, and
+     * DuckStation can name only a document in a tree. The folder holds this game's
+     * download alone.
      */
-    private fun launchTarget(wiring: RommWiring, rom: Path, spec: RomBytes): LaunchTarget.ContentUri =
-        LaunchTarget.ContentUri(
-            uri = if (spec.addOns.isEmpty()) wiring.contentUris.uriFor(rom) else wiring.contentUris.folderUriFor(rom),
-        )
+    private fun launchTarget(wiring: RommWiring, rom: Path): LaunchTarget.ContentUri =
+        LaunchTarget.ContentUri(uri = wiring.contentUris.folderUriFor(rom))
 
     /**
      * Deletes [game]'s downloaded ROM and the file list kept beside it, with no
@@ -490,9 +497,12 @@ internal class RommLibrary internal constructor(
         }
     }
 
-    private suspend fun negotiate(game: Game, player: Player, target: LaunchTarget): Placement {
+    private suspend fun negotiate(game: Game, player: Player, target: LaunchTarget): Placement = coroutineScope {
         val wiring = gate.wiring()
         val romId = game.romId()
+        // Fetched beside the save sync, so it adds little wait of its own, and in the
+        // background, so a slow download a launch does not wait for is there for the next.
+        val fetching = if (target is LaunchTarget.ContentUri) background.async { fetchFirmware(wiring, game, player) } else null
         // A slow server does not hold the game. A cut-short sync leaves files whole: each write is a rename.
         report(romId, GameActivity.SyncingSaves)
         val sync = withTimeoutOrNull(LAUNCH_SYNC_LIMIT_MS) { syncRom(romId, player.id) }
@@ -500,7 +510,66 @@ internal class RommLibrary internal constructor(
         report(romId, GameActivity.Synced(if (savesUnreachable(game, player)) unreachableSync() else sync))
         // A sync still running in the background may rename a save at any time, so
         // the shell gets copies whose hashes match their bytes.
-        return Placement(target, snapshotSaves(wiring, romId), sync)
+        // Firmware still on its way after the saves is not waited for long: the copies checked before go.
+        val firmware = fetching?.let { job ->
+            withTimeoutOrNull(FIRMWARE_AFTER_SYNC_MS) { job.await() } ?: checkedFirmwareFor(wiring, game, player)
+        }.orEmpty()
+        Placement(withFirmware(target, firmware), snapshotSaves(wiring, romId), sync)
+    }
+
+    /** [target] with [firmware] added, see [firmwareFor]. */
+    private fun withFirmware(target: LaunchTarget, firmware: List<FirmwareBytes>): LaunchTarget =
+        if (target is LaunchTarget.ContentUri && firmware.isNotEmpty()) target.copy(firmware = target.firmware + firmware) else target
+
+    /**
+     * The firmware [player] asks for that RomM keeps for [game]'s platform, such as a
+     * console's BIOS, each file downloaded and checked. Null when RomM did not answer,
+     * or [offlineCatalog] says it will not. Firmware never stops a launch.
+     */
+    private suspend fun fetchFirmware(wiring: RommWiring, game: Game, player: Player): List<FirmwareBytes>? {
+        if (offlineCatalog) return null
+        val platformId = gate.restoreCatalog(wiring).rom(game.remoteKey)?.platformId ?: return emptyList()
+        val dir = firmwareDir(wiring, platformId)
+        return try {
+            withTimeoutOrNull(FIRMWARE_FETCH_LIMIT_MS) {
+                gate.call { _, ops ->
+                    ops.firmware(platformId).filter { isPlainFileName(it.fileName) && player.wantsFirmware(it.fileName) }.map { firmware ->
+                        firmware.fileName to ops.downloadFirmware(firmware, dir.resolve(firmware.fileName))
+                    }
+                }
+            }?.map { (name, path) -> FirmwareBytes(name = name, contentUri = wiring.contentUris.uriFor(path)) }
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (_: Exception) {
+            null
+        }
+    }
+
+    /** The firmware [player] asks for that was downloaded and checked before, with no network call. */
+    private suspend fun checkedFirmwareFor(wiring: RommWiring, game: Game, player: Player): List<FirmwareBytes> = try {
+        val platformId = gate.restoreCatalog(wiring).rom(game.remoteKey)?.platformId
+        if (platformId == null) {
+            emptyList()
+        } else {
+            runInterruptible(Dispatchers.IO) { checkedFirmware(firmwareDir(wiring, platformId)) }
+                .filter { player.wantsFirmware(it.first) }
+                .map { (name, path) -> FirmwareBytes(name = name, contentUri = wiring.contentUris.uriFor(path)) }
+        }
+    } catch (cancelled: CancellationException) {
+        throw cancelled
+    } catch (_: Exception) {
+        emptyList()
+    }
+
+    private fun firmwareDir(wiring: RommWiring, platformId: Long): Path =
+        wiring.romRoot.resolve(FIRMWARE_DIR).resolve(platformId.toString())
+
+    private fun Player.wantsFirmware(name: String): Boolean = try {
+        firmwareFileName(name) != null
+    } catch (cancelled: CancellationException) {
+        throw cancelled
+    } catch (_: Exception) {
+        false
     }
 
     /**
@@ -777,6 +846,15 @@ internal fun RomSummary.bytes(): RomBytes {
             addOns = addOns,
         )
     }
+    discSheet()?.let { sheet ->
+        return RomBytes(
+            fileName = sheet.fileName,
+            fileIds = listOf(sheet.id),
+            expectedSize = sheet.fileSizeBytes,
+            md5 = sheet.md5Hash,
+            addOns = files.filter { it !== sheet }.map { AddOn(it.id, it.fileName, it.fileSizeBytes, it.md5Hash) },
+        )
+    }
     val multiple = hasMultipleFiles || hasNestedSingleFile
     val fileIds = if (multiple) files.map { it.id } else emptyList()
     val fileName = when {
@@ -808,6 +886,33 @@ private fun RomSummary.soleGameFile(): RomFileSummary? {
     return game
 }
 
+/**
+ * The file a disc game boots, when its folder is a disc image split into files: a
+ * `.cue` and its `.bin` tracks, or an `.m3u` naming each disc. A sheet names the
+ * other files by their names alone, so they are fetched one by one into one folder
+ * under the names RomM has, and the player is handed the sheet in that folder.
+ * A folder of two or more whole-disc images, such as `.chd` or `.iso` files, is a
+ * game of that many discs, fetched the same way.
+ *
+ * An `.m3u` wins over the discs it lists, and sheets over whole-disc images.
+ * Several discs with no `.m3u` get one, see [discPlaylist], and this is Disc 1. A folder with files below its top, an
+ * archive, or two names that differ only in case keeps the request it had.
+ */
+private fun RomSummary.discSheet(): RomFileSummary? {
+    if (hasSimpleSingleFile || files.size < 2) return null
+    if (files.any { it.isTopLevel != true || RommClient.isArchiveName(it.fileName) }) return null
+    if (files.map { it.fileName.lowercase() }.toSet().size != files.size) return null
+    fun sheets(extensions: Set<String>) =
+        files.filter { it.fileName.substringAfterLast('.', "").lowercase() in extensions }
+    sheets(PLAYLIST_EXTENSIONS).let { playlists -> if (playlists.isNotEmpty()) return playlists.singleOrNull() }
+    sheets(DISC_SHEET_EXTENSIONS).minByOrNull { it.fileName.lowercase() }?.let { return it }
+    val images = sheets(DISC_IMAGE_EXTENSIONS).takeIf { it.size >= 2 } ?: return null
+    return images.minWithOrNull(compareBy<RomFileSummary> { discNumber(it.fileName) }.thenBy { it.fileName.lowercase() })
+}
+
+/** The number in a disc name's `(Disc 2)`, or past every disc for a name with none. */
+private fun discNumber(name: String): Int = DISC_TAG.find(name)?.groupValues?.get(1)?.toIntOrNull() ?: Int.MAX_VALUE
+
 /** What [RommClient.downloadRom] needs for one ROM. [md5] is null when RomM has no hash for it. */
 internal data class RomBytes(
     val fileName: String,
@@ -825,6 +930,53 @@ internal data class AddOn(
     val size: Long,
     val md5: String? = null,
 )
+
+/**
+ * For a game of several discs whose folder has no playlist: the `.m3u` name and
+ * the disc sheets it lists, Disc 1 first. Handed a playlist, a player can change
+ * discs, and DuckStation names the set's memory card after it, which is the set's
+ * name with the disc taken out, as `Final Fantasy VII (USA).m3u` for discs named
+ * `Final Fantasy VII (USA) (Disc 1).cue` and on. Null for a game of one disc, or
+ * one with a playlist of its own.
+ */
+internal fun discPlaylist(spec: RomBytes): Pair<String, List<String>>? {
+    val names = listOf(spec.fileName) + spec.addOns.map { it.fileName }
+    fun extension(name: String) = name.substringAfterLast('.', "").lowercase()
+    if (names.any { extension(it) in PLAYLIST_EXTENSIONS }) return null
+    // Each sheet and each whole-disc image is a disc, so a set may mix them. When two of
+    // them are one disc, as a sheet and an image of it, the sheets are the discs.
+    val sheets = names.filter { extension(it) in DISC_SHEET_EXTENSIONS }
+    val all = sheets + names.filter { extension(it) in DISC_IMAGE_EXTENSIONS }
+    val numbers = all.map(::discNumber).filter { it != Int.MAX_VALUE }
+    val discs = if (numbers.size == all.size && numbers.toSet().size == numbers.size) all else sheets.ifEmpty { all }
+    if (discs.size < 2 || spec.fileName !in discs) return null
+    val ordered = discs.sortedWith(compareBy<String> { discNumber(it) }.thenBy { it.lowercase() })
+    val title = ordered.first().substringBeforeLast('.').replace(DISC_TAG, "").replace(Regex("\\s+"), " ").trim()
+    val name = "${title.ifEmpty { "Discs" }}.m3u"
+    if (!isPlainFileName(name) || names.any { it.equals(name, ignoreCase = true) }) return null
+    return name to ordered
+}
+
+/**
+ * The file a player is handed for [spec], downloaded as [rom] for a game of
+ * [platformId]: the game file, or the playlist of its discs, written beside them
+ * and marked checked like a download when [discPlaylist] names one, so the folder
+ * serves it. Only on [PLAYLIST_PLATFORMS], whose players all open a playlist.
+ */
+internal fun bootFile(rom: Path, spec: RomBytes, platformId: String): Path {
+    if (platformId !in PLAYLIST_PLATFORMS) return rom
+    val (name, discs) = discPlaylist(spec) ?: return rom
+    val playlist = rom.resolveSibling(name)
+    // Each disc by the name it is kept under beside the playlist.
+    val bytes = discs.joinToString("\n", postfix = "\n") { RommClient.besideRom(rom, it).fileName.toString() }
+        .toByteArray(Charsets.UTF_8)
+    val md5 = md5Hex(bytes)
+    if (!RommClient.isVerifiedRom(playlist, bytes.size.toLong(), md5)) {
+        writeDurably(playlist, bytes)
+        if (!RommClient.adoptLocalRom(playlist, bytes.size.toLong(), md5)) return rom
+    }
+    return playlist
+}
 
 /** The downloaded game file for [spec] when it and its add-ons still match their verified markers, else null. */
 internal fun verifiedRom(cacheRoot: Path, romId: Long, spec: RomBytes): Path? {
@@ -849,7 +1001,7 @@ internal fun verifiedRom(cacheRoot: Path, romId: Long, spec: RomBytes): Path? {
 internal fun pruneRomFolder(rom: Path, spec: RomBytes) {
     val keep = (listOf(rom) + spec.addOns.map { RommClient.besideRom(rom, it.fileName) })
         .map { it.fileName.toString() }
-        .toSet()
+        .toSet() + listOfNotNull(discPlaylist(spec)?.first)
     val markers = Files.list(rom.parent).use { entries ->
         entries.iterator().asSequence().filter { it.fileName.toString().endsWith(VERIFIED_SUFFIX) }.toList()
     }
@@ -981,6 +1133,25 @@ internal fun cacheAvailability(cacheRoot: Path, rom: RomSummary): Availability {
 }
 
 /** A file on disk matches the size and hash RomM published. A missing check is not a mismatch. */
+/**
+ * The firmware in [dir] that was downloaded and checked, by name: each file
+ * with its verified marker. A newer copy that stopped part way, beside it, does
+ * not touch it, since firmware is moved into place only once it is whole.
+ */
+internal fun checkedFirmware(dir: Path): List<Pair<String, Path>> {
+    if (!Files.isDirectory(dir)) return emptyList()
+    val files = Files.list(dir).use { stream -> stream.collect(java.util.stream.Collectors.toList()) }
+    return files
+        .filter { file -> FIRMWARE_SIDE_FILES.none { file.fileName.toString().endsWith(it) } }
+        .filter { RommClient.isVerifiedRom(it, null, null, besidePartial = true) }
+        .map { it.fileName.toString() to it }
+        .sortedBy { it.first }
+}
+
+/** A name that stays one file in its folder: no folder in it, and not `.` or `..`. */
+internal fun isPlainFileName(name: String): Boolean =
+    name.isNotBlank() && name != "." && name != ".." && name.none { it == '/' || it == '\\' || it == '\u0000' }
+
 internal fun localRomMatches(target: Path, expectedSize: Long?, expectedMd5: String?): Boolean {
     if (expectedSize != null && Files.size(target) != expectedSize) return false
     if (expectedMd5 != null && !md5File(target).equals(expectedMd5, ignoreCase = true)) return false
@@ -1120,8 +1291,20 @@ private const val PROGRESS_GAP_NS = 100_000_000L
 /** How long a launch waits for its save sync. */
 private const val LAUNCH_SYNC_LIMIT_MS = 20_000L
 
+/** How long a launch waits for firmware once its saves have synced. */
+private const val FIRMWARE_AFTER_SYNC_MS = 5_000L
+
+/** How long a firmware download may run, mostly past the launch that started it. */
+private const val FIRMWARE_FETCH_LIMIT_MS = 300_000L
+
 /** Why a sync with a player that has no save folder reads as not synced. */
 internal const val NO_SAVE_FOLDER = "Choose a save folder for this player so its saves sync"
+
+/** Under the download root: each platform's firmware, in a folder named by RomM's platform id. */
+internal const val FIRMWARE_DIR = "firmware"
+
+/** What [RommClient.downloadFirmware] keeps beside a file: its marker, and a download not finished. */
+private val FIRMWARE_SIDE_FILES = listOf(".verified", ".partial")
 
 /** The slot name RomM uses for a save with no slot. */
 internal const val ARCHIVE_SLOT = "archive"
@@ -1136,3 +1319,21 @@ private const val GAME_CATEGORY = "game"
 
 /** RomM's `category` values for files a player loads with the game, from its folder. */
 private val ADD_ON_CATEGORIES = setOf("update", "dlc")
+
+/** A list of a game's discs. */
+private val PLAYLIST_EXTENSIONS = setOf("m3u")
+
+/** Sheets that name a disc's track files: CUE, Dreamcast GDI, CloneCD. */
+private val DISC_SHEET_EXTENSIONS = setOf("cue", "gdi", "ccd")
+
+/** Images that hold a whole disc in one file. A `.pbp` holds every disc of a set, so it is not one. */
+private val DISC_IMAGE_EXTENSIONS = setOf("chd", "iso")
+
+/**
+ * Platforms whose players all open an `.m3u`: DuckStation, and RetroArch's
+ * PlayStation cores. A game of several discs there is handed a playlist of them.
+ */
+internal val PLAYLIST_PLATFORMS = setOf("playstation")
+
+/** A disc number in a file name, as Redump writes it: ` (Disc 2)`, also ` (Disc 2 of 3)` or ` (CD 2)`. */
+private val DISC_TAG = Regex("\\s*\\((?:Disc|Disk|CD)\\s*(\\d+)(?:\\s+of\\s+\\d+)?\\)", RegexOption.IGNORE_CASE)

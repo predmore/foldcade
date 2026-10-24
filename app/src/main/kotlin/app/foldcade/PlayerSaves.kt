@@ -5,11 +5,13 @@ import android.net.Uri
 import android.provider.DocumentsContract
 import android.provider.OpenableColumns
 import app.foldcade.api.plugin.Game
+import app.foldcade.api.plugin.HostedSaveFolder
 import app.foldcade.api.plugin.LaunchTarget
 import app.foldcade.api.plugin.ObservedSaves
 import app.foldcade.api.plugin.ObservedSlot
 import app.foldcade.api.plugin.PlacedSave
 import app.foldcade.api.plugin.Player
+import app.foldcade.api.plugin.SaveFolderHolder
 import app.foldcade.api.plugin.SaveFolderPart
 import java.io.ByteArrayInputStream
 import java.io.ByteArrayOutputStream
@@ -39,6 +41,14 @@ internal data class SaveSpot(
     val fileName: String,
     val folders: List<SaveFolderPart> = emptyList(),
 )
+
+/**
+ * Held while the shell checks a save file and writes it, and while a player
+ * changes a file in a folder Foldcade hosts, see [HostedSavesProvider]. A
+ * player's write then lands before the check, which sees it, or after the
+ * write, and never between them.
+ */
+internal object SaveFileLock
 
 /** A file or folder below a folder, at [path] below it, separated by `/`. */
 internal data class SaveEntry(
@@ -84,6 +94,9 @@ internal interface SaveDocuments {
 
     /** Makes the folder at exactly [name] inside [folderUri], and those it is in. False when it could not. */
     fun createFolder(folderUri: String, name: String): Boolean = false
+
+    /** The names directly inside the tree [folderUri], or null when it cannot be listed. */
+    fun childNames(folderUri: String): List<String>? = null
 }
 
 /** What the shell last placed in, or read from, each save file. */
@@ -125,6 +138,23 @@ internal class PlayerSaves(
     private val backups: Path,
     private val handover: Path,
 ) {
+    /**
+     * False when [folderUri], just picked for [player], holds none of its
+     * [SaveFolderHolder.saveFolderMarkers], so it is not the player's folder and no
+     * save would move through it. A player with no markers, or a folder that cannot
+     * be listed, passes.
+     */
+    fun looksLikeSaveFolder(player: Player?, folderUri: String): Boolean {
+        val markers = (player as? SaveFolderHolder)?.saveFolderMarkers.orEmpty()
+        if (markers.isEmpty()) return true
+        val names = try {
+            docs.childNames(folderUri)
+        } catch (_: Exception) {
+            null
+        } ?: return true
+        return names.any { name -> markers.any { it.equals(name, ignoreCase = true) } }
+    }
+
     fun spots(player: Player, game: Game, target: LaunchTarget): List<SaveSpot> {
         val uri = when (target) {
             is LaunchTarget.ContentUri -> target.uri
@@ -211,7 +241,9 @@ internal class PlayerSaves(
             val key = key(libraryId, game, player, spot)
             val bytes = docs.read(save.contentUri) ?: return false
             if (md5Hex(bytes) != save.contentHash) return false
-            val outcome = if (spot.folders.isEmpty()) placeFile(key, player, spot, bytes) else placeFolders(key, player, spot, bytes)
+            val outcome = synchronized(SaveFileLock) {
+                if (spot.folders.isEmpty()) placeFile(key, player, spot, bytes) else placeFolders(key, player, spot, bytes)
+            }
             when (outcome) {
                 Placing.Failed -> return false
                 Placing.Written -> changed?.add(spot.slot)
@@ -219,6 +251,93 @@ internal class PlayerSaves(
             }
         }
         return true
+    }
+
+    /**
+     * Writes each firmware file in [target] that [player] asks for, see
+     * [Player.firmwareFileName], into [folder], the folder the user picked for it,
+     * or else the one its save declarations for [game] name, unless that is a folder
+     * Foldcade hosts, which holds saves alone. A file there is replaced only when it holds what the shell last wrote
+     * there, so a library's new copy follows, and a file the user put there or
+     * changed stays. A written file is read back; one that does not match goes,
+     * and a file it replaced comes back. Never throws, since firmware does not
+     * stop a launch. Returns the names written.
+     */
+    fun placeFirmware(player: Player, game: Game, target: LaunchTarget, folder: String? = null): List<String> {
+        val firmware = (target as? LaunchTarget.ContentUri)?.firmware.orEmpty()
+        if (firmware.isEmpty()) return emptyList()
+        val into = folder ?: if (player is HostedSaveFolder) return emptyList() else try {
+            player.saveDeclarations(game).firstNotNullOfOrNull { it.locationUri }
+        } catch (_: Exception) {
+            null
+        } ?: return emptyList()
+        return firmware.mapNotNull { file ->
+            try {
+                val name = player.firmwareFileName(file.name)?.takeIf { savePathParts(it) != null }
+                    ?: return@mapNotNull null
+                if (synchronized(SaveFileLock) { placeFirmwareFile(into, name, file.contentUri) }) name else null
+            } catch (_: Exception) {
+                null
+            }
+        }
+    }
+
+    private fun placeFirmwareFile(folder: String, name: String, source: String): Boolean {
+        val key = "firmware:$folder/$name"
+        val bytes = docs.read(source) ?: return false
+        val hash = md5Hex(bytes)
+        val existing = docs.find(folder, name)
+        val current = existing?.let(docs::read)
+        val mine = marks.mark(key)
+        // Unreadable, or not the bytes the shell wrote or left: the user's own, which stays.
+        if (existing != null && (current == null || md5Hex(current).let { it != hash && it != mine && mine != ANY_BYTES })) return false
+        // Already there. Bytes the user put there stay theirs, so a later copy does not replace them.
+        // Under the any-bytes mark they are the shell's own write, finished before it could be marked.
+        if (current != null && md5Hex(current) == hash) {
+            if (mine == ANY_BYTES) marks.setMark(key, hash)
+            return false
+        }
+        // Until the write is settled, whatever is there is the shell's, so one cut short, even by the
+        // app dying as it makes the file, is replaced next time rather than kept as the user's.
+        marks.setMark(key, ANY_BYTES)
+        val written = existing ?: docs.create(folder, name) ?: run {
+            // Nothing was written, so whatever the folder holds, once it can be reached again, keeps its mark.
+            if (mine == null) marks.clearMark(key) else marks.setMark(key, mine)
+            return false
+        }
+        val checked = try {
+            docs.write(written, bytes)
+            docs.read(written)?.contentEquals(bytes) == true
+        } catch (_: Exception) {
+            false
+        }
+        if (checked) {
+            marks.setMark(key, hash)
+            return true
+        }
+        // Gone only when the shell's own delete says so: a file it cannot find may be in a folder it cannot reach.
+        val gone = try {
+            if (current != null) {
+                docs.write(written, current)
+                false
+            } else {
+                docs.delete(written)
+            }
+        } catch (_: Exception) {
+            false
+        }
+        if (gone) {
+            marks.clearMark(key)
+            return false
+        }
+        // What is there now is the shell's. Bytes it cannot find or read keep the mark they have, so they are replaced.
+        try {
+            val left = docs.find(folder, name)?.let(docs::read) ?: return false
+            marks.setMark(key, md5Hex(left))
+        } catch (_: Exception) {
+            Unit
+        }
+        return false
     }
 
     private enum class Placing { Failed, AlreadyThere, Written }
@@ -465,6 +584,12 @@ internal class PlayerSaves(
         fun key(libraryId: String, game: Game, player: Player, spot: SaveSpot): String =
             sha256("$libraryId\u0000${game.remoteKey}\u0000${player.id}\u0000${spot.slot}\u0000${spot.fileName}")
 
+        /**
+         * A firmware mark that makes whatever is there the shell's: set while it writes,
+         * and kept when what a failed write left cannot be read.
+         */
+        private const val ANY_BYTES = "any-bytes"
+
         private fun pendingKey(key: String): String = "placing:$key"
 
         private fun tornKey(key: String): String = "torn:$key"
@@ -708,6 +833,13 @@ internal class AndroidSaveDocuments(private val resolver: ContentResolver) : Sav
             }
             bytes.copyOf(filled)
         }
+    } catch (_: Exception) {
+        null
+    }
+
+    override fun childNames(folderUri: String): List<String>? = try {
+        val tree = Uri.parse(folderUri)
+        listChildren(tree, DocumentsContract.getTreeDocumentId(tree)).map { it.name }
     } catch (_: Exception) {
         null
     }

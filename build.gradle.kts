@@ -20,6 +20,7 @@ tasks.register("testDebugUnitTest") {
         ":host:test",
         ":plugins:azahar:test",
         ":plugins:droiddeck:test",
+        ":plugins:duckstation:test",
         ":plugins:emulators:test",
         ":plugins:gamenative:test",
         ":plugins:local-folder:test",

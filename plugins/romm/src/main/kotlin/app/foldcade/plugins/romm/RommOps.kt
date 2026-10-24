@@ -2,6 +2,7 @@ package app.foldcade.plugins.romm
 
 import app.foldcade.romm.DeviceAuthChallenge
 import app.foldcade.romm.DeviceTokenPoll
+import app.foldcade.romm.FirmwareSummary
 import app.foldcade.romm.Heartbeat
 import app.foldcade.romm.LocalSave
 import app.foldcade.romm.PlatformSummary
@@ -43,6 +44,10 @@ internal interface RommOps : AutoCloseable {
         /** Where the file goes. Null is [RommClient.romCacheFile]. */
         target: Path? = null,
     ): Path
+
+    suspend fun firmware(platformId: Long): List<FirmwareSummary>
+
+    suspend fun downloadFirmware(firmware: FirmwareSummary, target: Path): Path
 
     suspend fun registerDevice(
         stored: RegisteredDevice?,
@@ -100,6 +105,10 @@ internal class ClientRommOps(private val client: RommClient) : RommOps {
     } else {
         client.downloadRom(romId, fileName, cacheRoot, fileIds, expectedSize, expectedMd5, progress, target)
     }
+
+    override suspend fun firmware(platformId: Long) = client.firmware(platformId)
+
+    override suspend fun downloadFirmware(firmware: FirmwareSummary, target: Path) = client.downloadFirmware(firmware, target)
 
     override suspend fun registerDevice(
         stored: RegisteredDevice?,

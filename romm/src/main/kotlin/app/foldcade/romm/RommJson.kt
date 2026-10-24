@@ -257,6 +257,14 @@ internal fun parseRomFile(obj: JsonObject): RomFileSummary = RomFileSummary(
     isTopLevel = obj.optBool("is_top_level"),
 )
 
+internal fun parseFirmware(obj: JsonObject): FirmwareSummary = FirmwareSummary(
+    id = obj.reqLong("id"),
+    platformId = obj.reqLong("platform_id"),
+    fileName = obj.reqString("file_name"),
+    fileSizeBytes = obj.reqLong("file_size_bytes"),
+    md5Hash = obj.optString("md5_hash")?.lowercase()?.takeIf { it.length == 32 },
+)
+
 internal fun parseRom(obj: JsonObject): RomSummary = RomSummary(
     id = obj.reqLong("id"),
     name = obj.optString("name"),

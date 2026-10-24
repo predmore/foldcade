@@ -40,6 +40,8 @@ class RommOpenApiContractTest {
             "post" to "/api/saves/{id}/downloaded",
             "post" to "/api/sync/sessions/{session_id}/complete",
             "get" to "/api/users/me",
+            "get" to "/api/firmware",
+            "get" to "/api/firmware/{id}/content/{file_name}",
         ).forEach { (method, path) ->
             val item = paths.getValue(path).jsonObject
             assertTrue("$method $path", item.containsKey(method))
@@ -62,6 +64,8 @@ class RommOpenApiContractTest {
             ),
         )
         assertTrue(props(schemas, "DeviceCreatePayload").contains("allow_existing"))
+        // A platform's BIOS, placed where a player looks for it.
+        assertTrue(props(schemas, "FirmwareSchema").containsAll(listOf("id", "platform_id", "file_name", "file_size_bytes", "md5_hash")))
         // A folder ROM's game file, and the update and DLC downloaded beside it.
         assertTrue(props(schemas, "SimpleRomSchema").contains("files"))
         assertTrue(props(schemas, "RomFileSchema").containsAll(listOf("category", "is_top_level", "file_size_bytes", "md5_hash")))

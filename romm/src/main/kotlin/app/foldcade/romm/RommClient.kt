@@ -269,6 +269,16 @@ class RommClient(
         return parseCoverMatches(raw.body)
     }
 
+    /** `GET /api/firmware?platform_id=`: the firmware RomM keeps for [platformId]. Needs `firmware.read`. */
+    suspend fun firmware(platformId: Long): List<FirmwareSummary> {
+        require(platformId >= 1)
+        val raw = exchange(api("/firmware", listOf("platform_id" to platformId.toString())), "GET", authenticated = true)
+        raw.require(200)
+        val element = parseElement(raw.body.toString(Charsets.UTF_8))
+        if (element !is JsonArray) throw RommResponseException("firmware response is not an array")
+        return element.map { parseFirmware(it.jsonObject) }
+    }
+
     /**
      * `GET /api/users/me`, for the user's RetroAchievements progress. Needs the
      * `me.read` scope; a token without it gets [RommForbidden].
@@ -416,6 +426,41 @@ class RommClient(
                 }
             }
             progress?.invoke(RomProgress.Receiving(received, total))
+        }
+    }
+
+    /**
+     * Downloads [firmware] to [target]. A file there whose verified marker
+     * matches RomM's size and MD5 is returned unread, so a launch with no
+     * network still has it. The bytes must match both, or the size alone when
+     * RomM has no MD5, before the rename that publishes them. Firmware is small,
+     * so an interrupted download starts over.
+     */
+    suspend fun downloadFirmware(firmware: FirmwareSummary, target: Path): Path {
+        val md5 = firmware.md5Hash?.lowercase()
+        return romLock(target).withLock {
+            if (isVerifiedRom(target, firmware.fileSizeBytes, md5)) return@withLock target
+            val partial = partialOf(target)
+            Files.deleteIfExists(partial)
+            try {
+                streamGet(api("/firmware/${firmware.id}/content/${encode(safeFileName(firmware.fileName))}"), partial, range = null)
+            } catch (failure: Throwable) {
+                // Stopped or failed: the copy already checked stays the one to use.
+                Files.deleteIfExists(partial)
+                throw failure
+            }
+            withContext(Dispatchers.IO) {
+                val size = Files.size(partial)
+                val actual = runInterruptible { md5File(partial) }
+                if (size != firmware.fileSizeBytes || (md5 != null && actual != md5)) {
+                    Files.deleteIfExists(partial)
+                    throw RommResponseException("The firmware RomM sent does not match its size or hash. Try again.")
+                }
+                forceToDisk(partial)
+                moveIntoPlace(partial, target)
+                writeVerifiedMarker(target, size, actual)
+            }
+            target
         }
     }
 
@@ -1228,8 +1273,15 @@ class RommClient(
             return true
         }
 
-        fun isVerifiedRom(target: Path, expectedSize: Long?, expectedMd5: String?): Boolean {
-            if (!Files.isRegularFile(target) || Files.exists(partialOf(target))) return false
+        /**
+         * True when [target] holds the bytes its verified marker records, which match
+         * [expectedSize] and [expectedMd5] where given. A partial download beside it
+         * fails the check, since a ROM download may resume into it, unless
+         * [besidePartial] allows one: a download that never writes in place, as
+         * firmware's, leaves the checked file whole.
+         */
+        fun isVerifiedRom(target: Path, expectedSize: Long?, expectedMd5: String?, besidePartial: Boolean = false): Boolean {
+            if (!Files.isRegularFile(target) || (!besidePartial && Files.exists(partialOf(target)))) return false
             val size = Files.size(target)
             if (expectedSize != null && size != expectedSize) return false
             val marker = try {

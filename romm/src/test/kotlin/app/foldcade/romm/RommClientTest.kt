@@ -373,6 +373,46 @@ class RommClientTest {
     }
 
     @Test
+    fun aPlatformsFirmwareIsListedAndDownloadedOnceChecked() {
+        val bios = "playstation-bios".toByteArray()
+        server.route("GET", "/api/firmware") { exchange, _ ->
+            json(
+                exchange,
+                200,
+                """[{"id":1,"platform_id":46,"file_name":"SCPH1001.BIN","file_size_bytes":${bios.size},""" +
+                    """"md5_hash":"${md5Hex(bios).uppercase()}","file_path":"bios/psx"}]""",
+            )
+        }
+        server.route("GET", "/api/firmware/1/content/SCPH1001.BIN") { exchange, _ -> bytes(exchange, 200, bios) }
+        val target = dir.resolve("firmware/46/SCPH1001.BIN")
+        runClient(token = { "rmm_test" }) { client ->
+            val listed = client.firmware(46).single()
+            assertEquals(FirmwareSummary(1, 46, "SCPH1001.BIN", bios.size.toLong(), md5Hex(bios)), listed)
+            assertEquals(target, client.downloadFirmware(listed, target))
+            // A verified copy is reused without the network.
+            assertEquals(target, client.downloadFirmware(listed, target))
+        }
+        assertArrayEquals(bios, Files.readAllBytes(target))
+        assertTrue(RommClient.isVerifiedRom(target, bios.size.toLong(), md5Hex(bios)))
+        assertEquals("platform_id=46", server.recorded.first().query)
+        assertEquals(1, server.recorded.count { it.path.contains("/content/") })
+    }
+
+    @Test
+    fun firmwareThatDoesNotMatchItsHashIsNotKept() {
+        server.route("GET", "/api/firmware/1/content/SCPH1001.BIN") { exchange, _ ->
+            bytes(exchange, 200, "not-the-bios".toByteArray())
+        }
+        val wanted = FirmwareSummary(1, 46, "SCPH1001.BIN", 12, md5Hex("the-real-bio".toByteArray()))
+        val target = dir.resolve("firmware/46/SCPH1001.BIN")
+        runClient(token = { "rmm_test" }) { client ->
+            assertTrue(suspendCatching { client.downloadFirmware(wanted, target) }.exceptionOrNull() is RommResponseException)
+        }
+        assertFalse(Files.exists(target))
+        assertFalse(Files.exists(RommClient.partialOf(target)))
+    }
+
+    @Test
     fun skipsRegistrationWhenTheStoredClientVersionMatches() {
         runClient(origin = "http://127.0.0.1:9", token = { "rmm_test" }) { client ->
             val stored = RegisteredDevice("device-1", "0.1.0")

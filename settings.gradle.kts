@@ -23,6 +23,7 @@ include(
     ":host",
     ":plugins:azahar",
     ":plugins:droiddeck",
+    ":plugins:duckstation",
     ":plugins:emulators",
     ":plugins:gamenative",
     ":plugins:local-folder",

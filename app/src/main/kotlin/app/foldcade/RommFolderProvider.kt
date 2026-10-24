@@ -14,7 +14,9 @@ import java.io.FileNotFoundException
 /**
  * A RomM download's folder as a document tree, so a player handed one game file
  * can list and open the files beside it: a Switch game's update and DLC, which
- * Eden loads from the game's folder when it starts the game.
+ * Eden loads from the game's folder when it starts the game, or a cue sheet's
+ * tracks. Every RomM game is handed over this way: DuckStation opens only a
+ * document in a tree.
  *
  * Nothing here can be browsed. There are no roots, so no file picker lists it,
  * and the manifest guards it with MANAGE_DOCUMENTS. A player reads it only through

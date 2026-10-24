@@ -6,7 +6,8 @@ What you get:
 
 - **Sign-in with a code** you approve on your phone. Foldcade stores a token, not your password.
 - **Verified downloads** that resume after an interruption when the server allows it, and stay ready for offline play.
-- **[Save sync](#save-sync)** for melonDS and RetroArch, with a choice and both copies kept when two devices disagree.
+- **[Save sync](#save-sync)** for melonDS, RetroArch, Azahar and DuckStation, with a choice and both copies kept when two devices disagree.
+- **[Firmware](#firmware)**, such as a PlayStation BIOS, placed where the emulator looks for it.
 - **One tile** for a game that is in a [local folder](local-games.md) and on the server under the same system and file name, opening the copy already on your Thor.
 - **[Switch updates and DLC](#updates-and-dlc)** downloaded beside the game and loaded by Eden.
 - **RetroAchievements progress** on the other screen during a single-screen game.
@@ -55,13 +56,19 @@ A game can be a folder in RomM with its update and DLC beside it, such as a Swit
 
 Eden reads that folder through Foldcade, and only for the game it was launched with.
 
-A folder that RomM does not split this way still downloads as RomM sends it.
+### Disc games
+
+A disc game can be a folder in RomM with a `.cue` sheet and its `.bin` tracks, a Dreamcast `.gdi` or CloneCD `.ccd` with its files, or an `.m3u` naming each disc. When every file is at the top of the folder, Foldcade downloads each one under its own name into one folder and opens the sheet, so the emulator finds the tracks beside it. An `.m3u` opens over the discs it lists. Several discs with no `.m3u` open the first by name.
+
+Every game is handed to its emulator as a file in its own download folder, and the emulator can read only that folder.
+
+A folder that RomM does not split in one of these ways still downloads as RomM sends it.
 
 Downloaded games with a cached catalog can be played offline. New downloads need the server. Provide a format the emulator can open; Foldcade does not handle server-side conversion.
 
 ## Save sync
 
-Save sync supports **melonDS `.sav` files**, **RetroArch `.srm` battery saves** and **Azahar 3DS saves** with RomM **5.4.0 or newer**.
+Save sync supports **melonDS `.sav` files**, **RetroArch `.srm` battery saves**, **Azahar 3DS saves** and **DuckStation memory cards** with RomM **5.4.0 or newer**.
 
 For melonDS:
 
@@ -75,17 +82,23 @@ For RetroArch, choose `RetroArch/saves` in **Foldcade Settings › Emulators ›
 
 For Azahar, choose Azahar's user folder, the one that holds `sdmc`, `nand` and `config`, in **Foldcade Settings › Emulators › Azahar** or at the save-folder prompt. Foldcade finds each game's save there from the title id in its `.cci` header, and syncs the save data and the game's extra data together as one zip, in the layout Argosy also uploads. A `.zcci` has no title id Foldcade can read, so its saves stay with Azahar.
 
+For DuckStation, pick its own data folder at the save-folder prompt, then point DuckStation's **Memory Cards** folder at the one Foldcade keeps for it when Foldcade asks. See [DuckStation](emulators.md#bios-and-memory-cards). Each game's card 1 syncs as slot `card1`.
+
 A game that is also in a [local folder](local-games.md) syncs through RomM too, whichever copy opens. Its first launch after the two become one tile hands the emulator's save to RomM as progress, so a save made from the folder is kept. If another device saved since, Foldcade asks which to play and keeps both.
 
 Other emulators and sources manage their own saves. Save-state sync is not implemented.
 
 Offline changes stay on the device for a later sync. When copies conflict, Foldcade asks which to play and keeps both.
 
+## Firmware
+
+Firmware you add to a platform in RomM, such as a PlayStation BIOS, goes to the emulators that ask for it: Foldcade downloads each file, checks it against RomM's size and checksum, and writes it into the emulator's folder before the game starts. DuckStation takes any PlayStation BIOS into its `bios` folder. Foldcade replaces a file there only when Foldcade put it there. A new copy in RomM replaces the old one, and a BIOS you put there yourself stays. The checked copy is kept for offline launches. The emulator needs its save folder chosen in Foldcade, since that is where the firmware goes.
+
 ## If something goes wrong
 
 - **Cannot connect:** Try the address from the Thor, check network access, and get a new code or check the token's permissions.
 - **Missing game:** Check RomM's scan and account access, then restart Foldcade. If it is already in All, check [Home placement](README.md#a-game-is-in-all-but-missing-from-home).
 - **Will not launch:** Check the [emulator and format](emulators.md).
-- **Saves do not sync:** Check the server version, the shared melonDS directory, and that Azahar's save folder is its user folder. **Not now** at the save-folder prompt allows play with the emulator's own saves.
+- **Saves do not sync:** Check the server version, the shared melonDS directory, that Azahar's save folder is its user folder, and that **Foldcade Settings › Emulators** shows DuckStation's memory cards as **Syncing**. **Not now** at the save-folder prompt allows play with the emulator's own saves.
 
 [All integration guides](README.md)

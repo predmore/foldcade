@@ -19,7 +19,7 @@ Without that folder, Foldcade starts the first core in the table and can't warn 
 
 ## Systems and cores
 
-Foldcade uses the first core in each row that is installed. If none is installed, it says which core to install. For every system except the Nintendo DS, RetroArch with a core goes ahead of a standalone emulator. melonDS keeps the DS because it draws the touch screen on the bottom display. Without a core, a system's standalone emulator plays as before.
+Foldcade uses the first core in each row that is installed. If none is installed, it says which core to install. For every system except the Nintendo DS and the PlayStation, RetroArch with a core goes ahead of a standalone emulator. melonDS keeps the DS because it draws the touch screen on the bottom display, and DuckStation keeps the PlayStation because Foldcade brings it the BIOS and memory cards from RomM. Without a core, a system's standalone emulator plays as before.
 
 | System | Example folder | Cores, in order |
 | --- | --- | --- |

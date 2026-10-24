@@ -109,6 +109,9 @@ enum class DialogKind {
 
     /** Stop listing a paired computer's games. Opens on Not now. */
     ForgetHost,
+
+    /** How to point a player at the folder Foldcade hosts for its saves. Opens on Open. */
+    HostedSaves,
 }
 
 enum class DialogButton {
@@ -123,6 +126,9 @@ enum class DialogButton {
     OpenRetroArch,
     Restart,
     ForgetHost,
+
+    /** Opens the player [DialogState.subject] names. */
+    OpenPlayer,
 }
 
 data class DialogState(
@@ -264,15 +270,48 @@ fun forgetArtKeyPrompt(screen: HostScreen): DialogState = DialogState(
     screen = screen,
 )
 
-fun saveFolderDialog(screen: HostScreen, syncs: Boolean = false): DialogState = DialogState(
+/**
+ * The ask for a player's save folder. Before a game whose saves sync ([syncs]) it
+ * opens on Continue, since Not now is remembered. [playerName] names the player,
+ * and [opensThere] says the picker opens at its folder. [wrong] is set after a
+ * pick that was not the player's folder: what its folder holds.
+ */
+fun saveFolderDialog(
+    screen: HostScreen,
+    syncs: Boolean = false,
+    wrong: Pair<String, Collection<String>>? = null,
+    playerName: String? = null,
+    opensThere: Boolean = false,
+): DialogState = DialogState(
     kind = DialogKind.SaveFolder,
-    title = Copy.saveFolderTitle,
-    body = if (syncs) Copy.saveFolderSyncBody else Copy.saveFolderBody,
+    title = playerName?.let { "$it ${Copy.saveFolderTitle.lowercase()}" } ?: Copy.saveFolderTitle,
+    body = wrong?.let { (player, markers) -> wrongSaveFolderBody(player, markers) }
+        ?: listOfNotNull(
+            if (syncs) Copy.saveFolderSyncBody else Copy.saveFolderBody,
+            Copy.saveFolderOpensThere.takeIf { opensThere },
+        ).joinToString(" "),
     buttons = listOf(DialogButton.ContinueGrant, DialogButton.NotNow),
-    index = 1,
+    index = if (syncs) 0 else 1,
     safeIndex = 1,
     screen = screen,
 )
+
+/**
+ * How to point [playerName] at the folder Foldcade hosts for what [title] names,
+ * once, in its own settings: [steps]. Opens on Open, which opens the player.
+ * Before a launch, Not now starts the game.
+ */
+fun hostedSavesDialog(playerName: String, title: String, steps: String, beforeLaunch: Boolean, screen: HostScreen): DialogState =
+    DialogState(
+        kind = DialogKind.HostedSaves,
+        title = "${Copy.hostedSavesTitle} $title",
+        body = if (beforeLaunch) "$steps ${Copy.hostedSavesLater}" else steps,
+        buttons = listOf(DialogButton.OpenPlayer, DialogButton.NotNow),
+        index = 0,
+        safeIndex = 1,
+        screen = screen,
+        subject = playerName,
+    )
 
 /** Opens on Continue: the picker is the only way Foldcade learns which cores RetroArch has. */
 fun retroArchCoresDialog(screen: HostScreen): DialogState = DialogState(
@@ -320,6 +359,14 @@ fun noSharedPathDialog(playerName: String, screen: HostScreen): DialogState = Di
     safeIndex = 0,
     screen = screen,
 )
+
+/** The label of [DialogButton.OpenPlayer] on a dialog about [playerName]. */
+fun openPlayerLabel(playerName: String?): String = listOfNotNull(Copy.openPlayer, playerName).joinToString(" ")
+
+/** Why a picked folder was not kept: it holds none of what [playerName]'s folder holds. */
+fun wrongSaveFolderBody(playerName: String, markers: Collection<String>): String =
+    "That folder doesn’t hold ${markers.sorted().joinToString(" or ")}, so it isn’t $playerName’s. " +
+        "Choose the folder that holds them. If $playerName hasn’t been opened yet, open it once first."
 
 fun playerNotice(title: String, body: String, screen: HostScreen): DialogState = DialogState(
     kind = DialogKind.Ok,
@@ -409,6 +456,8 @@ sealed interface Row {
     data class SignOut(val pluginId: String, val label: String) : Row
     data class ForgetFolder(val uri: String, val label: String) : Row
     data class PlayerSave(val playerId: String) : Row
+    /** The folder Foldcade hosts for a player's saves, and whether the player has it. */
+    data class HostedSaves(val playerId: String) : Row
 
     /** Whether Foldcade can see RetroArch's cores. A shows them. */
     data object RetroArchCores : Row
@@ -554,6 +603,10 @@ data class PlayerSaveSetting(
     val playerId: String,
     val label: String,
     val chosen: Boolean,
+    /** What the folder Foldcade hosts for the player holds, or null when it hosts none. */
+    val hostedTitle: String? = null,
+    /** True when the player has been given the folder Foldcade hosts. */
+    val hostedInUse: Boolean = false,
 )
 
 /**
@@ -890,6 +943,11 @@ fun rowText(row: Row, model: PickerModel): RowText = when (row) {
         val chosen = if (setting?.chosen == true) Copy.playerSavesSet else Copy.playerSavesUnset
         RowText(setting?.label ?: row.playerId, chosen)
     }
+    is Row.HostedSaves -> {
+        val setting = model.playerSaves.firstOrNull { it.playerId == row.playerId }
+        val inUse = if (setting?.hostedInUse == true) Copy.hostedSavesSet else Copy.hostedSavesUnset
+        RowText(setting?.hostedTitle ?: row.playerId, inUse)
+    }
     Row.RetroArchCores -> RowText(
         Copy.retroArchCores,
         model.retroArch?.cores?.let { if (it == 1) Copy.oneCore else "$it ${Copy.cores}" } ?: Copy.showCores,
@@ -982,6 +1040,8 @@ sealed interface Effect {
     data object EditField : Effect
     data object RequestHome : Effect
     data class ChoosePlayerSave(val playerId: String) : Effect
+    /** How to point the player at the folder Foldcade hosts for its saves. */
+    data class SetUpHostedSaves(val playerId: String) : Effect
 
     /** Settings › RetroArch cores: the picker that lets Foldcade see them. */
     data object ShowRetroArchCores : Effect
@@ -1938,6 +1998,7 @@ private fun activateRow(
             notices = model.notices.filter { !it.dismissable },
         ) to Effect.ClearNotices
         is Row.PlayerSave -> model.copy(panel = null, focus = panel.grid) to Effect.ChoosePlayerSave(row.playerId)
+        is Row.HostedSaves -> model.copy(panel = null, focus = panel.grid) to Effect.SetUpHostedSaves(row.playerId)
         Row.RetroArchCores -> model.copy(panel = null, focus = panel.grid) to Effect.ShowRetroArchCores
         Row.AndroidGames -> model.copy(panel = null, focus = panel.grid) to Effect.OpenFolder(HOME_ANDROID_GAMES)
         Row.Apps -> model.copy(panel = null, focus = panel.grid) to Effect.OpenFolder(HOME_ANDROID_APPS)
