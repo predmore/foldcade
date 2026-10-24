@@ -203,6 +203,8 @@ object Copy {
     const val saveFolderBody = "This player keeps its own saves. Not now starts the game. You can choose one later in Settings."
     /** The same ask before a game whose saves sync with its server. */
     const val saveFolderSyncBody = "Choose where this player keeps its saves, so they sync. Not now starts the game without syncing."
+    /** The ask for a named player's folder, when the picker opens at it. */
+    const val saveFolderOpensThere = "It opens there: tap Use this folder, then Allow."
     const val playerSavesSet = "Folder set"
     const val playerSavesUnset = "Choose folder"
     const val missingFileBody = "This game has no file Foldcade can hand to the player."
@@ -217,6 +219,13 @@ object Copy {
     const val retroArchStorageBody = "Open RetroArch once and allow access to files. Then start the game again."
     const val retroArchStoreBuildBody = "RetroArch from Google Play can’t open games from other apps. Install it from retroarch.com or F-Droid."
     const val openRetroArch = "Open RetroArch"
+    /** Opens the player named on a dialog, such as Open DuckStation. */
+    const val openPlayer = "Open"
+    const val hostedSavesSet = "Syncing"
+    const val hostedSavesUnset = "Set up"
+    /** A player's memory cards or other saves, synced through a folder Foldcade hosts. */
+    const val hostedSavesTitle = "Sync"
+    const val hostedSavesLater = "Not now starts the game without syncing them. Settings › Emulators sets it up later."
     const val retroArchWrongFolder = "That folder has no cores. Choose RetroArch’s top folder, the one that holds cores, then Use this folder."
     const val retroArchCores = "RetroArch cores"
     const val edenFolderTitle = "Set up Eden from RomM"

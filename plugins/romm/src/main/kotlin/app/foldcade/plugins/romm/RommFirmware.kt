@@ -33,11 +33,8 @@ class RommFirmware(
 
     suspend fun download(
         origin: String,
-        id: Long,
-        fileName: String,
+        file: FirmwareSummary,
         target: Path,
-        expectedSize: Long?,
-        expectedMd5: String?,
         progress: ((RomProgress) -> Unit)? = null,
     ): Path {
         val wiring = wirings().firstOrNull { it.origin == origin }
@@ -45,7 +42,7 @@ class RommFirmware(
         val token = token(wiring) ?: throw IllegalStateException("Sign in to RomM")
         val ops = wiring.open(wiring.origin) { token }
         try {
-            return ops.downloadFirmware(id, fileName, target, expectedSize, expectedMd5, progress)
+            return ops.downloadFirmware(file, target, progress)
         } finally {
             ops.close()
         }

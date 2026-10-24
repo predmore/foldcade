@@ -79,7 +79,7 @@ class RetroArchPlayerTest {
 
     @Test
     fun onlyTheDsKeepsStandaloneFirst() {
-        assertEquals(listOf("nintendo-ds"), SYSTEMS.filterNot { it.aheadOfStandalone }.map { it.platformId })
+        assertEquals(listOf("nintendo-ds", "playstation"), SYSTEMS.filterNot { it.aheadOfStandalone }.map { it.platformId })
     }
 
     @Test

@@ -25,17 +25,6 @@ internal interface RommOps : AutoCloseable {
 
     suspend fun platforms(): List<PlatformSummary>
 
-    suspend fun firmware(platformId: Long): List<FirmwareSummary>
-
-    suspend fun downloadFirmware(
-        id: Long,
-        fileName: String,
-        target: Path,
-        expectedSize: Long?,
-        expectedMd5: String?,
-        progress: ((RomProgress) -> Unit)? = null,
-    ): Path
-
     suspend fun roms(query: RomQuery): RomPage
 
     suspend fun rom(id: Long): RomSummary
@@ -54,6 +43,14 @@ internal interface RommOps : AutoCloseable {
         progress: ((RomProgress) -> Unit)? = null,
         /** Where the file goes. Null is [RommClient.romCacheFile]. */
         target: Path? = null,
+    ): Path
+
+    suspend fun firmware(platformId: Long): List<FirmwareSummary>
+
+    suspend fun downloadFirmware(
+        firmware: FirmwareSummary,
+        target: Path,
+        progress: ((RomProgress) -> Unit)? = null,
     ): Path
 
     suspend fun registerDevice(
@@ -90,17 +87,6 @@ internal class ClientRommOps(private val client: RommClient) : RommOps {
 
     override suspend fun platforms() = client.platforms()
 
-    override suspend fun firmware(platformId: Long) = client.firmware(platformId)
-
-    override suspend fun downloadFirmware(
-        id: Long,
-        fileName: String,
-        target: Path,
-        expectedSize: Long?,
-        expectedMd5: String?,
-        progress: ((RomProgress) -> Unit)?,
-    ) = client.downloadFirmware(id, fileName, target, expectedSize, expectedMd5, progress)
-
     override suspend fun roms(query: RomQuery) = client.roms(query)
 
     override suspend fun rom(id: Long) = client.rom(id)
@@ -123,6 +109,14 @@ internal class ClientRommOps(private val client: RommClient) : RommOps {
     } else {
         client.downloadRom(romId, fileName, cacheRoot, fileIds, expectedSize, expectedMd5, progress, target)
     }
+
+    override suspend fun firmware(platformId: Long) = client.firmware(platformId)
+
+    override suspend fun downloadFirmware(
+        firmware: FirmwareSummary,
+        target: Path,
+        progress: ((RomProgress) -> Unit)?,
+    ) = client.downloadFirmware(firmware, target, progress)
 
     override suspend fun registerDevice(
         stored: RegisteredDevice?,

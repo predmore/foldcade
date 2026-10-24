@@ -204,6 +204,14 @@ class SessionStore(private val prefs: SharedPreferences) : SaveMarks {
         prefs.edit().putBoolean(saveFolderSkipKey(playerId), true).apply()
     }
 
+    /** True once Not now answered how to give [playerId] the folder Foldcade hosts for its saves. */
+    fun hostedPromptSkipped(playerId: String): Boolean =
+        prefs.getBoolean(hostedSkipKey(playerId), false)
+
+    fun setHostedPromptSkipped(playerId: String) {
+        prefs.edit().putBoolean(hostedSkipKey(playerId), true).apply()
+    }
+
     /**
      * A key for the last intent started for [packageName], for a player that
      * cannot switch games in place. Kept across restarts of Foldcade, since the
@@ -616,6 +624,7 @@ class SessionStore(private val prefs: SharedPreferences) : SaveMarks {
         private fun saveFolderKey(playerId: String) = PLAYER_SAVE_FOLDER_PREFIX + playerId
 
         private fun saveFolderSkipKey(playerId: String) = "player_save_folder_skipped:$playerId"
+        private fun hostedSkipKey(playerId: String) = "player_hosted_saves_skipped:$playerId"
 
         private fun saveMarkKey(key: String) = "player_save_mark:$key"
 

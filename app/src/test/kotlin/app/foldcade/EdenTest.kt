@@ -787,7 +787,7 @@ class EdenTest {
             assertEquals(setOf(refusedFirmwareKey("https://romm", listed)), refused)
             assertFalse(tree.files.keys.any { it.endsWith(".nca") })
 
-            val replaced = listed.copy(md5 = "new", sizeBytes = good.size.toLong())
+            val replaced = listed.copy(md5Hash = "new", fileSizeBytes = good.size.toLong())
             source.servers = listOf(server("https://romm", replaced))
             source.bodies = mapOf(4L to good)
             source.asked.clear()
@@ -1137,7 +1137,7 @@ class EdenTest {
             val body = bodies.getValue(file.id)
             target.parent?.let { Files.createDirectories(it) }
             Files.write(target, body)
-            progress?.invoke(RomProgress.Receiving(body.size.toLong(), file.sizeBytes))
+            progress?.invoke(RomProgress.Receiving(body.size.toLong(), file.fileSizeBytes))
             progress?.invoke(RomProgress.Checking)
         }
     }

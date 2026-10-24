@@ -330,29 +330,6 @@ class RommClient(
         }
     }
 
-    /**
-     * Downloads one firmware file to [target].
-     * The file name is one path segment, URL-encoded. A zip is checked by the
-     * plain MD5 of its bytes: RomM's firmware hash is the file, not its members.
-     * The finished bytes must match [expectedSize] and [expectedMd5] when RomM
-     * gave them. A mismatch deletes the file. Cancelling deletes the partial.
-     * [progress] hears the bytes as they arrive, then [RomProgress.Checking].
-     */
-    suspend fun downloadFirmware(
-        id: Long,
-        fileName: String,
-        target: Path,
-        expectedSize: Long? = null,
-        expectedMd5: String? = null,
-        progress: ((RomProgress) -> Unit)? = null,
-    ): Path {
-        require(id >= 1)
-        require(fileName.isNotBlank())
-        return romLock(target).withLock {
-            downloadFirmwareLocked(id, fileName, target, expectedSize, expectedMd5?.lowercase(), progress)
-        }
-    }
-
     private suspend fun downloadRomLocked(
         romId: Long,
         fileName: String,
@@ -454,6 +431,61 @@ class RommClient(
                 }
             }
             progress?.invoke(RomProgress.Receiving(received, total))
+        }
+    }
+
+    /**
+     * Downloads [firmware] to [target]. A file there whose verified marker
+     * matches RomM's size and MD5 is returned unread, so a launch with no
+     * network still has it. The bytes must match both, or the size alone when
+     * RomM has no MD5, before the rename that publishes them; a mismatch is
+     * [RommFirmwareMismatch]. RomM hashes a firmware zip by its bytes, not its
+     * members. An interrupted download starts over. [progress] hears the bytes
+     * as they arrive, then [RomProgress.Checking].
+     */
+    suspend fun downloadFirmware(
+        firmware: FirmwareSummary,
+        target: Path,
+        progress: ((RomProgress) -> Unit)? = null,
+    ): Path {
+        val md5 = firmware.md5Hash?.lowercase()
+        return romLock(target).withLock {
+            if (isVerifiedRom(target, firmware.fileSizeBytes, md5)) return@withLock target
+            val partial = partialOf(target)
+            Files.deleteIfExists(partial)
+            try {
+                var received = 0L
+                val total = firmware.fileSizeBytes.takeIf { it > 0L }
+                val onBytes = progress?.let { report ->
+                    { count: Int ->
+                        received += count
+                        report(RomProgress.Receiving(received, total))
+                    }
+                }
+                streamGet(
+                    api("/firmware/${firmware.id}/content/${encode(safeFileName(firmware.fileName))}"),
+                    partial,
+                    range = null,
+                    onBytes = onBytes,
+                )
+            } catch (failure: Throwable) {
+                // Stopped or failed: the copy already checked stays the one to use.
+                withContext(NonCancellable) { Files.deleteIfExists(partial) }
+                throw failure
+            }
+            progress?.invoke(RomProgress.Checking)
+            withContext(Dispatchers.IO) {
+                val size = Files.size(partial)
+                val actual = runInterruptible { md5File(partial) }
+                if (size != firmware.fileSizeBytes || (md5 != null && actual != md5)) {
+                    Files.deleteIfExists(partial)
+                    throw RommFirmwareMismatch()
+                }
+                forceToDisk(partial)
+                moveIntoPlace(partial, target)
+                writeVerifiedMarker(target, size, actual)
+            }
+            target
         }
     }
 
@@ -958,66 +990,6 @@ class RommClient(
         pairedLocal(saves, op)
             ?: throw RommResponseException("negotiate asked for ${op.fileName} and it was not local")
 
-    private suspend fun downloadFirmwareLocked(
-        id: Long,
-        fileName: String,
-        target: Path,
-        expectedSize: Long?,
-        expectedMd5: String?,
-        progress: ((RomProgress) -> Unit)?,
-    ): Path {
-        val partial = partialOf(target)
-        try {
-            withContext(Dispatchers.IO) {
-                Files.deleteIfExists(partial)
-                target.parent?.let { Files.createDirectories(it) }
-            }
-            var received = 0L
-            var total = expectedSize
-            val onBytes = progress?.let { report ->
-                { count: Int ->
-                    received += count
-                    report(RomProgress.Receiving(received, total))
-                }
-            }
-            streamGet(
-                api("/firmware/$id/content/${encode(fileName)}"),
-                partial,
-                range = null,
-                onBytes = onBytes,
-            ) { _, headers ->
-                if (total == null) total = headerValue(headers, "Content-Length")?.toLongOrNull()
-                progress?.invoke(RomProgress.Receiving(received, total))
-            }
-            progress?.invoke(RomProgress.Checking)
-            withContext(Dispatchers.IO) {
-                val size = Files.size(partial)
-                val md5 = runInterruptible { md5File(partial) }
-                if ((expectedSize != null && size != expectedSize) || (expectedMd5 != null && !md5.equals(expectedMd5, ignoreCase = true))) {
-                    Files.deleteIfExists(partial)
-                    Files.deleteIfExists(target)
-                    throw RommFirmwareMismatch()
-                }
-                forceToDisk(partial)
-                moveIntoPlace(partial, target)
-            }
-            return target
-        } catch (cancelled: CancellationException) {
-            withContext(NonCancellable + Dispatchers.IO) { Files.deleteIfExists(partial) }
-            throw cancelled
-        } catch (error: Exception) {
-            withContext(NonCancellable + Dispatchers.IO) {
-                Files.deleteIfExists(partial)
-                Files.deleteIfExists(target)
-            }
-            throw error
-        }
-    }
-
-    /**
-     * One GET into [partial]. [onHeaders] sees the status and headers before
-     * any body byte is written and may throw to refuse them.
-     */
     private suspend fun streamGet(
         uri: URI,
         partial: Path,
@@ -1322,8 +1294,15 @@ class RommClient(
             return true
         }
 
-        fun isVerifiedRom(target: Path, expectedSize: Long?, expectedMd5: String?): Boolean {
-            if (!Files.isRegularFile(target) || Files.exists(partialOf(target))) return false
+        /**
+         * True when [target] holds the bytes its verified marker records, which match
+         * [expectedSize] and [expectedMd5] where given. A partial download beside it
+         * fails the check, since a ROM download may resume into it, unless
+         * [besidePartial] allows one: a download that never writes in place, as
+         * firmware's, leaves the checked file whole.
+         */
+        fun isVerifiedRom(target: Path, expectedSize: Long?, expectedMd5: String?, besidePartial: Boolean = false): Boolean {
+            if (!Files.isRegularFile(target) || (!besidePartial && Files.exists(partialOf(target)))) return false
             val size = Files.size(target)
             if (expectedSize != null && size != expectedSize) return false
             val marker = try {

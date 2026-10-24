@@ -55,6 +55,7 @@ import java.util.concurrent.atomic.AtomicInteger
 import kotlin.coroutines.cancellation.CancellationException
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.cancelAndJoin
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
@@ -842,6 +843,95 @@ class RommLibraryTest {
         }
     }
 
+    @Test
+    fun aLaunchBringsTheFirmwareThePlayerAsksForAndKeepsItForOffline() = runBlocking {
+        val server = TinyServer()
+        val cache = Files.createTempDirectory("romm-firmware")
+        val bios = "the-platform-bios".toByteArray()
+        val firmwareUp = AtomicBoolean(true)
+        try {
+            server.route("GET", "/api/platforms") { exchange, _ ->
+                json(exchange, 200, """[{"id":3,"slug":"3ds","fs_slug":"3ds","rom_count":1,"name":"Nintendo 3DS"}]""")
+            }
+            server.route("GET", "/api/roms") { exchange, _ -> json(exchange, 200, ROM_PAGE) }
+            server.route("GET", "/api/firmware") { exchange, _ ->
+                if (!firmwareUp.get()) return@route json(exchange, 503, "{}")
+                json(
+                    exchange,
+                    200,
+                    """[{"id":9,"platform_id":3,"file_name":"boot9.bin","file_size_bytes":${bios.size},"md5_hash":"${md5Hex(bios)}"},""" +
+                        """{"id":10,"platform_id":3,"file_name":"readme.txt","file_size_bytes":4,"md5_hash":null},""" +
+                        """{"id":11,"platform_id":3,"file_name":"../boot9.bin","file_size_bytes":4,"md5_hash":null}]""",
+                )
+            }
+            server.route("GET", "/api/firmware/9/content/boot9.bin") { exchange, _ -> bytes(exchange, 200, bios) }
+            val library = live(server, cache)
+            val game = library.listGames("3ds", GameQuery()).games.single()
+            val spec = rom("3ds", 3).bytes()
+            val roms = cache.resolve("servers").resolve(RommData.serverKey(server.origin))
+            val cached = RommClient.romCacheFile(roms, 1234, spec.fileName, spec.fileIds)
+            Files.createDirectories(cached.parent)
+            Files.write(cached, "hello-rom".toByteArray())
+            val player = BiosPlayer(setOf("boot9.bin"))
+
+            val online = (library.prepareLaunch(game, player).target as LaunchTarget.ContentUri).firmware
+            assertEquals(listOf("boot9.bin"), online.map { it.name })
+            val kept = CachePathContentUri(cache).pathFor(online.single().contentUri)!!
+            assertEquals(roms.resolve("firmware/3/boot9.bin"), kept)
+            assertArrayEquals(bios, Files.readAllBytes(kept))
+            assertTrue(server.recorded.none { it.path.contains("/firmware/10/") || it.path.contains("/firmware/11/") })
+            // A player that asks for none gets none.
+            assertTrue((library.prepareLaunch(game, NamedPlayer("azahar")).target as LaunchTarget.ContentUri).firmware.isEmpty())
+
+            firmwareUp.set(false)
+            val offline = (library.prepareLaunch(game, player).target as LaunchTarget.ContentUri).firmware
+            assertEquals(online, offline)
+        } finally {
+            server.close()
+        }
+    }
+
+    @Test(timeout = 20_000)
+    fun firmwareTooSlowForOneLaunchIsThereForTheNext() = runBlocking {
+        val server = TinyServer(concurrent = true)
+        val cache = Files.createTempDirectory("romm-firmware-slow")
+        val bios = "the-platform-bios".toByteArray()
+        val release = AtomicBoolean(false)
+        try {
+            server.route("GET", "/api/platforms") { exchange, _ ->
+                json(exchange, 200, """[{"id":3,"slug":"3ds","fs_slug":"3ds","rom_count":1,"name":"Nintendo 3DS"}]""")
+            }
+            server.route("GET", "/api/roms") { exchange, _ -> json(exchange, 200, ROM_PAGE) }
+            server.route("GET", "/api/firmware") { exchange, _ ->
+                json(exchange, 200, """[{"id":9,"platform_id":3,"file_name":"boot9.bin","file_size_bytes":${bios.size},"md5_hash":"${md5Hex(bios)}"}]""")
+            }
+            server.route("GET", "/api/firmware/9/content/boot9.bin") { exchange, _ ->
+                while (!release.get()) Thread.sleep(20)
+                bytes(exchange, 200, bios)
+            }
+            val library = live(server, cache)
+            val game = library.listGames("3ds", GameQuery()).games.single()
+            val spec = rom("3ds", 3).bytes()
+            val roms = cache.resolve("servers").resolve(RommData.serverKey(server.origin))
+            val cached = RommClient.romCacheFile(roms, 1234, spec.fileName, spec.fileIds)
+            Files.createDirectories(cached.parent)
+            Files.write(cached, "hello-rom".toByteArray())
+            val player = BiosPlayer(setOf("boot9.bin"))
+
+            // The launch goes without it once its saves have synced, and the download goes on.
+            assertTrue((library.prepareLaunch(game, player).target as LaunchTarget.ContentUri).firmware.isEmpty())
+            release.set(true)
+            val kept = roms.resolve("firmware/3/boot9.bin")
+            withTimeout(10_000) { while (!RommClient.isVerifiedRom(kept, bios.size.toLong(), md5Hex(bios))) delay(20) }
+            val next = (library.prepareLaunch(game, player).target as LaunchTarget.ContentUri).firmware
+            assertEquals(listOf("boot9.bin"), next.map { it.name })
+            assertEquals(1, server.recorded.count { it.path.startsWith("/api/firmware/9/content/") })
+        } finally {
+            release.set(true)
+            server.close()
+        }
+    }
+
     @Test(timeout = 8_000)
     fun cancellingABrowseStopsTheClientCall() = runBlocking {
         val server = TinyServer()
@@ -1147,6 +1237,21 @@ private class NamedPlayer(override val id: String) : Player {
     override fun launchIntent(request: LaunchRequest): PlayerIntent = error("unused")
 }
 
+/** A player that looks for each firmware file in [wants] in its `bios` folder. */
+private class BiosPlayer(private val wants: Set<String>) : Player {
+    override val id = "bios-player"
+    override val displayName = id
+    override val platformId = "nintendo-3ds"
+    override val packageNames = emptyList<String>()
+    override val needsLocalFile = true
+    override val startDisplay = StartDisplay.Primary
+    override val occupiesBothDisplays = false
+    override val requiresImportedGame = false
+    override fun saveDeclarations(game: Game): List<SaveDeclaration> = emptyList()
+    override fun firmwareFileName(name: String): String? = if (name in wants) "bios/$name" else null
+    override fun launchIntent(request: LaunchRequest): PlayerIntent = error("unused")
+}
+
 internal class ScriptedOps : RommOps {
     var onHeartbeat: suspend () -> Heartbeat = { Heartbeat("5.4.0") }
     var onSearchCovers: suspend (String) -> List<app.foldcade.romm.RomCoverMatch> = { emptyList() }
@@ -1166,25 +1271,12 @@ internal class ScriptedOps : RommOps {
 
     /** What a download reports before [onDownload] answers. */
     var downloadSteps: List<RomProgress> = emptyList()
-
-    var onFirmware: suspend (Long) -> List<FirmwareSummary> = { emptyList() }
-    var onDownloadFirmware: suspend (Long, String, Path, Long?, String?, ((RomProgress) -> Unit)?) -> Path =
-        { _, _, _, _, _, _ -> error("firmware") }
+    var onFirmware: suspend (Long) -> List<app.foldcade.romm.FirmwareSummary> = { emptyList() }
+    var onDownloadFirmware: suspend (app.foldcade.romm.FirmwareSummary, Path) -> Path = { _, _ -> error("firmware") }
 
     override suspend fun heartbeat() = onHeartbeat()
     override suspend fun artwork(uri: String) = onArtwork(uri)
     override suspend fun platforms() = onPlatforms()
-
-    override suspend fun firmware(platformId: Long): List<FirmwareSummary> = onFirmware(platformId)
-
-    override suspend fun downloadFirmware(
-        id: Long,
-        fileName: String,
-        target: Path,
-        expectedSize: Long?,
-        expectedMd5: String?,
-        progress: ((RomProgress) -> Unit)?,
-    ): Path = onDownloadFirmware(id, fileName, target, expectedSize, expectedMd5, progress)
 
     override suspend fun roms(query: RomQuery) = onRoms(query)
     override suspend fun rom(id: Long) = onRom(id)
@@ -1203,6 +1295,13 @@ internal class ScriptedOps : RommOps {
         downloadSteps.forEach { progress?.invoke(it) }
         return onDownload(romId, fileName, cacheRoot, fileIds, expectedSize, expectedMd5)
     }
+
+    override suspend fun firmware(platformId: Long) = onFirmware(platformId)
+    override suspend fun downloadFirmware(
+        firmware: app.foldcade.romm.FirmwareSummary,
+        target: Path,
+        progress: ((RomProgress) -> Unit)?,
+    ) = onDownloadFirmware(firmware, target)
 
     override suspend fun registerDevice(
         stored: RegisteredDevice?,
@@ -1235,8 +1334,10 @@ internal class ScriptedOps : RommOps {
     override fun close() = onClose()
 }
 
-private class TinyServer : AutoCloseable {
+/** Answers one request at a time, or each on its own thread when [concurrent], so a held answer stops no other. */
+private class TinyServer(concurrent: Boolean = false) : AutoCloseable {
     private val server: HttpServer = HttpServer.create(InetSocketAddress("127.0.0.1", 0), 0)
+    private val pool = if (concurrent) java.util.concurrent.Executors.newCachedThreadPool() else null
     private val routes = mutableListOf<Route>()
     val recorded: MutableList<Hit> = java.util.Collections.synchronizedList(mutableListOf())
     val origin: String
@@ -1260,6 +1361,7 @@ private class TinyServer : AutoCloseable {
                 route.handler(exchange, body)
             }
         }
+        pool?.let(server::setExecutor)
         server.start()
         origin = "http://127.0.0.1:${server.address.port}"
     }
@@ -1270,6 +1372,7 @@ private class TinyServer : AutoCloseable {
 
     override fun close() {
         server.stop(0)
+        pool?.shutdownNow()
     }
 
     private data class Route(

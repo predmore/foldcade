@@ -29,6 +29,7 @@ import app.foldcade.api.plugin.Availability
 import app.foldcade.api.plugin.Game
 import app.foldcade.api.plugin.GameActivity
 import app.foldcade.api.plugin.Platform
+import app.foldcade.api.plugin.HostedSaveFolder
 import app.foldcade.api.plugin.SaveFolderHolder
 import app.foldcade.api.plugin.SyncOutcome
 import app.foldcade.api.plugin.SyncResult
@@ -2563,6 +2564,8 @@ class ShellController(
                 playerId = player.id,
                 label = player.displayName,
                 chosen = player.hasSaveFolder(),
+                hostedTitle = (player as? HostedSaveFolder)?.hostedFolderTitle,
+                hostedInUse = (player as? HostedSaveFolder)?.hostedFolderInUse() == true,
             )
         }.distinctBy { it.first }.map { it.second }
 

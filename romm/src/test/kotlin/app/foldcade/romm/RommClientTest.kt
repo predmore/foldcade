@@ -366,23 +366,16 @@ class RommClientTest {
     @Test
     fun aFirmwareFileThatDoesNotMatchItsHashIsNotKept() {
         val body = "not-the-keys".toByteArray()
-        server.route("GET", "/api/firmware/4/content/prod keys") { exchange, _ ->
+        server.route("GET", "/api/firmware/4/content/prod.keys") { exchange, _ ->
             bytes(exchange, 200, body)
         }
-        val target = dir.resolve("fw/prod keys")
+        val target = dir.resolve("fw/prod.keys")
+        val listed = FirmwareSummary(4, 18, "prod.keys", body.size.toLong(), md5Hex("real-keys".toByteArray()))
         runClient(token = { "rmm_test" }) { client ->
-            val error = suspendCatching {
-                client.downloadFirmware(
-                    4,
-                    "prod keys",
-                    target,
-                    expectedSize = body.size.toLong(),
-                    expectedMd5 = md5Hex("real-keys".toByteArray()),
-                )
-            }.exceptionOrNull()
+            val error = suspendCatching { client.downloadFirmware(listed, target) }.exceptionOrNull()
             assertTrue(error is RommFirmwareMismatch)
         }
-        assertEquals("/api/firmware/4/content/prod keys", server.recorded.single().path)
+        assertEquals("/api/firmware/4/content/prod.keys", server.recorded.single().path)
         assertFalse(Files.exists(target))
         assertFalse(Files.exists(RommClient.partialOf(target)))
     }
@@ -396,14 +389,8 @@ class RommClientTest {
         val target = dir.resolve("fw/prod.keys")
         val steps = mutableListOf<RomProgress>()
         runClient(token = { "rmm_test" }) { client ->
-            val file = client.downloadFirmware(
-                4,
-                "prod.keys",
-                target,
-                expectedSize = body.size.toLong(),
-                expectedMd5 = md5Hex(body),
-                progress = { steps += it },
-            )
+            val listed = FirmwareSummary(4, 18, "prod.keys", body.size.toLong(), md5Hex(body))
+            val file = client.downloadFirmware(listed, target, progress = { steps += it })
             assertEquals(target, file)
             assertTrue(body.contentEquals(Files.readAllBytes(file)))
         }
@@ -434,7 +421,7 @@ class RommClientTest {
         try {
             runBlocking {
                 val job = launch(Dispatchers.IO) {
-                    client.downloadFirmware(4, "slow.zip", target)
+                    client.downloadFirmware(FirmwareSummary(4, 18, "slow.zip", 1_000_000), target)
                 }
                 assertTrue(withContext(Dispatchers.IO) { started.await(5, TimeUnit.SECONDS) })
                 val cancelStarted = System.nanoTime()
@@ -519,6 +506,46 @@ class RommClientTest {
         assertTrue(query.contains("file_ids=7%2C8") || query.contains("file_ids=7,8"))
         assertTrue(query.contains("purpose=play"))
         assertFalse(query.contains("format"))
+    }
+
+    @Test
+    fun aPlatformsFirmwareIsListedAndDownloadedOnceChecked() {
+        val bios = "playstation-bios".toByteArray()
+        server.route("GET", "/api/firmware") { exchange, _ ->
+            json(
+                exchange,
+                200,
+                """[{"id":1,"platform_id":46,"file_name":"SCPH1001.BIN","file_size_bytes":${bios.size},""" +
+                    """"md5_hash":"${md5Hex(bios).uppercase()}","file_path":"bios/psx"}]""",
+            )
+        }
+        server.route("GET", "/api/firmware/1/content/SCPH1001.BIN") { exchange, _ -> bytes(exchange, 200, bios) }
+        val target = dir.resolve("firmware/46/SCPH1001.BIN")
+        runClient(token = { "rmm_test" }) { client ->
+            val listed = client.firmware(46).single()
+            assertEquals(FirmwareSummary(1, 46, "SCPH1001.BIN", bios.size.toLong(), md5Hex(bios)), listed)
+            assertEquals(target, client.downloadFirmware(listed, target))
+            // A verified copy is reused without the network.
+            assertEquals(target, client.downloadFirmware(listed, target))
+        }
+        assertArrayEquals(bios, Files.readAllBytes(target))
+        assertTrue(RommClient.isVerifiedRom(target, bios.size.toLong(), md5Hex(bios)))
+        assertEquals("platform_id=46", server.recorded.first().query)
+        assertEquals(1, server.recorded.count { it.path.contains("/content/") })
+    }
+
+    @Test
+    fun firmwareThatDoesNotMatchItsHashIsNotKept() {
+        server.route("GET", "/api/firmware/1/content/SCPH1001.BIN") { exchange, _ ->
+            bytes(exchange, 200, "not-the-bios".toByteArray())
+        }
+        val wanted = FirmwareSummary(1, 46, "SCPH1001.BIN", 12, md5Hex("the-real-bio".toByteArray()))
+        val target = dir.resolve("firmware/46/SCPH1001.BIN")
+        runClient(token = { "rmm_test" }) { client ->
+            assertTrue(suspendCatching { client.downloadFirmware(wanted, target) }.exceptionOrNull() is RommResponseException)
+        }
+        assertFalse(Files.exists(target))
+        assertFalse(Files.exists(RommClient.partialOf(target)))
     }
 
     @Test

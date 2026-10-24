@@ -157,18 +157,18 @@ class RommFirmwareTest {
             val opened = mutableListOf<String>()
             val calls = mutableListOf<Long>()
             val ops = ScriptedOps().apply {
-                onDownloadFirmware = { id, name, target, size, md5, _ ->
-                    calls += id
-                    assertEquals("prod.keys", name)
-                    assertEquals(12L, size)
-                    assertEquals("abc", md5)
+                onDownloadFirmware = { file, target ->
+                    calls += file.id
+                    assertEquals("prod.keys", file.fileName)
+                    assertEquals(12L, file.fileSizeBytes)
+                    assertEquals("abc", file.md5Hash)
                     Files.createDirectories(target.parent)
                     Files.write(target, "keys".toByteArray())
                     target
                 }
             }
             val other = ScriptedOps().apply {
-                onDownloadFirmware = { _, _, _, _, _, _ -> error("wrong server") }
+                onDownloadFirmware = { _, _ -> error("wrong server") }
             }
             val firmware = RommFirmware {
                 listOf(
@@ -177,13 +177,14 @@ class RommFirmwareTest {
                 )
             }
             val target = root.resolve("out/prod.keys")
-            val saved = firmware.download("https://two.example", 4, "prod.keys", target, 12, "abc")
+            val keys = FirmwareSummary(4, 18, "prod.keys", 12, "abc")
+            val saved = firmware.download("https://two.example", keys, target)
             assertEquals(target, saved)
             assertEquals("keys", Files.readString(target))
             assertEquals(listOf("https://two.example"), opened)
             assertEquals(listOf(4L), calls)
             val missing = runCatching {
-                firmware.download("https://missing.example", 4, "prod.keys", target, 12, "abc")
+                firmware.download("https://missing.example", keys, target)
             }.exceptionOrNull()
             assertTrue(missing is IllegalStateException)
             assertEquals("RomM server is not connected", missing?.message)

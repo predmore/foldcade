@@ -135,7 +135,7 @@ private fun compareVersions(left: List<Int>, right: List<Int>): Int {
  * with no hash is tried again when that size changes.
  */
 internal fun refusedFirmwareKey(origin: String, file: FirmwareSummary): String {
-    val mark = file.md5?.lowercase()?.takeIf { it.isNotEmpty() } ?: "size:${file.sizeBytes}"
+    val mark = file.md5Hash?.lowercase()?.takeIf { it.isNotEmpty() } ?: "size:${file.fileSizeBytes}"
     return "$origin\t${file.id}\t$mark"
 }
 
@@ -347,7 +347,7 @@ internal class EdenInstaller(
             warn("Could not add Eden $name", error)
         } finally {
             if (partialLeft) runCatching { tree.delete(partial) }
-            withContext(NonCancellable) { Files.deleteIfExists(downloaded) }
+            withContext(NonCancellable) { deleteDownload(downloaded) }
         }
         return false
     }
@@ -363,7 +363,7 @@ internal class EdenInstaller(
         val target = cache.resolve("${found.second.id}.zip")
         try {
             // The tile is marked on the first report. Send it before RomM answers, or a second press restarts this download.
-            onProgress?.invoke(RomProgress.Receiving(0, found.second.sizeBytes.takeIf { it > 0L }))
+            onProgress?.invoke(RomProgress.Receiving(0, found.second.fileSizeBytes.takeIf { it > 0L }))
             try {
                 source.download(found.first, found.second, target, onProgress)
             } catch (cancelled: CancellationException) {
@@ -434,8 +434,7 @@ internal class EdenInstaller(
             warn("Could not install Eden firmware", error)
         } finally {
             withContext(NonCancellable) {
-                Files.deleteIfExists(target)
-                Files.deleteIfExists(target.resolveSibling(target.fileName.toString() + ".partial"))
+                deleteDownload(target)
             }
         }
         return false
@@ -451,6 +450,12 @@ internal class EdenInstaller(
             if (runCatching { tree.delete(path) }.isFailure) cleared = false
         }
         if (cleared) runCatching { tree.delete(MARKER) }
+    }
+
+    /** A finished download, its partial, and the verified marker RomM's client keeps beside it. Nothing is kept for offline use. */
+    private fun deleteDownload(target: Path) {
+        val name = target.fileName.toString()
+        listOf(name, "$name.partial", "$name.verified").forEach { Files.deleteIfExists(target.resolveSibling(it)) }
     }
 
     private fun hasFirmware(tree: EdenTree): Boolean = firmwareNames(tree).isNotEmpty()

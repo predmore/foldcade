@@ -15,6 +15,8 @@ import kotlin.coroutines.cancellation.CancellationException
 internal class LaunchSaves(
     private val saves: PlayerSaves,
     private val plugins: PluginHost,
+    /** The folder the user picked for a player, where its firmware goes, or null. */
+    private val pickedFolder: (Player) -> String? = { null },
     /** A save was written for the player with this save folder key, which must load it. */
     private val awaitLoad: (String) -> Unit,
 ) {
@@ -51,6 +53,8 @@ internal class LaunchSaves(
             // Kept until the player starts, so a launch cancelled now still starts it fresh next time.
             if (written.isNotEmpty()) awaitLoad(player.saveFolderId())
             if (!placed) throw SaveNotPlaced()
+            // A BIOS the library has goes beside the saves. A file already there stays.
+            saves.placeFirmware(player, owner, placement.target, pickedFolder(player))
             return PreparedLaunch(placement.target, spots, owner)
         } catch (cancelled: CancellationException) {
             throw cancelled

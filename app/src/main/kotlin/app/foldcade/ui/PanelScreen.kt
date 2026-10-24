@@ -133,6 +133,7 @@ import androidx.compose.ui.zIndex
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import app.foldcade.language.actionFaces
 import app.foldcade.language.heroPlayLine
+import app.foldcade.language.openPlayerLabel
 import app.foldcade.language.DateStyle
 import app.foldcade.language.typingFaces
 import app.foldcade.language.FindEntry
@@ -4153,7 +4154,7 @@ private fun DialogCard(
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 dialog.buttons.forEachIndexed { index, button ->
-                    val label = dialogButtonLabel(button)
+                    val label = dialogButtonLabel(button, dialog.subject)
                     DialogAction(
                         label = label,
                         focused = dialog.index == index,

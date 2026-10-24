@@ -51,20 +51,6 @@ data class PlatformSummary(
     val romCount: Long,
 )
 
-/**
- * One firmware file from `GET /api/firmware`.
- * [md5] is the plain MD5 of the file bytes, lowercase, when RomM sent one.
- * [missingFromFs] is RomM's `missing_from_fs`. False when RomM omits it.
- */
-data class FirmwareSummary(
-    val id: Long,
-    val platformId: Long,
-    val fileName: String,
-    val sizeBytes: Long,
-    val md5: String?,
-    val missingFromFs: Boolean = false,
-)
-
 data class RomQuery(
     val platformIds: List<Long> = emptyList(),
     val searchTerm: String? = null,
@@ -83,6 +69,18 @@ data class RomFileSummary(
     val category: String? = null,
     /** `is_top_level`: the file sits in the ROM's folder itself, not a folder inside it. Null when not sent. */
     val isTopLevel: Boolean? = null,
+)
+
+/** One firmware file RomM keeps for a platform, such as a console's BIOS, from `GET /api/firmware`. */
+data class FirmwareSummary(
+    val id: Long,
+    val platformId: Long,
+    val fileName: String,
+    val fileSizeBytes: Long,
+    /** Lowercase hex MD5 RomM computed for this file, when it has one. */
+    val md5Hash: String? = null,
+    /** RomM's `missing_from_fs`: listed, but the file is gone from its disk. False when RomM omits it. */
+    val missingFromFs: Boolean = false,
 )
 
 @Serializable

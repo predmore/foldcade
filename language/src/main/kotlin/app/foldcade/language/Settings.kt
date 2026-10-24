@@ -86,7 +86,10 @@ fun settingsRows(category: SettingsCategory, model: PickerModel): List<Row> = wh
         if (model.eden != null && model.signedIn.any { it.pluginId == "romm" || it.pluginId.startsWith("romm#") }) {
             add(Row.EdenFolder)
         }
-        addAll(model.playerSaves.map { Row.PlayerSave(it.playerId) })
+        model.playerSaves.forEach { setting ->
+            add(Row.PlayerSave(setting.playerId))
+            if (setting.hostedTitle != null) add(Row.HostedSaves(setting.playerId))
+        }
     }
     SettingsCategory.Screens -> buildList {
         add(Row.Primary)

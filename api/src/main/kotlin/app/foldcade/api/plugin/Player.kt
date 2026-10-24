@@ -80,6 +80,19 @@ interface Player {
      */
     fun saveFolders(slot: String, romFileName: String, romHeader: ByteArray): List<SaveFolderPart>? = null
 
+    /**
+     * Where this player looks for the firmware file [name], such as a console's
+     * BIOS, below its save folder, with folders separated by `/`: the folder the
+     * user picked for it, see [SaveFolderHolder], or else the one its save
+     * declarations name, unless Foldcade hosts that one, see [HostedSaveFolder].
+     * A library that has [name] for the game's platform downloads it and
+     * returns it in [LaunchTarget.ContentUri.firmware], and the shell writes it
+     * there. A file already there is replaced only when it still holds what the
+     * shell last wrote, so a file the user put there stays. Null means the player
+     * does not use [name]. Added in API minor 12.
+     */
+    fun firmwareFileName(name: String): String? = null
+
     /** Builds the launch intent from [request]. Does not touch the network or disk. */
     fun launchIntent(request: LaunchRequest): PlayerIntent
 }
