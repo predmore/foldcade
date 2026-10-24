@@ -89,6 +89,7 @@ fun settingsRows(category: SettingsCategory, model: PickerModel): List<Row> = wh
         model.playerSaves.forEach { setting ->
             add(Row.PlayerSave(setting.playerId))
             if (setting.hostedTitle != null) add(Row.HostedSaves(setting.playerId))
+            if (setting.saveSyncing || setting.saveSyncSteps != null) add(Row.SaveSync(setting.playerId))
         }
     }
     SettingsCategory.Screens -> buildList {

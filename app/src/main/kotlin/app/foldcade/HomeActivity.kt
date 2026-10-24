@@ -53,6 +53,7 @@ import app.foldcade.api.plugin.SaveCopy
 import app.foldcade.api.plugin.HostedSaveFolder
 import app.foldcade.api.plugin.SaveFolderHolder
 import app.foldcade.api.plugin.SaveFolderPart
+import app.foldcade.api.plugin.SaveFolderSearch
 import app.foldcade.api.plugin.StartDisplay
 import app.foldcade.artwork.SteamGridDb
 import app.foldcade.language.AboutCopy
@@ -339,6 +340,11 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
             is Effect.SetUpHostedSaves -> (foldcade.plugins.player(effect.playerId) as? HostedSaveFolder)?.let { player ->
                 askHostedSaves(player, pending = null)
             }
+            is Effect.ShowSaveSync -> showSaveSync(effect.playerId)
+            is Effect.OpenPlayer -> {
+                cancelLaunches()
+                openPlayerApp(effect.playerId)
+            }
             Effect.ShowRetroArchCores -> showRetroArchCores(retry = null)
             Effect.ShowEdenFolder -> openEdenFolder(fromOffer = false)
             Effect.Undo, is Effect.ShowHidden, is Effect.DeleteShortcut -> Unit
@@ -472,6 +478,7 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
         // A player may have been pointed at the folder Foldcade hosts for its saves while Home was away.
         foldcade.refreshHostedFolders()
         foldcade.shell.refreshPlayerSaves()
+        foldcade.refreshSaveSync()
         // Usage access may have changed while Home was away, and without it no game reads Paused.
         foldcade.pruneRunningGames()
         val displayId = display?.displayId
@@ -1214,7 +1221,13 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
                         noteStart = { playerIntent?.let { foldcade.noteStarted(plan.player, it) } == true },
                     )
                     if (started) {
-                        val saves = LibraryReturn(owner.backendId, owner, plan.player, spots)
+                        val saves = LibraryReturn(
+                            owner.backendId,
+                            owner,
+                            plan.player,
+                            spots,
+                            (target as? LaunchTarget.ContentUri)?.uri,
+                        )
                         rememberReturn(saves)
                         noteRunning(id, title, game.platformId, plan.player, installedIntent, saves)
                     }
@@ -1624,7 +1637,7 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
             foldcade.noteExternalPlayerOpened()
             foldcade.notePlayScreen()
             if (game.libraryId != null) {
-                rememberReturn(LibraryReturn(game.libraryId, apiGame, player, spots))
+                rememberReturn(LibraryReturn(game.libraryId, apiGame, player, spots, ready.intent.dataUri))
             }
         } catch (cancelled: CancellationException) {
             throw cancelled
@@ -2569,8 +2582,17 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
                 foldcade.releaseUnusedFolderGrant(previous, read or write)
             }
             foldcade.shell.refreshPlayerSaves()
+            foldcade.refreshSaveSync()
         }
         return true
+    }
+
+    /** The steps for a memory card that is not syncing, and Open for the player that keeps it. */
+    private fun showSaveSync(playerId: String) {
+        val player = foldcade.plugins.player(playerId) ?: return
+        val steps = foldcade.shell.model.playerSaves.firstOrNull { it.playerId == playerId }?.saveSyncSteps ?: return
+        val shown = foldcade.shell.present(app.foldcade.language.saveSyncDialog(player.displayName, steps, hostScreen()))
+        if (shown) foldcade.hostedAsk = HostedAsk(player.id, null)
     }
 
     private fun requestHome() {
@@ -2668,7 +2690,9 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
             try {
                 foldcade.saveFlow.withLock {
                     val saves = foldcade.playerSaves
-                    val observed = saves.changedSince(pending.libraryId, pending.game, pending.player, pending.spots)
+                    // Read the card again, and do not set one up: the player has just been holding it.
+                    val spots = returnSpots(saves, pending)
+                    val observed = saves.changedSince(pending.libraryId, pending.game, pending.player, spots)
                     // The library may finish its sync before reconcile returns. The notice waits for either.
                     withContext(Dispatchers.Main.immediate) { foldcade.expectSaveReturn(pending.libraryId, pending.game) }
                     var announced = true
@@ -2691,7 +2715,7 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
                             }
                         }
                     }
-                    saves.noteHandedOver(pending.libraryId, pending.game, pending.player, pending.spots, observed)
+                    saves.noteHandedOver(pending.libraryId, pending.game, pending.player, spots, observed)
                     foldcade.store.setPendingSaveReturn(pending.storeKey, null)
                 }
             } catch (cancelled: CancellationException) {
@@ -2831,7 +2855,27 @@ internal data class LibraryReturn(
     val game: Game,
     val player: Player,
     val spots: List<SaveSpot> = emptyList(),
+    /** The game file, so a return can find the card again without setting one up. */
+    val targetUri: String? = null,
 )
+
+/**
+ * The spots to read back. A player whose spots at launch came from a search is
+ * looked up again, with the card left as it is, and that look wins when it finds
+ * any. The spots stored at launch remain when that look finds nothing, so a game
+ * file that cannot be read just now does not drop the saves. Every other player
+ * keeps the spots stored at launch.
+ */
+internal fun returnSpots(saves: PlayerSaves, pending: LibraryReturn): List<SaveSpot> {
+    val uri = pending.targetUri ?: return pending.spots
+    if (pending.spots.none { it.search != null }) return pending.spots
+    val fresh = try {
+        saves.spots(pending.player, pending.game, LaunchTarget.ContentUri(uri), forLaunch = false)
+    } catch (_: Exception) {
+        return pending.spots
+    }
+    return fresh.ifEmpty { pending.spots }
+}
 
 /** One stored read-back per game. */
 private val LibraryReturn.storeKey: String get() = "$libraryId\u0000${game.remoteKey}"
@@ -2843,7 +2887,7 @@ private fun storedReturnKey(text: String): String? = try {
     null
 }
 
-private fun LibraryReturn.encode(): String = JSONObject().apply {
+internal fun LibraryReturn.encode(): String = JSONObject().apply {
     put("library", libraryId)
     put("backend", game.backendId)
     put("key", game.remoteKey)
@@ -2851,13 +2895,28 @@ private fun LibraryReturn.encode(): String = JSONObject().apply {
     put("availability", game.availability.name)
     put("label", game.label)
     put("player", player.id)
+    targetUri?.let { put("target", it) }
     put(
         "spots",
         JSONArray(
             spots.map { spot ->
-                JSONObject().put("slot", spot.slot).put("folder", spot.folderUri).put("file", spot.fileName).apply {
+                JSONObject().apply {
+                    put("slot", spot.slot)
+                    put("folder", spot.folderUri)
+                    put("file", spot.fileName)
                     if (spot.folders.isNotEmpty()) {
-                        put("parts", JSONArray(spot.folders.map { JSONObject().put("name", it.name).put("path", it.path) }))
+                        put("parts", JSONArray(spot.folders.map { part ->
+                            JSONObject().apply {
+                                put("name", part.name)
+                                put("path", part.path)
+                            }
+                        }))
+                    }
+                    spot.search?.let { search ->
+                        put("search", JSONObject().apply {
+                            put("parent", search.parent)
+                            put("contains", search.nameContains)
+                        })
                     }
                 }
             },
@@ -2865,7 +2924,7 @@ private fun LibraryReturn.encode(): String = JSONObject().apply {
     )
 }.toString()
 
-private fun decodeLibraryReturn(text: String, player: (String) -> Player?): LibraryReturn? {
+internal fun decodeLibraryReturn(text: String, player: (String) -> Player?): LibraryReturn? {
     val json = try {
         JSONObject(text)
     } catch (_: Exception) {
@@ -2898,8 +2957,12 @@ private fun decodeLibraryReturn(json: JSONObject, player: Player): LibraryReturn
                 val folder = parts!!.getJSONObject(part)
                 SaveFolderPart(folder.getString("name"), folder.getString("path"))
             }
-            SaveSpot(spot.getString("slot"), spot.getString("folder"), spot.getString("file"), folders)
+            val search = spot.optJSONObject("search")?.let {
+                SaveFolderSearch(it.getString("parent"), it.getString("contains"))
+            }
+            SaveSpot(spot.getString("slot"), spot.getString("folder"), spot.getString("file"), folders, search)
         },
+        targetUri = json.optString("target", "").takeIf { it.isNotEmpty() },
     )
 }
 

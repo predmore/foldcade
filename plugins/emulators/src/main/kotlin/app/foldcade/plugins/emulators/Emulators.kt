@@ -115,7 +115,10 @@ val EMULATORS: List<Emulator> = listOf(
         action = "android.nfc.action.TECH_DISCOVERED",
     ),
 
-    // Sony. DuckStation, for the PlayStation, has its own plugin.
+    // Sony. DuckStation, for the PlayStation, and ARMSX2, for the PlayStation 2,
+    // have their own plugins. ARMSX2 ranks ahead of this table, see playerRank
+    // in the shell: NetherSX2 stays here, and registration order is not what
+    // puts ARMSX2 first.
     Emulator(
         id = "nethersx2",
         displayName = "NetherSX2",
@@ -128,10 +131,13 @@ val EMULATORS: List<Emulator> = listOf(
         flags = RELAUNCH,
     ),
     Emulator(
-        id = "armsx2",
-        displayName = "ARMSX2",
+        id = "emucorex",
+        displayName = "EmuCoreX",
         platformIds = listOf(PLAYSTATION_2),
-        activities = listOf("com.armsx2", "com.armsx2.nightly").associateWith { "com.armsx2.MainActivity" },
+        activities = mapOf("com.sbro.emucorex" to "com.sbro.emucorex.MainActivity"),
+        action = "com.sbro.emucorex.action.LAUNCH_GAME",
+        handoff = RomHandoff.Extra("com.sbro.emucorex.extra.GAME_PATH"),
+        flags = RELAUNCH,
     ),
     Emulator(
         id = "ppsspp",

@@ -3,7 +3,17 @@ package app.foldcade.plugins.romm
 import app.foldcade.romm.RomFileSummary
 import app.foldcade.romm.RomSummary
 import app.foldcade.romm.RommClient
+import app.foldcade.romm.md5File
+import java.io.ByteArrayOutputStream
 import java.nio.file.Files
+import java.nio.file.Path
+import java.util.concurrent.CyclicBarrier
+import java.util.concurrent.TimeUnit
+import java.util.zip.CRC32
+import java.util.zip.ZipEntry
+import java.util.zip.ZipFile
+import java.util.zip.ZipOutputStream
+import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
@@ -353,6 +363,433 @@ class RomFolderTest {
             RomFileSummary(52, "Game A.cue", 1, isTopLevel = true),
         ).bytes()
         assertEquals("Game A.m3u" to listOf("Game A.cue", "Game B.cue"), discPlaylist(unnumbered))
+    }
+
+    @Test
+    fun aZipOfFirmwareIsUnpackedBesideItselfAndOfferedByFile() {
+        val dir = Files.createTempDirectory("firmware-zip")
+        try {
+            val zip = dir.resolve("PS2_BIOS.zip")
+            Files.write(
+                zip,
+                zipOf(
+                    "Misc BIOS/ps2-0230a-20080220.bin" to "usa".toByteArray(),
+                    "DVD Firmware/" to ByteArray(0),
+                    "DVD Firmware/ps2-dvd-110u.bin" to "dvd".toByteArray(),
+                    "a/boot.bin" to "first".toByteArray(),
+                    "b/boot.bin" to "second".toByteArray(),
+                    "keys\\civ.bin" to "key".toByteArray(),
+                    "skip/." to "no".toByteArray(),
+                ),
+            )
+            assertTrue(RommClient.adoptLocalRom(zip, Files.size(zip), null))
+            assertEquals(listOf("PS2_BIOS.zip"), checkedFirmware(dir).map { it.first })
+            val unpacked = unpackFirmwareZip(zip) { it.endsWith("ps2-0230a-20080220.bin") || it.endsWith("boot.bin") }
+            assertEquals(
+                listOf(
+                    "PS2_BIOS.zip/boot.bin",
+                    "PS2_BIOS.zip/ps2-0230a-20080220.bin",
+                    "PS2_BIOS.zip/ps2-dvd-110u.bin",
+                ),
+                unpacked.map { it.first },
+            )
+            assertArrayEquals("first".toByteArray(), Files.readAllBytes(unpacked.first { it.first.endsWith("boot.bin") }.second))
+            // The zip itself stays, and the unpacked files are offered with it.
+            assertEquals(
+                listOf(
+                    "PS2_BIOS.zip",
+                    "PS2_BIOS.zip/boot.bin",
+                    "PS2_BIOS.zip/ps2-0230a-20080220.bin",
+                    "PS2_BIOS.zip/ps2-dvd-110u.bin",
+                ),
+                checkedFirmware(dir).map { it.first },
+            )
+            // A player that wants no file inside does not unpack a zip that is not one yet.
+            val plain = dir.resolve("readme.bin")
+            Files.write(plain, "notes".toByteArray())
+            assertTrue(RommClient.adoptLocalRom(plain, 5, null))
+            assertTrue(unpackFirmwareZip(plain) { true }.isEmpty())
+        } finally {
+            dir.toFile().deleteRecursively()
+        }
+    }
+
+    @Test
+    fun aPlayerThatWantsNoZipMemberLeavesTheZipPacked() {
+        val dir = Files.createTempDirectory("firmware-zip-packed")
+        try {
+            val zip = dir.resolve("bios.zip")
+            Files.write(zip, zipOf("boot.bin" to "bios".toByteArray()))
+            assertTrue(RommClient.adoptLocalRom(zip, Files.size(zip), null))
+            assertTrue(unpackFirmwareZip(zip) { !it.contains('/') }.isEmpty())
+            assertFalse(Files.exists(dir.resolve("bios.zip.unpacked")))
+            assertEquals(listOf("bios.zip"), checkedFirmware(dir).map { it.first })
+        } finally {
+            dir.toFile().deleteRecursively()
+        }
+    }
+
+    @Test
+    fun aZipOverTheCapIsNotUnpacked() {
+        assertEquals(32L * 1024 * 1024, FIRMWARE_ZIP_FILE_CAP)
+        assertEquals(1024L * 1024 * 1024, FIRMWARE_ZIP_TOTAL_CAP)
+        val dir = Files.createTempDirectory("firmware-zip-cap")
+        try {
+            val zip = dir.resolve("bios.zip")
+            Files.write(zip, zipOf("big.bin" to ByteArray(8), "small.bin" to ByteArray(4)))
+            assertTrue(RommClient.adoptLocalRom(zip, Files.size(zip), null))
+            assertTrue(unpackFirmwareZip(zip, fileCap = 7, totalCap = 100) { true }.isEmpty())
+            assertFalse(Files.exists(dir.resolve("bios.zip.unpacked")))
+            assertFalse(Files.exists(dir.resolve("bios.zip.unpacked.partial")))
+            // The two files together are over the unpack, so neither is written.
+            assertTrue(unpackFirmwareZip(zip, fileCap = 8, totalCap = 10) { true }.isEmpty())
+            assertEquals(listOf("bios.zip"), checkedFirmware(dir).map { it.first })
+        } finally {
+            dir.toFile().deleteRecursively()
+        }
+    }
+
+    @Test
+    fun aPartialUnpackIsNotOfferedAndANewZipReplacesTheOldOne() {
+        val dir = Files.createTempDirectory("firmware-zip-partial")
+        try {
+            val zip = dir.resolve("bios.zip")
+            Files.write(zip, zipOf("boot.bin" to "v1".toByteArray()))
+            assertTrue(RommClient.adoptLocalRom(zip, Files.size(zip), null))
+            assertEquals("bios.zip/boot.bin", unpackFirmwareZip(zip) { true }.single().first)
+            // A newer copy that stopped part way, beside the finished one, does not hide it.
+            Files.createDirectories(dir.resolve("bios.zip.unpacked.partial"))
+            Files.write(dir.resolve("bios.zip.unpacked.partial/boot.bin"), "torn".toByteArray())
+            assertArrayEquals("v1".toByteArray(), Files.readAllBytes(checkedFirmware(dir).single { it.first.endsWith("boot.bin") }.second))
+            // No stamp: the files that were written are not offered.
+            Files.delete(dir.resolve("bios.zip.unpacked.verified"))
+            assertEquals(listOf("bios.zip"), checkedFirmware(dir).map { it.first })
+            Files.write(zip, zipOf("boot.bin" to "v2".toByteArray()))
+            assertTrue(RommClient.adoptLocalRom(zip, Files.size(zip), md5File(zip)))
+            val replaced = unpackFirmwareZip(zip) { true }.single()
+            assertEquals("bios.zip/boot.bin", replaced.first)
+            assertArrayEquals("v2".toByteArray(), Files.readAllBytes(replaced.second))
+        } finally {
+            dir.toFile().deleteRecursively()
+        }
+    }
+
+    @Test
+    fun aStoredMemberWithABadCrcIsNotUnpacked() {
+        val dir = Files.createTempDirectory("firmware-zip-crc")
+        try {
+            val zip = dir.resolve("bios.zip")
+            val good = storedZip("boot.bin" to "bios".toByteArray(), "note.txt" to "ok".toByteArray())
+            Files.write(zip, good)
+            assertTrue(RommClient.adoptLocalRom(zip, Files.size(zip), null))
+            val unpacked = unpackFirmwareZip(zip) { true }
+            assertEquals(listOf("bios.zip/boot.bin", "bios.zip/note.txt"), unpacked.map { it.first })
+            assertArrayEquals("bios".toByteArray(), Files.readAllBytes(unpacked.first().second))
+            dir.resolve("bios.zip.unpacked").toFile().deleteRecursively()
+            Files.delete(dir.resolve("bios.zip.unpacked.verified"))
+            val corrupt = withCrc(good, 0, delta = 1)
+            ZipFile(Files.write(zip, corrupt).toFile()).use { archive ->
+                val entry = archive.getEntry("boot.bin")
+                val bytes = archive.getInputStream(entry).use { it.readBytes() }
+                val crc = CRC32().apply { update(bytes) }
+                assertEquals("bios", String(bytes))
+                assertTrue(crc.value != entry.crc)
+            }
+            assertTrue(RommClient.adoptLocalRom(zip, Files.size(zip), md5File(zip)))
+            assertTrue(unpackFirmwareZip(zip) { true }.isEmpty())
+            assertFalse(Files.exists(dir.resolve("bios.zip.unpacked")))
+            assertFalse(Files.exists(dir.resolve("bios.zip.unpacked.partial")))
+            assertFalse(Files.exists(dir.resolve("bios.zip.unpacked.verified")))
+            assertEquals(listOf("bios.zip"), checkedFirmware(dir).map { it.first })
+        } finally {
+            dir.toFile().deleteRecursively()
+        }
+    }
+
+    @Test
+    fun aMemberShorterThanItDeclaresIsNotUnpacked() {
+        val dir = Files.createTempDirectory("firmware-zip-short")
+        try {
+            val zip = dir.resolve("bios.zip")
+            val payload = ByteArray(10) { 'a'.code.toByte() }
+            val stored = storedZip("boot.bin" to payload, "note.txt" to "ok".toByteArray())
+            val short = withUncompressedSize(stored, 0, declared = 1_000)
+            ZipFile(Files.write(zip, short).toFile()).use { archive ->
+                val entry = archive.getEntry("boot.bin")
+                val bytes = archive.getInputStream(entry).use { it.readBytes() }
+                assertEquals(10, bytes.size)
+                assertEquals(1_000L, entry.size)
+            }
+            assertTrue(RommClient.adoptLocalRom(zip, Files.size(zip), null))
+            assertTrue(unpackFirmwareZip(zip) { true }.isEmpty())
+            assertFalse(Files.exists(dir.resolve("bios.zip.unpacked")))
+            assertFalse(Files.exists(dir.resolve("bios.zip.unpacked.partial")))
+            assertFalse(Files.exists(dir.resolve("bios.zip.unpacked.verified")))
+            assertEquals(listOf("bios.zip"), checkedFirmware(dir).map { it.first })
+        } finally {
+            dir.toFile().deleteRecursively()
+        }
+    }
+
+    @Test
+    fun theFirstCopyOfADuplicatedNameIsUnpacked() {
+        val dir = Files.createTempDirectory("firmware-zip-dup")
+        try {
+            val exact = dir.resolve("exact.zip")
+            // ZipOutputStream refuses a repeated name, so the second entry is renamed in place.
+            val repeated = withSameName(
+                storedZip("boot.bin" to "first".toByteArray(), "boot.bi2" to "second".toByteArray()),
+                "boot.bin",
+            )
+            Files.write(exact, repeated)
+            assertTrue(RommClient.adoptLocalRom(exact, Files.size(exact), null))
+            val exactUnpacked = unpackFirmwareZip(exact) { true }
+            // Android refuses a zip whose entries repeat a name, so nothing is offered.
+            // Where the archive opens, the first copy is the one kept.
+            val kept = exactUnpacked.singleOrNull()
+            assertTrue(kept == null || kept.first == "exact.zip/boot.bin")
+            if (kept != null) assertArrayEquals("first".toByteArray(), Files.readAllBytes(kept.second))
+            val nested = dir.resolve("nested.zip")
+            Files.write(nested, zipOf("a/boot.bin" to "first".toByteArray(), "b/boot.bin" to "second".toByteArray()))
+            assertTrue(RommClient.adoptLocalRom(nested, Files.size(nested), null))
+            val nestedUnpacked = unpackFirmwareZip(nested) { true }.single()
+            assertEquals("nested.zip/boot.bin", nestedUnpacked.first)
+            assertArrayEquals("first".toByteArray(), Files.readAllBytes(nestedUnpacked.second))
+        } finally {
+            dir.toFile().deleteRecursively()
+        }
+    }
+
+    @Test
+    fun aMemberNamedLikeUnpackBookkeepingIsOffered() {
+        val dir = Files.createTempDirectory("firmware-zip-names")
+        try {
+            val zip = dir.resolve("bios.zip")
+            // boot.bin.partial before boot.bin: that order used to overwrite the first.
+            Files.write(
+                zip,
+                zipOf(
+                    "retail.partial" to "retail-partial".toByteArray(),
+                    "retail.verified" to "retail-verified".toByteArray(),
+                    "boot.bin.partial" to "boot-partial".toByteArray(),
+                    "boot.bin" to "boot".toByteArray(),
+                ),
+            )
+            assertTrue(RommClient.adoptLocalRom(zip, Files.size(zip), null))
+            val unpacked = unpackFirmwareZip(zip) { true }
+            assertEquals(
+                listOf(
+                    "bios.zip/boot.bin",
+                    "bios.zip/boot.bin.partial",
+                    "bios.zip/retail.partial",
+                    "bios.zip/retail.verified",
+                ),
+                unpacked.map { it.first },
+            )
+            assertArrayEquals("boot".toByteArray(), Files.readAllBytes(unpacked[0].second))
+            assertArrayEquals("boot-partial".toByteArray(), Files.readAllBytes(unpacked[1].second))
+            assertArrayEquals("retail-partial".toByteArray(), Files.readAllBytes(unpacked[2].second))
+            assertArrayEquals("retail-verified".toByteArray(), Files.readAllBytes(unpacked[3].second))
+            assertEquals(
+                listOf(
+                    "bios.zip",
+                    "bios.zip/boot.bin",
+                    "bios.zip/boot.bin.partial",
+                    "bios.zip/retail.partial",
+                    "bios.zip/retail.verified",
+                ),
+                checkedFirmware(dir).map { it.first },
+            )
+        } finally {
+            dir.toFile().deleteRecursively()
+        }
+    }
+
+    @Test
+    fun aZipReplacedWhileItIsPlannedIsNotStamped() {
+        val dir = Files.createTempDirectory("firmware-zip-race")
+        try {
+            val zip = dir.resolve("bios.zip")
+            Files.write(zip, zipOf("boot.bin" to "old".toByteArray()))
+            assertTrue(RommClient.adoptLocalRom(zip, Files.size(zip), null))
+            val replaced = unpackFirmwareZip(zip, planning = {
+                Files.write(
+                    zip,
+                    zipOf("boot.bin" to "new".toByteArray(), "extra.bin" to "more".toByteArray()),
+                )
+                assertTrue(RommClient.adoptLocalRom(zip, Files.size(zip), md5File(zip)))
+            }) { true }
+            assertTrue(replaced.isEmpty())
+            assertFalse(Files.exists(dir.resolve("bios.zip.unpacked")))
+            assertFalse(Files.exists(dir.resolve("bios.zip.unpacked.partial")))
+            assertFalse(Files.exists(dir.resolve("bios.zip.unpacked.verified")))
+            assertEquals(listOf("bios.zip"), checkedFirmware(dir).map { it.first })
+            val unpacked = unpackFirmwareZip(zip) { true }
+            assertEquals(listOf("bios.zip/boot.bin", "bios.zip/extra.bin"), unpacked.map { it.first })
+            assertArrayEquals("new".toByteArray(), Files.readAllBytes(unpacked.first { it.first.endsWith("boot.bin") }.second))
+            assertArrayEquals("more".toByteArray(), Files.readAllBytes(unpacked.first { it.first.endsWith("extra.bin") }.second))
+        } finally {
+            dir.toFile().deleteRecursively()
+        }
+    }
+
+    @Test
+    fun twoUnpacksOfOneZipAtOnceKeepEveryMember() {
+        val dir = Files.createTempDirectory("firmware-zip-concurrent")
+        try {
+            val zip = dir.resolve("bios.zip")
+            val planned = List(24) { index ->
+                "%02d.bin".format(index) to ByteArray(64 * 1024) { ((index * 17 + it) and 0xff).toByte() }
+            }
+            Files.write(zip, zipOf(*planned.toTypedArray()))
+            assertTrue(RommClient.adoptLocalRom(zip, Files.size(zip), null))
+            // Both enter the unpack together. They share one work folder.
+            val start = CyclicBarrier(2)
+            val unpacked = arrayOfNulls<List<Pair<String, Path>>>(2)
+            val failures = arrayOfNulls<Throwable>(2)
+            val threads = List(2) { index ->
+                Thread {
+                    try {
+                        start.await(30, TimeUnit.SECONDS)
+                        unpacked[index] = unpackFirmwareZip(zip) { true }
+                    } catch (failure: Throwable) {
+                        failures[index] = failure
+                    }
+                }.apply { isDaemon = true }
+            }
+            threads.forEach { it.start() }
+            threads.forEach { thread ->
+                thread.join(60_000)
+                assertFalse("unpack did not finish", thread.isAlive)
+            }
+            assertNull(failures[0]?.stackTraceToString(), failures[0])
+            assertNull(failures[1]?.stackTraceToString(), failures[1])
+            val expectedNames = planned.map { "bios.zip/${it.first}" }.sorted()
+            val expectedBytes = planned.toMap()
+            for (index in 0..1) {
+                val files = checkNotNull(unpacked[index])
+                assertEquals(expectedNames, files.map { it.first })
+                for ((name, path) in files) {
+                    assertArrayEquals(expectedBytes.getValue(name.substringAfterLast('/')), Files.readAllBytes(path))
+                }
+            }
+            val folder = dir.resolve("bios.zip.unpacked")
+            for ((name, bytes) in planned) {
+                assertArrayEquals(bytes, Files.readAllBytes(folder.resolve(name)))
+            }
+            assertFalse(Files.exists(dir.resolve("bios.zip.unpacked.partial")))
+            // A later launch trusts the stamp, so a short publish would stay short.
+            val again = unpackFirmwareZip(zip) { true }
+            assertEquals(expectedNames, again.map { it.first })
+            for ((name, path) in again) {
+                assertArrayEquals(expectedBytes.getValue(name.substringAfterLast('/')), Files.readAllBytes(path))
+            }
+        } finally {
+            dir.toFile().deleteRecursively()
+        }
+    }
+
+    private fun zipOf(vararg entries: Pair<String, ByteArray>): ByteArray {
+        val out = ByteArrayOutputStream()
+        ZipOutputStream(out).use { zip ->
+            for ((name, bytes) in entries) {
+                val entry = ZipEntry(name)
+                zip.putNextEntry(entry)
+                if (!name.endsWith("/")) zip.write(bytes)
+                zip.closeEntry()
+            }
+        }
+        return out.toByteArray()
+    }
+
+    /** A zip whose members are stored, so a bad CRC is not checked by the inflater. */
+    private fun storedZip(vararg entries: Pair<String, ByteArray>): ByteArray {
+        val out = ByteArrayOutputStream()
+        ZipOutputStream(out).use { zip ->
+            for ((name, bytes) in entries) {
+                val crc = CRC32().apply { update(bytes) }
+                val entry = ZipEntry(name)
+                entry.method = ZipEntry.STORED
+                entry.size = bytes.size.toLong()
+                entry.crc = crc.value
+                zip.putNextEntry(entry)
+                zip.write(bytes)
+                zip.closeEntry()
+            }
+        }
+        return out.toByteArray()
+    }
+
+    /** Every entry is named [name]. The zip was written with names of that same length. */
+    private fun withSameName(zip: ByteArray, name: String): ByteArray {
+        val copy = zip.copyOf()
+        val spans = zipSpans(copy)
+        val bytes = name.toByteArray(Charsets.UTF_8)
+        for (i in spans.locals.indices) {
+            check(u16(copy, spans.locals[i] + 26) == bytes.size)
+            bytes.copyInto(copy, spans.locals[i] + 30)
+            bytes.copyInto(copy, spans.centrals[i] + 46)
+        }
+        return copy
+    }
+
+    /** [entry] keeps its bytes. Its CRC, in the local header and the central directory, moves by [delta]. */
+    private fun withCrc(zip: ByteArray, entry: Int, delta: Long): ByteArray {
+        val copy = zip.copyOf()
+        val spans = zipSpans(copy)
+        val crc = u32(copy, spans.locals[entry] + 14) + delta
+        putU32(copy, spans.locals[entry] + 14, crc)
+        putU32(copy, spans.centrals[entry] + 16, crc)
+        return copy
+    }
+
+    /** [entry] keeps its stored bytes. Its uncompressed size becomes [declared]. */
+    private fun withUncompressedSize(zip: ByteArray, entry: Int, declared: Int): ByteArray {
+        val copy = zip.copyOf()
+        val spans = zipSpans(copy)
+        putU32(copy, spans.locals[entry] + 22, declared.toLong())
+        putU32(copy, spans.centrals[entry] + 24, declared.toLong())
+        return copy
+    }
+
+    private class ZipSpans(val locals: List<Int>, val centrals: List<Int>)
+
+    private fun zipSpans(zip: ByteArray): ZipSpans {
+        val locals = mutableListOf<Int>()
+        var at = 0
+        while (at + 30 <= zip.size && u32(zip, at) == 0x04034b50L) {
+            locals += at
+            val compressed = u32(zip, at + 18).toInt()
+            val nameLen = u16(zip, at + 26)
+            val extraLen = u16(zip, at + 28)
+            at += 30 + nameLen + extraLen + compressed
+        }
+        val centrals = mutableListOf<Int>()
+        while (at + 46 <= zip.size && u32(zip, at) == 0x02014b50L) {
+            centrals += at
+            val nameLen = u16(zip, at + 28)
+            val extraLen = u16(zip, at + 30)
+            val commentLen = u16(zip, at + 32)
+            at += 46 + nameLen + extraLen + commentLen
+        }
+        return ZipSpans(locals, centrals)
+    }
+
+    private fun u16(bytes: ByteArray, at: Int): Int =
+        (bytes[at].toInt() and 0xff) or ((bytes[at + 1].toInt() and 0xff) shl 8)
+
+    private fun u32(bytes: ByteArray, at: Int): Long =
+        (bytes[at].toLong() and 0xff) or
+            ((bytes[at + 1].toLong() and 0xff) shl 8) or
+            ((bytes[at + 2].toLong() and 0xff) shl 16) or
+            ((bytes[at + 3].toLong() and 0xff) shl 24)
+
+    private fun putU32(bytes: ByteArray, at: Int, value: Long) {
+        val bits = value.toInt()
+        bytes[at] = bits.toByte()
+        bytes[at + 1] = (bits ushr 8).toByte()
+        bytes[at + 2] = (bits ushr 16).toByte()
+        bytes[at + 3] = (bits ushr 24).toByte()
     }
 
     private fun folder(vararg files: RomFileSummary) = RomSummary(

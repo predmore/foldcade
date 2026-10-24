@@ -31,6 +31,7 @@ import app.foldcade.api.plugin.GameActivity
 import app.foldcade.api.plugin.Platform
 import app.foldcade.api.plugin.HostedSaveFolder
 import app.foldcade.api.plugin.SaveFolderHolder
+import app.foldcade.api.plugin.SaveSyncState
 import app.foldcade.api.plugin.SyncOutcome
 import app.foldcade.api.plugin.SyncResult
 import app.foldcade.artwork.ArtQuery
@@ -2555,17 +2556,30 @@ class ShellController(
         }
     }
 
+    /** The last read of each player's [SaveSyncState]. Reading a card does not belong on this path. */
+    private var saveSync: Map<String, SaveSyncState> = emptyMap()
+
+    /** Replaces the cached card state and redraws the emulator rows. */
+    fun setSaveSync(states: Map<String, SaveSyncState>) {
+        if (states == saveSync) return
+        saveSync = states
+        model = model.copy(playerSaves = playerSaveSettings())
+    }
+
     /** One row per save folder. Players that share a folder, as RetroArch's systems do, share a row. */
     private fun playerSaveSettings(): List<PlayerSaveSetting> =
         plugins.playerIds().mapNotNull { id ->
             val player = plugins.player(id) ?: return@mapNotNull null
             if (player !is SaveFolderHolder) return@mapNotNull null
+            val sync = saveSync[player.id]
             player.saveFolderId() to PlayerSaveSetting(
                 playerId = player.id,
                 label = player.displayName,
                 chosen = player.hasSaveFolder(),
                 hostedTitle = (player as? HostedSaveFolder)?.hostedFolderTitle,
                 hostedInUse = (player as? HostedSaveFolder)?.hostedFolderInUse() == true,
+                saveSyncing = sync is SaveSyncState.Syncing,
+                saveSyncSteps = (sync as? SaveSyncState.NeedsSetup)?.steps,
             )
         }.distinctBy { it.first }.map { it.second }
 

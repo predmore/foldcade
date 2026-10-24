@@ -17,7 +17,9 @@ import app.foldcade.api.plugin.Placement
 import app.foldcade.api.plugin.Player
 import app.foldcade.api.plugin.PlayerIntent
 import app.foldcade.api.plugin.PluginEntry
+import app.foldcade.api.plugin.GameFileReader
 import app.foldcade.api.plugin.SaveDeclaration
+import app.foldcade.api.plugin.SaveFolderAccess
 import app.foldcade.api.plugin.SaveSet
 import app.foldcade.api.plugin.SaveSlot
 import app.foldcade.api.plugin.StartDisplay
@@ -107,6 +109,47 @@ class LaunchSavesTest {
         assertEquals(listOf("prepareSaves:12"), server.calls)
         assertEquals(listOf("prepareSaves:4"), other.calls)
         assertEquals("from the second server", String(docs.files.getValue("$SAVES/Tetris DS (USA).sav")))
+    }
+
+    @Test
+    fun cardSetupStartsThePlayerFreshEvenWhenNoSaveIsPlaced() = runBlocking {
+        val player = object : Player by Melon {
+            override val id = "armsx2"
+            override fun saveDeclarations(game: Game) = listOf(SaveDeclaration("card1", SAVES))
+            override fun saveFileName(slot: String, romFileName: String): String? = null
+            override fun findSaveFolders(
+                slot: String,
+                game: GameFileReader,
+                folder: SaveFolderAccess,
+                forLaunch: Boolean,
+            ): app.foldcade.api.plugin.SaveFolderSearch? {
+                check(forLaunch)
+                check(folder.write("memcards/card/note", byteArrayOf(7)))
+                return null
+            }
+        }
+        server.toPlace = null
+        LaunchSaves(saves, plugins) { awaiting += it }.prepare(GameRoute("tile", owner, owner), player, local)
+        assertEquals(listOf("armsx2"), awaiting)
+        assertEquals(7, docs.files["$SAVES/memcards/card/note"]?.single()?.toInt())
+    }
+
+    @Test
+    fun aSaveSearchThatThrowsStopsTheLaunch() = runBlocking {
+        val player = object : Player by Melon {
+            override fun findSaveFolders(
+                slot: String,
+                game: GameFileReader,
+                folder: SaveFolderAccess,
+                forLaunch: Boolean,
+            ): app.foldcade.api.plugin.SaveFolderSearch? = error("card setup failed")
+        }
+        val failure = runCatching {
+            LaunchSaves(saves, plugins) { awaiting += it }.prepare(GameRoute("tile", owner, owner), player, local)
+        }.exceptionOrNull()
+        assertTrue(failure is SaveNotPlaced)
+        assertEquals(emptyList<String>(), server.calls)
+        assertTrue(awaiting.isEmpty())
     }
 
     @Test

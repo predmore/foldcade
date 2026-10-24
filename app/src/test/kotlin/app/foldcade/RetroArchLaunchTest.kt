@@ -6,6 +6,7 @@ import app.foldcade.api.plugin.Game
 import app.foldcade.api.plugin.LaunchTarget
 import app.foldcade.api.plugin.Player
 import app.foldcade.api.plugin.PlayerExtra
+import app.foldcade.plugins.armsx2.ArmsX2Player
 import app.foldcade.plugins.emulators.EmulatorsEntry
 import app.foldcade.plugins.melonds.MelonDsPlayer
 import app.foldcade.plugins.retroarch.Core
@@ -55,6 +56,18 @@ class RetroArchLaunchTest {
         assertEquals("retroarch.game-boy-advance", pick(gba, setOf(AARCH64))?.id)
         // With neither installed, the missing-player dialog names RetroArch first.
         assertEquals("retroarch.game-boy-advance", pick(gba, emptySet())?.id)
+    }
+
+    @Test
+    fun armsX2GoesAheadOfTheEmulatorsTable() {
+        val nether = emulators.players.single { it.id == "nethersx2.playstation-2" }
+        val emucore = emulators.players.single { it.id == "emucorex.playstation-2" }
+        // NetherSX2 registered first still gives way. Rank does that, not plugin order.
+        val ps2 = listOf(nether, ArmsX2Player(), emucore)
+        val installed = setOf("xyz.aethersx2.android", "com.armsx2", "com.sbro.emucorex")
+        assertEquals("armsx2", pick(ps2, installed)?.id)
+        assertEquals("nethersx2.playstation-2", pick(ps2, setOf("xyz.aethersx2.android", "com.sbro.emucorex"))?.id)
+        assertEquals("emucorex.playstation-2", pick(ps2, setOf("com.sbro.emucorex"))?.id)
     }
 
     @Test

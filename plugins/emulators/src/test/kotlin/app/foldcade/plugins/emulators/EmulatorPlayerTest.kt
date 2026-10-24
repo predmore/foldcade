@@ -87,7 +87,7 @@ class EmulatorPlayerTest {
         fun order(platformId: String) = entry.players.filter { it.platformId == platformId }.map { it.displayName }
         assertEquals(listOf("My Boy!", "Pizza Boy GBA", "GBA.emu"), order(GBA))
         assertEquals(listOf("Dolphin", "Dolphin MMJR"), order(WII))
-        assertEquals(listOf("NetherSX2", "ARMSX2"), order(PLAYSTATION_2))
+        assertEquals(listOf("NetherSX2", "EmuCoreX"), order(PLAYSTATION_2))
         assertEquals(listOf("Flycast", "Redream"), order(DREAMCAST))
     }
 
@@ -116,6 +116,18 @@ class EmulatorPlayerTest {
         val dolphin = launch("dolphin.wii", "content://games/title.rvz")
         assertEquals("org.dolphinemu.dolphinemu.ui.main.TvMainActivity", dolphin.componentClass)
         assertEquals(listOf(PlayerExtra.Text("AutoStartFile", "content://games/title.rvz")), dolphin.extras)
+
+        val emucorex = launch("emucorex.playstation-2", "content://games/title.iso")
+        assertEquals("com.sbro.emucorex", emucorex.packageName)
+        assertEquals("com.sbro.emucorex.MainActivity", emucorex.componentClass)
+        assertEquals("com.sbro.emucorex.action.LAUNCH_GAME", emucorex.action)
+        assertEquals("content://games/title.iso", emucorex.dataUri)
+        assertTrue(emucorex.grantReadUri)
+        assertEquals(
+            listOf(PlayerExtra.Text("com.sbro.emucorex.extra.GAME_PATH", "content://games/title.iso")),
+            emucorex.extras,
+        )
+        assertEquals(setOf(LaunchFlag.NewTask, LaunchFlag.ClearTop, LaunchFlag.ClearTask), emucorex.flags)
     }
 
     @Test

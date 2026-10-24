@@ -4,7 +4,9 @@ import android.content.ContentResolver
 import android.net.Uri
 import android.provider.DocumentsContract
 import android.provider.OpenableColumns
+import app.foldcade.api.plugin.FirmwareOffer
 import app.foldcade.api.plugin.Game
+import app.foldcade.api.plugin.GameFileReader
 import app.foldcade.api.plugin.HostedSaveFolder
 import app.foldcade.api.plugin.LaunchTarget
 import app.foldcade.api.plugin.ObservedSaves
@@ -13,8 +15,10 @@ import app.foldcade.api.plugin.PlacedSave
 import app.foldcade.api.plugin.Player
 import app.foldcade.api.plugin.SaveFolderHolder
 import app.foldcade.api.plugin.SaveFolderPart
+import app.foldcade.api.plugin.SaveFolderSearch
 import java.io.ByteArrayInputStream
 import java.io.ByteArrayOutputStream
+import java.io.FileInputStream
 import java.io.InputStream
 import java.nio.file.Files
 import java.nio.file.Path
@@ -28,6 +32,7 @@ import java.util.SortedMap
 import java.util.zip.ZipEntry
 import java.util.zip.ZipInputStream
 import java.util.zip.ZipOutputStream
+import kotlin.coroutines.cancellation.CancellationException
 
 /**
  * One save file in a player's folder: the [slot] a library knows, the folder
@@ -40,6 +45,8 @@ internal data class SaveSpot(
     val folderUri: String,
     val fileName: String,
     val folders: List<SaveFolderPart> = emptyList(),
+    /** Set when the folders are found by name at read time, rather than named up front. */
+    val search: SaveFolderSearch? = null,
 )
 
 /**
@@ -55,6 +62,14 @@ internal data class SaveEntry(
     val path: String,
     val uri: String,
     val isFolder: Boolean,
+)
+
+/** One document directly inside a folder. [size] is zero when the provider does not say. */
+internal data class SaveChild(
+    val name: String,
+    val uri: String,
+    val isFolder: Boolean,
+    val size: Long,
 )
 
 /** Content-resolver work [PlayerSaves] needs, so its decisions run on the JVM in tests. */
@@ -86,6 +101,12 @@ internal interface SaveDocuments {
     fun head(uri: String, size: Int): ByteArray? = null
 
     /**
+     * Up to [length] bytes at [offset], fewer at the end of the file, or null
+     * when it cannot be read. The default reads nothing.
+     */
+    fun readAt(uri: String, offset: Long, length: Int): ByteArray? = null
+
+    /**
      * Everything below the folder at [name] inside [folderUri], or null when
      * there is no such folder. Throws when a folder cannot be listed, so a
      * folder that is there is never taken for one that is not.
@@ -97,6 +118,12 @@ internal interface SaveDocuments {
 
     /** The names directly inside the tree [folderUri], or null when it cannot be listed. */
     fun childNames(folderUri: String): List<String>? = null
+
+    /**
+     * The documents directly inside [path], or the tree itself when [path] is empty.
+     * Null when that folder is missing. Throws when it cannot be listed.
+     */
+    fun children(folderUri: String, path: String): List<SaveChild>? = null
 }
 
 /** What the shell last placed in, or read from, each save file. */
@@ -112,7 +139,9 @@ internal interface SaveMarks {
  * Moves a library's saves into the player's save folder before a launch, and
  * reads them back after the player returns. The shell touches only the one
  * file [Player.saveFileName] names in the folder the player declares, or the
- * folders [Player.saveFolders] names there, which move as one zip.
+ * folders [Player.saveFolders] names there, which move as one zip. A player can
+ * instead name those folders by a search, see [Player.findSaveFolders]. The
+ * shell finds them when it reads or writes, and sets the card up only on a launch.
  *
  * Nothing in the player's folder is overwritten unseen:
  * - a file whose hash differs from the last one the shell placed or read was
@@ -137,6 +166,7 @@ internal class PlayerSaves(
     private val marks: SaveMarks,
     private val backups: Path,
     private val handover: Path,
+    private val gameFile: (String) -> GameFileReader = { _ -> UnreadableGameFile },
 ) {
     /**
      * False when [folderUri], just picked for [player], holds none of its
@@ -155,7 +185,19 @@ internal class PlayerSaves(
         return names.any { name -> markers.any { it.equals(name, ignoreCase = true) } }
     }
 
-    fun spots(player: Player, game: Game, target: LaunchTarget): List<SaveSpot> {
+    /**
+     * [forLaunch] is true on the way into the player and false on the way back.
+     * A card is created or rewritten only on the way in. A slot whose setup
+     * changed the folder is added to [changed], the same list a placed save uses,
+     * so the player starts fresh and reads what was just written.
+     */
+    fun spots(
+        player: Player,
+        game: Game,
+        target: LaunchTarget,
+        forLaunch: Boolean = false,
+        changed: MutableList<String>? = null,
+    ): List<SaveSpot> {
         val uri = when (target) {
             is LaunchTarget.ContentUri -> target.uri
             is LaunchTarget.SharedFile -> target.uri
@@ -165,8 +207,23 @@ internal class PlayerSaves(
         val header by lazy {
             if (player.romHeaderSize > 0) docs.head(uri, player.romHeaderSize) ?: ByteArray(0) else ByteArray(0)
         }
+        val reader = gameFile(uri)
         return player.saveDeclarations(game).mapNotNull { declaration ->
             val folder = declaration.locationUri ?: return@mapNotNull null
+            val access = folderAccess(player, folder, forLaunch)
+            // A throw while setting a card up is a save that could not be placed. On the way back it is no spot.
+            val search = try {
+                player.findSaveFolders(declaration.slot, reader, access, forLaunch)
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (_: Exception) {
+                if (forLaunch) throw SaveNotPlaced() else null
+            }
+            if (access.changed) changed?.add(declaration.slot)
+            if (search != null && validSearch(search)) {
+                val zipName = romName.substringBeforeLast('.').ifEmpty { romName } + ".zip"
+                return@mapNotNull SaveSpot(declaration.slot, folder, zipName, search = search)
+            }
             val folders = player.saveFolders(declaration.slot, romName, header)
             if (folders != null) {
                 if (!validFolders(folders)) return@mapNotNull null
@@ -197,7 +254,7 @@ internal class PlayerSaves(
                     null
                 }
                 marks.mark(tornKey(key)) -> null
-                else -> if (spot.folders.isNotEmpty() && marks.mark(pendingKey(key)) != null) {
+                else -> if ((spot.folders.isNotEmpty() || spot.search != null) && marks.mark(pendingKey(key)) != null) {
                     // A folder placement is many writes, and one still pending stopped part way, so
                     // these files are half the old save and half the new. Later changes are progress.
                     marks.clearMark(pendingKey(key))
@@ -242,7 +299,7 @@ internal class PlayerSaves(
             val bytes = docs.read(save.contentUri) ?: return false
             if (md5Hex(bytes) != save.contentHash) return false
             val outcome = synchronized(SaveFileLock) {
-                if (spot.folders.isEmpty()) placeFile(key, player, spot, bytes) else placeFolders(key, player, spot, bytes)
+                if (spot.folders.isEmpty() && spot.search == null) placeFile(key, player, spot, bytes) else placeFolders(key, player, spot, bytes)
             }
             when (outcome) {
                 Placing.Failed -> return false
@@ -254,14 +311,15 @@ internal class PlayerSaves(
     }
 
     /**
-     * Writes each firmware file in [target] that [player] asks for, see
-     * [Player.firmwareFileName], into [folder], the folder the user picked for it,
-     * or else the one its save declarations for [game] name, unless that is a folder
-     * Foldcade hosts, which holds saves alone. A file there is replaced only when it holds what the shell last wrote
-     * there, so a library's new copy follows, and a file the user put there or
-     * changed stays. A written file is read back; one that does not match goes,
-     * and a file it replaced comes back. Never throws, since firmware does not
-     * stop a launch. Returns the names written.
+     * Writes the firmware in [target] that [player] chooses, see [Player.chooseFirmware],
+     * into [folder], the folder the user picked for it, or else the one its save
+     * declarations for [game] name, unless that is a folder Foldcade hosts, which holds
+     * saves alone. Each file [Player.firmwareFileName] names is offered with its first
+     * [Player.firmwareHeaderSize] bytes. A file there is replaced only when it holds what
+     * the shell last wrote there, so a library's new copy follows, and a file the user
+     * put there or changed stays. A written file is read back; one that does not match
+     * goes, and a file it replaced comes back. An exception from the player writes
+     * nothing. Never throws, since firmware does not stop a launch. Returns the names written.
      */
     fun placeFirmware(player: Player, game: Game, target: LaunchTarget, folder: String? = null): List<String> {
         val firmware = (target as? LaunchTarget.ContentUri)?.firmware.orEmpty()
@@ -271,10 +329,42 @@ internal class PlayerSaves(
         } catch (_: Exception) {
             null
         } ?: return emptyList()
-        return firmware.mapNotNull { file ->
-            try {
+        val named = try {
+            firmware.mapNotNull { file ->
                 val name = player.firmwareFileName(file.name)?.takeIf { savePathParts(it) != null }
                     ?: return@mapNotNull null
+                file to name
+            }
+        } catch (_: Exception) {
+            return emptyList()
+        }
+        if (named.isEmpty()) return emptyList()
+        val headerSize = try {
+            player.firmwareHeaderSize
+        } catch (_: Exception) {
+            return emptyList()
+        }
+        if (headerSize < 0) return emptyList()
+        val offers = named.map { (file, _) ->
+            val header = if (headerSize == 0) {
+                ByteArray(0)
+            } else {
+                try {
+                    docs.head(file.contentUri, headerSize) ?: ByteArray(0)
+                } catch (_: Exception) {
+                    ByteArray(0)
+                }
+            }
+            FirmwareOffer(file.name, header)
+        }
+        val chosen = try {
+            player.chooseFirmware(offers).map { it.name }.toSet()
+        } catch (_: Exception) {
+            return emptyList()
+        }
+        return named.mapNotNull { (file, name) ->
+            if (file.name !in chosen) return@mapNotNull null
+            try {
                 if (synchronized(SaveFileLock) { placeFirmwareFile(into, name, file.contentUri) }) name else null
             } catch (_: Exception) {
                 null
@@ -377,7 +467,16 @@ internal class PlayerSaves(
      * what it has, and the hash checked and marked is that of the whole spot.
      */
     private fun placeFolders(key: String, player: Player, spot: SaveSpot, zip: ByteArray): Placing {
-        val incoming = saveEntries(zip, spot.folders.map { it.name }.toSet()) ?: return Placing.Failed
+        val allowed = spot.search?.let { search ->
+            val roots = saveZipRoots(zip) ?: return Placing.Failed
+            if (savePathParts(search.parent) == null || roots.isEmpty() ||
+                roots.any { savePathParts(it)?.size != 1 || !saveFolderNameMatches(it, search.nameContains) }
+            ) {
+                return Placing.Failed
+            }
+            roots
+        } ?: spot.folders.map { it.name }.toSet()
+        val incoming = saveEntries(zip, allowed) ?: return Placing.Failed
         val current = when (val held = readFolders(spot)) {
             Held.Unreadable -> return Placing.Failed
             Held.Missing -> FolderSave.EMPTY
@@ -471,9 +570,19 @@ internal class PlayerSaves(
     private fun known(key: String): Set<String> =
         setOfNotNull(marks.mark(key), marks.mark(pendingKey(key)), marks.mark(tornKey(key)))
 
+    /** What Settings shows for [player], read from [folderUri]. Never writes. */
+    fun saveSync(player: Player, folderUri: String): app.foldcade.api.plugin.SaveSyncState? = try {
+        player.saveSyncState(folderAccess(player, folderUri, allowWrite = false))
+    } catch (_: Exception) {
+        null
+    }
+
+    private fun folderAccess(player: Player, folderUri: String, allowWrite: Boolean) =
+        DocumentSaveFolder(docs, folderUri, allowWrite) { name, bytes -> backup(player, name, bytes) }
+
     /** The bytes [spot] holds and the document they are in, or null when it holds none or cannot be read. */
     private fun readSpot(spot: SaveSpot): Pair<ByteArray, String?>? {
-        if (spot.folders.isNotEmpty()) {
+        if (spot.folders.isNotEmpty() || spot.search != null) {
             val held = readFolders(spot) as? Held.Found ?: return null
             // Folders with no file are no save, and a zip of them could never be placed.
             if (held.save.entries.values.none { it != null }) return null
@@ -483,12 +592,18 @@ internal class PlayerSaves(
         return (docs.read(uri) ?: return null) to uri
     }
 
-    /** Everything in [spot]'s folders, named as in its zip. */
+    /** Everything in [spot]'s folders, named as in its zip. A search lists its parent and takes the matches. */
     private fun readFolders(spot: SaveSpot): Held {
+        val parts = try {
+            folderParts(spot)
+        } catch (_: Exception) {
+            return Held.Unreadable
+        } ?: return Held.Unreadable
+        if (parts.isEmpty()) return Held.Missing
         val entries = sortedMapOf<String, ByteArray?>()
         val uris = HashMap<String, String>()
         try {
-            for (part in spot.folders) {
+            for (part in parts) {
                 val listed = docs.list(spot.folderUri, part.path) ?: continue
                 for (entry in listed) {
                     val name = "${part.name}/${entry.path}" + if (entry.isFolder) "/" else ""
@@ -510,10 +625,25 @@ internal class PlayerSaves(
         return file.toUri().toString()
     }
 
+    /** The folders [spot] moves. A search takes the matching children of its parent. */
+    private fun folderParts(spot: SaveSpot): List<SaveFolderPart>? {
+        val search = spot.search ?: return spot.folders
+        if (savePathParts(search.parent) == null) return null
+        val children = docs.children(spot.folderUri, search.parent) ?: return emptyList()
+        return children.mapNotNull { child ->
+            if (!child.isFolder || savePathParts(child.name)?.size != 1) return@mapNotNull null
+            if (!saveFolderNameMatches(child.name, search.nameContains)) return@mapNotNull null
+            SaveFolderPart(child.name, "${search.parent}/${child.name}")
+        }
+    }
+
     /** Where the entry [name] of [spot]'s zip lives, below the player's folder. */
     private fun documentPath(spot: SaveSpot, name: String): String {
-        val part = spot.folders.first { it.name == partOf(name) }
-        return part.path + "/" + name.substringAfter('/').removeSuffix("/")
+        val partName = partOf(name)
+        val base = spot.folders.firstOrNull { it.name == partName }?.path
+            ?: spot.search?.takeIf { saveFolderNameMatches(partName, it.nameContains) }?.let { "${it.parent}/$partName" }
+            ?: error("save could not be placed")
+        return base + "/" + name.substringAfter('/').removeSuffix("/")
     }
 
     /** What a spot kept as folders holds. */
@@ -567,12 +697,18 @@ internal class PlayerSaves(
         if (left != null) marks.setMark(tornKey(key), md5Hex(left))
     }
 
-    /** Keeps the newest [BACKUPS_KEPT] replaced files per player. */
+    /**
+     * Keeps the newest [BACKUPS_KEPT] replaced files per player. The copy is read
+     * back before this returns, so a caller can delete the original only once the
+     * backup holds every byte.
+     */
     private fun backup(player: Player, fileName: String, bytes: ByteArray) {
         val dir = backups.resolve(safeName(player.id))
         Files.createDirectories(dir)
         val stamp = DateTimeFormatter.ofPattern("yyyyMMddHHmmssSSS").withZone(ZoneOffset.UTC).format(Instant.now())
-        Files.write(dir.resolve("$stamp-${safeName(fileName)}"), bytes)
+        val file = dir.resolve("$stamp-${safeName(fileName)}")
+        Files.write(file, bytes)
+        if (!Files.readAllBytes(file).contentEquals(bytes)) error("backup did not match")
         val all = Files.list(dir).use { stream -> stream.collect(java.util.stream.Collectors.toList()) }
         all.sortedByDescending { it.fileName.toString() }.drop(BACKUPS_KEPT).forEach { Files.deleteIfExists(it) }
     }
@@ -612,6 +748,34 @@ internal fun savePathParts(name: String): List<String>? {
     return parts
 }
 
+/** A search the shell can follow: a path inside the save folder, and a name to look for. */
+private fun validSearch(search: SaveFolderSearch): Boolean =
+    savePathParts(search.parent) != null && folderKey(search.nameContains).isNotEmpty()
+
+/**
+ * [name], upper-cased with `-` and `_` removed, contains [contains] written the same way.
+ * How a PS2 folder card groups one game's saves, which share its serial.
+ * A name that starts with `_` is never a match: PCSX2 keeps a deleted save as
+ * `_pcsx2_deleted_<name>`, and a real save folder does not start with `_`.
+ */
+internal fun saveFolderNameMatches(name: String, contains: String): Boolean {
+    if (name.startsWith("_")) return false
+    val needle = folderKey(contains)
+    return needle.isNotEmpty() && needle in folderKey(name)
+}
+
+private fun folderKey(name: String): String = buildString(name.length) {
+    for (char in name) {
+        if (char == '-' || char == '_') continue
+        append(char.uppercaseChar())
+    }
+}
+
+/** A game file this shell cannot read. A player that does not ask gets nothing, not a failure. */
+private object UnreadableGameFile : GameFileReader {
+    override fun read(offset: Long, length: Int): ByteArray? = null
+}
+
 /** Folders the shell can move: at least one, each name one distinct part and each path inside the player's folder. */
 private fun validFolders(folders: List<SaveFolderPart>): Boolean =
     folders.isNotEmpty() &&
@@ -643,6 +807,31 @@ internal fun saveZip(entries: Map<String, ByteArray?>): ByteArray {
         }
     }
     return out.toByteArray()
+}
+
+/**
+ * The first folder of each entry in [zip], or null when [zip] is not a whole zip.
+ * Used to refuse a save that names a folder the search does not allow.
+ */
+internal fun saveZipRoots(zip: ByteArray): Set<String>? {
+    val listed = zipEntryCount(zip) ?: return null
+    val roots = linkedSetOf<String>()
+    var read = 0
+    try {
+        ZipInputStream(ByteArrayInputStream(zip)).use { input ->
+            while (true) {
+                val entry = input.nextEntry ?: break
+                read++
+                val first = entry.name.removeSuffix("/").substringBefore('/')
+                if (first.isEmpty()) return null
+                roots += first
+            }
+        }
+    } catch (_: Exception) {
+        return null
+    }
+    if (read != listed) return null
+    return roots
 }
 
 /**
@@ -811,6 +1000,20 @@ internal class AndroidSaveDocuments(private val resolver: ContentResolver) : Sav
         null
     }
 
+    override fun readAt(uri: String, offset: Long, length: Int): ByteArray? = try {
+        resolver.openFileDescriptor(Uri.parse(uri), "r")?.use { descriptor ->
+            FileInputStream(descriptor.fileDescriptor).channel.use { channel ->
+                val size = channel.size()
+                if (offset in 0 until size) channel.position(offset)
+                readSlice(size, offset, length) { channel.read(it) }
+            }
+        }
+    } catch (_: Exception) {
+        null
+    } catch (_: OutOfMemoryError) {
+        null
+    }
+
     override fun write(uri: String, bytes: ByteArray) {
         val out = resolver.openOutputStream(Uri.parse(uri), "wt") ?: error("save could not be opened for writing")
         out.use { it.write(bytes) }
@@ -881,7 +1084,29 @@ internal class AndroidSaveDocuments(private val resolver: ContentResolver) : Sav
         }
     }
 
-    private class Child(val id: String, val name: String, val isFolder: Boolean)
+    override fun children(folderUri: String, path: String): List<SaveChild>? {
+        val tree = Uri.parse(folderUri)
+        val parent = if (path.isEmpty()) {
+            DocumentsContract.getTreeDocumentId(tree)
+        } else {
+            val parts = savePathParts(path) ?: return null
+            var folder = DocumentsContract.getTreeDocumentId(tree)
+            for (part in parts) {
+                folder = listChildren(tree, folder).firstOrNull { it.name == part && it.isFolder }?.id ?: return null
+            }
+            folder
+        }
+        return listChildren(tree, parent).map { child ->
+            SaveChild(
+                child.name,
+                DocumentsContract.buildDocumentUriUsingTree(tree, child.id).toString(),
+                child.isFolder,
+                child.size,
+            )
+        }
+    }
+
+    private class Child(val id: String, val name: String, val isFolder: Boolean, val size: Long)
 
     /** The children of [parentId]. Throws when the provider does not answer, unlike [child]. */
     private fun listChildren(tree: Uri, parentId: String): List<Child> {
@@ -889,13 +1114,15 @@ internal class AndroidSaveDocuments(private val resolver: ContentResolver) : Sav
             DocumentsContract.Document.COLUMN_DOCUMENT_ID,
             DocumentsContract.Document.COLUMN_DISPLAY_NAME,
             DocumentsContract.Document.COLUMN_MIME_TYPE,
+            DocumentsContract.Document.COLUMN_SIZE,
         )
         val children = DocumentsContract.buildChildDocumentsUriUsingTree(tree, parentId)
         val cursor = resolver.query(children, columns, null, null, null) ?: error("save folder could not be listed")
         return cursor.use {
             buildList {
                 while (it.moveToNext()) {
-                    add(Child(it.getString(0), it.getString(1), it.getString(2) == DocumentsContract.Document.MIME_TYPE_DIR))
+                    val size = if (it.isNull(3)) 0L else it.getLong(3)
+                    add(Child(it.getString(0), it.getString(1), it.getString(2) == DocumentsContract.Document.MIME_TYPE_DIR, size))
                 }
             }
         }

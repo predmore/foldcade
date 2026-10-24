@@ -50,7 +50,9 @@
         <package android:name="xyz.aethersx2.tturnip" />
         <package android:name="xyz.aethersx2.cturnip" />
         <package android:name="com.armsx2" />
+        <package android:name="come.nanodata.armsx2" />
         <package android:name="com.armsx2.nightly" />
+        <package android:name="com.sbro.emucorex" />
         <package android:name="org.ppsspp.ppssppgold" />
         <package android:name="org.ppsspp.ppsspp" />
         <package android:name="com.explusalpha.MdEmu" />

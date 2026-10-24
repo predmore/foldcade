@@ -62,6 +62,14 @@ class PluginContractTest {
         assertTrue(player.needsLocalFile)
         assertEquals("slot", player.saveDeclarations(game).single().slot)
         assertFalse(player.occupiesBothDisplays)
+        assertEquals(0, player.firmwareHeaderSize)
+        val header = byteArrayOf(1, 2, 3)
+        val offer = FirmwareOffer("bios.bin", header)
+        assertEquals(offer, FirmwareOffer("bios.bin", byteArrayOf(1, 2, 3)))
+        assertEquals(offer.hashCode(), FirmwareOffer("bios.bin", byteArrayOf(1, 2, 3)).hashCode())
+        assertFalse(offer == FirmwareOffer("bios.bin", byteArrayOf(1, 2, 4)))
+        assertFalse(offer == FirmwareOffer("other.bin", header))
+        assertEquals(listOf(offer), player.chooseFirmware(listOf(offer)))
     }
 
     @Test
@@ -113,7 +121,7 @@ class PluginContractTest {
         assertTrue(aliases.isDefault)
         assertTrue(IdlePlatform().aliases.isEmpty())
         assertEquals(1, PLUGIN_API_VERSION)
-        assertEquals(12, PLUGIN_API_MINOR)
+        assertEquals(13, PLUGIN_API_MINOR)
         val bind = PluginEntry::class.java.methods.single { it.name == "bind" }
         assertTrue(bind.isDefault)
         val saveFileName = Player::class.java.methods.single { it.name == "saveFileName" }
@@ -121,6 +129,10 @@ class PluginContractTest {
         assertTrue(Player::class.java.methods.single { it.name == "saveFolders" }.isDefault)
         assertTrue(Player::class.java.methods.single { it.name == "getRomHeaderSize" }.isDefault)
         assertTrue(Player::class.java.methods.single { it.name == "firmwareFileName" }.isDefault)
+        assertTrue(Player::class.java.methods.single { it.name == "getFirmwareHeaderSize" }.isDefault)
+        assertTrue(Player::class.java.methods.single { it.name == "chooseFirmware" }.isDefault)
+        assertTrue(Player::class.java.methods.single { it.name == "findSaveFolders" }.isDefault)
+        assertTrue(Player::class.java.methods.single { it.name == "saveSyncState" }.isDefault)
         val observeActivity = LibraryBackend::class.java.methods.single { it.name == "observeActivity" }
         assertTrue(observeActivity.isDefault)
         val achievements = MetadataProvider::class.java.methods.single { it.name == "achievements" }

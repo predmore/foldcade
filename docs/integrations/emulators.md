@@ -22,7 +22,7 @@ Foldcade uses the first installed emulator in each row. There is currently no em
 | Nintendo DS / DSi | `ds` | `.nds`, `.dsi` | melonDS |
 | Nintendo 3DS | `3ds` | `.cci`, `.zcci`, `.3ds` | Azahar |
 | PlayStation | `ps1` | `.cue`, `.chd`, `.pbp`, `.img`, `.iso`, `.m3u` | DuckStation |
-| PlayStation 2 | `ps2` | `.iso`, `.chd`, `.m3u` | NetherSX2 / AetherSX2, ARMSX2 |
+| PlayStation 2 | `ps2` | `.iso`, `.chd`, `.m3u` | ARMSX2, NetherSX2 / AetherSX2, EmuCoreX |
 | PSP | `psp` | `.cso`, `.iso`, `.pbp` | PPSSPP |
 | Genesis / Mega Drive | `genesis` | `.gen`, `.smd`, `.md` | MD.emu, Pizza Boy SC |
 | Master System | `sms` | `.sms` | MD.emu, Pizza Boy SC |
@@ -84,6 +84,31 @@ A multi-disc RomM game downloads with an `.m3u` of its discs, named after the se
 
 Older DuckStation builds, from before the rewrite, read the game differently and do not start from Foldcade.
 
+## ARMSX2: PlayStation 2
+
+[ARMSX2](https://github.com/ARMSX2/ARMSX2) is the PlayStation 2 emulator to use on the Thor. Foldcade launches the GitHub build, then the Play Store build, then the nightly build, when more than one is installed. NetherSX2, AetherSX2, and EmuCoreX still launch when ARMSX2 is not.
+
+To install the GitHub build with Obtainium and get its updates, open [this link](https://apps.obtainium.imranr.dev/redirect?r=obtainium://app/%7B%22id%22%3A%22com.armsx2%22%2C%22url%22%3A%22https%3A%2F%2Fgithub.com%2FARMSX2%2FARMSX2%22%2C%22author%22%3A%22ARMSX2%22%2C%22name%22%3A%22ARMSX2%22%2C%22additionalSettings%22%3A%22%7B%5C%22apkFilterRegEx%5C%22%3A%5C%22a13-armv8%5C%5C%5C%5C.2-sdk33%5C%5C%5C%5C.apk%24%5C%22%7D%22%7D) on your Thor. It tracks [ARMSX2/ARMSX2](https://github.com/ARMSX2/ARMSX2) and takes the `a13-armv8.2-sdk33` APK. Open ARMSX2 once and finish its first-run setup before you launch a game from Foldcade.
+
+### BIOS
+
+ARMSX2 needs a PlayStation 2 BIOS dumped from a console you own. Put it in RomM's firmware for the PlayStation 2, under any file name, or put a zip of dumps there. Foldcade downloads it, checks it, and places one BIOS in ARMSX2's `bios` folder before the game starts. From a zip it keeps one console BIOS: Japan on a device set to Japan, the Americas BIOS in the US, Canada, and Latin America, and the Europe BIOS everywhere else. A newer version of that region wins, and then the later date. Devkit dumps, arcade dumps, DVD-player firmware, and the MagicGate key files (`civ.bin`, `cks.bin`, `eks.bin`, `kek.bin`) are not written. Those keys are not used. You can also put a BIOS in the folder yourself. A file you put there stays.
+
+The first time you play a RomM game with ARMSX2, Foldcade asks for ARMSX2's folder. The picker opens at the GitHub build's data folder, so tap **Use this folder** and **Allow**. That is where the BIOS goes. You can change the folder later in **Foldcade Settings › Emulators › ARMSX2**. A folder you pick has to hold `bios` or `memcards`. The Play Store and nightly builds keep their own data folders. If you use one of those, pick that build's folder instead.
+
+### Memory cards
+
+Foldcade syncs each game's saves on ARMSX2's slot 1 folder card through [RomM](romm.md#save-sync). The saves for one game are the folders on that card whose names contain the game's serial, such as `BASLUS-210651` for `SLUS-21065`.
+
+When slot 1 has no card, or its card is an empty 8 MB file card, Foldcade makes slot 1 a folder card before the game starts. The empty card is copied into Foldcade's save backups first. Any other file card, such as one that holds saves, is left as it is. **Foldcade Settings › Emulators** then shows **ARMSX2 memory card: Set up**. Select it for these steps and **Open ARMSX2**:
+
+1. In ARMSX2, open ☰ › **Memory Cards** and tap **＋**. Set **Type** to **Folder**, tap **Create**, then tap **Slot 1** on the new card.
+2. Saves on your old card stay there and don't sync. Some games can load a save from slot 2: tap **Slot 2** on your old card, load the save in the game, and save it to slot 1.
+
+Once slot 1 is a folder card, the row reads **ARMSX2 memory card: Syncing**. A card you set for one game in ARMSX2 is used for that game instead of slot 1's.
+
+ISO, BIN, CUE/BIN, multi-disc `.m3u`, and CHD games sync. chdman's defaults include FLAC as one choice per block. A CHD syncs when the part of the disc holding the serial (the start of its data) isn't stored with FLAC or Zstandard, which is how chdman usually compresses it, since FLAC suits audio. A CHD where that part is FLAC or Zstandard still launches, and its saves stay on the device. Save states stay with ARMSX2. Restoring happens before a game starts, so quit the game in ARMSX2 before playing it on another device.
+
 ## Other systems
 
 Complete the emulator's firmware, game-directory, controller, and graphics setup, and check that the game plays there before adding it to Foldcade. Eden can take its Switch keys and firmware from [RomM](romm.md#switch-keys-and-firmware) when they are missing: choose Eden's folder once, and files already there are left as they are.
@@ -94,6 +119,6 @@ Disc tracks and other related files may need the emulator's own game-directory a
 
 Forks with different Android package names are not detected automatically. Install a supported build or report the build you use.
 
-Recognized packages are listed in the source for [standalone emulators](../../plugins/emulators/src/main/kotlin/app/foldcade/plugins/emulators/Emulators.kt), [Azahar](../../plugins/azahar/src/main/kotlin/app/foldcade/plugins/azahar/AzaharEntry.kt), [DuckStation](../../plugins/duckstation/src/main/kotlin/app/foldcade/plugins/duckstation/DuckStationEntry.kt), [melonDS](../../plugins/melonds/src/main/kotlin/app/foldcade/plugins/melonds/MelonDsEntry.kt), and [RetroArch](../../plugins/retroarch/src/main/kotlin/app/foldcade/plugins/retroarch/RetroArchEntry.kt).
+Recognized packages are listed in the source for [standalone emulators](../../plugins/emulators/src/main/kotlin/app/foldcade/plugins/emulators/Emulators.kt), [ARMSX2](../../plugins/armsx2/src/main/kotlin/app/foldcade/plugins/armsx2/ArmsX2Entry.kt), [Azahar](../../plugins/azahar/src/main/kotlin/app/foldcade/plugins/azahar/AzaharEntry.kt), [DuckStation](../../plugins/duckstation/src/main/kotlin/app/foldcade/plugins/duckstation/DuckStationEntry.kt), [melonDS](../../plugins/melonds/src/main/kotlin/app/foldcade/plugins/melonds/MelonDsEntry.kt), and [RetroArch](../../plugins/retroarch/src/main/kotlin/app/foldcade/plugins/retroarch/RetroArchEntry.kt).
 
 [All integration guides](README.md)

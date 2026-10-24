@@ -1,0 +1,1 @@
+`make-fixtures.sh` rebuilds the `.chd` files here from a synthetic ISO 9660 volume that holds only `SYSTEM.CNF`. The CD images are that volume as a raw track, a cooked MODE1 track, an audio track padded out ahead of the data, a track with its pregap stored, plain zlib, lzma, and huffman hunks, and the older CHCD track table. It needs `chdman` from Homebrew `rom-tools`.

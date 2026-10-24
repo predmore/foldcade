@@ -90,8 +90,60 @@ interface Player {
      * there. A file already there is replaced only when it still holds what the
      * shell last wrote, so a file the user put there stays. Null means the player
      * does not use [name]. Added in API minor 12.
+     *
+     * [name] may be `<zip name>/<file name>`: a file inside a zip the library
+     * keeps for the platform, the file's own name after the zip's, whatever
+     * folder the zip holds it in. A library opens a zip only when the player
+     * wants the zip's own name too. A player that wants files from a zip should
+     * name the zip as well and leave it out in [chooseFirmware]. A player that
+     * does not want files from a zip returns null for a name that holds `/`.
+     * Added in API minor 13.
      */
     fun firmwareFileName(name: String): String? = null
+
+    /**
+     * How many bytes from the start of each firmware file the shell reads for
+     * [chooseFirmware]. Zero reads none. Added in API minor 13.
+     */
+    val firmwareHeaderSize: Int
+        get() = 0
+
+    /**
+     * The firmware to write, out of [offered]: each file the library has for the
+     * game's platform that [firmwareFileName] names. Default: all of them.
+     * A player that wants one of several, such as one console BIOS out of a set
+     * of dumps, picks it by its bytes. Added in API minor 13.
+     */
+    fun chooseFirmware(offered: List<FirmwareOffer>): List<FirmwareOffer> = offered
+
+    /**
+     * Folders this player keeps [slot] in, found by name among other games' in one
+     * folder, such as a game's saves on a PS2 folder memory card. The shell moves
+     * the matching folders as one zip, each under its own name, with the rules of
+     * [saveFolders]: placing makes each folder the zip holds match it and leaves the
+     * rest alone. [game] reads the game file. [folder] reads the save folder; the
+     * player may also set it up here, before a launch only ([forLaunch] true), as
+     * when the folder it needs is missing, and must leave anything holding saves
+     * as it is. Null means the slot is not kept this way, or cannot be now.
+     * A player that has started that setup and cannot finish throws. On a launch
+     * the shell treats the throw as a save that could not be placed, and the game
+     * does not start. On the way back the shell only reads, and a throw means no spot.
+     * Asked before [saveFolders]. Added in API minor 13.
+     */
+    fun findSaveFolders(
+        slot: String,
+        game: GameFileReader,
+        folder: SaveFolderAccess,
+        forLaunch: Boolean,
+    ): SaveFolderSearch? = null
+
+    /**
+     * Whether the player's saves sync now, for Settings. [folder] is read only
+     * there: [SaveFolderAccess.write], [SaveFolderAccess.createFolder], and
+     * [SaveFolderAccess.moveToBackup] return false. Null: the player does not say.
+     * Added in API minor 13.
+     */
+    fun saveSyncState(folder: SaveFolderAccess): SaveSyncState? = null
 
     /** Builds the launch intent from [request]. Does not touch the network or disk. */
     fun launchIntent(request: LaunchRequest): PlayerIntent
@@ -119,6 +171,102 @@ data class SaveFolderPart(
     val name: String,
     val path: String,
 )
+
+/**
+ * A firmware file the shell can write for a player, with its first
+ * [Player.firmwareHeaderSize] bytes. [header] is compared by its bytes.
+ * Added in API minor 13.
+ */
+data class FirmwareOffer(
+    val name: String,
+    val header: ByteArray,
+) {
+    override fun equals(other: Any?): Boolean =
+        other is FirmwareOffer && name == other.name && header.contentEquals(other.header)
+
+    override fun hashCode(): Int = 31 * name.hashCode() + header.contentHashCode()
+}
+
+/**
+ * The game file, read at any offset, for a player that finds its saves from what
+ * the game holds. Added in API minor 13.
+ */
+interface GameFileReader {
+    /** Up to [length] bytes at [offset], fewer at the end of the file, or null when it cannot be read. */
+    fun read(offset: Long, length: Int): ByteArray?
+
+    /**
+     * Another file in the same folder as the game file, by its name, such as a cue
+     * sheet's track or a playlist's disc. Null when there is none, or the shell
+     * cannot reach the folder. A name that contains `/` or `\`, or is `.` or `..`,
+     * is refused. Added in API minor 13.
+     */
+    fun sibling(name: String): GameFileReader? = null
+}
+
+/**
+ * The folder the user picked for a player, read and written by paths below it,
+ * folders separated by `/`. Added in API minor 13.
+ */
+interface SaveFolderAccess {
+    /** What the folder at [path] holds, or null when it is missing or cannot be listed. "" is the folder itself. */
+    fun list(path: String): List<SaveFolderEntry>?
+
+    /** The file at [path], or null when it is missing, unreadable, or larger than [limit]. */
+    fun read(path: String, limit: Int): ByteArray?
+
+    /**
+     * Up to [length] bytes of the file at [path] from [offset], fewer at the end
+     * of the file, or null when it is missing or cannot be read.
+     */
+    fun read(path: String, offset: Long, length: Int): ByteArray?
+
+    /**
+     * Writes [bytes] as the file at [path], making missing folders, and reads it back.
+     * When the file is already there and its bytes differ, those bytes are copied into
+     * Foldcade's save backups first, the same copy [moveToBackup] keeps. False when the
+     * backup, the write, or the read-back fails. The file may then hold part of [bytes],
+     * and its old bytes are in the backups.
+     */
+    fun write(path: String, bytes: ByteArray): Boolean
+
+    /** Makes the folder at [path] and missing folders above it. True when it is there. */
+    fun createFolder(path: String): Boolean
+
+    /**
+     * Moves the file at [path] out of the folder, into Foldcade's save backups for this player.
+     * True when it is gone from [path] and kept. Backups keep the newest 20 files per player.
+     */
+    fun moveToBackup(path: String): Boolean
+}
+
+/**
+ * One file or folder directly inside a [SaveFolderAccess] path.
+ * [size] is the file's length in bytes, or 0 when the provider does not report one.
+ * Added in API minor 13.
+ */
+data class SaveFolderEntry(val name: String, val isFolder: Boolean, val size: Long)
+
+/**
+ * Folders found by name: each folder directly below [parent] (a path below the
+ * save folder) whose name, upper-cased with `-` and `_` removed, contains
+ * [nameContains] upper-cased with `-` and `_` removed. A name that starts with
+ * `_` is never a match. PCSX2 keeps a deleted save as `_pcsx2_deleted_<name>`,
+ * and a real save folder does not start with `_`. Added in API minor 13.
+ */
+data class SaveFolderSearch(val parent: String, val nameContains: String)
+
+/**
+ * Whether a player's saves sync, for Settings. Open. A plugin that branches on
+ * this must use an `else` branch. Added in API minor 13.
+ */
+sealed interface SaveSyncState {
+    /** The saves sync. */
+    data object Syncing : SaveSyncState
+
+    /** The user does [steps] once, in the player's own settings, before saves can sync. */
+    data class NeedsSetup(val steps: String) : SaveSyncState
+}
 
 /**
  * What the shell already knows when the player builds an intent.
