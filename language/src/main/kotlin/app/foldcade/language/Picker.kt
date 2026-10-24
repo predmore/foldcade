@@ -101,6 +101,15 @@ enum class DialogKind {
     /** Offers to show Foldcade RetroArch's installed cores, once. Not now still starts the game. */
     RetroArchCores,
 
+    /** Offers to add Switch keys and firmware from RomM. Not now still starts the game. */
+    EdenFolder,
+
+    /** Eden was given files. Continue opens its App info. Not now only closes. */
+    EdenRestart,
+
+    /** The picker was not left on Eden's root. Try again opens it again. Not now starts a held launch. */
+    EdenWrongFolder,
+
     /** Something RetroArch needs before the game can start, such as a core. */
     RetroArchSetup,
 
@@ -123,6 +132,23 @@ enum class DialogButton {
     OpenRetroArch,
     Restart,
     ForgetHost,
+    TryAgain,
+}
+
+/** The words a dialog button shows. */
+fun dialogButtonLabel(button: DialogButton): String = when (button) {
+    DialogButton.UseAsHome -> Copy.useAsHome
+    DialogButton.NotNow -> Copy.notNow
+    DialogButton.ContinueGrant -> Copy.continueGrant
+    DialogButton.Allow -> Copy.allowUsage
+    DialogButton.Ok -> Copy.ok
+    DialogButton.CloseIt -> Copy.closeIt
+    DialogButton.ForgetKey -> Copy.forgetKey
+    DialogButton.KeepKey -> Copy.keepKey
+    DialogButton.OpenRetroArch -> Copy.openRetroArch
+    DialogButton.Restart -> Copy.restart
+    DialogButton.ForgetHost -> Copy.forgetHost
+    DialogButton.TryAgain -> Copy.tryAgain
 }
 
 data class DialogState(
@@ -285,6 +311,42 @@ fun retroArchCoresDialog(screen: HostScreen): DialogState = DialogState(
     screen = screen,
 )
 
+/** Opens on Continue. Not now starts the game, and Settings can ask again. */
+fun edenFolderDialog(screen: HostScreen): DialogState = DialogState(
+    kind = DialogKind.EdenFolder,
+    title = Copy.edenFolderTitle,
+    body = Copy.edenFolderBody,
+    buttons = listOf(DialogButton.ContinueGrant, DialogButton.NotNow),
+    index = 0,
+    safeIndex = 1,
+    screen = screen,
+)
+
+/**
+ * Opens on Continue, which shows Eden's App info. Not now only closes.
+ * Neither answer clears the pending restart.
+ */
+fun edenRestartDialog(screen: HostScreen): DialogState = DialogState(
+    kind = DialogKind.EdenRestart,
+    title = Copy.edenRestartTitle,
+    body = Copy.edenRestartBody,
+    buttons = listOf(DialogButton.ContinueGrant, DialogButton.NotNow),
+    index = 0,
+    safeIndex = 1,
+    screen = screen,
+)
+
+/** Opens on Try again, which returns to Eden's root. Not now starts a held launch. */
+fun edenWrongFolderDialog(screen: HostScreen): DialogState = DialogState(
+    kind = DialogKind.EdenWrongFolder,
+    title = Copy.edenWrongFolderTitle,
+    body = Copy.edenWrongFolderBody,
+    buttons = listOf(DialogButton.TryAgain, DialogButton.NotNow),
+    index = 0,
+    safeIndex = 1,
+    screen = screen,
+)
+
 /** No core for [platformName] is installed. [coreName] is the one to install first. */
 fun missingCoreDialog(platformName: String, coreName: String, screen: HostScreen): DialogState = retroArchSetupDialog(
     title = "${Copy.missingCoreTitle} $platformName",
@@ -362,6 +424,9 @@ fun previewDialogState(kind: String, index: Int, screen: HostScreen): DialogStat
         "missing-player" -> missingPlayerDialog("Azahar", screen)
         "forget-art-key" -> forgetArtKeyPrompt(screen)
         "retroarch-cores" -> retroArchCoresDialog(screen)
+        "eden-folder" -> edenFolderDialog(screen)
+        "eden-restart" -> edenRestartDialog(screen)
+        "eden-wrong-folder" -> edenWrongFolderDialog(screen)
         "missing-core" -> missingCoreDialog("Game Boy Advance", "mGBA", screen)
         "retroarch-storage" -> retroArchStorageDialog(screen)
         else -> return null
@@ -412,6 +477,9 @@ sealed interface Row {
 
     /** Whether Foldcade can see RetroArch's cores. A shows them. */
     data object RetroArchCores : Row
+
+    /** Whether Foldcade can add Eden's keys and firmware from RomM. A opens Eden's folder. */
+    data object EdenFolder : Row
     data object AndroidGames : Row
     data object Apps : Row
     /** Edit home's way into the one Hidden place: hidden games and apps, and groups taken off Home. */
@@ -562,6 +630,11 @@ data class PlayerSaveSetting(
  */
 data class RetroArchSetting(
     val cores: Int?,
+)
+
+/** Eden, when it is installed. [fromRomm] is true while Foldcade holds Eden's folder. */
+data class EdenSetting(
+    val fromRomm: Boolean,
 )
 
 /**
@@ -894,6 +967,10 @@ fun rowText(row: Row, model: PickerModel): RowText = when (row) {
         Copy.retroArchCores,
         model.retroArch?.cores?.let { if (it == 1) Copy.oneCore else "$it ${Copy.cores}" } ?: Copy.showCores,
     )
+    Row.EdenFolder -> RowText(
+        Copy.edenKeys,
+        if (model.eden?.fromRomm == true) Copy.edenFromRomm else Copy.setUp,
+    )
     Row.AndroidGames -> RowText(Copy.androidGames)
     Row.Apps -> RowText(Copy.apps)
     Row.Hidden -> RowText(Copy.hiddenAppsRow)
@@ -985,6 +1062,9 @@ sealed interface Effect {
 
     /** Settings › RetroArch cores: the picker that lets Foldcade see them. */
     data object ShowRetroArchCores : Effect
+
+    /** Settings › Eden keys and firmware: the picker for Eden's folder. */
+    data object ShowEdenFolder : Effect
     /** Move the installed app [gameId] to the Android folder [folderId]. */
     data class MoveApp(val gameId: String?, val folderId: String) : Effect
 
@@ -1155,6 +1235,8 @@ data class PickerModel(
     val playerSaves: List<PlayerSaveSetting> = emptyList(),
     /** Null while RetroArch is not installed. */
     val retroArch: RetroArchSetting? = null,
+    /** Null while Eden is not installed. */
+    val eden: EdenSetting? = null,
     val homeGrid: HomeGrid = HomeGrid.StandIns,
     /** What Y offers for the focused home or All tile. Null elsewhere. */
     val tileActions: TileActions? = null,
@@ -1939,6 +2021,7 @@ private fun activateRow(
         ) to Effect.ClearNotices
         is Row.PlayerSave -> model.copy(panel = null, focus = panel.grid) to Effect.ChoosePlayerSave(row.playerId)
         Row.RetroArchCores -> model.copy(panel = null, focus = panel.grid) to Effect.ShowRetroArchCores
+        Row.EdenFolder -> model.copy(panel = null, focus = panel.grid) to Effect.ShowEdenFolder
         Row.AndroidGames -> model.copy(panel = null, focus = panel.grid) to Effect.OpenFolder(HOME_ANDROID_GAMES)
         Row.Apps -> model.copy(panel = null, focus = panel.grid) to Effect.OpenFolder(HOME_ANDROID_APPS)
         Row.Hidden -> openGrid(model, panel, HomeGrid.Hidden)

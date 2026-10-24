@@ -18,6 +18,7 @@ import app.foldcade.api.plugin.SaveDeclaration
 import app.foldcade.api.plugin.StartDisplay
 import app.foldcade.api.plugin.SyncOutcome
 import app.foldcade.romm.DeviceAuthChallenge
+import app.foldcade.romm.FirmwareSummary
 import app.foldcade.romm.DeviceTokenPoll
 import app.foldcade.romm.Heartbeat
 import app.foldcade.romm.KeptBoth
@@ -1166,9 +1167,25 @@ internal class ScriptedOps : RommOps {
     /** What a download reports before [onDownload] answers. */
     var downloadSteps: List<RomProgress> = emptyList()
 
+    var onFirmware: suspend (Long) -> List<FirmwareSummary> = { emptyList() }
+    var onDownloadFirmware: suspend (Long, String, Path, Long?, String?, ((RomProgress) -> Unit)?) -> Path =
+        { _, _, _, _, _, _ -> error("firmware") }
+
     override suspend fun heartbeat() = onHeartbeat()
     override suspend fun artwork(uri: String) = onArtwork(uri)
     override suspend fun platforms() = onPlatforms()
+
+    override suspend fun firmware(platformId: Long): List<FirmwareSummary> = onFirmware(platformId)
+
+    override suspend fun downloadFirmware(
+        id: Long,
+        fileName: String,
+        target: Path,
+        expectedSize: Long?,
+        expectedMd5: String?,
+        progress: ((RomProgress) -> Unit)?,
+    ): Path = onDownloadFirmware(id, fileName, target, expectedSize, expectedMd5, progress)
+
     override suspend fun roms(query: RomQuery) = onRoms(query)
     override suspend fun rom(id: Long) = onRom(id)
     override suspend fun me() = onMe()

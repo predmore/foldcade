@@ -307,6 +307,155 @@ class RommClientTest {
     }
 
     @Test
+    fun listsFirmwareForOnePlatform() {
+        server.route("GET", "/api/firmware") { exchange, _ ->
+            json(
+                exchange,
+                200,
+                """
+                [
+                  {"id":4,"platform_id":18,"file_name":"prod.keys","file_size_bytes":12,"md5_hash":"ABCDEF0123456789ABCDEF0123456789","crc_hash":"ignored","sha1_hash":"ignored"},
+                  {"id":9,"platform_id":18,"file_name":"Firmware.23.0.1.zip","file_size_bytes":340,"md5_hash":"short"}
+                ]
+                """.trimIndent(),
+            )
+        }
+        runClient(token = { "rmm_test" }) { client ->
+            val files = client.firmware(18)
+            assertEquals(
+                FirmwareSummary(4, 18, "prod.keys", 12, "abcdef0123456789abcdef0123456789"),
+                files[0],
+            )
+            assertEquals(FirmwareSummary(9, 18, "Firmware.23.0.1.zip", 340, null), files[1])
+        }
+        val hit = server.recorded.single()
+        assertEquals("GET", hit.method)
+        assertEquals("/api/firmware", hit.path)
+        assertEquals("Bearer rmm_test", header(hit, "Authorization"))
+        assertTrue(hit.query.orEmpty().contains("platform_id=18"))
+    }
+
+    @Test
+    fun firmwareMissingFromDiskIsSkipped() {
+        server.route("GET", "/api/firmware") { exchange, _ ->
+            json(
+                exchange,
+                200,
+                """
+                [
+                  {"id":4,"platform_id":18,"file_name":"gone.zip","file_size_bytes":10,"missing_from_fs":true},
+                  {"id":9,"platform_id":18,"file_name":"Firmware.23.0.1.zip","file_size_bytes":340,"missing_from_fs":false}
+                ]
+                """.trimIndent(),
+            )
+        }
+        runClient(token = { "rmm_test" }) { client ->
+            assertEquals(
+                listOf(FirmwareSummary(9, 18, "Firmware.23.0.1.zip", 340, null, missingFromFs = false)),
+                client.firmware(18),
+            )
+        }
+        val hit = server.recorded.single()
+        assertEquals("GET", hit.method)
+        assertEquals("/api/firmware", hit.path)
+        val query = hit.query.orEmpty()
+        assertTrue(query.contains("platform_id=18"))
+        assertFalse(query.contains("missing"))
+    }
+
+    @Test
+    fun aFirmwareFileThatDoesNotMatchItsHashIsNotKept() {
+        val body = "not-the-keys".toByteArray()
+        server.route("GET", "/api/firmware/4/content/prod keys") { exchange, _ ->
+            bytes(exchange, 200, body)
+        }
+        val target = dir.resolve("fw/prod keys")
+        runClient(token = { "rmm_test" }) { client ->
+            val error = suspendCatching {
+                client.downloadFirmware(
+                    4,
+                    "prod keys",
+                    target,
+                    expectedSize = body.size.toLong(),
+                    expectedMd5 = md5Hex("real-keys".toByteArray()),
+                )
+            }.exceptionOrNull()
+            assertTrue(error is RommFirmwareMismatch)
+        }
+        assertEquals("/api/firmware/4/content/prod keys", server.recorded.single().path)
+        assertFalse(Files.exists(target))
+        assertFalse(Files.exists(RommClient.partialOf(target)))
+    }
+
+    @Test
+    fun aFirmwareDownloadKeepsTheFileAndReportsItsTotal() {
+        val body = "prod-keys".toByteArray()
+        server.route("GET", "/api/firmware/4/content/prod.keys") { exchange, _ ->
+            bytes(exchange, 200, body)
+        }
+        val target = dir.resolve("fw/prod.keys")
+        val steps = mutableListOf<RomProgress>()
+        runClient(token = { "rmm_test" }) { client ->
+            val file = client.downloadFirmware(
+                4,
+                "prod.keys",
+                target,
+                expectedSize = body.size.toLong(),
+                expectedMd5 = md5Hex(body),
+                progress = { steps += it },
+            )
+            assertEquals(target, file)
+            assertTrue(body.contentEquals(Files.readAllBytes(file)))
+        }
+        assertFalse(Files.exists(RommClient.partialOf(target)))
+        val receiving = steps.filterIsInstance<RomProgress.Receiving>()
+        assertTrue(receiving.isNotEmpty())
+        assertTrue(receiving.all { it.total == body.size.toLong() })
+        assertEquals(body.size.toLong(), receiving.last().bytes)
+        assertEquals(RomProgress.Checking, steps.last())
+        assertEquals("/api/firmware/4/content/prod.keys", server.recorded.single().path)
+    }
+
+    @Test
+    fun cancelStopsAFirmwareDownloadAndRemovesThePartial() {
+        val started = CountDownLatch(1)
+        val release = CountDownLatch(1)
+        server.route("GET", "/api/firmware/4/content/slow.zip") { exchange, _ ->
+            exchange.responseHeaders.add("Content-Type", "application/octet-stream")
+            exchange.sendResponseHeaders(200, 0)
+            exchange.responseBody.write(byteArrayOf(1))
+            exchange.responseBody.flush()
+            started.countDown()
+            release.await(30, TimeUnit.SECONDS)
+            exchange.close()
+        }
+        val target = dir.resolve("fw/slow.zip")
+        val client = RommClient(server.origin, { "rmm_test" })
+        try {
+            runBlocking {
+                val job = launch(Dispatchers.IO) {
+                    client.downloadFirmware(4, "slow.zip", target)
+                }
+                assertTrue(withContext(Dispatchers.IO) { started.await(5, TimeUnit.SECONDS) })
+                val cancelStarted = System.nanoTime()
+                job.cancel()
+                job.join()
+                val cancelMs = (System.nanoTime() - cancelStarted) / 1_000_000
+                assertTrue(job.isCancelled)
+                assertTrue(
+                    "download cancel took ${cancelMs}ms; the OkHttp call stayed open until the read timeout",
+                    cancelMs < 2_000,
+                )
+            }
+        } finally {
+            release.countDown()
+            client.close()
+        }
+        assertFalse(Files.exists(target))
+        assertFalse(Files.exists(RommClient.partialOf(target)))
+    }
+
+    @Test
     fun aCachedRomIsCheckedOnceAndReplacedWhenRommHasANewOne() {
         val cache = dir.resolve("cache")
         val target = RommClient.romCacheFile(cache, 1234, "mario.cci", emptyList())

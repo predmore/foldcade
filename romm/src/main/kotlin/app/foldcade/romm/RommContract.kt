@@ -19,7 +19,7 @@ object RommContract {
     /**
      * Scopes asked for on device-code sign-in.
      * `platforms.read` is the scope `GET /api/platforms` declares.
-     * `firmware.read` is reserved for a later firmware download and is not called here.
+     * `firmware.read` lists and downloads Switch keys and firmware for Eden.
      * `roms.user.read` and `collections.read` stay off until a feature calls them.
      * Play sessions, `roms.user.write`, and `tasks.run` are not requested.
      */

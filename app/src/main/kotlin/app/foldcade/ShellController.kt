@@ -114,6 +114,7 @@ import app.foldcade.language.offerButtonCalibration
 import app.foldcade.language.resolveFaceMap
 import app.foldcade.language.PickerModel
 import app.foldcade.language.PlayerSaveSetting
+import app.foldcade.language.EdenSetting
 import app.foldcade.language.RetroArchSetting
 import app.foldcade.language.Side
 import app.foldcade.language.SignedInBackend
@@ -1392,14 +1393,22 @@ class ShellController(
      * Records what a library said it is doing with a game. A finished sync keeps
      * its mark for [Motion.durationSyncMark]; the time it ends is returned so the
      * caller can call [expireActivity] then. Anything else returns null.
+     * [firmware] is Eden's firmware zip: the same fraction and pulse, with its own words.
      */
-    fun noteActivity(libraryId: String, remoteKey: String, reported: GameActivity, nowMillis: Long): Long? {
+    fun noteActivity(
+        libraryId: String,
+        remoteKey: String,
+        reported: GameActivity,
+        nowMillis: Long,
+        firmware: Boolean = false,
+    ): Long? {
         val id = homeGameId(libraryId, remoteKey)
         val next = when (reported) {
             is GameActivity.Downloading -> TileActivity.Downloading(
                 reported.totalBytes?.takeIf { it > 0 }?.let { total ->
                     (reported.bytesSoFar.toDouble() / total).toFloat().coerceIn(0f, 1f)
                 },
+                firmware = firmware,
             )
             GameActivity.Checking -> TileActivity.Checking
             GameActivity.SyncingSaves -> TileActivity.Syncing
@@ -2294,6 +2303,12 @@ class ShellController(
     fun setRetroArch(setting: RetroArchSetting?) {
         if (model.retroArch == setting) return
         model = model.copy(retroArch = setting)
+    }
+
+    /** Null while Eden is not installed. */
+    fun setEden(setting: EdenSetting?) {
+        if (model.eden == setting) return
+        model = model.copy(eden = setting)
     }
 
     private fun libraryEntry(snapshot: PickerModel): GridEntry? {

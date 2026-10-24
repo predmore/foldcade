@@ -56,7 +56,7 @@ Choose **Not now** at the save-folder prompt to play with melonDS's own saves.
 
 ## Other systems
 
-Complete the emulator's firmware, game-directory, controller, and graphics setup, and check that the game plays there before adding it to Foldcade.
+Complete the emulator's firmware, game-directory, controller, and graphics setup, and check that the game plays there before adding it to Foldcade. Eden can take its Switch keys and firmware from [RomM](romm.md#switch-keys-and-firmware) when they are missing: choose Eden's folder once, and files already there are left as they are.
 
 Disc tracks and other related files may need the emulator's own game-directory access. These emulators keep their own saves; Foldcade does not currently transfer them to RomM.
 

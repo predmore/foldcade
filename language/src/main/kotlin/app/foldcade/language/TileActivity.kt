@@ -5,8 +5,12 @@ package app.foldcade.language
  * None of it asks anything of the player: the game opens when it is ready.
  */
 sealed interface TileActivity {
-    /** The game is arriving. [fraction] is 0..1, or null while the size is not known. */
-    data class Downloading(val fraction: Float?) : TileActivity
+    /**
+     * The game, or Eden's firmware, is arriving.
+     * [fraction] is 0..1, or null while the size is not known.
+     * [firmware] uses its own words on the top screen. The pulse and the fraction stay the same.
+     */
+    data class Downloading(val fraction: Float?, val firmware: Boolean = false) : TileActivity
 
     /** Every byte is here and is being checked. */
     data object Checking : TileActivity
@@ -37,9 +41,12 @@ val SyncMark.worked: Boolean get() = this == SyncMark.Synced || this == SyncMark
 
 /** The top screen's words for [activity], first on the line under the game's name. */
 fun activityLine(activity: TileActivity): String = when (activity) {
-    is TileActivity.Downloading -> activity.fraction
-        ?.let { "${Copy.downloading} ${(it.coerceIn(0f, 1f) * 100).toInt()}%" }
-        ?: Copy.downloading
+    is TileActivity.Downloading -> {
+        val word = if (activity.firmware) Copy.gettingFirmware else Copy.downloading
+        activity.fraction
+            ?.let { "$word ${(it.coerceIn(0f, 1f) * 100).toInt()}%" }
+            ?: word
+    }
     TileActivity.Checking -> Copy.checkingDownload
     TileActivity.Syncing -> Copy.syncingSaves
     TileActivity.Paused -> Copy.paused

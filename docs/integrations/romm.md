@@ -9,6 +9,7 @@ What you get:
 - **[Save sync](#save-sync)** for melonDS and RetroArch, with a choice and both copies kept when two devices disagree.
 - **One tile** for a game that is in a [local folder](local-games.md) and on the server under the same system and file name, opening the copy already on your Thor.
 - **[Switch updates and DLC](#updates-and-dlc)** downloaded beside the game and loaded by Eden.
+- **[Switch keys and firmware](#switch-keys-and-firmware)** added to Eden when Eden is missing them.
 - **RetroAchievements progress** on the other screen during a single-screen game.
 - **Any number of servers**, each with its own sign-in, on one Home.
 
@@ -58,6 +59,16 @@ Eden reads that folder through Foldcade, and only for the game it was launched w
 A folder that RomM does not split this way still downloads as RomM sends it.
 
 Downloaded games with a cached catalog can be played offline. New downloads need the server. Provide a format the emulator can open; Foldcade does not handle server-side conversion.
+
+## Switch keys and firmware
+
+When a connected RomM server has Switch `prod.keys` or a firmware zip, the first time you start a game in Eden, Foldcade asks to set that up. Choose **Continue**, then on the next screen choose **Use this folder** at the bottom, without opening a folder inside it. Foldcade keeps that folder. **Not now** starts the game anyway, and you can choose the folder later from **Settings › Emulators › Eden keys and firmware**. That row is there while Eden is installed and a RomM server is signed in. While Foldcade holds the folder, the row reads **From RomM**. If the folder you choose is not Eden's, Foldcade offers **Try again** and **Not now**. **Try again** opens the picker at Eden's folder. **Not now** starts the game.
+
+Before the game starts, Foldcade looks at Eden's folder and adds only what is missing. `keys/prod.keys` is written when it is absent or empty. `keys/title.keys` is written in that same pass when RomM has the file, and only when `prod.keys` is missing or the firmware is missing. A missing `title.keys` on its own is left as it is. Firmware is the `.nca` files in `nand/system/Contents/registered/`. Foldcade installs the highest-numbered firmware zip RomM still has on disk for Switch, and only when Eden has none. A firmware file RomM lists as missing from its disk is skipped. A keys file or firmware that is already there is left as it is.
+
+After Foldcade adds files, it asks you to restart Eden once. That prompt returns on each Switch launch until Eden has been force-stopped or the device restarted. Choose **Continue** to open Eden's App info, then **Force stop**, then **OK**. Press **B** to come back and start the game again. **Not now** only closes the prompt. Eden reads keys and firmware only when it starts, and Foldcade can't restart it.
+
+The firmware download shows on the game's tile. If RomM cannot be reached, or a file does not check out, the game still starts, and the next launch tries again. A firmware zip Eden can't use is skipped until it changes on RomM.
 
 ## Save sync
 

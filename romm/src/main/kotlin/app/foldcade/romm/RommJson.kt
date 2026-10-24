@@ -241,6 +241,16 @@ internal fun parsePlatform(obj: JsonObject): PlatformSummary {
     )
 }
 
+/** One object from `GET /api/firmware`. Extra hashes are ignored. A missing `missing_from_fs` is false. */
+internal fun parseFirmware(obj: JsonObject): FirmwareSummary = FirmwareSummary(
+    id = obj.reqLong("id"),
+    platformId = obj.reqLong("platform_id"),
+    fileName = obj.reqString("file_name"),
+    sizeBytes = obj.reqLong("file_size_bytes"),
+    md5 = obj.optString("md5_hash")?.lowercase()?.takeIf { it.length == 32 },
+    missingFromFs = obj.optBool("missing_from_fs") ?: false,
+)
+
 /** 5.3.1 platform objects omit this. A missing or null value is an empty list. */
 internal fun JsonObject.optionalStringList(name: String): List<String> {
     val value = this[name] ?: return emptyList()

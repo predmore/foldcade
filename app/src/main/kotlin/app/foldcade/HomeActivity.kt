@@ -14,6 +14,8 @@ import android.hardware.display.DisplayManager
 import android.hardware.input.InputManager
 import android.net.Uri
 import android.os.Build
+import android.os.Handler
+import android.os.Looper
 import android.os.SystemClock
 import android.util.Log
 import android.provider.Settings
@@ -40,6 +42,7 @@ import app.foldcade.api.plugin.Availability
 import app.foldcade.api.plugin.Credential
 import app.foldcade.api.plugin.DeviceCodePoll
 import app.foldcade.api.plugin.Game
+import app.foldcade.api.plugin.GameActivity
 import app.foldcade.api.plugin.LaunchRequest
 import app.foldcade.api.plugin.LaunchTarget
 import app.foldcade.api.plugin.Player
@@ -73,6 +76,10 @@ import app.foldcade.language.missingPlayerDialog
 import app.foldcade.language.noFileDialog
 import app.foldcade.language.noSharedPathDialog
 import app.foldcade.language.playerNotice
+import app.foldcade.language.AndroidSetting
+import app.foldcade.language.edenFolderDialog
+import app.foldcade.language.edenRestartDialog
+import app.foldcade.language.edenWrongFolderDialog
 import app.foldcade.language.retroArchCoresDialog
 import app.foldcade.language.retroArchStorageDialog
 import app.foldcade.language.retroArchStoreBuildDialog
@@ -82,10 +89,12 @@ import app.foldcade.language.PanelKeyActivity
 import app.foldcade.language.PromptKey
 import app.foldcade.language.interpretThorStyle
 import app.foldcade.language.alsoRunsLine
+import app.foldcade.plugins.emulators.EDEN_PACKAGES
 import app.foldcade.plugins.retroarch.RetroArchPlayer
 import app.foldcade.plugins.romm.ROMM_ORIGIN_KEY
 import app.foldcade.plugins.romm.isRommInstance
 import app.foldcade.plugins.romm.rommOriginAlreadyConfigured
+import app.foldcade.romm.RomProgress
 import app.foldcade.romm.RommClient
 import app.foldcade.romm.RommSignInResult
 import app.foldcade.romm.normalizeSetupOrigin
@@ -97,6 +106,7 @@ import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.coroutines.sync.withLock
@@ -172,11 +182,13 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
                 FolderPurpose.Settings -> settingsPlayerId = null
                 FolderPurpose.Library -> Unit
                 FolderPurpose.RetroArchCores -> settleRetroArchCores()
+                FolderPurpose.EdenFolder -> declineEdenFolder()
             }
             return@registerForActivityResult
         }
         when (purpose) {
             FolderPurpose.RetroArchCores -> useRetroArchFolder(uri)
+            FolderPurpose.EdenFolder -> useEdenFolder(uri)
             FolderPurpose.Library -> {
                 if (persistTreeGrant(write = false) { flags ->
                     contentResolver.takePersistableUriPermission(uri, flags)
@@ -319,6 +331,7 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
             Effect.SyncLibrary -> foldcade.libraryResync.syncNow()
             is Effect.ChoosePlayerSave -> choosePlayerSave(effect.playerId)
             Effect.ShowRetroArchCores -> showRetroArchCores(retry = null)
+            Effect.ShowEdenFolder -> openEdenFolder(fromOffer = false)
             Effect.Undo, is Effect.ShowHidden, is Effect.DeleteShortcut -> Unit
             // The shell applies Y's tile actions and A on a text field itself and hands back null; these never arrive.
             is Effect.SelectTile, is Effect.Bulk, is Effect.ChooseArt, Effect.MoveTile, is Effect.ShowOnHome, is Effect.ToggleCollection, is Effect.NewCollection, is Effect.RecentOnHome,
@@ -799,13 +812,45 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
         spots: List<SaveSpot> = emptyList(),
         retroArchChecked: Boolean = false,
         coresRead: Boolean = false,
+        edenChecked: Boolean = false,
     ) {
         if (!launchCurrent(generation)) return
         if (player is RetroArchPlayer && !retroArchChecked) {
             foldcade.launchWork.job = foldcade.scope.launch {
                 if (retroArchHeld(player, generation, readCores = !coresRead) { launchGame(index) }) return@launch
                 withContext(Dispatchers.Main.immediate) {
-                    finishLaunch(index, game, player, target, apiGame, generation, spots, retroArchChecked = true)
+                    finishLaunch(
+                        index,
+                        game,
+                        player,
+                        target,
+                        apiGame,
+                        generation,
+                        spots,
+                        retroArchChecked = true,
+                        coresRead = coresRead,
+                        edenChecked = edenChecked,
+                    )
+                }
+            }
+            return
+        }
+        if (!edenChecked && installedEdenPackage(player, ::packageInstalled) != null) {
+            foldcade.launchWork.job = foldcade.scope.launch {
+                if (edenHeld(player, generation, { launchGame(index) }, game.libraryId, game.remoteKey)) return@launch
+                withContext(Dispatchers.Main.immediate) {
+                    finishLaunch(
+                        index,
+                        game,
+                        player,
+                        target,
+                        apiGame,
+                        generation,
+                        spots,
+                        retroArchChecked = true,
+                        coresRead = coresRead,
+                        edenChecked = true,
+                    )
                 }
             }
             return
@@ -962,6 +1007,8 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
         // A server game downloads first. Its tile pulses until then, and a second press waits.
         val fetching = game.availability == Availability.RemoteOnly
         if (fetching && !foldcade.shell.beginDownload(libraryId, game.remoteKey)) return
+        // A game on the device pulses while Eden's firmware downloads for it. A second press waits for that too.
+        if (!fetching && homeGameId(libraryId, game.remoteKey) in foldcade.shell.downloading) return
         val generation = beginLaunch()
         foldcade.suppressSaveConflict = true
         foldcade.launchWork.job = foldcade.scope.launch {
@@ -1018,6 +1065,22 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
             if (retroArchHeld(first, generation, retry = retry)) {
                 if (fetching) withContext(Dispatchers.Main.immediate) { foldcade.shell.endDownload(libraryId, game.remoteKey) }
                 return
+            }
+        }
+        // Eden's keys and firmware, also before a download. The same player the RetroArch check uses.
+        if (first != null && installedEdenPackage(first, ::packageInstalled) != null) {
+            val retry = { launchBackendGame(title, platformId, route, fresh) }
+            try {
+                if (edenHeld(first, generation, retry, libraryId, game.remoteKey)) {
+                    if (fetching) withContext(Dispatchers.Main.immediate) { foldcade.shell.endDownload(libraryId, game.remoteKey) }
+                    return
+                }
+            } catch (cancelled: CancellationException) {
+                // ensureLocal's finally never runs, so a RemoteOnly pulse would stay on.
+                withContext(NonCancellable + Dispatchers.Main.immediate) {
+                    if (fetching) foldcade.shell.endDownload(libraryId, game.remoteKey)
+                }
+                throw cancelled
             }
         }
         // A server keeps this game's saves, and they only move through a folder the player shares. Ask once, also before a download.
@@ -1618,6 +1681,7 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
         foldcade.launchWork.cancel()
         clearPendingLaunch()
         retroArchRetry = null
+        edenRetry = null
     }
 
     private fun launchCurrent(generation: Int): Boolean = foldcade.launchWork.current(generation)
@@ -1671,6 +1735,24 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
                 showRetroArchCores(retroArchRetry)
             } else {
                 settleRetroArchCores()
+            }
+            DialogKind.EdenFolder -> if (effect.button == DialogButton.ContinueGrant) {
+                openEdenFolder(fromOffer = true)
+            } else {
+                declineEdenFolder()
+            }
+            DialogKind.EdenRestart -> if (effect.button == DialogButton.ContinueGrant) {
+                val pkg = edenRestartPackage ?: EDEN_PACKAGES.firstOrNull(::packageInstalled)
+                edenRestartPackage = null
+                if (pkg != null) openAndroidSetting(AndroidSetting.AppInfo, pkg)
+            } else {
+                // Not now only closes. The pending restart stays until Eden is force-stopped or the device restarts.
+                edenRestartPackage = null
+            }
+            DialogKind.EdenWrongFolder -> if (effect.button == DialogButton.TryAgain) {
+                openEdenFolder(fromOffer = true)
+            } else {
+                declineEdenFolder()
             }
             DialogKind.RetroArchSetup -> {
                 retroArchRetry = null
@@ -2052,6 +2134,168 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
     /** The launch to try again once the RetroArch cores offer is answered, and its generation. */
     private var retroArchRetry: Pair<Int, () -> Unit>? = null
 
+    /** The launch to try again once the Eden folder offer is answered, and its generation. */
+    private var edenRetry: Pair<Int, () -> Unit>? = null
+
+    /**
+     * The Eden package the restart dialog's Continue opens App info for.
+     * Lost when this activity is recreated; Continue then uses the installed Eden.
+     */
+    private var edenRestartPackage: String? = null
+
+    /**
+     * What Eden needs before [player] starts. A grant is checked and filled in.
+     * Without one, RomM is asked once, and only then. A RomM error starts the
+     * game and does not count as the user declining. Returns true when the
+     * launch stops: for the folder offer, or because Eden has to be started
+     * again before it can see files Foldcade added.
+     */
+    private suspend fun edenHeld(
+        player: Player,
+        generation: Int,
+        retry: () -> Unit,
+        libraryId: String?,
+        remoteKey: String?,
+    ): Boolean {
+        val packageName = installedEdenPackage(player, ::packageInstalled) ?: return false
+        // Before Eden's documents provider. Opening it starts Eden and clears the stopped state.
+        if (edenRestartBlocks(packageName, generation)) return true
+        val holds = foldcade.edenFolderReader.granted(packageName) != null
+        val gate = edenGate(holds, foldcade.store.edenFolderOffered()) {
+            rommHasSwitchSetup(foldcade.rommFirmware.listSwitch())
+        }
+        when (gate) {
+            EdenGate.Check -> {
+                val progress = if (libraryId != null && remoteKey != null) {
+                    TileDownload(foldcade.shell, libraryId, remoteKey)
+                } else {
+                    null
+                }
+                try {
+                    foldcade.edenInstaller.ensure(
+                        packageName,
+                        onProgress = progress?.let { tile -> tile::onStep },
+                        onAdded = { foldcade.noteEdenRestartPending(packageName) },
+                    )
+                } finally {
+                    withContext(NonCancellable) { progress?.finish() }
+                }
+                // A launch replaced during the install still leaves the restart pending.
+                if (foldcade.edenRestartPending()?.packageName != packageName) return false
+                withContext(Dispatchers.Main.immediate) { presentEdenRestart(packageName, generation) }
+                return true
+            }
+            EdenGate.Offer -> {
+                withContext(Dispatchers.Main.immediate) {
+                    if (!launchCurrent(generation)) return@withContext
+                    edenRetry = generation to retry
+                    foldcade.shell.present(edenFolderDialog(hostScreen()))
+                }
+                return true
+            }
+            is EdenGate.Ready -> {
+                if (gate.markOffered) {
+                    withContext(Dispatchers.Main.immediate) { foldcade.store.setEdenFolderOffered() }
+                }
+                return false
+            }
+        }
+    }
+
+    /**
+     * True when [packageName] still has to restart, so this launch must not open Eden.
+     * A reboot or a force stop clears the pending restart and the launch continues.
+     * Showing the prompt, dismissing it, or finding another dialog already open leaves it pending.
+     */
+    private suspend fun edenRestartBlocks(packageName: String, generation: Int): Boolean {
+        val pending = foldcade.edenRestartPending() ?: return false
+        if (pending.packageName != packageName) return false
+        val currentBoot = Settings.Global.getInt(contentResolver, Settings.Global.BOOT_COUNT, -1)
+        val stopped = try {
+            (packageManager.getApplicationInfo(packageName, 0).flags and ApplicationInfo.FLAG_STOPPED) != 0
+        } catch (_: PackageManager.NameNotFoundException) {
+            false
+        }
+        if (!edenRestartStillNeeded(pending.bootCount, currentBoot, stopped)) {
+            foldcade.clearEdenRestartPending()
+            return false
+        }
+        withContext(Dispatchers.Main.immediate) { presentEdenRestart(packageName, generation) }
+        return true
+    }
+
+    /**
+     * Asks for Eden to be started again, for files added to [packageName].
+     * False when [generation] is no longer the current launch. Another dialog
+     * already open still holds this launch. The pending restart stays either way.
+     */
+    private fun presentEdenRestart(packageName: String, generation: Int): Boolean {
+        if (!launchCurrent(generation)) return false
+        if (!foldcade.shell.present(edenRestartDialog(hostScreen()))) return true
+        edenRestartPackage = packageName
+        return true
+    }
+
+    /** Android's picker, opened at the Eden package a launch uses. [fromOffer] is a launch, not Settings. */
+    private fun openEdenFolder(fromOffer: Boolean) {
+        val packageName = EDEN_PACKAGES.firstOrNull(::packageInstalled) ?: return
+        if (!fromOffer) edenRetry = null
+        folderPurpose = FolderPurpose.EdenFolder
+        folderPicker.launch(EdenFolders.root(packageName))
+    }
+
+    /**
+     * Not now, or the Eden picker closed from a launch or from Settings.
+     * The offer is answered. A held launch starts; Settings has none.
+     */
+    private fun declineEdenFolder() {
+        foldcade.store.setEdenFolderOffered()
+        val retry = edenRetry
+        edenRetry = null
+        retryAfterEden(retry)
+    }
+
+    /** Starts the launch the Eden offer held, unless a newer launch or a cancel replaced it. */
+    private fun retryAfterEden(retry: Pair<Int, () -> Unit>?) {
+        edenRetry = null
+        val (generation, launch) = retry ?: return
+        if (launchCurrent(generation)) launch()
+    }
+
+    private fun useEdenFolder(uri: Uri) {
+        // Derived again so a recreated activity still expects the package launches use.
+        val expected = EDEN_PACKAGES.firstOrNull(::packageInstalled)
+        val packageName = EdenFolders.packageOf(uri)
+        val read = Intent.FLAG_GRANT_READ_URI_PERMISSION
+        val write = Intent.FLAG_GRANT_WRITE_URI_PERMISSION
+        val flags = read or write
+        val root = packageName != null && packageName == expected && EdenFolders.isRoot(uri)
+        val took = root && try {
+            contentResolver.takePersistableUriPermission(uri, flags)
+            true
+        } catch (_: SecurityException) {
+            false
+        }
+        val held = took && contentResolver.persistedUriPermissions.any { permission ->
+            permission.uri == uri && permission.isReadPermission && permission.isWritePermission
+        }
+        if (!held || packageName != expected) {
+            // The held launch stays. Try again opens the picker; Not now starts it.
+            if (took) releaseUnlessUsed(uri.toString(), flags)
+            foldcade.refreshEdenSetting()
+            foldcade.shell.present(edenWrongFolderDialog(hostScreen()))
+            return
+        }
+        val retry = edenRetry
+        edenRetry = null
+        val previous = foldcade.store.edenFolder(packageName)
+        foldcade.store.setEdenFolder(packageName, uri.toString())
+        if (previous != null && previous != uri.toString()) releaseUnlessUsed(previous, flags)
+        foldcade.store.setEdenFolderOffered()
+        foldcade.refreshEdenSetting()
+        retryAfterEden(retry)
+    }
+
     /**
      * What RetroArch needs before [player] starts: storage access, and a core
      * for the system. Reads the cores again first, unless this launch already
@@ -2342,6 +2586,68 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
                 Unit
             }
         }
+    }
+}
+
+/**
+ * Firmware download progress on one game's tile, the same pulse and fraction a game download uses.
+ * A game that is already downloading keeps that begin and end. This only adds the fraction,
+ * and clears a pulse it started itself so the tile does not stay on Downloading.
+ */
+private class TileDownload(
+    private val shell: ShellController,
+    private val libraryId: String,
+    private val remoteKey: String,
+) {
+    private val main = Handler(Looper.getMainLooper())
+    private var owned = false
+    /** A report has been posted. That post is what claims the tile. */
+    @Volatile private var claimed = false
+    private var shownAt = 0L
+    private var shown = -1L
+
+    fun onStep(step: RomProgress) {
+        val reported = when (step) {
+            is RomProgress.Receiving -> {
+                val total = step.total
+                val percent = if (total != null && total > 0L) step.bytes * 100 / total else -1L
+                val now = System.nanoTime()
+                val last = total != null && step.bytes >= total
+                // The first report claims the tile. The gap must not drop it.
+                if (claimed && !last && (percent == shown || now - shownAt < PROGRESS_GAP_NS)) return
+                shownAt = now
+                shown = percent
+                GameActivity.Downloading(step.bytes, total)
+            }
+            RomProgress.Checking -> GameActivity.Checking
+        }
+        claimed = true
+        main.post {
+            if (!owned && shell.beginDownload(libraryId, remoteKey)) owned = true
+            shell.noteActivity(libraryId, remoteKey, reported, System.currentTimeMillis(), firmware = true)
+        }
+    }
+
+    /** Waits until the queued progress has been applied, then drops a pulse this download started. */
+    suspend fun finish() {
+        val done = CompletableDeferred<Unit>()
+        main.post {
+            try {
+                if (owned) {
+                    shell.endDownload(libraryId, remoteKey)
+                    shell.settleActivity(libraryId, remoteKey)
+                    owned = false
+                }
+            } finally {
+                done.complete(Unit)
+            }
+        }
+        done.await()
+    }
+
+    private companion object {
+        /** Same gap the RomM library uses between download reports. */
+        const val PROGRESS_GAP_NS = 100_000_000L
     }
 }
 

@@ -51,6 +51,20 @@ data class PlatformSummary(
     val romCount: Long,
 )
 
+/**
+ * One firmware file from `GET /api/firmware`.
+ * [md5] is the plain MD5 of the file bytes, lowercase, when RomM sent one.
+ * [missingFromFs] is RomM's `missing_from_fs`. False when RomM omits it.
+ */
+data class FirmwareSummary(
+    val id: Long,
+    val platformId: Long,
+    val fileName: String,
+    val sizeBytes: Long,
+    val md5: String?,
+    val missingFromFs: Boolean = false,
+)
+
 data class RomQuery(
     val platformIds: List<Long> = emptyList(),
     val searchTerm: String? = null,

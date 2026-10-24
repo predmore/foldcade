@@ -4,6 +4,7 @@ import app.foldcade.net.isLanHost
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runInterruptible
@@ -230,6 +231,20 @@ class RommClient(
         return element.map { parsePlatform(it.jsonObject) }
     }
 
+    /**
+     * `GET /api/firmware?platform_id=`. Needs `firmware.read`.
+     * The list is every firmware file RomM has on disk for that platform, keys included.
+     * A record with `missing_from_fs` is left out here. There is no query flag for that.
+     */
+    suspend fun firmware(platformId: Long): List<FirmwareSummary> {
+        require(platformId >= 1)
+        val raw = exchange(api("/firmware", listOf("platform_id" to platformId.toString())), "GET", authenticated = true)
+        raw.require(200)
+        val element = parseElement(raw.body.toString(Charsets.UTF_8))
+        if (element !is JsonArray) throw RommResponseException("firmware response is not an array")
+        return element.map { parseFirmware(it.jsonObject) }.filter { !it.missingFromFs }
+    }
+
     suspend fun roms(query: RomQuery = RomQuery()): RomPage {
         require(query.limit in 1..10_000) { "limit must be 1..10000" }
         require(query.offset >= 0) { "offset must be >= 0" }
@@ -312,6 +327,29 @@ class RommClient(
         val md5 = expectedMd5?.lowercase()?.takeUnless { isArchiveName(fileName) }
         return romLock(target).withLock {
             downloadRomLocked(romId, fileName, target, fileIds, expectedSize, md5, progress)
+        }
+    }
+
+    /**
+     * Downloads one firmware file to [target].
+     * The file name is one path segment, URL-encoded. A zip is checked by the
+     * plain MD5 of its bytes: RomM's firmware hash is the file, not its members.
+     * The finished bytes must match [expectedSize] and [expectedMd5] when RomM
+     * gave them. A mismatch deletes the file. Cancelling deletes the partial.
+     * [progress] hears the bytes as they arrive, then [RomProgress.Checking].
+     */
+    suspend fun downloadFirmware(
+        id: Long,
+        fileName: String,
+        target: Path,
+        expectedSize: Long? = null,
+        expectedMd5: String? = null,
+        progress: ((RomProgress) -> Unit)? = null,
+    ): Path {
+        require(id >= 1)
+        require(fileName.isNotBlank())
+        return romLock(target).withLock {
+            downloadFirmwareLocked(id, fileName, target, expectedSize, expectedMd5?.lowercase(), progress)
         }
     }
 
@@ -919,6 +957,62 @@ class RommClient(
     private fun localSave(saves: List<LocalSave>, op: SyncOperation): LocalSave =
         pairedLocal(saves, op)
             ?: throw RommResponseException("negotiate asked for ${op.fileName} and it was not local")
+
+    private suspend fun downloadFirmwareLocked(
+        id: Long,
+        fileName: String,
+        target: Path,
+        expectedSize: Long?,
+        expectedMd5: String?,
+        progress: ((RomProgress) -> Unit)?,
+    ): Path {
+        val partial = partialOf(target)
+        try {
+            withContext(Dispatchers.IO) {
+                Files.deleteIfExists(partial)
+                target.parent?.let { Files.createDirectories(it) }
+            }
+            var received = 0L
+            var total = expectedSize
+            val onBytes = progress?.let { report ->
+                { count: Int ->
+                    received += count
+                    report(RomProgress.Receiving(received, total))
+                }
+            }
+            streamGet(
+                api("/firmware/$id/content/${encode(fileName)}"),
+                partial,
+                range = null,
+                onBytes = onBytes,
+            ) { _, headers ->
+                if (total == null) total = headerValue(headers, "Content-Length")?.toLongOrNull()
+                progress?.invoke(RomProgress.Receiving(received, total))
+            }
+            progress?.invoke(RomProgress.Checking)
+            withContext(Dispatchers.IO) {
+                val size = Files.size(partial)
+                val md5 = runInterruptible { md5File(partial) }
+                if ((expectedSize != null && size != expectedSize) || (expectedMd5 != null && !md5.equals(expectedMd5, ignoreCase = true))) {
+                    Files.deleteIfExists(partial)
+                    Files.deleteIfExists(target)
+                    throw RommFirmwareMismatch()
+                }
+                forceToDisk(partial)
+                moveIntoPlace(partial, target)
+            }
+            return target
+        } catch (cancelled: CancellationException) {
+            withContext(NonCancellable + Dispatchers.IO) { Files.deleteIfExists(partial) }
+            throw cancelled
+        } catch (error: Exception) {
+            withContext(NonCancellable + Dispatchers.IO) {
+                Files.deleteIfExists(partial)
+                Files.deleteIfExists(target)
+            }
+            throw error
+        }
+    }
 
     /**
      * One GET into [partial]. [onHeaders] sees the status and headers before

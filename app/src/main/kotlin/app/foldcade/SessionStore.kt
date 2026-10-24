@@ -18,6 +18,9 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 
+/** Files were added to [packageName] while the device boot count was [bootCount]. */
+data class EdenRestartPending(val packageName: String, val bootCount: Int)
+
 class SessionStore(private val prefs: SharedPreferences) : SaveMarks {
     var session by mutableStateOf(load())
         private set
@@ -166,10 +169,11 @@ class SessionStore(private val prefs: SharedPreferences) : SaveMarks {
         prefs.edit().putString(saveFolderKey(playerId), uri).apply()
     }
 
-    /** A tree grant can be shared by a library source, several players, and RetroArch's cores. */
+    /** A tree grant can be shared by a library source, several players, RetroArch's cores, and Eden's folder. */
     fun folderTreeInUse(uri: String): Boolean = uri in folderTrees() ||
         prefs.all.any { (key, value) ->
-            (key.startsWith(PLAYER_SAVE_FOLDER_PREFIX) || key.startsWith(CORES_FOLDER_PREFIX)) && value == uri
+            (key.startsWith(PLAYER_SAVE_FOLDER_PREFIX) || key.startsWith(CORES_FOLDER_PREFIX) || key.startsWith(EDEN_FOLDER_PREFIX)) &&
+                value == uri
         }
 
     override fun mark(key: String): String? = prefs.getString(saveMarkKey(key), null)
@@ -248,6 +252,65 @@ class SessionStore(private val prefs: SharedPreferences) : SaveMarks {
     fun setRetroArchCoresOffered() {
         prefs.edit().putBoolean(KEY_RETROARCH_CORES_OFFERED, true).apply()
     }
+
+    /** The tree the user chose so Foldcade can add [packageName]'s keys and firmware. */
+    fun edenFolder(packageName: String): String? = prefs.getString(EDEN_FOLDER_PREFIX + packageName, null)
+
+    fun setEdenFolder(packageName: String, uri: String) {
+        prefs.edit().putString(EDEN_FOLDER_PREFIX + packageName, uri).apply()
+    }
+
+    /** True once Foldcade asked to see Eden's folder at a launch. Settings still offers it. */
+    fun edenFolderOffered(): Boolean = prefs.getBoolean(KEY_EDEN_FOLDER_OFFERED, false)
+
+    fun setEdenFolderOffered() {
+        prefs.edit().putBoolean(KEY_EDEN_FOLDER_OFFERED, true).apply()
+    }
+
+    /**
+     * Eden has not started since Foldcade added files to [EdenRestartPending.packageName].
+     * Written with [apply] from the install worker as each file lands.
+     */
+    fun edenRestartPending(): EdenRestartPending? {
+        val packageName = prefs.getString(KEY_EDEN_RESTART_PACKAGE, null)?.takeIf { it.isNotEmpty() } ?: return null
+        return EdenRestartPending(packageName, prefs.getInt(KEY_EDEN_RESTART_BOOT, -1))
+    }
+
+    fun setEdenRestartPending(packageName: String, bootCount: Int) {
+        if (packageName.isEmpty()) return
+        prefs.edit()
+            .putString(KEY_EDEN_RESTART_PACKAGE, packageName)
+            .putInt(KEY_EDEN_RESTART_BOOT, bootCount)
+            .apply()
+    }
+
+    fun clearEdenRestartPending() {
+        prefs.edit().remove(KEY_EDEN_RESTART_PACKAGE).remove(KEY_EDEN_RESTART_BOOT).apply()
+    }
+
+    /**
+     * Firmware zips Eden refused, keyed by server, firmware id, and md5 or size.
+     * At most 20. Adding one past that drops the oldest.
+     */
+    fun refusedEdenFirmware(): Set<String> = refusedEdenFirmwareRows().map { it.second }.toSet()
+
+    fun rememberRefusedEdenFirmware(key: String) {
+        if (key.isEmpty()) return
+        val existing = refusedEdenFirmwareRows()
+        if (existing.any { it.second == key }) return
+        val order = (existing.maxOfOrNull { it.first } ?: 0L) + 1L
+        val kept = (existing + (order to key)).takeLast(REFUSED_EDEN_FIRMWARE_CAP)
+        // The order sits in front of the key so a full set can drop the oldest. Committed so a launch that dies still skips this zip.
+        val stored = kept.map { (index, value) -> "$index\t$value" }.toSet()
+        prefs.edit().putStringSet(KEY_REFUSED_EDEN_FIRMWARE, stored).commit()
+    }
+
+    private fun refusedEdenFirmwareRows(): List<Pair<Long, String>> =
+        stringSet(KEY_REFUSED_EDEN_FIRMWARE).mapNotNull { entry ->
+            val index = entry.substringBefore('\t').toLongOrNull() ?: return@mapNotNull null
+            val key = entry.substringAfter('\t')
+            if (key.isEmpty()) null else index to key
+        }.sortedBy { it.first }
 
     /**
      * The apps a release with Android shelves hid there, once: the shelves' saved state is
@@ -515,10 +578,16 @@ class SessionStore(private val prefs: SharedPreferences) : SaveMarks {
         private const val KEY_BUTTON_PROMPT_SEEN = "button_prompt_seen"
         private const val KEY_USAGE_PROMPTED = "usage_prompted"
         private const val KEY_RETROARCH_CORES_OFFERED = "retroarch_cores_offered"
+        private const val KEY_EDEN_FOLDER_OFFERED = "eden_folder_offered"
+        private const val KEY_EDEN_RESTART_PACKAGE = "eden_restart_package"
+        private const val KEY_EDEN_RESTART_BOOT = "eden_restart_boot"
+        private const val KEY_REFUSED_EDEN_FIRMWARE = "refused_eden_firmware"
+        private const val REFUSED_EDEN_FIRMWARE_CAP = 20
         private const val LAST_START_PREFIX = "last_player_start:"
         private const val KEY_PLAYERS_HOLDING_GAMES = "players_holding_games"
         private const val SAVE_AWAITS_LOAD_PREFIX = "save_awaits_load:"
         private const val CORES_FOLDER_PREFIX = "retroarch_cores_folder:"
+        private const val EDEN_FOLDER_PREFIX = "eden_folder:"
         private const val KEY_MOONLIGHT_PINS = "moonlight_pins"
         private const val KEY_MOONLIGHT_HOSTS = "moonlight_hosts"
         private const val KEY_GAMESTREAM_CLIENT = "gamestream_client_id"

@@ -351,6 +351,68 @@ class SettingsPersistenceTest {
     }
 
     @Test
+    fun edensFolderKeepsItsGrantInUse() {
+        val prefs = MemoryPrefs()
+        val uri = "content://dev.eden.eden_emulator.user/tree/root"
+        val store = SessionStore(prefs)
+        store.setEdenFolder("dev.eden.eden_emulator", uri)
+        assertTrue(SessionStore(prefs).folderTreeInUse(uri))
+        assertEquals(uri, SessionStore(prefs).edenFolder("dev.eden.eden_emulator"))
+        assertFalse(store.edenFolderOffered())
+        store.setEdenFolderOffered()
+        assertTrue(SessionStore(prefs).edenFolderOffered())
+        store.setEdenFolder("dev.eden.eden_emulator", "content://other")
+        assertFalse(SessionStore(prefs).folderTreeInUse(uri))
+        assertTrue(SessionStore(prefs).folderTreeInUse("content://other"))
+    }
+
+    @Test
+    fun anEdenRestartRoundTripsUntilCleared() {
+        val prefs = MemoryPrefs()
+        val store = SessionStore(prefs)
+        assertNull(store.edenRestartPending())
+        store.setEdenRestartPending("", 3)
+        assertNull(SessionStore(prefs).edenRestartPending())
+        store.setEdenRestartPending("dev.eden.eden_emulator", 7)
+        assertEquals(
+            EdenRestartPending("dev.eden.eden_emulator", 7),
+            SessionStore(prefs).edenRestartPending(),
+        )
+        store.setEdenRestartPending("dev.eden.eden_emulator", -1)
+        assertEquals(
+            EdenRestartPending("dev.eden.eden_emulator", -1),
+            SessionStore(prefs).edenRestartPending(),
+        )
+        store.clearEdenRestartPending()
+        assertNull(SessionStore(prefs).edenRestartPending())
+        assertNull(store.edenRestartPending())
+    }
+
+    @Test
+    fun refusedEdenFirmwareDropsTheOldestPastTwenty() {
+        val prefs = MemoryPrefs()
+        val store = SessionStore(prefs)
+        assertTrue(store.refusedEdenFirmware().isEmpty())
+        store.rememberRefusedEdenFirmware("")
+        assertTrue(store.refusedEdenFirmware().isEmpty())
+        store.rememberRefusedEdenFirmware("m")
+        repeat(19) { store.rememberRefusedEdenFirmware("a$it") }
+        assertEquals(20, store.refusedEdenFirmware().size)
+        store.rememberRefusedEdenFirmware("a0")
+        assertEquals(20, store.refusedEdenFirmware().size)
+        assertTrue(store.refusedEdenFirmware().contains("m"))
+        store.rememberRefusedEdenFirmware("a19")
+        val kept = store.refusedEdenFirmware()
+        assertEquals(20, kept.size)
+        assertFalse(kept.contains("m"))
+        assertTrue(kept.contains("a0"))
+        assertTrue(kept.contains("a19"))
+        store.rememberRefusedEdenFirmware("a19")
+        assertEquals(kept, store.refusedEdenFirmware())
+        assertEquals(kept, SessionStore(prefs).refusedEdenFirmware())
+    }
+
+    @Test
     fun aWrittenSaveWaitsAndTheLastStartIsKept() {
         val prefs = MemoryPrefs()
         val store = SessionStore(prefs)

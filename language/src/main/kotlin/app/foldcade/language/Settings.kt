@@ -59,7 +59,7 @@ fun settingsTitle(category: SettingsCategory): String = when (category) {
     SettingsCategory.About -> SettingsCopy.about
 }
 
-/** Categories with at least one row. Players appears once a player has a save folder setting, or RetroArch is installed. */
+/** Categories with at least one row. Players appears once a player has a save folder setting, RetroArch is installed, or Eden is installed and a RomM server is signed in. */
 fun settingsCategories(model: PickerModel): List<SettingsCategory> =
     SettingsCategory.entries.filter { settingsRows(it, model).isNotEmpty() }
 
@@ -83,6 +83,9 @@ fun settingsRows(category: SettingsCategory, model: PickerModel): List<Row> = wh
     }
     SettingsCategory.Players -> buildList {
         if (model.retroArch != null) add(Row.RetroArchCores)
+        if (model.eden != null && model.signedIn.any { it.pluginId == "romm" || it.pluginId.startsWith("romm#") }) {
+            add(Row.EdenFolder)
+        }
         addAll(model.playerSaves.map { Row.PlayerSave(it.playerId) })
     }
     SettingsCategory.Screens -> buildList {
