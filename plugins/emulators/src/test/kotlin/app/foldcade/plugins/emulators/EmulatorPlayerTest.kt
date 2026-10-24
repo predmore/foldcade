@@ -105,18 +105,12 @@ class EmulatorPlayerTest {
 
     @Test
     fun extraHandoffAlsoSetsDataSoTheGrantCoversIt() {
-        val intent = launch("duckstation.playstation", "content://games/title.chd")
-        assertEquals("com.github.stenzek.duckstation.EmulationActivity", intent.componentClass)
+        val intent = launch("nethersx2.playstation-2", "content://games/title.chd")
+        assertEquals("xyz.aethersx2.android.EmulationActivity", intent.componentClass)
         assertEquals(ACTION_MAIN, intent.action)
         assertEquals("content://games/title.chd", intent.dataUri)
         assertTrue(intent.grantReadUri)
-        assertEquals(
-            listOf(
-                PlayerExtra.Text("bootPath", "content://games/title.chd"),
-                PlayerExtra.BooleanFlag("resumeState", false),
-            ),
-            intent.extras,
-        )
+        assertEquals(listOf(PlayerExtra.Text("bootPath", "content://games/title.chd")), intent.extras)
         assertEquals(setOf(LaunchFlag.NewTask, LaunchFlag.ClearTop, LaunchFlag.ClearTask), intent.flags)
 
         val dolphin = launch("dolphin.wii", "content://games/title.rvz")

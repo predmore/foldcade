@@ -107,19 +107,7 @@ val EMULATORS: List<Emulator> = listOf(
         action = "android.nfc.action.TECH_DISCOVERED",
     ),
 
-    // Sony.
-    Emulator(
-        id = "duckstation",
-        displayName = "DuckStation",
-        platformIds = listOf(PLAYSTATION),
-        activities = mapOf(
-            "com.github.stenzek.duckstation" to "com.github.stenzek.duckstation.EmulationActivity",
-        ),
-        action = ACTION_MAIN,
-        handoff = RomHandoff.Extra("bootPath"),
-        extras = listOf(PlayerExtra.BooleanFlag("resumeState", false)),
-        flags = RELAUNCH,
-    ),
+    // Sony. DuckStation, for the PlayStation, has its own plugin.
     Emulator(
         id = "nethersx2",
         displayName = "NetherSX2",
@@ -203,7 +191,6 @@ const val N64: String = "nintendo-64"
 const val GAMECUBE: String = "gamecube"
 const val WII: String = "wii"
 const val SWITCH: String = "nintendo-switch"
-const val PLAYSTATION: String = "playstation"
 const val PLAYSTATION_2: String = "playstation-2"
 const val PSP: String = "psp"
 const val GENESIS: String = "genesis"

@@ -184,5 +184,19 @@
             android:exported="true"
             android:grantUriPermissions="true"
             android:permission="android.permission.MANAGE_DOCUMENTS" />
+
+        <!-- Save folders Foldcade hosts, for a player that keeps its saves private to
+             itself elsewhere: DuckStation's memory cards. Each is a root, Foldcade, in
+             Android's folder picker; the user picks it once in the player's settings. -->
+        <provider
+            android:name=".HostedSavesProvider"
+            android:authorities="${applicationId}.saves"
+            android:exported="true"
+            android:grantUriPermissions="true"
+            android:permission="android.permission.MANAGE_DOCUMENTS">
+            <intent-filter>
+                <action android:name="android.content.action.DOCUMENTS_PROVIDER" />
+            </intent-filter>
+        </provider>
     </application>
 </manifest>

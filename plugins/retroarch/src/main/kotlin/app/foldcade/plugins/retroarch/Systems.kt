@@ -18,8 +18,9 @@ data class Core(
  * installed is used.
  *
  * [aheadOfStandalone] puts RetroArch, with a core installed, ahead of a
- * standalone emulator for the platform. The Nintendo DS is the exception:
- * melonDS draws the touch screen on the Thor's other display.
+ * standalone emulator for the platform. Two platforms are the exception: on the
+ * Nintendo DS, melonDS draws the touch screen on the Thor's other display, and
+ * on the PlayStation, DuckStation gets its BIOS and memory cards from RomM.
  */
 data class RetroArchSystem(
     val platformId: String,
@@ -89,7 +90,7 @@ val SYSTEMS: List<RetroArchSystem> = listOf(
     RetroArchSystem("dreamcast", listOf(Core("flycast", "Flycast"))),
 
     // Sony.
-    RetroArchSystem("playstation", listOf(PCSX_REARMED, SWANSTATION, BEETLE_PSX_HW, BEETLE_PSX)),
+    RetroArchSystem("playstation", listOf(PCSX_REARMED, SWANSTATION, BEETLE_PSX_HW, BEETLE_PSX), aheadOfStandalone = false),
     RetroArchSystem("psp", listOf(Core("ppsspp", "PPSSPP"))),
 
     // NEC.

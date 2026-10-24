@@ -36,12 +36,16 @@ import androidx.compose.runtime.snapshotFlow
 import app.foldcade.api.plugin.Credential
 import app.foldcade.api.plugin.CredentialLookup
 import app.foldcade.api.plugin.CredentialStore
+import app.foldcade.api.plugin.Game
+import app.foldcade.api.plugin.GameActivity
+import app.foldcade.api.plugin.HostedSaveFolder
 import app.foldcade.api.plugin.LaunchFlag
 import app.foldcade.api.plugin.LibraryInstance
 import app.foldcade.api.plugin.Player
 import app.foldcade.api.plugin.PlayerIntent
 import app.foldcade.api.plugin.PluginException
 import app.foldcade.api.plugin.SaveFolderHolder
+import app.foldcade.api.plugin.SyncOutcome
 import app.foldcade.language.RetroArchSetting
 import app.foldcade.plugins.droiddeck.DroidDeckGame
 import app.foldcade.plugins.droiddeck.DroidDeckLibrary
@@ -107,9 +111,11 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import java.lang.ref.WeakReference
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
 
 class FoldcadeApp : Application() {
     lateinit var store: SessionStore
@@ -120,6 +126,31 @@ class FoldcadeApp : Application() {
 
     /** One save flow at a time: a launch's placement, or a return's read-back. */
     internal val saveFlow = Mutex()
+
+    /** A return's save notice, held until the library says how its sync ended. Main thread only. */
+    private val returnNotices = ReturnSyncNotices()
+    private val noticeHandler by lazy { Handler(Looper.getMainLooper()) }
+
+    /** A hand-back of [game] is about to go to [libraryId], whose sync may report before it returns. Main thread only. */
+    internal fun expectSaveReturn(libraryId: String, game: Game) = returnNotices.handingBack(libraryId, game)
+
+    /** The hand-back [expectSaveReturn] announced failed. One it held back may be due now. Main thread only. */
+    internal fun dropSaveReturn(libraryId: String, game: Game) {
+        returnNotices.dropped(libraryId, game)
+        returnNotices.expire(System.currentTimeMillis()).forEach(::postNotice)
+    }
+
+    /**
+     * Posts the notice for a hand-back of [game] that returned [outcome], or holds it
+     * for the sync the library finishes in the background. Main thread only.
+     */
+    internal fun noteSaveReturn(libraryId: String, game: Game, outcome: SyncOutcome) {
+        val now = System.currentTimeMillis()
+        returnNotices.returned(libraryId, game, outcome, now)?.let(::postNotice) ?: noticeHandler.postDelayed(
+            { returnNotices.expire(System.currentTimeMillis()).forEach(::postNotice) },
+            RETURN_SYNC_PATIENCE_MS,
+        )
+    }
 
     /** Moves library saves in and out of each player's save folder. Replaced files are kept in `save-backups`. */
     internal val playerSaves: PlayerSaves by lazy {
@@ -307,6 +338,9 @@ class FoldcadeApp : Application() {
     /** A library launch held while its player's save folder is asked for. It outlives a recreated Home, as the ask does. */
     internal var pendingSaveAsk: PendingBackendLaunch? = null
 
+    /** The player the hosted-saves ask is about, and the library launch waiting on it, if any. Kept here as the ask is, for either Home to answer. */
+    internal var hostedAsk: HostedAsk? = null
+
     /** The tile Restart asked about, until its dialog closes. The app keeps it, as it keeps the dialog, for either Home to answer. */
     internal var restartAsk: String? = null
 
@@ -406,6 +440,9 @@ class FoldcadeApp : Application() {
     private val credentialGate = Mutex()
     private val pluginLoad = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val pluginsReady = CompletableDeferred<Unit>()
+
+    /** The plugin entries are loaded, so their players are known, long before [pluginsReady]. */
+    private val playersLoaded = CompletableDeferred<Unit>()
     private val libraryTicket = AtomicInteger()
     private val rommTicket = AtomicInteger()
     private var rommRefreshJob: Job? = null
@@ -623,6 +660,9 @@ class FoldcadeApp : Application() {
         val main = Handler(Looper.getMainLooper())
         plugins.activityListener = { libraryId, remoteKey, reported ->
             main.post {
+                if (reported is GameActivity.Synced) {
+                    returnNotices.synced(libraryId, remoteKey, reported.result, System.currentTimeMillis())?.let(::postNotice)
+                }
                 val until = shell.noteActivity(libraryId, remoteKey, reported, System.currentTimeMillis())
                 if (until != null) {
                     main.postDelayed(
@@ -681,7 +721,11 @@ class FoldcadeApp : Application() {
         reloadInstalledApps()
         pluginLoad.launch {
             try {
-                plugins.load(classLoader)
+                try {
+                    plugins.load(classLoader)
+                } finally {
+                    playersLoaded.complete(Unit)
+                }
                 restorePlayerSaveFolders()
                 readRetroArchCores()
                 moveRommDownloadsToSharedStorage()
@@ -697,6 +741,7 @@ class FoldcadeApp : Application() {
                 }
                 reloadInstalledApps()
             } finally {
+                playersLoaded.complete(Unit)
                 if (!pluginsReady.isCompleted) pluginsReady.complete(Unit)
             }
             if (store.folderTrees().isNotEmpty()) reloadFolder()
@@ -882,6 +927,47 @@ class FoldcadeApp : Application() {
             val uri = store.playerSaveFolder(player.saveFolderId()) ?: continue
             player.bindSaveFolder(uri)
         }
+        refreshHostedFolders()
+        contentResolver.notifyChange(DocumentsContract.buildRootsUri(hostedAuthority), null, false)
+    }
+
+    /** The manifest's [HostedSavesProvider] authority. */
+    val hostedAuthority: String get() = "$packageName${HostedSavesProvider.AUTHORITY_SUFFIX}"
+
+    /** The save folders [HostedSavesProvider] serves: one for each player that keeps its saves there. */
+    internal val hostedFolders: HostedFolders by lazy {
+        HostedFolders(filesDir.resolve("hosted-saves")) {
+            // A player can ask for its saves while Foldcade is still starting, as after a reboot. Its folder
+            // is known once the plugins are, which takes a moment and no network. Binder threads only wait.
+            if (!playersLoaded.isCompleted) runBlocking { withTimeoutOrNull(PLAYERS_LOAD_WAIT_MS) { playersLoaded.await() } }
+            plugins.playerIds().mapNotNull { id ->
+                (plugins.player(id) as? HostedSaveFolder)?.let { HostedFolder(id, it.hostedFolderTitle) }
+            }
+        }
+    }
+
+    /**
+     * Hands each player its hosted folder, and whether it has been given it: the
+     * player itself holds write access to that folder, from the grant Android's
+     * picker gave it. Another app given the folder, such as a file manager, does
+     * not count. Cheap; call it before reading whether a player has it.
+     */
+    fun refreshHostedFolders() {
+        for (id in plugins.playerIds()) {
+            val player = plugins.player(id) as? HostedSaveFolder ?: continue
+            val uri = DocumentsContract.buildTreeDocumentUri(hostedAuthority, HostedFolders.rootId(id))
+            val inUse = (player as? Player)?.packageNames.orEmpty().any { name -> holdsWrite(uri, name) }
+            player.bindHostedFolder(uri.toString(), inUse)
+        }
+    }
+
+    /** True when installed package [name] may write [uri], which a grant on it allows. */
+    private fun holdsWrite(uri: Uri, name: String): Boolean = try {
+        val uid = packageManager.getApplicationInfo(name, 0).uid
+        // Any pid but the system's: Android answers for the uid, from the grants it holds.
+        checkUriPermission(uri, -1, uid, Intent.FLAG_GRANT_WRITE_URI_PERMISSION) == PackageManager.PERMISSION_GRANTED
+    } catch (_: Exception) {
+        false
     }
 
     /**
@@ -1801,6 +1887,9 @@ class FoldcadeApp : Application() {
 
 /** The shortest time between two reads of RetroArch's cores when Foldcade returns to the front. */
 private const val RETROARCH_RETURN_READ_MS = 60_000L
+
+/** How long a hosted save folder waits, at most, for the players to load while Foldcade starts. */
+private const val PLAYERS_LOAD_WAIT_MS = 10_000L
 
 /** How often a shown Home adds to the trial of the packs in use. */
 private const val THEME_TRIAL_TICK_MILLIS = 15_000L

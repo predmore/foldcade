@@ -83,7 +83,10 @@ fun settingsRows(category: SettingsCategory, model: PickerModel): List<Row> = wh
     }
     SettingsCategory.Players -> buildList {
         if (model.retroArch != null) add(Row.RetroArchCores)
-        addAll(model.playerSaves.map { Row.PlayerSave(it.playerId) })
+        model.playerSaves.forEach { setting ->
+            add(Row.PlayerSave(setting.playerId))
+            if (setting.hostedTitle != null) add(Row.HostedSaves(setting.playerId))
+        }
     }
     SettingsCategory.Screens -> buildList {
         add(Row.Primary)

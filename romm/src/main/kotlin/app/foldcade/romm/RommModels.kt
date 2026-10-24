@@ -71,6 +71,16 @@ data class RomFileSummary(
     val isTopLevel: Boolean? = null,
 )
 
+/** One firmware file RomM keeps for a platform, such as a console's BIOS, from `GET /api/firmware`. */
+data class FirmwareSummary(
+    val id: Long,
+    val platformId: Long,
+    val fileName: String,
+    val fileSizeBytes: Long,
+    /** Lowercase hex MD5 RomM computed for this file, when it has one. */
+    val md5Hash: String? = null,
+)
+
 @Serializable
 data class RomSummary(
     val id: Long,
