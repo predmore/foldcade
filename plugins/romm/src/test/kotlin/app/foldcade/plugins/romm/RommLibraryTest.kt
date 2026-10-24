@@ -1021,6 +1021,51 @@ class RommLibraryTest {
     }
 
     @Test(timeout = 20_000)
+    fun aPlayerThatWantsNoFirmwareDoesNotWaitOutAStalledListing() = runBlocking {
+        val server = TinyServer(concurrent = true)
+        val cache = Files.createTempDirectory("romm-firmware-none")
+        val release = AtomicBoolean(false)
+        try {
+            server.route("GET", "/api/platforms") { exchange, _ ->
+                json(exchange, 200, """[{"id":3,"slug":"3ds","fs_slug":"3ds","rom_count":1,"name":"Nintendo 3DS"}]""")
+            }
+            server.route("GET", "/api/roms") { exchange, _ -> json(exchange, 200, ROM_PAGE) }
+            server.route("GET", "/api/firmware") { exchange, _ ->
+                while (!release.get()) Thread.sleep(20)
+                json(exchange, 200, """[{"id":9,"platform_id":3,"file_name":"boot9.bin","file_size_bytes":4,"md5_hash":null}]""")
+            }
+            val library = live(server, cache)
+            val game = library.listGames("3ds", GameQuery()).games.single()
+            val spec = rom("3ds", 3).bytes()
+            val roms = cache.resolve("servers").resolve(RommData.serverKey(server.origin))
+            val cached = RommClient.romCacheFile(roms, 1234, spec.fileName, spec.fileIds)
+            Files.createDirectories(cached.parent)
+            Files.write(cached, "hello-rom".toByteArray())
+            // Eden, Azahar, and melonDS name no RomM firmware file.
+            val player = NamedPlayer("azahar")
+            val heard = java.util.Collections.synchronizedList(mutableListOf<GameActivity>())
+            val syncedAt = AtomicLong(0)
+            library.observeActivity { _, activity ->
+                heard += activity
+                if (activity is GameActivity.Synced) syncedAt.compareAndSet(0, System.nanoTime())
+            }
+
+            val placement = library.prepareLaunch(game, player)
+            val waitedMs = (System.nanoTime() - syncedAt.get()) / 1_000_000
+            // The listing never answers. The launch keeps the short wait and shows no download.
+            assertTrue("returned after ${waitedMs}ms", waitedMs in 4_000..8_000)
+            assertTrue((placement.target as LaunchTarget.ContentUri).firmware.isEmpty())
+            assertEquals(
+                listOf(GameActivity.SyncingSaves, GameActivity.Synced(placement.sync)),
+                heard.toList(),
+            )
+        } finally {
+            release.set(true)
+            server.close()
+        }
+    }
+
+    @Test(timeout = 20_000)
     fun aWaitedFirmwareZipReportsCheckingWhileItUnpacks() = runBlocking {
         val server = TinyServer(concurrent = true)
         val cache = Files.createTempDirectory("romm-firmware-zip-wait")

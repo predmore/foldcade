@@ -52,6 +52,7 @@ import java.security.MessageDigest
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.coroutines.cancellation.CancellationException
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -505,11 +506,13 @@ internal class RommLibrary internal constructor(
     private suspend fun negotiate(game: Game, player: Player, target: LaunchTarget): Placement = coroutineScope {
         val wiring = gate.wiring()
         val romId = game.romId()
-        // Fetched beside the save sync. How long the launch waits is decided once
-        // the saves are done, from whether checked firmware the player would use is already here.
+        // Fetched beside the save sync. After the saves, a checked file the player
+        // would use keeps the short wait. Otherwise the launch waits that same
+        // short time to learn whether the listing is fetching a file this player names.
         val firmwareProgress = LaunchProgress()
+        val downloading = CompletableDeferred<Boolean>()
         val fetching = if (target is LaunchTarget.ContentUri) {
-            background.async { fetchFirmware(wiring, game, player, firmwareProgress) }
+            background.async { fetchFirmware(wiring, game, player, firmwareProgress, downloading) }
         } else {
             null
         }
@@ -521,32 +524,40 @@ internal class RommLibrary internal constructor(
         report(romId, shown)
         // A sync still running in the background may rename a save at any time, so
         // the shell gets copies whose hashes match their bytes.
-        // A first launch has no firmware the player would use, so it waits for the
-        // download and the tile shows that download. A file it names but would not
-        // choose does not count. A copy it would use is already here, and a slow
-        // fetch must not hold the launch or change what the tile says.
-        // A fetch that fails or runs out of time still launches, with whatever is checked.
+        // A file the player would use is already checked, so a slow fetch must not
+        // hold the launch or change what the tile says. Nothing usable yet: wait
+        // the same short time for the listing. A file this player names, a zip
+        // member included, is on its way, so wait out that download and show it.
+        // Nothing named, a failed listing, or no answer: the checked copies, which
+        // may be none, and the tile stays on the sync.
         val firmware = fetching?.let { job ->
             val checked = checkedFirmwareFor(wiring, game, player)
-            val limit = if (checked.usable) FIRMWARE_AFTER_SYNC_MS else FIRMWARE_FETCH_LIMIT_MS
             if (checked.usable) {
-                withTimeoutOrNull(limit) { job.await() } ?: checked.files
+                withTimeoutOrNull(FIRMWARE_AFTER_SYNC_MS) { job.await() } ?: checked.files
             } else {
-                val told = AtomicBoolean(false)
-                if (job.isActive) {
-                    firmwareProgress.follow { activity ->
-                        told.set(true)
-                        report(romId, activity)
+                when (withTimeoutOrNull(FIRMWARE_AFTER_SYNC_MS) { downloading.await() }) {
+                    true -> {
+                        val told = AtomicBoolean(false)
+                        if (job.isActive) {
+                            firmwareProgress.follow { activity ->
+                                told.set(true)
+                                report(romId, activity)
+                            }
+                        }
+                        val got = try {
+                            withTimeoutOrNull(FIRMWARE_FETCH_LIMIT_MS) { job.await() }
+                        } finally {
+                            firmwareProgress.stop()
+                        }
+                        // The tile was on the download. Put back the same sync mark it had.
+                        if (told.get()) report(romId, shown)
+                        got ?: checked.files
                     }
+                    // The listing already answered. Take its result if it has one.
+                    false -> withTimeoutOrNull(FIRMWARE_AFTER_SYNC_MS) { job.await() } ?: checked.files
+                    // The short wait already elapsed, and the listing still has not answered.
+                    null -> checked.files
                 }
-                val got = try {
-                    withTimeoutOrNull(limit) { job.await() }
-                } finally {
-                    firmwareProgress.stop()
-                }
-                // The tile was on the download. Put back the same sync mark it had.
-                if (told.get()) report(romId, shown)
-                got ?: checked.files
             }
         }.orEmpty()
         Placement(withFirmware(target, firmware), snapshotSaves(wiring, romId), sync)
@@ -560,59 +571,71 @@ internal class RommLibrary internal constructor(
      * The firmware [player] asks for that RomM keeps for [game]'s platform, such as a
      * console's BIOS, each file downloaded and checked. Null when RomM did not answer,
      * or [offlineCatalog] says it will not. Firmware never stops a launch.
+     *
+     * [downloading] is completed once the listing is filtered, true when a file this
+     * player names is about to be fetched. A fetch that never gets that far completes
+     * it false.
      */
     private suspend fun fetchFirmware(
         wiring: RommWiring,
         game: Game,
         player: Player,
         progress: LaunchProgress,
+        downloading: CompletableDeferred<Boolean>,
     ): List<FirmwareBytes>? {
-        if (offlineCatalog) return null
-        val platformId = gate.restoreCatalog(wiring).rom(game.remoteKey)?.platformId ?: return emptyList()
-        val dir = firmwareDir(wiring, platformId)
-        return try {
-            withTimeoutOrNull(FIRMWARE_FETCH_LIMIT_MS) {
-                gate.call { _, ops ->
-                    val wanted = ops.firmware(platformId)
-                        .filter { isPlainFileName(it.fileName) && player.wantsFirmware(it.fileName) }
-                    if (wanted.isEmpty()) {
-                        emptyList()
-                    } else {
-                        // One bar for every file this launch is fetching. RomM gives each size.
-                        val total = wanted.sumOf { it.fileSizeBytes }
-                        val reporter = downloadReporter { progress.note(it) }
-                        reporter(RomProgress.Receiving(0L, total))
-                        var before = 0L
-                        wanted.flatMap { firmware ->
-                            val moved = AtomicBoolean(false)
-                            val path = ops.downloadFirmware(firmware, dir.resolve(firmware.fileName)) { step ->
-                                moved.set(true)
-                                val scaled = if (step is RomProgress.Receiving) {
-                                    RomProgress.Receiving(before + step.bytes, total)
-                                } else {
-                                    step
+        try {
+            if (offlineCatalog) return null
+            val platformId = gate.restoreCatalog(wiring).rom(game.remoteKey)?.platformId ?: return emptyList()
+            val dir = firmwareDir(wiring, platformId)
+            return try {
+                withTimeoutOrNull(FIRMWARE_FETCH_LIMIT_MS) {
+                    gate.call { _, ops ->
+                        val wanted = ops.firmware(platformId)
+                            .filter { isPlainFileName(it.fileName) && player.wantsFirmware(it.fileName) }
+                        // The launch is waiting on this before it will wait out a download.
+                        downloading.complete(wanted.isNotEmpty())
+                        if (wanted.isEmpty()) {
+                            emptyList()
+                        } else {
+                            // One bar for every file this launch is fetching. RomM gives each size.
+                            val total = wanted.sumOf { it.fileSizeBytes }
+                            val reporter = downloadReporter { progress.note(it) }
+                            reporter(RomProgress.Receiving(0L, total))
+                            var before = 0L
+                            wanted.flatMap { firmware ->
+                                val moved = AtomicBoolean(false)
+                                val path = ops.downloadFirmware(firmware, dir.resolve(firmware.fileName)) { step ->
+                                    moved.set(true)
+                                    val scaled = if (step is RomProgress.Receiving) {
+                                        RomProgress.Receiving(before + step.bytes, total)
+                                    } else {
+                                        step
+                                    }
+                                    reporter(scaled)
                                 }
-                                reporter(scaled)
-                            }
-                            before += firmware.fileSizeBytes
-                            // Already checked: nothing was transferred, and the bar still moves past it.
-                            if (!moved.get()) reporter(RomProgress.Receiving(before, total))
-                            // A zip is offered as itself and, when the player wants one, as each file it holds.
-                            val members = runInterruptible(Dispatchers.IO) {
-                                unpackFirmwareZip(path, planning = { progress.note(GameActivity.Checking) }) {
-                                    player.wantsFirmware(it)
+                                before += firmware.fileSizeBytes
+                                // Already checked: nothing was transferred, and the bar still moves past it.
+                                if (!moved.get()) reporter(RomProgress.Receiving(before, total))
+                                // A zip is offered as itself and, when the player wants one, as each file it holds.
+                                val members = runInterruptible(Dispatchers.IO) {
+                                    unpackFirmwareZip(path, planning = { progress.note(GameActivity.Checking) }) {
+                                        player.wantsFirmware(it)
+                                    }
                                 }
+                                listOf(firmware.fileName to path) + members
                             }
-                            listOf(firmware.fileName to path) + members
                         }
                     }
-                }
-            }?.filter { player.wantsFirmware(it.first) }
-            ?.map { (name, path) -> FirmwareBytes(name = name, contentUri = wiring.contentUris.uriFor(path)) }
-        } catch (cancelled: CancellationException) {
-            throw cancelled
-        } catch (_: Exception) {
-            null
+                }?.filter { player.wantsFirmware(it.first) }
+                ?.map { (name, path) -> FirmwareBytes(name = name, contentUri = wiring.contentUris.uriFor(path)) }
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (_: Exception) {
+                null
+            }
+        } finally {
+            // No listing, a failed one, or a fetch that ended first: nothing is on its way.
+            downloading.complete(false)
         }
     }
 
@@ -1466,10 +1489,17 @@ private const val PROGRESS_GAP_NS = 100_000_000L
 /** How long a launch waits for its save sync. */
 private const val LAUNCH_SYNC_LIMIT_MS = 20_000L
 
-/** How long a launch waits for a newer firmware download when checked firmware the player would use is already here. */
+/**
+ * How long a launch waits for a newer copy when firmware it would use is already
+ * checked, and how long it waits to hear whether a listing is fetching a file
+ * this player names.
+ */
 private const val FIRMWARE_AFTER_SYNC_MS = 5_000L
 
-/** How long a firmware download may run. A launch with no usable firmware checked yet waits this long. */
+/**
+ * How long a firmware download may run. A launch waits this long only when that
+ * listing is fetching a file this player names and nothing usable is checked yet.
+ */
 private const val FIRMWARE_FETCH_LIMIT_MS = 300_000L
 
 /** Why a sync with a player that has no save folder reads as not synced. */
