@@ -57,4 +57,7 @@ class RommConversionPending(val retryAfterSeconds: Long?) : RommException(
 
 class RommUnsupportedServer(val serverVersion: String, message: String) : RommException(message)
 
-class RommResponseException(message: String) : RommException(message)
+open class RommResponseException(message: String) : RommException(message)
+
+/** A firmware download did not match the size or md5 RomM listed for it. */
+class RommFirmwareMismatch : RommResponseException("The firmware RomM sent does not match its size or hash. Try again.")

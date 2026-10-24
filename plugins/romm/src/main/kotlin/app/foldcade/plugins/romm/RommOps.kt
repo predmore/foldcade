@@ -47,7 +47,11 @@ internal interface RommOps : AutoCloseable {
 
     suspend fun firmware(platformId: Long): List<FirmwareSummary>
 
-    suspend fun downloadFirmware(firmware: FirmwareSummary, target: Path): Path
+    suspend fun downloadFirmware(
+        firmware: FirmwareSummary,
+        target: Path,
+        progress: ((RomProgress) -> Unit)? = null,
+    ): Path
 
     suspend fun registerDevice(
         stored: RegisteredDevice?,
@@ -108,7 +112,11 @@ internal class ClientRommOps(private val client: RommClient) : RommOps {
 
     override suspend fun firmware(platformId: Long) = client.firmware(platformId)
 
-    override suspend fun downloadFirmware(firmware: FirmwareSummary, target: Path) = client.downloadFirmware(firmware, target)
+    override suspend fun downloadFirmware(
+        firmware: FirmwareSummary,
+        target: Path,
+        progress: ((RomProgress) -> Unit)?,
+    ) = client.downloadFirmware(firmware, target, progress)
 
     override suspend fun registerDevice(
         stored: RegisteredDevice?,

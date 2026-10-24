@@ -4,6 +4,7 @@ import app.foldcade.net.isLanHost
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runInterruptible
@@ -230,6 +231,20 @@ class RommClient(
         return element.map { parsePlatform(it.jsonObject) }
     }
 
+    /**
+     * `GET /api/firmware?platform_id=`. Needs `firmware.read`.
+     * The list is every firmware file RomM has on disk for that platform, keys included.
+     * A record with `missing_from_fs` is left out here. There is no query flag for that.
+     */
+    suspend fun firmware(platformId: Long): List<FirmwareSummary> {
+        require(platformId >= 1)
+        val raw = exchange(api("/firmware", listOf("platform_id" to platformId.toString())), "GET", authenticated = true)
+        raw.require(200)
+        val element = parseElement(raw.body.toString(Charsets.UTF_8))
+        if (element !is JsonArray) throw RommResponseException("firmware response is not an array")
+        return element.map { parseFirmware(it.jsonObject) }.filter { !it.missingFromFs }
+    }
+
     suspend fun roms(query: RomQuery = RomQuery()): RomPage {
         require(query.limit in 1..10_000) { "limit must be 1..10000" }
         require(query.offset >= 0) { "offset must be >= 0" }
@@ -267,16 +282,6 @@ class RommClient(
         val raw = exchange(api("/search/cover", listOf("search_term" to term)), "GET", authenticated = true)
         raw.require(200)
         return parseCoverMatches(raw.body)
-    }
-
-    /** `GET /api/firmware?platform_id=`: the firmware RomM keeps for [platformId]. Needs `firmware.read`. */
-    suspend fun firmware(platformId: Long): List<FirmwareSummary> {
-        require(platformId >= 1)
-        val raw = exchange(api("/firmware", listOf("platform_id" to platformId.toString())), "GET", authenticated = true)
-        raw.require(200)
-        val element = parseElement(raw.body.toString(Charsets.UTF_8))
-        if (element !is JsonArray) throw RommResponseException("firmware response is not an array")
-        return element.map { parseFirmware(it.jsonObject) }
     }
 
     /**
@@ -433,28 +438,48 @@ class RommClient(
      * Downloads [firmware] to [target]. A file there whose verified marker
      * matches RomM's size and MD5 is returned unread, so a launch with no
      * network still has it. The bytes must match both, or the size alone when
-     * RomM has no MD5, before the rename that publishes them. Firmware is small,
-     * so an interrupted download starts over.
+     * RomM has no MD5, before the rename that publishes them; a mismatch is
+     * [RommFirmwareMismatch]. RomM hashes a firmware zip by its bytes, not its
+     * members. An interrupted download starts over. [progress] hears the bytes
+     * as they arrive, then [RomProgress.Checking].
      */
-    suspend fun downloadFirmware(firmware: FirmwareSummary, target: Path): Path {
+    suspend fun downloadFirmware(
+        firmware: FirmwareSummary,
+        target: Path,
+        progress: ((RomProgress) -> Unit)? = null,
+    ): Path {
         val md5 = firmware.md5Hash?.lowercase()
         return romLock(target).withLock {
             if (isVerifiedRom(target, firmware.fileSizeBytes, md5)) return@withLock target
             val partial = partialOf(target)
             Files.deleteIfExists(partial)
             try {
-                streamGet(api("/firmware/${firmware.id}/content/${encode(safeFileName(firmware.fileName))}"), partial, range = null)
+                var received = 0L
+                val total = firmware.fileSizeBytes.takeIf { it > 0L }
+                val onBytes = progress?.let { report ->
+                    { count: Int ->
+                        received += count
+                        report(RomProgress.Receiving(received, total))
+                    }
+                }
+                streamGet(
+                    api("/firmware/${firmware.id}/content/${encode(safeFileName(firmware.fileName))}"),
+                    partial,
+                    range = null,
+                    onBytes = onBytes,
+                )
             } catch (failure: Throwable) {
                 // Stopped or failed: the copy already checked stays the one to use.
-                Files.deleteIfExists(partial)
+                withContext(NonCancellable) { Files.deleteIfExists(partial) }
                 throw failure
             }
+            progress?.invoke(RomProgress.Checking)
             withContext(Dispatchers.IO) {
                 val size = Files.size(partial)
                 val actual = runInterruptible { md5File(partial) }
                 if (size != firmware.fileSizeBytes || (md5 != null && actual != md5)) {
                     Files.deleteIfExists(partial)
-                    throw RommResponseException("The firmware RomM sent does not match its size or hash. Try again.")
+                    throw RommFirmwareMismatch()
                 }
                 forceToDisk(partial)
                 moveIntoPlace(partial, target)
@@ -965,10 +990,6 @@ class RommClient(
         pairedLocal(saves, op)
             ?: throw RommResponseException("negotiate asked for ${op.fileName} and it was not local")
 
-    /**
-     * One GET into [partial]. [onHeaders] sees the status and headers before
-     * any body byte is written and may throw to refuse them.
-     */
     private suspend fun streamGet(
         uri: URI,
         partial: Path,

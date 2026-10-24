@@ -263,6 +263,7 @@ internal fun parseFirmware(obj: JsonObject): FirmwareSummary = FirmwareSummary(
     fileName = obj.reqString("file_name"),
     fileSizeBytes = obj.reqLong("file_size_bytes"),
     md5Hash = obj.optString("md5_hash")?.lowercase()?.takeIf { it.length == 32 },
+    missingFromFs = obj.optBool("missing_from_fs") ?: false,
 )
 
 internal fun parseRom(obj: JsonObject): RomSummary = RomSummary(

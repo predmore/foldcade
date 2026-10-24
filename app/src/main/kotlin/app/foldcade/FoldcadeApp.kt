@@ -26,6 +26,7 @@ import android.os.Looper
 import android.os.PowerManager
 import android.os.SystemClock
 import android.provider.DocumentsContract
+import android.provider.Settings
 import android.util.Log
 import android.view.Display
 import androidx.compose.runtime.getValue
@@ -46,6 +47,7 @@ import app.foldcade.api.plugin.PlayerIntent
 import app.foldcade.api.plugin.PluginException
 import app.foldcade.api.plugin.SaveFolderHolder
 import app.foldcade.api.plugin.SyncOutcome
+import app.foldcade.language.EdenSetting
 import app.foldcade.language.RetroArchSetting
 import app.foldcade.plugins.droiddeck.DroidDeckGame
 import app.foldcade.plugins.droiddeck.DroidDeckLibrary
@@ -67,7 +69,11 @@ import app.foldcade.plugins.romm.RomFolderDocuments
 import app.foldcade.plugins.romm.ROMM_MEDIA_PATH
 import app.foldcade.plugins.romm.ROMM_ORIGIN_KEY
 import app.foldcade.plugins.romm.RommArtwork
+import app.foldcade.plugins.emulators.EDEN_PACKAGES
 import app.foldcade.plugins.romm.RommCoverArt
+import app.foldcade.plugins.romm.RommFirmware
+import app.foldcade.romm.FirmwareSummary
+import app.foldcade.romm.RomProgress
 import app.foldcade.plugins.romm.SaveBytes
 import app.foldcade.plugins.romm.rommOriginAlreadyConfigured
 import app.foldcade.artwork.ART_HOSTS
@@ -541,6 +547,7 @@ class FoldcadeApp : Application() {
                     val changed = intent.data?.schemeSpecificPart
                     if (changed in GameNativePlayer.PACKAGES || changed == DroidDeckPlayer.PACKAGE) rerouteSteamFiles()
                     if (changed in RETROARCH_PACKAGES) refreshRetroArchCores()
+                    if (changed in EDEN_PACKAGES) refreshEdenSetting()
                 }
             }
         }
@@ -736,6 +743,7 @@ class FoldcadeApp : Application() {
                 restoreDroidDeckPins()
                 refreshDroidDeckShelf()
                 withContext(Dispatchers.Main.immediate) {
+                    refreshEdenSetting()
                     shell.refreshPlayerSaves()
                     shell.noteShelfChanged()
                 }
@@ -990,6 +998,72 @@ class FoldcadeApp : Application() {
     )
 
     internal val retroArchCoreReader: RetroArchCoreReader by lazy { RetroArchCoreReader(this, store::retroArchCoresFolder) }
+
+    /** The granted Eden folder, per installed package. */
+    internal val edenFolderReader: EdenFolderReader by lazy { EdenFolderReader(this, store::edenFolder) }
+
+    /**
+     * The Eden package Foldcade added files to that has not started since.
+     * Set from the install's worker as each file lands. Cleared when the device
+     * boot count changes, or when Eden is in the stopped state Force stop sets.
+     */
+    internal fun edenRestartPending(): EdenRestartPending? = store.edenRestartPending()
+
+    /** Records [Settings.Global.BOOT_COUNT], or -1 when Android does not report one. */
+    internal fun noteEdenRestartPending(packageName: String) {
+        store.setEdenRestartPending(packageName, deviceBootCount())
+    }
+
+    internal fun clearEdenRestartPending() {
+        store.clearEdenRestartPending()
+    }
+
+    private fun deviceBootCount(): Int =
+        Settings.Global.getInt(contentResolver, Settings.Global.BOOT_COUNT, -1)
+
+    /** Switch keys and firmware on every signed-in RomM server, in the order they were added. */
+    internal val rommFirmware: RommFirmware by lazy { RommFirmware { rommWirings(store) } }
+
+    /**
+     * Adds the keys and firmware the granted Eden folder is missing.
+     * One install at a time. The cached zip lives under `cache/eden-firmware`.
+     */
+    internal val edenInstaller: EdenInstaller by lazy {
+        EdenInstaller(
+            openTree = { packageName ->
+                val tree = edenFolderReader.granted(packageName) ?: return@EdenInstaller null
+                EdenDocumentTree(contentResolver, tree)
+            },
+            source = object : EdenFileSource {
+                override suspend fun servers(): List<EdenServerFiles> = rommFirmware.listSwitch().map { server ->
+                    EdenServerFiles(server.origin, server.files, server.failed)
+                }
+
+                override suspend fun download(
+                    origin: String,
+                    file: FirmwareSummary,
+                    target: Path,
+                    progress: ((RomProgress) -> Unit)?,
+                ) {
+                    rommFirmware.download(origin, file, target, progress)
+                }
+            },
+            cacheDirectory = {
+                val dir = File(cacheDir, "eden-firmware")
+                dir.mkdirs()
+                dir.toPath()
+            },
+            refusedFirmware = store::refusedEdenFirmware,
+            rememberRefusedFirmware = store::rememberRefusedEdenFirmware,
+        )
+    }
+
+    /** Settings › Emulators › Eden keys and firmware. Null while Eden is not installed. */
+    internal fun refreshEdenSetting() {
+        val installed = EDEN_PACKAGES.firstOrNull(::packageInstalled)
+        val setting = installed?.let { EdenSetting(fromRomm = edenFolderReader.granted(it) != null) }
+        shell.setEden(setting)
+    }
     private val retroArchRead = Mutex()
 
     /** Any RetroArch player. They share one view of the cores. */

@@ -8,6 +8,7 @@ import app.foldcade.api.plugin.SyncResult
 import app.foldcade.api.plugin.MemoryCredentialStore
 import app.foldcade.host.PluginHost
 import app.foldcade.language.Copy
+import app.foldcade.language.activityLine
 import app.foldcade.language.Effect
 import app.foldcade.language.HomeGrid
 import app.foldcade.language.HostScreen
@@ -173,6 +174,19 @@ class HomeGridOrderTest {
         assertEquals(TileActivity.Synced(SyncMark.Synced, until), shell.activityAt(drift))
         shell.expireActivity("romm", "drift", until)
         assertNull(shell.activityAt(drift))
+    }
+
+    @Test
+    fun aFirmwareDownloadKeepsTheFractionAndChangesTheWords() {
+        val shell = shell()
+        val id = homeGameId("romm", "drift")
+        shell.noteActivity("romm", "drift", GameActivity.Downloading(50L, 100L), nowMillis = 0L, firmware = true)
+        val firmware = shell.activity.getValue(id)
+        assertEquals(TileActivity.Downloading(0.5f, firmware = true), firmware)
+        assertEquals("Getting firmware 50%", activityLine(firmware))
+        shell.noteActivity("romm", "drift", GameActivity.Downloading(50L, 100L), nowMillis = 0L)
+        assertEquals(TileActivity.Downloading(0.5f), shell.activity.getValue(id))
+        assertEquals("Downloading 50%", activityLine(shell.activity.getValue(id)))
     }
 
     @Test

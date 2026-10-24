@@ -10,6 +10,15 @@ import app.foldcade.api.plugin.PlayerExtra
 private val RELAUNCH: Set<LaunchFlag> = setOf(LaunchFlag.NewTask, LaunchFlag.ClearTop, LaunchFlag.ClearTask)
 
 /**
+ * Eden's application ids, current build then the legacy one.
+ * The table below and the shell's folder grant share this list.
+ */
+val EDEN_PACKAGES: List<String> = listOf(
+    "dev.eden.eden_emulator",
+    "dev.legacy.eden_emulator",
+)
+
+/**
  * Application ids, activities, and handoffs. Read from ES-DE's Android
  * `es_find_rules.xml` and `es_systems.xml` (master, October 2026). Only the
  * launches that take a content URI are here. A launch that needs a file path,
@@ -101,8 +110,7 @@ val EMULATORS: List<Emulator> = listOf(
         id = "eden",
         displayName = "Eden",
         platformIds = listOf(SWITCH),
-        activities = listOf("dev.eden.eden_emulator", "dev.legacy.eden_emulator")
-            .associateWith { "org.yuzu.yuzu_emu.activities.EmulationActivity" },
+        activities = EDEN_PACKAGES.associateWith { "org.yuzu.yuzu_emu.activities.EmulationActivity" },
         // ES-DE launches Eden with this action, not VIEW.
         action = "android.nfc.action.TECH_DISCOVERED",
     ),

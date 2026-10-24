@@ -18,6 +18,7 @@ import app.foldcade.api.plugin.SaveDeclaration
 import app.foldcade.api.plugin.StartDisplay
 import app.foldcade.api.plugin.SyncOutcome
 import app.foldcade.romm.DeviceAuthChallenge
+import app.foldcade.romm.FirmwareSummary
 import app.foldcade.romm.DeviceTokenPoll
 import app.foldcade.romm.Heartbeat
 import app.foldcade.romm.KeptBoth
@@ -1276,6 +1277,7 @@ internal class ScriptedOps : RommOps {
     override suspend fun heartbeat() = onHeartbeat()
     override suspend fun artwork(uri: String) = onArtwork(uri)
     override suspend fun platforms() = onPlatforms()
+
     override suspend fun roms(query: RomQuery) = onRoms(query)
     override suspend fun rom(id: Long) = onRom(id)
     override suspend fun me() = onMe()
@@ -1295,8 +1297,11 @@ internal class ScriptedOps : RommOps {
     }
 
     override suspend fun firmware(platformId: Long) = onFirmware(platformId)
-    override suspend fun downloadFirmware(firmware: app.foldcade.romm.FirmwareSummary, target: Path) =
-        onDownloadFirmware(firmware, target)
+    override suspend fun downloadFirmware(
+        firmware: app.foldcade.romm.FirmwareSummary,
+        target: Path,
+        progress: ((RomProgress) -> Unit)?,
+    ) = onDownloadFirmware(firmware, target)
 
     override suspend fun registerDevice(
         stored: RegisteredDevice?,

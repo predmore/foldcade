@@ -79,6 +79,8 @@ data class FirmwareSummary(
     val fileSizeBytes: Long,
     /** Lowercase hex MD5 RomM computed for this file, when it has one. */
     val md5Hash: String? = null,
+    /** RomM's `missing_from_fs`: listed, but the file is gone from its disk. False when RomM omits it. */
+    val missingFromFs: Boolean = false,
 )
 
 @Serializable

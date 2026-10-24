@@ -2,7 +2,7 @@ package app.foldcade
 
 /**
  * Why the document-tree picker is open. The library, a player's save folder,
- * and RetroArch's data folder share one result callback. The purpose has to
+ * RetroArch's data folder, and Eden's data folder share one result callback. The purpose has to
  * survive the activity being recreated while the picker is in front, or the
  * new instance treats every choice as a game library.
  */
@@ -20,6 +20,9 @@ internal enum class FolderPurpose {
 
     /** RetroArch's data folder, so Foldcade can list its cores. */
     RetroArchCores,
+
+    /** Eden's data folder, so Foldcade can add keys and firmware. */
+    EdenFolder,
 }
 
 /** The picker fields that are not Android's URI result. */
@@ -56,9 +59,11 @@ internal enum class FolderPickResult {
     RememberSaveAndLaunch,
     RememberSaveForPlayer,
     ImportCores,
+    UseEdenFolder,
     SkipSaveAndLaunch,
     ClearSettingsPlayer,
     SettleCores,
+    SettleEden,
     Ignore,
 }
 
@@ -68,4 +73,5 @@ internal fun folderPickResult(state: FolderPickerState, choseFolder: Boolean): F
         if (choseFolder) FolderPickResult.RememberSaveAndLaunch else FolderPickResult.SkipSaveAndLaunch
     FolderPurpose.Settings -> if (choseFolder) FolderPickResult.RememberSaveForPlayer else FolderPickResult.ClearSettingsPlayer
     FolderPurpose.RetroArchCores -> if (choseFolder) FolderPickResult.ImportCores else FolderPickResult.SettleCores
+    FolderPurpose.EdenFolder -> if (choseFolder) FolderPickResult.UseEdenFolder else FolderPickResult.SettleEden
 }

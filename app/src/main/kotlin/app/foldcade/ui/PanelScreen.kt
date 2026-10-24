@@ -189,7 +189,7 @@ import app.foldcade.language.SceneLive
 import app.foldcade.language.CollectionTint
 import app.foldcade.language.IconPick
 import app.foldcade.language.homeGridLabel
-import app.foldcade.language.DialogButton
+import app.foldcade.language.dialogButtonLabel
 import app.foldcade.language.Effect
 import app.foldcade.language.DialogState
 import app.foldcade.language.EmptyGrid
@@ -4154,20 +4154,7 @@ private fun DialogCard(
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 dialog.buttons.forEachIndexed { index, button ->
-                    val label = when (button) {
-                        DialogButton.UseAsHome -> Copy.useAsHome
-                        DialogButton.NotNow -> Copy.notNow
-                        DialogButton.Allow -> Copy.allowUsage
-                        DialogButton.ContinueGrant -> Copy.continueGrant
-                        DialogButton.Ok -> Copy.ok
-                        DialogButton.CloseIt -> Copy.closeIt
-                        DialogButton.ForgetKey -> Copy.forgetKey
-                        DialogButton.KeepKey -> Copy.keepKey
-                        DialogButton.OpenRetroArch -> Copy.openRetroArch
-                        DialogButton.Restart -> Copy.restart
-                        DialogButton.ForgetHost -> Copy.forgetHost
-                        DialogButton.OpenPlayer -> openPlayerLabel(dialog.subject)
-                    }
+                    val label = dialogButtonLabel(button, dialog.subject)
                     DialogAction(
                         label = label,
                         focused = dialog.index == index,
