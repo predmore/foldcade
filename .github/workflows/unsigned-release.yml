@@ -84,7 +84,9 @@ jobs:
           cache-read-only: true
 
       # Same render step as the signed release job. No cross-workflow wait.
-      # A healthy render takes about two minutes. Fail here instead of the job limit.
+      # Packages come from the cached deb set. A healthy render takes about
+      # two minutes (2m00s on release run 39882256680). Fail here instead of
+      # the job limit.
       - name: Render home music
         uses: ./.github/actions/render-home-music
         timeout-minutes: 10

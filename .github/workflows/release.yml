@@ -199,8 +199,10 @@ jobs:
 
       # Same render as the unsigned dry-run and the home-music workflow.
       # This step does not receive the release signing secrets, and it runs
-      # before the keystore is decoded. A healthy render takes about two minutes.
-      # Fail this step instead of holding the job until its 30 minute limit.
+      # before the keystore is decoded. Packages come from the cached deb set.
+      # On the green release (run 39882256680) this step finished in 2m00s,
+      # and apt fetched the 70 MB in 3s while the mirror was fast. Ten minutes
+      # only stops a hung step; it is not the way a slow mirror is tolerated.
       - name: Render home music
         uses: ./.github/actions/render-home-music
         timeout-minutes: 10

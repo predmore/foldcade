@@ -1,18 +1,40 @@
 name: Render home music
-description: Install the render tools, cache the pinned SoundFont, and render every track.
+description: Install the render tools from a cached deb set, cache the pinned SoundFont, and render every track.
 
 runs:
   using: composite
   steps:
-    - name: Install fluidsynth and ffmpeg
+    # The debs are ~70 MB. Restoring them avoids apt on every release.
+    # A miss still installs from the lockfile; the install script does not
+    # leave that download to the Azure apt mirror.
+    - name: Hash render package lock
+      id: render-deb-key
       shell: bash
       run: |
-        # fluidsynth recommends qsynth, and qsynth recommends fluid-soundfont-gm
-        # (~130MB). This render loads MuseScore General instead. Installing those
-        # recommendations made a slow Ubuntu mirror outlast the 30 minute job limit.
-        sudo apt-get update
-        sudo env DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
-          fluidsynth ffmpeg python3-venv libsndfile1
+        set -euo pipefail
+        sum="$(sha256sum .github/actions/render-home-music/packages.lock)"
+        sum="${sum%% *}"
+        echo "key=ubuntu-24.04-home-music-debs-${sum}" >> "$GITHUB_OUTPUT"
+
+    - name: Restore cached render packages
+      id: render-debs
+      continue-on-error: true
+      uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      with:
+        path: ~/.cache/foldcade/render-debs
+        key: ${{ steps.render-deb-key.outputs.key }}
+
+    - name: Install fluidsynth and ffmpeg
+      shell: bash
+      run: .github/actions/render-home-music/install-tools.sh
+
+    - name: Save cached render packages
+      if: steps.render-debs.outputs.cache-hit != 'true'
+      continue-on-error: true
+      uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      with:
+        path: ~/.cache/foldcade/render-debs
+        key: ${{ steps.render-deb-key.outputs.key }}
 
     - name: Cache MuseScore General SoundFont
       uses: actions/cache@v6
