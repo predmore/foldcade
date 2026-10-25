@@ -87,13 +87,13 @@ fun settingsRows(category: SettingsCategory, model: PickerModel): List<Row> = wh
     SettingsCategory.Library -> buildList {
         // Only once there is a folder or a server to read.
         if (model.signedIn.isNotEmpty() || model.folders.isNotEmpty()) add(Row.SyncLibrary)
-        addAll(libraryRows(model.signedIn, model.folders))
+        addAll(libraryRows(model.signedIn, model.folders, model.rommSaved))
         addAll(model.streamHosts.map { Row.StreamHost(it.key) })
         addAll(listOf(Row.Order, Row.AddNewGames, Row.Artwork, Row.ArtKey, Row.UsageAccess))
     }
     SettingsCategory.Players -> buildList {
         if (model.retroArch != null) add(Row.RetroArchCores)
-        if (model.eden != null && model.signedIn.any { it.pluginId == "romm" || it.pluginId.startsWith("romm#") }) {
+        if (model.eden != null && model.signedIn.any { it.pluginId == "romm" }) {
             add(Row.EdenFolder)
         }
         model.playerSaves.forEach { setting ->

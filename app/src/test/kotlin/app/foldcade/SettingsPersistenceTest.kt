@@ -280,9 +280,7 @@ class SettingsPersistenceTest {
         val restored = SessionStore(prefs)
         assertEquals(listOf("content://tree/other"), restored.folderTrees())
         assertEquals("content://tree/saves", restored.playerSaveFolder("player"))
-        store.setRommInstance("romm#2", "https://other.example")
         assertEquals("https://romm.example", restored.rommOrigin())
-        assertEquals(listOf("romm#2" to "https://other.example"), restored.rommInstances())
         assertEquals(PromptKey.FaceA, restored.buttonPromptConfirm("controller"))
         assertTrue(restored.buttonPromptDismissed("controller"))
         assertEquals(PromptKey.FaceB, restored.buttonPromptConfirm("other"))
@@ -294,8 +292,6 @@ class SettingsPersistenceTest {
         assertFalse(restored.folderGrantPending())
         assertTrue(restored.usagePromptOffered())
 
-        restored.removeRommInstance("romm#2")
-        assertTrue(SessionStore(prefs).rommInstances().isEmpty())
         restored.clearRommOrigin()
         restored.saveButtonPrompt("controller", null, dismissed = false)
         assertNull(SessionStore(prefs).rommOrigin())

@@ -1128,31 +1128,31 @@ class HomeGridOrderTest {
     }
 
     @Test
-    fun anotherServerHoldsDeleteDownloadUntilItListsItsGames() {
+    fun changingTheServerHoldsDeleteDownloadUntilItListsItsGames() {
         val shell = shell()
-        val cached = listOf(entry("42", "Drift", "nintendo-3ds", backendId = "romm#2", availability = Availability.Cached))
-        shell.ingestLibrary("romm#2", cached, emptyList())
+        val cached = listOf(entry("42", "Drift", "nintendo-3ds", backendId = "romm", availability = Availability.Cached))
+        shell.ingestLibrary("romm", cached, emptyList())
         shell.openHomeAll()
         focus(shell, titles(shell).indexOf("Drift"))
         assertEquals("42", shell.focusedDownload()?.remoteKey)
         val before = shell.deviceMark()
         // ROM 42 on the new server is another game, so the old tile's copy is not the one it would delete.
-        shell.noteServerChanged("romm#2")
+        shell.noteServerChanged("romm")
         assertNull(shell.focusedDownload())
         shell.onMeaning(Meaning.Options, HostScreen.Bottom)
         assertFalse(Row.RemoveDownload in panelRows(shell.model.panel!!, shell.model))
         shell.onMeaning(Meaning.Back, HostScreen.Bottom)
         // Refreshes that started before the change, or while it was saving, list the old server.
-        shell.ingestLibrary("romm#2", cached, emptyList(), readAt = before)
-        shell.ingestLibrary("romm#2", cached, emptyList(), readAt = shell.deviceMark())
+        shell.ingestLibrary("romm", cached, emptyList(), readAt = before)
+        shell.ingestLibrary("romm", cached, emptyList(), readAt = shell.deviceMark())
         assertNull(shell.focusedDownload())
-        shell.settleServerChange("romm#2")
+        shell.settleServerChange("romm")
         val published = shell.deviceMark()
-        shell.settleServerChange("romm#2")
+        shell.settleServerChange("romm")
         assertEquals(published, shell.deviceMark())
-        shell.ingestLibrary("romm#2", cached, emptyList(), readAt = before)
+        shell.ingestLibrary("romm", cached, emptyList(), readAt = before)
         assertNull(shell.focusedDownload())
-        shell.ingestLibrary("romm#2", cached, emptyList(), readAt = published)
+        shell.ingestLibrary("romm", cached, emptyList(), readAt = published)
         assertEquals("42", shell.focusedDownload()?.remoteKey)
     }
 

@@ -9,14 +9,14 @@ import java.nio.file.Path
 import java.net.URI
 
 /**
- * Artwork bytes from the configured RomM servers, for the shell's image loader.
- * Public artwork stays credential-free. Private save screenshots use the instance token.
+ * Artwork bytes from the configured RomM server, for the shell's image loader.
+ * Public artwork stays credential-free. Private save screenshots use the connection token.
  * [app.foldcade.romm.RommClient.artwork] refuses an address on another origin,
  * so this reaches no other host. Cached bytes survive process death and are
  * bounded and scoped to the server. Origin checks also apply to cache hits.
  */
 class RommArtwork(
-    private val servers: () -> List<RommWiring> = { listOfNotNull(RommPlugins.wiring) },
+    private val wiring: () -> RommWiring? = { RommPlugins.wiring },
 ) : AutoCloseable {
     private class Held(val ops: RommOps, val images: ArtBytes) {
         var users = 0
@@ -29,17 +29,14 @@ class RommArtwork(
      * [app.foldcade.api.plugin.PluginException].
      */
     suspend fun load(uri: String): ByteArray? {
-        val configured = servers().filter { it.origin.isNotBlank() }
-        if (configured.isEmpty()) return null
+        val current = wiring()?.takeIf { it.origin.isNotBlank() } ?: return null
         if (credentialFreeArtworkUri(uri) != uri) {
             throw PluginException.Unavailable("Artwork must be a credential-free address on the RomM origin")
         }
-        // Prefer the most specific base path when two servers share a host.
-        val current = configured.filter { sameOrigin(it.origin, uri) }
-            .filter { withinBasePath(it.origin, uri) }
-            .maxByOrNull { URI(it.origin).path.orEmpty().length }
-            ?: throw PluginException.Unavailable("Artwork must be a credential-free address on the RomM origin")
-        val client = client(current, configured, RommClient.isSaveScreenshotUri(current.origin, uri))
+        if (!sameOrigin(current.origin, uri) || !withinBasePath(current.origin, uri)) {
+            throw PluginException.Unavailable("Artwork must be a credential-free address on the RomM origin")
+        }
+        val client = client(current, RommClient.isSaveScreenshotUri(current.origin, uri))
         try {
             return translate { client.images.load(uri) }
         } finally {
@@ -51,11 +48,10 @@ class RommArtwork(
     }
 
     /**
-     * Separate public and authenticated clients per server. Removing a server retires its client after active loads drain.
+     * Separate public and authenticated clients. Changing the origin retires old clients after active loads drain.
      */
-    private fun client(current: RommWiring, configured: List<RommWiring>, authenticated: Boolean): Held = synchronized(this) {
-        val roots = configured.map { it.romRoot }.toSet()
-        val removed = held.keys.filter { it.first !in roots }
+    private fun client(current: RommWiring, authenticated: Boolean): Held = synchronized(this) {
+        val removed = held.keys.filter { it.first != current.romRoot }
         removed.forEach { root -> held.remove(root)?.let(::retire) }
         held.getOrPut(current.romRoot to authenticated) {
             val ops = current.open(current.origin) { if (authenticated) current.tokenSource.accessToken() else null }

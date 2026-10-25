@@ -14,6 +14,9 @@ import app.foldcade.host.PluginHost
 import app.foldcade.language.Copy
 import app.foldcade.language.DialogKind
 import app.foldcade.language.SignedInBackend
+import app.foldcade.language.Row
+import app.foldcade.language.SettingsCategory
+import app.foldcade.language.settingsRows
 import app.foldcade.romm.CLEARTEXT_CREDENTIAL_WARNING
 import app.foldcade.romm.CLEARTEXT_TAILNET_NOTE
 import app.foldcade.romm.CLEARTEXT_LAN_ONLY
@@ -34,16 +37,28 @@ class CredentialRecoveryTest {
             override fun seal(plain: ByteArray, aad: ByteArray): ByteArray = plain
             override fun open(sealed: ByteArray, aad: ByteArray): Opened = openSealed(null, sealed, aad)
         })
-        val servers = listOf("romm" to "https://romm.example")
-        val recovery = readRommRecovery(missing, servers)
+        val origin = "https://romm.example"
+        val recovery = readRommRecovery(missing, origin)
         assertTrue(recovery.askToSignIn)
-        assertEquals("romm", recovery.rommInstanceId)
         assertTrue(blobs.pluginIds().isEmpty())
         assertSignedOut(recovery)
 
-        val thrown = readRommRecovery(ThrowingStore(), servers)
+        val thrown = readRommRecovery(ThrowingStore(), origin)
         assertTrue(thrown.askToSignIn)
         assertSignedOut(thrown)
+    }
+
+    @Test
+    fun unreadableTokenKeepsTheSavedConnectionActions() = runBlocking {
+        val session = SessionStore(MemoryPrefs()).apply { setRommOrigin("https://romm.example") }
+        val shell = ShellController(session, PluginHost(Dispatchers.Unconfined, MemoryCredentialStore()))
+        shell.applyRecovery(readRommRecovery(ThrowingStore(), session.rommOrigin()))
+        val rows = settingsRows(SettingsCategory.Library, shell.model)
+        assertTrue(Row.AddRomm !in rows)
+        assertTrue(Row.RommConnection("romm", "RomM") in rows)
+        shell.dismissDialog()
+        assertTrue(shell.editRommConnection())
+        assertEquals("https://romm.example", shell.model.connectOrigin)
     }
 
     @Test

@@ -70,16 +70,11 @@ internal fun edenRestartStillNeeded(pendingBoot: Int, currentBoot: Int, edenStop
     return !edenStopped
 }
 
-/**
- * True when a reachable server has `prod.keys` or a firmware zip.
- * Null when every server failed. False when none are connected, or none of
- * the ones that answered have those files. `title.keys` alone does not count.
- */
-internal fun rommHasSwitchSetup(servers: List<RommSwitchFirmware>): Boolean? {
-    if (servers.isEmpty()) return false
-    if (servers.any { server -> !server.failed && server.files.any(::countsAsSwitchSetup) }) return true
-    if (servers.all { it.failed }) return null
-    return false
+/** True when RomM has `prod.keys` or a firmware zip; null when it could not be reached. */
+internal fun rommHasSwitchSetup(server: RommSwitchFirmware?): Boolean? = when {
+    server == null -> false
+    server.failed -> null
+    else -> server.files.any(::countsAsSwitchSetup)
 }
 
 /** `prod.keys`, or a firmware zip. `title.keys` alone is not a reason to offer the folder. */
@@ -208,16 +203,9 @@ internal interface EdenTree {
     fun rename(path: String, newName: String)
 }
 
-/** Switch firmware from the signed-in servers, in server order. */
-internal data class EdenServerFiles(
-    val origin: String,
-    val files: List<FirmwareSummary>,
-    val failed: Boolean,
-)
-
 /** Where missing keys and firmware are downloaded from. */
 internal interface EdenFileSource {
-    suspend fun servers(): List<EdenServerFiles>
+    suspend fun server(): RommSwitchFirmware?
 
     suspend fun download(
         origin: String,
@@ -285,15 +273,15 @@ internal class EdenInstaller(
         val gaps = edenGaps(inventory(tree))
         // A missing title.keys does not contact RomM by itself.
         if (!gaps.prodKeys && !gaps.firmware) return false
-        val servers = source.servers()
+        val server = source.server()?.takeUnless { it.failed } ?: return false
         var added = false
         fun landed() {
             added = true
             onAdded()
         }
-        if (gaps.prodKeys && installKey(tree, servers, PROD_KEYS, KEYS_PROD)) landed()
-        if (gaps.titleKeys && installKey(tree, servers, TITLE_KEYS, KEYS_TITLE)) landed()
-        if (gaps.firmware && installFirmware(tree, servers, onProgress)) landed()
+        if (gaps.prodKeys && installKey(tree, server, PROD_KEYS, KEYS_PROD)) landed()
+        if (gaps.titleKeys && installKey(tree, server, TITLE_KEYS, KEYS_TITLE)) landed()
+        if (gaps.firmware && installFirmware(tree, server, onProgress)) landed()
         return added
     }
 
@@ -310,16 +298,16 @@ internal class EdenInstaller(
      * which is removed once the temp checks out so the rename can land.
      * True when [name] was renamed into place and the bytes there match.
      */
-    private suspend fun installKey(tree: EdenTree, servers: List<EdenServerFiles>, name: String, path: String): Boolean {
+    private suspend fun installKey(tree: EdenTree, server: RommSwitchFirmware, name: String, path: String): Boolean {
         val existing = tree.size(path)
         if (existing != null && existing > 0L) return false
-        val found = firstFile(servers) { chooseKeyFile(it, name) } ?: return false
+        val file = chooseKeyFile(server.files, name) ?: return false
         val cache = cacheDirectory()
-        val downloaded = cache.resolve("key-${found.second.id}")
+        val downloaded = cache.resolve("key-${file.id}")
         val partial = path + KEY_PARTIAL_SUFFIX
         var partialLeft = false
         try {
-            source.download(found.first, found.second, downloaded, progress = null)
+            source.download(server.origin, file, downloaded, progress = null)
             val bytes = Files.readAllBytes(downloaded)
             if (tree.size(path)?.let { it > 0L } == true) return false
             tree.mkdir(KEYS)
@@ -355,35 +343,36 @@ internal class EdenInstaller(
     /** True when the firmware copy finished and the partial marker was removed. */
     private suspend fun installFirmware(
         tree: EdenTree,
-        servers: List<EdenServerFiles>,
+        server: RommSwitchFirmware,
         onProgress: ((RomProgress) -> Unit)?,
     ): Boolean {
-        val found = firstFirmware(servers) ?: return false
+        val refused = refusedFirmware()
+        val file = chooseFirmwareZip(server.files.filter { refusedFirmwareKey(server.origin, it) !in refused }) ?: return false
         val cache = cacheDirectory()
-        val target = cache.resolve("${found.second.id}.zip")
+        val target = cache.resolve("${file.id}.zip")
         try {
             // The tile is marked on the first report. Send it before RomM answers, or a second press restarts this download.
-            onProgress?.invoke(RomProgress.Receiving(0, found.second.fileSizeBytes.takeIf { it > 0L }))
+            onProgress?.invoke(RomProgress.Receiving(0, file.fileSizeBytes.takeIf { it > 0L }))
             try {
-                source.download(found.first, found.second, target, onProgress)
+                source.download(server.origin, file, target, onProgress)
             } catch (cancelled: CancellationException) {
                 throw cancelled
             } catch (error: Exception) {
-                if (firmwareBytesRefused(error)) rememberRefused(found.first, found.second)
+                if (firmwareBytesRefused(error)) rememberRefused(server.origin, file)
                 throw error
             }
             // Bytes RomM vouched for that are not a zip are refused like a bad layout.
             val opened = try {
                 ZipFile(target.toFile())
             } catch (unreadable: ZipException) {
-                rememberRefused(found.first, found.second)
+                rememberRefused(server.origin, file)
                 warn("Eden firmware zip could not be read", unreadable)
                 return false
             }
             opened.use { archive ->
                 val entries = archive.entries().toList()
                 if (!firmwareZipOk(entries.map { FirmwareZipEntry(it.name, it.isDirectory) })) {
-                    rememberRefused(found.first, found.second)
+                    rememberRefused(server.origin, file)
                     warn("Eden firmware zip was refused", null)
                     return false
                 }
@@ -424,7 +413,7 @@ internal class EdenInstaller(
                 } catch (error: Exception) {
                     rollbackWritten(tree, written)
                     // A damaged entry fails the same way every time. A write to Eden's folder may not.
-                    if (error is ZipException) rememberRefused(found.first, found.second)
+                    if (error is ZipException) rememberRefused(server.origin, file)
                     warn("Could not install Eden firmware", error)
                 }
             }
@@ -465,33 +454,6 @@ internal class EdenInstaller(
 
     private fun mkdirFirmware(tree: EdenTree) {
         listOf("nand", "nand/system", CONTENTS, REGISTERED).forEach { tree.mkdir(it) }
-    }
-
-    private fun firstFile(
-        servers: List<EdenServerFiles>,
-        choose: (List<FirmwareSummary>) -> FirmwareSummary?,
-    ): Pair<String, FirmwareSummary>? {
-        for (server in servers) {
-            if (server.failed) continue
-            val file = choose(server.files) ?: continue
-            return server.origin to file
-        }
-        return null
-    }
-
-    /**
-     * The best zip the first server still has that Eden has not refused.
-     * A later server is used when this one has no usable zip left.
-     */
-    private fun firstFirmware(servers: List<EdenServerFiles>): Pair<String, FirmwareSummary>? {
-        val refused = refusedFirmware()
-        for (server in servers) {
-            if (server.failed) continue
-            val open = server.files.filter { refusedFirmwareKey(server.origin, it) !in refused }
-            val file = chooseFirmwareZip(open) ?: continue
-            return server.origin to file
-        }
-        return null
     }
 
     private fun rememberRefused(origin: String, file: FirmwareSummary) {

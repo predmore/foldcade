@@ -29,26 +29,8 @@ internal class LaunchSaves(
      * The caller runs one save flow at a time.
      */
     suspend fun prepare(route: GameRoute, player: Player, local: LaunchTarget): PreparedLaunch {
-        val candidates = candidates(route)
         val setup = mutableListOf<String>()
-        var chosen: Negotiated? = null
-        for (owner in candidates) {
-            val negotiated = try {
-                negotiate(route, owner, player, local, setup)
-            } catch (cancelled: CancellationException) {
-                throw cancelled
-            } catch (failure: Exception) {
-                // Only the first copy's failure stops the launch. A later one was a second look.
-                if (chosen == null) throw failure else continue
-            }
-            if (chosen == null) chosen = negotiated
-            // A device with no save of its own takes the first server copy that has one.
-            if (negotiated.placement.savesToPlace.isNotEmpty() || negotiated.spots.isEmpty()) {
-                chosen = negotiated
-                break
-            }
-        }
-        val (owner, spots, placement) = chosen ?: negotiate(route, route.saves, player, local, setup)
+        val (owner, spots, placement) = negotiate(route, route.saves, player, local, setup)
         try {
             val written = mutableListOf<String>()
             val placed = saves.place(owner.backendId, owner, player, spots, placement.savesToPlace, written)
@@ -101,26 +83,6 @@ internal class LaunchSaves(
             // With a save folder in play, any failure here would start the game from a save the library does not know.
             if (spots.isNotEmpty()) throw SaveNotPlaced() else throw failure
         }
-    }
-
-    /**
-     * The copies that may keep the saves, [GameRoute.saves] first. With several servers, one
-     * that already keeps a save here goes first, and each after it is asked in turn when the one
-     * before had nothing, so a device with no save loads the progress any server has.
-     */
-    private suspend fun candidates(route: GameRoute): List<Game> {
-        if (route.servers.size < 2) return listOf(route.saves)
-        val all = (listOf(route.saves) + route.servers).distinct()
-        val held = all.filter { holdsSaves(it) }
-        return held + (all - held.toSet())
-    }
-
-    private suspend fun holdsSaves(game: Game): Boolean = try {
-        plugins.saves(game.backendId, game).slots.isNotEmpty()
-    } catch (cancelled: CancellationException) {
-        throw cancelled
-    } catch (_: Exception) {
-        false
     }
 
     private data class Negotiated(val owner: Game, val spots: List<SaveSpot>, val placement: Placement)

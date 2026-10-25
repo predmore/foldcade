@@ -16,7 +16,7 @@ import java.nio.file.Files
 class RommArtworkTest {
     private val cache = Files.createTempDirectory("romm-artwork")
 
-    @Test fun privateSaveScreenshotsUseTheRealClientAndTheirInstancesToken() = runBlocking {
+    @Test fun privateSaveScreenshotsUseTheRealClientAndTheConnectionToken() = runBlocking {
         val server = com.sun.net.httpserver.HttpServer.create(java.net.InetSocketAddress("127.0.0.1", 0), 0)
         val authorizations = java.util.Collections.synchronizedList(mutableListOf<Pair<String, String?>>())
         val image = byteArrayOf(0x89.toByte(), 0x50, 0x4e, 0x47)
@@ -30,7 +30,7 @@ class RommArtworkTest {
             val origin = "http://127.0.0.1:${server.address.port}"
             var token = "rmm_first"
             val wiring = RommWiring(origin, RommTokenSource { token }, cache, cache.resolve("data"))
-            RommArtwork { listOf(wiring) }.use { artwork ->
+            RommArtwork { wiring }.use { artwork ->
                 assertArrayEquals(image, artwork.load("$origin/api/screenshots/9/content"))
                 token = "rmm_rotated"
                 assertArrayEquals(image, artwork.load("$origin/api/screenshots/10/content"))
@@ -46,7 +46,7 @@ class RommArtworkTest {
     }
 
     @Test
-    fun twoServersKeepSeparateClientsAndCachesWhenTheDefaultIsRemoved() = runBlocking {
+    fun editingTheAddressKeepsCachesSeparateAndClosesTheOldClient() = runBlocking {
         val opened = mutableListOf<String>()
         val closed = mutableListOf<String>()
         val requests = mutableListOf<String>()
@@ -62,17 +62,15 @@ class RommArtworkTest {
         }
         val first = wiring("https://one.example")
         val second = wiring("https://two.example")
-        var servers = listOf(first, second)
-        RommArtwork { servers }.use { artwork ->
-            for (server in servers) {
-                val uri = "${server.origin}/cover.png"
-                assertArrayEquals(server.origin.toByteArray(), artwork.load(uri))
-                assertArrayEquals(server.origin.toByteArray(), artwork.load(uri))
-            }
-            assertEquals(listOf(first.origin, second.origin), opened)
-            assertEquals(2, requests.size)
+        var current = first
+        RommArtwork { current }.use { artwork ->
+            val firstUri = "${first.origin}/cover.png"
+            assertArrayEquals(first.origin.toByteArray(), artwork.load(firstUri))
+            assertArrayEquals(first.origin.toByteArray(), artwork.load(firstUri))
+            assertEquals(listOf(first.origin), opened)
+            assertEquals(1, requests.size)
             assertTrue(closed.isEmpty())
-            servers = listOf(second)
+            current = second
             assertArrayEquals(second.origin.toByteArray(), artwork.load("${second.origin}/cover.png"))
             assertEquals(listOf(first.origin), closed)
             assertTrue(runCatching { artwork.load("${first.origin}/cover.png") }.exceptionOrNull() is PluginException.Unavailable)
@@ -95,12 +93,12 @@ class RommArtworkTest {
         val second = RommWiring("https://two.example", RommTokenSource { null }, cache, cache.resolve("data")).apply {
             open = { _, _ -> ScriptedOps().apply { onArtwork = { byteArrayOf(2) } } }
         }
-        var servers = listOf(first, second)
-        RommArtwork { servers }.use { artwork ->
+        var current = first
+        RommArtwork { current }.use { artwork ->
             withTimeout(3_000) {
                 val pending = async { artwork.load("${first.origin}/cover.png") }
                 started.await()
-                servers = listOf(second)
+                current = second
                 assertArrayEquals(byteArrayOf(2), artwork.load("${second.origin}/cover.png"))
                 assertEquals(0, closed)
                 release.complete(Unit)
@@ -111,21 +109,20 @@ class RommArtworkTest {
     }
 
     @Test
-    fun serversSharingAHostUseTheirOwnBasePath() = runBlocking {
+    fun artworkOutsideTheConfiguredBasePathIsRefused() = runBlocking {
         fun wiring(path: String) = RommWiring("https://romm.example/$path", RommTokenSource { null }, cache, cache.resolve("data")).apply {
             open = { _, _ -> ScriptedOps().apply { onArtwork = { path.toByteArray() } } }
         }
-        val servers = listOf(wiring("one"), wiring("two"))
-        RommArtwork { servers }.use { artwork ->
+        RommArtwork { wiring("one") }.use { artwork ->
             assertArrayEquals("one".toByteArray(), artwork.load("https://romm.example/one/cover.png"))
-            assertArrayEquals("two".toByteArray(), artwork.load("https://romm.example/two/cover.png"))
+            assertTrue(runCatching { artwork.load("https://romm.example/two/cover.png") }.exceptionOrNull() is PluginException.Unavailable)
             assertTrue(runCatching { artwork.load("https://romm.example/two-other/cover.png") }.exceptionOrNull() is PluginException.Unavailable)
         }
     }
 
     @Test
     fun nothingLoadsBeforeRommIsSetUp() = runBlocking {
-        assertNull(RommArtwork { emptyList() }.load("http://romm.example/assets/romm/resources/cover.png"))
+        assertNull(RommArtwork { null }.load("http://romm.example/assets/romm/resources/cover.png"))
     }
 
     @Test
@@ -138,7 +135,7 @@ class RommArtworkTest {
             tokens += token()
             ScriptedOps().apply { onArtwork = { uri -> uri.toByteArray() } }
         }
-        val artwork = RommArtwork { listOf(wiring) }
+        val artwork = RommArtwork { wiring }
         val first = artwork.load("http://romm.example/a.png")
         val second = artwork.load("http://romm.example/b.png")
         assertTrue("http://romm.example/a.png".toByteArray().contentEquals(first))
@@ -152,9 +149,9 @@ class RommArtworkTest {
         var origin = "http://one.example"
         var closed = 0
         val artwork = RommArtwork {
-            listOf(RommWiring(origin, RommTokenSource { null }, cache, cache.resolve("data")).apply {
+            RommWiring(origin, RommTokenSource { null }, cache, cache.resolve("data")).apply {
                 open = { _, _ -> ScriptedOps().apply { onArtwork = { ByteArray(1) }; onClose = { closed += 1 } } }
-            })
+            }
         }
         artwork.load("http://one.example/a.png")
         origin = "http://two.example"
@@ -173,14 +170,14 @@ class RommArtworkTest {
             ScriptedOps().apply { onArtwork = { image } }
         }
         val uri = "http://romm.example/cover.png?ts=123"
-        RommArtwork { listOf(wiring) }.use { assertArrayEquals(image, it.load(uri)) }
+        RommArtwork { wiring }.use { assertArrayEquals(image, it.load(uri)) }
 
         var requests = 0
         wiring.open = { _, token ->
             assertNull(token())
             ScriptedOps().apply { onArtwork = { requests++; throw RommUnavailable("offline") } }
         }
-        RommArtwork { listOf(wiring) }.use {
+        RommArtwork { wiring }.use {
             assertArrayEquals(image, it.load(uri))
             assertEquals(0, requests)
             assertTrue(runCatching { it.load("http://romm.example/uncached.png") }.exceptionOrNull() is PluginException.Unavailable)
@@ -193,9 +190,9 @@ class RommArtworkTest {
         var origin = "https://one.example"
         var requests = 0
         val artwork = RommArtwork {
-            listOf(RommWiring(origin, RommTokenSource { null }, cache, cache.resolve("data")).apply {
+            RommWiring(origin, RommTokenSource { null }, cache, cache.resolve("data")).apply {
                 open = { _, _ -> ScriptedOps().apply { onArtwork = { requests++; byteArrayOf(7) } } }
-            })
+            }
         }
         val first = "https://one.example/cover.png"
         artwork.load(first)

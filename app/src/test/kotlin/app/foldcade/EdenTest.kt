@@ -74,20 +74,12 @@ class EdenTest {
         val title = file(2, "TITLE.KEYS")
         val zip = file(3, "Firmware.1.0.zip")
         val other = file(4, "readme.txt")
-        assertEquals(false, rommHasSwitchSetup(emptyList()))
-        assertNull(rommHasSwitchSetup(listOf(romm("a", failed = true))))
-        assertEquals(
-            false,
-            rommHasSwitchSetup(listOf(romm("a", failed = true), romm("b", other))),
-        )
-        assertEquals(true, rommHasSwitchSetup(listOf(romm("a", keys))))
-        assertEquals(false, rommHasSwitchSetup(listOf(romm("a", title))))
-        assertEquals(true, rommHasSwitchSetup(listOf(romm("a", zip))))
-        assertEquals(false, rommHasSwitchSetup(listOf(romm("a", other))))
-        assertEquals(
-            true,
-            rommHasSwitchSetup(listOf(romm("a", failed = true), romm("b", keys))),
-        )
+        assertEquals(false, rommHasSwitchSetup(null))
+        assertNull(rommHasSwitchSetup(server("https://romm", failed = true)))
+        assertEquals(true, rommHasSwitchSetup(server("https://romm", keys)))
+        assertEquals(false, rommHasSwitchSetup(server("https://romm", title)))
+        assertEquals(true, rommHasSwitchSetup(server("https://romm", zip)))
+        assertEquals(false, rommHasSwitchSetup(server("https://romm", other)))
     }
 
     @Test
@@ -181,10 +173,7 @@ class EdenTest {
         val keys = "prod-bytes".toByteArray()
         val title = "title-bytes".toByteArray()
         val source = FakeFiles(
-            listOf(
-                server("https://down", failed = true),
-                server("https://romm", file(4, "PROD.KEYS", keys.size), file(7, "title.keys", title.size)),
-            ),
+            server("https://romm", file(4, "PROD.KEYS", keys.size), file(7, "title.keys", title.size)),
             mapOf(4L to keys, 7L to title),
         )
         val warnings = mutableListOf<String>()
@@ -211,7 +200,7 @@ class EdenTest {
         val tree = MemoryEden()
         tree.files["keys/prod.keys"] = ByteArray(0)
         val keys = "fresh".toByteArray()
-        val source = FakeFiles(listOf(server("https://romm", file(3, "prod.keys", keys.size))), mapOf(3L to keys))
+        val source = FakeFiles(server("https://romm", file(3, "prod.keys", keys.size)), mapOf(3L to keys))
         val cache = Files.createTempDirectory("eden-empty-key")
         try {
             installer(tree, source, cache, mutableListOf()).ensure(PKG)
@@ -234,7 +223,7 @@ class EdenTest {
     fun aDownloadFailureLeavesNoKeysFile() = runBlocking {
         val tree = MemoryEden()
         val source = FakeFiles(
-            listOf(server("https://romm", file(3, "prod.keys", 4))),
+            server("https://romm", file(3, "prod.keys", 4)),
             emptyMap(),
             fail = setOf(3),
         )
@@ -254,7 +243,7 @@ class EdenTest {
     fun aKeyIsRenamedIntoPlace() = runBlocking {
         val tree = MemoryEden()
         val keys = "prod-bytes".toByteArray()
-        val source = FakeFiles(listOf(server("https://romm", file(4, "prod.keys", keys.size))), mapOf(4L to keys))
+        val source = FakeFiles(server("https://romm", file(4, "prod.keys", keys.size)), mapOf(4L to keys))
         val cache = Files.createTempDirectory("eden-key-rename")
         try {
             installer(tree, source, cache, mutableListOf()).ensure(PKG)
@@ -271,7 +260,7 @@ class EdenTest {
         val tree = MemoryEden()
         tree.failWrite = "keys/prod.keys.foldcade-partial"
         val keys = "prod-bytes".toByteArray()
-        val source = FakeFiles(listOf(server("https://romm", file(4, "prod.keys", keys.size))), mapOf(4L to keys))
+        val source = FakeFiles(server("https://romm", file(4, "prod.keys", keys.size)), mapOf(4L to keys))
         val warnings = mutableListOf<String>()
         val cache = Files.createTempDirectory("eden-key-write-fail")
         try {
@@ -290,7 +279,7 @@ class EdenTest {
         val tree = MemoryEden()
         tree.files["keys/prod.keys.foldcade-partial"] = "stale".toByteArray()
         val keys = "prod-bytes".toByteArray()
-        val source = FakeFiles(listOf(server("https://romm", file(4, "prod.keys", keys.size))), mapOf(4L to keys))
+        val source = FakeFiles(server("https://romm", file(4, "prod.keys", keys.size)), mapOf(4L to keys))
         val cache = Files.createTempDirectory("eden-key-leftover")
         try {
             installer(tree, source, cache, mutableListOf()).ensure(PKG)
@@ -308,7 +297,7 @@ class EdenTest {
         tree.files["keys/prod.keys"] = ByteArray(0)
         tree.failRename = "keys/prod.keys.foldcade-partial"
         val keys = "prod-bytes".toByteArray()
-        val source = FakeFiles(listOf(server("https://romm", file(4, "prod.keys", keys.size))), mapOf(4L to keys))
+        val source = FakeFiles(server("https://romm", file(4, "prod.keys", keys.size)), mapOf(4L to keys))
         val warnings = mutableListOf<String>()
         val cache = Files.createTempDirectory("eden-key-rename-fail")
         try {
@@ -331,7 +320,7 @@ class EdenTest {
         val older = zipBytes("old.nca" to byteArrayOf(9))
         val newer = zipBytes("new.nca" to nca)
         val source = FakeFiles(
-            listOf(server("https://romm", file(1, "Firmware.1.2.zip", older.size), file(2, "Firmware.1.10.zip", newer.size))),
+            server("https://romm", file(1, "Firmware.1.2.zip", older.size), file(2, "Firmware.1.10.zip", newer.size)),
             mapOf(1L to older, 2L to newer),
         )
         val progress = mutableListOf<RomProgress>()
@@ -356,7 +345,7 @@ class EdenTest {
         tree.files["keys/title.keys"] = "keep".toByteArray()
         val zip = zipBytes("new.nca" to byteArrayOf(1, 2, 3, 4))
         val source = FakeFiles(
-            listOf(server("https://romm", file(2, "Firmware.1.10.zip", zip.size))),
+            server("https://romm", file(2, "Firmware.1.10.zip", zip.size)),
             mapOf(2L to zip),
         )
         val seen = mutableListOf<RomProgress>()
@@ -380,7 +369,7 @@ class EdenTest {
         tree.files[MARKER] = ByteArray(0)
         tree.files["$REGISTERED/old.nca"] = byteArrayOf(7)
         val good = zipBytes("new.nca" to byteArrayOf(1, 2))
-        val source = FakeFiles(listOf(server("https://romm", file(5, "Firmware.3.0.zip", good.size))), mapOf(5L to good))
+        val source = FakeFiles(server("https://romm", file(5, "Firmware.3.0.zip", good.size)), mapOf(5L to good))
         val cache = Files.createTempDirectory("eden-partial")
         try {
             installer(tree, source, cache, mutableListOf()).ensure(PKG)
@@ -406,7 +395,7 @@ class EdenTest {
             tree.files["keys/prod.keys"] = "keep".toByteArray()
             tree.files["keys/title.keys"] = "keep".toByteArray()
             val both = zipBytes("a.nca" to byteArrayOf(1), "b.nca" to byteArrayOf(2))
-            val failing = FakeFiles(listOf(server("https://romm", file(6, "Firmware.4.0.zip", both.size))), mapOf(6L to both))
+            val failing = FakeFiles(server("https://romm", file(6, "Firmware.4.0.zip", both.size)), mapOf(6L to both))
             tree.failWrite = "$REGISTERED/b.nca"
             installer(tree, failing, cache, warnings).ensure(PKG)
             assertFalse(tree.files.containsKey("$REGISTERED/a.nca"))
@@ -424,7 +413,7 @@ class EdenTest {
         tree.files["keys/prod.keys"] = "keep".toByteArray()
         tree.files["keys/title.keys"] = "keep".toByteArray()
         val both = zipBytes("a.nca" to byteArrayOf(1), "b.nca" to byteArrayOf(2))
-        val source = FakeFiles(listOf(server("https://romm", file(6, "Firmware.4.0.zip", both.size))), mapOf(6L to both))
+        val source = FakeFiles(server("https://romm", file(6, "Firmware.4.0.zip", both.size)), mapOf(6L to both))
         tree.failWrite = "$REGISTERED/b.nca"
         tree.failDelete = "$REGISTERED/a.nca"
         val warnings = mutableListOf<String>()
@@ -454,7 +443,7 @@ class EdenTest {
         tree.files["keys/prod.keys"] = "keep".toByteArray()
         tree.files["keys/title.keys"] = "keep".toByteArray()
         val both = zipBytes("a.nca" to byteArrayOf(1), "b.nca" to byteArrayOf(2))
-        val source = FakeFiles(listOf(server("https://romm", file(6, "Firmware.5.0.zip", both.size))), mapOf(6L to both))
+        val source = FakeFiles(server("https://romm", file(6, "Firmware.5.0.zip", both.size)), mapOf(6L to both))
         tree.cancelWrite = "$REGISTERED/b.nca"
         tree.failDelete = "$REGISTERED/a.nca"
         val cache = Files.createTempDirectory("eden-cancel-rollback")
@@ -483,7 +472,7 @@ class EdenTest {
         tree.files["keys/prod.keys"] = "keep".toByteArray()
         tree.files["keys/title.keys"] = "keep".toByteArray()
         val nested = zipBytes("dir/a.nca" to byteArrayOf(1))
-        val source = FakeFiles(listOf(server("https://romm", file(8, "Firmware.1.0.zip", nested.size))), mapOf(8L to nested))
+        val source = FakeFiles(server("https://romm", file(8, "Firmware.1.0.zip", nested.size)), mapOf(8L to nested))
         val warnings = mutableListOf<String>()
         val cache = Files.createTempDirectory("eden-bad-zip")
         try {
@@ -510,7 +499,7 @@ class EdenTest {
         tree.files["keys/prod.keys"] = "keep".toByteArray()
         tree.files["keys/title.keys"] = "keep".toByteArray()
         val zip = zipBytes("from-zip.nca" to byteArrayOf(1))
-        val source = FakeFiles(listOf(server("https://romm", file(2, "Firmware.9.0.zip", zip.size))), mapOf(2L to zip))
+        val source = FakeFiles(server("https://romm", file(2, "Firmware.9.0.zip", zip.size)), mapOf(2L to zip))
         source.beforeWrite = { tree.files["$REGISTERED/already.nca"] = byteArrayOf(5) }
         val cache = Files.createTempDirectory("eden-race")
         try {
@@ -527,7 +516,7 @@ class EdenTest {
     @Test
     fun aCancelledInstallPropagatesAndRemovesTheTempFile() = runBlocking {
         val tree = MemoryEden()
-        val source = FakeFiles(listOf(server("https://romm", file(3, "prod.keys", 4))), emptyMap())
+        val source = FakeFiles(server("https://romm", file(3, "prod.keys", 4)), emptyMap())
         source.cancel = true
         val cache = Files.createTempDirectory("eden-cancel")
         try {
@@ -547,7 +536,7 @@ class EdenTest {
         val keys = "one".toByteArray()
         val release = CompletableDeferred<Unit>()
         val entered = AtomicInteger(0)
-        val source = FakeFiles(listOf(server("https://romm", file(1, "prod.keys", keys.size))), mapOf(1L to keys))
+        val source = FakeFiles(server("https://romm", file(1, "prod.keys", keys.size)), mapOf(1L to keys))
         source.onDownload = {
             entered.incrementAndGet()
             release.await()
@@ -575,7 +564,7 @@ class EdenTest {
         tree.files["keys/prod.keys"] = "keep".toByteArray()
         tree.files["$REGISTERED/already.nca"] = byteArrayOf(3)
         val title = "title".toByteArray()
-        val source = FakeFiles(listOf(server("https://romm", file(7, "title.keys", title.size))), mapOf(7L to title))
+        val source = FakeFiles(server("https://romm", file(7, "title.keys", title.size)), mapOf(7L to title))
         val cache = Files.createTempDirectory("eden-title-only")
         try {
             installer(tree, source, cache, mutableListOf()).ensure(PKG)
@@ -595,7 +584,7 @@ class EdenTest {
         val title = "title-bytes".toByteArray()
         val zip = zipBytes("new.nca" to byteArrayOf(1, 2))
         val source = FakeFiles(
-            listOf(server("https://romm", file(7, "title.keys", title.size), file(2, "Firmware.1.0.zip", zip.size))),
+            server("https://romm", file(7, "title.keys", title.size), file(2, "Firmware.1.0.zip", zip.size)),
             mapOf(7L to title, 2L to zip),
         )
         val cache = Files.createTempDirectory("eden-title-with-fw")
@@ -615,13 +604,11 @@ class EdenTest {
         val tree = edenWithKeys()
         val bad = zipBytes("dir/a.nca" to byteArrayOf(1))
         val good = zipBytes("ok.nca" to byteArrayOf(2, 3))
-        val later = zipBytes("later.nca" to byteArrayOf(9))
         val badFile = file(9, "Firmware.2.0.zip", bad.size, md5 = "bad")
         val goodFile = file(3, "Firmware.1.0.zip", good.size, md5 = "good")
-        val laterFile = file(1, "Firmware.9.0.zip", later.size, md5 = "later")
         val source = FakeFiles(
-            listOf(server("https://romm", badFile, goodFile), server("https://other", laterFile)),
-            mapOf(9L to bad, 3L to good, 1L to later),
+            server("https://romm", badFile, goodFile),
+            mapOf(9L to bad, 3L to good),
         )
         val refused = linkedSetOf<String>()
         val warnings = mutableListOf<String>()
@@ -639,18 +626,10 @@ class EdenTest {
             installing.ensure(PKG)
             assertEquals(listOf(3L), source.asked)
             assertTrue(byteArrayOf(2, 3).contentEquals(tree.files["$REGISTERED/ok.nca"]))
-            assertFalse(tree.files.containsKey("$REGISTERED/later.nca"))
             assertEquals(setOf(refusedFirmwareKey("https://romm", badFile)), refused)
 
             tree.files.remove("$REGISTERED/ok.nca")
             refused += refusedFirmwareKey("https://romm", goodFile)
-            source.asked.clear()
-            installing.ensure(PKG)
-            assertEquals(listOf(1L), source.asked)
-            assertTrue(byteArrayOf(9).contentEquals(tree.files["$REGISTERED/later.nca"]))
-
-            tree.files.remove("$REGISTERED/later.nca")
-            refused += refusedFirmwareKey("https://other", laterFile)
             source.asked.clear()
             installing.ensure(PKG)
             assertTrue(source.asked.isEmpty())
@@ -668,7 +647,7 @@ class EdenTest {
         val brokenFile = file(9, "Firmware.2.0.zip", broken.size, md5 = "broken")
         val goodFile = file(3, "Firmware.1.0.zip", good.size, md5 = "good")
         val source = FakeFiles(
-            listOf(server("https://romm", brokenFile, goodFile)),
+            server("https://romm", brokenFile, goodFile),
             mapOf(9L to broken, 3L to good),
         )
         val refused = linkedSetOf<String>()
@@ -695,7 +674,7 @@ class EdenTest {
     fun aFirmwareHashMismatchIsRemembered() = runBlocking {
         val tree = edenWithKeys()
         val listed = file(4, "Firmware.1.0.zip", 340, md5 = "abc")
-        val source = FakeFiles(listOf(server("https://romm", listed)), emptyMap())
+        val source = FakeFiles(server("https://romm", listed), emptyMap())
         source.downloadError = {
             RommFirmwareMismatch()
         }
@@ -722,7 +701,7 @@ class EdenTest {
         val tree = edenWithKeys()
         val zip = zipBytes("ok.nca" to byteArrayOf(1, 2))
         val listed = file(4, "Firmware.1.0.zip", zip.size, md5 = "abc")
-        val source = FakeFiles(listOf(server("https://romm", listed)), mapOf(4L to zip))
+        val source = FakeFiles(server("https://romm", listed), mapOf(4L to zip))
         source.downloadError = { IOException("offline") }
         val refused = linkedSetOf<String>()
         val cache = Files.createTempDirectory("eden-fw-network")
@@ -750,7 +729,7 @@ class EdenTest {
         val tree = edenWithKeys()
         val zip = zipBytes("ok.nca" to byteArrayOf(8))
         val listed = file(4, "Firmware.1.0.zip", zip.size, md5 = "abc")
-        val source = FakeFiles(listOf(server("https://romm", listed)), mapOf(4L to zip))
+        val source = FakeFiles(server("https://romm", listed), mapOf(4L to zip))
         source.downloadError = { RommResponseException("server returned 206 without a partial file") }
         val refused = linkedSetOf<String>()
         val cache = Files.createTempDirectory("eden-fw-206")
@@ -777,7 +756,7 @@ class EdenTest {
         val bad = zipBytes("readme.txt" to byteArrayOf(1))
         val good = zipBytes("ok.nca" to byteArrayOf(4))
         val listed = file(4, "Firmware.3.0.zip", bad.size, md5 = "old")
-        val source = FakeFiles(listOf(server("https://romm", listed)), mapOf(4L to bad))
+        val source = FakeFiles(server("https://romm", listed), mapOf(4L to bad))
         val refused = linkedSetOf<String>()
         val cache = Files.createTempDirectory("eden-refuse-md5")
         try {
@@ -788,7 +767,7 @@ class EdenTest {
             assertFalse(tree.files.keys.any { it.endsWith(".nca") })
 
             val replaced = listed.copy(md5Hash = "new", fileSizeBytes = good.size.toLong())
-            source.servers = listOf(server("https://romm", replaced))
+            source.server = server("https://romm", replaced)
             source.bodies = mapOf(4L to good)
             source.asked.clear()
             installing.ensure(PKG)
@@ -806,7 +785,7 @@ class EdenTest {
         val tree = edenWithKeys()
         val zip = zipBytes("a.nca" to byteArrayOf(1))
         val listed = file(6, "Firmware.4.0.zip", zip.size, md5 = "abc")
-        val source = FakeFiles(listOf(server("https://romm", listed)), mapOf(6L to zip))
+        val source = FakeFiles(server("https://romm", listed), mapOf(6L to zip))
         tree.failWrite = "$REGISTERED/a.nca"
         val refused = linkedSetOf<String>()
         val cache = Files.createTempDirectory("eden-fw-write")
@@ -834,7 +813,7 @@ class EdenTest {
         val tree = edenWithKeys()
         val zip = zipBytes("a.nca" to byteArrayOf(1))
         val listed = file(4, "Firmware.5.0.zip", zip.size, md5 = "abc")
-        val source = FakeFiles(listOf(server("https://romm", listed)), mapOf(4L to zip))
+        val source = FakeFiles(server("https://romm", listed), mapOf(4L to zip))
         source.cancel = true
         val refused = linkedSetOf<String>()
         val cache = Files.createTempDirectory("eden-fw-cancel")
@@ -859,7 +838,7 @@ class EdenTest {
 
     @Test
     fun noFolderMeansNothingIsAsked() = runBlocking {
-        val source = FakeFiles(listOf(server("https://romm", file(1, "prod.keys", 1))), mapOf(1L to byteArrayOf(1)))
+        val source = FakeFiles(server("https://romm", file(1, "prod.keys", 1)), mapOf(1L to byteArrayOf(1)))
         val cache = Files.createTempDirectory("eden-none")
         try {
             EdenInstaller(openTree = { null }, source = source, cacheDirectory = { cache }).ensure(PKG)
@@ -877,7 +856,7 @@ class EdenTest {
             val keyBytes = "prod-bytes".toByteArray()
             val zip = zipBytes("ok.nca" to byteArrayOf(1))
             val source = FakeFiles(
-                listOf(server("https://romm", file(4, "prod.keys", keyBytes.size), file(2, "Firmware.1.0.zip", zip.size))),
+                server("https://romm", file(4, "prod.keys", keyBytes.size), file(2, "Firmware.1.0.zip", zip.size)),
                 mapOf(4L to keyBytes, 2L to zip),
             )
             // The key lands, then the firmware download is cancelled.
@@ -904,7 +883,7 @@ class EdenTest {
             }
             val keyBytes = "prod-bytes".toByteArray()
             val keySource = FakeFiles(
-                listOf(server("https://romm", file(4, "prod.keys", keyBytes.size))),
+                server("https://romm", file(4, "prod.keys", keyBytes.size)),
                 mapOf(4L to keyBytes),
             )
             assertTrue(installer(keysOnly, keySource, cache, mutableListOf()).ensure(PKG).added)
@@ -913,7 +892,7 @@ class EdenTest {
             val firmwareOnly = edenWithKeys()
             val zip = zipBytes("ok.nca" to byteArrayOf(1, 2))
             val firmwareSource = FakeFiles(
-                listOf(server("https://romm", file(2, "Firmware.1.0.zip", zip.size))),
+                server("https://romm", file(2, "Firmware.1.0.zip", zip.size)),
                 mapOf(2L to zip),
             )
             assertTrue(installer(firmwareOnly, firmwareSource, cache, mutableListOf()).ensure(PKG).added)
@@ -923,13 +902,11 @@ class EdenTest {
             val title = "title-bytes".toByteArray()
             val bothZip = zipBytes("both.nca" to byteArrayOf(3))
             val bothSource = FakeFiles(
-                listOf(
-                    server(
-                        "https://romm",
-                        file(4, "prod.keys", keyBytes.size),
-                        file(7, "title.keys", title.size),
-                        file(2, "Firmware.2.0.zip", bothZip.size),
-                    ),
+                server(
+                    "https://romm",
+                    file(4, "prod.keys", keyBytes.size),
+                    file(7, "title.keys", title.size),
+                    file(2, "Firmware.2.0.zip", bothZip.size),
                 ),
                 mapOf(4L to keyBytes, 7L to title, 2L to bothZip),
             )
@@ -943,13 +920,13 @@ class EdenTest {
                 files["keys/title.keys"] = "keep".toByteArray()
                 files["$REGISTERED/already.nca"] = byteArrayOf(1)
             }
-            val quiet = FakeFiles(listOf(server("https://romm", file(4, "prod.keys", 1))), mapOf(4L to byteArrayOf(1)))
+            val quiet = FakeFiles(server("https://romm", file(4, "prod.keys", 1)), mapOf(4L to byteArrayOf(1)))
             assertFalse(installer(full, quiet, cache, mutableListOf()).ensure(PKG).added)
             assertEquals(0, quiet.listings)
 
             val failed = MemoryEden().apply { files["$REGISTERED/already.nca"] = byteArrayOf(1) }
             val failSource = FakeFiles(
-                listOf(server("https://romm", file(3, "prod.keys", 4))),
+                server("https://romm", file(3, "prod.keys", 4)),
                 emptyMap(),
                 fail = setOf(3),
             )
@@ -959,7 +936,7 @@ class EdenTest {
             val refusedTree = edenWithKeys()
             val bad = zipBytes("dir/a.nca" to byteArrayOf(1))
             val badFile = file(9, "Firmware.2.0.zip", bad.size, md5 = "bad")
-            val refuseSource = FakeFiles(listOf(server("https://romm", badFile)), mapOf(9L to bad))
+            val refuseSource = FakeFiles(server("https://romm", badFile), mapOf(9L to bad))
             val refused = linkedSetOf<String>()
             assertFalse(installer(refusedTree, refuseSource, cache, mutableListOf(), refused).ensure(PKG).added)
             assertEquals(setOf(refusedFirmwareKey("https://romm", badFile)), refused)
@@ -970,7 +947,7 @@ class EdenTest {
             val mixedBad = zipBytes("readme.txt" to byteArrayOf(1))
             val mixedZip = file(9, "Firmware.1.0.zip", mixedBad.size, md5 = "bad")
             val mixedSource = FakeFiles(
-                listOf(server("https://romm", file(4, "prod.keys", mixedKeys.size), mixedZip)),
+                server("https://romm", file(4, "prod.keys", mixedKeys.size), mixedZip),
                 mapOf(4L to mixedKeys, 9L to mixedBad),
             )
             val mixedRefused = linkedSetOf<String>()
@@ -978,7 +955,7 @@ class EdenTest {
             assertTrue(mixedKeys.contentEquals(mixed.files["keys/prod.keys"]))
             assertTrue(mixedRefused.isNotEmpty())
 
-            val absent = FakeFiles(listOf(server("https://romm", file(1, "prod.keys", 1))), mapOf(1L to byteArrayOf(1)))
+            val absent = FakeFiles(server("https://romm", file(1, "prod.keys", 1)), mapOf(1L to byteArrayOf(1)))
             val none = EdenInstaller(openTree = { null }, source = absent, cacheDirectory = { cache }).ensure(PKG)
             assertFalse(none.added)
             assertTrue(absent.asked.isEmpty())
@@ -1018,9 +995,6 @@ class EdenTest {
         FirmwareSummary(id, 18, name, size.toLong(), md5)
 
     private fun server(origin: String, vararg files: FirmwareSummary, failed: Boolean = false) =
-        EdenServerFiles(origin, files.toList(), failed)
-
-    private fun romm(origin: String, vararg files: FirmwareSummary, failed: Boolean = false) =
         RommSwitchFirmware(origin, files.toList(), failed)
 
     private fun zipBytes(vararg entries: Pair<String, ByteArray>): ByteArray {
@@ -1101,11 +1075,11 @@ class EdenTest {
     }
 
     private class FakeFiles(
-        servers: List<EdenServerFiles>,
+        server: RommSwitchFirmware?,
         bytes: Map<Long, ByteArray>,
         fail: Set<Long> = emptySet(),
     ) : EdenFileSource {
-        var servers: List<EdenServerFiles> = servers
+        var server: RommSwitchFirmware? = server
         var bodies: Map<Long, ByteArray> = bytes
         var fail: Set<Long> = fail
         val asked = mutableListOf<Long>()
@@ -1116,9 +1090,9 @@ class EdenTest {
         var beforeDownload: () -> Unit = {}
         var onDownload: suspend () -> Unit = {}
 
-        override suspend fun servers(): List<EdenServerFiles> {
+        override suspend fun server(): RommSwitchFirmware? {
             listings++
-            return servers
+            return server
         }
 
         override suspend fun download(

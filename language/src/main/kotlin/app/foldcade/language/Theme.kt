@@ -142,7 +142,6 @@ object Copy {
     const val artKeyRefused = "SteamGridDB didn’t accept this key."
     const val artKeyUnreachable = "Couldn’t reach SteamGridDB. Try again in a moment."
     const val rommTokenHelp = "RomM uses a client API token or a device-code token. Foldcade stores the token and does not store a password."
-    const val rommSameServer = "That server is already connected."
     const val rommDeviceCode = "Approve this code on your phone, or paste a token instead."
     const val rommCodeExpired = "This code expired. Get a new code or paste a token."
     const val rommCodeDenied = "Approval was declined. Get a new code or paste a token."

@@ -16,24 +16,20 @@ import java.text.Normalizer
 import java.util.Locale
 
 internal class RommMetadata(
-    private val resolve: (String) -> RommGate?,
+    private val gate: RommGate,
 ) : MetadataProvider {
-    constructor(gate: RommGate) : this({ backendId ->
-        if (isRommInstance(backendId)) gate else null
-    })
-
     override val id = ROMM_METADATA_ID
     override val displayName = "RomM metadata"
 
     override fun cached(game: Game): GameMeta? {
-        val gate = resolve(game.backendId) ?: return null
+        if (game.backendId != ROMM_LIBRARY_ID) return null
         val wiring = gate.peek() ?: return null
         val rom = gate.catalog(wiring).rom(game.remoteKey) ?: return null
         return rom.toMeta(wiring.origin)
     }
 
     override suspend fun fetch(game: Game): GameMeta? {
-        val gate = resolve(game.backendId) ?: return null
+        if (game.backendId != ROMM_LIBRARY_ID) return null
         cached(game)?.let { return it }
         val romId = game.remoteKey.toLongOrNull()?.takeIf { it >= 1 }
         return translate {
@@ -58,7 +54,7 @@ internal class RommMetadata(
      * user has earned when RomM knows. A ROM RomM matched to no game has none.
      */
     override suspend fun achievements(game: Game): GameAchievements? {
-        val gate = resolve(game.backendId) ?: return null
+        if (game.backendId != ROMM_LIBRARY_ID) return null
         val romId = game.remoteKey.toLongOrNull()?.takeIf { it >= 1 } ?: return null
         return translate {
             gate.session { wiring, ops ->

@@ -71,21 +71,6 @@ class SameGamesTest {
     }
 
     @Test
-    fun threeCopiesAreOneTile() {
-        val second = "lib:romm#2:5"
-        val fold = fold(
-            listOf(rom(second, "B"), rom(local, "B"), rom(server, "B")),
-            mapOf(
-                local to SameSource(key, 3, true),
-                server to SameSource(key, 1, true),
-                second to SameSource(key, 2, true),
-            ),
-        )
-        assertEquals(listOf(tile), fold.items.map { it.id })
-        assertEquals(listOf(server, second, local), fold.members.getValue(tile))
-    }
-
-    @Test
     fun aTileOutlivesACopyThatIsNotListed() {
         val aliases = mapOf(local to tile, server to tile)
         val alone = fold(listOf(rom(local, "RF4")), mapOf(local to SameSource(key, 2, true)), aliases)

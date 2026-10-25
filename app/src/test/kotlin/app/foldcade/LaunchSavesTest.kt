@@ -74,44 +74,6 @@ class LaunchSavesTest {
     }
 
     @Test
-    fun aServerThatAlreadyHoldsTheSaveKeepsItOnADeviceWithNone() = runBlocking {
-        val other = RecordingLibrary("other")
-        plugins.register(object : PluginEntry {
-            override val apiVersion = PLUGIN_API_VERSION
-            override val apiMinor = PLUGIN_API_MINOR
-            override val libraries: List<LibraryBackend> = listOf(other)
-        })
-        val second = Game("other", "4", "nintendo-ds", Availability.Cached, "Tetris")
-        other.held = listOf("sav")
-        other.toPlace = "kept on the second server"
-        val route = GameRoute("tile", play, owner, servers = listOf(owner, second))
-        val prepared = LaunchSaves(saves, plugins) { awaiting += it }.prepare(route, Melon, local)
-        assertEquals(second, prepared.owner)
-        assertEquals(listOf("prepareSaves:4"), other.calls)
-        assertEquals(emptyList<String>(), server.calls)
-    }
-
-    @Test
-    fun aSaveOnlyTheSecondServerHasStillLoadsOnADeviceWithNone() = runBlocking {
-        val other = RecordingLibrary("other")
-        plugins.register(object : PluginEntry {
-            override val apiVersion = PLUGIN_API_VERSION
-            override val apiMinor = PLUGIN_API_MINOR
-            override val libraries: List<LibraryBackend> = listOf(other)
-        })
-        val second = Game("other", "4", "nintendo-ds", Availability.Cached, "Tetris")
-        // Neither keeps a save here yet. Only the second server's sync brings one.
-        other.toPlace = "from the second server"
-        server.toPlace = null
-        val prepared = LaunchSaves(saves, plugins) { awaiting += it }
-            .prepare(GameRoute("tile", play, owner, servers = listOf(owner, second)), Melon, local)
-        assertEquals(second, prepared.owner)
-        assertEquals(listOf("prepareSaves:12"), server.calls)
-        assertEquals(listOf("prepareSaves:4"), other.calls)
-        assertEquals("from the second server", String(docs.files.getValue("$SAVES/Tetris DS (USA).sav")))
-    }
-
-    @Test
     fun cardSetupStartsThePlayerFreshEvenWhenNoSaveIsPlaced() = runBlocking {
         val player = object : Player by Melon {
             override val id = "armsx2"

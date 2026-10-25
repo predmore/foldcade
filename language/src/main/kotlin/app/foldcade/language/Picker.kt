@@ -802,12 +802,16 @@ fun connectFields(kind: ConnectKind = ConnectKind.Romm, retry: Boolean = false):
 fun libraryRows(
     signedIn: List<SignedInBackend> = emptyList(),
     folders: List<LibraryFolder> = emptyList(),
+    rommSaved: Boolean = signedIn.any { it.pluginId == "romm" },
 ): List<Row> {
+    val connections = if (rommSaved && signedIn.none { it.pluginId == "romm" }) {
+        listOf(SignedInBackend("romm", "RomM")) + signedIn
+    } else signedIn
     // Removing a folder comes after adding one, so the first row is never the one that drops a library.
-    return signedIn.map {
-        if (it.pluginId == "romm" || it.pluginId.startsWith("romm#")) Row.RommConnection(it.pluginId, it.label)
+    return connections.map {
+        if (it.pluginId == "romm") Row.RommConnection(it.pluginId, it.label)
         else Row.SignOut(it.pluginId, it.label)
-    } + listOf(Row.AddFolder, Row.AddRomm) +
+    } + listOfNotNull(Row.AddFolder, Row.AddRomm.takeIf { connections.none { it.pluginId == "romm" } }) +
         folders.map { Row.ForgetFolder(it.uri, it.label) }
 }
 
@@ -1181,7 +1185,7 @@ sealed interface Effect {
     data object TryAgain : Effect
     data object AddFolder : Effect
     data object SyncLibrary : Effect
-    data class EditRommConnection(val pluginId: String) : Effect
+    data object EditRommConnection : Effect
 
     /** The connect form for a new server. */
     data object OpenAddRomm : Effect
@@ -1372,6 +1376,8 @@ data class PickerModel(
     val sort: LibrarySort = LibrarySort.Listed,
     val recentFirst: List<Int> = emptyList(),
     val signedIn: List<SignedInBackend> = emptyList(),
+    /** A saved address still has connection actions when its token needs recovery. */
+    val rommSaved: Boolean = signedIn.any { it.pluginId == "romm" },
     /** The folders the library reads. Each has a row to remove it. */
     val folders: List<LibraryFolder> = emptyList(),
     val connectOrigin: String = "",
@@ -1422,8 +1428,6 @@ data class PickerModel(
     /** Moonlight's computers, each with a switch in Settings › Library. */
     val streamHosts: List<StreamHostSetting> = emptyList(),
     val connectKind: ConnectKind = ConnectKind.Romm,
-    /** The open RomM form is adding a server besides the default instance. */
-    val connectAnother: Boolean = false,
     /** Both screens' brightness as a slider position, 0 to 100. See [brightnessLevel]. */
     val brightness: Int = 50,
     /** Android lets Foldcade write the brightness setting. */
@@ -1798,7 +1802,6 @@ private fun activate(model: PickerModel, screen: HostScreen, onBottom: Boolean =
                         connectScreen = screen,
                         connectIndex = 0,
                         connectKind = ConnectKind.Romm,
-                        connectAnother = false,
                         connectReturnPanel = null,
                     ) to Effect.OpenAddRomm
                 }
@@ -2148,9 +2151,8 @@ private fun activateRow(
             connectScreen = screen,
             connectIndex = 0,
             connectKind = ConnectKind.Romm,
-            connectAnother = false,
             connectReturnPanel = panel,
-        ) to Effect.EditRommConnection(row.pluginId)
+        ) to Effect.EditRommConnection
         Row.AddRomm -> model.copy(
             panel = null,
             focus = panel.grid,
@@ -2160,7 +2162,6 @@ private fun activateRow(
             connectIndex = 0,
             connectKind = ConnectKind.Romm,
             connectHint = null,
-            connectAnother = model.signedIn.any { it.pluginId == "romm" },
             connectReturnPanel = null,
         ) to Effect.OpenAddRomm
         is Row.SignOut -> model.copy(panel = null, focus = panel.grid) to Effect.ForgetCredentials(row.pluginId)
