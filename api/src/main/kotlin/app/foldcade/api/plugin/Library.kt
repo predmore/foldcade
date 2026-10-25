@@ -91,7 +91,7 @@ interface LibraryBackend {
      */
     suspend fun unsyncedSaves(): Set<String> = emptySet()
 
-    /** Every server version for this game, newest first. Added in API minor 15. */
+    /** Every server version for this game, newest first. Added in API minor 16. */
     suspend fun serverSaves(game: Game, player: Player? = null): List<ServerSave> = emptyList()
 
     /** IDs of this library's own backups in its most recent [serverSaves] listing. No I/O. */
@@ -110,7 +110,7 @@ interface LibraryBackend {
      * The host captures current player bytes first. [beforeCommit] persists a fresh-load marker
      * after all checks, under the library's save lock, immediately before promotion. A definitive
      * refusal is [PluginException.SaveChoiceRefused]; an uncertain commit must not use that failure.
-     * Incomplete syncs refuse the choice. Added in API minor 15.
+     * Incomplete syncs refuse the choice. Added in API minor 16.
      */
     suspend fun playServerSave(game: Game, player: Player, saveId: String, beforeCommit: () -> Unit = {}): List<PlacedSave> =
         throw PluginException.Unavailable("Choosing a server save is not supported")
