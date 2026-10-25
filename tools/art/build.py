@@ -5,7 +5,7 @@ import numpy as np, cairosvg
 from PIL import Image, ImageDraw, ImageFont, ImageFilter
 from art import *
 from palette import *
-import icons, symbols, appicon, sprites
+import icons, symbols, sprites
 
 OUT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 RES = f"{OUT}/res"; SVG = f"{OUT}/svg"; PREV = f"{OUT}/previews"
@@ -32,49 +32,7 @@ ctrl, stat = symbols.controller_assets(), symbols.status_assets()
 made = {a.name: a for a, _, _ in icons.assets()}
 mk = [made[f"mark_{n}"] for n in ("nintendo_3ds", "game_boy", "snes", "library", "playstation_2", "cloud")]
 
-# ---------------- app icon (concept A) ----------------
-K = 0.86
-fg_layers = []
-for l in appicon.concept_a():
-    if l.scale and isinstance(l.fill, Rad):        # squashed halo: rebuild at scaled centre/radius
-        sx, sy, cx, cy = l.scale; r = l.fill.r * K
-        ncx, ncy = 54 + (cx - 54) * K, 54 + (cy - 54) * K
-        fg_layers.append(halo(ncx, ncy, r, l.fill.stops[0][1], l.fill.stops[0][2], sx=sx, sy=sy, core=0.1))
-    else:
-        l.scale = (K, K, 54, 54); fg_layers.append(l)
-mono_layers = []
-for l in appicon.concept_a(mono=True):
-    l.scale = (K, K, 54, 54); mono_layers.append(l)
-fg = Asset("ic_launcher_foreground", 108, 108, fg_layers, note="Adaptive icon foreground: open clamshell in Afterglow light")
-bgA = Asset("ic_launcher_background", 108, 108, [L("M0,0H108V108H0Z", fill="#000000")], note="Adaptive icon background: true black")
-mono = Asset("ic_launcher_monochrome", 108, 108, mono_layers, note="Adaptive icon monochrome layer (themed icons)")
-for a in (fg, bgA, mono): write(a, "app-icon")
-os.makedirs(f"{RES}/mipmap-anydpi-v26", exist_ok=True)
-adaptive = ('<?xml version="1.0" encoding="utf-8"?>\n<adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">\n'
-            '    <background android:drawable="@drawable/ic_launcher_background" />\n'
-            '    <foreground android:drawable="@drawable/ic_launcher_foreground" />\n'
-            '    <monochrome android:drawable="@drawable/ic_launcher_monochrome" />\n</adaptive-icon>\n')
-for n in ("ic_launcher", "ic_launcher_round"):
-    open(f"{RES}/mipmap-anydpi-v26/{n}.xml", "w").write(adaptive)
-full = png(Asset("x", 108, 108, fg.layers), 1728, bg="#000000")   # 16x
-def view(im):  # the 72/108 a launcher shows
-    s = im.size[0]; c = round(s * 18 / 108); return im.crop((c, c, s - c, s - c))
-def mask(im, shape, ss=4):
-    s = im.size[0]; m = Image.new("L", (s * ss, s * ss), 0); d = ImageDraw.Draw(m)
-    if shape == "circle": d.ellipse([0, 0, s * ss - 1, s * ss - 1], fill=255)
-    else: d.rounded_rectangle([0, 0, s * ss - 1, s * ss - 1], radius=int(s * ss * 0.22), fill=255)
-    m = m.resize((s, s), Image.LANCZOS); out = Image.new("RGBA", im.size, (0, 0, 0, 0)); out.paste(im, (0, 0), m); return out
-v = view(full)
-for dens, px in (("mdpi", 48), ("hdpi", 72), ("xhdpi", 96), ("xxhdpi", 144), ("xxxhdpi", 192)):
-    os.makedirs(f"{RES}/mipmap-{dens}", exist_ok=True)
-    pad = round(px / 48)   # legacy icons leave 1dp of breathing room
-    body = v.resize((px - 2 * pad, px - 2 * pad), Image.LANCZOS)
-    for n, shp in (("ic_launcher", "square"), ("ic_launcher_round", "circle")):
-        c = Image.new("RGBA", (px, px), (0, 0, 0, 0)); m = mask(body, shp); c.paste(m, (pad, pad), m)
-        c.save(f"{RES}/mipmap-{dens}/{n}.png", optimize=True)
-os.makedirs(f"{OUT}/play", exist_ok=True)
-c = round(1728 * 9 / 108)
-full.crop((c, c, 1728 - c, 1728 - c)).resize((512, 512), Image.LANCZOS).convert("RGB").save(f"{OUT}/play/ic_launcher-playstore.png")
+# The app icon has its own script: tools/art/appicon.py
 
 # ---------------- preview glow ----------------
 # Afterglow draws its glows natively and its scenes in AGSL, so the pack ships no sprites or
