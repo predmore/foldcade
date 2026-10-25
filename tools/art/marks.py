@@ -215,29 +215,33 @@ def nintendo_switch(c):
             *stick(8.6, 24.5, 2.4, JOY_L), *[control(d, sym=None) for d in diamond(8.6, 38, 2.5, 1.1)],
             *[control(d, sym=None) for d in diamond(55.4, 25.5, 2.5, 1.1)], *stick(55.4, 38.5, 2.4, c)]
 
+# The PlayStation controller's outline, for apps that draw one (PS Remote Play).
 PS = ("M17,17 H47 C53,17 56.5,21 58,27 L61.6,46 C62.6,52 59.4,56 55,56 C51,56 49,53 47.6,49 L46.6,46 H17.4 "
       "L16.4,49 C15,53 13,56 9,56 C4.6,56 1.4,52 2.4,46 L6,27 C7.5,21 11,17 17,17 Z")
 
 def playstation(c):
-    """PlayStation-style: the first controller, before it had sticks."""
-    return [shadow(32, 58, 28, 3.4), body(PS, c), control(plus(17, 29, 5.2, 3.6)),
-            *[control(d, tone(c, -0.45)) for d in diamond(47, 29, 4.6, 2.4)],
-            control(rr(26.5, 30.5, 4.8, 2.4, 1.2)), control(rr(32.7, 30.5, 4.8, 2.4, 1.2))]
+    """PlayStation-style: the grey console from above, its round lid, the Open button beside it, Power and Reset behind.
+    The three PlayStations' controllers are alike, so they are drawn as their consoles."""
+    return [shadow(32, 53, 28, 3), body(rr(3, 13, 58, 37, 5), c),
+            recess(ci(27, 31.5, 15.5), c), body(ci(27, 31.5, 14), tone(c, 0.12), gloss=0.35, sym=1),
+            control(ci(52.5, 33, 4.5), tone(c, -0.35)),
+            control(ci(48.5, 18.5, 2.4), tone(c, -0.35), sym=None), control(ci(56, 18.5, 2.4), tone(c, -0.35), sym=None),
+            recess(rr(44, 44, 13, 2.6, 1.2), c, sym=None)]
 
 def playstation_2(c):
-    """PlayStation 2-style: the dual-stick controller."""
-    return [shadow(32, 58, 28, 3.4), body(PS, c), control(plus(16.5, 27, 4.8, 3.4)),
-            *[control(d, tone(c, -0.45)) for d in diamond(47.5, 27, 4.4, 2.3)],
-            control(rr(27, 25.8, 4.2, 2.2, 1.1)), control(rr(32.8, 25.8, 4.2, 2.2, 1.1)),
-            *stick(24.5, 37.5, 3.6, c), *stick(39.5, 37.5, 3.6, c)]
+    """PlayStation 2-style: the console lying down, from the front: the tray in the upper tier, grooves at its left,
+    the ports in the lower tier set back under it."""
+    out = [shadow(32, 50, 27, 3), body(rr(7, 34, 50, 13, (1, 1, 3, 3)), tone(c, -0.25), gloss=0.15),
+           body(rr(4, 19, 56, 15, (3, 3, 1, 1)), c)]
+    out += [recess(rr(x, 21.5, 2.6, 10, 1.3), c) for x in (8, 12.5, 17)]
+    return out + [recess(rr(24, 25, 31, 3, 1.5), c), control(rr(10, 38, 6, 4.5, 1.2)), control(rr(19, 38, 6, 4.5, 1.2)),
+                  control(ci(51, 40.5, 2.2), tone(c, 0.4))]
 
 def playstation_3(c):
-    """PlayStation 3-style: the dual-stick controller with a round button where Select and Start sat, and four player lights."""
-    return [shadow(32, 58, 28, 3.4), body(PS, c), control(plus(16.5, 27, 4.8, 3.4)),
-            *[control(d, tone(c, -0.45)) for d in diamond(47.5, 27, 4.4, 2.3)],
-            *[control(ci(x, 20.2, 0.75), tone(c, -0.45), sym=None) for x in (26, 30, 34, 38)],
-            control(ci(32, 27.5, 2.6), tone(c, -0.45)),
-            *stick(24.5, 37.5, 3.6, c), *stick(39.5, 37.5, 3.6, c)]
+    """PlayStation 3-style: the first console from the front, its top swelling into a curve, a disc slot across it."""
+    shell = "M4,46 V35 Q4,31 7.5,29.5 Q32,13 56.5,29.5 Q60,31 60,35 V46 Q60,50 56,50 H8 Q4,50 4,46 Z"
+    return [shadow(32, 53, 28, 3), body(shell, c), recess(rr(13, 33, 38, 3, 1.5), c),
+            control(ci(50.5, 42.5, 1.9), tone(c, 0.45)), control(ci(44.5, 42.5, 1.9), tone(c, 0.45))]
 
 def psp(c):
     """PSP-style: a long handheld with a wide screen."""
@@ -245,13 +249,25 @@ def psp(c):
             control(plus(8.8, 29.5, 3.4, 2.4)), control(ci(8.8, 38.6, 1.9)),
             *[control(d) for d in diamond(55.2, 30.5, 2.9, 1.5)]]
 
+GENESIS = ("M14,15 Q23,13 32,18.5 Q41,13 50,15 Q61,18 61,31 Q61,46 50,48 Q41,49.5 32,44 Q23,49.5 14,48 "
+           "Q3,46 3,31 Q3,18 14,15 Z")
+
+def _genesis_pad(c, t=lambda d: d):
+    return [body(t(GENESIS), c), control(t(ci(16, 31, 7.5))), recess(t(plus(16, 31, 5.2, 2.2)), RUBBER),
+            *[control(t(ci(x, y, 3.3))) for x, y in ((40.5, 37), (47.2, 33), (54, 29))],
+            control(t(rr(29.5, 25.5, 5, 2.4, 1.2)))]
+
 def genesis(c):
     """Genesis-style: a rounded controller with a round d-pad and three buttons in a row."""
-    shell = ("M14,15 Q23,13 32,18.5 Q41,13 50,15 Q61,18 61,31 Q61,46 50,48 Q41,49.5 32,44 Q23,49.5 14,48 "
-             "Q3,46 3,31 Q3,18 14,15 Z")
-    return [shadow(32, 51, 28, 3), body(shell, c), control(ci(16, 31, 7.5)), recess(plus(16, 31, 5.2, 2.2), RUBBER),
-            *[control(ci(x, y, 3.3)) for x, y in ((40.5, 37), (47.2, 33), (54, 29))],
-            control(rr(29.5, 25.5, 5, 2.4, 1.2))]
+    return [shadow(32, 51, 28, 3), *_genesis_pad(c)]
+
+def sega_cd(c):
+    """Sega CD: a disc rising over the Genesis pad, clear of it, so the symbol reads as two things."""
+    hole = circle_ccw(46, 13.5, 2.6)
+    return [shadow(30, 57, 26, 3), body(ci(46, 13.5, 12) + hole, SILVER, gloss=0.2),
+            paint(L(ci(46, 13.5, 12) + hole, fill=_shine(34, 1.5, 58, 25.5))),
+            recess(ci(46, 13.5, 4.6) + hole, SILVER),
+            *_genesis_pad(c, lambda d: xf(d, s=0.82, dx=-3, dy=10))]
 
 def master_system(c):
     """Master System-style: a controller with a square d-pad and two buttons."""
@@ -279,12 +295,12 @@ def saturn(c):
             paint(L(xf(front, dy=1.2), fill=BLACK, alpha=0.35)), body(front, tone(c, 0.5), gloss=0.2)]
 
 def dreamcast(c):
-    """Dreamcast-style: a controller with a memory-card screen in its middle."""
-    shell = ("M14,14 H50 Q60,14 60,26 L58.5,44 Q57.5,54 48.5,54 Q42.5,54 40,47 H24 Q21.5,54 15.5,54 "
-             "Q6.5,54 5.5,44 L4,26 Q4,14 14,14 Z")
-    return [shadow(32, 57, 26, 3), body(shell, c), *bezel(23, 16, 18, 14, 2, c, "#CFE9FF"),
-            *stick(14.5, 25, 3.4, c), control(plus(14.5, 38, 4.2, 3)),
-            *[control(d) for d in diamond(49.5, 30, 4.4, 2.3)], control(ci(32, 37, 1.8))]
+    """Dreamcast-style: a controller with a big memory-card screen in its middle."""
+    shell = ("M12,13 H52 Q61,13 60.5,24 L58.5,44 Q57.5,54 48.5,54 Q42.5,54 40.5,47 H23.5 Q21.5,54 15.5,54 "
+             "Q6.5,54 5.5,44 L3.5,24 Q3,13 12,13 Z")
+    return [shadow(32, 57, 26, 3), body(shell, c), *bezel(21, 15.5, 22, 18, 2.2, c, "#CFE9FF"),
+            *stick(12.5, 23.5, 3.3, c), control(plus(13.5, 37, 4.2, 3)),
+            *[control(d) for d in diamond(51, 30, 4.2, 2.2)], control(ci(32, 39.5, 1.8))]
 
 # ---------------- generic marks ----------------
 def clamshell(c):
@@ -312,12 +328,15 @@ def cartridge(c):
     return [shadow(32, 61, 20, 2.5), body(shell, c), *bezel(18, 11, 28, 25, 2, c, tone(c, 0.65)),
             *[recess(capsule(x, 44, x, 52.5, 2.4), c) for x in (21, 26.5, 32, 37.5, 43)]]
 
+def _shine(x0, y0, x1, y1):
+    """The rainbow a disc's surface throws, as a diagonal band."""
+    return Lin(x0, y0, x1, y1, [(0, "#FFFFFF", 0), (0.35, "#FFFFFF", 0), (0.45, "#8FF3FF", 0.38), (0.55, "#FFE08A", 0.32),
+                                (0.62, "#FF9AD0", 0.28), (0.72, "#FFFFFF", 0), (1, "#FFFFFF", 0)])
+
 def disc(c):
     """A game disc."""
     hole = circle_ccw(32, 32, 3.8)
-    shine = Lin(10, 10, 54, 54, [(0, "#FFFFFF", 0), (0.35, "#FFFFFF", 0), (0.45, "#8FF3FF", 0.38), (0.55, "#FFE08A", 0.32),
-                                 (0.62, "#FF9AD0", 0.28), (0.72, "#FFFFFF", 0), (1, "#FFFFFF", 0)])
-    return [shadow(32, 60.5, 22, 2.4), body(ci(32, 32, 26) + hole, c, gloss=0.2), paint(L(ci(32, 32, 26) + hole, fill=shine)),
+    return [shadow(32, 60.5, 22, 2.4), body(ci(32, 32, 26) + hole, c, gloss=0.2), paint(L(ci(32, 32, 26) + hole, fill=_shine(10, 10, 54, 54))),
             recess(ci(32, 32, 10.5) + hole, c), control(ci(32, 32, 7.8) + hole, tone(c, 0.3))]
 
 # name -> (drawing, accent, what it stands for)
@@ -344,15 +363,16 @@ MARKS = {
     "gamecube": (gamecube, CUBE, "GameCube-style controller"),
     "wii": (wii, SKY, "Wii-style remote"),
     "nintendo_switch": (nintendo_switch, JOY_R, "Switch-style tablet between two controllers"),
-    "playstation": (playstation, SILVER, "PlayStation-style controller"),
-    "playstation_2": (playstation_2, PSBLUE, "PlayStation 2-style dual-stick controller"),
-    "playstation_3": (playstation_3, PS3, "PlayStation 3-style dual-stick controller with a round center button and four player lights"),
+    "playstation": (playstation, SILVER, "PlayStation-style console with a round lid"),
+    "playstation_2": (playstation_2, PSBLUE, "PlayStation 2-style console lying down, in two tiers"),
+    "playstation_3": (playstation_3, PS3, "PlayStation 3-style console with a curved top"),
     "psp": (psp, PSP, "PSP-style widescreen handheld"),
     "genesis": (genesis, CRIMSON, "Genesis-style three-button controller"),
+    "sega_cd": (sega_cd, CRIMSON, "A disc above a Genesis-style controller, for Sega CD"),
     "master_system": (master_system, SMS, "Master System-style controller"),
     "game_gear": (game_gear, TEAL, "Game Gear-style landscape handheld"),
     "saturn": (saturn, GOLD, "A ringed planet for Saturn"),
-    "dreamcast": (dreamcast, SUNSET, "Dreamcast-style controller with a memory-card screen"),
+    "dreamcast": (dreamcast, SUNSET, "Dreamcast-style controller with a big memory-card screen"),
     "clamshell": (clamshell, ROSE, "A dual-screen clamshell"),
     "slim": (slim, ORANGE, "Two screens side by side"),
     "handheld": (handheld, HANDHELD, "A landscape handheld"),

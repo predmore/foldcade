@@ -117,14 +117,14 @@ internal object PlatformCatalog {
         ),
         spec(
             id = "playstation-2",
-            name = "PS2",
+            name = "PlayStation 2",
             folders = setOf("ps2", "playstation 2"),
             folderOnlyExtensions = setOf("iso", "chd", "m3u"),
             aliases = setOf("ps2"),
         ),
         spec(
             id = "playstation-3",
-            name = "PS3",
+            name = "PlayStation 3",
             folders = setOf("ps3", "playstation 3"),
             folderOnlyExtensions = setOf("iso"),
             // RomM's slug is ps3.

@@ -243,6 +243,177 @@ class HomeBoardTest {
     }
 
     @Test
+    fun aNewPlatformDefinitionRekeysItsOldAliasFolderInPlace() {
+        val aliasId = platformFolderId("gba")
+        val canonicalId = platformFolderId("game-boy-advance")
+        val cart = item("game.cart", platformId = "game-boy-advance")
+        val drift = item("game.drift", platformId = "game-boy-advance")
+        val old = HomeBoard(
+            slots = listOf(HOME_ALL, null, aliasId, cart.id),
+            folders = mapOf(aliasId to HomeFolder(
+                aliasId, "Old name", platformId = "gba", mark = "gba",
+                slots = listOf(drift.id, null, cart.id), sort = FolderSort.Alphabetical,
+            )),
+            openFolderId = aliasId,
+        )
+
+        val merged = mergeHome(old, listOf(cart, drift), platforms)
+
+        assertEquals(listOf(HOME_ALL, null, canonicalId, cart.id), merged.slots)
+        assertEquals(setOf(canonicalId), merged.folders.keys)
+        assertEquals(canonicalId, merged.openFolderId)
+        assertEquals(HomeFolder(
+            canonicalId, "Game Boy Advance", platformId = "game-boy-advance", mark = "game-boy-advance",
+            slots = listOf(drift.id, null, cart.id), sort = FolderSort.Alphabetical,
+        ), merged.folders.getValue(canonicalId))
+        assertEquals(merged, mergeHome(merged, listOf(cart, drift), platforms))
+    }
+
+    @Test
+    fun rekeyingAnAliasFolderKeepsANameChosenByTheUser() {
+        val cart = item("game.cart", platformId = "gba")
+        val old = mergeHome(HomeBoard(), listOf(cart), listOf(HomePlatform("gba", "Old name")))
+        val named = renameFolder(old, platformFolderId("gba"), "My handheld")
+
+        val merged = mergeHome(named, listOf(cart), platforms)
+
+        val folder = merged.folders.getValue(platformFolderId("game-boy-advance"))
+        assertEquals("My handheld", folder.name)
+        assertTrue(folder.namedByUser)
+        assertEquals("game-boy-advance", folder.mark)
+    }
+
+    @Test
+    fun anAliasFolderJoinsTheCanonicalFolderWithoutAnotherTileOrDuplicateGames() {
+        val aliasId = platformFolderId("gba")
+        val canonicalId = platformFolderId("game-boy-advance")
+        val catalog = listOf("game.cart", "game.drift", "game.fresh").map { item(it, platformId = "game-boy-advance") }
+        val canonical = HomeFolder(
+            canonicalId, "My handheld", platformId = "game-boy-advance", namedByUser = true,
+            slots = listOf("game.cart", null, "game.drift"),
+        )
+        val old = HomeBoard(
+            slots = listOf(HOME_ALL, aliasId, canonicalId),
+            folders = mapOf(
+                aliasId to HomeFolder(aliasId, "Old name", platformId = "gba", slots = listOf("game.drift", "game.fresh", "game.fresh")),
+                canonicalId to canonical,
+            ),
+            openFolderId = aliasId,
+        )
+
+        val merged = mergeHome(old, catalog, platforms)
+
+        // The joined folder keeps the old folder's place, the one the user knows.
+        assertEquals(listOf(HOME_ALL, canonicalId), merged.slots)
+        assertEquals(setOf(canonicalId), merged.folders.keys)
+        assertEquals(canonicalId, merged.openFolderId)
+        assertEquals(listOf("game.cart", null, "game.drift", "game.fresh"), merged.folders.getValue(canonicalId).slots)
+        assertEquals("My handheld", merged.folders.getValue(canonicalId).name)
+    }
+
+    @Test
+    fun joiningFoldersKeepsTheOldFoldersNameWhenTheUserGaveIt() {
+        val aliasId = platformFolderId("gba")
+        val canonicalId = platformFolderId("game-boy-advance")
+        val cart = item("game.cart", platformId = "game-boy-advance")
+        val drift = item("game.drift", platformId = "game-boy-advance")
+        val old = HomeBoard(
+            slots = listOf(HOME_ALL, canonicalId, aliasId),
+            folders = mapOf(
+                aliasId to HomeFolder(aliasId, "My handheld", platformId = "gba", namedByUser = true, slots = listOf(cart.id)),
+                canonicalId to HomeFolder(canonicalId, "Game Boy Advance", platformId = "game-boy-advance", slots = listOf(drift.id)),
+            ),
+        )
+
+        val merged = mergeHome(old, listOf(cart, drift), platforms)
+
+        assertEquals(listOf(HOME_ALL, null, canonicalId), merged.slots)
+        assertEquals("My handheld", merged.folders.getValue(canonicalId).name)
+        assertEquals(listOf(drift.id, cart.id), merged.folders.getValue(canonicalId).slots)
+    }
+
+    @Test
+    fun anAliasFolderWaitsUntilAPlatformDefinitionClaimsIt() {
+        val cart = item("game.cart", platformId = "gba")
+        val old = mergeHome(HomeBoard(), listOf(cart), listOf(HomePlatform("gba", "Old name")))
+
+        assertEquals(old, mergeHome(old, listOf(cart), emptyList()))
+        assertEquals(old, mergeHome(old, listOf(cart), platforms.filter { it.id != "game-boy-advance" }))
+    }
+
+    @Test
+    fun aCollectionWithAnAliasFolderIdKeepsItsIdentityAndIcon() {
+        val aliasId = platformFolderId("gba")
+        val cart = item("game.cart", kind = HomeKind.Loose)
+        val collection = HomeFolder(aliasId, "Mine", userMade = true, mark = "nintendo-ds", slots = listOf(cart.id))
+        val old = HomeBoard(slots = listOf(HOME_ALL, aliasId), folders = mapOf(aliasId to collection))
+
+        assertEquals(old, mergeHome(old, listOf(cart), platforms))
+    }
+
+    @Test
+    fun aRetiredAliasFolderStaysRetiredAndRemembersItsCanonicalPlaces() {
+        val aliasId = platformFolderId("gba")
+        val canonicalId = platformFolderId("game-boy-advance")
+        val cart = item("game.cart", platformId = "gba")
+        val drift = item("game.drift", platformId = "gba")
+        val old = mergeHome(HomeBoard(), listOf(cart, drift), listOf(HomePlatform("gba", "Old name")))
+        val removed = removeFolder(hideGame(old, cart.id), aliasId)
+
+        val merged = mergeHome(removed, listOf(cart, drift), platforms)
+
+        assertEquals(setOf(canonicalId), merged.retired)
+        assertFalse(canonicalId in merged.slots)
+        assertFalse(aliasId in merged.folders)
+        assertEquals(listOf(HiddenSlot(null, 1)), merged.hiddenSlots[canonicalId])
+        assertFalse(aliasId in merged.hiddenSlots)
+        assertEquals(listOf(HiddenSlot(canonicalId, 0)), merged.hiddenSlots[cart.id])
+        assertEquals(merged, decodeHome(encodeHome(merged)))
+        val shown = showHidden(showHidden(merged, canonicalId, listOf(cart, drift), platforms), cart.id, listOf(cart, drift), platforms)
+        assertEquals(listOf(HOME_ALL, canonicalId), shown.slots)
+        assertEquals(listOf(cart.id, drift.id), shown.folders.getValue(canonicalId).slots)
+    }
+
+    @Test
+    fun mergingFoldersKeepsTheResultOnHomeWhenEitherFolderWasThere() {
+        val aliasId = platformFolderId("gba")
+        val canonicalId = platformFolderId("game-boy-advance")
+        val cart = item("game.cart", platformId = "gba")
+        val drift = item("game.drift", platformId = "game-boy-advance")
+        val old = HomeBoard(
+            slots = listOf(HOME_ALL, aliasId, canonicalId),
+            folders = mapOf(
+                aliasId to HomeFolder(aliasId, "Old name", platformId = "gba", slots = listOf(cart.id)),
+                canonicalId to HomeFolder(canonicalId, "Game Boy Advance", platformId = "game-boy-advance", slots = listOf(drift.id)),
+            ),
+        )
+
+        for (retiredId in listOf(aliasId, canonicalId)) {
+            val merged = mergeHome(removeFolder(old, retiredId), listOf(cart, drift), platforms)
+            assertEquals(1, merged.slots.count { it == canonicalId })
+            assertFalse(aliasId in merged.slots)
+            assertTrue(merged.retired.isEmpty())
+            assertEquals(listOf(drift.id, cart.id), merged.folders.getValue(canonicalId).slots)
+        }
+    }
+
+    @Test
+    fun aliasMigrationWaitsUntilAHeldTileIsPutDown() {
+        val aliasId = platformFolderId("gba")
+        val canonicalId = platformFolderId("game-boy-advance")
+        val cart = item("game.cart", platformId = "gba")
+        val old = mergeHome(HomeBoard(), listOf(cart), listOf(HomePlatform("gba", "Old name")))
+        val held = pickUp(old, 1)
+
+        val waiting = mergeHome(held, listOf(cart), platforms)
+
+        assertEquals(held, waiting)
+        val merged = mergeHome(cancelHold(waiting), listOf(cart), platforms)
+        assertEquals(listOf(HOME_ALL, canonicalId), merged.slots)
+        assertFalse(aliasId in merged.folders)
+    }
+
+    @Test
     fun aRescanKeepsPlacementAndClearsAMissingGame() {
         val cart = item("game.cart", platformId = "nds")
         val drift = item("game.drift", platformId = "nds")

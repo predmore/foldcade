@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Foldcade original art, MIT licensed (see LICENSE). Afterglow symbol: PlayStation-style controller -->
+<!-- Foldcade original art, MIT licensed (see LICENSE). Afterglow symbol: PlayStation-style console with a round lid -->
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:aapt="http://schemas.android.com/aapt"
     android:width="48dp"
@@ -7,7 +7,11 @@
     android:viewportWidth="64"
     android:viewportHeight="64">
     <path
-        android:pathData="M17,17 H47 C53,17 56.5,21 58,27 L61.6,46 C62.6,52 59.4,56 55,56 C51,56 49,53 47.6,49 L46.6,46 H17.4 L16.4,49 C15,53 13,56 9,56 C4.6,56 1.4,52 2.4,46 L6,27 C7.5,21 11,17 17,17 ZM15.2,24.808 Q15.2,23.8 16.208,23.8 H17.792 Q18.8,23.8 18.8,24.808 V27.2 H21.192 Q22.2,27.2 22.2,28.208 V29.792 Q22.2,30.8 21.192,30.8 H18.8 V33.192 Q18.8,34.2 17.792,34.2 H16.208 Q15.2,34.2 15.2,33.192 V30.8 H12.808 Q11.8,30.8 11.8,29.792 V28.208 Q11.8,27.2 12.808,27.2 H15.2 ZM44.6,24.4A2.4,2.4 0 1 1 49.4,24.4A2.4,2.4 0 1 1 44.6,24.4ZM49.2,29A2.4,2.4 0 1 1 54,29A2.4,2.4 0 1 1 49.2,29ZM44.6,33.6A2.4,2.4 0 1 1 49.4,33.6A2.4,2.4 0 1 1 44.6,33.6ZM40,29A2.4,2.4 0 1 1 44.8,29A2.4,2.4 0 1 1 40,29ZM27.7,30.5H30.1A1.2,1.2 0 0 1 31.3,31.7V31.7A1.2,1.2 0 0 1 30.1,32.9H27.7A1.2,1.2 0 0 1 26.5,31.7V31.7A1.2,1.2 0 0 1 27.7,30.5ZM33.9,30.5H36.3A1.2,1.2 0 0 1 37.5,31.7V31.7A1.2,1.2 0 0 1 36.3,32.9H33.9A1.2,1.2 0 0 1 32.7,31.7V31.7A1.2,1.2 0 0 1 33.9,30.5Z"
+        android:pathData="M8,13H56A5,5 0 0 1 61,18V45A5,5 0 0 1 56,50H8A5,5 0 0 1 3,45V18A5,5 0 0 1 8,13ZM11.5,31.5A15.5,15.5 0 1 1 42.5,31.5A15.5,15.5 0 1 1 11.5,31.5ZM48,33A4.5,4.5 0 1 1 57,33A4.5,4.5 0 1 1 48,33Z"
+        android:fillColor="#FFF4F1EA"
+        android:fillType="evenOdd" />
+    <path
+        android:pathData="M13,31.5A14,14 0 1 1 41,31.5A14,14 0 1 1 13,31.5Z"
         android:fillColor="#FFF4F1EA"
         android:fillType="evenOdd" />
 </vector>
