@@ -14,7 +14,7 @@ from objects import *
 # ---- accents. A mark's accent is its body colour and the light the grid draws behind it.
 LIME = "#B6F25C"; GRAPE = "#C77DFF"; INDIGO = "#7C8CFF"; RED = "#FF4D5A"; LAVENDER = "#B39DFF"
 GREEN = "#3EE68A"; SKY = "#8FDFFF"; JOY_L = "#2FC7FF"; JOY_R = "#FF4F5E"; SILVER = "#C3CEDF"
-PSBLUE = "#4C8DFF"; PS3 = "#6E7C8C"; CRIMSON = "#FF3B52"; SUNSET = "#FF8A3D"; DROID = "#3DDC84"; MOON = "#A9BCFF"
+PSBLUE = "#4C8DFF"; PS3 = "#FF7AC8"; CRIMSON = "#FF3B52"; SUNSET = "#FF8A3D"; DROID = "#3DDC84"; MOON = "#A9BCFF"
 GOLD = "#FFC15A"; DECK = "#66C0F4"; EMU = "#B48CFF"; CUBE = "#9B7BFF"; PSP = "#6FC3FF"; SMS = "#FF5E3A"
 CLOUD = "#40D6FF"; CART = "#3EE0C3"; DISC = "#BC9CFF"; HANDHELD = "#FFBA48"
 
@@ -232,11 +232,11 @@ def playstation_2(c):
             *stick(24.5, 37.5, 3.6, c), *stick(39.5, 37.5, 3.6, c)]
 
 def playstation_3(c):
-    """PlayStation 3-style: the dual-stick controller, with a round button in the middle."""
+    """PlayStation 3-style: the dual-stick controller with a round button where Select and Start sat, and four player lights."""
     return [shadow(32, 58, 28, 3.4), body(PS, c), control(plus(16.5, 27, 4.8, 3.4)),
             *[control(d, tone(c, -0.45)) for d in diamond(47.5, 27, 4.4, 2.3)],
-            control(rr(27, 25.8, 4.2, 2.2, 1.1)), control(rr(32.8, 25.8, 4.2, 2.2, 1.1)),
-            control(ci(32, 32.2, 2.1), tone(c, -0.35)),
+            *[control(ci(x, 20.2, 0.75), tone(c, -0.45), sym=None) for x in (26, 30, 34, 38)],
+            control(ci(32, 27.5, 2.6), tone(c, -0.45)),
             *stick(24.5, 37.5, 3.6, c), *stick(39.5, 37.5, 3.6, c)]
 
 def psp(c):
@@ -346,7 +346,7 @@ MARKS = {
     "nintendo_switch": (nintendo_switch, JOY_R, "Switch-style tablet between two controllers"),
     "playstation": (playstation, SILVER, "PlayStation-style controller"),
     "playstation_2": (playstation_2, PSBLUE, "PlayStation 2-style dual-stick controller"),
-    "playstation_3": (playstation_3, PS3, "PlayStation 3-style dual-stick controller with a center button"),
+    "playstation_3": (playstation_3, PS3, "PlayStation 3-style dual-stick controller with a round center button and four player lights"),
     "psp": (psp, PSP, "PSP-style widescreen handheld"),
     "genesis": (genesis, CRIMSON, "Genesis-style three-button controller"),
     "master_system": (master_system, SMS, "Master System-style controller"),

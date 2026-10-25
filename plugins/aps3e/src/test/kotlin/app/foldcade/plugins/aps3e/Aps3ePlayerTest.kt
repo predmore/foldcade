@@ -107,8 +107,12 @@ class Aps3ePlayerTest {
         assertNull(player.setupSteps(folder("config/default_config.yml", "config/dev_flash/.installed")))
         assertEquals(Aps3ePlayer.NEEDS_FIRMWARE, player.setupSteps(folder()))
         assertEquals(Aps3ePlayer.NEEDS_FIRMWARE, player.setupSteps(folder("config/default_config.yml")))
+        assertEquals(Aps3ePlayer.NO_FOLDER, player.setupSteps(null))
+        assertEquals(Aps3ePlayer.FINISH_SETUP, player.setupSteps(folder("firmware/PS3UPDAT.PUP")))
+        // Firmware installed in the wizard, which then stopped: finishing it is what is left.
+        assertEquals(Aps3ePlayer.FINISH_SETUP_INSTALLED, player.setupSteps(folder("config/dev_flash/.installed")))
         assertEquals(
-            Aps3ePlayer.FINISH_SETUP,
+            Aps3ePlayer.FINISH_SETUP_INSTALLED,
             player.setupSteps(folder("firmware/PS3UPDAT.PUP", "config/dev_flash/.installed")),
         )
         assertEquals(

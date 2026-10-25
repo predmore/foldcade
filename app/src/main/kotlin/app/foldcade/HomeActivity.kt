@@ -834,8 +834,39 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
         retroArchChecked: Boolean = false,
         coresRead: Boolean = false,
         edenChecked: Boolean = false,
+        setupChecked: Boolean = false,
     ) {
         if (!launchCurrent(generation)) return
+        // A player that still needs its own setup, such as firmware, does not start. Not now only closes.
+        // A folder not yet asked for is asked for first, below, and this runs again once it is settled.
+        val folderSettled = player is SaveFolderHolder &&
+            (player.hasSaveFolder() || foldcade.store.saveFolderPromptSkipped(player.saveFolderId()))
+        if (folderSettled && !setupChecked) {
+            foldcade.launchWork.job = foldcade.scope.launch {
+                val steps = playerSetupSteps(player)
+                withContext(Dispatchers.Main.immediate) {
+                    if (!launchCurrent(generation)) return@withContext
+                    if (steps != null) {
+                        showPlayerSetup(player.id, steps)
+                        return@withContext
+                    }
+                    finishLaunch(
+                        index,
+                        game,
+                        player,
+                        target,
+                        apiGame,
+                        generation,
+                        spots,
+                        retroArchChecked = retroArchChecked,
+                        coresRead = coresRead,
+                        edenChecked = edenChecked,
+                        setupChecked = true,
+                    )
+                }
+            }
+            return
+        }
         if (player is RetroArchPlayer && !retroArchChecked) {
             foldcade.launchWork.job = foldcade.scope.launch {
                 if (retroArchHeld(player, generation, readCores = !coresRead) { launchGame(index) }) return@launch
@@ -851,6 +882,7 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
                         retroArchChecked = true,
                         coresRead = coresRead,
                         edenChecked = edenChecked,
+                        setupChecked = setupChecked,
                     )
                 }
             }
@@ -871,6 +903,7 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
                         retroArchChecked = true,
                         coresRead = coresRead,
                         edenChecked = true,
+                        setupChecked = setupChecked,
                     )
                 }
             }
@@ -1187,12 +1220,8 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
             emptyList()
         }
         // A player that still needs its own setup, such as firmware, does not start.
-        // The steps are read off the main thread. Not now only closes.
-        if (plan is GameLaunch.Installed && plan.player is SaveFolderHolder) {
-            val folder = foldcade.store.playerSaveFolder(plan.player.saveFolderId())
-            val steps = if (folder == null) null else withContext(Dispatchers.IO) {
-                foldcade.playerSaves.setupSteps(plan.player, folder)
-            }
+        if (plan is GameLaunch.Installed) {
+            val steps = playerSetupSteps(plan.player)
             if (steps != null) {
                 withContext(Dispatchers.Main.immediate) {
                     if (launchCurrent(generation)) showPlayerSetup(plan.player.id, steps)
@@ -2616,6 +2645,17 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
      * launch just read them; Settings uses the row's copy. Open starts the player.
      * Not now only closes.
      */
+    /**
+     * What [player] needs once before it starts, read off the main thread from the
+     * folder the user picked for it, or asked with none when none is picked.
+     * Null for a player that keeps no folder.
+     */
+    private suspend fun playerSetupSteps(player: Player): String? {
+        if (player !is SaveFolderHolder) return null
+        val folder = foldcade.store.playerSaveFolder(player.saveFolderId())
+        return withContext(Dispatchers.IO) { foldcade.playerSaves.setupSteps(player, folder) }
+    }
+
     private fun showPlayerSetup(playerId: String, steps: String? = null) {
         val player = foldcade.plugins.player(playerId) ?: return
         val body = steps ?: foldcade.shell.model.playerSaves.firstOrNull { it.playerId == playerId }?.setupSteps ?: return

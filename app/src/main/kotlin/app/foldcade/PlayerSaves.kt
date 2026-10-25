@@ -634,11 +634,12 @@ internal class PlayerSaves(
     }
 
     /**
-     * What [player] needs once before it can start, read from [folderUri].
-     * Never writes. A throw means it does not say, so the launch goes on.
+     * What [player] needs once before it can start, read from [folderUri], or
+     * asked with no folder when none is picked. Never writes. A throw means it
+     * does not say, so the launch goes on.
      */
-    fun setupSteps(player: Player, folderUri: String): String? = try {
-        player.setupSteps(folderAccess(player, folderUri, allowWrite = false))
+    fun setupSteps(player: Player, folderUri: String?): String? = try {
+        player.setupSteps(folderUri?.let { folderAccess(player, it, allowWrite = false) })
     } catch (_: Exception) {
         null
     }

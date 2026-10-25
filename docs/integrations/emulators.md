@@ -116,19 +116,20 @@ ISO, BIN, CUE/BIN, multi-disc `.m3u`, and CHD games sync. chdman's defaults incl
 
 To install the GitHub build with Obtainium and get its updates, open [this link](https://apps.obtainium.imranr.dev/redirect?r=obtainium://app/%7B%22id%22%3A%22aenu.aps3e%22%2C%22url%22%3A%22https%3A%2F%2Fgithub.com%2Faenu1%2Faps3e%22%2C%22author%22%3A%22aenu1%22%2C%22name%22%3A%22aPS3e%22%2C%22additionalSettings%22%3A%22%7B%5C%22apkFilterRegEx%5C%22%3A%5C%22%5E%5C%5C%5C%5Cd%2B%5C%5C%5C%5C.%5C%5C%5C%5Cd%2B%5C%5C%5C%5C.apk%24%5C%22%7D%22%7D) on your Thor. It tracks [aenu1/aps3e](https://github.com/aenu1/aps3e) and takes the `<version>.apk` asset, such as `2.43.apk`.
 
-aPS3e opens a decrypted ISO only. Name it after the disc, with `.dec.iso`, such as `Skate3.dec.iso`. An encrypted Redump image or a JB folder will not open.
+Foldcade starts aPS3e with a decrypted ISO only. Many decrypted images are named with `.dec.iso`, such as `Skate 3 (USA).dec.iso`; any `.iso` name works. An encrypted Redump image does not open, and Foldcade does not start a JB folder.
 
 ### Firmware
 
-Put `PS3UPDAT.PUP` in RomM's firmware for the PlayStation 3. Foldcade checks it and puts it in `aPS3e › firmware`. aPS3e installs firmware itself; Foldcade does not. Until aPS3e has finished its first-run setup and installed that file, Foldcade does not start the game. It shows the one step that is left, and **Open** opens aPS3e:
+Put `PS3UPDAT.PUP` in RomM's firmware for the PlayStation 3. Foldcade checks it and puts it in `aPS3e › firmware`. aPS3e installs firmware itself; Foldcade does not. Until aPS3e has finished its first-run setup and installed that file, Foldcade does not start the game, from RomM or from a folder. A game started before then leaves aPS3e with no renderer, and its setup does not fix that later. Foldcade shows the step that is left, and **Open** opens aPS3e:
 
-- No firmware staged yet: "aPS3e needs PlayStation 3 firmware. Add PS3UPDAT.PUP to the PlayStation 3 firmware on your RomM server, then start the game again."
-- The file is there, and setup is not finished: "Open aPS3e and finish its setup. When it asks for firmware, choose aPS3e › firmware › PS3UPDAT.PUP. Foldcade put it there from RomM. Then start the game again."
+- No aPS3e folder picked: "Foldcade checks aPS3e’s setup through aPS3e’s folder. In Foldcade’s Settings › Emulators › aPS3e, choose Use this folder where the picker opens. Then start the game again."
+- No firmware staged or installed: "aPS3e needs PlayStation 3 firmware. Add PS3UPDAT.PUP to the PlayStation 3 firmware on your RomM server, then start the game again."
+- Setup is not finished: "Open aPS3e and finish its setup. For firmware, choose aPS3e › firmware › PS3UPDAT.PUP, which Foldcade put there from RomM. For the font, choose From Firmware. For the GPU driver, turn off Use Custom Driver. Then start the game again." On the Thor the font and GPU driver pages start on choices that need a file, and their Next stays grey until you change them. When firmware is already installed, the firmware sentence is left out.
 - Setup is finished, and firmware is not installed: "In aPS3e, open the menu and choose Install Firmware, then aPS3e › firmware › PS3UPDAT.PUP. Foldcade put it there from RomM. Then start the game again."
 
-**Foldcade Settings › Emulators** shows **aPS3e setup: Set up** while any of those is still true. Select it for the same steps.
+Once aPS3e's folder is picked, **Foldcade Settings › Emulators** shows **aPS3e setup: Set up** while any of those is still true. Select it for the same steps.
 
-The first time you play a RomM game with aPS3e, Foldcade asks for aPS3e's folder. The picker opens at aPS3e's own folder, so tap **Use this folder** and **Allow**. You can change the folder later in **Foldcade Settings › Emulators › aPS3e**. A folder you pick has to hold `config`.
+The first time you play a RomM game with aPS3e, Foldcade asks for aPS3e's folder. The picker opens at aPS3e's own folder, so tap **Use this folder** and **Allow**. With the premium build, open **aPS3e Premium** in the picker's list first: the picker opens at the free build's folder. You can change the folder later in **Foldcade Settings › Emulators › aPS3e**. A folder you pick has to hold `config`.
 
 ### Saves
 
@@ -143,9 +144,9 @@ Skate 3 reached playable skating with these settings. They are what worked on th
 - **SPU Decoder:** Interpreter (dynamic). The LLVM SPU decoder hung Skate 3.
 - **Video › Strict Rendering Mode:** off.
 - **VRAM allocation limit:** 2048 MB.
-- A Turnip driver. Mr. Purple T30 worked. T23 crashed. The stock driver also runs.
+- A Turnip driver, installed in aPS3e from a driver file. Mr. Purple T30 worked. T23 crashed at start. The stock driver reached about 25 FPS at the start, then 8–10 FPS in PCU Tour, and ran out of memory.
 
-Skate 3 ran at about 20–27 FPS: playable, not full speed.
+Skate 3 ran at about 19–27 FPS: playable, not full speed.
 
 ## Other systems
 

@@ -554,11 +554,12 @@ class PlayerSavesTest {
     @Test
     fun setupStepsComeFromThePlayerAndAThrowDoesNotBlock() {
         val asking = object : Player by Melon(FOLDER) {
-            override fun setupSteps(folder: app.foldcade.api.plugin.SaveFolderAccess) = "Finish setup."
+            override fun setupSteps(folder: app.foldcade.api.plugin.SaveFolderAccess?) = if (folder == null) "Pick a folder." else "Finish setup."
         }
         assertEquals("Finish setup.", saves.setupSteps(asking, FOLDER))
+        assertEquals("Pick a folder.", saves.setupSteps(asking, null))
         val broken = object : Player by Melon(FOLDER) {
-            override fun setupSteps(folder: app.foldcade.api.plugin.SaveFolderAccess): String = error("no")
+            override fun setupSteps(folder: app.foldcade.api.plugin.SaveFolderAccess?): String = error("no")
         }
         assertEquals(null, saves.setupSteps(broken, FOLDER))
     }

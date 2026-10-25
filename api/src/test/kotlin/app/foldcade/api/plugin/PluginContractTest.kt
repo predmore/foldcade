@@ -136,6 +136,7 @@ class PluginContractTest {
         assertTrue(Player::class.java.methods.single { it.name == "setupSteps" }.isDefault)
         assertTrue(Player::class.java.methods.single { it.name == "needsFirmware" }.isDefault)
         assertNull(IdlePlayer().setupSteps(ReadOnlyFolder()))
+        assertNull(IdlePlayer().setupSteps(null))
         assertTrue(IdlePlayer().needsFirmware(ReadOnlyFolder()))
         val observeActivity = LibraryBackend::class.java.methods.single { it.name == "observeActivity" }
         assertTrue(observeActivity.isDefault)

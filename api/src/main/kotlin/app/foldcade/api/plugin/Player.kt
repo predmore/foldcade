@@ -148,12 +148,15 @@ interface Player {
     /**
      * What the user does once in the player before it can start any game, such as
      * finishing its first-run setup and installing the console's firmware, or null
-     * when it can start. [folder] is the folder the user picked for it, read only.
-     * The shell asks after it has placed saves and firmware for a launch, and does
-     * not start the player while this says what to do: it shows the steps, with
-     * Open for the player. Settings shows them too. Added in API minor 14.
+     * when it can start. [folder] is the folder the user picked for it, read only,
+     * or null when no folder is picked: a player that checks its setup through
+     * that folder then says how to pick it. The shell asks before every start of
+     * a [SaveFolderHolder], after it has placed saves and firmware, and does not
+     * start the player while this says what to do: it shows the steps, with Open
+     * for the player. Settings shows them too, once a folder is picked.
+     * Added in API minor 14.
      */
-    fun setupSteps(folder: SaveFolderAccess): String? = null
+    fun setupSteps(folder: SaveFolderAccess?): String? = null
 
     /**
      * False when the player no longer needs the firmware its library has, such as a

@@ -125,13 +125,19 @@ class Aps3ePlayer : Player, SaveFolderHolder {
 
     override fun needsFirmware(folder: SaveFolderAccess): Boolean = !folderHas(folder, INSTALLED)
 
-    override fun setupSteps(folder: SaveFolderAccess): String? {
+    /**
+     * Ready once aPS3e's first-run setup has written `default_config.yml` and it has
+     * installed firmware. Started before that, aPS3e writes a `config.yml` with no
+     * renderer, which its setup does not replace later, so the game stays black.
+     */
+    override fun setupSteps(folder: SaveFolderAccess?): String? {
+        if (folder == null) return NO_FOLDER
         val wizard = folderHas(folder, WIZARD_DONE)
         val installed = folderHas(folder, INSTALLED)
         if (wizard && installed) return null
-        val staged = folderHas(folder, FIRMWARE_FILE)
         return when {
-            !staged -> NEEDS_FIRMWARE
+            !installed && !folderHas(folder, FIRMWARE_FILE) -> NEEDS_FIRMWARE
+            !wizard && installed -> FINISH_SETUP_INSTALLED
             !wizard -> FINISH_SETUP
             else -> INSTALL_FIRMWARE
         }
@@ -190,10 +196,14 @@ class Aps3ePlayer : Player, SaveFolderHolder {
         /** Bytes read from the start of a PUP. The header and a short version.txt fit in this. */
         const val PUP_HEADER: Int = 0x1000
 
+        const val NO_FOLDER: String =
+            "Foldcade checks aPS3e’s setup through aPS3e’s folder. In Foldcade’s Settings › Emulators › aPS3e, choose Use this folder where the picker opens. Then start the game again."
         const val NEEDS_FIRMWARE: String =
             "aPS3e needs PlayStation 3 firmware. Add PS3UPDAT.PUP to the PlayStation 3 firmware on your RomM server, then start the game again."
         const val FINISH_SETUP: String =
-            "Open aPS3e and finish its setup. When it asks for firmware, choose aPS3e › firmware › PS3UPDAT.PUP. Foldcade put it there from RomM. Then start the game again."
+            "Open aPS3e and finish its setup. For firmware, choose aPS3e › firmware › PS3UPDAT.PUP, which Foldcade put there from RomM. For the font, choose From Firmware. For the GPU driver, turn off Use Custom Driver. Then start the game again."
+        const val FINISH_SETUP_INSTALLED: String =
+            "Open aPS3e and finish its setup. For the font, choose From Firmware. For the GPU driver, turn off Use Custom Driver. Then start the game again."
         const val INSTALL_FIRMWARE: String =
             "In aPS3e, open the menu and choose Install Firmware, then aPS3e › firmware › PS3UPDAT.PUP. Foldcade put it there from RomM. Then start the game again."
     }

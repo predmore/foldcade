@@ -1165,7 +1165,7 @@
     "mark.playstation-3": {
       "file": "icons/mark_playstation_3.xml",
       "tint": false,
-      "accent": "#6E7C8C"
+      "accent": "#FF7AC8"
     },
     "mark.psp": {
       "file": "icons/mark_psp.xml",

@@ -115,7 +115,7 @@ Switch keys and firmware for Eden work differently, through Eden's own folder: s
 
 - **Cannot connect:** Try the address from the Thor, check network access, and get a new code or check the token's permissions.
 - **Missing game:** Check RomM's scan and account access, then restart Foldcade. If it is already in All, check [Home placement](README.md#a-game-is-in-all-but-missing-from-home).
-- **Will not launch:** Check the [emulator and format](emulators.md).
-- **Saves do not sync:** Check the server version, the shared melonDS directory, that Azahar's save folder is its user folder, and that **Foldcade Settings › Emulators** shows DuckStation's memory cards and ARMSX2's memory card as **Syncing**. **Not now** at the save-folder prompt allows play with the emulator's own saves. **Set up** on ARMSX2's row means slot 1 is still a file card. **aPS3e setup** means aPS3e still needs its first-run setup or PlayStation 3 firmware.
+- **Will not launch:** Check the [emulator and format](emulators.md). **aPS3e setup: Set up** in **Foldcade Settings › Emulators** means aPS3e still needs its first-run setup or PlayStation 3 firmware; select it for the steps.
+- **Saves do not sync:** Check the server version, the shared melonDS directory, that Azahar's save folder is its user folder, and that **Foldcade Settings › Emulators** shows DuckStation's memory cards and ARMSX2's memory card as **Syncing**. **Not now** at the save-folder prompt allows play with the emulator's own saves. **Set up** on ARMSX2's row means slot 1 is still a file card.
 
 [All integration guides](README.md)

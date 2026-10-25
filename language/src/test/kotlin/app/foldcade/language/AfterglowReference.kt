@@ -167,7 +167,7 @@ object MarkAccent {
         "nintendo-switch" to Color(0xFFFF4F5E),
         "playstation" to Color(0xFFC3CEDF),
         "playstation-2" to Color(0xFF4C8DFF),
-        "playstation-3" to Color(0xFF6E7C8C),
+        "playstation-3" to Color(0xFFFF7AC8),
         "psp" to Color(0xFF6FC3FF),
         "genesis" to Color(0xFFFF3B52),
         "master-system" to Color(0xFFFF5E3A),
