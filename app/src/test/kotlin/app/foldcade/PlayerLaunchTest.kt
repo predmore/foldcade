@@ -10,6 +10,7 @@ import app.foldcade.localfolder.LocalFolderEntry
 import app.foldcade.language.Copy
 import app.foldcade.plugins.azahar.AzaharPlayer
 import app.foldcade.plugins.azahar.Nintendo3ds
+import app.foldcade.plugins.aps3e.Aps3eEntry
 import app.foldcade.plugins.armsx2.ArmsX2Entry
 import app.foldcade.plugins.duckstation.DuckStationEntry
 import app.foldcade.plugins.emulators.EmulatorsEntry
@@ -228,7 +229,7 @@ class PlayerLaunchTest {
     @Test
     fun everyEmulatorPlatformIsInTheLocalFolderCatalog() {
         val folder = LocalFolderEntry().platforms.map { it.id }.toSet()
-        (EmulatorsEntry().players + DuckStationEntry().players + ArmsX2Entry().players).forEach { player ->
+        (EmulatorsEntry().players + DuckStationEntry().players + ArmsX2Entry().players + Aps3eEntry().players).forEach { player ->
             assertTrue(player.id, player.platformId in folder)
         }
     }
@@ -236,7 +237,7 @@ class PlayerLaunchTest {
     @Test
     fun manifestSeesEveryEmulatorPackage() {
         val xml = File("src/main/AndroidManifest.xml").readText()
-        (EmulatorsEntry().players + DuckStationEntry().players + ArmsX2Entry().players).flatMap { it.packageNames }.distinct().forEach { name ->
+        (EmulatorsEntry().players + DuckStationEntry().players + ArmsX2Entry().players + Aps3eEntry().players).flatMap { it.packageNames }.distinct().forEach { name ->
             assertTrue(name, xml.contains("android:name=\"$name\""))
         }
     }

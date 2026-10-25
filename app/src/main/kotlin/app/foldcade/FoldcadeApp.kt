@@ -743,10 +743,10 @@ class FoldcadeApp : Application() {
                 refreshMoonlightShelf()
                 restoreDroidDeckPins()
                 refreshDroidDeckShelf()
-                val sync = readSaveSync()
+                val notes = readPlayerFolderNotes()
                 withContext(Dispatchers.Main.immediate) {
                     refreshEdenSetting()
-                    shell.setSaveSync(sync)
+                    shell.setSaveSync(notes.sync, notes.setup)
                     shell.refreshPlayerSaves()
                     shell.noteShelfChanged()
                 }
@@ -964,22 +964,28 @@ class FoldcadeApp : Application() {
     fun refreshSaveSync() {
         if (!::plugins.isInitialized || !::shell.isInitialized) return
         pluginLoad.launch {
-            val sync = readSaveSync()
-            withContext(Dispatchers.Main.immediate) { shell.setSaveSync(sync) }
+            val notes = readPlayerFolderNotes()
+            withContext(Dispatchers.Main.immediate) { shell.setSaveSync(notes.sync, notes.setup) }
         }
     }
 
-    private fun readSaveSync(): Map<String, app.foldcade.api.plugin.SaveSyncState> {
-        val states = linkedMapOf<String, app.foldcade.api.plugin.SaveSyncState>()
+    private fun readPlayerFolderNotes(): PlayerFolderNotes {
+        val sync = linkedMapOf<String, app.foldcade.api.plugin.SaveSyncState>()
+        val setup = linkedMapOf<String, String>()
         for (id in plugins.playerIds()) {
             val player = plugins.player(id) ?: continue
             if (player !is app.foldcade.api.plugin.SaveFolderHolder) continue
             val uri = store.playerSaveFolder(player.saveFolderId()) ?: continue
-            val state = playerSaves.saveSync(player, uri) ?: continue
-            states[player.id] = state
+            playerSaves.saveSync(player, uri)?.let { sync[player.id] = it }
+            playerSaves.setupSteps(player, uri)?.let { setup[player.id] = it }
         }
-        return states
+        return PlayerFolderNotes(sync, setup)
     }
+
+    private data class PlayerFolderNotes(
+        val sync: Map<String, app.foldcade.api.plugin.SaveSyncState>,
+        val setup: Map<String, String>,
+    )
 
     /**
      * Hands each player its hosted folder, and whether it has been given it: the

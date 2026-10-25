@@ -158,6 +158,7 @@ dependencies {
     implementation(project(":api"))
     implementation(project(":language"))
     implementation(project(":host"))
+    implementation(project(":plugins:aps3e"))
     implementation(project(":plugins:armsx2"))
     implementation(project(":plugins:azahar"))
     implementation(project(":plugins:droiddeck"))

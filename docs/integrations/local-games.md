@@ -28,7 +28,7 @@ Foldcade scans subfolders too. It needs access only to the tree you choose.
 
 ## Folder names and formats
 
-A unique extension such as `.nds` or `.gba` identifies its system. Shared extensions such as `.iso`, `.chd`, `.rvz`, `.zip`, and `.7z` need a system folder: put a PSP `.iso` in `psp` and a PS2 `.iso` in `ps2`.
+A unique extension such as `.nds` or `.gba` identifies its system. Shared extensions such as `.iso`, `.chd`, `.rvz`, `.zip`, and `.7z` need a system folder: put a PSP `.iso` in `psp`, a PS2 `.iso` in `ps2`, and a PS3 `.iso` in `ps3`.
 
 The [emulator table](emulators.md#supported-emulators-and-formats) lists folder names and recognized formats. The emulator must also support the format; unpack archives if it cannot open them directly.
 

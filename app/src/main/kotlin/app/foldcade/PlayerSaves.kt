@@ -100,6 +100,30 @@ internal interface SaveDocuments {
     /** Up to [size] bytes from the start of the document at [uri], or null. */
     fun head(uri: String, size: Int): ByteArray? = null
 
+    /** MD5 of the document at [uri], or null when it cannot be read. */
+    fun md5(uri: String): String? = read(uri)?.let(::md5Hex)
+
+    /**
+     * Copies [sourceUri] onto [targetUri], replacing it. False when the source
+     * cannot be read or the copy cannot be written.
+     */
+    fun copy(sourceUri: String, targetUri: String): Boolean {
+        val bytes = read(sourceUri) ?: return false
+        return try {
+            write(targetUri, bytes)
+            true
+        } catch (_: Exception) {
+            false
+        }
+    }
+
+    /**
+     * Length of the document at [uri], in bytes, or null when it is not known.
+     * The default reads the document. A streaming implementation reports the
+     * length without reading it, so a large file is not held to decide that.
+     */
+    fun length(uri: String): Long? = read(uri)?.size?.toLong()
+
     /**
      * Up to [length] bytes at [offset], fewer at the end of the file, or null
      * when it cannot be read. The default reads nothing.
@@ -317,9 +341,10 @@ internal class PlayerSaves(
      * saves alone. Each file [Player.firmwareFileName] names is offered with its first
      * [Player.firmwareHeaderSize] bytes. A file there is replaced only when it holds what
      * the shell last wrote there, so a library's new copy follows, and a file the user
-     * put there or changed stays. A written file is read back; one that does not match
-     * goes, and a file it replaced comes back. An exception from the player writes
-     * nothing. Never throws, since firmware does not stop a launch. Returns the names written.
+     * put there or changed stays. A player that no longer needs it, see [Player.needsFirmware],
+     * writes nothing. A written file is read back; one that does not match goes, and a
+     * small file it replaced comes back. An exception from the player writes nothing.
+     * Never throws, since firmware does not stop a launch. Returns the names written.
      */
     fun placeFirmware(player: Player, game: Game, target: LaunchTarget, folder: String? = null): List<String> {
         val firmware = (target as? LaunchTarget.ContentUri)?.firmware.orEmpty()
@@ -329,6 +354,12 @@ internal class PlayerSaves(
         } catch (_: Exception) {
             null
         } ?: return emptyList()
+        val needed = try {
+            player.needsFirmware(folderAccess(player, into, allowWrite = false))
+        } catch (_: Exception) {
+            true
+        }
+        if (!needed) return emptyList()
         val named = try {
             firmware.mapNotNull { file ->
                 val name = player.firmwareFileName(file.name)?.takeIf { savePathParts(it) != null }
@@ -374,16 +405,15 @@ internal class PlayerSaves(
 
     private fun placeFirmwareFile(folder: String, name: String, source: String): Boolean {
         val key = "firmware:$folder/$name"
-        val bytes = docs.read(source) ?: return false
-        val hash = md5Hex(bytes)
+        val hash = docs.md5(source) ?: return false
         val existing = docs.find(folder, name)
-        val current = existing?.let(docs::read)
+        val currentHash = existing?.let(docs::md5)
         val mine = marks.mark(key)
         // Unreadable, or not the bytes the shell wrote or left: the user's own, which stays.
-        if (existing != null && (current == null || md5Hex(current).let { it != hash && it != mine && mine != ANY_BYTES })) return false
+        if (existing != null && (currentHash == null || currentHash.let { it != hash && it != mine && mine != ANY_BYTES })) return false
         // Already there. Bytes the user put there stay theirs, so a later copy does not replace them.
         // Under the any-bytes mark they are the shell's own write, finished before it could be marked.
-        if (current != null && md5Hex(current) == hash) {
+        if (currentHash != null && currentHash == hash) {
             if (mine == ANY_BYTES) marks.setMark(key, hash)
             return false
         }
@@ -395,9 +425,12 @@ internal class PlayerSaves(
             if (mine == null) marks.clearMark(key) else marks.setMark(key, mine)
             return false
         }
+        // A small file can be put back. A large one, such as a firmware image, is not held in memory:
+        // a failed check deletes a file the shell just created, and leaves one that was already there
+        // under the any-bytes mark so the next launch replaces it.
+        val previous = if (existing != null) restorableFirmware(existing) else null
         val checked = try {
-            docs.write(written, bytes)
-            docs.read(written)?.contentEquals(bytes) == true
+            docs.copy(source, written) && docs.md5(written) == hash
         } catch (_: Exception) {
             false
         }
@@ -407,11 +440,13 @@ internal class PlayerSaves(
         }
         // Gone only when the shell's own delete says so: a file it cannot find may be in a folder it cannot reach.
         val gone = try {
-            if (current != null) {
-                docs.write(written, current)
-                false
-            } else {
-                docs.delete(written)
+            when {
+                previous != null -> {
+                    docs.write(written, previous)
+                    false
+                }
+                existing == null -> docs.delete(written)
+                else -> false
             }
         } catch (_: Exception) {
             false
@@ -420,14 +455,35 @@ internal class PlayerSaves(
             marks.clearMark(key)
             return false
         }
+        if (existing != null && previous == null) return false
         // What is there now is the shell's. Bytes it cannot find or read keep the mark they have, so they are replaced.
         try {
-            val left = docs.find(folder, name)?.let(docs::read) ?: return false
-            marks.setMark(key, md5Hex(left))
+            val left = docs.find(folder, name)?.let(docs::md5) ?: return false
+            marks.setMark(key, left)
         } catch (_: Exception) {
             Unit
         }
         return false
+    }
+
+    /** The file at [uri] when it is small enough to put back, or null. */
+    private fun restorableFirmware(uri: String): ByteArray? {
+        val known = try {
+            docs.length(uri)
+        } catch (_: Exception) {
+            null
+        } catch (_: OutOfMemoryError) {
+            null
+        }
+        if (known != null && known > FIRMWARE_RESTORE_LIMIT) return null
+        val bytes = try {
+            docs.read(uri)
+        } catch (_: Exception) {
+            null
+        } catch (_: OutOfMemoryError) {
+            null
+        } ?: return null
+        return bytes.takeIf { it.size <= FIRMWARE_RESTORE_LIMIT }
     }
 
     private enum class Placing { Failed, AlreadyThere, Written }
@@ -573,6 +629,16 @@ internal class PlayerSaves(
     /** What Settings shows for [player], read from [folderUri]. Never writes. */
     fun saveSync(player: Player, folderUri: String): app.foldcade.api.plugin.SaveSyncState? = try {
         player.saveSyncState(folderAccess(player, folderUri, allowWrite = false))
+    } catch (_: Exception) {
+        null
+    }
+
+    /**
+     * What [player] needs once before it can start, read from [folderUri].
+     * Never writes. A throw means it does not say, so the launch goes on.
+     */
+    fun setupSteps(player: Player, folderUri: String): String? = try {
+        player.setupSteps(folderAccess(player, folderUri, allowWrite = false))
     } catch (_: Exception) {
         null
     }
@@ -914,6 +980,20 @@ private fun readCapped(input: InputStream, limit: Long): ByteArray? {
 internal fun md5Hex(bytes: ByteArray): String =
     MessageDigest.getInstance("MD5").digest(bytes).joinToString("") { "%02x".format(it) }
 
+private fun digestHex(input: InputStream): String {
+    val digest = MessageDigest.getInstance("MD5")
+    val buffer = ByteArray(64 * 1024)
+    while (true) {
+        val count = input.read(buffer)
+        if (count < 0) break
+        digest.update(buffer, 0, count)
+    }
+    return digest.digest().joinToString("") { "%02x".format(it) }
+}
+
+/** A firmware file at most this large is held so a failed write can put it back. */
+private const val FIRMWARE_RESTORE_LIMIT = 16 * 1024 * 1024
+
 /** [SaveDocuments] over a [ContentResolver] and the tree grants the user gave. */
 internal class AndroidSaveDocuments(private val resolver: ContentResolver) : SaveDocuments {
     override fun displayName(uri: String): String? = try {
@@ -996,6 +1076,45 @@ internal class AndroidSaveDocuments(private val resolver: ContentResolver) : Sav
 
     override fun read(uri: String): ByteArray? = try {
         resolver.openInputStream(Uri.parse(uri))?.use { it.readBytes() }
+    } catch (_: Exception) {
+        null
+    }
+
+    override fun md5(uri: String): String? = try {
+        resolver.openInputStream(Uri.parse(uri))?.use { input -> digestHex(input) }
+    } catch (_: Exception) {
+        null
+    }
+
+    override fun copy(sourceUri: String, targetUri: String): Boolean = try {
+        val source = resolver.openInputStream(Uri.parse(sourceUri)) ?: return false
+        val target = resolver.openOutputStream(Uri.parse(targetUri), "wt") ?: run {
+            source.close()
+            return false
+        }
+        source.use { input ->
+            target.use { output ->
+                val buffer = ByteArray(64 * 1024)
+                while (true) {
+                    val count = input.read(buffer)
+                    if (count < 0) break
+                    output.write(buffer, 0, count)
+                }
+            }
+        }
+        true
+    } catch (_: Exception) {
+        false
+    }
+
+    override fun length(uri: String): Long? = try {
+        val parsed = Uri.parse(uri)
+        val reported = resolver.query(parsed, arrayOf(OpenableColumns.SIZE), null, null, null)?.use { cursor ->
+            if (cursor.moveToFirst() && !cursor.isNull(0)) cursor.getLong(0) else null
+        }
+        reported ?: resolver.openFileDescriptor(parsed, "r")?.use { descriptor ->
+            descriptor.statSize.takeIf { it >= 0 }
+        }
     } catch (_: Exception) {
         null
     }

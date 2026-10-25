@@ -86,6 +86,7 @@ import app.foldcade.language.retroArchCoresDialog
 import app.foldcade.language.retroArchStorageDialog
 import app.foldcade.language.retroArchStoreBuildDialog
 import app.foldcade.language.hostedSavesDialog
+import app.foldcade.language.playerSetupDialog
 import app.foldcade.language.saveFolderDialog
 import app.foldcade.language.wrongSaveFolderBody
 import app.foldcade.language.restartGameDialog
@@ -341,6 +342,7 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
                 askHostedSaves(player, pending = null)
             }
             is Effect.ShowSaveSync -> showSaveSync(effect.playerId)
+            is Effect.ShowPlayerSetup -> showPlayerSetup(effect.playerId)
             is Effect.OpenPlayer -> {
                 cancelLaunches()
                 openPlayerApp(effect.playerId)
@@ -1183,6 +1185,20 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
             }
         } else {
             emptyList()
+        }
+        // A player that still needs its own setup, such as firmware, does not start.
+        // The steps are read off the main thread. Not now only closes.
+        if (plan is GameLaunch.Installed && plan.player is SaveFolderHolder) {
+            val folder = foldcade.store.playerSaveFolder(plan.player.saveFolderId())
+            val steps = if (folder == null) null else withContext(Dispatchers.IO) {
+                foldcade.playerSaves.setupSteps(plan.player, folder)
+            }
+            if (steps != null) {
+                withContext(Dispatchers.Main.immediate) {
+                    if (launchCurrent(generation)) showPlayerSetup(plan.player.id, steps)
+                }
+                return
+            }
         }
         val playerIntent = if (plan is GameLaunch.Installed) {
             try {
@@ -2592,6 +2608,18 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
         val player = foldcade.plugins.player(playerId) ?: return
         val steps = foldcade.shell.model.playerSaves.firstOrNull { it.playerId == playerId }?.saveSyncSteps ?: return
         val shown = foldcade.shell.present(app.foldcade.language.saveSyncDialog(player.displayName, steps, hostScreen()))
+        if (shown) foldcade.hostedAsk = HostedAsk(player.id, null)
+    }
+
+    /**
+     * What [playerId] needs once before a game can start. [steps] is used when the
+     * launch just read them; Settings uses the row's copy. Open starts the player.
+     * Not now only closes.
+     */
+    private fun showPlayerSetup(playerId: String, steps: String? = null) {
+        val player = foldcade.plugins.player(playerId) ?: return
+        val body = steps ?: foldcade.shell.model.playerSaves.firstOrNull { it.playerId == playerId }?.setupSteps ?: return
+        val shown = foldcade.shell.present(playerSetupDialog(player.displayName, body, hostScreen()))
         if (shown) foldcade.hostedAsk = HostedAsk(player.id, null)
     }
 

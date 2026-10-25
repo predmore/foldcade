@@ -123,6 +123,14 @@ internal object PlatformCatalog {
             aliases = setOf("ps2"),
         ),
         spec(
+            id = "playstation-3",
+            name = "PS3",
+            folders = setOf("ps3", "playstation 3"),
+            folderOnlyExtensions = setOf("iso"),
+            // RomM's slug is ps3.
+            aliases = setOf("ps3"),
+        ),
+        spec(
             id = "psp",
             name = "PSP",
             folders = setOf("psp", "playstation portable"),

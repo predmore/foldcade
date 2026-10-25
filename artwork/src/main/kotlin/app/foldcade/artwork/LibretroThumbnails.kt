@@ -114,6 +114,7 @@ class LibretroThumbnails(
             "wii" to "Nintendo - Wii",
             "playstation" to "Sony - PlayStation",
             "playstation-2" to "Sony - PlayStation 2",
+            "playstation-3" to "Sony - PlayStation 3",
             "psp" to "Sony - PlayStation Portable",
             "genesis" to "Sega - Mega Drive - Genesis",
             "master-system" to "Sega - Master System - Mark III",

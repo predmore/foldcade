@@ -1162,6 +1162,11 @@
       "tint": false,
       "accent": "#4C8DFF"
     },
+    "mark.playstation-3": {
+      "file": "icons/mark_playstation_3.xml",
+      "tint": false,
+      "accent": "#6E7C8C"
+    },
     "mark.psp": {
       "file": "icons/mark_psp.xml",
       "tint": false,
@@ -1569,6 +1574,10 @@
     },
     "symbol.playstation-2": {
       "file": "icons/symbol_playstation_2.xml",
+      "tint": true
+    },
+    "symbol.playstation-3": {
+      "file": "icons/symbol_playstation_3.xml",
       "tint": true
     },
     "symbol.psp": {

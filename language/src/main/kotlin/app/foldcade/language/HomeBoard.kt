@@ -245,7 +245,7 @@ fun platformFolderId(canonicalId: String): String = "home.platform.$canonicalId"
 val PLATFORM_MARKS: Set<String> = setOf(
     "nintendo-3ds", "nintendo-ds", "game-boy", "game-boy-color", "game-boy-advance",
     "nes", "snes", "nintendo-64", "gamecube", "wii", "nintendo-switch",
-    "playstation", "playstation-2", "psp",
+    "playstation", "playstation-2", "playstation-3", "psp",
     "genesis", "master-system", "game-gear", "saturn", "dreamcast",
 )
 

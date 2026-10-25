@@ -166,6 +166,7 @@ class ShellHostTest {
         assertEquals(
             listOf(
                 "app.foldcade.localfolder.LocalFolderEntry",
+                "app.foldcade.plugins.aps3e.Aps3eEntry",
                 "app.foldcade.plugins.armsx2.ArmsX2Entry",
                 "app.foldcade.plugins.azahar.AzaharEntry",
                 "app.foldcade.plugins.droiddeck.DroidDeckEntry",
@@ -220,6 +221,7 @@ class ShellHostTest {
         assertEquals(
             setOf(
                 "app.foldcade.localfolder.LocalFolderEntry",
+                "app.foldcade.plugins.aps3e.Aps3eEntry",
                 "app.foldcade.plugins.armsx2.ArmsX2Entry",
                 "app.foldcade.plugins.azahar.AzaharEntry",
                 "app.foldcade.plugins.droiddeck.DroidDeckEntry",
