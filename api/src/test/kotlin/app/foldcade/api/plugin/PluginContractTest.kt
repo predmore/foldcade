@@ -268,6 +268,7 @@ class PluginContractTest {
                 "saves",
                 "unsyncedSaves",
                 "serverSaves",
+                "serverSaveBackups",
                 "syncServerSaves",
                 "playServerSave",
                 "copyServerSave",

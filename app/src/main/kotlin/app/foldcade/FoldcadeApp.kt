@@ -635,6 +635,7 @@ class FoldcadeApp : Application() {
             onBrightness = { position -> brightness.write(brightnessLevel(position)) },
             onSameGames = { groups -> saveArtChoices(artChoices.adopt(groups)) },
             appVersion = installedVersion(),
+            onSavePickerClosed = { onSaveConflicts?.invoke() },
             onSaveHealthChanged = { players ->
                 saveSetupNotices.update(players)
                 publishNotices()

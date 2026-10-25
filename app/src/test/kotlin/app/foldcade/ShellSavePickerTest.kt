@@ -20,6 +20,30 @@ class ShellSavePickerTest {
     private fun entry(game: Game) = GridEntry(game.remoteKey, game.label, "", game.platformId, null, true, game)
     private fun picker(session: Long = 1) = SavePickerState(SavePickerTarget(homeGameId("romm", "3"), "romm", "3", "melonds", session), "Original", "melonDS", SaveHealth.NotSyncing(SaveIssue.NoFolder), loading = false)
 
+    @Test fun closingThePickerRefreshesAConflictThatItHadCovered() {
+        var refreshed = 0
+        val shell = ShellController(SessionStore(MemoryPrefs()), plugins, onSavePickerClosed = { refreshed++ })
+        shell.ingestLibrary("romm", listOf(entry(game)), emptyList())
+        shell.presentSavePicker(picker())
+        val conflict = previewSaveConflict().copy(preview = false)
+        shell.presentSaveConflict(conflict)
+        assertNull(shell.model.saveConflict)
+        shell.onMeaning(Meaning.Back, HostScreen.Bottom)
+        assertEquals(1, refreshed)
+        shell.presentSaveConflict(conflict)
+        assertEquals(conflict, shell.model.saveConflict)
+        shell.presentSavePicker(picker())
+        shell.presentSavePicker(null)
+        assertEquals(2, refreshed)
+    }
+
+    @Test fun theConfirmationKnowsAnOpenGameWillRestart() {
+        shell.ingestLibrary("romm", listOf(entry(game)), emptyList())
+        shell.running = setOf(homeGameId("romm", "3"))
+        shell.presentSavePicker(picker())
+        assertTrue(shell.model.savePicker!!.restartsOpenGame)
+    }
+
     @Test fun homeAndAllOfferSavesForRemoteAndDownloadedGamesButNotLocalOnes() {
         shell.ingestLibrary("romm", listOf(entry(game), entry(game.copy(remoteKey = "4", label = "Remote", availability = Availability.RemoteOnly))), emptyList())
         shell.ingestLibrary("local-folder", listOf(entry(game.copy(backendId = "local-folder", remoteKey = "file", label = "Local", availability = Availability.LocalOnly))), emptyList())

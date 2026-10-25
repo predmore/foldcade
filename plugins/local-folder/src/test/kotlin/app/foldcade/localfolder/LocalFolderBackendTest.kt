@@ -58,6 +58,7 @@ class LocalFolderBackendTest {
                 "saves",
                 "unsyncedSaves",
                 "serverSaves",
+                "serverSaveBackups",
                 "syncServerSaves",
                 "playServerSave",
                 "copyServerSave",

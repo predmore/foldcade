@@ -80,6 +80,20 @@ class SavePickerTest {
         assertEquals(Effect.SyncSavePicker(target), applySavePicker(missing.copy(index = 0, health = SaveHealth.Waiting), Meaning.Activate).second)
     }
 
+    @Test fun onlyOwnBackupMetadataChangesTheSlotLabel() {
+        val archive = save.copy(slot = null)
+        assertEquals("Steam Deck · No slot", SavePickerCopy.row(archive))
+        assertEquals("Steam Deck · Backup", SavePickerCopy.row(archive.copy(backup = true)))
+        assertEquals("Steam Deck · autosave", SavePickerCopy.row(save))
+    }
+
+    @Test fun playWarnsThatAPausedGameRestartsAndLosesUnsavedProgress() {
+        val body = SavePickerCopy.confirmationBody(SavePickerChoice.Play(save), "melonds", "melonDS", DateStyle(), restartsOpenGame = true)
+        assertTrue(body.contains("The open game restarts."))
+        assertTrue(body.contains(SavePickerCopy.restartOpen))
+        assertFalse(SavePickerCopy.confirmationBody(SavePickerChoice.Play(save), "melonds", "melonDS", DateStyle()).contains(SavePickerCopy.restartOpen))
+    }
+
     @Test fun emulatorFamiliesWarnOnlyWhenDifferentAndDatesAreLocal() {
         assertFalse(emulatorMismatch("retroarch.nes", "retroarch.snes"))
         assertFalse(emulatorMismatch("azahar", "azahar"))

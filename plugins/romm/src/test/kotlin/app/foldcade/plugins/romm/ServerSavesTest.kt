@@ -81,6 +81,80 @@ class ServerSavesTest {
         assertTrue(library().serverSaves(GAME, player).single().playing)
     }
 
+    @Test fun aNamelessOriginFallsBackToTheEmulator() = runBlocking {
+        val save = add("progress".toByteArray(), "sav", "melonds")
+        server[0] = save.copy(originDeviceId = "nameless", deviceSyncs = listOf(SaveDeviceSync("nameless", null)))
+        assertEquals("melonds", library().serverSaves(GAME, player).single().source)
+    }
+
+    @Test fun aForeignCopyKeepsTheDestinationsFileNameAndExtension() = runBlocking {
+        hold("current")
+        val source = add("choice".toByteArray(), "srm", "retroarch")
+        val destination = add("destination".toByteArray(), "autosave", "melonds")
+        server[server.indexOf(destination)] = destination.copy(fileName = "Kid Icarus [old].sav")
+        val upload = ops.onUploadSave
+        var name: String? = null
+        ops.onUploadSave = { rom, file, slot, emulator, device, hash, content ->
+            name = file
+            upload(rom, file, slot, emulator, device, hash, content)
+        }
+        library().copyServerSave(GAME, source.id.toString(), "autosave", "melonds", player)
+        assertEquals("Kid Icarus [old].sav", name)
+    }
+
+    @Test fun theCommitHookRunsOnlyAfterValidationAndBeforePromotion() = runBlocking {
+        hold("current")
+        val source = add("choice".toByteArray(), "autosave", "melonds")
+        library().playServerSave(GAME, player, source.id.toString()) { events += "commit-hook" }
+        assertTrue(events.indexOfFirst { it.startsWith("archive:") } < events.indexOf("commit-hook"))
+        assertTrue(events.indexOf("commit-hook") < events.indexOfFirst { it.startsWith("upload:") })
+        events.clear()
+        val corrupt = source.copy(contentHash = "0".repeat(32))
+        server[server.indexOfFirst { it.id == source.id }] = corrupt
+        assertNotNull(runCatching { library().playServerSave(GAME, player, source.id.toString()) { events += "commit-hook" } }.exceptionOrNull())
+        assertFalse(events.contains("commit-hook"))
+    }
+
+    @Test fun aDefinitiveUploadRefusalAbandonsItsIntent() = runBlocking {
+        hold("current")
+        val source = add("choice".toByteArray(), "autosave", "melonds")
+        ops.onUploadSave = { _, _, _, _, _, _, _ -> throw RommHttpException(409, "Refused") }
+        val failure = runCatching { library().playServerSave(GAME, player, source.id.toString()) { events += "commit-hook" } }.exceptionOrNull()
+        assertTrue(failure is PluginException.SaveChoiceRefused)
+        assertFalse(SaveSelection(data.romSaves(ROM)).pending())
+        assertEquals("current", Files.readString(data.slotFile(ROM, "sav")))
+        assertTrue(events.contains("commit-hook"))
+    }
+
+    @Test fun aSlotMovedRefusalAlsoAbandonsTheIntent() = runBlocking {
+        hold("current")
+        val source = add("choice".toByteArray(), "autosave", "melonds")
+        ops.onUploadSave = { _, _, _, _, _, _, _ -> throw RommSlotMoved("Slot changed") }
+        assertTrue(runCatching { library().playServerSave(GAME, player, source.id.toString()) }.exceptionOrNull() is PluginException.SaveChoiceRefused)
+        assertFalse(SaveSelection(data.romSaves(ROM)).pending())
+        assertEquals("current", Files.readString(data.slotFile(ROM, "sav")))
+    }
+
+    @Test fun aConflictFromStrictSyncRefusesBeforeTheCommitHook() = runBlocking {
+        hold("current")
+        val source = add("choice".toByteArray(), "autosave", "melonds")
+        ops.onSync = { _, _, _, _ -> report().copy(keptBoth = listOf(KeptBoth(ROM, "sav", null, source.id, data.slotFile(ROM, "sav")))) }
+        assertNotNull(runCatching { library().playServerSave(GAME, player, source.id.toString()) { events += "commit-hook" } }.exceptionOrNull())
+        assertFalse(events.contains("commit-hook"))
+        assertFalse(events.any { it.startsWith("upload:") })
+        assertEquals("current", Files.readString(data.slotFile(ROM, "sav")))
+    }
+
+    @Test fun ownUnslottedArchivesAreIdentifiedWithoutInventingASlot() = runBlocking {
+        val backup = add("progress".toByteArray(), null, "azahar")
+        server[0] = backup.copy(fileName = "foldcade-kept-12345678-1234-1234-1234-123456789abc.zip")
+        add("other client".toByteArray(), null, "azahar")
+        val library = library()
+        val saves = library.serverSaves(GAME, player)
+        assertTrue(saves.all { it.slot == null })
+        assertEquals(setOf(backup.id.toString()), library.serverSaveBackups(GAME))
+    }
+
     @Test fun syncNowUploadsHeldProgressWithoutAnInstalledPlayer() = runBlocking {
         hold("waiting progress", synced = false)
         library().syncServerSaves(GAME, null)

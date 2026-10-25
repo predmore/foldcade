@@ -9,6 +9,7 @@ data class SavePickerTarget(val gameId: String, val libraryId: String, val remot
 data class SavePickerSave(
     val id: String, val slot: String?, val emulator: String?, val source: String?,
     val updatedAtMillis: Long, val sizeBytes: Long, val playing: Boolean, val screenshotUri: String?,
+    val backup: Boolean = false,
 )
 
 data class SaveDestination(val slot: String, val emulator: String?, val source: String)
@@ -37,6 +38,7 @@ data class SavePickerState(
     val confirmIndex: Int = 1,
     val message: String? = null,
     val canPlay: Boolean = true,
+    val restartsOpenGame: Boolean = false,
 ) {
     val focused: SavePickerSave? get() = copying ?: saves.getOrNull(index - 1)
     fun destinations(): List<SaveDestination> {
@@ -115,8 +117,11 @@ object SavePickerCopy {
     const val noDestinations = "No other slots yet"
     const val unknown = "Unknown"
     const val noSlot = "No slot"
+    const val backup = "Backup"
+    const val downloadFirst = "Download the game first."
+    const val restartOpen = "The open game restarts. Anything not saved is lost."
     const val unavailable = "Connect to RomM first. Your save on this device stays as it is."
-    const val failed = "The choice could not finish. Both saves are kept. Connect to RomM and try again."
+    const val failed = "The choice could not finish. Both saves are kept. Try again."
     const val unreadable = "Your save on this device couldn't be read. Check the save folder and try again."
     const val returnHome = "Return to Home before choosing a save."
     const val installFirst = "Install an emulator to play this save."
@@ -126,7 +131,7 @@ object SavePickerCopy {
     const val slotLabel = "Slot"
     const val sizeLabel = "Size"
     fun source(save: SavePickerSave): String = save.source?.takeIf { it.isNotBlank() } ?: save.emulator?.takeIf { it.isNotBlank() } ?: unknown
-    fun slot(save: SavePickerSave): String = save.slot?.takeIf { it.isNotBlank() } ?: noSlot
+    fun slot(save: SavePickerSave): String = if (save.backup) backup else save.slot?.takeIf { it.isNotBlank() } ?: noSlot
     fun row(save: SavePickerSave): String = "${source(save)} · ${slot(save)}"
     fun destination(destination: SaveDestination): String = "${destination.source} · ${destination.slot}"
     fun header(health: SaveHealth): String = when (health) {
@@ -146,9 +151,10 @@ object SavePickerCopy {
         is SavePickerChoice.Copy -> "Copy to ${choice.destination.slot}?"
         SavePickerChoice.Setup -> "Set up $player first"
     }
-    fun confirmationBody(choice: SavePickerChoice, playerId: String?, player: String, style: DateStyle): String = when (choice) {
+    fun confirmationBody(choice: SavePickerChoice, playerId: String?, player: String, style: DateStyle, restartsOpenGame: Boolean = false): String = when (choice) {
         is SavePickerChoice.Play -> "From ${source(choice.save)}, ${formatSaveWhen(choice.save.updatedAtMillis, style)}. Your current save stays on RomM." +
-            if (emulatorMismatch(choice.save.emulator, playerId)) " Made by ${choice.save.emulator}. It may not load in $player." else ""
+            (if (emulatorMismatch(choice.save.emulator, playerId)) " Made by ${choice.save.emulator}. It may not load in $player." else "") +
+            (if (restartsOpenGame) " $restartOpen" else "")
         is SavePickerChoice.Copy -> "The save there now stays on RomM."
         SavePickerChoice.Setup -> "Set up save syncing before playing a save from RomM."
     }

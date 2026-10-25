@@ -2810,8 +2810,10 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
         val request = foldcade.savePickerRequest?.takeIf { it.target == target } ?: return
         foldcade.scope.launch {
             try {
-                val saves = foldcade.plugins.serverSaves(request.owner.backendId, request.owner, request.player).map {
-                    app.foldcade.language.SavePickerSave(it.id, it.slot, it.emulator, it.source, it.updatedAtMillis, it.sizeBytes, it.playing, it.screenshotUri)
+                val listed = foldcade.plugins.serverSaves(request.owner.backendId, request.owner, request.player)
+                val backups = foldcade.plugins.serverSaveBackups(request.owner.backendId, request.owner)
+                val saves = listed.map {
+                    app.foldcade.language.SavePickerSave(it.id, it.slot, it.emulator, it.source, it.updatedAtMillis, it.sizeBytes, it.playing, it.screenshotUri, it.id in backups)
                 }
                 withContext(Dispatchers.Main.immediate) {
                     foldcade.shell.updateSavePicker(target) { previous ->
@@ -2845,20 +2847,17 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
         }
         foldcade.scope.launch {
             var success = false
-            var failure = app.foldcade.language.SavePickerCopy.unavailable
+            var failure = app.foldcade.language.SavePickerCopy.failed
             try {
                 foldcade.saveFlow.withLock {
-                    ServerSaveFlow(foldcade.playerSaves, foldcade.plugins) { key -> foldcade.store.setSaveAwaitsLoad(key, true) }
+                    ServerSaveFlow(foldcade.playerSaves, foldcade.plugins, foldcade.store::saveAwaitsLoad, foldcade.store::setSaveAwaitsLoad)
                         .perform(request.copy(player = installedPlayer), saveId, destination)
                 }
                 success = true
             } catch (cancelled: CancellationException) {
                 throw cancelled
-            } catch (_: SaveNotPlaced) {
-                failure = app.foldcade.language.SavePickerCopy.unreadable
-            } catch (_: Exception) {
-                // The library keeps both copies, including an upload whose response was lost.
-                Unit
+            } catch (error: Exception) {
+                failure = serverSaveFailure(error)
             } finally {
                 withContext(NonCancellable + Dispatchers.Main.immediate) {
                     foldcade.shell.updateSavePicker(target) { it.copy(busy = false, copying = null,

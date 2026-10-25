@@ -19,6 +19,9 @@ sealed class PluginException(
         cause: Throwable? = null,
     ) : PluginException(message, cause)
 
+    /** A save choice was definitively refused; its commit did not change server or player bytes. */
+    class SaveChoiceRefused(message: String, cause: Throwable? = null) : PluginException(message, cause)
+
     /** The plugin cannot reach its source. Offline is this failure. */
     class Unavailable(
         message: String,

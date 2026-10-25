@@ -57,6 +57,8 @@ internal class SaveSelection(private val root: Path) {
         Files.deleteIfExists(intent)
     }
 
+    fun abandon() { Files.deleteIfExists(intent) }
+
     fun finish(data: RommData, romId: Long) {
         val held = read()
         install(data, romId, held)

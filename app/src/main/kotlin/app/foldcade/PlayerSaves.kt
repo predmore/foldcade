@@ -231,7 +231,17 @@ internal class PlayerSaves(
         val header by lazy {
             if (player.romHeaderSize > 0) docs.head(uri, player.romHeaderSize) ?: ByteArray(0) else ByteArray(0)
         }
-        val reader = gameFile(uri)
+        return resolveSpots(player, game, romName, { header }, gameFile(uri), forLaunch, changed)
+    }
+
+    /** Resolve only what a filename proves. Header- or disc-based saves stay unresolved. */
+    fun spotsForFileName(player: Player, game: Game, romName: String): List<SaveSpot> =
+        resolveSpots(player, game, romName, { ByteArray(0) }, UnreadableGameFile, false, null)
+
+    private fun resolveSpots(
+        player: Player, game: Game, romName: String, header: () -> ByteArray, reader: GameFileReader,
+        forLaunch: Boolean, changed: MutableList<String>?,
+    ): List<SaveSpot> {
         return player.saveDeclarations(game).mapNotNull { declaration ->
             val folder = declaration.locationUri ?: return@mapNotNull null
             val access = folderAccess(player, folder, forLaunch)
@@ -248,7 +258,7 @@ internal class PlayerSaves(
                 val zipName = romName.substringBeforeLast('.').ifEmpty { romName } + ".zip"
                 return@mapNotNull SaveSpot(declaration.slot, folder, zipName, search = search)
             }
-            val folders = player.saveFolders(declaration.slot, romName, header)
+            val folders = player.saveFolders(declaration.slot, romName, header())
             if (folders != null) {
                 if (!validFolders(folders)) return@mapNotNull null
                 val zipName = romName.substringBeforeLast('.').ifEmpty { romName } + ".zip"

@@ -45,15 +45,21 @@ class ServerSaveFlowTest {
     private val game = Game("server", "original", "nintendo-ds", Availability.Cached, "Original game")
     private val target = SavePickerTarget("original-tile", "server", "original", player.id)
     private val request = SavePickerRequest(target, GameRoute("original-tile", game, game), game, player)
-    private val flow = ServerSaveFlow(saves, plugins) { events += "await-load:$it" }
+    private val awaiting = mutableMapOf<String, Boolean>()
+    private val flow = ServerSaveFlow(saves, plugins, { awaiting[it] == true }) { key, waiting ->
+        awaiting[key] = waiting
+        events += "await-load:$key:$waiting"
+    }
     private var onChoose: () -> Unit = {}
+    private var onSync: () -> Unit = {}
+    private var onCommit: () -> Unit = {}
 
     @After fun cleanup() { root.toFile().deleteRecursively() }
 
     @Test fun capturesCurrentProgressAndMarksFreshLoadBeforeChoosingAndPlacing() = runBlocking {
         docs.current = "current progress".toByteArray()
         flow.perform(request, "chosen-id")
-        assertEquals(listOf("local:original", "capture:original", "await-load:melonds", "choose:original:chosen-id", "place"), events)
+        assertEquals(listOf("local:original", "capture:original", "sync:original", "choose:original:chosen-id", "await-load:melonds:true", "commit", "place"), events)
         assertEquals("chosen", String(docs.current!!))
         assertEquals(md5Hex("current progress".toByteArray()), library.observed.single().contentHash)
         assertTrue(saves.changedSince(game.backendId, game, player, listOf(SaveSpot("sav", "content://folder", "Game.sav"))).slots.isEmpty())
@@ -86,22 +92,44 @@ class ServerSaveFlowTest {
         onChoose = { docs.current = "newer outside progress".toByteArray() }
         assertTrue(runCatching { flow.perform(request, "chosen-id") }.exceptionOrNull() is SaveNotPlaced)
         assertEquals("newer outside progress", String(docs.current!!))
-        assertTrue(events.contains("await-load:melonds"))
+        assertTrue(events.contains("await-load:melonds:true"))
     }
 
-    @Test fun aSyncRefusalLeavesThePlayerFileAsItWasAndKeepsTheFreshLoadMarker() = runBlocking {
+    @Test fun offlineSyncAndChoiceValidationRefuseWithoutArmingFreshLoad() = runBlocking {
         docs.current = "current progress".toByteArray()
-        onChoose = { throw PluginException.Unavailable("offline") }
+        onSync = { throw PluginException.Unavailable("offline") }
         assertNotNull(runCatching { flow.perform(request, "chosen-id") }.exceptionOrNull())
+        assertTrue(awaiting.isEmpty())
+        onSync = {}
+        for (refusal in listOf(PluginException.Unavailable("hash mismatch"), PluginException.NotFound("slot changed"))) {
+            onChoose = { throw refusal }
+            assertNotNull(runCatching { flow.perform(request, "chosen-id") }.exceptionOrNull())
+            assertTrue(awaiting.isEmpty())
+        }
         assertEquals("current progress", String(docs.current!!))
-        assertTrue(events.indexOf("await-load:melonds") < events.indexOf("choose:original:chosen-id"))
         assertFalse(events.contains("place"))
+    }
+
+    @Test fun aDefinitiveCommitRefusalRestoresThePreviousFreshLoadMarker() = runBlocking {
+        onCommit = { throw PluginException.SaveChoiceRefused("HTTP 409") }
+        for (previous in listOf(false, true)) {
+            awaiting["melonds"] = previous
+            assertNotNull(runCatching { flow.perform(request, "chosen-id") }.exceptionOrNull())
+            assertEquals(previous, awaiting["melonds"])
+        }
+        assertFalse(events.contains("place"))
+    }
+
+    @Test fun anUncertainUploadKeepsItsRecoveryMarker() = runBlocking {
+        onCommit = { throw app.foldcade.romm.RommUnavailable("Response lost") }
+        assertNotNull(runCatching { flow.perform(request, "chosen-id") }.exceptionOrNull())
+        assertEquals(true, awaiting["melonds"])
     }
 
     @Test fun foreignCopiesCaptureProgressButDoNotReplaceThePlayerFileOrSetFreshLoad() = runBlocking {
         docs.current = "current progress".toByteArray()
         flow.perform(request, "chosen-id", SaveDestination("autosave", "argosy", "Steam Deck"))
-        assertEquals(listOf("local:original", "capture:original", "copy:original:chosen-id:autosave:argosy"), events)
+        assertEquals(listOf("local:original", "capture:original", "sync:original", "copy:original:chosen-id:autosave:argosy"), events)
         assertEquals("current progress", String(docs.current!!))
     }
 
@@ -109,7 +137,7 @@ class ServerSaveFlowTest {
         docs.current = "current progress".toByteArray()
         flow.perform(request, "chosen-id", SaveDestination("sav", "melonds", "This device"))
         assertEquals("chosen", String(docs.current!!))
-        assertTrue(events.indexOf("await-load:melonds") < events.indexOf("copy:original:chosen-id:sav:melonds"))
+        assertTrue(events.indexOf("await-load:melonds:true") < events.indexOf("commit"))
     }
 
     @Test fun syncNowCapturesBeforeTheStrictSyncWithoutReplacingThePlayerFile() = runBlocking {
@@ -125,6 +153,38 @@ class ServerSaveFlowTest {
         assertNull(docs.current)
     }
 
+    @Test fun remotePlayAndOwnSlotCopyResolveByNameWithoutDownloadingOrCapturing() = runBlocking {
+        val remoteGame = game.copy(availability = Availability.RemoteOnly)
+        val remote = request.copy(route = GameRoute("original-tile", remoteGame, remoteGame), owner = remoteGame)
+        flow.perform(remote, "chosen-id")
+        assertEquals("chosen", String(docs.current!!))
+        assertFalse(events.any { it.startsWith("local:") || it.startsWith("capture:") })
+        assertTrue(events.contains("name:original"))
+        events.clear()
+        flow.perform(remote, "chosen-id", SaveDestination("sav", "melonds", "This device"))
+        assertFalse(events.any { it.startsWith("local:") || it.startsWith("capture:") })
+    }
+
+    @Test fun remoteForeignCopiesAndWaitingSyncNeedNeitherTheRomNorItsFilename() = runBlocking {
+        val remoteGame = game.copy(availability = Availability.RemoteOnly)
+        val remote = request.copy(route = GameRoute("original-tile", remoteGame, remoteGame), owner = remoteGame)
+        flow.perform(remote, "chosen-id", SaveDestination("autosave", "argosy", "Steam Deck"))
+        flow.perform(remote, null)
+        assertFalse(events.any { it.startsWith("local:") || it.startsWith("capture:") || it.startsWith("name:") })
+        assertTrue(awaiting.isEmpty())
+    }
+
+    @Test fun aRemoteSaveThatNeedsRomContentsRefusesBeforeSyncOrPromotion() = runBlocking {
+        val needsRom = object : Player by player {
+            override fun saveFileName(slot: String, romFileName: String): String? = null
+        }
+        val remoteGame = game.copy(availability = Availability.RemoteOnly)
+        val remote = request.copy(route = GameRoute("original-tile", remoteGame, remoteGame), owner = remoteGame, player = needsRom)
+        assertTrue(runCatching { flow.perform(remote, "chosen-id") }.exceptionOrNull() is SaveNeedsDownload)
+        assertEquals(listOf("name:original"), events)
+        assertTrue(awaiting.isEmpty())
+    }
+
     private inner class Library : LibraryBackend {
         override val id = "server"
         override val displayName = "Server"
@@ -133,18 +193,21 @@ class ServerSaveFlowTest {
         override suspend fun disconnect() = Unit
         override suspend fun listPlatforms(): List<ListedPlatform> = emptyList()
         override suspend fun listGames(platformId: String, query: GameQuery) = GamePage(emptyList(), null)
+        override suspend fun fileName(game: Game): String { events += "name:${game.remoteKey}"; return "Game.nds" }
         override suspend fun ensureLocal(game: Game): LaunchTarget { events += "local:${game.remoteKey}"; return LaunchTarget.ContentUri("content://rom") }
         override suspend fun saves(game: Game) = SaveSet(id, emptyList())
         override suspend fun prepareLaunch(game: Game, player: Player) = error("Must not use launch sync to capture")
         override suspend fun reconcile(game: Game, player: Player, observed: ObservedSaves): SyncResult {
             events += "capture:${game.remoteKey}"; this.observed += observed.slots; return SyncResult(SyncOutcome.Queued)
         }
-        override suspend fun syncServerSaves(game: Game, player: Player?): SyncResult { events += "sync:${game.remoteKey}"; return SyncResult(SyncOutcome.Unchanged) }
-        override suspend fun playServerSave(game: Game, player: Player, saveId: String): List<PlacedSave> {
-            events += "choose:${game.remoteKey}:$saveId"; onChoose(); return placed()
+        override suspend fun syncServerSaves(game: Game, player: Player?): SyncResult { events += "sync:${game.remoteKey}"; onSync(); return SyncResult(SyncOutcome.Unchanged) }
+        override suspend fun playServerSave(game: Game, player: Player, saveId: String, beforeCommit: () -> Unit): List<PlacedSave> {
+            events += "choose:${game.remoteKey}:$saveId"; onChoose(); beforeCommit(); events += "commit"; onCommit(); return placed()
         }
-        override suspend fun copyServerSave(game: Game, saveId: String, toSlot: String, toEmulator: String?, player: Player?): List<PlacedSave> {
-            events += "copy:${game.remoteKey}:$saveId:$toSlot:$toEmulator"; onChoose(); return if (toSlot == "sav") placed() else emptyList()
+        override suspend fun copyServerSave(game: Game, saveId: String, toSlot: String, toEmulator: String?, player: Player?, beforeCommit: () -> Unit): List<PlacedSave> {
+            events += "copy:${game.remoteKey}:$saveId:$toSlot:$toEmulator"; onChoose()
+            if (toSlot != "sav") return emptyList()
+            beforeCommit(); events += "commit"; onCommit(); return placed()
         }
         private fun placed() = listOf(PlacedSave("sav", "content://chosen", md5Hex("chosen".toByteArray())))
     }

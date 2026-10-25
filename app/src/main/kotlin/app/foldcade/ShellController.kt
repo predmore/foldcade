@@ -171,6 +171,7 @@ class ShellController(
     /** "0.1.2 (230)", read from the installed package. Settings › About shows it. */
     private val appVersion: String = "",
     private val onSaveHealthChanged: (Map<String, String>) -> Unit = {},
+    private val onSavePickerClosed: () -> Unit = {},
 ) {
     var artPicker by mutableStateOf<ArtPickerState?>(null)
         private set
@@ -2149,7 +2150,7 @@ class ShellController(
         val slots = if (owner != null && player != null)
             saveSupport.getOrPut(player.id to owner) { readGameSaveSupport(owner, player) }.declarations.map { it.slot }
         else emptyList()
-        model = model.copy(savePicker = page.copy(health = savePickerHealth(page.target), ownSlots = slots, canPlay = player != null))
+        model = model.copy(savePicker = page.copy(health = savePickerHealth(page.target), ownSlots = slots, canPlay = player != null, restartsOpenGame = isRunning(page.target.gameId)))
     }
 
     fun presentSavePicker(state: app.foldcade.language.SavePickerState?) {
@@ -2858,6 +2859,7 @@ class ShellController(
         if (showingHome() && next.homeGrid != HomeGrid.StandIns) {
             home.rememberRootFocus(model.panel?.grid?.cellIndex ?: model.focus.cellIndex)
         }
+        val savePickerClosed = model.savePicker != null && next.savePicker == null
         val connectClosed = model.connectOpen && !next.connectOpen
         if (model.connectOpen != next.connectOpen) invalidateSetupValidation()
         if (next.primaryIsTop != store.session.defaultDisplayIsTop) {
@@ -2894,6 +2896,7 @@ class ShellController(
         }
         refreshSavePickerHealth()
         if (connectClosed) showQueuedPrompt()
+        if (savePickerClosed) onSavePickerClosed()
         logHomeTile()
     }
 
