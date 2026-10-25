@@ -272,4 +272,4 @@ data class RommSave(
     val screenshotId: Long?,
 )
 
-data class SaveDeviceSync(val deviceId: String, val deviceName: String)
+data class SaveDeviceSync(val deviceId: String, val deviceName: String?)

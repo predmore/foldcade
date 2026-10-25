@@ -18,6 +18,7 @@ import kotlinx.serialization.json.longOrNull
 import kotlinx.serialization.json.put
 import java.security.MessageDigest
 import java.time.Instant
+import java.time.OffsetDateTime
 import java.time.ZoneOffset
 import java.time.format.DateTimeFormatter
 import java.time.temporal.ChronoUnit
@@ -30,6 +31,9 @@ internal fun md5Hex(bytes: ByteArray): String {
 
 internal fun instantText(instant: Instant): String =
     instant.truncatedTo(ChronoUnit.SECONDS).toString()
+
+/** Android 13's stock Instant parser rejects the numeric UTC offsets RomM emits. */
+internal fun parseRommTime(text: String): Instant = OffsetDateTime.parse(text).toInstant()
 
 internal fun parseElement(text: String): JsonElement = try {
     kotlinx.serialization.json.Json.parseToJsonElement(text)
@@ -449,11 +453,11 @@ internal fun parseSaves(bytes: ByteArray): List<RommSave> {
             id = obj.reqLong("id"), romId = obj.reqLong("rom_id"), fileName = obj.reqString("file_name"),
             slot = obj.optString("slot"), emulator = obj.optString("emulator"),
             contentHash = obj.optString("content_hash"),
-            updatedAt = try { Instant.parse(obj.reqString("updated_at")) }
+            updatedAt = try { parseRommTime(obj.reqString("updated_at")) }
                 catch (_: Exception) { throw RommResponseException("RomM save has an invalid updated_at") },
             sizeBytes = obj.reqLong("file_size_bytes"), originDeviceId = obj.optString("origin_device_id"),
             deviceSyncs = (obj["device_syncs"] as? JsonArray).orEmpty().map { sync ->
-                SaveDeviceSync(sync.jsonObject.reqString("device_id"), sync.jsonObject.reqString("device_name"))
+                SaveDeviceSync(sync.jsonObject.reqString("device_id"), sync.jsonObject.optString("device_name"))
             },
             screenshotId = (obj["screenshot"] as? JsonObject)?.optLong("id"),
         )

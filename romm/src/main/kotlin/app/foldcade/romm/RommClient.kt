@@ -141,8 +141,7 @@ class RommClient(
     suspend fun artwork(uri: String, maxBytes: Int = ARTWORK_MAX_BYTES): ByteArray {
         if (!sameOrigin(origin, uri)) throw RommResponseException("artwork is not on the RomM origin")
         // Save screenshots are private assets. Only this exact same-origin endpoint gets a bearer.
-        val path = URI.create(uri).path
-        val screenshot = path.removePrefix(URI.create(origin).path).matches(Regex("/api/screenshots/[1-9][0-9]*/content"))
+        val screenshot = isSaveScreenshotUri(origin, uri)
         val raw = exchange(URI.create(uri), "GET", authenticated = screenshot)
         raw.require(200)
         if (raw.body.size > maxBytes) throw RommResponseException("artwork is over $maxBytes bytes")
@@ -891,7 +890,7 @@ class RommClient(
             val remoteSize = withContext(Dispatchers.IO) { Files.size(path) }
             val remoteWhen = op.serverUpdatedAt?.let { text ->
                 try {
-                    Instant.parse(text).toEpochMilli()
+                    parseRommTime(text).toEpochMilli()
                 } catch (_: Exception) {
                     null
                 }
@@ -1193,6 +1192,14 @@ class RommClient(
     }
 
     companion object {
+        /** Only this exact, same-origin asset endpoint may receive an image bearer. */
+        fun isSaveScreenshotUri(origin: String, uri: String): Boolean {
+            if (!sameOrigin(origin, uri)) return false
+            val base = try { URI.create(normalizeOrigin(origin)).rawPath.orEmpty() } catch (_: IllegalArgumentException) { return false }
+            val path = URI.create(uri).rawPath
+            return path.startsWith("$base/") && path.removePrefix(base).matches(Regex("/api/screenshots/[1-9][0-9]*/content"))
+        }
+
         /** A cover is well under this. A larger body is not an image the hero needs. */
         const val ARTWORK_MAX_BYTES: Int = 8 * 1024 * 1024
 
