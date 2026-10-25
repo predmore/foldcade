@@ -246,7 +246,7 @@ val PLATFORM_MARKS: Set<String> = setOf(
     "nintendo-3ds", "nintendo-ds", "game-boy", "game-boy-color", "game-boy-advance",
     "nes", "snes", "nintendo-64", "gamecube", "wii", "nintendo-switch",
     "playstation", "playstation-2", "playstation-3", "psp",
-    "genesis", "master-system", "game-gear", "saturn", "dreamcast",
+    "genesis", "sega-cd", "master-system", "game-gear", "saturn", "dreamcast",
 )
 
 const val MARK_CONSOLE: String = "console"
@@ -434,15 +434,16 @@ fun mergeHome(
     val catalog = items.distinctBy { it.id }
     val ids = catalog.map { it.id }.toSet()
     val keep = { id: String -> id in ids || unsettled(id) }
-    val hidden = board.hidden.filter(keep).toSet()
-    var next = board.copy(
-        slots = tidySlots(board.slots, keep, board.folders, hidden),
-        folders = board.folders.mapValues { (_, folder) ->
-            folder.copy(slots = tidySlots(folder.slots, keep, board.folders, hidden))
+    val migrated = canonicalPlatformFolders(board, platforms)
+    val hidden = migrated.hidden.filter(keep).toSet()
+    var next = migrated.copy(
+        slots = tidySlots(migrated.slots, keep, migrated.folders, hidden),
+        folders = migrated.folders.mapValues { (_, folder) ->
+            folder.copy(slots = tidySlots(folder.slots, keep, migrated.folders, hidden))
         },
         hidden = hidden,
-        offHome = board.offHome.filter(keep).toSet(),
-        filedEmulators = board.filedEmulators.filter(keep).toSet(),
+        offHome = migrated.offHome.filter(keep).toSet(),
+        filedEmulators = migrated.filedEmulators.filter(keep).toSet(),
     )
     next = fileEmulators(next, catalog, platforms)
     val known = placedIds(next)
@@ -1225,6 +1226,50 @@ private fun completeFolders(board: HomeBoard, catalog: List<HomeItem>, platforms
         val folder = next.folders[folderId]?.takeIf { it.system } ?: continue
         next = next.copy(folders = next.folders + (folderId to folder.copy(slots = atEnd(folder.slots, id))))
         filed += id
+    }
+    return next
+}
+
+/**
+ * A platform definition can claim a formerly raw slug, as playstation-3 claimed RomM's ps3. Its old
+ * folder becomes the canonical one, or joins it, in the old folder's place on Home: the place the
+ * user knows. Only system folders hold games by platform, and only folder lists hold folder ids.
+ */
+private fun canonicalPlatformFolders(board: HomeBoard, platforms: List<HomePlatform>): HomeBoard {
+    if (board.hold != null) return board
+    var next = board
+    for (id in board.folders.keys) {
+        val alias = next.folders[id] ?: continue
+        if (alias.userMade || alias.platformId == null) continue
+        val platform = resolvePlatform(platforms, alias.platformId) ?: continue
+        if (platform.id == alias.platformId) continue
+        val canonicalId = platformFolderId(platform.id)
+        val canonical = next.folders[canonicalId]
+        val folder = if (canonical == null) {
+            alias.copy(id = canonicalId, platformId = platform.id)
+        } else {
+            val seen = canonical.slots.filterNotNull().toMutableSet()
+            val joined = canonical.copy(slots = canonical.slots + alias.slots.filterNotNull().filter { seen.add(it) })
+            if (alias.namedByUser && !canonical.namedByUser) joined.copy(name = alias.name, namedByUser = true) else joined
+        }
+        val rename = { reference: String -> if (reference == id) canonicalId else reference }
+        val onRoot = id in next.slots || canonicalId in next.slots
+        val slots = if (id in next.slots) next.slots.map { if (it == canonicalId) null else it?.let(rename) } else next.slots
+        val hiddenSlots = buildMap<String, List<HiddenSlot>> {
+            // Keep the canonical folder's remembered places first when both folders had some.
+            for ((key, places) in next.hiddenSlots.entries.sortedBy { it.key == id }) {
+                val renamed = rename(key)
+                val moved = places.map { it.copy(group = it.group?.let(rename)) }
+                put(renamed, (get(renamed).orEmpty() + moved).distinct())
+            }
+        }
+        next = next.copy(
+            slots = slots.dropLastWhile { it == null },
+            folders = next.folders - id + (canonicalId to folder),
+            openFolderId = next.openFolderId?.let(rename),
+            retired = next.retired.map(rename).toSet().let { if (onRoot) it - canonicalId else it },
+            hiddenSlots = hiddenSlots,
+        )
     }
     return next
 }

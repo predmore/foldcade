@@ -197,6 +197,7 @@ fun glyphName(mark: String): String = when (mark) {
     "playstation-3" -> "PS3"
     "psp" -> "PSP"
     "genesis" -> "Genesis"
+    "sega-cd" -> "Sega CD"
     "master-system" -> "Master System"
     "game-gear" -> "Game Gear"
     "saturn" -> "Saturn"

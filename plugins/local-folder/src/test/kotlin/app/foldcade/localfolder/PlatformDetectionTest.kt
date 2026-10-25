@@ -41,7 +41,8 @@ class PlatformDetectionTest {
     @Test
     fun namesFollowOneConvention() {
         // Every Sega system carries the maker, as Sega CD and Sega 32X always did; Nintendo
-        // and Sony keep the names players use, so Home reads Sega Genesis beside Nintendo DS.
+        // keeps the names players use, so Home reads Sega Genesis beside Nintendo DS. The
+        // PlayStations are numbered in full, so PlayStation 2 sits beside PlayStation, not PS2.
         val names = PlatformCatalog.specs.associate { it.platform.id to it.platform.name }
         val sega = listOf("genesis", "master-system", "game-gear", "saturn", "dreamcast", "sega-cd", "sega-32x")
         assertEquals(
@@ -52,7 +53,7 @@ class PlatformDetectionTest {
             listOf("NES", "SNES", "Nintendo 64", "GameCube", "Wii", "Nintendo Switch", "Nintendo DS", "Nintendo 3DS", "Game Boy"),
             listOf("nes", "snes", "nintendo-64", "gamecube", "wii", "nintendo-switch", "nintendo-ds", "nintendo-3ds", "game-boy").map { names[it] },
         )
-        assertEquals(listOf("PlayStation", "PS2", "PS3", "PSP"), listOf("playstation", "playstation-2", "playstation-3", "psp").map { names[it] })
+        assertEquals(listOf("PlayStation", "PlayStation 2", "PlayStation 3", "PSP"), listOf("playstation", "playstation-2", "playstation-3", "psp").map { names[it] })
     }
 
     @Test

@@ -37,7 +37,7 @@ Resource themes can override any slot (see [themes](themes.md)). A symbol is mar
 ## The rules
 
 1. **One shape per idea.** Use the shape people already know. A house is Home, a shelf of game cases is the library, a cloud is the server, and a folder is a folder.
-2. **Platforms are the thing you hold, seen from the front.** Draw the controller or the handheld, not the console box and not a logo. When two platforms' controllers look alike, draw what differs. The first PlayStation has no sticks and the PlayStation 2 does. The Master System's d-pad is square. Saturn is the planet.
+2. **Platforms are the thing you hold, seen from the front.** Draw the controller or the handheld, not a logo. When two platforms' controllers look alike, draw what differs: the Master System's d-pad is square, and Sega CD is the Genesis pad with a disc above it. When the difference is too small to read on a tile, draw the console instead. The three PlayStation controllers are nearly the same, so the PlayStations are their consoles: the first a grey box with a round lid, the PlayStation 2 lying down in two tiers, the PlayStation 3 a slab with a curved top. Saturn is the planet.
 3. **Shape says what it is, colour says which one.** A device is a platform, a folder is a folder or a collection, and a house, a shelf, or a cloud is a place.
 4. **Symbols are one ink.** No gradients, gloss, rims, or glows in the art. The host draws focus.
 5. **Colour in a symbol means state.** Teal (`#3EE6C0`) means on or held. Rose (`#FF5C7A`) means it needs you. Ink at 30% means off. Nothing else is coloured.
@@ -193,7 +193,7 @@ Draw it in `tools/art/symbols.py` on the 24-unit grid and add an `Asset` to `con
 - [ ] It is recognisable at a glance, beside the rest of its row on the sheet, at 32 px for a symbol and on a tile for an object.
 - [ ] A symbol is one ink, with cuts of at least 2.5 units, and colour only for state. Where it's drawn, the host passes its colour through `ThemeIconPainter.tint`.
 - [ ] An object uses only parts from the recipe, its body in its accent, and no new light source.
-- [ ] A platform is drawn as the thing you hold, seen from the front, with no logo.
+- [ ] A platform is drawn as the thing you hold, or its console when its controller looks like a neighbour's, with no logo.
 - [ ] An app echoes its own icon's colour and motif without tracing its logo or drawing letters, and an emulator doesn't pass for its platform.
 - [ ] Nothing new draws a border or edge inside a grid tile.
 - [ ] The XML came from `icons.py`, not a hand edit, and the tests pass.

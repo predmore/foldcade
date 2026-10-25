@@ -1177,6 +1177,11 @@
       "tint": false,
       "accent": "#FFC15A"
     },
+    "mark.sega-cd": {
+      "file": "icons/mark_sega_cd.xml",
+      "tint": false,
+      "accent": "#FF3B52"
+    },
     "mark.slim": {
       "file": "icons/mark_slim.xml",
       "tint": false,
@@ -1598,6 +1603,10 @@
     },
     "symbol.saturn": {
       "file": "icons/symbol_saturn.xml",
+      "tint": true
+    },
+    "symbol.sega-cd": {
+      "file": "icons/symbol_sega_cd.xml",
       "tint": true
     },
     "symbol.shield": {
