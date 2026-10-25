@@ -428,12 +428,14 @@ class ShellController(
         saveHealthEpoch // Folder checks, player installs, and catalog changes invalidate this read.
         val homeId = pressed?.let { homeGameId(it.backendId, it.remoteKey) } ?: id
         val route = launchRoute(tileOf(homeId), pressed) ?: return SaveHealth.Fine
-        val player = savePlayer(route.play.platformId) ?: return SaveHealth.Fine
+        val waiting = route.servers.any { it.remoteKey in unsyncedSaves[it.backendId].orEmpty() }
+        // A save still waiting for the server says so even after its emulator is gone.
+        val player = savePlayer(route.play.platformId) ?: return if (waiting) SaveHealth.Waiting else SaveHealth.Fine
         val saves = saveSupport.getOrPut(player.id to route.saves) { readGameSaveSupport(route.saves, player) }
         val reachability = reachableSaves[homeGameId(route.saves.backendId, route.saves.remoteKey) to player.id]
         return gameSaveHealth(
             route.saves, player, route.servers.isNotEmpty(),
-            waiting = route.servers.any { it.remoteKey in unsyncedSaves[it.backendId].orEmpty() },
+            waiting = waiting,
             sync = saveSync[player.id],
             setup = setupSteps[player.id],
             reachable = reachability?.takeIf { it.locations == saves.declarations }?.reachable,

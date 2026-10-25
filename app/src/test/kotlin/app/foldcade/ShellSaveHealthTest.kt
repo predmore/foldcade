@@ -299,4 +299,21 @@ class ShellSaveHealthTest {
         shell.noteSaveReachable(server, player.id, true)
         assertEquals(SaveHealth.Fine, shell.saveHealthOf(id))
     }
+
+    @Test fun aSaveWaitingForTheServerStaysVisibleAfterItsEmulatorIsUninstalled() {
+        val plugins = PluginHost(Dispatchers.Unconfined, MemoryCredentialStore())
+        plugins.register(LocalFolderEntry())
+        plugins.register(MelonDsEntry())
+        val shell = ShellController(SessionStore(MemoryPrefs()), plugins)
+        shell.setInstalledApps(emptyList(), plugins.playerPackageNames(), plugins.playerPackageNames())
+        val game = Game("romm", "42", "nintendo-ds", Availability.Cached, "Tetris")
+        shell.ingestLibrary("romm", listOf(GridEntry(game.remoteKey, game.label, "", game.platformId, null, false, game)), emptyList())
+        val id = homeGameId("romm", "42")
+        shell.setUnsyncedSaves("romm", setOf("42"))
+        shell.setInstalledApps(emptyList(), plugins.playerPackageNames(), installedPlayers = emptySet())
+        assertNull(shell.savePlayer(game.platformId))
+        assertEquals(SaveHealth.Waiting, shell.saveHealthOf(id))
+        shell.setUnsyncedSaves("romm", emptySet())
+        assertEquals(SaveHealth.Fine, shell.saveHealthOf(id))
+    }
 }
