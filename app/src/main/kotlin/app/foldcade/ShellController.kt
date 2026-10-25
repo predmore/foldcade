@@ -1412,6 +1412,12 @@ class ShellController(
                 },
                 firmware = firmware,
             )
+            is GameActivity.GettingFirmware -> TileActivity.Downloading(
+                reported.totalBytes?.takeIf { it > 0 }?.let { total ->
+                    (reported.bytesSoFar.toDouble() / total).toFloat().coerceIn(0f, 1f)
+                },
+                firmware = true,
+            )
             GameActivity.Checking -> TileActivity.Checking
             GameActivity.SyncingSaves -> TileActivity.Syncing
             is GameActivity.Synced -> TileActivity.Synced(syncMark(reported.result), nowMillis + Motion.durationSyncMark)

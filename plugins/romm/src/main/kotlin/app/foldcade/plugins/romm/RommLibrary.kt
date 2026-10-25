@@ -541,7 +541,10 @@ internal class RommLibrary internal constructor(
                         if (job.isActive) {
                             firmwareProgress.follow { activity ->
                                 told.set(true)
-                                report(romId, activity)
+                                // The game is here already: what is arriving is its firmware.
+                                val said = (activity as? GameActivity.Downloading)
+                                    ?.let { GameActivity.GettingFirmware(it.bytesSoFar, it.totalBytes) } ?: activity
+                                report(romId, said)
                             }
                         }
                         val got = try {

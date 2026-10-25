@@ -124,12 +124,12 @@ Put `PS3UPDAT.PUP` in RomM's firmware for the PlayStation 3. Foldcade checks it 
 
 - No aPS3e folder picked: "Foldcade checks aPS3e’s setup through aPS3e’s folder. In Foldcade’s Settings › Emulators › aPS3e, choose Use this folder where the picker opens. Then start the game again."
 - No firmware staged or installed: "aPS3e needs PlayStation 3 firmware. Add PS3UPDAT.PUP to the PlayStation 3 firmware on your RomM server, then start the game again."
-- Setup is not finished: "Open aPS3e and finish its setup. For firmware, choose aPS3e › firmware › PS3UPDAT.PUP, which Foldcade put there from RomM. For the font, choose From Firmware. For the GPU driver, turn off Use Custom Driver. Then start the game again." On the Thor the font and GPU driver pages start on choices that need a file, and their Next stays grey until you change them. When firmware is already installed, the firmware sentence is left out.
-- Setup is finished, and firmware is not installed: "In aPS3e, open the menu and choose Install Firmware, then aPS3e › firmware › PS3UPDAT.PUP. Foldcade put it there from RomM. Then start the game again."
+- Setup is not finished: "Open aPS3e and finish its setup. For firmware, tap ☰ in the file picker, then aPS3e › firmware › PS3UPDAT.PUP, which Foldcade put there from RomM. For the font, choose From Firmware. For the GPU driver, turn off Use Custom Driver. Then start the game again." On the Thor the font and GPU driver pages start on choices that need a file, and their Next stays grey until you change them. When firmware is already installed, the firmware sentence is left out.
+- Setup is finished, and firmware is not installed: "In aPS3e, open the menu and choose Install Firmware. Tap ☰ in the file picker, then aPS3e › firmware › PS3UPDAT.PUP. Foldcade put it there from RomM. Then start the game again."
 
 Once aPS3e's folder is picked, **Foldcade Settings › Emulators** shows **aPS3e setup: Set up** while any of those is still true. Select it for the same steps.
 
-The first time you play a game with aPS3e, Foldcade asks for aPS3e's folder. aPS3e can't start a game until it has one, so **Not now** there only closes, and the next start asks again. The picker opens at aPS3e's own folder, so tap **Use this folder** and **Allow**. With the premium build, open **aPS3e Premium** in the picker's list first: the picker opens at the free build's folder. You can change the folder later in **Foldcade Settings › Emulators › aPS3e**. A folder you pick has to hold `config`.
+The first time you play a game with aPS3e, Foldcade asks for aPS3e's folder. aPS3e can't start a game until it has one, so **Not now** there only closes, and the next start asks again. The picker opens at aPS3e's own folder, so tap **Use this folder** and **Allow**. With the premium build, open **aPS3e Premium** in the picker's list first: the picker opens at the free build's folder. You can change the folder later in **Foldcade Settings › Emulators › aPS3e**. A folder you pick has to hold `config` or `logs`; a new install of aPS3e has `logs` before you open it.
 
 ### Saves
 

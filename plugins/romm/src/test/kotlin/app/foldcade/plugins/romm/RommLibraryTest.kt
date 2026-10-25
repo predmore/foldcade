@@ -993,7 +993,7 @@ class RommLibraryTest {
             val sync = heard[1] as GameActivity.Synced
             // The tile shows the firmware download through the wait, and has not finished yet.
             assertEquals(
-                listOf(GameActivity.SyncingSaves, sync, GameActivity.Downloading(0L, bios.size.toLong())),
+                listOf(GameActivity.SyncingSaves, sync, GameActivity.GettingFirmware(0L, bios.size.toLong())),
                 heard.toList(),
             )
             release.set(true)
@@ -1007,8 +1007,8 @@ class RommLibraryTest {
                 listOf(
                     GameActivity.SyncingSaves,
                     sync,
-                    GameActivity.Downloading(0L, bios.size.toLong()),
-                    GameActivity.Downloading(bios.size.toLong(), bios.size.toLong()),
+                    GameActivity.GettingFirmware(0L, bios.size.toLong()),
+                    GameActivity.GettingFirmware(bios.size.toLong(), bios.size.toLong()),
                     GameActivity.Checking,
                     sync,
                 ),
@@ -1101,7 +1101,7 @@ class RommLibraryTest {
             val sawDownload = CompletableDeferred<Unit>()
             library.observeActivity { _, activity ->
                 heard += activity
-                if (activity is GameActivity.Downloading && heard.any { it is GameActivity.Synced }) sawDownload.complete(Unit)
+                if (activity is GameActivity.GettingFirmware && heard.any { it is GameActivity.Synced }) sawDownload.complete(Unit)
             }
 
             val pending = async { library.prepareLaunch(game, player) }
@@ -1113,8 +1113,8 @@ class RommLibraryTest {
                 listOf(
                     GameActivity.SyncingSaves,
                     sync,
-                    GameActivity.Downloading(0L, zip.size.toLong()),
-                    GameActivity.Downloading(zip.size.toLong(), zip.size.toLong()),
+                    GameActivity.GettingFirmware(0L, zip.size.toLong()),
+                    GameActivity.GettingFirmware(zip.size.toLong(), zip.size.toLong()),
                     GameActivity.Checking,
                     GameActivity.Checking,
                     sync,
@@ -1235,7 +1235,7 @@ class RommLibraryTest {
             delay(6_000)
             assertFalse(pending.isCompleted)
             val total = keys.values.sumOf { it.size.toLong() } + zip.size
-            assertTrue(heard.any { it is GameActivity.Downloading && it.totalBytes == total })
+            assertTrue(heard.any { it is GameActivity.GettingFirmware && it.totalBytes == total })
             release.set(true)
             val placement = withTimeout(15_000) { pending.await() }
             val firmware = (placement.target as LaunchTarget.ContentUri).firmware

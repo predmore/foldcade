@@ -68,7 +68,7 @@ class Aps3ePlayerTest {
             player.saveDeclarations(game),
         )
         assertEquals("content://aenu.aps3e.provider/root/root", player.suggestedSaveFolder)
-        assertEquals(setOf("config"), player.saveFolderMarkers)
+        assertEquals(setOf("config", "logs"), player.saveFolderMarkers)
     }
 
     @Test

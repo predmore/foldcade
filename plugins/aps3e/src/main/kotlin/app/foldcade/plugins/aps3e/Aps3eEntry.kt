@@ -94,8 +94,12 @@ class Aps3ePlayer : Player, SaveFolderHolder {
     /** aPS3e's own folder, as a document the picker opens at. */
     override val suggestedSaveFolder: String = DATA_FOLDER
 
-    /** The data folder holds this, and so does a folder it was moved to. */
-    override val saveFolderMarkers: Set<String> = setOf(CONFIG)
+    /**
+     * aPS3e's data folder holds `config` once aPS3e has been opened, and `logs` from
+     * the moment its provider is first asked, so a fresh install's folder fits too.
+     * Its own setup then needs the firmware Foldcade puts there, see [setupSteps].
+     */
+    override val saveFolderMarkers: Set<String> = setOf(CONFIG, LOGS)
 
     /** The game's save folders, once the data folder is picked. Found in [findSaveFolders]. */
     override fun saveDeclarations(game: Game): List<SaveDeclaration> =
@@ -188,6 +192,7 @@ class Aps3ePlayer : Player, SaveFolderHolder {
         const val DATA_FOLDER: String = "content://aenu.aps3e.provider/root/root"
 
         const val CONFIG: String = "config"
+        const val LOGS: String = "logs"
         const val SLOT: String = "savedata"
         const val SAVEDATA: String = "config/dev_hdd0/home/00000001/savedata"
         const val FIRMWARE_FILE: String = "firmware/PS3UPDAT.PUP"
@@ -202,11 +207,11 @@ class Aps3ePlayer : Player, SaveFolderHolder {
         const val NEEDS_FIRMWARE: String =
             "aPS3e needs PlayStation 3 firmware. Add PS3UPDAT.PUP to the PlayStation 3 firmware on your RomM server, then start the game again."
         const val FINISH_SETUP: String =
-            "Open aPS3e and finish its setup. For firmware, choose aPS3e › firmware › PS3UPDAT.PUP, which Foldcade put there from RomM. For the font, choose From Firmware. For the GPU driver, turn off Use Custom Driver. Then start the game again."
+            "Open aPS3e and finish its setup. For firmware, tap ☰ in the file picker, then aPS3e › firmware › PS3UPDAT.PUP, which Foldcade put there from RomM. For the font, choose From Firmware. For the GPU driver, turn off Use Custom Driver. Then start the game again."
         const val FINISH_SETUP_INSTALLED: String =
             "Open aPS3e and finish its setup. For the font, choose From Firmware. For the GPU driver, turn off Use Custom Driver. Then start the game again."
         const val INSTALL_FIRMWARE: String =
-            "In aPS3e, open the menu and choose Install Firmware, then aPS3e › firmware › PS3UPDAT.PUP. Foldcade put it there from RomM. Then start the game again."
+            "In aPS3e, open the menu and choose Install Firmware. Tap ☰ in the file picker, then aPS3e › firmware › PS3UPDAT.PUP. Foldcade put it there from RomM. Then start the game again."
     }
 }
 
