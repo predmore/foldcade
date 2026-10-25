@@ -5,12 +5,145 @@ import app.foldcade.api.plugin.Game
 import app.foldcade.api.plugin.SyncOutcome
 import app.foldcade.api.plugin.SyncResult
 import app.foldcade.language.Copy
+import app.foldcade.language.SettingsCategory
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class SaveNoticeTest {
+    @Test
+    fun ledgerNoticeCleanupRemovesOnlyNoticesItPosted() {
+        val ledger = WaitingSaveNotices(patienceMillis = 100)
+        val returns = ReturnSyncNotices(patienceMillis = 100)
+        returns.returned(game.backendId, game, SyncOutcome.Queued, 0)
+        val returning = returns.expire(100).single()
+        // The ledger scan has not seen a return waiting behind the sync's ROM lock yet.
+        ledger.update(emptyList(), 100)
+        assertTrue(ledger.settled(listOf(returning)).isEmpty())
+
+        ledger.update(listOf(game), 100)
+        val owned = ledger.update(listOf(game), 200).single()
+        val anotherReturn = saveNotice(game.copy(remoteKey = "other"), SyncOutcome.Queued, 200)!!
+        ledger.update(emptyList(), 300)
+        assertEquals(listOf(owned), ledger.settled(listOf(owned, anotherReturn)))
+
+        // A hand-back can replace the same id, even with equal text and time.
+        ledger.update(listOf(game), 400)
+        val replaced = ledger.update(listOf(game), 500).single()
+        val replacement = saveNotice(game, SyncOutcome.Queued, 500)!!
+        assertEquals(replaced, replacement)
+        ledger.update(emptyList(), 600)
+        assertTrue(ledger.settled(listOf(replacement)).isEmpty())
+    }
+
+    @Test
+    fun setupNoticesStayDismissedUntilThatPlayersNextLaunchAndDisappearWhenFixed() {
+        val notices = SaveSetupNotices()
+        notices.update(mapOf("armsx2" to "ARMSX2"))
+        val initial = notices.notices(100)
+        val arms = initial.single()
+        assertEquals("armsx2", arms.savePlayerId)
+        assertNull(arms.settingsCategory)
+        assertEquals(Copy.savesNotSyncingTitle("ARMSX2"), arms.title)
+        assertEquals(Copy.savesNotSyncingBody, arms.body)
+        assertTrue(arms.dismissable)
+        notices.dismiss(arms.id)
+        notices.update(mapOf("armsx2" to "ARMSX2"))
+        assertTrue(notices.notices(200).isEmpty())
+        notices.launch("melonds")
+        assertTrue(notices.notices(201).isEmpty())
+        notices.launch("armsx2")
+        assertEquals(initial, notices.notices(300)) // Refresh never reorders or reposts it.
+        notices.clear()
+        assertTrue(notices.notices(500).isEmpty())
+        notices.launch("armsx2")
+        assertEquals(1, notices.notices(600).size)
+        notices.update(emptyMap())
+        assertTrue(notices.notices(700).isEmpty())
+    }
+
+    @Test
+    fun setupNoticesMergeAndReplaceTheirCountThenReturnToOneOrNone() {
+        val players = linkedMapOf("armsx2" to "ARMSX2", "melonds" to "melonDS", "azahar" to "Azahar",
+            "aps3e" to "aPS3e", "duckstation" to "DuckStation", "retroarch" to "RetroArch")
+        val notices = SaveSetupNotices()
+        notices.update(players.entries.take(1).associate { it.toPair() })
+        val single = notices.notices(100).single()
+        assertEquals("armsx2", single.savePlayerId)
+        notices.update(players)
+        val merged = notices.notices(200).single()
+        assertEquals("Saves not syncing", merged.title)
+        assertEquals("6 emulators need setup.", merged.body)
+        assertNull(merged.savePlayerId)
+        assertEquals(SettingsCategory.Players, merged.settingsCategory)
+        assertTrue(merged.dismissable)
+        for (count in listOf(3, 2)) {
+            notices.update(players.entries.take(count).associate { it.toPair() })
+            val changed = notices.notices(300).single()
+            assertEquals(merged.id, changed.id)
+            assertEquals(merged.postedMillis, changed.postedMillis)
+            assertEquals(Copy.savesNotSyncingEmulatorsBody(count), changed.body)
+        }
+        notices.update(mapOf("melonds" to "melonDS"))
+        val remaining = notices.notices(400).single()
+        assertEquals("melonds", remaining.savePlayerId)
+        assertEquals(Copy.savesNotSyncingTitle("melonDS"), remaining.title)
+        assertTrue(remaining.id != merged.id)
+        assertNull(remaining.settingsCategory)
+        notices.update(emptyMap())
+        assertTrue(notices.notices(500).isEmpty())
+    }
+
+    @Test
+    fun dismissingTheMergedNoticeLastsUntilAnyAffectedPlayerLaunches() {
+        val players = mapOf("armsx2" to "ARMSX2", "melonds" to "melonDS", "azahar" to "Azahar")
+        val notices = SaveSetupNotices()
+        notices.update(players)
+        val merged = notices.notices(100).single()
+        notices.dismiss(merged.id)
+        notices.update(players - "azahar")
+        assertTrue(notices.notices(200).isEmpty())
+        notices.launch("unrelated-player")
+        assertTrue(notices.notices(201).isEmpty())
+        notices.launch("armsx2")
+        val rearmed = notices.notices(300).single()
+        assertEquals(merged.id, rearmed.id)
+        assertEquals(Copy.savesNotSyncingEmulatorsBody(2), rearmed.body)
+        notices.clear()
+        assertTrue(notices.notices(400).isEmpty())
+        notices.launch("melonds")
+        assertEquals(rearmed, notices.notices(500).single())
+        // Fixing one swaps to the other emulator's direct fix.
+        notices.update(mapOf("armsx2" to "ARMSX2"))
+        assertEquals("armsx2", notices.notices(600).single().savePlayerId)
+    }
+
+    @Test
+    fun aDismissedMergedNoticeStaysDismissedWhenOnlyOnePlayerRemains() {
+        val notices = SaveSetupNotices()
+        notices.update(mapOf("armsx2" to "ARMSX2", "melonds" to "melonDS"))
+        notices.dismiss(notices.notices(100).single().id)
+        notices.update(mapOf("melonds" to "melonDS"))
+        assertTrue(notices.notices(200).isEmpty())
+        notices.launch("melonds")
+        assertEquals("melonds", notices.notices(300).single().savePlayerId)
+    }
+
+    @Test
+    fun aColdLedgerGetsOneWaitingNoticeAfterPatienceAndANewWaitAfterItSettles() {
+        val notices = WaitingSaveNotices(patienceMillis = 100)
+        assertTrue(notices.update(listOf(game), 0).isEmpty())
+        assertEquals(100L, notices.nextDueMillis())
+        assertTrue(notices.update(listOf(game), 99).isEmpty())
+        assertEquals(Copy.offlineSaveTitle, notices.update(listOf(game), 100).single().title)
+        assertTrue(notices.update(listOf(game), 200).isEmpty())
+        assertNull(notices.nextDueMillis())
+        notices.update(emptyList(), 300)
+        assertTrue(notices.update(listOf(game), 400).isEmpty())
+        assertTrue(notices.update(listOf(game), 499).isEmpty())
+        assertEquals(1, notices.update(listOf(game), 500).size)
+    }
     private val game = Game(
         backendId = "romm",
         remoteKey = "42",

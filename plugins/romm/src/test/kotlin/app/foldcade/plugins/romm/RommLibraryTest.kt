@@ -1729,7 +1729,7 @@ private class NamedPlayer(override val id: String) : Player {
     override val startDisplay = StartDisplay.Primary
     override val occupiesBothDisplays = true
     override val requiresImportedGame = false
-    override fun saveDeclarations(game: Game): List<SaveDeclaration> = emptyList()
+    override fun saveDeclarations(game: Game): List<SaveDeclaration> = listOf(SaveDeclaration("title", "content://saves"))
     override fun launchIntent(request: LaunchRequest): PlayerIntent = error("unused")
 }
 
@@ -1743,6 +1743,7 @@ private class BiosPlayer(private val wants: Set<String>) : Player {
     override val startDisplay = StartDisplay.Primary
     override val occupiesBothDisplays = false
     override val requiresImportedGame = false
+    override fun supportsSaveSync(game: Game): Boolean = true
     override fun saveDeclarations(game: Game): List<SaveDeclaration> = emptyList()
     override fun firmwareFileName(name: String): String? = if (name in wants) "bios/$name" else null
     override fun launchIntent(request: LaunchRequest): PlayerIntent = error("unused")
@@ -1766,6 +1767,7 @@ private class ChoosingBiosPlayer(
     override val occupiesBothDisplays = false
     override val requiresImportedGame = false
     override val firmwareHeaderSize: Int = marker.size
+    override fun supportsSaveSync(game: Game): Boolean = true
     override fun saveDeclarations(game: Game): List<SaveDeclaration> = emptyList()
     override fun firmwareFileName(name: String): String? = if (name in wants) "bios/${name.substringAfterLast('/')}" else null
     override fun chooseFirmware(offered: List<FirmwareOffer>): List<FirmwareOffer> {

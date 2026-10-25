@@ -6,6 +6,65 @@ import org.junit.Assert.assertNull
 import org.junit.Test
 
 class NoticesTest {
+    @Test
+    fun aMergedSaveNoticeOpensTheSameEmulatorsPageAsSettings() {
+        val notice = FoldNotice("foldcade:save-setup:emulators", Copy.savesNotSyncing, Copy.savesNotSyncingEmulatorsBody(2),
+            settingsCategory = SettingsCategory.Players)
+        val base = model(listOf(notice)).copy(
+            count = 4,
+            focus = GridFocus(cellIndex = 2, lastColumn = 1),
+            playerSaves = listOf(PlayerSaveSetting("melonds", "melonDS", false), PlayerSaveSetting("armsx2", "ARMSX2", false)),
+        )
+        for (screen in HostScreen.entries) {
+            val right = reduce(base, Meaning.RightPanel, screen).first
+            val focused = right.copy(panel = right.panel!!.copy(index = panelRows(right.panel!!, right).indexOf(Row.Notice(notice.id))))
+            val (opened, effect) = reduce(focused, Meaning.Activate, screen)
+            assertNull(effect)
+            assertNull(opened.panel)
+            assertNull(opened.dialog)
+            assertEquals(SettingsCategory.Players, settingsCategories(opened)[opened.settings!!.category])
+            assertEquals(focused.panel!!.screen, opened.settings!!.screen)
+            assertEquals(base.focus, opened.settings!!.grid)
+            assertEquals(true, panelHints(focused)!!.any { it.label == Copy.setUp })
+
+            val left = reduce(base, Meaning.LeftPanel, screen).first
+            val onSettings = left.copy(panel = left.panel!!.copy(index = panelRows(left.panel!!, left).indexOf(Row.Settings)))
+            var normal = reduce(onSettings, Meaning.Activate, screen).first
+            repeat(settingsCategories(normal).indexOf(SettingsCategory.Players)) {
+                normal = reduce(normal, Meaning.MoveDown, screen).first
+            }
+            assertEquals(normal.settings, opened.settings)
+            assertEquals(base.focus, reduce(opened, Meaning.Back, screen).first.focus)
+            assertNull(reduce(opened, Meaning.Back, screen).first.settings)
+            assertEquals(Effect.DismissNotice(notice.id), reduce(focused, Meaning.Options, screen).second)
+            assertEquals(false, Row.ClearNotices in rightRows(listOf(notice)))
+        }
+    }
+
+    @Test
+    fun standingSaveNoticesOpenTheirOwnPlayersFixAndCanBeDismissed() {
+        val notice = FoldNotice("setup", "ARMSX2 saves aren’t syncing", "Set up to keep them on RomM.", savePlayerId = "armsx2")
+        val cases = listOf(
+            PlayerSaveSetting("armsx2", "ARMSX2", false) to Effect.ChoosePlayerSave("armsx2"),
+            PlayerSaveSetting("armsx2", "ARMSX2", false, hostedTitle = "Cards") to Effect.SetUpHostedSaves("armsx2"),
+            PlayerSaveSetting("armsx2", "ARMSX2", true, hostedTitle = "Cards") to Effect.SetUpHostedSaves("armsx2"),
+            PlayerSaveSetting("armsx2", "ARMSX2", true, saveSyncSteps = "Pick a folder card") to Effect.ShowSaveSync("armsx2"),
+            PlayerSaveSetting("armsx2", "ARMSX2", true, setupSteps = "Install firmware") to Effect.ShowPlayerSetup("armsx2"),
+        )
+        for ((setting, expected) in cases) {
+            val opened = reduce(model(listOf(notice)).copy(playerSaves = listOf(setting)), Meaning.RightPanel).first
+            val focused = opened.copy(panel = opened.panel!!.copy(index = panelRows(opened.panel!!, opened).indexOf(Row.Notice(notice.id))))
+            val (closed, effect) = reduce(focused, Meaning.Activate)
+            assertEquals(expected, effect)
+            assertNull(closed.panel)
+            assertNull(closed.dialog)
+            assertEquals(Effect.DismissNotice(notice.id), reduce(focused, Meaning.Options).second)
+            assertEquals(true, panelHints(focused)!!.any { it.label == Copy.setUp })
+            val (missing, noEffect) = reduce(focused.copy(playerSaves = emptyList()), Meaning.Activate)
+            assertNull(noEffect)
+            assertNull(missing.dialog)
+        }
+    }
     private val chat = FoldNotice("chat", "Alex", "you on tonight?", "com.discord", postedMillis = 3_000L, openable = true)
     private val mail = FoldNotice("mail", "Receipt", "Thanks", "com.mail", postedMillis = 2_000L, openable = true)
     private val saved = FoldNotice("foldcade:save", "Both saves were kept", "Bravely Second · archived", postedMillis = 1_000L)

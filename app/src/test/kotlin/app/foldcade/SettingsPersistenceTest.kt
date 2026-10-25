@@ -276,7 +276,6 @@ class SettingsPersistenceTest {
         store.setHomePromptSettled()
         store.setFolderGrantExplained()
         store.setUsagePromptOffered()
-        store.setSaveFolderPromptSkipped("player")
 
         val restored = SessionStore(prefs)
         assertEquals(listOf("content://tree/other"), restored.folderTrees())
@@ -294,7 +293,6 @@ class SettingsPersistenceTest {
         assertTrue(restored.homePromptSettled())
         assertFalse(restored.folderGrantPending())
         assertTrue(restored.usagePromptOffered())
-        assertTrue(restored.saveFolderPromptSkipped("player"))
 
         restored.removeRommInstance("romm#2")
         assertTrue(SessionStore(prefs).rommInstances().isEmpty())

@@ -135,6 +135,10 @@ class FoldcadeApp : Application() {
 
     /** A return's save notice, held until the library says how its sync ended. Main thread only. */
     private val returnNotices = ReturnSyncNotices()
+    private val saveSetupNotices = SaveSetupNotices()
+    private val waitingSaveNotices = WaitingSaveNotices()
+    private val unsyncedSaveKeys = mutableMapOf<String, Set<String>>()
+    private val saveHealthReads = mutableMapOf<String, Job>()
     private val noticeHandler by lazy { Handler(Looper.getMainLooper()) }
 
     /** A hand-back of [game] is about to go to [libraryId], whose sync may report before it returns. Main thread only. */
@@ -629,6 +633,11 @@ class FoldcadeApp : Application() {
             onBrightness = { position -> brightness.write(brightnessLevel(position)) },
             onSameGames = { groups -> saveArtChoices(artChoices.adopt(groups)) },
             appVersion = installedVersion(),
+            onSaveHealthChanged = { players ->
+                saveSetupNotices.update(players)
+                publishNotices()
+                updateWaitingSaveNotices()
+            },
         )
         // Loading ends once the shell has resolved the choices against the packs.
         try { themeInstalls.loaded(manifests, themeArchivesInUse()) } catch (error: Exception) { Log.w("FoldcadeTheme", "Theme trials not saved", error) }
@@ -672,6 +681,9 @@ class FoldcadeApp : Application() {
                     returnNotices.synced(libraryId, remoteKey, reported.result, System.currentTimeMillis())?.let(::postNotice)
                 }
                 val until = shell.noteActivity(libraryId, remoteKey, reported, System.currentTimeMillis())
+                if (reported.refreshesSaveHealth()) {
+                    refreshUnsyncedSaves(libraryId)
+                }
                 if (until != null) {
                     main.postDelayed(
                         { shell.expireActivity(libraryId, remoteKey, until) },
@@ -751,6 +763,7 @@ class FoldcadeApp : Application() {
                     shell.noteShelfChanged()
                 }
                 reloadInstalledApps()
+                refreshUnsyncedSaves()
             } finally {
                 playersLoaded.complete(Unit)
                 if (!pluginsReady.isCompleted) pluginsReady.complete(Unit)
@@ -795,6 +808,11 @@ class FoldcadeApp : Application() {
 
     /** Y on a notice. Android's go through the listener, which then publishes the rest. */
     fun dismissNotice(id: String) {
+        saveSetupNotices.dismiss(id)
+        if (id.startsWith("foldcade:save-setup:")) {
+            publishNotices()
+            return
+        }
         if (foldcadeNotices.any { it.id == id }) {
             foldcadeNotices = foldcadeNotices.filter { it.id != id }
             publishNotices()
@@ -804,6 +822,7 @@ class FoldcadeApp : Application() {
     }
 
     fun clearNotices() {
+        saveSetupNotices.clear()
         foldcadeNotices = foldcadeNotices.filter { !it.dismissable }
         publishNotices()
         NoticeListener.connected?.cancelAllNotifications()
@@ -822,7 +841,7 @@ class FoldcadeApp : Application() {
     }
 
     private fun publishNotices() {
-        shell.setNotices(orderedNotices(foldcadeNotices + androidNotices))
+        shell.setNotices(orderedNotices(foldcadeNotices + androidNotices + saveSetupNotices.notices(System.currentTimeMillis())))
     }
 
     /** Reads the level and the write access again. Resume calls this after Android's access page. */
@@ -965,7 +984,55 @@ class FoldcadeApp : Application() {
         if (!::plugins.isInitialized || !::shell.isInitialized) return
         pluginLoad.launch {
             val notes = readPlayerFolderNotes()
-            withContext(Dispatchers.Main.immediate) { shell.setSaveSync(notes.sync, notes.setup) }
+            withContext(Dispatchers.Main.immediate) {
+                shell.setSaveSync(notes.sync, notes.setup)
+                shell.refreshPlayerSaves()
+            }
+        }
+    }
+
+    internal fun noteSaveLaunch(route: GameRoute) {
+        shell.savePlayer(route.play.platformId)?.let { saveSetupNotices.launch(shell.saveNoticePlayerId(it.id)) }
+        publishNotices()
+    }
+
+    /** Superseded reads are cancelled on main, so only the latest completed snapshot publishes. */
+    private fun refreshUnsyncedSaves(libraryId: String? = null) {
+        scope.launch(Dispatchers.Main.immediate) {
+            val ids = libraryId?.let(::listOf) ?: plugins.libraryIds()
+            for (id in ids) {
+                saveHealthReads.remove(id)?.cancel()
+                saveHealthReads[id] = launch {
+                    val keys = try {
+                        plugins.unsyncedSaves(id)
+                    } catch (cancelled: CancellationException) {
+                        throw cancelled
+                    } catch (_: Exception) {
+                        return@launch // Failed reads keep the last known waiting set.
+                    }
+                    unsyncedSaveKeys[id] = keys
+                    shell.setUnsyncedSaves(id, keys)
+                    updateWaitingSaveNotices()
+                }
+            }
+        }
+    }
+
+    private val waitingSaveExpiry = Runnable { updateWaitingSaveNotices() }
+
+    private fun updateWaitingSaveNotices() {
+        val games = unsyncedSaveKeys.flatMap { (libraryId, keys) ->
+            keys.mapNotNull { key -> shell.saveGame(libraryId, key) }
+        }
+        waitingSaveNotices.update(games, System.currentTimeMillis()).forEach(::postNotice)
+        val settled = waitingSaveNotices.settled(foldcadeNotices)
+        if (settled.isNotEmpty()) {
+            foldcadeNotices = foldcadeNotices - settled.toSet()
+            publishNotices()
+        }
+        noticeHandler.removeCallbacks(waitingSaveExpiry)
+        waitingSaveNotices.nextDueMillis()?.let { due ->
+            noticeHandler.postDelayed(waitingSaveExpiry, (due - System.currentTimeMillis()).coerceAtLeast(1L))
         }
     }
 

@@ -129,12 +129,12 @@ class RommSyncTest {
         // The server had nothing new, which alone reads as synced. Nothing reached the player's saves.
         val placement = library.prepareLaunch(GAME, FolderlessPlayer)
         assertEquals(SyncOutcome.Unchanged, synced.single().result.outcome)
-        assertEquals(NO_SAVE_FOLDER, synced.single().result.note)
-        // The launch's own result is the server's; only what the tile says changes.
-        assertEquals(null, placement.sync.note)
+        assertEquals(SAVE_UNREACHABLE, synced.single().result.note)
+        // The returned result is honest about the player too.
+        assertEquals(SAVE_UNREACHABLE, placement.sync.note)
         library.reconcile(GAME, FolderlessPlayer, ObservedSaves(emptyList()))
         withTimeout(5_000) { while (synced.size < 2) delay(10) }
-        assertEquals(NO_SAVE_FOLDER, synced.last().result.note)
+        assertEquals(SAVE_UNREACHABLE, synced.last().result.note)
     }
 
     @Test
@@ -146,6 +146,71 @@ class RommSyncTest {
         library.observeActivity { _, activity -> if (activity is GameActivity.Synced) synced += activity }
         library.prepareLaunch(GAME, NamedPlayer)
         assertEquals(null, synced.single().result.note)
+    }
+
+    @Test
+    fun playersWithNoSaveSupportHaveNoSaveActivityOnLaunchOrReturn() = runBlocking {
+        cacheRom()
+        val held = writeSlot("sav", "another player's progress")
+        ops.onSync = { _, _, _, _ -> error("A player with no save support must not start a save sync") }
+        for (id in listOf("eden.nintendo-switch", "dolphin.wii")) {
+            val player = object : Player by NamedPlayer {
+                override val id = id
+                override fun supportsSaveSync(game: Game) = false
+                override fun saveDeclarations(game: Game): List<SaveDeclaration> = emptyList()
+            }
+            val library = library()
+            val activities = Collections.synchronizedList(mutableListOf<GameActivity>())
+            library.observeActivity { _, activity -> activities += activity }
+            val placement = library.prepareLaunch(GAME, player)
+            assertTrue(placement.savesToPlace.isEmpty())
+            assertTrue(activities.all { it == GameActivity.Idle })
+            activities.clear()
+            library.reconcile(GAME, player, ObservedSaves(emptyList()))
+            assertTrue(activities.isEmpty())
+            assertEquals("another player's progress", Files.readString(held))
+            assertEquals(setOf("1234"), library.unsyncedSaves())
+            library.disconnect()
+        }
+    }
+
+    @Test
+    fun missingAndEmptySlotsForEveryPlayerNeverReadAsSynced() = runBlocking {
+        cacheRom()
+        ops.onSync = { _, _, _, _ -> report() }
+        for (id in listOf("armsx2", "aps3e", "melonds", "azahar", "retroarch.nes", "duckstation")) {
+            for (declarations in listOf(emptyList(), listOf(SaveDeclaration("save", null)))) {
+                val player = object : Player by NamedPlayer {
+                    override val id = id
+                    override fun saveDeclarations(game: Game) = declarations
+                }
+                val library = library()
+                val reports = Collections.synchronizedList(mutableListOf<GameActivity.Synced>())
+                library.observeActivity { _, activity -> if (activity is GameActivity.Synced) reports += activity }
+                assertEquals(id, SAVE_UNREACHABLE, library.prepareLaunch(GAME, player).sync.note)
+                assertEquals(id, SAVE_UNREACHABLE, reports.single().result.note)
+                assertEquals(id, SAVE_UNREACHABLE, library.reconcile(GAME, player, ObservedSaves(emptyList())).note)
+                withTimeout(5_000) { while (reports.size < 2) delay(10) }
+                assertEquals(id, SAVE_UNREACHABLE, reports.last().result.note)
+                library.disconnect()
+            }
+        }
+    }
+
+    @Test
+    fun ledgerWaitingStateSurvivesReopeningAndClearsOnlyForMatchingBytes() = runBlocking {
+        writeSlot("sav", "progress")
+        writeSlot("card1", "other", romId = 99)
+        assertEquals(setOf("1234", "99"), library().unsyncedSaves())
+        val ledger = RommData(data, ORIGIN).ledger(1234)
+        ledger.markSynced("sav", md5("progress"), "melonds")
+        assertEquals(setOf("99"), library().unsyncedSaves())
+        writeSlot("sav", "more progress")
+        assertEquals(setOf("1234", "99"), library().unsyncedSaves())
+        RommData(data, ORIGIN).ledger(99).markSynced("card1", md5("other"), "armsx2")
+        assertEquals(setOf("1234"), library().unsyncedSaves())
+        ledger.markSynced("sav", md5("more progress"), "melonds")
+        assertTrue(library().unsyncedSaves().isEmpty())
     }
 
     @Test
@@ -383,7 +448,7 @@ class RommSyncTest {
         override val startDisplay = StartDisplay.Primary
         override val occupiesBothDisplays = true
         override val requiresImportedGame = false
-        override fun saveDeclarations(game: Game): List<SaveDeclaration> = emptyList()
+        override fun saveDeclarations(game: Game): List<SaveDeclaration> = listOf(SaveDeclaration("sav", "content://saves"))
         override fun launchIntent(request: LaunchRequest): PlayerIntent = error("unused")
     }
 

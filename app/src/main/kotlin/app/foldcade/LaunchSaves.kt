@@ -17,6 +17,7 @@ internal class LaunchSaves(
     private val plugins: PluginHost,
     /** The folder the user picked for a player, where its firmware goes, or null. */
     private val pickedFolder: (Player) -> String? = { null },
+    private val onSpots: suspend (Game, Player, List<SaveSpot>) -> Unit = { _, _, _ -> },
     /** A save was written for the player with this save folder key, which must load it. */
     private val awaitLoad: (String) -> Unit,
 ) {
@@ -77,16 +78,21 @@ internal class LaunchSaves(
         // Saves are named after the file that opens, which a folded copy shares by definition.
         // forLaunch: the card may be created here, and must not be on the way back.
         val spots = saves.spots(player, owner, local, forLaunch = true, changed = setup)
+        onSpots(owner, player, spots)
+        // A declared folder is not necessarily a reachable slot for this game
+        // (for example an ARMSX2 file card). Tell the library what the shell can
+        // actually place, so its activity cannot claim an unreachable save synced.
+        val syncingPlayer = playerForSaveSpots(player, owner, spots)
         try {
             val outside = saves.changedSince(libraryId, owner, player, spots)
             if (outside.slots.isNotEmpty()) {
-                plugins.reconcile(libraryId, owner, player, outside)
+                plugins.reconcile(libraryId, owner, syncingPlayer, outside)
                 saves.noteHandedOver(libraryId, owner, player, spots, outside)
             }
             val placement = if (owner == route.play) {
-                plugins.prepareLaunch(libraryId, owner, player)
+                plugins.prepareLaunch(libraryId, owner, syncingPlayer)
             } else {
-                plugins.prepareSaves(libraryId, owner, player, local)
+                plugins.prepareSaves(libraryId, owner, syncingPlayer, local)
             }
             return Negotiated(owner, spots, placement)
         } catch (cancelled: CancellationException) {
@@ -125,3 +131,16 @@ internal class PreparedLaunch(val target: LaunchTarget, val spots: List<SaveSpot
 
 /** A library save could not be written into the player's folder and checked. */
 internal class SaveNotPlaced : Exception("save could not be placed")
+
+/** A library sees only slots the shell can reach; all other player behavior delegates unchanged. */
+internal fun playerForSaveSpots(player: Player, game: Game, spots: List<SaveSpot>): Player {
+    val supportsSync = player.supportsSaveSync(game)
+    val reachable = spots.map { it.slot }.toSet()
+    val declarations = player.saveDeclarations(game).map { slot ->
+        if (slot.slot in reachable) slot else slot.copy(locationUri = null)
+    }
+    return object : Player by player {
+        override fun supportsSaveSync(game: Game) = supportsSync
+        override fun saveDeclarations(game: Game) = declarations
+    }
+}

@@ -30,6 +30,13 @@ class SessionStore(private val prefs: SharedPreferences) : SaveMarks {
         if (RETIRED_MOONLIGHT_KEYS.any(prefs::contains)) {
             prefs.edit().apply { RETIRED_MOONLIGHT_KEYS.forEach { remove(it) } }.apply()
         }
+        // Declining save sync is a choice for one launch, never a saved preference.
+        val retiredSaveOffers = prefs.all.keys.filter {
+            it.startsWith("player_save_folder_skipped:") || it.startsWith("player_hosted_saves_skipped:")
+        }
+        if (retiredSaveOffers.isNotEmpty()) {
+            prefs.edit().apply { retiredSaveOffers.forEach { remove(it) } }.apply()
+        }
     }
 
     /** Fired after [session] changes. Home music watches games entering and leaving either screen. */
@@ -194,22 +201,6 @@ class SessionStore(private val prefs: SharedPreferences) : SaveMarks {
     fun setPendingSaveReturn(gameKey: String, value: String?) {
         val key = PENDING_SAVE_RETURN_PREFIX + gameKey
         prefs.edit().apply { if (value == null) remove(key) else putString(key, value) }.commit()
-    }
-
-    /** True after Not now. The save-folder offer stays quiet for this player. */
-    fun saveFolderPromptSkipped(playerId: String): Boolean =
-        prefs.getBoolean(saveFolderSkipKey(playerId), false)
-
-    fun setSaveFolderPromptSkipped(playerId: String) {
-        prefs.edit().putBoolean(saveFolderSkipKey(playerId), true).apply()
-    }
-
-    /** True once Not now answered how to give [playerId] the folder Foldcade hosts for its saves. */
-    fun hostedPromptSkipped(playerId: String): Boolean =
-        prefs.getBoolean(hostedSkipKey(playerId), false)
-
-    fun setHostedPromptSkipped(playerId: String) {
-        prefs.edit().putBoolean(hostedSkipKey(playerId), true).apply()
     }
 
     /**
@@ -623,8 +614,6 @@ class SessionStore(private val prefs: SharedPreferences) : SaveMarks {
 
         private fun saveFolderKey(playerId: String) = PLAYER_SAVE_FOLDER_PREFIX + playerId
 
-        private fun saveFolderSkipKey(playerId: String) = "player_save_folder_skipped:$playerId"
-        private fun hostedSkipKey(playerId: String) = "player_hosted_saves_skipped:$playerId"
 
         private fun saveMarkKey(key: String) = "player_save_mark:$key"
 

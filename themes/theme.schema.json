@@ -131,6 +131,7 @@
                             "badge.hidden",
                             "badge.paused",
                             "badge.sync",
+                            "badge.unsynced",
                             "button.a",
                             "button.a.filled",
                             "button.b",
@@ -976,6 +977,11 @@
                     "type": "object",
                     "additionalProperties": false,
                     "properties": {
+                        "attention": {
+                            "type": "string",
+                            "pattern": "^#[0-9A-Fa-f]{6}$",
+                            "default": "#FFC48A"
+                        },
                         "scrim": {
                             "type": "string",
                             "pattern": "^#[0-9A-Fa-f]{6}$",

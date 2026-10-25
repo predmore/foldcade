@@ -85,6 +85,13 @@ interface LibraryBackend {
     suspend fun saves(game: Game): SaveSet
 
     /**
+     * Remote keys of games whose locally held saves have not reached the server.
+     * Includes saves with no sync record. The host reads this at startup and
+     * after activity reports. Default: nothing waiting. Added in API minor 15.
+     */
+    suspend fun unsyncedSaves(): Set<String> = emptySet()
+
+    /**
      * Negotiate this game's saves before the shell places them and starts [player].
      * Called after [ensureLocal]. [Placement.savesToPlace] is what the shell writes
      * into the player's locations.

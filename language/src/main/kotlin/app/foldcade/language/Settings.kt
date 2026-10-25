@@ -63,6 +63,16 @@ fun settingsTitle(category: SettingsCategory): String = when (category) {
 fun settingsCategories(model: PickerModel): List<SettingsCategory> =
     SettingsCategory.entries.filter { settingsRows(it, model).isNotEmpty() }
 
+/** Opens the normal Settings page at a category, keeping the grid to return to. */
+fun PickerModel.openSettings(
+    screen: HostScreen,
+    category: SettingsCategory = SettingsCategory.Personalization,
+    grid: GridFocus = focus,
+): PickerModel = copy(
+    panel = null,
+    settings = SettingsPage(screen, category = settingsCategories(this).indexOf(category).coerceAtLeast(0), grid = grid),
+)
+
 fun settingsRows(category: SettingsCategory, model: PickerModel): List<Row> = when (category) {
     SettingsCategory.Personalization -> buildList {
         add(Row.Theme)
@@ -126,7 +136,7 @@ sealed interface RowControl {
     data class Check(val on: Boolean, val some: Boolean = false) : RowControl
     data class Choice(val value: String) : RowControl
     data object Opens : RowControl
-    data class Value(val text: String) : RowControl
+    data class Value(val text: String, val attention: Boolean = false) : RowControl
     data object None : RowControl
 }
 
@@ -143,5 +153,8 @@ fun rowControl(row: Row, model: PickerModel, value: String? = rowText(row, model
     Row.EditHome, Row.AddToCollection, is Row.RommConnection,
     Row.AddFolder, Row.AddRomm, Row.SetAsHome, Row.DefaultHomeApp, Row.AndroidSettings, Row.Licenses, Row.Themes,
     -> RowControl.Opens
-    else -> value?.takeIf { it.isNotEmpty() }?.let(RowControl::Value) ?: RowControl.None
+    else -> value?.takeIf { it.isNotEmpty() }?.let {
+        RowControl.Value(it, attention = it == Copy.notSyncing &&
+            (row is Row.PlayerSave || row is Row.HostedSaves || row is Row.SaveSync || row is Row.PlayerSetup))
+    } ?: RowControl.None
 }

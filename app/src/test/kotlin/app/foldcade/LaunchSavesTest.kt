@@ -158,6 +158,25 @@ class LaunchSavesTest {
         assertEquals(listOf("prepareLaunch:12"), server.calls)
     }
 
+    @Test
+    fun aDeclaredFolderWithNoSpotForThisGameIsReportedUnreachableBeforeSync() = runBlocking {
+        val player = object : Player by Melon {
+            override val id = "armsx2"
+            override fun saveDeclarations(game: Game) = listOf(SaveDeclaration("card1", SAVES))
+            override fun saveFileName(slot: String, romFileName: String): String? = null
+        }
+        var reported = false
+        LaunchSaves(saves, plugins, onSpots = { _, _, spots ->
+            assertTrue(spots.isEmpty())
+            assertTrue(server.calls.isEmpty())
+            reported = true
+        }) { awaiting += it }.prepare(GameRoute("tile", owner, owner), player, local)
+        assertTrue(reported)
+        assertEquals(listOf(SaveDeclaration("card1", null)), server.declarationsSeen)
+        assertTrue(awaiting.isEmpty())
+        assertTrue(docs.files.isEmpty())
+    }
+
     private inner class RecordingLibrary(override val id: String) : LibraryBackend {
         init {
             libraries[id] = this
@@ -168,6 +187,7 @@ class LaunchSavesTest {
         val observed = mutableListOf<String>()
         var toPlace: String? = null
         var held: List<String> = emptyList()
+        var declarationsSeen: List<SaveDeclaration> = emptyList()
 
         override suspend fun connect() = Unit
         override suspend fun disconnect() = Unit
@@ -177,6 +197,7 @@ class LaunchSavesTest {
         override suspend fun saves(game: Game) = SaveSet(id, held.map { SaveSlot(it, "0".repeat(32), null) })
 
         override suspend fun prepareLaunch(game: Game, player: Player): Placement {
+            declarationsSeen = player.saveDeclarations(game)
             calls += "prepareLaunch:${game.remoteKey}"
             return Placement(LaunchTarget.ContentUri("content://own"), placed())
         }

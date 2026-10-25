@@ -124,6 +124,9 @@ enum class DialogKind {
 }
 
 enum class DialogButton {
+    ChooseSaveFolder,
+    PlayWithoutSyncing,
+    SetUpSaves,
     UseAsHome,
     NotNow,
     ContinueGrant,
@@ -143,6 +146,9 @@ enum class DialogButton {
 
 /** The words a dialog button shows. [subject] is [DialogState.subject], which names the player to open. */
 fun dialogButtonLabel(button: DialogButton, subject: String? = null): String = when (button) {
+    DialogButton.ChooseSaveFolder -> Copy.playerSavesUnset
+    DialogButton.PlayWithoutSyncing -> Copy.playWithoutSyncing
+    DialogButton.SetUpSaves -> Copy.setUp
     DialogButton.UseAsHome -> Copy.useAsHome
     DialogButton.NotNow -> Copy.notNow
     DialogButton.ContinueGrant -> Copy.continueGrant
@@ -298,8 +304,8 @@ fun forgetArtKeyPrompt(screen: HostScreen): DialogState = DialogState(
 )
 
 /**
- * The ask for a player's save folder. Before a game whose saves sync ([syncs]) it
- * opens on Continue, since Not now is remembered. [playerName] names the player,
+ * The ask for a player's save folder. Choose folder opens the picker by default.
+ * Play without syncing applies to this launch only. [playerName] names the player,
  * and [opensThere] says the picker opens at its folder. [wrong] is set after a
  * pick that was not the player's folder: what its folder holds.
  */
@@ -312,33 +318,34 @@ fun saveFolderDialog(
     needed: Boolean = false,
 ): DialogState = DialogState(
     kind = DialogKind.SaveFolder,
-    title = playerName?.let { "$it ${Copy.saveFolderTitle.lowercase()}" } ?: Copy.saveFolderTitle,
+    title = playerName?.let(Copy::syncSavesTitle) ?: Copy.saveFolderTitle,
     body = wrong?.let { (player, markers) -> wrongSaveFolderBody(player, markers) }
         ?: listOfNotNull(
             when {
                 needed -> Copy.saveFolderNeededBody
-                syncs -> Copy.saveFolderSyncBody
+                syncs -> playerName?.let(Copy::syncSavesBody) ?: Copy.saveFolderSyncBody
                 else -> Copy.saveFolderBody
             },
             Copy.saveFolderOpensThere.takeIf { opensThere },
         ).joinToString(" "),
-    buttons = listOf(DialogButton.ContinueGrant, DialogButton.NotNow),
-    index = if (syncs || needed) 0 else 1,
+    buttons = listOf(DialogButton.ChooseSaveFolder, if (needed) DialogButton.NotNow else DialogButton.PlayWithoutSyncing),
+    index = 0,
     safeIndex = 1,
     screen = screen,
 )
 
 /**
- * How to point [playerName] at the folder Foldcade hosts for what [title] names,
- * once, in its own settings: [steps]. Opens on Open, which opens the player.
- * Before a launch, Not now starts the game.
+ * How to point [playerName] at the folder Foldcade hosts,
+ * once, in its own settings: [steps]. Before a launch, Set up opens the player
+ * and Play without syncing starts this launch without remembering the choice.
  */
-fun hostedSavesDialog(playerName: String, title: String, steps: String, beforeLaunch: Boolean, screen: HostScreen): DialogState =
+fun hostedSavesDialog(playerName: String, steps: String, beforeLaunch: Boolean, screen: HostScreen): DialogState =
     DialogState(
         kind = DialogKind.HostedSaves,
-        title = "${Copy.hostedSavesTitle} $title",
-        body = if (beforeLaunch) "$steps ${Copy.hostedSavesLater}" else steps,
-        buttons = listOf(DialogButton.OpenPlayer, DialogButton.NotNow),
+        title = Copy.syncSavesTitle(playerName),
+        body = steps,
+        buttons = if (beforeLaunch) listOf(DialogButton.SetUpSaves, DialogButton.PlayWithoutSyncing)
+            else listOf(DialogButton.OpenPlayer, DialogButton.NotNow),
         index = 0,
         safeIndex = 1,
         screen = screen,
@@ -350,8 +357,8 @@ fun hostedSavesDialog(playerName: String, title: String, steps: String, beforeLa
  * settings. Opens on Open, which opens the player. The row reads the same way
  * as a folder Foldcade hosts.
  */
-fun saveSyncDialog(playerName: String, steps: String, screen: HostScreen): DialogState =
-    hostedSavesDialog(playerName, "$playerName ${Copy.memoryCard}", steps, beforeLaunch = false, screen)
+fun saveSyncDialog(playerName: String, steps: String, screen: HostScreen, beforeLaunch: Boolean = false): DialogState =
+    hostedSavesDialog(playerName, steps, beforeLaunch, screen)
 
 /** What [playerName] needs once before it can start a game. Open opens the player; Not now closes. */
 fun playerSetupDialog(playerName: String, steps: String, screen: HostScreen): DialogState = DialogState(
@@ -713,6 +720,8 @@ data class PlayerSaveSetting(
     val saveSyncSteps: String? = null,
     /** What the user does once in the player before it can start a game, or null when it can. */
     val setupSteps: String? = null,
+    /** False until the host knows one of this player's packages is installed. */
+    val installed: Boolean = false,
 )
 
 /**
@@ -916,6 +925,9 @@ fun panelHints(model: PickerModel): List<HintKey>? {
             val notice = model.notices.firstOrNull { it.id == row.id } ?: return null
             buildList {
                 val roles = actionFaces(model.faceMap)
+                if (notice.savePlayerId != null || notice.settingsCategory != null) {
+                    add(HintKey(promptKeyOf(model.faceMap.confirmKey) ?: PromptKey.FaceA, Copy.setUp))
+                }
                 if (notice.openable) {
                     add(HintKey(promptKeyOf(model.faceMap.confirmKey) ?: PromptKey.FaceA, Copy.hintTop))
                     add(HintKey(roles.bottomGlyph, Copy.hintBottom))
@@ -1051,24 +1063,36 @@ fun rowText(row: Row, model: PickerModel): RowText = when (row) {
     Row.ClearNotices -> RowText(NoticeCopy.clearAll)
     is Row.PlayerSave -> {
         val setting = model.playerSaves.firstOrNull { it.playerId == row.playerId }
-        val chosen = if (setting?.chosen == true) Copy.playerSavesSet else Copy.playerSavesUnset
+        val chosen = when {
+            setting?.chosen == true -> Copy.playerSavesSet
+            setting?.installed != true || setting.hostedTitle != null -> Copy.playerSavesUnset
+            else -> Copy.notSyncing
+        }
         RowText(setting?.label ?: row.playerId, chosen)
     }
     is Row.HostedSaves -> {
         val setting = model.playerSaves.firstOrNull { it.playerId == row.playerId }
-        val inUse = if (setting?.hostedInUse == true) Copy.hostedSavesSet else Copy.hostedSavesUnset
+        val inUse = when {
+            setting?.hostedInUse == true -> Copy.hostedSavesSet
+            setting?.installed == true -> Copy.notSyncing
+            else -> Copy.hostedSavesUnset
+        }
         RowText(setting?.hostedTitle ?: row.playerId, inUse)
     }
     is Row.SaveSync -> {
         val setting = model.playerSaves.firstOrNull { it.playerId == row.playerId }
-        val state = if (setting?.saveSyncing == true) Copy.hostedSavesSet else Copy.hostedSavesUnset
+        val state = when {
+            setting?.saveSyncing == true -> Copy.hostedSavesSet
+            setting?.installed == true -> Copy.notSyncing
+            else -> Copy.hostedSavesUnset
+        }
         val name = setting?.label ?: row.playerId
         RowText("$name ${Copy.memoryCard}", state)
     }
     is Row.PlayerSetup -> {
         val setting = model.playerSaves.firstOrNull { it.playerId == row.playerId }
         val name = setting?.label ?: row.playerId
-        RowText("$name ${Copy.setup}", Copy.hostedSavesUnset)
+        RowText("$name ${Copy.setup}", if (setting?.installed == true) Copy.notSyncing else Copy.hostedSavesUnset)
     }
     Row.RetroArchCores -> RowText(
         Copy.retroArchCores,
@@ -1577,9 +1601,7 @@ private fun applyGrid(
                 ) to null
             } else model.copy(focus = page(model.focus, forward, model, model.screenJumpLastColumn)) to null
         }
-        Meaning.Menu -> if (model.arranging) model to null else model.copy(
-            settings = SettingsPage(screen = HostScreen.Top, grid = model.focus),
-        ) to null
+        Meaning.Menu -> if (model.arranging) model to null else model.openSettings(HostScreen.Top) to null
         Meaning.Activate -> activate(model, screen)
         Meaning.ActivateBottom -> activate(model, screen, onBottom = true)
         Meaning.Options -> openActions(model) to null
@@ -2061,10 +2083,7 @@ private fun activateRow(
     screen: HostScreen,
 ): Pair<PickerModel, Effect?> {
     return when (row) {
-        Row.Settings -> model.copy(
-            panel = null,
-            settings = SettingsPage(screen = panel.screen, grid = panel.grid),
-        ) to null
+        Row.Settings -> model.openSettings(panel.screen, grid = panel.grid) to null
         // The [choiceRows]. The list is spelled out so a new row cannot slip past this when.
         Row.Theme, Row.IconTheme, Row.Background, Row.MotionSpeed, Row.MusicTrack, Row.Order, Row.Primary ->
             stepRow(model, row, 1)!!.copy(panel = panel) to null
@@ -2226,6 +2245,21 @@ private fun openNotice(
     screen: HostScreen,
 ): Pair<PickerModel, Effect?> {
     val notice = model.notices.firstOrNull { it.id == id } ?: return model.copy(panel = panel) to null
+    notice.settingsCategory?.let { category ->
+        return model.openSettings(panel.screen, category, panel.grid) to null
+    }
+    notice.savePlayerId?.let { playerId ->
+        val setting = model.playerSaves.firstOrNull { it.playerId == playerId }
+            ?: return model.copy(panel = panel) to null
+        val fix = when {
+            setting.hostedTitle != null && !setting.hostedInUse -> Effect.SetUpHostedSaves(playerId)
+            !setting.chosen -> Effect.ChoosePlayerSave(playerId)
+            setting.saveSyncSteps != null -> Effect.ShowSaveSync(playerId)
+            setting.setupSteps != null -> Effect.ShowPlayerSetup(playerId)
+            else -> Effect.ChoosePlayerSave(playerId)
+        }
+        return model.copy(panel = null, focus = panel.grid) to fix
+    }
     if (notice.openable) {
         return model.copy(panel = null, focus = panel.grid) to Effect.OpenNotice(id, onBottom)
     }

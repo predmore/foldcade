@@ -6,6 +6,7 @@ import app.foldcade.api.plugin.SyncOutcome
 import app.foldcade.api.plugin.SyncResult
 import app.foldcade.language.Copy
 import app.foldcade.language.FoldNotice
+import app.foldcade.language.SettingsCategory
 
 /**
  * What R1 says after a game's saves were handed back. Only the outcomes worth
@@ -123,3 +124,77 @@ internal class ReturnSyncNotices(private val patienceMillis: Long = RETURN_SYNC_
 
 /** How long a hand-back's notice waits for the library to say how its sync ended. */
 internal const val RETURN_SYNC_PATIENCE_MS = 45_000L
+
+/** One setup notice. A merged notice rearms when any affected emulator is launched. */
+internal class SaveSetupNotices {
+    private var players = emptyMap<String, String>()
+    private val dismissed = mutableSetOf<String>()
+    private val posted = mutableMapOf<String, Long>()
+
+    fun update(next: Map<String, String>) {
+        dismissed.retainAll(next.keys)
+        val ids = next.keys.mapTo(mutableSetOf(), ::noticeId)
+        if (next.size >= 2) ids.add(MERGED_NOTICE_ID)
+        posted.keys.retainAll(ids)
+        players = next
+    }
+
+    fun launch(playerId: String) {
+        if (playerId !in players) return
+        if (players.size >= 2) dismissed.clear() else dismissed.remove(playerId)
+    }
+    fun dismiss(id: String) {
+        if (id == MERGED_NOTICE_ID) clear()
+        else players.keys.firstOrNull { noticeId(it) == id }?.let(dismissed::add)
+    }
+    fun clear() { dismissed.addAll(players.keys) }
+
+    fun notices(nowMillis: Long): List<FoldNotice> {
+        if (players.keys.none { it !in dismissed }) return emptyList()
+        if (players.size >= 2) return listOf(FoldNotice(
+            id = MERGED_NOTICE_ID, title = Copy.savesNotSyncing, body = Copy.savesNotSyncingEmulatorsBody(players.size),
+            postedMillis = posted.getOrPut(MERGED_NOTICE_ID) { nowMillis }, settingsCategory = SettingsCategory.Players,
+        ))
+        val (playerId, name) = players.entries.single()
+        val id = noticeId(playerId)
+        return listOf(FoldNotice(
+            id = id, title = Copy.savesNotSyncingTitle(name), body = Copy.savesNotSyncingBody,
+            postedMillis = posted.getOrPut(id) { nowMillis }, savePlayerId = playerId,
+        ))
+    }
+
+    private fun noticeId(playerId: String) = "foldcade:save-setup:$playerId"
+
+    private companion object {
+        const val MERGED_NOTICE_ID = "foldcade:save-setup:emulators"
+    }
+}
+
+/** Cold-start ledger saves get the same patience as a hand-back. One notice until fixed. */
+internal class WaitingSaveNotices(private val patienceMillis: Long = RETURN_SYNC_PATIENCE_MS) {
+    private val since = mutableMapOf<Pair<String, String>, Long>()
+    private val told = mutableSetOf<Pair<String, String>>()
+    private val posted = mutableMapOf<Pair<String, String>, FoldNotice>()
+
+    fun nextDueMillis(): Long? = since.filterKeys { it !in told }.values.minOrNull()?.plus(patienceMillis)
+
+    fun update(games: List<Game>, nowMillis: Long): List<FoldNotice> {
+        val keys = games.map { it.backendId to it.remoteKey }.toSet()
+        since.keys.retainAll(keys)
+        told.retainAll(keys)
+        return games.mapNotNull { game ->
+            val key = game.backendId to game.remoteKey
+            val start = since.getOrPut(key) { nowMillis }
+            if (nowMillis - start >= patienceMillis && told.add(key)) {
+                saveNotice(game, SyncOutcome.Queued, nowMillis)?.also { posted[key] = it }
+            } else null
+        }
+    }
+
+    /** Only this producer's own notices expire; a hand-back may replace one under the same id. */
+    fun settled(notices: List<FoldNotice>): List<FoldNotice> {
+        val done = posted.filterKeys { it !in since }
+        done.keys.forEach(posted::remove)
+        return notices.filter { notice -> done.values.any { it === notice } }
+    }
+}

@@ -40,7 +40,7 @@ Resource themes can override any slot (see [themes](themes.md)). A symbol is mar
 2. **Platforms are the thing you hold, seen from the front.** Draw the controller or the handheld, not a logo. When two platforms' controllers look alike, draw what differs: the Master System's d-pad is square, and Sega CD is the Genesis pad with a disc above it. When the difference is too small to read on a tile, draw the console instead. The three PlayStation controllers are nearly the same, so the PlayStations are their consoles: the first a grey box with a round lid, the PlayStation 2 lying down in two tiers, the PlayStation 3 a slab with a curved top. Saturn is the planet.
 3. **Shape says what it is, colour says which one.** A device is a platform, a folder is a folder or a collection, and a house, a shelf, or a cloud is a place.
 4. **Symbols are one ink.** No gradients, gloss, rims, or glows in the art. The host draws focus.
-5. **Colour in a symbol means state.** Teal (`#3EE6C0`) means on or held. Rose (`#FF5C7A`) means it needs you. Ink at 30% means off. Nothing else is coloured.
+5. **Colour in a symbol means state.** Teal (`#3EE6C0`) means on or held. Rose (`#FF5C7A`) means it needs you. Warm amber (`style.colors.attention`, Afterglow `#FFC48A`) marks saves that need protection. Ink at 30% means off. Nothing else is coloured.
 6. **Details are cut out of the shape, not drawn on it.** A screen, a button, or a window is a hole in the silhouette. Anything inside a hole is solid again.
 7. **A button's cap is its only container.** Thor Start is a ▷ on the round cap, with no ring around it, the same as Select's square.
 8. **Objects share one light and one material.** See [Objects](#objects). Every object follows the same recipe, so the grid looks like one set beside any cover art.
@@ -56,6 +56,8 @@ Drawn in `tools/art/symbols.py` on a 24 × 24 viewport and shipped at 24dp.
 - **Legends and counts** use the built-in monoline alphabet: `legend("L1", cx, cy, height, color, stroke)`. It has A B X Y L R, the digits, and +. Add a letter to `CHARS` the same way: 10 units tall, drawn with round-ended strokes.
 - **State.** Off is ink at `OFF_ALPHA` (0.3). Disabled things are crossed out with `slashed()`, which cuts a black gap on either side of the line. Status icons sit on black islands, so a black gap reads as a cut.
 - **Badges** are drawn in ink and marked `tint=True`. The host recolours them, so they must stay one colour.
+
+`badge.unsynced` is a cloud with an exclamation cut out. It marks saves that are not syncing or are waiting to upload, in the attention colour.
 
 ### The 64-unit grid: places, platforms, and glyphs
 

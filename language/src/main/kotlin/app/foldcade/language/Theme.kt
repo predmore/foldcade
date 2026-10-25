@@ -200,9 +200,19 @@ object Copy {
     const val closePlayerBody = "This game uses both screens. The one already running has to close first."
     const val closeIt = "Close it"
     const val saveFolderTitle = "Save folder"
-    const val saveFolderBody = "This player keeps its own saves. Not now starts the game. You can choose one later in Settings."
+    const val saveFolderBody = "Choose where this player keeps its saves."
     /** The same ask before a game whose saves sync with its server. */
-    const val saveFolderSyncBody = "Choose where this player keeps its saves, so they sync. Not now starts the game without syncing."
+    const val saveFolderSyncBody = "Choose where this player keeps its saves to keep them on RomM."
+    const val playWithoutSyncing = "Play without syncing"
+    const val savesNotSyncing = "Saves not syncing"
+    const val savesWaiting = "Saves waiting to upload"
+    const val savesDeviceOnly = "Saves stay on this device"
+    const val notSyncing = "Not syncing"
+    fun savesNotSyncingTitle(player: String) = "$player saves aren’t syncing"
+    fun savesNotSyncingEmulatorsBody(count: Int) = "$count emulators need setup."
+    const val savesNotSyncingBody = "Set up to keep them on RomM."
+    fun syncSavesTitle(player: String) = "Sync $player saves?"
+    fun syncSavesBody(player: String) = "Foldcade keeps $player saves on RomM. Choose $player’s save folder to start."
     /** The same ask for a player that cannot start a game without its folder. Not now only closes. */
     const val saveFolderNeededBody = "This player needs its folder to start games and sync saves."
     /** The ask for a named player's folder, when the picker opens at it. */
@@ -233,7 +243,6 @@ object Copy {
     const val playerSetupTitle = "Set up"
     /** A player's memory cards or other saves, synced through a folder Foldcade hosts. */
     const val hostedSavesTitle = "Sync"
-    const val hostedSavesLater = "Not now starts the game without syncing them. Settings › Emulators sets it up later."
     const val retroArchWrongFolder = "That folder has no cores. Choose RetroArch’s top folder, the one that holds cores, then Use this folder."
     const val retroArchCores = "RetroArch cores"
     const val edenFolderTitle = "Set up Eden from RomM"

@@ -517,10 +517,14 @@ internal class RommLibrary internal constructor(
             null
         }
         // A slow server does not hold the game. A cut-short sync leaves files whole: each write is a rename.
-        report(romId, GameActivity.SyncingSaves)
-        val sync = withTimeoutOrNull(LAUNCH_SYNC_LIMIT_MS) { syncRom(romId, player.id) }
-            ?: pending(wiring, romId, "RomM took too long. Saves will sync later.")
-        val shown = GameActivity.Synced(if (savesUnreachable(game, player)) unreachableSync() else sync)
+        val supportsSync = player.supportsSaveSync(game)
+        val sync = if (supportsSync) {
+            report(romId, GameActivity.SyncingSaves)
+            withTimeoutOrNull(LAUNCH_SYNC_LIMIT_MS) { syncRom(romId, player.id) }
+                ?: pending(wiring, romId, "RomM took too long. Saves will sync later.")
+        } else SyncResult(SyncOutcome.Unchanged)
+        val visibleSync = if (supportsSync && savesUnreachable(game, player)) unreachableSync() else sync
+        val shown = if (supportsSync) GameActivity.Synced(visibleSync) else GameActivity.Idle
         report(romId, shown)
         // A sync still running in the background may rename a save at any time, so
         // the shell gets copies whose hashes match their bytes.
@@ -563,7 +567,7 @@ internal class RommLibrary internal constructor(
                 }
             }
         }.orEmpty()
-        Placement(withFirmware(target, firmware), snapshotSaves(wiring, romId), sync)
+        Placement(withFirmware(target, firmware), if (supportsSync) snapshotSaves(wiring, romId) else emptyList(), visibleSync)
     }
 
     /** [target] with [firmware] added, see [firmwareFor]. */
@@ -750,9 +754,10 @@ internal class RommLibrary internal constructor(
                 throw PluginException.Unavailable(error.message ?: "The save could not be kept", error)
             }
         }
+        if (!player.supportsSaveSync(game)) return pending(wiring, romId, null)
         val unreachable = savesUnreachable(game, player)
         background.launch { syncRomReported(romId, player.id, unreachable) }
-        return pending(wiring, romId, null)
+        return if (unreachable) unreachableSync() else pending(wiring, romId, null)
     }
 
     /**
@@ -761,15 +766,27 @@ internal class RommLibrary internal constructor(
      * between it and RomM then.
      */
     private fun savesUnreachable(game: Game, player: Player): Boolean = try {
-        player.saveDeclarations(game).any { it.locationUri == null }
+        val slots = player.saveDeclarations(game)
+        slots.isEmpty() || slots.any { it.locationUri == null }
     } catch (cancelled: CancellationException) {
         throw cancelled
     } catch (_: Exception) {
-        false
+        true
     }
 
     /** How a sync reads when the player's saves could not be reached: not synced. */
-    private fun unreachableSync(): SyncResult = SyncResult(SyncOutcome.Unchanged, NO_SAVE_FOLDER)
+    private fun unreachableSync(): SyncResult = SyncResult(SyncOutcome.Unchanged, SAVE_UNREACHABLE)
+
+    override suspend fun unsyncedSaves(): Set<String> {
+        val wiring = gate.wiring()
+        return buildSet {
+            for (romId in runInterruptible(Dispatchers.IO) { wiring.data.romsWithSaves() }) {
+                romLock(romId).withLock {
+                    if (runInterruptible(Dispatchers.IO) { unsyncedSlots(wiring, romId).isNotEmpty() }) add(romId.toString())
+                }
+            }
+        }
+    }
 
     /**
      * One negotiate for [romId]. Never throws except for cancellation: an
@@ -1516,8 +1533,8 @@ private const val FIRMWARE_AFTER_SYNC_MS = 5_000L
  */
 private const val FIRMWARE_FETCH_LIMIT_MS = 300_000L
 
-/** Why a sync with a player that has no save folder reads as not synced. */
-internal const val NO_SAVE_FOLDER = "Choose a save folder for this player so its saves sync"
+/** Why a sync with no reachable save slot reads as not synced. */
+internal const val SAVE_UNREACHABLE = "This player’s save location is not available for this game"
 
 /** Under the download root: each platform's firmware, in a folder named by RomM's platform id. */
 internal const val FIRMWARE_DIR = "firmware"

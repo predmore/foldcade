@@ -664,6 +664,10 @@
       "file": "icons/ic_badge_sync.xml",
       "tint": true
     },
+    "badge.unsynced": {
+      "file": "icons/ic_badge_unsynced.xml",
+      "tint": true
+    },
     "button.a": {
       "file": "icons/ic_btn_a.xml",
       "tint": false
@@ -1790,6 +1794,7 @@
       "glyphScale": 1
     },
     "colors": {
+      "attention": "#FFC48A",
       "scrim": "#000000",
       "shade": "#000000",
       "shine": "#FFFFFF",
