@@ -79,7 +79,7 @@ The firmware download shows on the game's tile. If RomM cannot be reached, or a 
 
 ## Save sync
 
-Save sync supports **melonDS `.sav` files**, **RetroArch `.srm` battery saves**, **Azahar 3DS saves**, **DuckStation memory cards** and **ARMSX2 folder memory cards** with RomM **5.4.0 or newer**.
+Save sync supports **melonDS `.sav` files**, **RetroArch `.srm` battery saves**, **Azahar 3DS saves**, **DuckStation memory cards**, **ARMSX2 folder memory cards**, and **aPS3e `savedata` folders** with RomM **5.4.0 or newer**.
 
 For melonDS:
 
@@ -97,6 +97,8 @@ For DuckStation, pick its own data folder at the save-folder prompt, then point 
 
 For ARMSX2, pick its data folder, the one that holds `bios` and `memcards`. Foldcade syncs slot 1 when that slot is a folder card, one zip of the game's folders. ISO, BIN, CUE/BIN, multi-disc `.m3u`, and CHD games sync. chdman's defaults include FLAC as one choice per block. A CHD syncs when the part of the disc holding the serial (the start of its data) isn't stored with FLAC or Zstandard, which is how chdman usually compresses it, since FLAC suits audio. A CHD where that part is FLAC or Zstandard still launches, and its saves stay on the device. See [ARMSX2](emulators.md#memory-cards). The slot syncs as `card1`.
 
+For aPS3e, pick its own folder, the one the picker opens on. Foldcade syncs the `savedata` folders whose names contain the game's title id, such as `BLUS30464-ALIAS_SKATER`. Trophies are not synced. See [aPS3e](emulators.md#saves).
+
 A game that is also in a [local folder](local-games.md) syncs through RomM too, whichever copy opens. Its first launch after the two become one tile hands the emulator's save to RomM as progress, so a save made from the folder is kept. If another device saved since, Foldcade asks which to play and keeps both.
 
 Other emulators and sources manage their own saves. Save-state sync is not implemented.
@@ -105,7 +107,7 @@ Offline changes stay on the device for a later sync. When copies conflict, Foldc
 
 ## Firmware
 
-Firmware you add to a platform in RomM, such as a PlayStation BIOS, goes to the emulators that ask for it: Foldcade downloads each file, checks it against RomM's size and checksum, and writes it into the emulator's folder before the game starts. A zip is checked the same way, and the files inside it are offered too, under the zip's name. DuckStation takes any PlayStation BIOS into its `bios` folder, and does not take files out of a zip. ARMSX2 takes one PlayStation 2 BIOS from a file or from a zip of dumps. Foldcade replaces a file there only when Foldcade put it there. A new copy in RomM replaces the old one, and a BIOS you put there yourself stays. The checked copy, zip and unpacked files, is kept for offline launches. The emulator needs its save folder chosen in Foldcade, since that is where the firmware goes.
+Firmware you add to a platform in RomM, such as a PlayStation BIOS, goes to the emulators that ask for it: Foldcade downloads each file, checks it against RomM's size and checksum, and writes it into the emulator's folder before the game starts. A zip is checked the same way, and the files inside it are offered too, under the zip's name. DuckStation takes any PlayStation BIOS into its `bios` folder, and does not take files out of a zip. ARMSX2 takes one PlayStation 2 BIOS from a file or from a zip of dumps. aPS3e takes one PlayStation 3 `PS3UPDAT.PUP` and stages it at `aPS3e › firmware`; aPS3e installs that file itself, and Foldcade does not write it again after aPS3e has. Foldcade replaces a file there only when Foldcade put it there. A new copy in RomM replaces the old one, and a BIOS you put there yourself stays. The checked copy, zip and unpacked files, is kept for offline launches. The emulator needs its save folder chosen in Foldcade, since that is where the firmware goes.
 
 Switch keys and firmware for Eden work differently, through Eden's own folder: see [Switch keys and firmware](#switch-keys-and-firmware).
 
@@ -113,7 +115,7 @@ Switch keys and firmware for Eden work differently, through Eden's own folder: s
 
 - **Cannot connect:** Try the address from the Thor, check network access, and get a new code or check the token's permissions.
 - **Missing game:** Check RomM's scan and account access, then restart Foldcade. If it is already in All, check [Home placement](README.md#a-game-is-in-all-but-missing-from-home).
-- **Will not launch:** Check the [emulator and format](emulators.md).
+- **Will not launch:** Check the [emulator and format](emulators.md). **aPS3e setup: Set up** in **Foldcade Settings › Emulators** means aPS3e still needs its first-run setup or PlayStation 3 firmware; select it for the steps.
 - **Saves do not sync:** Check the server version, the shared melonDS directory, that Azahar's save folder is its user folder, and that **Foldcade Settings › Emulators** shows DuckStation's memory cards and ARMSX2's memory card as **Syncing**. **Not now** at the save-folder prompt allows play with the emulator's own saves. **Set up** on ARMSX2's row means slot 1 is still a file card.
 
 [All integration guides](README.md)

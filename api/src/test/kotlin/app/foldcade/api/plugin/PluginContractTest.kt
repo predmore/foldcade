@@ -121,7 +121,7 @@ class PluginContractTest {
         assertTrue(aliases.isDefault)
         assertTrue(IdlePlatform().aliases.isEmpty())
         assertEquals(1, PLUGIN_API_VERSION)
-        assertEquals(13, PLUGIN_API_MINOR)
+        assertEquals(14, PLUGIN_API_MINOR)
         val bind = PluginEntry::class.java.methods.single { it.name == "bind" }
         assertTrue(bind.isDefault)
         val saveFileName = Player::class.java.methods.single { it.name == "saveFileName" }
@@ -133,6 +133,11 @@ class PluginContractTest {
         assertTrue(Player::class.java.methods.single { it.name == "chooseFirmware" }.isDefault)
         assertTrue(Player::class.java.methods.single { it.name == "findSaveFolders" }.isDefault)
         assertTrue(Player::class.java.methods.single { it.name == "saveSyncState" }.isDefault)
+        assertTrue(Player::class.java.methods.single { it.name == "setupSteps" }.isDefault)
+        assertTrue(Player::class.java.methods.single { it.name == "needsFirmware" }.isDefault)
+        assertNull(IdlePlayer().setupSteps(ReadOnlyFolder()))
+        assertNull(IdlePlayer().setupSteps(null))
+        assertTrue(IdlePlayer().needsFirmware(ReadOnlyFolder()))
         val observeActivity = LibraryBackend::class.java.methods.single { it.name == "observeActivity" }
         assertTrue(observeActivity.isDefault)
         val achievements = MetadataProvider::class.java.methods.single { it.name == "achievements" }
@@ -385,6 +390,15 @@ private class IdlePlayer(
             flags = setOf(LaunchFlag.NewTask),
         )
     }
+}
+
+private class ReadOnlyFolder : SaveFolderAccess {
+    override fun list(path: String): List<SaveFolderEntry>? = emptyList()
+    override fun read(path: String, limit: Int): ByteArray? = null
+    override fun read(path: String, offset: Long, length: Int): ByteArray? = null
+    override fun write(path: String, bytes: ByteArray) = false
+    override fun createFolder(path: String) = false
+    override fun moveToBackup(path: String) = false
 }
 
 private class IdleLibrary : LibraryBackend {

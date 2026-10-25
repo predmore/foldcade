@@ -39,6 +39,22 @@ class RomFolderTest {
     }
 
     @Test
+    fun oneFileInAFolderOfItsOwnKeepsItsSizeAndHash() {
+        // RomM's PS3 ISO in a folder named after the game: RomM sends the file as it is.
+        val iso = folder(RomFileSummary(258, "Skate 3 (USA).dec.iso", 6_968_246_272, isTopLevel = true)).bytes()
+        assertEquals("Skate 3 (USA).dec.iso", iso.fileName)
+        assertEquals(listOf(258L), iso.fileIds)
+        assertEquals(6_968_246_272L, iso.expectedSize)
+        assertNull(iso.md5)
+        assertTrue(RommClient.canCheckRom(iso.fileIds, iso.expectedSize, iso.md5))
+
+        val hashed = folder(RomFileSummary(259, "Game.iso", 9, md5Hash = "b".repeat(32), isTopLevel = true)).bytes()
+        assertEquals("b".repeat(32), hashed.md5)
+        // RomM hashes an archive by its members, so that hash cannot check the bytes.
+        assertNull(folder(RomFileSummary(260, "Game.zip", 9, md5Hash = "c".repeat(32), isTopLevel = true)).bytes().md5)
+    }
+
+    @Test
     fun twoAddOnsOfOneNameEachKeepAFile() {
         val spec = folder(
             RomFileSummary(11, "Game.nsp", 5, category = "game", isTopLevel = true),

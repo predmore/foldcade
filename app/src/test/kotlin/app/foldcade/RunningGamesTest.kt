@@ -35,6 +35,15 @@ class RunningGamesTest {
     }
 
     @Test
+    fun aGamesOwnStartSentAgainKeepsItsTask() {
+        val start = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP or
+            Intent.FLAG_ACTIVITY_MULTIPLE_TASK or Intent.FLAG_GRANT_READ_URI_PERMISSION
+        val again = resumeStartFlags(start)
+        assertEquals(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_GRANT_READ_URI_PERMISSION, again)
+        assertEquals(Intent.FLAG_ACTIVITY_NEW_TASK, resumeStartFlags(0))
+    }
+
+    @Test
     fun aResumeFoundTheGameUnlessThePlayersMenuCameForward() {
         val game = "org.citra.citra_emu.activities.EmulationActivity"
         val menu = "org.citra.citra_emu.ui.main.MainActivity"
@@ -46,6 +55,10 @@ class RunningGamesTest {
         // A player whose start hands the game to another activity, as Dolphin's does.
         assertEquals(true, resumeFound(listOf("org.dolphinemu.dolphinemu.activities.EmulationActivity"),
             "org.dolphinemu.dolphinemu.ui.main.MainActivity", "org.dolphinemu.dolphinemu.ui.main.TvMainActivity"))
+        // aPS3e: its front door hands on to its menu at once, and the game ran in EmulatorActivity.
+        val quickStart = "aenu.aps3e.QuickStartActivity"
+        assertEquals(false, resumeFound(listOf(quickStart, "aenu.aps3e.MainActivity"), quickStart, "aenu.aps3e.EmulatorActivity"))
+        assertEquals(true, resumeFound(listOf("aenu.aps3e.EmulatorActivity"), quickStart, "aenu.aps3e.EmulatorActivity"))
         // A front door that is also where the game started can't tell the menu from the game.
         assertEquals(true, resumeFound(listOf(menu), menu, menu))
         // Nothing seen yet, or no usage access.

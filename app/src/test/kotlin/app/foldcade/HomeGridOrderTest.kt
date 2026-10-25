@@ -160,6 +160,9 @@ class HomeGridOrderTest {
         assertEquals(TileActivity.Downloading(null), shell.activityAt(drift))
         shell.noteActivity("romm", "drift", GameActivity.Downloading(50L, 200L), nowMillis = 0L)
         assertEquals(TileActivity.Downloading(0.25f), shell.focusedActivity())
+        // Firmware for a game already here reads as firmware, not as the game downloading again.
+        shell.noteActivity("romm", "drift", GameActivity.GettingFirmware(100L, 400L), nowMillis = 0L)
+        assertEquals(TileActivity.Downloading(0.25f, firmware = true), shell.focusedActivity())
         shell.noteActivity("romm", "drift", GameActivity.Checking, nowMillis = 0L)
         assertEquals(TileActivity.Checking, shell.activityAt(drift))
         shell.noteActivity("romm", "drift", GameActivity.SyncingSaves, nowMillis = 0L)

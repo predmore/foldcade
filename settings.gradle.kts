@@ -21,6 +21,7 @@ include(
     ":language",
     ":app",
     ":host",
+    ":plugins:aps3e",
     ":plugins:armsx2",
     ":plugins:azahar",
     ":plugins:droiddeck",

@@ -63,6 +63,7 @@ class LocalFolderEntryTest {
         assertEquals("gamecube", canonicalPlatformId(entry.platforms, "ngc"))
         assertEquals("playstation", canonicalPlatformId(entry.platforms, "psx"))
         assertEquals("playstation-2", canonicalPlatformId(entry.platforms, "ps2"))
+        assertEquals("playstation-3", canonicalPlatformId(entry.platforms, "ps3"))
         assertEquals("master-system", canonicalPlatformId(entry.platforms, "sms"))
         assertEquals("game-gear", canonicalPlatformId(entry.platforms, "gamegear"))
         // RomM's slugs for the systems RetroArch runs.

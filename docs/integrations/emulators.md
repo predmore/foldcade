@@ -23,6 +23,7 @@ Foldcade uses the first installed emulator in each row. There is currently no em
 | Nintendo 3DS | `3ds` | `.cci`, `.zcci`, `.3ds` | Azahar |
 | PlayStation | `ps1` | `.cue`, `.chd`, `.pbp`, `.img`, `.iso`, `.m3u` | DuckStation |
 | PlayStation 2 | `ps2` | `.iso`, `.chd`, `.m3u` | ARMSX2, NetherSX2 / AetherSX2, EmuCoreX |
+| PlayStation 3 | `ps3` | `.iso` (decrypted) | aPS3e |
 | PSP | `psp` | `.cso`, `.iso`, `.pbp` | PPSSPP |
 | Genesis / Mega Drive | `genesis` | `.gen`, `.smd`, `.md` | MD.emu, Pizza Boy SC |
 | Master System | `sms` | `.sms` | MD.emu, Pizza Boy SC |
@@ -109,6 +110,44 @@ Once slot 1 is a folder card, the row reads **ARMSX2 memory card: Syncing**. A c
 
 ISO, BIN, CUE/BIN, multi-disc `.m3u`, and CHD games sync. chdman's defaults include FLAC as one choice per block. A CHD syncs when the part of the disc holding the serial (the start of its data) isn't stored with FLAC or Zstandard, which is how chdman usually compresses it, since FLAC suits audio. A CHD where that part is FLAC or Zstandard still launches, and its saves stay on the device. Save states stay with ARMSX2. Restoring happens before a game starts, so quit the game in ARMSX2 before playing it on another device.
 
+## aPS3e: PlayStation 3
+
+[aPS3e](https://github.com/aenu1/aps3e) is the PlayStation 3 emulator Foldcade launches. The GitHub build and the free Play build are both `aenu.aps3e`. A premium Play build, `aenu.aps3e.premium`, is recognized after that one.
+
+To install the GitHub build with Obtainium and get its updates, open [this link](https://apps.obtainium.imranr.dev/redirect?r=obtainium://app/%7B%22id%22%3A%22aenu.aps3e%22%2C%22url%22%3A%22https%3A%2F%2Fgithub.com%2Faenu1%2Faps3e%22%2C%22author%22%3A%22aenu1%22%2C%22name%22%3A%22aPS3e%22%2C%22additionalSettings%22%3A%22%7B%5C%22apkFilterRegEx%5C%22%3A%5C%22%5E%5C%5C%5C%5Cd%2B%5C%5C%5C%5C.%5C%5C%5C%5Cd%2B%5C%5C%5C%5C.apk%24%5C%22%7D%22%7D) on your Thor. It tracks [aenu1/aps3e](https://github.com/aenu1/aps3e) and takes the `<version>.apk` asset, such as `2.43.apk`.
+
+Foldcade starts aPS3e with a decrypted ISO only. Many decrypted images are named with `.dec.iso`, such as `Skate 3 (USA).dec.iso`; any `.iso` name works. An encrypted Redump image does not open, and Foldcade does not start a JB folder.
+
+### Firmware
+
+Put `PS3UPDAT.PUP` in RomM's firmware for the PlayStation 3. Foldcade checks it and puts it in `aPS3e › firmware`. aPS3e installs firmware itself; Foldcade does not. Until aPS3e has finished its first-run setup and installed that file, Foldcade does not start the game, from RomM or from a folder. A game started before then leaves aPS3e with no renderer, and its setup does not fix that later. Foldcade shows the step that is left, and **Open** opens aPS3e:
+
+- No aPS3e folder picked: "Foldcade checks aPS3e’s setup through aPS3e’s folder. In Foldcade’s Settings › Emulators › aPS3e, choose Use this folder where the picker opens. Then start the game again."
+- No firmware staged or installed: "aPS3e needs PlayStation 3 firmware. Add PS3UPDAT.PUP to the PlayStation 3 firmware on your RomM server, then start the game again."
+- Setup is not finished: "Open aPS3e and finish its setup. For firmware, tap ☰ in the file picker, then aPS3e › firmware › PS3UPDAT.PUP, which Foldcade put there from RomM. For the font, choose From Firmware. For the GPU driver, turn off Use Custom Driver. Then start the game again." On the Thor the font and GPU driver pages start on choices that need a file, and their Next stays grey until you change them. When firmware is already installed, the firmware sentence is left out.
+- Setup is finished, and firmware is not installed: "In aPS3e, open the menu and choose Install Firmware. Tap ☰ in the file picker, then aPS3e › firmware › PS3UPDAT.PUP. Foldcade put it there from RomM. Then start the game again."
+
+Once aPS3e's folder is picked, **Foldcade Settings › Emulators** shows **aPS3e setup: Set up** while any of those is still true. Select it for the same steps.
+
+The first time you play a game with aPS3e, Foldcade asks for aPS3e's folder. aPS3e can't start a game until it has one, so **Not now** there only closes, and the next start asks again. The picker opens at aPS3e's own folder, so tap **Use this folder** and **Allow**. With the premium build, open **aPS3e Premium** in the picker's list first: the picker opens at the free build's folder. You can change the folder later in **Foldcade Settings › Emulators › aPS3e**. A folder you pick has to hold `config` or `logs`; a new install of aPS3e has `logs` before you open it.
+
+### Saves
+
+Foldcade syncs each game's `savedata` folders through [RomM](romm.md#save-sync). Those folders are named with the game's title id, such as `BLUS30464-ALIAS_SKATER` for `BLUS30464`. Trophies are not synced. ISO games can't take updates or DLC in aPS3e yet. That limit is in aPS3e's FAQ.
+
+### Settings that worked on the Thor
+
+Skate 3 reached playable skating with these settings. They are what worked on that device, not a guarantee for every game.
+
+- **Core › Max LLVM Compile Threads:** 1. 4 ran out of memory compiling Skate 3.
+- **LLVM Precompilation:** off.
+- **SPU Decoder:** Interpreter (dynamic). The LLVM SPU decoder hung Skate 3.
+- **Video › Strict Rendering Mode:** off.
+- **VRAM allocation limit:** 2048 MB.
+- A Turnip driver, installed in aPS3e from a driver file. Mr. Purple T30 worked. T23 crashed at start. The stock driver reached about 25 FPS at the start, then 8–10 FPS in PCU Tour, and ran out of memory.
+
+Skate 3 ran at about 19–27 FPS: playable, not full speed. With these settings aPS3e also closed Skate 3 when Home paused it. A on the game's tile then starts it again, from its last save.
+
 ## Other systems
 
 Complete the emulator's firmware, game-directory, controller, and graphics setup, and check that the game plays there before adding it to Foldcade. Eden can take its Switch keys and firmware from [RomM](romm.md#switch-keys-and-firmware) when they are missing: choose Eden's folder once, and files already there are left as they are.
@@ -119,6 +158,6 @@ Disc tracks and other related files may need the emulator's own game-directory a
 
 Forks with different Android package names are not detected automatically. Install a supported build or report the build you use.
 
-Recognized packages are listed in the source for [standalone emulators](../../plugins/emulators/src/main/kotlin/app/foldcade/plugins/emulators/Emulators.kt), [ARMSX2](../../plugins/armsx2/src/main/kotlin/app/foldcade/plugins/armsx2/ArmsX2Entry.kt), [Azahar](../../plugins/azahar/src/main/kotlin/app/foldcade/plugins/azahar/AzaharEntry.kt), [DuckStation](../../plugins/duckstation/src/main/kotlin/app/foldcade/plugins/duckstation/DuckStationEntry.kt), [melonDS](../../plugins/melonds/src/main/kotlin/app/foldcade/plugins/melonds/MelonDsEntry.kt), and [RetroArch](../../plugins/retroarch/src/main/kotlin/app/foldcade/plugins/retroarch/RetroArchEntry.kt).
+Recognized packages are listed in the source for [standalone emulators](../../plugins/emulators/src/main/kotlin/app/foldcade/plugins/emulators/Emulators.kt), [aPS3e](../../plugins/aps3e/src/main/kotlin/app/foldcade/plugins/aps3e/Aps3eEntry.kt), [ARMSX2](../../plugins/armsx2/src/main/kotlin/app/foldcade/plugins/armsx2/ArmsX2Entry.kt), [Azahar](../../plugins/azahar/src/main/kotlin/app/foldcade/plugins/azahar/AzaharEntry.kt), [DuckStation](../../plugins/duckstation/src/main/kotlin/app/foldcade/plugins/duckstation/DuckStationEntry.kt), [melonDS](../../plugins/melonds/src/main/kotlin/app/foldcade/plugins/melonds/MelonDsEntry.kt), and [RetroArch](../../plugins/retroarch/src/main/kotlin/app/foldcade/plugins/retroarch/RetroArchEntry.kt).
 
 [All integration guides](README.md)

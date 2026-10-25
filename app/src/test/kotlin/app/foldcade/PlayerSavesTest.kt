@@ -508,6 +508,63 @@ class PlayerSavesTest {
     }
 
     @Test
+    fun firmwareThePlayerAlreadyInstalledIsNotWritten() {
+        docs.library["lib://bios"] = "bios".toByteArray()
+        val target = LaunchTarget.ContentUri(ROM_URI, firmware = listOf(FirmwareBytes("SCPH1001.BIN", "lib://bios")))
+        val installed = object : Player by Melon(FOLDER, firmware = setOf("SCPH1001.BIN")) {
+            override fun needsFirmware(folder: app.foldcade.api.plugin.SaveFolderAccess) = false
+        }
+        assertTrue(saves.placeFirmware(installed, GAME, target).isEmpty())
+        assertEquals(null, docs.text(FOLDER, "SCPH1001.BIN"))
+        // A player that cannot say still gets the file.
+        val unsure = object : Player by Melon(FOLDER, firmware = setOf("SCPH1001.BIN")) {
+            override fun needsFirmware(folder: app.foldcade.api.plugin.SaveFolderAccess): Boolean = error("no")
+        }
+        assertEquals(listOf("SCPH1001.BIN"), saves.placeFirmware(unsure, GAME, target))
+    }
+
+    @Test
+    fun aLargeFirmwareFileIsNotHeldToPutBack() {
+        val big = ByteArray(16 * 1024 * 1024 + 1) { 7 }
+        docs.putBytes(FOLDER, "PS3UPDAT.PUP", big)
+        // The shell wrote this one, so a newer library copy may replace it.
+        marks.setMark("firmware:$FOLDER/PS3UPDAT.PUP", md5Hex(big))
+        docs.library["lib://pup"] = "new pup".toByteArray()
+        docs.tearNextWrite = true
+        val target = LaunchTarget.ContentUri(ROM_URI, firmware = listOf(FirmwareBytes("PS3UPDAT.PUP", "lib://pup")))
+        val player = Melon(FOLDER, firmware = setOf("PS3UPDAT.PUP"))
+        assertTrue(saves.placeFirmware(player, GAME, target).isEmpty())
+        val left = docs.bytes(FOLDER, "PS3UPDAT.PUP")
+        assertEquals(3, left?.size)
+        assertFalse(left!!.contentEquals(big))
+        docs.tearNextWrite = false
+        assertEquals(listOf("PS3UPDAT.PUP"), saves.placeFirmware(player, GAME, target))
+        assertEquals("new pup", docs.text(FOLDER, "PS3UPDAT.PUP"))
+    }
+
+    @Test
+    fun aNewLargeFirmwareFileThatDoesNotCheckIsRemoved() {
+        docs.library["lib://pup"] = ByteArray(16 * 1024 * 1024 + 1) { 3 }
+        docs.tearNextWrite = true
+        val target = LaunchTarget.ContentUri(ROM_URI, firmware = listOf(FirmwareBytes("PS3UPDAT.PUP", "lib://pup")))
+        assertTrue(saves.placeFirmware(Melon(FOLDER, firmware = setOf("PS3UPDAT.PUP")), GAME, target).isEmpty())
+        assertEquals(null, docs.bytes(FOLDER, "PS3UPDAT.PUP"))
+    }
+
+    @Test
+    fun setupStepsComeFromThePlayerAndAThrowDoesNotBlock() {
+        val asking = object : Player by Melon(FOLDER) {
+            override fun setupSteps(folder: app.foldcade.api.plugin.SaveFolderAccess?) = if (folder == null) "Pick a folder." else "Finish setup."
+        }
+        assertEquals("Finish setup.", saves.setupSteps(asking, FOLDER))
+        assertEquals("Pick a folder.", saves.setupSteps(asking, null))
+        val broken = object : Player by Melon(FOLDER) {
+            override fun setupSteps(folder: app.foldcade.api.plugin.SaveFolderAccess?): String = error("no")
+        }
+        assertEquals(null, saves.setupSteps(broken, FOLDER))
+    }
+
+    @Test
     fun aSaveNameStaysInsideThePickedFolder() {
         assertEquals(listOf("mGBA", "Game.srm"), savePathParts("mGBA/Game.srm"))
         assertEquals(listOf("Game.sav"), savePathParts("Game.sav"))
@@ -529,8 +586,14 @@ class PlayerSavesTest {
         val unreadable = mutableSetOf<String>()
 
         fun put(folder: String, name: String, text: String) {
-            folders.getOrPut(folder) { mutableMapOf() }[name] = text.toByteArray()
+            putBytes(folder, name, text.toByteArray())
         }
+
+        fun putBytes(folder: String, name: String, bytes: ByteArray) {
+            folders.getOrPut(folder) { mutableMapOf() }[name] = bytes
+        }
+
+        fun bytes(folder: String, name: String): ByteArray? = folders[folder]?.get(name)
 
         fun text(folder: String, name: String): String? = folders[folder]?.get(name)?.toString(Charsets.UTF_8)
 

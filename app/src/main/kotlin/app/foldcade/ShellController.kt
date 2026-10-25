@@ -1412,6 +1412,12 @@ class ShellController(
                 },
                 firmware = firmware,
             )
+            is GameActivity.GettingFirmware -> TileActivity.Downloading(
+                reported.totalBytes?.takeIf { it > 0 }?.let { total ->
+                    (reported.bytesSoFar.toDouble() / total).toFloat().coerceIn(0f, 1f)
+                },
+                firmware = true,
+            )
             GameActivity.Checking -> TileActivity.Checking
             GameActivity.SyncingSaves -> TileActivity.Syncing
             is GameActivity.Synced -> TileActivity.Synced(syncMark(reported.result), nowMillis + Motion.durationSyncMark)
@@ -2559,10 +2565,14 @@ class ShellController(
     /** The last read of each player's [SaveSyncState]. Reading a card does not belong on this path. */
     private var saveSync: Map<String, SaveSyncState> = emptyMap()
 
+    /** The last read of each player's one-time setup, or absent when it can start. */
+    private var setupSteps: Map<String, String> = emptyMap()
+
     /** Replaces the cached card state and redraws the emulator rows. */
-    fun setSaveSync(states: Map<String, SaveSyncState>) {
-        if (states == saveSync) return
+    fun setSaveSync(states: Map<String, SaveSyncState>, setup: Map<String, String> = setupSteps) {
+        if (states == saveSync && setup == setupSteps) return
         saveSync = states
+        setupSteps = setup
         model = model.copy(playerSaves = playerSaveSettings())
     }
 
@@ -2580,6 +2590,7 @@ class ShellController(
                 hostedInUse = (player as? HostedSaveFolder)?.hostedFolderInUse() == true,
                 saveSyncing = sync is SaveSyncState.Syncing,
                 saveSyncSteps = (sync as? SaveSyncState.NeedsSetup)?.steps,
+                setupSteps = setupSteps[player.id],
             )
         }.distinctBy { it.first }.map { it.second }
 

@@ -21,6 +21,12 @@ internal data class RunningGame(
     val startedAtMillis: Long,
     /** What to read back when the game returns again, for a library game. */
     val saves: LibraryReturn?,
+    /**
+     * The game's own start, for a player that takes it again as a resume
+     * ([app.foldcade.api.plugin.LaunchFlag.SameStartResumes]), with [resumeStartFlags].
+     * Null resumes through the player's launcher.
+     */
+    val resumeStart: Intent? = null,
 )
 
 /** One game per player package: a player holds one game, so a new start there replaces the last. */
@@ -99,16 +105,20 @@ internal fun resumable(frontDoor: String?, started: String?): Boolean = frontDoo
 
 /**
  * What a resume brought to the front, from the player's activities that resumed
- * since it was sent, oldest first. Only the player's [frontDoor] (its launcher
- * activity) in front says the game was gone, as after a swipe from Recents: the
- * resume opened the player's own menu. Any other activity is the game, whichever
- * one the player runs it in. A front door that is also where the game's start
- * went ([started]) can't tell the two apart, so it never says gone. Nothing seen
- * yet is not known.
+ * since it was sent, oldest first. A task still there comes back without the
+ * player's [frontDoor] (its launcher activity), so the front door coming forward
+ * says the game was gone, as after a swipe from Recents or a crash: the resume
+ * opened the player itself. That holds when the front door hands on to the
+ * player's own menu at once, as aPS3e's QuickStartActivity opens its
+ * MainActivity, unless the activity the game started in ([started]) came last:
+ * the player opened the game again itself. Any other activity is the game,
+ * whichever one the player runs it in. A front door that is also where the
+ * game's start went can't tell the two apart, so it never says gone. Nothing
+ * seen yet is not known.
  */
 internal fun resumeFound(resumed: List<String>, frontDoor: String?, started: String?): Boolean? {
     val last = resumed.lastOrNull() ?: return null
-    return frontDoor == null || frontDoor == started || last != frontDoor
+    return frontDoor == null || frontDoor == started || frontDoor !in resumed || last == started
 }
 
 /** How long after a resume to look at what came to the front. */
@@ -123,6 +133,15 @@ internal const val RESUME_CHECK_MS = 1_500L
  * launcher activity is not the task's root.
  */
 internal const val RESUME_FLAGS: Int = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_RESET_TASK_IF_NEEDED
+
+/**
+ * The flags for a game's own start sent again as a resume
+ * ([app.foldcade.api.plugin.LaunchFlag.SameStartResumes]): the start's own, without
+ * the ones that would clear the game's task or open another beside it.
+ */
+internal fun resumeStartFlags(flags: Int): Int =
+    (flags and (Intent.FLAG_ACTIVITY_CLEAR_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_MULTIPLE_TASK).inv()) or
+        Intent.FLAG_ACTIVITY_NEW_TASK
 
 /**
  * The flags for a start in a player that still holds another game, or the same

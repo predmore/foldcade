@@ -26,6 +26,8 @@ class PlatformDetectionTest {
             "PlayStation" to "playstation",
             "PlayStation 2" to "playstation-2",
             "PS2" to "playstation-2",
+            "PlayStation 3" to "playstation-3",
+            "PS3" to "playstation-3",
             "snes" to "snes",
             "NES" to "nes",
             "mega-drive" to "genesis",
@@ -50,7 +52,7 @@ class PlatformDetectionTest {
             listOf("NES", "SNES", "Nintendo 64", "GameCube", "Wii", "Nintendo Switch", "Nintendo DS", "Nintendo 3DS", "Game Boy"),
             listOf("nes", "snes", "nintendo-64", "gamecube", "wii", "nintendo-switch", "nintendo-ds", "nintendo-3ds", "game-boy").map { names[it] },
         )
-        assertEquals(listOf("PlayStation", "PS2", "PSP"), listOf("playstation", "playstation-2", "psp").map { names[it] })
+        assertEquals(listOf("PlayStation", "PS2", "PS3", "PSP"), listOf("playstation", "playstation-2", "playstation-3", "psp").map { names[it] })
     }
 
     @Test
@@ -141,6 +143,7 @@ class PlatformDetectionTest {
                 "pc-engine-cd",
                 "playstation",
                 "playstation-2",
+                "playstation-3",
                 "psp",
                 "saturn",
                 "sega-32x",

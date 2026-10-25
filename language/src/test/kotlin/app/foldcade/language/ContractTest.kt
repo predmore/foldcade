@@ -654,6 +654,13 @@ class ContractTest {
         )
         assertEquals(Effect.DialogChoice(DialogButton.NotNow, DialogKind.SaveFolder), saveChoice)
         assertNull(started.dialog)
+
+        // A player that cannot start without its folder: Continue is the default, and Not now promises no game.
+        val needed = saveFolderDialog(HostScreen.Top, playerName = "aPS3e", opensThere = true, needed = true)
+        assertEquals(DialogButton.ContinueGrant, needed.buttons[needed.index])
+        assertEquals(DialogButton.NotNow, needed.buttons[needed.safeIndex])
+        assertTrue(needed.body.startsWith(Copy.saveFolderNeededBody))
+        assertFalse(needed.body.contains("starts the game"))
     }
 
     @Test
@@ -695,6 +702,32 @@ class ContractTest {
         assertEquals("Sync ARMSX2 memory card", dialog.title)
         assertEquals(steps, dialog.body)
         assertEquals("Open ARMSX2", openPlayerLabel(dialog.subject))
+    }
+
+    @Test
+    fun theSetupRowShowsThePlayersSteps() {
+        val steps = "Open aPS3e and finish its setup."
+        val setting = PlayerSaveSetting("aps3e", "aPS3e", chosen = true, setupSteps = steps)
+        val model = PickerModel(count = 1, rowsPerPage = 1, homeRoleHeld = true, playerSaves = listOf(setting))
+        assertEquals(
+            listOf(Row.PlayerSave("aps3e"), Row.PlayerSetup("aps3e")),
+            settingsRows(SettingsCategory.Players, model),
+        )
+        assertEquals("aPS3e setup  Set up", rowLabel(Row.PlayerSetup("aps3e"), model))
+        val (closed, effect) = reduce(model.onSetting(Row.PlayerSetup("aps3e")), Meaning.Activate)
+        assertEquals(Effect.ShowPlayerSetup("aps3e"), effect)
+        assertNull(closed.settings)
+        val dialog = playerSetupDialog("aPS3e", steps, HostScreen.Top)
+        assertEquals(DialogKind.HostedSaves, dialog.kind)
+        assertEquals("Set up aPS3e", dialog.title)
+        assertEquals(steps, dialog.body)
+        assertEquals(listOf(DialogButton.OpenPlayer, DialogButton.NotNow), dialog.buttons)
+        assertEquals(0, dialog.index)
+        assertEquals(1, dialog.safeIndex)
+        assertEquals("aPS3e", dialog.subject)
+        assertEquals("Open aPS3e", openPlayerLabel(dialog.subject))
+        val ready = model.copy(playerSaves = listOf(setting.copy(setupSteps = null)))
+        assertEquals(listOf(Row.PlayerSave("aps3e")), settingsRows(SettingsCategory.Players, ready))
     }
 
     @Test

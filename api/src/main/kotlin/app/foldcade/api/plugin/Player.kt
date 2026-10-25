@@ -145,6 +145,26 @@ interface Player {
      */
     fun saveSyncState(folder: SaveFolderAccess): SaveSyncState? = null
 
+    /**
+     * What the user does once in the player before it can start any game, such as
+     * finishing its first-run setup and installing the console's firmware, or null
+     * when it can start. [folder] is the folder the user picked for it, read only,
+     * or null when no folder is picked: a player that checks its setup through
+     * that folder then says how to pick it. The shell asks before every start of
+     * a [SaveFolderHolder], after it has placed saves and firmware, and does not
+     * start the player while this says what to do: it shows the steps, with Open
+     * for the player. Settings shows them too, once a folder is picked.
+     * Added in API minor 14.
+     */
+    fun setupSteps(folder: SaveFolderAccess?): String? = null
+
+    /**
+     * False when the player no longer needs the firmware its library has, such as a
+     * console firmware it has already installed from that file, so the shell does
+     * not write it again. [folder] is read only. Added in API minor 14.
+     */
+    fun needsFirmware(folder: SaveFolderAccess): Boolean = true
+
     /** Builds the launch intent from [request]. Does not touch the network or disk. */
     fun launchIntent(request: LaunchRequest): PlayerIntent
 }
@@ -300,6 +320,18 @@ enum class LaunchFlag {
      * The same intent again resumes the game that is running. Added in API minor 9.
      */
     ReplaceRunning,
+
+    /**
+     * This start sent again, without [ClearTop] and [ClearTask], brings back the
+     * game it started while that game runs, and starts the game anew when it has
+     * closed. The shell resumes the game that way, not through the player's
+     * launcher, which may open the player's own menu in front of a game that is
+     * gone without saying so. It does not place the library's saves first, since
+     * the game may still be running with them open: a game that had closed loads
+     * what the player last saved on this device, and the next read-back hands that
+     * to the library as any other change. Added in API minor 14.
+     */
+    SameStartResumes,
 }
 
 /**

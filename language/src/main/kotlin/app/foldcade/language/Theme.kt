@@ -203,6 +203,8 @@ object Copy {
     const val saveFolderBody = "This player keeps its own saves. Not now starts the game. You can choose one later in Settings."
     /** The same ask before a game whose saves sync with its server. */
     const val saveFolderSyncBody = "Choose where this player keeps its saves, so they sync. Not now starts the game without syncing."
+    /** The same ask for a player that cannot start a game without its folder. Not now only closes. */
+    const val saveFolderNeededBody = "This player needs its folder to start games and sync saves."
     /** The ask for a named player's folder, when the picker opens at it. */
     const val saveFolderOpensThere = "It opens there: tap Use this folder, then Allow."
     const val playerSavesSet = "Folder set"
@@ -225,6 +227,10 @@ object Copy {
     const val hostedSavesUnset = "Set up"
     /** The row under a player's folder: "ARMSX2 memory card". */
     const val memoryCard = "memory card"
+    /** The row under a player's folder for one-time setup: "aPS3e setup". */
+    const val setup = "setup"
+    /** The dialog for that setup: "Set up aPS3e". */
+    const val playerSetupTitle = "Set up"
     /** A player's memory cards or other saves, synced through a folder Foldcade hosts. */
     const val hostedSavesTitle = "Sync"
     const val hostedSavesLater = "Not now starts the game without syncing them. Settings › Emulators sets it up later."

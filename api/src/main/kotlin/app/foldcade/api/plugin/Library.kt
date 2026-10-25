@@ -161,6 +161,13 @@ sealed interface GameActivity {
     /** The game's bytes are arriving. [totalBytes] is null when the size is not known. */
     data class Downloading(val bytesSoFar: Long, val totalBytes: Long?) : GameActivity
 
+    /**
+     * Firmware the player needs is arriving before the game starts, such as a
+     * console's BIOS or system update. [totalBytes] is null when the size is not
+     * known. Added in API minor 14.
+     */
+    data class GettingFirmware(val bytesSoFar: Long, val totalBytes: Long?) : GameActivity
+
     /** Every byte is here, and the backend is checking them. */
     data object Checking : GameActivity
 
