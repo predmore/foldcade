@@ -35,6 +35,38 @@ class TiltTest {
     }
 
     @Test
+    fun aPortraitNativeThorShownSidewaysReadsTheScreensAxes() {
+        // At ROTATION_90 the screen's right is the device's -y and its up the device's x,
+        // so the hinge runs along the device's y axis.
+        val sideways = times(upright, about(0f, 0f, 1f, 90f))
+        val turn = TiltFollower(6f, 1000f, screenTurns = 1)
+        settle(turn, sideways, times(about(0f, 0f, 1f, 4f), sideways))
+        assertTrue(turn.x > 0.4f)
+        assertEquals(0f, turn.y, 0.02f)
+
+        val tip = TiltFollower(6f, 1000f, screenTurns = 1)
+        settle(tip, sideways, times(about(1f, 0f, 0f, -4f), sideways))
+        assertTrue(tip.y > 0.4f)
+        assertEquals(0f, tip.x, 0.02f)
+    }
+
+    @Test
+    fun everyScreenRotationSlidesTheSameWay() {
+        for (turns in 0..3) {
+            val held = times(upright, about(0f, 0f, 1f, turns * 90f))
+            val roll = TiltFollower(6f, 1000f, screenTurns = turns)
+            settle(roll, held, times(about(0f, -1f, 0f, 4f), held))
+            assertTrue("turns $turns", roll.x > 0.4f)
+            assertEquals("turns $turns", 0f, roll.y, 0.02f)
+
+            val tip = TiltFollower(6f, 1000f, screenTurns = turns)
+            settle(tip, held, times(about(1f, 0f, 0f, -4f), held))
+            assertTrue("turns $turns", tip.y > 0.4f)
+            assertEquals("turns $turns", 0f, tip.x, 0.02f)
+        }
+    }
+
+    @Test
     fun aBigTurnStopsShortOfAFullSlide() {
         val tilt = TiltFollower(6f, 1000f)
         settle(tilt, upright, times(about(0f, 0f, 1f, 60f), upright))
