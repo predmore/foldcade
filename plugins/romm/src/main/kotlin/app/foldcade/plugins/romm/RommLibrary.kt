@@ -263,7 +263,7 @@ internal class RommLibrary internal constructor(
         for (romId in roms) {
             try {
                 val waiting = runInterruptible(Dispatchers.IO) { unsyncedSlots(wiring, romId).isNotEmpty() }
-                if (waiting) syncRomReported(romId, emulator = null)
+                if (waiting || SaveSelection(wiring.data.romSaves(romId)).pending()) syncRomReported(romId, emulator = null)
             } catch (cancelled: CancellationException) {
                 throw cancelled
             } catch (_: Exception) {
@@ -777,6 +777,127 @@ internal class RommLibrary internal constructor(
     /** How a sync reads when the player's saves could not be reached: not synced. */
     private fun unreachableSync(): SyncResult = SyncResult(SyncOutcome.Unchanged, SAVE_UNREACHABLE)
 
+    override suspend fun serverSaves(game: Game, player: Player?): List<app.foldcade.api.plugin.ServerSave> {
+        val romId = game.romId()
+        return romLock(romId).withLock {
+            gate.session { wiring, ops ->
+                rememberDevice(wiring, ops)
+                val listed = ops.listSaves(romId, wiring.rememberedDevice!!.deviceId)
+                    .filter { it.romId == romId }.sortedWith(compareByDescending<app.foldcade.romm.RommSave> { it.updatedAt }.thenByDescending { it.id })
+                val slots = player?.saveDeclarations(game).orEmpty().map { it.slot }.toSet()
+                val ledger = wiring.data.ledger(romId)
+                val playing = slots.mapNotNull { slot ->
+                    val held = wiring.data.slotFile(romId, slot)
+                    val matchesLedger = runInterruptible(Dispatchers.IO) {
+                        Files.isRegularFile(held) && ledger.slot(slot)?.syncedHash == md5File(held)
+                    }
+                    val hash = if (matchesLedger) runInterruptible(Dispatchers.IO) { app.foldcade.romm.rommSaveHash(held) } else null
+                    listed.firstOrNull { it.slot == slot && hash != null && it.contentHash?.lowercase() == hash }?.id
+                        ?: listed.firstOrNull { it.slot == slot }?.id
+                }.toSet()
+                listed.map { save ->
+                    app.foldcade.api.plugin.ServerSave(
+                        save.id.toString(), save.slot, save.emulator,
+                        save.deviceSyncs.firstOrNull { it.deviceId == save.originDeviceId }?.deviceName?.takeIf { it.isNotBlank() }
+                            ?: save.emulator?.takeIf { it.isNotBlank() },
+                        save.updatedAt.toEpochMilli(), save.sizeBytes, save.id in playing,
+                        save.screenshotId?.let { "${RommClient.normalizeOrigin(wiring.origin)}/api/screenshots/$it/content" },
+                    )
+                }
+            }
+        }
+    }
+
+    override suspend fun syncServerSaves(game: Game, player: Player): SyncResult = serverSaveWork(game) { wiring, ops, romId ->
+        requireSavePlayer(game, player)
+        strictSaveSync(wiring, ops, romId, player.id).toResult()
+    }
+
+    override suspend fun playServerSave(game: Game, player: Player, saveId: String): List<PlacedSave> = serverSaveWork(game) { wiring, ops, romId ->
+        requireSavePlayer(game, player)
+        // Every bundled syncing player owns one slot. Do not guess for a future multi-slot player.
+        val slot = player.saveDeclarations(game).singleOrNull()?.slot
+            ?: throw PluginException.Unavailable("Choose a player with one save slot")
+        chooseSave(wiring, ops, romId, saveId, slot, player.id, player.id)
+    }
+
+    override suspend fun copyServerSave(game: Game, saveId: String, toSlot: String, toEmulator: String?, player: Player?): List<PlacedSave> =
+        serverSaveWork(game) { wiring, ops, romId ->
+            val own = player?.saveDeclarations(game).orEmpty().any { it.slot == toSlot }
+            if (own) requireSavePlayer(game, player!!)
+            chooseSave(wiring, ops, romId, saveId, toSlot, toEmulator, player?.id.takeIf { own })
+        }
+
+    /** Strict sync, download and promotion all share the ROM lock, including concurrent return syncs. */
+    private suspend fun <T> serverSaveWork(game: Game, action: suspend (RommWiring, RommOps, Long) -> T): T {
+        val romId = game.romId()
+        report(romId, GameActivity.SyncingSaves)
+        var finished = false
+        try {
+            return romLock(romId).withLock {
+                gate.session { wiring, ops ->
+                    rememberDevice(wiring, ops)
+                    recoverSelection(wiring, ops, romId)
+                    action(wiring, ops, romId)
+                }
+            }.also { finished = true }
+        } finally {
+            report(romId, if (finished) GameActivity.Synced(SyncResult(SyncOutcome.Uploaded)) else GameActivity.Idle)
+        }
+    }
+
+    private fun requireSavePlayer(game: Game, player: Player) {
+        if (!player.supportsSaveSync(game) || savesUnreachable(game, player))
+            throw PluginException.Unavailable(SAVE_UNREACHABLE)
+    }
+
+    private suspend fun strictSaveSync(wiring: RommWiring, ops: RommOps, romId: Long, emulator: String?): SaveSyncReport {
+        val report = syncOnce(wiring, ops, romId, emulator)
+        rememberConflicts(wiring, report)
+        if (report.failed.isNotEmpty() || report.queued.isNotEmpty() || !report.completedSession ||
+            runInterruptible(Dispatchers.IO) { unsyncedSlots(wiring, romId).isNotEmpty() }) {
+            throw PluginException.Unavailable("Save sync did not finish")
+        }
+        return report
+    }
+
+    private suspend fun chooseSave(wiring: RommWiring, ops: RommOps, romId: Long, id: String, slot: String, emulator: String?, localPlayer: String?): List<PlacedSave> {
+        strictSaveSync(wiring, ops, romId, localPlayer)
+        val device = wiring.rememberedDevice!!.deviceId
+        val listed = ops.listSaves(romId, device).filter { it.romId == romId }
+        val chosen = listed.singleOrNull { it.id.toString() == id } ?: throw PluginException.NotFound("Save is no longer available")
+        // A foreign destination must still be the slot the confirmation named. No arbitrary new slots.
+        val latest = listed.filter { it.slot == slot }.maxWithOrNull(compareBy<app.foldcade.romm.RommSave> { it.updatedAt }.thenBy { it.id })
+        if (localPlayer == null && (latest == null || latest.emulator != emulator))
+            throw PluginException.Unavailable("The destination slot changed; choose it again")
+        val hash = chosen.contentHash?.lowercase()?.takeIf { it.matches(Regex("[0-9a-f]{32}")) }
+            ?: throw PluginException.Unavailable("This save has no verifiable content hash")
+        val selection = SaveSelection(wiring.data.romSaves(romId))
+        ops.downloadSave(chosen, device, selection.staged)
+        val bytes = runInterruptible(Dispatchers.IO) {
+            val bytes = Files.readAllBytes(selection.staged)
+            if (bytes.size.toLong() != chosen.sizeBytes || app.foldcade.romm.rommSaveHash(bytes) != hash)
+                throw PluginException.Unavailable("The downloaded save did not verify")
+            bytes
+        }
+        if (localPlayer != null) runInterruptible(Dispatchers.IO) {
+            val current = wiring.data.slotFile(romId, slot)
+            selection.begin(slot, localPlayer, md5File(selection.staged), hash, if (Files.exists(current)) md5File(current) else null)
+        }
+        // Slot uploads get a unique versioned filename on RomM. Never send autocleanup.
+        ops.uploadSave(romId, chosen.fileName, slot, emulator, device, hash, bytes)
+        if (localPlayer == null) return emptyList()
+        runInterruptible(Dispatchers.IO) { selection.finish(wiring.data, romId) }
+        return snapshotSaves(wiring, romId)
+    }
+
+    private suspend fun recoverSelection(wiring: RommWiring, ops: RommOps, romId: Long) {
+        val selection = SaveSelection(wiring.data.romSaves(romId))
+        if (!runInterruptible(Dispatchers.IO) { selection.pending() }) return
+        val listed = ops.listSaves(romId, wiring.rememberedDevice!!.deviceId).filter { it.romId == romId }
+        runInterruptible(Dispatchers.IO) { selection.recover(wiring.data, romId, listed) }
+    }
+
     override suspend fun unsyncedSaves(): Set<String> {
         val wiring = gate.wiring()
         return buildSet {
@@ -830,6 +951,7 @@ internal class RommLibrary internal constructor(
     private suspend fun syncOnce(wiring: RommWiring, ops: RommOps, romId: Long, emulator: String?): SaveSyncReport {
         val deviceId = wiring.rememberedDevice?.deviceId
             ?: throw PluginException.NotAuthenticated("RomM device is not registered")
+        recoverSelection(wiring, ops, romId)
         val saves = runInterruptible(Dispatchers.IO) { localSaves(wiring.data, romId, emulator) }
         val players = (listOfNotNull(emulator) + saves.mapNotNull { it.emulator }).distinct()
         return ops.syncSaves(

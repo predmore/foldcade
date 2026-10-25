@@ -475,6 +475,18 @@ class PluginHost(
     suspend fun unsyncedSaves(libraryId: String): Set<String> =
         offMain(libraryId) { requireLibrary(libraryId).unsyncedSaves() }
 
+    suspend fun serverSaves(libraryId: String, game: Game, player: Player? = null): List<app.foldcade.api.plugin.ServerSave> =
+        offMain(libraryId) { requireLibrary(libraryId).serverSaves(game, player) }
+
+    suspend fun syncServerSaves(libraryId: String, game: Game, player: Player): SyncResult =
+        offMain(libraryId) { requireLibrary(libraryId).syncServerSaves(game, player) }
+
+    suspend fun playServerSave(libraryId: String, game: Game, player: Player, saveId: String): List<app.foldcade.api.plugin.PlacedSave> =
+        offMain(libraryId) { requireLibrary(libraryId).playServerSave(game, player, saveId) }
+
+    suspend fun copyServerSave(libraryId: String, game: Game, saveId: String, toSlot: String, toEmulator: String?, player: Player? = null): List<app.foldcade.api.plugin.PlacedSave> =
+        offMain(libraryId) { requireLibrary(libraryId).copyServerSave(game, saveId, toSlot, toEmulator, player) }
+
     suspend fun pendingSaveConflicts(): List<SaveConflict> {
         val found = mutableListOf<SaveConflict>()
         for (id in libraryIds()) {

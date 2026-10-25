@@ -256,3 +256,20 @@ data class SaveSyncReport(
 
 data class CompletedSync(val sessionId: Long, val status: String?)
 
+
+/** RomM 5.4.1 SaveSchema. Slot, emulator, content hash and origin can all be null. */
+data class RommSave(
+    val id: Long,
+    val romId: Long,
+    val fileName: String,
+    val slot: String?,
+    val emulator: String?,
+    val contentHash: String?,
+    val updatedAt: Instant,
+    val sizeBytes: Long,
+    val originDeviceId: String?,
+    val deviceSyncs: List<SaveDeviceSync>,
+    val screenshotId: Long?,
+)
+
+data class SaveDeviceSync(val deviceId: String, val deviceName: String)

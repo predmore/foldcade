@@ -91,6 +91,31 @@ interface LibraryBackend {
      */
     suspend fun unsyncedSaves(): Set<String> = emptySet()
 
+    /** Every server version for this game, newest first. Added in API minor 15. */
+    suspend fun serverSaves(game: Game, player: Player? = null): List<ServerSave> = emptyList()
+
+    /** Sync now, refusing offline or incomplete syncs. The host captures player changes first. */
+    suspend fun syncServerSaves(game: Game, player: Player): SyncResult =
+        throw PluginException.Unavailable("Server save sync is not supported")
+
+    /**
+     * Keep current progress on the server, verify [saveId], and make it the player's slot head.
+     * Neither version is deleted. Return snapshots to place through the normal player-save flow.
+     * The host captures current player bytes first and persists a fresh-load marker before calling.
+     * Incomplete syncs refuse the choice. Added in API minor 15.
+     */
+    suspend fun playServerSave(game: Game, player: Player, saveId: String): List<PlacedSave> =
+        throw PluginException.Unavailable("Choosing a server save is not supported")
+
+    /**
+     * Copy [saveId] into an existing slot, keeping its previous versions. The host captures
+     * [player]'s changes first. If the destination belongs to that player, return snapshots
+     * for placement and a fresh start, as [playServerSave] does. Otherwise return no snapshots.
+     */
+    suspend fun copyServerSave(
+        game: Game, saveId: String, toSlot: String, toEmulator: String?, player: Player? = null,
+    ): List<PlacedSave> = throw PluginException.Unavailable("Copying a server save is not supported")
+
     /**
      * Negotiate this game's saves before the shell places them and starts [player].
      * Called after [ensureLocal]. [Placement.savesToPlace] is what the shell writes
