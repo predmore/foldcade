@@ -1333,8 +1333,9 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
 
     /**
      * Brings back the game on tile [tileId] if it is still open in its player.
-     * True when that start was sent. Its player may have closed since without
-     * Android saying so; the same start then opens the game anew.
+     * True when that start was sent, or is waiting on the read-back of the game's
+     * last session, see [LaunchFlag.SameStartResumes]. Its player may have closed
+     * since without Android saying so; the same start then opens the game anew.
      */
     private fun resumeRunning(tileId: String, title: String, platformId: String?): Boolean {
         foldcade.pruneRunningGames()
@@ -1364,6 +1365,24 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
         // Behind Home, a player that may have closed unseen would open its own menu, not the game.
         if (!foldcade.closesVisible) return false
         cancelLaunches()
+        if (running.resumeStart != null) {
+            // The same start boots the game again when it had closed, and it writes the saves the read-back
+            // of its last session may still be reading. That read-back finishes first, and only then is this
+            // session's own noted, so the read-back cannot drop it.
+            val generation = beginLaunch()
+            foldcade.launchWork.job = foldcade.scope.launch {
+                foldcade.saveFlow.withLock { }
+                withContext(Dispatchers.Main.immediate) {
+                    if (launchCurrent(generation) && !isDestroyed && !isFinishing) sendResume(running, tileId, title, platformId, front)
+                }
+            }
+            return true
+        }
+        return sendResume(running, tileId, title, platformId, front)
+    }
+
+    /** Sends [front], which brings back [running], and notes the session it starts. True when it was sent. */
+    private fun sendResume(running: RunningGame, tileId: String, title: String, platformId: String?, front: Intent): Boolean {
         foldcade.music.onExternalLaunch()
         launchScreen = running.panel
         launchSubject = foldcade.shell.focusedRunningApp()

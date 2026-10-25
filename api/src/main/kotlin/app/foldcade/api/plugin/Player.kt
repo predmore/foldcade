@@ -326,7 +326,10 @@ enum class LaunchFlag {
      * game it started while that game runs, and starts the game anew when it has
      * closed. The shell resumes the game that way, not through the player's
      * launcher, which may open the player's own menu in front of a game that is
-     * gone without saying so. Added in API minor 14.
+     * gone without saying so. It does not place the library's saves first, since
+     * the game may still be running with them open: a game that had closed loads
+     * what the player last saved on this device, and the next read-back hands that
+     * to the library as any other change. Added in API minor 14.
      */
     SameStartResumes,
 }
