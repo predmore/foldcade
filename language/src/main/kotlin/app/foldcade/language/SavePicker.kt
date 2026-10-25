@@ -151,11 +151,12 @@ object SavePickerCopy {
         is SavePickerChoice.Copy -> "Copy to ${choice.destination.slot}?"
         SavePickerChoice.Setup -> "Set up $player first"
     }
-    fun confirmationBody(choice: SavePickerChoice, playerId: String?, player: String, style: DateStyle, restartsOpenGame: Boolean = false): String = when (choice) {
+    fun confirmationBody(choice: SavePickerChoice, playerId: String?, player: String, style: DateStyle, restartsOpenGame: Boolean = false, ownSlots: List<String> = emptyList()): String = when (choice) {
         is SavePickerChoice.Play -> "From ${source(choice.save)}, ${formatSaveWhen(choice.save.updatedAtMillis, style)}. Your current save stays on RomM." +
             (if (emulatorMismatch(choice.save.emulator, playerId)) " Made by ${choice.save.emulator}. It may not load in $player." else "") +
             (if (restartsOpenGame) " $restartOpen" else "")
-        is SavePickerChoice.Copy -> "The save there now stays on RomM."
+        is SavePickerChoice.Copy -> "The save there now stays on RomM." +
+            (if (restartsOpenGame && choice.destination.slot in ownSlots) " $restartOpen" else "")
         SavePickerChoice.Setup -> "Set up save syncing before playing a save from RomM."
     }
 }

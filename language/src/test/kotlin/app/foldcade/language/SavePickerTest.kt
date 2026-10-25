@@ -94,6 +94,18 @@ class SavePickerTest {
         assertFalse(SavePickerCopy.confirmationBody(SavePickerChoice.Play(save), "melonds", "melonDS", DateStyle()).contains(SavePickerCopy.restartOpen))
     }
 
+    @Test fun copyWarnsAboutRestartOnlyForAnOpenGameAndItsOwnSlot() {
+        for (open in listOf(false, true)) {
+            for (slot in listOf("sav", "autosave")) {
+                val page = state.copy(restartsOpenGame = open, ownSlots = listOf("sav"))
+                val choice = SavePickerChoice.Copy(save, SaveDestination(slot, "melonds", "Device"))
+                val body = SavePickerCopy.confirmationBody(choice, page.target.playerId, page.playerName, DateStyle(), page.restartsOpenGame, page.ownSlots)
+                assertTrue(body.startsWith("The save there now stays on RomM."))
+                assertEquals("open=$open slot=$slot", open && slot in page.ownSlots, body.contains(SavePickerCopy.restartOpen))
+            }
+        }
+    }
+
     @Test fun emulatorFamiliesWarnOnlyWhenDifferentAndDatesAreLocal() {
         assertFalse(emulatorMismatch("retroarch.nes", "retroarch.snes"))
         assertFalse(emulatorMismatch("azahar", "azahar"))

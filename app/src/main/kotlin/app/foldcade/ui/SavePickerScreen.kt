@@ -123,7 +123,7 @@ internal fun SavePickerBottom(app: FoldcadeApp, state: SavePickerState, dates: D
                 Column(Modifier.fillMaxWidth().padding(fit.edgeDp.dp).clip(RoundedCornerShape(theme.style.metrics.cardCornerDp.dp)).background(theme.surface).padding(fit.edgeDp.dp),
                     verticalArrangement = Arrangement.spacedBy(fit.gapDp.dp)) {
                     SaveText(SavePickerCopy.confirmationTitle(choice, state.playerName), title = true)
-                    SaveText(SavePickerCopy.confirmationBody(choice, state.target.playerId, state.playerName, dates, state.restartsOpenGame))
+                    SaveText(SavePickerCopy.confirmationBody(choice, state.target.playerId, state.playerName, dates, state.restartsOpenGame, state.ownSlots))
                     Column(Modifier.fillMaxWidth().selectionHighlight(buttons, state.confirmIndex, true, scale)) {
                         val action = when (choice) { is SavePickerChoice.Play -> SavePickerCopy.play; is SavePickerChoice.Copy -> SavePickerCopy.copyAction; SavePickerChoice.Setup -> Copy.setUp }
                         listOf(action, SavePickerCopy.cancel).forEachIndexed { index, label ->
