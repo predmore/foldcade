@@ -32,9 +32,8 @@ internal fun saveLaunchOffer(
     sync: SaveSyncState? = null,
 ): SaveLaunchOffer? = when {
     !onServer || declinedFor == player.id -> null
-    player is SaveFolderHolder && !player.hasSaveFolder() &&
-        (player !is HostedSaveFolder || !player.hostedFolderInUse()) -> SaveLaunchOffer.Folder
     player is HostedSaveFolder && !player.hostedFolderInUse() -> SaveLaunchOffer.Setup(player.hostedFolderSteps)
+    player is SaveFolderHolder && player !is HostedSaveFolder && !player.hasSaveFolder() -> SaveLaunchOffer.Folder
     sync is SaveSyncState.NeedsSetup -> SaveLaunchOffer.Setup(sync.steps)
     else -> null
 }

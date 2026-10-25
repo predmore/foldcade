@@ -11,6 +11,7 @@ class NoticesTest {
         val notice = FoldNotice("setup", "ARMSX2 saves aren’t syncing", "Set up to keep them on RomM.", savePlayerId = "armsx2")
         val cases = listOf(
             PlayerSaveSetting("armsx2", "ARMSX2", false) to Effect.ChoosePlayerSave("armsx2"),
+            PlayerSaveSetting("armsx2", "ARMSX2", false, hostedTitle = "Cards") to Effect.SetUpHostedSaves("armsx2"),
             PlayerSaveSetting("armsx2", "ARMSX2", true, hostedTitle = "Cards") to Effect.SetUpHostedSaves("armsx2"),
             PlayerSaveSetting("armsx2", "ARMSX2", true, saveSyncSteps = "Pick a folder card") to Effect.ShowSaveSync("armsx2"),
             PlayerSaveSetting("armsx2", "ARMSX2", true, setupSteps = "Install firmware") to Effect.ShowPlayerSetup("armsx2"),

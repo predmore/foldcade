@@ -99,7 +99,7 @@ For RetroArch, choose `RetroArch/saves` in **Foldcade Settings › Emulators ›
 
 For Azahar, choose Azahar's user folder, the one that holds `sdmc`, `nand` and `config`, in **Foldcade Settings › Emulators › Azahar** or at the save-folder prompt. Foldcade finds each game's save there from the title id in its `.cci` header, and syncs the save data and the game's extra data together as one zip, in the layout Argosy also uploads. A `.zcci` has no title id Foldcade can read, so its saves stay with Azahar.
 
-For DuckStation, pick its own data folder at the save-folder prompt, then point DuckStation's **Memory Cards** folder at the one Foldcade keeps for it when Foldcade asks. See [DuckStation](emulators.md#bios-and-memory-cards). Each game's card 1 syncs as slot `card1`.
+For DuckStation, point its **Memory Cards** folder at the one Foldcade keeps for it when Foldcade asks. Its data folder is optional for save sync; choose it in **Settings › Emulators › DuckStation** to let Foldcade place a BIOS. See [DuckStation](emulators.md#bios-and-memory-cards). Each game's card 1 syncs as slot `card1`.
 
 For ARMSX2, pick its data folder, the one that holds `bios` and `memcards`. Foldcade syncs slot 1 when that slot is a folder card, one zip of the game's folders. ISO, BIN, CUE/BIN, multi-disc `.m3u`, and CHD games sync. chdman's defaults include FLAC as one choice per block. A CHD syncs when the part of the disc holding the serial (the start of its data) isn't stored with FLAC or Zstandard, which is how chdman usually compresses it, since FLAC suits audio. A CHD where that part is FLAC or Zstandard still launches, and its saves stay on the device. See [ARMSX2](emulators.md#memory-cards). The slot syncs as `card1`.
 

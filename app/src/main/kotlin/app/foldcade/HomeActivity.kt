@@ -2679,7 +2679,10 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
         val markers = (player as? SaveFolderHolder)?.saveFolderMarkers.orEmpty()
         val name = player?.displayName.orEmpty()
         if (ask) {
-            foldcade.shell.present(saveFolderDialog(hostScreen(), syncs = true, wrong = name to markers))
+            foldcade.shell.present(saveFolderDialog(
+                hostScreen(), syncs = true, wrong = name to markers,
+                playerName = player?.displayName, needed = needsItsFolder(player),
+            ))
         } else {
             foldcade.shell.present(playerNotice(Copy.saveFolderTitle, wrongSaveFolderBody(name, markers), hostScreen()))
         }

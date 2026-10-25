@@ -56,6 +56,18 @@ class SaveLaunchOfferTest {
         assertNull(saveLaunchOffer(player, true))
     }
 
+    @Test fun missingHostedCardsAreTheFirstSaveOfferWithOrWithoutADataFolder() {
+        val player = DuckStationPlayer()
+        val setup = SaveLaunchOffer.Setup(player.hostedFolderSteps)
+        assertEquals(setup, saveLaunchOffer(player, true))
+        assertNull(saveLaunchOffer(player, true, declinedFor = player.id))
+        assertEquals(setup, saveLaunchOffer(player, true))
+        player.bindSaveFolder("content://data")
+        assertEquals(setup, saveLaunchOffer(player, true))
+        player.bindHostedFolder("content://hosted", true)
+        assertNull(saveLaunchOffer(player, true))
+    }
+
     @Test fun armsx2NeedsSetupUsesTheSameLaunchFlowAndNeverReplacesTheCard() {
         val player = ArmsX2Player().apply { bindSaveFolder("content://data") }
         val state = SaveSyncState.NeedsSetup("Keep the old card. Pick a folder card.")

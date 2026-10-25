@@ -388,17 +388,20 @@ class ShellController(
     private var unsyncedSaves by mutableStateOf<Map<String, Set<String>>>(emptyMap())
     private data class SaveReachability(val locations: List<SaveDeclaration>, val reachable: Boolean)
     private val reachableSaves = mutableMapOf<Pair<String, String>, SaveReachability>()
+    private val saveSupport = mutableMapOf<Pair<String, Game>, GameSaveSupport>()
+    private var healthPlayerSettings: List<PlayerSaveSetting>? = null
+    private var healthPlayerFolders: List<String?> = emptyList()
 
     internal fun setUnsyncedSaves(libraryId: String, keys: Set<String>) {
         if (unsyncedSaves[libraryId] == keys) return
         unsyncedSaves = unsyncedSaves + (libraryId to keys)
-        refreshSaveHealth()
     }
 
     internal fun noteSaveReachable(game: Game, playerId: String, reachable: Boolean) {
         val player = plugins.player(playerId) ?: return
         reachableSaves[homeGameId(game.backendId, game.remoteKey) to playerId] = SaveReachability(player.saveDeclarations(game), reachable)
-        refreshSaveHealth()
+        saveSupport.remove(playerId to game)
+        saveHealthEpoch += 1
     }
 
     internal fun saveGame(libraryId: String, remoteKey: String): Game? = libraryGames[homeGameId(libraryId, remoteKey)]
@@ -425,40 +428,38 @@ class ShellController(
         saveHealthEpoch // Folder checks, player installs, and catalog changes invalidate this read.
         val homeId = pressed?.let { homeGameId(it.backendId, it.remoteKey) } ?: id
         val route = launchRoute(tileOf(homeId), pressed) ?: return SaveHealth.Fine
-        val player = savePlayer(route.play.platformId)
-        val reachability = player?.let { reachableSaves[homeGameId(route.saves.backendId, route.saves.remoteKey) to it.id] }
-        val locations = try {
-            if (reachability != null) player?.saveDeclarations(route.saves) else null
-        } catch (cancelled: CancellationException) {
-            throw cancelled
-        } catch (_: Exception) {
-            null
-        }
+        val player = savePlayer(route.play.platformId) ?: return SaveHealth.Fine
+        val saves = saveSupport.getOrPut(player.id to route.saves) { readGameSaveSupport(route.saves, player) }
+        val reachability = reachableSaves[homeGameId(route.saves.backendId, route.saves.remoteKey) to player.id]
         return gameSaveHealth(
             route.saves, player, route.servers.isNotEmpty(),
             waiting = route.servers.any { it.remoteKey in unsyncedSaves[it.backendId].orEmpty() },
-            sync = player?.let { saveSync[it.id] },
-            setup = player?.let { setupSteps[it.id] },
-            reachable = reachability?.takeIf { it.locations == locations }?.reachable,
+            sync = saveSync[player.id],
+            setup = setupSteps[player.id],
+            reachable = reachability?.takeIf { it.locations == saves.declarations }?.reachable,
+            saves = saves,
         )
     }
 
-    fun saveHealthAt(source: Int): SaveHealth {
-        val game = tileFromOrder(source) ?: return SaveHealth.Fine
+    fun saveHealthAt(source: Int, game: ShelfGame?): SaveHealth {
+        if (game == null) return SaveHealth.Fine
         val pressed = if (model.libraryGrid) entries.getOrNull(source)?.game else null
         return saveHealthOf(pressed?.let { homeGameId(it.backendId, it.remoteKey) } ?: game.id, pressed)
     }
 
     private fun refreshSaveHealth() {
         if (!saveHealthReady) return
+        saveSupport.clear()
         saveHealthEpoch += 1
+        val onHome = app.foldcade.language.onHomeIds(home.board)
+        val platforms = HashSet<String>()
+        for ((id, game) in libraryGames) {
+            if (game.availability != Availability.LocalOnly && tileOf(id) in onHome) platforms.add(game.platformId)
+        }
         val players = linkedMapOf<String, String>()
-        for (id in libraryGames.keys.map(::tileOf).distinct()) {
-            if (!app.foldcade.language.onHome(home.board, id)) continue
-            val route = launchRoute(id) ?: continue
-            val health = saveHealthOf(id) as? SaveHealth.NotSyncing ?: continue
-            if (health.reason == app.foldcade.language.SaveIssue.NoSlot) continue
-            val player = savePlayer(route.play.platformId) ?: continue
+        for (platformId in platforms) {
+            val player = savePlayer(platformId) ?: continue
+            if (playerSaveIssue(player, saveSync[player.id], setupSteps[player.id]) == null) continue
             players[saveNoticePlayerId(player.id)] = player.displayName
         }
         onSaveHealthChanged(players)
@@ -2391,7 +2392,12 @@ class ShellController(
     }
 
     fun refreshPlayerSaves() {
-        model = model.copy(playerSaves = playerSaveSettings())
+        val settings = playerSaveSettings()
+        val folders = settings.map { store.playerSaveFolder(plugins.player(it.playerId)?.saveFolderId() ?: it.playerId) }
+        if (settings == healthPlayerSettings && folders == healthPlayerFolders) return
+        healthPlayerSettings = settings
+        healthPlayerFolders = folders
+        model = model.copy(playerSaves = settings)
         refreshSaveHealth()
     }
 
@@ -2399,6 +2405,7 @@ class ShellController(
     fun setRetroArch(setting: RetroArchSetting?) {
         if (model.retroArch == setting) return
         model = model.copy(retroArch = setting)
+        refreshSaveHealth()
     }
 
     /** Null while Eden is not installed. */
@@ -2665,8 +2672,8 @@ class ShellController(
         reachableSaves.keys.removeAll { it.second in changed }
         saveSync = states
         setupSteps = setup
-        model = model.copy(playerSaves = playerSaveSettings())
-        refreshSaveHealth()
+        saveHealthEpoch += 1
+        refreshPlayerSaves()
     }
 
     /** One row per save folder. Players that share a folder, as RetroArch's systems do, share a row. */

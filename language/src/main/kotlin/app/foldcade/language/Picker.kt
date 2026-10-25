@@ -1063,7 +1063,7 @@ fun rowText(row: Row, model: PickerModel): RowText = when (row) {
         val setting = model.playerSaves.firstOrNull { it.playerId == row.playerId }
         val chosen = when {
             setting?.chosen == true -> Copy.playerSavesSet
-            setting?.hostedInUse == true -> Copy.playerSavesUnset // Optional data folder; the cards already sync.
+            setting?.hostedTitle != null -> Copy.playerSavesUnset // Optional data folder; saves use the hosted folder.
             else -> Copy.notSyncing
         }
         RowText(setting?.label ?: row.playerId, chosen)
@@ -2244,8 +2244,8 @@ private fun openNotice(
         val setting = model.playerSaves.firstOrNull { it.playerId == playerId }
             ?: return model.copy(panel = panel) to null
         val fix = when {
-            !setting.chosen -> Effect.ChoosePlayerSave(playerId)
             setting.hostedTitle != null && !setting.hostedInUse -> Effect.SetUpHostedSaves(playerId)
+            !setting.chosen -> Effect.ChoosePlayerSave(playerId)
             setting.saveSyncSteps != null -> Effect.ShowSaveSync(playerId)
             setting.setupSteps != null -> Effect.ShowPlayerSetup(playerId)
             else -> Effect.ChoosePlayerSave(playerId)

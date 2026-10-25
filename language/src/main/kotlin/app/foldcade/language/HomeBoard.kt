@@ -383,6 +383,16 @@ fun emptyCollection(board: HomeBoard): HomeFolder? {
  */
 fun onHome(board: HomeBoard, id: String): Boolean = reachable(board, id, viaRecent = true)
 
+/** The same reachability as [onHome], built once for callers checking many catalog games. */
+fun onHomeIds(board: HomeBoard): Set<String> = HashSet<String>().apply {
+    for (id in board.slots.filterNotNull()) {
+        add(id)
+        board.folders[id]?.slots?.filterNotNull()?.let(::addAll)
+    }
+    removeAll(board.hidden)
+    add(HOME_ALL)
+}
+
 /**
  * [onHome], with or without Recently played. Placing a game asks without it: Recently played
  * only reflects play, so a game seen only there is still put in its folder.

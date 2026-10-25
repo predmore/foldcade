@@ -9,11 +9,116 @@ import app.foldcade.plugins.retroarch.RetroArchEntry
 import app.foldcade.plugins.armsx2.ArmsX2Entry
 import app.foldcade.plugins.aps3e.Aps3eEntry
 import app.foldcade.plugins.azahar.AzaharEntry
+import app.foldcade.plugins.duckstation.DuckStationEntry
+import app.foldcade.plugins.melonds.MelonDsPlayer
 import kotlinx.coroutines.Dispatchers
 import org.junit.Assert.*
 import org.junit.Test
 
 class ShellSaveHealthTest {
+    @Test fun hostedSetupIsTheOnlyStandingIssueWithoutADuckStationDataFolder() {
+        val plugins = PluginHost(Dispatchers.Unconfined, MemoryCredentialStore())
+        plugins.register(LocalFolderEntry())
+        val duck = DuckStationEntry()
+        plugins.register(duck)
+        var setupPlayers = emptyMap<String, String>()
+        val shell = ShellController(SessionStore(MemoryPrefs()), plugins, onSaveHealthChanged = { setupPlayers = it })
+        val game = Game("romm", "42", "playstation", Availability.Cached, "Game")
+        shell.ingestLibrary("romm", listOf(GridEntry(game.remoteKey, game.label, "", game.platformId, null, false, game)), emptyList())
+        val id = homeGameId(game.backendId, game.remoteKey)
+        assertEquals(SaveHealth.NotSyncing(SaveIssue.HostedFolder), shell.saveHealthOf(id))
+        assertEquals(mapOf(duck.player.id to duck.player.displayName), setupPlayers)
+        duck.player.bindHostedFolder("content://hosted", true)
+        shell.refreshPlayerSaves()
+        assertEquals(SaveHealth.Fine, shell.saveHealthOf(id))
+        assertTrue(setupPlayers.isEmpty())
+        assertFalse(shell.model.playerSaves.single().chosen)
+    }
+
+    @Test fun aLargeCatalogChecksPlayerSetupOncePerPlatformAndSkipsUnchangedResumeRefreshes() {
+        val player = CountingSavePlayer()
+        val plugins = countingPlugins(player)
+        var scans = 0
+        var setupPlayers = emptyMap<String, String>()
+        val shell = ShellController(SessionStore(MemoryPrefs()), plugins, onSaveHealthChanged = {
+            scans += 1
+            setupPlayers = it
+        })
+        shell.refreshPlayerSaves()
+        player.folderChecks = 0
+        val games = List(2_000) { Game("romm", it.toString(), player.platformId, Availability.Cached, "Game $it") }
+        shell.ingestLibrary("romm", games.map {
+            GridEntry(it.remoteKey, it.label, "", it.platformId, null, true, it)
+        }, emptyList())
+        assertEquals(mapOf(player.id to player.displayName), setupPlayers)
+        assertTrue("Setup checks must not grow with the catalog: ${player.folderChecks}", player.folderChecks <= 4)
+        assertEquals(0, player.declarationReads) // Standing notices never ask for per-game slots.
+        val scanned = scans
+        repeat(4) { shell.refreshPlayerSaves() }
+        assertEquals(scanned, scans)
+        shell.setUnsyncedSaves("romm", setOf("0"))
+        shell.noteSaveReachable(games.first(), player.id, false)
+        assertEquals(scanned, scans) // Waiting and NoSlot only change game state.
+    }
+
+    @Test fun tileAndHeroReuseGameDeclarationsUntilSaveConfigurationChanges() {
+        val player = CountingSavePlayer()
+        player.bindSaveFolder("content://first")
+        val store = SessionStore(MemoryPrefs()).apply { setPlayerSaveFolder(player.id, "content://first") }
+        val shell = ShellController(store, countingPlugins(player))
+        shell.refreshPlayerSaves()
+        val games = List(2) { Game("romm", it.toString(), player.platformId, Availability.Cached, "Game $it") }
+        shell.ingestLibrary("romm", games.map {
+            GridEntry(it.remoteKey, it.label, "", it.platformId, null, true, it)
+        }, emptyList())
+        val game = games.first()
+        val id = homeGameId(game.backendId, game.remoteKey)
+        val shown = ShelfGame(id, game.label, "", platformId = game.platformId)
+        assertEquals(SaveHealth.Fine, shell.saveHealthAt(0, shown))
+        val reads = player.declarationReads
+        assertTrue(reads > 0)
+        repeat(100) {
+            assertEquals(SaveHealth.Fine, shell.saveHealthAt(0, shown))
+            assertEquals(SaveHealth.Fine, shell.saveHealthOf(id))
+        }
+        assertEquals(reads, player.declarationReads)
+        shell.saveHealthOf(homeGameId("romm", "1"))
+        assertTrue(player.declarationReads > reads)
+        shell.noteSaveReachable(game, player.id, false)
+        assertEquals(SaveHealth.NotSyncing(SaveIssue.NoSlot), shell.saveHealthOf(id))
+        player.bindSaveFolder("content://second")
+        store.setPlayerSaveFolder(player.id, "content://second")
+        shell.refreshPlayerSaves() // Folder changed even though the row still reads Folder set.
+        assertEquals(SaveHealth.Fine, shell.saveHealthOf(id))
+        shell.setSaveSync(emptyMap(), mapOf(player.id to "Finish setup"))
+        assertEquals(SaveHealth.NotSyncing(SaveIssue.NeedsSetup), shell.saveHealthOf(id))
+        shell.setSaveSync(emptyMap(), emptyMap())
+        assertEquals(SaveHealth.Fine, shell.saveHealthOf(id))
+    }
+
+    private class CountingSavePlayer(private val delegate: MelonDsPlayer = MelonDsPlayer()) :
+        Player by delegate, SaveFolderHolder by delegate {
+        var declarationReads = 0
+        var folderChecks = 0
+        override fun saveDeclarations(game: Game): List<SaveDeclaration> {
+            declarationReads += 1
+            return delegate.saveDeclarations(game)
+        }
+        override fun hasSaveFolder(): Boolean {
+            folderChecks += 1
+            return delegate.hasSaveFolder()
+        }
+    }
+
+    private fun countingPlugins(player: Player) = PluginHost(Dispatchers.Unconfined, MemoryCredentialStore()).apply {
+        register(LocalFolderEntry())
+        register(object : PluginEntry {
+            override val apiVersion = PLUGIN_API_VERSION
+            override val apiMinor = PLUGIN_API_MINOR
+            override val players = listOf(player)
+        })
+    }
+
     @Test fun unavailableGameSlotsKeepTheirBadgeWithoutAnEmulatorSetupNotice() {
         val plugins = PluginHost(Dispatchers.Unconfined, MemoryCredentialStore())
         plugins.register(LocalFolderEntry())

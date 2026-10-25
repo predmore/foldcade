@@ -3177,7 +3177,7 @@ private fun StripColumn(
                         onServer = face?.onServer == true,
                         downloading = shell.isDownloading(face?.id),
                         activity = shell.activityAt(source),
-                        saveHealth = shell.saveHealthAt(source),
+                        saveHealth = shell.saveHealthAt(source, game),
                         library = libraryTile,
                         settledAt = if (face?.folder == true) shell.settledAt(face.id) else 0L,
                         onClick = { tap() },

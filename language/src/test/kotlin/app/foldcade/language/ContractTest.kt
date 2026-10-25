@@ -731,11 +731,25 @@ class ContractTest {
 
     @Test
     fun hostedCardsInUseMakeTheUnchosenDataFolderOptional() {
-        val setting = PlayerSaveSetting("duckstation", "DuckStation", false, hostedTitle = "Cards", hostedInUse = true)
-        val model = PickerModel(count = 1, rowsPerPage = 1, playerSaves = listOf(setting))
-        assertEquals(Copy.playerSavesUnset, rowText(Row.PlayerSave(setting.playerId), model).value)
-        assertEquals(RowControl.Value(Copy.playerSavesUnset), rowControl(Row.PlayerSave(setting.playerId), model))
-        assertEquals(Copy.hostedSavesSet, rowText(Row.HostedSaves(setting.playerId), model).value)
+        for (inUse in listOf(false, true)) {
+            val setting = PlayerSaveSetting("duckstation", "DuckStation", false, hostedTitle = "Cards", hostedInUse = inUse)
+            val model = PickerModel(count = 1, rowsPerPage = 1, playerSaves = listOf(setting))
+            assertEquals(Copy.playerSavesUnset, rowText(Row.PlayerSave(setting.playerId), model).value)
+            assertEquals(RowControl.Value(Copy.playerSavesUnset), rowControl(Row.PlayerSave(setting.playerId), model))
+            assertEquals(if (inUse) Copy.hostedSavesSet else Copy.notSyncing, rowText(Row.HostedSaves(setting.playerId), model).value)
+            assertEquals(Effect.ChoosePlayerSave(setting.playerId), reduce(model.onSetting(Row.PlayerSave(setting.playerId)), Meaning.Activate).second)
+        }
+    }
+
+    @Test
+    fun aWrongRequiredFolderStillOffersNotNow() {
+        val dialog = saveFolderDialog(HostScreen.Top, syncs = true, wrong = "aPS3e" to setOf("config", "logs"),
+            playerName = "aPS3e", needed = true)
+        assertEquals("Sync aPS3e saves?", dialog.title)
+        assertEquals(wrongSaveFolderBody("aPS3e", setOf("config", "logs")), dialog.body)
+        assertEquals(listOf(DialogButton.ChooseSaveFolder, DialogButton.NotNow), dialog.buttons)
+        val model = PickerModel(count = 1, rowsPerPage = 1, dialog = dialog)
+        assertEquals(Effect.DialogChoice(DialogButton.NotNow, DialogKind.SaveFolder), reduce(model, Meaning.Back).second)
     }
 
     @Test

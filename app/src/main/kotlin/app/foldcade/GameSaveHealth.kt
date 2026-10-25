@@ -13,6 +13,25 @@ import app.foldcade.language.deriveSaveHealth
 import app.foldcade.plugins.emulators.EmulatorPlayer
 import kotlin.coroutines.cancellation.CancellationException
 
+/** Player-level setup, independent of the file format or a particular game's slots. */
+internal fun playerSaveIssue(player: Player?, sync: SaveSyncState?, setup: String?): SaveIssue? = when {
+    player is HostedSaveFolder && !player.hostedFolderInUse() -> SaveIssue.HostedFolder
+    player is SaveFolderHolder && player !is HostedSaveFolder && !player.hasSaveFolder() -> SaveIssue.NoFolder
+    sync is SaveSyncState.NeedsSetup || setup != null -> SaveIssue.NeedsSetup
+    else -> null
+}
+
+internal data class GameSaveSupport(val declarations: List<SaveDeclaration>, val supportsSync: Boolean)
+
+/** Pure plugin metadata, cached by the shell per player and game. */
+internal fun readGameSaveSupport(game: Game, player: Player?): GameSaveSupport = try {
+    GameSaveSupport(player?.saveDeclarations(game).orEmpty(), player?.supportsSaveSync(game) == true)
+} catch (cancelled: CancellationException) {
+    throw cancelled
+} catch (_: Exception) {
+    GameSaveSupport(emptyList(), player is SaveFolderHolder || player is HostedSaveFolder)
+}
+
 /** Reads only player declarations and the host's cached checks; never reads a card on a frame. */
 internal fun gameSaveHealth(
     game: Game,
@@ -22,26 +41,15 @@ internal fun gameSaveHealth(
     sync: SaveSyncState? = null,
     setup: String? = null,
     reachable: Boolean? = null,
+    saves: GameSaveSupport = readGameSaveSupport(game, player),
 ): SaveHealth {
     if (player == null) return SaveHealth.Fine
-    val holder = player as? SaveFolderHolder
-    val hosted = player as? HostedSaveFolder
-    val (declarations, supportsSync) = try {
-        player.saveDeclarations(game) to player.supportsSaveSync(game)
-    } catch (cancelled: CancellationException) {
-        throw cancelled
-    } catch (_: Exception) {
-        emptyList<SaveDeclaration>() to (holder != null || hosted != null)
-    }
+    val (declarations, supportsSync) = saves
     // File-opening players are emulators in the bundled plugins. App/streaming/PC
     // players do not open ROM files. EmulatorPlayer also covers import-only emulators.
     val emulator = player.needsLocalFile || player is EmulatorPlayer || supportsSync
-    val issue = when {
-        holder != null && !holder.hasSaveFolder() && hosted?.hostedFolderInUse() != true -> SaveIssue.NoFolder
-        hosted != null && !hosted.hostedFolderInUse() -> SaveIssue.HostedFolder
-        sync is SaveSyncState.NeedsSetup || setup != null -> SaveIssue.NeedsSetup
-        supportsSync && (declarations.isEmpty() || declarations.any { it.locationUri == null } || reachable == false) -> SaveIssue.NoSlot
-        else -> null
+    val issue = playerSaveIssue(player, sync, setup) ?: SaveIssue.NoSlot.takeIf {
+        supportsSync && (declarations.isEmpty() || declarations.any { it.locationUri == null } || reachable == false)
     }
     return deriveSaveHealth(emulator, onServer, supportsSync, issue, waiting)
 }

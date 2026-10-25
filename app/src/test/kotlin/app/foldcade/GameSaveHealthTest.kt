@@ -25,9 +25,10 @@ class GameSaveHealthTest {
 
     @Test fun everySyncingPlayerWithoutAFolderNeedsAttention() {
         for (player in players()) {
-            assertEquals(player.id, SaveHealth.NotSyncing(SaveIssue.NoFolder), health(player))
+            val issue = if (player is HostedSaveFolder) SaveIssue.HostedFolder else SaveIssue.NoFolder
+            assertEquals(player.id, SaveHealth.NotSyncing(issue), health(player))
             // A held save reaching the server would still leave this player's own save unprotected.
-            assertEquals(player.id, SaveHealth.NotSyncing(SaveIssue.NoFolder), health(player, waiting = true))
+            assertEquals(player.id, SaveHealth.NotSyncing(issue), health(player, waiting = true))
             assertEquals(player.id, SaveHealth.DeviceOnly, health(player, server = false))
         }
     }
@@ -64,7 +65,7 @@ class GameSaveHealthTest {
         assertEquals(SaveHealth.Fine, health(duck))
         assertEquals(SaveHealth.Waiting, health(duck, waiting = true))
         duck.bindHostedFolder("content://hosted", false)
-        assertEquals(SaveHealth.NotSyncing(SaveIssue.NoFolder), health(duck))
+        assertEquals(SaveHealth.NotSyncing(SaveIssue.HostedFolder), health(duck))
     }
 
     @Test fun onlySettledActivityRefreshesTheLedger() {
@@ -110,7 +111,8 @@ class GameSaveHealthTest {
             assertTrue(player.id, player.supportsSaveSync(game))
             assertTrue(player.id, wrapped.supportsSaveSync(game))
             assertFalse(wrapped is SaveFolderHolder)
-            assertEquals(SaveHealth.NotSyncing(SaveIssue.NoFolder), health(player))
+            val issue = if (player is HostedSaveFolder) SaveIssue.HostedFolder else SaveIssue.NoFolder
+            assertEquals(SaveHealth.NotSyncing(issue), health(player))
         }
         for (player in EmulatorsEntry().players) {
             val game = game(player)
