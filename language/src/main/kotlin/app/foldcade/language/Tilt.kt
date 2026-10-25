@@ -1,13 +1,17 @@
 package app.foldcade.language
 
+import kotlin.math.cos
 import kotlin.math.exp
+import kotlin.math.sin
 import kotlin.math.sqrt
 import kotlin.math.tanh
 
 /**
  * How far the Thor has turned from the way it was lately held, for the top screen's
  * layers to slide by. Fed the game rotation vector as a unit quaternion, device to
- * world with world z up. Tipping is read about the hinge, and turning left or right
+ * world with world z up. The sensor's axes follow the device's natural orientation, and
+ * the Thor's panels are portrait-native shown sideways, so [screenTurns] is the screen's
+ * rotation from it, as the display reports it. Tipping is read about the hinge, and turning left or right
  * about world up or the level line toward the player, so it does not matter which
  * half holds the sensor or how far the lid is open. [x] and [y] are shares of the full slide, in screen directions, each
  * between -1 and 1. A held lean drifts back to rest over [recenterSeconds].
@@ -16,8 +20,20 @@ class TiltFollower(
     private val fullDegrees: Float,
     private val recenterSeconds: Float,
     private val smoothSeconds: Float = SMOOTH_SECONDS,
+    screenTurns: Int = 0,
 ) {
     private var rest: FloatArray? = null
+
+    // The screen's axes in the device's: a turn about the device's z axis, the opposite
+    // way to the picture's quarter turns.
+    private val screenW: Float
+    private val screenZ: Float
+
+    init {
+        val half = -Math.floorMod(screenTurns, 4) * Math.PI / 4
+        screenW = cos(half).toFloat()
+        screenZ = sin(half).toFloat()
+    }
 
     var x = 0f
         private set
@@ -26,7 +42,13 @@ class TiltFollower(
 
     /** Takes one reading, [seconds] after the last. */
     fun follow(w: Float, qx: Float, qy: Float, qz: Float, seconds: Float) {
-        val now = normalized(w, qx, qy, qz) ?: return
+        // Screen to world: device to world after screen to device.
+        val now = normalized(
+            w * screenW - qz * screenZ,
+            qx * screenW + qy * screenZ,
+            qy * screenW - qx * screenZ,
+            qz * screenW + w * screenZ,
+        ) ?: return
         val base = rest
         if (base == null) {
             rest = now
@@ -53,7 +75,7 @@ class TiltFollower(
         val turnX = 2f * dx
         val turnY = 2f * dy
         val turnZ = 2f * dz
-        // The hinge is the device's x axis, wherever it points in the world now.
+        // The hinge is the screen's x axis, wherever it points in the world now.
         val hingeX = 1f - 2f * (ny * ny + nz * nz)
         val hingeY = 2f * (nx * ny + nw * nz)
         val hingeZ = 2f * (nx * nz - nw * ny)

@@ -36,7 +36,8 @@ internal fun rememberTilt(enabled: Boolean, motion: MotionStyle): State<Offset> 
         val sensors = context.getSystemService(Context.SENSOR_SERVICE) as? SensorManager
         val rotation = sensors?.getDefaultSensor(Sensor.TYPE_GAME_ROTATION_VECTOR)
         if (!enabled || motion.tiltPx <= 0f || sensors == null || rotation == null) return@DisposableEffect onDispose { }
-        val follower = TiltFollower(motion.tiltDegrees, motion.durationTiltRecenter / 1000f)
+        val turns = context.display.rotation
+        val follower = TiltFollower(motion.tiltDegrees, motion.durationTiltRecenter / 1000f, screenTurns = turns)
         // Moves under a quarter pixel are not drawn, so a Thor at rest draws no frames.
         val step = TILT_STEP_PX / motion.tiltPx
         val quaternion = FloatArray(4)
