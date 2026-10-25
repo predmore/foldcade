@@ -7,6 +7,41 @@ import org.junit.Test
 
 class NoticesTest {
     @Test
+    fun aMergedSaveNoticeOpensTheSameEmulatorsPageAsSettings() {
+        val notice = FoldNotice("foldcade:save-setup:emulators", Copy.savesNotSyncingEmulatorsTitle(2), Copy.savesNotSyncingBody,
+            settingsCategory = SettingsCategory.Players)
+        val base = model(listOf(notice)).copy(
+            count = 4,
+            focus = GridFocus(cellIndex = 2, lastColumn = 1),
+            playerSaves = listOf(PlayerSaveSetting("melonds", "melonDS", false), PlayerSaveSetting("armsx2", "ARMSX2", false)),
+        )
+        for (screen in HostScreen.entries) {
+            val right = reduce(base, Meaning.RightPanel, screen).first
+            val focused = right.copy(panel = right.panel!!.copy(index = panelRows(right.panel!!, right).indexOf(Row.Notice(notice.id))))
+            val (opened, effect) = reduce(focused, Meaning.Activate, screen)
+            assertNull(effect)
+            assertNull(opened.panel)
+            assertNull(opened.dialog)
+            assertEquals(SettingsCategory.Players, settingsCategories(opened)[opened.settings!!.category])
+            assertEquals(focused.panel!!.screen, opened.settings!!.screen)
+            assertEquals(base.focus, opened.settings!!.grid)
+            assertEquals(true, panelHints(focused)!!.any { it.label == Copy.setUp })
+
+            val left = reduce(base, Meaning.LeftPanel, screen).first
+            val onSettings = left.copy(panel = left.panel!!.copy(index = panelRows(left.panel!!, left).indexOf(Row.Settings)))
+            var normal = reduce(onSettings, Meaning.Activate, screen).first
+            repeat(settingsCategories(normal).indexOf(SettingsCategory.Players)) {
+                normal = reduce(normal, Meaning.MoveDown, screen).first
+            }
+            assertEquals(normal.settings, opened.settings)
+            assertEquals(base.focus, reduce(opened, Meaning.Back, screen).first.focus)
+            assertNull(reduce(opened, Meaning.Back, screen).first.settings)
+            assertEquals(Effect.DismissNotice(notice.id), reduce(focused, Meaning.Options, screen).second)
+            assertEquals(false, Row.ClearNotices in rightRows(listOf(notice)))
+        }
+    }
+
+    @Test
     fun standingSaveNoticesOpenTheirOwnPlayersFixAndCanBeDismissed() {
         val notice = FoldNotice("setup", "ARMSX2 saves aren’t syncing", "Set up to keep them on RomM.", savePlayerId = "armsx2")
         val cases = listOf(

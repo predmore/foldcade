@@ -923,7 +923,7 @@ fun panelHints(model: PickerModel): List<HintKey>? {
             val notice = model.notices.firstOrNull { it.id == row.id } ?: return null
             buildList {
                 val roles = actionFaces(model.faceMap)
-                if (notice.savePlayerId != null) {
+                if (notice.savePlayerId != null || notice.settingsCategory != null) {
                     add(HintKey(promptKeyOf(model.faceMap.confirmKey) ?: PromptKey.FaceA, Copy.setUp))
                 }
                 if (notice.openable) {
@@ -1591,9 +1591,7 @@ private fun applyGrid(
                 ) to null
             } else model.copy(focus = page(model.focus, forward, model, model.screenJumpLastColumn)) to null
         }
-        Meaning.Menu -> if (model.arranging) model to null else model.copy(
-            settings = SettingsPage(screen = HostScreen.Top, grid = model.focus),
-        ) to null
+        Meaning.Menu -> if (model.arranging) model to null else model.openSettings(HostScreen.Top) to null
         Meaning.Activate -> activate(model, screen)
         Meaning.ActivateBottom -> activate(model, screen, onBottom = true)
         Meaning.Options -> openActions(model) to null
@@ -2075,10 +2073,7 @@ private fun activateRow(
     screen: HostScreen,
 ): Pair<PickerModel, Effect?> {
     return when (row) {
-        Row.Settings -> model.copy(
-            panel = null,
-            settings = SettingsPage(screen = panel.screen, grid = panel.grid),
-        ) to null
+        Row.Settings -> model.openSettings(panel.screen, grid = panel.grid) to null
         // The [choiceRows]. The list is spelled out so a new row cannot slip past this when.
         Row.Theme, Row.IconTheme, Row.Background, Row.MotionSpeed, Row.MusicTrack, Row.Order, Row.Primary ->
             stepRow(model, row, 1)!!.copy(panel = panel) to null
@@ -2240,6 +2235,9 @@ private fun openNotice(
     screen: HostScreen,
 ): Pair<PickerModel, Effect?> {
     val notice = model.notices.firstOrNull { it.id == id } ?: return model.copy(panel = panel) to null
+    notice.settingsCategory?.let { category ->
+        return model.openSettings(panel.screen, category, panel.grid) to null
+    }
     notice.savePlayerId?.let { playerId ->
         val setting = model.playerSaves.firstOrNull { it.playerId == playerId }
             ?: return model.copy(panel = panel) to null

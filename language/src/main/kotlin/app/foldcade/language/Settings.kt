@@ -63,6 +63,16 @@ fun settingsTitle(category: SettingsCategory): String = when (category) {
 fun settingsCategories(model: PickerModel): List<SettingsCategory> =
     SettingsCategory.entries.filter { settingsRows(it, model).isNotEmpty() }
 
+/** Opens the normal Settings page at a category, keeping the grid to return to. */
+fun PickerModel.openSettings(
+    screen: HostScreen,
+    category: SettingsCategory = SettingsCategory.Personalization,
+    grid: GridFocus = focus,
+): PickerModel = copy(
+    panel = null,
+    settings = SettingsPage(screen, category = settingsCategories(this).indexOf(category).coerceAtLeast(0), grid = grid),
+)
+
 fun settingsRows(category: SettingsCategory, model: PickerModel): List<Row> = when (category) {
     SettingsCategory.Personalization -> buildList {
         add(Row.Theme)

@@ -83,7 +83,7 @@ Save sync supports **melonDS `.sav` files**, **RetroArch `.srm` battery saves**,
 
 Select **Choose folder** to point Foldcade at the emulator's save folder. **Play without syncing**, or cancelling the folder picker, skips sync for this launch only. Foldcade asks again next time. DuckStation's hosted folder and ARMSX2's card setup offer **Set up** and **Play without syncing** the same way.
 
-A game whose saves are not protected keeps an amber badge and **Saves not syncing** on the top screen. R1 lists one setup notice per emulator; select it to fix the setup. Dismiss it for now and it returns after the next launch of that emulator's game. It disappears once set up. Settings › Emulators shows **Not syncing** on rows that need setup.
+A game whose saves are not protected keeps an amber badge and **Saves not syncing** on the top screen. R1 shows one setup notice. For several emulators, it opens **Settings › Emulators**; for one, it opens that emulator's fix. Dismiss it for now and launching an affected emulator brings it back. It disappears once set up. Settings › Emulators shows **Not syncing** on rows that need setup.
 
 **Saves waiting to upload** and the same badge mean Foldcade holds progress RomM has not received. If it is still waiting after 45 seconds, R1 says so too. The state survives a restart and clears when the save reaches RomM. Emulators Foldcade cannot sync, and games with no server copy, read **Saves stay on this device**.
 

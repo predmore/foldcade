@@ -11,12 +11,14 @@ data class FoldNotice(
     /** The app that posted it. Its icon draws beside the notice. */
     val packageName: String? = null,
     val postedMillis: Long = 0L,
-    /** A tells the app to open it. Foldcade's own notices only have their text. */
+    /** True for an app notification the shell can open; Foldcade notices use their own targets. */
     val openable: Boolean = false,
     /** Y removes it. Android marks some notifications as not clearable. */
     val dismissable: Boolean = true,
     /** A standing save notice opens this player's Settings fix. */
     val savePlayerId: String? = null,
+    /** A grouped setup notice opens this Settings category. */
+    val settingsCategory: SettingsCategory? = null,
 )
 
 object NoticeCopy {
