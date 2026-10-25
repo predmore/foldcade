@@ -1063,7 +1063,7 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
         fresh: Boolean = false,
     ) {
         // A game still open in its player comes back where it was, with nothing downloaded or placed.
-        if (!fresh && resumeRunning(route.tileId, title, platformId)) return
+        if (!fresh && resumeRunning(route.tileId, title, platformId) { launchBackendGame(title, platformId, route, fresh = true) }) return
         val game = route.play
         val libraryId = game.backendId
         // Play history uses the tile's id from every grid.
@@ -1334,10 +1334,11 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
     /**
      * Brings back the game on tile [tileId] if it is still open in its player.
      * True when that start was sent, or is waiting on the read-back of the game's
-     * last session, see [LaunchFlag.SameStartResumes]. Its player may have closed
-     * since without Android saying so; the same start then opens the game anew.
+     * last session, see [LaunchFlag.SameStartResumes]; if that start then cannot be
+     * sent, [startAnew] launches the game as a new press would. Its player may have
+     * closed since without Android saying so; the same start then opens the game anew.
      */
-    private fun resumeRunning(tileId: String, title: String, platformId: String?): Boolean {
+    private fun resumeRunning(tileId: String, title: String, platformId: String?, startAnew: () -> Unit): Boolean {
         foldcade.pruneRunningGames()
         val running = foldcade.runningOn(tileId) ?: return false
         // A player that takes its game's start again as a resume gets that, see LaunchFlag.SameStartResumes.
@@ -1367,13 +1368,14 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
         cancelLaunches()
         if (running.resumeStart != null) {
             // The same start boots the game again when it had closed, and it writes the saves the read-back
-            // of its last session may still be reading. That read-back finishes first, and only then is this
-            // session's own noted, so the read-back cannot drop it.
+            // of its last session may still be reading. A read-back already holding the save flow finishes
+            // first, and only then is this session's own noted, so that read-back cannot drop it.
             val generation = beginLaunch()
             foldcade.launchWork.job = foldcade.scope.launch {
                 foldcade.saveFlow.withLock { }
                 withContext(Dispatchers.Main.immediate) {
-                    if (launchCurrent(generation) && !isDestroyed && !isFinishing) sendResume(running, tileId, title, platformId, front)
+                    if (!launchCurrent(generation) || isDestroyed || isFinishing) return@withContext
+                    if (!sendResume(running, tileId, title, platformId, front)) startAnew()
                 }
             }
             return true
