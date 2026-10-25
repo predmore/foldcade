@@ -422,7 +422,7 @@ class ShellController(
         runnable = { runnableWith(it, it.packageNames.firstOrNull(installedPlayers::contains)) },
         rank = ::playerRank,
         installed = installedPlayers::contains,
-    )
+    )?.takeIf { it.packageNames.any(installedPlayers::contains) }
 
     internal fun saveHealthOf(id: String, pressed: Game? = null): SaveHealth {
         saveHealthEpoch // Folder checks, player installs, and catalog changes invalidate this read.
@@ -2691,6 +2691,7 @@ class ShellController(
                 saveSyncing = sync is SaveSyncState.Syncing,
                 saveSyncSteps = (sync as? SaveSyncState.NeedsSetup)?.steps,
                 setupSteps = setupSteps[player.id],
+                installed = player.packageNames.any(installedPlayers::contains),
             )
         }.distinctBy { it.first }.map { it.second }
 

@@ -665,7 +665,7 @@ class ContractTest {
 
     @Test
     fun leftPanelOffersThePlayerSaveFolder() {
-        val setting = PlayerSaveSetting(playerId = "azahar", label = "Azahar", chosen = false)
+        val setting = PlayerSaveSetting(playerId = "azahar", label = "Azahar", chosen = false, installed = true)
         val opened = PickerModel(
             count = 1,
             rowsPerPage = 1,
@@ -682,8 +682,33 @@ class ContractTest {
     }
 
     @Test
+    fun uninstalledOrNotYetDetectedPlayersHaveNeutralSetupRows() {
+        val settings = listOf(
+            PlayerSaveSetting("melonds", "melonDS", false),
+            PlayerSaveSetting("duckstation", "DuckStation", false, hostedTitle = "Cards"),
+            PlayerSaveSetting("armsx2", "ARMSX2", true, saveSyncSteps = "Choose a folder card"),
+            PlayerSaveSetting("aps3e", "aPS3e", true, setupSteps = "Install firmware"),
+        )
+        for (setting in settings) {
+            val model = PickerModel(count = 1, rowsPerPage = 1, playerSaves = listOf(setting))
+            val rows = settingsRows(SettingsCategory.Players, model)
+            assertEquals(if (setting.chosen) Copy.playerSavesSet else Copy.playerSavesUnset,
+                rowText(Row.PlayerSave(setting.playerId), model).value)
+            for (row in rows) {
+                val control = rowControl(row, model) as RowControl.Value
+                assertFalse(control.attention)
+                assertFalse(control.text == Copy.notSyncing)
+            }
+            val installed = model.copy(playerSaves = listOf(setting.copy(installed = true)))
+            assertTrue(settingsRows(SettingsCategory.Players, installed).any {
+                (rowControl(it, installed) as? RowControl.Value)?.attention == true
+            })
+        }
+    }
+
+    @Test
     fun theMemoryCardRowReadsSyncingOrSetUp() {
-        val syncing = PlayerSaveSetting("armsx2", "ARMSX2", chosen = true, saveSyncing = true)
+        val syncing = PlayerSaveSetting("armsx2", "ARMSX2", chosen = true, saveSyncing = true, installed = true)
         val model = PickerModel(count = 1, rowsPerPage = 1, homeRoleHeld = true, playerSaves = listOf(syncing))
         assertEquals(
             listOf(Row.PlayerSave("armsx2"), Row.SaveSync("armsx2")),
@@ -709,9 +734,9 @@ class ContractTest {
     @Test
     fun aChosenFolderRowDoesNotClaimToFixSeparateSaveSetup() {
         val settings = listOf(
-            PlayerSaveSetting("duckstation", "DuckStation", true, hostedTitle = "DuckStation memory cards"),
-            PlayerSaveSetting("armsx2", "ARMSX2", true, saveSyncSteps = "Choose a folder card"),
-            PlayerSaveSetting("aps3e", "aPS3e", true, setupSteps = "Install firmware"),
+            PlayerSaveSetting("duckstation", "DuckStation", true, hostedTitle = "DuckStation memory cards", installed = true),
+            PlayerSaveSetting("armsx2", "ARMSX2", true, saveSyncSteps = "Choose a folder card", installed = true),
+            PlayerSaveSetting("aps3e", "aPS3e", true, setupSteps = "Install firmware", installed = true),
         )
         for (setting in settings) {
             val model = PickerModel(count = 1, rowsPerPage = 1, playerSaves = listOf(setting))
@@ -732,7 +757,7 @@ class ContractTest {
     @Test
     fun hostedCardsInUseMakeTheUnchosenDataFolderOptional() {
         for (inUse in listOf(false, true)) {
-            val setting = PlayerSaveSetting("duckstation", "DuckStation", false, hostedTitle = "Cards", hostedInUse = inUse)
+            val setting = PlayerSaveSetting("duckstation", "DuckStation", false, hostedTitle = "Cards", hostedInUse = inUse, installed = true)
             val model = PickerModel(count = 1, rowsPerPage = 1, playerSaves = listOf(setting))
             assertEquals(Copy.playerSavesUnset, rowText(Row.PlayerSave(setting.playerId), model).value)
             assertEquals(RowControl.Value(Copy.playerSavesUnset), rowControl(Row.PlayerSave(setting.playerId), model))
@@ -755,7 +780,7 @@ class ContractTest {
     @Test
     fun theSetupRowShowsThePlayersSteps() {
         val steps = "Open aPS3e and finish its setup."
-        val setting = PlayerSaveSetting("aps3e", "aPS3e", chosen = true, setupSteps = steps)
+        val setting = PlayerSaveSetting("aps3e", "aPS3e", chosen = true, setupSteps = steps, installed = true)
         val model = PickerModel(count = 1, rowsPerPage = 1, homeRoleHeld = true, playerSaves = listOf(setting))
         assertEquals(
             listOf(Row.PlayerSave("aps3e"), Row.PlayerSetup("aps3e")),

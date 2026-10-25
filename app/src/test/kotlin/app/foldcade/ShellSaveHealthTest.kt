@@ -16,6 +16,64 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class ShellSaveHealthTest {
+    @Test fun healthAndNoticesStayQuietUntilAnEmulatorIsKnownToBeInstalled() {
+        val plugins = PluginHost(Dispatchers.Unconfined, MemoryCredentialStore())
+        plugins.register(LocalFolderEntry())
+        val retro = RetroArchEntry()
+        val melon = MelonDsEntry()
+        plugins.register(retro)
+        plugins.register(melon)
+        val notices = SaveSetupNotices()
+        lateinit var shell: ShellController
+        shell = ShellController(SessionStore(MemoryPrefs()), plugins, onSaveHealthChanged = { players ->
+            notices.update(players)
+            shell.setNotices(notices.notices(100))
+        })
+        val platforms = listOf("game-boy-advance", "snes", "nintendo-ds")
+        val games = platforms.mapIndexed { index, platform -> Game("romm", index.toString(), platform, Availability.Cached, platform) }
+        shell.ingestLibrary("romm", games.map { GridEntry(it.remoteKey, it.label, "", it.platformId, null, false, it) }, emptyList())
+        fun assertQuiet(game: Game) {
+            assertNull(shell.savePlayer(game.platformId))
+            assertEquals(SaveHealth.Fine, shell.saveHealthOf(homeGameId(game.backendId, game.remoteKey)))
+        }
+        // The catalog may arrive before the first installed-app scan.
+        games.forEach(::assertQuiet)
+        assertTrue(shell.model.notices.isEmpty())
+        assertTrue(shell.model.playerSaves.none { it.installed })
+        shell.model.playerSaves.forEach { setting ->
+            assertEquals(RowControl.Value(Copy.playerSavesUnset), rowControl(Row.PlayerSave(setting.playerId), shell.model))
+        }
+        val packages = plugins.playerPackageNames()
+        shell.setInstalledApps(emptyList(), packages, installedPlayers = emptySet())
+        games.forEach(::assertQuiet)
+        assertTrue(shell.model.notices.isEmpty())
+
+        val melonPackage = melon.players.single().packageNames.first()
+        shell.setInstalledApps(emptyList(), packages, installedPlayers = setOf(melonPackage))
+        games.take(2).forEach(::assertQuiet)
+        assertEquals("melonds", shell.model.notices.single().savePlayerId)
+        assertEquals(SaveHealth.NotSyncing(SaveIssue.NoFolder), shell.saveHealthOf(homeGameId("romm", "2")))
+        val retroSetting = shell.model.playerSaves.first { it.label == "RetroArch" }
+        assertFalse(retroSetting.installed)
+        assertEquals(RowControl.Value(Copy.playerSavesUnset), rowControl(Row.PlayerSave(retroSetting.playerId), shell.model))
+
+        val retroPackage = retro.players.first().packageNames.first()
+        shell.setInstalledApps(emptyList(), packages, installedPlayers = setOf(melonPackage, retroPackage))
+        games.forEach {
+            assertEquals(SaveHealth.NotSyncing(SaveIssue.NoFolder), shell.saveHealthOf(homeGameId(it.backendId, it.remoteKey)))
+        }
+        assertEquals(Copy.savesNotSyncingEmulatorsTitle(2), shell.model.notices.single().title)
+        assertTrue(shell.model.playerSaves.first { it.label == "RetroArch" }.installed)
+
+        // An uninstall removes it from the merged notice and clears its cached tile health.
+        shell.setInstalledApps(emptyList(), packages, installedPlayers = setOf(melonPackage))
+        games.take(2).forEach(::assertQuiet)
+        assertEquals("melonds", shell.model.notices.single().savePlayerId)
+        shell.setInstalledApps(emptyList(), packages, installedPlayers = emptySet())
+        games.forEach(::assertQuiet)
+        assertTrue(shell.model.notices.isEmpty())
+    }
+
     @Test fun hostedSetupIsTheOnlyStandingIssueWithoutADuckStationDataFolder() {
         val plugins = PluginHost(Dispatchers.Unconfined, MemoryCredentialStore())
         plugins.register(LocalFolderEntry())
@@ -23,6 +81,7 @@ class ShellSaveHealthTest {
         plugins.register(duck)
         var setupPlayers = emptyMap<String, String>()
         val shell = ShellController(SessionStore(MemoryPrefs()), plugins, onSaveHealthChanged = { setupPlayers = it })
+        shell.setInstalledApps(emptyList(), plugins.playerPackageNames(), plugins.playerPackageNames())
         val game = Game("romm", "42", "playstation", Availability.Cached, "Game")
         shell.ingestLibrary("romm", listOf(GridEntry(game.remoteKey, game.label, "", game.platformId, null, false, game)), emptyList())
         val id = homeGameId(game.backendId, game.remoteKey)
@@ -44,6 +103,7 @@ class ShellSaveHealthTest {
             scans += 1
             setupPlayers = it
         })
+        shell.setInstalledApps(emptyList(), plugins.playerPackageNames(), plugins.playerPackageNames())
         shell.refreshPlayerSaves()
         player.folderChecks = 0
         val games = List(2_000) { Game("romm", it.toString(), player.platformId, Availability.Cached, "Game $it") }
@@ -65,7 +125,9 @@ class ShellSaveHealthTest {
         val player = CountingSavePlayer()
         player.bindSaveFolder("content://first")
         val store = SessionStore(MemoryPrefs()).apply { setPlayerSaveFolder(player.id, "content://first") }
-        val shell = ShellController(store, countingPlugins(player))
+        val plugins = countingPlugins(player)
+        val shell = ShellController(store, plugins)
+        shell.setInstalledApps(emptyList(), plugins.playerPackageNames(), plugins.playerPackageNames())
         shell.refreshPlayerSaves()
         val games = List(2) { Game("romm", it.toString(), player.platformId, Availability.Cached, "Game $it") }
         shell.ingestLibrary("romm", games.map {
@@ -127,6 +189,7 @@ class ShellSaveHealthTest {
         plugins.register(AzaharEntry())
         var setupPlayers = emptyMap<String, String>()
         val shell = ShellController(SessionStore(MemoryPrefs()), plugins, onSaveHealthChanged = { setupPlayers = it })
+        shell.setInstalledApps(emptyList(), plugins.playerPackageNames(), plugins.playerPackageNames())
         val games = plugins.playerIds().mapIndexed { index, id ->
             val player = plugins.player(id)!!
             (player as SaveFolderHolder).bindSaveFolder("content://$id")
@@ -159,6 +222,7 @@ class ShellSaveHealthTest {
             notices.update(players)
             shell.setNotices(notices.notices(100))
         })
+        shell.setInstalledApps(emptyList(), plugins.playerPackageNames(), plugins.playerPackageNames())
         shell.applyHomeAddNew(false)
         val game = Game("romm", "42", "nintendo-ds", Availability.Cached, "New game")
         shell.ingestLibrary("romm", listOf(GridEntry(game.remoteKey, game.label, "", game.platformId, null, true, game)), emptyList())
@@ -187,6 +251,7 @@ class ShellSaveHealthTest {
         plugins.register(retro)
         var setupPlayers = emptyMap<String, String>()
         val shell = ShellController(SessionStore(MemoryPrefs()), plugins, onSaveHealthChanged = { setupPlayers = it })
+        shell.setInstalledApps(emptyList(), plugins.playerPackageNames(), plugins.playerPackageNames())
         val players = retro.players.take(2)
         val entries = players.mapIndexed { index, player ->
             val game = Game("romm", index.toString(), player.platformId, Availability.RemoteOnly, "Game $index")
@@ -205,6 +270,7 @@ class ShellSaveHealthTest {
         plugins.register(melon)
         var setupPlayers = emptyMap<String, String>()
         val shell = ShellController(SessionStore(MemoryPrefs()), plugins, onSaveHealthChanged = { setupPlayers = it })
+        shell.setInstalledApps(emptyList(), plugins.playerPackageNames(), plugins.playerPackageNames())
         val player = plugins.playersFor("nintendo-ds").first()
         val server = Game("romm", "42", "nintendo-ds", Availability.Cached, "Tetris")
         val other = server.copy(remoteKey = "43", label = "Puzzle")

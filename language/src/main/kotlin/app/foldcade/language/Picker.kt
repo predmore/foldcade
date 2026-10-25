@@ -720,6 +720,8 @@ data class PlayerSaveSetting(
     val saveSyncSteps: String? = null,
     /** What the user does once in the player before it can start a game, or null when it can. */
     val setupSteps: String? = null,
+    /** False until the host knows one of this player's packages is installed. */
+    val installed: Boolean = false,
 )
 
 /**
@@ -1063,26 +1065,34 @@ fun rowText(row: Row, model: PickerModel): RowText = when (row) {
         val setting = model.playerSaves.firstOrNull { it.playerId == row.playerId }
         val chosen = when {
             setting?.chosen == true -> Copy.playerSavesSet
-            setting?.hostedTitle != null -> Copy.playerSavesUnset // Optional data folder; saves use the hosted folder.
+            setting?.installed != true || setting.hostedTitle != null -> Copy.playerSavesUnset
             else -> Copy.notSyncing
         }
         RowText(setting?.label ?: row.playerId, chosen)
     }
     is Row.HostedSaves -> {
         val setting = model.playerSaves.firstOrNull { it.playerId == row.playerId }
-        val inUse = if (setting?.hostedInUse == true) Copy.hostedSavesSet else Copy.notSyncing
+        val inUse = when {
+            setting?.hostedInUse == true -> Copy.hostedSavesSet
+            setting?.installed == true -> Copy.notSyncing
+            else -> Copy.hostedSavesUnset
+        }
         RowText(setting?.hostedTitle ?: row.playerId, inUse)
     }
     is Row.SaveSync -> {
         val setting = model.playerSaves.firstOrNull { it.playerId == row.playerId }
-        val state = if (setting?.saveSyncing == true) Copy.hostedSavesSet else Copy.notSyncing
+        val state = when {
+            setting?.saveSyncing == true -> Copy.hostedSavesSet
+            setting?.installed == true -> Copy.notSyncing
+            else -> Copy.hostedSavesUnset
+        }
         val name = setting?.label ?: row.playerId
         RowText("$name ${Copy.memoryCard}", state)
     }
     is Row.PlayerSetup -> {
         val setting = model.playerSaves.firstOrNull { it.playerId == row.playerId }
         val name = setting?.label ?: row.playerId
-        RowText("$name ${Copy.setup}", Copy.notSyncing)
+        RowText("$name ${Copy.setup}", if (setting?.installed == true) Copy.notSyncing else Copy.hostedSavesUnset)
     }
     Row.RetroArchCores -> RowText(
         Copy.retroArchCores,
