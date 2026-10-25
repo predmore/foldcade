@@ -48,6 +48,14 @@ class SaveLaunchOfferTest {
         assertNull(saveLaunchOffer(player, true))
     }
 
+    @Test fun hostedCardsInUseNeverAskForAnOptionalDataFolder() {
+        val player = DuckStationPlayer().apply { bindHostedFolder("content://hosted", true) }
+        assertFalse(player.hasSaveFolder())
+        repeat(2) { assertNull(saveLaunchOffer(player, true)) }
+        player.bindSaveFolder("content://data")
+        assertNull(saveLaunchOffer(player, true))
+    }
+
     @Test fun armsx2NeedsSetupUsesTheSameLaunchFlowAndNeverReplacesTheCard() {
         val player = ArmsX2Player().apply { bindSaveFolder("content://data") }
         val state = SaveSyncState.NeedsSetup("Keep the old card. Pick a folder card.")
@@ -77,6 +85,13 @@ class SaveLaunchOfferTest {
     }
 
     @Test fun aPlayerThatRequiresItsFolderStillCannotStartUntilOneIsChosen() {
+        val prompt = saveFolderDialog(HostScreen.Top, playerName = "aPS3e", needed = true)
+        assertEquals(DialogButton.NotNow, prompt.buttons[prompt.safeIndex])
+        val model = PickerModel(count = 1, rowsPerPage = 1, dialog = prompt)
+        assertEquals(Effect.DialogChoice(DialogButton.NotNow, DialogKind.SaveFolder), reduce(model, Meaning.Back).second)
+        assertEquals(Effect.DialogChoice(DialogButton.NotNow, DialogKind.SaveFolder), reduce(model, Meaning.MoveRight).first.let {
+            reduce(it, Meaning.Activate).second
+        })
         for (answer in listOf(SaveFolderAnswer.PlayWithoutSyncing, SaveFolderAnswer.PickerCancelled)) {
             assertEquals(SaveLaunchContinuation.Cancel, saveLaunchContinuation("aps3e", answer, needsFolderToStart = true))
         }

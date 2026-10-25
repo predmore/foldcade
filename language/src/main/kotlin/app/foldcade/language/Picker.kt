@@ -328,7 +328,7 @@ fun saveFolderDialog(
             },
             Copy.saveFolderOpensThere.takeIf { opensThere },
         ).joinToString(" "),
-    buttons = listOf(DialogButton.ChooseSaveFolder, DialogButton.PlayWithoutSyncing),
+    buttons = listOf(DialogButton.ChooseSaveFolder, if (needed) DialogButton.NotNow else DialogButton.PlayWithoutSyncing),
     index = 0,
     safeIndex = 1,
     screen = screen,
@@ -720,9 +720,7 @@ data class PlayerSaveSetting(
     val saveSyncSteps: String? = null,
     /** What the user does once in the player before it can start a game, or null when it can. */
     val setupSteps: String? = null,
-) {
-    val notSyncing: Boolean get() = !chosen || (hostedTitle != null && !hostedInUse) || saveSyncSteps != null || setupSteps != null
-}
+)
 
 /**
  * RetroArch, when it is installed. [cores] is how many cores Foldcade can see,
@@ -1063,7 +1061,11 @@ fun rowText(row: Row, model: PickerModel): RowText = when (row) {
     Row.ClearNotices -> RowText(NoticeCopy.clearAll)
     is Row.PlayerSave -> {
         val setting = model.playerSaves.firstOrNull { it.playerId == row.playerId }
-        val chosen = if (setting?.notSyncing != false) Copy.notSyncing else Copy.playerSavesSet
+        val chosen = when {
+            setting?.chosen == true -> Copy.playerSavesSet
+            setting?.hostedInUse == true -> Copy.playerSavesUnset // Optional data folder; the cards already sync.
+            else -> Copy.notSyncing
+        }
         RowText(setting?.label ?: row.playerId, chosen)
     }
     is Row.HostedSaves -> {

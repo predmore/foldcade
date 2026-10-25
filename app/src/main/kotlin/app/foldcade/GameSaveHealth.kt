@@ -1,9 +1,11 @@
 package app.foldcade
 
 import app.foldcade.api.plugin.Game
+import app.foldcade.api.plugin.GameActivity
 import app.foldcade.api.plugin.HostedSaveFolder
 import app.foldcade.api.plugin.Player
 import app.foldcade.api.plugin.SaveFolderHolder
+import app.foldcade.api.plugin.SaveDeclaration
 import app.foldcade.api.plugin.SaveSyncState
 import app.foldcade.language.SaveHealth
 import app.foldcade.language.SaveIssue
@@ -24,19 +26,18 @@ internal fun gameSaveHealth(
     if (player == null) return SaveHealth.Fine
     val holder = player as? SaveFolderHolder
     val hosted = player as? HostedSaveFolder
-    val declarations = try {
-        player.saveDeclarations(game)
+    val (declarations, supportsSync) = try {
+        player.saveDeclarations(game) to player.supportsSaveSync(game)
     } catch (cancelled: CancellationException) {
         throw cancelled
     } catch (_: Exception) {
-        emptyList()
+        emptyList<SaveDeclaration>() to (holder != null || hosted != null)
     }
-    val supportsSync = holder != null || hosted != null || declarations.isNotEmpty()
     // File-opening players are emulators in the bundled plugins. App/streaming/PC
     // players do not open ROM files. EmulatorPlayer also covers import-only emulators.
     val emulator = player.needsLocalFile || player is EmulatorPlayer || supportsSync
     val issue = when {
-        holder != null && !holder.hasSaveFolder() -> SaveIssue.NoFolder
+        holder != null && !holder.hasSaveFolder() && hosted?.hostedFolderInUse() != true -> SaveIssue.NoFolder
         hosted != null && !hosted.hostedFolderInUse() -> SaveIssue.HostedFolder
         sync is SaveSyncState.NeedsSetup || setup != null -> SaveIssue.NeedsSetup
         supportsSync && (declarations.isEmpty() || declarations.any { it.locationUri == null } || reachable == false) -> SaveIssue.NoSlot
@@ -44,3 +45,6 @@ internal fun gameSaveHealth(
     }
     return deriveSaveHealth(emulator, onServer, supportsSync, issue, waiting)
 }
+
+/** Read the ledger after work settles, rather than competing with an active sync's ROM lock. */
+internal fun GameActivity.refreshesSaveHealth(): Boolean = this is GameActivity.Synced || this == GameActivity.Idle

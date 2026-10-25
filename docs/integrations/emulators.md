@@ -67,9 +67,9 @@ Games can be `.cue` sheets with their `.bin` tracks, `.chd`, or an `.m3u` of dis
 
 DuckStation needs a PlayStation BIOS dumped from a console you own. Put it in RomM's firmware for the PlayStation. Foldcade then downloads it, checks it, and places it in DuckStation's `bios` folder before the game starts. You can also import one in DuckStation yourself.
 
-The first time you play a RomM game with DuckStation, Foldcade asks for DuckStation's folder. The picker opens at DuckStation's own data folder, so tap **Use this folder** and **Allow**. That is where the BIOS goes, and nothing in DuckStation has to change for it. You can change the folder later in **Foldcade Settings › Emulators › DuckStation**. A folder you pick has to hold DuckStation's `bios` or `memcards`.
+Before a RomM launch, Foldcade asks for DuckStation's data folder while its saves are not set up. Once its hosted memory cards are in use, this folder is optional for save sync. The picker opens at DuckStation's own data folder, so tap **Use this folder** and **Allow**. That is where the BIOS goes, and nothing in DuckStation has to change for it. You can change the folder later in **Foldcade Settings › Emulators › DuckStation**. A folder you pick has to hold DuckStation's `bios` or `memcards`.
 
-Foldcade syncs each game's memory card through [RomM](romm.md#save-sync). DuckStation writes cards that only DuckStation can read, so Foldcade keeps them for it in a folder of its own. Foldcade asks you once to point DuckStation at that folder, and **Open DuckStation** takes you there:
+Foldcade syncs each game's memory card through [RomM](romm.md#save-sync). DuckStation writes cards that only DuckStation can read, so Foldcade keeps them for it in a folder of its own. Foldcade asks on each server launch until DuckStation uses that folder. **Set up** opens DuckStation:
 
 1. In DuckStation, open **App Settings**, turn on **Show Advanced Settings** in the ⋮ menu, and open **Folders › Memory Cards › Choose New Location**.
 2. Open the picker's menu, pick **Foldcade** (*DuckStation memory cards*), and tap **Use this folder** and **Allow**.

@@ -134,11 +134,13 @@ internal class SaveNotPlaced : Exception("save could not be placed")
 
 /** A library sees only slots the shell can reach; all other player behavior delegates unchanged. */
 internal fun playerForSaveSpots(player: Player, game: Game, spots: List<SaveSpot>): Player {
+    val supportsSync = player.supportsSaveSync(game)
     val reachable = spots.map { it.slot }.toSet()
     val declarations = player.saveDeclarations(game).map { slot ->
         if (slot.slot in reachable) slot else slot.copy(locationUri = null)
     }
     return object : Player by player {
+        override fun supportsSaveSync(game: Game) = supportsSync
         override fun saveDeclarations(game: Game) = declarations
     }
 }

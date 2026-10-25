@@ -58,6 +58,24 @@ class GameSaveHealthTest {
         assertEquals(SaveHealth.NotSyncing(SaveIssue.NeedsSetup), health(ps3, setup = "Install firmware"))
     }
 
+    @Test fun hostedCardsSyncWithoutADataFolder() {
+        val duck = DuckStationPlayer().apply { bindHostedFolder("content://hosted", true) }
+        assertFalse(duck.hasSaveFolder())
+        assertEquals(SaveHealth.Fine, health(duck))
+        assertEquals(SaveHealth.Waiting, health(duck, waiting = true))
+        duck.bindHostedFolder("content://hosted", false)
+        assertEquals(SaveHealth.NotSyncing(SaveIssue.NoFolder), health(duck))
+    }
+
+    @Test fun onlySettledActivityRefreshesTheLedger() {
+        for (outcome in SyncOutcome.entries) assertTrue(GameActivity.Synced(SyncResult(outcome)).refreshesSaveHealth())
+        assertTrue(GameActivity.Idle.refreshesSaveHealth())
+        for (activity in listOf(GameActivity.SyncingSaves, GameActivity.Checking,
+            GameActivity.Downloading(1, 2), GameActivity.GettingFirmware(1, 2))) {
+            assertFalse(activity.refreshesSaveHealth())
+        }
+    }
+
     @Test fun standaloneEmulatorsIncludingEdenAreDeviceOnlyButExternalGamesAreQuiet() {
         val emulators = EmulatorsEntry().players
         assertTrue(emulators.any { it.id.startsWith("eden.") })
@@ -83,5 +101,24 @@ class GameSaveHealthTest {
             }
             assertEquals(SaveHealth.NotSyncing(SaveIssue.NoSlot), health(player))
         }
+    }
+
+    @Test fun saveCapabilitySurvivesTheReachableSlotWrapper() {
+        for (player in players()) {
+            val game = game(player)
+            val wrapped = playerForSaveSpots(player, game, emptyList())
+            assertTrue(player.id, player.supportsSaveSync(game))
+            assertTrue(player.id, wrapped.supportsSaveSync(game))
+            assertFalse(wrapped is SaveFolderHolder)
+            assertEquals(SaveHealth.NotSyncing(SaveIssue.NoFolder), health(player))
+        }
+        for (player in EmulatorsEntry().players) {
+            val game = game(player)
+            assertFalse(player.id, playerForSaveSpots(player, game, emptyList()).supportsSaveSync(game))
+        }
+        val explicitSupport = object : Player by EmulatorsEntry().players.first() {
+            override fun supportsSaveSync(game: Game) = true
+        }
+        assertEquals(SaveHealth.NotSyncing(SaveIssue.NoSlot), health(explicitSupport))
     }
 }

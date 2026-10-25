@@ -149,6 +149,32 @@ class RommSyncTest {
     }
 
     @Test
+    fun playersWithNoSaveSupportHaveNoSaveActivityOnLaunchOrReturn() = runBlocking {
+        cacheRom()
+        val held = writeSlot("sav", "another player's progress")
+        ops.onSync = { _, _, _, _ -> error("A player with no save support must not start a save sync") }
+        for (id in listOf("eden.nintendo-switch", "dolphin.wii")) {
+            val player = object : Player by NamedPlayer {
+                override val id = id
+                override fun supportsSaveSync(game: Game) = false
+                override fun saveDeclarations(game: Game): List<SaveDeclaration> = emptyList()
+            }
+            val library = library()
+            val activities = Collections.synchronizedList(mutableListOf<GameActivity>())
+            library.observeActivity { _, activity -> activities += activity }
+            val placement = library.prepareLaunch(GAME, player)
+            assertTrue(placement.savesToPlace.isEmpty())
+            assertTrue(activities.all { it == GameActivity.Idle })
+            activities.clear()
+            library.reconcile(GAME, player, ObservedSaves(emptyList()))
+            assertTrue(activities.isEmpty())
+            assertEquals("another player's progress", Files.readString(held))
+            assertEquals(setOf("1234"), library.unsyncedSaves())
+            library.disconnect()
+        }
+    }
+
+    @Test
     fun missingAndEmptySlotsForEveryPlayerNeverReadAsSynced() = runBlocking {
         cacheRom()
         ops.onSync = { _, _, _, _ -> report() }

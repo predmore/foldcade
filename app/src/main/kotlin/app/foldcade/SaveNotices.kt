@@ -154,6 +154,7 @@ internal class SaveSetupNotices {
 internal class WaitingSaveNotices(private val patienceMillis: Long = RETURN_SYNC_PATIENCE_MS) {
     private val since = mutableMapOf<Pair<String, String>, Long>()
     private val told = mutableSetOf<Pair<String, String>>()
+    private val posted = mutableMapOf<Pair<String, String>, FoldNotice>()
 
     fun nextDueMillis(): Long? = since.filterKeys { it !in told }.values.minOrNull()?.plus(patienceMillis)
 
@@ -164,7 +165,16 @@ internal class WaitingSaveNotices(private val patienceMillis: Long = RETURN_SYNC
         return games.mapNotNull { game ->
             val key = game.backendId to game.remoteKey
             val start = since.getOrPut(key) { nowMillis }
-            if (nowMillis - start >= patienceMillis && told.add(key)) saveNotice(game, SyncOutcome.Queued, nowMillis) else null
+            if (nowMillis - start >= patienceMillis && told.add(key)) {
+                saveNotice(game, SyncOutcome.Queued, nowMillis)?.also { posted[key] = it }
+            } else null
         }
+    }
+
+    /** Only this producer's own notices expire; a hand-back may replace one under the same id. */
+    fun settled(notices: List<FoldNotice>): List<FoldNotice> {
+        val done = posted.filterKeys { it !in since }
+        done.keys.forEach(posted::remove)
+        return notices.filter { notice -> done.values.any { it === notice } }
     }
 }

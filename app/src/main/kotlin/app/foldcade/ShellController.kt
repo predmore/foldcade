@@ -456,7 +456,8 @@ class ShellController(
         for (id in libraryGames.keys.map(::tileOf).distinct()) {
             if (!app.foldcade.language.onHome(home.board, id)) continue
             val route = launchRoute(id) ?: continue
-            if (saveHealthOf(id) !is SaveHealth.NotSyncing) continue
+            val health = saveHealthOf(id) as? SaveHealth.NotSyncing ?: continue
+            if (health.reason == app.foldcade.language.SaveIssue.NoSlot) continue
             val player = savePlayer(route.play.platformId) ?: continue
             players[saveNoticePlayerId(player.id)] = player.displayName
         }
@@ -697,7 +698,7 @@ class ShellController(
                     commitHome()
                     syncHome()
                 }
-                publish(next)
+                publish(next.copy(notices = model.notices))
             }
             else -> publish(next)
         }

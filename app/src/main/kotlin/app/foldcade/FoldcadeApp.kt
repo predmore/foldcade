@@ -681,7 +681,7 @@ class FoldcadeApp : Application() {
                     returnNotices.synced(libraryId, remoteKey, reported.result, System.currentTimeMillis())?.let(::postNotice)
                 }
                 val until = shell.noteActivity(libraryId, remoteKey, reported, System.currentTimeMillis())
-                if (reported is GameActivity.Synced || reported == GameActivity.SyncingSaves || reported == GameActivity.Idle) {
+                if (reported.refreshesSaveHealth()) {
                     refreshUnsyncedSaves(libraryId)
                 }
                 if (until != null) {
@@ -1025,9 +1025,7 @@ class FoldcadeApp : Application() {
             keys.mapNotNull { key -> shell.saveGame(libraryId, key) }
         }
         waitingSaveNotices.update(games, System.currentTimeMillis()).forEach(::postNotice)
-        val waitingIds = games.map { "foldcade:save:${it.backendId}:${it.remoteKey}" }.toSet()
-        val settled = foldcadeNotices.filter { it.title == Copy.offlineSaveTitle &&
-            it.id !in waitingIds && unsyncedSaveKeys.keys.any { library -> it.id.startsWith("foldcade:save:$library:") } }
+        val settled = waitingSaveNotices.settled(foldcadeNotices)
         if (settled.isNotEmpty()) {
             foldcadeNotices = foldcadeNotices - settled.toSet()
             publishNotices()

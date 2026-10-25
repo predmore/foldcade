@@ -658,7 +658,7 @@ class ContractTest {
         // A player that cannot start without its folder: Continue is the default, and Not now promises no game.
         val needed = saveFolderDialog(HostScreen.Top, playerName = "aPS3e", opensThere = true, needed = true)
         assertEquals(DialogButton.ChooseSaveFolder, needed.buttons[needed.index])
-        assertEquals(DialogButton.PlayWithoutSyncing, needed.buttons[needed.safeIndex])
+        assertEquals(DialogButton.NotNow, needed.buttons[needed.safeIndex])
         assertTrue(needed.body.startsWith(Copy.saveFolderNeededBody))
         assertFalse(needed.body.contains("starts the game"))
     }
@@ -704,6 +704,38 @@ class ContractTest {
         assertEquals("Sync ARMSX2 saves?", dialog.title)
         assertEquals(steps, dialog.body)
         assertEquals("Open ARMSX2", openPlayerLabel(dialog.subject))
+    }
+
+    @Test
+    fun aChosenFolderRowDoesNotClaimToFixSeparateSaveSetup() {
+        val settings = listOf(
+            PlayerSaveSetting("duckstation", "DuckStation", true, hostedTitle = "DuckStation memory cards"),
+            PlayerSaveSetting("armsx2", "ARMSX2", true, saveSyncSteps = "Choose a folder card"),
+            PlayerSaveSetting("aps3e", "aPS3e", true, setupSteps = "Install firmware"),
+        )
+        for (setting in settings) {
+            val model = PickerModel(count = 1, rowsPerPage = 1, playerSaves = listOf(setting))
+            val row = Row.PlayerSave(setting.playerId)
+            assertEquals(Copy.playerSavesSet, rowText(row, model).value)
+            assertEquals(RowControl.Value(Copy.playerSavesSet), rowControl(row, model))
+            assertEquals(Effect.ChoosePlayerSave(setting.playerId), reduce(model.onSetting(row), Meaning.Activate).second)
+            val fix = when (setting.playerId) {
+                "duckstation" -> Row.HostedSaves(setting.playerId)
+                "armsx2" -> Row.SaveSync(setting.playerId)
+                else -> Row.PlayerSetup(setting.playerId)
+            }
+            assertEquals(Copy.notSyncing, rowText(fix, model).value)
+            assertEquals(RowControl.Value(Copy.notSyncing, attention = true), rowControl(fix, model))
+        }
+    }
+
+    @Test
+    fun hostedCardsInUseMakeTheUnchosenDataFolderOptional() {
+        val setting = PlayerSaveSetting("duckstation", "DuckStation", false, hostedTitle = "Cards", hostedInUse = true)
+        val model = PickerModel(count = 1, rowsPerPage = 1, playerSaves = listOf(setting))
+        assertEquals(Copy.playerSavesUnset, rowText(Row.PlayerSave(setting.playerId), model).value)
+        assertEquals(RowControl.Value(Copy.playerSavesUnset), rowControl(Row.PlayerSave(setting.playerId), model))
+        assertEquals(Copy.hostedSavesSet, rowText(Row.HostedSaves(setting.playerId), model).value)
     }
 
     @Test

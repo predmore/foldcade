@@ -12,6 +12,31 @@ import org.junit.Test
 
 class SaveNoticeTest {
     @Test
+    fun ledgerNoticeCleanupRemovesOnlyNoticesItPosted() {
+        val ledger = WaitingSaveNotices(patienceMillis = 100)
+        val returns = ReturnSyncNotices(patienceMillis = 100)
+        returns.returned(game.backendId, game, SyncOutcome.Queued, 0)
+        val returning = returns.expire(100).single()
+        // The ledger scan has not seen a return waiting behind the sync's ROM lock yet.
+        ledger.update(emptyList(), 100)
+        assertTrue(ledger.settled(listOf(returning)).isEmpty())
+
+        ledger.update(listOf(game), 100)
+        val owned = ledger.update(listOf(game), 200).single()
+        val anotherReturn = saveNotice(game.copy(remoteKey = "other"), SyncOutcome.Queued, 200)!!
+        ledger.update(emptyList(), 300)
+        assertEquals(listOf(owned), ledger.settled(listOf(owned, anotherReturn)))
+
+        // A hand-back can replace the same id, even with equal text and time.
+        ledger.update(listOf(game), 400)
+        val replaced = ledger.update(listOf(game), 500).single()
+        val replacement = saveNotice(game, SyncOutcome.Queued, 500)!!
+        assertEquals(replaced, replacement)
+        ledger.update(emptyList(), 600)
+        assertTrue(ledger.settled(listOf(replacement)).isEmpty())
+    }
+
+    @Test
     fun setupNoticesStayDismissedUntilThatPlayersNextLaunchAndDisappearWhenFixed() {
         val notices = SaveSetupNotices()
         notices.update(mapOf("armsx2" to "ARMSX2", "melonds" to "melonDS"))

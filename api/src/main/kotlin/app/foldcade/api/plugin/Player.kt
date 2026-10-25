@@ -50,6 +50,14 @@ interface Player {
     fun saveDeclarations(game: Game): List<SaveDeclaration>
 
     /**
+     * Whether this player supports save sync, even when it has no reachable slot
+     * for [game] yet. Folder holders support it before setup. A player with no
+     * save support leaves this false. Added in API minor 15.
+     */
+    fun supportsSaveSync(game: Game): Boolean =
+        this is SaveFolderHolder || this is HostedSaveFolder || saveDeclarations(game).isNotEmpty()
+
+    /**
      * The file this player keeps [slot] in, inside a folder [SaveDeclaration.locationUri],
      * when the game file it opens is named [romFileName]. The shell reads and writes
      * that one file there and nothing else. Null means the player does not keep the
