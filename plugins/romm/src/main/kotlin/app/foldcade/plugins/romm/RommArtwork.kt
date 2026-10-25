@@ -4,12 +4,13 @@ import app.foldcade.api.plugin.PluginException
 import app.foldcade.api.plugin.credentialFreeArtworkUri
 import app.foldcade.artwork.ArtBytes
 import app.foldcade.romm.sameOrigin
+import app.foldcade.romm.RommClient
 import java.nio.file.Path
 import java.net.URI
 
 /**
  * Artwork bytes from the configured RomM servers, for the shell's image loader.
- * No token is sent: an artwork address is loaded as that string alone.
+ * Public artwork stays credential-free. Private save screenshots use the instance token.
  * [app.foldcade.romm.RommClient.artwork] refuses an address on another origin,
  * so this reaches no other host. Cached bytes survive process death and are
  * bounded and scoped to the server. Origin checks also apply to cache hits.
@@ -21,7 +22,7 @@ class RommArtwork(
         var users = 0
         var retired = false
     }
-    private val held = mutableMapOf<Path, Held>()
+    private val held = mutableMapOf<Pair<Path, Boolean>, Held>()
 
     /**
      * Null when RomM is not set up. A failed load is a
@@ -38,7 +39,7 @@ class RommArtwork(
             .filter { withinBasePath(it.origin, uri) }
             .maxByOrNull { URI(it.origin).path.orEmpty().length }
             ?: throw PluginException.Unavailable("Artwork must be a credential-free address on the RomM origin")
-        val client = client(current, configured)
+        val client = client(current, configured, RommClient.isSaveScreenshotUri(current.origin, uri))
         try {
             return translate { client.images.load(uri) }
         } finally {
@@ -50,14 +51,14 @@ class RommArtwork(
     }
 
     /**
-     * One client per server. Removing a server retires its client after active loads drain.
+     * Separate public and authenticated clients per server. Removing a server retires its client after active loads drain.
      */
-    private fun client(current: RommWiring, configured: List<RommWiring>): Held = synchronized(this) {
+    private fun client(current: RommWiring, configured: List<RommWiring>, authenticated: Boolean): Held = synchronized(this) {
         val roots = configured.map { it.romRoot }.toSet()
-        val removed = held.keys.filter { it !in roots }
+        val removed = held.keys.filter { it.first !in roots }
         removed.forEach { root -> held.remove(root)?.let(::retire) }
-        held.getOrPut(current.romRoot) {
-            val ops = current.open(current.origin) { null }
+        held.getOrPut(current.romRoot to authenticated) {
+            val ops = current.open(current.origin) { if (authenticated) current.tokenSource.accessToken() else null }
             Held(ops, ArtBytes(current.artRoot.toFile(), { ops.artwork(it) }))
         }.also { it.users++ }
     }

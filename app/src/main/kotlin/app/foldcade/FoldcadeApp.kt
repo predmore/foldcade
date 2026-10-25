@@ -132,6 +132,8 @@ class FoldcadeApp : Application() {
 
     /** One save flow at a time: a launch's placement, or a return's read-back. */
     internal val saveFlow = Mutex()
+    internal var savePickerSerial = 0L
+    internal var savePickerRequest: SavePickerRequest? = null
 
     /** A return's save notice, held until the library says how its sync ended. Main thread only. */
     private val returnNotices = ReturnSyncNotices()
@@ -633,6 +635,7 @@ class FoldcadeApp : Application() {
             onBrightness = { position -> brightness.write(brightnessLevel(position)) },
             onSameGames = { groups -> saveArtChoices(artChoices.adopt(groups)) },
             appVersion = installedVersion(),
+            onSavePickerClosed = { onSaveConflicts?.invoke() },
             onSaveHealthChanged = { players ->
                 saveSetupNotices.update(players)
                 publishNotices()

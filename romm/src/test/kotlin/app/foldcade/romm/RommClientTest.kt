@@ -1582,6 +1582,77 @@ class RommClientTest {
         }
 
     @Test
+    fun listsDevicesWithAuthenticatedGetAndAcceptsNullableNamesAndClients() {
+        server.route("GET", "/api/devices") { exchange, _ -> json(exchange, 200, """[
+            {"id":"thor","name":"AYN AYN Thor","client":"argosy","client_version":"1.0"},
+            {"id":"deck","name":"Steam Deck","client":"foldcade"},
+            {"id":"unknown","name":null,"client":null}
+        ]""") }
+        val devices = runClient(token = { "rmm_test" }) { it.devices() }
+        assertEquals(listOf(
+            RommDevice("thor", "AYN AYN Thor", "argosy"),
+            RommDevice("deck", "Steam Deck", "foldcade"),
+            RommDevice("unknown", null, null),
+        ), devices)
+        assertEquals("Bearer rmm_test", header(server.recorded.single(), "Authorization"))
+    }
+
+    @Test
+    fun listsThe541SchemaAcrossAllSlotsWithNullableFieldsAndScreenshotMetadata() {
+        server.route("GET", "/api/saves") { exchange, _ -> json(exchange, 200, """[
+            {"id":17,"rom_id":3,"file_name":"save.zip","slot":"autosave","emulator":"azahar",
+             "content_hash":"abc","updated_at":"2026-10-25T09:10:00+00:00","file_size_bytes":5736,
+             "origin_device_id":"deck","device_syncs":[{"device_id":"deck","device_name":"Steam Deck","is_current":true}],
+             "screenshot":{"id":9,"download_path":"/api/screenshots/9/content"}},
+            {"id":18,"rom_id":3,"file_name":"archive.sav","slot":null,"emulator":null,"content_hash":null,
+             "updated_at":"2026-10-24T09:10:00Z","file_size_bytes":12,"origin_device_id":null,"screenshot":null}
+        ]""") }
+        val saves = runClient(token = { "rmm_test" }) { it.listSaves(3, "device-1") }
+        assertEquals(listOf("autosave", null), saves.map { it.slot })
+        assertEquals("Steam Deck", saves.first().deviceSyncs.single().deviceName)
+        assertEquals(9L, saves.first().screenshotId)
+        assertNull(saves.last().contentHash)
+        assertTrue(server.recorded.single().query!!.contains("rom_id=3"))
+        assertTrue(server.recorded.single().query!!.contains("device_id=device-1"))
+        assertEquals("Bearer rmm_test", header(server.recorded.single(), "Authorization"))
+    }
+
+    @Test
+    fun onlyAnExplicitUploadOverwritesAndNeitherUploadRequestsAutocleanup() {
+        server.route("POST", "/api/saves") { exchange, _ -> json(exchange, 200, """{"id":19}""") }
+        runClient(token = { "rmm_test" }) { client ->
+            client.uploadSave(3, "save.sav", "sav", "melonds", "device-1", null, md5Hex(byteArrayOf(1)), byteArrayOf(1))
+            client.uploadSave(3, "save.sav", "sav", "melonds", "device-1", null, md5Hex(byteArrayOf(2)), byteArrayOf(2), overwrite = true)
+        }
+        assertTrue(server.recorded[0].query!!.contains("overwrite=false"))
+        assertTrue(server.recorded[1].query!!.contains("overwrite=true"))
+        assertTrue(server.recorded.all { it.method == "POST" && !it.query!!.contains("autocleanup") })
+    }
+
+    @Test
+    fun selectionDownloadsVerifySizeAndDoNotMarkTheSourceSyncedOrOpenASession() {
+        server.route("GET", "/api/saves/17/content") { exchange, _ -> bytes(exchange, 200, "choice".toByteArray()) }
+        val destination = dir.resolve("selected.sav")
+        Files.writeString(destination, "current")
+        runClient(token = { "rmm_test" }) { client ->
+            val failed = runCatching { client.downloadSave(17, "device-1", null, destination, md5Hex("choice".toByteArray()), 999) }.exceptionOrNull()
+            assertTrue(failed is RommResponseException)
+            assertEquals("current", Files.readString(destination))
+            client.downloadSave(17, "device-1", null, destination, md5Hex("choice".toByteArray()), 6)
+        }
+        assertEquals("choice", Files.readString(destination))
+        assertTrue(server.recorded.all { it.method == "GET" && it.query!!.contains("optimistic=false") && !it.query!!.contains("session_id") })
+    }
+
+    @Test
+    fun saveScreenshotsUseTheProtectedContentPathAndReceiveTheToken() {
+        val png = byteArrayOf(0x89.toByte(), 0x50, 0x4E, 0x47)
+        server.route("GET", "/api/screenshots/9/content") { exchange, _ -> bytes(exchange, 200, png) }
+        runClient(token = { "rmm_test" }) { client -> assertArrayEquals(png, client.artwork("${server.origin}/api/screenshots/9/content")) }
+        assertEquals("Bearer rmm_test", header(server.recorded.single(), "Authorization"))
+    }
+
+    @Test
     fun artworkLoadsFromTheOriginWithoutTheToken() {
         val png = byteArrayOf(0x89.toByte(), 0x50, 0x4E, 0x47)
         server.route("GET", "/assets/romm/resources/roms/1/7/cover/big.png") { exchange, _ ->

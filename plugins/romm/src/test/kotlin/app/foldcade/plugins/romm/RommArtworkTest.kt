@@ -16,6 +16,35 @@ import java.nio.file.Files
 class RommArtworkTest {
     private val cache = Files.createTempDirectory("romm-artwork")
 
+    @Test fun privateSaveScreenshotsUseTheRealClientAndTheirInstancesToken() = runBlocking {
+        val server = com.sun.net.httpserver.HttpServer.create(java.net.InetSocketAddress("127.0.0.1", 0), 0)
+        val authorizations = java.util.Collections.synchronizedList(mutableListOf<Pair<String, String?>>())
+        val image = byteArrayOf(0x89.toByte(), 0x50, 0x4e, 0x47)
+        server.createContext("/") { exchange ->
+            authorizations += exchange.requestURI.path to exchange.requestHeaders.getFirst("Authorization")
+            exchange.sendResponseHeaders(200, image.size.toLong())
+            exchange.responseBody.use { it.write(image) }
+        }
+        server.start()
+        try {
+            val origin = "http://127.0.0.1:${server.address.port}"
+            var token = "rmm_first"
+            val wiring = RommWiring(origin, RommTokenSource { token }, cache, cache.resolve("data"))
+            RommArtwork { listOf(wiring) }.use { artwork ->
+                assertArrayEquals(image, artwork.load("$origin/api/screenshots/9/content"))
+                token = "rmm_rotated"
+                assertArrayEquals(image, artwork.load("$origin/api/screenshots/10/content"))
+                assertArrayEquals(image, artwork.load("$origin/assets/cover.png"))
+                assertTrue(runCatching { artwork.load("https://other.example/api/screenshots/9/content") }.exceptionOrNull() is PluginException.Unavailable)
+            }
+            assertEquals(listOf(
+                "/api/screenshots/9/content" to "Bearer rmm_first",
+                "/api/screenshots/10/content" to "Bearer rmm_rotated",
+                "/assets/cover.png" to null,
+            ), authorizations)
+        } finally { server.stop(0) }
+    }
+
     @Test
     fun twoServersKeepSeparateClientsAndCachesWhenTheDefaultIsRemoved() = runBlocking {
         val opened = mutableListOf<String>()

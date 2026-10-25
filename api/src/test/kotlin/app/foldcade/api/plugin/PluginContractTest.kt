@@ -121,8 +121,11 @@ class PluginContractTest {
         assertTrue(aliases.isDefault)
         assertTrue(IdlePlatform().aliases.isEmpty())
         assertEquals(1, PLUGIN_API_VERSION)
-        assertEquals(15, PLUGIN_API_MINOR)
+        assertEquals(16, PLUGIN_API_MINOR)
         assertTrue(LibraryBackend::class.java.methods.single { it.name == "unsyncedSaves" }.isDefault)
+        for (name in listOf("serverSaves", "serverSaveOrigins", "syncServerSaves", "playServerSave", "copyServerSave")) {
+            assertTrue(LibraryBackend::class.java.methods.single { it.name == name }.isDefault)
+        }
         val bind = PluginEntry::class.java.methods.single { it.name == "bind" }
         assertTrue(bind.isDefault)
         val saveFileName = Player::class.java.methods.single { it.name == "saveFileName" }
@@ -264,6 +267,12 @@ class PluginContractTest {
                 "removeLocal",
                 "saves",
                 "unsyncedSaves",
+                "serverSaves",
+                "serverSaveBackups",
+                "serverSaveOrigins",
+                "syncServerSaves",
+                "playServerSave",
+                "copyServerSave",
                 "prepareLaunch",
                 "prepareSaves",
                 "fileName",

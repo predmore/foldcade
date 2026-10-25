@@ -39,6 +39,7 @@ class ThemeStyle(
     val settings = ThemeSettings(reader)
     val find = ThemeFind(reader)
     val picker = ThemePicker(reader)
+    val saves = ThemeSaves(reader)
     val play = ThemePlay(reader)
     val collections = ThemeCollections(reader)
     val sound = ThemeSound(reader)
@@ -693,4 +694,12 @@ class ThemeCollections internal constructor(reader: ThemeStyleReader) {
 
 class ThemeSound internal constructor(reader: ThemeStyleReader) {
     val volume = reader.fraction("sound", "volume", .4f)
+}
+
+/** The two-screen save chooser. Its list and header share one row height. */
+class ThemeSaves internal constructor(reader: ThemeStyleReader) {
+    val rowHeightDp = reader.number("saves", "rowHeightDp", 52f, TokenDomain.Positive)
+    val edgeDp = reader.number("saves", "edgeDp", 24f)
+    val gapDp = reader.number("saves", "gapDp", 8f)
+    val screenshotShare = reader.number("saves", "screenshotShare", .5f, TokenDomain.Share)
 }

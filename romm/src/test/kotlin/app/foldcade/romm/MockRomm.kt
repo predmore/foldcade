@@ -83,6 +83,7 @@ internal class MockRomm : AutoCloseable {
             Regex("^/api/devices/[^/]+$"),
             Regex("^/api/sync/negotiate$"),
             Regex("^/api/saves$"),
+            Regex("^/api/screenshots/\\d+/content$"),
             Regex("^/api/saves/\\d+/content$"),
             Regex("^/api/saves/\\d+/downloaded$"),
             Regex("^/api/sync/sessions/\\d+/complete$"),

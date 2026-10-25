@@ -188,6 +188,9 @@ data class RegisteredDevice(
     val clientVersion: String,
 )
 
+/** Origin labels from RomM 5.4.1's `GET /api/devices`. */
+data class RommDevice(val id: String, val name: String?, val client: String?)
+
 /** A save file this device holds. [slot] null is an archive and is not paired. */
 data class LocalSave(
     val romId: Long,
@@ -256,3 +259,20 @@ data class SaveSyncReport(
 
 data class CompletedSync(val sessionId: Long, val status: String?)
 
+
+/** RomM 5.4.1 SaveSchema. Slot, emulator, content hash and origin can all be null. */
+data class RommSave(
+    val id: Long,
+    val romId: Long,
+    val fileName: String,
+    val slot: String?,
+    val emulator: String?,
+    val contentHash: String?,
+    val updatedAt: Instant,
+    val sizeBytes: Long,
+    val originDeviceId: String?,
+    val deviceSyncs: List<SaveDeviceSync>,
+    val screenshotId: Long?,
+)
+
+data class SaveDeviceSync(val deviceId: String, val deviceName: String?)

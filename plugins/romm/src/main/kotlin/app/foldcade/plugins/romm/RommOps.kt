@@ -79,6 +79,16 @@ internal interface RommOps : AutoCloseable {
 
     fun verificationUrl(challenge: DeviceAuthChallenge): String
 
+    suspend fun listSaves(romId: Long, deviceId: String?): List<app.foldcade.romm.RommSave>
+
+    suspend fun devices(): List<app.foldcade.romm.RommDevice>
+
+    suspend fun downloadSave(save: app.foldcade.romm.RommSave, deviceId: String, destination: Path)
+
+    suspend fun uploadArchive(save: app.foldcade.romm.RommSave, deviceId: String, hash: String, bytes: ByteArray): Long
+
+    suspend fun uploadSave(romId: Long, fileName: String, slot: String, emulator: String?, deviceId: String, hash: String, bytes: ByteArray): Long
+
     suspend fun artwork(uri: String): ByteArray
 }
 
@@ -140,6 +150,22 @@ internal class ClientRommOps(private val client: RommClient) : RommOps {
     override suspend fun pollDeviceToken(deviceCode: String) = client.pollDeviceToken(deviceCode)
 
     override fun verificationUrl(challenge: DeviceAuthChallenge) = client.verificationUrl(challenge)
+
+    override suspend fun listSaves(romId: Long, deviceId: String?) = client.listSaves(romId, deviceId)
+
+    override suspend fun devices() = client.devices()
+
+    override suspend fun downloadSave(save: app.foldcade.romm.RommSave, deviceId: String, destination: Path) =
+        client.downloadSave(save.id, deviceId, null, destination, save.contentHash, save.sizeBytes)
+
+    override suspend fun uploadArchive(save: app.foldcade.romm.RommSave, deviceId: String, hash: String, bytes: ByteArray): Long {
+        val extension = if (save.fileName.endsWith(".zip", ignoreCase = true)) ".zip" else ".sav"
+        val name = "foldcade-kept-${java.util.UUID.randomUUID()}$extension"
+        return client.uploadSave(save.romId, name, null, save.emulator, deviceId, null, hash, bytes)
+    }
+
+    override suspend fun uploadSave(romId: Long, fileName: String, slot: String, emulator: String?, deviceId: String, hash: String, bytes: ByteArray) =
+        client.uploadSave(romId, fileName, slot, emulator, deviceId, null, hash, bytes, overwrite = true)
 
     override suspend fun artwork(uri: String) = client.artwork(uri)
 

@@ -111,6 +111,14 @@ Other emulators and sources manage their own saves. Save-state sync is not imple
 
 Offline changes stay on the device for a later sync. When copies conflict, Foldcade asks which to play and keeps both.
 
+## Choose a save
+
+On a game with a server copy, press **Y › Saves**. The bottom screen lists every RomM save, newest first, across slots, emulators and devices. **Playing** marks the save Foldcade holds for the emulator. The top screen shows its time, source, slot, size and screenshot when one is available. The status row opens setup or syncs waiting progress.
+
+Press **A** on a save, then confirm **Play this save** to start the game right away. Foldcade syncs your current progress, verifies the chosen save, downloads the game if needed, and launches it fresh. Choosing an older save uploads the same bytes as a new head in Foldcade's slot. Connect to RomM before choosing. A save from another emulator may not load; the confirmation warns you. It also warns when an open game must restart. Your current save stays on RomM. A server-only game needs no download for melonDS, RetroArch or DuckStation save placement. Azahar, ARMSX2 and aPS3e need the ROM contents to find their saves; download the game first.
+
+Press **Y** on a save for **Copy to…**, choose another slot, and confirm. This can copy progress back to an Argosy slot. Copying into Foldcade's own slot makes an open game restart the next time you play; the confirmation warns you. The source and the save already in that slot stay on RomM. Foldcade’s kept copies read **Backup**. There is no delete action. If a connection drops, reconnect before trying again; Foldcade keeps both copies and reconciles unfinished choices.
+
 ## Firmware
 
 Firmware you add to a platform in RomM, such as a PlayStation BIOS, goes to the emulators that ask for it: Foldcade downloads each file, checks it against RomM's size and checksum, and writes it into the emulator's folder before the game starts. A zip is checked the same way, and the files inside it are offered too, under the zip's name. DuckStation takes any PlayStation BIOS into its `bios` folder, and does not take files out of a zip. ARMSX2 takes one PlayStation 2 BIOS from a file or from a zip of dumps. aPS3e takes one PlayStation 3 `PS3UPDAT.PUP` and stages it at `aPS3e › firmware`; aPS3e installs that file itself, and Foldcade does not write it again after aPS3e has. Foldcade replaces a file there only when Foldcade put it there. A new copy in RomM replaces the old one, and a BIOS you put there yourself stays. The checked copy, zip and unpacked files, is kept for offline launches. The emulator needs its save folder chosen in Foldcade, since that is where the firmware goes.

@@ -135,12 +135,14 @@ class RommClient(
 
     /**
      * One artwork image, as bytes. [uri] must be on [origin]: any other address
-     * is refused before a request is made. No bearer is sent, because an artwork
-     * address is loaded as that string alone. A body over [maxBytes] is refused.
+     * is refused before a request is made. Only the protected screenshot-content
+     * endpoint receives a bearer; ordinary cover art remains public. A body over [maxBytes] is refused.
      */
     suspend fun artwork(uri: String, maxBytes: Int = ARTWORK_MAX_BYTES): ByteArray {
         if (!sameOrigin(origin, uri)) throw RommResponseException("artwork is not on the RomM origin")
-        val raw = exchange(URI.create(uri), "GET", authenticated = false)
+        // Save screenshots are private assets. Only this exact same-origin endpoint gets a bearer.
+        val screenshot = isSaveScreenshotUri(origin, uri)
+        val raw = exchange(URI.create(uri), "GET", authenticated = screenshot)
         raw.require(200)
         if (raw.body.size > maxBytes) throw RommResponseException("artwork is over $maxBytes bytes")
         return raw.body
@@ -577,6 +579,21 @@ class RommClient(
         return parseNegotiate(raw.body, info.version)
     }
 
+    /** `GET /api/devices`. Needs `devices.read`. */
+    suspend fun devices(): List<RommDevice> {
+        val raw = exchange(api("/devices"), "GET", authenticated = true)
+        raw.require(200)
+        return parseDevices(raw.body)
+    }
+
+    suspend fun listSaves(romId: Long, deviceId: String? = null): List<RommSave> {
+        val params = mutableListOf("rom_id" to romId.toString())
+        if (deviceId != null) params += "device_id" to deviceId
+        val raw = exchange(api("/saves", params), "GET", authenticated = true)
+        raw.require(200)
+        return parseSaves(raw.body)
+    }
+
     suspend fun uploadSave(
         romId: Long,
         fileName: String,
@@ -586,12 +603,13 @@ class RommClient(
         sessionId: Long?,
         contentHash: String,
         bytes: ByteArray,
+        overwrite: Boolean = false,
     ): Long {
         val params = mutableListOf(
             "rom_id" to romId.toString(),
             "device_id" to deviceId,
             "content_hash" to contentHash,
-            "overwrite" to "false",
+            "overwrite" to overwrite.toString(),
         )
         if (slot != null) params += "slot" to slot
         if (emulator != null) params += "emulator" to emulator
@@ -618,22 +636,24 @@ class RommClient(
     suspend fun downloadSave(
         saveId: Long,
         deviceId: String,
-        sessionId: Long,
+        sessionId: Long?,
         destination: Path,
         expectedHash: String? = null,
+        expectedSize: Long? = null,
     ) {
         val uri = api(
             "/saves/$saveId/content",
-            listOf(
+            listOfNotNull(
                 "device_id" to deviceId,
-                "session_id" to sessionId.toString(),
+                sessionId?.let { "session_id" to it.toString() },
                 "optimistic" to "false",
             ),
         )
         val partial = partialOf(destination)
         streamGet(uri, partial, range = null)
         withContext(Dispatchers.IO) {
-            if (expectedHash != null && rommSaveHash(partial) != expectedHash.lowercase()) {
+            if ((expectedSize != null && Files.size(partial) != expectedSize) ||
+                (expectedHash != null && rommSaveHash(partial) != expectedHash.lowercase())) {
                 Files.deleteIfExists(partial)
                 throw RommResponseException("The save RomM sent does not match its hash")
             }
@@ -877,7 +897,7 @@ class RommClient(
             val remoteSize = withContext(Dispatchers.IO) { Files.size(path) }
             val remoteWhen = op.serverUpdatedAt?.let { text ->
                 try {
-                    Instant.parse(text).toEpochMilli()
+                    parseRommTime(text).toEpochMilli()
                 } catch (_: Exception) {
                     null
                 }
@@ -1179,6 +1199,14 @@ class RommClient(
     }
 
     companion object {
+        /** Only this exact, same-origin asset endpoint may receive an image bearer. */
+        fun isSaveScreenshotUri(origin: String, uri: String): Boolean {
+            if (!sameOrigin(origin, uri)) return false
+            val base = try { URI.create(normalizeOrigin(origin)).rawPath.orEmpty() } catch (_: IllegalArgumentException) { return false }
+            val path = URI.create(uri).rawPath
+            return path.startsWith("$base/") && path.removePrefix(base).matches(Regex("/api/screenshots/[1-9][0-9]*/content"))
+        }
+
         /** A cover is well under this. A larger body is not an image the hero needs. */
         const val ARTWORK_MAX_BYTES: Int = 8 * 1024 * 1024
 

@@ -91,6 +91,39 @@ interface LibraryBackend {
      */
     suspend fun unsyncedSaves(): Set<String> = emptySet()
 
+    /** Every server version for this game, newest first. Added in API minor 16. */
+    suspend fun serverSaves(game: Game, player: Player? = null): List<ServerSave> = emptyList()
+
+    /** IDs of this library's own backups in its most recent [serverSaves] listing. No I/O. */
+    suspend fun serverSaveBackups(game: Game): Set<String> = emptySet()
+
+    /** Optional origins by save ID from the latest [serverSaves] listing. No I/O. */
+    suspend fun serverSaveOrigins(game: Game): Map<String, ServerSaveOrigin> = emptyMap()
+
+    /** Sync held bytes now, even with no installed player. Refuse offline or incomplete syncs. */
+    suspend fun syncServerSaves(game: Game, player: Player? = null): SyncResult =
+        throw PluginException.Unavailable("Server save sync is not supported")
+
+    /**
+     * Keep current progress on the server, verify [saveId], and make it the player's slot head.
+     * Neither version is deleted. Return snapshots to place through the normal player-save flow.
+     * The host captures current player bytes first. [beforeCommit] persists a fresh-load marker
+     * after all checks, under the library's save lock, immediately before promotion. A definitive
+     * refusal is [PluginException.SaveChoiceRefused]; an uncertain commit must not use that failure.
+     * Incomplete syncs refuse the choice. Added in API minor 16.
+     */
+    suspend fun playServerSave(game: Game, player: Player, saveId: String, beforeCommit: () -> Unit = {}): List<PlacedSave> =
+        throw PluginException.Unavailable("Choosing a server save is not supported")
+
+    /**
+     * Copy [saveId] into an existing slot, keeping its previous versions. The host captures
+     * [player]'s changes first. If the destination belongs to that player, return snapshots
+     * for placement and a fresh start, as [playServerSave] does. Otherwise return no snapshots.
+     */
+    suspend fun copyServerSave(
+        game: Game, saveId: String, toSlot: String, toEmulator: String?, player: Player? = null, beforeCommit: () -> Unit = {},
+    ): List<PlacedSave> = throw PluginException.Unavailable("Copying a server save is not supported")
+
     /**
      * Negotiate this game's saves before the shell places them and starts [player].
      * Called after [ensureLocal]. [Placement.savesToPlace] is what the shell writes

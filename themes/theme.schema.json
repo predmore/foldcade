@@ -1866,6 +1866,36 @@
                         }
                     }
                 },
+                "saves": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                        "rowHeightDp": {
+                            "type": "number",
+                            "exclusiveMinimum": 0.0,
+                            "default": 52.0,
+                            "description": "dp"
+                        },
+                        "edgeDp": {
+                            "type": "number",
+                            "minimum": 0.0,
+                            "default": 24.0,
+                            "description": "dp"
+                        },
+                        "gapDp": {
+                            "type": "number",
+                            "minimum": 0.0,
+                            "default": 8.0,
+                            "description": "dp"
+                        },
+                        "screenshotShare": {
+                            "type": "number",
+                            "exclusiveMinimum": 0.0,
+                            "maximum": 1.0,
+                            "default": 0.5
+                        }
+                    }
+                },
                 "play": {
                     "type": "object",
                     "additionalProperties": false,
