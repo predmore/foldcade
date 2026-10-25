@@ -654,6 +654,13 @@ class ContractTest {
         )
         assertEquals(Effect.DialogChoice(DialogButton.NotNow, DialogKind.SaveFolder), saveChoice)
         assertNull(started.dialog)
+
+        // A player that cannot start without its folder: Continue is the default, and Not now promises no game.
+        val needed = saveFolderDialog(HostScreen.Top, playerName = "aPS3e", opensThere = true, needed = true)
+        assertEquals(DialogButton.ContinueGrant, needed.buttons[needed.index])
+        assertEquals(DialogButton.NotNow, needed.buttons[needed.safeIndex])
+        assertTrue(needed.body.startsWith(Copy.saveFolderNeededBody))
+        assertFalse(needed.body.contains("starts the game"))
     }
 
     @Test

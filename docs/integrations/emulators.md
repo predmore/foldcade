@@ -129,7 +129,7 @@ Put `PS3UPDAT.PUP` in RomM's firmware for the PlayStation 3. Foldcade checks it 
 
 Once aPS3e's folder is picked, **Foldcade Settings › Emulators** shows **aPS3e setup: Set up** while any of those is still true. Select it for the same steps.
 
-The first time you play a RomM game with aPS3e, Foldcade asks for aPS3e's folder. The picker opens at aPS3e's own folder, so tap **Use this folder** and **Allow**. With the premium build, open **aPS3e Premium** in the picker's list first: the picker opens at the free build's folder. You can change the folder later in **Foldcade Settings › Emulators › aPS3e**. A folder you pick has to hold `config`.
+The first time you play a game with aPS3e, Foldcade asks for aPS3e's folder. aPS3e can't start a game until it has one, so **Not now** there only closes, and the next start asks again. The picker opens at aPS3e's own folder, so tap **Use this folder** and **Allow**. With the premium build, open **aPS3e Premium** in the picker's list first: the picker opens at the free build's folder. You can change the folder later in **Foldcade Settings › Emulators › aPS3e**. A folder you pick has to hold `config`.
 
 ### Saves
 

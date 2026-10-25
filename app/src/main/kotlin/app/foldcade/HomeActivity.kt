@@ -940,7 +940,18 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
                 LaunchBlock.CloseFirst -> foldcade.shell.present(closeBothPanelDialog(hostScreen()))
                 LaunchBlock.MissingPlayer -> presentMissing(decision.playerName, generation)
                 LaunchBlock.NoLocalFile -> foldcade.shell.present(noFileDialog(hostScreen()))
-                LaunchBlock.SaveFolder -> foldcade.shell.present(saveFolderDialog(hostScreen()))
+                LaunchBlock.SaveFolder -> foldcade.shell.present(
+                    if (needsItsFolder(player)) {
+                        saveFolderDialog(
+                            hostScreen(),
+                            playerName = player.displayName,
+                            opensThere = (player as? SaveFolderHolder)?.suggestedSaveFolder != null,
+                            needed = true,
+                        )
+                    } else {
+                        saveFolderDialog(hostScreen())
+                    },
+                )
                 LaunchBlock.NoSharedPath -> foldcade.shell.present(noSharedPathDialog(decision.playerName, hostScreen()))
             }
             is PlayerLaunch.Ready -> {
@@ -1384,7 +1395,10 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
         }
     }
 
-    /** Holds [pending] and asks for its player's save folder. Continue opens the picker, Not now starts the game. */
+    /**
+     * Holds [pending] and asks for its player's save folder. Continue opens the picker,
+     * Not now starts the game, or only closes for a player that needs its folder to start.
+     */
     private fun askSaveFolder(pending: PendingBackendLaunch) {
         pendingBackend = pending
         val player = foldcade.plugins.player(pending.playerId)
@@ -1394,8 +1408,20 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
                 syncs = true,
                 playerName = player?.displayName,
                 opensThere = (player as? SaveFolderHolder)?.suggestedSaveFolder != null,
+                needed = needsItsFolder(player),
             ),
         )
+    }
+
+    /**
+     * True when [player] cannot start a game until it has its folder: it gives setup
+     * steps with none picked, see [Player.setupSteps]. Its folder ask is not skipped
+     * for good, so the next start asks again.
+     */
+    private fun needsItsFolder(player: Player?): Boolean = player is SaveFolderHolder && try {
+        player.setupSteps(null) != null
+    } catch (_: Exception) {
+        false
     }
 
     /**
@@ -2573,6 +2599,10 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
     private fun skipSaveFolderAndLaunch() {
         pendingBackend?.let { pending ->
             pendingBackend = null
+            if (needsItsFolder(foldcade.plugins.player(pending.playerId))) {
+                cancelLaunches()
+                return
+            }
             foldcade.plugins.player(pending.playerId)?.let { foldcade.store.setSaveFolderPromptSkipped(it.saveFolderId()) }
             launchScreen = pending.screen
             launchBackendGame(pending.title, pending.platformId, pending.route, pending.fresh)
@@ -2580,6 +2610,10 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
         }
         val index = pendingLaunch ?: return
         val player = playerForPendingLaunch() ?: return
+        if (needsItsFolder(player)) {
+            cancelLaunches()
+            return
+        }
         foldcade.store.setSaveFolderPromptSkipped(player.saveFolderId())
         launchGame(index)
     }
@@ -2641,11 +2675,6 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
     }
 
     /**
-     * What [playerId] needs once before a game can start. [steps] is used when the
-     * launch just read them; Settings uses the row's copy. Open starts the player.
-     * Not now only closes.
-     */
-    /**
      * What [player] needs once before it starts, read off the main thread from the
      * folder the user picked for it, or asked with none when none is picked.
      * Null for a player that keeps no folder.
@@ -2656,6 +2685,11 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
         return withContext(Dispatchers.IO) { foldcade.playerSaves.setupSteps(player, folder) }
     }
 
+    /**
+     * What [playerId] needs once before a game can start. [steps] is used when the
+     * launch just read them; Settings uses the row's copy. Open starts the player.
+     * Not now only closes.
+     */
     private fun showPlayerSetup(playerId: String, steps: String? = null) {
         val player = foldcade.plugins.player(playerId) ?: return
         val body = steps ?: foldcade.shell.model.playerSaves.firstOrNull { it.playerId == playerId }?.setupSteps ?: return

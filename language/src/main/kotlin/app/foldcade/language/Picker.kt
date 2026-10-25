@@ -309,16 +309,21 @@ fun saveFolderDialog(
     wrong: Pair<String, Collection<String>>? = null,
     playerName: String? = null,
     opensThere: Boolean = false,
+    needed: Boolean = false,
 ): DialogState = DialogState(
     kind = DialogKind.SaveFolder,
     title = playerName?.let { "$it ${Copy.saveFolderTitle.lowercase()}" } ?: Copy.saveFolderTitle,
     body = wrong?.let { (player, markers) -> wrongSaveFolderBody(player, markers) }
         ?: listOfNotNull(
-            if (syncs) Copy.saveFolderSyncBody else Copy.saveFolderBody,
+            when {
+                needed -> Copy.saveFolderNeededBody
+                syncs -> Copy.saveFolderSyncBody
+                else -> Copy.saveFolderBody
+            },
             Copy.saveFolderOpensThere.takeIf { opensThere },
         ).joinToString(" "),
     buttons = listOf(DialogButton.ContinueGrant, DialogButton.NotNow),
-    index = if (syncs) 0 else 1,
+    index = if (syncs || needed) 0 else 1,
     safeIndex = 1,
     screen = screen,
 )
