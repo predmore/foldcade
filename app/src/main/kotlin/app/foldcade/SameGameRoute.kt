@@ -7,7 +7,7 @@ import app.foldcade.api.plugin.Game
  * How one Home tile starts. [play] is the copy the player opens, and play is kept under
  * [tileId]. [saves] is the copy whose library keeps the saves, which may be another copy
  * of the same file: a game in a folder that a server also has syncs through the server.
- * [servers] are the server copies used by save actions and sync notices.
+ * [servers] are every server copy, first preferred, for when [saves] holds none yet.
  */
 internal data class GameRoute(
     val tileId: String,
@@ -19,7 +19,7 @@ internal data class GameRoute(
 /**
  * Picks the copy of a game that plays and the one that keeps its saves. A copy already on the
  * device plays before one that must download, and [pressed] plays when a library grid named
- * it. Saves go to a pressed server copy, else the server copy by [libraryRank], so every
+ * it. Saves go to a pressed server copy, else the first server copy by [libraryRank], so every
  * copy shares one save.
  */
 internal fun routeSameGame(

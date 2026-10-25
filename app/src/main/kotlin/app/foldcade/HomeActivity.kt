@@ -2099,7 +2099,7 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
                 if (!withContext(Dispatchers.Main.immediate) { foldcade.shell.deviceCodeFormCurrent(visit, revision) }) continue
                 pairedRevision = revision
                 try {
-                    foldcade.plugins.configure(instanceId, mapOf(ROMM_ORIGIN_KEY to origin), remember = saved != null)
+                    foldcade.plugins.configure(instanceId, mapOf(ROMM_ORIGIN_KEY to origin))
                     val outcome = pollRommDeviceCode(instanceId, visit, revision)
                     withContext(Dispatchers.Main.immediate) {
                         if (foldcade.shell.deviceCodeFormCurrent(visit, revision)) {
