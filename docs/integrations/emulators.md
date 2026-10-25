@@ -146,7 +146,7 @@ Skate 3 reached playable skating with these settings. They are what worked on th
 - **VRAM allocation limit:** 2048 MB.
 - A Turnip driver, installed in aPS3e from a driver file. Mr. Purple T30 worked. T23 crashed at start. The stock driver reached about 25 FPS at the start, then 8–10 FPS in PCU Tour, and ran out of memory.
 
-Skate 3 ran at about 19–27 FPS: playable, not full speed.
+Skate 3 ran at about 19–27 FPS: playable, not full speed. With these settings aPS3e also closed Skate 3 when Home paused it. A on the game's tile then starts it again, from its last save.
 
 ## Other systems
 
