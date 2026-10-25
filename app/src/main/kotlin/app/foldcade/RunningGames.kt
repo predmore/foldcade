@@ -99,16 +99,20 @@ internal fun resumable(frontDoor: String?, started: String?): Boolean = frontDoo
 
 /**
  * What a resume brought to the front, from the player's activities that resumed
- * since it was sent, oldest first. Only the player's [frontDoor] (its launcher
- * activity) in front says the game was gone, as after a swipe from Recents: the
- * resume opened the player's own menu. Any other activity is the game, whichever
- * one the player runs it in. A front door that is also where the game's start
- * went ([started]) can't tell the two apart, so it never says gone. Nothing seen
- * yet is not known.
+ * since it was sent, oldest first. A task still there comes back without the
+ * player's [frontDoor] (its launcher activity), so the front door coming forward
+ * says the game was gone, as after a swipe from Recents or a crash: the resume
+ * opened the player itself. That holds when the front door hands on to the
+ * player's own menu at once, as aPS3e's QuickStartActivity opens its
+ * MainActivity, unless the activity the game started in ([started]) came last:
+ * the player opened the game again itself. Any other activity is the game,
+ * whichever one the player runs it in. A front door that is also where the
+ * game's start went can't tell the two apart, so it never says gone. Nothing
+ * seen yet is not known.
  */
 internal fun resumeFound(resumed: List<String>, frontDoor: String?, started: String?): Boolean? {
     val last = resumed.lastOrNull() ?: return null
-    return frontDoor == null || frontDoor == started || last != frontDoor
+    return frontDoor == null || frontDoor == started || frontDoor !in resumed || last == started
 }
 
 /** How long after a resume to look at what came to the front. */
