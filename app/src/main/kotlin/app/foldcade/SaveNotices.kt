@@ -152,7 +152,7 @@ internal class SaveSetupNotices {
     fun notices(nowMillis: Long): List<FoldNotice> {
         if (players.keys.none { it !in dismissed }) return emptyList()
         if (players.size >= 2) return listOf(FoldNotice(
-            id = MERGED_NOTICE_ID, title = Copy.savesNotSyncingEmulatorsTitle(players.size), body = Copy.savesNotSyncingBody,
+            id = MERGED_NOTICE_ID, title = Copy.savesNotSyncing, body = Copy.savesNotSyncingEmulatorsBody(players.size),
             postedMillis = posted.getOrPut(MERGED_NOTICE_ID) { nowMillis }, settingsCategory = SettingsCategory.Players,
         ))
         val (playerId, name) = players.entries.single()

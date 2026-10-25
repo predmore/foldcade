@@ -8,7 +8,7 @@ import org.junit.Test
 class NoticesTest {
     @Test
     fun aMergedSaveNoticeOpensTheSameEmulatorsPageAsSettings() {
-        val notice = FoldNotice("foldcade:save-setup:emulators", Copy.savesNotSyncingEmulatorsTitle(2), Copy.savesNotSyncingBody,
+        val notice = FoldNotice("foldcade:save-setup:emulators", Copy.savesNotSyncing, Copy.savesNotSyncingEmulatorsBody(2),
             settingsCategory = SettingsCategory.Players)
         val base = model(listOf(notice)).copy(
             count = 4,

@@ -209,7 +209,7 @@ object Copy {
     const val savesDeviceOnly = "Saves stay on this device"
     const val notSyncing = "Not syncing"
     fun savesNotSyncingTitle(player: String) = "$player saves aren’t syncing"
-    fun savesNotSyncingEmulatorsTitle(count: Int) = "Saves aren’t syncing for $count emulators"
+    fun savesNotSyncingEmulatorsBody(count: Int) = "$count emulators need setup."
     const val savesNotSyncingBody = "Set up to keep them on RomM."
     fun syncSavesTitle(player: String) = "Sync $player saves?"
     fun syncSavesBody(player: String) = "Foldcade keeps $player saves on RomM. Choose $player’s save folder to start."

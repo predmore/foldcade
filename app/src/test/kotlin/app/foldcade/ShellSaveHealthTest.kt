@@ -62,7 +62,7 @@ class ShellSaveHealthTest {
         games.forEach {
             assertEquals(SaveHealth.NotSyncing(SaveIssue.NoFolder), shell.saveHealthOf(homeGameId(it.backendId, it.remoteKey)))
         }
-        assertEquals(Copy.savesNotSyncingEmulatorsTitle(2), shell.model.notices.single().title)
+        assertEquals(Copy.savesNotSyncingEmulatorsBody(2), shell.model.notices.single().body)
         assertTrue(shell.model.playerSaves.first { it.label == "RetroArch" }.installed)
 
         // An uninstall removes it from the merged notice and clears its cached tile health.
