@@ -293,7 +293,7 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
 
     override fun homeKeys(): HomeKeys = foldcade.shell.homeKeys()
 
-    override fun rowsTakeVerticalKeys(): Boolean = foldcade.shell.model.connectOpen
+    override fun rowsTakeVerticalKeys(): Boolean = foldcade.shell.model.connectOpen || foldcade.shell.model.savePicker != null
 
     override fun onMeaning(meaning: app.foldcade.language.Meaning) = onMeaningRepeated(meaning, 0)
 
@@ -388,6 +388,12 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
             is Effect.OpenNotice -> openNotice(effect.id, if (effect.onBottom) Panel.Bottom else Panel.Top)
             is Effect.DismissNotice -> foldcade.dismissNotice(effect.id)
             Effect.ClearNotices -> foldcade.clearNotices()
+            is Effect.OpenSaves -> openSaves(effect.gameId)
+            is Effect.LoadSavePicker -> loadSavePicker(effect.target)
+            is Effect.FixSavePicker -> dispatch(foldcade.shell.savePickerFix(effect.target))
+            is Effect.SyncSavePicker -> changeServerSave(effect.target, null)
+            is Effect.PlayPickedSave -> changeServerSave(effect.target, effect.saveId)
+            is Effect.CopyPickedSave -> changeServerSave(effect.target, effect.saveId, effect.destination)
             is Effect.ResolveSaveConflict -> resolveSaveConflict(effect)
             null -> Unit
         }
@@ -1340,6 +1346,9 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
     private fun resumeRunning(tileId: String, title: String, platformId: String?, startAnew: () -> Unit): Boolean {
         foldcade.pruneRunningGames()
         val running = foldcade.runningOn(tileId) ?: return false
+        // A chosen save must load even when the old game is still paused behind Home.
+        val savePlayer = platformId?.let(foldcade::playerFor)
+        if (savePlayer != null && foldcade.store.saveAwaitsLoad(savePlayer.saveFolderId())) return false
         // A player that takes its game's start again as a resume gets that, see LaunchFlag.SameStartResumes.
         val front = running.resumeStart?.let(::Intent)
             ?: packageManager.getLaunchIntentForPackage(running.packageName)?.apply { flags = RESUME_FLAGS } ?: run {
@@ -2778,6 +2787,84 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
                 withContext(Dispatchers.Main.immediate) {
                     if (libraryReturn == null && foldcade.externalPlay.sessionId == null) reconcile(lost)
                 }
+            }
+        }
+    }
+
+    /** Bind the whole screen and its later effects to the menu's original game. */
+    private fun openSaves(gameId: String) {
+        if (foldcade.launchWork.active) return
+        val route = foldcade.shell.savesMenuRoute(gameId) ?: return
+        val owner = route.servers.firstOrNull { it == route.saves } ?: route.servers.firstOrNull() ?: return
+        val player = foldcade.playerFor(route.play.platformId)
+        val target = app.foldcade.language.SavePickerTarget(route.tileId, owner.backendId, owner.remoteKey, player?.id, ++foldcade.savePickerSerial)
+        foldcade.savePickerRequest = SavePickerRequest(target, route, owner, player)
+        foldcade.shell.presentSavePicker(app.foldcade.language.SavePickerState(
+            target, owner.label, player?.displayName ?: app.foldcade.language.SavePickerCopy.unknown,
+            foldcade.shell.saveHealthOf(gameId), ownSlots = player?.saveDeclarations(owner).orEmpty().map { it.slot },
+        ))
+        loadSavePicker(target)
+    }
+
+    private fun loadSavePicker(target: app.foldcade.language.SavePickerTarget) {
+        val request = foldcade.savePickerRequest?.takeIf { it.target == target } ?: return
+        foldcade.scope.launch {
+            try {
+                val saves = foldcade.plugins.serverSaves(request.owner.backendId, request.owner, request.player).map {
+                    app.foldcade.language.SavePickerSave(it.id, it.slot, it.emulator, it.source, it.updatedAtMillis, it.sizeBytes, it.playing, it.screenshotUri)
+                }
+                withContext(Dispatchers.Main.immediate) {
+                    foldcade.shell.updateSavePicker(target) { previous ->
+                        val id = previous.focused?.id
+                        val index = if (previous.index == 0) 0 else (saves.indexOfFirst { it.id == id } + 1).coerceAtLeast(0)
+                        previous.copy(saves = saves, index = index, loading = false, error = false,
+                            health = foldcade.shell.savePickerHealth(target), ownSlots = request.player?.saveDeclarations(request.owner).orEmpty().map { it.slot })
+                    }
+                }
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (_: Exception) {
+                withContext(Dispatchers.Main.immediate) { foldcade.shell.updateSavePicker(target) { it.copy(loading = false, error = true) } }
+            }
+        }
+    }
+
+    private fun changeServerSave(target: app.foldcade.language.SavePickerTarget, saveId: String?, destination: app.foldcade.language.SaveDestination? = null) {
+        val request = foldcade.savePickerRequest?.takeIf { it.target == target } ?: return
+        if (foldcade.shell.model.savePicker?.target != target) return
+        // An emulator on either display can still be writing its save; ask for Home first.
+        if (foldcade.launchWork.active || Panel.entries.any { foldcade.store.session.externalOn(it) != null }) {
+            foldcade.shell.updateSavePicker(target) { it.copy(busy = false, message = app.foldcade.language.SavePickerCopy.returnHome) }
+            return
+        }
+        foldcade.scope.launch {
+            var success = false
+            var failure = app.foldcade.language.SavePickerCopy.unavailable
+            try {
+                foldcade.saveFlow.withLock {
+                    ServerSaveFlow(foldcade.playerSaves, foldcade.plugins) { key -> foldcade.store.setSaveAwaitsLoad(key, true) }
+                        .perform(request, saveId, destination)
+                }
+                success = true
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (_: SaveNotPlaced) {
+                failure = app.foldcade.language.SavePickerCopy.unreadable
+            } catch (_: Exception) {
+                // The library keeps both copies, including an upload whose response was lost.
+                Unit
+            } finally {
+                withContext(NonCancellable + Dispatchers.Main.immediate) {
+                    foldcade.shell.updateSavePicker(target) { it.copy(busy = false, copying = null,
+                        message = if (success) { if (saveId == null) app.foldcade.language.SavePickerCopy.synced else app.foldcade.language.SavePickerCopy.copied } else failure) }
+                }
+            }
+            withContext(Dispatchers.Main.immediate) {
+                if (success && saveId != null && destination == null && !isDestroyed && !isFinishing && foldcade.shell.model.savePicker?.target == target) {
+                    foldcade.shell.presentSavePicker(null)
+                    launchScreen = foldcade.runningOn(target.gameId)?.panel ?: Panel.Top
+                    launchBackendGame(request.owner.label, request.route.play.platformId, request.route, fresh = true)
+                } else if (success) loadSavePicker(target)
             }
         }
     }

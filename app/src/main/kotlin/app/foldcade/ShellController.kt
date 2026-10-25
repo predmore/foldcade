@@ -395,6 +395,7 @@ class ShellController(
     internal fun setUnsyncedSaves(libraryId: String, keys: Set<String>) {
         if (unsyncedSaves[libraryId] == keys) return
         unsyncedSaves = unsyncedSaves + (libraryId to keys)
+        refreshSavePickerHealth()
     }
 
     internal fun noteSaveReachable(game: Game, playerId: String, reachable: Boolean) {
@@ -402,6 +403,7 @@ class ShellController(
         reachableSaves[homeGameId(game.backendId, game.remoteKey) to playerId] = SaveReachability(player.saveDeclarations(game), reachable)
         saveSupport.remove(playerId to game)
         saveHealthEpoch += 1
+        refreshSavePickerHealth()
     }
 
     internal fun saveGame(libraryId: String, remoteKey: String): Game? = libraryGames[homeGameId(libraryId, remoteKey)]
@@ -464,6 +466,7 @@ class ShellController(
             if (playerSaveIssue(player, saveSync[player.id], setupSteps[player.id]) == null) continue
             players[saveNoticePlayerId(player.id)] = player.displayName
         }
+        refreshSavePickerHealth()
         onSaveHealthChanged(players)
     }
 
@@ -510,6 +513,7 @@ class ShellController(
     var activeLibraryId: String? = null
         private set
 
+    private var librarySavesMenuGame: Game? = null
     private var platformEntries: List<GridEntry> = emptyList()
     private var platformFocus: GridFocus = GridFocus()
     private var platformOrder: List<Int> = emptyList()
@@ -587,7 +591,7 @@ class ShellController(
         val rows = panel?.let { panelRows(it, model) }.orEmpty()
         val at = if (meaning == Meaning.Activate) panel?.index?.coerceIn(0, (rows.size - 1).coerceAtLeast(0)) else chordIndex(rows, meaning)
         val row = at?.let { rows.getOrNull(it) }
-        if (find == null && model.homeGrid == HomeGrid.Hidden && model.panel == null && model.playActivity == null && (meaning == Meaning.Activate || meaning == Meaning.ActivateBottom)) return null
+        if (find == null && model.homeGrid == HomeGrid.Hidden && model.panel == null && model.playActivity == null && model.savePicker == null && (meaning == Meaning.Activate || meaning == Meaning.ActivateBottom)) return null
         val before = home.board
         val beforeFocus = model.focus
         val beforeGrid = model.homeGrid
@@ -619,6 +623,11 @@ class ShellController(
     }
 
     private fun applyMeaning(meaning: Meaning, screen: HostScreen, repeatCount: Int, inputWindow: String): Effect? {
+        if (model.savePicker != null) {
+            val (next, effect) = reduce(model, meaning, screen, repeatCount)
+            publish(next)
+            return effect
+        }
         if (artPicker != null) {
             artInput(meaning)
             return null
@@ -651,6 +660,7 @@ class ShellController(
             }
         }
         val before = model
+        if (model.libraryGrid && model.panel == null && meaning == Meaning.Options) librarySavesMenuGame = libraryEntry(model)?.game
         val current = if (model.libraryGrid) model else withShelf(model)
         val (next, effect) = reduce(current, meaning, screen, repeatCount)
         if (current.panel == null && next.panel?.level == PanelLevel.Actions && showingHome() && find == null) {
@@ -843,7 +853,7 @@ class ShellController(
         if (artPicker != null) return app.foldcade.language.HomeKeys.ChoosingArt
         if (model.panel != null && home.selection != null) return HomeKeys.Selecting
         if (model.dialog != null || model.panel != null || model.playActivity != null ||
-            model.saveConflict != null || model.connectOpen
+            model.saveConflict != null || model.savePicker != null || model.connectOpen
         ) {
             return app.foldcade.language.HomeKeys.Idle
         }
@@ -867,7 +877,7 @@ class ShellController(
      * with nothing to act on.
      */
     fun holdsCommandCenter(): Boolean =
-        model.dialog != null || model.panel != null || model.connectOpen || typing() != null || home.iconPick != null || home.selection != null || find != null
+        model.savePicker != null || model.dialog != null || model.panel != null || model.connectOpen || typing() != null || home.iconPick != null || home.selection != null || find != null
 
     /**
      * The collection or folder being named, as the top screen shows it over the name field.
@@ -936,7 +946,7 @@ class ShellController(
      */
     private fun canOpenFind(): Boolean =
         find == null && artPicker == null && !model.libraryGrid && model.dialog == null && model.panel == null &&
-            model.settings == null && model.playActivity == null && model.saveConflict == null && !model.connectOpen &&
+            model.settings == null && model.playActivity == null && model.saveConflict == null && model.savePicker == null && !model.connectOpen &&
             (!showingHome() || home.keys().let { it == HomeKeys.Idle || it == HomeKeys.AllLibrary })
 
     /** Opens Find on everything Home knows, the most recently played first. */
@@ -958,7 +968,7 @@ class ShellController(
     /** True while Find has the keys: open, with no menu, page or dialog over it. */
     private fun findActive(): Boolean =
         find != null && artPicker == null && model.dialog == null && model.panel == null && model.settings == null &&
-            model.playActivity == null && model.saveConflict == null && !model.connectOpen
+            model.playActivity == null && model.saveConflict == null && model.savePicker == null && !model.connectOpen
 
     /** Everything Find lists: the catalog and the groups on Home, then what only Hidden lists. */
     private fun findEntries(): List<FindEntry> {
@@ -1898,7 +1908,7 @@ class ShellController(
     /** One tap focuses a tile. A second tap on it activates, and hands back what that opens. */
     /** Whether the grid itself takes touches: nothing covers it. */
     private fun gridTouchable(): Boolean =
-        find == null && artPicker == null && model.dialog == null && model.panel == null && !model.connectOpen
+        find == null && artPicker == null && model.dialog == null && model.panel == null && model.savePicker == null && !model.connectOpen
 
     fun touchCell(index: Int, screen: HostScreen): Effect? {
         if (!gridTouchable()) return null
@@ -2009,7 +2019,7 @@ class ShellController(
      * A dialog or save choice takes every key, so a touch on the page under it does nothing.
      * A tap on a Settings row once went on to activate the dialog's focused button.
      */
-    private fun modalOpen(): Boolean = model.dialog != null || model.saveConflict != null
+    private fun modalOpen(): Boolean = model.dialog != null || model.saveConflict != null || model.savePicker != null
 
     /** One tap focuses the button and activates it. Keys still move, then Activate. */
     fun touchDialog(index: Int, screen: HostScreen): Effect? {
@@ -2111,8 +2121,77 @@ class ShellController(
         publish(model.copy(panel = null, connectOpen = false, dialog = dialog))
     }
 
-    /** Puts [prompt] on the bottom screen. Null clears it. A debug preview is left in place. */
+    /** The exact server copy the menu opened on, including a library-grid press. */
+    internal fun savesMenuRoute(gameId: String): GameRoute? {
+        val pressed = librarySavesMenuGame?.takeIf { homeGameId(it.backendId, it.remoteKey) == gameId }
+        return launchRoute(tileOf(gameId), pressed)
+    }
+
+    internal fun savePickerHealth(target: app.foldcade.language.SavePickerTarget): SaveHealth {
+        val route = savesMenuRoute(target.gameId) ?: return model.savePicker?.health ?: SaveHealth.Fine
+        val owner = route.servers.firstOrNull { it.backendId == target.libraryId && it.remoteKey == target.remoteKey } ?: route.saves
+        val player = target.playerId?.let(plugins::player) ?: return SaveHealth.DeviceOnly
+        val saves = saveSupport.getOrPut(player.id to owner) { readGameSaveSupport(owner, player) }
+        val reachability = reachableSaves[homeGameId(owner.backendId, owner.remoteKey) to player.id]
+        return gameSaveHealth(owner, player, true, owner.remoteKey in unsyncedSaves[owner.backendId].orEmpty(),
+            saveSync[player.id], setupSteps[player.id],
+            reachable = reachability?.takeIf { it.locations == saves.declarations }?.reachable, saves = saves)
+    }
+
+    private fun refreshSavePickerHealth() {
+        val page = model.savePicker ?: return
+        val owner = savesMenuRoute(page.target.gameId)?.servers?.firstOrNull {
+            it.backendId == page.target.libraryId && it.remoteKey == page.target.remoteKey
+        }
+        val player = page.target.playerId?.let(plugins::player)
+        val slots = if (owner != null && player != null)
+            saveSupport.getOrPut(player.id to owner) { readGameSaveSupport(owner, player) }.declarations.map { it.slot }
+        else page.ownSlots
+        model = model.copy(savePicker = page.copy(health = savePickerHealth(page.target), ownSlots = slots))
+    }
+
+    fun presentSavePicker(state: app.foldcade.language.SavePickerState?) {
+        artPicker = null
+        find = null
+        publish(model.copy(savePicker = state, saveConflict = null, panel = null, playActivity = null, settings = null, connectOpen = false))
+    }
+
+    /** Async results are accepted only by the screen that requested them. */
+    fun updateSavePicker(target: app.foldcade.language.SavePickerTarget, update: (app.foldcade.language.SavePickerState) -> app.foldcade.language.SavePickerState) {
+        val state = model.savePicker?.takeIf { it.target == target } ?: return
+        publish(model.copy(savePicker = update(state)))
+    }
+
+    fun touchSavePicker(index: Int): Effect? {
+        val state = model.savePicker ?: return null
+        if (state.busy || state.confirmation != null) return null
+        model = model.copy(savePicker = if (state.copying != null) state.copy(destinationIndex = index) else state.copy(index = index))
+        return onMeaning(Meaning.Activate, HostScreen.Bottom)
+    }
+
+    fun touchSavePickerConfirm(index: Int): Effect? {
+        val state = model.savePicker ?: return null
+        if (state.confirmation == null || state.busy) return null
+        model = model.copy(savePicker = state.copy(confirmIndex = index))
+        return onMeaning(Meaning.Activate, HostScreen.Bottom)
+    }
+
+    fun savePickerFix(target: app.foldcade.language.SavePickerTarget): Effect? {
+        if (model.savePicker?.target != target) return null
+        val player = target.playerId?.let(plugins::player) ?: return null
+        return when {
+            player is app.foldcade.api.plugin.HostedSaveFolder && !player.hostedFolderInUse() -> Effect.SetUpHostedSaves(player.id)
+            player is SaveFolderHolder && !player.hasSaveFolder() -> Effect.ChoosePlayerSave(player.id)
+            saveSync[player.id] is SaveSyncState.NeedsSetup -> Effect.ShowSaveSync(player.id)
+            setupSteps[player.id] != null -> Effect.ShowPlayerSetup(player.id)
+            player is SaveFolderHolder -> Effect.ChoosePlayerSave(player.id)
+            else -> null
+        }
+    }
+
+    /** Puts a conflict on the bottom screen unless the save chooser owns it. */
     fun presentSaveConflict(prompt: app.foldcade.language.SaveConflictPrompt?) {
+        if (model.savePicker != null) return
         if (prompt == null && model.saveConflict?.preview == true) return
         if (prompt != null && !prompt.preview) {
             Log.i("Foldcade", "save-conflict ${prompt.gameLabel}")
@@ -2638,7 +2717,9 @@ class ShellController(
         val withArt = if (tile?.bulk == null && home.selection == null && counted.artKeySaved && artPickerAvailable() && targetGame?.let(::artQuery) != null) {
             (offered ?: TileActions()).copy(art = true)
         } else offered
-        return counted.copy(tileActions = (withArt ?: TileActions()).copy(undo = home.selection == null && activeUndo() != null), undoVerb = activeUndo()?.verb, atLibraryRoot = root)
+        val withSaves = if (tile?.bulk == null && home.selection == null && targetGame != null &&
+            launchRoute(targetGame.id)?.servers?.isNotEmpty() == true) (withArt ?: TileActions()).copy(saves = true, game = tile?.game ?: targetGame.id) else withArt
+        return counted.copy(tileActions = (withSaves ?: TileActions()).copy(undo = home.selection == null && activeUndo() != null), undoVerb = activeUndo()?.verb, atLibraryRoot = root)
     }
 
     /** A menu acts on its named game even after Add to leaves the focused slot empty. */
@@ -2786,10 +2867,14 @@ class ShellController(
         if (next.artwork != model.artwork) store.setArtworkEnabled(next.artwork)
         val ready = if (!next.connectOpen) next.copy(connectBusy = false) else next
         model = if (ready.libraryGrid) {
-            ready.copy(tileActions = null, playerSaves = playerSaveSettings())
+            val game = if (ready.panel != null) librarySavesMenuGame ?: libraryEntry(ready)?.game else libraryEntry(ready)?.game
+            val id = game?.let { homeGameId(it.backendId, it.remoteKey) }
+            val canChoose = game != null && id != null && launchRoute(tileOf(id), game)?.servers?.isNotEmpty() == true
+            ready.copy(tileActions = if (canChoose) TileActions(saves = true, game = id) else null, playerSaves = playerSaveSettings())
         } else {
             withShelf(ready.copy(libraryGrid = false))
         }
+        refreshSavePickerHealth()
         if (connectClosed) showQueuedPrompt()
         logHomeTile()
     }
@@ -2831,7 +2916,7 @@ class ShellController(
 
     private fun homeActive(): Boolean =
         showingHome() && model.dialog == null && model.panel == null && model.settings == null &&
-            model.playActivity == null && model.saveConflict == null && !model.connectOpen
+            model.playActivity == null && model.saveConflict == null && model.savePicker == null && !model.connectOpen
 
     /**
      * A or X with the cursor on L1's or R1's pill opens that drawer, as the grid reducer

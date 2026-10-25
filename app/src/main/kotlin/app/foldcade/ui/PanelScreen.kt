@@ -362,6 +362,10 @@ fun PanelHost(activity: FoldcadeHomeActivity, displays: Displays) {
             if (blurHere && session.surfaceOn(Panel.Bottom) == Surface.Picker) MenuHints(app)
             // The blurred grid takes no taps of its own. A tap on it closes the island over it.
             if (blurHere && model.panel?.screen == HostScreen.Top) Box(Modifier.fillMaxSize().closesIsland(app))
+            model.savePicker?.let { saves ->
+                if (screen == HostScreen.Top) SavePickerTop(app, saves, rememberDateStyle(app), scale)
+                if (screen == HostScreen.Bottom) SavePickerBottom(app, saves, rememberDateStyle(app), scale, activity::dispatch)
+            }
             if (panel != null && screen != null) {
                 DialogLayer(app, model.dialog, screen, scale, activity::dispatch)
             }
@@ -2721,7 +2725,7 @@ private fun GridHints(app: FoldcadeApp, modifier: Modifier = Modifier) {
         },
     )
     // The grid's own keys only count while nothing covers it.
-    val gridKeys = model.panel == null && model.dialog == null && model.saveConflict == null && !model.connectOpen
+    val gridKeys = model.panel == null && model.dialog == null && model.saveConflict == null && model.savePicker == null && !model.connectOpen
     val page = model.playActivity?.takeIf { model.dialog == null }?.let { playActivityHints(model) }
     val find = shell.findHints()
     val normalKeys = find ?: ((page ?: panelHints(model) ?: gridHints(

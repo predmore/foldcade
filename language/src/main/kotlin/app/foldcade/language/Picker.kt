@@ -615,6 +615,7 @@ sealed interface Row {
     data object RemoveDownload : Row
 
     /** A game still open in its player starts over. */
+    data object Saves : Row
     data object RestartGame : Row
 
     /** X on a session in Play activity's list: held, it takes the session out. Not a menu row. */
@@ -862,6 +863,7 @@ data class TileActions(
     val removeDownload: Boolean = false,
     /** The game is still open in its player, so it can start over. */
     val restart: Boolean = false,
+    val saves: Boolean = false,
     /** The game these rows act on. Null for a tile that is not a game, or one off the home grid. */
     val game: String? = null,
     /** Tidy, on an empty slot of a board with gaps to close. */
@@ -903,6 +905,7 @@ fun actionRows(tile: TileActions?): List<Row> = buildList {
     if (tile.rename) add(Row.RenameFolder)
     if (tile.icon) add(Row.FolderIcon)
     if (tile.remove != null) add(Row.RemoveTile)
+    if (tile.saves) add(Row.Saves)
     if (tile.restart) add(Row.RestartGame)
     if (tile.hide) add(Row.Hide)
     if (tile.removeDownload) add(Row.RemoveDownload)
@@ -1135,6 +1138,7 @@ fun rowText(row: Row, model: PickerModel): RowText = when (row) {
     Row.ShowHidden -> RowText(Copy.showApp)
     Row.DeleteShortcut -> RowText(Copy.deleteShortcut)
     Row.RemoveDownload -> RowText(Copy.deleteDownload)
+    Row.Saves -> RowText(SavePickerCopy.title)
     Row.RestartGame -> RowText(Copy.restart)
     Row.RemoveSession -> RowText(PlayCopy.remove)
     Row.ButtonLabels -> RowText(
@@ -1164,6 +1168,12 @@ fun displayOrder(model: PickerModel): List<Int> {
 }
 
 sealed interface Effect {
+    data class OpenSaves(val gameId: String) : Effect
+    data class LoadSavePicker(val target: SavePickerTarget) : Effect
+    data class FixSavePicker(val target: SavePickerTarget) : Effect
+    data class SyncSavePicker(val target: SavePickerTarget) : Effect
+    data class PlayPickedSave(val target: SavePickerTarget, val saveId: String) : Effect
+    data class CopyPickedSave(val target: SavePickerTarget, val saveId: String, val destination: SaveDestination) : Effect
     /** Launch the game at [index], on the bottom screen when [onBottom] (X), else the top (A). */
     data class Launch(val index: Int, val onBottom: Boolean = false) : Effect
     data class OpenPlatform(val index: Int) : Effect
@@ -1424,6 +1434,7 @@ data class PickerModel(
     val playActivity: PlayActivityPage? = null,
     /** Two saves waiting for a choice on the bottom screen. Null while there is nothing to ask. */
     val saveConflict: SaveConflictPrompt? = null,
+    val savePicker: SavePickerState? = null,
     /** Every library is being read again. */
     val librarySyncing: Boolean = false,
     /** Alphabetical labels in display order. Empty when triggers jump screens instead. */
@@ -1454,6 +1465,10 @@ fun reduce(
         val chosen = choice?.let { Effect.DialogChoice(it, dialog.kind, dialog.subject) }
         val cleared = if (choice != null) null else next
         return coerced.copy(dialog = cleared) to chosen
+    }
+    coerced.savePicker?.let {
+        val (next, effect) = applySavePicker(it, meaning)
+        return coerced.copy(savePicker = next) to effect
     }
     val conflict = coerced.saveConflict
     if (conflict != null) {
@@ -2218,6 +2233,7 @@ private fun activateRow(
         Row.ShowHidden -> model.copy(panel = null, focus = panel.grid) to Effect.ShowHidden(model.tileActions?.game)
         Row.DeleteShortcut -> model.copy(panel = null, focus = panel.grid) to Effect.DeleteShortcut(model.tileActions?.game)
         Row.RemoveDownload -> model.copy(panel = null, focus = panel.grid) to Effect.RemoveDownload(model.tileActions?.game)
+        Row.Saves -> model.copy(panel = null, focus = panel.grid) to model.tileActions?.game?.let(Effect::OpenSaves)
         Row.RestartGame -> model.copy(panel = null, focus = panel.grid) to Effect.RestartGame(model.tileActions?.game)
         // Play activity's list removes a session itself; no menu lists this row.
         Row.RemoveSession -> model to null

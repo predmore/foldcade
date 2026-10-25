@@ -265,9 +265,9 @@ internal class PlayerSaves(
      * and is left out. Any other bytes are handed over, even after a failed
      * placement, because the player may have run on its own since.
      */
-    fun changedSince(libraryId: String, game: Game, player: Player, spots: List<SaveSpot>): ObservedSaves {
+    fun changedSince(libraryId: String, game: Game, player: Player, spots: List<SaveSpot>, strict: Boolean = false): ObservedSaves {
         val changed = spots.mapNotNull { spot ->
-            val (bytes, uri) = readSpot(spot) ?: return@mapNotNull null
+            val (bytes, uri) = readSpot(spot, strict) ?: return@mapNotNull null
             val hash = md5Hex(bytes)
             val key = key(libraryId, game, player, spot)
             when (hash) {
@@ -648,21 +648,45 @@ internal class PlayerSaves(
         DocumentSaveFolder(docs, folderUri, allowWrite) { name, bytes -> backup(player, name, bytes) }
 
     /** The bytes [spot] holds and the document they are in, or null when it holds none or cannot be read. */
-    private fun readSpot(spot: SaveSpot): Pair<ByteArray, String?>? {
+    private fun readSpot(spot: SaveSpot, strict: Boolean = false): Pair<ByteArray, String?>? {
+        if (strict) readableChildren(spot.folderUri, "")
         if (spot.folders.isNotEmpty() || spot.search != null) {
-            val held = readFolders(spot) as? Held.Found ?: return null
+            val folders = readFolders(spot, strict)
+            if (strict && folders == Held.Unreadable) throw SaveNotPlaced()
+            val held = folders as? Held.Found ?: return null
             // Folders with no file are no save, and a zip of them could never be placed.
             if (held.save.entries.values.none { it != null }) return null
             return saveZip(held.save.entries) to null
+        }
+        if (strict) {
+            val parent = spot.fileName.substringBeforeLast('/', "")
+            val name = spot.fileName.substringAfterLast('/')
+            val listed = readableChildren(spot.folderUri, parent) ?: return null
+            val file = listed.firstOrNull { it.name == name } ?: return null
+            if (file.isFolder) throw SaveNotPlaced()
+            return (docs.read(file.uri) ?: throw SaveNotPlaced()) to file.uri
         }
         val uri = docs.find(spot.folderUri, spot.fileName) ?: return null
         return (docs.read(uri) ?: return null) to uri
     }
 
+    /** Distinguish a verified missing folder from one that exists but cannot be listed. */
+    private fun readableChildren(folder: String, path: String): List<SaveChild>? {
+        var children = docs.children(folder, "") ?: throw SaveNotPlaced()
+        var prefix = ""
+        for (part in path.split('/').filter { it.isNotEmpty() }) {
+            val child = children.firstOrNull { it.name == part } ?: return null
+            if (!child.isFolder) throw SaveNotPlaced()
+            prefix = if (prefix.isEmpty()) part else "$prefix/$part"
+            children = docs.children(folder, prefix) ?: throw SaveNotPlaced()
+        }
+        return children
+    }
+
     /** Everything in [spot]'s folders, named as in its zip. A search lists its parent and takes the matches. */
-    private fun readFolders(spot: SaveSpot): Held {
+    private fun readFolders(spot: SaveSpot, strict: Boolean = false): Held {
         val parts = try {
-            folderParts(spot)
+            folderParts(spot, strict)
         } catch (_: Exception) {
             return Held.Unreadable
         } ?: return Held.Unreadable
@@ -671,7 +695,8 @@ internal class PlayerSaves(
         val uris = HashMap<String, String>()
         try {
             for (part in parts) {
-                val listed = docs.list(spot.folderUri, part.path) ?: continue
+                if (strict && readableChildren(spot.folderUri, part.path) == null) continue
+                val listed = docs.list(spot.folderUri, part.path) ?: if (strict) return Held.Unreadable else continue
                 for (entry in listed) {
                     val name = "${part.name}/${entry.path}" + if (entry.isFolder) "/" else ""
                     entries[name] = if (entry.isFolder) null else docs.read(entry.uri) ?: return Held.Unreadable
@@ -693,10 +718,10 @@ internal class PlayerSaves(
     }
 
     /** The folders [spot] moves. A search takes the matching children of its parent. */
-    private fun folderParts(spot: SaveSpot): List<SaveFolderPart>? {
+    private fun folderParts(spot: SaveSpot, strict: Boolean = false): List<SaveFolderPart>? {
         val search = spot.search ?: return spot.folders
         if (savePathParts(search.parent) == null) return null
-        val children = docs.children(spot.folderUri, search.parent) ?: return emptyList()
+        val children = (if (strict) readableChildren(spot.folderUri, search.parent) else docs.children(spot.folderUri, search.parent)) ?: return emptyList()
         return children.mapNotNull { child ->
             if (!child.isFolder || savePathParts(child.name)?.size != 1) return@mapNotNull null
             if (!saveFolderNameMatches(child.name, search.nameContains)) return@mapNotNull null

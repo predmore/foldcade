@@ -483,6 +483,17 @@ The art picker.
 | --- | --- | --- |
 | `picker.shimmerAlpha` | 0.18 | The shimmer across a candidate still loading, in `focus` over `surface` |
 
+### `saves`
+
+The Saves screen reuses menu highlights, dialog chips, type and motion.
+
+| Token | Afterglow | Controls |
+| --- | --- | --- |
+| `saves.rowHeightDp` | 52 | Every save row and its status header |
+| `saves.edgeDp` | 24 | Screen and confirmation insets |
+| `saves.gapDp` | 8 | Space between details and around the Playing pill |
+| `saves.screenshotShare` | 0.5 | Screenshot's share of the top screen's content width |
+
 ### `play`
 
 Play activity: the week, the days and their sessions. The bars are `colors.progress`.

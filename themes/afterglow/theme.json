@@ -1941,6 +1941,12 @@
       "chosenRimDp": 1.5,
       "hiddenBackingAlpha": 0.78
     },
+    "saves": {
+      "rowHeightDp": 52,
+      "edgeDp": 24,
+      "gapDp": 8,
+      "screenshotShare": 0.5
+    },
     "picker": {
       "shimmerAlpha": 0.18
     },

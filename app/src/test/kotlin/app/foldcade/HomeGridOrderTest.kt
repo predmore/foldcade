@@ -1008,7 +1008,7 @@ class HomeGridOrderTest {
         shell.onMeaning(Meaning.Activate, HostScreen.Bottom)
         focus(shell, titles(shell).indexOf("Drift"))
         assertEquals(
-            listOf(Row.MoveTile, Row.AddToCollection, Row.SelectTile, Row.Hide, Row.RemoveDownload, Row.SortFolder),
+            listOf(Row.MoveTile, Row.AddToCollection, Row.SelectTile, Row.Saves, Row.Hide, Row.RemoveDownload, Row.SortFolder),
             optionRows(shell),
         )
         // A copy still arriving is not offered.
@@ -1166,7 +1166,7 @@ class HomeGridOrderTest {
         )
         shell.openHomeAll()
         focus(shell, titles(shell).indexOf("Drift"))
-        assertEquals(listOf(Row.ShowOnHome, Row.AddToCollection, Row.SelectTile, Row.Hide, Row.RemoveDownload), optionRows(shell))
+        assertEquals(listOf(Row.ShowOnHome, Row.AddToCollection, Row.SelectTile, Row.Saves, Row.Hide, Row.RemoveDownload), optionRows(shell))
         shell.noteOffDevice("romm", "drift")
         assertFalse(Row.RemoveDownload in optionRows(shell))
     }
