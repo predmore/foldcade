@@ -13,7 +13,9 @@ class ShellSavePickerTest {
     private val plugins = PluginHost(Dispatchers.Unconfined, MemoryCredentialStore()).apply {
         register(LocalFolderEntry()); register(MelonDsEntry())
     }
-    private val shell = ShellController(SessionStore(MemoryPrefs()), plugins)
+    private val shell = ShellController(SessionStore(MemoryPrefs()), plugins).apply {
+        setInstalledApps(emptyList(), plugins.playerPackageNames(), plugins.playerPackageNames())
+    }
     private val game = Game("romm", "3", "nintendo-ds", Availability.Cached, "Original")
     private fun entry(game: Game) = GridEntry(game.remoteKey, game.label, "", game.platformId, null, true, game)
     private fun picker(session: Long = 1) = SavePickerState(SavePickerTarget(homeGameId("romm", "3"), "romm", "3", "melonds", session), "Original", "melonDS", SaveHealth.NotSyncing(SaveIssue.NoFolder), loading = false)
@@ -77,6 +79,25 @@ class ShellSavePickerTest {
         shell.presentSavePicker(picker(session = 2).copy(saves = listOf(second)))
         assertNull(shell.touchSavePickerSave(target, "first"))
         assertNull(shell.model.savePicker!!.confirmation)
+    }
+
+    @Test fun uninstallingThePlayerKeepsWaitingVisibleAndLeavesSetupQuiet() {
+        shell.ingestLibrary("romm", listOf(entry(game)), emptyList())
+        shell.setUnsyncedSaves("romm", setOf("3"))
+        shell.presentSavePicker(picker())
+        shell.setInstalledApps(emptyList(), plugins.playerPackageNames(), installedPlayers = emptySet())
+        val target = shell.model.savePicker!!.target
+        assertEquals(SaveHealth.Waiting, shell.model.savePicker!!.health)
+        assertFalse(shell.model.savePicker!!.canPlay)
+        assertTrue(shell.model.savePicker!!.ownSlots.isEmpty())
+        assertNull(shell.savePickerFix(target))
+        assertEquals(Effect.SyncSavePicker(target), shell.onMeaning(Meaning.Activate, HostScreen.Bottom))
+        shell.setUnsyncedSaves("romm", emptySet())
+        assertEquals(SaveHealth.Fine, shell.model.savePicker!!.health)
+        shell.updateSavePicker(target) { it.copy(busy = false, saves = listOf(SavePickerSave("first", "sav", "melonds", null, 1, 10, false, null))) }
+        assertNull(shell.touchSavePickerSave(target, "first"))
+        assertNull(shell.model.savePicker!!.confirmation)
+        assertEquals(SavePickerCopy.installFirst, shell.model.savePicker!!.message)
     }
 
     @Test fun theHeaderUsesTheExistingFolderFixAndUpdatesWhenConfigured() {

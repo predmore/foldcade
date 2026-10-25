@@ -808,9 +808,8 @@ internal class RommLibrary internal constructor(
         }
     }
 
-    override suspend fun syncServerSaves(game: Game, player: Player): SyncResult = serverSaveWork(game) { wiring, ops, romId ->
-        requireSavePlayer(game, player)
-        strictSaveSync(wiring, ops, romId, player.id).toResult()
+    override suspend fun syncServerSaves(game: Game, player: Player?): SyncResult = serverSaveWork(game) { wiring, ops, romId ->
+        strictSaveSync(wiring, ops, romId, player?.id).toResult()
     }
 
     override suspend fun playServerSave(game: Game, player: Player, saveId: String): List<PlacedSave> = serverSaveWork(game) { wiring, ops, romId ->

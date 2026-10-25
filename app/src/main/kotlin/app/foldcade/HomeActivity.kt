@@ -2796,7 +2796,7 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
         if (foldcade.launchWork.active) return
         val route = foldcade.shell.savesMenuRoute(gameId) ?: return
         val owner = route.servers.firstOrNull { it == route.saves } ?: route.servers.firstOrNull() ?: return
-        val player = foldcade.playerFor(route.play.platformId)
+        val player = foldcade.shell.savePlayer(route.play.platformId)
         val target = app.foldcade.language.SavePickerTarget(route.tileId, owner.backendId, owner.remoteKey, player?.id, ++foldcade.savePickerSerial)
         foldcade.savePickerRequest = SavePickerRequest(target, route, owner, player)
         foldcade.shell.presentSavePicker(app.foldcade.language.SavePickerState(
@@ -2837,13 +2837,19 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
             foldcade.shell.updateSavePicker(target) { it.copy(busy = false, message = app.foldcade.language.SavePickerCopy.returnHome) }
             return
         }
+        val installedPlayer = request.player?.takeIf { it.packageNames.any(::packageInstalled) }
+        val needsPlayer = saveId != null && (destination == null || request.player?.saveDeclarations(request.owner).orEmpty().any { it.slot == destination.slot })
+        if (needsPlayer && installedPlayer == null) {
+            foldcade.shell.updateSavePicker(target) { it.copy(busy = false, message = app.foldcade.language.SavePickerCopy.installFirst) }
+            return
+        }
         foldcade.scope.launch {
             var success = false
             var failure = app.foldcade.language.SavePickerCopy.unavailable
             try {
                 foldcade.saveFlow.withLock {
                     ServerSaveFlow(foldcade.playerSaves, foldcade.plugins) { key -> foldcade.store.setSaveAwaitsLoad(key, true) }
-                        .perform(request, saveId, destination)
+                        .perform(request.copy(player = installedPlayer), saveId, destination)
                 }
                 success = true
             } catch (cancelled: CancellationException) {

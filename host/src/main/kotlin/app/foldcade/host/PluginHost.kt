@@ -478,7 +478,7 @@ class PluginHost(
     suspend fun serverSaves(libraryId: String, game: Game, player: Player? = null): List<app.foldcade.api.plugin.ServerSave> =
         offMain(libraryId) { requireLibrary(libraryId).serverSaves(game, player) }
 
-    suspend fun syncServerSaves(libraryId: String, game: Game, player: Player): SyncResult =
+    suspend fun syncServerSaves(libraryId: String, game: Game, player: Player? = null): SyncResult =
         offMain(libraryId) { requireLibrary(libraryId).syncServerSaves(game, player) }
 
     suspend fun playServerSave(libraryId: String, game: Game, player: Player, saveId: String): List<app.foldcade.api.plugin.PlacedSave> =

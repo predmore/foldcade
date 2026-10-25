@@ -94,8 +94,8 @@ interface LibraryBackend {
     /** Every server version for this game, newest first. Added in API minor 15. */
     suspend fun serverSaves(game: Game, player: Player? = null): List<ServerSave> = emptyList()
 
-    /** Sync now, refusing offline or incomplete syncs. The host captures player changes first. */
-    suspend fun syncServerSaves(game: Game, player: Player): SyncResult =
+    /** Sync held bytes now, even with no installed player. Refuse offline or incomplete syncs. */
+    suspend fun syncServerSaves(game: Game, player: Player? = null): SyncResult =
         throw PluginException.Unavailable("Server save sync is not supported")
 
     /**

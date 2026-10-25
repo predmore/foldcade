@@ -2130,10 +2130,12 @@ class ShellController(
     internal fun savePickerHealth(target: app.foldcade.language.SavePickerTarget): SaveHealth {
         val route = savesMenuRoute(target.gameId) ?: return model.savePicker?.health ?: SaveHealth.Fine
         val owner = route.servers.firstOrNull { it.backendId == target.libraryId && it.remoteKey == target.remoteKey } ?: route.saves
-        val player = target.playerId?.let(plugins::player) ?: return SaveHealth.DeviceOnly
+        val waiting = route.servers.any { it.remoteKey in unsyncedSaves[it.backendId].orEmpty() }
+        val player = target.playerId?.let(plugins::player)?.takeIf { it.packageNames.any(installedPlayers::contains) }
+            ?: return if (waiting) SaveHealth.Waiting else SaveHealth.Fine
         val saves = saveSupport.getOrPut(player.id to owner) { readGameSaveSupport(owner, player) }
         val reachability = reachableSaves[homeGameId(owner.backendId, owner.remoteKey) to player.id]
-        return gameSaveHealth(owner, player, true, owner.remoteKey in unsyncedSaves[owner.backendId].orEmpty(),
+        return gameSaveHealth(owner, player, true, waiting,
             saveSync[player.id], setupSteps[player.id],
             reachable = reachability?.takeIf { it.locations == saves.declarations }?.reachable, saves = saves)
     }
@@ -2143,11 +2145,11 @@ class ShellController(
         val owner = savesMenuRoute(page.target.gameId)?.servers?.firstOrNull {
             it.backendId == page.target.libraryId && it.remoteKey == page.target.remoteKey
         }
-        val player = page.target.playerId?.let(plugins::player)
+        val player = page.target.playerId?.let(plugins::player)?.takeIf { it.packageNames.any(installedPlayers::contains) }
         val slots = if (owner != null && player != null)
             saveSupport.getOrPut(player.id to owner) { readGameSaveSupport(owner, player) }.declarations.map { it.slot }
-        else page.ownSlots
-        model = model.copy(savePicker = page.copy(health = savePickerHealth(page.target), ownSlots = slots))
+        else emptyList()
+        model = model.copy(savePicker = page.copy(health = savePickerHealth(page.target), ownSlots = slots, canPlay = player != null))
     }
 
     fun presentSavePicker(state: app.foldcade.language.SavePickerState?) {
@@ -2194,7 +2196,7 @@ class ShellController(
 
     fun savePickerFix(target: app.foldcade.language.SavePickerTarget): Effect? {
         if (model.savePicker?.target != target) return null
-        val player = target.playerId?.let(plugins::player) ?: return null
+        val player = target.playerId?.let(plugins::player)?.takeIf { it.packageNames.any(installedPlayers::contains) } ?: return null
         return when {
             player is app.foldcade.api.plugin.HostedSaveFolder && !player.hostedFolderInUse() -> Effect.SetUpHostedSaves(player.id)
             player is SaveFolderHolder && !player.hasSaveFolder() -> Effect.ChoosePlayerSave(player.id)

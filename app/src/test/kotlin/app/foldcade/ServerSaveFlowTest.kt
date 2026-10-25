@@ -119,6 +119,12 @@ class ServerSaveFlowTest {
         assertEquals("current progress", String(docs.current!!))
     }
 
+    @Test fun heldProgressCanSyncAfterItsPlayerIsUninstalled() = runBlocking {
+        flow.perform(request.copy(player = null), null)
+        assertEquals(listOf("sync:original"), events)
+        assertNull(docs.current)
+    }
+
     private inner class Library : LibraryBackend {
         override val id = "server"
         override val displayName = "Server"
@@ -133,7 +139,7 @@ class ServerSaveFlowTest {
         override suspend fun reconcile(game: Game, player: Player, observed: ObservedSaves): SyncResult {
             events += "capture:${game.remoteKey}"; this.observed += observed.slots; return SyncResult(SyncOutcome.Queued)
         }
-        override suspend fun syncServerSaves(game: Game, player: Player): SyncResult { events += "sync:${game.remoteKey}"; return SyncResult(SyncOutcome.Unchanged) }
+        override suspend fun syncServerSaves(game: Game, player: Player?): SyncResult { events += "sync:${game.remoteKey}"; return SyncResult(SyncOutcome.Unchanged) }
         override suspend fun playServerSave(game: Game, player: Player, saveId: String): List<PlacedSave> {
             events += "choose:${game.remoteKey}:$saveId"; onChoose(); return placed()
         }

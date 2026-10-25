@@ -36,6 +36,7 @@ data class SavePickerState(
     val confirmation: SavePickerChoice? = null,
     val confirmIndex: Int = 1,
     val message: String? = null,
+    val canPlay: Boolean = true,
 ) {
     val focused: SavePickerSave? get() = copying ?: saves.getOrNull(index - 1)
     fun destinations(): List<SaveDestination> {
@@ -57,7 +58,8 @@ fun applySavePicker(state: SavePickerState, meaning: Meaning): Pair<SavePickerSt
             Meaning.MoveUp, Meaning.MoveLeft, Meaning.MoveDown, Meaning.MoveRight -> state.copy(confirmIndex = 1 - state.confirmIndex) to null
             Meaning.Activate -> if (state.confirmIndex == 1) state.copy(confirmation = null) to null else when (confirm) {
                 SavePickerChoice.Setup -> state.copy(confirmation = null) to Effect.FixSavePicker(state.target)
-                is SavePickerChoice.Play -> state.copy(confirmation = null, busy = true, message = null) to Effect.PlayPickedSave(state.target, confirm.save.id)
+                is SavePickerChoice.Play -> if (!state.canPlay) state.copy(confirmation = null, message = SavePickerCopy.installFirst) to null
+                    else state.copy(confirmation = null, busy = true, message = null) to Effect.PlayPickedSave(state.target, confirm.save.id)
                 is SavePickerChoice.Copy -> state.copy(confirmation = null, busy = true, message = null) to Effect.CopyPickedSave(state.target, confirm.save.id, confirm.destination)
             }
             else -> state to null
@@ -84,7 +86,7 @@ fun applySavePicker(state: SavePickerState, meaning: Meaning): Pair<SavePickerSt
             is SaveHealth.NotSyncing -> state to Effect.FixSavePicker(state.target)
             SaveHealth.Waiting -> state.copy(busy = true, message = null) to Effect.SyncSavePicker(state.target)
             else -> state to null
-        } else when (state.health) {
+        } else if (!state.canPlay) state.copy(message = SavePickerCopy.installFirst) to null else when (state.health) {
             is SaveHealth.NotSyncing -> state.copy(confirmation = SavePickerChoice.Setup, confirmIndex = 1) to null
             SaveHealth.DeviceOnly -> state.copy(message = SavePickerCopy.unsupported) to null
             else -> state.copy(confirmation = state.focused?.let(SavePickerChoice::Play), confirmIndex = 1) to null
@@ -117,6 +119,7 @@ object SavePickerCopy {
     const val failed = "The choice could not finish. Both saves are kept. Connect to RomM and try again."
     const val unreadable = "Your save on this device couldn't be read. Check the save folder and try again."
     const val returnHome = "Return to Home before choosing a save."
+    const val installFirst = "Install an emulator to play this save."
     const val unsupported = "This emulator can't load saves through Foldcade."
     const val whenLabel = "When"
     const val fromLabel = "From"

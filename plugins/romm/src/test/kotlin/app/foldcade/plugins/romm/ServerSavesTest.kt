@@ -81,6 +81,15 @@ class ServerSavesTest {
         assertTrue(library().serverSaves(GAME, player).single().playing)
     }
 
+    @Test fun syncNowUploadsHeldProgressWithoutAnInstalledPlayer() = runBlocking {
+        hold("waiting progress", synced = false)
+        library().syncServerSaves(GAME, null)
+        assertEquals(listOf("sync"), events)
+        assertEquals("waiting progress", Files.readString(data.slotFile(ROM, "sav")))
+        assertTrue(library().unsyncedSaves().isEmpty())
+        assertTrue(server.any { bytes[it.id]?.contentEquals("waiting progress".toByteArray()) == true })
+    }
+
     @Test fun choosingFirstSyncsThenDownloadsThenUploadsAndPlacesExactlyThoseBytes() = runBlocking {
         hold("current", synced = false)
         val source = add("choice".toByteArray(), "autosave", "melonds")

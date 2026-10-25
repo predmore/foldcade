@@ -69,6 +69,17 @@ class SavePickerTest {
         assertNull(applySavePicker(state.copy(loading = true), Meaning.Activate).second)
     }
 
+    @Test fun anUninstalledPlayerCanSyncHeldProgressButCannotConfirmPlay() {
+        val missing = state.copy(canPlay = false)
+        val tapped = applySavePicker(missing, Meaning.Activate)
+        assertNull(tapped.second)
+        assertNull(tapped.first!!.confirmation)
+        assertEquals(SavePickerCopy.installFirst, tapped.first!!.message)
+        val confirm = state.copy(canPlay = false, confirmation = SavePickerChoice.Play(save), confirmIndex = 0)
+        assertNull(applySavePicker(confirm, Meaning.Activate).second)
+        assertEquals(Effect.SyncSavePicker(target), applySavePicker(missing.copy(index = 0, health = SaveHealth.Waiting), Meaning.Activate).second)
+    }
+
     @Test fun emulatorFamiliesWarnOnlyWhenDifferentAndDatesAreLocal() {
         assertFalse(emulatorMismatch("retroarch.nes", "retroarch.snes"))
         assertFalse(emulatorMismatch("azahar", "azahar"))

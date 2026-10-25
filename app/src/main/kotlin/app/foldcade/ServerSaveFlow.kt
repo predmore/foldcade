@@ -24,7 +24,7 @@ internal class ServerSaveFlow(
         val spots = if (local != null) saves.spots(player, owner, local) else emptyList()
         val declarations = player?.saveDeclarations(owner).orEmpty()
         val ownsDestination = destination == null || declarations.any { it.slot == destination.slot }
-        if (ownsDestination && (player == null || !player.supportsSaveSync(owner) || declarations.isEmpty() || spots.size != declarations.size)) throw SaveNotPlaced()
+        if (saveId != null && ownsDestination && (player == null || !player.supportsSaveSync(owner) || declarations.isEmpty() || spots.size != declarations.size)) throw SaveNotPlaced()
         // Even a copy to a foreign slot first keeps every readable change from the player.
         if (player != null && spots.isNotEmpty()) {
             val observed = saves.changedSince(library, owner, player, spots, strict = true)
@@ -34,7 +34,7 @@ internal class ServerSaveFlow(
             }
         }
         if (saveId == null) {
-            plugins.syncServerSaves(library, owner, player ?: throw SaveNotPlaced())
+            plugins.syncServerSaves(library, owner, player)
             return
         }
         // Persist before the backend can commit a choice or a player file can be replaced.
