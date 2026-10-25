@@ -81,19 +81,19 @@ internal fun SavePickerBottom(app: FoldcadeApp, state: SavePickerState, dates: D
                         .selectionHighlight(slots, focus, state.confirmation == null, scale)) {
                         if (state.copying == null) {
                             SaveListRow(SavePickerCopy.header(state.health), null, false, state.index == 0,
-                                Modifier.selectionSlot(slots, 0).keepInView(state.index == 0).hostPress { dispatch(app.shell.touchSavePicker(0)) },
+                                Modifier.selectionSlot(slots, 0).keepInView(state.index == 0).hostPress { dispatch(app.shell.touchSavePickerHeader(state.target)) },
                                 attention = state.health.needsAttention)
                             val now = System.currentTimeMillis()
                             state.saves.forEachIndexed { index, save ->
                                 SaveListRow(SavePickerCopy.row(save), relativeSaveWhen(save.updatedAtMillis, now, dates), save.playing, state.index == index + 1,
-                                    Modifier.selectionSlot(slots, index + 1).keepInView(state.index == index + 1).hostPress { dispatch(app.shell.touchSavePicker(index + 1)) })
+                                    Modifier.selectionSlot(slots, index + 1).keepInView(state.index == index + 1).hostPress { dispatch(app.shell.touchSavePickerSave(state.target, save.id)) })
                             }
                             if (state.saves.isEmpty()) SaveText(SavePickerCopy.empty)
                         } else {
                             val destinations = state.destinations()
                             destinations.forEachIndexed { index, destination ->
                                 SaveListRow(SavePickerCopy.destination(destination), null, false, state.destinationIndex == index,
-                                    Modifier.selectionSlot(slots, index).keepInView(state.destinationIndex == index).hostPress { dispatch(app.shell.touchSavePicker(index)) })
+                                    Modifier.selectionSlot(slots, index).keepInView(state.destinationIndex == index).hostPress { dispatch(app.shell.touchSavePickerDestination(state.target, destination)) })
                             }
                             if (destinations.isEmpty()) SaveText(SavePickerCopy.noDestinations)
                         }
@@ -128,7 +128,7 @@ internal fun SavePickerBottom(app: FoldcadeApp, state: SavePickerState, dates: D
                         val action = when (choice) { is SavePickerChoice.Play -> SavePickerCopy.play; is SavePickerChoice.Copy -> SavePickerCopy.copyAction; SavePickerChoice.Setup -> Copy.setUp }
                         listOf(action, SavePickerCopy.cancel).forEachIndexed { index, label ->
                             SaveListRow(label, null, false, state.confirmIndex == index,
-                                Modifier.selectionSlot(buttons, index).hostPress { dispatch(app.shell.touchSavePickerConfirm(index)) })
+                                Modifier.selectionSlot(buttons, index).hostPress { dispatch(app.shell.touchSavePickerConfirm(state.target, choice, index)) })
                         }
                     }
                 }

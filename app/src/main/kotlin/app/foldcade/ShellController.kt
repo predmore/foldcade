@@ -2162,16 +2162,32 @@ class ShellController(
         publish(model.copy(savePicker = update(state)))
     }
 
-    fun touchSavePicker(index: Int): Effect? {
-        val state = model.savePicker ?: return null
-        if (state.busy || state.confirmation != null) return null
-        model = model.copy(savePicker = if (state.copying != null) state.copy(destinationIndex = index) else state.copy(index = index))
+    fun touchSavePickerHeader(target: app.foldcade.language.SavePickerTarget): Effect? {
+        val state = model.savePicker?.takeIf { it.target == target } ?: return null
+        if (state.busy || state.confirmation != null || state.copying != null) return null
+        model = model.copy(savePicker = state.copy(index = 0))
         return onMeaning(Meaning.Activate, HostScreen.Bottom)
     }
 
-    fun touchSavePickerConfirm(index: Int): Effect? {
-        val state = model.savePicker ?: return null
-        if (state.confirmation == null || state.busy) return null
+    fun touchSavePickerSave(target: app.foldcade.language.SavePickerTarget, saveId: String): Effect? {
+        val state = model.savePicker?.takeIf { it.target == target } ?: return null
+        if (state.busy || state.confirmation != null || state.copying != null) return null
+        val index = state.saves.indexOfFirst { it.id == saveId }.takeIf { it >= 0 } ?: return null
+        model = model.copy(savePicker = state.copy(index = index + 1))
+        return onMeaning(Meaning.Activate, HostScreen.Bottom)
+    }
+
+    fun touchSavePickerDestination(target: app.foldcade.language.SavePickerTarget, destination: app.foldcade.language.SaveDestination): Effect? {
+        val state = model.savePicker?.takeIf { it.target == target } ?: return null
+        if (state.busy || state.confirmation != null || state.copying == null) return null
+        val index = state.destinations().indexOf(destination).takeIf { it >= 0 } ?: return null
+        model = model.copy(savePicker = state.copy(destinationIndex = index))
+        return onMeaning(Meaning.Activate, HostScreen.Bottom)
+    }
+
+    fun touchSavePickerConfirm(target: app.foldcade.language.SavePickerTarget, choice: app.foldcade.language.SavePickerChoice, index: Int): Effect? {
+        val state = model.savePicker?.takeIf { it.target == target } ?: return null
+        if (state.confirmation != choice || state.busy) return null
         model = model.copy(savePicker = state.copy(confirmIndex = index))
         return onMeaning(Meaning.Activate, HostScreen.Bottom)
     }

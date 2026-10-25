@@ -62,6 +62,23 @@ class ShellSavePickerTest {
         assertNull(shell.model.savePicker)
     }
 
+    @Test fun staleTapsKeepTheirNamedSaveAfterReorderingAndCannotConfirmAnotherChoice() {
+        shell.ingestLibrary("romm", listOf(entry(game)), emptyList())
+        (plugins.player("melonds") as SaveFolderHolder).bindSaveFolder("content://saves")
+        val first = SavePickerSave("first", "sav", "melonds", null, 1, 10, false, null)
+        val second = first.copy(id = "second")
+        shell.presentSavePicker(picker().copy(saves = listOf(first, second)))
+        val target = shell.model.savePicker!!.target
+        shell.updateSavePicker(target) { it.copy(saves = listOf(second, first)) }
+        shell.touchSavePickerSave(target, "first")
+        assertEquals(SavePickerChoice.Play(first), shell.model.savePicker!!.confirmation)
+        assertNull(shell.touchSavePickerConfirm(target, SavePickerChoice.Play(second), 0))
+        assertFalse(shell.model.savePicker!!.busy)
+        shell.presentSavePicker(picker(session = 2).copy(saves = listOf(second)))
+        assertNull(shell.touchSavePickerSave(target, "first"))
+        assertNull(shell.model.savePicker!!.confirmation)
+    }
+
     @Test fun theHeaderUsesTheExistingFolderFixAndUpdatesWhenConfigured() {
         shell.ingestLibrary("romm", listOf(entry(game)), emptyList())
         shell.presentSavePicker(picker())
