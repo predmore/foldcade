@@ -821,7 +821,6 @@ internal class RommLibrary internal constructor(
                     app.foldcade.api.plugin.ServerSave(
                         save.id.toString(), save.slot, save.emulator,
                         save.deviceSyncs.firstOrNull { it.deviceId == save.originDeviceId }?.deviceName?.takeIf { it.isNotBlank() }
-                            ?: save.deviceSyncs.firstNotNullOfOrNull { it.deviceName?.takeIf(String::isNotBlank) }
                             ?: save.emulator?.takeIf { it.isNotBlank() },
                         save.updatedAt.toEpochMilli(), save.sizeBytes, save.id in playing,
                         save.screenshotId?.let { "${RommClient.normalizeOrigin(wiring.origin)}/api/screenshots/$it/content" },

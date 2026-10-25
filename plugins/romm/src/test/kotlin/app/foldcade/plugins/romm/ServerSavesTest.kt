@@ -126,7 +126,8 @@ class ServerSavesTest {
         assertEquals("Thor", library.serverSaves(GAME, player).single().source)
         assertTrue(library.serverSaveOrigins(GAME).isEmpty())
         server[0] = save.copy(originDeviceId = null, deviceSyncs = listOf(SaveDeviceSync("missing", null), SaveDeviceSync("named", "Steam Deck")))
-        assertEquals("Steam Deck", library.serverSaves(GAME, player).single().source)
+        // A device that only synced the save did not make it: an unknown origin falls back to the emulator.
+        assertEquals(save.emulator, library.serverSaves(GAME, player).single().source)
     }
 
     @Test fun deviceLookupCancellationStillCancelsTheScreenLoad() = runBlocking {
