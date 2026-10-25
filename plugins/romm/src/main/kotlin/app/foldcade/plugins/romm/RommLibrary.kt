@@ -880,6 +880,23 @@ internal class RommLibrary internal constructor(
                 throw PluginException.Unavailable("The downloaded save did not verify")
             bytes
         }
+        // The server can have a slot retention cap even though we never request autocleanup.
+        // Keep the current head outside slot retention before a confirmed overwrite can prune it.
+        if (latest != null && latest.contentHash?.lowercase() != hash) {
+            val previousHash = latest.contentHash?.lowercase()?.takeIf { it.matches(Regex("[0-9a-f]{32}")) }
+                ?: throw PluginException.Unavailable("The current slot head cannot be verified")
+            if (listed.none { it.slot == null && it.contentHash?.lowercase() == previousHash }) {
+                val previous = wiring.data.romSaves(romId).resolve("previous-head.sav")
+                ops.downloadSave(latest, device, previous)
+                val previousBytes = runInterruptible(Dispatchers.IO) {
+                    val held = Files.readAllBytes(previous)
+                    if (held.size.toLong() != latest.sizeBytes || app.foldcade.romm.rommSaveHash(held) != previousHash)
+                        throw PluginException.Unavailable("The current slot head did not verify")
+                    held
+                }
+                ops.uploadArchive(latest, device, previousHash, previousBytes)
+            }
+        }
         if (localPlayer != null) runInterruptible(Dispatchers.IO) {
             val current = wiring.data.slotFile(romId, slot)
             selection.begin(slot, localPlayer, md5File(selection.staged), hash, if (Files.exists(current)) md5File(current) else null)

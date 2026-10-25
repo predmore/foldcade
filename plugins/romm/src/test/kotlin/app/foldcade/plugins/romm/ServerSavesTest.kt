@@ -22,6 +22,7 @@ class ServerSavesTest {
     private val bytes = mutableMapOf<Long, ByteArray>()
     private var nextId = 10L
     private var failAfterUpload = false
+    private var pruneSlot = false
     private var token: String? = "rmm_test"
     private val player = object : Player {
         override val id = "melonds"
@@ -39,10 +40,16 @@ class ServerSavesTest {
     init {
         ops.onListSaves = { rom, device -> assertEquals(ROM, rom); assertNotNull(device); server.toList() }
         ops.onDownloadSave = { save, _, path -> events += "download:${save.id}"; writeDurably(path, bytes.getValue(save.id)) }
+        ops.onArchive = { save, _, hash, content ->
+            assertEquals(rommSaveHash(content), hash)
+            events += "archive:${save.id}"
+            add(content, null, save.emulator, at = 0).id
+        }
         ops.onUploadSave = { rom, _, slot, emulator, _, hash, content ->
             assertEquals(ROM, rom)
             assertEquals(rommSaveHash(content), hash)
             events += "upload:$slot:$emulator"
+            if (pruneSlot) server.removeAll { it.slot == slot }
             val save = add(content, slot, emulator, id = nextId++, at = 100 + nextId)
             if (failAfterUpload) throw RommUnavailable("Response was lost")
             save.id
@@ -81,7 +88,9 @@ class ServerSavesTest {
         val activity = mutableListOf<GameActivity>()
         library.observeActivity { _, a -> activity += a }
         val placed = library.playServerSave(GAME, player, source.id.toString())
-        assertEquals(listOf("sync", "download:${source.id}", "upload:sav:melonds"), events)
+        assertEquals("sync", events.first())
+        assertTrue(events.indexOf("download:${source.id}") < events.indexOfFirst { it.startsWith("archive") })
+        assertTrue(events.indexOfFirst { it.startsWith("archive") } < events.indexOf("upload:sav:melonds"))
         assertEquals("choice", Files.readString(data.slotFile(ROM, "sav")))
         assertEquals(md5File(data.slotFile(ROM, "sav")), data.ledger(ROM).slot("sav")?.syncedHash)
         assertEquals("sav", placed.single().slot)
@@ -214,6 +223,36 @@ class ServerSavesTest {
         assertEquals("new progress", Files.readString(data.slotFile(ROM, "sav")))
         assertFalse(events.any { it.startsWith("upload") })
         assertTrue(server.any { bytes[it.id]?.contentEquals("new progress".toByteArray()) == true })
+    }
+
+    @Test fun aServerRetentionCapCannotPruneTheCurrentSaveDuringPlayOrCopy() = runBlocking {
+        hold("current")
+        val source = add("choice".toByteArray(), "autosave", "melonds")
+        pruneSlot = true
+        library().playServerSave(GAME, player, source.id.toString())
+        assertTrue(server.any { it.slot == null && bytes[it.id]?.contentEquals("current".toByteArray()) == true })
+        assertTrue(server.any { it.slot == "sav" && bytes[it.id]?.contentEquals("choice".toByteArray()) == true })
+        add("destination progress".toByteArray(), "other-slot", "argosy")
+        library().copyServerSave(GAME, source.id.toString(), "other-slot", "argosy", player)
+        assertTrue(server.any { it.slot == null && bytes[it.id]?.contentEquals("destination progress".toByteArray()) == true })
+        assertTrue(server.any { it.id == source.id })
+    }
+
+    @Test fun aFailedArchiveRefusesPromotionAndARetryReusesAnAcknowledgedArchive() = runBlocking {
+        hold("current")
+        val source = add("choice".toByteArray(), "autosave", "melonds")
+        val archive = ops.onArchive
+        ops.onArchive = { save, device, hash, content ->
+            archive(save, device, hash, content)
+            throw RommUnavailable("Archive response lost")
+        }
+        assertNotNull(runCatching { library().playServerSave(GAME, player, source.id.toString()) }.exceptionOrNull())
+        assertEquals("current", Files.readString(data.slotFile(ROM, "sav")))
+        assertFalse(events.any { it.startsWith("upload") })
+        ops.onArchive = { _, _, _, _ -> error("Must reuse the existing archive") }
+        library().playServerSave(GAME, player, source.id.toString())
+        assertEquals("choice", Files.readString(data.slotFile(ROM, "sav")))
+        assertEquals(1, events.count { it.startsWith("archive") })
     }
 
     @Test fun foreignSlotCopyUsesItsLatestEmulatorAndLeavesLocalFilesAndLedgerAlone() = runBlocking {

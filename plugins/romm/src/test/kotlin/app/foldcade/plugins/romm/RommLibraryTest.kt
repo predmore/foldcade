@@ -1788,6 +1788,7 @@ internal class ScriptedOps : RommOps {
     var onArtwork: suspend (String) -> ByteArray = { error("artwork") }
     var onListSaves: suspend (Long, String?) -> List<app.foldcade.romm.RommSave> = { _, _ -> error("list saves") }
     var onDownloadSave: suspend (app.foldcade.romm.RommSave, String, Path) -> Unit = { _, _, _ -> error("download save") }
+    var onArchive: suspend (app.foldcade.romm.RommSave, String, String, ByteArray) -> Long = { _, _, _, _ -> error("archive save") }
     var onUploadSave: suspend (Long, String, String, String?, String, String, ByteArray) -> Long = { _, _, _, _, _, _, _ -> error("upload save") }
     var onRegister: suspend (RegisteredDevice?, String, String) -> RegisteredDevice =
         { _, _, version -> RegisteredDevice("device-1", version) }
@@ -1808,6 +1809,7 @@ internal class ScriptedOps : RommOps {
     override suspend fun heartbeat() = onHeartbeat()
     override suspend fun listSaves(romId: Long, deviceId: String?) = onListSaves(romId, deviceId)
     override suspend fun downloadSave(save: app.foldcade.romm.RommSave, deviceId: String, destination: Path) = onDownloadSave(save, deviceId, destination)
+    override suspend fun uploadArchive(save: app.foldcade.romm.RommSave, deviceId: String, hash: String, bytes: ByteArray) = onArchive(save, deviceId, hash, bytes)
     override suspend fun uploadSave(romId: Long, fileName: String, slot: String, emulator: String?, deviceId: String, hash: String, bytes: ByteArray) = onUploadSave(romId, fileName, slot, emulator, deviceId, hash, bytes)
     override suspend fun artwork(uri: String) = onArtwork(uri)
     override suspend fun platforms() = onPlatforms()
