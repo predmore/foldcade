@@ -32,6 +32,8 @@ import app.foldcade.api.plugin.Platform
 import app.foldcade.api.plugin.HostedSaveFolder
 import app.foldcade.api.plugin.SaveFolderHolder
 import app.foldcade.api.plugin.SaveSyncState
+import app.foldcade.api.plugin.SaveDeclaration
+import app.foldcade.language.SaveHealth
 import app.foldcade.api.plugin.SyncOutcome
 import app.foldcade.api.plugin.SyncResult
 import app.foldcade.artwork.ArtQuery
@@ -168,6 +170,7 @@ class ShellController(
     private val onSameGames: (Map<String, List<String>>) -> Unit = {},
     /** "0.1.2 (230)", read from the installed package. Settings › About shows it. */
     private val appVersion: String = "",
+    private val onSaveHealthChanged: (Map<String, String>) -> Unit = {},
 ) {
     var artPicker by mutableStateOf<ArtPickerState?>(null)
         private set
@@ -280,6 +283,7 @@ class ShellController(
     private val listedPlatformNames = HashMap<String, String>()
 
     private var committedHome: String? = store.homeBoardRaw()
+    private var saveHealthReady = false
     private var current by mutableStateOf(initial())
 
     /**
@@ -379,6 +383,85 @@ class ShellController(
     /** What libraries are doing with games, by home id. Tiles and the top screen show it. */
     var activity by mutableStateOf<Map<String, TileActivity>>(emptyMap())
         private set
+
+    private var saveHealthEpoch by mutableStateOf(0)
+    private var unsyncedSaves by mutableStateOf<Map<String, Set<String>>>(emptyMap())
+    private data class SaveReachability(val locations: List<SaveDeclaration>, val reachable: Boolean)
+    private val reachableSaves = mutableMapOf<Pair<String, String>, SaveReachability>()
+
+    internal fun setUnsyncedSaves(libraryId: String, keys: Set<String>) {
+        if (unsyncedSaves[libraryId] == keys) return
+        unsyncedSaves = unsyncedSaves + (libraryId to keys)
+        refreshSaveHealth()
+    }
+
+    internal fun noteSaveReachable(game: Game, playerId: String, reachable: Boolean) {
+        val player = plugins.player(playerId) ?: return
+        reachableSaves[homeGameId(game.backendId, game.remoteKey) to playerId] = SaveReachability(player.saveDeclarations(game), reachable)
+        refreshSaveHealth()
+    }
+
+    internal fun saveGame(libraryId: String, remoteKey: String): Game? = libraryGames[homeGameId(libraryId, remoteKey)]
+
+    /** The Settings row owns a shared folder's fix, such as RetroArch across several systems. */
+    internal fun saveNoticePlayerId(playerId: String): String {
+        val player = plugins.player(playerId) ?: return playerId
+        if (player !is SaveFolderHolder) return playerId
+        val key = player.saveFolderId()
+        return plugins.playerIds().firstOrNull { id ->
+            val candidate = plugins.player(id)
+            candidate is SaveFolderHolder && candidate.saveFolderId() == key
+        } ?: playerId
+    }
+
+    internal fun savePlayer(platformId: String) = preferredPlayer(
+        plugins.playersFor(platformId),
+        runnable = { runnableWith(it, it.packageNames.firstOrNull(installedPlayers::contains)) },
+        rank = ::playerRank,
+        installed = installedPlayers::contains,
+    )
+
+    internal fun saveHealthOf(id: String, pressed: Game? = null): SaveHealth {
+        saveHealthEpoch // Folder checks, player installs, and catalog changes invalidate this read.
+        val homeId = pressed?.let { homeGameId(it.backendId, it.remoteKey) } ?: id
+        val route = launchRoute(tileOf(homeId), pressed) ?: return SaveHealth.Fine
+        val player = savePlayer(route.play.platformId)
+        val reachability = player?.let { reachableSaves[homeGameId(route.saves.backendId, route.saves.remoteKey) to it.id] }
+        val locations = try {
+            if (reachability != null) player?.saveDeclarations(route.saves) else null
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (_: Exception) {
+            null
+        }
+        return gameSaveHealth(
+            route.saves, player, route.servers.isNotEmpty(),
+            waiting = route.servers.any { it.remoteKey in unsyncedSaves[it.backendId].orEmpty() },
+            sync = player?.let { saveSync[it.id] },
+            setup = player?.let { setupSteps[it.id] },
+            reachable = reachability?.takeIf { it.locations == locations }?.reachable,
+        )
+    }
+
+    fun saveHealthAt(source: Int): SaveHealth {
+        val game = tileFromOrder(source) ?: return SaveHealth.Fine
+        val pressed = if (model.libraryGrid) entries.getOrNull(source)?.game else null
+        return saveHealthOf(pressed?.let { homeGameId(it.backendId, it.remoteKey) } ?: game.id, pressed)
+    }
+
+    private fun refreshSaveHealth() {
+        if (!saveHealthReady) return
+        saveHealthEpoch += 1
+        val players = linkedMapOf<String, String>()
+        for (id in libraryGames.keys.map(::tileOf).distinct()) {
+            if (!app.foldcade.language.onHome(home.board, id)) continue
+            val route = launchRoute(id) ?: continue
+            if (saveHealthOf(id) !is SaveHealth.NotSyncing) continue
+            val player = savePlayer(route.play.platformId) ?: continue
+            players[saveNoticePlayerId(player.id)] = player.displayName
+        }
+        onSaveHealthChanged(players)
+    }
 
     /** Tiles whose game is still open in its player, see [RunningGames]. */
     var running by mutableStateOf<Set<String>>(emptySet())
@@ -1468,6 +1551,9 @@ class ShellController(
         return activityAt(source)
     }
 
+    /** Target-specific activity, including Find and the tile in hand. */
+    fun activityFor(id: String): TileActivity? = activityOf(tileOf(id))
+
     /** True once any library has a game on the board. */
     fun hasLibraryGames(): Boolean = libraryItems.isNotEmpty()
 
@@ -2305,6 +2391,7 @@ class ShellController(
 
     fun refreshPlayerSaves() {
         model = model.copy(playerSaves = playerSaveSettings())
+        refreshSaveHealth()
     }
 
     /** Null while RetroArch is not installed. */
@@ -2571,9 +2658,14 @@ class ShellController(
     /** Replaces the cached card state and redraws the emulator rows. */
     fun setSaveSync(states: Map<String, SaveSyncState>, setup: Map<String, String> = setupSteps) {
         if (states == saveSync && setup == setupSteps) return
+        val changed = (states.keys + saveSync.keys + setup.keys + setupSteps.keys).filter {
+            states[it] != saveSync[it] || setup[it] != setupSteps[it]
+        }.toSet()
+        reachableSaves.keys.removeAll { it.second in changed }
         saveSync = states
         setupSteps = setup
         model = model.copy(playerSaves = playerSaveSettings())
+        refreshSaveHealth()
     }
 
     /** One row per save folder. Players that share a folder, as RetroArch's systems do, share a row. */
@@ -2791,9 +2883,11 @@ class ShellController(
 
     private fun commitHome(catalog: Boolean = false) {
         val saved = home.encoded()
+        val changed = saved != committedHome
         if (!catalog && (saved != committedHome || home.board.editing)) undo = null
         committedHome = saved
         store.saveHomeBoard(saved)
+        if (!catalog && changed) refreshSaveHealth()
     }
 
     private fun syncHome() {
@@ -2830,6 +2924,7 @@ class ShellController(
         )
         commitHome(catalog = true)
         find?.refresh(findEntries())
+        refreshSaveHealth()
     }
 
     private fun shelfItems(): List<HomeItem> = Shelf.games.mapNotNull { game ->
@@ -3017,6 +3112,9 @@ class ShellController(
 
     /** One of them went away. */
     private fun closed(before: PickerModel, after: PickerModel): Boolean = opened(after, before)
+
+    // initial() merges the board before the later state fields and the app's shell binding exist.
+    init { saveHealthReady = true }
 }
 
 /** How a finished sync reads on its tile. Unchanged with a note is a sync that could not run. */

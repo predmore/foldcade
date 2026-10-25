@@ -11,6 +11,47 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class SaveNoticeTest {
+    @Test
+    fun setupNoticesStayDismissedUntilThatPlayersNextLaunchAndDisappearWhenFixed() {
+        val notices = SaveSetupNotices()
+        notices.update(mapOf("armsx2" to "ARMSX2", "melonds" to "melonDS"))
+        val initial = notices.notices(100)
+        assertEquals(2, initial.size)
+        val arms = initial.single { it.savePlayerId == "armsx2" }
+        assertEquals(Copy.savesNotSyncingTitle("ARMSX2"), arms.title)
+        assertEquals(Copy.savesNotSyncingBody, arms.body)
+        assertTrue(arms.dismissable)
+        notices.dismiss(arms.id)
+        notices.update(mapOf("armsx2" to "ARMSX2", "melonds" to "melonDS"))
+        assertEquals(listOf("melonds"), notices.notices(200).map { it.savePlayerId })
+        notices.launch("melonds")
+        assertEquals(listOf("melonds"), notices.notices(201).map { it.savePlayerId })
+        notices.launch("armsx2")
+        assertEquals(initial, notices.notices(300)) // Refresh never reorders or reposts it.
+        notices.update(mapOf("melonds" to "melonDS"))
+        assertEquals(listOf("melonds"), notices.notices(400).map { it.savePlayerId })
+        notices.clear()
+        assertTrue(notices.notices(500).isEmpty())
+        notices.launch("melonds")
+        assertEquals(1, notices.notices(600).size)
+        notices.update(emptyMap())
+        assertTrue(notices.notices(700).isEmpty())
+    }
+
+    @Test
+    fun aColdLedgerGetsOneWaitingNoticeAfterPatienceAndANewWaitAfterItSettles() {
+        val notices = WaitingSaveNotices(patienceMillis = 100)
+        assertTrue(notices.update(listOf(game), 0).isEmpty())
+        assertEquals(100L, notices.nextDueMillis())
+        assertTrue(notices.update(listOf(game), 99).isEmpty())
+        assertEquals(Copy.offlineSaveTitle, notices.update(listOf(game), 100).single().title)
+        assertTrue(notices.update(listOf(game), 200).isEmpty())
+        assertNull(notices.nextDueMillis())
+        notices.update(emptyList(), 300)
+        assertTrue(notices.update(listOf(game), 400).isEmpty())
+        assertTrue(notices.update(listOf(game), 499).isEmpty())
+        assertEquals(1, notices.update(listOf(game), 500).size)
+    }
     private val game = Game(
         backendId = "romm",
         remoteKey = "42",

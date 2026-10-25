@@ -43,7 +43,7 @@ Prefer decrypted `.cci` or `.zcci` games. `.3ds` is best-effort; Foldcade does n
 
 Both regular and Google Play builds are recognized; regular has priority when both are installed.
 
-For [RomM save sync](romm.md#save-sync), choose Azahar's user folder, the one that holds `sdmc`, `nand` and `config`, in **Foldcade Settings › Emulators › Azahar**. Foldcade moves a game's save data and extra data there before launch and reads them back when you return. Choose **Not now** at the save-folder prompt to play with Azahar's own saves.
+For [RomM save sync](romm.md#save-sync), choose Azahar's user folder, the one that holds `sdmc`, `nand` and `config`, in **Foldcade Settings › Emulators › Azahar**. Foldcade moves a game's save data and extra data there before launch and reads them back when you return. Choose **Play without syncing** at the save-folder prompt to play with Azahar's own saves for this launch. Foldcade asks again next time.
 
 ## melonDS: Nintendo DS and DSi
 
@@ -53,7 +53,7 @@ Stable and nightly builds are recognized; stable has priority when both are inst
 
 For [RomM save sync](romm.md#save-sync), choose the same save directory in melonDS and **Foldcade Settings › Emulators › melonDS**, with **Save next to ROM file** off. A ROM named `Puzzle.nds` uses `Puzzle.sav`; keep filenames consistent across devices.
 
-Choose **Not now** at the save-folder prompt to play with melonDS's own saves.
+Choose **Play without syncing** at the save-folder prompt to play with melonDS's own saves for this launch. Foldcade asks again next time.
 
 ## DuckStation: PlayStation
 
@@ -75,7 +75,7 @@ Foldcade syncs each game's memory card through [RomM](romm.md#save-sync). DuckSt
 2. Open the picker's menu, pick **Foldcade** (*DuckStation memory cards*), and tap **Use this folder** and **Allow**.
 3. Choose **Copy Files** to bring the cards you already have.
 
-**Foldcade Settings › Emulators** shows **DuckStation memory cards: Syncing** once DuckStation uses the folder. Until then, **Set up** there shows the steps again. **Not now** plays with DuckStation's own cards, unsynced. The cards are in Foldcade's storage, so uninstalling Foldcade removes the copies on the device. The ones on RomM stay.
+**Foldcade Settings › Emulators** shows **DuckStation memory cards: Syncing** once DuckStation uses the folder. Until then, **Not syncing** there shows the steps again. **Play without syncing** plays with DuckStation's own cards for this launch. Foldcade asks again next time. The cards are in Foldcade's storage, so uninstalling Foldcade removes the copies on the device. The ones on RomM stay.
 
 Foldcade syncs memory card 1, DuckStation's card per game. With its default type, **Separate Card Per Game (Title)**, DuckStation names that card after the game's title in its database. For Redump file names, as RomM keeps them, that title is the game file's name: `Castlevania - Symphony of the Night (USA).cue` uses `Castlevania - Symphony of the Night (USA)_1.mcd`. If your files are named otherwise, set memory card 1's type, in DuckStation's **Memory Cards** settings, to **Separate Card Per Game (File Title)** so the names match. A BIOS file you put in `bios` yourself is never replaced. Save states stay with DuckStation.
 
@@ -129,7 +129,7 @@ Put `PS3UPDAT.PUP` in RomM's firmware for the PlayStation 3. Foldcade checks it 
 
 Once aPS3e's folder is picked, **Foldcade Settings › Emulators** shows **aPS3e setup: Set up** while any of those is still true. Select it for the same steps.
 
-The first time you play a game with aPS3e, Foldcade asks for aPS3e's folder. aPS3e can't start a game until it has one, so **Not now** there only closes, and the next start asks again. The picker opens at aPS3e's own folder, so tap **Use this folder** and **Allow**. With the premium build, open **aPS3e Premium** in the picker's list first: the picker opens at the free build's folder. You can change the folder later in **Foldcade Settings › Emulators › aPS3e**. A folder you pick has to hold `config` or `logs`; a new install of aPS3e has `logs` before you open it.
+The first time you play a game with aPS3e, Foldcade asks for aPS3e's folder. aPS3e can't start a game until it has one, so declining the folder offer only closes it, and the next start asks again. The picker opens at aPS3e's own folder, so tap **Use this folder** and **Allow**. With the premium build, open **aPS3e Premium** in the picker's list first: the picker opens at the free build's folder. You can change the folder later in **Foldcade Settings › Emulators › aPS3e**. A folder you pick has to hold `config` or `logs`; a new install of aPS3e has `logs` before you open it.
 
 ### Saves
 

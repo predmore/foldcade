@@ -123,3 +123,48 @@ internal class ReturnSyncNotices(private val patienceMillis: Long = RETURN_SYNC_
 
 /** How long a hand-back's notice waits for the library to say how its sync ended. */
 internal const val RETURN_SYNC_PATIENCE_MS = 45_000L
+
+/** Standing setup notices. Dismissal lasts until that player's next launch attempt. */
+internal class SaveSetupNotices {
+    private var players = emptyMap<String, String>()
+    private val dismissed = mutableSetOf<String>()
+    private val posted = mutableMapOf<String, Long>()
+
+    fun update(next: Map<String, String>) {
+        dismissed.retainAll(next.keys)
+        posted.keys.retainAll(next.keys)
+        players = next
+    }
+
+    fun launch(playerId: String) { dismissed.remove(playerId) }
+    fun dismiss(id: String) { players.keys.firstOrNull { noticeId(it) == id }?.let(dismissed::add) }
+    fun clear() { dismissed.addAll(players.keys) }
+
+    fun notices(nowMillis: Long): List<FoldNotice> = players.filterKeys { it !in dismissed }.map { (id, name) ->
+        FoldNotice(
+            id = noticeId(id), title = Copy.savesNotSyncingTitle(name), body = Copy.savesNotSyncingBody,
+            postedMillis = posted.getOrPut(id) { nowMillis }, savePlayerId = id,
+        )
+    }
+
+    private fun noticeId(playerId: String) = "foldcade:save-setup:$playerId"
+}
+
+/** Cold-start ledger saves get the same patience as a hand-back. One notice until fixed. */
+internal class WaitingSaveNotices(private val patienceMillis: Long = RETURN_SYNC_PATIENCE_MS) {
+    private val since = mutableMapOf<Pair<String, String>, Long>()
+    private val told = mutableSetOf<Pair<String, String>>()
+
+    fun nextDueMillis(): Long? = since.filterKeys { it !in told }.values.minOrNull()?.plus(patienceMillis)
+
+    fun update(games: List<Game>, nowMillis: Long): List<FoldNotice> {
+        val keys = games.map { it.backendId to it.remoteKey }.toSet()
+        since.keys.retainAll(keys)
+        told.retainAll(keys)
+        return games.mapNotNull { game ->
+            val key = game.backendId to game.remoteKey
+            val start = since.getOrPut(key) { nowMillis }
+            if (nowMillis - start >= patienceMillis && told.add(key)) saveNotice(game, SyncOutcome.Queued, nowMillis) else null
+        }
+    }
+}

@@ -15,6 +15,8 @@ data class FoldNotice(
     val openable: Boolean = false,
     /** Y removes it. Android marks some notifications as not clearable. */
     val dismissable: Boolean = true,
+    /** A standing save notice opens this player's Settings fix. */
+    val savePlayerId: String? = null,
 )
 
 object NoticeCopy {

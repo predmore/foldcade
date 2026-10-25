@@ -637,7 +637,9 @@ internal fun MenuRow(
             is RowControl.Toggle -> ToggleSwitch(control.on, focused, scale)
             is RowControl.Check -> CheckMark(control.on, focused, scale, control.some)
             is RowControl.Choice -> ChoiceValue(control.value, focused, valueStyle.copy(color = if (focused) theme.onBackground else theme.muted), scale)
-            is RowControl.Value -> BasicText(control.text, style = valueStyle, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            is RowControl.Value -> BasicText(control.text,
+                style = if (control.attention) valueStyle.copy(color = theme.style.colors.attention) else valueStyle,
+                maxLines = 1, overflow = TextOverflow.Ellipsis)
             RowControl.Opens -> if (chord == null) OpensChevron(focused, labelStyle, scale)
             RowControl.None -> Unit
         }

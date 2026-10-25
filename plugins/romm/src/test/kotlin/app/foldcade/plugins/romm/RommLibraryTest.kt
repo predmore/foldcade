@@ -1729,7 +1729,7 @@ private class NamedPlayer(override val id: String) : Player {
     override val startDisplay = StartDisplay.Primary
     override val occupiesBothDisplays = true
     override val requiresImportedGame = false
-    override fun saveDeclarations(game: Game): List<SaveDeclaration> = emptyList()
+    override fun saveDeclarations(game: Game): List<SaveDeclaration> = listOf(SaveDeclaration("title", "content://saves"))
     override fun launchIntent(request: LaunchRequest): PlayerIntent = error("unused")
 }
 

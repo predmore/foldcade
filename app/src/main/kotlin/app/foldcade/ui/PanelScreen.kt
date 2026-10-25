@@ -237,6 +237,10 @@ import app.foldcade.language.rowLabel
 import app.foldcade.language.retargetHero
 import app.foldcade.language.Row as LanguageRow
 import app.foldcade.language.rowText
+import app.foldcade.language.SaveHealth
+import app.foldcade.language.needsAttention
+import app.foldcade.language.saveHealthLine
+import app.foldcade.language.saveHealthLeads
 import app.foldcade.language.TileActivity
 import app.foldcade.language.PlayKey
 import app.foldcade.language.activityLine
@@ -1562,7 +1566,10 @@ private fun HeroLabel(
             val focusedGame = app.shell.focusedGame()?.takeIf { it.id == item?.key }
             val both = focusedGame?.occupiesBothDisplays == true
             // What the library is doing with this game leads the line, in the focus colour.
-            val live = focusedGame?.let { app.shell.focusedActivity() }?.let(::activityLine)
+            val health = focusedGame?.let { app.shell.saveHealthOf(it.id, app.shell.artRecord(it)) } ?: SaveHealth.Fine
+            val activity = focusedGame?.let { app.shell.activityFor(it.id) }
+            val saveLine = if (saveHealthLeads(health, activity)) saveHealthLine(health) else null
+            val live = activity?.takeIf { saveLine == null }?.let(::activityLine)
             val played = item?.let { app.plays.run { stamp; shown(app.shell.playId(it.key)) } }
             val facts = heroFacts(
                 copy.title,
@@ -1573,11 +1580,14 @@ private fun HeroLabel(
                     heroPlayLine(it.activeMillis, it.lastPlayedMillis, System.currentTimeMillis(), ZoneId.systemDefault(), dateStyle)
                 },
             )
-            if (facts.isNotEmpty() || live != null) {
+            if (facts.isNotEmpty() || live != null || saveLine != null) {
                 BasicText(
                     text = buildAnnotatedString {
                         if (live != null) {
                             withStyle(SpanStyle(color = theme.focus)) { append(live) }
+                            if (facts.isNotEmpty()) append(" · ")
+                        } else if (saveLine != null) {
+                            withStyle(SpanStyle(color = if (health.needsAttention) theme.style.colors.attention else theme.muted)) { append(saveLine) }
                             if (facts.isNotEmpty()) append(" · ")
                         }
                         append(facts)
@@ -3167,6 +3177,7 @@ private fun StripColumn(
                         onServer = face?.onServer == true,
                         downloading = shell.isDownloading(face?.id),
                         activity = shell.activityAt(source),
+                        saveHealth = shell.saveHealthAt(source),
                         library = libraryTile,
                         settledAt = if (face?.folder == true) shell.settledAt(face.id) else 0L,
                         onClick = { tap() },
@@ -3546,6 +3557,7 @@ private fun CarriedTile(
                 favorite = game.favorite,
                 onServer = face.onServer,
                 downloading = shell.isDownloading(face.id),
+                saveHealth = shell.saveHealthOf(game.id),
                 // A tap on the tile in the hand puts it down, as a tap on its slot did.
                 onClick = { carry?.let { onTap(it.at) } },
             )
@@ -3601,6 +3613,7 @@ private fun FoundTile(app: FoldcadeApp, entry: FindEntry, focused: Boolean, size
             favorite = false,
             onServer = shell.onServer(entry.id),
             downloading = shell.isDownloading(entry.id),
+            saveHealth = shell.saveHealthOf(entry.id),
             onClick = onClick,
         )
         if (entry.hidden) {
@@ -3663,6 +3676,7 @@ private fun TileStatus(
     focused: Boolean,
     downloading: Boolean,
     activity: TileActivity?,
+    saveHealth: SaveHealth,
     animatorScale: Float,
     modifier: Modifier,
 ) {
@@ -3718,6 +3732,7 @@ private fun TileStatus(
                 R.drawable.ic_badge_sync to theme.muted
             }
             activity == TileActivity.Syncing -> R.drawable.ic_badge_sync to theme.focus
+            saveHealth.needsAttention && !busy -> R.drawable.ic_badge_unsynced to theme.style.colors.attention
             waiting -> R.drawable.ic_badge_paused to theme.focus
             busy -> R.drawable.ic_badge_cloud to theme.focus
             focused -> R.drawable.ic_badge_cloud to theme.onBackground
@@ -3811,6 +3826,7 @@ private fun Cell(
     onServer: Boolean = false,
     downloading: Boolean = false,
     activity: TileActivity? = null,
+    saveHealth: SaveHealth = SaveHealth.Fine,
     library: Boolean = false,
     /** When this tile last took a new look (see [ShellController.settledAt]), or 0. */
     settledAt: Long = 0L,
@@ -4063,12 +4079,13 @@ private fun Cell(
                 )
             }
             // On the server, not on this device. A downloaded game has no badge at all.
-            if (onServer || downloading || activity != null) {
+            if (onServer || downloading || activity != null || saveHealth.needsAttention) {
                 TileStatus(
                     onServer = onServer,
                     focused = focused,
                     downloading = downloading,
                     activity = activity,
+                    saveHealth = saveHealth,
                     animatorScale = animatorScale,
                     // Far enough in that the tile's rounded corner never clips it.
                     modifier = Modifier.align(Alignment.BottomEnd).padding(maxOf(px(8f), corner * CORNER_SAFE)),

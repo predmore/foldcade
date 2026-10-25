@@ -81,6 +81,12 @@ The firmware download shows on the game's tile. If RomM cannot be reached, or a 
 
 Save sync supports **melonDS `.sav` files**, **RetroArch `.srm` battery saves**, **Azahar 3DS saves**, **DuckStation memory cards**, **ARMSX2 folder memory cards**, and **aPS3e `savedata` folders** with RomM **5.4.0 or newer**.
 
+Select **Choose folder** to point Foldcade at the emulator's save folder. **Play without syncing**, or cancelling the folder picker, skips sync for this launch only. Foldcade asks again next time. DuckStation's hosted folder and ARMSX2's card setup offer **Set up** and **Play without syncing** the same way.
+
+A game whose saves are not protected keeps an amber badge and **Saves not syncing** on the top screen. R1 lists one setup notice per emulator; select it to fix the setup. Dismiss it for now and it returns after the next launch of that emulator's game. It disappears once set up. Settings › Emulators shows **Not syncing** on rows that need setup.
+
+**Saves waiting to upload** and the same badge mean Foldcade holds progress RomM has not received. If it is still waiting after 45 seconds, R1 says so too. The state survives a restart and clears when the save reaches RomM. Emulators Foldcade cannot sync, and games with no server copy, read **Saves stay on this device**.
+
 For melonDS:
 
 1. In melonDS, select a shared save directory and turn **Save next to ROM file** off.
@@ -115,7 +121,7 @@ Switch keys and firmware for Eden work differently, through Eden's own folder: s
 
 - **Cannot connect:** Try the address from the Thor, check network access, and get a new code or check the token's permissions.
 - **Missing game:** Check RomM's scan and account access, then restart Foldcade. If it is already in All, check [Home placement](README.md#a-game-is-in-all-but-missing-from-home).
-- **Will not launch:** Check the [emulator and format](emulators.md). **aPS3e setup: Set up** in **Foldcade Settings › Emulators** means aPS3e still needs its first-run setup or PlayStation 3 firmware; select it for the steps.
-- **Saves do not sync:** Check the server version, the shared melonDS directory, that Azahar's save folder is its user folder, and that **Foldcade Settings › Emulators** shows DuckStation's memory cards and ARMSX2's memory card as **Syncing**. **Not now** at the save-folder prompt allows play with the emulator's own saves. **Set up** on ARMSX2's row means slot 1 is still a file card.
+- **Will not launch:** Check the [emulator and format](emulators.md). **aPS3e setup: Not syncing** in **Foldcade Settings › Emulators** means aPS3e still needs its first-run setup or PlayStation 3 firmware; select it for the steps.
+- **Saves do not sync:** Check the server version, the shared melonDS directory, that Azahar's save folder is its user folder, and that **Foldcade Settings › Emulators** shows DuckStation's memory cards and ARMSX2's memory card as **Syncing**. **Play without syncing** at the save-folder prompt allows this launch with the emulator's own saves. **Not syncing** on ARMSX2's row opens the steps for its folder card. The old file card stays untouched.
 
 [All integration guides](README.md)
