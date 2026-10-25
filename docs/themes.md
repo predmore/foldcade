@@ -124,6 +124,8 @@ An installed pack is read in place. At start Foldcade reads its manifest and sce
 
 Foldcade is the Home app, so a pack that crashes it could leave nothing to go back to. A pack that arrives in `files/themes`, or changes there, is on trial. Android's record of how Foldcade's process ended is read at the next start. Each crash or ANR counts against the packs on trial that were in use: the packs of the theme, icon theme, and background the shell had resolved, or every pack still loading when it stopped. A crash before a new copy loaded does not count against that copy. After two, the start refuses that release from then on, writes that down, and only then puts the copy kept in `themes-previous` back, or takes the pack out when there is none. R1 says which. A trial ends after three minutes of Home shown with the pack in use. Packs already in `files/themes` the first time Foldcade keeps the ledger are not on trial.
 
+The `badge.unsynced` slot is a tinted symbol for a save that is not syncing or is waiting to upload. Afterglow draws a cloud with an exclamation cut out in `icons/ic_badge_unsynced.xml`; the host tints it with `style.colors.attention`.
+
 ## Style tokens
 
 Every token below is optional. A pack's value replaces Afterglow's; anything it leaves out is Afterglow's. `Dp` values are density-independent, `Px` values are panel pixels, and an `Alpha` is 0–1, usually a strength over `onBackground`, the focus ring's colours, or `colors.scrim`. Colours are `#RRGGBB`.
@@ -276,6 +278,7 @@ Colours beyond the manifest's five, as `#RRGGBB`. Those whose Afterglow value is
 
 | Token | Afterglow | Controls |
 | --- | --- | --- |
+| `colors.attention` | #FFC48A | Save protection that needs attention; persistent unsynced badges, the hero line, and Settings values. Role `attention`, unscaled |
 | `colors.scrim` | #000000 | What dims the screen under menus and dialogs, and shades art behind text |
 | `colors.shade` | #000000 | The dark end of art's shading: a pressed glyph, a swatch's base |
 | `colors.shine` | #FFFFFF | The light end: a pressed glyph's lip, a swatch's top and chosen rim |

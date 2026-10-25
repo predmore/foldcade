@@ -471,6 +471,10 @@ class PluginHost(
         return offMain(libraryId) { library.reconcile(game, player, observed) }
     }
 
+    /** Locally held progress waiting for this library's server. */
+    suspend fun unsyncedSaves(libraryId: String): Set<String> =
+        offMain(libraryId) { requireLibrary(libraryId).unsyncedSaves() }
+
     suspend fun pendingSaveConflicts(): List<SaveConflict> {
         val found = mutableListOf<SaveConflict>()
         for (id in libraryIds()) {

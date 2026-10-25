@@ -121,7 +121,8 @@ class PluginContractTest {
         assertTrue(aliases.isDefault)
         assertTrue(IdlePlatform().aliases.isEmpty())
         assertEquals(1, PLUGIN_API_VERSION)
-        assertEquals(14, PLUGIN_API_MINOR)
+        assertEquals(15, PLUGIN_API_MINOR)
+        assertTrue(LibraryBackend::class.java.methods.single { it.name == "unsyncedSaves" }.isDefault)
         val bind = PluginEntry::class.java.methods.single { it.name == "bind" }
         assertTrue(bind.isDefault)
         val saveFileName = Player::class.java.methods.single { it.name == "saveFileName" }
@@ -260,6 +261,7 @@ class PluginContractTest {
                 "ensureLocal",
                 "removeLocal",
                 "saves",
+                "unsyncedSaves",
                 "prepareLaunch",
                 "prepareSaves",
                 "fileName",

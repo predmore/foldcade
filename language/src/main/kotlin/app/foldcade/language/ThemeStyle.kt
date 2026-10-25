@@ -102,6 +102,7 @@ enum class TokenKind(val wire: String) { Number("number"), Duration("duration"),
  */
 enum class TokenRole(val wire: String, val scale: String?) {
     None("none", null),
+    Attention("attention", null),
     Corner("corner", "cornerScale"),
     Stroke("stroke", "strokeScale"),
     Glow("glow", "glowScale"),
@@ -250,8 +251,8 @@ internal class ThemeStyleReader(
         }.toInt()
     }
 
-    fun color(group: String, name: String, fallback: Color): Color =
-        layered(group, name, fallback, TokenSpec(TokenKind.Color, null, null, TokenRole.None)) { raw ->
+    fun color(group: String, name: String, fallback: Color, role: TokenRole = TokenRole.None): Color =
+        layered(group, name, fallback, TokenSpec(TokenKind.Color, null, null, role)) { raw ->
             (raw as? JsonPrimitive)?.contentOrNull?.let(::themeColor)
         }
 
@@ -420,6 +421,9 @@ class ThemeMotion internal constructor(private val reader: ThemeStyleReader) {
 
 /** Colours beyond the manifest's five. */
 class ThemeColors internal constructor(reader: ThemeStyleReader) {
+    /** Progress that needs protection, such as a save that is not reaching RomM. */
+    val attention = reader.color("colors", "attention", Color(0xFFFFC48A), TokenRole.Attention)
+
     /** What dims the screen under a menu or dialog and shades art behind text. */
     val scrim = reader.color("colors", "scrim", Color(0xFF000000))
 

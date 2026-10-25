@@ -326,6 +326,8 @@ def badge_assets():
     arrows = [ink("M5,12 A7,7 0 0 1 18.58,9.61", INK, 2.4), solid("M20.84,8.79 L19.47,12.05 L16.32,10.43 Z"),
               ink("M19,12 A7,7 0 0 1 5.42,14.39", INK, 2.4), solid("M3.16,15.21 L4.53,11.95 L7.68,13.57 Z")]
     return [Asset("ic_badge_cloud", 24, 24, [solid(cloud)], note="Tile badge: the game is on its server, not this device. Tinted at draw time.", tint=True),
+            Asset("ic_badge_unsynced", 24, 24, [solid(cloud + "M10.7,9 H13.3 V13.5 H10.7 Z " + circle(12, 16, 1.3), evenodd=True)],
+                  note="Tile badge: saves need attention. A cloud with an exclamation cut out. Tinted at draw time.", tint=True),
             Asset("ic_badge_check", 24, 24, [solid(check, evenodd=True)], note="Tile badge: the sync worked. Tinted at draw time.", tint=True),
             Asset("ic_badge_sync", 24, 24, arrows, note="Tile badge: saves are syncing. Tinted at draw time.", tint=True),
             Asset("ic_badge_paused", 24, 24, [solid(circle(12, 12, 10) + "M8.4,7.2 H11 V16.8 H8.4 Z M13,7.2 H15.6 V16.8 H13 Z", evenodd=True)],

@@ -56,6 +56,7 @@ class LocalFolderBackendTest {
                 "ensureLocal",
                 "removeLocal",
                 "saves",
+                "unsyncedSaves",
                 "prepareLaunch",
                 "prepareSaves",
                 "fileName",
