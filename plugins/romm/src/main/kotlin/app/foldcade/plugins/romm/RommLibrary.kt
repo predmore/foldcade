@@ -1014,6 +1014,17 @@ internal fun RomSummary.bytes(): RomBytes {
             addOns = files.filter { it !== sheet }.map { AddOn(it.id, it.fileName, it.fileSizeBytes, it.md5Hash) },
         )
     }
+    // One file in a folder of its own, such as a PS3 ISO: RomM sends that file as it is, so its size and hash check it.
+    if (hasNestedSingleFile && !hasMultipleFiles) {
+        files.singleOrNull()?.let { file ->
+            return RomBytes(
+                fileName = file.fileName,
+                fileIds = listOf(file.id),
+                expectedSize = file.fileSizeBytes.takeIf { it > 0 },
+                md5 = file.md5Hash?.takeUnless { RommClient.isArchiveName(file.fileName) },
+            )
+        }
+    }
     val multiple = hasMultipleFiles || hasNestedSingleFile
     val fileIds = if (multiple) files.map { it.id } else emptyList()
     val fileName = when {
