@@ -123,7 +123,7 @@ class PluginContractTest {
         assertEquals(1, PLUGIN_API_VERSION)
         assertEquals(15, PLUGIN_API_MINOR)
         assertTrue(LibraryBackend::class.java.methods.single { it.name == "unsyncedSaves" }.isDefault)
-        for (name in listOf("serverSaves", "syncServerSaves", "playServerSave", "copyServerSave")) {
+        for (name in listOf("serverSaves", "serverSaveOrigins", "syncServerSaves", "playServerSave", "copyServerSave")) {
             assertTrue(LibraryBackend::class.java.methods.single { it.name == name }.isDefault)
         }
         val bind = PluginEntry::class.java.methods.single { it.name == "bind" }
@@ -269,6 +269,7 @@ class PluginContractTest {
                 "unsyncedSaves",
                 "serverSaves",
                 "serverSaveBackups",
+                "serverSaveOrigins",
                 "syncServerSaves",
                 "playServerSave",
                 "copyServerSave",

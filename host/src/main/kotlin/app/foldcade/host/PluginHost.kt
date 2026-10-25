@@ -481,6 +481,9 @@ class PluginHost(
     suspend fun serverSaveBackups(libraryId: String, game: Game): Set<String> =
         offMain(libraryId) { requireLibrary(libraryId).serverSaveBackups(game) }
 
+    suspend fun serverSaveOrigins(libraryId: String, game: Game): Map<String, app.foldcade.api.plugin.ServerSaveOrigin> =
+        offMain(libraryId) { requireLibrary(libraryId).serverSaveOrigins(game) }
+
     suspend fun syncServerSaves(libraryId: String, game: Game, player: Player? = null): SyncResult =
         offMain(libraryId) { requireLibrary(libraryId).syncServerSaves(game, player) }
 

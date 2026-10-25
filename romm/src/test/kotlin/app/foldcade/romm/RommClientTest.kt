@@ -1582,6 +1582,22 @@ class RommClientTest {
         }
 
     @Test
+    fun listsDevicesWithAuthenticatedGetAndAcceptsNullableNamesAndClients() {
+        server.route("GET", "/api/devices") { exchange, _ -> json(exchange, 200, """[
+            {"id":"thor","name":"AYN AYN Thor","client":"argosy","client_version":"1.0"},
+            {"id":"deck","name":"Steam Deck","client":"foldcade"},
+            {"id":"unknown","name":null,"client":null}
+        ]""") }
+        val devices = runClient(token = { "rmm_test" }) { it.devices() }
+        assertEquals(listOf(
+            RommDevice("thor", "AYN AYN Thor", "argosy"),
+            RommDevice("deck", "Steam Deck", "foldcade"),
+            RommDevice("unknown", null, null),
+        ), devices)
+        assertEquals("Bearer rmm_test", header(server.recorded.single(), "Authorization"))
+    }
+
+    @Test
     fun listsThe541SchemaAcrossAllSlotsWithNullableFieldsAndScreenshotMetadata() {
         server.route("GET", "/api/saves") { exchange, _ -> json(exchange, 200, """[
             {"id":17,"rom_id":3,"file_name":"save.zip","slot":"autosave","emulator":"azahar",

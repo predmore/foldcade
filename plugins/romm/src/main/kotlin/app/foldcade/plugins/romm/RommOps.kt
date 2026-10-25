@@ -81,6 +81,8 @@ internal interface RommOps : AutoCloseable {
 
     suspend fun listSaves(romId: Long, deviceId: String?): List<app.foldcade.romm.RommSave>
 
+    suspend fun devices(): List<app.foldcade.romm.RommDevice>
+
     suspend fun downloadSave(save: app.foldcade.romm.RommSave, deviceId: String, destination: Path)
 
     suspend fun uploadArchive(save: app.foldcade.romm.RommSave, deviceId: String, hash: String, bytes: ByteArray): Long
@@ -150,6 +152,8 @@ internal class ClientRommOps(private val client: RommClient) : RommOps {
     override fun verificationUrl(challenge: DeviceAuthChallenge) = client.verificationUrl(challenge)
 
     override suspend fun listSaves(romId: Long, deviceId: String?) = client.listSaves(romId, deviceId)
+
+    override suspend fun devices() = client.devices()
 
     override suspend fun downloadSave(save: app.foldcade.romm.RommSave, deviceId: String, destination: Path) =
         client.downloadSave(save.id, deviceId, null, destination, save.contentHash, save.sizeBytes)

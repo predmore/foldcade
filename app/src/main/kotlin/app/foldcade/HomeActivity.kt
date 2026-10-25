@@ -2812,8 +2812,10 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
             try {
                 val listed = foldcade.plugins.serverSaves(request.owner.backendId, request.owner, request.player)
                 val backups = foldcade.plugins.serverSaveBackups(request.owner.backendId, request.owner)
+                val origins = foldcade.plugins.serverSaveOrigins(request.owner.backendId, request.owner)
                 val saves = listed.map {
-                    app.foldcade.language.SavePickerSave(it.id, it.slot, it.emulator, it.source, it.updatedAtMillis, it.sizeBytes, it.playing, it.screenshotUri, it.id in backups)
+                    val origin = origins[it.id]?.let { detail -> app.foldcade.language.SavePickerOrigin(detail.client, detail.deviceName, detail.thisDevice) }
+                    app.foldcade.language.SavePickerSave(it.id, it.slot, it.emulator, it.source, it.updatedAtMillis, it.sizeBytes, it.playing, it.screenshotUri, it.id in backups, origin)
                 }
                 withContext(Dispatchers.Main.immediate) {
                     foldcade.shell.updateSavePicker(target) { previous ->

@@ -87,6 +87,54 @@ class ServerSavesTest {
         assertEquals("melonds", library().serverSaves(GAME, player).single().source)
     }
 
+    @Test fun resolvesOriginsOncePerListingAndCachesThemByGameWithoutChangingSaveSources() = runBlocking {
+        var calls = 0
+        ops.onDevices = {
+            calls++
+            listOf(RommDevice("device-1", "Thor", "foldcade"), RommDevice("argosy", "AYN AYN Thor", "argosy"))
+        }
+        val own = add("own".toByteArray(), "sav", "melonds")
+        val other = add("other".toByteArray(), "autosave", "azahar")
+        server[0] = own.copy(originDeviceId = "device-1", deviceSyncs = listOf(SaveDeviceSync("device-1", "Old name")))
+        server[1] = other.copy(originDeviceId = "argosy", deviceSyncs = listOf(SaveDeviceSync("argosy", "Old name")))
+        val unknown = add("unknown".toByteArray(), null, null)
+        val library = library()
+        val saves = library.serverSaves(GAME, player)
+        assertEquals(1, calls)
+        assertEquals("Old name", saves.first { it.id == own.id.toString() }.source)
+        val origins = mapOf(
+            own.id.toString() to ServerSaveOrigin("foldcade", "Thor", true),
+            other.id.toString() to ServerSaveOrigin("argosy", "AYN AYN Thor", false),
+        )
+        assertEquals(origins, library.serverSaveOrigins(GAME))
+        assertEquals(origins, library.serverSaveOrigins(GAME))
+        assertFalse(library.serverSaveOrigins(GAME).containsKey(unknown.id.toString()))
+        assertTrue(library.serverSaveOrigins(GAME.copy(remoteKey = "99")).isEmpty())
+        assertEquals(1, calls)
+        library.serverSaves(GAME, player)
+        assertEquals(2, calls)
+    }
+
+    @Test fun failedDeviceLookupQuietlyKeepsFallbacksAndDoesNotReuseStaleOrigins() = runBlocking {
+        val save = add("progress".toByteArray(), "sav", "melonds")
+        server[0] = save.copy(originDeviceId = "argosy", deviceSyncs = listOf(SaveDeviceSync("argosy", "Thor")))
+        ops.onDevices = { listOf(RommDevice("argosy", "Thor", "argosy")) }
+        val library = library()
+        library.serverSaves(GAME, player)
+        assertFalse(library.serverSaveOrigins(GAME).isEmpty())
+        ops.onDevices = { throw RommForbidden("no devices.read") }
+        assertEquals("Thor", library.serverSaves(GAME, player).single().source)
+        assertTrue(library.serverSaveOrigins(GAME).isEmpty())
+        server[0] = save.copy(originDeviceId = null, deviceSyncs = listOf(SaveDeviceSync("missing", null), SaveDeviceSync("named", "Steam Deck")))
+        assertEquals("Steam Deck", library.serverSaves(GAME, player).single().source)
+    }
+
+    @Test fun deviceLookupCancellationStillCancelsTheScreenLoad() = runBlocking {
+        add("progress".toByteArray(), "sav", "melonds")
+        ops.onDevices = { throw kotlinx.coroutines.CancellationException("closed") }
+        assertTrue(runCatching { library().serverSaves(GAME, player) }.exceptionOrNull() is kotlinx.coroutines.CancellationException)
+    }
+
     @Test fun aForeignCopyKeepsTheDestinationsFileNameAndExtension() = runBlocking {
         hold("current")
         val source = add("choice".toByteArray(), "srm", "retroarch")

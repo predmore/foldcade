@@ -2128,6 +2128,17 @@ class ShellController(
         return launchRoute(tileOf(gameId), pressed)
     }
 
+    /** The picker's original game's hero art, even if the covered grid has moved. */
+    internal fun savePickerArt(target: app.foldcade.language.SavePickerTarget): RunningApp? {
+        val tile = homeTileOf(target.gameId)
+        if (artRecord(tile) != null) return runningApp(tile)
+        // A library-grid game may not have entered the Home catalog yet.
+        val record = savesMenuRoute(target.gameId)?.play ?: return null
+        val game = ShelfGame(target.gameId, record.label, "", platformId = record.platformId,
+            libraryId = record.backendId, remoteKey = record.remoteKey)
+        return runningApp(game).copy(record = record)
+    }
+
     internal fun savePickerHealth(target: app.foldcade.language.SavePickerTarget): SaveHealth {
         val route = savesMenuRoute(target.gameId) ?: return model.savePicker?.health ?: SaveHealth.Fine
         val owner = route.servers.firstOrNull { it.backendId == target.libraryId && it.remoteKey == target.remoteKey } ?: route.saves

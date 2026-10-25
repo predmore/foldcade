@@ -97,6 +97,9 @@ interface LibraryBackend {
     /** IDs of this library's own backups in its most recent [serverSaves] listing. No I/O. */
     suspend fun serverSaveBackups(game: Game): Set<String> = emptySet()
 
+    /** Optional origins by save ID from the latest [serverSaves] listing. No I/O. */
+    suspend fun serverSaveOrigins(game: Game): Map<String, ServerSaveOrigin> = emptyMap()
+
     /** Sync held bytes now, even with no installed player. Refuse offline or incomplete syncs. */
     suspend fun syncServerSaves(game: Game, player: Player? = null): SyncResult =
         throw PluginException.Unavailable("Server save sync is not supported")

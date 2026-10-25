@@ -463,3 +463,13 @@ internal fun parseSaves(bytes: ByteArray): List<RommSave> {
         )
     }
 }
+
+/** Fields verified against rommapp/romm tag 5.4.1, responses/device/__init__.py. */
+internal fun parseDevices(bytes: ByteArray): List<RommDevice> {
+    val array = parseElement(bytes.toString(Charsets.UTF_8)) as? JsonArray
+        ?: throw RommResponseException("RomM devices response is not a list")
+    return array.map { element ->
+        val obj = element.jsonObject
+        RommDevice(obj.reqString("id"), obj.optString("name"), obj.optString("client"))
+    }
+}

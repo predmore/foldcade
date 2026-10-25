@@ -1,15 +1,20 @@
 package app.foldcade
 
 import app.foldcade.api.plugin.*
+import app.foldcade.artwork.*
 import app.foldcade.host.PluginHost
 import app.foldcade.language.*
 import app.foldcade.localfolder.LocalFolderEntry
 import app.foldcade.plugins.melonds.MelonDsEntry
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.runBlocking
 import org.junit.Assert.*
+import org.junit.Rule
 import org.junit.Test
+import org.junit.rules.TemporaryFolder
 
 class ShellSavePickerTest {
+    @get:Rule val temp = TemporaryFolder()
     private val plugins = PluginHost(Dispatchers.Unconfined, MemoryCredentialStore()).apply {
         register(LocalFolderEntry()); register(MelonDsEntry())
     }
@@ -19,6 +24,42 @@ class ShellSavePickerTest {
     private val game = Game("romm", "3", "nintendo-ds", Availability.Cached, "Original")
     private fun entry(game: Game) = GridEntry(game.remoteKey, game.label, "", game.platformId, null, true, game)
     private fun picker(session: Long = 1) = SavePickerState(SavePickerTarget(homeGameId("romm", "3"), "romm", "3", "melonds", session), "Original", "melonDS", SaveHealth.NotSyncing(SaveIssue.NoFolder), loading = false)
+
+    @Test fun coverFallbackUsesTheOriginalGamesHeroArtAndItsChosenCoverAfterFocusMoves() = runBlocking {
+        shell.ingestLibrary("romm", listOf(entry(game), entry(game.copy(remoteKey = "4", label = "Other"))), emptyList())
+        shell.openHomeAll()
+        val original = shell.homeTileOf(picker().target.gameId)
+        val hero = shell.runningApp(original)
+        val other = (0 until shell.model.count).single { shell.homeFace(it)?.title == "Other" }
+        shell.touchCell(other, HostScreen.Bottom)
+        shell.presentSavePicker(picker())
+        assertEquals("Other", shell.focusedGame()?.title)
+        val art = shell.savePickerArt(picker().target)!!
+        assertEquals(hero.record, art.record)
+        assertEquals(hero.query, art.query)
+        val source = object : ArtSource {
+            override val id = "covers"
+            override fun handles(query: ArtQuery) = true
+            override suspend fun find(query: ArtQuery) = ArtSet(id, "https://covers/${query.title}")
+        }
+        var choices = ArtChoices()
+        val covers = CoverArt(plugins, ArtFinder({ listOf(source) }, ArtIndex(temp.newFile()))) { choices }
+        assertEquals("https://covers/Original", covers.fetch(art.record, art.query)?.cover)
+        assertEquals(covers.cached(hero.record, hero.query)?.cover, covers.cached(art.record, art.query)?.cover)
+        choices = choices.set(hero.query!!.key, ArtKind.Tile, "https://chosen/Original")
+        assertEquals("https://chosen/Original", covers.cached(art.record, art.query)?.cover)
+    }
+
+    @Test fun libraryOnlyPickerArtUsesItsNamedGameBeforeItEntersTheHomeCatalog() {
+        shell.showPlatforms("romm", emptyList())
+        shell.showGames(listOf(entry(game), entry(game.copy(remoteKey = "99", label = "Other"))))
+        shell.onMeaning(Meaning.Options, HostScreen.Bottom)
+        assertEquals(Effect.OpenSaves(homeGameId("romm", "3")), shell.onMeaning(Meaning.Activate, HostScreen.Bottom))
+        shell.presentSavePicker(picker())
+        val art = shell.savePickerArt(picker().target)!!
+        assertEquals(game, art.record)
+        assertEquals(ArtQuery(homeGameId("romm", "3"), "Original", platformId = game.platformId), art.query)
+    }
 
     @Test fun closingThePickerRefreshesAConflictThatItHadCovered() {
         var refreshed = 0

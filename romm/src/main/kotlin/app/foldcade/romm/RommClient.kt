@@ -579,6 +579,13 @@ class RommClient(
         return parseNegotiate(raw.body, info.version)
     }
 
+    /** `GET /api/devices`. Needs `devices.read`. */
+    suspend fun devices(): List<RommDevice> {
+        val raw = exchange(api("/devices"), "GET", authenticated = true)
+        raw.require(200)
+        return parseDevices(raw.body)
+    }
+
     suspend fun listSaves(romId: Long, deviceId: String? = null): List<RommSave> {
         val params = mutableListOf("rom_id" to romId.toString())
         if (deviceId != null) params += "device_id" to deviceId

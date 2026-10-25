@@ -2,6 +2,7 @@ package app.foldcade.language
 
 import java.time.Instant
 import java.time.ZoneId
+import java.util.Locale
 import org.junit.Assert.*
 import org.junit.Test
 
@@ -87,6 +88,35 @@ class SavePickerTest {
         assertEquals("Steam Deck · autosave", SavePickerCopy.row(save))
     }
 
+    @Test fun rowsNameTheOriginAppExceptForFoldcadeDevicesAndKeepFullDetailForConfirmation() {
+        val sources = listOf(
+            Triple(SavePickerOrigin("foldcade", "AYN AYN Thor", true), "This device", "Foldcade on AYN AYN Thor · melonds"),
+            Triple(SavePickerOrigin("foldcade", "Steam Deck", false), "Steam Deck", "Foldcade on Steam Deck · melonds"),
+            Triple(SavePickerOrigin("argosy", "AYN AYN Thor", false), "Argosy", "Argosy on AYN AYN Thor · melonds"),
+            Triple(SavePickerOrigin("argosy-launcher", "Thor", false), "Argosy", "Argosy on Thor · melonds"),
+            Triple(SavePickerOrigin("grout", null, false), "Grout", "Grout · melonds"),
+            Triple(SavePickerOrigin("web", "Browser", false), "RomM web", "RomM web on Browser · melonds"),
+            Triple(SavePickerOrigin("rom-ingest", "Server", false), "Rom Ingest", "Rom Ingest on Server · melonds"),
+        )
+        for ((origin, short, detail) in sources) {
+            val from = save.copy(origin = origin)
+            assertEquals("$short · autosave", SavePickerCopy.row(from))
+            assertEquals(detail, SavePickerCopy.sourceDetail(from))
+            assertTrue(SavePickerCopy.confirmationBody(SavePickerChoice.Play(from), "melonds", "melonDS", DateStyle()).startsWith("From $detail, "))
+            val choosing = state.copy(saves = listOf(from.copy(slot = "manual")), copying = save)
+            assertEquals(short, choosing.destinations().first().source)
+        }
+    }
+
+    @Test fun unknownOriginsKeepDeviceThenEmulatorThenUnknownFallbacks() {
+        assertEquals("Steam Deck", SavePickerCopy.source(save))
+        assertEquals("melonds", SavePickerCopy.source(save.copy(source = null)))
+        assertEquals("Unknown", SavePickerCopy.source(save.copy(source = "", emulator = null)))
+        assertEquals("Steam Deck", SavePickerCopy.source(save.copy(origin = SavePickerOrigin(null, null, false))))
+        assertEquals("Steam Deck · melonds", SavePickerCopy.sourceDetail(save))
+        assertEquals("melonds", SavePickerCopy.sourceDetail(save.copy(source = null)))
+    }
+
     @Test fun playWarnsThatAPausedGameRestartsAndLosesUnsavedProgress() {
         val body = SavePickerCopy.confirmationBody(SavePickerChoice.Play(save), "melonds", "melonDS", DateStyle(), restartsOpenGame = true)
         assertTrue(body.contains("The open game restarts."))
@@ -112,9 +142,26 @@ class SavePickerTest {
         assertTrue(emulatorMismatch("azahar", "melonds"))
         val now = Instant.parse("2026-10-25T10:00:00Z").toEpochMilli()
         assertEquals("2 h ago", relativeSaveWhen(now - 7_200_000, now, DateStyle()))
-        assertEquals("Oct 3", relativeSaveWhen(Instant.parse("2026-10-03T10:00:00Z").toEpochMilli(), now, DateStyle(), ZoneId.of("UTC")))
+        assertEquals("Oct 3, 10:00 AM", relativeSaveWhen(Instant.parse("2026-10-03T10:00:00Z").toEpochMilli(), now, DateStyle(), ZoneId.of("UTC")))
         val warning = SavePickerCopy.confirmationBody(SavePickerChoice.Play(save.copy(emulator = "azahar")), "melonds", "melonDS", DateStyle())
         assertTrue(warning.contains("Your current save stays on RomM."))
         assertTrue(warning.contains("Made by azahar. It may not load in melonDS."))
+    }
+
+    @Test fun onlyCalendarTodayUsesRelativeTimeAndOlderRowsAlwaysIncludeLocalTimeWithoutAYear() {
+        val now = Instant.parse("2026-10-25T10:00:00Z").toEpochMilli()
+        val zone = ZoneId.of("UTC")
+        assertEquals("Just now", relativeSaveWhen(now - 30_000, now, DateStyle(), zone))
+        assertEquals("2 min ago", relativeSaveWhen(now - 120_000, now, DateStyle(), zone))
+        assertEquals("3 h ago", relativeSaveWhen(now - 10_800_000, now, DateStyle(), zone))
+        val yesterday = Instant.parse("2026-10-24T23:59:00Z").toEpochMilli()
+        assertEquals("Oct 24, 11:59 PM", relativeSaveWhen(yesterday, now, DateStyle(), zone))
+        // It is still yesterday on the device, even though the UTC date has changed.
+        assertEquals("10 h ago", relativeSaveWhen(yesterday, now - 60_000, DateStyle(), ZoneId.of("Pacific/Honolulu")))
+        val old = Instant.parse("2025-09-30T22:25:00Z").toEpochMilli()
+        assertEquals("Sep 30, 10:25 PM", relativeSaveWhen(old, now, DateStyle(), zone))
+        assertEquals("Sep 30, 22:25", relativeSaveWhen(old, now, DateStyle(is24Hour = true), zone))
+        val french = DateStyle(Locale.FRANCE, monthDayPattern = "d MMM", is24Hour = true)
+        assertEquals("30 sept., 22:25", relativeSaveWhen(old, now, french, zone))
     }
 }

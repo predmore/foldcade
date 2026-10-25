@@ -86,6 +86,7 @@ internal class RommLibrary internal constructor(
     constructor(gate: RommGate) : this(gate, ROMM_LIBRARY_ID, { null }, null)
 
     private val listedBackups = java.util.concurrent.ConcurrentHashMap<java.nio.file.Path, Set<String>>()
+    private val listedOrigins = java.util.concurrent.ConcurrentHashMap<java.nio.file.Path, Map<String, app.foldcade.api.plugin.ServerSaveOrigin>>()
 
     override val id = ROMM_LIBRARY_ID
     override val displayName = "RomM"
@@ -786,6 +787,22 @@ internal class RommLibrary internal constructor(
                 rememberDevice(wiring, ops)
                 val listed = ops.listSaves(romId, wiring.rememberedDevice!!.deviceId)
                     .filter { it.romId == romId }.sortedWith(compareByDescending<app.foldcade.romm.RommSave> { it.updatedAt }.thenByDescending { it.id })
+                // Labels are optional. Ask once for the whole listing, never during save sync.
+                val devices = try {
+                    ops.devices().associateBy { it.id }
+                } catch (cancelled: CancellationException) {
+                    throw cancelled
+                } catch (_: Exception) {
+                    emptyMap()
+                }
+                listedOrigins[wiring.data.romSaves(romId)] = listed.mapNotNull { save ->
+                    val origin = devices[save.originDeviceId] ?: return@mapNotNull null
+                    save.id.toString() to app.foldcade.api.plugin.ServerSaveOrigin(
+                        origin.client, origin.name?.takeIf { it.isNotBlank() }
+                            ?: save.deviceSyncs.firstOrNull { it.deviceId == origin.id }?.deviceName,
+                        origin.id == wiring.rememberedDevice!!.deviceId,
+                    )
+                }.toMap()
                 listedBackups[wiring.data.romSaves(romId)] = listed.filter {
                     it.slot == null && it.fileName.matches(Regex("""foldcade-kept-[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}\.(sav|zip)"""))
                 }.mapTo(HashSet()) { it.id.toString() }
@@ -804,6 +821,7 @@ internal class RommLibrary internal constructor(
                     app.foldcade.api.plugin.ServerSave(
                         save.id.toString(), save.slot, save.emulator,
                         save.deviceSyncs.firstOrNull { it.deviceId == save.originDeviceId }?.deviceName?.takeIf { it.isNotBlank() }
+                            ?: save.deviceSyncs.firstNotNullOfOrNull { it.deviceName?.takeIf(String::isNotBlank) }
                             ?: save.emulator?.takeIf { it.isNotBlank() },
                         save.updatedAt.toEpochMilli(), save.sizeBytes, save.id in playing,
                         save.screenshotId?.let { "${RommClient.normalizeOrigin(wiring.origin)}/api/screenshots/$it/content" },
@@ -815,6 +833,9 @@ internal class RommLibrary internal constructor(
 
     override suspend fun serverSaveBackups(game: Game): Set<String> =
         listedBackups[gate.wiring().data.romSaves(game.romId())].orEmpty()
+
+    override suspend fun serverSaveOrigins(game: Game): Map<String, app.foldcade.api.plugin.ServerSaveOrigin> =
+        listedOrigins[gate.wiring().data.romSaves(game.romId())].orEmpty()
 
     override suspend fun syncServerSaves(game: Game, player: Player?): SyncResult = serverSaveWork(game) { wiring, ops, romId ->
         strictSaveSync(wiring, ops, romId, player?.id).toResult()

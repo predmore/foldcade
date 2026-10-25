@@ -188,6 +188,9 @@ data class RegisteredDevice(
     val clientVersion: String,
 )
 
+/** Origin labels from RomM 5.4.1's `GET /api/devices`. */
+data class RommDevice(val id: String, val name: String?, val client: String?)
+
 /** A save file this device holds. [slot] null is an archive and is not paired. */
 data class LocalSave(
     val romId: Long,

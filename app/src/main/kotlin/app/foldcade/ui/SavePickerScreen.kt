@@ -28,6 +28,8 @@ internal fun SavePickerTop(app: FoldcadeApp, state: SavePickerState, dates: Date
     val theme = LocalFoldTheme.current.theme
     val fit = theme.style.saves
     val focused = state.focused
+    val art = app.shell.savePickerArt(state.target)
+    val cover = rememberArt(app, art?.record, art?.query)?.cover
     Column(Modifier.fillMaxSize().background(theme.background).padding(fit.edgeDp.dp), verticalArrangement = Arrangement.spacedBy(fit.gapDp.dp)) {
         SaveText(state.gameLabel, title = true)
         Crossfade(focused?.id, animationSpec = theme.motion.arrive(theme.motion.durationTravel, scale), modifier = Modifier.weight(1f)) { id ->
@@ -37,16 +39,16 @@ internal fun SavePickerTop(app: FoldcadeApp, state: SavePickerState, dates: Date
                     SaveText(SavePickerCopy.explanation(state.health))
                 }
             } else Row(Modifier.fillMaxSize(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(fit.edgeDp.dp)) {
-                save.screenshotUri?.let { uri ->
-                    val painter = rememberAsyncImagePainter(CoverImage(uri), app.images)
-                    Image(painter, null, Modifier.fillMaxWidth(fit.screenshotShare).fillMaxHeight().clip(RoundedCornerShape(theme.style.shape.thumbCornerDp.dp)), contentScale = ContentScale.Fit)
-                }
                 Column(Modifier.weight(1f).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(fit.gapDp.dp)) {
                     SaveDetail(SavePickerCopy.whenLabel, formatSaveWhen(save.updatedAtMillis, dates))
-                    SaveDetail(SavePickerCopy.fromLabel, listOfNotNull(SavePickerCopy.source(save), save.emulator?.takeUnless { it == save.source }).joinToString(" · "))
+                    SaveDetail(SavePickerCopy.fromLabel, SavePickerCopy.sourceDetail(save))
                     SaveDetail(SavePickerCopy.slotLabel, SavePickerCopy.slot(save))
                     SaveDetail(SavePickerCopy.sizeLabel, formatSaveSize(save.sizeBytes))
                     if (save.playing) PlayingPill()
+                }
+                (save.screenshotUri ?: cover)?.let { uri ->
+                    val painter = rememberAsyncImagePainter(CoverImage(uri), app.images)
+                    Image(painter, null, Modifier.fillMaxWidth(fit.screenshotShare).fillMaxHeight().clip(RoundedCornerShape(theme.style.shape.thumbCornerDp.dp)), contentScale = ContentScale.Fit)
                 }
             }
         }
@@ -145,7 +147,8 @@ private fun SaveListRow(label: String, whenText: String?, playing: Boolean, focu
         BasicText(label, Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis,
             style = TextStyle(color = if (attention) theme.style.colors.attention else theme.onBackground.copy(alpha = if (focused) 1f else theme.style.menu.labelRestAlpha), fontSize = theme.style.type.menuRow, fontFamily = theme.font))
         if (playing) PlayingPill()
-        whenText?.let { BasicText(it, maxLines = 1, style = TextStyle(color = theme.muted, fontSize = theme.style.type.hint, fontFamily = theme.font)) }
+        whenText?.let { BasicText(it, maxLines = 1, softWrap = false, overflow = TextOverflow.Visible,
+            style = TextStyle(color = theme.muted, fontSize = theme.style.type.hint, fontFamily = theme.font)) }
     }
 }
 

@@ -2,6 +2,7 @@ package app.foldcade.language
 
 import java.time.Instant
 import java.time.ZoneId
+import java.util.Locale
 
 /** The menu's immutable subject. Effects never look up the currently focused game. */
 data class SavePickerTarget(val gameId: String, val libraryId: String, val remoteKey: String, val playerId: String?, val sessionId: Long = 0)
@@ -10,7 +11,10 @@ data class SavePickerSave(
     val id: String, val slot: String?, val emulator: String?, val source: String?,
     val updatedAtMillis: Long, val sizeBytes: Long, val playing: Boolean, val screenshotUri: String?,
     val backup: Boolean = false,
+    val origin: SavePickerOrigin? = null,
 )
+
+data class SavePickerOrigin(val client: String?, val deviceName: String?, val thisDevice: Boolean)
 
 data class SaveDestination(val slot: String, val emulator: String?, val source: String)
 
@@ -116,6 +120,7 @@ object SavePickerCopy {
     const val synced = "Saves synced"
     const val noDestinations = "No other slots yet"
     const val unknown = "Unknown"
+    const val thisDevice = "This device"
     const val noSlot = "No slot"
     const val backup = "Backup"
     const val downloadFirst = "Download the game first."
@@ -130,7 +135,31 @@ object SavePickerCopy {
     const val fromLabel = "From"
     const val slotLabel = "Slot"
     const val sizeLabel = "Size"
-    fun source(save: SavePickerSave): String = save.source?.takeIf { it.isNotBlank() } ?: save.emulator?.takeIf { it.isNotBlank() } ?: unknown
+    private fun fallbackSource(save: SavePickerSave): String = save.source?.takeIf { it.isNotBlank() } ?: save.emulator?.takeIf { it.isNotBlank() } ?: unknown
+    fun source(save: SavePickerSave): String {
+        val origin = save.origin ?: return fallbackSource(save)
+        return when {
+            origin.thisDevice -> thisDevice
+            origin.client?.equals("foldcade", ignoreCase = true) == true -> origin.deviceName?.takeIf { it.isNotBlank() } ?: fallbackSource(save)
+            else -> clientName(origin.client) ?: fallbackSource(save)
+        }
+    }
+    /** The detail page and confirmation keep the client, device and emulator together. */
+    fun sourceDetail(save: SavePickerSave): String {
+        val client = clientName(save.origin?.client)
+        val device = save.origin?.deviceName?.takeIf { it.isNotBlank() }
+        val from = if (client != null && device != null) "$client on $device" else client ?: device ?: fallbackSource(save)
+        return listOfNotNull(from, save.emulator?.takeIf { it.isNotBlank() && !it.equals(from, ignoreCase = true) }).joinToString(" · ")
+    }
+    private fun clientName(client: String?): String? = when (val name = client?.trim()?.lowercase(Locale.ROOT)?.takeIf { it.isNotEmpty() }) {
+        null -> null
+        "argosy", "argosy-launcher" -> "Argosy"
+        "grout" -> "Grout"
+        "web" -> "RomM web"
+        "foldcade" -> "Foldcade"
+        "retroarch" -> "RetroArch"
+        else -> name.split(Regex("[\\s_-]+")).joinToString(" ") { it.replaceFirstChar(Char::titlecase) }
+    }
     fun slot(save: SavePickerSave): String = if (save.backup) backup else save.slot?.takeIf { it.isNotBlank() } ?: noSlot
     fun row(save: SavePickerSave): String = "${source(save)} · ${slot(save)}"
     fun destination(destination: SaveDestination): String = "${destination.source} · ${destination.slot}"
@@ -152,7 +181,7 @@ object SavePickerCopy {
         SavePickerChoice.Setup -> "Set up $player first"
     }
     fun confirmationBody(choice: SavePickerChoice, playerId: String?, player: String, style: DateStyle, restartsOpenGame: Boolean = false, ownSlots: List<String> = emptyList()): String = when (choice) {
-        is SavePickerChoice.Play -> "From ${source(choice.save)}, ${formatSaveWhen(choice.save.updatedAtMillis, style)}. Your current save stays on RomM." +
+        is SavePickerChoice.Play -> "From ${sourceDetail(choice.save)}, ${formatSaveWhen(choice.save.updatedAtMillis, style)}. Your current save stays on RomM." +
             (if (emulatorMismatch(choice.save.emulator, playerId)) " Made by ${choice.save.emulator}. It may not load in $player." else "") +
             (if (restartsOpenGame) " $restartOpen" else "")
         is SavePickerChoice.Copy -> "The save there now stays on RomM." +
@@ -165,12 +194,14 @@ fun emulatorMismatch(emulator: String?, player: String?): Boolean = !emulator.is
     emulator.substringBefore('.').lowercase() != player.substringBefore('.').lowercase()
 
 fun relativeSaveWhen(millis: Long, now: Long, style: DateStyle, zone: ZoneId = ZoneId.systemDefault()): String {
+    val at = Instant.ofEpochMilli(millis).atZone(zone)
+    if (at.toLocalDate() != Instant.ofEpochMilli(now).atZone(zone).toLocalDate()) {
+        return "${style.monthDay(at)}, ${style.time(at)}"
+    }
     val seconds = ((now - millis).coerceAtLeast(0) / 1000)
     return when {
         seconds < 60 -> "Just now"
         seconds < 3600 -> "${seconds / 60} min ago"
-        seconds < 86_400 -> "${seconds / 3600} h ago"
-        seconds < 604_800 -> "${seconds / 86_400} d ago"
-        else -> style.monthDay(Instant.ofEpochMilli(millis).atZone(zone))
+        else -> "${seconds / 3600} h ago"
     }
 }
