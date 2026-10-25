@@ -148,6 +148,22 @@ Each entry in a module's `APPS` names the packages that wear it, and every packa
 
 An app no pack draws keeps its own launcher icon. Android games always do: draw only apps, never a game.
 
+## The app icon
+
+Foldcade's own launcher icon is not one of the family. It is drawn in Afterglow's light, not as an object: one strand, the same teal-to-violet light as the backdrop's ribbons, draws the open clamshell. It comes in from the left, rings the top screen, folds down at the hinge, rings the bottom screen, and leaves on the right. The bottom screen holds a grid of covers in dim Afterglow colours; the one in the mint focus ring is lit, and the top screen shows it again, big, in its glow. That is the app in one picture: move on the bottom, and the top becomes the game.
+
+- **One strand.** The two screens are one continuous line, never two boxes. Its tails fade out before the edge of what a launcher shows.
+- **Light, not hardware.** No shell, bezel, buttons, or sticks. The coral of the lit cover is the only bright warm colour.
+- **Covers, not keys.** The grid's covers are portrait and each a different colour, so the bottom screen reads as a library, not a keypad.
+- **True black behind it.** The background layer is `#000000`, like Afterglow.
+- **The monochrome layer** keeps the strand, the top screen's cover, and the grid, with only the lit cover solid. Its tails fade too.
+
+`tools/art/appicon.py` writes the adaptive icon's three layers to `app/src/main/res/drawable/`, their SVGs to `art/svg/app-icon/`, and, on macOS, the 512 px store icon `app/src/main/ic_launcher-playstore.png`. minSdk is 33, so the adaptive icon is the only launcher icon; there are no PNG mipmaps.
+
+```sh
+python3 tools/art/appicon.py
+```
+
 ## Adding an icon
 
 ### A platform or a place

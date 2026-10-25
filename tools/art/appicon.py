@@ -1,98 +1,110 @@
+#!/usr/bin/env python3
+"""Write Foldcade's launcher icon: the adaptive icon's three layers in app/src/main/res/drawable/,
+their SVG sources in art/svg/app-icon/, and the 512px store icon. Standard library only.
+
+    python3 tools/art/appicon.py
+
+One Afterglow strand draws the open clamshell. It comes in from the left, rings the lid, folds down
+at the hinge, rings the base, and leaves on the right. The cover lit in the base's grid is shown again, big, in the lid:
+move on the bottom screen, and the top screen becomes the game.
+
+The store icon is rendered through macOS Quick Look, like preview.py. Elsewhere it is left as it was.
+"""
+import os, shutil, subprocess, tempfile
 from art import *
 from palette import *
 
-def q_poly(pts, r):
-    """Closed polygon with rounded corners (quadratic)."""
-    n = len(pts); d = []
-    for i in range(n):
-        p0, p1, p2 = pts[i-1], pts[i], pts[(i+1) % n]
-        def toward(a, b, dist):
-            dx, dy = b[0]-a[0], b[1]-a[1]; L_ = math.hypot(dx, dy); t = min(dist / L_, 0.5)
-            return (a[0]+dx*t, a[1]+dy*t)
-        a = toward(p1, p0, r); b = toward(p1, p2, r)
-        d.append(("M" if i == 0 else "L") + f"{f(a[0])},{f(a[1])}")
-        d.append(f"Q{f(p1[0])},{f(p1[1])} {f(b[0])},{f(b[1])}")
-    return "".join(d) + "Z"
+ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
+RES = f"{ROOT}/app/src/main/res/drawable"
+SVG = f"{ROOT}/art/svg/app-icon"
+STORE = f"{ROOT}/app/src/main/ic_launcher-playstore.png"
 
-def concept_a(mono=False):
-    lid = [(33.5, 22), (74.5, 22), (79.5, 54.5), (28.5, 54.5)]
-    scr = [(38, 26.8), (70, 26.8), (73.6, 49.8), (34.4, 49.8)]
-    base = (27, 58, 54, 26, 7); bscr = (35, 62, 38, 17.5, 3.5)
-    if mono:
-        return [L(q_poly(lid, 5.5) + q_poly(scr, 2.5), fill="#FFFFFF", evenodd=True),
-                L(rrect(31, 54.6, 46, 3.2, 1.6), fill="#FFFFFF"),
-                L(rrect(*base) + rrect(*bscr), fill="#FFFFFF", evenodd=True),
-                L(rrect(39.5, 70, 7, 6, 1.8), fill="#FFFFFF"), L(rrect(50.5, 70, 7, 6, 1.8), fill="#FFFFFF"),
-                L(rrect(61.5, 70, 7, 6, 1.8), fill="#FFFFFF")]
-    out = [
-        halo(54, 40, 48, TEAL, 0.8, sx=1.0, sy=0.78, core=0.1),
-        halo(54, 72, 40, AMBER, 0.6, sx=1.15, sy=0.62, core=0.1),
-        L(q_poly(lid, 5.5), fill=Lin(0, 22, 0, 55, [(0, CAP_TOP, 1), (1, CAP_BOT, 1)]),
-          stroke=Lin(0, 22, 0, 55, [(0, MINT, 0.95), (1, TEAL, 0.35)]), sw=1.4),
-        L(q_poly(scr, 2.6), fill=Lin(38, 27, 70, 50, [(0, "#8AF7DF", 1), (0.5, TEAL, 1), (1, "#178F7B", 1)])),
-        L("M35.5,44 C44,33 52,46 60,37 S69,30 72.5,33", stroke=Lin(35, 0, 73, 0, [(0, INK, 0.0), (0.45, "#FFFFFF", 0.9), (1, INK, 0.0)]), sw=1.5),
-        L("M35.8,47.5 C45,40 54,49 63,43 S70,40 73,41", stroke=Lin(35, 0, 73, 0, [(0, ROSE, 0.0), (0.5, ROSE, 0.8), (1, ROSE, 0.0)]), sw=1.2),
-        L(q_poly([(39, 27.8), (53, 27.8), (44, 48.8), (36, 48.8)], 2), fill=Lin(39, 28, 49, 49, [(0, "#FFFFFF", 0.30), (1, "#FFFFFF", 0.0)])),
-        L(rrect(31, 54.4, 46, 4.4, 2.2), fill=Lin(0, 54, 0, 59, [(0, "#4A505E", 1), (1, "#15171C", 1)])),
-        L(rrect(*base), fill=Lin(0, 58, 0, 84, [(0, CAP_TOP, 1), (1, CAP_BOT, 1)]),
-          stroke=Lin(0, 58, 0, 84, [(0, "#FFE2B0", 0.9), (1, AMBER, 0.3)]), sw=1.4),
-        L(rrect(*bscr), fill=Lin(35, 62, 73, 80, [(0, "#20140A", 1), (1, "#0B0704", 1)]),
-          stroke=Lin(0, 62, 0, 80, [(0, AMBER, 0.9), (1, ORANGE, 0.5)]), sw=1.0),
-    ]
-    for x, c in ((39.5, ROSE), (50.5, AMBER), (61.5, VIOLET)):
-        out.append(halo(x + 3.5, 73, 6.5, c, 0.55))
-        out.append(L(rrect(x, 70, 7, 6, 1.8), fill=Lin(0, 70, 0, 76, [(0, "#FFFFFF", 0.95), (0.35, c, 1), (1, c, 0.8)])))
-    out.append(L(rrect(36, 62.8, 36, 4.5, 2.2), fill=Lin(0, 63, 0, 68, [(0, "#FFFFFF", 0.22), (1, "#FFFFFF", 0)])))
-    return out
+WHITE = "#FFFFFF"
+SCALE = 0.76         # the drawing below spans the 108-unit layer; this keeps the panes in the 66-unit safe zone
+STRAND = 3.0         # the strand's width before SCALE
+R = 7                # the panes' corner radius
 
-def concept_b(mono=False):
-    return _scaled(_concept_b(mono), 0.8)
+LID = (26, 20, 82, 53)       # x1, y1, x2, y2
+BASE = (33, 53, 75, 90)      # the base's top edge is the lid's bottom edge: the strand folds there
+HERO = (45.5, 25.5, 17, 22, 3)  # the lit tile again, big: the game fills the top screen
+TILES = [(39 + c * 11, 59.5 + r * 13.5, 8, 10.5, 2) for r in range(2) for c in range(3)]  # portrait, like covers
+LIT = 1                      # the tile in the focus ring: top row, middle
+COVERS = [TEAL, None, VIOLET, BLUE, ROSE, AMBER]  # the rest of the library, dimmed
 
-def _concept_b(mono=False):
-    if mono:
-        return [L(rrect(26, 24, 56, 34, 9) + rrect(31.5, 29.5, 45, 23, 5), fill="#FFFFFF", evenodd=True),
-                L(rrect(33, 61, 42, 24, 8) + rrect(38, 66, 32, 14, 4), fill="#FFFFFF", evenodd=True)]
-    return [
-        halo(54, 41, 46, TEAL, 0.40, sy=0.75),
-        halo(54, 73, 36, ROSE, 0.34, sy=0.7),
-        L("M18,66 C34,48 48,86 66,62 S88,44 92,50", stroke=Lin(18, 0, 92, 0, [(0, VIOLET, 0), (0.3, VIOLET, 0.6), (0.7, AMBER, 0.6), (1, AMBER, 0)]), sw=2.2),
-        L(rrect(26, 24, 56, 34, 9), fill=Lin(0, 24, 0, 58, [(0, CAP_TOP, 1), (1, CAP_BOT, 1)]),
-          stroke=Lin(0, 24, 0, 58, [(0, MINT, 0.95), (1, TEAL, 0.3)]), sw=1.5),
-        L(rrect(31.5, 29.5, 45, 23, 5), fill=Lin(31, 29, 76, 52, [(0, "#8AF7DF", 1), (0.55, TEAL, 1), (1, "#168C78", 1)])),
-        L(rrect(32.5, 30.3, 43, 8, 4), fill=Lin(0, 30, 0, 39, [(0, "#FFFFFF", 0.38), (1, "#FFFFFF", 0)])),
-        L(rrect(33, 61, 42, 24, 8), fill=Lin(0, 61, 0, 85, [(0, CAP_TOP, 1), (1, CAP_BOT, 1)]),
-          stroke=Lin(0, 61, 0, 85, [(0, "#FFC2CE", 0.95), (1, ROSE, 0.3)]), sw=1.5),
-        L(rrect(38, 66, 32, 14, 4), fill=Lin(38, 66, 70, 80, [(0, "#FF9DB0", 1), (0.6, ROSE, 1), (1, "#C8325A", 1)])),
-        L(rrect(39, 66.8, 30, 5, 2.4), fill=Lin(0, 66, 0, 72, [(0, "#FFFFFF", 0.35), (1, "#FFFFFF", 0)])),
-    ]
+def strand_path():
+    (lx1, ly1, lx2, ly2), (bx1, _, bx2, by2) = LID, BASE
+    return (
+        # in from the left, rising into the lid's left side
+        f"M-4,74 C8,74 16,60 22,55 Q{lx1},51.5 {lx1},47 "
+        # the lid, clockwise, then back along its bottom edge
+        f"L{lx1},{ly1 + R} Q{lx1},{ly1} {lx1 + R},{ly1} L{lx2 - R},{ly1} Q{lx2},{ly1} {lx2},{ly1 + R} "
+        f"L{lx2},{ly2 - R} Q{lx2},{ly2} {lx2 - R},{ly2} L{bx1 + R},{ly2} "
+        # the fold: down the base's left side, round the base
+        f"Q{bx1},{ly2} {bx1},{ly2 + 3.5} L{bx1},{by2 - R} Q{bx1},{by2} {bx1 + R},{by2} L{bx2 - R},{by2} "
+        f"Q{bx2},{by2} {bx2},{by2 - R} L{bx2},66 "
+        # and out to the right
+        f"Q{bx2},62 79,59 C86,53 96,36 112,36")
 
-def concept_c(mono=False):
-    # side view of an open clamshell; light spills out of the hinge
-    lid = "M30,74 L60,24"; base = "M30,76 L80,76"
-    if mono:
-        return [L(lid, stroke="#FFFFFF", sw=9), L(base, stroke="#FFFFFF", sw=9),
-                L("M38,70 L57,37 Q60,33 62,38 L72,68 Q73,71 70,71 Z", fill="#FFFFFF", alpha=1)]
-    return [
-        halo(52, 58, 42, TEAL, 0.45, core=0.1),
-        halo(56, 66, 28, AMBER, 0.45),
-        L("M37,71 L58,35 Q61,31 63,36 L76,70 Q77,72 74,72 L39,72 Q36,72 37,71 Z",
-          fill=Lin(60, 34, 56, 72, [(0, "#FFFFFF", 0.0), (0.25, MINT, 0.55), (1, AMBER, 0.75)])),
-        L(lid, stroke=Lin(30, 74, 60, 24, [(0, CAP_BOT, 1), (1, CAP_TOP, 1)]), sw=9),
-        L("M33.5,71 L61,25", stroke=Lin(30, 74, 60, 24, [(0, TEAL, 0.5), (1, MINT, 1)]), sw=1.4),
-        L(base, stroke=Lin(30, 0, 80, 0, [(0, CAP_BOT, 1), (1, CAP_TOP, 1)]), sw=9),
-        L("M33,72.4 L80,72.4", stroke=Lin(30, 0, 80, 0, [(0, AMBER, 0.6), (1, "#FFE2B0", 1)]), sw=1.4),
-        L(circle(30.5, 75, 3.2), fill="#2C3039", stroke=MINT, sw=0.8, salpha=0.6),
-    ]
+def fading(stops):
+    """A strand paint across the layer whose tails are gone by the time they cross a circle mask."""
+    return Lin(0, 0, 108, 0, [(0, stops[0][1], 0), (0.1, stops[0][1], 0)] + stops + [(0.9, stops[-1][1], 0), (1, stops[-1][1], 0)])
 
-CONCEPTS = {"A-open-clamshell": concept_a, "B-stacked-screens": concept_b, "C-light-spill": concept_c}
+def strand(d):
+    paint = fading([(0.23, TEAL, 1), (0.48, BLUE, 1), (0.77, VIOLET, 1)])
+    core = fading([(0.23, WHITE, 0.4), (0.77, WHITE, 0.4)])
+    # Vector drawables have no blur, so the glow is many faint widening strokes, packed near the core
+    glow = [L(d, stroke=paint, sw=STRAND * (1 + 4.5 * (i / 16) ** 1.6), salpha=0.02) for i in range(16, 0, -1)]
+    return glow + [L(d, stroke=paint, sw=STRAND), L(d, stroke=core, sw=STRAND * 0.32)]
 
-def _scaled(layers, k):
-    for l in layers:
-        l.scale = (k, k, 54, 54) if l.scale is None else (l.scale[0]*k, l.scale[1]*k, 54, 54) if False else l.scale
-    # wrap: simplest is to scale every layer about the centre
-    out = []
-    for l in layers:
-        if l.scale is None:
-            l.scale = (k, k, 54, 54)
-        out.append(l)
-    return out
+def lit(x, y, w, h, r, ring=False):
+    out = [halo(x + w / 2, y + h / 2, max(w, h) * 1.15, AMBER, 0.45)]
+    if ring:   # the home grid's focus ring
+        out.append(L(rrect(x - 1.6, y - 1.6, w + 3.2, h + 3.2, r + 1.4), stroke=MINT, sw=0.9))
+    return out + [
+        L(rrect(x, y, w, h, r), fill=Lin(x, y, x + w, y + h, [(0, "#FFD98A", 1), (0.5, ORANGE, 1), (1, ROSE, 1)])),
+        L(rrect(x, y, w, h, r), fill=Lin(x, y, x + w * 0.6, y + h, [(0, WHITE, 0.18), (1, WHITE, 0)]))]
+
+def fitted(layers):
+    return [G(layers, scale=(SCALE, SCALE), pivot=(54, 54))]
+
+def foreground():
+    # the game's light spreads across the top screen
+    out = strand(strand_path()) + [halo(54, 36.5, 30, AMBER, 0.22, sx=1.3, sy=0.55)] + lit(*HERO)
+    for i, t in enumerate(TILES):
+        out += lit(*t, ring=True) if i == LIT else [L(rrect(*t), fill=Lin(0, t[1], 0, t[1] + t[3], [(0, COVERS[i], 0.5), (1, COVERS[i], 0.28)]))]
+    return fitted(out)
+
+def monochrome():
+    # the tails fade here too, so a themed icon's strand doesn't read as a cord
+    out = [L(strand_path(), stroke=fading([(0.23, WHITE, 1), (0.77, WHITE, 1)]), sw=STRAND * 1.47), L(rrect(*HERO), fill=WHITE)]
+    return fitted(out + [L(rrect(*t), fill=WHITE, alpha=1 if i == LIT else 0.4) for i, t in enumerate(TILES)])
+
+def assets():
+    return [Asset("ic_launcher_foreground", 108, 108, foreground(), note="Adaptive icon foreground: one Afterglow strand draws the open clamshell"),
+            Asset("ic_launcher_background", 108, 108, [L("M0,0H108V108H0Z", fill=BLACK)], note="Adaptive icon background: true black"),
+            Asset("ic_launcher_monochrome", 108, 108, monochrome(), note="Adaptive icon monochrome layer (themed icons)")]
+
+def store_icon(fg, bg):
+    """The 512px store icon: the 72 units a launcher shows, square, on Quick Look. None off macOS."""
+    if not shutil.which("qlmanage"):
+        return None
+    layers = [G(bg.layers + fg.layers, scale=(1.5, 1.5), pivot=(54, 54))]
+    # Quick Look draws a square SVG as big as asked for at 1:1 only when the two sizes match
+    svg = to_svg(Asset("store", 108, 108, layers), px=512)
+    with tempfile.TemporaryDirectory() as tmp:
+        src = os.path.join(tmp, "store.svg"); open(src, "w").write(svg)
+        subprocess.run(["qlmanage", "-t", "-s", "512", "-o", tmp, src], check=True, capture_output=True)
+        shutil.copyfile(f"{src}.png", STORE)
+    return STORE
+
+def main():
+    made = assets()
+    os.makedirs(SVG, exist_ok=True)
+    for a in made:
+        open(f"{RES}/{a.name}.xml", "w").write(to_vd(a))
+        open(f"{SVG}/{a.name}.svg", "w").write(to_svg(a))
+    store = store_icon(made[0], made[1])
+    print(f"wrote {len(made)} layers" + (f" and {os.path.relpath(store, ROOT)}" if store else "; no Quick Look here, so the store icon is unchanged"))
+
+if __name__ == "__main__":
+    main()
