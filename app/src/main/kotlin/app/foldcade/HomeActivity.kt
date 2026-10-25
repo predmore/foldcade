@@ -43,6 +43,7 @@ import app.foldcade.api.plugin.Credential
 import app.foldcade.api.plugin.DeviceCodePoll
 import app.foldcade.api.plugin.Game
 import app.foldcade.api.plugin.GameActivity
+import app.foldcade.api.plugin.LaunchFlag
 import app.foldcade.api.plugin.LaunchRequest
 import app.foldcade.api.plugin.LaunchTarget
 import app.foldcade.api.plugin.Player
@@ -1285,7 +1286,8 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
                             (target as? LaunchTarget.ContentUri)?.uri,
                         )
                         rememberReturn(saves)
-                        noteRunning(id, title, game.platformId, plan.player, installedIntent, saves)
+                        val sameStart = playerIntent?.let { LaunchFlag.SameStartResumes in it.flags } == true
+                        noteRunning(id, title, game.platformId, plan.player, installedIntent, saves, sameStart)
                     }
                 } else if (launchCurrent(generation)) {
                     showMissing(plan.player.displayName, emptyList())
@@ -1303,7 +1305,15 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
      * instead of starting it again. RetroArch is left out: it keeps one game
      * and switches by itself (see [FoldcadeApp.startIntent]).
      */
-    private fun noteRunning(id: String, title: String, platformId: String?, player: Player, intent: Intent, saves: LibraryReturn?) {
+    private fun noteRunning(
+        id: String,
+        title: String,
+        platformId: String?,
+        player: Player,
+        intent: Intent,
+        saves: LibraryReturn?,
+        sameStartResumes: Boolean = false,
+    ) {
         val pkg = intent.component?.packageName ?: return
         if (pkg == packageName || player is RetroArchPlayer) return
         if (!resumable(packageManager.getLaunchIntentForPackage(pkg)?.component?.className, intent.component?.className)) {
@@ -1312,8 +1322,9 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
         }
         // Where the game landed, which may not be where it was asked for when that screen was busy.
         val panel = landedPanel() ?: if (player.occupiesBothDisplays) Panel.Top else launchScreen
+        val resumeStart = if (sameStartResumes) Intent(intent).apply { flags = resumeStartFlags(flags) } else null
         foldcade.runningGames.note(RunningGame(id, title, platformId, pkg, intent.component?.className, panel,
-            player.occupiesBothDisplays, System.currentTimeMillis(), saves))
+            player.occupiesBothDisplays, System.currentTimeMillis(), saves, resumeStart))
     }
 
     /** The screen the game just started is on. */
@@ -1328,7 +1339,9 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
     private fun resumeRunning(tileId: String, title: String, platformId: String?): Boolean {
         foldcade.pruneRunningGames()
         val running = foldcade.runningOn(tileId) ?: return false
-        val front = packageManager.getLaunchIntentForPackage(running.packageName)?.apply { flags = RESUME_FLAGS } ?: run {
+        // A player that takes its game's start again as a resume gets that, see LaunchFlag.SameStartResumes.
+        val front = running.resumeStart?.let(::Intent)
+            ?: packageManager.getLaunchIntentForPackage(running.packageName)?.apply { flags = RESUME_FLAGS } ?: run {
             foldcade.runningGames.forget(running.packageName)
             return false
         }
@@ -1365,7 +1378,8 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
         running.saves?.let(::rememberReturn)
         // A busy screen sends it to the other one; the next resume looks for it there.
         landedPanel()?.takeIf { it != running.panel }?.let { foldcade.runningGames.note(running.copy(panel = it)) }
-        checkResume(running, sentAt, front.component?.className)
+        // The same start opens the game anew by itself when it had closed, so there is nothing to look for.
+        if (running.resumeStart == null) checkResume(running, sentAt, front.component?.className)
         return true
     }
 

@@ -161,7 +161,8 @@ class Aps3ePlayer : Player, SaveFolderHolder {
             dataUri = uri,
             extras = listOf(PlayerExtra.Text("iso_uri", uri)),
             grantReadUri = true,
-            flags = setOf(LaunchFlag.NewTask, LaunchFlag.ClearTop, LaunchFlag.ClearTask),
+            // Sent again without the clears, the start brings back the game, or starts it anew once :emu has died.
+            flags = setOf(LaunchFlag.NewTask, LaunchFlag.ClearTop, LaunchFlag.ClearTask, LaunchFlag.SameStartResumes),
         )
     }
 

@@ -21,6 +21,12 @@ internal data class RunningGame(
     val startedAtMillis: Long,
     /** What to read back when the game returns again, for a library game. */
     val saves: LibraryReturn?,
+    /**
+     * The game's own start, for a player that takes it again as a resume
+     * ([app.foldcade.api.plugin.LaunchFlag.SameStartResumes]), with [resumeStartFlags].
+     * Null resumes through the player's launcher.
+     */
+    val resumeStart: Intent? = null,
 )
 
 /** One game per player package: a player holds one game, so a new start there replaces the last. */
@@ -127,6 +133,15 @@ internal const val RESUME_CHECK_MS = 1_500L
  * launcher activity is not the task's root.
  */
 internal const val RESUME_FLAGS: Int = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_RESET_TASK_IF_NEEDED
+
+/**
+ * The flags for a game's own start sent again as a resume
+ * ([app.foldcade.api.plugin.LaunchFlag.SameStartResumes]): the start's own, without
+ * the ones that would clear the game's task or open another beside it.
+ */
+internal fun resumeStartFlags(flags: Int): Int =
+    (flags and (Intent.FLAG_ACTIVITY_CLEAR_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_MULTIPLE_TASK).inv()) or
+        Intent.FLAG_ACTIVITY_NEW_TASK
 
 /**
  * The flags for a start in a player that still holds another game, or the same

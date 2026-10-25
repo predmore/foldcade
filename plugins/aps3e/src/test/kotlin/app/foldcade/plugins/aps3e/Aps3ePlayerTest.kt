@@ -146,7 +146,10 @@ class Aps3ePlayerTest {
                 assertEquals(target, intent.dataUri)
                 assertEquals(listOf(PlayerExtra.Text("iso_uri", target)), intent.extras)
                 assertTrue(intent.grantReadUri)
-                assertEquals(setOf(LaunchFlag.NewTask, LaunchFlag.ClearTop, LaunchFlag.ClearTask), intent.flags)
+                assertEquals(
+                    setOf(LaunchFlag.NewTask, LaunchFlag.ClearTop, LaunchFlag.ClearTask, LaunchFlag.SameStartResumes),
+                    intent.flags,
+                )
             }
         }
     }

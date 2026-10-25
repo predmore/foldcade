@@ -35,6 +35,15 @@ class RunningGamesTest {
     }
 
     @Test
+    fun aGamesOwnStartSentAgainKeepsItsTask() {
+        val start = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP or
+            Intent.FLAG_ACTIVITY_MULTIPLE_TASK or Intent.FLAG_GRANT_READ_URI_PERMISSION
+        val again = resumeStartFlags(start)
+        assertEquals(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_GRANT_READ_URI_PERMISSION, again)
+        assertEquals(Intent.FLAG_ACTIVITY_NEW_TASK, resumeStartFlags(0))
+    }
+
+    @Test
     fun aResumeFoundTheGameUnlessThePlayersMenuCameForward() {
         val game = "org.citra.citra_emu.activities.EmulationActivity"
         val menu = "org.citra.citra_emu.ui.main.MainActivity"

@@ -320,6 +320,15 @@ enum class LaunchFlag {
      * The same intent again resumes the game that is running. Added in API minor 9.
      */
     ReplaceRunning,
+
+    /**
+     * This start sent again, without [ClearTop] and [ClearTask], brings back the
+     * game it started while that game runs, and starts the game anew when it has
+     * closed. The shell resumes the game that way, not through the player's
+     * launcher, which may open the player's own menu in front of a game that is
+     * gone without saying so. Added in API minor 14.
+     */
+    SameStartResumes,
 }
 
 /**
