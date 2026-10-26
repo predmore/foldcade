@@ -11,7 +11,7 @@ import json, os, re
 from art import Asset, to_svg, to_vd
 from palette import INK
 from objects import object_layers, symbol_layers
-import apps, marks, symbols
+import apps, marks, symbols, verbs
 
 REPO = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 ICONS = f"{REPO}/themes/afterglow/icons"
@@ -55,6 +55,9 @@ def assets():
     for name, (draw, about) in marks.GLYPHS.items():
         out.append((Asset(f"symbol_{name}", 64, 64, symbol_layers(draw()), dp=(48, 48), tint=True,
                           note=f"Afterglow collection glyph: {about}"), "symbols", None))
+    for name, (draw, about) in verbs.VERBS.items():
+        out.append((Asset(f"symbol_{name}", 64, 64, symbol_layers(draw()), dp=(48, 48), tint=True,
+                          note=f"Afterglow verb: {about}"), "verbs", None))
     for name, (draw, accent, about, _) in apps.APPS.items():
         out.append((Asset(f"app_{name}", 64, 64, object_layers(draw(accent)), dp=(48, 48), note=f"Afterglow app object: {about}"),
                     "apps", accent))

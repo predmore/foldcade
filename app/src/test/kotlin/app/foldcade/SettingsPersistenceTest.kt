@@ -449,7 +449,7 @@ class SettingsPersistenceTest {
 
     private fun ShellController.chooseHomeAction(row: Row) {
         onMeaning(Meaning.Options, HostScreen.Bottom)
-        repeat(panelRows(model.panel!!, model).indexOf(row)) { onMeaning(Meaning.MoveDown, HostScreen.Bottom) }
+        walkPanelTo(this, panelRows(model.panel!!, model).indexOf(row), HostScreen.Bottom)
         onMeaning(Meaning.Activate, HostScreen.Bottom)
     }
 }

@@ -276,11 +276,12 @@ class FindTest {
     }
 
     @Test
-    fun showOnHomeLeadsTheMenuAndTakesSelect() {
+    fun showOnHomeLeadsTheRowsUnderTheTilesAndTakesSelect() {
         val tile = TileActions(showOnHome = "g", collections = emptyList(), hide = true, game = "g")
         val rows = actionRows(tile)
-        assertEquals(listOf(Row.ShowOnHome, Row.AddToCollection, Row.Hide), rows)
-        assertEquals(0, chordIndex(rows, Meaning.View))
+        assertEquals(listOf(Row.AddToCollection, Row.ShowOnHome, Row.Hide), rows)
+        assertEquals(0..0, tileBlock(rows))
+        assertEquals(1, chordIndex(rows, Meaning.View))
         val model = PickerModel(count = 4, rowsPerPage = 2, tileActions = tile)
         val menu = reduce(model, Meaning.Options).first
         val (closed, effect) = reduce(menu, Meaning.View)

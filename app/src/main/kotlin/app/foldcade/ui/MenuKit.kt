@@ -59,6 +59,7 @@ import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.toSize
 import app.foldcade.R
+import app.foldcade.language.HOME_ANDROID_APPS
 import app.foldcade.language.PromptKey
 import app.foldcade.language.Row
 import app.foldcade.language.RowControl
@@ -579,8 +580,11 @@ internal fun <T> SlideSwap(
     }
 }
 
-/** The art a row leads with, or null for a row that is only words. */
-internal fun rowIcon(row: Row): Int? = when (row) {
+/**
+ * The art a row leads with, or null for a row that is only words. A tile's verbs wear theirs on
+ * their round tiles. Move to Games or Apps shows where it goes, which [moveTo] names.
+ */
+internal fun rowIcon(row: Row, moveTo: String? = null): Int? = when (row) {
     Row.Home -> R.drawable.symbol_home
     Row.AllLibrary -> R.drawable.symbol_library
     Row.AndroidGames -> R.drawable.symbol_android_games
@@ -589,6 +593,26 @@ internal fun rowIcon(row: Row): Int? = when (row) {
     Row.Settings -> R.drawable.ic_status_settings
     is Row.RommConnection, is Row.SignOut -> R.drawable.symbol_cloud
     is Row.ForgetFolder -> R.drawable.symbol_folder
+    Row.MoveTile -> R.drawable.symbol_move
+    Row.AddToCollection -> R.drawable.symbol_add_to
+    Row.ChooseArt -> R.drawable.symbol_art
+    Row.Saves -> R.drawable.symbol_saves
+    Row.RenameFolder -> R.drawable.symbol_rename
+    Row.FolderIcon -> R.drawable.symbol_icon
+    Row.NewCollection -> R.drawable.symbol_new_collection
+    Row.Undo -> R.drawable.symbol_undo
+    Row.ShowHidden -> R.drawable.symbol_show
+    Row.ShowOnHome, Row.AddNewGames -> R.drawable.symbol_home
+    Row.MoveApp -> if (moveTo == HOME_ANDROID_APPS) R.drawable.symbol_android_apps else R.drawable.symbol_android_games
+    Row.SelectTile -> R.drawable.symbol_select
+    Row.Tidy -> R.drawable.symbol_tidy
+    Row.RemoveTile -> R.drawable.symbol_remove
+    Row.RestartGame -> R.drawable.symbol_restart
+    Row.Hide, Row.Hidden -> R.drawable.symbol_hide
+    Row.RemoveDownload -> R.drawable.symbol_remove_download
+    Row.DeleteShortcut -> R.drawable.symbol_delete
+    Row.SortFolder -> R.drawable.symbol_sort
+    Row.RecentOnHome -> R.drawable.symbol_clock
     else -> null
 }
 

@@ -6,13 +6,13 @@
 Open it in any browser. Grid objects sit on tiles drawn the way the home grid draws them: the
 surface, the light in the mark's colour, the tile's corner, and the resting brightness. Symbols
 show at menu size and large. Collections show every colour. Check a new icon here, beside the
-rest of its family, before shipping it (docs/iconography.md). App objects follow the grid objects.
+rest of its family, before shipping it (docs/iconography.md). Verbs follow the symbols. App objects follow the grid objects.
 """
 import sys
 from art import Asset, to_svg
 from objects import object_layers, symbol_layers, tone
 from palette import INK
-import apps, marks, symbols
+import apps, marks, symbols, verbs
 
 SURFACE = "#1C1C20"
 TINTS = {"gold": "#FFC15A", "coral": "#FF7F5C", "rose": "#FF5C8A", "violet": "#B48CFF", "indigo": "#7C8CFF",
@@ -63,6 +63,11 @@ def main(out):
         s = svg(symbol_layers(draw()))
         flat.append(f'<figure class="sym"><div>{s}{s}</div><figcaption>{name.replace("_", "-")}</figcaption></figure>')
     sections.append(("Symbols", "Places, platforms, and collection glyphs at menu-row size (32) and large.", f'<div class="syms">{"".join(flat)}</div>'))
+    acts = []
+    for name, (draw, about) in verbs.VERBS.items():
+        s = svg(symbol_layers(draw()))
+        acts.append(f'<figure class="sym"><div>{s}{s}</div><figcaption>{name.replace("_", "-")}</figcaption></figure>')
+    sections.append(("Verbs", "What Y's menu and Edit home do to a tile, at menu-row size (32) and large.", f'<div class="syms">{"".join(acts)}</div>'))
     folders = [tile(collection(g, t, f"c{i}"), t, f"{g.replace('_', '-')} · {n}")
                for i, ((n, t), g) in enumerate(zip(TINTS.items(), ("star", "heart", "skull", "ghost", "sword", "music",
                                                                     "clock", "leaf", "mushroom", "nintendo_3ds")))]

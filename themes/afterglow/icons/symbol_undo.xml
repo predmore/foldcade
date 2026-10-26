@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Foldcade original art, MIT licensed (see LICENSE). Afterglow verb: Undo: an arrow turning back -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:aapt="http://schemas.android.com/aapt"
+    android:width="48dp"
+    android:height="48dp"
+    android:viewportWidth="64"
+    android:viewportHeight="64">
+    <path
+        android:pathData="M8.229,25.024 Q7,24 8.229,22.976 L20.771,12.524 Q22,11.5 22,13.1 L22,34.9 Q22,36.5 20.771,35.476 Z"
+        android:fillColor="#FFF4F1EA"
+        android:fillType="evenOdd" />
+    <path
+        android:pathData="M20,24 H38 A12.5,12.5 0 0 1 38,49 H27"
+        android:strokeColor="#FFF4F1EA"
+        android:strokeWidth="7"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round" />
+</vector>

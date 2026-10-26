@@ -135,7 +135,7 @@ class FindRecoveryIntegrationTest {
     private fun choose(shell: ShellController, row: Row) {
         val target = panelRows(shell.model.panel!!, shell.model).indexOf(row)
         assertTrue("Missing $row", target >= 0)
-        while (shell.model.panel!!.index != target) shell.onMeaning(if (shell.model.panel!!.index < target) Meaning.MoveDown else Meaning.MoveUp, HostScreen.Top)
+        walkPanelTo(shell, target, HostScreen.Top)
         shell.onMeaning(Meaning.Activate, HostScreen.Top)
     }
 }
