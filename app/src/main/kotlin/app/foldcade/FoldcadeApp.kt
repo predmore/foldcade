@@ -41,7 +41,6 @@ import app.foldcade.api.plugin.Game
 import app.foldcade.api.plugin.GameActivity
 import app.foldcade.api.plugin.HostedSaveFolder
 import app.foldcade.api.plugin.LaunchFlag
-import app.foldcade.api.plugin.LibraryInstance
 import app.foldcade.api.plugin.Player
 import app.foldcade.api.plugin.PlayerIntent
 import app.foldcade.api.plugin.PluginException
@@ -72,10 +71,10 @@ import app.foldcade.plugins.romm.RommArtwork
 import app.foldcade.plugins.emulators.EDEN_PACKAGES
 import app.foldcade.plugins.romm.RommCoverArt
 import app.foldcade.plugins.romm.RommFirmware
+import app.foldcade.plugins.romm.RommPlugins
 import app.foldcade.romm.FirmwareSummary
 import app.foldcade.romm.RomProgress
 import app.foldcade.plugins.romm.SaveBytes
-import app.foldcade.plugins.romm.rommOriginAlreadyConfigured
 import app.foldcade.artwork.ART_HOSTS
 import app.foldcade.artwork.ArtBytes
 import app.foldcade.artwork.ArtFinder
@@ -246,7 +245,7 @@ class FoldcadeApp : Application() {
     @Volatile
     var steamGridDbKey: String? = null
 
-    private val rommCoverArt by lazy { RommCoverArt(publicArt::allows) { rommWirings(store).firstOrNull() } }
+    private val rommCoverArt by lazy { RommCoverArt(publicArt::allows) { RommPlugins.wiring } }
 
     val steamGridDb by lazy { SteamGridDb(PublicArtHttp(publicArt)) { steamGridDbKey } }
     private val artChoiceFile by lazy { File(filesDir, "art/choices.json") }
@@ -300,7 +299,7 @@ class FoldcadeApp : Application() {
 
     /** Decodes and caches covers. Public art loads through :net, RomM's through its own client. */
     val images: ImageLoader by lazy {
-        val romm = RommArtwork { rommWirings(store) }
+        val romm = RommArtwork { RommPlugins.wiring }
         ImageLoader.Builder(this)
             .components {
                 add(
@@ -896,7 +895,7 @@ class FoldcadeApp : Application() {
     }
 
     private suspend fun loadSignedIn() {
-        val romm = readRommRecovery(credentials, store.rommServers())
+        val romm = readRommRecovery(credentials, store.rommOrigin())
         val ids = try {
             credentials.pluginIds()
         } catch (cancelled: CancellationException) {
@@ -904,7 +903,7 @@ class FoldcadeApp : Application() {
         } catch (_: Exception) {
             emptySet()
         }
-        // The art key is not a library. RomM connections have their own rows under one plugin id.
+        // The art key is not a library. RomM has its own connection row.
         val others = ids
             .filter { it != SteamGridDb.CREDENTIAL_ID && it != RommCredentials.PLUGIN_ID }
             .map { SignedInBackend(it, backendLabel(it)) }
@@ -1124,8 +1123,8 @@ class FoldcadeApp : Application() {
     private fun deviceBootCount(): Int =
         Settings.Global.getInt(contentResolver, Settings.Global.BOOT_COUNT, -1)
 
-    /** Switch keys and firmware on every signed-in RomM server, in the order they were added. */
-    internal val rommFirmware: RommFirmware by lazy { RommFirmware { rommWirings(store) } }
+    /** Switch keys and firmware on the signed-in RomM server. */
+    internal val rommFirmware: RommFirmware by lazy { RommFirmware { RommPlugins.wiring } }
 
     /**
      * Adds the keys and firmware the granted Eden folder is missing.
@@ -1138,9 +1137,7 @@ class FoldcadeApp : Application() {
                 EdenDocumentTree(contentResolver, tree)
             },
             source = object : EdenFileSource {
-                override suspend fun servers(): List<EdenServerFiles> = rommFirmware.listSwitch().map { server ->
-                    EdenServerFiles(server.origin, server.files, server.failed)
-                }
+                override suspend fun server() = rommFirmware.listSwitch()
 
                 override suspend fun download(
                     origin: String,
@@ -1411,7 +1408,7 @@ class FoldcadeApp : Application() {
     }
 
     /**
-     * Gives each saved RomM server its origin. Editing an origin calls this again
+     * Gives the saved RomM server its origin. Editing an origin calls this again
      * and then [syncRomm], which reconnects. Shared roots stay on [app.foldcade.plugins.romm.RommPlugins].
      */
     private fun configureSavedRomm() {
@@ -1419,21 +1416,6 @@ class FoldcadeApp : Application() {
         val origin = store.rommOrigin()
         if (!origin.isNullOrBlank()) {
             plugins.configure(RommCredentials.PLUGIN_ID, mapOf(ROMM_ORIGIN_KEY to origin))
-        }
-        val others = store.rommInstances()
-        for ((id, extra) in others) {
-            val taken = listOfNotNull(origin) + others.filter { it.first != id }.map { it.second }
-            if (rommOriginAlreadyConfigured(taken, extra)) continue
-            if (plugins.library(id) == null) {
-                try {
-                    plugins.openInstance(LibraryInstance(id, RommCredentials.PLUGIN_ID))
-                } catch (cancelled: CancellationException) {
-                    throw cancelled
-                } catch (_: Exception) {
-                    continue
-                }
-            }
-            plugins.configure(id, mapOf(ROMM_ORIGIN_KEY to extra))
         }
     }
 
@@ -1944,49 +1926,45 @@ class FoldcadeApp : Application() {
                 pluginsReady.await()
                 if (ticket != rommTicket.get()) return@launch
                 configureSavedRomm()
-                val ids = store.rommServers().map { it.first }
-                if (ids.isEmpty()) {
+                val libraryId = RommCredentials.PLUGIN_ID
+                if (store.rommOrigin() == null) {
                     withContext(Dispatchers.Main.immediate) {
-                        if (ticket == rommTicket.get()) shell.dropLibrary(RommCredentials.PLUGIN_ID)
+                        if (ticket == rommTicket.get()) shell.dropLibrary(libraryId)
                     }
                     return@launch
                 }
-                refreshRommServers(
-                    ids = ids,
-                    load = { libraryId ->
-                        when (val listed = loadPlatforms(
-                            plugins,
+                try {
+                    val listed = when (val loaded = loadPlatforms(
+                        plugins,
+                        libraryId,
+                        occupiesBoth = { platformOccupiesBoth(plugins, it, ::packageInstalled) },
+                    )) {
+                        is LoadedLibrary.Platforms -> loaded
+                        LoadedLibrary.NoPlatforms -> null
+                        LoadedLibrary.Unreachable -> return@launch
+                    }
+                    val games = listed?.let { loadEveryGame(libraryId, it) }.orEmpty()
+                    withContext(Dispatchers.Main.immediate) {
+                        if (ticket != rommTicket.get() || store.rommOrigin() == null) return@withContext
+                        shell.ingestLibrary(
                             libraryId,
-                            occupiesBoth = { platformOccupiesBoth(plugins, it, ::packageInstalled) },
-                        )) {
-                            is LoadedLibrary.Platforms -> listed to loadEveryGame(libraryId, listed)
-                            LoadedLibrary.NoPlatforms -> null to emptyList<GridEntry>()
-                            LoadedLibrary.Unreachable -> null
-                        }
-                    },
-                    onSignIn = { libraryId ->
-                        withContext(Dispatchers.Main.immediate) {
-                            if (ticket == rommTicket.get() && store.rommServerOrigin(libraryId) != null) {
-                                shell.askToSignInAgain(libraryId)
-                            }
-                        }
-                    },
-                    onFailure = { libraryId, failure -> Log.w("Foldcade", "RomM library $libraryId failed", failure) },
-                    onLoaded = { libraryId, (listed, games) ->
-                        withContext(Dispatchers.Main.immediate) {
-                            if (ticket != rommTicket.get() || store.rommServerOrigin(libraryId) == null) return@withContext
-                            shell.ingestLibrary(
-                                libraryId,
-                                games,
-                                plugins.platformDefinitions(),
-                                listed?.entries.orEmpty().associate { (it.platformId ?: it.id) to it.title },
-                                readAt = readAt,
-                            )
-                            val waiting = shell.model.libraryGrid && shell.model.emptyGrid != EmptyGrid.Loading
-                            if (waiting && games.isNotEmpty()) shell.showCuratedHome()
-                        }
-                    },
-                )
+                            games,
+                            plugins.platformDefinitions(),
+                            listed?.entries.orEmpty().associate { (it.platformId ?: it.id) to it.title },
+                            readAt = readAt,
+                        )
+                        val waiting = shell.model.libraryGrid && shell.model.emptyGrid != EmptyGrid.Loading
+                        if (waiting && games.isNotEmpty()) shell.showCuratedHome()
+                    }
+                } catch (cancelled: CancellationException) {
+                    throw cancelled
+                } catch (_: PluginException.NotAuthenticated) {
+                    withContext(Dispatchers.Main.immediate) {
+                        if (ticket == rommTicket.get() && store.rommOrigin() != null) shell.askToSignInAgain()
+                    }
+                } catch (failure: Exception) {
+                    Log.w("Foldcade", "RomM library failed", failure)
+                }
             }.also { rommRefreshJob = it }
         }
     }

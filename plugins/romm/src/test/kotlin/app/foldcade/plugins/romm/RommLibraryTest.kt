@@ -1536,18 +1536,12 @@ class RommLibraryTest {
     }
 
     @Test
-    fun setupIsOriginThenDeviceCodeAndTheSecondInstanceKeepsItsKey() {
+    fun setupIsOriginThenDeviceCode() {
         val library = RommLibrary(RommGate { null })
         val steps = library.setup()
         assertEquals(Setup.Text(ROMM_ORIGIN_KEY, "Server"), steps[0])
         assertTrue(steps.none { it is Setup.Secret })
         assertEquals("access-token", (steps[1] as Setup.DeviceCode).credentialKey)
-        val second = RommLibrary.open("romm#2")
-        assertEquals("romm", second.id)
-        assertEquals("romm#2", second.instanceId)
-        assertEquals("access-token@romm#2", (second.setup()[1] as Setup.DeviceCode).credentialKey)
-        assertEquals("access-token", rommCredentialKey("romm"))
-        assertEquals("access-token@romm#2", rommCredentialKey("romm#2"))
     }
 
     @Test

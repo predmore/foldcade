@@ -78,12 +78,11 @@ import kotlinx.serialization.json.put
 
 internal class RommLibrary internal constructor(
     private val gate: RommGate,
-    override val instanceId: String,
     private val supply: () -> RommSupply?,
     private val slot: AtomicReference<RommWiring?>?,
 ) : LibraryBackend {
     /** Tests pass their own gate. Production uses [open]. */
-    constructor(gate: RommGate) : this(gate, ROMM_LIBRARY_ID, { null }, null)
+    constructor(gate: RommGate) : this(gate, { null }, null)
 
     private val listedBackups = java.util.concurrent.ConcurrentHashMap<java.nio.file.Path, Set<String>>()
     private val listedOrigins = java.util.concurrent.ConcurrentHashMap<java.nio.file.Path, Map<String, app.foldcade.api.plugin.ServerSaveOrigin>>()
@@ -95,7 +94,7 @@ internal class RommLibrary internal constructor(
 
     override fun setup(): List<Setup> = listOf(
         Setup.Text(key = ROMM_ORIGIN_KEY, prompt = "Server"),
-        Setup.DeviceCode(credentialKey = rommCredentialKey(instanceId)),
+        Setup.DeviceCode(credentialKey = "access-token"),
     )
 
     override fun configure(values: Map<String, String>) {
@@ -107,7 +106,7 @@ internal class RommLibrary internal constructor(
             return
         }
         val shared = supply() ?: return
-        held.set(shared.wiring(trimmed, rommCredentialKey(instanceId)))
+        held.set(shared.wiring(trimmed))
     }
 
     override suspend fun beginDeviceCode(): DeviceCodeChallenge {
@@ -132,13 +131,12 @@ internal class RommLibrary internal constructor(
         }
 
     companion object {
-        fun open(instanceId: String, supply: () -> RommSupply? = { RommPlugins.supply }): RommLibrary {
+        fun open(supply: () -> RommSupply? = { RommPlugins.supply }): RommLibrary {
             val slot = AtomicReference<RommWiring?>(null)
             return RommLibrary(
                 gate = RommGate {
-                    slot.get() ?: if (instanceId == ROMM_LIBRARY_ID) RommPlugins.wiring else null
+                    slot.get() ?: RommPlugins.wiring
                 },
-                instanceId = instanceId,
                 supply = supply,
                 slot = slot,
             )
@@ -323,7 +321,7 @@ internal class RommLibrary internal constructor(
         val offset = query.offset.coerceAtLeast(0).coerceAtMost(matches.size)
         val end = (offset.toLong() + query.limit.coerceIn(1, 10_000)).coerceAtMost(matches.size.toLong()).toInt()
         return GamePage(
-            games = matches.subList(offset, end).map { it.toGame(wiring.romRoot, wiring.platforms, instanceId) },
+            games = matches.subList(offset, end).map { it.toGame(wiring.romRoot, wiring.platforms) },
             nextOffset = end.takeIf { it < matches.size },
             total = matches.size,
         )
@@ -343,7 +341,7 @@ internal class RommLibrary internal constructor(
         )
         val page = ops.roms(romQuery)
         val games = runInterruptible(Dispatchers.IO) {
-            page.items.map { it.toGame(wiring.romRoot, wiring.platforms, instanceId) }
+            page.items.map { it.toGame(wiring.romRoot, wiring.platforms) }
         }
         val consumed = page.offset + page.items.size
         val knownTotal = page.total
@@ -469,7 +467,7 @@ internal class RommLibrary internal constructor(
                 throw PluginException.Unavailable(error.message ?: "RomM save could not be read", error)
             }
         }
-        return SaveSet(ownerBackendId = instanceId, slots = slots)
+        return SaveSet(ownerBackendId = id, slots = slots)
     }
 
     /**
@@ -1078,7 +1076,7 @@ internal class RommLibrary internal constructor(
         }
 
     private suspend fun romFor(game: Game, ops: RommOps, catalog: RommCatalog): RomSummary {
-        if (game.backendId != instanceId) {
+        if (game.backendId != id) {
             throw PluginException.NotFound("This game is not from RomM")
         }
         catalog.rom(game.remoteKey)?.let { return it }
@@ -1483,9 +1481,8 @@ internal fun alignedPlatformId(definitions: Iterable<Platform>, slug: String): S
 internal fun RomSummary.toGame(
     cacheRoot: Path,
     definitions: Iterable<Platform>,
-    instanceId: String = ROMM_LIBRARY_ID,
 ): Game = Game(
-    backendId = instanceId,
+    backendId = ROMM_LIBRARY_ID,
     remoteKey = id.toString(),
     platformId = alignedPlatformId(definitions, platformSlug),
     availability = cacheAvailability(cacheRoot, this),

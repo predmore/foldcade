@@ -1,7 +1,6 @@
 package app.foldcade
 
 import app.foldcade.language.HomeUndo
-import app.foldcade.plugins.romm.isRommInstance
 import app.foldcade.language.SAME_PREFIX
 import app.foldcade.language.SameSource
 import app.foldcade.language.foldSameGames
@@ -332,11 +331,6 @@ class ShellController(
         private set
     var connectOriginRevision: Int = 0
         private set
-
-    /** Shared by the two activities; the form always saves to the connection it opened for. */
-    var connectRommId: String = RommCredentials.PLUGIN_ID
-        private set
-    private var reLoginRommId = RommCredentials.PLUGIN_ID
 
     /** Only the current form may save credentials or show the result of its check. */
     fun beginSetupValidation(): Int? {
@@ -1682,43 +1676,38 @@ class ShellController(
     fun consumeConnectToken(): String = connectToken.also { connectToken = "" }
 
     fun openAddRomm() {
-        openConnect("", another = store.rommOrigin() != null)
+        openConnect(store.rommOrigin().orEmpty())
     }
 
-    fun editRommConnection(instanceId: String): Boolean {
-        val origin = store.rommServerOrigin(instanceId)
+    fun editRommConnection(): Boolean {
+        val origin = store.rommOrigin()
         if (origin == null) {
             closeConnect()
             return false
         }
-        openConnect(origin, instanceId = instanceId, returnPanel = model.connectReturnPanel)
+        openConnect(origin, returnPanel = model.connectReturnPanel)
         return true
     }
 
     fun openConnect(
         origin: String,
-        another: Boolean = false,
-        instanceId: String = RommCredentials.PLUGIN_ID,
         returnPanel: SidePanel? = null,
     ) {
         invalidateSetupValidation()
         connectVisit += 1
-        connectRommId = instanceId
         val screen = model.connectScreen ?: HostScreen.Top
-        val shown = if (another) "" else origin
         connectToken = ""
         model = model.copy(
             connectOpen = true,
             connectScreen = screen,
             connectReturnPanel = returnPanel,
             panel = null,
-            connectOrigin = shown,
+            connectOrigin = origin,
             connectIndex = 0,
-            connectWarning = cleartextCredentialWarning(shown),
+            connectWarning = cleartextCredentialWarning(origin),
             connectHint = null,
             connectRetry = false,
             connectKind = ConnectKind.Romm,
-            connectAnother = another,
         )
     }
 
@@ -1773,7 +1762,7 @@ class ShellController(
         deviceCodeVisitCurrent(visit) && connectOriginRevision == originRevision && !model.connectBusy
 
     fun setSignedIn(backends: List<SignedInBackend>) {
-        model = model.copy(signedIn = backends)
+        model = model.copy(signedIn = backends, rommSaved = store.rommOrigin() != null || backends.any { it.pluginId == RommCredentials.PLUGIN_ID })
     }
 
     fun setFolders(folders: List<LibraryFolder>) {
@@ -1788,7 +1777,6 @@ class ShellController(
             connectOpen = false,
             connectScreen = null,
             connectHint = null,
-            connectAnother = false,
             connectRetry = false,
             panel = model.connectReturnPanel,
             connectReturnPanel = null,
@@ -1797,16 +1785,12 @@ class ShellController(
     }
 
     fun openRommRecovery() {
-        val origin = store.rommServerOrigin(reLoginRommId)
-        // A removed additional server must not be recreated by an old prompt.
-        if (origin == null && reLoginRommId != RommCredentials.PLUGIN_ID) return
-        openConnect(origin.orEmpty(), instanceId = reLoginRommId)
+        openConnect(store.rommOrigin().orEmpty())
     }
 
-    fun askToSignInAgain(instanceId: String = RommCredentials.PLUGIN_ID) {
+    fun askToSignInAgain() {
         if (model.dialog?.kind == DialogKind.ReLogin || model.reLoginPending) return
-        if (model.connectOpen && !model.connectAnother && connectRommId == instanceId) return
-        reLoginRommId = instanceId
+        if (model.connectOpen && model.connectKind == ConnectKind.Romm) return
         if (model.dialog != null || model.connectOpen) {
             model = model.copy(reLoginPending = true)
             return
@@ -1814,16 +1798,11 @@ class ShellController(
         invalidateSetupValidation()
         connectToken = ""
         model = model.copy(
-            dialog = rommRecoveryPrompt(),
+            dialog = signInAgainPrompt(),
             connectOpen = false,
             connectScreen = null,
         )
     }
-
-    private fun rommRecoveryPrompt() = signInAgainPrompt().copy(
-        detail = if (reLoginRommId == RommCredentials.PLUGIN_ID) null
-        else store.rommServerOrigin(reLoginRommId)?.let { rommServerLabel(reLoginRommId, it) },
-    )
 
     /** Shows [dialog] unless another is open. True when it is shown. */
     fun present(dialog: DialogState): Boolean {
@@ -1868,7 +1847,7 @@ class ShellController(
 
     fun showQueuedPrompt() {
         if (!model.reLoginPending || model.dialog != null || model.connectOpen) return
-        model = model.copy(reLoginPending = false, dialog = rommRecoveryPrompt())
+        model = model.copy(reLoginPending = false, dialog = signInAgainPrompt())
     }
 
     /** One tap focuses a text row. Save activates on that tap. */
@@ -2331,12 +2310,9 @@ class ShellController(
         return routeSameGame(tileId, copies, pressed, ::libraryRank)
     }
 
-    /**
-     * Each RomM server in the order it was added, then every other library. The first server's
-     * copy keeps a folded game's saves and gives its tile a name and art.
-     */
+    /** RomM keeps a folded game's saves and gives its tile a name and art. */
     private fun libraryRank(libraryId: String): Int =
-        store.rommServers().indexOfFirst { it.first == libraryId }.let { if (it < 0) Int.MAX_VALUE / 2 else it }
+        if (libraryId == RommCredentials.PLUGIN_ID) 0 else Int.MAX_VALUE / 2
 
     /** A library game's platform, by the name its folder shows. Null off the library grid. */
     private fun libraryPlatformName(platformId: String?): String? {
@@ -3003,7 +2979,7 @@ class ShellController(
      */
     private fun awaitingLibrary(libraryId: String): Boolean =
         libraryId !in settledLibraries &&
-            (!isRommInstance(libraryId) || store.rommServers().any { it.first == libraryId })
+            (libraryId != RommCredentials.PLUGIN_ID || store.rommOrigin() != null)
 
     /** The library a [homeGameId] belongs to, or null for a tile that is not a library game. */
     private fun libraryOf(id: String): String? =
@@ -3153,6 +3129,7 @@ class ShellController(
         // Playback can fall back while a track is unavailable without erasing the user's choice.
         syncHome()
         return PickerModel(
+            rommSaved = store.rommOrigin() != null,
             count = home.visibleCount(),
             addNewToHome = home.board.addNewToHome,
             recentOnHome = groupOnHome(home.board, HOME_RECENT),

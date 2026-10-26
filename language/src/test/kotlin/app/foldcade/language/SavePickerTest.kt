@@ -7,7 +7,7 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class SavePickerTest {
-    private val target = SavePickerTarget("original-game", "romm#one", "3", "melonds")
+    private val target = SavePickerTarget("original-game", "romm", "3", "melonds")
     private val save = SavePickerSave("17", "autosave", "melonds", "Steam Deck", 1_000, 32_768, false, null)
     private val state = SavePickerState(target, "Mario", "melonDS", SaveHealth.Fine, listOf("sav"), listOf(save), index = 1, loading = false)
 

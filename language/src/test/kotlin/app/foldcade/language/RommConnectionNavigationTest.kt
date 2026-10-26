@@ -7,16 +7,24 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class RommConnectionNavigationTest {
-    private val connections = listOf(SignedInBackend("romm", "RomM"), SignedInBackend("romm#2", "two.example"))
+    private val connections = listOf(SignedInBackend("romm", "RomM"))
     private val home = PickerModel(count = 1, rowsPerPage = 1, signedIn = connections)
 
     @Test
-    fun eachSavedServerHasOneEntryAndASingleAddAction() {
+    fun aSavedServerHidesTheAddAction() {
         assertEquals(
-            listOf(Row.RommConnection("romm", "RomM"), Row.RommConnection("romm#2", "two.example"), Row.AddFolder, Row.AddRomm),
+            listOf(Row.RommConnection("romm", "RomM"), Row.AddFolder),
             libraryRows(connections),
         )
         assertEquals(listOf(Row.AddFolder, Row.AddRomm), libraryRows())
+    }
+
+    @Test
+    fun aSavedAddressStillShowsItsConnectionWhenTheTokenNeedsRecovery() {
+        assertEquals(
+            listOf(Row.RommConnection("romm", "RomM"), Row.AddFolder),
+            libraryRows(rommSaved = true),
+        )
     }
 
     @Test
@@ -32,9 +40,8 @@ class RommConnectionNavigationTest {
             assertEquals("Sign out", rowLabel(rows[1], opened))
 
             val (editing, edit) = reduce(opened, Meaning.Activate)
-            assertEquals(Effect.EditRommConnection(connections[index].pluginId), edit)
+            assertEquals(Effect.EditRommConnection, edit)
             assertTrue(editing.connectOpen)
-            assertFalse(editing.connectAnother)
             assertNull(editing.panel)
             assertEquals(opened.panel, reduce(editing, Meaning.Back).first.panel)
             assertEquals(selected.settings, reduce(opened, Meaning.Back).first.settings)
@@ -43,18 +50,18 @@ class RommConnectionNavigationTest {
 
     @Test
     fun signOutOnlyTargetsTheConnectionWhoseActionsAreOpen() {
-        val selected = home.onSetting(Row.RommConnection("romm#2", "two.example"))
+        val selected = home.onSetting(Row.RommConnection("romm", "RomM"))
         val opened = reduce(selected, Meaning.Activate).first
         val onSignOut = reduce(opened, Meaning.MoveDown).first
         val (closed, effect) = reduce(onSignOut, Meaning.Activate)
-        assertEquals(Effect.ForgetCredentials("romm#2"), effect)
+        assertEquals(Effect.ForgetCredentials("romm"), effect)
         assertNull(closed.panel)
         assertFalse(closed.connectOpen)
     }
 
     @Test
     fun aConnectionOpenedFromSettingsReturnsToTheSameRow() {
-        val selected = home.onSetting(Row.RommConnection("romm#2", "two.example"))
+        val selected = home.onSetting(Row.RommConnection("romm", "RomM"))
         val (opened, effect) = reduce(selected, Meaning.Activate)
         assertNull(effect)
         assertNull(opened.settings)

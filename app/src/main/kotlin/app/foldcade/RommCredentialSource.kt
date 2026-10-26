@@ -9,7 +9,6 @@ import app.foldcade.plugins.romm.ROMM_CONTENT_AUTHORITY
 import app.foldcade.plugins.romm.RommPlugins
 import app.foldcade.plugins.romm.RommSupply
 import app.foldcade.plugins.romm.RommTokenSource
-import app.foldcade.plugins.romm.rommCredentialKey
 import android.os.Looper
 import app.foldcade.plugins.romm.SaveBytes
 import java.nio.file.Path
@@ -37,11 +36,10 @@ internal fun rommTokenReadOnMainThread(): Boolean {
 internal fun readRommToken(
     store: CredentialStore,
     onMainThread: Boolean,
-    key: String = RommCredentials.ACCESS_TOKEN,
 ): String? {
     check(!onMainThread) { "RomM token reads run off the main thread" }
     val found = try {
-        runBlocking { store.lookup(RommCredentials.PLUGIN_ID, key) }
+        runBlocking { store.lookup(RommCredentials.PLUGIN_ID, RommCredentials.ACCESS_TOKEN) }
     } catch (cancelled: CancellationException) {
         throw cancelled
     } catch (_: Exception) {
@@ -89,13 +87,13 @@ fun publishRommWiring(
         platforms = platforms,
         contentUris = CachePathContentUri(cacheRoot, contentAuthority, dataRoot, cachePath, folderAuthority),
         saveBytes = saveBytes,
-        tokenFor = { key -> readRommToken(store, onMainThread = rommTokenReadOnMainThread(), key = key) },
+        tokenSource = rommTokenSource(store),
         artCacheRoot = artCacheRoot,
     )
     RommPlugins.installSupply(supply)
     val current = RommPlugins.wiring
     if (origin.isNullOrBlank()) {
-        if (current != null) RommPlugins.clearDefault()
+        if (current != null) RommPlugins.clearWiring()
         return
     }
     if (
@@ -108,7 +106,7 @@ fun publishRommWiring(
     ) {
         return
     }
-    RommPlugins.install(supply.wiring(origin, rommCredentialKey(RommCredentials.PLUGIN_ID)))
+    RommPlugins.install(supply.wiring(origin))
 }
 
 /**

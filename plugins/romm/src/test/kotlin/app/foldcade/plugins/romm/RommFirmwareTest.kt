@@ -28,19 +28,13 @@ class RommFirmwareTest {
                     listOf(FirmwareSummary(5, 9, "Firmware.23.0.1.zip", 40, null))
                 }
             }
-            val listed = RommFirmware {
-                listOf(
-                    wiring(root, "https://slug.example", bySlug),
-                    wiring(root, "https://fs.example", byFs),
-                )
-            }.listSwitch()
-            assertEquals(
-                listOf(
-                    RommSwitchFirmware("https://slug.example", listOf(FirmwareSummary(4, 18, "prod.keys", 8, null)), false),
-                    RommSwitchFirmware("https://fs.example", listOf(FirmwareSummary(5, 9, "Firmware.23.0.1.zip", 40, null)), false),
-                ),
-                listed,
-            )
+            for ((origin, ops, expected) in listOf(
+                Triple("https://slug.example", bySlug, FirmwareSummary(4, 18, "prod.keys", 8, null)),
+                Triple("https://fs.example", byFs, FirmwareSummary(5, 9, "Firmware.23.0.1.zip", 40, null)),
+            )) {
+                val listed = RommFirmware { wiring(root, origin, ops) }.listSwitch()
+                assertEquals(RommSwitchFirmware(origin, listOf(expected), false), listed)
+            }
         } finally {
             root.toFile().deleteRecursively()
         }
@@ -58,8 +52,8 @@ class RommFirmwareTest {
                     emptyList()
                 }
             }
-            val listed = RommFirmware { listOf(wiring(root, "https://romm.example", ops)) }.listSwitch()
-            assertEquals(listOf(RommSwitchFirmware("https://romm.example", emptyList(), failed = false)), listed)
+            val listed = RommFirmware { wiring(root, "https://romm.example", ops) }.listSwitch()
+            assertEquals(RommSwitchFirmware("https://romm.example", emptyList(), failed = false), listed)
             assertEquals(0, firmwareCalls)
         } finally {
             root.toFile().deleteRecursively()
@@ -71,19 +65,10 @@ class RommFirmwareTest {
         val root = Files.createTempDirectory("romm-firmware-token")
         try {
             val opened = mutableListOf<String>()
-            val listed = RommFirmware {
-                listOf(
-                    wiring(root, "https://none.example", ScriptedOps(), token = null, opened = opened),
-                    wiring(root, "https://blank.example", ScriptedOps(), token = "  ", opened = opened),
-                )
-            }.listSwitch()
-            assertEquals(
-                listOf(
-                    RommSwitchFirmware("https://none.example", emptyList(), failed = true),
-                    RommSwitchFirmware("https://blank.example", emptyList(), failed = true),
-                ),
-                listed,
-            )
+            for (token in listOf(null, "  ")) {
+                val listed = RommFirmware { wiring(root, "https://romm.example", ScriptedOps(), token = token, opened = opened) }.listSwitch()
+                assertEquals(RommSwitchFirmware("https://romm.example", emptyList(), failed = true), listed)
+            }
             assertTrue(opened.isEmpty())
         } finally {
             root.toFile().deleteRecursively()
@@ -99,8 +84,8 @@ class RommFirmwareTest {
                 onPlatforms = { error("platforms down") }
                 onClose = { closed = true }
             }
-            val listed = RommFirmware { listOf(wiring(root, "https://romm.example", ops)) }.listSwitch()
-            assertEquals(listOf(RommSwitchFirmware("https://romm.example", emptyList(), failed = true)), listed)
+            val listed = RommFirmware { wiring(root, "https://romm.example", ops) }.listSwitch()
+            assertEquals(RommSwitchFirmware("https://romm.example", emptyList(), failed = true), listed)
             assertTrue(closed)
         } finally {
             root.toFile().deleteRecursively()
@@ -117,8 +102,8 @@ class RommFirmwareTest {
                 onFirmware = { error("firmware down") }
                 onClose = { closed = true }
             }
-            val listed = RommFirmware { listOf(wiring(root, "https://romm.example", ops)) }.listSwitch()
-            assertEquals(listOf(RommSwitchFirmware("https://romm.example", emptyList(), failed = true)), listed)
+            val listed = RommFirmware { wiring(root, "https://romm.example", ops) }.listSwitch()
+            assertEquals(RommSwitchFirmware("https://romm.example", emptyList(), failed = true), listed)
             assertTrue(closed)
         } finally {
             root.toFile().deleteRecursively()
@@ -130,21 +115,9 @@ class RommFirmwareTest {
         val root = Files.createTempDirectory("romm-firmware-blank")
         try {
             val opened = mutableListOf<String>()
-            val real = ScriptedOps().apply {
-                onPlatforms = { listOf(platform(18, "switch")) }
-                onFirmware = { listOf(FirmwareSummary(4, 18, "prod.keys", 8, null)) }
-            }
-            val listed = RommFirmware {
-                listOf(
-                    wiring(root, "  ", ScriptedOps(), opened = opened),
-                    wiring(root, "https://romm.example", real, opened = opened),
-                )
-            }.listSwitch()
-            assertEquals(
-                listOf(RommSwitchFirmware("https://romm.example", listOf(FirmwareSummary(4, 18, "prod.keys", 8, null)), false)),
-                listed,
-            )
-            assertEquals(listOf("https://romm.example"), opened)
+            val listed = RommFirmware { wiring(root, "  ", ScriptedOps(), opened = opened) }.listSwitch()
+            assertEquals(null, listed)
+            assertTrue(opened.isEmpty())
         } finally {
             root.toFile().deleteRecursively()
         }
@@ -167,15 +140,7 @@ class RommFirmwareTest {
                     target
                 }
             }
-            val other = ScriptedOps().apply {
-                onDownloadFirmware = { _, _ -> error("wrong server") }
-            }
-            val firmware = RommFirmware {
-                listOf(
-                    wiring(root, "https://one.example", other, opened = opened),
-                    wiring(root, "https://two.example", ops, opened = opened),
-                )
-            }
+            val firmware = RommFirmware { wiring(root, "https://two.example", ops, opened = opened) }
             val target = root.resolve("out/prod.keys")
             val keys = FirmwareSummary(4, 18, "prod.keys", 12, "abc")
             val saved = firmware.download("https://two.example", keys, target)

@@ -2363,7 +2363,7 @@ private fun PanelRows(
                     text = connection.label,
                     style = rowStyle.copy(fontWeight = foldTheme().style.type.strongWeight),
                 )
-                app.store.rommServerOrigin(connection.pluginId)?.let { origin ->
+                app.store.rommOrigin()?.let { origin ->
                     BasicText(
                         text = origin,
                         style = text(theme.muted, LocalFoldTheme.current.theme.style.type.hint, theme),
@@ -4396,7 +4396,7 @@ private fun ConnectScreen(
             text = when {
                 artKey -> Copy.steamGridDb
                 model.connectReturnPanel != null -> Copy.editRommConnection
-                !model.connectAnother && app.store.rommServerOrigin(app.shell.connectRommId) != null -> Copy.signInAgainTitle
+                app.store.rommOrigin() != null -> Copy.signInAgainTitle
                 else -> Copy.addRommServer
             },
             style = text(theme.onBackground, LocalFoldTheme.current.theme.style.type.dialogTitle, theme, display = true),

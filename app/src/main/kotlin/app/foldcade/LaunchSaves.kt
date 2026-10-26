@@ -104,9 +104,10 @@ internal class LaunchSaves(
     }
 
     /**
-     * The copies that may keep the saves, [GameRoute.saves] first. With several servers, one
-     * that already keeps a save here goes first, and each after it is asked in turn when the one
-     * before had nothing, so a device with no save loads the progress any server has.
+     * The copies that may keep the saves, [GameRoute.saves] first. RomM can list one file under
+     * two platforms that fold into one tile. A copy that already keeps a save here goes first,
+     * and each after it is asked in turn when the one before had nothing, so a device with no
+     * save loads the progress either copy has.
      */
     private suspend fun candidates(route: GameRoute): List<Game> {
         if (route.servers.size < 2) return listOf(route.saves)

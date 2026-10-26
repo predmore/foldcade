@@ -75,12 +75,13 @@ class SameGameHomeTest {
         val shell = shell()
         listFolder(shell)
         shell.ingestLibrary(
-            "romm#2",
-            listOf(entry("31", RF4_FILE, "romm#2", Availability.RemoteOnly, RF4_FILE)),
+            "romm",
+            listOf(entry("31", RF4_FILE, "romm", Availability.RemoteOnly, RF4_FILE)),
             emptyList(),
         )
-        assertEquals(mapOf(local to tile, "lib:romm#2:31" to tile), store.sameGames())
-        // romm#2 is not a saved server. After a restart the folder lists without the game.
+        assertEquals(mapOf(local to tile, "lib:romm:31" to tile), store.sameGames())
+        // After signing out, a restart lists the folder without the game.
+        store.clearRommOrigin()
         val again = shell()
         again.ingestLibrary("local-folder", listOf(entry("other", "Other", "local-folder", Availability.LocalOnly, "Other.cci")), emptyList())
         assertFalse(tile in folderSlots(again, platformFolderId("nintendo-3ds")))

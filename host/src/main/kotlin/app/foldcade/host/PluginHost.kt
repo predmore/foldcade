@@ -700,7 +700,7 @@ private fun refuseLibraryIds(incoming: List<LibraryBackend>) {
     }
 }
 
-/** `romm#2`, then `romm#3`. [typeId] itself stays the default copy. */
+/** `shelf#2`, then `shelf#3`. [typeId] itself stays the default copy. */
 fun mintInstanceId(typeId: String, taken: Set<String>): String {
     require('#' !in typeId && ':' !in typeId) { "library type id $typeId contains a reserved character" }
     var n = 2

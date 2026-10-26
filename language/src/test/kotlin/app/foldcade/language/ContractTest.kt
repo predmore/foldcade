@@ -887,7 +887,7 @@ class ContractTest {
 
         val signedIn = libraryRows(listOf(SignedInBackend("romm", "RomM")))
         assertEquals(
-            listOf(Row.RommConnection("romm", "RomM"), Row.AddFolder, Row.AddRomm),
+            listOf(Row.RommConnection("romm", "RomM"), Row.AddFolder),
             signedIn,
         )
         val other = libraryRows(listOf(SignedInBackend("other", "Other")))
@@ -896,14 +896,9 @@ class ContractTest {
 
     @Test
     fun addRommOpensTheSameConnectForm() {
-        val home = PickerModel(
-            count = 1,
-            rowsPerPage = 1,
-            signedIn = listOf(SignedInBackend("romm", "RomM")),
-        )
+        val home = PickerModel(count = 1, rowsPerPage = 1)
         val (opened, effect) = reduce(home.onSetting(Row.AddRomm), Meaning.Activate)
         assertEquals(Effect.OpenAddRomm, effect)
-        assertTrue(opened.connectAnother)
         assertEquals("", opened.connectOrigin)
         assertEquals(ConnectKind.Romm, opened.connectKind)
         assertEquals(listOf(ConnectField.Origin, ConnectField.Token, ConnectField.Save), connectFields(opened.connectKind))

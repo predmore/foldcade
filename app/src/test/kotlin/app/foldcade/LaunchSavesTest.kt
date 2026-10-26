@@ -74,7 +74,7 @@ class LaunchSavesTest {
     }
 
     @Test
-    fun aServerThatAlreadyHoldsTheSaveKeepsItOnADeviceWithNone() = runBlocking {
+    fun aCopyThatAlreadyHoldsTheSaveKeepsItOnADeviceWithNone() = runBlocking {
         val other = RecordingLibrary("other")
         plugins.register(object : PluginEntry {
             override val apiVersion = PLUGIN_API_VERSION
@@ -83,7 +83,7 @@ class LaunchSavesTest {
         })
         val second = Game("other", "4", "nintendo-ds", Availability.Cached, "Tetris")
         other.held = listOf("sav")
-        other.toPlace = "kept on the second server"
+        other.toPlace = "kept on the second copy"
         val route = GameRoute("tile", play, owner, servers = listOf(owner, second))
         val prepared = LaunchSaves(saves, plugins) { awaiting += it }.prepare(route, Melon, local)
         assertEquals(second, prepared.owner)
@@ -92,7 +92,7 @@ class LaunchSavesTest {
     }
 
     @Test
-    fun aSaveOnlyTheSecondServerHasStillLoadsOnADeviceWithNone() = runBlocking {
+    fun aSaveOnlyTheSecondCopyHasStillLoadsOnADeviceWithNone() = runBlocking {
         val other = RecordingLibrary("other")
         plugins.register(object : PluginEntry {
             override val apiVersion = PLUGIN_API_VERSION
@@ -100,15 +100,15 @@ class LaunchSavesTest {
             override val libraries: List<LibraryBackend> = listOf(other)
         })
         val second = Game("other", "4", "nintendo-ds", Availability.Cached, "Tetris")
-        // Neither keeps a save here yet. Only the second server's sync brings one.
-        other.toPlace = "from the second server"
+        // Neither keeps a save here yet. Only the second copy's sync brings one.
+        other.toPlace = "from the second copy"
         server.toPlace = null
         val prepared = LaunchSaves(saves, plugins) { awaiting += it }
             .prepare(GameRoute("tile", play, owner, servers = listOf(owner, second)), Melon, local)
         assertEquals(second, prepared.owner)
         assertEquals(listOf("prepareSaves:12"), server.calls)
         assertEquals(listOf("prepareSaves:4"), other.calls)
-        assertEquals("from the second server", String(docs.files.getValue("$SAVES/Tetris DS (USA).sav")))
+        assertEquals("from the second copy", String(docs.files.getValue("$SAVES/Tetris DS (USA).sav")))
     }
 
     @Test

@@ -177,7 +177,6 @@ class SaveNoticeTest {
         // Another game's sync is not this one's answer.
         assertNull(notices.returned("romm", game, SyncOutcome.Queued, nowMillis = 0))
         assertNull(notices.synced("romm", "43", SyncResult(SyncOutcome.Queued), nowMillis = 5))
-        assertNull(notices.synced("romm#2", "42", SyncResult(SyncOutcome.Queued), nowMillis = 5))
         assertTrue(notices.expire(nowMillis = 1_000).isNotEmpty())
     }
 

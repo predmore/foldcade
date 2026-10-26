@@ -20,15 +20,13 @@ data class RommSwitchFirmware(
 )
 
 /**
- * Switch keys and firmware from every configured RomM server.
- * [wirings] is the host's saved servers, in the order they were added.
- * A server that cannot be reached is reported and the next one is still asked.
+ * Switch keys and firmware from the configured RomM server.
  */
 class RommFirmware(
-    private val wirings: () -> List<RommWiring>,
+    private val wiring: () -> RommWiring?,
 ) {
-    suspend fun listSwitch(): List<RommSwitchFirmware> = withContext(Dispatchers.IO) {
-        wirings().filter { it.origin.isNotBlank() }.map { wiring -> ask(wiring) }
+    suspend fun listSwitch(): RommSwitchFirmware? = withContext(Dispatchers.IO) {
+        wiring()?.takeIf { it.origin.isNotBlank() }?.let { ask(it) }
     }
 
     suspend fun download(
@@ -37,7 +35,7 @@ class RommFirmware(
         target: Path,
         progress: ((RomProgress) -> Unit)? = null,
     ): Path {
-        val wiring = wirings().firstOrNull { it.origin == origin }
+        val wiring = wiring()?.takeIf { it.origin == origin }
             ?: throw IllegalStateException("RomM server is not connected")
         val token = token(wiring) ?: throw IllegalStateException("Sign in to RomM")
         val ops = wiring.open(wiring.origin) { token }

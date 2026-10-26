@@ -33,8 +33,6 @@ class EdenSettingsTest {
             listOf(Row.RetroArchCores, Row.EdenFolder),
             settingsRows(SettingsCategory.Players, both),
         )
-        val secondServer = installed.copy(signedIn = listOf(SignedInBackend("romm#2", "Two")))
-        assertEquals(listOf(Row.EdenFolder), settingsRows(SettingsCategory.Players, secondServer))
         val (closed, effect) = reduce(granted.onSetting(Row.EdenFolder), Meaning.Activate)
         assertEquals(Effect.ShowEdenFolder, effect)
         assertNull(closed.settings)
