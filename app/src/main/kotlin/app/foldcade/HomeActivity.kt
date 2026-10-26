@@ -2763,7 +2763,7 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
                         val id = previous.focused?.id
                         val index = if (previous.index == 0) 0 else (saves.indexOfFirst { it.id == id } + 1).coerceAtLeast(0)
                         previous.copy(saves = saves, index = index, loading = false, error = false,
-                            health = foldcade.shell.savePickerHealth(target), ownSlots = request.player?.saveDeclarations(request.owner).orEmpty().map { it.slot })
+                            health = foldcade.shell.savePickerHealth(target), ownSlots = request.player?.saveDeclarations(request.owner).orEmpty().map { it.slot }).settled()
                     }
                 }
             } catch (cancelled: CancellationException) {

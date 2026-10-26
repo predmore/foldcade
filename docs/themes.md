@@ -486,7 +486,7 @@ The art picker.
 
 ### `saves`
 
-The Saves screen reuses menu highlights, dialog chips, type and motion.
+The Saves screen reuses Settings' card, menu highlights, dialog chips, type and motion. Its top screen is the game's hero art under `saves.backdropDim`.
 
 | Token | Afterglow | Controls |
 | --- | --- | --- |
@@ -494,6 +494,8 @@ The Saves screen reuses menu highlights, dialog chips, type and motion.
 | `saves.edgeDp` | 24 | Screen and confirmation insets |
 | `saves.gapDp` | 8 | Space between details and around the Playing pill |
 | `saves.screenshotShare` | 0.5 | Screenshot's share of the top screen's content width |
+| `saves.backdropDim` | 0.5 | The scrim over the game's art behind the top screen |
+| `saves.backupAlpha` | 0.6 | A Backup row at rest |
 
 ### `play`
 

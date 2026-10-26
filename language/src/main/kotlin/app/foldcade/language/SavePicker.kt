@@ -31,7 +31,7 @@ data class SavePickerState(
     val health: SaveHealth,
     val ownSlots: List<String> = emptyList(),
     val saves: List<SavePickerSave> = emptyList(),
-    /** Header is 0; save rows start at 1. */
+    /** The status chip is 0; save rows start at 1. See [firstIndex]. */
     val index: Int = 0,
     val loading: Boolean = true,
     val error: Boolean = false,
@@ -45,6 +45,17 @@ data class SavePickerState(
     val restartsOpenGame: Boolean = false,
 ) {
     val focused: SavePickerSave? get() = copying ?: saves.getOrNull(index - 1)
+
+    /**
+     * The status chip takes focus only while A does something there: setting up, or
+     * syncing held progress. Otherwise the newest save is where the page starts, and
+     * the chip is only read.
+     */
+    val statusActs: Boolean get() = health.needsAttention
+    val firstIndex: Int get() = if (statusActs || saves.isEmpty()) 0 else 1
+
+    /** [index] moved onto a row that can hold it, after the saves or the health change. */
+    fun settled(): SavePickerState = copy(index = index.coerceIn(firstIndex, saves.size.coerceAtLeast(firstIndex)))
     fun destinations(): List<SaveDestination> {
         val source = copying ?: return emptyList()
         val latest = saves.sortedByDescending { it.updatedAtMillis }.filter { !it.slot.isNullOrBlank() }
@@ -86,7 +97,7 @@ fun applySavePicker(state: SavePickerState, meaning: Meaning): Pair<SavePickerSt
     if (state.loading) return state to null
     if (state.error) return if (meaning == Meaning.Activate) state.copy(loading = true, error = false, message = null) to Effect.LoadSavePicker(state.target) else state to null
     return when (meaning) {
-        Meaning.MoveUp -> state.copy(index = (state.index - 1).coerceAtLeast(0), message = null) to null
+        Meaning.MoveUp -> state.copy(index = (state.index - 1).coerceAtLeast(state.firstIndex), message = null) to null
         Meaning.MoveDown -> state.copy(index = (state.index + 1).coerceAtMost(state.saves.size), message = null) to null
         Meaning.Activate -> if (state.index == 0) when (state.health) {
             is SaveHealth.NotSyncing -> state to Effect.FixSavePicker(state.target)
@@ -105,7 +116,6 @@ fun applySavePicker(state: SavePickerState, meaning: Meaning): Pair<SavePickerSt
 /** All screen, confirmation and failure copy stays with the shared UI language. */
 object SavePickerCopy {
     const val title = "Saves"
-    const val choose = "Choose"
     const val cancel = "Cancel"
     const val playing = "Playing"
     const val empty = "No saves on RomM yet"
@@ -113,9 +123,12 @@ object SavePickerCopy {
     const val retry = "Try again"
     const val loading = "Loading saves…"
     const val working = "Keeping your saves…"
-    const val play = "Play this save"
-    const val copy = "Copy to…"
-    const val copyAction = "Copy save"
+    /** A's word on a save and on the confirmation's button. */
+    const val play = "Play"
+    /** Y's word on a save, and the page's title while a slot is chosen. */
+    const val copy = "Copy"
+    const val copyTo = "Copy to"
+    const val syncNow = "Sync now"
     const val copied = "Save copied"
     const val synced = "Saves synced"
     const val noDestinations = "No other slots yet"
@@ -131,10 +144,6 @@ object SavePickerCopy {
     const val returnHome = "Return to Home before choosing a save."
     const val installFirst = "Install an emulator to play this save."
     const val unsupported = "This emulator can't load saves through Foldcade."
-    const val whenLabel = "When"
-    const val fromLabel = "From"
-    const val slotLabel = "Slot"
-    const val sizeLabel = "Size"
     private fun fallbackSource(save: SavePickerSave): String = save.source?.takeIf { it.isNotBlank() } ?: save.emulator?.takeIf { it.isNotBlank() } ?: unknown
     fun source(save: SavePickerSave): String {
         val origin = save.origin ?: return fallbackSource(save)
@@ -163,6 +172,12 @@ object SavePickerCopy {
     fun slot(save: SavePickerSave): String = if (save.backup) backup else save.slot?.takeIf { it.isNotBlank() } ?: noSlot
     fun row(save: SavePickerSave): String = "${source(save)} · ${slot(save)}"
     fun destination(destination: SaveDestination): String = "${destination.source} · ${destination.slot}"
+    /** Under the game's name on the top screen, once the saves are known. */
+    fun count(saves: Int): String = when (saves) {
+        0 -> empty
+        1 -> "1 save on RomM"
+        else -> "$saves saves on RomM"
+    }
     fun header(health: SaveHealth): String = when (health) {
         SaveHealth.Fine -> "Syncing with RomM"
         is SaveHealth.NotSyncing -> "Not syncing · Set up"
@@ -193,15 +208,44 @@ object SavePickerCopy {
 fun emulatorMismatch(emulator: String?, player: String?): Boolean = !emulator.isNullOrBlank() && !player.isNullOrBlank() &&
     emulator.substringBefore('.').lowercase() != player.substringBefore('.').lowercase()
 
+/**
+ * A save row's time, short enough to sit beside its slot: "Just now", "5m ago" and
+ * "2h ago" today, then "Yesterday", then the date, with the year once it is not this
+ * one. The top screen shows the focused save's full date and time.
+ */
 fun relativeSaveWhen(millis: Long, now: Long, style: DateStyle, zone: ZoneId = ZoneId.systemDefault()): String {
     val at = Instant.ofEpochMilli(millis).atZone(zone)
-    if (at.toLocalDate() != Instant.ofEpochMilli(now).atZone(zone).toLocalDate()) {
-        return "${style.monthDay(at)}, ${style.time(at)}"
+    val today = Instant.ofEpochMilli(now).atZone(zone).toLocalDate()
+    val day = at.toLocalDate()
+    if (day == today || day.isAfter(today)) {
+        val seconds = ((now - millis).coerceAtLeast(0) / 1000)
+        return when {
+            seconds < 60 -> "Just now"
+            seconds < 3600 -> "${seconds / 60}m ago"
+            else -> "${seconds / 3600}h ago"
+        }
     }
-    val seconds = ((now - millis).coerceAtLeast(0) / 1000)
     return when {
-        seconds < 60 -> "Just now"
-        seconds < 3600 -> "${seconds / 60} min ago"
-        else -> "${seconds / 3600} h ago"
+        day == today.minusDays(1) -> "Yesterday"
+        day.year == today.year -> style.monthDay(at)
+        else -> style.monthDayYear(at)
+    }
+}
+
+/**
+ * The keys under the Saves page, for what has focus now. B is the header's own glyph,
+ * as on Settings and Play activity, so it is not named again here. Nothing while the
+ * page loads or works, and nothing under a confirmation, which shows its own buttons.
+ */
+fun savePickerHints(state: SavePickerState, faces: FaceMap): List<HintKey> {
+    if (state.loading || state.busy || state.confirmation != null) return emptyList()
+    val confirm = promptKeyOf(faces.confirmKey) ?: PromptKey.FaceA
+    if (state.error) return listOf(HintKey(confirm, SavePickerCopy.retry))
+    if (state.copying != null) return if (state.destinations().isEmpty()) emptyList() else listOf(HintKey(confirm, SavePickerCopy.copy))
+    if (state.focused != null) return listOf(HintKey(confirm, SavePickerCopy.play), HintKey(actionFaces(faces).optionsGlyph, SavePickerCopy.copy))
+    return when (state.health) {
+        is SaveHealth.NotSyncing -> listOf(HintKey(confirm, Copy.setUp))
+        SaveHealth.Waiting -> listOf(HintKey(confirm, SavePickerCopy.syncNow))
+        else -> emptyList()
     }
 }

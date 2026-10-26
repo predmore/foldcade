@@ -362,9 +362,13 @@ fun PanelHost(activity: FoldcadeHomeActivity, displays: Displays) {
             if (blurHere && session.surfaceOn(Panel.Bottom) == Surface.Picker) MenuHints(app)
             // The blurred grid takes no taps of its own. A tap on it closes the island over it.
             if (blurHere && model.panel?.screen == HostScreen.Top) Box(Modifier.fillMaxSize().closesIsland(app))
-            model.savePicker?.let { saves ->
-                if (screen == HostScreen.Top) SavePickerTop(app, saves, rememberDateStyle(app), scale)
-                if (screen == HostScreen.Bottom) SavePickerBottom(app, saves, rememberDateStyle(app), scale, activity::dispatch)
+            // Saves rises over both screens as Settings does, and leaves as it was.
+            val saves = presence(model.savePicker, motion.durationIsland, scale)
+            saves.shown?.let { shown ->
+                Box(Modifier.fillMaxSize().rise { saves.progress.value }) {
+                    if (screen == HostScreen.Top) SavePickerTop(app, shown, rememberDateStyle(app), scale)
+                    if (screen == HostScreen.Bottom) SavePickerBottom(app, shown, rememberDateStyle(app), scale, activity::dispatch)
+                }
             }
             if (panel != null && screen != null) {
                 DialogLayer(app, model.dialog, screen, scale, activity::dispatch)
@@ -1660,7 +1664,7 @@ private fun rememberScene(app: FoldcadeApp, record: Game?, query: ArtQuery?): Ar
  * Without either, nothing is drawn and the theme's background shows.
  */
 @Composable
-private fun SceneBackdrop(app: FoldcadeApp, record: Game?, query: ArtQuery?, speed: MotionSpeed, animatorScale: Float) {
+internal fun SceneBackdrop(app: FoldcadeApp, record: Game?, query: ArtQuery?, speed: MotionSpeed, animatorScale: Float) {
     val motion = LocalFoldTheme.current.theme.motion
     val scene = rememberScene(app, record, query)
     val wide = scene?.background?.let { rememberCoverPainter(app, it, BACKDROP_PX) }
@@ -4311,7 +4315,7 @@ private fun EmptyCollection(
 }
 
 @Composable
-private fun DialogAction(label: String, focused: Boolean, onClick: () -> Unit) {
+internal fun DialogAction(label: String, focused: Boolean, onClick: () -> Unit) {
     val motion = LocalFoldTheme.current.theme.motion
     val theme = foldTheme()
     val animatorScale = motion.animatorScale(LocalContext.current.contentResolver)

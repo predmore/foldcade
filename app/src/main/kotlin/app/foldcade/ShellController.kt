@@ -2148,7 +2148,9 @@ class ShellController(
         val slots = if (owner != null && player != null)
             saveSupport.getOrPut(player.id to owner) { readGameSaveSupport(owner, player) }.declarations.map { it.slot }
         else emptyList()
-        model = model.copy(savePicker = page.copy(health = savePickerHealth(page.target), ownSlots = slots, canPlay = player != null, restartsOpenGame = isRunning(page.target.gameId)))
+        // A chip that stops acting gives its focus to the newest save.
+        model = model.copy(savePicker = page.copy(health = savePickerHealth(page.target), ownSlots = slots, canPlay = player != null,
+            restartsOpenGame = isRunning(page.target.gameId)).settled())
     }
 
     fun presentSavePicker(state: app.foldcade.language.SavePickerState?) {
@@ -2165,7 +2167,8 @@ class ShellController(
 
     fun touchSavePickerHeader(target: app.foldcade.language.SavePickerTarget): Effect? {
         val state = model.savePicker?.takeIf { it.target == target } ?: return null
-        if (state.busy || state.confirmation != null || state.copying != null) return null
+        // A chip that only reports takes no tap, as it takes no focus.
+        if (state.busy || state.confirmation != null || state.copying != null || !state.statusActs) return null
         model = model.copy(savePicker = state.copy(index = 0))
         return onMeaning(Meaning.Activate, HostScreen.Bottom)
     }
