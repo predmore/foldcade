@@ -1460,6 +1460,8 @@ fun reduce(
         return coerced.copy(dialog = cleared) to chosen
     }
     coerced.savePicker?.let {
+        // A held A opens one confirmation. Its repeats would answer it, Cancel first, and open it again.
+        if (meaning == Meaning.Activate && repeatCount > 0) return coerced to null
         val (next, effect) = applySavePicker(it, meaning)
         return coerced.copy(savePicker = next) to effect
     }

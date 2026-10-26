@@ -226,4 +226,16 @@ class SavePickerTest {
         assertEquals("retroarch.desktop", SavePickerCopy.source(save))
         assertEquals("retroarch.desktop · RetroArch", SavePickerCopy.sourceDetail(save))
     }
+
+    @Test fun aHeldAOpensOneConfirmationAndLeavesIt() {
+        val save = SavePickerSave("1", "slot", "melonds", null, 0L, 0L, false, null)
+        val state = SavePickerState(SavePickerTarget("g", "romm", "1", "melonds"), "Game", "melonDS",
+            SaveHealth.Fine, saves = listOf(save), index = 1, loading = false)
+        val model = PickerModel(count = 1, rowsPerPage = 1, savePicker = state)
+        val opened = reduce(model, Meaning.Activate, HostScreen.Bottom).first
+        assertNotNull(opened.savePicker!!.confirmation)
+        val held = reduce(opened, Meaning.Activate, HostScreen.Bottom, repeatCount = 1)
+        assertEquals(opened, held.first)
+        assertNull(held.second)
+    }
 }
