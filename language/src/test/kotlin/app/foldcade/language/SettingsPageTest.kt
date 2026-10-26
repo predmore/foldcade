@@ -85,6 +85,42 @@ class SettingsPageTest {
     }
 
     @Test
+    fun backFromEitherConnectFormRestoresTheExactSettingsPage() {
+        for (screen in HostScreen.entries) {
+            for (row in listOf(Row.AddRomm, Row.ArtKey)) {
+                val selected = home.onSetting(row, screen)
+                val form = reduce(selected, Meaning.Activate, screen).first
+                assertEquals(selected.settings, form.connectReturnSettings)
+                val (returned, effect) = reduce(form, Meaning.Back, screen)
+                assertNull(effect)
+                assertFalse(returned.connectOpen)
+                assertNull(returned.connectScreen)
+                assertNull(returned.connectReturnSettings)
+                assertNull(returned.panel)
+                assertEquals(selected.settings, returned.settings)
+                // The next Back steps out a level, proving the page under the form was restored too:
+                // from Add's page to the Library shelf, or from a row to the categories.
+                val out = reduce(returned, Meaning.Back, screen).first.settings!!
+                if (selected.settings!!.inner != null) assertNull(out.inner) else assertFalse(out.onRows)
+            }
+        }
+    }
+
+    @Test
+    fun aShoulderLeavesTheFormWithoutRememberingSettings() {
+        for (row in listOf(Row.AddRomm, Row.ArtKey)) {
+            for (shoulder in listOf(Meaning.LeftPanel, Meaning.RightPanel)) {
+                val form = reduce(home.onSetting(row), Meaning.Activate).first
+                val dismissed = reduce(form, shoulder).first
+                assertFalse(dismissed.connectOpen)
+                assertNull(dismissed.settings)
+                assertNull(dismissed.connectReturnSettings)
+                assertNull(dismissed.connectReturnPanel)
+            }
+        }
+    }
+
+    @Test
     fun aSavedKeyIsOnlyForgottenByTheDialogsForgetKey() {
         val saved = home.copy(artKeySaved = true).onSetting(Row.ArtKey)
         val (asked, effect) = reduce(saved, Meaning.Activate)

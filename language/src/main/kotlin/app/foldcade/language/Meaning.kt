@@ -125,9 +125,11 @@ fun meaningOf(
     if (homeKeys == HomeKeys.ChoosingArt && repeatCount > 0 &&
         (keyCode == KeyEvent.KEYCODE_BUTTON_L2 || keyCode == KeyEvent.KEYCODE_BUTTON_R2)) return null
     val roles = actionFaces(faces)
-    // Options must not repeat: a held press would open a menu and run its chord. The options
-    // button moves when calibration takes Y, so the check follows that button, not a fixed Y.
-    if (repeatCount > 0 && (keyCode in shoulderKeys || keyCode == roles.options)) {
+    val back = keyCode == KeyEvent.KEYCODE_BACK || keyCode == KeyEvent.KEYCODE_ESCAPE || keyCode == faces.backKey
+    // Back must not repeat into the surface it just revealed, including across activities.
+    // Options must not repeat either: a held press would open a menu and run its chord.
+    // Both follow calibration rather than a fixed face button.
+    if (repeatCount > 0 && (keyCode in shoulderKeys || keyCode == roles.options || back)) {
         return null
     }
     // The options button puts a held tile down as confirm does, so options then options lifts
@@ -149,7 +151,7 @@ fun meaningOf(
             keyCode == KeyEvent.KEYCODE_DPAD_CENTER ||
             keyCode == KeyEvent.KEYCODE_ENTER ||
             keyCode == KeyEvent.KEYCODE_NUMPAD_ENTER -> Meaning.Activate
-        keyCode == KeyEvent.KEYCODE_BACK || keyCode == KeyEvent.KEYCODE_ESCAPE || keyCode == faces.backKey ->
+        back ->
             if (homeKeys == HomeKeys.Moving || homeKeys == HomeKeys.PickingIcon) Meaning.CancelHold else Meaning.Back
         // A keyboard has no shoulders. The bracket keys sit where L1 and R1 would.
         keyCode == KeyEvent.KEYCODE_BUTTON_L1 || keyCode == KeyEvent.KEYCODE_LEFT_BRACKET -> Meaning.LeftPanel
