@@ -92,8 +92,7 @@ class UndoMenuAvailabilityTest {
     private fun choose(shell: ShellController, row: Row) {
         val target = panelRows(shell.model.panel!!, shell.model).indexOf(row)
         assertTrue(target >= 0)
-        while (shell.model.panel!!.index != target) shell.onMeaning(
-            if (shell.model.panel!!.index < target) Meaning.MoveDown else Meaning.MoveUp, HostScreen.Bottom)
+        walkPanelTo(shell, target, HostScreen.Bottom)
         shell.onMeaning(Meaning.Activate, HostScreen.Bottom)
     }
 

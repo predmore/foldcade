@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Foldcade original art, MIT licensed (see LICENSE). Afterglow verb: Move: four arrows out from the middle -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:aapt="http://schemas.android.com/aapt"
+    android:width="48dp"
+    android:height="48dp"
+    android:viewportWidth="64"
+    android:viewportHeight="64">
+    <path
+        android:pathData="M27.2,28.4 Q28.4,28.4 28.4,27.2 L28.4,19.2 Q28.4,18 27.2,18 L23.2,18 Q22,18 22.807,17.112 L31.193,7.888 Q32,7 32.807,7.888 L41.193,17.112 Q42,18 40.8,18 L36.8,18 Q35.6,18 35.6,19.2 L35.6,27.2 Q35.6,28.4 36.8,28.4 L44.8,28.4 Q46,28.4 46,27.2 L46,23.2 Q46,22 46.888,22.807 L56.112,31.193 Q57,32 56.112,32.807 L46.888,41.193 Q46,42 46,40.8 L46,36.8 Q46,35.6 44.8,35.6 L36.8,35.6 Q35.6,35.6 35.6,36.8 L35.6,44.8 Q35.6,46 36.8,46 L40.8,46 Q42,46 41.193,46.888 L32.807,56.112 Q32,57 31.193,56.112 L22.807,46.888 Q22,46 23.2,46 L27.2,46 Q28.4,46 28.4,44.8 L28.4,36.8 Q28.4,35.6 27.2,35.6 L19.2,35.6 Q18,35.6 18,36.8 L18,40.8 Q18,42 17.112,41.193 L7.888,32.807 Q7,32 7.888,31.193 L17.112,22.807 Q18,22 18,23.2 L18,27.2 Q18,28.4 19.2,28.4 Z"
+        android:fillColor="#FFF4F1EA"
+        android:fillType="evenOdd" />
+</vector>

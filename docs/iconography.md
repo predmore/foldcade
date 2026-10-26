@@ -26,6 +26,7 @@ The scripts use only the Python standard library. Open the sheet in any browser.
 | `badge.*` | `ic_badge_*.xml` | Symbol, 24 units, tinted | The chip in a tile's corner, and Find's hidden mark. |
 | `control.*` | `ic_control_*.xml` | Symbol, 24 units, tinted | The host's own controls: a checkmark's tick, the keyboard's Shift, Erase and Space, Find's magnifier. |
 | `symbol.*` | `symbol_*.xml` | Symbol, 64 units, tinted | Menu rows, the collection picker, and the glyph pressed into a collection. |
+| `symbol.<verb>` | `symbol_<verb>.xml` | Symbol, 64 units, tinted | What Y's menu and Edit home do to a tile: the round tiles at the menu's top and the rows under them. See [Verbs](#verbs). |
 | `mark.*` | `mark_*.xml` | Object, 64 units | Grid tiles and the hero. Its `accent` is the light behind the tile. |
 | `mark.collection-body`, `mark.collection-face` | `mark_collection_*.xml` | Object parts | A collection's folder. See [Collections](#collections). |
 | `app.<package>` | `app_*.xml` | Object, 64 units | An installed app's tile, its hero, and its notices, in place of its launcher icon. See [Apps](#apps). |
@@ -69,6 +70,16 @@ Symbols for marks and glyphs come from the same parts as the objects (next secti
 - Overlapping parts on the same layer cut each other where they overlap. Either keep parts on one layer apart, or move one to another layer.
 
 Keep every hole and every gap at least 2.5 units wide. Menu rows show symbols at 32dp, where one unit is half a dp. Details smaller than that should be object-only (`sym=None`).
+
+## Verbs
+
+Drawn in `tools/art/verbs.py`, in the same style as the collection glyphs: one bold silhouette with its details cut out. A tile's menu leads with its own verbs (Move, Add to, Art, Saves, Rename, Icon, New collection) as round tiles, and every other action is a row with its symbol at 32dp. A verb is chrome, never a thing on the grid, so it has only a `symbol.` slot.
+
+- **Draw the act, not the thing.** Move is four arrows out from the middle, Saves a floppy disk, Restart a ring that turns back, Undo an arrow that turns back on itself, Hide a shut eye.
+- **Two verbs that are close share a shape and differ in one detail.** Delete is a bin and Remove download the same bin with a down arrow cut where its ribs would be. Show is an open eye and Hide a shut one.
+- **No slashes.** A crossed-out symbol means off (rule 5's 30% ink), not an action.
+
+A verb that reuses a place's symbol keeps it: Show on Home and New games on Home wear `symbol.home`, Move to Games or Apps wears the folder it goes to, and Recently played wears `symbol.clock`.
 
 ## Objects
 
@@ -201,6 +212,13 @@ The app needs no code. Any tile or hero for a package with a slot draws the obje
 3. Add it to `COLLECTION_GLYPHS` (in picker order) and to `glyphName`.
 
 A glyph is a solid silhouette. It must read when it is pressed into the folder at about a third of the tile's width, so give it one strong outline and at most three cut-out details.
+
+### A verb
+
+1. Draw it in `verbs.py` as a function with no arguments, returning `outline()` and `line()` parts, and add it to `VERBS`.
+2. Regenerate. This writes `symbol_<name>.xml` and the `symbol.<name>` slot.
+3. Give its row the symbol in `rowIcon` in `MenuKit.kt`. A verb that leads a tile's menu as a tile goes in `verbRows` in `Picker.kt`, with its word in `tileLabel`.
+4. Regenerate the theme contract (`./gradlew :language:testDebugUnitTest --tests '*ThemeContractTest*' -PwriteThemeContract=true`) and bump the icon count in `ThemeSceneTest`.
 
 ### A controller, status, or badge symbol
 

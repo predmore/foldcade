@@ -24,7 +24,7 @@ import app.foldcade.language.LaunchableApp
 import app.foldcade.language.Meaning
 import app.foldcade.language.Effect
 import app.foldcade.language.Row
-import app.foldcade.language.tiled
+import app.foldcade.language.tileBlock
 import app.foldcade.language.androidHomeId
 import app.foldcade.language.decodeHome
 import app.foldcade.language.encodeHome
@@ -329,11 +329,12 @@ class AndroidShelfHostTest {
         val rows = panelRows(panel, shell.model)
         val index = rows.indexOf(row)
         check(index >= 0) { "missing row $row" }
+        val block = tileBlock(rows)
         repeat(rows.size * 2) {
             val at = shell.model.panel?.index ?: return@repeat
             if (at == index) return@repeat
             val step = when {
-                rows[at].tiled() && row.tiled() -> if (index > at) Meaning.MoveRight else Meaning.MoveLeft
+                at in block && index in block -> if (index > at) Meaning.MoveRight else Meaning.MoveLeft
                 index > at -> Meaning.MoveDown
                 else -> Meaning.MoveUp
             }

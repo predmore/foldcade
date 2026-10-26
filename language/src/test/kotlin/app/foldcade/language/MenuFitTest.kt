@@ -44,16 +44,19 @@ class MenuFitTest {
         assertEquals(190f, menuScrollTarget(200f, 240f, 160f, 280f, 100f, 0f, 600f, 10f), 0.01f)
         assertEquals(150f, menuScrollTarget(200f, 240f, 160f, 240f, 100f, 300f, 600f, 10f), 0.01f)
     }
-    @Test fun androidGameArtPrecedesSelectionAndHide() {
+    @Test fun androidGameArtIsATileAndMoveToLeadsTheRows() {
         val tile = TileActions(move = true, select = true, collections = emptyList(),
             art = true, remove = RemoveVerb.Unpin, hide = true, moveTo = HOME_ANDROID_APPS)
         val rows = actionRows(tile)
-        assertEquals(listOf(Row.MoveTile, Row.AddToCollection, Row.MoveApp, Row.ChooseArt,
+        assertEquals(listOf(Row.MoveTile, Row.AddToCollection, Row.ChooseArt, Row.MoveApp,
             Row.SelectTile, Row.RemoveTile, Row.Hide), rows)
+        assertEquals(0..2, tileBlock(rows))
         assertEquals(1, rows.count { it == Row.ChooseArt })
     }
-    @Test fun hiddenItemsKeepShowBeforeArt() {
-        assertEquals(listOf(Row.ShowHidden, Row.ChooseArt), actionRows(TileActions(show = true, art = true)))
+    @Test fun hiddenItemsShowArtAsATileAndShowUnderIt() {
+        val rows = actionRows(TileActions(show = true, art = true))
+        assertEquals(listOf(Row.ChooseArt, Row.ShowHidden), rows)
+        assertEquals(0..0, tileBlock(rows))
     }
     @Test fun gameRowsPutFilingBeforeSelectionAndKeepUndoFirst() {
         val rows = actionRows(TileActions(undo = true, move = true, select = true,
