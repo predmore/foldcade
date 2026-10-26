@@ -90,9 +90,9 @@ class SavePickerTest {
 
     @Test fun rowsNameTheOriginAppExceptForFoldcadeDevicesAndKeepFullDetailForConfirmation() {
         val sources = listOf(
-            Triple(SavePickerOrigin("foldcade", "AYN AYN Thor", true), "This device", "Foldcade on AYN AYN Thor · melonds"),
+            Triple(SavePickerOrigin("foldcade", "AYN AYN Thor", true), "This device", "Foldcade on AYN Thor · melonds"),
             Triple(SavePickerOrigin("foldcade", "Steam Deck", false), "Steam Deck", "Foldcade on Steam Deck · melonds"),
-            Triple(SavePickerOrigin("argosy", "AYN AYN Thor", false), "Argosy", "Argosy on AYN AYN Thor · melonds"),
+            Triple(SavePickerOrigin("argosy", "AYN AYN Thor", false), "Argosy", "Argosy on AYN Thor · melonds"),
             Triple(SavePickerOrigin("argosy-launcher", "Thor", false), "Argosy", "Argosy on Thor · melonds"),
             Triple(SavePickerOrigin("grout", null, false), "Grout", "Grout · melonds"),
             Triple(SavePickerOrigin("web", "Browser", false), "RomM web", "RomM web on Browser · melonds"),
@@ -141,27 +141,101 @@ class SavePickerTest {
         assertFalse(emulatorMismatch("azahar", "azahar"))
         assertTrue(emulatorMismatch("azahar", "melonds"))
         val now = Instant.parse("2026-10-25T10:00:00Z").toEpochMilli()
-        assertEquals("2 h ago", relativeSaveWhen(now - 7_200_000, now, DateStyle()))
-        assertEquals("Oct 3, 10:00 AM", relativeSaveWhen(Instant.parse("2026-10-03T10:00:00Z").toEpochMilli(), now, DateStyle(), ZoneId.of("UTC")))
+        assertEquals("2h ago", relativeSaveWhen(now - 7_200_000, now, DateStyle(), ZoneId.of("UTC")))
+        assertEquals("Oct 3", relativeSaveWhen(Instant.parse("2026-10-03T10:00:00Z").toEpochMilli(), now, DateStyle(), ZoneId.of("UTC")))
         val warning = SavePickerCopy.confirmationBody(SavePickerChoice.Play(save.copy(emulator = "azahar")), "melonds", "melonDS", DateStyle())
         assertTrue(warning.contains("Your current save stays on RomM."))
         assertTrue(warning.contains("Made by azahar. It may not load in melonDS."))
     }
 
-    @Test fun onlyCalendarTodayUsesRelativeTimeAndOlderRowsAlwaysIncludeLocalTimeWithoutAYear() {
+    @Test fun rowTimesAreShortTodayThenYesterdayThenTheDateWithAYearOnlyWhenItDiffers() {
         val now = Instant.parse("2026-10-25T10:00:00Z").toEpochMilli()
         val zone = ZoneId.of("UTC")
         assertEquals("Just now", relativeSaveWhen(now - 30_000, now, DateStyle(), zone))
-        assertEquals("2 min ago", relativeSaveWhen(now - 120_000, now, DateStyle(), zone))
-        assertEquals("3 h ago", relativeSaveWhen(now - 10_800_000, now, DateStyle(), zone))
+        assertEquals("2m ago", relativeSaveWhen(now - 120_000, now, DateStyle(), zone))
+        assertEquals("3h ago", relativeSaveWhen(now - 10_800_000, now, DateStyle(), zone))
+        // A clock a little ahead of the server is still now, not the future.
+        assertEquals("Just now", relativeSaveWhen(now + 5_000, now, DateStyle(), zone))
         val yesterday = Instant.parse("2026-10-24T23:59:00Z").toEpochMilli()
-        assertEquals("Oct 24, 11:59 PM", relativeSaveWhen(yesterday, now, DateStyle(), zone))
+        assertEquals("Yesterday", relativeSaveWhen(yesterday, now, DateStyle(), zone))
         // It is still yesterday on the device, even though the UTC date has changed.
-        assertEquals("10 h ago", relativeSaveWhen(yesterday, now - 60_000, DateStyle(), ZoneId.of("Pacific/Honolulu")))
+        assertEquals("10h ago", relativeSaveWhen(yesterday, now - 60_000, DateStyle(), ZoneId.of("Pacific/Honolulu")))
+        assertEquals("Oct 23", relativeSaveWhen(Instant.parse("2026-10-23T08:00:00Z").toEpochMilli(), now, DateStyle(), zone))
         val old = Instant.parse("2025-09-30T22:25:00Z").toEpochMilli()
-        assertEquals("Sep 30, 10:25 PM", relativeSaveWhen(old, now, DateStyle(), zone))
-        assertEquals("Sep 30, 22:25", relativeSaveWhen(old, now, DateStyle(is24Hour = true), zone))
-        val french = DateStyle(Locale.FRANCE, monthDayPattern = "d MMM", is24Hour = true)
-        assertEquals("30 sept., 22:25", relativeSaveWhen(old, now, french, zone))
+        assertEquals("Sep 30, 2025", relativeSaveWhen(old, now, DateStyle(), zone))
+        val french = DateStyle(Locale.FRANCE, monthDayPattern = "d MMM", monthDayYearPattern = "d MMM y", is24Hour = true)
+        assertEquals("30 sept. 2025", relativeSaveWhen(old, now, french, zone))
+    }
+
+    @Test fun theStatusChipHoldsFocusOnlyWhileItActsAndThePageOtherwiseStartsOnTheNewestSave() {
+        val older = save.copy(id = "18", updatedAtMillis = 0)
+        val opened = state.copy(index = 0, saves = listOf(save, older))
+        // Syncing fine: the chip is only read, so focus starts on the newest save and stops there going up.
+        assertEquals(1, opened.firstIndex)
+        assertEquals(1, opened.settled().index)
+        assertEquals(1, applySavePicker(opened.settled(), Meaning.MoveUp).first!!.index)
+        assertEquals(1, opened.copy(health = SaveHealth.DeviceOnly).settled().index)
+        // Not syncing or waiting: the chip is where setup starts, and it is reachable from the rows.
+        for (health in listOf(SaveHealth.NotSyncing(SaveIssue.NoFolder), SaveHealth.Waiting)) {
+            val needs = opened.copy(health = health)
+            assertEquals(0, needs.settled().index)
+            assertEquals(0, applySavePicker(needs.copy(index = 1), Meaning.MoveUp).first!!.index)
+        }
+        // A fixed setup moves focus off the chip that no longer acts; no saves keep it on the chip.
+        assertEquals(1, opened.copy(index = 0).settled().index)
+        assertEquals(0, opened.copy(saves = emptyList(), index = 2).settled().index)
+        assertEquals(2, opened.copy(index = 5).settled().index)
+    }
+
+    @Test fun hintsNameOnlyTheKeysThatActOnWhatHasFocus() {
+        val faces = FaceMap.standard()
+        val a = promptKeyOf(faces.confirmKey)!!
+        val y = actionFaces(faces).optionsGlyph
+        assertEquals(listOf(HintKey(a, "Play"), HintKey(y, "Copy")), savePickerHints(state, faces))
+        assertEquals(emptyList<HintKey>(), savePickerHints(state.copy(index = 0), faces))
+        assertEquals(listOf(HintKey(a, "Set up")), savePickerHints(state.copy(index = 0, health = SaveHealth.NotSyncing(SaveIssue.NeedsSetup)), faces))
+        assertEquals(listOf(HintKey(a, "Sync now")), savePickerHints(state.copy(index = 0, health = SaveHealth.Waiting), faces))
+        assertEquals(listOf(HintKey(a, "Try again")), savePickerHints(state.copy(error = true), faces))
+        for (quiet in listOf(state.copy(loading = true), state.copy(busy = true), state.copy(confirmation = SavePickerChoice.Play(save)))) {
+            assertEquals(emptyList<HintKey>(), savePickerHints(quiet, faces))
+        }
+        val choosing = state.copy(copying = save)
+        assertEquals(listOf(HintKey(a, "Copy")), savePickerHints(choosing, faces))
+        assertEquals(emptyList<HintKey>(), savePickerHints(choosing.copy(ownSlots = listOf("autosave")), faces))
+    }
+
+    @Test fun theTopScreenCountsTheSaves() {
+        assertEquals("No saves on RomM yet", SavePickerCopy.count(0))
+        assertEquals("1 save on RomM", SavePickerCopy.count(1))
+        assertEquals("3 saves on RomM", SavePickerCopy.count(3))
+    }
+
+    @Test fun savesNameTheirEmulatorAndDeviceAsPlayersDo() {
+        val save = SavePickerSave("1", "autosave", "melonds", null, 0L, 0L, false, null,
+            origin = SavePickerOrigin("argosy", "AYN AYN Thor", thisDevice = false), emulatorLabel = "melonDS")
+        assertEquals("Argosy on AYN Thor · melonDS", SavePickerCopy.sourceDetail(save))
+        val bare = save.copy(origin = null, source = "melonds")
+        assertEquals("melonDS", SavePickerCopy.source(bare))
+        // Without a known name, RomM's id stays as it is.
+        assertEquals("melonds", SavePickerCopy.source(bare.copy(emulatorLabel = null)))
+        assertEquals("Retroid Pocket 5", SavePickerCopy.deviceName("Retroid  Pocket 5"))
+    }
+
+    @Test fun aDeviceThatSharesTheEmulatorsPrefixKeepsItsName() {
+        val save = SavePickerSave("1", "slot", "retroarch.snes", "retroarch.desktop", 0L, 0L, false, null, emulatorLabel = "RetroArch")
+        assertEquals("retroarch.desktop", SavePickerCopy.source(save))
+        assertEquals("retroarch.desktop · RetroArch", SavePickerCopy.sourceDetail(save))
+    }
+
+    @Test fun aHeldAOpensOneConfirmationAndLeavesIt() {
+        val save = SavePickerSave("1", "slot", "melonds", null, 0L, 0L, false, null)
+        val state = SavePickerState(SavePickerTarget("g", "romm", "1", "melonds"), "Game", "melonDS",
+            SaveHealth.Fine, saves = listOf(save), index = 1, loading = false)
+        val model = PickerModel(count = 1, rowsPerPage = 1, savePicker = state)
+        val opened = reduce(model, Meaning.Activate, HostScreen.Bottom).first
+        assertNotNull(opened.savePicker!!.confirmation)
+        val held = reduce(opened, Meaning.Activate, HostScreen.Bottom, repeatCount = 1)
+        assertEquals(opened, held.first)
+        assertNull(held.second)
     }
 }
