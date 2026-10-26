@@ -242,6 +242,32 @@ def armsx2(c):
             screen(rpoly(front, 1), tone(c, 0.35), sym=0), screen(rr(30, 18, 4, 30, 2), tone(c, 0.8), sym=1),
             screen(rpoly(top, 1.2), tone(c, 0.7), sym=0)]
 
+def emucorex(c):
+    """EmuCoreX: four slanted blades crossing as an X around a lit gem, standing off the tile."""
+    m = lambda pts: rpoly([(32 + (x - 54) * 0.9, 31 + (y - 54) * 0.9) for x, y in pts], 1.6)
+    blade = [(30, 28), (50, 48), (38, 48), (18, 28)]
+    top = [m(blade), m([(108 - x, y) for x, y in blade][::-1])]
+    bot = [m([(x, 108 - y) for x, y in blade][::-1]), m([(108 - x, 108 - y) for x, y in blade])]
+    gem = rpoly([(32, 22.5), (38.5, 31), (32, 39.5), (25.5, 31)], 1.2)
+    return ([shadow(32, 59, 24, 3)] + [body(xf(d, dy=3), tone(c, -0.5), gloss=0, sym=None) for d in top + bot]
+            + [body(d, tone(c, 0.2)) for d in top] + [body(d, tone(c, -0.1)) for d in bot]
+            + [body(xf(gem, dy=2), tone(c, -0.3), gloss=0, sym=None), screen(gem, "#DDF0FF", sym=0)])
+
+def three(x, y, w, h):
+    """aPS3e's 3 in the box (x, y, w, h): three bars flush on the left, two round lobes on the right."""
+    bar = h * 0.2; mid = y + h * 0.47; r1 = h * 0.47 / 2; r2 = (h - h * 0.47) / 2; xr = x + w
+    return (f"M{f(x)},{f(y)} H{f(xr - r1)} A{f(r1)},{f(r1)} 0 0 1 {f(xr - r1 * 0.35)},{f(mid)} "
+            f"A{f(r2)},{f(r2)} 0 0 1 {f(xr - r2)},{f(y + h)} H{f(x)} V{f(y + h - bar)} "
+            f"H{f(xr - r2)} A{f(r2 - bar)},{f(r2 - bar)} 0 0 0 {f(xr - r2)},{f(mid + bar / 2)} H{f(x)} V{f(mid - bar / 2)} "
+            f"H{f(xr - r1)} A{f(r1 - bar)},{f(r1 - bar)} 0 0 0 {f(xr - r1)},{f(y + bar)} H{f(x)} Z")
+
+def aps3e(c):
+    """aPS3e: its icon's 3 as a thing, white with thick sides in the accent, a plate through the upper counter."""
+    t3, plate = three(13, 7, 38, 50), rr(4, 18.6, 36, 6, 3)
+    sides = [body(xf(t3, dx=0.5 * k, dy=0.9 * k), tone(c, -0.15 - 0.08 * k), gloss=0, sym=None) for k in (4, 3, 2, 1)]
+    return [shadow(32, 61, 24, 3), *sides, body(t3, "#F4F6FF", gloss=0.2),
+            body(xf(plate, dx=1, dy=1.8), tone(c, -0.4), gloss=0, sym=None), body(plate, tone(c, 0.15), sym=1)]
+
 def ppsspp(c):
     """PPSSPP: four chamfered arrow keys in a cross, like a handheld's d-pad."""
     arm = rpoly([(25, 6), (39, 6), (39, 21), (32, 28), (25, 21)], [3, 3, 1.5, 1.5, 1.5])
@@ -310,7 +336,10 @@ APPS = {
     "eden": (eden, "#FF5FA8", "Eden: a striped sunset sun and a palm", ["dev.eden.eden_emulator", "dev.legacy.eden_emulator"]),
     "duckstation": (duckstation, "#FFD23C", "DuckStation: a voxel duck", ["com.github.stenzek.duckstation"]),
     "nethersx2": (nethersx2, "#FF4848", "NetherSX2: a glossy red cube", ["xyz.aethersx2.android", "xyz.aethersx2.tturnip", "xyz.aethersx2.cturnip"]),
-    "armsx2": (armsx2, "#6FA0FF", "ARMSX2: a glowing crystal pillar", ["com.armsx2", "com.armsx2.nightly"]),
+    "armsx2": (armsx2, "#6FA0FF", "ARMSX2: a glowing crystal pillar", ["com.armsx2", "come.nanodata.armsx2", "com.armsx2.nightly"]),
+    "emucorex": (emucorex, "#4D9EFF", "EmuCoreX: four blades in an X around a gem", ["com.sbro.emucorex"]),
+    "aps3e": (aps3e, "#3F5CF0", "aPS3e: a raised white 3 with blue sides", ["aenu.aps3e"]),
+    "aps3e_premium": (aps3e, "#E6B23A", "aPS3e Premium: a raised white 3 with gold sides", ["aenu.aps3e.premium"]),
     "ppsspp": (ppsspp, "#5D9BE0", "PPSSPP: four arrow keys in a cross", ["org.ppsspp.ppsspp"]),
     "ppsspp_gold": (ppsspp, "#F2B51E", "PPSSPP Gold: four gold arrow keys in a cross", ["org.ppsspp.ppssppgold"]),
     "yaba_sanshiro": (yaba_sanshiro, "#7F94C6", "Yaba Sanshiro: a Saturn-style pad with six buttons", ["org.devmiyax.yabasanshioro2", "org.devmiyax.yabasanshioro2.pro"]),
