@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Foldcade original art, MIT licensed (see LICENSE). Afterglow verb: Art: a picture with hills and a sun -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:aapt="http://schemas.android.com/aapt"
+    android:width="48dp"
+    android:height="48dp"
+    android:viewportWidth="64"
+    android:viewportHeight="64">
+    <path
+        android:pathData="M14,10H50A8,8 0 0 1 58,18V46A8,8 0 0 1 50,54H14A8,8 0 0 1 6,46V18A8,8 0 0 1 14,10ZM15,47 Q13,47 14.141,45.357 L24.359,30.643 Q25.5,29 26.723,30.583 L32.777,38.417 Q34,40 35.361,38.534 L39.139,34.466 Q40.5,33 41.7,34.6 L49.8,45.4 Q51,47 49,47 ZM38.4,21.5A4.6,4.6 0 1 1 47.6,21.5A4.6,4.6 0 1 1 38.4,21.5Z"
+        android:fillColor="#FFF4F1EA"
+        android:fillType="evenOdd" />
+</vector>

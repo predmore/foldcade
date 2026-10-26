@@ -326,7 +326,7 @@ VQBRe5lqnnx88g==
         val panel = shell.model.panel ?: error("Y opened no menu")
         val rows = panelRows(panel, shell.model)
         assertTrue("$row in $rows", row in rows)
-        repeat(rows.indexOf(row)) { shell.onMeaning(Meaning.MoveDown, HostScreen.Bottom) }
+        walkPanelTo(shell, rows.indexOf(row), HostScreen.Bottom)
         shell.onMeaning(Meaning.Activate, HostScreen.Bottom)
     }
 

@@ -944,7 +944,7 @@ class HomeGridOrderTest {
         addToHome(shell)
         assertTrue(shell.homeFace(puzzle)?.onGrid == true)
         // Back on Home, it can be shown there.
-        assertEquals(listOf(Row.ShowOnHome, Row.AddToCollection, Row.SelectTile, Row.Hide), optionRows(shell))
+        assertEquals(listOf(Row.AddToCollection, Row.ShowOnHome, Row.SelectTile, Row.Hide), optionRows(shell))
         shell.onMeaning(Meaning.Back, HostScreen.Bottom)
         assertTrue("Puzzle" in titles(shell))
         focus(shell, titles(shell).indexOf("Nintendo 3DS"))
@@ -978,7 +978,7 @@ class HomeGridOrderTest {
     private fun pickRowFocus(shell: ShellController, row: Row) {
         val target = panelRows(shell.model.panel!!, shell.model).indexOf(row)
         assertTrue(target >= 0)
-        while (shell.model.panel!!.index != target) shell.onMeaning(if (shell.model.panel!!.index < target) Meaning.MoveDown else Meaning.MoveUp, HostScreen.Bottom)
+        walkPanelTo(shell, target, HostScreen.Bottom)
     }
 
     @Test
@@ -1008,7 +1008,7 @@ class HomeGridOrderTest {
         shell.onMeaning(Meaning.Activate, HostScreen.Bottom)
         focus(shell, titles(shell).indexOf("Drift"))
         assertEquals(
-            listOf(Row.MoveTile, Row.AddToCollection, Row.SelectTile, Row.Saves, Row.Hide, Row.RemoveDownload, Row.SortFolder),
+            listOf(Row.MoveTile, Row.AddToCollection, Row.Saves, Row.SelectTile, Row.Hide, Row.RemoveDownload, Row.SortFolder),
             optionRows(shell),
         )
         // A copy still arriving is not offered.
@@ -1021,7 +1021,7 @@ class HomeGridOrderTest {
 
         shell.onMeaning(Meaning.Options, HostScreen.Bottom)
         val rows = panelRows(shell.model.panel!!, shell.model)
-        repeat(rows.indexOf(Row.RemoveDownload)) { shell.onMeaning(Meaning.MoveDown, HostScreen.Bottom) }
+        walkPanelTo(shell, rows.indexOf(Row.RemoveDownload), HostScreen.Bottom)
         assertNull(shell.onMeaning(Meaning.Activate, HostScreen.Bottom))
         recoveryTime += 800L
         assertEquals(Effect.RemoveDownload(homeGameId("romm", "drift")), shell.tickRecovery())
@@ -1074,7 +1074,7 @@ class HomeGridOrderTest {
         // Returning to the parent keeps the rows it showed before the collection toggle.
         assertTrue(Row.ChooseArt in rows)
         assertTrue(Row.RemoveDownload in rows)
-        repeat(rows.indexOf(Row.RemoveDownload)) { shell.onMeaning(Meaning.MoveDown, HostScreen.Bottom) }
+        walkPanelTo(shell, rows.indexOf(Row.RemoveDownload), HostScreen.Bottom)
         assertNull(shell.onMeaning(Meaning.Activate, HostScreen.Bottom))
         recoveryTime += 800L
         val effect = shell.tickRecovery()
@@ -1166,7 +1166,7 @@ class HomeGridOrderTest {
         )
         shell.openHomeAll()
         focus(shell, titles(shell).indexOf("Drift"))
-        assertEquals(listOf(Row.ShowOnHome, Row.AddToCollection, Row.SelectTile, Row.Saves, Row.Hide, Row.RemoveDownload), optionRows(shell))
+        assertEquals(listOf(Row.AddToCollection, Row.Saves, Row.ShowOnHome, Row.SelectTile, Row.Hide, Row.RemoveDownload), optionRows(shell))
         shell.noteOffDevice("romm", "drift")
         assertFalse(Row.RemoveDownload in optionRows(shell))
     }
@@ -1234,8 +1234,7 @@ class HomeGridOrderTest {
         val rows = panelRows(panel, shell.model)
         val to = rows.indexOfFirst(match)
         assertTrue("no such row in $rows", to >= 0)
-        repeat(to - panel.index) { shell.onMeaning(Meaning.MoveDown, HostScreen.Bottom) }
-        repeat(panel.index - to) { shell.onMeaning(Meaning.MoveUp, HostScreen.Bottom) }
+        walkPanelTo(shell, to, HostScreen.Bottom)
         shell.onMeaning(Meaning.Activate, HostScreen.Bottom)
     }
 
@@ -1257,7 +1256,7 @@ class HomeGridOrderTest {
         val panel = shell.model.panel ?: error("Y opened no menu")
         val rows = panelRows(panel, shell.model)
         assertTrue("$row in $rows", row in rows)
-        repeat(rows.indexOf(row)) { shell.onMeaning(Meaning.MoveDown, HostScreen.Bottom) }
+        walkPanelTo(shell, rows.indexOf(row), HostScreen.Bottom)
         shell.onMeaning(Meaning.Activate, HostScreen.Bottom)
     }
 

@@ -134,9 +134,7 @@ class FolderSortHostTest {
         val rows = rows(shell)
         val target = rows.indexOf(row)
         assertTrue("Missing $row in $rows", target >= 0)
-        repeat(kotlin.math.abs(target - shell.model.panel!!.index)) {
-            shell.onMeaning(if (target > shell.model.panel!!.index) Meaning.MoveDown else Meaning.MoveUp, HostScreen.Bottom)
-        }
+        walkPanelTo(shell, target, HostScreen.Bottom)
         shell.onMeaning(Meaning.Activate, HostScreen.Bottom)
     }
 }

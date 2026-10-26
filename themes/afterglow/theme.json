@@ -1437,12 +1437,20 @@
       "file": "icons/ic_status_wrench.xml",
       "tint": true
     },
+    "symbol.add-to": {
+      "file": "icons/symbol_add_to.xml",
+      "tint": true
+    },
     "symbol.android-apps": {
       "file": "icons/symbol_android_apps.xml",
       "tint": true
     },
     "symbol.android-games": {
       "file": "icons/symbol_android_games.xml",
+      "tint": true
+    },
+    "symbol.art": {
+      "file": "icons/symbol_art.xml",
       "tint": true
     },
     "symbol.cartridge": {
@@ -1471,6 +1479,10 @@
     },
     "symbol.crown": {
       "file": "icons/symbol_crown.xml",
+      "tint": true
+    },
+    "symbol.delete": {
+      "file": "icons/symbol_delete.xml",
       "tint": true
     },
     "symbol.disc": {
@@ -1537,12 +1549,20 @@
       "file": "icons/symbol_heart.xml",
       "tint": true
     },
+    "symbol.hide": {
+      "file": "icons/symbol_hide.xml",
+      "tint": true
+    },
     "symbol.home": {
       "file": "icons/symbol_home.xml",
       "tint": true
     },
     "symbol.hourglass": {
       "file": "icons/symbol_hourglass.xml",
+      "tint": true
+    },
+    "symbol.icon": {
+      "file": "icons/symbol_icon.xml",
       "tint": true
     },
     "symbol.leaf": {
@@ -1561,6 +1581,10 @@
       "file": "icons/symbol_moonlight.xml",
       "tint": true
     },
+    "symbol.move": {
+      "file": "icons/symbol_move.xml",
+      "tint": true
+    },
     "symbol.mushroom": {
       "file": "icons/symbol_mushroom.xml",
       "tint": true
@@ -1571,6 +1595,10 @@
     },
     "symbol.nes": {
       "file": "icons/symbol_nes.xml",
+      "tint": true
+    },
+    "symbol.new-collection": {
+      "file": "icons/symbol_new_collection.xml",
       "tint": true
     },
     "symbol.nintendo-3ds": {
@@ -1625,6 +1653,22 @@
       "file": "icons/symbol_racing_flag.xml",
       "tint": true
     },
+    "symbol.remove": {
+      "file": "icons/symbol_remove.xml",
+      "tint": true
+    },
+    "symbol.remove-download": {
+      "file": "icons/symbol_remove_download.xml",
+      "tint": true
+    },
+    "symbol.rename": {
+      "file": "icons/symbol_rename.xml",
+      "tint": true
+    },
+    "symbol.restart": {
+      "file": "icons/symbol_restart.xml",
+      "tint": true
+    },
     "symbol.rocket": {
       "file": "icons/symbol_rocket.xml",
       "tint": true
@@ -1633,12 +1677,24 @@
       "file": "icons/symbol_saturn.xml",
       "tint": true
     },
+    "symbol.saves": {
+      "file": "icons/symbol_saves.xml",
+      "tint": true
+    },
     "symbol.sega-cd": {
       "file": "icons/symbol_sega_cd.xml",
       "tint": true
     },
+    "symbol.select": {
+      "file": "icons/symbol_select.xml",
+      "tint": true
+    },
     "symbol.shield": {
       "file": "icons/symbol_shield.xml",
+      "tint": true
+    },
+    "symbol.show": {
+      "file": "icons/symbol_show.xml",
       "tint": true
     },
     "symbol.skull": {
@@ -1653,6 +1709,10 @@
       "file": "icons/symbol_snes.xml",
       "tint": true
     },
+    "symbol.sort": {
+      "file": "icons/symbol_sort.xml",
+      "tint": true
+    },
     "symbol.star": {
       "file": "icons/symbol_star.xml",
       "tint": true
@@ -1661,12 +1721,20 @@
       "file": "icons/symbol_sword.xml",
       "tint": true
     },
+    "symbol.tidy": {
+      "file": "icons/symbol_tidy.xml",
+      "tint": true
+    },
     "symbol.trophy": {
       "file": "icons/symbol_trophy.xml",
       "tint": true
     },
     "symbol.two-players": {
       "file": "icons/symbol_two_players.xml",
+      "tint": true
+    },
+    "symbol.undo": {
+      "file": "icons/symbol_undo.xml",
       "tint": true
     },
     "symbol.wii": {
@@ -1970,7 +2038,9 @@
       "rowHeightDp": 52,
       "edgeDp": 24,
       "gapDp": 8,
-      "screenshotShare": 0.5
+      "screenshotShare": 0.5,
+      "backdropDim": 0.5,
+      "backupAlpha": 0.6
     },
     "picker": {
       "shimmerAlpha": 0.18

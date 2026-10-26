@@ -704,4 +704,8 @@ class ThemeSaves internal constructor(reader: ThemeStyleReader) {
     val edgeDp = reader.number("saves", "edgeDp", 24f)
     val gapDp = reader.number("saves", "gapDp", 8f)
     val screenshotShare = reader.number("saves", "screenshotShare", .5f, TokenDomain.Share)
+    /** The scrim over the game's art behind the top screen, so the focused save reads over it. */
+    val backdropDim = reader.fraction("saves", "backdropDim", .5f)
+    /** A Backup row at rest, quieter than the saves it keeps safe. */
+    val backupAlpha = reader.fraction("saves", "backupAlpha", .6f)
 }

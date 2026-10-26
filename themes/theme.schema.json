@@ -1900,6 +1900,18 @@
                             "exclusiveMinimum": 0.0,
                             "maximum": 1.0,
                             "default": 0.5
+                        },
+                        "backdropDim": {
+                            "type": "number",
+                            "minimum": 0.0,
+                            "maximum": 1.0,
+                            "default": 0.5
+                        },
+                        "backupAlpha": {
+                            "type": "number",
+                            "minimum": 0.0,
+                            "maximum": 1.0,
+                            "default": 0.6
                         }
                     }
                 },

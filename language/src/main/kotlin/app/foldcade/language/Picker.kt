@@ -61,6 +61,10 @@ data class SidePanel(
     val connectionSettings: SettingsPage? = null,
     /** An empty view opened Undo rather than a tile menu. Its rows do not depend on the covered grid. */
     val recoveryOnly: Boolean = false,
+    /** The column of the tile the D-pad last left the tiles from, so up from the row under them returns there. */
+    val tileColumn: Int? = null,
+    /** L1's [tileColumn] while Edit home is open, so Back returns to the place tile it was left from. */
+    val parentTileColumn: Int? = null,
 )
 
 fun signInAgainPrompt(screen: HostScreen = HostScreen.Top): DialogState = DialogState(
@@ -650,15 +654,44 @@ const val quickTileColumns = 4
 /** L1's places to go. They sit side by side as round tiles, as R1's Android screens do. */
 private val placeRows: Set<Row> = setOf(Row.Home, Row.AllLibrary, Row.AndroidGames, Row.Apps)
 
-/** True for a row drawn as a round tile in a row of [quickTileColumns]. */
-fun Row.tiled(): Boolean = this is Row.QuickTile || this in placeRows
+/**
+ * What makes a tile the user's own, in the order Y's menu offers them. The first
+ * [quickTileColumns] of them lead the menu as round tiles; any past those are rows.
+ */
+val verbRows: List<Row> = listOf(
+    Row.MoveTile, Row.AddToCollection, Row.ChooseArt, Row.Saves, Row.RenameFolder, Row.FolderIcon, Row.NewCollection,
+)
 
-/** The word under a place tile. A tile has less room than a row, so it says less. */
+/**
+ * The rows [rows] draws as round tiles, side by side in lines of [quickTileColumns]: R1's
+ * Android screens, L1's places, or the verbs that lead a tile's menu, under Undo when it is
+ * there. Empty when the page has none. Verbs lead only a tile's menu, so a verb further down
+ * a page, such as Add to's New collection, stays a row.
+ */
+fun tileBlock(rows: List<Row>): IntRange {
+    val start = rows.indexOfFirst { it is Row.QuickTile || it in placeRows }
+    if (start >= 0) {
+        val end = (start until rows.size).firstOrNull { rows[it] !is Row.QuickTile && rows[it] !in placeRows } ?: rows.size
+        return start until end
+    }
+    val lead = if (rows.firstOrNull() == Row.Undo) 1 else 0
+    val verbs = rows.drop(lead).take(quickTileColumns).takeWhile { it in verbRows }.size
+    return lead until lead + verbs
+}
+
+/** The word under a tile. A tile has less room than a row, so it says less. */
 fun tileLabel(row: Row): String? = when (row) {
     Row.Home -> Copy.home
     Row.AllLibrary -> Copy.tileAll
     Row.AndroidGames -> Copy.tileGames
     Row.Apps -> Copy.apps
+    Row.MoveTile -> Copy.move
+    Row.AddToCollection -> Copy.addTo
+    Row.ChooseArt -> ArtCopy.art
+    Row.Saves -> SavePickerCopy.title
+    Row.RenameFolder -> Copy.rename
+    Row.FolderIcon -> Copy.icon
+    Row.NewCollection -> Copy.tileNew
     is Row.QuickTile -> when (row.setting) {
         QuickSetting.Wifi -> Copy.wifi
         QuickSetting.Bluetooth -> Copy.bluetooth
@@ -868,10 +901,11 @@ data class TileActions(
 data class FolderSortChoice(val folderId: String, val sort: FolderSort)
 
 /**
- * Y's menu for the tile. Add to holds every place a game can be put, Home first, and New
- * collection at its end, so a game's menu has one row for all of them. Remove takes the
- * tile off the spot it is in, and Hide is its own row, after it. Sort, for the whole folder
- * rather than the tile, comes last.
+ * Y's menu for the tile. Undo leads when there is one. Then come the tile's own verbs
+ * ([verbRows]), which draw as round tiles, and under them the rest as rows. Add to holds
+ * every place a game can be put, Home first, and New collection at its end, so a game's
+ * menu has one tile for all of them. Remove takes the tile off the spot it is in, and Hide
+ * is its own row, after it. Sort, for the whole folder rather than the tile, comes last.
  */
 fun actionRows(tile: TileActions?): List<Row> = buildList {
     if (tile == null) return@buildList
@@ -883,19 +917,19 @@ fun actionRows(tile: TileActions?): List<Row> = buildList {
         return@buildList
     }
     if (tile.undo) add(Row.Undo)
-    if (tile.show) add(Row.ShowHidden)
-    if (tile.showOnHome != null) add(Row.ShowOnHome)
     if (tile.move) add(Row.MoveTile)
     if (tile.collections != null) add(Row.AddToCollection)
-    if (tile.moveTo != null) add(Row.MoveApp)
     if (tile.art) add(Row.ChooseArt)
-    if (tile.select) add(Row.SelectTile)
-    if (tile.newCollection && tile.collections == null) add(Row.NewCollection)
-    if (tile.tidy) add(Row.Tidy)
+    if (tile.saves) add(Row.Saves)
     if (tile.rename) add(Row.RenameFolder)
     if (tile.icon) add(Row.FolderIcon)
+    if (tile.newCollection && tile.collections == null) add(Row.NewCollection)
+    if (tile.show) add(Row.ShowHidden)
+    if (tile.showOnHome != null) add(Row.ShowOnHome)
+    if (tile.moveTo != null) add(Row.MoveApp)
+    if (tile.select) add(Row.SelectTile)
+    if (tile.tidy) add(Row.Tidy)
     if (tile.remove != null) add(Row.RemoveTile)
-    if (tile.saves) add(Row.Saves)
     if (tile.restart) add(Row.RestartGame)
     if (tile.hide) add(Row.Hide)
     if (tile.removeDownload) add(Row.RemoveDownload)
@@ -942,7 +976,7 @@ fun collectionRows(tile: TileActions?): List<Row> {
 /** Catalog reports keep rows stable; removing a game from its slot discards that slot's actions. */
 data class MenuRows(val page: SidePanel, val rows: List<Row>)
 
-private fun SidePanel.page() = copy(index = 0, retiring = false, pendingSide = null)
+private fun SidePanel.page() = copy(index = 0, retiring = false, pendingSide = null, tileColumn = null, parentTileColumn = null)
 
 fun retainMenuRows(previous: PickerModel, next: PickerModel): PickerModel {
     val panel = next.panel ?: return next.copy(menuRows = emptyList())
@@ -1464,6 +1498,8 @@ fun reduce(
         return coerced.copy(dialog = cleared) to chosen
     }
     coerced.savePicker?.let {
+        // A held A opens one confirmation. Its repeats would answer it, Cancel first, and open it again.
+        if (meaning == Meaning.Activate && repeatCount > 0) return coerced to null
         val (next, effect) = applySavePicker(it, meaning)
         return coerced.copy(savePicker = next) to effect
     }
@@ -1815,27 +1851,30 @@ private fun placeOrPick(model: PickerModel): Pair<PickerModel, Effect?> {
 }
 
 /**
- * Text rows are one column. Tiles ([tiled]) are [quickTileColumns] wide and sit
+ * Text rows are one column. Tiles ([tileBlock]) are [quickTileColumns] wide and sit
  * together as one block: R1's Android screens at its top, L1's places under the
- * play strip. Up from the row under the block lands on the first tile of its last
- * line. A direction with no neighbor stays put.
+ * play strip, a tile's verbs at the top of its menu. Up from the row under the block
+ * lands on the tile of its last line in [column], the one focus came down from, or
+ * the nearest one, or the first without one. A direction with no neighbor stays put.
  */
-fun panelFocusIndex(rows: List<Row>, index: Int, meaning: Meaning): Int {
+fun panelFocusIndex(rows: List<Row>, index: Int, meaning: Meaning, column: Int? = null): Int {
     if (rows.isEmpty()) return 0
     val current = index.coerceIn(0, rows.lastIndex)
-    val tileStart = rows.indexOfFirst { it.tiled() }
-    val tileEnd = rows.indexOfLast { it.tiled() } + 1
-    val tilesAreBlock = tileStart >= 0 && (tileStart until tileEnd).all { rows[it].tiled() }
+    val block = tileBlock(rows)
     val linear = when (meaning) {
         Meaning.MoveUp -> (current - 1).coerceAtLeast(0)
         Meaning.MoveDown -> (current + 1).coerceAtMost(rows.lastIndex)
         else -> current
     }
-    if (!tilesAreBlock) return linear
+    if (block.isEmpty()) return linear
+    val tileStart = block.first
+    val tileEnd = block.last + 1
     val tileCount = tileEnd - tileStart
     val lastLine = (tileCount - 1) / quickTileColumns
-    if (current !in tileStart until tileEnd) {
-        return if (meaning == Meaning.MoveUp && current == tileEnd) tileStart + lastLine * quickTileColumns else linear
+    if (current !in block) {
+        if (meaning != Meaning.MoveUp || current != tileEnd) return linear
+        val lastLineStart = lastLine * quickTileColumns
+        return tileStart + lastLineStart + (column ?: 0).coerceIn(0, tileCount - 1 - lastLineStart)
     }
     val tileIndex = current - tileStart
     val column = tileIndex % quickTileColumns
@@ -1888,8 +1927,13 @@ private fun applyPanel(
         if (chord != null) return activateRow(model, current.copy(index = chord), rows[chord], screen)
     }
     return when (meaning) {
-        Meaning.MoveUp, Meaning.MoveDown ->
-            model.copy(panel = current.copy(index = panelFocusIndex(rows, index, meaning))) to null
+        Meaning.MoveUp, Meaning.MoveDown -> {
+            val next = panelFocusIndex(rows, index, meaning, current.tileColumn)
+            val block = tileBlock(rows)
+            // Leaving the tiles remembers which one, so up from the row under them comes back to it.
+            val column = if (index in block && next !in block) (index - block.first) % quickTileColumns else current.tileColumn
+            model.copy(panel = current.copy(index = next, tileColumn = column)) to null
+        }
         Meaning.MoveLeft, Meaning.MoveRight -> {
             val direction = if (meaning == Meaning.MoveLeft) -1 else 1
             // A folder's order is the board's, which the shell changes; the menu stays on the row.
@@ -2099,7 +2143,8 @@ private fun backPanel(model: PickerModel, panel: SidePanel): Pair<PickerModel, E
             if (settings != null) model.copy(panel = null, settings = settings) to null
             else model.copy(panel = null, focus = panel.grid) to null
         }
-        PanelLevel.EditHome -> model.copy(panel = panel.copy(level = PanelLevel.Root, index = leftRows().indexOf(Row.EditHome))) to null
+        PanelLevel.EditHome -> model.copy(panel = panel.copy(level = PanelLevel.Root, index = leftRows().indexOf(Row.EditHome),
+            tileColumn = panel.parentTileColumn, parentTileColumn = null)) to null
         PanelLevel.Collections -> {
             val parent = panel.copy(level = panel.via)
             val row = panelRows(parent, model).indexOf(Row.AddToCollection).coerceAtLeast(0)
@@ -2130,7 +2175,7 @@ private fun activateRow(
             playActivity = PlayActivityPage(screen = panel.screen, grid = panel.grid),
         ) to null
         Row.Home -> model.copy(panel = null, focus = panel.grid) to Effect.GoHome
-        Row.EditHome -> model.copy(panel = panel.copy(level = PanelLevel.EditHome, index = 0)) to null
+        Row.EditHome -> model.copy(panel = panel.copy(level = PanelLevel.EditHome, index = 0, tileColumn = null, parentTileColumn = panel.tileColumn)) to null
         Row.Music -> model.copy(panel = panel, music = model.music.toggled()) to null
         Row.MusicVolume -> model.copy(panel = panel, music = model.music.stepped()) to null
         Row.SetAsHome -> model to Effect.RequestHome
