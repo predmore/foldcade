@@ -149,7 +149,7 @@ private fun SaveFacts(save: SavePickerSave, dates: DateStyle, theme: Theme, modi
             .clip(RoundedCornerShape(design.metrics.cardCornerDp.dp))
             .background(theme.surface.copy(alpha = design.hero.cardAlpha))
             .padding(CARD_PAD),
-        verticalArrangement = Arrangement.spacedBy(10.dp),
+        verticalArrangement = Arrangement.spacedBy(design.saves.gapDp.dp),
     ) {
         if (save.playing) Tag(SavePickerCopy.playing, theme.focus)
         else if (save.backup) Tag(SavePickerCopy.backup, theme.muted)
@@ -218,7 +218,7 @@ internal fun SavePickerBottom(app: FoldcadeApp, state: SavePickerState, dates: D
     val press = { meaning: Meaning -> dispatch(app.shell.onMeaning(meaning, HostScreen.Bottom)) }
     Box(Modifier.fillMaxSize().background(theme.background)) {
         Column(
-            Modifier.fillMaxSize().padding(horizontal = BOTTOM_EDGE_H, vertical = BOTTOM_EDGE_V),
+            Modifier.fillMaxSize().padding(horizontal = design.saves.edgeDp.dp, vertical = BOTTOM_EDGE_V),
             verticalArrangement = Arrangement.spacedBy(BOTTOM_GAP),
         ) {
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -552,7 +552,7 @@ private fun Confirmation(app: FoldcadeApp, state: SavePickerState, choice: SaveP
             .fillMaxSize()
             .blocksTouch()
             .background(design.colors.scrim.copy(alpha = design.dialog.scrimAlpha))
-            .padding(BOTTOM_EDGE_H),
+            .padding(design.saves.edgeDp.dp),
         contentAlignment = Alignment.Center,
     ) {
         Column(
@@ -613,7 +613,6 @@ private fun saveStyle(color: Color, size: TextUnit, theme: Theme, bold: Boolean 
  * The bottom screen is about 538 × 468dp. Its margins, header, and hints leave the card
  * about 330dp, five rows and a half, so a sixth save shows there is more.
  */
-private val BOTTOM_EDGE_H = 24.dp
 private val BOTTOM_EDGE_V = 16.dp
 private val BOTTOM_GAP = 12.dp
 private val HINT_HEIGHT = 28.dp
