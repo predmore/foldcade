@@ -7,7 +7,7 @@ import org.junit.Test
 
 class EdenSettingsTest {
     @Test
-    fun playersListsEdenAfterRetroArchWithBothValues() {
+    fun edenGetsATileForItsKeysWithBothValues() {
         val bare = PickerModel(count = 1, rowsPerPage = 1, homeRoleHeld = true)
         assertFalse(Row.EdenFolder in settingsRows(SettingsCategory.Players, bare))
         assertFalse(SettingsCategory.Players in settingsCategories(bare))
@@ -21,16 +21,21 @@ class EdenSettingsTest {
         assertFalse(Row.EdenFolder in settingsRows(SettingsCategory.Players, otherLibrary))
 
         val setup = installed.copy(signedIn = listOf(SignedInBackend("romm", "RomM")))
-        assertEquals(listOf(Row.EdenFolder), settingsRows(SettingsCategory.Players, setup))
+        val eden = Row.SettingsTile(SettingsInner.Emulator(EDEN_SHELF_KEY))
+        assertEquals(listOf(eden), settingsRows(SettingsCategory.Players, setup))
+        assertEquals(listOf(Row.EdenFolder), settingsInnerRows(SettingsInner.Emulator(EDEN_SHELF_KEY), setup))
+        assertEquals(Copy.eden, rowText(eden, setup).label)
+        assertEquals(TileStatus.Attention, settingsTileStatus(eden, setup))
         assertEquals(Copy.edenKeys, rowText(Row.EdenFolder, setup).label)
         assertEquals(Copy.setUp, rowText(Row.EdenFolder, setup).value)
 
         val granted = setup.copy(eden = EdenSetting(fromRomm = true))
         assertEquals(Copy.edenFromRomm, rowText(Row.EdenFolder, granted).value)
+        assertEquals(TileStatus.Fine, settingsTileStatus(eden, granted))
 
         val both = granted.copy(retroArch = RetroArchSetting(cores = 3))
         assertEquals(
-            listOf(Row.RetroArchCores, Row.EdenFolder),
+            listOf(eden, Row.SettingsTile(SettingsInner.Emulator(RETROARCH_SHELF_KEY))),
             settingsRows(SettingsCategory.Players, both),
         )
         val (closed, effect) = reduce(granted.onSetting(Row.EdenFolder), Meaning.Activate)

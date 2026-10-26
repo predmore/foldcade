@@ -9,7 +9,7 @@ Standard and Gold builds are supported; standard has priority when both are inst
 1. Set up GameNative, install a Steam game, and check that it plays there.
 2. Open that game's options and choose **Export for frontend**.
 3. Save its `.steam` file in a shared folder, such as `ROMs/GameNative`.
-4. In Foldcade, open **L1 › Settings › Library › Add a folder** and select that folder.
+4. In Foldcade, open **L1 › Settings › Library › Add › Add a folder** and select that folder.
 5. Find the game in **GameNative** on Home or in **All**.
 
 Use the same folder for more exports. These files are launch references; GameNative keeps the installed games. Its **Add to home screen** option is not currently a supported setup path in Foldcade.
@@ -21,7 +21,7 @@ Builds with **Frontend Sync** can update exports as games are installed or remov
 1. Open **Frontend Sync** in GameNative's settings.
 2. Select an export directory for **Steam** and confirm with **OK**.
 3. Wait for export to finish, or use **Resync all** if needed.
-4. Add that directory to Foldcade with **Settings › Library › Add a folder**.
+4. Add that directory to Foldcade with **Settings › Library › Add › Add a folder**.
 
 After exports change, return to Foldcade; it [rescans folders in the background](README.md#discovery-and-updates).
 

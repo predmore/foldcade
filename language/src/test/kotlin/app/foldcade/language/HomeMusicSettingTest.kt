@@ -251,13 +251,13 @@ class HomeMusicSettingTest {
         assertEquals(HomeMusicSetting.DEFAULT_TRACK_ID, forward.music.trackId)
 
         val onThemeRow = back.onSetting(Row.Theme)
-        val builtIn = reduce(onThemeRow, Meaning.Activate).first
+        val builtIn = reduce(onThemeRow, Meaning.MoveRight).first
         assertEquals(0, builtIn.themeIndex)
         assertEquals(HomeMusicSetting.DEFAULT_TRACK_ID, builtIn.music.trackId)
         assertEquals("Lanternlight", builtIn.trackTitle)
         assertTrue(offeredMusicTracks(builtIn.homeTracks, builtIn.themeTracks.getOrNull(0)).none { it.fromTheme })
 
-        val stayed = reduce(duskPick.onSetting(Row.Theme), Meaning.Activate).first
+        val stayed = reduce(duskPick.onSetting(Row.Theme), Meaning.MoveRight).first
         assertEquals(0, stayed.themeIndex)
         assertEquals("dusk", stayed.music.trackId)
     }

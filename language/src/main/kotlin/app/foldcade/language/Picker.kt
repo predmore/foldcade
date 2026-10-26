@@ -627,8 +627,8 @@ sealed interface Row {
     data object ButtonLabels : Row
     data object Licenses : Row
 
-    /** Settings › Look: every pack, Add a theme, and what Foldcade found in each. */
-    data object Themes : Row
+    /** A tile on a Settings shelf: an emulator, a library source, or Add. A opens [page] inside the card. */
+    data class SettingsTile(val page: SettingsInner) : Row
 
     /** About's version. A copies one line of debug info for a bug report. */
     data object Version : Row
@@ -723,6 +723,8 @@ data class PlayerSaveSetting(
     val setupSteps: String? = null,
     /** False until the host knows one of this player's packages is installed. */
     val installed: Boolean = false,
+    /** The player's installed packages. The first one's art is its Settings tile. */
+    val packages: List<String> = emptyList(),
 )
 
 /**
@@ -731,11 +733,15 @@ data class PlayerSaveSetting(
  */
 data class RetroArchSetting(
     val cores: Int?,
+    /** The RetroArch whose cores those are, which ties the row to that player's tile. */
+    val packageName: String? = null,
 )
 
 /** Eden, when it is installed. [fromRomm] is true while Foldcade holds Eden's folder. */
 data class EdenSetting(
     val fromRomm: Boolean,
+    /** The installed Eden, which ties the row to that player's tile. */
+    val packageName: String? = null,
 )
 
 /**
@@ -793,26 +799,6 @@ fun connectFields(kind: ConnectKind = ConnectKind.Romm, retry: Boolean = false):
     ConnectKind.Romm -> listOf(ConnectField.Origin, ConnectField.Token, ConnectField.Save) +
         if (retry) listOf(ConnectField.Retry) else emptyList()
     ConnectKind.ArtKey -> listOf(ConnectField.Token, ConnectField.Save)
-}
-
-/**
- * Every library feeds the one home grid, so these rows add or remove a source.
- * None of them switches the grid to a different library.
- */
-fun libraryRows(
-    signedIn: List<SignedInBackend> = emptyList(),
-    folders: List<LibraryFolder> = emptyList(),
-    rommSaved: Boolean = signedIn.any { it.pluginId == "romm" },
-): List<Row> {
-    val connections = if (rommSaved && signedIn.none { it.pluginId == "romm" }) {
-        listOf(SignedInBackend("romm", "RomM")) + signedIn
-    } else signedIn
-    // Removing a folder comes after adding one, so the first row is never the one that drops a library.
-    return connections.map {
-        if (it.pluginId == "romm") Row.RommConnection(it.pluginId, it.label)
-        else Row.SignOut(it.pluginId, it.label)
-    } + listOfNotNull(Row.AddFolder, Row.AddRomm.takeIf { connections.none { it.pluginId == "romm" } }) +
-        folders.map { Row.ForgetFolder(it.uri, it.label) }
 }
 
 /**
@@ -1043,7 +1029,7 @@ fun rowText(row: Row, model: PickerModel): RowText = when (row) {
     Row.SetAsHome -> RowText(Copy.setAsHome)
     Row.AndroidSettings -> RowText(Copy.androidSettings)
     Row.Licenses -> RowText(LicenseCopy.row)
-    Row.Themes -> RowText(ThemesCopy.row)
+    is Row.SettingsTile -> RowText(settingsInnerTitle(row.page, model))
     Row.Version -> RowText(AboutCopy.version, if (model.versionCopied) AboutCopy.copied else model.appVersion)
     Row.DefaultHomeApp -> RowText(Copy.defaultHomeApp)
     is Row.QuickTile -> RowText(
@@ -1063,8 +1049,9 @@ fun rowText(row: Row, model: PickerModel): RowText = when (row) {
     is Row.RommConnection -> RowText(row.label)
     is Row.EditRomm -> RowText(Copy.editRommConnection)
     Row.AddRomm -> RowText(Copy.addRommServer)
-    is Row.SignOut -> if (model.panel?.level == PanelLevel.RommConnection) RowText(Copy.signOut) else RowText(row.label, Copy.signOut)
-    is Row.ForgetFolder -> RowText(row.label, Copy.remove)
+    // Both live on a page that already names the connection or the folder.
+    is Row.SignOut -> RowText(Copy.signOut)
+    is Row.ForgetFolder -> RowText(Copy.remove)
     is Row.Notice -> RowText(model.notices.firstOrNull { it.id == row.id }?.title ?: "")
     Row.NoticeAccess -> RowText(NoticeCopy.access, NoticeCopy.accessValue)
     Row.ClearNotices -> RowText(NoticeCopy.clearAll)
@@ -1072,10 +1059,10 @@ fun rowText(row: Row, model: PickerModel): RowText = when (row) {
         val setting = model.playerSaves.firstOrNull { it.playerId == row.playerId }
         val chosen = when {
             setting?.chosen == true -> Copy.playerSavesSet
-            setting?.installed != true || setting.hostedTitle != null -> Copy.playerSavesUnset
+            setting?.installed != true || setting.hostedTitle != null -> Copy.choose
             else -> Copy.notSyncing
         }
-        RowText(setting?.label ?: row.playerId, chosen)
+        RowText(Copy.saveFolder, chosen)
     }
     is Row.HostedSaves -> {
         val setting = model.playerSaves.firstOrNull { it.playerId == row.playerId }
@@ -1084,7 +1071,7 @@ fun rowText(row: Row, model: PickerModel): RowText = when (row) {
             setting?.installed == true -> Copy.notSyncing
             else -> Copy.hostedSavesUnset
         }
-        RowText(setting?.hostedTitle ?: row.playerId, inUse)
+        RowText(setting?.hostedTitle?.let { pageLabel(it, setting.label) } ?: row.playerId, inUse)
     }
     is Row.SaveSync -> {
         val setting = model.playerSaves.firstOrNull { it.playerId == row.playerId }
@@ -1093,13 +1080,11 @@ fun rowText(row: Row, model: PickerModel): RowText = when (row) {
             setting?.installed == true -> Copy.notSyncing
             else -> Copy.hostedSavesUnset
         }
-        val name = setting?.label ?: row.playerId
-        RowText("$name ${Copy.memoryCard}", state)
+        RowText(Copy.memoryCard, state)
     }
     is Row.PlayerSetup -> {
         val setting = model.playerSaves.firstOrNull { it.playerId == row.playerId }
-        val name = setting?.label ?: row.playerId
-        RowText("$name ${Copy.setup}", if (setting?.installed == true) Copy.notSyncing else Copy.hostedSavesUnset)
+        RowText(Copy.setup, if (setting?.installed == true) Copy.notSyncing else Copy.hostedSavesUnset)
     }
     Row.RetroArchCores -> RowText(
         Copy.retroArchCores,
@@ -1118,7 +1103,7 @@ fun rowText(row: Row, model: PickerModel): RowText = when (row) {
     Row.Artwork -> RowText(Copy.artwork, if (model.artwork) Copy.on else Copy.off)
     Row.ArtKey -> RowText(Copy.steamGridDb, if (model.artKeySaved) Copy.forgetKey else Copy.addKey)
     is Row.StreamHost -> model.streamHosts.firstOrNull { it.key == row.key }.let { host ->
-        RowText("${Copy.gamesFrom} ${host?.name.orEmpty()}", if (host?.paired == true) Copy.on else Copy.off)
+        RowText(Copy.hostGames, if (host?.paired == true) Copy.on else Copy.off)
     }
     Row.MoveApp -> RowText(if (model.tileActions?.moveTo == HOME_ANDROID_APPS) Copy.moveToApps else Copy.moveToGames)
     Row.Hide -> RowText(Copy.hideApp)
@@ -1154,6 +1139,10 @@ fun rowText(row: Row, model: PickerModel): RowText = when (row) {
         },
     )
 }
+
+/** A row on a page headed by [name] drops the name it starts with: "DuckStation memory cards" reads "Memory cards". */
+private fun pageLabel(title: String, name: String): String =
+    title.removePrefix("$name ").takeIf { it != title }?.replaceFirstChar { it.uppercaseChar() } ?: title
 
 fun rowLabel(row: Row, model: PickerModel): String {
     val text = rowText(row, model)
@@ -1516,7 +1505,7 @@ fun reduce(
         }
     }
     val settings = coerced.settings
-    if (settings != null) return applySettings(coerced, settings, meaning).let { (next, effect) -> next.versionCopySettled() to effect }
+    if (settings != null) return applySettings(coerced, settings, meaning, repeatCount).let { (next, effect) -> next.versionCopySettled() to effect }
     val activity = coerced.playActivity
     if (activity != null) return applyPlayActivity(coerced, activity, meaning)
     val panel = coerced.panel
@@ -1948,7 +1937,8 @@ private fun sortStep(model: PickerModel, direction: Int): Effect? =
  * Left and right step a value and keep the row. Music volume moves by 5 points,
  * and so does brightness, or it asks for access first. A choice row (theme,
  * icons, background, motion, track, sort, main screen) cycles its choices either
- * way, as A cycles them forward. Other rows ignore the direction, so the focus stays put.
+ * way, as A cycles them forward, except Theme, whose A opens the Themes page. Other rows
+ * ignore the direction, so the focus stays put.
  */
 private fun stepRow(model: PickerModel, row: Row, direction: Int): PickerModel? {
     return when (row) {
@@ -2006,55 +1996,71 @@ private fun stepTheme(model: PickerModel, direction: Int): PickerModel {
 
 /**
  * Up and down move within the focused column. Right, or Activate, steps from a category into
- * its rows. Left on a row steps a value when the row has one, otherwise back to the
- * categories. Back steps out the same way, then closes the page. L1, R1, and Start close it
- * too, so Start undoes L1 then Start. A row acts exactly as it does in the menu. A row that
- * would close the menu closes the page.
+ * its card. A card's tiles move in two directions, its rows in one. Left on a row steps a
+ * value when the row has one, otherwise back to the categories, as Left from a line's first
+ * tile does. A on a tile opens its page in the card, and Back or Left there returns to that
+ * tile. Back steps out the same way, then closes the page. L1, R1, and Start close it too,
+ * so Start undoes L1 then Start. A row acts exactly as it does in the menu. A row that would
+ * close the menu closes the page.
  */
 private fun applySettings(
     model: PickerModel,
     page: SettingsPage,
     meaning: Meaning,
+    repeatCount: Int,
 ): Pair<PickerModel, Effect?> {
     val categories = settingsCategories(model)
     if (categories.isEmpty()) return model.copy(settings = null, focus = page.grid) to null
     val categoryIndex = page.category.coerceIn(0, categories.lastIndex)
-    val rows = settingsRows(categories[categoryIndex], model)
-    val rowIndex = page.row.coerceIn(0, (rows.size - 1).coerceAtLeast(0))
-    val current = page.copy(category = categoryIndex, row = rowIndex)
+    val category = categories[categoryIndex]
+    val (shown, rows) = settingsShown(page.copy(category = categoryIndex), model)
+    val rowIndex = shown.row.coerceIn(0, (rows.size - 1).coerceAtLeast(0))
+    val current = shown.copy(row = rowIndex)
     val close = model.copy(settings = null, focus = page.grid, capturingConfirm = false) to null
     if (!current.onRows) {
         return when (meaning) {
-            Meaning.MoveUp -> model.copy(settings = current.copy(category = (categoryIndex - 1).coerceAtLeast(0), row = 0)) to null
+            Meaning.MoveUp -> model.copy(settings = current.copy(category = (categoryIndex - 1).coerceAtLeast(0), row = 0, inner = null)) to null
             Meaning.MoveDown -> model.copy(
-                settings = current.copy(category = (categoryIndex + 1).coerceAtMost(categories.lastIndex), row = 0),
+                settings = current.copy(category = (categoryIndex + 1).coerceAtMost(categories.lastIndex), row = 0, inner = null),
             ) to null
             Meaning.MoveRight, Meaning.Activate ->
-                model.copy(settings = current.copy(onRows = rows.isNotEmpty(), row = 0)) to null
+                model.copy(settings = current.copy(onRows = rows.isNotEmpty(), row = 0, inner = null)) to null
             Meaning.Back, Meaning.LeftPanel, Meaning.RightPanel, Meaning.Menu -> close
             else -> model.copy(settings = current) to null
         }
     }
-    val row = rows.getOrNull(rowIndex) ?: return model.copy(settings = current.copy(onRows = false)) to null
+    val row = rows.getOrNull(rowIndex) ?: return model.copy(settings = current.copy(onRows = false, inner = null)) to null
+    val inner = current.inner
+    // Back on a page lands on the tile that opened it.
+    val shelf = current.copy(inner = null, row = inner?.let { settingsTileIndex(category, it, model) }?.coerceAtLeast(0) ?: rowIndex)
     return when (meaning) {
-        Meaning.MoveUp -> model.copy(capturingConfirm = false, settings = current.copy(row = (rowIndex - 1).coerceAtLeast(0))) to null
-        Meaning.MoveDown -> model.copy(capturingConfirm = false, settings = current.copy(row = (rowIndex + 1).coerceAtMost(rows.lastIndex))) to null
+        Meaning.MoveUp, Meaning.MoveDown -> model.copy(
+            capturingConfirm = false,
+            settings = current.copy(row = settingsFocusIndex(rows, rowIndex, meaning) ?: rowIndex),
+        ) to null
         Meaning.MoveLeft, Meaning.MoveRight -> {
             val direction = if (meaning == Meaning.MoveLeft) -1 else 1
             val nudged = stepRow(model, row, direction)
             when {
                 nudged != null -> nudged.copy(capturingConfirm = false, settings = current) to null
+                row.settingsTile() -> settingsFocusIndex(rows, rowIndex, meaning)
+                    ?.let { model.copy(settings = current.copy(row = it)) to null }
+                    ?: (model.copy(settings = current.copy(onRows = false)) to null)
+                meaning == Meaning.MoveLeft && inner != null -> model.copy(capturingConfirm = false, settings = shelf) to null
                 meaning == Meaning.MoveLeft -> model.copy(capturingConfirm = false, settings = current.copy(onRows = false)) to null
                 else -> model.copy(capturingConfirm = false, settings = current) to null
             }
         }
-        Meaning.Back -> if (model.capturingConfirm) {
-            model.copy(capturingConfirm = false, settings = current) to null
-        } else {
-            model.copy(settings = current.copy(onRows = false)) to null
+        Meaning.Back -> when {
+            model.capturingConfirm -> model.copy(capturingConfirm = false, settings = current) to null
+            inner != null -> model.copy(settings = shelf) to null
+            else -> model.copy(settings = current.copy(onRows = false)) to null
         }
         Meaning.LeftPanel, Meaning.RightPanel, Meaning.Menu -> close
         Meaning.Activate -> {
+            if (row is Row.SettingsTile) return model.copy(settings = current.copy(inner = row.page, row = 0)) to null
+            // A held A that opened a page does not go on to act in it: a folder's Remove, a computer's pairing.
+            if (inner != null && repeatCount > 0) return model.copy(settings = current) to null
             // Rows act through the menu path. A stand-in panel tells "stays open" from "leaves".
             val standIn = SidePanel(Side.Left, current.screen, PanelLevel.Root, rowIndex, current.grid)
             val (next, effect) = activateRow(model.copy(panel = standIn), standIn, row, current.screen)
@@ -2064,6 +2070,8 @@ private fun applySettings(
                     settings = null,
                 ) to effect
             }
+            // The folder goes; the shelf stays, its focus where the folder's tile was.
+            if (row is Row.ForgetFolder) return next.copy(panel = null, settings = shelf, focus = model.focus) to effect
             val stays = next.panel != null
             next.copy(
                 panel = null,
@@ -2108,8 +2116,10 @@ private fun activateRow(
     return when (row) {
         Row.Settings -> model.openSettings(panel.screen, grid = panel.grid) to null
         // The [choiceRows]. The list is spelled out so a new row cannot slip past this when.
-        Row.Theme, Row.IconTheme, Row.Background, Row.MotionSpeed, Row.MusicTrack, Row.Order, Row.Primary ->
+        Row.IconTheme, Row.Background, Row.MotionSpeed, Row.MusicTrack, Row.Order, Row.Primary ->
             stepRow(model, row, 1)!!.copy(panel = panel) to null
+        // Left and right step the pack. A opens every pack, Add a theme, and what was found in each.
+        Row.Theme -> model.copy(panel = panel) to Effect.OpenThemes
         // A choice row too, whose value is the board's: the shell steps it.
         Row.SortFolder -> model.copy(panel = panel) to sortStep(model, 1)
         Row.UsageAccess -> model.copy(dialog = usageAccessPrompt(screen)) to null
@@ -2124,7 +2134,8 @@ private fun activateRow(
         Row.SetAsHome -> model to Effect.RequestHome
         Row.AndroidSettings -> model.copy(panel = panel) to Effect.OpenAndroidSetting(AndroidSetting.Settings)
         Row.Licenses -> model.copy(panel = panel) to Effect.OpenLicenses
-        Row.Themes -> model.copy(panel = panel) to Effect.OpenThemes
+        // Settings opens its page itself, see [applySettings].
+        is Row.SettingsTile -> model.copy(panel = panel) to null
         Row.Version -> model.copy(panel = panel, versionCopied = true) to Effect.CopyDebugInfo
         Row.DefaultHomeApp -> model.copy(panel = panel) to Effect.OpenAndroidSetting(AndroidSetting.Home)
         is Row.QuickTile -> model.copy(panel = panel) to Effect.OpenAndroidSetting(row.setting.androidSetting())

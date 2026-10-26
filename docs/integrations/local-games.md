@@ -20,7 +20,7 @@ Foldcade scans folders on your Thor's internal storage or SD card. You can add s
        Racing.iso
    ```
 
-3. In Foldcade, open **L1 › Settings › Library › Add a folder**.
+3. In Foldcade, open **L1 › Settings › Library › Add › Add a folder**.
 4. Select `ROMs`, or an individual system folder, in Android's folder picker and grant access.
 5. Wait for the scan, then open the system's folder on Home or find the game in **All**.
 
@@ -47,7 +47,7 @@ Foldcade shows the playlist as one game and hides the files it names. The emulat
 
 Folders are scanned at startup, when you add or remove one, and [in the background when you return to Foldcade](README.md#discovery-and-updates).
 
-Remove a folder's row in **Settings › Library** to stop reading it; its files stay on the device. **Y › Hide** on a game takes it off Home; it remains in All.
+Choose a folder's tile in **Settings › Library**, then **Remove**, to stop reading it; its files stay on the device. **Y › Hide** on a game takes it off Home; it remains in All.
 
 For exported `.steam` files, follow [GameNative](gamenative.md) or [DroidDeck](droiddeck.md).
 

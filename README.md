@@ -124,7 +124,7 @@ Press **Select** on any grid and start typing on the controller keyboard. Result
 
 ### See where the hours went
 
-Track how long you played and when, see your week in L1, and sort All by **Recent** to return to a game. **Library** sorts All A–Z; **Recent** puts the most recently played games first, followed by unplayed games A–Z. In Recent order, L2 / R2 move four columns at a time. **Settings › Library › Play time › Everywhere** also counts sessions started outside Foldcade.
+Track how long you played and when, see your week in L1, and sort All by **Recent** to return to a game. **Library** sorts All A–Z; **Recent** puts the most recently played games first, followed by unplayed games A–Z. In Recent order, L2 / R2 move four columns at a time. **Settings › System › Play time › Everywhere** also counts sessions started outside Foldcade.
 
 ### Make it yours
 

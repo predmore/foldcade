@@ -1000,6 +1000,10 @@
       "file": "icons/ic_btn_y_filled.xml",
       "tint": false
     },
+    "control.add": {
+      "file": "icons/ic_control_add.xml",
+      "tint": true
+    },
     "control.check": {
       "file": "icons/ic_control_check.xml",
       "tint": true
@@ -1952,7 +1956,8 @@
       "artGrow": 0.14,
       "cardLift": 0.035,
       "borderAlpha": 0.06,
-      "borderDp": 1
+      "borderDp": 1,
+      "tileOffAlpha": 0.45
     },
     "find": {
       "ringRestAlpha": 0.38,

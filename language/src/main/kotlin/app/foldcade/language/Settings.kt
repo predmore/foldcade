@@ -12,7 +12,30 @@ data class SettingsPage(
     val onRows: Boolean = false,
     /** Grid focus to restore when the page closes. */
     val grid: GridFocus = GridFocus(),
+    /**
+     * A page inside the category's card: one emulator, one library source, or Add. [row]
+     * then counts that page's rows. Null shows the category's own tiles and rows.
+     */
+    val inner: SettingsInner? = null,
 )
+
+/** A page one step inside a Settings category. A tile on the category's shelf opens it, and B returns to that tile. */
+sealed interface SettingsInner {
+    /** One emulator's rows. [key] is its [EmulatorShelfEntry.key]. */
+    data class Emulator(val key: String) : SettingsInner
+
+    /** One folder the library reads, by its tree [uri]. */
+    data class Folder(val uri: String) : SettingsInner
+
+    /** One of Moonlight's computers, by its [StreamHostSetting.key]. */
+    data class Host(val key: String) : SettingsInner
+
+    /** A signed-in library other than RomM, which has its own connection actions. */
+    data class Backend(val pluginId: String) : SettingsInner
+
+    /** Ways to add a library: a folder, and a RomM server while none is saved. */
+    data object Add : SettingsInner
+}
 
 enum class SettingsCategory {
     Personalization,
@@ -59,7 +82,7 @@ fun settingsTitle(category: SettingsCategory): String = when (category) {
     SettingsCategory.About -> SettingsCopy.about
 }
 
-/** Categories with at least one row. Players appears once a player has a save folder setting, RetroArch is installed, or Eden is installed and a RomM server is signed in. */
+/** Categories with at least one row. Emulators appears once an emulator is installed whose saves, cores, or keys Foldcade can set up. */
 fun settingsCategories(model: PickerModel): List<SettingsCategory> =
     SettingsCategory.entries.filter { settingsRows(it, model).isNotEmpty() }
 
@@ -73,40 +96,34 @@ fun PickerModel.openSettings(
     settings = SettingsPage(screen, category = settingsCategories(this).indexOf(category).coerceAtLeast(0), grid = grid),
 )
 
+/**
+ * A category's tiles, then its rows. Your things are tiles (each emulator, each library
+ * source) and settings are rows, so no category needs to scroll on the Thor's top screen.
+ */
 fun settingsRows(category: SettingsCategory, model: PickerModel): List<Row> = when (category) {
     SettingsCategory.Personalization -> buildList {
+        // Left and right step the pack; A opens every pack, Add a theme, and what was found in each.
         add(Row.Theme)
         add(Row.IconTheme)
         add(Row.Background)
-        add(Row.Themes)
         add(Row.MotionSpeed)
         // Calibration can be corrected even after the one-time setup hint is settled.
         add(Row.ButtonLabels)
     }
     SettingsCategory.Sound -> listOf(Row.Music, Row.MusicTrack, Row.MusicVolume)
     SettingsCategory.Library -> buildList {
+        addAll(librarySources(model))
         // Only once there is a folder or a server to read.
         if (model.signedIn.isNotEmpty() || model.folders.isNotEmpty()) add(Row.SyncLibrary)
-        addAll(libraryRows(model.signedIn, model.folders, model.rommSaved))
-        addAll(model.streamHosts.map { Row.StreamHost(it.key) })
-        addAll(listOf(Row.Order, Row.AddNewGames, Row.Artwork, Row.ArtKey, Row.UsageAccess))
+        addAll(listOf(Row.Order, Row.Artwork, Row.ArtKey))
     }
-    SettingsCategory.Players -> buildList {
-        if (model.retroArch != null) add(Row.RetroArchCores)
-        if (model.eden != null && model.signedIn.any { it.pluginId == "romm" }) {
-            add(Row.EdenFolder)
-        }
-        model.playerSaves.forEach { setting ->
-            add(Row.PlayerSave(setting.playerId))
-            if (setting.hostedTitle != null) add(Row.HostedSaves(setting.playerId))
-            if (setting.saveSyncing || setting.saveSyncSteps != null) add(Row.SaveSync(setting.playerId))
-            if (setting.setupSteps != null) add(Row.PlayerSetup(setting.playerId))
-        }
-    }
+    SettingsCategory.Players -> emulatorShelf(model).map { Row.SettingsTile(SettingsInner.Emulator(it.key)) }
     SettingsCategory.Screens -> buildList {
         add(Row.Primary)
         if (!model.homeRoleHeld) add(Row.SetAsHome)
         add(Row.DefaultHomeApp)
+        // Android's permissions sit together: usage access for play time, then notification access.
+        add(Row.UsageAccess)
         // Until Android grants it, so R1 can list notifications.
         if (model.askNoticeAccess) add(Row.NoticeAccess)
         add(Row.AndroidSettings)
@@ -114,11 +131,208 @@ fun settingsRows(category: SettingsCategory, model: PickerModel): List<Row> = wh
     SettingsCategory.About -> listOf(Row.Version, Row.Licenses)
 }
 
+/**
+ * Settings › Library's tiles: RomM, any other signed-in library, each folder, each of
+ * Moonlight's computers, then Add. Every source feeds the one home grid, so a tile only
+ * opens what can be done to that source. None of them switches what the grid shows.
+ */
+fun librarySources(model: PickerModel): List<Row> {
+    // A saved address keeps its tile while its token needs recovery.
+    val connections = if (model.rommSaved && model.signedIn.none { it.pluginId == "romm" }) {
+        listOf(SignedInBackend("romm", "RomM")) + model.signedIn
+    } else model.signedIn
+    return connections.map {
+        if (it.pluginId == "romm") Row.RommConnection(it.pluginId, it.label)
+        else Row.SettingsTile(SettingsInner.Backend(it.pluginId))
+    } + model.folders.map { Row.SettingsTile(SettingsInner.Folder(it.uri)) } +
+        model.streamHosts.map { Row.SettingsTile(SettingsInner.Host(it.key)) } +
+        Row.SettingsTile(SettingsInner.Add)
+}
+
+/** True for a row Settings draws as a tile on a category's shelf, in lines of [quickTileColumns]. */
+fun Row.settingsTile(): Boolean = this is Row.SettingsTile || this is Row.RommConnection
+
+/**
+ * One emulator on Settings › Emulators: its tile, and the rows its page lists. [packageName]
+ * is the installed package whose art the tile wears.
+ */
+data class EmulatorShelfEntry(
+    val key: String,
+    val label: String,
+    val packageName: String?,
+    val rows: List<Row>,
+)
+
+/** The keys of RetroArch's and Eden's entries when no player with a save folder stands for them. */
+const val RETROARCH_SHELF_KEY = "retroarch"
+const val EDEN_SHELF_KEY = "eden"
+
+/**
+ * One entry per emulator Foldcade knows is installed, A to Z. Each holds only its own rows:
+ * its save folder, the folder Foldcade hosts, its memory card, and one-time setup, then
+ * RetroArch's cores or Eden's keys for the player that is RetroArch or Eden. RetroArch or
+ * Eden without a save-folder player still gets an entry for that row alone.
+ */
+fun emulatorShelf(model: PickerModel): List<EmulatorShelfEntry> {
+    val players = model.playerSaves.filter { it.installed }
+    val retroArch = model.retroArch
+    // Eden's keys come from RomM, so its row waits for a RomM server.
+    val eden = model.eden?.takeIf { _ -> model.signedIn.any { it.pluginId == "romm" } }
+    val retroArchOwner = retroArch?.packageName?.let { name -> players.firstOrNull { name in it.packages } }
+    val edenOwner = eden?.packageName?.let { name -> players.firstOrNull { name in it.packages } }
+    val entries = players.map { setting ->
+        EmulatorShelfEntry(
+            key = setting.playerId,
+            label = setting.label,
+            packageName = setting.packages.firstOrNull(),
+            rows = buildList {
+                add(Row.PlayerSave(setting.playerId))
+                if (setting.hostedTitle != null) add(Row.HostedSaves(setting.playerId))
+                if (setting.saveSyncing || setting.saveSyncSteps != null) add(Row.SaveSync(setting.playerId))
+                if (setting.setupSteps != null) add(Row.PlayerSetup(setting.playerId))
+                if (setting === retroArchOwner) add(Row.RetroArchCores)
+                if (setting === edenOwner) add(Row.EdenFolder)
+            },
+        )
+    }
+    val loose = listOfNotNull(
+        retroArch?.takeIf { retroArchOwner == null }?.let {
+            EmulatorShelfEntry(RETROARCH_SHELF_KEY, Copy.retroArch, it.packageName, listOf(Row.RetroArchCores))
+        },
+        eden?.takeIf { edenOwner == null }?.let {
+            EmulatorShelfEntry(EDEN_SHELF_KEY, Copy.eden, it.packageName, listOf(Row.EdenFolder))
+        },
+    )
+    return (entries + loose).sortedBy { it.label.lowercase() }
+}
+
+/** The rows [inner] lists, or none once what it was about has gone. */
+fun settingsInnerRows(inner: SettingsInner, model: PickerModel): List<Row> = when (inner) {
+    is SettingsInner.Emulator -> emulatorShelf(model).firstOrNull { it.key == inner.key }?.rows.orEmpty()
+    is SettingsInner.Folder -> model.folders.filter { it.uri == inner.uri }.take(1).map { Row.ForgetFolder(it.uri, it.label) }
+    is SettingsInner.Host -> model.streamHosts.filter { it.key == inner.key }.take(1).map { Row.StreamHost(it.key) }
+    is SettingsInner.Backend -> model.signedIn.filter { it.pluginId == inner.pluginId }.take(1).map { Row.SignOut(it.pluginId, it.label) }
+    // One RomM server at a time: once one is saved, its own tile edits it or signs out.
+    SettingsInner.Add -> listOfNotNull(Row.AddFolder, Row.AddRomm.takeIf { !model.rommSaved && model.signedIn.none { it.pluginId == "romm" } })
+}
+
+/** What an inner page, and the tile that opens it, is called. */
+fun settingsInnerTitle(inner: SettingsInner, model: PickerModel): String = when (inner) {
+    is SettingsInner.Emulator -> emulatorShelf(model).firstOrNull { it.key == inner.key }?.label ?: inner.key
+    is SettingsInner.Folder -> model.folders.firstOrNull { it.uri == inner.uri }?.label.orEmpty()
+    is SettingsInner.Host -> model.streamHosts.firstOrNull { it.key == inner.key }?.name.orEmpty()
+    is SettingsInner.Backend -> model.signedIn.firstOrNull { it.pluginId == inner.pluginId }?.label.orEmpty()
+    SettingsInner.Add -> Copy.add
+}
+
+/**
+ * The page as it can be shown now, and the rows its card lists: the inner page's, or the
+ * category's. An inner page whose subject has gone, as a folder just removed, gives way
+ * to the category's shelf.
+ */
+fun settingsShown(page: SettingsPage, model: PickerModel): Pair<SettingsPage, List<Row>> {
+    val categories = settingsCategories(model)
+    if (categories.isEmpty()) return page.copy(inner = null) to emptyList()
+    val category = categories[page.category.coerceIn(0, categories.lastIndex)]
+    page.inner?.let { inner ->
+        val rows = settingsInnerRows(inner, model)
+        if (rows.isNotEmpty()) return page to rows
+    }
+    return page.copy(inner = null) to settingsRows(category, model)
+}
+
+/** A folder just added from Add shows itself: the card returns to the shelf with the new folder's tile focused. */
+fun PickerModel.withFolders(folders: List<LibraryFolder>): PickerModel {
+    val next = copy(folders = folders)
+    val page = settings?.takeIf { it.inner == SettingsInner.Add } ?: return next
+    val added = folders.firstOrNull { new -> this.folders.none { it.uri == new.uri } } ?: return next
+    val category = settingsCategories(next).getOrNull(page.category) ?: return next
+    val index = settingsTileIndex(category, SettingsInner.Folder(added.uri), next).takeIf { it >= 0 } ?: return next
+    return next.copy(settings = page.copy(inner = null, row = index))
+}
+
+/** The tile on [category]'s shelf that opens [inner], or -1. */
+fun settingsTileIndex(category: SettingsCategory, inner: SettingsInner, model: PickerModel): Int =
+    settingsRows(category, model).indexOfFirst { it is Row.SettingsTile && it.page == inner }
+
+/** How a tile's corner badge reads. */
+enum class TileStatus {
+    Fine,
+    Attention,
+}
+
+/**
+ * An emulator tile wears a check while all its rows are fine, and the not-syncing mark
+ * while any says Not syncing or waits to be set up. Other tiles wear none.
+ */
+fun settingsTileStatus(row: Row, model: PickerModel): TileStatus? {
+    val inner = (row as? Row.SettingsTile)?.page as? SettingsInner.Emulator ?: return null
+    val needsYou = settingsInnerRows(inner, model).any {
+        when (it) {
+            Row.RetroArchCores -> model.retroArch?.cores == null
+            Row.EdenFolder -> model.eden?.fromRomm != true
+            else -> (rowControl(it, model) as? RowControl.Value)?.attention == true
+        }
+    }
+    return if (needsYou) TileStatus.Attention else TileStatus.Fine
+}
+
+/**
+ * Where the D-pad goes in a card that leads with tiles. The tiles sit in lines of
+ * [quickTileColumns]; the rows under them are one column. Down from a tile with nothing
+ * under it lands on the next line's last tile. Up from the first row lands on the last
+ * line's first tile. Null means the move leaves the card: left from a line's first tile.
+ */
+fun settingsFocusIndex(rows: List<Row>, index: Int, meaning: Meaning): Int? {
+    if (rows.isEmpty()) return 0
+    val current = index.coerceIn(0, rows.lastIndex)
+    val tiles = rows.takeWhile { it.settingsTile() }.size
+    val columns = quickTileColumns
+    val lastLine = (tiles - 1).coerceAtLeast(0) / columns
+    if (current >= tiles) {
+        return when (meaning) {
+            Meaning.MoveUp -> if (current == tiles && tiles > 0) lastLine * columns else (current - 1).coerceAtLeast(0)
+            Meaning.MoveDown -> (current + 1).coerceAtMost(rows.lastIndex)
+            else -> current
+        }
+    }
+    val column = current % columns
+    val line = current / columns
+    return when (meaning) {
+        Meaning.MoveLeft -> if (column == 0) null else current - 1
+        Meaning.MoveRight -> if (column == columns - 1 || current + 1 >= tiles) current else current + 1
+        Meaning.MoveUp -> if (line == 0) current else current - columns
+        Meaning.MoveDown -> when {
+            line < lastLine -> (current + columns).coerceAtMost(tiles - 1)
+            tiles < rows.size -> tiles
+            else -> current
+        }
+        else -> current
+    }
+}
+
 /** The row the D-pad is on in the settings page, or null while the categories have it or the page is shut. */
 fun settingsFocus(model: PickerModel): Row? {
     val page = model.settings?.takeIf { it.onRows } ?: return null
-    val category = settingsCategories(model).getOrNull(page.category) ?: return null
-    return settingsRows(category, model).getOrNull(page.row)
+    return settingsShown(page, model).second.getOrNull(page.row)
+}
+
+/**
+ * The page keeps its category when the list of categories changes under it, as when the
+ * last emulator is uninstalled and Emulators leaves. A category that left drops the focus
+ * back to the categories, at the same place.
+ */
+fun retainSettingsCategory(previous: PickerModel, next: PickerModel): PickerModel {
+    val was = previous.settings ?: return next
+    val page = next.settings ?: return next
+    if (page.category != was.category) return next
+    val held = settingsCategories(previous).getOrNull(was.category) ?: return next
+    val now = settingsCategories(next)
+    if (now.getOrNull(page.category) == held) return next
+    val index = now.indexOf(held)
+    val settled = if (index >= 0) page.copy(category = index)
+        else page.copy(category = page.category.coerceIn(0, now.lastIndex.coerceAtLeast(0)), onRows = false, row = 0, inner = null)
+    return next.copy(settings = settled)
 }
 
 /** Version reads Copied only until the focus leaves it. */
@@ -151,7 +365,7 @@ fun rowControl(row: Row, model: PickerModel, value: String? = rowText(row, model
     Row.MusicVolume, Row.Brightness -> RowControl.None
     is Row.Collection -> model.tileActions?.collections?.firstOrNull { it.folderId == row.folderId }.let { RowControl.Check(it?.member == true, it?.some == true) }
     Row.EditHome, Row.AddToCollection, is Row.RommConnection,
-    Row.AddFolder, Row.AddRomm, Row.SetAsHome, Row.DefaultHomeApp, Row.AndroidSettings, Row.Licenses, Row.Themes,
+    Row.AddFolder, Row.AddRomm, Row.SetAsHome, Row.DefaultHomeApp, Row.AndroidSettings, Row.Licenses, is Row.SettingsTile,
     -> RowControl.Opens
     else -> value?.takeIf { it.isNotEmpty() }?.let {
         RowControl.Value(it, attention = it == Copy.notSyncing &&

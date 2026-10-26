@@ -210,6 +210,7 @@
                             "button.x.filled",
                             "button.y",
                             "button.y.filled",
+                            "control.add",
                             "control.check",
                             "control.dash",
                             "control.erase",
@@ -1812,6 +1813,12 @@
                             "minimum": 0.0,
                             "default": 1.0,
                             "description": "dp; follows base.strokeScale"
+                        },
+                        "tileOffAlpha": {
+                            "type": "number",
+                            "minimum": 0.0,
+                            "maximum": 1.0,
+                            "default": 0.45
                         }
                     }
                 },

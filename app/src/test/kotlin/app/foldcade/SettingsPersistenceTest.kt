@@ -119,7 +119,7 @@ class SettingsPersistenceTest {
         val restored = shell(prefs)
         assertEquals(1, restored.model.iconThemeIndex)
         restored.openSetting(Row.Theme)
-        restored.onMeaning(Meaning.Activate, HostScreen.Bottom)
+        restored.onMeaning(Meaning.MoveRight, HostScreen.Bottom)
         assertEquals(0, restored.model.themeIndex)
         assertEquals(1, restored.model.iconThemeIndex)
     }
@@ -143,12 +143,21 @@ class SettingsPersistenceTest {
         assertEquals(1, changed.model.themeIndex)
         val rows = listOf(
             Row.Theme, Row.Background, Row.MotionSpeed, Row.Music, Row.MusicVolume,
-            Row.Primary, Row.Order, Row.Artwork, Row.AddNewGames,
+            Row.Primary, Row.Order, Row.Artwork,
         )
         for (row in rows) {
             changed.openSetting(row)
-            changed.onMeaning(Meaning.Activate, HostScreen.Bottom)
+            // Theme's A opens the Themes page; right steps it, as left and right step every choice.
+            changed.onMeaning(if (row == Row.Theme) Meaning.MoveRight else Meaning.Activate, HostScreen.Bottom)
         }
+        // New games on Home lives in Edit home.
+        changed.closeSettings()
+        changed.onMeaning(Meaning.LeftPanel, HostScreen.Bottom)
+        // L1's places are one line of tiles, so Down passes them in one step.
+        while (leftRows()[changed.model.panel!!.index] != Row.EditHome) changed.onMeaning(Meaning.MoveDown, HostScreen.Bottom)
+        changed.onMeaning(Meaning.Activate, HostScreen.Bottom)
+        repeat(panelRows(changed.model.panel!!, changed.model).indexOf(Row.AddNewGames)) { changed.onMeaning(Meaning.MoveDown, HostScreen.Bottom) }
+        changed.onMeaning(Meaning.Activate, HostScreen.Bottom)
         val restored = shell(prefs)
         assertEquals(0, restored.model.themeIndex)
         assertEquals(changed.model.backgroundMotion, restored.model.backgroundMotion)

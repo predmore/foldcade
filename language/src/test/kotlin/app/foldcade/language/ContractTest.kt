@@ -495,7 +495,7 @@ class ContractTest {
         val primary = reduce(onPrimary, Meaning.Activate).first
         assertFalse(primary.primaryIsTop)
         assertEquals(onPrimary.settings, primary.settings)
-        val theme = reduce(root.onSetting(Row.Theme), Meaning.Activate).first
+        val theme = reduce(root.onSetting(Row.Theme), Meaning.MoveRight).first
         assertEquals(1, theme.themeIndex)
         // The sources live on the Settings page's Library rows, not in L1.
         assertFalse(leftRows().any { it is Row.AddFolder || it is Row.RommConnection })
@@ -503,7 +503,7 @@ class ContractTest {
         assertNull(add)
         assertEquals(DialogKind.Folder, folder.dialog?.kind)
         val signedIn = root.copy(signedIn = listOf(SignedInBackend("romm", "RomM")))
-        val connection = libraryRows(signedIn.signedIn).first()
+        val connection = librarySources(signedIn).first()
         assertEquals("RomM", rowLabel(connection, signedIn))
         val (actions, openConnection) = reduce(signedIn.onSetting(connection), Meaning.Activate)
         assertNull(openConnection)
@@ -607,15 +607,15 @@ class ContractTest {
             motionSpeed = MotionSpeed.Slow,
         )
         val rows = settingsRows(SettingsCategory.Personalization, root)
-        assertEquals(listOf(Row.Theme, Row.IconTheme, Row.Background, Row.Themes, Row.MotionSpeed, Row.ButtonLabels), rows)
-        val themed = reduce(root.onSetting(Row.Theme), Meaning.Activate).first
+        assertEquals(listOf(Row.Theme, Row.IconTheme, Row.Background, Row.MotionSpeed, Row.ButtonLabels), rows)
+        val themed = reduce(root.onSetting(Row.Theme), Meaning.MoveRight).first
         assertEquals(0, themed.themeIndex)
         assertEquals(BackgroundMotion.Off, themed.backgroundMotion)
         assertFalse(themed.backgroundPinned)
         val pinned = reduce(themed.onSetting(Row.Background), Meaning.Activate).first
         assertEquals(BackgroundMotion.Ribbons, pinned.backgroundMotion)
         assertTrue(pinned.backgroundPinned)
-        val kept = reduce(pinned.onSetting(Row.Theme), Meaning.Activate).first
+        val kept = reduce(pinned.onSetting(Row.Theme), Meaning.MoveRight).first
         assertEquals(1, kept.themeIndex)
         assertEquals(BackgroundMotion.Ribbons, kept.backgroundMotion)
         val slowed = reduce(pinned.onSetting(Row.MotionSpeed), Meaning.Activate).first
@@ -672,12 +672,13 @@ class ContractTest {
             homeRoleHeld = true,
             playerSaves = listOf(setting),
         )
-        assertEquals(listOf(Row.PlayerSave("azahar")), settingsRows(SettingsCategory.Players, opened))
+        assertEquals(listOf(Row.SettingsTile(SettingsInner.Emulator("azahar"))), settingsRows(SettingsCategory.Players, opened))
+        assertEquals(listOf(Row.PlayerSave("azahar")), settingsInnerRows(SettingsInner.Emulator("azahar"), opened))
         val (closed, effect) = reduce(opened.onSetting(Row.PlayerSave("azahar")), Meaning.Activate)
         assertEquals(Effect.ChoosePlayerSave("azahar"), effect)
         assertNull(closed.panel)
         assertNull(closed.settings)
-        assertEquals("Azahar  Not syncing", rowLabel(Row.PlayerSave("azahar"), opened))
+        assertEquals("Save folder  Not syncing", rowLabel(Row.PlayerSave("azahar"), opened))
         assertEquals(RowControl.Value(Copy.notSyncing, attention = true), rowControl(Row.PlayerSave("azahar"), opened))
     }
 
@@ -691,18 +692,19 @@ class ContractTest {
         )
         for (setting in settings) {
             val model = PickerModel(count = 1, rowsPerPage = 1, playerSaves = listOf(setting))
-            val rows = settingsRows(SettingsCategory.Players, model)
-            assertEquals(if (setting.chosen) Copy.playerSavesSet else Copy.playerSavesUnset,
+            // Only an emulator Foldcade knows is installed has a tile.
+            assertTrue(settingsRows(SettingsCategory.Players, model).isEmpty())
+            val installed = model.copy(playerSaves = listOf(setting.copy(installed = true)))
+            val rows = settingsInnerRows(SettingsInner.Emulator(setting.playerId), installed)
+            assertEquals(if (setting.chosen) Copy.playerSavesSet else Copy.choose,
                 rowText(Row.PlayerSave(setting.playerId), model).value)
             for (row in rows) {
                 val control = rowControl(row, model) as RowControl.Value
                 assertFalse(control.attention)
                 assertFalse(control.text == Copy.notSyncing)
             }
-            val installed = model.copy(playerSaves = listOf(setting.copy(installed = true)))
-            assertTrue(settingsRows(SettingsCategory.Players, installed).any {
-                (rowControl(it, installed) as? RowControl.Value)?.attention == true
-            })
+            assertTrue(rows.any { (rowControl(it, installed) as? RowControl.Value)?.attention == true })
+            assertEquals(TileStatus.Attention, settingsTileStatus(settingsRows(SettingsCategory.Players, installed).single(), installed))
         }
     }
 
@@ -712,15 +714,15 @@ class ContractTest {
         val model = PickerModel(count = 1, rowsPerPage = 1, homeRoleHeld = true, playerSaves = listOf(syncing))
         assertEquals(
             listOf(Row.PlayerSave("armsx2"), Row.SaveSync("armsx2")),
-            settingsRows(SettingsCategory.Players, model),
+            settingsInnerRows(SettingsInner.Emulator("armsx2"), model),
         )
-        assertEquals("ARMSX2 memory card  Syncing", rowLabel(Row.SaveSync("armsx2"), model))
+        assertEquals("Memory card  Syncing", rowLabel(Row.SaveSync("armsx2"), model))
         val (leftSyncing, open) = reduce(model.onSetting(Row.SaveSync("armsx2")), Meaning.Activate)
         assertEquals(Effect.OpenPlayer("armsx2"), open)
         assertNull(leftSyncing.settings)
         val steps = "Slot 1 needs a folder card to sync."
         val asking = model.copy(playerSaves = listOf(syncing.copy(saveSyncing = false, saveSyncSteps = steps)))
-        assertEquals("ARMSX2 memory card  Not syncing", rowLabel(Row.SaveSync("armsx2"), asking))
+        assertEquals("Memory card  Not syncing", rowLabel(Row.SaveSync("armsx2"), asking))
         assertEquals(RowControl.Value(Copy.notSyncing, attention = true), rowControl(Row.SaveSync("armsx2"), asking))
         val (closed, effect) = reduce(asking.onSetting(Row.SaveSync("armsx2")), Meaning.Activate)
         assertEquals(Effect.ShowSaveSync("armsx2"), effect)
@@ -759,8 +761,8 @@ class ContractTest {
         for (inUse in listOf(false, true)) {
             val setting = PlayerSaveSetting("duckstation", "DuckStation", false, hostedTitle = "Cards", hostedInUse = inUse, installed = true)
             val model = PickerModel(count = 1, rowsPerPage = 1, playerSaves = listOf(setting))
-            assertEquals(Copy.playerSavesUnset, rowText(Row.PlayerSave(setting.playerId), model).value)
-            assertEquals(RowControl.Value(Copy.playerSavesUnset), rowControl(Row.PlayerSave(setting.playerId), model))
+            assertEquals(Copy.choose, rowText(Row.PlayerSave(setting.playerId), model).value)
+            assertEquals(RowControl.Value(Copy.choose), rowControl(Row.PlayerSave(setting.playerId), model))
             assertEquals(if (inUse) Copy.hostedSavesSet else Copy.notSyncing, rowText(Row.HostedSaves(setting.playerId), model).value)
             assertEquals(Effect.ChoosePlayerSave(setting.playerId), reduce(model.onSetting(Row.PlayerSave(setting.playerId)), Meaning.Activate).second)
         }
@@ -784,9 +786,9 @@ class ContractTest {
         val model = PickerModel(count = 1, rowsPerPage = 1, homeRoleHeld = true, playerSaves = listOf(setting))
         assertEquals(
             listOf(Row.PlayerSave("aps3e"), Row.PlayerSetup("aps3e")),
-            settingsRows(SettingsCategory.Players, model),
+            settingsInnerRows(SettingsInner.Emulator("aps3e"), model),
         )
-        assertEquals("aPS3e setup  Not syncing", rowLabel(Row.PlayerSetup("aps3e"), model))
+        assertEquals("Setup  Not syncing", rowLabel(Row.PlayerSetup("aps3e"), model))
         assertEquals(RowControl.Value(Copy.notSyncing, attention = true), rowControl(Row.PlayerSetup("aps3e"), model))
         val (closed, effect) = reduce(model.onSetting(Row.PlayerSetup("aps3e")), Meaning.Activate)
         assertEquals(Effect.ShowPlayerSetup("aps3e"), effect)
@@ -801,7 +803,7 @@ class ContractTest {
         assertEquals("aPS3e", dialog.subject)
         assertEquals("Open aPS3e", openPlayerLabel(dialog.subject))
         val ready = model.copy(playerSaves = listOf(setting.copy(setupSteps = null)))
-        assertEquals(listOf(Row.PlayerSave("aps3e")), settingsRows(SettingsCategory.Players, ready))
+        assertEquals(listOf(Row.PlayerSave("aps3e")), settingsInnerRows(SettingsInner.Emulator("aps3e"), ready))
     }
 
     @Test
@@ -882,16 +884,19 @@ class ContractTest {
     }
 
     @Test
-    fun libraryRowsAddSourcesAndNeverSwitchTheGrid() {
-        assertEquals(listOf(Row.AddFolder, Row.AddRomm), libraryRows())
+    fun librarySourcesAddSourcesAndNeverSwitchTheGrid() {
+        val bare = PickerModel(count = 1, rowsPerPage = 1)
+        val add = Row.SettingsTile(SettingsInner.Add)
+        assertEquals(listOf(add), librarySources(bare))
+        assertEquals(listOf(Row.AddFolder, Row.AddRomm), settingsInnerRows(SettingsInner.Add, bare))
 
-        val signedIn = libraryRows(listOf(SignedInBackend("romm", "RomM")))
-        assertEquals(
-            listOf(Row.RommConnection("romm", "RomM"), Row.AddFolder),
-            signedIn,
-        )
-        val other = libraryRows(listOf(SignedInBackend("other", "Other")))
-        assertEquals(listOf(Row.SignOut("other", "Other"), Row.AddFolder, Row.AddRomm), other)
+        val signedIn = bare.copy(signedIn = listOf(SignedInBackend("romm", "RomM")))
+        assertEquals(listOf(Row.RommConnection("romm", "RomM"), add), librarySources(signedIn))
+        assertEquals(listOf(Row.AddFolder), settingsInnerRows(SettingsInner.Add, signedIn))
+        val other = bare.copy(signedIn = listOf(SignedInBackend("other", "Other")))
+        assertEquals(listOf(Row.SettingsTile(SettingsInner.Backend("other")), add), librarySources(other))
+        assertEquals(listOf(Row.SignOut("other", "Other")), settingsInnerRows(SettingsInner.Backend("other"), other))
+        assertEquals(listOf(Row.AddFolder, Row.AddRomm), settingsInnerRows(SettingsInner.Add, other))
     }
 
     @Test
@@ -905,11 +910,16 @@ class ContractTest {
         assertEquals("Add a RomM server", rowLabel(Row.AddRomm, opened))
         assertNull(opened.settings)
 
-        // Each folder can be removed on its own. Adding another keeps the first.
-        val folders = libraryRows(folders = listOf(LibraryFolder("content://roms", "roms"), LibraryFolder("content://steam", "Steam")))
+        // Each folder can be removed on its own, from its own page. Adding another keeps the first.
+        val folders = home.copy(folders = listOf(LibraryFolder("content://roms", "roms"), LibraryFolder("content://steam", "Steam")))
         assertEquals(
-            listOf(Row.AddFolder, Row.AddRomm, Row.ForgetFolder("content://roms", "roms"), Row.ForgetFolder("content://steam", "Steam")),
-            folders,
+            listOf(
+                Row.SettingsTile(SettingsInner.Folder("content://roms")),
+                Row.SettingsTile(SettingsInner.Folder("content://steam")),
+                Row.SettingsTile(SettingsInner.Add),
+            ),
+            librarySources(folders),
         )
+        assertEquals(listOf(Row.ForgetFolder("content://steam", "Steam")), settingsInnerRows(SettingsInner.Folder("content://steam"), folders))
     }
 }

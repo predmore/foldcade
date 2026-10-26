@@ -13,7 +13,10 @@ class NoticesTest {
         val base = model(listOf(notice)).copy(
             count = 4,
             focus = GridFocus(cellIndex = 2, lastColumn = 1),
-            playerSaves = listOf(PlayerSaveSetting("melonds", "melonDS", false), PlayerSaveSetting("armsx2", "ARMSX2", false)),
+            playerSaves = listOf(
+                PlayerSaveSetting("melonds", "melonDS", false, installed = true),
+                PlayerSaveSetting("armsx2", "ARMSX2", false, installed = true),
+            ),
         )
         for (screen in HostScreen.entries) {
             val right = reduce(base, Meaning.RightPanel, screen).first
