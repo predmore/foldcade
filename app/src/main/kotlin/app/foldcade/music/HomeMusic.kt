@@ -30,10 +30,10 @@ import app.foldcade.language.HomeMusicSetting
 import app.foldcade.language.Meaning
 import app.foldcade.language.Motion
 import app.foldcade.language.MusicTrack
+import app.foldcade.language.defaultMusicTrack
 import app.foldcade.language.fadeInOnFocusReturn
 import app.foldcade.language.homeMusicMayStart
 import app.foldcade.language.homeOnEveryScreen
-import app.foldcade.language.defaultLanternlightTrack
 import app.foldcade.language.musicTracksFromManifest
 import app.foldcade.language.offeredMusicTracks
 import app.foldcade.language.packagedHomeMusicFile
@@ -414,9 +414,9 @@ class HomeMusic(
     private fun resolvedPlayable(): Playable? {
         val selected = selectedTrack()
         if (selected.fromTheme) {
-            return themePlayable(selected) ?: assetPlayable(defaultLanternlightTrack())
+            return themePlayable(selected) ?: assetPlayable(defaultMusicTrack())
         }
-        return assetPlayable(selected) ?: assetPlayable(defaultLanternlightTrack())
+        return assetPlayable(selected) ?: assetPlayable(defaultMusicTrack())
     }
 
     private fun assetPlayable(track: MusicTrack): Playable? {

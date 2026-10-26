@@ -2,7 +2,7 @@
 """Cut a seamless loop from the 4x render, optional retro post, compress, normalize, limit, encode.
 Usage: process.py --variant {sketch1,a,b} [--out DIR] [--title TITLE]"""
 import argparse, json, subprocess
-import numpy as np, soundfile as sf, pyloudnorm as pyln
+import mido, numpy as np, soundfile as sf, pyloudnorm as pyln
 from scipy.ndimage import maximum_filter1d
 from scipy.signal import resample_poly, butter, lfilter
 
@@ -147,7 +147,28 @@ V = args.variant
 D = args.out or f'out/{V}'
 base = f'{D}/foldcade_home_{V}'
 SR = 48000
-L = 80 * SR
+
+
+def loop_samples(path):
+    """Loop length from the loopEnd marker of the one-loop MIDI.
+
+    MIDI tempo is whole microseconds, so 72 bpm puts loopEnd at 79.999968 s.
+    Fluidsynth's player counts whole milliseconds, and copies repeat on that grid.
+    """
+    mid = mido.MidiFile(path)
+    tempo, tick, seconds = 500000, 0, None
+    for msg in mido.merge_tracks(mid.tracks):
+        tick += msg.time
+        if msg.type == 'set_tempo':
+            assert tick == 0, 'tempo changes are not supported'
+            tempo = msg.tempo
+        if msg.type == 'marker' and msg.text == 'loopEnd':
+            seconds = mido.tick2second(tick, mid.ticks_per_beat, tempo)
+    assert seconds, f'{path} has no loopEnd marker'
+    return round(seconds * 1000) * SR // 1000
+
+
+L = loop_samples(f'{base}_loop.mid')
 raw, sr = sf.read(f'{D}/raw_4x.wav', dtype='float64')
 assert sr == SR and len(raw) >= 4 * L
 print('raw render: %.2fs, raw peak %.2f dBFS' % (len(raw) / SR, 20 * np.log10(np.abs(raw).max())))
@@ -170,19 +191,29 @@ if V in POST:
     raw = x * pk
     print('post: %d-bit crush %.0f%% wet, %d Hz low-pass' % (p['bits'], p['wet'] * 100, p['lp_hz']))
 
-loop2 = raw[L:2 * L]
+# Ship copy 2 or copy 3, whichever matches the copy after it. Fluidsynth's first
+# copy can sound slightly different (its voices are fresh), and the reverb carries
+# copy 1's end into copy 2. A tempo that is not whole microseconds drifts instead,
+# so its later copies stop matching. Either way the shipped seam is a real join.
+def copy_mismatch(index):
+    return float(np.abs(raw[index * L:(index + 1) * L] - raw[(index + 1) * L:(index + 2) * L]).max())
+
+
+FIRST = min((1, 2), key=copy_mismatch)
+print('shipping copy %d (mismatch with the next copy %.2e)' % (FIRST + 1, copy_mismatch(FIRST)))
+loop2 = raw[FIRST * L:(FIRST + 1) * L]
 meter = pyln.Meter(SR)
 lufs = meter.integrated_loudness(loop2)
 peak = np.abs(loop2).max()
 print('pre-norm: %.2f LUFS, peak %.2f dBFS; target %.1f LUFS, true peak %.1f dBTP' % (
     lufs, 20 * np.log10(peak), TARGET_LUFS, TRUE_PEAK_DBTP))
-# Master from one second before copy 2 through copy 3. The warmup lets the
-# limiter settle so the loop seam matches the continuous copy2->copy3 join.
+# Master from one second before that copy through the next. The warmup lets the
+# limiter settle so the loop seam matches the continuous join.
 warm = SR
-span = raw[L - warm:3 * L]
+span = raw[FIRST * L - warm:(FIRST + 2) * L]
 mastered = master_loudness(span, SR, meter, TARGET_LUFS, LIMIT_DBTP, warm, L)
 loop = mastered[warm:warm + L]
-loop3n = mastered[warm + L:warm + 2 * L]
+loop_next = mastered[warm + L:warm + 2 * L]
 
 def db(x): return float(20 * np.log10(max(x, 1e-12)))
 res = {'variant': V, 'length_s': len(loop) / SR, 'integrated_lufs': meter.integrated_loudness(loop),
@@ -203,12 +234,12 @@ res['seam_sample_jump'] = float(d[L - 1]); res['typical_jump_p99'] = float(np.pe
 res['seam_jump_percentile'] = float((d < d[L - 1]).mean() * 100)
 w250 = SR // 4
 res['seam_250ms_rms_step_db'] = db(np.sqrt(np.mean(loop[:w250] ** 2))) - db(np.sqrt(np.mean(loop[-w250:] ** 2)))
-# Real continuous copy2->copy3 transition vs our artificial loop seam, 0.5 s each side
-cont = np.concatenate([loop[-SR // 2:], loop3n[:SR // 2]])
+# Real continuous transition into the next copy vs our artificial loop seam, 0.5 s each side
+cont = np.concatenate([loop[-SR // 2:], loop_next[:SR // 2]])
 art = np.concatenate([loop[-SR // 2:], loop[:SR // 2]])
 res['seam_vs_continuous_max_abs_diff'] = float(np.abs(cont - art).max())
-diff = loop - loop3n
-res['copy2_vs_copy3_residual_db_rel'] = db(np.sqrt(np.mean(diff ** 2))) - db(np.sqrt(np.mean(loop ** 2)))
+diff = loop - loop_next
+res['next_copy_residual_db_rel'] = db(np.sqrt(np.mean(diff ** 2))) - db(np.sqrt(np.mean(loop ** 2)))
 for k, v in res.items():
     print(f'{k}: {v:.4f}' if isinstance(v, float) else f'{k}: {v}')
 
@@ -218,7 +249,7 @@ meta = [
     '-metadata', f'artist={args.composer}',
     '-metadata',
     f'comment=Composition by {args.composer}. Licensed under {args.license} with the Foldcade repository. '
-    'Rendered with MuseScore General 0.2 (MIT). Loop: whole file 0-80 s.',
+    f'Rendered with MuseScore General 0.2 (MIT). Loop: whole file 0-{L / SR:g} s.',
 ]
 def encode_ogg():
     run('ffmpeg', '-y', '-i', f'{base}_loop.wav', '-c:a', 'libvorbis', '-q:a', '5', *meta, f'{base}_loop.ogg')
@@ -238,7 +269,7 @@ for _ in range(4):
     trim = TRUE_PEAK_DBTP - 0.05 - packaged_peak
     gain = 10 ** (trim / 20.0)
     loop *= gain
-    loop3n *= gain
+    loop_next *= gain
     print('ogg exceeded -1 dBTP; trimmed %.2f dB' % trim)
 else:
     sf.write(f'{base}_loop.wav', loop.astype(np.float32), SR, subtype='FLOAT')

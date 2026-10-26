@@ -37,6 +37,14 @@ class SessionStore(private val prefs: SharedPreferences) : SaveMarks {
         if (retiredSaveOffers.isNotEmpty()) {
             prefs.edit().apply { retiredSaveOffers.forEach { remove(it) } }.apply()
         }
+        // Night Route became the default track. Lanternlight was the only track before, and
+        // changing the volume saved it, so a stored Lanternlight was never a choice. Move it once.
+        // setMusic marks every later save, so picking Lanternlight from now on stays.
+        if (!prefs.getBoolean(KEY_MUSIC_DEFAULT_MOVED, false) &&
+            prefs.getString(KEY_MUSIC_TRACK, null) == FORMER_DEFAULT_TRACK
+        ) {
+            prefs.edit().remove(KEY_MUSIC_TRACK).putBoolean(KEY_MUSIC_DEFAULT_MOVED, true).apply()
+        }
     }
 
     /** Fired after [session] changes. Home music watches games entering and leaving either screen. */
@@ -323,6 +331,7 @@ class SessionStore(private val prefs: SharedPreferences) : SaveMarks {
             .putBoolean(KEY_MUSIC_ENABLED, enabled)
             .putFloat(KEY_MUSIC_VOLUME, safeMusicVolume(volume))
             .putString(KEY_MUSIC_TRACK, id)
+            .putBoolean(KEY_MUSIC_DEFAULT_MOVED, true)
             .apply()
     }
 
@@ -523,6 +532,8 @@ class SessionStore(private val prefs: SharedPreferences) : SaveMarks {
         private const val KEY_MUSIC_ENABLED = "music_enabled"
         private const val KEY_MUSIC_VOLUME = "music_volume"
         private const val KEY_MUSIC_TRACK = "music_track"
+        private const val KEY_MUSIC_DEFAULT_MOVED = "music_default_night_route"
+        private const val FORMER_DEFAULT_TRACK = "lanternlight"
         private const val KEY_BACKGROUND = "background_motion"
         private const val KEY_MOTION_SPEED = "motion_speed"
         private const val KEY_ARTWORK = "artwork"

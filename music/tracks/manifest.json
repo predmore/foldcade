@@ -1,6 +1,13 @@
 {
   "tracks": [
     {
+      "id": "nightroute",
+      "title": "Night Route",
+      "composer": "Foldcade project",
+      "license": "MIT",
+      "file": "music/nightroute.ogg"
+    },
+    {
       "id": "lanternlight",
       "title": "Lanternlight",
       "composer": "Foldcade project",

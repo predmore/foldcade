@@ -1,0 +1,22 @@
+{
+  "variant": "a",
+  "length_s": 180.0,
+  "integrated_lufs": -12.001162933586018,
+  "loudness_range_lu": 2.2030910681082627,
+  "sample_peak_dbfs": -1.800757121877918,
+  "true_peak_dbfs_est": -1.7952297468468479,
+  "clipped_samples": 0,
+  "rms50ms_min_db": -21.96061142963892,
+  "rms50ms_median_db": -16.484955287786242,
+  "windows_below_minus50db": 0,
+  "rms1s_range_db": 5.553341273260678,
+  "seam_sample_jump": 0.0037925910291807807,
+  "typical_jump_p99": 0.04090556587677928,
+  "seam_jump_percentile": 4.736690088928825,
+  "seam_250ms_rms_step_db": 0.4969972967508127,
+  "seam_vs_continuous_max_abs_diff": 1.315413001856669e-07,
+  "next_copy_residual_db_rel": -84.37940311116238,
+  "ogg_decoded_samples": 8640000,
+  "ogg_decoded_peak_dbfs": -1.5688702397858447,
+  "ogg_true_peak_dbtp": -1.563342864754775
+}

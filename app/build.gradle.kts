@@ -196,6 +196,7 @@ val renderHomeMusic = tasks.register<RenderHomeMusicTask>("renderHomeMusic") {
     group = "build"
     description = "Render every track in music/tracks/manifest.json, or copy a CI render."
     script.set(rootProject.layout.projectDirectory.file("music/gradle-render.sh"))
+    manifest.set(rootProject.layout.projectDirectory.file("music/tracks/manifest.json"))
     sources.from(
         rootProject.files(
             "music/process.py",
@@ -206,7 +207,7 @@ val renderHomeMusic = tasks.register<RenderHomeMusicTask>("renderHomeMusic") {
             "music/tracks/manifest.json",
         ),
     )
-    sources.from(rootProject.fileTree("music/tracks") { include("**/compose.py") })
+    sources.from(rootProject.fileTree("music/tracks") { include("*/compose.py", "*/mix.py", "*/checks.json") })
     prebuiltPath.set(prebuiltHomeMusic.orElse(""))
     if (prebuiltHomeMusic.isPresent) {
         prebuiltFiles.setFrom(rootProject.fileTree(prebuiltHomeMusic.get()))
@@ -339,6 +340,9 @@ abstract class RenderHomeMusicTask : DefaultTask() {
     @get:InputFile
     abstract val script: RegularFileProperty
 
+    @get:InputFile
+    abstract val manifest: RegularFileProperty
+
     @get:InputFiles
     abstract val sources: ConfigurableFileCollection
 
@@ -381,12 +385,20 @@ abstract class RenderHomeMusicTask : DefaultTask() {
         if (!source.isDirectory) {
             throw GradleException("foldcadeHomeMusicAssets is not a directory: ${source.absolutePath}")
         }
-        val manifest = File(source, "music/manifest.json")
-        val ogg = source.walkTopDown().firstOrNull { it.isFile && it.extension == "ogg" }
-        if (!manifest.isFile || ogg == null) {
+        // A render from before a track was added would build without it, so the copy has to
+        // come from this manifest and hold every file it lists.
+        val expected = manifest.get().asFile
+        val copied = File(source, "music/manifest.json")
+        if (!copied.isFile || copied.readText() != expected.readText()) {
             throw GradleException(
-                "foldcadeHomeMusicAssets must contain music/manifest.json and an ogg: ${source.absolutePath}",
+                "foldcadeHomeMusicAssets was not rendered from music/tracks/manifest.json. Render it again: ${source.absolutePath}",
             )
+        }
+        @Suppress("UNCHECKED_CAST")
+        val tracks = (groovy.json.JsonSlurper().parse(expected) as Map<String, Any?>)["tracks"] as List<Map<String, Any?>>
+        val missing = tracks.map { it["file"].toString() }.filterNot { File(source, it).isFile }
+        if (missing.isNotEmpty()) {
+            throw GradleException("foldcadeHomeMusicAssets is missing ${missing.joinToString()}: ${source.absolutePath}")
         }
         source.copyRecursively(dest, overwrite = true)
     }

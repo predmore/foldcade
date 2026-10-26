@@ -43,7 +43,7 @@ data class HomeMusicSetting(
         const val DEFAULT_VOLUME = 0.5f
         const val STEP_PERCENT = 5
         const val UI_SOUND_DUCK = 0.4f
-        const val DEFAULT_TRACK_ID = "lanternlight"
+        const val DEFAULT_TRACK_ID = "nightroute"
     }
 }
 
@@ -64,7 +64,8 @@ data class MusicTrack(
 /** Id for the track a theme zip offers. It is not a manifest id. */
 const val THEME_TRACK_ID = "theme"
 
-fun defaultLanternlightTrack(): MusicTrack = MusicTrack(
+/** The default track, Night Route, as the manifest lists it. */
+fun defaultMusicTrack(): MusicTrack = MusicTrack(
     id = HomeMusicSetting.DEFAULT_TRACK_ID,
     title = DEFAULT_TRACK_TITLE,
     composer = "Foldcade project",
@@ -149,10 +150,10 @@ class DuckLatch {
 /** Theme JSON key. Absent means the selected track from the manifest. */
 const val THEME_BACKGROUND_MUSIC = "backgroundMusic"
 
-/** Packaged file for Lanternlight. The manifest `file` field is this path. */
-const val DEFAULT_BACKGROUND_MUSIC = "music/lanternlight.ogg"
+/** Packaged file for the default track, Night Route. The manifest `file` field is this path. */
+const val DEFAULT_BACKGROUND_MUSIC = "music/nightroute.ogg"
 
-const val DEFAULT_TRACK_TITLE = "Lanternlight"
+const val DEFAULT_TRACK_TITLE = "Night Route"
 
 /**
  * Tracks listed in music/tracks/manifest.json. A blank or broken manifest is empty.
@@ -172,7 +173,7 @@ fun musicTracksFromManifest(json: String?): List<MusicTrack> {
     }
 }
 
-/** The selected track, or Lanternlight when the id is missing from [tracks]. */
+/** The selected track, or the default track when the id is missing from [tracks]. */
 fun musicTrack(tracks: List<MusicTrack>, id: String): MusicTrack? {
     tracks.firstOrNull { it.id == id }?.let { return it }
     return tracks.firstOrNull { it.id == HomeMusicSetting.DEFAULT_TRACK_ID }
@@ -180,19 +181,19 @@ fun musicTrack(tracks: List<MusicTrack>, id: String): MusicTrack? {
 
 /**
  * Home tracks, plus the theme's own track when this theme offers one.
- * An empty home list still offers Lanternlight, so the row has somewhere to land.
+ * An empty home list still offers the default track, so the row has somewhere to land.
  * A theme track whose file is already a home track is not listed twice.
  */
 fun offeredMusicTracks(home: List<MusicTrack>, theme: MusicTrack?): List<MusicTrack> {
-    val base = home.ifEmpty { listOf(defaultLanternlightTrack()) }
+    val base = home.ifEmpty { listOf(defaultMusicTrack()) }
     if (theme == null || !theme.fromTheme) return base
     if (base.any { it.id == theme.id || it.file == theme.file }) return base
     return base + theme
 }
 
-/** [id] when it is in [tracks], otherwise Lanternlight, otherwise the first track. */
+/** [id] when it is in [tracks], otherwise the default track, otherwise the first track. */
 fun selectedMusicTrack(tracks: List<MusicTrack>, id: String): MusicTrack {
-    val list = tracks.ifEmpty { listOf(defaultLanternlightTrack()) }
+    val list = tracks.ifEmpty { listOf(defaultMusicTrack()) }
     list.firstOrNull { it.id == id }?.let { return it }
     list.firstOrNull { it.id == HomeMusicSetting.DEFAULT_TRACK_ID }?.let { return it }
     return list.first()
@@ -203,7 +204,7 @@ fun selectedMusicTrack(tracks: List<MusicTrack>, id: String): MusicTrack {
  * One track stays put. A missing [id] starts from the track [selectedMusicTrack] would show.
  */
 fun cycledMusicTrack(tracks: List<MusicTrack>, id: String, direction: Int): MusicTrack {
-    val list = tracks.ifEmpty { listOf(defaultLanternlightTrack()) }
+    val list = tracks.ifEmpty { listOf(defaultMusicTrack()) }
     val current = selectedMusicTrack(list, id)
     val index = list.indexOfFirst { it.id == current.id }.coerceAtLeast(0)
     val step = if (direction < 0) -1 else 1
@@ -213,7 +214,7 @@ fun cycledMusicTrack(tracks: List<MusicTrack>, id: String, direction: Int): Musi
 /**
  * The track a theme zip offers, or null when it does not name one.
  * [entries] are the zip's file names. The path has to be one of them.
- * Lanternlight, a blank field, and a path that leaves the zip are not an offer.
+ * The default track, a blank field, and a path that leaves the zip are not an offer.
  */
 fun themeMusicTrack(themeName: String, themeJson: String?, entries: Set<String>): MusicTrack? {
     val path = backgroundMusicFromThemeJson(themeJson)
@@ -259,7 +260,7 @@ fun fadeInOnFocusReturn(
 ): Boolean = playbackResumed && fromAudioFocus && homeInFront && !gameInFront
 
 /**
- * The file the picker selected, when that file is available, otherwise Lanternlight.
+ * The file the picker selected, when that file is available, otherwise the default track.
  * A theme track plays only when it is the selection. This does not read theme.json.
  */
 fun packagedHomeMusicFile(
