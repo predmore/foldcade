@@ -290,4 +290,27 @@ class SettingsTilesTest {
         assertNull(back.settings!!.inner)
         assertEquals(tile("armsx2"), settingsFocus(back))
     }
+
+    @Test
+    fun aHeldAThatOpenedAComputersPageDoesNotPairIt() {
+        val unpaired = library.copy(streamHosts = listOf(gameWin.copy(paired = false)))
+        val page = unpaired.onSetting(Row.StreamHost(gameWin.key))
+        assertNull(reduce(page, Meaning.Activate, HostScreen.Top, repeatCount = 1).second)
+        assertEquals(Effect.PairStreamHost(gameWin.key), reduce(page, Meaning.Activate, HostScreen.Top).second)
+    }
+
+    @Test
+    fun theCategoryStaysPutWhenEmulatorsLeavesUnderIt() {
+        val one = emulators.copy(playerSaves = listOf(azahar), retroArch = null, eden = null, askNoticeAccess = false)
+        val before = one.onSetting(Row.UsageAccess)
+        val gone = before.copy(playerSaves = emptyList())
+        assertFalse(SettingsCategory.Players in settingsCategories(gone))
+        val kept = retainSettingsCategory(before, gone)
+        assertEquals(SettingsCategory.Screens, settingsCategories(kept)[kept.settings!!.category])
+        assertEquals(Row.UsageAccess, settingsFocus(kept))
+        // The page's own category leaving drops the focus to the categories.
+        val onEmulators = onCategory(one, SettingsCategory.Players)
+        val left = retainSettingsCategory(onEmulators, onEmulators.copy(playerSaves = emptyList()))
+        assertFalse(left.settings!!.onRows)
+    }
 }

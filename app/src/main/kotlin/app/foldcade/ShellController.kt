@@ -308,7 +308,7 @@ class ShellController(
             val holdMoved = if (current.deleteHold?.row == Row.RemoveSession) next.playActivity != current.playActivity
                 else next.panel == null || next.panel != current.panel
             val canceled = current.deleteHold != null && (holdMoved || next.dialog != null || next.settings != null || next.connectOpen)
-            val stable = app.foldcade.language.retainMenuRows(current, prepared)
+            val stable = app.foldcade.language.retainSettingsCategory(current, app.foldcade.language.retainMenuRows(current, prepared))
             undo = when {
                 stable.panel == null -> undo?.resume(nowMillis())
                 stable.panel?.let { Row.Undo in panelRows(it, stable) } == true -> undo?.pause(nowMillis())

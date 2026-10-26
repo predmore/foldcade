@@ -2055,8 +2055,8 @@ private fun applySettings(
         Meaning.LeftPanel, Meaning.RightPanel, Meaning.Menu -> close
         Meaning.Activate -> {
             if (row is Row.SettingsTile) return model.copy(settings = current.copy(inner = row.page, row = 0)) to null
-            // A held A that opened a folder's page does not go on to remove it.
-            if (row is Row.ForgetFolder && repeatCount > 0) return model.copy(settings = current) to null
+            // A held A that opened a page does not go on to act in it: a folder's Remove, a computer's pairing.
+            if (inner != null && repeatCount > 0) return model.copy(settings = current) to null
             // Rows act through the menu path. A stand-in panel tells "stays open" from "leaves".
             val standIn = SidePanel(Side.Left, current.screen, PanelLevel.Root, rowIndex, current.grid)
             val (next, effect) = activateRow(model.copy(panel = standIn), standIn, row, current.screen)

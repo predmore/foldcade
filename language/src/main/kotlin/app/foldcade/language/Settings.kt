@@ -317,6 +317,24 @@ fun settingsFocus(model: PickerModel): Row? {
     return settingsShown(page, model).second.getOrNull(page.row)
 }
 
+/**
+ * The page keeps its category when the list of categories changes under it, as when the
+ * last emulator is uninstalled and Emulators leaves. A category that left drops the focus
+ * back to the categories, at the same place.
+ */
+fun retainSettingsCategory(previous: PickerModel, next: PickerModel): PickerModel {
+    val was = previous.settings ?: return next
+    val page = next.settings ?: return next
+    if (page.category != was.category) return next
+    val held = settingsCategories(previous).getOrNull(was.category) ?: return next
+    val now = settingsCategories(next)
+    if (now.getOrNull(page.category) == held) return next
+    val index = now.indexOf(held)
+    val settled = if (index >= 0) page.copy(category = index)
+        else page.copy(category = page.category.coerceIn(0, now.lastIndex.coerceAtLeast(0)), onRows = false, row = 0, inner = null)
+    return next.copy(settings = settled)
+}
+
 /** Version reads Copied only until the focus leaves it. */
 fun PickerModel.versionCopySettled(): PickerModel =
     if (versionCopied && settingsFocus(this) != Row.Version) copy(versionCopied = false) else this

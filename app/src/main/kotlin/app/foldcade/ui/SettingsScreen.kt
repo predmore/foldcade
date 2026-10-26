@@ -218,7 +218,7 @@ private fun CardRows(
                         focused = focus == index,
                         scale = scale,
                         art = Modifier.selectionSlot(slots, index, depth = 3),
-                        modifier = Modifier.weight(1f).then(
+                        modifier = Modifier.weight(1f).keepInView(focus == index).then(
                             if (interactive) Modifier.press { onEffect(app.shell.touchSettingsRow(index, screen)) } else Modifier,
                         ),
                     )
