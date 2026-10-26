@@ -2357,8 +2357,8 @@ private fun PanelRows(
     }
     val moveTo = model.tileActions?.moveTo
     val iconSlot = rows.indices.any { it !in block && rowIcon(rows[it], moveTo) != null }
-    // The tiles light their own circle. The highlight serves every other row.
-    val listFocus = panel.index.takeIf { it in rows.indices && it !in block }
+    // One highlight travels between the tiles and the rows, rounding to fit a tile.
+    val listFocus = panel.index.takeIf { it in rows.indices }
     val rowStyle = text(theme.onBackground, LocalFoldTheme.current.theme.style.type.sideRow, theme)
     Column(
         Modifier
@@ -2394,6 +2394,7 @@ private fun PanelRows(
                         block = block,
                         interactive = interactive,
                         scale = scale,
+                        slots = slots,
                         modifier = Modifier
                             .onSizeChanged { fixedHeights[index] = it.height }
                             .onGloballyPositioned { tileBounds = Rect(it.positionInParent(), it.size.toSize()) }
@@ -2532,6 +2533,7 @@ private fun QuickTiles(
     block: IntRange,
     interactive: Boolean,
     scale: Float,
+    slots: SelectionSlots,
     modifier: Modifier,
     onEffect: (Effect?) -> Unit,
 ) {
@@ -2571,6 +2573,8 @@ private fun QuickTiles(
                     Box(
                         Modifier
                             .size(QUICK_BUTTON_DP.dp)
+                            // The tile, its line, the tiles' block, and the menu's column.
+                            .selectionSlot(slots, index, depth = 4, round = true)
                             .keepInView(focused)
                             .graphicsLayer { clip = false }
                             .drawBehind {
@@ -2588,7 +2592,6 @@ private fun QuickTiles(
                                         cornerRadius = CornerRadius(radius, radius),
                                     )
                                 }
-                                if (lit.value > 0f) with(ring) { drawFocusRing(radius, alpha = lit.value) }
                             }
                             .then(press)
                             .semantics { contentDescription = label },

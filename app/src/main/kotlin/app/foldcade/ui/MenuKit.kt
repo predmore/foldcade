@@ -113,6 +113,9 @@ internal fun bouncy(target: Float, scale: Float): State<Float> {
  */
 internal class SelectionSlots {
     internal val rows = mutableStateMapOf<Int, Rect>()
+
+    /** Slots that are round tiles. The highlight rounds its corners to fit them. */
+    internal val round = mutableStateMapOf<Int, Boolean>()
 }
 
 @Composable
@@ -128,8 +131,9 @@ internal fun Modifier.selectionSlot(slots: SelectionSlots, index: Int): Modifier
  * A slot [depth] layouts below the highlighted column rather than its own child, as a tile
  * sits in a line of tiles, so one highlight can travel between tiles and the rows under them.
  */
-internal fun Modifier.selectionSlot(slots: SelectionSlots, index: Int, depth: Int): Modifier =
+internal fun Modifier.selectionSlot(slots: SelectionSlots, index: Int, depth: Int, round: Boolean = false): Modifier =
     onGloballyPositioned { coordinates ->
+        if ((slots.round[index] == true) != round) slots.round[index] = round
         var column = coordinates.parentLayoutCoordinates
         repeat(depth - 1) { column = column?.parentLayoutCoordinates }
         val rect = column?.localBoundingBoxOf(coordinates, clipBounds = false) ?: return@onGloballyPositioned
@@ -156,6 +160,8 @@ internal fun Modifier.selectionHighlight(
     val left = remember { Animatable(0f) }
     val width = remember { Animatable(0f) }
     val height = remember { Animatable(0f) }
+    // 0 wears the highlight's own corner, 1 rounds it to fit a round tile.
+    val roundness = remember { Animatable(0f) }
     var placed by remember { mutableStateOf(false) }
     val focus = rememberUpdatedState(index)
     // The effect outlives a change of animator scale or theme, so it reads both fresh.
@@ -167,7 +173,9 @@ internal fun Modifier.selectionHighlight(
         withContext(SteadyMenu) {
             snapshotFlow { focus.value?.let(slots.rows::get) }.collect { next ->
                 if (next == null) return@collect
+                val round = if (focus.value?.let(slots.round::get) == true) 1f else 0f
                 if (!placed) {
+                    roundness.snapTo(round)
                     top.snapTo(next.top)
                     left.snapTo(next.left)
                     width.snapTo(next.width)
@@ -187,6 +195,7 @@ internal fun Modifier.selectionHighlight(
                 launch { left.animateTo(next.left, size) }
                 launch { width.animateTo(next.width, size) }
                 launch { height.animateTo(next.height, size) }
+                launch { roundness.animateTo(round, size) }
             }
         }
     }
@@ -197,7 +206,8 @@ internal fun Modifier.selectionHighlight(
     return drawBehind {
         if (!placed || shown <= 0f) return@drawBehind
         val rect = Rect(Offset(left.value, top.value), Size(width.value, height.value))
-        val cornerPx = design.shape.highlightCornerDp.dp.toPx()
+        val own = design.shape.highlightCornerDp.dp.toPx()
+        val cornerPx = own + (rect.minDimension * design.shape.round - own) * roundness.value
         // A lit glass fill, brighter where the ring's green starts.
         drawRoundRect(
             brush = Brush.horizontalGradient(
