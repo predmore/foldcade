@@ -634,6 +634,11 @@
       "tint": false,
       "accent": "#34BEF0"
     },
+    "app.psplay.grill.com": {
+      "file": "icons/app_pxplay.xml",
+      "tint": false,
+      "accent": "#3A7DFF"
+    },
     "app.rip.moth.cocoonshell": {
       "file": "icons/app_cocoonshell.xml",
       "tint": false,
