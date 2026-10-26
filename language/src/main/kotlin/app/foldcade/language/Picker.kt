@@ -1385,6 +1385,8 @@ data class PickerModel(
     val connectScreen: HostScreen? = null,
     /** Editing returns to this connection's actions when the form closes. */
     val connectReturnPanel: SidePanel? = null,
+    /** The full-screen Settings row that opened this form. */
+    val connectReturnSettings: SettingsPage? = null,
     val connectWarning: String? = null,
     val connectHint: String? = null,
     val connectBusy: Boolean = false,
@@ -1493,7 +1495,9 @@ fun reduce(
                 connectScreen = null,
                 connectBusy = false,
                 panel = coerced.connectReturnPanel,
+                settings = coerced.connectReturnSettings,
                 connectReturnPanel = null,
+                connectReturnSettings = null,
             ) to null
             Meaning.MoveUp -> coerced.copy(connectIndex = (index - 1).coerceAtLeast(0)) to null
             Meaning.MoveDown -> coerced.copy(connectIndex = (index + 1).coerceAtMost(fields.lastIndex)) to null
@@ -1504,7 +1508,7 @@ fun reduce(
             }
             Meaning.LeftPanel, Meaning.RightPanel ->
                 presentPanel(
-                    coerced.copy(connectOpen = false, connectScreen = null, connectBusy = false, connectReturnPanel = null),
+                    coerced.copy(connectOpen = false, connectScreen = null, connectBusy = false, connectReturnPanel = null, connectReturnSettings = null),
                     meaning,
                     screen,
                 ) to null
@@ -2064,6 +2068,7 @@ private fun applySettings(
             next.copy(
                 panel = null,
                 settings = if (stays) current else null,
+                connectReturnSettings = if (next.connectOpen) current else next.connectReturnSettings,
                 focus = if (stays) model.focus else next.focus,
             ) to effect
         }
