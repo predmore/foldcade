@@ -317,7 +317,8 @@ def control_assets():
             Asset("ic_control_shift_on", 24, 24, [L(arrow, fill=INK, stroke=INK, sw=key, cap="butt")], note=f"Keyboard Shift while it is on; it fades in over the outline. {note}", tint=True),
             Asset("ic_control_erase", 24, 24, [L(tag, stroke=INK, sw=key), ink(cross, sw=key)], note=f"Keyboard Erase. {note}", tint=True),
             Asset("ic_control_space", 57.6, 24, [ink(space, sw=key)], dp=(57.6, 24), note=f"Keyboard Space, 2.4 keys' glyphs wide. {note}", tint=True),
-            Asset("ic_control_search", 24, 24, [ink(glass, sw=2.64), ink(handle, sw=2.64)], note=f"Find's field before anything is typed. {note}", tint=True)]
+            Asset("ic_control_search", 24, 24, [ink(glass, sw=2.64), ink(handle, sw=2.64)], note=f"Find's field before anything is typed. {note}", tint=True),
+            Asset("ic_control_add", 24, 24, [ink("M12,5.28 V18.72 M5.28,12 H18.72", sw=2.4)], note=f"Settings › Library's Add tile. {note}", tint=True)]
 
 def badge_assets():
     cloud = "M7,19 H17.5 A4.5,4.5 0 0 0 18.1,10.04 A6,6 0 0 0 6.6,9.1 A5,5 0 0 0 7,19 Z"

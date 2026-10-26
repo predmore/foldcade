@@ -12,15 +12,18 @@ class StreamHostSettingsTest {
     private val model = PickerModel(count = 4, rowsPerPage = 1, streamHosts = listOf(gameWin))
 
     @Test
-    fun eachComputerHasASwitchBeforeTheLibrarySettings() {
+    fun eachComputerHasATileWhosePageIsItsSwitch() {
         val rows = settingsRows(SettingsCategory.Library, model)
+        val tile = Row.SettingsTile(SettingsInner.Host(gameWin.key))
+        assertTrue(rows.indexOf(tile) in 0 until rows.indexOf(Row.Order))
+        assertEquals("game-win", rowText(tile, model).label)
         val row = Row.StreamHost(gameWin.key)
-        assertTrue(rows.indexOf(row) < rows.indexOf(Row.Order))
-        assertEquals("Games from game-win", rowText(row, model).label)
+        assertEquals(listOf(row), settingsInnerRows(SettingsInner.Host(gameWin.key), model))
+        assertEquals(Copy.hostGames, rowText(row, model).label)
         assertEquals(RowControl.Toggle(false), rowControl(row, model))
         val paired = model.copy(streamHosts = listOf(gameWin.copy(paired = true)))
         assertEquals(RowControl.Toggle(true), rowControl(row, paired))
-        assertFalse(settingsRows(SettingsCategory.Library, PickerModel(count = 4, rowsPerPage = 1)).any { it is Row.StreamHost })
+        assertFalse(settingsRows(SettingsCategory.Library, PickerModel(count = 4, rowsPerPage = 1)).any { it is Row.SettingsTile && it.page is SettingsInner.Host })
     }
 
     @Test

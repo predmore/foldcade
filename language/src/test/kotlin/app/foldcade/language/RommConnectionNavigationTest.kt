@@ -13,18 +13,21 @@ class RommConnectionNavigationTest {
     @Test
     fun aSavedServerHidesTheAddAction() {
         assertEquals(
-            listOf(Row.RommConnection("romm", "RomM"), Row.AddFolder),
-            libraryRows(connections),
+            listOf(Row.RommConnection("romm", "RomM"), Row.SettingsTile(SettingsInner.Add)),
+            librarySources(home),
         )
-        assertEquals(listOf(Row.AddFolder, Row.AddRomm), libraryRows())
+        assertEquals(listOf(Row.AddFolder), settingsInnerRows(SettingsInner.Add, home))
+        assertEquals(listOf(Row.AddFolder, Row.AddRomm), settingsInnerRows(SettingsInner.Add, PickerModel(count = 1, rowsPerPage = 1)))
     }
 
     @Test
     fun aSavedAddressStillShowsItsConnectionWhenTheTokenNeedsRecovery() {
+        val recovering = PickerModel(count = 1, rowsPerPage = 1, rommSaved = true)
         assertEquals(
-            listOf(Row.RommConnection("romm", "RomM"), Row.AddFolder),
-            libraryRows(rommSaved = true),
+            listOf(Row.RommConnection("romm", "RomM"), Row.SettingsTile(SettingsInner.Add)),
+            librarySources(recovering),
         )
+        assertEquals(listOf(Row.AddFolder), settingsInnerRows(SettingsInner.Add, recovering))
     }
 
     @Test

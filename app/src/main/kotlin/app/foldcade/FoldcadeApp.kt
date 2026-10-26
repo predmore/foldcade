@@ -1161,7 +1161,7 @@ class FoldcadeApp : Application() {
     /** Settings › Emulators › Eden keys and firmware. Null while Eden is not installed. */
     internal fun refreshEdenSetting() {
         val installed = EDEN_PACKAGES.firstOrNull(::packageInstalled)
-        val setting = installed?.let { EdenSetting(fromRomm = edenFolderReader.granted(it) != null) }
+        val setting = installed?.let { EdenSetting(fromRomm = edenFolderReader.granted(it) != null, packageName = it) }
         shell.setEden(setting)
     }
     private val retroArchRead = Mutex()
@@ -1200,7 +1200,7 @@ class FoldcadeApp : Application() {
         val byPackage = installed.associateWith { retroArchCoreReader.read(it) }
         player.cores.update(byPackage)
         val active = player.cores.activePackage()
-        val setting = active?.let { RetroArchSetting(cores = byPackage[it]?.size) }
+        val setting = active?.let { RetroArchSetting(cores = byPackage[it]?.size, packageName = it) }
         withContext(Dispatchers.Main.immediate) { shell.setRetroArch(setting) }
     }
 

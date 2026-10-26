@@ -41,7 +41,7 @@ class ShellSaveHealthTest {
         assertTrue(shell.model.notices.isEmpty())
         assertTrue(shell.model.playerSaves.none { it.installed })
         shell.model.playerSaves.forEach { setting ->
-            assertEquals(RowControl.Value(Copy.playerSavesUnset), rowControl(Row.PlayerSave(setting.playerId), shell.model))
+            assertEquals(RowControl.Value(Copy.choose), rowControl(Row.PlayerSave(setting.playerId), shell.model))
         }
         val packages = plugins.playerPackageNames()
         shell.setInstalledApps(emptyList(), packages, installedPlayers = emptySet())
@@ -55,7 +55,7 @@ class ShellSaveHealthTest {
         assertEquals(SaveHealth.NotSyncing(SaveIssue.NoFolder), shell.saveHealthOf(homeGameId("romm", "2")))
         val retroSetting = shell.model.playerSaves.first { it.label == "RetroArch" }
         assertFalse(retroSetting.installed)
-        assertEquals(RowControl.Value(Copy.playerSavesUnset), rowControl(Row.PlayerSave(retroSetting.playerId), shell.model))
+        assertEquals(RowControl.Value(Copy.choose), rowControl(Row.PlayerSave(retroSetting.playerId), shell.model))
 
         val retroPackage = retro.players.first().packageNames.first()
         shell.setInstalledApps(emptyList(), packages, installedPlayers = setOf(melonPackage, retroPackage))
