@@ -16,9 +16,17 @@ class SettingsReturnTest {
         onMeaning(Meaning.LeftPanel, HostScreen.Top)
         repeat(leftRows().indexOf(Row.Settings)) { onMeaning(Meaning.MoveDown, HostScreen.Top) }
         onMeaning(Meaning.Activate, HostScreen.Top)
-        val category = settingsCategories(model).indexOfFirst { row in settingsRows(it, model) }
+        // A row on a tile's page, as Add a RomM server is on Library's Add, opens that page first.
+        fun holds(rows: List<Row>) = row in rows ||
+            rows.any { it is Row.SettingsTile && row in settingsInnerRows(it.page, model) }
+        val category = settingsCategories(model).indexOfFirst { holds(settingsRows(it, model)) }
         touchSettingsCategory(category, HostScreen.Top)
-        touchSettingsRow(settingsRows(settingsCategories(model)[category], model).indexOf(row), HostScreen.Top)
+        val rows = settingsRows(settingsCategories(model)[category], model)
+        val tile = rows.indexOfFirst { it is Row.SettingsTile && row in settingsInnerRows(it.page, model) }
+        if (row !in rows) touchSettingsRow(tile, HostScreen.Top)
+        val inner = model.settings?.inner
+        val shown = if (inner != null) settingsInnerRows(inner, model) else rows
+        touchSettingsRow(shown.indexOf(row), HostScreen.Top)
         return model.connectReturnSettings!!
     }
 
