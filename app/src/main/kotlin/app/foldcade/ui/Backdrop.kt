@@ -49,6 +49,9 @@ fun Backdrop(
     // Seconds of visible motion. Double keeps frame steps exact through months of uptime.
     var time by remember(scene) { mutableDoubleStateOf(scene.frozenTime) }
     var viewport by remember(scene) { mutableStateOf(IntSize.Zero) }
+    val resolution = scene.renderScale
+    // The scene works at its render size, so the grid's slide reaches it in the same px.
+    val told = { live().let { if (resolution == 1f || it.scroll == 0f) it else it.copy(scroll = it.scroll * resolution) } }
     LaunchedEffect(ticking, clock, scene, moving, panel, viewport) {
         if (!ticking || viewport.width == 0 || viewport.height == 0) return@LaunchedEffect
         var last = 0L
@@ -58,7 +61,7 @@ fun Backdrop(
                 if (last != 0L) time += ((frame - last) / 1_000_000_000.0).coerceIn(0.0, wait + 0.05) * clock
                 last = frame
             }
-            val rate = prepared.frameRate(time, viewport.width.toFloat(), viewport.height.toFloat(), moving, panel, clock, live())
+            val rate = prepared.frameRate(time, viewport.width.toFloat(), viewport.height.toFloat(), moving, panel, clock, told())
                 ?: return@LaunchedEffect
             if (rate == 0f) {
                 // Stopped, until an input the scene reads changes or a minute passes for `hour`.
@@ -73,7 +76,6 @@ fun Backdrop(
             if (sleep > 0L) delay(sleep)
         }
     }
-    val resolution = scene.renderScale
     Canvas(Modifier.fillMaxSize().layout { measurable, constraints ->
         val targetWidth = (constraints.maxWidth * resolution).toInt().coerceAtLeast(1)
         val targetHeight = (constraints.maxHeight * resolution).toInt().coerceAtLeast(1)
@@ -84,7 +86,7 @@ fun Backdrop(
             scaleX = 1f / resolution; scaleY = 1f / resolution
             if (resolution != 1f) compositingStrategy = CompositingStrategy.Offscreen
     }) {
-        prepared.draw(this, previewTime ?: time, moving, panel, clock, live())
+        prepared.draw(this, previewTime ?: time, moving, panel, clock, told())
         onMetrics?.invoke(prepared.metrics)
     }
 }
@@ -118,5 +120,41 @@ internal fun CoversBackdrop() {
     DisposableEffect(cover) {
         cover.add()
         onDispose { cover.remove() }
+    }
+}
+
+/**
+ * Where the grid on one panel has slid to, in px, for the scene behind it to follow
+ * as a camera would. The grid on screen tells it; once that grid leaves, the scene
+ * stays where the grid left it rather than jumping back.
+ */
+internal class BackdropCamera {
+    private var source by mutableStateOf<() -> Float>({ 0f })
+
+    /** Read in the scene's draw, so a slide redraws it each frame without a new tick. */
+    val scroll: Float get() = source()
+
+    fun follow(where: () -> Float) {
+        source = where
+    }
+
+    fun leave(where: () -> Float) {
+        if (source !== where) return
+        val last = where()
+        source = { last }
+    }
+}
+
+internal val LocalBackdropCamera = staticCompositionLocalOf<BackdropCamera?> { null }
+
+/** The grid's slide, px, while it is on screen. See [BackdropCamera]. */
+@Composable
+internal fun MovesBackdropCamera(scroll: () -> Float) {
+    val camera = LocalBackdropCamera.current ?: return
+    val where = rememberUpdatedState(scroll)
+    val read = remember { { where.value() } }
+    DisposableEffect(camera) {
+        camera.follow(read)
+        onDispose { camera.leave(read) }
     }
 }

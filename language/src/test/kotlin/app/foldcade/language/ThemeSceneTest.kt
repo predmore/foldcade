@@ -1,6 +1,7 @@
 package app.foldcade.language
 
 import kotlin.math.PI
+import kotlin.math.abs
 import kotlin.math.round
 import org.junit.Assert.*
 import org.junit.Test
@@ -200,6 +201,46 @@ class ThemeSceneTest {
                 assertEquals(previous.discs[index].cx, disc.x.evaluate(state.values).toFloat(), 0.01f)
                 assertEquals(previous.discs[index].cy, disc.y.evaluate(state.values).toFloat(), 0.01f)
             }
+        }
+    }
+
+    @Test
+    fun afterglowSlidesWithTheGridAsACameraWould() {
+        val pack = afterglow()
+        val width = 1240f
+        val slid = width * 0.3f
+        fun at(scene: ThemeScene, scroll: Float) = scene.state().apply {
+            update(12.0, width, 1080f, true, 1f, live = SceneLive(scroll = scroll))
+        }
+        val ribbons = pack.scenes.getValue(BackgroundMotion("afterglow:ribbons"))
+        assertTrue(ribbons.reads("scroll"))
+        val shader = ribbons.layers.first() as SceneLayer.Shader
+        assertEquals(0.3f, shader.uniforms.getValue("slide").single().evaluate(at(ribbons, slid).values).toFloat(), 0.0001f)
+        // The strand that sat 30% across now meets the left edge.
+        val still = at(ribbons, 0f).values
+        val moved = at(ribbons, slid).values
+        for (strand in listOf("y0", "y1", "y2")) {
+            val slot = ribbons.symbols.index(strand)
+            still[ribbons.symbols.index("u")] = 0.3
+            moved[ribbons.symbols.index("u")] = 0.0
+            ribbons.variables.forEach { (index, expression) -> still[index] = expression.evaluate(still); moved[index] = expression.evaluate(moved) }
+            assertEquals(strand, still[slot], moved[slot], 0.000001)
+        }
+        val shimmer = ribbons.layers[2] as SceneLayer.Disc
+        // The shimmer slides too, and one pushed off the left comes round past the right edge.
+        val sat = shimmer.x.evaluate(at(ribbons, 0f).values).toFloat() - slid
+        assertEquals(if (sat < -0.1f * width) sat + 1.2f * width else sat, shimmer.x.evaluate(at(ribbons, slid).values).toFloat(), 0.01f)
+        // Embers keep their places on the world, coming round off screen.
+        val embers = pack.scenes.getValue(BackgroundMotion("afterglow:embers"))
+        val disc = embers.layers[1] as SceneLayer.Disc
+        val before = at(embers, 0f)
+        val after = at(embers, slid)
+        repeat(disc.repeat) { index ->
+            before.instance(index); after.instance(index)
+            val x0 = disc.x.evaluate(before.values).toFloat()
+            val x1 = disc.x.evaluate(after.values).toFloat()
+            val shift = x0 - x1
+            assertTrue("ember $index moved ${shift}px", abs(shift - slid) < 0.01f || abs(shift - slid + width * 1.1f) < 0.01f)
         }
     }
 

@@ -394,10 +394,11 @@ fun PanelHost(activity: FoldcadeHomeActivity, displays: Displays) {
 
 /**
  * What the shell tells a theme's scene each time it draws: the focused item's accent, eased as
- * focus moves, the time of day, the battery, and how long since the cursor last moved.
+ * focus moves, the time of day, the battery, how long since the cursor last moved, and where
+ * [camera] says the panel's grid has slid to.
  */
 @Composable
-private fun sceneLive(app: FoldcadeApp, scene: app.foldcade.language.ThemeScene?, scale: Float): () -> SceneLive {
+private fun sceneLive(app: FoldcadeApp, scene: app.foldcade.language.ThemeScene?, scale: Float, camera: BackdropCamera): () -> SceneLive {
     val paint = LocalFoldTheme.current
     val motion = paint.theme.motion
     val accent = sceneAccent(app, paint)
@@ -417,7 +418,9 @@ private fun sceneLive(app: FoldcadeApp, scene: app.foldcade.language.ThemeScene?
     val readsMove = scene?.reads("sinceMove") == true
     // The clock and the time zone cost more than the rest of a frame's inputs, and few scenes read them.
     val readsHour = scene?.reads("hour") == true
-    return remember(red, green, blue, status, moved, readsAccent, readsMove, readsHour) {
+    // Each frame of a slide redraws a scene that follows it, and only that one.
+    val readsScroll = scene?.reads("scroll") == true
+    return remember(red, green, blue, status, moved, readsAccent, readsMove, readsHour, readsScroll, camera) {
         {
             val hour = if (!readsHour) UNREAD_HOUR else java.time.LocalTime.now().let { now ->
                 now.hour + now.minute / 60f + now.second / 3600f
@@ -432,6 +435,7 @@ private fun sceneLive(app: FoldcadeApp, scene: app.foldcade.language.ThemeScene?
                 battery = status.value.batteryPercent.coerceIn(0, 100) / 100f,
                 charging = status.value.charging,
                 sinceMove = (since ?: SCENE_SINCE_MOVE_MAX).coerceIn(0f, SCENE_SINCE_MOVE_MAX),
+                scroll = if (readsScroll) camera.scroll else 0f,
             )
         }
     }
@@ -464,6 +468,7 @@ private fun PanelBody(
     val session = app.store.session
     val model = app.shell.model
     val cover = remember { BackdropCover() }
+    val camera = remember { BackdropCamera() }
     // Settings and Play activity paint the theme's background over the whole panel.
     val pageHere = screen != null && (model.settings?.screen == screen || model.playActivity?.screen == screen)
     val settingsOver = pageHere && foldTheme().background.alpha >= 1f
@@ -500,13 +505,13 @@ private fun PanelBody(
             running = running,
             // Opaque game art or Settings over it, or the menu's blur, leaves nothing to watch move.
             held = cover.covered || settingsOver || LocalUnderMenu.current || centerHere,
-            live = sceneLive(app, backdrop, scale),
+            live = sceneLive(app, backdrop, scale, camera),
         )
     }
     if (panel == null || screen == null) return
     val artPage = presence(app.shell.artPicker, motion.durationIsland, scale)
     if (!covered) {
-        CompositionLocalProvider(LocalBackdropCover provides cover, LocalTilt provides tilt) {
+        CompositionLocalProvider(LocalBackdropCover provides cover, LocalBackdropCamera provides camera, LocalTilt provides tilt) {
             TravelFade(target = session.surfaceOn(panel), scale = scale) { shown ->
                 when (shown) {
                     null -> Unit
@@ -2875,6 +2880,8 @@ private fun StripGrid(
     val shownFirst = remember { { held ?: position.value } }
     val width = cell * columns + columnGap * (columns - 1)
     val pitchPx = with(LocalDensity.current) { (cell + columnGap).toPx() }
+    // The theme's scene slides with the strip, so scrolling reads as the view moving, not the tiles.
+    MovesBackdropCamera { shownFirst() * pitchPx }
     val lastColumn = GridStrip.reachColumns(model.count) - 1
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
