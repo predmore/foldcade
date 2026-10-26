@@ -152,8 +152,10 @@ object SavePickerCopy {
     /** [raw] as players read it: an emulator id wears the emulator's name. */
     private fun named(raw: String?, save: SavePickerSave): String? {
         val text = raw?.takeIf { it.isNotBlank() } ?: return null
-        val id = (save.emulator ?: save.source)?.substringBefore('.')
-        return save.emulatorLabel?.takeIf { id != null && text.substringBefore('.').equals(id, ignoreCase = true) } ?: text
+        // Only the emulator's own id is renamed. A source that merely starts the same, as a
+        // device "retroarch.desktop" beside "retroarch.snes", is a name of its own.
+        val id = save.emulator ?: save.source
+        return save.emulatorLabel?.takeIf { text.equals(id, ignoreCase = true) } ?: text
     }
 
     /** RomM can hold a device as "AYN AYN Thor", maker and model both naming the maker. */

@@ -2758,7 +2758,9 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
                 val names = foldcade.plugins.playerIds().mapNotNull { foldcade.plugins.player(it) }
                     .associate { it.id.substringBefore('.').lowercase() to it.displayName }
                 val saves = listed.map {
-                    val label = (it.emulator ?: it.source)?.substringBefore('.')?.lowercase()?.let(names::get)
+                    // A source names the emulator only when it is an emulator's id outright.
+                    val label = it.emulator?.substringBefore('.')?.lowercase()?.let(names::get)
+                        ?: it.source?.takeIf { _ -> it.emulator == null }?.lowercase()?.let(names::get)
                     val origin = origins[it.id]?.let { detail -> app.foldcade.language.SavePickerOrigin(detail.client, detail.deviceName, detail.thisDevice) }
                     app.foldcade.language.SavePickerSave(it.id, it.slot, it.emulator, it.source, it.updatedAtMillis, it.sizeBytes, it.playing, it.screenshotUri, it.id in backups, origin, label)
                 }

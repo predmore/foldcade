@@ -220,4 +220,10 @@ class SavePickerTest {
         assertEquals("melonds", SavePickerCopy.source(bare.copy(emulatorLabel = null)))
         assertEquals("Retroid Pocket 5", SavePickerCopy.deviceName("Retroid  Pocket 5"))
     }
+
+    @Test fun aDeviceThatSharesTheEmulatorsPrefixKeepsItsName() {
+        val save = SavePickerSave("1", "slot", "retroarch.snes", "retroarch.desktop", 0L, 0L, false, null, emulatorLabel = "RetroArch")
+        assertEquals("retroarch.desktop", SavePickerCopy.source(save))
+        assertEquals("retroarch.desktop · RetroArch", SavePickerCopy.sourceDetail(save))
+    }
 }
