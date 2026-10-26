@@ -90,9 +90,9 @@ class SavePickerTest {
 
     @Test fun rowsNameTheOriginAppExceptForFoldcadeDevicesAndKeepFullDetailForConfirmation() {
         val sources = listOf(
-            Triple(SavePickerOrigin("foldcade", "AYN AYN Thor", true), "This device", "Foldcade on AYN AYN Thor · melonds"),
+            Triple(SavePickerOrigin("foldcade", "AYN AYN Thor", true), "This device", "Foldcade on AYN Thor · melonds"),
             Triple(SavePickerOrigin("foldcade", "Steam Deck", false), "Steam Deck", "Foldcade on Steam Deck · melonds"),
-            Triple(SavePickerOrigin("argosy", "AYN AYN Thor", false), "Argosy", "Argosy on AYN AYN Thor · melonds"),
+            Triple(SavePickerOrigin("argosy", "AYN AYN Thor", false), "Argosy", "Argosy on AYN Thor · melonds"),
             Triple(SavePickerOrigin("argosy-launcher", "Thor", false), "Argosy", "Argosy on Thor · melonds"),
             Triple(SavePickerOrigin("grout", null, false), "Grout", "Grout · melonds"),
             Triple(SavePickerOrigin("web", "Browser", false), "RomM web", "RomM web on Browser · melonds"),
@@ -208,5 +208,16 @@ class SavePickerTest {
         assertEquals("No saves on RomM yet", SavePickerCopy.count(0))
         assertEquals("1 save on RomM", SavePickerCopy.count(1))
         assertEquals("3 saves on RomM", SavePickerCopy.count(3))
+    }
+
+    @Test fun savesNameTheirEmulatorAndDeviceAsPlayersDo() {
+        val save = SavePickerSave("1", "autosave", "melonds", null, 0L, 0L, false, null,
+            origin = SavePickerOrigin("argosy", "AYN AYN Thor", thisDevice = false), emulatorLabel = "melonDS")
+        assertEquals("Argosy on AYN Thor · melonDS", SavePickerCopy.sourceDetail(save))
+        val bare = save.copy(origin = null, source = "melonds")
+        assertEquals("melonDS", SavePickerCopy.source(bare))
+        // Without a known name, RomM's id stays as it is.
+        assertEquals("melonds", SavePickerCopy.source(bare.copy(emulatorLabel = null)))
+        assertEquals("Retroid Pocket 5", SavePickerCopy.deviceName("Retroid  Pocket 5"))
     }
 }

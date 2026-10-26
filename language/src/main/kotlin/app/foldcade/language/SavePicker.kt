@@ -12,6 +12,8 @@ data class SavePickerSave(
     val updatedAtMillis: Long, val sizeBytes: Long, val playing: Boolean, val screenshotUri: String?,
     val backup: Boolean = false,
     val origin: SavePickerOrigin? = null,
+    /** The emulator's own name, "melonDS" for RomM's "melonds". Only shown; [emulator] is what RomM keeps. */
+    val emulatorLabel: String? = null,
 )
 
 data class SavePickerOrigin(val client: String?, val deviceName: String?, val thisDevice: Boolean)
@@ -144,21 +146,36 @@ object SavePickerCopy {
     const val returnHome = "Return to Home before choosing a save."
     const val installFirst = "Install an emulator to play this save."
     const val unsupported = "This emulator can't load saves through Foldcade."
-    private fun fallbackSource(save: SavePickerSave): String = save.source?.takeIf { it.isNotBlank() } ?: save.emulator?.takeIf { it.isNotBlank() } ?: unknown
+    private fun fallbackSource(save: SavePickerSave): String =
+        named(save.source, save) ?: named(save.emulator, save) ?: unknown
+
+    /** [raw] as players read it: an emulator id wears the emulator's name. */
+    private fun named(raw: String?, save: SavePickerSave): String? {
+        val text = raw?.takeIf { it.isNotBlank() } ?: return null
+        val id = (save.emulator ?: save.source)?.substringBefore('.')
+        return save.emulatorLabel?.takeIf { id != null && text.substringBefore('.').equals(id, ignoreCase = true) } ?: text
+    }
+
+    /** RomM can hold a device as "AYN AYN Thor", maker and model both naming the maker. */
+    fun deviceName(name: String?): String? {
+        val words = name?.trim()?.split(Regex("\\s+"))?.filter { it.isNotEmpty() } ?: return null
+        return words.filterIndexed { i, word -> i == 0 || !word.equals(words[i - 1], ignoreCase = true) }
+            .joinToString(" ").takeIf { it.isNotEmpty() }
+    }
     fun source(save: SavePickerSave): String {
         val origin = save.origin ?: return fallbackSource(save)
         return when {
             origin.thisDevice -> thisDevice
-            origin.client?.equals("foldcade", ignoreCase = true) == true -> origin.deviceName?.takeIf { it.isNotBlank() } ?: fallbackSource(save)
+            origin.client?.equals("foldcade", ignoreCase = true) == true -> deviceName(origin.deviceName) ?: fallbackSource(save)
             else -> clientName(origin.client) ?: fallbackSource(save)
         }
     }
     /** The detail page and confirmation keep the client, device and emulator together. */
     fun sourceDetail(save: SavePickerSave): String {
         val client = clientName(save.origin?.client)
-        val device = save.origin?.deviceName?.takeIf { it.isNotBlank() }
+        val device = deviceName(save.origin?.deviceName)
         val from = if (client != null && device != null) "$client on $device" else client ?: device ?: fallbackSource(save)
-        return listOfNotNull(from, save.emulator?.takeIf { it.isNotBlank() && !it.equals(from, ignoreCase = true) }).joinToString(" · ")
+        return listOfNotNull(from, named(save.emulator, save)?.takeIf { !it.equals(from, ignoreCase = true) }).joinToString(" · ")
     }
     private fun clientName(client: String?): String? = when (val name = client?.trim()?.lowercase(Locale.ROOT)?.takeIf { it.isNotEmpty() }) {
         null -> null
@@ -197,7 +214,7 @@ object SavePickerCopy {
     }
     fun confirmationBody(choice: SavePickerChoice, playerId: String?, player: String, style: DateStyle, restartsOpenGame: Boolean = false, ownSlots: List<String> = emptyList()): String = when (choice) {
         is SavePickerChoice.Play -> "From ${sourceDetail(choice.save)}, ${formatSaveWhen(choice.save.updatedAtMillis, style)}. Your current save stays on RomM." +
-            (if (emulatorMismatch(choice.save.emulator, playerId)) " Made by ${choice.save.emulator}. It may not load in $player." else "") +
+            (if (emulatorMismatch(choice.save.emulator, playerId)) " Made by ${named(choice.save.emulator, choice.save)}. It may not load in $player." else "") +
             (if (restartsOpenGame) " $restartOpen" else "")
         is SavePickerChoice.Copy -> "The save there now stays on RomM." +
             (if (restartsOpenGame && choice.destination.slot in ownSlots) " $restartOpen" else "")
