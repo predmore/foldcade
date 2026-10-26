@@ -379,8 +379,8 @@ class HomeSession(
      * A downloaded server game can be deleted from anywhere. While Add to has taken the game
      * out of the collection on screen, the menu keeps acting on that game. Null while a tile
      * moves or a picker or name field is open.
-     * Inside a folder or collection every menu ends with its Sort, as a folder tile's on the
-     * root does; while it is sorted, nothing in it moves.
+     * Inside a folder or collection, Edit home carries its Sort ([TileActions.boardSort]); a
+     * folder tile's own Sort ends its Y menu. While a folder is sorted, nothing in it moves.
      */
     fun actions(index: Int): TileActions? {
         if (iconPick != null || renamingId != null || board.editing) return null
@@ -388,7 +388,7 @@ class HomeSession(
         val open = board.openFolderId?.let { board.folders[it] }?.takeUnless { board.allOpen }
         val sort = open?.let(::sortChoice)
         val held = menuGame
-        if (held != null && slotGame(index) != held) return gameActions(held, move = false, remove = null).copy(kept = true, sort = sort)
+        if (held != null && slotGame(index) != held) return gameActions(held, move = false, remove = null).copy(kept = true, boardSort = sort)
         if (board.allOpen) {
             val item = allRows().getOrNull(index) ?: return null
             return gameActions(item.id, move = false, remove = null)
@@ -403,14 +403,14 @@ class HomeSession(
         val moves = open?.sorted != true
         // An empty slot, or one past the last tile, moves as a tile does, makes a collection on
         // the root, and closes the board's gaps.
-        if (id == null) return TileActions(move = moves, newCollection = open == null, tidy = gaps, tidyBoard = gaps, sort = sort)
+        if (id == null) return TileActions(move = moves, newCollection = open == null, tidyBoard = gaps, boardSort = sort)
         if (id == HOME_ALL) return TileActions(move = true, newCollection = true, tidyBoard = gaps)
         val folder = board.folders[id]
         if (folder != null) {
             return TileActions(move = true, rename = true, icon = folder.userMade, remove = removeVerb(board, index), tidyBoard = gaps,
                 sort = sortChoice(folder))
         }
-        return gameActions(id, move = moves, remove = removeVerb(board, index), tidyBoard = gaps).copy(select = true, sort = sort)
+        return gameActions(id, move = moves, remove = removeVerb(board, index), tidyBoard = gaps).copy(select = true, boardSort = sort)
     }
 
     /** The games in a folder sorted by Most played: the only ones whose play time a merge needs. */

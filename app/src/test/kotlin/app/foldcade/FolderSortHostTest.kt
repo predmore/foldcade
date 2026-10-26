@@ -28,21 +28,25 @@ class FolderSortHostTest {
         return shell
     }
 
-    @Test fun sortingFromAGamesMenuReordersTheGridAndKeepsTheMenuOnThatGame() {
+    @Test fun sortingFromEditHomeReordersTheGridAndKeepsTheFocusOnThatGame() {
         store.saveHomeBoard(encodeHome(HomeBoard(slots = listOf(HOME_ALL, collection.id), folders = mapOf(collection.id to collection))))
         val shell = shell()
         focus(shell, 1)
         shell.onMeaning(Meaning.Activate, HostScreen.Bottom)
         assertEquals(arranged, shell.homeSlots())
         focus(shell, 2)
+        // The open folder's Sort orders all of it, so it is Edit home's, not the game's.
         shell.onMeaning(Meaning.Options, HostScreen.Bottom)
-        assertEquals(Row.SortFolder, rows(shell).last())
-        assertTrue(Row.MoveTile in rows(shell))
+        assertFalse(Row.SortFolder in rows(shell))
+        shell.onMeaning(Meaning.Back, HostScreen.Bottom)
+        openEditHome(shell)
+        assertEquals(Row.SortFolder, rows(shell).first())
+        assertTrue(shell.model.tileActions!!.move)
 
         choose(shell, Row.SortFolder)
         assertEquals(listOf(b, z, n), shell.homeSlots())
         assertMenuOn(shell, n, Copy.sortRecent)
-        assertFalse(Row.MoveTile in rows(shell))
+        assertFalse(shell.model.tileActions!!.move)
         assertEquals(FolderSort.Recent, saved().folders.getValue(collection.id).sort)
         assertEquals(arranged, saved().folders.getValue(collection.id).slots)
 
@@ -57,12 +61,13 @@ class FolderSortHostTest {
         shell.onMeaning(Meaning.MoveRight, HostScreen.Bottom)
         assertEquals(arranged, shell.homeSlots())
         assertMenuOn(shell, n, Copy.sortCustom)
-        assertTrue(Row.MoveTile in rows(shell))
+        assertTrue(shell.model.tileActions!!.move)
         assertEquals(arranged, saved().folders.getValue(collection.id).slots)
 
-        // Left steps back, and Back leaves the focus on the game the menu was on.
+        // Left steps back, and Back, to L1 then out, leaves the focus on the game it was on.
         shell.onMeaning(Meaning.MoveLeft, HostScreen.Bottom)
         assertMenuOn(shell, n, Copy.sortMostPlayed)
+        shell.onMeaning(Meaning.Back, HostScreen.Bottom)
         shell.onMeaning(Meaning.Back, HostScreen.Bottom)
         assertNull(shell.model.panel)
         assertEquals(0, shell.model.focus.cellIndex)
@@ -109,6 +114,14 @@ class FolderSortHostTest {
     }
 
     private fun saved(): HomeBoard = decodeHome(store.homeBoardRaw())
+
+    /** L1, down to Edit home, then A: the board's settings, never the tile's. */
+    private fun openEditHome(shell: ShellController) {
+        shell.onMeaning(Meaning.LeftPanel, HostScreen.Bottom)
+        walkPanelTo(shell, leftRows().indexOf(Row.EditHome), HostScreen.Bottom)
+        shell.onMeaning(Meaning.Activate, HostScreen.Bottom)
+        assertEquals(PanelLevel.EditHome, shell.model.panel?.level)
+    }
 
     private fun rows(shell: ShellController): List<Row> = panelRows(shell.model.panel!!, shell.model)
 

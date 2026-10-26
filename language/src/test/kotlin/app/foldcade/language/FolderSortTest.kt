@@ -145,16 +145,16 @@ class FolderSortTest {
 
     @Test fun sortingReadsTheMenuAgainSoMoveGoesAndComesBack() {
         val panel = SidePanel(Side.Left, HostScreen.Bottom, PanelLevel.Actions, 0, GridFocus())
-        val custom = TileActions(move = true, tidy = true, sort = FolderSortChoice(threeDs, FolderSort.Custom))
+        val custom = TileActions(move = true, sort = FolderSortChoice(threeDs, FolderSort.Custom))
         val closed = PickerModel(1, 3, tileActions = custom)
-        val opened = retainMenuRows(closed, closed.copy(panel = panel.copy(index = 2)))
-        assertEquals(listOf(Row.MoveTile, Row.Tidy, Row.SortFolder), panelRows(opened.panel!!, opened))
+        val opened = retainMenuRows(closed, closed.copy(panel = panel.copy(index = 1)))
+        assertEquals(listOf(Row.MoveTile, Row.SortFolder), panelRows(opened.panel!!, opened))
         val recent = retainMenuRows(opened, opened.copy(tileActions = TileActions(sort = FolderSortChoice(threeDs, FolderSort.Recent))))
         assertEquals(listOf(Row.SortFolder), panelRows(recent.panel!!, recent))
         assertEquals(0, recent.panel!!.index)
         assertEquals(RowText(Copy.sort, Copy.sortRecent), rowText(Row.SortFolder, recent))
         val back = retainMenuRows(recent, recent.copy(tileActions = custom))
-        assertEquals(listOf(Row.MoveTile, Row.Tidy, Row.SortFolder), panelRows(back.panel!!, back))
+        assertEquals(listOf(Row.MoveTile, Row.SortFolder), panelRows(back.panel!!, back))
         assertEquals(Row.SortFolder, panelRows(back.panel!!, back)[back.panel!!.index])
     }
 
@@ -167,5 +167,18 @@ class FolderSortTest {
 
     private object Base64Url {
         fun of(text: String): String = java.util.Base64.getUrlEncoder().withoutPadding().encodeToString(text.toByteArray())
+    }
+
+    @Test fun insideAFolderEditHomeSortsItAndYDoesNot() {
+        val inFolder = TileActions(move = true, collections = emptyList(), boardSort = FolderSortChoice(threeDs, FolderSort.Custom))
+        assertFalse(Row.SortFolder in actionRows(inFolder))
+        val model = PickerModel(1, 3, tileActions = inFolder,
+            panel = SidePanel(Side.Left, HostScreen.Top, PanelLevel.EditHome, 0, GridFocus()))
+        assertEquals(Row.SortFolder, editHomeRows(model).first())
+        assertEquals(RowText(Copy.sort, Copy.sortCustom), rowText(Row.SortFolder, model))
+        assertEquals(Effect.SortFolder(threeDs, 1), reduce(model, Meaning.MoveRight).second)
+        // A folder tile's own Sort stays in its Y menu.
+        val tile = TileActions(move = true, sort = FolderSortChoice(threeDs, FolderSort.Custom))
+        assertEquals(Row.SortFolder, actionRows(tile).last())
     }
 }
