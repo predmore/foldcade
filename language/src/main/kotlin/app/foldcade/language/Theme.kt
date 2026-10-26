@@ -322,6 +322,8 @@ object Copy {
     const val rename = "Rename"
     const val icon = "Icon"
     const val newCollection = "New collection"
+    /** New collection's word under its tile in Y's menu. */
+    const val tileNew = "New"
     /** A new collection's name, before a number: Collection 1. */
     const val collection = "Collection"
     const val recentlyPlayed = "Recently played"

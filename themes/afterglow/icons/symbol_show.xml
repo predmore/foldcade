@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Foldcade original art, MIT licensed (see LICENSE). Afterglow verb: Show: an open eye -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:aapt="http://schemas.android.com/aapt"
+    android:width="48dp"
+    android:height="48dp"
+    android:viewportWidth="64"
+    android:viewportHeight="64">
+    <path
+        android:pathData="M5,32 Q18.5,12 32,12 Q45.5,12 59,32 Q45.5,52 32,52 Q18.5,52 5,32 ZM20.5,32A11.5,11.5 0 1 1 43.5,32A11.5,11.5 0 1 1 20.5,32ZM26.5,32A5.5,5.5 0 1 1 37.5,32A5.5,5.5 0 1 1 26.5,32Z"
+        android:fillColor="#FFF4F1EA"
+        android:fillType="evenOdd" />
+</vector>

@@ -156,7 +156,7 @@ class SettingsPersistenceTest {
         // L1's places are one line of tiles, so Down passes them in one step.
         while (leftRows()[changed.model.panel!!.index] != Row.EditHome) changed.onMeaning(Meaning.MoveDown, HostScreen.Bottom)
         changed.onMeaning(Meaning.Activate, HostScreen.Bottom)
-        repeat(panelRows(changed.model.panel!!, changed.model).indexOf(Row.AddNewGames)) { changed.onMeaning(Meaning.MoveDown, HostScreen.Bottom) }
+        walkPanelTo(changed, panelRows(changed.model.panel!!, changed.model).indexOf(Row.AddNewGames), HostScreen.Bottom)
         changed.onMeaning(Meaning.Activate, HostScreen.Bottom)
         val restored = shell(prefs)
         assertEquals(0, restored.model.themeIndex)
@@ -449,7 +449,7 @@ class SettingsPersistenceTest {
 
     private fun ShellController.chooseHomeAction(row: Row) {
         onMeaning(Meaning.Options, HostScreen.Bottom)
-        repeat(panelRows(model.panel!!, model).indexOf(row)) { onMeaning(Meaning.MoveDown, HostScreen.Bottom) }
+        walkPanelTo(this, panelRows(model.panel!!, model).indexOf(row), HostScreen.Bottom)
         onMeaning(Meaning.Activate, HostScreen.Bottom)
     }
 }

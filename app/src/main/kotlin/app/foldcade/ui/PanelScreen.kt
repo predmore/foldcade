@@ -86,6 +86,9 @@ import androidx.compose.ui.draw.scale
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.positionInParent
+import androidx.compose.ui.unit.toSize
 import androidx.compose.ui.geometry.RoundRect
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
@@ -126,6 +129,7 @@ import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Density
+import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
@@ -161,7 +165,7 @@ import app.foldcade.language.promptKeyOf
 import app.foldcade.language.rowKeys
 import app.foldcade.language.rowControl
 import app.foldcade.language.tileLabel
-import app.foldcade.language.tiled
+import app.foldcade.language.tileBlock
 import app.foldcade.CoverImage
 import app.foldcade.artwork.ArtQuery
 import app.foldcade.artwork.ArtScene
@@ -2320,10 +2324,11 @@ private fun PanelRows(
     val density = LocalDensity.current
     val gap = px(6f)
     val fixedHeights = remember(panel.level, rows) { mutableStateMapOf<Int, Int>() }
-    val fixedRows = rows.indices.filter { rows[it].tiled() || rows[it] is Row.PlayActivity ||
+    val block = remember(rows) { tileBlock(rows) }
+    val fixedRows = rows.indices.filter { it in block || rows[it] is Row.PlayActivity ||
         rows[it] is Row.Notice || rows[it] is Row.Brightness || rows[it] is Row.MusicVolume }
     val regularRows = rows.size - fixedRows.size
-    val tiled = rows.count { it.tiled() }
+    val tiled = block.count()
     val blocks = rows.size - tiled + if (tiled > 0) 1 else 0
     val fixedHeight = fixedHeights.values.sum()
     val available = with(density) { island?.available?.roundToPx() ?: Int.MAX_VALUE } - fixedHeight -
@@ -2331,14 +2336,16 @@ private fun PanelRows(
     val fit = menuFit(regularRows, available, density.density)
     val heights = rows.indices.filter { it !in fixedRows }.zip(fit.rowHeights).toMap()
     val keys = remember(rows, model.faceMap) { rowKeys(rows, model.faceMap) }
-    val tileStart = rows.indexOfFirst { it.tiled() }
     val slots = rememberSelectionSlots()
     val reachPx = with(density) { ringReach().toPx() }
-    LaunchedEffect(panel.level, panel.index, interactive, island?.viewport, fit.rowHeights, slots.rows.toMap()) {
+    // The tiles light their own circles rather than the highlight, so they scroll into view as one block.
+    var tileBounds by remember(panel.level) { mutableStateOf<Rect?>(null) }
+    LaunchedEffect(panel.level, panel.index, interactive, island?.viewport, fit.rowHeights, slots.rows.toMap(), tileBounds) {
         if (island == null || !interactive || island.viewport <= 0) return@LaunchedEffect
-        val focused = slots.rows[panel.index] ?: return@LaunchedEffect
-        val previous = slots.rows[panel.index - 1] ?: focused
-        val next = slots.rows[panel.index + 1] ?: focused
+        val bounds = { at: Int -> if (at in block) tileBounds else slots.rows[at] }
+        val focused = bounds(panel.index) ?: return@LaunchedEffect
+        val previous = bounds(panel.index - 1) ?: focused
+        val next = bounds(panel.index + 1) ?: focused
         val target = menuScrollTarget(
             focused.top + reachPx, focused.bottom + reachPx,
             previous.top + reachPx, next.bottom + reachPx,
@@ -2348,9 +2355,10 @@ private fun PanelRows(
             island.state.animateScrollTo(target.roundToInt(), theme.motion.arrive(theme.motion.durationSelect, scale))
         }
     }
-    val iconSlot = rows.any { !it.tiled() && rowIcon(it) != null }
-    // The tiles light their own circle. The highlight serves every other row.
-    val listFocus = panel.index.takeIf { rows.getOrNull(it)?.tiled() == false }
+    val moveTo = model.tileActions?.moveTo
+    val iconSlot = rows.indices.any { it !in block && rowIcon(rows[it], moveTo) != null }
+    // One highlight travels between the tiles and the rows, rounding to fit a tile.
+    val listFocus = panel.index.takeIf { it in rows.indices }
     val rowStyle = text(theme.onBackground, LocalFoldTheme.current.theme.style.type.sideRow, theme)
     Column(
         Modifier
@@ -2375,18 +2383,22 @@ private fun PanelRows(
         }
         rows.forEachIndexed { index, row ->
             // The tiles draw as one block where the first of them sits: the top of R1, or under L1's strip.
-            if (row.tiled()) {
-                if (index == tileStart) {
+            if (index in block) {
+                if (index == block.first) {
                     QuickTiles(
                         app = app,
                         screen = screen,
                         panel = panel,
                         rows = rows,
                         keys = keys,
-                        tileStart = tileStart,
+                        block = block,
                         interactive = interactive,
                         scale = scale,
-                        modifier = Modifier.onSizeChanged { fixedHeights[index] = it.height }.cascade(index, progress),
+                        slots = slots,
+                        modifier = Modifier
+                            .onSizeChanged { fixedHeights[index] = it.height }
+                            .onGloballyPositioned { tileBounds = Rect(it.positionInParent(), it.size.toSize()) }
+                            .cascade(index, progress),
                         onEffect = onEffect,
                     )
                 }
@@ -2448,7 +2460,7 @@ private fun PanelRows(
                 )
                 else -> MenuRow(
                     label = parts.label,
-                    icon = rowIcon(row),
+                    icon = rowIcon(row, moveTo),
                     iconSlot = iconSlot,
                     focused = focused,
                     control = rowControl(row, model, parts.value),
@@ -2518,14 +2530,16 @@ private fun QuickTiles(
     panel: SidePanel,
     rows: List<Row>,
     keys: List<PromptKey?>,
-    tileStart: Int,
+    block: IntRange,
     interactive: Boolean,
     scale: Float,
+    slots: SelectionSlots,
     modifier: Modifier,
     onEffect: (Effect?) -> Unit,
 ) {
     val theme = foldTheme()
-    val tiles = rows.drop(tileStart).takeWhile { it.tiled() }
+    val tiles = rows.slice(block)
+    val tileStart = block.first
     // R1's Wi-Fi and Bluetooth tiles light while their radio is on, as Android's own do.
     val status by app.deviceStatus.status.collectAsStateWithLifecycle()
     // Round icon buttons in one row, like Cocoon's quick settings, each named under it.
@@ -2533,7 +2547,7 @@ private fun QuickTiles(
         tiles.chunked(quickTileColumns).forEachIndexed { rowIndex, chunk ->
             Row(
                 Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceEvenly,
+                horizontalArrangement = TileLine,
             ) {
                 chunk.forEachIndexed { column, row ->
                     val index = tileStart + rowIndex * quickTileColumns + column
@@ -2559,6 +2573,8 @@ private fun QuickTiles(
                     Box(
                         Modifier
                             .size(QUICK_BUTTON_DP.dp)
+                            // The tile, its line, the tiles' block, and the menu's column.
+                            .selectionSlot(slots, index, depth = 4, round = true)
                             .keepInView(focused)
                             .graphicsLayer { clip = false }
                             .drawBehind {
@@ -2576,7 +2592,6 @@ private fun QuickTiles(
                                         cornerRadius = CornerRadius(radius, radius),
                                     )
                                 }
-                                if (lit.value > 0f) with(ring) { drawFocusRing(radius, alpha = lit.value) }
                             }
                             .then(press)
                             .semantics { contentDescription = label },
@@ -2623,6 +2638,23 @@ private fun QuickTiles(
 }
 
 private const val QUICK_BUTTON_DP = 56f
+
+/**
+ * Round tiles spaced evenly across their line, as [quickTileColumns] of them would be. A line
+ * of fewer, such as a folder's Move and Rename, keeps that spacing and sits in the middle.
+ */
+private val TileLine = object : Arrangement.Horizontal {
+    override fun Density.arrange(totalSize: Int, sizes: IntArray, layoutDirection: LayoutDirection, outPositions: IntArray) {
+        if (sizes.isEmpty()) return
+        val used = sizes.sum()
+        val gap = ((totalSize - used * quickTileColumns / sizes.size) / (quickTileColumns + 1)).coerceAtLeast(0)
+        var x = (totalSize - used - gap * (sizes.size - 1)) / 2
+        sizes.forEachIndexed { i, size ->
+            outPositions[i] = x
+            x += size + gap
+        }
+    }
+}
 
 /** A radio's tile wears its off icon while the radio is off. */
 private fun quickIcon(setting: QuickSetting, status: DeviceStatus): Int = when (setting) {

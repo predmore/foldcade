@@ -59,6 +59,7 @@ import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.toSize
 import app.foldcade.R
+import app.foldcade.language.HOME_ANDROID_APPS
 import app.foldcade.language.PromptKey
 import app.foldcade.language.Row
 import app.foldcade.language.RowControl
@@ -112,6 +113,9 @@ internal fun bouncy(target: Float, scale: Float): State<Float> {
  */
 internal class SelectionSlots {
     internal val rows = mutableStateMapOf<Int, Rect>()
+
+    /** Slots that are round tiles. The highlight rounds its corners to fit them. */
+    internal val round = mutableStateMapOf<Int, Boolean>()
 }
 
 @Composable
@@ -127,8 +131,9 @@ internal fun Modifier.selectionSlot(slots: SelectionSlots, index: Int): Modifier
  * A slot [depth] layouts below the highlighted column rather than its own child, as a tile
  * sits in a line of tiles, so one highlight can travel between tiles and the rows under them.
  */
-internal fun Modifier.selectionSlot(slots: SelectionSlots, index: Int, depth: Int): Modifier =
+internal fun Modifier.selectionSlot(slots: SelectionSlots, index: Int, depth: Int, round: Boolean = false): Modifier =
     onGloballyPositioned { coordinates ->
+        if ((slots.round[index] == true) != round) slots.round[index] = round
         var column = coordinates.parentLayoutCoordinates
         repeat(depth - 1) { column = column?.parentLayoutCoordinates }
         val rect = column?.localBoundingBoxOf(coordinates, clipBounds = false) ?: return@onGloballyPositioned
@@ -155,6 +160,8 @@ internal fun Modifier.selectionHighlight(
     val left = remember { Animatable(0f) }
     val width = remember { Animatable(0f) }
     val height = remember { Animatable(0f) }
+    // 0 wears the highlight's own corner, 1 rounds it to fit a round tile.
+    val roundness = remember { Animatable(0f) }
     var placed by remember { mutableStateOf(false) }
     val focus = rememberUpdatedState(index)
     // The effect outlives a change of animator scale or theme, so it reads both fresh.
@@ -166,7 +173,9 @@ internal fun Modifier.selectionHighlight(
         withContext(SteadyMenu) {
             snapshotFlow { focus.value?.let(slots.rows::get) }.collect { next ->
                 if (next == null) return@collect
+                val round = if (focus.value?.let(slots.round::get) == true) 1f else 0f
                 if (!placed) {
+                    roundness.snapTo(round)
                     top.snapTo(next.top)
                     left.snapTo(next.left)
                     width.snapTo(next.width)
@@ -186,6 +195,7 @@ internal fun Modifier.selectionHighlight(
                 launch { left.animateTo(next.left, size) }
                 launch { width.animateTo(next.width, size) }
                 launch { height.animateTo(next.height, size) }
+                launch { roundness.animateTo(round, size) }
             }
         }
     }
@@ -196,7 +206,8 @@ internal fun Modifier.selectionHighlight(
     return drawBehind {
         if (!placed || shown <= 0f) return@drawBehind
         val rect = Rect(Offset(left.value, top.value), Size(width.value, height.value))
-        val cornerPx = design.shape.highlightCornerDp.dp.toPx()
+        val own = design.shape.highlightCornerDp.dp.toPx()
+        val cornerPx = own + (rect.minDimension * design.shape.round - own) * roundness.value
         // A lit glass fill, brighter where the ring's green starts.
         drawRoundRect(
             brush = Brush.horizontalGradient(
@@ -579,8 +590,11 @@ internal fun <T> SlideSwap(
     }
 }
 
-/** The art a row leads with, or null for a row that is only words. */
-internal fun rowIcon(row: Row): Int? = when (row) {
+/**
+ * The art a row leads with, or null for a row that is only words. A tile's verbs wear theirs on
+ * their round tiles. Move to Games or Apps shows where it goes, which [moveTo] names.
+ */
+internal fun rowIcon(row: Row, moveTo: String? = null): Int? = when (row) {
     Row.Home -> R.drawable.symbol_home
     Row.AllLibrary -> R.drawable.symbol_library
     Row.AndroidGames -> R.drawable.symbol_android_games
@@ -589,6 +603,26 @@ internal fun rowIcon(row: Row): Int? = when (row) {
     Row.Settings -> R.drawable.ic_status_settings
     is Row.RommConnection, is Row.SignOut -> R.drawable.symbol_cloud
     is Row.ForgetFolder -> R.drawable.symbol_folder
+    Row.MoveTile -> R.drawable.symbol_move
+    Row.AddToCollection -> R.drawable.symbol_add_to
+    Row.ChooseArt -> R.drawable.symbol_art
+    Row.Saves -> R.drawable.symbol_saves
+    Row.RenameFolder -> R.drawable.symbol_rename
+    Row.FolderIcon -> R.drawable.symbol_icon
+    Row.NewCollection -> R.drawable.symbol_new_collection
+    Row.Undo -> R.drawable.symbol_undo
+    Row.ShowHidden -> R.drawable.symbol_show
+    Row.ShowOnHome, Row.AddNewGames -> R.drawable.symbol_home
+    Row.MoveApp -> if (moveTo == HOME_ANDROID_APPS) R.drawable.symbol_android_apps else R.drawable.symbol_android_games
+    Row.SelectTile -> R.drawable.symbol_select
+    Row.Tidy -> R.drawable.symbol_tidy
+    Row.RemoveTile -> R.drawable.symbol_remove
+    Row.RestartGame -> R.drawable.symbol_restart
+    Row.Hide, Row.Hidden -> R.drawable.symbol_hide
+    Row.RemoveDownload -> R.drawable.symbol_remove_download
+    Row.DeleteShortcut -> R.drawable.symbol_delete
+    Row.SortFolder -> R.drawable.symbol_sort
+    Row.RecentOnHome -> R.drawable.symbol_clock
     else -> null
 }
 

@@ -21,6 +21,7 @@ import app.foldcade.language.Meaning
 import app.foldcade.language.PanelLevel
 import app.foldcade.language.Row
 import app.foldcade.language.panelRows
+import app.foldcade.language.tileBlock
 import kotlinx.coroutines.Dispatchers
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -145,7 +146,8 @@ class FindFlowTest {
         val panel = shell.model.panel!!
         assertEquals(PanelLevel.Actions, panel.level)
         val rows = panelRows(panel, shell.model)
-        assertEquals(Row.ShowOnHome, rows.first())
+        // Show on Home leads the rows under the tiles.
+        assertEquals(Row.ShowOnHome, rows.drop(tileBlock(rows).count()).first())
         // Find has no spot to take a game off, so no Remove; Hide is offered.
         assertTrue(Row.MoveTile !in rows && Row.RemoveTile !in rows && Row.Hide in rows)
         // Y then Select: Show on Home.
@@ -200,8 +202,7 @@ class FindFlowTest {
     private fun choose(shell: ShellController, row: Row) {
         val at = panelRows(shell.model.panel!!, shell.model).indexOf(row)
         assertTrue(at >= 0)
-        while (shell.model.panel!!.index != at) shell.onMeaning(
-            if (shell.model.panel!!.index < at) Meaning.MoveDown else Meaning.MoveUp, HostScreen.Top)
+        walkPanelTo(shell, at, HostScreen.Top)
         shell.onMeaning(Meaning.Activate, HostScreen.Top)
     }
 
@@ -231,7 +232,7 @@ class FindFlowTest {
         // Find stays open, now on a game that is back on Home.
         assertFalse(shell.find!!.results.first().hidden)
         shell.onMeaning(Meaning.Options, HostScreen.Bottom)
-        assertEquals(Row.ShowOnHome, panelRows(shell.model.panel!!, shell.model).first())
+        assertEquals(Row.ShowOnHome, panelRows(shell.model.panel!!, shell.model).let { it.drop(tileBlock(it).count()).first() })
     }
 
     @Test
@@ -392,7 +393,7 @@ class FindFlowTest {
         val drift = titles(shell).indexOf("Drift")
         focus(shell, drift)
         shell.onMeaning(Meaning.Options, HostScreen.Bottom)
-        assertEquals(Row.ShowOnHome, panelRows(shell.model.panel!!, shell.model).first())
+        assertEquals(Row.ShowOnHome, panelRows(shell.model.panel!!, shell.model).let { it.drop(tileBlock(it).count()).first() })
         shell.onMeaning(Meaning.View, HostScreen.Top)
         assertFalse(shell.homeAllOpen())
         assertEquals("Drift", shell.focusedGame()?.title)

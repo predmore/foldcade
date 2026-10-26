@@ -95,7 +95,7 @@ class DeleteHoldLifecycleTest {
         shell.onMeaning(Meaning.Activate, HostScreen.Bottom)
         shell.onMeaning(Meaning.Options, HostScreen.Bottom)
         val target = panelRows(shell.model.panel!!, shell.model).indexOf(Row.DeleteShortcut)
-        repeat(target) { shell.onMeaning(Meaning.MoveDown, HostScreen.Bottom) }
+        walkPanelTo(shell, target, HostScreen.Bottom)
         shell.onMeaning(Meaning.Activate, HostScreen.Bottom)
         assertNotNull(shell.model.deleteHold)
         return shell

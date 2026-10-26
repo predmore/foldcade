@@ -124,8 +124,7 @@ class HomeRecoveryHostTest {
     private fun chooseFocus(shell: ShellController, row: Row) {
         val target = panelRows(shell.model.panel!!, shell.model).indexOf(row)
         assertTrue(target >= 0)
-        while (shell.model.panel!!.index != target) shell.onMeaning(
-            if (target > shell.model.panel!!.index) Meaning.MoveDown else Meaning.MoveUp, HostScreen.Bottom)
+        walkPanelTo(shell, target, HostScreen.Bottom)
     }
 
     @Test fun undoExpiresAndMoveInvalidatesItWithoutSavingUndo() {
@@ -332,9 +331,7 @@ class HomeRecoveryHostTest {
         val rows = panelRows(shell.model.panel!!, shell.model)
         val target = rows.indexOf(row)
         assertTrue("Missing $row in $rows", target >= 0)
-        repeat(kotlin.math.abs(target - shell.model.panel!!.index)) {
-            shell.onMeaning(if (target > shell.model.panel!!.index) Meaning.MoveDown else Meaning.MoveUp, HostScreen.Bottom)
-        }
+        walkPanelTo(shell, target, HostScreen.Bottom)
         shell.onMeaning(Meaning.Activate, HostScreen.Bottom)
     }
 }
