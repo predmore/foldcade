@@ -315,6 +315,8 @@ class ShellController(
                 else -> undo
             }
             current = stable.copy(firstColumn = shownFirstColumn(stable),
+                // A replacement surface must not leave a return target for a later form.
+                connectReturnSettings = stable.connectReturnSettings.takeIf { stable.connectOpen },
                 deleteHold = if (canceled) null else next.deleteHold,
                 deleteProgress = if (canceled) 0f else next.deleteProgress,
                 deleteShake = next.deleteShake + if (canceled) 1 else 0)
@@ -1780,7 +1782,9 @@ class ShellController(
             connectHint = null,
             connectRetry = false,
             panel = model.connectReturnPanel,
+            settings = model.connectReturnSettings,
             connectReturnPanel = null,
+            connectReturnSettings = null,
         )
         showQueuedPrompt()
     }
