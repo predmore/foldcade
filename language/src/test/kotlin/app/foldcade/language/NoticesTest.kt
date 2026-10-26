@@ -2,7 +2,9 @@ package app.foldcade.language
 
 import android.view.KeyEvent
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class NoticesTest {
@@ -182,6 +184,18 @@ class NoticesTest {
         assertEquals("2d", noticeAge(0L, 2 * 86_400_000L))
         assertEquals("now", noticeAge(10_000L, 0L))
         assertEquals(listOf(chat, mail, saved), orderedNotices(listOf(saved, chat, mail)))
+    }
+
+    @Test
+    fun rOneFollowsAndroidsListWhileItIsOpen() {
+        val focused = retainMenuRows(PickerModel(count = 2, rowsPerPage = 2), onNotice(chat))
+        // Android takes the notice away after Y, and a new one arrives.
+        val news = FoldNotice("news", "Patch notes", "1.2", "com.news", postedMillis = 4_000L, openable = true)
+        val next = retainMenuRows(focused, focused.copy(notices = listOf(news, mail, saved, pinned)))
+        val rows = panelRows(next.panel!!, next)
+        assertFalse(Row.Notice("chat") in rows)
+        assertTrue(Row.Notice("news") in rows)
+        assertTrue(rows[next.panel!!.index] is Row.Notice)
     }
 
     private fun model(notices: List<FoldNotice>) = PickerModel(count = 2, rowsPerPage = 2, notices = notices)

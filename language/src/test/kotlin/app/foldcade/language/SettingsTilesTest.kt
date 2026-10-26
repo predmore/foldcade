@@ -133,7 +133,9 @@ class SettingsTilesTest {
         val onAzahar = emulators.onSetting(Row.PlayerSave("azahar"))
         val (closed, choose) = reduce(onAzahar, Meaning.Activate)
         assertEquals(Effect.ChoosePlayerSave("azahar"), choose)
-        assertNull(closed.settings)
+        // Android's folder picker comes back to the page it was opened from.
+        assertEquals(onAzahar.settings, closed.settings)
+        assertNull(closed.panel)
     }
 
     @Test
