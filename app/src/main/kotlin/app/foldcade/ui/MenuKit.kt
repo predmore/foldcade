@@ -124,6 +124,18 @@ internal fun Modifier.selectionSlot(slots: SelectionSlots, index: Int): Modifier
     }
 
 /**
+ * A slot [depth] layouts below the highlighted column rather than its own child, as a tile
+ * sits in a line of tiles, so one highlight can travel between tiles and the rows under them.
+ */
+internal fun Modifier.selectionSlot(slots: SelectionSlots, index: Int, depth: Int): Modifier =
+    onGloballyPositioned { coordinates ->
+        var column = coordinates.parentLayoutCoordinates
+        repeat(depth - 1) { column = column?.parentLayoutCoordinates }
+        val rect = column?.localBoundingBoxOf(coordinates, clipBounds = false) ?: return@onGloballyPositioned
+        if (slots.rows[index] != rect) slots.rows[index] = rect
+    }
+
+/**
  * One highlight behind the column's focused row. It travels to the next row and lands
  * with a little bounce, the same size at rest wherever it is. A move made while it is
  * still travelling carries the speed on, so a held D-pad glides. [ring] fades the focus

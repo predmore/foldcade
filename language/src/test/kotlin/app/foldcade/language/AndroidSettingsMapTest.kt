@@ -9,7 +9,7 @@ class AndroidSettingsMapTest {
     fun leftPanelKeepsAndroidSettingsAndTheWayOut() {
         val held = sample().copy(homeRoleHeld = true)
         assertEquals(
-            listOf(Row.Primary, Row.DefaultHomeApp, Row.AndroidSettings),
+            listOf(Row.Primary, Row.DefaultHomeApp, Row.UsageAccess, Row.AndroidSettings),
             settingsRows(SettingsCategory.Screens, held),
         )
         assertEquals("Android settings", rowLabel(Row.AndroidSettings, sample()))

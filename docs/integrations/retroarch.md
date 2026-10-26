@@ -11,7 +11,7 @@
 
 ## Let Foldcade see your cores
 
-RetroArch keeps its cores where other apps can't look. The first time you start a RetroArch game, Foldcade asks to see them. Choose **Continue**, then **Use this folder** and **Allow** on RetroArch's folder. You can do the same any time from **Settings › Emulators › RetroArch cores**, which then shows how many cores Foldcade sees.
+RetroArch keeps its cores where other apps can't look. The first time you start a RetroArch game, Foldcade asks to see them. Choose **Continue**, then **Use this folder** and **Allow** on RetroArch's folder. You can do the same any time from **Settings › Emulators › RetroArch › Cores**, which then shows how many cores Foldcade sees.
 
 Foldcade reads the cores again before every RetroArch launch, so a core you just installed counts. Choose RetroArch's top folder, the one that holds `cores`; Foldcade says so if you pick another.
 

@@ -35,7 +35,9 @@ class SettingsPageTest {
     @Test
     fun categoriesHideWhenTheyHaveNoRows() {
         assertFalse(SettingsCategory.Players in settingsCategories(home))
-        val withSaves = home.copy(playerSaves = listOf(PlayerSaveSetting("melonds", "melonDS", chosen = false)))
+        val notInstalled = home.copy(playerSaves = listOf(PlayerSaveSetting("melonds", "melonDS", chosen = false)))
+        assertFalse(SettingsCategory.Players in settingsCategories(notInstalled))
+        val withSaves = home.copy(playerSaves = listOf(PlayerSaveSetting("melonds", "melonDS", chosen = false, installed = true)))
         assertTrue(SettingsCategory.Players in settingsCategories(withSaves))
     }
 
@@ -61,7 +63,7 @@ class SettingsPageTest {
     fun aRowActsInPlaceAndThePageStaysOpen() {
         var model = openFromMenu()
         model = reduce(model, Meaning.Activate).first
-        val (stepped, effect) = reduce(model, Meaning.Activate)
+        val (stepped, effect) = reduce(model, Meaning.MoveRight)
         assertNull(effect)
         assertEquals(1, stepped.themeIndex)
         assertTrue(stepped.settings!!.onRows)
@@ -154,8 +156,12 @@ class SettingsPageTest {
         val library = settingsCategories(model).indexOf(SettingsCategory.Library)
         repeat(library) { model = reduce(model, Meaning.MoveDown).first }
         model = reduce(model, Meaning.MoveRight).first
-        val rows = settingsRows(SettingsCategory.Library, model)
-        repeat(rows.indexOf(Row.AddRomm)) { model = reduce(model, Meaning.MoveDown).first }
+        // With no library yet, the first tile is Add, and its page offers a RomM server.
+        assertEquals(Row.SettingsTile(SettingsInner.Add), settingsFocus(model))
+        model = reduce(model, Meaning.Activate).first
+        assertEquals(SettingsInner.Add, model.settings!!.inner)
+        model = reduce(model, Meaning.MoveDown).first
+        assertEquals(Row.AddRomm, settingsFocus(model))
         val (connect, effect) = reduce(model, Meaning.Activate)
         assertEquals(Effect.OpenAddRomm, effect)
         assertNull(connect.settings)
@@ -166,7 +172,7 @@ class SettingsPageTest {
     fun syncGamesWaitsForALibraryThenStaysOpenWhileItRuns() {
         assertFalse(Row.SyncLibrary in settingsRows(SettingsCategory.Library, home))
         val withFolder = home.copy(folders = listOf(LibraryFolder("content://roms", "roms")))
-        assertEquals(Row.SyncLibrary, settingsRows(SettingsCategory.Library, withFolder).first())
+        assertEquals(Row.SyncLibrary, settingsRows(SettingsCategory.Library, withFolder)[librarySources(withFolder).size])
         val (syncing, effect) = reduce(withFolder.onSetting(Row.SyncLibrary), Meaning.Activate)
         assertEquals(Effect.SyncLibrary, effect)
         assertTrue(syncing.settings!!.onRows)

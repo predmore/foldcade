@@ -7,7 +7,7 @@ Set up your computer with [Sunshine](https://github.com/LizardByte/Sunshine) or 
 ## List every game on a computer
 
 1. With the Thor on the same network as the computer, open **L1 › Settings › Library**.
-2. Turn on **Games from** your computer. Foldcade shows a four-digit code.
+2. Choose your computer's tile and turn on **Games**. Foldcade shows a four-digit code.
 3. On the computer, open Sunshine's web page (**https://localhost:47990**), choose **PIN**, type the code, give the device a name such as Foldcade, and send it. Apollo's page works the same way.
 4. Every app on the computer appears in the **Moonlight** folder within a few seconds, with the computer's own box art.
 
@@ -51,7 +51,7 @@ Foldcade skips shortcuts Moonlight disables after their computer or game is remo
 
 ## If something is missing or streaming fails
 
-- **No Games from switch:** Check that Moonlight is installed and the Thor is on the computer's network, then reopen Settings. The switch appears once Foldcade finds the computer.
+- **No tile for the computer:** Check that Moonlight is installed and the Thor is on the computer's network, then reopen Settings. The tile appears once Foldcade finds the computer.
 - **That code didn't match:** Turn the switch on again for a new code, and type that one.
 - **The computer didn't pair:** Another device may be pairing with it. Wait a few minutes and try again.
 - **Only the Moonlight app tile appears:** Pair Foldcade with the computer, or create individual game shortcuts; the tile in Emulators opens Moonlight itself.

@@ -124,8 +124,11 @@ object Copy {
     const val steamGridDb = "SteamGridDB"
     const val addKey = "Add key"
     const val forgetKey = "Forget key"
-    /** Settings › Library: the switch for one computer's Moonlight games, before its name. */
-    const val gamesFrom = "Games from"
+    /** Settings › Library: the switch for one computer's Moonlight games, on its page. */
+    const val hostGames = "Games"
+
+    /** Settings › Library's last tile, and the page it opens. */
+    const val add = "Add"
     const val pairHostBody = "In Sunshine or Apollo on that computer, open PIN and type this code. Its games then appear here."
     const val forgetHost = "Forget"
     const val forgetHostBody = "Its games leave Home, except ones you pinned in Moonlight. Remove Foldcade from the computer's client list too."
@@ -216,7 +219,10 @@ object Copy {
     const val saveFolderNeededBody = "This player needs its folder to start games and sync saves."
     /** The ask for a named player's folder, when the picker opens at it. */
     const val saveFolderOpensThere = "It opens there: tap Use this folder, then Allow."
-    const val playerSavesSet = "Folder set"
+    /** Settings › an emulator's save folder row, and its values. Its page already names the emulator. */
+    const val saveFolder = "Save folder"
+    const val playerSavesSet = "Set"
+    const val choose = "Choose"
     const val playerSavesUnset = "Choose folder"
     const val missingFileBody = "This game has no file Foldcade can hand to the player."
     const val noSharedPathTitle = "can’t open this file"
@@ -234,23 +240,28 @@ object Copy {
     const val openPlayer = "Open"
     const val hostedSavesSet = "Syncing"
     const val hostedSavesUnset = "Set up"
-    /** The row under a player's folder: "ARMSX2 memory card". */
-    const val memoryCard = "memory card"
-    /** The row under a player's folder for one-time setup: "aPS3e setup". */
-    const val setup = "setup"
+    /** The row under a player's folder, on its page. */
+    const val memoryCard = "Memory card"
+    /** The row under a player's folder for one-time setup, on its page. */
+    const val setup = "Setup"
     /** The dialog for that setup: "Set up aPS3e". */
     const val playerSetupTitle = "Set up"
     /** A player's memory cards or other saves, synced through a folder Foldcade hosts. */
     const val hostedSavesTitle = "Sync"
     const val retroArchWrongFolder = "That folder has no cores. Choose RetroArch’s top folder, the one that holds cores, then Use this folder."
-    const val retroArchCores = "RetroArch cores"
+    /** On RetroArch's page. */
+    const val retroArchCores = "Cores"
     const val edenFolderTitle = "Set up Eden from RomM"
     const val edenFolderBody = "Your RomM server has Switch files Eden needs. Foldcade adds them whenever Eden is missing them. On the next screen, choose Use this folder at the bottom. Not now starts the game anyway."
     const val edenWrongFolderTitle = "That isn’t Eden’s folder"
     const val edenWrongFolderBody = "Choose Use this folder where the picker opens, without opening a folder inside it."
     const val edenRestartTitle = "Restart Eden once"
     const val edenRestartBody = "Foldcade added Switch files to Eden. Eden reads them only when it starts. On the next screen, choose Force stop, then OK. Press B to come back and start the game again."
-    const val edenKeys = "Eden keys and firmware"
+    /** On Eden's page. */
+    const val edenKeys = "Keys & firmware"
+    /** The tiles of RetroArch and Eden when no player with a save folder names them. */
+    const val retroArch = "RetroArch"
+    const val eden = "Eden"
     const val edenFromRomm = "From RomM"
     const val showCores = "Show"
     const val cores = "cores"

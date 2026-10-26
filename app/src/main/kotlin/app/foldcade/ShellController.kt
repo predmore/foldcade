@@ -60,6 +60,7 @@ import app.foldcade.language.KeyFocus
 import app.foldcade.language.brightnessPrompt
 import app.foldcade.language.brightnessPosition
 import app.foldcade.language.settingsCategories
+import app.foldcade.language.withFolders
 import app.foldcade.language.BackgroundMotion
 import app.foldcade.language.ConnectField
 import app.foldcade.language.SidePanel
@@ -1766,7 +1767,7 @@ class ShellController(
     }
 
     fun setFolders(folders: List<LibraryFolder>) {
-        if (model.folders != folders) model = model.copy(folders = folders)
+        if (model.folders != folders) model = model.withFolders(folders)
     }
 
     /** Leaves the connect form, as after a server accepts the token. */
@@ -1950,7 +1951,7 @@ class ShellController(
         if (page.screen != screen) return null
         if (index !in settingsCategories(model).indices) return null
         if (page.category != index || page.onRows) {
-            publish(model.copy(capturingConfirm = false, versionCopied = false, settings = page.copy(category = index, row = 0, onRows = false)))
+            publish(model.copy(capturingConfirm = false, versionCopied = false, settings = page.copy(category = index, row = 0, onRows = false, inner = null)))
             return null
         }
         return onMeaning(Meaning.MoveRight, screen)
@@ -1993,6 +1994,13 @@ class ShellController(
         val page = model.settings ?: return null
         publish(model.copy(settings = null, focus = page.grid, capturingConfirm = false, versionCopied = false))
         return null
+    }
+
+    /** A tap on the page's back pill. A page inside a category returns to its tile, as B does; otherwise the page closes. */
+    fun backSettings(screen: HostScreen): Effect? {
+        val page = model.settings ?: return null
+        if (page.inner == null || modalOpen()) return closeSettings()
+        return onMeaning(Meaning.Back, screen)
     }
 
     /**
@@ -2781,6 +2789,7 @@ class ShellController(
                 saveSyncSteps = (sync as? SaveSyncState.NeedsSetup)?.steps,
                 setupSteps = setupSteps[player.id],
                 installed = player.packageNames.any(installedPlayers::contains),
+                packages = player.packageNames.filter(installedPlayers::contains),
             )
         }.distinctBy { it.first }.map { it.second }
 

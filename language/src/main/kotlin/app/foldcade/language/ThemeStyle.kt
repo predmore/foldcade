@@ -639,6 +639,8 @@ class ThemeSettings internal constructor(reader: ThemeStyleReader) {
     val cardLift = reader.number("settings", "cardLift", .035f, role = TokenRole.Fill)
     val borderAlpha = reader.fraction("settings", "borderAlpha", .06f, TokenRole.Fill)
     val borderDp = reader.number("settings", "borderDp", 1f, role = TokenRole.Stroke)
+    /** A source tile that is off, as a Moonlight computer Foldcade is not paired with: its art and name. */
+    val tileOffAlpha = reader.fraction("settings", "tileOffAlpha", .45f)
 }
 
 class ThemeFind internal constructor(reader: ThemeStyleReader) {

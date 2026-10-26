@@ -22,7 +22,7 @@ Configure the emulator before playing. RomM can catalog more systems than Foldca
 
 ## Connect with a code
 
-1. In Foldcade, open **L1 › Settings › Library › Add a RomM server**.
+1. In Foldcade, open **L1 › Settings › Library › Add › Add a RomM server**.
 2. Enter its address, including `https://` or `http://`, such as `https://romm.example.com`.
 3. Open the verification address shown in Foldcade on your phone or computer, sign in, and approve the code.
 4. Wait for the catalog to load, then choose a game from its system folder or **All**.
@@ -35,9 +35,9 @@ A manual token needs `roms.read`, `platforms.read`, `assets.read`, `assets.write
 
 ## Add or change a server
 
-Use **Add a RomM server** again for another server. Connections have separate catalogs and credentials; the same server cannot be added twice under different accounts.
+Foldcade keeps one RomM server. Once it is saved, **Add** offers only folders.
 
-Select a server in **Settings › Library** to **Edit connection** or **Sign out**. Other connections are unaffected.
+Select the RomM tile in **Settings › Library** to **Edit connection** or **Sign out**.
 
 Each Foldcade install registers as its own device in RomM and keeps it across restarts, so RomM keeps its sync history. Reinstalling Foldcade registers a new device.
 
@@ -69,7 +69,7 @@ Downloaded games with a cached catalog can be played offline. New downloads need
 
 ## Switch keys and firmware
 
-When a connected RomM server has Switch `prod.keys` or a firmware zip, the first time you start a game in Eden, Foldcade asks to set that up. Choose **Continue**, then on the next screen choose **Use this folder** at the bottom, without opening a folder inside it. Foldcade keeps that folder. **Not now** starts the game anyway, and you can choose the folder later from **Settings › Emulators › Eden keys and firmware**. That row is there while Eden is installed and a RomM server is signed in. While Foldcade holds the folder, the row reads **From RomM**. If the folder you choose is not Eden's, Foldcade offers **Try again** and **Not now**. **Try again** opens the picker at Eden's folder. **Not now** starts the game.
+When a connected RomM server has Switch `prod.keys` or a firmware zip, the first time you start a game in Eden, Foldcade asks to set that up. Choose **Continue**, then on the next screen choose **Use this folder** at the bottom, without opening a folder inside it. Foldcade keeps that folder. **Not now** starts the game anyway, and you can choose the folder later from **Settings › Emulators › Eden › Keys & firmware**. That row is there while Eden is installed and a RomM server is signed in. While Foldcade holds the folder, the row reads **From RomM**. If the folder you choose is not Eden's, Foldcade offers **Try again** and **Not now**. **Try again** opens the picker at Eden's folder. **Not now** starts the game.
 
 Before the game starts, Foldcade looks at Eden's folder and adds only what is missing. `keys/prod.keys` is written when it is absent or empty. `keys/title.keys` is written in that same pass when RomM has the file, and only when `prod.keys` is missing or the firmware is missing. A missing `title.keys` on its own is left as it is. Firmware is the `.nca` files in `nand/system/Contents/registered/`. Foldcade installs the highest-numbered firmware zip RomM still has on disk for Switch, and only when Eden has none. A firmware file RomM lists as missing from its disk is skipped. A keys file or firmware that is already there is left as it is.
 
