@@ -98,8 +98,10 @@ class SettingsPageTest {
                 assertNull(returned.connectReturnSettings)
                 assertNull(returned.panel)
                 assertEquals(selected.settings, returned.settings)
-                // The next Back steps to categories, proving the row column was restored too.
-                assertFalse(reduce(returned, Meaning.Back, screen).first.settings!!.onRows)
+                // The next Back steps out a level, proving the page under the form was restored too:
+                // from Add's page to the Library shelf, or from a row to the categories.
+                val out = reduce(returned, Meaning.Back, screen).first.settings!!
+                if (selected.settings!!.inner != null) assertNull(out.inner) else assertFalse(out.onRows)
             }
         }
     }
