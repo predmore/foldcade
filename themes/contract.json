@@ -265,6 +265,8 @@
     "saves.edgeDp": {"kind":"number","unit":"dp","min":0.0,"afterglow":24.0},
     "saves.gapDp": {"kind":"number","unit":"dp","min":0.0,"afterglow":8.0},
     "saves.screenshotShare": {"kind":"number","above":0.0,"max":1.0,"afterglow":0.5},
+    "saves.backdropDim": {"kind":"number","min":0.0,"max":1.0,"afterglow":0.5},
+    "saves.backupAlpha": {"kind":"number","min":0.0,"max":1.0,"afterglow":0.6},
     "play.backingAlpha": {"kind":"number","role":"fill","min":0.0,"max":1.0,"afterglow":0.06},
     "play.trackAlpha": {"kind":"number","role":"fill","min":0.0,"max":1.0,"afterglow":0.06},
     "play.hourAlpha": {"kind":"number","role":"fill","min":0.0,"max":1.0,"afterglow":0.1},

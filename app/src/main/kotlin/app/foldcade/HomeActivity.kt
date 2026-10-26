@@ -2754,16 +2754,22 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
                 val listed = foldcade.plugins.serverSaves(request.owner.backendId, request.owner, request.player)
                 val backups = foldcade.plugins.serverSaveBackups(request.owner.backendId, request.owner)
                 val origins = foldcade.plugins.serverSaveOrigins(request.owner.backendId, request.owner)
+                // RomM names an emulator by its id; players know it by its name.
+                val names = foldcade.plugins.playerIds().mapNotNull { foldcade.plugins.player(it) }
+                    .associate { it.id.substringBefore('.').lowercase() to it.displayName }
                 val saves = listed.map {
+                    // A source names the emulator only when it is an emulator's id outright.
+                    val label = it.emulator?.substringBefore('.')?.lowercase()?.let(names::get)
+                        ?: it.source?.takeIf { _ -> it.emulator == null }?.lowercase()?.let(names::get)
                     val origin = origins[it.id]?.let { detail -> app.foldcade.language.SavePickerOrigin(detail.client, detail.deviceName, detail.thisDevice) }
-                    app.foldcade.language.SavePickerSave(it.id, it.slot, it.emulator, it.source, it.updatedAtMillis, it.sizeBytes, it.playing, it.screenshotUri, it.id in backups, origin)
+                    app.foldcade.language.SavePickerSave(it.id, it.slot, it.emulator, it.source, it.updatedAtMillis, it.sizeBytes, it.playing, it.screenshotUri, it.id in backups, origin, label)
                 }
                 withContext(Dispatchers.Main.immediate) {
                     foldcade.shell.updateSavePicker(target) { previous ->
                         val id = previous.focused?.id
                         val index = if (previous.index == 0) 0 else (saves.indexOfFirst { it.id == id } + 1).coerceAtLeast(0)
                         previous.copy(saves = saves, index = index, loading = false, error = false,
-                            health = foldcade.shell.savePickerHealth(target), ownSlots = request.player?.saveDeclarations(request.owner).orEmpty().map { it.slot })
+                            health = foldcade.shell.savePickerHealth(target), ownSlots = request.player?.saveDeclarations(request.owner).orEmpty().map { it.slot }).settled()
                     }
                 }
             } catch (cancelled: CancellationException) {

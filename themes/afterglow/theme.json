@@ -2038,7 +2038,9 @@
       "rowHeightDp": 52,
       "edgeDp": 24,
       "gapDp": 8,
-      "screenshotShare": 0.5
+      "screenshotShare": 0.5,
+      "backdropDim": 0.5,
+      "backupAlpha": 0.6
     },
     "picker": {
       "shimmerAlpha": 0.18

@@ -992,8 +992,10 @@ fun retainMenuRows(previous: PickerModel, next: PickerModel): PickerModel {
     val retained = (if (previous.panel?.side == panel.side && !resorted) previous.menuRows else emptyList())
         .map { it.copy(rows = validMenuRows(it.rows, next)) }
     val page = panel.page()
-    val pages = if (retained.any { it.page == page }) retained else
-        retained + MenuRows(page, livePanelRows(panel, next))
+    // R1's rows are its notices, so they follow Android's list: a dismissed notice leaves, a new one arrives.
+    val live = panel.side == Side.Right && panel.level == PanelLevel.Root
+    val pages = if (!live && retained.any { it.page == page }) retained else
+        retained.filterNot { it.page == page } + MenuRows(page, livePanelRows(panel, next))
     val stable = next.copy(menuRows = pages)
     val oldPanel = previous.panel
     if (oldPanel != null && oldPanel.page() == page) {
@@ -1501,6 +1503,8 @@ fun reduce(
         return coerced.copy(dialog = cleared) to chosen
     }
     coerced.savePicker?.let {
+        // A held A opens one confirmation. Its repeats would answer it, Cancel first, and open it again.
+        if (meaning == Meaning.Activate && repeatCount > 0) return coerced to null
         val (next, effect) = applySavePicker(it, meaning)
         return coerced.copy(savePicker = next) to effect
     }
@@ -2236,7 +2240,8 @@ private fun activateRow(
             panel = panel.copy(index = rightStart()),
             notices = model.notices.filter { !it.dismissable },
         ) to Effect.ClearNotices
-        is Row.PlayerSave -> model.copy(panel = null, focus = panel.grid) to Effect.ChoosePlayerSave(row.playerId)
+        // Android's folder picker returns to the emulator's page it was opened from.
+        is Row.PlayerSave -> model.copy(panel = panel) to Effect.ChoosePlayerSave(row.playerId)
         is Row.HostedSaves -> model.copy(panel = null, focus = panel.grid) to Effect.SetUpHostedSaves(row.playerId)
         is Row.SaveSync -> {
             val setting = model.playerSaves.firstOrNull { it.playerId == row.playerId }
