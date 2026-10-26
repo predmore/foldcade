@@ -63,6 +63,8 @@ data class SidePanel(
     val recoveryOnly: Boolean = false,
     /** The column of the tile the D-pad last left the tiles from, so up from the row under them returns there. */
     val tileColumn: Int? = null,
+    /** L1's [tileColumn] while Edit home is open, so Back returns to the place tile it was left from. */
+    val parentTileColumn: Int? = null,
 )
 
 fun signInAgainPrompt(screen: HostScreen = HostScreen.Top): DialogState = DialogState(
@@ -974,7 +976,7 @@ fun collectionRows(tile: TileActions?): List<Row> {
 /** Catalog reports keep rows stable; removing a game from its slot discards that slot's actions. */
 data class MenuRows(val page: SidePanel, val rows: List<Row>)
 
-private fun SidePanel.page() = copy(index = 0, retiring = false, pendingSide = null, tileColumn = null)
+private fun SidePanel.page() = copy(index = 0, retiring = false, pendingSide = null, tileColumn = null, parentTileColumn = null)
 
 fun retainMenuRows(previous: PickerModel, next: PickerModel): PickerModel {
     val panel = next.panel ?: return next.copy(menuRows = emptyList())
@@ -2132,7 +2134,8 @@ private fun backPanel(model: PickerModel, panel: SidePanel): Pair<PickerModel, E
             if (settings != null) model.copy(panel = null, settings = settings) to null
             else model.copy(panel = null, focus = panel.grid) to null
         }
-        PanelLevel.EditHome -> model.copy(panel = panel.copy(level = PanelLevel.Root, index = leftRows().indexOf(Row.EditHome))) to null
+        PanelLevel.EditHome -> model.copy(panel = panel.copy(level = PanelLevel.Root, index = leftRows().indexOf(Row.EditHome),
+            tileColumn = panel.parentTileColumn, parentTileColumn = null)) to null
         PanelLevel.Collections -> {
             val parent = panel.copy(level = panel.via)
             val row = panelRows(parent, model).indexOf(Row.AddToCollection).coerceAtLeast(0)
@@ -2163,7 +2166,7 @@ private fun activateRow(
             playActivity = PlayActivityPage(screen = panel.screen, grid = panel.grid),
         ) to null
         Row.Home -> model.copy(panel = null, focus = panel.grid) to Effect.GoHome
-        Row.EditHome -> model.copy(panel = panel.copy(level = PanelLevel.EditHome, index = 0)) to null
+        Row.EditHome -> model.copy(panel = panel.copy(level = PanelLevel.EditHome, index = 0, tileColumn = null, parentTileColumn = panel.tileColumn)) to null
         Row.Music -> model.copy(panel = panel, music = model.music.toggled()) to null
         Row.MusicVolume -> model.copy(panel = panel, music = model.music.stepped()) to null
         Row.SetAsHome -> model to Effect.RequestHome

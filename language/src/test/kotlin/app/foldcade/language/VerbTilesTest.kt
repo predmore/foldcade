@@ -102,4 +102,17 @@ class VerbTilesTest {
         meanings.forEach { current = reduce(current, it).first }
         return current
     }
+
+    @Test fun backFromEditHomeReturnsUpToThePlaceL1WasLeftFrom() {
+        val apps = leftRows().indexOf(Row.Apps)
+        val l1 = PickerModel(count = 4, rowsPerPage = 2, tileActions = game,
+            panel = SidePanel(Side.Left, HostScreen.Top, PanelLevel.Root, apps, GridFocus()))
+        val onEdit = move(l1, Meaning.MoveDown)
+        assertEquals(Row.EditHome, leftRows()[onEdit.panel!!.index])
+        val inside = reduce(onEdit, Meaning.Activate).first
+        assertEquals(PanelLevel.EditHome, inside.panel?.level)
+        val back = reduce(move(inside, Meaning.MoveRight, Meaning.MoveDown), Meaning.Back).first
+        assertEquals(PanelLevel.Root, back.panel?.level)
+        assertEquals(apps, move(back, Meaning.MoveUp).panel?.index)
+    }
 }
