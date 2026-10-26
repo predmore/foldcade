@@ -57,7 +57,8 @@ class SceneEvaluation(val scene: ThemeScene, private val report: (ThemeDiagnosti
 
 /**
  * What the shell tells a scene each frame besides its clock: the focused item's accent, the time
- * of day, the battery, and how long since the cursor moved. [ThemeContract.sceneInputs] says each.
+ * of day, the battery, how long since the cursor moved, and how far the grid has scrolled.
+ * [ThemeContract.sceneInputs] says each.
  */
 data class SceneLive(
     val accentR: Float = 1f,
@@ -67,6 +68,8 @@ data class SceneLive(
     val battery: Float = 1f,
     val charging: Boolean = false,
     val sinceMove: Float = SCENE_SINCE_MOVE_MAX,
+    /** How far the panel's grid has slid sideways, render px, so a scene can move as a camera would. */
+    val scroll: Float = 0f,
 )
 
 /** The most [SceneLive.sinceMove] counts to, so it stays exact as a float. */
@@ -76,7 +79,7 @@ const val SCENE_SINCE_MOVE_MAX: Float = 3600f
  * Inputs added after scene version 1. A scene that declares a variable of the same name keeps
  * its own, so an input added later never changes a scene written before it.
  */
-private val LATER_SCENE_INPUTS = listOf("seed", "accentR", "accentG", "accentB", "hour", "battery", "charging", "sinceMove")
+private val LATER_SCENE_INPUTS = listOf("seed", "accentR", "accentG", "accentB", "hour", "battery", "charging", "sinceMove", "scroll")
 
 /** [seed] stays fixed for the life of the surface, so each panel can start somewhere of its own. */
 class SceneState(val scene: ThemeScene, seed: Double = 0.0) {
@@ -91,6 +94,7 @@ class SceneState(val scene: ThemeScene, seed: Double = 0.0) {
         set("accentR", live.accentR.toDouble()); set("accentG", live.accentG.toDouble()); set("accentB", live.accentB.toDouble())
         set("hour", live.hour.toDouble()); set("battery", live.battery.toDouble())
         set("charging", if (live.charging) 1.0 else 0.0); set("sinceMove", live.sinceMove.toDouble())
+        set("scroll", live.scroll.toDouble())
         set("index", 0.0); set("u", 0.0)
         scene.variables.forEach { (slot, expression) -> values[slot] = expression.evaluate(values) }
     }
