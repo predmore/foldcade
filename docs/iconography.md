@@ -143,7 +143,7 @@ Afterglow draws an object for the apps people open on a handheld: the Thor's own
 
 An app's object follows the same recipe as a platform's, with two more rules:
 
-1. **Draw what the app does, or the one thing its icon is known by.** A browser can be the ring of colours people know Chrome by, and RetroArch is its invader. Keep the cue, change the drawing: echo the colour and the motif, never trace the logo, and never draw lettering.
+1. **Draw what the app does, or the one thing its icon is known by.** A browser can be the ring of colours people know Chrome by, and RetroArch is its invader. Keep the cue, change the drawing: echo the colour and the motif, never trace the logo, and never draw words. When the icon is one bold character and nothing else, as aPS3e's is a 3, build that character as a raised object in the icon's colours.
 2. **An emulator is not its platform.** DuckStation is a duck, not a PlayStation controller. When an emulator's own icon is the console, draw what sets the emulator apart, so its tile never passes for the platform's.
 
 Each entry in a module's `APPS` names the packages that wear it, and every package gets its own `app.<package>` slot pointing at the one file. List every package an app ships under: its store build, its F-Droid or nightly build, and its paid build. A theme can then restyle one build or all of them.
@@ -212,6 +212,6 @@ Draw it in `tools/art/symbols.py` on the 24-unit grid and add an `Asset` to `con
 - [ ] A symbol is one ink, with cuts of at least 2.5 units, and colour only for state. Where it's drawn, the host passes its colour through `ThemeIconPainter.tint`.
 - [ ] An object uses only parts from the recipe, its body in its accent, and no new light source.
 - [ ] A platform is drawn as the thing you hold, or its console when its controller looks like a neighbour's, with no logo.
-- [ ] An app echoes its own icon's colour and motif without tracing its logo or drawing letters, and an emulator doesn't pass for its platform.
+- [ ] An app echoes its own icon's colour and motif without tracing its logo or drawing words, and an emulator doesn't pass for its platform.
 - [ ] Nothing new draws a border or edge inside a grid tile.
 - [ ] The XML came from `icons.py`, not a hand edit, and the tests pass.

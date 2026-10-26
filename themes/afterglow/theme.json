@@ -14,6 +14,16 @@
   "description": "True black, rounded tiles, and a soft neon glow. Every pack builds on it.",
   "license": "MIT; Nunito under the SIL Open Font License",
   "icons": {
+    "app.aenu.aps3e": {
+      "file": "icons/app_aps3e.xml",
+      "tint": false,
+      "accent": "#3F5CF0"
+    },
+    "app.aenu.aps3e.premium": {
+      "file": "icons/app_aps3e_premium.xml",
+      "tint": false,
+      "accent": "#E6B23A"
+    },
     "app.app.gamenative": {
       "file": "icons/app_gamenative.xml",
       "tint": false,
@@ -354,6 +364,11 @@
       "tint": false,
       "accent": "#B39DFF"
     },
+    "app.com.sbro.emucorex": {
+      "file": "icons/app_emucorex.xml",
+      "tint": false,
+      "accent": "#4D9EFF"
+    },
     "app.com.simplemobiletools.gallery.pro": {
       "file": "icons/app_gallery.xml",
       "tint": false,
@@ -398,6 +413,11 @@
       "file": "icons/app_gamehub.xml",
       "tint": false,
       "accent": "#B4BFCF"
+    },
+    "app.come.nanodata.armsx2": {
+      "file": "icons/app_armsx2.xml",
+      "tint": false,
+      "accent": "#6FA0FF"
     },
     "app.dev.eden.eden_emulator": {
       "file": "icons/app_eden.xml",
