@@ -674,10 +674,11 @@ class ContractTest {
         )
         assertEquals(listOf(Row.SettingsTile(SettingsInner.Emulator("azahar"))), settingsRows(SettingsCategory.Players, opened))
         assertEquals(listOf(Row.PlayerSave("azahar")), settingsInnerRows(SettingsInner.Emulator("azahar"), opened))
-        val (closed, effect) = reduce(opened.onSetting(Row.PlayerSave("azahar")), Meaning.Activate)
+        val onRow = opened.onSetting(Row.PlayerSave("azahar"))
+        val (closed, effect) = reduce(onRow, Meaning.Activate)
         assertEquals(Effect.ChoosePlayerSave("azahar"), effect)
         assertNull(closed.panel)
-        assertNull(closed.settings)
+        assertEquals(onRow.settings, closed.settings)
         assertEquals("Save folder  Not syncing", rowLabel(Row.PlayerSave("azahar"), opened))
         assertEquals(RowControl.Value(Copy.notSyncing, attention = true), rowControl(Row.PlayerSave("azahar"), opened))
     }
