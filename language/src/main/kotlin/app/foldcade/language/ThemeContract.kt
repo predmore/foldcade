@@ -70,6 +70,7 @@ object ThemeContract {
         "battery" to "Battery level, 0–1",
         "charging" to "1 while charging, else 0",
         "sinceMove" to "Real seconds since the cursor last moved, up to 3600",
+        "scroll" to "How far the panel's grid has slid sideways, render px, following its glide",
     )
 
     /** Manifest fields, with their JSON kind. `style` and `icons` have contracts of their own. */

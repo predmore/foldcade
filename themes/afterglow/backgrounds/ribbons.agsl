@@ -14,6 +14,10 @@ uniform float reach;
 uniform float4 falloff;
 uniform float endFade;
 uniform float crossingRadius;
+// How far the grid has slid, in panel widths. The strands, their swells and their knots
+// lie along the world, so they slide with the grid as if the camera moved. The fade at
+// either edge and the colour across the panel stay put, as the lens's.
+uniform float slide;
 
 const float PI = 3.14159265;
 const float TWO_PI = 6.28318531;
@@ -31,7 +35,7 @@ float cover(float t) {
 }
 
 float knot(float along, float phase) {
-    float direct = abs(along - fract(phase));
+    float direct = abs(fract(along) - fract(phase));
     float distance = min(direct, 1.0 - direct);
     if (distance >= falloff.w) return 0.0;
     return 0.5 * (1.0 + cos(distance / falloff.w * PI));
@@ -41,18 +45,19 @@ float edgeFade(float t) {
     return t < endFade ? ease(t / endFade) : (t > 1.0 - endFade ? ease((1.0 - t) / endFade) : 1.0);
 }
 
-// [edge] and [swelling] depend only on t, so main computes them once for every strand.
-float ribbonGain(float t, float edge, float swelling, float pulse) {
+// [edge] and [swelling] depend only on where the pixel is across, so main computes them once for every strand.
+float ribbonGain(float u, float edge, float swelling, float pulse) {
     if (edge <= 0.0) return 0.0;
-    float spots = knot(t, pulse) * 0.9 + knot(t, pulse + 0.46) * 0.5;
+    float spots = knot(u, pulse) * 0.9 + knot(u, pulse + 0.46) * 0.5;
     return clamp(edge * (swelling * 0.58 + spots), 0.0, 1.0);
 }
 
 half4 main(float2 p) {
-    float u = p.x / size.x;
-    float t = clamp(u, 0.0, 1.0);
+    // t is across the screen, u across the world the grid slides over.
+    float t = clamp(p.x / size.x, 0.0, 1.0);
+    float u = p.x / size.x + slide;
     float edge = edgeFade(t);
-    float swelling = 0.34 + 0.66 * (0.5 + 0.5 * sin(TWO_PI * (t * 2.15 + 0.35)));
+    float swelling = 0.34 + 0.66 * (0.5 + 0.5 * sin(TWO_PI * (u * 2.15 + 0.35)));
     // Light adds, so halo, glow, and core blend into one smooth profile and overlaps
     // brighten without the creases a max blend leaves.
     float3 lit = float3(0.0);
@@ -70,7 +75,7 @@ half4 main(float2 p) {
         float distance = abs(p.y - y) * inversesqrt(1.0 + slope * slope);
         // Most pixels are past even the widest halo; skip the gain curve for them.
         if (distance >= start[i * 3].w * 1.2 * falloff.z) continue;
-        float gain = ribbonGain(t, edge, swelling, move.z);
+        float gain = ribbonGain(u, edge, swelling, move.z);
         if (gain <= 0.0) continue;
         float width = 0.28 + 0.92 * gain;
         for (int layer = 0; layer < 3; layer++) {
