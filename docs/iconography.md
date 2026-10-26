@@ -26,7 +26,7 @@ The scripts use only the Python standard library. Open the sheet in any browser.
 | `badge.*` | `ic_badge_*.xml` | Symbol, 24 units, tinted | The chip in a tile's corner, and Find's hidden mark. |
 | `control.*` | `ic_control_*.xml` | Symbol, 24 units, tinted | The host's own controls: a checkmark's tick, the keyboard's Shift, Erase and Space, Find's magnifier. |
 | `symbol.*` | `symbol_*.xml` | Symbol, 64 units, tinted | Menu rows, the collection picker, and the glyph pressed into a collection. |
-| `symbol.<verb>` | `symbol_<verb>.xml` | Symbol, 64 units, tinted | What Y's menu and Edit home do to a tile: the round tiles at the menu's top and the rows under them. See [Verbs](#verbs). |
+| `symbol.<verb>` | `symbol_<verb>.xml` | Symbol, 64 units, tinted | What Y's menu does to a tile, on the round tiles at its top and the rows under them, and Edit home's Sort and Tidy for the whole board. See [Verbs](#verbs). |
 | `mark.*` | `mark_*.xml` | Object, 64 units | Grid tiles and the hero. Its `accent` is the light behind the tile. |
 | `mark.collection-body`, `mark.collection-face` | `mark_collection_*.xml` | Object parts | A collection's folder. See [Collections](#collections). |
 | `app.<package>` | `app_*.xml` | Object, 64 units | An installed app's tile, its hero, and its notices, in place of its launcher icon. See [Apps](#apps). |

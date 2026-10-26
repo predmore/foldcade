@@ -1,6 +1,7 @@
 package app.foldcade.language
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Test
 import java.time.LocalDateTime
@@ -27,21 +28,14 @@ class LeftDrawerTest {
     }
 
     @Test
-    fun editHomeHoldsTheFocusedTilesActionsThenTheBoardsSettings() {
+    fun editHomeHoldsTheBoardsSettingsAndBackReturnsToL1() {
         val opened = reduce(model(), Meaning.LeftPanel).first
         val edit = reduce(at(opened, Row.EditHome), Meaning.Activate).first
         assertEquals(PanelLevel.EditHome, edit.panel?.level)
-        assertEquals(
-            listOf(Row.MoveTile, Row.AddToCollection, Row.RenameFolder, Row.RecentOnHome, Row.AddNewGames, Row.Hidden),
-            panelRows(edit.panel!!, edit),
-        )
-        // Add to, then Back, returns to Edit home on Add to, then to L1 on Edit home.
-        val moveTo = reduce(at(edit, Row.AddToCollection), Meaning.Activate).first
-        assertEquals(PanelLevel.Collections, moveTo.panel?.level)
-        val back = reduce(moveTo, Meaning.Back).first
-        assertEquals(PanelLevel.EditHome, back.panel?.level)
-        assertEquals(Row.AddToCollection, panelRows(back.panel!!, back)[back.panel!!.index])
-        val root = reduce(back, Meaning.Back).first
+        // The focused tile's actions are Y's, so Edit home names no tile.
+        assertFalse(PanelLevel.EditHome.actsOnTile)
+        assertEquals(listOf(Row.RecentOnHome, Row.AddNewGames, Row.Hidden), panelRows(edit.panel!!, edit))
+        val root = reduce(edit, Meaning.Back).first
         assertEquals(PanelLevel.Root, root.panel?.level)
         assertEquals(Row.EditHome, panelRows(root.panel!!, root)[root.panel!!.index])
     }

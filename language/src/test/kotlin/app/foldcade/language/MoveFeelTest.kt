@@ -203,20 +203,18 @@ class MoveFeelTest {
     }
 
     @Test
-    fun tidyIsOfferedOnAnEmptySlotAndInEditHome() {
-        val slot = TileActions(move = true, newCollection = true, tidy = true, tidyBoard = true)
-        assertEquals(listOf(Row.MoveTile, Row.NewCollection, Row.Tidy), actionRows(slot))
+    fun tidyIsEditHomesAndNeverYs() {
+        // Tidy closes every gap on the board, so it is L1's, not the empty slot's.
+        val slot = TileActions(move = true, newCollection = true, tidyBoard = true)
+        assertEquals(listOf(Row.MoveTile, Row.NewCollection), actionRows(slot))
         val game = TileActions(move = true, collections = emptyList(), tidyBoard = true)
         assertFalse(Row.Tidy in actionRows(game))
         val model = PickerModel(count = 4, rowsPerPage = 3, tileActions = game)
-        assertEquals(listOf(Row.MoveTile, Row.AddToCollection, Row.Tidy, Row.RecentOnHome, Row.AddNewGames, Row.Hidden), editHomeRows(model))
-        assertEquals(1, editHomeRows(model.copy(tileActions = slot)).count { it == Row.Tidy })
+        assertEquals(listOf(Row.Tidy, Row.RecentOnHome, Row.AddNewGames, Row.Hidden), editHomeRows(model))
         assertFalse(Row.Tidy in editHomeRows(model.copy(tileActions = game.copy(tidyBoard = false))))
-        // A runs it, and it has no chord: Y stays Move.
-        val menu = reduce(model.copy(tileActions = slot), Meaning.Options).first
-        val onTidy = menu.copy(panel = menu.panel!!.copy(index = 2))
-        assertEquals(Effect.Tidy, reduce(onTidy, Meaning.Activate).second)
-        assertEquals(Effect.MoveTile, reduce(onTidy, Meaning.Options).second)
+        // A runs it from Edit home.
+        val editHome = model.copy(panel = SidePanel(Side.Left, HostScreen.Top, PanelLevel.EditHome, 0, GridFocus()))
+        assertEquals(Effect.Tidy, reduce(editHome, Meaning.Activate).second)
     }
 
     @Test

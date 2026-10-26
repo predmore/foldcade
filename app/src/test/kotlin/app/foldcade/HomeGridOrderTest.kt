@@ -35,6 +35,8 @@ import app.foldcade.language.HomeFolder
 import app.foldcade.language.androidHomeId
 import app.foldcade.language.encodeHome
 import app.foldcade.language.PanelLevel
+import app.foldcade.language.editHomeRows
+import app.foldcade.language.leftRows
 import app.foldcade.language.RemoveVerb
 import app.foldcade.language.Row
 import app.foldcade.language.actionRows
@@ -614,7 +616,7 @@ class HomeGridOrderTest {
     }
 
     @Test
-    fun tidyOnAnEmptySlotClosesTheGaps() {
+    fun tidyInEditHomeClosesTheGaps() {
         val shell = shell()
         shell.ingestLibrary(
             "local-folder",
@@ -629,11 +631,15 @@ class HomeGridOrderTest {
         repeat(GridStrip.trailing) { shell.onMeaning(Meaning.MoveRight, HostScreen.Bottom) }
         shell.onMeaning(Meaning.Activate, HostScreen.Bottom)
         focus(shell, first)
-        assertTrue(Row.Tidy in optionRows(shell))
-        choose(shell, Row.Tidy)
+        // Tidy closes every gap on the board, so it is L1's, never the empty slot's.
+        assertFalse(Row.Tidy in optionRows(shell))
+        openEditHome(shell)
+        val rows = panelRows(shell.model.panel!!, shell.model)
+        walkPanelTo(shell, rows.indexOf(Row.Tidy), HostScreen.Bottom)
+        shell.onMeaning(Meaning.Activate, HostScreen.Bottom)
         assertEquals(before.filter { it != "Nintendo 3DS" } + "Nintendo 3DS", titles(shell).filter { it.isNotEmpty() })
         assertTrue(titles(shell).dropLastWhile { it.isEmpty() }.none { it.isEmpty() })
-        assertFalse(Row.Tidy in optionRows(shell))
+        assertFalse(Row.Tidy in editHomeRows(shell.model))
     }
 
     @Test
@@ -751,8 +757,8 @@ class HomeGridOrderTest {
         shell.onMeaning(Meaning.Activate, HostScreen.Bottom)
         focus(shell, titles(shell).indexOf("Puzzle"))
         // A folder holds every game of its kind, so nothing is removed from it; Hide is its own row.
-        // The folder's Sort ends every menu inside it.
-        assertEquals(listOf(Row.MoveTile, Row.AddToCollection, Row.SelectTile, Row.Hide, Row.SortFolder), optionRows(shell))
+        // The folder's Sort orders the whole folder, so it is Edit home's, not the game's.
+        assertEquals(listOf(Row.MoveTile, Row.AddToCollection, Row.SelectTile, Row.Hide), optionRows(shell))
         assertNull(shell.model.tileActions?.remove)
         // Add to › Home pins it, leaving the game in its folder, and the focus on it.
         choose(shell, Row.AddToCollection)
@@ -816,7 +822,7 @@ class HomeGridOrderTest {
         focus(shell, titles(shell).indexOf("Quests"))
         shell.onMeaning(Meaning.Activate, HostScreen.Bottom)
         assertEquals(listOf("Drift"), titles(shell))
-        assertEquals(listOf(Row.MoveTile, Row.AddToCollection, Row.SelectTile, Row.RemoveTile, Row.Hide, Row.SortFolder), optionRows(shell))
+        assertEquals(listOf(Row.MoveTile, Row.AddToCollection, Row.SelectTile, Row.RemoveTile, Row.Hide), optionRows(shell))
         assertEquals(Copy.remove, rowText(Row.RemoveTile, shell.model).label)
         choose(shell, Row.AddToCollection)
         shell.onMeaning(Meaning.MoveDown, HostScreen.Bottom)
@@ -837,14 +843,14 @@ class HomeGridOrderTest {
         // Back in its menu, the rest acts on that game too: Hide, and the menu closes.
         shell.onMeaning(Meaning.Back, HostScreen.Bottom)
         val held = panelRows(shell.model.panel!!, shell.model).filterNot { it == Row.Undo }
-        assertEquals(listOf(Row.AddToCollection, Row.Hide, Row.SortFolder), held)
+        assertEquals(listOf(Row.AddToCollection, Row.Hide), held)
         pickRowFocus(shell, Row.Hide)
         shell.onMeaning(Meaning.Activate, HostScreen.Bottom)
         assertNull(shell.model.panel)
         assertEquals(Copy.hidden, shell.model.undoVerb)
         // The focus rests on the empty slot it left, and Y there is the slot's own menu.
         assertEquals(0, shell.model.focus.cellIndex)
-        assertEquals(listOf(Row.MoveTile, Row.SortFolder), optionRows(shell))
+        assertEquals(listOf(Row.MoveTile), optionRows(shell))
         shell.onMeaning(Meaning.Back, HostScreen.Bottom)
         assertFalse("Drift" in titles(shell))
         focus(shell, titles(shell).indexOf("Nintendo 3DS"))
@@ -1008,7 +1014,7 @@ class HomeGridOrderTest {
         shell.onMeaning(Meaning.Activate, HostScreen.Bottom)
         focus(shell, titles(shell).indexOf("Drift"))
         assertEquals(
-            listOf(Row.MoveTile, Row.AddToCollection, Row.Saves, Row.SelectTile, Row.Hide, Row.RemoveDownload, Row.SortFolder),
+            listOf(Row.MoveTile, Row.AddToCollection, Row.Saves, Row.SelectTile, Row.Hide, Row.RemoveDownload),
             optionRows(shell),
         )
         // A copy still arriving is not offered.
@@ -1245,6 +1251,14 @@ class HomeGridOrderTest {
         shell.onMeaning(Meaning.Activate, HostScreen.Bottom)
         shell.onMeaning(Meaning.Back, HostScreen.Bottom)
         shell.onMeaning(Meaning.Back, HostScreen.Bottom)
+    }
+
+    /** L1, down to Edit home, then A: the board's settings, never the tile's. */
+    private fun openEditHome(shell: ShellController) {
+        shell.onMeaning(Meaning.LeftPanel, HostScreen.Bottom)
+        walkPanelTo(shell, leftRows().indexOf(Row.EditHome), HostScreen.Bottom)
+        shell.onMeaning(Meaning.Activate, HostScreen.Bottom)
+        assertEquals(PanelLevel.EditHome, shell.model.panel?.level)
     }
 
     private fun optionRows(shell: ShellController): List<Row> =

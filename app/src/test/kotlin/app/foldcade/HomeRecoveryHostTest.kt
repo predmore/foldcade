@@ -229,7 +229,10 @@ class HomeRecoveryHostTest {
         shell.setInstalledApps(listOf(app, other), emptySet())
         val saved = store.homeBoardRaw()
         focus(shell, 1)
-        shell.onMeaning(Meaning.Options, HostScreen.Bottom)
+        // Tidy is Edit home's: L1, Edit home, Tidy.
+        shell.onMeaning(Meaning.LeftPanel, HostScreen.Bottom)
+        walkPanelTo(shell, leftRows().indexOf(Row.EditHome), HostScreen.Bottom)
+        shell.onMeaning(Meaning.Activate, HostScreen.Bottom)
         choose(shell, Row.Tidy)
         assertNotEquals(saved, store.homeBoardRaw())
         assertNotNull(shell.model.undoVerb)

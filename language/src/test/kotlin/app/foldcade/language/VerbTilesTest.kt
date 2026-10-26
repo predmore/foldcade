@@ -19,7 +19,7 @@ class VerbTilesTest {
         assertEquals(listOf(Row.MoveTile, Row.RenameFolder, Row.FolderIcon),
             tiles(TileActions(move = true, rename = true, icon = true, remove = RemoveVerb.Remove)))
         assertEquals(listOf(Row.MoveTile, Row.RenameFolder), tiles(TileActions(move = true, rename = true)))
-        assertEquals(listOf(Row.MoveTile, Row.NewCollection), tiles(TileActions(move = true, newCollection = true, tidy = true)))
+        assertEquals(listOf(Row.MoveTile, Row.NewCollection), tiles(TileActions(move = true, newCollection = true)))
         assertEquals(listOf(Row.AddToCollection),
             tiles(TileActions(bulk = listOf("a", "b"), collections = emptyList(), newCollection = true, hide = true)))
         assertEquals(listOf(Row.NewCollection), tiles(TileActions(bulk = listOf("a"), newCollection = true)))
@@ -76,12 +76,12 @@ class VerbTilesTest {
         assertEquals(2, panelFocusIndex(rows, 1, Meaning.MoveDown))
     }
 
-    @Test fun editHomeLeadsWithTheTileThenTheBoard() {
-        val model = PickerModel(count = 4, rowsPerPage = 2,
-            tileActions = TileActions(move = true, rename = true, remove = RemoveVerb.Remove, tidyBoard = true))
-        val rows = editHomeRows(model)
-        assertEquals(listOf(Row.MoveTile, Row.RenameFolder), rows.slice(tileBlock(rows)))
-        assertEquals(listOf(Row.RemoveTile, Row.Tidy, Row.RecentOnHome, Row.AddNewGames, Row.Hidden), rows.drop(2))
+    @Test fun editHomeHoldsOnlyTheBoardAndYOnlyTheTile() {
+        val tile = TileActions(move = true, rename = true, remove = RemoveVerb.Remove, tidyBoard = true)
+        val rows = editHomeRows(PickerModel(count = 4, rowsPerPage = 2, tileActions = tile))
+        assertTrue(tileBlock(rows).isEmpty())
+        assertEquals(listOf(Row.Tidy, Row.RecentOnHome, Row.AddNewGames, Row.Hidden), rows)
+        assertTrue(actionRows(tile).none { it in rows })
     }
 
     @Test fun everyVerbHasOneWordUnderItsTile() {

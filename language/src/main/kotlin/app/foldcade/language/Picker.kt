@@ -37,8 +37,8 @@ enum class PanelLevel(val depth: Int, val actsOnTile: Boolean = false) {
     /** Add to: Home, then the collections the focused game can join, each checked while it is in it. */
     Collections(2, actsOnTile = true),
 
-    /** L1's Edit home: the focused tile's actions, then the settings for the whole board. */
-    EditHome(1, actsOnTile = true),
+    /** L1's Edit home: the settings for the whole board. The focused tile's actions are Y's. */
+    EditHome(1),
 }
 
 data class SidePanel(
@@ -794,15 +794,19 @@ fun leftRows(): List<Row> = listOf(
 )
 
 /**
- * The focused tile's actions, the same ones Y offers, then what applies to the
- * whole board: Tidy while it has gaps, the Recently played tile, whether new
- * games join it, and what is hidden from it.
+ * What applies to the whole board, never to one tile, which is Y's: the open folder's
+ * Sort, Tidy while it has gaps, the Recently played tile, whether new games join it,
+ * and what is hidden from it.
  */
-fun editHomeRows(model: PickerModel): List<Row> {
-    val tile = actionRows(model.tileActions)
-    val tidy = if (model.tileActions?.tidyBoard == true && Row.Tidy !in tile) listOf(Row.Tidy) else emptyList()
-    return tile + tidy + listOf(Row.RecentOnHome, Row.AddNewGames, Row.Hidden)
+fun editHomeRows(model: PickerModel): List<Row> = buildList {
+    if (model.tileActions?.boardSort != null) add(Row.SortFolder)
+    if (model.tileActions?.tidyBoard == true) add(Row.Tidy)
+    addAll(listOf(Row.RecentOnHome, Row.AddNewGames, Row.Hidden))
 }
+
+/** The Sort a menu's Sort row steps: Edit home's is the open folder's, Y's the folder tile's. */
+private fun PickerModel.sortChoice(): FolderSortChoice? =
+    if (panel?.level == PanelLevel.EditHome) tileActions?.boardSort else tileActions?.sort
 
 data class SignedInBackend(
     val pluginId: String,
@@ -889,12 +893,12 @@ data class TileActions(
     val saves: Boolean = false,
     /** The game these rows act on. Null for a tile that is not a game, or one off the home grid. */
     val game: String? = null,
-    /** Tidy, on an empty slot of a board with gaps to close. */
-    val tidy: Boolean = false,
-    /** The board on screen has gaps to close, so Edit home offers Tidy whatever the tile. */
+    /** The board on screen has gaps to close, so Edit home offers Tidy. */
     val tidyBoard: Boolean = false,
-    /** The folder Sort orders, the open one or the folder tile, and its order now. Null leaves the row out. */
+    /** A folder tile's own Sort, in Y's menu: that folder and its order now. Null leaves the row out. */
     val sort: FolderSortChoice? = null,
+    /** The open folder's Sort, in Edit home: it orders the whole folder, not the tile. */
+    val boardSort: FolderSortChoice? = null,
 )
 
 /** A folder's Sort row: which folder it orders, and how it orders it now. */
@@ -905,7 +909,8 @@ data class FolderSortChoice(val folderId: String, val sort: FolderSort)
  * ([verbRows]), which draw as round tiles, and under them the rest as rows. Add to holds
  * every place a game can be put, Home first, and New collection at its end, so a game's
  * menu has one tile for all of them. Remove takes the tile off the spot it is in, and Hide
- * is its own row, after it. Sort, for the whole folder rather than the tile, comes last.
+ * is its own row, after it. Sort, on a folder tile, orders that folder and comes last. What
+ * acts on the whole board, Tidy and the open folder's Sort, is Edit home's, not Y's.
  */
 fun actionRows(tile: TileActions?): List<Row> = buildList {
     if (tile == null) return@buildList
@@ -928,7 +933,6 @@ fun actionRows(tile: TileActions?): List<Row> = buildList {
     if (tile.showOnHome != null) add(Row.ShowOnHome)
     if (tile.moveTo != null) add(Row.MoveApp)
     if (tile.select) add(Row.SelectTile)
-    if (tile.tidy) add(Row.Tidy)
     if (tile.remove != null) add(Row.RemoveTile)
     if (tile.restart) add(Row.RestartGame)
     if (tile.hide) add(Row.Hide)
@@ -981,9 +985,10 @@ private fun SidePanel.page() = copy(index = 0, retiring = false, pendingSide = n
 fun retainMenuRows(previous: PickerModel, next: PickerModel): PickerModel {
     val panel = next.panel ?: return next.copy(menuRows = emptyList())
     // Sorting the folder changes what its menu offers: Move and Tidy mean something only in Custom.
-    val was = previous.tileActions?.sort
-    val now = next.tileActions?.sort
-    val resorted = was != null && now != null && was.folderId == now.folderId && was.sort != now.sort
+    fun changed(was: FolderSortChoice?, now: FolderSortChoice?) =
+        was != null && now != null && was.folderId == now.folderId && was.sort != now.sort
+    val resorted = changed(previous.tileActions?.sort, next.tileActions?.sort) ||
+        changed(previous.tileActions?.boardSort, next.tileActions?.boardSort)
     val retained = (if (previous.panel?.side == panel.side && !resorted) previous.menuRows else emptyList())
         .map { it.copy(rows = validMenuRows(it.rows, next)) }
     val page = panel.page()
@@ -1056,7 +1061,7 @@ fun rowText(row: Row, model: PickerModel): RowText = when (row) {
     Row.UsageAccess -> RowText(Copy.playTime, if (model.usageGranted) Copy.playTimeEverywhere else Copy.playTimeHere)
     Row.Primary -> RowText(Copy.primaryPanel, if (model.primaryIsTop) Copy.top else Copy.bottom)
     Row.Order -> RowText(Copy.sortAll, if (model.sort == LibrarySort.RecentlyPlayed) Copy.sortRecent else Copy.sortListed)
-    Row.SortFolder -> RowText(Copy.sort, folderSortLabel(model.tileActions?.sort?.sort ?: FolderSort.Custom))
+    Row.SortFolder -> RowText(Copy.sort, folderSortLabel(model.sortChoice()?.sort ?: FolderSort.Custom))
     Row.Music -> RowText(MusicCopy.row, if (model.music.enabled) MusicCopy.on else MusicCopy.off)
     Row.MusicTrack -> RowText(MusicCopy.track, model.trackTitle)
     Row.MusicVolume -> RowText(MusicCopy.volume, MusicCopy.volumeLabel(model.music.volume).substringAfter("  "))
@@ -1973,7 +1978,7 @@ internal val choiceRows: Set<Row> = setOf(
 
 /** The folder Sort row's step, or null when the menu names no folder. */
 private fun sortStep(model: PickerModel, direction: Int): Effect? =
-    model.tileActions?.sort?.let { Effect.SortFolder(it.folderId, direction) }
+    model.sortChoice()?.let { Effect.SortFolder(it.folderId, direction) }
 
 /**
  * Left and right step a value and keep the row. Music volume moves by 5 points,
