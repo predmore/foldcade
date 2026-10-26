@@ -15,7 +15,7 @@
   "seam_jump_percentile": 3.906484883656886,
   "seam_250ms_rms_step_db": -1.8569983783309887,
   "seam_vs_continuous_max_abs_diff": 2.0443164633343613e-08,
-  "copy2_vs_copy3_residual_db_rel": -88.55395689032487,
+  "next_copy_residual_db_rel": -88.55395689032487,
   "ogg_decoded_samples": 3840000,
   "ogg_decoded_peak_dbfs": -1.3590736380386348,
   "ogg_true_peak_dbtp": -1.3304179922364843

@@ -1,10 +1,10 @@
 # Third-party licenses and credits
 
-## Lanternlight
+## Night Route and Lanternlight
 
-Lanternlight is the home-screen track. The composition is by the Foldcade project (variant A of that piece). It is licensed under MIT with this repository.
+Night Route (the default) and Lanternlight are the home-screen tracks. Both compositions are by the Foldcade project, and both are licensed under MIT with this repository. Night Route's chip voices are synthesized by its own script.
 
-The packaged file is `music/lanternlight.ogg`. The track list, with id, title, composer, license, and file, is `music/tracks/manifest.json`. It is rendered with MuseScore General 0.2.
+The packaged files are `music/nightroute.ogg` and `music/lanternlight.ogg`. The track list, with id, title, composer, license, and file, is `music/tracks/manifest.json`. Both are rendered with MuseScore General 0.2.
 
 ## Afterglow
 

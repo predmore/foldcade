@@ -16,7 +16,7 @@ import app.foldcade.language.HostScreen
 import app.foldcade.language.LibrarySort
 import app.foldcade.language.Meaning
 import app.foldcade.language.MusicTrack
-import app.foldcade.language.defaultLanternlightTrack
+import app.foldcade.language.defaultMusicTrack
 import app.foldcade.language.displayOrder
 import app.foldcade.localfolder.LocalFolderBackend
 import app.foldcade.localfolder.LocalFolderEntry
@@ -381,7 +381,7 @@ class ShellHostTest {
             host,
             onMusic = { ids += it.trackId },
             homeTracks = listOf(
-                defaultLanternlightTrack(),
+                defaultMusicTrack(),
                 MusicTrack("dusk", "Dusk", "Foldcade project", "MIT", "music/dusk.ogg"),
             ),
         )

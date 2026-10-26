@@ -19,7 +19,7 @@ import app.foldcade.language.Row
 import app.foldcade.language.SettingsCategory
 import app.foldcade.language.ThorStyle
 import app.foldcade.language.decodeHome
-import app.foldcade.language.defaultLanternlightTrack
+import app.foldcade.language.defaultMusicTrack
 import app.foldcade.language.encodeHome
 import app.foldcade.language.leftRows
 import app.foldcade.language.panelRows
@@ -208,9 +208,25 @@ class SettingsPersistenceTest {
         assertEquals("dusk", SessionStore(prefs).musicTrackId())
         val restored = ShellController(
             SessionStore(prefs), PluginHost(Dispatchers.Unconfined, MemoryCredentialStore()),
-            homeTracks = listOf(defaultLanternlightTrack(), MusicTrack("dusk", "Dusk", "Foldcade", "MIT", "music/dusk.ogg")),
+            homeTracks = listOf(defaultMusicTrack(), MusicTrack("dusk", "Dusk", "Foldcade", "MIT", "music/dusk.ogg")),
         )
         assertEquals(HomeMusicSetting(false, 0.25f, "dusk"), restored.model.music)
+    }
+
+    @Test
+    fun aSavedLanternlightMovesToNightRouteOnceAndALaterPickStays() {
+        val prefs = MemoryPrefs()
+        prefs.edit().putString("music_track", "lanternlight").putFloat("music_volume", 0.3f).apply()
+        val moved = SessionStore(prefs)
+        assertEquals(HomeMusicSetting.DEFAULT_TRACK_ID, moved.musicTrackId())
+        assertEquals(0.3f, moved.musicVolume(), 0.0001f)
+
+        moved.setMusic(true, 0.3f, "lanternlight")
+        assertEquals("lanternlight", SessionStore(prefs).musicTrackId())
+
+        val other = MemoryPrefs()
+        other.edit().putString("music_track", "dusk").apply()
+        assertEquals("dusk", SessionStore(other).musicTrackId())
     }
 
     @Test

@@ -1,17 +1,17 @@
 #!/usr/bin/env python3
 """Fail the build unless a rendered track matches its checks.
 
-Lanternlight (variant A) is the approved home loop: about -12.0 LUFS
-integrated, true peak at or below -1.0 dBTP, 0 clipped samples, an 80.000 s /
-3,840,000-sample loop, no dropouts, and a seam identical to the continuous
-render. Every other track must clear the same loudness and safety checks.
+Every track masters to about -12.0 LUFS integrated, so switching tracks keeps
+the level. Each must also have its true peak at or below -1.0 dBTP, 0 clipped
+samples, no dropouts, a seam identical to the continuous render, and the loop
+length in its approved tracks/<id>/checks.json (Lanternlight: 80.000 s).
 """
 import argparse
 import json
 import sys
 from pathlib import Path
 
-LENGTH_SAMPLES = 80 * 48000
+SR = 48000
 
 
 def fail(message):
@@ -27,6 +27,11 @@ def main():
     if not checks.is_file():
         fail("missing " + str(checks) + ". process.py did not write checks.")
     res = json.loads(checks.read_text())
+    approved = Path("tracks") / args.track / "checks.json"
+    if not approved.is_file():
+        fail("missing " + str(approved) + ". Commit the approved measurement for this track.")
+    approved_length = float(json.loads(approved.read_text())["length_s"])
+    length_samples = round(approved_length * SR)
     errors = []
 
     def need(condition, message):
@@ -35,9 +40,9 @@ def main():
 
     need(res.get("variant") == "a", "variant is %r, expected a" % res.get("variant"))
     length = float(res.get("length_s", -1))
-    need(abs(length - 80.0) < 1e-3, "length_s %s, expected 80.000" % length)
+    need(abs(length - approved_length) < 1e-3, "length_s %s, expected %.3f" % (length, approved_length))
     samples = int(res.get("ogg_decoded_samples", -1))
-    need(samples == LENGTH_SAMPLES, "ogg_decoded_samples %s, expected %s" % (samples, LENGTH_SAMPLES))
+    need(samples == length_samples, "ogg_decoded_samples %s, expected %s" % (samples, length_samples))
     lufs = float(res.get("integrated_lufs", 0))
     need(abs(lufs - (-12.0)) <= 0.5, "integrated_lufs %.3f, expected -12.0 within 0.5" % lufs)
     peak = float(res.get("sample_peak_dbfs", 0))
@@ -52,8 +57,8 @@ def main():
     need(dropouts == 0, "windows_below_minus50db %s, expected 0" % dropouts)
     seam = float(res.get("seam_vs_continuous_max_abs_diff", 1))
     need(seam < 1e-4, "seam_vs_continuous_max_abs_diff %s is not identical to the continuous render" % seam)
-    residual = float(res.get("copy2_vs_copy3_residual_db_rel", 0))
-    need(residual < -60.0, "copy2_vs_copy3_residual_db_rel %.2f, expected a matching pair of copies" % residual)
+    residual = float(res.get("next_copy_residual_db_rel", 0))
+    need(residual < -60.0, "next_copy_residual_db_rel %.2f, expected a matching pair of copies" % residual)
 
     if errors:
         for message in errors:

@@ -2,6 +2,8 @@
 # Usage: ./render.sh <track-id>
 # Renders one track listed in tracks/manifest.json. CI calls this for every track.
 # Lanternlight's compose source still accepts --variant; the shipped render is variant a.
+# A track with a mix.py finishes fluidsynth's raw_4x.wav (synthesized voices, bus
+# filters) before process.py masters it.
 set -euo pipefail
 cd "$(dirname "$0")"
 TRACK="${1:?pass a track id from tracks/manifest.json}"
@@ -25,6 +27,8 @@ PY
 )"
 
 OUT="tracks/$TRACK/out/a"
+mkdir -p "$OUT"
+rm -f "$OUT"/*.wav
 .venv/bin/python "tracks/$TRACK/compose.py" --variant a --out "$OUT"
 fluidsynth -ni -q -r 48000 -g 0.5 -z 64 -T wav -O float \
   -o synth.reverb.active=1 -o synth.chorus.active=1 \
@@ -32,6 +36,9 @@ fluidsynth -ni -q -r 48000 -g 0.5 -z 64 -T wav -O float \
   -o synth.reverb.width=0.9 -o synth.reverb.level=0.8 \
   -o synth.chorus.depth=6 -o synth.chorus.level=1.2 -o synth.chorus.nr=3 -o synth.chorus.speed=0.25 \
   -F "$OUT/raw_4x.wav" "$SF" "$OUT/foldcade_home_a_render4x.mid"
+if [[ -f "tracks/$TRACK/mix.py" ]]; then
+  .venv/bin/python "tracks/$TRACK/mix.py" --out "$OUT"
+fi
 .venv/bin/python process.py --variant a --out "$OUT" \
   --title "$TITLE" --composer "$COMPOSER" --license "$LICENSE"
 .venv/bin/python check_render.py --track "$TRACK"

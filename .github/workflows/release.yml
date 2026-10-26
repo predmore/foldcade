@@ -267,6 +267,7 @@ jobs:
             exit 1
           fi
           unzip -l "$signed" | grep -q 'assets/music/lanternlight.ogg'
+          unzip -l "$signed" | grep -q 'assets/music/nightroute.ogg'
           unzip -l "$signed" | grep -q 'assets/music/manifest.json'
           cp "$signed" "${RUNNER_TEMP}/foldcade.apk"
 

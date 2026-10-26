@@ -14,7 +14,7 @@ class HomeMusicSettingTest {
         assertEquals(0.5f, music.volume, 0.0001f)
         assertEquals(HomeMusicSetting.DEFAULT_TRACK_ID, music.trackId)
         assertEquals("Music  On", MusicCopy.musicLabel(true))
-        assertEquals("Track  Lanternlight", MusicCopy.trackLabel("Lanternlight"))
+        assertEquals("Track  Night Route", MusicCopy.trackLabel("Night Route"))
         assertEquals("Volume  50%", MusicCopy.volumeLabel(0.5f))
         assertEquals("Volume  25%", MusicCopy.volumeLabel(0.25f))
     }
@@ -43,9 +43,9 @@ class HomeMusicSettingTest {
         assertEquals(music.settings, toggled.settings)
         val again = reduce(toggled, Meaning.Activate).first
         assertTrue(again.music.enabled)
-        val stayed = reduce(base.copy(trackTitle = "Lanternlight").onSetting(Row.MusicTrack), Meaning.Activate).first
+        val stayed = reduce(base.copy(trackTitle = DEFAULT_TRACK_TITLE).onSetting(Row.MusicTrack), Meaning.Activate).first
         assertEquals(HomeMusicSetting.DEFAULT_TRACK_ID, stayed.music.trackId)
-        assertEquals("Track  Lanternlight", MusicCopy.trackLabel(stayed.trackTitle))
+        assertEquals("Track  Night Route", MusicCopy.trackLabel(stayed.trackTitle))
         val atQuarter = base.copy(music = HomeMusicSetting(volume = 0.25f)).onSetting(Row.MusicVolume)
         val stepped = reduce(atQuarter, Meaning.Activate).first
         assertEquals(0.30f, stepped.music.volume, 0.0001f)
@@ -126,15 +126,19 @@ class HomeMusicSettingTest {
     }
 
     @Test
-    fun manifestSelectsLanternlightById() {
+    fun manifestSelectsATrackByIdAndFallsBackToNightRoute() {
         val json = """
-            {"tracks":[{"id":"lanternlight","title":"Lanternlight","composer":"Foldcade project","license":"MIT","file":"music/lanternlight.ogg"}]}
+            {"tracks":[
+              {"id":"nightroute","title":"Night Route","composer":"Foldcade project","license":"MIT","file":"music/nightroute.ogg"},
+              {"id":"lanternlight","title":"Lanternlight","composer":"Foldcade project","license":"MIT","file":"music/lanternlight.ogg"}
+            ]}
         """.trimIndent()
         val tracks = musicTracksFromManifest(json)
-        assertEquals(1, tracks.size)
+        assertEquals(2, tracks.size)
         assertEquals("Lanternlight", musicTrack(tracks, "lanternlight")?.title)
-        assertEquals("music/lanternlight.ogg", musicTrack(tracks, "missing")?.file)
-        assertEquals("Foldcade project", tracks.single().composer)
+        assertEquals("music/nightroute.ogg", musicTrack(tracks, "missing")?.file)
+        assertEquals(DEFAULT_BACKGROUND_MUSIC, defaultMusicTrack().file)
+        assertEquals("Foldcade project", tracks.first().composer)
         assertTrue(musicTracksFromManifest("""{"tracks":[{"id":"x","title":"X","composer":"C","license":"MIT","file":"../no.ogg"}]}""").isEmpty())
     }
 
@@ -203,20 +207,20 @@ class HomeMusicSettingTest {
     }
 
     @Test
-    fun missingSelectedAssetFallsBackToLanternlight() {
-        val present = setOf("music/lanternlight.ogg", "music/theme.ogg")
+    fun missingSelectedAssetFallsBackToTheDefaultTrack() {
+        val present = setOf("music/nightroute.ogg", "music/lanternlight.ogg", "music/theme.ogg")
         val exists: (String) -> Boolean = { it in present }
         assertEquals("music/theme.ogg", packagedHomeMusicFile("music/theme.ogg", exists))
         assertEquals(DEFAULT_BACKGROUND_MUSIC, packagedHomeMusicFile("music/other.ogg", exists))
         assertEquals(
             DEFAULT_BACKGROUND_MUSIC,
-            packagedHomeMusicFile("music/lanternlight.ogg", assetExists = { false }),
+            packagedHomeMusicFile("music/nightroute.ogg", assetExists = { false }),
         )
     }
 
     @Test
     fun trackPickerCyclesHomeTracksAndDropsAThemeTrackWhenThatThemeLeaves() {
-        val lantern = defaultLanternlightTrack()
+        val night = defaultMusicTrack()
         val dusk = MusicTrack("dusk", "Dusk", "Foldcade project", "MIT", "music/dusk.ogg")
         val theme = MusicTrack(
             THEME_TRACK_ID,
@@ -227,11 +231,11 @@ class HomeMusicSettingTest {
             fromTheme = true,
         )
         val model = PickerModel(count = 1, rowsPerPage = 1).copy(
-            homeTracks = listOf(lantern, dusk),
+            homeTracks = listOf(night, dusk),
             themeTracks = listOf(null, theme),
             themes = listOf("Built-in", "Afterglow"),
             themeIndex = 1,
-            trackTitle = lantern.title,
+            trackTitle = night.title,
         )
         val onTrack = model.onSetting(Row.MusicTrack)
         val duskPick = reduce(onTrack, Meaning.Activate).first
@@ -254,7 +258,7 @@ class HomeMusicSettingTest {
         val builtIn = reduce(onThemeRow, Meaning.MoveRight).first
         assertEquals(0, builtIn.themeIndex)
         assertEquals(HomeMusicSetting.DEFAULT_TRACK_ID, builtIn.music.trackId)
-        assertEquals("Lanternlight", builtIn.trackTitle)
+        assertEquals("Night Route", builtIn.trackTitle)
         assertTrue(offeredMusicTracks(builtIn.homeTracks, builtIn.themeTracks.getOrNull(0)).none { it.fromTheme })
 
         val stayed = reduce(duskPick.onSetting(Row.Theme), Meaning.MoveRight).first
@@ -273,9 +277,9 @@ class HomeMusicSettingTest {
         assertEquals("music/moss.ogg", offered?.file)
         assertEquals(null, themeMusicTrack("Moss", """{"name":"Moss"}""", setOf("music/moss.ogg")))
         assertEquals(null, themeMusicTrack("Moss", """{"name":"Moss","backgroundMusic":"../x.ogg"}""", setOf("../x.ogg")))
-        val tracks = offeredMusicTracks(listOf(defaultLanternlightTrack()), offered)
+        val tracks = offeredMusicTracks(listOf(defaultMusicTrack()), offered)
         assertEquals(listOf(HomeMusicSetting.DEFAULT_TRACK_ID, THEME_TRACK_ID), tracks.map { it.id })
-        assertEquals(HomeMusicSetting.DEFAULT_TRACK_ID, cycledMusicTrack(listOf(defaultLanternlightTrack()), "lanternlight", 1).id)
+        assertEquals(HomeMusicSetting.DEFAULT_TRACK_ID, cycledMusicTrack(listOf(defaultMusicTrack()), "lanternlight", 1).id)
     }
 
     @Test
@@ -295,7 +299,10 @@ class HomeMusicSettingTest {
         assertEquals(DEFAULT_BACKGROUND_MUSIC, backgroundMusicFromThemeJson("""{"backgroundMusic":1}"""))
         assertEquals(DEFAULT_BACKGROUND_MUSIC, backgroundMusicFromThemeJson("""{"backgroundMusic":" /abs.ogg"}"""))
         val manifest = repoFile("music/tracks/manifest.json").readText()
-        assertEquals("music/lanternlight.ogg", musicTracksFromManifest(manifest).single().file)
+        assertEquals(
+            listOf("music/nightroute.ogg", "music/lanternlight.ogg"),
+            musicTracksFromManifest(manifest).map { it.file },
+        )
         val theme = repoFile("themes/afterglow/theme.json").readText()
         assertEquals(DEFAULT_BACKGROUND_MUSIC, backgroundMusicFromThemeJson(theme))
     }
