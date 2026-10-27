@@ -808,7 +808,7 @@ class FoldcadeApp : Application() {
         publishNotices()
     }
 
-    /** Y on a notice. Android's go through the listener, which then publishes the rest. */
+    /** X on a notice. Android's go through the listener, which then publishes the rest. */
     fun dismissNotice(id: String) {
         saveSetupNotices.dismiss(id)
         if (id.startsWith("foldcade:save-setup:")) {

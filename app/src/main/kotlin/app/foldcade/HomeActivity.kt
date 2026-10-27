@@ -381,7 +381,7 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
             Effect.OpenThemes -> startActivity(Intent(this, ThemesActivity::class.java))
             Effect.CopyDebugInfo -> copyDebugInfo()
             Effect.DismissButtonLabels -> Unit
-            is Effect.OpenNotice -> openNotice(effect.id, if (effect.onBottom) Panel.Bottom else Panel.Top)
+            is Effect.OpenNotice -> openNotice(effect.id)
             is Effect.DismissNotice -> foldcade.dismissNotice(effect.id)
             Effect.ClearNotices -> foldcade.clearNotices()
             is Effect.OpenSaves -> openSaves(effect.gameId)
@@ -1773,14 +1773,14 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
     }
 
     /**
-     * Opens a notice's app on [requested], or the other screen when a game holds it,
+     * Opens a notice's app on the top screen, or the bottom when a game holds the top,
      * the way an app from the grid opens. A notice that only runs a service or a
      * broadcast leaves both screens to Foldcade.
      */
-    private fun openNotice(key: String, requested: Panel) {
+    private fun openNotice(key: String) {
         val listener = NoticeListener.connected ?: return
         val session = foldcade.store.session
-        val panel = session.singleScreenTarget(requested) ?: return
+        val panel = session.singleScreenTarget(Panel.Top) ?: return
         val assignment = displays.assignment(session.defaultDisplayIsTop)
         val displayId = when (panel) {
             Panel.Top -> assignment.topDisplayId

@@ -553,7 +553,7 @@ sealed interface Row {
     /** Shown in R1 until Foldcade may read notifications. A asks. */
     data object NoticeAccess : Row
 
-    /** Under two or more notices Y could remove. */
+    /** Under two or more notices X could remove. */
     data object ClearNotices : Row
     data class SignOut(val pluginId: String, val label: String) : Row
     data class ForgetFolder(val uri: String, val label: String) : Row
@@ -943,7 +943,7 @@ fun actionRows(tile: TileActions?): List<Row> = buildList {
 
 /**
  * The hint row for the focused menu row when its keys are not just A and B:
- * the slider names the D-pad, and a notice names Y. Null leaves the usual row.
+ * the slider names the D-pad, and a notice names X. Null leaves the usual row.
  */
 fun panelHints(model: PickerModel): List<HintKey>? {
     val panel = model.panel ?: return null
@@ -959,11 +959,8 @@ fun panelHints(model: PickerModel): List<HintKey>? {
                 if (notice.savePlayerId != null || notice.settingsCategory != null) {
                     add(HintKey(promptKeyOf(model.faceMap.confirmKey) ?: PromptKey.FaceA, Copy.setUp))
                 }
-                if (notice.openable) {
-                    add(HintKey(promptKeyOf(model.faceMap.confirmKey) ?: PromptKey.FaceA, Copy.hintTop))
-                    add(HintKey(roles.bottomGlyph, Copy.hintBottom))
-                }
-                if (notice.dismissable) add(HintKey(roles.optionsGlyph, NoticeCopy.dismiss))
+                if (notice.openable) add(HintKey(promptKeyOf(model.faceMap.confirmKey) ?: PromptKey.FaceA, NoticeCopy.open))
+                if (notice.dismissable) add(HintKey(roles.bottomGlyph, NoticeCopy.dismiss))
                 add(back)
             }
         }
@@ -1319,11 +1316,11 @@ sealed interface Effect {
     /** Edit home's switch put Recently played on Home or took it off. */
     data class RecentOnHome(val on: Boolean) : Effect
 
-    /** Open the notice's app on the top screen, or the bottom when [onBottom]. */
-    data class OpenNotice(val id: String, val onBottom: Boolean) : Effect
+    /** Open the notice's app on the top screen, or the bottom when a game holds the top. */
+    data class OpenNotice(val id: String) : Effect
     data class DismissNotice(val id: String) : Effect
 
-    /** Every notice Y could remove is gone from the model; the app clears them too. */
+    /** Every notice X could remove is gone from the model; the app clears them too. */
     data object ClearNotices : Effect
 
     /** Show the home board's top level. */
@@ -1556,6 +1553,8 @@ fun reduce(
         if (meaning == Meaning.LeftPanel || meaning == Meaning.RightPanel) {
             return presentPanel(coerced, meaning, screen) to null
         }
+        // A held X or Delete removes one notice, not each one that moves up under the focus.
+        if (repeatCount > 0 && (meaning == Meaning.ActivateBottom || meaning == Meaning.Dismiss)) return coerced to null
         return applyPanel(coerced, panel, meaning, screen)
     }
     return applyGrid(coerced, meaning, screen, repeatCount)
@@ -1958,13 +1957,8 @@ private fun applyPanel(
         }
         Meaning.Activate -> activateRow(model, current, rows[index], screen)
         Meaning.LeftPanel, Meaning.RightPanel -> presentPanel(model, meaning, screen) to null
-        // X opens a notice on the bottom screen, as it opens a game there.
-        Meaning.ActivateBottom -> when (val row = rows[index]) {
-            is Row.Notice -> openNotice(model, current, row.id, onBottom = true, screen = screen)
-            else -> model.copy(panel = current) to null
-        }
-        // Y, or Delete on a keyboard, removes the focused notice.
-        Meaning.Options, Meaning.Dismiss -> when (val row = rows[index]) {
+        // X, or Delete on a keyboard, removes the focused notice, as X removes in every menu.
+        Meaning.ActivateBottom, Meaning.Dismiss -> when (val row = rows[index]) {
             is Row.Notice -> dismissNotice(model, current, row.id)
             else -> model.copy(panel = current) to null
         }
@@ -2234,7 +2228,7 @@ private fun activateRow(
         ) to Effect.OpenAddRomm
         is Row.SignOut -> model.copy(panel = null, focus = panel.grid) to Effect.ForgetCredentials(row.pluginId)
         is Row.ForgetFolder -> model.copy(panel = null, focus = panel.grid) to Effect.ForgetFolder(row.uri)
-        is Row.Notice -> openNotice(model, panel, row.id, onBottom = false, screen = screen)
+        is Row.Notice -> openNotice(model, panel, row.id)
         Row.NoticeAccess -> model.copy(panel = panel, dialog = noticeAccessPrompt(screen)) to null
         Row.ClearNotices -> model.copy(
             panel = panel.copy(index = rightStart()),
@@ -2319,17 +2313,8 @@ private fun TileActions.toggled(folderId: String): TileActions = copy(
     collections = collections?.map { if (it.folderId == folderId) it.copy(member = !it.member) else it },
 )
 
-/**
- * A, or X for the bottom screen. An app's notice opens that app and R1 closes.
- * A Foldcade notice has no app, so A shows all of its text and X does nothing.
- */
-private fun openNotice(
-    model: PickerModel,
-    panel: SidePanel,
-    id: String,
-    onBottom: Boolean,
-    screen: HostScreen,
-): Pair<PickerModel, Effect?> {
+/** A. An app's notice opens that app and R1 closes. A Foldcade notice has no app, so A shows all of its text. */
+private fun openNotice(model: PickerModel, panel: SidePanel, id: String): Pair<PickerModel, Effect?> {
     val notice = model.notices.firstOrNull { it.id == id } ?: return model.copy(panel = panel) to null
     notice.settingsCategory?.let { category ->
         return model.openSettings(panel.screen, category, panel.grid) to null
@@ -2347,9 +2332,8 @@ private fun openNotice(
         return model.copy(panel = null, focus = panel.grid) to fix
     }
     if (notice.openable) {
-        return model.copy(panel = null, focus = panel.grid) to Effect.OpenNotice(id, onBottom)
+        return model.copy(panel = null, focus = panel.grid) to Effect.OpenNotice(id)
     }
-    if (onBottom) return model.copy(panel = panel) to null
     return model.copy(panel = panel, dialog = noticeReader(notice, panel.screen)) to null
 }
 
