@@ -1,9 +1,12 @@
 #!/usr/bin/env bash
 # Attach foldcade.apk to a GitHub Release.
 # Every push to main moves the pre-release tag "pre-release" onto the built
-# commit before the APK is uploaded, so the source archive matches the binary.
-# The tag is updated in place. Deleting it queues a GitHub event that can land
-# after the new release is published and force that release back into a draft.
+# commit, then updates that release in place, so the source archive matches
+# the binary. The tag is not deleted. Deleting it queues a GitHub event that
+# can land after the new release is published and force it back into a draft.
+# The release object is not deleted either. GitHub has returned HTTP 500 for
+# that delete and the job then exits before a replacement exists. A delete
+# that does land also opens a gap while the next create is still racing it.
 # A push that changes versionName in app/build.gradle.kts also cuts tag vX.Y.Z
 # and a non-prerelease release. An existing tag is not recreated.
 # A push of an existing tag v0.x.y that matches versionName publishes that
@@ -139,16 +142,22 @@ commit: ${GITHUB_SHA}
 Asset name: foldcade.apk
 EOF
 
-# Remove the release object and leave its git tag in place.
-# --cleanup-tag queues a "tag deleted" event. GitHub can apply that event
-# after the replacement release is already public and force the new release
-# back into an untagged draft. The job would still be green.
-delete_prerelease_object() {
+# present, absent, or error. HTTP 500 is an error, not proof the release is
+# gone. Treating it as absent would try to create a second release while the
+# first one is still on the tag.
+prerelease_object_state() {
   local pre_tag="$1"
-  if gh release view "$pre_tag" >/dev/null 2>&1; then
-    echo "Deleting the ${pre_tag} release object without deleting its tag."
-    gh release delete "$pre_tag" --yes
+  local err
+  if err="$(gh release view "$pre_tag" 2>&1 >/dev/null)"; then
+    printf '%s\n' present
+    return 0
   fi
+  if printf '%s\n' "$err" | grep -Eq 'release not found|HTTP 404'; then
+    printf '%s\n' absent
+    return 0
+  fi
+  printf '%s\n' error
+  return 0
 }
 
 # Point the rolling tag at the built commit. Create the ref when it is missing.
@@ -182,22 +191,30 @@ point_prerelease_tag() {
 }
 
 # The tag already points at this commit. --verify-tag refuses to invent one.
+# A create that returns an error after the release exists is success: the
+# next step uploads the APK onto that object instead of starting another.
 create_prerelease_draft() {
   local pre_tag="$1"
-  local attempt
+  local attempt err state
   for attempt in 1 2 3 4 5; do
-    if gh release create "$pre_tag" \
+    if err="$(gh release create "$pre_tag" \
       --draft \
       --target "$GITHUB_SHA" \
       --title "Pre-release ${VERSION_NAME}" \
       --notes-file "$notes" \
       --prerelease \
       --latest=false \
-      --verify-tag
-    then
+      --verify-tag 2>&1)"; then
+      printf '%s\n' "$err"
       return 0
     fi
-    echo "Creating draft ${pre_tag} failed (attempt ${attempt}). The previous release may still be deleting."
+    printf '%s\n' "$err" >&2
+    state="$(prerelease_object_state "$pre_tag")"
+    if [ "$state" = "present" ]; then
+      echo "Release ${pre_tag} exists. Not creating another."
+      return 0
+    fi
+    echo "Creating draft ${pre_tag} failed (attempt ${attempt})."
     sleep $((attempt * 2))
   done
   echo "::error::Could not create the ${pre_tag} draft."
@@ -218,7 +235,7 @@ prerelease_is_public() {
       target="$(git rev-parse "${target}^{commit}")"
     fi
   fi
-  asset="$(printf '%s\n' "$json" | jq -r '[.assets[].name] | index("foldcade.apk") != null')"
+  asset="$(printf '%s\n' "$json" | jq -r '([(.assets // [])[].name] == ["foldcade.apk"])')"
   [ "$(printf '%s\n' "$json" | jq -r '.draft')" = "false" ] \
     && [ "$(printf '%s\n' "$json" | jq -r '.prerelease')" = "true" ] \
     && [ "$(printf '%s\n' "$json" | jq -r '.tag_name')" = "$pre_tag" ] \
@@ -231,7 +248,7 @@ prerelease_is_public() {
 # cover the tag-deleted event arriving after the first publish.
 confirm_prerelease() {
   local pre_tag="pre-release"
-  local attempt
+  local attempt state names
   local -a waits=(0 2 4 8 8 8 10 10 10)
   for attempt in "${!waits[@]}"; do
     if [ "${waits[$attempt]}" -gt 0 ]; then
@@ -242,26 +259,105 @@ confirm_prerelease() {
       return 0
     fi
     echo "pre-release is missing or still a draft (check $((attempt + 1)))."
-    if gh release view "$pre_tag" >/dev/null 2>&1; then
-      if ! gh release view "$pre_tag" --json assets --jq '.assets[].name' | grep -qx 'foldcade.apk'; then
-        gh release upload "$pre_tag" "$apk" --clobber
+    state="$(prerelease_object_state "$pre_tag")"
+    if [ "$state" = "absent" ]; then
+      if create_prerelease_draft "$pre_tag"; then
+        state=present
       fi
-      gh release edit "$pre_tag" --draft=false --prerelease=true --latest=false
+    fi
+    if [ "$state" = "present" ]; then
+      names="$(gh release view "$pre_tag" --json assets --jq '.assets[].name' 2>/dev/null || true)"
+      if [ "$names" != "foldcade.apk" ]; then
+        replace_prerelease_asset "$pre_tag" || echo "Replacing foldcade.apk failed."
+      fi
+      edit_prerelease "$pre_tag" || echo "Publishing ${pre_tag} failed."
     fi
   done
   echo "::error::Release ${pre_tag} is missing, still a draft, or has no foldcade.apk."
   return 1
 }
 
-# Replace the rolling pre-release on this commit. The release stays a draft
-# until foldcade.apk is uploaded, then it is published and checked.
-recreate_prerelease() {
+# Upload foldcade.apk and drop every other asset. --clobber replaces an
+# existing foldcade.apk; it does not remove a differently named file.
+replace_prerelease_asset() {
+  local pre_tag="$1"
+  local names name found=0
+  gh release upload "$pre_tag" "$apk" --clobber || return 1
+  names="$(gh release view "$pre_tag" --json assets --jq '.assets[].name')" || return 1
+  while IFS= read -r name; do
+    [ -n "$name" ] || continue
+    if [ "$name" = "foldcade.apk" ]; then
+      found=1
+      continue
+    fi
+    echo "Removing extra asset ${name} from ${pre_tag}."
+    gh release delete-asset "$pre_tag" "$name" --yes || return 1
+  done <<< "$names"
+  [ "$found" -eq 1 ]
+}
+
+# Keep the release on this commit, public, and not Latest. v0.x.y stays Latest.
+edit_prerelease() {
+  local pre_tag="$1"
+  gh release edit "$pre_tag" \
+    --target "$GITHUB_SHA" \
+    --title "Pre-release ${VERSION_NAME}" \
+    --notes-file "$notes" \
+    --draft=false \
+    --prerelease=true \
+    --latest=false
+}
+
+# Five attempts. GitHub sometimes returns HTTP 500 for a release write that
+# did not stick. Upload and edit are safe to repeat.
+update_prerelease() {
+  local pre_tag="$1"
+  local attempt
+  for attempt in 1 2 3 4 5; do
+    if replace_prerelease_asset "$pre_tag" && edit_prerelease "$pre_tag"; then
+      return 0
+    fi
+    echo "Updating ${pre_tag} failed (attempt ${attempt})."
+    sleep $((attempt * 2))
+  done
+  echo "::error::Could not update the ${pre_tag} release."
+  return 1
+}
+
+# Create only when the tag has no release. A lookup error is retried so a
+# 500 is not mistaken for a missing release.
+ensure_prerelease_object() {
+  local pre_tag="$1"
+  local attempt state
+  for attempt in 1 2 3 4 5; do
+    state="$(prerelease_object_state "$pre_tag")"
+    case "$state" in
+      present)
+        echo "Release ${pre_tag} already exists. Updating it in place."
+        return 0
+        ;;
+      absent)
+        echo "Release ${pre_tag} is missing. Creating a draft."
+        create_prerelease_draft "$pre_tag"
+        return $?
+        ;;
+      *)
+        echo "Looking up ${pre_tag} failed (attempt ${attempt})."
+        sleep $((attempt * 2))
+        ;;
+    esac
+  done
+  echo "::error::Could not tell whether ${pre_tag} exists."
+  return 1
+}
+
+# Move the rolling tag, then update the release already on it. The APK is
+# replaced before the job checks the public tag endpoint.
+publish_rolling_prerelease() {
   local pre_tag="pre-release"
-  delete_prerelease_object "$pre_tag"
   point_prerelease_tag "$pre_tag"
-  create_prerelease_draft "$pre_tag"
-  gh release upload "$pre_tag" "$apk" --clobber
-  gh release edit "$pre_tag" --draft=false --prerelease=true --latest=false
+  ensure_prerelease_object "$pre_tag"
+  update_prerelease "$pre_tag"
   confirm_prerelease
 }
 
@@ -404,7 +500,7 @@ if [ "$stable_tag" = true ]; then
   exit 0
 fi
 
-recreate_prerelease
+publish_rolling_prerelease
 if [ "$bump" = "bumped" ]; then
   publish_stable
 else
