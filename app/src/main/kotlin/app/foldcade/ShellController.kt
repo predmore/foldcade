@@ -2287,10 +2287,12 @@ class ShellController(
 
     /**
      * A home tile as a game. A library game takes its screens from its platform's
-     * players, as the library grid does, so a DS game reads as both screens.
+     * players, as the library grid does, so a DS game reads as both screens. An
+     * installed app does when it is one of [BOTH_SCREEN_APPS].
      */
     private fun homeShelf(face: HomeFace): ShelfGame {
         val game = home.asShelf(face)
+        if (game.androidPackage in BOTH_SCREEN_APPS) return game.copy(occupiesBothDisplays = true)
         val platformId = game.platformId
         if (game.libraryId == null || platformId == null) return game
         return game.copy(occupiesBothDisplays = platformOccupiesBoth(plugins, platformId, installedPlayers::contains))

@@ -178,6 +178,19 @@ def chiaki(c):
     return [shadow(32, 60, 24, 3), body(head, c), recess(rr(10, 26, 44, 16, 8), "#1C2A55"),
             screen(rr(18.5, 30, 6.5, 6.5, 1), "#FF6FB8", sym=0), screen(rr(39, 30, 6.5, 6.5, 1), "#FF6FB8", sym=0)]
 
+def pxplay(c):
+    """PXPlay: four white-rimmed face buttons in a diamond, each a PlayStation shape one stroke short."""
+    ink, w, s = "#F4F6FF", 2.5, 4.2
+    def face(x, y, marks):
+        return [body(ci(x, y, 10.6), ink, gloss=0.2), body(ci(x, y, 8.4), c), *[control(m, ink) for m in marks]]
+    top, left, right, bottom = (32, 15.5), (16, 31.5), (48, 31.5), (32, 47.5)
+    seg = lambda o, a, b: capsule(o[0] + a[0], o[1] + a[1], o[0] + b[0], o[1] + b[1], w)
+    return [shadow(32, 60.5, 22, 3),
+            *face(*top, [seg(top, (1, -s), (-s, s * 0.8)), seg(top, (-s, s * 0.8), (s, s * 0.8))]),
+            *face(*left, [seg(left, (-s * 0.8, -s), (-s * 0.8, s * 0.8)), seg(left, (-s * 0.8, s * 0.8), (s, s * 0.8))]),
+            *face(*right, [arc_band(*right, s, w, 20, 270)]),
+            *face(*bottom, [seg(bottom, (-s * 0.8, -s * 0.8), (s * 0.8, s * 0.8))])]
+
 def winlator(c):
     """Winlator: a window of four lit panes, its top corner folded down like a page."""
     frame = rpoly([(6, 8), (45, 8), (58, 21), (58, 56), (6, 56)], [6, 1.5, 1.5, 6, 6])
@@ -268,6 +281,7 @@ APPS = {
     "xbox": (xbox, "#6BDB3A", "Xbox: a lit green orb", ["com.microsoft.xboxone.smartglass", "com.gamepass"]),
     "ps_remote_play": (ps_remote_play, "#3F8CFF", "PS Remote Play: a controller with signal dots", ["com.playstation.remoteplay"]),
     "chiaki": (chiaki, "#C8EE3C", "Chiaki: a cat head in a visor", ["com.metallic.chiaki"]),
+    "pxplay": (pxplay, "#3A7DFF", "PXPlay: four ringed face buttons, each one stroke short", ["psplay.grill.com"]),
     "winlator": (winlator, "#4F8EFF", "Winlator: a window of four panes with a folded corner", ["com.winlator"]),
     "gamehub": (gamehub, "#B4BFCF", "GameHub: a d-pad between two brackets", ["com.xiaoji.egggame"]),
     "argosy": (argosy, "#8C8AFF", "Argosy: a ship's wheel", ["com.nendo.argosy"]),

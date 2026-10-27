@@ -20,6 +20,12 @@ Check [New games on Home](README.md#a-game-is-in-all-but-missing-from-home) if n
 
 An emulator's tile opens the app. Add its games through [local folders](local-games.md), [RomM](romm.md), or the relevant [source guide](README.md).
 
+## PlayStation streaming with PXPlay
+
+PXPlay (PS Play, `psplay.grill.com`) streams your PS5 or PS4. It opens on the top screen and takes both screens: while it streams, its DualSense touchpad and buttons are on the bottom screen, and Foldcade leaves that screen alone instead of dimming it. Press **A** to play it. To change what goes there, open PXPlay's settings and set **Content on external display** to **Gamepad overlay** or **Stream view**.
+
+PXPlay has no links into a console or a game, so its tile opens PXPlay's console list. To go straight into a stream, turn on **Auto-connect on app launch** in your console's settings in PXPlay.
+
 ## Updates and saves
 
 The list updates at startup, when you return, and when apps are installed, removed, or changed. Apps without launcher icons do not become tiles.
