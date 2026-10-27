@@ -13,7 +13,7 @@ data class FoldNotice(
     val postedMillis: Long = 0L,
     /** True for an app notification the shell can open; Foldcade notices use their own targets. */
     val openable: Boolean = false,
-    /** Y removes it. Android marks some notifications as not clearable. */
+    /** X removes it. Android marks some notifications as not clearable. */
     val dismissable: Boolean = true,
     /** A standing save notice opens this player's Settings fix. */
     val savePlayerId: String? = null,
@@ -29,6 +29,7 @@ object NoticeCopy {
         "Android asks once. Turn on notification access for Foldcade, then come back. They stay on this device."
     const val clearAll = "Clear all"
     const val dismiss = "Dismiss"
+    const val open = "Open"
 }
 
 /** How long ago, in the fewest characters: now, 5m, 3h, 2d. */

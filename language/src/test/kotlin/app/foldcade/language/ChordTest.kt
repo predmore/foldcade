@@ -75,8 +75,8 @@ class ChordTest {
         val drawer = reduce(home.copy(notices = listOf(notice)), Meaning.RightPanel).first
         assertEquals(Effect.OpenAndroidSetting(AndroidSetting.Settings), reduce(drawer, Meaning.Menu).second)
         val onNotice = drawer.copy(panel = drawer.panel!!.copy(index = panelRows(drawer.panel!!, drawer).indexOf(Row.Notice("n"))))
-        assertEquals(Effect.DismissNotice("n"), reduce(onNotice, Meaning.Options).second)
-        assertEquals(Effect.OpenNotice("n", onBottom = true), reduce(onNotice, Meaning.ActivateBottom).second)
+        assertEquals(Effect.DismissNotice("n"), reduce(onNotice, Meaning.ActivateBottom).second)
+        assertNull(reduce(onNotice, Meaning.Options).second)
     }
 
     @Test

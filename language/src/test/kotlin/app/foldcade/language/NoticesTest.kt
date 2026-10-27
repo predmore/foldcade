@@ -41,7 +41,7 @@ class NoticesTest {
             assertEquals(normal.settings, opened.settings)
             assertEquals(base.focus, reduce(opened, Meaning.Back, screen).first.focus)
             assertNull(reduce(opened, Meaning.Back, screen).first.settings)
-            assertEquals(Effect.DismissNotice(notice.id), reduce(focused, Meaning.Options, screen).second)
+            assertEquals(Effect.DismissNotice(notice.id), reduce(focused, Meaning.ActivateBottom, screen).second)
             assertEquals(false, Row.ClearNotices in rightRows(listOf(notice)))
         }
     }
@@ -63,7 +63,7 @@ class NoticesTest {
             assertEquals(expected, effect)
             assertNull(closed.panel)
             assertNull(closed.dialog)
-            assertEquals(Effect.DismissNotice(notice.id), reduce(focused, Meaning.Options).second)
+            assertEquals(Effect.DismissNotice(notice.id), reduce(focused, Meaning.ActivateBottom).second)
             assertEquals(true, panelHints(focused)!!.any { it.label == Copy.setUp })
             val (missing, noEffect) = reduce(focused.copy(playerSaves = emptyList()), Meaning.Activate)
             assertNull(noEffect)
@@ -92,27 +92,35 @@ class NoticesTest {
     }
 
     @Test
-    fun aOpensOnTopXOnTheBottomAndRoneCloses() {
+    fun aOpensTheNoticeAndRoneCloses() {
         val focused = onNotice(chat)
         val (top, open) = reduce(focused, Meaning.Activate)
-        assertEquals(Effect.OpenNotice("chat", onBottom = false), open)
+        assertEquals(Effect.OpenNotice("chat"), open)
         assertNull(top.panel)
-        val (bottom, below) = reduce(focused, Meaning.ActivateBottom)
-        assertEquals(Effect.OpenNotice("chat", onBottom = true), below)
-        assertNull(bottom.panel)
     }
 
     @Test
-    fun yAndDeleteDismissAndTheNextNoticeMovesUnderTheFocus() {
+    fun yDoesNothingOnANotice() {
         val focused = onNotice(chat)
-        listOf(Meaning.Options, Meaning.Dismiss).forEach { meaning ->
+        assertEquals(focused to null, reduce(focused, Meaning.Options))
+    }
+
+    @Test
+    fun xAndDeleteDismissAndTheNextNoticeMovesUnderTheFocus() {
+        val focused = onNotice(chat)
+        listOf(Meaning.ActivateBottom, Meaning.Dismiss).forEach { meaning ->
             val (after, effect) = reduce(focused, meaning)
             assertEquals(Effect.DismissNotice("chat"), effect)
             assertEquals(listOf(mail, saved, pinned), after.notices)
             assertEquals(focused.panel?.index, after.panel?.index)
             assertEquals(Row.Notice("mail"), panelRows(after.panel!!, after)[after.panel!!.index])
         }
-        val (kept, none) = reduce(onNotice(pinned), Meaning.Options)
+        // A held X or Delete takes only the first.
+        listOf(Meaning.ActivateBottom, Meaning.Dismiss).forEach { meaning ->
+            val after = reduce(focused, meaning).first
+            assertEquals(after, reduce(after, meaning, repeatCount = 1).first)
+        }
+        val (kept, none) = reduce(onNotice(pinned), Meaning.ActivateBottom)
         assertNull(none)
         assertEquals(listOf(chat, mail, saved, pinned), kept.notices)
     }
@@ -125,7 +133,6 @@ class NoticesTest {
         assertEquals(DialogKind.Notice, read.dialog?.kind)
         assertEquals("Bravely Second · archived", read.dialog?.body)
         assertEquals(focused.panel, read.panel)
-        assertEquals(focused, reduce(focused, Meaning.ActivateBottom).first)
     }
 
     @Test
@@ -155,18 +162,20 @@ class NoticesTest {
     fun theHintRowNamesWhatANoticeTakes() {
         assertEquals(
             listOf(
-                HintKey(PromptKey.FaceA, Copy.hintTop),
-                HintKey(PromptKey.FaceX, Copy.hintBottom),
-                HintKey(PromptKey.FaceY, NoticeCopy.dismiss),
+                HintKey(PromptKey.FaceA, NoticeCopy.open),
+                HintKey(PromptKey.FaceX, NoticeCopy.dismiss),
                 HintKey(PromptKey.FaceB, Copy.back),
             ),
             panelHints(onNotice(chat)),
         )
         assertEquals(
-            listOf(HintKey(PromptKey.FaceY, NoticeCopy.dismiss), HintKey(PromptKey.FaceB, Copy.back)),
+            listOf(HintKey(PromptKey.FaceX, NoticeCopy.dismiss), HintKey(PromptKey.FaceB, Copy.back)),
             panelHints(onNotice(saved)),
         )
-        assertEquals(listOf(HintKey(PromptKey.FaceB, Copy.back)), panelHints(onNotice(pinned))?.drop(2))
+        assertEquals(
+            listOf(HintKey(PromptKey.FaceA, NoticeCopy.open), HintKey(PromptKey.FaceB, Copy.back)),
+            panelHints(onNotice(pinned)),
+        )
     }
 
     @Test
@@ -189,7 +198,7 @@ class NoticesTest {
     @Test
     fun rOneFollowsAndroidsListWhileItIsOpen() {
         val focused = retainMenuRows(PickerModel(count = 2, rowsPerPage = 2), onNotice(chat))
-        // Android takes the notice away after Y, and a new one arrives.
+        // Android takes the notice away after X, and a new one arrives.
         val news = FoldNotice("news", "Patch notes", "1.2", "com.news", postedMillis = 4_000L, openable = true)
         val next = retainMenuRows(focused, focused.copy(notices = listOf(news, mail, saved, pinned)))
         val rows = panelRows(next.panel!!, next)

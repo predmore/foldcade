@@ -9,8 +9,8 @@ package app.foldcade.language
  * Y and X until calibration takes them. A confirms the focused row and B goes back,
  * so neither is ever a chord. Each row shows its key on its right.
  *
- * A row lives in one menu, so its chord is its own. R1's notices keep Y and X for
- * themselves, and no row in R1 takes either.
+ * A row lives in one menu, so its chord is its own. R1's notices keep X for
+ * themselves, and no row in R1 takes it.
  */
 private fun Row.chord(): Meaning? = when (this) {
     Row.Settings, Row.QuickTile(QuickSetting.Settings) -> Meaning.Menu

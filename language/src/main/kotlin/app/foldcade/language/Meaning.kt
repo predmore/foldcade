@@ -29,7 +29,7 @@ enum class Meaning {
     LetterForward,
     LetterBackward,
 
-    /** Delete on a keyboard. Removes the focused notice in R1, as Y does. */
+    /** Delete on a keyboard. Removes the focused notice in R1, as X does. */
     Dismiss,
 
     /** Start opens Settings from a grid, runs a menu's settings row, and closes Settings again. See [chords]. */
