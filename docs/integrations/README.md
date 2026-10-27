@@ -17,7 +17,7 @@ Choose a guide for where your games live. You can combine sources on the same Ho
 
 Open **L1 › Settings › Library › Add** to add game folders or a RomM server. If your games are on a RomM server, start there: one sign-in brings the whole library, and with RomM 5.4 or newer your saves follow you between Thors. A game in a folder with the same system and file name as a RomM game joins its tile instead of doubling it. For Moonlight, choose your computer's tile in the same place and turn on **Games** to list all its games. For Moonlight or DroidDeck shortcuts, first choose Foldcade under **Settings › System › Home app**; Android sends shortcut requests to its default home app.
 
-Finish setup in the source app or emulator and check that your game plays there. In Foldcade, press **A** to play on the top screen or **X** on the bottom. Azahar and melonDS use both screens; configure their layout in the emulator.
+Finish setup in the source app or emulator and check that your game plays there. In Foldcade, press **A** to play on the top screen or **X** on the bottom. Azahar, melonDS, and PXPlay use both screens; configure their layout in the app.
 
 ## Discovery and updates
 
