@@ -68,7 +68,7 @@ data class SceneLive(
     val battery: Float = 1f,
     val charging: Boolean = false,
     val sinceMove: Float = SCENE_SINCE_MOVE_MAX,
-    /** How far the panel's grid has slid sideways, render px, so a scene can move as a camera would. */
+    /** How far the grid has slid sideways, render px, on either screen, so a scene can move as a camera would. */
     val scroll: Float = 0f,
 )
 

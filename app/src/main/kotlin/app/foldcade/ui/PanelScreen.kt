@@ -395,7 +395,7 @@ fun PanelHost(activity: FoldcadeHomeActivity, displays: Displays) {
 /**
  * What the shell tells a theme's scene each time it draws: the focused item's accent, eased as
  * focus moves, the time of day, the battery, how long since the cursor last moved, and where
- * [camera] says the panel's grid has slid to.
+ * [camera] says the grid has slid to.
  */
 @Composable
 private fun sceneLive(app: FoldcadeApp, scene: app.foldcade.language.ThemeScene?, scale: Float, camera: BackdropCamera): () -> SceneLive {
@@ -468,7 +468,8 @@ private fun PanelBody(
     val session = app.store.session
     val model = app.shell.model
     val cover = remember { BackdropCover() }
-    val camera = remember { BackdropCamera() }
+    // One camera for both screens: the top's scene slides with the bottom's grid.
+    val camera = app.backdropCamera
     // Settings and Play activity paint the theme's background over the whole panel.
     val pageHere = screen != null && (model.settings?.screen == screen || model.playActivity?.screen == screen)
     val settingsOver = pageHere && foldTheme().background.alpha >= 1f

@@ -124,9 +124,10 @@ internal fun CoversBackdrop() {
 }
 
 /**
- * Where the grid on one panel has slid to, in px, for the scene behind it to follow
- * as a camera would. The grid on screen tells it; once that grid leaves, the scene
- * stays where the grid left it rather than jumping back.
+ * Where the grid has slid to, in px, for the scenes on both screens to follow as a
+ * camera would, as the 3DS's top screen slides with the grid below it. The grid on
+ * screen tells it; once that grid leaves, the scenes stay where it left them rather
+ * than jumping back.
  */
 internal class BackdropCamera {
     private var source by mutableStateOf<() -> Float>({ 0f })
