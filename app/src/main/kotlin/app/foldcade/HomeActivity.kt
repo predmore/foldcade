@@ -984,16 +984,17 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
     }
 
     /**
-     * Same top or bottom placement as any other single-screen launch.
+     * Same top or bottom placement as any other single-screen launch. One of [BOTH_SCREEN_APPS]
+     * opens on the top screen and takes both, as a 3DS game does.
      * [PluginHost.openInstalledApp] does not read a save folder, so a missing one does not block this.
      */
     private fun launchInstalled(game: ShelfGame) {
         val pkg = game.androidPackage ?: return
         val opened = foldcade.plugins.openInstalledApp(pkg)
         val launch = packageManager.getLaunchIntentForPackage(pkg) ?: return
-        val external = ExternalApp(opened.sessionId, occupiesBothDisplays = false)
+        val external = ExternalApp(opened.sessionId, game.occupiesBothDisplays)
         val session = foldcade.store.session
-        val panel = session.singleScreenTarget(launchScreen) ?: return
+        val panel = if (external.occupiesBothDisplays) Panel.Top else session.singleScreenTarget(launchScreen) ?: return
         val assignment = displays.assignment(session.defaultDisplayIsTop)
         val displayId = when (panel) {
             Panel.Top -> assignment.topDisplayId

@@ -423,6 +423,12 @@ class FoldcadeApp : Application() {
     var buttonPromptFirstSession: Boolean = false
         private set
 
+    /**
+     * Where the grid has slid to. Both screens' scenes follow it, so the top slides with
+     * the bottom's grid as the 3DS's top screen does.
+     */
+    internal val backdropCamera = app.foldcade.ui.BackdropCamera()
+
     /** Set before composition when a debug capture freezes the island morph. */
     var islandHold by mutableStateOf<IslandHold?>(null)
 

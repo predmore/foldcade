@@ -332,6 +332,28 @@ class HomeGridOrderTest {
     }
 
     @Test
+    fun pxPlayReadsAsBothScreensAndOtherAppsTakeOne() {
+        // PXPlay draws the DualSense controls on the bottom screen while it streams.
+        val shell = shell()
+        shell.setInstalledApps(
+            listOf(LaunchableApp("psplay.grill.com", "PXPlay", false), LaunchableApp("com.example.notes", "Notes", false)),
+            emptySet(),
+        )
+        focus(shell, titles(shell).indexOf("Android Apps"))
+        shell.onMeaning(Meaning.Activate, HostScreen.Bottom)
+        val apps = titles(shell)
+
+        focus(shell, apps.indexOf("PXPlay"))
+        assertEquals("psplay.grill.com", shell.focusedGame()?.androidPackage)
+        assertTrue(shell.focusedGame()!!.occupiesBothDisplays)
+        assertFalse(shell.focusedLaunchesOnOneScreen())
+
+        focus(shell, apps.indexOf("Notes"))
+        assertFalse(shell.focusedGame()!!.occupiesBothDisplays)
+        assertTrue(shell.focusedLaunchesOnOneScreen())
+    }
+
+    @Test
     fun aDsGameReadsAsBothScreensBesideRetroArchsDsCoresUntilOnlyRetroArchIsInstalled() {
         // RetroArch also runs DS games now, on one screen, ranked behind melonDS. The hero and
         // the launch keys follow the emulator the game opens in, not every one that could.

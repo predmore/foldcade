@@ -41,7 +41,7 @@ class ThemeSceneTest {
         assertEquals(pack.icons["app.com.retroarch"]?.file, pack.icons["app.com.retroarch.aarch64"]?.file)
         assertNotNull(pack.icons["app.com.android.chrome"])
         assertNotNull(pack.icons["app.org.azahar_emu.azahar"])
-        assertEquals(390, pack.icons.size)
+        assertEquals(391, pack.icons.size)
     }
 
     @Test

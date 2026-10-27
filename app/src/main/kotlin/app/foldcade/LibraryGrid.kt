@@ -136,6 +136,13 @@ internal fun platformOccupiesBoth(plugins: PluginHost, platformId: String, insta
     preferredPlayer(plugins.playersFor(platformId), runnable = { true }, rank = ::playerRank, installed = installed)
         ?.occupiesBothDisplays == true
 
+/**
+ * Installed apps that draw on the bottom screen while they run, so Foldcade leaves it to them:
+ * no command center there, and so no dim over what they draw. PXPlay (PS Play) puts the
+ * DualSense touchpad and buttons there during a stream, as a Presentation over Foldcade's window.
+ */
+internal val BOTH_SCREEN_APPS: Set<String> = setOf("psplay.grill.com")
+
 sealed interface GameLaunch {
     /** No player is registered. The stand-in opens this content URI with a read grant. */
     data class Dummy(val uri: String) : GameLaunch
