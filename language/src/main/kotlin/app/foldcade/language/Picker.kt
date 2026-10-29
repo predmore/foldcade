@@ -105,9 +105,6 @@ enum class DialogKind {
     /** Offers to show Foldcade RetroArch's installed cores, once. Not now still starts the game. */
     RetroArchCores,
 
-    /** Offers to add Switch keys and firmware from RomM. Not now still starts the game. */
-    EdenFolder,
-
     /** Eden was given files. Continue opens its App info. Not now only closes. */
     EdenRestart,
 
@@ -387,14 +384,14 @@ fun retroArchCoresDialog(screen: HostScreen): DialogState = DialogState(
     screen = screen,
 )
 
-/** Opens on Continue. Not now starts the game, and Settings can ask again. */
-fun edenFolderDialog(screen: HostScreen): DialogState = DialogState(
-    kind = DialogKind.EdenFolder,
-    title = Copy.edenFolderTitle,
-    body = Copy.edenFolderBody,
-    buttons = listOf(DialogButton.ContinueGrant, DialogButton.NotNow),
+/** An unplaced save stops the launch; Eden can still offer its per-launch opt-out. */
+fun saveNotPlacedDialog(title: String, screen: HostScreen, playAnyway: Boolean = false, needsEdenUser: Boolean = false): DialogState = DialogState(
+    kind = if (playAnyway) DialogKind.HostedSaves else DialogKind.Ok,
+    title = "${Copy.saveNotPlaced} $title",
+    body = if (needsEdenUser) Copy.edenSaveNeedsUser else Copy.saveNotPlacedBody,
+    buttons = if (playAnyway) listOf(DialogButton.SetUpSaves, DialogButton.PlayWithoutSyncing) else listOf(DialogButton.Ok),
     index = 0,
-    safeIndex = 1,
+    safeIndex = if (playAnyway) 1 else 0,
     screen = screen,
 )
 
@@ -508,7 +505,6 @@ fun previewDialogState(kind: String, index: Int, screen: HostScreen): DialogStat
         "missing-player" -> missingPlayerDialog("Azahar", screen)
         "forget-art-key" -> forgetArtKeyPrompt(screen)
         "retroarch-cores" -> retroArchCoresDialog(screen)
-        "eden-folder" -> edenFolderDialog(screen)
         "eden-restart" -> edenRestartDialog(screen)
         "eden-wrong-folder" -> edenWrongFolderDialog(screen)
         "missing-core" -> missingCoreDialog("Game Boy Advance", "mGBA", screen)
@@ -2321,7 +2317,7 @@ private fun openNotice(model: PickerModel, panel: SidePanel, id: String): Pair<P
     }
     notice.savePlayerId?.let { playerId ->
         val setting = model.playerSaves.firstOrNull { it.playerId == playerId }
-            ?: return model.copy(panel = panel) to null
+            ?: return model.copy(panel = null, focus = panel.grid) to Effect.ChoosePlayerSave(playerId)
         val fix = when {
             setting.hostedTitle != null && !setting.hostedInUse -> Effect.SetUpHostedSaves(playerId)
             !setting.chosen -> Effect.ChoosePlayerSave(playerId)

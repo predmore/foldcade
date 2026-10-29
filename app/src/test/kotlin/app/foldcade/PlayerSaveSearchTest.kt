@@ -3,16 +3,34 @@ package app.foldcade
 import app.foldcade.api.plugin.Availability
 import app.foldcade.api.plugin.Game
 import app.foldcade.api.plugin.GameFileReader
+import app.foldcade.api.plugin.GamePage
+import app.foldcade.api.plugin.GameQuery
 import app.foldcade.api.plugin.LaunchRequest
 import app.foldcade.api.plugin.LaunchTarget
+import app.foldcade.api.plugin.LibraryBackend
+import app.foldcade.api.plugin.ListedPlatform
+import app.foldcade.api.plugin.MemoryCredentialStore
+import app.foldcade.api.plugin.ObservedSaves
+import app.foldcade.api.plugin.ObservedSlot
+import app.foldcade.api.plugin.PLUGIN_API_MINOR
+import app.foldcade.api.plugin.PLUGIN_API_VERSION
 import app.foldcade.api.plugin.PlacedSave
 import app.foldcade.api.plugin.Player
 import app.foldcade.api.plugin.PlayerIntent
+import app.foldcade.api.plugin.PluginEntry
 import app.foldcade.api.plugin.SaveDeclaration
 import app.foldcade.api.plugin.SaveFolderAccess
 import app.foldcade.api.plugin.SaveFolderSearch
+import app.foldcade.api.plugin.SaveSet
+import app.foldcade.api.plugin.SaveSlot
+import app.foldcade.api.plugin.ServerSave
 import app.foldcade.api.plugin.StartDisplay
+import app.foldcade.api.plugin.SyncOutcome
+import app.foldcade.api.plugin.SyncResult
+import app.foldcade.host.PluginHost
 import java.nio.file.Files
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.runBlocking
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -229,15 +247,160 @@ class PlayerSaveSearchTest {
     }
 
     @Test
-    fun freshEdenStartsUnplacedAndResolvesItsNewSaveOnReturn() {
+    fun anIncomingEdenSaveWithoutAUserStopsBeforeNegotiationOrBaseline() = runBlocking {
         val player = app.foldcade.plugins.eden.EdenPlayer().apply { bindSaveFolder(TREE) }
         docs.names[ROM] = "Fantasy Life [$TITLE].nsp"
-        assertTrue(saves.spots(player, GAME, LaunchTarget.ContentUri(ROM), forLaunch = true).isEmpty())
+        val library = SaveLibrary().apply { remoteSlot = "savedata" }
+        val awaiting = mutableListOf<String>()
+        val before = docs.files.toMap()
+        val failure = runCatching {
+            LaunchSaves(saves, plugins(library)) { awaiting += it }.prepare(edenRoute(player), player, LaunchTarget.ContentUri(ROM))
+        }.exceptionOrNull()
+        assertTrue(failure is EdenSaveNotPlaced)
+        assertTrue((failure as EdenSaveNotPlaced).needsUser)
+        assertEquals(1, library.listings)
+        assertEquals(0, library.negotiations)
+        assertTrue(marks.stored.isEmpty())
+        assertTrue(awaiting.isEmpty())
+        assertEquals(before, docs.files)
+    }
+
+    @Test
+    fun aHeldEdenSaveWithoutAResolvedTitleStopsBeforeNegotiationOrBaseline() = runBlocking {
+        val player = eden(1)
+        docs.names[ROM] = "unresolved.nsp"
+        val library = SaveLibrary().apply { heldSlot = "savedata" }
+        val failure = runCatching {
+            LaunchSaves(saves, plugins(library)) { error("no save was placed") }
+                .prepare(edenRoute(player), player, LaunchTarget.ContentUri(ROM))
+        }.exceptionOrNull()
+        assertTrue(failure is EdenSaveNotPlaced)
+        assertFalse((failure as EdenSaveNotPlaced).needsUser)
+        assertEquals(0, library.listings)
+        assertEquals(0, library.negotiations)
+        assertTrue(marks.stored.isEmpty())
+    }
+
+    @Test
+    fun anIncomingSaveOnAnotherFoldedCopyAlsoStopsUnresolvedEden() = runBlocking {
+        val player = app.foldcade.plugins.eden.EdenPlayer().apply { bindSaveFolder(TREE) }
+        docs.names[ROM] = "Fantasy Life [$TITLE].nsp"
+        val first = SaveLibrary()
+        val second = SaveLibrary("other").apply { remoteSlot = "savedata" }
+        val route = edenRoute(player)
+        val other = route.saves.copy(backendId = second.id)
+        val failure = runCatching {
+            LaunchSaves(saves, plugins(first, second)) { error("no save was placed") }
+                .prepare(route.copy(servers = listOf(route.saves, other)), player, LaunchTarget.ContentUri(ROM))
+        }.exceptionOrNull()
+        assertTrue(failure is EdenSaveNotPlaced)
+        assertEquals(1, first.listings)
+        assertEquals(1, second.listings)
+        assertEquals(0, first.negotiations + second.negotiations)
+        assertTrue(marks.stored.isEmpty())
+    }
+
+    @Test
+    fun anUnavailableListingCannotAcknowledgeAnUnplaceableEdenSave() = runBlocking {
+        val player = app.foldcade.plugins.eden.EdenPlayer().apply { bindSaveFolder(TREE) }
+        docs.names[ROM] = "Fantasy Life [$TITLE].nsp"
+        val library = SaveLibrary().apply { listingFails = true }
+        val failure = runCatching {
+            LaunchSaves(saves, plugins(library)) { error("no save was placed") }
+                .prepare(edenRoute(player), player, LaunchTarget.ContentUri(ROM))
+        }.exceptionOrNull()
+        assertTrue(failure is SaveNotPlaced)
+        assertEquals(0, library.negotiations)
+        assertTrue(marks.stored.isEmpty())
+    }
+
+    @Test
+    fun playingEdenWithoutSyncingBypassesHeldAndIncomingSavesForOnlyThisLaunch() = runBlocking {
+        val player = app.foldcade.plugins.eden.EdenPlayer().apply { bindSaveFolder(TREE) }
+        docs.names[ROM] = "Fantasy Life [$TITLE].nsp"
+        val library = SaveLibrary().apply { remoteSlot = "savedata" }
+        val launch = LaunchSaves(saves, plugins(library)) { error("no save was placed") }
+        val route = edenRoute(player)
+        val prepared = launch.prepare(route, player, LaunchTarget.ContentUri(ROM), syncing = saveSyncForLaunch(player, player.id))
+        assertTrue(prepared.spots.isEmpty())
+        assertEquals(LaunchTarget.ContentUri(ROM), prepared.target)
+        assertEquals(0, library.listings)
+        assertEquals(0, library.negotiations)
+        assertTrue(marks.stored.isEmpty())
+        assertTrue(runCatching { launch.prepare(route, player, LaunchTarget.ContentUri(ROM)) }.exceptionOrNull() is EdenSaveNotPlaced)
+        assertTrue(marks.stored.isEmpty())
+        // The opt-out also bypasses sync when both the profile and title resolve.
+        eden(1)
+        launch.prepare(route, player, LaunchTarget.ContentUri(ROM), syncing = saveSyncForLaunch(player, player.id))
+        assertEquals(0, library.negotiations)
+        assertTrue(marks.stored.isEmpty())
+    }
+
+    @Test
+    fun freshEdenWithNoIncomingSaveStartsUnplacedAndHandsOverItsNewSaveOnReturn() = runBlocking {
+        val player = app.foldcade.plugins.eden.EdenPlayer().apply { bindSaveFolder(TREE) }
+        docs.names[ROM] = "Fantasy Life [$TITLE].nsp"
+        val library = SaveLibrary().apply { remoteSlot = "autosave" }
+        val plugins = plugins(library)
+        val route = edenRoute(player)
+        val prepared = LaunchSaves(saves, plugins) { error("no save was placed") }.prepare(route, player, LaunchTarget.ContentUri(ROM))
+        assertTrue(prepared.spots.isEmpty())
+        assertEquals(LaunchTarget.ContentUri(ROM), prepared.target)
+        assertEquals(0, library.negotiations)
+        assertTrue(marks.stored.isEmpty())
         eden(1)
         docs.file("${edenPath(1)}/systemdata", "first boot progress")
-        val returning = returnSpots(saves, LibraryReturn("romm", GAME, player, emptyList(), ROM))
+        val returning = returnSpots(saves, LibraryReturn("server", route.saves, player, prepared.spots, ROM))
         assertEquals("savedata", returning.single().slot)
-        assertEquals(1, saves.changedSince("romm", GAME, player, returning).slots.size)
+        val observed = saves.changedSince("server", route.saves, player, returning)
+        assertEquals(1, observed.slots.size)
+        plugins.reconcile("server", route.saves, playerForSaveSpots(player, route.saves, returning), observed)
+        val zip = Files.readAllBytes(java.nio.file.Path.of(java.net.URI.create(library.captured.single().contentUri)))
+        assertEquals("first boot progress", saveEntries(zip, setOf(TITLE))!!.getValue("$TITLE/systemdata")!!.toString(Charsets.UTF_8))
+        saves.noteHandedOver("server", route.saves, player, returning, observed)
+        assertTrue(saves.changedSince("server", route.saves, player, returning).slots.isEmpty())
+    }
+
+    private fun edenRoute(player: Player): GameRoute {
+        val game = GAME.copy(backendId = "server", platformId = player.platformId)
+        return GameRoute("eden", game, game)
+    }
+
+    private fun plugins(vararg libraries: LibraryBackend) = PluginHost(Dispatchers.Unconfined, MemoryCredentialStore()).apply {
+        register(object : PluginEntry {
+            override val apiVersion = PLUGIN_API_VERSION
+            override val apiMinor = PLUGIN_API_MINOR
+            override val libraries = libraries.toList()
+        })
+    }
+
+    private class SaveLibrary(override val id: String = "server") : LibraryBackend {
+        override val displayName = id
+        var heldSlot: String? = null
+        var remoteSlot: String? = null
+        var listingFails = false
+        var listings = 0
+        var negotiations = 0
+        val captured = mutableListOf<ObservedSlot>()
+        override suspend fun connect() = Unit
+        override suspend fun disconnect() = Unit
+        override suspend fun listPlatforms() = emptyList<ListedPlatform>()
+        override suspend fun listGames(platformId: String, query: GameQuery) = GamePage(emptyList(), null)
+        override suspend fun ensureLocal(game: Game): LaunchTarget = error("already downloaded")
+        override suspend fun saves(game: Game) = SaveSet(id, heldSlot?.let { listOf(SaveSlot(it, "0".repeat(32), "eden")) }.orEmpty())
+        override suspend fun serverSaves(game: Game, player: Player?): List<ServerSave> {
+            listings++
+            check(!listingFails) { "offline" }
+            return remoteSlot?.let { listOf(ServerSave("1", it, "eden", null, 0, 1, false, null)) }.orEmpty()
+        }
+        override suspend fun prepareLaunch(game: Game, player: Player): app.foldcade.api.plugin.Placement {
+            negotiations++
+            error("an unresolved or declined Eden save must never enter mutating negotiation")
+        }
+        override suspend fun reconcile(game: Game, player: Player, observed: ObservedSaves): SyncResult {
+            captured += observed.slots
+            return SyncResult(SyncOutcome.Queued)
+        }
     }
 
     private fun eden(user: Int): app.foldcade.plugins.eden.EdenPlayer {
@@ -351,7 +514,7 @@ class PlayerSaveSearchTest {
     }
 
     private class MemoryMarks : SaveMarks {
-        private val stored = mutableMapOf<String, String>()
+        val stored = mutableMapOf<String, String>()
         override fun mark(key: String) = stored[key]
         override fun setMark(key: String, hash: String) {
             stored[key] = hash

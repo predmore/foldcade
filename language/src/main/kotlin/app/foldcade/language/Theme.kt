@@ -187,6 +187,7 @@ object Copy {
     const val deleteFailedBody = "The download is still on this device. Try again."
     const val saveNotPlaced = "Couldn’t load the save for"
     const val saveNotPlacedBody = "The game didn’t start, so it won’t play from an old save. Check the player’s save folder, then try again."
+    const val edenSaveNeedsUser = "Open Eden once so it sets up its user, then come back and start the game again. Your RomM save hasn’t been loaded."
     const val tryAgain = "Try again"
     const val noPlatforms = "This library has no platforms"
     const val noGames = "No games"
@@ -251,8 +252,6 @@ object Copy {
     const val retroArchWrongFolder = "That folder has no cores. Choose RetroArch’s top folder, the one that holds cores, then Use this folder."
     /** On RetroArch's page. */
     const val retroArchCores = "Cores"
-    const val edenFolderTitle = "Set up Eden from RomM"
-    const val edenFolderBody = "Your RomM server has Switch files Eden needs. Foldcade adds them whenever Eden is missing them. On the next screen, choose Use this folder at the bottom. Not now starts the game anyway."
     const val edenWrongFolderTitle = "That isn’t Eden’s folder"
     const val edenWrongFolderBody = "Choose Use this folder where the picker opens, without opening a folder inside it."
     const val edenRestartTitle = "Restart Eden once"

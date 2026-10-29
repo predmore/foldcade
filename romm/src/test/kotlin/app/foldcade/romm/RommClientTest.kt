@@ -818,6 +818,34 @@ class RommClientTest {
     }
 
     @Test
+    fun aRefusedUploadOfNewerBytesKeepsBothInsteadOfLooping() {
+        // RomM 5.4 says "Client save is newer (no sync history)" with the head's id, then refuses the slot upload.
+        syncRoutes(operation("upload", saveId = 99, serverHash = md5Hex(SERVER_SAVE.toByteArray())))
+        server.route("POST", "/api/saves") { exchange, _ ->
+            if (exchange.requestURI.rawQuery.orEmpty().contains("slot=")) {
+                json(exchange, 409, """{"detail":"Slot has a newer save since your last sync"}""")
+            } else {
+                json(exchange, 200, """{"id":61,"rom_id":1234,"file_name":"mario.srm"}""")
+            }
+        }
+        server.route("GET", "/api/saves/99/content") { exchange, _ ->
+            bytes(exchange, 200, SERVER_SAVE.toByteArray())
+        }
+        val save = localSave("progress")
+        val ledger = SaveLedger(dir.resolve("ledger.json"))
+        ledger.markSynced("autosave", md5Hex("older".toByteArray()), "azahar")
+        runClient(token = { "rmm_test" }) { client ->
+            val report = client.syncSaves("device-1", listOf(save), destination = { save.file }, ledger = ledger)
+            val kept = report.keptBoth.single()
+            assertEquals(61L, kept.archivedSaveId)
+            assertEquals("progress", Files.readString(kept.localCopy!!))
+            assertTrue(report.failed.isEmpty())
+        }
+        assertEquals(SERVER_SAVE, Files.readString(save.file))
+        assertFalse(server.recorded.any { it.query.orEmpty().contains("overwrite=true") })
+    }
+
+    @Test
     fun anUploadOfBytesAlreadyAgreedTakesTheServerCopyInstead() {
         syncRoutes(operation("upload", saveId = 99, serverHash = md5Hex(SERVER_SAVE.toByteArray())))
         server.route("GET", "/api/saves/99/content") { exchange, _ ->

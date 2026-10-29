@@ -81,7 +81,6 @@ import app.foldcade.language.noFileDialog
 import app.foldcade.language.noSharedPathDialog
 import app.foldcade.language.playerNotice
 import app.foldcade.language.AndroidSetting
-import app.foldcade.language.edenFolderDialog
 import app.foldcade.language.edenRestartDialog
 import app.foldcade.language.edenWrongFolderDialog
 import app.foldcade.language.retroArchCoresDialog
@@ -792,7 +791,7 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
             pendingLaunch = index
             val apiGame = shelfGame(game)
             foldcade.launchWork.job = foldcade.scope.launch {
-                var notPlaced = false
+                var notPlaced: SaveNotPlaced? = null
                 if (installedEdenPackage(player, ::packageInstalled) != null &&
                     edenHeld(player, generation, libraryId, remoteKey)) return@launch
                 // The core decides where RetroArch keeps the save, so it is fixed before saves are placed.
@@ -800,20 +799,23 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
                 val prepared = try {
                     val local = foldcade.plugins.ensureLocal(libraryId, apiGame)
                     withContext(Dispatchers.Main.immediate) { foldcade.shell.noteOnDevice(libraryId, remoteKey) }
-                    prepareSaves(GameRoute(game.id, apiGame, apiGame), player, local)
+                    prepareSaves(GameRoute(game.id, apiGame, apiGame), player, local, saveSyncDeclinedFor)
                 } catch (cancelled: CancellationException) {
                     throw cancelled
                 } catch (fatal: VirtualMachineError) {
                     throw fatal
-                } catch (_: SaveNotPlaced) {
-                    notPlaced = true
+                } catch (failure: SaveNotPlaced) {
+                    notPlaced = failure
                     null
                 } catch (_: Exception) {
                     null
                 }
                 withContext(Dispatchers.Main.immediate) {
                     if (!launchCurrent(generation) || pendingLaunch != index) return@withContext
-                    if (notPlaced) showSaveNotPlaced(game.title)
+                    notPlaced?.let { failure ->
+                        val pending = if (player is EdenPlayer) PendingBackendLaunch(game.title, apiGame.platformId, GameRoute(game.id, apiGame, apiGame), player.id, launchScreen, false) else null
+                        showSaveNotPlaced(game.title, pending, (failure as? EdenSaveNotPlaced)?.needsUser == true)
+                    }
                     if (prepared == null) return@withContext
                     finishLaunch(index, game, player, prepared.target, apiGame, generation, prepared.spots, coresRead = true, edenChecked = true, saveSyncDeclinedFor = saveSyncDeclinedFor)
                 }
@@ -969,7 +971,7 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
             }
             is PlayerLaunch.Ready -> {
                 clearPendingLaunch()
-                startPlayer(game, decision, apiGame, player, generation, spots)
+                startPlayer(game, decision, apiGame, player, generation, spots, saveSyncForLaunch(player, saveSyncDeclinedFor))
             }
         }
     }
@@ -1221,14 +1223,17 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
         var owner = route.saves
         val spots = if (plan is GameLaunch.Installed) {
             try {
-                prepareSaves(route, plan.player, target).also { owner = it.owner ?: owner }.spots
+                prepareSaves(route, plan.player, target, saveSyncDeclinedFor).also { owner = it.owner ?: owner }.spots
             } catch (cancelled: CancellationException) {
                 throw cancelled
             } catch (fatal: VirtualMachineError) {
                 throw fatal
-            } catch (_: SaveNotPlaced) {
+            } catch (failure: SaveNotPlaced) {
                 withContext(Dispatchers.Main.immediate) {
-                    if (launchCurrent(generation)) showSaveNotPlaced(title)
+                    if (launchCurrent(generation)) {
+                        val pending = if (plan.player is EdenPlayer) PendingBackendLaunch(title, platformId, route, plan.player.id, launchScreen, fresh) else null
+                        showSaveNotPlaced(title, pending, (failure as? EdenSaveNotPlaced)?.needsUser == true)
+                    }
                 }
                 return
             } catch (_: Exception) {
@@ -1285,14 +1290,14 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
                         noteStart = { playerIntent?.let { foldcade.noteStarted(plan.player, it) } == true },
                     )
                     if (started) {
-                        val saves = LibraryReturn(
+                        val saves = if (saveSyncForLaunch(plan.player, saveSyncDeclinedFor)) LibraryReturn(
                             owner.backendId,
                             owner,
                             plan.player,
                             spots,
                             (target as? LaunchTarget.ContentUri)?.uri,
-                        )
-                        rememberReturn(saves)
+                        ) else null
+                        saves?.let(::rememberReturn)
                         val sameStart = playerIntent?.let { LaunchFlag.SameStartResumes in it.flags } == true
                         noteRunning(id, title, game.platformId, plan.player, installedIntent, saves, sameStart)
                     }
@@ -1581,25 +1586,16 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
         )
     }
 
-    private fun showSaveNotPlaced(title: String) {
-        foldcade.shell.showDialog(
-            DialogState(
-                kind = DialogKind.Ok,
-                title = "${Copy.saveNotPlaced} $title",
-                body = Copy.saveNotPlacedBody,
-                buttons = listOf(DialogButton.Ok),
-                index = 0,
-                safeIndex = 0,
-                screen = hostScreen(),
-            ),
-        )
+    private fun showSaveNotPlaced(title: String, pending: PendingBackendLaunch? = null, needsEdenUser: Boolean = false) {
+        foldcade.shell.showDialog(app.foldcade.language.saveNotPlacedDialog(title, hostScreen(), pending != null, needsEdenUser))
+        if (pending != null) foldcade.hostedAsk = HostedAsk(pending.playerId, pending)
     }
 
     /**
      * [route]'s saves into the player's folder, see [LaunchSaves.prepare]. One save flow
      * runs at a time, so a second launch or a return read-back waits rather than racing this one.
      */
-    private suspend fun prepareSaves(route: GameRoute, player: Player, local: LaunchTarget): PreparedLaunch =
+    private suspend fun prepareSaves(route: GameRoute, player: Player, local: LaunchTarget, declinedFor: String? = null): PreparedLaunch =
         foldcade.saveFlow.withLock {
             LaunchSaves(
                 foldcade.playerSaves,
@@ -1610,7 +1606,7 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
                     withContext(Dispatchers.Main.immediate) { foldcade.shell.noteSaveReachable(game, picked.id, spots.isNotEmpty()) }
                 },
             )
-                .prepare(route, player, local)
+                .prepare(route, player, local, syncing = saveSyncForLaunch(player, declinedFor))
         }
 
     private fun showMissing(playerName: String, alsoRuns: List<String>) {
@@ -1732,6 +1728,7 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
         player: Player,
         generation: Int,
         spots: List<SaveSpot>,
+        syncing: Boolean,
     ) {
         foldcade.music.onExternalLaunch()
         val assignment = displays.assignment(foldcade.store.session.defaultDisplayIsTop)
@@ -1762,7 +1759,7 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
             }
             foldcade.noteExternalPlayerOpened()
             foldcade.notePlayScreen()
-            if (game.libraryId != null) {
+            if (syncing && game.libraryId != null) {
                 rememberReturn(LibraryReturn(game.libraryId, apiGame, player, spots, ready.intent.dataUri))
             }
         } catch (cancelled: CancellationException) {
@@ -1937,11 +1934,6 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
                 showRetroArchCores(retroArchRetry)
             } else {
                 settleRetroArchCores()
-            }
-            DialogKind.EdenFolder -> if (effect.button == DialogButton.ContinueGrant) {
-                openEdenFolder(fromOffer = pendingBackend != null || pendingLaunch != null)
-            } else {
-                declineEdenFolder()
             }
             DialogKind.EdenRestart -> if (effect.button == DialogButton.ContinueGrant) {
                 val pkg = edenRestartPackage ?: EDEN_PACKAGES.firstOrNull(::packageInstalled)
@@ -3043,7 +3035,7 @@ internal data class LibraryReturn(
 
 /**
  * The spots to read back. A player whose spots at launch came from a search is
- * looked up again, as is one with no spots yet (a fresh Eden has no profile).
+ * looked up again, as is Eden with no spots yet (a fresh Eden has no profile).
  * The card is left as it is, and that look wins when it finds
  * any. The spots stored at launch remain when that look finds nothing, so a game
  * file that cannot be read just now does not drop the saves. Every other player
@@ -3051,7 +3043,7 @@ internal data class LibraryReturn(
  */
 internal fun returnSpots(saves: PlayerSaves, pending: LibraryReturn): List<SaveSpot> {
     val uri = pending.targetUri ?: return pending.spots
-    if (pending.spots.isNotEmpty() && pending.spots.none { it.search != null }) return pending.spots
+    if (pending.spots.none { it.search != null } && !(pending.player is EdenPlayer && pending.spots.isEmpty())) return pending.spots
     val fresh = try {
         saves.spots(pending.player, pending.game, LaunchTarget.ContentUri(uri), forLaunch = false)
     } catch (_: Exception) {

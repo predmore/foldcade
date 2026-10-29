@@ -649,6 +649,12 @@ internal class PlayerSaves(
         null
     }
 
+    /** Read-only profile check for an Eden save that has no destination yet. */
+    fun edenHasUser(player: app.foldcade.plugins.eden.EdenPlayer, game: Game): Boolean {
+        val folder = player.saveDeclarations(game).singleOrNull()?.locationUri ?: return false
+        return player.hasUser(folderAccess(player, folder, allowWrite = false))
+    }
+
     /**
      * What [player] needs once before it can start, read from [folderUri], or
      * asked with no folder when none is picked. Never writes. A throw means it

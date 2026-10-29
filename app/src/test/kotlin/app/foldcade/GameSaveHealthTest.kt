@@ -7,6 +7,7 @@ import app.foldcade.plugins.armsx2.ArmsX2Player
 import app.foldcade.plugins.aps3e.Aps3ePlayer
 import app.foldcade.plugins.azahar.AzaharPlayer
 import app.foldcade.plugins.duckstation.DuckStationPlayer
+import app.foldcade.plugins.eden.EdenPlayer
 import app.foldcade.plugins.emulators.EmulatorsEntry
 import app.foldcade.plugins.melonds.MelonDsPlayer
 import app.foldcade.plugins.retroarch.RetroArchEntry
@@ -15,7 +16,7 @@ import org.junit.Test
 
 class GameSaveHealthTest {
     private fun players(): List<Player> = listOf(
-        MelonDsPlayer(), AzaharPlayer(), ArmsX2Player(), Aps3ePlayer(), DuckStationPlayer(),
+        MelonDsPlayer(), AzaharPlayer(), ArmsX2Player(), Aps3ePlayer(), DuckStationPlayer(), EdenPlayer(),
         RetroArchEntry().players.first(),
     )
     private fun game(player: Player) = Game("romm", "42", player.platformId, Availability.Cached, "Game")
@@ -45,11 +46,12 @@ class GameSaveHealthTest {
         }
     }
 
-    @Test fun edenNeedsItsGrantAndAResolvedTitleBeforeItCanLookSynced() {
-        val player = app.foldcade.plugins.eden.EdenPlayer()
+    @Test fun edenWithAGrantWaitsForAnActualUnreachableCheckBeforeShowingNoSlot() {
+        val player = EdenPlayer()
         assertEquals(SaveHealth.NotSyncing(SaveIssue.NoFolder), health(player))
         player.bindSaveFolder("content://eden/tree/root")
-        assertEquals(SaveHealth.NotSyncing(SaveIssue.NoSlot), health(player))
+        assertEquals(SaveHealth.Fine, health(player))
+        assertEquals(SaveHealth.Waiting, health(player, waiting = true))
         assertEquals(SaveHealth.NotSyncing(SaveIssue.NoSlot), health(player, reachable = false))
         assertEquals(SaveHealth.Fine, health(player, reachable = true))
         assertEquals(SaveHealth.Waiting, health(player, reachable = true, waiting = true))

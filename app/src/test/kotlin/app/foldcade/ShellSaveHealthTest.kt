@@ -92,7 +92,7 @@ class ShellSaveHealthTest {
         assertEquals(listOf(Row.EdenFolder), emulatorShelf(shell.model).single().rows)
         entry.player.bindSaveFolder("content://eden/tree/root")
         shell.setEden(EdenSetting(true, pkg))
-        assertEquals(SaveHealth.NotSyncing(SaveIssue.NoSlot), shell.saveHealthOf(id))
+        assertEquals(SaveHealth.Fine, shell.saveHealthOf(id))
         shell.noteSaveReachable(game, entry.player.id, true)
         assertEquals(SaveHealth.Fine, shell.saveHealthOf(id))
         entry.player.bindSaveFolder("")

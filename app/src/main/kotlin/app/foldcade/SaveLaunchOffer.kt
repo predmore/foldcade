@@ -4,6 +4,10 @@ import app.foldcade.api.plugin.HostedSaveFolder
 import app.foldcade.api.plugin.Player
 import app.foldcade.api.plugin.SaveFolderHolder
 import app.foldcade.api.plugin.SaveSyncState
+import app.foldcade.plugins.eden.EdenPlayer
+
+/** Eden's per-launch opt-out skips negotiation and read-back, even with a held grant. */
+internal fun saveSyncForLaunch(player: Player, declinedFor: String?): Boolean = player !is EdenPlayer || declinedFor != player.id
 
 /** A choice for this launch only. The caller passes the declining player's id on its retry. */
 internal sealed interface SaveLaunchOffer {

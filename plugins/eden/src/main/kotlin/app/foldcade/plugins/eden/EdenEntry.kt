@@ -57,6 +57,9 @@ class EdenPlayer : Player, SaveFolderHolder {
     override fun saveDeclarations(game: Game): List<SaveDeclaration> =
         saveFolder?.let { listOf(SaveDeclaration(SLOT, it)) }.orEmpty()
 
+    /** Whether the current account's save directory can be identified. */
+    fun hasUser(folder: SaveFolderAccess): Boolean = edenUser(folder) != null
+
     override fun findSaveFolders(slot: String, game: GameFileReader, folder: SaveFolderAccess, forLaunch: Boolean): SaveFolderSearch? {
         if (slot != SLOT) return null
         val title = switchTitleId(game, folder) ?: return null

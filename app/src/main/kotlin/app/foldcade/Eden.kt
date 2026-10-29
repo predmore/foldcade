@@ -45,18 +45,6 @@ internal fun edenRestartStillNeeded(pendingBoot: Int, currentBoot: Int, edenStop
     return !edenStopped
 }
 
-/** True when RomM has `prod.keys` or a firmware zip; null when it could not be reached. */
-internal fun rommHasSwitchSetup(server: RommSwitchFirmware?): Boolean? = when {
-    server == null -> false
-    server.failed -> null
-    else -> server.files.any(::countsAsSwitchSetup)
-}
-
-/** `prod.keys`, or a firmware zip. `title.keys` alone is not a reason to offer the folder. */
-internal fun countsAsSwitchSetup(file: FirmwareSummary): Boolean =
-    file.fileName.equals(PROD_KEYS, ignoreCase = true) ||
-        file.fileName.endsWith(".zip", ignoreCase = true)
-
 /** The `prod.keys` or `title.keys` file, matching the name in any case. Ties take the highest id. */
 internal fun chooseKeyFile(files: List<FirmwareSummary>, name: String): FirmwareSummary? =
     files.filter { it.fileName.equals(name, ignoreCase = true) }.maxByOrNull { it.id }

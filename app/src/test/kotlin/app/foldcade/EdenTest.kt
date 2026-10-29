@@ -53,20 +53,6 @@ class EdenTest {
     }
 
     @Test
-    fun rommErrorsAreNotAnOfferAndAReachableFileIs() {
-        val keys = file(1, "prod.keys")
-        val title = file(2, "TITLE.KEYS")
-        val zip = file(3, "Firmware.1.0.zip")
-        val other = file(4, "readme.txt")
-        assertEquals(false, rommHasSwitchSetup(null))
-        assertNull(rommHasSwitchSetup(server("https://romm", failed = true)))
-        assertEquals(true, rommHasSwitchSetup(server("https://romm", keys)))
-        assertEquals(false, rommHasSwitchSetup(server("https://romm", title)))
-        assertEquals(true, rommHasSwitchSetup(server("https://romm", zip)))
-        assertEquals(false, rommHasSwitchSetup(server("https://romm", other)))
-    }
-
-    @Test
     fun firmwareChoiceFollowsTheVersionThenTheId() {
         val older = file(1, "Firmware.1.2.zip")
         val newer = file(2, "Firmware.1.10.zip")

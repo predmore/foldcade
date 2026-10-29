@@ -44,19 +44,30 @@ class EdenSettingsTest {
     }
 
     @Test
-    fun theOfferOpensOnContinueAndNotNowIsSafe() {
-        val dialog = checkNotNull(previewDialogState("eden-folder", 0, HostScreen.Bottom))
-        assertEquals(DialogKind.EdenFolder, dialog.kind)
-        assertEquals(Copy.edenFolderTitle, dialog.title)
-        assertEquals(Copy.edenFolderBody, dialog.body)
-        assertEquals(DialogButton.ContinueGrant, dialog.buttons.first())
-        assertEquals(DialogButton.NotNow, dialog.buttons[dialog.safeIndex])
-        val (after, effect) = reduce(
-            PickerModel(count = 1, rowsPerPage = 1, dialog = dialog),
-            Meaning.Back,
-        )
-        assertEquals(Effect.DialogChoice(DialogButton.NotNow, DialogKind.EdenFolder), effect)
-        assertNull(after.dialog)
+    fun anUnplacedEdenSaveOffersSetupOrPlayWithoutSyncingForThisLaunch() {
+        for (needsUser in listOf(false, true)) {
+            val dialog = saveNotPlacedDialog("Fantasy Life", HostScreen.Bottom, playAnyway = true, needsEdenUser = needsUser)
+            assertEquals(DialogKind.HostedSaves, dialog.kind)
+            assertEquals("${Copy.saveNotPlaced} Fantasy Life", dialog.title)
+            assertEquals(if (needsUser) Copy.edenSaveNeedsUser else Copy.saveNotPlacedBody, dialog.body)
+            assertEquals(listOf(DialogButton.SetUpSaves, DialogButton.PlayWithoutSyncing), dialog.buttons)
+            assertEquals(DialogButton.SetUpSaves, dialog.buttons[dialog.index])
+            assertEquals(DialogButton.PlayWithoutSyncing, dialog.buttons[dialog.safeIndex])
+            val model = PickerModel(count = 1, rowsPerPage = 1, dialog = dialog)
+            assertEquals(Effect.DialogChoice(DialogButton.SetUpSaves, DialogKind.HostedSaves), reduce(model, Meaning.Activate).second)
+            val (after, effect) = reduce(model, Meaning.Back)
+            assertEquals(Effect.DialogChoice(DialogButton.PlayWithoutSyncing, DialogKind.HostedSaves), effect)
+            assertNull(after.dialog)
+        }
+    }
+
+    @Test
+    fun otherPlayersKeepTheExistingSaveNotPlacedPrompt() {
+        val dialog = saveNotPlacedDialog("Tetris", HostScreen.Top)
+        assertEquals(DialogKind.Ok, dialog.kind)
+        assertEquals(Copy.saveNotPlacedBody, dialog.body)
+        assertEquals(listOf(DialogButton.Ok), dialog.buttons)
+        assertEquals(0, dialog.safeIndex)
     }
 
     @Test

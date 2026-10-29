@@ -65,10 +65,23 @@ class NoticesTest {
             assertNull(closed.dialog)
             assertEquals(Effect.DismissNotice(notice.id), reduce(focused, Meaning.ActivateBottom).second)
             assertEquals(true, panelHints(focused)!!.any { it.label == Copy.setUp })
-            val (missing, noEffect) = reduce(focused.copy(playerSaves = emptyList()), Meaning.Activate)
-            assertNull(noEffect)
+            val (missing, fallback) = reduce(focused.copy(playerSaves = emptyList()), Meaning.Activate)
+            assertEquals(Effect.ChoosePlayerSave("armsx2"), fallback)
+            assertNull(missing.panel)
             assertNull(missing.dialog)
         }
+    }
+
+    @Test
+    fun anEdenSaveNoticeWithoutAPlayerSaveRowOpensItsFolderPicker() {
+        val notice = FoldNotice("setup", "Eden saves aren’t syncing", "Set up to keep them on RomM.", savePlayerId = "eden")
+        val opened = reduce(model(listOf(notice)).copy(eden = EdenSetting(fromRomm = false)), Meaning.RightPanel).first
+        val focused = opened.copy(panel = opened.panel!!.copy(index = panelRows(opened.panel!!, opened).indexOf(Row.Notice(notice.id))))
+        val (closed, effect) = reduce(focused, Meaning.Activate)
+        assertEquals(Effect.ChoosePlayerSave("eden"), effect)
+        assertNull(closed.panel)
+        assertNull(closed.dialog)
+        assertEquals(focused.panel!!.grid, closed.focus)
     }
     private val chat = FoldNotice("chat", "Alex", "you on tonight?", "com.discord", postedMillis = 3_000L, openable = true)
     private val mail = FoldNotice("mail", "Receipt", "Thanks", "com.mail", postedMillis = 2_000L, openable = true)

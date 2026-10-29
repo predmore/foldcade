@@ -230,13 +230,6 @@ class SessionStore(private val prefs: SharedPreferences) : SaveMarks {
         prefs.edit().putString(EDEN_FOLDER_PREFIX + packageName, uri).apply()
     }
 
-    /** True once Foldcade asked to see Eden's folder at a launch. Settings still offers it. */
-    fun edenFolderOffered(): Boolean = prefs.getBoolean(KEY_EDEN_FOLDER_OFFERED, false)
-
-    fun setEdenFolderOffered() {
-        prefs.edit().putBoolean(KEY_EDEN_FOLDER_OFFERED, true).apply()
-    }
-
     /**
      * Eden has not started since Foldcade added files to [EdenRestartPending.packageName].
      * Written with [apply] from the install worker as each file lands.
@@ -550,7 +543,6 @@ class SessionStore(private val prefs: SharedPreferences) : SaveMarks {
         private const val KEY_BUTTON_PROMPT_SEEN = "button_prompt_seen"
         private const val KEY_USAGE_PROMPTED = "usage_prompted"
         private const val KEY_RETROARCH_CORES_OFFERED = "retroarch_cores_offered"
-        private const val KEY_EDEN_FOLDER_OFFERED = "eden_folder_offered"
         private const val KEY_EDEN_RESTART_PACKAGE = "eden_restart_package"
         private const val KEY_EDEN_RESTART_BOOT = "eden_restart_boot"
         private const val KEY_REFUSED_EDEN_FIRMWARE = "refused_eden_firmware"
