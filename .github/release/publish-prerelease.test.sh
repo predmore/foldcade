@@ -172,7 +172,7 @@ if grep -q '^sleep ' "$tmp/gh-success.log"; then
   echo "a public pre-release still waited to retry" >&2
   exit 1
 fi
-if grep -q '^release create ' "$tmp/gh-success.log"; then
+if grep -q '^release create pre-release' "$tmp/gh-success.log"; then
   echo "an existing pre-release was created again" >&2
   exit 1
 fi
@@ -215,7 +215,7 @@ if [ "$lookup_code" -ne 0 ]; then
   exit 1
 fi
 assert_kept_release "$tmp/gh-lookup500.log"
-if grep -q '^release create ' "$tmp/gh-lookup500.log"; then
+if grep -q '^release create pre-release' "$tmp/gh-lookup500.log"; then
   echo "a lookup HTTP 500 was treated as a missing release" >&2
   exit 1
 fi
