@@ -143,6 +143,12 @@ internal fun platformOccupiesBoth(plugins: PluginHost, platformId: String, insta
  */
 internal val BOTH_SCREEN_APPS: Set<String> = setOf("psplay.grill.com")
 
+/**
+ * Installed apps filed with the emulators though no player launches games in them: streaming
+ * apps, as Moonlight is. PXPlay (PS Play) streams a PS5 or PS4.
+ */
+internal val EMULATOR_APPS: Set<String> = setOf("psplay.grill.com")
+
 sealed interface GameLaunch {
     /** No player is registered. The stand-in opens this content URI with a read grant. */
     data class Dummy(val uri: String) : GameLaunch
