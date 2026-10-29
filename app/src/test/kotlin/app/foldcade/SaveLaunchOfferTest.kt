@@ -66,6 +66,56 @@ class SaveLaunchOfferTest {
         assertNull(saveLaunchOffer(player, true))
     }
 
+    @Test fun backOrNotNowOnTheEdenSaveHoldCancelsWithoutStartingAnything() {
+        val prompt = saveNotPlacedDialog("Fantasy Life", HostScreen.Bottom, playAnyway = true)
+        val model = PickerModel(count = 1, rowsPerPage = 1, dialog = prompt)
+        val back = reduce(model, Meaning.Back).second as Effect.DialogChoice
+        val notNow = reduce(model.copy(dialog = prompt.copy(index = 2)), Meaning.Activate).second as Effect.DialogChoice
+        for (choice in listOf(back, notNow)) {
+            assertEquals(DialogKind.EdenSaveHold, choice.kind)
+            val work = LaunchWork()
+            val generation = work.begin()
+            val actions = mutableListOf<String>()
+            answerEdenSaveHold(
+                choice.button,
+                cancel = { work.cancel(); actions += "cancel" },
+                openPlayer = { actions += "open" },
+                playWithoutSyncing = { actions += "play" },
+            )
+            assertEquals(listOf("cancel"), actions)
+            assertFalse(work.current(generation))
+        }
+    }
+
+    @Test fun settingUpAHeldEdenSaveCancelsBeforeOpeningThePlayer() {
+        val actions = mutableListOf<String>()
+        answerEdenSaveHold(
+            DialogButton.SetUpSaves,
+            cancel = { actions += "cancel" },
+            openPlayer = { actions += "open" },
+            playWithoutSyncing = { actions += "play" },
+        )
+        assertEquals(listOf("cancel", "open"), actions)
+    }
+
+    @Test fun onlyExplicitlyPlayingAHeldEdenSaveBypassesSyncForThisLaunch() {
+        val player = app.foldcade.plugins.eden.EdenPlayer().apply { bindSaveFolder("content://eden") }
+        val prompt = saveNotPlacedDialog("Fantasy Life", HostScreen.Bottom, playAnyway = true)
+        val model = PickerModel(count = 1, rowsPerPage = 1, dialog = prompt.copy(index = 1))
+        val choice = reduce(model, Meaning.Activate).second as Effect.DialogChoice
+        val actions = mutableListOf<String>()
+        var declinedFor: String? = null
+        answerEdenSaveHold(
+            choice.button,
+            cancel = { actions += "cancel" },
+            openPlayer = { actions += "open" },
+            playWithoutSyncing = { actions += "play"; declinedFor = player.id },
+        )
+        assertEquals(listOf("play"), actions)
+        assertFalse(saveSyncForLaunch(player, declinedFor))
+        assertTrue(saveSyncForLaunch(player, null))
+    }
+
     @Test fun hostedCardsInUseNeverAskForAnOptionalDataFolder() {
         val player = DuckStationPlayer().apply { bindHostedFolder("content://hosted", true) }
         assertFalse(player.hasSaveFolder())

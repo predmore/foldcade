@@ -44,19 +44,23 @@ class EdenSettingsTest {
     }
 
     @Test
-    fun anUnplacedEdenSaveOffersSetupOrPlayWithoutSyncingForThisLaunch() {
+    fun anUnresolvedEdenSaveOffersSetupPlayWithoutSyncingOrCancel() {
         for (needsUser in listOf(false, true)) {
             val dialog = saveNotPlacedDialog("Fantasy Life", HostScreen.Bottom, playAnyway = true, needsEdenUser = needsUser)
-            assertEquals(DialogKind.HostedSaves, dialog.kind)
+            assertEquals(DialogKind.EdenSaveHold, dialog.kind)
             assertEquals("${Copy.saveNotPlaced} Fantasy Life", dialog.title)
-            assertEquals(if (needsUser) Copy.edenSaveNeedsUser else Copy.saveNotPlacedBody, dialog.body)
-            assertEquals(listOf(DialogButton.SetUpSaves, DialogButton.PlayWithoutSyncing), dialog.buttons)
+            assertEquals(if (needsUser) Copy.edenSaveNeedsUser else Copy.edenSaveUnresolved, dialog.body)
+            assertEquals(listOf(DialogButton.SetUpSaves, DialogButton.PlayWithoutSyncing, DialogButton.NotNow), dialog.buttons)
             assertEquals(DialogButton.SetUpSaves, dialog.buttons[dialog.index])
-            assertEquals(DialogButton.PlayWithoutSyncing, dialog.buttons[dialog.safeIndex])
+            assertEquals(DialogButton.NotNow, dialog.buttons[dialog.safeIndex])
             val model = PickerModel(count = 1, rowsPerPage = 1, dialog = dialog)
-            assertEquals(Effect.DialogChoice(DialogButton.SetUpSaves, DialogKind.HostedSaves), reduce(model, Meaning.Activate).second)
+            assertEquals(Effect.DialogChoice(DialogButton.SetUpSaves, DialogKind.EdenSaveHold), reduce(model, Meaning.Activate).second)
+            val play = reduce(model, Meaning.MoveRight).first
+            assertEquals(Effect.DialogChoice(DialogButton.PlayWithoutSyncing, DialogKind.EdenSaveHold), reduce(play, Meaning.Activate).second)
+            val cancel = reduce(play, Meaning.MoveRight).first
+            assertEquals(Effect.DialogChoice(DialogButton.NotNow, DialogKind.EdenSaveHold), reduce(cancel, Meaning.Activate).second)
             val (after, effect) = reduce(model, Meaning.Back)
-            assertEquals(Effect.DialogChoice(DialogButton.PlayWithoutSyncing, DialogKind.HostedSaves), effect)
+            assertEquals(Effect.DialogChoice(DialogButton.NotNow, DialogKind.EdenSaveHold), effect)
             assertNull(after.dialog)
         }
     }

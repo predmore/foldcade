@@ -28,6 +28,11 @@ import app.foldcade.api.plugin.StartDisplay
 import app.foldcade.api.plugin.SyncOutcome
 import app.foldcade.api.plugin.SyncResult
 import app.foldcade.host.PluginHost
+import app.foldcade.language.Copy
+import app.foldcade.language.DialogButton
+import app.foldcade.language.DialogKind
+import app.foldcade.language.HostScreen
+import app.foldcade.language.saveNotPlacedDialog
 import java.nio.file.Files
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.runBlocking
@@ -309,9 +314,53 @@ class PlayerSaveSearchTest {
             LaunchSaves(saves, plugins(library)) { error("no save was placed") }
                 .prepare(edenRoute(player), player, LaunchTarget.ContentUri(ROM))
         }.exceptionOrNull()
-        assertTrue(failure is SaveNotPlaced)
+        assertTrue(failure is EdenSaveNotPlaced)
+        assertFalse((failure as EdenSaveNotPlaced).needsUser)
+        val route = edenRoute(player)
+        assertTrue(edenSaveHold(failure) { PendingBackendLaunch("Fantasy Life", player.platformId, route, player.id, Panel.Bottom) } != null)
         assertEquals(0, library.negotiations)
         assertTrue(marks.stored.isEmpty())
+    }
+
+    @Test
+    fun aResolvedEdenSaveWithAHashMismatchKeepsThePlainOkPrompt() = runBlocking {
+        resolvedEdenPlacementFailure(tornWrite = false)
+    }
+
+    @Test
+    fun aResolvedEdenSaveWithATornWriteKeepsThePlainOkPrompt() = runBlocking {
+        resolvedEdenPlacementFailure(tornWrite = true)
+    }
+
+    private suspend fun resolvedEdenPlacementFailure(tornWrite: Boolean) {
+        val player = eden(1)
+        val path = edenPath(1)
+        docs.file("$path/systemdata", "old progress")
+        val route = edenRoute(player)
+        assertEquals(1, saves.spots(player, route.saves, LaunchTarget.ContentUri(ROM), forLaunch = true).size)
+        docs.library[SERVER] = zipOf("$TITLE/systemdata" to "server")
+        val hash = if (tornWrite) md5Hex(docs.library.getValue(SERVER)) else "0".repeat(32)
+        val library = SaveLibrary().apply {
+            placement = app.foldcade.api.plugin.Placement(LaunchTarget.ContentUri(ROM), listOf(PlacedSave("savedata", SERVER, hash)))
+        }
+        if (tornWrite) docs.beforeWrite = {
+            docs.file("$path/systemdata", "partial write")
+            error("write interrupted")
+        }
+        val failure = runCatching {
+            LaunchSaves(saves, plugins(library)) { error("no save was placed") }
+                .prepare(route, player, LaunchTarget.ContentUri(ROM))
+        }.exceptionOrNull()
+        assertEquals(SaveNotPlaced::class.java, failure?.javaClass)
+        assertEquals(1, library.negotiations)
+        assertEquals(if (tornWrite) "partial write" else "old progress", docs.text("$path/systemdata"))
+        val pending = edenSaveHold(failure as SaveNotPlaced) { error("a failed placement must not offer a bypass") }
+        assertNull(pending)
+        val dialog = saveNotPlacedDialog("Fantasy Life", HostScreen.Bottom, playAnyway = pending != null)
+        assertEquals(DialogKind.Ok, dialog.kind)
+        assertEquals(Copy.saveNotPlacedBody, dialog.body)
+        assertEquals(listOf(DialogButton.Ok), dialog.buttons)
+        assertEquals(0, dialog.safeIndex)
     }
 
     @Test
@@ -381,6 +430,7 @@ class PlayerSaveSearchTest {
         var listingFails = false
         var listings = 0
         var negotiations = 0
+        var placement: app.foldcade.api.plugin.Placement? = null
         val captured = mutableListOf<ObservedSlot>()
         override suspend fun connect() = Unit
         override suspend fun disconnect() = Unit
@@ -395,6 +445,7 @@ class PlayerSaveSearchTest {
         }
         override suspend fun prepareLaunch(game: Game, player: Player): app.foldcade.api.plugin.Placement {
             negotiations++
+            placement?.let { return it }
             error("an unresolved or declined Eden save must never enter mutating negotiation")
         }
         override suspend fun reconcile(game: Game, player: Player, observed: ObservedSaves): SyncResult {

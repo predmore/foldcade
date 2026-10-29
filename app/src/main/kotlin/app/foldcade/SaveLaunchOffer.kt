@@ -4,10 +4,30 @@ import app.foldcade.api.plugin.HostedSaveFolder
 import app.foldcade.api.plugin.Player
 import app.foldcade.api.plugin.SaveFolderHolder
 import app.foldcade.api.plugin.SaveSyncState
+import app.foldcade.language.DialogButton
 import app.foldcade.plugins.eden.EdenPlayer
 
 /** Eden's per-launch opt-out skips negotiation and read-back, even with a held grant. */
 internal fun saveSyncForLaunch(player: Player, declinedFor: String?): Boolean = player !is EdenPlayer || declinedFor != player.id
+
+/** Only an unresolved Eden spot offers a retry without syncing; failed writes must stop. */
+internal fun edenSaveHold(failure: SaveNotPlaced, pending: () -> PendingBackendLaunch): PendingBackendLaunch? =
+    if (failure is EdenSaveNotPlaced) pending() else null
+
+/** Back and Not now cancel. Only the explicit opt-out retries the held launch. */
+internal fun answerEdenSaveHold(
+    button: DialogButton,
+    cancel: () -> Unit,
+    openPlayer: () -> Unit,
+    playWithoutSyncing: () -> Unit,
+) {
+    if (button == DialogButton.PlayWithoutSyncing) {
+        playWithoutSyncing()
+    } else {
+        cancel()
+        if (button == DialogButton.SetUpSaves) openPlayer()
+    }
+}
 
 /** A choice for this launch only. The caller passes the declining player's id on its retry. */
 internal sealed interface SaveLaunchOffer {

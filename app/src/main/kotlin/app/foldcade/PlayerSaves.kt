@@ -256,9 +256,6 @@ internal class PlayerSaves(
             } catch (_: Exception) {
                 if (forLaunch) throw SaveNotPlaced() else null
             }
-            if (player is app.foldcade.plugins.eden.EdenPlayer) {
-                android.util.Log.d("Foldcade", "eden-save title=${search?.nameContains ?: "unresolved"} user=${search?.parent?.substringAfterLast('/') ?: "unresolved"} launch=$forLaunch")
-            }
             if (access.changed) changed?.add(declaration.slot)
             if (search != null && validSearch(search)) {
                 val zipName = romName.substringBeforeLast('.').ifEmpty { romName } + ".zip"

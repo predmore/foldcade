@@ -813,7 +813,7 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
                 withContext(Dispatchers.Main.immediate) {
                     if (!launchCurrent(generation) || pendingLaunch != index) return@withContext
                     notPlaced?.let { failure ->
-                        val pending = if (player is EdenPlayer) PendingBackendLaunch(game.title, apiGame.platformId, GameRoute(game.id, apiGame, apiGame), player.id, launchScreen, false) else null
+                        val pending = edenSaveHold(failure) { PendingBackendLaunch(game.title, apiGame.platformId, GameRoute(game.id, apiGame, apiGame), player.id, launchScreen, false) }
                         showSaveNotPlaced(game.title, pending, (failure as? EdenSaveNotPlaced)?.needsUser == true)
                     }
                     if (prepared == null) return@withContext
@@ -1231,7 +1231,7 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
             } catch (failure: SaveNotPlaced) {
                 withContext(Dispatchers.Main.immediate) {
                     if (launchCurrent(generation)) {
-                        val pending = if (plan.player is EdenPlayer) PendingBackendLaunch(title, platformId, route, plan.player.id, launchScreen, fresh) else null
+                        val pending = edenSaveHold(failure) { PendingBackendLaunch(title, platformId, route, plan.player.id, launchScreen, fresh) }
                         showSaveNotPlaced(title, pending, (failure as? EdenSaveNotPlaced)?.needsUser == true)
                     }
                 }
@@ -1952,6 +1952,21 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
                 retroArchRetry = null
                 cancelLaunches()
                 if (effect.button == DialogButton.OpenRetroArch) openRetroArch()
+            }
+            DialogKind.EdenSaveHold -> {
+                val ask = foldcade.hostedAsk
+                foldcade.hostedAsk = null
+                answerEdenSaveHold(
+                    effect.button,
+                    cancel = ::cancelLaunches,
+                    openPlayer = { ask?.playerId?.let(::openPlayerApp) },
+                    playWithoutSyncing = {
+                        ask?.pending?.let { pending ->
+                            launchScreen = pending.screen
+                            launchBackendGame(pending.title, pending.platformId, pending.route, pending.fresh, saveSyncDeclinedFor = pending.playerId)
+                        }
+                    },
+                )
             }
             DialogKind.HostedSaves -> {
                 val ask = foldcade.hostedAsk

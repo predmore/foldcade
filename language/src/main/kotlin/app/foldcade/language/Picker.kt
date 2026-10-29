@@ -122,6 +122,9 @@ enum class DialogKind {
 
     /** How to point a player at the folder Foldcade hosts for its saves. Opens on Open. */
     HostedSaves,
+
+    /** Eden cannot place an incoming save. Not now cancels the held launch. */
+    EdenSaveHold,
 }
 
 enum class DialogButton {
@@ -384,14 +387,18 @@ fun retroArchCoresDialog(screen: HostScreen): DialogState = DialogState(
     screen = screen,
 )
 
-/** An unplaced save stops the launch; Eden can still offer its per-launch opt-out. */
+/** An unplaced save stops the launch; unresolved Eden saves offer an explicit per-launch opt-out. */
 fun saveNotPlacedDialog(title: String, screen: HostScreen, playAnyway: Boolean = false, needsEdenUser: Boolean = false): DialogState = DialogState(
-    kind = if (playAnyway) DialogKind.HostedSaves else DialogKind.Ok,
+    kind = if (playAnyway) DialogKind.EdenSaveHold else DialogKind.Ok,
     title = "${Copy.saveNotPlaced} $title",
-    body = if (needsEdenUser) Copy.edenSaveNeedsUser else Copy.saveNotPlacedBody,
-    buttons = if (playAnyway) listOf(DialogButton.SetUpSaves, DialogButton.PlayWithoutSyncing) else listOf(DialogButton.Ok),
+    body = when {
+        needsEdenUser -> Copy.edenSaveNeedsUser
+        playAnyway -> Copy.edenSaveUnresolved
+        else -> Copy.saveNotPlacedBody
+    },
+    buttons = if (playAnyway) listOf(DialogButton.SetUpSaves, DialogButton.PlayWithoutSyncing, DialogButton.NotNow) else listOf(DialogButton.Ok),
     index = 0,
-    safeIndex = if (playAnyway) 1 else 0,
+    safeIndex = if (playAnyway) 2 else 0,
     screen = screen,
 )
 

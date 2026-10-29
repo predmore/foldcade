@@ -50,7 +50,7 @@ internal class LaunchSaves(
                     throw failure
                 } catch (_: Exception) {
                     // An unavailable listing cannot prove there is no incoming save.
-                    throw SaveNotPlaced()
+                    throw EdenSaveNotPlaced(needsUser = false)
                 }
             }
             // With no incoming save, first boot can make a user and save. Return
