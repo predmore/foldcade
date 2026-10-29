@@ -339,16 +339,21 @@ class HomeGridOrderTest {
             listOf(LaunchableApp("psplay.grill.com", "PXPlay", false), LaunchableApp("com.example.notes", "Notes", false)),
             emptySet(),
         )
-        focus(shell, titles(shell).indexOf("Android Apps"))
+        val home = titles(shell)
+        // A streaming app, as Moonlight is, so it files with the emulators.
+        focus(shell, home.indexOf("Emulators"))
         shell.onMeaning(Meaning.Activate, HostScreen.Bottom)
-        val apps = titles(shell)
+        assertEquals(listOf("PXPlay"), titles(shell).filter(String::isNotEmpty))
 
-        focus(shell, apps.indexOf("PXPlay"))
+        focus(shell, titles(shell).indexOf("PXPlay"))
         assertEquals("psplay.grill.com", shell.focusedGame()?.androidPackage)
         assertTrue(shell.focusedGame()!!.occupiesBothDisplays)
         assertFalse(shell.focusedLaunchesOnOneScreen())
 
-        focus(shell, apps.indexOf("Notes"))
+        shell.onMeaning(Meaning.Back, HostScreen.Bottom)
+        focus(shell, titles(shell).indexOf("Android Apps"))
+        shell.onMeaning(Meaning.Activate, HostScreen.Bottom)
+        focus(shell, titles(shell).indexOf("Notes"))
         assertFalse(shell.focusedGame()!!.occupiesBothDisplays)
         assertTrue(shell.focusedLaunchesOnOneScreen())
     }

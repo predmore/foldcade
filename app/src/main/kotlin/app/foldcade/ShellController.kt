@@ -3084,14 +3084,15 @@ class ShellController(
     }
 
     /**
-     * What an installed app is: an emulator when a player launches games in it, else a game or
+     * What an installed app is: an emulator when a player launches games in it or it is one of
+     * [EMULATOR_APPS], else a game or
      * an app. The Android folder the user moved it to on Home decides that, and still does while
      * it is hidden, then the system's game flag, so All, Find and art follow a move between
      * Android Games and Android Apps.
      */
     private fun appKind(app: LaunchableApp): HomeKind {
         return when {
-            app.packageName in playerPackages -> HomeKind.Emulator
+            app.packageName in playerPackages || app.packageName in EMULATOR_APPS -> HomeKind.Emulator
             else -> when (androidFolderOf(home.board, androidHomeId(app.packageName))) {
                 HOME_ANDROID_GAMES -> HomeKind.AndroidGame
                 HOME_ANDROID_APPS -> HomeKind.AndroidApp
