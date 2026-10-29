@@ -5,6 +5,7 @@ import app.foldcade.api.plugin.LaunchTarget
 import app.foldcade.api.plugin.Placement
 import app.foldcade.api.plugin.Player
 import app.foldcade.host.PluginHost
+import app.foldcade.plugins.eden.EdenPlayer
 import kotlin.coroutines.cancellation.CancellationException
 
 /**
@@ -28,13 +29,39 @@ internal class LaunchSaves(
      * fails: the game must not start from a save the library does not know.
      * The caller runs one save flow at a time.
      */
-    suspend fun prepare(route: GameRoute, player: Player, local: LaunchTarget): PreparedLaunch {
+    suspend fun prepare(route: GameRoute, player: Player, local: LaunchTarget, syncing: Boolean = true): PreparedLaunch {
+        if (!syncing) return PreparedLaunch(local, emptyList(), route.saves)
         val candidates = candidates(route)
+        val edenSpots = if (player is EdenPlayer) saves.spots(player, route.saves, local, forLaunch = true) else null
+        // Eden may not have made its user yet. Do not let negotiation acknowledge
+        // a server save this device cannot place, even if the player starts anyway.
+        if (player is EdenPlayer && edenSpots?.isEmpty() == true) {
+            onSpots(route.saves, player, emptyList())
+            if (player.hasSaveFolder()) {
+                try {
+                    for (owner in candidates) {
+                        val held = plugins.saves(owner.backendId, owner).slots.any { it.slot == EdenPlayer.SLOT }
+                        val incoming = held || plugins.serverSaves(owner.backendId, owner, player).any { it.slot == EdenPlayer.SLOT }
+                        if (incoming) throw EdenSaveNotPlaced(needsUser = !saves.edenHasUser(player, owner))
+                    }
+                } catch (cancelled: CancellationException) {
+                    throw cancelled
+                } catch (failure: SaveNotPlaced) {
+                    throw failure
+                } catch (_: Exception) {
+                    // An unavailable listing cannot prove there is no incoming save.
+                    throw EdenSaveNotPlaced(needsUser = false)
+                }
+            }
+            // With no incoming save, first boot can make a user and save. Return
+            // discovery hands it over without a server baseline from this launch.
+            return PreparedLaunch(local, emptyList(), route.saves)
+        }
         val setup = mutableListOf<String>()
         var chosen: Negotiated? = null
         for (owner in candidates) {
             val negotiated = try {
-                negotiate(route, owner, player, local, setup)
+                negotiate(route, owner, player, local, setup, edenSpots)
             } catch (cancelled: CancellationException) {
                 throw cancelled
             } catch (failure: Exception) {
@@ -48,7 +75,7 @@ internal class LaunchSaves(
                 break
             }
         }
-        val (owner, spots, placement) = chosen ?: negotiate(route, route.saves, player, local, setup)
+        val (owner, spots, placement) = chosen ?: negotiate(route, route.saves, player, local, setup, edenSpots)
         try {
             val written = mutableListOf<String>()
             val placed = saves.place(owner.backendId, owner, player, spots, placement.savesToPlace, written)
@@ -73,11 +100,12 @@ internal class LaunchSaves(
         player: Player,
         local: LaunchTarget,
         setup: MutableList<String>,
+        resolvedSpots: List<SaveSpot>?,
     ): Negotiated {
         val libraryId = owner.backendId
         // Saves are named after the file that opens, which a folded copy shares by definition.
         // forLaunch: the card may be created here, and must not be on the way back.
-        val spots = saves.spots(player, owner, local, forLaunch = true, changed = setup)
+        val spots = resolvedSpots ?: saves.spots(player, owner, local, forLaunch = true, changed = setup)
         onSpots(owner, player, spots)
         // A declared folder is not necessarily a reachable slot for this game
         // (for example an ARMSX2 file card). Tell the library what the shell can
@@ -131,7 +159,9 @@ internal class LaunchSaves(
 internal class PreparedLaunch(val target: LaunchTarget, val spots: List<SaveSpot>, val owner: Game? = null)
 
 /** A library save could not be written into the player's folder and checked. */
-internal class SaveNotPlaced : Exception("save could not be placed")
+internal open class SaveNotPlaced : Exception("save could not be placed")
+
+internal class EdenSaveNotPlaced(val needsUser: Boolean) : SaveNotPlaced()
 
 /** A library sees only slots the shell can reach; all other player behavior delegates unchanged. */
 internal fun playerForSaveSpots(player: Player, game: Game, spots: List<SaveSpot>): Player {

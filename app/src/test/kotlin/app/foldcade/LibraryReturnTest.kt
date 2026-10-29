@@ -78,6 +78,15 @@ class LibraryReturnTest {
     }
 
     @Test
+    fun anEmptyLaunchForOtherPlayersDoesNotDiscoverNewSpotsOnReturn() {
+        val plain = object : Player by player {
+            override fun saveDeclarations(game: Game): List<SaveDeclaration> = error("must keep the empty launch spots")
+        }
+        val pending = LibraryReturn("romm", game, plain, emptyList(), "content://roms/game.nds")
+        assertEquals(emptyList<SaveSpot>(), returnSpots(shelf(), pending))
+    }
+
+    @Test
     fun aThrowOnTheWayBackKeepsTheSpotsStoredAtLaunch() {
         val throwing = object : Player by player {
             override fun saveDeclarations(game: Game) = listOf(SaveDeclaration("card1", "content://tree"))

@@ -153,7 +153,7 @@ class RommSyncTest {
         cacheRom()
         val held = writeSlot("sav", "another player's progress")
         ops.onSync = { _, _, _, _ -> error("A player with no save support must not start a save sync") }
-        for (id in listOf("eden.nintendo-switch", "dolphin.wii")) {
+        for (id in listOf("ppsspp.psp", "dolphin.wii")) {
             val player = object : Player by NamedPlayer {
                 override val id = id
                 override fun supportsSaveSync(game: Game) = false
@@ -178,7 +178,7 @@ class RommSyncTest {
     fun missingAndEmptySlotsForEveryPlayerNeverReadAsSynced() = runBlocking {
         cacheRom()
         ops.onSync = { _, _, _, _ -> report() }
-        for (id in listOf("armsx2", "aps3e", "melonds", "azahar", "retroarch.nes", "duckstation")) {
+        for (id in listOf("armsx2", "aps3e", "melonds", "azahar", "retroarch.nes", "duckstation", "eden")) {
             for (declarations in listOf(emptyList(), listOf(SaveDeclaration("save", null)))) {
                 val player = object : Player by NamedPlayer {
                     override val id = id

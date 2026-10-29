@@ -758,7 +758,14 @@ class RommClient(
                                 run.download(op, destination(op))
                                 run.completed++
                             }
-                            else -> run.upload(local)
+                            else -> try {
+                                run.upload(local)
+                            } catch (moved: RommSlotMoved) {
+                                // RomM called these bytes newer, then another device's save landed in the slot.
+                                // Keep both, or every negotiate says upload again and the save never syncs.
+                                if (op.saveId == null) throw moved
+                                run.keepBoth(local, op, destination(op))
+                            }
                         }
                     }
                     "download" -> {

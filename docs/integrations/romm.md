@@ -69,7 +69,7 @@ Downloaded games with a cached catalog can be played offline. New downloads need
 
 ## Switch keys and firmware
 
-When a connected RomM server has Switch `prod.keys` or a firmware zip, the first time you start a game in Eden, Foldcade asks to set that up. Choose **Continue**, then on the next screen choose **Use this folder** at the bottom, without opening a folder inside it. Foldcade keeps that folder. **Not now** starts the game anyway, and you can choose the folder later from **Settings › Emulators › Eden › Keys & firmware**. That row is there while Eden is installed and a RomM server is signed in. While Foldcade holds the folder, the row reads **From RomM**. If the folder you choose is not Eden's, Foldcade offers **Try again** and **Not now**. **Try again** opens the picker at Eden's folder. **Not now** starts the game.
+The first time you launch a game in Eden without its folder held, Foldcade asks for the save folder. Choose **Choose folder**, then **Use this folder** where Eden's picker opens, without opening a folder inside it. The same folder grants access to saves, keys and firmware. **Play without syncing**, or cancelling the picker, skips this launch only; the next launch asks again. You can also choose it in **Settings › Emulators › Eden › Saves, keys & firmware**. That row is there while Eden is installed and a RomM server is signed in. A wrong folder offers **Try again** or **Not now**; the latter continues this launch without syncing.
 
 Before the game starts, Foldcade looks at Eden's folder and adds only what is missing. `keys/prod.keys` is written when it is absent or empty. `keys/title.keys` is written in that same pass when RomM has the file, and only when `prod.keys` is missing or the firmware is missing. A missing `title.keys` on its own is left as it is. Firmware is the `.nca` files in `nand/system/Contents/registered/`. Foldcade installs the highest-numbered firmware zip RomM still has on disk for Switch, and only when Eden has none. A firmware file RomM lists as missing from its disk is skipped. A keys file or firmware that is already there is left as it is.
 
@@ -79,7 +79,7 @@ The firmware download shows on the game's tile. If RomM cannot be reached, or a 
 
 ## Save sync
 
-Save sync supports **melonDS `.sav` files**, **RetroArch `.srm` battery saves**, **Azahar 3DS saves**, **DuckStation memory cards**, **ARMSX2 folder memory cards**, and **aPS3e `savedata` folders** with RomM **5.4.0 or newer**.
+Save sync supports **melonDS `.sav` files**, **RetroArch `.srm` battery saves**, **Azahar 3DS saves**, **DuckStation memory cards**, **ARMSX2 folder memory cards**, **aPS3e `savedata` folders**, and **Eden Switch account saves** with RomM **5.4.0 or newer**.
 
 Select **Choose folder** to point Foldcade at the emulator's save folder. **Play without syncing**, or cancelling the folder picker, skips sync for this launch only. Foldcade asks again next time. DuckStation's hosted folder and ARMSX2's card setup offer **Set up** and **Play without syncing** the same way.
 
@@ -124,6 +124,8 @@ Press **Y** on a save for **Copy**, choose another slot, and confirm. This can c
 Firmware you add to a platform in RomM, such as a PlayStation BIOS, goes to the emulators that ask for it: Foldcade downloads each file, checks it against RomM's size and checksum, and writes it into the emulator's folder before the game starts. A zip is checked the same way, and the files inside it are offered too, under the zip's name. DuckStation takes any PlayStation BIOS into its `bios` folder, and does not take files out of a zip. ARMSX2 takes one PlayStation 2 BIOS from a file or from a zip of dumps. aPS3e takes one PlayStation 3 `PS3UPDAT.PUP` and stages it at `aPS3e › firmware`; aPS3e installs that file itself, and Foldcade does not write it again after aPS3e has. Foldcade replaces a file there only when Foldcade put it there. A new copy in RomM replaces the old one, and a BIOS you put there yourself stays. The checked copy, zip and unpacked files, is kept for offline launches. The emulator needs its save folder chosen in Foldcade, since that is where the firmware goes.
 
 Switch keys and firmware for Eden work differently, through Eden's own folder: see [Switch keys and firmware](#switch-keys-and-firmware).
+
+For Eden, choose its own data folder once for saves, keys and firmware. Slot `savedata`, emulator `eden`, is a zip with layout `<TITLEID>/…`, for example `0100755017EE0000/systemdata`. The device's user folder is outside the zip: each device maps the save to Eden's current profile. Only account saves sync; device-save-data and BCAT stay on the device. See [Eden](emulators.md#eden-nintendo-switch) for title-id sources, profile mapping and unresolved saves. Keys and firmware are checked first; a required restart stops the launch before save placement.
 
 ## If something goes wrong
 

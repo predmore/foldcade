@@ -23,6 +23,7 @@ tasks.register("testDebugUnitTest") {
         ":plugins:azahar:test",
         ":plugins:droiddeck:test",
         ":plugins:duckstation:test",
+        ":plugins:eden:test",
         ":plugins:emulators:test",
         ":plugins:gamenative:test",
         ":plugins:local-folder:test",

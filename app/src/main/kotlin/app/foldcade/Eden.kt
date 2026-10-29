@@ -1,7 +1,7 @@
 package app.foldcade
 
 import app.foldcade.api.plugin.Player
-import app.foldcade.plugins.emulators.EDEN_PACKAGES
+import app.foldcade.plugins.eden.EDEN_PACKAGES
 import app.foldcade.plugins.romm.RommSwitchFirmware
 import app.foldcade.romm.FirmwareSummary
 import app.foldcade.romm.RomProgress
@@ -27,37 +27,12 @@ internal sealed interface EdenGate {
     /** The folder is granted. Add whatever Eden is missing, then start. */
     data object Check : EdenGate
 
-    /** Ask once for Eden's folder. RomM has `prod.keys` or a firmware zip. */
-    data object Offer : EdenGate
-
-    /**
-     * Start as usual. [markOffered] stays false: an empty server and a RomM
-     * error are not the user declining, so the next launch asks again.
-     */
-    data class Ready(val markOffered: Boolean = false) : EdenGate
+    /** The save-folder flow asks for a grant. Skipping it applies only to this launch. */
+    data object Ready : EdenGate
 }
 
-/**
- * Grant first. RomM is asked only when there is no grant and Foldcade has not
- * offered yet. [rommHasSwitchFiles] null, or a throw, is a RomM or network
- * error: [EdenGate.Ready] and the offer is not marked.
- */
-internal suspend fun edenGate(
-    holdsGrant: Boolean,
-    offered: Boolean,
-    rommHasSwitchFiles: suspend () -> Boolean?,
-): EdenGate {
-    if (holdsGrant) return EdenGate.Check
-    if (offered) return EdenGate.Ready(markOffered = false)
-    val has = try {
-        rommHasSwitchFiles()
-    } catch (cancelled: CancellationException) {
-        throw cancelled
-    } catch (_: Exception) {
-        null
-    }
-    return if (has == true) EdenGate.Offer else EdenGate.Ready(markOffered = false)
-}
+/** Keys and firmware use the same grant as saves. No second folder offer runs here. */
+internal fun edenGate(holdsGrant: Boolean): EdenGate = if (holdsGrant) EdenGate.Check else EdenGate.Ready
 
 /**
  * True while files added at [pendingBoot] still need Eden to start again.
@@ -69,18 +44,6 @@ internal fun edenRestartStillNeeded(pendingBoot: Int, currentBoot: Int, edenStop
     if (pendingBoot != -1 && currentBoot != -1 && pendingBoot != currentBoot) return false
     return !edenStopped
 }
-
-/** True when RomM has `prod.keys` or a firmware zip; null when it could not be reached. */
-internal fun rommHasSwitchSetup(server: RommSwitchFirmware?): Boolean? = when {
-    server == null -> false
-    server.failed -> null
-    else -> server.files.any(::countsAsSwitchSetup)
-}
-
-/** `prod.keys`, or a firmware zip. `title.keys` alone is not a reason to offer the folder. */
-internal fun countsAsSwitchSetup(file: FirmwareSummary): Boolean =
-    file.fileName.equals(PROD_KEYS, ignoreCase = true) ||
-        file.fileName.endsWith(".zip", ignoreCase = true)
 
 /** The `prod.keys` or `title.keys` file, matching the name in any case. Ties take the highest id. */
 internal fun chooseKeyFile(files: List<FirmwareSummary>, name: String): FirmwareSummary? =

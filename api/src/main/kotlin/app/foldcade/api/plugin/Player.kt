@@ -220,6 +220,10 @@ data class FirmwareOffer(
  * the game holds. Added in API minor 13.
  */
 interface GameFileReader {
+    /** The game document's display name, when known. Added in API minor 17. */
+    val fileName: String?
+        get() = null
+
     /** Up to [length] bytes at [offset], fewer at the end of the file, or null when it cannot be read. */
     fun read(offset: Long, length: Int): ByteArray?
 

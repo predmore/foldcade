@@ -418,6 +418,60 @@ class ServerSavesTest {
         assertFalse(events.any { it.startsWith("upload") })
     }
 
+    @Test fun edenSavedataListsAndCopiesWithTheSameTitleRoot() = runBlocking {
+        val eden = app.foldcade.plugins.eden.EdenPlayer().apply { bindSaveFolder("content://eden/tree/root") }
+        val game = GAME.copy(platformId = eden.platformId)
+        val content = edenZip("other device")
+        val source = add(content, "savedata", "eden")
+        val library = library()
+        assertEquals(source.id.toString(), library.serverSaves(game, eden).single().id)
+        val placed = library.copyServerSave(game, source.id.toString(), "savedata", "eden", eden)
+        assertEquals("savedata", placed.single().slot)
+        assertArrayEquals(content, Files.readAllBytes(data.slotFile(ROM, "savedata")))
+        assertEquals("eden", data.ledger(ROM).slot("savedata")!!.emulator)
+        assertTrue(server.any { it.id == source.id })
+    }
+
+    @Test fun twoEdenDevicesChangedShowsTheExistingConflictAndBackKeepsBothZips() = runBlocking {
+        val eden = app.foldcade.plugins.eden.EdenPlayer().apply { bindSaveFolder("content://eden/tree/root") }
+        val game = GAME.copy(platformId = eden.platformId)
+        val local = edenZip("local device advanced")
+        val remote = edenZip("other device advanced")
+        val slot = data.slotFile(ROM, "savedata")
+        writeDurably(slot, local)
+        val source = add(remote, "savedata", "eden")
+        val localCopy = root.resolve("local-eden.zip")
+        val remoteCopy = root.resolve("remote-eden.zip")
+        ops.onSync = { _, _, _, _ ->
+            writeDurably(localCopy, local)
+            writeDurably(remoteCopy, remote)
+            writeDurably(slot, remote)
+            report().copy(keptBoth = listOf(KeptBoth(ROM, "savedata", null, source.id, slot,
+                localEmulator = "eden", remoteEmulator = "eden", localCopy = localCopy, remoteCopy = remoteCopy)))
+        }
+        val library = library()
+        assertNotNull(runCatching { library.playServerSave(game, eden, source.id.toString()) { events += "commit-hook" } }.exceptionOrNull())
+        assertFalse(events.contains("commit-hook"))
+        val conflict = library.pendingSaveConflicts().single()
+        assertEquals("$ROM:savedata", conflict.id)
+        // The shell maps Back to DecideLater; it leaves the two copies and reopens next launch.
+        library.resolveSaveConflict(conflict.id, SaveConflictChoice.DecideLater)
+        assertTrue(library.pendingSaveConflicts().isEmpty())
+        assertArrayEquals(local, Files.readAllBytes(localCopy))
+        assertArrayEquals(remote, Files.readAllBytes(remoteCopy))
+        assertArrayEquals(remote, Files.readAllBytes(slot))
+        library.reopenDeferredSaveConflicts()
+        assertEquals(conflict.id, library.pendingSaveConflicts().single().id)
+    }
+
+    private fun edenZip(text: String): ByteArray = ByteArrayOutputStream().also { out ->
+        ZipOutputStream(out).use {
+            it.putNextEntry(ZipEntry("0100755017EE0000/systemdata"))
+            it.write(text.toByteArray())
+            it.closeEntry()
+        }
+    }.toByteArray()
+
     private fun library(): RommLibrary {
         val wiring = RommWiring(ORIGIN, RommTokenSource { token }, root.resolve("cache"), root.resolve("data"))
         wiring.open = { _, _ -> ops }

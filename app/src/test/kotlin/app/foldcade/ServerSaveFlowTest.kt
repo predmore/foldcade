@@ -185,6 +185,17 @@ class ServerSaveFlowTest {
         assertTrue(awaiting.isEmpty())
     }
 
+    @Test fun edenSavesCanBeCopiedToAnotherSlotWithoutResolvingTheRemoteRom() = runBlocking {
+        val eden = app.foldcade.plugins.eden.EdenPlayer().apply { bindSaveFolder("content://eden/tree/root") }
+        val remoteGame = game.copy(platformId = eden.platformId, availability = Availability.RemoteOnly)
+        val remote = request.copy(route = GameRoute("original-tile", remoteGame, remoteGame), owner = remoteGame, player = eden)
+        flow.perform(remote, "chosen-id", SaveDestination("autosave", "argosy", "Steam Deck"))
+        assertFalse(events.any { it.startsWith("local:") || it.startsWith("name:") })
+        events.clear()
+        assertTrue(runCatching { flow.perform(remote, "chosen-id", SaveDestination("savedata", "eden", "This device")) }.exceptionOrNull() is SaveNeedsDownload)
+        assertEquals(listOf("name:original"), events)
+    }
+
     private inner class Library : LibraryBackend {
         override val id = "server"
         override val displayName = "Server"

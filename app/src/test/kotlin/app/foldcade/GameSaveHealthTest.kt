@@ -7,6 +7,7 @@ import app.foldcade.plugins.armsx2.ArmsX2Player
 import app.foldcade.plugins.aps3e.Aps3ePlayer
 import app.foldcade.plugins.azahar.AzaharPlayer
 import app.foldcade.plugins.duckstation.DuckStationPlayer
+import app.foldcade.plugins.eden.EdenPlayer
 import app.foldcade.plugins.emulators.EmulatorsEntry
 import app.foldcade.plugins.melonds.MelonDsPlayer
 import app.foldcade.plugins.retroarch.RetroArchEntry
@@ -15,7 +16,7 @@ import org.junit.Test
 
 class GameSaveHealthTest {
     private fun players(): List<Player> = listOf(
-        MelonDsPlayer(), AzaharPlayer(), ArmsX2Player(), Aps3ePlayer(), DuckStationPlayer(),
+        MelonDsPlayer(), AzaharPlayer(), ArmsX2Player(), Aps3ePlayer(), DuckStationPlayer(), EdenPlayer(),
         RetroArchEntry().players.first(),
     )
     private fun game(player: Player) = Game("romm", "42", player.platformId, Availability.Cached, "Game")
@@ -43,6 +44,19 @@ class GameSaveHealthTest {
             assertEquals(player.id, SaveHealth.NotSyncing(SaveIssue.NoSlot), health(player, reachable = false))
             assertEquals(player.id, SaveHealth.Fine, health(player, reachable = true))
         }
+    }
+
+    @Test fun edenWithAGrantWaitsForAnActualUnreachableCheckBeforeShowingNoSlot() {
+        val player = EdenPlayer()
+        assertEquals(SaveHealth.NotSyncing(SaveIssue.NoFolder), health(player))
+        player.bindSaveFolder("content://eden/tree/root")
+        assertEquals(SaveHealth.Fine, health(player))
+        assertEquals(SaveHealth.Waiting, health(player, waiting = true))
+        assertEquals(SaveHealth.NotSyncing(SaveIssue.NoSlot), health(player, reachable = false))
+        assertEquals(SaveHealth.Fine, health(player, reachable = true))
+        assertEquals(SaveHealth.Waiting, health(player, reachable = true, waiting = true))
+        player.bindSaveFolder("")
+        assertEquals(SaveHealth.NotSyncing(SaveIssue.NoFolder), health(player))
     }
 
     @Test fun hostedGrantAndPlayerSetupMustBothBeReady() {
@@ -77,9 +91,8 @@ class GameSaveHealthTest {
         }
     }
 
-    @Test fun standaloneEmulatorsIncludingEdenAreDeviceOnlyButExternalGamesAreQuiet() {
+    @Test fun standaloneEmulatorsAreDeviceOnlyButExternalGamesAreQuiet() {
         val emulators = EmulatorsEntry().players
-        assertTrue(emulators.any { it.id.startsWith("eden.") })
         for (player in emulators) {
             assertEquals(player.id, SaveHealth.DeviceOnly, health(player))
             assertEquals(player.id, SaveHealth.DeviceOnly, health(player, server = false))

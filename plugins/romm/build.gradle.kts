@@ -12,6 +12,7 @@ dependencies {
     implementation(libs.coroutines.core)
     testImplementation(project(":api"))
     testImplementation(project(":host"))
+    testImplementation(project(":plugins:eden"))
     testImplementation(project(":romm"))
     testImplementation(project(":net"))
     testImplementation(libs.coroutines.core)
