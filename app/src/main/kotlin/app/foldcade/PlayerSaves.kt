@@ -242,16 +242,22 @@ internal class PlayerSaves(
         player: Player, game: Game, romName: String, header: () -> ByteArray, reader: GameFileReader,
         forLaunch: Boolean, changed: MutableList<String>?,
     ): List<SaveSpot> {
+        val namedReader = object : GameFileReader by reader {
+            override val fileName: String = romName
+        }
         return player.saveDeclarations(game).mapNotNull { declaration ->
             val folder = declaration.locationUri ?: return@mapNotNull null
             val access = folderAccess(player, folder, forLaunch)
             // A throw while setting a card up is a save that could not be placed. On the way back it is no spot.
             val search = try {
-                player.findSaveFolders(declaration.slot, reader, access, forLaunch)
+                player.findSaveFolders(declaration.slot, namedReader, access, forLaunch)
             } catch (cancelled: CancellationException) {
                 throw cancelled
             } catch (_: Exception) {
                 if (forLaunch) throw SaveNotPlaced() else null
+            }
+            if (player is app.foldcade.plugins.eden.EdenPlayer) {
+                android.util.Log.d("Foldcade", "eden-save title=${search?.nameContains ?: "unresolved"} user=${search?.parent?.substringAfterLast('/') ?: "unresolved"} launch=$forLaunch")
             }
             if (access.changed) changed?.add(declaration.slot)
             if (search != null && validSearch(search)) {

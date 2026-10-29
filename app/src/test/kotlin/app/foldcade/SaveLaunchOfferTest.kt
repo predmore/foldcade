@@ -30,6 +30,23 @@ class SaveLaunchOfferTest {
         assertNull(saveLaunchOffer(player, true))
     }
 
+    @Test fun edenAlwaysUsesTheSaveOfferAndSkippingIsNeverRemembered() {
+        val prefs = MemoryPrefs()
+        val store = SessionStore(prefs)
+        store.setEdenFolderOffered() // The retired keys-only offer cannot silence save protection.
+        val player = app.foldcade.plugins.eden.EdenPlayer()
+        assertEquals(SaveLaunchOffer.Folder, saveLaunchOffer(player, true))
+        assertEquals(EdenGate.Ready, edenGate(false))
+        for (answer in listOf(SaveFolderAnswer.PlayWithoutSyncing, SaveFolderAnswer.PickerCancelled)) {
+            val continuation = saveLaunchContinuation(player.id, answer, player.setupSteps(null) != null) as SaveLaunchContinuation.Launch
+            assertNull(saveLaunchOffer(player, true, continuation.declinedFor))
+            assertEquals(SaveLaunchOffer.Folder, saveLaunchOffer(player, true))
+        }
+        player.bindSaveFolder("content://eden/tree/root")
+        assertNull(saveLaunchOffer(player, true))
+        assertEquals(EdenGate.Check, edenGate(true))
+    }
+
     @Test fun hostedSavesOfferSetupOrPlayAndAskAgainOnTheNextLaunch() {
         val player = DuckStationPlayer().apply { bindSaveFolder("content://data") }
         val chosen = saveLaunchContinuation(player.id, SaveFolderAnswer.Chosen, false) as SaveLaunchContinuation.Launch

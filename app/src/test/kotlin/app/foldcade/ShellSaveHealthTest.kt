@@ -74,6 +74,32 @@ class ShellSaveHealthTest {
         assertTrue(shell.model.notices.isEmpty())
     }
 
+    @Test fun edenHasOneSettingsRowAndItsHeldGrantChangesSaveHealth() {
+        val plugins = PluginHost(Dispatchers.Unconfined, MemoryCredentialStore())
+        plugins.register(LocalFolderEntry())
+        val entry = app.foldcade.plugins.eden.EdenEntry()
+        plugins.register(entry)
+        val shell = ShellController(SessionStore(MemoryPrefs()), plugins)
+        val pkg = entry.player.packageNames.first()
+        shell.setInstalledApps(emptyList(), setOf(pkg), setOf(pkg))
+        shell.setSignedIn(listOf(SignedInBackend("romm", "RomM")))
+        shell.setEden(EdenSetting(false, pkg))
+        val game = Game("romm", "35", entry.player.platformId, Availability.Cached, "Fantasy Life i")
+        shell.ingestLibrary("romm", listOf(GridEntry(game.remoteKey, game.label, "", game.platformId, null, false, game)), emptyList())
+        val id = homeGameId(game.backendId, game.remoteKey)
+        assertEquals(SaveHealth.NotSyncing(SaveIssue.NoFolder), shell.saveHealthOf(id))
+        assertTrue(shell.model.playerSaves.isEmpty())
+        assertEquals(listOf(Row.EdenFolder), emulatorShelf(shell.model).single().rows)
+        entry.player.bindSaveFolder("content://eden/tree/root")
+        shell.setEden(EdenSetting(true, pkg))
+        assertEquals(SaveHealth.NotSyncing(SaveIssue.NoSlot), shell.saveHealthOf(id))
+        shell.noteSaveReachable(game, entry.player.id, true)
+        assertEquals(SaveHealth.Fine, shell.saveHealthOf(id))
+        entry.player.bindSaveFolder("")
+        shell.setEden(EdenSetting(false, pkg))
+        assertEquals(SaveHealth.NotSyncing(SaveIssue.NoFolder), shell.saveHealthOf(id))
+    }
+
     @Test fun hostedSetupIsTheOnlyStandingIssueWithoutADuckStationDataFolder() {
         val plugins = PluginHost(Dispatchers.Unconfined, MemoryCredentialStore())
         plugins.register(LocalFolderEntry())

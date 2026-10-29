@@ -148,9 +148,21 @@ Skate 3 reached playable skating with these settings. They are what worked on th
 
 Skate 3 ran at about 19–27 FPS: playable, not full speed. With these settings aPS3e also closed Skate 3 when Home paused it. A on the game's tile then starts it again, from its last save.
 
+## Eden (Nintendo Switch)
+
+Foldcade syncs Eden's account saves for the current profile through [RomM](romm.md#save-sync). Choose **Settings › Emulators › Eden › Saves, keys & firmware**, or **Choose folder** before a launch, then **Use this folder** where Eden's picker opens. Pick the root of the installed Eden's own documents provider, without opening a folder inside it. This is the same grant Eden already uses for [keys and firmware](romm.md#switch-keys-and-firmware). **Play without syncing**, or cancelling the picker, applies to this launch only.
+
+Saves live at `nand/user/save/0000000000000000/<USER>/<TITLEID>/` inside that folder. Foldcade reads `[System] current_user` from `config/config.ini` (default 0) and maps that entry in `nand/system/save/8000000000000010/su/avators/profiles.dat` to its user folder. A zip contains `<TITLEID>/…`, leaving out the device's user id. Another device places it under its own current profile. If the profile cannot be read, exactly one non-zero 32-hex user folder is an acceptable fallback. Ambiguous users are left alone. Foldcade never changes the profile or configuration files.
+
+The title id comes first from a 16-hex filename tag such as `[0100755017EE0000]`, then from a ticket's rights-id filename in an NSP/NSZ. Otherwise Foldcade reads NCA headers inside an NSP/NSZ or an XCI/XCZ's secure partition, using `header_key` from Eden's `keys/prod.keys`. It does not need title keys. Update, DLC, and multi-program ids map to the base application. Several different applications in one source, malformed files, missing header keys, or an archive with more than 16 NCA headers leave the save unresolved. The game can still start; its saves read **Saves not syncing**. RomM metadata alone cannot identify a Switch save.
+
+Before launch, Foldcade checks keys and firmware and any required Eden restart, then pulls and places saves. Returning reads new progress back. An existing save is set aside before replacement. If two devices advanced, the existing conflict screen keeps both copies; **B** leaves the decision for later. A fresh Eden with no profile can start unplaced. Once Eden creates a profile and save, Foldcade finds it on return and the usual conflict flow protects both copies.
+
+Only account saves for Eden's current profile sync. Other profiles, device-save-data, BCAT, and save caches do not sync. A remote-only game's saves still appear in **Y › Saves**, but placing one on this device requires downloading the ROM when its title id cannot be resolved by name. Copies to other server slots do not need that ROM.
+
 ## Other systems
 
-Complete the emulator's firmware, game-directory, controller, and graphics setup, and check that the game plays there before adding it to Foldcade. Eden can take its Switch keys and firmware from [RomM](romm.md#switch-keys-and-firmware) when they are missing: choose Eden's folder once, and files already there are left as they are.
+Complete the emulator's firmware, game-directory, controller, and graphics setup, and check that the game plays there before adding it to Foldcade.
 
 Disc tracks and other related files may need the emulator's own game-directory access. These emulators keep their own saves; Foldcade does not currently transfer them to RomM.
 
@@ -158,6 +170,6 @@ Disc tracks and other related files may need the emulator's own game-directory a
 
 Forks with different Android package names are not detected automatically. Install a supported build or report the build you use.
 
-Recognized packages are listed in the source for [standalone emulators](../../plugins/emulators/src/main/kotlin/app/foldcade/plugins/emulators/Emulators.kt), [aPS3e](../../plugins/aps3e/src/main/kotlin/app/foldcade/plugins/aps3e/Aps3eEntry.kt), [ARMSX2](../../plugins/armsx2/src/main/kotlin/app/foldcade/plugins/armsx2/ArmsX2Entry.kt), [Azahar](../../plugins/azahar/src/main/kotlin/app/foldcade/plugins/azahar/AzaharEntry.kt), [DuckStation](../../plugins/duckstation/src/main/kotlin/app/foldcade/plugins/duckstation/DuckStationEntry.kt), [melonDS](../../plugins/melonds/src/main/kotlin/app/foldcade/plugins/melonds/MelonDsEntry.kt), and [RetroArch](../../plugins/retroarch/src/main/kotlin/app/foldcade/plugins/retroarch/RetroArchEntry.kt).
+Recognized packages are listed in the source for [Eden](../../plugins/eden/src/main/kotlin/app/foldcade/plugins/eden/EdenEntry.kt), [standalone emulators](../../plugins/emulators/src/main/kotlin/app/foldcade/plugins/emulators/Emulators.kt), [aPS3e](../../plugins/aps3e/src/main/kotlin/app/foldcade/plugins/aps3e/Aps3eEntry.kt), [ARMSX2](../../plugins/armsx2/src/main/kotlin/app/foldcade/plugins/armsx2/ArmsX2Entry.kt), [Azahar](../../plugins/azahar/src/main/kotlin/app/foldcade/plugins/azahar/AzaharEntry.kt), [DuckStation](../../plugins/duckstation/src/main/kotlin/app/foldcade/plugins/duckstation/DuckStationEntry.kt), [melonDS](../../plugins/melonds/src/main/kotlin/app/foldcade/plugins/melonds/MelonDsEntry.kt), and [RetroArch](../../plugins/retroarch/src/main/kotlin/app/foldcade/plugins/retroarch/RetroArchEntry.kt).
 
 [All integration guides](README.md)

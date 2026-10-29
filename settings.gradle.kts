@@ -26,6 +26,7 @@ include(
     ":plugins:azahar",
     ":plugins:droiddeck",
     ":plugins:duckstation",
+    ":plugins:eden",
     ":plugins:emulators",
     ":plugins:gamenative",
     ":plugins:local-folder",

@@ -49,7 +49,7 @@ internal fun gameSaveHealth(
     // players do not open ROM files. EmulatorPlayer also covers import-only emulators.
     val emulator = player.needsLocalFile || player is EmulatorPlayer || supportsSync
     val issue = playerSaveIssue(player, sync, setup) ?: SaveIssue.NoSlot.takeIf {
-        supportsSync && (declarations.isEmpty() || declarations.any { it.locationUri == null } || reachable == false)
+        supportsSync && (declarations.isEmpty() || declarations.any { it.locationUri == null } || reachable == false || (player is app.foldcade.plugins.eden.EdenPlayer && reachable != true))
     }
     return deriveSaveHealth(emulator, onServer, supportsSync, issue, waiting)
 }

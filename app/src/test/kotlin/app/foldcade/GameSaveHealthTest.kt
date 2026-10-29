@@ -45,6 +45,18 @@ class GameSaveHealthTest {
         }
     }
 
+    @Test fun edenNeedsItsGrantAndAResolvedTitleBeforeItCanLookSynced() {
+        val player = app.foldcade.plugins.eden.EdenPlayer()
+        assertEquals(SaveHealth.NotSyncing(SaveIssue.NoFolder), health(player))
+        player.bindSaveFolder("content://eden/tree/root")
+        assertEquals(SaveHealth.NotSyncing(SaveIssue.NoSlot), health(player))
+        assertEquals(SaveHealth.NotSyncing(SaveIssue.NoSlot), health(player, reachable = false))
+        assertEquals(SaveHealth.Fine, health(player, reachable = true))
+        assertEquals(SaveHealth.Waiting, health(player, reachable = true, waiting = true))
+        player.bindSaveFolder("")
+        assertEquals(SaveHealth.NotSyncing(SaveIssue.NoFolder), health(player))
+    }
+
     @Test fun hostedGrantAndPlayerSetupMustBothBeReady() {
         val duck = DuckStationPlayer().apply { bindSaveFolder("content://saves") }
         assertEquals(SaveHealth.NotSyncing(SaveIssue.HostedFolder), health(duck))
@@ -77,9 +89,8 @@ class GameSaveHealthTest {
         }
     }
 
-    @Test fun standaloneEmulatorsIncludingEdenAreDeviceOnlyButExternalGamesAreQuiet() {
+    @Test fun standaloneEmulatorsAreDeviceOnlyButExternalGamesAreQuiet() {
         val emulators = EmulatorsEntry().players
-        assertTrue(emulators.any { it.id.startsWith("eden.") })
         for (player in emulators) {
             assertEquals(player.id, SaveHealth.DeviceOnly, health(player))
             assertEquals(player.id, SaveHealth.DeviceOnly, health(player, server = false))

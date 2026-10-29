@@ -32,7 +32,7 @@ class PlayerSaveSearchTest {
     @Before
     fun setUp() {
         backups = Files.createTempDirectory("search-backups")
-        saves = PlayerSaves(docs, marks, backups, backups.resolveSibling("search-handover"))
+        saves = PlayerSaves(docs, marks, backups, backups.resolve("handover"))
         docs.names[ROM] = "Need for Speed Underground 2 (USA).iso"
         docs.dir("memcards/card")
         docs.file("memcards/card/BASLUS-210651/data", "played")
@@ -177,6 +177,77 @@ class PlayerSaveSearchTest {
         }
     }
 
+    @Test
+    fun edenZipMovesAcrossUsersAndCreatesTheMissingUserAndTitleFolders() {
+        val player = eden(1)
+        val firstPath = edenPath(1)
+        docs.file("$firstPath/systemdata", "first device")
+        val spots = saves.spots(player, GAME, LaunchTarget.ContentUri(ROM), forLaunch = false)
+        val observed = saves.changedSince("romm", GAME, player, spots)
+        val zip = Files.readAllBytes(java.nio.file.Path.of(java.net.URI.create(observed.slots.single().contentUri)))
+        assertEquals(setOf(TITLE), saveZipRoots(zip))
+        assertEquals("first device", saveEntries(zip, setOf(TITLE))!!.getValue("$TITLE/systemdata")!!.toString(Charsets.UTF_8))
+        saves.noteHandedOver("romm", GAME, player, spots, observed)
+        docs.library[SERVER] = zip
+
+        eden(2)
+        val secondPath = edenPath(2)
+        assertFalse(secondPath in docs.folders)
+        val destination = saves.spots(player, GAME, LaunchTarget.ContentUri(ROM), forLaunch = true)
+        assertEquals(secondPath.substringBeforeLast('/'), destination.single().search!!.parent)
+        val placed = PlacedSave("savedata", SERVER, md5Hex(zip))
+        assertTrue(saves.place("romm", GAME, player, destination, listOf(placed)))
+        assertEquals("first device", docs.text("$secondPath/systemdata"))
+        assertEquals("first device", docs.text("$firstPath/systemdata"))
+        assertTrue(secondPath in docs.folders)
+        assertTrue(saves.changedSince("romm", GAME, player, destination).slots.isEmpty())
+    }
+
+    @Test
+    fun edenSetsAsideTheWholeOldZipBeforeWritingAndRefusesAChangedAgainSave() {
+        val player = eden(1)
+        val path = edenPath(1)
+        docs.file("$path/systemdata", "old progress")
+        docs.file("$path/extra", "old extra")
+        val spots = saves.spots(player, GAME, LaunchTarget.ContentUri(ROM), forLaunch = true)
+        saves.noteHandedOver("romm", GAME, player, spots, saves.changedSince("romm", GAME, player, spots))
+        docs.library[SERVER] = zipOf("$TITLE/systemdata" to "server")
+        val placed = PlacedSave("savedata", SERVER, md5Hex(docs.library.getValue(SERVER)))
+        docs.beforeWrite = {
+            val kept = Files.list(backups.resolve("eden")).use { it.toList() }
+            val entries = saveEntries(Files.readAllBytes(kept.single()), setOf(TITLE))!!
+            assertEquals("old progress", entries.getValue("$TITLE/systemdata")!!.toString(Charsets.UTF_8))
+            assertEquals("old extra", entries.getValue("$TITLE/extra")!!.toString(Charsets.UTF_8))
+        }
+        assertTrue(saves.place("romm", GAME, player, spots, listOf(placed)))
+        docs.beforeWrite = {}
+        assertEquals("server", docs.text("$path/systemdata"))
+        docs.file("$path/systemdata", "changed again")
+        docs.library[SERVER] = zipOf("$TITLE/systemdata" to "another device")
+        assertFalse(saves.place("romm", GAME, player, spots, listOf(placed.copy(contentHash = md5Hex(docs.library.getValue(SERVER))))))
+        assertEquals("changed again", docs.text("$path/systemdata"))
+    }
+
+    @Test
+    fun freshEdenStartsUnplacedAndResolvesItsNewSaveOnReturn() {
+        val player = app.foldcade.plugins.eden.EdenPlayer().apply { bindSaveFolder(TREE) }
+        docs.names[ROM] = "Fantasy Life [$TITLE].nsp"
+        assertTrue(saves.spots(player, GAME, LaunchTarget.ContentUri(ROM), forLaunch = true).isEmpty())
+        eden(1)
+        docs.file("${edenPath(1)}/systemdata", "first boot progress")
+        val returning = returnSpots(saves, LibraryReturn("romm", GAME, player, emptyList(), ROM))
+        assertEquals("savedata", returning.single().slot)
+        assertEquals(1, saves.changedSince("romm", GAME, player, returning).slots.size)
+    }
+
+    private fun eden(user: Int): app.foldcade.plugins.eden.EdenPlayer {
+        docs.names[ROM] = "Fantasy Life [$TITLE].nsp"
+        docs.file(app.foldcade.plugins.eden.EdenPlayer.PROFILES, ByteArray(0x650).apply { this[0x10] = user.toByte() })
+        return app.foldcade.plugins.eden.EdenPlayer().apply { bindSaveFolder(TREE) }
+    }
+
+    private fun edenPath(user: Int) = "${app.foldcade.plugins.eden.EdenPlayer.SAVES}/${"0".repeat(30)}0$user/$TITLE"
+
     private fun placed() = PlacedSave("card1", SERVER, md5Hex(docs.library.getValue(SERVER)))
 
     private fun zipOf(vararg entries: Pair<String, String>): ByteArray =
@@ -213,6 +284,7 @@ class PlayerSaveSearchTest {
         val library = mutableMapOf<String, ByteArray>()
         val files = sortedMapOf<String, ByteArray>()
         val folders = sortedSetOf<String>()
+        var beforeWrite: () -> Unit = {}
 
         fun dir(path: String) {
             var folder = path
@@ -240,6 +312,7 @@ class PlayerSaveSearchTest {
         }
         override fun read(uri: String) = library[uri] ?: files[uri.removePrefix("$TREE/")]
         override fun write(uri: String, bytes: ByteArray) {
+            beforeWrite()
             files[uri.removePrefix("$TREE/")] = bytes
         }
         override fun list(folderUri: String, name: String): List<SaveEntry>? {
@@ -289,6 +362,7 @@ class PlayerSaveSearchTest {
     }
 
     private companion object {
+        const val TITLE = "0100755017EE0000"
         const val TREE = "content://tree/arms"
         const val ROM = "content://roms/nfsu2.iso"
         const val SERVER = "lib://card1"

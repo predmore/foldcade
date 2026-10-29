@@ -258,7 +258,7 @@ object Copy {
     const val edenRestartTitle = "Restart Eden once"
     const val edenRestartBody = "Foldcade added Switch files to Eden. Eden reads them only when it starts. On the next screen, choose Force stop, then OK. Press B to come back and start the game again."
     /** On Eden's page. */
-    const val edenKeys = "Keys & firmware"
+    const val edenKeys = "Saves, keys & firmware"
     /** The tiles of RetroArch and Eden when no player with a save folder names them. */
     const val retroArch = "RetroArch"
     const val eden = "Eden"

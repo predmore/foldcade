@@ -4,7 +4,7 @@ import android.content.ContentResolver
 import android.content.Context
 import android.net.Uri
 import android.provider.DocumentsContract
-import app.foldcade.plugins.emulators.EDEN_PACKAGES
+import app.foldcade.plugins.eden.EDEN_PACKAGES
 import java.io.InputStream
 
 /** Eden's documents provider: authority `<package>.user`, root id `root`. */

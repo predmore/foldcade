@@ -229,7 +229,7 @@ class PlayerLaunchTest {
     @Test
     fun everyEmulatorPlatformIsInTheLocalFolderCatalog() {
         val folder = LocalFolderEntry().platforms.map { it.id }.toSet()
-        (EmulatorsEntry().players + DuckStationEntry().players + ArmsX2Entry().players + Aps3eEntry().players).forEach { player ->
+        (app.foldcade.plugins.eden.EdenEntry().players + EmulatorsEntry().players + DuckStationEntry().players + ArmsX2Entry().players + Aps3eEntry().players).forEach { player ->
             assertTrue(player.id, player.platformId in folder)
         }
     }
@@ -237,7 +237,7 @@ class PlayerLaunchTest {
     @Test
     fun manifestSeesEveryEmulatorPackage() {
         val xml = File("src/main/AndroidManifest.xml").readText()
-        (EmulatorsEntry().players + DuckStationEntry().players + ArmsX2Entry().players + Aps3eEntry().players).flatMap { it.packageNames }.distinct().forEach { name ->
+        (app.foldcade.plugins.eden.EdenEntry().players + EmulatorsEntry().players + DuckStationEntry().players + ArmsX2Entry().players + Aps3eEntry().players).flatMap { it.packageNames }.distinct().forEach { name ->
             assertTrue(name, xml.contains("android:name=\"$name\""))
         }
     }

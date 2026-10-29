@@ -1,6 +1,6 @@
 package app.foldcade
 
-import app.foldcade.plugins.emulators.EDEN_PACKAGES
+import app.foldcade.plugins.eden.EDEN_PACKAGES
 import app.foldcade.plugins.emulators.EmulatorsEntry
 import app.foldcade.plugins.romm.RommSwitchFirmware
 import app.foldcade.romm.FirmwareSummary
@@ -29,28 +29,12 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class EdenTest {
-    private val eden = EmulatorsEntry().players.single { it.id == "eden.nintendo-switch" }
+    private val eden = app.foldcade.plugins.eden.EdenPlayer()
 
     @Test
-    fun theGateAsksRommOnlyWhenItMightOffer() = runBlocking {
-        var calls = 0
-        val ask = suspend {
-            calls++
-            true
-        }
-        assertEquals(EdenGate.Check, edenGate(holdsGrant = true, offered = false, ask))
-        assertEquals(EdenGate.Ready(markOffered = false), edenGate(holdsGrant = false, offered = true, ask))
-        assertEquals(0, calls)
-        assertEquals(EdenGate.Offer, edenGate(holdsGrant = false, offered = false, ask))
-        assertEquals(EdenGate.Ready(markOffered = false), edenGate(holdsGrant = false, offered = false) { false })
-        assertEquals(EdenGate.Ready(markOffered = false), edenGate(holdsGrant = false, offered = false) { null })
-        val failed = edenGate(holdsGrant = false, offered = false) { error("romm") }
-        assertEquals(EdenGate.Ready(markOffered = false), failed)
-        val cancelled = runCatching {
-            edenGate(holdsGrant = false, offered = false) { throw CancellationException("stop") }
-        }.exceptionOrNull()
-        assertTrue(cancelled is CancellationException)
-        assertEquals(1, calls)
+    fun theGateChecksTheHeldFolderAndLeavesTheOnlyOfferToSaves() {
+        assertEquals(EdenGate.Check, edenGate(holdsGrant = true))
+        assertEquals(EdenGate.Ready, edenGate(holdsGrant = false))
     }
 
     @Test

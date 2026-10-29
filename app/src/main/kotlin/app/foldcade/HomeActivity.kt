@@ -96,7 +96,8 @@ import app.foldcade.language.PanelKeyActivity
 import app.foldcade.language.PromptKey
 import app.foldcade.language.interpretThorStyle
 import app.foldcade.language.alsoRunsLine
-import app.foldcade.plugins.emulators.EDEN_PACKAGES
+import app.foldcade.plugins.eden.EDEN_PACKAGES
+import app.foldcade.plugins.eden.EdenPlayer
 import app.foldcade.plugins.retroarch.RetroArchPlayer
 import app.foldcade.plugins.romm.ROMM_ORIGIN_KEY
 import app.foldcade.romm.RomProgress
@@ -185,12 +186,14 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
                 FolderPurpose.Library -> Unit
                 FolderPurpose.RetroArchCores -> settleRetroArchCores()
                 FolderPurpose.EdenFolder -> declineEdenFolder()
+                FolderPurpose.EdenSaveOffer -> skipSaveFolderAndLaunch(SaveFolderAnswer.PickerCancelled)
             }
             return@registerForActivityResult
         }
         when (purpose) {
             FolderPurpose.RetroArchCores -> useRetroArchFolder(uri)
             FolderPurpose.EdenFolder -> useEdenFolder(uri)
+            FolderPurpose.EdenSaveOffer -> useEdenFolder(uri, saveOffer = true)
             FolderPurpose.Library -> {
                 if (persistTreeGrant(write = false) { flags ->
                     contentResolver.takePersistableUriPermission(uri, flags)
@@ -481,6 +484,7 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
         foldcade.refreshRetroArchCoresOnReturn()
         // A player may have been pointed at the folder Foldcade hosts for its saves while Home was away.
         foldcade.refreshHostedFolders()
+        foldcade.refreshEdenSetting()
         foldcade.shell.refreshPlayerSaves()
         foldcade.refreshSaveSync()
         // Usage access may have changed while Home was away, and without it no game reads Paused.
@@ -789,6 +793,8 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
             val apiGame = shelfGame(game)
             foldcade.launchWork.job = foldcade.scope.launch {
                 var notPlaced = false
+                if (installedEdenPackage(player, ::packageInstalled) != null &&
+                    edenHeld(player, generation, libraryId, remoteKey)) return@launch
                 // The core decides where RetroArch keeps the save, so it is fixed before saves are placed.
                 if (player is RetroArchPlayer) foldcade.readRetroArchCores()
                 val prepared = try {
@@ -809,7 +815,7 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
                     if (!launchCurrent(generation) || pendingLaunch != index) return@withContext
                     if (notPlaced) showSaveNotPlaced(game.title)
                     if (prepared == null) return@withContext
-                    finishLaunch(index, game, player, prepared.target, apiGame, generation, prepared.spots, coresRead = true, saveSyncDeclinedFor = saveSyncDeclinedFor)
+                    finishLaunch(index, game, player, prepared.target, apiGame, generation, prepared.spots, coresRead = true, edenChecked = true, saveSyncDeclinedFor = saveSyncDeclinedFor)
                 }
             }
             return
@@ -896,7 +902,7 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
         }
         if (!edenChecked && installedEdenPackage(player, ::packageInstalled) != null) {
             foldcade.launchWork.job = foldcade.scope.launch {
-                if (edenHeld(player, generation, { launchGame(index, saveSyncDeclinedFor) }, game.libraryId, game.remoteKey)) return@launch
+                if (edenHeld(player, generation, game.libraryId, game.remoteKey)) return@launch
                 withContext(Dispatchers.Main.immediate) {
                     finishLaunch(
                         index,
@@ -1145,9 +1151,8 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
         }
         // Eden's keys and firmware, also before a download. The same player the RetroArch check uses.
         if (first != null && installedEdenPackage(first, ::packageInstalled) != null) {
-            val retry = { launchBackendGame(title, platformId, route, fresh) }
             try {
-                if (edenHeld(first, generation, retry, libraryId, game.remoteKey)) {
+                if (edenHeld(first, generation, libraryId, game.remoteKey)) {
                     if (fetching) withContext(Dispatchers.Main.immediate) { foldcade.shell.endDownload(libraryId, game.remoteKey) }
                     return
                 }
@@ -1161,7 +1166,7 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
         }
         if (first is HostedSaveFolder) foldcade.refreshHostedFolders()
         val syncState = if (first is SaveFolderHolder && first.hasSaveFolder()) {
-            val folder = foldcade.store.playerSaveFolder(first.saveFolderId())
+            val folder = foldcade.playerSaveFolder(first)
             if (folder != null) withContext(Dispatchers.IO) { foldcade.playerSaves.saveSync(first, folder) } else null
         } else null
         val offer = first?.let { saveLaunchOffer(it, route.servers.isNotEmpty(), saveSyncDeclinedFor, syncState) }
@@ -1600,7 +1605,7 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
                 foldcade.playerSaves,
                 foldcade.plugins,
                 awaitLoad = { foldcade.store.setSaveAwaitsLoad(it, true) },
-                pickedFolder = { picked -> if (picked is SaveFolderHolder) foldcade.store.playerSaveFolder(picked.saveFolderId()) else null },
+                pickedFolder = { picked -> foldcade.playerSaveFolder(picked) },
                 onSpots = { game, picked, spots ->
                     withContext(Dispatchers.Main.immediate) { foldcade.shell.noteSaveReachable(game, picked.id, spots.isNotEmpty()) }
                 },
@@ -1879,7 +1884,6 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
         foldcade.launchWork.cancel()
         clearPendingLaunch()
         retroArchRetry = null
-        edenRetry = null
     }
 
     private fun launchCurrent(generation: Int): Boolean = foldcade.launchWork.current(generation)
@@ -1935,7 +1939,7 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
                 settleRetroArchCores()
             }
             DialogKind.EdenFolder -> if (effect.button == DialogButton.ContinueGrant) {
-                openEdenFolder(fromOffer = true)
+                openEdenFolder(fromOffer = pendingBackend != null || pendingLaunch != null)
             } else {
                 declineEdenFolder()
             }
@@ -1948,7 +1952,7 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
                 edenRestartPackage = null
             }
             DialogKind.EdenWrongFolder -> if (effect.button == DialogButton.TryAgain) {
-                openEdenFolder(fromOffer = true)
+                openEdenFolder(fromOffer = pendingBackend != null || pendingLaunch != null)
             } else {
                 declineEdenFolder()
             }
@@ -1981,15 +1985,23 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
             DialogKind.SaveFolder -> if (pendingBackend != null) {
                 val pending = pendingBackend ?: return
                 if (effect.button == DialogButton.ChooseSaveFolder) {
-                    folderPurpose = FolderPurpose.SaveOffer
-                    settingsPlayerId = pending.playerId
-                    folderPicker.launch(suggestedSaveFolder(foldcade.plugins.player(pending.playerId)))
+                    if (foldcade.plugins.player(pending.playerId) is EdenPlayer) {
+                        openEdenFolder(fromOffer = true)
+                    } else {
+                        folderPurpose = FolderPurpose.SaveOffer
+                        settingsPlayerId = pending.playerId
+                        folderPicker.launch(suggestedSaveFolder(foldcade.plugins.player(pending.playerId)))
+                    }
                 } else {
                     skipSaveFolderAndLaunch()
                 }
             } else if (effect.button == DialogButton.ChooseSaveFolder) {
-                folderPurpose = FolderPurpose.LaunchOffer
-                folderPicker.launch(suggestedSaveFolder(playerForPendingLaunch()))
+                if (playerForPendingLaunch() is EdenPlayer) {
+                    openEdenFolder(fromOffer = true)
+                } else {
+                    folderPurpose = FolderPurpose.LaunchOffer
+                    folderPicker.launch(suggestedSaveFolder(playerForPendingLaunch()))
+                }
             } else {
                 skipSaveFolderAndLaunch()
             }
@@ -2258,6 +2270,10 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
 
     private fun choosePlayerSave(playerId: String) {
         clearPendingLaunch()
+        if (foldcade.plugins.player(playerId) is EdenPlayer) {
+            openEdenFolder(fromOffer = false)
+            return
+        }
         settingsPlayerId = playerId
         folderPurpose = FolderPurpose.Settings
         folderPicker.launch(suggestedSaveFolder(foldcade.plugins.player(playerId)))
@@ -2293,9 +2309,6 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
     /** The launch to try again once the RetroArch cores offer is answered, and its generation. */
     private var retroArchRetry: Pair<Int, () -> Unit>? = null
 
-    /** The launch to try again once the Eden folder offer is answered, and its generation. */
-    private var edenRetry: Pair<Int, () -> Unit>? = null
-
     /**
      * The Eden package the restart dialog's Continue opens App info for.
      * Lost when this activity is recreated; Continue then uses the installed Eden.
@@ -2304,25 +2317,22 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
 
     /**
      * What Eden needs before [player] starts. A grant is checked and filled in.
-     * Without one, RomM is asked once, and only then. A RomM error starts the
-     * game and does not count as the user declining. Returns true when the
-     * launch stops: for the folder offer, or because Eden has to be started
-     * again before it can see files Foldcade added.
+     * The save-folder flow owns the single offer. Returns true when Eden has
+     * to restart before it can see files Foldcade added. This runs before save
+     * placement, including the local-library launch path.
      */
     private suspend fun edenHeld(
         player: Player,
         generation: Int,
-        retry: () -> Unit,
         libraryId: String?,
         remoteKey: String?,
     ): Boolean {
         val packageName = installedEdenPackage(player, ::packageInstalled) ?: return false
         // Before Eden's documents provider. Opening it starts Eden and clears the stopped state.
         if (edenRestartBlocks(packageName, generation)) return true
+        withContext(Dispatchers.Main.immediate) { foldcade.refreshEdenSetting() }
         val holds = foldcade.edenFolderReader.granted(packageName) != null
-        val gate = edenGate(holds, foldcade.store.edenFolderOffered()) {
-            rommHasSwitchSetup(foldcade.rommFirmware.listSwitch())
-        }
+        val gate = edenGate(holds)
         when (gate) {
             EdenGate.Check -> {
                 val progress = if (libraryId != null && remoteKey != null) {
@@ -2344,20 +2354,7 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
                 withContext(Dispatchers.Main.immediate) { presentEdenRestart(packageName, generation) }
                 return true
             }
-            EdenGate.Offer -> {
-                withContext(Dispatchers.Main.immediate) {
-                    if (!launchCurrent(generation)) return@withContext
-                    edenRetry = generation to retry
-                    foldcade.shell.present(edenFolderDialog(hostScreen()))
-                }
-                return true
-            }
-            is EdenGate.Ready -> {
-                if (gate.markOffered) {
-                    withContext(Dispatchers.Main.immediate) { foldcade.store.setEdenFolderOffered() }
-                }
-                return false
-            }
+            EdenGate.Ready -> return false
         }
     }
 
@@ -2398,8 +2395,8 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
     /** Android's picker, opened at the Eden package a launch uses. [fromOffer] is a launch, not Settings. */
     private fun openEdenFolder(fromOffer: Boolean) {
         val packageName = EDEN_PACKAGES.firstOrNull(::packageInstalled) ?: return
-        if (!fromOffer) edenRetry = null
-        folderPurpose = FolderPurpose.EdenFolder
+        if (!fromOffer) clearPendingLaunch()
+        folderPurpose = if (fromOffer) FolderPurpose.EdenSaveOffer else FolderPurpose.EdenFolder
         folderPicker.launch(EdenFolders.root(packageName))
     }
 
@@ -2408,20 +2405,10 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
      * The offer is answered. A held launch starts; Settings has none.
      */
     private fun declineEdenFolder() {
-        foldcade.store.setEdenFolderOffered()
-        val retry = edenRetry
-        edenRetry = null
-        retryAfterEden(retry)
+        if (pendingBackend != null || pendingLaunch != null) skipSaveFolderAndLaunch(SaveFolderAnswer.PickerCancelled)
     }
 
-    /** Starts the launch the Eden offer held, unless a newer launch or a cancel replaced it. */
-    private fun retryAfterEden(retry: Pair<Int, () -> Unit>?) {
-        edenRetry = null
-        val (generation, launch) = retry ?: return
-        if (launchCurrent(generation)) launch()
-    }
-
-    private fun useEdenFolder(uri: Uri) {
+    private fun useEdenFolder(uri: Uri, saveOffer: Boolean = false, continueLaunch: Boolean = true): Boolean {
         // Derived again so a recreated activity still expects the package launches use.
         val expected = EDEN_PACKAGES.firstOrNull(::packageInstalled)
         val packageName = EdenFolders.packageOf(uri)
@@ -2443,16 +2430,15 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
             if (took) releaseUnlessUsed(uri.toString(), flags)
             foldcade.refreshEdenSetting()
             foldcade.shell.present(edenWrongFolderDialog(hostScreen()))
-            return
+            return false
         }
-        val retry = edenRetry
-        edenRetry = null
         val previous = foldcade.store.edenFolder(packageName)
         foldcade.store.setEdenFolder(packageName, uri.toString())
         if (previous != null && previous != uri.toString()) releaseUnlessUsed(previous, flags)
-        foldcade.store.setEdenFolderOffered()
         foldcade.refreshEdenSetting()
-        retryAfterEden(retry)
+        foldcade.refreshSaveSync()
+        if (continueLaunch && saveOffer) skipSaveFolderAndLaunch(SaveFolderAnswer.Chosen)
+        return true
     }
 
     /**
@@ -2641,6 +2627,9 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
     }
 
     private fun rememberSaveFolder(uri: Uri, player: Player?): Boolean {
+        if (player is EdenPlayer) {
+            return useEdenFolder(uri, continueLaunch = false)
+        }
         val read = Intent.FLAG_GRANT_READ_URI_PERMISSION
         val write = Intent.FLAG_GRANT_WRITE_URI_PERMISSION
         if (!persistTreeGrant(write = true) { flags -> contentResolver.takePersistableUriPermission(uri, flags) }) {
@@ -2680,7 +2669,7 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
      */
     private suspend fun playerSetupSteps(player: Player): String? {
         if (player !is SaveFolderHolder) return null
-        val folder = foldcade.store.playerSaveFolder(player.saveFolderId())
+        val folder = foldcade.playerSaveFolder(player)
         return withContext(Dispatchers.IO) { foldcade.playerSaves.setupSteps(player, folder) }
     }
 
@@ -3054,14 +3043,15 @@ internal data class LibraryReturn(
 
 /**
  * The spots to read back. A player whose spots at launch came from a search is
- * looked up again, with the card left as it is, and that look wins when it finds
+ * looked up again, as is one with no spots yet (a fresh Eden has no profile).
+ * The card is left as it is, and that look wins when it finds
  * any. The spots stored at launch remain when that look finds nothing, so a game
  * file that cannot be read just now does not drop the saves. Every other player
  * keeps the spots stored at launch.
  */
 internal fun returnSpots(saves: PlayerSaves, pending: LibraryReturn): List<SaveSpot> {
     val uri = pending.targetUri ?: return pending.spots
-    if (pending.spots.none { it.search != null }) return pending.spots
+    if (pending.spots.isNotEmpty() && pending.spots.none { it.search != null }) return pending.spots
     val fresh = try {
         saves.spots(pending.player, pending.game, LaunchTarget.ContentUri(uri), forLaunch = false)
     } catch (_: Exception) {

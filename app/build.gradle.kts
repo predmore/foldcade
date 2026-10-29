@@ -163,6 +163,7 @@ dependencies {
     implementation(project(":plugins:azahar"))
     implementation(project(":plugins:droiddeck"))
     implementation(project(":plugins:duckstation"))
+    implementation(project(":plugins:eden"))
     implementation(project(":plugins:emulators"))
     implementation(project(":plugins:gamenative"))
     implementation(project(":plugins:local-folder"))

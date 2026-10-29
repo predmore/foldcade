@@ -68,7 +68,8 @@ import app.foldcade.plugins.romm.RomFolderDocuments
 import app.foldcade.plugins.romm.ROMM_MEDIA_PATH
 import app.foldcade.plugins.romm.ROMM_ORIGIN_KEY
 import app.foldcade.plugins.romm.RommArtwork
-import app.foldcade.plugins.emulators.EDEN_PACKAGES
+import app.foldcade.plugins.eden.EDEN_PACKAGES
+import app.foldcade.plugins.eden.EdenPlayer
 import app.foldcade.plugins.romm.RommCoverArt
 import app.foldcade.plugins.romm.RommFirmware
 import app.foldcade.plugins.romm.RommPlugins
@@ -962,7 +963,7 @@ class FoldcadeApp : Application() {
         for (id in plugins.playerIds()) {
             val player = plugins.player(id) ?: continue
             if (player !is SaveFolderHolder) continue
-            val uri = store.playerSaveFolder(player.saveFolderId()) ?: continue
+            val uri = playerSaveFolder(player) ?: continue
             player.bindSaveFolder(uri)
         }
         refreshHostedFolders()
@@ -1050,7 +1051,7 @@ class FoldcadeApp : Application() {
         for (id in plugins.playerIds()) {
             val player = plugins.player(id) ?: continue
             if (player !is app.foldcade.api.plugin.SaveFolderHolder) continue
-            val uri = store.playerSaveFolder(player.saveFolderId()) ?: continue
+            val uri = playerSaveFolder(player) ?: continue
             playerSaves.saveSync(player, uri)?.let { sync[player.id] = it }
             playerSaves.setupSteps(player, uri)?.let { setup[player.id] = it }
         }
@@ -1164,10 +1165,19 @@ class FoldcadeApp : Application() {
         )
     }
 
+    /** Eden has one grant for saves, keys and firmware. Other players use their save-folder store. */
+    internal fun playerSaveFolder(player: Player): String? = if (player is EdenPlayer) {
+        installedEdenPackage(player, ::packageInstalled)?.let { edenFolderReader.granted(it)?.toString() }
+    } else if (player is SaveFolderHolder) {
+        store.playerSaveFolder(player.saveFolderId())
+    } else null
+
     /** Settings › Emulators › Eden keys and firmware. Null while Eden is not installed. */
     internal fun refreshEdenSetting() {
         val installed = EDEN_PACKAGES.firstOrNull(::packageInstalled)
-        val setting = installed?.let { EdenSetting(fromRomm = edenFolderReader.granted(it) != null, packageName = it) }
+        val folder = installed?.let { edenFolderReader.granted(it)?.toString() }
+        (plugins.player("eden") as? EdenPlayer)?.bindSaveFolder(folder.orEmpty())
+        val setting = installed?.let { EdenSetting(fromRomm = folder != null, packageName = it) }
         shell.setEden(setting)
     }
     private val retroArchRead = Mutex()

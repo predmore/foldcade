@@ -36,7 +36,7 @@ class RemoteSaveSpotsTest {
             val azahar = AzaharEntry().player
             val arms = ArmsX2Entry().player
             val ps3 = Aps3eEntry().player
-            for ((player, resolves) in listOf(melon to true, retro to true, duck to true, azahar to false, arms to false, ps3 to false)) {
+            for ((player, resolves) in listOf(melon to true, retro to true, duck to true, azahar to false, arms to false, ps3 to false, app.foldcade.plugins.eden.EdenPlayer() to false)) {
                 (player as SaveFolderHolder).bindSaveFolder("content://saves")
                 val game = Game("romm", "3", player.platformId, Availability.RemoteOnly, "Game")
                 val spots = saves.spotsForFileName(player, game, "Game.nds")

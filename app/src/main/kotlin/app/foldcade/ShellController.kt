@@ -2514,8 +2514,8 @@ class ShellController(
 
     /** Null while Eden is not installed. */
     fun setEden(setting: EdenSetting?) {
-        if (model.eden == setting) return
-        model = model.copy(eden = setting)
+        if (model.eden != setting) model = model.copy(eden = setting)
+        refreshSaveHealth()
     }
 
     private fun libraryEntry(snapshot: PickerModel): GridEntry? {
@@ -2786,7 +2786,8 @@ class ShellController(
     private fun playerSaveSettings(): List<PlayerSaveSetting> =
         plugins.playerIds().mapNotNull { id ->
             val player = plugins.player(id) ?: return@mapNotNull null
-            if (player !is SaveFolderHolder) return@mapNotNull null
+            // Eden's existing row owns its one grant for saves, keys and firmware.
+            if (player !is SaveFolderHolder || player is app.foldcade.plugins.eden.EdenPlayer) return@mapNotNull null
             val sync = saveSync[player.id]
             player.saveFolderId() to PlayerSaveSetting(
                 playerId = player.id,

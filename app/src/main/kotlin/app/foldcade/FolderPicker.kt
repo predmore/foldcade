@@ -23,6 +23,9 @@ internal enum class FolderPurpose {
 
     /** Eden's data folder, so Foldcade can add keys and firmware. */
     EdenFolder,
+
+    /** Eden’s validated picker, answering this launch’s save-folder offer. */
+    EdenSaveOffer,
 }
 
 /** The picker fields that are not Android's URI result. */
@@ -73,5 +76,6 @@ internal fun folderPickResult(state: FolderPickerState, choseFolder: Boolean): F
         if (choseFolder) FolderPickResult.RememberSaveAndLaunch else FolderPickResult.SkipSaveAndLaunch
     FolderPurpose.Settings -> if (choseFolder) FolderPickResult.RememberSaveForPlayer else FolderPickResult.ClearSettingsPlayer
     FolderPurpose.RetroArchCores -> if (choseFolder) FolderPickResult.ImportCores else FolderPickResult.SettleCores
+    FolderPurpose.EdenSaveOffer -> if (choseFolder) FolderPickResult.UseEdenFolder else FolderPickResult.SkipSaveAndLaunch
     FolderPurpose.EdenFolder -> if (choseFolder) FolderPickResult.UseEdenFolder else FolderPickResult.SettleEden
 }
