@@ -4142,7 +4142,8 @@ private fun Cell(
                 Box(
                     Modifier
                         .align(Alignment.TopStart)
-                        .padding(px(8f))
+                        // Far enough in that the tile's rounded corner never clips it, as the check's.
+                        .padding(maxOf(px(8f), corner * CORNER_SAFE))
                         .size(px(tile.dotPx))
                         .background(theme.focus, theme.style.shape.control()),
                 )
