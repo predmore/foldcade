@@ -2236,7 +2236,7 @@ class ShellController(
     fun touchSaveSetupTile(key: String) {
         val page = model.saveSetup ?: return
         if (model.dialog != null || page.focus == key) return
-        publish(model.copy(saveSetup = page.copy(focus = key, celebrating = null, note = null)))
+        publish(model.copy(saveSetup = page.copy(focus = key, celebrating = null, note = null, restoring = null)))
         cue(model.themeIndex, "move")
     }
 

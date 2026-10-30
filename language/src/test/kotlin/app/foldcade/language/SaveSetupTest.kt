@@ -78,6 +78,11 @@ class SaveSetupTest {
         assertEquals("melonds", loaded.page().focus)
         assertEquals("melonds", loaded.page().celebrating)
         assertNull(loaded.page().restoring)
+        // Everything landing in one update, with the stand-in focus gone, keeps the restored tile.
+        val atOnce = partial.settle { model.copy(saveSetup = it.saveSetup, allFilesGranted = true)
+            .saves("melonds") { s -> s.copy(chosen = true) }.saves("retroarch.nes") { s -> s.copy(chosen = true) } }
+        assertEquals("melonds", atOnce.page().focus)
+        assertEquals("melonds", atOnce.page().celebrating)
         // A move before then wins over the restore.
         val moved = partial.press(Meaning.MoveRight).first
         assertNull(moved.page().restoring)

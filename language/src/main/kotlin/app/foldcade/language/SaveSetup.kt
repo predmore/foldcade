@@ -311,7 +311,7 @@ fun retainSaveSetup(previous: PickerModel, next: PickerModel): PickerModel {
         val tile = tiles.firstOrNull { it.key == key } ?: return@let
         settled = settled.copy(focus = key, restoring = null, celebrating = key.takeIf { tile.done }, note = null)
     }
-    val key = page.focus
+    val key = settled.focus
     val old = before.firstOrNull { it.key == key }
     val now = tiles.firstOrNull { it.key == key }
     if (key != null && was?.focus == key && old != null && now != null && !old.done && now.done) settled = settled.copy(celebrating = key)
