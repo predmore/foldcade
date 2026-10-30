@@ -38,7 +38,8 @@ class FindRecoveryIntegrationTest {
             assertNotNull(shell.model.panel)
             assertEquals(id, shell.model.tileActions!!.showOnHome)
             assertNull(shell.model.tileActions!!.game)
-            assertEquals(listOf(Row.ShowOnHome), panelRows(shell.model.panel!!, shell.model))
+            // Foldcade's folder also has Folders' switch, after the way to its tile.
+            assertEquals(if (collection) listOf(Row.ShowOnHome) else listOf(Row.ShowOnHome, Row.FolderOnHome), panelRows(shell.model.panel!!, shell.model))
             shell.onMeaning(Meaning.Activate, HostScreen.Top)
             assertNull(shell.find)
             assertEquals(id, shell.homeFace(shell.model.focus.cellIndex)!!.id)
@@ -47,7 +48,8 @@ class FindRecoveryIntegrationTest {
 
     @Test fun findsHiddenFilterAndShowUseEveryKindOfUnifiedHiddenItem() {
         // An emulator a player covers is filed in Emulators, not hidden, so Hidden leaves it out.
-        val ids = setOf(game, androidHomeId("notes"), HOME_MOONLIGHT)
+        // So is a folder off Home: Folders lists it, switched off.
+        val ids = setOf(game, androidHomeId("notes"))
         for (target in ids) {
             val store = SessionStore(MemoryPrefs())
             store.saveHomeBoard(encodeHome(HomeBoard(hidden = setOf(game, androidHomeId("notes")), retired = setOf(HOME_MOONLIGHT))))
@@ -68,7 +70,6 @@ class FindRecoveryIntegrationTest {
             assertFalse(shell.find!!.results.any { it.id == target })
             val board = decodeHome(store.homeBoardRaw())
             assertFalse(target in board.hidden || target in board.retired)
-            if (target == HOME_MOONLIGHT) assertTrue(target in board.slots)
             if (target == androidHomeId("notes")) assertTrue(board.folders.getValue(HOME_ANDROID_APPS).slots.contains(target))
         }
     }

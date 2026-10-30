@@ -360,6 +360,7 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
             Effect.Undo, is Effect.ShowHidden, is Effect.DeleteShortcut -> Unit
             // The shell applies Y's tile actions and A on a text field itself and hands back null; these never arrive.
             is Effect.SelectTile, is Effect.Bulk, is Effect.ChooseArt, Effect.MoveTile, is Effect.ShowOnHome, is Effect.ToggleCollection, is Effect.NewCollection, is Effect.RecentOnHome,
+            Effect.OpenFolders, is Effect.FolderOnHome,
             is Effect.MoveApp, is Effect.Hide,
             Effect.RenameFolder, Effect.ChooseFolderIcon, Effect.RemoveTile, Effect.Tidy, Effect.GoHome, Effect.EditField,
             is Effect.SortFolder,

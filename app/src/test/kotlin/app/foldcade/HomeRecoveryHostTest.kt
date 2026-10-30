@@ -256,7 +256,8 @@ class HomeRecoveryHostTest {
             focus(shell, decodeHome(saved).slots.indexOf(target))
             shell.onMeaning(Meaning.Options, HostScreen.Bottom)
             choose(shell, Row.RemoveTile)
-            assertEquals(Copy.removed, shell.model.undoVerb)
+            // A folder keeps its games off Home; a collection is gone.
+            assertEquals(if (target == folder.id) Copy.offHome else Copy.removed, shell.model.undoVerb)
             shell.onMeaning(Meaning.Options, HostScreen.Bottom)
             shell.onMeaning(Meaning.Activate, HostScreen.Bottom)
             assertEquals(saved, store.homeBoardRaw())

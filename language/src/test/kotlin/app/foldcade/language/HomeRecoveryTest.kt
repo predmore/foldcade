@@ -9,13 +9,14 @@ class HomeRecoveryTest {
     private val platforms = listOf(HomePlatform("gba", "Game Boy Advance"))
     private val folder = platformFolderId("gba")
 
-    @Test fun hiddenCombinesGamesAppsAndRetiredFoldersOnce() {
+    @Test fun hiddenCombinesGamesAndAppsOnceAndLeavesFoldersToFolders() {
         val notes = HomeItem(androidHomeId("notes"), "Notes", HomeKind.AndroidApp)
         val emulator = HomeItem(androidHomeId("emu"), "Emulator", HomeKind.Emulator)
-        val board = HomeBoard(hidden = setOf(game.id, notes.id), retired = setOf(HOME_MOONLIGHT))
+        val board = HomeBoard(hidden = setOf(game.id, notes.id), retired = setOf(HOME_MOONLIGHT, HOME_RECENT))
         val rows = hiddenItems(board, listOf(game, notes, emulator))
         // An emulator is filed in Emulators, not hidden, so only what the user hid is listed.
-        assertEquals(listOf("Alpha", "Moonlight", "Notes"), rows.map { it.title })
+        // Moonlight's folder is off Home, not hidden: Folders lists it with its switch.
+        assertEquals(listOf("Alpha", "Notes", "Recently played"), rows.map { it.title })
     }
 
     @Test fun showRestoresFreeSlotsPinsAndEveryCollectionAfterRestart() {
@@ -87,11 +88,17 @@ class HomeRecoveryTest {
         assertNull(snapshot.afterEdit(before, hideGame(before, game.id)))
     }
 
-    @Test fun oldRetiredPlatformFoldersAreListedEvenBeforeTheirLibraryReports() {
+    @Test fun anOldRetiredPlatformFolderIsInFoldersOnceItsLibraryReports() {
         val board = HomeBoard(retired = setOf(folder))
-        val rows = hiddenItems(board, emptyList(), platforms)
-        assertEquals(listOf("Game Boy Advance"), rows.map { it.title })
-        assertEquals(folder, rows.single().id)
+        assertTrue(hiddenItems(board, emptyList(), platforms).isEmpty())
+        // No games yet, nothing to switch on. Its games bring it back to Folders, still off Home.
+        assertTrue(foldcadeFolders(board, emptyList(), platforms).isEmpty())
+        val merged = mergeHome(board, listOf(game, other), platforms)
+        val listed = foldcadeFolders(merged, listOf(game, other), platforms).single()
+        assertEquals(folder, listed.folder.id)
+        assertEquals("Game Boy Advance", listed.folder.name)
+        assertEquals(2, listed.count)
+        assertFalse(listed.onHome)
     }
 
     @Test fun hidingAnUnplacedGameRoundTripsWithoutAnEmptySlotRecord() {

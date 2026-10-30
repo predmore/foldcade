@@ -305,6 +305,13 @@ object Copy {
     /** The Edit home row that opens the Hidden grid. */
     const val hiddenAppsRow = "Hidden"
     const val noHiddenApps = "Nothing hidden"
+    /** Edit home's row, and the view it opens: every folder Foldcade makes, on Home or off it. */
+    const val folders = "Folders"
+    const val noFolders = "No folders yet"
+    /** A Foldcade folder's switch, in its Y menu: its tile is on Home. */
+    const val onHome = "On Home"
+    /** What Undo says once a folder came off Home. It keeps its games, and Folders brings it back. */
+    const val offHome = "Off Home"
     const val pin = "Pin"
     const val unpin = "Unpin"
     const val moveToGames = "Move to Android Games"

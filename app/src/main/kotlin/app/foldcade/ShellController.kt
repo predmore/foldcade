@@ -74,6 +74,8 @@ import app.foldcade.language.HomeGrid
 import app.foldcade.language.HoldDrop
 import app.foldcade.language.LaunchableApp
 import app.foldcade.language.Effect
+import app.foldcade.language.atRoot
+import app.foldcade.language.FindCopy
 import app.foldcade.language.EmptyGrid
 import app.foldcade.language.GridFocus
 import app.foldcade.language.actionRows
@@ -611,6 +613,9 @@ class ShellController(
         val target = model.tileActions?.game
         val bulkIds = model.tileActions?.bulk
         val removeVerb = model.tileActions?.remove
+        // One of Foldcade's folders keeps its games off Home, so its Undo says so rather than Removed.
+        val removesFolder = removeVerb == RemoveVerb.Remove && before.atRoot &&
+            before.folders[app.foldcade.language.visibleSlots(before).getOrNull((model.panel?.grid ?: model.focus).cellIndex)]?.system == true
         val result = applyMeaning(meaning, screen, repeatCount, inputWindow)
         if (row != Row.Undo && (home.encoded() != beforeSaved || row == Row.MoveTile)) {
             // Taking a game out of Add to's choice: a collection, or Home, where it was a pin.
@@ -625,6 +630,7 @@ class ShellController(
                     row == Row.Tidy -> Copy.tidied
                     row == Row.Hide -> Copy.hidden
                     removeVerb == RemoveVerb.Unpin -> Copy.unpinned
+                    removesFolder -> Copy.offHome
                     else -> Copy.removed }, nowMillis(), after = if (bulkIds != null) home.bulkAfter ?: home.board else home.board).withFolderCleanup(home.board)
                 undoFocus = beforeFocus
                 undoGrid = beforeGrid
@@ -733,6 +739,17 @@ class ShellController(
                     syncHome()
                 }
                 publish(next.copy(notices = model.notices))
+            }
+            // Folders' switch, or Find's for a folder off Home, stays open too, so it can flip back
+            // while the tile under it dims or lights. Find's list follows it.
+            is Effect.FolderOnHome -> {
+                if (!model.libraryGrid) {
+                    home.setFolderOnHome(effect.folderId, effect.on, next.focus.cellIndex)
+                    commitHome()
+                    syncHome()
+                    find?.refresh(findEntries())
+                }
+                publish(next.copy(notices = model.notices, shelfEpoch = next.shelfEpoch + 1))
             }
             else -> publish(next)
         }
@@ -851,6 +868,11 @@ class ShellController(
                 null
             }
             is Effect.RecentOnHome -> changeHome { home.setRecentOnHome(effect.on, it) }
+            Effect.OpenFolders -> {
+                openHomeFolders()
+                null
+            }
+            is Effect.FolderOnHome -> null
             Effect.GoHome -> {
                 goHome()
                 null
@@ -1021,7 +1043,8 @@ class ShellController(
             }
             is FindOutcome.OpenGroup -> {
                 find = null
-                val at = home.openGroup(outcome.id)
+                // A folder off Home opens where it is, so its games are still a press away.
+                val at = home.openGroup(outcome.id) ?: home.openOffHome(outcome.id)
                 commitHome()
                 showBoard(at?.let { GridFocus(cellIndex = it, lastColumn = GridStrip.column(it)) } ?: model.focus, keepDialog = true)
                 cue(model.themeIndex, "activate")
@@ -1193,7 +1216,7 @@ class ShellController(
      * or off Home. The grid reads it to glide a tile that changed slots.
      */
     fun homeSlots(): List<String?> =
-        if (showingHome() && !home.board.allOpen) app.foldcade.language.visibleSlots(home.board) else emptyList()
+        if (showingHome() && !home.board.allOpen && !home.board.foldersOpen) app.foldcade.language.visibleSlots(home.board) else emptyList()
 
     /** The face of Home game or group [id] wherever it is, for a tile drawn in the hand. */
     fun homeFaceOf(id: String): HomeFace = home.faceOf(id)
@@ -1252,7 +1275,7 @@ class ShellController(
         artPicker = null
         find = null
         val rootFocus = model.focus.takeIf {
-            showingHome() && home.board.openFolderId == null && !home.board.allOpen
+            showingHome() && home.board.atRoot
         }
         val index = home.showRoot()
         syncHome()
@@ -1283,6 +1306,20 @@ class ShellController(
         commitHome()
         showBoard(GridFocus(cellIndex = index, lastColumn = GridStrip.column(index)), keepDialog = true)
     }
+
+    /** Edit home's Folders: every folder Foldcade makes, on Home or off it, in place of the board. */
+    fun openHomeFolders() {
+        artPicker = null
+        find = null
+        if (showingHome()) home.rememberRootFocus(model.focus.cellIndex)
+        val index = home.showFolders()
+        commitHome()
+        showBoard(GridFocus(cellIndex = index, lastColumn = GridStrip.column(index)), keepDialog = true)
+        Log.i("Foldcade", "home-ui folders")
+    }
+
+    /** Folders is on screen in place of the board. */
+    fun homeFoldersOpen(): Boolean = showingHome() && home.board.foldersOpen
 
     fun openHomeAll() {
         artPicker = null
@@ -2545,9 +2582,13 @@ class ShellController(
             mark = game.mark,
             packageName = game.androidPackage,
             emptyShelfHint = game.emptyShelfHint,
-            availability = game.availabilityLabel ?: streamLine(game) ?: downloadLine(game.id),
+            availability = game.availabilityLabel ?: folderLine(game.id) ?: streamLine(game) ?: downloadLine(game.id),
         ),
     )
+
+    /** In Folders, that a folder's tile is not on Home. Null on Home, or anywhere else. */
+    private fun folderLine(id: String): String? =
+        FindCopy.notOnHome.takeIf { homeFoldersOpen() && home.folderRows().any { it.folder.id == id && !it.onHome } }
 
     /**
      * What playing the tile [id]'s game would download, as [downloadFacts] says it, while no
@@ -2565,8 +2606,11 @@ class ShellController(
         val entry = session.subject ?: return null
         // A group's mark is already its look, as its result tile shows it.
         if (entry.kind == FindKind.Group) {
-            val apps = home.board.folders[entry.id]?.holdsApps == true
-            return HeroSubject.Folder(HeroFolder(key = entry.id, name = entry.title, count = folderCount(home.board, entry.id), mark = entry.mark, apps = apps))
+            // A folder off Home that the board has not made yet counts the games it would hold.
+            val listed = home.folderRows().firstOrNull { it.folder.id == entry.id }
+            val apps = (listed?.folder ?: home.board.folders[entry.id])?.holdsApps == true
+            val count = listed?.count ?: folderCount(home.board, entry.id)
+            return HeroSubject.Folder(HeroFolder(key = entry.id, name = entry.title, count = count, mark = entry.mark, apps = apps))
         }
         val game = foundGame() ?: return null
         return HeroSubject.Item(
@@ -2807,17 +2851,17 @@ class ShellController(
         val count = countFor(next.homeGrid)
         home.sort = next.sort
         home.lastPlayed = lastPlayedMillis
-        val alphabetical = next.homeGrid != HomeGrid.StandIns ||
+        val alphabetical = next.homeGrid != HomeGrid.StandIns || home.board.foldersOpen ||
             (home.board.allOpen && next.sort == app.foldcade.language.LibrarySort.Listed)
         val labels = if (!alphabetical) emptyList() else if (next.homeGrid == HomeGrid.StandIns) {
             home.faces().map { it.title }
         } else hiddenRows().map { it.title }
-        val lastOccupied = if (next.homeGrid == HomeGrid.StandIns && !home.board.allOpen) {
+        val lastOccupied = if (next.homeGrid == HomeGrid.StandIns && !home.board.allOpen && !home.board.foldersOpen) {
             app.foldcade.language.visibleSlots(home.board).indexOfLast { it != null }
         } else count - 1
         val counted = next.copy(count = count, playerSaves = playerSaveSettings(), recentFirst = recentOrder(),
             gridLabels = labels, lastOccupiedIndex = lastOccupied,
-            screenJumpLastColumn = if (showingHome(next) && !home.board.allOpen) GridStrip.column(lastOccupied.coerceAtLeast(0)) else null)
+            screenJumpLastColumn = if (showingHome(next) && !home.board.allOpen && !home.board.foldersOpen) GridStrip.column(lastOccupied.coerceAtLeast(0)) else null)
         val game = tileOn(counted)
         val onHome = showingHome(counted)
         // On Find's results, Y's menu is the focused result's, wherever the grid under it is. An
@@ -2838,7 +2882,7 @@ class ShellController(
             // A game still open in its player can start over. Find's menu acts on a result that may not be a tile.
             ?.let { if (found == null && isPaused(it.game)) it.copy(restart = true) else it }
         // A merge can close the open folder, when its last game left, so read where the board is now.
-        val root = if (onHome) home.board.openFolderId == null && !home.board.allOpen else counted.atLibraryRoot
+        val root = if (onHome) home.board.atRoot else counted.atLibraryRoot
         val withArt = if (tile?.bulk == null && home.selection == null && counted.artKeySaved && artPickerAvailable() && targetGame?.let(::artQuery) != null) {
             (offered ?: TileActions()).copy(art = true)
         } else offered
@@ -3021,7 +3065,7 @@ class ShellController(
      * The capture follows this line to the Game Boy Advance folder.
      */
     private fun logHomeTile() {
-        if (!showingHome() || home.board.allOpen || home.board.openFolderId != null) {
+        if (!showingHome() || !home.board.atRoot) {
             loggedHomeTile = null
             return
         }
@@ -3048,7 +3092,7 @@ class ShellController(
 
     /** The home grid's top level with nothing open over it, where B has nothing left to close. */
     fun atRest(): Boolean =
-        find == null && homeActive() && home.board.openFolderId == null && !home.board.allOpen && home.board.hold == null &&
+        find == null && homeActive() && home.board.atRoot && home.board.hold == null &&
             home.iconPick == null && home.selection == null && renameDraft() == null
 
     private fun homeActive(): Boolean =
@@ -3096,7 +3140,7 @@ class ShellController(
                 shelfEpoch = model.shelfEpoch + 1,
                 gridKind = GridKind.Games,
                 emptyGrid = EmptyGrid.None,
-                atLibraryRoot = home.board.openFolderId == null && !home.board.allOpen,
+                atLibraryRoot = home.board.atRoot,
                 dialog = if (keepDialog) model.dialog else null,
             ),
         )
@@ -3334,7 +3378,8 @@ class ShellController(
     private fun activateCue(before: PickerModel, after: PickerModel, effect: Effect?): String = when {
         effect is Effect.Launch -> "launch"
         before.music.enabled != after.music.enabled || before.addNewToHome != after.addNewToHome ||
-            before.recentOnHome != after.recentOnHome || before.artwork != after.artwork -> "toggle"
+            before.recentOnHome != after.recentOnHome || before.artwork != after.artwork ||
+            effect is Effect.FolderOnHome -> "toggle"
         opened(before, after) -> "open"
         else -> "activate"
     }

@@ -210,7 +210,7 @@ class MoveFeelTest {
         val game = TileActions(move = true, collections = emptyList(), tidyBoard = true)
         assertFalse(Row.Tidy in actionRows(game))
         val model = PickerModel(count = 4, rowsPerPage = 3, tileActions = game)
-        assertEquals(listOf(Row.Tidy, Row.RecentOnHome, Row.AddNewGames, Row.Hidden), editHomeRows(model))
+        assertEquals(listOf(Row.Tidy, Row.RecentOnHome, Row.AddNewGames, Row.Folders, Row.Hidden), editHomeRows(model))
         assertFalse(Row.Tidy in editHomeRows(model.copy(tileActions = game.copy(tidyBoard = false))))
         // A runs it from Edit home.
         val editHome = model.copy(panel = SidePanel(Side.Left, HostScreen.Top, PanelLevel.EditHome, 0, GridFocus()))

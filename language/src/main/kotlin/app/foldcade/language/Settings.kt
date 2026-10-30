@@ -372,6 +372,7 @@ fun rowControl(row: Row, model: PickerModel, value: String? = rowText(row, model
     // Android owns the switch: A opens its all-files page, and the switch shows what it says.
     Row.FindSaves -> RowControl.Toggle(model.allFilesGranted)
     Row.RecentOnHome -> RowControl.Toggle(model.recentOnHome)
+    Row.FolderOnHome -> RowControl.Toggle(model.tileActions?.folderOnHome?.on == true)
     Row.Artwork -> RowControl.Toggle(model.artwork)
     is Row.StreamHost -> RowControl.Toggle(model.streamHosts.any { it.key == row.key && it.paired })
     in choiceRows -> RowControl.Choice(value.orEmpty())

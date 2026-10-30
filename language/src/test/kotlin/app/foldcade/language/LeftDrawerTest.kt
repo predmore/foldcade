@@ -34,7 +34,7 @@ class LeftDrawerTest {
         assertEquals(PanelLevel.EditHome, edit.panel?.level)
         // The focused tile's actions are Y's, so Edit home names no tile.
         assertFalse(PanelLevel.EditHome.actsOnTile)
-        assertEquals(listOf(Row.RecentOnHome, Row.AddNewGames, Row.Hidden), panelRows(edit.panel!!, edit))
+        assertEquals(listOf(Row.RecentOnHome, Row.AddNewGames, Row.Folders, Row.Hidden), panelRows(edit.panel!!, edit))
         val root = reduce(edit, Meaning.Back).first
         assertEquals(PanelLevel.Root, root.panel?.level)
         assertEquals(Row.EditHome, panelRows(root.panel!!, root)[root.panel!!.index])

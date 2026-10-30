@@ -612,7 +612,8 @@ internal fun rowIcon(row: Row, moveTo: String? = null): Int? = when (row) {
     Row.NewCollection -> R.drawable.symbol_new_collection
     Row.Undo -> R.drawable.symbol_undo
     Row.ShowHidden -> R.drawable.symbol_show
-    Row.ShowOnHome, Row.AddNewGames -> R.drawable.symbol_home
+    Row.ShowOnHome, Row.AddNewGames, Row.FolderOnHome -> R.drawable.symbol_home
+    Row.Folders -> R.drawable.symbol_folder
     Row.MoveApp -> if (moveTo == HOME_ANDROID_APPS) R.drawable.symbol_android_apps else R.drawable.symbol_android_games
     Row.SelectTile -> R.drawable.symbol_select
     Row.Tidy -> R.drawable.symbol_tidy
