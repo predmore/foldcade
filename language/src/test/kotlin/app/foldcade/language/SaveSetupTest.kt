@@ -44,15 +44,20 @@ class SaveSetupTest {
         val tile = found.openSaveSetup(HostScreen.Top).tile("melonds")
         assertEquals("saves/nds", tile.foundIn)
         assertTrue(tile.done)
-        assertEquals(SaveSetupCopy.foundIn("saves/nds"), SaveSetupCopy.stepBody(tile))
+        assertEquals("Found in saves/nds.", SaveSetupCopy.stepBody(tile))
+        // The status chip already says Syncing, so the step has no title of its own.
+        assertNull(SaveSetupCopy.stepTitle(tile.step))
+        assertNull(SaveSetupCopy.stepBody(found.saves("melonds") { it.copy(foundIn = null) }.openSaveSetup(HostScreen.Top).tile("melonds")))
     }
 
     @Test fun edenWithoutAUserIsOneInEmulatorStep() {
         val ready = model.copy(eden = EdenSetting(fromRomm = true, packageName = "dev.eden.eden_emulator", setupSteps = Copy.edenUserSteps))
         val eden = ready.openSaveSetup(HostScreen.Top).tile(EDEN_SHELF_KEY)
         val step = eden.step as SetupStep.InApp
-        assertEquals(InAppStep.Setup, step.kind)
+        assertEquals(InAppStep.User, step.kind)
         assertEquals(Copy.edenUserSteps, step.steps)
+        assertEquals("Add a user in Eden", SaveSetupCopy.stepTitle(step))
+        assertEquals("Make a user profile, then come back.", SaveSetupCopy.stepBody(eden))
         assertEquals(EDEN_SHELF_KEY, step.playerId)
         val settled = ready.copy(eden = ready.eden!!.copy(setupSteps = null)).openSaveSetup(HostScreen.Top).tile(EDEN_SHELF_KEY)
         assertTrue(settled.done)
@@ -135,6 +140,37 @@ class SaveSetupTest {
         assertEquals("aps3e", allowed.advanceSaveSetup(FIND_SAVES_TILE).page().focus)
     }
 
+    @Test fun findSavesAsksForAccessThenSaysWhatItFoundAndHoldsTheFocusWhileTheyLand() {
+        val opened = model.openSaveSetup(HostScreen.Top)
+        val ask = opened.tile(FIND_SAVES_TILE)
+        assertEquals("Foldcade finds the folders", SaveSetupCopy.stepTitle(ask.step))
+        assertEquals("Turn on Allow access, then come back.", SaveSetupCopy.stepBody(ask))
+        val motion = MotionStyle()
+        assertEquals(motion.durationSetupPause, saveSetupPause(ask, motion))
+
+        val allowed = opened.settle { it.copy(allFilesGranted = true) }
+        // While the find runs it says so, rather than that nothing was found.
+        assertEquals(SaveSetupCopy.looking, SaveSetupCopy.stepBody(allowed.tile(FIND_SAVES_TILE), checking = true))
+        assertEquals("Nothing new found.", SaveSetupCopy.stepBody(allowed.tile(FIND_SAVES_TILE)))
+        assertEquals(motion.durationSetupPause, saveSetupPause(allowed.tile(FIND_SAVES_TILE), motion))
+
+        val found = allowed.settle { m ->
+            m.saves("melonds") { it.copy(chosen = true, foundIn = "saves/nds") }
+                .saves("retroarch.nes") { it.copy(chosen = true, foundIn = "RetroArch/saves") }
+                .copy(retroArch = RetroArchSetting(cores = 12, packageName = "com.retroarch.aarch64"))
+        }
+        val find = found.tile(FIND_SAVES_TILE)
+        assertEquals(listOf("melonDS", "RetroArch"), find.found)
+        assertEquals("Found melonDS and RetroArch.", SaveSetupCopy.stepBody(find, checking = true))
+        assertNull(SaveSetupCopy.stepTitle(find.step))
+        // One stagger more for each, so the flips are seen before the focus moves.
+        assertEquals(motion.durationSetupPause + 2 * motion.durationSetupStagger, saveSetupPause(find, motion))
+        // An emulator's own check pauses the same as ever.
+        assertEquals(motion.durationSetupPause, saveSetupPause(found.tile("melonds"), motion))
+        assertEquals("Found melonDS.", SaveSetupCopy.found(listOf("melonDS")))
+        assertEquals("Found aPS3e, melonDS and RetroArch.", SaveSetupCopy.found(listOf("aPS3e", "melonDS", "RetroArch")))
+    }
+
     @Test fun confirmDoesTheStepWithTheHandlingSettingsAlreadyUses() {
         val opened = model.openSaveSetup(HostScreen.Top)
         val expected = mapOf(
@@ -192,6 +228,19 @@ class SaveSetupTest {
         assertTrue(skipped.press(Meaning.Back).first.openSaveSetup(HostScreen.Top).page().skipped.isEmpty())
     }
 
+    @Test fun aSkippedFindSavesIsNotASkippedEmulator() {
+        val one = PickerModel(count = 1, rowsPerPage = 1, playerSaves = listOf(melon))
+        val opened = one.openSaveSetup(HostScreen.Top)
+        assertEquals(FIND_SAVES_TILE, opened.page().focus)
+        val passed = opened.press(Meaning.ActivateBottom).first
+        assertEquals(0, saveSetupSkipped(passed.tiles(), passed.page()))
+        assertEquals("1 to go", SaveSetupCopy.head(saveSetupLeft(passed.tiles(), passed.page()), 0))
+        // melonDS's folder picked: everything that saves syncs, so All set, Find saves skipped or not.
+        val picked = passed.settle { it.saves("melonds") { s -> s.copy(chosen = true) } }.on(null)
+        assertTrue(saveSetupFinished(picked.tiles(), picked.page()))
+        assertEquals("All set", SaveSetupCopy.endTitle(saveSetupSkipped(picked.tiles(), picked.page())))
+    }
+
     @Test fun skippingNeverQuietsTheSettingsBadgeOrTheNotice() {
         val skipped = model.openSaveSetup(HostScreen.Top).on("melonds").press(Meaning.ActivateBottom).first
         assertEquals(TileStatus.Attention, settingsTileStatus(Row.SettingsTile(SettingsInner.Emulator("melonds")), skipped))
@@ -200,14 +249,20 @@ class SaveSetupTest {
         assertTrue(saveSetupWanted(skipped))
     }
 
-    @Test fun skippingTheLastOneLeavesAllSetWithTheCountAndConfirmCloses() {
+    @Test fun skippingTheLastOneEndsOnDoneForNowNotAllSetAndConfirmCloses() {
         val one = PickerModel(count = 1, rowsPerPage = 1, playerSaves = listOf(arms, duck.copy(hostedInUse = true)))
         val opened = one.openSaveSetup(HostScreen.Top)
         assertEquals("armsx2", opened.page().focus)
+        assertEquals("1 to go", SaveSetupCopy.head(saveSetupLeft(opened.tiles(), opened.page()), saveSetupSkipped(opened.tiles(), opened.page())))
         val done = opened.press(Meaning.ActivateBottom).first
         assertNull(done.page().focus)
-        assertTrue(saveSetupAllSet(done.tiles(), done.page()))
-        assertEquals("1 skipped · R1 keeps reminding you", SaveSetupCopy.allSetBody(1))
+        assertTrue(saveSetupFinished(done.tiles(), done.page()))
+        // A skipped emulator still does not sync, so the page never calls it All set.
+        val skipped = saveSetupSkipped(done.tiles(), done.page())
+        assertEquals(1, skipped)
+        assertEquals("1 skipped", SaveSetupCopy.head(saveSetupLeft(done.tiles(), done.page()), skipped))
+        assertEquals("Done for now", SaveSetupCopy.endTitle(skipped))
+        assertEquals("1 still not syncing", SaveSetupCopy.endBody(skipped))
         assertEquals(listOf(HintKey(PromptKey.FaceA, SaveSetupCopy.done)), saveSetupActions(done, done.page()))
         assertNull(done.press(Meaning.Activate).first.saveSetup)
         // From All set, the D-pad still reaches the tiles.
@@ -219,6 +274,10 @@ class SaveSetupTest {
         val fine = PickerModel(count = 1, rowsPerPage = 1, playerSaves = listOf(melon.copy(chosen = true)), allFilesGranted = true)
         val opened = fine.openSaveSetup(HostScreen.Top)
         assertNull(opened.page().focus)
+        assertEquals(0, saveSetupSkipped(opened.tiles(), opened.page()))
+        assertEquals("All set", SaveSetupCopy.head(0, 0))
+        assertEquals("All set", SaveSetupCopy.endTitle(0))
+        assertNull(SaveSetupCopy.endBody(0))
         assertFalse(saveSetupWanted(fine))
         val (settings, effect) = opened.on("melonds").press(Meaning.Activate)
         assertNull(effect)
@@ -354,7 +413,8 @@ class SaveSetupTest {
     @Test fun aPickThatWasNotItsFolderSaysWhyUnderTheStepUntilTheStepChanges() {
         val opened = model.openSaveSetup(HostScreen.Top).on("melonds")
         val text = SaveSetupCopy.wrongFolder("Azahar", listOf("sdmc", "config"))
-        assertEquals("Not Azahar’s folder. Its folder holds config or sdmc.", text)
+        assertEquals("Not Azahar’s folder. Look for one with config or sdmc.", text)
+        assertEquals("Not Azahar’s folder. Look for one with config, nand or sdmc.", SaveSetupCopy.wrongFolder("Azahar", listOf("sdmc", "config", "nand")))
         assertEquals("That isn’t melonDS’s folder. Try another.", SaveSetupCopy.wrongFolder("melonDS", emptyList()))
         assertNull(opened.noteSaveSetup("azahar", text))
         val noted = opened.noteSaveSetup("melonds", text)!!

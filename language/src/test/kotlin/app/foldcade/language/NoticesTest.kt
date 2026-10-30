@@ -60,6 +60,27 @@ class NoticesTest {
     }
 
     @Test
+    fun theSavesFoundNoticeOpensSetUpSavesOnTheFirstEmulatorFoundNotFindSaves() {
+        val notice = FoldNotice("foldcade:saves-found", Copy.savesFoundTitle, Copy.savesFoundBody(listOf("melonDS" to "saves/nds")), savePlayerId = "melonds")
+        val base = model(listOf(notice)).copy(playerSaves = listOf(
+            PlayerSaveSetting("armsx2", "ARMSX2", false, installed = true),
+            PlayerSaveSetting("melonds", "melonDS", true, installed = true, foundIn = "saves/nds"),
+            PlayerSaveSetting("retroarch.nes", "RetroArch", false, installed = true, findable = true),
+        ))
+        // Find saves leads the strip, and ARMSX2 is the first that needs you; neither is where it opens.
+        assertEquals(FIND_SAVES_TILE, base.openSaveSetup(HostScreen.Top).saveSetup!!.focus)
+        val right = reduce(base, Meaning.RightPanel).first
+        val focused = right.copy(panel = right.panel!!.copy(index = panelRows(right.panel!!, right).indexOf(Row.Notice(notice.id))))
+        assertEquals(true, panelHints(focused)!!.any { it.label == Copy.setUp })
+        val (opened, effect) = reduce(focused, Meaning.Activate)
+        assertNull(effect)
+        val page = opened.saveSetup!!
+        assertEquals("melonds", page.focus)
+        val tile = saveSetupTiles(opened, page).first { it.key == "melonds" }
+        assertEquals("Found in saves/nds.", SaveSetupCopy.stepBody(tile))
+    }
+
+    @Test
     fun aSaveNoticeForAnEmulatorNotOnTheStripStillOpensItsOwnFixAndCanBeDismissed() {
         val notice = FoldNotice("setup", "ARMSX2 saves aren’t syncing", "Set up to keep them on RomM.", savePlayerId = "armsx2")
         val cases = listOf(

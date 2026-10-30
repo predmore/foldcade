@@ -606,7 +606,7 @@ internal fun rowIcon(row: Row, moveTo: String? = null): Int? = when (row) {
     Row.MoveTile -> R.drawable.symbol_move
     Row.AddToCollection -> R.drawable.symbol_add_to
     Row.ChooseArt -> R.drawable.symbol_art
-    Row.Saves, Row.SaveSetup -> R.drawable.symbol_saves
+    Row.Saves -> R.drawable.symbol_saves
     Row.RenameFolder -> R.drawable.symbol_rename
     Row.FolderIcon -> R.drawable.symbol_icon
     Row.NewCollection -> R.drawable.symbol_new_collection

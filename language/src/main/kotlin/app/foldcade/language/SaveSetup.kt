@@ -8,7 +8,7 @@ package app.foldcade.language
  * or access given on Android's page shows the moment Foldcade hears of it.
  */
 data class SaveSetupPage(
-    /** The focused tile's [SetupTile.key]. Null shows the All set card, once nothing needs you. */
+    /** The focused tile's [SetupTile.key]. Null shows the end, All set or Done for now, once nothing needs you. */
     val focus: String? = null,
     /** Tiles skipped for this run alone. Never stored: the next run asks again, and R1 keeps saying so. */
     val skipped: Set<String> = emptySet(),
@@ -53,6 +53,9 @@ enum class InAppStep {
 
     /** One-time setup, such as firmware, before a game can start. */
     Setup,
+
+    /** A user profile, which Eden keeps Switch saves under. */
+    User,
 }
 
 /** One thing a tile needs, in the order the page asks for them. [done] is read live. */
@@ -83,6 +86,8 @@ data class SetupTile(
     val steps: List<SetupStep>,
     /** Where Foldcade found this emulator's folder on its own, shown once it syncs. */
     val foundIn: String? = null,
+    /** On Find saves: the emulators whose folders Foldcade found on its own, A to Z. */
+    val found: List<String> = emptyList(),
 ) {
     /** The step to do now, or null once everything is done. */
     val step: SetupStep? get() = steps.firstOrNull { !it.done }
@@ -121,7 +126,7 @@ fun setupSteps(entry: EmulatorShelfEntry, model: PickerModel): List<SetupStep> =
         is Row.PlayerSetup -> SetupStep.InApp(row.playerId, InAppStep.Setup, setting(row.playerId)?.setupSteps, done)
         Row.RetroArchCores -> SetupStep.Cores(done)
         Row.EdenFolder -> SetupStep.EdenFolder(done)
-        Row.EdenUser -> SetupStep.InApp(EDEN_SHELF_KEY, InAppStep.Setup, model.eden?.setupSteps, done)
+        Row.EdenUser -> SetupStep.InApp(EDEN_SHELF_KEY, InAppStep.User, model.eden?.setupSteps, done)
         else -> null
     }
 }
@@ -137,12 +142,30 @@ fun saveSetupTiles(model: PickerModel, page: SaveSetupPage): List<SetupTile> {
     }
     val helps = emulators.any { tile -> tile.steps.any { it is SetupStep.Folder && it.findable && !it.done } }
     val find = (!model.allFilesGranted && helps) || (model.allFilesGranted && page.offeredFind)
-    return if (find) listOf(SetupTile(FIND_SAVES_TILE, SettingsCopy.findSaves, null, listOf(SetupStep.AllFiles(model.allFilesGranted)))) + emulators
-        else emulators
+    if (!find) return emulators
+    val found = emulators.filter { it.done && it.foundIn != null }.map { it.label }
+    return listOf(SetupTile(FIND_SAVES_TILE, SettingsCopy.findSaves, null, listOf(SetupStep.AllFiles(model.allFilesGranted)), found = found)) + emulators
 }
 
-/** True once there are tiles and none still needs you. Skipped ones count as answered, for this run. */
-fun saveSetupAllSet(tiles: List<SetupTile>, page: SaveSetupPage): Boolean = tiles.isNotEmpty() && tiles.none { it.needsYou(page) }
+/**
+ * True once there are tiles and none still needs you: the page ends. Skipped ones count as
+ * answered for this run, so the end says All set only when [saveSetupSkipped] is 0.
+ */
+fun saveSetupFinished(tiles: List<SetupTile>, page: SaveSetupPage): Boolean = tiles.isNotEmpty() && tiles.none { it.needsYou(page) }
+
+/** Emulators still waiting on you, for the head's count. Find saves is a shortcut, never a save that fails. */
+fun saveSetupLeft(tiles: List<SetupTile>, page: SaveSetupPage): Int = tiles.count { !it.findSaves && it.needsYou(page) }
+
+/** Emulators skipped this run, whose saves still do not sync. A skipped Find saves is not one. */
+fun saveSetupSkipped(tiles: List<SetupTile>, page: SaveSetupPage): Int =
+    tiles.count { !it.findSaves && setupStatus(it, page) == SetupStatus.Skipped }
+
+/**
+ * How long [tile]'s fresh check holds the focus. On Find saves it waits one stagger more for each
+ * folder it found, so their checks are seen landing one after another before the focus moves.
+ */
+fun saveSetupPause(tile: SetupTile?, motion: MotionStyle): Int =
+    motion.durationSetupPause + if (tile?.findSaves == true) motion.durationSetupStagger * tile.found.size else 0
 
 /** The next tile after [after] that needs you, wrapping round to the ones before it, or null. */
 private fun nextNeeding(tiles: List<SetupTile>, page: SaveSetupPage, after: String?): String? {
@@ -203,7 +226,7 @@ fun applySaveSetup(model: PickerModel, page: SaveSetupPage, meaning: Meaning, re
         }
         Meaning.Back -> closeSaveSetup(model, page) to null
         Meaning.Activate -> when {
-            tile == null -> if (saveSetupAllSet(tiles, page)) closeSaveSetup(model, page) to null else model to null
+            tile == null -> if (saveSetupFinished(tiles, page)) closeSaveSetup(model, page) to null else model to null
             // A press while a fresh check lands goes on at once rather than into its Settings,
             // once Foldcade has read what the new folder still needs.
             page.celebrating == tile.key -> model.advanceSaveSetup(tile.key) to null
@@ -264,7 +287,7 @@ fun PickerModel.noteSaveSetup(key: String, text: String): PickerModel? {
 /**
  * The page as the model under it changes. The focused tile that just started syncing celebrates
  * before the focus moves on ([advanceSaveSetup]). A tile that left, as an emulator uninstalled,
- * hands the focus to the next that needs you. All set gives way when something needs you again,
+ * hands the focus to the next that needs you. The end gives way when something needs you again,
  * as after all-files access is taken back, so it never claims what is not so. A note leaves with
  * the step it was about.
  */
@@ -282,7 +305,7 @@ fun retainSaveSetup(previous: PickerModel, next: PickerModel): PickerModel {
     // A step that shows up only once the one before is done, as ARMSX2's card after its folder, calls the celebration off.
     if (settled.celebrating != null && tiles.firstOrNull { it.key == settled.celebrating }?.done != true) settled = settled.copy(celebrating = null)
     if (key != null && now == null && (old != null || tiles.isNotEmpty())) settled = settled.copy(focus = nextNeeding(tiles, settled, null), celebrating = null)
-    if (settled.focus == null && tiles.isNotEmpty() && !saveSetupAllSet(tiles, settled)) settled = settled.copy(focus = nextNeeding(tiles, settled, null))
+    if (settled.focus == null && tiles.isNotEmpty() && !saveSetupFinished(tiles, settled)) settled = settled.copy(focus = nextNeeding(tiles, settled, null))
     settled.note?.let { note ->
         val step = { list: List<SetupTile> -> list.firstOrNull { it.key == note.key }?.step }
         if (note.key != settled.focus || (was != null && step(before) != step(tiles))) settled = settled.copy(note = null)
@@ -295,7 +318,7 @@ fun saveSetupActions(model: PickerModel, page: SaveSetupPage): List<HintKey> {
     val confirm = promptKeyOf(model.faceMap.confirmKey) ?: PromptKey.FaceA
     val tiles = saveSetupTiles(model, page)
     val tile = tiles.firstOrNull { it.key == page.focus }
-        ?: return if (saveSetupAllSet(tiles, page)) listOf(HintKey(confirm, SaveSetupCopy.done)) else emptyList()
+        ?: return if (saveSetupFinished(tiles, page)) listOf(HintKey(confirm, SaveSetupCopy.done)) else emptyList()
     return buildList {
         add(HintKey(confirm, SaveSetupCopy.action(tile)))
         if (tile.needsYou(page)) add(HintKey(actionFaces(model.faceMap).bottomGlyph, SaveSetupCopy.skip))
@@ -312,6 +335,7 @@ object SaveSetupCopy {
     const val skip = "Skip"
     const val done = "Done"
     const val allSet = "All set"
+    const val doneForNow = "Done for now"
     const val pick = "Pick"
     const val allow = "Allow"
     const val pickFolder = "Pick its folder"
@@ -322,26 +346,44 @@ object SaveSetupCopy {
     const val hostedFolder = "Point Memory Cards at Foldcade"
     const val memoryCard = "Switch to a folder card"
     const val finishSetup = "Finish its setup"
-    const val findOwn = "Find saves on their own"
-    const val findOwnBody = "Allow all files once, and Foldcade looks for each emulator’s folder."
-    const val syncingBody = "Change it any time in Settings."
+    const val edenUser = "Add a user in Eden"
+    const val findOwn = "Foldcade finds the folders"
+    const val findOwnBody = "Turn on Allow access, then come back."
+    const val looking = "Looking for save folders…"
+    const val nothingFound = "Nothing new found."
 
     /** A folder Foldcade found on its own says where, so the user can see it is the right one. */
-    fun foundIn(path: String): String = "Found in $path. Change it in Settings."
+    fun foundIn(path: String): String = "Found in $path."
 
-    const val findAllowedBody = "Foldcade looks for save folders itself."
+    /** What Find saves found, once allowed: `Found melonDS and RetroArch.` */
+    fun found(names: List<String>): String = "Found ${spoken(names, "and")}."
 
     fun browse(name: String) = "Find the folder $name keeps its saves in."
     fun open(name: String) = "Open $name"
     fun toGo(count: Int) = "$count to go"
+    fun skippedCount(count: Int) = "$count skipped"
 
-    /** Under All set: what was skipped, which R1 keeps saying. Null when nothing was. */
-    fun allSetBody(skipped: Int): String? = if (skipped == 0) null else "$skipped skipped · R1 keeps reminding you"
+    /** The head's chip: what is left, then what was skipped, and All set only once every emulator syncs. */
+    fun head(left: Int, skipped: Int): String = when {
+        left > 0 -> toGo(left)
+        skipped > 0 -> skippedCount(skipped)
+        else -> allSet
+    }
+
+    /** The end's title. Skipped emulators still do not sync, so the page never calls that All set. */
+    fun endTitle(skipped: Int): String = if (skipped == 0) allSet else doneForNow
+
+    /** Under Done for now: how many emulators still do not sync. Null when all of them do. */
+    fun endBody(skipped: Int): String? = if (skipped == 0) null else "$skipped still not syncing"
 
     /** A pick that was not [name]'s folder, in one line. */
     fun wrongFolder(name: String, markers: Collection<String>): String =
         if (markers.isEmpty()) "That isn’t $name’s folder. Try another."
-        else "Not $name’s folder. Its folder holds ${markers.sorted().joinToString(" or ")}."
+        else "Not $name’s folder. Look for one with ${spoken(markers.sorted(), "or")}."
+
+    /** `a`, `a and b`, `a, b and c`. */
+    private fun spoken(items: List<String>, last: String): String =
+        if (items.size < 2) items.joinToString() else "${items.dropLast(1).joinToString(", ")} $last ${items.last()}"
 
     fun status(tile: SetupTile, page: SaveSetupPage): String = when (setupStatus(tile, page)) {
         SetupStatus.Syncing -> if (tile.findSaves) SettingsCopy.accessAllowed else syncing
@@ -349,8 +391,9 @@ object SaveSetupCopy {
         SetupStatus.Skipped -> skipped
     }
 
-    fun stepTitle(step: SetupStep?): String = when (step) {
-        null -> syncing
+    /** The step's title. None once the tile syncs: its status chip already says so. */
+    fun stepTitle(step: SetupStep?): String? = when (step) {
+        null -> null
         is SetupStep.Folder -> if (step.pick == FolderPick.OwnProvider) asksOnce else pickFolder
         is SetupStep.EdenFolder -> asksOnce
         is SetupStep.Cores -> cores
@@ -358,15 +401,21 @@ object SaveSetupCopy {
             InAppStep.HostedFolder -> hostedFolder
             InAppStep.MemoryCard -> memoryCard
             InAppStep.Setup -> finishSetup
+            InAppStep.User -> edenUser
         }
         is SetupStep.AllFiles -> findOwn
     }
 
-    fun stepBody(tile: SetupTile): String? = when (val step = tile.step) {
+    /** The step's words. Find saves, once allowed, says what it found, after [checking] is over. */
+    fun stepBody(tile: SetupTile, checking: Boolean = false): String? = when (val step = tile.step) {
         null -> when {
-            tile.findSaves -> findAllowedBody
+            tile.findSaves -> when {
+                tile.found.isNotEmpty() -> found(tile.found)
+                checking -> looking
+                else -> nothingFound
+            }
             tile.foundIn != null -> foundIn(tile.foundIn)
-            else -> syncingBody
+            else -> null
         }
         is SetupStep.Folder -> when (step.pick) {
             FolderPick.Browse -> browse(tile.label)

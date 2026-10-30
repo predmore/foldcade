@@ -57,7 +57,10 @@ import app.foldcade.language.Theme
 import app.foldcade.language.actionFaces
 import app.foldcade.language.promptKeyOf
 import app.foldcade.language.saveSetupActions
-import app.foldcade.language.saveSetupAllSet
+import app.foldcade.language.saveSetupFinished
+import app.foldcade.language.saveSetupLeft
+import app.foldcade.language.saveSetupPause
+import app.foldcade.language.saveSetupSkipped
 import app.foldcade.language.saveSetupTiles
 import app.foldcade.language.setupStatus
 import kotlin.math.floor
@@ -85,23 +88,27 @@ internal fun SaveSetupBottom(app: FoldcadeApp, page: SaveSetupPage, scale: Float
     Column(Modifier.fillMaxSize().background(theme.background).padding(horizontal = EDGE_H, vertical = EDGE_V)) {
         Head(app, page, HostScreen.Bottom, scale, dispatch)
         Spacer(Modifier.weight(1f))
-        Strip(app, page, TILE_ART, scale)
+        Strip(app, page, TILE_ART, labels = true, scale = scale)
         Spacer(Modifier.weight(1f))
     }
 }
 
-/** A game holds the other screen: the showcase over the strip, on the one screen there is. */
+/**
+ * A game holds the other screen: the head, the showcase in one full-width column so the
+ * emulator's own how-to keeps the width to read, and a short strip without names, on the one
+ * screen there is. The focused tile's name is in the showcase.
+ */
 @Composable
 internal fun SaveSetupSingle(app: FoldcadeApp, page: SaveSetupPage, screen: HostScreen, scale: Float, dispatch: (Effect?) -> Unit) {
     val theme = LocalFoldTheme.current.theme
     AdvanceAfterCheck(app, scale)
     Column(
-        Modifier.fillMaxSize().background(theme.background).padding(horizontal = EDGE_H, vertical = EDGE_V),
-        verticalArrangement = Arrangement.spacedBy(8.dp),
+        Modifier.fillMaxSize().background(theme.background).padding(horizontal = EDGE_H, vertical = COMPACT_EDGE_V),
+        verticalArrangement = Arrangement.spacedBy(COMPACT_GAP),
     ) {
         Head(app, page, screen, scale, dispatch)
         Showcase(app, page, screen, compact = true, scale = scale, dispatch = dispatch, modifier = Modifier.weight(1f).fillMaxWidth())
-        Strip(app, page, COMPACT_ART, scale)
+        Strip(app, page, COMPACT_ART, labels = false, scale = scale)
     }
 }
 
@@ -117,19 +124,22 @@ private fun AdvanceAfterCheck(app: FoldcadeApp, scale: Float) {
     LaunchedEffect(celebrating, checking) {
         val key = celebrating ?: return@LaunchedEffect
         if (checking) return@LaunchedEffect
-        delay((motion.durationSetupPause * scale).toLong())
+        val model = app.shell.model
+        val tile = model.saveSetup?.let { page -> saveSetupTiles(model, page).firstOrNull { it.key == key } }
+        delay((saveSetupPause(tile, motion) * scale).toLong())
         app.shell.advanceSaveSetup(key)
     }
 }
 
-/** The page's name with the Back glyph, and how many tiles still need you. */
+/** The page's name with the Back glyph, and how many emulators still need you, then how many were skipped. */
 @Composable
 private fun Head(app: FoldcadeApp, page: SaveSetupPage, screen: HostScreen, scale: Float, dispatch: (Effect?) -> Unit) {
     val theme = LocalFoldTheme.current.theme
     val model = app.shell.model
     val back = promptKeyOf(model.faceMap.backKey) ?: PromptKey.FaceB
     val tiles = saveSetupTiles(model, page)
-    val left = tiles.count { !it.findSaves && setupStatus(it, page) == SetupStatus.NeedsYou }
+    val left = saveSetupLeft(tiles, page)
+    val skipped = saveSetupSkipped(tiles, page)
     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
         Row(
             Modifier
@@ -145,9 +155,9 @@ private fun Head(app: FoldcadeApp, page: SaveSetupPage, screen: HostScreen, scal
         }
         Spacer(Modifier.weight(1f))
         if (tiles.isNotEmpty()) {
-            val word = if (left == 0) SaveSetupCopy.allSet else SaveSetupCopy.toGo(left)
-            SlideSwap(target = word, scale = scale, distance = 12.dp, vertical = true, direction = { _, _ -> 1 }) { shown ->
-                Chip(shown, if (left == 0) StatusLook.Syncing else StatusLook.NeedsYou, theme)
+            val look = if (left == 0 && skipped == 0) StatusLook.Syncing else StatusLook.NeedsYou
+            SlideSwap(target = SaveSetupCopy.head(left, skipped) to look, scale = scale, distance = 12.dp, vertical = true, direction = { _, _ -> 1 }) { (word, shown) ->
+                Chip(word, shown, theme)
             }
         }
     }
@@ -155,10 +165,11 @@ private fun Head(app: FoldcadeApp, page: SaveSetupPage, screen: HostScreen, scal
 
 /**
  * The tiles side by side under one gliding highlight. The strip never pages: it slides only as
- * far as the focus needs, as the home grid does, and sits centred while every tile fits.
+ * far as the focus needs, as the home grid does, and sits centred while every tile fits. Without
+ * [labels] each column is just its art, so more fit.
  */
 @Composable
-private fun Strip(app: FoldcadeApp, page: SaveSetupPage, art: Dp, scale: Float) {
+private fun Strip(app: FoldcadeApp, page: SaveSetupPage, art: Dp, labels: Boolean, scale: Float) {
     val theme = LocalFoldTheme.current.theme
     val model = app.shell.model
     val tiles = saveSetupTiles(model, page)
@@ -166,7 +177,7 @@ private fun Strip(app: FoldcadeApp, page: SaveSetupPage, art: Dp, scale: Float) 
     val delays = flipDelays(tiles, (theme.motion.durationSetupStagger * scale).toLong())
     BoxWithConstraints(Modifier.fillMaxWidth().clipToBounds()) {
         val reach = ringReach()
-        val column = art * TILE_WIDTH
+        val column = if (labels) art * TILE_WIDTH else art
         val pitch = column + TILE_GAP
         val fits = floor(((maxWidth - reach * 2 + TILE_GAP) / pitch).toDouble()).toInt().coerceAtLeast(1)
         // A plain holder: the first tile shown follows the focus, which already recomposes the strip.
@@ -195,6 +206,7 @@ private fun Strip(app: FoldcadeApp, page: SaveSetupPage, art: Dp, scale: Float) 
                         focused = index == focus,
                         flipDelay = delays[tile.key] ?: 0L,
                         art = art,
+                        label = labels,
                         scale = scale,
                         artModifier = Modifier.selectionSlot(slots, index, depth = 2),
                         modifier = Modifier.width(column).hostPress { app.shell.touchSaveSetupTile(tile.key) },
@@ -222,7 +234,7 @@ private fun flipDelays(tiles: List<SetupTile>, stagger: Long): Map<String, Long>
     return delays
 }
 
-/** One tile: its lit object on a soft square, its badge, and its name. A skipped one rests dimmer; its badge does not. */
+/** One tile: its lit object on a soft square, its badge, and its [label]. A skipped one rests dimmer; its badge does not. */
 @Composable
 private fun StripTile(
     tile: SetupTile,
@@ -230,6 +242,7 @@ private fun StripTile(
     focused: Boolean,
     flipDelay: Long,
     art: Dp,
+    label: Boolean,
     scale: Float,
     artModifier: Modifier,
     modifier: Modifier,
@@ -252,7 +265,7 @@ private fun StripTile(
             ) { SetupArt(tile, ART_FILL) }
             FlipBadge(tile, status, flipDelay, scale, art * BADGE_SHARE, Modifier.align(Alignment.TopEnd).offset(x = 6.dp, y = (-6).dp))
         }
-        BasicText(
+        if (label) BasicText(
             tile.label,
             modifier = Modifier.fillMaxWidth().graphicsLayer {
                 alpha = dim.value * design.settings.labelRestAlpha.let { it + (1f - it) * lit.value }
@@ -363,7 +376,7 @@ private fun Showcase(
             val tile = tiles.firstOrNull { it.key == subject.key }
             when {
                 tile != null -> TileShowcase(app, page, tile, screen, compact, scale, dispatch)
-                saveSetupAllSet(tiles, page) -> AllSet(app, page, tiles, screen, compact, scale, dispatch)
+                saveSetupFinished(tiles, page) -> End(app, page, tiles, screen, compact, scale, dispatch)
                 // The emulators are still loading, as when the page comes back with a new process.
                 else -> Box(Modifier.fillMaxSize())
             }
@@ -371,7 +384,10 @@ private fun Showcase(
     }
 }
 
-/** The focused tile large: its art and name, how it is doing, its one step, step dots, and the buttons. */
+/**
+ * The focused tile large: its art and name, how it is doing, its one step, step dots, and the
+ * buttons. [compact] stacks it all in one column under a row of small art, name and status.
+ */
 @Composable
 private fun TileShowcase(
     app: FoldcadeApp,
@@ -385,37 +401,56 @@ private fun TileShowcase(
     val theme = LocalFoldTheme.current.theme
     val design = theme.style
     val status = setupStatus(tile, page)
+    val checking = app.shell.model.checkingSaves
     val celebrating = page.celebrating == tile.key
     val pop = bouncy(if (celebrating) 1f else 0f, scale)
-    Row(Modifier.fillMaxSize(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(if (compact) 20.dp else TOP_GAP)) {
-        Box(
-            Modifier
-                .fillMaxHeight(if (compact) COMPACT_ART_SHARE else design.setup.artShare)
-                .aspectRatio(1f)
-                .graphicsLayer {
-                    val grow = 1f + design.settings.artGrow * pop.value
-                    scaleX = grow
-                    scaleY = grow
-                },
-            contentAlignment = Alignment.Center,
-        ) {
-            SetupArt(tile, 1f)
-            FlipBadge(tile, status, 0L, scale, if (compact) 36.dp else 56.dp, Modifier.align(Alignment.TopEnd))
+    val popped = Modifier.graphicsLayer {
+        val grow = 1f + design.settings.artGrow * pop.value
+        scaleX = grow
+        scaleY = grow
+    }
+    val name = @Composable { modifier: Modifier ->
+        BasicText(
+            tile.label,
+            modifier = modifier,
+            style = setupStyle(theme.onBackground, design.type.heroTitle, theme, bold = true, display = true),
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
+    }
+    val chip = @Composable {
+        SlideSwap(target = SaveSetupCopy.status(tile, page), scale = scale, distance = 12.dp, vertical = true, direction = { _, _ -> 1 }) { word ->
+            Chip(word, statusLook(tile, status), theme)
         }
-        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(if (compact) 8.dp else 12.dp)) {
-            BasicText(
-                tile.label,
-                style = setupStyle(theme.onBackground, design.type.heroTitle, theme, bold = true, display = true),
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
-            SlideSwap(target = SaveSetupCopy.status(tile, page), scale = scale, distance = 12.dp, vertical = true, direction = { _, _ -> 1 }) { word ->
-                Chip(word, statusLook(tile, status), theme)
+    }
+    // A new step rises in under the last, as the check for the one before lands.
+    val words = @Composable {
+        SlideSwap(target = tile.step, scale = scale, distance = 24.dp, vertical = true, direction = { _, _ -> 1 }, key = { it?.let(::stepKey) }) { step ->
+            StepWords(tile, step, page, compact, checking, scale)
+        }
+    }
+    if (compact) {
+        Column(Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(COMPACT_GAP, Alignment.CenterVertically)) {
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                Box(Modifier.size(COMPACT_MARK).then(popped), contentAlignment = Alignment.Center) { SetupArt(tile, 1f) }
+                name(Modifier.weight(1f))
+                if (tile.steps.size > 1) StepDots(tile, scale)
+                chip()
             }
-            // A new step rises in under the last, as the check for the one before lands.
-            SlideSwap(target = tile.step, scale = scale, distance = 24.dp, vertical = true, direction = { _, _ -> 1 }, key = { it?.let(::stepKey) }) { step ->
-                StepWords(tile, step, page, compact, scale)
-            }
+            words()
+            Actions(app, page, screen, scale, dispatch)
+        }
+        return
+    }
+    Row(Modifier.fillMaxSize(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(TOP_GAP)) {
+        Box(Modifier.fillMaxHeight(design.setup.artShare).aspectRatio(1f).then(popped), contentAlignment = Alignment.Center) {
+            SetupArt(tile, 1f)
+            FlipBadge(tile, status, 0L, scale, 56.dp, Modifier.align(Alignment.TopEnd))
+        }
+        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            name(Modifier)
+            chip()
+            words()
             if (tile.steps.size > 1) StepDots(tile, scale)
             Actions(app, page, screen, scale, dispatch)
         }
@@ -431,34 +466,37 @@ private fun stepKey(step: SetupStep): String = when (step) {
     is SetupStep.AllFiles -> "files"
 }
 
+/** The step's title and words, and a wrong pick's note, which shares the words' lines. */
 @Composable
-private fun StepWords(tile: SetupTile, step: SetupStep?, page: SaveSetupPage, compact: Boolean, scale: Float) {
+private fun StepWords(tile: SetupTile, step: SetupStep?, page: SaveSetupPage, compact: Boolean, checking: Boolean, scale: Float) {
     val theme = LocalFoldTheme.current.theme
     val design = theme.style
+    val note = page.note?.takeIf { it.key == tile.key }?.text
+    val shown = presence(note, theme.motion.durationFocus, scale)
     Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-        BasicText(
-            SaveSetupCopy.stepTitle(step),
-            style = setupStyle(theme.onBackground, design.type.dialogTitle, theme, bold = true, display = true),
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-        )
-        // The words of the step on its way out stay its own, not the next one's.
-        SaveSetupCopy.stepBody(tile.copy(steps = listOfNotNull(step)))?.let { body ->
+        SaveSetupCopy.stepTitle(step)?.let { title ->
             BasicText(
-                body,
-                style = setupStyle(theme.muted, design.type.dialogBody, theme),
-                maxLines = if (compact) COMPACT_BODY_LINES else BODY_LINES,
+                title,
+                style = setupStyle(theme.onBackground, design.type.dialogTitle, theme, bold = true, display = true),
+                maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
         }
-        val note = page.note?.takeIf { it.key == tile.key }?.text
-        val shown = presence(note, theme.motion.durationFocus, scale)
+        // The words of the step on its way out stay its own, not the next one's.
+        SaveSetupCopy.stepBody(tile.copy(steps = listOfNotNull(step)), checking)?.let { body ->
+            BasicText(
+                body,
+                style = setupStyle(theme.muted, design.type.dialogBody, theme),
+                maxLines = (if (compact) COMPACT_BODY_LINES else BODY_LINES) - if (shown.shown != null) NOTE_LINES else 0,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
         shown.shown?.let { text ->
             BasicText(
                 text,
                 modifier = Modifier.rise { shown.progress.value },
                 style = setupStyle(design.colors.attention, design.type.dialogBody, theme, bold = true),
-                maxLines = 2,
+                maxLines = NOTE_LINES,
                 overflow = TextOverflow.Ellipsis,
             )
         }
@@ -553,9 +591,12 @@ private fun Chip(word: String, look: StatusLook, theme: Theme) {
     }
 }
 
-/** Nothing needs you: a large check, what was skipped, and Done. */
+/**
+ * Nothing needs you. With every emulator syncing: a large check, All set, and Done. With some
+ * skipped, they still do not sync, so the not-syncing cloud, Done for now, and how many.
+ */
 @Composable
-private fun AllSet(
+private fun End(
     app: FoldcadeApp,
     page: SaveSetupPage,
     tiles: List<SetupTile>,
@@ -570,12 +611,10 @@ private fun AllSet(
     LaunchedEffect(Unit) {
         withContext(SteadyMenu) { launch { landed.animateTo(1f, theme.motion.playful(theme.motion.durationSelect, scale)) } }
     }
-    val skipped = tiles.count { setupStatus(it, page) == SetupStatus.Skipped && !it.findSaves }
-    Row(Modifier.fillMaxSize(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(if (compact) 20.dp else TOP_GAP)) {
+    val skipped = saveSetupSkipped(tiles, page)
+    val mark = @Composable { modifier: Modifier ->
         Box(
-            Modifier
-                .fillMaxHeight((if (compact) COMPACT_ART_SHARE else design.setup.artShare) * ALL_SET_SHARE)
-                .aspectRatio(1f)
+            modifier
                 .graphicsLayer {
                     scaleX = landed.value
                     scaleY = landed.value
@@ -584,14 +623,35 @@ private fun AllSet(
                 .background(theme.background.copy(alpha = design.tile.statusBackingAlpha)),
             contentAlignment = Alignment.Center,
         ) {
-            val check = themeIcon(R.drawable.ic_badge_check)
-            Image(check.painter, contentDescription = null, colorFilter = check.tint(theme.focus), modifier = Modifier.fillMaxSize(BADGE_INK))
+            val (icon, tint) = badgeOf(if (skipped == 0) StatusLook.Syncing else StatusLook.NeedsYou, theme)!!
+            val badge = themeIcon(icon)
+            Image(badge.painter, contentDescription = null, colorFilter = badge.tint(tint), modifier = Modifier.fillMaxSize(BADGE_INK))
         }
-        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            BasicText(SaveSetupCopy.allSet, style = setupStyle(theme.onBackground, design.type.heroTitle, theme, bold = true, display = true), maxLines = 1)
-            SaveSetupCopy.allSetBody(skipped)?.let {
-                BasicText(it, style = setupStyle(theme.muted, design.type.dialogBody, theme), maxLines = 2, overflow = TextOverflow.Ellipsis)
+    }
+    val title = @Composable {
+        BasicText(SaveSetupCopy.endTitle(skipped), style = setupStyle(theme.onBackground, design.type.heroTitle, theme, bold = true, display = true), maxLines = 1)
+    }
+    val body = @Composable {
+        SaveSetupCopy.endBody(skipped)?.let {
+            BasicText(it, style = setupStyle(theme.muted, design.type.dialogBody, theme), maxLines = 2, overflow = TextOverflow.Ellipsis)
+        }
+    }
+    if (compact) {
+        Column(Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(COMPACT_GAP, Alignment.CenterVertically)) {
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                mark(Modifier.size(COMPACT_MARK))
+                title()
             }
+            body()
+            Actions(app, page, screen, scale, dispatch)
+        }
+        return
+    }
+    Row(Modifier.fillMaxSize(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(TOP_GAP)) {
+        mark(Modifier.fillMaxHeight(design.setup.artShare * ALL_SET_SHARE).aspectRatio(1f))
+        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            title()
+            body()
             Actions(app, page, screen, scale, dispatch)
         }
     }
@@ -606,13 +666,11 @@ private fun setupStyle(color: Color, size: TextUnit, theme: Theme, bold: Boolean
 
 /**
  * The bottom screen is about 538 × 468dp: four tiles of 92dp fit across it with their names,
- * and the strip slides for a fifth. One screen beside a game keeps the strip short so the step
- * above it still reads.
+ * and the strip slides for a fifth.
  */
 private val EDGE_H = 24.dp
 private val EDGE_V = 16.dp
 private val TILE_ART = 92.dp
-private val COMPACT_ART = 60.dp
 private val TILE_GAP = 8.dp
 private val TILE_LABEL_GAP = 4.dp
 
@@ -629,6 +687,16 @@ private val TOP_EDGE_H = 40.dp
 private val TOP_EDGE_V = 24.dp
 private val TOP_GAP = 32.dp
 private const val BODY_LINES = 6
-private const val COMPACT_BODY_LINES = 3
-private const val COMPACT_ART_SHARE = 0.62f
+private const val NOTE_LINES = 2
 private const val ALL_SET_SHARE = 0.72f
+
+/**
+ * One screen beside a game, 538 or 833 × 468dp, in one 490dp column: head 54, small art row 44,
+ * step title 27, six lines of words 132, buttons 44, and a strip of 52dp art with no names, 76
+ * with its ring, so seven tiles fit without sliding. About 447dp with the gaps.
+ */
+private val COMPACT_EDGE_V = 12.dp
+private val COMPACT_GAP = 10.dp
+private val COMPACT_MARK = 44.dp
+private val COMPACT_ART = 52.dp
+private const val COMPACT_BODY_LINES = 6

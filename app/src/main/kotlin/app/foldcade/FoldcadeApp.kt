@@ -986,6 +986,7 @@ class FoldcadeApp : Application() {
             val android = AndroidSaveFolderFinder(this@FoldcadeApp)
             val grants = android.grants(players.filterIsInstance<SaveFolderHolder>())
             val newlyFound = mutableListOf<Pair<String, String>>()
+            var firstFound: String? = null
             for (player in players) {
                 val holder = player as SaveFolderHolder
                 val key = player.saveFolderId()
@@ -1001,7 +1002,10 @@ class FoldcadeApp : Application() {
                     if (store.playerSaveFolder(key) != saved?.uri || store.playerSaveFolderFound(key) != (saved?.found == true)) return@withContext
                     if (next != saved) store.setPlayerSaveFolder(key, next?.uri, next?.found == true)
                     val uri = next?.uri?.takeIf { bound }.orEmpty()
-                    if (next?.found == true && bound && next.uri != saved?.uri) newlyFound += player.displayName to folderPathLabel(next.uri)
+                    if (next?.found == true && bound && next.uri != saved?.uri) {
+                        newlyFound += player.displayName to folderPathLabel(next.uri)
+                        if (firstFound == null) firstFound = player.id
+                    }
                     for (id in plugins.playerIds()) {
                         val sharing = plugins.player(id) ?: continue
                         if (sharing is SaveFolderHolder && sharing.saveFolderId() == key) sharing.bindSaveFolder(uri)
@@ -1010,22 +1014,30 @@ class FoldcadeApp : Application() {
             }
             withContext(Dispatchers.Main.immediate) {
                 shell.refreshPlayerSaves()
-                // A folder bound without asking says where, so a wrong one is never bound unseen.
+                // A folder bound without asking says where, so a wrong one is never bound unseen. A opens
+                // Set up saves on the first one found, whose page says where again.
                 if (newlyFound.isNotEmpty()) postNotice(FoldNotice(
                     id = SAVES_FOUND_NOTICE_ID, title = Copy.savesFoundTitle, body = Copy.savesFoundBody(newlyFound),
-                    postedMillis = System.currentTimeMillis(), settingsCategory = app.foldcade.language.SettingsCategory.Players,
+                    postedMillis = System.currentTimeMillis(), savePlayerId = firstFound,
                 ))
             }
         }
     }
 
     internal fun refreshFoundSaveFolders() {
+        // The find counts as a check, so Set up saves waits for what it finds before it moves on.
+        val counted = ::shell.isInitialized
+        if (counted) startSaveRead()
         scope.launch {
-            playersLoaded.await()
-            findPlayerSaveFolders()
-            withContext(Dispatchers.Main.immediate) {
-                shell.refreshPlayerSaves()
-                refreshSaveSync()
+            try {
+                playersLoaded.await()
+                findPlayerSaveFolders()
+                withContext(Dispatchers.Main.immediate) {
+                    shell.refreshPlayerSaves()
+                    refreshSaveSync()
+                }
+            } finally {
+                if (counted) withContext(NonCancellable + Dispatchers.Main.immediate) { endSaveRead() }
             }
         }
     }
@@ -1068,8 +1080,7 @@ class FoldcadeApp : Application() {
      */
     fun refreshSaveSync() {
         if (!::plugins.isInitialized || !::shell.isInitialized) return
-        saveSyncReads += 1
-        shell.setCheckingSaves(true)
+        startSaveRead()
         pluginLoad.launch {
             try {
                 val notes = readPlayerFolderNotes()
@@ -1078,16 +1089,23 @@ class FoldcadeApp : Application() {
                     shell.refreshPlayerSaves()
                 }
             } finally {
-                withContext(NonCancellable + Dispatchers.Main.immediate) {
-                    saveSyncReads -= 1
-                    if (saveSyncReads == 0) shell.setCheckingSaves(false)
-                }
+                withContext(NonCancellable + Dispatchers.Main.immediate) { endSaveRead() }
             }
         }
     }
 
-    /** Reads of [refreshSaveSync] still running. Main thread only. */
+    /** Reads of [refreshSaveSync] and finds of [refreshFoundSaveFolders] still running. Main thread only. */
     private var saveSyncReads = 0
+
+    private fun startSaveRead() {
+        saveSyncReads += 1
+        shell.setCheckingSaves(true)
+    }
+
+    private fun endSaveRead() {
+        saveSyncReads -= 1
+        if (saveSyncReads == 0) shell.setCheckingSaves(false)
+    }
 
     internal fun noteSaveLaunch(route: GameRoute) {
         shell.savePlayer(route.play.platformId)?.let { saveSetupNotices.launch(shell.saveNoticePlayerId(it.id)) }
