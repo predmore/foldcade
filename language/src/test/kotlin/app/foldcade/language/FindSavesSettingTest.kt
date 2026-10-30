@@ -19,7 +19,7 @@ class FindSavesSettingTest {
             val text = rowText(Row.FindSaves, current)
             assertEquals("Find saves", text.label)
             assertEquals(if (granted) "Allowed" else "Ask", text.value)
-            assertEquals(RowControl.Value(text.value!!), rowControl(Row.FindSaves, current))
+            assertEquals(RowControl.Toggle(granted), rowControl(Row.FindSaves, current))
         }
     }
 

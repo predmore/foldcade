@@ -188,18 +188,18 @@ class SaveFolderFinderTest {
         val restarted = SessionStore(prefs)
         assertFalse(restarted.playerSaveFolderFound("azahar"))
         val saved = SavedSaveFolder(restarted.playerSaveFolder("azahar")!!, restarted.playerSaveFolderFound("azahar"))
-        assertEquals(saved, detectedSaveFolder(saved, { false }, { error("must not replace a user pick") }))
+        assertEquals(saved, detectedSaveFolder(saved, { error("must not replace a user pick") }))
     }
 
     @Test fun lostReachClearsAFoundFolderAndAllowsDetectionAgain() {
         val store = SessionStore(MemoryPrefs())
         val saved = SavedSaveFolder(tree("primary:old"), found = true)
-        assertEquals(saved, detectedSaveFolder(saved, { true }, { saved.uri }))
-        val lost = detectedSaveFolder(saved, { false }, { null })
+        assertEquals(saved, detectedSaveFolder(saved, { saved.uri }))
+        val lost = detectedSaveFolder(saved, { null })
         store.setPlayerSaveFolder("azahar", lost?.uri, lost?.found == true)
         assertNull(store.playerSaveFolder("azahar"))
         assertFalse(store.playerSaveFolderFound("azahar"))
-        assertEquals(SavedSaveFolder(tree("primary:new"), true), detectedSaveFolder(lost, { false }, { tree("primary:new") }))
+        assertEquals(SavedSaveFolder(tree("primary:new"), true), detectedSaveFolder(lost, { tree("primary:new") }))
     }
 
     @Test fun realSafGrantsRankBeforeTheAllFilesTreeInEitherOrder() {
@@ -237,9 +237,9 @@ class SaveFolderFinderTest {
         assertNull(result.folder)
         assertEquals(2, result.candidates.size)
         assertEquals(primaryFolderDocument("saves/Azahar"), result.startingFolder)
-        assertNull(detectedSaveFolder(saved, { true }, { result.folder }))
+        assertNull(detectedSaveFolder(saved, { result.folder }))
         val picked = saved.copy(found = false)
-        assertEquals(picked, detectedSaveFolder(picked, { true }, { result.folder }))
+        assertEquals(picked, detectedSaveFolder(picked, { result.folder }))
     }
 
     @Test fun allFilesRevocationClearsItsFoundFolderOrUsesSafWithoutReplacingAPick() {
@@ -247,17 +247,17 @@ class SaveFolderFinderTest {
         val h = holder("RetroArch/saves")
         directories += "primary:RetroArch/saves"
         val saved = SavedSaveFolder(finder(allFiles).find(h).folder!!, found = true)
-        val lost = detectedSaveFolder(saved, { false }, { finder().find(h).folder })
+        val lost = detectedSaveFolder(saved, { finder().find(h).folder })
         val store = SessionStore(MemoryPrefs())
         store.setPlayerSaveFolder("retroarch", saved.uri, found = true)
         store.setPlayerSaveFolder("retroarch", lost?.uri, lost?.found == true)
         assertNull(store.playerSaveFolder("retroarch"))
         assertFalse(store.playerSaveFolderFound("retroarch"))
         val saf = grant(tree("primary:RetroArch/saves"))
-        assertEquals(SavedSaveFolder(saf.uri, true), detectedSaveFolder(saved, { false }, { finder(saf).find(h).folder }))
-        assertEquals(SavedSaveFolder(saf.uri, true), detectedSaveFolder(saved, { true }, { finder(allFiles, saf).find(h).folder }))
+        assertEquals(SavedSaveFolder(saf.uri, true), detectedSaveFolder(saved, { finder(saf).find(h).folder }))
+        assertEquals(SavedSaveFolder(saf.uri, true), detectedSaveFolder(saved, { finder(allFiles, saf).find(h).folder }))
         val picked = SavedSaveFolder(tree("primary:chosen"), found = false)
-        assertEquals(picked, detectedSaveFolder(picked, { false }, { finder(saf).find(h).folder }))
+        assertEquals(picked, detectedSaveFolder(picked, { finder(saf).find(h).folder }))
     }
 
     private fun holder(vararg places: String, markers: Set<String> = emptySet(), picked: Boolean = false, suggested: String? = null) = object : SaveFolderHolder {

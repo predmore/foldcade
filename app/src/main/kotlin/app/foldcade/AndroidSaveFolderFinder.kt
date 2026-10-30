@@ -33,11 +33,6 @@ internal class AndroidSaveFolderFinder(private val context: Context) {
         SaveFolderGrant(tree, permission.isReadPermission, permission.isWritePermission || upgraded)
     } + if (AllFilesAccess(context).granted()) listOf(SaveFolderGrant(SharedStorageProvider.tree(context.packageName), true, true, allFiles = true)) else emptyList()
 
-    fun reachable(player: Player, holder: SaveFolderHolder, uri: String, grants: List<SaveFolderGrant>): Boolean {
-        return canReach(uri, grants) && finder(player, grants).fits(holder, uri) &&
-            (!holder.saveFolderPickedInPlayer || playerHolds(player, folderDocumentId(uri)))
-    }
-
     fun canReach(uri: String, grants: List<SaveFolderGrant>): Boolean = holdsGrant(uri, grants) && isDirectory(uri)
 
     /** Whether Foldcade still holds the tree [uri] is in, read and write. No I/O. */

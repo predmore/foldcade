@@ -365,6 +365,8 @@ sealed interface RowControl {
 fun rowControl(row: Row, model: PickerModel, value: String? = rowText(row, model).value): RowControl = when (row) {
     Row.Music -> RowControl.Toggle(model.music.enabled)
     Row.AddNewGames -> RowControl.Toggle(model.addNewToHome)
+    // Android owns the switch: A opens its all-files page, and the switch shows what it says.
+    Row.FindSaves -> RowControl.Toggle(model.allFilesGranted)
     Row.RecentOnHome -> RowControl.Toggle(model.recentOnHome)
     Row.Artwork -> RowControl.Toggle(model.artwork)
     is Row.StreamHost -> RowControl.Toggle(model.streamHosts.any { it.key == row.key && it.paired })

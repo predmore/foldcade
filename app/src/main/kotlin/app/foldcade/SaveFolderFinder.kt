@@ -8,11 +8,9 @@ internal data class SaveFolderFind(val folder: String?, val startingFolder: Stri
 internal data class SavedSaveFolder(val uri: String, val found: Boolean)
 
 /** A chosen folder stays chosen. A found folder must still be reachable and unambiguous. */
-internal fun detectedSaveFolder(saved: SavedSaveFolder?, reachable: (String) -> Boolean, find: () -> String?): SavedSaveFolder? {
+internal fun detectedSaveFolder(saved: SavedSaveFolder?, find: () -> String?): SavedSaveFolder? {
     if (saved != null && !saved.found) return saved
-    val folder = find() ?: return null
-    if (saved != null && reachable(saved.uri) && saved.uri == folder) return saved
-    return SavedSaveFolder(folder, found = true)
+    return find()?.let { if (it == saved?.uri) saved else SavedSaveFolder(it, found = true) }
 }
 
 /** Finds one reachable save folder without choosing between plausible copies. */

@@ -990,7 +990,7 @@ class FoldcadeApp : Application() {
                 val finder = android.finder(player, grants)
                 val result = finder.find(holder)
                 if (result.placeStart != null) saveFolderStarts[key] = result.placeStart else saveFolderStarts.remove(key)
-                val next = detectedSaveFolder(saved, { android.reachable(player, holder, it, grants) }, { result.folder })
+                val next = detectedSaveFolder(saved) { result.folder }
                 // A found folder was just probed. A chosen one only needs its grant: a slow provider is no reason to drop it.
                 val bound = next != null && android.holdsGrant(next.uri, grants)
                 // A picker can finish while the provider is being read. Its choice wins.
