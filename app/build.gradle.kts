@@ -41,7 +41,7 @@ android {
         // Local fallback. CI passes -PfoldcadeVersionCode from git rev-list --count HEAD.
         // A stable tag is cut only when versionName changes.
         versionCode = 1
-        versionName = "0.1.4"
+        versionName = "0.1.5"
         val requestedVersionCode = providers.gradleProperty("foldcadeVersionCode").orNull?.trim().orEmpty()
         if (requestedVersionCode.isNotEmpty()) {
             val parsed = requestedVersionCode.toIntOrNull()
