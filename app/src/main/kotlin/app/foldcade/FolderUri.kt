@@ -41,3 +41,17 @@ private fun decodeDocumentId(value: String): String = URLDecoder.decode(value.re
 /** As Android's `Uri.encode`, which leaves `!'()*~` as they are, so a rebuilt tree URI matches the grant's. */
 private fun encodeDocumentId(value: String): String = URLEncoder.encode(value, "UTF-8").replace("+", "%20")
     .replace("%21", "!").replace("%27", "'").replace("%28", "(").replace("%29", ")").replace("%7E", "~")
+
+/**
+ * How Android's picker meets a save folder: [suggested] in a provider other than shared storage
+ * is the player's own files, which the picker shows alone, so only Allow is left. Otherwise
+ * [opensThere] says the picker opens on the folder itself.
+ */
+internal fun saveFolderPickOf(suggested: String?, opensThere: Boolean): app.foldcade.language.FolderPick {
+    val authority = suggested?.takeIf { it.startsWith("content://") }?.removePrefix("content://")?.substringBefore('/')
+    return when {
+        authority != null && authority != SharedPaths.EXTERNAL_STORAGE_AUTHORITY -> app.foldcade.language.FolderPick.OwnProvider
+        opensThere -> app.foldcade.language.FolderPick.OpensThere
+        else -> app.foldcade.language.FolderPick.Browse
+    }
+}

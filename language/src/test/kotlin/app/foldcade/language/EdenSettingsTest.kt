@@ -22,7 +22,7 @@ class EdenSettingsTest {
 
         val setup = installed.copy(signedIn = listOf(SignedInBackend("romm", "RomM")))
         val eden = Row.SettingsTile(SettingsInner.Emulator(EDEN_SHELF_KEY))
-        assertEquals(listOf(eden, Row.FindSaves), settingsRows(SettingsCategory.Players, setup))
+        assertEquals(listOf(eden, Row.SaveSetup, Row.FindSaves), settingsRows(SettingsCategory.Players, setup))
         assertEquals(listOf(Row.EdenFolder), settingsInnerRows(SettingsInner.Emulator(EDEN_SHELF_KEY), setup))
         assertEquals(Copy.eden, rowText(eden, setup).label)
         assertEquals(TileStatus.Attention, settingsTileStatus(eden, setup))
@@ -35,7 +35,7 @@ class EdenSettingsTest {
 
         val both = granted.copy(retroArch = RetroArchSetting(cores = 3))
         assertEquals(
-            listOf(eden, Row.SettingsTile(SettingsInner.Emulator(RETROARCH_SHELF_KEY)), Row.FindSaves),
+            listOf(eden, Row.SettingsTile(SettingsInner.Emulator(RETROARCH_SHELF_KEY)), Row.SaveSetup, Row.FindSaves),
             settingsRows(SettingsCategory.Players, both),
         )
         val (closed, effect) = reduce(granted.onSetting(Row.EdenFolder), Meaning.Activate)

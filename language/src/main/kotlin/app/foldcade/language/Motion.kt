@@ -34,6 +34,12 @@ open class MotionStyle(private val style: ThemeStyle = ThemeStyle()) {
 
     /** How long a finished sync's mark stays on its tile, fades included. */
     val durationSyncMark = style.motion.durationSyncMark
+
+    /** How long a tile's fresh check in Set up saves rests before the focus glides on. */
+    val durationSetupPause = style.motion.durationSetupPause
+
+    /** Between checks that land together in Set up saves, so they flip one after another. */
+    val durationSetupStagger = style.motion.durationSetupStagger
     val scaleRest = style.motion.scaleRest
     val scaleFocus = style.motion.scaleFocus
 

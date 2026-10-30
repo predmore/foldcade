@@ -536,6 +536,9 @@ sealed interface Row {
     data object UsageAccess : Row
     /** Opens Android's optional all-files access page. Its value follows Android. */
     data object FindSaves : Row
+
+    /** Opens Set up saves, which walks every emulator's remaining step. */
+    data object SaveSetup : Row
     data object Primary : Row
     data object Order : Row
     data object Music : Row
@@ -763,6 +766,12 @@ data class PlayerSaveSetting(
     val installed: Boolean = false,
     /** The player's installed packages. The first one's art is its Settings tile. */
     val packages: List<String> = emptyList(),
+    /** How Android's picker opens on the save folder. */
+    val pick: FolderPick = FolderPick.Browse,
+    /** True when all-files access could find the save folder without a pick. */
+    val findable: Boolean = false,
+    /** What the user does once, in the player, to give it the folder Foldcade hosts. */
+    val hostedSteps: String? = null,
 )
 
 /**
@@ -1064,6 +1073,7 @@ fun rowText(row: Row, model: PickerModel): RowText = when (row) {
     Row.MotionSpeed -> RowText(Copy.motion, speedLabel(model.motionSpeed))
     Row.UsageAccess -> RowText(Copy.playTime, if (model.usageGranted) Copy.playTimeEverywhere else Copy.playTimeHere)
     Row.FindSaves -> RowText(SettingsCopy.findSaves, if (model.allFilesGranted) SettingsCopy.accessAllowed else SettingsCopy.accessAsk)
+    Row.SaveSetup -> RowText(SaveSetupCopy.title)
     Row.Primary -> RowText(Copy.primaryPanel, if (model.primaryIsTop) Copy.top else Copy.bottom)
     Row.Order -> RowText(Copy.sortAll, if (model.sort == LibrarySort.RecentlyPlayed) Copy.sortRecent else Copy.sortListed)
     Row.SortFolder -> RowText(Copy.sort, folderSortLabel(model.sortChoice()?.sort ?: FolderSort.Custom))
@@ -1477,6 +1487,8 @@ data class PickerModel(
     /** Two saves waiting for a choice on the bottom screen. Null while there is nothing to ask. */
     val saveConflict: SaveConflictPrompt? = null,
     val savePicker: SavePickerState? = null,
+    /** Set up saves. Null while it is closed. */
+    val saveSetup: SaveSetupPage? = null,
     /** Every library is being read again. */
     val librarySyncing: Boolean = false,
     /** Alphabetical labels in display order. Empty when triggers jump screens instead. */
@@ -1507,6 +1519,10 @@ fun reduce(
         val chosen = choice?.let { Effect.DialogChoice(it, dialog.kind, dialog.subject) }
         val cleared = if (choice != null) null else next
         return coerced.copy(dialog = cleared) to chosen
+    }
+    coerced.saveSetup?.let { page ->
+        if (meaning == Meaning.LeftPanel || meaning == Meaning.RightPanel) return coerced to null
+        return applySaveSetup(coerced, page, meaning, repeatCount)
     }
     coerced.savePicker?.let {
         // A held A opens one confirmation. Its repeats would answer it, Cancel first, and open it again.
@@ -2114,7 +2130,9 @@ private fun applySettings(
         Meaning.Activate -> {
             if (row is Row.SettingsTile) return model.copy(settings = current.copy(inner = row.page, row = 0)) to null
             // A held A that opened a page does not go on to act in it: a folder's Remove, a computer's pairing.
-            if (repeatCount > 0 && (inner != null || row == Row.FindSaves)) return model.copy(settings = current) to null
+            if (repeatCount > 0 && (inner != null || row == Row.FindSaves || row == Row.SaveSetup)) return model.copy(settings = current) to null
+            // Back from Set up saves returns to this row.
+            if (row == Row.SaveSetup) return model.openSaveSetup(current.screen, settings = current) to null
             // Rows act through the menu path. A stand-in panel tells "stays open" from "leaves".
             val standIn = SidePanel(Side.Left, current.screen, PanelLevel.Root, rowIndex, current.grid)
             val (next, effect) = activateRow(model.copy(panel = standIn), standIn, row, current.screen)
@@ -2179,6 +2197,7 @@ private fun activateRow(
         Row.SortFolder -> model.copy(panel = panel) to sortStep(model, 1)
         Row.UsageAccess -> model.copy(dialog = usageAccessPrompt(screen)) to null
         Row.FindSaves -> model to Effect.OpenAllFilesAccess
+        Row.SaveSetup -> model.openSaveSetup(panel.screen, grid = panel.grid) to null
         Row.PlayActivity -> model.copy(
             panel = null,
             playActivity = PlayActivityPage(screen = panel.screen, grid = panel.grid),
@@ -2326,10 +2345,17 @@ private fun TileActions.toggled(folderId: String): TileActions = copy(
 /** A. An app's notice opens that app and R1 closes. A Foldcade notice has no app, so A shows all of its text. */
 private fun openNotice(model: PickerModel, panel: SidePanel, id: String): Pair<PickerModel, Effect?> {
     val notice = model.notices.firstOrNull { it.id == id } ?: return model.copy(panel = panel) to null
+    // The save-setup notices open Set up saves: the merged one at the first emulator that needs
+    // you, one emulator's on its own tile.
+    if (notice.settingsCategory == SettingsCategory.Players) return model.openSaveSetup(panel.screen, grid = panel.grid) to null
     notice.settingsCategory?.let { category ->
         return model.openSettings(panel.screen, category, panel.grid) to null
     }
     notice.savePlayerId?.let { playerId ->
+        if (saveSetupTiles(model, SaveSetupPage()).any { it.key == playerId }) {
+            return model.openSaveSetup(panel.screen, target = playerId, grid = panel.grid) to null
+        }
+        // Not on the strip, as before its emulator has loaded: the fix itself, as before.
         val setting = model.playerSaves.firstOrNull { it.playerId == playerId }
             ?: return model.copy(panel = null, focus = panel.grid) to Effect.ChoosePlayerSave(playerId)
         val fix = when {

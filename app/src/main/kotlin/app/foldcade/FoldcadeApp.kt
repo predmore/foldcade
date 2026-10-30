@@ -643,6 +643,7 @@ class FoldcadeApp : Application() {
             onSameGames = { groups -> saveArtChoices(artChoices.adopt(groups)) },
             appVersion = installedVersion(),
             onSavePickerClosed = { onSaveConflicts?.invoke() },
+            saveFolderPick = ::saveFolderPick,
             onSaveHealthChanged = { players ->
                 saveSetupNotices.update(players)
                 publishNotices()
@@ -1027,6 +1028,14 @@ class FoldcadeApp : Application() {
     internal fun saveFolderOpensThere(player: Player?): Boolean = (player as? SaveFolderHolder)?.let {
         saveFolderStarts[player.saveFolderId()] != null || it.suggestedSaveFolder != null
     } == true
+
+    /**
+     * How Android's picker meets [player]'s save folder, for Set up saves: the root of the
+     * player's own files, which Android shows alone, a folder that is there, or nowhere known.
+     */
+    internal fun saveFolderPick(player: Player): app.foldcade.language.FolderPick =
+        (player as? SaveFolderHolder)?.let { saveFolderPickOf(it.suggestedSaveFolder, saveFolderOpensThere(player)) }
+            ?: app.foldcade.language.FolderPick.Browse
 
     /** The manifest's [HostedSavesProvider] authority. */
     val hostedAuthority: String get() = "$packageName${HostedSavesProvider.AUTHORITY_SUFFIX}"

@@ -1810,6 +1810,8 @@
       "durationIsland": 320,
       "durationPulse": 720,
       "durationSyncMark": 2400,
+      "durationSetupPause": 900,
+      "durationSetupStagger": 160,
       "scaleRest": 1.0,
       "scaleFocus": 1.05,
       "heroScaleFrom": 0.96,
@@ -2046,6 +2048,10 @@
       "screenshotShare": 0.5,
       "backdropDim": 0.5,
       "backupAlpha": 0.6
+    },
+    "setup": {
+      "skippedAlpha": 0.45,
+      "artShare": 0.7
     },
     "picker": {
       "shimmerAlpha": 0.18
