@@ -790,6 +790,8 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
         }
         // Only a player that would ask for its folder looks first, so other launches start at once.
         if (!foldersChecked && player is SaveFolderHolder && player !is EdenPlayer && !player.hasSaveFolder()) {
+            // A library game already preparing keeps going, as before.
+            if (game.libraryId != null && game.remoteKey != null && foldcade.launchWork.active) return
             val generation = beginLaunch()
             foldcade.launchWork.job = foldcade.scope.launch {
                 foldcade.findPlayerSaveFolders()
@@ -2644,6 +2646,8 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
         val narrowed = withContext(Dispatchers.IO) {
             val holder = player as? SaveFolderHolder ?: return@withContext uri
             AndroidSaveFolderFinder(foldcade).finder(player, emptyList()).narrow(holder, uri.toString())?.let(Uri::parse)
+                // A folder the provider cannot list yet passes, as it always has.
+                ?: uri.takeIf { AndroidSaveDocuments(contentResolver).childNames(it.toString()) == null }
         }
         if (narrowed != null) return narrowed
         val markers = (player as? SaveFolderHolder)?.saveFolderMarkers.orEmpty()
