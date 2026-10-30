@@ -2085,6 +2085,11 @@ class ShellController(
         model = model.copy(usageGranted = granted)
     }
 
+    fun setAllFilesGranted(granted: Boolean) {
+        if (model.allFilesGranted == granted) return
+        model = model.copy(allFilesGranted = granted)
+    }
+
     /** Once, after a session exists. Never on a cold start, and never over another dialog. */
     fun maybeOfferUsageAccess(hasTrackedSession: Boolean, granted: Boolean, screen: HostScreen) {
         val blocked = model.dialog != null

@@ -7,6 +7,10 @@
         android:name="android.permission.PACKAGE_USAGE_STATS"
         tools:ignore="ProtectedPermissions" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <!-- Optional Find saves access. SAF remains available without it; never asked at startup. -->
+    <uses-permission
+        android:name="android.permission.MANAGE_EXTERNAL_STORAGE"
+        tools:ignore="ScopedStorage" />
     <!-- R1's Wi-Fi tile shows whether the radio is on. -->
     <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
     <!-- The R1 brightness slider. Granted from "Modify system settings", never at install. -->
@@ -185,6 +189,15 @@
         <provider
             android:name=".RommFolderProvider"
             android:authorities="${applicationId}.romm.folders"
+            android:exported="true"
+            android:grantUriPermissions="true"
+            android:permission="android.permission.MANAGE_DOCUMENTS" />
+
+        <!-- Foldcade alone opens this tree with optional all-files access. No picker roots;
+             the provider also refuses every other uid, even with a URI grant. -->
+        <provider
+            android:name=".SharedStorageProvider"
+            android:authorities="${applicationId}.storage"
             android:exported="true"
             android:grantUriPermissions="true"
             android:permission="android.permission.MANAGE_DOCUMENTS" />

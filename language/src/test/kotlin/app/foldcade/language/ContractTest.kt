@@ -672,7 +672,7 @@ class ContractTest {
             homeRoleHeld = true,
             playerSaves = listOf(setting),
         )
-        assertEquals(listOf(Row.SettingsTile(SettingsInner.Emulator("azahar"))), settingsRows(SettingsCategory.Players, opened))
+        assertEquals(listOf(Row.SettingsTile(SettingsInner.Emulator("azahar")), Row.FindSaves), settingsRows(SettingsCategory.Players, opened))
         assertEquals(listOf(Row.PlayerSave("azahar")), settingsInnerRows(SettingsInner.Emulator("azahar"), opened))
         val onRow = opened.onSetting(Row.PlayerSave("azahar"))
         val (closed, effect) = reduce(onRow, Meaning.Activate)
@@ -705,7 +705,7 @@ class ContractTest {
                 assertFalse(control.text == Copy.notSyncing)
             }
             assertTrue(rows.any { (rowControl(it, installed) as? RowControl.Value)?.attention == true })
-            assertEquals(TileStatus.Attention, settingsTileStatus(settingsRows(SettingsCategory.Players, installed).single(), installed))
+            assertEquals(TileStatus.Attention, settingsTileStatus(settingsRows(SettingsCategory.Players, installed).first(), installed))
         }
     }
 

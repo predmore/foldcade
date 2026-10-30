@@ -53,6 +53,9 @@ object SettingsCopy {
     const val sound = "Sound"
     const val library = "Library"
     const val players = "Emulators"
+    const val findSaves = "Find saves"
+    const val accessAllowed = "Allowed"
+    const val accessAsk = "Ask"
     const val screens = "System"
     const val about = "About"
 }
@@ -117,7 +120,11 @@ fun settingsRows(category: SettingsCategory, model: PickerModel): List<Row> = wh
         if (model.signedIn.isNotEmpty() || model.folders.isNotEmpty()) add(Row.SyncLibrary)
         addAll(listOf(Row.Order, Row.Artwork, Row.ArtKey))
     }
-    SettingsCategory.Players -> emulatorShelf(model).map { Row.SettingsTile(SettingsInner.Emulator(it.key)) }
+    SettingsCategory.Players -> buildList {
+        val shelf = emulatorShelf(model)
+        addAll(shelf.map { Row.SettingsTile(SettingsInner.Emulator(it.key)) })
+        if (shelf.isNotEmpty()) add(Row.FindSaves)
+    }
     SettingsCategory.Screens -> buildList {
         add(Row.Primary)
         if (!model.homeRoleHeld) add(Row.SetAsHome)

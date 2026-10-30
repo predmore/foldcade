@@ -31,7 +31,7 @@ internal class AndroidSaveFolderFinder(private val context: Context) {
         }
         val upgraded = needsWrite && upgradeTreeGrant { resolver.takePersistableUriPermission(permission.uri, flags) }
         SaveFolderGrant(tree, permission.isReadPermission, permission.isWritePermission || upgraded)
-    }
+    } + if (AllFilesAccess(context).granted()) listOf(SaveFolderGrant(SharedStorageProvider.tree(context.packageName), true, true, allFiles = true)) else emptyList()
 
     fun reachable(player: Player, holder: SaveFolderHolder, uri: String, grants: List<SaveFolderGrant>): Boolean {
         return canReach(uri, grants) && finder(player, grants).fits(holder, uri) &&
