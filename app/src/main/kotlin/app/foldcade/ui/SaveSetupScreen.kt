@@ -113,8 +113,10 @@ internal fun SaveSetupSingle(app: FoldcadeApp, page: SaveSetupPage, screen: Host
 private fun AdvanceAfterCheck(app: FoldcadeApp, scale: Float) {
     val motion = LocalFoldTheme.current.theme.motion
     val celebrating = app.shell.model.saveSetup?.celebrating
-    LaunchedEffect(celebrating) {
+    val checking = app.shell.model.checkingSaves
+    LaunchedEffect(celebrating, checking) {
         val key = celebrating ?: return@LaunchedEffect
+        if (checking) return@LaunchedEffect
         delay((motion.durationSetupPause * scale).toLong())
         app.shell.advanceSaveSetup(key)
     }

@@ -210,7 +210,7 @@ fun emulatorShelf(model: PickerModel): List<EmulatorShelfEntry> {
             EmulatorShelfEntry(RETROARCH_SHELF_KEY, Copy.retroArch, it.packageName, listOf(Row.RetroArchCores))
         },
         eden?.takeIf { edenOwner == null }?.let {
-            EmulatorShelfEntry(EDEN_SHELF_KEY, Copy.eden, it.packageName, listOfNotNull(Row.EdenFolder, Row.EdenUser.takeIf { _ -> it.fromRomm && it.needsUser }))
+            EmulatorShelfEntry(EDEN_SHELF_KEY, Copy.eden, it.packageName, listOfNotNull(Row.EdenFolder, Row.EdenUser.takeIf { _ -> it.fromRomm && it.setupSteps != null }))
         },
     )
     return (entries + loose).sortedBy { it.label.lowercase() }

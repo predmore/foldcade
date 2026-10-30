@@ -120,6 +120,7 @@ import app.foldcade.language.resolveFaceMap
 import app.foldcade.language.PickerModel
 import app.foldcade.language.PlayerSaveSetting
 import app.foldcade.language.FolderPick
+import app.foldcade.language.EDEN_SHELF_KEY
 import app.foldcade.language.advanceSaveSetup
 import app.foldcade.language.noteSaveSetup
 import app.foldcade.language.openSaveSetup
@@ -637,6 +638,8 @@ class ShellController(
         if (model.saveSetup != null && model.dialog == null) {
             val before = model
             val (next, effect) = reduce(model, meaning, screen, repeatCount)
+            // The press that closes the page stays its own until the key comes up, so a held Done never reaches the grid.
+            if (next.saveSetup == null) heldActions.capture(meaning.ordinal)
             publish(next)
             cueSaveSetup(meaning, before, model, effect)
             return effect
@@ -2105,6 +2108,10 @@ class ShellController(
         model = model.copy(usageGranted = granted)
     }
 
+    fun setCheckingSaves(checking: Boolean) {
+        if (model.checkingSaves != checking) publish(model.copy(checkingSaves = checking))
+    }
+
     fun setAllFilesGranted(granted: Boolean) {
         if (model.allFilesGranted == granted) return
         model = model.copy(allFilesGranted = granted)
@@ -2194,7 +2201,7 @@ class ShellController(
      * sign-in started there.
      */
     fun offerSaveSetup(screen: HostScreen) {
-        if (model.saveSetup != null || model.savePicker != null || model.saveConflict != null || model.connectOpen) return
+        if (model.saveSetup != null || model.savePicker != null || model.saveConflict != null || model.connectOpen || model.dialog != null) return
         if (!saveSetupWanted(model)) return
         artPicker = null
         find = null
@@ -2606,19 +2613,11 @@ class ShellController(
     }
 
     /** Null while Eden is not installed. */
+    /** Eden's one-time setup rides with the other players' in [setupSteps], read off the main thread, under its player id, which is its shelf key. */
     fun setEden(setting: EdenSetting?) {
-        val next = setting?.copy(needsUser = edenNeedsUser && setting.fromRomm)
+        val next = setting?.copy(setupSteps = setupSteps[EDEN_SHELF_KEY]?.takeIf { setting.fromRomm })
         if (model.eden != next) model = model.copy(eden = next)
         refreshSaveHealth()
-    }
-
-    /** Read off the main thread with the other folder notes; kept so a fresh [EdenSetting] still carries it. */
-    private var edenNeedsUser = false
-
-    fun setEdenNeedsUser(needsUser: Boolean) {
-        if (edenNeedsUser == needsUser) return
-        edenNeedsUser = needsUser
-        setEden(model.eden)
     }
 
     private fun libraryEntry(snapshot: PickerModel): GridEntry? {
@@ -2881,6 +2880,7 @@ class ShellController(
         reachableSaves.keys.removeAll { it.second in changed }
         saveSync = states
         setupSteps = setup
+        model.eden?.let { eden -> model = model.copy(eden = eden.copy(setupSteps = setup[EDEN_SHELF_KEY]?.takeIf { eden.fromRomm })) }
         saveHealthEpoch += 1
         refreshPlayerSaves()
     }

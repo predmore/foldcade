@@ -116,6 +116,7 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import java.lang.ref.WeakReference
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import java.util.concurrent.ConcurrentHashMap
@@ -770,7 +771,6 @@ class FoldcadeApp : Application() {
                 withContext(Dispatchers.Main.immediate) {
                     refreshEdenSetting()
                     shell.setSaveSync(notes.sync, notes.setup)
-                    shell.setEdenNeedsUser(notes.edenNeedsUser)
                     shell.refreshPlayerSaves()
                     shell.noteShelfChanged()
                 }
@@ -1068,15 +1068,26 @@ class FoldcadeApp : Application() {
      */
     fun refreshSaveSync() {
         if (!::plugins.isInitialized || !::shell.isInitialized) return
+        saveSyncReads += 1
+        shell.setCheckingSaves(true)
         pluginLoad.launch {
-            val notes = readPlayerFolderNotes()
-            withContext(Dispatchers.Main.immediate) {
-                shell.setSaveSync(notes.sync, notes.setup)
-                shell.setEdenNeedsUser(notes.edenNeedsUser)
-                shell.refreshPlayerSaves()
+            try {
+                val notes = readPlayerFolderNotes()
+                withContext(Dispatchers.Main.immediate) {
+                    shell.setSaveSync(notes.sync, notes.setup)
+                    shell.refreshPlayerSaves()
+                }
+            } finally {
+                withContext(NonCancellable + Dispatchers.Main.immediate) {
+                    saveSyncReads -= 1
+                    if (saveSyncReads == 0) shell.setCheckingSaves(false)
+                }
             }
         }
     }
+
+    /** Reads of [refreshSaveSync] still running. Main thread only. */
+    private var saveSyncReads = 0
 
     internal fun noteSaveLaunch(route: GameRoute) {
         shell.savePlayer(route.play.platformId)?.let { saveSetupNotices.launch(shell.saveNoticePlayerId(it.id)) }
@@ -1133,15 +1144,22 @@ class FoldcadeApp : Application() {
             playerSaves.saveSync(player, uri)?.let { sync[player.id] = it }
             playerSaves.setupSteps(player, uri)?.let { setup[player.id] = it }
         }
+        // Eden keeps Switch saves per user, so one with none has nowhere to put them. Reading its
+        // provider can start Eden, so a folder that has shown a user is not read again.
         val eden = plugins.player("eden") as? EdenPlayer
-        val edenNeedsUser = eden?.let(::playerSaveFolder)?.let { !playerSaves.edenHasUser(eden, it) } == true
-        return PlayerFolderNotes(sync, setup, edenNeedsUser)
+        eden?.let(::playerSaveFolder)?.takeIf { it != edenUserFolder }?.let { folder ->
+            if (playerSaves.edenHasUser(eden, folder)) edenUserFolder = folder else setup.putIfAbsent(eden.id, Copy.edenUserSteps)
+        }
+        return PlayerFolderNotes(sync, setup)
     }
+
+    /** The Eden folder last seen holding a user. Users are not taken away in passing. */
+    @Volatile
+    private var edenUserFolder: String? = null
 
     private data class PlayerFolderNotes(
         val sync: Map<String, app.foldcade.api.plugin.SaveSyncState>,
         val setup: Map<String, String>,
-        val edenNeedsUser: Boolean,
     )
 
     /**

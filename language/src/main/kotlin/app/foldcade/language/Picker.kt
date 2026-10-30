@@ -581,7 +581,7 @@ sealed interface Row {
     /** Whether Foldcade can add Eden's keys and firmware from RomM. A opens Eden's folder. */
     data object EdenFolder : Row
 
-    /** Eden has no user yet. A opens Eden to make one. */
+    /** Eden needs a step of its own before its saves sync, as a user while it has none. A opens Eden. */
     data object EdenUser : Row
     data object AndroidGames : Row
     data object Apps : Row
@@ -794,8 +794,8 @@ data class EdenSetting(
     val fromRomm: Boolean,
     /** The installed Eden, which ties the row to that player's tile. */
     val packageName: String? = null,
-    /** True when Foldcade holds Eden's folder and Eden has no user yet, so no Switch save has a place. */
-    val needsUser: Boolean = false,
+    /** What Eden needs once before its saves sync, as a user while it has none, or null. Read from the folder Foldcade holds. */
+    val setupSteps: String? = null,
 )
 
 /**
@@ -1151,7 +1151,7 @@ fun rowText(row: Row, model: PickerModel): RowText = when (row) {
         Copy.retroArchCores,
         model.retroArch?.cores?.let { if (it == 1) Copy.oneCore else "$it ${Copy.cores}" } ?: Copy.showCores,
     )
-    Row.EdenUser -> RowText(Copy.edenUser, Copy.notSyncing)
+    Row.EdenUser -> RowText(Copy.setup, Copy.notSyncing)
     Row.EdenFolder -> RowText(
         Copy.edenKeys,
         if (model.eden?.fromRomm == true) Copy.edenFromRomm else Copy.setUp,
@@ -1497,6 +1497,8 @@ data class PickerModel(
     val savePicker: SavePickerState? = null,
     /** Set up saves. Null while it is closed. */
     val saveSetup: SaveSetupPage? = null,
+    /** True while Foldcade reads what each emulator's folder still needs, as just after a pick. Set up saves waits on it before moving on. */
+    val checkingSaves: Boolean = false,
     /** Every library is being read again. */
     val librarySyncing: Boolean = false,
     /** Alphabetical labels in display order. Empty when triggers jump screens instead. */

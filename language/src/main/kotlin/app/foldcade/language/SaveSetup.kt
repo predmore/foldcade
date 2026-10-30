@@ -121,7 +121,7 @@ fun setupSteps(entry: EmulatorShelfEntry, model: PickerModel): List<SetupStep> =
         is Row.PlayerSetup -> SetupStep.InApp(row.playerId, InAppStep.Setup, setting(row.playerId)?.setupSteps, done)
         Row.RetroArchCores -> SetupStep.Cores(done)
         Row.EdenFolder -> SetupStep.EdenFolder(done)
-        Row.EdenUser -> SetupStep.InApp(EDEN_SHELF_KEY, InAppStep.Setup, Copy.edenUserSteps, done)
+        Row.EdenUser -> SetupStep.InApp(EDEN_SHELF_KEY, InAppStep.Setup, model.eden?.setupSteps, done)
         else -> null
     }
 }
@@ -204,7 +204,8 @@ fun applySaveSetup(model: PickerModel, page: SaveSetupPage, meaning: Meaning, re
         Meaning.Back -> closeSaveSetup(model, page) to null
         Meaning.Activate -> when {
             tile == null -> if (saveSetupAllSet(tiles, page)) closeSaveSetup(model, page) to null else model to null
-            // A press while a fresh check lands goes on at once rather than into its Settings.
+            // A press while a fresh check lands goes on at once rather than into its Settings,
+            // once Foldcade has read what the new folder still needs.
             page.celebrating == tile.key -> model.advanceSaveSetup(tile.key) to null
             else -> when (val step = tile.step) {
                 null -> openTileSettings(model, page, tile) to null
@@ -246,6 +247,8 @@ private fun openTileSettings(model: PickerModel, page: SaveSetupPage, tile: Setu
  * picked, keeps the focus.
  */
 fun PickerModel.advanceSaveSetup(key: String): PickerModel {
+    // A step read from the new folder, as aPS3e's firmware, may be on its way: the tile keeps the focus until it is read.
+    if (checkingSaves) return this
     val page = saveSetup?.takeIf { it.celebrating == key } ?: return this
     val tiles = saveSetupTiles(this, page)
     val stays = page.focus != key || tiles.firstOrNull { it.key == key }?.done != true

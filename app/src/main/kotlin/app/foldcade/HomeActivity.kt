@@ -193,6 +193,8 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
             return@registerForActivityResult
         }
         foldcade.scope.launch(Dispatchers.Main.immediate) {
+            // A process that died behind the picker is still loading: the saved player id needs its player.
+            foldcade.awaitPlugins()
             when (purpose) {
                 FolderPurpose.RetroArchCores -> useRetroArchFolder(uri)
                 FolderPurpose.EdenFolder -> useEdenFolder(uri)
@@ -2110,7 +2112,8 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
                             if (foldcade.shell.setupValidationCurrent(ticket)) {
                                 foldcade.shell.closeConnect()
                                 // A new server is the moment to get every emulator's saves onto it.
-                                if (newServer) foldcade.shell.offerSaveSetup(hostScreen())
+                                // Not beside a running game: the page would take the controls from it.
+                                if (newServer && Panel.entries.none { foldcade.store.session.externalOn(it) != null }) foldcade.shell.offerSaveSetup(hostScreen())
                             }
                             foldcade.syncRomm()
                         } else if (foldcade.shell.setupValidationCurrent(ticket)) {

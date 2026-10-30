@@ -48,16 +48,16 @@ class SaveSetupTest {
     }
 
     @Test fun edenWithoutAUserIsOneInEmulatorStep() {
-        val ready = model.copy(eden = EdenSetting(fromRomm = true, packageName = "dev.eden.eden_emulator", needsUser = true))
+        val ready = model.copy(eden = EdenSetting(fromRomm = true, packageName = "dev.eden.eden_emulator", setupSteps = Copy.edenUserSteps))
         val eden = ready.openSaveSetup(HostScreen.Top).tile(EDEN_SHELF_KEY)
         val step = eden.step as SetupStep.InApp
         assertEquals(InAppStep.Setup, step.kind)
         assertEquals(Copy.edenUserSteps, step.steps)
         assertEquals(EDEN_SHELF_KEY, step.playerId)
-        val settled = ready.copy(eden = ready.eden!!.copy(needsUser = false)).openSaveSetup(HostScreen.Top).tile(EDEN_SHELF_KEY)
+        val settled = ready.copy(eden = ready.eden!!.copy(setupSteps = null)).openSaveSetup(HostScreen.Top).tile(EDEN_SHELF_KEY)
         assertTrue(settled.done)
         // Without Eden's folder, the folder comes first and no user step shows.
-        val noFolder = model.copy(eden = EdenSetting(fromRomm = false, packageName = "dev.eden.eden_emulator", needsUser = true))
+        val noFolder = model.copy(eden = EdenSetting(fromRomm = false, packageName = "dev.eden.eden_emulator", setupSteps = Copy.edenUserSteps))
         assertTrue(noFolder.openSaveSetup(HostScreen.Top).tile(EDEN_SHELF_KEY).steps.single() is SetupStep.EdenFolder)
     }
 
@@ -295,6 +295,16 @@ class SaveSetupTest {
         val next = folder.settle { it.saves("armsx2") { s -> s.copy(chosen = true) } }
         assertNull(next.page().celebrating)
         assertEquals(InAppStep.MemoryCard, (next.tile("armsx2").step as SetupStep.InApp).kind)
+    }
+
+    @Test fun theFocusWaitsWhileTheNewFolderIsStillBeingRead() {
+        val opened = model.openSaveSetup(HostScreen.Top).on("melonds")
+        val picked = opened.settle { it.saves("melonds") { s -> s.copy(chosen = true) }.copy(checkingSaves = true) }
+        assertEquals("melonds", picked.page().celebrating)
+        assertEquals(picked, picked.advanceSaveSetup("melonds"))
+        assertEquals("melonds", picked.press(Meaning.Activate).first.page().focus)
+        val read = picked.copy(checkingSaves = false)
+        assertEquals("retroarch.nes", read.advanceSaveSetup("melonds").page().focus)
     }
 
     @Test fun aStepThatShowsUpOnlyAfterTheFolderCallsTheCelebrationOff() {
