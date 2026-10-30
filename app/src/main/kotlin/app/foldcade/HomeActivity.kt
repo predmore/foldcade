@@ -788,8 +788,8 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
             launchStandIn(game)
             return
         }
-        if (!foldersChecked) {
-            if (foldcade.launchWork.active) return
+        // Only a player that would ask for its folder looks first, so other launches start at once.
+        if (!foldersChecked && player is SaveFolderHolder && player !is EdenPlayer && !player.hasSaveFolder()) {
             val generation = beginLaunch()
             foldcade.launchWork.job = foldcade.scope.launch {
                 foldcade.findPlayerSaveFolders()
@@ -978,7 +978,7 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
                         saveFolderDialog(
                             hostScreen(),
                             playerName = player.displayName,
-                            opensThere = foldcade.saveFolderStart(player) != null,
+                            opensThere = foldcade.saveFolderOpensThere(player),
                             needed = true,
                         )
                     } else {
@@ -1184,7 +1184,7 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
                 throw cancelled
             }
         }
-        foldcade.findPlayerSaveFolders()
+        if (first is SaveFolderHolder && first !is EdenPlayer && !first.hasSaveFolder()) foldcade.findPlayerSaveFolders()
         if (first is HostedSaveFolder) foldcade.refreshHostedFolders()
         val syncState = if (first is SaveFolderHolder && first.hasSaveFolder()) {
             val folder = foldcade.playerSaveFolder(first)
@@ -1476,7 +1476,7 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
                 hostScreen(),
                 syncs = true,
                 playerName = player?.displayName,
-                opensThere = foldcade.saveFolderStart(player) != null,
+                opensThere = foldcade.saveFolderOpensThere(player),
                 needed = needsItsFolder(player),
             ),
         )
@@ -2305,14 +2305,9 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
         openSaveFolderPicker(foldcade.plugins.player(playerId))
     }
 
-    /** Refreshes the best starting folder before opening any save-folder picker. */
+    /** Opens the save-folder picker at once, at the start the last look found, so a second press cannot open another. */
     private fun openSaveFolderPicker(player: Player?) {
-        foldcade.scope.launch {
-            foldcade.findPlayerSaveFolders()
-            withContext(Dispatchers.Main.immediate) {
-                if (!isDestroyed && !isFinishing) folderPicker.launch(foldcade.saveFolderStart(player)?.let(Uri::parse))
-            }
-        }
+        folderPicker.launch(foldcade.saveFolderStart(player)?.let(Uri::parse))
     }
 
     /**

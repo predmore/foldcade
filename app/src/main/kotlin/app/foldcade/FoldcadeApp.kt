@@ -989,9 +989,10 @@ class FoldcadeApp : Application() {
                 val saved = store.playerSaveFolder(key)?.let { SavedSaveFolder(it, store.playerSaveFolderFound(key)) }
                 val finder = android.finder(player, grants)
                 val result = finder.find(holder)
-                result.startingFolder?.let { saveFolderStarts[key] = it }
+                if (result.placeStart != null) saveFolderStarts[key] = result.placeStart else saveFolderStarts.remove(key)
                 val next = detectedSaveFolder(saved, { android.reachable(player, holder, it, grants) }, { result.folder })
-                val bound = next != null && android.canReach(next.uri, grants)
+                // A found folder was just probed. A chosen one only needs its grant: a slow provider is no reason to drop it.
+                val bound = next != null && android.holdsGrant(next.uri, grants)
                 // A picker can finish while the provider is being read. Its choice wins.
                 withContext(Dispatchers.Main.immediate) {
                     if (store.playerSaveFolder(key) != saved?.uri || store.playerSaveFolderFound(key) != (saved?.found == true)) return@withContext
@@ -1021,6 +1022,11 @@ class FoldcadeApp : Application() {
     internal fun saveFolderStart(player: Player?): String? = (player as? SaveFolderHolder)?.let {
         saveFolderStarts[player.saveFolderId()] ?: it.suggestedSaveFolder ?: it.saveFolderPlaces.firstOrNull()?.let(::primaryFolderDocument)
     }
+
+    /** True when the picker opens at a folder that is there: a place found on the device, or the player's own. */
+    internal fun saveFolderOpensThere(player: Player?): Boolean = (player as? SaveFolderHolder)?.let {
+        saveFolderStarts[player.saveFolderId()] != null || it.suggestedSaveFolder != null
+    } == true
 
     /** The manifest's [HostedSavesProvider] authority. */
     val hostedAuthority: String get() = "$packageName${HostedSavesProvider.AUTHORITY_SUFFIX}"

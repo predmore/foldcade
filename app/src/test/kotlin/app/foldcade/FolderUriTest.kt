@@ -40,4 +40,10 @@ class FolderUriTest {
         assertEquals(tree, folderGrantUri(folder))
         assertEquals(tree, folderGrantUri("content://com.android.externalstorage.documents/tree/primary%3asaves"))
     }
+
+    @Test fun rebuiltTreeUrisKeepTheCharactersAndroidLeavesUnencoded() {
+        val picked = "content://com.android.externalstorage.documents/tree/primary%3AEmu%20(old)%2FJon's%20saves!~"
+        assertEquals(picked, folderGrantUri(picked))
+        assertEquals("primary:Emu (old)/Jon's saves!~", folderDocumentId(picked))
+    }
 }

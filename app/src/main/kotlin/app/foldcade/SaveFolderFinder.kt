@@ -3,7 +3,8 @@ package app.foldcade
 import app.foldcade.api.plugin.SaveFolderHolder
 
 internal data class SaveFolderGrant(val uri: String, val read: Boolean, val write: Boolean)
-internal data class SaveFolderFind(val folder: String?, val startingFolder: String?, val candidates: List<String>)
+/** [placeStart] is a place that is there; [startingFolder] falls back to hints that may not be. */
+internal data class SaveFolderFind(val folder: String?, val startingFolder: String?, val candidates: List<String>, val placeStart: String? = null)
 internal data class SavedSaveFolder(val uri: String, val found: Boolean)
 
 /** A chosen folder stays chosen. Only a found folder can be cleared or replaced by detection. */
@@ -29,13 +30,15 @@ internal class SaveFolderFinder(
             Place(path, uri, exists || placeExists(path), exists && fits(holder, uri!!) && (!holder.saveFolderPickedInPlayer || inPlayer), inPlayer)
         }
         val counting = places.filter { it.counts }
-        val chosen = counting.singleOrNull() ?: counting.filter { it.inPlayer }.singleOrNull()
-        val start = counting.firstOrNull() ?: places.firstOrNull { it.exists }
+        // A player given two of its places keeps one of them, and its grants cannot say which.
+        val playerHasOne = !holder.saveFolderPickedInPlayer || places.count { it.inPlayer } <= 1
+        val chosen = (counting.singleOrNull() ?: counting.filter { it.inPlayer }.singleOrNull())?.takeIf { playerHasOne }
+        val start = (counting.firstOrNull() ?: places.firstOrNull { it.exists })?.let { primaryFolderDocument(it.path) }
         return SaveFolderFind(
             chosen?.uri,
-            start?.let { primaryFolderDocument(it.path) } ?: holder.suggestedSaveFolder
-                ?: places.firstOrNull()?.let { primaryFolderDocument(it.path) },
+            start ?: holder.suggestedSaveFolder ?: places.firstOrNull()?.let { primaryFolderDocument(it.path) },
             counting.mapNotNull { it.uri },
+            start,
         )
     }
 
@@ -59,7 +62,7 @@ internal class SaveFolderFinder(
         if (result.candidates.isNotEmpty()) return null
         if (holder.saveFolderMarkers.isNotEmpty()) {
             val id = folderDocumentId(picked)
-            return childNames(picked).orEmpty().map { folderDocumentUri(picked, "$id/$it") }
+            return childNames(picked).orEmpty().map { folderDocumentUri(picked, if (id.endsWith(':')) "$id$it" else "$id/$it") }
                 .filter { isDirectory(it) && fits(holder, it) && (!holder.saveFolderPickedInPlayer || playerGrant(folderDocumentId(it))) }
                 .singleOrNull()
         }

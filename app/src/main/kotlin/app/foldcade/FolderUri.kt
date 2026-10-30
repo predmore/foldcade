@@ -38,4 +38,6 @@ internal fun containsFolder(parent: String, child: String): Boolean {
 }
 
 private fun decodeDocumentId(value: String): String = URLDecoder.decode(value.replace("+", "%2B"), "UTF-8")
+/** As Android's `Uri.encode`, which leaves `!'()*~` as they are, so a rebuilt tree URI matches the grant's. */
 private fun encodeDocumentId(value: String): String = URLEncoder.encode(value, "UTF-8").replace("+", "%20")
+    .replace("%21", "!").replace("%27", "'").replace("%28", "(").replace("%29", ")").replace("%7E", "~")

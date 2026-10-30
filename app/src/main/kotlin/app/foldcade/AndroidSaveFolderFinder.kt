@@ -38,8 +38,11 @@ internal class AndroidSaveFolderFinder(private val context: Context) {
             (!holder.saveFolderPickedInPlayer || playerHolds(player, folderDocumentId(uri)))
     }
 
-    fun canReach(uri: String, grants: List<SaveFolderGrant>): Boolean =
-        grants.any { it.read && it.write && folderGrantUri(it.uri) == folderGrantUri(uri) } && isDirectory(uri)
+    fun canReach(uri: String, grants: List<SaveFolderGrant>): Boolean = holdsGrant(uri, grants) && isDirectory(uri)
+
+    /** Whether Foldcade still holds the tree [uri] is in, read and write. No I/O. */
+    fun holdsGrant(uri: String, grants: List<SaveFolderGrant>): Boolean =
+        grants.any { it.read && it.write && folderGrantUri(it.uri) == folderGrantUri(uri) }
 
     fun isDirectory(uri: String): Boolean = try {
         val document = Uri.parse(folderDocumentUri(uri, folderDocumentId(uri)))
@@ -58,15 +61,8 @@ internal class AndroidSaveFolderFinder(private val context: Context) {
                 null
             }
         } ?: return false
-        var ancestor = documentId
-        while (true) {
-            val tree = DocumentsContract.buildTreeDocumentUri("com.android.externalstorage.documents", ancestor)
-            val document = DocumentsContract.buildDocumentUriUsingTree(tree, documentId)
-            if (context.checkUriPermission(tree, -1, uid, flags) == PackageManager.PERMISSION_GRANTED ||
-                context.checkUriPermission(document, -1, uid, flags) == PackageManager.PERMISSION_GRANTED) return true
-            val path = ancestor.substringAfter(':')
-            if (path.isEmpty()) return false
-            ancestor = ancestor.substringBefore(':') + ":" + path.substringBeforeLast('/', "")
-        }
+        // The player's own picker grants the very folder it uses. A grant on a folder above it means it uses that one.
+        val tree = DocumentsContract.buildTreeDocumentUri("com.android.externalstorage.documents", documentId)
+        return context.checkUriPermission(tree, -1, uid, flags) == PackageManager.PERMISSION_GRANTED
     }
 }

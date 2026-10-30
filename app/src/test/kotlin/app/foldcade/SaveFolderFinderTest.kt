@@ -94,6 +94,31 @@ class SaveFolderFinderTest {
         assertNull(finder(grant(tree("primary:"))).find(h).folder)
     }
 
+    @Test fun aPlayerGivenBothCopiesStaysAmbiguousWhenFoldcadeReachesOnlyOne() {
+        directories += listOf("primary:saves/Azahar", "primary:Azahar")
+        directories.forEach { names[it] = listOf("sdmc") }
+        playerGrants += directories
+        val h = holder("saves/Azahar", "Azahar", markers = setOf("sdmc"), picked = true)
+        val result = finder(grant(tree("primary:saves"))).find(h)
+        assertNull(result.folder)
+        assertEquals(primaryFolderDocument("saves/Azahar"), result.placeStart)
+    }
+
+    @Test fun aRootPickIsNarrowedToItsChildWithMarkers() {
+        val root = tree("primary:")
+        directories += listOf("primary:", "primary:Azahar")
+        names["primary:"] = listOf("Azahar", "Music")
+        names["primary:Azahar"] = listOf("sdmc")
+        val h = holder(markers = setOf("sdmc"))
+        assertEquals(folderDocumentUri(root, "primary:Azahar"), finder().narrow(h, root))
+    }
+
+    @Test fun placeStartIsOnlyAPlaceThatIsThere() {
+        assertNull(finder().find(holder("one")).placeStart)
+        placesOnDisk += "one"
+        assertEquals(primaryFolderDocument("one"), finder().find(holder("one")).placeStart)
+    }
+
     @Test fun twoPlausibleFoldersAreAmbiguousEvenWhenOrdered() {
         directories += listOf("primary:one", "primary:two")
         val f = finder(grant(tree("primary:")))
