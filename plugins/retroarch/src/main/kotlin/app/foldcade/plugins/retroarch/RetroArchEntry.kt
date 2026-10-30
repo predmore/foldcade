@@ -120,6 +120,8 @@ class RetroArchPlayer internal constructor(
 
     override fun hasSaveFolder(): Boolean = saves.uri != null
 
+    override val saveFolderPlaces: List<String> = listOf("RetroArch/saves")
+
     /** The core a launch through [packageName] loads. */
     fun coreChoice(packageName: String): CoreChoice {
         val files = cores.coreFiles(packageName) ?: return CoreChoice.Unknown(system.cores.first())

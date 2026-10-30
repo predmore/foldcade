@@ -4,7 +4,7 @@ import android.content.Intent
 
 /**
  * Keeps a document-tree grant. A save folder asks for write, then read.
- * A library asks for read only. Either call can throw when the grant is
+ * A library keeps write too when offered; its scans only read. Either call can throw when the grant is
  * not persistable; a thrown read after a failed write used to crash the
  * picker result.
  *
@@ -27,4 +27,12 @@ internal fun persistTreeGrant(write: Boolean, take: (Int) -> Unit): Boolean {
     } catch (_: SecurityException) {
         false
     }
+}
+
+/** A read-only tree is reachable for saves only after Android keeps its write grant. */
+internal fun upgradeTreeGrant(take: () -> Unit): Boolean = try {
+    take()
+    true
+} catch (_: SecurityException) {
+    false
 }

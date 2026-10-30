@@ -143,16 +143,21 @@ class SessionStore(private val prefs: SharedPreferences) : SaveMarks {
     fun playerSaveFolder(playerId: String): String? =
         prefs.getString(saveFolderKey(playerId), null)?.takeIf { it.isNotBlank() }
 
-    fun setPlayerSaveFolder(playerId: String, uri: String) {
-        prefs.edit().putString(saveFolderKey(playerId), uri).apply()
+    fun playerSaveFolderFound(playerId: String): Boolean = prefs.getBoolean("player_save_found:$playerId", false)
+
+    fun setPlayerSaveFolder(playerId: String, uri: String?, found: Boolean = false) {
+        prefs.edit().putString(saveFolderKey(playerId), uri)
+            .putBoolean("player_save_found:$playerId", uri != null && found).apply()
     }
 
     /** A tree grant can be shared by a library source, several players, RetroArch's cores, and Eden's folder. */
-    fun folderTreeInUse(uri: String): Boolean = uri in folderTrees() ||
-        prefs.all.any { (key, value) ->
+    fun folderTreeInUse(uri: String): Boolean {
+        val tree = folderGrantUri(uri)
+        return folderTrees().any { folderGrantUri(it) == tree } || prefs.all.any { (key, value) ->
             (key.startsWith(PLAYER_SAVE_FOLDER_PREFIX) || key.startsWith(CORES_FOLDER_PREFIX) || key.startsWith(EDEN_FOLDER_PREFIX)) &&
-                value == uri
+                value is String && value.isNotBlank() && folderGrantUri(value) == tree
         }
+    }
 
     override fun mark(key: String): String? = prefs.getString(saveMarkKey(key), null)
 

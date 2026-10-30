@@ -3,7 +3,7 @@
 package app.foldcade.api.plugin
 
 /**
- * A player whose save folder is a tree the user has already picked.
+ * A player whose save folder is a granted tree or a document inside one.
  * [bindSaveFolder] stores a content URI. It does not search the device.
  * Players that do not implement this keep their own [Player.saveDeclarations].
  */
@@ -26,6 +26,23 @@ interface SaveFolderHolder {
      */
     val suggestedSaveFolder: String?
         get() = null
+
+    /**
+     * Usual save folders below primary shared storage, most likely first, such as
+     * `RetroArch/saves`. The shell can reuse a writable grant when exactly one
+     * folder fits. Empty names no places. Added in API minor 18.
+     */
+    val saveFolderPlaces: List<String>
+        get() = emptyList()
+
+    /**
+     * True when the player gets this folder through its own Android picker.
+     * A place counts only while the installed player holds read and write access
+     * to it. False for folders the player opens by path or in its own app storage.
+     * Added in API minor 18.
+     */
+    val saveFolderPickedInPlayer: Boolean
+        get() = false
 
     /**
      * Names the player's save folder holds, one of which a folder the user picks

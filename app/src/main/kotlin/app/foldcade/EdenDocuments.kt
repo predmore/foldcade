@@ -20,7 +20,7 @@ internal object EdenFolders {
     /** True when the tree is Eden's data directory itself, not a folder inside it. */
     fun isRoot(tree: Uri): Boolean {
         val id = try {
-            DocumentsContract.getTreeDocumentId(tree)
+            folderDocumentId(tree.toString())
         } catch (_: IllegalArgumentException) {
             return false
         }
@@ -42,7 +42,7 @@ internal class EdenFolderReader(
         val chosen = chosenFolder(packageName)?.let(Uri::parse) ?: return null
         if (chosen.authority != EdenFolders.authority(packageName) || !EdenFolders.isRoot(chosen)) return null
         val held = context.contentResolver.persistedUriPermissions.any { permission ->
-            permission.uri == chosen && permission.isReadPermission && permission.isWritePermission
+            folderGrantUri(permission.uri.toString()) == folderGrantUri(chosen.toString()) && permission.isReadPermission && permission.isWritePermission
         }
         return chosen.takeIf { held }
     }
@@ -56,7 +56,7 @@ internal class EdenDocumentTree(
     private val resolver: ContentResolver,
     private val tree: Uri,
 ) : EdenTree {
-    private val rootId: String = DocumentsContract.getTreeDocumentId(tree)
+    private val rootId: String = folderDocumentId(tree.toString())
 
     override fun exists(relativePath: String): Boolean = find(relativePath) != null
 

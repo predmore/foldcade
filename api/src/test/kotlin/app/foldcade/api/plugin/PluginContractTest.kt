@@ -121,7 +121,9 @@ class PluginContractTest {
         assertTrue(aliases.isDefault)
         assertTrue(IdlePlatform().aliases.isEmpty())
         assertEquals(1, PLUGIN_API_VERSION)
-        assertEquals(17, PLUGIN_API_MINOR)
+        assertEquals(18, PLUGIN_API_MINOR)
+        assertTrue(SaveFolderHolder::class.java.methods.single { it.name == "getSaveFolderPlaces" }.isDefault)
+        assertTrue(SaveFolderHolder::class.java.methods.single { it.name == "getSaveFolderPickedInPlayer" }.isDefault)
         assertTrue(GameFileReader::class.java.methods.single { it.name == "getFileName" }.isDefault)
         assertNull(object : GameFileReader { override fun read(offset: Long, length: Int): ByteArray? = null }.fileName)
         assertTrue(LibraryBackend::class.java.methods.single { it.name == "unsyncedSaves" }.isDefault)
@@ -166,6 +168,16 @@ class PluginContractTest {
         assertTrue(Player::class.java.methods.single { it.name == "getOpensByPath" }.isDefault)
         assertTrue(SaveFolderHolder::class.java.methods.single { it.name == "getSaveFolderKey" }.isDefault)
         assertTrue(SaveFolderHolder::class.java.methods.single { it.name == "getSuggestedSaveFolder" }.isDefault)
+    }
+
+    @Test
+    fun saveFolderDetectionDefaultsToNoKnownPlaces() {
+        val holder = object : SaveFolderHolder {
+            override fun bindSaveFolder(contentUri: String) = Unit
+            override fun hasSaveFolder() = false
+        }
+        assertTrue(holder.saveFolderPlaces.isEmpty())
+        assertFalse(holder.saveFolderPickedInPlayer)
     }
 
     @Test

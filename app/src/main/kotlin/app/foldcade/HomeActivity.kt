@@ -189,46 +189,50 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
             }
             return@registerForActivityResult
         }
-        when (purpose) {
-            FolderPurpose.RetroArchCores -> useRetroArchFolder(uri)
-            FolderPurpose.EdenFolder -> useEdenFolder(uri)
-            FolderPurpose.EdenSaveOffer -> useEdenFolder(uri, saveOffer = true)
-            FolderPurpose.Library -> {
-                if (persistTreeGrant(write = false) { flags ->
-                    contentResolver.takePersistableUriPermission(uri, flags)
-                }) {
-                    foldcade.useFolder(uri)
-                } else {
-                    foldcade.shell.present(playerNotice(Copy.folderGrantTitle, Copy.folderGrantFailed, hostScreen()))
+        foldcade.scope.launch(Dispatchers.Main.immediate) {
+            when (purpose) {
+                FolderPurpose.RetroArchCores -> useRetroArchFolder(uri)
+                FolderPurpose.EdenFolder -> useEdenFolder(uri)
+                FolderPurpose.EdenSaveOffer -> useEdenFolder(uri, saveOffer = true)
+                FolderPurpose.Library -> {
+                    if (persistTreeGrant(write = true) { flags ->
+                        contentResolver.takePersistableUriPermission(uri, flags)
+                    }) {
+                        foldcade.useFolder(uri)
+                    } else {
+                        foldcade.shell.present(playerNotice(Copy.folderGrantTitle, Copy.folderGrantFailed, hostScreen()))
+                    }
+                }
+                FolderPurpose.LaunchOffer -> {
+                    // Not the player's folder: ask again, and the game waits.
+                    val player = playerForPendingLaunch()
+                    val folder = pickedSaveFolder(uri, player, ask = true) ?: return@launch
+                    if (rememberSaveFolder(folder, player)) {
+                        pendingLaunch?.let { launchGame(it) }
+                    } else {
+                        cancelLaunches()
+                    }
+                }
+                FolderPurpose.SaveOffer -> {
+                    val player = settingsPlayerId?.let { foldcade.plugins.player(it) }
+                    settingsPlayerId = null
+                    val folder = pickedSaveFolder(uri, player, ask = pendingBackend != null) ?: return@launch
+                    // A recreated screen lost the game. The folder is kept, and the next press starts it.
+                    val pending = pendingBackend
+                    pendingBackend = null
+                    if (rememberSaveFolder(folder, player) && pending != null) {
+                        continueBackendSaveAsk(pending, SaveFolderAnswer.Chosen)
+                    } else {
+                        cancelLaunches()
+                    }
+                }
+                FolderPurpose.Settings -> {
+                    val player = settingsPlayerId?.let { foldcade.plugins.player(it) }
+                    settingsPlayerId = null
+                    pickedSaveFolder(uri, player, ask = false)?.let { rememberSaveFolder(it, player) }
                 }
             }
-            FolderPurpose.LaunchOffer -> {
-                // Not the player's folder: ask again, and the game waits.
-                if (!pickedSaveFolderFits(uri, playerForPendingLaunch(), ask = true)) return@registerForActivityResult
-                if (rememberSaveFolder(uri, playerForPendingLaunch())) {
-                    pendingLaunch?.let { launchGame(it) }
-                } else {
-                    cancelLaunches()
-                }
-            }
-            FolderPurpose.SaveOffer -> {
-                val player = settingsPlayerId?.let { foldcade.plugins.player(it) }
-                settingsPlayerId = null
-                if (!pickedSaveFolderFits(uri, player, ask = pendingBackend != null)) return@registerForActivityResult
-                // A recreated screen lost the game. The folder is kept, and the next press starts it.
-                val pending = pendingBackend
-                pendingBackend = null
-                if (rememberSaveFolder(uri, player) && pending != null) {
-                    continueBackendSaveAsk(pending, SaveFolderAnswer.Chosen)
-                } else {
-                    cancelLaunches()
-                }
-            }
-            FolderPurpose.Settings -> {
-                val player = settingsPlayerId?.let { foldcade.plugins.player(it) }
-                settingsPlayerId = null
-                if (pickedSaveFolderFits(uri, player, ask = false)) rememberSaveFolder(uri, player)
-            }
+            foldcade.refreshFoundSaveFolders()
         }
     }
 
@@ -483,6 +487,7 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
         foldcade.refreshRetroArchCoresOnReturn()
         // A player may have been pointed at the folder Foldcade hosts for its saves while Home was away.
         foldcade.refreshHostedFolders()
+        foldcade.refreshFoundSaveFolders()
         foldcade.refreshEdenSetting()
         foldcade.shell.refreshPlayerSaves()
         foldcade.refreshSaveSync()
@@ -769,7 +774,7 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
         }
     }
 
-    private fun launchGame(index: Int, saveSyncDeclinedFor: String? = null) {
+    private fun launchGame(index: Int, saveSyncDeclinedFor: String? = null, foldersChecked: Boolean = false) {
         val game = Shelf.games.getOrNull(index) ?: return
         if (game.emptyShelfHint) return
         val player = game.platformId?.let(::playerFor)
@@ -781,6 +786,21 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
                 return
             }
             launchStandIn(game)
+            return
+        }
+        // Only a player that would ask for its folder looks first, so other launches start at once.
+        if (!foldersChecked && player is SaveFolderHolder && player !is EdenPlayer && !player.hasSaveFolder()) {
+            // A library game already preparing keeps going, as before.
+            if (game.libraryId != null && game.remoteKey != null && foldcade.launchWork.active) return
+            val generation = beginLaunch()
+            foldcade.launchWork.job = foldcade.scope.launch {
+                foldcade.findPlayerSaveFolders()
+                withContext(Dispatchers.Main.immediate) {
+                    if (!launchCurrent(generation)) return@withContext
+                    foldcade.launchWork.job = null
+                    launchGame(index, saveSyncDeclinedFor, foldersChecked = true)
+                }
+            }
             return
         }
         val libraryId = game.libraryId
@@ -960,7 +980,7 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
                         saveFolderDialog(
                             hostScreen(),
                             playerName = player.displayName,
-                            opensThere = (player as? SaveFolderHolder)?.suggestedSaveFolder != null,
+                            opensThere = foldcade.saveFolderOpensThere(player),
                             needed = true,
                         )
                     } else {
@@ -1166,6 +1186,7 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
                 throw cancelled
             }
         }
+        if (first is SaveFolderHolder && first !is EdenPlayer && !first.hasSaveFolder()) foldcade.findPlayerSaveFolders()
         if (first is HostedSaveFolder) foldcade.refreshHostedFolders()
         val syncState = if (first is SaveFolderHolder && first.hasSaveFolder()) {
             val folder = foldcade.playerSaveFolder(first)
@@ -1457,7 +1478,7 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
                 hostScreen(),
                 syncs = true,
                 playerName = player?.displayName,
-                opensThere = (player as? SaveFolderHolder)?.suggestedSaveFolder != null,
+                opensThere = foldcade.saveFolderOpensThere(player),
                 needed = needsItsFolder(player),
             ),
         )
@@ -1997,7 +2018,7 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
                     } else {
                         folderPurpose = FolderPurpose.SaveOffer
                         settingsPlayerId = pending.playerId
-                        folderPicker.launch(suggestedSaveFolder(foldcade.plugins.player(pending.playerId)))
+                        openSaveFolderPicker(foldcade.plugins.player(pending.playerId))
                     }
                 } else {
                     skipSaveFolderAndLaunch()
@@ -2007,7 +2028,7 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
                     openEdenFolder(fromOffer = true)
                 } else {
                     folderPurpose = FolderPurpose.LaunchOffer
-                    folderPicker.launch(suggestedSaveFolder(playerForPendingLaunch()))
+                    openSaveFolderPicker(playerForPendingLaunch())
                 }
             } else {
                 skipSaveFolderAndLaunch()
@@ -2283,12 +2304,13 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
         }
         settingsPlayerId = playerId
         folderPurpose = FolderPurpose.Settings
-        folderPicker.launch(suggestedSaveFolder(foldcade.plugins.player(playerId)))
+        openSaveFolderPicker(foldcade.plugins.player(playerId))
     }
 
-    /** Where the save-folder picker opens: the player's own save directory, when it names one. */
-    private fun suggestedSaveFolder(player: Player?): Uri? =
-        (player as? SaveFolderHolder)?.suggestedSaveFolder?.let(Uri::parse)
+    /** Opens the save-folder picker at once, at the start the last look found, so a second press cannot open another. */
+    private fun openSaveFolderPicker(player: Player?) {
+        folderPicker.launch(foldcade.saveFolderStart(player)?.let(Uri::parse))
+    }
 
     /**
      * A player handed a different game may quit instead of opening it, as
@@ -2423,14 +2445,15 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
         val write = Intent.FLAG_GRANT_WRITE_URI_PERMISSION
         val flags = read or write
         val root = packageName != null && packageName == expected && EdenFolders.isRoot(uri)
+        val grant = Uri.parse(folderGrantUri(uri.toString()))
         val took = root && try {
-            contentResolver.takePersistableUriPermission(uri, flags)
+            contentResolver.takePersistableUriPermission(grant, flags)
             true
         } catch (_: SecurityException) {
             false
         }
         val held = took && contentResolver.persistedUriPermissions.any { permission ->
-            permission.uri == uri && permission.isReadPermission && permission.isWritePermission
+            folderGrantUri(permission.uri.toString()) == grant.toString() && permission.isReadPermission && permission.isWritePermission
         }
         if (!held || packageName != expected) {
             // The held launch stays. Try again opens the picker; Not now starts it.
@@ -2548,7 +2571,7 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
 
     private fun releaseUnlessUsed(uri: String, flags: Int) {
         if (foldcade.store.folderTreeInUse(uri)) return
-        releaseGrant(Uri.parse(uri), flags)
+        releaseGrant(Uri.parse(folderGrantUri(uri)), flags)
     }
 
     private fun releaseGrant(uri: Uri, flags: Int) {
@@ -2614,12 +2637,19 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
     }
 
     /**
-     * True when [uri] can be [player]'s save folder. A folder that holds none of what
-     * its folder holds is not kept: with [ask], the save-folder ask comes back saying
-     * so, and the launch it holds still waits; without, a notice says so.
+     * The picked folder or one unambiguous save folder inside it. With [ask],
+     * a folder that does not fit brings the save-folder ask back and the launch
+     * still waits; without, a notice says so.
      */
-    private fun pickedSaveFolderFits(uri: Uri, player: Player?, ask: Boolean): Boolean {
-        if (foldcade.playerSaves.looksLikeSaveFolder(player, uri.toString())) return true
+    private suspend fun pickedSaveFolder(uri: Uri, player: Player?, ask: Boolean): Uri? {
+        if (player is EdenPlayer) return uri
+        val narrowed = withContext(Dispatchers.IO) {
+            val holder = player as? SaveFolderHolder ?: return@withContext uri
+            AndroidSaveFolderFinder(foldcade).finder(player, emptyList()).narrow(holder, uri.toString())?.let(Uri::parse)
+                // A folder the provider cannot list yet passes, as it always has.
+                ?: uri.takeIf { AndroidSaveDocuments(contentResolver).childNames(it.toString()) == null }
+        }
+        if (narrowed != null) return narrowed
         val markers = (player as? SaveFolderHolder)?.saveFolderMarkers.orEmpty()
         val name = player?.displayName.orEmpty()
         if (ask) {
@@ -2630,7 +2660,7 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
         } else {
             foldcade.shell.present(playerNotice(Copy.saveFolderTitle, wrongSaveFolderBody(name, markers), hostScreen()))
         }
-        return false
+        return null
     }
 
     private fun rememberSaveFolder(uri: Uri, player: Player?): Boolean {
@@ -2639,7 +2669,7 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
         }
         val read = Intent.FLAG_GRANT_READ_URI_PERMISSION
         val write = Intent.FLAG_GRANT_WRITE_URI_PERMISSION
-        if (!persistTreeGrant(write = true) { flags -> contentResolver.takePersistableUriPermission(uri, flags) }) {
+        if (!persistTreeGrant(write = true) { flags -> contentResolver.takePersistableUriPermission(Uri.parse(folderGrantUri(uri.toString())), flags) }) {
             foldcade.shell.present(playerNotice(Copy.saveFolderTitle, Copy.folderGrantFailed, hostScreen()))
             return false
         }

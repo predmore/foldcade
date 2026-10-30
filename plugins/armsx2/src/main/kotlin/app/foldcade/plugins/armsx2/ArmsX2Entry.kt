@@ -90,6 +90,9 @@ class ArmsX2Player : Player, SaveFolderHolder {
 
     override fun hasSaveFolder(): Boolean = saveFolder != null
 
+    /** Nightly's application id is set in ARMSX2's `platforms/android/tools/ci-nightly-dualcore.sh`. */
+    override val saveFolderPlaces: List<String> = listOf("Android/data/com.armsx2/files", "Android/data/com.armsx2.nightly/files")
+
     /** The GitHub build's data folder. Android lets the picker choose it on the Thor. */
     override val suggestedSaveFolder: String = DATA_FOLDER
 
