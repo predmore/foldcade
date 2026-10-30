@@ -143,7 +143,8 @@ fun saveSetupTiles(model: PickerModel, page: SaveSetupPage): List<SetupTile> {
     val helps = emulators.any { tile -> tile.steps.any { it is SetupStep.Folder && it.findable && !it.done } }
     val find = (!model.allFilesGranted && helps) || (model.allFilesGranted && page.offeredFind)
     if (!find) return emulators
-    val found = emulators.filter { it.done && it.foundIn != null }.map { it.label }
+    // A folder found counts even while its emulator has another step, as RetroArch's cores.
+    val found = emulators.filter { it.foundIn != null }.map { it.label }
     return listOf(SetupTile(FIND_SAVES_TILE, SettingsCopy.findSaves, null, listOf(SetupStep.AllFiles(model.allFilesGranted)), found = found)) + emulators
 }
 

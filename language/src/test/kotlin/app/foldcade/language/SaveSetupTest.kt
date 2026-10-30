@@ -161,6 +161,9 @@ class SaveSetupTest {
         }
         val find = found.tile(FIND_SAVES_TILE)
         assertEquals(listOf("melonDS", "RetroArch"), find.found)
+        // RetroArch's folder was found even while its cores are still to show.
+        val coresLeft = found.copy(retroArch = RetroArchSetting(cores = null, packageName = "com.retroarch.aarch64"))
+        assertEquals(listOf("melonDS", "RetroArch"), coresLeft.tile(FIND_SAVES_TILE).found)
         assertEquals("Found melonDS and RetroArch.", SaveSetupCopy.stepBody(find, checking = true))
         assertNull(SaveSetupCopy.stepTitle(find.step))
         // One stagger more for each, so the flips are seen before the focus moves.

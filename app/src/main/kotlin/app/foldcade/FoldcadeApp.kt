@@ -1002,7 +1002,8 @@ class FoldcadeApp : Application() {
                     if (store.playerSaveFolder(key) != saved?.uri || store.playerSaveFolderFound(key) != (saved?.found == true)) return@withContext
                     if (next != saved) store.setPlayerSaveFolder(key, next?.uri, next?.found == true)
                     val uri = next?.uri?.takeIf { bound }.orEmpty()
-                    if (next?.found == true && bound && next.uri != saved?.uri) {
+                    // Only an emulator on the device is news, and only it has a tile for the notice to open.
+                    if (next?.found == true && bound && next.uri != saved?.uri && player.packageNames.any(::packageInstalled)) {
                         newlyFound += player.displayName to folderPathLabel(next.uri)
                         if (firstFound == null) firstFound = player.id
                     }
