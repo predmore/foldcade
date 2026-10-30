@@ -489,13 +489,12 @@ class HomeSession(
     /**
      * What Y offers for [id] among Find's results. A game or app is offered where it lives on
      * Home, then what it is offered in All. Hidden items offer Show, and visible ones Hide.
-     * One of Foldcade's folders offers its On Home switch, and a retired group Show.
+     * One of Foldcade's folders off Home offers its On Home switch, and a retired group Show.
      */
     fun findActions(id: String, hidden: Boolean = id in board.hidden || id in board.retired): TileActions {
-        // One of Foldcade's folders has the switch Folders gives it, and on Home, the way to its tile.
-        folderRows().firstOrNull { it.folder.id == id }?.let { entry ->
-            return TileActions(folderOnHome = FolderSwitch(id, entry.onHome), showOnHome = id.takeIf { homeLanding(board, it) != null })
-        }
+        // One of Foldcade's folders off Home has the switch Folders gives it. On Home, Show on Home
+        // goes to its tile, where X takes it off, so the menu never holds two rows about Home.
+        offHomeFolder(id)?.let { return TileActions(folderOnHome = FolderSwitch(id, on = false)) }
         if (id in board.retired) return TileActions(show = true, game = id)
         val shown = id.takeIf { homeLanding(board, it) != null }
         if (board.folders[id] != null) return TileActions(showOnHome = shown)
@@ -1045,7 +1044,7 @@ class HomeSession(
 
     private var folderCache: Triple<HomeBoard, Int, List<FolderEntry>>? = null
 
-    /** Folders' tiles. A folder whose tile is on Home wears All's on-Home dot; one off Home is dimmed. */
+    /** Folders' tiles. One whose tile is off Home is dimmed ([HomeFace.onGrid] is false). */
     private fun folderFaces(): List<HomeFace> = folderRows().map { entry ->
         val folder = entry.folder
         HomeFace(

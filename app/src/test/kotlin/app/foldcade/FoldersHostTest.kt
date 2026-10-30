@@ -112,9 +112,9 @@ class FoldersHostTest {
         val entry = home.findEntries().single { it.id == HOME_ANDROID_GAMES }
         assertEquals(FindKind.Group, entry.kind)
         assertEquals(listOf("1 game", FindCopy.notOnHome), findFacts(home.board, entry))
-        // Its menu is Folders' switch, and one on Home also goes to its tile.
+        // Off Home, its menu is Folders' switch. On Home, it is the way to its tile, and only that.
         assertEquals(TileActions(folderOnHome = FolderSwitch(HOME_ANDROID_GAMES, on = false)), home.findActions(HOME_ANDROID_GAMES))
-        assertEquals(TileActions(folderOnHome = FolderSwitch(HOME_ANDROID_APPS, on = true), showOnHome = HOME_ANDROID_APPS), home.findActions(HOME_ANDROID_APPS))
+        assertEquals(TileActions(showOnHome = HOME_ANDROID_APPS), home.findActions(HOME_ANDROID_APPS))
         assertNull(home.openOffHome(HOME_ANDROID_APPS))
         assertEquals(0, home.openOffHome(HOME_ANDROID_GAMES))
         assertEquals(listOf(quest), visibleSlots(home.board))

@@ -3214,8 +3214,8 @@ private fun StripColumn(
                         carry == null
                     val label = game?.title.orEmpty()
                     val libraryTile = library && face == null
-                    // All marks a game on Home, and Folders a folder whose tile is there. One off Home rests dimmed.
-                    val onHomeMark = face != null && face.onGrid && !face.allTile && ((allOpen && !face.folder) || (foldersOpen && face.folder))
+                    // All marks a game on Home. Folders marks the exception instead: a folder off Home rests dimmed.
+                    val onHomeMark = face != null && allOpen && face.onGrid && !face.folder && !face.allTile
                     val offHome = face != null && foldersOpen && face.folder && !face.onGrid
                     val appObject = appGlyph(game?.androidPackage)
                     val art = tileArt(app, game, face, automatic = appObject == null)

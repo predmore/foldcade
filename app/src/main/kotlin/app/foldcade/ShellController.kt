@@ -2875,7 +2875,8 @@ class ShellController(
             onHome -> home.actions(counted.focus.cellIndex)
             else -> null
         }
-        val targetGame = actionGame(counted, tile?.game)
+        // Find's menu acts on its result: a group there has no game, so nothing on the grid under Find stands in.
+        val targetGame = if (found != null && found.game == null) null else actionGame(counted, tile?.game)
         // A copy still arriving, or already going, is not one to delete.
         val busy = (tile?.game ?: home.face(counted.focus.cellIndex)?.id)?.let(::busyOnDevice) == true
         val offered = (if (tile?.removeDownload == true && busy) tile.copy(removeDownload = false) else tile)

@@ -38,8 +38,7 @@ class FindRecoveryIntegrationTest {
             assertNotNull(shell.model.panel)
             assertEquals(id, shell.model.tileActions!!.showOnHome)
             assertNull(shell.model.tileActions!!.game)
-            // Foldcade's folder also has Folders' switch, after the way to its tile.
-            assertEquals(if (collection) listOf(Row.ShowOnHome) else listOf(Row.ShowOnHome, Row.FolderOnHome), panelRows(shell.model.panel!!, shell.model))
+            assertEquals(listOf(Row.ShowOnHome), panelRows(shell.model.panel!!, shell.model))
             shell.onMeaning(Meaning.Activate, HostScreen.Top)
             assertNull(shell.find)
             assertEquals(id, shell.homeFace(shell.model.focus.cellIndex)!!.id)
