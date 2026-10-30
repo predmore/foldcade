@@ -772,6 +772,8 @@ data class PlayerSaveSetting(
     val findable: Boolean = false,
     /** What the user does once, in the player, to give it the folder Foldcade hosts. */
     val hostedSteps: String? = null,
+    /** Where Foldcade found the folder on its own, such as `saves/Azahar`, so it is never bound unseen. Null for a chosen one. */
+    val foundIn: String? = null,
 )
 
 /**
@@ -1112,7 +1114,7 @@ fun rowText(row: Row, model: PickerModel): RowText = when (row) {
     is Row.PlayerSave -> {
         val setting = model.playerSaves.firstOrNull { it.playerId == row.playerId }
         val chosen = when {
-            setting?.chosen == true -> Copy.playerSavesSet
+            setting?.chosen == true -> setting.foundIn ?: Copy.playerSavesSet
             setting?.installed != true || setting.hostedTitle != null -> Copy.choose
             else -> Copy.notSyncing
         }

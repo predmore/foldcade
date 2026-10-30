@@ -213,6 +213,10 @@ object Copy {
     const val savesDeviceOnly = "Saves stay on this device"
     const val notSyncing = "Not syncing"
     fun savesNotSyncingTitle(player: String) = "$player saves aren’t syncing"
+    const val savesFoundTitle = "Saves found"
+
+    /** Each emulator Foldcade just found a folder for, with where: `Azahar · saves/Azahar`. */
+    fun savesFoundBody(found: List<Pair<String, String>>) = found.joinToString(", ") { (name, path) -> "$name · $path" }
     fun savesNotSyncingEmulatorsBody(count: Int) = "$count emulators need setup."
     const val savesNotSyncingBody = "Set up to keep them on RomM."
     fun syncSavesTitle(player: String) = "Sync $player saves?"

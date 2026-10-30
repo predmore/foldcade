@@ -37,6 +37,16 @@ class SaveSetupTest {
     private fun PickerModel.saves(id: String, change: (PlayerSaveSetting) -> PlayerSaveSetting) =
         copy(playerSaves = playerSaves.map { if (it.playerId == id) change(it) else it })
 
+    @Test fun aFolderFoundWithoutAskingSaysWhereOnThePageAndInSettings() {
+        val found = model.saves("melonds") { it.copy(chosen = true, foundIn = "saves/nds") }
+        assertEquals("saves/nds", rowText(Row.PlayerSave("melonds"), found).value)
+        assertEquals(Copy.playerSavesSet, rowText(Row.PlayerSave("melonds"), model.saves("melonds") { it.copy(chosen = true) }).value)
+        val tile = found.openSaveSetup(HostScreen.Top).tile("melonds")
+        assertEquals("saves/nds", tile.foundIn)
+        assertTrue(tile.done)
+        assertEquals(SaveSetupCopy.foundIn("saves/nds"), SaveSetupCopy.stepBody(tile))
+    }
+
     @Test fun theStripIsFindSavesThenEveryEmulatorOnSettingsAToZ() {
         val opened = model.openSaveSetup(HostScreen.Top)
         assertEquals(

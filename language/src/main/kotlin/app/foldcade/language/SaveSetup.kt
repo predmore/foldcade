@@ -81,6 +81,8 @@ data class SetupTile(
     val label: String,
     val packageName: String?,
     val steps: List<SetupStep>,
+    /** Where Foldcade found this emulator's folder on its own, shown once it syncs. */
+    val foundIn: String? = null,
 ) {
     /** The step to do now, or null once everything is done. */
     val step: SetupStep? get() = steps.firstOrNull { !it.done }
@@ -129,7 +131,9 @@ fun setupSteps(entry: EmulatorShelfEntry, model: PickerModel): List<SetupStep> =
  * Emulators, A to Z.
  */
 fun saveSetupTiles(model: PickerModel, page: SaveSetupPage): List<SetupTile> {
-    val emulators = emulatorShelf(model).map { SetupTile(it.key, it.label, it.packageName, setupSteps(it, model)) }
+    val emulators = emulatorShelf(model).map { entry ->
+        SetupTile(entry.key, entry.label, entry.packageName, setupSteps(entry, model), model.playerSaves.firstOrNull { it.playerId == entry.key }?.foundIn)
+    }
     val helps = emulators.any { tile -> tile.steps.any { it is SetupStep.Folder && it.findable && !it.done } }
     val find = (!model.allFilesGranted && helps) || (model.allFilesGranted && page.offeredFind)
     return if (find) listOf(SetupTile(FIND_SAVES_TILE, SettingsCopy.findSaves, null, listOf(SetupStep.AllFiles(model.allFilesGranted)))) + emulators
@@ -317,6 +321,10 @@ object SaveSetupCopy {
     const val findOwn = "Find saves on their own"
     const val findOwnBody = "Allow all files once, and Foldcade looks for each emulator’s folder."
     const val syncingBody = "Change it any time in Settings."
+
+    /** A folder Foldcade found on its own says where, so the user can see it is the right one. */
+    fun foundIn(path: String): String = "Found in $path. Change it in Settings."
+
     const val findAllowedBody = "Foldcade looks for save folders itself."
 
     fun browse(name: String) = "Find the folder $name keeps its saves in."
@@ -351,7 +359,11 @@ object SaveSetupCopy {
     }
 
     fun stepBody(tile: SetupTile): String? = when (val step = tile.step) {
-        null -> if (tile.findSaves) findAllowedBody else syncingBody
+        null -> when {
+            tile.findSaves -> findAllowedBody
+            tile.foundIn != null -> foundIn(tile.foundIn)
+            else -> syncingBody
+        }
         is SetupStep.Folder -> when (step.pick) {
             FolderPick.Browse -> browse(tile.label)
             FolderPick.OpensThere -> opensThere

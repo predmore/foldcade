@@ -26,6 +26,11 @@ internal fun folderTreeId(uri: String): String = folderDocumentId(folderGrantUri
 internal fun folderDocumentUri(tree: String, documentId: String): String =
     "${folderGrantUri(tree)}/document/${encodeDocumentId(documentId)}"
 
+/** How a folder reads to the user: its path on primary storage, `saves/Azahar`, or else its document id. */
+internal fun folderPathLabel(uri: String): String = folderDocumentId(uri).let { id ->
+    if (id.startsWith("primary:")) id.removePrefix("primary:").ifEmpty { "/" } else id
+}
+
 internal fun primaryFolderDocument(path: String): String =
     "content://com.android.externalstorage.documents/document/${encodeDocumentId("primary:$path")}"
 

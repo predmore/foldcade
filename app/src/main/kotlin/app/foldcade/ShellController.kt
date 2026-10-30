@@ -2897,6 +2897,8 @@ class ShellController(
                 // All-files access never opens Android/data, so a player kept there is never found by it.
                 findable = player.saveFolderPlaces.any { !it.startsWith("Android/", ignoreCase = true) },
                 hostedSteps = (player as? HostedSaveFolder)?.hostedFolderSteps,
+                foundIn = store.playerSaveFolder(player.saveFolderId())
+                    ?.takeIf { player.hasSaveFolder() && store.playerSaveFolderFound(player.saveFolderId()) }?.let(::folderPathLabel),
             )
         }.distinctBy { it.first }.map { it.second }
 

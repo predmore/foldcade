@@ -984,6 +984,7 @@ class FoldcadeApp : Application() {
                 .filter { it is SaveFolderHolder && it !is EdenPlayer }.distinctBy { it.saveFolderId() }
             val android = AndroidSaveFolderFinder(this@FoldcadeApp)
             val grants = android.grants(players.filterIsInstance<SaveFolderHolder>())
+            val newlyFound = mutableListOf<Pair<String, String>>()
             for (player in players) {
                 val holder = player as SaveFolderHolder
                 val key = player.saveFolderId()
@@ -999,13 +1000,21 @@ class FoldcadeApp : Application() {
                     if (store.playerSaveFolder(key) != saved?.uri || store.playerSaveFolderFound(key) != (saved?.found == true)) return@withContext
                     if (next != saved) store.setPlayerSaveFolder(key, next?.uri, next?.found == true)
                     val uri = next?.uri?.takeIf { bound }.orEmpty()
+                    if (next?.found == true && bound && next.uri != saved?.uri) newlyFound += player.displayName to folderPathLabel(next.uri)
                     for (id in plugins.playerIds()) {
                         val sharing = plugins.player(id) ?: continue
                         if (sharing is SaveFolderHolder && sharing.saveFolderId() == key) sharing.bindSaveFolder(uri)
                     }
                 }
             }
-            withContext(Dispatchers.Main.immediate) { shell.refreshPlayerSaves() }
+            withContext(Dispatchers.Main.immediate) {
+                shell.refreshPlayerSaves()
+                // A folder bound without asking says where, so a wrong one is never bound unseen.
+                if (newlyFound.isNotEmpty()) postNotice(FoldNotice(
+                    id = SAVES_FOUND_NOTICE_ID, title = Copy.savesFoundTitle, body = Copy.savesFoundBody(newlyFound),
+                    postedMillis = System.currentTimeMillis(), settingsCategory = app.foldcade.language.SettingsCategory.Players,
+                ))
+            }
         }
     }
 
@@ -2129,6 +2138,9 @@ private const val RETROARCH_RETURN_READ_MS = 60_000L
 
 /** How long a hosted save folder waits, at most, for the players to load while Foldcade starts. */
 private const val PLAYERS_LOAD_WAIT_MS = 10_000L
+
+/** One notice for every folder found without asking; a later find replaces it. */
+private const val SAVES_FOUND_NOTICE_ID = "foldcade:saves-found"
 
 /** How often a shown Home adds to the trial of the packs in use. */
 private const val THEME_TRIAL_TICK_MILLIS = 15_000L
