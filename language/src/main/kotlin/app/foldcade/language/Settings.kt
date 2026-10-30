@@ -123,7 +123,10 @@ fun settingsRows(category: SettingsCategory, model: PickerModel): List<Row> = wh
     SettingsCategory.Players -> buildList {
         val shelf = emulatorShelf(model)
         addAll(shelf.map { Row.SettingsTile(SettingsInner.Emulator(it.key)) })
-        if (shelf.isNotEmpty()) add(Row.FindSaves)
+        if (shelf.isNotEmpty()) {
+            add(Row.SaveSetup)
+            add(Row.FindSaves)
+        }
     }
     SettingsCategory.Screens -> buildList {
         add(Row.Primary)
@@ -207,7 +210,7 @@ fun emulatorShelf(model: PickerModel): List<EmulatorShelfEntry> {
             EmulatorShelfEntry(RETROARCH_SHELF_KEY, Copy.retroArch, it.packageName, listOf(Row.RetroArchCores))
         },
         eden?.takeIf { edenOwner == null }?.let {
-            EmulatorShelfEntry(EDEN_SHELF_KEY, Copy.eden, it.packageName, listOf(Row.EdenFolder))
+            EmulatorShelfEntry(EDEN_SHELF_KEY, Copy.eden, it.packageName, listOfNotNull(Row.EdenFolder, Row.EdenUser.takeIf { _ -> it.fromRomm && it.setupSteps != null }))
         },
     )
     return (entries + loose).sortedBy { it.label.lowercase() }
@@ -274,14 +277,15 @@ enum class TileStatus {
  */
 fun settingsTileStatus(row: Row, model: PickerModel): TileStatus? {
     val inner = (row as? Row.SettingsTile)?.page as? SettingsInner.Emulator ?: return null
-    val needsYou = settingsInnerRows(inner, model).any {
-        when (it) {
-            Row.RetroArchCores -> model.retroArch?.cores == null
-            Row.EdenFolder -> model.eden?.fromRomm != true
-            else -> (rowControl(it, model) as? RowControl.Value)?.attention == true
-        }
-    }
+    val needsYou = settingsInnerRows(inner, model).any { rowNeedsYou(it, model) }
     return if (needsYou) TileStatus.Attention else TileStatus.Fine
+}
+
+/** True while an emulator's row says Not syncing or waits to be set up. Set up saves reads its steps' progress from this too. */
+fun rowNeedsYou(row: Row, model: PickerModel): Boolean = when (row) {
+    Row.RetroArchCores -> model.retroArch?.cores == null
+    Row.EdenFolder -> model.eden?.fromRomm != true
+    else -> (rowControl(row, model) as? RowControl.Value)?.attention == true
 }
 
 /**
@@ -375,9 +379,10 @@ fun rowControl(row: Row, model: PickerModel, value: String? = rowText(row, model
     is Row.Collection -> model.tileActions?.collections?.firstOrNull { it.folderId == row.folderId }.let { RowControl.Check(it?.member == true, it?.some == true) }
     Row.EditHome, Row.AddToCollection, is Row.RommConnection,
     Row.AddFolder, Row.AddRomm, Row.SetAsHome, Row.DefaultHomeApp, Row.AndroidSettings, Row.Licenses, is Row.SettingsTile,
+    Row.SaveSetup,
     -> RowControl.Opens
     else -> value?.takeIf { it.isNotEmpty() }?.let {
         RowControl.Value(it, attention = it == Copy.notSyncing &&
-            (row is Row.PlayerSave || row is Row.HostedSaves || row is Row.SaveSync || row is Row.PlayerSetup))
+            (row is Row.PlayerSave || row is Row.HostedSaves || row is Row.SaveSync || row is Row.PlayerSetup || row == Row.EdenUser))
     } ?: RowControl.None
 }

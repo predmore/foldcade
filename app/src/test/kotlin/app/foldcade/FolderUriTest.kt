@@ -46,4 +46,11 @@ class FolderUriTest {
         assertEquals(picked, folderGrantUri(picked))
         assertEquals("primary:Emu (old)/Jon's saves!~", folderDocumentId(picked))
     }
+
+    @Test fun aFolderReadsAsItsPathOnPrimaryStorage() {
+        assertEquals("saves/Azahar", folderPathLabel(folder))
+        assertEquals("saves", folderPathLabel(tree))
+        assertEquals("/", folderPathLabel("content://app.foldcade.storage/tree/primary%3A"))
+        assertEquals("1A2B-3C4D:roms", folderPathLabel("content://com.android.externalstorage.documents/tree/1A2B-3C4D%3Aroms"))
+    }
 }

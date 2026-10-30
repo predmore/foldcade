@@ -12,8 +12,8 @@ class FindSavesSettingTest {
 
     @Test fun findSavesSitsUnderTheEmulatorTilesAndMirrorsAndroid() {
         val rows = settingsRows(SettingsCategory.Players, model)
-        assertTrue(rows.dropLast(1).all { it is Row.SettingsTile })
-        assertEquals(Row.FindSaves, rows.last())
+        assertTrue(rows.dropLast(2).all { it is Row.SettingsTile })
+        assertEquals(listOf(Row.SaveSetup, Row.FindSaves), rows.takeLast(2))
         for (granted in listOf(false, true)) {
             val current = model.copy(allFilesGranted = granted)
             val text = rowText(Row.FindSaves, current)

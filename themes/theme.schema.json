@@ -694,6 +694,20 @@
                             "default": 2400.0,
                             "description": "ms; follows base.durationScale"
                         },
+                        "durationSetupPause": {
+                            "type": "number",
+                            "minimum": 1.0,
+                            "maximum": 2.1474836E9,
+                            "default": 900.0,
+                            "description": "ms; follows base.durationScale"
+                        },
+                        "durationSetupStagger": {
+                            "type": "number",
+                            "minimum": 1.0,
+                            "maximum": 2.1474836E9,
+                            "default": 160.0,
+                            "description": "ms; follows base.durationScale"
+                        },
                         "scaleRest": {
                             "type": "number",
                             "exclusiveMinimum": 0.0,
@@ -1912,6 +1926,24 @@
                             "minimum": 0.0,
                             "maximum": 1.0,
                             "default": 0.6
+                        }
+                    }
+                },
+                "setup": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                        "skippedAlpha": {
+                            "type": "number",
+                            "minimum": 0.0,
+                            "maximum": 1.0,
+                            "default": 0.45
+                        },
+                        "artShare": {
+                            "type": "number",
+                            "exclusiveMinimum": 0.0,
+                            "maximum": 1.0,
+                            "default": 0.7
                         }
                     }
                 },

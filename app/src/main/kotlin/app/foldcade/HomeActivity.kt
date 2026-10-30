@@ -128,6 +128,9 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
         const val EXTRA_DIALOG_SCREEN = "foldcade.dialogScreen"
         const val EXTRA_SAVE_CONFLICT = "foldcade.saveConflict"
         const val STATE_FOLDER_PICKER = "foldcade.folderPicker"
+
+        /** Set up saves was open, on this tile ("" for All set), so a Home Android recreates opens it again. */
+        const val STATE_SAVE_SETUP = "foldcade.saveSetup"
     }
 
     private val displays by lazy { Displays(this) }
@@ -190,6 +193,8 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
             return@registerForActivityResult
         }
         foldcade.scope.launch(Dispatchers.Main.immediate) {
+            // A process that died behind the picker is still loading: the saved player id needs its player.
+            foldcade.awaitPlugins()
             when (purpose) {
                 FolderPurpose.RetroArchCores -> useRetroArchFolder(uri)
                 FolderPurpose.EdenFolder -> useEdenFolder(uri)
@@ -316,8 +321,9 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
         dispatch(foldcade.shell.onMeaning(meaning, screen, repeatCount, inputWindow))
     }
 
-    /** The command center on this screen, or the grid opened from it, takes the key first. */
+    /** The command center on this screen, or the grid opened from it, takes the key first. Set up saves covers it and keeps its keys. */
     private fun commandCenterKey(meaning: app.foldcade.language.Meaning): Boolean {
+        if (foldcade.shell.model.saveSetup != null) return false
         val panel = displays.panelFor(this, foldcade.store.session.defaultDisplayIsTop) ?: return false
         return foldcade.commandCenter.onKey(panel, meaning, foldcade.shell::atRest)
     }
@@ -419,6 +425,7 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
             STATE_FOLDER_PICKER,
             FolderPickerState(folderPurpose, pendingLaunch, settingsPlayerId).encode(),
         )
+        foldcade.shell.model.saveSetup?.let { outState.putString(STATE_SAVE_SETUP, it.focus.orEmpty()) }
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -429,6 +436,10 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
             settingsPlayerId = restored.settingsPlayerId
         }
         foldcade.homeCreated(this)
+        // The process may have died behind Android's picker or an emulator. A live one still has the page.
+        savedInstanceState?.getString(STATE_SAVE_SETUP)?.let { focus ->
+            foldcade.shell.restoreSaveSetup(focus.ifEmpty { null }, hostScreen())
+        }
         // Secondary Home may be created behind a running emulator. Resume reconciles its panel.
         if (launchesCompanion) acceptHome(intent)
         acceptShelf(intent)
@@ -2074,10 +2085,12 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
                 if (!current || result !is RommSignInResult.Accepted) return@launch
                 foldcade.editCredentials {
                     if (!withContext(Dispatchers.Main.immediate) { foldcade.shell.setupValidationCurrent(ticket) }) return@editCredentials
+                    var newServer = false
                     val saved = try {
                         val before = foldcade.store.rommOrigin()
+                        newServer = before == null || normalizeSetupOrigin(before) != origin
                         // Its tiles name the old server's ROM ids until the new one lists its games.
-                        if (before == null || normalizeSetupOrigin(before) != origin) {
+                        if (newServer) {
                             withContext(Dispatchers.Main.immediate) { foldcade.shell.noteServerChanged(instanceId) }
                         }
                         saveRommConnection(foldcade.store, foldcade.credentials, origin, token)
@@ -2096,7 +2109,12 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
                         foldcade.shell.settleServerChange(instanceId)
                         if (saved) {
                             refreshRommSignedIn()
-                            if (foldcade.shell.setupValidationCurrent(ticket)) foldcade.shell.closeConnect()
+                            if (foldcade.shell.setupValidationCurrent(ticket)) {
+                                foldcade.shell.closeConnect()
+                                // A new server is the moment to get every emulator's saves onto it.
+                                // Not beside a running game: the page would take the controls from it.
+                                if (newServer && Panel.entries.none { foldcade.store.session.externalOn(it) != null }) foldcade.shell.offerSaveSetup(hostScreen())
+                            }
                             foldcade.syncRomm()
                         } else if (foldcade.shell.setupValidationCurrent(ticket)) {
                             foldcade.shell.showSetupHint("Could not save the RomM credentials. Try again.", retry = true)
@@ -2659,7 +2677,8 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
                 hostScreen(), syncs = true, wrong = name to markers,
                 playerName = player?.displayName, needed = needsItsFolder(player),
             ))
-        } else {
+        } else if (player == null || !foldcade.shell.noteSaveSetup(player.id, app.foldcade.language.SaveSetupCopy.wrongFolder(name, markers))) {
+            // Set up saves says it in its own line, under the step, which stays.
             foldcade.shell.present(playerNotice(Copy.saveFolderTitle, wrongSaveFolderBody(name, markers), hostScreen()))
         }
         return null

@@ -116,6 +116,7 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import java.lang.ref.WeakReference
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import java.util.concurrent.ConcurrentHashMap
@@ -643,6 +644,7 @@ class FoldcadeApp : Application() {
             onSameGames = { groups -> saveArtChoices(artChoices.adopt(groups)) },
             appVersion = installedVersion(),
             onSavePickerClosed = { onSaveConflicts?.invoke() },
+            saveFolderPick = ::saveFolderPick,
             onSaveHealthChanged = { players ->
                 saveSetupNotices.update(players)
                 publishNotices()
@@ -983,6 +985,8 @@ class FoldcadeApp : Application() {
                 .filter { it is SaveFolderHolder && it !is EdenPlayer }.distinctBy { it.saveFolderId() }
             val android = AndroidSaveFolderFinder(this@FoldcadeApp)
             val grants = android.grants(players.filterIsInstance<SaveFolderHolder>())
+            val newlyFound = mutableListOf<Pair<String, String>>()
+            var firstFound: String? = null
             for (player in players) {
                 val holder = player as SaveFolderHolder
                 val key = player.saveFolderId()
@@ -998,23 +1002,43 @@ class FoldcadeApp : Application() {
                     if (store.playerSaveFolder(key) != saved?.uri || store.playerSaveFolderFound(key) != (saved?.found == true)) return@withContext
                     if (next != saved) store.setPlayerSaveFolder(key, next?.uri, next?.found == true)
                     val uri = next?.uri?.takeIf { bound }.orEmpty()
+                    // Only an emulator on the device is news, and only it has a tile for the notice to open.
+                    if (next?.found == true && bound && next.uri != saved?.uri && player.packageNames.any(::packageInstalled)) {
+                        newlyFound += player.displayName to folderPathLabel(next.uri)
+                        if (firstFound == null) firstFound = player.id
+                    }
                     for (id in plugins.playerIds()) {
                         val sharing = plugins.player(id) ?: continue
                         if (sharing is SaveFolderHolder && sharing.saveFolderId() == key) sharing.bindSaveFolder(uri)
                     }
                 }
             }
-            withContext(Dispatchers.Main.immediate) { shell.refreshPlayerSaves() }
+            withContext(Dispatchers.Main.immediate) {
+                shell.refreshPlayerSaves()
+                // A folder bound without asking says where, so a wrong one is never bound unseen. A opens
+                // Set up saves on the first one found, whose page says where again.
+                if (newlyFound.isNotEmpty()) postNotice(FoldNotice(
+                    id = SAVES_FOUND_NOTICE_ID, title = Copy.savesFoundTitle, body = Copy.savesFoundBody(newlyFound),
+                    postedMillis = System.currentTimeMillis(), savePlayerId = firstFound,
+                ))
+            }
         }
     }
 
     internal fun refreshFoundSaveFolders() {
+        // The find counts as a check, so Set up saves waits for what it finds before it moves on.
+        val counted = ::shell.isInitialized
+        if (counted) startSaveRead()
         scope.launch {
-            playersLoaded.await()
-            findPlayerSaveFolders()
-            withContext(Dispatchers.Main.immediate) {
-                shell.refreshPlayerSaves()
-                refreshSaveSync()
+            try {
+                playersLoaded.await()
+                findPlayerSaveFolders()
+                withContext(Dispatchers.Main.immediate) {
+                    shell.refreshPlayerSaves()
+                    refreshSaveSync()
+                }
+            } finally {
+                if (counted) withContext(NonCancellable + Dispatchers.Main.immediate) { endSaveRead() }
             }
         }
     }
@@ -1027,6 +1051,14 @@ class FoldcadeApp : Application() {
     internal fun saveFolderOpensThere(player: Player?): Boolean = (player as? SaveFolderHolder)?.let {
         saveFolderStarts[player.saveFolderId()] != null || it.suggestedSaveFolder != null
     } == true
+
+    /**
+     * How Android's picker meets [player]'s save folder, for Set up saves: the root of the
+     * player's own files, which Android shows alone, a folder that is there, or nowhere known.
+     */
+    internal fun saveFolderPick(player: Player): app.foldcade.language.FolderPick =
+        (player as? SaveFolderHolder)?.let { saveFolderPickOf(it.suggestedSaveFolder, saveFolderOpensThere(player)) }
+            ?: app.foldcade.language.FolderPick.Browse
 
     /** The manifest's [HostedSavesProvider] authority. */
     val hostedAuthority: String get() = "$packageName${HostedSavesProvider.AUTHORITY_SUFFIX}"
@@ -1049,13 +1081,31 @@ class FoldcadeApp : Application() {
      */
     fun refreshSaveSync() {
         if (!::plugins.isInitialized || !::shell.isInitialized) return
+        startSaveRead()
         pluginLoad.launch {
-            val notes = readPlayerFolderNotes()
-            withContext(Dispatchers.Main.immediate) {
-                shell.setSaveSync(notes.sync, notes.setup)
-                shell.refreshPlayerSaves()
+            try {
+                val notes = readPlayerFolderNotes()
+                withContext(Dispatchers.Main.immediate) {
+                    shell.setSaveSync(notes.sync, notes.setup)
+                    shell.refreshPlayerSaves()
+                }
+            } finally {
+                withContext(NonCancellable + Dispatchers.Main.immediate) { endSaveRead() }
             }
         }
+    }
+
+    /** Reads of [refreshSaveSync] and finds of [refreshFoundSaveFolders] still running. Main thread only. */
+    private var saveSyncReads = 0
+
+    private fun startSaveRead() {
+        saveSyncReads += 1
+        shell.setCheckingSaves(true)
+    }
+
+    private fun endSaveRead() {
+        saveSyncReads -= 1
+        if (saveSyncReads == 0) shell.setCheckingSaves(false)
     }
 
     internal fun noteSaveLaunch(route: GameRoute) {
@@ -1113,8 +1163,18 @@ class FoldcadeApp : Application() {
             playerSaves.saveSync(player, uri)?.let { sync[player.id] = it }
             playerSaves.setupSteps(player, uri)?.let { setup[player.id] = it }
         }
+        // Eden keeps Switch saves per user, so one with none has nowhere to put them. Reading its
+        // provider can start Eden, so a folder that has shown a user is not read again.
+        val eden = plugins.player("eden") as? EdenPlayer
+        eden?.let(::playerSaveFolder)?.takeIf { it != edenUserFolder }?.let { folder ->
+            if (playerSaves.edenHasUser(eden, folder)) edenUserFolder = folder else setup.putIfAbsent(eden.id, Copy.edenUserSteps)
+        }
         return PlayerFolderNotes(sync, setup)
     }
+
+    /** The Eden folder last seen holding a user. Users are not taken away in passing. */
+    @Volatile
+    private var edenUserFolder: String? = null
 
     private data class PlayerFolderNotes(
         val sync: Map<String, app.foldcade.api.plugin.SaveSyncState>,
@@ -2120,6 +2180,9 @@ private const val RETROARCH_RETURN_READ_MS = 60_000L
 
 /** How long a hosted save folder waits, at most, for the players to load while Foldcade starts. */
 private const val PLAYERS_LOAD_WAIT_MS = 10_000L
+
+/** One notice for every folder found without asking; a later find replaces it. */
+private const val SAVES_FOUND_NOTICE_ID = "foldcade:saves-found"
 
 /** How often a shown Home adds to the trial of the packs in use. */
 private const val THEME_TRIAL_TICK_MILLIS = 15_000L

@@ -212,6 +212,8 @@ Durations in ms, scales, distances, and cubic-bézier curves `[x1, y1, x2, y2]`.
 | `motion.durationIsland` | 320 | An island opening |
 | `motion.durationPulse` | 720 | One breath of a busy badge |
 | `motion.durationSyncMark` | 2400 | How long a finished sync's mark stays |
+| `motion.durationSetupPause` | 900 | How long a fresh check in Set up saves rests before the focus glides on |
+| `motion.durationSetupStagger` | 160 | Between checks that land together in Set up saves |
 | `motion.durationScene` | 360 | Wide art crossfading |
 | `motion.durationShowcase` | 1400 | Wide art settling |
 | `motion.durationSelect` | 280 | A highlight landing, a switch flipping |
@@ -496,6 +498,15 @@ The Saves screen reuses Settings' card, menu highlights, dialog chips, type and 
 | `saves.screenshotShare` | 0.5 | Screenshot's share of the top screen's content width |
 | `saves.backdropDim` | 0.5 | The scrim over the game's art behind the top screen |
 | `saves.backupAlpha` | 0.6 | A Backup row at rest |
+
+### `setup`
+
+Set up saves reuses Settings' tiles and badges, the menus' highlight, and the dialogs' type and chips. Its tiles wear `badge.check` once they sync and `badge.unsynced` in `colors.attention` while they need you, even when skipped.
+
+| Token | Afterglow | Controls |
+| --- | --- | --- |
+| `setup.skippedAlpha` | 0.45 | A tile skipped for this run, at rest; its badge stays bright |
+| `setup.artShare` | 0.7 | The focused emulator's art, as a share of the top screen's height |
 
 ### `play`
 

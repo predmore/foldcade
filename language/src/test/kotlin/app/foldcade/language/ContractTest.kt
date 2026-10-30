@@ -672,7 +672,7 @@ class ContractTest {
             homeRoleHeld = true,
             playerSaves = listOf(setting),
         )
-        assertEquals(listOf(Row.SettingsTile(SettingsInner.Emulator("azahar")), Row.FindSaves), settingsRows(SettingsCategory.Players, opened))
+        assertEquals(listOf(Row.SettingsTile(SettingsInner.Emulator("azahar")), Row.SaveSetup, Row.FindSaves), settingsRows(SettingsCategory.Players, opened))
         assertEquals(listOf(Row.PlayerSave("azahar")), settingsInnerRows(SettingsInner.Emulator("azahar"), opened))
         val onRow = opened.onSetting(Row.PlayerSave("azahar"))
         val (closed, effect) = reduce(onRow, Meaning.Activate)

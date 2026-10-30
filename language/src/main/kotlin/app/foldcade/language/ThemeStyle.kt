@@ -40,6 +40,7 @@ class ThemeStyle(
     val find = ThemeFind(reader)
     val picker = ThemePicker(reader)
     val saves = ThemeSaves(reader)
+    val setup = ThemeSetup(reader)
     val play = ThemePlay(reader)
     val collections = ThemeCollections(reader)
     val sound = ThemeSound(reader)
@@ -370,6 +371,8 @@ class ThemeMotion internal constructor(private val reader: ThemeStyleReader) {
     val durationIsland = ms("durationIsland", 320)
     val durationPulse = ms("durationPulse", 720)
     val durationSyncMark = ms("durationSyncMark", 2400)
+    val durationSetupPause = ms("durationSetupPause", 900)
+    val durationSetupStagger = ms("durationSetupStagger", 160)
     val scaleRest = reader.number("motion", "scaleRest", 1f, TokenDomain.Positive)
     val scaleFocus = reader.number("motion", "scaleFocus", 1.05f, TokenDomain.Positive)
     val heroScaleFrom = reader.number("motion", "heroScaleFrom", .96f, TokenDomain.Positive)
@@ -708,4 +711,12 @@ class ThemeSaves internal constructor(reader: ThemeStyleReader) {
     val backdropDim = reader.fraction("saves", "backdropDim", .5f)
     /** A Backup row at rest, quieter than the saves it keeps safe. */
     val backupAlpha = reader.fraction("saves", "backupAlpha", .6f)
+}
+
+/** Set up saves. Its strip, showcase and buttons reuse Settings' tiles, the menus' highlight, and the dialogs' type. */
+class ThemeSetup internal constructor(reader: ThemeStyleReader) {
+    /** A tile skipped for this run, at rest. Its not-syncing badge stays as bright as ever. */
+    val skippedAlpha = reader.fraction("setup", "skippedAlpha", .45f)
+    /** The focused emulator's art on the top screen, as a share of the showcase's height. */
+    val artShare = reader.number("setup", "artShare", .7f, TokenDomain.Share)
 }

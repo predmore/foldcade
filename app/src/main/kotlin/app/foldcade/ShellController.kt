@@ -28,6 +28,7 @@ import app.foldcade.api.plugin.Availability
 import app.foldcade.api.plugin.Game
 import app.foldcade.api.plugin.GameActivity
 import app.foldcade.api.plugin.Platform
+import app.foldcade.api.plugin.Player
 import app.foldcade.api.plugin.HostedSaveFolder
 import app.foldcade.api.plugin.SaveFolderHolder
 import app.foldcade.api.plugin.SaveSyncState
@@ -118,6 +119,12 @@ import app.foldcade.language.offerButtonCalibration
 import app.foldcade.language.resolveFaceMap
 import app.foldcade.language.PickerModel
 import app.foldcade.language.PlayerSaveSetting
+import app.foldcade.language.FolderPick
+import app.foldcade.language.EDEN_SHELF_KEY
+import app.foldcade.language.advanceSaveSetup
+import app.foldcade.language.noteSaveSetup
+import app.foldcade.language.openSaveSetup
+import app.foldcade.language.saveSetupWanted
 import app.foldcade.language.EdenSetting
 import app.foldcade.language.RetroArchSetting
 import app.foldcade.language.Side
@@ -172,6 +179,8 @@ class ShellController(
     private val appVersion: String = "",
     private val onSaveHealthChanged: (Map<String, String>) -> Unit = {},
     private val onSavePickerClosed: () -> Unit = {},
+    /** How Android's picker opens on a player's save folder, for Set up saves. */
+    private val saveFolderPick: (Player) -> FolderPick = { FolderPick.Browse },
 ) {
     var artPicker by mutableStateOf<ArtPickerState?>(null)
         private set
@@ -308,7 +317,8 @@ class ShellController(
             val holdMoved = if (current.deleteHold?.row == Row.RemoveSession) next.playActivity != current.playActivity
                 else next.panel == null || next.panel != current.panel
             val canceled = current.deleteHold != null && (holdMoved || next.dialog != null || next.settings != null || next.connectOpen)
-            val stable = app.foldcade.language.retainSettingsCategory(current, app.foldcade.language.retainMenuRows(current, prepared))
+            val stable = app.foldcade.language.retainSaveSetup(current,
+                app.foldcade.language.retainSettingsCategory(current, app.foldcade.language.retainMenuRows(current, prepared)))
             undo = when {
                 stable.panel == null -> undo?.resume(nowMillis())
                 stable.panel?.let { Row.Undo in panelRows(it, stable) } == true -> undo?.pause(nowMillis())
@@ -321,8 +331,12 @@ class ShellController(
                 deleteProgress = if (canceled) 0f else next.deleteProgress,
                 deleteShake = next.deleteShake + if (canceled) 1 else 0)
             if (canceled) cue(next.themeIndex, "back")
+            if (stable.saveSetup != null) saveSetupSeen = true
             closeArtAfterFocusChange()
         }
+
+    /** Set up saves has been open in this process, so a saved one is from a Home that outlived it. */
+    private var saveSetupSeen = false
 
     private var inputDeviceKey: String = "builtin"
 
@@ -589,7 +603,7 @@ class ShellController(
         val rows = panel?.let { panelRows(it, model) }.orEmpty()
         val at = if (meaning == Meaning.Activate) panel?.index?.coerceIn(0, (rows.size - 1).coerceAtLeast(0)) else chordIndex(rows, meaning)
         val row = at?.let { rows.getOrNull(it) }
-        if (find == null && model.homeGrid == HomeGrid.Hidden && model.panel == null && model.playActivity == null && model.savePicker == null && (meaning == Meaning.Activate || meaning == Meaning.ActivateBottom)) return null
+        if (find == null && model.homeGrid == HomeGrid.Hidden && model.panel == null && model.playActivity == null && model.savePicker == null && model.saveSetup == null && (meaning == Meaning.Activate || meaning == Meaning.ActivateBottom)) return null
         val before = home.board
         val beforeFocus = model.focus
         val beforeGrid = model.homeGrid
@@ -621,6 +635,15 @@ class ShellController(
     }
 
     private fun applyMeaning(meaning: Meaning, screen: HostScreen, repeatCount: Int, inputWindow: String): Effect? {
+        if (model.saveSetup != null && model.dialog == null) {
+            val before = model
+            val (next, effect) = reduce(model, meaning, screen, repeatCount)
+            // The press that closes the page stays its own until the key comes up, so a held Done never reaches the grid.
+            if (next.saveSetup == null) heldActions.capture(meaning.ordinal)
+            publish(next)
+            cueSaveSetup(meaning, before, model, effect)
+            return effect
+        }
         if (model.savePicker != null) {
             val (next, effect) = reduce(model, meaning, screen, repeatCount)
             publish(next)
@@ -851,7 +874,7 @@ class ShellController(
         if (artPicker != null) return app.foldcade.language.HomeKeys.ChoosingArt
         if (model.panel != null && home.selection != null) return HomeKeys.Selecting
         if (model.dialog != null || model.panel != null || model.playActivity != null ||
-            model.saveConflict != null || model.savePicker != null || model.connectOpen
+            model.saveConflict != null || model.savePicker != null || model.saveSetup != null || model.connectOpen
         ) {
             return app.foldcade.language.HomeKeys.Idle
         }
@@ -875,7 +898,7 @@ class ShellController(
      * with nothing to act on.
      */
     fun holdsCommandCenter(): Boolean =
-        model.savePicker != null || model.dialog != null || model.panel != null || model.connectOpen || typing() != null || home.iconPick != null || home.selection != null || find != null
+        model.savePicker != null || model.saveSetup != null || model.dialog != null || model.panel != null || model.connectOpen || typing() != null || home.iconPick != null || home.selection != null || find != null
 
     /**
      * The collection or folder being named, as the top screen shows it over the name field.
@@ -944,7 +967,7 @@ class ShellController(
      */
     private fun canOpenFind(): Boolean =
         find == null && artPicker == null && !model.libraryGrid && model.dialog == null && model.panel == null &&
-            model.settings == null && model.playActivity == null && model.saveConflict == null && model.savePicker == null && !model.connectOpen &&
+            model.settings == null && model.playActivity == null && model.saveConflict == null && model.savePicker == null && model.saveSetup == null && !model.connectOpen &&
             (!showingHome() || home.keys().let { it == HomeKeys.Idle || it == HomeKeys.AllLibrary })
 
     /** Opens Find on everything Home knows, the most recently played first. */
@@ -966,7 +989,7 @@ class ShellController(
     /** True while Find has the keys: open, with no menu, page or dialog over it. */
     private fun findActive(): Boolean =
         find != null && artPicker == null && model.dialog == null && model.panel == null && model.settings == null &&
-            model.playActivity == null && model.saveConflict == null && model.savePicker == null && !model.connectOpen
+            model.playActivity == null && model.saveConflict == null && model.savePicker == null && model.saveSetup == null && !model.connectOpen
 
     /** Everything Find lists: the catalog and the groups on Home, then what only Hidden lists. */
     private fun findEntries(): List<FindEntry> {
@@ -1893,7 +1916,7 @@ class ShellController(
     /** One tap focuses a tile. A second tap on it activates, and hands back what that opens. */
     /** Whether the grid itself takes touches: nothing covers it. */
     private fun gridTouchable(): Boolean =
-        find == null && artPicker == null && model.dialog == null && model.panel == null && model.savePicker == null && !model.connectOpen
+        find == null && artPicker == null && model.dialog == null && model.panel == null && model.savePicker == null && model.saveSetup == null && !model.connectOpen
 
     fun touchCell(index: Int, screen: HostScreen): Effect? {
         if (!gridTouchable()) return null
@@ -2011,7 +2034,7 @@ class ShellController(
      * A dialog or save choice takes every key, so a touch on the page under it does nothing.
      * A tap on a Settings row once went on to activate the dialog's focused button.
      */
-    private fun modalOpen(): Boolean = model.dialog != null || model.saveConflict != null || model.savePicker != null
+    private fun modalOpen(): Boolean = model.dialog != null || model.saveConflict != null || model.savePicker != null || model.saveSetup != null
 
     /** One tap focuses the button and activates it. Keys still move, then Activate. */
     fun touchDialog(index: Int, screen: HostScreen): Effect? {
@@ -2083,6 +2106,10 @@ class ShellController(
     fun setUsageGranted(granted: Boolean) {
         if (model.usageGranted == granted) return
         model = model.copy(usageGranted = granted)
+    }
+
+    fun setCheckingSaves(checking: Boolean) {
+        if (model.checkingSaves != checking) publish(model.copy(checkingSaves = checking))
     }
 
     fun setAllFilesGranted(granted: Boolean) {
@@ -2165,7 +2192,75 @@ class ShellController(
     fun presentSavePicker(state: app.foldcade.language.SavePickerState?) {
         artPicker = null
         find = null
-        publish(model.copy(savePicker = state, saveConflict = null, panel = null, playActivity = null, settings = null, connectOpen = false))
+        publish(model.copy(savePicker = state, saveConflict = null, panel = null, playActivity = null, settings = null, saveSetup = null, connectOpen = false))
+    }
+
+    /**
+     * Set up saves, as a RomM sign-in finishes: only while an emulator still needs a step, and
+     * never over a save page, a save conflict, or the form. Back returns to Settings when the
+     * sign-in started there.
+     */
+    fun offerSaveSetup(screen: HostScreen) {
+        if (model.saveSetup != null || model.savePicker != null || model.saveConflict != null || model.connectOpen || model.dialog != null) return
+        if (!saveSetupWanted(model)) return
+        artPicker = null
+        find = null
+        publish(model.openSaveSetup(model.settings?.screen ?: screen, settings = model.settings))
+    }
+
+    /** The page again on [focus] after Android recreated Home with it open, as when the process died behind a picker. */
+    fun restoreSaveSetup(focus: String?, screen: HostScreen) {
+        if (saveSetupSeen || model.saveSetup != null || model.savePicker != null || model.saveConflict != null || model.connectOpen) return
+        artPicker = null
+        find = null
+        publish(model.openSaveSetup(screen, target = focus))
+    }
+
+    /** [key]'s check has landed: the focus glides on, unless it has moved already. */
+    fun advanceSaveSetup(key: String) {
+        val next = model.advanceSaveSetup(key)
+        if (next == model) return
+        publish(next)
+        cue(model.themeIndex, "move")
+    }
+
+    /** Why a pick for [playerId] was not kept, in Set up saves' own line. False when the page is not on its tile. */
+    fun noteSaveSetup(playerId: String, text: String): Boolean {
+        val next = model.noteSaveSetup(playerId, text) ?: return false
+        publish(next)
+        cue(model.themeIndex, "notify")
+        return true
+    }
+
+    /** A tap on a strip tile focuses it. Its step waits for confirm, or a tap on the top screen's button. */
+    fun touchSaveSetupTile(key: String) {
+        val page = model.saveSetup ?: return
+        if (model.dialog != null || page.focus == key) return
+        publish(model.copy(saveSetup = page.copy(focus = key, celebrating = null, note = null, restoring = null)))
+        cue(model.themeIndex, "move")
+    }
+
+    /** A tap on one of the top screen's buttons, or the header's Back, does what its key does. */
+    fun touchSaveSetup(meaning: Meaning, screen: HostScreen): Effect? {
+        if (model.saveSetup == null || model.dialog != null) return null
+        return onMeaning(meaning, screen)
+    }
+
+    private fun cueSaveSetup(meaning: Meaning, before: PickerModel, after: PickerModel, effect: Effect?) {
+        val was = before.saveSetup
+        val now = after.saveSetup
+        when (meaning) {
+            Meaning.MoveLeft, Meaning.MoveRight -> cue(after.themeIndex, if (was?.focus != now?.focus) "move" else "edge")
+            Meaning.Back -> cue(after.themeIndex, "close")
+            Meaning.Activate -> cue(after.themeIndex, when {
+                now == null && after.settings != null && before.settings == null -> "open"
+                now == null -> "close"
+                effect != null -> "open"
+                else -> "activate"
+            })
+            Meaning.ActivateBottom, Meaning.Dismiss -> if (was?.skipped != now?.skipped) cue(after.themeIndex, "back")
+            else -> Unit
+        }
     }
 
     /** Async results are accepted only by the screen that requested them. */
@@ -2220,7 +2315,7 @@ class ShellController(
 
     /** Puts a conflict on the bottom screen unless the save chooser owns it. */
     fun presentSaveConflict(prompt: app.foldcade.language.SaveConflictPrompt?) {
-        if (model.savePicker != null) return
+        if (model.savePicker != null || model.saveSetup != null) return
         if (prompt == null && model.saveConflict?.preview == true) return
         if (prompt != null && !prompt.preview) {
             Log.i("Foldcade", "save-conflict ${prompt.gameLabel}")
@@ -2518,8 +2613,10 @@ class ShellController(
     }
 
     /** Null while Eden is not installed. */
+    /** Eden's one-time setup rides with the other players' in [setupSteps], read off the main thread, under its player id, which is its shelf key. */
     fun setEden(setting: EdenSetting?) {
-        if (model.eden != setting) model = model.copy(eden = setting)
+        val next = setting?.copy(setupSteps = setupSteps[EDEN_SHELF_KEY]?.takeIf { setting.fromRomm })
+        if (model.eden != next) model = model.copy(eden = next)
         refreshSaveHealth()
     }
 
@@ -2783,6 +2880,7 @@ class ShellController(
         reachableSaves.keys.removeAll { it.second in changed }
         saveSync = states
         setupSteps = setup
+        model.eden?.let { eden -> model = model.copy(eden = eden.copy(setupSteps = setup[EDEN_SHELF_KEY]?.takeIf { eden.fromRomm })) }
         saveHealthEpoch += 1
         refreshPlayerSaves()
     }
@@ -2805,6 +2903,12 @@ class ShellController(
                 setupSteps = setupSteps[player.id],
                 installed = player.packageNames.any(installedPlayers::contains),
                 packages = player.packageNames.filter(installedPlayers::contains),
+                pick = saveFolderPick(player),
+                // All-files access never opens Android/data, so a player kept there is never found by it.
+                findable = player.saveFolderPlaces.any { !it.startsWith("Android/", ignoreCase = true) },
+                hostedSteps = (player as? HostedSaveFolder)?.hostedFolderSteps,
+                foundIn = store.playerSaveFolder(player.saveFolderId())
+                    ?.takeIf { player.hasSaveFolder() && store.playerSaveFolderFound(player.saveFolderId()) }?.let(::folderPathLabel),
             )
         }.distinctBy { it.first }.map { it.second }
 
@@ -2870,7 +2974,8 @@ class ShellController(
         if (showingHome() && next.homeGrid != HomeGrid.StandIns) {
             home.rememberRootFocus(model.panel?.grid?.cellIndex ?: model.focus.cellIndex)
         }
-        val savePickerClosed = model.savePicker != null && next.savePicker == null
+        // A save conflict waits for either save page to close.
+        val savePickerClosed = (model.savePicker != null && next.savePicker == null) || (model.saveSetup != null && next.saveSetup == null)
         val connectClosed = model.connectOpen && !next.connectOpen
         if (model.connectOpen != next.connectOpen) invalidateSetupValidation()
         if (next.primaryIsTop != store.session.defaultDisplayIsTop) {
@@ -2948,7 +3053,7 @@ class ShellController(
 
     private fun homeActive(): Boolean =
         showingHome() && model.dialog == null && model.panel == null && model.settings == null &&
-            model.playActivity == null && model.saveConflict == null && model.savePicker == null && !model.connectOpen
+            model.playActivity == null && model.saveConflict == null && model.savePicker == null && model.saveSetup == null && !model.connectOpen
 
     /**
      * A or X with the cursor on L1's or R1's pill opens that drawer, as the grid reducer

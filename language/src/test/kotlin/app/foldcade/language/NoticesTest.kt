@@ -9,7 +9,7 @@ import org.junit.Test
 
 class NoticesTest {
     @Test
-    fun aMergedSaveNoticeOpensTheSameEmulatorsPageAsSettings() {
+    fun aMergedSaveNoticeOpensSetUpSavesAtTheFirstEmulatorThatNeedsYou() {
         val notice = FoldNotice("foldcade:save-setup:emulators", Copy.savesNotSyncing, Copy.savesNotSyncingEmulatorsBody(2),
             settingsCategory = SettingsCategory.Players)
         val base = model(listOf(notice)).copy(
@@ -27,27 +27,61 @@ class NoticesTest {
             assertNull(effect)
             assertNull(opened.panel)
             assertNull(opened.dialog)
-            assertEquals(SettingsCategory.Players, settingsCategories(opened)[opened.settings!!.category])
-            assertEquals(focused.panel!!.screen, opened.settings!!.screen)
-            assertEquals(base.focus, opened.settings!!.grid)
+            assertNull(opened.settings)
+            // A to Z, as Settings › Emulators lists them.
+            assertEquals("armsx2", opened.saveSetup!!.focus)
+            assertEquals(focused.panel!!.screen, opened.saveSetup!!.screen)
             assertEquals(true, panelHints(focused)!!.any { it.label == Copy.setUp })
-
-            val left = reduce(base, Meaning.LeftPanel, screen).first
-            val onSettings = left.copy(panel = left.panel!!.copy(index = panelRows(left.panel!!, left).indexOf(Row.Settings)))
-            var normal = reduce(onSettings, Meaning.Activate, screen).first
-            repeat(settingsCategories(normal).indexOf(SettingsCategory.Players)) {
-                normal = reduce(normal, Meaning.MoveDown, screen).first
-            }
-            assertEquals(normal.settings, opened.settings)
-            assertEquals(base.focus, reduce(opened, Meaning.Back, screen).first.focus)
-            assertNull(reduce(opened, Meaning.Back, screen).first.settings)
+            val closed = reduce(opened, Meaning.Back, screen).first
+            assertNull(closed.saveSetup)
+            assertNull(closed.settings)
+            assertEquals(base.focus, closed.focus)
             assertEquals(Effect.DismissNotice(notice.id), reduce(focused, Meaning.ActivateBottom, screen).second)
             assertEquals(false, Row.ClearNotices in rightRows(listOf(notice)))
         }
     }
 
     @Test
-    fun standingSaveNoticesOpenTheirOwnPlayersFixAndCanBeDismissed() {
+    fun oneEmulatorsSaveNoticeOpensSetUpSavesOnItsOwnTile() {
+        val notice = FoldNotice("foldcade:save-setup:melonds", "melonDS saves aren’t syncing", Copy.savesNotSyncingBody, savePlayerId = "melonds")
+        val base = model(listOf(notice)).copy(playerSaves = listOf(
+            PlayerSaveSetting("armsx2", "ARMSX2", false, installed = true),
+            PlayerSaveSetting("melonds", "melonDS", false, installed = true),
+        ))
+        val right = reduce(base, Meaning.RightPanel).first
+        val focused = right.copy(panel = right.panel!!.copy(index = panelRows(right.panel!!, right).indexOf(Row.Notice(notice.id))))
+        val (opened, effect) = reduce(focused, Meaning.Activate)
+        assertNull(effect)
+        assertNull(opened.panel)
+        assertEquals("melonds", opened.saveSetup!!.focus)
+        // The A that opened it, still held, does not go on to open the picker.
+        assertNull(reduce(opened, Meaning.Activate, repeatCount = 1).second)
+        assertEquals(Effect.ChoosePlayerSave("melonds"), reduce(opened, Meaning.Activate).second)
+    }
+
+    @Test
+    fun theSavesFoundNoticeOpensSetUpSavesOnTheFirstEmulatorFoundNotFindSaves() {
+        val notice = FoldNotice("foldcade:saves-found", Copy.savesFoundTitle, Copy.savesFoundBody(listOf("melonDS" to "saves/nds")), savePlayerId = "melonds")
+        val base = model(listOf(notice)).copy(playerSaves = listOf(
+            PlayerSaveSetting("armsx2", "ARMSX2", false, installed = true),
+            PlayerSaveSetting("melonds", "melonDS", true, installed = true, foundIn = "saves/nds"),
+            PlayerSaveSetting("retroarch.nes", "RetroArch", false, installed = true, findable = true),
+        ))
+        // Find saves leads the strip, and ARMSX2 is the first that needs you; neither is where it opens.
+        assertEquals(FIND_SAVES_TILE, base.openSaveSetup(HostScreen.Top).saveSetup!!.focus)
+        val right = reduce(base, Meaning.RightPanel).first
+        val focused = right.copy(panel = right.panel!!.copy(index = panelRows(right.panel!!, right).indexOf(Row.Notice(notice.id))))
+        assertEquals(true, panelHints(focused)!!.any { it.label == Copy.setUp })
+        val (opened, effect) = reduce(focused, Meaning.Activate)
+        assertNull(effect)
+        val page = opened.saveSetup!!
+        assertEquals("melonds", page.focus)
+        val tile = saveSetupTiles(opened, page).first { it.key == "melonds" }
+        assertEquals("Found in saves/nds.", SaveSetupCopy.stepBody(tile))
+    }
+
+    @Test
+    fun aSaveNoticeForAnEmulatorNotOnTheStripStillOpensItsOwnFixAndCanBeDismissed() {
         val notice = FoldNotice("setup", "ARMSX2 saves aren’t syncing", "Set up to keep them on RomM.", savePlayerId = "armsx2")
         val cases = listOf(
             PlayerSaveSetting("armsx2", "ARMSX2", false) to Effect.ChoosePlayerSave("armsx2"),

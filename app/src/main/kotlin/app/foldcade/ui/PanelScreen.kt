@@ -320,7 +320,8 @@ fun PanelHost(activity: FoldcadeHomeActivity, displays: Displays) {
         spec = if (blurTarget >= 1f) motion.arrive(motion.durationIsland, scale) else motion.leave(motion.durationIsland, scale),
         snap = heldBlur != null,
     )
-    val dimmed = panel != null && app.commandCenter.dimmed(panel)
+    // Set up saves beside an emulator shows that emulator's steps, so it stays at the panel's own brightness.
+    val dimmed = panel != null && app.commandCenter.dimmed(panel) && model.saveSetup == null
     // Either panel's level can move while dimmed, and a darker one still wins.
     LaunchedEffect(dimmed, app.brightness.revision) { activity.applyCommandCenterDim(dimmed) }
     // Leaving a window forgets what each graphics layer reads, and the next window
@@ -372,6 +373,19 @@ fun PanelHost(activity: FoldcadeHomeActivity, displays: Displays) {
                 Box(Modifier.fillMaxSize().rise { saves.progress.value }) {
                     if (screen == HostScreen.Top) SavePickerTop(app, shown, rememberDateStyle(app), scale)
                     if (screen == HostScreen.Bottom) SavePickerBottom(app, shown, rememberDateStyle(app), scale, activity::dispatch)
+                }
+            }
+            // Set up saves rises over both screens too. Beside a game or an emulator it takes the one screen there is.
+            val setup = presence(model.saveSetup, motion.durationIsland, scale)
+            setup.shown?.let { shown ->
+                val split = session.bothScreensFree()
+                Box(Modifier.fillMaxSize().rise { setup.progress.value }) {
+                    when {
+                        split && screen == HostScreen.Top -> SaveSetupTop(app, shown, scale, activity::dispatch)
+                        split && screen == HostScreen.Bottom -> SaveSetupBottom(app, shown, scale, activity::dispatch)
+                        !split && screen != null && panel != null && session.surfaceOn(panel) != null ->
+                            SaveSetupSingle(app, shown, screen, scale, activity::dispatch)
+                    }
                 }
             }
             if (panel != null && screen != null) {
