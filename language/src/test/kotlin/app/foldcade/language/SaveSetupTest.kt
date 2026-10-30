@@ -66,6 +66,23 @@ class SaveSetupTest {
         assertTrue(noFolder.openSaveSetup(HostScreen.Top).tile(EDEN_SHELF_KEY).steps.single() is SetupStep.EdenFolder)
     }
 
+    @Test fun aPageBackAfterProcessDeathReturnsToItsTileOnceItLoads() {
+        val empty = model.copy(playerSaves = emptyList(), retroArch = null, eden = null)
+        val restored = empty.openSaveSetup(HostScreen.Top, target = "melonds")
+        // Some emulators load first: the focus waits elsewhere, and the restored tile is still wanted.
+        val partial = restored.settle { it.copy(playerSaves = listOf(retroArch)) }
+        assertEquals(FIND_SAVES_TILE, partial.page().focus)
+        assertEquals("melonds", partial.page().restoring)
+        // The pick made behind the picker landed: its check lands, then the focus glides on.
+        val loaded = partial.settle { model.copy(saveSetup = it.saveSetup).saves("melonds") { s -> s.copy(chosen = true) } }
+        assertEquals("melonds", loaded.page().focus)
+        assertEquals("melonds", loaded.page().celebrating)
+        assertNull(loaded.page().restoring)
+        // A move before then wins over the restore.
+        val moved = partial.press(Meaning.MoveRight).first
+        assertNull(moved.page().restoring)
+    }
+
     @Test fun theStripIsFindSavesThenEveryEmulatorOnSettingsAToZ() {
         val opened = model.openSaveSetup(HostScreen.Top)
         assertEquals(

@@ -24,6 +24,11 @@ data class SaveSetupPage(
     val grid: GridFocus = GridFocus(),
     /** The Settings page that opened this one. Back returns there. */
     val settings: SettingsPage? = null,
+    /**
+     * The tile the page came back for after Android recreated Home, until it is on the strip, as
+     * when the emulators are still loading. It takes the focus then, unless the user has moved.
+     */
+    val restoring: String? = null,
 )
 
 data class SetupNote(val key: String, val text: String)
@@ -187,12 +192,13 @@ fun PickerModel.openSaveSetup(
 ): PickerModel {
     val fresh = SaveSetupPage(screen = screen, grid = grid, settings = settings)
     val tiles = saveSetupTiles(this, fresh)
-    val focus = target?.takeIf { key -> tiles.isEmpty() || tiles.any { it.key == key } } ?: nextNeeding(tiles, fresh, null)
+    val shown = target?.takeIf { key -> tiles.isEmpty() || tiles.any { it.key == key } }
+    val focus = shown ?: nextNeeding(tiles, fresh, null)
     return copy(
         panel = null,
         settings = null,
         playActivity = null,
-        saveSetup = fresh.copy(focus = focus, offeredFind = tiles.any { it.findSaves }),
+        saveSetup = fresh.copy(focus = focus, offeredFind = tiles.any { it.findSaves }, restoring = target?.takeIf { key -> tiles.none { it.key == key } }),
     )
 }
 
@@ -213,7 +219,7 @@ fun applySaveSetup(model: PickerModel, page: SaveSetupPage, meaning: Meaning, re
     val tiles = saveSetupTiles(model, page)
     val index = tiles.indexOfFirst { it.key == page.focus }
     val tile = tiles.getOrNull(index)
-    val moved = { key: String? -> model.copy(saveSetup = page.copy(focus = key, celebrating = null, note = null)) to null }
+    val moved = { key: String? -> model.copy(saveSetup = page.copy(focus = key, celebrating = null, note = null, restoring = null)) to null }
     return when (meaning) {
         Meaning.MoveLeft -> when {
             tiles.isEmpty() -> model to null
@@ -299,6 +305,12 @@ fun retainSaveSetup(previous: PickerModel, next: PickerModel): PickerModel {
     val tiles = saveSetupTiles(next, page)
     var settled = page
     if (tiles.any { it.findSaves } && !settled.offeredFind) settled = settled.copy(offeredFind = true)
+    // The tile the page came back for is on the strip now. A pick made behind the picker has landed
+    // already, so a done tile's check lands here, and the focus glides on as after any pick.
+    settled.restoring?.let { key ->
+        val tile = tiles.firstOrNull { it.key == key } ?: return@let
+        settled = settled.copy(focus = key, restoring = null, celebrating = key.takeIf { tile.done }, note = null)
+    }
     val key = page.focus
     val old = before.firstOrNull { it.key == key }
     val now = tiles.firstOrNull { it.key == key }
