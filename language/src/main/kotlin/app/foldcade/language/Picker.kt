@@ -1017,8 +1017,10 @@ fun retainMenuRows(previous: PickerModel, next: PickerModel): PickerModel {
     // Sorting the folder changes what its menu offers: Move and Tidy mean something only in Custom.
     fun changed(was: FolderSortChoice?, now: FolderSortChoice?) =
         was != null && now != null && was.folderId == now.folderId && was.sort != now.sort
+    // So does Find's folder once its switch puts it on Home: the switch gives way to Show on Home.
+    val switched = (previous.tileActions?.folderOnHome != null) != (next.tileActions?.folderOnHome != null)
     val resorted = changed(previous.tileActions?.sort, next.tileActions?.sort) ||
-        changed(previous.tileActions?.boardSort, next.tileActions?.boardSort)
+        changed(previous.tileActions?.boardSort, next.tileActions?.boardSort) || switched
     val retained = (if (previous.panel?.side == panel.side && !resorted) previous.menuRows else emptyList())
         .map { it.copy(rows = validMenuRows(it.rows, next)) }
     val page = panel.page()

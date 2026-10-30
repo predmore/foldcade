@@ -135,6 +135,31 @@ class FoldersHostTest {
         assertTrue(HOME_ANDROID_APPS in board().slots)
     }
 
+    @Test fun findsSwitchGivesWayToShowOnHomeOnceTheFolderIsOnHome() {
+        val shell = shell()
+        openFolders(shell)
+        focus(shell, 1)
+        shell.onMeaning(Meaning.Options, HostScreen.Bottom)
+        choose(shell, Row.FolderOnHome)
+        shell.onMeaning(Meaning.Back, HostScreen.Bottom)
+        shell.openFind()
+        shell.onMeaning(Meaning.Done, HostScreen.Bottom)
+        val find = shell.find!!
+        val target = find.results.indexOfFirst { it.id == HOME_ANDROID_GAMES }
+        assertTrue(target >= 0)
+        while (find.index != target) shell.onMeaning(if (find.index < target) Meaning.MoveRight else Meaning.MoveLeft, HostScreen.Bottom)
+        assertEquals(HOME_ANDROID_GAMES, shell.find?.subject?.id)
+        shell.onMeaning(Meaning.Options, HostScreen.Bottom)
+        assertEquals(listOf(Row.FolderOnHome), panelRows(shell.model.panel!!, shell.model))
+        shell.onMeaning(Meaning.Activate, HostScreen.Bottom)
+        assertTrue(HOME_ANDROID_GAMES in board().slots)
+        // The menu stays open, now with the way to its tile in place of the switch.
+        assertEquals(listOf(Row.ShowOnHome), panelRows(shell.model.panel!!, shell.model))
+        shell.onMeaning(Meaning.Activate, HostScreen.Bottom)
+        assertNull(shell.find)
+        assertEquals(HOME_ANDROID_GAMES, shell.homeFace(shell.model.focus.cellIndex)?.id)
+    }
+
     @Test fun showOnHomeLeavesFolders() {
         val home = HomeSession(null)
         home.remerge(emptyList(), listOf(HomeItem(quest, "Quest", HomeKind.AndroidGame), HomeItem(notes, "Notes", HomeKind.AndroidApp)), emptyList(), emptyList())
