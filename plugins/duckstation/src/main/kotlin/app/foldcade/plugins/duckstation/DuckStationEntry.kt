@@ -78,6 +78,8 @@ class DuckStationPlayer : Player, SaveFolderHolder, HostedSaveFolder {
 
     override fun hasSaveFolder(): Boolean = saveFolder != null
 
+    override val saveFolderPlaces: List<String> = listOf("Android/data/com.github.stenzek.duckstation/files")
+
     /**
      * DuckStation's own data folder. Android lets the picker choose it on the Thor,
      * so nothing in DuckStation has to change. Where it does not, the user moves

@@ -118,6 +118,7 @@ import kotlinx.coroutines.isActive
 import java.lang.ref.WeakReference
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
+import java.util.concurrent.ConcurrentHashMap
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
@@ -959,15 +960,66 @@ class FoldcadeApp : Application() {
             false
         }
 
-    private fun restorePlayerSaveFolders() {
+    private suspend fun restorePlayerSaveFolders() {
         for (id in plugins.playerIds()) {
             val player = plugins.player(id) ?: continue
             if (player !is SaveFolderHolder) continue
             val uri = playerSaveFolder(player) ?: continue
             player.bindSaveFolder(uri)
         }
+        findPlayerSaveFolders()
         refreshHostedFolders()
         contentResolver.notifyChange(DocumentsContract.buildRootsUri(hostedAuthority), null, false)
+    }
+
+    private val saveFolderFindLock = Mutex()
+    private val saveFolderStarts = ConcurrentHashMap<String, String>()
+
+    /** Reuses writable trees and retires found folders whose reach has gone. */
+    internal suspend fun findPlayerSaveFolders() = withContext(Dispatchers.IO) {
+        saveFolderFindLock.withLock {
+            if (!::plugins.isInitialized) return@withLock
+            val players = plugins.playerIds().mapNotNull(plugins::player)
+                .filter { it is SaveFolderHolder && it !is EdenPlayer }.distinctBy { it.saveFolderId() }
+            val android = AndroidSaveFolderFinder(this@FoldcadeApp)
+            val grants = android.grants(players.filterIsInstance<SaveFolderHolder>())
+            for (player in players) {
+                val holder = player as SaveFolderHolder
+                val key = player.saveFolderId()
+                val saved = store.playerSaveFolder(key)?.let { SavedSaveFolder(it, store.playerSaveFolderFound(key)) }
+                val finder = android.finder(player, grants)
+                val result = finder.find(holder)
+                result.startingFolder?.let { saveFolderStarts[key] = it }
+                val next = detectedSaveFolder(saved, { android.reachable(player, holder, it, grants) }, { result.folder })
+                val bound = next != null && android.canReach(next.uri, grants)
+                // A picker can finish while the provider is being read. Its choice wins.
+                withContext(Dispatchers.Main.immediate) {
+                    if (store.playerSaveFolder(key) != saved?.uri || store.playerSaveFolderFound(key) != (saved?.found == true)) return@withContext
+                    if (next != saved) store.setPlayerSaveFolder(key, next?.uri, next?.found == true)
+                    val uri = next?.uri?.takeIf { bound }.orEmpty()
+                    for (id in plugins.playerIds()) {
+                        val sharing = plugins.player(id) ?: continue
+                        if (sharing is SaveFolderHolder && sharing.saveFolderId() == key) sharing.bindSaveFolder(uri)
+                    }
+                }
+            }
+            withContext(Dispatchers.Main.immediate) { shell.refreshPlayerSaves() }
+        }
+    }
+
+    internal fun refreshFoundSaveFolders() {
+        scope.launch {
+            playersLoaded.await()
+            findPlayerSaveFolders()
+            withContext(Dispatchers.Main.immediate) {
+                shell.refreshPlayerSaves()
+                refreshSaveSync()
+            }
+        }
+    }
+
+    internal fun saveFolderStart(player: Player?): String? = (player as? SaveFolderHolder)?.let {
+        saveFolderStarts[player.saveFolderId()] ?: it.suggestedSaveFolder ?: it.saveFolderPlaces.firstOrNull()?.let(::primaryFolderDocument)
     }
 
     /** The manifest's [HostedSavesProvider] authority. */
@@ -1498,12 +1550,13 @@ class FoldcadeApp : Application() {
     fun useFolder(uri: Uri) {
         store.addFolderTree(uri.toString())
         reloadFolder()
+        refreshFoundSaveFolders()
     }
 
     /** Stops reading [uri]. Its games, and its .steam files, leave the grid. */
     fun forgetFolder(uri: String) {
         store.removeFolderTree(uri)
-        releaseUnusedFolderGrant(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        releaseUnusedFolderGrant(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION)
         shell.setFolders(libraryFolders())
         reloadFolder()
     }
@@ -1512,7 +1565,7 @@ class FoldcadeApp : Application() {
     fun releaseUnusedFolderGrant(uri: String, flags: Int) {
         if (store.folderTreeInUse(uri)) return
         try {
-            contentResolver.releasePersistableUriPermission(Uri.parse(uri), flags)
+            contentResolver.releasePersistableUriPermission(Uri.parse(folderGrantUri(uri)), flags)
         } catch (_: SecurityException) {
             // Already released.
         }

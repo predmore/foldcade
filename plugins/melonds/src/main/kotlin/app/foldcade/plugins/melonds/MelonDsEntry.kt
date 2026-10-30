@@ -72,6 +72,9 @@ class MelonDsPlayer : Player, SaveFolderHolder {
 
     override fun hasSaveFolder(): Boolean = saveFolder != null
 
+    override val saveFolderPlaces: List<String> = listOf("saves/nds")
+    override val saveFolderPickedInPlayer: Boolean = true
+
     override fun saveDeclarations(game: Game): List<SaveDeclaration> =
         listOf(SaveDeclaration(slot = SAVE_SLOT, locationUri = saveFolder))
 

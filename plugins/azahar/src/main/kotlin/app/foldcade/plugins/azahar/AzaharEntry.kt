@@ -100,6 +100,10 @@ class AzaharPlayer : Player, SaveFolderHolder {
 
     override fun hasSaveFolder(): Boolean = saveFolder != null
 
+    override val saveFolderPlaces: List<String> = listOf("saves/Azahar", "Azahar")
+    override val saveFolderPickedInPlayer: Boolean = true
+    override val saveFolderMarkers: Set<String> = setOf("config", "sdmc", "nand")
+
     override fun saveDeclarations(game: Game): List<SaveDeclaration> {
         val location = saveLocation(saveFolder)
         return listOf(SaveDeclaration(slot = location.slot, locationUri = location.locationUri))

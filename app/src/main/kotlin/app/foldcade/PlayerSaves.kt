@@ -1053,7 +1053,7 @@ internal class AndroidSaveDocuments(private val resolver: ContentResolver) : Sav
         val tree = Uri.parse(folderUri)
         val parts = savePathParts(name) ?: return null
         return try {
-            var parent = DocumentsContract.getTreeDocumentId(tree)
+            var parent = folderDocumentId(tree.toString())
             for (part in parts.dropLast(1)) {
                 parent = child(tree, parent, part, directory = true) ?: return null
             }
@@ -1068,7 +1068,7 @@ internal class AndroidSaveDocuments(private val resolver: ContentResolver) : Sav
         val tree = Uri.parse(folderUri)
         val parts = savePathParts(name) ?: return null
         val created = try {
-            var parent = DocumentsContract.getTreeDocumentId(tree)
+            var parent = folderDocumentId(tree.toString())
             for (part in parts.dropLast(1)) {
                 parent = child(tree, parent, part, directory = true)
                     ?: createIn(tree, parent, DocumentsContract.Document.MIME_TYPE_DIR, part)
@@ -1206,7 +1206,7 @@ internal class AndroidSaveDocuments(private val resolver: ContentResolver) : Sav
 
     override fun childNames(folderUri: String): List<String>? = try {
         val tree = Uri.parse(folderUri)
-        listChildren(tree, DocumentsContract.getTreeDocumentId(tree)).map { it.name }
+        listChildren(tree, folderDocumentId(tree.toString())).map { it.name }
     } catch (_: Exception) {
         null
     }
@@ -1214,7 +1214,7 @@ internal class AndroidSaveDocuments(private val resolver: ContentResolver) : Sav
     override fun list(folderUri: String, name: String): List<SaveEntry>? {
         val tree = Uri.parse(folderUri)
         val parts = savePathParts(name) ?: return null
-        var folder = DocumentsContract.getTreeDocumentId(tree)
+        var folder = folderDocumentId(tree.toString())
         for (part in parts) {
             folder = listChildren(tree, folder).firstOrNull { it.name == part && it.isFolder }?.id ?: return null
         }
@@ -1236,7 +1236,7 @@ internal class AndroidSaveDocuments(private val resolver: ContentResolver) : Sav
         val tree = Uri.parse(folderUri)
         val parts = savePathParts(name) ?: return false
         return try {
-            var parent = DocumentsContract.getTreeDocumentId(tree)
+            var parent = folderDocumentId(tree.toString())
             for (part in parts) {
                 parent = child(tree, parent, part, directory = true)
                     ?: createIn(tree, parent, DocumentsContract.Document.MIME_TYPE_DIR, part)
@@ -1251,10 +1251,10 @@ internal class AndroidSaveDocuments(private val resolver: ContentResolver) : Sav
     override fun children(folderUri: String, path: String): List<SaveChild>? {
         val tree = Uri.parse(folderUri)
         val parent = if (path.isEmpty()) {
-            DocumentsContract.getTreeDocumentId(tree)
+            folderDocumentId(tree.toString())
         } else {
             val parts = savePathParts(path) ?: return null
-            var folder = DocumentsContract.getTreeDocumentId(tree)
+            var folder = folderDocumentId(tree.toString())
             for (part in parts) {
                 folder = listChildren(tree, folder).firstOrNull { it.name == part && it.isFolder }?.id ?: return null
             }
