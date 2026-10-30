@@ -2607,8 +2607,18 @@ class ShellController(
 
     /** Null while Eden is not installed. */
     fun setEden(setting: EdenSetting?) {
-        if (model.eden != setting) model = model.copy(eden = setting)
+        val next = setting?.copy(needsUser = edenNeedsUser && setting.fromRomm)
+        if (model.eden != next) model = model.copy(eden = next)
         refreshSaveHealth()
+    }
+
+    /** Read off the main thread with the other folder notes; kept so a fresh [EdenSetting] still carries it. */
+    private var edenNeedsUser = false
+
+    fun setEdenNeedsUser(needsUser: Boolean) {
+        if (edenNeedsUser == needsUser) return
+        edenNeedsUser = needsUser
+        setEden(model.eden)
     }
 
     private fun libraryEntry(snapshot: PickerModel): GridEntry? {

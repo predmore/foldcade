@@ -647,6 +647,10 @@ internal class PlayerSaves(
     }
 
     /** Read-only profile check for an Eden save that has no destination yet. */
+    /** Whether Eden has a user in [folderUri], its granted folder. Read only. */
+    fun edenHasUser(player: app.foldcade.plugins.eden.EdenPlayer, folderUri: String): Boolean =
+        player.hasUser(folderAccess(player, folderUri, allowWrite = false))
+
     fun edenHasUser(player: app.foldcade.plugins.eden.EdenPlayer, game: Game): Boolean {
         val folder = player.saveDeclarations(game).singleOrNull()?.locationUri ?: return false
         return player.hasUser(folderAccess(player, folder, allowWrite = false))

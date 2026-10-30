@@ -770,6 +770,7 @@ class FoldcadeApp : Application() {
                 withContext(Dispatchers.Main.immediate) {
                     refreshEdenSetting()
                     shell.setSaveSync(notes.sync, notes.setup)
+                    shell.setEdenNeedsUser(notes.edenNeedsUser)
                     shell.refreshPlayerSaves()
                     shell.noteShelfChanged()
                 }
@@ -1071,6 +1072,7 @@ class FoldcadeApp : Application() {
             val notes = readPlayerFolderNotes()
             withContext(Dispatchers.Main.immediate) {
                 shell.setSaveSync(notes.sync, notes.setup)
+                shell.setEdenNeedsUser(notes.edenNeedsUser)
                 shell.refreshPlayerSaves()
             }
         }
@@ -1131,12 +1133,15 @@ class FoldcadeApp : Application() {
             playerSaves.saveSync(player, uri)?.let { sync[player.id] = it }
             playerSaves.setupSteps(player, uri)?.let { setup[player.id] = it }
         }
-        return PlayerFolderNotes(sync, setup)
+        val eden = plugins.player("eden") as? EdenPlayer
+        val edenNeedsUser = eden?.let(::playerSaveFolder)?.let { !playerSaves.edenHasUser(eden, it) } == true
+        return PlayerFolderNotes(sync, setup, edenNeedsUser)
     }
 
     private data class PlayerFolderNotes(
         val sync: Map<String, app.foldcade.api.plugin.SaveSyncState>,
         val setup: Map<String, String>,
+        val edenNeedsUser: Boolean,
     )
 
     /**

@@ -266,6 +266,8 @@ object Copy {
     /** The tiles of RetroArch and Eden when no player with a save folder names them. */
     const val retroArch = "RetroArch"
     const val eden = "Eden"
+    const val edenUser = "User"
+    const val edenUserSteps = "Eden keeps Switch saves per user. Open Eden, make a user profile, then come back."
     const val edenFromRomm = "From RomM"
     const val showCores = "Show"
     const val cores = "cores"

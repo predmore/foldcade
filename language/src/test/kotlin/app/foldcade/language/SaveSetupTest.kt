@@ -47,6 +47,20 @@ class SaveSetupTest {
         assertEquals(SaveSetupCopy.foundIn("saves/nds"), SaveSetupCopy.stepBody(tile))
     }
 
+    @Test fun edenWithoutAUserIsOneInEmulatorStep() {
+        val ready = model.copy(eden = EdenSetting(fromRomm = true, packageName = "dev.eden.eden_emulator", needsUser = true))
+        val eden = ready.openSaveSetup(HostScreen.Top).tile(EDEN_SHELF_KEY)
+        val step = eden.step as SetupStep.InApp
+        assertEquals(InAppStep.Setup, step.kind)
+        assertEquals(Copy.edenUserSteps, step.steps)
+        assertEquals(EDEN_SHELF_KEY, step.playerId)
+        val settled = ready.copy(eden = ready.eden!!.copy(needsUser = false)).openSaveSetup(HostScreen.Top).tile(EDEN_SHELF_KEY)
+        assertTrue(settled.done)
+        // Without Eden's folder, the folder comes first and no user step shows.
+        val noFolder = model.copy(eden = EdenSetting(fromRomm = false, packageName = "dev.eden.eden_emulator", needsUser = true))
+        assertTrue(noFolder.openSaveSetup(HostScreen.Top).tile(EDEN_SHELF_KEY).steps.single() is SetupStep.EdenFolder)
+    }
+
     @Test fun theStripIsFindSavesThenEveryEmulatorOnSettingsAToZ() {
         val opened = model.openSaveSetup(HostScreen.Top)
         assertEquals(

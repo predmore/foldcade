@@ -210,7 +210,7 @@ fun emulatorShelf(model: PickerModel): List<EmulatorShelfEntry> {
             EmulatorShelfEntry(RETROARCH_SHELF_KEY, Copy.retroArch, it.packageName, listOf(Row.RetroArchCores))
         },
         eden?.takeIf { edenOwner == null }?.let {
-            EmulatorShelfEntry(EDEN_SHELF_KEY, Copy.eden, it.packageName, listOf(Row.EdenFolder))
+            EmulatorShelfEntry(EDEN_SHELF_KEY, Copy.eden, it.packageName, listOfNotNull(Row.EdenFolder, Row.EdenUser.takeIf { _ -> it.fromRomm && it.needsUser }))
         },
     )
     return (entries + loose).sortedBy { it.label.lowercase() }
@@ -383,6 +383,6 @@ fun rowControl(row: Row, model: PickerModel, value: String? = rowText(row, model
     -> RowControl.Opens
     else -> value?.takeIf { it.isNotEmpty() }?.let {
         RowControl.Value(it, attention = it == Copy.notSyncing &&
-            (row is Row.PlayerSave || row is Row.HostedSaves || row is Row.SaveSync || row is Row.PlayerSetup))
+            (row is Row.PlayerSave || row is Row.HostedSaves || row is Row.SaveSync || row is Row.PlayerSetup || row == Row.EdenUser))
     } ?: RowControl.None
 }

@@ -121,6 +121,7 @@ fun setupSteps(entry: EmulatorShelfEntry, model: PickerModel): List<SetupStep> =
         is Row.PlayerSetup -> SetupStep.InApp(row.playerId, InAppStep.Setup, setting(row.playerId)?.setupSteps, done)
         Row.RetroArchCores -> SetupStep.Cores(done)
         Row.EdenFolder -> SetupStep.EdenFolder(done)
+        Row.EdenUser -> SetupStep.InApp(EDEN_SHELF_KEY, InAppStep.Setup, Copy.edenUserSteps, done)
         else -> null
     }
 }

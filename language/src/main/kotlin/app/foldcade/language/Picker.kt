@@ -580,6 +580,9 @@ sealed interface Row {
 
     /** Whether Foldcade can add Eden's keys and firmware from RomM. A opens Eden's folder. */
     data object EdenFolder : Row
+
+    /** Eden has no user yet. A opens Eden to make one. */
+    data object EdenUser : Row
     data object AndroidGames : Row
     data object Apps : Row
     /** Edit home's way into the one Hidden place: hidden games and apps, and groups taken off Home. */
@@ -791,6 +794,8 @@ data class EdenSetting(
     val fromRomm: Boolean,
     /** The installed Eden, which ties the row to that player's tile. */
     val packageName: String? = null,
+    /** True when Foldcade holds Eden's folder and Eden has no user yet, so no Switch save has a place. */
+    val needsUser: Boolean = false,
 )
 
 /**
@@ -1146,6 +1151,7 @@ fun rowText(row: Row, model: PickerModel): RowText = when (row) {
         Copy.retroArchCores,
         model.retroArch?.cores?.let { if (it == 1) Copy.oneCore else "$it ${Copy.cores}" } ?: Copy.showCores,
     )
+    Row.EdenUser -> RowText(Copy.edenUser, Copy.notSyncing)
     Row.EdenFolder -> RowText(
         Copy.edenKeys,
         if (model.eden?.fromRomm == true) Copy.edenFromRomm else Copy.setUp,
@@ -2283,6 +2289,7 @@ private fun activateRow(
         is Row.PlayerSetup -> model.copy(panel = null, focus = panel.grid) to Effect.ShowPlayerSetup(row.playerId)
         Row.RetroArchCores -> model.copy(panel = null, focus = panel.grid) to Effect.ShowRetroArchCores
         Row.EdenFolder -> model.copy(panel = null, focus = panel.grid) to Effect.ShowEdenFolder
+        Row.EdenUser -> model.copy(panel = null, focus = panel.grid) to Effect.OpenPlayer(EDEN_SHELF_KEY)
         Row.AndroidGames -> model.copy(panel = null, focus = panel.grid) to Effect.OpenFolder(HOME_ANDROID_GAMES)
         Row.Apps -> model.copy(panel = null, focus = panel.grid) to Effect.OpenFolder(HOME_ANDROID_APPS)
         Row.Hidden -> openGrid(model, panel, HomeGrid.Hidden)
