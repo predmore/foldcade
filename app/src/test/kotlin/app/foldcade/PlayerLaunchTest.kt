@@ -171,9 +171,9 @@ class PlayerLaunchTest {
     }
 
     @Test
-    fun manifestSeesBothPackagesAndDoesNotAskForAllFiles() {
+    fun manifestSeesBothPackagesWithoutBroadPackageVisibility() {
         val xml = File("src/main/AndroidManifest.xml").readText()
-        assertFalse(xml.contains("MANAGE_EXTERNAL_STORAGE"))
+        assertFalse(xml.contains("QUERY_ALL_PACKAGES"))
         AzaharPlayer.PACKAGES.forEach { name ->
             assertTrue(xml.contains("android:name=\"$name\""))
         }
@@ -329,7 +329,6 @@ class PlayerLaunchTest {
     fun manifestSeesGameNativePackagesAndDoesNotAskForEveryPackage() {
         val xml = File("src/main/AndroidManifest.xml").readText()
         assertFalse(xml.contains("QUERY_ALL_PACKAGES"))
-        assertFalse(xml.contains("MANAGE_EXTERNAL_STORAGE"))
         GameNativePlayer.PACKAGES.forEach { name ->
             assertTrue(xml.contains("android:name=\"$name\""))
         }
@@ -339,7 +338,6 @@ class PlayerLaunchTest {
     fun manifestSeesMelonDsPackagesAndDoesNotAskForEveryPackage() {
         val xml = File("src/main/AndroidManifest.xml").readText()
         assertFalse(xml.contains("QUERY_ALL_PACKAGES"))
-        assertFalse(xml.contains("MANAGE_EXTERNAL_STORAGE"))
         MelonDsPlayer.PACKAGES.forEach { name ->
             assertTrue(xml.contains("android:name=\"$name\""))
         }

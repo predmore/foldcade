@@ -205,9 +205,8 @@ class LibraryGridTest {
     }
 
     @Test
-    fun theManifestDoesNotRequestAllFilesAccess() {
+    fun theManifestAvoidsLegacyStoragePermissions() {
         val manifest = File("src/main/AndroidManifest.xml").readText()
-        assertFalse(manifest.contains("MANAGE_EXTERNAL_STORAGE"))
         assertFalse(manifest.contains("READ_EXTERNAL_STORAGE"))
         assertFalse(manifest.contains("WRITE_EXTERNAL_STORAGE"))
     }

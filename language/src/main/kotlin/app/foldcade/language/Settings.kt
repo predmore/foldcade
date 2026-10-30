@@ -53,6 +53,9 @@ object SettingsCopy {
     const val sound = "Sound"
     const val library = "Library"
     const val players = "Emulators"
+    const val findSaves = "Find saves"
+    const val accessAllowed = "Allowed"
+    const val accessAsk = "Ask"
     const val screens = "System"
     const val about = "About"
 }
@@ -117,7 +120,11 @@ fun settingsRows(category: SettingsCategory, model: PickerModel): List<Row> = wh
         if (model.signedIn.isNotEmpty() || model.folders.isNotEmpty()) add(Row.SyncLibrary)
         addAll(listOf(Row.Order, Row.Artwork, Row.ArtKey))
     }
-    SettingsCategory.Players -> emulatorShelf(model).map { Row.SettingsTile(SettingsInner.Emulator(it.key)) }
+    SettingsCategory.Players -> buildList {
+        val shelf = emulatorShelf(model)
+        addAll(shelf.map { Row.SettingsTile(SettingsInner.Emulator(it.key)) })
+        if (shelf.isNotEmpty()) add(Row.FindSaves)
+    }
     SettingsCategory.Screens -> buildList {
         add(Row.Primary)
         if (!model.homeRoleHeld) add(Row.SetAsHome)
@@ -358,6 +365,8 @@ sealed interface RowControl {
 fun rowControl(row: Row, model: PickerModel, value: String? = rowText(row, model).value): RowControl = when (row) {
     Row.Music -> RowControl.Toggle(model.music.enabled)
     Row.AddNewGames -> RowControl.Toggle(model.addNewToHome)
+    // Android owns the switch: A opens its all-files page, and the switch shows what it says.
+    Row.FindSaves -> RowControl.Toggle(model.allFilesGranted)
     Row.RecentOnHome -> RowControl.Toggle(model.recentOnHome)
     Row.Artwork -> RowControl.Toggle(model.artwork)
     is Row.StreamHost -> RowControl.Toggle(model.streamHosts.any { it.key == row.key && it.paired })

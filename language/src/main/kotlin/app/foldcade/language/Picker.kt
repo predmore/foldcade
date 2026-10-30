@@ -534,6 +534,8 @@ sealed interface Row {
     data object Background : Row
     data object MotionSpeed : Row
     data object UsageAccess : Row
+    /** Opens Android's optional all-files access page. Its value follows Android. */
+    data object FindSaves : Row
     data object Primary : Row
     data object Order : Row
     data object Music : Row
@@ -1061,6 +1063,7 @@ fun rowText(row: Row, model: PickerModel): RowText = when (row) {
     Row.Background -> RowText(Copy.background, model.backgroundChoices.firstOrNull { it.motion == model.backgroundMotion }?.name ?: backgroundLabel(model.backgroundMotion))
     Row.MotionSpeed -> RowText(Copy.motion, speedLabel(model.motionSpeed))
     Row.UsageAccess -> RowText(Copy.playTime, if (model.usageGranted) Copy.playTimeEverywhere else Copy.playTimeHere)
+    Row.FindSaves -> RowText(SettingsCopy.findSaves, if (model.allFilesGranted) SettingsCopy.accessAllowed else SettingsCopy.accessAsk)
     Row.Primary -> RowText(Copy.primaryPanel, if (model.primaryIsTop) Copy.top else Copy.bottom)
     Row.Order -> RowText(Copy.sortAll, if (model.sort == LibrarySort.RecentlyPlayed) Copy.sortRecent else Copy.sortListed)
     Row.SortFolder -> RowText(Copy.sort, folderSortLabel(model.sortChoice()?.sort ?: FolderSort.Custom))
@@ -1233,6 +1236,7 @@ sealed interface Effect {
     /** A on a text row of the connect form. The field takes focus and raises the keyboard. */
     data object EditField : Effect
     data object RequestHome : Effect
+    data object OpenAllFilesAccess : Effect
     data class ChoosePlayerSave(val playerId: String) : Effect
     /** How to point the player at the folder Foldcade hosts for its saves. */
     data class SetUpHostedSaves(val playerId: String) : Effect
@@ -1449,6 +1453,8 @@ data class PickerModel(
     val gridKind: GridKind = GridKind.Games,
     val emptyGrid: EmptyGrid = EmptyGrid.None,
     val usageGranted: Boolean = false,
+    /** Android's current optional all-files access, shared by Settings and save setup. */
+    val allFilesGranted: Boolean = false,
     /** Mirrors the home board. Off keeps new scans out of the grid. */
     val addNewToHome: Boolean = true,
     /** Mirrors the home board: the Recently played tile is on the root. */
@@ -2108,7 +2114,7 @@ private fun applySettings(
         Meaning.Activate -> {
             if (row is Row.SettingsTile) return model.copy(settings = current.copy(inner = row.page, row = 0)) to null
             // A held A that opened a page does not go on to act in it: a folder's Remove, a computer's pairing.
-            if (inner != null && repeatCount > 0) return model.copy(settings = current) to null
+            if (repeatCount > 0 && (inner != null || row == Row.FindSaves)) return model.copy(settings = current) to null
             // Rows act through the menu path. A stand-in panel tells "stays open" from "leaves".
             val standIn = SidePanel(Side.Left, current.screen, PanelLevel.Root, rowIndex, current.grid)
             val (next, effect) = activateRow(model.copy(panel = standIn), standIn, row, current.screen)
@@ -2172,6 +2178,7 @@ private fun activateRow(
         // A choice row too, whose value is the board's: the shell steps it.
         Row.SortFolder -> model.copy(panel = panel) to sortStep(model, 1)
         Row.UsageAccess -> model.copy(dialog = usageAccessPrompt(screen)) to null
+        Row.FindSaves -> model to Effect.OpenAllFilesAccess
         Row.PlayActivity -> model.copy(
             panel = null,
             playActivity = PlayActivityPage(screen = panel.screen, grid = panel.grid),

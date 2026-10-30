@@ -37,6 +37,8 @@ The home-music loop plays while Foldcade is in front and pauses when you leave i
 
 Saved settings, Home edits, file durability, credentials, and transfer rules are covered in the [persistence audit](persistence.md).
 
+Save discovery reuses writable SAF trees first. Optional all-files access adds `SharedStorageProvider` at `<applicationId>.storage`, with `primary:<path>` ids over primary shared storage. It has no picker roots and refuses every uid except Foldcade's own, even with a URI grant. Every storage operation requires current Android all-files access; app data (`Android/data`, `Android/obb`), traversal and symbolic links are refused. Save writes take the same `SaveFileLock` as hosted saves; file creation never replaces an existing name, rename refuses a taken name, and deletion only removes files or empty folders. The manifest exports it behind `MANAGE_DOCUMENTS`, as Android requires for a DocumentsProvider. SAF and its pickers work without the optional permission.
+
 Resource themes supply icons, styling, and animated scenes through a versioned ZIP contract. `:language` compiles scene expressions and tracks; the app's native renderer reuses shaders, textures, and path buffers. Afterglow's complete background definitions live under `themes/afterglow/backgrounds`. Icon providers and background selections compose independently. See [themes](themes.md) for author tools and the debug-only native preview.
 
 ## Plugins

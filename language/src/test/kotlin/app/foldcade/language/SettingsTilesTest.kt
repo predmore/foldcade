@@ -56,7 +56,7 @@ class SettingsTilesTest {
         val shelf = emulatorShelf(emulators)
         // A to Z, and melonDS is not installed, so it has no tile.
         assertEquals(listOf("ARMSX2", "Azahar", "Eden", "RetroArch"), shelf.map { it.label })
-        assertEquals(shelf.map { tile(it.key) }, settingsRows(SettingsCategory.Players, emulators))
+        assertEquals(shelf.map { tile(it.key) } + Row.FindSaves, settingsRows(SettingsCategory.Players, emulators))
         assertEquals(listOf(Row.PlayerSave("armsx2"), Row.SaveSync("armsx2")), shelf.single { it.key == "armsx2" }.rows)
         // RetroArch's cores and Eden's keys join the player that is that app, not a row of their own.
         assertEquals(listOf(Row.PlayerSave("retroarch.nes"), Row.RetroArchCores), shelf.single { it.key == "retroarch.nes" }.rows)

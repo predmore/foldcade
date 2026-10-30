@@ -2,15 +2,15 @@ package app.foldcade
 
 import app.foldcade.api.plugin.SaveFolderHolder
 
-internal data class SaveFolderGrant(val uri: String, val read: Boolean, val write: Boolean)
+internal data class SaveFolderGrant(val uri: String, val read: Boolean, val write: Boolean, val allFiles: Boolean = false)
 /** [placeStart] is a place that is there; [startingFolder] falls back to hints that may not be. */
 internal data class SaveFolderFind(val folder: String?, val startingFolder: String?, val candidates: List<String>, val placeStart: String? = null)
 internal data class SavedSaveFolder(val uri: String, val found: Boolean)
 
-/** A chosen folder stays chosen. Only a found folder can be cleared or replaced by detection. */
-internal fun detectedSaveFolder(saved: SavedSaveFolder?, reachable: (String) -> Boolean, find: () -> String?): SavedSaveFolder? {
-    if (saved != null && (!saved.found || reachable(saved.uri))) return saved
-    return find()?.let { SavedSaveFolder(it, found = true) }
+/** A chosen folder stays chosen. A found folder must still be reachable and unambiguous. */
+internal fun detectedSaveFolder(saved: SavedSaveFolder?, find: () -> String?): SavedSaveFolder? {
+    if (saved != null && !saved.found) return saved
+    return find()?.let { if (it == saved?.uri) saved else SavedSaveFolder(it, found = true) }
 }
 
 /** Finds one reachable save folder without choosing between plausible copies. */
@@ -44,7 +44,7 @@ internal class SaveFolderFinder(
 
     fun reachable(documentId: String): String? = grants.asSequence()
         .filter { it.read && it.write && containsFolder(folderTreeId(it.uri), documentId) }
-        .maxByOrNull { folderTreeId(it.uri).length }
+        .minWithOrNull(compareBy<SaveFolderGrant> { it.allFiles }.thenByDescending { folderTreeId(it.uri).length })
         ?.let { if (folderTreeId(it.uri) == documentId) folderGrantUri(it.uri) else folderDocumentUri(it.uri, documentId) }
 
     fun fits(holder: SaveFolderHolder, uri: String): Boolean = holder.saveFolderMarkers.isEmpty() ||

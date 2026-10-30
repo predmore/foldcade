@@ -383,6 +383,7 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
             is Effect.DialogChoice -> onDialog(effect)
             Effect.RequestHome -> requestHome()
             is Effect.OpenAndroidSetting -> openAndroidSetting(effect.setting)
+            Effect.OpenAllFilesAccess -> startFirst(AllFilesAccess(this).settingsIntents())
             Effect.OpenLicenses -> startActivity(Intent(this, LicensesActivity::class.java))
             Effect.OpenThemes -> startActivity(Intent(this, ThemesActivity::class.java))
             Effect.CopyDebugInfo -> copyDebugInfo()
@@ -487,6 +488,7 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
         foldcade.refreshRetroArchCoresOnReturn()
         // A player may have been pointed at the folder Foldcade hosts for its saves while Home was away.
         foldcade.refreshHostedFolders()
+        foldcade.shell.setAllFilesGranted(AllFilesAccess(this).granted())
         foldcade.refreshFoundSaveFolders()
         foldcade.refreshEdenSetting()
         foldcade.shell.refreshPlayerSaves()
