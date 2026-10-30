@@ -226,6 +226,9 @@ class HomeSession(
     /** The game an open menu keeps acting on after Add to took it out of the slot on screen. */
     private var menuGame: String? = null
 
+    /** The folder an open menu in Folders keeps switching, wherever it moves there. */
+    private var menuFolder: String? = null
+
     /** The collection whose icon is being chosen, and what is focused. Null when closed. */
     var iconPick: IconPick? = null
         private set
@@ -412,9 +415,11 @@ class HomeSession(
             return gameActions(item.id, move = false, remove = null)
                 .copy(select = true, showOnHome = item.id.takeIf { homeLanding(board, it) != null })
         }
-        // In Folders a folder has one thing to say: whether its tile is on Home.
+        // In Folders a folder has one thing to say: whether its tile is on Home. An open menu
+        // keeps the folder it opened on, however a library report moves Folders under it.
         if (board.foldersOpen) {
-            val entry = folderRows().getOrNull(index) ?: return null
+            val rows = folderRows()
+            val entry = menuFolder?.let { id -> rows.firstOrNull { it.folder.id == id } } ?: rows.getOrNull(index) ?: return null
             return TileActions(folderOnHome = FolderSwitch(entry.folder.id, entry.onHome))
         }
         if (index < 0) return null
@@ -539,7 +544,7 @@ class HomeSession(
         finishSelection()
         closeTyping()
         iconPick = null
-        board = closeAll(closeFolder(leaveEdit(board)))
+        board = closeFolders(closeAll(closeFolder(leaveEdit(board))))
         return when (spot) {
             is HomeLanding.Root -> spot.index.also { rootIndex = it }
             is HomeLanding.Inside -> {
@@ -627,13 +632,15 @@ class HomeSession(
      * Ends a menu's hold on its game, so the next menu reads the focused slot again. True
      * when there was one, and the menu's rows need reading again.
      */
-    fun keepMenu(id: String?) {
+    fun keepMenu(id: String?, folder: String? = null) {
         menuGame = id?.takeIf { it != HOME_ALL && it !in board.folders }
+        menuFolder = folder
     }
 
     fun releaseMenu(): Boolean {
-        if (menuGame == null) return false
+        if (menuGame == null && menuFolder == null) return false
         menuGame = null
+        menuFolder = null
         return true
     }
 

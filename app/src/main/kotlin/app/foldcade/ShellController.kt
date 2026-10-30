@@ -691,7 +691,7 @@ class ShellController(
         val current = if (model.libraryGrid) model else withShelf(model)
         val (next, effect) = reduce(current, meaning, screen, repeatCount)
         if (current.panel == null && next.panel?.level == PanelLevel.Actions && showingHome() && find == null) {
-            home.keepMenu(current.tileActions?.game)
+            home.keepMenu(current.tileActions?.game, folder = current.tileActions?.folderOnHome?.folderId?.takeIf { home.board.foldersOpen })
         }
         // L1 or R1 opening over Find's menu leaves Find: those drawers go places of their own.
         if (find != null && next.panel?.let { it.level == PanelLevel.Root || it.pendingSide != null } == true) find = null

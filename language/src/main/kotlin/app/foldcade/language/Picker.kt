@@ -1610,6 +1610,10 @@ fun reduce(
         }
         // A held X or Delete removes one notice, not each one that moves up under the focus.
         if (repeatCount > 0 && (meaning == Meaning.ActivateBottom || meaning == Meaning.Dismiss)) return coerced to null
+        // A held A flips a switch once. The menu stays open under it, so each repeat would flip it back.
+        if (repeatCount > 0 && meaning == Meaning.Activate &&
+            panelRows(panel, coerced).getOrNull(panel.index)?.let { rowControl(it, coerced) is RowControl.Toggle } == true
+        ) return coerced to null
         return applyPanel(coerced, panel, meaning, screen)
     }
     return applyGrid(coerced, meaning, screen, repeatCount)

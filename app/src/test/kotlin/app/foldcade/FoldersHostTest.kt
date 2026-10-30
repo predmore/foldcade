@@ -121,6 +121,29 @@ class FoldersHostTest {
         assertFalse(groupOnHome(home.board, HOME_ANDROID_GAMES))
     }
 
+    @Test fun anOpenMenuKeepsItsFolderWhenAReportMovesFoldersUnderIt() {
+        val shell = ShellController(store, PluginHost(Dispatchers.Unconfined, MemoryCredentialStore())).also { it.setInstalledApps(apps.take(1), emptySet()) }
+        openFolders(shell)
+        assertEquals(listOf("Android Games"), (0 until shell.model.count).map { shell.homeFace(it)?.title })
+        shell.onMeaning(Meaning.Options, HostScreen.Bottom)
+        // Android Apps arrives and sorts first, onto the slot the menu was opened on.
+        shell.setInstalledApps(apps, emptySet())
+        assertEquals("Android Apps", shell.homeFace(0)?.title)
+        assertEquals(HOME_ANDROID_GAMES, shell.model.tileActions?.folderOnHome?.folderId)
+        choose(shell, Row.FolderOnHome)
+        assertFalse(HOME_ANDROID_GAMES in board().slots)
+        assertTrue(HOME_ANDROID_APPS in board().slots)
+    }
+
+    @Test fun showOnHomeLeavesFolders() {
+        val home = HomeSession(null)
+        home.remerge(emptyList(), listOf(HomeItem(quest, "Quest", HomeKind.AndroidGame), HomeItem(notes, "Notes", HomeKind.AndroidApp)), emptyList(), emptyList())
+        home.showFolders()
+        val at = home.reveal(HOME_ANDROID_GAMES)
+        assertFalse(home.board.foldersOpen)
+        assertEquals(HOME_ANDROID_GAMES, home.face(at!!)?.id)
+    }
+
     private fun openFolders(shell: ShellController) {
         shell.onMeaning(Meaning.LeftPanel, HostScreen.Bottom)
         choose(shell, Row.EditHome)

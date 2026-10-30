@@ -209,6 +209,10 @@ class FoldersOnHomeTest {
         // The menu stays open on the switch, which reads off at once.
         assertEquals(PanelLevel.Actions, flipped.panel?.level)
         assertEquals(RowControl.Toggle(false), rowControl(Row.FolderOnHome, flipped))
+        // A held A flips it once: its repeats leave it as the press did.
+        val held = reduce(at(flipped, Row.FolderOnHome), Meaning.Activate, repeatCount = 1)
+        assertNull(held.second)
+        assertEquals(RowControl.Toggle(false), rowControl(Row.FolderOnHome, held.first))
     }
 
     private fun at(model: PickerModel, row: Row): PickerModel {
