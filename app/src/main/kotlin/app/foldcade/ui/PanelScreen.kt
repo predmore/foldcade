@@ -4460,7 +4460,7 @@ private fun ConnectScreen(
             .fillMaxSize()
             // Gboard's fullscreen editor takes arrows before the activity's normal dispatch.
             // Give the form its vertical navigation first, even while a text row is editing.
-            .onPreInterceptKeyBeforeSoftKeyboard { dispatchFormKeyEvent(it.nativeKeyEvent) == true }
+            .onPreInterceptKeyBeforeSoftKeyboard { dispatchFormKeyEvent(it.nativeKeyEvent) != null }
             .focusRequester(form)
             .focusable()
             .background(theme.background)
