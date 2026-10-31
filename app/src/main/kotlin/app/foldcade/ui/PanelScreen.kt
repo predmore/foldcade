@@ -107,6 +107,7 @@ import androidx.compose.ui.graphics.drawscope.clipPath
 import androidx.compose.ui.graphics.drawscope.scale
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.input.key.onPreInterceptKeyBeforeSoftKeyboard
 import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.PointerEventType
 import androidx.compose.foundation.gestures.detectTapGestures
@@ -547,7 +548,7 @@ private fun PanelBody(
                 }
             }
         }
-        if (connectHere) ConnectScreen(app, screen, activity::dispatch, activity::takeKeyboardFocus)
+        if (connectHere) ConnectScreen(app, screen, activity::dispatch, activity::takeKeyboardFocus, activity::dispatchFormKeyEvent)
     }
     if (screen == HostScreen.Bottom) artPage.shown?.let { shown ->
         Box(Modifier.fillMaxSize().rise { artPage.progress.value }) { ArtPickerScreen(app, shown, scale) }
@@ -4421,6 +4422,7 @@ private fun ConnectScreen(
     screen: HostScreen,
     onEffect: (Effect?) -> Unit,
     takeKeyboardFocus: suspend () -> Unit,
+    dispatchFormKeyEvent: (android.view.KeyEvent) -> Boolean?,
 ) {
     val design = LocalFoldTheme.current.theme.style
     val theme = foldTheme()
@@ -4456,6 +4458,9 @@ private fun ConnectScreen(
     Column(
         Modifier
             .fillMaxSize()
+            // Gboard's fullscreen editor takes arrows before the activity's normal dispatch.
+            // Give the form its vertical navigation first, even while a text row is editing.
+            .onPreInterceptKeyBeforeSoftKeyboard { dispatchFormKeyEvent(it.nativeKeyEvent) == true }
             .focusRequester(form)
             .focusable()
             .background(theme.background)
