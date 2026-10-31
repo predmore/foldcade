@@ -27,6 +27,13 @@ val releaseStorePassword = providers.environmentVariable("FOLDCADE_RELEASE_STORE
 val releaseKeyAlias = providers.environmentVariable("FOLDCADE_RELEASE_KEY_ALIAS")
 val releaseKeyPassword = providers.environmentVariable("FOLDCADE_RELEASE_KEY_PASSWORD")
 val allowUnsignedRelease = providers.gradleProperty("foldcadeAllowUnsigned").orNull == "true"
+// GitHub Actions builds (the releases, the rolling pre-release, the dry-run) wear the published icon.
+// Every other build is local and wears src/local/res on top, with a label to match, so the Thor shows
+// which one is installed. -PfoldcadeCiBuild=true or =false overrides the guess either way.
+val ciBuild = providers.gradleProperty("foldcadeCiBuild")
+    .orElse(providers.environmentVariable("GITHUB_ACTIONS"))
+    .map { it.trim().equals("true", ignoreCase = true) }
+    .getOrElse(false)
 
 android {
     namespace = "app.foldcade"
@@ -42,6 +49,7 @@ android {
         // A stable tag is cut only when versionName changes.
         versionCode = 1
         versionName = "0.1.6"
+        manifestPlaceholders["foldcadeLabel"] = if (ciBuild) "Foldcade" else "Foldcade (local)"
         val requestedVersionCode = providers.gradleProperty("foldcadeVersionCode").orNull?.trim().orEmpty()
         if (requestedVersionCode.isNotEmpty()) {
             val parsed = requestedVersionCode.toIntOrNull()
@@ -128,7 +136,7 @@ tasks.configureEach {
 
 tasks.register("printFoldcadeIdentity") {
     group = "help"
-    description = "Prints versionCode, versionName, and the debug and release application ids."
+    description = "Prints versionCode, versionName, the debug and release application ids, and ci or local."
     val code = android.defaultConfig.versionCode
         ?: throw GradleException("versionCode is not set in defaultConfig")
     val name = android.defaultConfig.versionName?.trim().orEmpty().ifEmpty {
@@ -136,11 +144,13 @@ tasks.register("printFoldcadeIdentity") {
     }
     val releaseId = android.defaultConfig.applicationId ?: "app.foldcade"
     val debugSuffix = android.buildTypes.getByName("debug").applicationIdSuffix ?: ""
+    val origin = if (ciBuild) "ci" else "local"
     val out = layout.buildDirectory.file("foldcade-identity.txt")
     inputs.property("versionCode", code)
     inputs.property("versionName", name)
     inputs.property("releaseApplicationId", releaseId)
     inputs.property("debugSuffix", debugSuffix)
+    inputs.property("buildOrigin", origin)
     outputs.file(out)
     doLast {
         val text = buildString {
@@ -148,6 +158,7 @@ tasks.register("printFoldcadeIdentity") {
             appendLine("versionName=$name")
             appendLine("releaseApplicationId=$releaseId")
             appendLine("debugApplicationId=$releaseId$debugSuffix")
+            appendLine("buildOrigin=$origin")
         }
         out.get().asFile.writeText(text)
         print(text)
@@ -247,6 +258,9 @@ val packageThemeIcons = tasks.register<PackageThemeIconsTask>("packageThemeIcons
 
 androidComponents {
     onVariants { variant ->
+        if (!ciBuild) {
+            variant.sources.res?.addStaticSourceDirectory("src/local/res")
+        }
         variant.sources.res?.addGeneratedSourceDirectory(packageThemeIcons, PackageThemeIconsTask::resourceDir)
         variant.sources.assets?.addGeneratedSourceDirectory(packageAfterglowTheme, PackageThemeTask::assetsDir)
         variant.sources.assets?.addGeneratedSourceDirectory(renderHomeMusic, RenderHomeMusicTask::assetsDir)

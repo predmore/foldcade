@@ -100,6 +100,8 @@ jobs:
             -PfoldcadeAllowUnsigned=true \
             :app:printFoldcadeIdentity :app:assembleRelease
           grep -qx "versionCode=${code}" app/build/foldcade-identity.txt
+          # GITHUB_ACTIONS=true keeps the published icon and label. Anything else would be a local build.
+          grep -qx "buildOrigin=ci" app/build/foldcade-identity.txt
           mapfile -t apks < <(find app/build/outputs/apk/release -name '*.apk' -type f | sort)
           if [ "${#apks[@]}" -ne 1 ]; then
             echo "::error::Expected one unsigned release APK, found ${#apks[@]}."

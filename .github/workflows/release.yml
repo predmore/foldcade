@@ -236,6 +236,8 @@ jobs:
           ./gradlew --configuration-cache -PfoldcadeVersionCode="$code" \
             :app:printFoldcadeIdentity :app:assembleRelease
           grep -qx "versionCode=${code}" app/build/foldcade-identity.txt
+          # GITHUB_ACTIONS=true keeps the published icon and label. Anything else would be a local build.
+          grep -qx "buildOrigin=ci" app/build/foldcade-identity.txt
 
       - name: Verify the release signature
         env:
