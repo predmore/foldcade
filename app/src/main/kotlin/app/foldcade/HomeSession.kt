@@ -88,6 +88,15 @@ import app.foldcade.language.holdDrop
 import app.foldcade.language.raiseToHome
 import app.foldcade.language.tidy
 import app.foldcade.language.visibleSlots
+import app.foldcade.language.FolderEntry
+import app.foldcade.language.FolderSwitch
+import app.foldcade.language.atRoot
+import app.foldcade.language.closeFolders
+import app.foldcade.language.foldcadeFolders
+import app.foldcade.language.groupOnHome
+import app.foldcade.language.openAnyFolder
+import app.foldcade.language.openFolders
+import app.foldcade.language.setFolderOnHome
 
 /** One cell the grid can draw. A null [id] is an empty slot. */
 data class HomeFace(
@@ -217,6 +226,9 @@ class HomeSession(
     /** The game an open menu keeps acting on after Add to took it out of the slot on screen. */
     private var menuGame: String? = null
 
+    /** The folder an open menu in Folders keeps switching, wherever it moves there. */
+    private var menuFolder: String? = null
+
     /** The collection whose icon is being chosen, and what is focused. Null when closed. */
     var iconPick: IconPick? = null
         private set
@@ -229,6 +241,9 @@ class HomeSession(
 
     /** The empty collection Add games left for All. Back from All opens it again. */
     private var addingTo: String? = null
+
+    /** The folder opened from Folders. Back from it opens Folders again, on that folder. */
+    private var fromFolders: String? = null
 
     fun rememberShelf(gamesOnShelf: List<ShelfGame>) {
         shelfById.clear()
@@ -255,7 +270,11 @@ class HomeSession(
         merge(report)
     }
 
+    /** Library reports merged so far, so a reading of the catalog knows it is still current. */
+    private var merges = 0
+
     private fun merge(report: PendingMerge) {
+        merges++
         shelf = report.shelf
         apps = report.apps
         library = report.library
@@ -313,6 +332,7 @@ class HomeSession(
 
     fun faces(): List<HomeFace> {
         if (board.allOpen) return allFaces()
+        if (board.foldersOpen) return folderFaces()
         return visibleSlots(board).map { id -> faceFor(id) }
     }
 
@@ -325,7 +345,7 @@ class HomeSession(
         else -> HomeKeys.Idle
     }
 
-    fun animToken(): String = "${board.openFolderId}:${board.allOpen}"
+    fun animToken(): String = "${board.openFolderId}:${board.allOpen}:${board.foldersOpen}"
 
     /** True when this meaning was applied. False lets the shared grid reducer move focus. */
     fun handle(meaning: Meaning, index: Int, repeatCount: Int = 0): HomeStep? {
@@ -347,6 +367,7 @@ class HomeSession(
             return null
         }
         if (board.allOpen) return handleAll(meaning, index)
+        if (board.foldersOpen) return handleFolders(meaning, index)
         return when (meaning) {
             Meaning.Activate, Meaning.ActivateBottom -> emptyCollection()?.let { addGames(it.id) }
                 ?: activateCell(index, onBottom = meaning == Meaning.ActivateBottom)
@@ -393,6 +414,13 @@ class HomeSession(
             val item = allRows().getOrNull(index) ?: return null
             return gameActions(item.id, move = false, remove = null)
                 .copy(select = true, showOnHome = item.id.takeIf { homeLanding(board, it) != null })
+        }
+        // In Folders a folder has one thing to say: whether its tile is on Home. An open menu
+        // keeps the folder it opened on, however a library report moves Folders under it.
+        if (board.foldersOpen) {
+            val rows = folderRows()
+            val entry = menuFolder?.let { id -> rows.firstOrNull { it.folder.id == id } } ?: rows.getOrNull(index) ?: return null
+            return TileActions(folderOnHome = FolderSwitch(entry.folder.id, entry.onHome))
         }
         if (index < 0) return null
         val id = visibleSlots(board).getOrNull(index)
@@ -461,9 +489,12 @@ class HomeSession(
     /**
      * What Y offers for [id] among Find's results. A game or app is offered where it lives on
      * Home, then what it is offered in All. Hidden items offer Show, and visible ones Hide.
-     * A retired group offers Show too.
+     * One of Foldcade's folders off Home offers its On Home switch, and a retired group Show.
      */
     fun findActions(id: String, hidden: Boolean = id in board.hidden || id in board.retired): TileActions {
+        // One of Foldcade's folders off Home has the switch Folders gives it. On Home, Show on Home
+        // goes to its tile, where X takes it off, so the menu never holds two rows about Home.
+        offHomeFolder(id)?.let { return TileActions(folderOnHome = FolderSwitch(id, on = false)) }
         if (id in board.retired) return TileActions(show = true, game = id)
         val shown = id.takeIf { homeLanding(board, it) != null }
         if (board.folders[id] != null) return TileActions(showOnHome = shown)
@@ -472,8 +503,8 @@ class HomeSession(
     }
 
     /**
-     * Everything Find can list: each game and app the catalog knows, hidden ones marked, and
-     * the groups on the root by their names.
+     * Everything Find can list: each game and app the catalog knows, hidden ones marked, the
+     * groups on the root by their names, and Foldcade's folders off Home, which A opens there.
      */
     fun findEntries(): List<FindEntry> {
         val items = catalog().filter { !it.placeholder }.map { item ->
@@ -492,8 +523,13 @@ class HomeSession(
         val groups = board.slots.mapNotNull { slot -> slot?.let { board.folders[it] } }.distinctBy { it.id }
             // A collection wears its look, a coloured card, and Recently played its clock, as on Home.
             .map { FindEntry(id = it.id, title = it.name, kind = FindKind.Group, mark = collectionLook(it)?.mark ?: it.mark) }
-        return items + groups
+        val offHome = folderRows().filter { !it.onHome }
+            .map { FindEntry(id = it.folder.id, title = it.folder.name, kind = FindKind.Group, mark = it.folder.mark) }
+        return items + groups + offHome
     }
+
+    /** Foldcade's folder [id] while it is off Home, or null for anything else. */
+    private fun offHomeFolder(id: String): FolderEntry? = folderRows().firstOrNull { it.folder.id == id && !it.onHome }
 
     /**
      * Leaves whatever is open for the place [id] has on Home (see [homeLanding]): the root, or
@@ -503,10 +539,11 @@ class HomeSession(
     fun reveal(id: String): Int? {
         val spot = homeLanding(board, id) ?: return null
         addingTo = null
+        fromFolders = null
         finishSelection()
         closeTyping()
         iconPick = null
-        board = closeAll(closeFolder(leaveEdit(board)))
+        board = closeFolders(closeAll(closeFolder(leaveEdit(board))))
         return when (spot) {
             is HomeLanding.Root -> spot.index.also { rootIndex = it }
             is HomeLanding.Inside -> {
@@ -526,8 +563,21 @@ class HomeSession(
         return 0
     }
 
-    /** What X does to the tile at [index]. Null in All, or where X does nothing. */
-    fun removeVerb(index: Int): RemoveVerb? = if (board.allOpen) null else removeVerb(board, index)
+    /**
+     * Opens Foldcade's folder [id] off Home, as Find's A does, so its games can be browsed where
+     * it is. Back from it goes to the root. Null when [id] is not one of them.
+     */
+    fun openOffHome(id: String): Int? {
+        if (offHomeFolder(id) == null) return null
+        showRoot()
+        val opened = openAnyFolder(board, id, catalog(), platforms)
+        if (opened.openFolderId != id) return null
+        board = opened
+        return 0
+    }
+
+    /** What X does to the tile at [index]. Null in All and Folders, or where X does nothing. */
+    fun removeVerb(index: Int): RemoveVerb? = if (board.allOpen || board.foldersOpen) null else removeVerb(board, index)
 
     /** A server game with a copy on this device. */
     private fun downloaded(id: String): Boolean = copies(id).any { it.availability == Availability.Cached }
@@ -555,11 +605,24 @@ class HomeSession(
         board = setRecentOnHome(board, on, catalog(), platforms)
         return index
     }
+    /**
+     * Folders' switch for Foldcade's folder [folderId]. The folder stays where it is in Folders,
+     * and so does the focus. Returns where focus goes.
+     */
+    fun setFolderOnHome(folderId: String, on: Boolean, index: Int): Int {
+        board = setFolderOnHome(board, folderId, on, catalog(), platforms)
+        return index
+    }
+
+    /** Whether Foldcade's folder [folderId] has its tile on Home. */
+    fun folderOnHome(folderId: String): Boolean = groupOnHome(board, folderId)
+
     fun deleteShortcut(id: String) { board = deleteShortcut(board, id) }
     fun hiddenItems(): List<HomeItem> = hiddenItems(board, catalog(), platforms)
 
     /** The game at [index] in All or on the board. Null for a group, the All tile, or an empty slot. */
     private fun slotGame(index: Int): String? {
+        if (board.foldersOpen) return null
         val id = if (board.allOpen) allRows().getOrNull(index)?.id else visibleSlots(board).getOrNull(index)
         return id?.takeIf { it != HOME_ALL && board.folders[it] == null }
     }
@@ -568,19 +631,21 @@ class HomeSession(
      * Ends a menu's hold on its game, so the next menu reads the focused slot again. True
      * when there was one, and the menu's rows need reading again.
      */
-    fun keepMenu(id: String?) {
+    fun keepMenu(id: String?, folder: String? = null) {
         menuGame = id?.takeIf { it != HOME_ALL && it !in board.folders }
+        menuFolder = folder
     }
 
     fun releaseMenu(): Boolean {
-        if (menuGame == null) return false
+        if (menuGame == null && menuFolder == null) return false
         menuGame = null
+        menuFolder = null
         return true
     }
 
     /** Move: lifts the tile or empty slot at [index]. The D-pad walks it, A drops it, B puts it back. */
     fun startMove(index: Int) {
-        if (index < 0) return
+        if (index < 0 || board.foldersOpen) return
         board = pickUp(enterEdit(board), index)
         if (board.hold == null) board = leaveEdit(board)
     }
@@ -606,8 +671,7 @@ class HomeSession(
         val count = board.folders.values.count { it.collection } + 1
         val name = "${Copy.collection} $count"
         val game = gameAt(index, gameId)
-        val atRoot = !board.allOpen && board.openFolderId == null
-        if (game == null && !atRoot) return index
+        if (game == null && !board.atRoot) return index
         board = newCollection(board, collectionId, name, at = index.takeIf { game == null }, member = game)
         if (collectionId !in board.folders) return index
         val focus = if (game == null) board.slots.indexOf(collectionId).coerceAtLeast(0) else index
@@ -682,6 +746,7 @@ class HomeSession(
 
     /** Does what X says for the tile at [index] (see [removeVerb]). Returns where focus goes. */
     fun remove(index: Int): Int {
+        if (board.foldersOpen) return index
         board = removeFromHome(board, index)
         return index.coerceAtMost((visibleCount() - 1).coerceAtLeast(0))
     }
@@ -718,10 +783,11 @@ class HomeSession(
      */
     fun showRoot(): Int {
         addingTo = null
+        fromFolders = null
         finishSelection()
         closeTyping()
         iconPick = null
-        board = closeAll(closeFolder(cancelHold(board)))
+        board = closeFolders(closeAll(closeFolder(cancelHold(board))))
         return rootIndex
     }
 
@@ -742,14 +808,25 @@ class HomeSession(
 
     /** A shelf opened from a nested view keeps that view's original root opener. */
     fun rememberRootFocus(index: Int) {
-        if (board.openFolderId == null && !board.allOpen) rootIndex = index
+        if (board.atRoot) rootIndex = index
     }
 
     fun showAll() {
         addingTo = null
+        fromFolders = null
         finishSelection()
         closeTyping()
         board = openAll(board)
+    }
+
+    /**
+     * Shows Folders in place of the board, from wherever it is, on its first folder. The board's
+     * own focus is kept for Back. Returns where focus goes.
+     */
+    fun showFolders(): Int {
+        showRoot()
+        board = openFolders(board)
+        return 0
     }
 
     fun applyAddNew(enabled: Boolean) {
@@ -922,9 +999,67 @@ class HomeSession(
     }
 
     private fun closeOpenFolder(): HomeStep {
+        val back = fromFolders
+        fromFolders = null
+        if (back != null) {
+            board = openFolders(closeFolder(board))
+            return step(null, folderRows().indexOfFirst { it.folder.id == back }.coerceAtLeast(0))
+        }
         val restore = rootIndex
         board = closeFolder(board)
         return step(null, restore)
+    }
+
+    /**
+     * Folders: A or X opens the folder, on Home or off it, and Back from it comes back here.
+     * B goes back to the board. The D-pad and triggers are the grid's, as in All.
+     */
+    private fun handleFolders(meaning: Meaning, index: Int): HomeStep = when (meaning) {
+        Meaning.Activate, Meaning.ActivateBottom -> {
+            val entry = folderRows().getOrNull(index)
+            val opened = entry?.let { openAnyFolder(board, it.folder.id, catalog(), platforms) }
+            if (opened != null && opened.openFolderId == entry.folder.id) {
+                board = opened
+                fromFolders = entry.folder.id
+                step(null, 0)
+            } else step(null, index)
+        }
+        Meaning.Back -> {
+            board = closeFolders(board)
+            step(null, rootIndex)
+        }
+        Meaning.LetterForward, Meaning.LetterBackward,
+        Meaning.Menu, Meaning.LeftPanel, Meaning.RightPanel, Meaning.Options,
+        Meaning.MoveUp, Meaning.MoveDown, Meaning.MoveLeft, Meaning.MoveRight,
+        Meaning.PageTowardStart, Meaning.PageTowardEnd,
+        -> HomeStep(handled = false, effect = null, focus = null)
+        else -> step(null, index)
+    }
+
+    /** What Folders lists, as the board and catalog stand now. Every face and menu asks, so one reading serves a change. */
+    fun folderRows(): List<FolderEntry> {
+        folderCache?.let { (from, merged, rows) -> if (from === board && merged == merges) return rows }
+        return foldcadeFolders(board, catalog(), platforms).also { folderCache = Triple(board, merges, it) }
+    }
+
+    private var folderCache: Triple<HomeBoard, Int, List<FolderEntry>>? = null
+
+    /** Folders' tiles. One whose tile is off Home is dimmed ([HomeFace.onGrid] is false). */
+    private fun folderFaces(): List<HomeFace> = folderRows().map { entry ->
+        val folder = entry.folder
+        HomeFace(
+            id = folder.id,
+            title = folder.name,
+            shortText = folderCountLine(entry.count, apps = folder.holdsApps),
+            mark = folder.mark,
+            empty = false,
+            folder = true,
+            allTile = false,
+            onGrid = entry.onHome,
+            platformId = folder.platformId,
+            androidPackage = null,
+            occupiesBoth = false,
+        )
     }
 
     /** Where game [id] sits in All, or -1 when All does not list it. */

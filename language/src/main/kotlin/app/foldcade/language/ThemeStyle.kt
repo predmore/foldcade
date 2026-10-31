@@ -497,6 +497,9 @@ class ThemeTile internal constructor(reader: ThemeStyleReader) {
 
     /** The faintest a carried tile's ring gets before it is raised. */
     val carriedRingAlpha = reader.fraction("tile", "carriedRingAlpha", .4f)
+
+    /** How strong a folder in Folders draws while its tile is off Home. */
+    val offHomeAlpha = reader.fraction("tile", "offHomeAlpha", .42f)
 }
 
 /** The top screen's selected item. */

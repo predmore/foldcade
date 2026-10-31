@@ -1212,6 +1212,12 @@
                             "minimum": 0.0,
                             "maximum": 1.0,
                             "default": 0.4
+                        },
+                        "offHomeAlpha": {
+                            "type": "number",
+                            "minimum": 0.0,
+                            "maximum": 1.0,
+                            "default": 0.42
                         }
                     }
                 },

@@ -325,6 +325,7 @@ A home grid tile, beyond its corner (`iconRadius`) and glow.
 | `tile.homeTargetStrokePx` | 3 | The Home pill's outline above a group's grid while a game is held |
 | `tile.homeTargetAlpha` | 0.35 | That outline's strength |
 | `tile.carriedRingAlpha` | 0.4 | The faintest a carried tile's ring gets before it is raised |
+| `tile.offHomeAlpha` | 0.42 | A folder in Folders while its tile is off Home |
 
 ### `hero`
 

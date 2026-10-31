@@ -585,8 +585,14 @@ sealed interface Row {
     data object EdenUser : Row
     data object AndroidGames : Row
     data object Apps : Row
-    /** Edit home's way into the one Hidden place: hidden games and apps, and groups taken off Home. */
+    /** Edit home's way into the one Hidden place: hidden games and apps. */
     data object Hidden : Row
+
+    /** Edit home's way into Folders: every folder Foldcade makes, on Home or off it. */
+    data object Folders : Row
+
+    /** The switch, in Y's menu in Folders, that puts the focused folder on Home or takes it off. */
+    data object FolderOnHome : Row
     data object AllLibrary : Row
     data object AddNewGames : Row
 
@@ -817,12 +823,12 @@ fun leftRows(): List<Row> = listOf(
 /**
  * What applies to the whole board, never to one tile, which is Y's: the open folder's
  * Sort, Tidy while it has gaps, the Recently played tile, whether new games join it,
- * and what is hidden from it.
+ * which of Foldcade's folders are on it, and what is hidden from it.
  */
 fun editHomeRows(model: PickerModel): List<Row> = buildList {
     if (model.tileActions?.boardSort != null) add(Row.SortFolder)
     if (model.tileActions?.tidyBoard == true) add(Row.Tidy)
-    addAll(listOf(Row.RecentOnHome, Row.AddNewGames, Row.Hidden))
+    addAll(listOf(Row.RecentOnHome, Row.AddNewGames, Row.Folders, Row.Hidden))
 }
 
 /** The Sort a menu's Sort row steps: Edit home's is the open folder's, Y's the folder tile's. */
@@ -920,7 +926,12 @@ data class TileActions(
     val sort: FolderSortChoice? = null,
     /** The open folder's Sort, in Edit home: it orders the whole folder, not the tile. */
     val boardSort: FolderSortChoice? = null,
+    /** In Folders, the focused folder's switch: on while its tile is on Home. Null leaves the row out. */
+    val folderOnHome: FolderSwitch? = null,
 )
+
+/** One of Foldcade's folders, and whether its tile is on Home. */
+data class FolderSwitch(val folderId: String, val on: Boolean)
 
 /** A folder's Sort row: which folder it orders, and how it orders it now. */
 data class FolderSortChoice(val folderId: String, val sort: FolderSort)
@@ -952,6 +963,7 @@ fun actionRows(tile: TileActions?): List<Row> = buildList {
     if (tile.newCollection && tile.collections == null) add(Row.NewCollection)
     if (tile.show) add(Row.ShowHidden)
     if (tile.showOnHome != null) add(Row.ShowOnHome)
+    if (tile.folderOnHome != null) add(Row.FolderOnHome)
     if (tile.moveTo != null) add(Row.MoveApp)
     if (tile.select) add(Row.SelectTile)
     if (tile.remove != null) add(Row.RemoveTile)
@@ -1005,8 +1017,10 @@ fun retainMenuRows(previous: PickerModel, next: PickerModel): PickerModel {
     // Sorting the folder changes what its menu offers: Move and Tidy mean something only in Custom.
     fun changed(was: FolderSortChoice?, now: FolderSortChoice?) =
         was != null && now != null && was.folderId == now.folderId && was.sort != now.sort
+    // So does Find's folder once its switch puts it on Home: the switch gives way to Show on Home.
+    val switched = (previous.tileActions?.folderOnHome != null) != (next.tileActions?.folderOnHome != null)
     val resorted = changed(previous.tileActions?.sort, next.tileActions?.sort) ||
-        changed(previous.tileActions?.boardSort, next.tileActions?.boardSort)
+        changed(previous.tileActions?.boardSort, next.tileActions?.boardSort) || switched
     val retained = (if (previous.panel?.side == panel.side && !resorted) previous.menuRows else emptyList())
         .map { it.copy(rows = validMenuRows(it.rows, next)) }
     val page = panel.page()
@@ -1159,6 +1173,8 @@ fun rowText(row: Row, model: PickerModel): RowText = when (row) {
     Row.AndroidGames -> RowText(Copy.androidGames)
     Row.Apps -> RowText(Copy.apps)
     Row.Hidden -> RowText(Copy.hiddenAppsRow)
+    Row.Folders -> RowText(Copy.folders)
+    Row.FolderOnHome -> RowText(Copy.onHome, if (model.tileActions?.folderOnHome?.on == true) Copy.on else Copy.off)
     Row.AllLibrary -> RowText(Copy.allLibrary)
     Row.AddNewGames -> RowText(Copy.addNewGames, if (model.addNewToHome) Copy.on else Copy.off)
     Row.RecentOnHome -> RowText(Copy.recentlyPlayed, if (model.recentOnHome) Copy.on else Copy.off)
@@ -1340,6 +1356,12 @@ sealed interface Effect {
 
     /** Edit home's switch put Recently played on Home or took it off. */
     data class RecentOnHome(val on: Boolean) : Effect
+
+    /** Show Folders in place of the board. */
+    data object OpenFolders : Effect
+
+    /** A folder's switch in Folders put Foldcade's folder [folderId] on Home or took it off. */
+    data class FolderOnHome(val folderId: String, val on: Boolean) : Effect
 
     /** Open the notice's app on the top screen, or the bottom when a game holds the top. */
     data class OpenNotice(val id: String) : Effect
@@ -1590,6 +1612,10 @@ fun reduce(
         }
         // A held X or Delete removes one notice, not each one that moves up under the focus.
         if (repeatCount > 0 && (meaning == Meaning.ActivateBottom || meaning == Meaning.Dismiss)) return coerced to null
+        // A held A flips a switch once. The menu stays open under it, so each repeat would flip it back.
+        if (repeatCount > 0 && meaning == Meaning.Activate &&
+            panelRows(panel, coerced).getOrNull(panel.index)?.let { rowControl(it, coerced) is RowControl.Toggle } == true
+        ) return coerced to null
         return applyPanel(coerced, panel, meaning, screen)
     }
     return applyGrid(coerced, meaning, screen, repeatCount)
@@ -2295,6 +2321,12 @@ private fun activateRow(
         Row.AndroidGames -> model.copy(panel = null, focus = panel.grid) to Effect.OpenFolder(HOME_ANDROID_GAMES)
         Row.Apps -> model.copy(panel = null, focus = panel.grid) to Effect.OpenFolder(HOME_ANDROID_APPS)
         Row.Hidden -> openGrid(model, panel, HomeGrid.Hidden)
+        Row.Folders -> model.copy(panel = null, focus = panel.grid, arranging = false, hold = null) to Effect.OpenFolders
+        // The switch flips here so it moves at once. The shell's own reading replaces this one.
+        Row.FolderOnHome -> model.tileActions?.folderOnHome?.let { switch ->
+            model.copy(panel = panel, tileActions = model.tileActions.copy(folderOnHome = switch.copy(on = !switch.on))) to
+                Effect.FolderOnHome(switch.folderId, !switch.on)
+        } ?: (model.copy(panel = panel) to null)
         Row.AllLibrary -> model.copy(panel = null, focus = panel.grid, arranging = false, hold = null) to Effect.OpenAll
         Row.AddNewGames -> model.copy(panel = panel, addNewToHome = !model.addNewToHome) to Effect.ToggleAddNew
         Row.RecentOnHome -> model.copy(panel = panel, recentOnHome = !model.recentOnHome) to Effect.RecentOnHome(!model.recentOnHome)

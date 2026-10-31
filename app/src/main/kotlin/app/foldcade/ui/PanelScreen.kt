@@ -2262,9 +2262,9 @@ private fun Picker(
                     EmptyLibrary(app, screen, emptyTitle, emptyActions(model))
                 } else if (emptyCollection != null) {
                     EmptyCollection(app, screen, emptyCollection.name)
-                } else if (!model.libraryGrid && model.homeGrid != HomeGrid.StandIns && model.count == 0) {
+                } else if (!model.libraryGrid && (model.homeGrid != HomeGrid.StandIns || shell.homeFoldersOpen()) && model.count == 0) {
                     BasicText(
-                        text = emptyShelf(model.homeGrid),
+                        text = if (model.homeGrid == HomeGrid.StandIns) Copy.noFolders else emptyShelf(model.homeGrid),
                         style = text(theme.muted, LocalFoldTheme.current.theme.style.type.dialogBody, theme),
                     )
                 } else {
@@ -2692,7 +2692,7 @@ private fun quickIcon(setting: QuickSetting, status: DeviceStatus): Int = when (
 @Composable
 private fun GridHeader(shell: app.foldcade.ShellController) {
     val theme = foldTheme()
-    val shelf = homeGridLabel(shell.model.homeGrid) ?: return
+    val shelf = homeGridLabel(shell.model.homeGrid) ?: Copy.folders.takeIf { shell.homeFoldersOpen() } ?: return
     BasicText(text = shelf, style = text(theme.onBackground, LocalFoldTheme.current.theme.style.type.sideRow, theme))
 }
 
@@ -2793,7 +2793,7 @@ private fun GridHints(app: FoldcadeApp, modifier: Modifier = Modifier) {
         drop = shell.homeHoldDrop(),
         play = if (gridKeys) shell.focusedPlayKey() else PlayKey.None,
     )) + if (gridKeys && model.settings == null && model.playActivity == null &&
-        (model.homeGrid != HomeGrid.StandIns || shell.homeKeys() == HomeKeys.AllLibrary)
+        (model.homeGrid != HomeGrid.StandIns || shell.homeKeys() == HomeKeys.AllLibrary || shell.homeFoldersOpen())
     ) {
         if (model.homeGrid == HomeGrid.Hidden && model.count == 0) emptyList()
         else triggerHints(model.gridLabels.isNotEmpty())
@@ -3175,6 +3175,7 @@ private fun StripColumn(
     val editing = shell.homeEditing()
     val lifted = shell.homeLiftedIndex()
     val allOpen = shell.homeAllOpen()
+    val foldersOpen = shell.homeFoldersOpen()
     Column(verticalArrangement = Arrangement.spacedBy(gap)) {
         for (row in 0 until Metrics.rows) {
             val index = GridStrip.index(column, row)
@@ -3213,7 +3214,9 @@ private fun StripColumn(
                         carry == null
                     val label = game?.title.orEmpty()
                     val libraryTile = library && face == null
+                    // All marks a game on Home. Folders marks the exception instead: a folder off Home rests dimmed.
                     val onHomeMark = face != null && allOpen && face.onGrid && !face.folder && !face.allTile
+                    val offHome = face != null && foldersOpen && face.folder && !face.onGrid
                     val appObject = appGlyph(game?.androidPackage)
                     val art = tileArt(app, game, face, automatic = appObject == null)
                     val themedApp = if (art == null) appObject else null
@@ -3236,6 +3239,7 @@ private fun StripColumn(
                         opened = carry?.over == index,
                         editing = editing,
                         marked = onHomeMark,
+                        offHome = offHome,
                         onServer = face?.onServer == true,
                         downloading = shell.isDownloading(face?.id),
                         activity = shell.activityAt(source),
@@ -3885,6 +3889,8 @@ private fun Cell(
     opened: Boolean = false,
     editing: Boolean = false,
     marked: Boolean = false,
+    /** A folder in Folders whose tile is off Home. It rests dimmed, and lights while focused. */
+    offHome: Boolean = false,
     onServer: Boolean = false,
     downloading: Boolean = false,
     activity: TileActivity? = null,
@@ -3933,9 +3939,10 @@ private fun Cell(
         else ((drawn - motion.scaleRest) / (motion.scaleFocus - motion.scaleRest)).coerceIn(0f, 1f)
     }
     val glowStops = remember { FloatArray(GlowFalloff.STOPS.size) }
+    val strength by motionState(if (offHome && !focused) tile.offHomeAlpha else 1f, motion.arrive(motion.durationFocus, animatorScale))
     Column(
         horizontalAlignment = Alignment.CenterHorizontally,
-        modifier = Modifier.zIndex(if (focused || lifted || opened) 1f else 0f),
+        modifier = Modifier.zIndex(if (focused || lifted || opened) 1f else 0f).graphicsLayer { alpha = strength },
     ) {
         val accent = glyph?.accent
         Box(
@@ -4135,7 +4142,8 @@ private fun Cell(
                 Box(
                     Modifier
                         .align(Alignment.TopStart)
-                        .padding(px(8f))
+                        // Far enough in that the tile's rounded corner never clips it, as the check's.
+                        .padding(maxOf(px(8f), corner * CORNER_SAFE))
                         .size(px(tile.dotPx))
                         .background(theme.focus, theme.style.shape.control()),
                 )

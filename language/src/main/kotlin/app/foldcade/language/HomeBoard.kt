@@ -185,6 +185,8 @@ data class HomeBoard(
     val addNewToHome: Boolean = true,
     val openFolderId: String? = null,
     val allOpen: Boolean = false,
+    /** Edit home's Folders is on screen: every folder Foldcade makes, on Home or off it ([foldcadeFolders]). Not saved. */
+    val foldersOpen: Boolean = false,
     val editing: Boolean = false,
     val hold: HomeHold? = null,
     /**
@@ -372,7 +374,7 @@ private fun sortRanks(board: HomeBoard, catalog: List<HomeItem>): Map<String, Ti
  * Null for a folder, Recently played, All, the root, or while a tile is in the hand.
  */
 fun emptyCollection(board: HomeBoard): HomeFolder? {
-    if (board.allOpen || board.hold != null) return null
+    if (board.allOpen || board.foldersOpen || board.hold != null) return null
     val folder = board.openFolderId?.let { board.folders[it] } ?: return null
     return folder.takeIf { it.collection && visibleSlots(board).all { slot -> slot == null } }
 }
@@ -481,7 +483,7 @@ fun mergeHome(
  * Recently played keeps its own order, and so does a sorted group, so nothing in them lifts.
  */
 fun pickUp(board: HomeBoard, index: Int): HomeBoard {
-    if (index < 0) return board
+    if (index < 0 || board.foldersOpen) return board
     // A second lift, a long press on another tile, puts the first one down where it is.
     if (board.hold != null) return board.copy(hold = null)
     if (board.openFolderId?.let { board.folders[it] }?.let { it.recent || it.sorted } == true) return board
@@ -699,7 +701,7 @@ fun tidy(board: HomeBoard): HomeBoard {
 
 /** The board on screen has a gap before its last tile, and is one the player arranges. */
 fun canTidy(board: HomeBoard): Boolean {
-    if (board.hold != null || board.allOpen) return false
+    if (board.hold != null || board.allOpen || board.foldersOpen) return false
     // A sorted group has no gaps on screen, and packing it would write its order over the arrangement.
     if (board.openFolderId?.let { board.folders[it] }?.let { it.recent || it.sorted } == true) return false
     val slots = visibleSlots(board)
@@ -715,6 +717,7 @@ fun canTidy(board: HomeBoard): Boolean {
  * A game a pin was the only place of is still in All and Find, where Add to brings it back.
  */
 fun removeVerb(board: HomeBoard, index: Int): RemoveVerb? {
+    if (board.allOpen || board.foldersOpen) return null
     val id = visibleSlots(board).getOrNull(index) ?: return null
     if (id == HOME_ALL) return null
     val openId = board.openFolderId
@@ -980,18 +983,27 @@ fun setAddNewToHome(board: HomeBoard, enabled: Boolean): HomeBoard =
 
 fun openFolder(board: HomeBoard, folderId: String): HomeBoard {
     if (board.folders[folderId] == null) return board
-    return board.copy(openFolderId = folderId, allOpen = false, hold = null)
+    return board.copy(openFolderId = folderId, allOpen = false, foldersOpen = false, hold = null)
 }
 
 fun closeFolder(board: HomeBoard): HomeBoard = board.copy(openFolderId = null, hold = null)
 
 fun openAll(board: HomeBoard): HomeBoard =
-    board.copy(allOpen = true, openFolderId = null, hold = null, editing = false)
+    board.copy(allOpen = true, foldersOpen = false, openFolderId = null, hold = null, editing = false)
+
+/** Shows Folders ([foldcadeFolders]) in place of the board. Nothing on the board moves. */
+fun openFolders(board: HomeBoard): HomeBoard =
+    board.copy(foldersOpen = true, allOpen = false, openFolderId = null, hold = null, editing = false)
+
+fun closeFolders(board: HomeBoard): HomeBoard = board.copy(foldersOpen = false)
+
+/** The board's top level is on screen: no group, All or Folders over it. */
+val HomeBoard.atRoot: Boolean get() = openFolderId == null && !allOpen && !foldersOpen
 
 fun closeAll(board: HomeBoard): HomeBoard = board.copy(allOpen = false)
 
 fun enterEdit(board: HomeBoard): HomeBoard =
-    board.copy(editing = true, allOpen = false, hold = null)
+    board.copy(editing = true, allOpen = false, foldersOpen = false, hold = null)
 
 fun leaveEdit(board: HomeBoard): HomeBoard = cancelHold(board).copy(editing = false)
 
@@ -1514,11 +1526,14 @@ private fun decodeSlots(bits: List<String>, encoded: Boolean): List<String?> =
 fun letterGroup(title: String): String =
     title.firstOrNull()?.takeIf { it.isLetter() }?.uppercaseChar()?.toString() ?: "#"
 
-/** Hidden games and apps, and retired groups, alphabetically: the one Hidden place. */
+/**
+ * Hidden games and apps, and retired groups other than Foldcade's folders, alphabetically: the
+ * one Hidden place. A folder taken off Home is not hidden: Folders lists it, switched off.
+ */
 fun hiddenItems(board: HomeBoard, catalog: List<HomeItem>, platforms: List<HomePlatform> = emptyList()): List<HomeItem> {
     val games = catalog.filter { it.id in board.hidden }
     val groups = board.retired.mapNotNull { id ->
-        retiredFolder(board, id, catalog, platforms)?.let { HomeItem(id, it.name, HomeKind.Loose, mark = it.mark) }
+        retiredFolder(board, id, catalog, platforms)?.takeUnless { it.system }?.let { HomeItem(id, it.name, HomeKind.Loose, mark = it.mark) }
     }
     return (games + groups).distinctBy { it.id }.sortedWith(compareBy<HomeItem> { it.title.lowercase() }.thenBy { it.id })
 }
@@ -1607,4 +1622,86 @@ fun ensureAppFolder(board: HomeBoard, id: String): HomeBoard {
     if (id in board.folders) return board
     val spec = specialFolders().firstOrNull { it.id == id && it.bucket in INSTALLED_KINDS } ?: return board
     return placeOnRoot(board.copy(folders = board.folders + (id to spec), retired = board.retired - id), id)
+}
+
+/** One of Foldcade's folders as Folders lists it: how many games it holds, and whether its tile is on Home. */
+data class FolderEntry(val folder: HomeFolder, val count: Int, val onHome: Boolean)
+
+/**
+ * Every folder Foldcade makes, one per platform or library, that holds a game, on Home or off
+ * it, A to Z. A folder the board has not made yet, because its games came while New games on
+ * Home was off, is listed off Home with the games the catalog has for it. Recently played and
+ * collections are not listed: Edit home switches the one, and the others are the user's.
+ */
+fun foldcadeFolders(board: HomeBoard, catalog: List<HomeItem>, platforms: List<HomePlatform>): List<FolderEntry> {
+    val ids = LinkedHashSet<String>()
+    board.folders.values.filter { it.system }.mapTo(ids) { it.id }
+    board.retired.filterTo(ids) { it != HOME_RECENT }
+    catalog.mapNotNullTo(ids) { systemFolderId(it, platforms) }
+    val waiting by lazy { catalogFolders(board, catalog, platforms) }
+    return ids.mapNotNull { id ->
+        val made = board.folders[id]
+        val folder = made ?: retiredFolder(board, id, catalog, platforms) ?: return@mapNotNull null
+        if (!folder.system) return@mapNotNull null
+        // One the board keeps empty fills from the catalog when it is opened or switched on.
+        val count = made?.let { folderCount(board, id) }?.takeIf { it > 0 } ?: waiting[id]?.size ?: 0
+        FolderEntry(folder, count, groupOnHome(board, id)).takeIf { count > 0 }
+    }.sortedWith(compareBy<FolderEntry> { it.folder.name.lowercase() }.thenBy { it.folder.id })
+}
+
+/** The catalog's games for each folder id, hidden ones left out, in the catalog's order. */
+private fun catalogFolders(board: HomeBoard, catalog: List<HomeItem>, platforms: List<HomePlatform>): Map<String, List<String>> =
+    catalog.filter { it.id !in board.hidden }.groupBy({ systemFolderId(it, platforms) }, { it.id })
+        .filterKeys { it != null }.mapKeys { it.key!! }
+
+/**
+ * Folders' switch for one of Foldcade's folders. Off takes its tile off Home as Remove does; it
+ * keeps its games, and new ones still go in it, so it comes back whole. On puts it back in its
+ * old slot when that is free, else the first free one. A folder the board has not made yet is
+ * made with the catalog's games for it. Nothing changes while a tile is held.
+ */
+fun setFolderOnHome(board: HomeBoard, folderId: String, on: Boolean, catalog: List<HomeItem>, platforms: List<HomePlatform>): HomeBoard {
+    if (board.hold != null || board.folders[folderId]?.system == false) return board
+    if (on == groupOnHome(board, folderId)) return board
+    if (!on) {
+        if (groupOnHome(board, folderId)) return removeFolder(board, folderId)
+        return keepOffHome(board, folderId, catalog, platforms)
+    }
+    val made = madeFolder(board, folderId, catalog, platforms)
+    if (made.folders[folderId]?.system != true) return board
+    val previous = made.hiddenSlots[folderId]?.firstOrNull()?.index ?: -1
+    return made.copy(
+        slots = restoredSlot(made.slots, folderId, previous, root = true),
+        retired = made.retired - folderId,
+        hiddenSlots = made.hiddenSlots - folderId,
+    )
+}
+
+/**
+ * Opens Foldcade's folder [folderId] wherever it is, on Home or off it, so its games can be
+ * browsed. One the board has not made yet is made off Home, as its switch in Folders shows.
+ */
+fun openAnyFolder(board: HomeBoard, folderId: String, catalog: List<HomeItem>, platforms: List<HomePlatform>): HomeBoard {
+    if (folderCount(board, folderId) > 0 || groupOnHome(board, folderId)) return openFolder(board, folderId)
+    val kept = keepOffHome(board, folderId, catalog, platforms)
+    return if (kept.folders[folderId] == null) board else openFolder(kept, folderId)
+}
+
+/** [folderId] made when it has to be, and retired: off Home, where neither a merge nor a new game brings it back. */
+private fun keepOffHome(board: HomeBoard, folderId: String, catalog: List<HomeItem>, platforms: List<HomePlatform>): HomeBoard {
+    val made = madeFolder(board, folderId, catalog, platforms)
+    if (made.folders[folderId]?.system != true) return board
+    return made.copy(retired = made.retired + folderId)
+}
+
+/**
+ * The board with Foldcade's folder [folderId], made from the catalog's games for it when the
+ * board has none yet, or has kept it with none in it.
+ */
+private fun madeFolder(board: HomeBoard, folderId: String, catalog: List<HomeItem>, platforms: List<HomePlatform>): HomeBoard {
+    if (folderCount(board, folderId) > 0) return board
+    val template = retiredFolder(board, folderId, catalog, platforms)?.takeIf { it.system } ?: return board
+    val games = catalogFolders(board, catalog, platforms)[folderId].orEmpty()
+    if (games.isEmpty()) return board
+    return board.copy(folders = board.folders + (folderId to template.copy(slots = games)), offHome = board.offHome - games.toSet())
 }

@@ -47,7 +47,8 @@ class FindRecoveryIntegrationTest {
 
     @Test fun findsHiddenFilterAndShowUseEveryKindOfUnifiedHiddenItem() {
         // An emulator a player covers is filed in Emulators, not hidden, so Hidden leaves it out.
-        val ids = setOf(game, androidHomeId("notes"), HOME_MOONLIGHT)
+        // So is a folder off Home: Folders lists it, switched off.
+        val ids = setOf(game, androidHomeId("notes"))
         for (target in ids) {
             val store = SessionStore(MemoryPrefs())
             store.saveHomeBoard(encodeHome(HomeBoard(hidden = setOf(game, androidHomeId("notes")), retired = setOf(HOME_MOONLIGHT))))
@@ -68,7 +69,6 @@ class FindRecoveryIntegrationTest {
             assertFalse(shell.find!!.results.any { it.id == target })
             val board = decodeHome(store.homeBoardRaw())
             assertFalse(target in board.hidden || target in board.retired)
-            if (target == HOME_MOONLIGHT) assertTrue(target in board.slots)
             if (target == androidHomeId("notes")) assertTrue(board.folders.getValue(HOME_ANDROID_APPS).slots.contains(target))
         }
     }

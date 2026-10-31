@@ -80,7 +80,7 @@ class VerbTilesTest {
         val tile = TileActions(move = true, rename = true, remove = RemoveVerb.Remove, tidyBoard = true)
         val rows = editHomeRows(PickerModel(count = 4, rowsPerPage = 2, tileActions = tile))
         assertTrue(tileBlock(rows).isEmpty())
-        assertEquals(listOf(Row.Tidy, Row.RecentOnHome, Row.AddNewGames, Row.Hidden), rows)
+        assertEquals(listOf(Row.Tidy, Row.RecentOnHome, Row.AddNewGames, Row.Folders, Row.Hidden), rows)
         assertTrue(actionRows(tile).none { it in rows })
     }
 

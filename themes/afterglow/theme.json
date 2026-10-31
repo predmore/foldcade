@@ -1927,7 +1927,8 @@
       "stripAlpha": 0.45,
       "homeTargetStrokePx": 3,
       "homeTargetAlpha": 0.35,
-      "carriedRingAlpha": 0.4
+      "carriedRingAlpha": 0.4,
+      "offHomeAlpha": 0.42
     },
     "hero": {
       "markScale": 0.86,

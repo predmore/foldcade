@@ -66,6 +66,7 @@ data class HomeUndo(
             hiddenSlots = reverseMap(board.hiddenSlots, after.hiddenSlots, current.hiddenSlots),
             openFolderId = board.openFolderId,
             allOpen = board.allOpen,
+            foldersOpen = board.foldersOpen,
             editing = false,
             hold = null,
         )
