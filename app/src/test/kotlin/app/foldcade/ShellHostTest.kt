@@ -13,7 +13,6 @@ import app.foldcade.language.settingsCategories
 import app.foldcade.language.leftRows
 import app.foldcade.language.Row
 import app.foldcade.language.HostScreen
-import app.foldcade.language.LibrarySort
 import app.foldcade.language.Meaning
 import app.foldcade.language.MusicTrack
 import app.foldcade.language.defaultMusicTrack
@@ -397,25 +396,6 @@ class ShellHostTest {
     }
 
     @Test
-    fun recentlyPlayedOrderFollowsLastPlayed() {
-        val host = PluginHost(Dispatchers.Unconfined, MemoryCredentialStore())
-        val store = SessionStore(MemoryPrefs())
-        val last = mapOf("shelf.handheld" to 30L, "shelf.clamshell" to 10L)
-        val shell = ShellController(store, host, lastPlayedMillis = { last[it] })
-        // Three folders, so there is an order to keep.
-        shell.setInstalledApps(
-            listOf(LaunchableApp("com.example.game", "Game", systemGame = true), LaunchableApp("com.example.notes", "Notes", systemGame = false)),
-            emptySet(),
-        )
-        shell.openSetting(Row.Order)
-        shell.onMeaning(Meaning.Activate, HostScreen.Bottom)
-        assertEquals(LibrarySort.RecentlyPlayed, shell.model.sort)
-        assertEquals(LibrarySort.RecentlyPlayed, store.librarySort())
-        // The curated grid keeps the user's placement. Recently played sorts All, not these slots.
-        assertEquals(listOf(0, 1, 2), displayOrder(shell.model).take(3))
-    }
-
-    @Test
     fun settingsRowActsOverTheHomeGrid() {
         val store = SessionStore(MemoryPrefs())
         val shell = ShellController(store, PluginHost(Dispatchers.Unconfined, MemoryCredentialStore()))
@@ -427,10 +407,10 @@ class ShellHostTest {
         repeat(library) { shell.onMeaning(Meaning.MoveDown, HostScreen.Bottom) }
         shell.onMeaning(Meaning.MoveRight, HostScreen.Bottom)
         val rows = settingsRows(SettingsCategory.Library, shell.model)
-        repeat(rows.indexOf(Row.Order)) { shell.onMeaning(Meaning.MoveDown, HostScreen.Bottom) }
+        repeat(rows.indexOf(Row.Artwork)) { shell.onMeaning(Meaning.MoveDown, HostScreen.Bottom) }
         // The home board must not take A while the page is open.
         shell.onMeaning(Meaning.Activate, HostScreen.Bottom)
-        assertEquals(LibrarySort.RecentlyPlayed, store.librarySort())
+        assertFalse(store.artworkEnabled())
         assertTrue(shell.model.settings != null)
     }
 

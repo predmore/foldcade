@@ -475,7 +475,7 @@ class HomeBoardTest {
             item("empty-pc", kind = HomeKind.GameNative).copy(placeholder = true),
             item("empty-stream", kind = HomeKind.Moonlight).copy(placeholder = true),
         )
-        assertEquals(setOf(pc.id, streamed.id), allItems(listOf(pc, streamed) + placeholders).map { it.id }.toSet())
+        assertEquals(setOf(pc.id, streamed.id), libraryGames(listOf(pc, streamed) + placeholders, HomeBoard(), emptyList()).map { it.id }.toSet())
     }
 
     @Test
@@ -483,7 +483,7 @@ class HomeBoardTest {
         val games = listOf(HomeKind.Rom, HomeKind.AndroidGame, HomeKind.GameNative, HomeKind.Moonlight, HomeKind.DroidDeck)
             .map { item(it.name, kind = it) }
         val others = listOf(HomeKind.AndroidApp, HomeKind.Emulator, HomeKind.Loose).map { item(it.name, kind = it) }
-        assertEquals(games.map { it.id }.toSet(), allItems(games + others).map { it.id }.toSet())
+        assertEquals(games.map { it.id }.toSet(), libraryGames(games + others, HomeBoard(), emptyList()).map { it.id }.toSet())
         // The All tile counts the same games, a repeat and a setup tile left out.
         val placeholder = item("empty-pc", kind = HomeKind.GameNative).copy(placeholder = true)
         assertEquals(games.size, allCount(games + others + games.first() + placeholder))
@@ -496,7 +496,7 @@ class HomeBoardTest {
             item("a", title = "alpha", platformId = "nds"),
             item("d", title = "Drift", platformId = "gba", lastPlayedMillis = 50),
         )
-        assertEquals(listOf("alpha", "Beta", "Drift"), allItems(items).map { it.title })
+        assertEquals(listOf("alpha", "Beta", "Drift"), libraryRows(libraryGames(items, HomeBoard(), emptyList()), libraryTabs(emptyList()).first()).map { it.item.title })
         val labels = listOf("Alpha", "Amber", "Beta")
         assertEquals(2, jumpLetter(labels, 0, forward = true))
         assertEquals(2, jumpLetter(labels, 2, forward = true))

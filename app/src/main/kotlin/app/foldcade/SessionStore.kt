@@ -8,7 +8,6 @@ import app.foldcade.language.decodeSameGames
 import app.foldcade.language.encodeSameGames
 import app.foldcade.language.savedBeforeCollections
 import app.foldcade.language.HomeMusicSetting
-import app.foldcade.language.LibrarySort
 import app.foldcade.language.PromptKey
 import app.foldcade.plugins.droiddeck.DroidDeckGame
 import app.foldcade.plugins.droiddeck.droidDeckGame
@@ -123,21 +122,10 @@ class SessionStore(private val prefs: SharedPreferences) : SaveMarks {
             ?.ifEmpty { HomeMusicSetting.DEFAULT_TRACK_ID }
             ?: HomeMusicSetting.DEFAULT_TRACK_ID
 
-    fun librarySort(): LibrarySort =
-        if (prefs.getString(KEY_LIBRARY_SORT, null) == LibrarySort.RecentlyPlayed.name) {
-            LibrarySort.RecentlyPlayed
-        } else {
-            LibrarySort.Listed
-        }
-
     fun usagePromptOffered(): Boolean = prefs.getBoolean(KEY_USAGE_PROMPTED, false)
 
     fun setUsagePromptOffered() {
         prefs.edit().putBoolean(KEY_USAGE_PROMPTED, true).apply()
-    }
-
-    fun setLibrarySort(sort: LibrarySort) {
-        prefs.edit().putString(KEY_LIBRARY_SORT, sort.name).apply()
     }
 
     fun playerSaveFolder(playerId: String): String? =
@@ -536,7 +524,6 @@ class SessionStore(private val prefs: SharedPreferences) : SaveMarks {
         private const val KEY_MOTION_SPEED = "motion_speed"
         private const val KEY_ARTWORK = "artwork"
         private const val KEY_THEME = "theme"
-        private const val KEY_LIBRARY_SORT = "library_sort"
         private const val KEY_HOME_BOARD = "home_board"
         private const val KEY_SAME_GAMES = "same_games"
         private const val KEY_HOME_BOARD_BEFORE_COLLECTIONS = "home_board_before_collections"

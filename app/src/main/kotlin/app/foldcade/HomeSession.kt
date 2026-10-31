@@ -9,7 +9,15 @@ import app.foldcade.language.bulkCollectionChoices
 import app.foldcade.language.bulkCollection
 import app.foldcade.language.bulkNewCollection
 import app.foldcade.language.bulkHide
-import app.foldcade.language.LibrarySort
+import app.foldcade.language.LibraryCopy
+import app.foldcade.language.LibraryGame
+import app.foldcade.language.LibraryTab
+import app.foldcade.language.LibraryTabKind
+import app.foldcade.language.indexOfTab
+import app.foldcade.language.libraryGames
+import app.foldcade.language.libraryRows
+import app.foldcade.language.libraryTabs
+import app.foldcade.language.steppedTab
 import app.foldcade.language.Copy
 import app.foldcade.language.HomeKind
 import app.foldcade.language.hideGame
@@ -49,7 +57,6 @@ import app.foldcade.language.MARK_LIBRARY
 import app.foldcade.language.Meaning
 import app.foldcade.language.Metrics
 import app.foldcade.language.addItemToHome
-import app.foldcade.language.allItems
 import app.foldcade.language.HoldDrop
 import app.foldcade.language.canTakeOut
 import app.foldcade.language.canTidy
@@ -201,8 +208,27 @@ class HomeSession(
             hide = ids.any { it !in board.hidden })
     }
 
-    var sort: LibrarySort = LibrarySort.Listed
     var lastPlayed: (String) -> Long? = { null }
+
+    /** Each game's time played, which All games' Most played orders by. Only read for games played at all. */
+    var playTime: (String) -> Long? = { null }
+
+    /**
+     * All games' tab, by what it shows rather than where it sits, so it holds while the tabs
+     * change round it. Each time All games opens it starts on All; it stays while All games
+     * is open, through a game and back.
+     */
+    private var libraryTab: LibraryTab? = null
+
+    /** All games as the last read built it. Read again only once what it reads has changed. */
+    private var libraryCache: LibraryView? = null
+
+    /** Library reports merged so far, so a reading of the catalog (All games, Folders) knows it is still current. */
+    private var merges = 0
+
+    /** The catalog as the last merge left it, and each item by id. */
+    private var catalogCache: List<HomeItem> = emptyList()
+    private var catalogById: Map<String, HomeItem> = emptyMap()
 
     private var shelf: List<HomeItem> = emptyList()
     private var apps: List<HomeItem> = emptyList()
@@ -270,15 +296,13 @@ class HomeSession(
         merge(report)
     }
 
-    /** Library reports merged so far, so a reading of the catalog knows it is still current. */
-    private var merges = 0
-
     private fun merge(report: PendingMerge) {
-        merges++
         shelf = report.shelf
         apps = report.apps
         library = report.library
-        allGames = allCount(catalog())
+        catalogCache = (shelf + apps + library).distinctBy { it.id }
+        catalogById = catalogCache.associateBy { it.id }
+        allGames = allCount(catalogCache)
         platforms = report.platforms
         report.remembered.forEach { (id, game) -> games[id] = game }
         report.copies.forEach { (id, listed) -> if (listed.isNotEmpty()) copies[id] = listed }
@@ -289,6 +313,8 @@ class HomeSession(
         val adopted = adoptSameGames(board, report.sameGames)
         val reconciled = report.hidden.fold(adopted) { current, id -> hideGame(current, id) }
         board = mergeHome(reconciled, catalog(), platforms, report.unsettled)
+        // Last, so no reading kept while this merge was half done passes for current.
+        merges++
     }
 
     fun asShelf(face: HomeFace): ShelfGame {
@@ -324,7 +350,7 @@ class HomeSession(
      */
     fun copies(id: String): List<Game> = copies[id] ?: listOfNotNull(games[id])
 
-    fun catalog(): List<HomeItem> = (shelf + apps + library).distinctBy { it.id }
+    fun catalog(): List<HomeItem> = catalogCache
 
     fun visibleCount(): Int = faces().size
 
@@ -345,7 +371,8 @@ class HomeSession(
         else -> HomeKeys.Idle
     }
 
-    fun animToken(): String = "${board.openFolderId}:${board.allOpen}:${board.foldersOpen}"
+    fun animToken(): String = "${board.openFolderId}:${board.allOpen}:${board.foldersOpen}" +
+        if (board.allOpen) ":" + libraryView().tab.let { "${it.kind}:${it.systemId}" } else ""
 
     /** True when this meaning was applied. False lets the shared grid reducer move focus. */
     fun handle(meaning: Meaning, index: Int, repeatCount: Int = 0): HomeStep? {
@@ -366,7 +393,7 @@ class HomeSession(
             }
             return null
         }
-        if (board.allOpen) return handleAll(meaning, index)
+        if (board.allOpen) return handleAll(meaning, index, repeatCount)
         if (board.foldersOpen) return handleFolders(meaning, index)
         return when (meaning) {
             Meaning.Activate, Meaning.ActivateBottom -> emptyCollection()?.let { addGames(it.id) }
@@ -388,6 +415,7 @@ class HomeSession(
     /** Opens All to fill collection [id] from, with Y › Add to. Back from All comes back to it. */
     private fun addGames(id: String): HomeStep {
         board = openAll(board)
+        libraryTab = null
         addingTo = id
         return step(null, 0)
     }
@@ -412,8 +440,9 @@ class HomeSession(
         if (held != null && slotGame(index) != held) return gameActions(held, move = false, remove = null).copy(kept = true, boardSort = sort)
         if (board.allOpen) {
             val item = allRows().getOrNull(index) ?: return null
+            // A hidden game offers Show, as Find and Hidden do, which puts it back where it was.
             return gameActions(item.id, move = false, remove = null)
-                .copy(select = true, showOnHome = item.id.takeIf { homeLanding(board, it) != null })
+                .copy(select = true, showOnHome = item.id.takeIf { homeLanding(board, it) != null }, show = item.id in board.hidden)
         }
         // In Folders a folder has one thing to say: whether its tile is on Home. An open menu
         // keeps the folder it opened on, however a library report moves Folders under it.
@@ -817,6 +846,7 @@ class HomeSession(
         finishSelection()
         closeTyping()
         board = openAll(board)
+        libraryTab = null
     }
 
     /**
@@ -956,7 +986,7 @@ class HomeSession(
         )
     }
 
-    private fun handleAll(meaning: Meaning, index: Int): HomeStep {
+    private fun handleAll(meaning: Meaning, index: Int, repeatCount: Int): HomeStep {
         return when (meaning) {
             Meaning.Activate -> activateCell(index)
             Meaning.ActivateBottom -> activateCell(index, onBottom = true)
@@ -970,7 +1000,9 @@ class HomeSession(
                 board = closeAll(board)
                 step(null, rootIndex)
             }
-            Meaning.LetterForward, Meaning.LetterBackward,
+            // L2 and R2 step the tabs, as they step Find's filters: once a press, so a held one never spins them.
+            Meaning.LetterForward, Meaning.LetterBackward ->
+                if (repeatCount > 0) step(null, index) else stepLibraryTab(if (meaning == Meaning.LetterForward) 1 else -1, index)
             Meaning.Menu, Meaning.LeftPanel, Meaning.RightPanel, Meaning.Options -> HomeStep(handled = false, effect = null, focus = null)
             Meaning.MoveUp, Meaning.MoveDown, Meaning.MoveLeft, Meaning.MoveRight,
             Meaning.PageTowardStart, Meaning.PageTowardEnd,
@@ -988,6 +1020,7 @@ class HomeSession(
             rootIndex = index
             addingTo = null
             board = openAll(board)
+            libraryTab = null
             return step(null, 0)
         }
         if (face.folder) {
@@ -1062,14 +1095,52 @@ class HomeSession(
         )
     }
 
-    /** Where game [id] sits in All, or -1 when All does not list it. */
+    /** Where game [id] sits in All games' tab, or -1 when the tab does not list it. */
     fun allIndexOf(id: String): Int = allRows().indexOfFirst { it.id == id }
 
-    private fun allRows(): List<HomeItem> =
-        allItems(catalog().map { it.copy(lastPlayedMillis = lastPlayed(it.id) ?: it.lastPlayedMillis) }, sort)
+    /**
+     * All games as it stands: its games, its tabs, the one chosen, and that tab's rows. Built
+     * again only when a merge, the board's places or the tab changed, so a key press over a
+     * big library only reads it.
+     */
+    fun libraryView(): LibraryView {
+        val cached = libraryCache
+        val sameGames = cached != null && cached.merges == merges && cached.slots === board.slots &&
+            cached.folders === board.folders && cached.hidden === board.hidden
+        val base = if (sameGames) cached!! else {
+            val listed = libraryGames(catalogCache, board, platforms, lastPlayed, playTime)
+            LibraryView(merges, board.slots, board.folders, board.hidden, listed, libraryTabs(listed))
+        }
+        val found = base.tabs.indexOfTab(libraryTab)
+        // A tab that emptied, as Not on Home once its last game is back, gives way to All for good,
+        // so it does not take the screen back the next time it lists something.
+        if (found < 0) libraryTab = null
+        val at = found.coerceAtLeast(0)
+        val view = if (sameGames && cached!!.tabIndex == at && cached.rowsBuilt) cached else base.withTab(at) { faceFor(it) }
+        libraryCache = view
+        return view
+    }
 
-    private fun allFaces(): List<HomeFace> =
-        allRows().map { item -> faceFor(item.id).copy(onGrid = onHome(board, item.id)) }
+    /** The tab [by] steps from the one open, round the ends. The tab's first game takes the focus. */
+    private fun stepLibraryTab(by: Int, index: Int): HomeStep {
+        val view = libraryView()
+        if (view.tabs.size < 2) return step(null, index)
+        libraryTab = view.tabs[steppedTab(view.tabs, view.tabIndex, by)]
+        return step(null, 0).copy(cue = TypingCue.Move)
+    }
+
+    /** A tap on tab [at]. True when it changed the tab, and the focus goes to its first game. */
+    fun chooseLibraryTab(at: Int): Boolean {
+        val view = libraryView()
+        val tab = view.tabs.getOrNull(at) ?: return false
+        if (at == view.tabIndex) return false
+        libraryTab = tab
+        return true
+    }
+
+    private fun allRows(): List<LibraryGame> = libraryView().rows
+
+    private fun allFaces(): List<HomeFace> = libraryView().faces
 
     private fun faceFor(id: String?): HomeFace {
         if (id == null) {
@@ -1090,7 +1161,7 @@ class HomeSession(
         if (id == HOME_ALL) {
             return HomeFace(
                 id = id,
-                title = Copy.allLibrary,
+                title = LibraryCopy.title,
                 shortText = folderCountLine(allGames),
                 mark = MARK_LIBRARY,
                 empty = false,
@@ -1120,7 +1191,7 @@ class HomeSession(
                 occupiesBoth = false,
             )
         }
-        val item = catalog().firstOrNull { it.id == id }
+        val item = catalogById[id]
         val game = games[id]
         return HomeFace(
             id = id,
@@ -1210,3 +1281,31 @@ data class HomeStep(
     val focus: GridFocus?,
     val cue: TypingCue? = null,
 )
+
+/**
+ * All games, built once for what it was read from: the merge [merges] counts and the board's
+ * places, compared by identity since the board keeps them when they do not change. [tabIndex]
+ * is the tab open in [tabs], [rows] its games in order, and [faces] their tiles.
+ */
+class LibraryView internal constructor(
+    internal val merges: Int,
+    internal val slots: List<String?>,
+    internal val folders: Map<String, app.foldcade.language.HomeFolder>,
+    internal val hidden: Set<String>,
+    val games: List<LibraryGame>,
+    val tabs: List<LibraryTab>,
+    val tabIndex: Int = 0,
+    val rows: List<LibraryGame> = emptyList(),
+    val faces: List<HomeFace> = emptyList(),
+    internal val rowsBuilt: Boolean = false,
+) {
+    val tab: LibraryTab get() = tabs.getOrElse(tabIndex) { LibraryTab(LibraryTabKind.All, LibraryCopy.all) }
+
+    /** This view on tab [at], its rows ordered and each one's tile drawn by [face], on Home or not. */
+    internal fun withTab(at: Int, face: (String) -> HomeFace): LibraryView {
+        val chosen = tabs.getOrElse(at) { tabs.first() }
+        val ordered = libraryRows(games, chosen)
+        return LibraryView(merges, slots, folders, hidden, games, tabs, at, ordered,
+            ordered.map { face(it.id).copy(onGrid = it.onHome) }, rowsBuilt = true)
+    }
+}

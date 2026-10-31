@@ -1192,6 +1192,7 @@ private fun Hero(app: FoldcadeApp, screen: HostScreen, scale: Float, onEffect: (
                                 width = cardMax,
                                 scale = scale,
                                 modifier = Modifier.rise { finding.progress.value },
+                                onTapFilter = { at -> onEffect(app.shell.tapFindFilter(at)) },
                             )
                         }
                         typing.shown?.let { shown ->
@@ -2228,6 +2229,17 @@ private fun Picker(
                 Spacer(Modifier.height(48.dp))
             }
             GridHeader(shell)
+            shell.libraryBar()?.let { view ->
+                // It sinks with the grid under Find and the keys, and gives them its room as it goes.
+                LibraryBar(
+                    view = view,
+                    style = text(theme.muted, design.type.hint, theme),
+                    scale = scale,
+                    onSearch = shell::tapLibrarySearch,
+                    onTab = shell::tapLibraryTab,
+                    modifier = Modifier.collapsing(covered).sinking(covered).padding(bottom = px(LIBRARY_BAR_GAP)),
+                )
+            }
             BoxWithConstraints(
                 Modifier
                     .weight(1f)
@@ -2311,6 +2323,7 @@ private fun Picker(
                         emptyStyle = text(theme.muted, design.type.dialogBody, theme),
                         onTapKey = { at -> onEffect(shell.tapFind(at)) },
                         onTapResult = { at -> onEffect(shell.tapFindResult(at)) },
+                        onTapFilter = { at -> onEffect(shell.tapFindFilter(at)) },
                         tile = { entry, focused, size, onClick -> FoundTile(app, entry, focused, size, !iconsOnly, onClick) },
                         modifier = Modifier.slidingUp { finding.progress.value },
                     )
@@ -2732,6 +2745,9 @@ private fun StripBar(count: Int, first: Int, shown: Int, scale: Float) {
 
 private const val STRIP_BAR_WIDTH = 160f
 
+/** Between All games' bar and the grid under it, so the focused tile's glow clears the bar as it clears the next row. */
+private const val LIBRARY_BAR_GAP = 28f
+
 /** How far ahead a flick carries the strip: its speed as the finger lifts, for this long. */
 private const val STRIP_FLICK_SECONDS = 0.15f
 
@@ -2792,8 +2808,9 @@ private fun GridHints(app: FoldcadeApp, modifier: Modifier = Modifier) {
         options = gridKeys && !model.connectOpen && shell.hasOptions(),
         drop = shell.homeHoldDrop(),
         play = if (gridKeys) shell.focusedPlayKey() else PlayKey.None,
+    // All games' bar shows L2 and R2 beside its tabs, so only Hidden and Folders name them here.
     )) + if (gridKeys && model.settings == null && model.playActivity == null &&
-        (model.homeGrid != HomeGrid.StandIns || shell.homeKeys() == HomeKeys.AllLibrary || shell.homeFoldersOpen())
+        (model.homeGrid != HomeGrid.StandIns || shell.homeFoldersOpen())
     ) {
         if (model.homeGrid == HomeGrid.Hidden && model.count == 0) emptyList()
         else triggerHints(model.gridLabels.isNotEmpty())
@@ -3174,7 +3191,6 @@ private fun StripColumn(
     val radius = cell * foldTheme().iconRadius
     val editing = shell.homeEditing()
     val lifted = shell.homeLiftedIndex()
-    val allOpen = shell.homeAllOpen()
     val foldersOpen = shell.homeFoldersOpen()
     Column(verticalArrangement = Arrangement.spacedBy(gap)) {
         for (row in 0 until Metrics.rows) {
@@ -3214,8 +3230,8 @@ private fun StripColumn(
                         carry == null
                     val label = game?.title.orEmpty()
                     val libraryTile = library && face == null
-                    // All marks a game on Home. Folders marks the exception instead: a folder off Home rests dimmed.
-                    val onHomeMark = face != null && allOpen && face.onGrid && !face.folder && !face.allTile
+                    // Folders marks the exception: a folder off Home rests dimmed. All games leaves that to
+                    // its Not on Home tab, since every game is in its folder on Home.
                     val offHome = face != null && foldersOpen && face.folder && !face.onGrid
                     val appObject = appGlyph(game?.androidPackage)
                     val art = tileArt(app, game, face, automatic = appObject == null)
@@ -3238,7 +3254,6 @@ private fun StripColumn(
                         socket = carry?.slot == index,
                         opened = carry?.over == index,
                         editing = editing,
-                        marked = onHomeMark,
                         offHome = offHome,
                         onServer = face?.onServer == true,
                         downloading = shell.isDownloading(face?.id),
@@ -3888,7 +3903,6 @@ private fun Cell(
     /** A group a held game is over. It opens up and lights, ready to take it. */
     opened: Boolean = false,
     editing: Boolean = false,
-    marked: Boolean = false,
     /** A folder in Folders whose tile is off Home. It rests dimmed, and lights while focused. */
     offHome: Boolean = false,
     onServer: Boolean = false,
@@ -4137,16 +4151,6 @@ private fun Cell(
                 .graphicsLayer { alpha = check.progress.value; scaleX = checked; scaleY = checked }
                 .clip(theme.style.shape.control()).background(theme.background)) {
                 CheckMark(true, focused, animatorScale)
-            }
-            if (marked && !selected) {
-                Box(
-                    Modifier
-                        .align(Alignment.TopStart)
-                        // Far enough in that the tile's rounded corner never clips it, as the check's.
-                        .padding(maxOf(px(8f), corner * CORNER_SAFE))
-                        .size(px(tile.dotPx))
-                        .background(theme.focus, theme.style.shape.control()),
-                )
             }
             // On the server, not on this device. A downloaded game has no badge at all.
             if (onServer || downloading || activity != null || saveHealth.needsAttention) {

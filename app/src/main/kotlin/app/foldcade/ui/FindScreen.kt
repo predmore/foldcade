@@ -96,6 +96,7 @@ internal fun FindKeys(
     emptyStyle: TextStyle,
     onTapKey: (KeyFocus) -> Unit,
     onTapResult: (Int) -> Unit,
+    onTapFilter: (Int) -> Unit,
     tile: @Composable (entry: FindEntry, focused: Boolean, size: Dp, onClick: () -> Unit) -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -116,7 +117,7 @@ internal fun FindKeys(
                     lead = { Magnifier(theme.muted, with(LocalDensity.current) { fieldStyle.fontSize.toDp() }) },
                     compact = true,
                 )
-                FindFilters(session, chipStyle, scale, Modifier.fillMaxWidth().padding(top = 8.dp))
+                FindFilters(session, chipStyle, scale, Modifier.fillMaxWidth().padding(top = 8.dp), onTapFilter)
             }
             ResultStrip(
                 session = session,
@@ -282,6 +283,7 @@ internal fun FindCard(
     width: Dp,
     scale: Float,
     modifier: Modifier = Modifier,
+    onTapFilter: ((Int) -> Unit)? = null,
 ) {
     val theme = LocalFoldTheme.current.theme
     val density = LocalDensity.current
@@ -340,6 +342,7 @@ internal fun FindCard(
                 .clip(theme.style.shape.control())
                 .background(background)
                 .padding(horizontal = 14.dp, vertical = 6.dp),
+            onTapFilter,
         )
     }
 }
@@ -347,20 +350,34 @@ internal fun FindCard(
 /** The result the top screen names: its [key], name and facts, and its [order] along the strip. */
 internal data class FoundLine(val key: String?, val title: String?, val facts: String, val order: Int)
 
+/** Find's filters, as a [PillCarousel]. A tap on a pill chooses it. */
+@Composable
+internal fun FindFilters(session: FindSession, style: TextStyle, scale: Float, modifier: Modifier = Modifier, onTap: ((Int) -> Unit)? = null) =
+    PillCarousel(session.filters.map { it.label }, session.filter, style, scale, modifier, onTap)
+
 /**
- * The filters as a row of pills between L2 and R2's glyphs. One highlight glides to the
- * chosen pill with the menus' bounce, and the row slides so it stays in view.
+ * A row of pills between L2 and R2's glyphs: Find's filters, or All games' tabs. One highlight
+ * glides to the [chosen] pill with the menus' bounce, and the row slides so it stays in view.
+ * With [onTap], a tap on a pill chooses it, and a tap on L2's or R2's glyph steps as the
+ * trigger would, round the ends.
  */
 @Composable
-internal fun FindFilters(session: FindSession, style: TextStyle, scale: Float, modifier: Modifier = Modifier) {
+internal fun PillCarousel(
+    labels: List<String>,
+    chosen: Int,
+    style: TextStyle,
+    scale: Float,
+    modifier: Modifier = Modifier,
+    onTap: ((Int) -> Unit)? = null,
+) {
     val theme = LocalFoldTheme.current.theme
     val motion = theme.motion
     val density = LocalDensity.current
     val spans = remember { mutableStateMapOf<Int, Rect>() }
-    val chosen = session.filter
     val glyph = with(density) { style.fontSize.toDp() } * GLYPH_SHARE
+    val step = { by: Int -> if (onTap != null && labels.size > 1) onTap(Math.floorMod(chosen + by, labels.size)) }
     Row(modifier, verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-        PromptImage(promptGlyph(PromptKey.L2), glyph)
+        PromptImage(promptGlyph(PromptKey.L2), glyph, if (onTap != null) Modifier.hostPress { step(-1) } else Modifier)
         BoxWithConstraints(Modifier.weight(1f).clipToBounds()) {
             val room = with(density) { maxWidth.toPx() }
             val end = spans.values.maxOfOrNull { it.right } ?: 0f
@@ -428,10 +445,11 @@ internal fun FindFilters(session: FindSession, style: TextStyle, scale: Float, m
                         },
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
-                    session.filters.forEachIndexed { index, filter ->
+                    labels.forEachIndexed { index, label ->
                         val on by eased(if (index == chosen) 1f else 0f, motion.durationFocus, scale)
                         Box(
                             Modifier
+                                .then(if (onTap != null) Modifier.hostPress { onTap(index) } else Modifier)
                                 .onGloballyPositioned {
                                     val rect = Rect(it.positionInParent(), it.size.toSize())
                                     if (spans[index] != rect) spans[index] = rect
@@ -441,7 +459,7 @@ internal fun FindFilters(session: FindSession, style: TextStyle, scale: Float, m
                                 .padding(horizontal = 16.dp, vertical = 6.dp),
                         ) {
                             BasicText(
-                                text = filter.label,
+                                text = label,
                                 maxLines = 1,
                                 style = style.copy(color = lerpInk(theme.muted, theme.onBackground, on)),
                             )
@@ -450,9 +468,9 @@ internal fun FindFilters(session: FindSession, style: TextStyle, scale: Float, m
                 }
             }
             // Pills that left the list are forgotten, so the row's end is where its last pill is.
-            LaunchedEffect(session.filters.size) { spans.keys.retainAll { it < session.filters.size } }
+            LaunchedEffect(labels.size) { spans.keys.retainAll { it < labels.size } }
         }
-        PromptImage(promptGlyph(PromptKey.R2), glyph)
+        PromptImage(promptGlyph(PromptKey.R2), glyph, if (onTap != null) Modifier.hostPress { step(1) } else Modifier)
     }
 }
 
@@ -499,7 +517,7 @@ private fun lerpInk(from: Color, to: Color, t: Float): Color = androidx.compose.
 
 /** A magnifying glass (`control.search`), in [ink] at [size], so the field reads as a search before anything is typed. */
 @Composable
-private fun Magnifier(ink: Color, size: Dp) {
+internal fun Magnifier(ink: Color, size: Dp) {
     val icon = themeIconOrNull("control.search", 128) ?: return
     Image(icon.painter, contentDescription = null, colorFilter = icon.tint(ink), modifier = Modifier.size(size))
 }
@@ -542,7 +560,7 @@ private const val POP_STAGGER_LIMIT = 8
 
 /** The L2 and R2 glyphs beside the filters, as a share of their text. */
 private const val GLYPH_SHARE = 1.5f
-private const val FADE = 28f
+private const val FADE = 52f
 
 /** The name card's padding, in the top screen's pixels, as Home's name card has. */
 private const val CARD_SIDE_PX = 40f

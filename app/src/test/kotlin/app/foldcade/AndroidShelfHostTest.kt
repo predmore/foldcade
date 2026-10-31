@@ -127,15 +127,13 @@ class AndroidShelfHostTest {
         assertTrue(androidHomeId(settings.packageName) in board.folders.getValue(HOME_ANDROID_GAMES).slots)
         assertFalse(androidHomeId(settings.packageName) in board.folders[HOME_ANDROID_APPS]?.slots.orEmpty())
 
-        shell.onMeaning(Meaning.LeftPanel, HostScreen.Bottom)
-        choose(shell, Row.AndroidGames)
+        shell.openHomeFolder(HOME_ANDROID_GAMES)
         assertFalse(shell.model.atLibraryRoot)
         assertEquals(setOf("Example", "Settings"), titles(shell).filter { it.isNotEmpty() }.toSet())
         // Moved to Games, it is a game: All lists it, and still does once it is hidden.
         shell.openHomeAll()
         assertTrue("Settings" in titles(shell))
-        shell.onMeaning(Meaning.LeftPanel, HostScreen.Bottom)
-        choose(shell, Row.AndroidGames)
+        shell.openHomeFolder(HOME_ANDROID_GAMES)
         // The grid fills each column top to bottom, so Settings, the second tile, is under the first.
         shell.onMeaning(Meaning.MoveDown, HostScreen.Bottom)
         assertEquals(androidHomeId(settings.packageName), shell.focusedGame()?.id)
@@ -144,8 +142,7 @@ class AndroidShelfHostTest {
         assertTrue(androidHomeId(settings.packageName) in decodeHome(store.homeBoardRaw()).hidden)
         shell.openHomeAll()
         assertTrue("Settings" in titles(shell))
-        shell.onMeaning(Meaning.LeftPanel, HostScreen.Bottom)
-        choose(shell, Row.AndroidGames)
+        shell.openHomeFolder(HOME_ANDROID_GAMES)
         // Back from it lands on Home, as from any folder.
         shell.onMeaning(Meaning.Back, HostScreen.Bottom)
         assertTrue(shell.model.atLibraryRoot)
@@ -160,7 +157,7 @@ class AndroidShelfHostTest {
     }
 
     @Test
-    fun lOneGamesOpensARetiredFolderWithoutPuttingItBackOnHome() {
+    fun lOneGamesListsAGameWhoseFolderIsOffHomeWithoutPuttingItBack() {
         val store = SessionStore(MemoryPrefs())
         val id = androidHomeId(game.packageName)
         store.saveHomeBoard(encodeHome(HomeBoard(
@@ -172,10 +169,11 @@ class AndroidShelfHostTest {
         shell.setInstalledApps(listOf(game), emptySet())
         assertFalse(HOME_ANDROID_GAMES in decodeHome(store.homeBoardRaw()).slots)
 
+        // L1's Games is All games: every game, this one too, though Home no longer shows it.
         shell.onMeaning(Meaning.LeftPanel, HostScreen.Bottom)
-        choose(shell, Row.AndroidGames)
-        assertFalse(shell.model.atLibraryRoot)
+        choose(shell, Row.AllLibrary)
         assertEquals(listOf("Example"), titles(shell))
+        assertFalse("Its tile is not marked as on Home", shell.homeFace(0)!!.onGrid)
         shell.onMeaning(Meaning.Back, HostScreen.Bottom)
         assertTrue(shell.model.atLibraryRoot)
         val board = decodeHome(store.homeBoardRaw())

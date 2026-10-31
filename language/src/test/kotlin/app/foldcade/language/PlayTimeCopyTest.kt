@@ -62,28 +62,10 @@ class PlayTimeCopyTest {
     }
 
     @Test
-    fun orderRowCyclesRecentlyPlayed() {
-        val opened = PickerModel(count = 1, rowsPerPage = 1).onSetting(Row.Order)
-        val next = reduce(opened, Meaning.Activate).first
-        assertEquals(LibrarySort.RecentlyPlayed, next.sort)
-        assertEquals("Sort All  Recent", rowLabel(Row.Order, next))
-        val back = reduce(next, Meaning.Activate).first
-        assertEquals(LibrarySort.Listed, back.sort)
-        assertEquals("Sort All  A–Z", orderLabel(back.sort))
-    }
-
-    @Test
-    fun recentlyPlayedOrderIsWhatTheGridShows() {
-        val sorted = PickerModel(
-            count = 3,
-            rowsPerPage = 1,
-            sort = LibrarySort.RecentlyPlayed,
-            recentFirst = listOf(2, 0, 1),
-        )
-        assertEquals(listOf(2, 0, 1), displayOrder(sorted))
-        val arranging = sorted.copy(arranging = true, order = listOf(1, 0, 2))
-        assertEquals(listOf(1, 0, 2), displayOrder(arranging))
-        assertEquals(listOf(0, 1, 2), displayOrder(sorted.copy(sort = LibrarySort.Listed, order = emptyList())))
+    fun anArrangementIsWhatTheGridShows() {
+        val listed = PickerModel(count = 3, rowsPerPage = 1)
+        assertEquals(listOf(0, 1, 2), displayOrder(listed))
+        assertEquals(listOf(1, 0, 2), displayOrder(listed.copy(arranging = true, order = listOf(1, 0, 2))))
     }
 
     @Test

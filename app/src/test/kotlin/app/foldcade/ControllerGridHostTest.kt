@@ -8,9 +8,8 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class ControllerGridHostTest {
-    @Test fun recentSortChangesAllFacesAndTriggersWithoutChangingHomeSlots() {
+    @Test fun allGamesTriggersStepItsTabsAndPlayReordersRecentWithoutChangingHomeSlots() {
         val store = SessionStore(MemoryPrefs())
-        store.setLibrarySort(LibrarySort.RecentlyPlayed)
         val played = mutableMapOf("android:z" to 30L, "android:c" to 10L)
         val shell = ShellController(store, PluginHost(Dispatchers.Unconfined, MemoryCredentialStore()),
             lastPlayedMillis = { played[it] })
@@ -20,16 +19,23 @@ class ControllerGridHostTest {
         ), emptySet())
         val before = decodeHome(store.homeBoardRaw()).slots
         shell.openHomeAll()
-        assertEquals(listOf("Zulu", "Charlie", "Alpha", "Beta"), (0..3).map { shell.homeFace(it)?.title })
+        assertEquals(listOf("Alpha", "Beta", "Charlie", "Zulu"), (0..3).map { shell.homeFace(it)?.title })
+        // L2 and R2 are the tabs' here, so nothing jumps by letter.
         assertTrue(shell.model.gridLabels.isEmpty())
+        shell.onMeaning(Meaning.MoveRight, HostScreen.Bottom)
         shell.onMeaning(Meaning.LetterForward, HostScreen.Bottom)
-        assertEquals(12, shell.model.focus.cellIndex)
+        assertEquals(LibraryTabKind.Recent, shell.libraryBar()!!.tab.kind)
+        assertEquals(0, shell.model.focus.cellIndex)
         assertNull(shell.model.letterJump)
+        assertEquals(listOf("Zulu", "Charlie"), (0 until shell.model.count).map { shell.homeFace(it)?.title })
         played["android:a"] = 40L
         shell.notePlayChanged()
-        assertEquals("Alpha", shell.homeFace(0)?.title)
+        assertEquals(listOf("Alpha", "Zulu", "Charlie"), (0 until shell.model.count).map { shell.homeFace(it)?.title })
+        shell.onMeaning(Meaning.LetterBackward, HostScreen.Bottom)
+        assertEquals(LibraryTabKind.All, shell.libraryBar()!!.tab.kind)
         assertEquals(before, decodeHome(store.homeBoardRaw()).slots)
         shell.goHome()
+        assertNull(shell.libraryBar())
         shell.onMeaning(Meaning.Menu, HostScreen.Bottom)
         assertNotNull(shell.model.settings)
         shell.onMeaning(Meaning.Menu, HostScreen.Bottom)

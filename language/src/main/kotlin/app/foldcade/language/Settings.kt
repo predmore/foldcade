@@ -118,7 +118,7 @@ fun settingsRows(category: SettingsCategory, model: PickerModel): List<Row> = wh
         addAll(librarySources(model))
         // Only once there is a folder or a server to read.
         if (model.signedIn.isNotEmpty() || model.folders.isNotEmpty()) add(Row.SyncLibrary)
-        addAll(listOf(Row.Order, Row.Artwork, Row.ArtKey))
+        addAll(listOf(Row.Artwork, Row.ArtKey))
     }
     SettingsCategory.Players -> buildList {
         val shelf = emulatorShelf(model)

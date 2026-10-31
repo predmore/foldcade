@@ -597,7 +597,6 @@ internal fun <T> SlideSwap(
 internal fun rowIcon(row: Row, moveTo: String? = null): Int? = when (row) {
     Row.Home -> R.drawable.symbol_home
     Row.AllLibrary -> R.drawable.symbol_library
-    Row.AndroidGames -> R.drawable.symbol_android_games
     Row.Apps -> R.drawable.symbol_android_apps
     Row.EditHome -> R.drawable.ic_status_tools
     Row.Settings -> R.drawable.ic_status_settings

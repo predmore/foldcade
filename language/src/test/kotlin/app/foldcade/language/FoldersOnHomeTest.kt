@@ -45,10 +45,13 @@ class FoldersOnHomeTest {
         val off = removeFromHome(board, at)
         assertFalse(threeDs in off.slots)
         assertNull(off.slots[at])
-        // Never deleted: the folder keeps every game, which All still lists.
+        // Never deleted: the folder keeps every game, which All games still lists, under Not on Home too.
         assertEquals(listOf(zelda.id, mario.id), off.folders.getValue(threeDs).slots)
         assertFalse(onHome(off, zelda.id))
-        assertTrue(allItems(catalog).any { it.id == zelda.id })
+        val library = libraryGames(catalog, off, platforms)
+        assertTrue(library.any { it.id == zelda.id })
+        val notOnHome = libraryTabs(library).first { it.kind == LibraryTabKind.NotOnHome }
+        assertEquals(setOf(zelda.id, mario.id), libraryRows(library, notOnHome).map { it.id }.toSet())
         val reloaded = mergeHome(decodeHome(encodeHome(off)), catalog, platforms)
         assertFalse(threeDs in reloaded.slots)
         assertEquals(off.folders.getValue(threeDs).slots, reloaded.folders.getValue(threeDs).slots)

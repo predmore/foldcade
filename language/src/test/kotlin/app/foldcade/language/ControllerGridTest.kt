@@ -64,18 +64,6 @@ class ControllerGridTest {
         assertEquals(Copy.screenJump, triggerHints(false).last().label)
     }
 
-    @Test fun allRecentOrdersPlayedGamesFirstAndUnplayedAlphabetically() {
-        val items = listOf(
-            HomeItem("b", "Beta", HomeKind.Rom),
-            HomeItem("z", "Zulu", HomeKind.AndroidGame, lastPlayedMillis = 30),
-            HomeItem("c", "Charlie", HomeKind.Rom, lastPlayedMillis = 10),
-            HomeItem("a", "Alpha", HomeKind.Rom),
-            HomeItem("app", "App", HomeKind.AndroidApp),
-        )
-        assertEquals(listOf("a", "b", "c", "z"), allItems(items).map { it.id })
-        assertEquals(listOf("z", "c", "a", "b"), allItems(items, LibrarySort.RecentlyPlayed).map { it.id })
-    }
-
     @Test fun installedAppsGoOnlyInTheAndroidFoldersAndCollections() {
         val folders = listOf(
             HomeFolder("roms", "ROMs", platformId = "ds"),

@@ -93,7 +93,8 @@ class VerbTilesTest {
     }
 
     @Test fun placesAndQuickTilesKeepTheirBlocks() {
-        assertEquals(1..4, tileBlock(leftRows()))
+        // Home, Games and Apps.
+        assertEquals(1..3, tileBlock(leftRows()))
         assertEquals(0..3, tileBlock(rightRows(emptyList())))
     }
 

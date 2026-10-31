@@ -540,7 +540,6 @@ sealed interface Row {
     /** Opens Set up saves, which walks every emulator's remaining step. */
     data object SaveSetup : Row
     data object Primary : Row
-    data object Order : Row
     data object Music : Row
     data object MusicTrack : Row
     data object MusicVolume : Row
@@ -583,7 +582,6 @@ sealed interface Row {
 
     /** Eden needs a step of its own before its saves sync, as a user while it has none. A opens Eden. */
     data object EdenUser : Row
-    data object AndroidGames : Row
     data object Apps : Row
     /** Edit home's way into the one Hidden place: hidden games and apps. */
     data object Hidden : Row
@@ -669,7 +667,7 @@ sealed interface Row {
 const val quickTileColumns = 4
 
 /** L1's places to go. They sit side by side as round tiles, as R1's Android screens do. */
-private val placeRows: Set<Row> = setOf(Row.Home, Row.AllLibrary, Row.AndroidGames, Row.Apps)
+private val placeRows: Set<Row> = setOf(Row.Home, Row.AllLibrary, Row.Apps)
 
 /**
  * What makes a tile the user's own, in the order Y's menu offers them. The first
@@ -699,8 +697,7 @@ fun tileBlock(rows: List<Row>): IntRange {
 /** The word under a tile. A tile has less room than a row, so it says less. */
 fun tileLabel(row: Row): String? = when (row) {
     Row.Home -> Copy.home
-    Row.AllLibrary -> Copy.tileAll
-    Row.AndroidGames -> Copy.tileGames
+    Row.AllLibrary -> LibraryCopy.tile
     Row.Apps -> Copy.apps
     Row.MoveTile -> Copy.move
     Row.AddToCollection -> Copy.addTo
@@ -814,7 +811,6 @@ fun leftRows(): List<Row> = listOf(
     Row.PlayActivity,
     Row.Home,
     Row.AllLibrary,
-    Row.AndroidGames,
     Row.Apps,
     Row.EditHome,
     Row.Settings,
@@ -1096,7 +1092,6 @@ fun rowText(row: Row, model: PickerModel): RowText = when (row) {
     Row.FindSaves -> RowText(SettingsCopy.findSaves, if (model.allFilesGranted) SettingsCopy.accessAllowed else SettingsCopy.accessAsk)
     Row.SaveSetup -> RowText(SaveSetupCopy.title)
     Row.Primary -> RowText(Copy.primaryPanel, if (model.primaryIsTop) Copy.top else Copy.bottom)
-    Row.Order -> RowText(Copy.sortAll, if (model.sort == LibrarySort.RecentlyPlayed) Copy.sortRecent else Copy.sortListed)
     Row.SortFolder -> RowText(Copy.sort, folderSortLabel(model.sortChoice()?.sort ?: FolderSort.Custom))
     Row.Music -> RowText(MusicCopy.row, if (model.music.enabled) MusicCopy.on else MusicCopy.off)
     Row.MusicTrack -> RowText(MusicCopy.track, model.trackTitle)
@@ -1170,12 +1165,11 @@ fun rowText(row: Row, model: PickerModel): RowText = when (row) {
         Copy.edenKeys,
         if (model.eden?.fromRomm == true) Copy.edenFromRomm else Copy.setUp,
     )
-    Row.AndroidGames -> RowText(Copy.androidGames)
     Row.Apps -> RowText(Copy.apps)
     Row.Hidden -> RowText(Copy.hiddenAppsRow)
     Row.Folders -> RowText(Copy.folders)
     Row.FolderOnHome -> RowText(Copy.onHome, if (model.tileActions?.folderOnHome?.on == true) Copy.on else Copy.off)
-    Row.AllLibrary -> RowText(Copy.allLibrary)
+    Row.AllLibrary -> RowText(LibraryCopy.title)
     Row.AddNewGames -> RowText(Copy.addNewGames, if (model.addNewToHome) Copy.on else Copy.off)
     Row.RecentOnHome -> RowText(Copy.recentlyPlayed, if (model.recentOnHome) Copy.on else Copy.off)
     Row.Artwork -> RowText(Copy.artwork, if (model.artwork) Copy.on else Copy.off)
@@ -1231,9 +1225,6 @@ fun rowLabel(row: Row, model: PickerModel): String {
 fun displayOrder(model: PickerModel): List<Int> {
     if (model.count <= 0) return emptyList()
     if (model.arranging && model.order.size == model.count) return model.order
-    if (model.homeGrid == HomeGrid.StandIns && model.sort == LibrarySort.RecentlyPlayed && model.recentFirst.size == model.count) {
-        return model.recentFirst
-    }
     if (model.order.size == model.count) return model.order
     return List(model.count) { it }
 }
@@ -1447,8 +1438,6 @@ data class PickerModel(
     val arranging: Boolean = false,
     val hold: Hold? = null,
     val order: List<Int> = emptyList(),
-    val sort: LibrarySort = LibrarySort.Listed,
-    val recentFirst: List<Int> = emptyList(),
     val signedIn: List<SignedInBackend> = emptyList(),
     /** A saved address still has connection actions when its token needs recovery. */
     val rommSaved: Boolean = signedIn.any { it.pluginId == "romm" },
@@ -2032,7 +2021,7 @@ private fun applyPanel(
  * The Settings page draws them as ‹ value ›.
  */
 internal val choiceRows: Set<Row> = setOf(
-    Row.Theme, Row.IconTheme, Row.Background, Row.MotionSpeed, Row.MusicTrack, Row.Order, Row.Primary, Row.SortFolder,
+    Row.Theme, Row.IconTheme, Row.Background, Row.MotionSpeed, Row.MusicTrack, Row.Primary, Row.SortFolder,
 )
 
 /** The folder Sort row's step, or null when the menu names no folder. */
@@ -2078,7 +2067,6 @@ private fun stepRow(model: PickerModel, row: Row, direction: Int): PickerModel? 
             val speeds = MotionSpeed.entries
             model.copy(motionSpeed = speeds[Math.floorMod(speeds.indexOf(model.motionSpeed) + direction, speeds.size)])
         }
-        Row.Order -> model.copy(sort = model.sort.toggled())
         Row.Primary -> model.copy(primaryIsTop = !model.primaryIsTop)
         else -> null
     }
@@ -2225,7 +2213,7 @@ private fun activateRow(
     return when (row) {
         Row.Settings -> model.openSettings(panel.screen, grid = panel.grid) to null
         // The [choiceRows]. The list is spelled out so a new row cannot slip past this when.
-        Row.IconTheme, Row.Background, Row.MotionSpeed, Row.MusicTrack, Row.Order, Row.Primary ->
+        Row.IconTheme, Row.Background, Row.MotionSpeed, Row.MusicTrack, Row.Primary ->
             stepRow(model, row, 1)!!.copy(panel = panel) to null
         // Left and right step the pack. A opens every pack, Add a theme, and what was found in each.
         Row.Theme -> model.copy(panel = panel) to Effect.OpenThemes
@@ -2318,7 +2306,6 @@ private fun activateRow(
         Row.RetroArchCores -> model.copy(panel = null, focus = panel.grid) to Effect.ShowRetroArchCores
         Row.EdenFolder -> model.copy(panel = null, focus = panel.grid) to Effect.ShowEdenFolder
         Row.EdenUser -> model.copy(panel = null, focus = panel.grid) to Effect.OpenPlayer(EDEN_SHELF_KEY)
-        Row.AndroidGames -> model.copy(panel = null, focus = panel.grid) to Effect.OpenFolder(HOME_ANDROID_GAMES)
         Row.Apps -> model.copy(panel = null, focus = panel.grid) to Effect.OpenFolder(HOME_ANDROID_APPS)
         Row.Hidden -> openGrid(model, panel, HomeGrid.Hidden)
         Row.Folders -> model.copy(panel = null, focus = panel.grid, arranging = false, hold = null) to Effect.OpenFolders

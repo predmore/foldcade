@@ -9,7 +9,7 @@ import org.junit.Test
 
 class HomeSelectionViewChangeTest {
     @Test fun lOneAppsEndsSelectionAndFlushesTheRefresh() = changeView(Row.Apps)
-    @Test fun lOneGamesAlsoEndsSelectionAndFlushesTheRefresh() = changeView(Row.AndroidGames)
+    @Test fun lOneGamesAlsoEndsSelectionAndFlushesTheRefresh() = changeView(Row.AllLibrary)
     @Test fun settingsOpenedThroughTheMenusEndsSelectionAndFlushesTheRefresh() = changeView(Row.Settings)
     @Test fun anExternalLibraryViewEndsSelectionAndFlushesTheRefresh() = changeView(null)
 
@@ -33,7 +33,7 @@ class HomeSelectionViewChangeTest {
             choose(shell, destination)
         }
         when (destination) {
-            Row.Apps, Row.AndroidGames -> assertFalse(shell.model.atLibraryRoot)
+            Row.Apps, Row.AllLibrary -> assertFalse(shell.model.atLibraryRoot)
             Row.Settings -> assertNotNull(shell.model.settings)
             null -> assertTrue(shell.model.libraryGrid)
             else -> Unit

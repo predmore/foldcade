@@ -17,7 +17,7 @@ class LeftDrawerTest {
         val opened = reduce(model(), Meaning.LeftPanel).first
         assertEquals(
             listOf(
-                Row.PlayActivity, Row.Home, Row.AllLibrary, Row.AndroidGames, Row.Apps,
+                Row.PlayActivity, Row.Home, Row.AllLibrary, Row.Apps,
                 Row.EditHome, Row.Settings,
             ),
             panelRows(opened.panel!!, opened),

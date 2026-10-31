@@ -8,6 +8,7 @@ import app.foldcade.api.plugin.SyncResult
 import app.foldcade.api.plugin.MemoryCredentialStore
 import app.foldcade.host.PluginHost
 import app.foldcade.language.Copy
+import app.foldcade.language.LibraryCopy
 import app.foldcade.language.activityLine
 import app.foldcade.language.Effect
 import app.foldcade.language.HomeGrid
@@ -66,7 +67,7 @@ class HomeGridOrderTest {
         assertFalse(shell.model.libraryGrid)
         assertTrue(shell.model.addNewToHome)
         // No games, no folder: not even for GameNative, Moonlight, DroidDeck, or Android. No Favorites either.
-        assertEquals(listOf(Copy.allLibrary), titles(shell))
+        assertEquals(listOf(LibraryCopy.title), titles(shell))
         assertTrue(shell.homeFace(0)?.allTile == true)
         assertEquals("library", shell.homeFace(0)?.mark)
 
@@ -76,7 +77,7 @@ class HomeGridOrderTest {
             emptySet(),
         )
         shell.ingestLibrary("local-folder", listOf(entry("puzzle", "Puzzle", "nintendo-3ds")), emptyList())
-        assertEquals(listOf(Copy.allLibrary, "Android Games", "Android Apps", "Nintendo 3DS"), titles(shell))
+        assertEquals(listOf(LibraryCopy.title, "Android Games", "Android Apps", "Nintendo 3DS"), titles(shell))
         assertTrue((1..3).all { shell.homeFace(it)?.folder == true })
         // All counts its games as every folder does; Notes is an app, so it is not one of them.
         assertEquals("2 games", shell.homeFace(0)?.shortText)
@@ -250,7 +251,7 @@ class HomeGridOrderTest {
         // No games, no folder: the folder closed under the focus, and Back has nothing left to close.
         assertTrue(titles(shell).none { it == "Nintendo DS" })
         assertTrue(shell.model.atLibraryRoot)
-        assertEquals(listOf(Copy.allLibrary), titles(shell))
+        assertEquals(listOf(LibraryCopy.title), titles(shell))
     }
 
     @Test
@@ -895,7 +896,7 @@ class HomeGridOrderTest {
         assertEquals(listOf(Row.MoveTile, Row.RenameFolder, Row.RemoveTile, Row.SortFolder), optionRows(shell))
         choose(shell, Row.RemoveTile)
         // The folder was the last tile, so its empty slot goes with it.
-        assertEquals(listOf(Copy.allLibrary), titles(shell))
+        assertEquals(listOf(LibraryCopy.title), titles(shell))
         // A rescan leaves it off Home. Puzzle is still in All, and not on Home.
         shell.ingestLibrary("local-folder", listOf(entry("puzzle", "Puzzle", "nintendo-3ds")), emptyList())
         assertFalse("Nintendo 3DS" in titles(shell))
@@ -971,8 +972,8 @@ class HomeGridOrderTest {
         val puzzle = titles(shell).indexOf("Puzzle")
         focus(shell, puzzle)
         assertFalse(shell.homeFace(puzzle)!!.onGrid)
-        // A hidden game has nothing to hide.
-        assertEquals(listOf(Row.AddToCollection, Row.SelectTile), optionRows(shell))
+        // A hidden game has nothing to hide; Show puts it back, as Find and Hidden offer.
+        assertEquals(listOf(Row.AddToCollection, Row.ShowHidden, Row.SelectTile), optionRows(shell))
         // Add to › Home brings a hidden game back: a pin, and back in its folder, which comes back with it.
         addToHome(shell)
         assertTrue(shell.homeFace(puzzle)?.onGrid == true)
