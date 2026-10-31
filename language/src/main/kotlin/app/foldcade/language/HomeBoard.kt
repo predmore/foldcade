@@ -1007,18 +1007,8 @@ fun enterEdit(board: HomeBoard): HomeBoard =
 
 fun leaveEdit(board: HomeBoard): HomeBoard = cancelHold(board).copy(editing = false)
 
-private val gameKinds = setOf(HomeKind.Rom, HomeKind.AndroidGame, HomeKind.GameNative, HomeKind.Moonlight, HomeKind.DroidDeck)
-
-/** All lists every game alphabetically, or played games newest first with unplayed games A to Z. */
-fun allItems(items: List<HomeItem>, sort: LibrarySort = LibrarySort.Listed): List<HomeItem> = items.distinctBy { it.id }
-    .filter(::listedInAll)
-    .sortedWith(compareBy<HomeItem> { if (sort == LibrarySort.RecentlyPlayed) -it.lastPlayedMillis else 0L }
-        .thenBy { it.title.lowercase() }.thenBy { it.id })
-
-/** How many games [allItems] lists, without sorting them, for the All tile's count. */
-fun allCount(items: List<HomeItem>): Int = items.distinctBy { it.id }.count(::listedInAll)
-
-private fun listedInAll(item: HomeItem): Boolean = !item.placeholder && item.kind in gameKinds
+/** How many games All games lists, without sorting them, for the All games tile's count. */
+fun allCount(items: List<HomeItem>): Int = items.distinctBy { it.id }.count(::listedInLibrary)
 
 /** Next letter group. Forward lands on its first row. Backward lands on the previous group's first row. Stays put at the ends. Does not wrap. */
 fun jumpLetter(labels: List<String>, index: Int, forward: Boolean): Int {
@@ -1332,7 +1322,7 @@ private fun atEnd(slots: List<String?>, id: String): List<String?> {
 private fun refreshRecent(board: HomeBoard, catalog: List<HomeItem>, unsettled: (String) -> Boolean): HomeBoard {
     if (board.hold != null) return board
     val played = catalog.filter {
-        it.lastPlayedMillis > 0L && !it.placeholder && it.kind in gameKinds && it.id !in board.hidden
+        it.lastPlayedMillis > 0L && listedInLibrary(it) && it.id !in board.hidden
     }.sortedWith(compareByDescending<HomeItem> { it.lastPlayedMillis }.thenBy { it.id })
     val existing = board.folders[HOME_RECENT]
     if (existing == null) {
@@ -1395,6 +1385,11 @@ private fun dropEmptySystemFolders(board: HomeBoard, waiting: Boolean): HomeBoar
         openFolderId = board.openFolderId?.takeIf { it !in gone },
     )
 }
+
+/** The library folder Home files a game of [kind] in, as it is first made, or null for a ROM or a loose tile. */
+internal fun libraryFolderOf(kind: HomeKind): HomeFolder? = bucketFolderId(kind)?.let(LIBRARY_FOLDERS::get)
+
+private val LIBRARY_FOLDERS: Map<String, HomeFolder> by lazy { specialFolders().associateBy { it.id } }
 
 private fun specialFolders(): List<HomeFolder> = listOf(
     HomeFolder(HOME_ANDROID_GAMES, "Android Games", bucket = HomeKind.AndroidGame, mark = bucketMark(HomeKind.AndroidGame)),

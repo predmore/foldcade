@@ -20,13 +20,14 @@ import app.foldcade.language.findResults
  * Find, open over a grid: the controller keyboard typing a query, the filters, and the strip
  * of results above the keys. The grid under it is left as it was, so closing Find is only
  * forgetting this. [entries] is everything Find can list; the shell hands it a new list
- * whenever Home changes.
+ * whenever Home changes. [startFilter] picks the filter it opens on: All games' Search starts
+ * on Games, or on the system its tab shows.
  *
  * On the keys: Up from the top row, or Start, goes to the results; L2 and R2 step the
  * filters; B clears the query, then closes; Select closes. On the results: left and right
  * walk them, A and X open the focused one, Y is its menu, and Down or B go back to the keys.
  */
-class FindSession(entries: List<FindEntry>) {
+class FindSession(entries: List<FindEntry>, startFilter: (List<FindFilter>) -> Int = { 0 }) {
     private var entries: List<FindEntry> = entries
 
     /** [entries] made ready to search, so a key press only matches. Built again when Home changes. */
@@ -39,7 +40,7 @@ class FindSession(entries: List<FindEntry>) {
         private set
 
     /** The chosen filter in [filters]. All is first. */
-    var filter: Int by mutableIntStateOf(0)
+    var filter: Int by mutableIntStateOf(startFilter(filters).coerceIn(0, (filters.size - 1).coerceAtLeast(0)))
         private set
 
     var results: List<FindEntry> by mutableStateOf(emptyList())
@@ -116,6 +117,14 @@ class FindSession(entries: List<FindEntry>) {
     fun typeText(text: String): FindOutcome {
         onResults = false
         return FindOutcome.Stay(typing.typeText(text).cue)
+    }
+
+    /** A tap on filter [at]. The results start again from the best, as L2 and R2 do. */
+    fun tapFilter(at: Int): FindOutcome {
+        if (at !in filters.indices || at == filter) return FindOutcome.Stay(TypingCue.None)
+        filter = at
+        search(fresh = true)
+        return FindOutcome.Stay(TypingCue.Move)
     }
 
     /** A tap on result [at]: the first tap focuses it, a second opens it. */

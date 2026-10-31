@@ -474,7 +474,6 @@ private fun settingsRowIcon(row: Row): Int? = when (row) {
     Row.SyncLibrary -> R.drawable.ic_badge_sync
     Row.AddFolder -> R.drawable.symbol_folder
     Row.AddRomm -> R.drawable.symbol_cloud
-    Row.Order -> R.drawable.symbol_library
     // A cartridge's label is its art.
     Row.Artwork -> R.drawable.symbol_cartridge
     Row.ArtKey -> R.drawable.ic_status_wrench

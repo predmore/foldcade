@@ -3,22 +3,6 @@ package app.foldcade.language
 import java.time.Instant
 import java.time.ZoneId
 
-/** Library order. Recently played uses the host's last-played times. */
-enum class LibrarySort {
-    Listed,
-    RecentlyPlayed,
-}
-
-fun LibrarySort.toggled(): LibrarySort = when (this) {
-    LibrarySort.Listed -> LibrarySort.RecentlyPlayed
-    LibrarySort.RecentlyPlayed -> LibrarySort.Listed
-}
-
-fun orderLabel(sort: LibrarySort): String = when (sort) {
-    LibrarySort.Listed -> "${Copy.sortAll}  ${Copy.sortListed}"
-    LibrarySort.RecentlyPlayed -> "${Copy.sortAll}  ${Copy.sortRecent}"
-}
-
 /** A folder's Sort choice, as its Y menu reads it. */
 fun folderSortLabel(sort: FolderSort): String = when (sort) {
     FolderSort.Custom -> Copy.sortCustom

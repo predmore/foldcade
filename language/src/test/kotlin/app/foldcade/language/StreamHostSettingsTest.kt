@@ -15,7 +15,7 @@ class StreamHostSettingsTest {
     fun eachComputerHasATileWhosePageIsItsSwitch() {
         val rows = settingsRows(SettingsCategory.Library, model)
         val tile = Row.SettingsTile(SettingsInner.Host(gameWin.key))
-        assertTrue(rows.indexOf(tile) in 0 until rows.indexOf(Row.Order))
+        assertTrue(rows.indexOf(tile) in 0 until rows.indexOf(Row.Artwork))
         assertEquals("game-win", rowText(tile, model).label)
         val row = Row.StreamHost(gameWin.key)
         assertEquals(listOf(row), settingsInnerRows(SettingsInner.Host(gameWin.key), model))

@@ -10,7 +10,6 @@ import app.foldcade.language.HomeFolder
 import app.foldcade.language.HomeMusicSetting
 import app.foldcade.language.HostScreen
 import app.foldcade.language.LaunchableApp
-import app.foldcade.language.LibrarySort
 import app.foldcade.language.Meaning
 import app.foldcade.language.MotionSpeed
 import app.foldcade.language.MusicTrack
@@ -143,7 +142,7 @@ class SettingsPersistenceTest {
         assertEquals(1, changed.model.themeIndex)
         val rows = listOf(
             Row.Theme, Row.Background, Row.MotionSpeed, Row.Music, Row.MusicVolume,
-            Row.Primary, Row.Order, Row.Artwork,
+            Row.Primary, Row.Artwork,
         )
         for (row in rows) {
             changed.openSetting(row)
@@ -165,7 +164,6 @@ class SettingsPersistenceTest {
         assertEquals(changed.model.motionSpeed, restored.model.motionSpeed)
         assertEquals(changed.model.music, restored.model.music)
         assertEquals(changed.model.primaryIsTop, restored.model.primaryIsTop)
-        assertEquals(LibrarySort.RecentlyPlayed, restored.model.sort)
         assertFalse(restored.model.artwork)
         assertFalse(restored.model.addNewToHome)
     }
@@ -332,7 +330,6 @@ class SettingsPersistenceTest {
         assertEquals(HomeMusicSetting.DEFAULT_VOLUME, restored.musicVolume())
         assertEquals(BackgroundMotion.Off, restored.backgroundMotion())
         assertEquals(MotionSpeed.Slow, restored.motionSpeed())
-        assertEquals(LibrarySort.Listed, restored.librarySort())
         restored.setMusic(false, Float.POSITIVE_INFINITY, " dusk ")
         assertEquals(HomeMusicSetting.DEFAULT_VOLUME, SessionStore(prefs).musicVolume())
         assertEquals("dusk", SessionStore(prefs).musicTrackId())

@@ -163,8 +163,6 @@ object Copy {
     const val playTimeHere = "Foldcade only"
     const val sort = "Sort"
 
-    /** Settings › Library: the order All lists games in. Each folder's own Sort is on its Y menu. */
-    const val sortAll = "Sort All"
     const val sortRecent = "Recent"
     const val sortListed = "A–Z"
     const val sortCustom = "Custom"
@@ -318,10 +316,6 @@ object Copy {
     const val moveToApps = "Move to Apps"
     const val hideApp = "Hide"
     const val showApp = "Show"
-    const val allLibrary = "All library"
-    /** The L1 tiles' words: All library and Android Games, said in one word each. */
-    const val tileAll = "All"
-    const val tileGames = "Games"
     const val addNewGames = "New games on Home"
     /** A switch's value, for readers and labels: New games on Home, Game art. */
     const val on = "On"

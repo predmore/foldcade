@@ -54,6 +54,7 @@ import app.foldcade.language.StreamHostSetting
 import app.foldcade.language.streamHostLine
 import app.foldcade.language.HintKey
 import app.foldcade.language.HomeKeys
+import app.foldcade.language.libraryFindFilter
 import app.foldcade.language.PanelLevel
 import app.foldcade.language.findKeyboardHints
 import app.foldcade.language.findResultHints
@@ -100,7 +101,6 @@ import app.foldcade.language.TileActivity
 import app.foldcade.language.PlayKey
 import app.foldcade.language.resolvePlatform
 import app.foldcade.language.kitMark
-import app.foldcade.host.play.recentlyPlayedIndices
 import app.foldcade.language.HomeMusicSetting
 import app.foldcade.language.MusicTrack
 import app.foldcade.language.offeredMusicTracks
@@ -992,10 +992,14 @@ class ShellController(
             model.settings == null && model.playActivity == null && model.saveConflict == null && model.savePicker == null && model.saveSetup == null && !model.connectOpen &&
             (!showingHome() || home.keys().let { it == HomeKeys.Idle || it == HomeKeys.AllLibrary })
 
-    /** Opens Find on everything Home knows, the most recently played first. */
+    /**
+     * Opens Find on everything Home knows, the most recently played first. Over All games it
+     * starts on Games, or on the system the open tab shows, so Search there looks through games.
+     */
     fun openFind() {
         if (!canOpenFind()) return
-        find = FindSession(findEntries())
+        val tab = if (showingHome() && home.board.allOpen) home.libraryView().tab else null
+        find = FindSession(findEntries()) { filters -> if (tab == null) 0 else libraryFindFilter(tab, filters) }
         Log.i("Foldcade", "home-ui find")
         cue(model.themeIndex, "open")
         publish(model)
@@ -1082,6 +1086,33 @@ class ShellController(
 
     /** A tap on Find's keyboard. */
     fun tapFind(at: KeyFocus): Effect? = find?.takeIf { findActive() }?.let { findOutcome(it.tap(at)) }
+
+    /** A tap on one of Find's filters. */
+    fun tapFindFilter(at: Int): Effect? = find?.takeIf { findActive() }?.let { findOutcome(it.tapFilter(at)) }
+
+    /** All games' tabs and the one open, for the bar over its grid, while All games is on screen. Null anywhere else. */
+    fun libraryBar(): LibraryView? = if (showingHome() && home.board.allOpen) home.libraryView() else null
+
+    /**
+     * True while All games has the keys, so its bar takes taps: no Find, art chooser, menu, page,
+     * dialog or lifted tile over it, which would each have the keys of their own.
+     */
+    private fun libraryBarLive(): Boolean =
+        libraryBar() != null && find == null && artPicker == null && !model.connectOpen && home.keys() == HomeKeys.AllLibrary &&
+            model.panel == null && model.settings == null &&
+            model.playActivity == null && model.dialog == null && model.saveConflict == null && model.savePicker == null && model.saveSetup == null
+
+    /** A tap on All games' tab [at]: it opens on its first game, as L2 and R2 do. */
+    fun tapLibraryTab(at: Int) {
+        if (!libraryBarLive() || !home.chooseLibraryTab(at)) return
+        cue(model.themeIndex, "move")
+        showBoard(GridFocus(), keepDialog = true)
+    }
+
+    /** A tap on All games' Search: Find, as Select opens it there. */
+    fun tapLibrarySearch() {
+        if (libraryBarLive()) openFind()
+    }
 
     /** A tap on one of Find's results: the first focuses it, a second opens it. */
     fun tapFindResult(at: Int): Effect? = find?.takeIf { findActive() }?.let { findOutcome(it.tapResult(at)) }
@@ -2849,17 +2880,18 @@ class ShellController(
 
     private fun withShelf(next: PickerModel): PickerModel {
         val count = countFor(next.homeGrid)
-        home.sort = next.sort
         home.lastPlayed = lastPlayedMillis
-        val alphabetical = next.homeGrid != HomeGrid.StandIns || home.board.foldersOpen ||
-            (home.board.allOpen && next.sort == app.foldcade.language.LibrarySort.Listed)
-        val labels = if (!alphabetical) emptyList() else if (next.homeGrid == HomeGrid.StandIns) {
-            home.faces().map { it.title }
-        } else hiddenRows().map { it.title }
+        home.playTime = playMillis
+        // Hidden and Folders run A to Z, so L2 and R2 jump letters there. All games' step its tabs instead.
+        val labels = when {
+            next.homeGrid != HomeGrid.StandIns -> hiddenRows().map { it.title }
+            home.board.foldersOpen -> home.faces().map { it.title }
+            else -> emptyList()
+        }
         val lastOccupied = if (next.homeGrid == HomeGrid.StandIns && !home.board.allOpen && !home.board.foldersOpen) {
             app.foldcade.language.visibleSlots(home.board).indexOfLast { it != null }
         } else count - 1
-        val counted = next.copy(count = count, playerSaves = playerSaveSettings(), recentFirst = recentOrder(),
+        val counted = next.copy(count = count, playerSaves = playerSaveSettings(),
             gridLabels = labels, lastOccupiedIndex = lastOccupied,
             screenJumpLastColumn = if (showingHome(next) && !home.board.allOpen && !home.board.foldersOpen) GridStrip.column(lastOccupied.coerceAtLeast(0)) else null)
         val game = tileOn(counted)
@@ -3001,7 +3033,7 @@ class ShellController(
      * last-played times.
      */
     fun notePlayChanged() {
-        // All's Recent sort reorders its rows, which the board does not see.
+        // All games' Recent and Most played reorder its rows, which the board does not see.
         if (showingHome() && home.board.allOpen) {
             syncHome()
             model = withShelf(model.copy(shelfEpoch = model.shelfEpoch + 1))
@@ -3009,10 +3041,8 @@ class ShellController(
         }
         val before = home.board
         syncHome()
-        val next = recentOrder()
-        if (home.board == before && next == model.recentFirst) return
+        if (home.board == before) return
         noteShelfChanged()
-        if (model.recentFirst != next) model = model.copy(recentFirst = next)
     }
 
     private fun publish(next: PickerModel) {
@@ -3026,7 +3056,6 @@ class ShellController(
         if (next.primaryIsTop != store.session.defaultDisplayIsTop) {
             store.update { it.withDefaultDisplayIsTop(next.primaryIsTop) }
         }
-        if (next.sort != model.sort) store.setLibrarySort(next.sort)
         if (next.themeIndex != model.themeIndex) {
             store.setTheme(next.themeIds[next.themeIndex])
             onTheme(next.themeIndex)
@@ -3284,9 +3313,6 @@ class ShellController(
         return byId.values.toList()
     }
 
-    private fun recentOrder(): List<Int> =
-        recentlyPlayedIndices(Shelf.games.map { it.id }, lastPlayedMillis)
-
     private fun initial(): PickerModel {
         val names = themeNames.ifEmpty { listOf(Copy.builtIn) }
         val index = store.themeIndex(themeIds, names)
@@ -3325,8 +3351,6 @@ class ShellController(
             backgroundPinned = pinned,
             motionSpeed = store.motionSpeed(),
             artwork = store.artworkEnabled(),
-            sort = store.librarySort(),
-            recentFirst = recentOrder(),
             appVersion = appVersion,
         )
     }
@@ -3341,7 +3365,7 @@ class ShellController(
         before.music.volume != after.music.volume || before.music.trackId != after.music.trackId ||
             before.brightness != after.brightness || before.themeIndex != after.themeIndex ||
             before.iconThemeIndex != after.iconThemeIndex || before.backgroundMotion != after.backgroundMotion ||
-            before.motionSpeed != after.motionSpeed || before.sort != after.sort ||
+            before.motionSpeed != after.motionSpeed ||
             before.primaryIsTop != after.primaryIsTop
 
     /**
