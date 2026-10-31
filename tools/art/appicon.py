@@ -8,15 +8,22 @@ One Afterglow strand draws the open clamshell. It comes in from the left, rings 
 at the hinge, rings the base, and leaves on the right. The cover lit in the base's grid is shown again, big, in the lid:
 move on the bottom screen, and the top screen becomes the game.
 
+A local build (anything Gradle builds outside GitHub Actions) wears app/src/local/res/ on top: the same
+drawing with the strand burning ember instead of Afterglow, and a wrench badge, so a bench build on the
+Thor is never mistaken for a release. Only the foreground and monochrome layers are replaced.
+
 The store icon is rendered through macOS Quick Look, like preview.py. Elsewhere it is left as it was.
 """
 import os, shutil, subprocess, tempfile
 from art import *
 from palette import *
+import symbols
 
 ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 RES = f"{ROOT}/app/src/main/res/drawable"
 SVG = f"{ROOT}/art/svg/app-icon"
+LOCAL_RES = f"{ROOT}/app/src/local/res/drawable"
+LOCAL_SVG = f"{SVG}/local"
 STORE = f"{ROOT}/app/src/main/ic_launcher-playstore.png"
 
 WHITE = "#FFFFFF"
@@ -30,6 +37,11 @@ HERO = (45.5, 25.5, 17, 22, 3)  # the lit tile again, big: the game fills the to
 TILES = [(39 + c * 11, 59.5 + r * 13.5, 8, 10.5, 2) for r in range(2) for c in range(3)]  # portrait, like covers
 LIT = 1                      # the tile in the focus ring: top row, middle
 COVERS = [TEAL, None, VIOLET, BLUE, ROSE, AMBER]  # the rest of the library, dimmed
+
+AFTERGLOW = [(0.23, TEAL, 1), (0.48, BLUE, 1), (0.77, VIOLET, 1)]
+EMBER = [(0.23, AMBER, 1), (0.48, ORANGE, 1), (0.77, ROSE, 1)]  # a local build's strand
+BADGE = (71, 71, 9.5)  # the local badge, in layer units outside SCALE: it reaches 35.5 from the centre, inside a circle mask
+BADGE_GAP = 2.2        # black between the badge and the drawing it sits on
 
 def strand_path():
     (lx1, ly1, lx2, ly2), (bx1, _, bx2, by2) = LID, BASE
@@ -49,8 +61,8 @@ def fading(stops):
     """A strand paint across the layer whose tails are gone by the time they cross a circle mask."""
     return Lin(0, 0, 108, 0, [(0, stops[0][1], 0), (0.1, stops[0][1], 0)] + stops + [(0.9, stops[-1][1], 0), (1, stops[-1][1], 0)])
 
-def strand(d):
-    paint = fading([(0.23, TEAL, 1), (0.48, BLUE, 1), (0.77, VIOLET, 1)])
+def strand(d, light=AFTERGLOW):
+    paint = fading(light)
     core = fading([(0.23, WHITE, 0.4), (0.77, WHITE, 0.4)])
     # Vector drawables have no blur, so the glow is many faint widening strokes, packed near the core
     glow = [L(d, stroke=paint, sw=STRAND * (1 + 4.5 * (i / 16) ** 1.6), salpha=0.02) for i in range(16, 0, -1)]
@@ -67,9 +79,9 @@ def lit(x, y, w, h, r, ring=False):
 def fitted(layers):
     return [G(layers, scale=(SCALE, SCALE), pivot=(54, 54))]
 
-def foreground():
+def foreground(light=AFTERGLOW):
     # the game's light spreads across the top screen
-    out = strand(strand_path()) + [halo(54, 36.5, 30, AMBER, 0.22, sx=1.3, sy=0.55)] + lit(*HERO)
+    out = strand(strand_path(), light) + [halo(54, 36.5, 30, AMBER, 0.22, sx=1.3, sy=0.55)] + lit(*HERO)
     for i, t in enumerate(TILES):
         out += lit(*t, ring=True) if i == LIT else [L(rrect(*t), fill=Lin(0, t[1], 0, t[1] + t[3], [(0, COVERS[i], 0.5), (1, COVERS[i], 0.28)]))]
     return fitted(out)
@@ -78,6 +90,26 @@ def monochrome():
     # the tails fade here too, so a themed icon's strand doesn't read as a cord
     out = [L(strand_path(), stroke=fading([(0.23, WHITE, 1), (0.77, WHITE, 1)]), sw=STRAND * 1.47), L(rrect(*HERO), fill=WHITE)]
     return fitted(out + [L(rrect(*t), fill=WHITE, alpha=1 if i == LIT else 0.4) for i, t in enumerate(TILES)])
+
+def badge(color):
+    """A warm-white disc with the status wrench cut through it, as one even-odd path, so a themed icon keeps the hole."""
+    x, y, r = BADGE
+    k = (r - 1.3) / 11.45   # the handle's end reaches 11.45 from the wrench's centre: keep all of it inside the disc
+    wrench = xf(symbols.wrench()[0].d, s=k, dx=x - 12, dy=y - 12, cx=12, cy=12)
+    return L(circle(x, y, r) + wrench, fill=color, evenodd=True)
+
+def local_foreground():
+    x, y, r = BADGE
+    return foreground(EMBER) + [L(circle(x, y, r + BADGE_GAP), fill=BLACK), badge(INK)]
+
+def local_monochrome():
+    # a monochrome layer is alpha only, so the gap round the badge is cut out of the drawing, not painted black
+    x, y, r = BADGE
+    return [G(monochrome(), clip="M0,0H108V108H0Z" + circle_ccw(x, y, r + BADGE_GAP)), badge(WHITE)]
+
+def local_assets():
+    return [Asset("ic_launcher_foreground", 108, 108, local_foreground(), note="Local build adaptive icon foreground: the strand burns ember and wears a wrench"),
+            Asset("ic_launcher_monochrome", 108, 108, local_monochrome(), note="Local build adaptive icon monochrome layer (themed icons): the wrench badge cut out")]
 
 def assets():
     return [Asset("ic_launcher_foreground", 108, 108, foreground(), note="Adaptive icon foreground: one Afterglow strand draws the open clamshell"),
@@ -97,14 +129,19 @@ def store_icon(fg, bg):
         shutil.copyfile(f"{src}.png", STORE)
     return STORE
 
+def write(made, res, svg):
+    os.makedirs(res, exist_ok=True)
+    os.makedirs(svg, exist_ok=True)
+    for a in made:
+        open(f"{res}/{a.name}.xml", "w").write(to_vd(a))
+        open(f"{svg}/{a.name}.svg", "w").write(to_svg(a))
+
 def main():
     made = assets()
-    os.makedirs(SVG, exist_ok=True)
-    for a in made:
-        open(f"{RES}/{a.name}.xml", "w").write(to_vd(a))
-        open(f"{SVG}/{a.name}.svg", "w").write(to_svg(a))
+    write(made, RES, SVG)
+    write(local_assets(), LOCAL_RES, LOCAL_SVG)
     store = store_icon(made[0], made[1])
-    print(f"wrote {len(made)} layers" + (f" and {os.path.relpath(store, ROOT)}" if store else "; no Quick Look here, so the store icon is unchanged"))
+    print(f"wrote {len(made)} layers, 2 local layers" + (f" and {os.path.relpath(store, ROOT)}" if store else "; no Quick Look here, so the store icon is unchanged"))
 
 if __name__ == "__main__":
     main()

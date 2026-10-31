@@ -171,11 +171,19 @@ Foldcade's own launcher icon is not one of the family. It is drawn in Afterglow'
 - **True black behind it.** The background layer is `#000000`, like Afterglow.
 - **The monochrome layer** keeps the strand, the top screen's cover, and the grid, with only the lit cover solid. Its tails fade too.
 
-`tools/art/appicon.py` writes the adaptive icon's three layers to `app/src/main/res/drawable/`, their SVGs to `art/svg/app-icon/`, and, on macOS, the 512 px store icon `app/src/main/ic_launcher-playstore.png`. minSdk is 33, so the adaptive icon is the only launcher icon; there are no PNG mipmaps.
+`tools/art/appicon.py` writes the adaptive icon's three layers to `app/src/main/res/drawable/`, the local build's two to `app/src/local/res/drawable/`, their SVGs to `art/svg/app-icon/` and `art/svg/app-icon/local/`, and, on macOS, the 512 px store icon `app/src/main/ic_launcher-playstore.png`. minSdk is 33, so the adaptive icon is the only launcher icon; there are no PNG mipmaps.
 
 ```sh
 python3 tools/art/appicon.py
 ```
+
+### The local build's icon
+
+Anything Gradle builds outside GitHub Actions is a local build, and it says so on the Thor. It keeps the drawing but the strand burns ember (amber to orange to rose) instead of Afterglow, and a warm-white disc with the status wrench cut through it sits on the bottom screen's corner. The label becomes "Foldcade (local)". The release, the rolling pre-release, and the unsigned dry-run all build on GitHub Actions, so they wear the published icon and label unchanged.
+
+- **Only two layers change.** `app/src/local/res/` replaces `ic_launcher_foreground` and `ic_launcher_monochrome`. The background, the adaptive icon XML, and everything else come from `main`. `LocalBuildIconTest` holds it to that.
+- **The badge is cut, not painted.** A themed icon keeps only a layer's alpha, so in the monochrome layer the gap round the disc is clipped out of the drawing and the wrench is an even-odd hole. Monochrome layers paint white only.
+- **The switch.** `app/build.gradle.kts` treats a build as CI when `GITHUB_ACTIONS=true`, and `-PfoldcadeCiBuild=true` or `=false` overrides it. `printFoldcadeIdentity` writes `buildOrigin=ci` or `local`, and both release workflows fail unless it says `ci`.
 
 ## Adding an icon
 
