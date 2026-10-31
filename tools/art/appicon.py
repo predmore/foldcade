@@ -94,7 +94,7 @@ def monochrome():
 def badge(color):
     """A warm-white disc with the status wrench cut through it, as one even-odd path, so a themed icon keeps the hole."""
     x, y, r = BADGE
-    k = r * 1.25 / 12   # the 24-unit wrench spans about 20 units; this leaves it a ring of disc
+    k = (r - 1.3) / 11.45   # the handle's end reaches 11.45 from the wrench's centre: keep all of it inside the disc
     wrench = xf(symbols.wrench()[0].d, s=k, dx=x - 12, dy=y - 12, cx=12, cy=12)
     return L(circle(x, y, r) + wrench, fill=color, evenodd=True)
 
