@@ -1,5 +1,6 @@
 package app.foldcade.language
 
+import android.annotation.SuppressLint
 import android.os.Bundle
 import android.view.KeyEvent
 import androidx.activity.ComponentActivity
@@ -78,6 +79,9 @@ abstract class PanelKeyActivity : ComponentActivity() {
         return null
     }
 
+    // AndroidX inherits this public Activity callback through its restricted core shim.
+    // Form navigation must run before the focused text view handles the D-pad.
+    @SuppressLint("RestrictedApi")
     override fun dispatchKeyEvent(event: KeyEvent): Boolean =
         dispatchFormKeyEvent(event) ?: super.dispatchKeyEvent(event)
 
