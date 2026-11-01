@@ -33,12 +33,12 @@ fun refreshGameNativeCatalog(
     library: GameNativeLibrary,
     file: File,
     steamFiles: List<CatalogGame> = emptyList(),
-) {
+): Boolean {
     val stored = readCatalog(file)
     val shortcuts = readGameNativeShortcuts(context, GameNativePlayer.PACKAGES)
-    library.confirm(stored + shortcuts + steamFiles)
+    library.confirm(stored + shortcuts.orEmpty() + steamFiles)
     Shelf.catalog = library.confirmed().map { it.toShelfGame() }
-    val kept = (stored + shortcuts).map { it.remoteKey }.toSet()
+    val kept = (stored + shortcuts.orEmpty()).map { it.remoteKey }.toSet()
     try {
         writeCatalog(file, library.confirmed().filter { it.remoteKey in kept })
     } catch (cancelled: CancellationException) {
@@ -46,6 +46,7 @@ fun refreshGameNativeCatalog(
     } catch (_: Exception) {
         // The shelf already has the list. The next start reads shortcuts again.
     }
+    return shortcuts != null
 }
 
 internal fun readCatalog(file: File): List<CatalogGame> {
@@ -61,8 +62,9 @@ internal fun writeCatalog(file: File, games: List<CatalogGame>) {
     writeDurably(file.toPath(), raw.toByteArray(Charsets.UTF_8))
 }
 
-internal fun readGameNativeShortcuts(context: Context, packages: List<String>): List<CatalogGame> {
-    val launcher = context.getSystemService(LauncherApps::class.java) ?: return emptyList()
+internal fun readGameNativeShortcuts(context: Context, packages: List<String>): List<CatalogGame>? {
+    val launcher = context.getSystemService(LauncherApps::class.java) ?: return null
+    if (!launcher.hasShortcutHostPermission()) return null
     val user = Process.myUserHandle()
     val found = ArrayList<CatalogGame>()
     for (packageName in packages) {
@@ -76,9 +78,9 @@ internal fun readGameNativeShortcuts(context: Context, packages: List<String>): 
         val shortcuts = try {
             launcher.getShortcuts(query, user).orEmpty()
         } catch (_: SecurityException) {
-            emptyList()
+            return null
         } catch (_: IllegalStateException) {
-            emptyList()
+            return null
         }
         for (shortcut in shortcuts) {
             val intent = shortcut.intents?.lastOrNull() ?: continue
