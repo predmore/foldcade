@@ -1985,7 +1985,7 @@ private fun activate(model: PickerModel, screen: HostScreen, elsewhere: Boolean 
                 } else {
                     model.copy(
                         connectOpen = true,
-                        connectScreen = screen,
+                        connectScreen = model.layout.pageScreen,
                         connectIndex = 0,
                         connectKind = ConnectKind.Romm,
                         connectReturnPanel = null,
@@ -2370,7 +2370,7 @@ private fun activateRow(
             panel = null,
             focus = panel.grid,
             connectOpen = true,
-            connectScreen = screen,
+            connectScreen = model.layout.pageScreen,
             connectIndex = 0,
             connectKind = ConnectKind.Romm,
             connectReturnPanel = panel,
@@ -2379,7 +2379,7 @@ private fun activateRow(
             panel = null,
             focus = panel.grid,
             connectOpen = true,
-            connectScreen = screen,
+            connectScreen = model.layout.pageScreen,
             connectOrigin = "",
             connectIndex = 0,
             connectKind = ConnectKind.Romm,
@@ -2433,7 +2433,7 @@ private fun activateRow(
                 panel = null,
                 focus = panel.grid,
                 connectOpen = true,
-                connectScreen = screen,
+                connectScreen = model.layout.pageScreen,
                 connectIndex = 0,
                 connectKind = ConnectKind.ArtKey,
             ) to Effect.OpenArtKey

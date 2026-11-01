@@ -136,4 +136,17 @@ class ScreenLayoutTest {
         val closed = reduce(right, Meaning.RightPanel).first.let(::finishIslandRetire)
         assertEquals(HostScreen.Bottom, reduce(closed.copy(panel = null), Meaning.LeftPanel).first.panel?.screen)
     }
+
+    @Test
+    fun theConnectFormOpensOnTopWhicheverScreenAsked() {
+        val signedIn = PickerModel(count = 2, rowsPerPage = 2, signedIn = listOf(SignedInBackend("romm", "RomM")))
+        val drawer = reduce(signedIn.onSetting(librarySources(signedIn).first()), Meaning.Activate).first
+        val edit = panelRows(drawer.panel!!, drawer).indexOf(Row.EditRomm("romm"))
+        val onEdit = drawer.copy(panel = drawer.panel.copy(index = edit))
+        for (from in HostScreen.entries) {
+            val form = reduce(onEdit, Meaning.Activate, from).first
+            assertEquals(true, form.connectOpen)
+            assertEquals(HostScreen.Top, form.connectScreen)
+        }
+    }
 }
