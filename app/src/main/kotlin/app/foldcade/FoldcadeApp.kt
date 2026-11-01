@@ -601,6 +601,9 @@ class FoldcadeApp : Application() {
      */
     internal val backdropCamera = app.foldcade.ui.BackdropCamera()
 
+    /** A launching game's art, growing over both screens while the game opens. */
+    internal val launchBlooms = LaunchBlooms()
+
     /** Set before composition when a debug capture freezes the island morph. */
     var islandHold by mutableStateOf<IslandHold?>(null)
 

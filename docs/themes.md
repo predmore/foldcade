@@ -215,7 +215,10 @@ Durations in ms, scales, distances, and cubic-bézier curves `[x1, y1, x2, y2]`.
 | `motion.durationSetupPause` | 900 | How long a fresh check in Set up saves rests before the focus glides on |
 | `motion.durationSetupStagger` | 160 | Between checks that land together in Set up saves |
 | `motion.durationScene` | 360 | Wide art crossfading |
-| `motion.durationShowcase` | 1400 | Wide art settling |
+| `motion.durationShowcase` | 1400 | Wide art settling, and the push into a launching game's art |
+| `motion.durationLaunch` | 420 | A launching game's art growing to fill both screens |
+| `motion.durationLaunchHold` | 600 | How long the screen beside the game keeps that art before it gives way |
+| `motion.launchPush` | 1.06 | How much larger that art is drawn as it waits for the game |
 | `motion.durationSelect` | 280 | A highlight landing, a switch flipping |
 | `motion.durationBob` | 1800 | One rise and fall of a held tile |
 | `motion.durationLetterHold` | 360 | How long the letter-jump letter stays |

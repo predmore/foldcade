@@ -785,6 +785,25 @@
                             "default": 1400.0,
                             "description": "ms; follows base.durationScale"
                         },
+                        "durationLaunch": {
+                            "type": "number",
+                            "minimum": 1.0,
+                            "maximum": 2.1474836E9,
+                            "default": 420.0,
+                            "description": "ms; follows base.durationScale"
+                        },
+                        "durationLaunchHold": {
+                            "type": "number",
+                            "minimum": 1.0,
+                            "maximum": 2.1474836E9,
+                            "default": 600.0,
+                            "description": "ms; follows base.durationScale"
+                        },
+                        "launchPush": {
+                            "type": "number",
+                            "exclusiveMinimum": 0.0,
+                            "default": 1.06
+                        },
                         "durationSelect": {
                             "type": "number",
                             "minimum": 1.0,

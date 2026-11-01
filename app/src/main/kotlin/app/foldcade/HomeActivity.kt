@@ -57,6 +57,7 @@ import app.foldcade.api.plugin.SaveFolderPart
 import app.foldcade.api.plugin.SaveFolderSearch
 import app.foldcade.api.plugin.StartDisplay
 import app.foldcade.artwork.SteamGridDb
+import app.foldcade.language.MotionSpeed
 import app.foldcade.language.AboutCopy
 import app.foldcade.language.SaveConflictAction
 import app.foldcade.language.SaveConflictPrompt
@@ -319,6 +320,7 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
     override fun onMeaning(meaning: app.foldcade.language.Meaning) = onMeaningRepeated(meaning, 0)
 
     override fun onMeaningRepeated(meaning: app.foldcade.language.Meaning, repeatCount: Int) {
+        if (foldcade.shell.swallowsHomeReturnRepeat(repeatCount)) return
         if (commandCenterKey(meaning)) return
         if (app.foldcade.language.topMenuKeyBlocked(meaning, foldcade.shell.homeKeys(), foldcade.store.session.islandsOpen())) return
         if (app.foldcade.language.cancelsPendingLaunch(
@@ -347,6 +349,7 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
             is Effect.Launch -> {
                 launchScreen = if (effect.onBottom) Panel.Bottom else Panel.Top
                 launchSubject = foldcade.shell.focusedRunningApp()
+                bloomPress = BloomPress(foldcade.shell.focusedGame()?.id, SystemClock.uptimeMillis())
                 if (foldcade.shell.model.libraryGrid) launchLibraryGame(effect.index) else launchFocused()
                 // A launch from Find has read its game; the grid is what to come back to.
                 foldcade.shell.closeFindAfterLaunch()
@@ -627,13 +630,24 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
             resumeLostReturn()
             if (!foldcade.suppressSaveConflict) refreshSaveConflict()
         }
+        // Back in front where the game opened: its art leaves both screens, including one a
+        // presentation covered, which never stopped.
+        displays.panelFor(this, foldcade.store.session.defaultDisplayIsTop)?.let { panel ->
+            if (foldcade.launchBlooms.current?.gamePanels?.contains(panel) == true) foldcade.launchBlooms.retire()
+        }
         // Foldcade in front on this panel means the game there has left. A launcher-icon
         // start is not a Home recall, so without this a Foldcade that is not the default
         // Home keeps the panel for the game and ignores every key.
         var reclaimedPanel = false
         displays.panelFor(this, foldcade.store.session.defaultDisplayIsTop)?.let { panel ->
             reclaimedPanel = foldcade.store.session.surfaceOn(panel) == null
+            val returnedId = foldcade.store.session.externalOn(panel)?.id
+            // Browsing the grid beside the game: a game that quits by itself leaves the cursor where the user has it.
+            val browsing = foldcade.store.session.browsing != null
             foldcade.store.update { it.foldcadeResumed(panel) }
+            if (returned || (reclaimedPanel && foldcade.store.session.externalOn(panel) == null)) {
+                if (browsing) foldcade.shell.forgetGameLaunch() else foldcade.shell.noteHomeReturned(returnedId)
+            }
         }
         resumed = true
         // Primary Home coming forward reclaims the launcher, including a fresh icon start.
@@ -655,6 +669,8 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
 
     override fun onStop() {
         super.onStop()
+        // Whatever covers this screen now, a game or not, its launch art has nowhere left to show.
+        displays.panelFor(this, foldcade.store.session.defaultDisplayIsTop)?.let(foldcade.launchBlooms::covered)
         // A Home created behind another app must not keep that old recall until the app quits.
         initialHomeRecallPending = false
         noteCovered()
@@ -856,8 +872,10 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
         foldcade.pendingRestart = null
         val panel = displays.panelFor(this, foldcade.store.session.defaultDisplayIsTop) ?: return
         val surface = foldcade.store.session.surfaceOn(panel)
-        if (surface == Surface.Picker || surface == Surface.Hero) foldcade.shell.goHome()
+        val returnedId = foldcade.store.session.externalOn(panel)?.id
+        if (surface == Surface.Picker || surface == Surface.Hero) foldcade.shell.goHome(fromRecall = true)
         foldcade.store.update { it.home(panel) }
+        foldcade.shell.noteHomeReturned(returnedId)
         if (foldcade.panelRecoveryRequested) foldcade.requestPanelRecovery()
     }
 
@@ -1140,10 +1158,20 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
         // The player opened by its own icon is the player's to steer now, and its game may
         // close without Foldcade seeing it, so that game is no longer held as paused.
         val beside = if (external.occupiesBothDisplays) null else session.externalOn(panel.flip())?.id?.let(foldcade::runningOn)?.packageName
-        foldcade.commandCenter.note(external.id, foldcade.shell.runningApp(game))
+        val running = foldcade.shell.runningApp(game)
+        foldcade.commandCenter.note(external.id, running)
+        val still = bloomLaunch(running, displayId, external.occupiesBothDisplays)
+        foldcade.shell.noteGameLaunched(external.id)
         foldcade.store.place(panel, external)
         val options = ActivityOptions.makeBasic().apply { launchDisplayId = displayId }
-        startActivity(launch, options.toBundle())
+        if (still) bloomStart(launch)
+        try {
+            startActivity(launch, options.toBundle())
+        } catch (failure: RuntimeException) {
+            foldcade.launchBlooms.cancel()
+            foldcade.shell.forgetGameLaunch()
+            throw failure
+        }
         foldcade.runningGames.noteApp(GameCompanion(pkg, game.title, panel), beside,
             setOf(packageName, "app.foldcade"))
         foldcade.runningGames.forget(pkg)
@@ -1158,6 +1186,46 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
 
     /** The tile behind the launch now starting, for the command center beside it. */
     private var launchSubject: RunningApp? = null
+
+    /** The tile focused at the last A or X, and when, so a start right after it grows from that tile. */
+    private class BloomPress(val focusedId: String?, val at: Long)
+
+    private var bloomPress: BloomPress? = null
+
+    /**
+     * [art] grows to fill both screens while the start to [displayId] goes in, see
+     * [LaunchBlooms]. Called in the same moment as the start, so it never delays a launch,
+     * and before the play is noted, while the grid and the hero still show the game.
+     * Motion Off and Android's remove-animations open the game with no art. True when the
+     * game should open with no slide, over the art or with Motion Off: see [bloomStart].
+     */
+    private fun bloomLaunch(art: RunningApp, displayId: Int, both: Boolean): Boolean {
+        val press = bloomPress
+        bloomPress = null
+        // Motion Off asks for less movement, so its games open without Android's slide too.
+        val still = foldcade.shell.model.motionSpeed == MotionSpeed.Off
+        // An app with no art of its own opens as it always has.
+        if (art.record == null && art.query == null) return still
+        val motion = foldcade.paintFor(foldcade.shell.model.themeIndex).theme.motion
+        val timing = motion.launchBloom(foldcade.shell.model.motionSpeed, motion.animatorScale(contentResolver)) ?: return still
+        val assignment = displays.assignment(foldcade.store.session.defaultDisplayIsTop)
+        val panels = if (both) Panel.entries.toSet() else setOfNotNull(assignment.panelFor(displayId))
+        // A start that waited on a download or a question grows from the middle: the
+        // cursor may be on another tile by now.
+        val pressed = press != null &&
+            SystemClock.uptimeMillis() - press.at <= BLOOM_PRESS_MS &&
+            press.focusedId != null &&
+            foldcade.shell.focusedGame()?.id == press.focusedId
+        foldcade.launchBlooms.start(
+            art = art,
+            gamePanels = panels,
+            timing = timing,
+            pressed = pressed,
+            finding = foldcade.shell.find != null,
+            heroKey = foldcade.shell.focusedHero()?.key,
+        )
+        return true
+    }
 
     private fun launchFocused() {
         val game = foldcade.shell.focusedGame() ?: return
@@ -1508,6 +1576,7 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
             val displayId = if (shown == Panel.Top) assignment.topDisplayId else assignment.bottomDisplayId
             if (displayId != null) {
                 try {
+                    foldcade.shell.noteGameLaunched(tileId)
                     startOnDisplay(front, displayId, multipleTask = false)
                 } catch (_: ActivityNotFoundException) {
                     Unit
@@ -1897,7 +1966,8 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
     ): Boolean {
         val session = foldcade.store.session
         val external = ExternalApp(id, occupiesBoth)
-        foldcade.commandCenter.note(id, launchSubject?.takeIf { it.title == title } ?: RunningApp(title))
+        val running = launchSubject?.takeIf { it.title == title } ?: RunningApp(title)
+        foldcade.commandCenter.note(id, running)
         val assignment = displays.assignment(session.defaultDisplayIsTop)
         val displayId = if (occupiesBoth) {
             foldcade.store.update { it.launch(external, launchScreen) }
@@ -1915,9 +1985,18 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
         if (replacing) intent.flags = replaceFlags(intent.flags)
         // Only a Home press after this start says the game was left open.
         foldcade.homeRecalledOn = null
-        foldcade.externalPlay.open(foldcade.plays, id, title, displayId, playerPackage) {
-            startOnDisplay(intent, displayId, multipleTask = !resume && !replacing)
-            if (noteStart()) armRestart(intent, displayId)
+        // Before the play is noted: noting it can reorder a Recent folder under the cursor.
+        val still = bloomLaunch(running, displayId, occupiesBoth)
+        foldcade.shell.noteGameLaunched(id)
+        try {
+            foldcade.externalPlay.open(foldcade.plays, id, title, displayId, playerPackage) {
+                startOnDisplay(intent, displayId, multipleTask = !resume && !replacing, bloom = still)
+                if (noteStart()) armRestart(intent, displayId)
+            }
+        } catch (failure: Exception) {
+            foldcade.launchBlooms.cancel()
+            foldcade.shell.forgetGameLaunch()
+            throw failure
         }
         // The game it replaced is gone. This one is noted once the start is in.
         if (replacing && playerPackage != null) foldcade.runningGames.forget(playerPackage)
@@ -1930,10 +2009,14 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
         foldcade.music.onExternalLaunch()
         val session = foldcade.store.session
         val external = ExternalApp(game.id, game.occupiesBothDisplays)
-        foldcade.commandCenter.note(game.id, foldcade.shell.runningApp(game))
+        val running = foldcade.shell.runningApp(game)
+        foldcade.commandCenter.note(game.id, running)
         if (game.occupiesBothDisplays) {
+            val displayId = displays.assignment(session.defaultDisplayIsTop).topDisplayId
+            val still = bloomLaunch(running, displayId, both = true)
+            foldcade.shell.noteGameLaunched(game.id)
             foldcade.store.update { it.launch(external, launchScreen) }
-            beginPlay(game, displays.assignment(session.defaultDisplayIsTop).topDisplayId)
+            beginPlay(game, displayId, still)
             return
         }
         val panel = session.singleScreenTarget(launchScreen) ?: return
@@ -1942,21 +2025,25 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
             Panel.Top -> assignment.topDisplayId
             Panel.Bottom -> assignment.bottomDisplayId ?: return
         }
+        val still = bloomLaunch(running, displayId, both = false)
+        foldcade.shell.noteGameLaunched(game.id)
         foldcade.store.place(panel, external)
-        beginPlay(game, displayId)
+        beginPlay(game, displayId, still)
     }
 
     /** Opens a play session, then starts the stand-in. That activity reports the rest of the session. */
-    private fun beginPlay(game: ShelfGame, displayId: Int) {
+    private fun beginPlay(game: ShelfGame, displayId: Int, bloom: Boolean = false) {
         val playId = foldcade.plays.start(game.id, game.title)
         try {
-            startOnDisplay(StandInActivity::class.java, displayId) {
+            startOnDisplay(StandInActivity::class.java, displayId, bloom) {
                 putExtra(StandInActivity.EXTRA_ID, game.id)
                 putExtra(StandInActivity.EXTRA_TITLE, game.title)
                 putExtra(StandInActivity.EXTRA_PLAY, playId)
             }
         } catch (failure: RuntimeException) {
             foldcade.plays.signal(playId, PlaySignal.End)
+            foldcade.launchBlooms.cancel()
+            foldcade.shell.forgetGameLaunch()
             throw failure
         }
     }
@@ -1983,7 +2070,11 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
             Panel.Bottom -> assignment.bottomDisplayId ?: return
         }
         val external = ExternalApp(game.id, ready.occupiesBothDisplays)
-        foldcade.commandCenter.note(game.id, foldcade.shell.runningApp(game))
+        val running = foldcade.shell.runningApp(game)
+        foldcade.commandCenter.note(game.id, running)
+        // Before the play is noted: noting it can reorder a Recent folder under the cursor.
+        val still = bloomLaunch(running, displayId, ready.occupiesBothDisplays)
+        foldcade.shell.noteGameLaunched(game.id)
         if (ready.occupiesBothDisplays) {
             foldcade.store.update { it.launch(external, launchScreen) }
         } else {
@@ -1994,6 +2085,7 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
             foldcade.externalPlay.open(foldcade.plays, game.id, game.title, displayId, intent.packageName) {
                 val options = ActivityOptions.makeBasic().apply { launchDisplayId = displayId }
                 val start = intent.toAndroidIntent(foldcade.rommFolderAuthority)
+                if (still) bloomStart(start)
                 startActivity(start, options.toBundle())
                 if (foldcade.noteStarted(player, intent)) armRestart(start, displayId)
             }
@@ -2005,12 +2097,16 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
         } catch (cancelled: CancellationException) {
             throw cancelled
         } catch (_: ActivityNotFoundException) {
+            foldcade.launchBlooms.cancel()
+            foldcade.shell.forgetGameLaunch()
             foldcade.store.update { it.home(Panel.Top).home(Panel.Bottom) }
             val name = game.platformId
                 ?.let { playerFor(it)?.displayName }
                 ?: "Player"
             presentMissing(name, generation)
         } catch (_: Exception) {
+            foldcade.launchBlooms.cancel()
+            foldcade.shell.forgetGameLaunch()
             foldcade.store.update { it.home(Panel.Top).home(Panel.Bottom) }
         }
     }
@@ -3295,6 +3391,9 @@ internal const val OTHER_APP_ID = "android:other"
 
 /** How long A on a text field waits for its screen to take focus before raising the keyboard anyway. */
 private const val KEYBOARD_FOCUS_WAIT_MS = 1_000L
+
+/** How long after A or X a start still grows from the pressed tile. Later ones waited on something. */
+private const val BLOOM_PRESS_MS = 1_500L
 
 internal const val EXTRA_ANDROID_SHELF = "app.foldcade.extra.SHELF"
 internal const val EXTRA_FOLDER_LIBRARY = "app.foldcade.extra.FOLDER_LIBRARY"

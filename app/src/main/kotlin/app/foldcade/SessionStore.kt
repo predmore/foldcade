@@ -504,11 +504,20 @@ class SessionStore(private val prefs: SharedPreferences) : SaveMarks {
 
     fun place(panel: Panel, app: ExternalApp) = update { it.place(panel, app) }
 
+    /** The tile to come back to after a game, including when its player outlives Home. */
+    fun pendingHomeGame(): String? = prefs.getString(KEY_HOME_RETURN_GAME, null)
+
+    fun setPendingHomeGame(id: String?) {
+        // Written as the game starts, so it must not hold up the frame its art grows in.
+        prefs.edit().putString(KEY_HOME_RETURN_GAME, id).apply()
+    }
+
     companion object {
         private fun safeMusicVolume(volume: Float): Float =
             if (volume.isFinite()) volume.coerceIn(0f, 1f) else HomeMusicSetting.DEFAULT_VOLUME
 
         private const val KEY_PRIMARY_TOP = "primary_top"
+        private const val KEY_HOME_RETURN_GAME = "home_return_game"
         private const val KEY_GAME_SCREENS = "game_screens"
         private const val KEY_PLATFORM_SCREENS = "platform_screens"
         private const val KEY_HOME_PROMPTED = "home_prompted"
