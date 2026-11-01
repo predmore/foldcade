@@ -83,6 +83,13 @@ android {
             }
         }
     }
+    buildTypes.create("benchmark") {
+        initWith(buildTypes.getByName("release"))
+        signingConfig = signingConfigs.getByName("debug")
+        applicationIdSuffix = ".benchmark"
+        isDebuggable = false
+        matchingFallbacks += "release"
+    }
     buildFeatures {
         compose = true
     }
@@ -186,6 +193,7 @@ dependencies {
     implementation(project(":gamestream"))
     implementation(project(":artwork"))
     implementation(project(":plugins:romm"))
+    implementation(libs.profileinstaller)
     implementation(libs.androidx.core)
     implementation(libs.coroutines.android)
     implementation(libs.datastore.preferences)

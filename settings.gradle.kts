@@ -20,6 +20,7 @@ include(
     ":api",
     ":language",
     ":app",
+    ":baselineprofile",
     ":host",
     ":plugins:aps3e",
     ":plugins:armsx2",

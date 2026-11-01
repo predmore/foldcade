@@ -271,6 +271,7 @@ jobs:
           unzip -l "$signed" | grep -q 'assets/music/lanternlight.ogg'
           unzip -l "$signed" | grep -q 'assets/music/nightroute.ogg'
           unzip -l "$signed" | grep -q 'assets/music/manifest.json'
+          python3 tools/profile/check-apk.py "$signed"
           cp "$signed" "${RUNNER_TEMP}/foldcade.apk"
 
       # publish.sh moves the pre-release tag without deleting it or its release,
