@@ -2838,6 +2838,7 @@ private fun GridHints(app: FoldcadeApp, modifier: Modifier = Modifier) {
         options = gridKeys && !model.connectOpen && shell.hasOptions(),
         drop = shell.homeHoldDrop(),
         play = if (gridKeys) shell.focusedPlayKey() else PlayKey.None,
+        close = gridKeys && shell.focusedCanClose(),
     // All games' bar shows L2 and R2 beside its tabs, so only Hidden and Folders name them here.
     )) + if (gridKeys && model.settings == null && model.playActivity == null &&
         (model.homeGrid != HomeGrid.StandIns || shell.homeFoldersOpen())

@@ -344,6 +344,15 @@ enum class LaunchFlag {
      * to the library as any other change. Added in API minor 14.
      */
     SameStartResumes,
+
+    /**
+     * The original game start can move its running task to another display
+     * without recreating the game. Implies [SameStartResumes]; the shell also
+     * sets Android's reset-task flag on resumes and moves. Only declare this
+     * after testing a round trip between differently sized displays.
+     * Added in API minor 19.
+     */
+    MovesBetweenScreens,
 }
 
 /**

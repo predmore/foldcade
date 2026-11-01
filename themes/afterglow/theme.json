@@ -1474,6 +1474,10 @@
       "file": "icons/symbol_clock.xml",
       "tint": true
     },
+    "symbol.close": {
+      "file": "icons/symbol_close.xml",
+      "tint": true
+    },
     "symbol.cloud": {
       "file": "icons/symbol_cloud.xml",
       "tint": true

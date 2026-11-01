@@ -9,7 +9,11 @@ import app.foldcade.host.play.PlayClock
 import app.foldcade.host.play.PlayEvent
 import app.foldcade.host.play.PlayKind
 import app.foldcade.language.PlaySpan
+import app.foldcade.host.play.PlayArchive
+import app.foldcade.host.play.PlayExport
 import app.foldcade.host.play.PlayLog
+import app.foldcade.host.play.PlayMerge
+import app.foldcade.host.play.PlayMove
 import app.foldcade.host.play.PlayNames
 import app.foldcade.host.play.PlaySignal
 import app.foldcade.host.play.QueuedPlaySink
@@ -26,6 +30,7 @@ import app.foldcade.language.PlayCopy
 import app.foldcade.language.homeGameKey
 import app.foldcade.localfolder.LocalFolderBackend
 import java.io.File
+import java.io.OutputStream
 
 /**
  * Host play history for the launch path.
@@ -45,6 +50,8 @@ import java.io.File
 class PlaySessions private constructor(
     private val log: PlayLog,
     private val names: PlayNames,
+    /** Each played game's cover, kept so its history still shows it once no library has it. */
+    val art: PlayArt,
 ) {
     var stamp by mutableIntStateOf(0)
         private set
@@ -64,6 +71,9 @@ class PlaySessions private constructor(
     /** The tile a game id is shown as now, so a folded game's play is one row. */
     var tileOf: (String) -> String = { it }
 
+    /** A session started for the tile a game id is shown as. The app keeps its cover then. */
+    var onStarted: ((String) -> Unit)? = null
+
     private var usageGranted = false
     private var usageByPackage = emptyMap<String, PackagePlay>()
     private var usageSeen = emptyList<UsageSpan>()
@@ -74,6 +84,7 @@ class PlaySessions private constructor(
         if (name != null) names.remember(gameId, name)
         val id = log.start(gameId)
         changed()
+        onStarted?.invoke(tileOf(gameId))
         return id
     }
 
@@ -96,7 +107,7 @@ class PlaySessions private constructor(
 
     fun lastPlayedMillis(gameId: String): Long? = shown(gameId).lastPlayedMillis
 
-    fun hasTrackedSession(): Boolean = log.events().isNotEmpty()
+    fun hasTrackedSession(): Boolean = !log.isEmpty()
 
     /** Replaces the usage overlay. Lifecycle sessions stay in place for when access is off. */
     fun applyUsage(granted: Boolean, samples: List<UsageSample>, nowMillis: Long) {
@@ -142,8 +153,69 @@ class PlaySessions private constructor(
         names.remember(gameId, name)
     }
 
-    /** Every stretch a game was in front, for the Play activity page. */
-    fun spans(): List<PlaySpan> = playSpans(log.events()).map { it.copy(gameId = tileOf(it.gameId)) }
+    /**
+     * The cover kept for [tileId], or for one of its copies: a cover kept before copies
+     * folded into one tile stays under the copy's own id.
+     */
+    fun keptCover(tileId: String): File? = art.file(tileId) ?: historyIds(tileId).firstNotNullOfOrNull(art::file)
+
+    /** Every stretch a game was in front, for the Play activity page, under the tile it counts for now. */
+    fun spans(): List<PlaySpan> = playSpans(log.counted()).map { it.copy(gameId = tileOf(it.gameId)) }
+
+    /**
+     * Every tile with play that still counts, its time and last play: each copy's and each
+     * moved session's, as the tile's own totals add them up.
+     */
+    fun played(): Map<String, PlayTotals> {
+        val byTile = HashMap<String, PlayTotals>()
+        for ((gameId, totals) in log.played()) {
+            val tile = tileOf(gameId)
+            val known = byTile[tile]
+            byTile[tile] = if (known == null) totals.copy(gameId = tile) else PlayTotals(
+                tile,
+                known.activeMillis + totals.activeMillis,
+                listOfNotNull(known.lastPlayedMillis, totals.lastPlayedMillis).maxOrNull(),
+            )
+        }
+        return byTile
+    }
+
+    /**
+     * Gives [toTile] every finished session of [fromTile] and of each copy it folds, as
+     * after a ROM was renamed or replaced. Returns what moved, for [undo].
+     */
+    fun move(fromTile: String, toTile: String): List<PlayMove> {
+        val target = tileOf(toTile)
+        val from = historyIds(fromTile) - historyIds(target)
+        if (from.isEmpty()) return emptyList()
+        val moved = log.move(from, target)
+        if (moved.isNotEmpty()) changed()
+        return moved
+    }
+
+    fun undo(moves: List<PlayMove>) {
+        if (log.undo(moves) > 0) changed()
+    }
+
+    /** The whole history to [out]: every finished session as stored, every kept name, and every kept cover. */
+    fun export(out: OutputStream) {
+        PlayArchive.write(out, log.finished(), names.all(), art.files())
+    }
+
+    /**
+     * Adds a read [export] to this history, never replacing anything here: sessions it
+     * lacks, then removals and moves, then names. Covers go in with [PlayArt.adopt] first,
+     * off the main thread. Call this on the main thread, as every other change is.
+     */
+    fun merge(read: PlayExport): PlayMerge {
+        val merged = log.merge(read.events)
+        val named = names.merge(read.names)
+        if (!merged.empty || named > 0) {
+            countUsage()
+            changed()
+        }
+        return merged
+    }
 
     fun subscribe(listener: (PlayEvent) -> Unit): AutoCloseable = log.subscribe(listener)
 
@@ -157,6 +229,7 @@ class PlaySessions private constructor(
             PlaySessions(
                 PlayLog(clock, QueuedPlaySink(FilePlayLog(file))),
                 PlayNames(File(file.absoluteFile.parentFile, "names.log")),
+                PlayArt(File(file.absoluteFile.parentFile, "art")),
             )
     }
 }
@@ -180,7 +253,7 @@ internal fun playSpans(events: List<PlayEvent>): List<PlaySpan> {
                 val active = event.activeMillis - since.activeMillis
                 if (active > 0L) spans += PlaySpan(event.gameId, since.atMillis, since.atMillis + active, event.sessionId)
             }
-            PlayKind.Removed -> Unit
+            PlayKind.Removed, PlayKind.Moved -> Unit
         }
     }
     return spans
@@ -204,7 +277,7 @@ internal fun removedStretches(events: List<PlayEvent>): List<Pair<String, LongRa
                 val since = front.remove(event.sessionId) ?: continue
                 if (event.atMillis > since.atMillis) stretches += event.gameId to (since.atMillis..event.atMillis)
             }
-            PlayKind.Removed -> Unit
+            PlayKind.Removed, PlayKind.Moved -> Unit
         }
     }
     return stretches

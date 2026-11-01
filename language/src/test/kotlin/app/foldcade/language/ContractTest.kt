@@ -258,9 +258,9 @@ class ContractTest {
         // A game that takes both screens has no choice of screens, but A still plays it.
         assertEquals(listOf(Copy.hintPlay), gridHints(null, HomeKeys.Idle, map, play = PlayKey.Play).map { it.label })
         // One still open in its player comes back where it was, whichever screen it takes.
-        assertEquals(listOf(Copy.hintResume), gridHints(null, HomeKeys.Idle, map, screens = false, play = PlayKey.Resume).map { it.label })
+        assertEquals(listOf(Copy.hintResume, Copy.hintClose), gridHints(null, HomeKeys.Idle, map, screens = false, play = PlayKey.Resume).map { it.label })
         assertEquals(
-            listOf(PromptKey.FaceA, PromptKey.FaceY),
+            listOf(PromptKey.FaceA, PromptKey.FaceX, PromptKey.FaceY),
             gridHints(hintFor(HintPlace.RootGrid), HomeKeys.Idle, map, options = true, play = PlayKey.Resume).map { it.key },
         )
         assertEquals(Copy.paused, activityLine(TileActivity.Paused))

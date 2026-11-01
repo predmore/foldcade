@@ -344,6 +344,9 @@ class HomeSession(
 
     fun game(id: String): Game? = games[id]
 
+    /** The catalog's item for [id], or null for a folder, a setup tile, or a game no library has now. */
+    fun item(id: String): HomeItem? = catalogById[id]
+
     /**
      * The library games behind the tile [id]: each copy of a game several libraries have, in
      * rank order, or the one game of any other tile. Kept while a copy's library is still loading.

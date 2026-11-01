@@ -38,6 +38,16 @@ class PlayNames(
 
     fun name(gameId: String): String? = names[gameId]
 
+    /** Every kept name, for an export. */
+    fun all(): Map<String, String> = HashMap(names)
+
+    /**
+     * Keeps each of [imported] this file has no name for, as an import does. A name
+     * kept here already wins: it is the newer one on this device. Returns how many it kept.
+     */
+    fun merge(imported: Map<String, String>): Int =
+        imported.count { (gameId, name) -> !names.containsKey(gameId) && remember(gameId, name) }
+
     /**
      * Keeps [name] for [gameId]. A blank name, the id itself, or a URI is not
      * a name and is ignored. Returns true when this stored a new name.

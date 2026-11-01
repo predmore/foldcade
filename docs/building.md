@@ -74,6 +74,10 @@ That prints `versionCode`, `versionName`, and the debug and release application 
 
 `:api`, `:host`, `:romm`, and every `:plugins:*` module apply `foldcade.jvm-api33`. Animal Sniffer fails the build when those modules call an Android API above 33. `testDebugUnitTest` depends on that check.
 
+## Baseline profile
+
+The release includes an app profile. See [baseline-profile.md](baseline-profile.md) to regenerate it on a Thor and measure startup and controller frames.
+
 ## Minify
 
 Minify is off for debug and release. `app/build.gradle.kts` does not enable it. If it is enabled later, the keep rules in [plugins.md](plugins.md) are required.

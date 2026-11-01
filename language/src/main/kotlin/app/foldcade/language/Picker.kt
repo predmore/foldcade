@@ -90,6 +90,9 @@ enum class DialogKind {
     /** Restart a game still open in its player. Not now leaves it paused. */
     RestartGame,
 
+    /** Close a paused game and the apps opened beside its current run. */
+    CloseGame,
+
     /** Android's "Modify system settings" access, for the R1 brightness slider. */
     Brightness,
 
@@ -125,6 +128,12 @@ enum class DialogKind {
 
     /** Eden cannot place an incoming save. Not now cancels the held launch. */
     EdenSaveHold,
+
+    /** Settings › System › Play history: export it to a file, or import one. Opens on Export. */
+    PlayHistory,
+
+    /** What an export or an import did. Ok only closes it. */
+    PlayHistoryDone,
 }
 
 enum class DialogButton {
@@ -146,6 +155,8 @@ enum class DialogButton {
     /** Opens the player [DialogState.subject] names. */
     OpenPlayer,
     TryAgain,
+    ExportPlay,
+    ImportPlay,
 }
 
 /** The words a dialog button shows. [subject] is [DialogState.subject], which names the player to open. */
@@ -166,6 +177,8 @@ fun dialogButtonLabel(button: DialogButton, subject: String? = null): String = w
     DialogButton.ForgetHost -> Copy.forgetHost
     DialogButton.OpenPlayer -> openPlayerLabel(subject)
     DialogButton.TryAgain -> Copy.tryAgain
+    DialogButton.ExportPlay -> PlayCopy.export
+    DialogButton.ImportPlay -> PlayCopy.import
 }
 
 data class DialogState(
@@ -240,6 +253,28 @@ fun usageAccessPrompt(screen: HostScreen = HostScreen.Bottom): DialogState = Dia
     screen = screen,
 )
 
+/** Settings › System › Play history. Neither way loses anything, so it opens on Export. */
+fun playHistoryDialog(screen: HostScreen): DialogState = DialogState(
+    kind = DialogKind.PlayHistory,
+    title = PlayCopy.history,
+    body = PlayCopy.historyBody,
+    buttons = listOf(DialogButton.ExportPlay, DialogButton.ImportPlay, DialogButton.NotNow),
+    index = 0,
+    safeIndex = 2,
+    screen = screen,
+)
+
+/** What an export or an import did, in a line. */
+fun playHistoryDone(message: String, screen: HostScreen): DialogState = DialogState(
+    kind = DialogKind.PlayHistoryDone,
+    title = PlayCopy.history,
+    body = message,
+    buttons = listOf(DialogButton.Ok),
+    index = 0,
+    safeIndex = 0,
+    screen = screen,
+)
+
 /** The automatic ask. L1 can open the same explainer later. It never replaces another dialog. */
 fun shouldOfferUsageAccess(
     hasTrackedSession: Boolean,
@@ -285,7 +320,18 @@ fun closeBothPanelDialog(screen: HostScreen): DialogState = DialogState(
     screen = screen,
 )
 
-/** Restarting loses what was not saved, so it opens on Not now, and Back keeps the game too. */
+/** Closing loses what was not saved, so it opens on Not now, and Back keeps the game too. */
+fun closeGameDialog(screen: HostScreen, companions: List<String> = emptyList()): DialogState = DialogState(
+    kind = DialogKind.CloseGame,
+    title = Copy.closeGameTitle,
+    body = listOf(Copy.closeGameBody, Copy.companionCloseLine(companions)).filter { it.isNotEmpty() }.joinToString(" "),
+    buttons = listOf(DialogButton.CloseIt, DialogButton.NotNow),
+    index = 1,
+    safeIndex = 1,
+    screen = screen,
+)
+
+/** Restarting loses what was not saved, so it opens on Not now. */
 fun restartGameDialog(screen: HostScreen): DialogState = DialogState(
     kind = DialogKind.RestartGame,
     title = Copy.restartTitle,
@@ -636,9 +682,20 @@ sealed interface Row {
     /** A game still open in its player starts over. */
     data object Saves : Row
     data object RestartGame : Row
+    data object CloseGame : Row
+    data object MoveGame : Row
 
     /** X on a session in Play activity's list: held, it takes the session out. Not a menu row. */
     data object RemoveSession : Row
+
+    /** A game's play: its time, and other games' play to move onto it. Opens Play activity for the game. */
+    data object PlayTime : Row
+
+    /** A on another game in a game's Play activity: held, it moves that game's play here. Not a menu row. */
+    data object MovePlay : Row
+
+    /** Settings › System: export the play history to a file, or import one. */
+    data object PlayHistory : Row
     data class QuickTile(val setting: QuickSetting) : Row
 
     /** The R1 slider for both screens' brightness. */
@@ -913,7 +970,14 @@ data class TileActions(
     val removeDownload: Boolean = false,
     /** The game is still open in its player, so it can start over. */
     val restart: Boolean = false,
+    val close: Boolean = false,
+    /** The other screen, when Foldcade owns it and this player can move there. */
+    val moveGame: HostScreen? = null,
     val saves: Boolean = false,
+    /** The game's play time, for its Play time row. Null leaves the row out: not a game, or no play anywhere yet. */
+    val playTime: Long? = null,
+    /** With no play of its own, the time a gone game of its name left: the row says it was found. */
+    val playFound: Long? = null,
     /** The game these rows act on. Null for a tile that is not a game, or one off the home grid. */
     val game: String? = null,
     /** The board on screen has gaps to close, so Edit home offers Tidy. */
@@ -957,6 +1021,7 @@ fun actionRows(tile: TileActions?): List<Row> = buildList {
     if (tile.rename) add(Row.RenameFolder)
     if (tile.icon) add(Row.FolderIcon)
     if (tile.newCollection && tile.collections == null) add(Row.NewCollection)
+    if (tile.playTime != null) add(Row.PlayTime)
     if (tile.show) add(Row.ShowHidden)
     if (tile.showOnHome != null) add(Row.ShowOnHome)
     if (tile.folderOnHome != null) add(Row.FolderOnHome)
@@ -964,6 +1029,8 @@ fun actionRows(tile: TileActions?): List<Row> = buildList {
     if (tile.select) add(Row.SelectTile)
     if (tile.remove != null) add(Row.RemoveTile)
     if (tile.restart) add(Row.RestartGame)
+    if (tile.close) add(Row.CloseGame)
+    if (tile.moveGame != null) add(Row.MoveGame)
     if (tile.hide) add(Row.Hide)
     if (tile.removeDownload) add(Row.RemoveDownload)
     if (tile.deleteShortcut) add(Row.DeleteShortcut)
@@ -1201,7 +1268,16 @@ fun rowText(row: Row, model: PickerModel): RowText = when (row) {
     Row.RemoveDownload -> RowText(Copy.deleteDownload)
     Row.Saves -> RowText(SavePickerCopy.title)
     Row.RestartGame -> RowText(Copy.restart)
+    Row.CloseGame -> RowText(Copy.closeGame)
+    Row.MoveGame -> RowText(if (model.tileActions?.moveGame == HostScreen.Bottom) Copy.playOnBottom else Copy.playOnTop)
     Row.RemoveSession -> RowText(PlayCopy.remove)
+    Row.PlayTime -> RowText(
+        PlayCopy.playTime,
+        model.tileActions?.playFound?.takeIf { model.tileActions.playTime == 0L }?.let(PlayCopy::found)
+            ?: model.tileActions?.playTime?.let(::playDuration),
+    )
+    Row.MovePlay -> RowText(PlayCopy.moveHere)
+    Row.PlayHistory -> RowText(PlayCopy.history)
     Row.ButtonLabels -> RowText(
         Copy.buttonLabels,
         when {
@@ -1336,12 +1412,23 @@ sealed interface Effect {
 
     /** Ask, then start the game open in its player over. */
     data class RestartGame(val gameId: String?) : Effect
+    data class CloseGame(val gameId: String?) : Effect
+    data class MoveGame(val gameId: String?) : Effect
 
     /** A on a day of Play activity: list that day's sessions. The shell fills them in. */
     data class OpenPlayDay(val weeksBack: Int, val day: Int) : Effect
 
     /** Take a play session out of the history, after its X was held. */
     data class RemovePlaySession(val sessionId: String) : Effect
+
+    /** Play activity opened on one game: the shell lists the other played games its play can come from. */
+    data class OpenPlayGame(val gameId: String) : Effect
+
+    /** Every finished session of [from] counts for [to] from now on. The shell has it held first. */
+    data class MovePlayTime(val from: String, val to: String) : Effect
+
+    /** Puts back what the last [MovePlayTime] from [from] to [to] moved, while the page is still open. */
+    data class UndoPlayMove(val from: String, val to: String) : Effect
     data object OpenAll : Effect
     data object ToggleAddNew : Effect
 
@@ -1535,6 +1622,8 @@ fun reduce(
     val coerced = model.copy(focus = coerce(model.focus, model))
     val dialog = coerced.dialog
     if (dialog != null) {
+        if (dialog.kind == DialogKind.CloseGame && repeatCount > 0 &&
+            (meaning == Meaning.Activate || meaning == Meaning.ActivateBottom)) return coerced to null
         if (meaning == Meaning.LeftPanel || meaning == Meaning.RightPanel) return coerced to null
         val (next, choice) = applyDialog(dialog, meaning)
         val chosen = choice?.let { Effect.DialogChoice(it, dialog.kind, dialog.subject) }
@@ -2220,6 +2309,7 @@ private fun activateRow(
         // A choice row too, whose value is the board's: the shell steps it.
         Row.SortFolder -> model.copy(panel = panel) to sortStep(model, 1)
         Row.UsageAccess -> model.copy(dialog = usageAccessPrompt(screen)) to null
+        Row.PlayHistory -> model.copy(dialog = playHistoryDialog(screen)) to null
         Row.FindSaves -> model to Effect.OpenAllFilesAccess
         Row.SaveSetup -> model.openSaveSetup(panel.screen, grid = panel.grid) to null
         Row.PlayActivity -> model.copy(
@@ -2357,9 +2447,15 @@ private fun activateRow(
         Row.DeleteShortcut -> model.copy(panel = null, focus = panel.grid) to Effect.DeleteShortcut(model.tileActions?.game)
         Row.RemoveDownload -> model.copy(panel = null, focus = panel.grid) to Effect.RemoveDownload(model.tileActions?.game)
         Row.Saves -> model.copy(panel = null, focus = panel.grid) to model.tileActions?.game?.let(Effect::OpenSaves)
+        Row.PlayTime -> model.tileActions?.game?.let { game ->
+            model.copy(panel = null, focus = panel.grid, playActivity = PlayActivityPage(screen = panel.screen, grid = panel.grid, game = game)) to
+                Effect.OpenPlayGame(game)
+        } ?: (model.copy(panel = panel) to null)
         Row.RestartGame -> model.copy(panel = null, focus = panel.grid) to Effect.RestartGame(model.tileActions?.game)
+        Row.CloseGame -> model.copy(panel = null, focus = panel.grid) to Effect.CloseGame(model.tileActions?.game)
+        Row.MoveGame -> model.copy(panel = null, focus = panel.grid) to Effect.MoveGame(model.tileActions?.game)
         // Play activity's list removes a session itself; no menu lists this row.
-        Row.RemoveSession -> model to null
+        Row.RemoveSession, Row.MovePlay -> model to null
         Row.ButtonLabels -> if (model.capturingConfirm) {
             model.copy(capturingConfirm = false, offerButtonLabels = false) to Effect.DismissButtonLabels
         } else {
