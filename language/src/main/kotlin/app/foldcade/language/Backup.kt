@@ -22,6 +22,8 @@ object BackupCopy {
     const val restoreUnfinished = "The restore didn't finish. Your setup is as it was."
     const val confirm = "Restore this backup?"
     const val restored = "Restored"
+    const val restoredDone = "Restored."
+    const val pickAgain = "Pick again"
     fun replacing(date: String): String = "Replaces Home, collections, hidden games, settings and theme with the backup's from $date. Play time is added to, never replaced."
     fun preview(games: Int, collections: Int, hidden: Int, theme: String, missingGames: Int, missingApps: Int): String =
         "Home: ${count(games, "game")}, ${count(collections, "collection")}, $hidden hidden · Theme: $theme · Not here yet: ${count(missingGames, "game")}, ${count(missingApps, "app")}"
@@ -33,6 +35,7 @@ object BackupCopy {
     fun folders(names: String): String = "Pick these folders again: $names."
     fun saves(names: String): String = "Pick save folders again: $names."
     fun switchedRomm(host: String): String = "RomM: switches to $host; sign in again"
+    fun connectRomm(host: String): String = "RomM: $host; sign in"
 }
 
 fun backupDialog(screen: HostScreen, undo: Boolean = false): DialogState {
@@ -42,8 +45,9 @@ fun backupDialog(screen: HostScreen, undo: Boolean = false): DialogState {
 }
 
 fun backupDone(message: String, screen: HostScreen, restored: Boolean = false): DialogState = DialogState(
-    DialogKind.BackupDone, if (restored) BackupCopy.restored else BackupCopy.title,
-    message, listOf(DialogButton.Ok), 0, 0, screen,
+    DialogKind.BackupDone, if (restored && message.isNotBlank()) BackupCopy.restored else BackupCopy.title,
+    if (restored && message.isBlank()) BackupCopy.restoredDone else message,
+    listOf(DialogButton.Ok), 0, 0, screen,
 )
 
 fun restoreDialog(date: String, detail: String, screen: HostScreen): DialogState = DialogState(

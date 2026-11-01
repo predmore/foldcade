@@ -44,11 +44,22 @@ internal fun carriedBackupFolders(trees: List<String>, missing: List<BackupFolde
         BackupFolder(uri, name.ifBlank { "ROMs" })
     } + missing).distinctBy { it.uri }
 
+/** Outstanding picks use the existing source tile and its Remove page, even after a card changes. */
+internal fun libraryFoldersWithOutstandingRestores(current: List<LibraryFolder>, missing: List<BackupFolder>): List<LibraryFolder> {
+    val pending = missing.mapTo(mutableSetOf()) { it.uri }
+    return (current + missing.map { LibraryFolder(it.uri, it.name) }).distinctBy { it.uri }.map {
+        if (it.uri in pending) it.copy(label = "${it.label} · ${BackupCopy.pickAgain}") else it
+    }
+}
+
 internal fun backupPreview(backup: SetupBackup, available: Set<String>, currentOrigin: String? = null): Pair<String, String> {
     val summary = backupHomeSummary(decodeHome(backup.home), available + decodeSameGames(backup.sameGames).filterKeys { it in available }.values)
     val date = DateTimeFormatter.ofPattern("MMM d, yyyy").format(Instant.ofEpochMilli(backup.manifest.createdMillis).atZone(ZoneId.systemDefault()))
     val origin = backup.settings["romm_origin"] as? String
-    val switches = origin?.takeIf { it != currentOrigin }?.let { BackupCopy.switchedRomm(java.net.URI(it).host) }
+    val switches = origin?.takeIf { it != currentOrigin }?.let {
+        val host = java.net.URI(it).host
+        if (currentOrigin.isNullOrBlank()) BackupCopy.connectRomm(host) else BackupCopy.switchedRomm(host)
+    }
     return date to listOfNotNull(BackupCopy.preview(summary.games, summary.collections, summary.hidden, backup.manifest.summary.theme, summary.missingGames, summary.missingApps), switches).joinToString(" · ")
 }
 
@@ -56,9 +67,9 @@ internal fun storedComputersNeedPairing(store: SessionStore, identity: String?):
 
 /** Before SessionStore exists. Add a theme's validator still decides which restored packs load. */
 internal fun FoldcadeApp.applySetupRestore() {
-    if (!setupBackups.pending() && !setupBackups.failed.isFile) return
     kotlinx.coroutines.runBlocking(kotlinx.coroutines.Dispatchers.IO) {
-        val grants = contentResolver.persistedUriPermissions.filter { it.isReadPermission }.mapTo(mutableSetOf()) { it.uri.toString() }
+        val grants = if (setupBackups.pending()) contentResolver.persistedUriPermissions.filter { it.isReadPermission }
+            .mapTo(mutableSetOf()) { it.uri.toString() } else emptySet()
         setupBackups.resume(grants, restoreThemes = { archives ->
             val packs = PackagedTheme.loadAll(this@applySetupRestore)
             val resources = packs.associate { it.resources.id to it.resources }.toMutableMap()

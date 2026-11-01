@@ -147,7 +147,7 @@ class SessionStore(private val prefs: SharedPreferences) : SaveMarks {
     fun updateRestoreHolds(change: (app.foldcade.language.RestoreHolds) -> app.foldcade.language.RestoreHolds): app.foldcade.language.RestoreHolds = synchronized(prefs) {
         val before = restoreHolds()
         val next = change(before)
-        if (next != before) check(prefs.edit().putString("restore_holds", next.encode()).commit())
+        if (next != before) prefs.edit().putString("restore_holds", next.encode()).apply()
         next
     }
 
@@ -158,7 +158,7 @@ class SessionStore(private val prefs: SharedPreferences) : SaveMarks {
         val before = restoreFolders()
         val left = before.filter { it.uri !in trees }
         if (left == before) return
-        check(prefs.edit().putString("restore_folders", encodeBackupFolders(left)).commit())
+        prefs.edit().putString("restore_folders", encodeBackupFolders(left)).apply()
     }
 
     fun musicEnabled(): Boolean = prefs.getBoolean(KEY_MUSIC_ENABLED, true)

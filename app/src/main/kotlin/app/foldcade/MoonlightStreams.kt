@@ -48,7 +48,7 @@ internal class MoonlightStreams(
     private val shell: () -> ShellController,
     private val library: () -> MoonlightLibrary?,
     /** Puts the library's catalog back on the shelf. Off the main thread. */
-    private val refreshShelf: suspend () -> Unit,
+    private val refreshShelf: suspend (reportedHost: String?) -> Unit,
     /** The computer [hostKey]'s box art may be found now, or is gone: ask again. Main thread. */
     private val refreshArt: (hostKey: String) -> Unit,
 ) {
@@ -181,7 +181,7 @@ internal class MoonlightStreams(
                 File(artDir, key).deleteRecursively()
             }
             withContext(Dispatchers.Main.immediate) { refreshArt(key) }
-            refreshShelf()
+            refreshShelf(null)
         }
     }
 
@@ -244,8 +244,7 @@ internal class MoonlightStreams(
             all != before
         }
         if (listedOnce.add(host.key) || changed) withContext(Dispatchers.Main.immediate) { refreshArt(host.key) }
-        withContext(Dispatchers.Main.immediate) { shell().reportRestoreSources(setOf("moonlight:${host.key}")) }
-        refreshShelf()
+        refreshShelf(host.key)
     }
 
     private fun moonlightInstalled(): Boolean = try {

@@ -172,9 +172,9 @@ class SetupReviewRegressionTest {
         val huge = File(root, "huge.zip")
         java.io.RandomAccessFile(huge, "rw").use { it.setLength(SetupArchive.MAX_THEMES_BYTES + 1) }
         try {
-            backups.stage(undo, backup().copy(themeFiles = mapOf("huge.zip" to huge)), afterStage = { error("stopped after staging") })
+            backups.stage(undo, backup().copy(themeFiles = mapOf("huge.zip" to huge)), afterStage = { throw AssertionError("stopped after staging") })
             fail("Expected stop")
-        } catch (expected: IllegalStateException) { assertEquals("stopped after staging", expected.message) }
+        } catch (expected: AssertionError) { assertEquals("stopped after staging", expected.message) }
         assertArrayEquals(originalUndo, backups.before.readBytes())
         assertArrayEquals(originalUndo, File(root, "backup/staged.zip").readBytes())
         assertEquals(SetupRestoreResult.Failed, backups.resume(emptySet(), {}))

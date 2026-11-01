@@ -497,16 +497,16 @@ class LocalFolderBackendTest {
         val backend = LocalFolderBackend(tree.entry()) { entry ->
             if (entry.documentUri == tree.uri) files.map { it.entry() } else emptyList()
         }
-        assertFalse(backend.rescan())
+        assertEquals(FolderRescan.NotScanned, backend.rescan())
 
         assertEquals(listOf("A"), backend.listGames("nintendo-ds", GameQuery()).games.map { it.label })
-        assertFalse(backend.rescan())
+        assertEquals(FolderRescan.Unchanged, backend.rescan())
 
         files += folderFile("content://b", "B.nds")
         assertEquals(listOf("A"), backend.listGames("nintendo-ds", GameQuery()).games.map { it.label })
-        assertTrue(backend.rescan())
+        assertEquals(FolderRescan.Changed, backend.rescan())
         assertEquals(listOf("A", "B"), backend.listGames("nintendo-ds", GameQuery()).games.map { it.label })
-        assertFalse(backend.rescan())
+        assertEquals(FolderRescan.Unchanged, backend.rescan())
     }
 
     @Test(timeout = 5_000)
@@ -531,8 +531,27 @@ class LocalFolderBackendTest {
         } finally {
             release.countDown()
         }
-        assertFalse(rescanning.await())
+        assertEquals(FolderRescan.NotScanned, rescanning.await())
         assertEquals(listOf("New"), backend.listGames("snes", GameQuery()).games.map { it.label })
+    }
+
+    @Test fun anEmptyCompletedRescanIsDistinctFromNoScan() = runBlocking {
+        val tree = folderDir("content://empty", "ROMs")
+        var reached = false
+        var mounted = false
+        val backend = LocalFolderBackend(tree.entry()) {
+            reached = mounted
+            emptyList()
+        }
+        assertEquals(FolderRescan.NotScanned, backend.rescan())
+        backend.connect() // An unmounted forest can yield the same empty listing.
+        assertFalse(reached)
+        mounted = true
+        assertEquals(FolderRescan.Unchanged, backend.rescan())
+        assertTrue(reached)
+        assertTrue(backend.listPlatforms().isEmpty())
+        backend.disconnect()
+        assertEquals(FolderRescan.NotScanned, backend.rescan())
     }
 
     @Test(timeout = 5_000)

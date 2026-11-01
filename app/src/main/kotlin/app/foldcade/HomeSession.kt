@@ -788,8 +788,8 @@ class HomeSession(
         return index.coerceAtMost((visibleCount() - 1).coerceAtLeast(0))
     }
 
-    internal fun restoredGapAt(index: Int): String? = visibleSlots(board).getOrNull(index)
-        ?.takeIf { it in restoredGaps && it !in catalogById }
+    internal fun restoredGapAt(index: Int): String? = if (board.foldersOpen || board.allOpen) null else
+        visibleSlots(board).getOrNull(index)?.takeIf { it in restoredGaps && it !in catalogById }
 
     /**
      * Places catalog item [id] on Home in its own folder, the way Add to Home in

@@ -25,6 +25,9 @@ import kotlinx.coroutines.isActive
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 
+/** A completed unchanged scan is still an answer from a reconnected library. */
+enum class FolderRescan { NotScanned, Unchanged, Changed }
+
 /**
  * Local-folder [LibraryBackend]. Games come from one cached [scanFolderTree].
  * Later pages read that cache. They do not walk the tree again.
@@ -82,18 +85,18 @@ class LocalFolderBackend(
 
     /**
      * Walks the bound tree again and publishes the result when it differs from
-     * the cached scan. Pages keep reading the cached scan until then. False when
-     * nothing changed, no scan has finished yet, or the tree was rebound meanwhile.
+     * the cached scan. Pages keep reading the cached scan until then. An unchanged
+     * completed scan is distinct from a missing or superseded one.
      */
-    suspend fun rescan(): Boolean {
-        val current = binding.get() ?: return false
-        val before = published() ?: return false
+    suspend fun rescan(): FolderRescan {
+        val current = binding.get() ?: return FolderRescan.NotScanned
+        val before = published() ?: return FolderRescan.NotScanned
         val scan = scanOf(current)
-        if (scan == before) return false
         return gate.withLock {
-            if (published() !== before) return@withLock false
+            if (published() !== before) return@withLock FolderRescan.NotScanned
+            if (scan == before) return@withLock FolderRescan.Unchanged
             publish(current.generation, scan)
-            published() === scan
+            if (published() === scan) FolderRescan.Changed else FolderRescan.NotScanned
         }
     }
 

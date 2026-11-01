@@ -84,6 +84,15 @@ class BackupTest {
         assertEquals(RowControl.Opens, rowControl(Row.Backup, PickerModel(0, 1)))
     }
 
+    @Test fun aFinishedRestoreAlwaysHasANonemptyMessageWithoutRepeatingItsTitle() {
+        val complete = backupDone("", HostScreen.Top, restored = true)
+        assertEquals(BackupCopy.title, complete.title)
+        assertEquals("Restored.", complete.body)
+        val remaining = backupDone(BackupCopy.signIn, HostScreen.Top, restored = true)
+        assertEquals(BackupCopy.restored, remaining.title)
+        assertEquals(BackupCopy.signIn, remaining.body)
+    }
+
     @Test fun systemFitsWithSettledPermissionsButEightPendingRowsExceedTheExistingCard() {
         val normal = PickerModel(0, 1, homeRoleHeld = true, askNoticeAccess = false)
         val rows = settingsRows(SettingsCategory.Screens, normal)

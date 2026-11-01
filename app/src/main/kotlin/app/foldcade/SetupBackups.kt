@@ -56,23 +56,33 @@ internal class SetupBackups(private val root: File, private val prefs: SharedPre
         failed.delete()
         ready.delete()
         result.delete()
-        val source = incoming.sourceArchive
-        writeBackupDurably(stage) { output ->
-            if (source != null) source.inputStream().use { copySetupAtMost(it, output, 300L * 1024 * 1024) }
-            else SetupArchive.write(output, incoming)
+        try {
+            val source = incoming.sourceArchive
+            writeBackupDurably(stage) { output ->
+                if (source != null) source.inputStream().use { copySetupAtMost(it, output, 300L * 1024 * 1024) }
+                else SetupArchive.write(output, incoming)
+            }
+            afterStage()
+            val localKeys = setOf("folder_tree", "restore_holds", "restore_folders", "restore_romm_sign_in", "restore_committed")
+            val original = prefs.all.mapNotNull { (key, value) ->
+                if (value != null && (BackupSettings.classify(key)?.disposition == BackupDisposition.BackedUp || key in localKeys)) key to value else null
+            }.toMap()
+            writeDurably(baseline.toPath(), SetupArchive.settingsJson(original).toString().encodeToByteArray())
+            writeDurably(oldArt.toPath(), current.artChoices.encodeToByteArray())
+            // Packs stay installed across restore/undo. Their bytes must never block the safety copy.
+            writeBackupDurably(nextBefore) { SetupArchive.write(it, current.copy(themes = emptyMap(), themeFiles = emptyMap())) }
+            writeDurably(attempts.toPath(), "0".encodeToByteArray())
+            writeDurably(ready.toPath(), UUID.randomUUID().toString().encodeToByteArray())
+            moveBackup(nextBefore, before)
+        } catch (failure: Exception) {
+            // Before readiness nothing can apply. A failed safety copy must not block
+            // another try; after readiness startup owns the recoverable rename.
+            if (!ready.isFile) {
+                stage.delete()
+                nextBefore.delete()
+            }
+            throw failure
         }
-        afterStage()
-        val localKeys = setOf("folder_tree", "restore_holds", "restore_folders", "restore_romm_sign_in", "restore_committed")
-        val original = prefs.all.mapNotNull { (key, value) ->
-            if (value != null && (BackupSettings.classify(key)?.disposition == BackupDisposition.BackedUp || key in localKeys)) key to value else null
-        }.toMap()
-        writeDurably(baseline.toPath(), SetupArchive.settingsJson(original).toString().encodeToByteArray())
-        writeDurably(oldArt.toPath(), current.artChoices.encodeToByteArray())
-        // Packs stay installed across restore/undo. Their bytes must never block the safety copy.
-        writeBackupDurably(nextBefore) { SetupArchive.write(it, current.copy(themes = emptyMap(), themeFiles = emptyMap())) }
-        writeDurably(attempts.toPath(), "0".encodeToByteArray())
-        writeDurably(ready.toPath(), UUID.randomUUID().toString().encodeToByteArray())
-        moveBackup(nextBefore, before)
     }
 
     fun pending(): Boolean = stage.isFile
@@ -81,6 +91,11 @@ internal class SetupBackups(private val root: File, private val prefs: SharedPre
 
     /** A killed process spends an attempt too. Two failures preserve and quarantine the transport. */
     fun resume(granted: Set<String>, restoreThemes: (Map<String, File>) -> Unit): SetupRestoreResult {
+        try { return resumeAttempt(granted, restoreThemes) }
+        finally { cleanupStaleFiles() }
+    }
+
+    private fun resumeAttempt(granted: Set<String>, restoreThemes: (Map<String, File>) -> Unit): SetupRestoreResult {
         if (failed.isFile) { failurePending = true; return SetupRestoreResult.Failed }
         if (!pending()) return SetupRestoreResult.None
         if (!ready.isFile) return abandon(rollback = false)
@@ -102,8 +117,24 @@ internal class SetupBackups(private val root: File, private val prefs: SharedPre
         } catch (failure: Exception) {
             // A normal I/O failure gets its second bounded attempt in this process. Only an
             // actual process stop needs the next start to spend the remaining attempt.
-            if (used + 1 < 2) return resume(granted, restoreThemes)
+            if (used + 1 < 2) return resumeAttempt(granted, restoreThemes)
             return abandon(rollback = true)
+        }
+    }
+
+    /** Startup has no active imports or exports. Keep only recovery inputs and one failed archive. */
+    private fun cleanupStaleFiles() {
+        val files = directory.listFiles().orEmpty()
+        val recovering = ready.isFile && stage.isFile
+        val newestFailure = files.filter { it.isFile && it.name.startsWith("failed-restore-") && it.extension == "zip" }
+            .maxWithOrNull(compareBy<File> { it.lastModified() }.thenBy { it.name })
+        for (file in files) {
+            val name = file.name
+            if (file == before || (recovering && (file == stage || file == nextBefore))) continue
+            val stale = name.startsWith("import-") || name.startsWith("apply-") || name.startsWith("export-") ||
+                name.startsWith("before-") || name.endsWith(".tmp") ||
+                (name.startsWith("failed-restore-") && file.extension == "zip" && file != newestFailure)
+            if (stale) file.deleteRecursively()
         }
     }
 

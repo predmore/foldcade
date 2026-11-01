@@ -191,6 +191,8 @@ class ShellController(
     private val saveFolderPick: (Player) -> FolderPick = { FolderPick.Browse },
     /** A restored setup has its own one-time list of remaining sign-in and folder steps. */
     private val restoreResultPending: () -> Boolean = { false },
+    /** Both folder scan paths notify the aggregate PC catalogs after the last pending tree clears. */
+    private val onRestoreFoldersConnected: () -> Unit = {},
 ) {
     var artPicker by mutableStateOf<ArtPickerState?>(null)
         private set
@@ -309,8 +311,10 @@ class ShellController(
     }
 
     fun reportRestoreFolders(trees: Set<String>) {
+        val hadMissing = store.restoreFolders().isNotEmpty()
         reportRestoreSources(trees.mapTo(mutableSetOf()) { "folder:$it" } + "local-folder")
         store.reportRestoreFolders(trees)
+        if (hadMissing && store.restoreFolders().isEmpty()) onRestoreFoldersConnected()
     }
 
     /** An incomplete forest says nothing about games on an unmounted card. */
@@ -2411,6 +2415,14 @@ class ShellController(
      */
     fun settleMoonlight() {
         moonlightSettled = true
+    }
+
+    /** Publish the catalog before releasing its holds; both changes become visible in one merge. */
+    fun publishMoonlightCatalog(games: List<ShelfGame>, reportedHost: String? = null) {
+        Shelf.moonlightGames = games
+        reportedHost?.let { reportRestoreSources(setOf("moonlight:$it")) }
+        settleMoonlight()
+        noteShelfChanged()
     }
 
     fun settleGameNative() {
