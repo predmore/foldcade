@@ -28,7 +28,8 @@ class LocalFolderEntryTest {
         assertTrue(entry.libraries.single() === entry.folder)
         assertEquals("local-folder", entry.folder.id)
         assertEquals("Local folder", entry.folder.displayName)
-        assertTrue(entry.metadataProviders.isEmpty())
+        assertTrue(entry.metadataProviders.single() === entry.media)
+        assertEquals("local.media", entry.media.id)
         assertTrue(entry.players.isEmpty())
         assertEquals(
             PlatformCatalog.specs.map { it.platform.id },

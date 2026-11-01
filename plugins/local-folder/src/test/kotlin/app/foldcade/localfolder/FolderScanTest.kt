@@ -68,7 +68,7 @@ class FolderScanTest {
                 game("content://tree/nds/a", "Zelda.nds", "Zelda", "nintendo-ds", "nds"),
                 game("content://tree/ps1/cue", "Track.cue", "Track", "playstation", "PlayStation"),
             ),
-            scan.games,
+            identityGames(scan),
         )
         assertEquals(
             listOf("nintendo-3ds", "nintendo-ds", "playstation"),
@@ -131,7 +131,7 @@ class FolderScanTest {
                 game("content://ps2/game", "Game.iso", "Game", "playstation-2", "ps2"),
                 game("content://wii/game", "Game.rvz", "Game", "wii", "wii"),
             ),
-            scan.games,
+            identityGames(scan),
         )
     }
 
@@ -192,7 +192,7 @@ class FolderScanTest {
                 game("content://gen/game", "Sonic.md", "Sonic", "genesis", "genesis"),
                 game("content://gen/gen", "Sonic.gen", "Sonic", "genesis", "genesis"),
             ),
-            scan.games,
+            identityGames(scan),
         )
     }
 
@@ -410,7 +410,7 @@ class FolderScanTest {
                 ),
                 game("content://ps1/other", "Suikoden.cue", "Suikoden", "playstation", "PlayStation"),
             ),
-            scan(root).games,
+            identityGames(scan(root)),
         )
     }
 
@@ -446,7 +446,7 @@ class FolderScanTest {
                 game("content://ps1/loose", "Loose.cue", "Loose", "playstation", "ps1"),
                 game("content://ps1/nested/m3u", "Nested.m3u", "Nested", "playstation", "nested"),
             ),
-            scan(root).games,
+            identityGames(scan(root)),
         )
     }
 
@@ -553,7 +553,7 @@ class FolderScanTest {
                 game("content://ps2/m3u", "Game.m3u", "Game", "playstation-2", "ps2"),
                 game("content://snes/cart", "Cart.sfc", "Cart", "snes", "snes"),
             ),
-            scan(root).games,
+            identityGames(scan(root)),
         )
     }
 
@@ -673,3 +673,7 @@ private fun game(
     platformId = platformId,
     folderName = folderName,
 )
+
+/** Older scan assertions cover ROM identity; LocalMediaIndexTest checks the media-relative paths. */
+private fun identityGames(scan: FolderScan): List<FolderGame> =
+    scan.games.map { it.copy(relativePath = it.fileName, systemUri = "") }

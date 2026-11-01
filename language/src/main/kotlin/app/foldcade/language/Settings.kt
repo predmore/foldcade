@@ -391,3 +391,7 @@ fun rowControl(row: Row, model: PickerModel, value: String? = rowText(row, model
             (row is Row.PlayerSave || row is Row.HostedSaves || row is Row.SaveSync || row is Row.PlayerSetup || row == Row.EdenUser))
     } ?: RowControl.None
 }
+
+/** A picked media tree uses the same Sources row as a ROM folder, with its purpose made clear. */
+fun libraryFolderLabel(name: String, artAndInfo: Boolean): String =
+    if (artAndInfo) "$name · art and info" else name
