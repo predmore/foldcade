@@ -291,7 +291,21 @@ internal fun parseRom(obj: JsonObject): RomSummary = RomSummary(
     screenshots = obj.optionalStringList("merged_screenshots"),
     raId = obj.optLong("ra_id"),
     achievements = parseAchievements(obj["merged_ra_metadata"]),
+    summary = obj.factString("summary"),
+    genres = (obj["metadatum"] as? JsonObject)?.factList("genres").orEmpty(),
+    firstReleaseDate = ((obj["metadatum"] as? JsonObject)?.get("first_release_date") as? JsonPrimitive)?.longOrNull,
+    developers = (obj["metadatum"] as? JsonObject)?.factList("developers").orEmpty(),
+    publishers = (obj["metadatum"] as? JsonObject)?.factList("publishers").orEmpty(),
+    playerCount = (obj["metadatum"] as? JsonObject)?.factString("player_count"),
 )
+
+/** Optional display facts never make an otherwise readable ROM fail. */
+private fun JsonObject.factString(key: String): String? =
+    (get(key) as? JsonPrimitive)?.takeIf { it.isString }?.content
+
+private fun JsonObject.factList(key: String): List<String> =
+    (get(key) as? JsonArray).orEmpty().mapNotNull { (it as? JsonPrimitive)?.takeIf { it.isString }?.content }
+
 
 /**
  * `merged_ra_metadata.achievements`. RomM sends `{}` for a game with no match.

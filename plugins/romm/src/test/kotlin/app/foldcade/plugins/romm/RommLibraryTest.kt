@@ -76,6 +76,50 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class RommLibraryTest {
+    @Test fun detailsUseExplicitRolesAndAggregateMillisecondsThenStayCached() = runBlocking {
+        val ops = ScriptedOps()
+        var reads = 0
+        val listed = rom("3ds", 3).copy(summary = " An adventure. ", genres = listOf("Platform", "Platform"),
+            firstReleaseDate = 1437436800000, developers = listOf("M2"), publishers = listOf("Sega Games"), playerCount = "1-2")
+        ops.onRom = { reads++; listed }
+        val harness = harness(ops)
+        val game = Game(ROMM_LIBRARY_ID, "1234", "nintendo-3ds", Availability.RemoteOnly, "Game")
+        try {
+            assertNull(harness.metadata.cachedDetails(game))
+            val details = harness.metadata.details(game)!!
+            assertEquals(2015, details.releaseYear)
+            assertEquals("M2", details.developer)
+            assertEquals("Sega Games", details.publisher)
+            assertEquals(listOf("Platform"), details.genres)
+            assertEquals("1-2", details.players)
+            assertEquals(details, harness.metadata.cachedDetails(game))
+            assertEquals(details, harness.metadata.details(game))
+            assertEquals(1, reads)
+            assertNull(harness.metadata.details(game.copy(backendId = "local-folder")))
+            assertNull(listed.copy(summary = null, genres = emptyList(), firstReleaseDate = Long.MAX_VALUE,
+                developers = emptyList(), publishers = emptyList(), playerCount = null).toDetails())
+        } finally {
+            harness.wiring.cacheRoot.toFile().deleteRecursively()
+            harness.wiring.dataRoot.toFile().deleteRecursively()
+        }
+    }
+
+    @Test fun cancellingDetailsDoesNotTurnCancellationIntoAMiss() = runBlocking {
+        val ops = ScriptedOps()
+        val entered = CompletableDeferred<Unit>()
+        ops.onRom = { entered.complete(Unit); kotlinx.coroutines.awaitCancellation() }
+        val harness = harness(ops)
+        try {
+            val job = launch { harness.metadata.details(Game(ROMM_LIBRARY_ID, "1234", "nintendo-3ds", Availability.RemoteOnly, "Game")) }
+            withTimeout(2_000) { entered.await() }
+            job.cancelAndJoin()
+            assertTrue(job.isCancelled)
+        } finally {
+            harness.wiring.cacheRoot.toFile().deleteRecursively()
+            harness.wiring.dataRoot.toFile().deleteRecursively()
+        }
+    }
+
     @Test
     fun catalogSnapshotStripsArtworkCredentialsAndCorruptSnapshotsCanRefresh() = runBlocking {
         val ops = ScriptedOps()

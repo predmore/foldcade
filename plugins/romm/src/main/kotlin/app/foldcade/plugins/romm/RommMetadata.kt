@@ -5,6 +5,8 @@ import app.foldcade.api.plugin.Artwork
 import app.foldcade.api.plugin.ArtworkRole
 import app.foldcade.api.plugin.Game
 import app.foldcade.api.plugin.GameAchievements
+import app.foldcade.api.plugin.GameDetails
+import app.foldcade.api.plugin.normalizeGameDetails
 import app.foldcade.api.plugin.GameMeta
 import app.foldcade.api.plugin.MetadataProvider
 import app.foldcade.api.plugin.credentialFreeArtworkUri
@@ -12,6 +14,8 @@ import app.foldcade.romm.RomQuery
 import app.foldcade.romm.RomSummary
 import app.foldcade.romm.RommException
 import kotlin.coroutines.cancellation.CancellationException
+import java.time.Instant
+import java.time.ZoneOffset
 import java.text.Normalizer
 import java.util.Locale
 
@@ -45,6 +49,27 @@ internal class RommMetadata(
                     gate.catalog(wiring).rememberRoms(listOf(rom))
                     rom.toMeta(wiring.origin)
                 }
+            }
+        }
+    }
+
+    override fun cachedDetails(game: Game): GameDetails? {
+        if (game.backendId != ROMM_LIBRARY_ID) return null
+        val wiring = gate.peek() ?: return null
+        return gate.catalog(wiring).rom(game.remoteKey)?.toDetails()
+    }
+
+    override suspend fun details(game: Game): GameDetails? {
+        if (game.backendId != ROMM_LIBRARY_ID) return null
+        val wiring = gate.peek()
+        // A catalog entry with no facts is also a known result. Do not refetch it on every focus.
+        wiring?.let { gate.catalog(it).rom(game.remoteKey) }?.let { return it.toDetails() }
+        val romId = game.remoteKey.toLongOrNull()?.takeIf { it >= 1 } ?: return null
+        return translate {
+            gate.session { current, ops ->
+                val rom = ops.rom(romId)
+                gate.catalog(current).rememberRoms(listOf(rom))
+                rom.toDetails()
             }
         }
     }
@@ -183,3 +208,17 @@ private fun isHex(char: Char): Boolean = char in '0'..'9' || char in 'a'..'f' ||
 private const val URI_PUNCTUATION = "-._~:/?#[]@!$&'()*+,;="
 
 private const val HEX = "0123456789ABCDEF"
+
+/** RomM's aggregate date is milliseconds; separate developer and publisher lists preserve roles. */
+internal fun RomSummary.toDetails(): GameDetails? = normalizeGameDetails(GameDetails(
+    summary = summary,
+    releaseYear = firstReleaseDate?.let { millis ->
+        // Keep invalid and overflowing timestamps from reaching the date conversion.
+        millis.takeIf { it in -631_152_000_000L..4_102_444_800_000L }
+            ?.let { Instant.ofEpochMilli(it).atOffset(ZoneOffset.UTC).year }
+    },
+    genres = genres,
+    developer = developers.filter { it.isNotBlank() }.distinct().joinToString(", "),
+    publisher = publishers.filter { it.isNotBlank() }.distinct().joinToString(", "),
+    players = playerCount,
+))

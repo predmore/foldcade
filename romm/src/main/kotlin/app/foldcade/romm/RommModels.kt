@@ -108,6 +108,15 @@ data class RomSummary(
     val raId: Long? = null,
     /** `merged_ra_metadata.achievements`, in `display_order`. Empty without a match. */
     val achievements: List<RaAchievement> = emptyList(),
+    /** Plain description from RomM's `summary`. Defaults keep older disk catalogs readable. */
+    val summary: String? = null,
+    /** Facts from `metadatum`; company roles are explicit, never inferred from `companies`. */
+    val genres: List<String> = emptyList(),
+    /** `metadatum.first_release_date`, Unix milliseconds (provider metadata uses seconds). */
+    val firstReleaseDate: Long? = null,
+    val developers: List<String> = emptyList(),
+    val publishers: List<String> = emptyList(),
+    val playerCount: String? = null,
 )
 
 /**
