@@ -189,6 +189,28 @@ class SettingsPersistenceTest {
     }
 
     @Test
+    fun aLayoutThatLeavesNoLitScreenClosesSettingsRatherThanHidingItUnderAGame() {
+        val prefs = MemoryPrefs()
+        SessionStore(prefs).update { it.withLayout(app.foldcade.language.ScreenLayout.ShowcaseBottom) }
+        val store = SessionStore(prefs)
+        val changed = ShellController(
+            store, PluginHost(Dispatchers.Unconfined, MemoryCredentialStore()),
+            themeNames = listOf("Built-in", "Afterglow"), themeMotions = listOf(BackgroundMotion.Off, BackgroundMotion.Ribbons),
+        )
+        // A game on top; Settings opens with the islands, on the bottom.
+        store.update { it.launch(ExternalApp("game"), Panel.Top) }
+        changed.openSetting(Row.ScreenLayout)
+        assertEquals(HostScreen.Bottom, changed.model.settings?.screen)
+        changed.onMeaning(Meaning.MoveRight, HostScreen.Bottom)
+        assertEquals(app.foldcade.language.ScreenLayout.TopOnly, store.session.layout)
+        assertNull(changed.model.settings)
+        // With the game gone the grid is back on top and Settings opens there.
+        store.update { it.home(Panel.Top) }
+        changed.onMeaning(Meaning.Menu, HostScreen.Bottom)
+        assertEquals(HostScreen.Top, changed.model.settings?.screen)
+    }
+
+    @Test
     fun addNewGamesIsSavedEvenWhenNoMergeChangesTheLayout() {
         val prefs = MemoryPrefs()
         val changed = shell(prefs)

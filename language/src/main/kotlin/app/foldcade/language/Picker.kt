@@ -2266,7 +2266,8 @@ private fun applySettings(
             val (next, effect) = activateRow(model.copy(panel = standIn), standIn, row, current.screen)
             if (next.panel?.level == PanelLevel.RommConnection) {
                 return next.copy(
-                    panel = next.panel.copy(connectionSettings = current),
+                    // A drawer, so it opens with the islands, wherever this page was left.
+                    panel = next.panel.copy(connectionSettings = current, screen = model.layout.menuScreen),
                     settings = null,
                 ) to effect
             }

@@ -94,6 +94,16 @@ data class Session(
     fun controlsPanel(): Panel? =
         Panel.entries.firstOrNull { surfaceOn(it) == Surface.Picker } ?: Panel.entries.firstOrNull { draws(it) }
 
+    /**
+     * True while keys on [panel] reach Foldcade. The dark screen's go to the grid, so only
+     * while the grid's screen is Foldcade's; a game covering it keeps them from a grid nobody sees.
+     */
+    fun takesKeys(panel: Panel): Boolean = when (surfaceOn(panel)) {
+        null -> false
+        Surface.Dark -> draws(gridPanel())
+        else -> true
+    }
+
     /** True while Foldcade draws something on [panel]: not an app's, and not dark. */
     fun draws(panel: Panel): Boolean = surfaceOn(panel).let { it != null && it != Surface.Dark }
 

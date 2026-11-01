@@ -279,7 +279,7 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
 
     override fun foldcadeSurfaceFocused(): Boolean {
         val panel = displays.panelFor(this, foldcade.store.session.defaultDisplayIsTop) ?: return false
-        return foldcade.store.session.surfaceOn(panel) != null
+        return foldcade.store.session.takesKeys(panel)
     }
 
     internal val inputWindow: String = java.util.UUID.randomUUID().toString()

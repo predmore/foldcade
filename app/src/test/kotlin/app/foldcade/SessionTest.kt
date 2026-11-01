@@ -309,6 +309,11 @@ class SessionTest {
         assertEquals(Surface.Picker, gameBelow.browse(Panel.Top).surfaceOn(Panel.Top))
         // Home back from it leaves the bottom dark again.
         assertEquals(Surface.Dark, gameBelow.home(Panel.Bottom).surfaceOn(Panel.Bottom))
+        // The dark screen's keys drive the grid only while the grid's screen is Foldcade's.
+        assertTrue(one.takesKeys(Panel.Bottom))
+        assertFalse(gameOnTop.takesKeys(Panel.Bottom))
+        assertFalse(gameOnTop.takesKeys(Panel.Top))
+        assertTrue(gameBelow.takesKeys(Panel.Top))
         // The dark screen is not dimmed as a command center: it has its own darkness.
         assertFalse(commandCenterDimmed(gameOnTop, Panel.Bottom, awake = null))
     }

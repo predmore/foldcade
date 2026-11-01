@@ -284,9 +284,17 @@ fun PanelHost(activity: FoldcadeHomeActivity, displays: Displays) {
     val motion = paint.theme.motion
     val scale = motion.animatorScale(LocalContext.current.contentResolver)
     val model = app.shell.model
-    LaunchedEffect(activity.shellVisible, panel, model.deleteHold?.started, model.undoVerb) {
-        if (panel != Panel.Top || !activity.shellVisible) {
-            if (panel == Panel.Top) app.shell.cancelDeleteHold()
+    // One screen ticks a held confirmation and the Undo timer: the one with the menu or page,
+    // else the islands' or the grid's, whichever Foldcade still draws.
+    val ticker = listOfNotNull(
+        model.panel?.screen?.panel(),
+        model.playActivity?.screen?.panel(),
+        session.menuPanel(),
+        session.gridPanel(),
+    ).firstOrNull { session.draws(it) } ?: Panel.Top
+    LaunchedEffect(activity.shellVisible, panel, ticker, model.deleteHold?.started, model.undoVerb) {
+        if (panel != ticker || !activity.shellVisible) {
+            if (panel == ticker) app.shell.cancelDeleteHold()
             return@LaunchedEffect
         }
         while (app.shell.model.deleteHold != null || app.shell.model.undoVerb != null) {

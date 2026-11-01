@@ -96,4 +96,16 @@ class ScreenLayoutTest {
         val found = findResultHints(faces, screens = true, options = false, playOn = HostScreen.Bottom)
         assertEquals(listOf(Copy.hintBottom, Copy.hintTop), found.take(2).map { it.label })
     }
+
+    @Test
+    fun aConnectionDrawerFromSettingsLeftOnTheOldScreenOpensWithTheIslands() {
+        // Settings opened in Classic, on top, then Layout stepped to Swapped: the page stays put,
+        // and RomM's drawer opens where the islands are now.
+        val signedIn = PickerModel(count = 2, rowsPerPage = 2, signedIn = listOf(SignedInBackend("romm", "RomM")))
+        val connection = librarySources(signedIn).first()
+        val swapped = signedIn.onSetting(connection, HostScreen.Top).copy(layout = ScreenLayout.ShowcaseBottom)
+        val drawer = reduce(swapped, Meaning.Activate).first
+        assertEquals(PanelLevel.RommConnection, drawer.panel?.level)
+        assertEquals(HostScreen.Bottom, drawer.panel?.screen)
+    }
 }

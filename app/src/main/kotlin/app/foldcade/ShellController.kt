@@ -3280,7 +3280,13 @@ class ShellController(
         noteShelfChanged(focusedId)
     }
 
-    private fun publish(next: PickerModel) {
+    private fun publish(requested: PickerModel) {
+        // The other screen changes at once. A page open now stays where it is until it closes,
+        // unless no screen Foldcade draws is left for it: it would sit under a game, taking keys.
+        if (requested.layout != model.layout) store.update { it.withLayout(requested.layout) }
+        val next = if (requested.layout != model.layout && Panel.entries.none(store.session::draws)) {
+            requested.copy(settings = null, playActivity = null, panel = null, focus = requested.settings?.grid ?: requested.focus)
+        } else requested
         if (showingHome() && next.homeGrid != HomeGrid.StandIns) {
             home.rememberRootFocus(model.panel?.grid?.cellIndex ?: model.focus.cellIndex)
         }
@@ -3288,8 +3294,6 @@ class ShellController(
         val savePickerClosed = (model.savePicker != null && next.savePicker == null) || (model.saveSetup != null && next.saveSetup == null)
         val connectClosed = model.connectOpen && !next.connectOpen
         if (model.connectOpen != next.connectOpen) invalidateSetupValidation()
-        // The other screen changes at once. A page open now stays where it is until it closes.
-        if (next.layout != model.layout) store.update { it.withLayout(next.layout) }
         if (next.playOn != model.playOn) store.update { it.withPlayOn(next.playOn.panel()) }
         if (next.themeIndex != model.themeIndex) {
             store.setTheme(next.themeIds[next.themeIndex])
