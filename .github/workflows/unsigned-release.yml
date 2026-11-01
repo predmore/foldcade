@@ -112,6 +112,7 @@ jobs:
           unzip -l "$apk" | grep -q 'assets/music/lanternlight.ogg'
           unzip -l "$apk" | grep -q 'assets/music/nightroute.ogg'
           unzip -l "$apk" | grep -q 'assets/music/manifest.json'
+          python3 tools/profile/check-apk.py "$apk"
           if "$ANDROID_HOME/build-tools/37.0.0/apksigner" verify "$apk"; then
             echo "::error::Unsigned dry-run produced a signed APK."
             exit 1
