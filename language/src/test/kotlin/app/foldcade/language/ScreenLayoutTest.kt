@@ -121,4 +121,19 @@ class ScreenLayoutTest {
         // Nothing shown: nothing to move to.
         assertSame(opened, opened.onShownScreens { false })
     }
+
+    @Test
+    fun theNextIslandOpensWhereTheLastOneWas() {
+        // A drawer left on top by a layout change hands over to R1 there, not on the new islands' screen.
+        val model = PickerModel(count = 2, rowsPerPage = 2, layout = ScreenLayout.ShowcaseBottom)
+        val left = reduce(model, Meaning.LeftPanel).first.let { it.copy(panel = it.panel!!.copy(screen = HostScreen.Top)) }
+        val retiring = reduce(left, Meaning.RightPanel).first
+        assertEquals(Side.Right, retiring.panel?.pendingSide)
+        val right = finishIslandRetire(retiring)
+        assertEquals(Side.Right, right.panel?.side)
+        assertEquals(HostScreen.Top, right.panel?.screen)
+        // Closed, the next opens with the islands again.
+        val closed = reduce(right, Meaning.RightPanel).first.let(::finishIslandRetire)
+        assertEquals(HostScreen.Bottom, reduce(closed.copy(panel = null), Meaning.LeftPanel).first.panel?.screen)
+    }
 }

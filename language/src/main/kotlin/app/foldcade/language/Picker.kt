@@ -1773,7 +1773,8 @@ fun finishIslandRetire(model: PickerModel): PickerModel {
     val open = model.panel ?: return model
     if (!open.retiring) return model
     val next = open.pendingSide ?: return model.copy(panel = null, focus = open.grid)
-    return model.copy(panel = freshPanel(next, open.grid, model.layout))
+    // The next island opens where the last one was, which may be a page's screen a layout change left.
+    return model.copy(panel = freshPanel(next, open.grid, model.layout).copy(screen = open.screen))
 }
 
 private fun applyGrid(
@@ -2073,7 +2074,7 @@ private fun applyPanel(
         // opening. The island leaving never takes it, even when the opening one has no such row.
         if (current.retiring) {
             val pending = current.pendingSide ?: return model to null
-            val opening = freshPanel(pending, current.grid, model.layout)
+            val opening = freshPanel(pending, current.grid, model.layout).copy(screen = current.screen)
             chordIndex(panelRows(opening, model), meaning) ?: return model to null
             return applyPanel(model.copy(panel = opening), opening, meaning, screen)
         }
