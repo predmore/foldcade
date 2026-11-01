@@ -405,6 +405,12 @@ class FoldcadeApp : Application() {
     private fun playFoundFor(tileId: String): Long? {
         // Its time is read first, which starts both caches over after a change to the log.
         playTimeOf(tileId)
+        // A scan can take a game away, or bring one back, without a change to the log.
+        val catalog = shell.catalogNow()
+        if (catalog !== playFoundCatalog) {
+            playFoundCatalog = catalog
+            playFound.clear()
+        }
         val key = tileId to shell.historyIds(tileId)
         // Most games have nothing found, so null is kept too rather than looked for again.
         if (key in playFound) return playFound[key]
@@ -413,6 +419,7 @@ class FoldcadeApp : Application() {
     }
 
     private val playFound = HashMap<Pair<String, Set<String>>, Long?>()
+    private var playFoundCatalog: List<Any>? = null
 
     /**
      * Keeps [tileId]'s cover beside its play, from [uri] when the caller has drawn it, else

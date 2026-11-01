@@ -1342,6 +1342,9 @@ class ShellController(
      */
     fun playTitle(gameId: String): String? = libraryTitle(gameId) ?: home.game(gameId)?.label
 
+    /** The catalog as last merged: a new list whenever a library scan, sign-out, or install changes it. */
+    fun catalogNow(): List<Any> = home.catalog()
+
     /**
      * [gameId]'s title in a catalog that has it now, or null for a game that is gone: its file
      * renamed, replaced, or removed, or its library signed out of. [playTitle] also reads the
