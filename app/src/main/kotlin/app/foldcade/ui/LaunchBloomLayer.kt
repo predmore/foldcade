@@ -98,13 +98,19 @@ private fun BloomArt(app: FoldcadeApp, bloom: ActiveBloom, panel: Panel) {
     val sharp = uri?.let { rememberCoverPainter(app, it, px) }
     val painter = sharp?.painter ?: small?.painter
     var elapsed by remember { mutableLongStateOf(bloom.elapsed()) }
+    // How far the growth has gone, timed from this screen's first frame of it: the start can keep
+    // the main thread busy for a few frames, and growth timed from the press would skip ahead.
+    var grown by remember { mutableLongStateOf(0L) }
     val missing = painter == null
     LaunchedEffect(bloom, panel, missing) {
         val timing = bloom.timing
         // Past the push the art holds still, so frames stop until it is time to give way.
         val moving = maxOf(timing.growMillis, timing.pushMillis).toLong()
+        var first = Long.MIN_VALUE
         while (true) {
-            withFrameMillis { }
+            val frame = withFrameMillis { it }
+            if (first == Long.MIN_VALUE) first = frame
+            grown = frame - first
             elapsed = bloom.elapsed(SystemClock.uptimeMillis())
             val leaveFrom = bloom.leavesAt(panel)
             // Art that never arrived while it would have grown, or art that has given way: this screen is done.
@@ -114,9 +120,9 @@ private fun BloomArt(app: FoldcadeApp, bloom: ActiveBloom, panel: Panel) {
                 return@LaunchedEffect
             }
             if (missing) continue
-            val whole = elapsed >= timing.growMillis && elapsed < leaveFrom
+            val whole = grown >= timing.growMillis && elapsed < leaveFrom
             if (whole) bloom.filled.add(panel) else bloom.filled.remove(panel)
-            if (elapsed in moving until leaveFrom) {
+            if (grown >= moving && elapsed < leaveFrom) {
                 // A failed start brings the leave forward, so this waits on that too.
                 withTimeoutOrNull(leaveFrom - elapsed) {
                     snapshotFlow { bloom.leavesAt(panel) }.first { it < leaveFrom }
@@ -131,15 +137,15 @@ private fun BloomArt(app: FoldcadeApp, bloom: ActiveBloom, panel: Panel) {
         val presence = timing.presence(elapsed, bloom.leavesAt(panel))
         if (presence <= 0f) return@Canvas
         val full = Rect(Offset.Zero, size)
-        val grow = timing.grow(elapsed)
+        val grow = timing.grow(grown)
         val (rect, corner, alpha, scale) = when (anchor?.from) {
             BloomFrom.Tile, BloomFrom.Cover -> Frame(lerp(anchor.rect, full, grow), anchor.cornerPx * (1f - grow), 1f, 1f)
             // Wide art already fills the screen behind the logo. It comes forward over the logo and the name.
-            BloomFrom.Scene -> Frame(full, 0f, timing.arrive(elapsed), motion.sceneOverscan)
+            BloomFrom.Scene -> Frame(full, 0f, timing.arrive(grown), motion.sceneOverscan)
             // Art this screen did not show grows out of its middle as it fades in.
-            null -> Frame(lerp(middle(full, painter.intrinsicSize), full, grow), 0f, timing.arrive(elapsed), 1f)
+            null -> Frame(lerp(middle(full, painter.intrinsicSize), full, grow), 0f, timing.arrive(grown), 1f)
         }
-        val push = scale * timing.pushScale(elapsed)
+        val push = scale * timing.pushScale(grown)
         withTransform({ scale(push, push, full.center) }) {
             drawCropped(painter, rect, corner, alpha * presence, path)
         }

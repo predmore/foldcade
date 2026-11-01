@@ -22,8 +22,11 @@ class LaunchBloom internal constructor(
     val push: Float,
     private val motion: MotionStyle,
 ) {
-    /** How far the art has grown, 0 where it sat to 1 filling the screen. */
-    fun grow(elapsed: Long): Float = motion.easingArrive.transform(share(elapsed, growMillis))
+    /**
+     * How far the art has grown, 0 where it sat to 1 filling the screen. It leaves the tile
+     * gently, so a frame the start holds up costs little distance, then sweeps out and settles.
+     */
+    fun grow(elapsed: Long): Float = motion.easingDissolve.transform(share(elapsed, growMillis))
 
     /** Art that had no place on this screen fades in as it grows, so it never cuts in. */
     fun arrive(elapsed: Long): Float = motion.easingDissolve.transform(share(elapsed, growMillis))

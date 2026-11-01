@@ -35,8 +35,11 @@ class LaunchBloomTest {
         assertEquals(0f, bloom.grow(0), 0.001f)
         assertEquals(1f, bloom.grow(bloom.growMillis.toLong()), 0.001f)
         assertEquals(1f, bloom.grow(bloom.growMillis * 3L), 0.001f)
-        // Most of the way there in the first third, so the press answers at once.
-        assertTrue(bloom.grow(bloom.growMillis / 3L) > 0.6f)
+        // It leaves the tile gently: one frame moves it only a little, so a held-up frame never jumps.
+        assertTrue(bloom.grow(16) < 0.05f)
+        assertTrue(bloom.grow(16) > 0f)
+        // Then most of the way by half time, so the screen fills before the game opens.
+        assertTrue(bloom.grow(bloom.growMillis / 2L) > 0.6f)
         // Art with no place on the screen fades in over the same span.
         assertEquals(0f, bloom.arrive(0), 0.001f)
         assertEquals(1f, bloom.arrive(bloom.growMillis.toLong()), 0.001f)
