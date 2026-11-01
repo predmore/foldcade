@@ -28,6 +28,15 @@ interface MetadataProvider {
 
     suspend fun fetch(game: Game): GameMeta?
 
+    /** Facts already loaded for [game] (API minor 20). Synchronous, with no I/O. */
+    fun cachedDetails(game: Game): GameDetails? = null
+
+    /**
+     * Facts for the game's info page and top screen (API minor 20).
+     * Same rules as [fetch]: off the main thread, cancellable, null when there are none.
+     */
+    suspend fun details(game: Game): GameDetails? = null
+
     /**
      * The game's achievements, and the user's progress when this provider knows it
      * (API minor 5). Null when it has none for [game].

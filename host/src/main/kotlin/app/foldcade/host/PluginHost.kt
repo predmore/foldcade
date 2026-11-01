@@ -7,6 +7,7 @@ import app.foldcade.api.plugin.DeviceCodePoll
 import app.foldcade.api.plugin.Game
 import app.foldcade.api.plugin.GameActivity
 import app.foldcade.api.plugin.GameAchievements
+import app.foldcade.api.plugin.GameDetails
 import app.foldcade.api.plugin.GameMeta
 import app.foldcade.api.plugin.GamePage
 import app.foldcade.api.plugin.GameQuery
@@ -330,6 +331,12 @@ class PluginHost(
         return callPlugin(providerId) { provider.cached(game) }
     }
 
+    /** Already loaded facts. No I/O, and not moved onto [io]. */
+    fun cachedDetails(providerId: String, game: Game): GameDetails? {
+        val provider = requireMetadata(providerId)
+        return callPlugin(providerId) { provider.cachedDetails(game) }
+    }
+
     /** Builds the intent. A plugin failure is [PluginCallException] or [PluginException]. */
     fun launchIntent(playerId: String, request: LaunchRequest): PlayerIntent {
         val player = requirePlayer(playerId)
@@ -531,6 +538,12 @@ class PluginHost(
     suspend fun fetchMetadata(providerId: String, game: Game): GameMeta? {
         val provider = requireMetadata(providerId)
         return offMain(providerId) { provider.fetch(game) }
+    }
+
+    /** The provider's facts for [game], off the main thread. Null when it has none. */
+    suspend fun fetchDetails(providerId: String, game: Game): GameDetails? {
+        val provider = requireMetadata(providerId)
+        return offMain(providerId) { provider.details(game) }
     }
 
     /** The provider's achievements for [game], off the main thread. Null when it has none. */

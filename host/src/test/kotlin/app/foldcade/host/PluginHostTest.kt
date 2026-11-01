@@ -2,6 +2,7 @@ package app.foldcade.host
 
 import app.foldcade.api.plugin.Availability
 import app.foldcade.api.plugin.Game
+import app.foldcade.api.plugin.GameDetails
 import app.foldcade.api.plugin.GameMeta
 import app.foldcade.api.plugin.GamePage
 import app.foldcade.api.plugin.GameQuery
@@ -61,6 +62,34 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class PluginHostTest {
+    @Test fun cachedDetailsStayOnCallerAndDetailsFetchMovesToIo() = runBlocking {
+        val caller = namedDispatcher("caller")
+        val io = namedDispatcher("foldcade-io")
+        try {
+            var cachedThread = ""
+            var fetchThread = ""
+            val provider = object : MetadataFake("facts") {
+                override fun cachedDetails(game: Game): GameDetails {
+                    cachedThread = Thread.currentThread().name
+                    return GameDetails(releaseYear = 1991)
+                }
+                override suspend fun details(game: Game): GameDetails {
+                    fetchThread = Thread.currentThread().name
+                    return GameDetails(releaseYear = 1992)
+                }
+            }
+            val host = PluginHost(io, MemoryCredentialStore())
+            host.register(object : PluginEntry {
+                override val apiVersion = PLUGIN_API_VERSION
+                override val metadataProviders = listOf(provider)
+            })
+            assertEquals(1991, withContext(caller) { host.cachedDetails(provider.id, game) }?.releaseYear)
+            assertEquals(1992, withContext(caller) { host.fetchDetails(provider.id, game) }?.releaseYear)
+            assertTrue(cachedThread.startsWith("caller"))
+            assertTrue(fetchThread.startsWith("foldcade-io"))
+        } finally { caller.close(); io.close() }
+    }
+
     private val game = Game(
         backendId = "sample.library",
         remoteKey = "content://sample/1",
