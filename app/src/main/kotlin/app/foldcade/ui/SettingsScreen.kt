@@ -91,7 +91,8 @@ internal fun SettingsScreen(app: FoldcadeApp, screen: HostScreen, page: Settings
                 .padding(horizontal = if (compact) 20.dp else 40.dp, vertical = 16.dp),
             horizontalArrangement = Arrangement.spacedBy(if (compact) 16.dp else 24.dp),
         ) {
-            Column((if (compact) Modifier.width(COMPACT_COLUMN) else Modifier.weight(0.32f)).fillMaxHeight()) {
+            // The categories scroll inside the ring's reach on each side, so the art's column adds it.
+            Column((if (compact) Modifier.width(COMPACT_COLUMN + ringReach() * 2) else Modifier.weight(0.32f)).fillMaxHeight()) {
                 val back = if (model.capturingConfirm) PromptKey.Start else promptKeyOf(model.faceMap.backKey) ?: PromptKey.FaceB
                 Header(theme, back, titled = !compact) { onEffect(app.shell.backSettings(screen)) }
                 val master = rememberSelectionSlots()
@@ -526,6 +527,8 @@ private fun CategoryRow(
             .height(ROW_HEIGHT)
             .keepInView(focused)
             .press(onClick)
+            // Art alone still says which category it is.
+            .then(if (labelled) Modifier else Modifier.semantics { contentDescription = title })
             .padding(horizontal = 16.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(16.dp),
