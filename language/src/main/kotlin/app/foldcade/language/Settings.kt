@@ -139,6 +139,7 @@ fun settingsRows(category: SettingsCategory, model: PickerModel): List<Row> = wh
         // Until Android grants it, so R1 can list notifications.
         if (model.askNoticeAccess) add(Row.NoticeAccess)
         // Your play time, to a file and back.
+        add(Row.Backup)
         add(Row.PlayHistory)
         add(Row.AndroidSettings)
     }
@@ -387,7 +388,7 @@ fun rowControl(row: Row, model: PickerModel, value: String? = rowText(row, model
     is Row.Collection -> model.tileActions?.collections?.firstOrNull { it.folderId == row.folderId }.let { RowControl.Check(it?.member == true, it?.some == true) }
     Row.EditHome, Row.AddToCollection, is Row.RommConnection,
     Row.AddFolder, Row.AddRomm, Row.SetAsHome, Row.DefaultHomeApp, Row.AndroidSettings, Row.Licenses, is Row.SettingsTile,
-    Row.SaveSetup, Row.PlayHistory,
+    Row.SaveSetup, Row.PlayHistory, Row.Backup,
     -> RowControl.Opens
     else -> value?.takeIf { it.isNotEmpty() }?.let {
         RowControl.Value(it, attention = it == Copy.notSyncing &&

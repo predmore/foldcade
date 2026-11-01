@@ -61,6 +61,8 @@ internal class MoonlightStreams(
     @Volatile
     private var paired: List<PairedStreamHost> = emptyList()
 
+    fun hasPaired(): Boolean = paired.isNotEmpty()
+
     private var pairing: Job? = null
 
     /** Pairings, and the apps they list, change one at a time. */
@@ -244,7 +246,8 @@ internal class MoonlightStreams(
             all != before
         }
         if (listedOnce.add(host.key) || changed) withContext(Dispatchers.Main.immediate) { refreshArt(host.key) }
-        if (changed) refreshShelf()
+        withContext(Dispatchers.Main.immediate) { shell().reportRestoreSources(setOf("moonlight:${host.key}")) }
+        refreshShelf()
     }
 
     private fun moonlightInstalled(): Boolean = try {

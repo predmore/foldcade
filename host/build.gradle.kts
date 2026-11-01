@@ -20,6 +20,7 @@ kotlin {
 dependencies {
     implementation(project(":api"))
     implementation(libs.coroutines.core)
+    implementation(libs.kotlinx.serialization.json)
     testImplementation(libs.junit)
     testImplementation(project(":plugins:sample"))
 }

@@ -127,6 +127,29 @@ class SessionStore(private val prefs: SharedPreferences) : SaveMarks {
         prefs.edit().remove(KEY_ROMM_ORIGIN).apply()
     }
 
+    fun restoreRommNeedsSignIn(): Boolean = prefs.getBoolean("restore_romm_sign_in", false)
+
+    fun clearRestoreRommSignIn() {
+        check(prefs.edit().remove("restore_romm_sign_in").commit())
+    }
+
+    fun restoreHolds(): app.foldcade.language.RestoreHolds =
+        app.foldcade.language.RestoreHolds.decode(prefs.getString("restore_holds", null))
+
+    fun saveRestoreHolds(holds: app.foldcade.language.RestoreHolds) {
+        check(prefs.edit().putString("restore_holds", holds.encode()).commit())
+    }
+
+    internal fun restoreFolders(): List<app.foldcade.host.backup.BackupFolder> =
+        decodeBackupFolders(prefs.getString("restore_folders", null))
+
+    internal fun reportRestoreFolders(trees: Set<String>) {
+        val before = restoreFolders()
+        val left = before.filter { it.uri !in trees }
+        if (left == before) return
+        check(prefs.edit().putString("restore_folders", encodeBackupFolders(left)).commit())
+    }
+
     fun musicEnabled(): Boolean = prefs.getBoolean(KEY_MUSIC_ENABLED, true)
 
     fun musicVolume(): Float =

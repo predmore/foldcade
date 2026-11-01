@@ -134,6 +134,11 @@ class FoldcadeApp : Application() {
     lateinit var store: SessionStore
         private set
 
+    internal val setupBackups by lazy { SetupBackups(filesDir, getSharedPreferences("foldcade", MODE_PRIVATE)) }
+    internal val backupWork = Mutex()
+    internal var pendingSetupRestore: app.foldcade.host.backup.SetupBackup? = null
+    internal var restoreNoticeShown = false
+
     /** Waits until the plugin entries are loaded, so a player can be found by id. */
     internal suspend fun awaitPlugins() = pluginsReady.await()
 
@@ -758,6 +763,11 @@ class FoldcadeApp : Application() {
         super.onCreate()
         // RestartActivity's process only brings Home back. It must not load packs or count exits.
         if (getProcessName() != packageName) return
+        // Before the packs load, so a pack that crashed Foldcade twice is already back out of the way.
+        val themeRollbacks = try {
+            themeInstalls.begin(processExits())
+        } catch (error: Exception) { Log.w("FoldcadeTheme", "Theme trials skipped", error); emptyList() }
+        applySetupRestore()
         store = SessionStore(getSharedPreferences("foldcade", MODE_PRIVATE))
         runningGames.restore(store.playersHoldingGames())
         runningGames.onPlayersChange = store::setPlayersHoldingGames
@@ -785,10 +795,6 @@ class FoldcadeApp : Application() {
             if (::shell.isInitialized) shell.noteSessionChanged()
             refreshHomeRecovery()
         }
-        // Before the packs load, so a pack that crashed Foldcade twice is already back out of the way.
-        val themeRollbacks = try {
-            themeInstalls.begin(processExits())
-        } catch (error: Exception) { Log.w("FoldcadeTheme", "Theme trials skipped", error); emptyList() }
         val manifests = mutableMapOf<String, ThemeFile>()
         themePacks = PackagedTheme.loadAll(this) { archive, manifest ->
             manifests[archive] = manifest
@@ -844,6 +850,7 @@ class FoldcadeApp : Application() {
             appVersion = installedVersion(),
             onSavePickerClosed = { onSaveConflicts?.invoke() },
             saveFolderPick = ::saveFolderPick,
+            restoreResultPending = { setupBackups.result.isFile },
             onSaveHealthChanged = { players ->
                 saveSetupNotices.update(players)
                 publishNotices()
@@ -923,7 +930,7 @@ class FoldcadeApp : Application() {
             apply = { request ->
                 publishRommWiring(
                     request.origin,
-                    credentials,
+                    store.restoreCredentials(credentials),
                     request.cacheRoot,
                     request.platforms,
                     // The manifest's FileProvider authority. The debug build's id ends in .debug.
@@ -1112,7 +1119,7 @@ class FoldcadeApp : Application() {
     }
 
     private suspend fun loadSignedIn() {
-        val romm = readRommRecovery(credentials, store.rommOrigin())
+        val romm = readRommRecovery(store.restoreCredentials(credentials), store.rommOrigin())
         val ids = try {
             credentials.pluginIds()
         } catch (cancelled: CancellationException) {
@@ -1147,6 +1154,7 @@ class FoldcadeApp : Application() {
         try {
             refreshGameNativeCatalog(this, library, File(filesDir, "gamenative/catalog.txt"), steamFileGames)
             withContext(Dispatchers.Main.immediate) {
+                if (Shelf.gameNativeInstalled && store.restoreFolders().isEmpty()) shell.reportRestoreSources(setOf("gamenative"))
                 shell.settleGameNative()
                 shell.noteShelfChanged()
             }
@@ -1599,7 +1607,9 @@ class FoldcadeApp : Application() {
         }
         Shelf.moonlightGames = plugins.moonlightShelfGames()
         withContext(Dispatchers.Main.immediate) {
-            if (read != null) shell.settleMoonlight()
+            if (read != null) {
+                shell.settleMoonlight()
+            }
             shell.noteShelfChanged()
         }
     }
@@ -1717,7 +1727,10 @@ class FoldcadeApp : Application() {
         // With no folder there is no scan to wait for.
         val settled = droidDeckShortcutsRead && (steamFilesRead || store.folderTrees().isEmpty())
         withContext(Dispatchers.Main.immediate) {
-            if (settled) shell.settleDroidDeck()
+            if (settled) {
+                if (Shelf.droidDeckInstalled && store.restoreFolders().isEmpty()) shell.reportRestoreSources(setOf("droiddeck"))
+                shell.settleDroidDeck()
+            }
             shell.noteShelfChanged()
         }
     }
@@ -1996,6 +2009,7 @@ class FoldcadeApp : Application() {
                 // The last folder was forgotten meanwhile, and its games already left.
                 if (store.folderTrees().isEmpty() || boundForest !== forest) return@withContext
                 if (loaded is LoadedLibrary.Platforms) {
+                    shell.reportRestoreFolders(forest.reportedTrees.toSet())
                     shell.ingestLibrary(
                         LocalFolderBackend.ID,
                         games,
@@ -2003,6 +2017,7 @@ class FoldcadeApp : Application() {
                         loaded.entries.associate { (it.platformId ?: it.id) to it.title },
                     )
                 } else {
+                    shell.reportRestoreFolders(forest.reportedTrees.toSet())
                     shell.dropLibrary(LocalFolderBackend.ID)
                 }
                 val waiting = shell.model.libraryGrid && shell.model.emptyGrid != EmptyGrid.Loading
@@ -2380,6 +2395,11 @@ class FoldcadeApp : Application() {
         }
         withContext(Dispatchers.Main.immediate) {
             if (ticket != libraryTicket.get()) return@withContext
+            if (libraryId == LocalFolderBackend.ID && loaded != LoadedLibrary.Unreachable && loaded != null &&
+                (loaded !is LoadedLibrary.Platforms || games != null)) {
+                shell.reportRestoreFolders(boundForest?.reportedTrees?.toSet().orEmpty())
+                if (loaded == LoadedLibrary.NoPlatforms) shell.ingestLibrary(libraryId, emptyList(), plugins.platformDefinitions())
+            }
             when (loaded) {
                 is LoadedLibrary.Platforms -> if (games == null) {
                     shell.showUnreachable(insidePlatform = false)

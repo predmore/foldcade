@@ -134,6 +134,9 @@ enum class DialogKind {
 
     /** What an export or an import did. Ok only closes it. */
     PlayHistoryDone,
+    Backup,
+    RestoreBackup,
+    BackupDone,
 }
 
 enum class DialogButton {
@@ -157,6 +160,10 @@ enum class DialogButton {
     TryAgain,
     ExportPlay,
     ImportPlay,
+    BackUp,
+    PickRestore,
+    UndoRestore,
+    RestoreBackup,
 }
 
 /** The words a dialog button shows. [subject] is [DialogState.subject], which names the player to open. */
@@ -179,6 +186,9 @@ fun dialogButtonLabel(button: DialogButton, subject: String? = null): String = w
     DialogButton.TryAgain -> Copy.tryAgain
     DialogButton.ExportPlay -> PlayCopy.export
     DialogButton.ImportPlay -> PlayCopy.import
+    DialogButton.BackUp -> BackupCopy.backUp
+    DialogButton.PickRestore, DialogButton.RestoreBackup -> BackupCopy.restore
+    DialogButton.UndoRestore -> BackupCopy.undo
 }
 
 data class DialogState(
@@ -702,6 +712,7 @@ sealed interface Row {
 
     /** Settings › System: export the play history to a file, or import one. */
     data object PlayHistory : Row
+    data object Backup : Row
     data class QuickTile(val setting: QuickSetting) : Row
 
     /** The R1 slider for both screens' brightness. */
@@ -1294,6 +1305,7 @@ fun rowText(row: Row, model: PickerModel): RowText = when (row) {
     Row.MovePlay -> RowText(PlayCopy.moveHere)
     Row.About -> RowText(GameAboutCopy.about)
     Row.PlayHistory -> RowText(PlayCopy.history)
+    Row.Backup -> RowText(BackupCopy.title)
     Row.ButtonLabels -> RowText(
         Copy.buttonLabels,
         when {
@@ -1386,6 +1398,7 @@ sealed interface Effect {
     data class OpenAndroidSetting(val setting: AndroidSetting) : Effect
     data object OpenLicenses : Effect
     data object OpenThemes : Effect
+    data object OpenBackup : Effect
 
     /** Copy Foldcade's version and the device's to the clipboard, for a bug report. */
     data object CopyDebugInfo : Effect
@@ -1646,6 +1659,8 @@ fun reduce(
     val coerced = model.copy(focus = coerce(model.focus, model))
     val dialog = coerced.dialog
     if (dialog != null) {
+        if (dialog.kind in setOf(DialogKind.Backup, DialogKind.RestoreBackup, DialogKind.BackupDone) && repeatCount > 0 &&
+            meaning in setOf(Meaning.Activate, Meaning.ActivateBottom, Meaning.Back, Meaning.Dismiss)) return coerced to null
         if (dialog.kind == DialogKind.CloseGame && repeatCount > 0 &&
             (meaning == Meaning.Activate || meaning == Meaning.ActivateBottom)) return coerced to null
         if (meaning == Meaning.LeftPanel || meaning == Meaning.RightPanel) return coerced to null
@@ -2342,6 +2357,7 @@ private fun activateRow(
         Row.SortFolder -> model.copy(panel = panel) to sortStep(model, 1)
         Row.UsageAccess -> model.copy(dialog = usageAccessPrompt(screen)) to null
         Row.PlayHistory -> model.copy(dialog = playHistoryDialog(screen)) to null
+        Row.Backup -> model.copy(dialog = backupDialog(screen)) to Effect.OpenBackup
         Row.FindSaves -> model to Effect.OpenAllFilesAccess
         Row.SaveSetup -> model.openSaveSetup(panel.screen, grid = panel.grid) to null
         Row.PlayActivity -> model.copy(

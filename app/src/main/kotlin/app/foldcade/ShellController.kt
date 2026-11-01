@@ -189,6 +189,8 @@ class ShellController(
     private val onSavePickerClosed: () -> Unit = {},
     /** How Android's picker opens on a player's save folder, for Set up saves. */
     private val saveFolderPick: (Player) -> FolderPick = { FolderPick.Browse },
+    /** A restored setup has its own one-time list of remaining sign-in and folder steps. */
+    private val restoreResultPending: () -> Boolean = { false },
 ) {
     var artPicker by mutableStateOf<ArtPickerState?>(null)
         private set
@@ -281,6 +283,7 @@ class ShellController(
     private val home = store.run {
         keepHomeBoardBeforeCollections()
         HomeSession(homeBoardRaw(), sameGames = sameAliases).also { session ->
+            session.restoredGaps = restoreHolds().sources.keys
             // Apps a release with Android shelves hid there are hidden on Home, the one Hidden place.
             val hidden = takeShelfHiddenApps()
             hidden.forEach { session.hide(androidHomeId(it)) }
@@ -291,6 +294,22 @@ class ShellController(
 
     /** Libraries that have reported their games since launch. Until then their home tiles are kept. */
     private val settledLibraries = mutableSetOf<String>()
+    private var restoreHolds = store.restoreHolds()
+
+    /** Only a connected catalog's successful listing counts; dropping a source never does. */
+    fun reportRestoreSources(sources: Set<String>) {
+        val next = restoreHolds.reported(sources)
+        if (next == restoreHolds) return
+        store.saveRestoreHolds(next)
+        restoreHolds = next
+        // Keep the rendering guard for this process: an edit can defer the catalog merge
+        // until its move ends, even though the source has now answered durably.
+    }
+
+    fun reportRestoreFolders(trees: Set<String>) {
+        reportRestoreSources(trees.mapTo(mutableSetOf()) { "folder:$it" } + "local-folder")
+        store.reportRestoreFolders(trees)
+    }
     private var moonlightSettled = false
     private var droidDeckSettled = false
     private var installedAppsSettled = false
@@ -1628,6 +1647,7 @@ class ShellController(
             remembered[id] = deviceEdited[id]?.let { (_, availability) -> game.copy(availability = availability) } ?: game
         }
         libraryItems = libraryItems.filterNot { it.id.startsWith(prefix) } + items
+        if (libraryId != "local-folder") reportRestoreSources(setOf(libraryId))
         settledLibraries += libraryId
         libraryGames.keys.filter { it.startsWith(prefix) }.toList().forEach { libraryGames.remove(it) }
         libraryGames.putAll(remembered)
@@ -2074,6 +2094,7 @@ class ShellController(
     }
 
     fun askToSignInAgain() {
+        if (restoreResultPending()) return
         if (model.dialog?.kind == DialogKind.ReLogin || model.reLoginPending) return
         if (model.connectOpen && model.connectKind == ConnectKind.Romm) return
         if (model.dialog != null || model.connectOpen) {
@@ -3478,7 +3499,7 @@ class ShellController(
             (libraryId != RommCredentials.PLUGIN_ID || store.rommOrigin() != null)
 
     private fun awaitingHomeTile(id: String): Boolean =
-        tileIds(id).any { one -> libraryOf(one)?.let(::awaitingLibrary) == true } ||
+        restoreHolds.awaiting(id) || tileIds(id).any { one -> libraryOf(one)?.let(::awaitingLibrary) == true } ||
             (!moonlightSettled && isMoonlightRemoteKey(id)) ||
             (!droidDeckSettled && id.startsWith(Shelf.DROIDDECK_PREFIX)) ||
             (!installedAppsSettled && id.startsWith("android:")) ||
