@@ -49,6 +49,17 @@ data class PlayActivityPage(
     val sessions: List<String>? = null,
     /** The session in focus on the open day's list. */
     val session: Int = 0,
+    /**
+     * The game the page is about, opened from its Y menu's Play time: the schedule shows only
+     * its play, and the side lists [sources]. Null for everything played.
+     */
+    val game: String? = null,
+    /** On a game's page, the other games with play that can move onto it, likeliest first. */
+    val sources: List<String> = emptyList(),
+    /** The source in focus. */
+    val source: Int = 0,
+    /** Sources moved onto [game] while the page is open. A on one again puts it back. */
+    val moved: Set<String> = emptySet(),
 )
 
 object PlayCopy {
@@ -59,6 +70,36 @@ object PlayCopy {
     const val week = "Week"
     const val sessions = "Sessions"
     const val remove = "Remove"
+
+    /** A game's Y menu row, and the top of its own Play activity. */
+    const val playTime = "Play time"
+    const val total = "Total"
+
+    /** Over the other games on a game's page. */
+    const val moveFrom = "Move time from"
+
+    /** Held A on one of them. */
+    const val moveHere = "Move here"
+    const val moved = "Moved here"
+    const val undo = Copy.undo
+
+    /** A game with play that no library has any more: its file was renamed, replaced, or removed. */
+    const val gone = "Gone"
+    const val noSources = "No other games played yet"
+
+    /** Settings › System. Its dialog offers both ways. */
+    const val history = "Play history"
+    const val historyBody = "Save your play time to a file, or add one saved before. Importing adds to what is here; it never replaces it."
+    const val export = "Export"
+    const val import = "Import"
+    const val exported = "Play history saved"
+    const val notSaved = "The file couldn't be saved."
+    const val updated = "Play history updated"
+    const val nothingNew = "Nothing new to add"
+    const val notHistory = "That file isn't a Foldcade play history."
+    const val unreadable = "That file couldn't be read."
+
+    fun imported(sessions: Int): String = if (sessions == 1) "Added 1 session" else "Added $sessions sessions"
 
     /** A game that left every catalog and left nothing readable behind. */
     const val removedGame = "Removed game"
@@ -177,6 +218,7 @@ fun playDuration(millis: Long): String {
  * the session in focus (the shell has it held first), and back goes to the week.
  */
 internal fun applyPlayActivity(model: PickerModel, page: PlayActivityPage, meaning: Meaning): Pair<PickerModel, Effect?> {
+    if (page.game != null) return applyPlayGame(model, page, page.game, meaning)
     val listed = page.sessions
     if (listed != null) {
         val at = page.session.coerceIn(0, (listed.size - 1).coerceAtLeast(0))
@@ -207,9 +249,44 @@ internal fun applyPlayActivity(model: PickerModel, page: PlayActivityPage, meani
     }
 }
 
-/** The hint row under the page: the week's keys, or the open day's. */
+/**
+ * A game's page. Up and down move over the other games with play; left and right step
+ * the weeks of this game's schedule. A held A moves the focused game's play here (the
+ * shell holds it first), and A on one moved here puts it back. B, L1, R1, and Select close.
+ */
+private fun applyPlayGame(model: PickerModel, page: PlayActivityPage, game: String, meaning: Meaning): Pair<PickerModel, Effect?> {
+    val at = page.source.coerceIn(0, (page.sources.size - 1).coerceAtLeast(0))
+    return when (meaning) {
+        Meaning.MoveUp -> model.copy(playActivity = page.copy(source = (at - 1).coerceAtLeast(0))) to null
+        Meaning.MoveDown -> model.copy(playActivity = page.copy(source = (at + 1).coerceAtMost(page.sources.lastIndex.coerceAtLeast(0)))) to null
+        Meaning.MoveLeft -> model.copy(playActivity = page.copy(weeksBack = page.weeksBack + 1)) to null
+        Meaning.MoveRight -> model.copy(playActivity = page.copy(weeksBack = (page.weeksBack - 1).coerceAtLeast(0))) to null
+        Meaning.Activate -> {
+            val from = page.sources.getOrNull(at) ?: return model to null
+            if (from in page.moved) {
+                model.copy(playActivity = page.copy(source = at, moved = page.moved - from)) to Effect.UndoPlayMove(from, game)
+            } else {
+                model.copy(playActivity = page.copy(source = at, moved = page.moved + from)) to Effect.MovePlayTime(from, game)
+            }
+        }
+        Meaning.Back, Meaning.LeftPanel, Meaning.RightPanel, Meaning.View -> model.copy(playActivity = null, focus = page.grid) to null
+        else -> model to null
+    }
+}
+
+/** The hint row under the page: the week's keys, the open day's, or a game's. */
 fun playActivityHints(model: PickerModel): List<HintKey> {
     val back = HintKey(promptKeyOf(model.faceMap.backKey) ?: PromptKey.FaceB, Copy.back)
+    val page = model.playActivity
+    if (page?.game != null) {
+        val confirm = promptKeyOf(model.faceMap.confirmKey) ?: PromptKey.FaceA
+        val focused = page.sources.getOrNull(page.source)
+        return listOfNotNull(
+            focused?.let { HintKey(confirm, if (it in page.moved) PlayCopy.undo else PlayCopy.moveHere) },
+            HintKey(PromptKey.DpadSides, PlayCopy.week),
+            back,
+        )
+    }
     if (model.playActivity?.sessions != null) {
         return listOf(HintKey(actionFaces(model.faceMap).bottomGlyph, PlayCopy.remove), back)
     }
@@ -219,3 +296,48 @@ fun playActivityHints(model: PickerModel): List<HintKey> {
         back,
     )
 }
+
+/** One other game a game's page can take play from. [gone] is a game no library has now. */
+data class PlaySource(val id: String, val name: String, val gone: Boolean, val activeMillis: Long)
+
+/**
+ * The order a game's page lists [sources] for the game named [name]: first a game of the
+ * same name, as a ROM renamed or replaced in another region or revision is, then one whose
+ * name shares most of its words, and in each a game no library has now before one still
+ * there. Then the rest, gone first, each tier by most time played, then A to Z.
+ */
+fun playSourceOrder(name: String, sources: List<PlaySource>): List<PlaySource> {
+    val words = playWords(name)
+    val key = words.joinToString(" ")
+    return sources.sortedWith(
+        compareByDescending<PlaySource> { source ->
+            val theirs = playWords(source.name)
+            val like = when {
+                key.isNotEmpty() && theirs.joinToString(" ") == key -> 2
+                alike(words, theirs) -> 1
+                else -> 0
+            }
+            like * 2 + if (source.gone) 1 else 0
+        }.thenByDescending { it.activeMillis }.thenBy { it.name.lowercase() }.thenBy { it.id },
+    )
+}
+
+/** Half or more of the words of the shorter name are in the other. */
+private fun alike(ours: List<String>, theirs: List<String>): Boolean {
+    if (ours.isEmpty() || theirs.isEmpty()) return false
+    val shorter = if (ours.size <= theirs.size) ours else theirs
+    val longer = (if (shorter === ours) theirs else ours).toSet()
+    return shorter.count { it in longer } * 2 >= shorter.size
+}
+
+/**
+ * A name's words as two names of one game share them: lower case, without the tags in
+ * brackets a ROM set adds, "(USA)", "[!]", "(Rev 1)", or a file extension, and without
+ * punctuation. "Pokémon - Emerald Version (USA, Europe).gba" is "pokémon emerald version".
+ */
+internal fun playWords(name: String): List<String> =
+    name.lowercase()
+        .replace(Regex("\\.[a-z0-9]{1,4}$"), "")
+        .replace(Regex("[(\\[][^)\\]]*[)\\]]"), " ")
+        .split(Regex("[^\\p{L}\\p{N}]+"))
+        .filter { it.isNotEmpty() && it != "the" }

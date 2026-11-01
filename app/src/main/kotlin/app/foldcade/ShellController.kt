@@ -315,8 +315,8 @@ class ShellController(
                 commitHome(catalog = true)
                 if (next.libraryGrid) next else withShelf(next)
             } else next
-            // A session's hold lives on Play activity's list, which has no menu: that list changing cancels it.
-            val holdMoved = if (current.deleteHold?.row == Row.RemoveSession) next.playActivity != current.playActivity
+            // A session's or a move's hold lives on Play activity, which has no menu: the page changing cancels it.
+            val holdMoved = if (current.deleteHold?.row in pageHolds) next.playActivity != current.playActivity
                 else next.panel == null || next.panel != current.panel
             val canceled = current.deleteHold != null && (holdMoved || next.dialog != null || next.settings != null || next.connectOpen)
             val stable = app.foldcade.language.retainSaveSetup(current,
@@ -565,10 +565,13 @@ class ShellController(
         if (undo != null && activeUndo() == null) { undo = null; publish(model.copy(undoVerb = null)) }
         val hold = model.deleteHold ?: return null
         if (inputWindows[hold.inputWindow] == false) { cancelDelete(); return null }
-        val session = hold.row == Row.RemoveSession
-        if (session) {
+        val session = hold.row in pageHolds
+        if (hold.row == Row.RemoveSession) {
             val page = model.playActivity
             if (page?.sessions?.getOrNull(page.session) != hold.gameId) { cancelDelete(); return null }
+        } else if (hold.row == Row.MovePlay) {
+            val page = model.playActivity
+            if (page?.game == null || page.sources.getOrNull(page.source) != hold.gameId || hold.gameId in page.moved) { cancelDelete(); return null }
         } else {
             val selected = model.panel?.let { panelRows(it, model).getOrNull(it.index) }
             if (selected != hold.row || model.tileActions?.game != hold.gameId) { cancelDelete(); return null }
@@ -707,6 +710,20 @@ class ShellController(
                 heldActions.capture(meaning.ordinal)
                 model = current.copy(panel = panel.copy(index = index),
                     deleteHold = DeleteHold(row, key, nowMillis(), game, meaning, inputWindow, inputKeys[inputWindow]), deleteProgress = 0f)
+            }
+            return null
+        }
+        // Moving another game's play here is held first: it changes two games' time at once.
+        if (!completingDelete && effect is Effect.MovePlayTime) {
+            val page = current.playActivity
+            if (page?.game != null && repeatCount == 0 && inputWindows[inputWindow] != false) {
+                heldActions.capture(meaning.ordinal)
+                val key = promptKeyOf(current.faceMap.confirmKey) ?: PromptKey.FaceA
+                model = current.copy(
+                    playActivity = next.playActivity?.copy(moved = page.moved),
+                    deleteHold = DeleteHold(Row.MovePlay, key, nowMillis(), effect.from, meaning, inputWindow, inputKeys[inputWindow]),
+                    deleteProgress = 0f,
+                )
             }
             return null
         }
@@ -883,6 +900,10 @@ class ShellController(
             }
             is Effect.OpenPlayDay -> {
                 openPlayDay(effect.weeksBack, effect.day)
+                null
+            }
+            is Effect.OpenPlayGame -> {
+                openPlayGame(effect.gameId)
                 null
             }
             else -> effect
@@ -2070,6 +2091,22 @@ class ShellController(
      */
     var playDaySessions: (weeksBack: Int, day: Int) -> List<String> = { _, _ -> emptyList() }
 
+    /** The other games with play a game's page can take from, likeliest first. The app reads its play log. */
+    var playSources: (tileId: String) -> List<String> = { emptyList() }
+
+    /** A game's play time for its Y menu's Play time row. */
+    var playTimeOf: (tileId: String) -> Long = { 0L }
+
+    /** True once anything has been played, so Play time has something to show. */
+    var anyPlay: () -> Boolean = { false }
+
+    /** Y › Play time: the page is about the tile the game shows as, and lists where its play can come from. */
+    private fun openPlayGame(gameId: String) {
+        val page = model.playActivity ?: return
+        val tile = tileOf(gameId)
+        publish(model.copy(playActivity = page.copy(game = tile, sources = playSources(tile), source = 0, moved = emptySet())))
+    }
+
     /** A on a day of Play activity lists its sessions. A day without any stays as it is. */
     private fun openPlayDay(weeksBack: Int, day: Int) {
         val page = model.playActivity ?: return
@@ -2921,7 +2958,14 @@ class ShellController(
         } else offered
         val withSaves = if (tile?.bulk == null && home.selection == null && targetGame != null &&
             launchRoute(targetGame.id)?.servers?.isNotEmpty() == true) (withArt ?: TileActions()).copy(saves = true, game = tile?.game ?: targetGame.id) else withArt
-        return counted.copy(tileActions = (withSaves ?: TileActions()).copy(undo = home.selection == null && activeUndo() != null), undoVerb = activeUndo()?.verb, atLibraryRoot = root)
+        // A game's own play, and where more of it can come from, once anything has been played.
+        val playGame = (tile?.game ?: targetGame?.id)?.takeIf {
+            tile?.bulk == null && home.selection == null && targetGame != null && home.item(it)?.let { item -> app.foldcade.language.listedInLibrary(item) } == true
+        }
+        val withPlay = if (playGame != null && anyPlay()) {
+            (withSaves ?: TileActions()).copy(playTime = playTimeOf(tileOf(playGame)), game = withSaves?.game ?: playGame)
+        } else withSaves
+        return counted.copy(tileActions = (withPlay ?: TileActions()).copy(undo = home.selection == null && activeUndo() != null), undoVerb = activeUndo()?.verb, atLibraryRoot = root)
     }
 
     /** A menu acts on its named game even after Add to leaves the focused slot empty. */
@@ -3429,3 +3473,6 @@ internal fun syncMark(result: SyncResult): SyncMark = when (result.outcome) {
     SyncOutcome.Unchanged -> if (result.note == null) SyncMark.Synced else SyncMark.NotSynced
     else -> SyncMark.Synced
 }
+
+/** Holds that live on Play activity's page rather than on a menu row. */
+private val pageHolds = setOf(Row.RemoveSession, Row.MovePlay)

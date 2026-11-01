@@ -24,6 +24,7 @@ import androidx.compose.foundation.text.BasicText
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
@@ -62,13 +63,14 @@ import app.foldcade.language.playWeek
 import java.time.ZoneId
 import java.util.Date
 
-/** The week [weeksBack] weeks ago, read again whenever a play session changes. */
+/** The week [weeksBack] weeks ago, read again whenever a play session changes. [game] keeps only that game's play. */
 @Composable
-private fun rememberPlayWeek(app: FoldcadeApp, weeksBack: Int): PlayWeek {
+private fun rememberPlayWeek(app: FoldcadeApp, weeksBack: Int, game: String? = null): PlayWeek {
     val stamp = app.plays.stamp
     val dateStyle = rememberDateStyle(app)
-    return remember(stamp, weeksBack, dateStyle) {
-        playWeek(app.plays.spans(), System.currentTimeMillis(), ZoneId.systemDefault(), dateStyle, weeksBack)
+    return remember(stamp, weeksBack, dateStyle, game) {
+        val spans = app.plays.spans().let { all -> if (game == null) all else all.filter { it.gameId == game } }
+        playWeek(spans, System.currentTimeMillis(), ZoneId.systemDefault(), dateStyle, weeksBack)
     }
 }
 
@@ -99,8 +101,9 @@ internal fun PlayActivityScreen(app: FoldcadeApp, page: PlayActivityPage) {
     val theme = LocalFoldTheme.current.theme
     val motion = theme.motion
     val scale = motion.animatorScale(LocalContext.current.contentResolver)
-    val week = rememberPlayWeek(app, page.weeksBack)
+    val week = rememberPlayWeek(app, page.weeksBack, page.game)
     val listing = presence(page.takeIf { it.sessions != null }, motion.durationIsland, scale)
+    val game = page.game
     Column(
         Modifier
             .fillMaxSize()
@@ -124,7 +127,13 @@ internal fun PlayActivityScreen(app: FoldcadeApp, page: PlayActivityPage) {
                     promptGlyph(promptKeyOf(app.shell.model.faceMap.backKey) ?: PromptKey.FaceB),
                     32.dp,
                 )
-                BasicText(PlayCopy.activity, style = playText(theme.onBackground, theme, LocalFoldTheme.current.theme.style.type.heroTitle, bold = true, display = true))
+                // A game's page is named for the game, as its Y menu was.
+                BasicText(
+                    if (game == null) PlayCopy.activity else playName(game, app.shell.playTitle(game), app.plays.name(game)),
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    style = playText(theme.onBackground, theme, LocalFoldTheme.current.theme.style.type.heroTitle, bold = true, display = true),
+                )
             }
             Spacer(Modifier.weight(1f))
             BasicText(week.label, style = playText(theme.muted, theme, LocalFoldTheme.current.theme.style.type.heroMeta))
@@ -144,7 +153,8 @@ internal fun PlayActivityScreen(app: FoldcadeApp, page: PlayActivityPage) {
                     .background(theme.surface)
                     .padding(24.dp)
                     // The ring is on the days while they take the D-pad; an open list keeps its day lit.
-                    .selectionHighlight(days, page.day, ring = page.sessions == null, scale = scale),
+                    // A game's schedule is only read: the D-pad is on the games beside it.
+                    .selectionHighlight(days, page.day.takeIf { game == null }, ring = page.sessions == null, scale = scale),
                 verticalArrangement = Arrangement.SpaceEvenly,
             ) {
                 HourScale(theme)
@@ -156,7 +166,7 @@ internal fun PlayActivityScreen(app: FoldcadeApp, page: PlayActivityPage) {
                         BasicText(
                             day.label,
                             modifier = Modifier.width(DAY_LABEL),
-                            style = playText(if (index == page.day) theme.onBackground else theme.muted, theme, LocalFoldTheme.current.theme.style.type.sideRow),
+                            style = playText(if (index == page.day && game == null) theme.onBackground else theme.muted, theme, LocalFoldTheme.current.theme.style.type.sideRow),
                         )
                         DayTrack(day.blocks, theme, Modifier.weight(1f).height(22.dp))
                         // Every day says its total, one without play too, so today reads like the rest.
@@ -176,6 +186,10 @@ internal fun PlayActivityScreen(app: FoldcadeApp, page: PlayActivityPage) {
                     .clip(RoundedCornerShape(design.metrics.cardCornerDp.dp))
                     .background(theme.surface),
             ) {
+                if (game != null) {
+                    GameSources(app, page, game, theme, scale)
+                    return@Box
+                }
                 // The most played give way to the day's sessions, and come back after.
                 Box(Modifier.fillMaxSize().sinking { listing.progress.value }) { MostPlayed(app, week, theme) }
                 listing.shown?.let { shown ->
@@ -290,11 +304,100 @@ private fun DaySessions(app: FoldcadeApp, page: PlayActivityPage, dayLabel: Stri
     }
 }
 
+/**
+ * A game's side of its own page: its cover and all its time, then the other games with
+ * play, likeliest first, each with its time, and Gone when no library has it now. A held
+ * A fills the one in focus and moves its play here; it then reads Moved here, and A puts
+ * it back.
+ */
+@Composable
+private fun GameSources(app: FoldcadeApp, page: PlayActivityPage, game: String, theme: Theme, scale: Float) {
+    val stamp = app.plays.stamp
+    val type = LocalFoldTheme.current.theme.style.type
+    val played = remember(stamp) { app.plays.played() }
+    val total = played[game]?.activeMillis ?: 0L
+    val model = app.shell.model
+    val reach = ringReach()
+    val slots = rememberSelectionSlots()
+    val scroll = rememberScrollState()
+    val focused = page.sources.getOrNull(page.source)
+    Column(Modifier.fillMaxSize().padding(horizontal = (CARD_PAD - reach).coerceAtLeast(0.dp), vertical = CARD_PAD - DAY_INSET)) {
+        Row(
+            Modifier.padding(horizontal = reach, vertical = DAY_INSET),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            PlayCover(app, game, TOP_COVER)
+            Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                BasicText(PlayCopy.total, style = playText(theme.muted, theme, type.hint))
+                BasicText(playDuration(total), style = playText(theme.onBackground, theme, type.sideRow, bold = true))
+            }
+        }
+        BasicText(
+            if (page.sources.isEmpty()) PlayCopy.noSources else PlayCopy.moveFrom,
+            modifier = Modifier.padding(horizontal = reach, vertical = 4.dp),
+            style = playText(theme.muted, theme, type.sideRow),
+        )
+        Column(
+            Modifier
+                .weight(1f)
+                .fillMaxWidth()
+                .menuFade(scroll)
+                .verticalScroll(scroll)
+                .padding(reach)
+                .selectionHighlight(slots, page.source.takeIf { page.sources.isNotEmpty() }, ring = true, scale = scale),
+            verticalArrangement = Arrangement.spacedBy(4.dp),
+        ) {
+            page.sources.forEachIndexed { index, source ->
+                key(source) {
+                    val moved = source in page.moved
+                    val current = app.shell.playTitle(source)
+                    Row(
+                        Modifier
+                            .fillMaxWidth()
+                            .selectionSlot(slots, index)
+                            .keepInView(source == focused)
+                            .then(holdFeedback(model, LanguageRow.MovePlay, source, theme, scale))
+                            .padding(horizontal = 10.dp, vertical = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(10.dp),
+                    ) {
+                        PlayCover(app, source, SESSION_COVER)
+                        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                            BasicText(
+                                playName(source, current, app.plays.name(source)),
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                                style = playText(theme.onBackground, theme, type.sideRow, bold = true),
+                            )
+                            BasicText(
+                                when {
+                                    moved -> PlayCopy.moved
+                                    current == null -> "${playDuration(played[source]?.activeMillis ?: 0L)} · ${PlayCopy.gone}"
+                                    else -> playDuration(played[source]?.activeMillis ?: 0L)
+                                },
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                                style = playText(if (moved) theme.focus else theme.muted, theme, type.hint, bold = moved),
+                            )
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
 /** A held X fills the session it removes; letting go early shakes it, as Delete download does. */
 @Composable
-private fun removeFeedback(model: PickerModel, sessionId: String, theme: Theme, scale: Float): Modifier {
+private fun removeFeedback(model: PickerModel, sessionId: String, theme: Theme, scale: Float): Modifier =
+    holdFeedback(model, LanguageRow.RemoveSession, sessionId, theme, scale)
+
+/** A held key fills the [row] for [id] it acts on; letting go early shakes it. */
+@Composable
+private fun holdFeedback(model: PickerModel, row: LanguageRow, id: String, theme: Theme, scale: Float): Modifier {
     val motion = theme.motion
-    val held = model.deleteHold?.takeIf { it.row == LanguageRow.RemoveSession && it.gameId == sessionId }
+    val held = model.deleteHold?.takeIf { it.row == row && it.gameId == id }
     val shake = remember { Animatable(0f) }
     // The hold is gone by the time the shake is asked for, so the row remembers it was the one held.
     var wasHeld by remember { mutableStateOf(false) }
@@ -327,9 +430,21 @@ private fun PlayCover(app: FoldcadeApp, gameId: String, size: Dp) {
     val shell = app.shell
     val game = shell.findGame(gameId)
     val appObject = appGlyph(game.androidPackage)
+    // A game no library has now shows the cover kept when it was played.
+    val gone = shell.playTitle(gameId) == null
     val art = key(gameId) {
-        val found = rememberArt(app, shell.artRecord(game), shell.artQuery(game), automatic = appObject == null)
-        found?.let { rememberCoverPainter(app, it.square ?: it.cover, TILE_PX)?.painter }
+        if (gone) {
+            rememberKeptCover(app, gameId)
+        } else {
+            val found = rememberArt(app, shell.artRecord(game), shell.artQuery(game), automatic = appObject == null)
+            val uri = found?.let { it.square ?: it.cover }
+            val loaded = uri?.let { rememberCoverPainter(app, it, TILE_PX) }
+            // History drawn before this release has no kept cover yet: this one is it.
+            LaunchedEffect(uri, loaded != null) {
+                if (uri != null && loaded != null && app.plays.art.file(gameId) == null) app.keepPlayArt(gameId, uri)
+            }
+            loaded?.painter
+        }
     }
     val icon = if (art == null && appObject == null) launcherIcon(game.androidPackage) else null
     Box(
@@ -346,6 +461,16 @@ private fun PlayCover(app: FoldcadeApp, gameId: String, size: Dp) {
             else -> MarkIcon(game.mark ?: MARK_CONSOLE, MARK_FILL)
         }
     }
+}
+
+/** The cover [PlayArt] kept for [gameId], or null when none was. */
+@Composable
+private fun rememberKeptCover(app: FoldcadeApp, gameId: String): androidx.compose.ui.graphics.painter.Painter? {
+    val stamp = app.plays.stamp
+    val file = remember(gameId, stamp) { app.plays.art.file(gameId) } ?: return null
+    val painter = coil3.compose.rememberAsyncImagePainter(file, app.images)
+    val state by painter.state.collectAsState()
+    return painter.takeIf { state is coil3.compose.AsyncImagePainter.State.Success }
 }
 
 /** Covers: four of the most played still fit the page's height. */

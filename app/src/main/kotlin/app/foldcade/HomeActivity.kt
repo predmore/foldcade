@@ -64,6 +64,8 @@ import app.foldcade.language.SaveConflictSide
 import app.foldcade.language.Copy
 import app.foldcade.language.SignedInBackend
 import app.foldcade.language.DialogButton
+import app.foldcade.language.PlayCopy
+import app.foldcade.language.playHistoryDone
 import app.foldcade.language.DialogKind
 import app.foldcade.language.DialogState
 import app.foldcade.language.Effect
@@ -173,6 +175,16 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
     private var settingsPlayerId: String? = null
     private var libraryReturn: LibraryReturn? = null
     private var deviceCodeJob: Job? = null
+
+    /** Settings › System › Play history › Export: where the file goes. */
+    private val playExport = registerForActivityResult(ActivityResultContracts.CreateDocument("application/zip")) { uri ->
+        uri?.let(::exportPlayHistory)
+    }
+
+    /** Settings › System › Play history › Import: the file to add. */
+    private val playImport = registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        uri?.let(::importPlayHistory)
+    }
 
     private val folderPicker = registerForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri ->
         val purpose = folderPurpose
@@ -368,8 +380,10 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
             is Effect.RemoveDownload -> removeDownload(effect.gameId)
             is Effect.RestartGame -> askRestart(effect.gameId)
             is Effect.RemovePlaySession -> foldcade.plays.remove(effect.sessionId)
-            // The shell lists the day's sessions itself.
-            is Effect.OpenPlayDay -> Unit
+            // The shell lists the day's sessions, and a game's sources, itself.
+            is Effect.OpenPlayDay, is Effect.OpenPlayGame -> Unit
+            is Effect.MovePlayTime -> foldcade.movePlay(effect.from, effect.to)
+            is Effect.UndoPlayMove -> foldcade.undoPlayMove(effect.from, effect.to)
             Effect.OpenAll -> foldcade.shell.openHomeAll()
             is Effect.OpenFolder -> foldcade.shell.openHomeFolder(effect.folderId)
             Effect.ToggleAddNew -> foldcade.shell.applyHomeAddNew(foldcade.shell.model.addNewToHome)
@@ -406,6 +420,68 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
             is Effect.CopyPickedSave -> changeServerSave(effect.target, effect.saveId, effect.destination)
             is Effect.ResolveSaveConflict -> resolveSaveConflict(effect)
             null -> Unit
+        }
+    }
+
+    /** "Foldcade play history 2026-10-31.zip", in the device's own calendar. */
+    private fun playHistoryFileName(): String = "Foldcade play history ${java.time.LocalDate.now()}.zip"
+
+    /** Android's file picker, or a word when this device has none. */
+    private fun startPicker(otherwise: String, launch: () -> Unit) {
+        try {
+            launch()
+        } catch (missing: android.content.ActivityNotFoundException) {
+            Log.w("FoldcadePlay", "No document picker", missing)
+            foldcade.shell.present(playHistoryDone(otherwise, hostScreen()))
+        }
+    }
+
+    /** Writes the whole play history to [uri], off the main thread, then says how it went. */
+    private fun exportPlayHistory(uri: Uri) {
+        val screen = hostScreen()
+        foldcade.scope.launch {
+            val message = try {
+                val out = contentResolver.openOutputStream(uri, "wt") ?: throw java.io.IOException("no stream for $uri")
+                out.use { foldcade.plays.export(it) }
+                PlayCopy.exported
+            } catch (cancelled: kotlin.coroutines.cancellation.CancellationException) {
+                throw cancelled
+            } catch (failure: Exception) {
+                Log.w("FoldcadePlay", "Play history not exported", failure)
+                PlayCopy.notSaved
+            }
+            withContext(Dispatchers.Main.immediate) { foldcade.shell.present(playHistoryDone(message, screen)) }
+        }
+    }
+
+    /** Reads [uri] off the main thread and adds it to the play history on it, then says what it added. */
+    private fun importPlayHistory(uri: Uri) {
+        val screen = hostScreen()
+        foldcade.scope.launch {
+            var refusal = PlayCopy.unreadable
+            val read = try {
+                val input = contentResolver.openInputStream(uri) ?: throw java.io.IOException("no stream for $uri")
+                input.use { app.foldcade.host.play.PlayArchive.read(it) }.also { foldcade.plays.art.adopt(it.art) }
+            } catch (cancelled: kotlin.coroutines.cancellation.CancellationException) {
+                throw cancelled
+            } catch (refused: app.foldcade.host.play.PlayArchiveException) {
+                Log.w("FoldcadePlay", "Not a play history", refused)
+                refusal = PlayCopy.notHistory
+                null
+            } catch (failure: Exception) {
+                Log.w("FoldcadePlay", "Play history not imported", failure)
+                null
+            }
+            withContext(Dispatchers.Main.immediate) {
+                val message = read?.let { foldcade.plays.merge(it) }?.let { merged ->
+                    when {
+                        merged.sessions > 0 -> PlayCopy.imported(merged.sessions)
+                        merged.changes > 0 -> PlayCopy.updated
+                        else -> PlayCopy.nothingNew
+                    }
+                } ?: refusal
+                foldcade.shell.present(playHistoryDone(message, screen))
+            }
         }
     }
 
@@ -1988,6 +2064,12 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
                 cancelLaunches()
                 if (effect.button == DialogButton.OpenRetroArch) openRetroArch()
             }
+            DialogKind.PlayHistory -> when (effect.button) {
+                DialogButton.ExportPlay -> startPicker(PlayCopy.notSaved) { playExport.launch(playHistoryFileName()) }
+                DialogButton.ImportPlay -> startPicker(PlayCopy.unreadable) { playImport.launch(arrayOf("application/zip", "application/octet-stream")) }
+                else -> Unit
+            }
+            DialogKind.PlayHistoryDone -> Unit
             DialogKind.EdenSaveHold -> {
                 val ask = foldcade.hostedAsk
                 foldcade.hostedAsk = null

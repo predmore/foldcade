@@ -86,6 +86,8 @@ import app.foldcade.artwork.SteamGridDb
 import app.foldcade.artwork.SteamStoreArt
 import app.foldcade.net.PublicHttps
 import coil3.ImageLoader
+import coil3.request.allowHardware
+import coil3.toBitmap
 import android.service.notification.NotificationListenerService
 import app.foldcade.language.FoldNotice
 import app.foldcade.language.orderedNotices
@@ -325,6 +327,92 @@ class FoldcadeApp : Application() {
     /** Local play history. Not a plugin API. */
     lateinit var plays: PlaySessions
         private set
+
+    /**
+     * What each move on a game's Play activity did, by the game it came from and the game it
+     * went to, so A puts it back while the page is open. A later move of the same two replaces it.
+     */
+    private val playMoves = HashMap<Pair<String, String>, List<app.foldcade.host.play.PlayMove>>()
+
+    /** Tiles whose cover was kept in this process, so a page drawing them again does not keep them again. */
+    private val keptPlayArt = java.util.Collections.synchronizedSet(HashSet<String>())
+
+    /** Moves every finished session of [from] onto [to], from a game's Play activity. */
+    fun movePlay(from: String, to: String) {
+        val moves = plays.move(from, to)
+        if (moves.isNotEmpty()) playMoves[from to to] = moves
+    }
+
+    /** Puts back the last [movePlay] of [from] onto [to]. */
+    fun undoPlayMove(from: String, to: String) {
+        playMoves.remove(from to to)?.let(plays::undo)
+    }
+
+    /** A tile's play time for its Y menu, read once per change to the log: menus ask on every publish. */
+    private fun playTimeOf(tileId: String): Long {
+        if (playTimeStamp != plays.stamp) {
+            playTimeStamp = plays.stamp
+            playTimes.clear()
+        }
+        return playTimes.getOrPut(tileId) { plays.shown(tileId).activeMillis }
+    }
+
+    private var playTimeStamp = -1
+    private val playTimes = HashMap<String, Long>()
+
+    /**
+     * The other games a game's page can take play from, likeliest first: each tile with play
+     * but [tileId] and its copies, by [app.foldcade.language.playSourceOrder].
+     */
+    fun playSources(tileId: String): List<String> {
+        val own = shell.historyIds(tileId) + shell.tileOf(tileId)
+        val title = shell.playTitle(tileId) ?: plays.name(tileId).orEmpty()
+        val sources = plays.played().values
+            .filter { it.gameId !in own && it.activeMillis > 0L }
+            .map { totals ->
+                val current = shell.playTitle(totals.gameId)
+                app.foldcade.language.PlaySource(
+                    id = totals.gameId,
+                    name = playName(totals.gameId, current, plays.name(totals.gameId)),
+                    gone = current == null,
+                    activeMillis = totals.activeMillis,
+                )
+            }
+        return app.foldcade.language.playSourceOrder(title, sources).map { it.id }
+    }
+
+    /**
+     * Keeps [tileId]'s cover beside its play, from [uri] when the caller has drawn it, else
+     * from wherever the grid finds its art. A game's cover is kept once a process unless a
+     * session starts, which keeps it again, so new art is what history shows.
+     */
+    fun keepPlayArt(tileId: String, uri: String? = null, again: Boolean = false) {
+        if (!again && tileId in keptPlayArt) return
+        keptPlayArt += tileId
+        themeTrialScope.launch {
+            val game = shell.findGame(tileId).takeIf { !it.emptyShelfHint && it.id.isNotEmpty() } ?: return@launch
+            val record = shell.artRecord(game)
+            val query = shell.artQuery(game)
+            val source = uri ?: (covers.cached(record, query) ?: if (record != null || query != null) covers.fetch(record, query) else null)
+                ?.let { it.square ?: it.cover } ?: return@launch
+            withContext(Dispatchers.IO) {
+                try {
+                    val request = coil3.request.ImageRequest.Builder(this@FoldcadeApp)
+                        .data(CoverImage(source))
+                        .size(PLAY_ART_PX)
+                        .allowHardware(false)
+                        .build()
+                    val image = (images.execute(request) as? coil3.request.SuccessResult)?.image ?: return@withContext
+                    plays.art.keep(tileId, image.toBitmap())
+                } catch (cancelled: kotlin.coroutines.cancellation.CancellationException) {
+                    throw cancelled
+                } catch (error: Exception) {
+                    keptPlayArt -= tileId
+                    Log.w("FoldcadePlay", "Cover not kept", error)
+                }
+            }
+        }
+    }
 
     /** Both screens' brightness, for the R1 slider. */
     lateinit var brightness: ScreenBrightness
@@ -663,6 +751,11 @@ class FoldcadeApp : Application() {
         // A game several libraries have is one tile, and its copies' play counts on it.
         plays.historyIds = shell::historyIds
         plays.tileOf = shell::tileOf
+        // A game's cover is kept when it is played, so its history keeps showing it after it leaves.
+        plays.onStarted = { tile -> keepPlayArt(tile, again = true) }
+        shell.playSources = ::playSources
+        shell.playTimeOf = ::playTimeOf
+        shell.anyPlay = plays::hasTrackedSession
         shell.playDaySessions = { weeksBack, day ->
             app.foldcade.language.playDaySessions(plays.spans(), System.currentTimeMillis(), java.time.ZoneId.systemDefault(), weeksBack, day)
                 .map { it.sessionId }
@@ -2177,6 +2270,9 @@ class FoldcadeApp : Application() {
 
 /** The shortest time between two reads of RetroArch's cores when Foldcade returns to the front. */
 private const val RETROARCH_RETURN_READ_MS = 60_000L
+
+/** A kept cover's size: the grid's own tile size. */
+private const val PLAY_ART_PX = 384
 
 /** How long a hosted save folder waits, at most, for the players to load while Foldcade starts. */
 private const val PLAYERS_LOAD_WAIT_MS = 10_000L

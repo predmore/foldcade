@@ -125,6 +125,12 @@ enum class DialogKind {
 
     /** Eden cannot place an incoming save. Not now cancels the held launch. */
     EdenSaveHold,
+
+    /** Settings › System › Play history: export it to a file, or import one. Opens on Export. */
+    PlayHistory,
+
+    /** What an export or an import did. Ok only closes it. */
+    PlayHistoryDone,
 }
 
 enum class DialogButton {
@@ -146,6 +152,8 @@ enum class DialogButton {
     /** Opens the player [DialogState.subject] names. */
     OpenPlayer,
     TryAgain,
+    ExportPlay,
+    ImportPlay,
 }
 
 /** The words a dialog button shows. [subject] is [DialogState.subject], which names the player to open. */
@@ -166,6 +174,8 @@ fun dialogButtonLabel(button: DialogButton, subject: String? = null): String = w
     DialogButton.ForgetHost -> Copy.forgetHost
     DialogButton.OpenPlayer -> openPlayerLabel(subject)
     DialogButton.TryAgain -> Copy.tryAgain
+    DialogButton.ExportPlay -> PlayCopy.export
+    DialogButton.ImportPlay -> PlayCopy.import
 }
 
 data class DialogState(
@@ -237,6 +247,28 @@ fun usageAccessPrompt(screen: HostScreen = HostScreen.Bottom): DialogState = Dia
     buttons = listOf(DialogButton.Allow, DialogButton.NotNow),
     index = 1,
     safeIndex = 1,
+    screen = screen,
+)
+
+/** Settings › System › Play history. Neither way loses anything, so it opens on Export. */
+fun playHistoryDialog(screen: HostScreen): DialogState = DialogState(
+    kind = DialogKind.PlayHistory,
+    title = PlayCopy.history,
+    body = PlayCopy.historyBody,
+    buttons = listOf(DialogButton.ExportPlay, DialogButton.ImportPlay, DialogButton.NotNow),
+    index = 0,
+    safeIndex = 2,
+    screen = screen,
+)
+
+/** What an export or an import did, in a line. */
+fun playHistoryDone(message: String, screen: HostScreen): DialogState = DialogState(
+    kind = DialogKind.PlayHistoryDone,
+    title = PlayCopy.history,
+    body = message,
+    buttons = listOf(DialogButton.Ok),
+    index = 0,
+    safeIndex = 0,
     screen = screen,
 )
 
@@ -639,6 +671,15 @@ sealed interface Row {
 
     /** X on a session in Play activity's list: held, it takes the session out. Not a menu row. */
     data object RemoveSession : Row
+
+    /** A game's play: its time, and other games' play to move onto it. Opens Play activity for the game. */
+    data object PlayTime : Row
+
+    /** A on another game in a game's Play activity: held, it moves that game's play here. Not a menu row. */
+    data object MovePlay : Row
+
+    /** Settings › System: export the play history to a file, or import one. */
+    data object PlayHistory : Row
     data class QuickTile(val setting: QuickSetting) : Row
 
     /** The R1 slider for both screens' brightness. */
@@ -914,6 +955,8 @@ data class TileActions(
     /** The game is still open in its player, so it can start over. */
     val restart: Boolean = false,
     val saves: Boolean = false,
+    /** The game's play time, for its Play time row. Null leaves the row out: not a game, or no play anywhere yet. */
+    val playTime: Long? = null,
     /** The game these rows act on. Null for a tile that is not a game, or one off the home grid. */
     val game: String? = null,
     /** The board on screen has gaps to close, so Edit home offers Tidy. */
@@ -957,6 +1000,7 @@ fun actionRows(tile: TileActions?): List<Row> = buildList {
     if (tile.rename) add(Row.RenameFolder)
     if (tile.icon) add(Row.FolderIcon)
     if (tile.newCollection && tile.collections == null) add(Row.NewCollection)
+    if (tile.playTime != null) add(Row.PlayTime)
     if (tile.show) add(Row.ShowHidden)
     if (tile.showOnHome != null) add(Row.ShowOnHome)
     if (tile.folderOnHome != null) add(Row.FolderOnHome)
@@ -1202,6 +1246,9 @@ fun rowText(row: Row, model: PickerModel): RowText = when (row) {
     Row.Saves -> RowText(SavePickerCopy.title)
     Row.RestartGame -> RowText(Copy.restart)
     Row.RemoveSession -> RowText(PlayCopy.remove)
+    Row.PlayTime -> RowText(PlayCopy.playTime, model.tileActions?.playTime?.let(::playDuration))
+    Row.MovePlay -> RowText(PlayCopy.moveHere)
+    Row.PlayHistory -> RowText(PlayCopy.history)
     Row.ButtonLabels -> RowText(
         Copy.buttonLabels,
         when {
@@ -1342,6 +1389,15 @@ sealed interface Effect {
 
     /** Take a play session out of the history, after its X was held. */
     data class RemovePlaySession(val sessionId: String) : Effect
+
+    /** Play activity opened on one game: the shell lists the other played games its play can come from. */
+    data class OpenPlayGame(val gameId: String) : Effect
+
+    /** Every finished session of [from] counts for [to] from now on. The shell has it held first. */
+    data class MovePlayTime(val from: String, val to: String) : Effect
+
+    /** Puts back what the last [MovePlayTime] from [from] to [to] moved, while the page is still open. */
+    data class UndoPlayMove(val from: String, val to: String) : Effect
     data object OpenAll : Effect
     data object ToggleAddNew : Effect
 
@@ -2220,6 +2276,7 @@ private fun activateRow(
         // A choice row too, whose value is the board's: the shell steps it.
         Row.SortFolder -> model.copy(panel = panel) to sortStep(model, 1)
         Row.UsageAccess -> model.copy(dialog = usageAccessPrompt(screen)) to null
+        Row.PlayHistory -> model.copy(dialog = playHistoryDialog(screen)) to null
         Row.FindSaves -> model to Effect.OpenAllFilesAccess
         Row.SaveSetup -> model.openSaveSetup(panel.screen, grid = panel.grid) to null
         Row.PlayActivity -> model.copy(
@@ -2357,9 +2414,13 @@ private fun activateRow(
         Row.DeleteShortcut -> model.copy(panel = null, focus = panel.grid) to Effect.DeleteShortcut(model.tileActions?.game)
         Row.RemoveDownload -> model.copy(panel = null, focus = panel.grid) to Effect.RemoveDownload(model.tileActions?.game)
         Row.Saves -> model.copy(panel = null, focus = panel.grid) to model.tileActions?.game?.let(Effect::OpenSaves)
+        Row.PlayTime -> model.tileActions?.game?.let { game ->
+            model.copy(panel = null, focus = panel.grid, playActivity = PlayActivityPage(screen = panel.screen, grid = panel.grid, game = game)) to
+                Effect.OpenPlayGame(game)
+        } ?: (model.copy(panel = panel) to null)
         Row.RestartGame -> model.copy(panel = null, focus = panel.grid) to Effect.RestartGame(model.tileActions?.game)
         // Play activity's list removes a session itself; no menu lists this row.
-        Row.RemoveSession -> model to null
+        Row.RemoveSession, Row.MovePlay -> model to null
         Row.ButtonLabels -> if (model.capturingConfirm) {
             model.copy(capturingConfirm = false, offerButtonLabels = false) to Effect.DismissButtonLabels
         } else {
