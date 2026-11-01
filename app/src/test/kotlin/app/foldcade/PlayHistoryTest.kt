@@ -50,6 +50,9 @@ class PlayHistoryTest {
 
         assertEquals(30_000L, plays.totals("renamed").activeMillis)
         assertEquals(0L, plays.totals("tile").activeMillis)
+        // A cover kept under a copy before the copies folded still shows for the tile.
+        File(dirOf(plays), "art").apply { mkdirs() }.resolve(playArtName("copy")).writeBytes(byteArrayOf(1))
+        assertEquals(playArtName("copy"), plays.keptCover("tile")?.name)
         // Moving a tile onto one of its own copies moves nothing.
         assertTrue(plays.move("renamed", "renamed").isEmpty())
     }
@@ -98,7 +101,11 @@ class PlayHistoryTest {
         now += 1_000L
     }
 
-    private fun open(folder: File): PlaySessions = PlaySessions.open(File(folder, "events.log"), PlayClock { now })
+    private val folders = HashMap<PlaySessions, File>()
+
+    private fun open(folder: File): PlaySessions = PlaySessions.open(File(folder, "events.log"), PlayClock { now }).also { folders[it] = folder }
+
+    private fun dirOf(plays: PlaySessions): File = folders.getValue(plays)
 
     private fun dir(): File = Files.createTempDirectory("play-history").toFile()
 }

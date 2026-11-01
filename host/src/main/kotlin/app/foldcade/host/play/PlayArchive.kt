@@ -77,8 +77,8 @@ object PlayArchive {
         ZipInputStream(input).use { zip ->
             while (true) {
                 val entry = zip.nextEntry ?: break
-                if (entry.isDirectory) continue
-                val name = entry.name
+                // A directory reads nothing, but what it holds still inflates: it drains below.
+                val name = if (entry.isDirectory) "" else entry.name
                 when {
                     name == MARKER -> format = readFormat(String(zip.bounded(1024, budget), Charsets.UTF_8))
                     name == EVENTS -> events = String(zip.bounded(MAX_LOG_BYTES, budget), Charsets.UTF_8).lineSequence().mapNotNull(::decodePlayEvent).toList()

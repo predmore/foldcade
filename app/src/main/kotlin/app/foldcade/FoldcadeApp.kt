@@ -398,28 +398,40 @@ class FoldcadeApp : Application() {
      */
     fun keepPlayArt(tileId: String, uri: String? = null, again: Boolean = false) {
         if (!again && tileId in keptPlayArt) return
+        // Marked while it runs, so a page drawing the cover again waits; kept only once written.
         keptPlayArt += tileId
         themeTrialScope.launch {
-            val game = shell.findGame(tileId).takeIf { !it.emptyShelfHint && it.id.isNotEmpty() } ?: return@launch
-            val record = shell.artRecord(game)
-            val query = shell.artQuery(game)
-            val source = uri ?: (covers.cached(record, query) ?: if (record != null || query != null) covers.fetch(record, query) else null)
-                ?.let { it.square ?: it.cover } ?: return@launch
-            withContext(Dispatchers.IO) {
-                try {
-                    val request = coil3.request.ImageRequest.Builder(this@FoldcadeApp)
-                        .data(CoverImage(source))
-                        .size(PLAY_ART_PX)
-                        .allowHardware(false)
-                        .build()
-                    val image = (images.execute(request) as? coil3.request.SuccessResult)?.image ?: return@withContext
-                    plays.art.keep(tileId, image.toBitmap())
-                } catch (cancelled: kotlin.coroutines.cancellation.CancellationException) {
-                    throw cancelled
-                } catch (error: Exception) {
-                    keptPlayArt -= tileId
-                    Log.w("FoldcadePlay", "Cover not kept", error)
-                }
+            var kept = false
+            try {
+                kept = keepPlayArtNow(tileId, uri)
+            } finally {
+                if (!kept) keptPlayArt -= tileId
+            }
+        }
+    }
+
+    /** [keepPlayArt]'s work, on the main thread until the image loads. True once the cover is written. */
+    private suspend fun keepPlayArtNow(tileId: String, uri: String?): Boolean {
+        val game = shell.findGame(tileId).takeIf { !it.emptyShelfHint && it.id.isNotEmpty() } ?: return false
+        val record = shell.artRecord(game)
+        val query = shell.artQuery(game)
+        val source = uri ?: (covers.cached(record, query) ?: if (record != null || query != null) covers.fetch(record, query) else null)
+            ?.let { it.square ?: it.cover } ?: return false
+        return withContext(Dispatchers.IO) {
+            try {
+                val request = coil3.request.ImageRequest.Builder(this@FoldcadeApp)
+                    .data(CoverImage(source))
+                    .size(PLAY_ART_PX)
+                    .allowHardware(false)
+                    .build()
+                val image = (images.execute(request) as? coil3.request.SuccessResult)?.image ?: return@withContext false
+                plays.art.keep(tileId, image.toBitmap())
+                true
+            } catch (cancelled: kotlin.coroutines.cancellation.CancellationException) {
+                throw cancelled
+            } catch (error: Exception) {
+                Log.w("FoldcadePlay", "Cover not kept", error)
+                false
             }
         }
     }

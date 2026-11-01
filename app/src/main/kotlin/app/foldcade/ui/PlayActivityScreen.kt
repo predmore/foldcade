@@ -441,7 +441,7 @@ private fun PlayCover(app: FoldcadeApp, gameId: String, size: Dp) {
             val loaded = uri?.let { rememberCoverPainter(app, it, TILE_PX) }
             // History drawn before this release has no kept cover yet: this one is it.
             LaunchedEffect(uri, loaded != null) {
-                if (uri != null && loaded != null && app.plays.art.file(gameId) == null) app.keepPlayArt(gameId, uri)
+                if (uri != null && loaded != null && app.plays.keptCover(gameId) == null) app.keepPlayArt(gameId, uri)
             }
             loaded?.painter
         }
@@ -467,7 +467,7 @@ private fun PlayCover(app: FoldcadeApp, gameId: String, size: Dp) {
 @Composable
 private fun rememberKeptCover(app: FoldcadeApp, gameId: String): androidx.compose.ui.graphics.painter.Painter? {
     val stamp = app.plays.stamp
-    val file = remember(gameId, stamp) { app.plays.art.file(gameId) } ?: return null
+    val file = remember(gameId, stamp) { app.plays.keptCover(gameId) } ?: return null
     val painter = coil3.compose.rememberAsyncImagePainter(file, app.images)
     val state by painter.state.collectAsState()
     return painter.takeIf { state is coil3.compose.AsyncImagePainter.State.Success }

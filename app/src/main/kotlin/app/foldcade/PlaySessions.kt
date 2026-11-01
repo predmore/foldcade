@@ -153,6 +153,12 @@ class PlaySessions private constructor(
         names.remember(gameId, name)
     }
 
+    /**
+     * The cover kept for [tileId], or for one of its copies: a cover kept before copies
+     * folded into one tile stays under the copy's own id.
+     */
+    fun keptCover(tileId: String): File? = art.file(tileId) ?: historyIds(tileId).firstNotNullOfOrNull(art::file)
+
     /** Every stretch a game was in front, for the Play activity page, under the tile it counts for now. */
     fun spans(): List<PlaySpan> = playSpans(log.counted()).map { it.copy(gameId = tileOf(it.gameId)) }
 

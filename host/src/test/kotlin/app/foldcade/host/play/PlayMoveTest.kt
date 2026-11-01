@@ -139,6 +139,19 @@ class PlayMoveTest {
     }
 
     @Test
+    fun aDirectoryEntryCountsAgainstTheBudgetToo() {
+        val out = ByteArrayOutputStream()
+        ZipOutputStream(out).use { zip ->
+            zip.putNextEntry(ZipEntry("foldcade-play.txt")); zip.write("foldcade-play-history 1\n".toByteArray()); zip.closeEntry()
+            zip.putNextEntry(ZipEntry("padding/"))
+            val zeros = ByteArray(1024 * 1024)
+            repeat(200) { zip.write(zeros) }
+            zip.closeEntry()
+        }
+        assertThrows(PlayArchiveException::class.java) { PlayArchive.read(ByteArrayInputStream(out.toByteArray())) }
+    }
+
+    @Test
     fun aFileThatInflatesPastItsBudgetIsRefusedEvenInEntriesItSkips() {
         val out = ByteArrayOutputStream()
         ZipOutputStream(out).use { zip ->
