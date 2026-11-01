@@ -335,9 +335,14 @@ private fun alike(ours: List<String>, theirs: List<String>): Boolean {
  * brackets a ROM set adds, "(USA)", "[!]", "(Rev 1)", or a file extension, and without
  * punctuation. "Pokémon - Emerald Version (USA, Europe).gba" is "pokémon emerald version".
  */
+/** A ROM file's extension at the end of its name; "Dragon Quest I.II" keeps its ".II". */
+private val ROM_EXTENSION = Regex(
+    "\\.(gba|gbc|gb|nes|fds|sfc|smc|n64|z64|v64|nds|3ds|cci|cia|cxi|iso|cso|chd|cue|bin|img|pbp|m3u|rvz|gcm|wbfs|wua|wux|rpx|xci|nsp|gen|md|smd|sms|gg|32x|pce|ngp|ngc|ws|wsc|a26|lnx|zip|7z)$",
+)
+
 internal fun playWords(name: String): List<String> =
     name.lowercase()
-        .replace(Regex("\\.[a-z0-9]{1,4}$"), "")
+        .replace(ROM_EXTENSION, "")
         .replace(Regex("[(\\[][^)\\]]*[)\\]]"), " ")
         .split(Regex("[^\\p{L}\\p{N}]+"))
         .filter { it.isNotEmpty() && it != "the" }

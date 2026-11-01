@@ -111,12 +111,46 @@ class PlayMoveTest {
     }
 
     @Test
-    fun aBuildThatDoesNotKnowMovedStillReadsTheRest() {
-        // An older build skips the kind it does not know, so it counts the time where it was played.
-        val line = "$PLAY_EVENT_SCHEMA\tsession-0\tnew\tMoved\t9000\t-\t0"
-        assertEquals(PlayKind.Moved, decodePlayEvent(line)?.kind)
-        val olderKinds = setOf("Started", "Backgrounded", "Resumed", "Ended", "Removed")
-        assertFalse(line.split('\t')[3] in olderKinds)
+    fun aBuildThatDoesNotKnowMovedCountsTheTimeWhereItWasPlayed() {
+        val file = tempLog()
+        val first = fileLog(file)
+        play(first, "old", 7_000)
+        first.move(setOf("old"), "new")
+        // An older build's decoder has no Moved: the kind does not parse, so the line is skipped.
+        file.writeText(file.readText().replace("\tMoved\t", "\tUnknownKind\t"))
+        val older = fileLog(file)
+        assertEquals(7_000L, older.totals("old").activeMillis)
+        assertEquals(0L, older.totals("new").activeMillis)
+        assertEquals(listOf(PlayKind.Started, PlayKind.Ended), older.events().map { it.kind })
+    }
+
+    @Test
+    fun anExportLeavesOutASessionStillOpenUntilItEnds() {
+        val log = memoryLog()
+        play(log, "done", 2_000)
+        val running = log.start("running")
+        now += 3_000
+        assertEquals(setOf("done"), log.finished().map { it.gameId }.toSet())
+        val here = memoryLog()
+        here.merge(log.finished())
+        log.signal(running, PlaySignal.End)
+        assertEquals(1, here.merge(log.finished()).sessions)
+        assertEquals(3_000L, here.totals("running").activeMillis)
+    }
+
+    @Test
+    fun aFileThatInflatesPastItsBudgetIsRefusedEvenInEntriesItSkips() {
+        val out = ByteArrayOutputStream()
+        ZipOutputStream(out).use { zip ->
+            zip.putNextEntry(ZipEntry("foldcade-play.txt")); zip.write("foldcade-play-history 1\n".toByteArray()); zip.closeEntry()
+            zip.putNextEntry(ZipEntry("padding.bin"))
+            val zeros = ByteArray(1024 * 1024)
+            repeat(200) { zip.write(zeros) }
+            zip.closeEntry()
+        }
+        // Two hundred megabytes of zeros pack into a fraction of one.
+        assertTrue(out.size() < 1024 * 1024)
+        assertThrows(PlayArchiveException::class.java) { PlayArchive.read(ByteArrayInputStream(out.toByteArray())) }
     }
 
     @Test

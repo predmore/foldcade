@@ -95,6 +95,10 @@ class PlayGamePageTest {
         assertEquals(listOf("pokémon", "emerald", "version"), playWords("Pokémon - Emerald Version (USA, Europe).gba"))
         assertEquals(listOf("legend", "of", "zelda", "a", "link", "to", "past"), playWords("The Legend of Zelda - A Link to the Past [!] (Rev 1).sfc"))
         assertEquals(emptyList<String>(), playWords("(USA)"))
+        // A dot in a title is not an extension.
+        assertEquals(listOf("dragon", "quest", "i", "ii"), playWords("Dragon Quest I.II"))
+        assertEquals(playWords("Dragon Quest I.II"), playWords("Dragon Quest I.II (USA).gba"))
+        assertEquals(listOf("r", "e", "p", "o"), playWords("R.E.P.O."))
     }
 
     @Test

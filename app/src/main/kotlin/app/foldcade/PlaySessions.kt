@@ -191,9 +191,9 @@ class PlaySessions private constructor(
         if (log.undo(moves) > 0) changed()
     }
 
-    /** The whole history to [out]: the log as stored, every kept name, and every kept cover. */
+    /** The whole history to [out]: every finished session as stored, every kept name, and every kept cover. */
     fun export(out: OutputStream) {
-        PlayArchive.write(out, log.events(), names.all(), art.files())
+        PlayArchive.write(out, log.finished(), names.all(), art.files())
     }
 
     /**

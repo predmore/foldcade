@@ -183,6 +183,15 @@ class PlayLog(
 
     fun events(): List<PlayEvent> = synchronized(lock) { history.toList() }
 
+    /**
+     * [events] for an export: everything but a session still open, which another device
+     * would have to close early. Its removal or move still goes, and the next export
+     * carries the session whole once it has ended.
+     */
+    fun finished(): List<PlayEvent> = synchronized(lock) {
+        history.filter { it.sessionId !in open || it.kind == PlayKind.Removed || it.kind == PlayKind.Moved }
+    }
+
     /** True before the first session, without copying [events]. */
     fun isEmpty(): Boolean = synchronized(lock) { history.isEmpty() }
 
