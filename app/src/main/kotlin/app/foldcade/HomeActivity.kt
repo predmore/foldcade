@@ -92,6 +92,7 @@ import app.foldcade.language.hostedSavesDialog
 import app.foldcade.language.playerSetupDialog
 import app.foldcade.language.saveFolderDialog
 import app.foldcade.language.wrongSaveFolderBody
+import app.foldcade.language.closeGameDialog
 import app.foldcade.language.restartGameDialog
 import app.foldcade.language.PanelKeyActivity
 import app.foldcade.language.PromptKey
@@ -379,6 +380,8 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
             -> Unit
             is Effect.RemoveDownload -> removeDownload(effect.gameId)
             is Effect.RestartGame -> askRestart(effect.gameId)
+            is Effect.CloseGame -> askCloseGame(effect.gameId)
+            is Effect.MoveGame -> moveGame(effect.gameId)
             is Effect.RemovePlaySession -> foldcade.plays.remove(effect.sessionId)
             // The shell lists the day's sessions, and a game's sources, itself.
             is Effect.OpenPlayDay, is Effect.OpenPlayGame -> Unit
@@ -1121,11 +1124,14 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
         foldcade.music.onExternalLaunch()
         // The player opened by its own icon is the player's to steer now, and its game may
         // close without Foldcade seeing it, so that game is no longer held as paused.
-        foldcade.runningGames.forget(pkg)
+        val beside = if (external.occupiesBothDisplays) null else session.externalOn(panel.flip())?.id?.let(foldcade::runningOn)?.packageName
         foldcade.commandCenter.note(external.id, foldcade.shell.runningApp(game))
         foldcade.store.place(panel, external)
         val options = ActivityOptions.makeBasic().apply { launchDisplayId = displayId }
         startActivity(launch, options.toBundle())
+        foldcade.runningGames.noteApp(GameCompanion(pkg, game.title, panel), beside,
+            setOf(packageName, "app.foldcade"))
+        foldcade.runningGames.forget(pkg)
     }
 
     /**
@@ -1464,6 +1470,7 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
     private fun resumeRunning(tileId: String, title: String, platformId: String?, startAnew: () -> Unit): Boolean {
         foldcade.pruneRunningGames()
         val running = foldcade.runningOn(tileId) ?: return false
+        if (running.packageName in foldcade.closingPlayers) return true
         // A chosen save must load even when the old game is still paused behind Home.
         val savePlayer = platformId?.let(foldcade::playerFor)
         if (savePlayer != null && foldcade.store.saveAwaitsLoad(savePlayer.saveFolderId())) return false
@@ -1510,9 +1517,9 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
     }
 
     /** Sends [front], which brings back [running], and notes the session it starts. True when it was sent. */
-    private fun sendResume(running: RunningGame, tileId: String, title: String, platformId: String?, front: Intent): Boolean {
+    private fun sendResume(running: RunningGame, tileId: String, title: String, platformId: String?, front: Intent, panel: Panel = running.panel): Boolean {
         foldcade.music.onExternalLaunch()
-        launchScreen = running.panel
+        launchScreen = panel
         launchSubject = foldcade.shell.focusedRunningApp()
         val sentAt = System.currentTimeMillis()
         val started = try {
@@ -1613,6 +1620,101 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
             packageManager.getLaunchIntentForPackage(name) != null
         } ?: return
         openAppForSetup(packageName)
+    }
+
+    /** X, including Find's X and Y's Close, asks about the exact run shown now. */
+    private fun askCloseGame(gameId: String?) {
+        val id = gameId ?: return
+        if (!foldcade.shell.isPaused(id) || !foldcade.canCloseGame(id)) return
+        val running = foldcade.runningOn(id) ?: return
+        if (foldcade.shell.present(closeGameDialog(hostScreen(), running.companions.map { it.title }))) {
+            foldcade.closeGameAsk = running
+        }
+    }
+
+    private fun closeGame(asked: RunningGame) {
+        val running = foldcade.runningGames.forPackage(asked.packageName) ?: return
+        if (running.startedAtMillis != asked.startedAtMillis || !foldcade.shell.isPaused(running.tileId)) return
+        if (!foldcade.closingPlayers.add(running.packageName)) return
+        cancelLaunches()
+        // This job belongs to the application, never to a launch that a newer press may cancel.
+        foldcade.scope.launch {
+            try {
+                foldcade.saveFlow.withLock {
+                    // Persist before touching the player. An interrupted shutdown must still read back later.
+                    running.saves?.let { foldcade.store.setPendingSaveReturn(it.storeKey, it.encode()) }
+                    val closed = withContext(Dispatchers.Main.immediate) {
+                        val current = foldcade.runningGames.forPackage(running.packageName)
+                        if (current?.startedAtMillis != asked.startedAtMillis || !foldcade.shell.isPaused(running.tileId)) return@withContext false
+                        val assignment = displays.assignment(foldcade.store.session.defaultDisplayIsTop)
+                        val displayId = if (running.panel == Panel.Top) assignment.topDisplayId else assignment.bottomDisplayId
+                        if (displayId == null || !clearBehindHome(running.packageName, displayId)) return@withContext false
+                        val companions = asked.companions.filter { named -> current.companions.any { it.packageName == named.packageName } }
+                        for (app in companions) {
+                            val appDisplay = if (app.panel == Panel.Top) assignment.topDisplayId else assignment.bottomDisplayId
+                            if (appDisplay != null && clearBehindHome(app.packageName, appDisplay)) {
+                                val appId = "android:${app.packageName}"
+                                foldcade.store.update { it.clearIfCurrent(app.panel, appId) }
+                            }
+                        }
+                        foldcade.runningGames.noteHolding(running.packageName)
+                        true
+                    }
+                    if (closed) {
+                        // Android sends destroy asynchronously. Keep new save handovers behind the shutdown flush.
+                        delay(CLOSE_SETTLE_MS)
+                        running.saves?.let {
+                            Log.i("Foldcade", "game-close read-back ${running.packageName} after ${CLOSE_SETTLE_MS}ms")
+                            val returned = reconcileLocked(it)
+                            Log.i("Foldcade", "game-close read-back finished=$returned ${running.packageName}")
+                        }
+                    }
+                }
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (failure: Exception) {
+                Log.w("Foldcade", "Could not finish closing player", failure)
+            } finally {
+                withContext(NonCancellable + Dispatchers.Main.immediate) { foldcade.closingPlayers.remove(running.packageName) }
+            }
+        }
+    }
+
+    /** A single launch transaction destroys the old task while only Home resumes. */
+    private fun clearBehindHome(playerPackage: String, displayId: Int): Boolean {
+        val front = packageManager.getLaunchIntentForPackage(playerPackage) ?: return false
+        val home = foldcade.homeOnDisplay(displayId) ?: return false
+        front.flags = CLOSE_FLAGS
+        val homeIntent = Intent(this, if (displayId == Display.DEFAULT_DISPLAY) PrimaryHomeActivity::class.java else CompanionHomeActivity::class.java)
+            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_NO_ANIMATION)
+        return try {
+            home.startActivities(arrayOf(front, homeIntent), ActivityOptions.makeBasic().apply { launchDisplayId = displayId }.toBundle())
+            Log.i("Foldcade", "game-close $playerPackage display=$displayId")
+            true
+        } catch (failure: RuntimeException) {
+            Log.w("Foldcade", "Could not close player behind Home", failure)
+            false
+        }
+    }
+
+    /** A paused one-screen game resumes on the other free panel, using its existing task. */
+    private fun moveGame(gameId: String?) {
+        val id = gameId ?: return
+        val running = foldcade.runningOn(id) ?: return
+        if (!foldcade.shell.isPaused(id)) return
+        val target = foldcade.moveGameTarget(id) ?: return
+        val front = running.resumeStart?.let(::Intent)
+            ?: packageManager.getLaunchIntentForPackage(running.packageName)?.apply { flags = RESUME_FLAGS } ?: return
+        cancelLaunches()
+        val generation = beginLaunch()
+        foldcade.launchWork.job = foldcade.scope.launch {
+            // SameStartResumes may boot a closed game, so finish its preceding save return first.
+            foldcade.saveFlow.withLock { }
+            withContext(Dispatchers.Main.immediate) {
+                if (!launchCurrent(generation) || isDestroyed || isFinishing || foldcade.runningOn(id) != running || foldcade.moveGameTarget(id) != target) return@withContext
+                sendResume(running, id, running.title, running.platformId, front, panel = target)
+            }
+        }
     }
 
     /** Y's Restart asks first: what the game has not saved is lost. */
@@ -2100,6 +2202,11 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
                         launchBackendGame(pending.title, pending.platformId, pending.route, pending.fresh, saveSyncDeclinedFor = pending.playerId)
                     }
                 }
+            }
+            DialogKind.CloseGame -> {
+                val asked = foldcade.closeGameAsk
+                foldcade.closeGameAsk = null
+                if (effect.button == DialogButton.CloseIt && asked != null) closeGame(asked)
             }
             DialogKind.RestartGame -> {
                 val id = restartId
@@ -3009,47 +3116,53 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
     /** Reads back what the player wrote and gives it to the library. */
     private fun reconcile(pending: LibraryReturn) {
         foldcade.scope.launch {
-            try {
-                foldcade.saveFlow.withLock {
-                    val saves = foldcade.playerSaves
-                    // Read the card again, and do not set one up: the player has just been holding it.
-                    val spots = returnSpots(saves, pending)
-                    withContext(Dispatchers.Main.immediate) { foldcade.shell.noteSaveReachable(pending.game, pending.player.id, spots.isNotEmpty()) }
-                    val observed = saves.changedSince(pending.libraryId, pending.game, pending.player, spots)
-                    // The library may finish its sync before reconcile returns. The notice waits for either.
-                    withContext(Dispatchers.Main.immediate) { foldcade.expectSaveReturn(pending.libraryId, pending.game) }
-                    var announced = true
-                    try {
-                        val result = foldcade.plugins.reconcile(
-                            pending.libraryId,
-                            pending.game,
-                            playerForSaveSpots(pending.player, pending.game, spots),
-                            observed,
-                        )
-                        withContext(Dispatchers.Main.immediate) {
-                            announced = false
-                            foldcade.noteSaveReturn(pending.libraryId, pending.game, result.outcome)
-                        }
-                    } finally {
-                        // Taken back before the save flow is free, so the next hand-back's own announcement stays.
-                        if (announced) {
-                            withContext(NonCancellable + Dispatchers.Main.immediate) {
-                                foldcade.dropSaveReturn(pending.libraryId, pending.game)
-                            }
-                        }
-                    }
-                    saves.noteHandedOver(pending.libraryId, pending.game, pending.player, spots, observed)
-                    foldcade.store.setPendingSaveReturn(pending.storeKey, null)
-                }
-            } catch (cancelled: CancellationException) {
-                throw cancelled
-            } catch (fatal: VirtualMachineError) {
-                throw fatal
-            } catch (_: Exception) {
-                Unit
-            }
+            foldcade.saveFlow.withLock { reconcileLocked(pending) }
         }
     }
+
+    /** The caller holds saveFlow, including any shutdown settling time before this read. */
+    private suspend fun reconcileLocked(pending: LibraryReturn): Boolean {
+        return try {
+            val saves = foldcade.playerSaves
+            // Read the card again, and do not set one up: the player has just been holding it.
+            val spots = returnSpots(saves, pending)
+            withContext(Dispatchers.Main.immediate) { foldcade.shell.noteSaveReachable(pending.game, pending.player.id, spots.isNotEmpty()) }
+            val observed = saves.changedSince(pending.libraryId, pending.game, pending.player, spots)
+            // The library may finish its sync before reconcile returns. The notice waits for either.
+            withContext(Dispatchers.Main.immediate) { foldcade.expectSaveReturn(pending.libraryId, pending.game) }
+            var announced = true
+            try {
+                val result = foldcade.plugins.reconcile(
+                    pending.libraryId,
+                    pending.game,
+                    playerForSaveSpots(pending.player, pending.game, spots),
+                    observed,
+                )
+                withContext(Dispatchers.Main.immediate) {
+                    announced = false
+                    foldcade.noteSaveReturn(pending.libraryId, pending.game, result.outcome)
+                }
+            } finally {
+                // Taken back before the save flow is free, so the next hand-back's own announcement stays.
+                if (announced) {
+                    withContext(NonCancellable + Dispatchers.Main.immediate) {
+                        foldcade.dropSaveReturn(pending.libraryId, pending.game)
+                    }
+                }
+            }
+            saves.noteHandedOver(pending.libraryId, pending.game, pending.player, spots, observed)
+            foldcade.store.setPendingSaveReturn(pending.storeKey, null)
+            true
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (fatal: VirtualMachineError) {
+            throw fatal
+        } catch (_: Exception) {
+            // Keep the pending record so the next return or process retries it.
+            false
+        }
+    }
+
 }
 
 /** The player [askHostedSaves] asked about, and the library launch [pending] on the answer, if any. */

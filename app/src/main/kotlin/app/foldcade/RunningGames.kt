@@ -27,7 +27,11 @@ internal data class RunningGame(
      * Null resumes through the player's launcher.
      */
     val resumeStart: Intent? = null,
+    /** Apps opened beside this run, in launch order. These associations live only in memory. */
+    val companions: List<GameCompanion> = emptyList(),
 )
+
+internal data class GameCompanion(val packageName: String, val title: String, val panel: Panel)
 
 /** One game per player package: a player holds one game, so a new start there replaces the last. */
 internal class RunningGames {
@@ -53,6 +57,7 @@ internal class RunningGames {
     }
 
     fun note(game: RunningGame) {
+        dropCompanion(game.packageName)
         holdingOnly -= game.packageName
         byPackage[game.packageName] = game
         changed()
@@ -60,6 +65,7 @@ internal class RunningGames {
 
     /** [packageName] holds a game now that its front door would not bring back, see [resumable]. */
     fun noteHolding(packageName: String) {
+        dropCompanion(packageName)
         byPackage.remove(packageName)
         holdingOnly += packageName
         changed()
@@ -92,6 +98,21 @@ internal class RunningGames {
     private fun changed() {
         onChange(byPackage.values.map { it.tileId }.toSet())
         onPlayersChange(byPackage.keys + holdingOnly)
+    }
+
+    /** Opening an app alone releases any earlier association; a library player is never a companion. */
+    fun noteApp(app: GameCompanion, besidePlayer: String?, ownPackages: Set<String>) {
+        dropCompanion(app.packageName)
+        val game = besidePlayer?.let(byPackage::get)
+        if (game != null && !game.occupiesBoth && game.panel != app.panel &&
+            ownPackages.none { app.packageName == it || app.packageName.startsWith("$it.") } && !mayHold(app.packageName)) {
+            byPackage[game.packageName] = game.copy(companions = game.companions + app)
+        }
+        changed()
+    }
+
+    private fun dropCompanion(packageName: String) {
+        byPackage.replaceAll { _, game -> game.copy(companions = game.companions.filterNot { it.packageName == packageName }) }
     }
 }
 
@@ -150,3 +171,13 @@ internal fun resumeStartFlags(flags: Int): Int =
  */
 internal fun replaceFlags(flags: Int): Int =
     (flags and Intent.FLAG_ACTIVITY_MULTIPLE_TASK.inv()) or Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK
+
+/** Clear only this player's existing task; no game URI and no second task beside it. */
+internal const val CLOSE_FLAGS: Int = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK or Intent.FLAG_ACTIVITY_NO_ANIMATION
+
+/** A shutdown may finish writes after its activities leave the task history. */
+internal const val CLOSE_SETTLE_MS = 1_500L
+
+/** Moving never displaces an app on the other panel. */
+internal fun RunningGame.moveTarget(session: Session): Panel? =
+    panel.flip().takeIf { !occupiesBoth && session.externalOn(it) == null }
