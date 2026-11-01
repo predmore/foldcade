@@ -101,9 +101,10 @@ internal fun PlayActivityScreen(app: FoldcadeApp, page: PlayActivityPage) {
     val theme = LocalFoldTheme.current.theme
     val motion = theme.motion
     val scale = motion.animatorScale(LocalContext.current.contentResolver)
-    val week = rememberPlayWeek(app, page.weeksBack, page.game)
+    // The tile the game shows as now: copies folding while the page is open give it a new id.
+    val game = page.game?.let(app.shell::tileOf)
+    val week = rememberPlayWeek(app, page.weeksBack, game)
     val listing = presence(page.takeIf { it.sessions != null }, motion.durationIsland, scale)
-    val game = page.game
     Column(
         Modifier
             .fillMaxSize()
@@ -314,7 +315,7 @@ private fun DaySessions(app: FoldcadeApp, page: PlayActivityPage, dayLabel: Stri
 private fun GameSources(app: FoldcadeApp, page: PlayActivityPage, game: String, theme: Theme, scale: Float) {
     val stamp = app.plays.stamp
     val type = LocalFoldTheme.current.theme.style.type
-    val played = remember(stamp) { app.plays.played() }
+    val played = remember(stamp, game) { app.plays.played() }
     val total = played[game]?.activeMillis ?: 0L
     val model = app.shell.model
     val reach = ringReach()
