@@ -3051,7 +3051,6 @@ private fun StripGrid(
         }
         GridCursor(
             app = app,
-            screen = screen,
             index = model.focus.cellIndex,
             cell = cell,
             gap = rowGap,
@@ -3075,7 +3074,6 @@ private fun StripGrid(
 @Composable
 private fun GridCursor(
     app: FoldcadeApp,
-    screen: HostScreen,
     index: Int,
     cell: Dp,
     gap: Dp,
@@ -3122,8 +3120,6 @@ private fun GridCursor(
     val theme = foldTheme()
     val radius = cell * theme.iconRadius
     val ring = remember { Path() }
-    // The ring sits on the focused tile, at its focused size: a launch grows the tile's art from here.
-    val tileCornerPx = with(LocalDensity.current) { radius.toPx() } * motion.scaleFocus
     Box(
         Modifier
             .size(cell)
@@ -3162,8 +3158,7 @@ private fun GridCursor(
                         }
                     }
                 }
-            }
-            .bloomSource(app, screen, BloomFrom.Tile, tileCornerPx),
+            },
     )
 }
 
@@ -3209,6 +3204,8 @@ private fun StripColumn(
     val showingHome = !library && shell.model.homeGrid == HomeGrid.StandIns
     val order = displayOrder(shell.model)
     val radius = cell * foldTheme().iconRadius
+    val radiusPx = with(LocalDensity.current) { radius.toPx() }
+    val motion = LocalFoldTheme.current.theme.motion
     val editing = shell.homeEditing()
     val lifted = shell.homeLiftedIndex()
     val foldersOpen = shell.homeFoldersOpen()
@@ -3281,6 +3278,8 @@ private fun StripColumn(
                         saveHealth = shell.saveHealthAt(source, game),
                         library = libraryTile,
                         settledAt = if (face?.folder == true) shell.settledAt(face.id) else 0L,
+                        // The focused tile is where a launch grows its art from.
+                        bloom = if (focused) Modifier.bloomSource(app, screen, BloomFrom.Tile, radiusPx * motion.scaleFocus) else Modifier,
                         onClick = { tap() },
                         onDrag = if (editing) {
                             { meaning -> shell.dragHome(meaning) }
@@ -3700,10 +3699,11 @@ private fun FoundTile(app: FoldcadeApp, screen: HostScreen, entry: FindEntry, fo
     }
     val corner = size * foldTheme().iconRadius
     val themedApp = if (art == null) appObject else null
-    // The focused result is where a launch from Find grows its art from.
     val cornerPx = with(LocalDensity.current) { corner.toPx() }
-    Box(if (focused) Modifier.bloomSource(app, screen, BloomFrom.Tile, cornerPx, find = true) else Modifier) {
+    Box {
         Cell(
+            // The focused result is where a launch from Find grows its art from.
+            bloom = if (focused) Modifier.bloomSource(app, screen, BloomFrom.Tile, cornerPx * foldTheme().motion.scaleFocus, find = true) else Modifier,
             title = entry.title,
             mark = entry.mark ?: game?.mark,
             themedApp = themedApp,
@@ -3934,6 +3934,8 @@ private fun Cell(
     library: Boolean = false,
     /** When this tile last took a new look (see [ShellController.settledAt]), or 0. */
     settledAt: Long = 0L,
+    /** On the tile's art at its drawn size, as it scales and slides: see [bloomSource]. */
+    bloom: Modifier = Modifier,
     onClick: () -> Unit,
     onPickUp: (() -> Unit)? = null,
     onDrag: ((Meaning) -> Unit)? = null,
@@ -3990,6 +3992,7 @@ private fun Cell(
                     scaleY = drawn * settle.value
                     translationY = -size.toPx() * 0.025f * checked
                 }
+                .then(bloom)
                 .drawWithCache {
                     // The light behind a mark, built when the tile's size or mark changes, not each frame.
                     val markLight = theme.style.glow

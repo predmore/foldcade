@@ -541,6 +541,11 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
         // Foldcade in front on this panel means the game there has left. A launcher-icon
         // start is not a Home recall, so without this a Foldcade that is not the default
         // Home keeps the panel for the game and ignores every key.
+        // Back in front where the game opened: its art leaves both screens, including one a
+        // presentation covered, which never stopped.
+        displays.panelFor(this, foldcade.store.session.defaultDisplayIsTop)?.let { panel ->
+            if (foldcade.launchBlooms.current?.gamePanels?.contains(panel) == true) foldcade.launchBlooms.retire()
+        }
         var reclaimedPanel = false
         displays.panelFor(this, foldcade.store.session.defaultDisplayIsTop)?.let { panel ->
             reclaimedPanel = foldcade.store.session.surfaceOn(panel) == null

@@ -128,6 +128,11 @@ internal class LaunchBlooms {
         settle(bloom)
     }
 
+    /** Home is back on a screen the game took: the game has left, so no screen keeps its art. */
+    fun retire() {
+        current = null
+    }
+
     fun finished(bloom: ActiveBloom, panel: Panel) {
         bloom.done.add(panel)
         bloom.filled.remove(panel)
