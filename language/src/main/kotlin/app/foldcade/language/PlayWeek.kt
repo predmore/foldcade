@@ -78,7 +78,8 @@ object PlayCopy {
     /** Over the other games on a game's page. */
     const val moveFrom = "Move time from"
 
-    /** Held A on one of them. */
+    /** Held A on one of them: the hint says to hold, as a tap does nothing. */
+    const val holdToMove = "Hold to move"
     const val moveHere = "Move here"
     const val moved = "Moved here"
     const val undo = Copy.undo
@@ -89,12 +90,15 @@ object PlayCopy {
 
     /** Settings › System. Its dialog offers both ways. */
     const val history = "Play history"
-    const val historyBody = "Save your play time to a file, or add one saved before. Importing adds to what is here; it never replaces it."
+    const val historyBody = "Export your play time to a file, or import one. Importing only adds to what's here."
     const val export = "Export"
     const val import = "Import"
-    const val exported = "Play history saved"
+    const val exported = "Saved"
     const val notSaved = "The file couldn't be saved."
-    const val updated = "Play history updated"
+    const val updated = "Updated"
+
+    /** A game's Play time row when it has none, but a gone game of its name has: its time, waiting. */
+    fun found(millis: Long): String = "Found ${playDuration(millis)}"
     const val nothingNew = "Nothing new to add"
     const val notHistory = "That file isn't a Foldcade play history."
     const val unreadable = "That file couldn't be read."
@@ -282,7 +286,7 @@ fun playActivityHints(model: PickerModel): List<HintKey> {
         val confirm = promptKeyOf(model.faceMap.confirmKey) ?: PromptKey.FaceA
         val focused = page.sources.getOrNull(page.source)
         return listOfNotNull(
-            focused?.let { HintKey(confirm, if (it in page.moved) PlayCopy.undo else PlayCopy.moveHere) },
+            focused?.let { HintKey(confirm, if (it in page.moved) PlayCopy.undo else PlayCopy.holdToMove) },
             HintKey(PromptKey.DpadSides, PlayCopy.week),
             back,
         )
@@ -320,6 +324,16 @@ fun playSourceOrder(name: String, sources: List<PlaySource>): List<PlaySource> {
             like * 2 + if (source.gone) 1 else 0
         }.thenByDescending { it.activeMillis }.thenBy { it.name.lowercase() }.thenBy { it.id },
     )
+}
+
+/**
+ * The gone game of [name]'s own name with the most play, as a renamed or replaced ROM
+ * leaves behind: what a game with no play of its own points to. Null when there is none.
+ */
+fun foundSource(name: String, sources: List<PlaySource>): PlaySource? {
+    val key = playWords(name).joinToString(" ").takeIf { it.isNotEmpty() } ?: return null
+    return sources.filter { it.gone && it.activeMillis > 0L && playWords(it.name).joinToString(" ") == key }
+        .maxByOrNull { it.activeMillis }
 }
 
 /** Half or more of the words of the shorter name are in the other. */

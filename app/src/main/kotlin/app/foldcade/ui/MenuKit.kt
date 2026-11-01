@@ -623,6 +623,7 @@ internal fun rowIcon(row: Row, moveTo: String? = null): Int? = when (row) {
     Row.DeleteShortcut -> R.drawable.symbol_delete
     Row.SortFolder -> R.drawable.symbol_sort
     Row.RecentOnHome -> R.drawable.symbol_clock
+    Row.PlayTime -> R.drawable.ic_status_playtime
     else -> null
 }
 

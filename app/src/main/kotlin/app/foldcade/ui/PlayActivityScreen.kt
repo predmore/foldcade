@@ -366,9 +366,10 @@ private fun GameSources(app: FoldcadeApp, page: PlayActivityPage, game: String, 
                     ) {
                         PlayCover(app, source, SESSION_COVER)
                         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                            // Two lines, so the end of a long name, where copies differ, still shows.
                             BasicText(
                                 playName(source, current, app.plays.name(source)),
-                                maxLines = 1,
+                                maxLines = 2,
                                 overflow = TextOverflow.Ellipsis,
                                 style = playText(theme.onBackground, theme, type.sideRow, bold = true),
                             )

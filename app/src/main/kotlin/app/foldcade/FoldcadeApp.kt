@@ -363,6 +363,7 @@ class FoldcadeApp : Application() {
         if (playTimeStamp != plays.stamp) {
             playTimeStamp = plays.stamp
             playTimes.clear()
+            playFound.clear()
         }
         // A copy folding into the tile changes its total without a new session, so its ids are the key too.
         return playTimes.getOrPut(tileId to shell.historyIds(tileId)) { plays.shown(tileId).activeMillis }
@@ -378,6 +379,12 @@ class FoldcadeApp : Application() {
     fun playSources(tileId: String): List<String> {
         // A page opening starts with nothing to put back: Undo is for this visit's moves.
         playMoves.clear()
+        val (title, sources) = sourcesFor(tileId)
+        return app.foldcade.language.playSourceOrder(title, sources).map { it.id }
+    }
+
+    /** [tileId]'s name, and every other tile with play as a source for its page. */
+    private fun sourcesFor(tileId: String): Pair<String, List<app.foldcade.language.PlaySource>> {
         val own = shell.historyIds(tileId) + shell.tileOf(tileId)
         val title = shell.playTitle(tileId) ?: plays.name(tileId).orEmpty()
         val sources = plays.played().values
@@ -391,8 +398,21 @@ class FoldcadeApp : Application() {
                     activeMillis = totals.activeMillis,
                 )
             }
-        return app.foldcade.language.playSourceOrder(title, sources).map { it.id }
+        return title to sources
     }
+
+    /** For a game's Play time row: the time a gone game of its name left, read once per change to the log. */
+    private fun playFoundFor(tileId: String): Long? {
+        // Its time is read first, which starts both caches over after a change to the log.
+        playTimeOf(tileId)
+        val key = tileId to shell.historyIds(tileId)
+        // Most games have nothing found, so null is kept too rather than looked for again.
+        if (key in playFound) return playFound[key]
+        val (title, sources) = sourcesFor(tileId)
+        return app.foldcade.language.foundSource(title, sources)?.activeMillis.also { playFound[key] = it }
+    }
+
+    private val playFound = HashMap<Pair<String, Set<String>>, Long?>()
 
     /**
      * Keeps [tileId]'s cover beside its play, from [uri] when the caller has drawn it, else
@@ -780,6 +800,7 @@ class FoldcadeApp : Application() {
         plays.onStarted = { tile -> keepPlayArt(tile, again = true) }
         shell.playSources = ::playSources
         shell.playTimeOf = ::playTimeOf
+        shell.playFoundFor = ::playFoundFor
         shell.anyPlay = plays::hasTrackedSession
         shell.playDaySessions = { weeksBack, day ->
             app.foldcade.language.playDaySessions(plays.spans(), System.currentTimeMillis(), java.time.ZoneId.systemDefault(), weeksBack, day)

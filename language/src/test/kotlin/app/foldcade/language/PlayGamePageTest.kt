@@ -23,6 +23,9 @@ class PlayGamePageTest {
         // A tile that is not a game, or nothing played anywhere yet, has no row.
         assertFalse(Row.PlayTime in actionRows(tile.copy(playTime = null)))
         assertEquals(RowText(PlayCopy.playTime, "0m"), rowText(Row.PlayTime, model.copy(tileActions = tile.copy(playTime = 0L))))
+        // A renamed ROM, with no play of its own, says the old file's time was found.
+        assertEquals(RowText(PlayCopy.playTime, "Found 12h"), rowText(Row.PlayTime, model.copy(tileActions = tile.copy(playTime = 0L, playFound = 12 * 3_600_000L))))
+        assertEquals(RowText(PlayCopy.playTime, "2h 5m"), rowText(Row.PlayTime, model.copy(tileActions = tile.copy(playFound = 60_000L))))
     }
 
     @Test
@@ -54,7 +57,7 @@ class PlayGamePageTest {
         val (back, undo) = reduce(moved, Meaning.Activate)
         assertEquals(Effect.UndoPlayMove("old", game), undo)
         assertEquals(emptySet<String>(), back.playActivity?.moved)
-        assertEquals(listOf(PlayCopy.moveHere, PlayCopy.week, Copy.back), playActivityHints(back).map { it.label })
+        assertEquals(listOf(PlayCopy.holdToMove, PlayCopy.week, Copy.back), playActivityHints(back).map { it.label })
         assertEquals(listOf(PromptKey.FaceA, PromptKey.DpadSides, PromptKey.FaceB), playActivityHints(back).map { it.key })
 
         // X and Select do not reach a day's sessions here: the schedule is only read.
@@ -88,6 +91,19 @@ class PlayGamePageTest {
         ).map { it.id }
         // The renamed file is gone and named alike: the likeliest. A copy still here comes next.
         assertEquals(listOf("renamed", "copy", "same-here", "gone", "long"), ordered)
+    }
+
+    @Test
+    fun aGameWithNoPlayFindsOnlyAGoneGameOfItsOwnName() {
+        val sources = listOf(
+            PlaySource("here", "Pokémon Emerald", gone = false, activeMillis = 9_000L),
+            PlaySource("alike", "Pokémon Emerald Plus", gone = true, activeMillis = 8_000L),
+            PlaySource("old", "Pokémon - Emerald (USA).gba", gone = true, activeMillis = 5_000L),
+            PlaySource("older", "Pokemon Emerald", gone = true, activeMillis = 7_000L),
+        )
+        assertEquals("old", foundSource("Pokémon - Emerald (Europe).gba", sources)?.id)
+        assertNull(foundSource("Tetris", sources))
+        assertNull(foundSource("(USA)", sources))
     }
 
     @Test

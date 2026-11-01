@@ -2103,6 +2103,9 @@ class ShellController(
     /** A game's play time for its Y menu's Play time row. */
     var playTimeOf: (tileId: String) -> Long = { 0L }
 
+    /** With no play of its own, the time a gone game of the tile's name left, for the row to say so. */
+    var playFoundFor: (tileId: String) -> Long? = { null }
+
     /** True once anything has been played, so Play time has something to show. */
     var anyPlay: () -> Boolean = { false }
 
@@ -2975,7 +2978,13 @@ class ShellController(
             tile?.bulk == null && home.selection == null && targetGame != null && home.item(it)?.let { item -> app.foldcade.language.listedInLibrary(item) } == true
         }
         val withPlay = if (playGame != null && anyPlay()) {
-            (withSaves ?: TileActions()).copy(playTime = playTimeOf(tileOf(playGame)), game = withSaves?.game ?: playGame)
+            val shown = tileOf(playGame)
+            val time = playTimeOf(shown)
+            (withSaves ?: TileActions()).copy(
+                playTime = time,
+                playFound = if (time == 0L) playFoundFor(shown) else null,
+                game = withSaves?.game ?: playGame,
+            )
         } else withSaves
         return counted.copy(tileActions = (withPlay ?: TileActions()).copy(undo = home.selection == null && activeUndo() != null), undoVerb = activeUndo()?.verb, atLibraryRoot = root)
     }

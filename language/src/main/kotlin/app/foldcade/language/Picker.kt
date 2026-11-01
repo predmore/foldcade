@@ -957,6 +957,8 @@ data class TileActions(
     val saves: Boolean = false,
     /** The game's play time, for its Play time row. Null leaves the row out: not a game, or no play anywhere yet. */
     val playTime: Long? = null,
+    /** With no play of its own, the time a gone game of its name left: the row says it was found. */
+    val playFound: Long? = null,
     /** The game these rows act on. Null for a tile that is not a game, or one off the home grid. */
     val game: String? = null,
     /** The board on screen has gaps to close, so Edit home offers Tidy. */
@@ -1246,7 +1248,11 @@ fun rowText(row: Row, model: PickerModel): RowText = when (row) {
     Row.Saves -> RowText(SavePickerCopy.title)
     Row.RestartGame -> RowText(Copy.restart)
     Row.RemoveSession -> RowText(PlayCopy.remove)
-    Row.PlayTime -> RowText(PlayCopy.playTime, model.tileActions?.playTime?.let(::playDuration))
+    Row.PlayTime -> RowText(
+        PlayCopy.playTime,
+        model.tileActions?.playFound?.takeIf { model.tileActions.playTime == 0L }?.let(PlayCopy::found)
+            ?: model.tileActions?.playTime?.let(::playDuration),
+    )
     Row.MovePlay -> RowText(PlayCopy.moveHere)
     Row.PlayHistory -> RowText(PlayCopy.history)
     Row.ButtonLabels -> RowText(
