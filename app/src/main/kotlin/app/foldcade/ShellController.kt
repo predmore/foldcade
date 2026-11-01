@@ -149,6 +149,8 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import kotlin.coroutines.cancellation.CancellationException
 
+private const val HOME_RETURN_WAIT_MS = 30_000L
+
 class ShellController(
     private val store: SessionStore,
     private val plugins: PluginHost,
@@ -290,6 +292,12 @@ class ShellController(
     private var installedAppsSettled = false
     private val libraryGames = HashMap<String, Game>()
     private var extraPlatforms: List<HomePlatform> = emptyList()
+
+    private data class HomeReturn(val id: String, val ready: Boolean, val untilMillis: Long)
+
+    // A cold Home waits briefly for the remembered tile's library, until the user takes over.
+    private var homeReturn = store.pendingHomeGame()?.let { HomeReturn(it, true, nowMillis() + HOME_RETURN_WAIT_MS) }
+    private var ignoreReturnRepeats = homeReturn != null
 
     /** Platform names a library listed, by platform id. Used when nothing else names it. */
     private val listedPlatformNames = HashMap<String, String>()
@@ -596,6 +604,10 @@ class ShellController(
     }
 
     fun onMeaning(meaning: Meaning, screen: HostScreen, repeatCount: Int = 0, inputWindow: String = inputWindow(screen)): Effect? {
+        if (swallowsHomeReturnRepeat(repeatCount)) return null
+        landHomeReturn()
+        if (ignoreReturnRepeats && repeatCount > 0) return null
+        cancelHomeReturnOnInput()
         if (!completingDelete && heldActions.swallows(meaning.ordinal, repeatCount, capturing = model.deleteHold?.meaning == meaning)) return null
         if (!completingDelete && model.deleteHold != null) {
             inputKey(meaning, inputWindow, inputKeys[inputWindow])
@@ -998,6 +1010,7 @@ class ShellController(
      */
     fun openFind() {
         if (!canOpenFind()) return
+        cancelHomeReturnOnInput()
         val tab = if (showingHome() && home.board.allOpen) home.libraryView().tab else null
         find = FindSession(findEntries()) { filters -> if (tab == null) 0 else libraryFindFilter(tab, filters) }
         Log.i("Foldcade", "home-ui find")
@@ -1105,6 +1118,7 @@ class ShellController(
     /** A tap on All games' tab [at]: it opens on its first game, as L2 and R2 do. */
     fun tapLibraryTab(at: Int) {
         if (!libraryBarLive() || !home.chooseLibraryTab(at)) return
+        cancelHomeReturnOnInput()
         cue(model.themeIndex, "move")
         showBoard(GridFocus(), keepDialog = true)
     }
@@ -1151,6 +1165,101 @@ class ShellController(
             cue(model.themeIndex, "notify")
         }
         Log.i("Foldcade", "home-ui shown ${home.face(index)?.title.orEmpty()}")
+        return true
+    }
+
+    /** Called before play history can reorder the grid or the player can outlive Home. */
+    fun noteGameLaunched(id: String) {
+        val tile = tileOf(id)
+        homeReturn = HomeReturn(tile, false, Long.MAX_VALUE)
+        store.setPendingHomeGame(tile)
+        ignoreReturnRepeats = false
+    }
+
+    /** A Home recall or a player leaving its panel gives the launched tile the cursor once. */
+    fun noteHomeReturned(returnedId: String? = null) {
+        val tile = returnedId?.let(::tileOf)?.takeIf { id ->
+            id == homeReturn?.id?.let(::tileOf) || id == store.pendingHomeGame()?.let(::tileOf) ||
+                home.catalog().any { it.id == id }
+        }
+        if (tile != null && homeReturn?.id?.let(::tileOf) != tile) {
+            homeReturn = HomeReturn(tile, false, Long.MAX_VALUE)
+            store.setPendingHomeGame(tile)
+        }
+        val pending = homeReturn ?: return
+        if (!pending.ready) {
+            homeReturn = pending.copy(ready = true, untilMillis = nowMillis() + HOME_RETURN_WAIT_MS)
+            ignoreReturnRepeats = true
+        }
+        noteShelfChanged()
+    }
+
+    /** Checked before the command center too, so a held game key cannot open its grid. */
+    fun swallowsHomeReturnRepeat(repeatCount: Int): Boolean {
+        if (repeatCount > 0) return ignoreReturnRepeats
+        ignoreReturnRepeats = false
+        return false
+    }
+
+    private fun cancelHomeReturn(keepSaved: Boolean = false) {
+        homeReturn = null
+        if (!keepSaved) store.setPendingHomeGame(null)
+    }
+
+    private fun cancelHomeReturnOnInput() {
+        if (homeReturn?.ready == true) cancelHomeReturn()
+    }
+
+    private fun homeReturnBlocked(): Boolean =
+        find != null || artPicker != null || model.panel != null || model.dialog != null || model.settings != null ||
+            model.playActivity != null || model.saveConflict != null || model.savePicker != null || model.saveSetup != null ||
+            model.connectOpen || home.board.editing || home.selection != null || home.typing != null || home.iconPick != null
+
+    private fun landHomeReturn() {
+        val pending = homeReturn?.takeIf { it.ready } ?: return
+        if (nowMillis() > pending.untilMillis || homeReturnBlocked()) {
+            cancelHomeReturn()
+            return
+        }
+        val id = tileOf(pending.id)
+        if (id in home.board.hidden) {
+            cancelHomeReturn()
+            return
+        }
+        // Saved board slots can arrive before their library records. They cannot launch yet.
+        val known = home.catalog().any { it.id == id && !it.placeholder }
+        if (!known && awaitingHomeTile(id)) return
+        if (!known) {
+            cancelHomeReturn()
+            return
+        }
+        val landed = focusGridId(id) ||
+            (app.foldcade.language.homeLanding(home.board, id) != null && showOnHome(id, burst = false))
+        // Home on the free screen leaves the game running on the other one.
+        cancelHomeReturn(keepSaved = landed && tileIds(id).any(store.session::runs))
+        if (landed) ignoreReturnRepeats = true
+    }
+
+    /** The current grid's tile, without Find or a menu substituting its own subject. */
+    private fun gridFocusId(): String? {
+        if (model.focus.chrome != null || homeReturnBlocked()) return null
+        return when {
+            model.libraryGrid -> libraryEntry(model)?.game?.let { tileOf(homeGameId(it.backendId, it.remoteKey)) }
+            showingHome() -> home.face(model.focus.cellIndex)?.takeUnless { it.empty }?.id
+            else -> null
+        }
+    }
+
+    private fun focusGridId(id: String): Boolean {
+        val index = when {
+            model.libraryGrid && model.gridKind == GridKind.Games -> displayOrder(model).indexOfFirst { source ->
+                entries.getOrNull(source)?.game?.let { tileOf(homeGameId(it.backendId, it.remoteKey)) } == id
+            }
+            showingHome() -> home.faces().indexOfFirst { !it.empty && it.id?.let(::tileOf) == id }
+            else -> -1
+        }
+        if (index < 0) return false
+        publish(model.copy(focus = GridFocus(cellIndex = index, lastColumn = GridStrip.column(index))))
         return true
     }
 
@@ -1302,7 +1411,10 @@ class ShellController(
     }
 
     /** L1's Home: the board's top level, from a folder, All, or a shelf. The last root tile keeps the focus. */
-    fun goHome() {
+    fun goHome(fromRecall: Boolean = false) {
+        // The other Home window can receive the same recall after the game has already landed.
+        if (fromRecall && (homeReturn != null || ignoreReturnRepeats)) return
+        cancelHomeReturnOnInput()
         artPicker = null
         find = null
         val rootFocus = model.focus.takeIf {
@@ -1662,10 +1774,12 @@ class ShellController(
 
     /** The scanned library is on the home grid. Emulator waits for this line. */
     fun showCuratedHome() {
+        val focus = model.focus.takeIf { showingHome() } ?: GridFocus()
         artPicker = null
         find = null
         syncHome()
-        showBoard(GridFocus(), keepDialog = true)
+        showBoard(focus, keepDialog = true)
+        landHomeReturn()
         Log.i("Foldcade", "library-ui home")
     }
 
@@ -1679,8 +1793,7 @@ class ShellController(
         this.installedPlayers = installedPlayers
         installedAppsSettled = true
         playerPackages = players
-        syncHome()
-        publish(model)
+        noteShelfChanged()
     }
 
     fun showHomeGrid(grid: HomeGrid) {
@@ -1988,6 +2101,7 @@ class ShellController(
 
     fun touchCell(index: Int, screen: HostScreen): Effect? {
         if (!gridTouchable()) return null
+        cancelHomeReturnOnInput()
         val current = model.focus
         val already = current.chrome == null && current.cellIndex == index
         if (!already) {
@@ -2012,6 +2126,7 @@ class ShellController(
     /** A finger let the strip go at [first]. It rests there, and the cursor comes onto the screen if it was left behind. */
     fun touchScroll(first: Int) {
         if (!scrollsByTouch()) return
+        cancelHomeReturnOnInput()
         val before = model.focus
         val next = scrolledTo(model, first)
         if (next == model) return
@@ -2021,6 +2136,7 @@ class ShellController(
 
     fun touchChrome(chrome: Chrome, screen: HostScreen) {
         if (find != null || model.dialog != null || model.panel != null || model.connectOpen) return
+        cancelHomeReturnOnInput()
         publish(model.copy(focus = model.focus.copy(chrome = chrome)))
         onMeaning(Meaning.Activate, screen)
     }
@@ -2108,6 +2224,7 @@ class ShellController(
     fun touchDialog(index: Int, screen: HostScreen): Effect? {
         val dialog = model.dialog ?: return null
         if (dialog.screen != screen) return null
+        cancelHomeReturnOnInput()
         val (next, effect) = focusAndActivateDialog(model, index)
         publish(next)
         return effect
@@ -2789,6 +2906,7 @@ class ShellController(
     }
 
     fun showGames(cells: List<GridEntry>) {
+        val focusedId = gridFocusId().takeIf { model.libraryGrid && model.gridKind == GridKind.Games }
         val empty = cells.isEmpty()
         show(
             cells = cells,
@@ -2799,6 +2917,8 @@ class ShellController(
             focus = GridFocus(),
             order = emptyList(),
         )
+        if (focusedId != null) focusGridId(focusedId)
+        landHomeReturn()
     }
 
     /** Saves the platform grid so Back can return to the same cell. */
@@ -3007,11 +3127,15 @@ class ShellController(
      * [PickerModel.shelfEpoch] changes even when the count does not, so Compose
      * redraws the hint. Focus stays inside the new strip's reach, see [GridStrip.reach].
      */
-    fun noteShelfChanged() {
+    fun noteShelfChanged() = noteShelfChanged(gridFocusId())
+
+    private fun noteShelfChanged(focusedId: String?) {
+        if (homeReturnBlocked()) cancelHomeReturnOnInput()
         syncHome()
         val next = model.copy(shelfEpoch = model.shelfEpoch + 1)
         if (model.libraryGrid) {
             model = next
+            landHomeReturn()
             return
         }
         val counted = withShelf(next)
@@ -3026,6 +3150,8 @@ class ShellController(
                 ),
             )
         }
+        if (focusedId != null && !homeReturnBlocked()) focusGridId(tileOf(focusedId))
+        landHomeReturn()
     }
 
     /**
@@ -3033,16 +3159,23 @@ class ShellController(
      * last-played times.
      */
     fun notePlayChanged() {
+        val focusedId = gridFocusId()
+        if (homeReturnBlocked()) cancelHomeReturnOnInput()
         // All games' Recent and Most played reorder its rows, which the board does not see.
         if (showingHome() && home.board.allOpen) {
             syncHome()
             model = withShelf(model.copy(shelfEpoch = model.shelfEpoch + 1))
+            if (focusedId != null && !homeReturnBlocked()) focusGridId(tileOf(focusedId))
+            landHomeReturn()
             return
         }
         val before = home.board
         syncHome()
-        if (home.board == before) return
-        noteShelfChanged()
+        if (home.board == before) {
+            landHomeReturn()
+            return
+        }
+        noteShelfChanged(focusedId)
     }
 
     private fun publish(next: PickerModel) {
@@ -3184,6 +3317,13 @@ class ShellController(
         libraryId !in settledLibraries &&
             (libraryId != RommCredentials.PLUGIN_ID || store.rommOrigin() != null)
 
+    private fun awaitingHomeTile(id: String): Boolean =
+        tileIds(id).any { one -> libraryOf(one)?.let(::awaitingLibrary) == true } ||
+            (!moonlightSettled && isMoonlightRemoteKey(id)) ||
+            (!droidDeckSettled && id.startsWith(Shelf.DROIDDECK_PREFIX)) ||
+            (!installedAppsSettled && id.startsWith("android:")) ||
+            (GameNativeLibrary.ID !in settledLibraries && id.startsWith("gamenative."))
+
     /** The library a [homeGameId] belongs to, or null for a tile that is not a library game. */
     private fun libraryOf(id: String): String? =
         id.removePrefix("lib:").takeIf { it != id }?.substringBefore(':')
@@ -3219,13 +3359,7 @@ class ShellController(
             homePlatforms(),
             // A tile's art and details come from its first copy: a server's, which knows the game.
             libraryGames + copies.mapNotNull { (tile, games) -> games.firstOrNull()?.let { tile to it } },
-            unsettled = { id ->
-                tileIds(id).any { one -> libraryOf(one)?.let(::awaitingLibrary) == true } ||
-                    (!moonlightSettled && isMoonlightRemoteKey(id)) ||
-                    (!droidDeckSettled && id.startsWith(Shelf.DROIDDECK_PREFIX)) ||
-                    (!installedAppsSettled && id.startsWith("android:")) ||
-                    (GameNativeLibrary.ID !in settledLibraries && id.startsWith("gamenative."))
-            },
+            unsettled = ::awaitingHomeTile,
             sameGames = sameAliases,
             copies = copies,
         )
