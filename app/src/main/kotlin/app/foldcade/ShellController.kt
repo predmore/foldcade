@@ -1184,13 +1184,14 @@ class ShellController(
 
     /** A Home recall or a player leaving its panel gives the launched tile the cursor once. */
     fun noteHomeReturned(returnedId: String? = null) {
-        // Home on the free screen, or another app leaving it, is not a return: the game is still open beside it.
-        val launched = homeReturn?.id?.let(::tileOf)
-        if (launched != null && returnedId?.let(::tileOf) != launched && tileIds(launched).any(store.session::runs)) return
         val tile = returnedId?.let(::tileOf)?.takeIf { id ->
             id == homeReturn?.id?.let(::tileOf) || id == store.pendingHomeGame()?.let(::tileOf) ||
                 home.catalog().any { it.id == id }
         }
+        // Home on the free screen, or another app leaving it, is not a return: the game is still open beside it.
+        // A game that did leave is one, even with another still open.
+        val launched = homeReturn?.id?.let(::tileOf)
+        if (tile == null && launched != null && tileIds(launched).any(store.session::runs)) return
         if (tile != null && homeReturn?.id?.let(::tileOf) != tile) {
             homeReturn = HomeReturn(tile, false, Long.MAX_VALUE)
             store.setPendingHomeGame(tile)

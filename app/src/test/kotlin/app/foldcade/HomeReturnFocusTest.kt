@@ -256,6 +256,21 @@ class HomeReturnFocusTest {
         assertTrue(shell.model.atLibraryRoot)
     }
 
+    @Test fun theOlderOfTwoOpenGamesLandsWhenItLeaves() {
+        val store = store()
+        val shell = shell(store)
+        load(shell)
+        val older = ids.first()
+        shell.noteGameLaunched(older)
+        store.place(Panel.Top, ExternalApp(older))
+        shell.noteGameLaunched(target)
+        store.place(Panel.Bottom, ExternalApp(target))
+        // The older game leaves the top while the newer one stays open below.
+        store.update { it.home(Panel.Top) }
+        shell.noteHomeReturned(older)
+        assertFocused(shell, older)
+    }
+
     @Test fun aStartThatFailedLeavesNothingToComeBackTo() {
         val store = store()
         val shell = shell(store)
