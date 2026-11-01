@@ -249,6 +249,7 @@ class RommLibraryTest {
             cold.connect()
             assertEquals("3ds", cold.listPlatforms().single().platformId)
             val cached = cold.listGames("3ds", GameQuery()).games.single()
+            assertFalse("A cold offline cache is not a live report", rommCatalogLive(cold))
             assertEquals(game.label, cached.label)
             assertEquals(Availability.Cached, cached.availability)
             assertEquals("Super Mario", RommMetadata(gate).cached(cached)?.title)
@@ -261,6 +262,11 @@ class RommLibraryTest {
             cold.connect()
             cold.listPlatforms()
             assertEquals("Renamed online", cold.listGames("3ds", GameQuery()).games.single().label)
+            assertTrue(rommCatalogLive(cold))
+            // Even with live platforms, one cached game page leaves the whole report incomplete.
+            ops.onRoms = { throw RommUnavailable("went offline while listing") }
+            cold.listGames("3ds", GameQuery())
+            assertFalse(rommCatalogLive(cold))
         } finally {
             harness.library.disconnect()
             harness.wiring.cacheRoot.toFile().deleteRecursively()

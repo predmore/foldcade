@@ -465,7 +465,9 @@ class HomeSession(
         val moves = open?.sorted != true
         // An empty slot, or one past the last tile, moves as a tile does, makes a collection on
         // the root, and closes the board's gaps.
-        if (id == null || (id in restoredGaps && id !in catalogById))
+        if (restoredGapAt(index) != null)
+            return TileActions(move = moves, remove = RemoveVerb.Remove, tidyBoard = gaps, boardSort = sort)
+        if (id == null)
             return TileActions(move = moves, newCollection = open == null, tidyBoard = gaps, boardSort = sort)
         if (id == HOME_ALL) return TileActions(move = true, newCollection = true, tidyBoard = gaps)
         val folder = board.folders[id]
@@ -782,9 +784,12 @@ class HomeSession(
     /** Does what X says for the tile at [index] (see [removeVerb]). Returns where focus goes. */
     fun remove(index: Int): Int {
         if (board.foldersOpen) return index
-        board = removeFromHome(board, index)
+        board = restoredGapAt(index)?.let { app.foldcade.language.forgetRestoredGame(board, it) } ?: removeFromHome(board, index)
         return index.coerceAtMost((visibleCount() - 1).coerceAtLeast(0))
     }
+
+    internal fun restoredGapAt(index: Int): String? = visibleSlots(board).getOrNull(index)
+        ?.takeIf { it in restoredGaps && it !in catalogById }
 
     /**
      * Places catalog item [id] on Home in its own folder, the way Add to Home in

@@ -4,26 +4,24 @@ import android.content.Context
 import android.os.Build
 import app.foldcade.host.backup.*
 import app.foldcade.language.*
-import java.io.ByteArrayOutputStream
 import java.io.File
 import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 
 /** Call off the main thread. SharedPreferences copies its values for the snapshot. */
-internal fun FoldcadeApp.setupSnapshot(): SetupBackup {
+internal fun FoldcadeApp.setupSnapshot(work: File, includeThemes: Boolean = true): SetupBackup {
     val all = getSharedPreferences("foldcade", Context.MODE_PRIVATE).all
     val portable = BackupSettings.portable(all)
     val home = portable["home_board"] as? String ?: encodeHome(HomeBoard())
     val summary = backupHomeSummary(decodeHome(home), emptySet())
     val info = packageManager.getPackageInfo(packageName, 0)
-    val folders = (store.folderTrees().map { uri ->
-        val name = runCatching { java.net.URI(uri).path.substringAfterLast('/').substringAfterLast(':') }.getOrDefault("ROMs")
-        BackupFolder(uri, name.ifBlank { "ROMs" })
-    } + store.restoreFolders()).distinctBy { it.uri }
-    val play = ByteArrayOutputStream().also(plays::export).toByteArray()
-    val themes = File(filesDir, "themes").listFiles().orEmpty().filter { it.isFile && it.extension == "zip" }.sortedBy { it.name }
-    require(themes.sumOf { it.length() } <= SetupArchive.MAX_THEMES_BYTES) { "Themes are too large" }
+    val folders = carriedBackupFolders(store.folderTrees(), store.restoreFolders())
+    val play = File(work, "play-history.zip")
+    play.outputStream().use(plays::export)
+    val themes = if (includeThemes) File(filesDir, "themes").listFiles().orEmpty().filter { it.isFile && it.extension == "zip" }.sortedBy { it.name } else emptyList()
+    val art = File(filesDir, "art/choices.json")
+    require(!art.isFile || art.length() <= 8L * 1024 * 1024) { "Art choices are too large" }
     val players = all.entries.filter { it.key.startsWith("player_save_folder:") && it.value is String && (it.value as String).isNotBlank() }
         .map { it.key.removePrefix("player_save_folder:") }
     val theme = (all["theme"] as? String)?.let { id -> themePacks.firstOrNull { it.resources.id == id }?.name ?: id } ?: "Afterglow"
@@ -35,36 +33,37 @@ internal fun FoldcadeApp.setupSnapshot(): SetupBackup {
             all.any { (key, value) -> key.startsWith("retroarch_cores_folder:") && value is String && value.isNotBlank() },
             all.any { (key, value) -> key.startsWith("eden_folder:") && value is String && value.isNotBlank() }),
         portable - setOf("home_board", "same_games"), home, portable["same_games"] as? String ?: "",
-        File(filesDir, "art/choices.json").takeIf { it.isFile }?.readText() ?: "{}", play,
-        themes.associate { it.name to it.readBytes() },
+        art.takeIf { it.isFile }?.readText() ?: "{}", byteArrayOf(),
+        playHistoryFile = play, themeFiles = themes.associateBy { it.name },
     )
 }
 
-internal fun backupPreview(backup: SetupBackup, available: Set<String>): Pair<String, String> {
+internal fun carriedBackupFolders(trees: List<String>, missing: List<BackupFolder>): List<BackupFolder> =
+    (trees.map { uri ->
+        val name = runCatching { java.net.URI(uri).path.substringAfterLast('/').substringAfterLast(':') }.getOrDefault("ROMs")
+        BackupFolder(uri, name.ifBlank { "ROMs" })
+    } + missing).distinctBy { it.uri }
+
+internal fun backupPreview(backup: SetupBackup, available: Set<String>, currentOrigin: String? = null): Pair<String, String> {
     val summary = backupHomeSummary(decodeHome(backup.home), available + decodeSameGames(backup.sameGames).filterKeys { it in available }.values)
     val date = DateTimeFormatter.ofPattern("MMM d, yyyy").format(Instant.ofEpochMilli(backup.manifest.createdMillis).atZone(ZoneId.systemDefault()))
-    return date to BackupCopy.preview(summary.games, summary.collections, summary.hidden, backup.manifest.summary.theme, summary.missingGames, summary.missingApps)
+    val origin = backup.settings["romm_origin"] as? String
+    val switches = origin?.takeIf { it != currentOrigin }?.let { BackupCopy.switchedRomm(java.net.URI(it).host) }
+    return date to listOfNotNull(BackupCopy.preview(summary.games, summary.collections, summary.hidden, backup.manifest.summary.theme, summary.missingGames, summary.missingApps), switches).joinToString(" · ")
 }
+
+internal fun storedComputersNeedPairing(store: SessionStore, identity: String?): Boolean = store.pairedStreamHosts(identity).isEmpty()
 
 /** Before SessionStore exists. Add a theme's validator still decides which restored packs load. */
 internal fun FoldcadeApp.applySetupRestore() {
-    if (!setupBackups.pending()) return
+    if (!setupBackups.pending() && !setupBackups.failed.isFile) return
     kotlinx.coroutines.runBlocking(kotlinx.coroutines.Dispatchers.IO) {
         val grants = contentResolver.persistedUriPermissions.filter { it.isReadPermission }.mapTo(mutableSetOf()) { it.uri.toString() }
-        val packs = PackagedTheme.loadAll(this@applySetupRestore)
-        val resources = packs.associate { it.resources.id to it.resources }.toMutableMap()
-        val bundled = setOf(FALLBACK_THEME_ID) + packs.filter { it.archive == null }.map { it.resources.id }
-        setupBackups.applyStaged(grants, restoreThemes = { archives ->
-            // Inspect in place, as Add a theme does. Reading a whole inner zip just to find its
-            // manifest could inflate a resource pack far past the backup's memory budget.
-            fun manifest(bytes: ByteArray): ThemeFile? {
-                val temporary = File.createTempFile("backup-theme-", ".zip", cacheDir)
-                return try {
-                    temporary.writeBytes(bytes)
-                    openThemeArchive(temporary)?.use { it.file }
-                } finally { temporary.delete() }
-            }
-            val manifests = archives.mapValues { runCatching { manifest(it.value) }.getOrNull() }
+        setupBackups.resume(grants, restoreThemes = { archives ->
+            val packs = PackagedTheme.loadAll(this@applySetupRestore)
+            val resources = packs.associate { it.resources.id to it.resources }.toMutableMap()
+            val bundled = setOf(FALLBACK_THEME_ID) + packs.filter { it.archive == null }.map { it.resources.id }
+            val manifests = archives.mapValues { try { openThemeArchive(it.value)?.use { it.file } } catch (_: Exception) { null } }
             val remaining = archives.toMutableMap()
             val opened = mutableListOf<ThemeZip>()
             try {
@@ -75,9 +74,9 @@ internal fun FoldcadeApp.applySetupRestore() {
                     } ?: remaining.entries.first()
                     try {
                         val parent = manifests[next.key]?.extends?.let(resources::get) ?: resources[FALLBACK_THEME_ID]
-                        val installed = themeInstalls.install(next.value.inputStream(), bundled, restoring = true) { zip ->
+                        val installed = next.value.inputStream().use { input -> themeInstalls.install(input, bundled, restoring = true) { zip ->
                             themeInstallable(zip, parent)
-                        }
+                        } }
                         if (installed is ThemeInstallResult.Installed) {
                             openThemeArchive(File(filesDir, "themes/${installed.theme.file}"))?.let { zip ->
                                 opened += zip

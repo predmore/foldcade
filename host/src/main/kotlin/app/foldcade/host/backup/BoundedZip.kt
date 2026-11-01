@@ -2,6 +2,7 @@ package app.foldcade.host.backup
 
 import java.io.ByteArrayOutputStream
 import java.io.IOException
+import java.io.OutputStream
 import java.util.zip.ZipInputStream
 
 /** Count skipped entries too: reaching the next ZIP entry inflates the preceding one. */
@@ -35,5 +36,19 @@ fun ZipInputStream.drainBounded(budget: InflateBudget) {
         val read = read(buffer)
         if (read < 0) return
         budget.spend(read)
+    }
+}
+
+/** Stream a large section to private staging storage without retaining an inflated copy. */
+fun ZipInputStream.copyBounded(output: OutputStream, limit: Long, budget: InflateBudget) {
+    val buffer = ByteArray(64 * 1024)
+    var size = 0L
+    while (true) {
+        val read = read(buffer)
+        if (read < 0) return
+        budget.spend(read)
+        size += read
+        if (size > limit) throw IOException("archive entry is too large")
+        output.write(buffer, 0, read)
     }
 }

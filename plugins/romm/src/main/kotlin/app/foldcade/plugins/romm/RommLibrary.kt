@@ -12,6 +12,7 @@ import app.foldcade.api.plugin.GamePage
 import app.foldcade.api.plugin.GameQuery
 import app.foldcade.api.plugin.LaunchTarget
 import app.foldcade.api.plugin.LibraryBackend
+
 import app.foldcade.api.plugin.ListedPlatform
 import app.foldcade.api.plugin.ObservedSaves
 import app.foldcade.api.plugin.Placement
@@ -75,6 +76,9 @@ import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.longOrNull
 import kotlinx.serialization.json.put
+
+/** A cached offline listing may fill Home, but cannot release newly restored places. */
+fun rommCatalogLive(library: LibraryBackend?): Boolean = (library as? RommLibrary)?.liveCatalog == true
 
 internal class RommLibrary internal constructor(
     private val gate: RommGate,
@@ -152,6 +156,9 @@ internal class RommLibrary internal constructor(
     /** One ROM's file at a time: a download, a launch's check of it, or a delete. */
     private val fileLocks = ConcurrentHashMap<Long, Mutex>()
     @Volatile private var offlineCatalog = false
+    /** True only while every part of the current catalog listing came from the server. */
+    @Volatile var liveCatalog = false
+        private set
 
     @Volatile
     private var listener: GameActivityListener? = null
@@ -222,6 +229,7 @@ internal class RommLibrary internal constructor(
      * background, so a slow server does not hold the library open.
      */
     override suspend fun connect() {
+        liveCatalog = true
         val catalog = gate.restoreCatalog()
         offlineCatalog = false
         try {
@@ -230,6 +238,7 @@ internal class RommLibrary internal constructor(
                 rememberDevice(wiring, ops)
             }
         } catch (unavailable: PluginException.Unavailable) {
+            liveCatalog = false
             if (!catalog.hasPlatforms()) throw unavailable
             offlineCatalog = true
             return
@@ -276,11 +285,12 @@ internal class RommLibrary internal constructor(
     override suspend fun listPlatforms(): List<ListedPlatform> {
         val wiring = gate.wiring()
         val catalog = gate.restoreCatalog(wiring)
-        val platforms = if (offlineCatalog) catalog.platforms() else try {
+        val platforms = if (offlineCatalog) { liveCatalog = false; catalog.platforms() } else try {
             gate.call { current, ops ->
                 ops.platforms().also { gate.catalog(current).rememberPlatforms(it) }
             }
         } catch (unavailable: PluginException.Unavailable) {
+            liveCatalog = false
             if (!catalog.hasPlatforms()) throw unavailable
             offlineCatalog = true
             catalog.platforms()
@@ -297,10 +307,11 @@ internal class RommLibrary internal constructor(
     override suspend fun listGames(platformId: String, query: GameQuery): GamePage {
         val wiring = gate.wiring()
         val catalog = gate.restoreCatalog(wiring)
-        if (offlineCatalog) return cachedGames(wiring, catalog, platformId, query)
+        if (offlineCatalog) { liveCatalog = false; return cachedGames(wiring, catalog, platformId, query) }
         return try {
             listOnlineGames(platformId, query)
         } catch (unavailable: PluginException.Unavailable) {
+            liveCatalog = false
             cachedGames(wiring, catalog, platformId, query, unavailable)
         }
     }

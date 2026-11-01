@@ -4,6 +4,11 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class BackupTest {
+    @Test fun exportedPacksThatDoNotFitAreNamedInTheDoneLine() {
+        assertEquals("Backed up.", BackupCopy.saved(0))
+        assertEquals("Backed up. 1 theme was too large to include.", BackupCopy.saved(1))
+        assertEquals("Backed up. 2 themes were too large to include.", BackupCopy.saved(2))
+    }
     private val tree = "content://documents/tree/primary%3AROMs"
     private val local = homeGameId("local-folder", "$tree/document/primary%3AROMs%2Fgame.zip")
     private val server = homeGameId("romm", "42")

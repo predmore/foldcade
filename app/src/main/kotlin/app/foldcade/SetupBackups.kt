@@ -6,93 +6,238 @@ import app.foldcade.host.play.mergedBackupPlay
 import app.foldcade.host.play.PlayNames
 import app.foldcade.language.*
 import app.foldcade.romm.writeDurably
-import java.io.ByteArrayOutputStream
 import java.io.File
+import java.io.FileOutputStream
+import java.io.InputStream
+import java.io.OutputStream
 import java.nio.channels.FileChannel
+import java.nio.file.Files
+import java.nio.file.StandardCopyOption
 import java.nio.file.StandardOpenOption
+import java.util.UUID
+import kotlinx.serialization.json.*
 
-/** Disk work only. The stage is replayed before any live store can read or save a preference. */
+internal enum class SetupRestoreResult { None, Restored, Failed }
+
+/** File staging and its recovery run before SessionStore can read or save anything. */
 internal class SetupBackups(private val root: File, private val prefs: SharedPreferences) {
     private val directory = File(root, "backup")
     val before = File(directory, "before-restore.zip")
     private val stage = File(directory, "staged.zip")
+    private val nextBefore = File(directory, "before-next.zip")
+    private val ready = File(directory, "ready")
+    private val attempts = File(directory, "attempts")
+    private val baseline = File(directory, "rollback-settings.json")
+    private val oldArt = File(directory, "rollback-art.json")
     val result = File(directory, "restored.txt")
+    val failed = File(directory, "failed")
+    var failurePending = false
+        private set
 
-    fun encode(backup: SetupBackup): ByteArray = ByteArrayOutputStream().also { SetupArchive.write(it, backup) }.toByteArray()
+    fun workspace(kind: String): File = File(directory, "$kind-${UUID.randomUUID()}").apply { mkdirs() }
 
-    /** Keep the undo copy before publishing the stage. No running state has changed yet. */
-    fun stage(incoming: SetupBackup, current: SetupBackup) {
-        val next = encode(incoming)
-        val previous = encode(current)
-        // Read our output too, so a snapshot that cannot round-trip never becomes the undo copy.
-        SetupArchive.read(previous.inputStream())
-        writeDurably(before.toPath(), previous)
-        writeDurably(stage.toPath(), next)
+    /** Keep the transport exactly as picked; large sections are read into separate private files. */
+    fun read(input: InputStream): SetupBackup {
+        val work = workspace("import")
+        return try {
+            val source = File(work, "source.zip")
+            writeBackupDurably(source) { output -> copySetupAtMost(input, output, 300L * 1024 * 1024) }
+            source.inputStream().use { SetupArchive.read(it, File(work, "sections")) }.copy(sourceArchive = source)
+        } catch (failure: Exception) { work.deleteRecursively(); throw failure }
+    }
+
+    fun discard(backup: SetupBackup?) {
+        backup?.sourceArchive?.parentFile?.takeIf { it.parentFile == directory && it.name.startsWith("import-") }?.deleteRecursively()
+    }
+
+    /** Stage first. A ready marker makes completing the before-copy rename recoverable too. */
+    fun stage(incoming: SetupBackup, current: SetupBackup, afterStage: () -> Unit = {}) {
+        check(!stage.exists()) { "A restore is already staged" }
+        failed.delete()
+        ready.delete()
+        result.delete()
+        val source = incoming.sourceArchive
+        writeBackupDurably(stage) { output ->
+            if (source != null) source.inputStream().use { copySetupAtMost(it, output, 300L * 1024 * 1024) }
+            else SetupArchive.write(output, incoming)
+        }
+        afterStage()
+        val localKeys = setOf("folder_tree", "restore_holds", "restore_folders", "restore_romm_sign_in", "restore_committed")
+        val original = prefs.all.mapNotNull { (key, value) ->
+            if (value != null && (BackupSettings.classify(key)?.disposition == BackupDisposition.BackedUp || key in localKeys)) key to value else null
+        }.toMap()
+        writeDurably(baseline.toPath(), SetupArchive.settingsJson(original).toString().encodeToByteArray())
+        writeDurably(oldArt.toPath(), current.artChoices.encodeToByteArray())
+        // Packs stay installed across restore/undo. Their bytes must never block the safety copy.
+        writeBackupDurably(nextBefore) { SetupArchive.write(it, current.copy(themes = emptyMap(), themeFiles = emptyMap())) }
+        writeDurably(attempts.toPath(), "0".encodeToByteArray())
+        writeDurably(ready.toPath(), UUID.randomUUID().toString().encodeToByteArray())
+        moveBackup(nextBefore, before)
     }
 
     fun pending(): Boolean = stage.isFile
+    fun hasNotice(): Boolean = result.isFile || failed.isFile || failurePending
+    fun acknowledgeFailure() { failed.delete(); failurePending = false }
 
-    /**
-     * A stop at any point leaves the stage. The next process repeats the replacement and
-     * the idempotent play merge before constructing SessionStore or ShellController.
-     * Errors propagate: a partly applied setup must never be opened by the shell.
-     */
+    /** A killed process spends an attempt too. Two failures preserve and quarantine the transport. */
+    fun resume(granted: Set<String>, restoreThemes: (Map<String, File>) -> Unit): SetupRestoreResult {
+        if (failed.isFile) { failurePending = true; return SetupRestoreResult.Failed }
+        if (!pending()) return SetupRestoreResult.None
+        if (!ready.isFile) return abandon(rollback = false)
+        val id = try { ready.takeIf { it.length() <= 128 }?.readText() }
+            catch (_: Exception) { return abandon(rollback = true) }
+        if (id.isNullOrBlank()) return abandon(rollback = true)
+        if (prefs.getString("restore_committed", null) == id) {
+            finishCommit()
+            return SetupRestoreResult.Restored
+        }
+        val used = try { attempts.takeIf { it.length() <= 16 }?.readText()?.toIntOrNull()?.takeIf { it in 0..2 } ?: 2 }
+            catch (_: Exception) { return abandon(rollback = true) }
+        if (used >= 2) return abandon(rollback = true)
+        try { writeDurably(attempts.toPath(), (used + 1).toString().encodeToByteArray()) }
+        catch (_: Exception) { return abandon(rollback = true) }
+        try {
+            applyStaged(granted, restoreThemes)
+            return SetupRestoreResult.Restored
+        } catch (failure: Exception) {
+            if (used + 1 < 2) throw failure
+            return abandon(rollback = true)
+        }
+    }
+
+    private fun abandon(rollback: Boolean): SetupRestoreResult {
+        failurePending = true
+        // Renames need no second copy of the archive or art, including on a full filesystem.
+        if (stage.isFile) try { moveBackup(stage, File(directory, "failed-restore-${UUID.randomUUID()}.zip")) } catch (_: Exception) { }
+        if (rollback) {
+            try { restoreBaselinePreferences() } catch (_: Exception) { }
+            if (oldArt.isFile) try { moveBackup(oldArt, File(root, "art/choices.json")) } catch (_: Exception) { }
+        }
+        result.delete()
+        val noticeSource = attempts.takeIf { it.isFile } ?: ready.takeIf { it.isFile }
+        if (noticeSource != null) try { moveBackup(noticeSource, failed) } catch (_: Exception) { }
+        ready.delete()
+        return SetupRestoreResult.Failed
+    }
+
+    private fun restoreBaselinePreferences() {
+        if (!baseline.isFile || baseline.length() > 32L * 1024 * 1024) return
+        val original = Json.parseToJsonElement(baseline.readText()).jsonObject.mapValues { SetupArchive.readPreference(it.value) }
+        val editor = prefs.edit()
+        prefs.all.keys.filter { BackupSettings.classify(it)?.disposition == BackupDisposition.BackedUp ||
+            it in setOf("folder_tree", "restore_holds", "restore_folders", "restore_romm_sign_in", "restore_committed") }.forEach(editor::remove)
+        original.forEach { (key, value) -> editor.putValue(key, value) }
+        // commit(false) still resets Android's cached values. Incoming disk preferences were
+        // never committed without the marker that resume() checks before counting failures.
+        editor.commit()
+    }
+
+    /** Files/result first; the committed preference marker makes the final cleanup idempotent. */
     fun applyStaged(
-        granted: Set<String>, restoreThemes: (Map<String, ByteArray>) -> Unit,
+        granted: Set<String>, restoreThemes: (Map<String, File>) -> Unit,
         afterFiles: () -> Unit = {}, afterPreferences: () -> Unit = {},
     ) {
         if (!stage.isFile) return
-        val backup = stage.inputStream().use(SetupArchive::read)
-        val board = decodeHome(backup.home)
-        val folders = backup.manifest.folders.distinctBy { it.uri }
-        val kept = folders.filter { it.uri in granted }
-        val missing = folders - kept.toSet()
-        val holds = RestoreHolds.forBoard(board, decodeSameGames(backup.sameGames), folders.map { it.uri })
-        val plan = BackupSettings.plan(prefs.all, backup.preferences())
-        // An archive may choose another server. A token kept on this device must never be
-        // sent to that address until the player signs in there. The secret itself stays put.
-        val origin = plan.put["romm_origin"] as? String
-        val signIn = origin != null && (prefs.getBoolean("restore_romm_sign_in", false) || origin != prefs.getString("romm_origin", null))
-
-        writeDurably(File(root, "art/choices.json").toPath(), backup.artChoices.encodeToByteArray())
-        restoreThemes(backup.themes)
-        val play = backup.play()
-        val playFile = File(root, "play-sessions/events.log")
-        writeDurably(playFile.toPath(), mergedBackupPlay(playFile, play.events))
-        PlayNames(File(playFile.parentFile, "names.log")).merge(play.names, durable = true)
-        PlayArt(File(playFile.parentFile, "art")).adopt(play.art)
-        afterFiles()
-
-        val editor = prefs.edit()
-        plan.remove.forEach(editor::remove)
-        plan.put.forEach { (key, value) -> editor.putValue(key, value) }
-        // Library trees are the one special case: transport the list, never transport grants.
-        editor.putString("folder_tree", kept.joinToString("\n") { it.uri })
-        editor.putString("restore_folders", encodeBackupFolders(missing))
-        editor.putString("restore_holds", holds.encode())
-        editor.putBoolean("restore_romm_sign_in", signIn)
-        check(editor.commit()) { "Restored preferences were not committed" }
-        afterPreferences()
-        val todo = buildList {
-            if (backup.settings["romm_origin"] != null || holds.sources.values.any { "romm" in it }) add("romm")
-            if (missing.isNotEmpty()) add("folders:" + missing.joinToString(", ") { it.name })
-            val saveFolders = backup.manifest.saveFolders.filter { name ->
-                prefs.all.none { (key, value) -> key == "player_save_folder:$name" && value is String && value.isNotBlank() }
+        check(ready.length() in 1..128)
+        val id = ready.readText()
+        if (prefs.getString("restore_committed", null) == id) { finishCommit(); return }
+        if (nextBefore.isFile) moveBackup(nextBefore, before)
+        val work = workspace("apply")
+        try {
+            val backup = stage.inputStream().use { SetupArchive.read(it, work) }
+            val folders = backup.manifest.folders.distinctBy { it.uri }
+            val currentTrees = prefs.getString("folder_tree", null).orEmpty().lines().filter { it.isNotBlank() }
+            val kept = folders.filter { it.uri in granted }
+            val trees = (currentTrees + kept.map { it.uri }).distinct()
+            val missing = folders.filter { it.uri !in granted }
+            val holds = RestoreHolds.forBoard(decodeHome(backup.home), decodeSameGames(backup.sameGames), folders.map { it.uri })
+            val plan = BackupSettings.plan(prefs.all, backup.preferences())
+            val origin = plan.put["romm_origin"] as? String
+            val signIn = prefs.getBoolean("restore_romm_sign_in", false) || (origin != null && origin != prefs.getString("romm_origin", null))
+            writeDurably(File(root, "art/choices.json").toPath(), backup.artChoices.encodeToByteArray())
+            restoreThemes(backup.themeFiles)
+            val play = backup.play()
+            val playFile = File(root, "play-sessions/events.log")
+            writeDurably(playFile.toPath(), mergedBackupPlay(playFile, play.events))
+            PlayNames(File(playFile.parentFile, "names.log")).merge(play.names, durable = true)
+            PlayArt(File(playFile.parentFile, "art")).adopt(play.art)
+            afterFiles()
+            val todo = buildList {
+                if (backup.settings["romm_origin"] != null || holds.sources.values.any { "romm" in it }) add("romm")
+                if (missing.isNotEmpty()) add("folders:" + missing.joinToString(", ") { it.name })
+                val saves = backup.manifest.saveFolders.filter { name -> prefs.getString("player_save_folder:$name", null).isNullOrBlank() }
+                if (saves.isNotEmpty()) add("saves:" + saves.joinToString(", "))
+                if (backup.manifest.computers) add("computers")
+                fun chosen(prefix: String) = prefs.all.any { (key, value) -> key.startsWith(prefix) && value is String && value.isNotBlank() }
+                if (backup.manifest.retroArchCores && !chosen("retroarch_cores_folder:")) add("cores")
+                if (backup.manifest.edenFolder && !chosen("eden_folder:")) add("eden")
             }
-            if (saveFolders.isNotEmpty()) add("saves:" + saveFolders.joinToString(", "))
-            if (backup.manifest.computers) add("computers")
-            fun chosen(prefix: String) = prefs.all.any { (key, value) -> key.startsWith(prefix) && value is String && value.isNotBlank() }
-            if (backup.manifest.retroArchCores && !chosen("retroarch_cores_folder:")) add("cores")
-            if (backup.manifest.edenFolder && !chosen("eden_folder:")) add("eden")
-        }
-        writeDurably(result.toPath(), todo.joinToString("\n").encodeToByteArray())
-        check(stage.delete()) { "Restore stage was not cleared" }
-        syncDirectory()
+            writeDurably(result.toPath(), todo.joinToString("\n").encodeToByteArray())
+            val editor = prefs.edit()
+            plan.remove.forEach(editor::remove)
+            plan.put.forEach { (key, value) -> editor.putValue(key, value) }
+            editor.putString("folder_tree", trees.joinToString("\n"))
+            editor.putString("restore_folders", encodeBackupFolders(missing))
+            editor.putString("restore_holds", holds.encode())
+            editor.putBoolean("restore_romm_sign_in", signIn)
+            editor.putString("restore_committed", id)
+            if (!editor.commit()) {
+                restoreBaselinePreferences()
+                error("Restored preferences were not committed")
+            }
+            afterPreferences()
+            finishCommit()
+        } finally { work.deleteRecursively() }
     }
 
-    private fun syncDirectory() {
-        runCatching { FileChannel.open(directory.toPath(), StandardOpenOption.READ).use { it.force(true) } }
+    private fun finishCommit() {
+        // Preferences already contain the commit marker. A cleanup failure must not turn
+        // a finished restore into a crash loop or another application of its files.
+        if (stage.isFile && !stage.delete()) return
+        ready.delete()
+        attempts.delete()
+        baseline.delete()
+        oldArt.delete()
+        syncBackupDirectory(directory)
     }
+}
+
+internal fun copySetupAtMost(input: InputStream, output: OutputStream, limit: Long) {
+    var bytes = 0L
+    val buffer = ByteArray(64 * 1024)
+    while (true) {
+        val count = input.read(buffer)
+        if (count < 0) return
+        bytes += count
+        check(bytes <= limit) { "Backup is too large" }
+        output.write(buffer, 0, count)
+    }
+}
+
+internal fun writeBackupDurably(target: File, body: (OutputStream) -> Unit) {
+    target.parentFile?.mkdirs()
+    val temporary = File(target.parentFile, ".${target.name}-${UUID.randomUUID()}.tmp")
+    try {
+        FileOutputStream(temporary).use { output ->
+            val stream = object : java.io.FilterOutputStream(output) {
+                override fun close() { flush() }
+            }
+            body(stream)
+            output.fd.sync()
+        }
+        moveBackup(temporary, target)
+    } finally { temporary.delete() }
+}
+
+private fun moveBackup(from: File, to: File) {
+    to.parentFile?.mkdirs()
+    try { Files.move(from.toPath(), to.toPath(), StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING) }
+    catch (_: java.nio.file.AtomicMoveNotSupportedException) { Files.move(from.toPath(), to.toPath(), StandardCopyOption.REPLACE_EXISTING) }
+    syncBackupDirectory(to.parentFile!!)
+}
+
+private fun syncBackupDirectory(directory: File) {
+    try { FileChannel.open(directory.toPath(), StandardOpenOption.READ).use { it.force(true) } } catch (_: Exception) { }
 }
 
 internal fun SharedPreferences.Editor.putValue(key: String, value: Any): SharedPreferences.Editor = apply {

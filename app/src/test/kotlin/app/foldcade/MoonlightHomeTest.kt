@@ -243,6 +243,10 @@ class MoonlightHomeTest {
         val gameWin = PairedStreamHost("8FE9E201-578A-7C2C-B017-F2A9A9D86886", "game-win", 47984, HOST_CERT)
         SessionStore(prefs).setPairedStreamHosts("aaaa", listOf(gameWin))
         assertEquals(listOf(gameWin), SessionStore(prefs).pairedStreamHosts("aaaa"))
+        // The Restored notice reads the persisted pairing before MoonlightStreams has loaded.
+        assertFalse(storedComputersNeedPairing(SessionStore(prefs), "aaaa"))
+        assertTrue(storedComputersNeedPairing(SessionStore(prefs), "bbbb"))
+        assertTrue(storedComputersNeedPairing(SessionStore(prefs), null))
         assertEquals("8fe9e201-578a-7c2c-b017-f2a9a9d86886", SessionStore(prefs).pairedStreamHosts("aaaa").single().key)
         // Moved to another device, or Foldcade reinstalled: the key is new, so the pairing is gone.
         assertEquals(emptyList<PairedStreamHost>(), SessionStore(prefs).pairedStreamHosts("bbbb"))

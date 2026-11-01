@@ -28,25 +28,36 @@ import kotlin.coroutines.cancellation.CancellationException
  * join the catalog but are not stored with it, so a deleted file takes its
  * game off the grid at the next scan.
  */
+data class GameNativeCatalogRead(val shortcutsRead: Boolean, val hasGames: Boolean, val storedCatalog: Boolean) {
+    fun releasesRestore(foldersRead: Boolean, hasFolders: Boolean): Boolean =
+        shortcutsRead && (foldersRead || !hasFolders) && (hasGames || storedCatalog)
+}
+
 fun refreshGameNativeCatalog(
     context: Context,
     library: GameNativeLibrary,
     file: File,
     steamFiles: List<CatalogGame> = emptyList(),
-): Boolean {
+): GameNativeCatalogRead {
+    val storedCatalog = file.isFile
     val stored = readCatalog(file)
     val shortcuts = readGameNativeShortcuts(context, GameNativePlayer.PACKAGES)
     library.confirm(stored + shortcuts.orEmpty() + steamFiles)
     Shelf.catalog = library.confirmed().map { it.toShelfGame() }
     val kept = (stored + shortcuts.orEmpty()).map { it.remoteKey }.toSet()
     try {
-        writeCatalog(file, library.confirmed().filter { it.remoteKey in kept })
+        keepGameNativeCatalog(file, library.confirmed().filter { it.remoteKey in kept }, storedCatalog)
     } catch (cancelled: CancellationException) {
         throw cancelled
     } catch (_: Exception) {
         // The shelf already has the list. The next start reads shortcuts again.
     }
-    return shortcuts != null
+    return GameNativeCatalogRead(shortcuts != null, library.confirmed().isNotEmpty(), storedCatalog)
+}
+
+/** An empty first shortcut read must not manufacture the evidence of an earlier setup. */
+internal fun keepGameNativeCatalog(file: File, games: List<CatalogGame>, storedCatalog: Boolean) {
+    if (storedCatalog || games.isNotEmpty()) writeCatalog(file, games)
 }
 
 internal fun readCatalog(file: File): List<CatalogGame> {

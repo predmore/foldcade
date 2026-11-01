@@ -295,13 +295,15 @@ class ShellController(
     /** Libraries that have reported their games since launch. Until then their home tiles are kept. */
     private val settledLibraries = mutableSetOf<String>()
     private var restoreHolds = store.restoreHolds()
+    private var restoreReportSerial = 0L
+    private val restoreReports = mutableMapOf<String, Long>()
+    private var forgottenHold: Triple<String, Set<String>, Long>? = null
+    private var undoHold: Pair<HomeUndo, Triple<String, Set<String>, Long>>? = null
 
     /** Only a connected catalog's successful listing counts; dropping a source never does. */
     fun reportRestoreSources(sources: Set<String>) {
-        val next = restoreHolds.reported(sources)
-        if (next == restoreHolds) return
-        store.saveRestoreHolds(next)
-        restoreHolds = next
+        sources.forEach { restoreReports[it] = ++restoreReportSerial }
+        restoreHolds = store.updateRestoreHolds { it.reported(sources) }
         // Keep the rendering guard for this process: an edit can defer the catalog merge
         // until its move ends, even though the source has now answered durably.
     }
@@ -309,6 +311,14 @@ class ShellController(
     fun reportRestoreFolders(trees: Set<String>) {
         reportRestoreSources(trees.mapTo(mutableSetOf()) { "folder:$it" } + "local-folder")
         store.reportRestoreFolders(trees)
+    }
+
+    /** An incomplete forest says nothing about games on an unmounted card. */
+    fun finishFolderReport(complete: Boolean, trees: Set<String>, empty: Boolean, platforms: List<Platform>): Boolean {
+        if (!complete) return false
+        reportRestoreFolders(trees)
+        if (empty) ingestLibrary("local-folder", emptyList(), platforms)
+        return true
     }
     private var moonlightSettled = false
     private var droidDeckSettled = false
@@ -653,7 +663,10 @@ class ShellController(
         val panel = model.panel
         val rows = panel?.let { panelRows(it, model) }.orEmpty()
         val at = if (meaning == Meaning.Activate) panel?.index?.coerceIn(0, (rows.size - 1).coerceAtLeast(0)) else chordIndex(rows, meaning)
-        val row = at?.let { rows.getOrNull(it) }
+        val directGapRemove = meaning == Meaning.ActivateBottom && panel == null && showingHome() && find == null &&
+            model.dialog == null && model.settings == null && homeKeys() == HomeKeys.Idle && home.restoredGapAt(model.focus.cellIndex) != null
+        val row = if (directGapRemove) Row.RemoveTile else at?.let { rows.getOrNull(it) }
+        forgottenHold = null
         if (find == null && model.homeGrid == HomeGrid.Hidden && model.panel == null && model.playActivity == null && model.gameAbout == null && model.savePicker == null && model.saveSetup == null && (meaning == Meaning.Activate || meaning == Meaning.ActivateBottom)) return null
         val before = home.board
         val beforeFocus = model.focus
@@ -683,6 +696,7 @@ class ShellController(
                     else -> Copy.removed }, nowMillis(), after = if (bulkIds != null) home.bulkAfter ?: home.board else home.board).withFolderCleanup(home.board)
                 undoFocus = beforeFocus
                 undoGrid = beforeGrid
+                forgottenHold?.let { undoHold = undo!! to it }
             }
             publish(model.copy(undoVerb = activeUndo()?.verb))
         }
@@ -718,6 +732,12 @@ class ShellController(
             return null
         }
         if (model.panel == null && home.releaseMenu()) publish(model)
+        if (meaning == Meaning.ActivateBottom && model.panel == null && showingHome() && find == null &&
+            model.dialog == null && model.settings == null && homeKeys() == HomeKeys.Idle && home.restoredGapAt(model.focus.cellIndex) != null) {
+            if (repeatCount > 0) return null
+            heldActions.capture(meaning.ordinal)
+            return changeHome { removeHomeTile(it) }
+        }
         if (meaning == Meaning.ActivateBottom && model.dialog == null && model.panel == null &&
             model.settings == null && model.playActivity == null && model.gameAbout == null && model.saveConflict == null && !model.connectOpen &&
             homeKeys().let { it == HomeKeys.Idle || it == HomeKeys.AllLibrary || it == HomeKeys.FindResults } &&
@@ -899,7 +919,7 @@ class ShellController(
             Effect.RenameFolder -> changeHome { home.startRename(it); it }
             Effect.ChooseFolderIcon -> changeHome { home.pickIcon(it); it }
             // Remove takes a tile off the spot it is in on Home. Find and All have no spots, so none there.
-            Effect.RemoveTile -> if (showingHome() && find == null) changeHome { home.remove(it) } else null
+            Effect.RemoveTile -> if (showingHome() && find == null) changeHome { removeHomeTile(it) } else null
             is Effect.ShowHidden -> {
                 effect.id?.let { id ->
                     val wasFolder = id in home.board.retired
@@ -912,6 +932,12 @@ class ShellController(
             }
             Effect.Undo -> {
                 activeUndo()?.let { saved ->
+                    undoHold?.takeIf { it.first.board === saved.board }?.second?.let { (id, sources, serial) ->
+                        val waiting = sources.filterTo(mutableSetOf()) { (restoreReports[it] ?: 0) <= serial }
+                        if (waiting.isNotEmpty()) {
+                            restoreHolds = store.updateRestoreHolds { it.copy(sources = it.sources + (id to waiting)) }
+                        }
+                    }
                     undo = null
                     home.restore(saved.adopt(sameAliases).restore(home.board))
                     syncHome()
@@ -1608,6 +1634,7 @@ class ShellController(
         platforms: List<Platform>,
         listedNames: Map<String, String> = emptyMap(),
         readAt: Long = deviceMark(),
+        restoreReported: Boolean = true,
     ) {
         listedPlatformNames.putAll(listedNames.filterValues { it.isNotBlank() })
         val prefix = "lib:$libraryId:"
@@ -1647,7 +1674,7 @@ class ShellController(
             remembered[id] = deviceEdited[id]?.let { (_, availability) -> game.copy(availability = availability) } ?: game
         }
         libraryItems = libraryItems.filterNot { it.id.startsWith(prefix) } + items
-        if (libraryId != "local-folder") reportRestoreSources(setOf(libraryId))
+        if (libraryId != "local-folder" && restoreReported) reportRestoreSources(setOf(libraryId))
         settledLibraries += libraryId
         libraryGames.keys.filter { it.startsWith(prefix) }.toList().forEach { libraryGames.remove(it) }
         libraryGames.putAll(remembered)
@@ -3518,7 +3545,18 @@ class ShellController(
         if (!catalog && changed) refreshSaveHealth()
     }
 
+    private fun removeHomeTile(index: Int): Int {
+        home.restoredGapAt(index)?.let { id ->
+            restoreHolds = store.updateRestoreHolds {
+                forgottenHold = Triple(id, it.sources[id].orEmpty(), restoreReportSerial)
+                it.without(id)
+            }
+        }
+        return home.remove(index)
+    }
+
     private fun syncHome() {
+        restoreHolds = store.restoreHolds()
         home.rememberShelf(Shelf.games)
         val folded = foldSameGames(libraryItems, sameSources, sameAliases)
         sameCopies = folded.members

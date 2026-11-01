@@ -850,7 +850,7 @@ class FoldcadeApp : Application() {
             appVersion = installedVersion(),
             onSavePickerClosed = { onSaveConflicts?.invoke() },
             saveFolderPick = ::saveFolderPick,
-            restoreResultPending = { setupBackups.result.isFile },
+            restoreResultPending = { setupBackups.hasNotice() },
             onSaveHealthChanged = { players ->
                 saveSetupNotices.update(players)
                 publishNotices()
@@ -1154,7 +1154,7 @@ class FoldcadeApp : Application() {
         try {
             val reported = refreshGameNativeCatalog(this, library, File(filesDir, "gamenative/catalog.txt"), steamFileGames)
             withContext(Dispatchers.Main.immediate) {
-                if (reported && Shelf.gameNativeInstalled && store.restoreFolders().isEmpty()) shell.reportRestoreSources(setOf("gamenative"))
+                if (reported.releasesRestore(steamFilesRead, store.folderTrees().isNotEmpty()) && Shelf.gameNativeInstalled && store.restoreFolders().isEmpty()) shell.reportRestoreSources(setOf("gamenative"))
                 shell.settleGameNative()
                 shell.noteShelfChanged()
             }
@@ -1653,7 +1653,11 @@ class FoldcadeApp : Application() {
 
     fun cancelMoonlightPairing() = moonlightStreams.cancelPairing()
 
-    fun forgetMoonlightHost(key: String) = moonlightStreams.forget(key)
+    fun forgetMoonlightHost(key: String) {
+        shell.reportRestoreSources(setOf("moonlight:$key"))
+        shell.noteShelfChanged()
+        moonlightStreams.forget(key)
+    }
 
     /**
      * [PinShortcutActivity] accepted Moonlight's Create shortcut for [shortcutId].
@@ -1842,6 +1846,7 @@ class FoldcadeApp : Application() {
     /** Stops reading [uri]. Its games, and its .steam files, leave the grid. */
     fun forgetFolder(uri: String) {
         store.removeFolderTree(uri)
+        shell.reportRestoreSources(setOf("folder:$uri"))
         releaseUnusedFolderGrant(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION)
         shell.setFolders(libraryFolders())
         reloadFolder()
@@ -1889,20 +1894,21 @@ class FoldcadeApp : Application() {
     private var steamFilesRead = false
 
     private suspend fun useSteamFiles(found: List<SteamShortcut>) {
+        val firstReport = !steamFilesRead
         steamFiles = found
         steamFilesRead = true
-        routeSteamFiles()
+        routeSteamFiles(refreshPcCatalog = firstReport)
     }
 
     /** Splits the .steam files between GameNative and DroidDeck. See [routeSteamFiles]. */
-    private suspend fun routeSteamFiles() {
+    private suspend fun routeSteamFiles(refreshPcCatalog: Boolean = false) {
         val route = routeSteamFiles(
             steamFiles,
             gameNativeInstalled = gameNativePackagePresent(),
             droidDeckInstalled = packageInstalled(DroidDeckPlayer.PACKAGE),
         )
         droidDeckFileGames = route.droidDeck
-        if (route.gameNative != steamFileGames) {
+        if (refreshPcCatalog || route.gameNative != steamFileGames) {
             steamFileGames = route.gameNative
             refreshGameNative()
         }
@@ -2082,7 +2088,7 @@ class FoldcadeApp : Application() {
                 occupiesBoth = { platformOccupiesBoth(plugins, it, ::packageInstalled) },
             )
             // A failed read says nothing about the .steam files, and a newer reload has its own.
-            if (loaded != LoadedLibrary.Unreachable && ticket == libraryTicket.get()) {
+            if (loaded != LoadedLibrary.Unreachable && forest.complete && ticket == libraryTicket.get()) {
                 useSteamFiles(backend.steamShortcuts())
                 refreshLocalMedia(backend, forest)
             }
@@ -2357,6 +2363,7 @@ class FoldcadeApp : Application() {
                             plugins.platformDefinitions(),
                             listed?.entries.orEmpty().associate { (it.platformId ?: it.id) to it.title },
                             readAt = readAt,
+                            restoreReported = app.foldcade.plugins.romm.rommCatalogLive(plugins.library(libraryId)),
                         )
                         val waiting = shell.model.libraryGrid && shell.model.emptyGrid != EmptyGrid.Loading
                         if (waiting && games.isNotEmpty()) shell.showCuratedHome()
@@ -2395,10 +2402,14 @@ class FoldcadeApp : Application() {
         }
         withContext(Dispatchers.Main.immediate) {
             if (ticket != libraryTicket.get()) return@withContext
-            if (libraryId == LocalFolderBackend.ID && loaded != LoadedLibrary.Unreachable && loaded != null &&
-                (loaded !is LoadedLibrary.Platforms || games != null)) {
-                shell.reportRestoreFolders(boundForest?.reportedTrees?.toSet().orEmpty())
-                if (loaded == LoadedLibrary.NoPlatforms) shell.ingestLibrary(libraryId, emptyList(), plugins.platformDefinitions())
+            val hadMissingFolders = store.restoreFolders().isNotEmpty()
+            val folderReported = libraryId == LocalFolderBackend.ID && loaded != LoadedLibrary.Unreachable && loaded != null &&
+                (loaded !is LoadedLibrary.Platforms || games != null) && shell.finishFolderReport(
+                    boundForest?.complete == true, boundForest?.reportedTrees?.toSet().orEmpty(),
+                    empty = loaded == LoadedLibrary.NoPlatforms, plugins.platformDefinitions(),
+                )
+            if (folderReported && hadMissingFolders && store.restoreFolders().isEmpty()) {
+                pluginLoad.launch { refreshGameNative(); publishDroidDeck() }
             }
             when (loaded) {
                 is LoadedLibrary.Platforms -> if (games == null) {
@@ -2413,7 +2424,7 @@ class FoldcadeApp : Application() {
                     shell.showCuratedHome()
                 }
                 // A folder of .steam files has games, just none of its own: GameNative's, DroidDeck's, or both.
-                LoadedLibrary.NoPlatforms -> if (steamFiles.isNotEmpty() && libraryId == LocalFolderBackend.ID) {
+                LoadedLibrary.NoPlatforms -> if (steamFiles.isNotEmpty() && folderReported) {
                     shell.dropLibrary(libraryId)
                     shell.showCuratedHome()
                 } else {

@@ -9,11 +9,17 @@ object BackupCopy {
     const val restore = "Restore"
     const val undo = "Undo restore"
     const val saved = "Backed up."
+    fun saved(skippedThemes: Int): String = when (skippedThemes) {
+        0 -> saved
+        1 -> "$saved 1 theme was too large to include."
+        else -> "$saved $skippedThemes themes were too large to include."
+    }
     const val notSaved = PlayCopy.notSaved
     const val unreadable = PlayCopy.unreadable
     const val foreign = "That file isn't a Foldcade backup."
     const val newer = "That backup is from a newer Foldcade."
     const val restoreFailed = "The backup couldn't be restored."
+    const val restoreUnfinished = "The restore didn't finish. Your setup is as it was."
     const val confirm = "Restore this backup?"
     const val restored = "Restored"
     fun replacing(date: String): String = "Replaces Home, collections, hidden games, settings and theme with the backup's from $date. Play time is added to, never replaced."
@@ -26,6 +32,7 @@ object BackupCopy {
     const val eden = "Pick Eden's folder again."
     fun folders(names: String): String = "Pick these folders again: $names."
     fun saves(names: String): String = "Pick save folders again: $names."
+    fun switchedRomm(host: String): String = "RomM: switches to $host; sign in again"
 }
 
 fun backupDialog(screen: HostScreen, undo: Boolean = false): DialogState {
@@ -65,6 +72,7 @@ fun backupHomeSummary(board: HomeBoard, available: Set<String>): BackupHomeSumma
 data class RestoreHolds(val sources: Map<String, Set<String>> = emptyMap()) {
     fun awaiting(id: String): Boolean = sources[id]?.isNotEmpty() == true
     fun reported(sources: Set<String>): RestoreHolds = RestoreHolds(this.sources.mapValues { it.value - sources }.filterValues { it.isNotEmpty() })
+    fun without(id: String): RestoreHolds = copy(sources = sources - id)
     fun encode(): String = buildJsonObject {
         sources.toSortedMap().forEach { (id, from) -> put(id, JsonArray(from.sorted().map(::JsonPrimitive))) }
     }.toString()

@@ -61,8 +61,6 @@ internal class MoonlightStreams(
     @Volatile
     private var paired: List<PairedStreamHost> = emptyList()
 
-    fun hasPaired(): Boolean = paired.isNotEmpty()
-
     private var pairing: Job? = null
 
     /** Pairings, and the apps they list, change one at a time. */

@@ -5,6 +5,7 @@ import app.foldcade.host.play.PlayExport
 import java.io.InputStream
 import java.io.OutputStream
 import java.io.IOException
+import java.io.File
 import java.util.zip.ZipEntry
 import java.util.zip.ZipInputStream
 import java.util.zip.ZipOutputStream
@@ -34,10 +35,23 @@ data class SetupBackup(
     val artChoices: String,
     val playHistory: ByteArray,
     val themes: Map<String, ByteArray> = emptyMap(),
+    /** Android reads large sections into private files, and opens one pack at a time. */
+    val playHistoryFile: File? = null,
+    val themeFiles: Map<String, File> = emptyMap(),
+    val sourceArchive: File? = null,
 ) {
     fun preferences(): Map<String, Any> = settings + mapOf("home_board" to home, "same_games" to sameGames)
-    fun play(): PlayExport = PlayArchive.read(playHistory.inputStream())
+    fun play(): PlayExport = (playHistoryFile?.inputStream() ?: playHistory.inputStream()).use {
+        PlayArchive.read(it, retainedLimit = backupReadMemoryLimit())
+    }
 }
+private const val MAX_BACKUP_PLAY_MEMORY = 32L * 1024 * 1024
+private fun backupReadMemoryLimit(): Long {
+    val runtime = Runtime.getRuntime()
+    val headroom = runtime.maxMemory() - (runtime.totalMemory() - runtime.freeMemory())
+    return minOf(MAX_BACKUP_PLAY_MEMORY, headroom / 4).coerceAtLeast(64 * 1024)
+}
+data class BackupWriteResult(val skippedThemes: Int)
 enum class BackupRefusal { Foreign, Newer, Unreadable }
 class SetupArchiveException(val reason: BackupRefusal) : IOException(reason.name)
 
@@ -50,7 +64,8 @@ object SetupArchive {
         "same-games.txt" to 8 * MIB, "art-choices.json" to 8 * MIB, "play-history.zip" to 112 * MIB)
     private val themeName = Regex("themes/[A-Za-z0-9._-]{1,251}\\.zip")
 
-    fun write(output: OutputStream, backup: SetupBackup) {
+    fun write(output: OutputStream, backup: SetupBackup): BackupWriteResult {
+        var skipped = 0
         ZipOutputStream(output).use { zip ->
             fun entry(name: String, bytes: ByteArray) {
                 val limit = limits[name] ?: MAX_THEMES_BYTES
@@ -64,18 +79,44 @@ object SetupArchive {
             entry("home.txt", backup.home.encodeToByteArray())
             entry("same-games.txt", backup.sameGames.encodeToByteArray())
             entry("art-choices.json", backup.artChoices.encodeToByteArray())
-            entry("play-history.zip", backup.playHistory)
-            require(backup.themes.values.sumOf { it.size.toLong() } <= MAX_THEMES_BYTES) { "themes are too large" }
-            backup.themes.toSortedMap().forEach { (name, bytes) ->
+            fun fileEntry(name: String, file: File, limit: Long) {
+                require(file.length() <= limit) { "$name is too large" }
+                zip.putNextEntry(ZipEntry(name))
+                var written = 0L
+                file.inputStream().use { input ->
+                    val buffer = ByteArray(64 * 1024)
+                    while (true) {
+                        val count = input.read(buffer)
+                        if (count < 0) break
+                        written += count
+                        require(written <= limit) { "$name grew during backup" }
+                        zip.write(buffer, 0, count)
+                    }
+                }
+                zip.closeEntry()
+            }
+            if (backup.playHistoryFile != null) fileEntry("play-history.zip", backup.playHistoryFile, limits.getValue("play-history.zip"))
+            else entry("play-history.zip", backup.playHistory)
+            var remaining = MAX_THEMES_BYTES
+            (backup.themes.keys + backup.themeFiles.keys).sorted().forEach { name ->
                 require(themeName.matches("themes/$name")) { "invalid theme name" }
-                entry("themes/$name", bytes)
+                val file = backup.themeFiles[name]
+                val bytes = backup.themes[name]
+                val size = file?.length() ?: bytes!!.size.toLong()
+                if (size > remaining) { skipped++; return@forEach }
+                if (file != null) fileEntry("themes/$name", file, remaining) else entry("themes/$name", bytes!!)
+                remaining -= size
             }
         }
+        return BackupWriteResult(skipped)
     }
 
-    fun read(input: InputStream): SetupBackup {
+    fun read(input: InputStream, storage: File? = null): SetupBackup {
         try {
+            storage?.mkdirs()
+            val memoryLimit = backupReadMemoryLimit()
             val entries = LinkedHashMap<String, ByteArray>()
+            val files = LinkedHashMap<String, File>()
             val seen = HashSet<String>()
             val budget = InflateBudget(288 * MIB)
             var themes = 0L
@@ -88,9 +129,18 @@ object SetupArchive {
                         name.split('/').any { it == "." || it == ".." }) throw SetupArchiveException(BackupRefusal.Unreadable)
                     val limit = limits[name] ?: if (themeName.matches(name)) minOf(MAX_THEMES_BYTES - themes, MAX_THEMES_BYTES) else null
                     if (limit != null && !entry.isDirectory) {
-                        val bytes = zip.readBounded(limit, budget)
-                        entries[name] = bytes
-                        if (name.startsWith("themes/")) themes += bytes.size
+                        if (storage != null && (name == "play-history.zip" || themeName.matches(name))) {
+                            val target = File(storage, "section-${files.size}")
+                            target.outputStream().use { zip.copyBounded(it, limit, budget) }
+                            files[name] = target
+                            if (name.startsWith("themes/")) themes += target.length()
+                        } else {
+                            // The convenience JVM reader is bounded too; Android always spools large sections.
+                            val bytes = zip.readBounded(minOf(limit, memoryLimit / 2), budget)
+                            entries[name] = bytes
+                            if (name.startsWith("themes/")) themes += bytes.size
+                            require(entries.values.sumOf { it.size.toLong() } <= memoryLimit) { "metadata is too large" }
+                        }
                     }
                     zip.drainBounded(budget)
                     zip.closeEntry()
@@ -102,15 +152,17 @@ object SetupArchive {
             if (format > SETUP_FORMAT) throw SetupArchiveException(BackupRefusal.Newer)
             val migrated = migrate(format, root)
             fun section(name: String): ByteArray = entries[name] ?: throw SetupArchiveException(BackupRefusal.Unreadable)
-            val play = section("play-history.zip")
-            PlayArchive.read(play.inputStream()) // Validate the nested transport before asking to replace anything.
+            val playFile = files["play-history.zip"]
+            val play = if (playFile == null) section("play-history.zip") else byteArrayOf()
+            (playFile?.inputStream() ?: play.inputStream()).use { PlayArchive.read(it, retainedLimit = memoryLimit) }
             val art = section("art-choices.json").decodeToString()
             Json.parseToJsonElement(art).jsonObject
             val home = section("home.txt").decodeToString()
             require(home.lineSequence().firstOrNull() in setOf("v1", "v2")) { "unreadable Home" }
             return SetupBackup(readManifest(migrated), readSettings(section("settings.json").decodeToString()),
                 home, section("same-games.txt").decodeToString(), art, play,
-                entries.filterKeys { themeName.matches(it) }.mapKeys { it.key.removePrefix("themes/") })
+                entries.filterKeys { themeName.matches(it) }.mapKeys { it.key.removePrefix("themes/") }, playFile,
+                files.filterKeys { themeName.matches(it) }.mapKeys { it.key.removePrefix("themes/") })
         } catch (refused: SetupArchiveException) { throw refused }
         catch (_: Exception) { throw SetupArchiveException(BackupRefusal.Unreadable) }
     }
@@ -121,7 +173,7 @@ object SetupArchive {
         else -> throw SetupArchiveException(BackupRefusal.Foreign)
     }
 
-    internal fun settingsJson(settings: Map<String, Any>): JsonObject = buildJsonObject {
+    fun settingsJson(settings: Map<String, Any>): JsonObject = buildJsonObject {
         settings.toSortedMap().forEach { (key, value) ->
             val type = PreferenceType.entries.firstOrNull { it.accepts(value) } ?: return@forEach
             put(key, buildJsonObject {
@@ -145,7 +197,7 @@ object SetupArchive {
         key to readPreference(entry)
     }.toMap().let(BackupSettings::portable)
 
-    internal fun readPreference(entry: JsonElement): Any {
+    fun readPreference(entry: JsonElement): Any {
         val row = entry.jsonObject
         val type = PreferenceType.entries.firstOrNull { it.wire == row["type"]?.jsonPrimitive?.content }
         val value = row.getValue("value")

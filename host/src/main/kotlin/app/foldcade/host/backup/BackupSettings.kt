@@ -33,7 +33,7 @@ object BackupSettings {
             "players_holding_games", "save_awaits_load:", "retroarch_cores_folder:", "retroarch_cores_offered",
             "eden_folder:", "eden_restart_package", "eden_restart_boot", "refused_eden_firmware",
             "moonlight_pins", "moonlight_hosts", "moonlight_listed_apps", "moonlight_paired_hosts", "gamestream_client_id",
-            "droiddeck_pins", "home_return_game", "home_board_before_collections", "restore_holds", "restore_folders", "restore_romm_sign_in",
+            "droiddeck_pins", "home_return_game", "home_board_before_collections", "restore_holds", "restore_folders", "restore_romm_sign_in", "restore_committed",
             // Retired keys are still classified: startup migrations must never become a transfer path.
             "game_screens", "platform_screens", "android_shelf_games", "android_shelf_apps", "android_shelf_hidden",
             "android_shelf_favorites", "android_shelf_shown", "moonlight_source", "moonlight_import",
@@ -51,10 +51,11 @@ object BackupSettings {
     }.toMap()
 
     /** A replacement, including absent keys, while every device-owned value stays as it is. */
-    fun plan(current: Map<String, *>, incoming: Map<String, *>): PreferencePlan = PreferencePlan(
-        remove = current.keys.filter { classify(it)?.disposition == BackupDisposition.BackedUp }.toSet(),
-        put = portable(incoming),
-    )
+    fun plan(current: Map<String, *>, incoming: Map<String, *>): PreferencePlan {
+        val values = portable(incoming)
+        return PreferencePlan(current.keys.filter { classify(it)?.disposition == BackupDisposition.BackedUp &&
+            (it != "romm_origin" || values.containsKey(it)) }.toSet(), values)
+    }
 
     private fun safeOrigin(value: String): Boolean = try {
         val uri = URI(value)

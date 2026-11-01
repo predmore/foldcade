@@ -69,12 +69,18 @@ object PlayArchive {
         }
     }
 
-    fun read(input: InputStream): PlayExport {
+    fun read(input: InputStream, retainedLimit: Long = Long.MAX_VALUE): PlayExport {
         var format: Int? = null
         var events: List<PlayEvent> = emptyList()
         val names = HashMap<String, String>()
         val art = LinkedHashMap<String, ByteArray>()
         var artBytes = 0L
+        var retained = 0L
+        fun retain(bytes: Long) {
+            retained += bytes
+            if (retained > retainedLimit) throw PlayArchiveException("play history is too large to read")
+        }
+        val logLimit = minOf(MAX_LOG_BYTES, retainedLimit / 4)
         val budget = InflateBudget(MAX_INFLATED_BYTES) { PlayArchiveException("play history is too large") }
         ZipInputStream(input).use { zip ->
             while (true) {
@@ -83,13 +89,16 @@ object PlayArchive {
                 val name = if (entry.isDirectory) "" else entry.name
                 when {
                     name == MARKER -> format = readFormat(String(zip.bounded(1024, budget), Charsets.UTF_8))
-                    name == EVENTS -> events = String(zip.bounded(MAX_LOG_BYTES, budget), Charsets.UTF_8).lineSequence().mapNotNull(::decodePlayEvent).toList()
-                    name == NAMES -> String(zip.bounded(MAX_LOG_BYTES, budget), Charsets.UTF_8).lineSequence().forEach { line ->
-                        decodePlayName(line)?.let { (id, kept) -> names[id] = kept }
+                    name == EVENTS -> events = String(zip.bounded(logLimit, budget), Charsets.UTF_8).lineSequence().mapNotNull { line ->
+                        decodePlayEvent(line)?.also { retain(384L + 2L * (it.gameId.length + it.sessionId.length)) }
+                    }.toList()
+                    name == NAMES -> String(zip.bounded(logLimit, budget), Charsets.UTF_8).lineSequence().forEach { line ->
+                        decodePlayName(line)?.let { (id, kept) -> retain(192L + 2L * (id.length + kept.length)); names[id] = kept }
                     }
                     name.startsWith(ART) && isPlayArtName(name.removePrefix(ART)) && artBytes < MAX_ALL_ART_BYTES -> {
                         val bytes = zip.boundedOrNull(minOf(MAX_ART_BYTES, MAX_ALL_ART_BYTES - artBytes), budget)
                         if (bytes != null && bytes.isNotEmpty()) {
+                            retain(bytes.size.toLong())
                             art[name.removePrefix(ART)] = bytes
                             artBytes += bytes.size
                         }

@@ -131,4 +131,37 @@ class SetupArchiveTest {
             assertEquals(60000L, log.totals("lib:romm:1").activeMillis)
         } finally { root.deleteRecursively() }
     }
+
+    @Test fun packsStreamFromFilesAndOversizeOrOverBudgetPacksAreReportedAndSkipped() {
+        val root = Files.createTempDirectory("backup-large-packs").toFile()
+        try {
+            fun sparse(name: String, size: Long): File = File(root, name).also { file ->
+                java.io.RandomAccessFile(file, "rw").use { it.setLength(size) }
+            }
+            val first = sparse("a.zip", SetupArchive.MAX_THEMES_BYTES - 8192)
+            val second = sparse("b.zip", 16384)
+            val small = sparse("c.zip", 4096)
+            val tooBig = sparse("z.zip", SetupArchive.MAX_THEMES_BYTES + 1)
+            val archive = File(root, "backup.zip")
+            val result = archive.outputStream().use { output -> SetupArchive.write(output, sample().copy(
+                themes = emptyMap(), themeFiles = listOf(first, second, small, tooBig).associateBy { it.name },
+            )) }
+            assertEquals(2, result.skippedThemes)
+            val read = archive.inputStream().use { SetupArchive.read(it, File(root, "sections")) }
+            assertTrue(read.themes.isEmpty())
+            assertEquals(setOf("a.zip", "c.zip"), read.themeFiles.keys)
+            assertEquals(first.length(), read.themeFiles.getValue("a.zip").length())
+            assertTrue(read.playHistory.isEmpty())
+            assertNotNull(read.playHistoryFile)
+            assertEquals(sample().play().events, read.play().events)
+            // The memory-only convenience reader refuses a large pack rather than allocating it.
+            refusal(archive.readBytes(), BackupRefusal.Unreadable)
+        } finally { root.deleteRecursively() }
+    }
+
+    @Test fun retainedPlayRecordsHaveAMemoryBudgetAsWellAsAnInflateBudget() {
+        val events = (0 until 100).map { PlayEvent("s$it", "g", PlayKind.Started, 1, null, 0) }
+        val archive = ByteArrayOutputStream().also { PlayArchive.write(it, events, emptyMap(), emptyList()) }.toByteArray()
+        assertThrows(PlayArchiveException::class.java) { PlayArchive.read(archive.inputStream(), retainedLimit = 16 * 1024) }
+    }
 }
