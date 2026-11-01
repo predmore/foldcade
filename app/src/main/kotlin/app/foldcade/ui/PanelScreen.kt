@@ -535,8 +535,12 @@ private fun PanelBody(
             // While a launching game's art grows here, this screen keeps what it showed. Keys
             // already follow the session; only the drawing waits, so the grow gets the frames.
             val surface = session.surfaceOn(panel)
-            val drawn = remember { SurfaceHold(surface) }
-            if (!app.launchBlooms.holdsView(panel)) drawn.surface = surface
+            val bothFree = session.bothScreensFree()
+            val drawn = remember { SurfaceHold(surface, bothFree) }
+            if (!app.launchBlooms.holdsView(panel)) {
+                drawn.surface = surface
+                drawn.bothFree = bothFree
+            }
             TravelFade(target = drawn.surface, scale = scale) { shown ->
                 when (shown) {
                     null -> Unit
@@ -548,6 +552,7 @@ private fun PanelBody(
                         activity::dispatch,
                         editorHere = session.editorPanel() == panel,
                         live = session.surfaceOn(panel) == Surface.Picker,
+                        iconsOnly = drawn.bothFree,
                     )
                     Surface.CommandCenter -> CommandCenterScreen(
                         app,
@@ -581,8 +586,8 @@ private fun PanelBody(
     }
 }
 
-/** The surface a panel draws, which a growing launch holds back from the session's. */
-private class SurfaceHold(var surface: Surface?)
+/** The surface a panel draws, and how its grid is laid out, which a growing launch holds back from the session's. */
+private class SurfaceHold(var surface: Surface?, var bothFree: Boolean)
 
 /** [base] under its own identity, so every layer under it counts it as a new density. */
 private class WindowDensity(base: Density) : Density by base
@@ -2213,6 +2218,11 @@ private fun Picker(
     editorHere: Boolean = false,
     /** This panel is where the grid is, not one it is fading out of. Only it sets how many columns show. */
     live: Boolean,
+    /**
+     * The hero on the other screen carries the focused name, so the grid is icons only.
+     * With one screen free there is no hero, and tiles keep labels. A growing launch holds it.
+     */
+    iconsOnly: Boolean = app.store.session.bothScreensFree(),
 ) {
     val design = LocalFoldTheme.current.theme.style
     val theme = foldTheme()
@@ -2226,9 +2236,6 @@ private fun Picker(
     val finding = presence(shell.find, motion.durationIsland, scale)
     val covered = { max(typing.progress.value, finding.progress.value) }
     val gridGone by remember { derivedStateOf { covered() >= 1f } }
-    // The hero on the other screen carries the focused name, so the grid is
-    // icons only. With one screen free there is no hero, and tiles keep labels.
-    val iconsOnly = app.store.session.bothScreensFree()
     BoxWithConstraints(Modifier.fillMaxSize()) {
         val inset = maxWidth * design.metrics.insetFraction
         // A wide panel spaces its tiles as a 4:3 one would, and spends the rest of its width on columns.
