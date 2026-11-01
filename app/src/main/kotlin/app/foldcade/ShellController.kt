@@ -1340,9 +1340,15 @@ class ShellController(
      * Foldcade no longer knows. History from before the home id kept a library
      * game under its bare remote key, so a key one library game still has names it.
      */
-    fun playTitle(gameId: String): String? =
-        home.catalog().firstOrNull { it.id == gameId }?.title
-            ?: home.game(gameId)?.label
+    fun playTitle(gameId: String): String? = libraryTitle(gameId) ?: home.game(gameId)?.label
+
+    /**
+     * [gameId]'s title in a catalog that has it now, or null for a game that is gone: its file
+     * renamed, replaced, or removed, or its library signed out of. [playTitle] also reads the
+     * games Home remembers after they leave, so it is not the test for gone.
+     */
+    fun libraryTitle(gameId: String): String? =
+        home.item(gameId)?.title
             ?: Shelf.games.firstOrNull { it.id == gameId }?.title
             ?: installed.firstOrNull { androidHomeId(it.packageName) == gameId }?.label
             ?: home.catalog().singleOrNull { homeGameKey(it.id) == gameId }?.title

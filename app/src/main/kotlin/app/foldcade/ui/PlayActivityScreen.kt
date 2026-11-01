@@ -353,6 +353,7 @@ private fun GameSources(app: FoldcadeApp, page: PlayActivityPage, game: String, 
                 key(source) {
                     val moved = source in page.moved
                     val current = app.shell.playTitle(source)
+                    val gone = app.shell.libraryTitle(source) == null
                     Row(
                         Modifier
                             .fillMaxWidth()
@@ -374,7 +375,7 @@ private fun GameSources(app: FoldcadeApp, page: PlayActivityPage, game: String, 
                             BasicText(
                                 when {
                                     moved -> PlayCopy.moved
-                                    current == null -> "${playDuration(played[source]?.activeMillis ?: 0L)} · ${PlayCopy.gone}"
+                                    gone -> "${playDuration(played[source]?.activeMillis ?: 0L)} · ${PlayCopy.gone}"
                                     else -> playDuration(played[source]?.activeMillis ?: 0L)
                                 },
                                 maxLines = 1,
@@ -432,10 +433,12 @@ private fun PlayCover(app: FoldcadeApp, gameId: String, size: Dp) {
     val game = shell.findGame(gameId)
     val appObject = appGlyph(game.androidPackage)
     // A game no library has now shows the cover kept when it was played.
-    val gone = shell.playTitle(gameId) == null
+    val gone = shell.libraryTitle(gameId) == null
     val art = key(gameId) {
-        if (gone) {
-            rememberKeptCover(app, gameId)
+        // Without one kept, as for history older than kept covers, the game's art is still looked for.
+        val kept = if (gone) rememberKeptCover(app, gameId) else null
+        if (kept != null) {
+            kept
         } else {
             val found = rememberArt(app, shell.artRecord(game), shell.artQuery(game), automatic = appObject == null)
             val uri = found?.let { it.square ?: it.cover }
@@ -471,7 +474,8 @@ private fun rememberKeptCover(app: FoldcadeApp, gameId: String): androidx.compos
     val file = remember(gameId, stamp) { app.plays.keptCover(gameId) } ?: return null
     val painter = coil3.compose.rememberAsyncImagePainter(file, app.images)
     val state by painter.state.collectAsState()
-    return painter.takeIf { state is coil3.compose.AsyncImagePainter.State.Success }
+    // A kept file is the cover while it decodes too, so the page does not look for it elsewhere meanwhile.
+    return painter.takeIf { state !is coil3.compose.AsyncImagePainter.State.Error }
 }
 
 /** Covers: four of the most played still fit the page's height. */

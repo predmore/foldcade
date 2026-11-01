@@ -387,7 +387,7 @@ class FoldcadeApp : Application() {
                 app.foldcade.language.PlaySource(
                     id = totals.gameId,
                     name = playName(totals.gameId, current, plays.name(totals.gameId)),
-                    gone = current == null,
+                    gone = shell.libraryTitle(totals.gameId) == null,
                     activeMillis = totals.activeMillis,
                 )
             }
