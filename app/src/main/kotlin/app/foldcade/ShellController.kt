@@ -979,15 +979,15 @@ class ShellController(
     fun homeFace(index: Int): HomeFace? = home.face(index)
 
     /**
-     * True while a grid opened from a command center must stay: a dialog or menu is up, a
+     * True while a grid opened from a command center must stay: a dialog, menu or page is up, a
      * name is being typed, a collection's icon is being chosen, or Find is open. Its idle timer would
-     * otherwise drop the grid mid-word or mid-choice and leave the keyboard or editor open
+     * otherwise drop the grid mid-word or mid-choice and leave the keyboard, editor or page open
      * with nothing to act on.
      */
     fun holdsCommandCenter(): Boolean =
         model.savePicker != null || model.saveSetup != null || model.dialog != null || model.panel != null || model.connectOpen || typing() != null || home.iconPick != null || home.selection != null || find != null ||
-            // Settings and Play activity opened from that grid, as beside a game on the top screen.
-            model.settings != null || model.playActivity != null
+            // Settings, Play activity and a game's About opened from that grid, as beside a game on the top screen.
+            model.settings != null || model.playActivity != null || model.gameAbout != null
 
     /**
      * The collection or folder being named, as the top screen shows it over the name field.
@@ -1225,6 +1225,8 @@ class ShellController(
 
     /** Called before play history can reorder the grid or the player can outlive Home. */
     fun noteGameLaunched(id: String) {
+        // A start that took its time, a download or a save, may have let About open meanwhile. The game is what is shown now.
+        model.gameAbout?.let { page -> publish(model.copy(gameAbout = null, focus = page.grid)) }
         val tile = tileOf(id)
         homeReturn = HomeReturn(tile, false, Long.MAX_VALUE)
         store.setPendingHomeGame(tile)
@@ -2306,6 +2308,18 @@ class ShellController(
         publish(model.copy(gameAbout = null, focus = page.grid))
     }
 
+    /**
+     * The screens changed hands. A game's About page stays only while its screen still shows
+     * Foldcade's grid or hero: a game there covers it, a command center there takes its keys, and
+     * the dark screen draws nothing.
+     */
+    fun noteSessionChanged() {
+        val page = model.gameAbout ?: return
+        val session = store.session
+        val panel = page.screen.panel()
+        if (!session.draws(panel) || session.surfaceOn(panel) == Surface.CommandCenter) publish(model.copy(gameAbout = null, focus = page.grid))
+    }
+
     /** The game a page about [gameId] shows: the tile it is now, as Home shows it. Null once no library lists it. */
     fun aboutGame(gameId: String): ShelfGame? {
         val tile = tileOf(gameId)
@@ -3266,7 +3280,10 @@ class ShellController(
     private fun noteShelfChanged(focusedId: String?) {
         if (homeReturnBlocked()) cancelHomeReturnOnInput()
         syncHome()
-        val next = model.copy(shelfEpoch = model.shelfEpoch + 1)
+        // A rescan can take the game an About page is about. A copy folding under another tile keeps
+        // the page, since it reads the tile the game is now.
+        val gone = model.gameAbout?.takeIf { aboutGame(it.game) == null }
+        val next = model.copy(shelfEpoch = model.shelfEpoch + 1, gameAbout = model.gameAbout.takeIf { gone == null }, focus = gone?.grid ?: model.focus)
         if (model.libraryGrid) {
             model = next
             landHomeReturn()

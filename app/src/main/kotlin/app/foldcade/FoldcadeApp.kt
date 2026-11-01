@@ -783,6 +783,7 @@ class FoldcadeApp : Application() {
             }
             artSession = next
             music.onSessionChanged()
+            if (::shell.isInitialized) shell.noteSessionChanged()
             refreshHomeRecovery()
         }
         // Before the packs load, so a pack that crashed Foldcade twice is already back out of the way.
