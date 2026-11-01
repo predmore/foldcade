@@ -151,6 +151,7 @@ import app.foldcade.DeviceStatus
 import app.foldcade.Displays
 import app.foldcade.language.ArtCopy
 import app.foldcade.language.ArtKind
+import app.foldcade.BloomFrom
 import app.foldcade.FoldcadeApp
 import app.foldcade.FoldcadeHomeActivity
 import app.foldcade.Panel
@@ -403,6 +404,8 @@ fun PanelHost(activity: FoldcadeHomeActivity, displays: Displays) {
                     backKey = promptKeyOf(model.faceMap.backKey) ?: PromptKey.FaceB,
                 )
             }
+            // A launching game's art grows over everything here, then waits for the game.
+            if (panel != null) LaunchBloomLayer(app, panel)
         }
     }
 }
@@ -520,7 +523,8 @@ private fun PanelBody(
             animatorScale = scale,
             running = running,
             // Opaque game art or Settings over it, or the menu's blur, leaves nothing to watch move.
-            held = cover.covered || settingsOver || LocalUnderMenu.current || centerHere,
+            held = cover.covered || settingsOver || LocalUnderMenu.current || centerHere ||
+                (panel != null && app.launchBlooms.fills(panel)),
             live = sceneLive(app, backdrop, scale, camera),
         )
     }
@@ -1147,13 +1151,15 @@ private fun Hero(app: FoldcadeApp, screen: HostScreen, scale: Float, onEffect: (
                             when (layer) {
                                 is HeroSubject.Item -> HeroArt(
                                     app = app,
+                                    screen = screen,
+                                    key = layer.key,
                                     title = layer.item.title,
                                     mark = layer.item.mark,
                                     packageName = layer.item.packageName,
                                     record = records[layer.key],
                                     query = queries[layer.key],
                                 )
-                                is HeroSubject.Folder -> HeroArt(app, layer.folder.name, layer.folder.mark, null, null, null)
+                                is HeroSubject.Folder -> HeroArt(app, screen, null, layer.folder.name, layer.folder.mark, null, null, null)
                             }
                         }
                     }
@@ -1399,7 +1405,7 @@ private fun FolderIconPicker(app: FoldcadeApp, pick: IconPick, name: String, top
             Box(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
                 Crossfade(pick.look.mark, animationSpec = motion.arrive(motion.durationFocus, scale)) { mark ->
                     Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                        HeroArt(app, name, mark, null, null, null)
+                        HeroArt(app, null, null, name, mark, null, null, null)
                     }
                 }
             }
@@ -1663,7 +1669,7 @@ private fun Modifier.fadingHero(
  * Changing artwork sources or the Game art setting asks again.
  */
 @Composable
-private fun rememberScene(app: FoldcadeApp, record: Game?, query: ArtQuery?): ArtScene? {
+internal fun rememberScene(app: FoldcadeApp, record: Game?, query: ArtQuery?): ArtScene? {
     val allowed = app.shell.model.artwork
     val connections = app.shell.model.signedIn
     val revision = app.artRevision
@@ -1783,6 +1789,9 @@ internal fun rememberArt(app: FoldcadeApp, record: Game?, query: ArtQuery?, auto
 @Composable
 private fun HeroArt(
     app: FoldcadeApp,
+    /** The screen it is on, and its subject's key, mark it as where a launch grows from. Null for previews. */
+    screen: HostScreen?,
+    key: String?,
     title: String,
     mark: String?,
     packageName: String?,
@@ -1805,6 +1814,7 @@ private fun HeroArt(
     // art is behind them, so they draw no glow. A lone box or mark stays in its square, lit
     // from behind when the theme's glow.heroPeak asks for it (Afterglow's is 0).
     val staged = logo != null || (loaded != null && screenShot != null)
+    val coverCornerPx = with(LocalDensity.current) { design.metrics.cardCornerDp.dp.toPx() }
     Box(
         Modifier
             .fillMaxHeight()
@@ -1834,6 +1844,8 @@ private fun HeroArt(
             // Wide art fills the screen behind; the logo names the game over it.
             logo != null -> Box(
                 modifier = Modifier
+                    // The wide art behind the logo is what a launch brings forward.
+                    .then(if (screen != null) Modifier.bloomSource(app, screen, BloomFrom.Scene, 0f, key) else Modifier)
                     .fillMaxWidth(LOGO_WIDTH)
                     .fillMaxHeight(LOGO_HEIGHT)
                     // A soft shade behind the logo keeps a dark logo readable over busy art.
@@ -1891,7 +1903,8 @@ private fun HeroArt(
                     modifier = Modifier
                         .fillMaxHeight()
                         .aspectRatio(loaded.ratio, matchHeightConstraintsFirst = true)
-                        .clip(RoundedCornerShape(design.metrics.cardCornerDp.dp)),
+                        .clip(RoundedCornerShape(design.metrics.cardCornerDp.dp))
+                        .then(if (screen != null) Modifier.bloomSource(app, screen, BloomFrom.Cover, coverCornerPx, key) else Modifier),
                     contentScale = ContentScale.Crop,
                 )
                 Image(
@@ -1911,7 +1924,8 @@ private fun HeroArt(
                 modifier = Modifier
                     .fillMaxHeight(COVER_HEIGHT)
                     .aspectRatio(loaded.ratio, matchHeightConstraintsFirst = true)
-                    .clip(RoundedCornerShape(design.metrics.cardCornerDp.dp)),
+                    .clip(RoundedCornerShape(design.metrics.cardCornerDp.dp))
+                    .then(if (screen != null) Modifier.bloomSource(app, screen, BloomFrom.Cover, coverCornerPx, key) else Modifier),
                 contentScale = ContentScale.Crop,
             )
             icon != null -> LauncherImage(icon, contentDescription = title, modifier = Modifier.fillMaxSize(theme.artScale))
@@ -2325,7 +2339,7 @@ private fun Picker(
                         onTapKey = { at -> onEffect(shell.tapFind(at)) },
                         onTapResult = { at -> onEffect(shell.tapFindResult(at)) },
                         onTapFilter = { at -> onEffect(shell.tapFindFilter(at)) },
-                        tile = { entry, focused, size, onClick -> FoundTile(app, entry, focused, size, !iconsOnly, onClick) },
+                        tile = { entry, focused, size, onClick -> FoundTile(app, screen, entry, focused, size, !iconsOnly, onClick) },
                         modifier = Modifier.slidingUp { finding.progress.value },
                     )
                 }
@@ -3037,6 +3051,7 @@ private fun StripGrid(
         }
         GridCursor(
             app = app,
+            screen = screen,
             index = model.focus.cellIndex,
             cell = cell,
             gap = rowGap,
@@ -3060,6 +3075,7 @@ private fun StripGrid(
 @Composable
 private fun GridCursor(
     app: FoldcadeApp,
+    screen: HostScreen,
     index: Int,
     cell: Dp,
     gap: Dp,
@@ -3106,6 +3122,8 @@ private fun GridCursor(
     val theme = foldTheme()
     val radius = cell * theme.iconRadius
     val ring = remember { Path() }
+    // The ring sits on the focused tile, at its focused size: a launch grows the tile's art from here.
+    val tileCornerPx = with(LocalDensity.current) { radius.toPx() } * motion.scaleFocus
     Box(
         Modifier
             .size(cell)
@@ -3144,7 +3162,8 @@ private fun GridCursor(
                         }
                     }
                 }
-            },
+            }
+            .bloomSource(app, screen, BloomFrom.Tile, tileCornerPx),
     )
 }
 
@@ -3671,7 +3690,7 @@ private fun CarriedTile(
  * or a group's mark. A hidden one wears a badge, since Find shows it all the same.
  */
 @Composable
-private fun FoundTile(app: FoldcadeApp, entry: FindEntry, focused: Boolean, size: Dp, showTitle: Boolean, onClick: () -> Unit) {
+private fun FoundTile(app: FoldcadeApp, screen: HostScreen, entry: FindEntry, focused: Boolean, size: Dp, showTitle: Boolean, onClick: () -> Unit) {
     val shell = app.shell
     val game = if (entry.kind == FindKind.Group) null else shell.findGame(entry.id)
     val appObject = appGlyph(game?.androidPackage)
@@ -3681,7 +3700,9 @@ private fun FoundTile(app: FoldcadeApp, entry: FindEntry, focused: Boolean, size
     }
     val corner = size * foldTheme().iconRadius
     val themedApp = if (art == null) appObject else null
-    Box {
+    // The focused result is where a launch from Find grows its art from.
+    val cornerPx = with(LocalDensity.current) { corner.toPx() }
+    Box(if (focused) Modifier.bloomSource(app, screen, BloomFrom.Tile, cornerPx, find = true) else Modifier) {
         Cell(
             title = entry.title,
             mark = entry.mark ?: game?.mark,

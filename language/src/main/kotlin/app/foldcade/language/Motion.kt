@@ -85,6 +85,15 @@ open class MotionStyle(private val style: ThemeStyle = ThemeStyle()) {
     /** Wide art's slow settle after it arrives. */
     val durationShowcase = style.motion.durationShowcase
 
+    /** A launching game's art growing to fill both screens. */
+    val durationLaunch = style.motion.durationLaunch
+
+    /** How long the screen beside a launching game keeps that art before it gives way. */
+    val durationLaunchHold = style.motion.durationLaunchHold
+
+    /** How much larger that art is drawn as it waits for the game. */
+    val launchPush = style.motion.launchPush
+
     /** A menu's highlight landing on a row, and a switch flipping. Long enough to read the overshoot. */
     val durationSelect = style.motion.durationSelect
 
@@ -212,6 +221,23 @@ open class MotionStyle(private val style: ThemeStyle = ThemeStyle()) {
     /** The wide art's settle. Callers hold it still when [heroFadeOnly]. */
     fun showcase(speed: MotionSpeed, animatorScale: Float): FiniteAnimationSpec<Float> =
         tween(durationMillis = heroSpan(durationShowcase, speed, animatorScale), easing = easingArrive)
+
+    /**
+     * A launching game's art growing to fill both screens, see [LaunchBloom]. Slower takes
+     * twice as long. Null when Motion is Off or Android removes animations: the game just opens.
+     */
+    fun launchBloom(speed: MotionSpeed, animatorScale: Float): LaunchBloom? {
+        if (speed == MotionSpeed.Off || reduced(animatorScale)) return null
+        val slower = if (speed == MotionSpeed.Slower) 2 else 1
+        return LaunchBloom(
+            growMillis = duration(durationLaunch * slower, animatorScale),
+            holdMillis = duration(durationLaunchHold * slower, animatorScale),
+            leaveMillis = duration(durationScene * slower, animatorScale),
+            pushMillis = duration(durationShowcase * slower, animatorScale),
+            push = launchPush,
+            motion = this,
+        )
+    }
 
     fun heroScale(progress: Float, fadeOnly: Boolean): Float {
         if (fadeOnly) return scaleRest
