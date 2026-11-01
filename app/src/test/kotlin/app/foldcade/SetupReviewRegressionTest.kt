@@ -206,7 +206,7 @@ class SetupReviewRegressionTest {
         assertArrayEquals(preserved.toByteArray(), File(root, "backup/staged.zip").readBytes())
     }
 
-    @Test fun twoFailedStartsQuarantineTheStageAndRestoreOriginalChoicesWithoutTouchingSaves() = fixture { root ->
+    @Test fun twoFailedAttemptsQuarantineTheStageAndRestoreOriginalChoicesWithoutTouchingSaves() = fixture { root ->
         val prefs = prefs()
         prefs.edit().putString("theme", "neon").putString("player_save_mark:game", "hash").commit()
         val originalArt = "{\"original\":{}}"
@@ -215,8 +215,7 @@ class SetupReviewRegressionTest {
         val before = backups.before.readBytes()
         var calls = 0
         val broken: (Map<String, File>) -> Unit = { calls++; throw IOException("ENOSPC") }
-        try { backups.resume(emptySet(), broken); fail("First failed attempt must remain retryable") }
-        catch (expected: IOException) { assertEquals("ENOSPC", expected.message) }
+        assertEquals(SetupRestoreResult.Failed, backups.resume(emptySet(), broken))
         val restarted = SetupBackups(root, prefs)
         assertEquals(SetupRestoreResult.Failed, restarted.resume(emptySet(), broken))
         assertEquals(2, calls)
@@ -244,7 +243,7 @@ class SetupReviewRegressionTest {
             val backups = SetupBackups(root, prefs)
             backups.stage(backup(), backup("neon"))
             if (corrupt) File(root, "backup/staged.zip").writeText("broken zip")
-            try { backups.resume(emptySet(), {}); fail("Expected first failure") } catch (_: Exception) { }
+            assertEquals(SetupRestoreResult.Failed, backups.resume(emptySet(), {}))
             assertEquals(SetupRestoreResult.Failed, SetupBackups(root, prefs).resume(emptySet(), {}))
             assertEquals("neon", prefs.getString("theme", null))
             assertEquals("hash", prefs.getString("player_save_mark:game", null))
@@ -276,5 +275,19 @@ class SetupReviewRegressionTest {
         counter.delete(); counter.mkdir(); File(counter, "full").writeText("blocked")
         assertEquals(SetupRestoreResult.Failed, backups.resume(emptySet()) { fail("Must not start an untracked apply") })
         assertFalse(backups.pending())
+    }
+
+    @Test fun aTransientFailureCanFinishItsSecondAttemptWithoutCrashingTheApplication() = fixture { root ->
+        val prefs = prefs()
+        val backups = SetupBackups(root, prefs)
+        backups.stage(backup(), backup("neon"))
+        var calls = 0
+        assertEquals(SetupRestoreResult.Restored, backups.resume(emptySet()) {
+            if (++calls == 1) throw IOException("temporary read failure")
+        })
+        assertEquals(2, calls)
+        assertEquals("afterglow", prefs.getString("theme", null))
+        assertFalse(backups.pending())
+        assertFalse(backups.failed.isFile)
     }
 }

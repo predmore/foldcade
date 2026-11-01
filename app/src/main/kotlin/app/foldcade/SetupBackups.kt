@@ -100,7 +100,9 @@ internal class SetupBackups(private val root: File, private val prefs: SharedPre
             applyStaged(granted, restoreThemes)
             return SetupRestoreResult.Restored
         } catch (failure: Exception) {
-            if (used + 1 < 2) throw failure
+            // A normal I/O failure gets its second bounded attempt in this process. Only an
+            // actual process stop needs the next start to spend the remaining attempt.
+            if (used + 1 < 2) return resume(granted, restoreThemes)
             return abandon(rollback = true)
         }
     }
