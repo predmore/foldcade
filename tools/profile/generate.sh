@@ -18,21 +18,24 @@ until mkdir /tmp/foldcade-thor.lock 2>/dev/null; do
     fi
     sleep 1
 done
-printf 'Foldcade baseline profile generator, pid %s, %s\n' "$$" "$(date -Iseconds)" > /tmp/foldcade-thor.lock/owner
 installed=false
+remote=""
 cleanup() {
     if [ "$installed" = true ]; then
         "$adb" -s "$serial" uninstall app.foldcade.benchmark > "$out/uninstall-app.txt" 2>&1 || true
         "$adb" -s "$serial" uninstall app.foldcade.baselineprofile > "$out/uninstall-harness.txt" 2>&1 || true
         "$adb" -s "$serial" shell am start --display 0 -n app.foldcade/.PrimaryHomeActivity > "$out/restore-home.txt" 2>&1 || true
         "$adb" -s "$serial" shell am start --display 4 -n app.foldcade/.CompanionHomeActivity >> "$out/restore-home.txt" 2>&1 || true
-        "$adb" -s "$serial" shell dumpsys activity activities | rg topResumedActivity >> "$out/restore-home.txt" || true
+        "$adb" -s "$serial" shell dumpsys activity activities | grep topResumedActivity >> "$out/restore-home.txt" || true
     fi
+    if [ -n "$remote" ]; then "$adb" -s "$serial" shell rm -rf "$remote" || true; fi
     "$adb" -s "$serial" shell svc power stayon false || true
-    rm /tmp/foldcade-thor.lock/owner
+    rm -f /tmp/foldcade-thor.lock/owner
     rmdir /tmp/foldcade-thor.lock
 }
+# Armed as soon as the lock is ours, so no failure can leave it held.
 trap cleanup EXIT
+printf 'Foldcade baseline profile generator, pid %s, %s\n' "$$" "$(date -Iseconds)" > /tmp/foldcade-thor.lock/owner
 if "$adb" -s "$serial" shell pm path app.foldcade.benchmark | grep -q '^package:'; then
     echo 'app.foldcade.benchmark is already installed. Archive its data and remove it first; generation reinstalls this disposable package.' >&2
     exit 1
@@ -54,5 +57,4 @@ profile="$out/HomeProfile_firstMinute-baseline-prof.txt"
 test -s "$profile"
 grep -q 'Lapp/foldcade/FoldcadeApp;' "$profile"
 cp "$profile" app/src/main/baseline-prof.txt
-"$adb" -s "$serial" shell rm -r "$remote"
 echo "Profile copied to app/src/main/baseline-prof.txt. Evidence: $out"

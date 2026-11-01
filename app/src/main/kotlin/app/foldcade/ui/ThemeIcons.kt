@@ -29,10 +29,17 @@ internal object ThemeIconImages {
     fun showing(image: Bitmap) = shown.add(image)
     fun leaving(image: Bitmap) = shown.remove(image)
 
-    /** Main thread. Keep the current hero/tiles and command center ready; drop only historical decodes. */
-    fun trimUnused(): Int {
+    /** Main thread. The decodes no panel shows right now, for [trim] to drop once the screens settle. */
+    fun unshown(): List<String> = images.snapshot().filterValues { !shown.contains(it) }.keys.toList()
+
+    /**
+     * Main thread. Drops those of [keys] that still show nowhere. A page that faded in since
+     * [unshown] keeps its art, and so does a screen that faded out in between.
+     */
+    fun trim(keys: List<String>): Int {
         var released = 0
-        images.snapshot().forEach { (key, image) ->
+        keys.forEach { key ->
+            val image = images.get(key) ?: return@forEach
             if (!shown.contains(image)) {
                 images.remove(key)
                 released += image.allocationByteCount

@@ -16,3 +16,6 @@ internal class ShownImages<T : Any> {
 /** Trim once as a game takes a panel. Browsing beside it must keep the grid's cache. */
 internal fun homeIconCacheMayTrim(before: Session, after: Session): Boolean =
     before.bothScreensFree() && !after.bothScreensFree()
+
+/** Long enough for the page beside a game to fade in and the game's own screen to fade out. */
+internal const val HOME_ICON_TRIM_DELAY_MS = 2_000L

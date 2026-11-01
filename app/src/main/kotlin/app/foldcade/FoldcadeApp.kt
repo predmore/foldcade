@@ -586,8 +586,13 @@ class FoldcadeApp : Application() {
         store.afterSessionChanged = {
             val next = store.session
             if (homeIconCacheMayTrim(artSession, next)) {
-                val released = app.foldcade.ui.ThemeIconImages.trimUnused()
-                Log.d("Foldcade", "Home icon cache released $released unused bytes")
+                // The screen beside the game draws its new page after this change. What that page
+                // shows by the time the fade ends stays cached, and so does what the game covered.
+                val unshown = app.foldcade.ui.ThemeIconImages.unshown()
+                noticeHandler.postDelayed({
+                    val released = app.foldcade.ui.ThemeIconImages.trim(unshown)
+                    Log.d("Foldcade", "Home icon cache released $released unused bytes")
+                }, HOME_ICON_TRIM_DELAY_MS)
             }
             artSession = next
             music.onSessionChanged()
