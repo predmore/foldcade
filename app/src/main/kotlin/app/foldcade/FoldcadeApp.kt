@@ -330,17 +330,25 @@ class FoldcadeApp : Application() {
 
     /**
      * What each move on a game's Play activity did, by the game it came from and the game it
-     * went to, so A puts it back while the page is open. A later move of the same two replaces it.
+     * went to, so A puts it back while the page is open. Cleared when a game's page opens.
      */
     private val playMoves = HashMap<Pair<String, String>, List<app.foldcade.host.play.PlayMove>>()
 
     /** Tiles whose cover was kept in this process, so a page drawing them again does not keep them again. */
     private val keptPlayArt = java.util.Collections.synchronizedSet(HashSet<String>())
 
-    /** Moves every finished session of [from] onto [to], from a game's Play activity. */
-    fun movePlay(from: String, to: String) {
+    /**
+     * Moves every finished session of [from] onto [to], from a game's Play activity. False
+     * when nothing could move, as when [from]'s only play is still running.
+     */
+    fun movePlay(from: String, to: String): Boolean {
         val moves = plays.move(from, to)
-        if (moves.isNotEmpty()) playMoves[from to to] = moves
+        if (moves.isEmpty()) {
+            playMoves.remove(from to to)
+            return false
+        }
+        playMoves[from to to] = moves
+        return true
     }
 
     /** Puts back the last [movePlay] of [from] onto [to]. */
@@ -365,6 +373,8 @@ class FoldcadeApp : Application() {
      * but [tileId] and its copies, by [app.foldcade.language.playSourceOrder].
      */
     fun playSources(tileId: String): List<String> {
+        // A page opening starts with nothing to put back: Undo is for this visit's moves.
+        playMoves.clear()
         val own = shell.historyIds(tileId) + shell.tileOf(tileId)
         val title = shell.playTitle(tileId) ?: plays.name(tileId).orEmpty()
         val sources = plays.played().values

@@ -402,14 +402,19 @@ class PlayLog(
             for (event in changes.distinct()) {
                 val session = event.sessionId
                 if (session !in ended && session !in open) continue
-                val applies = when (event.kind) {
-                    PlayKind.Removed -> session !in removed
-                    else -> ownerOf(session) != event.gameId
+                if (event.kind == PlayKind.Removed) {
+                    if (session in removed) continue
+                    commitLocked(event)
+                    committed += event
+                    changed++
+                    continue
                 }
-                if (!applies) continue
+                // A move is kept even when the session already counts there: a later line in
+                // the same file may move it on, and the next import must find both already here.
+                val effective = ownerOf(session) != event.gameId
                 commitLocked(event)
                 committed += event
-                changed++
+                if (effective) changed++
             }
             committed to PlayMerge(sessions, changed)
         }

@@ -2107,6 +2107,12 @@ class ShellController(
         publish(model.copy(playActivity = page.copy(game = tile, sources = playSources(tile), source = 0, moved = emptySet())))
     }
 
+    /** A move on a game's page found nothing finished to move, so its row does not say Moved here. */
+    fun notePlayNotMoved(from: String) {
+        val page = model.playActivity?.takeIf { from in it.moved } ?: return
+        publish(model.copy(playActivity = page.copy(moved = page.moved - from)))
+    }
+
     /** A on a day of Play activity lists its sessions. A day without any stays as it is. */
     private fun openPlayDay(weeksBack: Int, day: Int) {
         val page = model.playActivity ?: return

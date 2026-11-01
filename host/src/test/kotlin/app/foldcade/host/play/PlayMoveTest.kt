@@ -146,6 +146,45 @@ class PlayMoveTest {
     }
 
     @Test
+    fun reimportingKeepsAMoveTheFileMadeAfterOneThisLogAlreadyHad() {
+        val there = memoryLog()
+        play(there, "a", 5_000)
+        val here = memoryLog()
+        here.merge(there.events())
+        // Both logs move the session to b, at different times; the file then moves it on to c.
+        here.move(setOf("a"), "b")
+        now += 1_000
+        there.move(setOf("a"), "b")
+        now += 1_000
+        there.move(setOf("b"), "c")
+
+        here.merge(there.events())
+        assertEquals(5_000L, here.totals("c").activeMillis)
+        assertTrue(here.merge(there.events()).empty)
+        assertEquals(5_000L, here.totals("c").activeMillis)
+        assertEquals(0L, here.totals("b").activeMillis)
+    }
+
+    @Test
+    fun coversPastTheirShareAreLeftOutOfAnImport() {
+        val big = ByteArray(1024 * 1024 + 1)
+        val within = ByteArray(1024 * 1024)
+        val names = (0 until 60).map { "%040x.webp".format(it) }
+        val out = ByteArrayOutputStream()
+        ZipOutputStream(out).use { zip ->
+            zip.putNextEntry(ZipEntry("foldcade-play.txt")); zip.write("foldcade-play-history 1\n".toByteArray()); zip.closeEntry()
+            zip.putNextEntry(ZipEntry("art/${"f".repeat(40)}.webp")); zip.write(big); zip.closeEntry()
+            names.forEach { name -> zip.putNextEntry(ZipEntry("art/$name")); zip.write(within); zip.closeEntry() }
+        }
+        val archive = out.toByteArray()
+        val read = PlayArchive.read(ByteArrayInputStream(archive))
+        // One over a cover's own limit, and the ones past every cover's share, are not read.
+        assertFalse("${"f".repeat(40)}.webp" in read.art)
+        assertTrue(read.art.values.sumOf { it.size.toLong() } <= 48L * 1024 * 1024)
+        assertEquals(48, read.art.size)
+    }
+
+    @Test
     fun aMergedSessionThatNeverEndedIsClosedAtItsLastEvent() {
         val there = memoryLog()
         val open = there.start("game")

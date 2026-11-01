@@ -382,7 +382,7 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
             is Effect.RemovePlaySession -> foldcade.plays.remove(effect.sessionId)
             // The shell lists the day's sessions, and a game's sources, itself.
             is Effect.OpenPlayDay, is Effect.OpenPlayGame -> Unit
-            is Effect.MovePlayTime -> foldcade.movePlay(effect.from, effect.to)
+            is Effect.MovePlayTime -> if (!foldcade.movePlay(effect.from, effect.to)) foldcade.shell.notePlayNotMoved(effect.from)
             is Effect.UndoPlayMove -> foldcade.undoPlayMove(effect.from, effect.to)
             Effect.OpenAll -> foldcade.shell.openHomeAll()
             is Effect.OpenFolder -> foldcade.shell.openHomeFolder(effect.folderId)

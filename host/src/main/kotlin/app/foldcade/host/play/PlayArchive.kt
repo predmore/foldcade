@@ -40,9 +40,13 @@ object PlayArchive {
     private const val HEADER = "foldcade-play-history"
 
     /** Far past any real history: ten years of play is a few megabytes. */
-    private const val MAX_LOG_BYTES = 64L * 1024 * 1024
-    private const val MAX_ART_BYTES = 2L * 1024 * 1024
-    private const val MAX_ART = 20_000
+    private const val MAX_LOG_BYTES = 32L * 1024 * 1024
+
+    /** A kept cover is a 384-pixel WebP, tens of kilobytes. */
+    private const val MAX_ART_BYTES = 1L * 1024 * 1024
+
+    /** Every cover together, held in memory until they are written: covers past it are left out. */
+    private const val MAX_ALL_ART_BYTES = 48L * 1024 * 1024
 
     fun write(out: OutputStream, events: List<PlayEvent>, names: Map<String, String>, art: List<File>) {
         ZipOutputStream(out).use { zip ->
@@ -62,6 +66,7 @@ object PlayArchive {
         var events: List<PlayEvent> = emptyList()
         val names = HashMap<String, String>()
         val art = LinkedHashMap<String, ByteArray>()
+        var artBytes = 0L
         ZipInputStream(input).use { zip ->
             while (true) {
                 val entry = zip.nextEntry ?: break
@@ -73,9 +78,12 @@ object PlayArchive {
                     name == NAMES -> String(zip.bounded(MAX_LOG_BYTES), Charsets.UTF_8).lineSequence().forEach { line ->
                         decodePlayName(line)?.let { (id, kept) -> names[id] = kept }
                     }
-                    name.startsWith(ART) && isPlayArtName(name.removePrefix(ART)) && art.size < MAX_ART -> {
-                        val bytes = zip.boundedOrNull(MAX_ART_BYTES)
-                        if (bytes != null && bytes.isNotEmpty()) art[name.removePrefix(ART)] = bytes
+                    name.startsWith(ART) && isPlayArtName(name.removePrefix(ART)) && artBytes < MAX_ALL_ART_BYTES -> {
+                        val bytes = zip.boundedOrNull(minOf(MAX_ART_BYTES, MAX_ALL_ART_BYTES - artBytes))
+                        if (bytes != null && bytes.isNotEmpty()) {
+                            art[name.removePrefix(ART)] = bytes
+                            artBytes += bytes.size
+                        }
                     }
                 }
                 zip.closeEntry()
