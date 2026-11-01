@@ -54,6 +54,32 @@ fun heroFacts(title: String, vararg parts: String?): String =
         .joinToString(" · ")
 
 /**
+ * A game's one line under its name: [platform] · [year] · [genre], then [rest], which is
+ * where the game is, both screens, and its play, in that order. When the whole line does
+ * not [fit], the genre goes first and then the year, so where it is and its play stay.
+ * Past that the line is what is left, and the card ends it in "…".
+ */
+fun heroGameFacts(
+    title: String,
+    platform: String?,
+    year: Int?,
+    genre: String?,
+    rest: List<String?>,
+    fits: (String) -> Boolean,
+): String {
+    val released = year?.toString()
+    val tries = listOf(listOf(platform, released, genre), listOf(platform, released), listOf(platform))
+    var line = ""
+    for (lead in tries) {
+        val next = heroFacts(title, *(lead + rest).toTypedArray())
+        if (next == line) continue
+        line = next
+        if (fits(line)) return line
+    }
+    return line
+}
+
+/**
  * The hero's word on a game that is only on a server: where it is, and how much playing it
  * downloads when the library knows, as "On RomM · 512 MB". [server] is the library's own
  * name; without one it is only not here.

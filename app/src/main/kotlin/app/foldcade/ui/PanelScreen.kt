@@ -114,6 +114,8 @@ import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.layout.layout
+import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
@@ -145,6 +147,9 @@ import app.foldcade.language.FindEntry
 import app.foldcade.language.FindKind
 import app.foldcade.language.withFindHint
 import app.foldcade.language.heroFacts
+import app.foldcade.language.heroGameFacts
+import app.foldcade.language.GameAboutCopy
+import app.foldcade.language.gameAboutHints
 import app.foldcade.R
 import app.foldcade.language.QuickSetting
 import app.foldcade.DeviceStatus
@@ -174,6 +179,7 @@ import app.foldcade.artwork.ArtQuery
 import app.foldcade.artwork.ArtScene
 import app.foldcade.artwork.ArtSet
 import app.foldcade.api.plugin.Game
+import app.foldcade.api.plugin.GameDetails
 import androidx.compose.runtime.collectAsState
 import androidx.compose.ui.graphics.painter.Painter
 import coil3.compose.AsyncImagePainter
@@ -313,9 +319,9 @@ fun PanelHost(activity: FoldcadeHomeActivity, displays: Displays) {
     }
     val drawsHere = panel != null && session.draws(panel)
     // A full-screen page on the other screen leaves this one its command center, not a blurred grid.
-    val besidePage = screen != null && pageBeside(model, session, screen) != null
+    val besidePage = screen != null && pageBeside(app, model, session, screen) != null
     // A menu or a page open on the other screen blurs this one. Over this screen's own grid, as with one screen, it does not.
-    val menuOn = model.panel?.screen ?: model.settings?.screen ?: model.playActivity?.screen
+    val menuOn = model.panel?.screen ?: model.settings?.screen ?: model.playActivity?.screen ?: model.gameAbout?.screen
     val menuVisible = menuOn != null && model.dialog?.screen != menuOn
     val blurHere = screen != null &&
         menuOn != screen &&
@@ -504,10 +510,10 @@ private fun PanelBody(
     val cover = remember { BackdropCover() }
     // One camera for both screens: the top's scene slides with the bottom's grid.
     val camera = app.backdropCamera
-    // Settings and Play activity paint the theme's background over the whole panel.
-    val pageHere = screen != null && (model.settings?.screen == screen || model.playActivity?.screen == screen)
+    // Settings, Play activity and a game's About paint over the whole panel.
+    val pageHere = screen != null && (model.settings?.screen == screen || model.playActivity?.screen == screen || model.gameAbout?.screen == screen)
     val settingsOver = pageHere && foldTheme().background.alpha >= 1f
-    val page = screen?.let { pageBeside(model, session, it) }
+    val page = screen?.let { pageBeside(app, model, session, it) }
     val centerHere = page != null || (panel != null && session.surfaceOn(panel) == Surface.CommandCenter)
     // The dark screen draws nothing at all, not even a resting backdrop.
     val dark = panel != null && session.surfaceOn(panel) == Surface.Dark
@@ -516,12 +522,14 @@ private fun PanelBody(
     // last state while it leaves, so it fades out as it was rather than vanishing.
     val settingsPage = model.settings?.takeIf { it.screen == screen }
     val activityPage = model.playActivity?.takeIf { it.screen == screen }
+    val aboutPage = model.gameAbout?.takeIf { it.screen == screen }
     val settings = presence(settingsPage, motion.durationIsland, scale)
     val played = presence(activityPage, motion.durationIsland, scale)
+    val about = presence(aboutPage, motion.durationIsland, scale)
     val beside = presence(page, motion.durationIsland, scale)
     // Only whether a page fully covers the panel, so the fades do not recompose it each frame.
     val covered by remember {
-        derivedStateOf { maxOf(settings.progress.value, played.progress.value, beside.progress.value) >= 1f }
+        derivedStateOf { maxOf(settings.progress.value, played.progress.value, about.progress.value, beside.progress.value) >= 1f }
     }
     // The connection form takes the hero's place.
     val connectHere = screen != null && model.connectOpen && model.connectScreen == screen
@@ -592,7 +600,11 @@ private fun PanelBody(
         // Play activity names its keys here; Settings shows its own on the page.
         Box(Modifier.fillMaxSize().graphicsLayer { alpha = beside.progress.value }) {
             CommandCenterScreen(app, subject, hints = !subject.settings) {
-                if (subject.settings) app.shell.closeSettings() else app.shell.closePlayActivity()
+                when {
+                    subject.settings -> app.shell.closeSettings()
+                    app.shell.model.gameAbout != null -> app.shell.closeGameAbout()
+                    else -> app.shell.closePlayActivity()
+                }
             }
         }
     }
@@ -603,6 +615,9 @@ private fun PanelBody(
     }
     played.shown?.let { shown ->
         Box(Modifier.fillMaxSize().rise { played.progress.value }) { PlayActivityScreen(app, shown) }
+    }
+    about.shown?.let { shown ->
+        Box(Modifier.fillMaxSize().rise { about.progress.value }) { GameAboutScreen(app, shown, scale) }
     }
 }
 
@@ -785,10 +800,12 @@ private sealed interface CenterSubject {
 }
 
 /**
- * Settings or Play activity filling the other screen while both are Foldcade's.
- * This screen then says where the user is, the way it would beside an app.
+ * Settings, Play activity, or a game's About filling the other screen while both are Foldcade's.
+ * This screen then says where the user is, the way it would beside an app: About names the
+ * game and wears its platform's mark.
  */
 private fun pageBeside(
+    app: FoldcadeApp,
     model: app.foldcade.language.PickerModel,
     session: app.foldcade.Session,
     screen: HostScreen,
@@ -797,11 +814,16 @@ private fun pageBeside(
     if (!session.bothScreensFree() || session.surfaceOn(screen.panel()) == Surface.Dark) return null
     val settings = model.settings
     val playActivity = model.playActivity
+    val about = model.gameAbout
     return when {
         settings != null && settings.screen != screen ->
             CenterSubject.Page(SettingsCopy.title, R.drawable.ic_status_settings, null, settings = true)
         playActivity != null && playActivity.screen != screen ->
             CenterSubject.Page(PlayCopy.activity, null, "console", settings = false)
+        about != null && about.screen != screen -> {
+            val game = app.shell.aboutGame(about.game)
+            CenterSubject.Page(game?.title ?: GameAboutCopy.about, null, game?.mark ?: MARK_CONSOLE, settings = false)
+        }
         else -> null
     }
 }
@@ -1202,6 +1224,12 @@ private fun Hero(app: FoldcadeApp, screen: HostScreen, scale: Float, onEffect: (
                 // A name being typed, or Find, takes the name card's place, under the art.
                 val typing = presence(app.shell.typing()?.typing, motion.durationIsland, scale)
                 val finding = presence(find, motion.durationIsland, scale)
+                // The facts and summary of the game the name card names, which is the focus, not the art still arriving.
+                val details = rememberGameDetails(app, (subject as? HeroSubject.Item)?.let { records[it.key] }?.takeIf { naming == null })
+                // The card opens to the summary only while the cursor rests on the grid, with nothing over the card.
+                val resting = cellFocused && find == null && naming == null && typing.shown == null && finding.shown == null &&
+                    editor.shown == null && app.shell.artPicker == null &&
+                    app.shell.homeKeys().let { it == HomeKeys.Idle || it == HomeKeys.AllLibrary }
                 if (subject != null || finding.shown != null) {
                     Spacer(Modifier.height(px(24f)))
                     Box(contentAlignment = Alignment.Center) {
@@ -1211,6 +1239,9 @@ private fun Hero(app: FoldcadeApp, screen: HostScreen, scale: Float, onEffect: (
                                 subject,
                                 cellFocused,
                                 cardMax,
+                                details = details,
+                                unfolds = resting,
+                                scale = scale,
                                 overArt = sceneArt,
                                 // A logo on wide art already says the name, once that art is the focused game's.
                                 named = !(shown?.key == subject.key && scene?.background != null && scene.logo != null),
@@ -1608,14 +1639,33 @@ private fun HeroLabel(
     shown: HeroSubject,
     cellFocused: Boolean,
     maxWidth: Dp,
+    details: GameDetails?,
+    unfolds: Boolean,
+    scale: Float,
     overArt: Boolean = false,
     named: Boolean = true,
 ) {
     val design = LocalFoldTheme.current.theme.style
     val theme = foldTheme()
+    val motion = LocalFoldTheme.current.theme.motion
     val copy = heroCopy(shown)
     val dateStyle = rememberDateStyle(app)
     val centred = text(theme.onBackground, LocalFoldTheme.current.theme.style.type.heroTitle, theme, display = true).copy(textAlign = TextAlign.Center)
+    val item = (shown as? HeroSubject.Item)?.item
+    val summary = details?.summary?.takeIf { item != null && !item.emptyShelfHint }
+    // Each game starts closed, so moving on closes the card at once and never shows the last game's words.
+    val unfold = remember(shown.key) { Animatable(0f) }
+    val still = motion.heroFadeOnly(app.shell.model.motionSpeed, scale)
+    // The rest is timed from when the cursor reached this game, or came back to the grid on it.
+    val restedAt = remember(shown.key, unfolds) { SystemClock.uptimeMillis() }
+    LaunchedEffect(shown.key, summary != null, unfolds, still) {
+        if (summary == null || !unfolds) {
+            if (still) unfold.snapTo(0f) else unfold.animateTo(0f, motion.leave(motion.durationIsland, scale))
+            return@LaunchedEffect
+        }
+        delay(restedAt + motion.durationSummaryDwell - SystemClock.uptimeMillis())
+        if (still) unfold.snapTo(1f) else unfold.animateTo(1f, motion.arrive(motion.durationIsland, scale))
+    }
     Column(
         Modifier
             .widthIn(min = px(360f), max = maxWidth)
@@ -1624,57 +1674,102 @@ private fun HeroLabel(
             .background(if (overArt) theme.surface.copy(alpha = design.hero.cardAlpha) else theme.surface)
             .padding(horizontal = px(40f), vertical = px(20f)),
         horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.spacedBy(px(4f)),
     ) {
-        if (named) {
-            BasicText(
-                text = copy.title,
-                style = centred.copy(fontWeight = design.type.strongWeight),
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
-        }
-        val item = (shown as? HeroSubject.Item)?.item
-        if (item?.emptyShelfHint == true) {
-            ShelfMeta(line = copy.detail, hintFocused = cellFocused, centred = true)
-        } else {
-            val focusedGame = app.shell.focusedGame()?.takeIf { it.id == item?.key }
-            val both = focusedGame?.occupiesBothDisplays == true
-            // What the library is doing with this game leads the line, in the focus colour.
-            val health = focusedGame?.let { app.shell.saveHealthOf(it.id, app.shell.artRecord(it)) } ?: SaveHealth.Fine
-            val activity = focusedGame?.let { app.shell.activityFor(it.id) }
-            val saveLine = if (saveHealthLeads(health, activity)) saveHealthLine(health) else null
-            val live = activity?.takeIf { saveLine == null }?.let(::activityLine)
-            val played = item?.let { app.plays.run { stamp; shown(app.shell.playId(it.key)) } }
-            val facts = heroFacts(
-                copy.title,
-                copy.detail,
-                item?.availability.takeIf { live == null },
-                Copy.usesBothScreens.takeIf { both },
-                played?.let {
-                    heroPlayLine(it.activeMillis, it.lastPlayedMillis, System.currentTimeMillis(), ZoneId.systemDefault(), dateStyle)
-                },
-            )
-            if (facts.isNotEmpty() || live != null || saveLine != null) {
+        // The name and its line, as they always were. The summary opens under them.
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(px(4f)),
+        ) {
+            if (named) {
                 BasicText(
-                    text = buildAnnotatedString {
-                        if (live != null) {
-                            withStyle(SpanStyle(color = theme.focus)) { append(live) }
-                            if (facts.isNotEmpty()) append(" · ")
-                        } else if (saveLine != null) {
-                            withStyle(SpanStyle(color = if (health.needsAttention) theme.style.colors.attention else theme.muted)) { append(saveLine) }
-                            if (facts.isNotEmpty()) append(" · ")
-                        }
-                        append(facts)
-                    },
-                    style = text(theme.muted, LocalFoldTheme.current.theme.style.type.heroMeta, theme).copy(textAlign = TextAlign.Center),
+                    text = copy.title,
+                    style = centred.copy(fontWeight = design.type.strongWeight),
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                 )
             }
+            if (item?.emptyShelfHint == true) {
+                ShelfMeta(line = copy.detail, hintFocused = cellFocused, centred = true)
+            } else {
+                val focusedGame = app.shell.focusedGame()?.takeIf { it.id == item?.key }
+                val both = focusedGame?.occupiesBothDisplays == true
+                // What the library is doing with this game leads the line, in the focus colour.
+                val health = focusedGame?.let { app.shell.saveHealthOf(it.id, app.shell.artRecord(it)) } ?: SaveHealth.Fine
+                val activity = focusedGame?.let { app.shell.activityFor(it.id) }
+                val saveLine = if (saveHealthLeads(health, activity)) saveHealthLine(health) else null
+                val live = activity?.takeIf { saveLine == null }?.let(::activityLine)
+                val played = item?.let { app.plays.run { stamp; shown(app.shell.playId(it.key)) } }
+                val rest = listOf(
+                    item?.availability.takeIf { live == null },
+                    Copy.usesBothScreens.takeIf { both },
+                    played?.let {
+                        heroPlayLine(it.activeMillis, it.lastPlayedMillis, System.currentTimeMillis(), ZoneId.systemDefault(), dateStyle)
+                    },
+                )
+                val metaStyle = text(theme.muted, LocalFoldTheme.current.theme.style.type.heroMeta, theme)
+                val year = details?.releaseYear
+                val genre = details?.genres?.firstOrNull()
+                val facts = if (item == null || (year == null && genre == null)) {
+                    heroFacts(copy.title, copy.detail, *rest.toTypedArray())
+                } else {
+                    // The line is measured as the card draws it, the save or activity word in front included.
+                    val measurer = rememberTextMeasurer()
+                    val room = with(LocalDensity.current) { (maxWidth - px(80f)).roundToPx() }
+                    val lead = live ?: saveLine
+                    heroGameFacts(copy.title, copy.detail, year, genre, rest) { line ->
+                        val whole = listOfNotNull(lead, line.ifEmpty { null }).joinToString(" · ")
+                        measurer.measure(whole, metaStyle, maxLines = 1, softWrap = false).size.width <= room
+                    }
+                }
+                if (facts.isNotEmpty() || live != null || saveLine != null) {
+                    BasicText(
+                        text = buildAnnotatedString {
+                            if (live != null) {
+                                withStyle(SpanStyle(color = theme.focus)) { append(live) }
+                                if (facts.isNotEmpty()) append(" · ")
+                            } else if (saveLine != null) {
+                                withStyle(SpanStyle(color = if (health.needsAttention) theme.style.colors.attention else theme.muted)) { append(saveLine) }
+                                if (facts.isNotEmpty()) append(" · ")
+                            }
+                            append(facts)
+                        },
+                        style = metaStyle.copy(textAlign = TextAlign.Center),
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
+            }
+        }
+        // The summary is laid out whole from the start and the card grows around it, so its lines never rewrap.
+        if (summary != null) {
+            BasicText(
+                text = summary,
+                modifier = Modifier.unfold { unfold.value }.padding(top = px(SUMMARY_GAP_PX)),
+                style = text(theme.muted, design.type.dialogBody, theme).copy(textAlign = TextAlign.Center),
+                maxLines = SUMMARY_LINES,
+                overflow = TextOverflow.Ellipsis,
+            )
         }
     }
 }
+
+/** Lines of a game's summary the name card opens to, and the space above them. */
+private const val SUMMARY_LINES = 3
+private const val SUMMARY_GAP_PX = 16f
+
+/**
+ * Lays the content out whole but takes only [progress] of its size, centred across and
+ * clipped, and fades it in with it. A card around it grows smoothly; at 0 it takes no room.
+ */
+private fun Modifier.unfold(progress: () -> Float): Modifier = this
+    .clipToBounds()
+    .layout { measurable, constraints ->
+        val placeable = measurable.measure(constraints.copy(minWidth = 0, minHeight = 0))
+        val shown = progress().coerceIn(0f, 1f)
+        val width = (placeable.width * shown).roundToInt()
+        val height = (placeable.height * shown).roundToInt()
+        layout(width, height) { placeable.placeWithLayer((width - placeable.width) / 2, 0) { alpha = shown } }
+    }
 
 @Composable
 private fun Modifier.fadingHero(
@@ -2898,6 +2993,7 @@ private fun GridHints(app: FoldcadeApp, modifier: Modifier = Modifier) {
     // The grid's own keys only count while nothing covers it.
     val gridKeys = model.panel == null && model.dialog == null && model.saveConflict == null && model.savePicker == null && !model.connectOpen
     val page = model.playActivity?.takeIf { model.dialog == null }?.let { playActivityHints(model) }
+        ?: model.gameAbout?.takeIf { model.dialog == null }?.let { gameAboutHints(model) }
     val find = shell.findHints()
     val normalKeys = find ?: ((page ?: panelHints(model) ?: gridHints(
         actions,
@@ -2910,14 +3006,14 @@ private fun GridHints(app: FoldcadeApp, modifier: Modifier = Modifier) {
         close = gridKeys && shell.focusedCanClose(),
         playOn = model.playOn,
     // All games' bar shows L2 and R2 beside its tabs, so only Hidden and Folders name them here.
-    )) + if (gridKeys && model.settings == null && model.playActivity == null &&
+    )) + if (gridKeys && model.settings == null && model.playActivity == null && model.gameAbout == null &&
         (model.homeGrid != HomeGrid.StandIns || shell.homeFoldersOpen())
     ) {
         if (model.homeGrid == HomeGrid.Hidden && model.count == 0) emptyList()
         else triggerHints(model.gridLabels.isNotEmpty())
     } else emptyList())
     // An empty collection's one button, named on A.
-    val addGames = if (gridKeys && find == null && model.settings == null && model.playActivity == null && shell.emptyCollection() != null) {
+    val addGames = if (gridKeys && find == null && model.settings == null && model.playActivity == null && model.gameAbout == null && shell.emptyCollection() != null) {
         listOf(HintKey(promptKeyOf(model.faceMap.confirmKey) ?: PromptKey.FaceA, Copy.addGames))
     } else emptyList()
     val destructive = model.panel?.let { panelRows(it, model).getOrNull(it.index) }?.let { it == LanguageRow.RemoveDownload || it == LanguageRow.DeleteShortcut } == true ||
@@ -2929,7 +3025,7 @@ private fun GridHints(app: FoldcadeApp, modifier: Modifier = Modifier) {
         normalKeys.filterNot { it.key == back } + HintKey(back, "Cancel download")
     } else addGames + normalKeys
     // The root grid names Select's Find while the row has room, so the button can be found.
-    val atRoot = gridKeys && find == null && shell.find == null && model.settings == null && model.playActivity == null &&
+    val atRoot = gridKeys && find == null && shell.find == null && model.settings == null && model.playActivity == null && model.gameAbout == null &&
         model.homeGrid == HomeGrid.StandIns && !model.libraryGrid && model.atLibraryRoot && shell.homeKeys() == HomeKeys.Idle
     val keys = withFindHint(shown, atRoot)
     if (keys.isEmpty()) return

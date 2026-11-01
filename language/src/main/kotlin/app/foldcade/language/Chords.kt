@@ -4,7 +4,7 @@ package app.foldcade.language
  * A menu's shortcuts. The key that opens a menu, then one more key, runs a row
  * without walking to it: L1 then Start is Settings, Y then Y is Move. The second
  * key means the same thing in every menu: Start is settings, Select is a view
- * (Play activity, or Show on Home for a game Find or All found),
+ * (Play activity, a game's About, or Show on Home for a game Find or All found),
  * The options button moves or edits, and the bottom button takes away. Those stay on
  * Y and X until calibration takes them. A confirms the focused row and B goes back,
  * so neither is ever a chord. Each row shows its key on its right.
@@ -14,7 +14,7 @@ package app.foldcade.language
  */
 private fun Row.chord(): Meaning? = when (this) {
     Row.Settings, Row.QuickTile(QuickSetting.Settings) -> Meaning.Menu
-    Row.PlayActivity, Row.ShowOnHome -> Meaning.View
+    Row.PlayActivity, Row.ShowOnHome, Row.About -> Meaning.View
     Row.EditHome, Row.MoveTile, Row.ShowHidden -> Meaning.Options
     // Hide has no chord: X takes a tile off its spot, and never hides a game.
     Row.RemoveTile, Row.RemoveDownload, Row.DeleteShortcut, Row.CloseGame -> Meaning.ActivateBottom

@@ -324,6 +324,7 @@ class ShellController(
                 next.gridKind != current.gridKind || next.layout != current.layout ||
                 (next.settings != null && current.settings == null) ||
                 (next.playActivity != null && current.playActivity == null) ||
+                (next.gameAbout != null && current.gameAbout == null) ||
                 (next.connectOpen && !current.connectOpen)
             val prepared = if (home.selection != null && changedView) {
                 home.finishSelection()
@@ -634,7 +635,7 @@ class ShellController(
         val rows = panel?.let { panelRows(it, model) }.orEmpty()
         val at = if (meaning == Meaning.Activate) panel?.index?.coerceIn(0, (rows.size - 1).coerceAtLeast(0)) else chordIndex(rows, meaning)
         val row = at?.let { rows.getOrNull(it) }
-        if (find == null && model.homeGrid == HomeGrid.Hidden && model.panel == null && model.playActivity == null && model.savePicker == null && model.saveSetup == null && (meaning == Meaning.Activate || meaning == Meaning.ActivateBottom)) return null
+        if (find == null && model.homeGrid == HomeGrid.Hidden && model.panel == null && model.playActivity == null && model.gameAbout == null && model.savePicker == null && model.saveSetup == null && (meaning == Meaning.Activate || meaning == Meaning.ActivateBottom)) return null
         val before = home.board
         val beforeFocus = model.focus
         val beforeGrid = model.homeGrid
@@ -684,13 +685,22 @@ class ShellController(
             publish(next)
             return effect
         }
+        if (model.gameAbout != null && model.dialog == null) {
+            val before = model
+            val (next, effect) = reduce(model, meaning, screen, repeatCount)
+            // The press that closes the page stays its own until the key comes up, so a held B never reaches the grid.
+            if (next.gameAbout == null) heldActions.capture(meaning.ordinal)
+            publish(next)
+            cueMeaning(meaning, before, model)
+            return effect
+        }
         if (artPicker != null) {
             artInput(meaning)
             return null
         }
         if (model.panel == null && home.releaseMenu()) publish(model)
         if (meaning == Meaning.ActivateBottom && model.dialog == null && model.panel == null &&
-            model.settings == null && model.playActivity == null && model.saveConflict == null && !model.connectOpen &&
+            model.settings == null && model.playActivity == null && model.gameAbout == null && model.saveConflict == null && !model.connectOpen &&
             homeKeys().let { it == HomeKeys.Idle || it == HomeKeys.AllLibrary || it == HomeKeys.FindResults } &&
             focusedCanClose()) {
             if (repeatCount > 0) return null
@@ -950,7 +960,7 @@ class ShellController(
     fun homeKeys(): app.foldcade.language.HomeKeys {
         if (artPicker != null) return app.foldcade.language.HomeKeys.ChoosingArt
         if (model.panel != null && home.selection != null) return HomeKeys.Selecting
-        if (model.dialog != null || model.panel != null || model.playActivity != null ||
+        if (model.dialog != null || model.panel != null || model.playActivity != null || model.gameAbout != null ||
             model.saveConflict != null || model.savePicker != null || model.saveSetup != null || model.connectOpen
         ) {
             return app.foldcade.language.HomeKeys.Idle
@@ -1046,7 +1056,7 @@ class ShellController(
      */
     private fun canOpenFind(): Boolean =
         find == null && artPicker == null && !model.libraryGrid && model.dialog == null && model.panel == null &&
-            model.settings == null && model.playActivity == null && model.saveConflict == null && model.savePicker == null && model.saveSetup == null && !model.connectOpen &&
+            model.settings == null && model.playActivity == null && model.gameAbout == null && model.saveConflict == null && model.savePicker == null && model.saveSetup == null && !model.connectOpen &&
             (!showingHome() || home.keys().let { it == HomeKeys.Idle || it == HomeKeys.AllLibrary })
 
     /**
@@ -1073,7 +1083,7 @@ class ShellController(
     /** True while Find has the keys: open, with no menu, page or dialog over it. */
     private fun findActive(): Boolean =
         find != null && artPicker == null && model.dialog == null && model.panel == null && model.settings == null &&
-            model.playActivity == null && model.saveConflict == null && model.savePicker == null && model.saveSetup == null && !model.connectOpen
+            model.playActivity == null && model.gameAbout == null && model.saveConflict == null && model.savePicker == null && model.saveSetup == null && !model.connectOpen
 
     /** Everything Find lists: the catalog and the groups on Home, then what only Hidden lists. */
     private fun findEntries(): List<FindEntry> {
@@ -1158,7 +1168,7 @@ class ShellController(
     private fun libraryBarLive(): Boolean =
         libraryBar() != null && find == null && artPicker == null && !model.connectOpen && home.keys() == HomeKeys.AllLibrary &&
             model.panel == null && model.settings == null &&
-            model.playActivity == null && model.dialog == null && model.saveConflict == null && model.savePicker == null && model.saveSetup == null
+            model.playActivity == null && model.gameAbout == null && model.dialog == null && model.saveConflict == null && model.savePicker == null && model.saveSetup == null
 
     /** A tap on All games' tab [at]: it opens on its first game, as L2 and R2 do. */
     fun tapLibraryTab(at: Int) {
@@ -1264,7 +1274,7 @@ class ShellController(
 
     private fun homeReturnBlocked(): Boolean =
         find != null || artPicker != null || model.panel != null || model.dialog != null || model.settings != null ||
-            model.playActivity != null || model.saveConflict != null || model.savePicker != null || model.saveSetup != null ||
+            model.playActivity != null || model.gameAbout != null || model.saveConflict != null || model.savePicker != null || model.saveSetup != null ||
             model.connectOpen || home.board.editing || home.selection != null || home.typing != null || home.iconPick != null
 
     private fun landHomeReturn() {
@@ -2289,6 +2299,20 @@ class ShellController(
         publish(model.copy(playActivity = null, focus = page.grid))
     }
 
+    /** A tap on a game's About page's back pill, or on the screen beside it. */
+    fun closeGameAbout() {
+        if (modalOpen()) return
+        val page = model.gameAbout ?: return
+        publish(model.copy(gameAbout = null, focus = page.grid))
+    }
+
+    /** The game a page about [gameId] shows: the tile it is now, as Home shows it. Null once no library lists it. */
+    fun aboutGame(gameId: String): ShelfGame? {
+        val tile = tileOf(gameId)
+        if (home.item(tile) == null) return null
+        return homeShelf(home.faceOf(tile))
+    }
+
     fun closeSettings(): Effect? {
         if (modalOpen()) return null
         val page = model.settings ?: return null
@@ -2466,7 +2490,7 @@ class ShellController(
     fun presentSavePicker(state: app.foldcade.language.SavePickerState?) {
         artPicker = null
         find = null
-        publish(model.copy(savePicker = state, saveConflict = null, panel = null, playActivity = null, settings = null, saveSetup = null, connectOpen = false))
+        publish(model.copy(savePicker = state, saveConflict = null, panel = null, playActivity = null, gameAbout = null, settings = null, saveSetup = null, connectOpen = false))
     }
 
     /**
@@ -2599,6 +2623,7 @@ class ShellController(
                 saveConflict = prompt,
                 panel = if (prompt != null) null else model.panel,
                 playActivity = if (prompt != null) null else model.playActivity,
+                gameAbout = if (prompt != null) null else model.gameAbout,
             ),
         )
     }
@@ -2614,6 +2639,7 @@ class ShellController(
                 dialog = null,
                 settings = null,
                 playActivity = null,
+                gameAbout = null,
                 saveConflict = prompt,
             ),
         )
@@ -3146,7 +3172,10 @@ class ShellController(
                 game = withSaves?.game ?: playGame,
             )
         } else withSaves
-        return counted.copy(tileActions = (withPlay ?: TileActions()).copy(undo = home.selection == null && activeUndo() != null), undoVerb = activeUndo()?.verb, atLibraryRoot = root)
+        // A game a library lists has a page of its own. An app, a stream, or a shortcut has nothing for it to say.
+        val aboutGame = playGame?.takeIf { home.item(it)?.let { item -> app.foldcade.language.hasAboutPage(item) } == true }
+        val withAbout = if (aboutGame != null) (withPlay ?: TileActions()).copy(about = true, game = withPlay?.game ?: aboutGame) else withPlay
+        return counted.copy(tileActions = (withAbout ?: TileActions()).copy(undo = home.selection == null && activeUndo() != null), undoVerb = activeUndo()?.verb, atLibraryRoot = root)
     }
 
     /** A menu acts on its named game even after Add to leaves the focused slot empty. */
@@ -3288,7 +3317,7 @@ class ShellController(
         // unless no screen Foldcade draws is left for it: it would sit under a game, taking keys.
         if (requested.layout != model.layout) store.update { it.withLayout(requested.layout) }
         val next = if (requested.layout != model.layout && Panel.entries.none(store.session::draws)) {
-            requested.copy(settings = null, playActivity = null, panel = null, focus = requested.settings?.grid ?: requested.focus)
+            requested.copy(settings = null, playActivity = null, gameAbout = null, panel = null, focus = requested.settings?.grid ?: requested.gameAbout?.grid ?: requested.focus)
         } else requested
         if (showingHome() && next.homeGrid != HomeGrid.StandIns) {
             home.rememberRootFocus(model.panel?.grid?.cellIndex ?: model.focus.cellIndex)
@@ -3369,7 +3398,7 @@ class ShellController(
 
     private fun homeActive(): Boolean =
         showingHome() && model.dialog == null && model.panel == null && model.settings == null &&
-            model.playActivity == null && model.saveConflict == null && model.savePicker == null && model.saveSetup == null && !model.connectOpen
+            model.playActivity == null && model.gameAbout == null && model.saveConflict == null && model.savePicker == null && model.saveSetup == null && !model.connectOpen
 
     /**
      * A or X with the cursor on L1's or R1's pill opens that drawer, as the grid reducer
@@ -3662,7 +3691,7 @@ class ShellController(
     private fun opened(before: PickerModel, after: PickerModel): Boolean =
         (before.panel == null && after.panel != null) || (before.dialog == null && after.dialog != null) ||
             (before.settings == null && after.settings != null) || (before.playActivity == null && after.playActivity != null) ||
-            (!before.connectOpen && after.connectOpen)
+            (before.gameAbout == null && after.gameAbout != null) || (!before.connectOpen && after.connectOpen)
 
     /** One of them went away. */
     private fun closed(before: PickerModel, after: PickerModel): Boolean = opened(after, before)

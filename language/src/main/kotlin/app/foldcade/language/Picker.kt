@@ -694,6 +694,9 @@ sealed interface Row {
     /** A game's play: its time, and other games' play to move onto it. Opens Play activity for the game. */
     data object PlayTime : Row
 
+    /** A game's page: its cover, facts, and summary. Opens [GameAboutPage]. */
+    data object About : Row
+
     /** A on another game in a game's Play activity: held, it moves that game's play here. Not a menu row. */
     data object MovePlay : Row
 
@@ -981,6 +984,8 @@ data class TileActions(
     val playTime: Long? = null,
     /** With no play of its own, the time a gone game of its name left: the row says it was found. */
     val playFound: Long? = null,
+    /** The tile is a game a library lists, so it has an About page. */
+    val about: Boolean = false,
     /** The game these rows act on. Null for a tile that is not a game, or one off the home grid. */
     val game: String? = null,
     /** The board on screen has gaps to close, so Edit home offers Tidy. */
@@ -1027,6 +1032,8 @@ fun actionRows(tile: TileActions?): List<Row> = buildList {
     if (tile.playTime != null) add(Row.PlayTime)
     if (tile.show) add(Row.ShowHidden)
     if (tile.showOnHome != null) add(Row.ShowOnHome)
+    // After Show on Home, so Find's Select keeps showing where a game lives.
+    if (tile.about) add(Row.About)
     if (tile.folderOnHome != null) add(Row.FolderOnHome)
     if (tile.moveTo != null) add(Row.MoveApp)
     if (tile.select) add(Row.SelectTile)
@@ -1281,6 +1288,7 @@ fun rowText(row: Row, model: PickerModel): RowText = when (row) {
             ?: model.tileActions?.playTime?.let(::playDuration),
     )
     Row.MovePlay -> RowText(PlayCopy.moveHere)
+    Row.About -> RowText(GameAboutCopy.about)
     Row.PlayHistory -> RowText(PlayCopy.history)
     Row.ButtonLabels -> RowText(
         Copy.buttonLabels,
@@ -1600,6 +1608,8 @@ data class PickerModel(
     val askNoticeAccess: Boolean = false,
     /** The Play activity page. Null while it is closed. */
     val playActivity: PlayActivityPage? = null,
+    /** A game's About page. Null while it is closed. */
+    val gameAbout: GameAboutPage? = null,
     /** Two saves waiting for a choice on the bottom screen. Null while there is nothing to ask. */
     val saveConflict: SaveConflictPrompt? = null,
     val savePicker: SavePickerState? = null,
@@ -1691,6 +1701,7 @@ fun reduce(
     }
     val settings = coerced.settings
     if (settings != null) return applySettings(coerced, settings, meaning, repeatCount).let { (next, effect) -> next.versionCopySettled() to effect }
+    coerced.gameAbout?.let { return applyGameAbout(coerced, it, meaning, repeatCount) }
     val activity = coerced.playActivity
     if (activity != null) return applyPlayActivity(coerced, activity, meaning)
     val panel = coerced.panel
@@ -2467,6 +2478,9 @@ private fun activateRow(
         Row.PlayTime -> model.tileActions?.game?.let { game ->
             model.copy(panel = null, focus = panel.grid, playActivity = PlayActivityPage(screen = model.layout.pageScreen, grid = panel.grid, game = game)) to
                 Effect.OpenPlayGame(game)
+        } ?: (model.copy(panel = panel) to null)
+        Row.About -> model.tileActions?.game?.let { game ->
+            model.copy(panel = null, focus = panel.grid, gameAbout = GameAboutPage(screen = model.layout.pageScreen, game = game, grid = panel.grid)) to null
         } ?: (model.copy(panel = panel) to null)
         Row.RestartGame -> model.copy(panel = null, focus = panel.grid) to Effect.RestartGame(model.tileActions?.game)
         Row.CloseGame -> model.copy(panel = null, focus = panel.grid) to Effect.CloseGame(model.tileActions?.game)

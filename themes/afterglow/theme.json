@@ -1834,6 +1834,7 @@
       "durationLaunchHold": 600,
       "launchPush": 1.06,
       "durationSelect": 280,
+      "durationSummaryDwell": 1200,
       "durationBob": 1800,
       "durationLetterHold": 360,
       "durationLetterFade": 120,
@@ -1948,7 +1949,8 @@
       "sceneShadeTop": 0.45,
       "sceneShadeBottom": 0.8,
       "ambientBlurDp": 48,
-      "ambientDim": 0.55
+      "ambientDim": 0.55,
+      "aboutDim": 0.55
     },
     "menu": {
       "highlightStartAlpha": 0.2,

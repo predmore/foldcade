@@ -391,6 +391,7 @@ class ThemeMotion internal constructor(private val reader: ThemeStyleReader) {
     val durationLaunchHold = ms("durationLaunchHold", 600)
     val launchPush = reader.number("motion", "launchPush", 1.06f, TokenDomain.Positive)
     val durationSelect = ms("durationSelect", 280)
+    val durationSummaryDwell = ms("durationSummaryDwell", 1200)
     val durationBob = ms("durationBob", 1800)
     val durationLetterHold = ms("durationLetterHold", 360)
     val durationLetterFade = ms("durationLetterFade", 120)
@@ -530,6 +531,9 @@ class ThemeHero internal constructor(reader: ThemeStyleReader) {
     val sceneShadeBottom = reader.fraction("hero", "sceneShadeBottom", .8f)
     val ambientBlurDp = reader.number("hero", "ambientBlurDp", 48f)
     val ambientDim = reader.fraction("hero", "ambientDim", .55f)
+
+    /** The scrim over the game's art behind its About page, so its words read over it. */
+    val aboutDim = reader.fraction("hero", "aboutDim", .55f)
 }
 
 /** The L1, R1 and Y menus and their islands. */

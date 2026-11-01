@@ -97,6 +97,9 @@ open class MotionStyle(private val style: ThemeStyle = ThemeStyle()) {
     /** A menu's highlight landing on a row, and a switch flipping. Long enough to read the overshoot. */
     val durationSelect = style.motion.durationSelect
 
+    /** How long the cursor rests on a game before its name card opens to show the summary. */
+    val durationSummaryDwell = style.motion.durationSummaryDwell.toLong()
+
     private val arriveCurve = style.motion.arrive
     val easingArrive: Easing = CubicBezierEasing(arriveCurve[0], arriveCurve[1], arriveCurve[2], arriveCurve[3])
     val easingLeave: Easing = style.motion.leave.let { CubicBezierEasing(it[0], it[1], it[2], it[3]) }

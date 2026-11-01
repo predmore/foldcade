@@ -198,6 +198,7 @@ fun PickerModel.openSaveSetup(
         panel = null,
         settings = null,
         playActivity = null,
+        gameAbout = null,
         saveSetup = fresh.copy(focus = focus, offeredFind = tiles.any { it.findSaves }, restoring = target?.takeIf { key -> tiles.none { it.key == key } }),
     )
 }

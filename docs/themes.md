@@ -220,6 +220,7 @@ Durations in ms, scales, distances, and cubic-bézier curves `[x1, y1, x2, y2]`.
 | `motion.durationLaunchHold` | 600 | How long the screen beside the game keeps that art before it gives way |
 | `motion.launchPush` | 1.06 | How much larger that art is drawn as it waits for the game |
 | `motion.durationSelect` | 280 | A highlight landing, a switch flipping |
+| `motion.durationSummaryDwell` | 1200 | How long the cursor rests on a game before its name card opens to show the summary |
 | `motion.durationBob` | 1800 | One rise and fall of a held tile |
 | `motion.durationLetterHold` | 360 | How long the letter-jump letter stays |
 | `motion.durationLetterFade` | 120 | Its fade |
@@ -347,6 +348,7 @@ The top screen's selected item.
 | `hero.sceneShadeBottom` | 0.8 | And at the bottom |
 | `hero.ambientBlurDp` | 48 | Blur of the box-art backdrop |
 | `hero.ambientDim` | 0.55 | Its dim |
+| `hero.aboutDim` | 0.55 | The scrim over the game's art behind its About page |
 
 ### `menu`
 
