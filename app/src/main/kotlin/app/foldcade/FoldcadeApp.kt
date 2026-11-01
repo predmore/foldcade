@@ -348,6 +348,8 @@ class FoldcadeApp : Application() {
             return false
         }
         playMoves[from to to] = moves
+        // The game it went to may never have been played: its name now has history to read.
+        shell.playTitle(to)?.let { plays.rememberName(shell.tileOf(to), it) }
         return true
     }
 
@@ -362,11 +364,12 @@ class FoldcadeApp : Application() {
             playTimeStamp = plays.stamp
             playTimes.clear()
         }
-        return playTimes.getOrPut(tileId) { plays.shown(tileId).activeMillis }
+        // A copy folding into the tile changes its total without a new session, so its ids are the key too.
+        return playTimes.getOrPut(tileId to shell.historyIds(tileId)) { plays.shown(tileId).activeMillis }
     }
 
     private var playTimeStamp = -1
-    private val playTimes = HashMap<String, Long>()
+    private val playTimes = HashMap<Pair<String, Set<String>>, Long>()
 
     /**
      * The other games a game's page can take play from, likeliest first: each tile with play
