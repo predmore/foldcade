@@ -63,6 +63,7 @@ import kotlin.coroutines.cancellation.CancellationException
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.async
 import kotlinx.coroutines.cancelAndJoin
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
@@ -86,6 +87,7 @@ class RommLibraryTest {
         val game = Game(ROMM_LIBRARY_ID, "1234", "nintendo-3ds", Availability.RemoteOnly, "Game")
         try {
             assertNull(harness.metadata.cachedDetails(game))
+            harness.metadata.fetch(game) // The existing artwork path populates catalog facts.
             val details = harness.metadata.details(game)!!
             assertEquals(2015, details.releaseYear)
             assertEquals("M2", details.developer)
@@ -97,7 +99,7 @@ class RommLibraryTest {
             assertEquals(1, reads)
             assertNull(harness.metadata.details(game.copy(backendId = "local-folder")))
             assertNull(listed.copy(summary = null, genres = emptyList(), firstReleaseDate = Long.MAX_VALUE,
-                developers = emptyList(), publishers = emptyList(), playerCount = null).toDetails())
+                developers = emptyList(), publishers = emptyList(), playerCount = "1").toDetails())
         } finally {
             harness.wiring.cacheRoot.toFile().deleteRecursively()
             harness.wiring.dataRoot.toFile().deleteRecursively()
@@ -106,14 +108,51 @@ class RommLibraryTest {
 
     @Test fun cancellingDetailsDoesNotTurnCancellationIntoAMiss() = runBlocking {
         val ops = ScriptedOps()
-        val entered = CompletableDeferred<Unit>()
-        ops.onRom = { entered.complete(Unit); kotlinx.coroutines.awaitCancellation() }
         val harness = harness(ops)
+        var returned = false
         try {
-            val job = launch { harness.metadata.details(Game(ROMM_LIBRARY_ID, "1234", "nintendo-3ds", Availability.RemoteOnly, "Game")) }
-            withTimeout(2_000) { entered.await() }
-            job.cancelAndJoin()
+            val job = launch {
+                coroutineContext.cancel()
+                harness.metadata.details(Game(ROMM_LIBRARY_ID, "1234", "nintendo-3ds", Availability.RemoteOnly, "Game"))
+                returned = true
+            }
+            job.join()
             assertTrue(job.isCancelled)
+            assertFalse("Details must propagate cancellation instead of returning a miss", returned)
+        } finally {
+            harness.wiring.cacheRoot.toFile().deleteRecursively()
+            harness.wiring.dataRoot.toFile().deleteRecursively()
+        }
+    }
+
+    @Test fun detailsRestoreOfflineAndMissingCatalogEntriesNeverUseTheNetwork() = runBlocking {
+        val ops = ScriptedOps()
+        val harness = harness(ops)
+        val game = Game(ROMM_LIBRARY_ID, "1234", "nintendo-3ds", Availability.RemoteOnly, "Game")
+        var reads = 0
+        ops.onRom = { reads++; throw RommUnavailable("offline") }
+        try {
+            RommCatalog(harness.wiring.data.catalogFile(), harness.wiring.origin)
+                .rememberRoms(listOf(rom("3ds", 3).copy(summary = "Offline facts")))
+            assertNull(harness.metadata.cachedDetails(game))
+            assertEquals("Offline facts", harness.metadata.details(game)?.summary)
+            val offline = RommWiring(harness.wiring.origin, RommTokenSource { error("Offline details must not read a token") },
+                harness.wiring.cacheRoot, harness.wiring.dataRoot)
+            offline.open = { _, _ -> error("Offline details must not open a client") }
+            var current: RommWiring? = null
+            val reconnecting = RommMetadata(RommGate { current })
+            assertTrue(runCatching { reconnecting.details(game) }.exceptionOrNull() is PluginException.NotAuthenticated)
+            current = offline
+            assertEquals("Offline facts", reconnecting.details(game)?.summary)
+            repeat(3) { assertNull(harness.metadata.details(game.copy(remoteKey = "5678"))) }
+            assertEquals(0, reads)
+            val gate = RommGate { harness.wiring }
+            val catalog = gate.restoreCatalog()
+            val fresh = RommMetadata(gate)
+            catalog.rememberRoms(listOf(rom("3ds", 3))) // An upgraded catalog has no facts yet.
+            assertNull(fresh.details(game))
+            catalog.rememberRoms(listOf(rom("3ds", 3).copy(summary = "Refreshed facts")))
+            assertEquals("Refreshed facts", fresh.details(game)?.summary)
         } finally {
             harness.wiring.cacheRoot.toFile().deleteRecursively()
             harness.wiring.dataRoot.toFile().deleteRecursively()

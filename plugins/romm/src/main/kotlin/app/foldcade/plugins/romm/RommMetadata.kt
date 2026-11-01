@@ -61,17 +61,9 @@ internal class RommMetadata(
 
     override suspend fun details(game: Game): GameDetails? {
         if (game.backendId != ROMM_LIBRARY_ID) return null
-        val wiring = gate.peek()
-        // A catalog entry with no facts is also a known result. Do not refetch it on every focus.
-        wiring?.let { gate.catalog(it).rom(game.remoteKey) }?.let { return it.toDetails() }
-        val romId = game.remoteKey.toLongOrNull()?.takeIf { it >= 1 } ?: return null
-        return translate {
-            gate.session { current, ops ->
-                val rom = ops.rom(romId)
-                gate.catalog(current).rememberRoms(listOf(rom))
-                rom.toDetails()
-            }
-        }
+        // Restore before reading, including offline and before any artwork or library lookup.
+        // The catalog is filled by library/artwork reads; focus alone never adds a network request.
+        return gate.restoreCatalog().rom(game.remoteKey)?.toDetails()
     }
 
     /**
@@ -220,5 +212,6 @@ internal fun RomSummary.toDetails(): GameDetails? = normalizeGameDetails(GameDet
     genres = genres,
     developer = developers.filter { it.isNotBlank() }.distinct().joinToString(", "),
     publisher = publishers.filter { it.isNotBlank() }.distinct().joinToString(", "),
-    players = playerCount,
+    // RomM 5.4.1 defaults this field to "1", even without matched metadata.
+    players = playerCount?.trim()?.takeUnless { it == "1" },
 ))

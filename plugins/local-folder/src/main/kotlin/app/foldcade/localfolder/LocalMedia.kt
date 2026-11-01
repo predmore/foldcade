@@ -8,6 +8,7 @@ import app.foldcade.api.plugin.Game
 import app.foldcade.api.plugin.GameDetails
 import app.foldcade.api.plugin.GameMeta
 import app.foldcade.api.plugin.MetadataProvider
+import app.foldcade.api.plugin.PluginException
 import java.util.Locale
 import kotlin.coroutines.cancellation.CancellationException
 
@@ -157,6 +158,7 @@ private class MediaIndexBuilder(
             val path = joined(prefix, file.displayName)
             if (file.isDirectory()) roleFiles(file, platform, path, role)
             else if (isImage(file)) {
+                contributions++
                 candidate(platform, path.substringBeforeLast('.')).add(role.role, file.documentUri, role.rank + 10)
             }
         }
@@ -164,7 +166,7 @@ private class MediaIndexBuilder(
 
     private fun gamelist(file: FolderEntry, platform: String, prefix: String, system: FolderEntry?) {
         if (!parsedLists.add(file.documentUri)) return
-        val text = readText(file, MAX_GAMELIST_BYTES) ?: return
+        val text = readable { readText(file, MAX_GAMELIST_BYTES) } ?: return
         for (game in parseGamelist(text, isCancelled)) {
             checkActive()
             val path = gamelistRomPath(game.path, prefix) ?: continue
@@ -173,11 +175,13 @@ private class MediaIndexBuilder(
             entry.title = game.name
             // A ROM-side gamelist is more specific than a standalone ES-DE gamelist.
             if (entry.details == null || system != null) entry.details = game.details ?: entry.details
+            if (game.details != null) contributions++
             val roots = system?.let { listOf(it) } ?: scan.mediaSystems.filter { it.platformId == platform }.map { it.entry }
             for (image in game.images) {
                 val imagePath = mediaPath(joined(prefix, image.path)) ?: continue
                 val documents = roots.mapNotNull { resolve(it, imagePath) }.distinctBy { it.documentUri }
                 val document = documents.singleOrNull()?.takeIf(::isImage) ?: continue
+                contributions++
                 entry.add(image.role, document.documentUri, image.rank)
             }
         }
@@ -194,13 +198,23 @@ private class MediaIndexBuilder(
     }
 
     private fun candidate(platform: String, path: String): Candidate {
-        contributions++
         return candidates.getOrPut(platform to path.lowercase(Locale.ROOT)) { Candidate(platform, path) }
     }
 
     private fun children(entry: FolderEntry): List<FolderEntry> {
         checkActive()
-        return directories.getOrPut(entry.documentUri) { childrenOf(entry) }
+        return directories.getOrPut(entry.documentUri) { readable { childrenOf(entry) }.orEmpty() }
+    }
+
+    /** An unavailable document affects only that source, never the rest of the index. */
+    private inline fun <T> readable(read: () -> T): T? = try {
+        read()
+    } catch (cancelled: CancellationException) {
+        throw cancelled
+    } catch (_: PluginException.Unavailable) {
+        null
+    } catch (_: SecurityException) {
+        null
     }
 
     private fun checkActive() {

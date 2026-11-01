@@ -38,6 +38,12 @@ class RommDetailsJsonTest {
         }
     }
 
+    @Test fun summariesAreBoundedBeforeEnteringTheCatalog() {
+        val base = parseObject(fixture("rom-simple.json"))
+        val rom = parseRom(JsonObject(base + ("summary" to JsonPrimitive("x".repeat(100_000)))))
+        assertEquals(2_000, rom.summary!!.length)
+    }
+
     @Test fun anOldSerializedCatalogStillDeserializes() {
         val rom = parseRom(parseObject(fixture("rom-simple.json")))
         val old = Json.parseToJsonElement(Json.encodeToString(rom)).jsonObject

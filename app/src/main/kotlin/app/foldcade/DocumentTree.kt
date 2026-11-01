@@ -27,7 +27,7 @@ internal class DocumentTree(
         }
         val document = DocumentsContract.buildDocumentUriUsingTree(tree, documentId)
         val (name, mime) = read(document)
-        return entry(document, name, mime.ifBlank { DOCUMENT_DIRECTORY_MIME })
+        return entry(document, name, mime.ifBlank { DOCUMENT_DIRECTORY_MIME }).copy(isScanRoot = true)
     }
 
     fun children(parent: FolderEntry): List<FolderEntry> {

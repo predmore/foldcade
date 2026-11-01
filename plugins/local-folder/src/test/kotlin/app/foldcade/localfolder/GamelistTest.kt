@@ -36,6 +36,8 @@ class GamelistTest {
             <desc/><releasedate>00000000T000000</releasedate><players> </players>
             </game></gameList>""").single()
         assertNull(game.details)
+        assertEquals(listOf("./box/x.webp", "./thumb/x.png", "./images/x-image.png"),
+            game.images.filter { it.role == ArtworkRole.Cover }.sortedBy { it.rank }.map { it.path })
         assertEquals(mapOf(ArtworkRole.Cover to "./box/x.webp", ArtworkRole.Logo to "./wheel/x.png",
             ArtworkRole.Background to "./fanart/x.jpg", ArtworkRole.Screenshot to "./snaps/x.png"), game.images.groupBy { it.role }.mapValues { (_, images) -> images.first().path })
     }

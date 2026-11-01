@@ -30,16 +30,12 @@ class GameInfoTest {
         return GameInfo(host)
     }
 
-    @Test fun firstNonEmptyProviderWinsAndMissesAreHeldUntilForgotten() = runBlocking {
+    @Test fun firstNonEmptyProviderWinsAndProviderChangesAreImmediatelyVisible() = runBlocking {
         val first = Provider("one")
         val second = Provider("two")
         val info = info(first, second)
         assertNull(info.fetch(game))
         second.facts = GameDetails(" Now available. ")
-        assertNull(info.cached(game))
-        assertNull(info.fetch(game))
-        assertEquals(1, second.calls)
-        info.forget(game.backendId)
         assertEquals("Now available.", info.cached(game)?.summary)
         assertEquals("Now available.", info.fetch(game)?.summary)
         first.facts = GameDetails("First provider")
@@ -48,7 +44,7 @@ class GameInfoTest {
         assertNull(info.cached(null))
     }
 
-    @Test fun anOlderInFlightMissCannotOverwriteANewIndex() = runBlocking {
+    @Test fun anOlderInFlightMissIsNeverHeldOverANewIndex() = runBlocking {
         val provider = Provider("local.media")
         val started = CompletableDeferred<Unit>()
         val release = CompletableDeferred<Unit>()
@@ -60,7 +56,7 @@ class GameInfoTest {
         provider.facts = GameDetails("New index")
         provider.read = { provider.facts }
         release.complete(Unit)
-        assertEquals(provider.facts, fetched.await())
+        assertNull(fetched.await())
         assertEquals(provider.facts, info.cached(game))
     }
 
@@ -69,6 +65,11 @@ class GameInfoTest {
         failed.read = { throw PluginException.Unavailable("Unavailable") }
         val available = Provider("fine").also { it.facts = GameDetails(releaseYear = 1995) }
         assertEquals(available.facts, info(failed, available).fetch(game))
+        val retry = info(failed)
+        assertNull(retry.fetch(game))
+        failed.facts = GameDetails(summary = "Signed in")
+        failed.read = { failed.facts }
+        assertEquals(failed.facts, retry.fetch(game))
         failed.read = { throw kotlin.coroutines.cancellation.CancellationException("Cancelled") }
         val result = runCatching { info(failed, available).fetch(game) }
         assertTrue(result.exceptionOrNull() is kotlin.coroutines.cancellation.CancellationException)

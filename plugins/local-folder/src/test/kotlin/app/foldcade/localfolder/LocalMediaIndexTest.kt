@@ -98,6 +98,80 @@ class LocalMediaIndexTest {
         assertFalse(art.any { it.uri == title.documentUri })
     }
 
+    @Test fun pathOnlyOrBrokenImageGamelistsDoNotClaimToContributeMedia() {
+        val tree = MediaTree()
+        val root = tree.dir("gba")
+        tree.file("Game.gba", root)
+        tree.file("gamelist.xml", root, "<game><path>Game.gba</path><image>missing.png</image></game>")
+        val index = buildLocalMediaIndex(scanFolderTree(root, childrenOf = tree::children), tree::children, tree::read)
+        assertTrue(index.games.isEmpty())
+        assertTrue(index.sourceUris.isEmpty())
+    }
+
+    @Test fun roleFolderCoverBeatsAmbiguousGamelistImageAndImageAloneStillWorks() {
+        val tree = MediaTree()
+        val root = tree.dir("gba")
+        val rom = tree.file("Game.gba", root)
+        val box = tree.file("Game.png", tree.dir("box2dfront", tree.dir("media", root)))
+        val image = tree.file("mix.png", root)
+        val onlyImageRom = tree.file("Other.gba", root)
+        tree.file("gamelist.xml", root, """<gameList>
+            <game><path>Game.gba</path><image>mix.png</image></game>
+            <game><path>Other.gba</path><image>mix.png</image></game></gameList>""")
+        val index = buildLocalMediaIndex(scanFolderTree(root, childrenOf = tree::children), tree::children, tree::read)
+        assertEquals(box.documentUri, index.games[rom.documentUri]!!.artwork.single().uri)
+        assertEquals(image.documentUri, index.games[onlyImageRom.documentUri]!!.artwork.single().uri)
+    }
+
+    @Test fun failedMediaListingsAndReadsLeaveOtherSourcesAvailable() {
+        for (failure in listOf(app.foldcade.api.plugin.PluginException.Unavailable("Deleted"), SecurityException("Lost grant"))) {
+            val tree = MediaTree()
+            val root = tree.dir("gba")
+            val rom = tree.file("Game.gba", root)
+            val gone = tree.dir("boxart", root)
+            val cover = tree.file("Game.png", tree.dir("Imgs", root))
+            val list = tree.file("gamelist.xml", root, "<game><path>Game.gba</path><desc>Gone</desc></game>")
+            val scan = scanFolderTree(root, childrenOf = tree::children)
+            val index = buildLocalMediaIndex(scan, { if (it == gone) throw failure else tree.children(it) },
+                { file, limit -> if (file == list) throw failure else tree.read(file, limit) })
+            assertEquals(cover.documentUri, index.games[rom.documentUri]!!.artwork.single().uri)
+            assertNull(index.games[rom.documentUri]!!.details)
+        }
+    }
+
+    @Test(expected = CancellationException::class)
+    fun cancellationFromAListingStillPropagates() {
+        val tree = MediaTree()
+        val root = tree.dir("gba")
+        val art = tree.dir("Imgs", root)
+        val scan = scanFolderTree(root, childrenOf = tree::children)
+        buildLocalMediaIndex(scan, { if (it == art) throw CancellationException("Cancelled") else tree.children(it) }, tree::read)
+    }
+
+    @Test fun pickedRootsWithMediaNamesStillContainGamesAndEsDeDataDoesNot() {
+        for (name in listOf("Media", "Images", "Box", "Videos", "Manuals")) {
+            val tree = MediaTree()
+            val root = tree.dir(name)
+            tree.file("Game.gba", root)
+            assertEquals(name, 1, scanFolderTree(root, childrenOf = tree::children).games.size)
+            val forest = tree.dir("Forest")
+            // A real SAF root is also marked when scanned beneath FolderForest's synthetic root.
+            val scan = scanFolderTree(forest) { if (it == forest) listOf(root.copy(isScanRoot = true)) else tree.children(it) }
+            assertEquals(name, 1, scan.games.size)
+        }
+        val tree = MediaTree()
+        val root = tree.dir("ES-DE")
+        tree.file("demo.gba", tree.dir("themes", root))
+        tree.file("script.gba", tree.dir("scripts", root))
+        tree.file("Game.gba", tree.dir("gba", root))
+        assertEquals(listOf("Game.gba"), scanFolderTree(root, childrenOf = tree::children).games.map { it.fileName })
+        assertFalse(tree.queries.keys.any { it.contains("themes") || it.contains("scripts") })
+        val downloaded = tree.dir("downloaded_media")
+        assertEquals(MediaSourceKind.DownloadedMedia, scanFolderTree(downloaded, childrenOf = tree::children).mediaSources.single().kind)
+        val lists = tree.dir("gamelists")
+        assertEquals(MediaSourceKind.Gamelists, scanFolderTree(lists, childrenOf = tree::children).mediaSources.single().kind)
+    }
+
     @Test(expected = CancellationException::class)
     fun cancelledIndexNeverPublishes() {
         buildLocalMediaIndex(FolderScan(listOf(FolderGame("x", "x.gba", "x", "game-boy-advance")), emptyList()),

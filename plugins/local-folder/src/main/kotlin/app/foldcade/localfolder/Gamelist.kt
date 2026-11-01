@@ -118,8 +118,8 @@ private fun Map<String, String>.toGame(): GamelistGame? {
         first(key)?.let { images += GamelistImage(role, it, rank) }
     }
     image("boxart", ArtworkRole.Cover)
-    image("image", ArtworkRole.Cover, 1)
-    image("thumbnail", ArtworkRole.Cover, 2)
+    image("thumbnail", ArtworkRole.Cover, 1)
+    image("image", ArtworkRole.Cover, 20)
     image("screenshot", ArtworkRole.Screenshot)
     image("titleshot", ArtworkRole.Screenshot, 20)
     image("marquee", ArtworkRole.Logo)

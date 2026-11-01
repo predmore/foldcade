@@ -1855,9 +1855,13 @@ class FoldcadeApp : Application() {
     }
 
     /** The folders the library reads, named for the Sources rows. */
-    fun libraryFolders(): List<LibraryFolder> = store.folderTrees().map { uri ->
-        val media = localMedia?.index()?.sourceUris.orEmpty().any { source -> folderGrantUri(source) == folderGrantUri(uri) }
-        LibraryFolder(uri, libraryFolderLabel(folderLabel(uri), media))
+    fun libraryFolders(): List<LibraryFolder> {
+        val scan = (plugins.library(LocalFolderBackend.ID) as? LocalFolderBackend)?.mediaScan()
+        val gameUris = scan?.let { it.games.map { game -> game.documentUri } + it.steamShortcuts.map { game -> game.documentUri } }.orEmpty()
+        return store.folderTrees().map { uri ->
+            val mediaOnly = isMediaOnlyLibraryTree(uri, localMedia?.index()?.sourceUris.orEmpty(), gameUris)
+            LibraryFolder(uri, libraryFolderLabel(folderLabel(uri), mediaOnly))
+        }
     }
 
     /** The GameNative games named by .steam files in the folders. They join the GameNative catalog. */
@@ -1925,8 +1929,9 @@ class FoldcadeApp : Application() {
                         gameInfo.forget(LocalFolderBackend.ID)
                         artRevision++
                         infoRevision++
-                        shell.setFolders(libraryFolders())
                     }
+                    // A tree can gain or lose games without changing its indexed media.
+                    shell.setFolders(libraryFolders())
                 }
             } catch (cancelled: CancellationException) {
                 throw cancelled
@@ -1954,9 +1959,8 @@ class FoldcadeApp : Application() {
             val loaded = try {
                 val changed = backend.rescan()
                 if (!forest.complete || boundForest !== forest) return@launch
-                // Art can change even when the ROM list is unchanged.
-                refreshLocalMedia(backend, forest)
                 if (!changed) return@launch
+                refreshLocalMedia(backend, forest)
                 loadPlatforms(
                     plugins,
                     LocalFolderBackend.ID,

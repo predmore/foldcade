@@ -18,13 +18,20 @@ class LocalArtworkTest {
         assertTrue(allowsLibraryArtworkUri(plus, listOf(tree), setOf(plus)))
     }
 
-    @Test fun rejectsBorrowedGrantsTraversalOtherAuthoritiesQueriesAndMalformedUris() {
-        for (uri in listOf(document("primary%3Aroms2%2Fsecret.png"), document("primary%3Aroms%2F..%2Fsecret.png"),
-            document("primary%3Aother%2Fsecret.png"), image.replace("com.android.externalstorage.documents", "other"),
-            "$image?token=x", "$image#fragment", image.replace("content:", "file:"), "$tree/children",
-            "content://bad%/tree/x/document/y", "$tree/document/%", "content://user@provider/tree/x/document/y")) {
-            assertFalse(uri, allowsLibraryArtworkUri(uri, listOf(tree), setOf(uri)))
+    @Test fun theIndexEstablishesDocumentMembershipAndCurrentTreesEstablishTheGrant() {
+        val elsewhere = image.replace("com.android.externalstorage.documents", "other")
+        assertFalse(allowsLibraryArtworkUri(elsewhere, listOf(tree), setOf(elsewhere)))
+        // Path validation belongs to enumeration and gamelist resolution, before index publication.
+        for (uri in listOf("$image?token=x", "$tree/children", "$tree/document/%", "not a URI")) {
+            assertFalse(uri, allowsLibraryArtworkUri(uri, listOf(tree), setOf(image)))
         }
+    }
+
+    @Test fun purposeSuffixRequiresMediaAndNoGamesInTheSameTree() {
+        assertTrue(isMediaOnlyLibraryTree(tree, listOf(image), emptyList()))
+        assertFalse(isMediaOnlyLibraryTree(tree, emptyList(), emptyList()))
+        assertFalse(isMediaOnlyLibraryTree(tree, listOf(image), listOf(document("rom.gba"))))
+        assertTrue(isMediaOnlyLibraryTree(tree, listOf(image), listOf("content://other/tree/root/document/rom.gba")))
     }
 
     @Test fun opaqueProviderIdsNeedBothEnumerationAndTheMatchingTreeGrant() {

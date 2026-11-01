@@ -15,6 +15,8 @@ data class FolderEntry(
     val displayName: String,
     val mimeType: String,
     val text: String? = null,
+    /** A picked tree root, including roots below a synthetic forest. */
+    val isScanRoot: Boolean = false,
 )
 
 /** `DocumentsContract.Document.MIME_TYPE_DIR`. */
@@ -138,11 +140,12 @@ fun scanFolderTree(
 
         if (frame.entry.isDirectory()) {
             val name = frame.entry.displayName.lowercase(Locale.ROOT)
+            val scanRoot = frame.parent == null || frame.entry.isScanRoot
             val sourceKind = when {
                 name == "downloaded_media" -> MediaSourceKind.DownloadedMedia
                 name == "gamelists" -> MediaSourceKind.Gamelists
-                name == "media" -> MediaSourceKind.Media
-                mediaRole(name) != null -> MediaSourceKind.Role
+                !scanRoot && name == "media" -> MediaSourceKind.Media
+                !scanRoot && mediaRole(name) != null -> MediaSourceKind.Role
                 else -> null
             }
             if (sourceKind != null) {
@@ -150,7 +153,9 @@ fun scanFolderTree(
                     frame.system ?: frame.parent, frame.relativePath.substringBeforeLast('/', ""))
                 continue
             }
-            if (name in IGNORED_MEDIA_FOLDERS || isSkippedFolder(frame.entry.displayName)) continue
+            if (!scanRoot && (name in IGNORED_MEDIA_FOLDERS || isSkippedFolder(frame.entry.displayName))) continue
+            // ES-DE's data directories can contain theme/demo ROM-shaped assets.
+            if (frame.parent?.displayName.equals("ES-DE", ignoreCase = true) && name in ES_DE_DATA_FOLDERS) continue
             val detected = platformFromFolderName(frame.entry.displayName)
             val folderPlatform = detected ?: frame.folderPlatform
             val system = if (detected != null) frame.entry else frame.system
@@ -223,6 +228,8 @@ private class ChildRef(
     val name: String,
     val directory: Boolean,
 )
+
+private val ES_DE_DATA_FOLDERS = setOf("themes", "custom_systems", "collections", "resources", "scripts", "screensavers", "settings")
 
 private val SKIPPED_FOLDERS: Set<String> = setOf(
     "bios",

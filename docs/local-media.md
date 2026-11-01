@@ -6,21 +6,23 @@ Game art off. RomM records use RomM's metadata provider instead.
 
 Add the ROM folders and, if separate, the ES-DE data folder through the existing
 Add a folder flow. A granted tree can contain `ES-DE`, `downloaded_media`, or
-`gamelists` below its root. Sources with media show “art and info” in their folder
+`gamelists` below its root. Sources with media and no games show “art and info” in their folder
 label. No additional Android grant or all-files access is needed.
 
 The ROM walk records media locations without opening their images or gamelists.
 The app builds the media index on IO after that walk, without awaiting it before
-listing games. Returning Home rebuilds it even if the ROM list is unchanged.
+listing games. Returning Home rebuilds it only when the scan changes; reload the
+folders to pick up scraper edits that leave the scan unchanged.
 Publication checks that the forest and ROM snapshot are still current. A changed
-index forgets local games' held artwork and facts, including misses, then advances
-Compose revisions. Older in-flight provider reads cannot restore forgotten results.
+index forgets local games' held artwork and advances the artwork and facts
+Compose revisions. Facts are read directly from the current provider snapshot.
 
 Supported layouts are ES-DE's `downloaded_media/<system>/<role>/<relative stem>.*`
 and `gamelists/<system>/gamelist.xml`, system-side `gamelist.xml`,
 `media/<role>/<stem>.*`, and direct role folders such as `Imgs`. Role names and
 matching are case insensitive. Gameplay screenshots take precedence over title
-screens. Gamelist box art, image and thumbnail references are tried in that order;
+screens. Gamelist box art and thumbnail references precede role-folder covers, with the
+ambiguous `image` tag last (it may contain a mix image or screenshot);
 a missing reference does not prevent a later one from working. Videos, manuals,
 back covers, 3D boxes and mixed images are ignored.
 
@@ -48,14 +50,18 @@ changing focus cancels the prior lookup.
 
 Non-Compose callers use `app.gameInfo.cached(record)` and suspending
 `app.gameInfo.fetch(record)`. These return the first nonempty normalized
-`GameDetails` across `plugins.metadataIds()`. Null records return null. Held misses
-last until `gameInfo.forget(backendId, which)`; `which` defaults to all remote keys.
+`GameDetails` across `plugins.metadataIds()`. Null records return null. The lookup holds no results or misses;
+`gameInfo.forget(backendId, which)` remains a compatibility no-op.
 `PluginHost.cachedDetails(providerId, game)` stays on the caller, while
 `fetchDetails(providerId, game)` runs on the host's IO dispatcher.
 
 `GameMeta` is unchanged. API minor 20 adds defaulted details members and the new
 frozen `GameDetails`. RomM uses `summary` and aggregate `metadatum` fields, with
-explicit developer and publisher lists. The aggregate release date is Unix
+explicit developer and publisher lists. Details restore the disk catalog before
+reading, without opening a network session. Library and artwork reads populate
+that catalog, so focusing a game adds no network requests. RomM's default player
+count of `1` is omitted because it cannot be distinguished from missing facts.
+The aggregate release date is Unix
 milliseconds, unlike individual scraper metadata dates.
 
 ## Cold index cost
