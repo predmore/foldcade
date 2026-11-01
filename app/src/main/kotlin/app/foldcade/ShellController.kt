@@ -1248,7 +1248,7 @@ class ShellController(
 
     /** The focused tile when it is a game A would start. */
     private fun focusedPlayable(): ShelfGame? {
-        if (model.focus.chrome != null) return null
+        if (find == null && model.focus.chrome != null) return null
         if (model.libraryGrid && model.gridKind != GridKind.Games) return null
         val found = find?.subject
         if (found != null && found.kind == FindKind.Group) return null

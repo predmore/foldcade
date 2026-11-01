@@ -41,6 +41,16 @@ class CloseGameHostTest {
         assertFalse(shell.onMeaning(Meaning.ActivateBottom, HostScreen.Bottom) is Effect.CloseGame)
     }
 
+    @Test fun aFindResultOwnsXEvenWhenFindOpenedFromAPill() {
+        val shell = shell()
+        shell.onMeaning(Meaning.MoveUp, HostScreen.Bottom)
+        assertNotNull(shell.model.focus.chrome)
+        shell.openFind()
+        shell.onMeaning(Meaning.Done, HostScreen.Bottom)
+        assertEquals(id, shell.find!!.subject?.id)
+        assertEquals(Effect.CloseGame(id), shell.onMeaning(Meaning.ActivateBottom, HostScreen.Bottom))
+    }
+
     @Test fun findsXAndMenuActOnThePausedResult() {
         val shell = shell()
         shell.openFind()
