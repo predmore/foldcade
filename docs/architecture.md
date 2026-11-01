@@ -31,7 +31,19 @@ Foldcade is an Android launcher for the AYN Thor. The shell is Compose. Plugins 
 
 `assignDisplays` maps the default display and one other display onto a top panel and a bottom panel. Which physical display is on top is `defaultDisplayIsTop`.
 
-With both screens free, the top panel is the hero for the game you have selected, and the bottom panel is the picker. A game can take one screen or both. Android Home on a panel clears that panel only.
+`Panel` is always the physical screen. Roles come from `ScreenLayout` (Settings › System › Layout), which `Session` holds:
+
+| Layout | Top | Bottom |
+| --- | --- | --- |
+| Classic (default) | Hero, with the L1 and R1 islands | Picker |
+| Swapped | Picker | Hero, with the islands |
+| Top only | Picker, with the islands | Dark |
+
+With both screens free, `Session.surfaceOn` puts the hero and the picker where the layout says. The islands, their menus, Settings, and Play activity open on `ScreenLayout.menuScreen`: the hero's screen, or the grid's with one screen. A page split over two screens (Saves, Set up saves, a save conflict, Y › Art) puts its showcase half on `Session.heroPanel` and its controls on `Session.controlsPanel`; with no hero it shows the controls alone. The dark screen draws nothing, sets its window to the lowest backlight, and passes its keys to the grid. `PickerModel.offTheDarkScreen` moves anything aimed at it to the grid's screen. Changing the layout takes effect at once; a page already open stays on its screen until it closes.
+
+A game can take one screen or both. A opens a one-screen game on `Session.playOn` (Settings › System › Play on), and X on the other screen; a taken screen falls back to the free one. Beside a game the free screen is the command center, except the dark screen, which stays dark. Android Home on a panel clears that panel only.
+
+`Session.defaultDisplayIsTop` is the display mapping and stays true. The old Main screen ‹Bottom› setting moves once to Swapped with Play on ‹Bottom›, which is what it showed on the Thor.
 
 The home-music loop plays while Foldcade is in front and pauses when you leave it. The setting (on, volume, track id) lives in `:language`. Playback lives in `:app`. The default track is Lanternlight.
 

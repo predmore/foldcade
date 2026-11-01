@@ -74,19 +74,19 @@ import kotlinx.coroutines.withContext
  * the page as it was while it fades away; the tiles are always read from the model as it is.
  */
 @Composable
-internal fun SaveSetupTop(app: FoldcadeApp, page: SaveSetupPage, scale: Float, dispatch: (Effect?) -> Unit) {
+internal fun SaveSetupTop(app: FoldcadeApp, page: SaveSetupPage, screen: HostScreen, scale: Float, dispatch: (Effect?) -> Unit) {
     val theme = LocalFoldTheme.current.theme
     Box(Modifier.fillMaxSize().background(theme.background).padding(horizontal = TOP_EDGE_H, vertical = TOP_EDGE_V)) {
-        Showcase(app, page, HostScreen.Top, compact = false, scale = scale, dispatch = dispatch, modifier = Modifier.fillMaxSize())
+        Showcase(app, page, screen, compact = false, scale = scale, dispatch = dispatch, modifier = Modifier.fillMaxSize())
     }
 }
 
 @Composable
-internal fun SaveSetupBottom(app: FoldcadeApp, page: SaveSetupPage, scale: Float, dispatch: (Effect?) -> Unit) {
+internal fun SaveSetupBottom(app: FoldcadeApp, page: SaveSetupPage, screen: HostScreen, scale: Float, dispatch: (Effect?) -> Unit) {
     val theme = LocalFoldTheme.current.theme
     AdvanceAfterCheck(app, scale)
     Column(Modifier.fillMaxSize().background(theme.background).padding(horizontal = EDGE_H, vertical = EDGE_V)) {
-        Head(app, page, HostScreen.Bottom, scale, dispatch)
+        Head(app, page, screen, scale, dispatch)
         Spacer(Modifier.weight(1f))
         Strip(app, page, TILE_ART, labels = true, scale = scale)
         Spacer(Modifier.weight(1f))

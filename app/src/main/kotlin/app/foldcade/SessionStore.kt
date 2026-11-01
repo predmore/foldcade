@@ -9,6 +9,7 @@ import app.foldcade.language.encodeSameGames
 import app.foldcade.language.savedBeforeCollections
 import app.foldcade.language.HomeMusicSetting
 import app.foldcade.language.PromptKey
+import app.foldcade.language.ScreenLayout
 import app.foldcade.plugins.droiddeck.DroidDeckGame
 import app.foldcade.plugins.droiddeck.droidDeckGame
 import app.foldcade.plugins.moonlight.MoonlightApp
@@ -57,13 +58,28 @@ class SessionStore(private val prefs: SharedPreferences) : SaveMarks {
         afterSessionChanged?.invoke()
     }
 
-    private fun load(): Session = Session(
-        defaultDisplayIsTop = prefs.getBoolean(KEY_PRIMARY_TOP, true),
-    )
+    private fun load(): Session {
+        // Main screen ‹Bottom› gave the default display's panel the grid, and A opened games
+        // beside it. Layout and Play on say that now, and the default display is the top again.
+        if (!prefs.contains(KEY_SCREEN_LAYOUT) && !prefs.getBoolean(KEY_PRIMARY_TOP, true)) {
+            prefs.edit()
+                .putString(KEY_SCREEN_LAYOUT, ScreenLayout.ShowcaseBottom.id)
+                .putString(KEY_PLAY_ON, PLAY_ON_BOTTOM)
+                .putBoolean(KEY_PRIMARY_TOP, true)
+                .apply()
+        }
+        return Session(
+            defaultDisplayIsTop = prefs.getBoolean(KEY_PRIMARY_TOP, true),
+            layout = ScreenLayout.fromId(prefs.getString(KEY_SCREEN_LAYOUT, null)),
+            playOn = if (prefs.getString(KEY_PLAY_ON, null) == PLAY_ON_BOTTOM) Panel.Bottom else Panel.Top,
+        )
+    }
 
     private fun save(session: Session) {
         prefs.edit()
             .putBoolean(KEY_PRIMARY_TOP, session.defaultDisplayIsTop)
+            .putString(KEY_SCREEN_LAYOUT, session.layout.id)
+            .putString(KEY_PLAY_ON, if (session.playOn == Panel.Bottom) PLAY_ON_BOTTOM else PLAY_ON_TOP)
             // The launch button picks the screen now; per-game and per-platform choices are gone.
             .remove(KEY_GAME_SCREENS)
             .remove(KEY_PLATFORM_SCREENS)
@@ -517,6 +533,10 @@ class SessionStore(private val prefs: SharedPreferences) : SaveMarks {
             if (volume.isFinite()) volume.coerceIn(0f, 1f) else HomeMusicSetting.DEFAULT_VOLUME
 
         private const val KEY_PRIMARY_TOP = "primary_top"
+        private const val KEY_SCREEN_LAYOUT = "screen_layout"
+        private const val KEY_PLAY_ON = "play_on"
+        private const val PLAY_ON_TOP = "top"
+        private const val PLAY_ON_BOTTOM = "bottom"
         private const val KEY_HOME_RETURN_GAME = "home_return_game"
         private const val KEY_GAME_SCREENS = "game_screens"
         private const val KEY_PLATFORM_SCREENS = "platform_screens"

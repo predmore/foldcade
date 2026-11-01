@@ -209,13 +209,13 @@ private fun Fact(symbol: String, value: String, theme: Theme, lines: Int = 1) {
  * into in the same card, and a confirmation rises over it as every dialog does.
  */
 @Composable
-internal fun SavePickerBottom(app: FoldcadeApp, state: SavePickerState, dates: DateStyle, scale: Float, dispatch: (Effect?) -> Unit) {
+internal fun SavePickerBottom(app: FoldcadeApp, state: SavePickerState, dates: DateStyle, scale: Float, screen: HostScreen, dispatch: (Effect?) -> Unit) {
     val theme = LocalFoldTheme.current.theme
     val design = theme.style
     val model = app.shell.model
     val back = promptKeyOf(model.faceMap.backKey) ?: PromptKey.FaceB
     val art = app.shell.savePickerArt(state.target)
-    val press = { meaning: Meaning -> dispatch(app.shell.onMeaning(meaning, HostScreen.Bottom)) }
+    val press = { meaning: Meaning -> dispatch(app.shell.onMeaning(meaning, screen)) }
     Box(Modifier.fillMaxSize().background(theme.background)) {
         Column(
             Modifier.fillMaxSize().padding(horizontal = design.saves.edgeDp.dp, vertical = BOTTOM_EDGE_V),

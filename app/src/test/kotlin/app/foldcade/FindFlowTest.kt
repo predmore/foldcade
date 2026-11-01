@@ -68,7 +68,7 @@ class FindFlowTest {
         assertEquals(0, find.index)
         assertEquals(findResults(find.results, "puz", find.filters[find.filter]), find.results)
         val launch = shell.onMeaning(Meaning.ActivateBottom, HostScreen.Bottom)
-        assertEquals(Effect.Launch(shell.model.focus.cellIndex, onBottom = true), launch)
+        assertEquals(Effect.Launch(shell.model.focus.cellIndex, elsewhere = true), launch)
         assertEquals("Puzzle", shell.focusedGame()?.title)
         shell.closeFindAfterLaunch()
         assertNull(shell.find)

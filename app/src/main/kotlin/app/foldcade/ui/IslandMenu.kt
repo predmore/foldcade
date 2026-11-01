@@ -98,11 +98,11 @@ internal fun TopIslands(
     scale: Float,
     menuRows: @Composable (panel: SidePanel, progress: () -> Float, interactive: Boolean) -> Unit,
 ) {
-    // Top screen only. The bottom screen keeps the grid and the hint row.
-    // The L1 chip, launch target, and status cluster are not drawn there.
-    if (screen != HostScreen.Top) return
+    // The layout's menu screen only: over the hero, or over the grid with one screen. The other
+    // screen keeps its grid or hero and the hint row; the L1 chip and status cluster are not drawn there.
     val model = app.shell.model
-    val dialogCovers = model.dialog?.screen == HostScreen.Top
+    if (screen != model.layout.menuScreen) return
+    val dialogCovers = model.dialog?.screen == screen
     BoxWithConstraints(
         Modifier
             .fillMaxSize()
@@ -110,11 +110,11 @@ internal fun TopIslands(
             .focusProperties { canFocus = false },
     ) {
         // A tap off the open card closes it, as its shoulder would. The cards sit above and keep their own taps.
-        if (!dialogCovers && model.panel?.screen == HostScreen.Top) Box(Modifier.fillMaxSize().closesIsland(app))
+        if (!dialogCovers && model.panel?.screen == screen) Box(Modifier.fillMaxSize().closesIsland(app))
         Island(
             app = app,
             side = Side.Left,
-            open = !dialogCovers && model.panel?.side == Side.Left && model.panel?.screen == HostScreen.Top,
+            open = !dialogCovers && model.panel?.side == Side.Left && model.panel?.screen == screen,
             scale = scale,
             maxWidth = maxWidth,
             maxHeight = maxHeight,
@@ -123,7 +123,7 @@ internal fun TopIslands(
         Island(
             app = app,
             side = Side.Right,
-            open = !dialogCovers && model.panel?.side == Side.Right && model.panel?.screen == HostScreen.Top,
+            open = !dialogCovers && model.panel?.side == Side.Right && model.panel?.screen == screen,
             scale = scale,
             maxWidth = maxWidth,
             maxHeight = maxHeight,
@@ -147,7 +147,7 @@ private fun Island(
     val density = LocalDensity.current
     val model = app.shell.model
     val held = app.islandHold
-    val mine = model.panel?.takeIf { it.side == side && it.screen == HostScreen.Top }
+    val mine = model.panel?.takeIf { it.side == side && it.screen == model.layout.menuScreen }
     val retiringHere = held == null && mine?.retiring == true
     val snap = held != null
     val target = when {
@@ -163,7 +163,7 @@ private fun Island(
         handoff = retiringHere,
         onHandoff = { app.shell.completeIslandRetire() },
     )
-    val live = app.shell.model.panel?.takeIf { it.side == side && it.screen == HostScreen.Top }
+    val live = app.shell.model.panel?.takeIf { it.side == side && it.screen == app.shell.model.layout.menuScreen }
     var shown by remember { mutableStateOf<SidePanel?>(null) }
     if (live != null) shown = live
     val panel = shown
@@ -250,7 +250,7 @@ private fun Island(
             .clip(shape)
             .background(cardFill(theme, design.menu.islandLift * progress))
             // The open card holds a tap between its rows, so it never reaches the catch under it.
-            .then(if (!interactive) Modifier.islandPress { app.shell.onMeaning(side.meaning(), HostScreen.Top) } else Modifier.blocksTouch()),
+            .then(if (!interactive) Modifier.islandPress { app.shell.onMeaning(side.meaning(), app.shell.model.layout.menuScreen) } else Modifier.blocksTouch()),
     ) {
         // The chip leads on both sides, so the clock is the last thing on the right.
         // The chip art carries its own margin. The text end gets a little more.

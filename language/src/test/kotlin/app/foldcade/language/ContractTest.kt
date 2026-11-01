@@ -244,8 +244,8 @@ class ContractTest {
     @Test
     fun aLaunchesOnTopAndXOnTheBottom() {
         val model = PickerModel(count = 6, rowsPerPage = 1, focus = GridFocus(cellIndex = 2, lastColumn = 2))
-        assertEquals(Effect.Launch(2, onBottom = false), reduce(model, Meaning.Activate).second)
-        assertEquals(Effect.Launch(2, onBottom = true), reduce(model, Meaning.ActivateBottom).second)
+        assertEquals(Effect.Launch(2, elsewhere = false), reduce(model, Meaning.Activate).second)
+        assertEquals(Effect.Launch(2, elsewhere = true), reduce(model, Meaning.ActivateBottom).second)
         assertEquals(Meaning.ActivateBottom, meaningOf(android.view.KeyEvent.KEYCODE_BUTTON_X))
         val hints = gridHints(null, HomeKeys.Idle, FaceMap.standard(), screens = true)
         assertEquals(listOf(Copy.hintTop, Copy.hintBottom), hints.map { it.label })
@@ -491,10 +491,10 @@ class ContractTest {
         val opened = reduce(root, Meaning.LeftPanel, HostScreen.Bottom).first
         assertEquals(Side.Left, opened.panel?.side)
         assertEquals(HostScreen.Top, opened.panel?.screen)
-        val onPrimary = root.onSetting(Row.Primary)
-        val primary = reduce(onPrimary, Meaning.Activate).first
-        assertFalse(primary.primaryIsTop)
-        assertEquals(onPrimary.settings, primary.settings)
+        val onLayout = root.onSetting(Row.ScreenLayout)
+        val layout = reduce(onLayout, Meaning.Activate).first
+        assertEquals(ScreenLayout.ShowcaseBottom, layout.layout)
+        assertEquals(onLayout.settings, layout.settings)
         val theme = reduce(root.onSetting(Row.Theme), Meaning.MoveRight).first
         assertEquals(1, theme.themeIndex)
         // The sources live on the Settings page's Library rows, not in L1.

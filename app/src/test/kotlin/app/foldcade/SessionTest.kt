@@ -1,8 +1,10 @@
 package app.foldcade
 
+import app.foldcade.language.ScreenLayout
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertSame
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -260,4 +262,78 @@ class SessionTest {
         }
     }
 
+    @Test
+    fun swappedPutsTheGridOnTopAndTheHeroWithItsIslandsBelow() {
+        val swapped = Session(layout = ScreenLayout.ShowcaseBottom)
+        assertEquals(Surface.Picker, swapped.surfaceOn(Panel.Top))
+        assertEquals(Surface.Hero, swapped.surfaceOn(Panel.Bottom))
+        assertEquals(Panel.Top, swapped.gridPanel())
+        assertEquals(Panel.Bottom, swapped.menuPanel())
+        assertEquals(Panel.Bottom, swapped.heroPanel())
+        assertEquals(Panel.Top, swapped.controlsPanel())
+        assertNull(swapped.darkPanel())
+        assertTrue(swapped.islandsOpen())
+        // A game on top leaves the bottom its command center, and its islands.
+        val gameOnTop = swapped.launch(one, Panel.Top)
+        assertEquals(Surface.CommandCenter, gameOnTop.surfaceOn(Panel.Bottom))
+        assertTrue(gameOnTop.islandsOpen())
+        assertEquals(Panel.Bottom, gameOnTop.controlsPanel())
+        // A game on the bottom covers the islands, as one on top does in Classic.
+        val gameBelow = swapped.launch(one, Panel.Bottom)
+        assertEquals(Surface.CommandCenter, gameBelow.surfaceOn(Panel.Top))
+        assertFalse(gameBelow.islandsOpen())
+        assertNull(gameBelow.heroPanel())
+    }
+
+    @Test
+    fun topOnlyLeavesTheBottomDarkEvenBesideAGame() {
+        val one = Session(layout = ScreenLayout.TopOnly)
+        assertEquals(Surface.Picker, one.surfaceOn(Panel.Top))
+        assertEquals(Surface.Dark, one.surfaceOn(Panel.Bottom))
+        assertNull(one.heroPanel())
+        assertEquals(Panel.Top, one.menuPanel())
+        assertEquals(Panel.Top, one.controlsPanel())
+        assertTrue(one.draws(Panel.Top))
+        assertFalse(one.draws(Panel.Bottom))
+        assertTrue(one.islandsOpen())
+        // A game on top: the bottom stays dark, with nothing to browse.
+        val gameOnTop = one.launch(this.one, Panel.Top)
+        assertEquals(Surface.Dark, gameOnTop.surfaceOn(Panel.Bottom))
+        assertEquals(gameOnTop, gameOnTop.browse(Panel.Bottom))
+        assertNull(gameOnTop.controlsPanel())
+        assertFalse(gameOnTop.islandsOpen())
+        // X opens a game on the dark screen, and the grid's screen beside it is the command center.
+        val gameBelow = one.launch(this.one, Panel.Bottom)
+        assertNull(gameBelow.surfaceOn(Panel.Bottom))
+        assertEquals(Surface.CommandCenter, gameBelow.surfaceOn(Panel.Top))
+        assertEquals(Surface.Picker, gameBelow.browse(Panel.Top).surfaceOn(Panel.Top))
+        // Home back from it leaves the bottom dark again.
+        assertEquals(Surface.Dark, gameBelow.home(Panel.Bottom).surfaceOn(Panel.Bottom))
+        // The dark screen is not dimmed as a command center: it has its own darkness.
+        assertFalse(commandCenterDimmed(gameOnTop, Panel.Bottom, awake = null))
+    }
+
+    @Test
+    fun aGameOpensOnPlayOnUnlessItIsTaken() {
+        val below = Session(playOn = Panel.Bottom)
+        assertEquals(one, below.launch(one).bottomApp)
+        assertNull(below.launch(one).topApp)
+        // Taken: the other screen, as before.
+        assertEquals(two, below.launch(one).launch(two).topApp)
+        assertEquals(one, Session().launch(one).topApp)
+    }
+
+    @Test
+    fun aNewLayoutKeepsEveryAppAndDropsBrowsingOnAScreenThatWentDark() {
+        val browsing = Session().launch(one, Panel.Top).browse(Panel.Bottom)
+        assertEquals(Panel.Bottom, browsing.browsing)
+        val dark = browsing.withLayout(ScreenLayout.TopOnly)
+        assertEquals(one, dark.topApp)
+        assertNull(dark.browsing)
+        assertEquals(Surface.Dark, dark.surfaceOn(Panel.Bottom))
+        val swapped = browsing.withLayout(ScreenLayout.ShowcaseBottom)
+        assertEquals(Panel.Bottom, swapped.browsing)
+        assertEquals(Surface.Picker, swapped.surfaceOn(Panel.Bottom))
+        assertSame(browsing, browsing.withLayout(ScreenLayout.ShowcaseTop))
+    }
 }

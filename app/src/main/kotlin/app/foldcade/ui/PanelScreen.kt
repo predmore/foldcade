@@ -156,6 +156,7 @@ import app.foldcade.FoldcadeApp
 import app.foldcade.FoldcadeHomeActivity
 import app.foldcade.Panel
 import app.foldcade.Surface
+import app.foldcade.panel
 import app.foldcade.RunningApp
 import app.foldcade.CenterFocus
 import app.foldcade.language.AchievementCopy
@@ -302,19 +303,18 @@ fun PanelHost(activity: FoldcadeHomeActivity, displays: Displays) {
         screen?.let { app.shell.registerInputWindow(it, activity.inputWindow) }
         onDispose { app.shell.cancelDeleteHold(activity.inputWindow) }
     }
-    val ownsBottom = session.surfaceOn(Panel.Bottom) != null
+    val drawsHere = panel != null && session.draws(panel)
     // A full-screen page on the other screen leaves this one its command center, not a blurred grid.
     val besidePage = screen != null && pageBeside(model, session, screen) != null
-    val menuVisible = (
-        model.panel?.screen == HostScreen.Top ||
-            model.settings?.screen == HostScreen.Top ||
-            model.playActivity?.screen == HostScreen.Top
-        ) && model.dialog?.screen != HostScreen.Top
-    val blurHere = screen == HostScreen.Bottom &&
-        ownsBottom &&
+    // A menu or a page open on the other screen blurs this one. Over this screen's own grid, as with one screen, it does not.
+    val menuOn = model.panel?.screen ?: model.settings?.screen ?: model.playActivity?.screen
+    val menuVisible = menuOn != null && model.dialog?.screen != menuOn
+    val blurHere = screen != null &&
+        menuOn != screen &&
+        drawsHere &&
         !besidePage &&
         menuVisible &&
-        model.dialog?.screen != HostScreen.Bottom
+        model.dialog?.screen != screen
     val heldBlur = if (blurHere) app.islandHold?.progress else null
     val blurTarget = heldBlur ?: if (blurHere) 1f else 0f
     val blur by motionState(
@@ -324,8 +324,9 @@ fun PanelHost(activity: FoldcadeHomeActivity, displays: Displays) {
     )
     // Set up saves beside an emulator shows that emulator's steps, so it stays at the panel's own brightness.
     val dimmed = panel != null && app.commandCenter.dimmed(panel) && model.saveSetup == null
+    val dark = panel != null && session.surfaceOn(panel) == Surface.Dark
     // Either panel's level can move while dimmed, and a darker one still wins.
-    LaunchedEffect(dimmed, app.brightness.revision) { activity.applyCommandCenterDim(dimmed) }
+    LaunchedEffect(dimmed, dark, app.brightness.revision) { activity.applyCommandCenterDim(dimmed, dark) }
     // Leaving a window forgets what each graphics layer reads, and the next window
     // only lays out and draws again, so the grid's ring stopped where it was. A layer
     // runs again when its density changes: each window gets the same one, new.
@@ -338,7 +339,7 @@ fun PanelHost(activity: FoldcadeHomeActivity, displays: Displays) {
             Modifier
                 .fillMaxSize()
                 .focusRequester(activity.panelFocus)
-                .background(paint.theme.background)
+                .background(if (dark) Color.Black else paint.theme.background)
                 .wakesCommandCenter(app, panel),
         ) {
             val wallpaper = when (panel) {
@@ -349,7 +350,7 @@ fun PanelHost(activity: FoldcadeHomeActivity, displays: Displays) {
             // No wallpaper node when this panel has none. A full-screen layer left
             // in the tree keeps the accessibility dump empty, so the library title
             // is not in the window the folder check reads.
-            if (wallpaper != null) PanelWallpaper(wallpaper)
+            if (wallpaper != null && !dark) PanelWallpaper(wallpaper)
             // The body has one place in the tree, open menu or not. Opening a menu
             // keeps the backdrop's clock and the grid's state, and the blur eases out.
             Box(Modifier.fillMaxSize().menuBlur { blur }.menuDim { blur }) {
@@ -365,37 +366,43 @@ fun PanelHost(activity: FoldcadeHomeActivity, displays: Displays) {
                     }
                 }
             }
-            if (screen == HostScreen.Top) LetterOverlay(app, scale)
-            if (blurHere && session.surfaceOn(Panel.Bottom) == Surface.Picker) MenuHints(app)
+            // A page split over two screens puts its showcase half with the hero and its
+            // controls with the grid. With no hero, the controls are all there is.
+            val heroHere = panel != null && session.heroPanel() == panel
+            val controlsHere = panel != null && session.controlsPanel() == panel
+            // The big letter of a trigger jump shows over the hero, or over the grid with no hero.
+            if (heroHere || (controlsHere && session.heroPanel() == null)) LetterOverlay(app, scale)
+            if (blurHere && panel != null && session.surfaceOn(panel) == Surface.Picker) MenuHints(app)
             // The blurred grid takes no taps of its own. A tap on it closes the island over it.
-            if (blurHere && model.panel?.screen == HostScreen.Top) Box(Modifier.fillMaxSize().closesIsland(app))
+            if (blurHere && model.panel != null) Box(Modifier.fillMaxSize().closesIsland(app))
             // Saves rises over both screens as Settings does, and leaves as it was.
             val saves = presence(model.savePicker, motion.durationIsland, scale)
             saves.shown?.let { shown ->
                 Box(Modifier.fillMaxSize().rise { saves.progress.value }) {
-                    if (screen == HostScreen.Top) SavePickerTop(app, shown, rememberDateStyle(app), scale)
-                    if (screen == HostScreen.Bottom) SavePickerBottom(app, shown, rememberDateStyle(app), scale, activity::dispatch)
+                    if (heroHere) SavePickerTop(app, shown, rememberDateStyle(app), scale)
+                    if (controlsHere && screen != null) SavePickerBottom(app, shown, rememberDateStyle(app), scale, screen, activity::dispatch)
                 }
             }
-            // Set up saves rises over both screens too. Beside a game or an emulator it takes the one screen there is.
+            // Set up saves rises over both screens too. Beside a game or an emulator, or with one
+            // screen, it takes the one screen there is.
             val setup = presence(model.saveSetup, motion.durationIsland, scale)
             setup.shown?.let { shown ->
-                val split = session.bothScreensFree()
+                val split = session.heroPanel() != null
                 Box(Modifier.fillMaxSize().rise { setup.progress.value }) {
                     when {
-                        split && screen == HostScreen.Top -> SaveSetupTop(app, shown, scale, activity::dispatch)
-                        split && screen == HostScreen.Bottom -> SaveSetupBottom(app, shown, scale, activity::dispatch)
-                        !split && screen != null && panel != null && session.surfaceOn(panel) != null ->
+                        split && heroHere && screen != null -> SaveSetupTop(app, shown, screen, scale, activity::dispatch)
+                        split && controlsHere && screen != null -> SaveSetupBottom(app, shown, screen, scale, activity::dispatch)
+                        !split && screen != null && controlsHere ->
                             SaveSetupSingle(app, shown, screen, scale, activity::dispatch)
                     }
                 }
             }
-            if (panel != null && screen != null) {
+            if (panel != null && screen != null && drawsHere) {
                 DialogLayer(app, model.dialog, screen, scale, activity::dispatch)
             }
             val conflict = model.saveConflict
-            if (conflict != null && screen == HostScreen.Top) SaveConflictTop(conflict)
-            if (conflict != null && screen == HostScreen.Bottom) {
+            if (conflict != null && heroHere) SaveConflictTop(conflict)
+            if (conflict != null && controlsHere) {
                 SaveConflictBottom(
                     conflict,
                     dateStyle = rememberDateStyle(app),
@@ -404,8 +411,9 @@ fun PanelHost(activity: FoldcadeHomeActivity, displays: Displays) {
                     backKey = promptKeyOf(model.faceMap.backKey) ?: PromptKey.FaceB,
                 )
             }
-            // A launching game's art grows over everything here, then waits for the game.
-            if (panel != null) LaunchBloomLayer(app, panel)
+            // A launching game's art grows over everything here, then waits for the game. The dark
+            // screen stays dark unless the game is opening there.
+            if (panel != null && (!dark || app.launchBlooms.current?.gamePanels?.contains(panel) == true)) LaunchBloomLayer(app, panel)
         }
     }
 }
@@ -493,6 +501,8 @@ private fun PanelBody(
     val settingsOver = pageHere && foldTheme().background.alpha >= 1f
     val page = screen?.let { pageBeside(model, session, it) }
     val centerHere = page != null || (panel != null && session.surfaceOn(panel) == Surface.CommandCenter)
+    // The dark screen draws nothing at all, not even a resting backdrop.
+    val dark = panel != null && session.surfaceOn(panel) == Surface.Dark
     val motion = LocalFoldTheme.current.theme.motion
     // Settings and Play activity rise over the panel and sink away again. Each keeps its
     // last state while it leaves, so it fades out as it was rather than vanishing.
@@ -511,11 +521,12 @@ private fun PanelBody(
     val backdrop = app.backgroundFor(model.backgroundMotion)
     // The icon editor hides the hero's art, so with no backdrop behind it nothing is left to slide.
     val nothingToSlide = backdrop == null && app.shell.folderIconPick() != null
-    // Moving the Thor slides the hero's layers a touch, deepest most. Only while the top screen's hero shows.
-    val tiltHere = panel == Panel.Top && running && session.surfaceOn(panel) == Surface.Hero && !covered && !connectHere &&
+    // Moving the Thor slides the hero's layers a touch, deepest most. Only while the hero shows, on whichever screen.
+    val showcase = panel != null && panel == session.layout.showcaseScreen?.panel()
+    val tiltHere = panel != null && showcase && running && session.surfaceOn(panel) == Surface.Hero && !covered && !connectHere &&
         !nothingToSlide && !motion.heroFadeOnly(model.motionSpeed, scale)
     val tilt = rememberTilt(tiltHere, motion)
-    Box(if (panel == Panel.Top) Modifier.fillMaxSize().tilted(tilt, motion, 1f, cover = true) else Modifier.fillMaxSize()) {
+    if (!dark) Box(if (showcase) Modifier.fillMaxSize().tilted(tilt, motion, 1f, cover = true) else Modifier.fillMaxSize()) {
         Backdrop(
             scene = backdrop,
             panel = if (panel == Panel.Bottom) 1f else 0f,
@@ -528,22 +539,23 @@ private fun PanelBody(
             live = sceneLive(app, backdrop, scale, camera),
         )
     }
-    if (panel == null || screen == null) return
+    if (panel == null || screen == null || dark) return
     val artPage = presence(app.shell.artPicker, motion.durationIsland, scale)
     if (!covered) {
         CompositionLocalProvider(LocalBackdropCover provides cover, LocalBackdropCamera provides camera, LocalTilt provides tilt) {
             // While a launching game's art grows here, this screen keeps what it showed. Keys
             // already follow the session; only the drawing waits, so the grow gets the frames.
             val surface = session.surfaceOn(panel)
-            val bothFree = session.bothScreensFree()
-            val drawn = remember { SurfaceHold(surface, bothFree) }
+            // With a hero on the other screen, the grid is icons only.
+            val heroBeside = session.heroPanel() != null
+            val drawn = remember { SurfaceHold(surface, heroBeside) }
             if (!app.launchBlooms.holdsView(panel)) {
                 drawn.surface = surface
-                drawn.bothFree = bothFree
+                drawn.heroBeside = heroBeside
             }
             TravelFade(target = drawn.surface, scale = scale) { shown ->
                 when (shown) {
-                    null -> Unit
+                    null, Surface.Dark -> Unit
                     Surface.Hero -> if (connectHere) Unit else ArtPreviewHero(app, screen, scale, activity::dispatch)
                     Surface.Picker -> Picker(
                         app,
@@ -552,7 +564,7 @@ private fun PanelBody(
                         activity::dispatch,
                         editorHere = session.editorPanel() == panel,
                         live = session.surfaceOn(panel) == Surface.Picker,
-                        iconsOnly = drawn.bothFree,
+                        iconsOnly = drawn.heroBeside,
                     )
                     Surface.CommandCenter -> CommandCenterScreen(
                         app,
@@ -564,7 +576,7 @@ private fun PanelBody(
         }
         if (connectHere) ConnectScreen(app, screen, activity::dispatch, activity::takeKeyboardFocus, activity::dispatchFormKeyEvent)
     }
-    if (screen == HostScreen.Bottom) artPage.shown?.let { shown ->
+    if (session.controlsPanel() == panel) artPage.shown?.let { shown ->
         Box(Modifier.fillMaxSize().rise { artPage.progress.value }) { ArtPickerScreen(app, shown, scale) }
     }
     beside.shown?.let { subject ->
@@ -587,7 +599,7 @@ private fun PanelBody(
 }
 
 /** The surface a panel draws, and how its grid is laid out, which a growing launch holds back from the session's. */
-private class SurfaceHold(var surface: Surface?, var bothFree: Boolean)
+private class SurfaceHold(var surface: Surface?, var heroBeside: Boolean)
 
 /** [base] under its own identity, so every layer under it counts it as a new density. */
 private class WindowDensity(base: Density) : Density by base
@@ -773,7 +785,8 @@ private fun pageBeside(
     session: app.foldcade.Session,
     screen: HostScreen,
 ): CenterSubject.Page? {
-    if (!session.bothScreensFree()) return null
+    // The dark screen stays dark beside a page too.
+    if (!session.bothScreensFree() || session.surfaceOn(screen.panel()) == Surface.Dark) return null
     val settings = model.settings
     val playActivity = model.playActivity
     return when {
@@ -1060,7 +1073,7 @@ private fun ArtPreviewHero(app: FoldcadeApp, screen: HostScreen, scale: Float, o
         Crossfade(preview, animationSpec = motion.arrive(motion.durationScene, scale)) { shown ->
             CompositionLocalProvider(LocalArtPreview provides shown) { Hero(app, screen, scale, onEffect) }
         }
-        if (screen == HostScreen.Top) {
+        if (screen == app.shell.model.layout.menuScreen) {
             Crossfade(app.shell.artPicker?.match?.name,
                 animationSpec = motion.arrive(motion.durationShort, scale),
                 modifier = Modifier.align(Alignment.TopCenter).padding(top = 76.dp, start = 24.dp, end = 24.dp),
@@ -1140,7 +1153,8 @@ private fun Hero(app: FoldcadeApp, screen: HostScreen, scale: Float, onEffect: (
                     .padding(
                         start = inset,
                         end = inset,
-                        top = if (screen == HostScreen.Top) inset + 48.dp else inset,
+                        // Under the islands, on the screen that has them.
+                        top = if (screen == model.layout.menuScreen) inset + 48.dp else inset,
                         bottom = inset,
                     ),
                 horizontalAlignment = Alignment.CenterHorizontally,
@@ -1382,7 +1396,7 @@ private fun IconEditorLayer(app: FoldcadeApp, editor: Presence<Pair<IconPick, St
     val (pick, name) = editor.shown ?: return
     Column(Modifier.fillMaxSize().rise { editor.progress.value }, horizontalAlignment = Alignment.CenterHorizontally) {
         Box(Modifier.weight(1f).fillMaxWidth()) {
-            FolderIconPicker(app, pick, name, top = screen == HostScreen.Top, scale = scale)
+            FolderIconPicker(app, pick, name, top = screen == app.shell.model.layout.menuScreen, scale = scale)
         }
         if (hints) GridHints(app, Modifier.padding(bottom = px(EDITOR_HINT_INSET)))
     }
@@ -2222,7 +2236,7 @@ private fun Picker(
      * The hero on the other screen carries the focused name, so the grid is icons only.
      * With one screen free there is no hero, and tiles keep labels. A growing launch holds it.
      */
-    iconsOnly: Boolean = app.store.session.bothScreensFree(),
+    iconsOnly: Boolean = app.store.session.heroPanel() != null,
 ) {
     val design = LocalFoldTheme.current.theme.style
     val theme = foldTheme()
@@ -2236,6 +2250,13 @@ private fun Picker(
     val finding = presence(shell.find, motion.durationIsland, scale)
     val covered = { max(typing.progress.value, finding.progress.value) }
     val gridGone by remember { derivedStateOf { covered() >= 1f } }
+    // An island's menu open over this same grid, as with one screen: the tiles quiet under it,
+    // as the other screen's grid does under its blur. Its hints stay bright.
+    val menuOver = model.panel?.screen == screen && model.dialog?.screen != screen
+    val quiet = motionState(
+        if (menuOver) 1f else 0f,
+        if (menuOver) motion.arrive(motion.durationIsland, scale) else motion.leave(motion.durationIsland, scale),
+    )
     BoxWithConstraints(Modifier.fillMaxSize()) {
         val inset = maxWidth * design.metrics.insetFraction
         // A wide panel spaces its tiles as a 4:3 one would, and spends the rest of its width on columns.
@@ -2255,7 +2276,8 @@ private fun Picker(
                 .padding(horizontal = inset)
                 .padding(top = inset, bottom = inset),
         ) {
-            if (screen == HostScreen.Top) {
+            // The islands sit over this grid when it shares their screen.
+            if (screen == model.layout.menuScreen) {
                 Spacer(Modifier.height(48.dp))
             }
             GridHeader(shell)
@@ -2273,7 +2295,8 @@ private fun Picker(
             BoxWithConstraints(
                 Modifier
                     .weight(1f)
-                    .fillMaxWidth(),
+                    .fillMaxWidth()
+                    .menuDim { quiet.value },
                 contentAlignment = Alignment.Center,
             ) {
                 // Rows are the same on every panel, so a Home layout reads the same on both.
@@ -2839,6 +2862,7 @@ private fun GridHints(app: FoldcadeApp, modifier: Modifier = Modifier) {
         drop = shell.homeHoldDrop(),
         play = if (gridKeys) shell.focusedPlayKey() else PlayKey.None,
         close = gridKeys && shell.focusedCanClose(),
+        playOn = model.playOn,
     // All games' bar shows L2 and R2 beside its tabs, so only Hidden and Folders name them here.
     )) + if (gridKeys && model.settings == null && model.playActivity == null &&
         (model.homeGrid != HomeGrid.StandIns || shell.homeFoldersOpen())

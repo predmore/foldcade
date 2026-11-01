@@ -130,7 +130,7 @@ class FindSession(entries: List<FindEntry>, startFilter: (List<FindFilter>) -> I
     /** A tap on result [at]: the first tap focuses it, a second opens it. */
     fun tapResult(at: Int): FindOutcome {
         val entry = results.getOrNull(at) ?: return FindOutcome.Stay(TypingCue.None)
-        if (onResults && index == at) return open(entry, onBottom = false)
+        if (onResults && index == at) return open(entry, elsewhere = false)
         onResults = true
         focus(at)
         return FindOutcome.Stay(TypingCue.Move)
@@ -171,15 +171,15 @@ class FindSession(entries: List<FindEntry>, startFilter: (List<FindFilter>) -> I
             }
             Meaning.LetterBackward, Meaning.LetterForward -> step(if (meaning == Meaning.LetterForward) 1 else -1)
             Meaning.View -> FindOutcome.Close
-            Meaning.Activate -> entry?.let { open(it, onBottom = false) } ?: FindOutcome.Stay(TypingCue.None)
-            Meaning.ActivateBottom -> entry?.let { open(it, onBottom = true) } ?: FindOutcome.Stay(TypingCue.None)
+            Meaning.Activate -> entry?.let { open(it, elsewhere = false) } ?: FindOutcome.Stay(TypingCue.None)
+            Meaning.ActivateBottom -> entry?.let { open(it, elsewhere = true) } ?: FindOutcome.Stay(TypingCue.None)
             Meaning.Options -> if (entry != null) FindOutcome.Options else FindOutcome.Stay(TypingCue.None)
             else -> FindOutcome.Stay(TypingCue.None)
         }
     }
 
-    private fun open(entry: FindEntry, onBottom: Boolean): FindOutcome =
-        if (entry.kind == FindKind.Group) FindOutcome.OpenGroup(entry.id) else FindOutcome.Launch(onBottom)
+    private fun open(entry: FindEntry, elsewhere: Boolean): FindOutcome =
+        if (entry.kind == FindKind.Group) FindOutcome.OpenGroup(entry.id) else FindOutcome.Launch(elsewhere)
 
     /** To the results, on the best one. With nothing to show it stays on the keys. */
     private fun toResults(): FindOutcome {
@@ -222,8 +222,8 @@ sealed interface FindOutcome {
     data class Stay(val cue: TypingCue) : FindOutcome
     data object Close : FindOutcome
 
-    /** Open the focused game or app, on the bottom screen when [onBottom]. */
-    data class Launch(val onBottom: Boolean) : FindOutcome
+    /** Open the focused game or app, on the screen Play on does not name when [elsewhere]. */
+    data class Launch(val elsewhere: Boolean) : FindOutcome
 
     /** Leave Find and open the group [id] on Home. */
     data class OpenGroup(val id: String) : FindOutcome
