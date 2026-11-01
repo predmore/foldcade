@@ -49,7 +49,8 @@ restricted to that firmware and belongs only to the test harness.
 `FrameTimingMetric` runs under `CompilationMode.None` and
 `Partial(BaselineProfileMode.Require)`. Invoke each test through `am instrument`
 with the same shell workaround, or use `:baselineprofile:connectedBenchmarkAndroidTest`
-with `-Pandroid.testInstrumentationRunnerArguments.class=app.foldcade.baselineprofile.HomeBenchmarks`.
+with `-Pandroid.testInstrumentationRunnerArguments.class=app.foldcade.baselineprofile.HomeBenchmarks`
+and `-Pandroid.testInstrumentationRunnerArguments.foldcade.thorShellWorkaround=true`.
 Keep the Thor lock for the entire run and keep raw JSON and traces outside the repo.
 Compare APKs built from the same source: save the library-only APK before adding
 the app profile, then rebuild with the committed profile. Do not compare debug
@@ -70,3 +71,27 @@ five-iteration `FrameTimingGfxInfoMetric` fallback with a SurfaceFlinger-only tr
 Report `am start -W` separately for cold starts; it measures the primary first
 frame and is not `StartupTimingMetric` or a measurement of both panels drawn.
 Never treat an empty trace or frameCount=0 as a performance improvement.
+
+The benchmark APK also has a diagnostics activity (absent from release).
+After an ordinary first launch, this prints the profile file size and ProfileVerifier
+status to logcat, without forcing profile installation:
+
+```sh
+adb shell am start -n app.foldcade.benchmark/app.foldcade.ProfileStatusActivity
+adb logcat -d -s FoldcadeProfileStatus:I
+```
+
+## Home during a game
+
+Home already holds its backdrop and tilt, pauses music, and lets Compose pause a
+stopped window's frame clock. Device status is event-driven. No extra polling or
+animation controller is needed. The command center, save sync, play tracking and
+exit detection continue normally, including the command center's 15-second dim.
+
+On the transition from both panels free to a game occupying either one, the theme
+icon cache drops only historical decoded images. Composition counts references
+from both panels and transition layers, so the current hero and visible tiles
+remain cached and ready to return. Bitmaps are not recycled. Coil already handles
+Android's memory callbacks; its displayed art and scene renderers are preserved.
+A Thor comparison after browsing Apps released 9.9 MiB of unused icon decodes and
+reduced game-time PSS by about 10 MiB, with no material CPU change.

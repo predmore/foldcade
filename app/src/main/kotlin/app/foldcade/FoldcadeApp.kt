@@ -582,7 +582,14 @@ class FoldcadeApp : Application() {
         music = HomeMusic(this, store) { slot ->
             ::shell.isInitialized && themePacks.getOrNull(shell.model.themeIndex - 1)?.sounds?.has(slot) == true
         }
+        var artSession = store.session
         store.afterSessionChanged = {
+            val next = store.session
+            if (homeIconCacheMayTrim(artSession, next)) {
+                val released = app.foldcade.ui.ThemeIconImages.trimUnused()
+                Log.d("Foldcade", "Home icon cache released $released unused bytes")
+            }
+            artSession = next
             music.onSessionChanged()
             refreshHomeRecovery()
         }

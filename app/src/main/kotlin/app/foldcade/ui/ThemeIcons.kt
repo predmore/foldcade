@@ -25,6 +25,21 @@ import kotlinx.coroutines.withContext
 
 /** Vectors are rasterized off main and reused, including during hero transitions. */
 internal object ThemeIconImages {
+    private val shown = app.foldcade.ShownImages<Bitmap>()
+    fun showing(image: Bitmap) = shown.add(image)
+    fun leaving(image: Bitmap) = shown.remove(image)
+
+    /** Main thread. Keep the current hero/tiles and command center ready; drop only historical decodes. */
+    fun trimUnused(): Int {
+        var released = 0
+        images.snapshot().forEach { (key, image) ->
+            if (!shown.contains(image)) {
+                images.remove(key)
+                released += image.allocationByteCount
+            }
+        }
+        return released
+    }
     private val images = object : LruCache<String, Bitmap>(16 * 1024 * 1024) {
         override fun sizeOf(key: String, value: Bitmap): Int = value.allocationByteCount
     }
@@ -48,6 +63,15 @@ internal object ThemeIconImages {
     }
 }
 
+/** Pin what composition actually displays, including both sides of an outgoing transition. */
+@Composable
+private fun KeepThemeImage(image: Bitmap?) {
+    DisposableEffect(image) {
+        image?.let(ThemeIconImages::showing)
+        onDispose { image?.let(ThemeIconImages::leaving) }
+    }
+}
+
 internal data class ThemeIconPainter(
     val painter: Painter,
     val resolved: ResolvedThemeIcon<Bitmap>?,
@@ -67,6 +91,7 @@ internal fun themeIcon(slot: String, fallback: Int, pixels: Int = 256): ThemeIco
     val candidates = LocalFoldTheme.current.icons[slot].orEmpty()
     var resolved by remember(candidates, pixels) { mutableStateOf(ThemeIconImages.cached(candidates, pixels)) }
     LaunchedEffect(candidates, pixels) { resolved = ThemeIconImages.load(candidates, pixels) }
+    KeepThemeImage(resolved?.image)
     val painter = resolved?.image?.let { remember(it) { BitmapPainter(it.asImageBitmap()) } } ?: painterResource(fallback)
     return ThemeIconPainter(painter, resolved)
 }
@@ -112,6 +137,7 @@ internal fun themeIconOrNull(slot: String, pixels: Int = 256): ThemeIconPainter?
         loaded = true
     }
     val image = resolved?.image
+    KeepThemeImage(image)
     val painter = when {
         image != null -> remember(image) { BitmapPainter(image.asImageBitmap()) }
         fallback != 0 -> painterResource(fallback)
