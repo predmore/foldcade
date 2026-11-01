@@ -102,6 +102,7 @@ internal class HomeJourney(private val device: UiDevice) {
 
         Log.i("FoldcadeProfile", "R1 command center")
         key("BUTTON_R1", 0)
+        key("DPAD_UP", 0) // leave the brightness slider; move only among navigation tiles
         repeat(3) { key("DPAD_RIGHT", 0) }
         key("BUTTON_R1", 0)
         Log.i("FoldcadeProfile", "Find")

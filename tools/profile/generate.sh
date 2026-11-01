@@ -16,7 +16,7 @@ until mkdir /tmp/foldcade-thor.lock 2>/dev/null; do
         cat /tmp/foldcade-thor.lock/owner 2>/dev/null || true
         announced=true
     fi
-    sleep 5
+    sleep 1
 done
 printf 'Foldcade baseline profile generator, pid %s, %s\n' "$$" "$(date -Iseconds)" > /tmp/foldcade-thor.lock/owner
 installed=false
