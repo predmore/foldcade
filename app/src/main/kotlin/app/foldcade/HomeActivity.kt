@@ -1493,9 +1493,6 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
         // A chosen save must load even when the old game is still paused behind Home.
         val savePlayer = platformId?.let(foldcade::playerFor)
         if (savePlayer != null && foldcade.store.saveAwaitsLoad(savePlayer.saveFolderId())) return false
-        // A known launcher task can intercept this resume. Keep the paused run
-        // untouched; only a declared same-start resume is safe in that case.
-        if (running.resumeStart == null && !foldcade.runningGames.canUsePlayerFrontDoor(running.packageName)) return true
         // A player that takes its game's start again as a resume gets that, see LaunchFlag.SameStartResumes.
         val front = running.resumeStart?.let(::Intent)
             ?: packageManager.getLaunchIntentForPackage(running.packageName)?.apply { flags = RESUME_FLAGS } ?: run {
@@ -1666,15 +1663,10 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
                     val closed = withContext(Dispatchers.Main.immediate) {
                         val current = foldcade.runningGames.forPackage(running.packageName)
                         if (current?.startedAtMillis != asked.startedAtMillis || !foldcade.shell.isPaused(running.tileId)) return@withContext false
-                        if (!foldcade.runningGames.canUsePlayerFrontDoor(running.packageName)) return@withContext false
                         val assignment = displays.assignment(foldcade.store.session.defaultDisplayIsTop)
                         val displayId = if (running.panel == Panel.Top) assignment.topDisplayId else assignment.bottomDisplayId
                         val companions = asked.companions.filter { named -> current.companions.any { it.packageName == named.packageName } }
-                        if (displayId == null || foldcade.runningGames.frontDoorElsewhere(running.packageName, displayId) ||
-                            companions.any { app ->
-                                val appDisplay = if (app.panel == Panel.Top) assignment.topDisplayId else assignment.bottomDisplayId
-                                appDisplay == null || foldcade.runningGames.frontDoorElsewhere(app.packageName, appDisplay)
-                            }) return@withContext false
+                        if (displayId == null) return@withContext false
                         // Persist after revalidation and before touching the player.
                         running.saves?.let { foldcade.store.setPendingSaveReturn(it.storeKey, it.encode()) }
                         if (!clearBehindHome(running.packageName, displayId)) return@withContext false
@@ -1708,17 +1700,14 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
         }
     }
 
-    /** A single launch transaction destroys the old task while only Home resumes. */
+    /** Task identity stays with its creator. A task first created by the player's menu on another screen can take this clear. */
     private fun clearBehindHome(playerPackage: String, displayId: Int): Boolean {
-        if (foldcade.runningGames.frontDoorElsewhere(playerPackage, displayId)) return false
         val front = packageManager.getLaunchIntentForPackage(playerPackage) ?: return false
         val home = foldcade.homeOnDisplay(displayId) ?: return false
         front.flags = CLOSE_FLAGS
         val homeIntent = Intent(this, if (displayId == Display.DEFAULT_DISPLAY) PrimaryHomeActivity::class.java else CompanionHomeActivity::class.java)
             .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_NO_ANIMATION)
         return try {
-            // Commit before sending: a process exit here must not lose the known-task guard.
-            foldcade.runningGames.noteFrontDoor(playerPackage, displayId)
             home.startActivities(arrayOf(front, homeIntent), ActivityOptions.makeBasic().apply { launchDisplayId = displayId }.toBundle())
             // Home may cover a different game now using this panel. Keep that game
             // paused, as a Home press does, instead of treating it as a player exit.
@@ -1928,10 +1917,7 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
             if (noteStart()) armRestart(intent, displayId)
         }
         // The game it replaced is gone. This one is noted once the start is in.
-        if (replacing && playerPackage != null) {
-            foldcade.runningGames.noteFreshStart(playerPackage, displayId)
-            foldcade.runningGames.forget(playerPackage)
-        }
+        if (replacing && playerPackage != null) foldcade.runningGames.forget(playerPackage)
         foldcade.noteExternalPlayerOpened()
         foldcade.notePlayScreen()
         return true

@@ -145,47 +145,7 @@ class RunningGamesTest {
         assertEquals(0, CLOSE_FLAGS and Intent.FLAG_ACTIVITY_MULTIPLE_TASK)
         assertTrue(CLOSE_FLAGS and Intent.FLAG_ACTIVITY_CLEAR_TASK != 0)
         assertTrue(CLOSE_FLAGS and Intent.FLAG_ACTIVITY_NEW_TASK != 0)
-        assertTrue(CLOSE_FLAGS and Intent.FLAG_ACTIVITY_NO_HISTORY != 0)
-    }
-
-    @Test fun aKnownFrontDoorCannotInterceptAnotherGamesCloseOrLauncherResume() {
-        val games = RunningGames()
-        val saved = mutableListOf<Set<String>>()
-        games.onFrontDoorsChange = { saved += it }
-        games.noteFrontDoor("player", 7)
-        games.noteHolding("player", closed = true)
-        assertFalse(games.canUsePlayerFrontDoor("player"))
-        assertTrue(games.frontDoorElsewhere("player", 13))
-        assertFalse(games.frontDoorElsewhere("player", 7))
-        // The fresh start on the other display leaves the known launcher alone.
-        games.noteFreshStart("player", 13)
-        games.forget("player")
-        games.note(game("bottom", "player").copy(occupiesBoth = false))
-        assertFalse(games.canUsePlayerFrontDoor("player"))
-        // Moving the game onto that display does not consume a separate launcher task.
-        games.note(games.forPackage("player")!!.copy(panel = Panel.Top))
-        assertFalse(games.canUsePlayerFrontDoor("player"))
-        val restored = RunningGames()
-        restored.restoreFrontDoors(saved.last())
-        assertTrue(restored.frontDoorElsewhere("player", 13))
-        assertFalse(restored.canUsePlayerFrontDoor("player"))
-        assertTrue(restored.canUsePlayerFrontDoor("another"))
-    }
-
-    @Test fun replacingTheSoleKnownClosedTaskOnItsDisplayConsumesThatFrontDoor() {
-        val games = RunningGames()
-        var stored = emptySet<String>()
-        games.onFrontDoorsChange = { stored = it }
-        games.noteFrontDoor("player", 7)
-        games.noteHolding("player", closed = true)
-        games.noteFreshStart("player", 7)
-        assertTrue(stored.isEmpty())
-        assertTrue(games.canUsePlayerFrontDoor("player"))
-        // Unknown or live tasks must not retire a guard just because another start was sent.
-        games.restoreFrontDoors(setOf("player:7"))
-        games.note(game("new", "player"))
-        games.noteFreshStart("player", 7)
-        assertFalse(games.canUsePlayerFrontDoor("player"))
+        assertTrue(CLOSE_FLAGS and Intent.FLAG_ACTIVITY_NO_ANIMATION != 0)
     }
 
     @Test fun companionsBelongToThisRunAndAnAppOpenedAloneLeavesIt() {

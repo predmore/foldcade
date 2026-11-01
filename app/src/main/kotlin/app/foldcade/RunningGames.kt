@@ -53,39 +53,6 @@ internal class RunningGames {
     /** Close keeps a replacement guard, but its player may later be opened as an app beside another game. */
     private val closedPlayers = LinkedHashSet<String>()
 
-    /** Unseen front doors can stay INITIALIZING on Android, even with NO_HISTORY. */
-    private val frontDoors = LinkedHashMap<String, MutableSet<Int>>()
-    var onFrontDoorsChange: (Set<String>) -> Unit = {}
-
-    fun restoreFrontDoors(entries: Set<String>) {
-        for (entry in entries) {
-            val displayId = entry.substringAfterLast(':').toIntOrNull() ?: continue
-            frontDoors.getOrPut(entry.substringBeforeLast(':')) { linkedSetOf() }.add(displayId)
-        }
-    }
-
-    fun noteFrontDoor(packageName: String, displayId: Int) {
-        if (frontDoors.getOrPut(packageName) { linkedSetOf() }.add(displayId)) publishFrontDoors()
-    }
-
-    /** A separate launcher task can beat the game's task even after both move onto one display. */
-    fun canUsePlayerFrontDoor(packageName: String): Boolean = frontDoors[packageName].isNullOrEmpty()
-
-    fun frontDoorElsewhere(packageName: String, displayId: Int): Boolean =
-        frontDoors[packageName]?.any { it != displayId } == true
-
-    /** A fresh replacement of this process's sole closed task consumes its known front door. */
-    fun noteFreshStart(packageName: String, displayId: Int) {
-        if (packageName in closedPlayers && packageName !in byPackage && frontDoors[packageName] == setOf(displayId)) {
-            frontDoors.remove(packageName)
-            publishFrontDoors()
-        }
-    }
-
-    private fun publishFrontDoors() {
-        onFrontDoorsChange(frontDoors.flatMap { (pkg, displays) -> displays.map { "$pkg:$it" } }.toSet())
-    }
-
     /** Called with every tile id still running, after each change. */
     var onChange: (Set<String>) -> Unit = {}
 
@@ -225,9 +192,9 @@ internal fun resumeStartFlags(flags: Int, launchFlags: Set<LaunchFlag> = emptySe
 internal fun replaceFlags(flags: Int): Int =
     (flags and Intent.FLAG_ACTIVITY_MULTIPLE_TASK.inv()) or Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK
 
-/** Clear this player's task, then discard the unseen front door so it cannot intercept a later clear on another display. */
+/** Clear the player's task behind Home, without opening a second task beside it. */
 internal const val CLOSE_FLAGS: Int = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK or
-    Intent.FLAG_ACTIVITY_NO_ANIMATION or Intent.FLAG_ACTIVITY_NO_HISTORY
+    Intent.FLAG_ACTIVITY_NO_ANIMATION
 
 /** A shutdown may finish writes after its activities leave the task history. */
 internal const val CLOSE_SETTLE_MS = 1_500L

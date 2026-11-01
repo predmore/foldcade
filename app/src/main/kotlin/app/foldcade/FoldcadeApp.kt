@@ -504,12 +504,7 @@ class FoldcadeApp : Application() {
     internal val closingPlayers = mutableSetOf<String>()
 
     internal fun canCloseGame(tileId: String): Boolean = runningOn(tileId)?.let {
-        it.packageName !in closingPlayers && runningGames.canUsePlayerFrontDoor(it.packageName) &&
-            packageManager.getLaunchIntentForPackage(it.packageName) != null && it.companions.all { app ->
-                val assignment = Displays(this).assignment(store.session.defaultDisplayIsTop)
-                val display = if (app.panel == Panel.Top) assignment.topDisplayId else assignment.bottomDisplayId
-                display != null && !runningGames.frontDoorElsewhere(app.packageName, display)
-            }
+        it.packageName !in closingPlayers && packageManager.getLaunchIntentForPackage(it.packageName) != null
     } == true
 
     internal fun moveGameTarget(tileId: String): Panel? {
@@ -751,8 +746,6 @@ class FoldcadeApp : Application() {
         store = SessionStore(getSharedPreferences("foldcade", MODE_PRIVATE))
         runningGames.restore(store.playersHoldingGames())
         runningGames.onPlayersChange = store::setPlayersHoldingGames
-        runningGames.restoreFrontDoors(store.playerFrontDoors())
-        runningGames.onFrontDoorsChange = store::setPlayerFrontDoors
         buttonPromptFirstSession = !store.buttonPromptSeenLaunch()
         if (buttonPromptFirstSession) store.setButtonPromptSeenLaunch()
         credentials = AndroidCredentialStore(this)
