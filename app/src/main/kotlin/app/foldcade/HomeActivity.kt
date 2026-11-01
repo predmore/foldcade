@@ -305,6 +305,7 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
     override fun onMeaning(meaning: app.foldcade.language.Meaning) = onMeaningRepeated(meaning, 0)
 
     override fun onMeaningRepeated(meaning: app.foldcade.language.Meaning, repeatCount: Int) {
+        if (foldcade.shell.swallowsHomeReturnRepeat(repeatCount)) return
         if (commandCenterKey(meaning)) return
         if (app.foldcade.language.topMenuKeyBlocked(meaning, foldcade.shell.homeKeys(), foldcade.store.session.islandsOpen())) return
         if (app.foldcade.language.cancelsPendingLaunch(
@@ -543,7 +544,11 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
         var reclaimedPanel = false
         displays.panelFor(this, foldcade.store.session.defaultDisplayIsTop)?.let { panel ->
             reclaimedPanel = foldcade.store.session.surfaceOn(panel) == null
+            val returnedId = foldcade.store.session.externalOn(panel)?.id
             foldcade.store.update { it.foldcadeResumed(panel) }
+            if (returned || (reclaimedPanel && foldcade.store.session.externalOn(panel) == null)) {
+                foldcade.shell.noteHomeReturned(returnedId)
+            }
         }
         resumed = true
         // Primary Home coming forward reclaims the launcher, including a fresh icon start.
@@ -765,8 +770,10 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
         foldcade.pendingRestart = null
         val panel = displays.panelFor(this, foldcade.store.session.defaultDisplayIsTop) ?: return
         val surface = foldcade.store.session.surfaceOn(panel)
-        if (surface == Surface.Picker || surface == Surface.Hero) foldcade.shell.goHome()
+        val returnedId = foldcade.store.session.externalOn(panel)?.id
+        if (surface == Surface.Picker || surface == Surface.Hero) foldcade.shell.goHome(fromRecall = true)
         foldcade.store.update { it.home(panel) }
+        foldcade.shell.noteHomeReturned(returnedId)
         if (foldcade.panelRecoveryRequested) foldcade.requestPanelRecovery()
     }
 
@@ -1052,6 +1059,7 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
         val running = foldcade.shell.runningApp(game)
         foldcade.commandCenter.note(external.id, running)
         bloomLaunch(running, displayId, external.occupiesBothDisplays)
+        foldcade.shell.noteGameLaunched(external.id)
         foldcade.store.place(panel, external)
         val options = ActivityOptions.makeBasic().apply { launchDisplayId = displayId }
         try {
@@ -1452,6 +1460,7 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
             val displayId = if (shown == Panel.Top) assignment.topDisplayId else assignment.bottomDisplayId
             if (displayId != null) {
                 try {
+                    foldcade.shell.noteGameLaunched(tileId)
                     startOnDisplay(front, displayId, multipleTask = false)
                 } catch (_: ActivityNotFoundException) {
                     Unit
@@ -1759,6 +1768,7 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
         foldcade.homeRecalledOn = null
         // Before the play is noted: noting it can reorder a Recent folder under the cursor.
         bloomLaunch(running, displayId, occupiesBoth)
+        foldcade.shell.noteGameLaunched(id)
         try {
             foldcade.externalPlay.open(foldcade.plays, id, title, displayId, playerPackage) {
                 startOnDisplay(intent, displayId, multipleTask = !resume && !replacing)
@@ -1784,6 +1794,7 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
         if (game.occupiesBothDisplays) {
             val displayId = displays.assignment(session.defaultDisplayIsTop).topDisplayId
             bloomLaunch(running, displayId, both = true)
+            foldcade.shell.noteGameLaunched(game.id)
             foldcade.store.update { it.launch(external, launchScreen) }
             beginPlay(game, displayId)
             return
@@ -1795,6 +1806,7 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
             Panel.Bottom -> assignment.bottomDisplayId ?: return
         }
         bloomLaunch(running, displayId, both = false)
+        foldcade.shell.noteGameLaunched(game.id)
         foldcade.store.place(panel, external)
         beginPlay(game, displayId)
     }
@@ -1841,6 +1853,7 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
         foldcade.commandCenter.note(game.id, running)
         // Before the play is noted: noting it can reorder a Recent folder under the cursor.
         bloomLaunch(running, displayId, ready.occupiesBothDisplays)
+        foldcade.shell.noteGameLaunched(game.id)
         if (ready.occupiesBothDisplays) {
             foldcade.store.update { it.launch(external, launchScreen) }
         } else {
