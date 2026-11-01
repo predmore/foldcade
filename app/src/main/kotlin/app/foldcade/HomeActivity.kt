@@ -181,12 +181,12 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
     private var libraryReturn: LibraryReturn? = null
     private var deviceCodeJob: Job? = null
 
-    /** Settings › System › Play history › Export: where the file goes. */
+    /** Settings › System › Backup › Play history › Export: where the file goes. */
     private val playExport = registerForActivityResult(ActivityResultContracts.CreateDocument("application/zip")) { uri ->
         uri?.let(::exportPlayHistory)
     }
 
-    /** Settings › System › Play history › Import: the file to add. */
+    /** Settings › System › Backup › Play history › Import: the file to add. */
     private val playImport = registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         uri?.let(::importPlayHistory)
     }
@@ -546,7 +546,8 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
                 foldcade.pendingSetupRestore = backup
                 val dialog = if (backup == null) backupDone(refusal, screen) else {
                     val available = foldcade.shell.catalogNow().filterIsInstance<HomeItem>().mapTo(mutableSetOf()) { it.id }
-                    val (date, detail) = backupPreview(backup, available, foldcade.store.rommOrigin())
+                    val model = foldcade.shell.model
+                    val (date, detail) = backupPreview(backup, available, foldcade.store.rommOrigin(), model.themeIds.zip(model.themes).toMap())
                     restoreDialog(date, detail, screen)
                 }
                 foldcade.shell.present(dialog)

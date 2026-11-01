@@ -71,6 +71,8 @@ class BackupTest {
 
     @Test fun dialogsOpenSafelyAndHeldButtonsCannotAnswerThem() {
         val simple = backupDialog(HostScreen.Top)
+        assertEquals(listOf(DialogButton.BackUp, DialogButton.PickRestore, DialogButton.PlayHistory, DialogButton.NotNow), simple.buttons)
+        assertEquals(listOf(DialogButton.BackUp, DialogButton.PickRestore, DialogButton.UndoRestore, DialogButton.PlayHistory, DialogButton.NotNow), backupDialog(HostScreen.Top, true).buttons)
         assertEquals(DialogButton.BackUp, simple.buttons[simple.index])
         assertEquals(DialogButton.NotNow, simple.buttons[simple.safeIndex])
         assertFalse(DialogButton.UndoRestore in simple.buttons)
@@ -93,15 +95,43 @@ class BackupTest {
         assertEquals(BackupCopy.signIn, remaining.body)
     }
 
-    @Test fun systemFitsWithSettledPermissionsButEightPendingRowsExceedTheExistingCard() {
+    @Test fun systemFitsWithEveryPermissionPromptPending() {
         val normal = PickerModel(0, 1, homeRoleHeld = true, askNoticeAccess = false)
         val rows = settingsRows(SettingsCategory.Screens, normal)
-        assertEquals(Row.Backup, rows[rows.indexOf(Row.PlayHistory) - 1])
+        assertEquals(Row.Backup, rows[rows.indexOf(Row.AndroidSettings) - 1])
         assertTrue(rows.size * 52 + (rows.size - 1) * 4 <= 410)
         val pending = settingsRows(SettingsCategory.Screens, normal.copy(homeRoleHeld = false, askNoticeAccess = true))
-        assertEquals(8, pending.size)
-        // The current Settings card uses fixed 52dp rows, unlike island menus' adaptive MenuFit.
-        assertTrue(pending.size * 52 + (pending.size - 1) * 4 > 410)
+        assertEquals(7, pending.size)
+        assertTrue(Row.SetAsHome in pending)
+        assertTrue(Row.NoticeAccess in pending)
+        // The Settings card's fixed 52dp rows fit too, including Android settings at the bottom.
+        assertTrue(pending.size * 52 + (pending.size - 1) * 4 <= 410)
         assertFalse(menuFit(pending.size, 410, 1f, 4).scrolls)
+    }
+
+    @Test fun previewOnlyNamesThingsThatAreMissingAndUsesTheShortConfirmationBody() {
+        val home = "Home: 3 games, 1 collection, 1 hidden · Theme: Built-in"
+        assertEquals("$home · Not here yet: 3 games", BackupCopy.preview(3, 1, 1, "Built-in", 3, 0))
+        assertEquals("$home · Not here yet: 1 app", BackupCopy.preview(3, 1, 1, "Built-in", 0, 1))
+        assertEquals(home, BackupCopy.preview(3, 1, 1, "Built-in", 0, 0))
+        assertEquals("$home · Not here yet: 1 game, 2 apps", BackupCopy.preview(3, 1, 1, "Built-in", 1, 2))
+        assertEquals("Replaces Home, collections, hidden games, settings and theme with this backup's, from Nov 1, 2026. Play time is only added to.",
+            restoreDialog("Nov 1, 2026", home, HostScreen.Top).body)
+    }
+
+    @Test fun playHistoryOpensFromBackupOnTheSameScreenAndHeldAStopsThere() {
+        for (undo in listOf(false, true)) for (screen in HostScreen.entries) {
+            val backup = backupDialog(screen, undo)
+            val (history, effect) = focusAndActivateDialog(PickerModel(0, 1, dialog = backup), backup.buttons.indexOf(DialogButton.PlayHistory))
+            assertNull(effect)
+            assertEquals(playHistoryDialog(screen), history.dialog)
+            assertEquals(PlayCopy.history, dialogButtonLabel(DialogButton.PlayHistory))
+            val (held, heldEffect) = reduce(history, Meaning.Activate, screen, repeatCount = 1)
+            assertEquals(history.dialog, held.dialog)
+            assertNull(heldEffect)
+            val (exporting, exportEffect) = reduce(history, Meaning.Activate, screen)
+            assertNull(exporting.dialog)
+            assertEquals(Effect.DialogChoice(DialogButton.ExportPlay, DialogKind.PlayHistory), exportEffect)
+        }
     }
 }

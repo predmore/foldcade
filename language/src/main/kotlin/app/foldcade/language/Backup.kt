@@ -24,9 +24,15 @@ object BackupCopy {
     const val restored = "Restored"
     const val restoredDone = "Restored."
     const val pickAgain = "Pick again"
-    fun replacing(date: String): String = "Replaces Home, collections, hidden games, settings and theme with the backup's from $date. Play time is added to, never replaced."
-    fun preview(games: Int, collections: Int, hidden: Int, theme: String, missingGames: Int, missingApps: Int): String =
-        "Home: ${count(games, "game")}, ${count(collections, "collection")}, $hidden hidden · Theme: $theme · Not here yet: ${count(missingGames, "game")}, ${count(missingApps, "app")}"
+    fun replacing(date: String): String = "Replaces Home, collections, hidden games, settings and theme with this backup's, from $date. Play time is only added to."
+    fun preview(games: Int, collections: Int, hidden: Int, theme: String, missingGames: Int, missingApps: Int): String {
+        val missing = listOfNotNull(
+            count(missingGames, "game").takeIf { missingGames > 0 },
+            count(missingApps, "app").takeIf { missingApps > 0 },
+        )
+        val home = "Home: ${count(games, "game")}, ${count(collections, "collection")}, $hidden hidden · Theme: $theme"
+        return home + if (missing.isEmpty()) "" else " · Not here yet: ${missing.joinToString(", ")}"
+    }
     private fun count(number: Int, noun: String): String = "$number $noun${if (number == 1) "" else "s"}"
     const val signIn = "Sign in to RomM again."
     const val pair = "Pair your computers again."
@@ -40,7 +46,7 @@ object BackupCopy {
 
 fun backupDialog(screen: HostScreen, undo: Boolean = false): DialogState {
     val buttons = listOf(DialogButton.BackUp, DialogButton.PickRestore) +
-        (if (undo) listOf(DialogButton.UndoRestore) else emptyList()) + DialogButton.NotNow
+        (if (undo) listOf(DialogButton.UndoRestore) else emptyList()) + listOf(DialogButton.PlayHistory, DialogButton.NotNow)
     return DialogState(DialogKind.Backup, BackupCopy.title, BackupCopy.body, buttons, 0, buttons.lastIndex, screen)
 }
 

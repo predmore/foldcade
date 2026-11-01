@@ -24,7 +24,9 @@ internal fun FoldcadeApp.setupSnapshot(work: File, includeThemes: Boolean = true
     require(!art.isFile || art.length() <= 8L * 1024 * 1024) { "Art choices are too large" }
     val players = all.entries.filter { it.key.startsWith("player_save_folder:") && it.value is String && (it.value as String).isNotBlank() }
         .map { it.key.removePrefix("player_save_folder:") }
-    val theme = (all["theme"] as? String)?.let { id -> themePacks.firstOrNull { it.resources.id == id }?.name ?: id } ?: "Afterglow"
+    val model = shell.model
+    val theme = backupThemeName(all["theme"] as? String, rowText(Row.Theme, model).value ?: Copy.builtIn,
+        model.themeIds.zip(model.themes).toMap())
     return SetupBackup(
         BackupManifest(System.currentTimeMillis(), info.versionName.orEmpty(), info.longVersionCode, Build.MODEL,
             BackupSummary(summary.games, summary.collections, summary.hidden, theme), folders, players,
@@ -52,7 +54,19 @@ internal fun libraryFoldersWithOutstandingRestores(current: List<LibraryFolder>,
     }
 }
 
-internal fun backupPreview(backup: SetupBackup, available: Set<String>, currentOrigin: String? = null): Pair<String, String> {
+/** Available before plugin loading, including an install that holds no folder grants yet. */
+internal fun SessionStore.libraryFolders(): List<LibraryFolder> = libraryFoldersWithOutstandingRestores(
+    carriedBackupFolders(folderTrees(), emptyList()).map { LibraryFolder(it.uri, it.name) }, restoreFolders(),
+)
+
+/** Theme ids and legacy names resolve against the same labels Settings shows. */
+internal fun backupThemeName(id: String?, storedName: String, themes: Map<String, String>): String =
+    themes[id] ?: themes.values.firstOrNull { it == id } ?: storedName
+
+internal fun backupPreview(
+    backup: SetupBackup, available: Set<String>, currentOrigin: String? = null,
+    themes: Map<String, String> = mapOf("builtin" to Copy.builtIn, FALLBACK_THEME_ID to "Afterglow"),
+): Pair<String, String> {
     val summary = backupHomeSummary(decodeHome(backup.home), available + decodeSameGames(backup.sameGames).filterKeys { it in available }.values)
     val date = DateTimeFormatter.ofPattern("MMM d, yyyy").format(Instant.ofEpochMilli(backup.manifest.createdMillis).atZone(ZoneId.systemDefault()))
     val origin = backup.settings["romm_origin"] as? String
@@ -60,7 +74,8 @@ internal fun backupPreview(backup: SetupBackup, available: Set<String>, currentO
         val host = java.net.URI(it).host
         if (currentOrigin.isNullOrBlank()) BackupCopy.connectRomm(host) else BackupCopy.switchedRomm(host)
     }
-    return date to listOfNotNull(BackupCopy.preview(summary.games, summary.collections, summary.hidden, backup.manifest.summary.theme, summary.missingGames, summary.missingApps), switches).joinToString(" · ")
+    val theme = backupThemeName(backup.settings["theme"] as? String, backup.manifest.summary.theme, themes)
+    return date to listOfNotNull(BackupCopy.preview(summary.games, summary.collections, summary.hidden, theme, summary.missingGames, summary.missingApps), switches).joinToString(" · ")
 }
 
 internal fun storedComputersNeedPairing(store: SessionStore, identity: String?): Boolean = store.pairedStreamHosts(identity).isEmpty()

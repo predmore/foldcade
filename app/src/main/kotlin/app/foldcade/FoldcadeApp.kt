@@ -1843,10 +1843,8 @@ class FoldcadeApp : Application() {
 
     /** Stops reading [uri]. Its games, and its .steam files, leave the grid. */
     fun forgetFolder(uri: String) {
-        store.removeFolderTree(uri)
-        shell.reportRestoreSources(setOf("folder:$uri"))
+        shell.removeFolderTree(uri)
         releaseUnusedFolderGrant(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION)
-        shell.setFolders(libraryFolders())
         reloadFolder()
     }
 
@@ -1860,25 +1858,14 @@ class FoldcadeApp : Application() {
         }
     }
 
-    /** The folder's own name, such as "roms" for primary:roms. */
-    private fun folderLabel(uri: String): String {
-        val documentId = try {
-            DocumentsContract.getTreeDocumentId(Uri.parse(uri))
-        } catch (_: IllegalArgumentException) {
-            return uri
-        }
-        return documentId.substringAfterLast('/').substringAfterLast(':').ifEmpty { documentId }
-    }
-
     /** The folders the library reads, named for the Sources rows. */
     fun libraryFolders(): List<LibraryFolder> {
         val scan = (plugins.library(LocalFolderBackend.ID) as? LocalFolderBackend)?.mediaScan()
         val gameUris = scan?.let { it.games.map { game -> game.documentUri } + it.steamShortcuts.map { game -> game.documentUri } }.orEmpty()
-        val current = store.folderTrees().map { uri ->
-            val mediaOnly = isMediaOnlyLibraryTree(uri, localMedia?.index()?.sourceUris.orEmpty(), gameUris)
-            LibraryFolder(uri, folderLabel(uri), artAndInfo = mediaOnly)
+        return store.libraryFolders().map { folder ->
+            val mediaOnly = isMediaOnlyLibraryTree(folder.uri, localMedia?.index()?.sourceUris.orEmpty(), gameUris)
+            folder.copy(artAndInfo = mediaOnly)
         }
-        return libraryFoldersWithOutstandingRestores(current, store.restoreFolders())
     }
 
     /** The GameNative games named by .steam files in the folders. They join the GameNative catalog. */

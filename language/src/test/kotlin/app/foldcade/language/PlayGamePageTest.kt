@@ -6,7 +6,7 @@ import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
-/** Y › Play time on a game, its own Play activity page, and Settings › System › Play history. */
+/** Y › Play time on a game, its own Play activity page, and Settings › System › Backup › Play history. */
 class PlayGamePageTest {
     private val game = "lib:local-folder:new.gba"
 
@@ -118,11 +118,16 @@ class PlayGamePageTest {
     }
 
     @Test
-    fun systemOffersPlayHistoryAndItsDialogOpensOnExport() {
+    fun backupOffersPlayHistoryAndItsDialogOpensOnExport() {
         val model = PickerModel(count = 1, rowsPerPage = 1)
-        assertTrue(Row.PlayHistory in settingsRows(SettingsCategory.Screens, model))
-        assertEquals(RowControl.Opens, rowControl(Row.PlayHistory, model))
-        val asking = reduce(model.onSetting(Row.PlayHistory), Meaning.Activate).first.dialog!!
+        assertTrue(Row.Backup in settingsRows(SettingsCategory.Screens, model))
+        val (opened, effect) = reduce(model.onSetting(Row.Backup), Meaning.Activate)
+        assertEquals(Effect.OpenBackup, effect)
+        assertNull(opened.dialog) // The host supplies Undo from its current before-copy.
+        val backup = backupDialog(HostScreen.Top)
+        val (history, historyEffect) = focusAndActivateDialog(opened.copy(dialog = backup), backup.buttons.indexOf(DialogButton.PlayHistory))
+        assertNull(historyEffect)
+        val asking = history.dialog!!
         assertEquals(DialogKind.PlayHistory, asking.kind)
         assertEquals(listOf(DialogButton.ExportPlay, DialogButton.ImportPlay, DialogButton.NotNow), asking.buttons)
         assertEquals(DialogButton.ExportPlay, asking.buttons[asking.index])

@@ -129,7 +129,7 @@ enum class DialogKind {
     /** Eden cannot place an incoming save. Not now cancels the held launch. */
     EdenSaveHold,
 
-    /** Settings › System › Play history: export it to a file, or import one. Opens on Export. */
+    /** Settings › System › Backup › Play history: export it to a file, or import one. Opens on Export. */
     PlayHistory,
 
     /** What an export or an import did. Ok only closes it. */
@@ -160,6 +160,7 @@ enum class DialogButton {
     TryAgain,
     ExportPlay,
     ImportPlay,
+    PlayHistory,
     BackUp,
     PickRestore,
     UndoRestore,
@@ -186,6 +187,7 @@ fun dialogButtonLabel(button: DialogButton, subject: String? = null): String = w
     DialogButton.TryAgain -> Copy.tryAgain
     DialogButton.ExportPlay -> PlayCopy.export
     DialogButton.ImportPlay -> PlayCopy.import
+    DialogButton.PlayHistory -> PlayCopy.history
     DialogButton.BackUp -> BackupCopy.backUp
     DialogButton.PickRestore, DialogButton.RestoreBackup -> BackupCopy.restore
     DialogButton.UndoRestore -> BackupCopy.undo
@@ -263,7 +265,7 @@ fun usageAccessPrompt(screen: HostScreen = HostScreen.Bottom): DialogState = Dia
     screen = screen,
 )
 
-/** Settings › System › Play history. Neither way loses anything, so it opens on Export. */
+/** Settings › System › Backup › Play history. Neither way loses anything, so it opens on Export. */
 fun playHistoryDialog(screen: HostScreen): DialogState = DialogState(
     kind = DialogKind.PlayHistory,
     title = PlayCopy.history,
@@ -711,7 +713,6 @@ sealed interface Row {
     data object MovePlay : Row
 
     /** Settings › System: export the play history to a file, or import one. */
-    data object PlayHistory : Row
     data object Backup : Row
     data class QuickTile(val setting: QuickSetting) : Row
 
@@ -1304,7 +1305,6 @@ fun rowText(row: Row, model: PickerModel): RowText = when (row) {
     )
     Row.MovePlay -> RowText(PlayCopy.moveHere)
     Row.About -> RowText(GameAboutCopy.about)
-    Row.PlayHistory -> RowText(PlayCopy.history)
     Row.Backup -> RowText(BackupCopy.title)
     Row.ButtonLabels -> RowText(
         Copy.buttonLabels,
@@ -1659,12 +1659,15 @@ fun reduce(
     val coerced = model.copy(focus = coerce(model.focus, model))
     val dialog = coerced.dialog
     if (dialog != null) {
-        if (dialog.kind in setOf(DialogKind.Backup, DialogKind.RestoreBackup, DialogKind.BackupDone) && repeatCount > 0 &&
+        if (dialog.kind in setOf(DialogKind.Backup, DialogKind.RestoreBackup, DialogKind.BackupDone, DialogKind.PlayHistory) && repeatCount > 0 &&
             meaning in setOf(Meaning.Activate, Meaning.ActivateBottom, Meaning.Back, Meaning.Dismiss)) return coerced to null
         if (dialog.kind == DialogKind.CloseGame && repeatCount > 0 &&
             (meaning == Meaning.Activate || meaning == Meaning.ActivateBottom)) return coerced to null
         if (meaning == Meaning.LeftPanel || meaning == Meaning.RightPanel) return coerced to null
         val (next, choice) = applyDialog(dialog, meaning)
+        if (dialog.kind == DialogKind.Backup && choice == DialogButton.PlayHistory) {
+            return coerced.copy(dialog = playHistoryDialog(dialog.screen)) to null
+        }
         val chosen = choice?.let { Effect.DialogChoice(it, dialog.kind, dialog.subject) }
         val cleared = if (choice != null) null else next
         return coerced.copy(dialog = cleared) to chosen
@@ -2356,8 +2359,8 @@ private fun activateRow(
         // A choice row too, whose value is the board's: the shell steps it.
         Row.SortFolder -> model.copy(panel = panel) to sortStep(model, 1)
         Row.UsageAccess -> model.copy(dialog = usageAccessPrompt(screen)) to null
-        Row.PlayHistory -> model.copy(dialog = playHistoryDialog(screen)) to null
-        Row.Backup -> model.copy(dialog = backupDialog(screen)) to Effect.OpenBackup
+        // Android adds Undo from the current before-copy; leave presentation to that effect.
+        Row.Backup -> model to Effect.OpenBackup
         Row.FindSaves -> model to Effect.OpenAllFilesAccess
         Row.SaveSetup -> model.openSaveSetup(panel.screen, grid = panel.grid) to null
         Row.PlayActivity -> model.copy(

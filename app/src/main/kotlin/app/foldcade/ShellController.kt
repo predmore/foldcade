@@ -311,9 +311,24 @@ class ShellController(
     }
 
     fun reportRestoreFolders(trees: Set<String>) {
+        updateRestoreFolders {
+            reportRestoreSources(trees.mapTo(mutableSetOf()) { "folder:$it" } + "local-folder")
+            store.reportRestoreFolders(trees)
+        }
+    }
+
+    /** Forgetting a pending folder completes that restore step just as a finished scan does. */
+    fun removeFolderTree(uri: String) {
+        updateRestoreFolders {
+            store.removeFolderTree(uri)
+            reportRestoreSources(setOf("folder:$uri"))
+            setFolders(store.libraryFolders())
+        }
+    }
+
+    private fun updateRestoreFolders(change: () -> Unit) {
         val hadMissing = store.restoreFolders().isNotEmpty()
-        reportRestoreSources(trees.mapTo(mutableSetOf()) { "folder:$it" } + "local-folder")
-        store.reportRestoreFolders(trees)
+        change()
         if (hadMissing && store.restoreFolders().isEmpty()) onRestoreFoldersConnected()
     }
 
@@ -3696,6 +3711,7 @@ class ShellController(
         syncHome()
         return PickerModel(
             rommSaved = store.rommOrigin() != null,
+            folders = store.libraryFolders(),
             count = home.visibleCount(),
             addNewToHome = home.board.addNewToHome,
             recentOnHome = groupOnHome(home.board, HOME_RECENT),
