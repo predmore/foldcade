@@ -1,6 +1,7 @@
 package app.foldcade.ui
 
 import android.os.SystemClock
+import android.util.Log
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
@@ -97,6 +98,7 @@ private fun BloomArt(app: FoldcadeApp, bloom: ActiveBloom, panel: Panel) {
     val small = if (anchor?.from == BloomFrom.Tile) uri?.let { rememberCoverPainter(app, it, TILE_PX) } else null
     val sharp = uri?.let { rememberCoverPainter(app, it, px) }
     val painter = sharp?.painter ?: small?.painter
+    val wide = uri != null && uri == scene?.background
     var elapsed by remember { mutableLongStateOf(bloom.elapsed()) }
     // How far the growth has gone, counted in frames shown: the start keeps the main thread busy
     // for a frame or a few, and growth timed by the clock would leap across them. It pauses instead.
@@ -110,6 +112,8 @@ private fun BloomArt(app: FoldcadeApp, bloom: ActiveBloom, panel: Panel) {
         while (true) {
             val frame = withFrameMillis { it }
             if (last != Long.MIN_VALUE) grown += (frame - last).coerceIn(0L, BLOOM_FRAME_STEP_MS)
+            // Each screen's first frame, on one clock, so the two screens can be checked against each other.
+            if (last == Long.MIN_VALUE) Log.i("Foldcade", "launch-bloom $panel first frame +${bloom.elapsed()}ms")
             last = frame
             elapsed = bloom.elapsed(SystemClock.uptimeMillis())
             val leaveFrom = bloom.leavesAt(panel)
@@ -146,9 +150,12 @@ private fun BloomArt(app: FoldcadeApp, bloom: ActiveBloom, panel: Panel) {
             // Art this screen did not show grows out of its middle as it fades in.
             null -> Frame(lerp(middle(full, painter.intrinsicSize), full, grow), 0f, timing.arrive(grown), 1f)
         }
+        // A box's title is near its top. As the box fills a wide screen, the crop moves up to
+        // keep it; the first frame is still centred, as the tile was drawn. Wide art stays centred.
+        val bias = if (wide) 0.5f else 0.5f + (BLOOM_COVER_BIAS - 0.5f) * grow
         val push = scale * timing.pushScale(grown)
         withTransform({ scale(push, push, full.center) }) {
-            drawCropped(painter, rect, corner, alpha * presence, path)
+            drawCropped(painter, rect, corner, alpha * presence, path, bias)
         }
     }
 }
@@ -171,8 +178,8 @@ private fun middle(full: Rect, intrinsic: Size): Rect {
     return Rect(full.center.x - width / 2f, full.center.y - height / 2f, full.center.x + width / 2f, full.center.y + height / 2f)
 }
 
-/** [painter] filling [rect] as ContentScale.Crop would, inside corners of [corner]. */
-private fun DrawScope.drawCropped(painter: Painter, rect: Rect, corner: Float, alpha: Float, path: Path) {
+/** [painter] filling [rect] as ContentScale.Crop would, inside corners of [corner]. [biasY] places a tall crop: 0 top, 0.5 centre. */
+private fun DrawScope.drawCropped(painter: Painter, rect: Rect, corner: Float, alpha: Float, path: Path, biasY: Float) {
     val intrinsic = painter.intrinsicSize
     val known = intrinsic.isSpecified && intrinsic.width > 0f && intrinsic.height > 0f
     val width = if (known) intrinsic.width else rect.width
@@ -180,7 +187,7 @@ private fun DrawScope.drawCropped(painter: Painter, rect: Rect, corner: Float, a
     val fit = max(rect.width / width, rect.height / height)
     val drawn = Size(width * fit, height * fit)
     val left = rect.left + (rect.width - drawn.width) / 2f
-    val top = rect.top + (rect.height - drawn.height) / 2f
+    val top = rect.top + (rect.height - drawn.height) * biasY
     val paint: DrawScope.() -> Unit = { translate(left, top) { with(painter) { draw(drawn, alpha) } } }
     if (corner > 0.5f) {
         path.reset()
@@ -192,6 +199,9 @@ private fun DrawScope.drawCropped(painter: Painter, rect: Rect, corner: Float, a
 }
 
 private const val MIDDLE_SHARE = 0.6f
+
+/** Where a tall box's crop rests once it fills its screen, from its top: near its title. */
+private const val BLOOM_COVER_BIAS = 0.2f
 
 /** The most one frame advances the growth, two frames at 60 Hz, so a held-up frame never makes it leap. */
 private const val BLOOM_FRAME_STEP_MS = 33L

@@ -30,20 +30,32 @@ class Displays(private val context: Context) {
     }
 }
 
-fun Context.startOnDisplay(activity: Class<*>, displayId: Int, configure: Intent.() -> Unit = {}) {
-    startOnDisplay(Intent(this, activity).apply(configure), displayId)
+fun Context.startOnDisplay(activity: Class<*>, displayId: Int, bloom: Boolean = false, configure: Intent.() -> Unit = {}) {
+    startOnDisplay(Intent(this, activity).apply(configure), displayId, bloom = bloom)
 }
 
 /**
  * Starts [intent] on [displayId] in a task of its own. A start that must reuse the
  * task its player already has, to bring a game back or to replace it, passes
- * [multipleTask] false and its own task flags.
+ * [multipleTask] false and its own task flags. [bloom]: see [launchOptions].
  */
-fun Context.startOnDisplay(intent: Intent, displayId: Int, multipleTask: Boolean = true) {
+fun Context.startOnDisplay(intent: Intent, displayId: Int, multipleTask: Boolean = true, bloom: Boolean = false) {
     intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or if (multipleTask) Intent.FLAG_ACTIVITY_MULTIPLE_TASK else 0)
-    val options = ActivityOptions.makeBasic()
+    startActivity(intent, launchOptions(displayId, bloom).toBundle())
+}
+
+/**
+ * A start on [displayId]. Under a launch's art ([bloom]) the game fades in over that art
+ * while Home holds still, instead of Android sliding Home and its art away.
+ */
+fun Context.launchOptions(displayId: Int, bloom: Boolean = false): ActivityOptions {
+    val options = if (bloom) {
+        ActivityOptions.makeCustomAnimation(this, R.anim.bloom_game_enter, R.anim.bloom_home_hold)
+    } else {
+        ActivityOptions.makeBasic()
+    }
     options.launchDisplayId = displayId
-    startActivity(intent, options.toBundle())
+    return options
 }
 
 internal fun PlayerIntent.toStartIntent(folderAuthority: String? = null): Intent {

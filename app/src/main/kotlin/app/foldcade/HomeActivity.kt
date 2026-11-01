@@ -1065,10 +1065,10 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
         foldcade.runningGames.forget(pkg)
         val running = foldcade.shell.runningApp(game)
         foldcade.commandCenter.note(external.id, running)
-        bloomLaunch(running, displayId, external.occupiesBothDisplays)
+        val bloomed = bloomLaunch(running, displayId, external.occupiesBothDisplays)
         foldcade.shell.noteGameLaunched(external.id)
         foldcade.store.place(panel, external)
-        val options = ActivityOptions.makeBasic().apply { launchDisplayId = displayId }
+        val options = launchOptions(displayId, bloomed)
         try {
             startActivity(launch, options.toBundle())
         } catch (failure: RuntimeException) {
@@ -1097,15 +1097,16 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
      * [art] grows to fill both screens while the start to [displayId] goes in, see
      * [LaunchBlooms]. Called in the same moment as the start, so it never delays a launch,
      * and before the play is noted, while the grid and the hero still show the game.
-     * Motion Off and Android's remove-animations open the game as before.
+     * Motion Off and Android's remove-animations open the game as before. True when it
+     * started, so the game's window fades in over the art: see [launchOptions].
      */
-    private fun bloomLaunch(art: RunningApp, displayId: Int, both: Boolean) {
+    private fun bloomLaunch(art: RunningApp, displayId: Int, both: Boolean): Boolean {
         val press = bloomPress
         bloomPress = null
         // An app with no art of its own opens as it always has.
-        if (art.record == null && art.query == null) return
+        if (art.record == null && art.query == null) return false
         val motion = foldcade.paintFor(foldcade.shell.model.themeIndex).theme.motion
-        val timing = motion.launchBloom(foldcade.shell.model.motionSpeed, motion.animatorScale(contentResolver)) ?: return
+        val timing = motion.launchBloom(foldcade.shell.model.motionSpeed, motion.animatorScale(contentResolver)) ?: return false
         val assignment = displays.assignment(foldcade.store.session.defaultDisplayIsTop)
         val panels = if (both) Panel.entries.toSet() else setOfNotNull(assignment.panelFor(displayId))
         // A start that waited on a download or a question grows from the middle: the
@@ -1122,6 +1123,7 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
             finding = foldcade.shell.find != null,
             heroKey = foldcade.shell.focusedHero()?.key,
         )
+        return true
     }
 
     private fun launchFocused() {
@@ -1775,11 +1777,11 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
         // Only a Home press after this start says the game was left open.
         foldcade.homeRecalledOn = null
         // Before the play is noted: noting it can reorder a Recent folder under the cursor.
-        bloomLaunch(running, displayId, occupiesBoth)
+        val bloomed = bloomLaunch(running, displayId, occupiesBoth)
         foldcade.shell.noteGameLaunched(id)
         try {
             foldcade.externalPlay.open(foldcade.plays, id, title, displayId, playerPackage) {
-                startOnDisplay(intent, displayId, multipleTask = !resume && !replacing)
+                startOnDisplay(intent, displayId, multipleTask = !resume && !replacing, bloom = bloomed)
                 if (noteStart()) armRestart(intent, displayId)
             }
         } catch (failure: Exception) {
@@ -1802,10 +1804,10 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
         foldcade.commandCenter.note(game.id, running)
         if (game.occupiesBothDisplays) {
             val displayId = displays.assignment(session.defaultDisplayIsTop).topDisplayId
-            bloomLaunch(running, displayId, both = true)
+            val bloomed = bloomLaunch(running, displayId, both = true)
             foldcade.shell.noteGameLaunched(game.id)
             foldcade.store.update { it.launch(external, launchScreen) }
-            beginPlay(game, displayId)
+            beginPlay(game, displayId, bloomed)
             return
         }
         val panel = session.singleScreenTarget(launchScreen) ?: return
@@ -1814,17 +1816,17 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
             Panel.Top -> assignment.topDisplayId
             Panel.Bottom -> assignment.bottomDisplayId ?: return
         }
-        bloomLaunch(running, displayId, both = false)
+        val bloomed = bloomLaunch(running, displayId, both = false)
         foldcade.shell.noteGameLaunched(game.id)
         foldcade.store.place(panel, external)
-        beginPlay(game, displayId)
+        beginPlay(game, displayId, bloomed)
     }
 
     /** Opens a play session, then starts the stand-in. That activity reports the rest of the session. */
-    private fun beginPlay(game: ShelfGame, displayId: Int) {
+    private fun beginPlay(game: ShelfGame, displayId: Int, bloom: Boolean = false) {
         val playId = foldcade.plays.start(game.id, game.title)
         try {
-            startOnDisplay(StandInActivity::class.java, displayId) {
+            startOnDisplay(StandInActivity::class.java, displayId, bloom) {
                 putExtra(StandInActivity.EXTRA_ID, game.id)
                 putExtra(StandInActivity.EXTRA_TITLE, game.title)
                 putExtra(StandInActivity.EXTRA_PLAY, playId)
@@ -1862,7 +1864,7 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
         val running = foldcade.shell.runningApp(game)
         foldcade.commandCenter.note(game.id, running)
         // Before the play is noted: noting it can reorder a Recent folder under the cursor.
-        bloomLaunch(running, displayId, ready.occupiesBothDisplays)
+        val bloomed = bloomLaunch(running, displayId, ready.occupiesBothDisplays)
         foldcade.shell.noteGameLaunched(game.id)
         if (ready.occupiesBothDisplays) {
             foldcade.store.update { it.launch(external, launchScreen) }
@@ -1872,7 +1874,7 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
         try {
             val intent = foldcade.startIntent(player, ready.intent)
             foldcade.externalPlay.open(foldcade.plays, game.id, game.title, displayId, intent.packageName) {
-                val options = ActivityOptions.makeBasic().apply { launchDisplayId = displayId }
+                val options = launchOptions(displayId, bloomed)
                 val start = intent.toAndroidIntent(foldcade.rommFolderAuthority)
                 startActivity(start, options.toBundle())
                 if (foldcade.noteStarted(player, intent)) armRestart(start, displayId)
