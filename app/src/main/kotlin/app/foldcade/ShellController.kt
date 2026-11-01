@@ -975,7 +975,9 @@ class ShellController(
      * with nothing to act on.
      */
     fun holdsCommandCenter(): Boolean =
-        model.savePicker != null || model.saveSetup != null || model.dialog != null || model.panel != null || model.connectOpen || typing() != null || home.iconPick != null || home.selection != null || find != null
+        model.savePicker != null || model.saveSetup != null || model.dialog != null || model.panel != null || model.connectOpen || typing() != null || home.iconPick != null || home.selection != null || find != null ||
+            // Settings and Play activity opened from that grid, as beside a game on the top screen.
+            model.settings != null || model.playActivity != null
 
     /**
      * The collection or folder being named, as the top screen shows it over the name field.

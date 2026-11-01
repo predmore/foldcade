@@ -201,6 +201,8 @@ class SettingsPersistenceTest {
         store.update { it.launch(ExternalApp("game"), Panel.Top) }
         changed.openSetting(Row.ScreenLayout)
         assertEquals(HostScreen.Bottom, changed.model.settings?.screen)
+        // Opened from the grid beside the game, it keeps that grid from resting under it.
+        assertTrue(changed.holdsCommandCenter())
         changed.onMeaning(Meaning.MoveRight, HostScreen.Bottom)
         assertEquals(app.foldcade.language.ScreenLayout.TopOnly, store.session.layout)
         assertNull(changed.model.settings)
