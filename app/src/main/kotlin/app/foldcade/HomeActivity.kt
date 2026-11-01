@@ -1733,9 +1733,12 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
             // SameStartResumes may boot a closed game, so finish its preceding save return first.
             foldcade.saveFlow.withLock {
                 withContext(Dispatchers.Main.immediate) {
-                    // A save choice may have committed while Move waited for the flow.
-                    if (!launchCurrent(generation) || isDestroyed || isFinishing || foldcade.runningOn(id) != running || foldcade.moveGameTarget(id) != target) return@withContext
-                    sendResume(running, id, running.title, running.platformId, front, panel = target)
+                    // A save choice may have committed while Move waited for the flow. The same
+                    // run may have gained or lost a companion meanwhile, so it is matched by its start.
+                    val current = foldcade.runningOn(id)
+                        ?.takeIf { it.packageName == running.packageName && it.startedAtMillis == running.startedAtMillis }
+                    if (current == null || !launchCurrent(generation) || isDestroyed || isFinishing || foldcade.moveGameTarget(id) != target) return@withContext
+                    sendResume(current, id, current.title, current.platformId, front, panel = target)
                 }
             }
         }

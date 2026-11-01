@@ -512,9 +512,7 @@ class FoldcadeApp : Application() {
         // A launcher aimed at the other display can create a menu task there.
         // A reusable start alone does not promise a move; the player must opt in.
         if (game.packageName in closingPlayers || game.resumeStart == null) return null
-        val saveFolder = game.saveFolderKey ?: game.saves?.player?.saveFolderId()
-            ?: game.platformId?.let(::playerFor)?.saveFolderId()
-        val saveAwaitsLoad = saveFolder?.let(store::saveAwaitsLoad) == true
+        val saveAwaitsLoad = game.saveFolderKey?.let(store::saveAwaitsLoad) == true
         val target = game.moveTarget(store.session, saveAwaitsLoad) ?: return null
         val activity = game.activity ?: return null
         val changes = try {

@@ -75,7 +75,7 @@ Keep every hole and every gap at least 2.5 units wide. Menu rows show symbols at
 
 Drawn in `tools/art/verbs.py`, in the same style as the collection glyphs: one bold silhouette with its details cut out. A tile's menu leads with its own verbs (Move, Add to, Art, Saves, Rename, Icon, New collection) as round tiles, and every other action is a row with its symbol at 32dp. A verb is chrome, never a thing on the grid, so it has only a `symbol.` slot.
 
-- **Draw the act, not the thing.** Move is four arrows out from the middle, Saves a floppy disk, Restart a ring that turns back, Undo an arrow that turns back on itself, Hide a shut eye.
+- **Draw the act, not the thing.** Move is four arrows out from the middle, Saves a floppy disk, Restart a ring that turns back, Close the power mark (Restart's ring, open at the top with a bar through the gap), Undo an arrow that turns back on itself, Hide a shut eye.
 - **Two verbs that are close share a shape and differ in one detail.** Delete is a bin and Remove download the same bin with a down arrow cut where its ribs would be. Show is an open eye and Hide a shut one.
 - **No slashes.** A crossed-out symbol means off (rule 5's 30% ink), not an action.
 

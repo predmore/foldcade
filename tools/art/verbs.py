@@ -89,6 +89,12 @@ def restart():
     return [outline(arc_band(cx, cy, r, w, -60, 250)),
             outline(rpoly([side(11), tip, side(-11)], 1.4), sym=1)]
 
+def close():
+    """Close: the power mark, a ring open at the top with a bar through the gap. Restart's ring,
+    turned off rather than turned back."""
+    cx, cy, r, w = 32, 34, 18.5, 7
+    return [outline(arc_band(cx, cy, r, w, -55, 235)), outline(capsule(32, 7.5, 32, 30, 7))]
+
 def undo():
     """Undo: an arrow that turns back on itself, pointing left."""
     return [outline(rpoly([(7, 24), (22, 11.5), (22, 36.5)], 1.6)),
@@ -147,6 +153,7 @@ VERBS = {
     "new_collection": (new_collection, "New collection: a folder with a plus"),
     "select": (select, "Select: a box with a tick"),
     "restart": (restart, "Restart: a ring turning back to the top"),
+    "close": (close, "Close: a ring open at the top with a bar through it"),
     "undo": (undo, "Undo: an arrow turning back"),
     "show": (show, "Show: an open eye"),
     "hide": (hide, "Hide: a shut eye"),
