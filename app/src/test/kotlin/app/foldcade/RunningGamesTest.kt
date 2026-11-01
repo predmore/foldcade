@@ -1,6 +1,7 @@
 package app.foldcade
 
 import android.content.Intent
+import app.foldcade.api.plugin.LaunchFlag
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
@@ -41,6 +42,26 @@ class RunningGamesTest {
         val again = resumeStartFlags(start)
         assertEquals(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_GRANT_READ_URI_PERMISSION, again)
         assertEquals(Intent.FLAG_ACTIVITY_NEW_TASK, resumeStartFlags(0))
+    }
+
+    @Test fun aStandardGameRootCanKeepItsTaskThroughHomeOnTheOtherDisplay() {
+        val start = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP or
+            Intent.FLAG_ACTIVITY_MULTIPLE_TASK or Intent.FLAG_GRANT_READ_URI_PERMISSION
+        assertEquals(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_RESET_TASK_IF_NEEDED or
+            Intent.FLAG_GRANT_READ_URI_PERMISSION, resumeStartFlags(start, setOf(LaunchFlag.MovesBetweenScreens)))
+        // Players already using their own start retain the flags they resumed with before.
+        assertEquals(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_GRANT_READ_URI_PERMISSION, resumeStartFlags(start))
+        assertEquals(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_GRANT_READ_URI_PERMISSION,
+            resumeStartFlags(start, setOf(LaunchFlag.SameStartResumes)))
+    }
+
+    @Test fun movingRequiresTheActivityToHandleBothPanelSizeChanges() {
+        val size = android.content.pm.ActivityInfo.CONFIG_SCREEN_SIZE
+        val layout = android.content.pm.ActivityInfo.CONFIG_SCREEN_LAYOUT
+        assertTrue(handlesPanelSizeChange(size or layout))
+        assertFalse(handlesPanelSizeChange(size))
+        assertFalse(handlesPanelSizeChange(layout))
+        assertFalse(handlesPanelSizeChange(0))
     }
 
     @Test
@@ -113,6 +134,107 @@ class RunningGamesTest {
         assertFalse(resumable("org.ppsspp.ppsspp.PpssppActivity", "org.ppsspp.ppsspp.PpssppActivity"))
         assertTrue(resumable("org.citra.citra_emu.ui.main.MainActivity", "org.citra.citra_emu.activities.EmulationActivity"))
         assertFalse(resumable(null, "org.citra.citra_emu.activities.EmulationActivity"))
+    }
+
+    @Test fun closingRemovesPausedButKeepsTheReplacementGuard() {
+        val games = RunningGames()
+        games.note(game("sonic", "azahar"))
+        games.noteHolding("azahar")
+        assertTrue(games.tiles().isEmpty())
+        assertTrue(games.mayHold("azahar"))
+        assertEquals(0, CLOSE_FLAGS and Intent.FLAG_ACTIVITY_MULTIPLE_TASK)
+        assertTrue(CLOSE_FLAGS and Intent.FLAG_ACTIVITY_CLEAR_TASK != 0)
+        assertTrue(CLOSE_FLAGS and Intent.FLAG_ACTIVITY_NEW_TASK != 0)
+        assertTrue(CLOSE_FLAGS and Intent.FLAG_ACTIVITY_NO_ANIMATION != 0)
+    }
+
+    @Test fun companionsBelongToThisRunAndAnAppOpenedAloneLeavesIt() {
+        val games = RunningGames()
+        games.note(game("sonic", "player").copy(occupiesBoth = false))
+        val notes = GameCompanion("notes", "Notes", Panel.Bottom)
+        games.noteApp(notes, "player", setOf("foldcade"))
+        assertEquals(listOf(notes), games.forPackage("player")!!.companions)
+        games.noteApp(notes, null, setOf("foldcade"))
+        assertTrue(games.forPackage("player")!!.companions.isEmpty())
+        games.noteApp(notes, "player", setOf("foldcade"))
+        games.note(game("other", "player").copy(occupiesBoth = false))
+        assertTrue(games.forPackage("player")!!.companions.isEmpty())
+    }
+
+    @Test fun ownAppsPlayersAndAppsOnTheSamePanelAreNeverCompanions() {
+        val games = RunningGames()
+        games.note(game("sonic", "player").copy(occupiesBoth = false))
+        games.note(game("mario", "otherPlayer"))
+        for ((pkg, panel) in listOf("foldcade" to Panel.Bottom, "player" to Panel.Bottom,
+            "otherPlayer" to Panel.Bottom, "notes" to Panel.Top)) {
+            games.noteApp(GameCompanion(pkg, pkg, panel), "player", setOf("foldcade"))
+        }
+        assertTrue(games.forPackage("player")!!.companions.isEmpty())
+        games.noteApp(GameCompanion("notes", "Notes", Panel.Bottom), "player", emptySet())
+        // A library game starting in that app releases its old companion association.
+        games.note(game("new", "notes"))
+        assertTrue(games.forPackage("player")!!.companions.isEmpty())
+    }
+
+    @Test fun movingOnlyUsesTheOtherFreePanelOfAOneScreenGame() {
+        val game = game("sonic", "player").copy(occupiesBoth = false, movesBetweenScreens = true)
+        assertEquals(Panel.Bottom, game.moveTarget(Session(), saveAwaitsLoad = false))
+        assertEquals(Panel.Top, game.copy(panel = Panel.Bottom).moveTarget(Session(), saveAwaitsLoad = false))
+        assertNull(game.copy(occupiesBoth = true).moveTarget(Session(), saveAwaitsLoad = false))
+        assertNull(game.moveTarget(Session().place(Panel.Bottom, ExternalApp("notes", false)), saveAwaitsLoad = false))
+        assertNull(game.copy(movesBetweenScreens = false).moveTarget(Session(), saveAwaitsLoad = false))
+    }
+
+    @Test fun aChosenSaveDisablesMoveUntilItHasBeenLoadedFresh() {
+        val store = SessionStore(MemoryPrefs())
+        val game = game("sonic", "duckstation").copy(occupiesBoth = false, movesBetweenScreens = true, saveFolderKey = "duckstation")
+        fun target() = game.moveTarget(store.session, store.saveAwaitsLoad(game.saveFolderKey!!))
+        assertEquals(Panel.Bottom, target())
+        store.setSaveAwaitsLoad("duckstation", true)
+        assertNull(target())
+        store.setSaveAwaitsLoad("duckstation", false)
+        assertEquals(Panel.Bottom, target())
+    }
+
+    @Test fun anExitedCompanionLeavesTheGameAndOtherCompanionsAlone() {
+        val games = RunningGames()
+        games.note(game("sonic", "player").copy(occupiesBoth = false))
+        val notes = GameCompanion("notes", "Notes", Panel.Bottom)
+        val music = GameCompanion("music", "Music", Panel.Bottom)
+        games.noteApp(notes, "player", emptySet())
+        games.noteApp(music, "player", emptySet())
+        games.forgetCompanion("notes")
+        assertEquals(listOf(music), games.forPackage("player")!!.companions)
+        assertEquals(setOf("sonic"), games.tiles())
+        assertTrue(games.mayHold("player"))
+        games.forgetCompanion("notes")
+        assertEquals(listOf(music), games.forPackage("player")!!.companions)
+    }
+
+    @Test fun aClosedPlayersAppCanBeOpenedBesideAnotherGame() {
+        val games = RunningGames()
+        games.note(game("old", "closed-player"))
+        games.noteHolding("closed-player", closed = true)
+        games.note(game("current", "player").copy(occupiesBoth = false))
+        val app = GameCompanion("closed-player", "Emulator", Panel.Bottom)
+        games.noteApp(app, "player", emptySet())
+        // launchInstalled releases the replacement guard after opening the app itself.
+        games.forget("closed-player")
+        assertEquals(listOf(app), games.forPackage("player")!!.companions)
+        assertFalse(games.mayHold("closed-player"))
+    }
+
+    @Test fun aPlayerThatMayStillHoldAnotherLibraryGameIsNotACompanion() {
+        val games = RunningGames()
+        games.note(game("current", "player").copy(occupiesBoth = false))
+        games.noteHolding("other-player")
+        games.noteApp(GameCompanion("other-player", "Other", Panel.Bottom), "player", emptySet())
+        assertTrue(games.forPackage("player")!!.companions.isEmpty())
+        games.noteHolding("other-player", closed = true)
+        // A new library start in that player ends its closed state, including one without a Paused tile.
+        games.noteHolding("other-player")
+        games.noteApp(GameCompanion("other-player", "Other", Panel.Bottom), "player", emptySet())
+        assertTrue(games.forPackage("player")!!.companions.isEmpty())
     }
 
     private fun game(tile: String, pkg: String, startedAt: Long = 0L) = RunningGame(

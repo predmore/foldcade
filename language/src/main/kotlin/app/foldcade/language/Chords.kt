@@ -17,14 +17,19 @@ private fun Row.chord(): Meaning? = when (this) {
     Row.PlayActivity, Row.ShowOnHome -> Meaning.View
     Row.EditHome, Row.MoveTile, Row.ShowHidden -> Meaning.Options
     // Hide has no chord: X takes a tile off its spot, and never hides a game.
-    Row.RemoveTile, Row.RemoveDownload, Row.DeleteShortcut -> Meaning.ActivateBottom
+    Row.RemoveTile, Row.RemoveDownload, Row.DeleteShortcut, Row.CloseGame -> Meaning.ActivateBottom
     else -> null
 }
 
 /** Each row's chord, or null. When two rows could take a key, the first one has it. */
 fun chords(rows: List<Row>): List<Meaning?> {
     val taken = mutableSetOf<Meaning>()
-    return rows.map { row -> row.chord()?.takeIf { taken.add(it) } }
+    return rows.map { row ->
+        row.chord()?.takeIf {
+            // A paused game's X closes it, including inside Y. Remove keeps its row.
+            (it != Meaning.ActivateBottom || Row.CloseGame !in rows || row == Row.CloseGame) && taken.add(it)
+        }
+    }
 }
 
 /** The row [meaning] runs among [rows], or null when that key is not a chord there. */

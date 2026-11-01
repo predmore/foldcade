@@ -401,12 +401,15 @@ fun findKeyboardHints(faceMap: FaceMap, typed: Boolean): List<HintKey> {
 }
 
 /** Find's keys on its results: open on either screen, the game's menu, the filters, and back to the keys. */
-fun findResultHints(faceMap: FaceMap, screens: Boolean, options: Boolean): List<HintKey> {
+fun findResultHints(faceMap: FaceMap, screens: Boolean, options: Boolean, play: PlayKey = PlayKey.None, close: Boolean = play == PlayKey.Resume): List<HintKey> {
     val confirm = promptKeyOf(faceMap.confirmKey) ?: PromptKey.FaceA
     val back = promptKeyOf(faceMap.backKey) ?: PromptKey.FaceB
     val roles = actionFaces(faceMap)
     return buildList {
-        if (screens) {
+        if (play == PlayKey.Resume) {
+            add(HintKey(confirm, Copy.hintResume))
+            if (close) add(HintKey(roles.bottomGlyph, Copy.hintClose))
+        } else if (screens) {
             add(HintKey(confirm, Copy.hintTop))
             add(HintKey(roles.bottomGlyph, Copy.hintBottom))
         } else {

@@ -499,6 +499,33 @@ class FoldcadeApp : Application() {
     /** The tile Restart asked about, until its dialog closes. The app keeps it, as it keeps the dialog, for either Home to answer. */
     internal var restartAsk: String? = null
 
+    /** The exact run and companion list the Close confirmation named. */
+    internal var closeGameAsk: RunningGame? = null
+    internal val closingPlayers = mutableSetOf<String>()
+
+    internal fun canCloseGame(tileId: String): Boolean = runningOn(tileId)?.let {
+        it.packageName !in closingPlayers && packageManager.getLaunchIntentForPackage(it.packageName) != null
+    } == true
+
+    internal fun moveGameTarget(tileId: String): Panel? {
+        val game = runningOn(tileId) ?: return null
+        // A launcher aimed at the other display can create a menu task there.
+        // A reusable start alone does not promise a move; the player must opt in.
+        if (game.packageName in closingPlayers || game.resumeStart == null) return null
+        val saveAwaitsLoad = game.saveFolderKey?.let(store::saveAwaitsLoad) == true
+        val target = game.moveTarget(store.session, saveAwaitsLoad) ?: return null
+        val activity = game.activity ?: return null
+        val changes = try {
+            packageManager.getActivityInfo(android.content.ComponentName(game.packageName, activity), 0).configChanges
+        } catch (_: android.content.pm.PackageManager.NameNotFoundException) {
+            return null
+        }
+        if (!handlesPanelSizeChange(changes)) return null
+        val assignment = Displays(this).assignment(store.session.defaultDisplayIsTop)
+        if (target == Panel.Bottom && assignment.bottomDisplayId == null) return null
+        return target
+    }
+
     /** The running game on tile [tileId], under whichever id its tile has now. */
     internal fun runningOn(tileId: String): RunningGame? = runningGames.forTile(tileId, shell::tileOf)
 
@@ -524,6 +551,8 @@ class FoldcadeApp : Application() {
     private fun refreshHomeRecovery(reclaim: Boolean = false) {
         homes.values.toList().forEach { it.get()?.refreshRecoveryWindow(reclaim) }
     }
+
+    internal fun homeOnDisplay(displayId: Int): FoldcadeHomeActivity? = homes[displayId]?.get()?.takeUnless { it.isDestroyed || it.isFinishing }
 
     internal fun companionAlive(displayId: Int): Boolean = homes[displayId]?.get()?.let {
         !it.isDestroyed && !it.isFinishing
@@ -803,6 +832,8 @@ class FoldcadeApp : Application() {
                 updateWaitingSaveNotices()
             },
         )
+        shell.canCloseGame = ::canCloseGame
+        shell.moveGameScreen = { id -> moveGameTarget(id)?.let { if (it == Panel.Top) app.foldcade.language.HostScreen.Top else app.foldcade.language.HostScreen.Bottom } }
         // Loading ends once the shell has resolved the choices against the packs.
         try { themeInstalls.loaded(manifests, themeArchivesInUse()) } catch (error: Exception) { Log.w("FoldcadeTheme", "Theme trials not saved", error) }
         // A pack chosen in Settings is in use from that moment, so a crash right after counts against it.

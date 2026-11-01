@@ -67,6 +67,7 @@ import app.foldcade.language.Meaning
 import app.foldcade.language.heroCopy
 import app.foldcade.language.Side
 import app.foldcade.language.SidePanel
+import app.foldcade.language.PanelLevel
 import app.foldcade.language.playDuration
 import app.foldcade.language.playToday
 import app.foldcade.millisUntilNextMinute
@@ -176,9 +177,12 @@ private fun Island(
     val openWidth = maxWidth * 0.48f
     // The open card fits its rows, up to most of the screen. A taller menu scrolls.
     // A new level or a new notice changes the rows, and the card eases to the new height.
+    // Y's menu may reach a little further: a paused game's ten actions fit the Thor's top
+    // screen without scrolling at 91%, and fall 10dp short at 88%.
     var rowsHeight by remember(side) { mutableStateOf(Dp.Hairline) }
     val reach = ringReach()
-    val maximumHeight = with(density) { (maxHeight * 0.88f).roundToPx() }
+    val reachFraction = if (panel?.level == PanelLevel.Actions) 0.91f else 0.88f
+    val maximumHeight = with(density) { (maxHeight * reachFraction).roundToPx() }
     val reservedHeight = with(density) { pillHeight.roundToPx() + reach.roundToPx() * 2 + MENU_BOTTOM_DP.dp.roundToPx() }
     val availableRows = with(density) { (maximumHeight - reservedHeight).toDp() }
     val scroll = rememberScrollState()

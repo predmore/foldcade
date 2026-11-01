@@ -618,6 +618,8 @@ internal fun rowIcon(row: Row, moveTo: String? = null): Int? = when (row) {
     Row.Tidy -> R.drawable.symbol_tidy
     Row.RemoveTile -> R.drawable.symbol_remove
     Row.RestartGame -> R.drawable.symbol_restart
+    Row.CloseGame -> R.drawable.symbol_close
+    Row.MoveGame -> R.drawable.symbol_clamshell
     Row.Hide, Row.Hidden -> R.drawable.symbol_hide
     Row.RemoveDownload -> R.drawable.symbol_remove_download
     Row.DeleteShortcut -> R.drawable.symbol_delete

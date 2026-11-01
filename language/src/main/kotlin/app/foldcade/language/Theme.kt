@@ -346,6 +346,21 @@ object Copy {
     const val deleteShortcut = "Delete shortcut"
     const val deleteDownload = "Delete download"
     const val restart = "Restart"
+    const val closeGame = "Close"
+    const val closeGameTitle = "Close the game?"
+    const val closeGameBody = "Anything not saved is lost."
+
+    /** The confirmation names the first two apps, then counts the rest. */
+    fun companionCloseLine(names: List<String>): String = when (names.size) {
+        0 -> ""
+        1 -> "${names[0]} closes too."
+        2 -> "${names[0]} and ${names[1]} close too."
+        else -> "${names[0]}, ${names[1]} and ${names.size - 2} more close too."
+    }
+
+    const val playOnBottom = "Play on bottom"
+    const val playOnTop = "Play on top"
+    const val hintClose = "Close"
     const val restartTitle = "Restart the game?"
     const val restartBody = "It closes where you left it. Anything not saved is lost."
     const val addTo = "Add to"
@@ -432,6 +447,7 @@ fun gridHints(
     options: Boolean = false,
     drop: HoldDrop = HoldDrop.Place,
     play: PlayKey = PlayKey.None,
+    close: Boolean = play == PlayKey.Resume,
 ): List<HintKey> {
     val confirm = promptKeyOf(faceMap.confirmKey) ?: PromptKey.FaceA
     val back = promptKeyOf(faceMap.backKey) ?: PromptKey.FaceB
@@ -439,7 +455,7 @@ fun gridHints(
     // A one-screen game opens on the top screen with confirm and on the bottom with the free face button, X unless calibration took it.
     // A game that takes both screens says Play, so confirm is named on every game; one still open says Resume.
     val launch = when {
-        play == PlayKey.Resume -> listOf(HintKey(confirm, Copy.hintResume))
+        play == PlayKey.Resume -> listOfNotNull(HintKey(confirm, Copy.hintResume), HintKey(roles.bottomGlyph, Copy.hintClose).takeIf { close })
         screens -> listOf(HintKey(confirm, Copy.hintTop), HintKey(roles.bottomGlyph, Copy.hintBottom))
         play == PlayKey.Play -> listOf(HintKey(confirm, Copy.hintPlay))
         else -> emptyList()

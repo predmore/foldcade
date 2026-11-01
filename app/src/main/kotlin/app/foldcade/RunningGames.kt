@@ -1,6 +1,7 @@
 package app.foldcade
 
 import android.content.Intent
+import app.foldcade.api.plugin.LaunchFlag
 
 /**
  * A game Foldcade started that may still be open in its player. The Home button
@@ -27,7 +28,15 @@ internal data class RunningGame(
      * Null resumes through the player's launcher.
      */
     val resumeStart: Intent? = null,
+    /** Apps opened beside this run, in launch order. These associations live only in memory. */
+    val companions: List<GameCompanion> = emptyList(),
+    /** Explicitly tested across displays, independently of ordinary same-start resume. */
+    val movesBetweenScreens: Boolean = false,
+    /** The started player's folder, even if the platform's chosen player changes later. */
+    val saveFolderKey: String? = null,
 )
+
+internal data class GameCompanion(val packageName: String, val title: String, val panel: Panel)
 
 /** One game per player package: a player holds one game, so a new start there replaces the last. */
 internal class RunningGames {
@@ -41,6 +50,9 @@ internal class RunningGames {
      */
     private val holdingOnly = LinkedHashSet<String>()
 
+    /** Close keeps a replacement guard, but its player may later be opened as an app beside another game. */
+    private val closedPlayers = LinkedHashSet<String>()
+
     /** Called with every tile id still running, after each change. */
     var onChange: (Set<String>) -> Unit = {}
 
@@ -53,15 +65,19 @@ internal class RunningGames {
     }
 
     fun note(game: RunningGame) {
+        dropCompanion(game.packageName)
+        closedPlayers -= game.packageName
         holdingOnly -= game.packageName
         byPackage[game.packageName] = game
         changed()
     }
 
-    /** [packageName] holds a game now that its front door would not bring back, see [resumable]. */
-    fun noteHolding(packageName: String) {
+    /** Keep the replacement guard without a Paused tile. [closed] lets its app be a companion after Close. */
+    fun noteHolding(packageName: String, closed: Boolean = false) {
+        dropCompanion(packageName)
         byPackage.remove(packageName)
         holdingOnly += packageName
+        if (closed) closedPlayers += packageName else closedPlayers -= packageName
         changed()
     }
 
@@ -85,13 +101,38 @@ internal class RunningGames {
     fun mayHold(packageName: String?): Boolean = packageName != null && (packageName in byPackage || packageName in holdingOnly)
 
     fun forget(packageName: String) {
+        closedPlayers -= packageName
         val known = byPackage.remove(packageName) != null
         if (holdingOnly.remove(packageName) || known) changed()
+    }
+
+    /** An app that returned to Home by itself no longer closes with its former game. */
+    fun forgetCompanion(packageName: String) {
+        if (byPackage.values.any { game -> game.companions.any { it.packageName == packageName } }) {
+            dropCompanion(packageName)
+            changed()
+        }
     }
 
     private fun changed() {
         onChange(byPackage.values.map { it.tileId }.toSet())
         onPlayersChange(byPackage.keys + holdingOnly)
+    }
+
+    /** Opening an app alone releases any earlier association; another library game is never a companion. */
+    fun noteApp(app: GameCompanion, besidePlayer: String?, ownPackages: Set<String>) {
+        dropCompanion(app.packageName)
+        val game = besidePlayer?.let(byPackage::get)
+        if (game != null && !game.occupiesBoth && game.panel != app.panel &&
+            ownPackages.none { app.packageName == it || app.packageName.startsWith("$it.") } &&
+            (!mayHold(app.packageName) || app.packageName in closedPlayers)) {
+            byPackage[game.packageName] = game.copy(companions = game.companions + app)
+        }
+        changed()
+    }
+
+    private fun dropCompanion(packageName: String) {
+        byPackage.replaceAll { _, game -> game.copy(companions = game.companions.filterNot { it.packageName == packageName }) }
     }
 }
 
@@ -139,9 +180,9 @@ internal const val RESUME_FLAGS: Int = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.F
  * ([app.foldcade.api.plugin.LaunchFlag.SameStartResumes]): the start's own, without
  * the ones that would clear the game's task or open another beside it.
  */
-internal fun resumeStartFlags(flags: Int): Int =
+internal fun resumeStartFlags(flags: Int, launchFlags: Set<LaunchFlag> = emptySet()): Int =
     (flags and (Intent.FLAG_ACTIVITY_CLEAR_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_MULTIPLE_TASK).inv()) or
-        Intent.FLAG_ACTIVITY_NEW_TASK
+        Intent.FLAG_ACTIVITY_NEW_TASK or (if (LaunchFlag.MovesBetweenScreens in launchFlags) Intent.FLAG_ACTIVITY_RESET_TASK_IF_NEEDED else 0)
 
 /**
  * The flags for a start in a player that still holds another game, or the same
@@ -150,3 +191,20 @@ internal fun resumeStartFlags(flags: Int): Int =
  */
 internal fun replaceFlags(flags: Int): Int =
     (flags and Intent.FLAG_ACTIVITY_MULTIPLE_TASK.inv()) or Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK
+
+/** Clear the player's task behind Home, without opening a second task beside it. */
+internal const val CLOSE_FLAGS: Int = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK or
+    Intent.FLAG_ACTIVITY_NO_ANIMATION
+
+/** A shutdown may finish writes after its activities leave the task history. */
+internal const val CLOSE_SETTLE_MS = 1_500L
+
+/** Moving never displaces an app on the other panel. */
+internal fun RunningGame.moveTarget(session: Session, saveAwaitsLoad: Boolean): Panel? =
+    panel.flip().takeIf { movesBetweenScreens && !saveAwaitsLoad && !occupiesBoth && session.externalOn(it) == null }
+
+/** The Thor panels change width and aspect ratio; unhandled changes would recreate the game activity. */
+internal fun handlesPanelSizeChange(configChanges: Int): Boolean {
+    val needed = android.content.pm.ActivityInfo.CONFIG_SCREEN_SIZE or android.content.pm.ActivityInfo.CONFIG_SCREEN_LAYOUT
+    return configChanges and needed == needed
+}

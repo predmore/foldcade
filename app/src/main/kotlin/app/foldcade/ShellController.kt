@@ -487,6 +487,11 @@ class ShellController(
     /** Tiles whose game is still open in its player, see [RunningGames]. */
     var running by mutableStateOf<Set<String>>(emptySet())
 
+    internal var canCloseGame: (String) -> Boolean = { false }
+    internal var moveGameScreen: (String) -> HostScreen? = { null }
+
+    fun focusedCanClose(): Boolean = focusedPlayable()?.let { isPaused(it.id) && canCloseGame(it.id) } == true
+
     /** Moonlight's computers by host key, see [MoonlightHosts]. */
     internal var moonlightHosts by mutableStateOf<Map<String, MoonlightHost>>(emptyMap())
         private set
@@ -663,6 +668,14 @@ class ShellController(
             return null
         }
         if (model.panel == null && home.releaseMenu()) publish(model)
+        if (meaning == Meaning.ActivateBottom && model.dialog == null && model.panel == null &&
+            model.settings == null && model.playActivity == null && model.saveConflict == null && !model.connectOpen &&
+            homeKeys().let { it == HomeKeys.Idle || it == HomeKeys.AllLibrary || it == HomeKeys.FindResults } &&
+            focusedCanClose()) {
+            if (repeatCount > 0) return null
+            heldActions.capture(meaning.ordinal)
+            return Effect.CloseGame(focusedPlayable()?.id)
+        }
         find?.takeIf { findActive() }?.let { return findOutcome(it.handle(meaning)) }
         if (meaning == Meaning.View && canOpenFind()) {
             openFind()
@@ -1142,7 +1155,7 @@ class ShellController(
     fun findHints(): List<HintKey>? {
         val session = find?.takeIf { findActive() } ?: return null
         return if (session.onResults) {
-            findResultHints(model.faceMap, screens = focusedLaunchesOnOneScreen(), options = hasOptions())
+            findResultHints(model.faceMap, screens = focusedLaunchesOnOneScreen(), options = hasOptions(), play = focusedPlayKey(), close = focusedCanClose())
         } else {
             findKeyboardHints(model.faceMap, typed = session.query.isNotEmpty())
         }
@@ -1235,7 +1248,7 @@ class ShellController(
 
     /** The focused tile when it is a game A would start. */
     private fun focusedPlayable(): ShelfGame? {
-        if (model.focus.chrome != null) return null
+        if (find == null && model.focus.chrome != null) return null
         if (model.libraryGrid && model.gridKind != GridKind.Games) return null
         val found = find?.subject
         if (found != null && found.kind == FindKind.Group) return null
@@ -2968,7 +2981,10 @@ class ShellController(
         val busy = (tile?.game ?: home.face(counted.focus.cellIndex)?.id)?.let(::busyOnDevice) == true
         val offered = (if (tile?.removeDownload == true && busy) tile.copy(removeDownload = false) else tile)
             // A game still open in its player can start over. Find's menu acts on a result that may not be a tile.
-            ?.let { if (found == null && isPaused(it.game)) it.copy(restart = true) else it }
+            ?.let {
+                val id = it.game
+                if (id != null && isPaused(id)) it.copy(restart = true, close = canCloseGame(id), moveGame = moveGameScreen(id)) else it
+            }
         // A merge can close the open folder, when its last game left, so read where the board is now.
         val root = if (onHome) home.board.atRoot else counted.atLibraryRoot
         val withArt = if (tile?.bulk == null && home.selection == null && counted.artKeySaved && artPickerAvailable() && targetGame?.let(::artQuery) != null) {

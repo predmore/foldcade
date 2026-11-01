@@ -4015,7 +4015,7 @@ PLapp/foldcade/language/ThemeKeyboard;->getShiftAlpha()F
 Lapp/foldcade/language/ThemeKt;
 HSPLapp/foldcade/language/ThemeKt;->builtInTheme()Lapp/foldcade/language/Theme;
 HSPLapp/foldcade/language/ThemeKt;->fontOrInherited(Landroidx/compose/ui/text/font/FontFamily;Landroidx/compose/ui/text/font/FontFamily;)Landroidx/compose/ui/text/font/FontFamily;
-HSPLapp/foldcade/language/ThemeKt;->gridHints(Lapp/foldcade/language/HintActions;Lapp/foldcade/language/HomeKeys;Lapp/foldcade/language/FaceMap;ZZLapp/foldcade/language/HoldDrop;Lapp/foldcade/language/PlayKey;)Ljava/util/List;
+HSPLapp/foldcade/language/ThemeKt;->gridHints(Lapp/foldcade/language/HintActions;Lapp/foldcade/language/HomeKeys;Lapp/foldcade/language/FaceMap;ZZLapp/foldcade/language/HoldDrop;Lapp/foldcade/language/PlayKey;Z)Ljava/util/List;
 HSPLapp/foldcade/language/ThemeKt;->hintFor(Lapp/foldcade/language/HintPlace;)Lapp/foldcade/language/HintActions;
 HSPLapp/foldcade/language/ThemeKt;->hintLine(ZZ)Lapp/foldcade/language/HintActions;
 Lapp/foldcade/language/ThemeKt$WhenMappings;
@@ -4366,10 +4366,10 @@ HSPLapp/foldcade/language/ThorStyle;->$values()[Lapp/foldcade/language/ThorStyle
 HSPLapp/foldcade/language/ThorStyle;-><clinit>()V
 HSPLapp/foldcade/language/ThorStyle;-><init>(Ljava/lang/String;I)V
 Lapp/foldcade/language/TileActions;
-HSPLapp/foldcade/language/TileActions;-><init>(ZLjava/util/List;Ljava/lang/String;ZZZZZZLjava/util/List;ZZZLapp/foldcade/language/RemoveVerb;ZLjava/lang/String;ZZZLjava/lang/String;ZLapp/foldcade/language/FolderSortChoice;Lapp/foldcade/language/FolderSortChoice;Lapp/foldcade/language/FolderSwitch;)V
-HSPLapp/foldcade/language/TileActions;-><init>(ZLjava/util/List;Ljava/lang/String;ZZZZZZLjava/util/List;ZZZLapp/foldcade/language/RemoveVerb;ZLjava/lang/String;ZZZLjava/lang/String;ZLapp/foldcade/language/FolderSortChoice;Lapp/foldcade/language/FolderSortChoice;Lapp/foldcade/language/FolderSwitch;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
-HSPLapp/foldcade/language/TileActions;->copy$default(Lapp/foldcade/language/TileActions;ZLjava/util/List;Ljava/lang/String;ZZZZZZLjava/util/List;ZZZLapp/foldcade/language/RemoveVerb;ZLjava/lang/String;ZZZLjava/lang/String;ZLapp/foldcade/language/FolderSortChoice;Lapp/foldcade/language/FolderSortChoice;Lapp/foldcade/language/FolderSwitch;ILjava/lang/Object;)Lapp/foldcade/language/TileActions;
-HSPLapp/foldcade/language/TileActions;->copy(ZLjava/util/List;Ljava/lang/String;ZZZZZZLjava/util/List;ZZZLapp/foldcade/language/RemoveVerb;ZLjava/lang/String;ZZZLjava/lang/String;ZLapp/foldcade/language/FolderSortChoice;Lapp/foldcade/language/FolderSortChoice;Lapp/foldcade/language/FolderSwitch;)Lapp/foldcade/language/TileActions;
+HSPLapp/foldcade/language/TileActions;-><init>(ZLjava/util/List;Ljava/lang/String;ZZZZZZLjava/util/List;ZZZLapp/foldcade/language/RemoveVerb;ZLjava/lang/String;ZZZLapp/foldcade/language/HostScreen;ZLjava/lang/String;ZLapp/foldcade/language/FolderSortChoice;Lapp/foldcade/language/FolderSortChoice;Lapp/foldcade/language/FolderSwitch;)V
+HSPLapp/foldcade/language/TileActions;-><init>(ZLjava/util/List;Ljava/lang/String;ZZZZZZLjava/util/List;ZZZLapp/foldcade/language/RemoveVerb;ZLjava/lang/String;ZZZLapp/foldcade/language/HostScreen;ZLjava/lang/String;ZLapp/foldcade/language/FolderSortChoice;Lapp/foldcade/language/FolderSortChoice;Lapp/foldcade/language/FolderSwitch;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+HSPLapp/foldcade/language/TileActions;->copy$default(Lapp/foldcade/language/TileActions;ZLjava/util/List;Ljava/lang/String;ZZZZZZLjava/util/List;ZZZLapp/foldcade/language/RemoveVerb;ZLjava/lang/String;ZZZLapp/foldcade/language/HostScreen;ZLjava/lang/String;ZLapp/foldcade/language/FolderSortChoice;Lapp/foldcade/language/FolderSortChoice;Lapp/foldcade/language/FolderSwitch;ILjava/lang/Object;)Lapp/foldcade/language/TileActions;
+HSPLapp/foldcade/language/TileActions;->copy(ZLjava/util/List;Ljava/lang/String;ZZZZZZLjava/util/List;ZZZLapp/foldcade/language/RemoveVerb;ZLjava/lang/String;ZZZLapp/foldcade/language/HostScreen;ZLjava/lang/String;ZLapp/foldcade/language/FolderSortChoice;Lapp/foldcade/language/FolderSortChoice;Lapp/foldcade/language/FolderSwitch;)Lapp/foldcade/language/TileActions;
 HSPLapp/foldcade/language/TileActions;->equals(Ljava/lang/Object;)Z
 HSPLapp/foldcade/language/TileActions;->getArt()Z
 PLapp/foldcade/language/TileActions;->getBoardSort()Lapp/foldcade/language/FolderSortChoice;
