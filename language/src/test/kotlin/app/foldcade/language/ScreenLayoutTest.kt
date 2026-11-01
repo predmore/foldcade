@@ -37,14 +37,15 @@ class ScreenLayoutTest {
     }
 
     @Test
-    fun theIslandsAndSettingsOpenOnTheLayoutsMenuScreen() {
+    fun theIslandsOpenOnTheLayoutsMenuScreenAndSettingsOnTop() {
         for (layout in ScreenLayout.entries) {
             val model = PickerModel(count = 4, rowsPerPage = 2, layout = layout)
             // A key from either screen opens the island where the island is.
             for (from in HostScreen.entries) {
                 assertEquals(layout.menuScreen, reduce(model, Meaning.LeftPanel, from).first.panel?.screen)
                 assertEquals(layout.menuScreen, reduce(model, Meaning.RightPanel, from).first.panel?.screen)
-                assertEquals(layout.menuScreen, reduce(model, Meaning.Menu, from).first.settings?.screen)
+                // Settings takes the larger top screen in every layout.
+                assertEquals(HostScreen.Top, reduce(model, Meaning.Menu, from).first.settings?.screen)
             }
         }
     }
@@ -107,5 +108,17 @@ class ScreenLayoutTest {
         val drawer = reduce(swapped, Meaning.Activate).first
         assertEquals(PanelLevel.RommConnection, drawer.panel?.level)
         assertEquals(HostScreen.Top, drawer.panel?.screen)
+    }
+
+    @Test
+    fun aPageAimedAtAScreenAGameHoldsOpensWhereFoldcadeIs() {
+        // Swapped with a game on top: Settings asked for the top, and gets the islands' screen.
+        val model = PickerModel(count = 2, rowsPerPage = 2, layout = ScreenLayout.ShowcaseBottom)
+        val opened = reduce(model, Meaning.Menu).first
+        assertEquals(HostScreen.Top, opened.settings?.screen)
+        val moved = opened.onShownScreens { it == HostScreen.Bottom }
+        assertEquals(HostScreen.Bottom, moved.settings?.screen)
+        // Nothing shown: nothing to move to.
+        assertSame(opened, opened.onShownScreens { false })
     }
 }

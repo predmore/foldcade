@@ -143,7 +143,7 @@ import app.foldcade.language.shouldOfferUsageAccess
 import app.foldcade.language.usageAccessPrompt
 import app.foldcade.language.reduce
 import app.foldcade.language.signInAgainPrompt
-import app.foldcade.language.offTheDarkScreen
+import app.foldcade.language.onShownScreens
 import app.foldcade.romm.cleartextCredentialWarning
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -336,7 +336,8 @@ class ShellController(
             val canceled = current.deleteHold != null && (holdMoved || next.dialog != null || next.settings != null || next.connectOpen)
             val stable = app.foldcade.language.retainSaveSetup(current,
                 app.foldcade.language.retainSettingsCategory(current, app.foldcade.language.retainMenuRows(current, prepared)))
-                .offTheDarkScreen()
+                // Off the dark screen, and off one a game holds.
+                .onShownScreens { store.session.draws(it.panel()) }
             undo = when {
                 stable.panel == null -> undo?.resume(nowMillis())
                 stable.panel?.let { Row.Undo in panelRows(it, stable) } == true -> undo?.pause(nowMillis())
@@ -1963,7 +1964,7 @@ class ShellController(
     ) {
         invalidateSetupValidation()
         connectVisit += 1
-        val screen = model.connectScreen ?: model.layout.menuScreen
+        val screen = model.connectScreen ?: model.layout.pageScreen
         connectToken = ""
         model = model.copy(
             connectOpen = true,
@@ -1983,7 +1984,7 @@ class ShellController(
     fun openArtKey() {
         invalidateSetupValidation()
         connectVisit += 1
-        val screen = model.connectScreen ?: model.layout.menuScreen
+        val screen = model.connectScreen ?: model.layout.pageScreen
         connectToken = ""
         model = model.copy(
             connectOpen = true,

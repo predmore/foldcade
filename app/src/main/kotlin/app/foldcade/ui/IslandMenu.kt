@@ -179,7 +179,9 @@ private fun Island(
     val pillHeight = 44.dp
     val pillWidth = rowWidth.takeIf { it.isSpecified } ?: pillHeight
     val edge = if (side == Side.Left) Alignment.Start else Alignment.End
-    val openWidth = maxWidth * 0.48f
+    // Half the top screen. The narrower bottom screen, which has the islands in Swapped, keeps
+    // the width the status row and the tiles' names need.
+    val openWidth = maxOf(maxWidth * 0.48f, minOf(ISLAND_MIN_OPEN_WIDTH, maxWidth - inset * 2))
     // The open card fits its rows, up to most of the screen. A taller menu scrolls.
     // A new level or a new notice changes the rows, and the card eases to the new height.
     // Y's menu may reach a little further: a paused game's ten actions fit the Thor's top
@@ -565,3 +567,6 @@ internal fun Modifier.closesIsland(app: FoldcadeApp): Modifier = pointerInput(ap
 }
 
 private fun lerp(start: Dp, end: Dp, fraction: Float): Dp = start + (end - start) * fraction
+
+/** The open card's narrowest: the R1 status row and four tiles' names, on the Thor's bottom screen. */
+private val ISLAND_MIN_OPEN_WIDTH = 340.dp

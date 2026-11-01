@@ -1805,7 +1805,7 @@ private fun applyGrid(
                 ) to null
             } else model.copy(focus = page(model.focus, forward, model, model.screenJumpLastColumn)) to null
         }
-        Meaning.Menu -> if (model.arranging) model to null else model.openSettings(model.layout.menuScreen) to null
+        Meaning.Menu -> if (model.arranging) model to null else model.openSettings(model.layout.pageScreen) to null
         Meaning.Activate -> activate(model, screen)
         Meaning.ActivateBottom -> activate(model, screen, elsewhere = true)
         Meaning.Options -> openActions(model) to null
@@ -2316,7 +2316,7 @@ private fun activateRow(
     screen: HostScreen,
 ): Pair<PickerModel, Effect?> {
     return when (row) {
-        Row.Settings -> model.openSettings(panel.screen, grid = panel.grid) to null
+        Row.Settings -> model.openSettings(model.layout.pageScreen, grid = panel.grid) to null
         // The [choiceRows]. The list is spelled out so a new row cannot slip past this when.
         Row.IconTheme, Row.Background, Row.MotionSpeed, Row.MusicTrack, Row.ScreenLayout, Row.PlayOn ->
             stepRow(model, row, 1)!!.copy(panel = panel) to null
@@ -2330,7 +2330,7 @@ private fun activateRow(
         Row.SaveSetup -> model.openSaveSetup(panel.screen, grid = panel.grid) to null
         Row.PlayActivity -> model.copy(
             panel = null,
-            playActivity = PlayActivityPage(screen = panel.screen, grid = panel.grid),
+            playActivity = PlayActivityPage(screen = model.layout.pageScreen, grid = panel.grid),
         ) to null
         Row.Home -> model.copy(panel = null, focus = panel.grid) to Effect.GoHome
         Row.EditHome -> model.copy(panel = panel.copy(level = PanelLevel.EditHome, index = 0, tileColumn = null, parentTileColumn = panel.tileColumn)) to null
@@ -2464,7 +2464,7 @@ private fun activateRow(
         Row.RemoveDownload -> model.copy(panel = null, focus = panel.grid) to Effect.RemoveDownload(model.tileActions?.game)
         Row.Saves -> model.copy(panel = null, focus = panel.grid) to model.tileActions?.game?.let(Effect::OpenSaves)
         Row.PlayTime -> model.tileActions?.game?.let { game ->
-            model.copy(panel = null, focus = panel.grid, playActivity = PlayActivityPage(screen = panel.screen, grid = panel.grid, game = game)) to
+            model.copy(panel = null, focus = panel.grid, playActivity = PlayActivityPage(screen = model.layout.pageScreen, grid = panel.grid, game = game)) to
                 Effect.OpenPlayGame(game)
         } ?: (model.copy(panel = panel) to null)
         Row.RestartGame -> model.copy(panel = null, focus = panel.grid) to Effect.RestartGame(model.tileActions?.game)
@@ -2491,7 +2491,7 @@ private fun openNotice(model: PickerModel, panel: SidePanel, id: String): Pair<P
     // you, one emulator's on its own tile.
     if (notice.settingsCategory == SettingsCategory.Players) return model.openSaveSetup(panel.screen, grid = panel.grid) to null
     notice.settingsCategory?.let { category ->
-        return model.openSettings(panel.screen, category, panel.grid) to null
+        return model.openSettings(model.layout.pageScreen, category, panel.grid) to null
     }
     notice.savePlayerId?.let { playerId ->
         if (saveSetupTiles(model, SaveSetupPage()).any { it.key == playerId }) {

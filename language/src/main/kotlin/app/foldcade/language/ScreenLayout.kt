@@ -36,11 +36,19 @@ enum class ScreenLayout(val id: String) {
         get() = if (this == TopOnly) HostScreen.Bottom else null
 
     /**
-     * Where the L1 and R1 islands sit, and where their menus, Settings, and Play activity
-     * open: over the hero, or over the grid when there is no hero.
+     * Where the L1 and R1 islands sit, and where their menus open: over the hero, or over
+     * the grid when there is no hero.
      */
     val menuScreen: HostScreen
         get() = showcaseScreen ?: gridScreen
+
+    /**
+     * Where Settings, Play activity, and the connect form open: the top screen, the larger,
+     * in every layout. Its rows were laid out for that width. A game there sends them to the
+     * screen Foldcade still has ([onShownScreens]).
+     */
+    val pageScreen: HostScreen
+        get() = HostScreen.Top
 
     companion object {
         val Default = ShowcaseTop
@@ -82,17 +90,15 @@ fun screenHints(confirm: PromptKey, other: PromptKey, playOn: HostScreen): List<
 )
 
 /**
- * Nothing Foldcade draws is aimed at the dark screen: a dialog, a menu, a page, or the
- * connect form meant for it opens over the grid instead. Keys from the dark screen are
- * already the grid's, so this only catches what was aimed there by default.
+ * Nothing Foldcade draws is aimed at a screen it does not show: the dark screen, or one a game
+ * holds. A dialog, a menu, a page, or the connect form meant for one opens on a screen that is
+ * [shown] instead: the islands', the grid's, then either. With none shown it stays put.
  */
-fun PickerModel.offTheDarkScreen(): PickerModel {
-    val dark = layout.darkScreen ?: return this
-    val lit = layout.gridScreen
-    fun HostScreen.lit(): HostScreen = if (this == dark) lit else this
-    if (dialog?.screen != dark && panel?.screen != dark && settings?.screen != dark &&
-        playActivity?.screen != dark && connectScreen != dark && saveSetup?.screen != dark
-    ) return this
+fun PickerModel.onShownScreens(shown: (HostScreen) -> Boolean): PickerModel {
+    val screens = listOfNotNull(dialog?.screen, panel?.screen, settings?.screen, playActivity?.screen, connectScreen, saveSetup?.screen)
+    if (screens.all(shown)) return this
+    val lit = listOf(layout.menuScreen, layout.gridScreen, HostScreen.Top, HostScreen.Bottom).firstOrNull(shown) ?: return this
+    fun HostScreen.lit(): HostScreen = if (shown(this)) this else lit
     return copy(
         dialog = dialog?.let { it.copy(screen = it.screen.lit()) },
         panel = panel?.let { it.copy(screen = it.screen.lit()) },
@@ -102,3 +108,6 @@ fun PickerModel.offTheDarkScreen(): PickerModel {
         saveSetup = saveSetup?.let { it.copy(screen = it.screen.lit()) },
     )
 }
+
+/** [onShownScreens] with only the dark screen unshown, for a model that knows no apps. */
+fun PickerModel.offTheDarkScreen(): PickerModel = onShownScreens { it != layout.darkScreen }
