@@ -100,6 +100,7 @@ import app.foldcade.language.interpretThorStyle
 import app.foldcade.language.alsoRunsLine
 import app.foldcade.plugins.eden.EDEN_PACKAGES
 import app.foldcade.plugins.eden.EdenPlayer
+import app.foldcade.plugins.duckstation.DuckStationPlayer
 import app.foldcade.plugins.retroarch.RetroArchPlayer
 import app.foldcade.plugins.romm.ROMM_ORIGIN_KEY
 import app.foldcade.romm.RomProgress
@@ -1451,7 +1452,11 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
         }
         // Where the game landed, which may not be where it was asked for when that screen was busy.
         val panel = landedPanel() ?: if (player.occupiesBothDisplays) Panel.Top else launchScreen
-        val resumeStart = if (sameStartResumes) Intent(intent).apply { flags = resumeStartFlags(flags) } else null
+        // DuckStation's launcher opens a menu task on the other display. Its exact
+        // game start resumes the existing root; reset-task keeps it through Home there.
+        val resumeStart = if (sameStartResumes) Intent(intent).apply {
+            flags = resumeStartFlags(flags, resetTask = player is DuckStationPlayer)
+        } else null
         foldcade.runningGames.note(RunningGame(id, title, platformId, pkg, intent.component?.className, panel,
             player.occupiesBothDisplays, System.currentTimeMillis(), saves, resumeStart))
     }
@@ -1657,7 +1662,7 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
                                 foldcade.store.update { it.clearIfCurrent(app.panel, appId) }
                             }
                         }
-                        foldcade.runningGames.noteHolding(running.packageName)
+                        foldcade.runningGames.noteHolding(running.packageName, closed = true)
                         true
                     }
                     if (closed) {
@@ -1689,6 +1694,9 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
             .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_NO_ANIMATION)
         return try {
             home.startActivities(arrayOf(front, homeIntent), ActivityOptions.makeBasic().apply { launchDisplayId = displayId }.toBundle())
+            // Home may cover a different game now using this panel. Keep that game
+            // paused, as a Home press does, instead of treating it as a player exit.
+            if (foldcade.externalPlay.displayId == displayId) foldcade.homeRecalledOn = displayId
             Log.i("Foldcade", "game-close $playerPackage display=$displayId")
             true
         } catch (failure: RuntimeException) {
@@ -1703,8 +1711,7 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
         val running = foldcade.runningOn(id) ?: return
         if (!foldcade.shell.isPaused(id)) return
         val target = foldcade.moveGameTarget(id) ?: return
-        val front = running.resumeStart?.let(::Intent)
-            ?: packageManager.getLaunchIntentForPackage(running.packageName)?.apply { flags = RESUME_FLAGS } ?: return
+        val front = running.resumeStart?.let(::Intent) ?: return
         cancelLaunches()
         val generation = beginLaunch()
         foldcade.launchWork.job = foldcade.scope.launch {

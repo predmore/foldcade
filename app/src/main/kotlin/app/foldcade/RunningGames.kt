@@ -45,6 +45,9 @@ internal class RunningGames {
      */
     private val holdingOnly = LinkedHashSet<String>()
 
+    /** Close keeps a replacement guard, but its player may later be opened as an app beside another game. */
+    private val closedPlayers = LinkedHashSet<String>()
+
     /** Called with every tile id still running, after each change. */
     var onChange: (Set<String>) -> Unit = {}
 
@@ -58,16 +61,18 @@ internal class RunningGames {
 
     fun note(game: RunningGame) {
         dropCompanion(game.packageName)
+        closedPlayers -= game.packageName
         holdingOnly -= game.packageName
         byPackage[game.packageName] = game
         changed()
     }
 
-    /** [packageName] holds a game now that its front door would not bring back, see [resumable]. */
-    fun noteHolding(packageName: String) {
+    /** Keep the replacement guard without a Paused tile. [closed] lets its app be a companion after Close. */
+    fun noteHolding(packageName: String, closed: Boolean = false) {
         dropCompanion(packageName)
         byPackage.remove(packageName)
         holdingOnly += packageName
+        if (closed) closedPlayers += packageName else closedPlayers -= packageName
         changed()
     }
 
@@ -91,6 +96,7 @@ internal class RunningGames {
     fun mayHold(packageName: String?): Boolean = packageName != null && (packageName in byPackage || packageName in holdingOnly)
 
     fun forget(packageName: String) {
+        closedPlayers -= packageName
         val known = byPackage.remove(packageName) != null
         if (holdingOnly.remove(packageName) || known) changed()
     }
@@ -100,12 +106,13 @@ internal class RunningGames {
         onPlayersChange(byPackage.keys + holdingOnly)
     }
 
-    /** Opening an app alone releases any earlier association; a library player is never a companion. */
+    /** Opening an app alone releases any earlier association; another library game is never a companion. */
     fun noteApp(app: GameCompanion, besidePlayer: String?, ownPackages: Set<String>) {
         dropCompanion(app.packageName)
         val game = besidePlayer?.let(byPackage::get)
         if (game != null && !game.occupiesBoth && game.panel != app.panel &&
-            ownPackages.none { app.packageName == it || app.packageName.startsWith("$it.") } && !mayHold(app.packageName)) {
+            ownPackages.none { app.packageName == it || app.packageName.startsWith("$it.") } &&
+            (!mayHold(app.packageName) || app.packageName in closedPlayers)) {
             byPackage[game.packageName] = game.copy(companions = game.companions + app)
         }
         changed()
@@ -160,9 +167,9 @@ internal const val RESUME_FLAGS: Int = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.F
  * ([app.foldcade.api.plugin.LaunchFlag.SameStartResumes]): the start's own, without
  * the ones that would clear the game's task or open another beside it.
  */
-internal fun resumeStartFlags(flags: Int): Int =
+internal fun resumeStartFlags(flags: Int, resetTask: Boolean = false): Int =
     (flags and (Intent.FLAG_ACTIVITY_CLEAR_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_MULTIPLE_TASK).inv()) or
-        Intent.FLAG_ACTIVITY_NEW_TASK
+        Intent.FLAG_ACTIVITY_NEW_TASK or (if (resetTask) Intent.FLAG_ACTIVITY_RESET_TASK_IF_NEEDED else 0)
 
 /**
  * The flags for a start in a player that still holds another game, or the same
@@ -181,3 +188,9 @@ internal const val CLOSE_SETTLE_MS = 1_500L
 /** Moving never displaces an app on the other panel. */
 internal fun RunningGame.moveTarget(session: Session): Panel? =
     panel.flip().takeIf { !occupiesBoth && session.externalOn(it) == null }
+
+/** The Thor panels change width and aspect ratio; unhandled changes would recreate the game activity. */
+internal fun handlesPanelSizeChange(configChanges: Int): Boolean {
+    val needed = android.content.pm.ActivityInfo.CONFIG_SCREEN_SIZE or android.content.pm.ActivityInfo.CONFIG_SCREEN_LAYOUT
+    return configChanges and needed == needed
+}

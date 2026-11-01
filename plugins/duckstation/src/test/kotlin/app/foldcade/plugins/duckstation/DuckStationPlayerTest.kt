@@ -120,7 +120,7 @@ class DuckStationPlayerTest {
             ),
             intent.extras,
         )
-        assertEquals(setOf(LaunchFlag.NewTask, LaunchFlag.ClearTop, LaunchFlag.ClearTask), intent.flags)
+        assertEquals(setOf(LaunchFlag.NewTask, LaunchFlag.ClearTop, LaunchFlag.ClearTask, LaunchFlag.SameStartResumes), intent.flags)
 
         // A local folder: Android's external storage ids are `volume:path`.
         val local = "content://com.android.externalstorage.documents/tree/primary%3AROMs" +

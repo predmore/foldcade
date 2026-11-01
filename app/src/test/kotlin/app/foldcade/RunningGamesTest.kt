@@ -43,6 +43,24 @@ class RunningGamesTest {
         assertEquals(Intent.FLAG_ACTIVITY_NEW_TASK, resumeStartFlags(0))
     }
 
+    @Test fun aStandardGameRootCanKeepItsTaskThroughHomeOnTheOtherDisplay() {
+        val start = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP or
+            Intent.FLAG_ACTIVITY_MULTIPLE_TASK or Intent.FLAG_GRANT_READ_URI_PERMISSION
+        assertEquals(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_RESET_TASK_IF_NEEDED or
+            Intent.FLAG_GRANT_READ_URI_PERMISSION, resumeStartFlags(start, resetTask = true))
+        // Players already using their own start retain the flags they resumed with before.
+        assertEquals(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_GRANT_READ_URI_PERMISSION, resumeStartFlags(start))
+    }
+
+    @Test fun movingRequiresTheActivityToHandleBothPanelSizeChanges() {
+        val size = android.content.pm.ActivityInfo.CONFIG_SCREEN_SIZE
+        val layout = android.content.pm.ActivityInfo.CONFIG_SCREEN_LAYOUT
+        assertTrue(handlesPanelSizeChange(size or layout))
+        assertFalse(handlesPanelSizeChange(size))
+        assertFalse(handlesPanelSizeChange(layout))
+        assertFalse(handlesPanelSizeChange(0))
+    }
+
     @Test
     fun aResumeFoundTheGameUnlessThePlayersMenuCameForward() {
         val game = "org.citra.citra_emu.activities.EmulationActivity"
@@ -160,6 +178,32 @@ class RunningGamesTest {
         assertEquals(Panel.Top, game.copy(panel = Panel.Bottom).moveTarget(Session()))
         assertNull(game.copy(occupiesBoth = true).moveTarget(Session()))
         assertNull(game.moveTarget(Session().place(Panel.Bottom, ExternalApp("notes", false))))
+    }
+
+    @Test fun aClosedPlayersAppCanBeOpenedBesideAnotherGame() {
+        val games = RunningGames()
+        games.note(game("old", "closed-player"))
+        games.noteHolding("closed-player", closed = true)
+        games.note(game("current", "player").copy(occupiesBoth = false))
+        val app = GameCompanion("closed-player", "Emulator", Panel.Bottom)
+        games.noteApp(app, "player", emptySet())
+        // launchInstalled releases the replacement guard after opening the app itself.
+        games.forget("closed-player")
+        assertEquals(listOf(app), games.forPackage("player")!!.companions)
+        assertFalse(games.mayHold("closed-player"))
+    }
+
+    @Test fun aPlayerThatMayStillHoldAnotherLibraryGameIsNotACompanion() {
+        val games = RunningGames()
+        games.note(game("current", "player").copy(occupiesBoth = false))
+        games.noteHolding("other-player")
+        games.noteApp(GameCompanion("other-player", "Other", Panel.Bottom), "player", emptySet())
+        assertTrue(games.forPackage("player")!!.companions.isEmpty())
+        games.noteHolding("other-player", closed = true)
+        // A new library start in that player ends its closed state, including one without a Paused tile.
+        games.noteHolding("other-player")
+        games.noteApp(GameCompanion("other-player", "Other", Panel.Bottom), "player", emptySet())
+        assertTrue(games.forPackage("player")!!.companions.isEmpty())
     }
 
     private fun game(tile: String, pkg: String, startedAt: Long = 0L) = RunningGame(

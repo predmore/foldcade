@@ -509,11 +509,20 @@ class FoldcadeApp : Application() {
 
     internal fun moveGameTarget(tileId: String): Panel? {
         val game = runningOn(tileId) ?: return null
-        if (game.packageName in closingPlayers) return null
+        // A launcher aimed at the other display can create a menu task there.
+        // Only a player declaring a reusable game start can promise a move.
+        if (game.packageName in closingPlayers || game.resumeStart == null) return null
+        val activity = game.activity ?: return null
+        val changes = try {
+            packageManager.getActivityInfo(android.content.ComponentName(game.packageName, activity), 0).configChanges
+        } catch (_: android.content.pm.PackageManager.NameNotFoundException) {
+            return null
+        }
+        if (!handlesPanelSizeChange(changes)) return null
         val target = game.moveTarget(store.session) ?: return null
         val assignment = Displays(this).assignment(store.session.defaultDisplayIsTop)
         if (target == Panel.Bottom && assignment.bottomDisplayId == null) return null
-        return target.takeIf { game.resumeStart != null || packageManager.getLaunchIntentForPackage(game.packageName) != null }
+        return target
     }
 
     /** The running game on tile [tileId], under whichever id its tile has now. */
