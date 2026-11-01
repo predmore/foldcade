@@ -205,20 +205,22 @@ class HomeReturnFocusTest {
         assertTrue(shell.model.atLibraryRoot)
     }
 
-    @Test fun returningOnTheFreePanelStillAllowsALaterReturnFromTheGamesPanel() {
+    @Test fun homeOnTheFreePanelLeavesTheCursorWhileTheGameIsStillOpen() {
         val store = store()
         val shell = shell(store)
         load(shell)
+        val before = shell.model.focus
         shell.noteGameLaunched(target)
         store.place(Panel.Top, ExternalApp(target))
+        // Home on the free screen, or another app leaving it: the game is still open on top.
+        shell.goHome(fromRecall = true)
         shell.noteHomeReturned()
-        assertFocused(shell)
+        shell.noteHomeReturned(OTHER_APP_ID)
+        assertEquals(before, shell.model.focus)
+        assertTrue(shell.model.atLibraryRoot)
         assertEquals(target, store.session.topApp?.id)
         assertEquals(target, store.pendingHomeGame())
-        assertTrue(shell.swallowsHomeReturnRepeat(2))
-        assertFalse(shell.swallowsHomeReturnRepeat(0))
-        shell.goHome()
-        shell.onMeaning(Meaning.MoveRight, HostScreen.Bottom)
+        // The game leaving its own screen is the return.
         store.update { it.home(Panel.Top) }
         shell.noteHomeReturned(target)
         assertFocused(shell)
@@ -227,6 +229,35 @@ class HomeReturnFocusTest {
         val moved = shell.model.focus
         shell.noteHomeReturned()
         assertEquals(moved, shell.model.focus)
+    }
+
+    @Test fun homeStillGoesToRootAfterALanding() {
+        val store = store()
+        val shell = shell(store)
+        load(shell)
+        shell.noteGameLaunched(target)
+        shell.noteHomeReturned(target)
+        assertFocused(shell)
+        assertFalse(shell.model.atLibraryRoot)
+        // The same recall reaching the other screen at once leaves the landing alone.
+        shell.goHome(fromRecall = true)
+        assertFocused(shell)
+        // A later Home press, with no key or touch between, goes to the top level as always.
+        now += 5_000L
+        shell.goHome(fromRecall = true)
+        assertTrue(shell.model.atLibraryRoot)
+    }
+
+    @Test fun aStartThatFailedLeavesNothingToComeBackTo() {
+        val store = store()
+        val shell = shell(store)
+        load(shell)
+        val before = shell.model.focus
+        shell.noteGameLaunched(target)
+        shell.forgetGameLaunch()
+        assertNull(store.pendingHomeGame())
+        shell.noteHomeReturned()
+        assertEquals(before, shell.model.focus)
     }
 
     @Test fun aGameStillOnTheOtherPanelIsRememberedIfHomeDiesAfterAFreePanelRecall() {

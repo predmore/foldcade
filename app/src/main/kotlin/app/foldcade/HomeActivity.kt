@@ -538,21 +538,23 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
             resumeLostReturn()
             if (!foldcade.suppressSaveConflict) refreshSaveConflict()
         }
-        // Foldcade in front on this panel means the game there has left. A launcher-icon
-        // start is not a Home recall, so without this a Foldcade that is not the default
-        // Home keeps the panel for the game and ignores every key.
         // Back in front where the game opened: its art leaves both screens, including one a
         // presentation covered, which never stopped.
         displays.panelFor(this, foldcade.store.session.defaultDisplayIsTop)?.let { panel ->
             if (foldcade.launchBlooms.current?.gamePanels?.contains(panel) == true) foldcade.launchBlooms.retire()
         }
+        // Foldcade in front on this panel means the game there has left. A launcher-icon
+        // start is not a Home recall, so without this a Foldcade that is not the default
+        // Home keeps the panel for the game and ignores every key.
         var reclaimedPanel = false
         displays.panelFor(this, foldcade.store.session.defaultDisplayIsTop)?.let { panel ->
             reclaimedPanel = foldcade.store.session.surfaceOn(panel) == null
             val returnedId = foldcade.store.session.externalOn(panel)?.id
+            // Browsing the grid beside the game: a game that quits by itself leaves the cursor where the user has it.
+            val browsing = foldcade.store.session.browsing != null
             foldcade.store.update { it.foldcadeResumed(panel) }
             if (returned || (reclaimedPanel && foldcade.store.session.externalOn(panel) == null)) {
-                foldcade.shell.noteHomeReturned(returnedId)
+                if (browsing) foldcade.shell.forgetGameLaunch() else foldcade.shell.noteHomeReturned(returnedId)
             }
         }
         resumed = true
@@ -1071,6 +1073,7 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
             startActivity(launch, options.toBundle())
         } catch (failure: RuntimeException) {
             foldcade.launchBlooms.cancel()
+            foldcade.shell.forgetGameLaunch()
             throw failure
         }
     }
@@ -1781,6 +1784,7 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
             }
         } catch (failure: Exception) {
             foldcade.launchBlooms.cancel()
+            foldcade.shell.forgetGameLaunch()
             throw failure
         }
         // The game it replaced is gone. This one is noted once the start is in.
@@ -1828,6 +1832,7 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
         } catch (failure: RuntimeException) {
             foldcade.plays.signal(playId, PlaySignal.End)
             foldcade.launchBlooms.cancel()
+            foldcade.shell.forgetGameLaunch()
             throw failure
         }
     }
@@ -1881,6 +1886,7 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
             throw cancelled
         } catch (_: ActivityNotFoundException) {
             foldcade.launchBlooms.cancel()
+            foldcade.shell.forgetGameLaunch()
             foldcade.store.update { it.home(Panel.Top).home(Panel.Bottom) }
             val name = game.platformId
                 ?.let { playerFor(it)?.displayName }
@@ -1888,6 +1894,7 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
             presentMissing(name, generation)
         } catch (_: Exception) {
             foldcade.launchBlooms.cancel()
+            foldcade.shell.forgetGameLaunch()
             foldcade.store.update { it.home(Panel.Top).home(Panel.Bottom) }
         }
     }

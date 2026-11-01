@@ -151,6 +151,9 @@ import kotlin.coroutines.cancellation.CancellationException
 
 private const val HOME_RETURN_WAIT_MS = 30_000L
 
+/** How long after a landing a Home recall counts as the same press reaching the other screen. */
+private const val HOME_RECALL_ECHO_MS = 1_000L
+
 class ShellController(
     private val store: SessionStore,
     private val plugins: PluginHost,
@@ -298,6 +301,9 @@ class ShellController(
     // A cold Home waits briefly for the remembered tile's library, until the user takes over.
     private var homeReturn = store.pendingHomeGame()?.let { HomeReturn(it, true, nowMillis() + HOME_RETURN_WAIT_MS) }
     private var ignoreReturnRepeats = homeReturn != null
+
+    /** When a return last put the cursor on its game, so the same recall reaching the other screen leaves it there. */
+    private var homeLandedAt = Long.MIN_VALUE
 
     /** Platform names a library listed, by platform id. Used when nothing else names it. */
     private val listedPlatformNames = HashMap<String, String>()
@@ -1178,6 +1184,9 @@ class ShellController(
 
     /** A Home recall or a player leaving its panel gives the launched tile the cursor once. */
     fun noteHomeReturned(returnedId: String? = null) {
+        // Home on the free screen, or another app leaving it, is not a return: the game is still open beside it.
+        val launched = homeReturn?.id?.let(::tileOf)
+        if (launched != null && returnedId?.let(::tileOf) != launched && tileIds(launched).any(store.session::runs)) return
         val tile = returnedId?.let(::tileOf)?.takeIf { id ->
             id == homeReturn?.id?.let(::tileOf) || id == store.pendingHomeGame()?.let(::tileOf) ||
                 home.catalog().any { it.id == id }
@@ -1205,6 +1214,9 @@ class ShellController(
         homeReturn = null
         if (!keepSaved) store.setPendingHomeGame(null)
     }
+
+    /** A start that did not go in, or a game that left while the user browsed beside it: nothing to come back to. */
+    fun forgetGameLaunch() = cancelHomeReturn()
 
     private fun cancelHomeReturnOnInput() {
         if (homeReturn?.ready == true) cancelHomeReturn()
@@ -1237,7 +1249,10 @@ class ShellController(
             (app.foldcade.language.homeLanding(home.board, id) != null && showOnHome(id, burst = false))
         // Home on the free screen leaves the game running on the other one.
         cancelHomeReturn(keepSaved = landed && tileIds(id).any(store.session::runs))
-        if (landed) ignoreReturnRepeats = true
+        if (landed) {
+            ignoreReturnRepeats = true
+            homeLandedAt = nowMillis()
+        }
     }
 
     /** The current grid's tile, without Find or a menu substituting its own subject. */
@@ -1413,7 +1428,7 @@ class ShellController(
     /** L1's Home: the board's top level, from a folder, All, or a shelf. The last root tile keeps the focus. */
     fun goHome(fromRecall: Boolean = false) {
         // The other Home window can receive the same recall after the game has already landed.
-        if (fromRecall && (homeReturn != null || ignoreReturnRepeats)) return
+        if (fromRecall && nowMillis() - homeLandedAt < HOME_RECALL_ECHO_MS) return
         cancelHomeReturnOnInput()
         artPicker = null
         find = null
