@@ -1759,7 +1759,9 @@ private const val SUMMARY_GAP_PX = 16f
 
 /**
  * Lays the content out whole but takes only [progress] of its size, centred across and
- * clipped, and fades it in with it. A card around it grows smoothly; at 0 it takes no room.
+ * clipped. A card around it grows smoothly; at 0 it takes no room. The words fade in over
+ * the second half of the growth only, so no line shows cut at the card's edges while it
+ * opens. With motion off [progress] jumps to 1, so they show at once.
  */
 private fun Modifier.unfold(progress: () -> Float): Modifier = this
     .clipToBounds()
@@ -1768,7 +1770,7 @@ private fun Modifier.unfold(progress: () -> Float): Modifier = this
         val shown = progress().coerceIn(0f, 1f)
         val width = (placeable.width * shown).roundToInt()
         val height = (placeable.height * shown).roundToInt()
-        layout(width, height) { placeable.placeWithLayer((width - placeable.width) / 2, 0) { alpha = shown } }
+        layout(width, height) { placeable.placeWithLayer((width - placeable.width) / 2, 0) { alpha = ((shown - 0.5f) * 2f).coerceIn(0f, 1f) } }
     }
 
 @Composable

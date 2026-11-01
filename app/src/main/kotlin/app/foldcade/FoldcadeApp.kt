@@ -104,7 +104,6 @@ import app.foldcade.localfolder.LocalFolderBackend
 import app.foldcade.localfolder.LocalMediaProvider
 import app.foldcade.localfolder.LocalMediaIndex
 import app.foldcade.localfolder.buildLocalMediaIndex
-import app.foldcade.language.libraryFolderLabel
 import app.foldcade.localfolder.SteamShortcut
 import app.foldcade.language.FALLBACK_THEME_ID
 import app.foldcade.music.HomeMusic
@@ -1861,7 +1860,7 @@ class FoldcadeApp : Application() {
         val gameUris = scan?.let { it.games.map { game -> game.documentUri } + it.steamShortcuts.map { game -> game.documentUri } }.orEmpty()
         return store.folderTrees().map { uri ->
             val mediaOnly = isMediaOnlyLibraryTree(uri, localMedia?.index()?.sourceUris.orEmpty(), gameUris)
-            LibraryFolder(uri, libraryFolderLabel(folderLabel(uri), mediaOnly))
+            LibraryFolder(uri, folderLabel(uri), artAndInfo = mediaOnly)
         }
     }
 

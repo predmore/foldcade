@@ -201,7 +201,12 @@ private const val URI_PUNCTUATION = "-._~:/?#[]@!$&'()*+,;="
 
 private const val HEX = "0123456789ABCDEF"
 
-/** RomM's aggregate date is milliseconds; separate developer and publisher lists preserve roles. */
+private const val COMPANY_JOIN = " / "
+
+/**
+ * RomM's aggregate date is milliseconds; separate developer and publisher lists preserve roles.
+ * Companies join with " / ", as their own names often hold a comma ("Sega Enterprises, Ltd.").
+ */
 internal fun RomSummary.toDetails(): GameDetails? = normalizeGameDetails(GameDetails(
     summary = summary,
     releaseYear = firstReleaseDate?.let { millis ->
@@ -210,8 +215,8 @@ internal fun RomSummary.toDetails(): GameDetails? = normalizeGameDetails(GameDet
             ?.let { Instant.ofEpochMilli(it).atOffset(ZoneOffset.UTC).year }
     },
     genres = genres,
-    developer = developers.filter { it.isNotBlank() }.distinct().joinToString(", "),
-    publisher = publishers.filter { it.isNotBlank() }.distinct().joinToString(", "),
+    developer = developers.filter { it.isNotBlank() }.distinct().joinToString(COMPANY_JOIN),
+    publisher = publishers.filter { it.isNotBlank() }.distinct().joinToString(COMPANY_JOIN),
     // RomM 5.4.1 defaults this field to "1", even without matched metadata.
     players = playerCount?.trim()?.takeUnless { it == "1" },
 ))

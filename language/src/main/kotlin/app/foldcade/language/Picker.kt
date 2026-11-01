@@ -899,10 +899,14 @@ data class SignedInBackend(
     val label: String,
 )
 
-/** One folder the library reads. [uri] is its document tree; [label] its own name. */
+/**
+ * One folder the library reads. [uri] is its document tree; [label] its own name. [artAndInfo]
+ * marks a media tree that holds a frontend's art and facts rather than games.
+ */
 data class LibraryFolder(
     val uri: String,
     val label: String,
+    val artAndInfo: Boolean = false,
 )
 
 enum class ConnectField {
@@ -1177,7 +1181,7 @@ fun rowText(row: Row, model: PickerModel): RowText = when (row) {
     Row.SetAsHome -> RowText(Copy.setAsHome)
     Row.AndroidSettings -> RowText(Copy.androidSettings)
     Row.Licenses -> RowText(LicenseCopy.row)
-    is Row.SettingsTile -> RowText(settingsInnerTitle(row.page, model))
+    is Row.SettingsTile -> RowText(settingsTileLabel(row.page, model))
     Row.Version -> RowText(AboutCopy.version, if (model.versionCopied) AboutCopy.copied else model.appVersion)
     Row.DefaultHomeApp -> RowText(Copy.defaultHomeApp)
     is Row.QuickTile -> RowText(

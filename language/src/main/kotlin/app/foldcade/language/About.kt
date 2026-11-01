@@ -21,7 +21,7 @@ object GameAboutCopy {
     const val players = "Players"
 
     /** The page's one line when nothing about the game is known yet. */
-    const val noInfo = "Game info shows up here from RomM, or from the media folder you use with ES-DE."
+    const val noInfo = "No info for this game yet. It comes from RomM, or an ES-DE, Batocera or Skraper media folder."
 }
 
 /**

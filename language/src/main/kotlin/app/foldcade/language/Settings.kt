@@ -230,10 +230,13 @@ fun settingsInnerRows(inner: SettingsInner, model: PickerModel): List<Row> = whe
     SettingsInner.Add -> listOfNotNull(Row.AddFolder, Row.AddRomm.takeIf { !model.rommSaved && model.signedIn.none { it.pluginId == "romm" } })
 }
 
-/** What an inner page, and the tile that opens it, is called. */
+/**
+ * What an inner page is called. A media folder's page says what it is for; its tile, with
+ * less room, says only [settingsTileLabel].
+ */
 fun settingsInnerTitle(inner: SettingsInner, model: PickerModel): String = when (inner) {
     is SettingsInner.Emulator -> emulatorShelf(model).firstOrNull { it.key == inner.key }?.label ?: inner.key
-    is SettingsInner.Folder -> model.folders.firstOrNull { it.uri == inner.uri }?.label.orEmpty()
+    is SettingsInner.Folder -> model.folders.firstOrNull { it.uri == inner.uri }?.let { libraryFolderLabel(it.label, it.artAndInfo) }.orEmpty()
     is SettingsInner.Host -> model.streamHosts.firstOrNull { it.key == inner.key }?.name.orEmpty()
     is SettingsInner.Backend -> model.signedIn.firstOrNull { it.pluginId == inner.pluginId }?.label.orEmpty()
     SettingsInner.Add -> Copy.add
@@ -392,6 +395,12 @@ fun rowControl(row: Row, model: PickerModel, value: String? = rowText(row, model
     } ?: RowControl.None
 }
 
-/** A picked media tree uses the same Sources row as a ROM folder, with its purpose made clear. */
+/** What the tile that opens an inner page is called: a folder's own name, else the page's title. */
+fun settingsTileLabel(inner: SettingsInner, model: PickerModel): String = when (inner) {
+    is SettingsInner.Folder -> model.folders.firstOrNull { it.uri == inner.uri }?.label.orEmpty()
+    else -> settingsInnerTitle(inner, model)
+}
+
+/** A picked media tree's page title: its name, with its purpose made clear. */
 fun libraryFolderLabel(name: String, artAndInfo: Boolean): String =
     if (artAndInfo) "$name · art and info" else name

@@ -28,6 +28,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.FilterQuality
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.text.style.TextOverflow
@@ -149,6 +150,9 @@ private fun AboutCard(
     val design = theme.style
     val shot = rememberScene(app, record, query)?.screen?.let { rememberCoverPainter(app, it, SCREEN_PX, FilterQuality.None) }
     val body = aboutText(theme.onBackground, theme, design.type.dialogBody)
+    val measurer = rememberTextMeasurer()
+    val bodyLine = remember(body) { measurer.measure(LINE_PROBE, body, maxLines = 1).size.height }
+    val gapPx = with(LocalDensity.current) { GAP.roundToPx() }
     BoxWithConstraints(
         modifier
             .clip(RoundedCornerShape(design.metrics.cardCornerDp.dp))
@@ -157,13 +161,15 @@ private fun AboutCard(
     ) {
         val shotMax = maxWidth * SHOT_SHARE
         val shotTall = maxHeight * SHOT_HEIGHT
+        // The facts may grow to what leaves the summary its first lines.
+        val factRoom = constraints.maxHeight - if (summary != null) gapPx + bodyLine * SUMMARY_MIN_LINES else 0
         Column(
             Modifier.fillMaxWidth().then(if (summary != null) Modifier.fillMaxHeight() else Modifier),
             verticalArrangement = Arrangement.spacedBy(GAP),
         ) {
             if (facts.isNotEmpty() || shot != null) {
                 Row(horizontalArrangement = Arrangement.spacedBy(GAP)) {
-                    FactList(facts, theme, Modifier.weight(1f))
+                    FactList(facts, theme, factRoom, Modifier.weight(1f))
                     if (shot != null) {
                         Image(
                             painter = shot.painter,
@@ -186,21 +192,42 @@ private fun AboutCard(
     }
 }
 
-/** Each fact's name, muted, in one column, and what it is beside it, one line each. */
+/**
+ * One row per fact: its name, muted, in a column as wide as the widest name, and what it is
+ * beside it. A long value takes a second line while the facts stay within [room] pixels
+ * tall, earlier facts first, and ends in "…" past that.
+ */
 @Composable
-private fun FactList(facts: List<AboutFact>, theme: Theme, modifier: Modifier) {
+private fun FactList(facts: List<AboutFact>, theme: Theme, room: Int, modifier: Modifier) {
     if (facts.isEmpty()) {
         Spacer(modifier)
         return
     }
     val size = theme.style.type.sideRow
-    Row(modifier, horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-        Column(verticalArrangement = Arrangement.spacedBy(FACT_GAP)) {
-            facts.forEach { BasicText(it.label, maxLines = 1, style = aboutText(theme.muted, theme, size)) }
+    val labelStyle = aboutText(theme.muted, theme, size)
+    val valueStyle = aboutText(theme.onBackground, theme, size, bold = true)
+    val measurer = rememberTextMeasurer()
+    val density = LocalDensity.current
+    val labelWidth = remember(facts, labelStyle) {
+        facts.maxOf { measurer.measure(it.label, labelStyle, maxLines = 1, softWrap = false).size.width }
+    }
+    BoxWithConstraints(modifier) {
+        val gapPx = with(density) { FACT_GAP.roundToPx() }
+        val valueWidth = (constraints.maxWidth - labelWidth - with(density) { LABEL_GAP.roundToPx() }).coerceAtLeast(0)
+        val lines = remember(facts, valueStyle, valueWidth, room) {
+            val line = measurer.measure(LINE_PROBE, valueStyle, maxLines = 1).size.height
+            val wraps = facts.map {
+                measurer.measure(it.value, valueStyle, constraints = Constraints(maxWidth = valueWidth), maxLines = FACT_MAX_LINES).lineCount > 1
+            }
+            var tall = facts.size * line + (facts.size - 1) * gapPx
+            wraps.map { wrap -> if (wrap && tall + line <= room) 2.also { tall += line } else 1 }
         }
-        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(FACT_GAP)) {
-            facts.forEach {
-                BasicText(it.value, maxLines = 1, overflow = TextOverflow.Ellipsis, style = aboutText(theme.onBackground, theme, size, bold = true))
+        Column(verticalArrangement = Arrangement.spacedBy(FACT_GAP)) {
+            facts.forEachIndexed { index, fact ->
+                Row(horizontalArrangement = Arrangement.spacedBy(LABEL_GAP)) {
+                    BasicText(fact.label, Modifier.width(with(density) { labelWidth.toDp() }), maxLines = 1, softWrap = false, style = labelStyle)
+                    BasicText(fact.value, Modifier.weight(1f), maxLines = lines[index], overflow = TextOverflow.Ellipsis, style = valueStyle)
+                }
             }
         }
     }
@@ -234,6 +261,17 @@ private val EDGE_V = 24.dp
 private val GAP = 20.dp
 private val CARD_PAD = 24.dp
 private val FACT_GAP = 6.dp
+private val LABEL_GAP = 16.dp
+
+/**
+ * A fact's value takes at most two lines, and only while the summary keeps this many. On
+ * the top screen with a screenshot that is about three two-line facts of five.
+ */
+private const val FACT_MAX_LINES = 2
+private const val SUMMARY_MIN_LINES = 2
+
+/** Measured for one line's height. */
+private const val LINE_PROBE = "Ag"
 private const val COVER_SHARE = 0.3f
 
 /** A screenshot takes up to this much of the card's width, and of its height. */

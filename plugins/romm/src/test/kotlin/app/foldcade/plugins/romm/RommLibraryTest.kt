@@ -98,6 +98,10 @@ class RommLibraryTest {
             assertEquals(details, harness.metadata.details(game))
             assertEquals(1, reads)
             assertNull(harness.metadata.details(game.copy(backendId = "local-folder")))
+            val companies = listed.copy(developers = listOf("Sega Enterprises, Ltd.", " ", "Sega Enterprises, Ltd."),
+                publishers = listOf("NEC Avenue, Ltd.", "Sega Enterprises, Ltd.")).toDetails()!!
+            assertEquals("Sega Enterprises, Ltd.", companies.developer)
+            assertEquals("NEC Avenue, Ltd. / Sega Enterprises, Ltd.", companies.publisher)
             assertNull(listed.copy(summary = null, genres = emptyList(), firstReleaseDate = Long.MAX_VALUE,
                 developers = emptyList(), publishers = emptyList(), playerCount = "1").toDetails())
         } finally {
