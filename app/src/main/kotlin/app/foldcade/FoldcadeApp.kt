@@ -504,14 +504,23 @@ class FoldcadeApp : Application() {
     internal val closingPlayers = mutableSetOf<String>()
 
     internal fun canCloseGame(tileId: String): Boolean = runningOn(tileId)?.let {
-        it.packageName !in closingPlayers && packageManager.getLaunchIntentForPackage(it.packageName) != null
+        it.packageName !in closingPlayers && runningGames.canUsePlayerFrontDoor(it.packageName) &&
+            packageManager.getLaunchIntentForPackage(it.packageName) != null && it.companions.all { app ->
+                val assignment = Displays(this).assignment(store.session.defaultDisplayIsTop)
+                val display = if (app.panel == Panel.Top) assignment.topDisplayId else assignment.bottomDisplayId
+                display != null && !runningGames.frontDoorElsewhere(app.packageName, display)
+            }
     } == true
 
     internal fun moveGameTarget(tileId: String): Panel? {
         val game = runningOn(tileId) ?: return null
         // A launcher aimed at the other display can create a menu task there.
-        // Only a player declaring a reusable game start can promise a move.
+        // A reusable start alone does not promise a move; the player must opt in.
         if (game.packageName in closingPlayers || game.resumeStart == null) return null
+        val saveFolder = game.saveFolderKey ?: game.saves?.player?.saveFolderId()
+            ?: game.platformId?.let(::playerFor)?.saveFolderId()
+        val saveAwaitsLoad = saveFolder?.let(store::saveAwaitsLoad) == true
+        val target = game.moveTarget(store.session, saveAwaitsLoad) ?: return null
         val activity = game.activity ?: return null
         val changes = try {
             packageManager.getActivityInfo(android.content.ComponentName(game.packageName, activity), 0).configChanges
@@ -519,7 +528,6 @@ class FoldcadeApp : Application() {
             return null
         }
         if (!handlesPanelSizeChange(changes)) return null
-        val target = game.moveTarget(store.session) ?: return null
         val assignment = Displays(this).assignment(store.session.defaultDisplayIsTop)
         if (target == Panel.Bottom && assignment.bottomDisplayId == null) return null
         return target
@@ -743,6 +751,8 @@ class FoldcadeApp : Application() {
         store = SessionStore(getSharedPreferences("foldcade", MODE_PRIVATE))
         runningGames.restore(store.playersHoldingGames())
         runningGames.onPlayersChange = store::setPlayersHoldingGames
+        runningGames.restoreFrontDoors(store.playerFrontDoors())
+        runningGames.onFrontDoorsChange = store::setPlayerFrontDoors
         buttonPromptFirstSession = !store.buttonPromptSeenLaunch()
         if (buttonPromptFirstSession) store.setButtonPromptSeenLaunch()
         credentials = AndroidCredentialStore(this)

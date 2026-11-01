@@ -1,6 +1,7 @@
 package app.foldcade
 
 import android.content.Intent
+import app.foldcade.api.plugin.LaunchFlag
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
@@ -47,9 +48,11 @@ class RunningGamesTest {
         val start = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP or
             Intent.FLAG_ACTIVITY_MULTIPLE_TASK or Intent.FLAG_GRANT_READ_URI_PERMISSION
         assertEquals(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_RESET_TASK_IF_NEEDED or
-            Intent.FLAG_GRANT_READ_URI_PERMISSION, resumeStartFlags(start, resetTask = true))
+            Intent.FLAG_GRANT_READ_URI_PERMISSION, resumeStartFlags(start, setOf(LaunchFlag.MovesBetweenScreens)))
         // Players already using their own start retain the flags they resumed with before.
         assertEquals(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_GRANT_READ_URI_PERMISSION, resumeStartFlags(start))
+        assertEquals(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_GRANT_READ_URI_PERMISSION,
+            resumeStartFlags(start, setOf(LaunchFlag.SameStartResumes)))
     }
 
     @Test fun movingRequiresTheActivityToHandleBothPanelSizeChanges() {
@@ -142,6 +145,47 @@ class RunningGamesTest {
         assertEquals(0, CLOSE_FLAGS and Intent.FLAG_ACTIVITY_MULTIPLE_TASK)
         assertTrue(CLOSE_FLAGS and Intent.FLAG_ACTIVITY_CLEAR_TASK != 0)
         assertTrue(CLOSE_FLAGS and Intent.FLAG_ACTIVITY_NEW_TASK != 0)
+        assertTrue(CLOSE_FLAGS and Intent.FLAG_ACTIVITY_NO_HISTORY != 0)
+    }
+
+    @Test fun aKnownFrontDoorCannotInterceptAnotherGamesCloseOrLauncherResume() {
+        val games = RunningGames()
+        val saved = mutableListOf<Set<String>>()
+        games.onFrontDoorsChange = { saved += it }
+        games.noteFrontDoor("player", 7)
+        games.noteHolding("player", closed = true)
+        assertFalse(games.canUsePlayerFrontDoor("player"))
+        assertTrue(games.frontDoorElsewhere("player", 13))
+        assertFalse(games.frontDoorElsewhere("player", 7))
+        // The fresh start on the other display leaves the known launcher alone.
+        games.noteFreshStart("player", 13)
+        games.forget("player")
+        games.note(game("bottom", "player").copy(occupiesBoth = false))
+        assertFalse(games.canUsePlayerFrontDoor("player"))
+        // Moving the game onto that display does not consume a separate launcher task.
+        games.note(games.forPackage("player")!!.copy(panel = Panel.Top))
+        assertFalse(games.canUsePlayerFrontDoor("player"))
+        val restored = RunningGames()
+        restored.restoreFrontDoors(saved.last())
+        assertTrue(restored.frontDoorElsewhere("player", 13))
+        assertFalse(restored.canUsePlayerFrontDoor("player"))
+        assertTrue(restored.canUsePlayerFrontDoor("another"))
+    }
+
+    @Test fun replacingTheSoleKnownClosedTaskOnItsDisplayConsumesThatFrontDoor() {
+        val games = RunningGames()
+        var stored = emptySet<String>()
+        games.onFrontDoorsChange = { stored = it }
+        games.noteFrontDoor("player", 7)
+        games.noteHolding("player", closed = true)
+        games.noteFreshStart("player", 7)
+        assertTrue(stored.isEmpty())
+        assertTrue(games.canUsePlayerFrontDoor("player"))
+        // Unknown or live tasks must not retire a guard just because another start was sent.
+        games.restoreFrontDoors(setOf("player:7"))
+        games.note(game("new", "player"))
+        games.noteFreshStart("player", 7)
+        assertFalse(games.canUsePlayerFrontDoor("player"))
     }
 
     @Test fun companionsBelongToThisRunAndAnAppOpenedAloneLeavesIt() {
@@ -173,11 +217,38 @@ class RunningGamesTest {
     }
 
     @Test fun movingOnlyUsesTheOtherFreePanelOfAOneScreenGame() {
-        val game = game("sonic", "player").copy(occupiesBoth = false)
-        assertEquals(Panel.Bottom, game.moveTarget(Session()))
-        assertEquals(Panel.Top, game.copy(panel = Panel.Bottom).moveTarget(Session()))
-        assertNull(game.copy(occupiesBoth = true).moveTarget(Session()))
-        assertNull(game.moveTarget(Session().place(Panel.Bottom, ExternalApp("notes", false))))
+        val game = game("sonic", "player").copy(occupiesBoth = false, movesBetweenScreens = true)
+        assertEquals(Panel.Bottom, game.moveTarget(Session(), saveAwaitsLoad = false))
+        assertEquals(Panel.Top, game.copy(panel = Panel.Bottom).moveTarget(Session(), saveAwaitsLoad = false))
+        assertNull(game.copy(occupiesBoth = true).moveTarget(Session(), saveAwaitsLoad = false))
+        assertNull(game.moveTarget(Session().place(Panel.Bottom, ExternalApp("notes", false)), saveAwaitsLoad = false))
+        assertNull(game.copy(movesBetweenScreens = false).moveTarget(Session(), saveAwaitsLoad = false))
+    }
+
+    @Test fun aChosenSaveDisablesMoveUntilItHasBeenLoadedFresh() {
+        val store = SessionStore(MemoryPrefs())
+        val game = game("sonic", "duckstation").copy(occupiesBoth = false, movesBetweenScreens = true, saveFolderKey = "duckstation")
+        fun target() = game.moveTarget(store.session, store.saveAwaitsLoad(game.saveFolderKey!!))
+        assertEquals(Panel.Bottom, target())
+        store.setSaveAwaitsLoad("duckstation", true)
+        assertNull(target())
+        store.setSaveAwaitsLoad("duckstation", false)
+        assertEquals(Panel.Bottom, target())
+    }
+
+    @Test fun anExitedCompanionLeavesTheGameAndOtherCompanionsAlone() {
+        val games = RunningGames()
+        games.note(game("sonic", "player").copy(occupiesBoth = false))
+        val notes = GameCompanion("notes", "Notes", Panel.Bottom)
+        val music = GameCompanion("music", "Music", Panel.Bottom)
+        games.noteApp(notes, "player", emptySet())
+        games.noteApp(music, "player", emptySet())
+        games.forgetCompanion("notes")
+        assertEquals(listOf(music), games.forPackage("player")!!.companions)
+        assertEquals(setOf("sonic"), games.tiles())
+        assertTrue(games.mayHold("player"))
+        games.forgetCompanion("notes")
+        assertEquals(listOf(music), games.forPackage("player")!!.companions)
     }
 
     @Test fun aClosedPlayersAppCanBeOpenedBesideAnotherGame() {

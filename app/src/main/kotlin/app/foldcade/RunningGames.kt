@@ -1,6 +1,7 @@
 package app.foldcade
 
 import android.content.Intent
+import app.foldcade.api.plugin.LaunchFlag
 
 /**
  * A game Foldcade started that may still be open in its player. The Home button
@@ -29,6 +30,10 @@ internal data class RunningGame(
     val resumeStart: Intent? = null,
     /** Apps opened beside this run, in launch order. These associations live only in memory. */
     val companions: List<GameCompanion> = emptyList(),
+    /** Explicitly tested across displays, independently of ordinary same-start resume. */
+    val movesBetweenScreens: Boolean = false,
+    /** The started player's folder, even if the platform's chosen player changes later. */
+    val saveFolderKey: String? = null,
 )
 
 internal data class GameCompanion(val packageName: String, val title: String, val panel: Panel)
@@ -47,6 +52,39 @@ internal class RunningGames {
 
     /** Close keeps a replacement guard, but its player may later be opened as an app beside another game. */
     private val closedPlayers = LinkedHashSet<String>()
+
+    /** Unseen front doors can stay INITIALIZING on Android, even with NO_HISTORY. */
+    private val frontDoors = LinkedHashMap<String, MutableSet<Int>>()
+    var onFrontDoorsChange: (Set<String>) -> Unit = {}
+
+    fun restoreFrontDoors(entries: Set<String>) {
+        for (entry in entries) {
+            val displayId = entry.substringAfterLast(':').toIntOrNull() ?: continue
+            frontDoors.getOrPut(entry.substringBeforeLast(':')) { linkedSetOf() }.add(displayId)
+        }
+    }
+
+    fun noteFrontDoor(packageName: String, displayId: Int) {
+        if (frontDoors.getOrPut(packageName) { linkedSetOf() }.add(displayId)) publishFrontDoors()
+    }
+
+    /** A separate launcher task can beat the game's task even after both move onto one display. */
+    fun canUsePlayerFrontDoor(packageName: String): Boolean = frontDoors[packageName].isNullOrEmpty()
+
+    fun frontDoorElsewhere(packageName: String, displayId: Int): Boolean =
+        frontDoors[packageName]?.any { it != displayId } == true
+
+    /** A fresh replacement of this process's sole closed task consumes its known front door. */
+    fun noteFreshStart(packageName: String, displayId: Int) {
+        if (packageName in closedPlayers && packageName !in byPackage && frontDoors[packageName] == setOf(displayId)) {
+            frontDoors.remove(packageName)
+            publishFrontDoors()
+        }
+    }
+
+    private fun publishFrontDoors() {
+        onFrontDoorsChange(frontDoors.flatMap { (pkg, displays) -> displays.map { "$pkg:$it" } }.toSet())
+    }
 
     /** Called with every tile id still running, after each change. */
     var onChange: (Set<String>) -> Unit = {}
@@ -99,6 +137,14 @@ internal class RunningGames {
         closedPlayers -= packageName
         val known = byPackage.remove(packageName) != null
         if (holdingOnly.remove(packageName) || known) changed()
+    }
+
+    /** An app that returned to Home by itself no longer closes with its former game. */
+    fun forgetCompanion(packageName: String) {
+        if (byPackage.values.any { game -> game.companions.any { it.packageName == packageName } }) {
+            dropCompanion(packageName)
+            changed()
+        }
     }
 
     private fun changed() {
@@ -167,9 +213,9 @@ internal const val RESUME_FLAGS: Int = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.F
  * ([app.foldcade.api.plugin.LaunchFlag.SameStartResumes]): the start's own, without
  * the ones that would clear the game's task or open another beside it.
  */
-internal fun resumeStartFlags(flags: Int, resetTask: Boolean = false): Int =
+internal fun resumeStartFlags(flags: Int, launchFlags: Set<LaunchFlag> = emptySet()): Int =
     (flags and (Intent.FLAG_ACTIVITY_CLEAR_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_MULTIPLE_TASK).inv()) or
-        Intent.FLAG_ACTIVITY_NEW_TASK or (if (resetTask) Intent.FLAG_ACTIVITY_RESET_TASK_IF_NEEDED else 0)
+        Intent.FLAG_ACTIVITY_NEW_TASK or (if (LaunchFlag.MovesBetweenScreens in launchFlags) Intent.FLAG_ACTIVITY_RESET_TASK_IF_NEEDED else 0)
 
 /**
  * The flags for a start in a player that still holds another game, or the same
@@ -179,15 +225,16 @@ internal fun resumeStartFlags(flags: Int, resetTask: Boolean = false): Int =
 internal fun replaceFlags(flags: Int): Int =
     (flags and Intent.FLAG_ACTIVITY_MULTIPLE_TASK.inv()) or Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK
 
-/** Clear only this player's existing task; no game URI and no second task beside it. */
-internal const val CLOSE_FLAGS: Int = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK or Intent.FLAG_ACTIVITY_NO_ANIMATION
+/** Clear this player's task, then discard the unseen front door so it cannot intercept a later clear on another display. */
+internal const val CLOSE_FLAGS: Int = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK or
+    Intent.FLAG_ACTIVITY_NO_ANIMATION or Intent.FLAG_ACTIVITY_NO_HISTORY
 
 /** A shutdown may finish writes after its activities leave the task history. */
 internal const val CLOSE_SETTLE_MS = 1_500L
 
 /** Moving never displaces an app on the other panel. */
-internal fun RunningGame.moveTarget(session: Session): Panel? =
-    panel.flip().takeIf { !occupiesBoth && session.externalOn(it) == null }
+internal fun RunningGame.moveTarget(session: Session, saveAwaitsLoad: Boolean): Panel? =
+    panel.flip().takeIf { movesBetweenScreens && !saveAwaitsLoad && !occupiesBoth && session.externalOn(it) == null }
 
 /** The Thor panels change width and aspect ratio; unhandled changes would recreate the game activity. */
 internal fun handlesPanelSizeChange(configChanges: Int): Boolean {

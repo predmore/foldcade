@@ -33,6 +33,13 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class SettingsPersistenceTest {
+    @Test fun knownPlayerFrontDoorsSurviveTheLaunchersProcess() {
+        val prefs = MemoryPrefs()
+        val entries = setOf("player:7", "companion:13")
+        SessionStore(prefs).setPlayerFrontDoors(entries)
+        assertEquals(entries, SessionStore(prefs).playerFrontDoors())
+    }
+
     @Test
     fun savedCalibrationCanBeChangedBackAndStillBeChangedAfterRestart() {
         val prefs = MemoryPrefs()

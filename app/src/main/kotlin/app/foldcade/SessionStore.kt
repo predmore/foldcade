@@ -190,6 +190,14 @@ class SessionStore(private val prefs: SharedPreferences) : SaveMarks {
         prefs.edit().putStringSet(KEY_PLAYERS_HOLDING_GAMES, packages).commit()
     }
 
+    /** Known launcher tasks survive Foldcade's process, so their safety guard must too. */
+    fun playerFrontDoors(): Set<String> = stringSet(KEY_PLAYER_FRONT_DOORS)
+
+    fun setPlayerFrontDoors(entries: Set<String>) {
+        if (entries == playerFrontDoors()) return
+        prefs.edit().putStringSet(KEY_PLAYER_FRONT_DOORS, entries).commit()
+    }
+
     /**
      * True while a save was written for players keyed [saveFolderKey] and none
      * of them has started since. A player still holding that game must start fresh.
@@ -541,6 +549,7 @@ class SessionStore(private val prefs: SharedPreferences) : SaveMarks {
         private const val REFUSED_EDEN_FIRMWARE_CAP = 20
         private const val LAST_START_PREFIX = "last_player_start:"
         private const val KEY_PLAYERS_HOLDING_GAMES = "players_holding_games"
+        private const val KEY_PLAYER_FRONT_DOORS = "player_front_doors"
         private const val SAVE_AWAITS_LOAD_PREFIX = "save_awaits_load:"
         private const val CORES_FOLDER_PREFIX = "retroarch_cores_folder:"
         private const val EDEN_FOLDER_PREFIX = "eden_folder:"

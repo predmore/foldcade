@@ -164,7 +164,8 @@ class DuckStationPlayer : Player, SaveFolderHolder, HostedSaveFolder {
             grantReadUri = true,
             // A fresh start replaces the old game. Without the clears, this exact
             // start brings back its task, including on Foldcade's other display.
-            flags = setOf(LaunchFlag.NewTask, LaunchFlag.ClearTop, LaunchFlag.ClearTask, LaunchFlag.SameStartResumes),
+            flags = setOf(LaunchFlag.NewTask, LaunchFlag.ClearTop, LaunchFlag.ClearTask,
+                LaunchFlag.SameStartResumes, LaunchFlag.MovesBetweenScreens),
         )
     }
 
