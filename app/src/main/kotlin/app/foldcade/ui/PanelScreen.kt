@@ -2276,6 +2276,11 @@ private fun Picker(
         ).size.height
         val titleLine = with(LocalDensity.current) { titlePx.toDp() }
         val showingHome = !model.libraryGrid && model.homeGrid == HomeGrid.StandIns
+        // Sharing the islands' screen with no hero beside it, as in Top only: the focused name sits
+        // on the islands' row, between L1 and R1, and the tiles take the room their names would.
+        val islandsHere = screen == model.layout.menuScreen
+        val nameAbove = islandsHere && !iconsOnly
+        val titled = !iconsOnly && !nameAbove
         Column(
             Modifier
                 .fillMaxSize()
@@ -2285,8 +2290,10 @@ private fun Picker(
                 .padding(top = inset, bottom = inset),
         ) {
             // The islands sit over this grid when it shares their screen.
-            if (screen == model.layout.menuScreen) {
-                Spacer(Modifier.height(48.dp))
+            if (islandsHere) {
+                Box(Modifier.fillMaxWidth().height(48.dp), contentAlignment = Alignment.Center) {
+                    if (nameAbove) FocusedName(app, scale, Modifier.fillMaxWidth(FOCUSED_NAME_WIDTH))
+                }
             }
             GridHeader(shell)
             shell.libraryBar()?.let { view ->
@@ -2312,9 +2319,11 @@ private fun Picker(
                 val rows = Metrics.rows
                 // Room for the focused tile's scale and ring. The glow is not clipped.
                 val ring = focusOutset(minOf(maxWidth / Metrics.columns, maxHeight / rows)) + px(GRID_RING_PAD)
-                val titleBlock = if (iconsOnly) Dp.Hairline else px(20f) + titleLine
+                val titleBlock = if (!titled) Dp.Hairline else px(20f) + titleLine
+                // Find's results keep their names: the name above follows the grid, not Find.
+                val foundTitleBlock = if (iconsOnly) Dp.Hairline else px(20f) + titleLine
                 // A title already parts its row from the next, so titled rows sit closer.
-                val rowGap = if (iconsOnly) gap else gap * TITLED_ROW_GAP
+                val rowGap = if (!titled) gap else gap * TITLED_ROW_GAP
                 val fromHeight = (maxHeight - ring * 2 - rowGap * (rows - 1)) / rows - titleBlock
                 val fromWidth = (maxWidth - ring * 2 - gap * (Metrics.columns - 1)) / Metrics.columns
                 val cell = minOf(fromHeight, fromWidth).coerceAtLeast(px(56f))
@@ -2351,7 +2360,7 @@ private fun Picker(
                             columns = columns,
                             pad = ring,
                             scale = scale,
-                            showTitle = !iconsOnly,
+                            showTitle = titled,
                             homeTiles = showingHome,
                         )
                     }
@@ -2376,7 +2385,7 @@ private fun Picker(
                         scale = scale,
                         gap = gap,
                         ring = ring,
-                        titleBlock = titleBlock,
+                        titleBlock = foundTitleBlock,
                         // With no top screen beside it, the query and filters show over the results, a
                         // size down so the keys keep their room.
                         fieldStyle = if (iconsOnly) null else text(theme.onBackground, design.type.dialogTitle, theme, display = true),
@@ -2399,11 +2408,40 @@ private fun Picker(
             GridHints(app, Modifier.alpha(if (LocalUnderMenu.current) 0f else 1f))
         }
         IconEditorLayer(app, editor, screen, scale, hints = true)
-        TopIslands(app, screen, scale) { panelState, progress, interactive ->
+        TopIslands(app, screen, scale, overGrid = true) { panelState, progress, interactive ->
             PanelRows(app, screen, panelState, progress, interactive, scale, onEffect)
         }
     }
 }
+
+/**
+ * The focused tile's name on the islands' row, for a grid with no hero to carry it. It
+ * changes at once with the focus, as the hero's label does, and fades away under a menu.
+ */
+@Composable
+private fun FocusedName(app: FoldcadeApp, scale: Float, modifier: Modifier) {
+    val theme = foldTheme()
+    val design = LocalFoldTheme.current.theme.style
+    val motion = LocalFoldTheme.current.theme.motion
+    val model = app.shell.model
+    val name = (app.shell.typingHero() ?: app.shell.focusedHero() ?: app.shell.emptyCollectionHero())
+        ?.let { heroCopy(it).title }.orEmpty()
+    val shown = model.panel == null && model.focus.chrome == null && app.shell.find == null
+    val alpha by motionState(
+        if (shown) 1f else 0f,
+        if (shown) motion.arrive(motion.durationFocus, scale) else motion.leave(motion.durationFocus, scale),
+    )
+    BasicText(
+        name,
+        modifier = modifier.graphicsLayer { this.alpha = alpha },
+        style = text(theme.onBackground, design.type.menuRow, theme, display = true).copy(textAlign = TextAlign.Center),
+        maxLines = 1,
+        overflow = TextOverflow.Ellipsis,
+    )
+}
+
+/** The share of the islands' row the focused name may take, clear of L1's and R1's pills. */
+private const val FOCUSED_NAME_WIDTH = 0.46f
 
 @Composable
 private fun PanelRows(

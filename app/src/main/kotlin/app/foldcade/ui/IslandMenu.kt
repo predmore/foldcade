@@ -96,6 +96,8 @@ internal fun TopIslands(
     app: FoldcadeApp,
     screen: HostScreen,
     scale: Float,
+    /** Over a grid, whose hint row the open card must stay clear of. */
+    overGrid: Boolean = false,
     menuRows: @Composable (panel: SidePanel, progress: () -> Float, interactive: Boolean) -> Unit,
 ) {
     // The layout's menu screen only: over the hero, or over the grid with one screen. The other
@@ -116,6 +118,7 @@ internal fun TopIslands(
         Island(
             app = app,
             screen = screen,
+            overGrid = overGrid,
             side = Side.Left,
             open = !dialogCovers && model.panel?.side == Side.Left && model.panel?.screen == screen,
             scale = scale,
@@ -126,6 +129,7 @@ internal fun TopIslands(
         Island(
             app = app,
             screen = screen,
+            overGrid = overGrid,
             side = Side.Right,
             open = !dialogCovers && model.panel?.side == Side.Right && model.panel?.screen == screen,
             scale = scale,
@@ -140,6 +144,7 @@ internal fun TopIslands(
 private fun Island(
     app: FoldcadeApp,
     screen: HostScreen,
+    overGrid: Boolean,
     side: Side,
     open: Boolean,
     scale: Float,
@@ -188,7 +193,12 @@ private fun Island(
     // screen without scrolling at 91%, and fall 10dp short at 88%.
     var rowsHeight by remember(side) { mutableStateOf(Dp.Hairline) }
     val reach = ringReach()
-    val reachFraction = if (panel?.level == PanelLevel.Actions) 0.91f else 0.88f
+    // Over a grid on the same screen the card stops above the grid's hint row, and a long menu scrolls.
+    val reachFraction = when {
+        overGrid -> OVER_GRID_REACH
+        panel?.level == PanelLevel.Actions -> 0.91f
+        else -> 0.88f
+    }
     val maximumHeight = with(density) { (maxHeight * reachFraction).roundToPx() }
     val reservedHeight = with(density) { pillHeight.roundToPx() + reach.roundToPx() * 2 + MENU_BOTTOM_DP.dp.roundToPx() }
     val availableRows = with(density) { (maximumHeight - reservedHeight).toDp() }
@@ -570,3 +580,6 @@ private fun lerp(start: Dp, end: Dp, fraction: Float): Dp = start + (end - start
 
 /** The open card's narrowest: the R1 status row and four tiles' names, on the Thor's bottom screen. */
 private val ISLAND_MIN_OPEN_WIDTH = 340.dp
+
+/** The open card's tallest over a grid: its top inset and this share of the screen end above the hint row. */
+private const val OVER_GRID_REACH = 0.8f

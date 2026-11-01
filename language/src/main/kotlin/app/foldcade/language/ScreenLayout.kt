@@ -66,8 +66,9 @@ fun HostScreen.other(): HostScreen = when (this) {
 /** Settings › System's two screen rows. A word or two each, as the rest of the page. */
 object ScreenCopy {
     const val layout = "Layout"
-    const val showcaseTop = "Classic"
-    const val showcaseBottom = "Swapped"
+    // Each says what the top screen shows, as Play on says Top or Bottom.
+    const val showcaseTop = "Art top"
+    const val showcaseBottom = "Art bottom"
     const val topOnly = "Top only"
     const val playOn = "Play on"
 }
