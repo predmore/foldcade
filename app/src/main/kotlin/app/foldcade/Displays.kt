@@ -48,9 +48,9 @@ fun Context.startOnDisplay(intent: Intent, displayId: Int, multipleTask: Boolean
 }
 
 /**
- * A start under a launch's art. Android 13 refuses an app's own animation for another
- * app's new task, so its slide would carry Home and the art away. The game opens over
- * the art instead, with no slide.
+ * A start under a launch's art, or with Motion Off. Android 13 refuses an app's own
+ * animation for another app's new task, so its slide would carry Home and the art away.
+ * The game opens over the art instead, with no slide; with Motion Off, with no movement.
  */
 fun bloomStart(intent: Intent): Intent = intent.addFlags(Intent.FLAG_ACTIVITY_NO_ANIMATION)
 
