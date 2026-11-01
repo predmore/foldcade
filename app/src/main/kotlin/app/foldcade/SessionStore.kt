@@ -508,7 +508,8 @@ class SessionStore(private val prefs: SharedPreferences) : SaveMarks {
     fun pendingHomeGame(): String? = prefs.getString(KEY_HOME_RETURN_GAME, null)
 
     fun setPendingHomeGame(id: String?) {
-        prefs.edit().putString(KEY_HOME_RETURN_GAME, id).commit()
+        // Written as the game starts, so it must not hold up the frame its art grows in.
+        prefs.edit().putString(KEY_HOME_RETURN_GAME, id).apply()
     }
 
     companion object {

@@ -98,19 +98,19 @@ private fun BloomArt(app: FoldcadeApp, bloom: ActiveBloom, panel: Panel) {
     val sharp = uri?.let { rememberCoverPainter(app, it, px) }
     val painter = sharp?.painter ?: small?.painter
     var elapsed by remember { mutableLongStateOf(bloom.elapsed()) }
-    // How far the growth has gone, timed from this screen's first frame of it: the start can keep
-    // the main thread busy for a few frames, and growth timed from the press would skip ahead.
+    // How far the growth has gone, counted in frames shown: the start keeps the main thread busy
+    // for a frame or a few, and growth timed by the clock would leap across them. It pauses instead.
     var grown by remember { mutableLongStateOf(0L) }
     val missing = painter == null
     LaunchedEffect(bloom, panel, missing) {
         val timing = bloom.timing
         // Past the push the art holds still, so frames stop until it is time to give way.
         val moving = maxOf(timing.growMillis, timing.pushMillis).toLong()
-        var first = Long.MIN_VALUE
+        var last = Long.MIN_VALUE
         while (true) {
             val frame = withFrameMillis { it }
-            if (first == Long.MIN_VALUE) first = frame
-            grown = frame - first
+            if (last != Long.MIN_VALUE) grown += (frame - last).coerceIn(0L, BLOOM_FRAME_STEP_MS)
+            last = frame
             elapsed = bloom.elapsed(SystemClock.uptimeMillis())
             val leaveFrom = bloom.leavesAt(panel)
             // Art that never arrived while it would have grown, or art that has given way: this screen is done.
@@ -191,6 +191,9 @@ private fun DrawScope.drawCropped(painter: Painter, rect: Rect, corner: Float, a
 }
 
 private const val MIDDLE_SHARE = 0.6f
+
+/** The most one frame advances the growth, two frames at 60 Hz, so a held-up frame never makes it leap. */
+private const val BLOOM_FRAME_STEP_MS = 33L
 
 /** The sizes the hero decodes its box and wide art at, so the bloom finds them already in memory. */
 private const val BLOOM_COVER_PX = 1024
