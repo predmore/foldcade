@@ -303,7 +303,7 @@ class ShellController(
     private var ignoreReturnRepeats = homeReturn != null
 
     /** When a return last put the cursor on its game, so the same recall reaching the other screen leaves it there. */
-    private var homeLandedAt = Long.MIN_VALUE
+    private var homeLandedAt: Long? = null
 
     /** Platform names a library listed, by platform id. Used when nothing else names it. */
     private val listedPlatformNames = HashMap<String, String>()
@@ -1428,7 +1428,7 @@ class ShellController(
     /** L1's Home: the board's top level, from a folder, All, or a shelf. The last root tile keeps the focus. */
     fun goHome(fromRecall: Boolean = false) {
         // The other Home window can receive the same recall after the game has already landed.
-        if (fromRecall && nowMillis() - homeLandedAt < HOME_RECALL_ECHO_MS) return
+        if (fromRecall && homeLandedAt?.let { nowMillis() - it < HOME_RECALL_ECHO_MS } == true) return
         cancelHomeReturnOnInput()
         artPicker = null
         find = null

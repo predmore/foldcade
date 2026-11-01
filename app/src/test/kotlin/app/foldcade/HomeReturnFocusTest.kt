@@ -248,6 +248,14 @@ class HomeReturnFocusTest {
         assertTrue(shell.model.atLibraryRoot)
     }
 
+    @Test fun homeGoesToRootBeforeAnyGameReturned() {
+        val shell = shell()
+        load(shell)
+        openCollection(shell)
+        shell.goHome(fromRecall = true)
+        assertTrue(shell.model.atLibraryRoot)
+    }
+
     @Test fun aStartThatFailedLeavesNothingToComeBackTo() {
         val store = store()
         val shell = shell(store)
