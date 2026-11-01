@@ -100,8 +100,10 @@ internal fun TopIslands(
 ) {
     // The layout's menu screen only: over the hero, or over the grid with one screen. The other
     // screen keeps its grid or hero and the hint row; the L1 chip and status cluster are not drawn there.
+    // An open drawer stays on the screen it opened on, as one from a page left there by a
+    // layout change: it is drawn there, and the islands follow it until it closes.
     val model = app.shell.model
-    if (screen != model.layout.menuScreen) return
+    if (screen != (model.panel?.screen ?: model.layout.menuScreen)) return
     val dialogCovers = model.dialog?.screen == screen
     BoxWithConstraints(
         Modifier
@@ -113,6 +115,7 @@ internal fun TopIslands(
         if (!dialogCovers && model.panel?.screen == screen) Box(Modifier.fillMaxSize().closesIsland(app))
         Island(
             app = app,
+            screen = screen,
             side = Side.Left,
             open = !dialogCovers && model.panel?.side == Side.Left && model.panel?.screen == screen,
             scale = scale,
@@ -122,6 +125,7 @@ internal fun TopIslands(
         )
         Island(
             app = app,
+            screen = screen,
             side = Side.Right,
             open = !dialogCovers && model.panel?.side == Side.Right && model.panel?.screen == screen,
             scale = scale,
@@ -135,6 +139,7 @@ internal fun TopIslands(
 @Composable
 private fun Island(
     app: FoldcadeApp,
+    screen: HostScreen,
     side: Side,
     open: Boolean,
     scale: Float,
@@ -147,7 +152,7 @@ private fun Island(
     val density = LocalDensity.current
     val model = app.shell.model
     val held = app.islandHold
-    val mine = model.panel?.takeIf { it.side == side && it.screen == model.layout.menuScreen }
+    val mine = model.panel?.takeIf { it.side == side && it.screen == screen }
     val retiringHere = held == null && mine?.retiring == true
     val snap = held != null
     val target = when {
@@ -163,7 +168,7 @@ private fun Island(
         handoff = retiringHere,
         onHandoff = { app.shell.completeIslandRetire() },
     )
-    val live = app.shell.model.panel?.takeIf { it.side == side && it.screen == app.shell.model.layout.menuScreen }
+    val live = app.shell.model.panel?.takeIf { it.side == side && it.screen == screen }
     var shown by remember { mutableStateOf<SidePanel?>(null) }
     if (live != null) shown = live
     val panel = shown
@@ -250,7 +255,7 @@ private fun Island(
             .clip(shape)
             .background(cardFill(theme, design.menu.islandLift * progress))
             // The open card holds a tap between its rows, so it never reaches the catch under it.
-            .then(if (!interactive) Modifier.islandPress { app.shell.onMeaning(side.meaning(), app.shell.model.layout.menuScreen) } else Modifier.blocksTouch()),
+            .then(if (!interactive) Modifier.islandPress { app.shell.onMeaning(side.meaning(), screen) } else Modifier.blocksTouch()),
     ) {
         // The chip leads on both sides, so the clock is the last thing on the right.
         // The chip art carries its own margin. The text end gets a little more.

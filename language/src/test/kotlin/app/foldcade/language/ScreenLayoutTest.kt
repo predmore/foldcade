@@ -98,14 +98,14 @@ class ScreenLayoutTest {
     }
 
     @Test
-    fun aConnectionDrawerFromSettingsLeftOnTheOldScreenOpensWithTheIslands() {
+    fun aConnectionDrawerFromSettingsLeftOnTheOldScreenOpensWhereThePageWas() {
         // Settings opened in Classic, on top, then Layout stepped to Swapped: the page stays put,
-        // and RomM's drawer opens where the islands are now.
+        // and RomM's drawer opens on that screen, which Foldcade still shows. The islands draw it there.
         val signedIn = PickerModel(count = 2, rowsPerPage = 2, signedIn = listOf(SignedInBackend("romm", "RomM")))
         val connection = librarySources(signedIn).first()
         val swapped = signedIn.onSetting(connection, HostScreen.Top).copy(layout = ScreenLayout.ShowcaseBottom)
         val drawer = reduce(swapped, Meaning.Activate).first
         assertEquals(PanelLevel.RommConnection, drawer.panel?.level)
-        assertEquals(HostScreen.Bottom, drawer.panel?.screen)
+        assertEquals(HostScreen.Top, drawer.panel?.screen)
     }
 }
