@@ -37,26 +37,22 @@ fun Context.startOnDisplay(activity: Class<*>, displayId: Int, bloom: Boolean = 
 /**
  * Starts [intent] on [displayId] in a task of its own. A start that must reuse the
  * task its player already has, to bring a game back or to replace it, passes
- * [multipleTask] false and its own task flags. [bloom]: see [launchOptions].
+ * [multipleTask] false and its own task flags. [bloom]: see [bloomStart].
  */
 fun Context.startOnDisplay(intent: Intent, displayId: Int, multipleTask: Boolean = true, bloom: Boolean = false) {
     intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or if (multipleTask) Intent.FLAG_ACTIVITY_MULTIPLE_TASK else 0)
-    startActivity(intent, launchOptions(displayId, bloom).toBundle())
+    if (bloom) bloomStart(intent)
+    val options = ActivityOptions.makeBasic()
+    options.launchDisplayId = displayId
+    startActivity(intent, options.toBundle())
 }
 
 /**
- * A start on [displayId]. Under a launch's art ([bloom]) the game fades in over that art
- * while Home holds still, instead of Android sliding Home and its art away.
+ * A start under a launch's art. Android 13 refuses an app's own animation for another
+ * app's new task, so its slide would carry Home and the art away. The game opens over
+ * the art instead, with no slide.
  */
-fun Context.launchOptions(displayId: Int, bloom: Boolean = false): ActivityOptions {
-    val options = if (bloom) {
-        ActivityOptions.makeCustomAnimation(this, R.anim.bloom_game_enter, R.anim.bloom_home_hold)
-    } else {
-        ActivityOptions.makeBasic()
-    }
-    options.launchDisplayId = displayId
-    return options
-}
+fun bloomStart(intent: Intent): Intent = intent.addFlags(Intent.FLAG_ACTIVITY_NO_ANIMATION)
 
 internal fun PlayerIntent.toStartIntent(folderAuthority: String? = null): Intent {
     val intent = Intent()

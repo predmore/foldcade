@@ -1068,7 +1068,8 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
         val bloomed = bloomLaunch(running, displayId, external.occupiesBothDisplays)
         foldcade.shell.noteGameLaunched(external.id)
         foldcade.store.place(panel, external)
-        val options = launchOptions(displayId, bloomed)
+        val options = ActivityOptions.makeBasic().apply { launchDisplayId = displayId }
+        if (bloomed) bloomStart(launch)
         try {
             startActivity(launch, options.toBundle())
         } catch (failure: RuntimeException) {
@@ -1098,7 +1099,7 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
      * [LaunchBlooms]. Called in the same moment as the start, so it never delays a launch,
      * and before the play is noted, while the grid and the hero still show the game.
      * Motion Off and Android's remove-animations open the game as before. True when it
-     * started, so the game's window fades in over the art: see [launchOptions].
+     * started, so the game's window opens over the art with no slide: see [bloomStart].
      */
     private fun bloomLaunch(art: RunningApp, displayId: Int, both: Boolean): Boolean {
         val press = bloomPress
@@ -1874,8 +1875,9 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
         try {
             val intent = foldcade.startIntent(player, ready.intent)
             foldcade.externalPlay.open(foldcade.plays, game.id, game.title, displayId, intent.packageName) {
-                val options = launchOptions(displayId, bloomed)
+                val options = ActivityOptions.makeBasic().apply { launchDisplayId = displayId }
                 val start = intent.toAndroidIntent(foldcade.rommFolderAuthority)
+                if (bloomed) bloomStart(start)
                 startActivity(start, options.toBundle())
                 if (foldcade.noteStarted(player, intent)) armRestart(start, displayId)
             }
