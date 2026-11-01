@@ -120,6 +120,7 @@ private fun BloomArt(app: FoldcadeApp, bloom: ActiveBloom, panel: Panel) {
                 return@LaunchedEffect
             }
             if (missing) continue
+            if (grown >= timing.growMillis) bloom.grown.add(panel)
             val whole = grown >= timing.growMillis && elapsed < leaveFrom
             if (whole) bloom.filled.add(panel) else bloom.filled.remove(panel)
             if (grown >= moving && elapsed < leaveFrom) {

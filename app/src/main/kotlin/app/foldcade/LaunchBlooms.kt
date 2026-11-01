@@ -62,6 +62,9 @@ internal class ActiveBloom(
     /** Screens the grown art covers edge to edge, so their backdrop can rest. */
     val filled = mutableStateSetOf<Panel>()
 
+    /** Screens whose art has finished growing, at least once. */
+    val grown = mutableStateSetOf<Panel>()
+
     /** When the start failed, in millis from [startedAt]. Every screen gives way from there. */
     var cancelledAt by mutableLongStateOf(Long.MAX_VALUE)
 
@@ -137,6 +140,16 @@ internal class LaunchBlooms {
         bloom.done.add(panel)
         bloom.filled.remove(panel)
         settle(bloom)
+    }
+
+    /**
+     * True while [panel]'s art is still growing over it. The screen keeps drawing what it
+     * showed until then, so the frames the art grows in are not also spent building the
+     * screen's next page; that page changes in, unseen, under the grown art.
+     */
+    fun holdsView(panel: Panel): Boolean {
+        val bloom = current ?: return false
+        return panel !in bloom.grown && panel !in bloom.covered && panel !in bloom.done
     }
 
     /** True while [panel]'s art covers it edge to edge. */

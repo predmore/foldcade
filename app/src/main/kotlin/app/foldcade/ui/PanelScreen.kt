@@ -532,7 +532,12 @@ private fun PanelBody(
     val artPage = presence(app.shell.artPicker, motion.durationIsland, scale)
     if (!covered) {
         CompositionLocalProvider(LocalBackdropCover provides cover, LocalBackdropCamera provides camera, LocalTilt provides tilt) {
-            TravelFade(target = session.surfaceOn(panel), scale = scale) { shown ->
+            // While a launching game's art grows here, this screen keeps what it showed. Keys
+            // already follow the session; only the drawing waits, so the grow gets the frames.
+            val surface = session.surfaceOn(panel)
+            val drawn = remember { SurfaceHold(surface) }
+            if (!app.launchBlooms.holdsView(panel)) drawn.surface = surface
+            TravelFade(target = drawn.surface, scale = scale) { shown ->
                 when (shown) {
                     null -> Unit
                     Surface.Hero -> if (connectHere) Unit else ArtPreviewHero(app, screen, scale, activity::dispatch)
@@ -575,6 +580,9 @@ private fun PanelBody(
         Box(Modifier.fillMaxSize().rise { played.progress.value }) { PlayActivityScreen(app, shown) }
     }
 }
+
+/** The surface a panel draws, which a growing launch holds back from the session's. */
+private class SurfaceHold(var surface: Surface?)
 
 /** [base] under its own identity, so every layer under it counts it as a new density. */
 private class WindowDensity(base: Density) : Density by base
