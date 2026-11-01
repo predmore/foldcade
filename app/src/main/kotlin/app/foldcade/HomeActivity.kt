@@ -2964,7 +2964,10 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
                     continue
                 }
                 withContext(Dispatchers.Main.immediate) {
-                    if (libraryReturn == null && foldcade.externalPlay.sessionId == null) reconcile(lost)
+                    // Closing a companion resumes its Home too. Close already owns this
+                    // persisted return; do not queue a second read behind its save lock.
+                    if (libraryReturn == null && foldcade.externalPlay.sessionId == null &&
+                        lost.player.packageNames.none { it in foldcade.closingPlayers }) reconcile(lost)
                 }
             }
         }
