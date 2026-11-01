@@ -140,6 +140,7 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
     private val displays by lazy { Displays(this) }
     private val foldcade by lazy { application as FoldcadeApp }
     private var resumed = false
+    private var initialHomeRecallPending = false
     private var recoveryWindow: PanelRecoveryWindow? = null
     internal val panelFocus = FocusRequester()
 
@@ -521,8 +522,10 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
         savedInstanceState?.getString(STATE_SAVE_SETUP)?.let { focus ->
             foldcade.shell.restoreSaveSetup(focus.ifEmpty { null }, hostScreen())
         }
-        // Secondary Home may be created behind a running emulator. Resume reconciles its panel.
+        // Secondary Home may be created behind a running emulator. A Home intent
+        // must count as leaving it paused only when this activity actually resumes.
         if (launchesCompanion) acceptHome(intent)
+        else initialHomeRecallPending = isAndroidHomeRecall(intent.action, intent.categories ?: emptySet())
         acceptShelf(intent)
         acceptFolderLibrary(intent)
         val roleManager = getSystemService(RoleManager::class.java)
@@ -571,6 +574,10 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
 
     override fun onResume() {
         super.onResume()
+        if (initialHomeRecallPending) {
+            initialHomeRecallPending = false
+            acceptHome(intent)
+        }
         // onPause marked this window unfocused. A pause that kept focus, as Home or a new
         // intent to this screen does, brings no focus change to mark it focused again,
         // and a hold to delete would wait for one.
@@ -703,6 +710,7 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
 
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
+        initialHomeRecallPending = false
         setIntent(intent)
         acceptHome(intent)
         acceptShelf(intent)
