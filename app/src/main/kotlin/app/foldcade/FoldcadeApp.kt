@@ -1960,7 +1960,6 @@ class FoldcadeApp : Application() {
                 val changed = backend.rescan()
                 if (!forest.complete || boundForest !== forest) return@launch
                 if (!changed) return@launch
-                refreshLocalMedia(backend, forest)
                 loadPlatforms(
                     plugins,
                     LocalFolderBackend.ID,
@@ -1979,6 +1978,9 @@ class FoldcadeApp : Application() {
             folderRead.withLock {
                 if (boundForest === forest) useSteamFiles(backend.steamShortcuts())
             }
+            // After loadPlatforms: its connect walks the tree again and publishes a new scan,
+            // which would make an index built from the earlier one stale before it lands.
+            refreshLocalMedia(backend, forest)
             val games = when (loaded) {
                 is LoadedLibrary.Platforms -> try {
                     loadEveryGame(LocalFolderBackend.ID, loaded)
