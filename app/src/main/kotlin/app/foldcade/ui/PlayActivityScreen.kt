@@ -113,6 +113,8 @@ internal fun PlayActivityScreen(app: FoldcadeApp, page: PlayActivityPage) {
         verticalArrangement = Arrangement.spacedBy(20.dp),
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
+            // The pill takes what the week's label and total leave, and a long game name ends in "…".
+            Box(Modifier.weight(1f)) {
             Row(
                 Modifier
                     .clip(theme.style.shape.control())
@@ -131,13 +133,15 @@ internal fun PlayActivityScreen(app: FoldcadeApp, page: PlayActivityPage) {
                 // A game's page is named for the game, as its Y menu was.
                 BasicText(
                     if (game == null) PlayCopy.activity else playName(game, app.shell.playTitle(game), app.plays.name(game)),
+                    modifier = Modifier.weight(1f, fill = false),
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                     style = playText(theme.onBackground, theme, LocalFoldTheme.current.theme.style.type.heroTitle, bold = true, display = true),
                 )
             }
-            Spacer(Modifier.weight(1f))
-            BasicText(week.label, style = playText(theme.muted, theme, LocalFoldTheme.current.theme.style.type.heroMeta))
+            }
+            Spacer(Modifier.width(24.dp))
+            BasicText(week.label, maxLines = 1, style = playText(theme.muted, theme, LocalFoldTheme.current.theme.style.type.heroMeta))
             Spacer(Modifier.width(16.dp))
             BasicText(playDuration(week.totalMillis), style = playText(theme.onBackground, theme, LocalFoldTheme.current.theme.style.type.heroMeta, bold = true))
         }
