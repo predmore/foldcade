@@ -467,6 +467,8 @@ internal fun PillCarousel(
                                 // A pill the row's edge would cut into its word is gone instead, so the edge
                                 // shows whole pills or none: no "DS" left of a "3DS". Its padding may pass the edge.
                                 .graphicsLayer {
+                                    // The chosen pill always shows; the row centres on it.
+                                    if (index == chosen) return@graphicsLayer
                                     val span = spans[index] ?: return@graphicsLayer
                                     val hidden = maxOf(scroll - span.left, span.right - scroll - room, 0f)
                                     alpha = 1f - (hidden / padPx).coerceIn(0f, 1f)

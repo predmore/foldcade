@@ -141,10 +141,16 @@ internal class FrontStack {
  */
 class FrontApps(private val access: UsageAccess, private val ownPackage: String) {
     private var checkedAt = 0L
-    private val stack = FrontStack()
+    private var stack = FrontStack()
 
     @Synchronized
     fun latest(nowMillis: Long = System.currentTimeMillis()): String? {
+        // Without usage access nothing is read, so the next look once it is granted reads the whole day again.
+        if (!access.granted()) {
+            checkedAt = 0L
+            stack = FrontStack()
+            return null
+        }
         // The window overlaps the last one a little, for moves that land after their time stamp.
         // Moving the latest few in again, in order, leaves the stack as it was.
         val since = if (checkedAt == 0L) nowMillis - FRONT_LOOKBACK_MS else checkedAt - FRONT_SLACK_MS

@@ -48,6 +48,9 @@ class LicensesActivity : PanelKeyActivity() {
 
     override fun pickerIsFocused(): Boolean = true
 
+    /** The player's own Confirm and Back, as Home reads them, so the Back the header names is the one that closes. */
+    override fun faceMap(): app.foldcade.language.FaceMap = (application as FoldcadeApp).shell.model.faceMap
+
     override fun onMeaning(meaning: Meaning) {
         handle(meaning)
     }
