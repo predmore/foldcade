@@ -40,10 +40,22 @@ membership in the current index and the matching configured library tree. Opaque
 SAF document ids work without guessing their filesystem paths. The resolver does
 the actual grant enforcement. Image reads use IO and refuse bodies over 20 MiB.
 
+## On screen
+
+The top screen's facts line adds the release year and first genre after the platform,
+and drops genre, then year, before it would cut the play line. When focus rests on a
+game for `motion.durationSummaryDwell` (1.2 s in Afterglow), the name card grows to
+show up to three lines of the summary; moving on closes it at once. Top only has no
+hero, so it has no summary there. A game with no facts looks exactly as before.
+
+Y › About (ROM games only) opens a page on the layout's page screen: cover, title,
+platform, facts, a screenshot when one is known, and the summary cut to fit. Nothing
+scrolls. With no facts it says where they come from.
+
 ## App lookup
 
-Phase B can call `rememberGameDetails(app, record)` from `app.foldcade.ui`, alongside
-`rememberArt` or `rememberScene`. Pass the focused library `Game`, such as
+UI code calls `rememberGameDetails(app, record)` from `app.foldcade.ui`, alongside
+`rememberArt` or `rememberScene`, with the library `Game` it shows, such as
 `shell.artRecord(focusedGame)`. This reads available facts immediately, then launches
 a cancellable lookup. It observes `app.infoRevision` and the signed-in connections;
 changing focus cancels the prior lookup.
@@ -66,6 +78,13 @@ milliseconds, unlike individual scraper metadata dates.
 
 ## Cold index cost
 
+On a Thor, adding an ES-DE folder with 1,000 ROMs and 5,000 images showed the first
+local hero art about 3.3 s later, and a cold start showed it after about 5 s,
+including opening All games. Held browsing on that 1,015-game grid measured 18.0%
+janky frames (p95 29 ms) against 19.0% (p95 32 ms) on the base commit.
+
+The unit fixture below measures the walk itself.
+
 `LocalMediaIndexTest.realisticColdIndexQueriesDirectoriesOnceAndKeepsOnlyMatchedGames`
 builds 2,000 ROM records across 20 systems, with four images per game and 20 ES-DE
 gamelists. Summaries are 599 characters, and image URIs use realistic external
@@ -81,7 +100,7 @@ queries and 20 document opens; there is no query per ROM or image.
 A full uncached test run on the development Mac took 130 ms for the in-memory
 index build. This excludes Android IPC, storage latency and image decoding. For
 example, 5–20 ms per SAF query would add 0.6–2.4 seconds for media listings alone,
-plus text-open latency and parsing. No Thor measurement was taken.
+plus text-open latency and parsing.
 
 The test's conservative object-graph estimate is 8,547,336 bytes total, or 4,273
 bytes per game (about 4.2 KiB). It assumes 16-byte headers, four-byte references,
