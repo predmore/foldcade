@@ -43,7 +43,7 @@ the actual grant enforcement. Image reads use IO and refuse bodies over 20 MiB.
 ## On screen
 
 The top screen's facts line adds the release year and first genre after the platform,
-and drops genre, then year, before it would cut the play line. When the focused game has
+and drops genre, then year, then "Both screens", before it would cut the play line. When the focused game has
 a summary, the grid's hint row names R3 Info. R3, the right stick's click, grows the name
 card to show up to three lines of it, and R3 again folds it. Moving on, or B, closes it at
 once, so each game starts closed. Top only has no hero, so it has no summary there. A

@@ -61,6 +61,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.toSize
 import app.foldcade.R
 import app.foldcade.language.HOME_ANDROID_APPS
+import app.foldcade.language.PlayerChoiceCopy
 import app.foldcade.language.PromptKey
 import app.foldcade.language.Row
 import app.foldcade.language.RowControl
@@ -482,7 +483,16 @@ internal fun CheckMark(on: Boolean, focused: Boolean, scale: Float, some: Boolea
  * makes its room as the focus arrives, nudging the value aside.
  */
 @Composable
-internal fun ChoiceValue(value: String, focused: Boolean, style: TextStyle, scale: Float, modifier: Modifier = Modifier, short: String? = null) {
+internal fun ChoiceValue(
+    value: String,
+    focused: Boolean,
+    style: TextStyle,
+    scale: Float,
+    modifier: Modifier = Modifier,
+    short: String? = null,
+    /** An ending the value keeps whole when it must shorten, as "· not installed" after a long emulator name. */
+    keepEnd: String? = null,
+) {
     val theme = LocalFoldTheme.current.theme
     val arrows by eased(if (focused) 1f else 0f, theme.motion.durationFocus, scale)
     val arrow = style.copy(color = theme.onBackground)
@@ -495,7 +505,15 @@ internal fun ChoiceValue(value: String, focused: Boolean, style: TextStyle, scal
         // A long value, as an emulator's name, shortens itself and keeps both chevrons.
         Box(Modifier.weight(1f, fill = false)) {
             SlideSwap(target = value to short, scale = scale, distance = 18.dp, vertical = true, direction = { _, _ -> 1 }) { (shown, shorter) ->
-                FittedChoice(shown, shorter, style)
+                val end = keepEnd?.takeIf { shown.length > it.length && shown.endsWith(it) }
+                if (end == null) {
+                    FittedChoice(shown, shorter, style)
+                } else {
+                    Row {
+                        BasicText(shown.removeSuffix(end), Modifier.weight(1f, fill = false), style = style, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        BasicText(end, style = style, maxLines = 1, softWrap = false)
+                    }
+                }
             }
         }
         BasicText(
@@ -752,7 +770,9 @@ internal fun MenuRow(
                 }
                 LabelAndChoice(Modifier.weight(1f)) {
                     labelText(Modifier)
-                    ChoiceValue(control.value, focused, valueStyle.copy(color = ink), scale, short = control.short)
+                    // A missing emulator's row says so in full; its name is what shortens.
+                    ChoiceValue(control.value, focused, valueStyle.copy(color = ink), scale, short = control.short,
+                        keepEnd = PlayerChoiceCopy.notInstalledEnd.takeIf { control.attention })
                 }
             }
             is RowControl.Value -> BasicText(control.text,

@@ -931,13 +931,18 @@ data class SignedInBackend(
 
 /**
  * One folder the library reads. [uri] is its document tree; [label] its own name. [artAndInfo]
- * marks a media tree that holds a frontend's art and facts rather than games.
+ * marks a media tree that holds a frontend's art and facts rather than games. [path] is where it
+ * is on the device, [games] how many games the last scan found in it, and [media] whether it
+ * holds art and facts at all.
  */
 data class LibraryFolder(
     val uri: String,
     val label: String,
     val artAndInfo: Boolean = false,
     val pickAgain: Boolean = false,
+    val path: String? = null,
+    val games: Int = 0,
+    val media: Boolean = false,
 )
 
 enum class ConnectField {

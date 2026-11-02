@@ -56,8 +56,8 @@ fun heroFacts(title: String, vararg parts: String?): String =
 /**
  * A game's one line under its name: [platform] · [year] · [genre], then [rest], which is
  * where the game is, both screens, and its play, in that order. When the whole line does
- * not [fit], the genre goes first and then the year, so where it is and its play stay.
- * Past that the line is what is left, and the card ends it in "…".
+ * not [fit], the genre goes first, then the year, then both screens, so where it is and its
+ * play stay. Past that the line is what is left, and the card ends it in "…".
  */
 fun heroGameFacts(
     title: String,
@@ -68,10 +68,16 @@ fun heroGameFacts(
     fits: (String) -> Boolean,
 ): String {
     val released = year?.toString()
-    val tries = listOf(listOf(platform, released, genre), listOf(platform, released), listOf(platform))
+    val spare = rest.filterNot { it == Copy.usesBothScreens }
+    val tries = listOf(
+        listOf(platform, released, genre) + rest,
+        listOf(platform, released) + rest,
+        listOf(platform) + rest,
+        listOf(platform) + spare,
+    )
     var line = ""
-    for (lead in tries) {
-        val next = heroFacts(title, *(lead + rest).toTypedArray())
+    for (parts in tries) {
+        val next = heroFacts(title, *parts.toTypedArray())
         if (next == line) continue
         line = next
         if (fits(line)) return line

@@ -77,7 +77,56 @@ class UsageAccess(private val context: Context) {
         return resumed
     }
 
+    /**
+     * The package whose activity came to the front last between [sinceMillis] and [nowMillis],
+     * passing over packages [skip] names. Null without usage access, or with nothing new.
+     */
+    fun lastResumed(sinceMillis: Long, nowMillis: Long, skip: (String) -> Boolean): String? {
+        if (!granted()) return null
+        val manager = context.getSystemService(UsageStatsManager::class.java) ?: return null
+        val events = try {
+            manager.queryEvents(sinceMillis, nowMillis)
+        } catch (_: SecurityException) {
+            return null
+        }
+        val event = UsageEvents.Event()
+        var last: String? = null
+        while (events.hasNextEvent()) {
+            events.getNextEvent(event)
+            if (event.eventType != UsageEvents.Event.ACTIVITY_RESUMED) continue
+            val name = event.packageName?.takeIf { it.isNotEmpty() && !skip(it) } ?: continue
+            last = name
+        }
+        return last
+    }
+
     companion object {
         const val LOOKBACK_MS = 7L * 24L * 60L * 60L * 1000L
+    }
+}
+
+/**
+ * The app in front of a screen Foldcade did not open an app on, as Recents, a notification or
+ * an emulator's own setup leaves it. Android names only the app that came to the front last,
+ * not its screen; the screen beside a command center is Foldcade's, so the last other app is
+ * the one beside it. Each look reads only what is new since the last one.
+ */
+class FrontApps(private val access: UsageAccess, private val ownPackage: String) {
+    private var checkedAt = 0L
+    private var front: String? = null
+
+    @Synchronized
+    fun latest(nowMillis: Long = System.currentTimeMillis()): String? {
+        val since = if (checkedAt == 0L) nowMillis - FRONT_LOOKBACK_MS else checkedAt - FRONT_SLACK_MS
+        access.lastResumed(since, nowMillis) { it == ownPackage || it == SYSTEM_UI }?.let { front = it }
+        checkedAt = nowMillis
+        return front
+    }
+
+    private companion object {
+        const val FRONT_LOOKBACK_MS = 24L * 60L * 60L * 1000L
+        /** Events can land a moment after their time stamp. */
+        const val FRONT_SLACK_MS = 2_000L
+        const val SYSTEM_UI = "com.android.systemui"
     }
 }

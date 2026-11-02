@@ -5,6 +5,7 @@ import android.content.pm.ApplicationInfo
 import android.content.pm.PackageManager
 import android.content.pm.ResolveInfo
 import app.foldcade.language.LaunchableApp
+import app.foldcade.language.appName
 
 internal data class ScannedLaunchable(
     val packageName: String,
@@ -26,7 +27,7 @@ internal fun launchablesFrom(scanned: List<ScannedLaunchable>, ownPackage: Strin
         if (row.packageName.isBlank() || row.packageName == ownPackage) return@mapNotNull null
         LaunchableApp(
             packageName = row.packageName,
-            label = row.label.ifBlank { row.packageName },
+            label = appName(row.packageName, row.label.ifBlank { row.packageName }),
             systemGame = isSystemGame(row.category, row.flags),
         )
     }.distinctBy { it.packageName }
