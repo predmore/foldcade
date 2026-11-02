@@ -115,14 +115,17 @@ internal class ThemeInstalls(private val root: File) {
      * kept. [bundled] are the ids Foldcade ships.
      */
     @Synchronized
-    fun install(input: InputStream, bundled: Set<String>, validate: (ThemeZip) -> Boolean): ThemeInstallResult {
+    fun install(input: InputStream, bundled: Set<String>, restoring: Boolean = false, validate: (ThemeZip) -> Boolean): ThemeInstallResult {
         staging.mkdirs()
         val download = File(staging, "download")
         try {
             if (!copyAtMost(input, download, MAX_THEME_INSTALL_BYTES)) return ThemeInstallResult.Refused(ThemeInstallRefusal.TooLarge)
             // Read the way the next start reads it, so what is checked is what loads.
             val zip = openThemeArchive(download, key = "staged") ?: return ThemeInstallResult.Refused(ThemeInstallRefusal.NotATheme)
-            val valid = zip.use { checkThemeInstall(it.file, ledger, bundled) ?: if (validate(it)) null else ThemeInstallRefusal.Broken }
+            // An explicit restore may bring an older release back. It still passes the same
+            // format, host, bundled-id and resource validation, and starts a fresh trial.
+            val installLedger = if (restoring) ThemeLedger() else ledger
+            val valid = zip.use { checkThemeInstall(it.file, installLedger, bundled) ?: if (validate(it)) null else ThemeInstallRefusal.Broken }
             valid?.let { return ThemeInstallResult.Refused(it) }
             val existing = ledger.themes.firstOrNull { it.id == zip.file.id }
             val name = existing?.file ?: freeName(zip.file.id)

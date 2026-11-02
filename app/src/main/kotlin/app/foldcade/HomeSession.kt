@@ -134,6 +134,8 @@ class HomeSession(
     /** Each copy's id to the one tile it folds into ([foldSameGames]), as last saved. */
     sameGames: Map<String, String> = emptyMap(),
 ) {
+    /** Restored games waiting for a source have places, but no tile until the catalog knows them. */
+    internal var restoredGaps: Set<String> = emptySet()
     /** Each copy's id to its tile, as the last merge folded them. */
     private var sameGames: Map<String, String> = sameGames
 
@@ -463,7 +465,10 @@ class HomeSession(
         val moves = open?.sorted != true
         // An empty slot, or one past the last tile, moves as a tile does, makes a collection on
         // the root, and closes the board's gaps.
-        if (id == null) return TileActions(move = moves, newCollection = open == null, tidyBoard = gaps, boardSort = sort)
+        if (restoredGapAt(index) != null)
+            return TileActions(move = moves, remove = RemoveVerb.Remove, tidyBoard = gaps, boardSort = sort)
+        if (id == null)
+            return TileActions(move = moves, newCollection = open == null, tidyBoard = gaps, boardSort = sort)
         if (id == HOME_ALL) return TileActions(move = true, newCollection = true, tidyBoard = gaps)
         val folder = board.folders[id]
         if (folder != null) {
@@ -656,7 +661,7 @@ class HomeSession(
     private fun slotGame(index: Int): String? {
         if (board.foldersOpen) return null
         val id = if (board.allOpen) allRows().getOrNull(index)?.id else visibleSlots(board).getOrNull(index)
-        return id?.takeIf { it != HOME_ALL && board.folders[it] == null }
+        return id?.takeIf { it != HOME_ALL && board.folders[it] == null && (it !in restoredGaps || it in catalogById) }
     }
 
     /**
@@ -779,9 +784,12 @@ class HomeSession(
     /** Does what X says for the tile at [index] (see [removeVerb]). Returns where focus goes. */
     fun remove(index: Int): Int {
         if (board.foldersOpen) return index
-        board = removeFromHome(board, index)
+        board = restoredGapAt(index)?.let { app.foldcade.language.forgetRestoredGame(board, it) } ?: removeFromHome(board, index)
         return index.coerceAtMost((visibleCount() - 1).coerceAtLeast(0))
     }
+
+    internal fun restoredGapAt(index: Int): String? = if (board.foldersOpen || board.allOpen) null else
+        visibleSlots(board).getOrNull(index)?.takeIf { it in restoredGaps && it !in catalogById }
 
     /**
      * Places catalog item [id] on Home in its own folder, the way Add to Home in
@@ -1207,6 +1215,7 @@ class HomeSession(
         }
         val item = catalogById[id]
         val game = games[id]
+        if (id in restoredGaps && item == null) return faceFor(null)
         return HomeFace(
             id = id,
             title = item?.title ?: id,

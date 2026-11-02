@@ -134,6 +134,12 @@ class FoldcadeApp : Application() {
     lateinit var store: SessionStore
         private set
 
+    internal val setupBackups by lazy { SetupBackups(filesDir, getSharedPreferences("foldcade", MODE_PRIVATE)) }
+    internal val backupWork = Mutex()
+    internal var pendingSetupRestore: app.foldcade.host.backup.SetupBackup? = null
+    internal var pendingSetupAction = app.foldcade.language.RestoreAction.Restore
+    internal var restoreNoticeShown = false
+
     /** Waits until the plugin entries are loaded, so a player can be found by id. */
     internal suspend fun awaitPlugins() = pluginsReady.await()
 
@@ -758,6 +764,11 @@ class FoldcadeApp : Application() {
         super.onCreate()
         // RestartActivity's process only brings Home back. It must not load packs or count exits.
         if (getProcessName() != packageName) return
+        // Before the packs load, so a pack that crashed Foldcade twice is already back out of the way.
+        val themeRollbacks = try {
+            themeInstalls.begin(processExits())
+        } catch (error: Exception) { Log.w("FoldcadeTheme", "Theme trials skipped", error); emptyList() }
+        applySetupRestore()
         store = SessionStore(getSharedPreferences("foldcade", MODE_PRIVATE))
         runningGames.restore(store.playersHoldingGames())
         runningGames.onPlayersChange = store::setPlayersHoldingGames
@@ -785,10 +796,6 @@ class FoldcadeApp : Application() {
             if (::shell.isInitialized) shell.noteSessionChanged()
             refreshHomeRecovery()
         }
-        // Before the packs load, so a pack that crashed Foldcade twice is already back out of the way.
-        val themeRollbacks = try {
-            themeInstalls.begin(processExits())
-        } catch (error: Exception) { Log.w("FoldcadeTheme", "Theme trials skipped", error); emptyList() }
         val manifests = mutableMapOf<String, ThemeFile>()
         themePacks = PackagedTheme.loadAll(this) { archive, manifest ->
             manifests[archive] = manifest
@@ -844,6 +851,8 @@ class FoldcadeApp : Application() {
             appVersion = installedVersion(),
             onSavePickerClosed = { onSaveConflicts?.invoke() },
             saveFolderPick = ::saveFolderPick,
+            restoreResultPending = { setupBackups.hasNotice() },
+            onRestoreFoldersConnected = { pluginLoad.launch { refreshGameNative(); publishDroidDeck() } },
             onSaveHealthChanged = { players ->
                 saveSetupNotices.update(players)
                 publishNotices()
@@ -923,7 +932,7 @@ class FoldcadeApp : Application() {
             apply = { request ->
                 publishRommWiring(
                     request.origin,
-                    credentials,
+                    store.restoreCredentials(credentials),
                     request.cacheRoot,
                     request.platforms,
                     // The manifest's FileProvider authority. The debug build's id ends in .debug.
@@ -1112,7 +1121,7 @@ class FoldcadeApp : Application() {
     }
 
     private suspend fun loadSignedIn() {
-        val romm = readRommRecovery(credentials, store.rommOrigin())
+        val romm = readRommRecovery(store.restoreCredentials(credentials), store.rommOrigin())
         val ids = try {
             credentials.pluginIds()
         } catch (cancelled: CancellationException) {
@@ -1141,12 +1150,21 @@ class FoldcadeApp : Application() {
      * leave the current wiring in place.
      */
     /** Shortcuts and the stored list. A failure leaves the shelf tiles already there. */
-    private suspend fun refreshGameNative() {
+    /**
+     * One GameNative refresh at a time. Each reads the .steam games when its turn comes, so a
+     * refresh started before a folder was forgotten cannot finish last with that folder's games.
+     */
+    private val gameNativeRefresh = Mutex()
+
+    private suspend fun refreshGameNative(): Unit = gameNativeRefresh.withLock { refreshGameNativeNow() }
+
+    private suspend fun refreshGameNativeNow() {
         val library = plugins.library(GameNativeLibrary.ID) as? GameNativeLibrary ?: return
         Shelf.gameNativeInstalled = gameNativePackagePresent()
         try {
-            refreshGameNativeCatalog(this, library, File(filesDir, "gamenative/catalog.txt"), steamFileGames)
+            val reported = refreshGameNativeCatalog(this, library, File(filesDir, "gamenative/catalog.txt"), steamFileGames)
             withContext(Dispatchers.Main.immediate) {
+                if (reported.releasesRestore(steamFilesRead, store.folderTrees().isNotEmpty()) && Shelf.gameNativeInstalled && store.restoreFolders().isEmpty()) shell.reportRestoreSources(setOf("gamenative"))
                 shell.settleGameNative()
                 shell.noteShelfChanged()
             }
@@ -1599,7 +1617,9 @@ class FoldcadeApp : Application() {
         }
         Shelf.moonlightGames = plugins.moonlightShelfGames()
         withContext(Dispatchers.Main.immediate) {
-            if (read != null) shell.settleMoonlight()
+            if (read != null) {
+                shell.settleMoonlight()
+            }
             shell.noteShelfChanged()
         }
     }
@@ -1618,12 +1638,9 @@ class FoldcadeApp : Application() {
      * apps, or one was forgotten. That is a live answer, as a shortcut read is, so a game it
      * dropped leaves Home even while Foldcade is not the home app and cannot read shortcuts.
      */
-    private suspend fun putMoonlightOnShelf() {
-        Shelf.moonlightGames = plugins.moonlightShelfGames()
-        withContext(Dispatchers.Main.immediate) {
-            shell.settleMoonlight()
-            shell.noteShelfChanged()
-        }
+    private suspend fun putMoonlightOnShelf(reportedHost: String? = null) {
+        val games = plugins.moonlightShelfGames()
+        withContext(Dispatchers.Main.immediate) { shell.publishMoonlightCatalog(games, reportedHost) }
     }
 
     /** Tiles of the computer [hostKey] ask for their art again. Main thread. */
@@ -1643,7 +1660,11 @@ class FoldcadeApp : Application() {
 
     fun cancelMoonlightPairing() = moonlightStreams.cancelPairing()
 
-    fun forgetMoonlightHost(key: String) = moonlightStreams.forget(key)
+    fun forgetMoonlightHost(key: String) {
+        shell.reportRestoreSources(setOf("moonlight:$key"))
+        shell.noteShelfChanged()
+        moonlightStreams.forget(key)
+    }
 
     /**
      * [PinShortcutActivity] accepted Moonlight's Create shortcut for [shortcutId].
@@ -1717,7 +1738,10 @@ class FoldcadeApp : Application() {
         // With no folder there is no scan to wait for.
         val settled = droidDeckShortcutsRead && (steamFilesRead || store.folderTrees().isEmpty())
         withContext(Dispatchers.Main.immediate) {
-            if (settled) shell.settleDroidDeck()
+            if (settled) {
+                if (Shelf.droidDeckInstalled && store.restoreFolders().isEmpty()) shell.reportRestoreSources(setOf("droiddeck"))
+                shell.settleDroidDeck()
+            }
             shell.noteShelfChanged()
         }
     }
@@ -1828,9 +1852,8 @@ class FoldcadeApp : Application() {
 
     /** Stops reading [uri]. Its games, and its .steam files, leave the grid. */
     fun forgetFolder(uri: String) {
-        store.removeFolderTree(uri)
+        shell.removeFolderTree(uri)
         releaseUnusedFolderGrant(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION)
-        shell.setFolders(libraryFolders())
         reloadFolder()
     }
 
@@ -1844,23 +1867,13 @@ class FoldcadeApp : Application() {
         }
     }
 
-    /** The folder's own name, such as "roms" for primary:roms. */
-    private fun folderLabel(uri: String): String {
-        val documentId = try {
-            DocumentsContract.getTreeDocumentId(Uri.parse(uri))
-        } catch (_: IllegalArgumentException) {
-            return uri
-        }
-        return documentId.substringAfterLast('/').substringAfterLast(':').ifEmpty { documentId }
-    }
-
     /** The folders the library reads, named for the Sources rows. */
     fun libraryFolders(): List<LibraryFolder> {
         val scan = (plugins.library(LocalFolderBackend.ID) as? LocalFolderBackend)?.mediaScan()
         val gameUris = scan?.let { it.games.map { game -> game.documentUri } + it.steamShortcuts.map { game -> game.documentUri } }.orEmpty()
-        return store.folderTrees().map { uri ->
-            val mediaOnly = isMediaOnlyLibraryTree(uri, localMedia?.index()?.sourceUris.orEmpty(), gameUris)
-            LibraryFolder(uri, folderLabel(uri), artAndInfo = mediaOnly)
+        return store.libraryFolders().map { folder ->
+            val mediaOnly = isMediaOnlyLibraryTree(folder.uri, localMedia?.index()?.sourceUris.orEmpty(), gameUris)
+            folder.copy(artAndInfo = mediaOnly)
         }
     }
 
@@ -1876,20 +1889,21 @@ class FoldcadeApp : Application() {
     private var steamFilesRead = false
 
     private suspend fun useSteamFiles(found: List<SteamShortcut>) {
+        val firstReport = !steamFilesRead
         steamFiles = found
         steamFilesRead = true
-        routeSteamFiles()
+        routeSteamFiles(refreshPcCatalog = firstReport)
     }
 
     /** Splits the .steam files between GameNative and DroidDeck. See [routeSteamFiles]. */
-    private suspend fun routeSteamFiles() {
+    private suspend fun routeSteamFiles(refreshPcCatalog: Boolean = false) {
         val route = routeSteamFiles(
             steamFiles,
             gameNativeInstalled = gameNativePackagePresent(),
             droidDeckInstalled = packageInstalled(DroidDeckPlayer.PACKAGE),
         )
         droidDeckFileGames = route.droidDeck
-        if (route.gameNative != steamFileGames) {
+        if (refreshPcCatalog || route.gameNative != steamFileGames) {
             steamFileGames = route.gameNative
             refreshGameNative()
         }
@@ -1956,16 +1970,15 @@ class FoldcadeApp : Application() {
             if (store.folderTrees().isEmpty()) return@launch
             val backend = plugins.library(LocalFolderBackend.ID) as? LocalFolderBackend ?: return@launch
             val forest = boundForest ?: return@launch
-            val loaded = try {
-                val changed = backend.rescan()
-                if (!forest.complete || boundForest !== forest) return@launch
-                if (!changed) return@launch
-                loadPlatforms(
-                    plugins,
-                    LocalFolderBackend.ID,
-                    folderName = backend::folderName,
-                    occupiesBoth = { platformOccupiesBoth(plugins, it, ::packageInstalled) },
-                )
+            val refresh = try {
+                readFolderRefresh(backend, { forest.complete && boundForest === forest }) {
+                    loadPlatforms(
+                        plugins,
+                        LocalFolderBackend.ID,
+                        folderName = backend::folderName,
+                        occupiesBoth = { platformOccupiesBoth(plugins, it, ::packageInstalled) },
+                    )
+                } ?: return@launch
             } catch (cancelled: CancellationException) {
                 throw cancelled
             } catch (fatal: VirtualMachineError) {
@@ -1974,13 +1987,14 @@ class FoldcadeApp : Application() {
                 Log.w("Foldcade", "Folder refresh failed", failure)
                 return@launch
             }
+            val loaded = refresh.library
             if (loaded == LoadedLibrary.Unreachable) return@launch
             folderRead.withLock {
                 if (boundForest === forest) useSteamFiles(backend.steamShortcuts())
             }
             // After loadPlatforms: its connect walks the tree again and publishes a new scan,
             // which would make an index built from the earlier one stale before it lands.
-            refreshLocalMedia(backend, forest)
+            if (refresh.changed) refreshLocalMedia(backend, forest)
             val games = when (loaded) {
                 is LoadedLibrary.Platforms -> try {
                     loadEveryGame(LocalFolderBackend.ID, loaded)
@@ -1995,7 +2009,14 @@ class FoldcadeApp : Application() {
             withContext(Dispatchers.Main.immediate) {
                 // The last folder was forgotten meanwhile, and its games already left.
                 if (store.folderTrees().isEmpty() || boundForest !== forest) return@withContext
-                if (loaded is LoadedLibrary.Platforms) {
+                if (!refresh.changed) {
+                    // The cached catalog is still current. Report a reconnected empty tree
+                    // without republishing a scan and invalidating an in-flight media index.
+                    shell.finishFolderReport(true, forest.reportedTrees.toSet(),
+                        empty = backend.mediaScan()?.platforms?.isEmpty() == true, plugins.platformDefinitions())
+                    shell.noteShelfChanged()
+                } else if (loaded is LoadedLibrary.Platforms) {
+                    shell.reportRestoreFolders(forest.reportedTrees.toSet())
                     shell.ingestLibrary(
                         LocalFolderBackend.ID,
                         games,
@@ -2003,6 +2024,7 @@ class FoldcadeApp : Application() {
                         loaded.entries.associate { (it.platformId ?: it.id) to it.title },
                     )
                 } else {
+                    shell.reportRestoreFolders(forest.reportedTrees.toSet())
                     shell.dropLibrary(LocalFolderBackend.ID)
                 }
                 val waiting = shell.model.libraryGrid && shell.model.emptyGrid != EmptyGrid.Loading
@@ -2068,7 +2090,7 @@ class FoldcadeApp : Application() {
             )
             // A failed read says nothing about the .steam files, and a newer reload has its own.
             if (loaded != LoadedLibrary.Unreachable && ticket == libraryTicket.get()) {
-                useSteamFiles(backend.steamShortcuts())
+                if (forest.complete) useSteamFiles(backend.steamShortcuts())
                 refreshLocalMedia(backend, forest)
             }
             loaded
@@ -2342,6 +2364,7 @@ class FoldcadeApp : Application() {
                             plugins.platformDefinitions(),
                             listed?.entries.orEmpty().associate { (it.platformId ?: it.id) to it.title },
                             readAt = readAt,
+                            restoreReported = app.foldcade.plugins.romm.rommCatalogLive(plugins.library(libraryId)),
                         )
                         val waiting = shell.model.libraryGrid && shell.model.emptyGrid != EmptyGrid.Loading
                         if (waiting && games.isNotEmpty()) shell.showCuratedHome()
@@ -2380,6 +2403,11 @@ class FoldcadeApp : Application() {
         }
         withContext(Dispatchers.Main.immediate) {
             if (ticket != libraryTicket.get()) return@withContext
+            val folderReported = libraryId == LocalFolderBackend.ID && loaded != LoadedLibrary.Unreachable && loaded != null &&
+                (loaded !is LoadedLibrary.Platforms || games != null) && shell.finishFolderReport(
+                    boundForest?.complete == true, boundForest?.reportedTrees?.toSet().orEmpty(),
+                    empty = loaded == LoadedLibrary.NoPlatforms, plugins.platformDefinitions(),
+                )
             when (loaded) {
                 is LoadedLibrary.Platforms -> if (games == null) {
                     shell.showUnreachable(insidePlatform = false)
@@ -2393,7 +2421,7 @@ class FoldcadeApp : Application() {
                     shell.showCuratedHome()
                 }
                 // A folder of .steam files has games, just none of its own: GameNative's, DroidDeck's, or both.
-                LoadedLibrary.NoPlatforms -> if (steamFiles.isNotEmpty() && libraryId == LocalFolderBackend.ID) {
+                LoadedLibrary.NoPlatforms -> if (steamFiles.isNotEmpty() && folderReported) {
                     shell.dropLibrary(libraryId)
                     shell.showCuratedHome()
                 } else {

@@ -1612,6 +1612,14 @@ fun deleteShortcut(board: HomeBoard, id: String): HomeBoard {
     return gone.copy(hidden = gone.hidden - id, hiddenSlots = gone.hiddenSlots - id, offHome = gone.offHome + id)
 }
 
+/** Forget an unavailable restored game in every place, rather than hiding a broken tile. */
+fun forgetRestoredGame(board: HomeBoard, id: String): HomeBoard = board.copy(
+    slots = board.slots.map { if (it == id) null else it },
+    folders = board.folders.mapValues { (_, folder) -> folder.copy(slots = folder.slots.map { if (it == id) null else it }) },
+    hidden = board.hidden - id, hiddenSlots = board.hiddenSlots - id, offHome = board.offHome - id,
+    filedEmulators = board.filedEmulators - id, hold = null,
+)
+
 /** Classification can move an app into a folder that has never been created. */
 fun ensureAppFolder(board: HomeBoard, id: String): HomeBoard {
     if (id in board.folders) return board

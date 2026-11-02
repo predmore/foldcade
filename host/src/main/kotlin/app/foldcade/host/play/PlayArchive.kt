@@ -1,6 +1,8 @@
 package app.foldcade.host.play
 
-import java.io.ByteArrayOutputStream
+import app.foldcade.host.backup.InflateBudget
+import app.foldcade.host.backup.readBoundedOrNull
+import app.foldcade.host.backup.drainBounded
 import java.io.File
 import java.io.IOException
 import java.io.InputStream
@@ -67,13 +69,19 @@ object PlayArchive {
         }
     }
 
-    fun read(input: InputStream): PlayExport {
+    fun read(input: InputStream, retainedLimit: Long = Long.MAX_VALUE): PlayExport {
         var format: Int? = null
         var events: List<PlayEvent> = emptyList()
         val names = HashMap<String, String>()
         val art = LinkedHashMap<String, ByteArray>()
         var artBytes = 0L
-        val budget = Budget(MAX_INFLATED_BYTES)
+        var retained = 0L
+        fun retain(bytes: Long) {
+            retained += bytes
+            if (retained > retainedLimit) throw PlayArchiveException("play history is too large to read")
+        }
+        val logLimit = minOf(MAX_LOG_BYTES, retainedLimit / 4)
+        val budget = InflateBudget(MAX_INFLATED_BYTES) { PlayArchiveException("play history is too large") }
         ZipInputStream(input).use { zip ->
             while (true) {
                 val entry = zip.nextEntry ?: break
@@ -81,13 +89,16 @@ object PlayArchive {
                 val name = if (entry.isDirectory) "" else entry.name
                 when {
                     name == MARKER -> format = readFormat(String(zip.bounded(1024, budget), Charsets.UTF_8))
-                    name == EVENTS -> events = String(zip.bounded(MAX_LOG_BYTES, budget), Charsets.UTF_8).lineSequence().mapNotNull(::decodePlayEvent).toList()
-                    name == NAMES -> String(zip.bounded(MAX_LOG_BYTES, budget), Charsets.UTF_8).lineSequence().forEach { line ->
-                        decodePlayName(line)?.let { (id, kept) -> names[id] = kept }
+                    name == EVENTS -> events = String(zip.bounded(logLimit, budget), Charsets.UTF_8).lineSequence().mapNotNull { line ->
+                        decodePlayEvent(line)?.also { retain(384L + 2L * (it.gameId.length + it.sessionId.length)) }
+                    }.toList()
+                    name == NAMES -> String(zip.bounded(logLimit, budget), Charsets.UTF_8).lineSequence().forEach { line ->
+                        decodePlayName(line)?.let { (id, kept) -> retain(192L + 2L * (id.length + kept.length)); names[id] = kept }
                     }
                     name.startsWith(ART) && isPlayArtName(name.removePrefix(ART)) && artBytes < MAX_ALL_ART_BYTES -> {
                         val bytes = zip.boundedOrNull(minOf(MAX_ART_BYTES, MAX_ALL_ART_BYTES - artBytes), budget)
                         if (bytes != null && bytes.isNotEmpty()) {
+                            retain(bytes.size.toLong())
                             art[name.removePrefix(ART)] = bytes
                             artBytes += bytes.size
                         }
@@ -115,43 +126,13 @@ object PlayArchive {
         closeEntry()
     }
 
-    /** Bytes the whole file may still inflate to. */
-    private class Budget(var left: Long) {
-        fun spend(bytes: Int) {
-            left -= bytes
-            if (left < 0) throw PlayArchiveException("play history is too large")
-        }
-    }
-
     /** The entry's bytes, refusing the file once it passes [limit]. */
-    private fun ZipInputStream.bounded(limit: Long, budget: Budget): ByteArray =
+    private fun ZipInputStream.bounded(limit: Long, budget: InflateBudget): ByteArray =
         boundedOrNull(limit, budget) ?: throw PlayArchiveException("play history entry is too large")
 
-    /** The entry's bytes, or null once it passes [limit]; the rest is left for [drain]. */
-    private fun ZipInputStream.boundedOrNull(limit: Long, budget: Budget): ByteArray? {
-        val out = ByteArrayOutputStream()
-        val buffer = ByteArray(16 * 1024)
-        var total = 0L
-        while (true) {
-            val read = read(buffer, 0, minOf(buffer.size.toLong(), limit - total + 1).toInt().coerceAtLeast(1))
-            if (read < 0) break
-            budget.spend(read)
-            total += read
-            if (total > limit) return null
-            out.write(buffer, 0, read)
-        }
-        return out.toByteArray()
-    }
+    private fun ZipInputStream.boundedOrNull(limit: Long, budget: InflateBudget): ByteArray? = readBoundedOrNull(limit, budget)
 
-    /** Reads past what is left of the entry, counting it against [budget]. */
-    private fun ZipInputStream.drain(budget: Budget) {
-        val buffer = ByteArray(16 * 1024)
-        while (true) {
-            val read = read(buffer)
-            if (read < 0) return
-            budget.spend(read)
-        }
-    }
+    private fun ZipInputStream.drain(budget: InflateBudget) = drainBounded(budget)
 }
 
 /**

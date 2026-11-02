@@ -28,24 +28,36 @@ import kotlin.coroutines.cancellation.CancellationException
  * join the catalog but are not stored with it, so a deleted file takes its
  * game off the grid at the next scan.
  */
+data class GameNativeCatalogRead(val shortcutsRead: Boolean, val hasGames: Boolean, val storedCatalog: Boolean) {
+    fun releasesRestore(foldersRead: Boolean, hasFolders: Boolean): Boolean =
+        shortcutsRead && (foldersRead || !hasFolders) && (hasGames || storedCatalog)
+}
+
 fun refreshGameNativeCatalog(
     context: Context,
     library: GameNativeLibrary,
     file: File,
     steamFiles: List<CatalogGame> = emptyList(),
-) {
+): GameNativeCatalogRead {
+    val storedCatalog = file.isFile
     val stored = readCatalog(file)
     val shortcuts = readGameNativeShortcuts(context, GameNativePlayer.PACKAGES)
-    library.confirm(stored + shortcuts + steamFiles)
+    library.confirm(stored + shortcuts.orEmpty() + steamFiles)
     Shelf.catalog = library.confirmed().map { it.toShelfGame() }
-    val kept = (stored + shortcuts).map { it.remoteKey }.toSet()
+    val kept = (stored + shortcuts.orEmpty()).map { it.remoteKey }.toSet()
     try {
-        writeCatalog(file, library.confirmed().filter { it.remoteKey in kept })
+        keepGameNativeCatalog(file, library.confirmed().filter { it.remoteKey in kept }, storedCatalog)
     } catch (cancelled: CancellationException) {
         throw cancelled
     } catch (_: Exception) {
         // The shelf already has the list. The next start reads shortcuts again.
     }
+    return GameNativeCatalogRead(shortcuts != null, library.confirmed().isNotEmpty(), storedCatalog)
+}
+
+/** An empty first shortcut read must not manufacture the evidence of an earlier setup. */
+internal fun keepGameNativeCatalog(file: File, games: List<CatalogGame>, storedCatalog: Boolean) {
+    if (storedCatalog || games.isNotEmpty()) writeCatalog(file, games)
 }
 
 internal fun readCatalog(file: File): List<CatalogGame> {
@@ -61,8 +73,9 @@ internal fun writeCatalog(file: File, games: List<CatalogGame>) {
     writeDurably(file.toPath(), raw.toByteArray(Charsets.UTF_8))
 }
 
-internal fun readGameNativeShortcuts(context: Context, packages: List<String>): List<CatalogGame> {
-    val launcher = context.getSystemService(LauncherApps::class.java) ?: return emptyList()
+internal fun readGameNativeShortcuts(context: Context, packages: List<String>): List<CatalogGame>? {
+    val launcher = context.getSystemService(LauncherApps::class.java) ?: return null
+    if (!launcher.hasShortcutHostPermission()) return null
     val user = Process.myUserHandle()
     val found = ArrayList<CatalogGame>()
     for (packageName in packages) {
@@ -76,9 +89,9 @@ internal fun readGameNativeShortcuts(context: Context, packages: List<String>): 
         val shortcuts = try {
             launcher.getShortcuts(query, user).orEmpty()
         } catch (_: SecurityException) {
-            emptyList()
+            return null
         } catch (_: IllegalStateException) {
-            emptyList()
+            return null
         }
         for (shortcut in shortcuts) {
             val intent = shortcut.intents?.lastOrNull() ?: continue

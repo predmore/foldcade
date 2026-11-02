@@ -28,6 +28,12 @@ internal enum class FolderPurpose {
     EdenSaveOffer,
 }
 
+/** A restored SAF address may guide the picker; other archive strings use its default location. */
+internal fun libraryFolderStart(raw: String): String? = raw.takeIf {
+    try { java.net.URI(it).scheme == "content" } catch (_: IllegalArgumentException) { false }
+    catch (_: java.net.URISyntaxException) { false }
+}
+
 /** The picker fields that are not Android's URI result. */
 internal data class FolderPickerState(
     val purpose: FolderPurpose = FolderPurpose.Library,

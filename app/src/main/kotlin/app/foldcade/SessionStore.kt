@@ -105,6 +105,8 @@ class SessionStore(private val prefs: SharedPreferences) : SaveMarks {
 
     fun removeFolderTree(uri: String) {
         saveFolderTrees(folderTrees() - uri)
+        reportRestoreFolders(setOf(uri))
+        updateRestoreHolds { it.reported(setOf("folder:$uri")) }
     }
 
     private fun saveFolderTrees(trees: List<String>) {
@@ -124,7 +126,39 @@ class SessionStore(private val prefs: SharedPreferences) : SaveMarks {
     }
 
     fun clearRommOrigin() {
-        prefs.edit().remove(KEY_ROMM_ORIGIN).apply()
+        synchronized(prefs) {
+            prefs.edit().remove(KEY_ROMM_ORIGIN).putString("restore_holds", restoreHolds().reported(setOf("romm")).encode()).apply()
+        }
+    }
+
+    fun restoreRommNeedsSignIn(): Boolean = prefs.getBoolean("restore_romm_sign_in", false)
+
+    fun clearRestoreRommSignIn() {
+        check(prefs.edit().remove("restore_romm_sign_in").commit())
+    }
+
+    fun restoreHolds(): app.foldcade.language.RestoreHolds =
+        app.foldcade.language.RestoreHolds.decode(prefs.getString("restore_holds", null))
+
+    fun saveRestoreHolds(holds: app.foldcade.language.RestoreHolds) {
+        updateRestoreHolds { holds }
+    }
+
+    fun updateRestoreHolds(change: (app.foldcade.language.RestoreHolds) -> app.foldcade.language.RestoreHolds): app.foldcade.language.RestoreHolds = synchronized(prefs) {
+        val before = restoreHolds()
+        val next = change(before)
+        if (next != before) prefs.edit().putString("restore_holds", next.encode()).apply()
+        next
+    }
+
+    internal fun restoreFolders(): List<app.foldcade.host.backup.BackupFolder> =
+        decodeBackupFolders(prefs.getString("restore_folders", null))
+
+    internal fun reportRestoreFolders(trees: Set<String>) {
+        val before = restoreFolders()
+        val left = before.filter { it.uri !in trees }
+        if (left == before) return
+        prefs.edit().putString("restore_folders", encodeBackupFolders(left)).apply()
     }
 
     fun musicEnabled(): Boolean = prefs.getBoolean(KEY_MUSIC_ENABLED, true)

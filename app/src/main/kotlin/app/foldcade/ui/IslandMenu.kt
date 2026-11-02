@@ -335,7 +335,7 @@ private fun Island(
 @Composable
 private fun ActingHeader(app: FoldcadeApp, modifier: Modifier) {
     val theme = LocalFoldTheme.current.theme
-    val name = app.shell.model.tileActions?.bulk?.let { SelectionCopy.count(it.size) } ?: app.shell.focusedHero()?.let { heroCopy(it).title }?.takeIf { it.isNotBlank() } ?: Copy.emptySlot
+    val name = app.shell.model.tileActions?.bulk?.let { SelectionCopy.count(it.size) } ?: app.shell.restoredGapTitle() ?: app.shell.focusedHero()?.let { heroCopy(it).title }?.takeIf { it.isNotBlank() } ?: Copy.emptySlot
     Row(modifier, verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
         PromptImage(promptGlyph(actionFaces(app.shell.model.faceMap).optionsGlyph), 26.dp)
         BasicText(

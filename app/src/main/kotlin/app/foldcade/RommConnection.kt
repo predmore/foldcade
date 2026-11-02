@@ -14,6 +14,14 @@ internal suspend fun saveRommConnection(
 ) {
     credentials.put(RommCredentials.PLUGIN_ID, RommCredentials.ACCESS_TOKEN, Credential.ApiToken(token))
     session.setRommOrigin(origin)
+    session.clearRestoreRommSignIn()
+}
+
+/** A restore can change addresses without carrying a sign-in to that server. */
+internal fun SessionStore.restoreCredentials(credentials: CredentialStore): CredentialStore = object : CredentialStore by credentials {
+    override suspend fun lookup(pluginId: String, key: String): CredentialLookup =
+        if (pluginId == RommCredentials.PLUGIN_ID && restoreRommNeedsSignIn()) CredentialLookup.Absent
+        else credentials.lookup(pluginId, key)
 }
 
 /** An unreadable token asks for sign-in without discarding the saved address. */

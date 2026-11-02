@@ -65,6 +65,8 @@ import app.foldcade.language.SaveConflictSide
 import app.foldcade.language.Copy
 import app.foldcade.language.SignedInBackend
 import app.foldcade.language.DialogButton
+import app.foldcade.language.*
+import app.foldcade.host.backup.*
 import app.foldcade.language.PlayCopy
 import app.foldcade.language.playHistoryDone
 import app.foldcade.language.DialogKind
@@ -179,14 +181,21 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
     private var libraryReturn: LibraryReturn? = null
     private var deviceCodeJob: Job? = null
 
-    /** Settings › System › Play history › Export: where the file goes. */
+    /** Settings › System › Backup › Play history › Export: where the file goes. */
     private val playExport = registerForActivityResult(ActivityResultContracts.CreateDocument("application/zip")) { uri ->
         uri?.let(::exportPlayHistory)
     }
 
-    /** Settings › System › Play history › Import: the file to add. */
+    /** Settings › System › Backup › Play history › Import: the file to add. */
     private val playImport = registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         uri?.let(::importPlayHistory)
+    }
+
+    private val setupExport = registerForActivityResult(ActivityResultContracts.CreateDocument("application/zip")) { uri ->
+        if (uri != null) exportSetup(uri)
+    }
+    private val setupImport = registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        if (uri != null) readSetup { contentResolver.openInputStream(uri) ?: throw java.io.IOException("No input") }
     }
 
     private val folderPicker = registerForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri ->
@@ -360,6 +369,10 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
                 folderPurpose = FolderPurpose.Library
                 folderPicker.launch(null)
             }
+            is Effect.PickFolderAgain -> {
+                folderPurpose = FolderPurpose.Library
+                folderPicker.launch(libraryFolderStart(effect.uri)?.let(Uri::parse)) // OpenDocumentTree supplies EXTRA_INITIAL_URI.
+            }
             Effect.SyncLibrary -> foldcade.libraryResync.syncNow()
             is Effect.ChoosePlayerSave -> choosePlayerSave(effect.playerId)
             is Effect.SetUpHostedSaves -> (foldcade.plugins.player(effect.playerId) as? HostedSaveFolder)?.let { player ->
@@ -413,6 +426,15 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
             Effect.OpenAllFilesAccess -> startFirst(AllFilesAccess(this).settingsIntents())
             Effect.OpenLicenses -> startActivity(Intent(this, LicensesActivity::class.java))
             Effect.OpenThemes -> startActivity(Intent(this, ThemesActivity::class.java))
+            Effect.OpenBackup -> {
+                val screen = foldcade.shell.model.backupDialogScreen(hostScreen())
+                foldcade.scope.launch {
+                    val action = foldcade.setupBackups.undoAction()
+                    withContext(Dispatchers.Main.immediate) {
+                        foldcade.shell.present(backupDialog(screen, undo = action != null, redo = action == RestoreAction.Redo))
+                    }
+                }
+            }
             Effect.CopyDebugInfo -> copyDebugInfo()
             Effect.DismissButtonLabels -> Unit
             is Effect.OpenNotice -> openNotice(effect.id)
@@ -433,18 +455,18 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
     private fun playHistoryFileName(): String = "Foldcade play history ${java.time.LocalDate.now()}.zip"
 
     /** Android's file picker, or a word when this device has none. */
-    private fun startPicker(otherwise: String, launch: () -> Unit) {
+    private fun startPicker(otherwise: String, backup: Boolean = false, launch: () -> Unit) {
         try {
             launch()
         } catch (missing: android.content.ActivityNotFoundException) {
             Log.w("FoldcadePlay", "No document picker", missing)
-            foldcade.shell.present(playHistoryDone(otherwise, hostScreen()))
+            foldcade.shell.present(if (backup) backupDone(otherwise, foldcade.shell.model.backupDialogScreen(hostScreen())) else playHistoryDone(otherwise, foldcade.shell.model.backupDialogScreen(hostScreen())))
         }
     }
 
     /** Writes the whole play history to [uri], off the main thread, then says how it went. */
     private fun exportPlayHistory(uri: Uri) {
-        val screen = hostScreen()
+        val screen = foldcade.shell.model.backupDialogScreen(hostScreen())
         foldcade.scope.launch {
             val message = try {
                 val out = contentResolver.openOutputStream(uri, "wt") ?: throw java.io.IOException("no stream for $uri")
@@ -462,7 +484,7 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
 
     /** Reads [uri] off the main thread and adds it to the play history on it, then says what it added. */
     private fun importPlayHistory(uri: Uri) {
-        val screen = hostScreen()
+        val screen = foldcade.shell.model.backupDialogScreen(hostScreen())
         foldcade.scope.launch {
             var refusal = PlayCopy.unreadable
             val read = try {
@@ -487,6 +509,115 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
                     }
                 } ?: refusal
                 foldcade.shell.present(playHistoryDone(message, screen))
+            }
+        }
+    }
+
+    private fun exportSetup(uri: Uri) {
+        val screen = foldcade.shell.model.backupDialogScreen(hostScreen())
+        foldcade.scope.launch {
+            val message = try {
+                foldcade.backupWork.withLock {
+                    val work = foldcade.setupBackups.workspace("export")
+                    try {
+                        val snapshot = foldcade.setupSnapshot(work)
+                        val output = contentResolver.openOutputStream(uri, "wt") ?: throw java.io.IOException("No output")
+                        BackupCopy.saved(output.use { SetupArchive.write(it, snapshot) }.skippedThemes)
+                    } finally { work.deleteRecursively() }
+                }
+            } catch (cancelled: CancellationException) { throw cancelled }
+            catch (failure: Exception) {
+                Log.w("FoldcadeBackup", "Backup not saved", failure)
+                BackupCopy.notSaved
+            }
+            withContext(Dispatchers.Main.immediate) { foldcade.shell.present(backupDone(message, screen)) }
+        }
+    }
+
+    private fun readSetup(action: RestoreAction = RestoreAction.Restore, open: () -> java.io.InputStream) {
+        val screen = foldcade.shell.model.backupDialogScreen(hostScreen())
+        foldcade.scope.launch {
+            var refusal = BackupCopy.unreadable
+            val backup = try {
+                foldcade.backupWork.withLock { open().use(foldcade.setupBackups::read) }
+            } catch (cancelled: CancellationException) { throw cancelled }
+            catch (failure: SetupArchiveException) {
+                refusal = when (failure.reason) {
+                    BackupRefusal.Foreign -> BackupCopy.foreign
+                    BackupRefusal.Newer -> BackupCopy.newer
+                    BackupRefusal.Unreadable -> BackupCopy.unreadable
+                }
+                null
+            } catch (failure: Exception) {
+                Log.w("FoldcadeBackup", "Backup not read", failure)
+                null
+            }
+            withContext(Dispatchers.Main.immediate) {
+                val previous = foldcade.pendingSetupRestore
+                foldcade.scope.launch { foldcade.setupBackups.discard(previous) }
+                foldcade.pendingSetupRestore = backup
+                foldcade.pendingSetupAction = action
+                val dialog = if (backup == null) backupDone(refusal, screen) else {
+                    val available = foldcade.shell.catalogNow().filterIsInstance<HomeItem>().mapTo(mutableSetOf()) { it.id }
+                    val model = foldcade.shell.model
+                    val (date, detail) = backupPreview(backup, available, foldcade.store.rommOrigin(), model.themeIds.zip(model.themes).toMap())
+                    restoreDialog(date, detail, screen, action)
+                }
+                foldcade.shell.present(dialog)
+            }
+        }
+    }
+
+    private fun restoreSetup(backup: SetupBackup, action: RestoreAction) {
+        val screen = foldcade.shell.model.backupDialogScreen(hostScreen())
+        foldcade.scope.launch {
+            try {
+                foldcade.backupWork.withLock {
+                    val work = foldcade.setupBackups.workspace("before")
+                    try {
+                        foldcade.saveFlow.withLock { foldcade.setupBackups.stage(backup, foldcade.setupSnapshot(work, includeThemes = false), action) }
+                    } finally { work.deleteRecursively(); foldcade.setupBackups.discard(backup) }
+                }
+                withContext(Dispatchers.Main.immediate) { foldcade.restart(this@FoldcadeHomeActivity) }
+            } catch (cancelled: CancellationException) { throw cancelled }
+            catch (failure: Exception) {
+                Log.w("FoldcadeBackup", "Restore not staged", failure)
+                withContext(Dispatchers.Main.immediate) { foldcade.shell.present(backupDone(BackupCopy.restoreFailed, screen)) }
+            }
+        }
+    }
+
+    private fun showRestoredSetup() {
+        if (foldcade.restoreNoticeShown || !foldcade.setupBackups.hasNotice()) return
+        foldcade.restoreNoticeShown = true
+        val screen = foldcade.shell.model.backupDialogScreen(hostScreen())
+        foldcade.scope.launch {
+            if (foldcade.setupBackups.failed.isFile || foldcade.setupBackups.failurePending) {
+                withContext(Dispatchers.Main.immediate) {
+                    snapshotFlow { foldcade.shell.model.dialog == null }.first { it }
+                    foldcade.shell.present(backupDone(BackupCopy.restoreUnfinished, screen).copy(subject = "restore-failed"))
+                }
+                return@launch
+            }
+            foldcade.awaitPlugins()
+            val todo = foldcade.setupBackups.result.readLines()
+            val signedIn = readRommRecovery(foldcade.store.restoreCredentials(foldcade.credentials), foldcade.store.rommOrigin()).backends.isNotEmpty()
+            val lines = buildList {
+                if ("romm" in todo && !signedIn) add(BackupCopy.signIn)
+                todo.firstOrNull { it.startsWith("folders:") }?.let { add(BackupCopy.folders(it.removePrefix("folders:"))) }
+                todo.firstOrNull { it.startsWith("saves:") }?.let { row ->
+                    val players = foldcade.plugins.playerIds().mapNotNull(foldcade.plugins::player)
+                    val names = row.removePrefix("saves:").split(", ").mapNotNull { id -> players.firstOrNull { it.id == id || it.saveFolderId() == id }?.displayName }.distinct()
+                    if (names.isNotEmpty()) add(BackupCopy.saves(names.joinToString(", ")))
+                }
+                if ("computers" in todo && storedComputersNeedPairing(foldcade.store, runCatching { GameStreamIdentity.existing()?.fingerprint }.getOrNull())) add(BackupCopy.pair)
+                if ("cores" in todo) add(BackupCopy.cores)
+                if ("eden" in todo) add(BackupCopy.eden)
+            }
+            withContext(Dispatchers.Main.immediate) {
+                snapshotFlow { foldcade.shell.model.dialog == null }.first { it }
+                foldcade.shell.present(backupDone(lines.joinToString("\n"), screen, restored = true,
+                    library = todo.any { it.startsWith("folders:") }).copy(subject = "restored"))
             }
         }
     }
@@ -532,7 +663,8 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
         val roleManager = getSystemService(RoleManager::class.java)
         val held = roleManager.isRoleHeld(RoleManager.ROLE_HOME)
         foldcade.shell.setHomeRoleHeld(held)
-        foldcade.shell.maybeAskHome(held)
+        if (!foldcade.setupBackups.hasNotice()) foldcade.shell.maybeAskHome(held)
+        if (launchesCompanion) showRestoredSetup()
         foldcade.onSaveConflicts = { refreshSaveConflict() }
         applyDialogPreview(intent)
         applySaveConflictPreview(intent)
@@ -2305,6 +2437,25 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
                 else -> Unit
             }
             DialogKind.PlayHistoryDone -> Unit
+            DialogKind.Backup -> when (effect.button) {
+                DialogButton.BackUp -> startPicker(BackupCopy.notSaved, backup = true) { setupExport.launch("Foldcade backup ${java.time.LocalDate.now()}.zip") }
+                DialogButton.PickRestore -> startPicker(BackupCopy.unreadable, backup = true) { setupImport.launch(arrayOf("application/zip", "application/octet-stream")) }
+                DialogButton.UndoRestore -> readSetup(RestoreAction.Undo) { foldcade.setupBackups.before.inputStream() }
+                DialogButton.RedoRestore -> readSetup(RestoreAction.Redo) { foldcade.setupBackups.before.inputStream() }
+                else -> Unit
+            }
+            DialogKind.RestoreBackup -> {
+                val backup = foldcade.pendingSetupRestore
+                val action = foldcade.pendingSetupAction
+                foldcade.pendingSetupRestore = null
+                foldcade.pendingSetupAction = RestoreAction.Restore
+                if (effect.button in setOf(DialogButton.RestoreBackup, DialogButton.UndoRestore, DialogButton.RedoRestore) && backup != null) restoreSetup(backup, action)
+                else foldcade.scope.launch { foldcade.setupBackups.discard(backup) }
+            }
+            DialogKind.BackupDone -> when (effect.subject) {
+                "restored" -> foldcade.scope.launch { foldcade.setupBackups.result.delete() }
+                "restore-failed" -> foldcade.scope.launch { foldcade.setupBackups.acknowledgeFailure() }
+            }
             DialogKind.EdenSaveHold -> {
                 val ask = foldcade.hostedAsk
                 foldcade.hostedAsk = null
@@ -2627,7 +2778,10 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
                 }
                 withContext(Dispatchers.Main.immediate) {
                     if (forgotten) {
-                        if (pluginId == RommCredentials.PLUGIN_ID) foldcade.shell.dropLibrary(pluginId)
+                        if (pluginId == RommCredentials.PLUGIN_ID) {
+                            foldcade.shell.reportRestoreSources(setOf("romm"))
+                            foldcade.shell.dropLibrary(pluginId)
+                        }
                         foldcade.shell.setSignedIn(
                             foldcade.shell.model.signedIn.filter { it.pluginId != pluginId },
                         )

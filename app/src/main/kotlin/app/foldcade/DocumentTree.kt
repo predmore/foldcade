@@ -137,21 +137,22 @@ private const val MAX_STEAM_BYTES: Int = 256
  */
 internal class FolderForest(resolver: ContentResolver, trees: List<Uri>) {
     private val parts = trees.map { tree -> tree.toString() to DocumentTree(resolver, tree) }
+    val reportedTrees = mutableSetOf<String>()
 
     /** False once a scan found a saved folder it could not reach. */
     @Volatile
     var complete = true
         private set
 
-    fun root(): FolderEntry = parts.singleOrNull()?.second?.root()
+    fun root(): FolderEntry = parts.singleOrNull()?.let { (uri, tree) -> tree.root().also { reportedTrees += uri } }
         ?: FolderEntry(documentUri = FOREST_ROOT, displayName = "", mimeType = DOCUMENT_DIRECTORY_MIME)
 
     fun children(parent: FolderEntry): List<FolderEntry> {
         if (parent.documentUri == FOREST_ROOT) {
             // A folder that is gone or no longer granted drops out. The rest still scan.
-            val roots = parts.mapNotNull { (_, tree) ->
+            val roots = parts.mapNotNull { (uri, tree) ->
                 try {
-                    tree.root()
+                    tree.root().also { reportedTrees += uri }
                 } catch (_: PluginException) {
                     null
                 } catch (_: SecurityException) {

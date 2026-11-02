@@ -129,11 +129,14 @@ enum class DialogKind {
     /** Eden cannot place an incoming save. Not now cancels the held launch. */
     EdenSaveHold,
 
-    /** Settings › System › Play history: export it to a file, or import one. Opens on Export. */
+    /** Settings › System › Backup › Play history: export it to a file, or import one. Opens on Export. */
     PlayHistory,
 
     /** What an export or an import did. Ok only closes it. */
     PlayHistoryDone,
+    Backup,
+    RestoreBackup,
+    BackupDone,
 }
 
 enum class DialogButton {
@@ -157,6 +160,13 @@ enum class DialogButton {
     TryAgain,
     ExportPlay,
     ImportPlay,
+    PlayHistory,
+    BackUp,
+    PickRestore,
+    UndoRestore,
+    RedoRestore,
+    RestoreBackup,
+    Library,
 }
 
 /** The words a dialog button shows. [subject] is [DialogState.subject], which names the player to open. */
@@ -179,6 +189,12 @@ fun dialogButtonLabel(button: DialogButton, subject: String? = null): String = w
     DialogButton.TryAgain -> Copy.tryAgain
     DialogButton.ExportPlay -> PlayCopy.export
     DialogButton.ImportPlay -> PlayCopy.import
+    DialogButton.PlayHistory -> PlayCopy.history
+    DialogButton.BackUp -> BackupCopy.backUp
+    DialogButton.PickRestore, DialogButton.RestoreBackup -> BackupCopy.restore
+    DialogButton.UndoRestore -> BackupCopy.undo
+    DialogButton.RedoRestore -> BackupCopy.redo
+    DialogButton.Library -> SettingsCopy.library
 }
 
 data class DialogState(
@@ -253,7 +269,7 @@ fun usageAccessPrompt(screen: HostScreen = HostScreen.Bottom): DialogState = Dia
     screen = screen,
 )
 
-/** Settings › System › Play history. Neither way loses anything, so it opens on Export. */
+/** Settings › System › Backup › Play history. Neither way loses anything, so it opens on Export. */
 fun playHistoryDialog(screen: HostScreen): DialogState = DialogState(
     kind = DialogKind.PlayHistory,
     title = PlayCopy.history,
@@ -613,6 +629,7 @@ sealed interface Row {
     data object ClearNotices : Row
     data class SignOut(val pluginId: String, val label: String) : Row
     data class ForgetFolder(val uri: String, val label: String) : Row
+    data class PickFolderAgain(val uri: String) : Row
     data class PlayerSave(val playerId: String) : Row
     /** The folder Foldcade hosts for a player's saves, and whether the player has it. */
     data class HostedSaves(val playerId: String) : Row
@@ -701,7 +718,7 @@ sealed interface Row {
     data object MovePlay : Row
 
     /** Settings › System: export the play history to a file, or import one. */
-    data object PlayHistory : Row
+    data object Backup : Row
     data class QuickTile(val setting: QuickSetting) : Row
 
     /** The R1 slider for both screens' brightness. */
@@ -907,6 +924,7 @@ data class LibraryFolder(
     val uri: String,
     val label: String,
     val artAndInfo: Boolean = false,
+    val pickAgain: Boolean = false,
 )
 
 enum class ConnectField {
@@ -1204,6 +1222,7 @@ fun rowText(row: Row, model: PickerModel): RowText = when (row) {
     // Both live on a page that already names the connection or the folder.
     is Row.SignOut -> RowText(Copy.signOut)
     is Row.ForgetFolder -> RowText(Copy.remove)
+    is Row.PickFolderAgain -> RowText(BackupCopy.pickAgain)
     is Row.Notice -> RowText(model.notices.firstOrNull { it.id == row.id }?.title ?: "")
     Row.NoticeAccess -> RowText(NoticeCopy.access, NoticeCopy.accessValue)
     Row.ClearNotices -> RowText(NoticeCopy.clearAll)
@@ -1293,7 +1312,7 @@ fun rowText(row: Row, model: PickerModel): RowText = when (row) {
     )
     Row.MovePlay -> RowText(PlayCopy.moveHere)
     Row.About -> RowText(GameAboutCopy.about)
-    Row.PlayHistory -> RowText(PlayCopy.history)
+    Row.Backup -> RowText(BackupCopy.title)
     Row.ButtonLabels -> RowText(
         Copy.buttonLabels,
         when {
@@ -1351,6 +1370,7 @@ sealed interface Effect {
     data class PairStreamHost(val key: String) : Effect
     data class ForgetCredentials(val pluginId: String) : Effect
     data class ForgetFolder(val uri: String) : Effect
+    data class PickFolderAgain(val uri: String) : Effect
     data object SaveRommToken : Effect
 
     /** A on a text row of the connect form. The field takes focus and raises the keyboard. */
@@ -1386,6 +1406,7 @@ sealed interface Effect {
     data class OpenAndroidSetting(val setting: AndroidSetting) : Effect
     data object OpenLicenses : Effect
     data object OpenThemes : Effect
+    data object OpenBackup : Effect
 
     /** Copy Foldcade's version and the device's to the clipboard, for a bug report. */
     data object CopyDebugInfo : Effect
@@ -1646,11 +1667,19 @@ fun reduce(
     val coerced = model.copy(focus = coerce(model.focus, model))
     val dialog = coerced.dialog
     if (dialog != null) {
+        if (dialog.kind in setOf(DialogKind.Backup, DialogKind.RestoreBackup, DialogKind.BackupDone, DialogKind.PlayHistory) && repeatCount > 0 &&
+            meaning in setOf(Meaning.Activate, Meaning.ActivateBottom, Meaning.Back, Meaning.Dismiss)) return coerced to null
         if (dialog.kind == DialogKind.CloseGame && repeatCount > 0 &&
             (meaning == Meaning.Activate || meaning == Meaning.ActivateBottom)) return coerced to null
         if (meaning == Meaning.LeftPanel || meaning == Meaning.RightPanel) return coerced to null
         val (next, choice) = applyDialog(dialog, meaning)
+        if (dialog.kind == DialogKind.Backup && choice == DialogButton.PlayHistory) {
+            return coerced.copy(dialog = playHistoryDialog(dialog.screen)) to null
+        }
         val chosen = choice?.let { Effect.DialogChoice(it, dialog.kind, dialog.subject) }
+        if (dialog.kind == DialogKind.BackupDone && choice == DialogButton.Library) {
+            return coerced.copy(dialog = null).openSettings(coerced.layout.pageScreen, SettingsCategory.Library) to chosen
+        }
         val cleared = if (choice != null) null else next
         return coerced.copy(dialog = cleared) to chosen
     }
@@ -2341,7 +2370,8 @@ private fun activateRow(
         // A choice row too, whose value is the board's: the shell steps it.
         Row.SortFolder -> model.copy(panel = panel) to sortStep(model, 1)
         Row.UsageAccess -> model.copy(dialog = usageAccessPrompt(screen)) to null
-        Row.PlayHistory -> model.copy(dialog = playHistoryDialog(screen)) to null
+        // Android adds Undo from the current before-copy; leave presentation to that effect.
+        Row.Backup -> model to Effect.OpenBackup
         Row.FindSaves -> model to Effect.OpenAllFilesAccess
         Row.SaveSetup -> model.openSaveSetup(panel.screen, grid = panel.grid) to null
         Row.PlayActivity -> model.copy(
@@ -2403,6 +2433,7 @@ private fun activateRow(
         ) to Effect.OpenAddRomm
         is Row.SignOut -> model.copy(panel = null, focus = panel.grid) to Effect.ForgetCredentials(row.pluginId)
         is Row.ForgetFolder -> model.copy(panel = null, focus = panel.grid) to Effect.ForgetFolder(row.uri)
+        is Row.PickFolderAgain -> model.copy(panel = null, focus = panel.grid) to Effect.PickFolderAgain(row.uri)
         is Row.Notice -> openNotice(model, panel, row.id)
         Row.NoticeAccess -> model.copy(panel = panel, dialog = noticeAccessPrompt(screen)) to null
         Row.ClearNotices -> model.copy(

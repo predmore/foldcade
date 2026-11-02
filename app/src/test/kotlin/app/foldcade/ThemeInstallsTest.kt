@@ -14,6 +14,7 @@ import java.util.zip.ZipOutputStream
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -61,6 +62,18 @@ class ThemeInstallsTest {
     private fun installedRelease(): String? =
         java.util.zip.ZipFile(File(themes, "neon.zip")).use { zip -> zip.getInputStream(zip.getEntry("theme.json")).readBytes().decodeToString() }
             .let { parseThemeJson(it)?.release?.toString() }
+
+    @Test
+    fun anExplicitRestoreMayInstallAnOlderReleaseButStillValidatesAndStartsATrial() {
+        val (installs, _) = start()
+        install(installs, pack("2.0.0"))
+        installs.shown(10 * 60_000L)
+        assertTrue(installs.install(pack("1.0.0").inputStream(), bundled, restoring = true) { true } is ThemeInstallResult.Installed)
+        assertEquals("1.0.0", installedRelease())
+        assertNotNull(installs.ledger.theme("neon.zip")?.trial)
+        assertEquals(ThemeInstallRefusal.Broken,
+            (installs.install(pack("0.9.0").inputStream(), bundled, restoring = true) { false } as ThemeInstallResult.Refused).reason)
+    }
 
     @Test
     fun aFirstInstallGoesOnTrialAndIsTakenOutAfterTwoCrashes() {

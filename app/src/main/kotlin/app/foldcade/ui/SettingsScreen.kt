@@ -30,6 +30,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.TextStyle
@@ -52,6 +53,7 @@ import app.foldcade.language.SettingsPage
 import app.foldcade.language.Theme
 import app.foldcade.language.TileStatus
 import app.foldcade.language.emulatorShelf
+import app.foldcade.language.menuFit
 import app.foldcade.language.promptKeyOf
 import app.foldcade.language.quickTileColumns
 import app.foldcade.language.rowControl
@@ -177,6 +179,7 @@ private fun CategoryCard(
             screen = screen,
             rows = rows,
             inner = shownInner,
+            fitRows = category == SettingsCategory.Screens && shownInner == null,
             focus = page.row.takeIf { live && page.onRows && it in rows.indices },
             // The card on its way out takes no taps: its rows are not the page's now.
             interactive = live,
@@ -193,6 +196,7 @@ private fun CardRows(
     screen: HostScreen,
     rows: List<Row>,
     inner: SettingsInner?,
+    fitRows: Boolean,
     focus: Int?,
     interactive: Boolean,
     hint: Boolean,
@@ -205,84 +209,93 @@ private fun CardRows(
     val iconSlot = rows.any { !it.settingsTile() && settingsRowIcon(it) != null }
     val labelStyle = style(theme.onBackground, theme.style.type.menuRow, theme, bold = true)
     val tiles = rows.takeWhile { it.settingsTile() }
-    Column(
-        Modifier
-            .fillMaxSize()
-            .ringScroll(extra = CARD_EXTRA)
-            .selectionHighlight(slots, focus, ring = true, scale = scale),
-        verticalArrangement = Arrangement.spacedBy(ROW_GAP),
-    ) {
-        if (inner != null) InnerHeader(model, inner)
-        // Tiles sit in lines of four, each a child of this column, so the one highlight reaches them too.
-        tiles.chunked(quickTileColumns).forEachIndexed { line, chunk ->
-            Row(
-                Modifier
+    BoxWithConstraints(Modifier.fillMaxSize()) {
+        val density = LocalDensity.current
+        // System contracts row padding like the island menus, keeping Layout, Play on and
+        // every pending Android permission visible without consuming the focus ring's room.
+        val fit = if (fitRows) with(density) {
+            menuFit(rows.size, constraints.maxHeight - (ringReach() + CARD_EXTRA).roundToPx() * 2,
+                density.density, ROW_GAP.roundToPx())
+        } else null
+        Column(
+            Modifier
+                .fillMaxSize()
+                .ringScroll(extra = CARD_EXTRA)
+                .selectionHighlight(slots, focus, ring = true, scale = scale),
+            verticalArrangement = Arrangement.spacedBy(ROW_GAP),
+        ) {
+            if (inner != null) InnerHeader(model, inner)
+            // Tiles sit in lines of four, each a child of this column, so the one highlight reaches them too.
+            tiles.chunked(quickTileColumns).forEachIndexed { line, chunk ->
+                Row(
+                    Modifier
+                        .fillMaxWidth()
+                        .padding(bottom = if (line == (tiles.size - 1) / quickTileColumns) TILE_BLOCK_GAP else TILE_LINE_GAP),
+                ) {
+                    chunk.forEachIndexed { column, row ->
+                        val index = line * quickTileColumns + column
+                        ShelfTile(
+                            row = row,
+                            model = model,
+                            focused = focus == index,
+                            scale = scale,
+                            art = Modifier.selectionSlot(slots, index, depth = 3),
+                            modifier = Modifier.weight(1f).keepInView(focus == index).then(
+                                if (interactive) Modifier.press { onEffect(app.shell.touchSettingsRow(index, screen)) } else Modifier,
+                            ),
+                        )
+                    }
+                    // A short last line keeps the columns of the lines above it.
+                    repeat(quickTileColumns - chunk.size) { Spacer(Modifier.weight(1f)) }
+                }
+            }
+            rows.forEachIndexed { index, row ->
+                if (index < tiles.size) return@forEachIndexed
+                val focused = focus == index
+                val parts = rowText(row, model)
+                val place = Modifier
                     .fillMaxWidth()
-                    .padding(bottom = if (line == (tiles.size - 1) / quickTileColumns) TILE_BLOCK_GAP else TILE_LINE_GAP),
-            ) {
-                chunk.forEachIndexed { column, row ->
-                    val index = line * quickTileColumns + column
-                    ShelfTile(
-                        row = row,
-                        model = model,
-                        focused = focus == index,
+                    .selectionSlot(slots, index)
+                    .keepInView(focused)
+                val tap = { onEffect(app.shell.touchSettingsRow(index, screen)) }
+                if (row == Row.MusicVolume) {
+                    SliderRow(
+                        label = parts.label,
+                        value = parts.value.orEmpty(),
+                        fraction = model.music.volume,
+                        focused = focused,
+                        interactive = interactive,
+                        onStep = tap,
+                        onFraction = app.shell::setMusicVolume,
+                        modifier = place,
                         scale = scale,
-                        art = Modifier.selectionSlot(slots, index, depth = 3),
-                        modifier = Modifier.weight(1f).keepInView(focus == index).then(
-                            if (interactive) Modifier.press { onEffect(app.shell.touchSettingsRow(index, screen)) } else Modifier,
-                        ),
+                        labelStyle = labelStyle,
+                    )
+                } else {
+                    MenuRow(
+                        label = parts.label,
+                        icon = settingsRowIcon(row),
+                        iconSlot = iconSlot,
+                        focused = focused,
+                        control = rowControl(row, model, parts.value),
+                        chord = null,
+                        held = model.held,
+                        scale = scale,
+                        modifier = if (interactive) place.press(tap) else place,
+                        labelStyle = labelStyle,
+                        height = fit?.rowHeights?.getOrNull(index)?.let { with(density) { it.toDp() } } ?: ROW_HEIGHT,
                     )
                 }
-                // A short last line keeps the columns of the lines above it.
-                repeat(quickTileColumns - chunk.size) { Spacer(Modifier.weight(1f)) }
             }
-        }
-        rows.forEachIndexed { index, row ->
-            if (index < tiles.size) return@forEachIndexed
-            val focused = focus == index
-            val parts = rowText(row, model)
-            val place = Modifier
-                .fillMaxWidth()
-                .selectionSlot(slots, index)
-                .keepInView(focused)
-            val tap = { onEffect(app.shell.touchSettingsRow(index, screen)) }
-            if (row == Row.MusicVolume) {
-                SliderRow(
-                    label = parts.label,
-                    value = parts.value.orEmpty(),
-                    fraction = model.music.volume,
-                    focused = focused,
-                    interactive = interactive,
-                    onStep = tap,
-                    onFraction = app.shell::setMusicVolume,
-                    modifier = place,
-                    scale = scale,
-                    labelStyle = labelStyle,
-                )
-            } else {
-                MenuRow(
-                    label = parts.label,
-                    icon = settingsRowIcon(row),
-                    iconSlot = iconSlot,
-                    focused = focused,
-                    control = rowControl(row, model, parts.value),
-                    chord = null,
-                    held = model.held,
-                    scale = scale,
-                    modifier = if (interactive) place.press(tap) else place,
-                    labelStyle = labelStyle,
-                    height = ROW_HEIGHT,
+            // Calibrating Confirm: what to press, under the row that asked.
+            val help = presence(Copy.buttonCalibrationHelp.takeIf { hint }, theme.motion.durationFocus, scale)
+            help.shown?.let {
+                BasicText(
+                    it,
+                    modifier = Modifier.padding(horizontal = 14.dp, vertical = 6.dp).rise { help.progress.value },
+                    style = style(theme.muted, theme.style.type.hint, theme),
                 )
             }
-        }
-        // Calibrating Confirm: what to press, under the row that asked.
-        val help = presence(Copy.buttonCalibrationHelp.takeIf { hint }, theme.motion.durationFocus, scale)
-        help.shown?.let {
-            BasicText(
-                it,
-                modifier = Modifier.padding(horizontal = 14.dp, vertical = 6.dp).rise { help.progress.value },
-                style = style(theme.muted, theme.style.type.hint, theme),
-            )
         }
     }
 }
@@ -438,8 +451,8 @@ private fun TileArt(art: ShelfArt, lit: Float, off: Boolean) {
 }
 
 /**
- * Categories and rows share one height and one gap, so both highlights are the same size
- * and both columns keep one rhythm. Six categories take 6 × 52 + 5 × 4 = 332dp, inside the
+ * Categories and rows normally share one height and one gap. System contracts padding
+ * with menuFit when its pending permissions need more room. Six categories take 6 × 52 + 5 × 4 = 332dp, inside the
  * Thor's 468dp top screen less the page's margins, header, and the ring's reach. The card
  * beside them has the page's full height, about 410dp inside the ring's reach.
  */

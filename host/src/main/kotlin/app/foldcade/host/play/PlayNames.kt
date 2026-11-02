@@ -45,18 +45,19 @@ class PlayNames(
      * Keeps each of [imported] this file has no name for, as an import does. A name
      * kept here already wins: it is the newer one on this device. Returns how many it kept.
      */
-    fun merge(imported: Map<String, String>): Int =
-        imported.count { (gameId, name) -> !names.containsKey(gameId) && remember(gameId, name) }
+    fun merge(imported: Map<String, String>, durable: Boolean = false): Int =
+        imported.count { (gameId, name) -> !names.containsKey(gameId) && remember(gameId, name, durable) }
 
     /**
      * Keeps [name] for [gameId]. A blank name, the id itself, or a URI is not
      * a name and is ignored. Returns true when this stored a new name.
      */
-    fun remember(gameId: String, name: String): Boolean {
+    fun remember(gameId: String, name: String, durable: Boolean = false): Boolean {
         val clean = name.trim()
         if (gameId.isBlank() || !isPlayName(gameId, clean)) return false
         if (names.put(gameId, clean) == clean) return false
-        writer.execute { append(gameId, clean) }
+        if (durable) writer.submit(Callable { append(gameId, clean) }).get()
+        else writer.execute { append(gameId, clean) }
         return true
     }
 

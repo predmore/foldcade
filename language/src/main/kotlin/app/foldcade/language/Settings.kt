@@ -138,8 +138,8 @@ fun settingsRows(category: SettingsCategory, model: PickerModel): List<Row> = wh
         add(Row.UsageAccess)
         // Until Android grants it, so R1 can list notifications.
         if (model.askNoticeAccess) add(Row.NoticeAccess)
-        // Your play time, to a file and back.
-        add(Row.PlayHistory)
+        // Setup and play history, to a file and back.
+        add(Row.Backup)
         add(Row.AndroidSettings)
     }
     SettingsCategory.About -> listOf(Row.Version, Row.Licenses)
@@ -223,7 +223,9 @@ fun emulatorShelf(model: PickerModel): List<EmulatorShelfEntry> {
 /** The rows [inner] lists, or none once what it was about has gone. */
 fun settingsInnerRows(inner: SettingsInner, model: PickerModel): List<Row> = when (inner) {
     is SettingsInner.Emulator -> emulatorShelf(model).firstOrNull { it.key == inner.key }?.rows.orEmpty()
-    is SettingsInner.Folder -> model.folders.filter { it.uri == inner.uri }.take(1).map { Row.ForgetFolder(it.uri, it.label) }
+    is SettingsInner.Folder -> model.folders.firstOrNull { it.uri == inner.uri }?.let {
+        listOfNotNull(Row.PickFolderAgain(it.uri).takeIf { _ -> it.pickAgain }, Row.ForgetFolder(it.uri, it.label))
+    }.orEmpty()
     is SettingsInner.Host -> model.streamHosts.filter { it.key == inner.key }.take(1).map { Row.StreamHost(it.key) }
     is SettingsInner.Backend -> model.signedIn.filter { it.pluginId == inner.pluginId }.take(1).map { Row.SignOut(it.pluginId, it.label) }
     // One RomM server at a time: once one is saved, its own tile edits it or signs out.
@@ -236,7 +238,9 @@ fun settingsInnerRows(inner: SettingsInner, model: PickerModel): List<Row> = whe
  */
 fun settingsInnerTitle(inner: SettingsInner, model: PickerModel): String = when (inner) {
     is SettingsInner.Emulator -> emulatorShelf(model).firstOrNull { it.key == inner.key }?.label ?: inner.key
-    is SettingsInner.Folder -> model.folders.firstOrNull { it.uri == inner.uri }?.let { libraryFolderLabel(it.label, it.artAndInfo) }.orEmpty()
+    is SettingsInner.Folder -> model.folders.firstOrNull { it.uri == inner.uri }?.let {
+        if (it.pickAgain) "${it.label} · ${BackupCopy.pickAgain}" else libraryFolderLabel(it.label, it.artAndInfo)
+    }.orEmpty()
     is SettingsInner.Host -> model.streamHosts.firstOrNull { it.key == inner.key }?.name.orEmpty()
     is SettingsInner.Backend -> model.signedIn.firstOrNull { it.pluginId == inner.pluginId }?.label.orEmpty()
     SettingsInner.Add -> Copy.add
@@ -280,10 +284,13 @@ enum class TileStatus {
 
 /**
  * An emulator tile wears a check while all its rows are fine, and the not-syncing mark
- * while any says Not syncing or waits to be set up. Other tiles wear none.
+ * while any says Not syncing or waits to be set up. A folder awaiting its restored
+ * grant wears Attention too; other source tiles wear none.
  */
 fun settingsTileStatus(row: Row, model: PickerModel): TileStatus? {
-    val inner = (row as? Row.SettingsTile)?.page as? SettingsInner.Emulator ?: return null
+    val inner = (row as? Row.SettingsTile)?.page ?: return null
+    if (inner is SettingsInner.Folder) return TileStatus.Attention.takeIf { model.folders.any { it.uri == inner.uri && it.pickAgain } }
+    if (inner !is SettingsInner.Emulator) return null
     val needsYou = settingsInnerRows(inner, model).any { rowNeedsYou(it, model) }
     return if (needsYou) TileStatus.Attention else TileStatus.Fine
 }
@@ -387,7 +394,7 @@ fun rowControl(row: Row, model: PickerModel, value: String? = rowText(row, model
     is Row.Collection -> model.tileActions?.collections?.firstOrNull { it.folderId == row.folderId }.let { RowControl.Check(it?.member == true, it?.some == true) }
     Row.EditHome, Row.AddToCollection, is Row.RommConnection,
     Row.AddFolder, Row.AddRomm, Row.SetAsHome, Row.DefaultHomeApp, Row.AndroidSettings, Row.Licenses, is Row.SettingsTile,
-    Row.SaveSetup, Row.PlayHistory,
+    Row.SaveSetup, Row.Backup, is Row.PickFolderAgain,
     -> RowControl.Opens
     else -> value?.takeIf { it.isNotEmpty() }?.let {
         RowControl.Value(it, attention = it == Copy.notSyncing &&
