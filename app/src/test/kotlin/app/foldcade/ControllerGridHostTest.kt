@@ -42,6 +42,52 @@ class ControllerGridHostTest {
         assertNull(shell.model.settings)
     }
 
+    @Test fun aFolderReturnDropsTheChildViewsScroll() {
+        val store = SessionStore(MemoryPrefs())
+        val folder = HomeFolder(HOME_ANDROID_APPS, "Apps", bucket = HomeKind.AndroidApp,
+            slots = (0..29).map { androidHomeId("app$it") })
+        store.saveHomeBoard(encodeHome(HomeBoard(slots = listOf(HOME_ALL) + List(11) { null } + folder.id,
+            folders = mapOf(folder.id to folder))))
+        val shell = ShellController(store, PluginHost(Dispatchers.Unconfined, MemoryCredentialStore()))
+        shell.setInstalledApps((0..29).map { LaunchableApp("app$it", "App $it", false) }, emptySet())
+        shell.openHomeFolder(HOME_ANDROID_APPS)
+        shell.touchCell(27, HostScreen.Bottom)
+        assertTrue(shell.model.firstColumn > 1)
+        shell.onMeaning(Meaning.Back, HostScreen.Bottom)
+        assertEquals(12, shell.model.focus.cellIndex)
+        assertEquals(1, shell.model.firstColumn)
+        shell.openHomeFolder(HOME_ANDROID_APPS)
+        assertEquals(0, shell.model.firstColumn)
+    }
+
+    @Test fun offHomeUndoDoesNotFollowThePlayerIntoAllGames() {
+        val store = SessionStore(MemoryPrefs())
+        val shell = ShellController(store, PluginHost(Dispatchers.Unconfined, MemoryCredentialStore()))
+        shell.setInstalledApps(listOf(LaunchableApp("game", "Game", true)), emptySet())
+        val folder = decodeHome(store.homeBoardRaw()).slots.indexOf(HOME_ANDROID_GAMES)
+        shell.touchCell(folder, HostScreen.Bottom)
+        shell.onMeaning(Meaning.Options, HostScreen.Bottom)
+        val rows = panelRows(shell.model.panel!!, shell.model)
+        shell.touchPanel(rows.indexOf(Row.RemoveTile), HostScreen.Top)
+        shell.touchPanel(rows.indexOf(Row.RemoveTile), HostScreen.Top)
+        assertEquals(Copy.offHome, shell.model.undoVerb)
+        shell.openHomeAll()
+        assertNull(shell.model.undoVerb)
+        shell.onMeaning(Meaning.Options, HostScreen.Bottom)
+        assertNotNull(shell.model.panel)
+        assertFalse(Row.Undo in panelRows(shell.model.panel!!, shell.model))
+        assertEquals("Game", shell.homeFace(0)?.title)
+    }
+
+    @Test fun playIsFiledAsAnEmulatorEvenWhenAndroidCallsItAGame() {
+        val shell = ShellController(SessionStore(MemoryPrefs()), PluginHost(Dispatchers.Unconfined, MemoryCredentialStore()))
+        shell.setInstalledApps(listOf(LaunchableApp("com.virtualapplications.play", "Play!", true)), emptySet())
+        shell.openHomeAll()
+        assertEquals(0, shell.model.count)
+        shell.openHomeFolder(HOME_EMULATORS)
+        assertEquals("Play!", shell.homeFace(0)?.title)
+    }
+
     @Test fun hiddenTriggersUseAlphabeticalLabelsAndAppsOfferTheOtherAndroidFolder() {
         val store = SessionStore(MemoryPrefs())
         store.saveHomeBoard(encodeHome(HomeBoard(hidden = setOf(androidHomeId("a"), androidHomeId("b")))))

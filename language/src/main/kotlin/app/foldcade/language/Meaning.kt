@@ -177,13 +177,13 @@ fun opensTopMenu(meaning: Meaning): Boolean =
     meaning == Meaning.LeftPanel || meaning == Meaning.RightPanel || meaning == Meaning.Menu
 
 /**
- * True when a key that opens the top screen's menus has nowhere to go: an app holds the top
- * screen, so it covers the islands. The icon editor's L1 and R1 step its colour instead, so
+ * True when an island key has nowhere to go: an app holds the top
+ * screen, so it covers the islands. Start opens a full page on the free screen. The icon editor's L1 and R1 step its colour instead, so
  * they still reach it wherever it is. The keyboard's shoulders move its caret and are never
  * menu keys (see [typingMeaningOf]).
  */
 fun topMenuKeyBlocked(meaning: Meaning, homeKeys: HomeKeys, islandsOpen: Boolean): Boolean {
-    if (!opensTopMenu(meaning) || islandsOpen) return false
+    if (meaning == Meaning.Menu || !opensTopMenu(meaning) || islandsOpen) return false
     return !(homeKeys == HomeKeys.PickingIcon && (meaning == Meaning.LeftPanel || meaning == Meaning.RightPanel))
 }
 

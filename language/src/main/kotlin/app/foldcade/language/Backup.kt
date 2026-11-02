@@ -12,10 +12,10 @@ object BackupCopy {
     const val undoConfirm = "Undo restore?"
     const val redoConfirm = "Redo restore?"
     const val saved = "Backed up."
-    fun saved(skippedThemes: Int): String = when (skippedThemes) {
-        0 -> saved
-        1 -> "$saved 1 theme was too large to include."
-        else -> "$saved $skippedThemes themes were too large to include."
+    fun saved(skippedThemes: Int, result: String = saved): String = when (skippedThemes) {
+        0 -> result
+        1 -> "$result 1 theme was too large to include."
+        else -> "$result $skippedThemes themes were too large to include."
     }
     const val notSaved = PlayCopy.notSaved
     const val unreadable = PlayCopy.unreadable
