@@ -58,6 +58,41 @@ class MenuFitTest {
         assertEquals(listOf(Row.ChooseArt, Row.ShowHidden), rows)
         assertEquals(0..0, tileBlock(rows))
     }
+    /**
+     * Y's menu beside its tile, on the Thor's bottom grid screen (538x468dp, inset 4%) and on
+     * the top one (833x468dp) for Art bottom and Top only, at 1.0x and 1.3x font. The longest
+     * real menus fit without scrolling: a paused DuckStation game with Restart, Close, Play on
+     * the other screen and Open with; a paused NetherSX2 game with Open with; and Hide (UX-02).
+     */
+    @Test fun runningGamesMenusFitBesideTheirTileWithoutScrolling() {
+        val openWith = PlayerChoiceRow(listOf(PlayerChoice("a", label = "DuckStation"), PlayerChoice("b", label = "RetroArch")))
+        val game = TileActions(move = true, collections = emptyList(), playTime = 1L, about = true, select = true, hide = true, game = "g")
+        val running = game.copy(restart = true, close = true)
+        val menus = mapOf(
+            "DuckStation paused, Play on bottom, Open with" to running.copy(moveGame = HostScreen.Bottom, openWith = openWith),
+            "NetherSX2 paused, Open with" to running.copy(openWith = openWith),
+            "paused, Play on bottom" to running.copy(moveGame = HostScreen.Top),
+            "paused in All, no Move" to running.copy(move = false, moveGame = HostScreen.Bottom, openWith = openWith),
+            "paused with art and saves" to running.copy(move = false, art = true, saves = true, openWith = openWith),
+            "not running, Open with" to game.copy(openWith = openWith),
+            "not running, art, saves, Open with" to game.copy(art = true, saves = true, openWith = openWith),
+        )
+        val screens = listOf("bottom" to (468f to 538f * 0.04f), "top" to (468f to 833f * 0.04f))
+        for ((name, tile) in menus) {
+            val rows = actionRows(tile)
+            assertTrue("$name: Hide is in the menu", Row.Hide in rows)
+            for ((screen, size) in screens) for (font in listOf(1f, 1.3f)) {
+                val fit = tileMenuFit(rows, size.first, size.second, font)
+                assertTrue("$name on the $screen screen at ${font}x needs ${fit.neededDp}dp of ${fit.roomDp}dp", fit.fits)
+            }
+        }
+    }
+
+    @Test fun aMenuTooLongForTheCardIsCaughtByTheFit() {
+        val rows = List(9) { Row.Hide }
+        assertFalse(tileMenuFit(rows, 468f, 21.5f, 1f).fits)
+    }
+
     @Test fun gameRowsPutFilingBeforeSelectionAndKeepUndoFirst() {
         val rows = actionRows(TileActions(undo = true, move = true, select = true,
             collections = emptyList(), art = true,

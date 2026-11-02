@@ -11,7 +11,10 @@ object ThemeContract {
     val renamedTokens: Map<String, String> = emptyMap()
 
     /** Tokens the engine no longer reads. A pack that sets one is told so. Their names are never reused. */
-    val retiredTokens: Set<String> = emptySet()
+    val retiredTokens: Set<String> = setOf(
+        // R3 opens a game's summary now; resting on a game no longer does (2026-11-02).
+        "motion.durationSummaryDwell",
+    )
 
     /** Old icon slot names a pack may still fill, and the slot each became. */
     val renamedSlots: Map<String, String> = emptyMap()

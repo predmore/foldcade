@@ -44,10 +44,12 @@ class ContractTest {
     fun unusedKeysAreNotGivenAMeaning() {
         listOf(
             KeyEvent.KEYCODE_BUTTON_THUMBL,
-            KeyEvent.KEYCODE_BUTTON_THUMBR,
             KeyEvent.KEYCODE_BUTTON_MODE,
             KeyEvent.KEYCODE_HOME,
         ).forEach { assertNull(meaningOf(it)) }
+        // R3 opens a game's summary; it means nothing while typing or with a tile in the hand.
+        assertEquals(Meaning.Info, meaningOf(KeyEvent.KEYCODE_BUTTON_THUMBR))
+        assertNull(meaningOf(KeyEvent.KEYCODE_BUTTON_THUMBR, homeKeys = HomeKeys.Typing))
     }
 
     @Test
@@ -269,7 +271,9 @@ class ContractTest {
     @Test
     fun aGameStillOpenOffersRestartWhichAsksFirst() {
         val rows = actionRows(TileActions(move = true, select = true, restart = true, hide = true, removeDownload = true, game = "g"))
-        assertEquals(listOf(Row.MoveTile, Row.SelectTile, Row.RestartGame, Row.Hide, Row.RemoveDownload), rows)
+        // Restart takes a round tile beside Move, since a paused game's menu has one to spare.
+        assertEquals(listOf(Row.MoveTile, Row.RestartGame, Row.SelectTile, Row.Hide, Row.RemoveDownload), rows)
+        assertEquals(0..1, tileBlock(rows))
         assertNull(chords(rows)[rows.indexOf(Row.RestartGame)])
         val model = PickerModel(count = 6, rowsPerPage = 1, tileActions = TileActions(restart = true, game = "g"))
         val menu = reduce(model, Meaning.Options).first
@@ -294,7 +298,7 @@ class ContractTest {
         val model = PickerModel(count = 6, rowsPerPage = 1, focus = focus, tileActions = tile)
         val open = reduce(model, Meaning.Options).first
         val panel = open.panel!!
-        assertEquals(Side.Left, panel.side)
+        assertEquals(Side.Tile, panel.side)
         assertEquals(PanelLevel.Actions, panel.level)
         assertEquals(
             listOf(Row.MoveTile, Row.AddToCollection, Row.RemoveTile, Row.Hide),

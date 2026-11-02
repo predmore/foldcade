@@ -36,7 +36,8 @@ class PlayGamePageTest {
         val (opened, effect) = reduce(at, Meaning.Activate)
         assertNull(opened.panel)
         assertEquals(game, opened.playActivity?.game)
-        assertEquals(menu.panel!!.screen, opened.playActivity?.screen)
+        // A full page, on the larger top screen, wherever Y's menu was.
+        assertEquals(ScreenLayout.Default.pageScreen, opened.playActivity?.screen)
         assertEquals(Effect.OpenPlayGame(game), effect)
     }
 

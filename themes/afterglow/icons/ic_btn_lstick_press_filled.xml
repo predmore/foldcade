@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Foldcade original art, MIT licensed (see LICENSE). Left stick click (L3) (held) -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:aapt="http://schemas.android.com/aapt"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+    <path
+        android:pathData="M1.4,12A10.6,10.6 0 1 1 22.6,12A10.6,10.6 0 1 1 1.4,12Z"
+        android:fillColor="#FF3EE6C0" />
+    <path
+        android:pathData="M10.95,3.9A1.05,1.05 0 1 1 13.05,3.9A1.05,1.05 0 1 1 10.95,3.9Z"
+        android:fillColor="#FF04120E" />
+    <path
+        android:pathData="M10.95,20.1A1.05,1.05 0 1 1 13.05,20.1A1.05,1.05 0 1 1 10.95,20.1Z"
+        android:fillColor="#FF04120E" />
+    <path
+        android:pathData="M2.85,12A1.05,1.05 0 1 1 4.95,12A1.05,1.05 0 1 1 2.85,12Z"
+        android:fillColor="#FF04120E" />
+    <path
+        android:pathData="M19.05,12A1.05,1.05 0 1 1 21.15,12A1.05,1.05 0 1 1 19.05,12Z"
+        android:fillColor="#FF04120E" />
+    <path
+        android:pathData="M8.52,9.1L8.52,14.9L11.42,14.9M12.116,9.1L15.364,9.1L13.508,11.478A1.74,1.74 0 1 1 12.116,14.262"
+        android:strokeColor="#FF04120E"
+        android:strokeWidth="1.8"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round" />
+</vector>

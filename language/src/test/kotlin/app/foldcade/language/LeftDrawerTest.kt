@@ -1,7 +1,6 @@
 package app.foldcade.language
 
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Test
 import java.time.LocalDateTime
@@ -32,8 +31,6 @@ class LeftDrawerTest {
         val opened = reduce(model(), Meaning.LeftPanel).first
         val edit = reduce(at(opened, Row.EditHome), Meaning.Activate).first
         assertEquals(PanelLevel.EditHome, edit.panel?.level)
-        // The focused tile's actions are Y's, so Edit home names no tile.
-        assertFalse(PanelLevel.EditHome.actsOnTile)
         assertEquals(listOf(Row.RecentOnHome, Row.AddNewGames, Row.Folders, Row.Hidden), panelRows(edit.panel!!, edit))
         val root = reduce(edit, Meaning.Back).first
         assertEquals(PanelLevel.Root, root.panel?.level)
@@ -41,10 +38,15 @@ class LeftDrawerTest {
     }
 
     @Test
-    fun yOpensTheTilesMenuOnTheLeftAndAddToComesBackToIt() {
+    fun yOpensTheTilesMenuBesideItOnTheGridsScreenAndAddToComesBackToIt() {
         val actions = reduce(model(), Meaning.Options).first
-        assertEquals(Side.Left, actions.panel?.side)
+        assertEquals(Side.Tile, actions.panel?.side)
         assertEquals(PanelLevel.Actions, actions.panel?.level)
+        // The grid's screen in every layout, never the hero's where L1's island is.
+        assertEquals(ScreenLayout.ShowcaseTop.gridScreen, actions.panel?.screen)
+        ScreenLayout.entries.forEach { layout ->
+            assertEquals(layout.gridScreen, reduce(model().copy(layout = layout), Meaning.Options).first.panel?.screen)
+        }
         val moveTo = reduce(at(actions, Row.AddToCollection), Meaning.Activate).first
         val back = reduce(moveTo, Meaning.Back).first
         assertEquals(PanelLevel.Actions, back.panel?.level)

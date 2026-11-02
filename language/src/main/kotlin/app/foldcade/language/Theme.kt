@@ -327,8 +327,6 @@ object Copy {
     const val rename = "Rename"
     const val icon = "Icon"
     const val newCollection = "New collection"
-    /** New collection's word under its tile in Y's menu. */
-    const val tileNew = "New"
     /** A new collection's name, before a number: Collection 1. */
     const val collection = "Collection"
     const val recentlyPlayed = "Recently played"
@@ -363,7 +361,6 @@ object Copy {
     const val restartTitle = "Restart the game?"
     const val restartBody = "It closes where you left it. Anything not saved is lost."
     const val addTo = "Add to"
-    const val emptySlot = "Empty slot"
     const val letterJump = "Letter"
     const val screenJump = "Screen"
     const val hintDrop = "Drop"
@@ -377,6 +374,10 @@ object Copy {
     const val hintChoose = "Choose"
     const val hintColor = "Color"
     const val hintOptions = "Options"
+    /** R3's word under the grid: it opens the focused game's summary on the hero. */
+    const val hintInfo = "Info"
+    /** Under Y's menu while Open with is focused on a game still open: the choice waits for its next start. */
+    const val nextLaunch = "Next launch"
     const val collectionIcon = "Collection icon"
     const val hintTop = "Top"
     const val hintPlay = "Play"
@@ -510,6 +511,27 @@ fun dropLabel(drop: HoldDrop): String = when (drop) {
     HoldDrop.Add -> Copy.hintAdd
     HoldDrop.PutBack -> Copy.hintPutBack
     HoldDrop.TakeOut -> Copy.hintTakeOut
+}
+
+/**
+ * R3 joins the grid's keys, last and only while the row has room, when the focused game has a
+ * summary for the hero to open. With none it says nothing, so the row stays as it was.
+ */
+fun withInfoHint(keys: List<HintKey>, summary: Boolean): List<HintKey> =
+    if (summary && keys.size <= INFO_HINT_ROOM) keys + HintKey(PromptKey.R3, Copy.hintInfo) else keys
+
+/** How many hints may already be in the row for R3's Info to join it: the root grid's A, X, Y and Find. */
+private const val INFO_HINT_ROOM = 4
+
+/**
+ * A word in front of the hint row for the focused menu row, or null. Open with on a game still
+ * open in its player changes the emulator for its next start, not the run that is paused.
+ */
+fun panelNote(model: PickerModel): String? {
+    val panel = model.panel ?: return null
+    if (model.dialog != null) return null
+    val row = panelRows(panel, model).getOrNull(panel.index)
+    return if (row == Row.OpenWith && model.tileActions?.restart == true) Copy.nextLaunch else null
 }
 
 fun triggerHints(letters: Boolean): List<HintKey> = listOf(

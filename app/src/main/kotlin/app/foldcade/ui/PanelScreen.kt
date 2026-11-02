@@ -88,6 +88,8 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.positionInParent
+import androidx.compose.ui.layout.positionInRoot
+import androidx.compose.ui.layout.boundsInRoot
 import androidx.compose.ui.unit.toSize
 import androidx.compose.ui.geometry.RoundRect
 import androidx.compose.ui.geometry.Size
@@ -223,6 +225,10 @@ import app.foldcade.language.GridStrip
 import app.foldcade.language.shownFirstColumn
 import app.foldcade.language.MotionSpeed
 import app.foldcade.language.SidePanel
+import app.foldcade.language.Side
+import app.foldcade.language.panelNote
+import app.foldcade.language.withInfoHint
+import app.foldcade.language.tileLabelLines
 import app.foldcade.language.GlowFalloff
 import app.foldcade.language.builtInTheme
 import app.foldcade.language.connectFields
@@ -321,7 +327,8 @@ fun PanelHost(activity: FoldcadeHomeActivity, displays: Displays) {
     // A full-screen page on the other screen leaves this one its command center, not a blurred grid.
     val besidePage = screen != null && pageBeside(app, model, session, screen) != null
     // A menu or a page open on the other screen blurs this one. Over this screen's own grid, as with one screen, it does not.
-    val menuOn = model.panel?.screen ?: model.settings?.screen ?: model.playActivity?.screen ?: model.gameAbout?.screen
+    // Y's menu sits by its tile on the grid's screen and leaves the hero as it is, title and all.
+    val menuOn = model.panel?.takeIf { it.side != Side.Tile }?.screen ?: model.settings?.screen ?: model.playActivity?.screen ?: model.gameAbout?.screen
     val menuVisible = menuOn != null && model.dialog?.screen != menuOn
     val blurHere = screen != null &&
         menuOn != screen &&
@@ -346,9 +353,11 @@ fun PanelHost(activity: FoldcadeHomeActivity, displays: Displays) {
     // runs again when its density changes: each window gets the same one, new.
     val base = LocalDensity.current
     val density = remember(base, activity.panelWindows) { WindowDensity(base) }
+    // Where this window's grid draws its focused tile, for Y's menu to grow out of.
+    val tileAnchor = remember { TileAnchor() }
     // A closed menu draws neither the blur nor the scrim. A graphics layer
     // left over the library, even at zero alpha, keeps the accessibility dump empty.
-    CompositionLocalProvider(LocalFoldTheme provides paint, LocalDensity provides density) {
+    CompositionLocalProvider(LocalFoldTheme provides paint, LocalDensity provides density, LocalTileAnchor provides tileAnchor) {
         Box(
             Modifier
                 .fillMaxSize()
@@ -367,7 +376,7 @@ fun PanelHost(activity: FoldcadeHomeActivity, displays: Displays) {
             if (wallpaper != null && !dark) PanelWallpaper(wallpaper)
             // The body has one place in the tree, open menu or not. Opening a menu
             // keeps the backdrop's clock and the grid's state, and the blur eases out.
-            Box(Modifier.fillMaxSize().menuBlur { blur }.menuDim { blur }) {
+            Box(Modifier.fillMaxSize().menuBlur { blur }.menuDim({ blur })) {
                 CompositionLocalProvider(LocalUnderMenu provides blurHere) {
                     val rewind = remember { androidx.compose.animation.core.Animatable(1f) }
                     LaunchedEffect(model.rewind) {
@@ -411,7 +420,11 @@ fun PanelHost(activity: FoldcadeHomeActivity, displays: Displays) {
                     }
                 }
             }
+            // Y's menu, beside its tile, over the grid it came from and under any dialog it asks.
             if (panel != null && screen != null && drawsHere) {
+                TileMenuLayer(app, screen, scale) { panelState, progress, interactive ->
+                    PanelRows(app, screen, panelState, progress, interactive, scale, activity::dispatch)
+                }
                 DialogLayer(app, model.dialog, screen, scale, activity::dispatch)
             }
             val conflict = model.saveConflict
@@ -627,18 +640,30 @@ private class SurfaceHold(var surface: Surface?, var heroBeside: Boolean)
 /** [base] under its own identity, so every layer under it counts it as a new density. */
 private class WindowDensity(base: Density) : Density by base
 
-/** Dim painted with the content, not a second full-screen node on top of it. */
+/**
+ * Dim painted with the content, not a second full-screen node on top of it. [hole], in this
+ * node's own pixels, stays lit: the tile Y's menu grows out of, with its ring.
+ */
 @Composable
-private fun Modifier.menuDim(progress: () -> Float): Modifier {
+private fun Modifier.menuDim(progress: () -> Float, hole: (() -> RoundRect?)? = null): Modifier {
     val design = foldTheme().style
     val scrim = design.colors.scrim
     // Without a blur behind it, the dim alone has to quiet the grid.
     val dim = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) design.menu.scrimAlpha else design.menu.scrimAlphaUnblurred
+    val cut = remember { Path() }
     return drawWithContent {
         drawContent()
         val amount = progress()
         if (amount <= 0f) return@drawWithContent
-        drawRect(scrim.copy(alpha = dim * amount.coerceIn(0f, 1f)))
+        val color = scrim.copy(alpha = dim * amount.coerceIn(0f, 1f))
+        val lit = hole?.invoke()
+        if (lit == null) {
+            drawRect(color)
+        } else {
+            cut.reset()
+            cut.addRoundRect(lit)
+            clipPath(cut, ClipOp.Difference) { drawRect(color) }
+        }
     }
 }
 
@@ -1226,10 +1251,17 @@ private fun Hero(app: FoldcadeApp, screen: HostScreen, scale: Float, onEffect: (
                 val finding = presence(find, motion.durationIsland, scale)
                 // The facts and summary of the game the name card names, which is the focus, not the art still arriving.
                 val details = rememberGameDetails(app, (subject as? HeroSubject.Item)?.let { records[it.key] }?.takeIf { naming == null })
-                // The card opens to the summary only while the cursor rests on the grid, with nothing over the card.
+                // The card opens to the summary only when R3 asked for this game, while the cursor rests on
+                // the grid with nothing over the card.
                 val resting = cellFocused && find == null && naming == null && typing.shown == null && finding.shown == null &&
                     editor.shown == null && app.shell.artPicker == null &&
                     app.shell.homeKeys().let { it == HomeKeys.Idle || it == HomeKeys.AllLibrary }
+                // The grid's hint row offers R3 Info for a game whose summary this card could open.
+                val summaryKey = subject?.key?.takeIf {
+                    subject is HeroSubject.Item && !subject.item.emptyShelfHint && details?.summary != null
+                }
+                androidx.compose.runtime.SideEffect { app.shell.offerSummary(summaryKey) }
+                androidx.compose.runtime.DisposableEffect(Unit) { onDispose { app.shell.offerSummary(null) } }
                 if (subject != null || finding.shown != null) {
                     Spacer(Modifier.height(px(24f)))
                     Box(contentAlignment = Alignment.Center) {
@@ -1240,7 +1272,7 @@ private fun Hero(app: FoldcadeApp, screen: HostScreen, scale: Float, onEffect: (
                                 cellFocused,
                                 cardMax,
                                 details = details,
-                                unfolds = resting,
+                                unfolds = resting && app.shell.summaryOpenFor == subject.key,
                                 scale = scale,
                                 overArt = sceneArt,
                                 // A logo on wide art already says the name, once that art is the focused game's.
@@ -1282,7 +1314,8 @@ private fun Hero(app: FoldcadeApp, screen: HostScreen, scale: Float, onEffect: (
             }
         }
         val checks = app.shell.homeSelection()
-        val selected = presence(checks?.checked?.size?.takeIf { model.panel == null }, motion.durationFocus, scale)
+        // Y's menu beside the tile has no header, so the count stays up here while it acts on them.
+        val selected = presence(checks?.checked?.size?.takeIf { model.panel?.let { it.side == Side.Tile } ?: true }, motion.durationFocus, scale)
         selected.shown?.let { count ->
             BasicText(SelectionCopy.count(count),
                 modifier = Modifier.align(Alignment.TopCenter).padding(top = px(32f))
@@ -1292,6 +1325,19 @@ private fun Hero(app: FoldcadeApp, screen: HostScreen, scale: Float, onEffect: (
                 style = text(theme.onBackground, design.type.hint, theme))
         }
         IconEditorLayer(app, editor, screen, scale)
+        // L1's or R1's island open over the hero on this screen dims it, so the name card under the
+        // card reads as behind it rather than cut (UX-08). Y's menu is on the grid's screen and leaves it.
+        val islandOver = model.panel?.let { it.side != Side.Tile && it.screen == screen } == true && model.dialog?.screen != screen
+        val dim = motionState(
+            if (islandOver) 1f else 0f,
+            if (islandOver) motion.arrive(motion.durationIsland, scale) else motion.leave(motion.durationIsland, scale),
+        )
+        val dimmed by remember { derivedStateOf { dim.value > 0f } }
+        if (dimmed) {
+            val scrim = design.colors.scrim
+            val alpha = design.menu.scrimAlphaUnblurred
+            Box(Modifier.fillMaxSize().drawBehind { drawRect(scrim.copy(alpha = alpha * dim.value.coerceIn(0f, 1f))) })
+        }
         TopIslands(app, screen, scale) { panelState, progress, interactive ->
             PanelRows(app, screen, panelState, progress, interactive, scale, onEffect)
         }
@@ -1656,14 +1702,12 @@ private fun HeroLabel(
     // Each game starts closed, so moving on closes the card at once and never shows the last game's words.
     val unfold = remember(shown.key) { Animatable(0f) }
     val still = motion.heroFadeOnly(app.shell.model.motionSpeed, scale)
-    // The rest is timed from when the cursor reached this game, or came back to the grid on it.
-    val restedAt = remember(shown.key, unfolds) { SystemClock.uptimeMillis() }
+    // R3 opens it ([unfolds]); R3 again, B, or moving on folds it.
     LaunchedEffect(shown.key, summary != null, unfolds, still) {
         if (summary == null || !unfolds) {
             if (still) unfold.snapTo(0f) else unfold.animateTo(0f, motion.leave(motion.durationIsland, scale))
             return@LaunchedEffect
         }
-        delay(restedAt + motion.durationSummaryDwell - SystemClock.uptimeMillis())
         if (still) unfold.snapTo(1f) else unfold.animateTo(1f, motion.arrive(motion.durationIsland, scale))
     }
     Column(
@@ -2363,6 +2407,21 @@ private fun Picker(
         if (menuOver) 1f else 0f,
         if (menuOver) motion.arrive(motion.durationIsland, scale) else motion.leave(motion.durationIsland, scale),
     )
+    // Y's menu leaves its tile lit, ring and all, as the rest of the grid quiets around it.
+    val anchor = LocalTileAnchor.current
+    val gridOrigin = remember { floatArrayOf(0f, 0f) }
+    val ringPx = with(LocalDensity.current) { ringReach().toPx() }
+    val tileHole = remember(anchor, screen, ringPx) {
+        {
+            anchor?.takeIf { tileMenuOn(app, screen) }?.bounds()?.let { bounds ->
+                val corner = anchor.cornerPx + ringPx
+                RoundRect(
+                    bounds.translate(-gridOrigin[0], -gridOrigin[1]).inflate(ringPx),
+                    CornerRadius(corner, corner),
+                )
+            }
+        }
+    }
     BoxWithConstraints(Modifier.fillMaxSize()) {
         val inset = maxWidth * design.metrics.insetFraction
         // A wide panel spaces its tiles as a 4:3 one would, and spends the rest of its width on columns.
@@ -2409,7 +2468,8 @@ private fun Picker(
                 Modifier
                     .weight(1f)
                     .fillMaxWidth()
-                    .menuDim { quiet.value },
+                    .onGloballyPositioned { val at = it.positionInRoot(); gridOrigin[0] = at.x; gridOrigin[1] = at.y }
+                    .menuDim({ quiet.value }, tileHole),
                 contentAlignment = Alignment.Center,
             ) {
                 // Rows are the same on every panel, so a Home layout reads the same on both.
@@ -2857,11 +2917,15 @@ private fun QuickTiles(
                     }
                     if (words != null) {
                         val quickRest = LocalFoldTheme.current.theme.style.menu.quickLabelRestAlpha
+                        // "New collection" takes two short lines under its tile rather than reading as a bare "New".
+                        val lines = tileLabelLines(row)
                         BasicText(
                             text = words,
-                            maxLines = 1,
-                            style = text(theme.onBackground, LocalFoldTheme.current.theme.style.type.hint, theme),
-                            modifier = Modifier.graphicsLayer { alpha = quickRest + (1f - quickRest) * lit.value },
+                            maxLines = lines,
+                            style = text(theme.onBackground, LocalFoldTheme.current.theme.style.type.hint, theme).copy(textAlign = TextAlign.Center),
+                            modifier = Modifier
+                                .then(if (lines > 1) Modifier.widthIn(max = (QUICK_BUTTON_DP * TWO_LINE_LABEL_SPAN).dp) else Modifier)
+                                .graphicsLayer { alpha = quickRest + (1f - quickRest) * lit.value },
                         )
                     }
                     }
@@ -2872,6 +2936,9 @@ private fun QuickTiles(
 }
 
 private const val QUICK_BUTTON_DP = 56f
+
+/** A two-line word under a round tile wraps within this many tiles' width, so it stays under its own. */
+private const val TWO_LINE_LABEL_SPAN = 1.4f
 
 /**
  * Round tiles spaced evenly across their line, as [quickTileColumns] of them would be. A line
@@ -3030,7 +3097,10 @@ private fun GridHints(app: FoldcadeApp, modifier: Modifier = Modifier) {
     // The root grid names Select's Find while the row has room, so the button can be found.
     val atRoot = gridKeys && find == null && shell.find == null && model.settings == null && model.playActivity == null && model.gameAbout == null &&
         model.homeGrid == HomeGrid.StandIns && !model.libraryGrid && model.atLibraryRoot && shell.homeKeys() == HomeKeys.Idle
-    val keys = withFindHint(shown, atRoot)
+    // R3 Info, last and quiet, only for a game whose summary the hero can open.
+    val keys = withInfoHint(withFindHint(shown, atRoot), summary = gridKeys && !selecting && model.undoVerb == null && shell.offersInfo())
+    // Open with on a game still open in its player says when its choice takes effect (UX-17).
+    val note = panelNote(model)
     if (keys.isEmpty()) return
     Row(
         modifier.fillMaxWidth(),
@@ -3040,6 +3110,7 @@ private fun GridHints(app: FoldcadeApp, modifier: Modifier = Modifier) {
         if (selecting) BasicText(SelectionCopy.count(shell.homeSelection()!!.checked.size) + " ·", style = text(foldTheme().muted, LocalFoldTheme.current.theme.style.type.hint, foldTheme()))
         if (!selecting && model.undoVerb != null && model.panel == null && model.dialog == null) BasicText(text = model.undoVerb + " ·", style = text(foldTheme().muted, LocalFoldTheme.current.theme.style.type.hint, foldTheme()))
         if (destructive) BasicText(text = Copy.hold, style = text(foldTheme().muted, LocalFoldTheme.current.theme.style.type.hint, foldTheme()))
+        if (note != null) BasicText(text = "$note ·", style = text(foldTheme().muted, LocalFoldTheme.current.theme.style.type.hint, foldTheme()))
         keys.forEach { key -> HintWord(model, key) }
     }
 }
@@ -3273,8 +3344,9 @@ private fun GridCursor(
     val motion = LocalFoldTheme.current.theme.motion
     val shell = app.shell
     val model = shell.model
+    // Y's menu grows out of the tile, so the ring stays on it while the menu is open.
     val shown = model.dialog == null &&
-        model.panel == null &&
+        (model.panel?.let { it.side == Side.Tile } ?: true) &&
         !model.connectOpen &&
         model.focus.chrome == null &&
         !shell.homeEditing()
@@ -3424,8 +3496,9 @@ private fun StripColumn(
                     val game = shell.tileFromOrder(source)
                     // A tile in the hand draws itself over the grid, so its slot is only
                     // the space it left, and focus is where it is held.
+                    // Y's menu grows out of the focused tile, which stays lit and lifted under it.
                     val focused = shell.model.dialog == null &&
-                        shell.model.panel == null &&
+                        (shell.model.panel?.let { it.side == Side.Tile } ?: true) &&
                         !shell.model.connectOpen &&
                         focus.chrome == null &&
                         focus.cellIndex == index &&
@@ -3463,8 +3536,10 @@ private fun StripColumn(
                         saveHealth = shell.saveHealthAt(source, game),
                         library = libraryTile,
                         settledAt = if (face?.folder == true) shell.settledAt(face.id) else 0L,
-                        // The focused tile is where a launch grows its art from.
-                        bloom = if (focused) Modifier.bloomSource(app, screen, BloomFrom.Tile, radiusPx * motion.scaleFocus) else Modifier,
+                        // The focused tile is where a launch grows its art from, and Y's menu its card.
+                        bloom = if (focused) {
+                            Modifier.bloomSource(app, screen, BloomFrom.Tile, radiusPx * motion.scaleFocus).tileAnchor(radiusPx * motion.scaleFocus)
+                        } else Modifier,
                         onClick = { tap() },
                         onDrag = if (editing) {
                             { meaning -> shell.dragHome(meaning) }
@@ -3888,7 +3963,10 @@ private fun FoundTile(app: FoldcadeApp, screen: HostScreen, entry: FindEntry, fo
     Box {
         Cell(
             // The focused result is where a launch from Find grows its art from.
-            bloom = if (focused) Modifier.bloomSource(app, screen, BloomFrom.Tile, cornerPx * foldTheme().motion.scaleFocus, find = true) else Modifier,
+            bloom = if (focused) {
+                Modifier.bloomSource(app, screen, BloomFrom.Tile, cornerPx * foldTheme().motion.scaleFocus, find = true)
+                    .tileAnchor(cornerPx * foldTheme().motion.scaleFocus)
+            } else Modifier,
             title = entry.title,
             mark = entry.mark ?: game?.mark,
             themedApp = themedApp,
