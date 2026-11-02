@@ -5,6 +5,31 @@ import org.junit.Test
 import kotlin.math.roundToInt
 
 class BackupTest {
+    @Test fun backupUndoAndRedoUseTheirOwnCopyWithoutChangingConfirmationSafety() {
+        assertEquals("Home, collections, hidden games, settings, themes and play time, in one file. Not saves or sign-ins.", BackupCopy.body)
+        val redo = backupDialog(HostScreen.Top, undo = true, redo = true)
+        assertEquals(listOf(DialogButton.BackUp, DialogButton.PickRestore, DialogButton.RedoRestore, DialogButton.PlayHistory, DialogButton.NotNow), redo.buttons)
+        assertEquals("Redo restore", dialogButtonLabel(DialogButton.RedoRestore))
+        for ((action, title, body) in listOf(
+            Triple(RestoreAction.Undo, "Undo restore?", "Puts back the setup you had before, from Nov 1, 2026. Play time from both is kept."),
+            Triple(RestoreAction.Redo, "Redo restore?", "Puts back the restored setup, from Nov 1, 2026. Play time from both is kept."),
+        )) {
+            val dialog = restoreDialog("Nov 1, 2026", "Home: 3 games", HostScreen.Top, action)
+            assertEquals(title, dialog.title)
+            assertEquals(body, dialog.body)
+            assertEquals("Home: 3 games", dialog.detail)
+            assertEquals(DialogButton.NotNow, dialog.buttons[dialog.index])
+            assertEquals(DialogButton.NotNow, dialog.buttons[dialog.safeIndex])
+            val button = if (action == RestoreAction.Undo) DialogButton.UndoRestore else DialogButton.RedoRestore
+            assertEquals(button, dialog.buttons[0])
+            val model = PickerModel(0, 1, dialog = dialog.copy(index = 0))
+            assertNull(reduce(model, Meaning.Activate, repeatCount = 1).second)
+            assertEquals(Effect.DialogChoice(button, DialogKind.RestoreBackup), reduce(model, Meaning.Activate).second)
+        }
+        assertEquals("Pick these folders again in Settings › Library: roms, ES-DE.", BackupCopy.folders("roms, ES-DE"))
+        assertEquals("Saved.", playHistoryDone(PlayCopy.exported, HostScreen.Top).body)
+    }
+
     @Test fun exportedPacksThatDoNotFitAreNamedInTheDoneLine() {
         assertEquals("Backed up.", BackupCopy.saved(0))
         assertEquals("Backed up. 1 theme was too large to include.", BackupCopy.saved(1))
@@ -89,8 +114,8 @@ class BackupTest {
 
     @Test fun aFinishedRestoreAlwaysHasANonemptyMessageWithoutRepeatingItsTitle() {
         val complete = backupDone("", HostScreen.Top, restored = true)
-        assertEquals(BackupCopy.title, complete.title)
-        assertEquals("Restored.", complete.body)
+        assertEquals(BackupCopy.restored, complete.title)
+        assertEquals("All set.", complete.body)
         val remaining = backupDone(BackupCopy.signIn, HostScreen.Top, restored = true)
         assertEquals(BackupCopy.restored, remaining.title)
         assertEquals(BackupCopy.signIn, remaining.body)
@@ -120,7 +145,7 @@ class BackupTest {
         assertEquals("$home · Not here yet: 1 app", BackupCopy.preview(3, 1, 1, "Built-in", 0, 1))
         assertEquals(home, BackupCopy.preview(3, 1, 1, "Built-in", 0, 0))
         assertEquals("$home · Not here yet: 1 game, 2 apps", BackupCopy.preview(3, 1, 1, "Built-in", 1, 2))
-        assertEquals("Replaces Home, collections, hidden games, settings and theme with this backup's, from Nov 1, 2026. Play time is only added to.",
+        assertEquals("Replaces your Home, collections, hidden games, settings and theme with this backup's from Nov 1, 2026. Play time from both is kept.",
             restoreDialog("Nov 1, 2026", home, HostScreen.Top).body)
     }
 

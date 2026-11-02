@@ -115,7 +115,8 @@ class SetupRebaseRegressionTest {
         val folders = libraryFoldersWithOutstandingRestores(listOf(current), listOf(BackupFolder(mediaTree, "ES-DE")))
         assertEquals(current, folders[0])
         assertTrue(folders[0].artAndInfo)
-        assertEquals("ES-DE · Pick again", folders[1].label)
+        assertEquals("ES-DE", folders[1].label)
+        assertTrue(folders[1].pickAgain)
         assertFalse(folders[1].artAndInfo) // Purpose is learned after a granted scan.
         val model = PickerModel(0, 1, folders = folders)
         assertEquals("ROMs · art and info", settingsInnerTitle(SettingsInner.Folder(currentTree), model))

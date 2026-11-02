@@ -4,10 +4,13 @@ import kotlinx.serialization.json.*
 
 object BackupCopy {
     const val title = "Backup"
-    const val body = "Home, collections, hidden games, settings, themes and play time, in one file. Sign-ins stay on this device."
+    const val body = "Home, collections, hidden games, settings, themes and play time, in one file. Not saves or sign-ins."
     const val backUp = "Back up"
     const val restore = "Restore"
     const val undo = "Undo restore"
+    const val redo = "Redo restore"
+    const val undoConfirm = "Undo restore?"
+    const val redoConfirm = "Redo restore?"
     const val saved = "Backed up."
     fun saved(skippedThemes: Int): String = when (skippedThemes) {
         0 -> saved
@@ -22,9 +25,11 @@ object BackupCopy {
     const val restoreUnfinished = "The restore didn't finish. Your setup is as it was."
     const val confirm = "Restore this backup?"
     const val restored = "Restored"
-    const val restoredDone = "Restored."
+    const val restoredDone = "All set."
     const val pickAgain = "Pick again"
-    fun replacing(date: String): String = "Replaces Home, collections, hidden games, settings and theme with this backup's, from $date. Play time is only added to."
+    fun replacing(date: String): String = "Replaces your Home, collections, hidden games, settings and theme with this backup's from $date. Play time from both is kept."
+    fun undoing(date: String): String = "Puts back the setup you had before, from $date. Play time from both is kept."
+    fun redoing(date: String): String = "Puts back the restored setup, from $date. Play time from both is kept."
     fun preview(games: Int, collections: Int, hidden: Int, theme: String, missingGames: Int, missingApps: Int): String {
         val missing = listOfNotNull(
             count(missingGames, "game").takeIf { missingGames > 0 },
@@ -38,31 +43,51 @@ object BackupCopy {
     const val pair = "Pair your computers again."
     const val cores = "Pick RetroArch's cores folder again."
     const val eden = "Pick Eden's folder again."
-    fun folders(names: String): String = "Pick these folders again: $names."
+    fun folders(names: String): String = "Pick these folders again in Settings › Library: $names."
     fun saves(names: String): String = "Pick save folders again: $names."
     fun switchedRomm(host: String): String = "RomM: switches to $host; sign in again"
     fun connectRomm(host: String): String = "RomM: $host; sign in"
+    fun waiting(source: String): String = "Waiting for $source"
+}
+
+enum class RestoreAction { Restore, Undo, Redo }
+
+/** Missing sources name the recovery step, without inventing a game tile. */
+fun restoreWaitingTitle(sources: Set<String>, folders: Map<String, String>, computers: Map<String, String>): String? {
+    val name = sources.sorted().firstNotNullOfOrNull { source -> when {
+        source.startsWith("folder:") -> folders[source.removePrefix("folder:")]
+        source == "romm" -> "RomM"
+        source.startsWith("moonlight:") -> computers.entries.firstOrNull { it.key.equals(source.removePrefix("moonlight:"), ignoreCase = true) }?.value
+        source == "gamenative" -> "GameNative"
+        source == "droiddeck" -> "DroidDeck"
+        else -> null
+    } }?.takeIf { it.isNotBlank() }
+    return name?.let(BackupCopy::waiting)
 }
 
 /** A file flow opened from Settings stays with its page, whichever panel delivered the key. */
 fun PickerModel.backupDialogScreen(from: HostScreen): HostScreen = settings?.screen ?: from
 
-fun backupDialog(screen: HostScreen, undo: Boolean = false): DialogState {
+fun backupDialog(screen: HostScreen, undo: Boolean = false, redo: Boolean = false): DialogState {
     val buttons = listOf(DialogButton.BackUp, DialogButton.PickRestore) +
-        (if (undo) listOf(DialogButton.UndoRestore) else emptyList()) + listOf(DialogButton.PlayHistory, DialogButton.NotNow)
+        (if (undo) listOf(if (redo) DialogButton.RedoRestore else DialogButton.UndoRestore) else emptyList()) + listOf(DialogButton.PlayHistory, DialogButton.NotNow)
     return DialogState(DialogKind.Backup, BackupCopy.title, BackupCopy.body, buttons, 0, buttons.lastIndex, screen)
 }
 
-fun backupDone(message: String, screen: HostScreen, restored: Boolean = false): DialogState = DialogState(
-    DialogKind.BackupDone, if (restored && message.isNotBlank()) BackupCopy.restored else BackupCopy.title,
+fun backupDone(message: String, screen: HostScreen, restored: Boolean = false, library: Boolean = false): DialogState = DialogState(
+    DialogKind.BackupDone, if (restored) BackupCopy.restored else BackupCopy.title,
     if (restored && message.isBlank()) BackupCopy.restoredDone else message,
-    listOf(DialogButton.Ok), 0, 0, screen,
+    if (library) listOf(DialogButton.Library, DialogButton.Ok) else listOf(DialogButton.Ok), 0, if (library) 1 else 0, screen,
 )
 
-fun restoreDialog(date: String, detail: String, screen: HostScreen): DialogState = DialogState(
-    DialogKind.RestoreBackup, BackupCopy.confirm, BackupCopy.replacing(date),
-    listOf(DialogButton.RestoreBackup, DialogButton.NotNow), 1, 1, screen, detail = detail,
-)
+fun restoreDialog(date: String, detail: String, screen: HostScreen, action: RestoreAction = RestoreAction.Restore): DialogState {
+    val (title, body, button) = when (action) {
+        RestoreAction.Restore -> Triple(BackupCopy.confirm, BackupCopy.replacing(date), DialogButton.RestoreBackup)
+        RestoreAction.Undo -> Triple(BackupCopy.undoConfirm, BackupCopy.undoing(date), DialogButton.UndoRestore)
+        RestoreAction.Redo -> Triple(BackupCopy.redoConfirm, BackupCopy.redoing(date), DialogButton.RedoRestore)
+    }
+    return DialogState(DialogKind.RestoreBackup, title, body, listOf(button, DialogButton.NotNow), 1, 1, screen, detail = detail)
+}
 
 /** Every saved game, including games hidden or taken off Home and collection-only memberships. */
 fun backupHomeIds(board: HomeBoard): Set<String> = (

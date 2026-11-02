@@ -93,7 +93,7 @@ object PlayCopy {
     const val historyBody = "Export your play time to a file, or import one. Importing only adds to what's here."
     const val export = "Export"
     const val import = "Import"
-    const val exported = "Saved"
+    const val exported = "Saved."
     const val notSaved = "The file couldn't be saved."
     const val updated = "Updated"
 

@@ -51,7 +51,7 @@ internal class SetupBackups(private val root: File, private val prefs: SharedPre
     }
 
     /** Stage first. A ready marker makes completing the before-copy rename recoverable too. */
-    fun stage(incoming: SetupBackup, current: SetupBackup, afterStage: () -> Unit = {}) {
+    fun stage(incoming: SetupBackup, current: SetupBackup, action: RestoreAction = RestoreAction.Restore, afterStage: () -> Unit = {}) {
         check(!stage.exists()) { "A restore is already staged" }
         failed.delete()
         ready.delete()
@@ -70,7 +70,10 @@ internal class SetupBackups(private val root: File, private val prefs: SharedPre
             writeDurably(baseline.toPath(), SetupArchive.settingsJson(original).toString().encodeToByteArray())
             writeDurably(oldArt.toPath(), current.artChoices.encodeToByteArray())
             // Packs stay installed across restore/undo. Their bytes must never block the safety copy.
-            writeBackupDurably(nextBefore) { SetupArchive.write(it, current.copy(themes = emptyMap(), themeFiles = emptyMap())) }
+            writeBackupDurably(nextBefore) { SetupArchive.write(it, current.copy(
+                manifest = current.manifest.copy(redoRestore = action == RestoreAction.Undo),
+                themes = emptyMap(), themeFiles = emptyMap(),
+            )) }
             writeDurably(attempts.toPath(), "0".encodeToByteArray())
             writeDurably(ready.toPath(), UUID.randomUUID().toString().encodeToByteArray())
             moveBackup(nextBefore, before)
@@ -86,6 +89,13 @@ internal class SetupBackups(private val root: File, private val prefs: SharedPre
     }
 
     fun pending(): Boolean = stage.isFile
+    /** The direction travels inside the before-copy so its atomic rename cannot separate them. IO. */
+    fun undoAction(): RestoreAction? {
+        if (!before.isFile) return null
+        return try {
+            if (before.inputStream().use(SetupArchive::readManifest).redoRestore) RestoreAction.Redo else RestoreAction.Undo
+        } catch (_: Exception) { RestoreAction.Undo } // The normal reader gives the refusal if it is damaged.
+    }
     fun hasNotice(): Boolean = result.isFile || failed.isFile || failurePending
     fun acknowledgeFailure() { failed.delete(); failurePending = false }
 

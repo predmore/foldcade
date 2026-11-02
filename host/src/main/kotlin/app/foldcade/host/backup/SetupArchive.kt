@@ -26,6 +26,8 @@ data class BackupManifest(
     val computers: Boolean = false,
     val retroArchCores: Boolean = false,
     val edenFolder: Boolean = false,
+    /** Local before-copy direction; normal exports omit it. Absent means Undo. */
+    val redoRestore: Boolean = false,
 )
 data class SetupBackup(
     val manifest: BackupManifest,
@@ -147,10 +149,7 @@ object SetupArchive {
                 }
             }
             val marker = entries[MARKER] ?: throw SetupArchiveException(BackupRefusal.Foreign)
-            val root = Json.parseToJsonElement(marker.decodeToString()).jsonObject
-            val format = root.getValue("format").jsonPrimitive.int
-            if (format > SETUP_FORMAT) throw SetupArchiveException(BackupRefusal.Newer)
-            val migrated = migrate(format, root)
+            val migrated = readMarker(marker)
             fun section(name: String): ByteArray = entries[name] ?: throw SetupArchiveException(BackupRefusal.Unreadable)
             val playFile = files["play-history.zip"]
             val play = if (playFile == null) section("play-history.zip") else byteArrayOf()
@@ -212,6 +211,24 @@ object SetupArchive {
         }
     }
 
+    /** Only the bounded header is needed to name a private before-copy's next action. */
+    fun readManifest(input: InputStream): BackupManifest = ZipInputStream(input).use { zip ->
+        val budget = InflateBudget(2 * MIB)
+        repeat(4096) {
+            val entry = zip.nextEntry ?: throw SetupArchiveException(BackupRefusal.Foreign)
+            if (entry.name == MARKER) return@use readManifest(readMarker(zip.readBounded(limits.getValue(MARKER), budget)))
+            zip.drainBounded(budget)
+        }
+        throw SetupArchiveException(BackupRefusal.Unreadable)
+    }
+
+    private fun readMarker(marker: ByteArray): JsonObject {
+        val root = Json.parseToJsonElement(marker.decodeToString()).jsonObject
+        val format = root.getValue("format").jsonPrimitive.int
+        if (format > SETUP_FORMAT) throw SetupArchiveException(BackupRefusal.Newer)
+        return migrate(format, root)
+    }
+
     private fun manifestJson(manifest: BackupManifest): JsonObject = buildJsonObject {
         put("format", SETUP_FORMAT)
         put("createdMillis", manifest.createdMillis)
@@ -227,6 +244,7 @@ object SetupArchive {
         put("computers", manifest.computers)
         put("retroArchCores", manifest.retroArchCores)
         put("edenFolder", manifest.edenFolder)
+        if (manifest.redoRestore) put("redoRestore", true)
     }
 
     private fun readManifest(root: JsonObject): BackupManifest {
@@ -242,6 +260,7 @@ object SetupArchive {
             root["computers"]?.jsonPrimitive?.boolean ?: false,
             root["retroArchCores"]?.jsonPrimitive?.boolean ?: false,
             root["edenFolder"]?.jsonPrimitive?.boolean ?: false,
+            root["redoRestore"]?.jsonPrimitive?.boolean ?: false,
         )
     }
 }

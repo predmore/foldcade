@@ -4,6 +4,15 @@ import org.junit.Assert.assertEquals
 import org.junit.Test
 
 class FolderPickerTest {
+    @Test fun aPendingLibraryTreeCanPrefillTheExistingPickerWithoutChangingItsPurpose() {
+        val tree = "content://documents/tree/primary%3AROMs"
+        assertEquals(tree, libraryFolderStart(tree))
+        for (foreign in listOf("file:///private/file", "https://example.com", "not a URI")) assertEquals(null, libraryFolderStart(foreign))
+        val state = decodeFolderPickerState(FolderPickerState(FolderPurpose.Library).encode())
+        assertEquals(FolderPickResult.UseAsLibrary, folderPickResult(state, choseFolder = true))
+        assertEquals(FolderPickResult.Ignore, folderPickResult(state, choseFolder = false))
+    }
+
     @Test
     fun aRecreatedPickerKeepsTheReasonItWasOpened() {
         val save = FolderPickerState(FolderPurpose.LaunchOffer, pendingLaunch = 4)

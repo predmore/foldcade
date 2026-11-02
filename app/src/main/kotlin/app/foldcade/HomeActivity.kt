@@ -369,6 +369,10 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
                 folderPurpose = FolderPurpose.Library
                 folderPicker.launch(null)
             }
+            is Effect.PickFolderAgain -> {
+                folderPurpose = FolderPurpose.Library
+                folderPicker.launch(libraryFolderStart(effect.uri)?.let(Uri::parse)) // OpenDocumentTree supplies EXTRA_INITIAL_URI.
+            }
             Effect.SyncLibrary -> foldcade.libraryResync.syncNow()
             is Effect.ChoosePlayerSave -> choosePlayerSave(effect.playerId)
             is Effect.SetUpHostedSaves -> (foldcade.plugins.player(effect.playerId) as? HostedSaveFolder)?.let { player ->
@@ -422,7 +426,15 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
             Effect.OpenAllFilesAccess -> startFirst(AllFilesAccess(this).settingsIntents())
             Effect.OpenLicenses -> startActivity(Intent(this, LicensesActivity::class.java))
             Effect.OpenThemes -> startActivity(Intent(this, ThemesActivity::class.java))
-            Effect.OpenBackup -> foldcade.shell.present(backupDialog(foldcade.shell.model.backupDialogScreen(hostScreen()), foldcade.setupBackups.before.isFile))
+            Effect.OpenBackup -> {
+                val screen = foldcade.shell.model.backupDialogScreen(hostScreen())
+                foldcade.scope.launch {
+                    val action = foldcade.setupBackups.undoAction()
+                    withContext(Dispatchers.Main.immediate) {
+                        foldcade.shell.present(backupDialog(screen, undo = action != null, redo = action == RestoreAction.Redo))
+                    }
+                }
+            }
             Effect.CopyDebugInfo -> copyDebugInfo()
             Effect.DismissButtonLabels -> Unit
             is Effect.OpenNotice -> openNotice(effect.id)
@@ -522,7 +534,7 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
         }
     }
 
-    private fun readSetup(open: () -> java.io.InputStream) {
+    private fun readSetup(action: RestoreAction = RestoreAction.Restore, open: () -> java.io.InputStream) {
         val screen = foldcade.shell.model.backupDialogScreen(hostScreen())
         foldcade.scope.launch {
             var refusal = BackupCopy.unreadable
@@ -544,25 +556,26 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
                 val previous = foldcade.pendingSetupRestore
                 foldcade.scope.launch { foldcade.setupBackups.discard(previous) }
                 foldcade.pendingSetupRestore = backup
+                foldcade.pendingSetupAction = action
                 val dialog = if (backup == null) backupDone(refusal, screen) else {
                     val available = foldcade.shell.catalogNow().filterIsInstance<HomeItem>().mapTo(mutableSetOf()) { it.id }
                     val model = foldcade.shell.model
                     val (date, detail) = backupPreview(backup, available, foldcade.store.rommOrigin(), model.themeIds.zip(model.themes).toMap())
-                    restoreDialog(date, detail, screen)
+                    restoreDialog(date, detail, screen, action)
                 }
                 foldcade.shell.present(dialog)
             }
         }
     }
 
-    private fun restoreSetup(backup: SetupBackup) {
+    private fun restoreSetup(backup: SetupBackup, action: RestoreAction) {
         val screen = foldcade.shell.model.backupDialogScreen(hostScreen())
         foldcade.scope.launch {
             try {
                 foldcade.backupWork.withLock {
                     val work = foldcade.setupBackups.workspace("before")
                     try {
-                        foldcade.saveFlow.withLock { foldcade.setupBackups.stage(backup, foldcade.setupSnapshot(work, includeThemes = false)) }
+                        foldcade.saveFlow.withLock { foldcade.setupBackups.stage(backup, foldcade.setupSnapshot(work, includeThemes = false), action) }
                     } finally { work.deleteRecursively(); foldcade.setupBackups.discard(backup) }
                 }
                 withContext(Dispatchers.Main.immediate) { foldcade.restart(this@FoldcadeHomeActivity) }
@@ -603,7 +616,8 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
             }
             withContext(Dispatchers.Main.immediate) {
                 snapshotFlow { foldcade.shell.model.dialog == null }.first { it }
-                foldcade.shell.present(backupDone(lines.joinToString("\n"), screen, restored = true).copy(subject = "restored"))
+                foldcade.shell.present(backupDone(lines.joinToString("\n"), screen, restored = true,
+                    library = todo.any { it.startsWith("folders:") }).copy(subject = "restored"))
             }
         }
     }
@@ -2426,13 +2440,16 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
             DialogKind.Backup -> when (effect.button) {
                 DialogButton.BackUp -> startPicker(BackupCopy.notSaved, backup = true) { setupExport.launch("Foldcade backup ${java.time.LocalDate.now()}.zip") }
                 DialogButton.PickRestore -> startPicker(BackupCopy.unreadable, backup = true) { setupImport.launch(arrayOf("application/zip", "application/octet-stream")) }
-                DialogButton.UndoRestore -> readSetup { foldcade.setupBackups.before.inputStream() }
+                DialogButton.UndoRestore -> readSetup(RestoreAction.Undo) { foldcade.setupBackups.before.inputStream() }
+                DialogButton.RedoRestore -> readSetup(RestoreAction.Redo) { foldcade.setupBackups.before.inputStream() }
                 else -> Unit
             }
             DialogKind.RestoreBackup -> {
                 val backup = foldcade.pendingSetupRestore
+                val action = foldcade.pendingSetupAction
                 foldcade.pendingSetupRestore = null
-                if (effect.button == DialogButton.RestoreBackup && backup != null) restoreSetup(backup)
+                foldcade.pendingSetupAction = RestoreAction.Restore
+                if (effect.button in setOf(DialogButton.RestoreBackup, DialogButton.UndoRestore, DialogButton.RedoRestore) && backup != null) restoreSetup(backup, action)
                 else foldcade.scope.launch { foldcade.setupBackups.discard(backup) }
             }
             DialogKind.BackupDone -> when (effect.subject) {

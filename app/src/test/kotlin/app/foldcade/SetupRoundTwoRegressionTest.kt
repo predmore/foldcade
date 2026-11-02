@@ -229,14 +229,16 @@ class SetupRoundTwoRegressionTest {
         store.addFolderTree(tree)
         val folders = libraryFoldersWithOutstandingRestores(listOf(LibraryFolder(tree, "ROMs")), store.restoreFolders())
         assertEquals(listOf(tree, otherTree), folders.map { it.uri })
-        assertEquals(listOf("ROMs · Pick again", "Games · Pick again"), folders.map { it.label })
+        assertEquals(listOf("ROMs", "Games"), folders.map { it.label })
+        assertTrue(folders.all { it.pickAgain })
         var model = PickerModel(0, 1, folders = folders)
         val tile = Row.SettingsTile(SettingsInner.Folder(otherTree))
         val rows = settingsRows(SettingsCategory.Library, model)
         model = model.copy(settings = SettingsPage(HostScreen.Top, category = settingsCategories(model).indexOf(SettingsCategory.Library), onRows = true, row = rows.indexOf(tile)))
         model = reduce(model, Meaning.Activate, HostScreen.Top).first
         assertEquals(SettingsInner.Folder(otherTree), model.settings!!.inner)
-        assertEquals(listOf(Row.ForgetFolder(otherTree, "Games · Pick again")), settingsInnerRows(model.settings!!.inner!!, model))
+        assertEquals(listOf(Row.PickFolderAgain(otherTree), Row.ForgetFolder(otherTree, "Games")), settingsInnerRows(model.settings!!.inner!!, model))
+        model = reduce(model, Meaning.MoveDown, HostScreen.Top).first
         val effect = reduce(model, Meaning.Activate, HostScreen.Top).second
         assertEquals(Effect.ForgetFolder(otherTree), effect)
         store.updateRestoreHolds { RestoreHolds(it.sources + ("old-card-game" to setOf("folder:$otherTree"))) }

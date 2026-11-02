@@ -64,6 +64,28 @@ class SetupArchiveTest {
         assertEquals(values, encoded.mapValues { SetupArchive.readPreference(it.value) })
     }
 
+    @Test fun beforeCopyDirectionLivesInTheHeaderAndOldFormatOneArchivesDefaultToUndo() {
+        val original = sample()
+        assertFalse(SetupArchive.readManifest(bytes(original).inputStream()).redoRestore)
+        assertFalse(entries(bytes(original)).getValue("foldcade-backup.json").decodeToString().contains("redoRestore"))
+        val redo = original.copy(manifest = original.manifest.copy(redoRestore = true))
+        assertEquals(redo.manifest, SetupArchive.readManifest(bytes(redo).inputStream()))
+        assertEquals(redo.manifest, SetupArchive.read(bytes(redo).inputStream()).manifest)
+        assertFalse(javaClass.getResourceAsStream("/backups/format-1.zip")!!.use(SetupArchive::readManifest).redoRestore)
+    }
+
+    @Test fun headerOnlyReadsStillBoundInflationAndRefuseNewerFormats() {
+        val marker = entries(bytes(sample())).getValue("foldcade-backup.json")
+        for (large in listOf(mapOf("foldcade-backup.json" to ByteArray(1024 * 1024 + 1)),
+            linkedMapOf("padding" to ByteArray(2 * 1024 * 1024 + 1), "foldcade-backup.json" to marker))) {
+            try { SetupArchive.readManifest(zip(large).inputStream()); fail("Accepted oversized header") }
+            catch (_: java.io.IOException) { }
+        }
+        val newer = marker.decodeToString().replace("\"format\":1", "\"format\":2").encodeToByteArray()
+        try { SetupArchive.readManifest(zip(mapOf("foldcade-backup.json" to newer)).inputStream()); fail("Accepted newer header") }
+        catch (failure: SetupArchiveException) { assertEquals(BackupRefusal.Newer, failure.reason) }
+    }
+
     @Test fun formatOneFixtureRemainsReadable() {
         val read = javaClass.getResourceAsStream("/backups/format-1.zip")!!.use(SetupArchive::read)
         assertEquals(1793491200000, read.manifest.createdMillis)

@@ -137,6 +137,7 @@ class FoldcadeApp : Application() {
     internal val setupBackups by lazy { SetupBackups(filesDir, getSharedPreferences("foldcade", MODE_PRIVATE)) }
     internal val backupWork = Mutex()
     internal var pendingSetupRestore: app.foldcade.host.backup.SetupBackup? = null
+    internal var pendingSetupAction = app.foldcade.language.RestoreAction.Restore
     internal var restoreNoticeShown = false
 
     /** Waits until the plugin entries are loaded, so a player can be found by id. */

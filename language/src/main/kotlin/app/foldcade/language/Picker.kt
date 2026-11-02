@@ -164,7 +164,9 @@ enum class DialogButton {
     BackUp,
     PickRestore,
     UndoRestore,
+    RedoRestore,
     RestoreBackup,
+    Library,
 }
 
 /** The words a dialog button shows. [subject] is [DialogState.subject], which names the player to open. */
@@ -191,6 +193,8 @@ fun dialogButtonLabel(button: DialogButton, subject: String? = null): String = w
     DialogButton.BackUp -> BackupCopy.backUp
     DialogButton.PickRestore, DialogButton.RestoreBackup -> BackupCopy.restore
     DialogButton.UndoRestore -> BackupCopy.undo
+    DialogButton.RedoRestore -> BackupCopy.redo
+    DialogButton.Library -> SettingsCopy.library
 }
 
 data class DialogState(
@@ -625,6 +629,7 @@ sealed interface Row {
     data object ClearNotices : Row
     data class SignOut(val pluginId: String, val label: String) : Row
     data class ForgetFolder(val uri: String, val label: String) : Row
+    data class PickFolderAgain(val uri: String) : Row
     data class PlayerSave(val playerId: String) : Row
     /** The folder Foldcade hosts for a player's saves, and whether the player has it. */
     data class HostedSaves(val playerId: String) : Row
@@ -919,6 +924,7 @@ data class LibraryFolder(
     val uri: String,
     val label: String,
     val artAndInfo: Boolean = false,
+    val pickAgain: Boolean = false,
 )
 
 enum class ConnectField {
@@ -1216,6 +1222,7 @@ fun rowText(row: Row, model: PickerModel): RowText = when (row) {
     // Both live on a page that already names the connection or the folder.
     is Row.SignOut -> RowText(Copy.signOut)
     is Row.ForgetFolder -> RowText(Copy.remove)
+    is Row.PickFolderAgain -> RowText(BackupCopy.pickAgain)
     is Row.Notice -> RowText(model.notices.firstOrNull { it.id == row.id }?.title ?: "")
     Row.NoticeAccess -> RowText(NoticeCopy.access, NoticeCopy.accessValue)
     Row.ClearNotices -> RowText(NoticeCopy.clearAll)
@@ -1363,6 +1370,7 @@ sealed interface Effect {
     data class PairStreamHost(val key: String) : Effect
     data class ForgetCredentials(val pluginId: String) : Effect
     data class ForgetFolder(val uri: String) : Effect
+    data class PickFolderAgain(val uri: String) : Effect
     data object SaveRommToken : Effect
 
     /** A on a text row of the connect form. The field takes focus and raises the keyboard. */
@@ -1669,6 +1677,9 @@ fun reduce(
             return coerced.copy(dialog = playHistoryDialog(dialog.screen)) to null
         }
         val chosen = choice?.let { Effect.DialogChoice(it, dialog.kind, dialog.subject) }
+        if (dialog.kind == DialogKind.BackupDone && choice == DialogButton.Library) {
+            return coerced.copy(dialog = null).openSettings(coerced.layout.pageScreen, SettingsCategory.Library) to chosen
+        }
         val cleared = if (choice != null) null else next
         return coerced.copy(dialog = cleared) to chosen
     }
@@ -2422,6 +2433,7 @@ private fun activateRow(
         ) to Effect.OpenAddRomm
         is Row.SignOut -> model.copy(panel = null, focus = panel.grid) to Effect.ForgetCredentials(row.pluginId)
         is Row.ForgetFolder -> model.copy(panel = null, focus = panel.grid) to Effect.ForgetFolder(row.uri)
+        is Row.PickFolderAgain -> model.copy(panel = null, focus = panel.grid) to Effect.PickFolderAgain(row.uri)
         is Row.Notice -> openNotice(model, panel, row.id)
         Row.NoticeAccess -> model.copy(panel = panel, dialog = noticeAccessPrompt(screen)) to null
         Row.ClearNotices -> model.copy(

@@ -70,13 +70,13 @@ class SetupRoundThreeRegressionTest {
             repeat(2) {
                 val store = SessionStore(prefs)
                 val shell = ShellController(store, host()) // No plugin load or reloadFolder call.
-                val pending = LibraryFolder(tree, "ROMs · Pick again")
+                val pending = LibraryFolder(tree, "ROMs", pickAgain = true)
                 assertEquals(if (hasConnectedTree) listOf(LibraryFolder(connectedTree, "Steam Library"), pending) else listOf(pending), shell.model.folders)
                 assertEquals(store.libraryFolders(), shell.model.folders)
                 shell.openSetting(Row.SettingsTile(SettingsInner.Folder(tree)))
                 shell.onMeaning(Meaning.Activate, HostScreen.Bottom)
                 assertEquals(SettingsInner.Folder(tree), shell.model.settings!!.inner)
-                assertEquals(listOf(Row.ForgetFolder(tree, pending.label)), settingsInnerRows(shell.model.settings!!.inner!!, shell.model))
+                assertEquals(listOf(Row.PickFolderAgain(tree), Row.ForgetFolder(tree, pending.label)), settingsInnerRows(shell.model.settings!!.inner!!, shell.model))
             }
         }
     }

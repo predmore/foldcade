@@ -326,6 +326,16 @@ class ShellController(
         }
     }
 
+    /** The Y heading for a held gap; ordinary empty slots keep their existing title. */
+    fun restoredGapTitle(): String? {
+        val index = (model.panel?.grid ?: model.focus).cellIndex
+        val id = home.restoredGapAt(index) ?: return null
+        val sources = store.restoreHolds().sources[id] ?: return null
+        val folders = (store.libraryFolders().associate { it.uri to it.label } + store.restoreFolders().associate { it.uri to it.name })
+        val computers = store.moonlightHostNames() + moonlightHosts.mapValues { it.value.name } + model.streamHosts.associate { it.key to it.name }
+        return app.foldcade.language.restoreWaitingTitle(sources, folders, computers)
+    }
+
     private fun updateRestoreFolders(change: () -> Unit) {
         val hadMissing = store.restoreFolders().isNotEmpty()
         change()
@@ -795,6 +805,9 @@ class ShellController(
         if (model.libraryGrid && model.panel == null && meaning == Meaning.Options) librarySavesMenuGame = libraryEntry(model)?.game
         val current = if (model.libraryGrid) model else withShelf(model)
         val (next, effect) = reduce(current, meaning, screen, repeatCount)
+        if (current.dialog?.kind == DialogKind.BackupDone && effect is Effect.DialogChoice && effect.button == app.foldcade.language.DialogButton.Library) {
+            heldActions.capture(meaning.ordinal)
+        }
         if (current.panel == null && next.panel?.level == PanelLevel.Actions && showingHome() && find == null) {
             home.keepMenu(current.tileActions?.game, folder = current.tileActions?.folderOnHome?.folderId?.takeIf { home.board.foldersOpen })
         }

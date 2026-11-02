@@ -50,7 +50,7 @@ internal fun carriedBackupFolders(trees: List<String>, missing: List<BackupFolde
 internal fun libraryFoldersWithOutstandingRestores(current: List<LibraryFolder>, missing: List<BackupFolder>): List<LibraryFolder> {
     val pending = missing.mapTo(mutableSetOf()) { it.uri }
     return (current + missing.map { LibraryFolder(it.uri, it.name) }).distinctBy { it.uri }.map {
-        if (it.uri in pending) it.copy(label = "${it.label} · ${BackupCopy.pickAgain}") else it
+        if (it.uri in pending) it.copy(pickAgain = true) else it
     }
 }
 
