@@ -359,7 +359,7 @@ private fun lerp(start: Float, end: Float, fraction: Float): Float = start + (en
 private const val FILL_IN = 0.35f
 
 /** Where in the grow the rows start to come in. */
-private const val ROWS_START = 0.35f
+private const val ROWS_START = 0.55f
 
 /** With no tile, how far inside its own place the card starts, as a share of its shorter side. */
 private const val NO_TILE_INSET = 0.04f

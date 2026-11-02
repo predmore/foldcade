@@ -105,7 +105,9 @@ internal fun TopIslands(
     // An open drawer stays on the screen it opened on, as one from a page left there by a
     // layout change: it is drawn there, and the islands follow it until it closes.
     val model = app.shell.model
-    if (screen != (model.panel?.screen ?: model.layout.menuScreen)) return
+    // Y's menu is by its tile on the grid's screen, so it never takes the islands with it.
+    val island = model.panel?.takeIf { it.side != Side.Tile }
+    if (screen != (island?.screen ?: model.layout.menuScreen)) return
     val dialogCovers = model.dialog?.screen == screen
     BoxWithConstraints(
         Modifier
@@ -114,7 +116,7 @@ internal fun TopIslands(
             .focusProperties { canFocus = false },
     ) {
         // A tap off the open card closes it, as its shoulder would. The cards sit above and keep their own taps.
-        if (!dialogCovers && model.panel?.screen == screen) Box(Modifier.fillMaxSize().closesIsland(app))
+        if (!dialogCovers && island?.screen == screen) Box(Modifier.fillMaxSize().closesIsland(app))
         Island(
             app = app,
             screen = screen,
