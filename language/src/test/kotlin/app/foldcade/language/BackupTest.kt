@@ -2,6 +2,7 @@ package app.foldcade.language
 
 import org.junit.Assert.*
 import org.junit.Test
+import kotlin.math.roundToInt
 
 class BackupTest {
     @Test fun exportedPacksThatDoNotFitAreNamedInTheDoneLine() {
@@ -101,12 +102,16 @@ class BackupTest {
         assertEquals(Row.Backup, rows[rows.indexOf(Row.AndroidSettings) - 1])
         assertTrue(rows.size * 52 + (rows.size - 1) * 4 <= 410)
         val pending = settingsRows(SettingsCategory.Screens, normal.copy(homeRoleHeld = false, askNoticeAccess = true))
-        assertEquals(7, pending.size)
+        assertEquals(8, pending.size)
+        assertEquals(listOf(Row.ScreenLayout, Row.PlayOn), pending.take(2))
         assertTrue(Row.SetAsHome in pending)
         assertTrue(Row.NoticeAccess in pending)
-        // The Settings card's fixed 52dp rows fit too, including Android settings at the bottom.
-        assertTrue(pending.size * 52 + (pending.size - 1) * 4 <= 410)
-        assertFalse(menuFit(pending.size, 410, 1f, 4).scrolls)
+        // System uses the same padding contraction as island menus, including the final row.
+        for (height in listOf(388, 410)) for (density in listOf(1f, 2.30625f, 3f)) {
+            val fit = menuFit(pending.size, (height * density).roundToInt(), density, (4 * density).roundToInt())
+            assertFalse(fit.scrolls)
+            assertTrue(fit.rowHeights.sum() + (pending.size - 1) * (4 * density).roundToInt() <= (height * density).roundToInt())
+        }
     }
 
     @Test fun previewOnlyNamesThingsThatAreMissingAndUsesTheShortConfirmationBody() {

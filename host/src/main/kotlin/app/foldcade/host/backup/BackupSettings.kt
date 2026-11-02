@@ -22,7 +22,7 @@ data class BackupKey(val name: String, val disposition: BackupDisposition, val t
 /** The only preference transfer policy. Unknown keys never travel, even from a newer writer. */
 object BackupSettings {
     private val backedStrings = listOf("music_track", "background_motion", "motion_speed", "theme", "icon_theme_id",
-        "home_board", "same_games", "romm_origin", "button_prompt_confirm:")
+        "home_board", "same_games", "romm_origin", "button_prompt_confirm:", "screen_layout", "play_on")
     private val backedBooleans = listOf("primary_top", "music_enabled", "music_default_night_route", "artwork", "button_prompt_dismissed:")
     val keys: List<BackupKey> = backedStrings.map { BackupKey(it, BackupDisposition.BackedUp, PreferenceType.StringValue) } +
         backedBooleans.map { BackupKey(it, BackupDisposition.BackedUp, PreferenceType.BooleanValue) } +

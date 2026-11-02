@@ -44,6 +44,9 @@ object BackupCopy {
     fun connectRomm(host: String): String = "RomM: $host; sign in"
 }
 
+/** A file flow opened from Settings stays with its page, whichever panel delivered the key. */
+fun PickerModel.backupDialogScreen(from: HostScreen): HostScreen = settings?.screen ?: from
+
 fun backupDialog(screen: HostScreen, undo: Boolean = false): DialogState {
     val buttons = listOf(DialogButton.BackUp, DialogButton.PickRestore) +
         (if (undo) listOf(DialogButton.UndoRestore) else emptyList()) + listOf(DialogButton.PlayHistory, DialogButton.NotNow)

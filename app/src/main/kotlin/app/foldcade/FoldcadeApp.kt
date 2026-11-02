@@ -1969,15 +1969,15 @@ class FoldcadeApp : Application() {
             if (store.folderTrees().isEmpty()) return@launch
             val backend = plugins.library(LocalFolderBackend.ID) as? LocalFolderBackend ?: return@launch
             val forest = boundForest ?: return@launch
-            val loaded = try {
-                if (backend.rescan() == app.foldcade.localfolder.FolderRescan.NotScanned) return@launch
-                if (!forest.complete || boundForest !== forest) return@launch
-                loadPlatforms(
-                    plugins,
-                    LocalFolderBackend.ID,
-                    folderName = backend::folderName,
-                    occupiesBoth = { platformOccupiesBoth(plugins, it, ::packageInstalled) },
-                )
+            val refresh = try {
+                readFolderRefresh(backend, { forest.complete && boundForest === forest }) {
+                    loadPlatforms(
+                        plugins,
+                        LocalFolderBackend.ID,
+                        folderName = backend::folderName,
+                        occupiesBoth = { platformOccupiesBoth(plugins, it, ::packageInstalled) },
+                    )
+                } ?: return@launch
             } catch (cancelled: CancellationException) {
                 throw cancelled
             } catch (fatal: VirtualMachineError) {
@@ -1986,13 +1986,14 @@ class FoldcadeApp : Application() {
                 Log.w("Foldcade", "Folder refresh failed", failure)
                 return@launch
             }
+            val loaded = refresh.library
             if (loaded == LoadedLibrary.Unreachable) return@launch
             folderRead.withLock {
                 if (boundForest === forest) useSteamFiles(backend.steamShortcuts())
             }
             // After loadPlatforms: its connect walks the tree again and publishes a new scan,
             // which would make an index built from the earlier one stale before it lands.
-            refreshLocalMedia(backend, forest)
+            if (refresh.changed) refreshLocalMedia(backend, forest)
             val games = when (loaded) {
                 is LoadedLibrary.Platforms -> try {
                     loadEveryGame(LocalFolderBackend.ID, loaded)
@@ -2007,7 +2008,13 @@ class FoldcadeApp : Application() {
             withContext(Dispatchers.Main.immediate) {
                 // The last folder was forgotten meanwhile, and its games already left.
                 if (store.folderTrees().isEmpty() || boundForest !== forest) return@withContext
-                if (loaded is LoadedLibrary.Platforms) {
+                if (!refresh.changed) {
+                    // The cached catalog is still current. Report a reconnected empty tree
+                    // without republishing a scan and invalidating an in-flight media index.
+                    shell.finishFolderReport(true, forest.reportedTrees.toSet(),
+                        empty = backend.mediaScan()?.platforms?.isEmpty() == true, plugins.platformDefinitions())
+                    shell.noteShelfChanged()
+                } else if (loaded is LoadedLibrary.Platforms) {
                     shell.reportRestoreFolders(forest.reportedTrees.toSet())
                     shell.ingestLibrary(
                         LocalFolderBackend.ID,
@@ -2081,8 +2088,8 @@ class FoldcadeApp : Application() {
                 occupiesBoth = { platformOccupiesBoth(plugins, it, ::packageInstalled) },
             )
             // A failed read says nothing about the .steam files, and a newer reload has its own.
-            if (loaded != LoadedLibrary.Unreachable && forest.complete && ticket == libraryTicket.get()) {
-                useSteamFiles(backend.steamShortcuts())
+            if (loaded != LoadedLibrary.Unreachable && ticket == libraryTicket.get()) {
+                if (forest.complete) useSteamFiles(backend.steamShortcuts())
                 refreshLocalMedia(backend, forest)
             }
             loaded

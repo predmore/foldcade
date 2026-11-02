@@ -422,7 +422,7 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
             Effect.OpenAllFilesAccess -> startFirst(AllFilesAccess(this).settingsIntents())
             Effect.OpenLicenses -> startActivity(Intent(this, LicensesActivity::class.java))
             Effect.OpenThemes -> startActivity(Intent(this, ThemesActivity::class.java))
-            Effect.OpenBackup -> foldcade.shell.present(backupDialog(hostScreen(), foldcade.setupBackups.before.isFile))
+            Effect.OpenBackup -> foldcade.shell.present(backupDialog(foldcade.shell.model.backupDialogScreen(hostScreen()), foldcade.setupBackups.before.isFile))
             Effect.CopyDebugInfo -> copyDebugInfo()
             Effect.DismissButtonLabels -> Unit
             is Effect.OpenNotice -> openNotice(effect.id)
@@ -448,13 +448,13 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
             launch()
         } catch (missing: android.content.ActivityNotFoundException) {
             Log.w("FoldcadePlay", "No document picker", missing)
-            foldcade.shell.present(if (backup) backupDone(otherwise, hostScreen()) else playHistoryDone(otherwise, hostScreen()))
+            foldcade.shell.present(if (backup) backupDone(otherwise, foldcade.shell.model.backupDialogScreen(hostScreen())) else playHistoryDone(otherwise, foldcade.shell.model.backupDialogScreen(hostScreen())))
         }
     }
 
     /** Writes the whole play history to [uri], off the main thread, then says how it went. */
     private fun exportPlayHistory(uri: Uri) {
-        val screen = hostScreen()
+        val screen = foldcade.shell.model.backupDialogScreen(hostScreen())
         foldcade.scope.launch {
             val message = try {
                 val out = contentResolver.openOutputStream(uri, "wt") ?: throw java.io.IOException("no stream for $uri")
@@ -472,7 +472,7 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
 
     /** Reads [uri] off the main thread and adds it to the play history on it, then says what it added. */
     private fun importPlayHistory(uri: Uri) {
-        val screen = hostScreen()
+        val screen = foldcade.shell.model.backupDialogScreen(hostScreen())
         foldcade.scope.launch {
             var refusal = PlayCopy.unreadable
             val read = try {
@@ -502,7 +502,7 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
     }
 
     private fun exportSetup(uri: Uri) {
-        val screen = hostScreen()
+        val screen = foldcade.shell.model.backupDialogScreen(hostScreen())
         foldcade.scope.launch {
             val message = try {
                 foldcade.backupWork.withLock {
@@ -523,7 +523,7 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
     }
 
     private fun readSetup(open: () -> java.io.InputStream) {
-        val screen = hostScreen()
+        val screen = foldcade.shell.model.backupDialogScreen(hostScreen())
         foldcade.scope.launch {
             var refusal = BackupCopy.unreadable
             val backup = try {
@@ -556,7 +556,7 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
     }
 
     private fun restoreSetup(backup: SetupBackup) {
-        val screen = hostScreen()
+        val screen = foldcade.shell.model.backupDialogScreen(hostScreen())
         foldcade.scope.launch {
             try {
                 foldcade.backupWork.withLock {
@@ -577,7 +577,7 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
     private fun showRestoredSetup() {
         if (foldcade.restoreNoticeShown || !foldcade.setupBackups.hasNotice()) return
         foldcade.restoreNoticeShown = true
-        val screen = hostScreen()
+        val screen = foldcade.shell.model.backupDialogScreen(hostScreen())
         foldcade.scope.launch {
             if (foldcade.setupBackups.failed.isFile || foldcade.setupBackups.failurePending) {
                 withContext(Dispatchers.Main.immediate) {
