@@ -26,9 +26,13 @@ import app.foldcade.language.TileActions
 import android.util.Log
 import app.foldcade.api.plugin.Availability
 import app.foldcade.api.plugin.Game
+import app.foldcade.api.plugin.Player
+import app.foldcade.api.plugin.canonicalPlatformId
+import app.foldcade.language.PlayerChoiceRow
+import app.foldcade.language.SystemPlayerChoice
+import app.foldcade.plugins.retroarch.RetroArchPlayer
 import app.foldcade.api.plugin.GameActivity
 import app.foldcade.api.plugin.Platform
-import app.foldcade.api.plugin.Player
 import app.foldcade.api.plugin.HostedSaveFolder
 import app.foldcade.api.plugin.SaveFolderHolder
 import app.foldcade.api.plugin.SaveSyncState
@@ -509,12 +513,69 @@ class ShellController(
         } ?: playerId
     }
 
-    internal fun savePlayer(platformId: String) = preferredPlayer(
+    internal var runningPlayer: (String) -> Player? = { null }
+    internal var onPlayerChoiceChanged: (String) -> Unit = {}
+    internal var onPlayerAvailabilityChanged: () -> Unit = {}
+
+    internal fun canonicalSystem(platformId: String): String =
+        canonicalPlatformId(plugins.platformDefinitions(), platformId)
+            ?: plugins.playersFor(platformId).firstOrNull()?.platformId ?: platformId
+
+    /**
+     * The game's own choice: saved under its tile, or under a copy's id from before the copies
+     * folded into that tile. Read per game on every refresh, so only the tile's own copies are
+     * looked at, never the whole same-games catalog.
+     */
+    internal fun gamePlayerChoice(gameId: String): PlayerChoice? {
+        val tile = tileOf(gameId)
+        store.gamePlayerChoice(tile)?.let { return it }
+        return (home.copies(tile).map { homeGameId(it.backendId, it.remoteKey) } + gameId)
+            .firstNotNullOfOrNull { id -> id.takeIf { it != tile }?.let(store::gamePlayerChoice) }
+    }
+
+    internal fun playerResolution(
+        gameId: String?, platformId: String,
+        installed: (String) -> Boolean = installedPlayers::contains,
+    ): PlayerResolution = resolvePlayer(
         plugins.playersFor(platformId),
+        gameChoice = gameId?.let(::gamePlayerChoice),
+        systemChoice = store.systemPlayerChoice(canonicalSystem(platformId)),
+        installed = { it.packageNames.any(installed) },
+        runnable = { runnableWith(it, it.packageNames.firstOrNull(installed)) },
+        rank = ::playerRank,
+        coreFiles = { player -> (player as? RetroArchPlayer)?.let { it.packageNames.firstOrNull(installed)?.let(it.cores::coreFiles) } },
+    )
+
+    internal fun playerOptionsFor(platformId: String): List<PlayerChoice> = playerOptions(
+        plugins.playersFor(platformId),
+        installed = { it.packageNames.any(installedPlayers::contains) },
         runnable = { runnableWith(it, it.packageNames.firstOrNull(installedPlayers::contains)) },
         rank = ::playerRank,
-        installed = installedPlayers::contains,
-    )?.takeIf { it.packageNames.any(installedPlayers::contains) }
+        coreFiles = { player -> (player as? RetroArchPlayer)?.let { it.packageNames.firstOrNull(installedPlayers::contains)?.let(it.cores::coreFiles) } },
+    )
+
+    private fun openWith(gameId: String, platformId: String): PlayerChoiceRow? = PlayerChoiceRow(
+        options = playerOptionsFor(platformId),
+        selected = gamePlayerChoice(gameId),
+        selectedUsable = playerResolution(gameId, platformId).source == PlayerChoiceSource.Game,
+        inherited = playerChoiceLabel(playerResolution(null, platformId).player?.takeIf { it.packageNames.any(installedPlayers::contains) }),
+    ).takeIf { it.visible }
+
+    private fun systemPlayerChoices(): List<SystemPlayerChoice> =
+        (libraryGames.values.map { it.platformId } + entries.mapNotNull { it.game?.platformId } + Shelf.games.mapNotNull { it.platformId })
+            .distinct().map(::canonicalSystem).distinct().map { id ->
+                val automatic = resolvePlayer(plugins.playersFor(id), installed = { it.packageNames.any(installedPlayers::contains) },
+                    runnable = { runnableWith(it, it.packageNames.firstOrNull(installedPlayers::contains)) }, rank = ::playerRank,
+                    coreFiles = { player -> (player as? RetroArchPlayer)?.let { it.packageNames.firstOrNull(installedPlayers::contains)?.let(it.cores::coreFiles) } })
+                SystemPlayerChoice(id, plugins.platformDefinitions().firstOrNull { it.id == id }?.displayName ?: id,
+                    PlayerChoiceRow(playerOptionsFor(id), store.systemPlayerChoice(id),
+                        playerChoiceLabel(automatic.player?.takeIf { it.packageNames.any(installedPlayers::contains) }), system = true,
+                        selectedUsable = playerResolution(null, id).source == PlayerChoiceSource.System))
+            }.filter { it.choice.visible }.sortedBy { it.label.lowercase() }
+
+    internal fun savePlayer(route: GameRoute): Player? =
+        (runningPlayer(route.tileId) ?: playerResolution(route.tileId, route.play.platformId).player)
+            ?.takeIf { it.packageNames.any(installedPlayers::contains) }
 
     internal fun saveHealthOf(id: String, pressed: Game? = null): SaveHealth {
         saveHealthEpoch // Folder checks, player installs, and catalog changes invalidate this read.
@@ -522,7 +583,7 @@ class ShellController(
         val route = launchRoute(tileOf(homeId), pressed) ?: return SaveHealth.Fine
         val waiting = route.servers.any { it.remoteKey in unsyncedSaves[it.backendId].orEmpty() }
         // A save still waiting for the server says so even after its emulator is gone.
-        val player = savePlayer(route.play.platformId) ?: return if (waiting) SaveHealth.Waiting else SaveHealth.Fine
+        val player = savePlayer(route) ?: return if (waiting) SaveHealth.Waiting else SaveHealth.Fine
         val saves = saveSupport.getOrPut(player.id to route.saves) { readGameSaveSupport(route.saves, player) }
         val reachability = reachableSaves[homeGameId(route.saves.backendId, route.saves.remoteKey) to player.id]
         return gameSaveHealth(
@@ -546,13 +607,18 @@ class ShellController(
         saveSupport.clear()
         saveHealthEpoch += 1
         val onHome = app.foldcade.language.onHomeIds(home.board)
-        val platforms = HashSet<String>()
+        val routes = linkedMapOf<String, GameRoute>()
         for ((id, game) in libraryGames) {
-            if (game.availability != Availability.LocalOnly && tileOf(id) in onHome) platforms.add(game.platformId)
+            if (game.availability != Availability.LocalOnly && tileOf(id) in onHome) {
+                val tile = tileOf(id)
+                launchRoute(tile)?.let { routes[tile] = it }
+            }
         }
         val players = linkedMapOf<String, String>()
-        for (platformId in platforms) {
-            val player = savePlayer(platformId) ?: continue
+        val checked = HashSet<String>()
+        for (route in routes.values) {
+            val player = savePlayer(route) ?: continue
+            if (!checked.add(player.id)) continue
             if (playerSaveIssue(player, saveSync[player.id], setupSteps[player.id]) == null) continue
             players[saveNoticePlayerId(player.id)] = player.displayName
         }
@@ -851,6 +917,10 @@ class ShellController(
             }
             return null
         }
+        val wasSettings = current.settings
+        val nowSettings = next.settings
+        if (nowSettings != null && (wasSettings == null || wasSettings.inner != nowSettings.inner ||
+                (!wasSettings.onRows && nowSettings.onRows))) heldActions.capture(meaning.ordinal)
         if (!next.connectOpen) connectToken = ""
         val targetGame = actionGame(current)
         val packageName = targetGame?.androidPackage
@@ -932,6 +1002,24 @@ class ShellController(
                 null
             }
             Effect.Tidy -> changeHome { home.tidyBoard(it) }
+            is Effect.SetGamePlayerChoice -> {
+                val tile = tileOf(effect.gameId)
+                if (effect.choice == null) {
+                    (listOf(tile) + sameGroups()[tile].orEmpty() + effect.gameId).distinct().forEach { store.setGamePlayerChoice(it, null) }
+                } else store.setGamePlayerChoice(tile, effect.choice)
+                onPlayerChoiceChanged("game:$tile")
+                refreshSaveHealth()
+                publish(model.copy(shelfEpoch = model.shelfEpoch + 1))
+                null
+            }
+            is Effect.SetSystemPlayerChoice -> {
+                val id = canonicalSystem(effect.platformId)
+                store.setSystemPlayerChoice(id, effect.choice)
+                onPlayerChoiceChanged("system:$id")
+                refreshSaveHealth()
+                publish(model.copy(shelfEpoch = model.shelfEpoch + 1))
+                null
+            }
             is Effect.SortFolder -> {
                 sortFolder(effect)
                 null
@@ -1946,6 +2034,7 @@ class ShellController(
     ) {
         installed = apps.distinctBy { it.packageName }
         this.installedPlayers = installedPlayers
+        onPlayerAvailabilityChanged()
         installedAppsSettled = true
         playerPackages = players
         noteShelfChanged()
@@ -2797,7 +2886,7 @@ class ShellController(
         if (game.androidPackage in BOTH_SCREEN_APPS) return game.copy(occupiesBothDisplays = true)
         val platformId = game.platformId
         if (game.libraryId == null || platformId == null) return game
-        return game.copy(occupiesBothDisplays = platformOccupiesBoth(plugins, platformId, installedPlayers::contains))
+        return game.copy(occupiesBothDisplays = (runningPlayer(game.id) ?: playerResolution(game.id, platformId).player)?.occupiesBothDisplays == true)
     }
 
     /**
@@ -3016,9 +3105,10 @@ class ShellController(
 
     /** Null while RetroArch is not installed. */
     fun setRetroArch(setting: RetroArchSetting?) {
-        if (model.retroArch == setting) return
+        onPlayerAvailabilityChanged()
         model = model.copy(retroArch = setting)
         refreshSaveHealth()
+        publish(model.copy(shelfEpoch = model.shelfEpoch + 1))
     }
 
     /** Null while Eden is not installed. */
@@ -3040,7 +3130,10 @@ class ShellController(
         title = title,
         shortText = shortText,
         platformId = platformId,
-        occupiesBothDisplays = occupiesBothDisplays,
+        occupiesBothDisplays = game?.let { record ->
+            val tile = tileOf(homeGameId(record.backendId, record.remoteKey))
+            (runningPlayer(tile) ?: playerResolution(tile, record.platformId).player)?.occupiesBothDisplays == true
+        } ?: occupiesBothDisplays,
         mark = platformId?.let(::kitMark),
         availabilityLabel = availabilityLabel,
     )
@@ -3228,7 +3321,7 @@ class ShellController(
         val lastOccupied = if (next.homeGrid == HomeGrid.StandIns && !home.board.allOpen && !home.board.foldersOpen) {
             app.foldcade.language.visibleSlots(home.board).indexOfLast { it != null }
         } else count - 1
-        val counted = next.copy(count = count, playerSaves = playerSaveSettings(),
+        val counted = next.copy(count = count, playerSaves = playerSaveSettings(), systemPlayers = systemPlayerChoices(),
             gridLabels = labels, lastOccupiedIndex = lastOccupied,
             screenJumpLastColumn = if (showingHome(next) && !home.board.allOpen && !home.board.foldersOpen) GridStrip.column(lastOccupied.coerceAtLeast(0)) else null)
         val game = tileOn(counted)
@@ -3261,6 +3354,14 @@ class ShellController(
         } else offered
         val withSaves = if (tile?.bulk == null && home.selection == null && targetGame != null &&
             launchRoute(targetGame.id)?.servers?.isNotEmpty() == true) (withArt ?: TileActions()).copy(saves = true, game = tile?.game ?: targetGame.id) else withArt
+        // Only a game opens with an emulator. A platform folder has a system too, but no game to open.
+        val choiceGame = (tile?.game ?: targetGame?.id)?.takeIf { id ->
+            tile?.bulk == null && home.selection == null && targetGame?.platformId != null &&
+                home.item(id)?.let { item -> app.foldcade.language.listedInLibrary(item) } == true
+        }
+        val withChoice = if (choiceGame != null && targetGame?.platformId != null) {
+            (withSaves ?: TileActions()).copy(game = choiceGame, openWith = openWith(choiceGame, targetGame.platformId))
+        } else withSaves
         // A game's own play, and where more of it can come from, once anything has been played.
         val playGame = (tile?.game ?: targetGame?.id)?.takeIf {
             tile?.bulk == null && home.selection == null && targetGame != null && home.item(it)?.let { item -> app.foldcade.language.listedInLibrary(item) } == true
@@ -3268,12 +3369,12 @@ class ShellController(
         val withPlay = if (playGame != null && anyPlay()) {
             val shown = tileOf(playGame)
             val time = playTimeOf(shown)
-            (withSaves ?: TileActions()).copy(
+            (withChoice ?: TileActions()).copy(
                 playTime = time,
                 playFound = if (time == 0L) playFoundFor(shown) else null,
                 game = withSaves?.game ?: playGame,
             )
-        } else withSaves
+        } else withChoice
         // A game a library lists has a page of its own. An app, a stream, or a shortcut has nothing for it to say.
         val aboutGame = playGame?.takeIf { home.item(it)?.let { item -> app.foldcade.language.hasAboutPage(item) } == true }
         val withAbout = if (aboutGame != null) (withPlay ?: TileActions()).copy(about = true, game = withPlay?.game ?: aboutGame) else withPlay
@@ -3282,7 +3383,9 @@ class ShellController(
 
     /** A menu acts on its named game even after Add to leaves the focused slot empty. */
     private fun actionGame(snapshot: PickerModel, gameId: String? = snapshot.tileActions?.game): ShelfGame? = when {
-        snapshot.libraryGrid -> libraryEntry(snapshot)?.asShelf()
+        snapshot.libraryGrid -> librarySavesMenuGame?.takeIf { record -> gameId == homeGameId(record.backendId, record.remoteKey) }
+            ?.let { record -> entries.firstOrNull { it.game?.backendId == record.backendId && it.game.remoteKey == record.remoteKey }?.asShelf() }
+            ?: libraryEntry(snapshot)?.takeIf { gameId == null || it.game?.let { game -> homeGameId(game.backendId, game.remoteKey) } == gameId }?.asShelf()
         gameId != null -> homeShelf(home.faceOf(gameId))
         else -> tileOn(snapshot)
     }
@@ -3456,7 +3559,9 @@ class ShellController(
             val game = if (ready.panel != null) librarySavesMenuGame ?: libraryEntry(ready)?.game else libraryEntry(ready)?.game
             val id = game?.let { homeGameId(it.backendId, it.remoteKey) }
             val canChoose = game != null && id != null && launchRoute(tileOf(id), game)?.servers?.isNotEmpty() == true
-            ready.copy(tileActions = if (canChoose) TileActions(saves = true, game = id) else null, playerSaves = playerSaveSettings())
+            ready.copy(tileActions = if (game != null && id != null) TileActions(saves = canChoose, game = id,
+                openWith = openWith(tileOf(id), game.platformId)) else null,
+                playerSaves = playerSaveSettings(), systemPlayers = systemPlayerChoices())
         } else {
             withShelf(ready.copy(libraryGrid = false))
         }

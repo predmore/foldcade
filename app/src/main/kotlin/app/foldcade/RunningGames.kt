@@ -34,6 +34,7 @@ internal data class RunningGame(
     val movesBetweenScreens: Boolean = false,
     /** The started player's folder, even if the platform's chosen player changes later. */
     val saveFolderKey: String? = null,
+    val player: app.foldcade.api.plugin.Player? = null,
 )
 
 internal data class GameCompanion(val packageName: String, val title: String, val panel: Panel)

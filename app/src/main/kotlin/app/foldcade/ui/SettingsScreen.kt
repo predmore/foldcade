@@ -217,10 +217,14 @@ private fun CardRows(
             menuFit(rows.size, constraints.maxHeight - (ringReach() + CARD_EXTRA).roundToPx() * 2,
                 density.density, ROW_GAP.roundToPx())
         } else null
+        // A card should fit at rest. One that cannot, as Systems with many systems to choose,
+        // fades at the edge with more beyond it, as the categories do, rather than cut a row off.
+        val cardScroll = rememberScrollState()
         Column(
             Modifier
                 .fillMaxSize()
-                .ringScroll(extra = CARD_EXTRA)
+                .menuFade(cardScroll)
+                .ringScroll(extra = CARD_EXTRA, state = cardScroll)
                 .selectionHighlight(slots, focus, ring = true, scale = scale),
             verticalArrangement = Arrangement.spacedBy(ROW_GAP),
         ) {
@@ -414,6 +418,7 @@ private fun innerArt(inner: SettingsInner, model: PickerModel): ShelfArt = when 
     is SettingsInner.Folder -> ShelfArt.Mark("folder")
     is SettingsInner.Host -> ShelfArt.Mark("moonlight")
     is SettingsInner.Backend -> ShelfArt.Mark("cloud")
+    SettingsInner.Systems -> ShelfArt.Mark("emulators")
     SettingsInner.Add -> ShelfArt.Control("control.add")
 }
 

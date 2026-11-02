@@ -33,7 +33,7 @@ class ShellSaveHealthTest {
         val games = platforms.mapIndexed { index, platform -> Game("romm", index.toString(), platform, Availability.Cached, platform) }
         shell.ingestLibrary("romm", games.map { GridEntry(it.remoteKey, it.label, "", it.platformId, null, false, it) }, emptyList())
         fun assertQuiet(game: Game) {
-            assertNull(shell.savePlayer(game.platformId))
+            assertNull(shell.savePlayer(GameRoute(homeGameId(game.backendId, game.remoteKey), game, game)))
             assertEquals(SaveHealth.Fine, shell.saveHealthOf(homeGameId(game.backendId, game.remoteKey)))
         }
         // The catalog may arrive before the first installed-app scan.
@@ -225,7 +225,7 @@ class ShellSaveHealthTest {
             GridEntry(game.remoteKey, game.label, "", game.platformId, null, false, game)
         }, emptyList())
         for (game in games) {
-            val player = shell.savePlayer(game.platformId)!!
+            val player = shell.savePlayer(GameRoute(homeGameId(game.backendId, game.remoteKey), game, game))!!
             shell.noteSaveReachable(game, player.id, false)
             val health = shell.saveHealthOf(homeGameId(game.backendId, game.remoteKey))
             assertEquals(SaveHealth.NotSyncing(SaveIssue.NoSlot), health)
@@ -233,7 +233,7 @@ class ShellSaveHealthTest {
             assertEquals(Copy.savesNotSyncing, saveHealthLine(health))
             assertTrue(setupPlayers.isEmpty())
         }
-        val arms = shell.savePlayer("playstation-2")!!
+        val arms = shell.savePlayer(games.first { it.platformId == "playstation-2" }.let { GameRoute(homeGameId(it.backendId, it.remoteKey), it, it) })!!
         shell.setSaveSync(mapOf(arms.id to SaveSyncState.NeedsSetup("Choose a folder card")))
         assertEquals(mapOf(arms.id to arms.displayName), setupPlayers)
     }
@@ -337,7 +337,7 @@ class ShellSaveHealthTest {
         val id = homeGameId("romm", "42")
         shell.setUnsyncedSaves("romm", setOf("42"))
         shell.setInstalledApps(emptyList(), plugins.playerPackageNames(), installedPlayers = emptySet())
-        assertNull(shell.savePlayer(game.platformId))
+        assertNull(shell.savePlayer(GameRoute(homeGameId(game.backendId, game.remoteKey), game, game)))
         assertEquals(SaveHealth.Waiting, shell.saveHealthOf(id))
         shell.setUnsyncedSaves("romm", emptySet())
         assertEquals(SaveHealth.Fine, shell.saveHealthOf(id))

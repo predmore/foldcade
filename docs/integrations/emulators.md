@@ -4,7 +4,15 @@ Set up an emulator on your Thor, then add its games through [local folders](loca
 
 ## Supported emulators and formats
 
-Foldcade uses the first installed emulator in each row. There is currently no emulator selector in Settings.
+With more than one emulator installed for a system, you choose which one opens its games:
+
+- **Settings › Emulators › Systems** lists each system you have games for and more than one emulator to run. **Automatic**, shown as *Auto · melonDS*, picks the first installed emulator in the order below. Left and right step through the others; A and a tap step forward.
+- **Open with**, in a game's **Y** menu on Home or in Games, chooses for that game only. **Default** follows the system's choice and clears the game's own.
+- RetroArch is listed once per core Foldcade can see, as *mGBA (RetroArch)*. Until you choose RetroArch's folder in **Settings › Emulators › RetroArch**, it is listed once, and starts the system's first core.
+
+A game's choice comes before its system's. When the chosen emulator or core is not installed, the game opens with the next choice, and R1 says which one it used. The choice stays saved, so reinstalling the emulator brings it back. A game that is still open in an emulator resumes there, and Restart and Close act on it there; a new choice applies once it is closed. RetroArch is the exception, as before: Foldcade does not keep track of the game RetroArch has open.
+
+Saves stay with each emulator. Switching does not move a save from one emulator to another, though [RomM save sync](romm.md#save-sync) places the server's save in whichever emulator syncs it. RetroArch keeps saves per core, so a different core uses a different save.
 
 [RetroArch](retroarch.md) with a core for a system goes ahead of these emulators, except on the Nintendo DS and the PlayStation. It also runs systems this table doesn't list, such as the Sega CD, PC Engine, and Atari consoles.
 

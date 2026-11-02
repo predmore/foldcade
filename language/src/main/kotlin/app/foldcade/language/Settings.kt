@@ -21,6 +21,9 @@ data class SettingsPage(
 
 /** A page one step inside a Settings category. A tile on the category's shelf opens it, and B returns to that tile. */
 sealed interface SettingsInner {
+    /** Each system's emulator, Automatic first. Settings › Emulators › Systems opens it. */
+    data object Systems : SettingsInner
+
     /** One emulator's rows. [key] is its [EmulatorShelfEntry.key]. */
     data class Emulator(val key: String) : SettingsInner
 
@@ -85,7 +88,10 @@ fun settingsTitle(category: SettingsCategory): String = when (category) {
     SettingsCategory.About -> SettingsCopy.about
 }
 
-/** Categories with at least one row. Emulators appears once an emulator is installed whose saves, cores, or keys Foldcade can set up. */
+/**
+ * Categories with at least one row. Emulators appears once an emulator is installed whose saves,
+ * cores, or keys Foldcade can set up, or once a system has an emulator to choose.
+ */
 fun settingsCategories(model: PickerModel): List<SettingsCategory> =
     SettingsCategory.entries.filter { settingsRows(it, model).isNotEmpty() }
 
@@ -123,6 +129,8 @@ fun settingsRows(category: SettingsCategory, model: PickerModel): List<Row> = wh
     SettingsCategory.Players -> buildList {
         val shelf = emulatorShelf(model)
         addAll(shelf.map { Row.SettingsTile(SettingsInner.Emulator(it.key)) })
+        // Only once a system has more than one emulator to choose, or a choice to clear.
+        if (model.systemPlayers.any { it.choice.visible }) add(Row.Systems)
         if (shelf.isNotEmpty()) {
             add(Row.SaveSetup)
             add(Row.FindSaves)
@@ -222,6 +230,7 @@ fun emulatorShelf(model: PickerModel): List<EmulatorShelfEntry> {
 
 /** The rows [inner] lists, or none once what it was about has gone. */
 fun settingsInnerRows(inner: SettingsInner, model: PickerModel): List<Row> = when (inner) {
+    SettingsInner.Systems -> model.systemPlayers.filter { it.choice.visible }.sortedBy { it.label.lowercase() }.map { Row.SystemPlayer(it.platformId) }
     is SettingsInner.Emulator -> emulatorShelf(model).firstOrNull { it.key == inner.key }?.rows.orEmpty()
     is SettingsInner.Folder -> model.folders.firstOrNull { it.uri == inner.uri }?.let {
         listOfNotNull(Row.PickFolderAgain(it.uri).takeIf { _ -> it.pickAgain }, Row.ForgetFolder(it.uri, it.label))
@@ -237,6 +246,7 @@ fun settingsInnerRows(inner: SettingsInner, model: PickerModel): List<Row> = whe
  * less room, says only [settingsTileLabel].
  */
 fun settingsInnerTitle(inner: SettingsInner, model: PickerModel): String = when (inner) {
+    SettingsInner.Systems -> PlayerChoiceCopy.systems
     is SettingsInner.Emulator -> emulatorShelf(model).firstOrNull { it.key == inner.key }?.label ?: inner.key
     is SettingsInner.Folder -> model.folders.firstOrNull { it.uri == inner.uri }?.let {
         if (it.pickAgain) "${it.label} · ${BackupCopy.pickAgain}" else libraryFolderLabel(it.label, it.artAndInfo)
@@ -274,7 +284,7 @@ fun PickerModel.withFolders(folders: List<LibraryFolder>): PickerModel {
 
 /** The tile on [category]'s shelf that opens [inner], or -1. */
 fun settingsTileIndex(category: SettingsCategory, inner: SettingsInner, model: PickerModel): Int =
-    settingsRows(category, model).indexOfFirst { it is Row.SettingsTile && it.page == inner }
+    settingsRows(category, model).indexOfFirst { (it is Row.SettingsTile && it.page == inner) || (it == Row.Systems && inner == SettingsInner.Systems) }
 
 /** How a tile's corner badge reads. */
 enum class TileStatus {
@@ -373,7 +383,7 @@ fun PickerModel.versionCopySettled(): PickerModel =
 sealed interface RowControl {
     data class Toggle(val on: Boolean) : RowControl
     data class Check(val on: Boolean, val some: Boolean = false) : RowControl
-    data class Choice(val value: String) : RowControl
+    data class Choice(val value: String, val attention: Boolean = false) : RowControl
     data object Opens : RowControl
     data class Value(val text: String, val attention: Boolean = false) : RowControl
     data object None : RowControl
@@ -389,12 +399,16 @@ fun rowControl(row: Row, model: PickerModel, value: String? = rowText(row, model
     Row.FolderOnHome -> RowControl.Toggle(model.tileActions?.folderOnHome?.on == true)
     Row.Artwork -> RowControl.Toggle(model.artwork)
     is Row.StreamHost -> RowControl.Toggle(model.streamHosts.any { it.key == row.key && it.paired })
+    // An emulator choice that is not installed reads in the attention colour, as Not syncing does.
+    Row.OpenWith -> RowControl.Choice(value.orEmpty(), attention = model.tileActions?.openWith?.missing == true)
+    is Row.SystemPlayer -> RowControl.Choice(value.orEmpty(),
+        attention = model.systemPlayers.firstOrNull { it.platformId == row.platformId }?.choice?.missing == true)
     in choiceRows -> RowControl.Choice(value.orEmpty())
     Row.MusicVolume, Row.Brightness -> RowControl.None
     is Row.Collection -> model.tileActions?.collections?.firstOrNull { it.folderId == row.folderId }.let { RowControl.Check(it?.member == true, it?.some == true) }
     Row.EditHome, Row.AddToCollection, is Row.RommConnection,
     Row.AddFolder, Row.AddRomm, Row.SetAsHome, Row.DefaultHomeApp, Row.AndroidSettings, Row.Licenses, is Row.SettingsTile,
-    Row.SaveSetup, Row.Backup, is Row.PickFolderAgain,
+    Row.SaveSetup, Row.Backup, is Row.PickFolderAgain, Row.Systems,
     -> RowControl.Opens
     else -> value?.takeIf { it.isNotEmpty() }?.let {
         RowControl.Value(it, attention = it == Copy.notSyncing &&

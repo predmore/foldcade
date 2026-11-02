@@ -48,9 +48,11 @@ class RetroArchCores {
     /**
      * Every installed RetroArch package, mapped to its core file names, or to
      * null when the shell cannot see them. A package that is not a key is not installed.
+     * True when that changed what the shell knew.
      */
-    fun update(byPackage: Map<String, Set<String>?>) {
-        installed.set(byPackage.filterKeys { it in PACKAGES })
+    fun update(byPackage: Map<String, Set<String>?>): Boolean {
+        val next = byPackage.filterKeys { it in PACKAGES }
+        return installed.getAndSet(next) != next
     }
 
     /** The package a launch resolves to: the first of [PACKAGES] that is installed. */
@@ -100,6 +102,7 @@ class RetroArchPlayer internal constructor(
     /** The view every RetroArch player shares. The shell keeps it current. */
     val cores: RetroArchCores,
     private val saves: SharedSaveFolder,
+    val pinnedCore: String? = null,
 ) : Player, SaveFolderHolder {
     override val id: String = "$ID_PREFIX${system.platformId}"
     override val displayName: String = DISPLAY_NAME
@@ -122,9 +125,17 @@ class RetroArchPlayer internal constructor(
 
     override val saveFolderPlaces: List<String> = listOf("RetroArch/saves")
 
+    /** A core pin shares installation state and the save-folder grant with the registered player. */
+    fun withCore(file: String): RetroArchPlayer {
+        val core = system.cores.firstOrNull { it.file == file } ?: return this
+        return RetroArchPlayer(system.copy(cores = listOf(core) + system.cores.filterNot { it.file == file }), cores, saves, file)
+    }
+
     /** The core a launch through [packageName] loads. */
     fun coreChoice(packageName: String): CoreChoice {
         val files = cores.coreFiles(packageName) ?: return CoreChoice.Unknown(system.cores.first())
+        if (pinnedCore != null) return if (system.cores.first().fileName in files) CoreChoice.Ready(system.cores.first())
+            else CoreChoice.Missing(system.cores.first())
         val core = system.cores.firstOrNull { it.fileName in files } ?: return CoreChoice.Missing(system.cores.first())
         return CoreChoice.Ready(core)
     }
