@@ -124,14 +124,15 @@ def emulators(c):
     """Emulators: a cartridge and a disc, every kind of game they play. No device, so the folder
     never passes for a platform beside the handhelds. The disc rises clear of the cartridge, so
     the symbol reads as two things."""
+    # Every cut in the symbol is at least 2.5 units: the disc's ring and hole, the label's bezel, the contacts.
     dx, dy, r = 48, 15.5, 13.5
     hole = circle_ccw(dx, dy, 3.2)
     shell = "M8,20 H29 L36,27 V57 Q36,61 32,61 H8 Q4,61 4,57 V24 Q4,20 8,20 Z"
     return [shadow(31, 62, 27, 2.4),
             body(ci(dx, dy, r) + hole, tone(c, 0.35), gloss=0.2), paint(L(ci(dx, dy, r) + hole, fill=_shine(dx - r, dy - r, dx + r, dy + r))),
-            recess(ci(dx, dy, 7.4) + hole, tone(c, 0.35)), control(ci(dx, dy, 5.4) + hole, tone(c, 0.6)),
-            body(shell, c), *bezel(8.5, 25, 23, 17, 2, c, tone(c, 0.65)),
-            *[recess(capsule(x, 47.5, x, 56, 2.4), c) for x in (10, 15, 20, 25, 30)]]
+            recess(ci(dx, dy, 8.4) + hole, tone(c, 0.35)), control(ci(dx, dy, 5.8) + hole, tone(c, 0.6)),
+            body(shell, c), *bezel(8.5, 25, 23, 17, 2, c, tone(c, 0.65), inset=2.5),
+            *[recess(capsule(x, 47.5, x, 56, 2.6), c) for x in (11.6, 17.2, 22.8, 28.4)]]
 
 # ---------------- platforms ----------------
 def nintendo_3ds(c):
