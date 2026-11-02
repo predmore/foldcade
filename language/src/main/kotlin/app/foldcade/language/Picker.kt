@@ -678,6 +678,10 @@ sealed interface Row {
     /** Closes the gaps on the board on screen. */
     data object Tidy : Row
 
+    data object OpenWith : Row
+    data object Systems : Row
+    data class SystemPlayer(val platformId: String) : Row
+
     /** ‹ Custom › and the orders a folder can show instead ([TileActions.sort]). */
     data object SortFolder : Row
 
@@ -1002,6 +1006,7 @@ data class TileActions(
     /** The other screen, when Foldcade owns it and this player can move there. */
     val moveGame: HostScreen? = null,
     val saves: Boolean = false,
+    val openWith: PlayerChoiceRow? = null,
     /** The game's play time, for its Play time row. Null leaves the row out: not a game, or no play anywhere yet. */
     val playTime: Long? = null,
     /** With no play of its own, the time a gone game of its name left: the row says it was found. */
@@ -1051,6 +1056,7 @@ fun actionRows(tile: TileActions?): List<Row> = buildList {
     if (tile.rename) add(Row.RenameFolder)
     if (tile.icon) add(Row.FolderIcon)
     if (tile.newCollection && tile.collections == null) add(Row.NewCollection)
+    if (tile.openWith != null) add(Row.OpenWith)
     if (tile.playTime != null) add(Row.PlayTime)
     if (tile.show) add(Row.ShowHidden)
     if (tile.showOnHome != null) add(Row.ShowOnHome)
@@ -1192,6 +1198,11 @@ fun rowText(row: Row, model: PickerModel): RowText = when (row) {
     Row.SaveSetup -> RowText(SaveSetupCopy.title)
     Row.ScreenLayout -> RowText(ScreenCopy.layout, layoutLabel(model.layout))
     Row.PlayOn -> RowText(ScreenCopy.playOn, screenLabel(model.playOn))
+    Row.OpenWith -> RowText(PlayerChoiceCopy.openWith, model.tileActions?.openWith?.value())
+    Row.Systems -> RowText(PlayerChoiceCopy.systems)
+    is Row.SystemPlayer -> model.systemPlayers.firstOrNull { it.platformId == row.platformId }.let {
+        RowText(it?.label.orEmpty(), it?.choice?.value())
+    }
     Row.SortFolder -> RowText(Copy.sort, folderSortLabel(model.sortChoice()?.sort ?: FolderSort.Custom))
     Row.Music -> RowText(MusicCopy.row, if (model.music.enabled) MusicCopy.on else MusicCopy.off)
     Row.MusicTrack -> RowText(MusicCopy.track, model.trackTitle)
@@ -1423,6 +1434,9 @@ sealed interface Effect {
     /** Close the gaps on the board on screen. */
     data object Tidy : Effect
 
+    data class SetGamePlayerChoice(val gameId: String, val choice: PlayerChoice?) : Effect
+    data class SetSystemPlayerChoice(val platformId: String, val choice: PlayerChoice?) : Effect
+
     /** Step folder [folderId]'s sort forward, or back for a negative [direction]. The menu stays open. */
     data class SortFolder(val folderId: String, val direction: Int) : Effect
 
@@ -1586,6 +1600,7 @@ data class PickerModel(
     val connectRetry: Boolean = false,
     val reLoginPending: Boolean = false,
     val playerSaves: List<PlayerSaveSetting> = emptyList(),
+    val systemPlayers: List<SystemPlayerChoice> = emptyList(),
     /** Null while RetroArch is not installed. */
     val retroArch: RetroArchSetting? = null,
     /** Null while Eden is not installed. */
@@ -1733,6 +1748,7 @@ fun reduce(
         }
     }
     val settings = coerced.settings
+    if (repeatCount > 0 && meaning in setOf(Meaning.Options, Meaning.Menu, Meaning.LeftPanel, Meaning.RightPanel)) return coerced to null
     if (settings != null) return applySettings(coerced, settings, meaning, repeatCount).let { (next, effect) -> next.versionCopySettled() to effect }
     coerced.gameAbout?.let { return applyGameAbout(coerced, it, meaning, repeatCount) }
     val activity = coerced.playActivity
@@ -1745,6 +1761,8 @@ fun reduce(
         // A held X or Delete removes one notice, not each one that moves up under the focus.
         if (repeatCount > 0 && (meaning == Meaning.ActivateBottom || meaning == Meaning.Dismiss)) return coerced to null
         // A held A flips a switch once. The menu stays open under it, so each repeat would flip it back.
+        if (repeatCount > 0 && meaning == Meaning.Activate &&
+            panelRows(panel, coerced).getOrNull(panel.index) == Row.OpenWith) return coerced to null
         if (repeatCount > 0 && meaning == Meaning.Activate &&
             panelRows(panel, coerced).getOrNull(panel.index)?.let { rowControl(it, coerced) is RowControl.Toggle } == true
         ) return coerced to null
@@ -2136,6 +2154,7 @@ private fun applyPanel(
         Meaning.MoveLeft, Meaning.MoveRight -> {
             val direction = if (meaning == Meaning.MoveLeft) -1 else 1
             // A folder's order is the board's, which the shell changes; the menu stays on the row.
+            playerChoiceStep(model, rows[index], direction)?.let { return model.copy(panel = current) to it }
             if (rows[index] == Row.SortFolder) return model.copy(panel = current) to sortStep(model, direction)
             val nudged = stepRow(model, rows[index], direction)
             if (nudged != null) {
@@ -2166,8 +2185,19 @@ private fun applyPanel(
  * The Settings page draws them as ‹ value ›.
  */
 internal val choiceRows: Set<Row> = setOf(
-    Row.Theme, Row.IconTheme, Row.Background, Row.MotionSpeed, Row.MusicTrack, Row.ScreenLayout, Row.PlayOn, Row.SortFolder,
+    Row.Theme, Row.IconTheme, Row.Background, Row.MotionSpeed, Row.MusicTrack, Row.ScreenLayout, Row.PlayOn, Row.SortFolder, Row.OpenWith,
 )
+
+/** The shell persists choices; effects always carry the menu's game, never the grid focus. */
+private fun playerChoiceStep(model: PickerModel, row: Row, direction: Int): Effect? = when (row) {
+    Row.OpenWith -> model.tileActions?.let { tile -> tile.game?.let { id ->
+        tile.openWith?.let { Effect.SetGamePlayerChoice(id, it.step(direction)) }
+    } }
+    is Row.SystemPlayer -> model.systemPlayers.firstOrNull { it.platformId == row.platformId }?.let {
+        Effect.SetSystemPlayerChoice(row.platformId, it.choice.step(direction))
+    }
+    else -> null
+}
 
 /** The folder Sort row's step, or null when the menu names no folder. */
 private fun sortStep(model: PickerModel, direction: Int): Effect? =
@@ -2260,6 +2290,8 @@ private fun applySettings(
     val rowIndex = shown.row.coerceIn(0, (rows.size - 1).coerceAtLeast(0))
     val current = shown.copy(row = rowIndex)
     val close = model.copy(settings = null, focus = page.grid, capturingConfirm = false) to null
+    // The A that opened Settings cannot enter its rows or change their values while held.
+    if (repeatCount > 0 && meaning == Meaning.Activate) return model.copy(settings = current) to null
     if (!current.onRows) {
         return when (meaning) {
             Meaning.MoveUp -> model.copy(settings = current.copy(category = (categoryIndex - 1).coerceAtLeast(0), row = 0, inner = null)) to null
@@ -2272,10 +2304,14 @@ private fun applySettings(
             else -> model.copy(settings = current) to null
         }
     }
-    val row = rows.getOrNull(rowIndex) ?: return model.copy(settings = current.copy(onRows = false, inner = null)) to null
     val inner = current.inner
-    // Back on a page lands on the tile that opened it.
+    // Back on a page lands on the tile or row that opened it, including an empty Systems page.
     val shelf = current.copy(inner = null, row = inner?.let { settingsTileIndex(category, it, model) }?.coerceAtLeast(0) ?: rowIndex)
+    val row = rows.getOrNull(rowIndex) ?: return when (meaning) {
+        Meaning.Back, Meaning.MoveLeft -> model.copy(settings = shelf) to null
+        Meaning.LeftPanel, Meaning.RightPanel, Meaning.Menu -> close
+        else -> model.copy(settings = current) to null
+    }
     return when (meaning) {
         Meaning.MoveUp, Meaning.MoveDown -> model.copy(
             capturingConfirm = false,
@@ -2283,6 +2319,7 @@ private fun applySettings(
         ) to null
         Meaning.MoveLeft, Meaning.MoveRight -> {
             val direction = if (meaning == Meaning.MoveLeft) -1 else 1
+            playerChoiceStep(model, row, direction)?.let { return model.copy(settings = current) to it }
             val nudged = stepRow(model, row, direction)
             when {
                 nudged != null -> nudged.copy(capturingConfirm = false, settings = current) to null
@@ -2301,9 +2338,8 @@ private fun applySettings(
         }
         Meaning.LeftPanel, Meaning.RightPanel, Meaning.Menu -> close
         Meaning.Activate -> {
+            if (row == Row.Systems) return model.copy(settings = current.copy(inner = SettingsInner.Systems, row = 0)) to null
             if (row is Row.SettingsTile) return model.copy(settings = current.copy(inner = row.page, row = 0)) to null
-            // A held A that opened a page does not go on to act in it: a folder's Remove, a computer's pairing.
-            if (repeatCount > 0 && (inner != null || row == Row.FindSaves || row == Row.SaveSetup)) return model.copy(settings = current) to null
             // Back from Set up saves returns to this row.
             if (row == Row.SaveSetup) return model.openSaveSetup(current.screen, settings = current) to null
             // Rows act through the menu path. A stand-in panel tells "stays open" from "leaves".
@@ -2368,6 +2404,8 @@ private fun activateRow(
         // Left and right step the pack. A opens every pack, Add a theme, and what was found in each.
         Row.Theme -> model.copy(panel = panel) to Effect.OpenThemes
         // A choice row too, whose value is the board's: the shell steps it.
+        Row.OpenWith, is Row.SystemPlayer -> model.copy(panel = panel) to playerChoiceStep(model, row, 1)
+        Row.Systems -> model.copy(panel = panel) to null
         Row.SortFolder -> model.copy(panel = panel) to sortStep(model, 1)
         Row.UsageAccess -> model.copy(dialog = usageAccessPrompt(screen)) to null
         // Android adds Undo from the current before-copy; leave presentation to that effect.
@@ -2539,7 +2577,16 @@ private fun openNotice(model: PickerModel, panel: SidePanel, id: String): Pair<P
     val notice = model.notices.firstOrNull { it.id == id } ?: return model.copy(panel = panel) to null
     // The save-setup notices open Set up saves: the merged one at the first emulator that needs
     // you, one emulator's on its own tile.
-    if (notice.settingsCategory == SettingsCategory.Players) return model.openSaveSetup(panel.screen, grid = panel.grid) to null
+    if (notice.settingsCategory == SettingsCategory.Players && notice.id.startsWith("foldcade:save-setup:")) return model.openSaveSetup(panel.screen, grid = panel.grid) to null
+    // A system's fallback notice opens Systems on that system's row, where its choice is changed.
+    if (notice.settingsCategory == SettingsCategory.Players && notice.id.startsWith(PLAYER_CHOICE_SYSTEM_NOTICE)) {
+        val row = settingsInnerRows(SettingsInner.Systems, model).indexOf(Row.SystemPlayer(notice.id.removePrefix(PLAYER_CHOICE_SYSTEM_NOTICE)))
+        val opened = model.openSettings(model.layout.pageScreen, SettingsCategory.Players, panel.grid)
+        if (row >= 0 && SettingsCategory.Players in settingsCategories(model)) {
+            return opened.copy(settings = opened.settings?.copy(inner = SettingsInner.Systems, onRows = true, row = row)) to null
+        }
+        return opened to null
+    }
     notice.settingsCategory?.let { category ->
         return model.openSettings(model.layout.pageScreen, category, panel.grid) to null
     }

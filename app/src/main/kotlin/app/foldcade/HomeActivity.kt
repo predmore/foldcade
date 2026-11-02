@@ -392,7 +392,7 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
             Effect.OpenFolders, is Effect.FolderOnHome,
             is Effect.MoveApp, is Effect.Hide,
             Effect.RenameFolder, Effect.ChooseFolderIcon, Effect.RemoveTile, Effect.Tidy, Effect.GoHome, Effect.EditField,
-            is Effect.SortFolder,
+            is Effect.SortFolder, is Effect.SetGamePlayerChoice, is Effect.SetSystemPlayerChoice,
             -> Unit
             is Effect.RemoveDownload -> removeDownload(effect.gameId)
             is Effect.RestartGame -> askRestart(effect.gameId)
@@ -1036,15 +1036,28 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
         }
     }
 
-    private fun launchGame(index: Int, saveSyncDeclinedFor: String? = null, foldersChecked: Boolean = false) {
+    private fun launchGame(index: Int, saveSyncDeclinedFor: String? = null, foldersChecked: Boolean = false, coresChecked: Boolean = false) {
         val game = Shelf.games.getOrNull(index) ?: return
         if (game.emptyShelfHint) return
-        val player = game.platformId?.let(::playerFor)
+        if (!coresChecked && game.platformId?.let { foldcade.mayOpenRetroArch(game.id, it) } == true) {
+            val generation = beginLaunch()
+            foldcade.launchWork.job = foldcade.scope.launch {
+                foldcade.readRetroArchCores()
+                withContext(Dispatchers.Main.immediate) {
+                    if (!launchCurrent(generation)) return@withContext
+                    foldcade.launchWork.job = null
+                    launchGame(index, saveSyncDeclinedFor, foldersChecked, coresChecked = true)
+                }
+            }
+            return
+        }
+        val resolution = game.platformId?.let { foldcade.playerResolution(game.id, it) }
+        val player = resolution?.player
         if (player == null) {
             if (game.platformId != null) {
                 val generation = beginLaunch()
                 pendingLaunch = index
-                presentMissing("Player", generation)
+                presentMissing(resolution?.skipped?.firstOrNull()?.label ?: "Player", generation)
                 return
             }
             launchStandIn(game)
@@ -1060,7 +1073,7 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
                 withContext(Dispatchers.Main.immediate) {
                     if (!launchCurrent(generation)) return@withContext
                     foldcade.launchWork.job = null
-                    launchGame(index, saveSyncDeclinedFor, foldersChecked = true)
+                    launchGame(index, saveSyncDeclinedFor, foldersChecked = true, coresChecked = coresChecked)
                 }
             }
             return
@@ -1076,8 +1089,6 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
                 var notPlaced: SaveNotPlaced? = null
                 if (installedEdenPackage(player, ::packageInstalled) != null &&
                     edenHeld(player, generation, libraryId, remoteKey)) return@launch
-                // The core decides where RetroArch keeps the save, so it is fixed before saves are placed.
-                if (player is RetroArchPlayer) foldcade.readRetroArchCores()
                 val prepared = try {
                     val local = foldcade.plugins.ensureLocal(libraryId, apiGame)
                     withContext(Dispatchers.Main.immediate) { foldcade.shell.noteOnDevice(libraryId, remoteKey) }
@@ -1113,6 +1124,7 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
             shelfGame(game),
             generation,
             saveSyncDeclinedFor = saveSyncDeclinedFor,
+            coresRead = coresChecked,
         )
     }
 
@@ -1235,7 +1247,7 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
         when (decision) {
             is PlayerLaunch.Blocked -> if (launchCurrent(generation)) when (decision.block) {
                 LaunchBlock.CloseFirst -> foldcade.shell.present(closeBothPanelDialog(hostScreen()))
-                LaunchBlock.MissingPlayer -> presentMissing(decision.playerName, generation)
+                LaunchBlock.MissingPlayer -> presentMissing(game.platformId?.let { foldcade.playerResolution(game.id, it).skipped.firstOrNull()?.label } ?: decision.playerName, generation)
                 LaunchBlock.NoLocalFile -> foldcade.shell.present(noFileDialog(hostScreen()))
                 LaunchBlock.SaveFolder -> foldcade.shell.present(
                     if (needsItsFolder(player)) {
@@ -1462,7 +1474,10 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
         val game = route.play
         val libraryId = game.backendId
         val id = route.tileId
-        val players = foldcade.rankedPlayers(game.platformId)
+        // Refresh before resolving: both the choice and its save path depend on core visibility.
+        if (foldcade.mayOpenRetroArch(id, game.platformId)) foldcade.readRetroArchCores()
+        val resolution = foldcade.playerResolution(id, game.platformId)
+        val players = listOfNotNull(resolution.player)
         val installedPackage = { player: Player ->
             player.packageNames.firstOrNull { name ->
                 runCatching { packageManager.getPackageInfo(name, 0) }.isSuccess
@@ -1470,10 +1485,14 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
         }
         // Say so before a download that could take minutes, not after it.
         val missing = missingPlayer(players, installedPackage)
+            ?: resolution.skipped.firstOrNull()?.takeIf { players.isEmpty() }?.let { GameLaunch.Missing(it.label, emptyList()) }
         if (missing != null) {
             withContext(Dispatchers.Main.immediate) {
                 if (fetching) foldcade.shell.endDownload(libraryId, game.remoteKey)
-                if (launchCurrent(generation)) showMissing(missing.playerName, missing.alsoRuns)
+                // The saved choice is the one named missing, when there was one; the rest, best first, also run it.
+                val name = resolution.skipped.firstOrNull()?.label ?: missing.playerName
+                if (launchCurrent(generation)) showMissing(name,
+                    foldcade.plugins.playersFor(game.platformId).sortedBy(::playerRank).map { it.displayName }.distinct() - name)
             }
             return
         }
@@ -1481,7 +1500,7 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
         val first = players.firstOrNull { installedPackage(it) != null }
         if (first is RetroArchPlayer) {
             val retry = { launchBackendGame(title, platformId, route) }
-            if (retroArchHeld(first, generation, retry = retry)) {
+            if (retroArchHeld(first, generation, readCores = false, retry = retry)) {
                 if (fetching) withContext(Dispatchers.Main.immediate) { foldcade.shell.endDownload(libraryId, game.remoteKey) }
                 return
             }
@@ -1591,10 +1610,7 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
         }
         val playerIntent = if (plan is GameLaunch.Installed) {
             try {
-                foldcade.plugins.launchIntent(
-                    plan.player.id,
-                    LaunchRequest(game, target, plan.packageName),
-                ).let { foldcade.startIntent(plan.player, it) }
+                plan.player.launchIntent(LaunchRequest(game, target, plan.packageName)).let { foldcade.startIntent(plan.player, it) }
             } catch (cancelled: CancellationException) {
                 throw cancelled
             } catch (fatal: VirtualMachineError) {
@@ -1626,6 +1642,7 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
                         noteStart = { playerIntent?.let { foldcade.noteStarted(plan.player, it) } == true },
                     )
                     if (started) {
+                        foldcade.notePlayerChoiceLaunch(id, game.platformId, resolution)
                         val saves = if (saveSyncForLaunch(plan.player, saveSyncDeclinedFor)) LibraryReturn(
                             owner.backendId,
                             owner,
@@ -1676,7 +1693,7 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
         } else null
         foldcade.runningGames.note(RunningGame(id, title, platformId, pkg, intent.component?.className, panel,
             player.occupiesBothDisplays, System.currentTimeMillis(), saves, resumeStart,
-            movesBetweenScreens = movesBetweenScreens, saveFolderKey = player.saveFolderId()))
+            movesBetweenScreens = movesBetweenScreens, saveFolderKey = player.saveFolderId(), player = player))
     }
 
     /** The screen the game just started is on. */
@@ -1695,8 +1712,7 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
         val running = foldcade.runningOn(tileId) ?: return false
         if (running.packageName in foldcade.closingPlayers) return true
         // A chosen save must load even when the old game is still paused behind Home.
-        val savePlayer = platformId?.let(foldcade::playerFor)
-        if (savePlayer != null && foldcade.store.saveAwaitsLoad(savePlayer.saveFolderId())) return false
+        if (running.saveFolderKey?.let(foldcade.store::saveAwaitsLoad) == true) return false
         // A player that takes its game's start again as a resume gets that, see LaunchFlag.SameStartResumes.
         val front = running.resumeStart?.let(::Intent)
             ?: packageManager.getLaunchIntentForPackage(running.packageName)?.apply { flags = RESUME_FLAGS } ?: run {
@@ -2230,15 +2246,14 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
             if (syncing && game.libraryId != null) {
                 rememberReturn(LibraryReturn(game.libraryId, apiGame, player, spots, ready.intent.dataUri))
             }
+            game.platformId?.let { platform -> foldcade.notePlayerChoiceLaunch(game.id, platform, foldcade.playerResolution(game.id, platform).copy(player = player)) }
         } catch (cancelled: CancellationException) {
             throw cancelled
         } catch (_: ActivityNotFoundException) {
             foldcade.launchBlooms.cancel()
             foldcade.shell.forgetGameLaunch()
             foldcade.store.update { it.home(Panel.Top).home(Panel.Bottom) }
-            val name = game.platformId
-                ?.let { playerFor(it)?.displayName }
-                ?: "Player"
+            val name = playerChoiceLabel(player) ?: "Player"
             presentMissing(name, generation)
         } catch (_: Exception) {
             foldcade.launchBlooms.cancel()
@@ -2305,7 +2320,7 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
         }
 
     /** Several emulators can serve one platform. See [FoldcadeApp.playerFor]. */
-    private fun playerFor(platformId: String): Player? = foldcade.playerFor(platformId)
+    private fun playerFor(game: ShelfGame): Player? = game.platformId?.let { foldcade.playerFor(game.id, it) }
 
     private val usageReconcile = UsageReconcile()
 
@@ -3131,7 +3146,7 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
     private fun playerForPendingLaunch(): Player? {
         val index = pendingLaunch ?: return null
         val game = Shelf.games.getOrNull(index) ?: return null
-        return game.platformId?.let(::playerFor)
+        return playerFor(game)
     }
 
     /**
@@ -3266,7 +3281,7 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
         if (foldcade.launchWork.active) return
         val route = foldcade.shell.savesMenuRoute(gameId) ?: return
         val owner = route.servers.firstOrNull { it == route.saves } ?: route.servers.firstOrNull() ?: return
-        val player = foldcade.shell.savePlayer(route.play.platformId)
+        val player = foldcade.shell.savePlayer(route)
         val target = app.foldcade.language.SavePickerTarget(route.tileId, owner.backendId, owner.remoteKey, player?.id, ++foldcade.savePickerSerial)
         foldcade.savePickerRequest = SavePickerRequest(target, route, owner, player)
         foldcade.shell.presentSavePicker(app.foldcade.language.SavePickerState(
@@ -3626,6 +3641,7 @@ internal fun LibraryReturn.encode(): String = JSONObject().apply {
     put("availability", game.availability.name)
     put("label", game.label)
     put("player", player.id)
+    (player as? RetroArchPlayer)?.pinnedCore?.let { put("core", it) }
     targetUri?.let { put("target", it) }
     put(
         "spots",
@@ -3663,7 +3679,8 @@ internal fun decodeLibraryReturn(text: String, player: (String) -> Player?): Lib
     }
     val resolved = player(json.optString("player")) ?: return null
     return try {
-        decodeLibraryReturn(json, resolved)
+        val pinned = if (resolved is RetroArchPlayer) json.optString("core").takeIf { it.isNotBlank() }?.let(resolved::withCore) ?: resolved else resolved
+        decodeLibraryReturn(json, pinned)
     } catch (_: Exception) {
         null
     }

@@ -89,6 +89,7 @@ import coil3.ImageLoader
 import coil3.request.allowHardware
 import coil3.toBitmap
 import android.service.notification.NotificationListenerService
+import app.foldcade.language.homeGameId
 import app.foldcade.language.FoldNotice
 import app.foldcade.language.orderedNotices
 import app.foldcade.language.brightnessLevel
@@ -752,6 +753,9 @@ class FoldcadeApp : Application() {
                 -> {
                     reloadInstalledApps()
                     val changed = intent.data?.schemeSpecificPart
+                    // A game cannot still run in an emulator that is gone, so its tile falls back
+                    // to the game's choice, and Close and Move find the run that replaces it.
+                    if (intent.action == Intent.ACTION_PACKAGE_REMOVED && changed != null) runningGames.forget(changed)
                     if (changed in GameNativePlayer.PACKAGES || changed == DroidDeckPlayer.PACKAGE) rerouteSteamFiles()
                     if (changed in RETROARCH_PACKAGES) refreshRetroArchCores()
                     if (changed in EDEN_PACKAGES) refreshEdenSetting()
@@ -820,8 +824,8 @@ class FoldcadeApp : Application() {
         val sliderTick = SliderTick()
         plays.packageOf = { gameId ->
             val platform = Shelf.games.firstOrNull { it.id == gameId }?.platformId
-            val player = platform?.let(::playerFor)
-            player?.packageNames?.let { names -> names.firstOrNull(::packageInstalled) ?: names.firstOrNull() }
+            val player = platform?.let { playerFor(gameId, it) }
+            runningOn(gameId)?.packageName ?: player?.packageNames?.let { names -> names.firstOrNull(::packageInstalled) ?: names.firstOrNull() }
         }
         artChoices = ArtChoices.decode(artChoiceFile.takeIf { it.isFile }?.readText())
         shell = ShellController(
@@ -859,6 +863,9 @@ class FoldcadeApp : Application() {
                 updateWaitingSaveNotices()
             },
         )
+        shell.runningPlayer = { id -> runningOn(id)?.takeIf { packageInstalled(it.packageName) }?.player }
+        shell.onPlayerChoiceChanged = { scope -> dismissNotice("foldcade:player-choice:$scope") }
+        shell.onPlayerAvailabilityChanged = ::clearUsablePlayerChoiceNotices
         shell.canCloseGame = ::canCloseGame
         shell.moveGameScreen = { id -> moveGameTarget(id)?.let { if (it == Panel.Top) app.foldcade.language.HostScreen.Top else app.foldcade.language.HostScreen.Bottom } }
         // Loading ends once the shell has resolved the choices against the packs.
@@ -1036,6 +1043,7 @@ class FoldcadeApp : Application() {
 
     /** X on a notice. Android's go through the listener, which then publishes the rest. */
     fun dismissNotice(id: String) {
+        playerChoiceNotices.remove(id)
         saveSetupNotices.dismiss(id)
         if (id.startsWith("foldcade:save-setup:")) {
             publishNotices()
@@ -1334,7 +1342,7 @@ class FoldcadeApp : Application() {
     }
 
     internal fun noteSaveLaunch(route: GameRoute) {
-        shell.savePlayer(route.play.platformId)?.let { saveSetupNotices.launch(shell.saveNoticePlayerId(it.id)) }
+        shell.savePlayer(route)?.let { saveSetupNotices.launch(shell.saveNoticePlayerId(it.id)) }
         publishNotices()
     }
 
@@ -1430,24 +1438,69 @@ class FoldcadeApp : Application() {
         false
     }
 
-    /**
-     * The player a game on [platformId] launches with, see [rankPlayers]. RetroArch
-     * counts as runnable only with a core Foldcade knows is installed.
-     */
-    fun playerFor(platformId: String): Player? = preferredPlayer(
-        plugins.playersFor(platformId),
-        runnable = { runnableWith(it, it.packageNames.firstOrNull(::packageInstalled)) },
-        rank = ::playerRank,
-        installed = ::packageInstalled,
-    )
+    /** Game-specific resolution is shared with save health and every shell hint. */
+    fun playerFor(gameId: String?, platformId: String): Player? =
+        gameId?.let { playerResolution(it, platformId).player } ?: shell.playerResolution(null, platformId, ::packageInstalled).player
 
-    /** Every player for [platformId], in the order [playerFor] tries them. */
-    fun rankedPlayers(platformId: String): List<Player> = rankPlayers(
-        plugins.playersFor(platformId),
-        installed = { player -> player.packageNames.any(::packageInstalled) },
-        runnable = { runnableWith(it, it.packageNames.firstOrNull(::packageInstalled)) },
-        rank = ::playerRank,
-    )
+    internal fun playerResolution(gameId: String, platformId: String): PlayerResolution {
+        val resolved = shell.playerResolution(gameId, platformId, ::packageInstalled)
+        // A game noted as running stays with its emulator, through Restart and a picked save too.
+        // A changed choice applies once that run is closed, or its emulator is uninstalled.
+        val running = runningOn(gameId)?.takeIf { packageInstalled(it.packageName) }?.player
+        return if (running == null) resolved else resolved.copy(player = running, skipped = emptyList())
+    }
+
+    /**
+     * True when starting [gameId] may open RetroArch: it is installed for the platform, and it
+     * is what the game resolves to now or what a saved choice names. Its cores are read first
+     * then, since the core decides both the choice and where RetroArch keeps the save. Other
+     * launches skip the read, which starts RetroArch's process.
+     */
+    internal fun mayOpenRetroArch(gameId: String, platformId: String): Boolean {
+        val players = plugins.playersFor(platformId)
+        val retroArch = players.filterIsInstance<RetroArchPlayer>().filter { it.packageNames.any(::packageInstalled) }
+        if (retroArch.isEmpty()) return false
+        if (playerResolution(gameId, platformId).player is RetroArchPlayer) return true
+        val saved = listOfNotNull(shell.gamePlayerChoice(gameId), store.systemPlayerChoice(shell.canonicalSystem(platformId)))
+        return saved.any { choice -> retroArch.any { it.id == choice.playerId } }
+    }
+
+    private data class ChoiceNotice(val platformId: String, val choice: PlayerChoice)
+    private val playerChoiceNotices = mutableMapOf<String, ChoiceNotice>()
+
+    /** Called only once the resolved player actually starts. The saved preference stays. */
+    internal fun notePlayerChoiceLaunch(gameId: String, platformId: String, resolution: PlayerResolution) {
+        val label = playerChoiceLabel(resolution.player) ?: return
+        val choices = buildList {
+            add("game:${shell.tileOf(gameId)}" to shell.gamePlayerChoice(gameId))
+            if (resolution.source != PlayerChoiceSource.Game) {
+                val system = shell.canonicalSystem(platformId)
+                add("system:$system" to store.systemPlayerChoice(system))
+            }
+        }
+        for ((scope, choice) in choices) {
+            val id = "foldcade:player-choice:$scope"
+            if (choice != null && choice in resolution.skipped) {
+                playerChoiceNotices[id] = ChoiceNotice(platformId, choice)
+                postNotice(FoldNotice(id, app.foldcade.language.PlayerChoiceCopy.opened(label),
+                    app.foldcade.language.PlayerChoiceCopy.unavailable(choice), postedMillis = System.currentTimeMillis(),
+                    // A system's choice is fixed in Settings › Emulators; a game's in its own Y menu.
+                    settingsCategory = app.foldcade.language.SettingsCategory.Players.takeIf { scope.startsWith("system:") }))
+            } else if (foldcadeNotices.any { it.id == id }) dismissNotice(id)
+        }
+    }
+
+    private fun clearUsablePlayerChoiceNotices() {
+        for ((id, saved) in playerChoiceNotices.toMap()) {
+            val resolved = resolvePlayer(plugins.playersFor(saved.platformId), gameChoice = saved.choice,
+                installed = { it.packageNames.any(::packageInstalled) },
+                coreFiles = { player -> (player as? RetroArchPlayer)?.let { it.packageNames.firstOrNull(::packageInstalled)?.let(it.cores::coreFiles) } })
+            if (resolved.source == PlayerChoiceSource.Game) {
+                playerChoiceNotices.remove(id)
+                dismissNotice(id)
+            }
+        }
+    }
 
     internal val retroArchCoreReader: RetroArchCoreReader by lazy { RetroArchCoreReader(this, store::retroArchCoresFolder) }
 
@@ -1557,10 +1610,11 @@ class FoldcadeApp : Application() {
         retroArchReadAt = SystemClock.elapsedRealtime()
         val installed = RETROARCH_PACKAGES.filter(::packageInstalled)
         val byPackage = installed.associateWith { retroArchCoreReader.read(it) }
-        player.cores.update(byPackage)
+        val changed = player.cores.update(byPackage)
         val active = player.cores.activePackage()
         val setting = active?.let { RetroArchSetting(cores = byPackage[it]?.size, packageName = it) }
-        withContext(Dispatchers.Main.immediate) { shell.setRetroArch(setting) }
+        // The cores decide the Systems and Open with choices too, so a changed set republishes them.
+        withContext(Dispatchers.Main.immediate) { if (changed || shell.model.retroArch != setting) shell.setRetroArch(setting) }
     }
 
     /**
@@ -1976,7 +2030,7 @@ class FoldcadeApp : Application() {
                         plugins,
                         LocalFolderBackend.ID,
                         folderName = backend::folderName,
-                        occupiesBoth = { platformOccupiesBoth(plugins, it, ::packageInstalled) },
+                        occupiesBoth = { playerFor(null, it)?.occupiesBothDisplays == true },
                     )
                 } ?: return@launch
             } catch (cancelled: CancellationException) {
@@ -2086,7 +2140,7 @@ class FoldcadeApp : Application() {
                 plugins,
                 LocalFolderBackend.ID,
                 folderName = backend::folderName,
-                occupiesBoth = { platformOccupiesBoth(plugins, it, ::packageInstalled) },
+                occupiesBoth = { playerFor(null, it)?.occupiesBothDisplays == true },
             )
             // A failed read says nothing about the .steam files, and a newer reload has its own.
             if (loaded != LoadedLibrary.Unreachable && ticket == libraryTicket.get()) {
@@ -2278,7 +2332,8 @@ class FoldcadeApp : Application() {
                     libraryId,
                     platformId,
                     folderName = folderName,
-                    occupiesBoth = { platformOccupiesBoth(plugins, it, ::packageInstalled) },
+                    occupiesBoth = { playerFor(null, it)?.occupiesBothDisplays == true },
+                    gameOccupiesBoth = { game -> playerFor(shell.tileOf(homeGameId(game.backendId, game.remoteKey)), game.platformId)?.occupiesBothDisplays == true },
                 )
             } catch (cancelled: CancellationException) {
                 throw cancelled
@@ -2349,7 +2404,7 @@ class FoldcadeApp : Application() {
                     val listed = when (val loaded = loadPlatforms(
                         plugins,
                         libraryId,
-                        occupiesBoth = { platformOccupiesBoth(plugins, it, ::packageInstalled) },
+                        occupiesBoth = { playerFor(null, it)?.occupiesBothDisplays == true },
                     )) {
                         is LoadedLibrary.Platforms -> loaded
                         LoadedLibrary.NoPlatforms -> null
@@ -2445,7 +2500,8 @@ class FoldcadeApp : Application() {
                 libraryId,
                 platformId,
                 folderName = folderName,
-                occupiesBoth = { platformOccupiesBoth(plugins, it, ::packageInstalled) },
+                occupiesBoth = { playerFor(null, it)?.occupiesBothDisplays == true },
+                gameOccupiesBoth = { game -> playerFor(shell.tileOf(homeGameId(game.backendId, game.remoteKey)), game.platformId)?.occupiesBothDisplays == true },
             )
         }
         return games

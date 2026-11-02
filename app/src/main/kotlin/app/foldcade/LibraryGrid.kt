@@ -90,6 +90,7 @@ internal suspend fun loadGames(
     platformId: String,
     folderName: (String) -> String = { "" },
     occupiesBoth: (String) -> Boolean = { false },
+    gameOccupiesBoth: ((Game) -> Boolean)? = null,
 ): List<GridEntry> {
     val games = ArrayList<Game>()
     var offset = 0
@@ -113,7 +114,7 @@ internal suspend fun loadGames(
             shortText = folderName(game.remoteKey),
             platformId = game.platformId,
             availabilityLabel = availabilityCopy(game.availability),
-            occupiesBothDisplays = both,
+            occupiesBothDisplays = gameOccupiesBoth?.invoke(game) ?: both,
             game = game,
             fileName = plugins.fileName(libraryId, game),
         )
@@ -125,16 +126,6 @@ internal fun availabilityCopy(availability: Availability): String = when (availa
     Availability.Cached -> Copy.onDevice
     Availability.LocalOnly -> Copy.inFolder
 }
-
-/**
- * True when the player a launch picks for [platformId] takes both screens: the first
- * [installed] one in [playerRank] order, so melonDS ahead of RetroArch's DS cores. With
- * none installed, the first ranked one. No player does not. [FoldcadeApp.playerFor] also
- * passes over RetroArch without a core, which this does not know.
- */
-internal fun platformOccupiesBoth(plugins: PluginHost, platformId: String, installed: (String) -> Boolean = { false }): Boolean =
-    preferredPlayer(plugins.playersFor(platformId), runnable = { true }, rank = ::playerRank, installed = installed)
-        ?.occupiesBothDisplays == true
 
 /**
  * Installed apps that draw on the bottom screen while they run, so Foldcade leaves it to them:

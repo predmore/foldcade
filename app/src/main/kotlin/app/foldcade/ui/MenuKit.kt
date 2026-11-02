@@ -46,6 +46,7 @@ import androidx.compose.ui.graphics.drawscope.clipRect
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.graphics.luminance
+import androidx.compose.ui.layout.Layout
 import androidx.compose.ui.layout.layout
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.onSizeChanged
@@ -480,18 +481,21 @@ internal fun CheckMark(on: Boolean, focused: Boolean, scale: Float, some: Boolea
  * makes its room as the focus arrives, nudging the value aside.
  */
 @Composable
-internal fun ChoiceValue(value: String, focused: Boolean, style: TextStyle, scale: Float) {
+internal fun ChoiceValue(value: String, focused: Boolean, style: TextStyle, scale: Float, modifier: Modifier = Modifier) {
     val theme = LocalFoldTheme.current.theme
     val arrows by eased(if (focused) 1f else 0f, theme.motion.durationFocus, scale)
     val arrow = style.copy(color = theme.onBackground)
-    Row(verticalAlignment = Alignment.CenterVertically) {
+    Row(modifier, verticalAlignment = Alignment.CenterVertically) {
         BasicText(
             "‹",
             style = arrow,
             modifier = Modifier.padding(end = CHOICE_GAP).graphicsLayer { alpha = arrows; translationX = (1f - arrows) * 8.dp.toPx() },
         )
-        SlideSwap(target = value, scale = scale, distance = 18.dp, vertical = true, direction = { _, _ -> 1 }) { shown ->
-            BasicText(shown, style = style, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        // A long value, as an emulator's name, shortens itself and keeps both chevrons.
+        Box(Modifier.weight(1f, fill = false)) {
+            SlideSwap(target = value, scale = scale, distance = 18.dp, vertical = true, direction = { _, _ -> 1 }) { shown ->
+                BasicText(shown, style = style, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            }
         }
         BasicText(
             "›",
@@ -627,8 +631,38 @@ internal fun rowIcon(row: Row, moveTo: String? = null): Int? = when (row) {
     Row.RecentOnHome -> R.drawable.symbol_clock
     Row.PlayTime -> R.drawable.ic_status_playtime
     Row.About -> R.drawable.ic_status_info
+    Row.OpenWith, Row.Systems -> R.drawable.symbol_emulators
     else -> null
 }
+
+/**
+ * A choice row's label, then its value at the end. Both show whole when they fit. When they
+ * do not, the label keeps its words unless that would leave the value under half the row,
+ * and the value, as a long emulator name, shortens between its chevrons. Neither can push
+ * the other out, at any font size.
+ */
+@Composable
+private fun LabelAndChoice(modifier: Modifier, content: @Composable () -> Unit) {
+    Layout(content, modifier) { measurables, constraints ->
+        val (label, value) = measurables
+        val gap = CHOICE_LABEL_GAP.roundToPx()
+        val room = (constraints.maxWidth - gap).coerceAtLeast(0)
+        val labelNeed = label.maxIntrinsicWidth(constraints.maxHeight)
+        val valueNeed = value.maxIntrinsicWidth(constraints.maxHeight)
+        val labelWidth = if (labelNeed + valueNeed <= room) labelNeed else minOf(labelNeed, maxOf(room - valueNeed, room / 2))
+        val loose = constraints.copy(minWidth = 0, minHeight = 0)
+        val labelPlaced = label.measure(loose.copy(maxWidth = labelWidth))
+        val valuePlaced = value.measure(loose.copy(maxWidth = (room - labelPlaced.width).coerceAtLeast(0)))
+        val height = maxOf(labelPlaced.height, valuePlaced.height).coerceIn(constraints.minHeight, constraints.maxHeight)
+        layout(constraints.maxWidth, height) {
+            labelPlaced.placeRelative(0, (height - labelPlaced.height) / 2)
+            valuePlaced.placeRelative(constraints.maxWidth - valuePlaced.width, (height - valuePlaced.height) / 2)
+        }
+    }
+}
+
+/** Between a choice row's label and its value, as the row spaces its other parts. */
+private val CHOICE_LABEL_GAP = 14.dp
 
 /** Height of one menu row, the same for every row so the highlight keeps one size. */
 private val MENU_ROW_HEIGHT = 52.dp
@@ -675,18 +709,31 @@ internal fun MenuRow(
                 }
             }
         }
-        BasicText(
-            text = label,
-            modifier = Modifier.weight(1f).graphicsLayer { alpha = theme.style.menu.labelRestAlpha.let { it + (1f - it) * lit.value } },
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-            style = labelStyle.copy(color = theme.onBackground),
-        )
+        val labelText: @Composable (Modifier) -> Unit = { width ->
+            BasicText(
+                text = label,
+                modifier = width.graphicsLayer { alpha = theme.style.menu.labelRestAlpha.let { it + (1f - it) * lit.value } },
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                style = labelStyle.copy(color = theme.onBackground),
+            )
+        }
         val valueStyle = labelStyle.copy(color = theme.muted, textAlign = TextAlign.End)
+        if (control !is RowControl.Choice) labelText(Modifier.weight(1f))
         when (control) {
             is RowControl.Toggle -> ToggleSwitch(control.on, focused, scale)
             is RowControl.Check -> CheckMark(control.on, focused, scale, control.some)
-            is RowControl.Choice -> ChoiceValue(control.value, focused, valueStyle.copy(color = if (focused) theme.onBackground else theme.muted), scale)
+            is RowControl.Choice -> {
+                val ink = when {
+                    control.attention -> theme.style.colors.attention
+                    focused -> theme.onBackground
+                    else -> theme.muted
+                }
+                LabelAndChoice(Modifier.weight(1f)) {
+                    labelText(Modifier)
+                    ChoiceValue(control.value, focused, valueStyle.copy(color = ink), scale)
+                }
+            }
             is RowControl.Value -> BasicText(control.text,
                 style = if (control.attention) valueStyle.copy(color = theme.style.colors.attention) else valueStyle,
                 maxLines = 1, overflow = TextOverflow.Ellipsis)

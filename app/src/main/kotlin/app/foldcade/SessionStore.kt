@@ -181,6 +181,29 @@ class SessionStore(private val prefs: SharedPreferences) : SaveMarks {
     fun playerSaveFolder(playerId: String): String? =
         prefs.getString(saveFolderKey(playerId), null)?.takeIf { it.isNotBlank() }
 
+    fun systemPlayerChoice(platformId: String): PlayerChoice? = readPlayerChoice("system_player:", platformId)
+    fun gamePlayerChoice(gameId: String): PlayerChoice? = readPlayerChoice("game_player:", gameId)
+    fun setSystemPlayerChoice(platformId: String, choice: PlayerChoice?) = writePlayerChoice("system_player:", platformId, choice)
+    fun setGamePlayerChoice(gameId: String, choice: PlayerChoice?) = writePlayerChoice("game_player:", gameId, choice)
+
+    private fun readPlayerChoice(prefix: String, id: String): PlayerChoice? = runCatching {
+        val fields = prefs.getString(prefix + choiceField(id), null)?.split('|') ?: return null
+        if (fields.size != 4 || fields[0] != "1") return null
+        val decoded = fields.drop(1).map { String(java.util.Base64.getUrlDecoder().decode(it), Charsets.UTF_8) }
+        if (decoded[0].isBlank() || decoded[2].isBlank()) return null
+        PlayerChoice(decoded[0], decoded[1].ifEmpty { null }, decoded[2])
+    }.getOrNull()
+
+    private fun writePlayerChoice(prefix: String, id: String, choice: PlayerChoice?) {
+        val key = prefix + choiceField(id)
+        prefs.edit().apply {
+            if (choice == null) remove(key)
+            else putString(key, "1|" + listOf(choice.playerId, choice.core.orEmpty(), choice.label).joinToString("|", transform = ::choiceField))
+        }.apply()
+    }
+
+    private fun choiceField(value: String): String = java.util.Base64.getUrlEncoder().withoutPadding().encodeToString(value.toByteArray(Charsets.UTF_8))
+
     fun playerSaveFolderFound(playerId: String): Boolean = prefs.getBoolean("player_save_found:$playerId", false)
 
     fun setPlayerSaveFolder(playerId: String, uri: String?, found: Boolean = false) {

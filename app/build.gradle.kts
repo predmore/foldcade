@@ -206,6 +206,7 @@ dependencies {
     implementation(libs.media3.exoplayer)
     implementation(libs.coil.compose)
     testImplementation(libs.junit)
+    testImplementation("org.json:json:20240303")
 }
 
 // Debug and release both merge these assets, so assembleDebug and assembleRelease
