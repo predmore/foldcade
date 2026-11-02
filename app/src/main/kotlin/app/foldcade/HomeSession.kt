@@ -874,7 +874,18 @@ class HomeSession(
         board = moveHeld(board, to, catalog(), platforms)
     }
 
-    fun encoded(): String = encodeHome(board)
+    private var encodedBoard: HomeBoard? = null
+    private var encodedValue = ""
+
+    /** Focus moves read this twice; the immutable board needs encoding only after it changes. */
+    fun encoded(): String {
+        val current = board
+        if (encodedBoard === current) return encodedValue
+        return encodeHome(current).also {
+            encodedBoard = current
+            encodedValue = it
+        }
+    }
 
     /**
      * The D-pad walks the colours and glyphs, and the tile wears each as it goes (see [IconPick]).

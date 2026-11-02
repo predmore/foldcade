@@ -811,6 +811,13 @@
                             "default": 280.0,
                             "description": "ms; follows base.durationScale"
                         },
+                        "durationSummaryDwell": {
+                            "type": "number",
+                            "minimum": 1.0,
+                            "maximum": 2.1474836E9,
+                            "default": 1200.0,
+                            "description": "ms; follows base.durationScale"
+                        },
                         "durationBob": {
                             "type": "number",
                             "minimum": 1.0,
@@ -1305,6 +1312,12 @@
                             "description": "dp"
                         },
                         "ambientDim": {
+                            "type": "number",
+                            "minimum": 0.0,
+                            "maximum": 1.0,
+                            "default": 0.55
+                        },
+                        "aboutDim": {
                             "type": "number",
                             "minimum": 0.0,
                             "maximum": 1.0,

@@ -27,7 +27,7 @@ internal class DocumentTree(
         }
         val document = DocumentsContract.buildDocumentUriUsingTree(tree, documentId)
         val (name, mime) = read(document)
-        return entry(document, name, mime.ifBlank { DOCUMENT_DIRECTORY_MIME })
+        return entry(document, name, mime.ifBlank { DOCUMENT_DIRECTORY_MIME }).copy(isScanRoot = true)
     }
 
     fun children(parent: FolderEntry): List<FolderEntry> {
@@ -64,6 +64,17 @@ internal class DocumentTree(
             }
             return listed
         }
+    }
+
+    /** Bounded UTF-8 text for a deferred gamelist read. Oversized or unreadable bodies have none. */
+    fun readText(entry: FolderEntry, maxBytes: Int): String? = try {
+        resolver.openInputStream(Uri.parse(entry.documentUri))?.use { stream ->
+            readBoundedBytes(stream, maxBytes)?.toString(StandardCharsets.UTF_8)?.removePrefix("\uFEFF")
+        }
+    } catch (_: IOException) {
+        null
+    } catch (_: SecurityException) {
+        null
     }
 
     private fun entry(document: Uri, displayName: String, mimeType: String): FolderEntry =
@@ -153,6 +164,13 @@ internal class FolderForest(resolver: ContentResolver, trees: List<Uri>) {
         val owner = parts.firstOrNull { (prefix, _) -> parent.documentUri.startsWith("$prefix/document/") }
             ?: throw PluginException.Unavailable("Couldn’t reach the library")
         return owner.second.children(parent)
+    }
+
+    /** A media read uses the same tree owner as a children query. */
+    fun readText(entry: FolderEntry, maxBytes: Int): String? {
+        val owner = parts.firstOrNull { (prefix, _) -> entry.documentUri.startsWith("$prefix/document/") }
+            ?: return null
+        return owner.second.readText(entry, maxBytes)
     }
 
     private companion object {

@@ -43,7 +43,7 @@ enum class ScreenLayout(val id: String) {
         get() = showcaseScreen ?: gridScreen
 
     /**
-     * Where Settings, Play activity, and the connect form open: the top screen, the larger,
+     * Where Settings, Play activity, a game's About, and the connect form open: the top screen, the larger,
      * in every layout. Its rows were laid out for that width. A game there sends them to the
      * screen Foldcade still has ([onShownScreens]).
      */
@@ -96,7 +96,7 @@ fun screenHints(confirm: PromptKey, other: PromptKey, playOn: HostScreen): List<
  * [shown] instead: the islands', the grid's, then either. With none shown it stays put.
  */
 fun PickerModel.onShownScreens(shown: (HostScreen) -> Boolean): PickerModel {
-    val screens = listOfNotNull(dialog?.screen, panel?.screen, settings?.screen, playActivity?.screen, connectScreen, saveSetup?.screen)
+    val screens = listOfNotNull(dialog?.screen, panel?.screen, settings?.screen, playActivity?.screen, gameAbout?.screen, connectScreen, saveSetup?.screen)
     if (screens.all(shown)) return this
     val lit = listOf(layout.menuScreen, layout.gridScreen, HostScreen.Top, HostScreen.Bottom).firstOrNull(shown) ?: return this
     fun HostScreen.lit(): HostScreen = if (shown(this)) this else lit
@@ -105,6 +105,7 @@ fun PickerModel.onShownScreens(shown: (HostScreen) -> Boolean): PickerModel {
         panel = panel?.let { it.copy(screen = it.screen.lit()) },
         settings = settings?.let { it.copy(screen = it.screen.lit()) },
         playActivity = playActivity?.let { it.copy(screen = it.screen.lit()) },
+        gameAbout = gameAbout?.let { it.copy(screen = it.screen.lit()) },
         connectScreen = connectScreen?.lit(),
         saveSetup = saveSetup?.let { it.copy(screen = it.screen.lit()) },
     )

@@ -8,6 +8,7 @@ import app.foldcade.romm.writeDurably
 import java.io.IOException
 import java.nio.file.Files
 import java.nio.file.Path
+import java.util.concurrent.ConcurrentHashMap
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.SerializationException
 import kotlinx.serialization.encodeToString
@@ -17,7 +18,11 @@ import kotlinx.serialization.json.Json
 internal class RommCatalog(private val file: Path, private val origin: String) {
     private var restored = false
     private var platforms: List<PlatformSummary>? = null
-    private val roms = LinkedHashMap<String, RomSummary>()
+    /**
+     * Concurrent so [rom] can answer the main thread's focus lookups without the
+     * monitor, which a sync holds while it encodes and writes the whole snapshot.
+     */
+    private val roms = ConcurrentHashMap<String, RomSummary>()
     private val listings = HashMap<Long, List<String>>()
     private val incoming = HashMap<Long, MutableList<String>>()
     private val json = Json { ignoreUnknownKeys = true; encodeDefaults = true }
@@ -74,7 +79,6 @@ internal class RommCatalog(private val file: Path, private val origin: String) {
         }
     }
 
-    @Synchronized
     fun rom(remoteKey: String): RomSummary? = roms[remoteKey]
 
     @Synchronized

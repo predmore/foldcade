@@ -97,6 +97,9 @@ class LocalFolderBackend(
         }
     }
 
+    /** The finished scan's media locations. Reading these never starts another tree walk. */
+    fun mediaScan(): FolderScan? = published()
+
     private val gate = Mutex()
     private val remembered = HashMap<String, Map<String, RememberedSave>>()
 

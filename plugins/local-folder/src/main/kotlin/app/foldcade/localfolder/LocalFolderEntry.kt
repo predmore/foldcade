@@ -1,6 +1,7 @@
 package app.foldcade.localfolder
 
 import app.foldcade.api.plugin.LibraryBackend
+import app.foldcade.api.plugin.MetadataProvider
 import app.foldcade.api.plugin.PLUGIN_API_MINOR
 import app.foldcade.api.plugin.PLUGIN_API_VERSION
 import app.foldcade.api.plugin.Platform
@@ -12,7 +13,7 @@ import app.foldcade.api.plugin.PluginEntry
  * The host stores [platforms], aliases included, and passes that list to RomM.
  * A slug that is not the canonical id, such as `gba`, `3ds`, or `nds`, becomes that id.
  * Ids that already match a RomM slug, such as `snes` and `psp`, stay the id.
- * This entry does not contribute a metadata provider.
+ * [media] indexes existing art and info after the folder library has been listed.
  *
  * This bundled entry is licensed under MIT.
  */
@@ -22,6 +23,11 @@ class LocalFolderEntry : PluginEntry {
 
     /** The library instance the host stores. Bind a document tree on it before connect. */
     val folder: LocalFolderBackend = LocalFolderBackend()
+
+    /** The app publishes a background media index here, separately from the ROM scan. */
+    val media = LocalMediaProvider()
+
+    override val metadataProviders: List<MetadataProvider> = listOf(media)
 
     override val libraries: List<LibraryBackend> = listOf(folder)
 

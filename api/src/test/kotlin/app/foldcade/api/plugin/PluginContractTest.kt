@@ -121,7 +121,7 @@ class PluginContractTest {
         assertTrue(aliases.isDefault)
         assertTrue(IdlePlatform().aliases.isEmpty())
         assertEquals(1, PLUGIN_API_VERSION)
-        assertEquals(19, PLUGIN_API_MINOR)
+        assertEquals(20, PLUGIN_API_MINOR)
         assertTrue(SaveFolderHolder::class.java.methods.single { it.name == "getSaveFolderPlaces" }.isDefault)
         assertTrue(SaveFolderHolder::class.java.methods.single { it.name == "getSaveFolderPickedInPlayer" }.isDefault)
         assertTrue(GameFileReader::class.java.methods.single { it.name == "getFileName" }.isDefault)
@@ -150,6 +150,8 @@ class PluginContractTest {
         assertTrue(IdlePlayer().needsFirmware(ReadOnlyFolder()))
         val observeActivity = LibraryBackend::class.java.methods.single { it.name == "observeActivity" }
         assertTrue(observeActivity.isDefault)
+        assertTrue(MetadataProvider::class.java.methods.single { it.name == "cachedDetails" }.isDefault)
+        assertTrue(MetadataProvider::class.java.methods.single { it.name == "details" }.isDefault)
         val achievements = MetadataProvider::class.java.methods.single { it.name == "achievements" }
         assertTrue(achievements.isDefault)
         assertTrue(LibraryBackend::class.java.methods.single { it.name == "pendingSaveConflicts" }.isDefault)
@@ -298,7 +300,7 @@ class PluginContractTest {
                 "pollDeviceCode",
             ),
         )
-        assertSuspendMethods(MetadataProvider::class.java, setOf("fetch", "achievements"))
+        assertSuspendMethods(MetadataProvider::class.java, setOf("fetch", "achievements", "details"))
         assertSuspendMethods(Player::class.java, emptySet())
         assertSuspendMethods(Platform::class.java, emptySet())
     }

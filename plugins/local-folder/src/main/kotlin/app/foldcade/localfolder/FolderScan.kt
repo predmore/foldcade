@@ -15,6 +15,8 @@ data class FolderEntry(
     val displayName: String,
     val mimeType: String,
     val text: String? = null,
+    /** A picked tree root, including roots below a synthetic forest. */
+    val isScanRoot: Boolean = false,
 )
 
 /** `DocumentsContract.Document.MIME_TYPE_DIR`. */
@@ -39,6 +41,10 @@ data class FolderGame(
     val folderName: String = "",
     /** The name exactly as the folder lists it, spaces included, which a player names its save after. */
     val displayName: String = fileName,
+    /** Path below the nearest system folder, including subdirectories and the ROM extension. */
+    val relativePath: String = fileName,
+    /** The actual system directory, never inferred from an opaque document id. */
+    val systemUri: String = "",
 )
 
 data class FolderScan(
@@ -46,6 +52,9 @@ data class FolderScan(
     val platforms: List<FolderPlatform>,
     val cancelled: Boolean = false,
     val steamShortcuts: List<SteamShortcut> = emptyList(),
+    /** Media directories and gamelists to read after publishing the game list. */
+    val mediaSources: List<FolderMediaSource> = emptyList(),
+    val mediaSystems: List<FolderMediaSystem> = emptyList(),
 )
 
 /**
@@ -113,9 +122,11 @@ fun scanFolderTree(
     val playlists = LinkedHashMap<String, String>()
     val parentOf = HashMap<String, String>()
     val childrenByParent = HashMap<String, List<ChildRef>>()
+    val mediaSources = ArrayList<FolderMediaSource>()
+    val mediaSystems = LinkedHashMap<Pair<String, String>, FolderMediaSystem>()
     val seen = HashSet<String>()
     val stack = ArrayDeque<Frame>()
-    stack.addLast(Frame(root, folderPlatform = null, folderName = "", droidDeckFolder = false))
+    stack.addLast(Frame(root, folderPlatform = null, folderName = "", droidDeckFolder = false, parent = null, system = null, relativePath = ""))
     var cancelled = false
 
     while (stack.isNotEmpty()) {
@@ -128,9 +139,30 @@ fun scanFolderTree(
         if (uri.isEmpty() || !seen.add(uri)) continue
 
         if (frame.entry.isDirectory()) {
-            if (isSkippedFolder(frame.entry.displayName)) continue
-            val folderPlatform = platformFromFolderName(frame.entry.displayName)
-                ?: frame.folderPlatform
+            val name = frame.entry.displayName.lowercase(Locale.ROOT)
+            val scanRoot = frame.parent == null || frame.entry.isScanRoot
+            val sourceKind = when {
+                name == "downloaded_media" -> MediaSourceKind.DownloadedMedia
+                name == "gamelists" -> MediaSourceKind.Gamelists
+                !scanRoot && name == "media" -> MediaSourceKind.Media
+                !scanRoot && mediaRole(name) != null -> MediaSourceKind.Role
+                else -> null
+            }
+            if (sourceKind != null) {
+                mediaSources += FolderMediaSource(frame.entry, sourceKind, frame.folderPlatform?.id,
+                    frame.system ?: frame.parent, frame.relativePath.substringBeforeLast('/', ""))
+                continue
+            }
+            if (!scanRoot && (name in IGNORED_MEDIA_FOLDERS || isSkippedFolder(frame.entry.displayName))) continue
+            // ES-DE's data directories can contain theme/demo ROM-shaped assets.
+            if (frame.parent?.displayName.equals("ES-DE", ignoreCase = true) && name in ES_DE_DATA_FOLDERS) continue
+            val detected = platformFromFolderName(frame.entry.displayName)
+            val folderPlatform = detected ?: frame.folderPlatform
+            val system = if (detected != null) frame.entry else frame.system
+            val relative = if (detected != null) "" else frame.relativePath
+            if (system != null && folderPlatform != null) {
+                mediaSystems[folderPlatform.id to system.documentUri] = FolderMediaSystem(folderPlatform.id, system)
+            }
             val children = childrenOf(frame.entry)
             val listed = ArrayList<ChildRef>(children.size)
             for (child in children) {
@@ -143,7 +175,9 @@ fun scanFolderTree(
             val containing = frame.entry.displayName
             val droidDeck = listed.any { !it.directory && it.name == DROIDDECK_INVENTORY }
             for (index in children.lastIndex downTo 0) {
-                stack.addLast(Frame(children[index], folderPlatform, containing, droidDeck))
+                val child = children[index]
+                stack.addLast(Frame(child, folderPlatform, containing, droidDeck, frame.entry, system,
+                    if (system == null || relative.isEmpty()) child.displayName else "$relative/${child.displayName}"))
             }
         } else {
             val shortcut = steamShortcutOf(frame.entry, frame.droidDeckFolder)
@@ -151,7 +185,17 @@ fun scanFolderTree(
                 steam.putIfAbsent(uri, shortcut)
                 continue
             }
-            val game = toGame(frame.entry, uri, frame.folderPlatform, frame.folderName) ?: continue
+            if (frame.entry.displayName.equals("gamelist.xml", ignoreCase = true)) {
+                mediaSources += FolderMediaSource(frame.entry, MediaSourceKind.Gamelist, frame.folderPlatform?.id,
+                    frame.system ?: frame.parent, frame.relativePath.substringBeforeLast('/', ""))
+                continue
+            }
+            val game = toGame(frame.entry, uri, frame.folderPlatform, frame.folderName)?.copy(
+                relativePath = if (frame.system == null) frame.entry.displayName else frame.relativePath,
+                systemUri = (frame.system ?: frame.parent)?.documentUri.orEmpty(),
+            ) ?: continue
+            val system = frame.system ?: frame.parent
+            if (system != null) mediaSystems[game.platformId to system.documentUri] = FolderMediaSystem(game.platformId, system)
             if (found.putIfAbsent(game.documentUri, game) != null) continue
             val body = frame.entry.text
             if (fileExtension(game.fileName) == "m3u" && !body.isNullOrBlank()) {
@@ -161,7 +205,11 @@ fun scanFolderTree(
     }
 
     if (!cancelled) hideListedDiscs(found, playlists, parentOf, childrenByParent)
-    return finish(found.values, cancelled).copy(steamShortcuts = steam.values.sortedBy { it.title.lowercase(Locale.ROOT) })
+    return finish(found.values, cancelled).copy(
+        steamShortcuts = steam.values.sortedBy { it.title.lowercase(Locale.ROOT) },
+        mediaSources = mediaSources,
+        mediaSystems = mediaSystems.values.toList(),
+    )
 }
 
 private class Frame(
@@ -170,6 +218,9 @@ private class Frame(
     val folderName: String,
     /** The containing directory holds [DROIDDECK_INVENTORY]. */
     val droidDeckFolder: Boolean,
+    val parent: FolderEntry?,
+    val system: FolderEntry?,
+    val relativePath: String,
 )
 
 private class ChildRef(
@@ -177,6 +228,8 @@ private class ChildRef(
     val name: String,
     val directory: Boolean,
 )
+
+private val ES_DE_DATA_FOLDERS = setOf("themes", "custom_systems", "collections", "resources", "scripts", "screensavers", "settings")
 
 private val SKIPPED_FOLDERS: Set<String> = setOf(
     "bios",

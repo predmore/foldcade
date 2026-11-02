@@ -57,6 +57,8 @@ class CoverArt(
     private class Held(val meta: GameMeta?)
 
     private val held = ConcurrentHashMap<String, Held>()
+    private val providerGate = Any()
+    private var providerRevision = 0L
 
     fun cached(record: Game?, query: ArtQuery?): ArtSet? =
         chosen(record?.let(::cachedMeta)?.cover()?.let { ArtSet(PROVIDER, it) } ?: query?.let(art::cached), query)
@@ -79,8 +81,11 @@ class CoverArt(
 
     /** Asks the providers again for [backendId]'s games whose remote key [which] picks. */
     fun forget(backendId: String, which: (String) -> Boolean) {
-        val prefix = backendId + "\u0000"
-        held.keys.removeIf { it.startsWith(prefix) && which(it.removePrefix(prefix)) }
+        synchronized(providerGate) {
+            providerRevision++
+            val prefix = backendId + "\u0000"
+            held.keys.removeIf { it.startsWith(prefix) && which(it.removePrefix(prefix)) }
+        }
     }
 
     private fun cachedMeta(game: Game): GameMeta? {
@@ -92,12 +97,21 @@ class CoverArt(
 
     private suspend fun fetchMeta(game: Game): GameMeta? {
         val key = keyOf(game)
-        held[key]?.let { return it.meta }
-        val meta = plugins.metadataIds().firstNotNullOfOrNull { id ->
-            quietly { plugins.fetchMetadata(id, game) }?.takeIf { it.artwork.isNotEmpty() }
+        while (true) {
+            val ticket = synchronized(providerGate) {
+                held[key]?.let { return it.meta }
+                providerRevision
+            }
+            val meta = plugins.metadataIds().firstNotNullOfOrNull { id ->
+                quietly { plugins.fetchMetadata(id, game) }?.takeIf { it.artwork.isNotEmpty() }
+            }
+            synchronized(providerGate) {
+                if (ticket == providerRevision) {
+                    held[key] = Held(meta)
+                    return meta
+                }
+            }
         }
-        held[key] = Held(meta)
-        return meta
     }
 
     private companion object {

@@ -786,7 +786,7 @@ class HomeGridOrderTest {
         focus(shell, titles(shell).indexOf("Puzzle"))
         // A folder holds every game of its kind, so nothing is removed from it; Hide is its own row.
         // The folder's Sort orders the whole folder, so it is Edit home's, not the game's.
-        assertEquals(listOf(Row.MoveTile, Row.AddToCollection, Row.SelectTile, Row.Hide), optionRows(shell))
+        assertEquals(listOf(Row.MoveTile, Row.AddToCollection, Row.About, Row.SelectTile, Row.Hide), optionRows(shell))
         assertNull(shell.model.tileActions?.remove)
         // Add to › Home pins it, leaving the game in its folder, and the focus on it.
         choose(shell, Row.AddToCollection)
@@ -836,7 +836,7 @@ class HomeGridOrderTest {
         assertEquals(folderCountLine(1), shell.homeFace(root.indexOf("Quests"))?.shortText)
         // Remove on a pin unpins it: only the root tile goes.
         focus(shell, root.indexOf("Puzzle"))
-        assertEquals(listOf(Row.MoveTile, Row.AddToCollection, Row.SelectTile, Row.RemoveTile, Row.Hide), optionRows(shell))
+        assertEquals(listOf(Row.MoveTile, Row.AddToCollection, Row.About, Row.SelectTile, Row.RemoveTile, Row.Hide), optionRows(shell))
         assertEquals(Copy.unpin, rowText(Row.RemoveTile, shell.model).label)
         choose(shell, Row.RemoveTile)
         assertFalse("Puzzle" in titles(shell))
@@ -850,7 +850,7 @@ class HomeGridOrderTest {
         focus(shell, titles(shell).indexOf("Quests"))
         shell.onMeaning(Meaning.Activate, HostScreen.Bottom)
         assertEquals(listOf("Drift"), titles(shell))
-        assertEquals(listOf(Row.MoveTile, Row.AddToCollection, Row.SelectTile, Row.RemoveTile, Row.Hide), optionRows(shell))
+        assertEquals(listOf(Row.MoveTile, Row.AddToCollection, Row.About, Row.SelectTile, Row.RemoveTile, Row.Hide), optionRows(shell))
         assertEquals(Copy.remove, rowText(Row.RemoveTile, shell.model).label)
         choose(shell, Row.AddToCollection)
         shell.onMeaning(Meaning.MoveDown, HostScreen.Bottom)
@@ -871,7 +871,7 @@ class HomeGridOrderTest {
         // Back in its menu, the rest acts on that game too: Hide, and the menu closes.
         shell.onMeaning(Meaning.Back, HostScreen.Bottom)
         val held = panelRows(shell.model.panel!!, shell.model).filterNot { it == Row.Undo }
-        assertEquals(listOf(Row.AddToCollection, Row.Hide), held)
+        assertEquals(listOf(Row.AddToCollection, Row.About, Row.Hide), held)
         pickRowFocus(shell, Row.Hide)
         shell.onMeaning(Meaning.Activate, HostScreen.Bottom)
         assertNull(shell.model.panel)
@@ -905,7 +905,7 @@ class HomeGridOrderTest {
         assertFalse(shell.homeFace(puzzle)!!.onGrid)
         focus(shell, puzzle)
         // All offers what a game has, and nothing that brings a folder back. All has no spots, so no Remove.
-        assertEquals(listOf(Row.AddToCollection, Row.SelectTile, Row.Hide), optionRows(shell))
+        assertEquals(listOf(Row.AddToCollection, Row.About, Row.SelectTile, Row.Hide), optionRows(shell))
         // With no Move in All, Y then Y does nothing.
         shell.onMeaning(Meaning.Options, HostScreen.Bottom)
         val (open, effect) = shell.model to shell.onMeaning(Meaning.Options, HostScreen.Bottom)
@@ -939,7 +939,7 @@ class HomeGridOrderTest {
         shell.onMeaning(Meaning.Activate, HostScreen.Bottom)
         assertEquals(listOf("Puzzle"), titles(shell))
         // Nothing moves or comes out of it, and the game can still be pinned and filed.
-        assertEquals(listOf(Row.AddToCollection, Row.SelectTile, Row.Hide), optionRows(shell))
+        assertEquals(listOf(Row.AddToCollection, Row.About, Row.SelectTile, Row.Hide), optionRows(shell))
     }
 
     @Test
@@ -973,12 +973,12 @@ class HomeGridOrderTest {
         focus(shell, puzzle)
         assertFalse(shell.homeFace(puzzle)!!.onGrid)
         // A hidden game has nothing to hide; Show puts it back, as Find and Hidden offer.
-        assertEquals(listOf(Row.AddToCollection, Row.ShowHidden, Row.SelectTile), optionRows(shell))
+        assertEquals(listOf(Row.AddToCollection, Row.ShowHidden, Row.About, Row.SelectTile), optionRows(shell))
         // Add to › Home brings a hidden game back: a pin, and back in its folder, which comes back with it.
         addToHome(shell)
         assertTrue(shell.homeFace(puzzle)?.onGrid == true)
         // Back on Home, it can be shown there.
-        assertEquals(listOf(Row.AddToCollection, Row.ShowOnHome, Row.SelectTile, Row.Hide), optionRows(shell))
+        assertEquals(listOf(Row.AddToCollection, Row.ShowOnHome, Row.About, Row.SelectTile, Row.Hide), optionRows(shell))
         shell.onMeaning(Meaning.Back, HostScreen.Bottom)
         assertTrue("Puzzle" in titles(shell))
         focus(shell, titles(shell).indexOf("Nintendo 3DS"))
@@ -1042,7 +1042,7 @@ class HomeGridOrderTest {
         shell.onMeaning(Meaning.Activate, HostScreen.Bottom)
         focus(shell, titles(shell).indexOf("Drift"))
         assertEquals(
-            listOf(Row.MoveTile, Row.AddToCollection, Row.Saves, Row.SelectTile, Row.Hide, Row.RemoveDownload),
+            listOf(Row.MoveTile, Row.AddToCollection, Row.Saves, Row.About, Row.SelectTile, Row.Hide, Row.RemoveDownload),
             optionRows(shell),
         )
         // A copy still arriving is not offered.
@@ -1200,7 +1200,7 @@ class HomeGridOrderTest {
         )
         shell.openHomeAll()
         focus(shell, titles(shell).indexOf("Drift"))
-        assertEquals(listOf(Row.AddToCollection, Row.Saves, Row.ShowOnHome, Row.SelectTile, Row.Hide, Row.RemoveDownload), optionRows(shell))
+        assertEquals(listOf(Row.AddToCollection, Row.Saves, Row.ShowOnHome, Row.About, Row.SelectTile, Row.Hide, Row.RemoveDownload), optionRows(shell))
         shell.noteOffDevice("romm", "drift")
         assertFalse(Row.RemoveDownload in optionRows(shell))
     }

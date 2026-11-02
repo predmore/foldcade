@@ -90,6 +90,19 @@ class SettingsTilesTest {
     }
 
     @Test
+    fun aMediaFoldersTileShowsItsNameAndItsPageSaysWhatItIsFor() {
+        val media = LibraryFolder("content://esde", "ES-DE", artAndInfo = true)
+        val model = library.copy(folders = listOf(roms, media))
+        val tile = Row.SettingsTile(SettingsInner.Folder(media.uri))
+        assertEquals(RowText("ES-DE"), rowText(tile, model))
+        assertEquals("ES-DE · art and info", settingsInnerTitle(SettingsInner.Folder(media.uri), model))
+        assertEquals(listOf(Row.ForgetFolder(media.uri, "ES-DE")), settingsInnerRows(SettingsInner.Folder(media.uri), model))
+        // A games folder is called by its name on both.
+        assertEquals(RowText("roms"), rowText(Row.SettingsTile(SettingsInner.Folder(roms.uri)), model))
+        assertEquals("roms", settingsInnerTitle(SettingsInner.Folder(roms.uri), model))
+    }
+
+    @Test
     fun anEmulatorsPageListsShortValuesUnderItsName() {
         assertEquals("ARMSX2", settingsInnerTitle(SettingsInner.Emulator("armsx2"), emulators))
         assertEquals(RowText(Copy.saveFolder, Copy.playerSavesSet), rowText(Row.PlayerSave("armsx2"), emulators))
