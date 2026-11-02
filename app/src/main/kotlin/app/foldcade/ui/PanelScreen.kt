@@ -2133,7 +2133,8 @@ private fun coverRequest(context: Context, uri: String, px: Int): ImageRequest =
         .data(CoverImage(uri))
         .size(px)
         .memoryCacheKeyExtra(COVER_SIZE_KEY, px.toString())
-        .crossfade(true)
+        // Columns already move and fade at the edges; a new cover arrives whole.
+        .crossfade(px != TILE_PX)
         .build()
 
 private const val COVER_SIZE_KEY = "foldcade.px"
