@@ -1149,7 +1149,15 @@ class FoldcadeApp : Application() {
      * leave the current wiring in place.
      */
     /** Shortcuts and the stored list. A failure leaves the shelf tiles already there. */
-    private suspend fun refreshGameNative() {
+    /**
+     * One GameNative refresh at a time. Each reads the .steam games when its turn comes, so a
+     * refresh started before a folder was forgotten cannot finish last with that folder's games.
+     */
+    private val gameNativeRefresh = Mutex()
+
+    private suspend fun refreshGameNative(): Unit = gameNativeRefresh.withLock { refreshGameNativeNow() }
+
+    private suspend fun refreshGameNativeNow() {
         val library = plugins.library(GameNativeLibrary.ID) as? GameNativeLibrary ?: return
         Shelf.gameNativeInstalled = gameNativePackagePresent()
         try {
