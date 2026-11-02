@@ -585,7 +585,10 @@ sealed interface Row {
 
     /** Opens Set up saves, which walks every emulator's remaining step. */
     data object SaveSetup : Row
-    data object Primary : Row
+    /** Settings › System › Layout: which screen has the grid, which the hero, or the grid alone on top. */
+    data object ScreenLayout : Row
+    /** Settings › System › Play on: the screen A opens a game on. */
+    data object PlayOn : Row
     data object Music : Row
     data object MusicTrack : Row
     data object MusicVolume : Row
@@ -1158,7 +1161,8 @@ fun rowText(row: Row, model: PickerModel): RowText = when (row) {
     Row.UsageAccess -> RowText(Copy.playTime, if (model.usageGranted) Copy.playTimeEverywhere else Copy.playTimeHere)
     Row.FindSaves -> RowText(SettingsCopy.findSaves, if (model.allFilesGranted) SettingsCopy.accessAllowed else SettingsCopy.accessAsk)
     Row.SaveSetup -> RowText(SaveSetupCopy.title)
-    Row.Primary -> RowText(Copy.primaryPanel, if (model.primaryIsTop) Copy.top else Copy.bottom)
+    Row.ScreenLayout -> RowText(ScreenCopy.layout, layoutLabel(model.layout))
+    Row.PlayOn -> RowText(ScreenCopy.playOn, screenLabel(model.playOn))
     Row.SortFolder -> RowText(Copy.sort, folderSortLabel(model.sortChoice()?.sort ?: FolderSort.Custom))
     Row.Music -> RowText(MusicCopy.row, if (model.music.enabled) MusicCopy.on else MusicCopy.off)
     Row.MusicTrack -> RowText(MusicCopy.track, model.trackTitle)
@@ -1312,8 +1316,11 @@ sealed interface Effect {
     data class SyncSavePicker(val target: SavePickerTarget) : Effect
     data class PlayPickedSave(val target: SavePickerTarget, val saveId: String) : Effect
     data class CopyPickedSave(val target: SavePickerTarget, val saveId: String, val destination: SaveDestination) : Effect
-    /** Launch the game at [index], on the bottom screen when [onBottom] (X), else the top (A). */
-    data class Launch(val index: Int, val onBottom: Boolean = false) : Effect
+    /**
+     * Launch the game at [index]: on the Play on screen for A, or on the other screen when
+     * [elsewhere] (X). [PickerModel.playOn] says which screen that is.
+     */
+    data class Launch(val index: Int, val elsewhere: Boolean = false) : Effect
     data class OpenPlatform(val index: Int) : Effect
     data object LeavePlatform : Effect
     data object TryAgain : Effect
@@ -1494,7 +1501,10 @@ data class PickerModel(
     val dialog: DialogState? = null,
     val connectOpen: Boolean = false,
     val atLibraryRoot: Boolean = true,
-    val primaryIsTop: Boolean = true,
+    /** Which screen has the grid and which the hero. Settings › System › Layout. */
+    val layout: ScreenLayout = ScreenLayout.Default,
+    /** The screen A opens a one-screen game on. X opens it on the other. Settings › System › Play on. */
+    val playOn: HostScreen = HostScreen.Top,
     /**
      * Up from the top row can reach L1's and R1's pills. They are on the top screen, so an
      * app there covers them, and a selection keeps their drawers shut. Up then stays on the grid.
@@ -1719,7 +1729,7 @@ private fun coerce(focus: GridFocus, model: PickerModel): GridFocus {
 private fun presentPanel(model: PickerModel, meaning: Meaning, screen: HostScreen): PickerModel {
     val side = if (meaning == Meaning.LeftPanel) Side.Left else Side.Right
     val open = model.panel
-    if (open == null) return model.copy(panel = freshPanel(side, model.focus))
+    if (open == null) return model.copy(panel = freshPanel(side, model.focus, model.layout))
     if (open.retiring) {
         val pending = if (side == open.side) null else side
         return model.copy(panel = open.copy(pendingSide = pending))
@@ -1728,9 +1738,10 @@ private fun presentPanel(model: PickerModel, meaning: Meaning, screen: HostScree
     return model.copy(panel = open.copy(retiring = true, pendingSide = side))
 }
 
-private fun freshPanel(side: Side, grid: GridFocus): SidePanel = SidePanel(
+/** An island's menu opens on the screen its island is on, [ScreenLayout.menuScreen]. */
+private fun freshPanel(side: Side, grid: GridFocus, layout: ScreenLayout): SidePanel = SidePanel(
     side = side,
-    screen = HostScreen.Top,
+    screen = layout.menuScreen,
     level = PanelLevel.Root,
     index = if (side == Side.Right) rightStart() else 0,
     grid = grid,
@@ -1746,12 +1757,12 @@ fun replaceIsland(model: PickerModel, side: Side): PickerModel {
         open.side == side &&
         !open.retiring &&
         open.pendingSide == null &&
-        open.screen == HostScreen.Top &&
+        open.screen == model.layout.menuScreen &&
         open.level == PanelLevel.Root
     ) {
         return model
     }
-    return model.copy(panel = freshPanel(side, open?.grid ?: model.focus))
+    return model.copy(panel = freshPanel(side, open?.grid ?: model.focus, model.layout))
 }
 
 /**
@@ -1762,7 +1773,8 @@ fun finishIslandRetire(model: PickerModel): PickerModel {
     val open = model.panel ?: return model
     if (!open.retiring) return model
     val next = open.pendingSide ?: return model.copy(panel = null, focus = open.grid)
-    return model.copy(panel = freshPanel(next, open.grid))
+    // The next island opens where the last one was, which may be a page's screen a layout change left.
+    return model.copy(panel = freshPanel(next, open.grid, model.layout).copy(screen = open.screen))
 }
 
 private fun applyGrid(
@@ -1794,9 +1806,9 @@ private fun applyGrid(
                 ) to null
             } else model.copy(focus = page(model.focus, forward, model, model.screenJumpLastColumn)) to null
         }
-        Meaning.Menu -> if (model.arranging) model to null else model.openSettings(HostScreen.Top) to null
+        Meaning.Menu -> if (model.arranging) model to null else model.openSettings(model.layout.pageScreen) to null
         Meaning.Activate -> activate(model, screen)
-        Meaning.ActivateBottom -> activate(model, screen, onBottom = true)
+        Meaning.ActivateBottom -> activate(model, screen, elsewhere = true)
         Meaning.Options -> openActions(model) to null
         Meaning.Back -> backGrid(model)
         Meaning.LeftPanel, Meaning.RightPanel -> presentPanel(model, meaning, screen) to null
@@ -1814,7 +1826,7 @@ private fun openActions(model: PickerModel): PickerModel {
         if (model.tileActions?.undo != true) return model
     } else if (model.focus.chrome != null) return model
     if (actionRows(model.tileActions).isEmpty()) return model
-    return model.copy(panel = freshPanel(Side.Left, model.focus).copy(
+    return model.copy(panel = freshPanel(Side.Left, model.focus, model.layout).copy(
         level = PanelLevel.Actions, recoveryOnly = model.count <= 0))
 }
 
@@ -1951,17 +1963,17 @@ fun scrolledTo(model: PickerModel, first: Int): PickerModel {
     )
 }
 
-/** A, or X when [onBottom]. X launches a game on the bottom screen and does what A does anywhere else. */
-private fun activate(model: PickerModel, screen: HostScreen, onBottom: Boolean = false): Pair<PickerModel, Effect?> {
+/** A, or X when [elsewhere]. X launches a game on the screen Play on does not name, and does what A does anywhere else. */
+private fun activate(model: PickerModel, screen: HostScreen, elsewhere: Boolean = false): Pair<PickerModel, Effect?> {
     return when (model.focus.chrome) {
         Chrome.StatusCluster -> presentPanel(model, Meaning.RightPanel, screen) to null
         Chrome.LeftIsland -> presentPanel(model, Meaning.LeftPanel, screen) to null
         null -> {
             if (model.arranging) return placeOrPick(model)
             if (model.count <= 0 || model.focus.cellIndex !in 0 until model.count) return model to null
-            if (!model.libraryGrid) return model to Effect.Launch(model.focus.cellIndex, onBottom)
+            if (!model.libraryGrid) return model to Effect.Launch(model.focus.cellIndex, elsewhere)
             when (model.gridKind) {
-                GridKind.Games -> model to Effect.Launch(model.focus.cellIndex, onBottom)
+                GridKind.Games -> model to Effect.Launch(model.focus.cellIndex, elsewhere)
                 GridKind.Platforms -> model to Effect.OpenPlatform(model.focus.cellIndex)
                 GridKind.Unreachable -> model to Effect.TryAgain
                 GridKind.NoLibrary -> if (model.focus.cellIndex == 0) {
@@ -1973,7 +1985,7 @@ private fun activate(model: PickerModel, screen: HostScreen, onBottom: Boolean =
                 } else {
                     model.copy(
                         connectOpen = true,
-                        connectScreen = screen,
+                        connectScreen = model.layout.pageScreen,
                         connectIndex = 0,
                         connectKind = ConnectKind.Romm,
                         connectReturnPanel = null,
@@ -2062,7 +2074,7 @@ private fun applyPanel(
         // opening. The island leaving never takes it, even when the opening one has no such row.
         if (current.retiring) {
             val pending = current.pendingSide ?: return model to null
-            val opening = freshPanel(pending, current.grid)
+            val opening = freshPanel(pending, current.grid, model.layout).copy(screen = current.screen)
             chordIndex(panelRows(opening, model), meaning) ?: return model to null
             return applyPanel(model.copy(panel = opening), opening, meaning, screen)
         }
@@ -2110,7 +2122,7 @@ private fun applyPanel(
  * The Settings page draws them as ‹ value ›.
  */
 internal val choiceRows: Set<Row> = setOf(
-    Row.Theme, Row.IconTheme, Row.Background, Row.MotionSpeed, Row.MusicTrack, Row.Primary, Row.SortFolder,
+    Row.Theme, Row.IconTheme, Row.Background, Row.MotionSpeed, Row.MusicTrack, Row.ScreenLayout, Row.PlayOn, Row.SortFolder,
 )
 
 /** The folder Sort row's step, or null when the menu names no folder. */
@@ -2120,7 +2132,7 @@ private fun sortStep(model: PickerModel, direction: Int): Effect? =
 /**
  * Left and right step a value and keep the row. Music volume moves by 5 points,
  * and so does brightness, or it asks for access first. A choice row (theme,
- * icons, background, motion, track, sort, main screen) cycles its choices either
+ * icons, background, motion, track, sort, layout, play on) cycles its choices either
  * way, as A cycles them forward, except Theme, whose A opens the Themes page. Other rows
  * ignore the direction, so the focus stays put.
  */
@@ -2130,7 +2142,7 @@ private fun stepRow(model: PickerModel, row: Row, direction: Int): PickerModel? 
         Row.Brightness -> if (model.brightnessAllowed) {
             model.copy(brightness = steppedBrightness(model.brightness, direction))
         } else {
-            model.copy(dialog = brightnessPrompt())
+            model.copy(dialog = brightnessPrompt(model.panel?.screen ?: model.layout.menuScreen))
         }
         Row.MusicTrack -> model.withTrack(cycledMusicTrack(offeredTracks(model), model.music.trackId, direction))
         Row.Theme -> stepTheme(model, direction)
@@ -2156,7 +2168,11 @@ private fun stepRow(model: PickerModel, row: Row, direction: Int): PickerModel? 
             val speeds = MotionSpeed.entries
             model.copy(motionSpeed = speeds[Math.floorMod(speeds.indexOf(model.motionSpeed) + direction, speeds.size)])
         }
-        Row.Primary -> model.copy(primaryIsTop = !model.primaryIsTop)
+        Row.ScreenLayout -> {
+            val layouts = ScreenLayout.entries
+            model.copy(layout = layouts[Math.floorMod(layouts.indexOf(model.layout) + direction, layouts.size)])
+        }
+        Row.PlayOn -> model.copy(playOn = model.playOn.other())
         else -> null
     }
 }
@@ -2251,6 +2267,7 @@ private fun applySettings(
             val (next, effect) = activateRow(model.copy(panel = standIn), standIn, row, current.screen)
             if (next.panel?.level == PanelLevel.RommConnection) {
                 return next.copy(
+                    // On this page's screen, which is Foldcade's: the islands draw it there.
                     panel = next.panel.copy(connectionSettings = current),
                     settings = null,
                 ) to effect
@@ -2300,9 +2317,9 @@ private fun activateRow(
     screen: HostScreen,
 ): Pair<PickerModel, Effect?> {
     return when (row) {
-        Row.Settings -> model.openSettings(panel.screen, grid = panel.grid) to null
+        Row.Settings -> model.openSettings(model.layout.pageScreen, grid = panel.grid) to null
         // The [choiceRows]. The list is spelled out so a new row cannot slip past this when.
-        Row.IconTheme, Row.Background, Row.MotionSpeed, Row.MusicTrack, Row.Primary ->
+        Row.IconTheme, Row.Background, Row.MotionSpeed, Row.MusicTrack, Row.ScreenLayout, Row.PlayOn ->
             stepRow(model, row, 1)!!.copy(panel = panel) to null
         // Left and right step the pack. A opens every pack, Add a theme, and what was found in each.
         Row.Theme -> model.copy(panel = panel) to Effect.OpenThemes
@@ -2314,7 +2331,7 @@ private fun activateRow(
         Row.SaveSetup -> model.openSaveSetup(panel.screen, grid = panel.grid) to null
         Row.PlayActivity -> model.copy(
             panel = null,
-            playActivity = PlayActivityPage(screen = panel.screen, grid = panel.grid),
+            playActivity = PlayActivityPage(screen = model.layout.pageScreen, grid = panel.grid),
         ) to null
         Row.Home -> model.copy(panel = null, focus = panel.grid) to Effect.GoHome
         Row.EditHome -> model.copy(panel = panel.copy(level = PanelLevel.EditHome, index = 0, tileColumn = null, parentTileColumn = panel.tileColumn)) to null
@@ -2332,7 +2349,7 @@ private fun activateRow(
         Row.Brightness -> if (model.brightnessAllowed) {
             model.copy(panel = panel) to null
         } else {
-            model.copy(panel = panel, dialog = brightnessPrompt()) to null
+            model.copy(panel = panel, dialog = brightnessPrompt(panel.screen)) to null
         }
         Row.AddFolder ->
             if (model.folderGrantPending) {
@@ -2353,7 +2370,7 @@ private fun activateRow(
             panel = null,
             focus = panel.grid,
             connectOpen = true,
-            connectScreen = screen,
+            connectScreen = model.layout.pageScreen,
             connectIndex = 0,
             connectKind = ConnectKind.Romm,
             connectReturnPanel = panel,
@@ -2362,7 +2379,7 @@ private fun activateRow(
             panel = null,
             focus = panel.grid,
             connectOpen = true,
-            connectScreen = screen,
+            connectScreen = model.layout.pageScreen,
             connectOrigin = "",
             connectIndex = 0,
             connectKind = ConnectKind.Romm,
@@ -2416,7 +2433,7 @@ private fun activateRow(
                 panel = null,
                 focus = panel.grid,
                 connectOpen = true,
-                connectScreen = screen,
+                connectScreen = model.layout.pageScreen,
                 connectIndex = 0,
                 connectKind = ConnectKind.ArtKey,
             ) to Effect.OpenArtKey
@@ -2448,7 +2465,7 @@ private fun activateRow(
         Row.RemoveDownload -> model.copy(panel = null, focus = panel.grid) to Effect.RemoveDownload(model.tileActions?.game)
         Row.Saves -> model.copy(panel = null, focus = panel.grid) to model.tileActions?.game?.let(Effect::OpenSaves)
         Row.PlayTime -> model.tileActions?.game?.let { game ->
-            model.copy(panel = null, focus = panel.grid, playActivity = PlayActivityPage(screen = panel.screen, grid = panel.grid, game = game)) to
+            model.copy(panel = null, focus = panel.grid, playActivity = PlayActivityPage(screen = model.layout.pageScreen, grid = panel.grid, game = game)) to
                 Effect.OpenPlayGame(game)
         } ?: (model.copy(panel = panel) to null)
         Row.RestartGame -> model.copy(panel = null, focus = panel.grid) to Effect.RestartGame(model.tileActions?.game)
@@ -2475,7 +2492,7 @@ private fun openNotice(model: PickerModel, panel: SidePanel, id: String): Pair<P
     // you, one emulator's on its own tile.
     if (notice.settingsCategory == SettingsCategory.Players) return model.openSaveSetup(panel.screen, grid = panel.grid) to null
     notice.settingsCategory?.let { category ->
-        return model.openSettings(panel.screen, category, panel.grid) to null
+        return model.openSettings(model.layout.pageScreen, category, panel.grid) to null
     }
     notice.savePlayerId?.let { playerId ->
         if (saveSetupTiles(model, SaveSetupPage()).any { it.key == playerId }) {

@@ -279,7 +279,7 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
 
     override fun foldcadeSurfaceFocused(): Boolean {
         val panel = displays.panelFor(this, foldcade.store.session.defaultDisplayIsTop) ?: return false
-        return foldcade.store.session.surfaceOn(panel) != null
+        return foldcade.store.session.takesKeys(panel)
     }
 
     internal val inputWindow: String = java.util.UUID.randomUUID().toString()
@@ -333,8 +333,7 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
         }
         foldcade.music.duckForThemeSound(meaning)
         val panel = displays.panelFor(this, foldcade.store.session.defaultDisplayIsTop) ?: return
-        val screen = if (panel == Panel.Top) HostScreen.Top else HostScreen.Bottom
-        dispatch(foldcade.shell.onMeaning(meaning, screen, repeatCount, inputWindow))
+        dispatch(foldcade.shell.onMeaning(meaning, inputScreen(panel), repeatCount, inputWindow))
     }
 
     /** The command center on this screen, or the grid opened from it, takes the key first. Set up saves covers it and keeps its keys. */
@@ -347,7 +346,7 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
     fun dispatch(effect: Effect?) {
         when (effect) {
             is Effect.Launch -> {
-                launchScreen = if (effect.onBottom) Panel.Bottom else Panel.Top
+                launchScreen = foldcade.store.session.playOn.let { if (effect.elsewhere) it.flip() else it }
                 launchSubject = foldcade.shell.focusedRunningApp()
                 bloomPress = BloomPress(foldcade.shell.focusedGame()?.id, SystemClock.uptimeMillis())
                 if (foldcade.shell.model.libraryGrid) launchLibraryGame(effect.index) else launchFocused()
@@ -808,10 +807,15 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
     /**
      * The command center's dim, as this window's own brightness. On the Thor that
      * moves this panel's backlight and no other. Not dimmed hands the panel back
-     * to its own level, with nothing to remember or restore.
+     * to its own level, with nothing to remember or restore. [dark], the screen a
+     * one-screen layout leaves black, goes to the lowest backlight there is.
      */
-    fun applyCommandCenterDim(dimmed: Boolean) {
-        val level = if (dimmed) commandCenterDimLevel() else WindowManager.LayoutParams.BRIGHTNESS_OVERRIDE_NONE
+    fun applyCommandCenterDim(dimmed: Boolean, dark: Boolean = false) {
+        val level = when {
+            dark -> WindowManager.LayoutParams.BRIGHTNESS_OVERRIDE_OFF
+            dimmed -> commandCenterDimLevel()
+            else -> WindowManager.LayoutParams.BRIGHTNESS_OVERRIDE_NONE
+        }
         val attributes = window.attributes
         if (attributes.screenBrightness == level) return
         attributes.screenBrightness = level
@@ -1178,7 +1182,7 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
     }
 
     /**
-     * The screen the launch now starting asked for: top for A, bottom for X. A
+     * The screen the launch now starting asked for: Play on's for A, the other for X. A
      * newer launch replaces it, and an older one still running is dropped by its
      * generation check before it places anything.
      */
@@ -2112,14 +2116,14 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
     }
 
     /**
-     * Opens a notice's app on the top screen, or the bottom when a game holds the top,
+     * Opens a notice's app on the Play on screen, or the other when a game holds it,
      * the way an app from the grid opens. A notice that only runs a service or a
      * broadcast leaves both screens to Foldcade.
      */
     private fun openNotice(key: String) {
         val listener = NoticeListener.connected ?: return
         val session = foldcade.store.session
-        val panel = session.singleScreenTarget(Panel.Top) ?: return
+        val panel = session.singleScreenTarget(session.playOn) ?: return
         val assignment = displays.assignment(session.defaultDisplayIsTop)
         val displayId = when (panel) {
             Panel.Top -> assignment.topDisplayId
@@ -2147,8 +2151,14 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
     }
 
     private fun hostScreen(): HostScreen {
-        val panel = displays.panelFor(this, foldcade.store.session.defaultDisplayIsTop)
-        return if (panel == Panel.Top) HostScreen.Top else HostScreen.Bottom
+        val panel = displays.panelFor(this, foldcade.store.session.defaultDisplayIsTop) ?: Panel.Bottom
+        return inputScreen(panel)
+    }
+
+    /** The screen a key or a page from [panel] belongs to. The dark screen's are the grid's. */
+    private fun inputScreen(panel: Panel): HostScreen {
+        val session = foldcade.store.session
+        return if (session.surfaceOn(panel) == Surface.Dark) session.gridPanel().screen() else panel.screen()
     }
 
     private fun installedPackages(packageNames: List<String>): Set<String> =
@@ -2925,7 +2935,8 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
     private fun openAppForSetup(packageName: String) {
         val launch = packageManager.getLaunchIntentForPackage(packageName) ?: return
         val session = foldcade.store.session
-        val here = displays.panelFor(this, session.defaultDisplayIsTop) ?: Panel.Top
+        // The screen it was asked from. The dark screen's keys are the grid's, so it opens there.
+        val here = displays.panelFor(this, session.defaultDisplayIsTop)?.let { inputScreen(it).panel() } ?: Panel.Top
         val panel = session.singleScreenTarget(here) ?: return
         val assignment = displays.assignment(session.defaultDisplayIsTop)
         val displayId = when (panel) {
@@ -3180,7 +3191,7 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
             withContext(Dispatchers.Main.immediate) {
                 if (success && saveId != null && destination == null && !isDestroyed && !isFinishing && foldcade.shell.model.savePicker?.target == target) {
                     foldcade.shell.presentSavePicker(null)
-                    launchScreen = foldcade.runningOn(target.gameId)?.panel ?: Panel.Top
+                    launchScreen = foldcade.runningOn(target.gameId)?.panel ?: foldcade.store.session.playOn
                     launchBackendGame(request.owner.label, request.route.play.platformId, request.route, fresh = true)
                 } else if (success) loadSavePicker(target)
             }

@@ -108,7 +108,6 @@ object Copy {
     const val bluetooth = "Bluetooth"
     const val battery = "Battery"
     const val builtIn = "Built-in"
-    const val primaryPanel = "Main screen"
     const val top = "Top"
     const val bottom = "Bottom"
     const val addFolder = "Add a folder"
@@ -448,15 +447,17 @@ fun gridHints(
     drop: HoldDrop = HoldDrop.Place,
     play: PlayKey = PlayKey.None,
     close: Boolean = play == PlayKey.Resume,
+    /** The screen A opens a game on. X names the other one. */
+    playOn: HostScreen = HostScreen.Top,
 ): List<HintKey> {
     val confirm = promptKeyOf(faceMap.confirmKey) ?: PromptKey.FaceA
     val back = promptKeyOf(faceMap.backKey) ?: PromptKey.FaceB
     val roles = actionFaces(faceMap)
-    // A one-screen game opens on the top screen with confirm and on the bottom with the free face button, X unless calibration took it.
+    // A one-screen game opens on the Play on screen with confirm and on the other with the free face button, X unless calibration took it.
     // A game that takes both screens says Play, so confirm is named on every game; one still open says Resume.
     val launch = when {
         play == PlayKey.Resume -> listOfNotNull(HintKey(confirm, Copy.hintResume), HintKey(roles.bottomGlyph, Copy.hintClose).takeIf { close })
-        screens -> listOf(HintKey(confirm, Copy.hintTop), HintKey(roles.bottomGlyph, Copy.hintBottom))
+        screens -> screenHints(confirm, roles.bottomGlyph, playOn)
         play == PlayKey.Play -> listOf(HintKey(confirm, Copy.hintPlay))
         else -> emptyList()
     }
@@ -488,7 +489,7 @@ fun gridHints(
         )
         // The shell names Find's own keys, which depend on what has been typed.
         HomeKeys.Finding -> findKeyboardHints(faceMap, typed = false)
-        HomeKeys.FindResults -> findResultHints(faceMap, screens, options)
+        HomeKeys.FindResults -> findResultHints(faceMap, screens, options, playOn = playOn)
         HomeKeys.ChoosingArt -> artPickerHints(faceMap)
         HomeKeys.AllLibrary -> launch + menu + HintKey(back, Copy.back)
         HomeKeys.Idle -> buildList {

@@ -96,13 +96,17 @@ internal fun TopIslands(
     app: FoldcadeApp,
     screen: HostScreen,
     scale: Float,
+    /** Over a grid, whose hint row the open card must stay clear of. */
+    overGrid: Boolean = false,
     menuRows: @Composable (panel: SidePanel, progress: () -> Float, interactive: Boolean) -> Unit,
 ) {
-    // Top screen only. The bottom screen keeps the grid and the hint row.
-    // The L1 chip, launch target, and status cluster are not drawn there.
-    if (screen != HostScreen.Top) return
+    // The layout's menu screen only: over the hero, or over the grid with one screen. The other
+    // screen keeps its grid or hero and the hint row; the L1 chip and status cluster are not drawn there.
+    // An open drawer stays on the screen it opened on, as one from a page left there by a
+    // layout change: it is drawn there, and the islands follow it until it closes.
     val model = app.shell.model
-    val dialogCovers = model.dialog?.screen == HostScreen.Top
+    if (screen != (model.panel?.screen ?: model.layout.menuScreen)) return
+    val dialogCovers = model.dialog?.screen == screen
     BoxWithConstraints(
         Modifier
             .fillMaxSize()
@@ -110,11 +114,13 @@ internal fun TopIslands(
             .focusProperties { canFocus = false },
     ) {
         // A tap off the open card closes it, as its shoulder would. The cards sit above and keep their own taps.
-        if (!dialogCovers && model.panel?.screen == HostScreen.Top) Box(Modifier.fillMaxSize().closesIsland(app))
+        if (!dialogCovers && model.panel?.screen == screen) Box(Modifier.fillMaxSize().closesIsland(app))
         Island(
             app = app,
+            screen = screen,
+            overGrid = overGrid,
             side = Side.Left,
-            open = !dialogCovers && model.panel?.side == Side.Left && model.panel?.screen == HostScreen.Top,
+            open = !dialogCovers && model.panel?.side == Side.Left && model.panel?.screen == screen,
             scale = scale,
             maxWidth = maxWidth,
             maxHeight = maxHeight,
@@ -122,8 +128,10 @@ internal fun TopIslands(
         )
         Island(
             app = app,
+            screen = screen,
+            overGrid = overGrid,
             side = Side.Right,
-            open = !dialogCovers && model.panel?.side == Side.Right && model.panel?.screen == HostScreen.Top,
+            open = !dialogCovers && model.panel?.side == Side.Right && model.panel?.screen == screen,
             scale = scale,
             maxWidth = maxWidth,
             maxHeight = maxHeight,
@@ -135,6 +143,8 @@ internal fun TopIslands(
 @Composable
 private fun Island(
     app: FoldcadeApp,
+    screen: HostScreen,
+    overGrid: Boolean,
     side: Side,
     open: Boolean,
     scale: Float,
@@ -147,7 +157,7 @@ private fun Island(
     val density = LocalDensity.current
     val model = app.shell.model
     val held = app.islandHold
-    val mine = model.panel?.takeIf { it.side == side && it.screen == HostScreen.Top }
+    val mine = model.panel?.takeIf { it.side == side && it.screen == screen }
     val retiringHere = held == null && mine?.retiring == true
     val snap = held != null
     val target = when {
@@ -163,7 +173,7 @@ private fun Island(
         handoff = retiringHere,
         onHandoff = { app.shell.completeIslandRetire() },
     )
-    val live = app.shell.model.panel?.takeIf { it.side == side && it.screen == HostScreen.Top }
+    val live = app.shell.model.panel?.takeIf { it.side == side && it.screen == screen }
     var shown by remember { mutableStateOf<SidePanel?>(null) }
     if (live != null) shown = live
     val panel = shown
@@ -174,14 +184,21 @@ private fun Island(
     val pillHeight = 44.dp
     val pillWidth = rowWidth.takeIf { it.isSpecified } ?: pillHeight
     val edge = if (side == Side.Left) Alignment.Start else Alignment.End
-    val openWidth = maxWidth * 0.48f
+    // Half the top screen. The narrower bottom screen, which has the islands in Swapped, keeps
+    // the width the status row and the tiles' names need.
+    val openWidth = maxOf(maxWidth * 0.48f, minOf(ISLAND_MIN_OPEN_WIDTH, maxWidth - inset * 2))
     // The open card fits its rows, up to most of the screen. A taller menu scrolls.
     // A new level or a new notice changes the rows, and the card eases to the new height.
     // Y's menu may reach a little further: a paused game's ten actions fit the Thor's top
     // screen without scrolling at 91%, and fall 10dp short at 88%.
     var rowsHeight by remember(side) { mutableStateOf(Dp.Hairline) }
     val reach = ringReach()
-    val reachFraction = if (panel?.level == PanelLevel.Actions) 0.91f else 0.88f
+    // Over a grid on the same screen the card stops above the grid's hint row, and a long menu scrolls.
+    val reachFraction = when {
+        overGrid -> OVER_GRID_REACH
+        panel?.level == PanelLevel.Actions -> 0.91f
+        else -> 0.88f
+    }
     val maximumHeight = with(density) { (maxHeight * reachFraction).roundToPx() }
     val reservedHeight = with(density) { pillHeight.roundToPx() + reach.roundToPx() * 2 + MENU_BOTTOM_DP.dp.roundToPx() }
     val availableRows = with(density) { (maximumHeight - reservedHeight).toDp() }
@@ -250,7 +267,7 @@ private fun Island(
             .clip(shape)
             .background(cardFill(theme, design.menu.islandLift * progress))
             // The open card holds a tap between its rows, so it never reaches the catch under it.
-            .then(if (!interactive) Modifier.islandPress { app.shell.onMeaning(side.meaning(), HostScreen.Top) } else Modifier.blocksTouch()),
+            .then(if (!interactive) Modifier.islandPress { app.shell.onMeaning(side.meaning(), screen) } else Modifier.blocksTouch()),
     ) {
         // The chip leads on both sides, so the clock is the last thing on the right.
         // The chip art carries its own margin. The text end gets a little more.
@@ -560,3 +577,9 @@ internal fun Modifier.closesIsland(app: FoldcadeApp): Modifier = pointerInput(ap
 }
 
 private fun lerp(start: Dp, end: Dp, fraction: Float): Dp = start + (end - start) * fraction
+
+/** The open card's narrowest: the R1 status row and four tiles' names, on the Thor's bottom screen. */
+private val ISLAND_MIN_OPEN_WIDTH = 340.dp
+
+/** The open card's tallest over a grid: its top inset and this share of the screen end above the hint row. */
+private const val OVER_GRID_REACH = 0.8f

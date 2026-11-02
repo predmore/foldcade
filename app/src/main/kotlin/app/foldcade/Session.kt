@@ -1,5 +1,8 @@
 package app.foldcade
 
+import app.foldcade.language.HostScreen
+import app.foldcade.language.ScreenLayout
+
 /**
  * Which panel a surface belongs to. Not a display id.
  * Thor's default display is the top panel. A setting can swap that.
@@ -19,6 +22,12 @@ enum class Surface {
      * app's art, and a button that opens the grid here. See [Session.browsing].
      */
     CommandCenter,
+
+    /**
+     * The screen [ScreenLayout.TopOnly] leaves black, at its lowest backlight. Nothing is
+     * drawn there and its keys drive the grid. It stays dark beside a game too.
+     */
+    Dark,
 }
 
 data class ExternalApp(
@@ -27,19 +36,25 @@ data class ExternalApp(
 )
 
 /**
- * Dual-screen session. Idle is hero on top and picker on the bottom.
+ * Dual-screen session. Idle is the hero and the picker where [layout] puts them: by
+ * default the hero on top and the picker on the bottom.
  * A single-screen launch leaves the command center on the other panel, and
- * the picker there only while the user is [browsing] it.
+ * the picker there only while the user is [browsing] it. The dark screen of
+ * [ScreenLayout.TopOnly] stays dark instead.
  * Android Home clears only the panel that has input. An app on both screens
  * runs on the top panel, so Home there clears both.
  *
- * Which screen a game launches on is the button that launched it: A for the
- * top screen, X for the bottom.
+ * Which screen a game launches on is the button that launched it: A for
+ * [playOn], X for the other screen.
  */
 data class Session(
     val topApp: ExternalApp? = null,
     val bottomApp: ExternalApp? = null,
     val defaultDisplayIsTop: Boolean = true,
+    /** Settings › System › Layout. */
+    val layout: ScreenLayout = ScreenLayout.Default,
+    /** Settings › System › Play on: the screen A opens a one-screen game on. */
+    val playOn: Panel = Panel.Top,
     /**
      * The free panel showing the grid instead of the command center. Cleared
      * when an app takes that panel, when both panels are free again, and when
@@ -53,26 +68,49 @@ data class Session(
     }
 
     fun surfaceOn(panel: Panel): Surface? {
-        val topFree = topApp == null
-        val bottomFree = bottomApp == null
-        return when (panel) {
-            Panel.Top -> when {
-                !topFree -> null
-                bottomFree -> Surface.Hero
-                else -> besideApp(panel)
-            }
-            Panel.Bottom -> when {
-                !bottomFree -> null
-                topFree -> Surface.Picker
-                else -> besideApp(panel)
-            }
-        }
+        if (externalOn(panel) != null) return null
+        if (panel == darkPanel()) return Surface.Dark
+        if (externalOn(panel.flip()) != null) return besideApp(panel)
+        return if (panel == gridPanel()) Surface.Picker else Surface.Hero
     }
+
+    /** The screen the grid has while no app is beside it. */
+    fun gridPanel(): Panel = layout.gridScreen.panel()
+
+    /** The screen [layout] keeps dark, if it keeps one. */
+    fun darkPanel(): Panel? = layout.darkScreen?.panel()
+
+    /** Where the L1 and R1 islands are, and where their menus and pages open. See [ScreenLayout.menuScreen]. */
+    fun menuPanel(): Panel = layout.menuScreen.panel()
+
+    /** The panel showing the hero now. None beside an app, and none with one screen. */
+    fun heroPanel(): Panel? = Panel.entries.firstOrNull { surfaceOn(it) == Surface.Hero }
+
+    /**
+     * Where a page split over two screens puts its controls: the grid, or beside an app
+     * the screen Foldcade has left. The hero's screen, when there is one, takes the
+     * page's showcase half.
+     */
+    fun controlsPanel(): Panel? =
+        Panel.entries.firstOrNull { surfaceOn(it) == Surface.Picker } ?: Panel.entries.firstOrNull { draws(it) }
+
+    /**
+     * True while keys on [panel] reach Foldcade. The dark screen's go to the grid, so only
+     * while the grid's screen is Foldcade's; a game covering it keeps them from a grid nobody sees.
+     */
+    fun takesKeys(panel: Panel): Boolean = when (surfaceOn(panel)) {
+        null -> false
+        Surface.Dark -> draws(gridPanel())
+        else -> true
+    }
+
+    /** True while Foldcade draws something on [panel]: not an app's, and not dark. */
+    fun draws(panel: Panel): Boolean = surfaceOn(panel).let { it != null && it != Surface.Dark }
 
     private fun besideApp(panel: Panel): Surface =
         if (browsing == panel) Surface.Picker else Surface.CommandCenter
 
-    /** The command center on [panel] gives way to the grid. Nothing changes on any other surface. */
+    /** The command center on [panel] gives way to the grid. Nothing changes on any other surface. The dark screen has none. */
     fun browse(panel: Panel): Session =
         if (surfaceOn(panel) == Surface.CommandCenter) copy(browsing = panel) else this
 
@@ -90,8 +128,8 @@ data class Session(
     /** True while the app or game [id] holds either panel. */
     fun runs(id: String): Boolean = topApp?.id == id || bottomApp?.id == id
 
-    /** The island menus open on the top screen. An app there would cover them, so L1 and R1 do nothing. */
-    fun islandsOpen(): Boolean = topApp == null
+    /** The island menus open on [menuPanel]. An app there would cover them, so L1 and R1 do nothing. */
+    fun islandsOpen(): Boolean = externalOn(menuPanel()) == null
 
     /** The picker handles controls only while it is the focused surface. */
     fun pickerHandlesKeys(focused: Panel): Boolean = surfaceOn(focused) == Surface.Picker
@@ -112,7 +150,13 @@ data class Session(
 
     fun withDefaultDisplayIsTop(top: Boolean): Session = copy(defaultDisplayIsTop = top)
 
-    fun launch(app: ExternalApp, requested: Panel = Panel.Top): Session {
+    /** A new layout. Nothing an app holds moves, and browsing beside one keeps its screen unless that screen went dark. */
+    fun withLayout(next: ScreenLayout): Session =
+        if (next == layout) this else copy(layout = next).let { if (it.browsing == it.darkPanel()) it.copy(browsing = null) else it }
+
+    fun withPlayOn(panel: Panel): Session = copy(playOn = panel)
+
+    fun launch(app: ExternalApp, requested: Panel = playOn): Session {
         if (app.occupiesBothDisplays) {
             return copy(topApp = app, bottomApp = app)
         }
@@ -172,4 +216,14 @@ data class Session(
 internal fun Panel.flip(): Panel = when (this) {
     Panel.Top -> Panel.Bottom
     Panel.Bottom -> Panel.Top
+}
+
+internal fun Panel.screen(): HostScreen = when (this) {
+    Panel.Top -> HostScreen.Top
+    Panel.Bottom -> HostScreen.Bottom
+}
+
+internal fun HostScreen.panel(): Panel = when (this) {
+    HostScreen.Top -> Panel.Top
+    HostScreen.Bottom -> Panel.Bottom
 }

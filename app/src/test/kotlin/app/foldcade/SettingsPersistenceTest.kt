@@ -142,7 +142,7 @@ class SettingsPersistenceTest {
         assertEquals(1, changed.model.themeIndex)
         val rows = listOf(
             Row.Theme, Row.Background, Row.MotionSpeed, Row.Music, Row.MusicVolume,
-            Row.Primary, Row.Artwork,
+            Row.ScreenLayout, Row.PlayOn, Row.Artwork,
         )
         for (row in rows) {
             changed.openSetting(row)
@@ -163,9 +163,53 @@ class SettingsPersistenceTest {
         assertTrue(restored.model.backgroundPinned)
         assertEquals(changed.model.motionSpeed, restored.model.motionSpeed)
         assertEquals(changed.model.music, restored.model.music)
-        assertEquals(changed.model.primaryIsTop, restored.model.primaryIsTop)
+        assertEquals(app.foldcade.language.ScreenLayout.ShowcaseBottom, restored.model.layout)
+        assertEquals(HostScreen.Bottom, restored.model.playOn)
         assertFalse(restored.model.artwork)
         assertFalse(restored.model.addNewToHome)
+    }
+
+    @Test
+    fun mainScreenBottomBecomesSwappedWithGamesOnTheBottom() {
+        val prefs = MemoryPrefs()
+        prefs.edit().putBoolean("primary_top", false).apply()
+        val session = SessionStore(prefs).session
+        assertEquals(app.foldcade.language.ScreenLayout.ShowcaseBottom, session.layout)
+        assertEquals(Panel.Bottom, session.playOn)
+        assertTrue(session.defaultDisplayIsTop)
+        // Once moved, a later start reads the new settings and moves nothing again.
+        SessionStore(prefs).update { it.withLayout(app.foldcade.language.ScreenLayout.TopOnly).withPlayOn(Panel.Top) }
+        val again = SessionStore(prefs).session
+        assertEquals(app.foldcade.language.ScreenLayout.TopOnly, again.layout)
+        assertEquals(Panel.Top, again.playOn)
+        // A fresh install has the defaults.
+        val fresh = SessionStore(MemoryPrefs()).session
+        assertEquals(app.foldcade.language.ScreenLayout.ShowcaseTop, fresh.layout)
+        assertEquals(Panel.Top, fresh.playOn)
+    }
+
+    @Test
+    fun aLayoutThatLeavesNoLitScreenClosesSettingsRatherThanHidingItUnderAGame() {
+        val prefs = MemoryPrefs()
+        SessionStore(prefs).update { it.withLayout(app.foldcade.language.ScreenLayout.ShowcaseBottom) }
+        val store = SessionStore(prefs)
+        val changed = ShellController(
+            store, PluginHost(Dispatchers.Unconfined, MemoryCredentialStore()),
+            themeNames = listOf("Built-in", "Afterglow"), themeMotions = listOf(BackgroundMotion.Off, BackgroundMotion.Ribbons),
+        )
+        // A game on top; Settings opens with the islands, on the bottom.
+        store.update { it.launch(ExternalApp("game"), Panel.Top) }
+        changed.openSetting(Row.ScreenLayout)
+        assertEquals(HostScreen.Bottom, changed.model.settings?.screen)
+        // Opened from the grid beside the game, it keeps that grid from resting under it.
+        assertTrue(changed.holdsCommandCenter())
+        changed.onMeaning(Meaning.MoveRight, HostScreen.Bottom)
+        assertEquals(app.foldcade.language.ScreenLayout.TopOnly, store.session.layout)
+        assertNull(changed.model.settings)
+        // With the game gone the grid is back on top and Settings opens there.
+        store.update { it.home(Panel.Top) }
+        changed.onMeaning(Meaning.Menu, HostScreen.Bottom)
+        assertEquals(HostScreen.Top, changed.model.settings?.screen)
     }
 
     @Test

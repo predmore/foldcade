@@ -401,7 +401,14 @@ fun findKeyboardHints(faceMap: FaceMap, typed: Boolean): List<HintKey> {
 }
 
 /** Find's keys on its results: open on either screen, the game's menu, the filters, and back to the keys. */
-fun findResultHints(faceMap: FaceMap, screens: Boolean, options: Boolean, play: PlayKey = PlayKey.None, close: Boolean = play == PlayKey.Resume): List<HintKey> {
+fun findResultHints(
+    faceMap: FaceMap,
+    screens: Boolean,
+    options: Boolean,
+    play: PlayKey = PlayKey.None,
+    close: Boolean = play == PlayKey.Resume,
+    playOn: HostScreen = HostScreen.Top,
+): List<HintKey> {
     val confirm = promptKeyOf(faceMap.confirmKey) ?: PromptKey.FaceA
     val back = promptKeyOf(faceMap.backKey) ?: PromptKey.FaceB
     val roles = actionFaces(faceMap)
@@ -410,8 +417,7 @@ fun findResultHints(faceMap: FaceMap, screens: Boolean, options: Boolean, play: 
             add(HintKey(confirm, Copy.hintResume))
             if (close) add(HintKey(roles.bottomGlyph, Copy.hintClose))
         } else if (screens) {
-            add(HintKey(confirm, Copy.hintTop))
-            add(HintKey(roles.bottomGlyph, Copy.hintBottom))
+            addAll(screenHints(confirm, roles.bottomGlyph, playOn))
         } else {
             add(HintKey(confirm, FindCopy.open))
         }

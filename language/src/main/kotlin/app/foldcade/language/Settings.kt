@@ -129,7 +129,9 @@ fun settingsRows(category: SettingsCategory, model: PickerModel): List<Row> = wh
         }
     }
     SettingsCategory.Screens -> buildList {
-        add(Row.Primary)
+        // Which screen shows what, then where A opens a game.
+        add(Row.ScreenLayout)
+        add(Row.PlayOn)
         if (!model.homeRoleHeld) add(Row.SetAsHome)
         add(Row.DefaultHomeApp)
         // Android's permissions sit together: usage access for play time, then notification access.

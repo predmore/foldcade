@@ -143,6 +143,7 @@ import app.foldcade.language.shouldOfferUsageAccess
 import app.foldcade.language.usageAccessPrompt
 import app.foldcade.language.reduce
 import app.foldcade.language.signInAgainPrompt
+import app.foldcade.language.onShownScreens
 import app.foldcade.romm.cleartextCredentialWarning
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -320,7 +321,7 @@ class ShellController(
         get() = current
         private set(next) {
             val changedView = next.homeGrid != current.homeGrid || next.libraryGrid != current.libraryGrid ||
-                next.gridKind != current.gridKind || next.primaryIsTop != current.primaryIsTop ||
+                next.gridKind != current.gridKind || next.layout != current.layout ||
                 (next.settings != null && current.settings == null) ||
                 (next.playActivity != null && current.playActivity == null) ||
                 (next.connectOpen && !current.connectOpen)
@@ -335,6 +336,8 @@ class ShellController(
             val canceled = current.deleteHold != null && (holdMoved || next.dialog != null || next.settings != null || next.connectOpen)
             val stable = app.foldcade.language.retainSaveSetup(current,
                 app.foldcade.language.retainSettingsCategory(current, app.foldcade.language.retainMenuRows(current, prepared)))
+                // Off the dark screen, and off one a game holds.
+                .onShownScreens { store.session.draws(it.panel()) }
             undo = when {
                 stable.panel == null -> undo?.resume(nowMillis())
                 stable.panel?.let { Row.Undo in panelRows(it, stable) } == true -> undo?.pause(nowMillis())
@@ -601,7 +604,7 @@ class ShellController(
             cue(model.themeIndex, "notify")
             // A menu row runs on A; a session's list has no rows, so the key held is pressed again.
             val press = if (session) hold.meaning else Meaning.Activate
-            return try { onMeaning(press, HostScreen.Top, inputWindow = hold.inputWindow) } finally { completingDelete = false }
+            return try { onMeaning(press, model.layout.menuScreen, inputWindow = hold.inputWindow) } finally { completingDelete = false }
         }
         model = model.copy(deleteProgress = hold.progress(nowMillis()))
         return null
@@ -972,7 +975,9 @@ class ShellController(
      * with nothing to act on.
      */
     fun holdsCommandCenter(): Boolean =
-        model.savePicker != null || model.saveSetup != null || model.dialog != null || model.panel != null || model.connectOpen || typing() != null || home.iconPick != null || home.selection != null || find != null
+        model.savePicker != null || model.saveSetup != null || model.dialog != null || model.panel != null || model.connectOpen || typing() != null || home.iconPick != null || home.selection != null || find != null ||
+            // Settings and Play activity opened from that grid, as beside a game on the top screen.
+            model.settings != null || model.playActivity != null
 
     /**
      * The collection or folder being named, as the top screen shows it over the name field.
@@ -1096,7 +1101,7 @@ class ShellController(
             }
             is FindOutcome.Launch -> {
                 cue(model.themeIndex, "launch")
-                return Effect.Launch(model.focus.cellIndex, outcome.onBottom)
+                return Effect.Launch(model.focus.cellIndex, outcome.elsewhere)
             }
             is FindOutcome.OpenGroup -> {
                 find = null
@@ -1112,7 +1117,7 @@ class ShellController(
             FindOutcome.Options -> {
                 val session = find ?: return null
                 session.holdMenu()
-                val menu = model.copy(panel = SidePanel(Side.Left, HostScreen.Top, PanelLevel.Actions, 0, model.focus))
+                val menu = model.copy(panel = SidePanel(Side.Left, model.layout.menuScreen, PanelLevel.Actions, 0, model.focus))
                 if (actionRows(withShelf(menu).tileActions).isNotEmpty()) publish(menu) else session.releaseMenu()
             }
         }
@@ -1175,7 +1180,7 @@ class ShellController(
     fun findHints(): List<HintKey>? {
         val session = find?.takeIf { findActive() } ?: return null
         return if (session.onResults) {
-            findResultHints(model.faceMap, screens = focusedLaunchesOnOneScreen(), options = hasOptions(), play = focusedPlayKey(), close = focusedCanClose())
+            findResultHints(model.faceMap, screens = focusedLaunchesOnOneScreen(), options = hasOptions(), play = focusedPlayKey(), close = focusedCanClose(), playOn = model.playOn)
         } else {
             findKeyboardHints(model.faceMap, typed = session.query.isNotEmpty())
         }
@@ -1961,7 +1966,7 @@ class ShellController(
     ) {
         invalidateSetupValidation()
         connectVisit += 1
-        val screen = model.connectScreen ?: HostScreen.Top
+        val screen = model.connectScreen ?: model.layout.pageScreen
         connectToken = ""
         model = model.copy(
             connectOpen = true,
@@ -1981,7 +1986,7 @@ class ShellController(
     fun openArtKey() {
         invalidateSetupValidation()
         connectVisit += 1
-        val screen = model.connectScreen ?: HostScreen.Top
+        val screen = model.connectScreen ?: model.layout.pageScreen
         connectToken = ""
         model = model.copy(
             connectOpen = true,
@@ -2066,7 +2071,7 @@ class ShellController(
         invalidateSetupValidation()
         connectToken = ""
         model = model.copy(
-            dialog = signInAgainPrompt(),
+            dialog = signInAgainPrompt(model.layout.menuScreen),
             connectOpen = false,
             connectScreen = null,
         )
@@ -2110,12 +2115,12 @@ class ShellController(
     fun closePanel() {
         val side = model.panel?.side ?: return
         val meaning = if (side == Side.Left) Meaning.LeftPanel else Meaning.RightPanel
-        onMeaning(meaning, HostScreen.Top)
+        onMeaning(meaning, model.layout.menuScreen)
     }
 
     fun showQueuedPrompt() {
         if (!model.reLoginPending || model.dialog != null || model.connectOpen) return
-        model = model.copy(reLoginPending = false, dialog = signInAgainPrompt())
+        model = model.copy(reLoginPending = false, dialog = signInAgainPrompt(model.layout.menuScreen))
     }
 
     /** One tap focuses a text row. Save activates on that tap. */
@@ -2401,7 +2406,7 @@ class ShellController(
             return
         }
         if (store.homePromptSettled() || model.dialog != null) return
-        publish(model.copy(dialog = homePrompt()))
+        publish(model.copy(dialog = homePrompt(model.layout.gridScreen)))
     }
 
     /** Debuggable captures. Replaces whatever dialog is up. */
@@ -2543,7 +2548,7 @@ class ShellController(
         // A chip that only reports takes no tap, as it takes no focus.
         if (state.busy || state.confirmation != null || state.copying != null || !state.statusActs) return null
         model = model.copy(savePicker = state.copy(index = 0))
-        return onMeaning(Meaning.Activate, HostScreen.Bottom)
+        return onMeaning(Meaning.Activate, model.layout.gridScreen)
     }
 
     fun touchSavePickerSave(target: app.foldcade.language.SavePickerTarget, saveId: String): Effect? {
@@ -2551,7 +2556,7 @@ class ShellController(
         if (state.busy || state.confirmation != null || state.copying != null) return null
         val index = state.saves.indexOfFirst { it.id == saveId }.takeIf { it >= 0 } ?: return null
         model = model.copy(savePicker = state.copy(index = index + 1))
-        return onMeaning(Meaning.Activate, HostScreen.Bottom)
+        return onMeaning(Meaning.Activate, model.layout.gridScreen)
     }
 
     fun touchSavePickerDestination(target: app.foldcade.language.SavePickerTarget, destination: app.foldcade.language.SaveDestination): Effect? {
@@ -2559,14 +2564,14 @@ class ShellController(
         if (state.busy || state.confirmation != null || state.copying == null) return null
         val index = state.destinations().indexOf(destination).takeIf { it >= 0 } ?: return null
         model = model.copy(savePicker = state.copy(destinationIndex = index))
-        return onMeaning(Meaning.Activate, HostScreen.Bottom)
+        return onMeaning(Meaning.Activate, model.layout.gridScreen)
     }
 
     fun touchSavePickerConfirm(target: app.foldcade.language.SavePickerTarget, choice: app.foldcade.language.SavePickerChoice, index: Int): Effect? {
         val state = model.savePicker?.takeIf { it.target == target } ?: return null
         if (state.confirmation != choice || state.busy) return null
         model = model.copy(savePicker = state.copy(confirmIndex = index))
-        return onMeaning(Meaning.Activate, HostScreen.Bottom)
+        return onMeaning(Meaning.Activate, model.layout.gridScreen)
     }
 
     fun savePickerFix(target: app.foldcade.language.SavePickerTarget): Effect? {
@@ -2618,13 +2623,13 @@ class ShellController(
     fun touchSaveConflict(focus: app.foldcade.language.SaveConflictFocus): Effect? {
         val prompt = model.saveConflict ?: return null
         model = model.copy(saveConflict = prompt.copy(focus = focus))
-        return onMeaning(Meaning.Activate, HostScreen.Bottom)
+        return onMeaning(Meaning.Activate, model.layout.gridScreen)
     }
 
     /** A touch on Decide later, the same as B. Both copies stay and the prompt returns next launch. */
     fun touchSaveConflictLater(): Effect? {
         if (model.saveConflict == null) return null
-        return onMeaning(Meaning.Back, HostScreen.Bottom)
+        return onMeaning(Meaning.Back, model.layout.gridScreen)
     }
 
     fun focusedGame(): ShelfGame? = when {
@@ -3080,7 +3085,7 @@ class ShellController(
         return displayOrder(snapshot).getOrElse(index) { index }
     }
 
-    private fun artPickerAvailable(): Boolean = store.session.surfaceOn(Panel.Bottom) != null
+    private fun artPickerAvailable(): Boolean = store.session.controlsPanel() != null
 
     private fun withShelf(next: PickerModel): PickerModel {
         val count = countFor(next.homeGrid)
@@ -3216,7 +3221,7 @@ class ShellController(
     /** A touch on the brightness slider. Without access it asks, as the keys do. */
     fun touchBrightness(position: Int) {
         if (!model.brightnessAllowed) {
-            present(brightnessPrompt())
+            present(brightnessPrompt(model.layout.menuScreen))
             return
         }
         publish(model.copy(brightness = position.coerceIn(0, 100)))
@@ -3278,7 +3283,13 @@ class ShellController(
         noteShelfChanged(focusedId)
     }
 
-    private fun publish(next: PickerModel) {
+    private fun publish(requested: PickerModel) {
+        // The other screen changes at once. A page open now stays where it is until it closes,
+        // unless no screen Foldcade draws is left for it: it would sit under a game, taking keys.
+        if (requested.layout != model.layout) store.update { it.withLayout(requested.layout) }
+        val next = if (requested.layout != model.layout && Panel.entries.none(store.session::draws)) {
+            requested.copy(settings = null, playActivity = null, panel = null, focus = requested.settings?.grid ?: requested.focus)
+        } else requested
         if (showingHome() && next.homeGrid != HomeGrid.StandIns) {
             home.rememberRootFocus(model.panel?.grid?.cellIndex ?: model.focus.cellIndex)
         }
@@ -3286,9 +3297,7 @@ class ShellController(
         val savePickerClosed = (model.savePicker != null && next.savePicker == null) || (model.saveSetup != null && next.saveSetup == null)
         val connectClosed = model.connectOpen && !next.connectOpen
         if (model.connectOpen != next.connectOpen) invalidateSetupValidation()
-        if (next.primaryIsTop != store.session.defaultDisplayIsTop) {
-            store.update { it.withDefaultDisplayIsTop(next.primaryIsTop) }
-        }
+        if (next.playOn != model.playOn) store.update { it.withPlayOn(next.playOn.panel()) }
         if (next.themeIndex != model.themeIndex) {
             store.setTheme(next.themeIds[next.themeIndex])
             onTheme(next.themeIndex)
@@ -3372,11 +3381,16 @@ class ShellController(
             home.keys().let { it == HomeKeys.Idle || it == HomeKeys.AllLibrary }
 
     /**
-     * The pills are drawn on the top screen, so an app there leaves the cursor on the grid.
+     * The pills are drawn on the islands' screen, so an app there leaves the cursor on the grid.
+     * Up reaches them only where they are above the grid: on the top screen, or over the grid on
+     * the same one. Under the grid, as Swapped has them, L1 and R1 still open them.
      * A selection keeps L1 and R1 shut, so their pills are out of reach then too.
      */
     private fun syncPills() {
-        val shown = store.session.islandsOpen() && home.keys() != HomeKeys.Selecting
+        val session = store.session
+        val menu = session.menuPanel()
+        val above = menu == Panel.Top || session.surfaceOn(menu) == Surface.Picker
+        val shown = session.islandsOpen() && above && home.keys() != HomeKeys.Selecting
         if (model.pills == shown) return
         model = model.copy(pills = shown, focus = if (shown) model.focus else model.focus.copy(chrome = null))
     }
@@ -3569,7 +3583,8 @@ class ShellController(
             addNewToHome = home.board.addNewToHome,
             recentOnHome = groupOnHome(home.board, HOME_RECENT),
             rowsPerPage = 2,
-            primaryIsTop = store.session.defaultDisplayIsTop,
+            layout = store.session.layout,
+            playOn = store.session.playOn.screen(),
             folderGrantPending = store.folderGrantPending(),
             music = stored.copy(trackId = selected.id),
             trackTitle = selected.title,
@@ -3600,7 +3615,7 @@ class ShellController(
             before.brightness != after.brightness || before.themeIndex != after.themeIndex ||
             before.iconThemeIndex != after.iconThemeIndex || before.backgroundMotion != after.backgroundMotion ||
             before.motionSpeed != after.motionSpeed ||
-            before.primaryIsTop != after.primaryIsTop
+            before.layout != after.layout || before.playOn != after.playOn
 
     /**
      * The sound of a key that did something. Each cue past the first four falls back to the one

@@ -400,7 +400,7 @@ class HomeSession(
         if (board.foldersOpen) return handleFolders(meaning, index)
         return when (meaning) {
             Meaning.Activate, Meaning.ActivateBottom -> emptyCollection()?.let { addGames(it.id) }
-                ?: activateCell(index, onBottom = meaning == Meaning.ActivateBottom)
+                ?: activateCell(index, elsewhere = meaning == Meaning.ActivateBottom)
             // With no tile to land on, Down from L1 or R1 comes back to Add games.
             Meaning.MoveDown -> emptyCollection()?.let { step(null, 0) }
             Meaning.Back -> if (board.openFolderId != null) closeOpenFolder() else null
@@ -992,7 +992,7 @@ class HomeSession(
     private fun handleAll(meaning: Meaning, index: Int, repeatCount: Int): HomeStep {
         return when (meaning) {
             Meaning.Activate -> activateCell(index)
-            Meaning.ActivateBottom -> activateCell(index, onBottom = true)
+            Meaning.ActivateBottom -> activateCell(index, elsewhere = true)
             Meaning.Back -> {
                 val back = addingTo?.takeIf { it in board.folders }
                 addingTo = null
@@ -1016,7 +1016,7 @@ class HomeSession(
     }
 
     /** A opens a folder or launches on the top screen. X opens a folder too, or launches on the bottom. */
-    private fun activateCell(index: Int, onBottom: Boolean = false): HomeStep {
+    private fun activateCell(index: Int, elsewhere: Boolean = false): HomeStep {
         val face = face(index) ?: return step(null, index)
         val id = face.id ?: return step(null, index)
         if (face.allTile) {
@@ -1031,7 +1031,7 @@ class HomeSession(
             board = openFolder(board, id)
             return step(null, 0)
         }
-        return step(Effect.Launch(index, onBottom), index)
+        return step(Effect.Launch(index, elsewhere), index)
     }
 
     private fun closeOpenFolder(): HomeStep {

@@ -7,6 +7,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -17,6 +18,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicText
@@ -77,61 +79,69 @@ internal fun SettingsScreen(app: FoldcadeApp, screen: HostScreen, page: Settings
     val categories = settingsCategories(model)
     if (categories.isEmpty()) return
     val categoryIndex = page.category.coerceIn(0, categories.lastIndex)
-    Row(
-        Modifier
-            .fillMaxSize()
-            .background(theme.background)
-            .padding(horizontal = 40.dp, vertical = 16.dp),
-        horizontalArrangement = Arrangement.spacedBy(24.dp),
-    ) {
-        Column(Modifier.weight(0.32f).fillMaxHeight()) {
-            val back = if (model.capturingConfirm) PromptKey.Start else promptKeyOf(model.faceMap.backKey) ?: PromptKey.FaceB
-            Header(theme, back) { onEffect(app.shell.backSettings(screen)) }
-            val master = rememberSelectionSlots()
-            // All six fit at rest on the Thor's top screen. Should they not, as at a large font
-            // size, the edge with more beyond it fades, so a hidden category still shows.
-            val categoryScroll = rememberScrollState()
-            Column(
-                Modifier
-                    .padding(top = 20.dp)
-                    .fillMaxSize()
-                    .menuFade(categoryScroll)
-                    .ringScroll(state = categoryScroll)
-                    .selectionHighlight(master, categoryIndex, ring = !page.onRows, scale = scale),
-                verticalArrangement = Arrangement.spacedBy(ROW_GAP),
-            ) {
-                categories.forEachIndexed { index, category ->
-                    val selected = index == categoryIndex
-                    CategoryRow(
-                        title = settingsTitle(category),
-                        icon = categoryIcon(category),
-                        selected = selected,
-                        focused = selected && !page.onRows,
-                        scale = scale,
-                        modifier = Modifier.selectionSlot(master, index),
-                        onClick = { onEffect(app.shell.touchSettingsCategory(index, screen)) },
-                    )
+    // The bottom screen is a third narrower. Settings opens there only when a game holds the
+    // top, and then the categories are their art alone and the header its button, so the
+    // card keeps the width its rows need.
+    BoxWithConstraints(Modifier.fillMaxSize()) {
+        val compact = maxWidth < COMPACT_BELOW
+        Row(
+            Modifier
+                .fillMaxSize()
+                .background(theme.background)
+                .padding(horizontal = if (compact) 20.dp else 40.dp, vertical = 16.dp),
+            horizontalArrangement = Arrangement.spacedBy(if (compact) 16.dp else 24.dp),
+        ) {
+            // The categories scroll inside the ring's reach on each side, so the art's column adds it.
+            Column((if (compact) Modifier.width(COMPACT_COLUMN + ringReach() * 2) else Modifier.weight(0.32f)).fillMaxHeight()) {
+                val back = if (model.capturingConfirm) PromptKey.Start else promptKeyOf(model.faceMap.backKey) ?: PromptKey.FaceB
+                Header(theme, back, titled = !compact) { onEffect(app.shell.backSettings(screen)) }
+                val master = rememberSelectionSlots()
+                // All six fit at rest on the Thor's top screen. Should they not, as at a large font
+                // size, the edge with more beyond it fades, so a hidden category still shows.
+                val categoryScroll = rememberScrollState()
+                Column(
+                    Modifier
+                        .padding(top = 20.dp)
+                        .fillMaxSize()
+                        .menuFade(categoryScroll)
+                        .ringScroll(state = categoryScroll)
+                        .selectionHighlight(master, categoryIndex, ring = !page.onRows, scale = scale),
+                    verticalArrangement = Arrangement.spacedBy(ROW_GAP),
+                ) {
+                    categories.forEachIndexed { index, category ->
+                        val selected = index == categoryIndex
+                        CategoryRow(
+                            title = settingsTitle(category),
+                            icon = categoryIcon(category),
+                            labelled = !compact,
+                            selected = selected,
+                            focused = selected && !page.onRows,
+                            scale = scale,
+                            modifier = Modifier.selectionSlot(master, index),
+                            onClick = { onEffect(app.shell.touchSettingsCategory(index, screen)) },
+                        )
+                    }
                 }
             }
-        }
-        val card = RoundedCornerShape(design.metrics.cardCornerDp.dp)
-        Box(
-            Modifier
-                .weight(0.68f)
-                .fillMaxHeight()
-                .clip(card)
-                .background(cardFill(theme, design.settings.cardLift))
-                .border(design.settings.borderDp.dp, theme.onBackground.copy(alpha = design.settings.borderAlpha), card),
-        ) {
-            // A new category's card rises in from the way the focus went.
-            SlideSwap(
-                target = categories[categoryIndex],
-                scale = scale,
-                distance = 36.dp,
-                vertical = true,
-                direction = { from, to -> to.ordinal.compareTo(from.ordinal) },
-            ) { category ->
-                CategoryCard(app, screen, page, category, category == categories[categoryIndex], scale, onEffect)
+            val card = RoundedCornerShape(design.metrics.cardCornerDp.dp)
+            Box(
+                Modifier
+                    .weight(0.68f)
+                    .fillMaxHeight()
+                    .clip(card)
+                    .background(cardFill(theme, design.settings.cardLift))
+                    .border(design.settings.borderDp.dp, theme.onBackground.copy(alpha = design.settings.borderAlpha), card),
+            ) {
+                // A new category's card rises in from the way the focus went.
+                SlideSwap(
+                    target = categories[categoryIndex],
+                    scale = scale,
+                    distance = 36.dp,
+                    vertical = true,
+                    direction = { from, to -> to.ordinal.compareTo(from.ordinal) },
+                ) { category ->
+                    CategoryCard(app, screen, page, category, category == categories[categoryIndex], scale, onEffect)
+                }
             }
         }
     }
@@ -481,18 +491,18 @@ private fun settingsRowIcon(row: Row): Int? = when (row) {
 }
 
 @Composable
-private fun Header(theme: Theme, back: PromptKey, onBack: () -> Unit) {
+private fun Header(theme: Theme, back: PromptKey, titled: Boolean = true, onBack: () -> Unit) {
     Row(
         Modifier
             .clip(theme.style.shape.control())
             .background(theme.surface)
             .press(onBack)
-            .padding(start = 12.dp, end = 24.dp, top = 8.dp, bottom = 8.dp),
+            .padding(start = 12.dp, end = if (titled) 24.dp else 12.dp, top = 8.dp, bottom = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         PromptImage(promptGlyph(back), 32.dp)
-        BasicText(SettingsCopy.title, style = style(theme.onBackground, theme.style.type.heroTitle, theme, bold = true, display = true))
+        if (titled) BasicText(SettingsCopy.title, style = style(theme.onBackground, theme.style.type.heroTitle, theme, bold = true, display = true))
     }
 }
 
@@ -501,6 +511,7 @@ private fun Header(theme: Theme, back: PromptKey, onBack: () -> Unit) {
 private fun CategoryRow(
     title: String,
     icon: Int,
+    labelled: Boolean,
     selected: Boolean,
     focused: Boolean,
     scale: Float,
@@ -516,6 +527,8 @@ private fun CategoryRow(
             .height(ROW_HEIGHT)
             .keepInView(focused)
             .press(onClick)
+            // Art alone still says which category it is.
+            .then(if (labelled) Modifier else Modifier.semantics { contentDescription = title })
             .padding(horizontal = 16.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(16.dp),
@@ -527,7 +540,7 @@ private fun CategoryRow(
             colorFilter = art.tint(theme.onBackground),
             modifier = Modifier.size(34.dp).lifted(chosen, lift, grow = theme.style.settings.artGrow, rest = theme.style.settings.artRestAlpha),
         )
-        BasicText(
+        if (labelled) BasicText(
             title,
             modifier = Modifier.graphicsLayer {
                 alpha = theme.style.settings.labelRestAlpha.let { it + (1f - it) * chosen.value }
@@ -553,3 +566,9 @@ private fun style(color: Color, size: TextUnit, theme: Theme, bold: Boolean = fa
     fontFamily = if (display) theme.displayFont else theme.font,
     fontWeight = if (bold) theme.style.type.strongWeight else theme.style.type.bodyWeight,
 )
+
+/** Narrower than this, as the Thor's bottom screen, Settings drops its words beside the card. */
+private val COMPACT_BELOW = 640.dp
+
+/** The categories' column with art alone: the art and the row's padding on each side. */
+private val COMPACT_COLUMN = 66.dp

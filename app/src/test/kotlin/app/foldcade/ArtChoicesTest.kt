@@ -139,12 +139,17 @@ class ArtChoicesTest {
         assertEquals(2, restarted.artQuery(restarted.focusedGame()!!)!!.steamGridDbGameId)
     }
 
-    @Test fun artIsOfferedOnlyWhileFoldcadeOwnsTheBottomScreen() {
+    @Test fun artIsOfferedOnlyWhileFoldcadeHasAScreenForItsChoices() {
         val cases = listOf(
             Session() to true,
-            Session().launch(ExternalApp("bottom"), Panel.Bottom).browse(Panel.Top) to false,
+            // The choices take the grid's screen, whichever that is.
+            Session().launch(ExternalApp("bottom"), Panel.Bottom).browse(Panel.Top) to true,
             Session().launch(ExternalApp("top"), Panel.Top).browse(Panel.Bottom) to true,
+            Session(layout = app.foldcade.language.ScreenLayout.ShowcaseBottom) to true,
+            Session(layout = app.foldcade.language.ScreenLayout.TopOnly) to true,
             Session().launch(ExternalApp("both", occupiesBothDisplays = true)) to false,
+            // A game on the one lit screen leaves only the dark one.
+            Session(layout = app.foldcade.language.ScreenLayout.TopOnly).launch(ExternalApp("top"), Panel.Top) to false,
         )
         for ((session, available) in cases) {
             val store = SessionStore(MemoryPrefs())
@@ -160,8 +165,9 @@ class ArtChoicesTest {
         }
     }
 
-    @Test fun losingTheBottomScreenAfterOpeningTheMenuCannotOpenAnInvisibleArtPicker() {
+    @Test fun losingTheLastLitScreenAfterOpeningTheMenuCannotOpenAnInvisibleArtPicker() {
         val store = SessionStore(MemoryPrefs())
+        store.update { it.withLayout(app.foldcade.language.ScreenLayout.TopOnly) }
         val shell = ShellController(store, plugins)
         shell.setInstalledApps(listOf(LaunchableApp("game", "Game", true)), emptySet())
         shell.openHomeAll()
@@ -169,12 +175,12 @@ class ArtChoicesTest {
         shell.onMeaning(Meaning.Options, HostScreen.Top)
         val index = panelRows(shell.model.panel!!, shell.model).indexOf(Row.ChooseArt)
         assertTrue(index >= 0)
-        store.update { it.launch(ExternalApp("bottom"), Panel.Bottom).browse(Panel.Top) }
+        store.update { it.launch(ExternalApp("top"), Panel.Top) }
         shell.touchPanel(index, HostScreen.Top)
         shell.touchPanel(index, HostScreen.Top)
         assertNull(shell.artPicker)
-        assertNull(store.session.surfaceOn(Panel.Bottom))
-        assertEquals(Surface.Picker, store.session.surfaceOn(Panel.Top))
+        assertNull(store.session.surfaceOn(Panel.Top))
+        assertEquals(Surface.Dark, store.session.surfaceOn(Panel.Bottom))
     }
 
 }
