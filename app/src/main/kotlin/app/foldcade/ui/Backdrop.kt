@@ -124,6 +124,22 @@ internal class BackdropInputs {
     }
 }
 
+/** A late image only occludes after an actual draw at the end of Coil's crossfade. */
+internal class BackdropArtReveal(crossfadeMillis: Int) {
+    private val duration = crossfadeMillis * 1_000_000L
+    var firstDraw by mutableStateOf<Long?>(null)
+        private set
+    var complete by mutableStateOf(crossfadeMillis == 0)
+        private set
+
+    fun drew(started: Long, finished: Long = started) {
+        if (complete) return
+        val first = firstDraw
+        if (first == null) firstDraw = finished
+        else if (started - first >= duration) complete = true
+    }
+}
+
 /** How often a stopped scene asks its frame rate again, so one that waits for an hour wakes. */
 private const val STOPPED_RECHECK_MILLIS = 60_000L
 

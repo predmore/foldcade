@@ -196,6 +196,8 @@ import coil3.request.SuccessResult
 import java.util.concurrent.ConcurrentHashMap
 import coil3.request.ImageRequest
 import coil3.request.crossfade
+import coil3.request.crossfadeMillis
+import coil3.decode.DataSource
 import app.foldcade.language.ConnectField
 import app.foldcade.language.ConnectKind
 import app.foldcade.language.Copy
@@ -1934,7 +1936,7 @@ internal fun SceneBackdrop(app: FoldcadeApp, record: Game?, query: ArtQuery?, sp
     val scene = rememberScene(app, record, query)
     val wide = scene?.background?.let { rememberCoverPainter(app, it, BACKDROP_PX) }
     if (wide != null) {
-        CoversBackdrop(opaque = wide.opaque)
+        val coverage = coversBackdrop(wide)
         // Wide art lands a little close and settles back over a long breath, once per
         // game. It stays drawn just past the screen's edges, so its travel shows none.
         val still = motion.heroFadeOnly(speed, animatorScale)
@@ -1956,7 +1958,8 @@ internal fun SceneBackdrop(app: FoldcadeApp, record: Game?, query: ArtQuery?, sp
                         val drawn = motion.sceneScale(settle.value)
                         scaleX = drawn
                         scaleY = drawn
-                    },
+                    }
+                    .then(coverage),
                 contentScale = ContentScale.Crop,
             )
             val hero = foldTheme().style
@@ -1979,13 +1982,14 @@ internal fun SceneBackdrop(app: FoldcadeApp, record: Game?, query: ArtQuery?, sp
     val cover = rememberArt(app, record, query)?.cover ?: return
     val ambient = rememberCoverPainter(app, cover, AMBIENT_PX) ?: return
     val design = foldTheme().style
-    CoversBackdrop(opaque = ambient.opaque)
+    val coverage = coversBackdrop(ambient)
     Image(
         painter = ambient.painter,
         contentDescription = null,
         modifier = Modifier
             .fillMaxSize()
             .blur(design.hero.ambientBlurDp.dp, BlurredEdgeTreatment.Rectangle)
+            .then(coverage)
             .drawWithContent {
                 drawContent()
                 drawRect(design.colors.scrim.copy(alpha = design.hero.ambientDim))
@@ -2174,9 +2178,32 @@ private fun HeroArt(
     }
 }
 
-internal class LoadedCover(val painter: Painter, val ratio: Float, val image: coil3.Image? = null) {
+internal class LoadedCover(val painter: Painter, val ratio: Float, val image: coil3.Image? = null, val crossfadeMillis: Int = 0) {
     // PNG art can let the backdrop show through. Only a known opaque bitmap can hide it.
     val opaque: Boolean get() = (image as? coil3.BitmapImage)?.bitmap?.hasAlpha() == false
+}
+
+/** Coil's success bitmap can be opaque before its painter has finished fading it in. */
+@Composable
+private fun coversBackdrop(cover: LoadedCover): Modifier {
+    if (LocalBackdropCover.current == null) return Modifier
+    val reveal = remember(cover.painter, cover.image, cover.crossfadeMillis) { BackdropArtReveal(cover.crossfadeMillis) }
+    CoversBackdrop(opaque = cover.opaque && reveal.complete)
+    LaunchedEffect(reveal, reveal.firstDraw) {
+        if (reveal.firstDraw == null || reveal.complete) return@LaunchedEffect
+        // Coil can stop invalidating at its last frame. Completing this gate also removes
+        // the draw modifier below, ensuring an opaque image frame is recorded then.
+        delay(cover.crossfadeMillis.toLong())
+        reveal.drew(System.nanoTime())
+    }
+    if (!cover.opaque || reveal.complete) return Modifier
+    // Inside the image's layer: Coil invalidates this draw throughout its crossfade. Start
+    // after the first actual draw, not when Success arrives (the image may not draw yet).
+    return Modifier.drawWithContent {
+        val started = System.nanoTime()
+        drawContent()
+        reveal.drew(started, System.nanoTime())
+    }
 }
 
 /** How light [image] is over its opaque pixels, 0 black to 1 white. Null until read, or for an image it can't read. */
@@ -2402,7 +2429,8 @@ internal fun rememberCoverPainter(
         result.memoryCacheKey?.let { decodedCovers[coverId(uri, px)] = it }
         val image = result.image
         if (image.width <= 0 || image.height <= 0) return null
-        return LoadedCover(painter, image.width.toFloat() / image.height, image)
+        val fade = if (result.dataSource == DataSource.MEMORY_CACHE) 0 else result.request.crossfadeMillis
+        return LoadedCover(painter, image.width.toFloat() / image.height, image, fade)
     }
     // Until the painter has it, the same cover already in memory draws at once.
     val held = remember(uri, px) {
