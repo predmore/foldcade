@@ -1478,13 +1478,19 @@ class FoldcadeApp : Application() {
 
     /** Game-specific resolution is shared with save health and every shell hint. */
     fun playerFor(gameId: String?, platformId: String): Player? =
-        gameId?.let { playerResolution(it, platformId).player } ?: shell.playerResolution(null, platformId, ::packageInstalled).player
+        playerFor(gameId, platformId, ::packageInstalled)
 
-    internal fun playerResolution(gameId: String, platformId: String): PlayerResolution {
-        val resolved = shell.playerResolution(gameId, platformId, ::packageInstalled)
+    /** A catalog load passes one package snapshot; launches keep the live default above. */
+    private fun playerFor(gameId: String?, platformId: String, installed: (String) -> Boolean): Player? =
+        gameId?.let { playerResolution(it, platformId, installed).player } ?: shell.playerResolution(null, platformId, installed).player
+
+    internal fun playerResolution(
+        gameId: String, platformId: String, installed: (String) -> Boolean = ::packageInstalled,
+    ): PlayerResolution {
+        val resolved = shell.playerResolution(gameId, platformId, installed)
         // A game noted as running stays with its emulator, through Restart and a picked save too.
         // A changed choice applies once that run is closed, or its emulator is uninstalled.
-        val running = runningOn(gameId)?.takeIf { packageInstalled(it.packageName) }?.player
+        val running = runningOn(gameId)?.takeIf { installed(it.packageName) }?.player
         return if (running == null) resolved else resolved.copy(player = running, skipped = emptyList())
     }
 
@@ -2371,6 +2377,7 @@ class FoldcadeApp : Application() {
             withContext(Dispatchers.Main.immediate) {
                 if (ticket == libraryTicket.get()) shell.showLoading(insidePlatform = true)
             }
+            val installed = plugins.playerPackageNames().filterTo(HashSet(), ::packageInstalled)
             val games = try {
                 val folderName = (plugins.library(libraryId) as? LocalFolderBackend)?.let { backend ->
                     backend::folderName
@@ -2380,8 +2387,8 @@ class FoldcadeApp : Application() {
                     libraryId,
                     platformId,
                     folderName = folderName,
-                    occupiesBoth = { playerFor(null, it)?.occupiesBothDisplays == true },
-                    gameOccupiesBoth = { game -> playerFor(shell.tileOf(homeGameId(game.backendId, game.remoteKey)), game.platformId)?.occupiesBothDisplays == true },
+                    occupiesBoth = { playerFor(null, it, installed::contains)?.occupiesBothDisplays == true },
+                    gameOccupiesBoth = { game -> playerFor(shell.tileOf(homeGameId(game.backendId, game.remoteKey)), game.platformId, installed::contains)?.occupiesBothDisplays == true },
                 )
             } catch (cancelled: CancellationException) {
                 throw cancelled
@@ -2449,32 +2456,54 @@ class FoldcadeApp : Application() {
                     return@launch
                 }
                 try {
-                    val listed = when (val loaded = loadPlatforms(
-                        plugins,
-                        libraryId,
-                        occupiesBoth = { playerFor(null, it)?.occupiesBothDisplays == true },
-                    )) {
-                        is LoadedLibrary.Platforms -> loaded
-                        LoadedLibrary.NoPlatforms -> null
-                        LoadedLibrary.Unreachable -> return@launch
-                    }
-                    val games = listed?.let { loadEveryGame(libraryId, it) }.orEmpty()
-                    // A list read with the saved token means it works again, after a refusal that passed.
-                    val tokenWorks = lookupOrUnreadable(store.restoreCredentials(credentials), RommCredentials.PLUGIN_ID, RommCredentials.ACCESS_TOKEN) is CredentialLookup.Present
-                    withContext(Dispatchers.Main.immediate) {
-                        if (ticket != rommTicket.get() || store.rommOrigin() == null) return@withContext
-                        // Only a live answer counts: an offline cache would read with a refused token too.
-                        if (tokenWorks && app.foldcade.plugins.romm.rommCatalogLive(plugins.library(libraryId))) shell.rommAccepted()
-                        shell.ingestLibrary(
+                    app.foldcade.plugins.romm.refreshRommCatalog(
+                        plugins.library(libraryId),
+                        cached = { snapshot ->
+                            val savedGames = gameEntries(
+                                plugins, libraryId, snapshot.games,
+                                gameOccupiesBoth = { game -> playerFor(shell.tileOf(homeGameId(game.backendId, game.remoteKey)), game.platformId)?.occupiesBothDisplays == true },
+                            )
+                            withContext(Dispatchers.Main.immediate) {
+                                if (ticket != rommTicket.get() || store.rommOrigin() == null) return@withContext
+                                shell.ingestLibrary(
+                                    libraryId, savedGames, plugins.platformDefinitions(),
+                                    snapshot.platforms.associate { it.platformId to it.displayName },
+                                    readAt = readAt,
+                                    restoreReported = false,
+                                    settles = false,
+                                )
+                                val waiting = shell.model.libraryGrid && shell.model.emptyGrid != EmptyGrid.Loading
+                                if (waiting && savedGames.isNotEmpty()) shell.showCuratedHome()
+                            }
+                        },
+                    ) {
+                        val listed = when (val loaded = loadPlatforms(
+                            plugins,
                             libraryId,
-                            games,
-                            plugins.platformDefinitions(),
-                            listed?.entries.orEmpty().associate { (it.platformId ?: it.id) to it.title },
-                            readAt = readAt,
-                            restoreReported = app.foldcade.plugins.romm.rommCatalogLive(plugins.library(libraryId)),
-                        )
-                        val waiting = shell.model.libraryGrid && shell.model.emptyGrid != EmptyGrid.Loading
-                        if (waiting && games.isNotEmpty()) shell.showCuratedHome()
+                            occupiesBoth = { playerFor(null, it)?.occupiesBothDisplays == true },
+                        )) {
+                            is LoadedLibrary.Platforms -> loaded
+                            LoadedLibrary.NoPlatforms -> null
+                            LoadedLibrary.Unreachable -> return@refreshRommCatalog
+                        }
+                        val games = listed?.let { loadEveryGame(libraryId, it) }.orEmpty()
+                        // A list read with the saved token means it works again, after a refusal that passed.
+                        val tokenWorks = lookupOrUnreadable(store.restoreCredentials(credentials), RommCredentials.PLUGIN_ID, RommCredentials.ACCESS_TOKEN) is CredentialLookup.Present
+                        withContext(Dispatchers.Main.immediate) {
+                            if (ticket != rommTicket.get() || store.rommOrigin() == null) return@withContext
+                            // Only a live answer counts: an offline cache would read with a refused token too.
+                            if (tokenWorks && app.foldcade.plugins.romm.rommCatalogLive(plugins.library(libraryId))) shell.rommAccepted()
+                            shell.ingestLibrary(
+                                libraryId,
+                                games,
+                                plugins.platformDefinitions(),
+                                listed?.entries.orEmpty().associate { (it.platformId ?: it.id) to it.title },
+                                readAt = readAt,
+                                restoreReported = app.foldcade.plugins.romm.rommCatalogLive(plugins.library(libraryId)),
+                            )
+                            val waiting = shell.model.libraryGrid && shell.model.emptyGrid != EmptyGrid.Loading
+                            if (waiting && games.isNotEmpty()) shell.showCuratedHome()
+                        }
                     }
                 } catch (cancelled: CancellationException) {
                     throw cancelled
@@ -2548,6 +2577,7 @@ class FoldcadeApp : Application() {
     }
 
     private suspend fun loadEveryGame(libraryId: String, loaded: LoadedLibrary.Platforms): List<GridEntry> {
+        val installed = plugins.playerPackageNames().filterTo(HashSet(), ::packageInstalled)
         val backend = plugins.library(libraryId)
         val folderName = (backend as? LocalFolderBackend)?.let { it::folderName } ?: { "" }
         val games = ArrayList<GridEntry>()
@@ -2560,8 +2590,8 @@ class FoldcadeApp : Application() {
                 libraryId,
                 platformId,
                 folderName = folderName,
-                occupiesBoth = { playerFor(null, it)?.occupiesBothDisplays == true },
-                gameOccupiesBoth = { game -> playerFor(shell.tileOf(homeGameId(game.backendId, game.remoteKey)), game.platformId)?.occupiesBothDisplays == true },
+                occupiesBoth = { playerFor(null, it, installed::contains)?.occupiesBothDisplays == true },
+                gameOccupiesBoth = { game -> playerFor(shell.tileOf(homeGameId(game.backendId, game.remoteKey)), game.platformId, installed::contains)?.occupiesBothDisplays == true },
             )
         }
         return games

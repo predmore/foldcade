@@ -192,6 +192,275 @@ class RommLibraryTest {
     }
 
     @Test
+    fun cachedGamesPublishBeforeSlowHeartbeatAndRegistrationWithoutStartingSaveSync() = runBlocking {
+        val ops = ScriptedOps()
+        ops.onPlatforms = { listOf(platform(3, "3ds")) }
+        ops.onRoms = { page(rom("3ds", 3)) }
+        val harness = harness(ops)
+        val heartbeat = CompletableDeferred<Unit>()
+        val allowHeartbeat = CompletableDeferred<Unit>()
+        val registering = CompletableDeferred<Unit>()
+        val allowRegister = CompletableDeferred<Unit>()
+        val synced = CompletableDeferred<Unit>()
+        val cold = RommLibrary(RommGate { harness.wiring })
+        try {
+            harness.library.listPlatforms()
+            harness.library.listGames("3ds", GameQuery())
+            val save = harness.wiring.data.slotFile(1234, "main")
+            Files.createDirectories(save.parent)
+            Files.write(save, byteArrayOf(1, 2, 3))
+            ops.onHeartbeat = { heartbeat.complete(Unit); allowHeartbeat.await(); Heartbeat("5.4.0") }
+            ops.onRegister = { _, _, version ->
+                registering.complete(Unit)
+                allowRegister.await()
+                RegisteredDevice("device-1", version)
+            }
+            ops.onSync = { _, _, _, _ -> synced.complete(Unit); error("Test ends at the sync boundary") }
+            ops.onRoms = { page(rom("3ds", 3).copy(name = "Refreshed online")) }
+            val publications = mutableListOf<String>()
+            val job = launch {
+                refreshRommCatalog(cold, cached = {
+                    assertFalse(rommCatalogLive(cold))
+                    publications += it.games.single().label
+                }) {
+                    cold.connect()
+                    cold.listPlatforms()
+                    publications += cold.listGames("3ds", GameQuery()).games.single().label
+                }
+            }
+            withTimeout(2_000) { heartbeat.await() }
+            assertEquals(listOf("Super Mario"), publications)
+            assertFalse(job.isCompleted)
+            assertFalse(synced.isCompleted)
+            allowHeartbeat.complete(Unit)
+            withTimeout(2_000) { registering.await() }
+            assertFalse(synced.isCompleted)
+            assertEquals(listOf("Super Mario"), publications)
+            allowRegister.complete(Unit)
+            withTimeout(2_000) { job.join(); synced.await() }
+            assertEquals(listOf("Super Mario", "Refreshed online"), publications)
+            assertTrue(rommCatalogLive(cold))
+        } finally {
+            cold.disconnect()
+            harness.wiring.cacheRoot.toFile().deleteRecursively()
+            harness.wiring.dataRoot.toFile().deleteRecursively()
+        }
+    }
+
+    @Test
+    fun unavailableServerUsesTheAlreadyPublishedSnapshotAndMissingCredentialsNeverPublishIt() = runBlocking {
+        val ops = ScriptedOps()
+        ops.onPlatforms = { listOf(platform(3, "3ds")) }
+        ops.onRoms = { page(rom("3ds", 3)) }
+        val harness = harness(ops)
+        try {
+            harness.library.listPlatforms()
+            harness.library.listGames("3ds", GameQuery())
+            var published = false
+            ops.onHeartbeat = { assertTrue(published); throw RommUnavailable("unreachable") }
+            val cold = RommLibrary(RommGate { harness.wiring })
+            refreshRommCatalog(cold, cached = { published = true }) {
+                cold.connect()
+                assertEquals("Super Mario", cold.listGames("3ds", GameQuery()).games.single().label)
+                assertFalse(rommCatalogLive(cold))
+            }
+            val signedOut = RommWiring(harness.wiring.origin, RommTokenSource { null }, harness.wiring.cacheRoot, harness.wiring.dataRoot)
+            signedOut.open = { _, _ -> error("A missing token cannot open a session") }
+            val failure = runCatching {
+                refreshRommCatalog(RommLibrary(RommGate { signedOut }), cached = { error("Signed out must not publish") }) {
+                    error("Signed out must not refresh")
+                }
+            }.exceptionOrNull()
+            assertTrue(failure is PluginException.NotAuthenticated)
+            ops.onHeartbeat = { throw RommUnauthorized("expired") }
+            val refused = RommLibrary(RommGate { harness.wiring })
+            assertTrue(runCatching {
+                refreshRommCatalog(refused, cached = {}) { refused.connect() }
+            }.exceptionOrNull() is PluginException.NotAuthenticated)
+            assertFalse(rommCatalogLive(refused))
+        } finally {
+            harness.wiring.cacheRoot.toFile().deleteRecursively()
+            harness.wiring.dataRoot.toFile().deleteRecursively()
+        }
+    }
+
+    @Test
+    fun cancellingARefreshFlushesItsMetadataWithoutReplacingAnIncompleteListing() = runBlocking {
+        val ops = ScriptedOps()
+        ops.onPlatforms = { listOf(platform(3, "3ds").copy(romCount = 2)) }
+        val first = rom("3ds", 3)
+        val second = first.copy(id = 5678, name = "Luigi")
+        ops.onRoms = { RomPage(listOf(first, second), 2, 50, 0) }
+        val harness = harness(ops)
+        try {
+            harness.library.listPlatforms()
+            harness.library.listGames("3ds", GameQuery())
+            val read = CompletableDeferred<Unit>()
+            ops.onRoms = { RomPage(listOf(first.copy(name = "Renamed")), 2, 1, 0) }
+            val job = launch {
+                refreshRommCatalog(harness.library, cached = {}) {
+                    harness.library.listGames("3ds", GameQuery(limit = 1))
+                    read.complete(Unit)
+                    CompletableDeferred<Unit>().await()
+                }
+            }
+            withTimeout(2_000) { read.await() }
+            job.cancelAndJoin()
+            val cold = RommCatalog(harness.wiring.data.catalogFile(), harness.wiring.origin).also { it.restore() }
+            assertEquals(listOf(1234L, 5678L), cold.listing(3)!!.map { it.id })
+            assertEquals("Renamed", cold.rom("1234")!!.name)
+        } finally {
+            harness.wiring.cacheRoot.toFile().deleteRecursively()
+            harness.wiring.dataRoot.toFile().deleteRecursively()
+        }
+    }
+
+    @Test
+    fun aRealStalledHttpHeartbeatDoesNotDelayCachedPublicationAndCancelsCleanly() = runBlocking {
+        val server = TinyServer(concurrent = true)
+        val root = Files.createTempDirectory("romm-stalled-start")
+        val entered = CountDownLatch(1)
+        val release = CountDownLatch(1)
+        val wiring = RommWiring(server.origin, RommTokenSource { "rmm_test" }, root.resolve("cache"), root.resolve("data"))
+        val library = RommLibrary(RommGate { wiring })
+        var job: kotlinx.coroutines.Job? = null
+        try {
+            val catalog = RommCatalog(wiring.data.catalogFile(), wiring.origin)
+            catalog.beginRefresh()
+            catalog.rememberPlatforms(listOf(platform(3, "3ds")))
+            catalog.rememberPage(3, RomQuery(), page(rom("3ds", 3)), true)
+            catalog.finishRefresh()
+            server.route("GET", "/api/heartbeat") { exchange, _ ->
+                entered.countDown()
+                release.await(5, TimeUnit.SECONDS)
+                json(exchange, 200, """{"SYSTEM":{"VERSION":"5.4.0"}}""")
+            }
+            val published = CompletableDeferred<RommCatalogSnapshot>()
+            job = launch {
+                refreshRommCatalog(library, cached = { published.complete(it) }) { library.connect() }
+            }
+            val saved = withTimeout(2_000) { published.await() }
+            assertEquals("Super Mario", saved.games.single().label)
+            assertTrue(kotlinx.coroutines.runInterruptible(kotlinx.coroutines.Dispatchers.IO) { entered.await(2, TimeUnit.SECONDS) })
+            assertFalse(job.isCompleted)
+            assertFalse(rommCatalogLive(library))
+            withTimeout(2_000) { job.cancelAndJoin() }
+            assertEquals(listOf("/api/heartbeat"), server.recorded.map { it.path })
+            // The same persisted snapshot also works when the TCP connection is refused.
+            release.countDown()
+            server.close()
+            val refused = RommLibrary(RommGate { wiring })
+            refreshRommCatalog(refused, cached = { assertEquals(saved.games, it.games) }) {
+                refused.connect()
+                assertEquals("Super Mario", refused.listGames("3ds", GameQuery()).games.single().label)
+            }
+            refused.disconnect()
+        } finally {
+            release.countDown()
+            job?.cancelAndJoin()
+            library.disconnect()
+            server.close()
+            root.toFile().deleteRecursively()
+        }
+    }
+
+    @Test
+    fun anInterruptedNewSystemDoesNotHidePreviouslySavedSystemsAtStartup() = runBlocking {
+        val ops = ScriptedOps()
+        val harness = harness(ops)
+        try {
+            val catalog = RommCatalog(harness.wiring.data.catalogFile(), harness.wiring.origin)
+            catalog.beginRefresh()
+            catalog.rememberPlatforms(listOf(platform(3, "3ds"), platform(4, "snes")))
+            catalog.rememberPage(3, RomQuery(), page(rom("3ds", 3)), true)
+            catalog.rememberPage(4, RomQuery(limit = 1), RomPage(listOf(rom("snes", 4).copy(id = 9)), 2, 1, 0), false)
+            catalog.finishRefresh()
+            var published = false
+            ops.onHeartbeat = { assertTrue(published); throw RommUnavailable("offline") }
+            refreshRommCatalog(harness.library, cached = {
+                assertEquals(listOf("1234"), it.games.map { game -> game.remoteKey })
+                assertFalse(rommCatalogLive(harness.library))
+                published = true
+            }) { harness.library.connect() }
+            assertTrue(published)
+        } finally {
+            harness.wiring.cacheRoot.toFile().deleteRecursively()
+            harness.wiring.dataRoot.toFile().deleteRecursively()
+        }
+    }
+
+    @Test
+    fun cachedSnapshotUsesVerifiedMarkersWithoutRehashingRomBytes() = runBlocking {
+        val ops = ScriptedOps()
+        val harness = harness(ops)
+        try {
+            val listed = rom("3ds", 3).copy(files = listOf(RomFileSummary(7, "mario.cci", 9, md5Hash = "0".repeat(32))))
+            val catalog = RommCatalog(harness.wiring.data.catalogFile(), harness.wiring.origin)
+            catalog.beginRefresh()
+            catalog.rememberPlatforms(listOf(platform(3, "3ds")))
+            catalog.rememberPage(3, RomQuery(), page(listed), true)
+            catalog.finishRefresh()
+            val spec = listed.bytes()
+            val target = RommClient.romCacheFile(harness.wiring.romRoot, listed.id, spec.fileName, spec.fileIds)
+            Files.createDirectories(target.parent)
+            Files.write(target, ByteArray(9))
+            val marker = target.resolveSibling(target.fileName.toString() + ".verified")
+            // A deliberately stale marker proves the early pass does not read/hash the ROM.
+            // The live listing must still detect the bytes' mismatch.
+            Files.writeString(marker, """{"size":9,"md5":"${spec.md5}"}""")
+            var published = false
+            ops.onHeartbeat = { assertTrue(published); Heartbeat("5.4.0") }
+            ops.onPlatforms = { listOf(platform(3, "3ds")) }
+            ops.onRoms = { page(listed) }
+            refreshRommCatalog(harness.library, cached = {
+                assertEquals(Availability.Cached, it.games.single().availability)
+                published = true
+            }) {
+                harness.library.connect()
+                harness.library.listPlatforms()
+                assertEquals(Availability.RemoteOnly, harness.library.listGames("3ds", GameQuery()).games.single().availability)
+            }
+            Files.delete(marker)
+            assertEquals(Availability.RemoteOnly, cacheAvailability(harness.wiring.romRoot, listed, verifyBytes = false))
+            Files.writeString(marker, """{"size":9,"md5":"${spec.md5}"}""")
+            Files.write(target.resolveSibling(target.fileName.toString() + ".partial"), byteArrayOf(1))
+            assertEquals(Availability.RemoteOnly, cacheAvailability(harness.wiring.romRoot, listed, verifyBytes = false))
+            Files.delete(target.resolveSibling(target.fileName.toString() + ".partial"))
+            Files.write(target, ByteArray(4))
+            assertEquals(Availability.RemoteOnly, cacheAvailability(harness.wiring.romRoot, listed, verifyBytes = false))
+        } finally {
+            harness.library.disconnect()
+            harness.wiring.cacheRoot.toFile().deleteRecursively()
+            harness.wiring.dataRoot.toFile().deleteRecursively()
+        }
+    }
+
+    @Test
+    fun systemsLastReportedEmptyDoNotResurrectOldCachedGames() = runBlocking {
+        val ops = ScriptedOps()
+        val harness = harness(ops)
+        try {
+            val catalog = RommCatalog(harness.wiring.data.catalogFile(), harness.wiring.origin)
+            catalog.beginRefresh()
+            catalog.rememberPlatforms(listOf(platform(3, "3ds")))
+            catalog.rememberPage(3, RomQuery(), page(rom("3ds", 3)), true)
+            catalog.finishRefresh()
+            // The host skips a live zero-count system, so its previous listing remains on disk.
+            catalog.rememberPlatforms(listOf(platform(3, "3ds").copy(romCount = 0), platform(4, "snes")))
+            var published = false
+            ops.onHeartbeat = { assertTrue(published); throw RommUnavailable("offline") }
+            refreshRommCatalog(harness.library, cached = {
+                assertTrue(it.games.isEmpty())
+                published = true
+            }) { harness.library.connect() }
+            assertTrue(published)
+        } finally {
+            harness.wiring.cacheRoot.toFile().deleteRecursively()
+            harness.wiring.dataRoot.toFile().deleteRecursively()
+        }
+    }
+
+    @Test
     fun cancellingDownloadClearsItsActivityAndDoesNotProduceATarget() = runBlocking {
         val ops = ScriptedOps()
         ops.onPlatforms = { listOf(platform(3, "3ds")) }
