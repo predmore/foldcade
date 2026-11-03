@@ -109,10 +109,17 @@ internal fun TopIslands(
     val island = model.panel?.takeIf { it.side != Side.Tile }
     if (screen != (island?.screen ?: model.layout.menuScreen)) return
     val dialogCovers = model.dialog?.screen == screen
+    // Y's card over this grid, as in Top only, quiets the closed pills with the tiles under it.
+    val under = motionState(
+        if (tileMenuOn(app, screen)) 1f else 0f,
+        LocalFoldTheme.current.theme.motion.arrive(LocalFoldTheme.current.theme.motion.durationIsland, scale),
+    )
+    val quiet = LocalFoldTheme.current.theme.style.menu.scrimAlphaUnblurred
     BoxWithConstraints(
         Modifier
             .fillMaxSize()
             .zIndex(4f)
+            .graphicsLayer { alpha = 1f - quiet * under.value }
             .focusProperties { canFocus = false },
     ) {
         // A tap off the open card closes it, as its shoulder would. The cards sit above and keep their own taps.

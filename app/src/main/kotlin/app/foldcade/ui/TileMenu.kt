@@ -55,7 +55,6 @@ import app.foldcade.language.Side
 import app.foldcade.language.SidePanel
 import app.foldcade.language.TileMenuSize
 import app.foldcade.language.SelectionCopy
-import app.foldcade.language.actionFaces
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.height
@@ -226,8 +225,15 @@ internal fun TileMenuLayer(
         val tile = rest
         // With no tile to grow from, the card grows from a little inside its own place.
         val slideDp = placed.slideDp
-        val from = tile ?: card.deflate(minOf(card.width, card.height) * NO_TILE_INSET)
-        val tileCorner = with(density) { (anchor?.cornerPx ?: 0f).toDp().value }.takeIf { tile != null } ?: design.metrics.cardCornerDp
+        // It opens out of the tile's side that faces it, a sliver as tall as the tile, so it never
+        // lands on the tile it acts on.
+        val from = tile?.let {
+            val opensRight = card.left >= it.right + slideDp - 1f
+            val edge = if (opensRight) it.right else it.left
+            Rect(edge, it.top, edge, it.bottom)
+        } ?: card.deflate(minOf(card.width, card.height) * NO_TILE_INSET)
+        val tileCorner = with(density) { (anchor?.cornerPx ?: 0f).toDp().value }.takeIf { tile != null }
+            ?.coerceAtMost((from.height) / 2f) ?: design.metrics.cardCornerDp
         val latestFrom by rememberUpdatedState(from)
         val latestCard by rememberUpdatedState(card)
         val latestCorner by rememberUpdatedState(tileCorner)
@@ -285,8 +291,9 @@ internal fun TileMenuLayer(
         ) {
             // The rows are laid out at the card's resting size and place from the first frame. The
             // growing card reveals them where they will stay, so nothing slides or rewraps inside it.
+            // The rows, and the ring among them, arrive and leave together, so no glow shows on an empty card.
             Box(
-                Modifier.layout { measurable, constraints ->
+                Modifier.graphicsLayer { alpha = rowsIn() }.layout { measurable, constraints ->
                     val t = grow(progress.value)
                     val f = latestFrom.translate(latestSlide * t, 0f)
                     val c = latestCard
@@ -311,7 +318,7 @@ internal fun TileMenuLayer(
                     var headingHeight by remember { mutableStateOf(Dp.Hairline) }
                     Column(Modifier.fillMaxWidth().onSizeChanged { rowsHeight = with(density) { it.height.toDp() } }) {
                         if (heading != null) {
-                            TileMenuHeading(app, heading, Modifier.onSizeChanged { headingHeight = with(density) { it.height.toDp() } }.graphicsLayer { alpha = rowsIn() })
+                            TileMenuHeading(heading, Modifier.onSizeChanged { headingHeight = with(density) { it.height.toDp() } }.graphicsLayer { alpha = rowsIn() })
                         }
                         SlideSwap(
                             target = shownPanel,
@@ -336,16 +343,15 @@ internal fun TileMenuLayer(
     }
 }
 
-/** Y and what the card acts on, when the tile cannot say it. */
+/** What the card acts on, when the tile cannot say it. The key that opened it is never shown. */
 @Composable
-private fun TileMenuHeading(app: FoldcadeApp, text: String, modifier: Modifier) {
+private fun TileMenuHeading(text: String, modifier: Modifier) {
     val theme = LocalFoldTheme.current.theme
     Row(
         modifier.fillMaxWidth().height(HEADING_DP.dp).padding(horizontal = 14.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(12.dp),
     ) {
-        PromptImage(promptGlyph(actionFaces(app.shell.model.faceMap).optionsGlyph), 22.dp)
         BasicText(
             text = text,
             maxLines = 1,

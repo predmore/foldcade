@@ -645,11 +645,11 @@ private class WindowDensity(base: Density) : Density by base
  * node's own pixels, stays lit: the tile Y's menu grows out of, with its ring.
  */
 @Composable
-private fun Modifier.menuDim(progress: () -> Float, hole: (() -> RoundRect?)? = null): Modifier {
+private fun Modifier.menuDim(progress: () -> Float, hole: (() -> RoundRect?)? = null, blurred: Boolean = true): Modifier {
     val design = foldTheme().style
     val scrim = design.colors.scrim
     // Without a blur behind it, the dim alone has to quiet the grid.
-    val dim = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) design.menu.scrimAlpha else design.menu.scrimAlphaUnblurred
+    val dim = if (blurred && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) design.menu.scrimAlpha else design.menu.scrimAlphaUnblurred
     val cut = remember { Path() }
     return drawWithContent {
         drawContent()
@@ -2478,7 +2478,8 @@ private fun Picker(
                     .weight(1f)
                     .fillMaxWidth()
                     .onGloballyPositioned { val at = it.positionInRoot(); gridOrigin[0] = at.x; gridOrigin[1] = at.y }
-                    .menuDim({ quiet.value }, tileHole)
+                    // A menu over its own grid has no blur under it, so the dim alone quiets the tiles.
+                    .menuDim({ quiet.value }, tileHole, blurred = false)
                     // The grid slides aside for Y's menu when its card would not fit beside the tile.
                     .graphicsLayer { translationX = slide.value },
                 contentAlignment = Alignment.Center,
@@ -3078,7 +3079,8 @@ private fun GridHints(app: FoldcadeApp, modifier: Modifier = Modifier) {
     val find = shell.findHints()
     val normalKeys = find ?: ((page ?: panelHints(model) ?: gridHints(
         actions,
-        if (model.connectOpen) HomeKeys.Idle else shell.homeKeys(),
+        // A menu open over a selection names its own keys, not the selection's.
+        if (model.connectOpen || model.panel != null) HomeKeys.Idle else shell.homeKeys(),
         model.faceMap,
         screens = gridKeys && shell.focusedLaunchesOnOneScreen(),
         options = gridKeys && !model.connectOpen && shell.hasOptions(),
