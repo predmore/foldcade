@@ -647,7 +647,13 @@ private class WindowDensity(base: Density) : Density by base
  * node's own pixels, stays lit: the tile Y's menu grows out of, with its ring.
  */
 @Composable
-private fun Modifier.menuDim(progress: () -> Float, hole: (() -> RoundRect?)? = null, blurred: Boolean = true): Modifier {
+private fun Modifier.menuDim(
+    progress: () -> Float,
+    hole: (() -> RoundRect?)? = null,
+    blurred: Boolean = true,
+    /** How far, in px, the content has slid sideways past this node, so the dim reaches the tiles that slid out of it. */
+    spill: (() -> Float)? = null,
+): Modifier {
     val design = foldTheme().style
     val scrim = design.colors.scrim
     // Without a blur behind it, the dim alone has to quiet the grid.
@@ -659,12 +665,15 @@ private fun Modifier.menuDim(progress: () -> Float, hole: (() -> RoundRect?)? = 
         if (amount <= 0f) return@drawWithContent
         val color = scrim.copy(alpha = dim * amount.coerceIn(0f, 1f))
         val lit = hole?.invoke()
+        val over = spill?.invoke() ?: 0f
+        val from = Offset(minOf(0f, over), 0f)
+        val reach = Size(size.width + kotlin.math.abs(over), size.height)
         if (lit == null) {
-            drawRect(color)
+            drawRect(color, from, reach)
         } else {
             cut.reset()
             cut.addRoundRect(lit)
-            clipPath(cut, ClipOp.Difference) { drawRect(color) }
+            clipPath(cut, ClipOp.Difference) { drawRect(color, from, reach) }
         }
     }
 }
@@ -2504,7 +2513,7 @@ private fun Picker(
                     .fillMaxWidth()
                     .onGloballyPositioned { val at = it.positionInRoot(); gridOrigin[0] = at.x; gridOrigin[1] = at.y }
                     // A menu over its own grid has no blur under it, so the dim alone quiets the tiles.
-                    .menuDim({ quiet.value }, tileHole, blurred = false)
+                    .menuDim({ quiet.value }, tileHole, blurred = false, spill = { slide.value })
                     // The grid slides aside for Y's menu when its card would not fit beside the tile.
                     .graphicsLayer { translationX = slide.value },
                 contentAlignment = Alignment.Center,
