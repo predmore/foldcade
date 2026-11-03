@@ -23,10 +23,10 @@ class ResumeRefreshTest {
     }
 
     @Test
-    fun bothPanelsShareTheRunningAndRecentWalkButReloadBypassesTheInterval() {
+    fun bothPanelsShareTheRunningAndRecentWalkButReloadBypassesTheInterval() = runBlocking {
         var now = 0L
         var walks = 0
-        val refreshes = FolderRefreshes(5_000) { now }
+        val refreshes = FolderRefreshes(this, 5_000) { now }
         fun walk() = Job().also { walks++ }
         val first = refreshes.quietly(start = ::walk)
         now = 10_000
@@ -41,6 +41,58 @@ class ResumeRefreshTest {
         val reload = refreshes.record(walk())
         assertSame(reload, refreshes.quietly(start = ::walk))
         assertEquals(4, walks)
+    }
+
+    @Test
+    fun forcesDuringAWalkShareOneFreshPassAndWaitForIt() = runBlocking {
+        var now = 0L
+        val passes = mutableListOf<kotlinx.coroutines.CompletableJob>()
+        val refreshes = FolderRefreshes(this, 5_000) { now }
+        fun walk() = Job().also { passes += it }
+        val first = refreshes.quietly(start = ::walk)
+        val forced = refreshes.quietly(force = true, start = ::walk)
+        assertSame(forced, refreshes.quietly(force = true, start = ::walk))
+        assertSame(forced, refreshes.quietly(start = ::walk))
+        yield()
+        assertEquals(1, passes.size)
+        now = 10_000
+        passes[0].complete()
+        first.join()
+        yield()
+        assertEquals(2, passes.size)
+        assertFalse(forced.isCompleted)
+        passes[1].complete()
+        forced.join()
+        now += 1
+        assertSame(passes[1], refreshes.quietly(start = ::walk)) // Window starts at the fresh pass.
+        assertEquals(2, passes.size)
+    }
+
+    @Test
+    fun aQueuedForceWaitsForAReplacementReloadAndAnotherForceCanFollowItsPass() = runBlocking {
+        val passes = mutableListOf<kotlinx.coroutines.CompletableJob>()
+        val refreshes = FolderRefreshes(this, 5_000) { 0 }
+        fun walk() = Job().also { passes += it }
+        refreshes.quietly(start = ::walk)
+        val forced = refreshes.quietly(force = true, start = ::walk)
+        yield()
+        refreshes.record(walk()) // An explicit reload supersedes the first scan.
+        passes[0].complete()
+        yield()
+        assertEquals(2, passes.size)
+        assertFalse(forced.isCompleted)
+        passes[1].complete()
+        yield()
+        assertEquals(3, passes.size)
+        val laterForce = refreshes.quietly(force = true, start = ::walk)
+        yield()
+        assertEquals(3, passes.size)
+        passes[2].complete()
+        forced.join()
+        yield()
+        assertEquals(4, passes.size)
+        passes[3].complete()
+        laterForce.join()
     }
 
     @Test

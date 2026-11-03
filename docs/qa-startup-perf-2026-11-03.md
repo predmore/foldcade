@@ -13,7 +13,10 @@ listing and catalog publication, not ROM contents or a connected RomM server.
 Base and branch share the same suffix, grants, preferences and cached Home.
 Afterglow / Ribbons / Slow and the default test-build music setting were used.
 
-## Final comparison
+## Measured comparison
+
+These device results were recorded before the follow-up fixes below, at
+`0259d8a6`. No additional device speedup is claimed for the follow-up.
 
 Five runs per build and condition. Times are median / worst, in milliseconds.
 
@@ -56,6 +59,32 @@ apart each performed a walk, bypassing the five-second interval.
 The changed-snapshot regression test also verifies that a quiet rescan's new
 platform/game listing performs no second walk and keeps the same media snapshot.
 Incomplete-forest and restore-source checks remain in place.
+
+## Follow-up review fixes
+
+Startup failures now log and complete the readiness gates normally in `finally`,
+matching the base behavior so later launch and sync requests can recover.
+Cancellation still propagates. Tests cover an already waiting launch, later
+waiters, and cancellation.
+
+Folder reads capture `.steam` files under the folder lock, publish the local
+library, then await restored shortcut pins and route those files outside the
+lock. Reports check their folder, scan and configured trees again inside the routing
+lock, so a superseded report cannot republish forgotten files. A folder containing
+only `.steam` files uses the captured listing to choose Home while routing waits.
+Local ingestion reports only the local-folder restore sources; GameNative and
+DroidDeck holds still wait for their own complete, routed reports.
+
+The earlier device logs did not time pin restoration separately, so they cannot
+establish how much this dependency contributed to the measured publication time.
+A debug checkpoint now records its completion. The follow-up removes the wait
+from the local publication path; it was not remeasured on Thor.
+
+An explicit Sync games during a walk now queues one fresh pass after it; repeated
+requests share that pass and wait for it. Tests also cover a replacement reload
+and a further request during the fresh pass. Ordinary failed reads keep the
+existing five-second retry interval: the walk handles provider errors internally,
+so changing that policy would require a separate success/failure result.
 
 ## History and themes
 

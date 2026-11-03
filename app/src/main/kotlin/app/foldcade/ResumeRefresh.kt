@@ -5,6 +5,7 @@ import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.async
+import kotlinx.coroutines.launch
 
 /** A companion resume may consume a pause while a game is still open; its actual return always checks saves. */
 internal class HomeSaveReturns {
@@ -20,14 +21,37 @@ internal class HomeSaveReturns {
 }
 
 /** Shares a recent or running folder walk between both Home activities. Reload bypasses the limit. */
-internal class FolderRefreshes(private val intervalMillis: Long, private val now: () -> Long) {
+internal class FolderRefreshes(
+    private val scope: CoroutineScope,
+    private val intervalMillis: Long,
+    private val now: () -> Long,
+) {
     private var lastStarted: Long? = null
     private var running: Job? = null
+    private var followUp: Job? = null
 
     @Synchronized
     fun quietly(force: Boolean = false, start: () -> Job): Job {
+        followUp?.takeIf { !it.isCompleted }?.let { return it }
         running?.let { job ->
-            if (!job.isCompleted || (!force && now() - (lastStarted ?: 0) < intervalMillis)) return job
+            if (!job.isCompleted) {
+                if (!force) return job
+                // Several forces during this walk share one pass after it. If a reload
+                // replaces it meanwhile, wait for that walk too before starting ours.
+                return scope.launch(start = CoroutineStart.LAZY) {
+                    while (true) {
+                        val (pass, started) = synchronized(this@FolderRefreshes) {
+                            running?.takeIf { !it.isCompleted }?.let { it to false } ?: run {
+                                followUp = null
+                                record(start()) to true
+                            }
+                        }
+                        pass.join()
+                        if (started) break
+                    }
+                }.also { followUp = it; it.start() }
+            }
+            if (!force && now() - (lastStarted ?: 0) < intervalMillis) return job
         }
         return record(start())
     }
