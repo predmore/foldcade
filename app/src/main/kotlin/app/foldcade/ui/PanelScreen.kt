@@ -17,6 +17,7 @@ import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.FiniteAnimationSpec
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.updateTransition
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -295,7 +296,7 @@ fun PanelHost(activity: FoldcadeHomeActivity, displays: Displays) {
     val app = activity.application as FoldcadeApp
     val session = app.store.session
     val panel = displays.panelFor(activity, session.defaultDisplayIsTop)
-    val paint = app.paintFor(app.shell.model.themeIndex)
+    val paint = preparedPaint(app.paintFor(app.shell.model.themeIndex))
     val motion = paint.theme.motion
     val scale = motion.animatorScale(LocalContext.current.contentResolver)
     val model = app.shell.model
@@ -568,6 +569,7 @@ private fun PanelBody(
             // Opaque game art or Settings over it, or the menu's blur, leaves nothing to watch move.
             held = cover.covered || settingsOver || LocalUnderMenu.current || centerHere ||
                 (panel != null && app.launchBlooms.fills(panel)),
+            occluded = cover.occluded || (covered && foldTheme().background.alpha >= 1f),
             live = sceneLive(app, backdrop, scale, camera),
         )
     }
@@ -806,10 +808,12 @@ private fun <T> TravelFade(target: T, scale: Float, content: @Composable (T) -> 
             .focusProperties { canFocus = false }
             .clearAndSetSemantics { },
     ) {
-        if (previous != null) {
-            Box(Modifier.graphicsLayer { alpha = outgoing.value }) { content(previous) }
+        CompositionLocalProvider(LocalBackdropOpaque provides false) {
+            if (previous != null) {
+                Box(Modifier.graphicsLayer { alpha = outgoing.value }) { content(previous) }
+            }
+            Box(Modifier.graphicsLayer { alpha = incoming.value }) { content(front) }
         }
-        Box(Modifier.graphicsLayer { alpha = incoming.value }) { content(front) }
     }
 }
 
@@ -1154,13 +1158,22 @@ private data class ArtPreview(val gameId: String, val kind: ArtKind, val url: St
 private val LocalArtPreview = compositionLocalOf<ArtPreview?> { null }
 
 @Composable
+@OptIn(androidx.compose.animation.ExperimentalAnimationApi::class)
 private fun ArtPreviewHero(app: FoldcadeApp, screen: HostScreen, scale: Float, onEffect: (Effect?) -> Unit) {
     val picker = app.shell.artPicker?.takeIf { it.preview }
     val preview = picker?.focused?.let { ArtPreview(picker.gameId, picker.kind, it.url) }
     val motion = LocalFoldTheme.current.theme.motion
+    val previewTransition = updateTransition(preview, label = "art preview")
+    val previewSettled by remember {
+        derivedStateOf { !previewTransition.isRunning && previewTransition.currentState == previewTransition.targetState }
+    }
     Box(Modifier.fillMaxSize()) {
-        Crossfade(preview, animationSpec = motion.arrive(motion.durationScene, scale)) { shown ->
-            CompositionLocalProvider(LocalArtPreview provides shown) { Hero(app, screen, scale, onEffect) }
+        previewTransition.Crossfade(animationSpec = motion.arrive(motion.durationScene, scale)) { shown ->
+            // The preview's enclosing crossfade must settle too before its art can occlude.
+            CompositionLocalProvider(
+                LocalArtPreview provides shown,
+                LocalBackdropOpaque provides (LocalBackdropOpaque.current && previewSettled),
+            ) { Hero(app, screen, scale, onEffect) }
         }
         if (screen == app.shell.model.layout.menuScreen) {
             Crossfade(app.shell.artPicker?.match?.name,
@@ -1230,7 +1243,9 @@ private fun Hero(app: FoldcadeApp, screen: HostScreen, scale: Float, onEffect: (
                 grows = false,
                 dissolves = true,
             ) { layer ->
-                SceneBackdrop(app, records[layer.key], queries[layer.key], model.motionSpeed, scale)
+                CompositionLocalProvider(LocalBackdropOpaque provides (LocalBackdropOpaque.current && editor.shown == null)) {
+                    SceneBackdrop(app, records[layer.key], queries[layer.key], model.motionSpeed, scale)
+                }
             }
             val inset = px(design.metrics.heroInsetPx)
             // Wide enough for a platform, both screens, and play time on one line.
@@ -1501,7 +1516,11 @@ private fun <T> HeroCrossfade(
                     active -> Modifier.fadingHero(incoming.asState(), inX.asState(), inY.asState(), depth, grows, fadeOnly)
                     else -> Modifier
                 }
-                Box(fade) { content(shown) }
+                Box(fade) {
+                    CompositionLocalProvider(LocalBackdropOpaque provides (LocalBackdropOpaque.current && !active)) {
+                        content(shown)
+                    }
+                }
             }
         }
     }
@@ -1913,7 +1932,7 @@ internal fun SceneBackdrop(app: FoldcadeApp, record: Game?, query: ArtQuery?, sp
     val scene = rememberScene(app, record, query)
     val wide = scene?.background?.let { rememberCoverPainter(app, it, BACKDROP_PX) }
     if (wide != null) {
-        CoversBackdrop()
+        CoversBackdrop(opaque = wide.opaque)
         // Wide art lands a little close and settles back over a long breath, once per
         // game. It stays drawn just past the screen's edges, so its travel shows none.
         val still = motion.heroFadeOnly(speed, animatorScale)
@@ -1958,7 +1977,7 @@ internal fun SceneBackdrop(app: FoldcadeApp, record: Game?, query: ArtQuery?, sp
     val cover = rememberArt(app, record, query)?.cover ?: return
     val ambient = rememberCoverPainter(app, cover, AMBIENT_PX) ?: return
     val design = foldTheme().style
-    CoversBackdrop()
+    CoversBackdrop(opaque = ambient.opaque)
     Image(
         painter = ambient.painter,
         contentDescription = null,
@@ -2153,7 +2172,10 @@ private fun HeroArt(
     }
 }
 
-internal class LoadedCover(val painter: Painter, val ratio: Float, val image: coil3.Image? = null)
+internal class LoadedCover(val painter: Painter, val ratio: Float, val image: coil3.Image? = null) {
+    // PNG art can let the backdrop show through. Only a known opaque bitmap can hide it.
+    val opaque: Boolean get() = (image as? coil3.BitmapImage)?.bitmap?.hasAlpha() == false
+}
 
 /** How light [image] is over its opaque pixels, 0 black to 1 white. Null until read, or for an image it can't read. */
 @Composable
