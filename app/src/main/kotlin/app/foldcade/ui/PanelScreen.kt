@@ -1260,8 +1260,9 @@ private fun Hero(app: FoldcadeApp, screen: HostScreen, scale: Float, onEffect: (
                 val summaryKey = subject?.key?.takeIf {
                     subject is HeroSubject.Item && !subject.item.emptyShelfHint && details?.summary != null
                 }
-                androidx.compose.runtime.SideEffect { app.shell.offerSummary(summaryKey) }
-                androidx.compose.runtime.DisposableEffect(Unit) { onDispose { app.shell.offerSummary(null) } }
+                val offerer = remember { Any() }
+                androidx.compose.runtime.SideEffect { app.shell.offerSummary(offerer, summaryKey) }
+                androidx.compose.runtime.DisposableEffect(offerer) { onDispose { app.shell.withdrawSummary(offerer) } }
                 if (subject != null || finding.shown != null) {
                     Spacer(Modifier.height(px(24f)))
                     Box(contentAlignment = Alignment.Center) {
@@ -2409,6 +2410,8 @@ private fun Picker(
     )
     // Y's menu leaves its tile lit, ring and all, as the rest of the grid quiets around it.
     val anchor = LocalTileAnchor.current
+    val slideTo = if (anchor != null && tileMenuOn(app, screen)) anchor.slidePx else 0f
+    val slide = motionState(slideTo, motion.tileMenu(slideTo != 0f, model.motionSpeed, scale))
     val gridOrigin = remember { floatArrayOf(0f, 0f) }
     val ringPx = with(LocalDensity.current) { ringReach().toPx() }
     val tileHole = remember(anchor, screen, ringPx) {
@@ -2469,7 +2472,9 @@ private fun Picker(
                     .weight(1f)
                     .fillMaxWidth()
                     .onGloballyPositioned { val at = it.positionInRoot(); gridOrigin[0] = at.x; gridOrigin[1] = at.y }
-                    .menuDim({ quiet.value }, tileHole),
+                    .menuDim({ quiet.value }, tileHole)
+                    // The grid slides aside for Y's menu when its card would not fit beside the tile.
+                    .graphicsLayer { translationX = slide.value },
                 contentAlignment = Alignment.Center,
             ) {
                 // Rows are the same on every panel, so a Home layout reads the same on both.

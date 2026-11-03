@@ -83,6 +83,12 @@ internal class TileAnchor {
     var revision by mutableIntStateOf(0)
         private set
 
+    /**
+     * How far, in px, the grid slides aside while the card is open, so the card fits beside a tile
+     * in a middle column of a narrow screen. Negative is left. The grid eases there as the card grows.
+     */
+    var slidePx by mutableFloatStateOf(0f)
+
     /** The focused tile's bounds in the window, in px, as drawn now, or null. */
     fun bounds(): Rect? = coordinates?.takeIf { it.isAttached }?.boundsInRoot()?.takeIf { it.width > 0f && it.height > 0f }
 
@@ -145,6 +151,8 @@ internal fun TileMenuLayer(
     val open = live != null && model.dialog?.screen != screen
     var kept by remember { mutableStateOf<SidePanel?>(null) }
     if (live != null) kept = live
+    // Where the tile rested when the card opened, in this layer's dp, before the grid slid aside for it.
+    var rest by remember { mutableStateOf<Rect?>(null) }
     val grows = motion.tileMenuGrows(model.motionSpeed, scale)
     val progress = remember { Animatable(0f) }
     LaunchedEffect(open, grows) {
@@ -152,10 +160,15 @@ internal fun TileMenuLayer(
         if (progress.value != target) {
             withContext(SteadyMenu) { progress.animateTo(target, motion.tileMenu(open, model.motionSpeed, scale)) }
         }
-        if (!open && app.shell.model.panel?.let { it.side == Side.Tile && it.screen == screen } != true) kept = null
+        if (!open && app.shell.model.panel?.let { it.side == Side.Tile && it.screen == screen } != true) {
+            kept = null
+            rest = null
+        }
     }
     val shownPanel = kept ?: return
     val visible by remember { derivedStateOf { progress.value > 0f } }
+    // Still at the tile: the tile it grows from is read now, or a frame later as it takes the anchor.
+    val starting by remember { derivedStateOf { progress.value < START_READ } }
     if (!visible && !open) return
     val anchor = LocalTileAnchor.current
     val density = LocalDensity.current
@@ -186,23 +199,32 @@ internal fun TileMenuLayer(
         var settled by remember { mutableStateOf(false) }
         val height = motionState(fitted.value, motion.playful(motion.durationSelect, scale), snap = !settled).value.dp
         if (rowsHeight > Dp.Hairline) androidx.compose.runtime.SideEffect { settled = true }
-        // Where the tile is, in this layer's dp, when the card settles beside it.
+        // Where the tile is, in this layer's dp, read once as the card opens: the grid may slide after.
         anchor?.revision
-        val tile = anchor?.bounds()?.let { bounds ->
-            with(density) {
-                Rect(
-                    (bounds.left - origin[0]).toDp().value, (bounds.top - origin[1]).toDp().value,
-                    (bounds.right - origin[0]).toDp().value, (bounds.bottom - origin[1]).toDp().value,
-                )
+        if (rest == null && open && starting) {
+            rest = anchor?.bounds()?.let { bounds ->
+                with(density) {
+                    Rect(
+                        (bounds.left - origin[0]).toDp().value, (bounds.top - origin[1]).toDp().value,
+                        (bounds.right - origin[0]).toDp().value, (bounds.bottom - origin[1]).toDp().value,
+                    )
+                }
             }
         }
-        val card = cardRect(tile, width.value, height.value, maxWidth.value, top.value, bottom.value)
+        val placed = cardPlace(rest, width.value, height.value, maxWidth.value, top.value, bottom.value)
+        val card = placed.card
+        val slidePx = with(density) { placed.slideDp.dp.toPx() }
+        androidx.compose.runtime.SideEffect { anchor?.slidePx = if (open) slidePx else 0f }
+        val tile = rest
         // With no tile to grow from, the card grows from a little inside its own place.
+        val slideDp = placed.slideDp
         val from = tile ?: card.deflate(minOf(card.width, card.height) * NO_TILE_INSET)
         val tileCorner = with(density) { (anchor?.cornerPx ?: 0f).toDp().value }.takeIf { tile != null } ?: design.metrics.cardCornerDp
         val latestFrom by rememberUpdatedState(from)
         val latestCard by rememberUpdatedState(card)
         val latestCorner by rememberUpdatedState(tileCorner)
+        // A tile with no tile behind it never slides.
+        val latestSlide by rememberUpdatedState(if (tile != null) slideDp else 0f)
         val grow = { t: Float -> if (grows) t.coerceIn(0f, 1f) else 1f }
         // The rows come in once the card is most of the way out, and leave first as it shrinks.
         val rowsIn = { ((progress.value - ROWS_START) / (1f - ROWS_START)).coerceIn(0f, 1f).let { if (grows) it else progress.value } }
@@ -215,7 +237,7 @@ internal fun TileMenuLayer(
             Modifier
                 .layout { measurable, _ ->
                     val t = grow(progress.value)
-                    val f = latestFrom
+                    val f = latestFrom.translate(latestSlide * t, 0f)
                     val c = latestCard
                     val x = lerp(f.left, c.left, t).dp.roundToPx()
                     val y = lerp(f.top, c.top, t).dp.roundToPx()
@@ -258,7 +280,7 @@ internal fun TileMenuLayer(
             Box(
                 Modifier.layout { measurable, constraints ->
                     val t = grow(progress.value)
-                    val f = latestFrom
+                    val f = latestFrom.translate(latestSlide * t, 0f)
                     val c = latestCard
                     val placeable = measurable.measure(Constraints.fixed(c.width.dp.roundToPx(), c.height.dp.roundToPx()))
                     val dx = (c.left - lerp(f.left, c.left, t)).dp.roundToPx()
@@ -328,32 +350,41 @@ private fun TileMenuHeading(app: FoldcadeApp, text: String, modifier: Modifier) 
 /** The heading's line, a little shorter than a row. */
 private const val HEADING_DP = 40f
 
+/** Where the card rests, and how far the grid slides aside for it, in dp. */
+internal data class CardPlace(val card: Rect, val slideDp: Float)
+
 /**
- * Where the card rests beside [tile], in dp: right of it when it fits, else left, else on the
- * side with more room, held inside the screen. Its top meets the tile's, unless that would push
- * it past [bottom]. With no tile it sits in the middle.
+ * Where the card rests beside [tile], in dp: right of it when it fits, else left. On a screen too
+ * narrow for either, as the Thor's bottom one is for its middle columns, the grid slides the
+ * shorter way until the card fits beside the tile, so the card never covers the tile it acts on.
+ * Its top meets the tile's, unless that would push it past [bottom]. With no tile it sits in the middle.
  */
-internal fun cardRect(tile: Rect?, width: Float, height: Float, screenWidth: Float, top: Float, bottom: Float): Rect {
+internal fun cardPlace(tile: Rect?, width: Float, height: Float, screenWidth: Float, top: Float, bottom: Float): CardPlace {
     val margin = TileMenuSize.marginDp
     val beside = TileMenuSize.besideDp
     if (tile == null) {
         val x = (screenWidth - width) / 2f
         val y = top + ((bottom - top - height) / 2f).coerceAtLeast(0f)
-        return Rect(x, y, x + width, y + height)
+        return CardPlace(Rect(x, y, x + width, y + height), 0f)
     }
     val right = tile.right + beside
     val left = tile.left - beside - width
-    val x = when {
-        right + width <= screenWidth - margin -> right
-        left >= margin -> left
-        screenWidth - tile.right >= tile.left -> screenWidth - margin - width
-        else -> margin
-    }.coerceIn(margin, (screenWidth - margin - width).coerceAtLeast(margin))
+    val edge = screenWidth - margin
+    val (x, slide) = when {
+        right + width <= edge -> right to 0f
+        left >= margin -> left to 0f
+        // Sliding left by this much puts the card at the right edge; sliding right puts it at the left.
+        right + width - edge <= margin - left -> (edge - width) to -(right + width - edge)
+        else -> margin to (margin - left)
+    }
     val y = tile.top.coerceIn(top, (bottom - height).coerceAtLeast(top))
-    return Rect(x, y, x + width, y + height)
+    return CardPlace(Rect(x, y, x + width, y + height), slide)
 }
 
 private fun lerp(start: Float, end: Float, fraction: Float): Float = start + (end - start) * fraction
+
+/** How far into the grow the tile is still read, for a tile that takes the anchor a frame late. */
+private const val START_READ = 0.05f
 
 /** The share of the grow over which the card's fill comes up. */
 private const val FILL_IN = 0.35f

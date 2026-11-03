@@ -234,9 +234,26 @@ class ShellController(
     var summaryOffered by mutableStateOf<String?>(null)
         private set
 
-    /** The hero says which game it could open to a summary, or none. */
-    fun offerSummary(key: String?) {
+    /** Each drawn hero's offer, newest last. */
+    private val summaryOffers = LinkedHashMap<Any, String?>()
+
+    /**
+     * A hero says which game it could open to a summary, or none. Two heroes can be drawn while
+     * one crossfades into the other, so each takes back only its own offer ([withdrawSummary]).
+     */
+    fun offerSummary(owner: Any, key: String?) {
+        if (summaryOffers.keys.lastOrNull() !== owner || summaryOffers[owner] != key) {
+            summaryOffers.remove(owner)
+            summaryOffers[owner] = key
+        }
         if (summaryOffered != key) summaryOffered = key
+    }
+
+    /** The hero [owner] leaves. The offer of a hero still drawn stands. */
+    fun withdrawSummary(owner: Any) {
+        summaryOffers.remove(owner)
+        val left = summaryOffers.values.lastOrNull()
+        if (summaryOffered != left) summaryOffered = left
     }
 
     /** The grid rests on the focused game with nothing over it, as the hero's card needs to open. */
