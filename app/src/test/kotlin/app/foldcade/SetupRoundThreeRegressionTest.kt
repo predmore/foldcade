@@ -57,7 +57,7 @@ class SetupRoundThreeRegressionTest {
             assertEquals(Effect.OpenBackup, shell.onMeaning(Meaning.Activate, HostScreen.Bottom))
             assertTrue(shell.present(backupDialog(HostScreen.Bottom, backups.before.isFile)))
             assertEquals(Effect.DialogChoice(DialogButton.UndoRestore, DialogKind.Backup),
-                shell.touchDialog(shell.model.dialog!!.buttons.indexOf(DialogButton.UndoRestore), HostScreen.Bottom))
+                shell.touchDialog(shell.model.dialog!!.buttons.indexOf(DialogButton.UndoRestore), shell.model.dialog!!.screen))
         } finally { root.deleteRecursively() }
     }
 

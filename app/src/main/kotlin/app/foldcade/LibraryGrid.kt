@@ -136,9 +136,9 @@ internal val BOTH_SCREEN_APPS: Set<String> = setOf("psplay.grill.com")
 
 /**
  * Installed apps filed with the emulators though no player launches games in them: streaming
- * apps, as Moonlight is. PXPlay (PS Play) streams a PS5 or PS4.
+ * apps, as Moonlight is, and emulators without a player plugin. PXPlay streams a PS5 or PS4; Play! emulates PS2.
  */
-internal val EMULATOR_APPS: Set<String> = setOf("psplay.grill.com")
+internal val EMULATOR_APPS: Set<String> = setOf("psplay.grill.com", "com.virtualapplications.play")
 
 sealed interface GameLaunch {
     /** No player is registered. The stand-in opens this content URI with a read grant. */

@@ -79,12 +79,46 @@ class ScreenLayoutTest {
         val lit = model.offTheDarkScreen()
         assertEquals(HostScreen.Top, lit.dialog?.screen)
         assertEquals(HostScreen.Top, lit.connectScreen)
-        // With two screens lit nothing moves.
+        // With two screens lit pages return to the preferred top screen.
         val both = model.copy(layout = ScreenLayout.ShowcaseBottom)
-        assertSame(both, both.offTheDarkScreen())
+        assertEquals(HostScreen.Bottom, both.offTheDarkScreen().dialog?.screen)
         // Already on the lit screen: the same model.
         assertSame(lit, lit.offTheDarkScreen())
     }
+
+    @Test
+    fun everyPageReturnsToItsPreferredScreenWhenItIsShownAgain() {
+        for (layout in ScreenLayout.entries) {
+            val top = HostScreen.Top
+            val pages = PickerModel(count = 2, rowsPerPage = 2, layout = layout,
+                settings = SettingsPage(top), playActivity = PlayActivityPage(top),
+                gameAbout = GameAboutPage(top, "rom"), connectScreen = top,
+                saveSetup = SaveSetupPage(screen = top), dialog = homePrompt(top))
+            val displaced = pages.onShownScreens { it == HostScreen.Bottom }
+            assertEquals(List(6) { HostScreen.Bottom }, pageScreens(displaced))
+            val returned = displaced.onShownScreens { true }
+            assertEquals(List(6) { layout.pageScreen }, pageScreens(returned))
+            assertSame(returned, returned.onShownScreens { true })
+            assertSame(displaced, displaced.onShownScreens { false })
+        }
+    }
+
+    @Test
+    fun anIslandDialogKeepsItsOpenersScreenAndReturnsAfterDisplacement() {
+        val bottom = PickerModel(count = 2, rowsPerPage = 2, layout = ScreenLayout.ShowcaseBottom,
+            dialog = brightnessPrompt(HostScreen.Bottom))
+        assertSame(bottom, bottom.onShownScreens { true })
+        val moved = bottom.onShownScreens { it == HostScreen.Top }
+        assertEquals(HostScreen.Top, moved.dialog?.screen)
+        assertEquals(HostScreen.Bottom, moved.onShownScreens { true }.dialog?.screen)
+        // A dialog belonging to Settings follows that page instead of the caller's panel.
+        val page = bottom.copy(settings = SettingsPage(HostScreen.Top))
+        assertEquals(HostScreen.Top, page.onShownScreens { true }.dialog?.screen)
+    }
+
+    private fun pageScreens(model: PickerModel): List<HostScreen?> = listOf(
+        model.settings?.screen, model.playActivity?.screen, model.gameAbout?.screen,
+        model.connectScreen, model.saveSetup?.screen, model.dialog?.screen)
 
     @Test
     fun aAndXNameThePlayOnScreenAndTheOther() {

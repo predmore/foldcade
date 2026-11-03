@@ -182,7 +182,7 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
     private var deviceCodeJob: Job? = null
 
     /** Settings › System › Backup › Play history › Export: where the file goes. */
-    private val playExport = registerForActivityResult(ActivityResultContracts.CreateDocument("application/zip")) { uri ->
+    private val playExport = registerForActivityResult(ExportDocument()) { uri ->
         uri?.let(::exportPlayHistory)
     }
 
@@ -191,7 +191,7 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
         uri?.let(::importPlayHistory)
     }
 
-    private val setupExport = registerForActivityResult(ActivityResultContracts.CreateDocument("application/zip")) { uri ->
+    private val setupExport = registerForActivityResult(ExportDocument()) { uri ->
         if (uri != null) exportSetup(uri)
     }
     private val setupImport = registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
@@ -471,7 +471,7 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
             val message = try {
                 val out = contentResolver.openOutputStream(uri, "wt") ?: throw java.io.IOException("no stream for $uri")
                 out.use { foldcade.plays.export(it) }
-                PlayCopy.exported
+                exportResult(uri)
             } catch (cancelled: kotlin.coroutines.cancellation.CancellationException) {
                 throw cancelled
             } catch (failure: Exception) {
@@ -522,7 +522,7 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
                     try {
                         val snapshot = foldcade.setupSnapshot(work)
                         val output = contentResolver.openOutputStream(uri, "wt") ?: throw java.io.IOException("No output")
-                        BackupCopy.saved(output.use { SetupArchive.write(it, snapshot) }.skippedThemes)
+                        BackupCopy.saved(output.use { SetupArchive.write(it, snapshot) }.skippedThemes, exportResult(uri))
                     } finally { work.deleteRecursively() }
                 }
             } catch (cancelled: CancellationException) { throw cancelled }

@@ -93,22 +93,28 @@ fun screenHints(confirm: PromptKey, other: PromptKey, playOn: HostScreen): List<
 /**
  * Nothing Foldcade draws is aimed at a screen it does not show: the dark screen, or one a game
  * holds. A dialog, a menu, a page, or the connect form meant for one opens on a screen that is
- * [shown] instead: the islands', the grid's, then either. With none shown it stays put.
+ * [shown] instead. Pages return to the preferred page screen as soon as it is shown again.
+ * Dialogs follow their page, or return to the screen that opened them. Islands keep their
+ * explicit screen while shown. With none shown the model stays put.
  */
 fun PickerModel.onShownScreens(shown: (HostScreen) -> Boolean): PickerModel {
-    val screens = listOfNotNull(dialog?.screen, panel?.screen, settings?.screen, playActivity?.screen, gameAbout?.screen, connectScreen, saveSetup?.screen)
-    if (screens.all(shown)) return this
     val lit = listOf(layout.menuScreen, layout.gridScreen, HostScreen.Top, HostScreen.Bottom).firstOrNull(shown) ?: return this
-    fun HostScreen.lit(): HostScreen = if (shown(this)) this else lit
-    return copy(
-        dialog = dialog?.let { it.copy(screen = it.screen.lit()) },
-        panel = panel?.let { it.copy(screen = it.screen.lit()) },
-        settings = settings?.let { it.copy(screen = it.screen.lit()) },
-        playActivity = playActivity?.let { it.copy(screen = it.screen.lit()) },
-        gameAbout = gameAbout?.let { it.copy(screen = it.screen.lit()) },
-        connectScreen = connectScreen?.lit(),
-        saveSetup = saveSetup?.let { it.copy(screen = it.screen.lit()) },
+    val page = layout.pageScreen.takeIf(shown) ?: lit
+    val pageOpen = settings != null || playActivity != null || gameAbout != null || connectOpen || saveSetup != null
+    val next = copy(
+        dialog = dialog?.let {
+            val preferred = if (pageOpen) layout.pageScreen else it.preferredScreen
+            it.copy(screen = preferred.takeIf(shown) ?: lit)
+        },
+        // Islands can also be submenus of Settings; keep their explicit screen while it is shown.
+        panel = panel?.let { it.copy(screen = it.screen.takeIf(shown) ?: lit) },
+        settings = settings?.copy(screen = page),
+        playActivity = playActivity?.copy(screen = page),
+        gameAbout = gameAbout?.copy(screen = page),
+        connectScreen = connectScreen?.let { page },
+        saveSetup = saveSetup?.copy(screen = page),
     )
+    return if (next == this) this else next
 }
 
 /** [onShownScreens] with only the dark screen unshown, for a model that knows no apps. */
