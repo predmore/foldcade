@@ -625,7 +625,8 @@ internal fun rowIcon(row: Row, moveTo: String? = null): Int? = when (row) {
     Row.Apps -> R.drawable.symbol_android_apps
     Row.EditHome -> R.drawable.ic_status_tools
     Row.Settings -> R.drawable.ic_status_settings
-    is Row.RommConnection, is Row.SignOut -> R.drawable.symbol_cloud
+    // Sign out and Remove go without: beside them the cloud read as a download.
+    is Row.RommConnection, Row.SignInRomm -> R.drawable.symbol_cloud
     is Row.ForgetFolder -> R.drawable.symbol_folder
     Row.MoveTile -> R.drawable.symbol_move
     Row.AddToCollection -> R.drawable.symbol_add_to

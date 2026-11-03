@@ -64,6 +64,9 @@ import app.foldcade.language.needsAttention
 import app.foldcade.language.promptKeyOf
 import app.foldcade.language.relativeSaveWhen
 import app.foldcade.language.savePickerHints
+import app.foldcade.language.saveNames
+import app.foldcade.language.saveNameSaysTime
+import app.foldcade.language.destinationName
 
 /**
  * The top screen shows what the bottom has focused, large, over the game's own hero art:
@@ -105,7 +108,7 @@ internal fun SavePickerTop(app: FoldcadeApp, state: SavePickerState, dates: Date
                         Row(Modifier.fillMaxSize(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(TOP_GAP)) {
                             TopArt(app, art, subject.save?.screenshotUri, Modifier.fillMaxHeight().widthIn(max = artMax))
                             val shown = subject.save
-                            if (shown != null) SaveFacts(shown, dates, theme, Modifier.weight(1f))
+                            if (shown != null) SaveFacts(shown, saveNames(state.saves, state.ownSlots, dates, System.currentTimeMillis())[shown.id] ?: SavePickerCopy.slot(shown), dates, theme, Modifier.weight(1f))
                             else Overview(state, theme, scale, Modifier.weight(1f))
                         }
                     }
@@ -142,7 +145,7 @@ private fun TopArt(app: FoldcadeApp, art: RunningApp?, screenshot: String?, modi
 
 /** The focused save, large: its slot, then when, who made it, and how big, each led by its symbol. */
 @Composable
-private fun SaveFacts(save: SavePickerSave, dates: DateStyle, theme: Theme, modifier: Modifier) {
+private fun SaveFacts(save: SavePickerSave, name: String, dates: DateStyle, theme: Theme, modifier: Modifier) {
     val design = theme.style
     Column(
         modifier
@@ -154,12 +157,13 @@ private fun SaveFacts(save: SavePickerSave, dates: DateStyle, theme: Theme, modi
         if (save.playing) Tag(SavePickerCopy.playing, theme.focus)
         else if (save.backup) Tag(SavePickerCopy.backup, theme.muted)
         BasicText(
-            if (save.backup) save.slot?.takeIf { it.isNotBlank() } ?: SavePickerCopy.noSlot else SavePickerCopy.slot(save),
+            if (save.backup) save.slot?.takeIf { it.isNotBlank() } ?: SavePickerCopy.noSlot else name,
             style = saveStyle(theme.onBackground, design.type.heroTitle, theme, bold = true, display = true),
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
         )
-        Fact("clock", formatSaveWhen(save.updatedAtMillis, dates), theme)
+        // A save named by its day and time already says when.
+        if (!saveNameSaysTime(name, save.updatedAtMillis, dates)) Fact("clock", formatSaveWhen(save.updatedAtMillis, dates), theme)
         Fact("handheld", SavePickerCopy.sourceDetail(save), theme, lines = 2)
         Fact("cartridge", formatSaveSize(save.sizeBytes), theme)
     }
@@ -264,7 +268,7 @@ internal fun SavePickerBottom(app: FoldcadeApp, state: SavePickerState, dates: D
                         CardMode.Error -> CardNote("cloud", SavePickerCopy.error, pulse = false, scale = scale, modifier = Modifier.hostPress { press(Meaning.Activate) })
                         CardMode.Empty -> CardNote("cloud", SavePickerCopy.empty, pulse = false, scale = scale)
                         CardMode.Saves -> SaveList(app, state, art, dates, scale, dispatch)
-                        CardMode.Destinations -> DestinationList(app, state.copy(copying = state.copying ?: copying), art, scale, dispatch)
+                        CardMode.Destinations -> DestinationList(app, state.copy(copying = state.copying ?: copying), art, dates, scale, dispatch)
                     }
                 }
                 val message = presence(state.message, theme.motion.durationFocus, scale)
@@ -315,6 +319,7 @@ private fun SaveList(app: FoldcadeApp, state: SavePickerState, art: RunningApp?,
     val scroll = rememberScrollState()
     val now = System.currentTimeMillis()
     val focus = (state.index - 1).takeIf { it >= 0 }
+    val names = saveNames(state.saves, state.ownSlots, dates, now)
     Column(
         Modifier
             .fillMaxSize()
@@ -327,7 +332,7 @@ private fun SaveList(app: FoldcadeApp, state: SavePickerState, art: RunningApp?,
         state.saves.forEachIndexed { index, save ->
             val focused = focus == index
             SaveRow(
-                app, save, art, relativeSaveWhen(save.updatedAtMillis, now, dates), focused, scale,
+                app, save, names[save.id] ?: SavePickerCopy.slot(save), relativeSaveWhen(save.updatedAtMillis, now, dates), art, focused, scale,
                 Modifier.selectionSlot(slots, index).keepInView(focused).hostPress { dispatch(app.shell.touchSavePickerSave(state.target, save.id)) },
             )
         }
@@ -335,8 +340,9 @@ private fun SaveList(app: FoldcadeApp, state: SavePickerState, art: RunningApp?,
 }
 
 @Composable
-private fun DestinationList(app: FoldcadeApp, state: SavePickerState, art: RunningApp?, scale: Float, dispatch: (Effect?) -> Unit) {
+private fun DestinationList(app: FoldcadeApp, state: SavePickerState, art: RunningApp?, dates: DateStyle, scale: Float, dispatch: (Effect?) -> Unit) {
     val destinations = state.destinations()
+    val names = saveNames(state.saves, state.ownSlots, dates, System.currentTimeMillis())
     if (destinations.isEmpty()) {
         CardNote("folder", SavePickerCopy.noDestinations, pulse = false, scale = scale)
         return
@@ -355,7 +361,7 @@ private fun DestinationList(app: FoldcadeApp, state: SavePickerState, art: Runni
         destinations.forEachIndexed { index, destination ->
             val focused = state.destinationIndex == index
             DestinationRow(
-                destination, art, focused, scale,
+                destination, destinationName(destination, state.saves, names, state.ownSlots), art, focused, scale,
                 Modifier.selectionSlot(slots, index).keepInView(focused).hostPress { dispatch(app.shell.touchSavePickerDestination(state.target, destination)) },
             )
         }
@@ -367,7 +373,7 @@ private fun DestinationList(app: FoldcadeApp, state: SavePickerState, art: Runni
  * is not this device, how long ago, and Playing on the one Foldcade plays. A Backup rests quieter.
  */
 @Composable
-private fun SaveRow(app: FoldcadeApp, save: SavePickerSave, art: RunningApp?, whenText: String, focused: Boolean, scale: Float, modifier: Modifier) {
+private fun SaveRow(app: FoldcadeApp, save: SavePickerSave, name: String, whenText: String, art: RunningApp?, focused: Boolean, scale: Float, modifier: Modifier) {
     val theme = LocalFoldTheme.current.theme
     val design = theme.style
     val lit = eased(if (focused) 1f else 0f, theme.motion.durationFocus, scale)
@@ -380,7 +386,7 @@ private fun SaveRow(app: FoldcadeApp, save: SavePickerSave, art: RunningApp?, wh
     ) {
         Thumb(app, save.screenshotUri, if (save.backup) "shield" else art?.mark, lit, lift, rest)
         BasicText(
-            SavePickerCopy.slot(save),
+            name,
             modifier = Modifier.weight(1f).graphicsLayer { alpha = rest + (1f - rest) * lit.value },
             style = saveStyle(theme.onBackground, design.type.menuRow, theme, bold = true),
             maxLines = 1,
@@ -393,14 +399,15 @@ private fun SaveRow(app: FoldcadeApp, save: SavePickerSave, art: RunningApp?, wh
                 BasicText(SavePickerCopy.source(save), style = saveStyle(theme.muted, design.type.hint, theme), maxLines = 1, overflow = TextOverflow.Ellipsis)
             }
         }
-        BasicText(whenText, modifier = meta, style = saveStyle(theme.muted, design.type.hint, theme), maxLines = 1, softWrap = false)
+        // A save named by its day already says when; "5m ago" beside Today still adds something.
+        if (!name.startsWith(whenText)) BasicText(whenText, modifier = meta, style = saveStyle(theme.muted, design.type.hint, theme), maxLines = 1, softWrap = false)
         if (save.playing) Tag(SavePickerCopy.playing, theme.focus)
     }
 }
 
 /** A slot to copy into: its slot, and whose it is. */
 @Composable
-private fun DestinationRow(destination: SaveDestination, art: RunningApp?, focused: Boolean, scale: Float, modifier: Modifier) {
+private fun DestinationRow(destination: SaveDestination, name: String, art: RunningApp?, focused: Boolean, scale: Float, modifier: Modifier) {
     val theme = LocalFoldTheme.current.theme
     val design = theme.style
     val lit = eased(if (focused) 1f else 0f, theme.motion.durationFocus, scale)
@@ -413,7 +420,7 @@ private fun DestinationRow(destination: SaveDestination, art: RunningApp?, focus
     ) {
         Thumb(null, null, art?.mark, lit, lift, rest)
         BasicText(
-            destination.slot,
+            name,
             modifier = Modifier.weight(1f).graphicsLayer { alpha = rest + (1f - rest) * lit.value },
             style = saveStyle(theme.onBackground, design.type.menuRow, theme, bold = true),
             maxLines = 1,
@@ -564,7 +571,10 @@ private fun Confirmation(app: FoldcadeApp, state: SavePickerState, choice: SaveP
                 .padding(CARD_PAD),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            BasicText(SavePickerCopy.confirmationTitle(choice, state.playerName), style = saveStyle(theme.onBackground, design.type.dialogTitle, theme, bold = true, display = true))
+            val destination = (choice as? SavePickerChoice.Copy)?.destination?.let {
+                destinationName(it, state.saves, saveNames(state.saves, state.ownSlots, dates, System.currentTimeMillis()), state.ownSlots)
+            }.orEmpty()
+            BasicText(SavePickerCopy.confirmationTitle(choice, state.playerName, destination), style = saveStyle(theme.onBackground, design.type.dialogTitle, theme, bold = true, display = true))
             BasicText(
                 SavePickerCopy.confirmationBody(choice, state.target.playerId, state.playerName, dates, state.restartsOpenGame, state.ownSlots),
                 style = saveStyle(theme.onBackground, design.type.dialogBody, theme),

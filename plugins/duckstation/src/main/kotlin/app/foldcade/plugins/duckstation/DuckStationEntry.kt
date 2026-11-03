@@ -98,10 +98,14 @@ class DuckStationPlayer : Player, SaveFolderHolder, HostedSaveFolder {
 
     override val hostedFolderTitle: String = "DuckStation memory cards"
 
-    override val hostedFolderSteps: String =
-        "In DuckStation, open App Settings, turn on Show Advanced Settings in the ⋮ menu, and open " +
-            "Folders › Memory Cards › Choose New Location. Pick Foldcade in the picker’s menu, tap " +
-            "Use this folder and Allow, then Copy Files to bring the cards you have."
+    /** One step a line, numbered, so Set up saves can show them as a list. */
+    override val hostedFolderSteps: String = listOf(
+        "1. Open DuckStation’s App Settings.",
+        "2. Tap ⋮ and turn on Show Advanced Settings.",
+        "3. Open Folders › Memory Cards › Choose New Location.",
+        "4. In the picker’s menu, pick Foldcade, tap Use this folder, then Allow.",
+        "5. Tap Copy Files to bring your cards.",
+    ).joinToString("\n")
 
     override fun bindHostedFolder(contentUri: String, inUse: Boolean) {
         cards = contentUri.takeIf { it.startsWith("content:") }

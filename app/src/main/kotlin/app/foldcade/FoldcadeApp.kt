@@ -34,6 +34,7 @@ import androidx.lifecycle.Lifecycle
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
+import app.foldcade.language.fullPageOn
 import app.foldcade.api.plugin.Credential
 import app.foldcade.api.plugin.CredentialLookup
 import app.foldcade.api.plugin.CredentialStore
@@ -879,6 +880,8 @@ class FoldcadeApp : Application() {
             }
         }
         themeRollbacks.forEach { postNotice(themeRollbackNotice(it)) }
+        // R1's sign-in notice comes and goes with RomM's sign-in.
+        scope.launch(Dispatchers.Main.immediate) { snapshotFlow { shell.model.rommSignIn }.collect { publishNotices() } }
         // A game several libraries have is one tile, and its copies' play counts on it.
         plays.historyIds = shell::historyIds
         plays.tileOf = shell::tileOf
@@ -905,6 +908,20 @@ class FoldcadeApp : Application() {
             showHome = shell::goHome,
             busy = shell::holdsCommandCenter,
         )
+        // A page that moved onto a command center, as when an app took the top while Settings was open, makes
+        // that screen browse, as Start does there: the page, and any menu it opens, draws and takes keys and taps.
+        scope.launch(Dispatchers.Main.immediate) {
+            // Either order counts: the page moving onto the screen, or the screen turning into a command center under it.
+            // Full pages only: a dialog alone draws over the command center and takes its keys without it.
+            snapshotFlow { Panel.entries.filter { shell.model.fullPageOn(it.screen()) && store.session.surfaceOn(it) == Surface.CommandCenter } }
+                .collect { panels ->
+                    panels.forEach { panel ->
+                        store.update { it.browse(panel) }
+                        // Its idle timer, as Start's browse has, hands the screen back to the command center once the page has closed.
+                        commandCenter.touch(panel)
+                    }
+                }
+        }
         brightness = ScreenBrightness(this)
         // The Thor's own quick settings, or Android's, can move it too. The slider follows.
         brightness.observe(::refreshBrightness)
@@ -1079,8 +1096,17 @@ class FoldcadeApp : Application() {
     }
 
     private fun publishNotices() {
-        shell.setNotices(orderedNotices(foldcadeNotices + androidNotices + saveSetupNotices.notices(System.currentTimeMillis())))
+        val now = System.currentTimeMillis()
+        // RomM waiting for a sign-in stands in R1 until it is signed in. Nothing else would say its saves wait.
+        val signIn = if (shell.model.rommSignIn) listOf(app.foldcade.language.rommSignInNotice(rommSignInSince ?: now.also { rommSignInSince = it })) else {
+            rommSignInSince = null
+            emptyList()
+        }
+        shell.setNotices(orderedNotices(signIn + foldcadeNotices + androidNotices + saveSetupNotices.notices(now)))
     }
+
+    /** When RomM began waiting for a sign-in, so its notice keeps its place among the others. */
+    private var rommSignInSince: Long? = null
 
     /** Reads the level and the write access again. Resume calls this after Android's access page. */
     fun refreshBrightness() {
@@ -2414,8 +2440,12 @@ class FoldcadeApp : Application() {
                         LoadedLibrary.Unreachable -> return@launch
                     }
                     val games = listed?.let { loadEveryGame(libraryId, it) }.orEmpty()
+                    // A list read with the saved token means it works again, after a refusal that passed.
+                    val tokenWorks = lookupOrUnreadable(store.restoreCredentials(credentials), RommCredentials.PLUGIN_ID, RommCredentials.ACCESS_TOKEN) is CredentialLookup.Present
                     withContext(Dispatchers.Main.immediate) {
                         if (ticket != rommTicket.get() || store.rommOrigin() == null) return@withContext
+                        // Only a live answer counts: an offline cache would read with a refused token too.
+                        if (tokenWorks && app.foldcade.plugins.romm.rommCatalogLive(plugins.library(libraryId))) shell.rommAccepted()
                         shell.ingestLibrary(
                             libraryId,
                             games,
@@ -2430,8 +2460,16 @@ class FoldcadeApp : Application() {
                 } catch (cancelled: CancellationException) {
                     throw cancelled
                 } catch (_: PluginException.NotAuthenticated) {
+                    // A restore leaves the token out on purpose, so its sign-in is still to do: R1's notice, RomM's
+                    // tile and its places already say so, and it doesn't interrupt every launch with a dialog.
+                    // A token RomM refused, or one that could not be read, still asks.
+                    val restored = store.restoreRommNeedsSignIn()
                     withContext(Dispatchers.Main.immediate) {
-                        if (ticket == rommTicket.get() && store.rommOrigin() != null) shell.askToSignInAgain()
+                        if (ticket == rommTicket.get() && store.rommOrigin() != null) {
+                            // Refused, not unreachable: until a sign-in its saves wait, and RomM's places say so.
+                            shell.rommRefused()
+                            if (!restored) shell.askToSignInAgain()
+                        }
                     }
                 } catch (failure: Exception) {
                     Log.w("Foldcade", "RomM library failed", failure)

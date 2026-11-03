@@ -75,7 +75,7 @@ internal fun backupPreview(
         if (currentOrigin.isNullOrBlank()) BackupCopy.connectRomm(host) else BackupCopy.switchedRomm(host)
     }
     val theme = backupThemeName(backup.settings["theme"] as? String, backup.manifest.summary.theme, themes)
-    return date to listOfNotNull(BackupCopy.preview(summary.games, summary.collections, summary.hidden, theme, summary.missingGames, summary.missingApps), switches).joinToString(" · ")
+    return date to listOfNotNull(BackupCopy.preview(summary.games, summary.collections, summary.hidden, theme, summary.missingGames, summary.missingApps), switches).joinToString("\n")
 }
 
 internal fun storedComputersNeedPairing(store: SessionStore, identity: String?): Boolean = store.pairedStreamHosts(identity).isEmpty()

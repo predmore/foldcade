@@ -46,9 +46,9 @@ class SetupRoundThreeRegressionTest {
                 assertNull(shell.model.dialog)
                 assertTrue(shell.present(backupDialog(HostScreen.Bottom, backups.before.isFile)))
                 val dialog = shell.model.dialog!!
-                assertEquals(listOf(DialogButton.BackUp, DialogButton.PickRestore, DialogButton.UndoRestore, DialogButton.PlayHistory, DialogButton.NotNow), dialog.buttons)
+                assertEquals(listOf(DialogButton.BackUp, DialogButton.PickRestore, DialogButton.UndoRestore, DialogButton.PlayHistory), dialog.buttons)
                 assertEquals(DialogButton.BackUp, dialog.buttons[dialog.index])
-                assertEquals(DialogButton.NotNow, dialog.buttons[dialog.safeIndex])
+                assertEquals(BACK_CLOSES, dialog.safeIndex)
                 assertNull(shell.onMeaning(Meaning.Activate, HostScreen.Bottom, repeatCount = 1))
                 assertEquals(dialog, shell.model.dialog)
                 shell.onMeaning(Meaning.Back, HostScreen.Bottom)

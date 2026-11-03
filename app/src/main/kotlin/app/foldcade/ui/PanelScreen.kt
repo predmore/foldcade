@@ -30,6 +30,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxHeight
@@ -2694,6 +2695,15 @@ private fun PanelRows(
                         overflow = TextOverflow.Ellipsis,
                     )
                 }
+                // Signed out, its saves wait: the attention colour, as anything else not syncing.
+                if (connection.pluginId == "romm" && model.rommSignIn) {
+                    BasicText(
+                        text = Copy.signedOut,
+                        style = text(theme.style.colors.attention, LocalFoldTheme.current.theme.style.type.hint, theme)
+                            .copy(fontWeight = theme.style.type.strongWeight),
+                        maxLines = 1,
+                    )
+                }
             }
         }
         rows.forEachIndexed { index, row ->
@@ -3108,6 +3118,12 @@ private fun GridHints(app: FoldcadeApp, modifier: Modifier = Modifier) {
     val addGames = if (gridKeys && find == null && model.settings == null && model.playActivity == null && model.gameAbout == null && shell.emptyCollection() != null) {
         listOf(HintKey(promptKeyOf(model.faceMap.confirmKey) ?: PromptKey.FaceA, Copy.addGames))
     } else emptyList()
+    // A restored place waiting for RomM signs in on A.
+    // The same guards as the press itself: on the gap, not on a pill above it, with nothing held.
+    val signIn = if (gridKeys && find == null && model.settings == null && model.playActivity == null && model.gameAbout == null &&
+        model.focus.chrome == null && shell.homeKeys() == HomeKeys.Idle && shell.gapNeedsSignIn()) {
+        listOf(HintKey(promptKeyOf(model.faceMap.confirmKey) ?: PromptKey.FaceA, Copy.signIn))
+    } else emptyList()
     val destructive = model.panel?.let { panelRows(it, model).getOrNull(it.index) }?.let { it == LanguageRow.RemoveDownload || it == LanguageRow.DeleteShortcut } == true ||
         model.playActivity?.sessions != null
     val back = promptKeyOf(model.faceMap.backKey) ?: PromptKey.FaceB
@@ -3115,7 +3131,7 @@ private fun GridHints(app: FoldcadeApp, modifier: Modifier = Modifier) {
     val optionsKey = actionFaces(model.faceMap).optionsGlyph
     val shown = if (!selecting && model.undoVerb != null && model.panel == null && model.dialog == null) listOf(HintKey(optionsKey, Copy.undo)) else if (!selecting && gridKeys && (shell.downloading.isNotEmpty() || shell.activity.values.any { it is TileActivity.Downloading || it == TileActivity.Checking })) {
         normalKeys.filterNot { it.key == back } + HintKey(back, "Cancel download")
-    } else addGames + normalKeys
+    } else addGames + signIn + normalKeys
     // The root grid names Select's Find while the row has room, so the button can be found.
     val atRoot = gridKeys && find == null && shell.find == null && model.settings == null && model.playActivity == null && model.gameAbout == null &&
         model.homeGrid == HomeGrid.StandIns && !model.libraryGrid && model.atLibraryRoot && shell.homeKeys() == HomeKeys.Idle
@@ -4550,9 +4566,9 @@ private fun DialogCard(
             if (!detail.isNullOrBlank()) {
                 BasicText(text = detail, style = text(theme.muted, LocalFoldTheme.current.theme.style.type.dialogBody, theme))
             }
-            Row(
+            // Buttons that do not fit one line move whole to the next, at any font size, rather than squeeze.
+            FlowRow(
                 horizontalArrangement = Arrangement.spacedBy(px(8f)),
-                verticalAlignment = Alignment.CenterVertically,
             ) {
                 dialog.buttons.forEachIndexed { index, button ->
                     val label = dialogButtonLabel(button, dialog.subject)
@@ -4722,160 +4738,10 @@ internal fun DialogAction(label: String, focused: Boolean, onClick: () -> Unit) 
             LocalFoldTheme.current.theme.style.type.dialogBody,
             theme,
         ).copy(textAlign = TextAlign.Center),
+        // A button's words stay on one line: two words never break into a letter a line.
+        maxLines = 1,
+        softWrap = false,
     )
-}
-
-@Composable
-private fun ConnectScreen(
-    app: FoldcadeApp,
-    screen: HostScreen,
-    onEffect: (Effect?) -> Unit,
-    takeKeyboardFocus: suspend () -> Unit,
-    dispatchFormKeyEvent: (android.view.KeyEvent) -> Boolean?,
-) {
-    val design = LocalFoldTheme.current.theme.style
-    val theme = foldTheme()
-    val model = app.shell.model
-    val artKey = model.connectKind == ConnectKind.ArtKey
-    val fields = connectFields(model.connectKind, model.connectRetry)
-    val ringed = fields[model.connectIndex.coerceIn(fields.indices)]
-    val origin = remember { FocusRequester() }
-    val token = remember { FocusRequester() }
-    // Leaving a field parks focus on the form. Cleared focus would land on the first field again.
-    val form = remember { FocusRequester() }
-    val keyboard = LocalSoftwareKeyboardController.current
-    var typingIn by remember { mutableStateOf<ConnectField?>(null) }
-    // Presses from an earlier visit to the form don't count.
-    val opened = remember { app.shell.typingRequest }
-    // A on a text row: the cursor goes into that field and the keyboard comes up.
-    // A again brings the keyboard back after it was put away.
-    LaunchedEffect(app.shell.typingRequest) {
-        if (app.shell.typingRequest == opened) return@LaunchedEffect
-        val field = when (ringed) {
-            ConnectField.Origin -> origin
-            ConnectField.Token -> token
-            ConnectField.Save, ConnectField.Retry -> return@LaunchedEffect
-        }
-        takeKeyboardFocus()
-        field.requestFocus()
-        keyboard?.show()
-    }
-    // The D-pad moved the ring off the field being typed in, so typing stops there.
-    LaunchedEffect(ringed) {
-        if (typingIn != null && typingIn != ringed) form.requestFocus()
-    }
-    Column(
-        Modifier
-            .fillMaxSize()
-            // Gboard's fullscreen editor takes arrows before the activity's normal dispatch.
-            // Give the form its vertical navigation first, even while a text row is editing.
-            .onPreInterceptKeyBeforeSoftKeyboard { dispatchFormKeyEvent(it.nativeKeyEvent) != null }
-            .focusRequester(form)
-            .focusable()
-            .background(theme.background)
-            .padding(px(design.metrics.dialogInsetPx)),
-        verticalArrangement = Arrangement.spacedBy(px(16f)),
-    ) {
-        BasicText(
-            text = when {
-                artKey -> Copy.steamGridDb
-                model.connectReturnPanel != null -> Copy.editRommConnection
-                app.store.rommOrigin() != null -> Copy.signInAgainTitle
-                else -> Copy.addRommServer
-            },
-            style = text(theme.onBackground, LocalFoldTheme.current.theme.style.type.dialogTitle, theme, display = true),
-        )
-        if (!artKey) {
-            BasicText(text = "Server", style = text(theme.muted, LocalFoldTheme.current.theme.style.type.hint, theme))
-            BasicTextField(
-                value = model.connectOrigin,
-                onValueChange = { app.shell.editOrigin(it) },
-                singleLine = true,
-                textStyle = text(theme.onBackground, LocalFoldTheme.current.theme.style.type.dialogBody, theme),
-                cursorBrush = cursorBrush(theme),
-                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri, imeAction = ImeAction.Next),
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .focusRequester(origin)
-                    .chip(focused(model, ConnectField.Origin))
-                    .onFocusChanged { state ->
-                        typingIn = typing(typingIn, ConnectField.Origin, state.isFocused)
-                        if (state.isFocused) app.shell.touchConnect(fields.indexOf(ConnectField.Origin), screen)
-                    }
-                    .padding(horizontal = px(20f), vertical = px(10f)),
-            )
-            val warning = model.connectWarning
-            if (warning != null) {
-                BasicText(text = warning, style = text(theme.onBackground, LocalFoldTheme.current.theme.style.type.dialogBody, theme))
-            }
-        }
-        val hint = model.connectHint
-        if (hint != null) {
-            BasicText(text = hint, style = text(theme.onBackground, LocalFoldTheme.current.theme.style.type.dialogBody, theme))
-        }
-        BasicText(text = if (artKey) Copy.apiKey else Copy.clientApiToken, style = text(theme.muted, LocalFoldTheme.current.theme.style.type.hint, theme))
-        BasicTextField(
-            value = app.shell.connectToken,
-            onValueChange = { app.shell.editToken(it) },
-            singleLine = true,
-            visualTransformation = PasswordVisualTransformation(),
-            textStyle = text(theme.onBackground, LocalFoldTheme.current.theme.style.type.dialogBody, theme),
-            cursorBrush = cursorBrush(theme),
-            // A password field to the keyboard too, so it neither shows nor learns the token.
-            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password, imeAction = ImeAction.Done),
-            // Done saves, as Save below does, rather than only closing the keyboard.
-            keyboardActions = KeyboardActions(onDone = {
-                if (!model.connectBusy) onEffect(app.shell.touchConnect(fields.indexOf(ConnectField.Save), screen))
-            }),
-            modifier = Modifier
-                .fillMaxWidth()
-                .focusRequester(token)
-                .chip(focused(model, ConnectField.Token))
-                .onFocusChanged { state ->
-                    typingIn = typing(typingIn, ConnectField.Token, state.isFocused)
-                    if (state.isFocused) app.shell.touchConnect(fields.indexOf(ConnectField.Token), screen)
-                }
-                .padding(horizontal = px(20f), vertical = px(10f)),
-        )
-        BasicText(
-            text = when {
-                model.connectBusy -> if (artKey) "Checking key…" else "Checking token…"
-                artKey -> Copy.saveKey
-                else -> Copy.saveToken
-            },
-            modifier = Modifier
-                .chip(focused(model, ConnectField.Save))
-                .hostPress { if (!model.connectBusy) onEffect(app.shell.touchConnect(fields.indexOf(ConnectField.Save), screen)) }
-                .padding(horizontal = px(20f), vertical = px(10f)),
-            style = text(theme.onBackground, LocalFoldTheme.current.theme.style.type.dialogBody, theme),
-        )
-        if (!artKey && model.connectRetry) {
-            BasicText(
-                text = Copy.rommNewCode,
-                modifier = Modifier
-                    .chip(focused(model, ConnectField.Retry))
-                    .hostPress { onEffect(app.shell.touchConnect(fields.indexOf(ConnectField.Retry), screen)) }
-                    .padding(horizontal = px(20f), vertical = px(10f)),
-                style = text(theme.onBackground, design.type.dialogBody, theme),
-            )
-        }
-        BasicText(
-            text = if (artKey) Copy.artKeyHelp else Copy.rommTokenHelp,
-            style = text(theme.muted, LocalFoldTheme.current.theme.style.type.dialogBody, theme),
-        )
-    }
-}
-
-/** The field taking text after [field] gains or loses focus. */
-private fun typing(current: ConnectField?, field: ConnectField, focused: Boolean): ConnectField? = when {
-    focused -> field
-    current == field -> null
-    else -> current
-}
-
-private fun focused(model: app.foldcade.language.PickerModel, field: ConnectField): Boolean {
-    val fields = connectFields(model.connectKind, model.connectRetry)
-    return fields[model.connectIndex.coerceIn(fields.indices)] == field
 }
 
 @Composable
@@ -4936,7 +4802,7 @@ private fun Modifier.rowHighlight(focused: Boolean): Modifier {
  * while it has focus. Tabs, actions, and fields all use it.
  */
 @Composable
-private fun Modifier.chip(focused: Boolean): Modifier {
+internal fun Modifier.chip(focused: Boolean): Modifier {
     val theme = foldTheme()
     val lift = theme.onBackground
     val dialog = theme.style.dialog

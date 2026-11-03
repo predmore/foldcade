@@ -208,8 +208,9 @@ fun emulatorShelf(model: PickerModel): List<EmulatorShelfEntry> {
             label = setting.label,
             packageName = setting.packages.firstOrNull(),
             rows = buildList {
-                add(Row.PlayerSave(setting.playerId))
+                // The save row the player must act on comes first: a hosted player's own folder only holds its BIOS.
                 if (setting.hostedTitle != null) add(Row.HostedSaves(setting.playerId))
+                add(Row.PlayerSave(setting.playerId))
                 if (setting.saveSyncing || setting.saveSyncSteps != null) add(Row.SaveSync(setting.playerId))
                 if (setting.setupSteps != null) add(Row.PlayerSetup(setting.playerId))
                 if (setting === retroArchOwner) add(Row.RetroArchCores)
@@ -295,9 +296,11 @@ enum class TileStatus {
 /**
  * An emulator tile wears a check while all its rows are fine, and the not-syncing mark
  * while any says Not syncing or waits to be set up. A folder awaiting its restored
- * grant wears Attention too; other source tiles wear none.
+ * grant wears Attention too, as RomM does while it waits for a sign-in; other source tiles wear none.
  */
 fun settingsTileStatus(row: Row, model: PickerModel): TileStatus? {
+    // RomM waiting for a sign-in wears it too: its saves wait until then.
+    if (row is Row.RommConnection) return TileStatus.Attention.takeIf { model.rommSignIn }
     val inner = (row as? Row.SettingsTile)?.page ?: return null
     if (inner is SettingsInner.Folder) return TileStatus.Attention.takeIf { model.folders.any { it.uri == inner.uri && it.pickAgain } }
     if (inner !is SettingsInner.Emulator) return null
@@ -411,11 +414,12 @@ fun rowControl(row: Row, model: PickerModel, value: String? = rowText(row, model
     is Row.Collection -> model.tileActions?.collections?.firstOrNull { it.folderId == row.folderId }.let { RowControl.Check(it?.member == true, it?.some == true) }
     Row.EditHome, Row.AddToCollection, is Row.RommConnection,
     Row.AddFolder, Row.AddRomm, Row.SetAsHome, Row.DefaultHomeApp, Row.AndroidSettings, Row.Licenses, is Row.SettingsTile,
-    Row.SaveSetup, Row.Backup, is Row.PickFolderAgain, Row.Systems,
+    Row.Backup, is Row.PickFolderAgain, Row.Systems,
     -> RowControl.Opens
+    Row.SaveSetup -> value?.let { RowControl.Value(it, attention = true) } ?: RowControl.Opens
     else -> value?.takeIf { it.isNotEmpty() }?.let {
         RowControl.Value(it, attention = it == Copy.notSyncing &&
-            (row is Row.PlayerSave || row is Row.HostedSaves || row is Row.SaveSync || row is Row.PlayerSetup || row == Row.EdenUser))
+            (row is Row.PlayerSave || row is Row.HostedSaves || row is Row.SaveSync || row is Row.PlayerSetup || row == Row.EdenUser || row == Row.EdenFolder))
     } ?: RowControl.None
 }
 

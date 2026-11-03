@@ -158,8 +158,8 @@ class SetupReviewRegressionTest {
         assertFalse(SessionStore(prefs).restoreRommNeedsSignIn())
         assertEquals(listOf(otherTree, tree), SessionStore(prefs).folderTrees())
         assertEquals("hash", prefs.getString("player_save_mark:game", null))
-        assertTrue(backupPreview(backup(), emptySet(), "https://other.example").second.contains("RomM: switches to romm.example; sign in again"))
-        assertFalse(backupPreview(backup(), emptySet(), "https://romm.example").second.contains("switches to"))
+        assertTrue(backupPreview(backup(), emptySet(), "https://other.example").second.contains("RomM changes to romm.example. Sign in after the restore."))
+        assertFalse(backupPreview(backup(), emptySet(), "https://romm.example").second.contains("changes to"))
     }
 
     @Test fun rawIncomingBytesAreStagedBeforeTheUndoCopyChangesAndThemesCannotBlockUndo() = fixture { root ->
