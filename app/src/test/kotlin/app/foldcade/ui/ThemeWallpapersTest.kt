@@ -31,6 +31,23 @@ class ThemeWallpapersTest {
         }
     }
 
+    @Test fun aWallpaperReadBeforeDecodingIsInvalidatedWhenItLands() {
+        val wallpapers = ThemeWallpapers { null }
+        val paint = FoldPaint(builtInTheme(), wallpapers)
+        var changed = false
+        val observer = SnapshotStateObserver { it() }
+        observer.start()
+        try {
+            // A panel that drew before the decode, with the same paint still provided.
+            observer.observeReads(Any(), { changed = true }) { paint.wallpaperTop }
+            wallpapers.prepare()
+            Snapshot.sendApplyNotifications()
+            assertTrue("Finishing the decode must redraw whatever read the wallpaper", changed)
+        } finally {
+            observer.stop()
+        }
+    }
+
     @Test fun ReadingPaintNeverDecodesAndPreparationRemembersMissingImages() {
         val decoded = mutableListOf<Boolean>()
         val wallpapers = ThemeWallpapers { decoded += it; null }

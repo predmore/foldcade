@@ -21,10 +21,14 @@ data class FoldPaint(
     val wallpaperBottom: ImageBitmap? get() = wallpapers.bottom
 }
 
-/** A pack's two wallpapers, prepared off Main and published together to both panels. */
+/**
+ * A pack's two wallpapers, prepared off Main and published together to both panels.
+ * The images are snapshot state, so anything that read a wallpaper before decoding
+ * finished draws again when it lands, even where the same paint is still provided.
+ */
 class ThemeWallpapers(private val decode: (top: Boolean) -> ImageBitmap?) {
     private data class Images(val top: ImageBitmap?, val bottom: ImageBitmap?)
-    @Volatile private var images: Images? = null
+    private var images: Images? by mutableStateOf(null)
     val prepared: Boolean get() = images != null
     val top: ImageBitmap? get() = images?.top
     val bottom: ImageBitmap? get() = images?.bottom
