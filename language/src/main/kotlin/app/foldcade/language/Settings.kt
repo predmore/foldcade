@@ -57,6 +57,8 @@ object SettingsCopy {
     const val library = "Library"
     const val players = "Emulators"
     const val findSaves = "Find saves"
+    /** A folder that brings a frontend's art and facts, as ES-DE's or Batocera's. */
+    const val artAndInfo = "art and info"
     const val accessAllowed = "Allowed"
     const val accessAsk = "Ask"
     const val screens = "System"
@@ -431,4 +433,21 @@ fun settingsTileLabel(inner: SettingsInner, model: PickerModel): String = when (
 
 /** A picked media tree's page title: its name, with its purpose made clear. */
 fun libraryFolderLabel(name: String, artAndInfo: Boolean): String =
-    if (artAndInfo) "$name · art and info" else name
+    if (artAndInfo) "$name · ${SettingsCopy.artAndInfo}" else name
+
+/**
+ * The line under a folder page's name: where the folder is, how many games it brings, and
+ * art and info when it brings those beside its games. A media-only folder's title already says so.
+ */
+fun libraryFolderDetail(folder: LibraryFolder): String? = listOfNotNull(
+    // A folder at the top of its storage is named by its path, so the path says nothing more.
+    folder.path?.ifEmpty { null }?.takeIf { it != folder.label },
+    folderCountLine(folder.games).takeIf { folder.games > 0 },
+    SettingsCopy.artAndInfo.takeIf { folder.media && !folder.artAndInfo },
+).joinToString(" · ").ifEmpty { null }
+
+/** The line under an inner page's name, or null for a page that has none. */
+fun settingsInnerDetail(inner: SettingsInner, model: PickerModel): String? = when (inner) {
+    is SettingsInner.Folder -> model.folders.firstOrNull { it.uri == inner.uri }?.let(::libraryFolderDetail)
+    else -> null
+}

@@ -73,15 +73,21 @@ class AndroidShelfHostTest {
         val rows = listOf(
             ScannedLaunchable("app.foldcade", "Foldcade", ApplicationInfo.CATEGORY_UNDEFINED, 0),
             ScannedLaunchable("", "Blank", ApplicationInfo.CATEGORY_GAME, 0),
-            ScannedLaunchable("com.android.settings", "", ApplicationInfo.CATEGORY_UNDEFINED, 0),
-            ScannedLaunchable("com.android.settings", "Settings again", ApplicationInfo.CATEGORY_UNDEFINED, 0),
+            ScannedLaunchable("com.example.notes", "", ApplicationInfo.CATEGORY_UNDEFINED, 0),
+            ScannedLaunchable("com.example.notes", "Notes again", ApplicationInfo.CATEGORY_UNDEFINED, 0),
             ScannedLaunchable("com.example.game", "Example", ApplicationInfo.CATEGORY_GAME, 0),
         )
         val listed = launchablesFrom(rows, ownPackage = "app.foldcade")
-        assertEquals(listOf("com.android.settings", "com.example.game"), listed.map { it.packageName })
-        assertEquals("com.android.settings", listed.first().label)
+        assertEquals(listOf("com.example.notes", "com.example.game"), listed.map { it.packageName })
+        assertEquals("com.example.notes", listed.first().label)
         assertTrue(listed.last().systemGame)
         assertFalse(listed.first().systemGame)
+    }
+
+    @Test
+    fun androidsSettingsAppIsListedAsAndroidSettings() {
+        val listed = launchablesFrom(listOf(ScannedLaunchable("com.android.settings", "Settings", ApplicationInfo.CATEGORY_UNDEFINED, 0)), ownPackage = "app.foldcade")
+        assertEquals(listOf(app.foldcade.language.Copy.androidSettings), listed.map { it.label })
     }
 
     @Test

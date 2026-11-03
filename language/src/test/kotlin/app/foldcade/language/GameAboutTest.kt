@@ -18,16 +18,25 @@ class GameAboutTest {
     }
 
     @Test
-    fun aLineTooLongDropsTheGenreThenTheYearButKeepsThePlayLine() {
+    fun aLineTooLongDropsTheGenreThenTheYearThenBothScreensButKeepsThePlayLine() {
         val rest = listOf("On this device", Copy.usesBothScreens, played)
         val full = heroGameFacts("Zelda", "Nintendo 3DS", 2011, "Adventure", rest) { true }
         val noGenre = "Nintendo 3DS · 2011 · On this device · ${Copy.usesBothScreens} · $played"
         val noYear = "Nintendo 3DS · On this device · ${Copy.usesBothScreens} · $played"
+        val noScreens = "Nintendo 3DS · On this device · $played"
         assertEquals("Nintendo 3DS · 2011 · Adventure · On this device · ${Copy.usesBothScreens} · $played", full)
         assertEquals(noGenre, heroGameFacts("Zelda", "Nintendo 3DS", 2011, "Adventure", rest) { it.length <= full.length - 1 })
         assertEquals(noYear, heroGameFacts("Zelda", "Nintendo 3DS", 2011, "Adventure", rest) { it.length <= noGenre.length - 1 })
+        assertEquals(noScreens, heroGameFacts("Zelda", "Nintendo 3DS", 2011, "Adventure", rest) { it.length <= noYear.length - 1 })
         // Past that, nothing more goes: the card ends what is left in "…", play time still in it.
-        assertEquals(noYear, heroGameFacts("Zelda", "Nintendo 3DS", 2011, "Adventure", rest) { false })
+        assertEquals(noScreens, heroGameFacts("Zelda", "Nintendo 3DS", 2011, "Adventure", rest) { false })
+    }
+
+    @Test
+    fun aGameWithNoYearOrGenreStillGivesUpBothScreensBeforeItsPlay() {
+        // As a local game with no facts: the save line leads, and its play must not be cut (#345).
+        val rest = listOf(null, Copy.usesBothScreens, played)
+        assertEquals("Nintendo DS · $played", heroGameFacts("Tetris", "Nintendo DS", null, null, rest) { !it.contains(Copy.usesBothScreens) })
     }
 
     @Test

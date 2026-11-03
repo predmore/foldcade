@@ -121,11 +121,18 @@ def droiddeck(c):
             *[control(d) for d in diamond(54.5, 27.5, 3.3, 1.5)], *stick(54.5, 39, 3, c)]
 
 def emulators(c):
-    """Emulators: a cartridge going into a handheld."""
-    return [shadow(32, 59, 27, 3), body("M21,6 H40 L44,10 V25 H20 V7 Q20,6 21,6 Z", tone(c, -0.2)),
-            recess(rr(23.5, 11, 17, 10.5, 1.5), c),
-            body(rr(4, 27, 56, 29, 10), c), *bezel(19, 30, 26, 22.5, 2, c),
-            control(plus(11.5, 41.5, 3.6, 2.6)), control(ci(53, 38.5, 2.5), tone(c, 0.35)), control(ci(47.5, 44.5, 2.5), tone(c, 0.35))]
+    """Emulators: a cartridge and a disc, every kind of game they play. No device, so the folder
+    never passes for a platform beside the handhelds. The disc rises clear of the cartridge, so
+    the symbol reads as two things."""
+    # Every cut in the symbol is at least 2.5 units: the disc's ring and hole, the label's bezel, the contacts.
+    dx, dy, r = 48, 15.5, 13.5
+    hole = circle_ccw(dx, dy, 3.2)
+    shell = "M8,20 H29 L36,27 V57 Q36,61 32,61 H8 Q4,61 4,57 V24 Q4,20 8,20 Z"
+    return [shadow(31, 62, 27, 2.4),
+            body(ci(dx, dy, r) + hole, tone(c, 0.35), gloss=0.2), paint(L(ci(dx, dy, r) + hole, fill=_shine(dx - r, dy - r, dx + r, dy + r))),
+            recess(ci(dx, dy, 8.4) + hole, tone(c, 0.35)), control(ci(dx, dy, 5.8) + hole, tone(c, 0.6)),
+            body(shell, c), *bezel(8.5, 25, 23, 17, 2, c, tone(c, 0.65), inset=2.5),
+            *[recess(capsule(x, 47.5, x, 56, 2.6), c) for x in (11.6, 17.2, 22.8, 28.4)]]
 
 # ---------------- platforms ----------------
 def nintendo_3ds(c):
@@ -351,7 +358,7 @@ MARKS = {
     "moonlight": (moonlight, MOON, "A crescent moon and a star"),
     "pc": (pc, BLUE, "A monitor showing a controller"),
     "droiddeck": (droiddeck, DECK, "A wide handheld with two sticks"),
-    "emulators": (emulators, EMU, "A cartridge going into a handheld"),
+    "emulators": (emulators, EMU, "A cartridge and a disc, for every game an emulator plays"),
     "nintendo_3ds": (nintendo_3ds, ROSE, "Nintendo 3DS-style clamshell"),
     "nintendo_ds": (nintendo_ds, ORANGE, "Nintendo DS-style clamshell"),
     "game_boy": (game_boy, LIME, "Game Boy-style portrait handheld"),

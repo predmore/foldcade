@@ -97,7 +97,7 @@ internal fun FindKeys(
     onTapKey: (KeyFocus) -> Unit,
     onTapResult: (Int) -> Unit,
     onTapFilter: (Int) -> Unit,
-    tile: @Composable (entry: FindEntry, focused: Boolean, size: Dp, onClick: () -> Unit) -> Unit,
+    tile: @Composable (entry: FindEntry, focused: Boolean, size: Dp, titleWidth: Dp, onClick: () -> Unit) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     BoxWithConstraints(modifier.fillMaxSize()) {
@@ -105,19 +105,31 @@ internal fun FindKeys(
         val fromHeight = maxHeight * RESULTS_SHARE - ring * 2 - titleBlock
         val fromWidth = (maxWidth - ring * 2 - gap * (RESULTS_ACROSS - 1)) / RESULTS_ACROSS
         val cell = minOf(fromHeight, fromWidth).coerceAtLeast(MIN_CELL.dp)
+        val wide = maxWidth >= FIELD_BESIDE_FILTERS
         Column(Modifier.fillMaxSize()) {
             if (fieldStyle != null) {
                 val theme = LocalFoldTheme.current.theme
-                TypingField(
-                    typing = session.typing.typing,
-                    style = fieldStyle,
-                    background = theme.surface,
-                    scale = scale,
-                    modifier = Modifier.fillMaxWidth().padding(horizontal = ring),
-                    lead = { Magnifier(theme.muted, with(LocalDensity.current) { fieldStyle.fontSize.toDp() }) },
-                    compact = true,
-                )
-                FindFilters(session, chipStyle, scale, Modifier.fillMaxWidth().padding(top = 8.dp), onTapFilter)
+                val field = @Composable { fieldModifier: Modifier ->
+                    TypingField(
+                        typing = session.typing.typing,
+                        style = fieldStyle,
+                        background = theme.surface,
+                        scale = scale,
+                        modifier = fieldModifier,
+                        lead = { Magnifier(theme.muted, with(LocalDensity.current) { fieldStyle.fontSize.toDp() }) },
+                        compact = true,
+                    )
+                }
+                if (wide) {
+                    // A wide screen puts the filters beside the query, so the keys get the height a second line took.
+                    Row(Modifier.fillMaxWidth().padding(horizontal = ring), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                        field(Modifier.weight(FIELD_SHARE))
+                        FindFilters(session, chipStyle, scale, Modifier.weight(1f - FIELD_SHARE), onTapFilter)
+                    }
+                } else {
+                    field(Modifier.fillMaxWidth().padding(horizontal = ring))
+                    FindFilters(session, chipStyle, scale, Modifier.fillMaxWidth().padding(top = 8.dp), onTapFilter)
+                }
             }
             ResultStrip(
                 session = session,
@@ -161,7 +173,7 @@ private fun ResultStrip(
     scale: Float,
     emptyStyle: TextStyle,
     onTap: (Int) -> Unit,
-    tile: @Composable (entry: FindEntry, focused: Boolean, size: Dp, onClick: () -> Unit) -> Unit,
+    tile: @Composable (entry: FindEntry, focused: Boolean, size: Dp, titleWidth: Dp, onClick: () -> Unit) -> Unit,
 ) {
     val theme = LocalFoldTheme.current.theme
     val motion = theme.motion
@@ -185,6 +197,8 @@ private fun ResultStrip(
         // Results centre while there are fewer than fit, and start at the left once they fill it.
         val spare = max(0f, widthPx - padPx * 2 - (results.size * pitchPx - with(density) { gap.toPx() }))
         val lead by eased(spare / 2f, motion.durationTravel, scale)
+        // A name may reach into the gaps beside its tile, and a lone result's across the strip's empty width.
+        val titleWidth = with(density) { if (results.size == 1) (widthPx - padPx * 2).toDp() else cell + gap }
         if (results.isEmpty()) {
             BasicText(FindCopy.noMatches, Modifier.align(Alignment.Center), style = emptyStyle)
         }
@@ -213,7 +227,7 @@ private fun ResultStrip(
                             scaleY = grown
                         },
                 ) {
-                    tile(entry, session.onResults && session.index == index, cell) { onTap(index) }
+                    tile(entry, session.onResults && session.index == index, cell, titleWidth) { onTap(index) }
                 }
             }
         }
@@ -445,10 +459,20 @@ internal fun PillCarousel(
                         },
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
+                    val padPx = with(density) { PILL_PAD.toPx() }
                     labels.forEachIndexed { index, label ->
                         val on by eased(if (index == chosen) 1f else 0f, motion.durationFocus, scale)
                         Box(
                             Modifier
+                                // A pill the row's edge would cut into its word is gone instead, so the edge
+                                // shows whole pills or none: no "DS" left of a "3DS". Its padding may pass the edge.
+                                .graphicsLayer {
+                                    // The chosen pill always shows; the row centres on it.
+                                    if (index == chosen) return@graphicsLayer
+                                    val span = spans[index] ?: return@graphicsLayer
+                                    val hidden = maxOf(scroll - span.left, span.right - scroll - room, 0f)
+                                    alpha = 1f - (hidden / padPx).coerceIn(0f, 1f)
+                                }
                                 .then(if (onTap != null) Modifier.hostPress { onTap(index) } else Modifier)
                                 .onGloballyPositioned {
                                     val rect = Rect(it.positionInParent(), it.size.toSize())
@@ -456,7 +480,7 @@ internal fun PillCarousel(
                                 }
                                 .clip(theme.style.shape.control())
                                 .drawBehind { drawRoundRect(theme.onBackground.copy(alpha = find.filterAlpha), cornerRadius = CornerRadius(size.height * round)) }
-                                .padding(horizontal = 16.dp, vertical = 6.dp),
+                                .padding(horizontal = PILL_PAD, vertical = 6.dp),
                         ) {
                             BasicText(
                                 text = label,
@@ -546,6 +570,13 @@ internal fun Modifier.slidingUp(progress: () -> Float): Modifier = graphicsLayer
     alpha = t
     translationY = (1f - t) * size.height * SLIDE_SHARE
 }
+
+/** As wide as this, compact Find puts its filters beside the query; the field takes this share. */
+private val FIELD_BESIDE_FILTERS = 640.dp
+private const val FIELD_SHARE = 0.4f
+
+/** A pill's room either side of its word. */
+private val PILL_PAD = 16.dp
 
 /** The share of the keys' screen the result strip takes, at most. */
 private const val RESULTS_SHARE = 0.34f

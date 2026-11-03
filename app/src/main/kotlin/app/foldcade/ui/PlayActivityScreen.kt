@@ -49,6 +49,7 @@ import app.foldcade.FoldcadeApp
 import app.foldcade.R
 import app.foldcade.playName
 import app.foldcade.language.MARK_CONSOLE
+import app.foldcade.language.PLAY_TOP_GAMES
 import app.foldcade.language.PickerModel
 import app.foldcade.language.PlayActivityPage
 import app.foldcade.language.PlayCopy
@@ -220,13 +221,16 @@ private fun MostPlayed(app: FoldcadeApp, week: PlayWeek, theme: Theme) {
         LaunchedEffect(current) {
             current.forEach { (gameId, title) -> if (title != null) app.plays.rememberName(gameId, title) }
         }
+        // Two lines, as a game's own page gives a long name, while the card has room for every row at two.
+        // A full week of four keeps to one line each, so nothing falls off the card.
+        val nameLines = if (week.top.size < PLAY_TOP_GAMES) 2 else 1
         week.top.forEachIndexed { index, (gameId, millis) ->
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 PlayCover(app, gameId, TOP_COVER)
                 Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
                     BasicText(
                         playName(gameId, current[index].second, app.plays.name(gameId)),
-                        maxLines = 1,
+                        maxLines = nameLines,
                         overflow = TextOverflow.Ellipsis,
                         style = playText(theme.onBackground, theme, LocalFoldTheme.current.theme.style.type.sideRow, bold = true),
                     )

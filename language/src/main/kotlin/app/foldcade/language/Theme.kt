@@ -403,6 +403,7 @@ object Copy {
     const val collectionIcon = "Collection icon"
     const val hintTop = "Top"
     const val hintPlay = "Play"
+    const val hintOpen = "Open"
     const val hintResume = "Resume"
     const val hintBottom = "Bottom"
     const val onHomeMark = "On home"
@@ -445,13 +446,15 @@ fun hintFor(place: HintPlace): HintActions? = when (place) {
 }
 
 /**
- * What A does to the focused game when it is not a choice of screens: a game
- * that takes both screens plays, and one still open in its player resumes.
+ * What A does to the focused tile when it is not a choice of screens: a game
+ * that takes both screens plays, one still open in its player resumes, and a
+ * folder, a collection, or a place such as All games opens.
  */
 enum class PlayKey {
     None,
     Play,
     Resume,
+    Open,
 }
 
 /** One glyph and one word in the hint row. */
@@ -482,6 +485,7 @@ fun gridHints(
         play == PlayKey.Resume -> listOfNotNull(HintKey(confirm, Copy.hintResume), HintKey(roles.bottomGlyph, Copy.hintClose).takeIf { close })
         screens -> screenHints(confirm, roles.bottomGlyph, playOn)
         play == PlayKey.Play -> listOf(HintKey(confirm, Copy.hintPlay))
+        play == PlayKey.Open -> listOf(HintKey(confirm, Copy.hintOpen))
         else -> emptyList()
     }
     // The options button names its menu only when the focused tile has one.
