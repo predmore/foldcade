@@ -68,17 +68,21 @@ class SetupReviewRegressionTest {
         assertTrue(fresh.copy(hasGames = true).releasesRestore(true, true))
     }
 
-    @Test fun aCachedRommIngestDoesNotReleaseMissingRestoredGames() {
-        val prefs = prefs()
-        val shell = shell(prefs)
-        shell.ingestLibrary("romm", emptyList(), emptyList(), restoreReported = false)
-        val cached = decodeHome(prefs.getString("home_board", null))
-        assertTrue(server in cached.slots)
-        assertTrue(server in cached.folders.getValue(collection.id).slots)
-        assertTrue(SessionStore(prefs).restoreHolds().awaiting(server))
-        shell.ingestLibrary("romm", emptyList(), emptyList(), restoreReported = true)
-        assertFalse(server in decodeHome(prefs.getString("home_board", null)).slots)
-        assertFalse(SessionStore(prefs).restoreHolds().awaiting(server))
+    @Test fun aCachedRommIngestDoesNotReleaseMissingOrPresentRestoredGames() {
+        val game = app.foldcade.api.plugin.Game("romm", "42", "snes", app.foldcade.api.plugin.Availability.RemoteOnly, "Saved game")
+        val entry = GridEntry("42", game.label, "", game.platformId, null, false, game)
+        for (entries in listOf(emptyList(), listOf(entry))) {
+            val prefs = prefs()
+            val shell = shell(prefs)
+            shell.ingestLibrary("romm", entries, emptyList(), restoreReported = false)
+            val cached = decodeHome(prefs.getString("home_board", null))
+            assertTrue(server in cached.slots)
+            assertTrue(server in cached.folders.getValue(collection.id).slots)
+            assertTrue(SessionStore(prefs).restoreHolds().awaiting(server))
+            shell.ingestLibrary("romm", emptyList(), emptyList(), restoreReported = true)
+            assertFalse(server in decodeHome(prefs.getString("home_board", null)).slots)
+            assertFalse(SessionStore(prefs).restoreHolds().awaiting(server))
+        }
     }
 
     @Test fun xAndTheRemoveMenuClearAHeldGapFromEveryPlaceAndItsHold() {
