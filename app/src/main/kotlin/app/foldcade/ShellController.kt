@@ -625,6 +625,10 @@ class ShellController(
         inherited = playerChoiceLabel(playerResolution(null, platformId).player?.takeIf { it.packageNames.any(installedPlayers::contains) }),
     ).takeIf { it.visible }
 
+    /** Notices and Set up saves choose a Settings row in the reducer, before Settings opens. */
+    private fun settingsPlayerChoices(next: PickerModel): List<SystemPlayerChoice> =
+        if (next.settings != null || next.panel != null || next.saveSetup != null) systemPlayerChoices() else next.systemPlayers
+
     private fun systemPlayerChoices(): List<SystemPlayerChoice> =
         (libraryGames.values.map { it.platformId } + entries.mapNotNull { it.game?.platformId } + Shelf.games.mapNotNull { it.platformId })
             .distinct().map(::canonicalSystem).distinct().map { id ->
@@ -3485,7 +3489,7 @@ class ShellController(
         val lastOccupied = if (next.homeGrid == HomeGrid.StandIns && !home.board.allOpen && !home.board.foldersOpen) {
             home.lastOccupiedIndex()
         } else count - 1
-        val counted = next.copy(count = count, playerSaves = playerSaveSettings(), systemPlayers = if (next.settings != null || next.panel != null) systemPlayerChoices() else next.systemPlayers,
+        val counted = next.copy(count = count, playerSaves = playerSaveSettings(), systemPlayers = settingsPlayerChoices(next),
             gridLabels = labels, lastOccupiedIndex = lastOccupied,
             screenJumpLastColumn = if (showingHome(next) && !home.board.allOpen && !home.board.foldersOpen) GridStrip.column(lastOccupied.coerceAtLeast(0)) else null)
         val game = tileOn(counted)
@@ -3749,7 +3753,7 @@ class ShellController(
             val canChoose = game != null && id != null && launchRoute(tileOf(id), game)?.servers?.isNotEmpty() == true
             ready.copy(tileActions = if (game != null && id != null) TileActions(saves = canChoose, game = id,
                 openWith = openWith(tileOf(id), game.platformId)) else null,
-                playerSaves = playerSaveSettings(), systemPlayers = if (ready.settings != null || ready.panel != null) systemPlayerChoices() else ready.systemPlayers)
+                playerSaves = playerSaveSettings(), systemPlayers = settingsPlayerChoices(ready))
         } else {
             withShelf(ready.copy(libraryGrid = false))
         }

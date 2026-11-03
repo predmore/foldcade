@@ -85,6 +85,30 @@ class MoveSettingsTest {
         openSystemNotice("nintendo-ds")
     }
 
+    @Test fun restoredSaveSetupFindSavesOpensItsSettingsRowBeforeSettingsHasEverOpened() {
+        for (libraryGrid in listOf(false, true)) {
+            val cold = ShellController(SessionStore(MemoryPrefs()), host)
+            cold.setInstalledApps(emptyList(), host.playerPackageNames(), setOf(pkg, MelonDsPlayer.STABLE_PACKAGE))
+            cold.ingestLibrary("romm", listOf(entry("nintendo-ds")), host.platformDefinitions())
+            if (libraryGrid) {
+                cold.showPlatforms("romm", emptyList())
+                cold.showGames(listOf(entry("nintendo-ds")))
+            }
+            assertTrue(cold.model.systemPlayers.isEmpty())
+            cold.restoreSaveSetup(FIND_SAVES_TILE, HostScreen.Top)
+            assertEquals(FIND_SAVES_TILE, cold.model.saveSetup!!.focus)
+            cold.setAllFilesGranted(true)
+            // A newly completed step celebrates first. Revisit its now-done tile to open its Settings.
+            cold.onMeaning(Meaning.MoveRight, HostScreen.Top)
+            cold.onMeaning(Meaning.MoveLeft, HostScreen.Top)
+            assertEquals(FIND_SAVES_TILE, cold.model.saveSetup!!.focus)
+            cold.onMeaning(Meaning.Activate, HostScreen.Top)
+            assertNull(cold.model.saveSetup)
+            assertEquals(SettingsCategory.Players, settingsCategories(cold.model)[cold.model.settings!!.category])
+            assertEquals(Row.FindSaves, settingsFocus(cold.model))
+        }
+    }
+
     @Test fun saveRowsReuseWorkButRefreshOnSetupSyncFolderAndInstallChanges() {
         val before = shell.model.playerSaves
         repeat(4) { shell.onMeaning(Meaning.MoveRight, HostScreen.Bottom) }
